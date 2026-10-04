@@ -28,6 +28,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     holds no API key)
   - bucket files (piece shapes, pictures) are read from
     `flare.tangent.workers.dev`; games only reads from flare, never writes
+- **Chess pieces** are `.tvf3d` fields from flare's BUCKET1 (`PIECE_FILES`).
+  A `TVF3D-PARTS` file is a piece of several parts, written by the 3d studio's
+  "export as a chess piece": `parseTVF3D` reads it and `buildPartsGeometry`
+  lays the parts into one mesh. The format is defined on the 3d side
+  (`buildPieceTVF3D`); change the two together. Dropping or opening a
+  `.tvf3d` named after a piece swaps it in for the session (`loadPieceFiles`).
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
@@ -42,9 +48,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - `npm test` runs `tests/smoke.mjs`: it loads the page in headless Chromium,
   switches to every app in `FIELD_APPS`, and fails on any uncaught error. Run it
   before every PR, and add checks there for new behaviour.
-- In a cloud sandbox the CDNs may be blocked. Serve three.js r128 from the npm
-  package `three@0.128.0` and chess.js 1.4.0 from `chess.js@1.4.0` with
-  `page.route`, as earlier sessions did.
+- In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
+  `chess.js@1.4.0` somewhere and run `LIBS_DIR=that/node_modules npm test`; the
+  test then serves both from there.
 
 ## Related repos
 - **3d:** the shape studio; it exports `.tvf3d`, the chess piece format read here.
