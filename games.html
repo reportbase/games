@@ -1189,7 +1189,7 @@
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
     <button id="bLoadImage" title="Open anything into the field: images, a PDF or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
-    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.pgn,.pdn,.sgf" multiple hidden>
+    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.pgn,.pdn,.sgf,.tvf3d" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution (1024px long side) instead of scaling down as the collection grows. Costs real GPU memory: ~5MB per print at 1024, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to the next load."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
     <button id="bSelfCheck" title="Run the field's invariant checks: do the geometry and fabric tiers agree about which picture hangs where, does every print hang somewhere, can the ordered walk reach them all, is any board drawing the backdrop instead of its image. Also on the V key.">Self&#8209;check &#10003;</button>
@@ -5221,8 +5221,51 @@ const defaultHeightShade = heightShade;   // was a cross-module import
 
 
 /* ─── parseTVF3D ──────────────────────────────────────────────────────── */
+/* A PIECE OF SEVERAL PARTS (Oct 4: 3d→games, "combine objects into one larger
+   object" carried through to the board). The 3d studio builds an object from
+   parts — a base, a collar, a head — each one surface about its own axis,
+   placed, turned and scaled. One field cannot hold that: a field is a single
+   r(θ, h) about a single axis. So the studio writes the parts side by side:
+
+     TVF3D-PARTS n
+     PART name m00 m01 m02 m03  m10 m11 m12 m13  m20 m21 m22 m23
+     TVF3D Nh Mt color
+     Aa … / Ab … / Cra … (one ordinary field)
+     PART name …
+     TVF3D …
+
+   Each PART line is the 3×4 matrix (row-major) that takes that field's own
+   frame — y up 0..1, radius as written — into the piece's frame, where the
+   studio has already stood the whole object on y=0, centred it and scaled it
+   to the height and footprint a single-field piece has. So games does no
+   fitting of its own: it builds each field, moves it by its matrix and lays
+   the parts into one mesh, and the ladder never knows it was more than one.
+
+   The returned object is the FIRST part's field with `parts` added. Anything
+   that only understands one field — the fireball's coefficient blend, say —
+   still finds Nh, Aa and the rest, and gets a reasonable stand-in.
+   An older page reading one of these files fails cleanly: its single-field
+   reader finds the coefficient rows don't match the header and throws, and
+   the piece falls back the way any bad file does. */
 function parseTVF3D(text){
-  const lines = text.replace(/\r/g, '').split('\n');
+  const src = text.replace(/\r/g, '');
+  if (/^\s*TVF3D-PARTS\b/.test(src)){
+    const parts = [];
+    let cur = null;
+    for (const l of src.split('\n')){
+      const t = l.trim();
+      if (t.startsWith('PART ')){
+        const w = t.split(/\s+/), M = w.slice(2, 14).map(Number);
+        if (M.length !== 12 || M.some(v => !isFinite(v))) throw new Error('bad PART line: ' + t.slice(0, 40));
+        cur = { name: w[1], M, lines: [] };
+        parts.push(cur);
+      } else if (cur) cur.lines.push(l);
+    }
+    if (!parts.length) throw new Error('TVF3D-PARTS file with no PART');
+    for (const p of parts){ p.C = parseTVF3D(p.lines.join('\n')); delete p.lines; }
+    return Object.assign({}, parts[0].C, { parts });
+  }
+  const lines = src.split('\n');
   const hdr = lines.find(l => l.startsWith('TVF3D'));
   if (!hdr) throw new Error('not a TVF3D field');
   const h = hdr.split(/\s+/);
@@ -5377,6 +5420,7 @@ function makeFieldEvaluator(C, K){
                (default: heightShade from field-math) */
 function buildFieldGeometry(K, C, opts = {}){
   if (!C) return null;
+  if (C.parts) return buildPartsGeometry(K, C, opts);
   const ev = makeFieldEvaluator(C, K);
   const rings = opts.rings ?? Math.max(4,   Math.min(80,  4 + K));
   const seg   = opts.seg   ?? Math.max(8,   Math.min(160, 8 + K*2));
@@ -5429,6 +5473,49 @@ function buildFieldGeometry(K, C, opts = {}){
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   g.setAttribute('color',    new THREE.Float32BufferAttribute(vcolors, 3));
   g.setIndex(indices);
+  g.computeVertexNormals();
+  return g;
+}
+
+/* …and a piece of several parts (see parseTVF3D): every part built at the
+   same K, moved by its matrix, and laid into one geometry, so a rung is still
+   one InstancedMesh however many parts the piece has.
+   THE SHADE IS THE PIECE'S, NOT THE PART'S. heightShade darkens a field toward
+   its foot; applied per part, a small collar halfway up would get a whole
+   foot-to-crown gradient of its own and the piece would read as a stack of
+   separately lit objects. So the parts are built unshaded and the shade is
+   laid on afterwards, from each vertex's height in the finished piece. */
+function buildPartsGeometry(K, C, opts = {}){
+  const shade = opts.shadeFn || defaultHeightShade;
+  const pos = [], col = [], idx = [];
+  const m4 = new THREE.Matrix4();
+  for (const part of C.parts){
+    const g = buildFieldGeometry(K, part.C, Object.assign({}, opts, { shadeFn: () => 1 }));
+    const M = part.M;
+    m4.set(M[0], M[1], M[2],  M[3],
+           M[4], M[5], M[6],  M[7],
+           M[8], M[9], M[10], M[11],
+           0,    0,    0,     1);
+    g.applyMatrix4(m4);
+    const base = pos.length / 3;
+    const P = g.attributes.position.array, Cc = g.attributes.color.array, I = g.index.array;
+    for (let i = 0; i < P.length; i += 3){
+      const sh = shade(P[i + 1]);
+      pos.push(P[i], P[i + 1], P[i + 2]);
+      col.push(Cc[i] * sh, Cc[i + 1] * sh, Cc[i + 2] * sh);
+    }
+    // A mirrored part (a negative scale) turns its triangles inside out, and
+    // the normals computed below would face in; swap two corners to undo it.
+    const flip = m4.determinant() < 0;
+    for (let i = 0; i < I.length; i += 3)
+      if (flip) idx.push(I[i] + base, I[i + 2] + base, I[i + 1] + base);
+      else      idx.push(I[i] + base, I[i + 1] + base, I[i + 2] + base);
+    g.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
   g.computeVertexNormals();
   return g;
 }
@@ -8160,6 +8247,7 @@ const PIECE_TYPES = ['p', 'n', 'b', 'r', 'q', 'k'];
 const PIECE_FILES = { p:'pawn.tvf3d', r:'rook.tvf3d', n:'knight.tvf3d',
                       b:'bishop.tvf3d', q:'queen.tvf3d', k:'king.tvf3d' };
 const FIELDS = {};                                     // pieceChar → parsed TVF3D
+const PIECE_LOCAL = new Set();                         // pieces dropped in this session (loadPieceFiles)
 const sourceFor = ch => FIELDS[ch] || FIELDS.p || null;
 /* Whether the piece-field fetch has SETTLED — succeeded, failed, or been
    ruled out (file://). Until then a missing field means "still loading",
@@ -16645,6 +16733,9 @@ panBtn?.addEventListener('click', () => setPanMode(!panModeIsOn()));
     return;
   }
   const { loaded, missing, fields } = await loadFields(PIECE_FILES, PIECE_DIR);
+  // A piece you dropped in while this was fetching is the one you want to
+  // see; the bucket's copy arriving late must not quietly replace it.
+  for (const ch of PIECE_LOCAL) delete fields[ch];
   Object.assign(FIELDS, fields);
   FIELDS_SETTLED = true;                          // in every outcome below, the load is over
   ladder.invalidateAll();                         // force a rebuild against the now-loaded fields
@@ -16675,6 +16766,50 @@ panBtn?.addEventListener('click', () => setPanMode(!panModeIsOn()));
   }
   setMsg(`loaded ${loaded.length}/${loaded.length} fields (${loadedStr})`, true);
 })();
+
+/* TRY A PIECE WITHOUT UPLOADING IT (Oct 4, with the 3d studio's chess-piece
+   export). The set comes from the bucket, and games only ever reads the
+   bucket — so until now the only way to see a new knight on a board was to
+   put it there first, with the write token, and reload. Dropping a .tvf3d on
+   the page (or opening one) swaps it in for this session instead.
+   THE FILE NAME SAYS WHICH PIECE: knight.tvf3d, white_knight.tvf3d and
+   my-knight-3.tvf3d are all knights. The word is the only thing to go on — a
+   field has no idea what it is meant to be — and a file that names no piece
+   is refused with a message saying so, rather than guessed onto the pawn.
+   Nothing is written anywhere; a reload brings the bucket's set back. */
+const PIECE_WORDS = { pawn: 'p', knight: 'n', bishop: 'b', rook: 'r', queen: 'q', king: 'k' };
+function pieceForFileName(name){
+  const n = String(name || '').toLowerCase();
+  for (const w in PIECE_WORDS) if (n.includes(w)) return PIECE_WORDS[w];
+  return null;
+}
+async function loadPieceFiles(files){
+  const done = [], bad = [];
+  for (const f of files){
+    const ch = pieceForFileName(f.name);
+    if (!ch){ bad.push(f.name + ': name it after a piece (pawn, knight, bishop, rook, queen or king)'); continue; }
+    try {
+      const C = parseTVF3D(await f.text());
+      FIELDS[ch] = C;
+      PIECE_LOCAL.add(ch);
+      done.push(f.name + (C.parts ? ' (' + C.parts.length + ' parts)' : ''));
+    } catch (e){ bad.push(f.name + ': ' + e.message); }
+  }
+  if (done.length){
+    // Not FIELDS_SETTLED: that flag means the BUCKET load is over, and a
+    // dropped knight says nothing about whether the pawn is still coming.
+    ladder.invalidateAll();
+    try { _disposeAppItems(); } catch {}
+  }
+  const msg = (done.length ? 'piece loaded for this session: ' + done.join(', ') : '')
+            + (bad.length ? (done.length ? ' · ' : '') + '⚠ ' + bad.join(' · ') : '');
+  console.log('[pieces]', msg);
+  try { engineNotice(msg, bad.length ? 12000 : 5000); } catch {}
+  return { done, bad };
+}
+// The smoke test reaches the piece pipeline through here (tests/smoke.mjs).
+try { window.loadPieceFiles = loadPieceFiles;
+      window.__pieces = { FIELDS, parseTVF3D, buildFieldGeometry }; } catch {}
 
 /* ─── Main frame loop ─────────────────────────────────────────────────── */
 let t0 = performance.now();
@@ -39750,6 +39885,9 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
        picker's accept list, which would not let you select one. */
     const _recs = all.filter(f => f && FIELD_RECORD.EXT.test(f.name || ''));
     for (const f of _recs) FIELD_RECORD.importFile(f);
+    // A chess piece from the 3d studio: swapped in for this session.
+    const _pieces = all.filter(f => f && /\.tvf3d$/i.test(f.name || ''));
+    if (_pieces.length) loadPieceFiles(_pieces);
     // .cbz/.cbr ride the zip path — a comic archive IS a folder of pages, and
     // _loadZip's numeric name sort is already the page order. The bytes decide
     // whether it can actually be read; see _sniffArchive.

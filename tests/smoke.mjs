@@ -4,6 +4,11 @@
 //   npm test                       serves the repo itself on a free port
 //   BASE_URL=http://host/ npm test test an already-running server instead
 //
+//   LIBS_DIR=path/node_modules npm test
+//                                  serve three.js and chess.js from local npm
+//                                  copies (three@0.128.0, chess.js@1.4.0), for
+//                                  a sandbox where the CDNs are blocked
+//
 // Console errors (a CDN hiccup, the coach's sign-in check) are printed but do
 // not fail the run; uncaught exceptions do.
 
@@ -39,6 +44,13 @@ const launch = { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-u
 if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launch);
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+if (process.env.LIBS_DIR){
+  const lib = f => readFile(join(process.env.LIBS_DIR, f));
+  await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r =>
+    r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
+  await page.route(/cdn\.jsdelivr\.net\/npm\/chess\.js@1\.4\.0\/\+esm/, async r =>
+    r.fulfill({ contentType: 'text/javascript', body: await lib('chess.js/dist/esm/chess.js') }));
+}
 
 let current = 'page load';
 const failures = [];
@@ -63,6 +75,42 @@ try {
     if (active !== id) failures.push(`[${id}] switching did not take: the active app is ${active}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${id}`);
   }
+
+  // A chess piece of several parts, as the 3d studio exports it, dropped in
+  // through the same door as a dragged file. Two cylinders: a wide base and a
+  // narrow column standing on it. The test checks the file reads as two
+  // parts, that the piece geometry holds both (and sits where the matrices
+  // put it), and that a file named after no piece is refused, not guessed.
+  current = 'multi-part piece';
+  const before = failures.length;
+  const got = await page.evaluate(async () => {
+    const field = r => 'TVF3D 2 2\nAa ' + r + ' 0\nAa 0 0\nAb 0 0\nAb 0 0\n';
+    const text = 'TVF3D-PARTS 2\n'
+      + 'PART base 1 0 0 0  0 0.2 0 0  0 0 1 0\n' + field(0.4)
+      + 'PART column 1 0 0 0  0 0.8 0 0.2  0 0 1 0\n' + field(0.15);
+    const P = window.__pieces;
+    const C = P.parseTVF3D(text);
+    const g = P.buildFieldGeometry(8, C);
+    const one = P.buildFieldGeometry(8, C.parts[0].C);
+    g.computeBoundingBox();
+    const bb = g.boundingBox;
+    const ok = await window.loadPieceFiles([new File([text], 'my_knight.tvf3d')]);
+    const no = await window.loadPieceFiles([new File([text], 'thing.tvf3d')]);
+    return { parts: C.parts.length, names: C.parts.map(p => p.name).join(','),
+             verts: g.attributes.position.count, oneVerts: one.attributes.position.count,
+             minY: bb.min.y, maxY: bb.max.y, maxX: bb.max.x,
+             loaded: ok.done.length, knightParts: (P.FIELDS.n && P.FIELDS.n.parts || []).length,
+             refused: no.bad.length };
+  });
+  const near = (a, b) => Math.abs(a - b) < 1e-3;
+  if (got.parts !== 2 || got.names !== 'base,column') failures.push(`[${current}] parsed ${got.parts} parts (${got.names})`);
+  if (got.verts !== 2 * got.oneVerts) failures.push(`[${current}] geometry has ${got.verts} vertices, expected ${2 * got.oneVerts}`);
+  if (!near(got.minY, 0) || !near(got.maxY, 1) || !near(got.maxX, 0.4))
+    failures.push(`[${current}] piece spans y ${got.minY}..${got.maxY}, x to ${got.maxX}; expected 0..1 and 0.4`);
+  if (got.loaded !== 1 || got.knightParts !== 2) failures.push(`[${current}] dropping my_knight.tvf3d did not replace the knight`);
+  if (got.refused !== 1) failures.push(`[${current}] a file named after no piece was not refused`);
+  await page.waitForTimeout(SETTLE_MS);         // let the board rebuild with it
+  console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

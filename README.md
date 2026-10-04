@@ -18,6 +18,16 @@ Add `?app=` and the game's id to the link, for example
 
 `gallery` opens the photo / PDF / comic viewer. `?debug=1` shows the debug menu.
 
+## Your own chess pieces
+
+The chess pieces are `.tvf3d` files, read from the
+[flare](https://github.com/reportbase/flare) bucket. To try one of your own,
+make it in the [3d studio](https://reportbase.github.io/3d/) (file → export as
+a chess piece), name the file after the piece it replaces (`knight.tvf3d`,
+`white_queen.tvf3d`), and drop it on the page, or pick it with the open button.
+It replaces that piece for the session; reloading brings the usual set back.
+Pieces made of several parts work too.
+
 ## Files
 
 | File | What it is |
@@ -44,7 +54,8 @@ python3 -m http.server 8000
 
 Every pull request runs `tests/smoke.mjs` in GitHub Actions. It opens the page
 in headless Chromium, switches to every game in turn, and fails if any of them
-throws an uncaught error. To run it yourself:
+throws an uncaught error. It also loads a two-part chess piece and checks it
+is built where its file says. To run it yourself:
 
 ```sh
 npm install
