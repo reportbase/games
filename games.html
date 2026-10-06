@@ -16786,8 +16786,19 @@ function pieceForFileName(name){
 async function loadPieceFiles(files){
   const done = [], bad = [];
   for (const f of files){
+    const prop = propForFileName(f.name);
+    if (prop){
+      // A windmill needs its sails as parts of their own, or nothing would turn.
+      try {
+        const C = parseTVF3D(await f.text());
+        if (prop === 'windmill' && !(C.parts && C.parts.some(p => /^sail/i.test(p.name)))) throw new Error('a windmill needs parts named "sail …" (export it from the 3d studio as a piece)');
+        Object.assign(PROPS[prop], { C, state: 'local' });
+        done.push(f.name + ' (' + prop + ', ' + (C.parts ? C.parts.length + ' parts' : 'one part') + ')');
+      } catch (e){ bad.push(f.name + ': ' + e.message); }
+      continue;
+    }
     const ch = pieceForFileName(f.name);
-    if (!ch){ bad.push(f.name + ': name it after a piece (pawn, knight, bishop, rook, queen or king)'); continue; }
+    if (!ch){ bad.push(f.name + ': name it after a piece (pawn, knight, bishop, rook, queen or king) or a prop (' + Object.keys(PROPS).join(', ') + ')'); continue; }
     try {
       const C = parseTVF3D(await f.text());
       FIELDS[ch] = C;
@@ -16807,8 +16818,41 @@ async function loadPieceFiles(files){
   try { engineNotice(msg, bad.length ? 12000 : 5000); } catch {}
   return { done, bad };
 }
+/* PROPS FROM THE 3D STUDIO (Oct 6: "the games project uses tvf3d sucessfully. many other
+   games could use tvf3d objects, for example mini-golf."). A prop is an object a game stands
+   on its boards that is not a chess piece: mini golf's windmill first. It is a TVF3D-PARTS
+   file exported from the studio like a piece, and read by the same parseTVF3D.
+   WHERE IT LIVES: beside games.html in the repo (windmill.tvf3d), fetched the first time a
+   game asks for it. games only reads flare and never writes to it, so a new prop could not be
+   put in the bucket from here; beside the page it ships with the page, the way the Stockfish
+   files do. Opened as a single file, with nothing beside it, the fetch fails and the game draws
+   its old plain shapes.
+   THE PROP'S LOOK ONLY. The game keeps its own rules and collisions; the object is what is
+   drawn there. Parts the game moves are found by their names (mini golf turns the parts
+   named "sail …").
+   Dropping or opening a .tvf3d named after a prop (my_windmill.tvf3d) swaps it in for the
+   session, as a piece is. */
+const PROPS = { windmill: { file: 'windmill.tvf3d', C: null, state: 'idle' } };
+function propC(name){
+  const P = PROPS[name];
+  if (!P) return null;
+  if (P.state === 'idle'){
+    P.state = 'loading';
+    fetch(new URL(P.file, location.href))
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(t => { if (P.state === 'loading'){ P.C = parseTVF3D(t); P.state = 'ready'; } })
+      .catch(e => { if (P.state === 'loading'){ P.state = 'failed'; console.log('[props] ' + P.file + ': ' + e.message + ' (drawn plain)'); } });
+  }
+  return P.C;
+}
+function propForFileName(name){
+  const n = String(name || '').toLowerCase();
+  for (const k in PROPS) if (n.includes(k)) return k;
+  return null;
+}
 // The smoke test reaches the piece pipeline through here (tests/smoke.mjs).
-try { window.loadPieceFiles = loadPieceFiles;
+try { window.__props = { PROPS, propC };
+      window.loadPieceFiles = loadPieceFiles;
       window.__pieces = { FIELDS, parseTVF3D, buildFieldGeometry }; } catch {}
 
 /* ─── Main frame loop ─────────────────────────────────────────────────── */
@@ -32938,7 +32982,34 @@ const GOLF_APP = (() => {
     g.userData.unlit = true; g.userData.opacity = 0.55;
     return g;
   }
+  /* THE WINDMILL FROM THE STUDIO (Oct 6: "many other games could use tvf3d objects, for
+     example mini-golf"). The toy's tower and sails are windmill.tvf3d's parts (see PROPS):
+     the parts named "sail …" turn, the rest stand. It is the toy's look only. The ball still
+     meets what it always met, the two crossed arms and the hub in toys(), so no hole plays
+     differently.
+     The sails are fitted to the arm: the file is scaled so the sails' reach is 1, and the item's
+     scale is the arm, so the sails end where the arms do. The studio file was built to the
+     physics: a tower as wide as the hub, sails starting at the tower and about as tall as the
+     ball. Until the file has loaded, or if it can't be, the old hub and blades are drawn. */
+  let _mill = null;
+  function millGeos(){
+    const C = propC('windmill');
+    if (!C || !C.parts) return null;
+    if (_mill && _mill.C === C) return _mill;
+    const isSail = p => /^sail/i.test(p.name), sl = C.parts.filter(isSail), tw = C.parts.filter(p => !isSail(p));
+    if (!sl.length) return null;
+    // (unshaded: the chess pieces' darkening toward the foot made the cream tower and white sails grey)
+    const flat = { shadeFn: () => 1 }, sails = buildPartsGeometry(24, { parts: sl }, flat), tower = tw.length ? buildPartsGeometry(24, { parts: tw }, flat) : null;
+    const P = sails.attributes.position.array;
+    let reach = 0;
+    for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2]));
+    for (const g of [sails, tower]) if (g){ g.scale(1 / reach, 1 / reach, 1 / reach); g.userData.vertexColors = true; }
+    return _mill = { C, sails, tower };
+  }
   const itemGeometries = {
+    // (null while the file loads: the emitter skips the kind without caching it, and tries again)
+    millSails: () => { const M = millGeos(); return M && M.sails; },
+    millTower: () => { const M = millGeos(); return M && M.tower; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
     wall: T => { const g = new T.BoxGeometry(1, 0.88, 1); g.translate(0, -0.16, 0); return g; },   // stands 0.28 above the ground, low enough for the winning bar to show; reaches down past any slope
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
@@ -33007,7 +33078,12 @@ const GOLF_APP = (() => {
     (H.toys || []).forEach((T, j) => {
       if (T.slide){ const S = toyAt(T, t); out.push({ kind: 'slide' + k + '_' + j, u: S.x, v: S.y, scale: 1, lift: hOf(H, S.x, S.y), color: 0x7a4fd0 }); }
       else if (T.mill){
-        const [mx, my, arm] = T.mill, M = toyAt(T, t), hm = hOf(H, mx, my);
+        const [mx, my, arm] = T.mill, M = toyAt(T, t), hm = hOf(H, mx, my), MG = millGeos();
+        if (MG){
+          if (MG.tower) out.push({ kind: 'millTower', u: mx, v: my, scale: arm, lift: hm, color: 0xffffff });
+          out.push({ kind: 'millSails', u: mx, v: my, scale: arm, lift: hm, yaw: M.a, color: 0xffffff });
+          return;
+        }
         out.push({ kind: 'hub', u: mx, v: my, scale: 0.04, lift: hm, color: 0xd9d2c0 });
         for (const a of [M.a, M.a + Math.PI / 2]) for (let s = -arm; s <= arm + 1e-9; s += arm / 6)
           out.push({ kind: 'blade', u: mx + Math.cos(a) * s, v: my + Math.sin(a) * s, scale: MILL_T * 2.2, lift: hm + 0.01, color: (Math.abs(s) < arm / 4) ? 0xd9d2c0 : 0xc0392b });
@@ -33139,7 +33215,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x * sz, b.y * sz, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf },
+    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos },
   };
   return app;
 })();
@@ -37061,7 +37137,7 @@ const _itemMeshes = new Map();
    boards do, and they are one instance each, so depth is cheap.
    48,000 × ~76 bytes ≈ 3.6 MB a kind; draughts has two (man, king), Go one. */
 const _ITEM_CAP = 48000;
-const _ip = new THREE.Vector3(), _iq = new THREE.Quaternion(), _is = new THREE.Vector3();
+const _ip = new THREE.Vector3(), _iq = new THREE.Quaternion(), _is = new THREE.Vector3(), _iUp = new THREE.Vector3(0, 1, 0);
 const _im = new THREE.Matrix4();
 let _itemLightsOn = false;
 /* NOTHING TO ADD ANY MORE. The app items used to bring their own hemisphere
@@ -37130,6 +37206,11 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
   // `lift`: raise the item off the board (a fraction of the board, as u and v are).
   _ip.set(cx + (0.5 - u) * bWX, 0.02 + (it.lift || 0) * bWX, cz + (0.5 - v) * bWZ);
   _is.set(s, s, s);
+  /* `yaw` (Oct 6, mini golf's windmill from the 3d studio): an item turned about the upright,
+     in the board's own terms. Its +x then points along (cos yaw, sin yaw) in u and v. The
+     board runs +u to −x and +v to −z, so that is a turn of π − yaw about +y. Until now every
+     item stood square, and a turning thing was drawn as a row of small unturned boxes. */
+  if (it.yaw) _iq.setFromAxisAngle(_iUp, Math.PI - it.yaw); else _iq.identity();
   _im.compose(_ip, _iq, _is);
   rec.mesh.setMatrixAt(rec.n, _im);
   rec.mesh.setColorAt(rec.n, _appColor(it.color == null ? 0xf0e6d2 : it.color));
