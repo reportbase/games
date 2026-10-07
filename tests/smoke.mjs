@@ -148,14 +148,14 @@ try {
         if (nx * cx + nz * cz > 0) out++; else inn++; }
       return { out, inn }; };
     const towerFacing = facing(M.tower);
-    return { towerFacing, hole: k, kinds: kinds(a), blades: kinds(a).filter(x => x === 'blade' || x === 'hub').length,
+    return { towerFacing, WD: D.WD, hole: k, kinds: kinds(a), blades: kinds(a).filter(x => x === 'blade' || x === 'hub').length,
              yawA: sailA && sailA.yaw, yawB: sailB && sailB.yaw, scale: sailA && sailA.scale, arm, reach,
              towerTop: box(M.tower).max.y, sailTop: box(M.sails).max.y, parts: M.C.parts.length,
              dropped: ok.done.length, local, swapped, refused: no.bad.length };
   });
   if (!mill.kinds.includes('millSails') || !mill.kinds.includes('millTower') || mill.blades)
     failures.push(`[${current}] hole ${mill.hole + 1} drew ${mill.kinds.join(',')}`);
-  if (Math.abs(mill.reach - 1) > 1e-3 || mill.scale !== mill.arm) failures.push(`[${current}] sails reach ${mill.reach}, scale ${mill.scale} for an arm of ${mill.arm}`);
+  if (Math.abs(mill.reach - 1) > 1e-3 || Math.abs(mill.scale * mill.WD - mill.arm) > 1e-9) failures.push(`[${current}] sails reach ${mill.reach}, scale ${mill.scale} (in board widths of ${mill.WD}) for an arm of ${mill.arm}`);
   if (!(mill.yawA != null && mill.yawB != null && mill.yawA !== mill.yawB)) failures.push(`[${current}] the sails did not turn: ${mill.yawA} → ${mill.yawB}`);
   if (!(mill.towerTop > mill.sailTop * 2)) failures.push(`[${current}] the tower (${mill.towerTop}) does not stand over the sails (${mill.sailTop})`);
   if (mill.dropped !== 1 || mill.local !== 'local' || !mill.swapped) failures.push(`[${current}] dropping my_windmill.tvf3d did not replace the windmill`);

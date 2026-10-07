@@ -16832,7 +16832,10 @@ async function loadPieceFiles(files){
    named "sail …").
    Dropping or opening a .tvf3d named after a prop (my_windmill.tvf3d) swaps it in for the
    session, as a piece is. */
-const PROPS = { windmill: { file: 'res/windmill.tvf3d', C: null, state: 'idle' } };
+const PROPS = { windmill: { file: 'res/windmill.tvf3d', C: null, state: 'idle' },
+                // mini golf's golden course (Oct 7): kickers, boulders, trees and pipes
+                bumper: { file: 'res/bumper.tvf3d', C: null, state: 'idle' }, rock: { file: 'res/rock.tvf3d', C: null, state: 'idle' },
+                tree: { file: 'res/tree.tvf3d', C: null, state: 'idle' }, pipe: { file: 'res/pipe.tvf3d', C: null, state: 'idle' } };
 function propC(name){
   const P = PROPS[name];
   if (!P) return null;
@@ -32609,88 +32612,99 @@ const TILES_APP = (() => {
    post that kicks the ball away — all on the clock, so you time the putt. And THE GHOST: the path of
    your last putt stays on the grass as a dotted line until the next, so you see how the ground bent it. */
 const GOLF_APP = (() => {
-  const N = 10, SQ = 1 / N;
-  // '#' wall · '.' grass · 'T' tee · 'O' cup · 's' sand · '~' water.
-  // land: the ground's shape — bumps (x, y, radius, height; negative is a hollow) and tilts (rise per board along x and y).
-  // toys: slide [x0, y0, x1, y1, width, depth, seconds there and back] · mill [x, y, arm, turns (radians a second)] · kick [x, y, radius]
+  // The grid: NX across, NY deep, square cells of CW; the board is WD wide by 1 deep in these units (the physics' own,
+  // isotropic). The field draws the board WD : 1 (boardShape), so board u is x / WD and v is y.
+  const NX = 8, NY = 13, CW = 1 / NY, WD = NX * CW;
+  // THE GOLDEN COURSE (Oct 7: "improve the golf holes with new 3d objects to affect game play. the golf holes should be sized
+  // as the golden rectangle, with shorter side on the bottom for better mobile device game play."). Every hole is 8 cells
+  // across by 13 deep, two Fibonacci numbers, 0.615 to φ's 0.618: an upright board that fills a phone held upright, the
+  // tee at the near (bottom) edge and the cup toward the far one. Eighteen holes, each built round the new 3d objects from
+  // the studio (res/*.tvf3d): trees whose trunks stop the ball while their crowns hang over it, boulders to bank off,
+  // mushroom bumpers that kick, pipes that swallow the ball and send it out somewhere else, plank bridges over water, and
+  // the windmill. They replace the thirty-six square holes of Oct 2, which are in the history if any is wanted back.
+  // Written in CELLS: map rows of 8; toy and land positions as (column, row) from the far-left corner, radii in cells
+  // (converted to the board's own units below).
+  // '#' wall · '.' grass · 'T' tee · 'O' cup · 's' sand · '~' water · '=' a plank bridge over water.
+  // land: bump [col, row, radius, height] · tilt [rise per board across, down] · step [dx, dy, at (cells), width (cells), height]
+  // toys: mill [col, row, arm, turns a second] · slide [c0, r0, c1, r1, width, depth, seconds there and back] · kick [col, row, r]
+  //       rock [col, row, r] · tree [col, row, trunk r] · pipe [col in, row in, col out, row out, out heading (° from →, 90 is ↓), r]
   const HOLES = [
-    { name: 'the alley', par: 2, land: [{ bump: [0.5, 0.5, 0.09, 0.035] }], toys: [{ slide: [0.42, 0.45, 0.58, 0.45, 0.12, 0.04, 2.6] }], map: ['###....###', '###.O..###', '###....###', '###....###', '###....###', '###....###', '###....###', '###....###', '###.T..###', '###....###'] },
-    { name: 'the dogleg', par: 3, land: [{ bump: [0.3, 0.5, 0.2, -0.04] }, { bump: [0.85, 0.75, 0.2, 0.05] }], toys: [{ kick: [0.5, 0.5, 0.03] }], map: ['######....', '######.O..', '######....', '######....', '..........', '..........', '....######', '....######', '.T..######', '....######'] },
-    { name: 'the bunker', par: 2, land: [{ tilt: [0, 0.06] }, { bump: [0.75, 0.55, 0.15, 0.04] }], toys: [{ kick: [0.25, 0.45, 0.028] }, { kick: [0.75, 0.3, 0.028] }], map: ['#........#', '#...O....#', '#..sss...#', '#..sss...#', '#........#', '#........#', '#........#', '#........#', '#...T....#', '#........#'] },
-    { name: 'the creek', par: 3, land: [{ bump: [0.5, 0.35, 0.16, -0.045] }, { bump: [0.25, 0.8, 0.15, 0.03] }], toys: [{ mill: [0.6, 0.6, 0.085, 1.4] }], map: ['..........', '...O......', '..........', '~~~~~..~~~', '~~~~~..~~~', '..........', '..........', '.....##...', '...T.##...', '..........'] },
-    { name: 'the hairpin', par: 3, land: [{ bump: [0.85, 0.45, 0.2, -0.035] }, { tilt: [-0.05, 0] }], toys: [{ kick: [0.85, 0.45, 0.03] }], map: ['..........', '.O........', '..........', '#######...', '#######...', '#######...', '..........', '..........', '.T........', '..........'] },
-    { name: 'the side hill', par: 3, land: [{ tilt: [-0.16, 0] }], toys: [{ slide: [0.25, 0.45, 0.75, 0.45, 0.16, 0.04, 3.4] }], map: ['#........#', '#...O....#', '#........#', '#........#', '#........#', '#........#', '#........#', '#........#', '#...T....#', '#........#'] },
-    { name: 'the pins', par: 3, land: [{ bump: [0.3, 0.45, 0.12, 0.03] }, { bump: [0.7, 0.6, 0.12, 0.03] }, { bump: [0.5, 0.25, 0.1, -0.025] }], map: ['..........', '....O.....', '..........', '..#..#..#.', '..........', '.#..#..#..', '..........', '..#..#..#.', '..........', '....T.....'] },
-    { name: 'the zigzag', par: 4, land: [{ bump: [0.5, 0.35, 0.18, -0.03] }, { bump: [0.5, 0.65, 0.18, 0.03] }], toys: [{ slide: [0.2, 0.35, 0.8, 0.35, 0.12, 0.04, 3] }], map: ['O...######', '....######', '....######', '..........', '######....', '######....', '..........', '....######', '....######', 'T...######'] },
-    { name: 'the hill', par: 3, land: [{ bump: [0.45, 0.35, 0.2, 0.075] }], toys: [{ mill: [0.45, 0.62, 0.1, -1.1] }], map: ['..........', '..........', '..........', '....O.....', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    /* THE STEEPER NINE (Oct 2, "#4"; then "don't have courses, put all holes in the viewer") — bowls, a
-       volcano, ridges, a gully, terraces and a cliff: here the ground decides where a ball can stop. */
-    { name: 'the bowl', par: 2, land: [{ bump: [0.45, 0.35, 0.3, -0.09] }],
-      map: ['..........', '..........', '..........', '....O.....', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the volcano', par: 3, land: [{ bump: [0.45, 0.35, 0.15, 0.12] }],
-      map: ['..........', '..........', '..........', '....O.....', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the ridge', par: 3, land: [{ bump: [0.2, 0.2, 0.1, 0.09] }, { bump: [0.45, 0.45, 0.1, 0.09] }, { bump: [0.7, 0.7, 0.1, 0.09] }, { bump: [0.92, 0.92, 0.1, 0.09] }],
-      map: ['..........', '........O.', '..........', '..........', '..........', '..........', '..........', '..........', '.T........', '..........'] },
-    { name: 'the gully', par: 3, land: [{ bump: [0.5, 0.45, 0.16, -0.08] }], toys: [{ kick: [0.5, 0.15, 0.025] }],
-      map: ['..........', '........O.', '..........', '....~~....', '....~~....', '....~~....', '....~~....', '..........', '.T........', '..........'] },
-    { name: 'the terraces', par: 3, land: [{ step: [0, -1, -0.66, 0.06, 0.06] }, { step: [0, -1, -0.36, 0.06, 0.06] }],
-      map: ['#........#', '#...O....#', '#........#', '#........#', '#........#', '#........#', '#........#', '#........#', '#...T....#', '#........#'] },
-    { name: 'the saddle', par: 3, land: [{ bump: [0.2, 0.5, 0.17, 0.11] }, { bump: [0.8, 0.5, 0.17, 0.11] }], toys: [{ slide: [0.42, 0.5, 0.58, 0.5, 0.08, 0.04, 2.2] }],
-      map: ['..........', '....O.....', '..........', '..........', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the switchback', par: 4, land: [{ step: [0, -1, -0.8, 0.04, 0.045] }, { step: [0, -1, -0.5, 0.04, 0.045] }, { step: [0, -1, -0.2, 0.04, 0.045] }],   // the climbs in the uphill legs, the cross-corridors flat
-      map: ['O...######', '....######', '....######', '..........', '######....', '######....', '..........', '....######', '....######', 'T...######'] },
-    { name: 'the cliff', par: 3, land: [{ step: [1, 0, 0.5, 0.05, 0.09] }],
-      map: ['..........', '.......O..', '..........', '..........', '..........', '..........', '..........', '..........', '..T.......', '..........'] },
-    { name: 'the summit', par: 4, land: [{ bump: [0.45, 0.25, 0.22, 0.13] }], toys: [{ mill: [0.45, 0.56, 0.09, 1.6] }],
-      map: ['..........', '..........', '....O.....', '..........', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    /* THE HARD EIGHTEEN (Oct 2: "create 18 new golf holes, make them more difficult") — narrow ways,
-       water by the cup, toys in the gaps, steep ground, and longer roads round. */
-    { name: 'the island', par: 3, land: [{ bump: [0.45, 0.35, 0.15, 0.03] }], toys: [{ slide: [0.44, 0.55, 0.56, 0.55, 0.08, 0.04, 2.2] }],
-      map: ['..........', '.~~~~~~~~.', '.~......~.', '.~..O...~.', '.~......~.', '.~~~..~~~.', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the needle', par: 3, land: [{ tilt: [0.04, 0] }], toys: [{ slide: [0.3, 0.5, 0.6, 0.5, 0.1, 0.04, 2.4] }],
-      map: ['###...####', '###.O.####', '###...####', '####.#####', '####.#####', '####.#####', '####.#####', '###...####', '###.T.####', '###...####'] },
-    { name: 'the moat', par: 4, land: [{ bump: [0.4, 0.35, 0.12, -0.03] }],
-      map: ['..........', '.###.##...', '.#....#...', '.#.O..#...', '.#....#...', '.######...', '..........', '..~~~~....', '.......T..', '..........'] },
-    { name: 'the gauntlet', par: 3, land: [], toys: [{ mill: [0.45, 0.3, 0.12, 1.8] }, { mill: [0.45, 0.62, 0.12, -1.6] }],
-      map: ['###.O.####', '###...####', '###...####', '###...####', '###...####', '###...####', '###...####', '###...####', '###.T.####', '###...####'] },
-    { name: 'the staircase', par: 4, land: [{ step: [0, -1, -0.82, 0.035, 0.05] }, { step: [0, -1, -0.62, 0.035, 0.05] }, { step: [0, -1, -0.42, 0.035, 0.05] }, { step: [0, -1, -0.22, 0.035, 0.05] }],
-      map: ['#........#', '#...O....#', '#........#', '#........#', '#.sss....#', '#........#', '#....ss..#', '#........#', '#...T....#', '#........#'] },
-    { name: 'the pinball', par: 3, land: [],
-      toys: [{ kick: [0.3, 0.3, 0.025] }, { kick: [0.6, 0.3, 0.025] }, { kick: [0.45, 0.45, 0.025] }, { kick: [0.25, 0.6, 0.025] }, { kick: [0.7, 0.6, 0.025] }, { kick: [0.45, 0.72, 0.025] }],
-      map: ['..........', '....O.....', '..........', '..........', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the crater', par: 3, land: [{ bump: [0.45, 0.35, 0.26, 0.08] }, { bump: [0.45, 0.35, 0.12, -0.15] }],
-      map: ['..........', '..........', '..........', '....O.....', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the snake', par: 5, land: [{ bump: [0.5, 0.45, 0.2, -0.03] }],
-      map: ['O.........', '########..', '..........', '..########', '..........', '########..', '..........', '..########', '.........T', '..........'] },
-    { name: 'the river', par: 4, land: [{ bump: [0.25, 0.85, 0.15, 0.03] }],   // (no hollow under the windmill: a ball there would be knocked for ever) toys: [{ mill: [0.5, 0.25, 0.08, 1.5] }],
-      map: ['.......O..', '..........', '~~~~..~~~~', '~~~~..~~~~', '..........', '..........', '~..~~~~..~', '~..~~~~..~', '....T.....', '..........'] },
-    { name: 'the funnel', par: 3, land: [{ tilt: [0, 0.08] }], toys: [{ slide: [0.44, 0.55, 0.56, 0.55, 0.06, 0.04, 1.9] }],
-      map: ['~~~~~~~~~~', '..........', '....O.....', '..........', '###....###', '####..####', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the gates', par: 3, land: [{ tilt: [-0.04, 0] }],
-      map: ['..........', '.########.', '.#......#.', '.#.####.#.', '.#.#..#.#.', '.#.#.O#.#.', '.#.#.##.#.', '.#......#.', '.####.###.', '....T.....'] },
-    { name: 'the seesaw', par: 3, land: [{ step: [0, -1, -0.62, 0.04, 0.07] }, { step: [0, -1, -0.42, 0.04, -0.07] }], toys: [{ kick: [0.5, 0.52, 0.025] }],
-      map: ['~~~~~~~~~~', '..........', '...O......', '..........', '..........', '..........', '..........', '..........', '......T...', '..........'] },
-    { name: 'the maze', par: 5, land: [],
-      map: ['O..#......', '##.#.####.', '...#.#....', '.###.#.###', '.....#....', '####.####.', '..........', '.########.', '.#...T....', '...#......'] },
-    { name: 'the fortress', par: 4, land: [{ bump: [0.45, 0.35, 0.13, 0.1] }],
-      map: ['..........', '..~~~~~~..', '..~....~..', '..~.O..~..', '..~....~..', '..~~..~~..', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the ledges', par: 4, land: [{ step: [1, 0, 0.35, 0.03, 0.06] }, { step: [0, -1, -0.5, 0.03, 0.06] }, { step: [1, 0, 0.7, 0.03, 0.06] }],
-      map: ['~.........', '~.......O.', '~.........', '~.........', '~.........', '~.........', '~.........', '~.........', '~.T.......', '~.........'] },
-    { name: 'the windmills', par: 3, land: [], toys: [{ mill: [0.2, 0.55, 0.09, 1.7] }, { mill: [0.5, 0.55, 0.09, -2] }, { mill: [0.8, 0.55, 0.09, 1.4] }],
-      map: ['..........', '....O.....', '...sss....', '..........', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the drop', par: 3, land: [{ step: [0, 1, 0.5, 0.03, 0.1] }],
-      map: ['~~~~~~~~~~', '..........', '....O.....', '..........', '..........', '..........', '..........', '..........', '....T.....', '..........'] },
-    { name: 'the finale', par: 5, land: [{ step: [0, -1, -0.55, 0.03, 0.05] }, { step: [0, -1, -0.25, 0.03, 0.05] }],
-      toys: [{ mill: [0.6, 0.25, 0.08, 2.0] }, { slide: [0.36, 0.65, 0.44, 0.65, 0.06, 0.04, 1.8] }],
-      map: ['.O........', '..........', '#####..###', '..........', '..~~~~~~..', '..........', '###..#####', '..........', '........T.', '..........'] },
+    { name: 'the windmill', par: 2, land: [{ bump: [4, 9, 1.5, 0.02] }], toys: [{ mill: [4, 6.5, 1.6, 1.2] }],
+      map: ['########', '##..O.##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##..T.##', '########'] },
+    { name: 'the pines', par: 3, land: [{ bump: [4, 6.5, 2.5, 0.03] }],
+      toys: [{ tree: [2.4, 3.4, 0.26] }, { tree: [5.6, 4.6, 0.26] }, { tree: [3.6, 6.8, 0.26] }, { tree: [2.0, 9.2, 0.26] }, { tree: [5.8, 8.8, 0.26] }],
+      map: ['########', '#..O...#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#....T.#', '########'] },
+    { name: 'the boulders', par: 3, land: [{ tilt: [0.03, 0] }],
+      toys: [{ rock: [4.0, 3.0, 0.55] }, { rock: [2.4, 6.2, 0.62] }, { rock: [5.6, 5.0, 0.48] }, { rock: [3.2, 9.4, 0.5] }],
+      map: ['########', '#.....O#', '#......#', '#.ss...#', '#.ss...#', '#......#', '#......#', '#...ss.#', '#...ss.#', '#......#', '#......#', '#.T....#', '########'] },
+    { name: 'the pipe', par: 2, land: [],
+      toys: [{ pipe: [5.5, 9.2, 2.5, 3.0, -90, 0.45] }, { tree: [1.6, 9.6, 0.24] }],
+      map: ['########', '#..O...#', '#......#', '#......#', '#~~~~~~#', '#~~~~~~#', '#~~~~~~#', '#~~~~~~#', '#......#', '#......#', '#......#', '#..T...#', '########'] },
+    { name: 'the bridge', par: 3, land: [{ bump: [5.5, 2.5, 1.5, 0.03] }],
+      toys: [{ kick: [2.5, 8.2, 0.32] }, { rock: [6.0, 8.6, 0.45] }],
+      map: ['########', '#....O.#', '#......#', '#......#', '#......#', '#~~~=~~#', '#~~~=~~#', '#......#', '#......#', '#......#', '#......#', '#.T....#', '########'] },
+    { name: 'the dogleg', par: 3, land: [{ tilt: [0, 0.04] }],
+      toys: [{ tree: [4.9, 2.9, 0.3] }, { rock: [1.4, 2.6, 0.4] }],
+      map: ['########', '#.O....#', '#......#', '#......#', '#####..#', '#####..#', '#####..#', '#####..#', '#####..#', '#####..#', '#####..#', '#####T.#', '########'] },
+    { name: 'the bumpers', par: 3, land: [],
+      toys: [{ kick: [2.5, 4.0, 0.32] }, { kick: [5.5, 4.0, 0.32] }, { kick: [4.0, 6.0, 0.32] }, { kick: [2.5, 8.0, 0.32] }, { kick: [5.5, 8.0, 0.32] }, { kick: [4.0, 2.8, 0.28] }],
+      map: ['########', '#...O..#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#..T...#', '########'] },
+    { name: 'the switchback', par: 4, land: [{ step: [0, -1, -6.5, 0.4, 0.04] }],
+      toys: [{ kick: [6.2, 7.6, 0.3] }],
+      map: ['########', '#O.....#', '#......#', '#####..#', '#......#', '#......#', '#..#####', '#......#', '#......#', '#####..#', '#......#', '#.T....#', '########'] },
+    { name: 'the island', par: 3, land: [],
+      toys: [{ mill: [4.0, 7.2, 1.2, 1.4] }, { tree: [1.5, 2.0, 0.24] }, { tree: [6.5, 2.0, 0.24] }],
+      map: ['########', '#......#', '#.~~~~.#', '#.~O.~.#', '#.~..~.#', '#.~==~.#', '#......#', '#......#', '#......#', '#......#', '#......#', '#..T...#', '########'] },
+    { name: 'the volcano', par: 3, land: [{ bump: [4.5, 4.5, 2.3, 0.1] }],
+      toys: [{ rock: [2.4, 7.2, 0.42] }, { rock: [6.2, 7.6, 0.42] }, { rock: [4.6, 8.4, 0.36] }],
+      map: ['########', '#......#', '#......#', '#......#', '#...O..#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#...T..#', '########'] },
+    { name: 'the gauntlet', par: 3, land: [],
+      toys: [{ mill: [4.0, 4.2, 1.5, 1.6] }, { mill: [4.0, 8.4, 1.5, -1.3] }],
+      map: ['########', '##.O..##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '##.T..##', '########'] },
+    { name: 'the forest', par: 4, land: [{ bump: [4, 6.5, 3, 0.02] }],
+      toys: [3.5, 6.5, 9.5].flatMap((r, k) => (k === 1 ? [3.4, 4.4, 5.4, 6.4] : [1.6, 2.6, 3.6, 4.6]).map(c => ({ tree: [c, r, 0.29] }))),
+      map: ['########', '#O.....#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#.....T#', '########'] },
+    { name: 'the canyon', par: 3, land: [{ tilt: [0, -0.02] }],
+      toys: [{ slide: [3.45, 4.5, 4.55, 4.5, 0.9, 0.35, 2.4] }, { rock: [2.0, 7.6, 0.4] }],
+      map: ['########', '###O.###', '###..###', '###..###', '###..###', '###..###', '###..###', '#......#', '#......#', '#ss....#', '#ss....#', '#....T.#', '########'] },
+    { name: 'the pipes', par: 3, land: [],
+      toys: [{ pipe: [2.0, 6.0, 1.6, 2.0, 0, 0.45] }, { pipe: [6.0, 6.0, 6.0, 10.4, 90, 0.45] }, { kick: [4.0, 8.0, 0.3] }],
+      map: ['########', '#..O...#', '#......#', '########', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#..T...#', '########'] },
+    { name: 'the moat', par: 3, land: [],
+      toys: [{ tree: [1.5, 9.0, 0.26] }, { tree: [6.5, 9.4, 0.26] }, { kick: [6.4, 1.4, 0.26] }],
+      map: ['########', '#......#', '#.####.#', '#.#O.#.#', '#.#..#.#', '#.##.#.#', '#~~~=~~#', '#......#', '#......#', '#......#', '#......#', '#..T...#', '########'] },
+    { name: 'the snake', par: 5, land: [],
+      toys: [{ rock: [3.5, 5.5, 0.35] }, { tree: [3.5, 9.5, 0.26] }],
+      map: ['########', '#O.....#', '######.#', '#......#', '#.######', '#......#', '######.#', '#......#', '#.######', '#......#', '######.#', '#T.....#', '########'] },
+    { name: 'the hill', par: 3, land: [{ bump: [4, 6.5, 3, 0.12] }],
+      toys: [{ mill: [4.5, 3.5, 1.3, 1.5] }, { tree: [1.6, 6.0, 0.26] }, { tree: [6.4, 6.0, 0.26] }],
+      map: ['########', '#...O..#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#......#', '#...T..#', '########'] },
+    { name: 'the finale', par: 4, land: [{ bump: [2, 2, 1.5, 0.03] }],
+      toys: [{ mill: [4.0, 8.5, 1.0, 1.7] }, { kick: [2.0, 6.0, 0.3] }, { kick: [6.0, 6.0, 0.3] }, { pipe: [6.4, 5.4, 5.5, 1.5, 180, 0.42] }, { tree: [1.5, 10.0, 0.26] }, { rock: [6.3, 10.2, 0.4] }],
+      map: ['########', '#.O....#', '#......#', '#......#', '#~~=~~~#', '#......#', '#......#', '#......#', '###..###', '#......#', '#......#', '#....T.#', '########'] },
   ];
+  // cells to the board's own units
+  for (const H of HOLES){
+    const P = v => v * CW;
+    for (const f of H.land || []){
+      if (f.bump) f.bump = [P(f.bump[0]), P(f.bump[1]), P(f.bump[2]), f.bump[3]];
+      if (f.step) f.step = [f.step[0], f.step[1], P(f.step[2]), P(f.step[3]), f.step[4]];
+    }
+    for (const T of H.toys || []){
+      if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
+      if (T.slide) T.slide = [P(T.slide[0]), P(T.slide[1]), P(T.slide[2]), P(T.slide[3]), P(T.slide[4]), P(T.slide[5]), T.slide[6]];
+      for (const k of ['kick', 'rock', 'tree']) if (T[k]) T[k] = T[k].map(P);
+      if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
+    }
+  }
   for (const H of HOLES) H.map.forEach((row, j) => [...row].forEach((ch, i) => {
-    if (ch === 'T') H.tee = { x: (i + 0.5) * SQ, y: (j + 0.5) * SQ };
-    if (ch === 'O') H.cup = { x: (i + 0.5) * SQ, y: (j + 0.5) * SQ };
+    if (ch === 'T') H.tee = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
+    if (ch === 'O') H.cup = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
   }));
   // ONE COURSE, every hole on the field (Oct 2: "don't have courses, put all holes in the viewer"): a round is all of them.
   const COURSE = HOLES.length;
-  const at = (H, i, j) => (i < 0 || j < 0 || i >= N || j >= N) ? '#' : H.map[j][i];
+  const at = (H, i, j) => (i < 0 || j < 0 || i >= NX || j >= NY) ? '#' : H.map[j][i];
+  const cellAt = (H, x, y) => at(H, Math.floor(x / CW), Math.floor(y / CW));
   /* THE GROUND (Oct 2). A height at every point, from the hole's bumps and tilts, on a base high
      enough that no hollow goes below the board; flat round the cup, so a ball can rest by it. */
   const BASE = 0.05;
@@ -32698,7 +32712,7 @@ const GOLF_APP = (() => {
     let h = BASE;
     for (const f of H.land || []){
       if (f.bump){ const [bx, by, r, a] = f.bump, d2 = ((x - bx) ** 2 + (y - by) ** 2) / (r * r); h += a * Math.exp(-d2); }
-      if (f.tilt){ h += f.tilt[0] * (x - 0.5) + f.tilt[1] * (y - 0.5); }
+      if (f.tilt){ h += f.tilt[0] * (x - WD / 2) + f.tilt[1] * (y - 0.5); }
       // a step: up by a, over a width w, where (x, y)·dir passes pos — flat on either side, a terrace
       if (f.step){ const [dx, dy, pos, w, a] = f.step, q = Math.min(1, Math.max(0, ((x * dx + y * dy) - pos) / (2 * w) + 0.5)); h += a * q * q * (3 - 2 * q); }
     }
@@ -32855,6 +32869,19 @@ const GOLF_APP = (() => {
         }
         const dx = b.x - mx, dy = b.y - my, d = Math.hypot(dx, dy);           // the hub
         if (d < BR + 0.02 && d > 1e-9) hit = Math.max(hit, knockOff(b, dx / d, dy / d, mx, my, BR + 0.02, 0, 0, E));
+      } else if (T.rock || T.tree){
+        // a boulder, or a tree's trunk: it stands still, and the ball bounces off it as off a wall
+        const [cx, cy, cr] = T.rock || T.tree, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
+        if (d >= BR + cr || d < 1e-9) return;
+        hit = Math.max(hit, knockOff(b, dx / d, dy / d, cx, cy, BR + cr, 0, 0, E));
+      } else if (T.pipe){
+        // a pipe: the ball goes in at one mouth and comes out of the other, heading the exit's way at the speed it went in
+        const [x0, y0, x1, y1, a, pr] = T.pipe;
+        if (Math.hypot(b.x - x0, b.y - y0) >= pr) return;
+        const sp = Math.max(0.55, Math.hypot(b.vx, b.vy) * 0.9), ux = Math.cos(a), uy = Math.sin(a);
+        b.x = x1 + ux * (pr + BR + 0.006); b.y = y1 + uy * (pr + BR + 0.006); b.vx = ux * sp; b.vy = uy * sp;
+        (g.piped = g.piped || {})[k] = t; g.moving = true; g.slowT = 0; hit = Math.max(hit, 0.02);
+        SND.play('flag');
       } else if (T.kick){
         const [kx, ky, kr] = T.kick, dx = b.x - kx, dy = b.y - ky, d = Math.hypot(dx, dy);
         if (d >= BR + kr || d < 1e-9) return;
@@ -32873,13 +32900,13 @@ const GOLF_APP = (() => {
     const b = g.ball;
     let knock = 0;
     if (b.x < BR){ b.x = BR; if (b.vx < 0){ b.vx = -b.vx * E; knock = Math.max(knock, b.vx); } }
-    if (b.x > 1 - BR){ b.x = 1 - BR; if (b.vx > 0){ b.vx = -b.vx * E; knock = Math.max(knock, -b.vx); } }
+    if (b.x > WD - BR){ b.x = WD - BR; if (b.vx > 0){ b.vx = -b.vx * E; knock = Math.max(knock, -b.vx); } }
     if (b.y < BR){ b.y = BR; if (b.vy < 0){ b.vy = -b.vy * E; knock = Math.max(knock, b.vy); } }
     if (b.y > 1 - BR){ b.y = 1 - BR; if (b.vy > 0){ b.vy = -b.vy * E; knock = Math.max(knock, -b.vy); } }
-    const i0 = Math.floor((b.x - BR) * N), i1 = Math.floor((b.x + BR) * N), j0 = Math.floor((b.y - BR) * N), j1 = Math.floor((b.y + BR) * N);
+    const i0 = Math.floor((b.x - BR) / CW), i1 = Math.floor((b.x + BR) / CW), j0 = Math.floor((b.y - BR) / CW), j1 = Math.floor((b.y + BR) / CW);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++){
-      if (i < 0 || j < 0 || i >= N || j >= N || at(H, i, j) !== '#') continue;
-      const px = clamp(b.x, i * SQ, (i + 1) * SQ), py = clamp(b.y, j * SQ, (j + 1) * SQ);
+      if (i < 0 || j < 0 || i >= NX || j >= NY || at(H, i, j) !== '#') continue;
+      const px = clamp(b.x, i * CW, (i + 1) * CW), py = clamp(b.y, j * CW, (j + 1) * CW);
       let dx = b.x - px, dy = b.y - py, d = Math.hypot(dx, dy);
       if (d >= BR) continue;
       if (d < 1e-9){ const s = Math.hypot(b.vx, b.vy) || 1; dx = -b.vx / s; dy = -b.vy / s; d = 1; }
@@ -32902,7 +32929,7 @@ const GOLF_APP = (() => {
     const n = Math.min(400, Math.max(1, Math.ceil(Math.hypot(b.vx, b.vy) * dt / (BR * 0.4))));
     const h = dt / n;
     for (let k = 0; k < n && g.moving; k++){
-      const ch = at(H, Math.floor(b.x * N), Math.floor(b.y * N));
+      const ch = cellAt(H, b.x, b.y);
       if (ch === '~'){                                         // in the water: a stroke, and back where you putted from
         g.moving = false; b.vx = b.vy = 0; b.x = g.rest.x; b.y = g.rest.y; g.strokes++;
         say('In the water — one stroke penalty', 1500); SND.play('bad');
@@ -32935,26 +32962,28 @@ const GOLF_APP = (() => {
 
   /* ─── WHAT A BOARD SHOWS ───────────────────────────────────────────── */
   const GRASS = [0x63b86a, 0x58ad60];
-  const GRIDS = HOLES.map(H => ({ n: N, colors: Array.from({ length: N * N }, (_, k) => {
-    const i = k % N, j = (k / N) | 0, ch = H.map[j][i], odd = (i + j) & 1;
-    return ch === '#' ? 0x7a5a3c : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : GRASS[odd];
+  // the far board: NY × NY tiles over the WD × 1 board, each the colour of the cell under its middle
+  const GRIDS = HOLES.map(H => ({ n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
+    const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, ch = H.map[j][i], odd = (i + j) & 1;
+    return ch === '#' ? 0x7a5a3c : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[odd];
   }) }));
   const holeShown = (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.hole : holeOf(c, r); };
   const POLE_H = 0.16;
   /* THE GRASS, as a surface: a 60×60 mesh on the ground's heights, coloured by what it is — grass
      lighter up high and darker down low, mown in stripes; sand; water; walls under their blocks. */
-  const MESH = 60;
+  // (in the board's own units: x across WD, y down 1, placed by the item at the board's middle)
+  const MESH = 64;
   function groundGeo(T, H){
-    const n = MESH, pos = [], col = [], idx = [], c = new T.Color();
-    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++){
-      const u = i / n, v = j / n, h = hOf(H, u, v);
-      pos.push(0.5 - u, h, 0.5 - v);
-      const ch = at(H, Math.min(N - 1, Math.floor(u * N)), Math.min(N - 1, Math.floor(v * N)));
-      if (ch === 's') c.setHex(0xd8c287); else if (ch === '~') c.setHex(0x2f6cc4); else if (ch === '#') c.setHex(0x6b4f33);
-      else { c.setHex(((Math.floor(u * N) + Math.floor(v * N)) & 1) ? GRASS[1] : GRASS[0]); c.multiplyScalar(0.72 * Math.max(0.55, Math.min(1.4, 1 + (h - BASE) * 8))); }
+    const ny = MESH, nx = Math.round(MESH * WD), pos = [], col = [], idx = [], c = new T.Color();
+    for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
+      const x = i / nx * WD, y = j / ny, h = hOf(H, x, y), ci = Math.min(NX - 1, Math.floor(x / CW)), cj = Math.min(NY - 1, Math.floor(y / CW));
+      pos.push(WD / 2 - x, h, 0.5 - y);
+      const ch = at(H, ci, cj);
+      if (ch === 's') c.setHex(0xd8c287); else if (ch === '~' || ch === '=') c.setHex(0x2f6cc4); else if (ch === '#') c.setHex(0x6b4f33);
+      else { c.setHex(((ci + cj) & 1) ? GRASS[1] : GRASS[0]); c.multiplyScalar(0.72 * Math.max(0.55, Math.min(1.4, 1 + (h - BASE) * 8))); }
       col.push(c.r, c.g, c.b);
     }
-    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++){ const a = j * (n + 1) + i, b = a + 1, d = a + n + 1, e = d + 1; idx.push(a, d, b, b, d, e); }
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++){ const a = j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1; idx.push(a, d, b, b, d, e); }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
@@ -32966,15 +32995,15 @@ const GOLF_APP = (() => {
      draped over the ground — twenty lines each way, as thin ribbons just above it — so a slope
      shows as the lines bending and bunching. */
   function wireGeo(T, H){
-    const L = 20, S = 60, w = 0.0018, lift = 0.0015, pos = [];
+    const L = 26, S = 64, w = 0.0018, lift = 0.0015, pos = [];
     const quad = (a, b, c, d) => pos.push(...a, ...b, ...c, ...c, ...b, ...d, ...a, ...c, ...b, ...c, ...d, ...b);   // both faces
-    const P = (u, v) => [0.5 - u, hOf(H, u, v) + lift, 0.5 - v];
+    const P = (x, y) => [WD / 2 - x, hOf(H, x, y) + lift, 0.5 - y];
     for (let k = 0; k <= L; k++){
       const q = k / L;
       for (let m = 0; m < S; m++){
         const t0 = m / S, t1 = (m + 1) / S;
-        quad(P(q - w, t0), P(q + w, t0), P(q - w, t1), P(q + w, t1));     // a line across, at u = q
-        quad(P(t0, q - w), P(t1, q - w), P(t0, q + w), P(t1, q + w));     // a line down, at v = q
+        quad(P(q * WD - w, t0 * 1), P(q * WD + w, t0), P(q * WD - w, t1), P(q * WD + w, t1));   // a line down, at x = q·WD
+        quad(P(t0 * WD, q - w), P(t1 * WD, q - w), P(t0 * WD, q + w), P(t1 * WD, q + w));                                        // a line across, at y
       }
     }
     const g = new T.BufferGeometry();
@@ -33017,10 +33046,36 @@ const GOLF_APP = (() => {
     }
     return _mill = { C, sails, tower };
   }
+  /* THE OTHER OBJECTS FROM THE STUDIO (Oct 7). Each of res/bumper, rock, tree and pipe.tvf3d is laid into one mesh, its
+     faces turned out (as the windmill's are), and fitted so its reach across is 1: the item's scale is then the radius it
+     should cover. The ball meets only what toys() says: a bumper's and a boulder's own radius, a tree's trunk (its crown is
+     PROP_K wider, overhead), a pipe's mouth. Until a file is in, the old plain shapes stand in. */
+  const PROP_K = { bumper: 1, rock: 1.05, tree: 4.2, pipe: 1.3 };
+  const _props = {};
+  function propGeo(name){
+    const C = propC(name);
+    if (!C || !C.parts) return null;
+    if (_props[name] && _props[name].C === C) return _props[name].g;
+    const g = buildPartsGeometry(24, C, { shadeFn: () => 1 }), P = g.attributes.position.array;
+    let reach = 0;
+    for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2]));
+    g.scale(1 / reach, 1 / reach, 1 / reach); g.userData.vertexColors = true;
+    const I = g.index.array;
+    for (let t = 0; t < I.length; t += 3){ const k = I[t + 1]; I[t + 1] = I[t + 2]; I[t + 2] = k; }
+    g.index.needsUpdate = true; g.computeVertexNormals();
+    _props[name] = { C, g };
+    return g;
+  }
   const itemGeometries = {
     // (null while the file loads: the emitter skips the kind without caching it, and tries again)
     millSails: () => { const M = millGeos(); return M && M.sails; },
     millTower: () => { const M = millGeos(); return M && M.tower; },
+    propBumper: () => propGeo('bumper'), propRock: () => propGeo('rock'), propTree: () => propGeo('tree'), propPipe: () => propGeo('pipe'),
+    // stand-ins, and the bridge's planks
+    rockPlain: T => { const g = new T.SphereGeometry(0.5, 14, 10); g.scale(1, 0.7, 1); g.translate(0, 0.3, 0); return g; },
+    trunkPlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 10); g.translate(0, 0.5, 0); return g; },
+    pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
+    plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
     wall: T => { const g = new T.BoxGeometry(1, 0.88, 1); g.translate(0, -0.16, 0); return g; },   // stands 0.28 above the ground, low enough for the winning bar to show; reaches down past any slope
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
@@ -33073,12 +33128,13 @@ const GOLF_APP = (() => {
     const G = GAMES.get(gkey(c, r));                  // (a sunk ball may have moved the round on)
     const H = HOLES[G ? G.hole : holeOf(c, r)], out = [];
     const k = HOLES.indexOf(H);
-    out.push({ kind: 'land' + k, u: 0.5, v: 0.5, scale: 1, color: 0xffffff });
-    if (WIRE.on) out.push({ kind: 'wire' + k, u: 0.5, v: 0.5, scale: 1, color: 0x123a18 });
+    out.push({ kind: 'land' + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
+    if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x123a18 });
     if (NUMS.on) numberItems(out, H, k + 1);
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++){
-      const u = (i + 0.5) * SQ, v = (j + 0.5) * SQ;
-      if (H.map[j][i] === '#') out.push({ kind: 'wall', u, v, scale: SQ, lift: hOf(H, u, v), color: 0x8a6440 });
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
+      const u = (i + 0.5) * CW, v = (j + 0.5) * CW;
+      if (H.map[j][i] === '#') out.push({ kind: 'wall', u, v, scale: CW, lift: hOf(H, u, v), color: 0x8a6440 });
+      if (H.map[j][i] === '=') out.push({ kind: 'plank', u, v, scale: CW, lift: hOf(H, u, v) + 0.004, color: (i + j) & 1 ? 0x9a7048 : 0x8a6240 });
     }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
     out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
@@ -33100,7 +33156,21 @@ const GOLF_APP = (() => {
           out.push({ kind: 'blade', u: mx + Math.cos(a) * s, v: my + Math.sin(a) * s, scale: MILL_T * 2.2, lift: hm + 0.01, color: (Math.abs(s) < arm / 4) ? 0xd9d2c0 : 0xc0392b });
       } else if (T.kick){
         const [kx, ky, kr] = T.kick, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
-        out.push({ kind: 'kicker', u: kx, v: ky, scale: kr * 2, lift: hOf(H, kx, ky), color: lit ? 0xffffff : 0xe0443a });
+        if (propGeo('bumper')) out.push({ kind: 'propBumper', u: kx, v: ky, scale: kr * PROP_K.bumper, lift: hOf(H, kx, ky), color: lit ? 0xffe680 : 0xffffff });
+        else out.push({ kind: 'kicker', u: kx, v: ky, scale: kr * 2, lift: hOf(H, kx, ky), color: lit ? 0xffffff : 0xe0443a });
+      } else if (T.rock){
+        const [x, y, r] = T.rock;
+        if (propGeo('rock')) out.push({ kind: 'propRock', u: x, v: y, scale: r * PROP_K.rock, lift: hOf(H, x, y) - 0.002, yaw: (x * 37 + y * 11) % 6.28, color: 0xffffff });
+        else out.push({ kind: 'rockPlain', u: x, v: y, scale: r * 2, lift: hOf(H, x, y), color: 0x8a857c });
+      } else if (T.tree){
+        const [x, y, r] = T.tree;
+        if (propGeo('tree')) out.push({ kind: 'propTree', u: x, v: y, scale: r * PROP_K.tree, lift: hOf(H, x, y), yaw: (x * 23 + y * 7) % 6.28, color: 0xffffff });
+        else out.push({ kind: 'trunkPlain', u: x, v: y, scale: r * 2, lift: hOf(H, x, y), color: 0x6b4a2c });
+      } else if (T.pipe){
+        const [x0, y0, x1, y1, , pr] = T.pipe, lit = G && G.piped && t - (G.piped[j] ?? -9) < 0.3;
+        for (const [x, y, c] of [[x0, y0, lit ? 0xfff2a0 : 0xffffff], [x1, y1, 0xbcd6ff]])   // the exit a little blue, so you can tell them apart
+          if (propGeo('pipe')) out.push({ kind: 'propPipe', u: x, v: y, scale: pr * PROP_K.pipe, lift: hOf(H, x, y) - 0.002, color: c });
+          else out.push({ kind: 'pipePlain', u: x, v: y, scale: pr * 2.4, lift: hOf(H, x, y), color: c === 0xffffff ? 0x2f9a4a : 0x2f7a9a });
       }
     });
     // The ghost: the last putt's path, as faint dots on the grass.
@@ -33111,8 +33181,10 @@ const GOLF_APP = (() => {
     if (G && G.state === 'play' && !G.moving && (G.pull.x || G.pull.y)){
       const p = powerOf(G), L = Math.hypot(G.pull.x, G.pull.y), dx = -G.pull.x / L, dy = -G.pull.y / L, len = 0.06 + 0.34 * p;
       const col = p < 0.5 ? 0x4be38a : p < 0.8 ? 0xffd23a : 0xff4a3a;
-      for (let k = 1; k <= 7; k++){ const f = k / 7; const du = b.x + dx * len * f, dv = b.y + dy * len * f; out.push({ kind: 'dot', u: du, v: dv, scale: 0.012 + 0.006 * (1 - f), lift: hOf(H, clamp(du, 0, 1), clamp(dv, 0, 1)) + 0.004, color: col }); }
+      for (let k = 1; k <= 7; k++){ const f = k / 7; const du = b.x + dx * len * f, dv = b.y + dy * len * f; out.push({ kind: 'dot', u: du, v: dv, scale: 0.012 + 0.006 * (1 - f), lift: hOf(H, clamp(du, 0, WD), clamp(dv, 0, 1)) + 0.004, color: col }); }
     }
+    // to the board's units: the field lays u across the board's WD and v down its 1, and scales and lifts by its width
+    for (const it of out){ it.u /= WD; it.scale = (it.scale || 0.25) / WD; it.lift = (it.lift || 0) / WD; }
     return out;
   }
 
@@ -33141,13 +33213,14 @@ const GOLF_APP = (() => {
 
   const app = {
     name: 'mini golf',
+    boardShape: { cellW: WD, cellH: 1 },               // the golden board, upright (Oct 7)
     keepsPress: true,                                  // a still finger is aiming, not asking the view to tilt
     cellFar: { light: GRASS[0], dark: GRASS[1] },
     itemMinPx: 4,
     itemGeometries,
     fabricCell(ctx, rect){
-      const t = rect.w / N;
-      for (let k = 0; k < N * N; k++){ ctx.fillStyle = ((k % N) + ((k / N) | 0)) % 2 ? '#58ad60' : '#63b86a'; ctx.fillRect(rect.x + (k % N) * t, rect.y + ((k / N) | 0) * t, t + 0.5, t + 0.5); }
+      const tx = rect.w / NX, ty = rect.h / NY;
+      for (let k = 0; k < NX * NY; k++){ ctx.fillStyle = ((k % NX) + ((k / NX) | 0)) % 2 ? '#58ad60' : '#63b86a'; ctx.fillRect(rect.x + (k % NX) * tx, rect.y + ((k / NX) | 0) * ty, tx + 0.5, ty + 0.5); }
     },
     cellGrid(c, r){ return GRIDS[holeShown(c, r)]; },
     cellItems,
@@ -33198,7 +33271,7 @@ const GOLF_APP = (() => {
       if (g.moving) return true;
       // The finger's own movement, on the board: where it is now against where it was.
       let du = 0, dv = 0;
-      if (at && g.prevAt){ du = at.u - g.prevAt.u; dv = at.v - g.prevAt.v; }
+      if (at && g.prevAt){ du = (at.u - g.prevAt.u) * WD; dv = at.v - g.prevAt.v; }   // (u runs across the board's WD)
       else if (!at){
         let k = 0; try { k = panWorldPerPixel() / (gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize))); } catch {}
         let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
@@ -33220,13 +33293,17 @@ const GOLF_APP = (() => {
       putt(g);
     },
     drawIcon(ctx, sz, c, r){
-      const H = HOLES[holeShown(c, r)], cols = GRIDS[holeShown(c, r)].colors, t = sz / N;
-      for (let k = 0; k < N * N; k++){ ctx.fillStyle = '#' + cols[k].toString(16).padStart(6, '0'); ctx.fillRect((k % N) * t, ((k / N) | 0) * t, t + 0.5, t + 0.5); }
-      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(H.cup.x * sz, H.cup.y * sz, t * 0.32, 0, 7); ctx.fill();
+      // the upright hole in the middle of the square icon
+      const H = HOLES[holeShown(c, r)], t = sz / NY, x0 = (sz - NX * t) / 2;
+      ctx.fillStyle = '#1d3a22'; ctx.fillRect(0, 0, sz, sz);
+      for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){ const ch = H.map[j][i];
+        ctx.fillStyle = ch === '#' ? '#7a5a3c' : ch === 's' ? '#e6d39a' : ch === '~' ? '#3d7fd9' : ch === '=' ? '#9a7048' : ((i + j) & 1 ? '#58ad60' : '#63b86a');
+        ctx.fillRect(x0 + i * t, j * t, t + 0.5, t + 0.5); }
+      ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x0 + H.cup.x / CW * t, H.cup.y / CW * t, t * 0.32, 0, 7); ctx.fill();
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x * sz, b.y * sz, t * 0.25, 0, 7); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos },
+    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt },
   };
   return app;
 })();
@@ -37059,8 +37136,8 @@ window.setFieldApp = app => {
      its collection measured, and every other app gets a square. Before the
      fabric is resynced below, since that is what the fabric is drawn from. */
   try {
-    const _pics = !!FIELD_APP.fabricCellAt;
-    applyBoardShape(_pics ? PHOTO_SHAPE.cellW : 1, _pics ? PHOTO_SHAPE.cellH : 1);
+    const _pics = !!FIELD_APP.fabricCellAt, _bs = FIELD_APP.boardShape;   // …or the shape the app declares (mini golf's golden board, Oct 7)
+    applyBoardShape(_pics ? PHOTO_SHAPE.cellW : _bs ? _bs.cellW : 1, _pics ? PHOTO_SHAPE.cellH : _bs ? _bs.cellH : 1);
   } catch {}
   // An image app coming forward now dresses the field in its own tone —
   // it could not while chess was showing.
