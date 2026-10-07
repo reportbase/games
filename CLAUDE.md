@@ -18,7 +18,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - `index.html`: forwards `/games/` to `games.html`, keeping `?app=…`.
 - `res/`: the `.tvf3d` files the page fetches from beside itself. `res/windmill.tvf3d` is
   mini golf's windmill, a prop from the 3d studio (a `TVF3D-PARTS` file, like a piece);
-  without it the windmills are drawn with the old plain shapes. New props go here too.
+  without it the windmills are drawn with the old plain shapes. `bumper`, `rock`, `tree`
+  and `pipe` (Oct 7) are the course's other props, each with a plain fallback shape.
+  New props go here too.
 
 ## How the page is put together
 - **Apps:** each game is an app object (`CHESS_APP`, `TETRIS_APP`, …), with the
@@ -42,6 +44,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `sail …` turn (`millGeos`, an item's `yaw`) and the rest stand. A prop is the
   look only: the game's own collisions stay as they were. A dropped `.tvf3d`
   named after a prop (`my_windmill.tvf3d`) swaps it in for the session.
+- **Mini golf** (`GOLF_APP`, Oct 7) is played on a golden board: 8×13 cells, the short
+  side at the bottom for phones, declared as the app's `boardShape: {cellW, cellH}`
+  (the field calls `applyBoardShape` with it). Physics runs in square units (x in
+  [0, WD], y in [0, 1], `CW` = 1/13, `WD` = 8/13); `cellItems` divides u, scale and lift
+  by WD at the end, because items are laid out across the board's width. `HOLES` are
+  maps of 13 rows of 8 with toys given in cells: bumpers (`kick`), boulders (`rock`)
+  and trees (`tree`) the ball bounces off, pipes (`pipe`) that carry it to their other
+  mouth, bridges (`=`) over water, plus the windmills, slopes and steps. A new hole
+  must pass `tests/golf-course.mjs`.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
@@ -55,7 +66,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 ## Testing
 - `npm test` runs `tests/smoke.mjs`: it loads the page in headless Chromium,
   switches to every app in `FIELD_APPS`, and fails on any uncaught error. Run it
-  before every PR, and add checks there for new behaviour.
+  before every PR, and add checks there for new behaviour. It then runs
+  `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
+  with a greedy player and fails on a hole it can't sink within par + 3.
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
   `chess.js@1.4.0` somewhere and run `LIBS_DIR=that/node_modules npm test`; the
   test then serves both from there.
