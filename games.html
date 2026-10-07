@@ -16822,8 +16822,8 @@ async function loadPieceFiles(files){
    games could use tvf3d objects, for example mini-golf."). A prop is an object a game stands
    on its boards that is not a chess piece: mini golf's windmill first. It is a TVF3D-PARTS
    file exported from the studio like a piece, and read by the same parseTVF3D.
-   WHERE IT LIVES: beside games.html in the repo (windmill.tvf3d), fetched the first time a
-   game asks for it. games only reads flare and never writes to it, so a new prop could not be
+   WHERE IT LIVES: in res/ beside games.html (res/windmill.tvf3d; Oct 7: "create a res folder in
+   games and put the tvf3d files there"), fetched the first time a game asks for it. games only reads flare and never writes to it, so a new prop could not be
    put in the bucket from here; beside the page it ships with the page, the way the Stockfish
    files do. Opened as a single file, with nothing beside it, the fetch fails and the game draws
    its old plain shapes.
@@ -16832,7 +16832,7 @@ async function loadPieceFiles(files){
    named "sail …").
    Dropping or opening a .tvf3d named after a prop (my_windmill.tvf3d) swaps it in for the
    session, as a piece is. */
-const PROPS = { windmill: { file: 'windmill.tvf3d', C: null, state: 'idle' } };
+const PROPS = { windmill: { file: 'res/windmill.tvf3d', C: null, state: 'idle' } };
 function propC(name){
   const P = PROPS[name];
   if (!P) return null;
