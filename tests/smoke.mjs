@@ -162,6 +162,34 @@ try {
   if (mill.towerFacing.inn > mill.towerFacing.out * 0.2) failures.push(`[${current}] the tower's faces turn inward (${mill.towerFacing.inn} in, ${mill.towerFacing.out} out): a one-sided material shows a hole`);
   if (mill.refused !== 1) failures.push(`[${current}] a windmill without sails was not refused`);
   console.log(`${failures.length === before2 ? 'ok  ' : 'FAIL'} ${current} (${mill.parts} parts)`);
+  // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
+  // never crosses: a 6° roll turns nothing, a 60° twist turns about 48°, clockwise for clockwise, about
+  // the ground at the middle of the screen (where the camera looks stays put).
+  current = 'two-finger twist';
+  const before3 = failures.length;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  const look = () => page.evaluate(() => { const s = window.FIELD_ST;
+    return { yaw: s.yaw, x: s.camX, z: s.camZ }; });
+  const twist = async deg => {
+    const cx = 640, cy = 400, R = 120, pts = a => [0, 180].map((o, id) => ({ x: cx + R * Math.cos((a + o) * Math.PI / 180), y: cy + R * Math.sin((a + o) * Math.PI / 180), id }));
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
+    for (let k = 1; k <= 12; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(deg * k / 12) }); await page.waitForTimeout(16); }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(100);
+  };
+  for (const name of ['field checkers', 'mini golf']){
+    await page.evaluate(n => window.setFieldApp(window.FIELD_APPS.find(a => a.name === n)), name);
+    // let the switch's framing finish turning the view first
+    for (let k = 0, y = null; k < 40; k++){ await page.waitForTimeout(250); const n = (await look()).yaw; if (n === y && !(await page.evaluate(() => window.FIELD_TARGET.active))) break; y = n; }
+    const a = await look(); await twist(6); const b = await look();
+    if (Math.abs(b.yaw - a.yaw) > 1e-6) failures.push(`[${current}] ${name}: a 6° roll turned the view ${b.yaw - a.yaw}°`);
+    await twist(60); const c = await look();
+    const turned = ((c.yaw - b.yaw) % 360 + 540) % 360 - 180;
+    if (Math.abs(turned - 48) > 3) failures.push(`[${current}] ${name}: a 60° clockwise twist turned the view ${turned}°, expected about +48°`);
+  }
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  console.log(`${failures.length === before3 ? 'ok  ' : 'FAIL'} ${current}`);
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

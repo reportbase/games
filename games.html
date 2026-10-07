@@ -4507,10 +4507,11 @@ function mountPan(){
    pinching run together, as they do on any map — a symmetric spread barely
    moves the midpoint and a drag barely changes the gap, so the hand separates
    them without being asked to choose.
-   THE TWIST STAYS OUT (rotation is a hold and a sideways sweep) and so does
-   the pitch (the left rail, R/F).
+   THE TWIST STAYED OUT until Oct 7, when it came back behind a dead zone (see
+   TWIST_DEAD below); rotation is also a hold and a sideways sweep. The pitch
+   stays out (the left rail, R/F).
 
-   THE PAIR NO LONGER LEANS, AND NO LONGER TURNS. It was the orbit joystick —
+   THE PAIR NO LONGER LEANS, AND (until Oct 7) NO LONGER TURNED. It was the orbit joystick —
    an offset from where it landed, integrated into a yaw RATE and an altitude
    rate — plus a spread read as pitch, and the two had to commit against each
    other because no hand produces one without a little of the other. Then the
@@ -4535,6 +4536,42 @@ let pinchPanned = false;               // did the pair actually move the ground?
    nothing next to a real spread. */
 let pinchZ = null;
 const PINCH_ZOOM_DEAD = 0.01;
+/* THE TWIST IS BACK (Oct 7: "can you add two finger rotate to rotate all applications?"), with the
+   answer to why it went (Sep 21): a hand panning with two fingers rolls a few degrees whether it means
+   to or not. So the pair's angle is measured against where it landed, and nothing turns until it has
+   twisted TWIST_DEAD degrees; from then on the view follows the fingers one for one (the dead stretch
+   is not paid back, so nothing jumps), until the fingers lift. A pan or a pinch never gets that far.
+   The view turns about the ground at the middle of the screen, as a map does, so what you are looking
+   at stays in front of you instead of swinging off round the camera. Every app gets it: two fingers
+   always belong to the camera (see applyPan), never to the app. */
+let pinchA = null, pinchTwisting = false;
+const TWIST_DEAD = 12;
+function pangle(t){ return Math.atan2(t[1].clientY - t[0].clientY, t[1].clientX - t[0].clientX) * 180 / Math.PI; }
+const _wrap180 = a => ((a % 360) + 540) % 360 - 180;
+function _twistTo(touches){
+  const a = pangle(touches);
+  if (pinchA === null){ pinchA = a; return; }
+  let d = _wrap180(a - pinchA);
+  if (!pinchTwisting){
+    if (Math.abs(d) < TWIST_DEAD) return;
+    pinchTwisting = true;
+    d -= Math.sign(d) * TWIST_DEAD;
+  }
+  pinchA = a;
+  if (!d) return;
+  yawAboutCentre(d);              // a clockwise twist (the angle rising, y down) turns the ground clockwise: st.yaw rising, as the hold-sweep right
+}
+/* Turn the view by dYaw degrees about the ground point the camera is looking at. */
+function yawAboutCentre(dYaw){
+  const { back } = camGeom();
+  const y0 = (st.yaw || 0) * Math.PI / 180;
+  const lx = st.camX + back * Math.sin(y0), lz = st.camZ + back * Math.cos(y0);
+  target.active = false; target.yaw = null;   // not fighting a framing spring
+  st.yawV = 0;
+  st.yaw = _wrap180((st.yaw || 0) + dYaw);
+  const y1 = st.yaw * Math.PI / 180;
+  st.camX = lx - back * Math.sin(y1); st.camZ = lz - back * Math.cos(y1);
+}
 const WHEEL_YAW  = 0.12;          // degrees of turn per pixel of sideways scroll
 const WHEEL_ZOOM = 0.55;          // zoom units per pixel of forward scroll, at mid altitude
 /* THE PAIR BEGINS. Two doors reach this — a second finger landing on the
@@ -4545,6 +4582,7 @@ function _pairStart(touches){
   turnCancel();                      // a second finger means the first was no tap
   pinchD = pinchZ = pdist(touches);
   pinchC = pmid(touches);
+  pinchA = pangle(touches); pinchTwisting = false;
   pinchPanned = false;
   turn.active = true; turn.orbit = true; turn.longPressed = false;
   turn.anchorX = turn.currentX = pinchC.x;
@@ -4732,11 +4770,10 @@ function mountControls(opts){
         const r = d / pinchZ;
         if (Math.abs(r - 1) > PINCH_ZOOM_DEAD){ pinchZoom(r); pinchZ = d; }
       }
-      /* AND NOTHING ELSE. The twist used to turn the view here; it is out
-         (Sep 21: "turn off rotation with two fingers"). Rotation is a HOLD and
-         a sideways drag now — see turnMove's long-press branch — which is a
-         thing you ask for, where a twist is a thing a hand does while it is
-         panning. */
+      /* AND THE TWIST TURNS. It was out from Sep 21 ("turn off rotation with two
+         fingers") and came back on Oct 7, behind a dead zone a panning hand never
+         crosses: see TWIST_DEAD. The hold and sideways drag still turns as well. */
+      _twistTo(e.touches);
       pinchD = d; pinchC = c;
       return;
     }
@@ -4748,7 +4785,7 @@ function mountControls(opts){
   _canvas.addEventListener('touchend', e => {
     _lastTouchAt = performance.now();
     if (e.touches.length < 2){
-      pinchD = null; pinchC = null; pinchZ = null;
+      pinchD = null; pinchC = null; pinchZ = null; pinchA = null; pinchTwisting = false;
       // Down to one finger. The pair's gesture belonged to the pair, so end it
       // rather than let the straggler drive it from somewhere meaningless —
       // and hand the coast on here, because two fingers almost never leave the
@@ -4766,7 +4803,7 @@ function mountControls(opts){
   });
   _canvas.addEventListener('touchcancel', () => {
     _lastTouchAt = performance.now();
-    pinchD = null; pinchC = null; pinchZ = null;
+    pinchD = null; pinchC = null; pinchZ = null; pinchA = null; pinchTwisting = false;
     pinchPanned = false;                 // the system took the touch: nothing coasts
     turnCancel();
     turn.multi = false;
