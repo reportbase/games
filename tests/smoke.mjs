@@ -112,7 +112,7 @@ try {
   await page.waitForTimeout(SETTLE_MS);         // let the board rebuild with it
   console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
 
-  // Mini golf's windmill, from the 3d studio (windmill.tvf3d beside the page): it loads, its
+  // Mini golf's windmill, from the 3d studio (res/windmill.tvf3d beside the page): it loads, its
   // sails are fitted to the toy's arm (reach 1, the item scaled by the arm), they turn with the
   // clock while the tower stands, and the old blades are gone. Then a windmill dropped in
   // replaces it for the session, and one without sails is refused.
@@ -120,7 +120,7 @@ try {
   const before2 = failures.length;
   await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'mini golf')));
   await page.waitForFunction(() => window.__props.propC('windmill') && window.__props.PROPS.windmill.state === 'ready', null, { timeout: 20000 })
-    .catch(() => failures.push(`[${current}] windmill.tvf3d did not load`));
+    .catch(() => failures.push(`[${current}] res/windmill.tvf3d did not load`));
   const mill = await page.evaluate(async () => {
     const D = window.getFieldApp()._debug, k = D.HOLES.findIndex(H => (H.toys || []).some(T => T.mill));
     let c = 0, r = 0;

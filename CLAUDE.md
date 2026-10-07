@@ -16,9 +16,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   them as a Worker from beside itself, so they must stay in the same folder. This
   is why the game runs on Pages but has no engine as a single-file chat artifact.
 - `index.html`: forwards `/games/` to `games.html`, keeping `?app=…`.
-- `windmill.tvf3d`: mini golf's windmill, a prop from the 3d studio (a
-  `TVF3D-PARTS` file, like a piece). `games.html` fetches it from beside itself;
-  without it the windmills are drawn with the old plain shapes.
+- `res/`: the `.tvf3d` files the page fetches from beside itself. `res/windmill.tvf3d` is
+  mini golf's windmill, a prop from the 3d studio (a `TVF3D-PARTS` file, like a piece);
+  without it the windmills are drawn with the old plain shapes. New props go here too.
 
 ## How the page is put together
 - **Apps:** each game is an app object (`CHESS_APP`, `TETRIS_APP`, …), with the
