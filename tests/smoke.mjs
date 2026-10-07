@@ -111,6 +111,47 @@ try {
   if (got.refused !== 1) failures.push(`[${current}] a file named after no piece was not refused`);
   await page.waitForTimeout(SETTLE_MS);         // let the board rebuild with it
   console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+
+  // Mini golf's windmill, from the 3d studio (windmill.tvf3d beside the page): it loads, its
+  // sails are fitted to the toy's arm (reach 1, the item scaled by the arm), they turn with the
+  // clock while the tower stands, and the old blades are gone. Then a windmill dropped in
+  // replaces it for the session, and one without sails is refused.
+  current = 'mini golf windmill';
+  const before2 = failures.length;
+  await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'mini golf')));
+  await page.waitForFunction(() => window.__props.propC('windmill') && window.__props.PROPS.windmill.state === 'ready', null, { timeout: 20000 })
+    .catch(() => failures.push(`[${current}] windmill.tvf3d did not load`));
+  const mill = await page.evaluate(async () => {
+    const D = window.getFieldApp()._debug, k = D.HOLES.findIndex(H => (H.toys || []).some(T => T.mill));
+    let c = 0, r = 0;
+    search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
+    const kinds = its => its.map(i => i.kind);
+    const a = D.cellItems(c, r);
+    await new Promise(ok => setTimeout(ok, 400));
+    const b = D.cellItems(c, r), M = D.millGeos();
+    const box = g => { g.computeBoundingBox(); return g.boundingBox; };
+    const P = M.sails.attributes.position.array; let reach = 0;
+    for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2]));
+    const sailA = a.find(i => i.kind === 'millSails'), sailB = b.find(i => i.kind === 'millSails');
+    const arm = D.HOLES[k].toys.find(T => T.mill).mill[2];
+    const plain = 'TVF3D 2 2\nAa 0.3 0\nAa 0 0\nAb 0 0\nAb 0 0\n';
+    const two = 'TVF3D-PARTS 2\nPART tower 1 0 0 0  0 1 0 0  0 0 1 0\n' + plain + 'PART sail_1 1 0 0 0.5  0 0.3 0 0  0 0 0.1 0\n' + plain;
+    const ok = await window.loadPieceFiles([new File([two], 'my_windmill.tvf3d')]);
+    const local = window.__props.PROPS.windmill.state, swapped = D.millGeos() !== M;
+    const no = await window.loadPieceFiles([new File(['TVF3D-PARTS 1\nPART tower 1 0 0 0  0 1 0 0  0 0 1 0\n' + plain], 'windmill2.tvf3d')]);
+    return { hole: k, kinds: kinds(a), blades: kinds(a).filter(x => x === 'blade' || x === 'hub').length,
+             yawA: sailA && sailA.yaw, yawB: sailB && sailB.yaw, scale: sailA && sailA.scale, arm, reach,
+             towerTop: box(M.tower).max.y, sailTop: box(M.sails).max.y, parts: M.C.parts.length,
+             dropped: ok.done.length, local, swapped, refused: no.bad.length };
+  });
+  if (!mill.kinds.includes('millSails') || !mill.kinds.includes('millTower') || mill.blades)
+    failures.push(`[${current}] hole ${mill.hole + 1} drew ${mill.kinds.join(',')}`);
+  if (Math.abs(mill.reach - 1) > 1e-3 || mill.scale !== mill.arm) failures.push(`[${current}] sails reach ${mill.reach}, scale ${mill.scale} for an arm of ${mill.arm}`);
+  if (!(mill.yawA != null && mill.yawB != null && mill.yawA !== mill.yawB)) failures.push(`[${current}] the sails did not turn: ${mill.yawA} → ${mill.yawB}`);
+  if (!(mill.towerTop > mill.sailTop * 2)) failures.push(`[${current}] the tower (${mill.towerTop}) does not stand over the sails (${mill.sailTop})`);
+  if (mill.dropped !== 1 || mill.local !== 'local' || !mill.swapped) failures.push(`[${current}] dropping my_windmill.tvf3d did not replace the windmill`);
+  if (mill.refused !== 1) failures.push(`[${current}] a windmill without sails was not refused`);
+  console.log(`${failures.length === before2 ? 'ok  ' : 'FAIL'} ${current} (${mill.parts} parts)`);
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

@@ -16,6 +16,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   them as a Worker from beside itself, so they must stay in the same folder. This
   is why the game runs on Pages but has no engine as a single-file chat artifact.
 - `index.html`: forwards `/games/` to `games.html`, keeping `?app=…`.
+- `windmill.tvf3d`: mini golf's windmill, a prop from the 3d studio (a
+  `TVF3D-PARTS` file, like a piece). `games.html` fetches it from beside itself;
+  without it the windmills are drawn with the old plain shapes.
 
 ## How the page is put together
 - **Apps:** each game is an app object (`CHESS_APP`, `TETRIS_APP`, …), with the
@@ -34,6 +37,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   lays the parts into one mesh. The format is defined on the 3d side
   (`buildPieceTVF3D`); change the two together. Dropping or opening a
   `.tvf3d` named after a piece swaps it in for the session (`loadPieceFiles`).
+- **Props** (`PROPS`, `propC`) are other games' objects in the same format, loaded
+  from beside the page. Mini golf's windmill is the first: the parts named
+  `sail …` turn (`millGeos`, an item's `yaw`) and the rest stand. A prop is the
+  look only: the game's own collisions stay as they were. A dropped `.tvf3d`
+  named after a prop (`my_windmill.tvf3d`) swaps it in for the session.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
