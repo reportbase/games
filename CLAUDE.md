@@ -49,7 +49,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (the field calls `applyBoardShape` with it). Physics runs in square units (x in
   [0, WD], y in [0, 1], `CW` = 1/13, `WD` = 8/13); `cellItems` divides u, scale and lift
   by WD at the end, because items are laid out across the board's width. `HOLES` are
-  maps of 13 rows of 8 with toys given in cells: bumpers (`kick`), boulders (`rock`)
+  maps of 13 rows of 8, every cell in play (the board's edge is the wall, drawn as a
+  thin rail `RT` inside it), with toys given in cells: bumpers (`kick`), boulders (`rock`)
   and trees (`tree`) the ball bounces off, pipes (`pipe`) that carry it to their other
   mouth, bridges (`=`) over water, plus the windmills, slopes and steps. A new hole
   must pass `tests/golf-course.mjs`.
