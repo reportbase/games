@@ -3742,7 +3742,7 @@ function raycastGround(clientX, clientY){
    steer that wanders off the ship stays a steer. */
 /* Where on the FRAMED board a screen point lands: its cell and (u, v), the
    same orientation onCellTap uses. Null off the board or with none framed. */
-function _framedUV(x, y){
+function _framedUV(x, y, margin = 0){
   try {
     if (!target.shown) return null;
     const hit = raycastGround(x, y);
@@ -3751,10 +3751,11 @@ function _framedUV(x, y){
     const bWX = bW * ((window.LAB && window.LAB.cellW) || 1);
     const bWZ = bW * ((window.LAB && window.LAB.cellH) || 1);
     const dx = hit.x - target.boardX, dz = hit.z - target.boardZ;
-    if (Math.abs(dx) > bWX / 2 || Math.abs(dz) > bWZ / 2) return null;
+    if (Math.abs(dx) > bWX * (0.5 + margin) || Math.abs(dz) > bWZ * (0.5 + margin)) return null;
     const f = framedCell();
     if (!f) return null;
-    return { c: f.c, r: f.r, u: 0.5 - dx / bWX, v: 0.5 - dz / bWZ };
+    const c01 = t => margin ? Math.max(0, Math.min(1, t)) : t;   // a press in the margin is read at the edge
+    return { c: f.c, r: f.r, u: c01(0.5 - dx / bWX), v: c01(0.5 - dz / bWZ) };
   } catch { return null; }
 }
 /* THE WORLD, for an app with things in it that belong to no one board (the
@@ -3782,7 +3783,12 @@ function _appClaimsPress(x, y){
   let a = null;
   try { a = window.getFieldApp && window.getFieldApp(); } catch {}
   if (!a || !a.claimsPan) return false;
-  const b = _framedUV(x, y);
+  /* A PRESS JUST OFF THE BOARD MAY STILL BE THE APP'S (Oct 7, mini golf: "long press does not work when
+     the ball is next to the outer margin"). A finger pressed on a ball lying against the rail lands as
+     often as not just past the board's edge, where the press was the view's: the hold tilted the camera
+     instead of aiming. An app with claimMargin (a fraction of the board) is asked about presses that
+     far outside it too, read at the nearest edge. */
+  const b = _framedUV(x, y) || (a.claimMargin ? _framedUV(x, y, a.claimMargin) : null);
   try { return !!a.claimsPan(b ? b.u : null, b ? b.v : null); } catch { return false; }
 }
 
@@ -33271,6 +33277,7 @@ const GOLF_APP = (() => {
     name: 'mini golf',
     boardShape: { cellW: WD, cellH: 1 },               // the golden board, upright (Oct 7)
     keepsPress: true,                                  // a still finger is aiming, not asking the view to tilt
+    claimMargin: 0.12,                                 // …and so is one pressed just past the rail, on a ball against it (Oct 7)
     cellFar: { light: GRASS[0], dark: GRASS[1] },
     itemMinPx: 4,
     itemGeometries,
