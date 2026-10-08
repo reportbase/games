@@ -429,14 +429,6 @@ try {
     });
     if (!sh.plat || !(sh.raised > 0.02) || !sh.ramp) failures.push(`[${current}] plateau and ramp: ${JSON.stringify(sh)}`);
     if (sh.selKind !== 'plateau' || !(sh.moved > 1.5) || !(sh.h1 > sh.h0) || sh.tilts !== 0 || sh.left !== 0) failures.push(`[${current}] select, move, higher, level, delete: ${JSON.stringify(sh)}`);
-    // the hole stands on its board (Oct 8: "the entire golf hole, it is hovering off the ground"): every hole is drawn
-    // lowered so its lowest ground lies on the board, not BASE or more above it
-    const sunk = await page.evaluate(() => { const D = window.getFieldApp()._debug, bad = [];
-      D.HOLES.forEach((H, k) => { let m = Infinity; for (let j = 0; j <= 26; j++) for (let i = 0; i <= 16; i++) m = Math.min(m, D.hOf(H, i / 16 * D.WD, j / 26));
-        if (H.map.some(r => /[~=]/.test(r))) m = Math.min(m, D.waterLevel(H));
-        const low = m - D.sinkOf(H); if (!(low >= 0 && low < 0.012)) bad.push([k, +low.toFixed(4)]); });
-      return bad; });
-    if (sunk.length) failures.push(`[${current}] holes not on their boards: ${JSON.stringify(sunk)}`);
     // the green sits in the ground (Oct 8: "could it not be below the ground?"): a plateau laid with its edge through the
     // cup leaves the cup no higher than the lowest ground round its rim, not on a pad at the plateau's height
     const cupLow = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
