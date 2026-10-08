@@ -3742,7 +3742,7 @@ function raycastGround(clientX, clientY){
    steer that wanders off the ship stays a steer. */
 /* Where on the FRAMED board a screen point lands: its cell and (u, v), the
    same orientation onCellTap uses. Null off the board or with none framed. */
-function _framedUV(x, y){
+function _framedUV(x, y, margin = 0){
   try {
     if (!target.shown) return null;
     const hit = raycastGround(x, y);
@@ -3751,10 +3751,11 @@ function _framedUV(x, y){
     const bWX = bW * ((window.LAB && window.LAB.cellW) || 1);
     const bWZ = bW * ((window.LAB && window.LAB.cellH) || 1);
     const dx = hit.x - target.boardX, dz = hit.z - target.boardZ;
-    if (Math.abs(dx) > bWX / 2 || Math.abs(dz) > bWZ / 2) return null;
+    if (Math.abs(dx) > bWX * (0.5 + margin) || Math.abs(dz) > bWZ * (0.5 + margin)) return null;
     const f = framedCell();
     if (!f) return null;
-    return { c: f.c, r: f.r, u: 0.5 - dx / bWX, v: 0.5 - dz / bWZ };
+    const c01 = t => margin ? Math.max(0, Math.min(1, t)) : t;   // a press in the margin is read at the edge
+    return { c: f.c, r: f.r, u: c01(0.5 - dx / bWX), v: c01(0.5 - dz / bWZ) };
   } catch { return null; }
 }
 /* THE WORLD, for an app with things in it that belong to no one board (the
@@ -3782,7 +3783,12 @@ function _appClaimsPress(x, y){
   let a = null;
   try { a = window.getFieldApp && window.getFieldApp(); } catch {}
   if (!a || !a.claimsPan) return false;
-  const b = _framedUV(x, y);
+  /* A PRESS JUST OFF THE BOARD MAY STILL BE THE APP'S (Oct 7, mini golf: "long press does not work when
+     the ball is next to the outer margin"). A finger pressed on a ball lying against the rail lands as
+     often as not just past the board's edge, where the press was the view's: the hold tilted the camera
+     instead of aiming. An app with claimMargin (a fraction of the board) is asked about presses that
+     far outside it too, read at the nearest edge. */
+  const b = _framedUV(x, y) || (a.claimMargin ? _framedUV(x, y, a.claimMargin) : null);
   try { return !!a.claimsPan(b ? b.u : null, b ? b.v : null); } catch { return false; }
 }
 
@@ -4507,10 +4513,11 @@ function mountPan(){
    pinching run together, as they do on any map — a symmetric spread barely
    moves the midpoint and a drag barely changes the gap, so the hand separates
    them without being asked to choose.
-   THE TWIST STAYS OUT (rotation is a hold and a sideways sweep) and so does
-   the pitch (the left rail, R/F).
+   THE TWIST STAYED OUT until Oct 7, when it came back behind a dead zone (see
+   TWIST_DEAD below); rotation is also a hold and a sideways sweep. The pitch
+   stays out (the left rail, R/F).
 
-   THE PAIR NO LONGER LEANS, AND NO LONGER TURNS. It was the orbit joystick —
+   THE PAIR NO LONGER LEANS, AND (until Oct 7) NO LONGER TURNED. It was the orbit joystick —
    an offset from where it landed, integrated into a yaw RATE and an altitude
    rate — plus a spread read as pitch, and the two had to commit against each
    other because no hand produces one without a little of the other. Then the
@@ -4535,6 +4542,42 @@ let pinchPanned = false;               // did the pair actually move the ground?
    nothing next to a real spread. */
 let pinchZ = null;
 const PINCH_ZOOM_DEAD = 0.01;
+/* THE TWIST IS BACK (Oct 7: "can you add two finger rotate to rotate all applications?"), with the
+   answer to why it went (Sep 21): a hand panning with two fingers rolls a few degrees whether it means
+   to or not. So the pair's angle is measured against where it landed, and nothing turns until it has
+   twisted TWIST_DEAD degrees; from then on the view follows the fingers one for one (the dead stretch
+   is not paid back, so nothing jumps), until the fingers lift. A pan or a pinch never gets that far.
+   The view turns about the ground at the middle of the screen, as a map does, so what you are looking
+   at stays in front of you instead of swinging off round the camera. Every app gets it: two fingers
+   always belong to the camera (see applyPan), never to the app. */
+let pinchA = null, pinchTwisting = false;
+const TWIST_DEAD = 12;
+function pangle(t){ return Math.atan2(t[1].clientY - t[0].clientY, t[1].clientX - t[0].clientX) * 180 / Math.PI; }
+const _wrap180 = a => ((a % 360) + 540) % 360 - 180;
+function _twistTo(touches){
+  const a = pangle(touches);
+  if (pinchA === null){ pinchA = a; return; }
+  let d = _wrap180(a - pinchA);
+  if (!pinchTwisting){
+    if (Math.abs(d) < TWIST_DEAD) return;
+    pinchTwisting = true;
+    d -= Math.sign(d) * TWIST_DEAD;
+  }
+  pinchA = a;
+  if (!d) return;
+  yawAboutCentre(d);              // a clockwise twist (the angle rising, y down) turns the ground clockwise: st.yaw rising, as the hold-sweep right
+}
+/* Turn the view by dYaw degrees about the ground point the camera is looking at. */
+function yawAboutCentre(dYaw){
+  const { back } = camGeom();
+  const y0 = (st.yaw || 0) * Math.PI / 180;
+  const lx = st.camX + back * Math.sin(y0), lz = st.camZ + back * Math.cos(y0);
+  target.active = false; target.yaw = null;   // not fighting a framing spring
+  st.yawV = 0;
+  st.yaw = _wrap180((st.yaw || 0) + dYaw);
+  const y1 = st.yaw * Math.PI / 180;
+  st.camX = lx - back * Math.sin(y1); st.camZ = lz - back * Math.cos(y1);
+}
 const WHEEL_YAW  = 0.12;          // degrees of turn per pixel of sideways scroll
 const WHEEL_ZOOM = 0.55;          // zoom units per pixel of forward scroll, at mid altitude
 /* THE PAIR BEGINS. Two doors reach this — a second finger landing on the
@@ -4545,6 +4588,7 @@ function _pairStart(touches){
   turnCancel();                      // a second finger means the first was no tap
   pinchD = pinchZ = pdist(touches);
   pinchC = pmid(touches);
+  pinchA = pangle(touches); pinchTwisting = false;
   pinchPanned = false;
   turn.active = true; turn.orbit = true; turn.longPressed = false;
   turn.anchorX = turn.currentX = pinchC.x;
@@ -4732,11 +4776,10 @@ function mountControls(opts){
         const r = d / pinchZ;
         if (Math.abs(r - 1) > PINCH_ZOOM_DEAD){ pinchZoom(r); pinchZ = d; }
       }
-      /* AND NOTHING ELSE. The twist used to turn the view here; it is out
-         (Sep 21: "turn off rotation with two fingers"). Rotation is a HOLD and
-         a sideways drag now — see turnMove's long-press branch — which is a
-         thing you ask for, where a twist is a thing a hand does while it is
-         panning. */
+      /* AND THE TWIST TURNS. It was out from Sep 21 ("turn off rotation with two
+         fingers") and came back on Oct 7, behind a dead zone a panning hand never
+         crosses: see TWIST_DEAD. The hold and sideways drag still turns as well. */
+      _twistTo(e.touches);
       pinchD = d; pinchC = c;
       return;
     }
@@ -4748,7 +4791,7 @@ function mountControls(opts){
   _canvas.addEventListener('touchend', e => {
     _lastTouchAt = performance.now();
     if (e.touches.length < 2){
-      pinchD = null; pinchC = null; pinchZ = null;
+      pinchD = null; pinchC = null; pinchZ = null; pinchA = null; pinchTwisting = false;
       // Down to one finger. The pair's gesture belonged to the pair, so end it
       // rather than let the straggler drive it from somewhere meaningless —
       // and hand the coast on here, because two fingers almost never leave the
@@ -4766,7 +4809,7 @@ function mountControls(opts){
   });
   _canvas.addEventListener('touchcancel', () => {
     _lastTouchAt = performance.now();
-    pinchD = null; pinchC = null; pinchZ = null;
+    pinchD = null; pinchC = null; pinchZ = null; pinchA = null; pinchTwisting = false;
     pinchPanned = false;                 // the system took the touch: nothing coasts
     turnCancel();
     turn.multi = false;
@@ -33234,6 +33277,7 @@ const GOLF_APP = (() => {
     name: 'mini golf',
     boardShape: { cellW: WD, cellH: 1 },               // the golden board, upright (Oct 7)
     keepsPress: true,                                  // a still finger is aiming, not asking the view to tilt
+    claimMargin: 0.12,                                 // …and so is one pressed just past the rail, on a ball against it (Oct 7)
     cellFar: { light: GRASS[0], dark: GRASS[1] },
     itemMinPx: 4,
     itemGeometries,

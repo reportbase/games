@@ -162,6 +162,65 @@ try {
   if (mill.towerFacing.inn > mill.towerFacing.out * 0.2) failures.push(`[${current}] the tower's faces turn inward (${mill.towerFacing.inn} in, ${mill.towerFacing.out} out): a one-sided material shows a hole`);
   if (mill.refused !== 1) failures.push(`[${current}] a windmill without sails was not refused`);
   console.log(`${failures.length === before2 ? 'ok  ' : 'FAIL'} ${current} (${mill.parts} parts)`);
+  // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
+  // never crosses: a 6° roll turns nothing, a 60° twist turns about 48°, clockwise for clockwise, about
+  // the ground at the middle of the screen (where the camera looks stays put).
+  current = 'two-finger twist';
+  const before3 = failures.length;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  const look = () => page.evaluate(() => { const s = window.FIELD_ST;
+    return { yaw: s.yaw, x: s.camX, z: s.camZ }; });
+  const twist = async deg => {
+    const cx = 640, cy = 400, R = 120, pts = a => [0, 180].map((o, id) => ({ x: cx + R * Math.cos((a + o) * Math.PI / 180), y: cy + R * Math.sin((a + o) * Math.PI / 180), id }));
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
+    for (let k = 1; k <= 12; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(deg * k / 12) }); await page.waitForTimeout(16); }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(100);
+  };
+  for (const name of ['field checkers', 'mini golf']){
+    await page.evaluate(n => window.setFieldApp(window.FIELD_APPS.find(a => a.name === n)), name);
+    // let the switch's framing finish turning the view first
+    for (let k = 0, y = null; k < 40; k++){ await page.waitForTimeout(250); const n = (await look()).yaw; if (n === y && !(await page.evaluate(() => window.FIELD_TARGET.active))) break; y = n; }
+    const a = await look(); await twist(6); const b = await look();
+    if (Math.abs(b.yaw - a.yaw) > 1e-6) failures.push(`[${current}] ${name}: a 6° roll turned the view ${b.yaw - a.yaw}°`);
+    await twist(60); const c = await look();
+    const turned = ((c.yaw - b.yaw) % 360 + 540) % 360 - 180;
+    if (Math.abs(turned - 48) > 3) failures.push(`[${current}] ${name}: a 60° clockwise twist turned the view ${turned}°, expected about +48°`);
+  }
+  console.log(`${failures.length === before3 ? 'ok  ' : 'FAIL'} ${current}`);
+
+  // Mini golf: a press held just past the rail (a finger on a ball lying against it) still aims and
+  // putts, rather than tilting the view (Oct 7: "long press does not work when the ball is next to the
+  // outer margin").
+  current = 'mini golf press past the rail';
+  const before4 = failures.length;
+  const scr = () => page.evaluate(() => {
+    const W = window.FIELD_WORLD, T = W.target, cam = W.camera, bW = W.boardW(), L = window.LAB || {};
+    const P = (x, z) => { const v = new W.THREE.Vector3(x, 0.02, z).project(cam); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; };
+    return { mid: P(T.boardX, T.boardZ), out: P(T.boardX + bW * (L.cellW || 1) * 0.54, T.boardZ), shown: !!T.shown };
+  });
+  const golf = () => page.evaluate(() => { const g = [...window.getFieldApp()._debug.games.values()].find(g => g.state === 'play');
+    return { strokes: g ? g.strokes : null, moving: g ? !!g.moving : null, pitch: window.FIELD_ST.pitch }; });
+  const at = q => [{ x: q.x, y: q.y, id: 0 }];
+  let S = await scr();
+  await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); window.getFieldApp().onCellTap(f.c, f.r); });
+  await page.waitForTimeout(300);
+  S = await scr();
+  const g0 = await golf();
+  if (!S.shown || g0.strokes == null) failures.push(`[${current}] starting a round on the framed hole failed (${JSON.stringify({ S, g0, n: await page.evaluate(() => [...window.getFieldApp()._debug.games.values()].map(g => g.state)) })})`);
+  else {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(S.out) });
+    await page.waitForTimeout(900);                                  // past the long press
+    for (let k = 1; k <= 8; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at({ x: S.out.x + 8 * k, y: S.out.y + 6 * k }) }); await page.waitForTimeout(16); }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(200);
+    const g1 = await golf();
+    if (g1.strokes !== g0.strokes + 1) failures.push(`[${current}] a held press past the rail did not putt (strokes ${g0.strokes} → ${g1.strokes})`);
+    if (Math.abs(g1.pitch - g0.pitch) > 1e-6) failures.push(`[${current}] it tilted the view instead (${g0.pitch} → ${g1.pitch})`);
+  }
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  console.log(`${failures.length === before4 ? 'ok  ' : 'FAIL'} ${current}`);
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
