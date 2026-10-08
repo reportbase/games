@@ -24352,7 +24352,11 @@ const CROSSING_APP = (() => {
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
     onReset(c, r){ const g = gameAt(c, r); g.state = 'over'; start(g); g.state = 'wait'; g.last = 0; LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ gameAt(c, r); return true; },   // Sep 27: selecting frames the board; it waits for a tap
-    onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
+    onFramed(c, r){
+      LIVE = (c == null) ? null : { key: gkey(c, r), c, r };
+      if (ED.on && (!LIVE || LIVE.key !== ED.key)) editStop(true);
+      if (LIVE && PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'); }
+    },
     /* A TAP HOPS TOWARD WHERE YOU TAPPED (Sep 22: "add left and right
        capability"). Measured from the pawn: tap beside it and it steps left
        or right, tap ahead and it goes forward, behind and it goes back —
@@ -32772,8 +32776,11 @@ const GOLF_APP = (() => {
       toys: [{ shuttle: [1.5, 5, 6.5, 5, 0.3, 2.6] }],
       map: ['........', '........', '..O.....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
   ];
-  // cells to the board's own units
-  for (const H of HOLES){
+  /* THE HOLES AS WRITTEN, kept before they are turned into the board's units below (Oct 8, for the editor: a hole you take
+     into the editor starts from its cells, which is how the editor writes them too). */
+  const HOLE_SRC = HOLES.map(H => JSON.parse(JSON.stringify(H)));
+  // cells to the board's own units, and the tee and cup found on the map: one hole, the course's or one from the editor
+  function compileHole(H){
     const P = v => v * CW;
     for (const f of H.land || []){
       if (f.bump) f.bump = [P(f.bump[0]), P(f.bump[1]), P(f.bump[2]), f.bump[3]];
@@ -32792,11 +32799,13 @@ const GOLF_APP = (() => {
       if (T.orbit) T.orbit = [P(T.orbit[0]), P(T.orbit[1]), P(T.orbit[2]), P(T.orbit[3]), T.orbit[4], T.orbit[5] || 0];
       if (T.gate) T.gate = [...T.gate.slice(0, 4).map(P), T.gate[4], T.gate[5] || 0];
     }
+    H.map.forEach((row, j) => [...row].forEach((ch, i) => {
+      if (ch === 'T') H.tee = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
+      if (ch === 'O') H.cup = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
+    }));
+    return H;
   }
-  for (const H of HOLES) H.map.forEach((row, j) => [...row].forEach((ch, i) => {
-    if (ch === 'T') H.tee = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
-    if (ch === 'O') H.cup = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
-  }));
+  HOLES.forEach(compileHole);
   // ONE COURSE, every hole on the field (Oct 2: "don't have courses, put all holes in the viewer"): a round is all of them.
   const COURSE = HOLES.length;
   const at = (H, i, j) => (i < 0 || j < 0 || i >= NX || j >= NY) ? '#' : H.map[j][i];
@@ -32894,7 +32903,8 @@ const GOLF_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
-  const say = (m, ms) => { try { engineNotice(m, ms || 2000); } catch {} };
+  let SILENT = false;                                     // (the editor's Check plays thousands of putts: quietly)
+  const say = (m, ms) => { if (SILENT) return; try { engineNotice(m, ms || 2000); } catch {} };
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
   // The hole a board holds: the board to the right holds the next one, so the course walks rightward.
   const holeOf = (c, r) => (((3 * r - c) % COURSE) + COURSE) % COURSE;
@@ -32958,6 +32968,12 @@ const GOLF_APP = (() => {
   // On to the next hole: the board to the right, the view following.
   function nextHole(g){
     const R = g.R;
+    if (R.single){                                           // a hole of your own is a round of one (Oct 8)
+      g.state = 'done';
+      const h = R.card[R.card.length - 1] || { strokes: g.strokes, par: HOLES[g.hole].par };
+      say('Done — ' + h.strokes + (h.strokes === 1 ? ' stroke' : ' strokes') + ' on par ' + h.par + '. Tap the board to play it again.', 4000);
+      return;
+    }
     if (R.card.length >= COURSE){
       g.state = 'done';
       const tot = R.card.reduce((s, h) => s + h.strokes, 0), par = R.card.reduce((s, h) => s + h.par, 0), d = par - tot;
@@ -33150,10 +33166,11 @@ const GOLF_APP = (() => {
   /* ─── WHAT A BOARD SHOWS ───────────────────────────────────────────── */
   const GRASS = [0x63b86a, 0x58ad60];
   // the far board: NY × NY tiles over the WD × 1 board, each the colour of the cell under its middle
-  const GRIDS = HOLES.map(H => ({ n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
+  // (made when first wanted and kept on the hole, so an editor's hole gets its own: Oct 8)
+  const gridOf = hk => { const H = HOLES[hk]; return H._grid || (H._grid = { n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
     const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, ch = H.map[j][i];
     return ch === '#' ? 0x7a5a3c : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
-  }) }));
+  }) }); };
   const holeShown = (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.hole : holeOf(c, r); };
   const POLE_H = 0.16;
   /* THE GRASS, as a surface: a 60×60 mesh on the ground's heights, coloured by what it is — grass
@@ -33325,7 +33342,7 @@ const GOLF_APP = (() => {
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
-    if (NUMS.on) numberItems(out, H, k + 1);
+    if (NUMS.on && !H.custom) numberItems(out, H, k + 1);                // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
     for (let j = 0; j < 2 * NY; j++) for (const i of [0, 1]){
@@ -33401,7 +33418,8 @@ const GOLF_APP = (() => {
     // The ghost: the last putt's path, as faint dots on the grass.
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     const b = G ? G.ball : H.tee;
-    if (!G || G.state === 'play' || G.state === 'done') out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
+    if (!G || G.state === 'play' || G.state === 'done' || G.state === 'edit') out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
+    if (G && G.state === 'edit') editOverlay(out, H);
     // The aim: dots from the ball, the way it will go, longer and redder the harder.
     if (G && G.state === 'play' && !G.moving && (G.pull.x || G.pull.y)){
       const p = powerOf(G), L = Math.hypot(G.pull.x, G.pull.y), dx = -G.pull.x / L, dy = -G.pull.y / L, len = 0.06 + 0.34 * p;
@@ -33436,6 +33454,339 @@ const GOLF_APP = (() => {
     if (k === 'Enter') putt(g);
   }, true);
 
+  /* ═══ THE HOLE EDITOR (Oct 8: "how expensive is each mini-golf hole? could we let users create them in an editor?" …
+     "yes, build the editor") ═══════════════════════════════════════════════════════════════════════════════════════════
+     A hole is a few hundred bytes: its name, par, a map of 13 rows of 8 cells, its ground and its toys, written in cells.
+     Everything heavy (the ground's mesh, the far board's tiles) is made from that. So the editor edits exactly that, the
+     way HOLES are written above, and the hole on the board is made again from it after every stroke.
+       · Choose Edit this hole (a copy of the hole on the selected board) or New hole from the menu. The board becomes the
+         editor's and a bar of tools comes up along the bottom.
+       · Grass, wall, sand, water and bridge are painted: tap a cell, or drag across cells. Tee and cup are moved by a tap.
+       · Hill and hollow raise or lower the ground round where you tap (or along a drag), a little each time.
+       · Bumper, boulder, tree and windmill are placed by a tap; a pipe takes two (in, then out); Erase takes away the
+         nearest thing, then the nearest hill, then the cell's paint.
+       · Check plays the hole with the same plain player the course test uses (tests/golf-course.mjs) and, if it can sink
+         it, sets the par one over what it took. Save keeps it in this browser (My holes, in the menu); Share copies a link
+         that opens the page on it; Done plays it.
+     The course's own holes are never changed: editing one edits a copy. Holes made here come after the course's in HOLES
+     (index BUILT and on), so they are on no board until you play one; a round of one of them is that one hole. */
+  const BUILT = HOLES.length;
+  const MINE_KEY = 'golf.myholes';
+  const clone = o => JSON.parse(JSON.stringify(o));
+  /* Anything read from a link or from storage is checked before it is believed: a map of the right size with only the
+     map's own letters, one tee and one cup, and only the kinds of ground and toy the course knows, each number held in
+     range. A link is anyone's, so nothing in it is ever run or put in the page as markup. */
+  const SPEC_LAND = { bump: [[-1, 9], [-1, 14], [0.2, 8], [-0.08, 0.25]], tilt: [[-0.1, 0.1], [-0.1, 0.1]],
+    step: [[-1, 1], [-1, 1], [-14, 14], [0.1, 4], [-0.25, 0.25]], wave: [[-0.05, 0.05], [0.5, 14], [-360, 360], [-7, 7]],
+    ridge: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.2, 8], [-0.1, 0.25]], bowl: [[-1, 9], [-1, 14], [0.3, 8], [0, 0.25]],
+    pipe: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.5, 12], [0, 0.25]] };
+  const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]],
+    mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
+    shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7]],
+    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]] };
+  const OPTIONAL_LAST = { orbit: 1, gate: 1 };
+  function cleanList(list, spec, max){
+    const out = [];
+    for (const f of Array.isArray(list) ? list : []){
+      if (out.length >= max) break;
+      const key = f && typeof f === 'object' && Object.keys(spec).find(k => Array.isArray(f[k]));
+      if (!key) continue;
+      const lim = spec[key], v = f[key];
+      const nums = lim.map(([lo, hi], i) => {
+        const x = Number(v[i]);
+        if (!isFinite(x)) return (i === lim.length - 1 && OPTIONAL_LAST[key]) ? 0 : NaN;
+        return Math.round(Math.max(lo, Math.min(hi, x)) * 1000) / 1000;
+      });
+      if (nums.some(x => !isFinite(x))) continue;
+      if (key === 'orbit' && !nums[4]) nums[4] = 6;
+      out.push({ [key]: nums });
+    }
+    return out;
+  }
+  function cleanSrc(o){
+    if (!o || typeof o !== 'object' || !Array.isArray(o.map) || o.map.length !== NY) return null;
+    let map = o.map.map(r => String(r).slice(0, NX).padEnd(NX, '.').replace(/[^.#s~=TO]/g, '.'));
+    for (const [ch, j] of [['T', NY - 1], ['O', 0]]){             // exactly one tee and one cup
+      let seen = false;
+      map = map.map(r => [...r].map(c => c !== ch ? c : seen ? '.' : (seen = true, c)).join(''));
+      if (!seen){ const row = [...map[j]]; row[NX >> 1] = ch; map[j] = row.join(''); }
+    }
+    return { name: String(o.name || 'my hole').replace(/\s+/g, ' ').slice(0, 40), par: Math.max(1, Math.min(9, Math.round(Number(o.par)) || 3)),
+             map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40) };
+  }
+  const blankSrc = () => ({ name: 'my hole', par: 3, land: [], toys: [],
+    map: Array.from({ length: NY }, (_, j) => j === 1 ? '...O....' : j === NY - 2 ? '...T....' : '........') });
+  /* An editor's hole on the field: its ground, wireframe and any slide are kinds of their own, made from HOLES[k] as it
+     is now; after an edit the old meshes are dropped (fieldDropItemKind), so the next frame makes them again. */
+  function ensureKinds(k){
+    itemGeometries['land' + k] = T => groundGeo(T, HOLES[k]);
+    itemGeometries['wire' + k] = T => wireGeo(T, HOLES[k]);
+    (HOLES[k].toys || []).forEach((T, j) => { if (T.slide) itemGeometries['slide' + k + '_' + j] = T3 => {
+      const S = HOLES[k].toys[j] && HOLES[k].toys[j].slide; if (!S) return null;
+      const g = new T3.BoxGeometry(S[4], 0.06, S[5]); g.translate(0, 0.005, 0); return g; }; });
+  }
+  function dropKinds(k, old){
+    const drop = n => { try { window.fieldDropItemKind && window.fieldDropItemKind(n); } catch {} };
+    drop('land' + k); drop('wire' + k);
+    ((old && old.toys) || []).forEach((T, j) => drop('slide' + k + '_' + j));
+  }
+  function makeHole(src, keep){ const H = compileHole(clone(src)); H.src = clone(src); H.custom = true; if (keep) H.mine = keep.mine; return H; }
+  function addHole(src){ const k = HOLES.length; HOLES.push(makeHole(src)); ensureKinds(k); return k; }
+  function setHole(k, src){ const old = HOLES[k]; HOLES[k] = makeHole(src, old); ensureKinds(k); dropKinds(k, old); }
+  const srcOf = k => k < BUILT ? HOLE_SRC[k] : HOLES[k].src;
+  // My holes: kept in this browser, each made into a hole the first time it is played
+  const MINE = (() => { try { const a = JSON.parse(localStorage.getItem(MINE_KEY) || '[]'); return Array.isArray(a) ? a.map(cleanSrc).filter(Boolean) : []; } catch { return []; } })();
+  const mineK = MINE.map(() => -1);
+  function storeMine(){ try { localStorage.setItem(MINE_KEY, JSON.stringify(MINE)); return true; } catch { return false; } }
+  function holeOfMine(i){ if (mineK[i] < 0 || !HOLES[mineK[i]]){ mineK[i] = addHole(MINE[i]); HOLES[mineK[i]].mine = i; } return mineK[i]; }
+  // A link carries a hole: the page opened with ?hole=… plays it on the first board you select (or tap)
+  function shareLink(src){
+    const b = btoa(unescape(encodeURIComponent(JSON.stringify(src)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return location.origin + location.pathname + '?app=minigolf&hole=' + b;
+  }
+  function readLink(q){
+    try { const b = String(q).replace(/-/g, '+').replace(/_/g, '/'); return cleanSrc(JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))))); }
+    catch { return null; }
+  }
+  let PENDING = null;
+  try { const q = new URLSearchParams(location.search).get('hole'); const src = q && readLink(q); if (src) PENDING = addHole(src); } catch {}
+  const framedHere = () => {
+    if (LIVE) return LIVE;
+    try { const f = framedCell(); if (f) return { key: gkey(f.c, f.r), c: f.c, r: f.r }; } catch {}
+    return null;
+  };
+  function playHoleHere(k, note){
+    const L = framedHere();
+    if (!L){ say('Select a board first, then choose the hole.', 2400); return false; }
+    LIVE = L;
+    GAMES.set(L.key, holeGame({ start: k, card: [], single: true }, k));
+    say(note || ('Your hole: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Drag to pull back, let go to putt.'), 2800);
+    return true;
+  }
+  /* The plain player (the course test's): from where the ball lies it tries 72 headings at 5 strengths, keeps a putt that
+     sinks or else the one that ends nearest the cup by the way round (walls and water in the way, pipes taken). */
+  function solveHole(k, maxStrokes){
+    const H = HOLES[k], dist = new Map(), key = (i, j) => i + ',' + j, ci = Math.floor(H.cup.x / CW), cj = Math.floor(H.cup.y / CW), q = [[ci, cj]];
+    dist.set(key(ci, cj), 0);
+    const pipes = (H.toys || []).filter(T => T.pipe).map(T => T.pipe);
+    while (q.length){ const [i, j] = q.shift(), d = dist.get(key(i, j));
+      const nb = [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]];
+      for (const p of pipes) if (Math.floor(p[2] / CW) === i && Math.floor(p[3] / CW) === j) nb.push([Math.floor(p[0] / CW), Math.floor(p[1] / CW)]);
+      for (const [a, b] of nb){ if (a < 0 || b < 0 || a >= NX || b >= NY || '#~'.includes(H.map[b][a]) || dist.has(key(a, b))) continue; dist.set(key(a, b), d + 1); q.push([a, b]); } }
+    const score = b => { const d = dist.get(key(Math.floor(b.x / CW), Math.floor(b.y / CW))); return (d == null ? 99 : d) + Math.hypot(b.x - H.cup.x, b.y - H.cup.y) / CW * 0.3; };
+    const copy = g => ({ ...clone({ ...g, R: null }), R: { start: k, card: [], single: true } });
+    const play = (g0, a, p) => {
+      const g1 = copy(g0); g1.pull = { x: -Math.cos(a) * FULL * p, y: -Math.sin(a) * FULL * p };
+      if (!putt(g1)) return null;
+      for (let n = 0; n < 2400 && g1.state === 'play' && (g1.moving || n < 2); n++) step(g1, 1 / 120);
+      return g1;
+    };
+    let g = holeGame({ start: k, card: [], single: true }, k), strokes = 0, sunk = false;
+    const wasOn = SND.on; SND.on = false; SILENT = true;
+    try { for (; strokes < maxStrokes && !sunk; strokes++){
+      let best = null, bs = Infinity;
+      for (let ai = 0; ai < 72 && !sunk; ai++) for (const p of [0.22, 0.4, 0.58, 0.78, 1]){
+        const g1 = play(g, ai / 72 * 2 * Math.PI, p); if (!g1) continue;
+        if (g1.state === 'sunk' || g1.state === 'done'){ sunk = true; best = g1; break; }
+        const sc = score(g1.ball); if (sc < bs){ bs = sc; best = g1; }
+      }
+      if (best) g = best;
+    } } finally { SND.on = wasOn; SILENT = false; }
+    return { sunk, strokes };
+  }
+  /* ─── the editing itself ─── */
+  const ED = { on: false, k: -1, src: null, key: null, tool: '#', pipeAt: null, undo: [], last: null, stroke: false, timer: 0, msg: '' };
+  function editStart(from){                               // from: a HOLES index to take in, or null for a new hole
+    const L = framedHere();
+    if (!L){ say('Select a hole on the field first, then choose Edit.', 2600); return false; }
+    if (ED.on) editStop(true);
+    let k, src;
+    if (from != null && HOLES[from] && HOLES[from].custom){ k = from; src = clone(HOLES[from].src); }   // your own: edited in place
+    else {
+      src = from == null ? blankSrc() : clone(srcOf(from));
+      if (from != null) src.name = String(src.name).slice(0, 33) + ' (mine)';
+      src = cleanSrc(src) || blankSrc();
+      k = addHole(src);
+    }
+    Object.assign(ED, { on: true, k, src, key: L.key, pipeAt: null, undo: [], last: null, stroke: false, msg: '' });
+    LIVE = L;
+    const g = holeGame({ start: k, card: [], single: true }, k); g.state = 'edit';
+    GAMES.set(L.key, g);
+    try { toggleBoardBrowser(false); } catch {}
+    showEditBar();
+    say('Editing — choose a tool below, then tap or drag on the hole.', 3000);
+    return true;
+  }
+  function editStop(quiet){
+    if (!ED.on) return;
+    clearTimeout(ED.timer); ED.timer = 0;
+    setHole(ED.k, ED.src);
+    ED.on = false; ED.stroke = false;
+    const bar = document.getElementById('golfEditBar'); if (bar) bar.hidden = true;
+    const g = GAMES.get(ED.key);
+    if (g && g.state === 'edit') GAMES.set(ED.key, holeGame({ start: ED.k, card: [], single: true }, ED.k));
+    if (!quiet) say('Playing ' + HOLES[ED.k].name + ' — Hole editor in the menu to change it again.', 2600);
+    try { renderAppMenu(); } catch {}
+  }
+  function snapEdit(){ ED.undo.push(JSON.stringify(ED.src)); if (ED.undo.length > 60) ED.undo.shift(); }
+  function editRefresh(now){
+    clearTimeout(ED.timer); ED.timer = 0;
+    const go = () => {
+      ED.timer = 0;
+      setHole(ED.k, ED.src);
+      const g = GAMES.get(ED.key), H = HOLES[ED.k];
+      if (g && g.state === 'edit'){ g.ball.x = g.rest.x = H.tee.x; g.ball.y = g.rest.y = H.tee.y; }
+      ED.msg = ''; updateEditBar();
+    };
+    if (now) go(); else ED.timer = setTimeout(go, 90);       // a drag repaints the ground a few times a second, not every move
+  }
+  // (u, v) on the board, 0 to 1 across and down; drag: part of a stroke rather than a tap. True if the hole changed.
+  function editApply(u, v, drag){
+    if (!ED.on || u == null || v == null) return false;
+    const x = u * NX, y = v * NY, i = Math.floor(x), j = Math.floor(y), S = ED.src, t = ED.tool;
+    if (i < 0 || j < 0 || i >= NX || j >= NY) return false;
+    const R2 = n => Math.round(n * 100) / 100, cell = S.map[j][i];
+    const set = ch => { const row = [...S.map[j]]; row[i] = ch; S.map[j] = row.join(''); };
+    if (t.length === 1 && '.#s~='.includes(t)){ if ('TO'.includes(cell) || cell === t) return false; set(t); return true; }
+    if (t === 'T' || t === 'O'){
+      if (drag || cell === t || 'TO#'.includes(cell)) return false;
+      S.map = S.map.map(r => r.replace(t, '.')); set(t); return true;
+    }
+    if (t === 'up' || t === 'down'){
+      if (drag && ED.last && Math.hypot(x - ED.last.x, y - ED.last.y) < 0.8) return false;
+      if (S.land.length >= 40) { say('That is as much ground as a hole can hold — erase some first.', 2000); return false; }
+      ED.last = { x, y };
+      S.land.push({ bump: [R2(x), R2(y), 1.4, t === 'up' ? 0.03 : -0.025] });
+      return true;
+    }
+    if (drag) return false;                                 // things are placed by a tap
+    if (t === 'erase'){
+      let best = -1, bd = 1;
+      S.toys.forEach((T, n) => { const a = Object.values(T)[0], d = Math.min(Math.hypot(a[0] - x, a[1] - y), T.pipe ? Math.hypot(a[2] - x, a[3] - y) : 9); if (d < bd){ bd = d; best = n; } });
+      if (best >= 0){ S.toys.splice(best, 1); return true; }
+      let lb = -1, ld = 1.6;
+      S.land.forEach((f, n) => { if (!f.bump && !f.bowl && !f.ridge && !f.pipe) return; const a = Object.values(f)[0], d = Math.hypot(a[0] - x, a[1] - y); if (d < ld){ ld = d; lb = n; } });
+      if (lb >= 0){ S.land.splice(lb, 1); return true; }
+      if (!'.TO'.includes(cell)){ set('.'); return true; }
+      return false;
+    }
+    if (cell === '#') return false;
+    if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
+    if (t === 'kick') S.toys.push({ kick: [R2(x), R2(y), 0.32] });
+    else if (t === 'rock') S.toys.push({ rock: [R2(x), R2(y), 0.5] });
+    else if (t === 'tree') S.toys.push({ tree: [R2(x), R2(y), 0.26] });
+    else if (t === 'mill') S.toys.push({ mill: [R2(x), R2(y), 1.4, 1.3] });
+    else if (t === 'pipe'){
+      if (!ED.pipeAt){ ED.pipeAt = { x: R2(x), y: R2(y) }; ED.msg = 'now tap where it comes out'; updateEditBar(); return false; }
+      const a = ED.pipeAt; ED.pipeAt = null;
+      if (Math.hypot(x - a.x, y - a.y) < 1){ ED.msg = 'too close: tap further away'; updateEditBar(); return false; }
+      const deg = Math.round(Math.atan2(NY / 2 - y, NX / 2 - x) * 180 / Math.PI);   // out toward the middle of the hole
+      S.toys.push({ pipe: [a.x, a.y, R2(x), R2(y), deg, 0.45] });
+    } else return false;
+    return true;
+  }
+  function editAction(a){
+    if (!ED.on) return;
+    const S = ED.src;
+    if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.src = JSON.parse(u); editRefresh(true); } return; }
+    if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
+    if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
+    if (a === 'check'){
+      ED.msg = 'checking…'; updateEditBar();
+      return new Promise(done => setTimeout(() => {
+        setHole(ED.k, S);
+        const r = solveHole(ED.k, 8);
+        if (r.sunk){ S.par = Math.max(2, Math.min(6, r.strokes + 1)); setHole(ED.k, S); ED.msg = 'playable: sunk in ' + r.strokes + ', par ' + S.par; }
+        else ED.msg = 'not sunk in 8: open a way to the cup';
+        updateEditBar(); done(r);
+      }, 30));
+    }
+    if (a === 'save'){
+      let i = HOLES[ED.k].mine;
+      if (i == null || !MINE[i]){ i = MINE.length; MINE.push(null); mineK.push(ED.k); }
+      MINE[i] = clone(S); mineK[i] = ED.k; HOLES[ED.k].mine = i;
+      ED.msg = storeMine() ? 'saved (My holes: ' + MINE.length + ')' : 'could not save in this browser';
+      updateEditBar(); return;
+    }
+    if (a === 'share'){
+      const url = shareLink(S);
+      ED.lastLink = url;
+      const told = () => { ED.msg = 'link copied'; updateEditBar(); };
+      try { navigator.clipboard.writeText(url).then(told, () => { prompt('Copy this link to share the hole', url); }); }
+      catch { prompt('Copy this link to share the hole', url); }
+      return url;
+    }
+    if (a === 'done'){ editStop(false); return; }
+  }
+  // The cells' corners as faint dots, and the pipe's first mouth while it waits for its second
+  function editOverlay(out, H){
+    for (let j = 0; j <= NY; j++) for (let i = 0; i <= NX; i++){
+      const x = Math.min(WD - 0.004, Math.max(0.004, i * CW)), y = Math.min(0.996, Math.max(0.004, j * CW));
+      out.push({ kind: 'ghost', u: x, v: y, scale: 0.007, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
+    }
+    if (ED.pipeAt){ const x = ED.pipeAt.x * CW, y = ED.pipeAt.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
+  }
+  /* The bar: the tools on one row (the one in hand ringed), what to do with the hole on the next, and the hole's name,
+     par and the last thing that happened above them. Plain buttons in the page, so they are big enough to hit on a
+     phone and scroll sideways when the screen is narrow. The name goes in as text, never markup. */
+  const TOOLS = [['.', 'Grass', '#63b86a'], ['#', 'Wall', '#8a6440'], ['s', 'Sand', '#e6d39a'], ['~', 'Water', '#3d7fd9'],
+    ['=', 'Bridge', '#9a7048'], ['T', 'Tee', '#ffffff'], ['O', 'Cup', '#111111'], ['up', 'Hill', '#7fd086'], ['down', 'Hollow', '#3f7f46'],
+    ['kick', 'Bumper', '#e0443a'], ['rock', 'Boulder', '#8a857c'], ['tree', 'Tree', '#2f7a3a'], ['mill', 'Windmill', '#d9d2c0'],
+    ['pipe', 'Pipe', '#2f9a4a'], ['erase', 'Erase', null]];
+  const ACTS = [['undo', 'Undo'], ['name', 'Name'], ['par', 'Par'], ['check', 'Check'], ['save', 'Save'], ['share', 'Share'], ['done', 'Done']];
+  function showEditBar(){
+    let bar = document.getElementById('golfEditBar');
+    if (!bar){
+      bar = document.createElement('div'); bar.id = 'golfEditBar';
+      bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(16,20,18,.94);color:#e8ece9;'
+        + 'font:13px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:6px 6px calc(8px + env(safe-area-inset-bottom));'
+        + 'display:flex;flex-direction:column;gap:6px;user-select:none;-webkit-user-select:none;touch-action:pan-x';
+      const info = document.createElement('div'); info.className = 'ge-info';
+      info.style.cssText = 'display:flex;justify-content:space-between;gap:10px;padding:0 6px;white-space:nowrap;overflow:hidden';
+      info.append(Object.assign(document.createElement('span'), { className: 'ge-name' }), Object.assign(document.createElement('span'), { className: 'ge-msg' }));
+      const row = cls => { const d = document.createElement('div'); d.className = cls; d.style.cssText = 'display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:0 2px'; return d; };
+      const mk = (label, sw) => {
+        const b = document.createElement('button'); b.type = 'button';
+        b.style.cssText = 'flex:0 0 auto;min-width:54px;height:44px;border-radius:8px;border:2px solid transparent;background:#2a302d;color:#e8ece9;'
+          + 'font:600 12px inherit;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:2px 8px;cursor:pointer';
+        if (sw){ const d = document.createElement('span'); d.style.cssText = 'width:16px;height:12px;border-radius:3px;border:1px solid rgba(255,255,255,.35);background:' + sw; b.appendChild(d); }
+        b.appendChild(document.createTextNode(label));
+        return b;
+      };
+      const tools = row('ge-tools'), acts = row('ge-acts');
+      for (const [t, label, sw] of TOOLS){ const b = mk(label, sw); b.dataset.tool = t; b.addEventListener('click', () => { ED.tool = t; ED.pipeAt = null; ED.msg = ''; updateEditBar(); }); tools.appendChild(b); }
+      for (const [a, label] of ACTS){ const b = mk(label); b.dataset.act = a; if (a === 'done') b.style.background = '#2f6f3a'; b.addEventListener('click', () => editAction(a)); acts.appendChild(b); }
+      bar.append(info, tools, acts);
+      bar.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+      document.body.appendChild(bar);
+    }
+    bar.hidden = false;
+    updateEditBar();
+  }
+  function updateEditBar(){
+    const bar = document.getElementById('golfEditBar');
+    if (!bar || !ED.src) return;
+    bar.querySelector('.ge-name').textContent = ED.src.name + ' · par ' + ED.src.par;
+    bar.querySelector('.ge-msg').textContent = ED.msg || (ED.tool === 'pipe' ? 'tap where the pipe goes in' : '');
+    for (const b of bar.querySelectorAll('[data-tool]')) b.style.borderColor = b.dataset.tool === ED.tool ? '#ffd23a' : 'transparent';
+  }
+  function editorMenu(){
+    const items = [];
+    if (ED.on) items.push({ label: 'Leave the editor', title: 'Stop editing and play the hole.', on(){ editStop(false); } });
+    items.push({ label: 'Edit this hole', title: 'Take the hole on the selected board into the editor. A hole of the course is copied; it is never changed.',
+      on(){ const L = framedHere(), g = L && GAMES.get(L.key); editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); } });
+    items.push({ label: 'New hole', title: 'Start a hole of your own on the selected board.', on(){ editStart(null); } });
+    MINE.forEach((src, i) => {
+      items.push({ label: 'Play: ' + src.name, title: 'Play your hole on the selected board.', on(){ playHoleHere(holeOfMine(i)); } });
+      items.push({ label: 'Delete: ' + src.name, title: 'Take this hole out of My holes (in this browser).', on(){
+        const go = () => { MINE.splice(i, 1); const k = mineK.splice(i, 1)[0]; if (k >= 0 && HOLES[k]) HOLES[k].mine = null;
+          for (let n = i; n < mineK.length; n++) if (mineK[n] >= 0 && HOLES[mineK[n]]) HOLES[mineK[n]].mine = n;
+          storeMine(); try { renderAppMenu(); } catch {} };
+        try { confirmAction('Delete "' + src.name + '" from My holes?', 'Delete', go); } catch { go(); } } });
+    });
+    return items;
+  }
+
   const app = {
     name: 'mini golf',
     boardShape: { cellW: WD, cellH: 1 },               // the golden board, upright (Oct 7)
@@ -33449,15 +33800,17 @@ const GOLF_APP = (() => {
       const tx = rect.w / NX, ty = rect.h / NY;
       ctx.fillStyle = '#63b86a'; ctx.fillRect(rect.x, rect.y, NX * tx, NY * ty);   // one grass (Oct 8)
     },
-    cellGrid(c, r){ return GRIDS[holeShown(c, r)]; },
+    cellGrid(c, r){ return gridOf(holeShown(c, r)); },
     cellItems,
-    menu: [{ head: 'Mini golf', items: [
+    get menu(){ return [{ head: 'Mini golf', items: [
       DL.item,
       { label: () => 'Hole numbers: ' + (NUMS.on ? 'on' : 'off'), title: 'Each board shows its hole number in the far left corner.',
         on(){ NUMS.on = !NUMS.on; ARCADE.save('golf.nums', NUMS.on ? 'on' : 'off'); } },
       { label: () => 'Wireframe: ' + (WIRE.on ? 'on' : 'off'), title: 'A grid draped over the grass, so the hills and hollows show as the lines bend.',
         on(){ WIRE.on = !WIRE.on; ARCADE.save('golf.wire', WIRE.on ? 'on' : 'off'); } },
-      SND.item] }],
+      SND.item] }, { head: 'Hole editor', items: editorMenu() }]; },
+    // an editor's hole is on a few boards at most: its ground needs no room for thousands (Oct 8)
+    itemCaps(kind){ const m = /^(land|wire)(\d+)$/.exec(kind); return m && +m[2] >= BUILT ? 64 : 0; },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r)), H = HOLES[holeShown(c, r)];
       if (!g) return 'Mini golf — ' + H.name + ', par ' + H.par + ' (tap to play a round from here)';
@@ -33472,10 +33825,10 @@ const GOLF_APP = (() => {
     },
     statTiles(c, r){
       const g = GAMES.get(gkey(c, r));
-      if (!g) return null;
+      if (!g || g.state === 'edit') return null;
       const H = HOLES[g.hole], d = diffOf(g), n = g.R.card.length + (g.state === 'play' ? 1 : 0);
       return [
-        { label: 'Hole', value: Math.max(1, n) + '/' + COURSE, sub: H.name, color: '#ffffff' },
+        { label: 'Hole', value: g.R.single ? 'yours' : Math.max(1, n) + '/' + COURSE, sub: H.name, color: '#ffffff' },
         { label: 'Par', value: H.par, color: '#9fe3a0' },
         { label: 'Strokes', value: g.state === 'play' ? g.strokes : (g.R.card[g.R.card.length - 1] || {}).strokes || 0, sub: 'this hole', color: '#ffd23a' },
         { label: 'Total', value: fmtDiff(d), sub: totalOf(g) + ' strokes', color: d >= 0 ? '#9fe3a0' : '#ff8a7a' },
@@ -33483,16 +33836,29 @@ const GOLF_APP = (() => {
     },
     onReset(c, r){ startRound(c, r); return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
-    onCellTap(c, r){
+    onCellTap(c, r, u, v){
+      if (ED.on){
+        if (gkey(c, r) === ED.key){ snapEdit(); if (editApply(u, v, false)) editRefresh(true); else ED.undo.pop(); return true; }
+        editStop(true);                                      // a tap on another board leaves the editor
+      }
       LIVE = { key: gkey(c, r), c, r };
+      if (PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'); return true; }
       const g = GAMES.get(gkey(c, r));
+      if (g && g.state === 'done' && g.R.single){ GAMES.set(gkey(c, r), holeGame({ start: g.hole, card: [], single: true }, g.hole)); return true; }
       if (!g || g.state === 'done') startRound(c, r);
       return true;
     },
     // A board in play keeps its drags: the board never moves under an aim.
     // Only a finger on the selected board aims; anywhere else the view moves (Oct 2: "touch should only be locked in the selected board").
-    claimsPan(u){ const g = liveGame(); return !!(g && u != null && (g.state === 'play' || g.state === 'sunk')); },
+    claimsPan(u){
+      if (ED.on && LIVE && LIVE.key === ED.key) return u != null;   // in the editor a finger on the hole paints
+      const g = liveGame(); return !!(g && u != null && (g.state === 'play' || g.state === 'sunk'));
+    },
     onPan(dx, dy, at){
+      if (ED.on && LIVE && LIVE.key === ED.key){
+        if (at){ if (!ED.stroke){ ED.stroke = true; snapEdit(); } if (editApply(at.u, at.v, true)) editRefresh(false); }
+        return true;
+      }
       const g = liveGame();
       if (!g || g.state !== 'play') return !!g;
       if (g.moving) return true;
@@ -33513,6 +33879,7 @@ const GOLF_APP = (() => {
       return true;
     },
     onPanEnd(){
+      if (ED.stroke){ ED.stroke = false; ED.last = null; editRefresh(true); return; }
       const g = liveGame();
       if (!g) return;
       g.prevAt = null;
@@ -33530,7 +33897,8 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt },
+    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+      editor: { ED, MINE, BUILT, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
 })();
@@ -37471,6 +37839,15 @@ function _flushAppItems(){
     uploadInstances(rec.mesh, rec.n);
   }
 }
+/* ONE KIND MADE AGAIN (Oct 8, mini golf's hole editor): its mesh dropped, so the next frame that wants the kind builds
+   it afresh from the app's itemGeometries — how an edited hole's ground follows the edit. */
+function _dropAppItemKind(kind){
+  const rec = _itemMeshes.get(kind);
+  if (!rec) return;
+  scene.remove(rec.mesh); rec.mesh.geometry.dispose(); rec.mesh.material.dispose();
+  _itemMeshes.delete(kind);
+}
+window.fieldDropItemKind = _dropAppItemKind;
 function _disposeAppItems(){
   for (const rec of _itemMeshes.values()){
     scene.remove(rec.mesh);

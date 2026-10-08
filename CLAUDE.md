@@ -62,6 +62,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   bumper riding to and fro), `orbit` (a boulder going round) and `gate` (a bar rising out
   of the ground and sinking), each drawn over a dotted track. The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
+- **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
+  edits a hole as written, in cells (`ED.src`); the course's own holes are kept as
+  written in `HOLE_SRC` and compiled by `compileHole`. Editor holes come after the
+  course's in `HOLES` (index `BUILT` and on), are rebuilt after each stroke (`setHole`,
+  which drops the old meshes with the field's `fieldDropItemKind`), and are played as
+  rounds of one (`R.single`). Saved holes live in localStorage (`golf.myholes`); a link
+  `?app=minigolf&hole=…` carries one (base64 JSON). Anything from a link or storage
+  goes through `cleanSrc` (map letters, one tee and cup, known kinds, numbers in range).
+  Check runs the course test's plain player in the page (`solveHole`) and sets par.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
