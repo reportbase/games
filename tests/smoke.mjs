@@ -317,6 +317,67 @@ try {
   }
   console.log(`${failures.length === before8 ? 'ok  ' : 'FAIL'} ${current}`);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  // The hole editor (Oct 8: "yes, build the editor"): a new hole on the selected board, painted with a real drag after
+  // choosing a tool on the bar, things placed, undo, Check sets the par, Save keeps it, Share's link opens the page on it.
+  current = 'hole editor';
+  const before9 = failures.length;
+  {
+    await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); A.onCellTap(f.c, f.r); });
+    const st0 = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; const n = window.getFieldApp()._debug.HOLES.length; const ok = E.editStart(null);
+      const bar = document.getElementById('golfEditBar'); return { ok, n, k: E.ED.k, bar: !!bar && !bar.hidden, tools: bar ? bar.querySelectorAll('[data-tool]').length : 0 }; });
+    if (!st0.ok || !st0.bar || st0.tools < 12 || st0.k !== st0.n) failures.push(`[${current}] editStart: ${JSON.stringify(st0)}`);
+    // choose Wall on the bar, then drag across the middle of the hole with the mouse
+    await page.click('#golfEditBar [data-tool="#"]');
+    const P = await page.evaluate(() => {
+      const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, bWX = bW * L.cellW;
+      const S = dx => { const v = new W.THREE.Vector3(T.boardX + dx * bWX, 0.05, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; };
+      return { a: S(0.3), b: S(-0.3) };
+    });
+    await page.mouse.move(P.a.x, P.a.y); await page.mouse.down();
+    for (let q = 1; q <= 12; q++){ await page.mouse.move(P.a.x + (P.b.x - P.a.x) * q / 12, P.a.y + (P.b.y - P.a.y) * q / 12); await page.waitForTimeout(20); }
+    await page.mouse.up(); await page.waitForTimeout(300);
+    const st1 = await page.evaluate(() => { const D = window.getFieldApp()._debug, E = D.editor; return { walls: E.ED.src.map.join('').split('#').length - 1, holeWalls: D.HOLES[E.ED.k].map.join('').split('#').length - 1 }; });
+    if (st1.walls < 3 || st1.holeWalls !== st1.walls) failures.push(`[${current}] a drag with Wall painted ${st1.walls} walls (the hole on the board has ${st1.holeWalls})`);
+    const st2 = await page.evaluate(async () => {
+      const D = window.getFieldApp()._debug, E = D.editor, ED = E.ED, A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tap = (tool, u, v) => { ED.tool = tool; A.onCellTap(f.c, f.r, u, v); };
+      tap('rock', 0.25, 0.2); tap('up', 0.7, 0.35); tap('pipe', 0.2, 0.8); tap('pipe', 0.8, 0.3);
+      const toys = ED.src.toys.length, land = ED.src.land.length, k = ED.k;
+      const kinds = D.cellItems(f.c, f.r).map(i => i.kind);
+      tap('kick', 0.6, 0.6); E.editAction('undo');
+      const afterUndo = ED.src.toys.length;
+      const r = await E.editAction('check');
+      E.editAction('save');
+      const link = E.shareLink(ED.src), back = E.readLink(new URL(link).searchParams.get('hole'));
+      const evil = E.cleanSrc({ name: '<img src=x onerror=alert(1)>', par: 99, map: Array(13).fill('########ZZZ'), toys: [{ rock: ['x', 1, 2] }, { nope: [1] }], land: 'no' });
+      return { toys, land, k, hasLand: kinds.includes('land' + k), hasRock: kinds.some(x => /rock/i.test(x)), afterUndo, check: r, par: ED.src.par, msg: ED.msg,
+               stored: JSON.parse(localStorage.getItem('golf.myholes') || '[]').length, same: JSON.stringify(back) === JSON.stringify(E.cleanSrc(ED.src)), link,
+               evil: evil && { par: evil.par, toys: evil.toys.length, land: evil.land.length, rows: evil.map.every(r => r.length === 8 && /^[.#s~=TO]+$/.test(r)), T: evil.map.join('').split('T').length - 1, O: evil.map.join('').split('O').length - 1 } };
+    });
+    if (st2.toys !== 2 || st2.land !== 1) failures.push(`[${current}] after a boulder, a hill and a pipe: ${st2.toys} things, ${st2.land} ground`);
+    if (!st2.hasLand || !st2.hasRock) failures.push(`[${current}] the board does not draw the edited hole (land ${st2.hasLand}, boulder ${st2.hasRock})`);
+    if (st2.afterUndo !== 2) failures.push(`[${current}] undo left ${st2.afterUndo} things`);
+    if (!st2.check || !st2.check.sunk || st2.par !== Math.max(2, Math.min(6, st2.check.strokes + 1))) failures.push(`[${current}] Check: ${JSON.stringify(st2.check)}, par ${st2.par}, "${st2.msg}"`);
+    if (st2.stored < 1) failures.push(`[${current}] Save kept nothing`);
+    if (!st2.same) failures.push(`[${current}] the share link does not carry the hole back`);
+    if (!st2.evil || st2.evil.par !== 9 || st2.evil.toys !== 0 || st2.evil.land !== 0 || !st2.evil.rows || st2.evil.T !== 1 || st2.evil.O !== 1) failures.push(`[${current}] a bad link was not cleaned: ${JSON.stringify(st2.evil)}`);
+    // Done: the bar goes and the hole is played
+    await page.click('#golfEditBar [data-act="done"]');
+    const st3 = await page.evaluate(() => { const D = window.getFieldApp()._debug, E = D.editor, bar = document.getElementById('golfEditBar');
+      const g = [...D.games.values()].find(g => g.hole === E.ED.k); return { on: E.ED.on, hidden: !bar || bar.hidden, state: g && g.state, single: g && g.R.single }; });
+    if (st3.on || !st3.hidden || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
+    // the share link opens the page on the hole
+    await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
+    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
+    await page.waitForTimeout(4000);
+    const st4 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onCellTap(f.c, f.r, 0.5, 0.5);                            // the first tap on a board
+      const g = D.games.get(f.c + '_' + f.r);
+      return { hole: g && g.hole, built: D.editor.BUILT, name: g && D.HOLES[g.hole].name, mine: D.editor.MINE.length}; });
+    if (!(st4.hole >= st4.built) || st4.name !== 'my hole') failures.push(`[${current}] the shared link opened ${JSON.stringify(st4)}`);
+    if (st4.mine < 1) failures.push(`[${current}] My holes did not survive the reload`);
+  }
+  console.log(`${failures.length === before9 ? 'ok  ' : 'FAIL'} ${current}`);
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
