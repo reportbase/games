@@ -66,8 +66,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`): `shuttle` (a
   bumper riding to and fro), `orbit` (a boulder going round) and `gate` (a bar rising out
   of the ground and sinking), each drawn over a dotted track. The grass is one colour,
-  shaded by height. A hole is drawn lowered by its lowest ground (`sinkOf`, drawing only), so it
-  rests on its board, its edges running down as earth sides (`groundGeo`). A new hole must pass `tests/golf-course.mjs`.
+  shaded by height. A new hole must pass `tests/golf-course.mjs`.
 - **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
   puts its tools in the bottom panel: while editing, `statTiles` gives the editor's tiles
   and a tap on a tile reaches the app's `onStatTap` (the field offers stat-tile taps to any
