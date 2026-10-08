@@ -58,8 +58,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `tree` or `bush` (saved or shared holes) is read as a short fence. The cup is kept clear
   of the rail by a quarter of its width (`compileHole`, `CUP_R_MAX`). The ground (`land`, read by
   `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
-  (negative ones are gullies), two or more per hole, and the skate park's bowls and
-  pipes (Oct 8: the half-pipe, the bowl, the mega ramp, the skate park); water lies
+  (negative ones are gullies), two or more per hole, the skate park's bowls and
+  pipes (Oct 8: the half-pipe, the bowl, the mega ramp, the skate park), and plateaus
+  (a raised box) and ramps (a kicker along a line); water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
   alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`): `shuttle` (a
@@ -77,6 +78,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `?app=minigolf&hole=…` carries one (base64 JSON). Anything from a link or storage
   goes through `cleanSrc` (map letters, one tee and cup, known kinds, numbers in range).
   Check runs the course test's plain player in the page (`solveHole`) and sets par.
+  Its ground tools: Hill and Hollow, Plateau (drag a box), Ramp and Half-pipe (drag a
+  line), Bowl, and Select (`nearestLand`, `moveLand`) with Higher, Lower, Delete and Level.
+  A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
