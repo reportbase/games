@@ -55,8 +55,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   mouth, bridges (`=`) over water, plus the windmills. The ground (`land`, read by
   `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
   (negative ones are gullies), two or more per hole; water lies level below its banks
-  (`waterLevel`). Fountains (`fountain`) and waterfalls (`fall`) are drawn from the clock
-  each frame (`waterToyItems`) and don't touch the physics. The grass is one colour,
+  (`waterLevel`). The movers (Oct 8) run on the game's clock (`toyAt`): `shuttle` (a
+  bumper riding to and fro), `orbit` (a boulder going round) and `gate` (a bar rising out
+  of the ground and sinking), each drawn over a dotted track. The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
