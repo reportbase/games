@@ -404,6 +404,37 @@ try {
       const kinds = D.cellItems(f.c, f.r).map(i => i.kind);
       return { fences, m0, m1: ED.src.fence, stoneWall: kinds.some(k => /_stone$/.test(k)), stays: A.statsStay() }; });
     if (st2b.fences !== 1 || st2b.m0 !== 'wood' || st2b.m1 !== 'stone' || !st2b.stoneWall || !st2b.stays) failures.push(`[${current}] fence and material: ${JSON.stringify(st2b)}`);
+    // shaping the ground (Oct 8): a plateau by a drag, a ramp by a tap, Select a terrace-less piece and drag it, Higher,
+    // Delete, Level; and the tool tiles as wide as their widest name
+    const sh = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const H0 = () => D.HOLES[ED.k], hAt = (cx, cy) => D.rawH(H0(), cx * D.CW, cy * D.CW);
+      const n0 = ED.src.land.length;
+      tool('plat');                                       // a drag from (1, 2) to (4, 4) in cells, through onPan
+      for (const [cx, cy] of [[1, 2], [2, 3], [3, 3.5], [4, 4]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY });
+      A.onPanEnd();
+      const plat = ED.src.land.find(g => g.plateau), raised = hAt(2.5, 3) - hAt(6.5, 9);
+      tool('ramp'); A.onCellTap(f.c, f.r, 6 / D.NX, 9 / D.NY);
+      const ramp = ED.src.land.find(g => g.ramp);
+      tool('select'); A.onCellTap(f.c, f.r, 2.5 / D.NX, 3 / D.NY);
+      const selKind = ED.sel != null && Object.keys(ED.src.land[ED.sel])[0];
+      const before = ED.src.land[ED.sel].plateau.slice();
+      for (const [cx, cy] of [[2.5, 3], [3.5, 4], [4.5, 5]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY });
+      A.onPanEnd();
+      const moved = ED.src.land[ED.sel].plateau[0] - before[0];
+      const h0 = ED.src.land[ED.sel].plateau[4]; act('higher'); const h1 = ED.src.land[ED.sel].plateau[4];
+      ED.src.land.push({ tilt: [0.03, 0] }); act('level'); const tilts = ED.src.land.filter(g => g.tilt).length;
+      act('del'); const left = ED.src.land.filter(g => g.plateau).length;
+      return { n0, plat: !!plat, raised, ramp: !!ramp, selKind, moved, h0, h1, tilts, left };
+    });
+    if (!sh.plat || !(sh.raised > 0.02) || !sh.ramp) failures.push(`[${current}] plateau and ramp: ${JSON.stringify(sh)}`);
+    if (sh.selKind !== 'plateau' || !(sh.moved > 1.5) || !(sh.h1 > sh.h0) || sh.tilts !== 0 || sh.left !== 0) failures.push(`[${current}] select, move, higher, level, delete: ${JSON.stringify(sh)}`);
+    const wide = await page.evaluate(() => { const st = document.getElementById('boardBrowser'), A = window.getFieldApp(), E = A._debug.editor;
+      const ts = [...st.querySelectorAll('*')].filter(t => t.parentElement === st && t._key && /^stat_\d+$/.test(t._key) && t.style.display !== 'none');
+      const c = document.createElement('canvas').getContext('2d'); c.font = '700 17px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif';
+      const need = Math.max(...E.TOOLS.map(t => c.measureText(t[1]).width));
+      return { w: ts.length ? Math.min(...ts.map(t => parseFloat(t.style.width))) : 0, need }; });
+    if (!(wide.w >= wide.need)) failures.push(`[${current}] tool tiles ${wide.w}px wide for names needing ${wide.need.toFixed(0)}px`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
