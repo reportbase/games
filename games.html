@@ -32939,10 +32939,21 @@ const GOLF_APP = (() => {
     }
     return h;
   }
+  /* THE GREEN SITS IN THE GROUND (Oct 8: "why does the select edit option raise golf hole off the ground, could it not
+     be below the ground?"). The ground round the cup is made flat so a ball can rest by it, and that flat used to be laid
+     at the height under the cup's centre: with the cup at the edge of a plateau, or on a slope a hill was raised beside,
+     it stood as a pad above the ground around it. Now it is laid at the lowest ground round the green's rim, so the cup
+     sits level with the ground or in a shallow dish below it, never on a pedestal. */
+  function cupLevel(H){
+    if (H.hc != null) return H.hc;
+    const { x, y } = H.cup; let m = rawH(H, x, y);
+    for (let q = 0; q < 12; q++) m = Math.min(m, rawH(H, x + 0.05 * Math.cos(q * Math.PI / 6), y + 0.05 * Math.sin(q * Math.PI / 6)));
+    return (H.hc = m);
+  }
   function hOf(H, x, y){
     const h = rawH(H, x, y), d = Math.hypot(x - H.cup.x, y - H.cup.y), R1 = 0.05, R2 = 0.11;
     if (d >= R2) return Math.max(0.004, h);
-    const hc = H.hc != null ? H.hc : (H.hc = rawH(H, H.cup.x, H.cup.y));
+    const hc = cupLevel(H);
     const f = d <= R1 ? 0 : (d - R1) / (R2 - R1), e = f * f * (3 - 2 * f);
     return Math.max(0.004, hc + (h - hc) * e);
   }
