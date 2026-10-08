@@ -4009,6 +4009,14 @@ function turnEnd(e){
     if (turn.tilted){ try { _saveTilt(); } catch {} }
     turn.tilted = false; turn.turned = false;
     if (!_did){
+      /* HOLD AND LET GO ON ANOTHER BOARD SELECTS IT (Oct 8: "long press should select the board, it still does not
+         work"). A hold used to do one thing wherever it landed, the selected board's hold or the drawer, so holding a
+         board you were not on did nothing to it. Now a hold and let go on a board other than the selected one goes to it,
+         exactly as a tap would; on the selected board it keeps its old job. */
+      try {
+        const _h = raycastGround(turn.anchorX, turn.anchorY), _f = framedCell(), _w = _h && window.FIELD_WORLD.cellAt(_h.x, _h.z);
+        if (_w && (!_f || _w.c !== _f.c || _w.r !== _f.r) && _hooks.onClickGround){ turn.holdAt = null; _hooks.onClickGround(_h, e); return; }
+      } catch {}
       // Hold and let go: the app's hold if it wants it, the drawer if not.
       let _took = false;
       try {
@@ -13018,7 +13026,12 @@ function layoutBoardBrowser(){
      eleven indices whether N is ten or a hundred thousand. Nothing here
      iterates the collection. */
   const best = {};
-  if (n === 1) best[0] = 0;                            // the fisheye degenerates at N=1
+  /* WHEN EVERY TILE FITS, NO FISHEYE (Oct 8: "if all subpanels can fit on the bottom panel dont use fisheye and center
+     them. this applies to all applications."). The lens is for a row longer than the screen; laid out on it, a short row
+     (mini golf's four numbers on a phone) still wrapped round the ring, so one tile sat off the edge and the rest were
+     pushed aside from the middle. Now a row that fits stands in one even line, in order, centred, and does not turn. */
+  const _flat = n * BB_ITEM_W <= W;
+  if (n === 1 || _flat){ for (let i = 0; i < n; i++) best[i] = (i - (n - 1) / 2) * BB_ITEM_W; }
   else {
     const virtualWidth = bbVirtualWidth();
     const buffer = 2 * BB_ITEM_W;
