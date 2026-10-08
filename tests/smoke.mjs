@@ -314,24 +314,23 @@ try {
     if (r.corner !== '.' || r.mid !== '~') failures.push(`[${current}] the island's moat: corner ${r.corner}, middle ${r.mid} (wanted grass at the rounded corner, water in the middle)`);
     if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the boulders' bunker: corner ${r.sandCorner}, middle ${r.sandMid}`);
     if (r.skate.length < 4) failures.push(`[${current}] skate-park holes: ${r.skate.join(', ')}`);
-    // bushes, not trees (Oct 8): groomed and wild ones drawn, ten styles, no tree left, and an old tree read as a bush
-    const bu = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, G = A.itemGeometries, THREE = window.FIELD_WORLD.THREE;
-      const kinds = new Set(), styles = new Set();
-      D.HOLES.forEach(H => (H.toys || []).forEach(T => { if (T.bush) styles.add(T.bush[3]); }));
-      const k = D.HOLES.findIndex(H => H.name === 'the hedges');
+    // fences, not bushes (Oct 8): every hole one of wood, stone or brick, all three used, fences drawn in their hole's
+    // material, walls and rail too; and every cup clear of the rail by a quarter of its width
+    const fe = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, P = { RT: D.CW * 0.2, R: 0.042 };
+      const mats = D.HOLES.map(H => H.fence), left = D.HOLES.filter(H => (H.toys || []).some(T => T.bush || T.tree)).map(H => H.name);
+      const k = D.HOLES.findIndex(H => H.name === 'the fences');
       let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
-      D.cellItems(c, r).forEach(i => { if (/^bush\d$/.test(i.kind)) kinds.add(i.kind); });
-      const geo = Array.from({ length: 10 }, (_, n) => G['bush' + n](THREE)).map(g => { g.computeBoundingBox(); const P = g.attributes.position.array; let w = 0;
-        for (let i = 0; i < P.length; i += 3) w = Math.max(w, Math.hypot(P[i], P[i + 2]));     // fitted: the footprint's radius is 1
-        return { v: g.attributes.position.count, w, y0: g.boundingBox.min.y }; });
-      const old = D.editor.cleanSrc({ map: Array(13).fill('........'), toys: [{ tree: [2, 3, 0.26] }] });
-      return { trees: D.HOLES.some(H => (H.toys || []).some(T => T.tree)), kinds: [...kinds], styles: [...styles].sort(), geo, oldOk: !!old };
+      const kinds = [...new Set(D.cellItems(c, r).map(i => i.kind))], m = D.HOLES[k].fence;
+      const close = D.HOLES.filter(H => { const g = P.RT + P.R * 1.5 - 1e-9; return H.cup.x < g || H.cup.y < g || H.cup.x > D.WD - g || H.cup.y > 1 - g; }).map(H => H.name);
+      const old = D.editor.cleanSrc({ map: Array(13).fill('........'), toys: [{ tree: [2, 3, 0.26] }, { bush: [4, 6, 0.4] }] });
+      return { mats, left, kinds, m, close, oldToys: old && old.toys.length };
     });
-    if (bu.trees) failures.push(`[${current}] a tree is left on the course`);
-    if (!bu.kinds.some(k => +k.slice(4) <= 5) || !bu.kinds.some(k => +k.slice(4) >= 6)) failures.push(`[${current}] the hedges hole draws ${bu.kinds.join(',')}: wanted groomed and wild bushes`);
-    if (bu.styles.length < 8) failures.push(`[${current}] the course uses ${bu.styles.length} bush styles`);
-    if (bu.geo.some(g => g.v < 100 || Math.abs(g.w - 1) > 0.02 || g.y0 < -1e-6)) failures.push(`[${current}] a bush geometry is off: ${JSON.stringify(bu.geo)}`);
+    if (fe.left.length) failures.push(`[${current}] bushes or trees left on ${fe.left.join(', ')}`);
+    if (!fe.mats.every(m => ['wood', 'stone', 'brick'].includes(m)) || new Set(fe.mats).size !== 3) failures.push(`[${current}] the holes' materials: ${fe.mats.join(',')}`);
+    if (!['fence_', 'wall_', 'railV_', 'railH_'].every(p => fe.kinds.includes(p + fe.m)) && !['fence_', 'railV_', 'railH_'].every(p => fe.kinds.includes(p + fe.m))) failures.push(`[${current}] the fences hole (${fe.m}) draws ${fe.kinds.join(',')}`);
+    if (fe.close.length) failures.push(`[${current}] cups against the rail: ${fe.close.join(', ')}`);
+    if (fe.oldToys !== 2) failures.push(`[${current}] an old link's tree and bush were dropped`);
   }
   console.log(`${failures.length === before8 ? 'ok  ' : 'FAIL'} ${current}`);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
@@ -341,11 +340,29 @@ try {
   const before9 = failures.length;
   {
     await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); A.onCellTap(f.c, f.r); });
-    const st0 = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; const n = window.getFieldApp()._debug.HOLES.length; const ok = E.editStart(null);
-      const bar = document.getElementById('golfEditBar'); return { ok, n, k: E.ED.k, bar: !!bar && !bar.hidden, tools: bar ? bar.querySelectorAll('[data-tool]').length : 0 }; });
-    if (!st0.ok || !st0.bar || st0.tools < 12 || st0.k !== st0.n) failures.push(`[${current}] editStart: ${JSON.stringify(st0)}`);
-    // choose Wall on the bar, then drag across the middle of the hole with the mouse
-    await page.click('#golfEditBar [data-tool="#"]');
+    const st0 = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const n = A._debug.HOLES.length, ok = E.editStart(null), tiles = A.statTiles(f.c, f.r) || [];
+      return { ok, n, k: E.ED.k, tiles: tiles.length, want: 1 + E.TOOLS.length + E.ACTS.length, own: !!document.getElementById('golfEditBar') }; });
+    if (!st0.ok || st0.tiles !== st0.want || st0.k !== st0.n || st0.own) failures.push(`[${current}] editStart: ${JSON.stringify(st0)}`);
+    // the editor's tools are the bottom panel's tiles: click one that is in view and it is taken up
+    const findTile = () => { const st = document.getElementById('boardBrowser'), E = window.getFieldApp()._debug.editor;
+      if (!st || st.hidden) return null;
+      const ts = [...st.querySelectorAll('*')].filter(t => t.parentElement === st && t._key && /^stat_\d+$/.test(t._key) && t.style.display !== 'none').map(t => ({ i: +t._key.slice(5), r: t.getBoundingClientRect() }))
+        .filter(t => t.i >= 1 && t.i <= E.TOOLS.length && t.r.width > 10 && t.r.left > 0 && t.r.right < innerWidth && t.r.top > 0 && t.r.bottom < innerHeight);
+      const t = ts[0]; return t ? { i: t.i, x: t.r.left + t.r.width / 2, y: t.r.top + t.r.height / 2, tool: E.TOOLS[t.i - 1][0] } : null; };
+    await page.waitForFunction(findTile, null, { timeout: 10000, polling: 200 }).catch(() => {});   // (the row slides up when it opens)
+    await page.waitForTimeout(400);
+    const tile = await page.evaluate(findTile);
+    const why = tile ? null : await page.evaluate(() => { const st = document.getElementById('boardBrowser'); return st ? { hidden: st.hidden, rect: st.getBoundingClientRect().toJSON(), keys: [...st.children].filter(t => t._key).map(t => t._key + ':' + t.style.display).slice(0, 12) } : 'no strip'; });
+    if (!tile) failures.push(`[${current}] no tool tile in view on the bottom panel: ${JSON.stringify(why)}`);
+    else {
+      await page.mouse.click(tile.x, tile.y); await page.waitForTimeout(300);
+      const inHand = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.tool);
+      if (inHand !== tile.tool) failures.push(`[${current}] clicking the ${tile.tool} tile left ${inHand} in hand`);
+    }
+    // the row stays up while painting; take up Wall (by its tile) and drag across the middle of the hole with the mouse
+    await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(t => t[0] === '#')); });
     const P = await page.evaluate(() => {
       const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, bWX = bW * L.cellW;
       const S = dx => { const v = new W.THREE.Vector3(T.boardX + dx * bWX, 0.05, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; };
@@ -379,11 +396,20 @@ try {
     if (st2.stored < 1) failures.push(`[${current}] Save kept nothing`);
     if (!st2.same) failures.push(`[${current}] the share link does not carry the hole back`);
     if (!st2.evil || st2.evil.par !== 9 || st2.evil.toys !== 0 || st2.evil.land !== 0 || !st2.evil.rows || st2.evil.T !== 1 || st2.evil.O !== 1) failures.push(`[${current}] a bad link was not cleaned: ${JSON.stringify(st2.evil)}`);
-    // Done: the bar goes and the hole is played
-    await page.click('#golfEditBar [data-act="done"]');
-    const st3 = await page.evaluate(() => { const D = window.getFieldApp()._debug, E = D.editor, bar = document.getElementById('golfEditBar');
-      const g = [...D.games.values()].find(g => g.hole === E.ED.k); return { on: E.ED.on, hidden: !bar || bar.hidden, state: g && g.state, single: g && g.R.single }; });
-    if (st3.on || !st3.hidden || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
+    // a fence by two taps, and Material: the hole is rebuilt in stone
+    const st2b = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      ED.tool = 'fence'; A.onCellTap(f.c, f.r, 0.2, 0.6); A.onCellTap(f.c, f.r, 0.6, 0.62);
+      const fences = ED.src.toys.filter(T => T.fence).length, m0 = ED.src.fence;
+      A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'mat'));
+      const kinds = D.cellItems(f.c, f.r).map(i => i.kind);
+      return { fences, m0, m1: ED.src.fence, stoneWall: kinds.some(k => /_stone$/.test(k)), stays: A.statsStay() }; });
+    if (st2b.fences !== 1 || st2b.m0 !== 'wood' || st2b.m1 !== 'stone' || !st2b.stoneWall || !st2b.stays) failures.push(`[${current}] fence and material: ${JSON.stringify(st2b)}`);
+    // Done (its tile): the editor's tiles go and the hole is played
+    await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
+    const st3 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const g = [...D.games.values()].find(g => g.hole === E.ED.k), t = A.statTiles(f.c, f.r) || []; return { on: E.ED.on, first: t[0] && t[0].label, state: g && g.state, single: g && g.R.single }; });
+    if (st3.on || st3.first !== 'Hole' || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
     // the share link opens the page on the hole
     await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
