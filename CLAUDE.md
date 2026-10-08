@@ -51,9 +51,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   by WD at the end, because items are laid out across the board's width. `HOLES` are
   maps of 13 rows of 8, every cell in play (the board's edge is the wall, drawn as a
   thin rail `RT` inside it), with toys given in cells: bumpers (`kick`), boulders (`rock`)
-  and bushes (`bush`, Oct 8: ten styles grown in the page by `bushGeo`, 0–5 groomed and
-  6–9 wild; an old `tree` becomes a bush) the ball bounces off, pipes (`pipe`) that carry it to their other
-  mouth, bridges (`=`) over water, plus the windmills. The ground (`land`, read by
+  and fences (`fence [c0, r0, c1, r1]`, a low wall along a line) the ball bounces off, pipes
+  (`pipe`) that carry it to their other mouth, bridges (`=`) over water, plus the windmills.
+  Each hole is built of one material (`fence: 'wood' | 'stone' | 'brick'`, the course's in
+  turn): its fences, walls and rail are clad in it (`cladGeo`, `picketGeo`, Oct 8). An old
+  `tree` or `bush` (saved or shared holes) is read as a short fence. The cup is kept clear
+  of the rail by a quarter of its width (`compileHole`, `CUP_R_MAX`). The ground (`land`, read by
   `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
   (negative ones are gullies), two or more per hole, and the skate park's bowls and
   pipes (Oct 8: the half-pipe, the bowl, the mega ramp, the skate park); water lies
@@ -64,7 +67,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   of the ground and sinking), each drawn over a dotted track. The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
 - **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
-  edits a hole as written, in cells (`ED.src`); the course's own holes are kept as
+  puts its tools in the bottom panel: while editing, `statTiles` gives the editor's tiles
+  and a tap on a tile reaches the app's `onStatTap` (the field offers stat-tile taps to any
+  app that has it); `statsStay` keeps the row up while the hole is painted. It edits a hole as written, in cells (`ED.src`); the course's own holes are kept as
   written in `HOLE_SRC` and compiled by `compileHole`. Editor holes come after the
   course's in `HOLES` (index `BUILT` and on), are rebuilt after each stroke (`setHole`,
   which drops the old meshes with the field's `fieldDropItemKind`), and are played as

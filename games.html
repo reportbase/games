@@ -13355,6 +13355,7 @@ function bbPaintStat(ico, s, S){
    are left as they are. */
 function bbStatsAway(){
   if (!bbVisible || !bbKeys.length || !String(bbKeys[0]).startsWith('stat_')) return;
+  try { const _a = window.getFieldApp && window.getFieldApp(); if (_a && _a.statsStay && _a.statsStay()) return; } catch {}   // (an editor's tools stay up)
   toggleBoardBrowser(false);
 }
 function bbStatTick(){
@@ -13369,6 +13370,8 @@ function bbStatTick(){
      there are statistics to show). Only on that arrival: shut by hand, it stays shut while you play. */
   const had = _bbStatHad; _bbStatHad = !!L;
   if (L && !had){ toggleBoardBrowser(true); return; }
+  // a row the app needs up (the hole editor's tools) is put back up whatever shut it
+  try { if (L && !bbVisible && a.statsStay && a.statsStay()){ toggleBoardBrowser(true); return; } } catch {}
   if (sig !== _bbStatSig){ rebuildBoardBrowser(); return; }
   if (!L) return;
   const S = bbIcoSize();
@@ -13885,6 +13888,13 @@ function bbAttachTile(tile){
     // "show me the next move". Tapping the same tile over and over walks a
     // finished game from its first move to its last, which is the whole
     // gesture: one small target, no controls to find, the game plays out.
+    /* A STATISTICS TILE CAN BE A BUTTON (Oct 8, mini golf's hole editor: its tools are the row's tiles). A tap on one is
+       offered to the app, onStatTap(c, r, index); an app without it leaves the numbers read-only, as before. */
+    if (key.startsWith('stat_')){
+      try { const _a = window.getFieldApp && window.getFieldApp(), _f = bbFramedCell();
+        if (_a && _a.onStatTap){ _a.onStatTap(_f && _f.c, _f && _f.r, +key.slice(5)); _bbStatT = 0; bbStatTick(); } } catch (e){ _reportError('stat tap', e); }
+      return;
+    }
     if (key.startsWith('ply_')){
       /* Go to that move — AND to that board. The camera used to stay put on
          the grounds that you were already there, which is true while you are
@@ -32688,6 +32698,9 @@ const GOLF_APP = (() => {
   // thirteenth of the board on every side and two on some, so the green was 6 × 11 in an 8 × 13 board. Now every cell is
   // the hole's and the board's edge is the wall, drawn as a rail RT thick standing just inside it.
   const RT = CW * 0.2;
+  const CUP_R_MAX = 0.042;                                  // the widest cup (easy), for keeping it clear of the rail
+  const FENCE_MATS = ['wood', 'stone', 'brick'];
+  const FENCE_T = CW * 0.12;                                // a fence's half thickness
   // THE GOLDEN COURSE (Oct 7: "improve the golf holes with new 3d objects to affect game play. the golf holes should be sized
   // as the golden rectangle, with shorter side on the bottom for better mobile device game play."). Every hole is 8 cells
   // across by 13 deep, two Fibonacci numbers, 0.615 to φ's 0.618: an upright board that fills a phone held upright, the
@@ -32698,10 +32711,11 @@ const GOLF_APP = (() => {
   // (Since the rail, every map's cells are all in play: the old holes' inner 6 × 11 stretched over the 8 × 13, and touched up.)
   // Written in CELLS: map rows of 8; toy and land positions as (column, row) from the far-left corner, radii in cells
   // (converted to the board's own units below).
+  // fence: what the hole's fences, walls and rail are built of, 'wood', 'stone' or 'brick' (Oct 8)
   // '#' wall · '.' grass · 'T' tee · 'O' cup · 's' sand · '~' water · '=' a plank bridge over water.
   // land: bump [col, row, radius, height] · tilt [rise per board across, down] · step [dx, dy, at (cells), width (cells), height]
   // toys: mill [col, row, arm, turns a second] · slide [c0, r0, c1, r1, width, depth, seconds there and back] · kick [col, row, r]
-  //       rock [col, row, r] · bush [col, row, r, style 0–9: 0–5 groomed, 6–9 wild] · pipe [col in, row in, col out, row out, out heading (° from →, 90 is ↓), r]
+  //       rock [col, row, r] · fence [c0, r0, c1, r1], a low wall along a line · pipe [col in, row in, col out, row out, out heading (° from →, 90 is ↓), r]
   // the movers (Oct 8): shuttle [c0, r0, c1, r1, r, seconds] a bumper riding to and fro · orbit [col, row, radius, r, seconds
   //       (less than nothing the other way), phase] a boulder going round · gate [c0, r0, c1, r1, seconds, phase] a bar that
   //       rises out of the ground across the way and sinks again
@@ -32709,70 +32723,70 @@ const GOLF_APP = (() => {
   //       hump along a line, or a gully when the height is less than nothing; a bump of negative height is a hollow
   // skate park (Oct 8): bowl [col, row, radius, lip height] · pipe [c0, r0, c1, r1, width, lip height], a half-pipe
   const HOLES = [
-    { name: 'the windmill', par: 2, land: [{ bump: [4, 9.45, 1.72, 0.02] }, { wave: [0.012, 4.5, 90, 0] }, { bump: [1.5, 3, 1.5, -0.025] }, { bump: [6.5, 3.5, 1.5, 0.03] }],
+    { name: 'the windmill', par: 2, fence: 'wood', land: [{ bump: [4, 9.45, 1.72, 0.02] }, { wave: [0.012, 4.5, 90, 0] }, { bump: [1.5, 3, 1.5, -0.025] }, { bump: [6.5, 3.5, 1.5, 0.03] }],
       toys: [{ mill: [4, 6.5, 1.84, 1.2] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the garden', par: 3, land: [{ bump: [4, 6.5, 2.88, 0.03] }, { ridge: [0, 11, 8, 8, 1.2, 0.025] }, { bump: [5, 2, 1.6, -0.03] }],
-      toys: [{ bush: [1.87, 2.84, 0.5, 6] }, { bush: [6.13, 4.25, 0.4, 1] }, { bush: [3.47, 6.85, 0.55, 8] }, { bush: [1.33, 9.69, 0.38, 0] }, { bush: [6.4, 9.22, 0.45, 7] }],
+    { name: 'the garden', par: 3, fence: 'stone', land: [{ bump: [4, 6.5, 2.88, 0.03] }, { ridge: [0, 11, 8, 8, 1.2, 0.025] }, { bump: [5, 2, 1.6, -0.03] }],
+      toys: [{ fence: [1.18, 2.44, 2.56, 3.24] }, { fence: [5.68, 3.8, 6.58, 4.7] }, { fence: [3.03, 6.09, 3.91, 7.61] }, { fence: [0.72, 9.69, 1.94, 9.69] }, { fence: [5.78, 9.58, 7.02, 8.86] }],
       map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
-    { name: 'the boulders', par: 3, land: [{ tilt: [0.03, 0] }, { wave: [0.01, 3.5, 30, 1] }, { bump: [6, 10, 1.8, 0.035] }],
+    { name: 'the boulders', par: 3, fence: 'brick', land: [{ tilt: [0.03, 0] }, { wave: [0.01, 3.5, 30, 1] }, { bump: [6, 10, 1.8, 0.035] }],
       toys: [{ orbit: [4, 2.6, 1.2, 0.5, 6, 0] }, { rock: [1.87, 6.15, 0.71] }, { rock: [6.13, 4.73, 0.55] }, { rock: [2.93, 9.93, 0.57] }],
       map: ['.......O', '........', '.sss....', '.sss....', '.sss....', '........', '........', '....sss.', '....sss.', '........', '........', '........', '..T.....'] },
-    { name: 'the pipe', par: 2, land: [{ bump: [4, 10.5, 2.5, 0.03] }, { bump: [4, 1.5, 2.2, 0.025] }, { wave: [0.008, 3, 0, 0] }],
-      toys: [{ shuttle: [1.2, 10.8, 5.2, 10.8, 0.3, 3.2] }, { pipe: [6, 9.69, 2, 2.36, -90, 0.45] }, { bush: [0.8, 10.16, 0.4, 9] }],
+    { name: 'the pipe', par: 2, fence: 'wood', land: [{ bump: [4, 10.5, 2.5, 0.03] }, { bump: [4, 1.5, 2.2, 0.025] }, { wave: [0.008, 3, 0, 0] }],
+      toys: [{ shuttle: [1.2, 10.8, 5.2, 10.8, 0.3, 3.2] }, { pipe: [6, 9.69, 2, 2.36, -90, 0.45] }, { fence: [0.48, 10.71, 1.12, 9.61] }],
       map: ['...O....', '........', '........', '........', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '........', '........', '........', '........', '...T....'] },
-    { name: 'the bridge', par: 3, land: [{ bump: [6, 1.77, 1.72, 0.03] }, { ridge: [0, 9.5, 8, 9.5, 1, 0.03] }, { bump: [1.5, 2.5, 1.5, -0.025] }],
+    { name: 'the bridge', par: 3, fence: 'stone', land: [{ bump: [6, 1.77, 1.72, 0.03] }, { ridge: [0, 9.5, 8, 9.5, 1, 0.03] }, { bump: [1.5, 2.5, 1.5, -0.025] }],
       toys: [{ gate: [3, 4.5, 6, 4.5, 3, 0] }, { kick: [2, 8.51, 0.32] }, { rock: [6.67, 8.98, 0.52] }],
       map: ['......O.', '........', '........', '........', '........', '~~~~=~~~', '~~~~=~~~', '........', '........', '........', '........', '........', '..T.....'] },
-    { name: 'the dogleg', par: 3, land: [{ tilt: [0, 0.04] }, { ridge: [5, 0, 8, 4, 1.2, 0.035] }, { bump: [2, 1.5, 1.5, -0.02] }],
-      toys: [{ bush: [5.2, 2.25, 0.45, 3] }, { rock: [0.53, 1.89, 0.46] }],
+    { name: 'the dogleg', par: 3, fence: 'brick', land: [{ tilt: [0, 0.04] }, { ridge: [5, 0, 8, 4, 1.2, 0.035] }, { bump: [2, 1.5, 1.5, -0.02] }],
+      toys: [{ fence: [4.69, 2.76, 5.71, 1.74] }, { rock: [0.53, 1.89, 0.46] }],
       map: ['..O.....', '........', '........', '........', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####.T.'] },
-    { name: 'the bumpers', par: 3, land: [{ bump: [4, 6, 2.5, 0.04] }, { bump: [1.5, 10.5, 1.5, -0.025] }, { bump: [6.5, 10.5, 1.5, -0.025] }],
+    { name: 'the bumpers', par: 3, fence: 'wood', land: [{ bump: [4, 6, 2.5, 0.04] }, { bump: [1.5, 10.5, 1.5, -0.025] }, { bump: [6.5, 10.5, 1.5, -0.025] }],
       toys: [{ kick: [2, 3.55, 0.32] }, { kick: [6, 3.55, 0.32] }, { shuttle: [1.5, 5.91, 6.5, 5.91, 0.32, 3.6] }, { kick: [2, 8.27, 0.32] }, { kick: [6, 8.27, 0.32] }, { kick: [4, 2.13, 0.28] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the switchback', par: 4, land: [{ step: [0, -1, -6.5, 0.4, 0.04] }, { wave: [0.008, 3, 0, 0.5] }],
+    { name: 'the switchback', par: 4, fence: 'stone', land: [{ step: [0, -1, -6.5, 0.4, 0.04] }, { wave: [0.008, 3, 0, 0.5] }],
       toys: [{ kick: [6.93, 7.8, 0.3] }],
       map: ['O.......', '........', '#####...', '........', '........', '........', '...#####', '........', '........', '........', '#####...', '........', '..T.....'] },
-    { name: 'the island', par: 3, land: [{ bump: [4, 9.5, 2.5, 0.03] }, { wave: [0.008, 3, 60, 0] }],
-      toys: [{ mill: [4, 7.33, 1.38, 1.4] }, { bush: [0.67, 1.18, 0.35, 1] }, { bush: [7.33, 1.18, 0.35, 1] }],
+    { name: 'the island', par: 3, fence: 'brick', land: [{ bump: [4, 9.5, 2.5, 0.03] }, { wave: [0.008, 3, 60, 0] }],
+      toys: [{ mill: [4, 7.33, 1.38, 1.4] }, { fence: [0.35, 0.76, 1.09, 1.6] }, { fence: [6.91, 0.76, 7.65, 1.6] }],
       map: ['........', '.~~~~~~.', '.~~O.~~.', '.~~..~~.', '.~~..~~.', '.~~==~~.', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the volcano', par: 3, land: [{ bump: [4.67, 4.14, 2.64, 0.1] }, { wave: [0.008, 2.5, 45, 0] }],
+    { name: 'the volcano', par: 3, fence: 'wood', land: [{ bump: [4.67, 4.14, 2.64, 0.1] }, { wave: [0.008, 2.5, 45, 0] }],
       toys: [{ orbit: [4.67, 4.14, 1.9, 0.4, 6, 0] }, { orbit: [4.67, 4.14, 1.9, 0.4, 6, 3.14] }, { rock: [1.87, 7.33, 0.48] }, { rock: [6.93, 7.8, 0.48] }, { rock: [4.8, 8.75, 0.41] }],
       map: ['........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the gauntlet', par: 3, land: [{ ridge: [4, 0.5, 4, 12.5, 1.6, -0.035] }, { bump: [0.8, 6.3, 1.4, 0.03] }, { bump: [7.2, 6.3, 1.4, 0.03] }],
+    { name: 'the gauntlet', par: 3, fence: 'stone', land: [{ ridge: [4, 0.5, 4, 12.5, 1.6, -0.035] }, { bump: [0.8, 6.3, 1.4, 0.03] }, { bump: [7.2, 6.3, 1.4, 0.03] }],
       toys: [{ mill: [4, 3.78, 1.72, 1.6] }, { mill: [4, 8.75, 1.72, -1.3] }],
       map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the hedges', par: 4, land: [{ bump: [4, 6.5, 3.45, 0.02] }, { wave: [0.012, 3.5, 90, 0.8] }],
-      toys: [{ bush: [0.8, 2.95, 0.45, 2] }, { bush: [2.13, 2.95, 0.45, 2] }, { bush: [3.47, 2.95, 0.45, 2] }, { bush: [4.8, 2.95, 0.45, 2] }, { bush: [3.2, 6.5, 0.42, 0] }, { bush: [4.53, 6.5, 0.42, 4] }, { bush: [5.87, 6.5, 0.42, 0] }, { bush: [7.2, 6.5, 0.42, 4] }, { bush: [0.8, 10.05, 0.45, 6] }, { bush: [2.13, 10.05, 0.45, 7] }, { bush: [3.47, 10.05, 0.45, 8] }, { bush: [4.8, 10.05, 0.45, 9] }],
+    { name: 'the fences', par: 4, fence: 'brick', land: [{ bump: [4, 6.5, 3.45, 0.02] }, { wave: [0.012, 3.5, 90, 0.8] }],
+      toys: [{ fence: [0.8, 2.23, 0.8, 3.67] }, { fence: [2.13, 2.23, 2.13, 3.67] }, { fence: [3.47, 2.23, 3.47, 3.67] }, { fence: [4.8, 2.23, 4.8, 3.67] }, { fence: [2.53, 6.5, 3.87, 6.5] }, { fence: [3.86, 6.5, 5.2, 6.5] }, { fence: [5.2, 6.5, 6.54, 6.5] }, { fence: [6.53, 6.5, 7.65, 6.5] }, { fence: [0.35, 9.69, 1.42, 10.41] }, { fence: [1.51, 10.41, 2.75, 9.69] }, { fence: [3.11, 9.43, 3.83, 10.67] }, { fence: [4.44, 10.67, 5.16, 9.43] }],
       map: ['O.......', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '.......T'] },
-    { name: 'the canyon', par: 3, land: [{ tilt: [0, -0.02] }, { step: [0, 1, 7.2, 0.5, -0.03] }, { bump: [1.5, 10.5, 1.4, 0.03] }],
+    { name: 'the canyon', par: 3, fence: 'wood', land: [{ tilt: [0, -0.02] }, { step: [0, 1, 7.2, 0.5, -0.03] }, { bump: [1.5, 10.5, 1.4, 0.03] }],
       toys: [{ slide: [3.27, 4.14, 4.73, 4.14, 1.03, 0.4, 2.4] }, { rock: [1.33, 7.8, 0.46] }],
       map: ['##.O..##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '........', '........', 'sss.....', 'sss.....', 'sss.....', '......T.'] },
-    { name: 'the pipes', par: 3, land: [{ bump: [2, 8, 1.8, 0.035] }, { bump: [5.5, 10, 1.6, -0.025] }, { wave: [0.008, 3, 120, 0] }],
+    { name: 'the pipes', par: 3, fence: 'stone', land: [{ bump: [2, 8, 1.8, 0.035] }, { bump: [5.5, 10, 1.6, -0.025] }, { wave: [0.008, 3, 120, 0] }],
       toys: [{ pipe: [1.33, 5.91, 0.8, 1.18, 0, 0.45] }, { pipe: [6.67, 5.91, 6.67, 11.11, 90, 0.45] }, { shuttle: [1.5, 8.27, 6.5, 8.27, 0.3, 2.8] }],
       map: ['...O....', '........', '########', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the moat', par: 3, land: [{ bump: [4, 9.5, 2.5, 0.035] }, { bump: [4, 3.5, 1.2, -0.02] }],
-      toys: [{ gate: [3, 7.4, 6, 7.4, 3.2, 0.5] }, { bush: [0.67, 9.45, 0.4, 8] }, { bush: [7.33, 9.93, 0.45, 6] }, { kick: [7.2, 0.47, 0.26] }],
+    { name: 'the moat', par: 3, fence: 'brick', land: [{ bump: [4, 9.5, 2.5, 0.035] }, { bump: [4, 3.5, 1.2, -0.02] }],
+      toys: [{ gate: [3, 7.4, 6, 7.4, 3.2, 0.5] }, { fence: [0.35, 8.9, 0.99, 10] }, { fence: [6.71, 9.57, 7.65, 10.29] }, { kick: [7.2, 0.47, 0.26] }],
       map: ['........', '.######.', '.#.O..#.', '.#....#.', '.#....#.', '.###.##.', '~~~~=~~~', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the snake', par: 5, land: [{ wave: [0.01, 4, 0, 0] }, { tilt: [0, -0.02] }, { bump: [5.5, 7.5, 1.4, 0.03] }],
-      toys: [{ rock: [3.33, 5.32, 0.4] }, { bush: [3.33, 10.05, 0.35, 5] }],
+    { name: 'the snake', par: 5, fence: 'wood', land: [{ wave: [0.01, 4, 0, 0] }, { tilt: [0, -0.02] }, { bump: [5.5, 7.5, 1.4, 0.03] }],
+      toys: [{ rock: [3.33, 5.32, 0.4] }, { fence: [3.33, 9.45, 3.33, 10.65] }],
       map: ['O.......', '#######.', '........', '........', '.#######', '........', '#######.', '........', '.#######', '........', '........', '#######.', 'T.......'] },
-    { name: 'the hill', par: 3, land: [{ bump: [4, 6.5, 3.45, 0.12] }, { ridge: [0, 9, 8, 11, 0.8, 0.02] }],
-      toys: [{ orbit: [4, 6.5, 2.2, 0.42, -7, 0] }, { mill: [4.67, 2.95, 1.49, 1.5] }, { bush: [0.8, 5.91, 0.4, 0] }, { bush: [7.2, 5.91, 0.4, 0] }],
+    { name: 'the hill', par: 3, fence: 'stone', land: [{ bump: [4, 6.5, 3.45, 0.12] }, { ridge: [0, 9, 8, 11, 0.8, 0.02] }],
+      toys: [{ orbit: [4, 6.5, 2.2, 0.42, -7, 0] }, { mill: [4.67, 2.95, 1.49, 1.5] }, { fence: [0.35, 5.91, 1.44, 5.91] }, { fence: [6.56, 5.91, 7.65, 5.91] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the finale', par: 4, land: [{ bump: [1.33, 1.18, 1.72, 0.03] }, { wave: [0.01, 3.5, 100, 0] }, { bump: [4, 6.8, 1.6, -0.03] }],
-      toys: [{ shuttle: [1.5, 2.5, 6.5, 2.5, 0.3, 2.8] }, { mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { bush: [0.67, 10.64, 0.4, 3] }, { rock: [7.07, 10.87, 0.46] }],
+    { name: 'the finale', par: 4, fence: 'brick', land: [{ bump: [1.33, 1.18, 1.72, 0.03] }, { wave: [0.01, 3.5, 100, 0] }, { bump: [4, 6.8, 1.6, -0.03] }],
+      toys: [{ shuttle: [1.5, 2.5, 6.5, 2.5, 0.3, 2.8] }, { mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { fence: [0.35, 11.09, 1.12, 10.19] }, { rock: [7.07, 10.87, 0.46] }],
       map: ['..O.....', '........', '........', '........', '~~~=~~~~', '........', '........', '........', '###..###', '........', '........', '........', '......T.'] },
-    { name: 'the half-pipe', par: 3, land: [{ pipe: [4, -1, 4, 14, 8, 0.16] }, { ridge: [4, 5, 4, 8.5, 1, 0.05] }],
+    { name: 'the half-pipe', par: 3, fence: 'wood', land: [{ pipe: [4, -1, 4, 14, 8, 0.16] }, { ridge: [4, 5, 4, 8.5, 1, 0.05] }],
       toys: [{ gate: [1.2, 3.5, 3.4, 3.5, 3.4, 0] }],
       map: ['........', '.O......', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
-    { name: 'the bowl', par: 3, land: [{ bowl: [4, 5, 3.2, 0.17] }, { bowl: [5.5, 10.5, 1.5, 0.08] }],
+    { name: 'the bowl', par: 3, fence: 'stone', land: [{ bowl: [4, 5, 3.2, 0.17] }, { bowl: [5.5, 10.5, 1.5, 0.08] }],
       toys: [{ orbit: [4, 5, 2.3, 0.38, 7, 0] }],
       map: ['ss......', 's.......', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '.......s', '.T....ss'] },
-    { name: 'the mega ramp', par: 4, land: [{ step: [0, -1, -9.5, 0.9, 0.18] }, { step: [0, -1, -4, 0.6, -0.16] }, { pipe: [4, -1, 4, 14, 8, 0.07] }],
+    { name: 'the mega ramp', par: 4, fence: 'brick', land: [{ step: [0, -1, -9.5, 0.9, 0.18] }, { step: [0, -1, -4, 0.6, -0.16] }, { pipe: [4, -1, 4, 14, 8, 0.07] }],
       toys: [{ shuttle: [1.5, 6.5, 6.5, 6.5, 0.3, 3] }],
       map: ['........', '.~~...O.', '.~~.....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the skate park', par: 4, land: [{ pipe: [4, -1, 4, 14, 8, 0.12] }, { bowl: [2.5, 2.6, 1.8, 0.12] }, { ridge: [1.5, 7, 6.5, 7, 0.9, 0.09] }, { bump: [6, 10, 0.8, 0.06] }],
+    { name: 'the skate park', par: 4, fence: 'wood', land: [{ pipe: [4, -1, 4, 14, 8, 0.12] }, { bowl: [2.5, 2.6, 1.8, 0.12] }, { ridge: [1.5, 7, 6.5, 7, 0.9, 0.09] }, { bump: [6, 10, 0.8, 0.06] }],
       toys: [{ shuttle: [1.5, 5, 6.5, 5, 0.3, 2.6] }],
       map: ['........', '........', '..O.....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
   ];
@@ -32793,10 +32807,11 @@ const GOLF_APP = (() => {
     for (const T of H.toys || []){
       if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
       if (T.slide) T.slide = [P(T.slide[0]), P(T.slide[1]), P(T.slide[2]), P(T.slide[3]), P(T.slide[4]), P(T.slide[5]), T.slide[6]];
-      // a tree (the course's before Oct 8, and any saved or shared hole from then) is a bush now, a little wider than its trunk
-      if (T.tree){ T.bush = [T.tree[0], T.tree[1], Math.max(0.32, T.tree[2] * 1.5), -1]; delete T.tree; }
+      // a tree (the course's before Oct 8) became a bush, and a bush (Oct 8, an afternoon) is a short fence across where it stood
+      if (T.tree){ T.bush = [T.tree[0], T.tree[1], Math.max(0.32, T.tree[2] * 1.5)]; delete T.tree; }
+      if (T.bush){ const [x, y, r] = T.bush, L = Math.max(0.6, r * 1.6); T.fence = [x - L, y, x + L, y]; delete T.bush; }
       for (const k of ['kick', 'rock']) if (T[k]) T[k] = T[k].map(P);
-      if (T.bush) T.bush = [P(T.bush[0]), P(T.bush[1]), P(T.bush[2]), T.bush[3] == null ? -1 : T.bush[3]];
+      if (T.fence) T.fence = T.fence.slice(0, 4).map(P);
       if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
       if (T.shuttle) T.shuttle = [...T.shuttle.slice(0, 5).map(P), T.shuttle[5]];
       if (T.orbit) T.orbit = [P(T.orbit[0]), P(T.orbit[1]), P(T.orbit[2]), P(T.orbit[3]), T.orbit[4], T.orbit[5] || 0];
@@ -32806,9 +32821,17 @@ const GOLF_APP = (() => {
       if (ch === 'T') H.tee = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
       if (ch === 'O') H.cup = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
     }));
+    /* THE CUP STANDS CLEAR OF THE RAIL (Oct 8: "the golf hole and flag must be away from the margin. let say the golf hole
+       and flag must itself have a margin of 1/4 the size of the golf hole to the side"). A cup on an edge cell sat half
+       under the rail. It is kept far enough in that a quarter of its width (at its widest, the easy cup) shows as grass
+       between it and the rail, whichever cell the map puts it in. */
+    const m = RT + CUP_R_MAX * 1.5;
+    if (H.cup){ H.cup.x = Math.min(WD - m, Math.max(m, H.cup.x)); H.cup.y = Math.min(1 - m, Math.max(m, H.cup.y)); }
+    if (!FENCE_MATS.includes(H.fence)) H.fence = null;
     return H;
   }
   HOLES.forEach(compileHole);
+  HOLES.forEach((H, k) => { if (!H.fence) H.fence = FENCE_MATS[k % 3]; });
   // ONE COURSE, every hole on the field (Oct 2: "don't have courses, put all holes in the viewer"): a round is all of them.
   const COURSE = HOLES.length;
   const at = (H, i, j) => (i < 0 || j < 0 || i >= NX || j >= NY) ? '#' : H.map[j][i];
@@ -33056,9 +33079,16 @@ const GOLF_APP = (() => {
         }
         const dx = b.x - mx, dy = b.y - my, d = Math.hypot(dx, dy);           // the hub
         if (d < BR + 0.02 && d > 1e-9) hit = Math.max(hit, knockOff(b, dx / d, dy / d, mx, my, BR + 0.02, 0, 0, E));
-      } else if (T.rock || T.bush){
-        // a boulder or a bush: it stands still, and the ball bounces off it as off a wall (a bush all the way out: it is low)
-        const [cx, cy, cr] = T.rock || T.bush, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
+      } else if (T.fence){
+        // a fence: a low wall along a line, the ball off it as off a wall
+        const [x0, y0, x1, y1] = T.fence, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
+        const q = clamp(((b.x - x0) * ux + (b.y - y0) * uy) / L2, 0, 1), px = x0 + ux * q, py = y0 + uy * q;
+        const dx = b.x - px, dy = b.y - py, d = Math.hypot(dx, dy);
+        if (d >= BR + FENCE_T || d < 1e-9) return;
+        hit = Math.max(hit, knockOff(b, dx / d, dy / d, px, py, BR + FENCE_T, 0, 0, E));
+      } else if (T.rock){
+        // a boulder: it stands still, and the ball bounces off it as off a wall
+        const [cx, cy, cr] = T.rock, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
         if (d >= BR + cr || d < 1e-9) return;
         hit = Math.max(hit, knockOff(b, dx / d, dy / d, cx, cy, BR + cr, 0, 0, E));
       } else if (T.pipe){
@@ -33172,7 +33202,7 @@ const GOLF_APP = (() => {
   // (made when first wanted and kept on the hole, so an editor's hole gets its own: Oct 8)
   const gridOf = hk => { const H = HOLES[hk]; return H._grid || (H._grid = { n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
     const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, ch = H.map[j][i];
-    return ch === '#' ? 0x7a5a3c : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
+    return ch === '#' ? (MAT_COL[matOf(H)] || MAT_COL.wood).far : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
   }) }); };
   const holeShown = (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.hole : holeOf(c, r); };
   const POLE_H = 0.16;
@@ -33260,74 +33290,62 @@ const GOLF_APP = (() => {
      faces turned out (as the windmill's are), and fitted so its reach across is 1: the item's scale is then the radius it
      should cover. The ball meets only what toys() says: a bumper's and a boulder's own radius, a pipe's mouth. Until a file
      is in, the old plain shapes stand in. (The trees were the fourth; bushes took their place on Oct 8, below.) */
-  /* THE BUSHES (Oct 8: "replace the trees with a smaller bushes. the bushes should be a variety of shapes and sizes. some
-     bushes should be wild and some should be groomed."). Ten of them, made here rather than in the studio, because what
-     makes a bush is its irregularity and the shapes are quick to grow from a seed: each is balls of leaves, smooth and
-     clipped or lumpy and loose, coloured leaf by leaf and darker toward the ground, then fitted so its footprint's radius is
-     1 (the item's scale is the bush's radius, which is also all the ball meets: a bush is low, so it stops a ball at its
-     edge, where a tree stopped it only at the trunk).
-       groomed: 0 a clipped ball · 1 a cone · 2 a hedge block · 3 three balls on a stem (the poodle cut) · 4 a low dome ·
-                5 a column with a rounded top
-       wild:    6–9 tangles of five to eleven lumpy clumps, one with white and pink flowers in it, one with red berries
-     A hole names each bush's style (bush [col, row, r, style]); a style of −1 picks one from where it stands. Each also
-     takes a slight tint of its own, so two of a kind are not twins. */
-  const BUSH_KINDS = 10;
-  const BUSH_TINT = [0xffffff, 0xf2fff0, 0xfff8e8, 0xe8f6ff, 0xf6ffe0, 0xfff0f0];
-  const bushKind = (st, x, y) => st >= 0 && st < BUSH_KINDS ? st | 0 : Math.floor(Math.abs(Math.sin(x * 127.1 + y * 311.7)) * 43758.5) % BUSH_KINDS;
-  function bushGeo(T3, kind){
-    let seed = 1013 + kind * 7919;
+  /* FENCES, AND WHAT A HOLE IS BUILT OF (Oct 8: "remove the bushes and replace with a fence. the could be wood, stone or
+     brick. each golf hole should just one of those three."). Each hole has a material (H.fence): its fences, its walls and
+     the rail round it are all of it, so a hole reads as one place: a paddock of planks, a garden of dry stone, a court of
+     brick. A wall, a rail piece or a fence piece is one geometry per material, made here as a core of mortar (or the dark
+     gaps between planks) with the units laid over its faces: bricks in running bond, stones in courses of random lengths,
+     planks standing side by side. Each unit has a colour of its own, a little jittered, so a wall is not a print of a wall.
+     A fence (fence [c0, r0, c1, r1]) is a low wall along a line, the ball meets it as a wall; a wooden one is posts, two rails
+     and pickets. The far boards and the icon colour walls by the material too. */
+  const MAT_COL = { wood: { core: 0x3a2716, units: [0x8a6440, 0x7a5636, 0x94704a, 0x6e4c2e], far: 0x7a5a3c },
+                    stone: { core: 0x5e5a54, units: [0x9a958c, 0x8a857c, 0xa8a196, 0x7f7a70, 0xb0a998], far: 0x8a8680 },
+                    brick: { core: 0xbab3a6, units: [0xa04a32, 0x8f4029, 0xb0573a, 0x96452f, 0x7e3b28], far: 0xa04a32 } };
+  /* A box W × Hh × D (x, y, z; its bottom at y0) clad in a material. u: a unit's size in the box's own units, so a half-cell
+     rail piece (drawn at half the scale) asks for units twice as big and they come out the same size on the hole. */
+  function cladGeo(T3, mat, W, Hh, D, y0, u, seedBase){
+    let seed = seedBase || 4242;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-    const wild = kind >= 6, pos = [], nrm = [], col = [], c = new T3.Color();
-    const GREENS = wild ? [0x5c8a2e, 0x6b9a3a, 0x3d6e2a, 0x7a9a3a, 0x4f7d33] : [0x3f8f3a, 0x46993f, 0x357f33, 0x3b8a42];
-    // a clump: a sphere pushed in and out by a few waves over its surface (gentle when clipped, deep when wild)
-    function clump(x, y, z, rx, ry, rz, rough, hex, seg){
-      const g = new T3.SphereGeometry(1, seg || 18, Math.round((seg || 18) * 0.7)), P = g.attributes.position;
-      const waves = Array.from({ length: 5 }, () => { const a = rnd() * Math.PI * 2, b = Math.acos(2 * rnd() - 1);
-        return [Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a), 2 + rnd() * (wild ? 5 : 2), rnd() * 6.28]; });
-      for (let i = 0; i < P.count; i++){
-        const vx = P.getX(i), vy = P.getY(i), vz = P.getZ(i);
-        let n = 0; for (const [ax, ay, az, f, ph] of waves) n += Math.sin((vx * ax + vy * ay + vz * az) * f + ph);
-        const k = 1 + rough * n / waves.length;
-        P.setXYZ(i, x + vx * rx * k, Math.max(0, y + vy * ry * k), z + vz * rz * k);
-      }
-      g.computeVertexNormals();
-      const q = g.toNonIndexed(), QP = q.attributes.position.array, QN = q.attributes.normal.array;
-      const base = new T3.Color(hex);
-      for (let i = 0; i < QP.length; i += 3){
-        pos.push(QP[i], QP[i + 1], QP[i + 2]); nrm.push(QN[i], QN[i + 1], QN[i + 2]);
-        const dark = 0.62 + 0.38 * Math.min(1, QP[i + 1] / 1.4), jit = 0.9 + 0.2 * rnd();      // shade toward the ground, leaf by leaf
-        c.copy(base).multiplyScalar(dark * jit); col.push(c.r, c.g, c.b);
-      }
-    }
-    const pick = () => GREENS[Math.floor(rnd() * GREENS.length)];
-    if (kind === 0) clump(0, 0.95, 0, 1, 0.95, 1, 0.03, GREENS[0]);
-    else if (kind === 1){                                   // a cone: rings of clipped clumps, smaller up the spire
-      for (let k = 0; k < 6; k++){ const f = k / 5; clump(0, 0.35 + f * 1.9, 0, 1 - f * 0.78, 0.5, 1 - f * 0.78, 0.04, GREENS[1]); }
-    } else if (kind === 2) clump(0, 0.6, 0, 1.25, 0.75, 0.8, 0.02, GREENS[2], 28);    // a hedge block, squared off by the clippers below
-    else if (kind === 3){
-      clump(0, 0.06, 0, 0.12, 2.2, 0.12, 0, 0x6b4a2c, 8);                                // the stem
-      clump(0, 0.62, 0, 0.78, 0.6, 0.78, 0.03, GREENS[0]); clump(0, 1.55, 0, 0.55, 0.45, 0.55, 0.03, GREENS[1]); clump(0, 2.25, 0, 0.32, 0.3, 0.32, 0.03, GREENS[3]);
-    } else if (kind === 4) clump(0, 0.1, 0, 1, 0.65, 1, 0.04, GREENS[3]);
-    else if (kind === 5){ clump(0, 0.9, 0, 0.62, 0.95, 0.62, 0.03, GREENS[2]); clump(0, 1.75, 0, 0.6, 0.5, 0.6, 0.03, GREENS[2]); }
-    else {                                                  // wild: clumps every which way, some leaning out
-      const n = 5 + Math.floor(rnd() * 7);
-      for (let k = 0; k < n; k++){
-        const a = rnd() * Math.PI * 2, d = rnd() * 0.65, s = 0.32 + rnd() * 0.38;
-        clump(Math.cos(a) * d, s * 0.6 + rnd() * 0.9, Math.sin(a) * d, s, s * (0.8 + rnd() * 0.5), s, 0.28, pick(), 12);
-      }
-      if (kind === 8 || kind === 9){                          // flowers, or berries, dotted over the outside
-        for (let k = 0; k < 14; k++){
-          const a = rnd() * Math.PI * 2, h = 0.3 + rnd() * 1.1, d = 0.75 + rnd() * 0.15;
-          clump(Math.cos(a) * d, h, Math.sin(a) * d, 0.07, 0.07, 0.07, 0, kind === 8 ? (k & 1 ? 0xffffff : 0xf29ac0) : 0xd0302a, 6);
+    const M = MAT_COL[mat] || MAT_COL.wood, pos = [], nrm = [], col = [], c = new T3.Color();
+    const box = (cx, cy, cz, sx, sy, sz, hex, jit) => {
+      const g = new T3.BoxGeometry(sx, sy, sz).toNonIndexed(); g.translate(cx, cy, cz);
+      const P = g.attributes.position.array, N = g.attributes.normal.array;
+      c.setHex(hex).multiplyScalar(1 - (jit == null ? 0.12 : jit) * rnd());
+      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); }
+      for (let i = 0; i < P.length / 3; i++) col.push(c.r, c.g, c.b);
+    };
+    const unit = () => M.units[Math.floor(rnd() * M.units.length)];
+    box(0, y0 + Hh / 2, 0, W, Hh, D, M.core, 0);
+    const top = y0 + Hh, from = Math.max(y0, -0.12 * u / 0.25);            // nothing laid far below the ground
+    const t = 0.018 * u / 0.25, gap = 0.014 * u / 0.25;                       // how proud a unit stands, and the joint
+    // lay one face: along its length `len` (centred) and up its height, out from the core along n (the face at distance off)
+    function face(len, axis, n, off){
+      const place = (a0, a1, b0, b1, hex) => {
+        const am = (a0 + a1) / 2, bm = (b0 + b1) / 2, la = a1 - a0 - gap, lb = b1 - b0 - gap, o = off + t / 2 * (0.6 + 0.8 * rnd());
+        if (axis === 'x') box(am, bm, n * o, la, lb, t, hex); else box(n * o, bm, am, t, lb, la, hex);
+      };
+      if (mat === 'brick'){
+        const bh = 0.09 * u / 0.25, bl = 0.25 * u / 0.25;
+        for (let r = 0, y = from; y < top - 1e-6; r++, y += bh){
+          const y1 = Math.min(top, y + bh);
+          for (let x = -len / 2 - (r & 1 ? bl / 2 : 0); x < len / 2 - 1e-6; x += bl) place(Math.max(-len / 2, x), Math.min(len / 2, x + bl), y, y1, unit());
         }
+      } else if (mat === 'stone'){
+        for (let y = from; y < top - 1e-6;){
+          const h = (0.11 + rnd() * 0.08) * u / 0.25, y1 = Math.min(top, y + h);
+          for (let x = -len / 2; x < len / 2 - 1e-6;){ const l = (0.14 + rnd() * 0.22) * u / 0.25, x1 = Math.min(len / 2, x + l); place(x, x1, y, y1, unit()); x = x1; }
+          y = y1;
+        }
+      } else {
+        const pw = 0.13 * u / 0.25;
+        for (let x = -len / 2; x < len / 2 - 1e-6; x += pw) place(x, Math.min(len / 2, x + pw), from, top - 0.01 * u / 0.25 * rnd(), unit());
       }
     }
-    // a hedge's sides clipped flat: each point pulled toward its box
-    if (kind === 2) for (let i = 0; i < pos.length; i += 3){ const x = pos[i], z = pos[i + 2];
-      pos[i] = Math.sign(x) * Math.min(Math.abs(x), 0.95); pos[i + 2] = Math.sign(z) * Math.min(Math.abs(z), 0.55); pos[i + 1] = Math.min(pos[i + 1], 1.05); }
-    // fitted: the footprint's radius 1, standing on the ground
-    let R = 0; for (let i = 0; i < pos.length; i += 3) R = Math.max(R, Math.hypot(pos[i], pos[i + 2]));
-    for (let i = 0; i < pos.length; i++) pos[i] /= R || 1;
+    face(W, 'x', 1, D / 2); face(W, 'x', -1, D / 2); face(D, 'z', 1, W / 2); face(D, 'z', -1, W / 2);
+    // and the top: a coping of the same units, laid across
+    const cap = mat === 'wood' ? 0.13 : mat === 'brick' ? 0.25 : 0.22;
+    for (let x = -W / 2; x < W / 2 - 1e-6;){ const l = (mat === 'stone' ? 0.14 + rnd() * 0.2 : cap) * u / 0.25, x1 = Math.min(W / 2, x + l);
+      box((x + x1) / 2, top + t / 2, 0, x1 - x - gap, t, D + 2 * t, unit()); x = x1; }
     const g = new T3.BufferGeometry();
     g.setAttribute('position', new T3.Float32BufferAttribute(pos, 3));
     g.setAttribute('normal', new T3.Float32BufferAttribute(nrm, 3));
@@ -33335,6 +33353,27 @@ const GOLF_APP = (() => {
     g.userData.vertexColors = true;
     return g;
   }
+  // a wooden fence: two posts, two rails, a row of pickets (a piece one cell long, along x)
+  function picketGeo(T3){
+    let seed = 99;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    const M = MAT_COL.wood, pos = [], nrm = [], col = [], c = new T3.Color();
+    const box = (cx, cy, cz, sx, sy, sz, hex) => { const g = new T3.BoxGeometry(sx, sy, sz).toNonIndexed(); g.translate(cx, cy, cz);
+      const P = g.attributes.position.array, N = g.attributes.normal.array; c.setHex(hex).multiplyScalar(1 - 0.15 * rnd());
+      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); } for (let i = 0; i < P.length / 3; i++) col.push(c.r, c.g, c.b); };
+    for (const x of [-0.46, 0.46]) box(x, 0.2, 0, 0.09, 0.8, 0.09, 0x5e4128);                  // posts, sunk a little
+    for (const y of [0.16, 0.42]) box(0, y, 0.06, 1.0, 0.06, 0.035, 0x6e4c2e);                // rails
+    for (let x = -0.42; x <= 0.42; x += 0.12){ const h = 0.5 + 0.03 * rnd();
+      box(x, h / 2 - 0.02, 0.095, 0.075, h, 0.025, M.units[Math.floor(rnd() * M.units.length)]);
+      box(x, h - 0.02, 0.095, 0.05, 0.05, 0.025, 0x94704a); }                                 // pickets, each with a rounded-off top
+    const g = new T3.BufferGeometry();
+    g.setAttribute('position', new T3.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T3.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('color', new T3.Float32BufferAttribute(col, 3));
+    g.userData.vertexColors = true;
+    return g;
+  }
+  const matOf = H => FENCE_MATS.includes(H && H.fence) ? H.fence : 'wood';
   const PROP_K = { bumper: 1, rock: 1.05, pipe: 1.3 };
   const _props = {};
   function propGeo(name){
@@ -33358,14 +33397,16 @@ const GOLF_APP = (() => {
     propBumper: () => propGeo('bumper'), propRock: () => propGeo('rock'), propPipe: () => propGeo('pipe'),
     // stand-ins, and the bridge's planks
     rockPlain: T => { const g = new T.SphereGeometry(0.5, 14, 10); g.scale(1, 0.7, 1); g.translate(0, 0.3, 0); return g; },
-    ...Object.fromEntries(Array.from({ length: BUSH_KINDS }, (_, k) => ['bush' + k, T => bushGeo(T, k)])),
+    ...Object.fromEntries(FENCE_MATS.flatMap(m => [
+      ['wall_' + m, T => cladGeo(T, m, 1, 0.88, 1, -0.6, 0.25, 11)],                                   // a wall cell (scale CW), standing 0.28 up
+      ['railV_' + m, T => cladGeo(T, m, 2 * RT / CW, 1.76, 1.02, -1.2, 0.5, 23)],                       // half-cell rail pieces (scale CW/2)
+      ['railH_' + m, T => cladGeo(T, m, 1.02, 1.76, 2 * RT / CW, -1.2, 0.5, 37)],
+      ['fence_' + m, m === 'wood' ? (T => picketGeo(T)) : (T => cladGeo(T, m, 1, 0.75, 2 * FENCE_T / CW, -0.25, 0.25, 51))],   // a fence piece a cell long
+    ])),
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
-    wall: T => { const g = new T.BoxGeometry(1, 0.88, 1); g.translate(0, -0.16, 0); return g; },
-    railV: T => { const g = new T.BoxGeometry(2 * RT / CW, 1.76, 1.02); g.translate(0, -0.32, 0); return g; },   // a half cell long (scale CW/2): a wall's height, RT thick
-    railH: T => { const g = new T.BoxGeometry(1.02, 1.76, 2 * RT / CW); g.translate(0, -0.32, 0); return g; },   // stands 0.28 above the ground, low enough for the winning bar to show; reaches down past any slope
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
     pole: T => { const g = new T.CylinderGeometry(0.025, 0.025, 1, 6); g.translate(0, 0.5, 0); return g; },
     pennant: T => { const g = new T.BoxGeometry(0.45, 0.26, 0.03); g.translate(-0.225, 0.86, 0); return g; },   // flies toward +u (−x)
@@ -33425,15 +33466,15 @@ const GOLF_APP = (() => {
     // climbed the half-pipe in steps)
     for (let j = 0; j < 2 * NY; j++) for (const i of [0, 1]){
       const u = i ? WD - RT / 2 : RT / 2, v = (j + 0.5) * CW / 2;
-      out.push({ kind: 'railV', u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0x8a6440 });
+      out.push({ kind: 'railV_' + matOf(H), u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0xffffff });
     }
     for (let i = 0; i < 2 * NX; i++) for (const j of [0, 1]){
       const u = (i + 0.5) * CW / 2, v = j ? 1 - RT / 2 : RT / 2;
-      out.push({ kind: 'railH', u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0x8a6440 });
+      out.push({ kind: 'railH_' + matOf(H), u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0xffffff });
     }
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
       const u = (i + 0.5) * CW, v = (j + 0.5) * CW;
-      if (H.map[j][i] === '#') out.push({ kind: 'wall', u, v, scale: CW, lift: hOf(H, u, v), color: 0x8a6440 });
+      if (H.map[j][i] === '#') out.push({ kind: 'wall_' + matOf(H), u, v, scale: CW, lift: hOf(H, u, v), color: 0xffffff });
       if (H.map[j][i] === '=') out.push({ kind: 'plank', u, v, scale: CW, lift: hOf(H, u, v) + 0.004, color: (i + j) & 1 ? 0x9a7048 : 0x8a6240 });
     }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
@@ -33482,9 +33523,13 @@ const GOLF_APP = (() => {
         const [x, y, r] = T.rock;
         if (propGeo('rock')) out.push({ kind: 'propRock', u: x, v: y, scale: r * PROP_K.rock, lift: hOf(H, x, y) - 0.002, yaw: (x * 37 + y * 11) % 6.28, color: 0xffffff });
         else out.push({ kind: 'rockPlain', u: x, v: y, scale: r * 2, lift: hOf(H, x, y), color: 0x8a857c });
-      } else if (T.bush){
-        const [x, y, r, st] = T.bush, kd = bushKind(st, x, y);              // (a hedge, style 2, stands square to the hole)
-        out.push({ kind: 'bush' + kd, u: x, v: y, scale: r, lift: hOf(H, x, y) - 0.002, yaw: kd === 2 ? 0 : (x * 23 + y * 7) % 6.28, color: BUSH_TINT[(Math.floor(x * 97 + y * 61)) % BUSH_TINT.length] });
+      } else if (T.fence){
+        // a fence, in pieces about a cell long, each on the ground under it and turned along the line
+        const [x0, y0, x1, y1] = T.fence, L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / CW)), yaw = Math.atan2(y1 - y0, x1 - x0);
+        for (let q = 0; q < n; q++){
+          const f = (q + 0.5) / n, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f;
+          out.push({ kind: 'fence_' + matOf(H), u: x, v: y, scale: L / n, lift: hOf(H, x, y), yaw, color: 0xffffff });
+        }
       } else if (T.pipe){
         const [x0, y0, x1, y1, , pr] = T.pipe, lit = G && G.piped && t - (G.piped[j] ?? -9) < 0.3;
         for (const [x, y, c] of [[x0, y0, lit ? 0xfff2a0 : 0xffffff], [x1, y1, 0xbcd6ff]])   // the exit a little blue, so you can tell them apart
@@ -33537,14 +33582,15 @@ const GOLF_APP = (() => {
      Everything heavy (the ground's mesh, the far board's tiles) is made from that. So the editor edits exactly that, the
      way HOLES are written above, and the hole on the board is made again from it after every stroke.
        · Choose Edit this hole (a copy of the hole on the selected board) or New hole from the menu. The board becomes the
-         editor's and a bar of tools comes up along the bottom.
+         editor's and its tools come up as the bottom panel's tiles.
        · Grass, wall, sand, water and bridge are painted: tap a cell, or drag across cells. Tee and cup are moved by a tap.
        · Hill and hollow raise or lower the ground round where you tap (or along a drag), a little each time.
-       · Bumper, boulder, bush (each tap the next of the ten styles) and windmill are placed by a tap; a pipe takes two (in, then out); Erase takes away the
+       · Bumper, boulder and windmill are placed by a tap; a pipe takes two (in, then out), and so does a fence (one end, then
+         the other); Material sets what the hole is built of (wood, stone, brick); Erase takes away the
          nearest thing, then the nearest hill, then the cell's paint.
        · Check plays the hole with the same plain player the course test uses (tests/golf-course.mjs) and, if it can sink
          it, sets the par one over what it took. Save keeps it in this browser (My holes, in the menu); Share copies a link
-         that opens the page on it; Done plays it.
+         that opens the page on it; Done plays it. (Since Oct 8 the tools are the bottom panel's tiles, below.)
      The course's own holes are never changed: editing one edits a copy. Holes made here come after the course's in HOLES
      (index BUILT and on), so they are on no board until you play one; a round of one of them is that one hole. */
   const BUILT = HOLES.length;
@@ -33557,7 +33603,8 @@ const GOLF_APP = (() => {
     step: [[-1, 1], [-1, 1], [-14, 14], [0.1, 4], [-0.25, 0.25]], wave: [[-0.05, 0.05], [0.5, 14], [-360, 360], [-7, 7]],
     ridge: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.2, 8], [-0.1, 0.25]], bowl: [[-1, 9], [-1, 14], [0.3, 8], [0, 0.25]],
     pipe: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.5, 12], [0, 0.25]] };
-  const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2], [-1, 9]],
+  const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
+    fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
     mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
     shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7]],
     gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]] };
@@ -33589,9 +33636,9 @@ const GOLF_APP = (() => {
       if (!seen){ const row = [...map[j]]; row[NX >> 1] = ch; map[j] = row.join(''); }
     }
     return { name: String(o.name || 'my hole').replace(/\s+/g, ' ').slice(0, 40), par: Math.max(1, Math.min(9, Math.round(Number(o.par)) || 3)),
-             map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40) };
+             map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40), fence: FENCE_MATS.includes(o.fence) ? o.fence : 'wood' };
   }
-  const blankSrc = () => ({ name: 'my hole', par: 3, land: [], toys: [],
+  const blankSrc = () => ({ name: 'my hole', par: 3, fence: 'wood', land: [], toys: [],
     map: Array.from({ length: NY }, (_, j) => j === 1 ? '...O....' : j === NY - 2 ? '...T....' : '........') });
   /* An editor's hole on the field: its ground, wireframe and any slide are kinds of their own, made from HOLES[k] as it
      is now; after an edit the old meshes are dropped (fieldDropItemKind), so the next frame makes them again. */
@@ -33690,7 +33737,7 @@ const GOLF_APP = (() => {
     const g = holeGame({ start: k, card: [], single: true }, k); g.state = 'edit';
     GAMES.set(L.key, g);
     try { toggleBoardBrowser(false); } catch {}
-    showEditBar();
+    try { toggleBoardBrowser(true); } catch {}
     say('Editing — choose a tool below, then tap or drag on the hole.', 3000);
     return true;
   }
@@ -33699,7 +33746,6 @@ const GOLF_APP = (() => {
     clearTimeout(ED.timer); ED.timer = 0;
     setHole(ED.k, ED.src);
     ED.on = false; ED.stroke = false;
-    const bar = document.getElementById('golfEditBar'); if (bar) bar.hidden = true;
     const g = GAMES.get(ED.key);
     if (g && g.state === 'edit') GAMES.set(ED.key, holeGame({ start: ED.k, card: [], single: true }, ED.k));
     if (!quiet) say('Playing ' + HOLES[ED.k].name + ' — Hole editor in the menu to change it again.', 2600);
@@ -33739,7 +33785,10 @@ const GOLF_APP = (() => {
     if (drag) return false;                                 // things are placed by a tap
     if (t === 'erase'){
       let best = -1, bd = 1;
-      S.toys.forEach((T, n) => { const a = Object.values(T)[0], d = Math.min(Math.hypot(a[0] - x, a[1] - y), T.pipe ? Math.hypot(a[2] - x, a[3] - y) : 9); if (d < bd){ bd = d; best = n; } });
+      S.toys.forEach((T, n) => { const a = Object.values(T)[0];
+        let d = Math.min(Math.hypot(a[0] - x, a[1] - y), T.pipe ? Math.hypot(a[2] - x, a[3] - y) : 9);
+        if (T.fence){ const ux = a[2] - a[0], uy = a[3] - a[1], q = Math.max(0, Math.min(1, ((x - a[0]) * ux + (y - a[1]) * uy) / (ux * ux + uy * uy || 1))); d = Math.hypot(a[0] + ux * q - x, a[1] + uy * q - y); }
+        if (d < bd){ bd = d; best = n; } });
       if (best >= 0){ S.toys.splice(best, 1); return true; }
       let lb = -1, ld = 1.6;
       S.land.forEach((f, n) => { if (!f.bump && !f.bowl && !f.ridge && !f.pipe) return; const a = Object.values(f)[0], d = Math.hypot(a[0] - x, a[1] - y); if (d < ld){ ld = d; lb = n; } });
@@ -33751,9 +33800,11 @@ const GOLF_APP = (() => {
     if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
     if (t === 'kick') S.toys.push({ kick: [R2(x), R2(y), 0.32] });
     else if (t === 'rock') S.toys.push({ rock: [R2(x), R2(y), 0.5] });
-    else if (t === 'bush'){                                   // each a different one: the ten styles in turn, a size of its own
-      ED.bushN = ((ED.bushN || 0) + 1) % BUSH_KINDS;
-      S.toys.push({ bush: [R2(x), R2(y), R2(0.32 + 0.24 * ((ED.bushN * 7) % 5) / 4), ED.bushN] });
+    else if (t === 'fence'){                                  // a fence takes two taps, one at each end
+      if (!ED.fenceAt){ ED.fenceAt = { x: R2(x), y: R2(y) }; ED.msg = 'now tap where the fence ends'; updateEditBar(); return false; }
+      const a = ED.fenceAt; ED.fenceAt = null;
+      if (Math.hypot(x - a.x, y - a.y) < 0.5){ ED.msg = 'too short: tap further away'; updateEditBar(); return false; }
+      S.toys.push({ fence: [a.x, a.y, R2(x), R2(y)] });
     }
     else if (t === 'mill') S.toys.push({ mill: [R2(x), R2(y), 1.4, 1.3] });
     else if (t === 'pipe'){
@@ -33771,6 +33822,7 @@ const GOLF_APP = (() => {
     if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.src = JSON.parse(u); editRefresh(true); } return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
     if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
+    if (a === 'mat'){ S.fence = FENCE_MATS[(FENCE_MATS.indexOf(S.fence) + 1) % FENCE_MATS.length]; editRefresh(true); return; }
     if (a === 'check'){
       ED.msg = 'checking…'; updateEditBar();
       return new Promise(done => setTimeout(() => {
@@ -33804,52 +33856,35 @@ const GOLF_APP = (() => {
       const x = Math.min(WD - 0.004, Math.max(0.004, i * CW)), y = Math.min(0.996, Math.max(0.004, j * CW));
       out.push({ kind: 'ghost', u: x, v: y, scale: 0.007, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     }
-    if (ED.pipeAt){ const x = ED.pipeAt.x * CW, y = ED.pipeAt.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
+    for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
-  /* The bar: the tools on one row (the one in hand ringed), what to do with the hole on the next, and the hole's name,
-     par and the last thing that happened above them. Plain buttons in the page, so they are big enough to hit on a
-     phone and scroll sideways when the screen is narrow. The name goes in as text, never markup. */
-  const TOOLS = [['.', 'Grass', '#63b86a'], ['#', 'Wall', '#8a6440'], ['s', 'Sand', '#e6d39a'], ['~', 'Water', '#3d7fd9'],
-    ['=', 'Bridge', '#9a7048'], ['T', 'Tee', '#ffffff'], ['O', 'Cup', '#111111'], ['up', 'Hill', '#7fd086'], ['down', 'Hollow', '#3f7f46'],
-    ['kick', 'Bumper', '#e0443a'], ['rock', 'Boulder', '#8a857c'], ['bush', 'Bush', '#3f8f3a'], ['mill', 'Windmill', '#d9d2c0'],
-    ['pipe', 'Pipe', '#2f9a4a'], ['erase', 'Erase', null]];
-  const ACTS = [['undo', 'Undo'], ['name', 'Name'], ['par', 'Par'], ['check', 'Check'], ['save', 'Save'], ['share', 'Share'], ['done', 'Done']];
-  function showEditBar(){
-    let bar = document.getElementById('golfEditBar');
-    if (!bar){
-      bar = document.createElement('div'); bar.id = 'golfEditBar';
-      bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:60;background:rgba(16,20,18,.94);color:#e8ece9;'
-        + 'font:13px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:6px 6px calc(8px + env(safe-area-inset-bottom));'
-        + 'display:flex;flex-direction:column;gap:6px;user-select:none;-webkit-user-select:none;touch-action:pan-x';
-      const info = document.createElement('div'); info.className = 'ge-info';
-      info.style.cssText = 'display:flex;justify-content:space-between;gap:10px;padding:0 6px;white-space:nowrap;overflow:hidden';
-      info.append(Object.assign(document.createElement('span'), { className: 'ge-name' }), Object.assign(document.createElement('span'), { className: 'ge-msg' }));
-      const row = cls => { const d = document.createElement('div'); d.className = cls; d.style.cssText = 'display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:0 2px'; return d; };
-      const mk = (label, sw) => {
-        const b = document.createElement('button'); b.type = 'button';
-        b.style.cssText = 'flex:0 0 auto;min-width:54px;height:44px;border-radius:8px;border:2px solid transparent;background:#2a302d;color:#e8ece9;'
-          + 'font:600 12px inherit;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:2px 8px;cursor:pointer';
-        if (sw){ const d = document.createElement('span'); d.style.cssText = 'width:16px;height:12px;border-radius:3px;border:1px solid rgba(255,255,255,.35);background:' + sw; b.appendChild(d); }
-        b.appendChild(document.createTextNode(label));
-        return b;
-      };
-      const tools = row('ge-tools'), acts = row('ge-acts');
-      for (const [t, label, sw] of TOOLS){ const b = mk(label, sw); b.dataset.tool = t; b.addEventListener('click', () => { ED.tool = t; ED.pipeAt = null; ED.msg = ''; updateEditBar(); }); tools.appendChild(b); }
-      for (const [a, label] of ACTS){ const b = mk(label); b.dataset.act = a; if (a === 'done') b.style.background = '#2f6f3a'; b.addEventListener('click', () => editAction(a)); acts.appendChild(b); }
-      bar.append(info, tools, acts);
-      bar.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
-      document.body.appendChild(bar);
-    }
-    bar.hidden = false;
-    updateEditBar();
+  /* THE TOOLS ARE THE BOTTOM PANEL'S TILES (Oct 8: "the hole editor should use the bottom fisheye panel, not its own panel.
+     in this edit mode, the edit options are available."). While a hole is being edited its statistics tiles give way to
+     the editor's: the hole itself (its name, par and the last thing that happened), then a tile for each tool, the one in
+     hand lit, then a tile for each thing to do. The row is the field's own fisheye, so it pans and coasts like any row; a
+     tap on a tile (onStatTap) takes up that tool or does that thing, and the row stays open while editing however the
+     board is tapped or dragged (statsStay). The tiles are read again a few times a second, so they follow the editor. */
+  const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
+    ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'], ['up', 'Hill', '⛰️', 'ground'], ['down', 'Hollow', '🕳️', 'ground'],
+    ['kick', 'Bumper', '🔴', 'place'], ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
+    ['pipe', 'Pipe', '🟢', 'two taps'], ['erase', 'Erase', '🧽', 'take away']];
+  const ACTS = [['undo', 'Undo', '↶'], ['mat', 'Material', '🧱'], ['name', 'Name', '✎'], ['par', 'Par', '#'], ['check', 'Check', '✓'],
+    ['save', 'Save', '💾'], ['share', 'Share', '🔗'], ['done', 'Done', '▶']];
+  function editTiles(){
+    const S = ED.src, out = [{ label: ED.msg || 'editing', value: S.name, sub: 'par ' + S.par + ' · ' + S.fence, color: '#ffd23a' }];
+    for (const [t, name, glyph, how] of TOOLS) out.push({ label: t === ED.tool ? 'in hand' : how, glyph, value: name, color: t === ED.tool ? '#ffd23a' : '#ffffff', dim: false });
+    for (const [a, name, glyph] of ACTS) out.push({ label: a === 'mat' ? S.fence : a === 'par' ? 'par ' + S.par : '', glyph, value: name, color: a === 'done' ? '#9fe3a0' : '#c9ccd2' });
+    return out;
   }
-  function updateEditBar(){
-    const bar = document.getElementById('golfEditBar');
-    if (!bar || !ED.src) return;
-    bar.querySelector('.ge-name').textContent = ED.src.name + ' · par ' + ED.src.par;
-    bar.querySelector('.ge-msg').textContent = ED.msg || (ED.tool === 'pipe' ? 'tap where the pipe goes in' : '');
-    for (const b of bar.querySelectorAll('[data-tool]')) b.style.borderColor = b.dataset.tool === ED.tool ? '#ffd23a' : 'transparent';
+  function editTileTap(i){
+    if (!ED.on || i < 1) return false;
+    const t = TOOLS[i - 1];
+    if (t){ ED.tool = t[0]; ED.pipeAt = ED.fenceAt = null; ED.msg = t[3] === 'two taps' ? 'tap where it starts' : ''; return true; }
+    const a = ACTS[i - 1 - TOOLS.length];
+    if (a){ editAction(a[0]); return true; }
+    return false;
   }
+  const updateEditBar = () => {};                            // (the tiles follow by themselves: see above)
   function editorMenu(){
     const items = [];
     if (ED.on) items.push({ label: 'Leave the editor', title: 'Stop editing and play the hole.', on(){ editStop(false); } });
@@ -33905,7 +33940,8 @@ const GOLF_APP = (() => {
     },
     statTiles(c, r){
       const g = GAMES.get(gkey(c, r));
-      if (!g || g.state === 'edit') return null;
+      if (g && g.state === 'edit') return ED.on && gkey(c, r) === ED.key ? editTiles() : null;
+      if (!g) return null;
       const H = HOLES[g.hole], d = diffOf(g), n = g.R.card.length + (g.state === 'play' ? 1 : 0);
       return [
         { label: 'Hole', value: g.R.single ? 'yours' : Math.max(1, n) + '/' + COURSE, sub: H.name, color: '#ffffff' },
@@ -33915,6 +33951,8 @@ const GOLF_APP = (() => {
       ];
     },
     onReset(c, r){ startRound(c, r); return true; },
+    onStatTap(c, r, i){ return editTileTap(i); },             // the editor's tiles (Oct 8)
+    statsStay(){ return ED.on; },                             // …and its row stays up while the hole is painted
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       if (ED.on){
@@ -33971,14 +34009,14 @@ const GOLF_APP = (() => {
       const H = HOLES[holeShown(c, r)], t = sz / NY, x0 = (sz - NX * t) / 2;
       ctx.fillStyle = '#1d3a22'; ctx.fillRect(0, 0, sz, sz);
       for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){ const ch = H.map[j][i];
-        ctx.fillStyle = ch === '#' ? '#7a5a3c' : ch === 's' ? '#e6d39a' : ch === '~' ? '#3d7fd9' : ch === '=' ? '#9a7048' : '#63b86a';
+        ctx.fillStyle = ch === '#' ? '#' + ((MAT_COL[matOf(H)] || MAT_COL.wood).far).toString(16).padStart(6, '0') : ch === 's' ? '#e6d39a' : ch === '~' ? '#3d7fd9' : ch === '=' ? '#9a7048' : '#63b86a';
         ctx.fillRect(x0 + i * t, j * t, t + 0.5, t + 0.5); }
       ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x0 + H.cup.x / CW * t, H.cup.y / CW * t, t * 0.32, 0, 7); ctx.fill();
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
 })();
