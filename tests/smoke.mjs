@@ -162,6 +162,30 @@ try {
   if (mill.towerFacing.inn > mill.towerFacing.out * 0.2) failures.push(`[${current}] the tower's faces turn inward (${mill.towerFacing.inn} in, ${mill.towerFacing.out} out): a one-sided material shows a hole`);
   if (mill.refused !== 1) failures.push(`[${current}] a windmill without sails was not refused`);
   console.log(`${failures.length === before2 ? 'ok  ' : 'FAIL'} ${current} (${mill.parts} parts)`);
+  // Mini golf's water and ground (Oct 8): fountains and waterfalls are drawn and move with the clock, water lies level,
+  // the grass is one colour (no checks), and every hole has more than one feature of ground.
+  current = 'mini golf water';
+  const before5 = failures.length;
+  const wat = await page.evaluate(() => {
+    const D = window.getFieldApp()._debug, res = [];
+    for (const [k, H] of D.HOLES.entries()){
+      if (!(H.toys || []).some(T => T.fountain || T.fall)) continue;
+      let c = 0, r = 0;
+      search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
+      const drops = its => its.filter(i => i.kind === 'drop').map(i => i.lift.toFixed(5)).join();
+      const a = D.cellItems(c, r), t0 = performance.now(); while (performance.now() - t0 < 120){}
+      const b = D.cellItems(c, r);
+      res.push({ name: H.name, drops: a.filter(i => i.kind === 'drop').length, moved: drops(a) !== drops(b),
+                 bowl: a.some(i => i.kind === 'fountBowl') || a.some(i => i.kind === 'cliff'), wl: D.waterLevel(H) });
+    }
+    const flat = D.HOLES.filter(H => (H.land || []).length < 2).map(H => H.name);
+    return { res, flat };
+  });
+  if (wat.res.length < 4) failures.push(`[${current}] only ${wat.res.length} holes have water to watch`);
+  for (const w of wat.res) if (w.drops < 10 || !w.moved || !w.bowl) failures.push(`[${current}] ${w.name}: ${w.drops} drops, moved ${w.moved}, basin or rock ${w.bowl}`);
+  if (wat.flat.length) failures.push(`[${current}] holes with one feature of ground or none: ${wat.flat.join(', ')}`);
+  console.log(`${failures.length === before5 ? 'ok  ' : 'FAIL'} ${current} (${wat.res.map(w => w.name).join(', ')})`);
+
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
   // never crosses: a 6° roll turns nothing, a 60° twist turns about 48°, clockwise for clockwise, about
   // the ground at the middle of the screen (where the camera looks stays put).

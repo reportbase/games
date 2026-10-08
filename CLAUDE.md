@@ -52,8 +52,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   maps of 13 rows of 8, every cell in play (the board's edge is the wall, drawn as a
   thin rail `RT` inside it), with toys given in cells: bumpers (`kick`), boulders (`rock`)
   and trees (`tree`) the ball bounces off, pipes (`pipe`) that carry it to their other
-  mouth, bridges (`=`) over water, plus the windmills, slopes and steps. A new hole
-  must pass `tests/golf-course.mjs`.
+  mouth, bridges (`=`) over water, plus the windmills. The ground (`land`, read by
+  `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
+  (negative ones are gullies), two or more per hole; water lies level below its banks
+  (`waterLevel`). Fountains (`fountain`) and waterfalls (`fall`) are drawn from the clock
+  each frame (`waterToyItems`) and don't touch the physics. The grass is one colour,
+  shaded by height. A new hole must pass `tests/golf-course.mjs`.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
