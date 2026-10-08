@@ -32689,7 +32689,9 @@ const GOLF_APP = (() => {
   // land: bump [col, row, radius, height] · tilt [rise per board across, down] · step [dx, dy, at (cells), width (cells), height]
   // toys: mill [col, row, arm, turns a second] · slide [c0, r0, c1, r1, width, depth, seconds there and back] · kick [col, row, r]
   //       rock [col, row, r] · tree [col, row, trunk r] · pipe [col in, row in, col out, row out, out heading (° from →, 90 is ↓), r]
-  //       fountain [col, row, jet height] and fall [col, row, col, row (its lip), heading the water leaves at]: water, to look at only
+  // the movers (Oct 8): shuttle [c0, r0, c1, r1, r, seconds] a bumper riding to and fro · orbit [col, row, radius, r, seconds
+  //       (less than nothing the other way), phase] a boulder going round · gate [c0, r0, c1, r1, seconds, phase] a bar that
+  //       rises out of the ground across the way and sinks again
   // more land (Oct 8): wave [height, length (cells), heading (°), phase] rolls · ridge [c0, r0, c1, r1, width, height] a long
   //       hump along a line, or a gully when the height is less than nothing; a bump of negative height is a hollow
   const HOLES = [
@@ -32700,28 +32702,28 @@ const GOLF_APP = (() => {
       toys: [{ tree: [1.87, 2.84, 0.26] }, { tree: [6.13, 4.25, 0.26] }, { tree: [3.47, 6.85, 0.26] }, { tree: [1.33, 9.69, 0.26] }, { tree: [6.4, 9.22, 0.26] }],
       map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
     { name: 'the boulders', par: 3, land: [{ tilt: [0.03, 0] }, { wave: [0.01, 3.5, 30, 1] }, { bump: [6, 10, 1.8, 0.035] }],
-      toys: [{ rock: [4, 2.36, 0.63] }, { rock: [1.87, 6.15, 0.71] }, { rock: [6.13, 4.73, 0.55] }, { rock: [2.93, 9.93, 0.57] }],
+      toys: [{ orbit: [4, 2.6, 1.2, 0.5, 6, 0] }, { rock: [1.87, 6.15, 0.71] }, { rock: [6.13, 4.73, 0.55] }, { rock: [2.93, 9.93, 0.57] }],
       map: ['.......O', '........', '.sss....', '.sss....', '.sss....', '........', '........', '....sss.', '....sss.', '........', '........', '........', '..T.....'] },
     { name: 'the pipe', par: 2, land: [{ bump: [4, 10.5, 2.5, 0.03] }, { bump: [4, 1.5, 2.2, 0.025] }, { wave: [0.008, 3, 0, 0] }],
-      toys: [{ fountain: [4, 6, 1.6] }, { fall: [7.8, 4.3, 7.8, 7.7, 180] }, { pipe: [6, 9.69, 2, 2.36, -90, 0.45] }, { tree: [0.8, 10.16, 0.24] }],
+      toys: [{ shuttle: [1.2, 10.8, 5.2, 10.8, 0.3, 3.2] }, { pipe: [6, 9.69, 2, 2.36, -90, 0.45] }, { tree: [0.8, 10.16, 0.24] }],
       map: ['...O....', '........', '........', '........', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '........', '........', '........', '........', '...T....'] },
     { name: 'the bridge', par: 3, land: [{ bump: [6, 1.77, 1.72, 0.03] }, { ridge: [0, 9.5, 8, 9.5, 1, 0.03] }, { bump: [1.5, 2.5, 1.5, -0.025] }],
-      toys: [{ fall: [0.2, 5.2, 0.2, 6.8, 0] }, { kick: [2, 8.51, 0.32] }, { rock: [6.67, 8.98, 0.52] }],
+      toys: [{ gate: [3, 4.5, 6, 4.5, 3, 0] }, { kick: [2, 8.51, 0.32] }, { rock: [6.67, 8.98, 0.52] }],
       map: ['......O.', '........', '........', '........', '........', '~~~~=~~~', '~~~~=~~~', '........', '........', '........', '........', '........', '..T.....'] },
     { name: 'the dogleg', par: 3, land: [{ tilt: [0, 0.04] }, { ridge: [5, 0, 8, 4, 1.2, 0.035] }, { bump: [2, 1.5, 1.5, -0.02] }],
       toys: [{ tree: [5.2, 2.25, 0.3] }, { rock: [0.53, 1.89, 0.46] }],
       map: ['..O.....', '........', '........', '........', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####.T.'] },
     { name: 'the bumpers', par: 3, land: [{ bump: [4, 6, 2.5, 0.04] }, { bump: [1.5, 10.5, 1.5, -0.025] }, { bump: [6.5, 10.5, 1.5, -0.025] }],
-      toys: [{ kick: [2, 3.55, 0.32] }, { kick: [6, 3.55, 0.32] }, { kick: [4, 5.91, 0.32] }, { kick: [2, 8.27, 0.32] }, { kick: [6, 8.27, 0.32] }, { kick: [4, 2.13, 0.28] }],
+      toys: [{ kick: [2, 3.55, 0.32] }, { kick: [6, 3.55, 0.32] }, { shuttle: [1.5, 5.91, 6.5, 5.91, 0.32, 3.6] }, { kick: [2, 8.27, 0.32] }, { kick: [6, 8.27, 0.32] }, { kick: [4, 2.13, 0.28] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
     { name: 'the switchback', par: 4, land: [{ step: [0, -1, -6.5, 0.4, 0.04] }, { wave: [0.008, 3, 0, 0.5] }],
       toys: [{ kick: [6.93, 7.8, 0.3] }],
       map: ['O.......', '........', '#####...', '........', '........', '........', '...#####', '........', '........', '........', '#####...', '........', '..T.....'] },
     { name: 'the island', par: 3, land: [{ bump: [4, 9.5, 2.5, 0.03] }, { wave: [0.008, 3, 60, 0] }],
-      toys: [{ fountain: [2, 2.5, 1] }, { fountain: [6, 2.5, 1] }, { mill: [4, 7.33, 1.38, 1.4] }, { tree: [0.67, 1.18, 0.24] }, { tree: [7.33, 1.18, 0.24] }],
+      toys: [{ mill: [4, 7.33, 1.38, 1.4] }, { tree: [0.67, 1.18, 0.24] }, { tree: [7.33, 1.18, 0.24] }],
       map: ['........', '.~~~~~~.', '.~~O.~~.', '.~~..~~.', '.~~..~~.', '.~~==~~.', '........', '........', '........', '........', '........', '........', '...T....'] },
     { name: 'the volcano', par: 3, land: [{ bump: [4.67, 4.14, 2.64, 0.1] }, { wave: [0.008, 2.5, 45, 0] }],
-      toys: [{ rock: [1.87, 7.33, 0.48] }, { rock: [6.93, 7.8, 0.48] }, { rock: [4.8, 8.75, 0.41] }],
+      toys: [{ orbit: [4.67, 4.14, 1.9, 0.4, 6, 0] }, { orbit: [4.67, 4.14, 1.9, 0.4, 6, 3.14] }, { rock: [1.87, 7.33, 0.48] }, { rock: [6.93, 7.8, 0.48] }, { rock: [4.8, 8.75, 0.41] }],
       map: ['........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
     { name: 'the gauntlet', par: 3, land: [{ ridge: [4, 0.5, 4, 12.5, 1.6, -0.035] }, { bump: [0.8, 6.3, 1.4, 0.03] }, { bump: [7.2, 6.3, 1.4, 0.03] }],
       toys: [{ mill: [4, 3.78, 1.72, 1.6] }, { mill: [4, 8.75, 1.72, -1.3] }],
@@ -32733,19 +32735,19 @@ const GOLF_APP = (() => {
       toys: [{ slide: [3.27, 4.14, 4.73, 4.14, 1.03, 0.4, 2.4] }, { rock: [1.33, 7.8, 0.46] }],
       map: ['##.O..##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '........', '........', 'sss.....', 'sss.....', 'sss.....', '......T.'] },
     { name: 'the pipes', par: 3, land: [{ bump: [2, 8, 1.8, 0.035] }, { bump: [5.5, 10, 1.6, -0.025] }, { wave: [0.008, 3, 120, 0] }],
-      toys: [{ pipe: [1.33, 5.91, 0.8, 1.18, 0, 0.45] }, { pipe: [6.67, 5.91, 6.67, 11.11, 90, 0.45] }, { kick: [4, 8.27, 0.3] }],
+      toys: [{ pipe: [1.33, 5.91, 0.8, 1.18, 0, 0.45] }, { pipe: [6.67, 5.91, 6.67, 11.11, 90, 0.45] }, { shuttle: [1.5, 8.27, 6.5, 8.27, 0.3, 2.8] }],
       map: ['...O....', '........', '########', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
     { name: 'the moat', par: 3, land: [{ bump: [4, 9.5, 2.5, 0.035] }, { bump: [4, 3.5, 1.2, -0.02] }],
-      toys: [{ fall: [0.2, 6.15, 0.2, 6.85, 0] }, { tree: [0.67, 9.45, 0.26] }, { tree: [7.33, 9.93, 0.26] }, { kick: [7.2, 0.47, 0.26] }],
+      toys: [{ gate: [3, 7.4, 6, 7.4, 3.2, 0.5] }, { tree: [0.67, 9.45, 0.26] }, { tree: [7.33, 9.93, 0.26] }, { kick: [7.2, 0.47, 0.26] }],
       map: ['........', '.######.', '.#.O..#.', '.#....#.', '.#....#.', '.###.##.', '~~~~=~~~', '........', '........', '........', '........', '........', '...T....'] },
     { name: 'the snake', par: 5, land: [{ wave: [0.01, 4, 0, 0] }, { tilt: [0, -0.02] }, { bump: [5.5, 7.5, 1.4, 0.03] }],
       toys: [{ rock: [3.33, 5.32, 0.4] }, { tree: [3.33, 10.05, 0.26] }],
       map: ['O.......', '#######.', '........', '........', '.#######', '........', '#######.', '........', '.#######', '........', '........', '#######.', 'T.......'] },
     { name: 'the hill', par: 3, land: [{ bump: [4, 6.5, 3.45, 0.12] }, { ridge: [0, 9, 8, 11, 0.8, 0.02] }],
-      toys: [{ mill: [4.67, 2.95, 1.49, 1.5] }, { tree: [0.8, 5.91, 0.26] }, { tree: [7.2, 5.91, 0.26] }],
+      toys: [{ orbit: [4, 6.5, 2.2, 0.42, -7, 0] }, { mill: [4.67, 2.95, 1.49, 1.5] }, { tree: [0.8, 5.91, 0.26] }, { tree: [7.2, 5.91, 0.26] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
     { name: 'the finale', par: 4, land: [{ bump: [1.33, 1.18, 1.72, 0.03] }, { wave: [0.01, 3.5, 100, 0] }, { bump: [4, 6.8, 1.6, -0.03] }],
-      toys: [{ fall: [7.8, 4.15, 7.8, 4.85, 180] }, { mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { tree: [0.67, 10.64, 0.26] }, { rock: [7.07, 10.87, 0.46] }],
+      toys: [{ shuttle: [1.5, 2.5, 6.5, 2.5, 0.3, 2.8] }, { mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { tree: [0.67, 10.64, 0.26] }, { rock: [7.07, 10.87, 0.46] }],
       map: ['..O.....', '........', '........', '........', '~~~=~~~~', '........', '........', '........', '###..###', '........', '........', '........', '......T.'] },
   ];
   // cells to the board's own units
@@ -32762,8 +32764,9 @@ const GOLF_APP = (() => {
       if (T.slide) T.slide = [P(T.slide[0]), P(T.slide[1]), P(T.slide[2]), P(T.slide[3]), P(T.slide[4]), P(T.slide[5]), T.slide[6]];
       for (const k of ['kick', 'rock', 'tree']) if (T[k]) T[k] = T[k].map(P);
       if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
-      if (T.fountain) T.fountain = T.fountain.map(P);
-      if (T.fall){ const [c0, r0, c1, r1, deg] = T.fall; T.fall = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180]; }
+      if (T.shuttle) T.shuttle = [...T.shuttle.slice(0, 5).map(P), T.shuttle[5]];
+      if (T.orbit) T.orbit = [P(T.orbit[0]), P(T.orbit[1]), P(T.orbit[2]), P(T.orbit[3]), T.orbit[4], T.orbit[5] || 0];
+      if (T.gate) T.gate = [...T.gate.slice(0, 4).map(P), T.gate[4], T.gate[5] || 0];
     }
   }
   for (const H of HOLES) H.map.forEach((row, j) => [...row].forEach((ch, i) => {
@@ -32919,12 +32922,25 @@ const GOLF_APP = (() => {
   /* ─── THE TOYS ─────────────────────────────────────────────────────── */
   const MILL_T = 0.011;                                    // a windmill arm's half thickness
   // Where a toy is at time t: a slide's middle and velocity; a mill's angle and turn rate.
+  const GATE_T = CW * 0.14;                                  // a gate's half thickness
   function toyAt(T, t){
     if (T.slide){
       const [x0, y0, x1, y1, , , per] = T.slide, w = 2 * Math.PI / per, f = 0.5 - 0.5 * Math.cos(w * t), df = 0.5 * w * Math.sin(w * t);
       return { x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f, vx: (x1 - x0) * df, vy: (y1 - y0) * df };
     }
     if (T.mill) return { a: T.mill[3] * t, w: T.mill[3] };
+    if (T.shuttle){
+      const [x0, y0, x1, y1, , per] = T.shuttle, w = 2 * Math.PI / per, f = 0.5 - 0.5 * Math.cos(w * t), df = 0.5 * w * Math.sin(w * t);
+      return { x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f, vx: (x1 - x0) * df, vy: (y1 - y0) * df };
+    }
+    if (T.orbit){
+      const [cx, cy, R, , per, ph] = T.orbit, w = 2 * Math.PI / per, a = ph + w * t;
+      return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), vx: -R * w * Math.sin(a), vy: R * w * Math.cos(a), a };
+    }
+    if (T.gate){                                             // up a while, down a while, a quick rise and fall between
+      const [, , , , per, ph] = T.gate, u = clamp(0.5 + 1.4 * Math.sin(2 * Math.PI * t / per + ph), 0, 1);
+      return { up: u };
+    }
     return null;
   }
   // A ball against something moving at (vx, vy) where they touch: out along n, bounced on their relative speed.
@@ -32971,10 +32987,28 @@ const GOLF_APP = (() => {
         b.x = x1 + ux * (pr + BR + 0.006); b.y = y1 + uy * (pr + BR + 0.006); b.vx = ux * sp; b.vy = uy * sp;
         (g.piped = g.piped || {})[k] = t; g.moving = true; g.slowT = 0; hit = Math.max(hit, 0.02);
         SND.play('flag');
-      } else if (T.kick){
-        const [kx, ky, kr] = T.kick, dx = b.x - kx, dy = b.y - ky, d = Math.hypot(dx, dy);
+      } else if (T.orbit){
+        /* THE MOVERS (Oct 8: "remove the water fall and water fountain. lets try moving obsticals instead."). A boulder
+           going round meets the ball as a standing one does, but moving: it bounces off the boulder's own speed where they
+           touch, so a boulder coming at the ball knocks it on, and one going away lets it by. */
+        const S = toyAt(T, t), cr = T.orbit[3], dx = b.x - S.x, dy = b.y - S.y, d = Math.hypot(dx, dy);
+        if (d >= BR + cr || d < 1e-9) return;
+        hit = Math.max(hit, knockOff(b, dx / d, dy / d, S.x, S.y, BR + cr, S.vx, S.vy, E));
+      } else if (T.gate){
+        // a gate: a bar across the way, solid while it stands more than half out of the ground, and nothing while it is down
+        const S = toyAt(T, t);
+        if (S.up < 0.5) return;
+        const [x0, y0, x1, y1] = T.gate, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
+        const q = clamp(((b.x - x0) * ux + (b.y - y0) * uy) / L2, 0, 1), px = x0 + ux * q, py = y0 + uy * q;
+        const dx = b.x - px, dy = b.y - py, d = Math.hypot(dx, dy);
+        if (d >= BR + GATE_T || d < 1e-9) return;
+        hit = Math.max(hit, knockOff(b, dx / d, dy / d, px, py, BR + GATE_T, 0, 0, E));
+      } else if (T.kick || T.shuttle){
+        // a bumper, standing or riding to and fro: it kicks the ball away, faster than it came, on top of its own speed
+        const S = T.shuttle ? toyAt(T, t) : { x: T.kick[0], y: T.kick[1], vx: 0, vy: 0 };
+        const kx = S.x, ky = S.y, kr = (T.kick || T.shuttle)[T.kick ? 2 : 4], dx = b.x - kx, dy = b.y - ky, d = Math.hypot(dx, dy);
         if (d >= BR + kr || d < 1e-9) return;
-        const nx = dx / d, ny = dy / d, vn = b.vx * nx + b.vy * ny;
+        const nx = dx / d, ny = dy / d, vn = (b.vx - S.vx) * nx + (b.vy - S.vy) * ny;
         b.x = kx + nx * (BR + kr); b.y = ky + ny * (BR + kr);
         if (vn < 0.6){ const out = Math.max(0.6, -vn * 1.15); b.vx += (out - vn) * nx; b.vy += (out - vn) * ny; }   // it kicks: always away, never softer
         (g.kicked = g.kicked || {})[k] = t; hit = Math.max(hit, 0.6);
@@ -33170,20 +33204,7 @@ const GOLF_APP = (() => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
-    // the water's pieces (Oct 8): drops long and thin so a string of them reads as a stream, foam, rings on the pond,
-    // a fountain's basin and a waterfall's rock face
-    drop: T => { const g = new T.SphereGeometry(0.5, 6, 5); g.scale(0.8, 1.8, 0.8); g.userData.unlit = true; g.userData.opacity = 0.85; return g; },
-    foam: T => { const g = new T.SphereGeometry(0.5, 8, 5); g.scale(1, 0.45, 1); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
-    ripple: T => { const g = new T.RingGeometry(0.44, 0.5, 32); g.rotateX(-Math.PI / 2); g.userData.unlit = true; g.userData.opacity = 0.6; return g; },
-    fountBowl: T => {                                       // a stone drum, a pillar and a dish on top, as one mesh
-      const parts = [[0.5, 0.44, 0.22, 0.11], [0.1, 0.13, 0.42, 0.42], [0.26, 0.12, 0.08, 0.66]].map(([a, b, h, y]) => {
-        const g = new T.CylinderGeometry(a, b, h, 20).toNonIndexed(); g.translate(0, y, 0); return g; });
-      const pos = [], nrm = [];
-      for (const g of parts){ pos.push(...g.attributes.position.array); nrm.push(...g.attributes.normal.array); }
-      const g = new T.BufferGeometry();
-      g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
-      return g; },
-    cliff: T => { const g = new T.DodecahedronGeometry(0.5, 0); g.scale(1.7, 2.6, 1.1); g.translate(0, 1.0, 0); return g; },
+    gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     wall: T => { const g = new T.BoxGeometry(1, 0.88, 1); g.translate(0, -0.16, 0); return g; },
     railV: T => { const g = new T.BoxGeometry(RT / CW, 0.88, 1); g.translate(0, -0.16, 0); return g; },   // a wall's height, RT thick
     railH: T => { const g = new T.BoxGeometry(1, 0.88, RT / CW); g.translate(0, -0.16, 0); return g; },   // stands 0.28 above the ground, low enough for the winning bar to show; reaches down past any slope
@@ -33227,63 +33248,6 @@ const GOLF_APP = (() => {
       if (segs.includes('e')) put('segV', x, v0 + 1.5 * HH, HH);
       if (segs.includes('c')) put('segV', x + W, v0 + 1.5 * HH, HH);
     });
-  }
-  /* FOUNTAINS AND WATERFALLS (Oct 8: "add animations like water falls and water fountains"). Water to look at: the ball
-     meets the pond by its cell, as it always has, and nothing here touches the physics. Each is drawn afresh every frame
-     from the clock, as the windmills are, so every board on the field plays them, the one in play on the game's clock.
-     A FOUNTAIN is a stone basin in the pond, a jet straight up and six arcs round it, each a string of drops at evenly
-     spaced moments of one flight (so the string is the arc, and moving the moments along makes it flow), and rings
-     spreading out on the water where they come down.
-     A WATERFALL is a rock face standing on the rail with water pouring off its lip into the pond: streams across the lip,
-     each a string of drops falling under gravity as they move out, white foam churning where they land, and rings. */
-  const DROP = 0xcfe8ff, FOAM = 0xf4fbff, WATER_C = new THREE.Color(0x2f6cc4);
-  const _rc = new THREE.Color();
-  function ringColor(q){ _rc.setHex(0xffffff).lerp(WATER_C, q); return _rc.getHex(); }
-  function waterToyItems(out, H, T, t){
-    const wl = waterLevel(H), fr = v => v - Math.floor(v);
-    if (T.fountain){
-      const [x, y, jh] = T.fountain, R = jh * 0.32;
-      out.push({ kind: 'fountBowl', u: x, v: y, scale: jh * 0.42, lift: wl - 0.004, color: 0xb9b2a4 });
-      const top = wl + jh * 0.16;                                         // the jets leave the basin's rim
-      const N = 14;
-      for (let k = 0; k < N; k++){                                         // the jet up the middle, falling back on itself
-        const p = fr(t * 0.85 + k / N);
-        out.push({ kind: 'drop', u: x + Math.sin(k * 2.4) * 0.002, v: y + Math.cos(k * 2.4) * 0.002, scale: 0.012 * (1 - 0.4 * p), lift: top + 4 * jh * p * (1 - p), color: DROP });
-      }
-      for (let a = 0; a < 6; a++){                                         // six arcs out to the pond
-        const th = a * Math.PI / 3 + 0.3;
-        for (let k = 0; k < 9; k++){
-          const p = fr(t * 0.7 + k / 9 + a * 0.11), r = R * 0.35 + R * 1.25 * p;
-          out.push({ kind: 'drop', u: x + Math.cos(th) * r, v: y + Math.sin(th) * r, scale: 0.01, lift: Math.max(wl, top - jh * 0.1 + 2.4 * jh * 0.45 * p * (1 - p) - jh * 0.2 * p), color: DROP });
-        }
-      }
-      for (let i = 0; i < 3; i++){                                         // rings where it lands
-        const q = fr(t * 0.45 + i / 3);
-        out.push({ kind: 'ripple', u: x, v: y, scale: jh * 0.7 + q * jh * 1.6, lift: wl + 0.001, color: ringColor(q) });
-      }
-    } else if (T.fall){
-      const [x0, y0, x1, y1, th] = T.fall, dx = Math.cos(th), dy = Math.sin(th), L = Math.hypot(x1 - x0, y1 - y0);
-      const hh = CW * 1.15, top = wl + hh, Tf = 0.55, g = 2 * hh / (Tf * Tf), vo = CW * 0.45 / Tf;
-      for (let s = 0, n = Math.max(2, Math.round(L / (CW * 0.5))); s <= n; s++){   // the rock face, block by block
-        const f = s / n, bx = x0 + (x1 - x0) * f - dx * CW * 0.12, by = y0 + (y1 - y0) * f - dy * CW * 0.12;
-        out.push({ kind: 'cliff', u: bx, v: by, scale: CW * 0.5, lift: wl - 0.006, yaw: th + (s % 3) * 0.2, color: s & 1 ? 0x8a8478 : 0x77736a });
-      }
-      const ns = Math.max(3, Math.round(L / (CW * 0.16)));
-      for (let s = 0; s < ns; s++){
-        const f = (s + 0.5) / ns, lx = x0 + (x1 - x0) * f, ly = y0 + (y1 - y0) * f;
-        for (let k = 0; k < 8; k++){
-          const p = fr(t * 1.6 + k / 8 + s * 0.37), tau = p * Tf, out_ = vo * tau;
-          out.push({ kind: 'drop', u: lx + dx * out_, v: ly + dy * out_, scale: 0.011, lift: Math.max(wl, top - 0.5 * g * tau * tau), color: k & 1 ? DROP : FOAM });
-        }
-        const fx = lx + dx * vo * Tf, fy = ly + dy * vo * Tf;              // foam where it lands
-        out.push({ kind: 'foam', u: fx, v: fy, scale: 0.026 + 0.01 * Math.sin(t * 7 + s * 1.7), lift: wl - 0.002, color: FOAM });
-      }
-      const mx = (x0 + x1) / 2 + dx * vo * Tf, my = (y0 + y1) / 2 + dy * vo * Tf;
-      for (let i = 0; i < 2; i++){
-        const q = fr(t * 0.6 + i / 2);
-        out.push({ kind: 'ripple', u: mx + dx * q * CW * 0.6, v: my + dy * q * CW * 0.6, scale: Math.max(L, CW) * (0.8 + q), lift: wl + 0.001, color: ringColor(q) });
-      }
-    }
   }
   function cellItems(c, r){
     const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
@@ -33330,6 +33294,26 @@ const GOLF_APP = (() => {
         out.push({ kind: 'hub', u: mx, v: my, scale: 0.04, lift: hm, color: 0xd9d2c0 });
         for (const a of [M.a, M.a + Math.PI / 2]) for (let s = -arm; s <= arm + 1e-9; s += arm / 6)
           out.push({ kind: 'blade', u: mx + Math.cos(a) * s, v: my + Math.sin(a) * s, scale: MILL_T * 2.2, lift: hm + 0.01, color: (Math.abs(s) < arm / 4) ? 0xd9d2c0 : 0xc0392b });
+      } else if (T.shuttle || T.orbit || T.gate){
+        /* The movers, where the clock has them, each over a faint dotted track so you can see where it will be. */
+        const S = toyAt(T, t);
+        if (T.shuttle){
+          const [x0, y0, x1, y1, kr] = T.shuttle, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / (CW * 0.5)));
+          for (let q = 0; q <= n; q++){ const x = x0 + (x1 - x0) * q / n, y = y0 + (y1 - y0) * q / n; out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
+          if (propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: kr * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xbfe0ff });
+          else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: kr * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : 0x3a7fe0 });
+        } else if (T.orbit){
+          const [cx, cy, R, r] = T.orbit, n = Math.max(12, Math.round(2 * Math.PI * R / (CW * 0.5)));
+          for (let q = 0; q < n; q++){ const a = 2 * Math.PI * q / n, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a); out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
+          if (propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a * R / r, color: 0xffffff });   // rolling as it goes
+          else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
+        } else {
+          const [x0, y0, x1, y1] = T.gate, L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / CW)), yaw = Math.atan2(y1 - y0, x1 - x0);
+          for (let q = 0; q < n; q++){                        // CW-long pieces, red and white, sunk by how far down the gate is
+            const f = (q + 0.5) / n, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f;
+            out.push({ kind: 'gateSeg', u: x, v: y, scale: L / n, lift: hOf(H, x, y) - (1 - S.up) * 0.3 * (L / n), yaw, color: q & 1 ? 0xf2f2f2 : 0xd9473c });
+          }
+        }
       } else if (T.kick){
         const [kx, ky, kr] = T.kick, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
         if (propGeo('bumper')) out.push({ kind: 'propBumper', u: kx, v: ky, scale: kr * PROP_K.bumper, lift: hOf(H, kx, ky), color: lit ? 0xffe680 : 0xffffff });
@@ -33349,7 +33333,6 @@ const GOLF_APP = (() => {
           else out.push({ kind: 'pipePlain', u: x, v: y, scale: pr * 2.4, lift: hOf(H, x, y), color: c === 0xffffff ? 0x2f9a4a : 0x2f7a9a });
       }
     });
-    (H.toys || []).forEach(T => { if (T.fountain || T.fall) waterToyItems(out, H, T, t); });
     // The ghost: the last putt's path, as faint dots on the grass.
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     const b = G ? G.ball : H.tee;
