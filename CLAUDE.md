@@ -18,8 +18,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - `index.html`: forwards `/games/` to `games.html`, keeping `?app=…`.
 - `res/`: the `.tvf3d` files the page fetches from beside itself. `res/windmill.tvf3d` is
   mini golf's windmill, a prop from the 3d studio (a `TVF3D-PARTS` file, like a piece);
-  without it the windmills are drawn with the old plain shapes. `bumper`, `rock`, `tree`
-  and `pipe` (Oct 7) are the course's other props, each with a plain fallback shape.
+  without it the windmills are drawn with the old plain shapes. `bumper`, `rock` and
+  `pipe` (Oct 7) are the course's other props, each with a plain fallback shape.
   New props go here too.
 
 ## How the page is put together
@@ -51,7 +51,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   by WD at the end, because items are laid out across the board's width. `HOLES` are
   maps of 13 rows of 8, every cell in play (the board's edge is the wall, drawn as a
   thin rail `RT` inside it), with toys given in cells: bumpers (`kick`), boulders (`rock`)
-  and trees (`tree`) the ball bounces off, pipes (`pipe`) that carry it to their other
+  and bushes (`bush`, Oct 8: ten styles grown in the page by `bushGeo`, 0–5 groomed and
+  6–9 wild; an old `tree` becomes a bush) the ball bounces off, pipes (`pipe`) that carry it to their other
   mouth, bridges (`=`) over water, plus the windmills. The ground (`land`, read by
   `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
   (negative ones are gullies), two or more per hole, and the skate park's bowls and

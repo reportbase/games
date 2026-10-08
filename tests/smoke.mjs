@@ -314,6 +314,24 @@ try {
     if (r.corner !== '.' || r.mid !== '~') failures.push(`[${current}] the island's moat: corner ${r.corner}, middle ${r.mid} (wanted grass at the rounded corner, water in the middle)`);
     if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the boulders' bunker: corner ${r.sandCorner}, middle ${r.sandMid}`);
     if (r.skate.length < 4) failures.push(`[${current}] skate-park holes: ${r.skate.join(', ')}`);
+    // bushes, not trees (Oct 8): groomed and wild ones drawn, ten styles, no tree left, and an old tree read as a bush
+    const bu = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, G = A.itemGeometries, THREE = window.FIELD_WORLD.THREE;
+      const kinds = new Set(), styles = new Set();
+      D.HOLES.forEach(H => (H.toys || []).forEach(T => { if (T.bush) styles.add(T.bush[3]); }));
+      const k = D.HOLES.findIndex(H => H.name === 'the hedges');
+      let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
+      D.cellItems(c, r).forEach(i => { if (/^bush\d$/.test(i.kind)) kinds.add(i.kind); });
+      const geo = Array.from({ length: 10 }, (_, n) => G['bush' + n](THREE)).map(g => { g.computeBoundingBox(); const P = g.attributes.position.array; let w = 0;
+        for (let i = 0; i < P.length; i += 3) w = Math.max(w, Math.hypot(P[i], P[i + 2]));     // fitted: the footprint's radius is 1
+        return { v: g.attributes.position.count, w, y0: g.boundingBox.min.y }; });
+      const old = D.editor.cleanSrc({ map: Array(13).fill('........'), toys: [{ tree: [2, 3, 0.26] }] });
+      return { trees: D.HOLES.some(H => (H.toys || []).some(T => T.tree)), kinds: [...kinds], styles: [...styles].sort(), geo, oldOk: !!old };
+    });
+    if (bu.trees) failures.push(`[${current}] a tree is left on the course`);
+    if (!bu.kinds.some(k => +k.slice(4) <= 5) || !bu.kinds.some(k => +k.slice(4) >= 6)) failures.push(`[${current}] the hedges hole draws ${bu.kinds.join(',')}: wanted groomed and wild bushes`);
+    if (bu.styles.length < 8) failures.push(`[${current}] the course uses ${bu.styles.length} bush styles`);
+    if (bu.geo.some(g => g.v < 100 || Math.abs(g.w - 1) > 0.02 || g.y0 < -1e-6)) failures.push(`[${current}] a bush geometry is off: ${JSON.stringify(bu.geo)}`);
   }
   console.log(`${failures.length === before8 ? 'ok  ' : 'FAIL'} ${current}`);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
