@@ -32676,60 +32676,63 @@ const GOLF_APP = (() => {
   // land: bump [col, row, radius, height] · tilt [rise per board across, down] · step [dx, dy, at (cells), width (cells), height]
   // toys: mill [col, row, arm, turns a second] · slide [c0, r0, c1, r1, width, depth, seconds there and back] · kick [col, row, r]
   //       rock [col, row, r] · tree [col, row, trunk r] · pipe [col in, row in, col out, row out, out heading (° from →, 90 is ↓), r]
+  //       fountain [col, row, jet height] and fall [col, row, col, row (its lip), heading the water leaves at]: water, to look at only
+  // more land (Oct 8): wave [height, length (cells), heading (°), phase] rolls · ridge [c0, r0, c1, r1, width, height] a long
+  //       hump along a line, or a gully when the height is less than nothing; a bump of negative height is a hollow
   const HOLES = [
-    { name: 'the windmill', par: 2, land: [{ bump: [4, 9.45, 1.72, 0.02] }],
+    { name: 'the windmill', par: 2, land: [{ bump: [4, 9.45, 1.72, 0.02] }, { wave: [0.012, 4.5, 90, 0] }, { bump: [1.5, 3, 1.5, -0.025] }, { bump: [6.5, 3.5, 1.5, 0.03] }],
       toys: [{ mill: [4, 6.5, 1.84, 1.2] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the pines', par: 3, land: [{ bump: [4, 6.5, 2.88, 0.03] }],
+    { name: 'the pines', par: 3, land: [{ bump: [4, 6.5, 2.88, 0.03] }, { ridge: [0, 11, 8, 8, 1.2, 0.025] }, { bump: [5, 2, 1.6, -0.03] }],
       toys: [{ tree: [1.87, 2.84, 0.26] }, { tree: [6.13, 4.25, 0.26] }, { tree: [3.47, 6.85, 0.26] }, { tree: [1.33, 9.69, 0.26] }, { tree: [6.4, 9.22, 0.26] }],
       map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
-    { name: 'the boulders', par: 3, land: [{ tilt: [0.03, 0] }],
+    { name: 'the boulders', par: 3, land: [{ tilt: [0.03, 0] }, { wave: [0.01, 3.5, 30, 1] }, { bump: [6, 10, 1.8, 0.035] }],
       toys: [{ rock: [4, 2.36, 0.63] }, { rock: [1.87, 6.15, 0.71] }, { rock: [6.13, 4.73, 0.55] }, { rock: [2.93, 9.93, 0.57] }],
       map: ['.......O', '........', '.sss....', '.sss....', '.sss....', '........', '........', '....sss.', '....sss.', '........', '........', '........', '..T.....'] },
-    { name: 'the pipe', par: 2, land: [],
-      toys: [{ pipe: [6, 9.69, 2, 2.36, -90, 0.45] }, { tree: [0.8, 10.16, 0.24] }],
+    { name: 'the pipe', par: 2, land: [{ bump: [4, 10.5, 2.5, 0.03] }, { bump: [4, 1.5, 2.2, 0.025] }, { wave: [0.008, 3, 0, 0] }],
+      toys: [{ fountain: [4, 6, 1.6] }, { fall: [7.8, 4.3, 7.8, 7.7, 180] }, { pipe: [6, 9.69, 2, 2.36, -90, 0.45] }, { tree: [0.8, 10.16, 0.24] }],
       map: ['...O....', '........', '........', '........', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '........', '........', '........', '........', '...T....'] },
-    { name: 'the bridge', par: 3, land: [{ bump: [6, 1.77, 1.72, 0.03] }],
-      toys: [{ kick: [2, 8.51, 0.32] }, { rock: [6.67, 8.98, 0.52] }],
+    { name: 'the bridge', par: 3, land: [{ bump: [6, 1.77, 1.72, 0.03] }, { ridge: [0, 9.5, 8, 9.5, 1, 0.03] }, { bump: [1.5, 2.5, 1.5, -0.025] }],
+      toys: [{ fall: [0.2, 5.2, 0.2, 6.8, 0] }, { kick: [2, 8.51, 0.32] }, { rock: [6.67, 8.98, 0.52] }],
       map: ['......O.', '........', '........', '........', '........', '~~~~=~~~', '~~~~=~~~', '........', '........', '........', '........', '........', '..T.....'] },
-    { name: 'the dogleg', par: 3, land: [{ tilt: [0, 0.04] }],
+    { name: 'the dogleg', par: 3, land: [{ tilt: [0, 0.04] }, { ridge: [5, 0, 8, 4, 1.2, 0.035] }, { bump: [2, 1.5, 1.5, -0.02] }],
       toys: [{ tree: [5.2, 2.25, 0.3] }, { rock: [0.53, 1.89, 0.46] }],
       map: ['..O.....', '........', '........', '........', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####.T.'] },
-    { name: 'the bumpers', par: 3, land: [],
+    { name: 'the bumpers', par: 3, land: [{ bump: [4, 6, 2.5, 0.04] }, { bump: [1.5, 10.5, 1.5, -0.025] }, { bump: [6.5, 10.5, 1.5, -0.025] }],
       toys: [{ kick: [2, 3.55, 0.32] }, { kick: [6, 3.55, 0.32] }, { kick: [4, 5.91, 0.32] }, { kick: [2, 8.27, 0.32] }, { kick: [6, 8.27, 0.32] }, { kick: [4, 2.13, 0.28] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the switchback', par: 4, land: [{ step: [0, -1, -6.5, 0.4, 0.04] }],
+    { name: 'the switchback', par: 4, land: [{ step: [0, -1, -6.5, 0.4, 0.04] }, { wave: [0.008, 3, 0, 0.5] }],
       toys: [{ kick: [6.93, 7.8, 0.3] }],
       map: ['O.......', '........', '#####...', '........', '........', '........', '...#####', '........', '........', '........', '#####...', '........', '..T.....'] },
-    { name: 'the island', par: 3, land: [],
-      toys: [{ mill: [4, 7.33, 1.38, 1.4] }, { tree: [0.67, 1.18, 0.24] }, { tree: [7.33, 1.18, 0.24] }],
+    { name: 'the island', par: 3, land: [{ bump: [4, 9.5, 2.5, 0.03] }, { wave: [0.008, 3, 60, 0] }],
+      toys: [{ fountain: [2, 2.5, 1] }, { fountain: [6, 2.5, 1] }, { mill: [4, 7.33, 1.38, 1.4] }, { tree: [0.67, 1.18, 0.24] }, { tree: [7.33, 1.18, 0.24] }],
       map: ['........', '.~~~~~~.', '.~~O.~~.', '.~~..~~.', '.~~..~~.', '.~~==~~.', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the volcano', par: 3, land: [{ bump: [4.67, 4.14, 2.64, 0.1] }],
+    { name: 'the volcano', par: 3, land: [{ bump: [4.67, 4.14, 2.64, 0.1] }, { wave: [0.008, 2.5, 45, 0] }],
       toys: [{ rock: [1.87, 7.33, 0.48] }, { rock: [6.93, 7.8, 0.48] }, { rock: [4.8, 8.75, 0.41] }],
       map: ['........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the gauntlet', par: 3, land: [],
+    { name: 'the gauntlet', par: 3, land: [{ ridge: [4, 0.5, 4, 12.5, 1.6, -0.035] }, { bump: [0.8, 6.3, 1.4, 0.03] }, { bump: [7.2, 6.3, 1.4, 0.03] }],
       toys: [{ mill: [4, 3.78, 1.72, 1.6] }, { mill: [4, 8.75, 1.72, -1.3] }],
       map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the forest', par: 4, land: [{ bump: [4, 6.5, 3.45, 0.02] }],
+    { name: 'the forest', par: 4, land: [{ bump: [4, 6.5, 3.45, 0.02] }, { wave: [0.012, 3.5, 90, 0.8] }],
       toys: [{ tree: [0.8, 2.95, 0.29] }, { tree: [2.13, 2.95, 0.29] }, { tree: [3.47, 2.95, 0.29] }, { tree: [4.8, 2.95, 0.29] }, { tree: [3.2, 6.5, 0.29] }, { tree: [4.53, 6.5, 0.29] }, { tree: [5.87, 6.5, 0.29] }, { tree: [7.2, 6.5, 0.29] }, { tree: [0.8, 10.05, 0.29] }, { tree: [2.13, 10.05, 0.29] }, { tree: [3.47, 10.05, 0.29] }, { tree: [4.8, 10.05, 0.29] }],
       map: ['O.......', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '.......T'] },
-    { name: 'the canyon', par: 3, land: [{ tilt: [0, -0.02] }],
+    { name: 'the canyon', par: 3, land: [{ tilt: [0, -0.02] }, { step: [0, 1, 7.2, 0.5, -0.03] }, { bump: [1.5, 10.5, 1.4, 0.03] }],
       toys: [{ slide: [3.27, 4.14, 4.73, 4.14, 1.03, 0.4, 2.4] }, { rock: [1.33, 7.8, 0.46] }],
       map: ['##.O..##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '........', '........', 'sss.....', 'sss.....', 'sss.....', '......T.'] },
-    { name: 'the pipes', par: 3, land: [],
+    { name: 'the pipes', par: 3, land: [{ bump: [2, 8, 1.8, 0.035] }, { bump: [5.5, 10, 1.6, -0.025] }, { wave: [0.008, 3, 120, 0] }],
       toys: [{ pipe: [1.33, 5.91, 0.8, 1.18, 0, 0.45] }, { pipe: [6.67, 5.91, 6.67, 11.11, 90, 0.45] }, { kick: [4, 8.27, 0.3] }],
       map: ['...O....', '........', '########', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the moat', par: 3, land: [],
-      toys: [{ tree: [0.67, 9.45, 0.26] }, { tree: [7.33, 9.93, 0.26] }, { kick: [7.2, 0.47, 0.26] }],
+    { name: 'the moat', par: 3, land: [{ bump: [4, 9.5, 2.5, 0.035] }, { bump: [4, 3.5, 1.2, -0.02] }],
+      toys: [{ fall: [0.2, 6.15, 0.2, 6.85, 0] }, { tree: [0.67, 9.45, 0.26] }, { tree: [7.33, 9.93, 0.26] }, { kick: [7.2, 0.47, 0.26] }],
       map: ['........', '.######.', '.#.O..#.', '.#....#.', '.#....#.', '.###.##.', '~~~~=~~~', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the snake', par: 5, land: [],
+    { name: 'the snake', par: 5, land: [{ wave: [0.01, 4, 0, 0] }, { tilt: [0, -0.02] }, { bump: [5.5, 7.5, 1.4, 0.03] }],
       toys: [{ rock: [3.33, 5.32, 0.4] }, { tree: [3.33, 10.05, 0.26] }],
       map: ['O.......', '#######.', '........', '........', '.#######', '........', '#######.', '........', '.#######', '........', '........', '#######.', 'T.......'] },
-    { name: 'the hill', par: 3, land: [{ bump: [4, 6.5, 3.45, 0.12] }],
+    { name: 'the hill', par: 3, land: [{ bump: [4, 6.5, 3.45, 0.12] }, { ridge: [0, 9, 8, 11, 0.8, 0.02] }],
       toys: [{ mill: [4.67, 2.95, 1.49, 1.5] }, { tree: [0.8, 5.91, 0.26] }, { tree: [7.2, 5.91, 0.26] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the finale', par: 4, land: [{ bump: [1.33, 1.18, 1.72, 0.03] }],
-      toys: [{ mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { tree: [0.67, 10.64, 0.26] }, { rock: [7.07, 10.87, 0.46] }],
+    { name: 'the finale', par: 4, land: [{ bump: [1.33, 1.18, 1.72, 0.03] }, { wave: [0.01, 3.5, 100, 0] }, { bump: [4, 6.8, 1.6, -0.03] }],
+      toys: [{ fall: [7.8, 4.15, 7.8, 4.85, 180] }, { mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { tree: [0.67, 10.64, 0.26] }, { rock: [7.07, 10.87, 0.46] }],
       map: ['..O.....', '........', '........', '........', '~~~=~~~~', '........', '........', '........', '###..###', '........', '........', '........', '......T.'] },
   ];
   // cells to the board's own units
@@ -32738,12 +32741,16 @@ const GOLF_APP = (() => {
     for (const f of H.land || []){
       if (f.bump) f.bump = [P(f.bump[0]), P(f.bump[1]), P(f.bump[2]), f.bump[3]];
       if (f.step) f.step = [f.step[0], f.step[1], P(f.step[2]), P(f.step[3]), f.step[4]];
+      if (f.wave) f.wave = [f.wave[0], P(f.wave[1]), f.wave[2] * Math.PI / 180, f.wave[3]];
+      if (f.ridge) f.ridge = [P(f.ridge[0]), P(f.ridge[1]), P(f.ridge[2]), P(f.ridge[3]), P(f.ridge[4]), f.ridge[5]];
     }
     for (const T of H.toys || []){
       if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
       if (T.slide) T.slide = [P(T.slide[0]), P(T.slide[1]), P(T.slide[2]), P(T.slide[3]), P(T.slide[4]), P(T.slide[5]), T.slide[6]];
       for (const k of ['kick', 'rock', 'tree']) if (T[k]) T[k] = T[k].map(P);
       if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
+      if (T.fountain) T.fountain = T.fountain.map(P);
+      if (T.fall){ const [c0, r0, c1, r1, deg] = T.fall; T.fall = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180]; }
     }
   }
   for (const H of HOLES) H.map.forEach((row, j) => [...row].forEach((ch, i) => {
@@ -32764,6 +32771,17 @@ const GOLF_APP = (() => {
       if (f.tilt){ h += f.tilt[0] * (x - WD / 2) + f.tilt[1] * (y - 0.5); }
       // a step: up by a, over a width w, where (x, y)·dir passes pos — flat on either side, a terrace
       if (f.step){ const [dx, dy, pos, w, a] = f.step, q = Math.min(1, Math.max(0, ((x * dx + y * dy) - pos) / (2 * w) + 0.5)); h += a * q * q * (3 - 2 * q); }
+      /* MORE KINDS OF GROUND (Oct 8: "the elevation changes should be more varied and interesting"). Until now a hole had a
+         bump or a tilt or a step, one each and mostly gentle, so most greens read as flat. A wave rolls the whole green in
+         ridges, so a long putt rides over and down them; a ridge is a hump along a line (a dyke between tee and water, a
+         bank round a corner), and a gully when its height is negative, a channel the ball runs down. With them, and with
+         bumps of negative height for hollows, every hole now has two or three features. */
+      if (f.wave){ const [a, L, th, ph] = f.wave; h += a * Math.sin(2 * Math.PI * (x * Math.cos(th) + y * Math.sin(th)) / L + ph); }
+      if (f.ridge){
+        const [x0, y0, x1, y1, w, a] = f.ridge, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
+        const q = Math.max(0, Math.min(1, ((x - x0) * ux + (y - y0) * uy) / L2)), d2 = (x - x0 - q * ux) ** 2 + (y - y0 - q * uy) ** 2;
+        h += a * Math.exp(-d2 / (w * w / 4));
+      }
     }
     return h;
   }
@@ -32773,6 +32791,15 @@ const GOLF_APP = (() => {
     const hc = H.hc != null ? H.hc : (H.hc = rawH(H, H.cup.x, H.cup.y));
     const f = d <= R1 ? 0 : (d - R1) / (R2 - R1), e = f * f * (3 - 2 * f);
     return Math.max(0.004, hc + (h - hc) * e);
+  }
+  /* WHERE THE WATER LIES (Oct 8): one level for the hole's water, a little under the lowest ground beneath it, so a pond
+     on rolling ground is a flat sheet with banks rather than a blue patch draped over the hills. The ball still meets water
+     by its cell, as before; the fountains and falls stand on this level. */
+  function waterLevel(H){
+    if (H.wl != null) return H.wl;
+    let m = Infinity;
+    H.map.forEach((row, j) => [...row].forEach((ch, i) => { if (ch === '~' || ch === '=') for (const [a, b] of [[0.1, 0.1], [0.9, 0.1], [0.5, 0.5], [0.1, 0.9], [0.9, 0.9]]) m = Math.min(m, rawH(H, (i + a) * CW, (j + b) * CW)); }));
+    return (H.wl = isFinite(m) ? Math.max(0.006, m - 0.006) : BASE);
   }
   const gradOf = (H, x, y) => { const e = 0.002; return [(hOf(H, x + e, y) - hOf(H, x - e, y)) / (2 * e), (hOf(H, x, y + e) - hOf(H, x, y - e)) / (2 * e)]; };
   const GRAV = 4;                                          // how hard the ground's slope pulls the ball
@@ -33014,8 +33041,8 @@ const GOLF_APP = (() => {
   const GRASS = [0x63b86a, 0x58ad60];
   // the far board: NY × NY tiles over the WD × 1 board, each the colour of the cell under its middle
   const GRIDS = HOLES.map(H => ({ n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
-    const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, ch = H.map[j][i], odd = (i + j) & 1;
-    return ch === '#' ? 0x7a5a3c : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[odd];
+    const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, ch = H.map[j][i];
+    return ch === '#' ? 0x7a5a3c : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
   }) }));
   const holeShown = (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.hole : holeOf(c, r); };
   const POLE_H = 0.16;
@@ -33027,10 +33054,13 @@ const GOLF_APP = (() => {
     const ny = MESH, nx = Math.round(MESH * WD), pos = [], col = [], idx = [], c = new T.Color();
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
       const x = i / nx * WD, y = j / ny, h = hOf(H, x, y), ci = Math.min(NX - 1, Math.floor(x / CW)), cj = Math.min(NY - 1, Math.floor(y / CW));
-      pos.push(WD / 2 - x, h, 0.5 - y);
-      const ch = at(H, ci, cj);
-      if (ch === 's') c.setHex(0xd8c287); else if (ch === '~' || ch === '=') c.setHex(0x2f6cc4); else if (ch === '#') c.setHex(0x6b4f33);
-      else { c.setHex(((ci + cj) & 1) ? GRASS[1] : GRASS[0]); c.multiplyScalar(0.72 * Math.max(0.55, Math.min(1.4, 1 + (h - BASE) * 8))); }
+      const ch = at(H, ci, cj), wet = ch === '~' || ch === '=';
+      pos.push(WD / 2 - x, wet ? waterLevel(H) : h, 0.5 - y);     // water lies level, below its banks, however the land rolls
+      if (ch === 's') c.setHex(0xd8c287); else if (wet) c.setHex(0x2f6cc4); else if (ch === '#') c.setHex(0x6b4f33);
+      /* ONE GRASS (Oct 8: "remove the checkerboard pattern"). The cells were mown in alternate shades, which ruled every hole
+         into squares and fought the slopes for the eye; now the grass is one green, lighter up high and darker down low, so
+         what shows is the shape of the ground. */
+      else { c.setHex(GRASS[0]); c.multiplyScalar(0.72 * Math.max(0.5, Math.min(1.45, 1 + (h - BASE) * 9))); }
       col.push(c.r, c.g, c.b);
     }
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++){ const a = j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1; idx.push(a, d, b, b, d, e); }
@@ -33127,6 +33157,20 @@ const GOLF_APP = (() => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
+    // the water's pieces (Oct 8): drops long and thin so a string of them reads as a stream, foam, rings on the pond,
+    // a fountain's basin and a waterfall's rock face
+    drop: T => { const g = new T.SphereGeometry(0.5, 6, 5); g.scale(0.8, 1.8, 0.8); g.userData.unlit = true; g.userData.opacity = 0.85; return g; },
+    foam: T => { const g = new T.SphereGeometry(0.5, 8, 5); g.scale(1, 0.45, 1); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
+    ripple: T => { const g = new T.RingGeometry(0.44, 0.5, 32); g.rotateX(-Math.PI / 2); g.userData.unlit = true; g.userData.opacity = 0.6; return g; },
+    fountBowl: T => {                                       // a stone drum, a pillar and a dish on top, as one mesh
+      const parts = [[0.5, 0.44, 0.22, 0.11], [0.1, 0.13, 0.42, 0.42], [0.26, 0.12, 0.08, 0.66]].map(([a, b, h, y]) => {
+        const g = new T.CylinderGeometry(a, b, h, 20).toNonIndexed(); g.translate(0, y, 0); return g; });
+      const pos = [], nrm = [];
+      for (const g of parts){ pos.push(...g.attributes.position.array); nrm.push(...g.attributes.normal.array); }
+      const g = new T.BufferGeometry();
+      g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+      return g; },
+    cliff: T => { const g = new T.DodecahedronGeometry(0.5, 0); g.scale(1.7, 2.6, 1.1); g.translate(0, 1.0, 0); return g; },
     wall: T => { const g = new T.BoxGeometry(1, 0.88, 1); g.translate(0, -0.16, 0); return g; },
     railV: T => { const g = new T.BoxGeometry(RT / CW, 0.88, 1); g.translate(0, -0.16, 0); return g; },   // a wall's height, RT thick
     railH: T => { const g = new T.BoxGeometry(1, 0.88, RT / CW); g.translate(0, -0.16, 0); return g; },   // stands 0.28 above the ground, low enough for the winning bar to show; reaches down past any slope
@@ -33170,6 +33214,63 @@ const GOLF_APP = (() => {
       if (segs.includes('e')) put('segV', x, v0 + 1.5 * HH, HH);
       if (segs.includes('c')) put('segV', x + W, v0 + 1.5 * HH, HH);
     });
+  }
+  /* FOUNTAINS AND WATERFALLS (Oct 8: "add animations like water falls and water fountains"). Water to look at: the ball
+     meets the pond by its cell, as it always has, and nothing here touches the physics. Each is drawn afresh every frame
+     from the clock, as the windmills are, so every board on the field plays them, the one in play on the game's clock.
+     A FOUNTAIN is a stone basin in the pond, a jet straight up and six arcs round it, each a string of drops at evenly
+     spaced moments of one flight (so the string is the arc, and moving the moments along makes it flow), and rings
+     spreading out on the water where they come down.
+     A WATERFALL is a rock face standing on the rail with water pouring off its lip into the pond: streams across the lip,
+     each a string of drops falling under gravity as they move out, white foam churning where they land, and rings. */
+  const DROP = 0xcfe8ff, FOAM = 0xf4fbff, WATER_C = new THREE.Color(0x2f6cc4);
+  const _rc = new THREE.Color();
+  function ringColor(q){ _rc.setHex(0xffffff).lerp(WATER_C, q); return _rc.getHex(); }
+  function waterToyItems(out, H, T, t){
+    const wl = waterLevel(H), fr = v => v - Math.floor(v);
+    if (T.fountain){
+      const [x, y, jh] = T.fountain, R = jh * 0.32;
+      out.push({ kind: 'fountBowl', u: x, v: y, scale: jh * 0.42, lift: wl - 0.004, color: 0xb9b2a4 });
+      const top = wl + jh * 0.16;                                         // the jets leave the basin's rim
+      const N = 14;
+      for (let k = 0; k < N; k++){                                         // the jet up the middle, falling back on itself
+        const p = fr(t * 0.85 + k / N);
+        out.push({ kind: 'drop', u: x + Math.sin(k * 2.4) * 0.002, v: y + Math.cos(k * 2.4) * 0.002, scale: 0.012 * (1 - 0.4 * p), lift: top + 4 * jh * p * (1 - p), color: DROP });
+      }
+      for (let a = 0; a < 6; a++){                                         // six arcs out to the pond
+        const th = a * Math.PI / 3 + 0.3;
+        for (let k = 0; k < 9; k++){
+          const p = fr(t * 0.7 + k / 9 + a * 0.11), r = R * 0.35 + R * 1.25 * p;
+          out.push({ kind: 'drop', u: x + Math.cos(th) * r, v: y + Math.sin(th) * r, scale: 0.01, lift: Math.max(wl, top - jh * 0.1 + 2.4 * jh * 0.45 * p * (1 - p) - jh * 0.2 * p), color: DROP });
+        }
+      }
+      for (let i = 0; i < 3; i++){                                         // rings where it lands
+        const q = fr(t * 0.45 + i / 3);
+        out.push({ kind: 'ripple', u: x, v: y, scale: jh * 0.7 + q * jh * 1.6, lift: wl + 0.001, color: ringColor(q) });
+      }
+    } else if (T.fall){
+      const [x0, y0, x1, y1, th] = T.fall, dx = Math.cos(th), dy = Math.sin(th), L = Math.hypot(x1 - x0, y1 - y0);
+      const hh = CW * 1.15, top = wl + hh, Tf = 0.55, g = 2 * hh / (Tf * Tf), vo = CW * 0.45 / Tf;
+      for (let s = 0, n = Math.max(2, Math.round(L / (CW * 0.5))); s <= n; s++){   // the rock face, block by block
+        const f = s / n, bx = x0 + (x1 - x0) * f - dx * CW * 0.12, by = y0 + (y1 - y0) * f - dy * CW * 0.12;
+        out.push({ kind: 'cliff', u: bx, v: by, scale: CW * 0.5, lift: wl - 0.006, yaw: th + (s % 3) * 0.2, color: s & 1 ? 0x8a8478 : 0x77736a });
+      }
+      const ns = Math.max(3, Math.round(L / (CW * 0.16)));
+      for (let s = 0; s < ns; s++){
+        const f = (s + 0.5) / ns, lx = x0 + (x1 - x0) * f, ly = y0 + (y1 - y0) * f;
+        for (let k = 0; k < 8; k++){
+          const p = fr(t * 1.6 + k / 8 + s * 0.37), tau = p * Tf, out_ = vo * tau;
+          out.push({ kind: 'drop', u: lx + dx * out_, v: ly + dy * out_, scale: 0.011, lift: Math.max(wl, top - 0.5 * g * tau * tau), color: k & 1 ? DROP : FOAM });
+        }
+        const fx = lx + dx * vo * Tf, fy = ly + dy * vo * Tf;              // foam where it lands
+        out.push({ kind: 'foam', u: fx, v: fy, scale: 0.026 + 0.01 * Math.sin(t * 7 + s * 1.7), lift: wl - 0.002, color: FOAM });
+      }
+      const mx = (x0 + x1) / 2 + dx * vo * Tf, my = (y0 + y1) / 2 + dy * vo * Tf;
+      for (let i = 0; i < 2; i++){
+        const q = fr(t * 0.6 + i / 2);
+        out.push({ kind: 'ripple', u: mx + dx * q * CW * 0.6, v: my + dy * q * CW * 0.6, scale: Math.max(L, CW) * (0.8 + q), lift: wl + 0.001, color: ringColor(q) });
+      }
+    }
   }
   function cellItems(c, r){
     const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
@@ -33235,6 +33336,7 @@ const GOLF_APP = (() => {
           else out.push({ kind: 'pipePlain', u: x, v: y, scale: pr * 2.4, lift: hOf(H, x, y), color: c === 0xffffff ? 0x2f9a4a : 0x2f7a9a });
       }
     });
+    (H.toys || []).forEach(T => { if (T.fountain || T.fall) waterToyItems(out, H, T, t); });
     // The ghost: the last putt's path, as faint dots on the grass.
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     const b = G ? G.ball : H.tee;
@@ -33278,12 +33380,12 @@ const GOLF_APP = (() => {
     boardShape: { cellW: WD, cellH: 1 },               // the golden board, upright (Oct 7)
     keepsPress: true,                                  // a still finger is aiming, not asking the view to tilt
     claimMargin: 0.12,                                 // …and so is one pressed just past the rail, on a ball against it (Oct 7)
-    cellFar: { light: GRASS[0], dark: GRASS[1] },
+    cellFar: { light: GRASS[0], dark: GRASS[0] },
     itemMinPx: 4,
     itemGeometries,
     fabricCell(ctx, rect){
       const tx = rect.w / NX, ty = rect.h / NY;
-      for (let k = 0; k < NX * NY; k++){ ctx.fillStyle = ((k % NX) + ((k / NX) | 0)) % 2 ? '#58ad60' : '#63b86a'; ctx.fillRect(rect.x + (k % NX) * tx, rect.y + ((k / NX) | 0) * ty, tx + 0.5, ty + 0.5); }
+      ctx.fillStyle = '#63b86a'; ctx.fillRect(rect.x, rect.y, NX * tx, NY * ty);   // one grass (Oct 8)
     },
     cellGrid(c, r){ return GRIDS[holeShown(c, r)]; },
     cellItems,
@@ -33360,13 +33462,13 @@ const GOLF_APP = (() => {
       const H = HOLES[holeShown(c, r)], t = sz / NY, x0 = (sz - NX * t) / 2;
       ctx.fillStyle = '#1d3a22'; ctx.fillRect(0, 0, sz, sz);
       for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){ const ch = H.map[j][i];
-        ctx.fillStyle = ch === '#' ? '#7a5a3c' : ch === 's' ? '#e6d39a' : ch === '~' ? '#3d7fd9' : ch === '=' ? '#9a7048' : ((i + j) & 1 ? '#58ad60' : '#63b86a');
+        ctx.fillStyle = ch === '#' ? '#7a5a3c' : ch === 's' ? '#e6d39a' : ch === '~' ? '#3d7fd9' : ch === '=' ? '#9a7048' : '#63b86a';
         ctx.fillRect(x0 + i * t, j * t, t + 0.5, t + 0.5); }
       ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x0 + H.cup.x / CW * t, H.cup.y / CW * t, t * 0.32, 0, 7); ctx.fill();
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt },
+    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel },
   };
   return app;
 })();
