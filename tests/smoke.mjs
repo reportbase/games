@@ -446,6 +446,19 @@ try {
       const need = Math.max(...E.TOOLS.map(t => c.measureText(t[1]).width));
       return { w: ts.length ? Math.min(...ts.map(t => parseFloat(t.style.width))) : 0, need }; });
     if (!(wide.w >= wide.need)) failures.push(`[${current}] tool tiles ${wide.w}px wide for names needing ${wide.need.toFixed(0)}px`);
+    // the editor goes where you tap (Oct 8: "i should be able to add features to any board"): a tap on another board moves
+    // the editor there with the tool kept, and a tap back returns to the first hole, edited in place; Half-pipe and Bowl
+    // are no longer tools
+    const anyB = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const key0 = ED.key, k0 = ED.k; ED.tool = 'kick';
+      A.onCellTap(f.c + 1, f.r, 0.5, 0.5);
+      const moved = { on: ED.on, key: ED.key, tool: ED.tool, k: ED.k, toys: ED.src.toys.length };
+      A.onCellTap(f.c + 1, f.r, 0.5, 0.5);                   // the next tap places a bumper on that board
+      const placed = ED.src.toys.length - moved.toys;
+      A.onCellTap(f.c, f.r, 0.5, 0.5);
+      return { key0, moved, placed, back: ED.key === key0, sameHole: ED.k === k0, gone: E.TOOLS.filter(t => t[0] === 'bowl' || t[0] === 'hpipe').length }; });
+    if (!anyB.moved.on || anyB.moved.key === anyB.key0 || anyB.moved.tool !== 'kick' || anyB.placed !== 1 || !anyB.back || !anyB.sameHole || anyB.gone)
+      failures.push(`[${current}] editing another board: ${JSON.stringify(anyB)}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
