@@ -243,8 +243,45 @@ try {
     if (g1.strokes !== g0.strokes + 1) failures.push(`[${current}] a held press past the rail did not putt (strokes ${g0.strokes} → ${g1.strokes})`);
     if (Math.abs(g1.pitch - g0.pitch) > 1e-6) failures.push(`[${current}] it tilted the view instead (${g0.pitch} → ${g1.pitch})`);
   }
-  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
   console.log(`${failures.length === before4 ? 'ok  ' : 'FAIL'} ${current}`);
+
+  // The bottom row: when every tile fits there is no fisheye, the tiles stand in one even row, in order, centred (Oct 8:
+  // "if all subpanels can fit on the bottom panel dont use fisheye and center them. this applies to all applications.")
+  current = 'bottom row centred';
+  const before6 = failures.length;
+  await page.waitForTimeout(600);
+  const row = await page.evaluate(() => {
+    const st = document.getElementById('boardBrowser');
+    if (!st || st.hidden) return null;
+    const ts = [...st.querySelectorAll('*')].filter(t => t.parentElement === st && t.style.left && t.style.display !== 'none');
+    return { W: st.clientWidth, xs: ts.map(t => parseFloat(t.style.left)).sort((a, b) => a - b) };
+  });
+  if (!row || row.xs.length !== 4) failures.push(`[${current}] mini golf's row shows ${row ? row.xs.length : 'no'} tiles, expected its 4 numbers`);
+  else {
+    const gaps = row.xs.slice(1).map((x, i) => x - row.xs[i]), mid = (row.xs[0] + row.xs[row.xs.length - 1]) / 2;
+    if (Math.max(...gaps) - Math.min(...gaps) > 1 || Math.abs(mid - row.W / 2) > 1) failures.push(`[${current}] tiles at ${row.xs.map(x => x.toFixed(0)).join(', ')} in ${row.W}: not one even row, centred`);
+  }
+  console.log(`${failures.length === before6 ? 'ok  ' : 'FAIL'} ${current}`);
+
+  // A hold and let go on another board selects it (Oct 8: "long press should select the board")
+  current = 'long press selects a board';
+  const before7 = failures.length;
+  {
+    const N = await page.evaluate(() => {
+      const W = window.FIELD_WORLD, T = W.target, [sx] = W.spacing(), f = W.cellAt(T.boardX, T.boardZ);
+      const v = new W.THREE.Vector3(T.boardX - sx, 0.02, T.boardZ).project(W.camera);
+      const n = W.cellAt(T.boardX - sx, T.boardZ);
+      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, from: f, to: n };
+    });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(N) });
+    await page.waitForTimeout(900);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(400);
+    const now = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; return W.cellAt(T.boardX, T.boardZ); });
+    if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] held ${JSON.stringify(N.to)} from ${JSON.stringify(N.from)}, now on ${JSON.stringify(now)}`);
+  }
+  console.log(`${failures.length === before7 ? 'ok  ' : 'FAIL'} ${current}`);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
