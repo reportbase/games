@@ -33278,9 +33278,35 @@ const GOLF_APP = (() => {
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
     g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    /* THE HOLE'S SIDES (Oct 8: "the entire golf hole, it is hovering off the ground. why can't we move it lower into the
+       ground?"). The grass was a sheet with nothing under it, so from any angle the hole floated over its board. Now its
+       four edges run down as banks of earth to the board (sinkOf, below, lowers the whole hole so the board is where they
+       end), and the hole stands on the board as a block of ground. */
+    const base = pos.length / 3, bottom = sinkOf(H) - 0.002, earth = new T.Color(0x5a3f26);
+    const edge = [];
+    for (let i = 0; i <= nx; i++) edge.push(i);
+    for (let j = 1; j <= ny; j++) edge.push(j * (nx + 1) + nx);
+    for (let i = nx - 1; i >= 0; i--) edge.push(ny * (nx + 1) + i);
+    for (let j = ny - 1; j >= 0; j--) edge.push(j * (nx + 1));
+    edge.forEach((v, n) => {
+      pos.push(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2], pos[v * 3], bottom, pos[v * 3 + 2]);
+      col.push(earth.r, earth.g, earth.b, earth.r * 0.7, earth.g * 0.7, earth.b * 0.7);
+      if (n){ const a = base + 2 * (n - 1), b = a + 1, c2 = a + 2, d = a + 3; idx.push(a, c2, b, b, c2, d, a, b, c2, b, d, c2); }   // both faces
+    });
     g.setIndex(idx); g.computeVertexNormals();
     g.userData.vertexColors = true;
     return g;
+  }
+  /* HOW FAR A HOLE IS LOWERED (Oct 8, as above): its ground is held at least BASE over the board, so a hollow has room to
+     dip, and a hill or a plateau raises it further; drawn as it is, the whole hole sat that far up in the air. It is drawn
+     lowered by its lowest ground (or water), so that point rests on the board and the sides above reach down to it. Only
+     the drawing moves: the physics keeps its heights. */
+  function sinkOf(H){
+    if (H._sink != null) return H._sink;
+    let m = Infinity;
+    for (let j = 0; j <= 52; j++) for (let i = 0; i <= 32; i++) m = Math.min(m, hOf(H, i / 32 * WD, j / 52));
+    if (H.map.some(r => /[~=]/.test(r))) m = Math.min(m, waterLevel(H));
+    return (H._sink = Math.max(0, m - 0.004));
   }
   /* THE WIREFRAME (Oct 2: "what about wireframe so you can see the elevations"): a square grid
      draped over the ground — twenty lines each way, as thin ribbons just above it — so a slope
@@ -33600,7 +33626,8 @@ const GOLF_APP = (() => {
       for (let k = 1; k <= 7; k++){ const f = k / 7; const du = b.x + dx * len * f, dv = b.y + dy * len * f; out.push({ kind: 'dot', u: du, v: dv, scale: 0.012 + 0.006 * (1 - f), lift: hOf(H, clamp(du, 0, WD), clamp(dv, 0, 1)) + 0.004, color: col }); }
     }
     // to the board's units: the field lays u across the board's WD and v down its 1, and scales and lifts by its width
-    for (const it of out){ it.u /= WD; it.scale = (it.scale || 0.25) / WD; it.lift = (it.lift || 0) / WD; }
+    const sink = sinkOf(H);                                 // (the whole hole drawn lowered onto its board: sinkOf)
+    for (const it of out){ it.u /= WD; it.scale = (it.scale || 0.25) / WD; it.lift = ((it.lift || 0) - sink) / WD; }
     return out;
   }
 
@@ -34164,7 +34191,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt, sinkOf,
       editor: { ED, MINE, BUILT, TOOLS, ACTS, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
