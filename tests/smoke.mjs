@@ -266,24 +266,56 @@ try {
   }
   console.log(`${failures.length === before6 ? 'ok  ' : 'FAIL'} ${current}`);
 
-  // A hold and let go on another board selects it (Oct 8: "long press should select the board")
-  current = 'long press selects a board';
+  // The first tap on a board you are not on selects it and, in mini golf, tees off (Oct 8: "the first tap should select
+  // the board, not the second" / "remove the long press to select board")
+  current = 'first tap tees off';
   const before7 = failures.length;
   {
-    const N = await page.evaluate(() => {
-      const W = window.FIELD_WORLD, T = W.target, [sx] = W.spacing(), f = W.cellAt(T.boardX, T.boardZ);
-      const v = new W.THREE.Vector3(T.boardX - sx, 0.02, T.boardZ).project(W.camera);
-      const n = W.cellAt(T.boardX - sx, T.boardZ);
-      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, from: f, to: n };
+    const N = await page.evaluate(() => {                         // a neighbour well in view (an earlier twist may have turned it)
+      const W = window.FIELD_WORLD, T = W.target, [sx, sz] = W.spacing(), f = W.cellAt(T.boardX, T.boardZ);
+      for (const [dx, dz] of [[-sx, 0], [sx, 0], [0, sz], [0, -sz]]){
+        const v = new W.THREE.Vector3(T.boardX + dx, 0.02, T.boardZ + dz).project(W.camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+        if (x > 80 && x < innerWidth - 80 && y > 80 && y < innerHeight * 0.7) return { x, y, from: f, to: W.cellAt(T.boardX + dx, T.boardZ + dz) };
+      }
+      return null;
     });
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(N) });
-    await page.waitForTimeout(900);
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(400);
-    const now = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; return W.cellAt(T.boardX, T.boardZ); });
-    if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] held ${JSON.stringify(N.to)} from ${JSON.stringify(N.from)}, now on ${JSON.stringify(now)}`);
+    if (!N) failures.push(`[${current}] no neighbouring board in view`);
+    else {
+    const playing = () => page.evaluate(to => { const g = window.getFieldApp()._debug.games.get(to.c + '_' + to.r); return g ? g.state : null; }, N.to);
+    const held = async () => { await page.waitForTimeout(400); return page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; return W.cellAt(T.boardX, T.boardZ); }); };
+    // a hold and let go no longer moves you (the mouse: a headless touch tap arrives seconds long, so taps are clicks here)
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await page.mouse.move(N.x, N.y); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up();
+    let now = await held();
+    if (!now || now.c !== N.from.c || now.r !== N.from.r) failures.push(`[${current}] a long press went to ${JSON.stringify(now)}`);
+    const before = await playing();
+    await page.waitForTimeout(700);                                // (not a double with the release above)
+    await page.mouse.click(N.x, N.y);
+    now = await held();
+    const after = await playing();
+    if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] one tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
+    if (before === 'play' || after !== 'play') failures.push(`[${current}] the round on the tapped hole: ${before} → ${after}, expected it to start on the first tap`);
+    }
   }
   console.log(`${failures.length === before7 ? 'ok  ' : 'FAIL'} ${current}`);
+
+  // Round ponds and bunkers, and the skate park (Oct 8)
+  current = 'mini golf shapes';
+  const before8 = failures.length;
+  {
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, CW = D.CW, isl = D.HOLES.find(H => H.name === 'the island'), box = D.HOLES.find(H => H.name === 'the boulders');
+      return {
+        corner: D.groundAt(isl, 1.06 * CW, 1.06 * CW), mid: D.groundAt(isl, 3.5 * CW, 1.5 * CW),
+        sandCorner: D.groundAt(box, 1.04 * CW, 2.04 * CW), sandMid: D.groundAt(box, 2.5 * CW, 3.5 * CW),
+        skate: D.HOLES.filter(H => (H.land || []).some(f => f.bowl || f.pipe)).map(H => H.name),
+      };
+    });
+    if (r.corner !== '.' || r.mid !== '~') failures.push(`[${current}] the island's moat: corner ${r.corner}, middle ${r.mid} (wanted grass at the rounded corner, water in the middle)`);
+    if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the boulders' bunker: corner ${r.sandCorner}, middle ${r.sandMid}`);
+    if (r.skate.length < 4) failures.push(`[${current}] skate-park holes: ${r.skate.join(', ')}`);
+  }
+  console.log(`${failures.length === before8 ? 'ok  ' : 'FAIL'} ${current}`);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
 } catch (e){
   failures.push(`[${current}] ${e.message}`);

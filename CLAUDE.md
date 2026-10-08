@@ -54,8 +54,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   and trees (`tree`) the ball bounces off, pipes (`pipe`) that carry it to their other
   mouth, bridges (`=`) over water, plus the windmills. The ground (`land`, read by
   `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
-  (negative ones are gullies), two or more per hole; water lies level below its banks
-  (`waterLevel`). The movers (Oct 8) run on the game's clock (`toyAt`): `shuttle` (a
+  (negative ones are gullies), two or more per hole, and the skate park's bowls and
+  pipes (Oct 8: the half-pipe, the bowl, the mega ramp, the skate park); water lies
+  level below its banks (`waterLevel`). Water and sand are rounded: what a point is
+  comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
+  alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`): `shuttle` (a
   bumper riding to and fro), `orbit` (a boulder going round) and `gate` (a bar rising out
   of the ground and sinking), each drawn over a dotted track. The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.

@@ -4009,14 +4009,8 @@ function turnEnd(e){
     if (turn.tilted){ try { _saveTilt(); } catch {} }
     turn.tilted = false; turn.turned = false;
     if (!_did){
-      /* HOLD AND LET GO ON ANOTHER BOARD SELECTS IT (Oct 8: "long press should select the board, it still does not
-         work"). A hold used to do one thing wherever it landed, the selected board's hold or the drawer, so holding a
-         board you were not on did nothing to it. Now a hold and let go on a board other than the selected one goes to it,
-         exactly as a tap would; on the selected board it keeps its old job. */
-      try {
-        const _h = raycastGround(turn.anchorX, turn.anchorY), _f = framedCell(), _w = _h && window.FIELD_WORLD.cellAt(_h.x, _h.z);
-        if (_w && (!_f || _w.c !== _f.c || _w.r !== _f.r) && _hooks.onClickGround){ turn.holdAt = null; _hooks.onClickGround(_h, e); return; }
-      } catch {}
+      /* (Oct 8, an hour later: "remove the long press to select board" — a hold and let go on another board went to it for
+         a while; it is back to the one job below, the first tap selecting instead, see firstTapPlays.) */
       // Hold and let go: the app's hold if it wants it, the drawer if not.
       let _took = false;
       try {
@@ -16276,6 +16270,21 @@ function handleGroundTap(hit){
          yours (drag, pinch, the keys, the 0 key for the fit, a double tap to
          square up). The Sep 3 ruling above is kept as history. */
       selectCellInPlace(Math.round(hit.x / gridSpacingX()), Math.round(hit.z / gridSpacingZ()));
+      /* THE FIRST TAP CAN PLAY (Oct 8: "the first tap should select the board, not the second"). A tap on a board you are
+         not on selects it, and only a SECOND tap, on the board now selected, reached the app (the APP TAP above), so mini
+         golf took two taps to tee off. An app that says firstTapPlays gets this first tap too, at the same (u, v), so
+         selecting the board and starting on it are one tap. Opt-in, because in a board game a first tap that also moved a
+         piece would be a move you never meant. */
+      try {
+        const _fa = window.getFieldApp && window.getFieldApp();
+        if (_fa && _fa.firstTapPlays && _fa.onCellTap && target.shown){
+          const _cw = (window.LAB && window.LAB.cellW) || 1, _ch = (window.LAB && window.LAB.cellH) || 1;
+          const _bx = boardW * _cw, _bz = boardW * _ch, _dx = hit.x - target.boardX, _dz = hit.z - target.boardZ;
+          const _GS = Math.max(1, Math.round(Math.sqrt(st.N))), _w = v => ((v % _GS) + _GS) % _GS;
+          if (Math.abs(_dx) <= _bx / 2 && Math.abs(_dz) <= _bz / 2)
+            _fa.onCellTap(_w(Math.round(target.boardX / gridSpacingX())), _w(Math.round(target.boardZ / gridSpacingZ())), 0.5 - _dx / _bx, 0.5 - _dz / _bz);
+        }
+      } catch {}
       /* …AND A RECORDING STOPS WHEN YOU GO TO IT. Reaching for a board is
          reaching for what is on it, and a game that carries on moving while
          you arrive is a game you have to chase. It keeps replaying everywhere
@@ -32694,6 +32703,7 @@ const GOLF_APP = (() => {
   //       rises out of the ground across the way and sinks again
   // more land (Oct 8): wave [height, length (cells), heading (°), phase] rolls · ridge [c0, r0, c1, r1, width, height] a long
   //       hump along a line, or a gully when the height is less than nothing; a bump of negative height is a hollow
+  // skate park (Oct 8): bowl [col, row, radius, lip height] · pipe [c0, r0, c1, r1, width, lip height], a half-pipe
   const HOLES = [
     { name: 'the windmill', par: 2, land: [{ bump: [4, 9.45, 1.72, 0.02] }, { wave: [0.012, 4.5, 90, 0] }, { bump: [1.5, 3, 1.5, -0.025] }, { bump: [6.5, 3.5, 1.5, 0.03] }],
       toys: [{ mill: [4, 6.5, 1.84, 1.2] }],
@@ -32749,6 +32759,18 @@ const GOLF_APP = (() => {
     { name: 'the finale', par: 4, land: [{ bump: [1.33, 1.18, 1.72, 0.03] }, { wave: [0.01, 3.5, 100, 0] }, { bump: [4, 6.8, 1.6, -0.03] }],
       toys: [{ shuttle: [1.5, 2.5, 6.5, 2.5, 0.3, 2.8] }, { mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { tree: [0.67, 10.64, 0.26] }, { rock: [7.07, 10.87, 0.46] }],
       map: ['..O.....', '........', '........', '........', '~~~=~~~~', '........', '........', '........', '###..###', '........', '........', '........', '......T.'] },
+    { name: 'the half-pipe', par: 3, land: [{ pipe: [4, -1, 4, 14, 8, 0.16] }, { ridge: [4, 5, 4, 8.5, 1, 0.05] }],
+      toys: [{ gate: [1.2, 3.5, 3.4, 3.5, 3.4, 0] }],
+      map: ['........', '.O......', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
+    { name: 'the bowl', par: 3, land: [{ bowl: [4, 5, 3.2, 0.17] }, { bowl: [5.5, 10.5, 1.5, 0.08] }],
+      toys: [{ orbit: [4, 5, 2.3, 0.38, 7, 0] }],
+      map: ['ss......', 's.......', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '.......s', '.T....ss'] },
+    { name: 'the mega ramp', par: 4, land: [{ step: [0, -1, -9.5, 0.9, 0.18] }, { step: [0, -1, -4, 0.6, -0.16] }, { pipe: [4, -1, 4, 14, 8, 0.07] }],
+      toys: [{ shuttle: [1.5, 6.5, 6.5, 6.5, 0.3, 3] }],
+      map: ['........', '.~~...O.', '.~~.....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
+    { name: 'the skate park', par: 4, land: [{ pipe: [4, -1, 4, 14, 8, 0.12] }, { bowl: [2.5, 2.6, 1.8, 0.12] }, { ridge: [1.5, 7, 6.5, 7, 0.9, 0.09] }, { bump: [6, 10, 0.8, 0.06] }],
+      toys: [{ shuttle: [1.5, 5, 6.5, 5, 0.3, 2.6] }],
+      map: ['........', '........', '..O.....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
   ];
   // cells to the board's own units
   for (const H of HOLES){
@@ -32758,6 +32780,8 @@ const GOLF_APP = (() => {
       if (f.step) f.step = [f.step[0], f.step[1], P(f.step[2]), P(f.step[3]), f.step[4]];
       if (f.wave) f.wave = [f.wave[0], P(f.wave[1]), f.wave[2] * Math.PI / 180, f.wave[3]];
       if (f.ridge) f.ridge = [P(f.ridge[0]), P(f.ridge[1]), P(f.ridge[2]), P(f.ridge[3]), P(f.ridge[4]), f.ridge[5]];
+      if (f.bowl) f.bowl = [P(f.bowl[0]), P(f.bowl[1]), P(f.bowl[2]), f.bowl[3]];
+      if (f.pipe) f.pipe = [P(f.pipe[0]), P(f.pipe[1]), P(f.pipe[2]), P(f.pipe[3]), P(f.pipe[4]), f.pipe[5]];
     }
     for (const T of H.toys || []){
       if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
@@ -32777,6 +32801,34 @@ const GOLF_APP = (() => {
   const COURSE = HOLES.length;
   const at = (H, i, j) => (i < 0 || j < 0 || i >= NX || j >= NY) ? '#' : H.map[j][i];
   const cellAt = (H, x, y) => at(H, Math.floor(x / CW), Math.floor(y / CW));
+  /* ROUND PONDS AND BUNKERS (Oct 8: "sand traps and lake should be rounded, not squared"). The map is still written in
+     cells, but what a point IS is read from the cells blurred: how much of the water (or sand) lies near it, weighed by a
+     soft round brush of SOFT cells, and it is water where that is more than half. A straight shore stays where the cells
+     meet; an outside corner is rounded off and an inside one filled in, so a pond made of squares lies as a pond. The
+     physics and the drawing both ask here, so the ball goes in the water exactly where the water is drawn. Walls stay
+     square (they are walls), a bridge's planks stay where they are, and past the board's edge the edge cell carries on,
+     so a lake that runs to the rail meets it square. */
+  const SOFT = 0.42 * CW;
+  const _erf = x => { const t = 1 / (1 + 0.3275911 * Math.abs(x)), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x < 0 ? -y : y; };
+  const _cdf = x => 0.5 * (1 + _erf(x / (SOFT * Math.SQRT2)));
+  function softAmount(H, x, y, kinds){
+    const i0 = Math.floor(x / CW), j0 = Math.floor(y / CW);
+    let v = 0;
+    for (let j = j0 - 2; j <= j0 + 2; j++) for (let i = i0 - 2; i <= i0 + 2; i++){
+      const ch = H.map[Math.max(0, Math.min(NY - 1, j))][Math.max(0, Math.min(NX - 1, i))];
+      if (!kinds.includes(ch)) continue;
+      const ax = i <= 0 ? -1 : i * CW, bx = i >= NX - 1 ? 2 : (i + 1) * CW, ay = j <= 0 ? -1 : j * CW, by = j >= NY - 1 ? 2 : (j + 1) * CW;
+      v += (_cdf(bx - x) - _cdf(ax - x)) * (_cdf(by - y) - _cdf(ay - y));
+    }
+    return v;
+  }
+  function groundAt(H, x, y){
+    const ch = cellAt(H, x, y);
+    if (ch === '#' || ch === '=' || ch === 'T' || ch === 'O') return ch;
+    if (softAmount(H, x, y, '~=') > 0.5) return '~';
+    if (softAmount(H, x, y, 's') > 0.5) return 's';
+    return '.';
+  }
   /* THE GROUND (Oct 2). A height at every point, from the hole's bumps and tilts, on a base high
      enough that no hollow goes below the board; flat round the cup, so a ball can rest by it. */
   const BASE = 0.05;
@@ -32793,6 +32845,17 @@ const GOLF_APP = (() => {
          bank round a corner), and a gully when its height is negative, a channel the ball runs down. With them, and with
          bumps of negative height for hollows, every hole now has two or three features. */
       if (f.wave){ const [a, L, th, ph] = f.wave; h += a * Math.sin(2 * Math.PI * (x * Math.cos(th) + y * Math.sin(th)) / L + ph); }
+      /* THE SKATE PARK'S GROUND (Oct 8: "some boards should be extreme, like skate board parks"). A bowl is a round dip
+         with a skater's transition, flat at the bottom and curling up ever steeper to a lip, then the deck all round at the
+         lip's height; a pipe is the same profile along a line, a half-pipe, or quarter-pipes up both rails when it is as
+         wide as the board. Both are far steeper than anything else on the course: a ball sent up the wall rolls back down
+         it, and a putt can ride up one wall and down across to the other. */
+      if (f.bowl){ const [bx, by, R, a] = f.bowl, q = Math.min(1, Math.hypot(x - bx, y - by) / R); h += a * Math.pow(q, 2.5); }
+      if (f.pipe){
+        const [x0, y0, x1, y1, w, a] = f.pipe, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
+        const q = Math.max(0, Math.min(1, ((x - x0) * ux + (y - y0) * uy) / L2)), d = Math.hypot(x - x0 - q * ux, y - y0 - q * uy);
+        h += a * Math.pow(Math.min(1, d / (w / 2)), 2.5);
+      }
       if (f.ridge){
         const [x0, y0, x1, y1, w, a] = f.ridge, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
         const q = Math.max(0, Math.min(1, ((x - x0) * ux + (y - y0) * uy) / L2)), d2 = (x - x0 - q * ux) ** 2 + (y - y0 - q * uy) ** 2;
@@ -33053,7 +33116,7 @@ const GOLF_APP = (() => {
     const n = Math.min(400, Math.max(1, Math.ceil(Math.hypot(b.vx, b.vy) * dt / (BR * 0.4))));
     const h = dt / n;
     for (let k = 0; k < n && g.moving; k++){
-      const ch = cellAt(H, b.x, b.y);
+      const ch = groundAt(H, b.x, b.y);
       if (ch === '~'){                                         // in the water: a stroke, and back where you putted from
         g.moving = false; b.vx = b.vy = 0; b.x = g.rest.x; b.y = g.rest.y; g.strokes++;
         say('In the water — one stroke penalty', 1500); SND.play('bad');
@@ -33096,12 +33159,12 @@ const GOLF_APP = (() => {
   /* THE GRASS, as a surface: a 60×60 mesh on the ground's heights, coloured by what it is — grass
      lighter up high and darker down low, mown in stripes; sand; water; walls under their blocks. */
   // (in the board's own units: x across WD, y down 1, placed by the item at the board's middle)
-  const MESH = 64;
+  const MESH = 104;                                        // (eight a cell, so the rounded shores read round)
   function groundGeo(T, H){
     const ny = MESH, nx = Math.round(MESH * WD), pos = [], col = [], idx = [], c = new T.Color();
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
       const x = i / nx * WD, y = j / ny, h = hOf(H, x, y), ci = Math.min(NX - 1, Math.floor(x / CW)), cj = Math.min(NY - 1, Math.floor(y / CW));
-      const ch = at(H, ci, cj), wet = ch === '~' || ch === '=';
+      const ch = at(H, ci, cj) === '#' ? '#' : groundAt(H, x, y), wet = ch === '~' || ch === '=';
       pos.push(WD / 2 - x, wet ? waterLevel(H) : h, 0.5 - y);     // water lies level, below its banks, however the land rolls
       if (ch === 's') c.setHex(0xd8c287); else if (wet) c.setHex(0x2f6cc4); else if (ch === '#') c.setHex(0x6b4f33);
       /* ONE GRASS (Oct 8: "remove the checkerboard pattern"). The cells were mown in alternate shades, which ruled every hole
@@ -33206,8 +33269,8 @@ const GOLF_APP = (() => {
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     wall: T => { const g = new T.BoxGeometry(1, 0.88, 1); g.translate(0, -0.16, 0); return g; },
-    railV: T => { const g = new T.BoxGeometry(RT / CW, 0.88, 1); g.translate(0, -0.16, 0); return g; },   // a wall's height, RT thick
-    railH: T => { const g = new T.BoxGeometry(1, 0.88, RT / CW); g.translate(0, -0.16, 0); return g; },   // stands 0.28 above the ground, low enough for the winning bar to show; reaches down past any slope
+    railV: T => { const g = new T.BoxGeometry(2 * RT / CW, 1.76, 1.02); g.translate(0, -0.32, 0); return g; },   // a half cell long (scale CW/2): a wall's height, RT thick
+    railH: T => { const g = new T.BoxGeometry(1.02, 1.76, 2 * RT / CW); g.translate(0, -0.32, 0); return g; },   // stands 0.28 above the ground, low enough for the winning bar to show; reaches down past any slope
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
     pole: T => { const g = new T.CylinderGeometry(0.025, 0.025, 1, 6); g.translate(0, 0.5, 0); return g; },
     pennant: T => { const g = new T.BoxGeometry(0.45, 0.26, 0.03); g.translate(-0.225, 0.86, 0); return g; },   // flies toward +u (−x)
@@ -33263,13 +33326,15 @@ const GOLF_APP = (() => {
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
     if (NUMS.on) numberItems(out, H, k + 1);
-    for (let j = 0; j < NY; j++) for (const [i, kind] of [[0, 'railV'], [NX - 1, 'railV']]){   // the rails, a segment a cell, on the ground there
-      const u = i ? WD - RT / 2 : RT / 2, v = (j + 0.5) * CW;
-      out.push({ kind, u, v, scale: CW, lift: hOf(H, u, v), color: 0x8a6440 });
+    // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
+    // climbed the half-pipe in steps)
+    for (let j = 0; j < 2 * NY; j++) for (const i of [0, 1]){
+      const u = i ? WD - RT / 2 : RT / 2, v = (j + 0.5) * CW / 2;
+      out.push({ kind: 'railV', u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0x8a6440 });
     }
-    for (let i = 0; i < NX; i++) for (const j of [0, NY - 1]){
-      const u = (i + 0.5) * CW, v = j ? 1 - RT / 2 : RT / 2;
-      out.push({ kind: 'railH', u, v, scale: CW, lift: hOf(H, u, v), color: 0x8a6440 });
+    for (let i = 0; i < 2 * NX; i++) for (const j of [0, 1]){
+      const u = (i + 0.5) * CW / 2, v = j ? 1 - RT / 2 : RT / 2;
+      out.push({ kind: 'railH', u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0x8a6440 });
     }
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
       const u = (i + 0.5) * CW, v = (j + 0.5) * CW;
@@ -33376,6 +33441,7 @@ const GOLF_APP = (() => {
     boardShape: { cellW: WD, cellH: 1 },               // the golden board, upright (Oct 7)
     keepsPress: true,                                  // a still finger is aiming, not asking the view to tilt
     claimMargin: 0.12,                                 // …and so is one pressed just past the rail, on a ball against it (Oct 7)
+    firstTapPlays: true,                               // one tap on a hole selects it and tees off (Oct 8)
     cellFar: { light: GRASS[0], dark: GRASS[0] },
     itemMinPx: 4,
     itemGeometries,
@@ -33464,7 +33530,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel },
+    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt },
   };
   return app;
 })();
