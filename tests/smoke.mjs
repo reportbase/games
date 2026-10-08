@@ -429,6 +429,17 @@ try {
     });
     if (!sh.plat || !(sh.raised > 0.02) || !sh.ramp) failures.push(`[${current}] plateau and ramp: ${JSON.stringify(sh)}`);
     if (sh.selKind !== 'plateau' || !(sh.moved > 1.5) || !(sh.h1 > sh.h0) || sh.tilts !== 0 || sh.left !== 0) failures.push(`[${current}] select, move, higher, level, delete: ${JSON.stringify(sh)}`);
+    // the green sits in the ground (Oct 8: "could it not be below the ground?"): a plateau laid with its edge through the
+    // cup leaves the cup no higher than the lowest ground round its rim, not on a pad at the plateau's height
+    const cupLow = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const H0 = D.HOLES[ED.k], cx = H0.cup.x / D.CW, cy = H0.cup.y / D.CW;
+      A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === 'plat')); A.onCellTap(f.c, f.r, (cx - 1) / D.NX, cy / D.NY);
+      const H = D.HOLES[ED.k], at = D.hOf(H, H.cup.x, H.cup.y);
+      let low = Infinity, high = -Infinity;
+      for (let q = 0; q < 12; q++){ const h = D.rawH(H, H.cup.x + 0.05 * Math.cos(q * Math.PI / 6), H.cup.y + 0.05 * Math.sin(q * Math.PI / 6)); low = Math.min(low, h); high = Math.max(high, h); }
+      ED.src.land = ED.src.land.filter(g => !g.plateau);
+      return { at, low, high }; });
+    if (!(cupLow.high - cupLow.low > 0.01) || !(cupLow.at <= cupLow.low + 1e-6)) failures.push(`[${current}] the cup sits in the ground: ${JSON.stringify(cupLow)}`);
     const wide = await page.evaluate(() => { const st = document.getElementById('boardBrowser'), A = window.getFieldApp(), E = A._debug.editor;
       const ts = [...st.querySelectorAll('*')].filter(t => t.parentElement === st && t._key && /^stat_\d+$/.test(t._key) && t.style.display !== 'none');
       const c = document.createElement('canvas').getContext('2d'); c.font = '700 17px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif';
