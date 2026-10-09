@@ -64,7 +64,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   moat when negative). The course was rebuilt on Oct 9 ("reset all the boards"): 22 holes
   made first of their ground (the crater, the terraces, the moguls, the mesa, the
   amphitheatre, the sunken garden, …). **Every board has its own hole** (Oct 9): a board's index
-  (`boardIdx`, row by row) picks it; the first 22 boards are the course as written, every other
+  (`boardIdx`, made from its column and row alone by Szudzik's pairing, so a hole stays on its board
+  whatever the field's size) picks it; the first 22 (the corner block) are the course as written, every other
   board gets a hole generated from its index (`genSrc`, seeded, so always the same; `holeAt`
   makes it on first want and keeps up to `GEN_CAP` = 1500, the least recently wanted giving up
   its slot). A round is `ROUND` = 18 holes, board after board, and there is no stroke limit
