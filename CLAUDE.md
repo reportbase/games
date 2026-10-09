@@ -70,7 +70,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   its slot). A round is `ROUND` = 18 holes, board after board. Every hole has one to three
   boulders orbiting its cup as guards (`guardCup`, Oct 9), so cups are kept two cells in from
   the sides and top. Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
-  1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways). `tests/golf-course.mjs` plays the
+  1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
+  A **cannon** (`cannon [col, row, heading°]`, Oct 9) fires a ball rolled into it onto the next
+  board the way it points (`fireCannon`, state `'fly'`, `cannonLand`): the view follows and the
+  round goes on there, on that board's hole, strokes kept. Some generated boards and the meadow
+  and the moguls have one; to a ball only being tried out (the course test, Check) it is a post. `tests/golf-course.mjs` plays the
   course and a sample of generated holes (`GEN_SAMPLE`, 40). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing

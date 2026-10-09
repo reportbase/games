@@ -231,6 +231,24 @@ try {
   });
   if (gd.bare.length || gd.edge.length) failures.push(`[${current}] cups without guards ${gd.bare.join(',')}, cups near the edge ${gd.edge.join(',')}`);
   if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
+  // a cannon (Oct 9: "is there a way to shoot a ball like a canyon onta different board. some boards have cannons."): a
+  // ball rolled into one flies to the next board the way it points, and the round goes on there with its strokes kept;
+  // some generated boards have one
+  const cn = await page.evaluate(async () => {
+    const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the meadow');
+    let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
+    A.onCellTap(c, r, 0.5, 0.9);                              // a round on the meadow's board
+    const g = D.games.get(c + '_' + r), T = D.HOLES[k].toys.find(T => T.cannon).cannon;
+    g.state = 'play'; g.strokes = 2; g.ball.x = T[0] + 0.03; g.ball.y = T[1]; g.ball.vx = -0.3; g.ball.vy = 0; g.moving = true;
+    for (let n = 0; n < 60 && g.state === 'play'; n++) D.step(g, 1 / 60);
+    const flew = g.state;
+    await new Promise(ok => setTimeout(ok, 2200));
+    const keys = [...D.games.keys()], g2 = keys.map(kk => D.games.get(kk)).find(x => x !== g && x.strokes === 2 && x.state === 'play');
+    let withCannon = 0; for (let i = 22; i < 322; i++) if (D.genSrc(i).toys.some(T => T.cannon)) withCannon++;
+    return { flew, left: !D.games.get(c + '_' + r) || D.games.get(c + '_' + r) !== g, landed: !!g2, onBoard: g2 && keys.find(kk => D.games.get(kk) === g2) !== c + '_' + r, withCannon };
+  });
+  if (cn.flew !== 'fly' || !cn.left || !cn.landed || !cn.onBoard) failures.push(`[${current}] a cannon shot: ${JSON.stringify(cn)}`);
+  if (cn.withCannon < 15) failures.push(`[${current}] only ${cn.withCannon} of 300 generated boards have a cannon`);
   console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand

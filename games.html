@@ -32800,7 +32800,7 @@ const GOLF_APP = (() => {
      goes at most BASE down (the board is under it); high ground is what makes the deep places deep. */
   const HOLES = [
     { name: 'the meadow', par: 2, fence: 'wood', land: [{ rough: [0.014, 2.4, 1] }, { bump: [4, 6.5, 2.4, 0.035] }, { bump: [2, 3, 1.3, -0.025] }],
-      toys: [],
+      toys: [{ cannon: [0.9, 8, 180] }],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
     { name: 'the crater', par: 3, fence: 'stone', land: [{ ring: [4, 4.5, 2.1, 1, 0.06] }, { dish: [4, 4.5, 1.6, 0.04] }, { rough: [0.008, 2, 2] }],
       toys: [{ kick: [1.4, 9, 0.28, 1] }],
@@ -32809,7 +32809,7 @@ const GOLF_APP = (() => {
       toys: [{ fence: [0.4, 9, 2.2, 9] }, { fence: [5.8, 5, 7.6, 5] }],
       map: ['.....O..', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '..T.....'] },
     { name: 'the moguls', par: 3, fence: 'wood', land: [{ rough: [0.018, 1.7, 7] }, { rough: [0.012, 3.2, 4] }, { tilt: [0, 0.02] }],
-      toys: [],
+      toys: [{ cannon: [7.1, 7, 0] }],
       map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
     { name: 'the sinkhole', par: 3, fence: 'stone', land: [{ dish: [3.5, 7, 1.9, 0.045] }, { ring: [3.5, 7, 2.2, 0.7, 0.025] }, { rough: [0.008, 2.5, 5] }],
       toys: [{ orbit: [3.5, 7, 2.6, 0.4, 7, 0] }],
@@ -32912,6 +32912,7 @@ const GOLF_APP = (() => {
     }
     for (const T of H.toys || []){
       if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
+      if (T.cannon) T.cannon = [P(T.cannon[0]), P(T.cannon[1]), T.cannon[2] * Math.PI / 180];
       if (T.slide) T.slide = [P(T.slide[0]), P(T.slide[1]), P(T.slide[2]), P(T.slide[3]), P(T.slide[4]), P(T.slide[5]), T.slide[6]];
       // a tree (the course's before Oct 8) became a bush, and a bush (Oct 8, an afternoon) is a short fence across where it stood
       if (T.tree){ T.bush = [T.tree[0], T.tree[1], Math.max(0.32, T.tree[2] * 1.5)]; delete T.tree; }
@@ -33222,6 +33223,53 @@ const GOLF_APP = (() => {
     if (vn < 0){ b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; return -vn; }
     return 0;
   }
+  const CANNON_R = CW * 0.32, CANNON_DUR = 1.5;
+  // which board a cannon points at (one of the four next to this one), and where on it the ball comes down: just inside
+  // the side facing the cannon, on the first open cell along it
+  function fireCannon(g, T, cx, cy, a){
+    let key = null;
+    for (const [k, v] of GAMES) if (v === g){ key = k; break; }
+    if (!key || g.state !== 'play') return false;
+    const [c, r] = key.split('_').map(Number), dc = -Math.round(Math.cos(a)), dr = -Math.round(Math.sin(a));
+    if (!dc && !dr) return false;
+    let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {}
+    const tc = ((c + dc) % GS + GS) % GS, tr = ((r + dr) % GS + GS) % GS, H2 = HOLES[holeOf(tc, tr)];
+    // the landing spot, in the target board's own cells
+    const sx = Math.min(NX - 1, Math.max(0, Math.floor(cx / CW))), sy = Math.min(NY - 1, Math.max(0, Math.floor(cy / CW)));
+    let li = dc < 0 ? 0 : dc > 0 ? NX - 1 : sx, lj = dr < 0 ? 0 : dr > 0 ? NY - 1 : sy, best = null, bd = Infinity;
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
+      const ch = H2.map[j][i]; if (ch !== '.' && ch !== 's') continue;
+      const dd = Math.hypot(i - li, j - lj) + (Math.hypot(i + 0.5 - H2.cup.x / CW, j + 0.5 - H2.cup.y / CW) < 2.2 ? 9 : 0);
+      if (dd < bd){ bd = dd; best = [i, j]; }
+    }
+    if (!best) return false;
+    const land = { x: (best[0] + 0.5) * CW, y: (best[1] + 0.5) * CW };
+    // the same spot as seen from this board, for drawing the flight: the next board is a board's pitch away
+    let px = 1.3, py = 1.3;
+    try { const W = window.FIELD_WORLD, sp = W.spacing(), bw = W.boardW(); px = sp[0] / (bw * ((window.LAB && window.LAB.cellW) || 1)); py = sp[1] / (bw * ((window.LAB && window.LAB.cellH) || 1)); } catch {}
+    const b = g.ball;
+    g.moving = false; b.vx = b.vy = 0;
+    g.state = 'fly';
+    g.fly = { at: performance.now(), dur: CANNON_DUR, x0: cx, y0: cy, x1: land.x - dc * px * WD, y1: land.y - dr * py, key, tc, tr, land,
+              h0: hOf(HOLES[g.hole], cx, cy), h1: hOf(H2, land.x, land.y) };
+    (g.fired = g.fired || {})[T.cannon.join()] = g.t || 0;
+    SND.play('flag');
+    say('Boom! Over to the next board…', 1500);
+    try { if (typeof gotoCell === 'function'){ const w = { x: target.cellX, z: target.cellZ }; gotoCell(w.x + dc, w.z + dr); } } catch {}
+    setTimeout(() => { if (g.state === 'fly') cannonLand(g); }, CANNON_DUR * 1000 + 400);   // (even if the board leaves the screen)
+    return true;
+  }
+  function cannonLand(g){
+    const F = g.fly; if (!F || g.state !== 'fly') return;
+    const tk = gkey(F.tc, F.tr), hole = holeOf(F.tc, F.tr), H2 = HOLES[hole];
+    const ng = holeGame(g.R.single ? { start: hole, card: [], single: true } : g.R, hole);
+    ng.strokes = g.strokes; ng.ball.x = ng.rest.x = F.land.x; ng.ball.y = ng.rest.y = F.land.y;
+    g.state = 'done'; g.fly = null;
+    if (GAMES.get(F.key) === g) GAMES.delete(F.key);
+    GAMES.set(tk, ng);
+    LIVE = { key: tk, c: F.tc, r: F.tr };
+    say('Landed on ' + H2.name + ', par ' + H2.par + ' — ' + ng.strokes + (ng.strokes === 1 ? ' stroke' : ' strokes') + ' so far.', 2600);
+  }
   function toys(g, H){
     const b = g.ball, t = g.t || 0;
     let hit = 0;
@@ -33258,6 +33306,15 @@ const GOLF_APP = (() => {
         const [cx, cy, cr] = T.rock, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
         if (d >= BR + cr || d < 1e-9) return;
         hit = Math.max(hit, knockOff(b, dx / d, dy / d, cx, cy, BR + cr, 0, 0, E));
+      } else if (T.cannon){
+        /* A CANNON (Oct 9: "is there a way to shoot a ball like a canyon onta different board. some boards have cannons.").
+           Roll the ball into it and it fires the ball high over the rail onto the next board the way it points; the view
+           follows, and the round goes on there, on that board's hole, from where the ball lands, the strokes so far kept.
+           A ball the page is only trying out (the course test, Check) is not on any board: for it a cannon is a post. */
+        const [cx, cy, a] = T.cannon, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
+        if (d >= BR + CANNON_R || d < 1e-9) return;
+        if (fireCannon(g, T, cx, cy, a)){ hit = Math.max(hit, 0.5); return; }
+        hit = Math.max(hit, knockOff(b, dx / d, dy / d, cx, cy, BR + CANNON_R, 0, 0, E));
       } else if (T.pipe){
         // a pipe: the ball goes in at one mouth and comes out of the other, heading the exit's way at the speed it went in
         const [x0, y0, x1, y1, a, pr] = T.pipe;
@@ -33331,6 +33388,7 @@ const GOLF_APP = (() => {
   function step(g, dt){
     g.t = (g.t || 0) + dt;                                   // the toys' clock runs whether the ball rolls or not
     if (g.state === 'sunk'){ if ((g.sunkT -= dt) <= 0) nextHole(g); return; }
+    if (g.state === 'fly'){ if (performance.now() - g.fly.at >= g.fly.dur * 1000) cannonLand(g); return; }
     if (g.state !== 'play') return;
     const H = HOLES[g.hole], b = g.ball, P = D();
     if (!g.moving){                                          // a ball at rest can still be knocked by a toy: a free push
@@ -33581,6 +33639,8 @@ const GOLF_APP = (() => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
+    cannonBase: T => { const g = new T.CylinderGeometry(0.42, 0.5, 0.36, 18); g.translate(0, 0.18, 0); return g; },
+    cannonBarrel: T => { const g = new T.CylinderGeometry(0.17, 0.22, 1.1, 16); g.rotateZ(-Math.PI / 2); g.translate(0.4, 0, 0); g.rotateZ(0.45); g.translate(0, 0.42, 0); return g; },   // along +x, cocked up
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
     pole: T => { const g = new T.CylinderGeometry(0.025, 0.025, 1, 6); g.translate(0, 0.5, 0); return g; },
@@ -33628,7 +33688,7 @@ const GOLF_APP = (() => {
     });
   }
   function cellItems(c, r){
-    const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
+    const g = GAMES.get(gkey(c, r)), live = g && ((LIVE && LIVE.key === gkey(c, r)) || g.state === 'fly');   // (a ball in the air flies on)
     if (live){
       const now = performance.now(), dt = g.last ? Math.min(0.05, (now - g.last) / 1000) : 0;
       g.last = now; step(g, dt);
@@ -33694,6 +33754,10 @@ const GOLF_APP = (() => {
             out.push({ kind: 'gateSeg', u: x, v: y, scale: L / n, lift: hOf(H, x, y) - (1 - S.up) * 0.3 * (L / n), yaw, color: q & 1 ? 0xf2f2f2 : 0xd9473c });
           }
         }
+      } else if (T.cannon){
+        const [cx, cy, a] = T.cannon, fired = G && G.fired && t - (G.fired[T.cannon.join()] ?? -9) < 0.4, sc = CW * 0.85, hc = hOf(H, cx, cy);
+        out.push({ kind: 'cannonBase', u: cx, v: cy, scale: sc, lift: hc, yaw: a, color: 0x6b4a2c },
+                 { kind: 'cannonBarrel', u: cx, v: cy, scale: sc, lift: hc, yaw: a, color: fired ? 0xff9a3a : 0x2e2e33 });
       } else if (T.kick){
         const [kx, ky, kr] = T.kick, kind = T.kick[3] | 0, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
         const tint = [0xffffff, 0xff8a4a, 0x7fd67a, 0x6fb2ff][kind] || 0xffffff, plain = [0xe0443a, 0xff8a1a, 0x4cae4c, 0x3a7fd9][kind] || 0xe0443a;   // classic, power, sponge, spinner
@@ -33721,6 +33785,10 @@ const GOLF_APP = (() => {
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     const b = G ? G.ball : H.tee;
     if (!G || G.state === 'play' || G.state === 'done' || G.state === 'edit') out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
+    if (G && G.state === 'fly' && G.fly){                    // a ball fired from a cannon, high over the rail to the next board
+      const F = G.fly, f = Math.min(1, (performance.now() - F.at) / (F.dur * 1000));
+      out.push({ kind: 'ball', u: F.x0 + (F.x1 - F.x0) * f, v: F.y0 + (F.y1 - F.y0) * f, scale: BR * 2, lift: F.h0 + (F.h1 - F.h0) * f + 1.6 * 4 * f * (1 - f) * 0.35, color: 0xffffff });
+    }
     if (G && G.state === 'edit') editOverlay(out, H);
     // The aim: dots from the ball, the way it will go, longer and redder the harder.
     if (G && G.state === 'play' && !G.moving && (G.pull.x || G.pull.y)){
@@ -33790,7 +33858,7 @@ const GOLF_APP = (() => {
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
     mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
     shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7]],
-    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]] };
+    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]], cannon: [[0, 8], [0, 13], [-360, 360]] };
   const OPTIONAL_LAST = { orbit: 1, gate: 1, kick: 1 };   // (a bumper's kind came on Oct 9: an older bumper is a classic)
   function cleanList(list, spec, max){
     const out = [];
@@ -33923,6 +33991,11 @@ const GOLF_APP = (() => {
       else if (t === 'gate') toys.push({ gate: [r2(Math.max(0.4, x - 1.2)), y, r2(Math.min(NX - 0.4, x + 1.2)), y, r2(u(2.6, 4)), r2(u(0, 6))] });
       else toys.push({ mill: [x, y, r2(u(1.1, 1.5)), r2(u(1, 1.6))] });
       q++;
+    }
+    if (R() < 0.18){                                          // some boards have a cannon, on a side, pointing over it
+      const side = R() < 0.5 ? 0 : 1, x = side ? NX - 0.9 : 0.9;
+      for (let q = 0; q < 6; q++){ const y = r2(u(4, NY - 3)), ch = map[Math.floor(y)][Math.floor(x)];
+        if (ch === '.' && clear(x, y, 2.2)){ toys.push({ cannon: [x, y, side ? 0 : 180] }); break; } }
     }
     const d = Math.hypot(cc - tc, cr - tr), par = Math.max(2, Math.min(5, 2 + (d > 8 ? 1 : 0) + (water || wall ? 1 : 0) + (toys.length >= 2 ? 1 : 0)));
     const main = kinds.find(k => k !== 'tilt' && k !== 'moguls') || kinds[0];
@@ -34136,6 +34209,10 @@ const GOLF_APP = (() => {
     if (t === 'kick') S.toys.push({ kick: [R2(x), R2(y), 0.32, 0] });
     else if (/^kick[123]$/.test(t)) S.toys.push({ kick: [R2(x), R2(y), [0, 0.28, 0.4, 0.32][+t[4]], +t[4]] });
     else if (t === 'rock') S.toys.push({ rock: [R2(x), R2(y), 0.5] });
+    else if (t === 'cannon'){                                 // pointing out over the nearest side, at the board beyond it
+      const dl = x, dr = NX - x, du = y, dd = NY - y, m = Math.min(dl, dr, du, dd);
+      S.toys.push({ cannon: [R2(x), R2(y), m === dr ? 0 : m === dd ? 90 : m === dl ? 180 : -90] });
+    }
     else if (t === 'fence'){                                  // a fence takes two taps, one at each end
       if (!ED.fenceAt){ ED.fenceAt = { x: R2(x), y: R2(y) }; ED.msg = 'now tap where the fence ends'; updateEditBar(); return false; }
       const a = ED.fenceAt; ED.fenceAt = null;
@@ -34290,7 +34367,7 @@ const GOLF_APP = (() => {
   const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
     ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'], ['up', 'Hill', '⛰️', 'ground'], ['down', 'Hollow', '🕳️', 'ground'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
-    ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
+    ['rock', 'Boulder', '🪨', 'place'], ['cannon', 'Cannon', '💣', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],
     ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
     ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
