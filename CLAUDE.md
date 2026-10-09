@@ -68,15 +68,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   board gets a hole generated from its index (`genSrc`, seeded, so always the same; `holeAt`
   makes it on first want and keeps up to `GEN_CAP` = 1500, the least recently wanted giving up
   its slot). A round is `ROUND` = 18 holes, board after board, and there is no stroke limit
-  (Oct 9: stay on a hole as long as you like). Each hole draws one way of keeping its cup
-  (`guardCup`, Oct 9): nothing, boulders going round, bumpers going round (an `orbit`'s 7th
-  number, 1), a bumper sweeping across the way in, two crossing, one sliding beside it, or a
-  gate; cups are kept two cells in from the sides and top. Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
+  (Oct 9: stay on a hole as long as you like). Each hole draws one of fourteen ways of keeping its cup
+  (`guardCup`, Oct 9): nothing, boulders or bumpers going round (an `orbit`'s 7th number, 1),
+  a bumper sweeping across the way in, two crossing, one sliding beside it, a gate, a horseshoe of
+  fences open at the back, an arc of bumpers, a scatter of boulders, a sand apron, a raised
+  green with a ramp, a crater's rim or a moat; a cup with a stream, a wall or things of its own
+  near it gets only a light one, and the hardest add a stroke to par. Cups are kept two cells in
+  from the sides and top. (The cannon was taken out on Oct 9.) Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
   1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
-  A **cannon** (`cannon [col, row, heading°]`, Oct 9) fires a ball rolled into it onto the next
-  board the way it points (`fireCannon`, state `'fly'`, `cannonLand`): the view follows and the
-  round goes on there, on that board's hole, strokes kept. Some generated boards and the meadow
-  and the moguls have one; to a ball only being tried out (the course test, Check) it is a post. `tests/golf-course.mjs` plays the
+  `tests/golf-course.mjs` plays the
   course and a sample of generated holes (`GEN_SAMPLE`, 40). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing

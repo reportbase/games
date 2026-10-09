@@ -229,11 +229,15 @@ try {
   const gd = await page.evaluate(() => {
     // (Oct 9: "to many holes have rocks circling protecting the hole. more variety, should be bumpers as well and not all
     //  circling, some doing linear patterns": the ways of keeping a cup are counted over 300 generated holes)
-    const D = window.getFieldApp()._debug, E = D.editor, edge = [], kinds = new Set(), st = { none: 0, rocks: 0, bumpers: 0, linear: 0 };
+    const D = window.getFieldApp()._debug, E = D.editor, edge = [], kinds = new Set(), st = { none: 0, rocks: 0, bumpers: 0, linear: 0, ground: 0, sand: 0, still: 0 };
     for (let i = 22; i < 322; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O'), cx = c + 0.5, cy = j + 0.5;
       const ring = s.toys.filter(T => T.orbit && T.orbit[0] === cx && T.orbit[1] === cy);
       const lin = s.toys.filter(T => (T.shuttle || T.gate) && Math.min(Math.abs(Object.values(T)[0][1] - cy), Math.abs(Object.values(T)[0][0] - cx)) < 1.4);
-      if (ring.some(T => T.orbit[6] === 1)) st.bumpers++; else if (ring.length) st.rocks++; else if (lin.length) st.linear++; else st.none++;
+      const near = s.toys.filter(T => (T.fence || T.kick || T.rock) && Math.hypot(Object.values(T)[0][0] - cx, Object.values(T)[0][1] - cy) < 2.3);
+      const ground = s.land.some(f => (f.ring && f.ring[0] === cx && f.ring[1] === cy) || (f.plateau && Math.abs((f.plateau[0] + f.plateau[2]) / 2 - cx) < 0.01 && Math.abs((f.plateau[1] + f.plateau[3]) / 2 - cy) < 0.01));
+      const sandy = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([a, b2]) => (s.map[j + b2] || '')[c + a] === 's').length >= 3;
+      if (ring.some(T => T.orbit[6] === 1)) st.bumpers++; else if (ring.length) st.rocks++; else if (lin.length) st.linear++;
+      else if (ground) st.ground++; else if (sandy) st.sand++; else if (near.length >= 2) st.still++; else st.none++;
       if (c < 2 || c > D.NX - 3 || j < 2) edge.push(i);
       s.toys.forEach(T => { if (T.kick) kinds.add(T.kick[3]); }); }
     const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }, { orbit: [4, 6, 1, 0.4, 6] }] });
@@ -241,27 +245,11 @@ try {
              tools: ['kick1', 'kick2', 'kick3'].every(t => E.TOOLS.some(x => x[0] === t)), cap: D.MAX_STROKES };
   });
   if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
-  if (gd.st.rocks > 120 || gd.st.bumpers < 20 || gd.st.linear < 40 || gd.st.none < 30) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
+  // (Oct 9, again: "every hole pretty much rocks circling the golf hole. that should be one way of protecting the hole among
+  //  many": boulders going round are at most one cup in six, and every other way turns up)
+  if (gd.st.rocks > 50 || ['bumpers', 'linear', 'ground', 'sand', 'still', 'none'].some(k => gd.st[k] < 12)) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (!gd.oldOrbit || gd.oldOrbit.orbit[6] !== 0 || gd.oldOrbit.orbit[5] !== 0) failures.push(`[${current}] an old orbit was not read: ${JSON.stringify(gd.oldOrbit)}`);
   if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
-  // a cannon (Oct 9: "is there a way to shoot a ball like a canyon onta different board. some boards have cannons."): a
-  // ball rolled into one flies to the next board the way it points, and the round goes on there with its strokes kept;
-  // some generated boards have one
-  const cn = await page.evaluate(async () => {
-    const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the meadow');
-    let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
-    A.onCellTap(c, r, 0.5, 0.9);                              // a round on the meadow's board
-    const g = D.games.get(c + '_' + r), T = D.HOLES[k].toys.find(T => T.cannon).cannon;
-    g.state = 'play'; g.strokes = 2; g.ball.x = T[0] + 0.03; g.ball.y = T[1]; g.ball.vx = -0.3; g.ball.vy = 0; g.moving = true;
-    for (let n = 0; n < 60 && g.state === 'play'; n++) D.step(g, 1 / 60);
-    const flew = g.state;
-    await new Promise(ok => setTimeout(ok, 2200));
-    const keys = [...D.games.keys()], g2 = keys.map(kk => D.games.get(kk)).find(x => x !== g && x.strokes === 2 && x.state === 'play');
-    let withCannon = 0; for (let i = 22; i < 322; i++) if (D.genSrc(i).toys.some(T => T.cannon)) withCannon++;
-    return { flew, left: !D.games.get(c + '_' + r) || D.games.get(c + '_' + r) !== g, landed: !!g2, onBoard: g2 && keys.find(kk => D.games.get(kk) === g2) !== c + '_' + r, withCannon };
-  });
-  if (cn.flew !== 'fly' || !cn.left || !cn.landed || !cn.onBoard) failures.push(`[${current}] a cannon shot: ${JSON.stringify(cn)}`);
-  if (cn.withCannon < 15) failures.push(`[${current}] only ${cn.withCannon} of 300 generated boards have a cannon`);
   console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
