@@ -67,7 +67,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`boardIdx`, row by row) picks it; the first 22 boards are the course as written, every other
   board gets a hole generated from its index (`genSrc`, seeded, so always the same; `holeAt`
   makes it on first want and keeps up to `GEN_CAP` = 1500, the least recently wanted giving up
-  its slot). A round is `ROUND` = 18 holes, board after board. `tests/golf-course.mjs` plays the
+  its slot). A round is `ROUND` = 18 holes, board after board. Every hole has one to three
+  boulders orbiting its cup as guards (`guardCup`, Oct 9), so cups are kept two cells in from
+  the sides and top. Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
+  1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways). `tests/golf-course.mjs` plays the
   course and a sample of generated holes (`GEN_SAMPLE`, 40). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing

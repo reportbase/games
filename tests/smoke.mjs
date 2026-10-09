@@ -213,6 +213,24 @@ try {
   if (gb.k[0] !== gb.k[1] || gb.k[0] === gb.k[2]) failures.push(`[${current}] holeAt kept ${JSON.stringify(gb.k)}`);
   if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
   if (gb.wire !== false) failures.push(`[${current}] the wireframe is on by default (Oct 9: off unless turned on)`);
+  // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
+  // objects that have orbits. the orbits should try to protect the golf hole."): every hole of the course and 300
+  // generated ones have boulders going round their cup, every cup two cells in from the sides and the top, all four kinds
+  // of bumper turn up, and an old bumper without a kind is read as the classic
+  const gd = await page.evaluate(() => {
+    const D = window.getFieldApp()._debug, E = D.editor, bare = [], edge = [], kinds = new Set();
+    D.HOLES.forEach((H, k) => { if (H.gen != null || H.custom) return;
+      if (!(H.toys || []).some(T => T.orbit && Math.abs(T.orbit[0] - H.cup.x) < 1e-6 && Math.abs(T.orbit[1] - H.cup.y) < 1e-6)) bare.push(H.name); });
+    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O');
+      if (!s.toys.some(T => T.orbit && T.orbit[0] === c + 0.5 && T.orbit[1] === j + 0.5)) bare.push(i);
+      if (c < 2 || c > D.NX - 3 || j < 2) edge.push(i);
+      s.toys.forEach(T => { if (T.kick) kinds.add(T.kick[3]); }); }
+    const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }] });
+    return { bare: bare.slice(0, 6), edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.map(T => T.kick[3]),
+             tools: ['kick1', 'kick2', 'kick3'].every(t => E.TOOLS.some(x => x[0] === t)) };
+  });
+  if (gd.bare.length || gd.edge.length) failures.push(`[${current}] cups without guards ${gd.bare.join(',')}, cups near the edge ${gd.edge.join(',')}`);
+  if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
   console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
