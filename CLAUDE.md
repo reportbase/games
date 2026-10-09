@@ -84,6 +84,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   bumper riding to and fro), `orbit` (a boulder going round) and `gate` (a bar rising out
   of the ground and sinking), each drawn over a dotted track. The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
+  **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 50`, a board
+  under 20 px gets no pieces (`itemMinPx`), and `cellItems(c, r, bp)` draws by the board's size on
+  screen: under 1500 px the rail in cell-long pieces, under 600 plain box rails (`railPV`/`railPH`),
+  plain bumpers and boulders and quarter-detail ground (`landM`), under 300 two-cell rails, coarse
+  ground (`landL`), no number and no dotted tracks. Items may be stretched (`sx`/`sy`/`sz`).
 - **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
   puts its tools in the bottom panel: while editing, `statTiles` gives the editor's tiles
   and a tap on a tile reaches the app's `onStatTap` (the field offers stat-tile taps to any

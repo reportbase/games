@@ -213,6 +213,15 @@ try {
   if (gb.k[0] !== gb.k[1] || gb.k[0] === gb.k[2]) failures.push(`[${current}] holeAt kept ${JSON.stringify(gb.k)}`);
   if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
   if (gb.wire !== false) failures.push(`[${current}] the wireframe is on by default (Oct 9: off unless turned on)`);
+  // lighter on a field of thousands (Oct 9: "is getting heavy … we can resrict the tilt, clamp it"): mini golf's tilt floor
+  // is 50°, and a board small on screen is drawn with far fewer pieces: coarse ground, a plain rail, no number, no models
+  const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
+    let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
+    const big = D.cellItems(c, r, 2000), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '')))];
+    return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, small: small.length, smallKinds: kinds(small), bigKinds: kinds(big) }; });
+  if (lod.floor !== 50 || lod.appFloor !== 50) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 50 for mini golf)`);
+  if (!(lod.small < lod.big / 2) || !lod.smallKinds.includes('landL') || lod.smallKinds.some(k => /^(railV_|railH_|propBumper|propRock|segH|segV)/.test(k)))
+    failures.push(`[${current}] a small board's pieces: ${JSON.stringify(lod)}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
   // objects that have orbits. the orbits should try to protect the golf hole."): every hole of the course and 300
   // generated ones have boulders going round their cup, every cup two cells in from the sides and the top, all four kinds
