@@ -207,11 +207,12 @@ try {
     search: for (r = 0; r < 60; r++) for (c = 0; c < 60; c++) if (D.boardIdx(c, r) >= 22){ found = { c, r }; break search; }
     const kb = found && D.holeOf(found.c, found.r);
     return { same, distinct: maps.size, names: names.size, bad: bad.slice(0, 5), k: [k1, k2, k3], board: found && { idx: D.boardIdx(found.c, found.r), gen: D.HOLES[kb].gen, num: D.HOLES[kb].num },
-             course: D.holeOf(0, 0) };
+             course: D.holeOf(0, 0), wire: found ? D.cellItems(found.c, found.r).some(i => /^wire/.test(i.kind)) : null };
   });
   if (!gb.same || gb.distinct < 300 || gb.bad.length) failures.push(`[${current}] generated holes: same ${gb.same}, ${gb.distinct} of 300 different, ill-formed ${gb.bad.join(',')}`);
   if (gb.k[0] !== gb.k[1] || gb.k[0] === gb.k[2]) failures.push(`[${current}] holeAt kept ${JSON.stringify(gb.k)}`);
   if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
+  if (gb.wire !== false) failures.push(`[${current}] the wireframe is on by default (Oct 9: off unless turned on)`);
   console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand

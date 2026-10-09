@@ -33050,7 +33050,7 @@ const GOLF_APP = (() => {
   }
   const gradOf = (H, x, y) => { const e = 0.002; return [(hOf(H, x + e, y) - hOf(H, x - e, y)) / (2 * e), (hOf(H, x, y + e) - hOf(H, x, y - e)) / (2 * e)]; };
   const GRAV = 4;                                          // how hard the ground's slope pulls the ball
-  const WIRE = { on: ARCADE.load('golf.wire', 'on') !== 'off' };
+  const WIRE = { on: ARCADE.load('golf.wire', 'off') === 'on' };   // off unless turned on (Oct 9: "turn off wireframe by default")
   const NUMS = { on: ARCADE.load('golf.nums', 'on') !== 'off' };     // the hole's number in the corner (Oct 2: "add a menu option to show the hole #")
   const BR = 0.02, E = 0.78, VMAX = 2.0, DRAG = 0.5, FULL = 0.4, MAX_STROKES = 8, SINK_T = 1.4;
   const DIFF = { easy:   { mu: 0.6,  cup: 0.042, cap: 1.25 },
