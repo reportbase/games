@@ -711,6 +711,31 @@ try {
       return { c, two, want: [a, b].join(), both, one, boxTool, boxed, back, rise: after.map((h, n) => +(h - before[n]).toFixed(3)), bar: !!document.getElementById('golfSelBar') }; });
     if (md.none || md.two !== md.want || !(md.both[0] > 0.03) || md.both[0] !== md.both[1] || md.one !== String(md.want.split(',')[0]) || md.boxTool !== 'box' || md.boxed !== 4 || md.back !== 'select'
         || md.rise.some(r => r !== 0.01) || md.bar) failures.push(`[${current}] many dots at once: ${JSON.stringify(md)}`);
+    // the selection box (Oct 9: "use a selection box to select points. clicking away from the selection box or escape
+    // closes it."): a drag from bare grass draws a box that stays, its dots selected; a drag inside it raises them all; a
+    // tap away closes it, and so does Escape
+    const sb = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY), drag = pts => { for (const [x, y] of pts) A.onPan(0, -25, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd(); };
+      const lift = i => (ED.src.lift && ED.src.lift[i]) || 0;
+      A.onQuickAct(f.c, f.r, 'select');
+      const bare = (x, y) => { const p = E.pickAll(x, y); return p.length === 1 && p[0].type === 'dot' && p[0].d >= 1; };
+      let c = null; search: for (let j = 2; j < D.NY - 3; j++) for (let i = 0; i < D.NX - 3; i++) if (bare(i + 0.5, j + 0.5)){ c = [i, j]; break search; }
+      if (!c) return { none: true };
+      const [i, j] = c;
+      drag([[i + 0.5, j + 0.5], [i + 1.5, j + 1], [i + 2.5, j + 1.5]]);
+      const box = !!ED.box, n = E.selDots().length, want = [(j + 1) * D.LIFT_W + i + 1, (j + 1) * D.LIFT_W + i + 2];
+      const h0 = want.map(lift);
+      drag([[i + 1.5, j + 1], [i + 1.5, j + 0.9]]);
+      const rose = want.map((d, k) => +(lift(d) - h0[k]).toFixed(4)), still = !!ED.box;
+      tap(i + 1.5, j + 1); const tapInside = !!ED.box;
+      tap(Math.min(D.NX - 0.5, i + 5.5), Math.min(D.NY - 0.5, j + 5.5)); const afterAway = { box: !!ED.box, dots: E.selDots().length };
+      drag([[i + 0.5, j + 0.5], [i + 2.5, j + 1.5]]); const again = !!ED.box;
+      return { c, box, n, rose, still, tapInside, afterAway, again };
+    });
+    if (!sb.none) await page.keyboard.press('Escape');
+    const esc = await page.evaluate(() => { const ED = window.getFieldApp()._debug.editor.ED; return { box: !!ED.box, pick: ED.pick }; });
+    if (sb.none || !sb.box || sb.n !== 2 || !(sb.rose[0] > 0.01) || sb.rose[0] !== sb.rose[1] || !sb.still || !sb.tapInside || sb.afterAway.box || sb.afterAway.dots || !sb.again || esc.box || esc.pick)
+      failures.push(`[${current}] the selection box: ${JSON.stringify({ sb, esc })}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });

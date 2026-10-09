@@ -228,6 +228,10 @@
   /* …and only while the pane is open (Oct 9: "dont show any buttons when the bottom panel is not visible"). */
   body.bb-collapsed #bbQuick { display: none; }
   @media (max-width: 420px){ #bbQuick { right: 6px; gap: 4px; } #bbQuick button { width: 31px; height: 31px; font-size: 16px; } }
+  /* (Oct 9: with six of them, Select and Box added, the row reached the dots in the middle and the first button sat under
+     them: the row now stops short of the middle, and its buttons narrow to fit rather than run on) */
+  #bbQuick { max-width: calc(50% - 40px); }
+  #bbQuick button { flex: 0 1 auto; min-width: 22px; }
   #bbHandle svg circle { fill: #fff; transition: fill .12s ease; }     /* white (Sep 25), so they read on any field */
   #bbHandle:hover svg circle { fill: rgba(232, 200, 106, .95); }
   /* Open, the dots are the way to shut it again, so they stay lit rather than
@@ -34259,7 +34263,7 @@ const GOLF_APP = (() => {
     return { sunk, strokes };
   }
   /* ─── the editing itself ─── */
-  const ED = { on: false, k: -1, src: null, key: null, tool: 'select', pick: null, dots: [], grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], last: null, stroke: false, timer: 0, msg: '' };
+  const ED = { on: false, k: -1, src: null, key: null, tool: 'select', pick: null, dots: [], box: null, boxing: false, grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], last: null, stroke: false, timer: 0, msg: '' };
   function editStart(from){                               // from: a HOLES index to take in, or null for a new hole
     const L = framedHere();
     if (!L){ say('Select a hole on the field first, then choose Edit.', 2600); return false; }
@@ -34272,7 +34276,7 @@ const GOLF_APP = (() => {
       src = cleanSrc(src) || blankSrc();
       k = addHole(src);
     }
-    Object.assign(ED, { on: true, k, src, key: L.key, pick: null, dots: [], grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], redo: [], last: null, stroke: false, msg: '', saved: false });
+    Object.assign(ED, { on: true, k, src, key: L.key, pick: null, dots: [], box: null, boxing: false, grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], redo: [], last: null, stroke: false, msg: '', saved: false });
     LIVE = L;
     const g = holeGame({ start: k, card: [], single: true }, k); g.state = 'edit';
     GAMES.set(L.key, g);
@@ -34381,10 +34385,11 @@ const GOLF_APP = (() => {
     // (within a fingertip, before the ground under it; farther, after the ground: bare grass still gives its nearest dot)
     const di = Math.max(0, Math.min(LIFT_W - 1, Math.round(x))), dj = Math.max(0, Math.min(LIFT_H - 1, Math.round(y))), dd = Math.hypot(x - di, y - dj);
     out.push({ type: 'dot', i: dj * LIFT_W + di, d: dd < dotTol ? -0.03 + dd * 0.01 : 1 + dd });
-    S.land.forEach((f, i) => { const d = landReach(f, x, y); if (d < PICK_TOL) out.push({ type: 'land', i, d: Math.max(0, d) }); });
+    // (ground is large: its own body, and a little round it, not a fingertip more, or no grass is left bare to box: Oct 9)
+    S.land.forEach((f, i) => { const d = landReach(f, x, y); if (d < LAND_TOL) out.push({ type: 'land', i, d: Math.max(0, d) }); });
     return out.sort((a, b) => a.d - b.d);
   }
-  const DOT_TOL = 0.22;                                        // cells: how near a dot a press must be to take it
+  const DOT_TOL = 0.22, LAND_TOL = 0.15;                                        // cells: how near a dot a press must be to take it
   const samePick = (a, b) => !!a && !!b && a.type === b.type && a.i === b.i;
   function pickValid(p = ED.pick){
     if (!p || !ED.src) return false;
@@ -34457,6 +34462,20 @@ const GOLF_APP = (() => {
      box dragged over the hole. A drag on any of the selected dots then raises or sinks them all together, each by the same
      amount from where it was, and Higher, Lower and Level act on them all. The set is ED.dots, read only while the
      selection is a dot (selDots), so taking anything else lets them all go. */
+  /* THE SELECTION BOX (Oct 9: "use a selection box to select points. clicking away from the selection box or escape closes
+     it."). A drag that starts on bare grass, not on a dot, a thing or ground of a hole's own, draws a box, as draw.html's
+     drag on its empty canvas draws a marquee; when the finger lifts the box stays on the hole in gold with every dot
+     inside it selected (the Box quick button draws one from anywhere). A drag that starts inside the box raises or sinks
+     all its dots together; a tap outside it, or Escape, closes it and lets them go. ED.box is the rectangle, in cells. */
+  const boxOpen = () => !!ED.box && !!ED.pick && ED.pick.type === 'dot';
+  const inBox = (x, y, m = 0.25) => !!ED.box && x >= ED.box.x0 - m && x <= ED.box.x1 + m && y >= ED.box.y0 - m && y <= ED.box.y1 + m;
+  function boxDots(B){
+    const got = [], x0 = Math.ceil(B.x0 - 0.15), x1 = Math.floor(B.x1 + 0.15), y0 = Math.ceil(B.y0 - 0.15), y1 = Math.floor(B.y1 + 0.15);
+    for (let j = Math.max(0, y0); j <= Math.min(LIFT_H - 1, y1); j++) for (let i = Math.max(0, x0); i <= Math.min(LIFT_W - 1, x1); i++) got.push(j * LIFT_W + i);
+    return got;
+  }
+  function closeBox(){ ED.box = null; ED.dots = []; if (ED.pick && ED.pick.type === 'dot') ED.pick = null; ED.msg = 'let go'; }
+  try { window.addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && (ED.box || ED.pick)){ ED.box ? closeBox() : (ED.pick = null, ED.dots = []); } }); } catch {}
   const selDots = () => ED.pick && ED.pick.type === 'dot' ? (ED.dots && ED.dots.includes(ED.pick.i) ? ED.dots : [ED.pick.i]) : [];
   function tapDot(i){
     const cur = selDots();
@@ -34483,7 +34502,18 @@ const GOLF_APP = (() => {
     const S = ED.src;
     if (!ED.grab){
       if (ED.pressAt){ x = ED.pressAt.x; y = ED.pressAt.y; }   // (where the finger pressed, not where its first move reached)
-      const here = pickAll(x, y), p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here[0];
+      if (boxOpen() && inBox(x, y)){                           // inside the box: all its dots, up or down together
+        ED.grab = { dot: true, dots: ED.dots.map(i => [i, (S.lift && S.lift[i]) || 0]), sy: ED.panDy || 0 };
+        ED.msg = 'pull up or down: ' + ED.dots.length + ' dots';
+        return moveDots(ED.grab);
+      }
+      if (ED.box) closeBox();                                  // (a drag outside it lets it go, and does what it does)
+      const here = pickAll(x, y);
+      if (here[0] && here[0].type === 'dot' && here[0].d >= 1){  // bare grass, no dot under the finger: a selection box
+        ED.grab = { none: true }; ED.boxing = true; ED.drag = { from: { x, y }, to: { x, y } }; ED.pick = null; ED.dots = [];
+        ED.msg = 'drag a box over the dots'; return false;
+      }
+      const p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here[0];
       if (!p){ ED.grab = { none: true }; return false; }
       ED.pick = { type: p.type, i: p.i };
       if (p.type === 'dot'){                                   // (a dot of the selected ones carries them all; another dot is taken alone)
@@ -34497,6 +34527,7 @@ const GOLF_APP = (() => {
       return false;
     }
     const G = ED.grab, P = ED.pick;
+    if (ED.boxing){ ED.drag.to = { x, y }; return false; }
     if (G.none || !pickValid(P)) return false;
     if (G.dot){ G.sy += ED.panDy || 0; return moveDots(G); }   // up the screen is up
     if (P.type === 'T' || P.type === 'O'){                    // the tee and the cup go cell by cell, onto grass or sand
@@ -34600,6 +34631,7 @@ const GOLF_APP = (() => {
     if (t === 'select'){                                     // (Oct 9: anything, not only the ground; see SELECT AND MOVE)
       if (!drag){
         ED.grab = null; ED.guide = null;
+        if (boxOpen()){ if (!inBox(x, y)) closeBox(); return false; }   // a tap away from the box closes it; inside, it stays
         const here = pickAll(x, y);
         if (selDots().length && here[0] && here[0].type === 'dot'){ ED.lastTap = { x, y }; tapDot(here[0].i); return false; }   // (adding to the dots selected)
         ED.pick = pickAt(x, y); ED.dots = ED.pick && ED.pick.type === 'dot' ? [ED.pick.i] : [];
@@ -34701,7 +34733,7 @@ const GOLF_APP = (() => {
   const SUNK = { dish: 1, trough: 1 };                       // held as a depth: Higher makes them shallower, in smaller steps
   // a drag with Plateau, Ramp or Half-pipe ends: the box or the line it drew becomes ground
   function editDragEnd(){
-    const D = ED.drag; ED.drag = null;
+    const D = ED.drag, boxing = ED.boxing; ED.drag = null; ED.boxing = false;
     if (!D || !D.to || !ED.on) return;
     const S = ED.src, t = ED.tool, R2 = n => Math.round(n * 100) / 100, { from: a, to: b } = D;
     if (t === 'shuttle' || t === 'orbit' || t === 'gate' || t === 'arm' || t === 'swing'){
@@ -34722,13 +34754,12 @@ const GOLF_APP = (() => {
       ED.pick = { type: 'toy', i: S.toys.length - 1 };
       return;
     }
-    if (t === 'box'){
-      const x0 = Math.ceil(Math.min(a.x, b.x) - 0.15), x1 = Math.floor(Math.max(a.x, b.x) + 0.15), y0 = Math.ceil(Math.min(a.y, b.y) - 0.15), y1 = Math.floor(Math.max(a.y, b.y) + 0.15), got = [];
-      for (let j = Math.max(0, y0); j <= Math.min(LIFT_H - 1, y1); j++) for (let i = Math.max(0, x0); i <= Math.min(LIFT_W - 1, x1); i++) got.push(j * LIFT_W + i);
+    if (t === 'box' || boxing){
+      const B = { x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) }, got = boxDots(B);
       ED.tool = 'select';
-      if (!got.length){ ED.msg = 'no dots in that box'; return; }
-      ED.dots = [...new Set([...selDots(), ...got])]; ED.pick = { type: 'dot', i: ED.dots[ED.dots.length - 1] };
-      ED.msg = ED.dots.length + ' dots selected: drag one to move them all';
+      if (!got.length){ ED.box = null; ED.msg = 'no dots in that box'; return; }
+      ED.box = B; ED.dots = got; ED.pick = { type: 'dot', i: got[got.length - 1] };
+      ED.msg = got.length + ' dots in the box: drag inside it to move them all; tap away or Escape to close';
       return;
     }
     if (S.land.length >= 40) return;
@@ -34828,7 +34859,8 @@ const GOLF_APP = (() => {
       else if (k === 'plateau') boxAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
-    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat' || ED.tool === 'box') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
+    if (boxOpen()) boxAt(ED.box.x0, ED.box.y0, ED.box.x1, ED.box.y1, G);   // the selection box, while it is open (Oct 9)
+    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat' || ED.tool === 'box' || ED.boxing) boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
   /* THE TOOLS ARE THE BOTTOM PANEL'S TILES (Oct 8: "the hole editor should use the bottom fisheye panel, not its own panel.
@@ -34947,7 +34979,7 @@ const GOLF_APP = (() => {
       return framedHere() ? [{ key: 'restart', glyph: '↺', title: 'Start this hole again' }, { key: 'edit', glyph: '✎', title: 'Edit this hole' }] : null;
     },
     onQuickAct(c, r, key){
-      if (key === 'select'){ if (ED.on){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.pick = null; ED.dots = []; ED.msg = 'tap anything to select it, drag it to move it'; } return true; }
+      if (key === 'select'){ if (ED.on){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.pick = null; ED.dots = []; ED.box = null; ED.msg = 'tap anything to select it, drag it to move it'; } return true; }
       if (key === 'box'){ if (ED.on){ ED.tool = 'box'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'drag a box over the dots to take'; } return true; }
       if (key === 'erase'){ if (ED.on){ ED.tool = 'erase'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tap what to take away'; } return true; }
       if (key === 'restart'){
@@ -35033,7 +35065,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
 })();
