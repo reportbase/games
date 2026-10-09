@@ -644,6 +644,31 @@ try {
     if (!sm.placed || !/kind/.test(sm.acts) || !/dup/.test(sm.acts) || sm.tool !== 'select' || !sm.letGo || !sm.moved || Math.abs(sm.moved[0] - 4) > 0.01 || Math.abs(sm.moved[1] - 7.5) > 0.01
         || !sm.still || !sm.undone || sm.undone[0] !== 1.5 || !sm.keptPick || sm.cycle !== 'toy>land' || sm.kind !== 1 || sm.dup !== 2 || !sm.dupPicked || sm.afterDel !== 1 || !sm.faster || !sm.tee || sm.barFor !== 'toy')
       failures.push(`[${current}] select and move: ${JSON.stringify(sm)}`);
+    // the dots lift the grass (Oct 9: "the grass has dots on them, can we use them to pull up and down to change the
+    // grass."): a press on a dot and a drag up the screen raises the ground there by the dot's height exactly, the ground
+    // between dots following smoothly; Higher on the bar adds to it, Level this dot takes it back, a link carries the
+    // dots and a link with a wrong number of them is read without
+    const dl = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onQuickAct(f.c, f.r, 'select');
+      let c = null; search: for (let j = 2; j < D.NY - 1; j++) for (let i = 1; i < D.NX; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type === 'land')){ c = [i, j]; break search; } }
+      if (!c) return { none: true };
+      const H0 = () => D.HOLES[ED.k], at = () => D.rawH(H0(), c[0] * D.CW, c[1] * D.CW), mid = () => D.rawH(H0(), (c[0] + 0.5) * D.CW, c[1] * D.CW);
+      const h0 = at(), m0 = mid();
+      for (let q = 0; q < 5; q++) A.onPan(0, -20, { c: f.c, r: f.r, u: (c[0] + 0.01) / D.NX, v: (c[1] + 0.01) / D.NY });
+      A.onPanEnd();
+      const idx = c[1] * D.LIFT_W + c[0], lift = ED.src.lift && ED.src.lift[idx], rose = at() - h0, half = mid() - m0, pick = ED.pick && ED.pick.type;
+      const acts = E.selActs().map(a => a.key).join();
+      E.selAct('higher'); const higher = ED.src.lift[idx];
+      const link = E.readLink(new URL(E.shareLink(ED.src)).searchParams.get('hole')), carried = !!link && JSON.stringify(link.lift) === JSON.stringify(ED.src.lift);
+      const bad = E.cleanSrc({ map: Array(13).fill('........'), lift: [1, 2, 3] });
+      E.selAct('flat'); const back = { lift: ED.src.lift, at: at() - h0 };
+      return { c, lift, rose, half, pick, acts, higher, carried, badLift: bad && bad.lift, back };
+    });
+    if (dl.none || !(dl.lift > 0.035 && dl.lift < 0.045) || Math.abs(dl.rose - dl.lift) > 1e-6 || !(dl.half > 0.005 && dl.half < dl.rose) || dl.pick !== 'dot'
+        || !/flat/.test(dl.acts) || Math.abs(dl.higher - dl.lift - 0.01) > 1e-6 || !dl.carried || dl.badLift !== undefined || dl.back.lift !== undefined || Math.abs(dl.back.at) > 1e-6)
+      failures.push(`[${current}] the dots lift the grass: ${JSON.stringify(dl)}`);
+    await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const T = ED.src.toys.findIndex(t => t.kick || t.rock || t.fence || t.gate || t.pipe); if (T >= 0) ED.pick = { type: 'toy', i: T }; });
     await page.waitForFunction(() => { const b = document.getElementById('golfSelBar'); return b && b.style.display !== 'none' && b.querySelector('button[title="Delete"]'); }, null, { timeout: 20000 }).catch(() => {});
     const barDel = await page.evaluate(() => { const b = document.getElementById('golfSelBar'), d = b && b.querySelector('button[title="Delete"]'), r = d && d.getBoundingClientRect();
       return r && r.width > 10 ? { x: r.x + r.width / 2, y: r.y + r.height / 2, n: window.getFieldApp()._debug.editor.ED.src.toys.length } : null; });

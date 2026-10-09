@@ -33121,8 +33121,26 @@ const GOLF_APP = (() => {
   /* THE GROUND (Oct 2). A height at every point, from the hole's bumps and tilts, on a base high
      enough that no hollow goes below the board; flat round the cup, so a ball can rest by it. */
   const BASE = 0.05;
+  /* THE DOTS LIFT THE GRASS (Oct 9: "the grass has dots on them, can we use them to pull up and down to change the
+     grass."). The editor's faint dots stand at the cells' corners, (NX+1) by (NY+1) of them; each may carry a height of
+     its own (a hole's `lift`, a list a row of dots at a time, nothing when every dot is level), and the ground between
+     them is the dots' heights joined smoothly: a Catmull-Rom curve across and another down, which passes through every
+     dot exactly and bends without a crease, so a dot pulled up is a hill whose top is the dot, and a row of dots a ridge. */
+  const LIFT_W = NX + 1, LIFT_H = NY + 1, LIFT_MIN = -0.05, LIFT_MAX = 0.12;
+  const crK = t => { t = Math.abs(t); return t < 1 ? 1.5 * t * t * t - 2.5 * t * t + 1 : t < 2 ? -0.5 * t * t * t + 2.5 * t * t - 4 * t + 2 : 0; };
+  function liftAt(L, x, y){
+    const gx = x / CW, gy = y / CW, i0 = Math.floor(gx), j0 = Math.floor(gy);
+    let h = 0;
+    for (let j = j0 - 1; j <= j0 + 2; j++){
+      const wy = crK(gy - j); if (!wy) continue;
+      const jj = Math.max(0, Math.min(LIFT_H - 1, j)) * LIFT_W;
+      for (let i = i0 - 1; i <= i0 + 2; i++){ const wx = crK(gx - i); if (wx) h += wx * wy * L[jj + Math.max(0, Math.min(LIFT_W - 1, i))]; }
+    }
+    return h;
+  }
   function rawH(H, x, y){
     let h = BASE;
+    if (H.lift) h += liftAt(H.lift, x, y);
     for (const f of H.land || []){
       if (f.bump){ const [bx, by, r, a] = f.bump, d2 = ((x - bx) ** 2 + (y - by) ** 2) / (r * r); h += a * Math.exp(-d2); }
       if (f.tilt){ h += f.tilt[0] * (x - WD / 2) + f.tilt[1] * (y - 0.5); }
@@ -34035,7 +34053,14 @@ const GOLF_APP = (() => {
       if (!seen){ const row = [...map[j]]; row[NX >> 1] = ch; map[j] = row.join(''); }
     }
     return { name: String(o.name || 'my hole').replace(/\s+/g, ' ').slice(0, 40), par: Math.max(1, Math.min(9, Math.round(Number(o.par)) || 3)),
-             map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40), fence: FENCE_MATS.includes(o.fence) ? o.fence : 'wood' };
+             map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40), fence: FENCE_MATS.includes(o.fence) ? o.fence : 'wood',
+             ...cleanLift(o.lift) };
+  }
+  // the dots' heights (Oct 9): a list of LIFT_W × LIFT_H numbers in range, kept only when some dot is off level
+  function cleanLift(L){
+    if (!Array.isArray(L) || L.length !== LIFT_W * LIFT_H) return {};
+    const out = L.map(v => { const x = Number(v); return isFinite(x) ? Math.round(Math.max(LIFT_MIN, Math.min(LIFT_MAX, x)) * 1000) / 1000 : 0; });
+    return out.some(v => v) ? { lift: out } : {};
   }
   const blankSrc = () => ({ name: 'my hole', par: 3, fence: 'wood', land: [], toys: [],
     map: Array.from({ length: NY }, (_, j) => j === 1 ? '...O....' : j === NY - 2 ? '...T....' : '........') });
@@ -34335,14 +34360,19 @@ const GOLF_APP = (() => {
     const S = ED.src, out = [];
     S.toys.forEach((T, i) => { const d = toyReach(T, x, y); if (d < PICK_TOL) out.push({ type: 'toy', i, d: Math.max(0, d) - 0.05 }); });
     for (const ch of ['T', 'O']){ const c = cellOf(ch); if (c){ const d = Math.hypot(x - c[0], y - c[1]) - 0.4; if (d < PICK_TOL) out.push({ type: ch, i: 0, d: Math.max(0, d) - 0.1 }); } }
+    // a dot of the grass (Oct 9): a press close to one takes it before the ground it stands on, after the things
+    const di = Math.round(x), dj = Math.round(y), dd = Math.hypot(x - di, y - dj);
+    if (dd < DOT_TOL && di >= 0 && dj >= 0 && di < LIFT_W && dj < LIFT_H) out.push({ type: 'dot', i: dj * LIFT_W + di, d: -0.03 + dd * 0.1 });
     S.land.forEach((f, i) => { const d = landReach(f, x, y); if (d < PICK_TOL) out.push({ type: 'land', i, d: Math.max(0, d) }); });
     return out.sort((a, b) => a.d - b.d);
   }
+  const DOT_TOL = 0.22;                                        // cells: how near a dot a press must be to take it
   const samePick = (a, b) => !!a && !!b && a.type === b.type && a.i === b.i;
   function pickValid(p = ED.pick){
     if (!p || !ED.src) return false;
     if (p.type === 'toy') return !!ED.src.toys[p.i];
     if (p.type === 'land') return !!ED.src.land[p.i] && landReach(ED.src.land[p.i], 0, 0) !== Infinity;
+    if (p.type === 'dot') return p.i >= 0 && p.i < LIFT_W * LIFT_H;
     return !!cellOf(p.type);
   }
   Object.defineProperty(ED, 'sel', { enumerable: true,
@@ -34354,6 +34384,7 @@ const GOLF_APP = (() => {
     if (!pickValid(p)) return '';
     if (p.type === 'T') return 'tee';
     if (p.type === 'O') return 'cup';
+    if (p.type === 'dot'){ const h = (ED.src.lift && ED.src.lift[p.i]) || 0; return 'dot ' + (h ? (h > 0 ? 'up ' : 'down ') + Math.abs(h).toFixed(3) : 'level'); }
     if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'orbit' && T.orbit[6] === 1 ? 'bumper going round' : TOY_NAME[k] || k); }
     const f = ED.src.land[p.i], k = Object.keys(f)[0];
     return k === 'bump' && f.bump[3] < 0 ? 'hollow' : k === 'ring' && f.ring[4] < 0 ? 'moat' : k === 'ridge' && f.ridge[5] < 0 ? 'gully' : LAND_NAME[k] || k;
@@ -34373,6 +34404,7 @@ const GOLF_APP = (() => {
   function anchorOf(p){
     if (p.type === 'toy'){ const v = Object.values(ED.src.toys[p.i])[0]; return [v[0], v[1]]; }
     if (p.type === 'land'){ const f = ED.src.land[p.i], k = Object.keys(f)[0]; return k === 'step' ? null : [f[k][0], f[k][1]]; }
+    if (p.type === 'dot') return [p.i % LIFT_W, Math.floor(p.i / LIFT_W)];
     return cellOf(p.type);
   }
   const TWO_ENDS = { fence: 1, gate: 1, shuttle: 1, slide: 1, pipe: 1 };
@@ -34402,6 +34434,18 @@ const GOLF_APP = (() => {
     if (gx != null || gy != null) ED.guide = { x: gx, y: gy };
     return [sx, sy];
   }
+  // a dot's height set (Oct 9), the list made when the first dot leaves level and dropped when the last comes back
+  function setDot(i, h){
+    const S = ED.src;
+    h = Math.round(Math.max(LIFT_MIN, Math.min(LIFT_MAX, h)) * 1000) / 1000;
+    if (!S.lift){ if (!h) return false; S.lift = new Array(LIFT_W * LIFT_H).fill(0); }
+    if (S.lift[i] === h) return false;
+    S.lift[i] = h;
+    if (!S.lift.some(v => v)) delete S.lift;
+    ED.msg = pickName({ type: 'dot', i });
+    return true;
+  }
+  const DOT_PER_PX = 0.0004;                                  // a dot rises 0.04 for a finger moved 100 px up the screen
   // a drag with Select: the press takes what is under it (what is selected, if the press is on it), the moves carry it
   function dragPick(x, y){
     const S = ED.src;
@@ -34409,12 +34453,15 @@ const GOLF_APP = (() => {
       const here = pickAll(x, y), p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here[0];
       if (!p){ ED.grab = { none: true }; return false; }
       ED.pick = { type: p.type, i: p.i };
+      if (p.type === 'dot'){ const h0 = (S.lift && S.lift[p.i]) || 0; ED.grab = { dot: true, h0, sy: ED.panDy || 0 }; ED.msg = 'pull up or down: ' + pickName();
+        return setDot(p.i, h0 - ED.grab.sy * DOT_PER_PX); }   // (the finger's first move counts too)
       ED.grab = { from: { x, y }, anchor: anchorOf(ED.pick), orig: p.type === 'toy' ? clone(S.toys[p.i]) : p.type === 'land' ? clone(S.land[p.i]) : null };
       ED.msg = 'moving: ' + pickName();
       return false;
     }
     const G = ED.grab, P = ED.pick;
     if (G.none || !pickValid(P)) return false;
+    if (G.dot){ G.sy += ED.panDy || 0; return setDot(P.i, G.h0 - G.sy * DOT_PER_PX); }   // up the screen is up
     if (P.type === 'T' || P.type === 'O'){                    // the tee and the cup go cell by cell, onto grass or sand
       const i = Math.floor(x), j = Math.floor(y);
       if (i < 0 || j < 0 || i >= NX || j >= NY || !'.s'.includes(S.map[j][i])) return false;
@@ -34441,7 +34488,8 @@ const GOLF_APP = (() => {
       if (k === 'kick') out.push({ key: 'kind', glyph: KICK_GLYPH[((T.kick[3] | 0) + 1) % 4], title: 'Another kind of bumper' });
       if (PERIOD_AT[k] != null || k === 'mill') out.push({ key: 'faster', glyph: '⏩', title: 'Faster' }, { key: 'slower', glyph: '⏪', title: 'Slower' });
     }
-    if (P.type === 'land') out.push({ key: 'higher', glyph: '⬆️', title: 'Higher' }, { key: 'lower', glyph: '⬇️', title: 'Lower' });
+    if (P.type === 'land' || P.type === 'dot') out.push({ key: 'higher', glyph: '⬆️', title: 'Higher' }, { key: 'lower', glyph: '⬇️', title: 'Lower' });
+    if (P.type === 'dot') out.push({ key: 'flat', glyph: '➖', title: 'Level this dot' });
     if (P.type === 'toy' || P.type === 'land') out.push({ key: 'dup', glyph: '⧉', title: 'Duplicate' }, { key: 'del', glyph: '🗑️', title: 'Delete' });
     out.push({ key: 'deselect', glyph: '✕', title: 'Let go' });
     return out;
@@ -34451,6 +34499,11 @@ const GOLF_APP = (() => {
     if (!ED.on) return false;
     if (key === 'deselect'){ ED.pick = null; ED.guide = null; return true; }
     if (!pickValid(P)) return false;
+    if (P.type === 'dot' && (key === 'higher' || key === 'lower' || key === 'flat')){
+      const h = (S.lift && S.lift[P.i]) || 0; snapEdit();
+      if (setDot(P.i, key === 'flat' ? 0 : h + (key === 'higher' ? 0.01 : -0.01))) editRefresh(true); else ED.undo.pop();
+      return true;
+    }
     if (key === 'higher' || key === 'lower'){ editAction(key); return true; }
     const isToy = P.type === 'toy', list = isToy ? S.toys : S.land;
     if (key === 'del'){ snapEdit(); list.splice(P.i, 1); ED.pick = null; ED.msg = 'deleted'; editRefresh(true); return true; }
@@ -34703,8 +34756,9 @@ const GOLF_APP = (() => {
     if (a === 'level'){
       snapEdit(); const n = S.land.length, keep = ED.sel != null ? S.land[ED.sel] : null;
       S.land = S.land.filter(f => !f.tilt && !f.wave && !f.rough);
+      const hadLift = !!S.lift; delete S.lift;                // (and the dots, all back to level: Oct 9)
       ED.sel = keep && S.land.includes(keep) ? S.land.indexOf(keep) : null;   // (what was selected stays selected)
-      ED.msg = n === S.land.length ? 'no tilt, wave or rough to level' : 'levelled'; editRefresh(true); return;
+      ED.msg = n === S.land.length && !hadLift ? 'no tilt, wave, rough or dots to level' : 'levelled'; editRefresh(true); return;
     }
     if (a === 'mat'){ S.fence = FENCE_MATS[(FENCE_MATS.indexOf(S.fence) + 1) % FENCE_MATS.length]; editRefresh(true); return; }
     if (a === 'check'){
@@ -34733,9 +34787,11 @@ const GOLF_APP = (() => {
   }
   // The cells' corners as faint dots, and the pipe's first mouth while it waits for its second
   function editOverlay(out, H){
+    // (a dot lifted is drawn warm and larger, one sunk cool: Oct 9, the dots pull the grass up and down)
+    const LF = ED.src && ED.src.lift;
     for (let j = 0; j <= NY; j++) for (let i = 0; i <= NX; i++){
-      const x = Math.min(WD - 0.004, Math.max(0.004, i * CW)), y = Math.min(0.996, Math.max(0.004, j * CW));
-      out.push({ kind: 'ghost', u: x, v: y, scale: 0.007, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
+      const x = Math.min(WD - 0.004, Math.max(0.004, i * CW)), y = Math.min(0.996, Math.max(0.004, j * CW)), lh = LF ? LF[j * LIFT_W + i] : 0;
+      out.push({ kind: 'ghost', u: x, v: y, scale: lh ? 0.011 : 0.007, lift: hOf(H, x, y) + 0.002, color: lh > 0 ? 0xffe0a0 : lh < 0 ? 0xa0d0ff : 0xffffff });
     }
     const dotAt = (cx, cy, col, sc) => { const x = Math.min(WD - 0.004, Math.max(0.004, cx * CW)), y = Math.min(0.996, Math.max(0.004, cy * CW)); out.push({ kind: 'dot', u: x, v: y, scale: sc || 0.014, lift: hOf(H, x, y) + 0.004, color: col }); };
     const lineAt = (x0, y0, x1, y1, col) => { const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) * 3)); for (let q = 0; q <= n; q++) dotAt(x0 + (x1 - x0) * q / n, y0 + (y1 - y0) * q / n, col); };
@@ -34744,7 +34800,8 @@ const GOLF_APP = (() => {
     // what is selected, outlined in gold (Oct 9: anything, not only ground), and the line a move has snapped into, in white
     const P = ED.pick, G = 0xffd23a;
     if (P && pickValid(P) && P.type !== 'land'){
-      if (P.type === 'T' || P.type === 'O'){ const c = cellOf(P.type); ringAt(c[0], c[1], 0.55, G); }
+      if (P.type === 'dot'){ const x = P.i % LIFT_W, y = Math.floor(P.i / LIFT_W); dotAt(x, y, G, 0.02); ringAt(x, y, 0.3, G); }
+      else if (P.type === 'T' || P.type === 'O'){ const c = cellOf(P.type); ringAt(c[0], c[1], 0.55, G); }
       else { const T = ED.src.toys[P.i], k = Object.keys(T)[0], v = T[k];
         if (TWO_ENDS[k]){ lineAt(v[0], v[1], v[2], v[3], G); if (k === 'pipe') ringAt(v[2], v[3], v[5] + 0.2, G); }
         else if (k === 'orbit') ringAt(v[0], v[1], v[2], G);
@@ -34919,7 +34976,7 @@ const GOLF_APP = (() => {
     },
     onPan(dx, dy, at){
       if (ED.on && LIVE && LIVE.key === ED.key){
-        if (at){ if (!ED.stroke){ ED.stroke = true; snapEdit(); } if (editApply(at.u, at.v, true)) editRefresh(false); }
+        if (at){ if (!ED.stroke){ ED.stroke = true; snapEdit(); } ED.panDy = dy; if (editApply(at.u, at.v, true)) editRefresh(false); ED.panDy = 0; }
         return true;
       }
       const g = liveGame();
@@ -34962,8 +35019,8 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, holeAt, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
+    _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
 })();
