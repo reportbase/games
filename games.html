@@ -32830,6 +32830,8 @@ const GOLF_APP = (() => {
       if (f.plateau) f.plateau = [...f.plateau.slice(0, 4).map(P), f.plateau[4]];
       if (f.ramp) f.ramp = [...f.ramp.slice(0, 5).map(P), f.ramp[5]];
       if (f.pipe) f.pipe = [P(f.pipe[0]), P(f.pipe[1]), P(f.pipe[2]), P(f.pipe[3]), P(f.pipe[4]), f.pipe[5]];
+      if (f.dish) f.dish = [P(f.dish[0]), P(f.dish[1]), P(f.dish[2]), f.dish[3]];
+      if (f.trough) f.trough = [...f.trough.slice(0, 5).map(P), f.trough[5]];
     }
     for (const T of H.toys || []){
       if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
@@ -32913,6 +32915,18 @@ const GOLF_APP = (() => {
          wide as the board. Both are far steeper than anything else on the course: a ball sent up the wall rolls back down
          it, and a putt can ride up one wall and down across to the other. */
       if (f.bowl){ const [bx, by, R, a] = f.bowl, q = Math.min(1, Math.hypot(x - bx, y - by) / R); h += a * Math.pow(q, 2.5); }
+      /* A BOWL AND A HALF-PIPE SUNK INTO THE GROUND (Oct 9: "maybe I did not understand the half pipe and bowl. why did
+         they elevate the boards?" … "yes"). The skate park's bowl and pipe keep the ground beyond their lip at the lip's
+         height, the deck: dropped on an ordinary hole that raised the whole board round a hole at its old level. The
+         editor's Bowl and Half-pipe make these instead: the same skater's curve, carved down into the ground where they
+         are, the ground beyond them left as it was. Their depth is at most what the ground has under it (BASE, less the
+         floor hOf keeps), so a bowl never goes through the board. */
+      if (f.dish){ const [bx, by, R, d] = f.dish, q = Math.min(1, Math.hypot(x - bx, y - by) / R); h -= d * (1 - Math.pow(q, 2.5)); }
+      if (f.trough){
+        const [x0, y0, x1, y1, w, d] = f.trough, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
+        const q = Math.max(0, Math.min(1, ((x - x0) * ux + (y - y0) * uy) / L2)), e = Math.hypot(x - x0 - q * ux, y - y0 - q * uy);
+        h -= d * (1 - Math.pow(Math.min(1, e / (w / 2)), 2.5));
+      }
       /* A PLATEAU AND A RAMP (Oct 8, for the editor: "elevated panels … i can't change them or add any objects to them").
          A plateau is a box of ground raised (or sunk) flat, its sides sloping over EDGE; a ramp rises evenly along a line,
          as wide as asked, to its height at the far end and drops away just past it, a kicker. */
@@ -33654,7 +33668,8 @@ const GOLF_APP = (() => {
     step: [[-1, 1], [-1, 1], [-14, 14], [0.1, 4], [-0.25, 0.25]], wave: [[-0.05, 0.05], [0.5, 14], [-360, 360], [-7, 7]],
     ridge: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.2, 8], [-0.1, 0.25]], bowl: [[-1, 9], [-1, 14], [0.3, 8], [0, 0.25]],
     pipe: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.5, 12], [0, 0.25]],
-    plateau: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [-0.15, 0.25]], ramp: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.3, 8], [-0.2, 0.25]] };
+    plateau: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [-0.15, 0.25]], ramp: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.3, 8], [-0.2, 0.25]],
+    dish: [[-1, 9], [-1, 14], [0.4, 5], [0.01, 0.046]], trough: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.8, 6], [0.01, 0.046]] };
   const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
     mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
@@ -33828,20 +33843,26 @@ const GOLF_APP = (() => {
       S.map = S.map.map(r => r.replace(t, '.')); set(t); return true;
     }
     /* SHAPING THE GROUND (Oct 8: "how do elevated panels work. they work good, but i can't change them or add any objects
-       to them." … "yes"). Plateau and ramp are drawn by a drag (a box, a line), or placed at a default size by a tap.
-       (The Half-pipe and Bowl tools were taken out on Oct 8: "remove the half-pipe and the bowl"; the course's skate holes
-       keep theirs, and Select still moves and reshapes a bowl or a pipe in a hole taken into the editor.) Select picks the nearest piece of ground, any kind with a place (a terrace too), and
+       to them." … "yes"). Plateau, ramp and half-pipe are drawn by a drag (a box, a line, a line), or placed at a default
+       size by a tap; a bowl by a tap. (Bowl and Half-pipe were taken out on Oct 8, "remove the half-pipe and the bowl",
+       because they raised the whole board; on Oct 9 they came back sunk into the ground: dish and trough, in rawH.) Select picks the nearest piece of ground, any kind with a place (a terrace too), and
        a drag then moves it; Higher, Lower and Delete act on it, and Level takes away the whole-board tilts and waves. */
-    if (t === 'plat' || t === 'ramp'){
+    if (t === 'plat' || t === 'ramp' || t === 'hpipe'){
       if (drag){ if (!ED.drag) ED.drag = { from: { x, y } }; ED.drag.to = { x, y }; return false; }
       if (S.land.length >= 40){ say('That is as much ground as a hole can hold — delete some first.', 2000); return false; }
       if (t === 'plat') S.land.push({ plateau: [R2(x - 1), R2(y - 1), R2(x + 1), R2(y + 1), 0.04] });
-      else S.land.push({ ramp: [R2(x), R2(y + 1.2), R2(x), R2(y - 1.2), 1.6, 0.05] });
+      else if (t === 'ramp') S.land.push({ ramp: [R2(x), R2(y + 1.2), R2(x), R2(y - 1.2), 1.6, 0.05] });
+      else S.land.push({ trough: [R2(x), R2(y + 2), R2(x), R2(y - 2), 2.4, 0.045] });
       ED.sel = S.land.length - 1;
       return true;
     }
+    if (t === 'bowl'){
+      if (drag) return false;
+      if (S.land.length >= 40){ say('That is as much ground as a hole can hold — delete some first.', 2000); return false; }
+      S.land.push({ dish: [R2(x), R2(y), 1.6, 0.045] }); ED.sel = S.land.length - 1; return true;
+    }
     if (t === 'select'){
-      if (!drag){ ED.sel = nearestLand(x, y, 2.2); ED.selLast = null; ED.msg = ED.sel == null ? 'nothing raised here' : 'selected: ' + Object.keys(S.land[ED.sel])[0]; return false; }
+      if (!drag){ ED.sel = nearestLand(x, y, 2.2); ED.selLast = null; ED.msg = ED.sel == null ? 'nothing raised here' : 'selected: ' + ({ dish: 'bowl', trough: 'half-pipe' }[Object.keys(S.land[ED.sel])[0]] || Object.keys(S.land[ED.sel])[0]); return false; }
       if (ED.sel == null || !S.land[ED.sel]) return false;
       const last = ED.selLast || { x, y }; ED.selLast = { x, y };
       const dx = x - last.x, dy = y - last.y;
@@ -33893,6 +33914,8 @@ const GOLF_APP = (() => {
     const seg = (x0, y0, x1, y1) => { const ux = x1 - x0, uy = y1 - y0, q = Math.max(0, Math.min(1, ((x - x0) * ux + (y - y0) * uy) / (ux * ux + uy * uy || 1))); return Math.hypot(x0 + ux * q - x, y0 + uy * q - y); };
     if (f.bump) return Math.hypot(f.bump[0] - x, f.bump[1] - y);
     if (f.bowl) return Math.hypot(f.bowl[0] - x, f.bowl[1] - y);
+    if (f.dish) return Math.hypot(f.dish[0] - x, f.dish[1] - y);
+    if (f.trough) return seg(...f.trough.slice(0, 4));
     if (f.ridge) return seg(...f.ridge.slice(0, 4));
     if (f.pipe) return seg(...f.pipe.slice(0, 4));
     if (f.ramp) return seg(...f.ramp.slice(0, 4));
@@ -33907,11 +33930,12 @@ const GOLF_APP = (() => {
   }
   function moveLand(f, dx, dy){
     const R2 = n => Math.round(n * 100) / 100;
-    for (const k of ['bump', 'bowl']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); }
-    for (const k of ['ridge', 'pipe', 'ramp', 'plateau']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); f[k][2] = R2(f[k][2] + dx); f[k][3] = R2(f[k][3] + dy); }
+    for (const k of ['bump', 'bowl', 'dish']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); }
+    for (const k of ['ridge', 'pipe', 'ramp', 'plateau', 'trough']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); f[k][2] = R2(f[k][2] + dx); f[k][3] = R2(f[k][3] + dy); }
     if (f.step) f.step[2] = R2(f.step[2] + dx * f.step[0] + dy * f.step[1]);
   }
-  const HEIGHT_AT = { bump: 3, ridge: 5, bowl: 3, pipe: 5, plateau: 4, ramp: 5, step: 4 };
+  const HEIGHT_AT = { bump: 3, ridge: 5, bowl: 3, pipe: 5, plateau: 4, ramp: 5, step: 4, dish: 3, trough: 5 };
+  const SUNK = { dish: 1, trough: 1 };                       // held as a depth: Higher makes them shallower, in smaller steps
   // a drag with Plateau, Ramp or Half-pipe ends: the box or the line it drew becomes ground
   function editDragEnd(){
     const D = ED.drag; ED.drag = null;
@@ -33921,9 +33945,9 @@ const GOLF_APP = (() => {
     if (t === 'plat'){
       if (Math.abs(b.x - a.x) < 0.6 || Math.abs(b.y - a.y) < 0.6){ ED.msg = 'drag a bigger box'; return; }
       S.land.push({ plateau: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 0.04] });   // (the stroke kept its undo when it began)
-    } else if (t === 'ramp'){
+    } else if (t === 'ramp' || t === 'hpipe'){
       if (Math.hypot(b.x - a.x, b.y - a.y) < 0.8){ ED.msg = 'drag a longer line'; return; }
-      S.land.push({ ramp: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 1.6, 0.05] });
+      S.land.push(t === 'ramp' ? { ramp: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 1.6, 0.05] } : { trough: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 2.4, 0.045] });
     } else return;
     ED.sel = S.land.length - 1;
   }
@@ -33938,8 +33962,10 @@ const GOLF_APP = (() => {
       if (!f){ ED.msg = 'select some ground first'; return; }
       snapEdit();
       const k = Object.keys(f)[0], i = HEIGHT_AT[k], lim = SPEC_LAND[k][i];
-      f[k][i] = Math.round(Math.max(lim[0], Math.min(lim[1], f[k][i] + (a === 'higher' ? 0.02 : -0.02))) * 1000) / 1000;
-      ED.msg = k + ' ' + (f[k][i] >= 0 ? 'up ' : 'down ') + Math.abs(f[k][i]).toFixed(2); editRefresh(true); return;
+      const step = (a === 'higher' ? 1 : -1) * (SUNK[k] ? -0.01 : 0.02);
+      f[k][i] = Math.round(Math.max(lim[0], Math.min(lim[1], f[k][i] + step)) * 1000) / 1000;
+      ED.msg = SUNK[k] ? (k === 'dish' ? 'bowl' : 'half-pipe') + ' ' + f[k][i].toFixed(2) + ' deep' : k + ' ' + (f[k][i] >= 0 ? 'up ' : 'down ') + Math.abs(f[k][i]).toFixed(2);
+      editRefresh(true); return;
     }
     if (a === 'del'){
       if (ED.sel == null || !S.land[ED.sel]){ ED.msg = 'select some ground first'; return; }
@@ -33993,9 +34019,9 @@ const GOLF_APP = (() => {
     // the piece of ground selected, outlined in gold; a box or line being dragged, in white
     const f = ED.sel != null && ED.src.land[ED.sel];
     if (f){ const k = Object.keys(f)[0], v = f[k], G = 0xffd23a;
-      if (k === 'bump' || k === 'bowl') ringAt(v[0], v[1], Math.max(0.4, k === 'bump' ? v[2] * 0.7 : v[2]), G);
+      if (k === 'bump' || k === 'bowl' || k === 'dish') ringAt(v[0], v[1], Math.max(0.4, k === 'bump' ? v[2] * 0.7 : v[2]), G);
       else if (k === 'plateau') boxAt(v[0], v[1], v[2], v[3], G);
-      else if (k === 'ridge' || k === 'pipe' || k === 'ramp') lineAt(v[0], v[1], v[2], v[3], G);
+      else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
     if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
@@ -34010,7 +34036,7 @@ const GOLF_APP = (() => {
     ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'], ['up', 'Hill', '⛰️', 'ground'], ['down', 'Hollow', '🕳️', 'ground'],
     ['kick', 'Bumper', '🔴', 'place'], ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
-    ['select', 'Select', '👆', 'tap, then drag'],
+    ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
     ['erase', 'Erase', '🧽', 'take away']];
   const ACTS = [['undo', 'Undo', '↶'], ['higher', 'Higher', '⬆️'], ['lower', 'Lower', '⬇️'], ['del', 'Delete', '✖️'], ['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['name', 'Name', '✎'], ['par', 'Par', '#'], ['check', 'Check', '✓'],
     ['save', 'Save', '💾'], ['share', 'Share', '🔗'], ['done', 'Done', '▶']];

@@ -78,9 +78,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `?app=minigolf&hole=…` carries one (base64 JSON). Anything from a link or storage
   goes through `cleanSrc` (map letters, one tee and cup, known kinds, numbers in range).
   Check runs the course test's plain player in the page (`solveHole`) and sets par.
-  Its ground tools: Hill and Hollow, Plateau (drag a box), Ramp (drag a line), and Select
-  (`nearestLand`, `moveLand`) with Higher, Lower, Delete and Level (the Half-pipe and Bowl tools
-  went on Oct 8; Select still moves those in a hole taken in). A tap on another board while
+  Its ground tools: Hill and Hollow, Plateau (drag a box), Ramp and Half-pipe (drag a line),
+  Bowl, and Select (`nearestLand`, `moveLand`) with Higher, Lower, Delete and Level. The
+  editor's Bowl and Half-pipe are sunk into the ground (`dish`, `trough`, Oct 9), at most
+  BASE deep; the skate holes' `bowl` and `pipe` keep the ground beyond their lip at the lip's
+  height, which raised a whole board when dropped on an ordinary hole. A tap on another board while
   editing moves the editor there, the tool kept (`onCellTap`); the next tap paints.
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
