@@ -33828,22 +33828,17 @@ const GOLF_APP = (() => {
       S.map = S.map.map(r => r.replace(t, '.')); set(t); return true;
     }
     /* SHAPING THE GROUND (Oct 8: "how do elevated panels work. they work good, but i can't change them or add any objects
-       to them." … "yes"). Plateau, ramp and half-pipe are drawn by a drag (a box, a line, a line), or placed at a default
-       size by a tap; a bowl by a tap. Select picks the nearest piece of ground, any kind with a place (a terrace too), and
+       to them." … "yes"). Plateau and ramp are drawn by a drag (a box, a line), or placed at a default size by a tap.
+       (The Half-pipe and Bowl tools were taken out on Oct 8: "remove the half-pipe and the bowl"; the course's skate holes
+       keep theirs, and Select still moves and reshapes a bowl or a pipe in a hole taken into the editor.) Select picks the nearest piece of ground, any kind with a place (a terrace too), and
        a drag then moves it; Higher, Lower and Delete act on it, and Level takes away the whole-board tilts and waves. */
-    if (t === 'plat' || t === 'ramp' || t === 'hpipe'){
+    if (t === 'plat' || t === 'ramp'){
       if (drag){ if (!ED.drag) ED.drag = { from: { x, y } }; ED.drag.to = { x, y }; return false; }
       if (S.land.length >= 40){ say('That is as much ground as a hole can hold — delete some first.', 2000); return false; }
       if (t === 'plat') S.land.push({ plateau: [R2(x - 1), R2(y - 1), R2(x + 1), R2(y + 1), 0.04] });
-      else if (t === 'ramp') S.land.push({ ramp: [R2(x), R2(y + 1.2), R2(x), R2(y - 1.2), 1.6, 0.05] });
-      else S.land.push({ pipe: [R2(x), R2(y + 2), R2(x), R2(y - 2), 3, 0.1] });
+      else S.land.push({ ramp: [R2(x), R2(y + 1.2), R2(x), R2(y - 1.2), 1.6, 0.05] });
       ED.sel = S.land.length - 1;
       return true;
-    }
-    if (t === 'bowl'){
-      if (drag) return false;
-      if (S.land.length >= 40){ say('That is as much ground as a hole can hold — delete some first.', 2000); return false; }
-      S.land.push({ bowl: [R2(x), R2(y), 1.6, 0.1] }); ED.sel = S.land.length - 1; return true;
     }
     if (t === 'select'){
       if (!drag){ ED.sel = nearestLand(x, y, 2.2); ED.selLast = null; ED.msg = ED.sel == null ? 'nothing raised here' : 'selected: ' + Object.keys(S.land[ED.sel])[0]; return false; }
@@ -33926,9 +33921,9 @@ const GOLF_APP = (() => {
     if (t === 'plat'){
       if (Math.abs(b.x - a.x) < 0.6 || Math.abs(b.y - a.y) < 0.6){ ED.msg = 'drag a bigger box'; return; }
       S.land.push({ plateau: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 0.04] });   // (the stroke kept its undo when it began)
-    } else if (t === 'ramp' || t === 'hpipe'){
+    } else if (t === 'ramp'){
       if (Math.hypot(b.x - a.x, b.y - a.y) < 0.8){ ED.msg = 'drag a longer line'; return; }
-      S.land.push(t === 'ramp' ? { ramp: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 1.6, 0.05] } : { pipe: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 3, 0.1] });
+      S.land.push({ ramp: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 1.6, 0.05] });
     } else return;
     ED.sel = S.land.length - 1;
   }
@@ -34015,7 +34010,7 @@ const GOLF_APP = (() => {
     ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'], ['up', 'Hill', '⛰️', 'ground'], ['down', 'Hollow', '🕳️', 'ground'],
     ['kick', 'Bumper', '🔴', 'place'], ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
-    ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
+    ['select', 'Select', '👆', 'tap, then drag'],
     ['erase', 'Erase', '🧽', 'take away']];
   const ACTS = [['undo', 'Undo', '↶'], ['higher', 'Higher', '⬆️'], ['lower', 'Lower', '⬇️'], ['del', 'Delete', '✖️'], ['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['name', 'Name', '✎'], ['par', 'Par', '#'], ['check', 'Check', '✓'],
     ['save', 'Save', '💾'], ['share', 'Share', '🔗'], ['done', 'Done', '▶']];
@@ -34106,7 +34101,15 @@ const GOLF_APP = (() => {
     onCellTap(c, r, u, v){
       if (ED.on){
         if (gkey(c, r) === ED.key){ snapEdit(); if (editApply(u, v, false)) editRefresh(true); else ED.undo.pop(); return true; }
-        editStop(true);                                      // a tap on another board leaves the editor
+        /* THE EDITOR GOES WHERE YOU TAP (Oct 8: "in edit mode, i should be able to add features to any board, not just the
+           selected board."). A tap on another board used to leave the editor; now the editor moves there, the tool in hand
+           kept, and that board's hole is the one being edited (a hole of the course is copied, as Edit this hole does; one
+           of yours is edited in place). The hole just edited keeps its changes on its board. The tap only moves the
+           editor: the next one paints or places. */
+        const prev = GAMES.get(gkey(c, r)), from = prev ? prev.hole : holeOf(c, r);
+        editStop(true);
+        LIVE = { key: gkey(c, r), c, r };
+        if (editStart(from)){ say('Editing ' + ED.src.name + ' — the tool in hand is ' + (TOOLS.find(t => t[0] === ED.tool) || ['', 'the same'])[1] + '.', 2400); return true; }
       }
       LIVE = { key: gkey(c, r), c, r };
       if (PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'); return true; }
