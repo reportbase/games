@@ -141,13 +141,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   near a dot takes it (`pickAll`, after things, before ground; "near" is a fingertip on screen,
   `DOT_PX`/`PICK_PX` over `cellPx`, and on bare grass the nearest dot is taken anyway); a drag is
   hit-tested where the finger pressed (`ED.pressAt`, from `claimsPan(u, v)`), and up or down the screen raises
-  or sinks it (`DOT_PER_PX`, the pan's dy passed in as `ED.panDy`). **Many dots** (Oct 9): with a dot
-  selected a tap on another adds it and a tap on a selected one takes it out (`tapDot`); the Box quick
+  or sinks it (`DOT_PER_PX`, the pan's dy passed in as `ED.panDy`). **Many dots** (Oct 9): only the
+  selection box takes several (a tap takes one dot alone); the Box quick
   button (⬚, tool `box`) takes every dot inside a dragged box; a drag on any selected dot moves them
   all by the same amount (`moveDots`), and the Higher/Lower tiles act on them all. The set is
   `ED.dots`, read through `selDots()` only while the selection is a dot. **The selection box** (Oct 9):
-  a drag with Select that starts on bare grass (no thing, no ground of the hole's own within `LAND_TOL`,
-  no dot within a fingertip) draws a box (`ED.boxing`); it stays open in gold (`ED.box`, cells) with
+  a drag with Select draws a box (`ED.boxing`) unless it starts on what is selected (a dot or ground
+  tapped first) or on a thing, the tee or the cup ("selects only one point at a time": a dot within a
+  fingertip no longer takes the drag); it stays open in gold (`ED.box`, cells) with
   its dots selected (`boxDots`); a drag inside it moves them all, a tap outside it or Escape closes it
   (`closeBox`); Box (⬚) draws one from anywhere. Lifted dots draw warm, sunk
   ones cool; Level (the tile) also levels every dot.

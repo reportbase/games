@@ -654,6 +654,7 @@ try {
       if (!c) return { none: true };
       const H0 = () => D.HOLES[ED.k], at = () => D.rawH(H0(), c[0] * D.CW, c[1] * D.CW), mid = () => D.rawH(H0(), (c[0] + 0.5) * D.CW, c[1] * D.CW);
       const h0 = at(), m0 = mid();
+      A.onCellTap(f.c, f.r, c[0] / D.NX, c[1] / D.NY);       // (taken by a tap first: a drag on grass is the box since Oct 9)
       for (let q = 0; q < 5; q++) A.onPan(0, -20, { c: f.c, r: f.r, u: (c[0] + 0.01) / D.NX, v: (c[1] + 0.01) / D.NY });
       A.onPanEnd();
       const idx = c[1] * D.LIFT_W + c[0], lift = ED.src.lift && ED.src.lift[idx], rose = at() - h0, half = mid() - m0, pick = ED.pick && ED.pick.type;
@@ -667,13 +668,14 @@ try {
     if (dl.none || !(dl.lift > 0.035 && dl.lift < 0.045) || Math.abs(dl.rose - dl.lift) > 1e-6 || !(dl.half > 0.005 && dl.half < dl.rose) || dl.pick !== 'dot'
         || !/flat/.test(dl.acts) || Math.abs(dl.higher - dl.lift - 0.01) > 1e-6 || !dl.carried || dl.badLift !== undefined || dl.back.lift !== undefined || Math.abs(dl.back.at) > 1e-6)
       failures.push(`[${current}] the dots lift the grass: ${JSON.stringify(dl)}`);
-    // (Oct 9: "selecting the grass is clumsy. sometimes it works but generally not."): a real mouse pressed on a dot and
+    // (Oct 9: "selecting the grass is clumsy. sometimes it works but generally not."): a real mouse pressed on a selected dot and
     // moved up the screen pulls that dot up, though it pressed beside the dot and the first move the field passes on is far off it
     const scr = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
       A.onQuickAct(null, null, 'select'); ED.pick = null;
       let c = null; search: for (let j = 3; j < D.NY - 2; j++) for (let i = 2; i < D.NX - 1; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot')){ c = [i, j]; break search; } }
       if (!c) return null;
       const v = new W.THREE.Vector3(T.boardX + (0.5 - c[0] / D.NX) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - c[1] / D.NY) * bW * (L.cellH || 1)).project(W.camera);
+      ED.pick = { type: 'dot', i: c[1] * D.LIFT_W + c[0] }; ED.dots = [ED.pick.i];   // (selected first, by a tap, as since Oct 9)
       return { c, idx: c[1] * D.LIFT_W + c[0], x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, h0: (ED.src.lift && ED.src.lift[c[1] * D.LIFT_W + c[0]]) || 0 }; });
     if (!scr) failures.push(`[${current}] no clear dot to pull`);
     else {
@@ -685,31 +687,30 @@ try {
       const after = await page.evaluate(i => { const ED = window.getFieldApp()._debug.editor.ED; return { lift: (ED.src.lift && ED.src.lift[i]) || 0, pick: ED.pick }; }, scr.idx);
       if (!(after.lift - scr.h0 > 0.01) || !after.pick || after.pick.type !== 'dot' || after.pick.i !== scr.idx) failures.push(`[${current}] a real drag up from a dot: ${JSON.stringify({ scr, after })}`);
     }
-    // many dots at once (Oct 9: "remove that popup panel, its not needed. how do I select and move multiple points at
-    // once?"): no bar follows the selection; with a dot selected a tap on another adds it, a drag on either raises both by
-    // the same amount, a tap on a selected one takes it out; Box takes every dot inside a dragged box, and Higher (its
-    // tile) raises them all
+    // many dots at once, by the box only (Oct 9: "how do I select and move multiple points at once?" … "selection box works
+    // badly. it selects only one point at a time. I only want the selection box to select multiple items."): a tap on a
+    // second dot takes it alone, not with the first; a drag from grass that starts right beside a dot (within a fingertip)
+    // draws a box over four dots, not a pull on the one; Box (⬚) does the same; Higher raises them all; no bar on the page
     const md = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const drag = pts => { for (const [x, y] of pts) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd(); };
       const lift = i => (ED.src.lift && ED.src.lift[i]) || 0, W8 = D.LIFT_W;
-      A.onQuickAct(f.c, f.r, 'select'); ED.src.lift = undefined; delete ED.src.lift;
-      const clear = (i, j) => { const p = E.pickAll(i, j); return p[0] && p[0].type === 'dot' && !p.some(q => q.type === 'toy' || q.type === 'T' || q.type === 'O'); };
-      let c = null; search: for (let j = 3; j < D.NY - 3; j++) for (let i = 1; i < D.NX - 2; i++) if (clear(i, j) && clear(i + 1, j) && clear(i, j + 1) && clear(i + 1, j + 1)){ c = [i, j]; break search; }
+      A.onQuickAct(f.c, f.r, 'select'); delete ED.src.lift;
+      const clear = (i, j) => { const p = E.pickAll(i, j); return p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot'); };
+      let c = null; search: for (let j = 3; j < D.NY - 3; j++) for (let i = 1; i < D.NX - 2; i++) if (clear(i, j) && clear(i + 1, j) && clear(i, j + 1) && clear(i + 1, j + 1) && clear(i + 0.5, j + 0.5)){ c = [i, j]; break search; }
       if (!c) return { none: true };
-      const [i, j] = c, a = j * W8 + i, b = j * W8 + i + 1;
-      tap(i, j); tap(i + 1, j);
-      const two = E.selDots().slice().sort((x, y) => x - y).join();
-      for (let q = 0; q < 4; q++) A.onPan(0, -25, { c: f.c, r: f.r, u: i / D.NX, v: j / D.NY }); A.onPanEnd();
-      const both = [lift(a), lift(b)];
-      tap(i + 1, j); const one = E.selDots().join();
+      const [i, j] = c, four = [j * W8 + i, j * W8 + i + 1, (j + 1) * W8 + i, (j + 1) * W8 + i + 1];
+      tap(i, j); tap(i + 1, j); const tapped = E.selDots().join();
+      A.onQuickAct(f.c, f.r, 'select');
+      drag([[i - 0.1, j - 0.05], [i + 0.6, j + 0.5], [i + 1.2, j + 1.2]]);
+      const dragged = E.selDots().slice().sort((x, y) => x - y).join(), pulled = four.some(n => lift(n));
+      tap(D.NX - 0.5, 0.5); tap(D.NX - 0.5, 0.5); A.onQuickAct(f.c, f.r, 'select');
       A.onQuickAct(f.c, f.r, 'box'); const boxTool = ED.tool;
-      for (const [x, y] of [[i - 0.2, j - 0.2], [i + 0.6, j + 0.5], [i + 1.2, j + 1.2]]) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd();
+      drag([[i - 0.2, j - 0.2], [i + 0.6, j + 0.5], [i + 1.2, j + 1.2]]);
       const boxed = E.selDots().length, back = ED.tool;
-      const before = [j * W8 + i, j * W8 + i + 1, (j + 1) * W8 + i, (j + 1) * W8 + i + 1].map(lift);
-      act('higher');
-      const after = [j * W8 + i, j * W8 + i + 1, (j + 1) * W8 + i, (j + 1) * W8 + i + 1].map(lift);
-      return { c, two, want: [a, b].join(), both, one, boxTool, boxed, back, rise: after.map((h, n) => +(h - before[n]).toFixed(3)), bar: !!document.getElementById('golfSelBar') }; });
-    if (md.none || md.two !== md.want || !(md.both[0] > 0.03) || md.both[0] !== md.both[1] || md.one !== String(md.want.split(',')[0]) || md.boxTool !== 'box' || md.boxed !== 4 || md.back !== 'select'
+      const before = four.map(lift); act('higher'); const after = four.map(lift);
+      return { c, tapped, wantOne: String(j * W8 + i + 1), dragged, want: four.join(), pulled, boxTool, boxed, back, rise: after.map((h, n) => +(h - before[n]).toFixed(3)), bar: !!document.getElementById('golfSelBar') }; });
+    if (md.none || md.tapped !== md.wantOne || md.dragged !== md.want || md.pulled || md.boxTool !== 'box' || md.boxed !== 4 || md.back !== 'select'
         || md.rise.some(r => r !== 0.01) || md.bar) failures.push(`[${current}] many dots at once: ${JSON.stringify(md)}`);
     // the selection box (Oct 9: "use a selection box to select points. clicking away from the selection box or escape
     // closes it."): a drag from bare grass draws a box that stays, its dots selected; a drag inside it raises them all; a
