@@ -447,8 +447,7 @@ try {
       return { w: ts.length ? Math.min(...ts.map(t => parseFloat(t.style.width))) : 0, need }; });
     if (!(wide.w >= wide.need)) failures.push(`[${current}] tool tiles ${wide.w}px wide for names needing ${wide.need.toFixed(0)}px`);
     // the editor goes where you tap (Oct 8: "i should be able to add features to any board"): a tap on another board moves
-    // the editor there with the tool kept, and a tap back returns to the first hole, edited in place; Half-pipe and Bowl
-    // are no longer tools
+    // the editor there with the tool kept, and a tap back returns to the first hole, edited in place
     const anyB = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const key0 = ED.key, k0 = ED.k; ED.tool = 'kick';
       A.onCellTap(f.c + 1, f.r, 0.5, 0.5);
@@ -456,9 +455,24 @@ try {
       A.onCellTap(f.c + 1, f.r, 0.5, 0.5);                   // the next tap places a bumper on that board
       const placed = ED.src.toys.length - moved.toys;
       A.onCellTap(f.c, f.r, 0.5, 0.5);
-      return { key0, moved, placed, back: ED.key === key0, sameHole: ED.k === k0, gone: E.TOOLS.filter(t => t[0] === 'bowl' || t[0] === 'hpipe').length }; });
-    if (!anyB.moved.on || anyB.moved.key === anyB.key0 || anyB.moved.tool !== 'kick' || anyB.placed !== 1 || !anyB.back || !anyB.sameHole || anyB.gone)
+      return { key0, moved, placed, back: ED.key === key0, sameHole: ED.k === k0 }; });
+    if (!anyB.moved.on || anyB.moved.key === anyB.key0 || anyB.moved.tool !== 'kick' || anyB.placed !== 1 || !anyB.back || !anyB.sameHole)
       failures.push(`[${current}] editing another board: ${JSON.stringify(anyB)}`);
+    // Bowl and Half-pipe sink into the ground (Oct 9: "why did they elevate the boards?"): where one is placed the ground
+    // goes down, and the ground away from it stays where it was
+    const sunkB = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t));
+      const hAt = (cx, cy) => D.hOf(D.HOLES[ED.k], cx * D.CW, cy * D.CW);
+      const out = {};
+      for (const [t, cx, cy] of [['bowl', 4, 4], ['hpipe', 2, 9]]){
+        const n0 = ED.src.land.length, mid0 = hAt(cx, cy), far0 = hAt(cx < 4 ? 7 : 1, cy < 6 ? 11 : 1);
+        tool(t); A.onCellTap(f.c, f.r, cx / D.NX, cy / D.NY);
+        out[t] = { added: ED.src.land.length - n0, kind: Object.keys(ED.src.land[ED.src.land.length - 1] || {})[0], drop: mid0 - hAt(cx, cy), farMoved: Math.abs(hAt(cx < 4 ? 7 : 1, cy < 6 ? 11 : 1) - far0) };
+        ED.src.land.pop();
+      }
+      return out; });
+    for (const [t, want] of [['bowl', 'dish'], ['hpipe', 'trough']]){ const r = sunkB[t];
+      if (!r || r.added !== 1 || r.kind !== want || !(r.drop > 0.01) || !(r.farMoved < 1e-6)) failures.push(`[${current}] ${t} sinks into the ground: ${JSON.stringify(r)}`); }
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
