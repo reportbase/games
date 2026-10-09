@@ -546,7 +546,10 @@ try {
       const key0 = ED.key, k0 = ED.k; ED.tool = 'kick';
       A.onCellTap(f.c + 1, f.r, 0.5, 0.5);
       const moved = { on: ED.on, key: ED.key, tool: ED.tool, k: ED.k, toys: ED.src.toys.length };
-      A.onCellTap(f.c + 1, f.r, 0.5, 0.5);                   // the next tap places a bumper on that board
+      // the next tap places a bumper on that board (on grass clear of its things: a tap on one now selects it, Oct 9)
+      let at = [0.5, 0.5]; search: for (let y = 1.5; y < D.NY - 1; y++) for (let x = 1.5; x < D.NX - 1; x++)
+        if (ED.src.map[Math.floor(y)][Math.floor(x)] === '.' && !E.pickAll(x, y).some(c => c.type === 'toy')){ at = [x / D.NX, y / D.NY]; break search; }
+      A.onCellTap(f.c + 1, f.r, at[0], at[1]);
       const placed = ED.src.toys.length - moved.toys;
       A.onCellTap(f.c, f.r, 0.5, 0.5);
       return { key0, moved, placed, back: ED.key === key0, sameHole: ED.k === k0 }; });
@@ -592,14 +595,62 @@ try {
       return { kinds: added.map(T => Object.keys(T)[0]).join(), door: (added.find(T => T.swing) || {}).swing, items, back: ED.src.toys.length === n0 }; });
     if (td.kinds !== 'arm,swing' || !td.door || !(td.door[2] > 1) || !(td.items >= 3) || !td.back) failures.push(`[${current}] turnstile and door in the editor: ${JSON.stringify(td)}`);
     // the quick buttons (Oct 9): icon buttons at the top right of the bottom pane; a real click on Undo takes the gate away
-    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 4, null, { timeout: 20000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 5, null, { timeout: 20000 }).catch(() => {});
     const qb = await page.evaluate(() => { const bs = [...document.querySelectorAll('#bbQuick button')], u = bs.find(b => b.title === 'Undo'), r = u && u.getBoundingClientRect();
       return { n: bs.length, text: bs.map(b => b.textContent).join(''), titles: bs.map(b => b.title), at: r && { x: r.x + r.width / 2, y: r.y + r.height / 2, right: innerWidth - r.right, w: r.width } }; });
     let qbUndo = -1;
     if (qb.at){ const before = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
       await page.mouse.click(qb.at.x, qb.at.y); await page.waitForTimeout(300);
       qbUndo = before - await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length); }
-    if (qb.n !== 4 || !qb.at || qb.at.right > 220 || qb.at.w > 40 || /[a-z]/i.test(qb.text) || qbUndo !== 1) failures.push(`[${current}] quick buttons: ${JSON.stringify(qb)}, undo took ${qbUndo}`);
+    if (qb.n !== 5 || !qb.at || qb.at.right > 220 || qb.at.w > 40 || /[a-z]/i.test(qb.text) || qbUndo !== 1) failures.push(`[${current}] quick buttons: ${JSON.stringify(qb)}, undo took ${qbUndo}`);
+    // select and move in place (Oct 9: "editing the boards is clumsy. lets make it better, like the draw project … I want
+    // to edit the boards as much as possible in place"): what is placed is selected; Select takes a thing by a tap and a
+    // drag moves it, snapped to the half cells; a second tap on the same spot takes what is under it; the bar beside the
+    // selection changes a bumper's kind, a mover's speed, duplicates and deletes; undo keeps the selection; the tee is
+    // dragged cell by cell; and a real click on the bar's Delete takes the thing away
+    const sm = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
+      const drag = pts => { for (const [x, y] of pts) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd(); };
+      const out = {};
+      ED.src.toys = ED.src.toys.filter(T => !T.kick); ED.src.land = ED.src.land.filter(g => !g.bump);
+      tool('kick'); tap(1.5, 5.5);
+      out.placed = ED.pick && ED.pick.type === 'toy' && !!ED.src.toys[ED.pick.i].kick;
+      out.acts = E.selActs().map(a => a.key).join();
+      A.onQuickAct(f.c, f.r, 'select'); out.tool = ED.tool;
+      tap(6.5, 11.5); out.letGo = !(ED.pick && ED.pick.type === 'toy');
+      tap(1.5, 5.5); const i = ED.pick && ED.pick.i;
+      drag([[1.5, 5.5], [2.2, 6.2], [3.1, 7.2], [3.9, 7.6]]);
+      const k = ED.src.toys[i] && ED.src.toys[i].kick; out.moved = k && [k[0], k[1]]; out.still = samePickI(ED.pick, i);
+      function samePickI(p, n){ return !!p && p.type === 'toy' && p.i === n; }
+      out.undos = ED.undo.length;
+      E.editAction('undo'); out.undone = ED.src.toys[i] && ED.src.toys[i].kick.slice(0, 2); out.keptPick = samePickI(ED.pick, i);
+      E.editAction('redo');
+      // a hill under the bumper: a second tap on the same spot takes the hill
+      ED.src.land.push({ bump: [k[0], k[1], 1.4, 0.03] });
+      ED.lastTap = null; tap(k[0], k[1]); const first = ED.pick && ED.pick.type; tap(k[0], k[1]); out.cycle = first + '>' + (ED.pick && ED.pick.type);
+      ED.lastTap = null; tap(k[0], k[1]);
+      E.selAct('kind'); out.kind = ED.src.toys[i].kick[3];
+      E.selAct('dup'); out.dup = ED.src.toys.filter(T => T.kick).length; out.dupPicked = ED.pick && ED.pick.i !== i;
+      E.selAct('del'); out.afterDel = ED.src.toys.filter(T => T.kick).length;
+      tool('shuttle'); tap(4, 3); const sh = ED.src.toys[ED.pick.i].shuttle[5]; E.selAct('faster'); out.faster = ED.src.toys[ED.pick.i].shuttle[5] < sh;
+      E.selAct('del');
+      tool('select'); const t0 = ED.src.map.findIndex(r => r.includes('T')), ti = ED.src.map[t0].indexOf('T');
+      const ni = ti > 3 ? ti - 2 : ti + 2, nj = Math.max(1, t0 - 1);
+      ED.src.map = ED.src.map.map((r, j) => j === nj ? r.slice(0, ni) + '.' + r.slice(ni + 1) : r);
+      drag([[ti + 0.5, t0 + 0.5], [(ti + ni) / 2 + 0.5, (t0 + nj) / 2 + 0.5], [ni + 0.5, nj + 0.5]]);
+      out.tee = ED.src.map[nj][ni] === 'T' && ED.src.map.join('').split('T').length === 2;
+      tap(k[0], k[1]); out.barFor = ED.pick && ED.pick.type;
+      return out; });
+    if (!sm.placed || !/kind/.test(sm.acts) || !/dup/.test(sm.acts) || sm.tool !== 'select' || !sm.letGo || !sm.moved || Math.abs(sm.moved[0] - 4) > 0.01 || Math.abs(sm.moved[1] - 7.5) > 0.01
+        || !sm.still || !sm.undone || sm.undone[0] !== 1.5 || !sm.keptPick || sm.cycle !== 'toy>land' || sm.kind !== 1 || sm.dup !== 2 || !sm.dupPicked || sm.afterDel !== 1 || !sm.faster || !sm.tee || sm.barFor !== 'toy')
+      failures.push(`[${current}] select and move: ${JSON.stringify(sm)}`);
+    await page.waitForFunction(() => { const b = document.getElementById('golfSelBar'); return b && b.style.display !== 'none' && b.querySelector('button[title="Delete"]'); }, null, { timeout: 20000 }).catch(() => {});
+    const barDel = await page.evaluate(() => { const b = document.getElementById('golfSelBar'), d = b && b.querySelector('button[title="Delete"]'), r = d && d.getBoundingClientRect();
+      return r && r.width > 10 ? { x: r.x + r.width / 2, y: r.y + r.height / 2, n: window.getFieldApp()._debug.editor.ED.src.toys.length } : null; });
+    if (!barDel) failures.push(`[${current}] no bar beside the selection`);
+    else { await page.mouse.click(barDel.x, barDel.y); await page.waitForTimeout(300);
+      const n1 = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
+      if (n1 !== barDel.n - 1) failures.push(`[${current}] the bar's Delete took ${barDel.n - n1} things`); }
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
