@@ -138,7 +138,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `LIFT_W` × `LIFT_H`) each carry a height in the hole's optional `lift` list (row by row, dropped
   when all are level; `cleanLift` keeps it in range, -0.05 to 0.12). `rawH` adds `liftAt`: a
   Catmull-Rom surface through the dots, exact at each dot and smooth between. With Select, a press
-  near a dot takes it (`pickAll`, after things, before ground) and a drag up or down the screen raises
+  near a dot takes it (`pickAll`, after things, before ground; "near" is a fingertip on screen,
+  `DOT_PX`/`PICK_PX` over `cellPx`, and on bare grass the nearest dot is taken anyway); a drag is
+  hit-tested where the finger pressed (`ED.pressAt`, from `claimsPan(u, v)`), and up or down the screen raises
   or sinks it (`DOT_PER_PX`, the pan's dy passed in as `ED.panDy`); its bar has Higher, Lower and Level
   this dot. Lifted dots draw warm, sunk ones cool; Level (the tile) also levels every dot.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and

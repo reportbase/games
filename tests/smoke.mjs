@@ -627,7 +627,7 @@ try {
       E.editAction('redo');
       // a hill under the bumper: a second tap on the same spot takes the hill
       ED.src.land.push({ bump: [k[0], k[1], 1.4, 0.03] });
-      ED.lastTap = null; tap(k[0], k[1]); const first = ED.pick && ED.pick.type; tap(k[0], k[1]); out.cycle = first + '>' + (ED.pick && ED.pick.type);
+      ED.lastTap = null; tap(k[0], k[1]); const first = ED.pick && ED.pick.type; tap(k[0], k[1]); out.cycle = first + ">" + (ED.pick && ED.pick.type);
       ED.lastTap = null; tap(k[0], k[1]);
       E.selAct('kind'); out.kind = ED.src.toys[i].kick[3];
       E.selAct('dup'); out.dup = ED.src.toys.filter(T => T.kick).length; out.dupPicked = ED.pick && ED.pick.i !== i;
@@ -642,7 +642,7 @@ try {
       tap(k[0], k[1]); out.barFor = ED.pick && ED.pick.type;
       return out; });
     if (!sm.placed || !/kind/.test(sm.acts) || !/dup/.test(sm.acts) || sm.tool !== 'select' || !sm.letGo || !sm.moved || Math.abs(sm.moved[0] - 4) > 0.01 || Math.abs(sm.moved[1] - 7.5) > 0.01
-        || !sm.still || !sm.undone || sm.undone[0] !== 1.5 || !sm.keptPick || sm.cycle !== 'toy>land' || sm.kind !== 1 || sm.dup !== 2 || !sm.dupPicked || sm.afterDel !== 1 || !sm.faster || !sm.tee || sm.barFor !== 'toy')
+        || !sm.still || !sm.undone || sm.undone[0] !== 1.5 || !sm.keptPick || !/^toy>(land|dot)$/.test(sm.cycle) || sm.kind !== 1 || sm.dup !== 2 || !sm.dupPicked || sm.afterDel !== 1 || !sm.faster || !sm.tee || sm.barFor !== 'toy')
       failures.push(`[${current}] select and move: ${JSON.stringify(sm)}`);
     // the dots lift the grass (Oct 9: "the grass has dots on them, can we use them to pull up and down to change the
     // grass."): a press on a dot and a drag up the screen raises the ground there by the dot's height exactly, the ground
@@ -667,6 +667,24 @@ try {
     if (dl.none || !(dl.lift > 0.035 && dl.lift < 0.045) || Math.abs(dl.rose - dl.lift) > 1e-6 || !(dl.half > 0.005 && dl.half < dl.rose) || dl.pick !== 'dot'
         || !/flat/.test(dl.acts) || Math.abs(dl.higher - dl.lift - 0.01) > 1e-6 || !dl.carried || dl.badLift !== undefined || dl.back.lift !== undefined || Math.abs(dl.back.at) > 1e-6)
       failures.push(`[${current}] the dots lift the grass: ${JSON.stringify(dl)}`);
+    // (Oct 9: "selecting the grass is clumsy. sometimes it works but generally not."): a real mouse pressed on a dot and
+    // moved up the screen pulls that dot up, though it pressed beside the dot and the first move the field passes on is far off it
+    const scr = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+      A.onQuickAct(null, null, 'select'); ED.pick = null;
+      let c = null; search: for (let j = 3; j < D.NY - 2; j++) for (let i = 2; i < D.NX - 1; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot')){ c = [i, j]; break search; } }
+      if (!c) return null;
+      const v = new W.THREE.Vector3(T.boardX + (0.5 - c[0] / D.NX) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - c[1] / D.NY) * bW * (L.cellH || 1)).project(W.camera);
+      return { c, idx: c[1] * D.LIFT_W + c[0], x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, h0: (ED.src.lift && ED.src.lift[c[1] * D.LIFT_W + c[0]]) || 0 }; });
+    if (!scr) failures.push(`[${current}] no clear dot to pull`);
+    else {
+      // (a fingertip lands a little off the dot and its first move is quick: pressed 6 px aside, then 24 px up at once)
+      await page.mouse.move(scr.x + 6, scr.y + 3); await page.mouse.down();
+      await page.mouse.move(scr.x + 6, scr.y - 21); await page.waitForTimeout(30);
+      for (let q = 1; q <= 6; q++){ await page.mouse.move(scr.x + 6, scr.y - 21 - 8 * q); await page.waitForTimeout(30); }
+      await page.mouse.up(); await page.waitForTimeout(300);
+      const after = await page.evaluate(i => { const ED = window.getFieldApp()._debug.editor.ED; return { lift: (ED.src.lift && ED.src.lift[i]) || 0, pick: ED.pick }; }, scr.idx);
+      if (!(after.lift - scr.h0 > 0.01) || !after.pick || after.pick.type !== 'dot' || after.pick.i !== scr.idx) failures.push(`[${current}] a real drag up from a dot: ${JSON.stringify({ scr, after })}`);
+    }
     await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const T = ED.src.toys.findIndex(t => t.kick || t.rock || t.fence || t.gate || t.pipe); if (T >= 0) ED.pick = { type: 'toy', i: T }; });
     await page.waitForFunction(() => { const b = document.getElementById('golfSelBar'); return b && b.style.display !== 'none' && b.querySelector('button[title="Delete"]'); }, null, { timeout: 20000 }).catch(() => {});

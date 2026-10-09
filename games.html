@@ -34330,7 +34330,23 @@ const GOLF_APP = (() => {
      small bar of buttons follows it on the screen: what can be done to that thing (a bumper's kind, a mover's speed, the
      ground higher or lower, duplicate, delete) where it is, not down in the bottom panel. Undo keeps the selection.
      ED.sel, the ground selected before, is now read from the one selection (ED.pick). */
-  const PICK_TOL = 0.35;                                       // cells: how far off a thing a tap may land and still take it
+  /* FINGER-SIZED (Oct 9: "selecting the grass is clumsy. sometimes it works but generally not."). How far off a thing a
+     press may land and still take it was a fixed part of a cell, a few pixels on a phone's board; now it is at least a
+     fingertip on the screen, measured from the board as it is drawn (`cellPx`). And a drag takes what was under the
+     finger where it PRESSED (claimsPan is told that point, ED.pressAt): the first move the field passes on comes only
+     after the finger has travelled, which on a dot pulled up was often already off it. On bare grass a press takes the
+     nearest dot, so the grass can always be pulled. */
+  const PICK_PX = 22, DOT_PX = 30;                             // screen pixels: a fingertip, for things and for dots
+  function cellPx(){
+    try {
+      const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), LB = window.LAB || {}, bWX = bW * (LB.cellW || 1), bWZ = bW * (LB.cellH || 1);
+      const P = (dx, dz) => new W.THREE.Vector3(T.boardX + dx, 0, T.boardZ + dz).project(W.camera);
+      const a = P(0, 0), b = P(bWX / NX, 0), c = P(0, bWZ / NY);
+      const px = q => Math.hypot((q.x - a.x) / 2 * innerWidth, (q.y - a.y) / 2 * innerHeight), m = Math.min(px(b), px(c));
+      return m > 1 && isFinite(m) ? m : 25;
+    } catch { return 25; }
+  }
+  let PICK_TOL = 0.35;                                         // cells: how far off a thing a tap may land and still take it (set per press)
   const SNAP_TOL = 0.18;                                       // cells: how near a line or a half cell pulls the anchor in
   const segDist = (x, y, x0, y0, x1, y1) => { const ux = x1 - x0, uy = y1 - y0, q = Math.max(0, Math.min(1, ((x - x0) * ux + (y - y0) * uy) / (ux * ux + uy * uy || 1))); return Math.hypot(x0 + ux * q - x, y0 + uy * q - y); };
   // how far (x, y) is from a thing's body, in cells: 0 or less is on it
@@ -34357,12 +34373,15 @@ const GOLF_APP = (() => {
   const cellOf = ch => { for (let j = 0; j < NY; j++){ const i = ED.src.map[j].indexOf(ch); if (i >= 0) return [i + 0.5, j + 0.5]; } return null; };
   // everything under (x, y), nearest first: the tee and the cup before the things, the things before the ground
   function pickAll(x, y){
-    const S = ED.src, out = [];
+    const S = ED.src, out = [], cp = cellPx();
+    PICK_TOL = Math.min(0.8, Math.max(0.35, PICK_PX / cp));
+    const dotTol = Math.min(0.5, Math.max(DOT_TOL, DOT_PX / cp));
     S.toys.forEach((T, i) => { const d = toyReach(T, x, y); if (d < PICK_TOL) out.push({ type: 'toy', i, d: Math.max(0, d) - 0.05 }); });
     for (const ch of ['T', 'O']){ const c = cellOf(ch); if (c){ const d = Math.hypot(x - c[0], y - c[1]) - 0.4; if (d < PICK_TOL) out.push({ type: ch, i: 0, d: Math.max(0, d) - 0.1 }); } }
     // a dot of the grass (Oct 9): a press close to one takes it before the ground it stands on, after the things
-    const di = Math.round(x), dj = Math.round(y), dd = Math.hypot(x - di, y - dj);
-    if (dd < DOT_TOL && di >= 0 && dj >= 0 && di < LIFT_W && dj < LIFT_H) out.push({ type: 'dot', i: dj * LIFT_W + di, d: -0.03 + dd * 0.1 });
+    // (within a fingertip, before the ground under it; farther, after the ground: bare grass still gives its nearest dot)
+    const di = Math.max(0, Math.min(LIFT_W - 1, Math.round(x))), dj = Math.max(0, Math.min(LIFT_H - 1, Math.round(y))), dd = Math.hypot(x - di, y - dj);
+    out.push({ type: 'dot', i: dj * LIFT_W + di, d: dd < dotTol ? -0.03 + dd * 0.01 : 1 + dd });
     S.land.forEach((f, i) => { const d = landReach(f, x, y); if (d < PICK_TOL) out.push({ type: 'land', i, d: Math.max(0, d) }); });
     return out.sort((a, b) => a.d - b.d);
   }
@@ -34450,6 +34469,7 @@ const GOLF_APP = (() => {
   function dragPick(x, y){
     const S = ED.src;
     if (!ED.grab){
+      if (ED.pressAt){ x = ED.pressAt.x; y = ED.pressAt.y; }   // (where the finger pressed, not where its first move reached)
       const here = pickAll(x, y), p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here[0];
       if (!p){ ED.grab = { none: true }; return false; }
       ED.pick = { type: p.type, i: p.i };
@@ -34970,8 +34990,8 @@ const GOLF_APP = (() => {
     },
     // A board in play keeps its drags: the board never moves under an aim.
     // Only a finger on the selected board aims; anywhere else the view moves (Oct 2: "touch should only be locked in the selected board").
-    claimsPan(u){
-      if (ED.on && LIVE && LIVE.key === ED.key) return u != null;   // in the editor a finger on the hole paints
+    claimsPan(u, v){
+      if (ED.on && LIVE && LIVE.key === ED.key){ ED.pressAt = u != null ? { x: u * NX, y: v * NY } : null; return u != null; }   // in the editor a finger on the hole paints
       const g = liveGame(); return !!(g && u != null && (g.state === 'play' || g.state === 'sunk'));
     },
     onPan(dx, dy, at){
@@ -34999,7 +35019,7 @@ const GOLF_APP = (() => {
       return true;
     },
     onPanEnd(){
-      if (ED.stroke){ ED.stroke = false; ED.last = null; ED.selLast = null; ED.grab = null; ED.guide = null; editDragEnd();
+      if (ED.stroke){ ED.stroke = false; ED.last = null; ED.selLast = null; ED.grab = null; ED.guide = null; ED.pressAt = null; editDragEnd();
         if (ED.undo.length && ED.undo[ED.undo.length - 1] === JSON.stringify(ED.src)) ED.undo.pop();   // (a drag that changed nothing leaves no undo)
         editRefresh(true); return; }
       const g = liveGame();
