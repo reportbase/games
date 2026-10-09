@@ -119,6 +119,21 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   is not. The movers are tools too: Shuttle and Gate (drag a track), Orbit (drag out from the
   centre), each placed at a default size by a tap. Undo has Redo (`ED.redo`).
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
+  **Select and move in place** (Oct 9, step 1 of making the editor like draw.html): Select is the
+  tool in hand at the start (and a quick button). A tap takes anything under it, the tee and cup
+  first, then toys, then ground (`pickAll`, `toyReach`, `landReach`); a second tap on the same spot
+  takes the next thing under it; bare grass lets go. A drag that starts on a thing moves it
+  (`dragPick`): from where the finger pressed, its anchor snapped to half cells and into line with
+  other things (`snapAnchor`, a white guide line; Ctrl/Alt/Shift held moves freely); the tee and cup
+  go cell by cell. The one selection is `ED.pick` ({type: 'toy'|'land'|'T'|'O', i}); `ED.sel` (the
+  ground index the older code uses) is an accessor over it. What a tool places is selected, and a
+  tap with Bumper, Boulder or Windmill on a thing already there selects it. Beside the selection a
+  bar of buttons follows it on screen (`#golfSelBar`, `selActs`/`selAct`, projected from the board
+  each frame by `selBarTick`): a bumper's kind, a mover's Faster/Slower, the ground Higher/Lower,
+  Duplicate, Delete, let go. Undo keeps the selection. Draw.html has no selection library to lift
+  (its selection is spread through its app), so its ways are rewritten here. Still to come: handles
+  per kind (size rings, line ends, plateau corners, turning grips) and drag-to-create, box select,
+  keys, copy and paste.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
   title, no text) in the band at the top right of the bottom pane (`#bbQuick`, `bbQuickTick`);
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Undo, Redo, Erase, Done while editing;
