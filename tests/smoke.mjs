@@ -182,7 +182,8 @@ try {
       const a = D.cellItems(c, r);
       let moved = false;                                     // (a gate stands up or lies down a while: give it a few seconds)
       for (let q = 0; q < 10 && !moved; q++){ await new Promise(ok => setTimeout(ok, 400)); moved = sig(D.cellItems(c, r)) !== sig(a); }
-      res.push({ name: H.name, kinds, drawn: kinds.every(n => a.some(i => i.kind === KINDS[n])), moved,
+      // (an orbit may be a bumper going round, drawn as a bumper: Oct 9)
+      res.push({ name: H.name, kinds, drawn: kinds.every(n => a.some(i => i.kind === KINDS[n] || (n === 'orbit' && i.kind === 'propBumper'))), moved,
                  water: a.some(i => /^(drop|foam|ripple|fountBowl|cliff)$/.test(i.kind)) });
     }
     return { res, flat: D.HOLES.filter(H => (H.land || []).length < 2).map(H => H.name), old: D.HOLES.filter(H => (H.toys || []).some(T => T.fountain || T.fall)).map(H => H.name) };

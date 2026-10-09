@@ -32927,11 +32927,11 @@ const GOLF_APP = (() => {
       [0.94, () => { land.push({ ring: [cx, cy, 1.15, 0.7, 0.05] }); return []; }],
       [1, () => { land.push({ ring: [cx, cy, 1.35, 0.6, -0.035] }); return []; }]];
     /* (a cup that already has things about it, toys or ground of the hole's own within a few cells, gets a light guard
-       only: nothing, a sand apron or one boulder going round. Two defences stacked made holes no one could finish.) */
+       only: nothing, a sand apron or one bumper going round. Two defences stacked made holes no one could finish.) */
     const crossing = map.some(r => r.includes('=') || r.filter(ch => ch === '#').length >= 3);   // a stream or a wall across is a defence already
     const busy = crossing || toys.some(T => { const v = Object.values(T)[0]; return Math.hypot(v[0] - cx, v[1] - cy) < 3.2 || (v.length > 3 && !T.kick && !T.rock && Math.hypot(v[2] - cx, v[3] - cy) < 3.2); })
       || (src.land || []).some(f => { const k = Object.keys(f)[0], v = f[k]; return ['ring', 'dish', 'bowl', 'bump', 'plateau'].includes(k) && Math.hypot(v[0] - cx, v[1] - cy) < 3 && Math.abs(v[k === 'plateau' ? 4 : 3]) > 0.035; });
-    const guards = busy ? (pickW < 0.4 ? [] : pickW < 0.7 ? styles[10][1]() : ring(1, 0)) : styles.find(([w]) => pickW < w)[1]();
+    const guards = busy ? (pickW < 0.45 ? [] : pickW < 0.75 ? styles[10][1]() : ring(1, 1)) : styles.find(([w]) => pickW < w)[1]();
     for (const [i, j] of sand) map[j][i] = 's';
     return { ...src, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards], land: [...(src.land || []), ...land] };
   }
