@@ -59,8 +59,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   of the rail by a quarter of its width (`compileHole`, `CUP_R_MAX`). The ground (`land`, read by
   `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
   (negative ones are gullies), two or more per hole, the skate park's bowls and
-  pipes (Oct 8: the half-pipe, the bowl, the mega ramp, the skate park), and plateaus
-  (a raised box) and ramps (a kicker along a line); water lies
+  pipes, plateaus (a raised box) and ramps (a kicker along a line), sunken dishes and
+  troughs, `rough` (the green perturbed every way, by a seed) and `ring` (a round rim, or a
+  moat when negative). The course was rebuilt on Oct 9 ("reset all the boards"): 22 holes
+  made first of their ground (the crater, the terraces, the moguls, the mesa, the
+  amphitheatre, the sunken garden, …). **Every board has its own hole** (Oct 9): a board's index
+  (`boardIdx`, row by row) picks it; the first 22 boards are the course as written, every other
+  board gets a hole generated from its index (`genSrc`, seeded, so always the same; `holeAt`
+  makes it on first want and keeps up to `GEN_CAP` = 1500, the least recently wanted giving up
+  its slot). A round is `ROUND` = 18 holes, board after board. `tests/golf-course.mjs` plays the
+  course and a sample of generated holes (`GEN_SAMPLE`, 40). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
   alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`): `shuttle` (a
@@ -91,7 +99,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
   title, no text) in the band at the top right of the bottom pane (`#bbQuick`, `bbQuickTick`);
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Undo, Redo, Erase, Done while editing;
-  Start again and Edit while playing.
+  Start again and Edit while playing. They show only while the pane is open; the three dots
+  (`#bbHandle`) show on every game, whether or not its row has anything in it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 

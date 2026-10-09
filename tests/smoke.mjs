@@ -73,6 +73,9 @@ try {
     await page.waitForTimeout(SETTLE_MS);
     const active = await page.evaluate(() => { const a = window.getFieldApp(); return a && (a.id || a.name); });
     if (active !== id) failures.push(`[${id}] switching did not take: the active app is ${active}`);
+    // the three dots are on every game (Oct 9: "always show the triple dots on bottom")
+    const dots = await page.evaluate(() => { const h = document.getElementById('bbHandle'), r = h && h.getBoundingClientRect(); return !!(h && getComputedStyle(h).display !== 'none' && r.width > 0 && r.bottom <= innerHeight + 1); });
+    if (!dots) failures.push(`[${id}] the three dots are not showing`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${id}`);
   }
 
@@ -170,6 +173,7 @@ try {
   const mv = await page.evaluate(async () => {
     const D = window.getFieldApp()._debug, res = [], KINDS = { shuttle: 'propBumper', orbit: 'propRock', gate: 'gateSeg' };
     for (const [k, H] of D.HOLES.entries()){
+      if (H.gen != null) continue;                           // (the course's own holes; the generated ones are checked below)
       const kinds = Object.keys(KINDS).filter(n => (H.toys || []).some(T => T[n]));
       if (!kinds.length) continue;
       let c = 0, r = 0;
@@ -188,6 +192,27 @@ try {
   if (mv.old.length) failures.push(`[${current}] fountains or waterfalls are left on ${mv.old.join(', ')}`);
   if (mv.flat.length) failures.push(`[${current}] holes with one feature of ground or none: ${mv.flat.join(', ')}`);
   console.log(`${failures.length === before5 ? 'ok  ' : 'FAIL'} ${current} (${mv.res.map(w => w.name).join(', ')})`);
+  // A hole for every board (Oct 9: "can you use the index to generate a unique board for each index?"): the same index
+  // always makes the same hole, neighbouring indices make different ones, a board past the course shows the hole of its
+  // own index, and a few hundred generated holes are all well formed
+  current = 'mini golf boards';
+  const before10 = failures.length;
+  const gb = await page.evaluate(() => {
+    const D = window.getFieldApp()._debug, E = D.editor, J = o => JSON.stringify(o);
+    const same = J(D.genSrc(5000)) === J(D.genSrc(5000)), names = new Set(), maps = new Set(), bad = [];
+    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), c = E.cleanSrc(s); names.add(s.name); maps.add(J([s.land, s.map, s.toys]));
+      if (!c || J(c.land) !== J(s.land) || J(c.toys) !== J(s.toys) || J(c.map) !== J(s.map) || c.land.length < 3) bad.push(i); }
+    const k1 = D.holeAt(5000), k2 = D.holeAt(5000), k3 = D.holeAt(5001);
+    let c = 0, r = 0, found = null;
+    search: for (r = 0; r < 60; r++) for (c = 0; c < 60; c++) if (D.boardIdx(c, r) >= 22){ found = { c, r }; break search; }
+    const kb = found && D.holeOf(found.c, found.r);
+    return { same, distinct: maps.size, names: names.size, bad: bad.slice(0, 5), k: [k1, k2, k3], board: found && { idx: D.boardIdx(found.c, found.r), gen: D.HOLES[kb].gen, num: D.HOLES[kb].num },
+             course: D.holeOf(0, 0) };
+  });
+  if (!gb.same || gb.distinct < 300 || gb.bad.length) failures.push(`[${current}] generated holes: same ${gb.same}, ${gb.distinct} of 300 different, ill-formed ${gb.bad.join(',')}`);
+  if (gb.k[0] !== gb.k[1] || gb.k[0] === gb.k[2]) failures.push(`[${current}] holeAt kept ${JSON.stringify(gb.k)}`);
+  if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
+  console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
   // never crosses: a 6° roll turns nothing, a 60° twist turns about 48°, clockwise for clockwise, about
@@ -304,15 +329,15 @@ try {
   const before8 = failures.length;
   {
     const r = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, CW = D.CW, isl = D.HOLES.find(H => H.name === 'the island'), box = D.HOLES.find(H => H.name === 'the boulders');
+      const D = window.getFieldApp()._debug, CW = D.CW, isl = D.HOLES.find(H => H.name === 'the island'), box = D.HOLES.find(H => H.name === 'the bunkers');
       return {
         corner: D.groundAt(isl, 1.06 * CW, 1.06 * CW), mid: D.groundAt(isl, 3.5 * CW, 1.5 * CW),
         sandCorner: D.groundAt(box, 1.04 * CW, 2.04 * CW), sandMid: D.groundAt(box, 2.5 * CW, 3.5 * CW),
-        skate: D.HOLES.filter(H => (H.land || []).some(f => f.bowl || f.pipe)).map(H => H.name),
+        skate: D.HOLES.filter(H => (H.land || []).some(f => f.bowl || f.pipe || f.dish || f.trough)).map(H => H.name),
       };
     });
     if (r.corner !== '.' || r.mid !== '~') failures.push(`[${current}] the island's moat: corner ${r.corner}, middle ${r.mid} (wanted grass at the rounded corner, water in the middle)`);
-    if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the boulders' bunker: corner ${r.sandCorner}, middle ${r.sandMid}`);
+    if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the bunkers' sand: corner ${r.sandCorner}, middle ${r.sandMid}`);
     if (r.skate.length < 4) failures.push(`[${current}] skate-park holes: ${r.skate.join(', ')}`);
     // fences, not bushes (Oct 8): every hole one of wood, stone or brick, all three used, fences drawn in their hole's
     // material, walls and rail too; and every cup clear of the rail by a quarter of its width
@@ -507,6 +532,17 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 5000 }).catch(() => {});
     const qp = await page.evaluate(() => [...document.querySelectorAll('#bbQuick button')].map(b => b.title));
     if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
+    // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
+    // it and the buttons go; the dots open it and they are back
+    const qVis = () => page.evaluate(() => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0); });
+    const dotsAt = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    const shut0 = await page.evaluate(() => document.body.classList.contains('bb-collapsed'));
+    if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500); }
+    const openVis = await qVis();
+    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    const shutNow = await page.evaluate(() => document.body.classList.contains('bb-collapsed')), shutVis = await qVis();
+    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    if (!openVis || !shutNow || shutVis) failures.push(`[${current}] quick buttons with the pane open ${openVis}, shut ${shutNow} and still showing ${shutVis}`);
     // the share link opens the page on the hole
     await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });

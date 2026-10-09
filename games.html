@@ -225,6 +225,8 @@
                     border: 1px solid rgba(201, 199, 190, .30); background: rgba(18, 21, 28, .58); color: #fff;
                     font-size: 18px; line-height: 1; cursor: pointer; }
   #bbQuick button:disabled { opacity: .35; cursor: default; }
+  /* …and only while the pane is open (Oct 9: "dont show any buttons when the bottom panel is not visible"). */
+  body.bb-collapsed #bbQuick { display: none; }
   @media (max-width: 420px){ #bbQuick { right: 6px; gap: 4px; } #bbQuick button { width: 31px; height: 31px; font-size: 16px; } }
   #bbHandle svg circle { fill: #fff; transition: fill .12s ease; }     /* white (Sep 25), so they read on any field */
   #bbHandle:hover svg circle { fill: rgba(232, 200, 106, .95); }
@@ -12924,13 +12926,11 @@ function syncBrowserVisibility(){
   }
   const h = document.getElementById('bbHandle');
   if (h){
-    /* NO DOTS WHERE THERE IS NO ROW (Sep 26: "remove the three dots on the
-       bottom browser for games that don't use the bottom browser"). Only the
-       gallery (its prints) and chess (the moves of the game you are playing)
-       ever put anything in the row; everywhere else it is empty, and dots
-       that open onto nothing are a control that does nothing. */
-    const want = bbKeys.length ? '' : 'none';
-    if (h.style.display !== want) h.style.display = want;
+    /* THE DOTS ARE ALWAYS THERE (Oct 9: "always show the triple dots on bottom"). They were hidden where the row was
+       empty (Sep 26: "remove the three dots on the bottom browser for games that don't use the bottom browser"); since
+       then most games put their numbers in the row, and the dots are the one mark that says the pane is down there, so
+       they stay on every game. */
+    if (h.style.display) h.style.display = '';
     const t = on ? 'Hide the row of boards' : 'Show the row of boards';
     if (t !== _bbLabelLast){ _bbLabelLast = t; h.title = t; }
   }
@@ -32788,73 +32788,83 @@ const GOLF_APP = (() => {
   // more land (Oct 8): wave [height, length (cells), heading (°), phase] rolls · ridge [c0, r0, c1, r1, width, height] a long
   //       hump along a line, or a gully when the height is less than nothing; a bump of negative height is a hollow
   // skate park (Oct 8): bowl [col, row, radius, lip height] · pipe [c0, r0, c1, r1, width, lip height], a half-pipe
+  // more land (Oct 9): rough [height, length (cells), seed], the whole green perturbed, small hummocks every way · ring
+  //       [col, row, radius, width, height] a round rim (a crater's lip, the steps of an amphitheatre), or a round moat in
+  //       the grass when the height is less than nothing · dish [col, row, radius, depth] and trough [c0, r0, c1, r1, width,
+  //       depth], a bowl and a half-pipe sunk into the ground
+  /* A NEW COURSE (Oct 9: "reset all the boards. create a wide variety of different boards, focusing on the ground itself,
+     with different perturbations and interesting elevations and sunken areas"). Twenty-two holes, each built first of its
+     ground: terraces, craters, moguls, a mesa, saddles, gullies, a canyon, an amphitheatre, dunes, sunken bunkers and a
+     sunken garden, the skate park's bowl and pipe, every green roughened a little so no putt runs quite straight. The
+     toys are fewer than before and placed for the ground: an orbit round a sinkhole, a gate across a saddle. Sunken ground
+     goes at most BASE down (the board is under it); high ground is what makes the deep places deep. */
   const HOLES = [
-    { name: 'the windmill', par: 2, fence: 'wood', land: [{ bump: [4, 9.45, 1.72, 0.02] }, { wave: [0.012, 4.5, 90, 0] }, { bump: [1.5, 3, 1.5, -0.025] }, { bump: [6.5, 3.5, 1.5, 0.03] }],
-      toys: [{ mill: [4, 6.5, 1.84, 1.2] }],
+    { name: 'the meadow', par: 2, fence: 'wood', land: [{ rough: [0.014, 2.4, 1] }, { bump: [4, 6.5, 2.4, 0.035] }, { bump: [2, 3, 1.3, -0.025] }],
+      toys: [],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the garden', par: 3, fence: 'stone', land: [{ bump: [4, 6.5, 2.88, 0.03] }, { ridge: [0, 11, 8, 8, 1.2, 0.025] }, { bump: [5, 2, 1.6, -0.03] }],
-      toys: [{ fence: [1.18, 2.44, 2.56, 3.24] }, { fence: [5.68, 3.8, 6.58, 4.7] }, { fence: [3.03, 6.09, 3.91, 7.61] }, { fence: [0.72, 9.69, 1.94, 9.69] }, { fence: [5.78, 9.58, 7.02, 8.86] }],
-      map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
-    { name: 'the boulders', par: 3, fence: 'brick', land: [{ tilt: [0.03, 0] }, { wave: [0.01, 3.5, 30, 1] }, { bump: [6, 10, 1.8, 0.035] }],
-      toys: [{ orbit: [4, 2.6, 1.2, 0.5, 6, 0] }, { rock: [1.87, 6.15, 0.71] }, { rock: [6.13, 4.73, 0.55] }, { rock: [2.93, 9.93, 0.57] }],
-      map: ['.......O', '........', '.sss....', '.sss....', '.sss....', '........', '........', '....sss.', '....sss.', '........', '........', '........', '..T.....'] },
-    { name: 'the pipe', par: 2, fence: 'wood', land: [{ bump: [4, 10.5, 2.5, 0.03] }, { bump: [4, 1.5, 2.2, 0.025] }, { wave: [0.008, 3, 0, 0] }],
-      toys: [{ shuttle: [1.2, 10.8, 5.2, 10.8, 0.3, 3.2] }, { pipe: [6, 9.69, 2, 2.36, -90, 0.45] }, { fence: [0.48, 10.71, 1.12, 9.61] }],
-      map: ['...O....', '........', '........', '........', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '~~~~~~~~', '........', '........', '........', '........', '...T....'] },
-    { name: 'the bridge', par: 3, fence: 'stone', land: [{ bump: [6, 1.77, 1.72, 0.03] }, { ridge: [0, 9.5, 8, 9.5, 1, 0.03] }, { bump: [1.5, 2.5, 1.5, -0.025] }],
-      toys: [{ gate: [3, 4.5, 6, 4.5, 3, 0] }, { kick: [2, 8.51, 0.32] }, { rock: [6.67, 8.98, 0.52] }],
-      map: ['......O.', '........', '........', '........', '........', '~~~~=~~~', '~~~~=~~~', '........', '........', '........', '........', '........', '..T.....'] },
-    { name: 'the dogleg', par: 3, fence: 'brick', land: [{ tilt: [0, 0.04] }, { ridge: [5, 0, 8, 4, 1.2, 0.035] }, { bump: [2, 1.5, 1.5, -0.02] }],
-      toys: [{ fence: [4.69, 2.76, 5.71, 1.74] }, { rock: [0.53, 1.89, 0.46] }],
-      map: ['..O.....', '........', '........', '........', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####...', '#####.T.'] },
-    { name: 'the bumpers', par: 3, fence: 'wood', land: [{ bump: [4, 6, 2.5, 0.04] }, { bump: [1.5, 10.5, 1.5, -0.025] }, { bump: [6.5, 10.5, 1.5, -0.025] }],
-      toys: [{ kick: [2, 3.55, 0.32] }, { kick: [6, 3.55, 0.32] }, { shuttle: [1.5, 5.91, 6.5, 5.91, 0.32, 3.6] }, { kick: [2, 8.27, 0.32] }, { kick: [6, 8.27, 0.32] }, { kick: [4, 2.13, 0.28] }],
-      map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the switchback', par: 4, fence: 'stone', land: [{ step: [0, -1, -6.5, 0.4, 0.04] }, { wave: [0.008, 3, 0, 0.5] }],
-      toys: [{ kick: [6.93, 7.8, 0.3] }],
-      map: ['O.......', '........', '#####...', '........', '........', '........', '...#####', '........', '........', '........', '#####...', '........', '..T.....'] },
-    { name: 'the island', par: 3, fence: 'brick', land: [{ bump: [4, 9.5, 2.5, 0.03] }, { wave: [0.008, 3, 60, 0] }],
-      toys: [{ mill: [4, 7.33, 1.38, 1.4] }, { fence: [0.35, 0.76, 1.09, 1.6] }, { fence: [6.91, 0.76, 7.65, 1.6] }],
-      map: ['........', '.~~~~~~.', '.~~O.~~.', '.~~..~~.', '.~~..~~.', '.~~==~~.', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the volcano', par: 3, fence: 'wood', land: [{ bump: [4.67, 4.14, 2.64, 0.1] }, { wave: [0.008, 2.5, 45, 0] }],
-      toys: [{ orbit: [4.67, 4.14, 1.9, 0.4, 6, 0] }, { orbit: [4.67, 4.14, 1.9, 0.4, 6, 3.14] }, { rock: [1.87, 7.33, 0.48] }, { rock: [6.93, 7.8, 0.48] }, { rock: [4.8, 8.75, 0.41] }],
+    { name: 'the crater', par: 3, fence: 'stone', land: [{ ring: [4, 4.5, 2.1, 1, 0.06] }, { dish: [4, 4.5, 1.6, 0.04] }, { rough: [0.008, 2, 2] }],
+      toys: [{ kick: [1.4, 9, 0.3] }],
+      map: ['........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
+    { name: 'the terraces', par: 3, fence: 'brick', land: [{ step: [0, -1, -9, 0.35, 0.04] }, { step: [0, -1, -5, 0.35, 0.04] }, { rough: [0.01, 2.2, 3] }],
+      toys: [{ fence: [0.4, 9, 2.2, 9] }, { fence: [5.8, 5, 7.6, 5] }],
+      map: ['.....O..', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '..T.....'] },
+    { name: 'the moguls', par: 3, fence: 'wood', land: [{ rough: [0.018, 1.7, 7] }, { rough: [0.012, 3.2, 4] }, { tilt: [0, 0.02] }],
+      toys: [],
+      map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the sinkhole', par: 3, fence: 'stone', land: [{ dish: [3.5, 7, 1.9, 0.045] }, { ring: [3.5, 7, 2.2, 0.7, 0.025] }, { rough: [0.008, 2.5, 5] }],
+      toys: [{ orbit: [3.5, 7, 2.6, 0.4, 7, 0] }],
+      map: ['......O.', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
+    { name: 'the canyon', par: 3, fence: 'brick', land: [{ trough: [4, 12.6, 4, 0.4, 3.2, 0.045] }, { ridge: [0.7, 0, 0.7, 13, 1.3, 0.05] }, { ridge: [7.3, 0, 7.3, 13, 1.3, 0.05] }, { rough: [0.006, 2, 6] }],
+      toys: [{ shuttle: [2.2, 6.5, 5.8, 6.5, 0.3, 3.2] }],
+      map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the saddle', par: 3, fence: 'wood', land: [{ bump: [1.3, 6.5, 1.8, 0.065] }, { bump: [6.7, 6.5, 1.8, 0.065] }, { bump: [4, 2.8, 1.5, -0.035] }, { bump: [4, 10.2, 1.5, -0.035] }],
+      toys: [{ gate: [2.6, 6.5, 5.4, 6.5, 3.2, 0] }],
+      map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the mesa', par: 3, fence: 'stone', land: [{ plateau: [2, 1, 6, 5, 0.07] }, { ramp: [4, 9.5, 4, 5.1, 1.8, 0.07] }, { rough: [0.008, 2, 8] }],
+      toys: [{ rock: [1.2, 8, 0.5] }, { rock: [6.8, 9, 0.45] }],
+      map: ['........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the target', par: 4, fence: 'brick', land: [{ ring: [4, 5, 3, 0.8, 0.045] }, { ring: [4, 5, 1.5, 0.6, 0.035] }, { wave: [0.008, 3, 30, 0] }],
+      toys: [{ kick: [4, 9.2, 0.3] }],
+      map: ['........', '........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the rapids', par: 3, fence: 'wood', land: [{ wave: [0.016, 1.6, 90, 0] }, { rough: [0.01, 2.6, 9] }, { bump: [6, 10.5, 1.5, 0.03] }],
+      toys: [{ kick: [6.2, 3, 0.3] }],
+      map: ['..O.....', '........', '........', '........', '........', '~~~=~~~~', '~~~=~~~~', '~~~=~~~~', '........', '........', '........', '........', '.....T..'] },
+    { name: 'the volcano', par: 3, fence: 'stone', land: [{ bump: [4, 4.5, 2.6, 0.1] }, { dish: [4, 4.5, 1, 0.045] }, { rough: [0.008, 2, 10] }],
+      toys: [{ orbit: [4, 4.5, 2.2, 0.4, 6, 0] }, { orbit: [4, 4.5, 2.2, 0.4, 6, 3.14] }],
       map: ['........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the gauntlet', par: 3, fence: 'stone', land: [{ ridge: [4, 0.5, 4, 12.5, 1.6, -0.035] }, { bump: [0.8, 6.3, 1.4, 0.03] }, { bump: [7.2, 6.3, 1.4, 0.03] }],
-      toys: [{ mill: [4, 3.78, 1.72, 1.6] }, { mill: [4, 8.75, 1.72, -1.3] }],
-      map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the fences', par: 4, fence: 'brick', land: [{ bump: [4, 6.5, 3.45, 0.02] }, { wave: [0.012, 3.5, 90, 0.8] }],
+    { name: 'the gullies', par: 3, fence: 'brick', land: [{ ridge: [0, 3, 8, 7, 1, -0.04] }, { ridge: [0, 7.5, 8, 11.5, 1, -0.04] }, { bump: [6, 2, 1.4, 0.04] }, { rough: [0.007, 2, 11] }],
+      toys: [{ kick: [2, 6, 0.3] }],
+      map: ['.O......', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
+    { name: 'the amphitheatre', par: 3, fence: 'wood', land: [{ dish: [4, 2.5, 2.6, 0.045] }, { ring: [4, 2.5, 4, 1, 0.04] }, { ring: [4, 2.5, 6.2, 1.2, 0.05] }],
+      toys: [],
+      map: ['........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the dunes', par: 3, fence: 'stone', land: [{ wave: [0.024, 3.2, 20, 0] }, { wave: [0.014, 2.1, 110, 1] }, { rough: [0.008, 1.8, 12] }],
+      toys: [],
+      map: ['.....O..', '........', '.ss.....', '.sss....', '........', '....ss..', '...sss..', '........', '........', '.ss.....', '.sss....', '........', '..T.....'] },
+    { name: 'the island', par: 3, fence: 'brick', land: [{ bump: [4, 10, 2.5, 0.035] }, { rough: [0.008, 2.4, 13] }, { bump: [3.5, 2.5, 1, 0.02] }],
+      toys: [{ mill: [4, 7.33, 1.38, 1.4] }],
+      map: ['........', '.~~~~~~.', '.~~O.~~.', '.~~..~~.', '.~~..~~.', '.~~==~~.', '........', '........', '........', '........', '........', '........', '...T....'] },
+    { name: 'the bunkers', par: 3, fence: 'wood', land: [{ dish: [2.5, 3.5, 1.6, 0.035] }, { dish: [5.5, 8, 1.4, 0.035] }, { rough: [0.01, 2.2, 14] }, { bump: [6, 3, 1.4, 0.03] }],
+      toys: [{ rock: [6.4, 11, 0.45] }],
+      map: ['.......O', '........', '.sss....', '.sss....', '.sss....', '........', '........', '....sss.', '....sss.', '........', '........', '........', '..T.....'] },
+    { name: 'the fences', par: 4, fence: 'stone', land: [{ step: [0, -1, -8, 0.4, 0.035] }, { step: [0, -1, -4.5, 0.4, -0.03] }, { rough: [0.01, 2.6, 15] }],
       toys: [{ fence: [0.8, 2.23, 0.8, 3.67] }, { fence: [2.13, 2.23, 2.13, 3.67] }, { fence: [3.47, 2.23, 3.47, 3.67] }, { fence: [4.8, 2.23, 4.8, 3.67] }, { fence: [2.53, 6.5, 3.87, 6.5] }, { fence: [3.86, 6.5, 5.2, 6.5] }, { fence: [5.2, 6.5, 6.54, 6.5] }, { fence: [6.53, 6.5, 7.65, 6.5] }, { fence: [0.35, 9.69, 1.42, 10.41] }, { fence: [1.51, 10.41, 2.75, 9.69] }, { fence: [3.11, 9.43, 3.83, 10.67] }, { fence: [4.44, 10.67, 5.16, 9.43] }],
       map: ['O.......', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '.......T'] },
-    { name: 'the canyon', par: 3, fence: 'wood', land: [{ tilt: [0, -0.02] }, { step: [0, 1, 7.2, 0.5, -0.03] }, { bump: [1.5, 10.5, 1.4, 0.03] }],
-      toys: [{ slide: [3.27, 4.14, 4.73, 4.14, 1.03, 0.4, 2.4] }, { rock: [1.33, 7.8, 0.46] }],
-      map: ['##.O..##', '##....##', '##....##', '##....##', '##....##', '##....##', '##....##', '........', '........', 'sss.....', 'sss.....', 'sss.....', '......T.'] },
-    { name: 'the pipes', par: 3, fence: 'stone', land: [{ bump: [2, 8, 1.8, 0.035] }, { bump: [5.5, 10, 1.6, -0.025] }, { wave: [0.008, 3, 120, 0] }],
-      toys: [{ pipe: [1.33, 5.91, 0.8, 1.18, 0, 0.45] }, { pipe: [6.67, 5.91, 6.67, 11.11, 90, 0.45] }, { shuttle: [1.5, 8.27, 6.5, 8.27, 0.3, 2.8] }],
-      map: ['...O....', '........', '########', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the moat', par: 3, fence: 'brick', land: [{ bump: [4, 9.5, 2.5, 0.035] }, { bump: [4, 3.5, 1.2, -0.02] }],
-      toys: [{ gate: [3, 7.4, 6, 7.4, 3.2, 0.5] }, { fence: [0.35, 8.9, 0.99, 10] }, { fence: [6.71, 9.57, 7.65, 10.29] }, { kick: [7.2, 0.47, 0.26] }],
-      map: ['........', '.######.', '.#.O..#.', '.#....#.', '.#....#.', '.###.##.', '~~~~=~~~', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the snake', par: 5, fence: 'wood', land: [{ wave: [0.01, 4, 0, 0] }, { tilt: [0, -0.02] }, { bump: [5.5, 7.5, 1.4, 0.03] }],
-      toys: [{ rock: [3.33, 5.32, 0.4] }, { fence: [3.33, 9.45, 3.33, 10.65] }],
-      map: ['O.......', '#######.', '........', '........', '.#######', '........', '#######.', '........', '.#######', '........', '........', '#######.', 'T.......'] },
-    { name: 'the hill', par: 3, fence: 'stone', land: [{ bump: [4, 6.5, 3.45, 0.12] }, { ridge: [0, 9, 8, 11, 0.8, 0.02] }],
-      toys: [{ orbit: [4, 6.5, 2.2, 0.42, -7, 0] }, { mill: [4.67, 2.95, 1.49, 1.5] }, { fence: [0.35, 5.91, 1.44, 5.91] }, { fence: [6.56, 5.91, 7.65, 5.91] }],
-      map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
-    { name: 'the finale', par: 4, fence: 'brick', land: [{ bump: [1.33, 1.18, 1.72, 0.03] }, { wave: [0.01, 3.5, 100, 0] }, { bump: [4, 6.8, 1.6, -0.03] }],
-      toys: [{ shuttle: [1.5, 2.5, 6.5, 2.5, 0.3, 2.8] }, { mill: [4, 8.86, 1.15, 1.7] }, { kick: [1.33, 5.91, 0.3] }, { kick: [6.67, 5.91, 0.3] }, { pipe: [7.2, 5.2, 6, 0.59, 180, 0.42] }, { fence: [0.35, 11.09, 1.12, 10.19] }, { rock: [7.07, 10.87, 0.46] }],
-      map: ['..O.....', '........', '........', '........', '~~~=~~~~', '........', '........', '........', '###..###', '........', '........', '........', '......T.'] },
-    { name: 'the half-pipe', par: 3, fence: 'wood', land: [{ pipe: [4, -1, 4, 14, 8, 0.16] }, { ridge: [4, 5, 4, 8.5, 1, 0.05] }],
-      toys: [{ gate: [1.2, 3.5, 3.4, 3.5, 3.4, 0] }],
-      map: ['........', '.O......', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '......T.'] },
-    { name: 'the bowl', par: 3, fence: 'stone', land: [{ bowl: [4, 5, 3.2, 0.17] }, { bowl: [5.5, 10.5, 1.5, 0.08] }],
-      toys: [{ orbit: [4, 5, 2.3, 0.38, 7, 0] }],
-      map: ['ss......', 's.......', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '.......s', '.T....ss'] },
-    { name: 'the mega ramp', par: 4, fence: 'brick', land: [{ step: [0, -1, -9.5, 0.9, 0.18] }, { step: [0, -1, -4, 0.6, -0.16] }, { pipe: [4, -1, 4, 14, 8, 0.07] }],
-      toys: [{ shuttle: [1.5, 6.5, 6.5, 6.5, 0.3, 3] }],
-      map: ['........', '.~~...O.', '.~~.....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] },
-    { name: 'the skate park', par: 4, fence: 'wood', land: [{ pipe: [4, -1, 4, 14, 8, 0.12] }, { bowl: [2.5, 2.6, 1.8, 0.12] }, { ridge: [1.5, 7, 6.5, 7, 0.9, 0.09] }, { bump: [6, 10, 0.8, 0.06] }],
-      toys: [{ shuttle: [1.5, 5, 6.5, 5, 0.3, 2.6] }],
-      map: ['........', '........', '..O.....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the half-pipe', par: 3, fence: 'brick', land: [{ pipe: [4, -1, 4, 14, 7, 0.12] }, { rough: [0.006, 2, 16] }],
+      toys: [{ kick: [4, 6.5, 0.3] }],
+      map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the bowl', par: 3, fence: 'wood', land: [{ bowl: [4, 5, 3.2, 0.16] }, { bowl: [5.5, 10.5, 1.5, 0.08] }],
+      toys: [],
+      map: ['........', '........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '..T.....'] },
+    { name: 'the ridgeline', par: 4, fence: 'stone', land: [{ ridge: [1, 12, 7, 1, 1.4, 0.065] }, { ridge: [0, 6, 4, 0, 1, -0.035] }, { ridge: [4, 13, 8, 7, 1, -0.035] }, { rough: [0.008, 2.2, 17] }],
+      toys: [{ gate: [3, 6.5, 5, 6.5, 3.4, 1] }],
+      map: ['......O.', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '.T......'] },
+    { name: 'the sunken garden', par: 3, fence: 'brick', land: [{ plateau: [1.5, 2.5, 6.5, 8.5, -0.045] }, { ring: [4, 5.5, 3.6, 0.6, 0.03] }, { rough: [0.008, 2, 18] }],
+      toys: [{ fence: [2.3, 4, 3.5, 4] }, { fence: [4.5, 7, 5.7, 7] }, { shuttle: [1.8, 10.5, 6.2, 10.5, 0.3, 3.4] }],
+      map: ['........', '........', '........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '....T...'] },
+    { name: 'the finale', par: 4, fence: 'wood', land: [{ ring: [4, 3, 2, 0.8, 0.05] }, { dish: [4, 3, 1.4, 0.035] }, { trough: [1.5, 12.5, 6.5, 7, 2.2, 0.04] }, { rough: [0.01, 1.8, 19] }],
+      toys: [{ mill: [4, 7, 1.3, 1.5] }, { shuttle: [1.5, 10, 6.5, 10, 0.3, 3] }],
+      map: ['........', '........', '........', '....O...', '........', '........', '........', '........', '........', '........', '........', '........', '.T......'] },
   ];
   /* THE HOLES AS WRITTEN, kept before they are turned into the board's units below (Oct 8, for the editor: a hole you take
      into the editor starts from its cells, which is how the editor writes them too). */
@@ -32873,6 +32883,8 @@ const GOLF_APP = (() => {
       if (f.pipe) f.pipe = [P(f.pipe[0]), P(f.pipe[1]), P(f.pipe[2]), P(f.pipe[3]), P(f.pipe[4]), f.pipe[5]];
       if (f.dish) f.dish = [P(f.dish[0]), P(f.dish[1]), P(f.dish[2]), f.dish[3]];
       if (f.trough) f.trough = [...f.trough.slice(0, 5).map(P), f.trough[5]];
+      if (f.rough) f.rough = [f.rough[0], P(f.rough[1]), f.rough[2]];
+      if (f.ring) f.ring = [...f.ring.slice(0, 4).map(P), f.ring[4]];
     }
     for (const T of H.toys || []){
       if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
@@ -32962,6 +32974,21 @@ const GOLF_APP = (() => {
          editor's Bowl and Half-pipe make these instead: the same skater's curve, carved down into the ground where they
          are, the ground beyond them left as it was. Their depth is at most what the ground has under it (BASE, less the
          floor hOf keeps), so a bowl never goes through the board. */
+      /* PERTURBED AND RINGED GROUND (Oct 9, for the new course: "different pertibations and interesting elevations and
+         sunken areas"). Rough is the green perturbed every way at once: four rolls of about its length at headings and
+         phases of its own seed, summed, so it reads as hummocks rather than as the stripes a wave makes, and a seed always
+         makes the same ground. A ring is a hump round a circle, a crater's lip or the steps of an amphitheatre, and a
+         round moat cut in the grass when its height is less than nothing. */
+      if (f.rough){
+        const [a, L, sd] = f.rough;
+        let n = 0;
+        for (let q = 0; q < 4; q++){
+          const th = sd * 2.39996 + q * 0.7854 + 0.3 * Math.sin(sd * 1.7 + q), k = 2 * Math.PI / (L * (0.8 + 0.15 * q));
+          n += Math.sin(k * (x * Math.cos(th) + y * Math.sin(th)) + sd * 1.3 + q * 2.1);
+        }
+        h += a * n / 2;
+      }
+      if (f.ring){ const [cx, cy, R, w, a] = f.ring, d = Math.hypot(x - cx, y - cy) - R; h += a * Math.exp(-d * d / (w * w / 4)); }
       if (f.dish){ const [bx, by, R, d] = f.dish, q = Math.min(1, Math.hypot(x - bx, y - by) / R); h -= d * (1 - Math.pow(q, 2.5)); }
       if (f.trough){
         const [x0, y0, x1, y1, w, d] = f.trough, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
@@ -33039,7 +33066,14 @@ const GOLF_APP = (() => {
   const say = (m, ms) => { if (SILENT) return; try { engineNotice(m, ms || 2000); } catch {} };
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
   // The hole a board holds: the board to the right holds the next one, so the course walks rightward.
-  const holeOf = (c, r) => (((3 * r - c) % COURSE) + COURSE) % COURSE;
+  /* A HOLE FOR EVERY BOARD (Oct 9: "the problem is there are thousands of boards. can you use the index to generate a
+     unique board for each index?"). The course's 22 holes used to come round again and again across the field. Now a
+     board's hole is chosen by the board's index (row by row across the field): the first 22 boards are the course as
+     written, and every other board gets a hole of its own made from its index (genSrc, below; holeAt), the same hole
+     every time for the same board. A round is ROUND holes, board after board. */
+  const ROUND = 18;
+  const boardIdx = (c, r) => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return ((r % GS) + GS) % GS * GS + ((c % GS) + GS) % GS; };
+  const holeOf = (c, r) => holeAt(boardIdx(c, r));
 
   function holeGame(R, hole){
     const H = HOLES[hole];
@@ -33051,7 +33085,7 @@ const GOLF_APP = (() => {
     GAMES.set(gkey(c, r), g);
     LIVE = { key: gkey(c, r), c, r };
     const H = HOLES[h];
-    say('Hole 1 of ' + COURSE + ' — ' + H.name + ', par ' + H.par + '. Drag anywhere to pull back, let go to putt.', 3200);
+    say('Hole 1 of ' + ROUND + ' — ' + H.name + ', par ' + H.par + '. Drag anywhere to pull back, let go to putt.', 3200);
     return g;
   }
   const liveGame = () => {
@@ -33106,28 +33140,31 @@ const GOLF_APP = (() => {
       say('Done — ' + h.strokes + (h.strokes === 1 ? ' stroke' : ' strokes') + ' on par ' + h.par + '. Tap the board to play it again.', 4000);
       return;
     }
-    if (R.card.length >= COURSE){
+    if (R.card.length >= ROUND){
       g.state = 'done';
       const tot = R.card.reduce((s, h) => s + h.strokes, 0), par = R.card.reduce((s, h) => s + h.par, 0), d = par - tot;
       say('Round over — ' + tot + ' strokes, par ' + par + ' (' + fmtDiff(d) + '). Tap the board to play again.', 5000);
       SND.play(d >= 0 ? 'win' : 'lose');
       return;
     }
-    const hole = (R.start + R.card.length) % COURSE, ng = holeGame(R, hole), H = HOLES[hole];
-    let moved = false;
+    let moved = false, hole = (R.start + R.card.length) % COURSE, ng = null, H = null;   // (the next board's hole, below)
     try {
       const tc = { x: target.cellX, z: target.cellZ };
       let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {}
       const gx = tc.x - 1, gz = tc.z, nc = ((gx % GS) + GS) % GS, nr = ((gz % GS) + GS) % GS;
+      hole = holeOf(nc, nr);
       if (typeof gotoCell === 'function' && GS > 1){
+        ng = holeGame(R, hole);
         GAMES.delete(LIVE.key);
         GAMES.set(gkey(nc, nr), ng);
         LIVE = { key: gkey(nc, nr), c: nc, r: nr };
         gotoCell(gx, gz); moved = true;
       }
     } catch {}
+    if (!ng) ng = holeGame(R, hole);
+    H = HOLES[hole];
     if (!moved) GAMES.set(LIVE.key, ng);
-    say('Hole ' + (R.card.length + 1) + ' of ' + COURSE + ' — ' + H.name + ', par ' + H.par, 2200);
+    say('Hole ' + (R.card.length + 1) + ' of ' + ROUND + ' — ' + H.name + ', par ' + H.par, 2200);
   }
 
   /* ─── THE TOYS ─────────────────────────────────────────────────────── */
@@ -33567,7 +33604,7 @@ const GOLF_APP = (() => {
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
-    if (NUMS.on && !H.custom) numberItems(out, H, k + 1);                // (a hole of your own has no number on the course)
+    if (NUMS.on && !H.custom) numberItems(out, H, H.num || k + 1);                // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
     for (let j = 0; j < 2 * NY; j++) for (const i of [0, 1]){
@@ -33710,6 +33747,7 @@ const GOLF_APP = (() => {
     ridge: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.2, 8], [-0.1, 0.25]], bowl: [[-1, 9], [-1, 14], [0.3, 8], [0, 0.25]],
     pipe: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.5, 12], [0, 0.25]],
     plateau: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [-0.15, 0.25]], ramp: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.3, 8], [-0.2, 0.25]],
+    rough: [[0, 0.04], [0.8, 8], [0, 999]], ring: [[-1, 9], [-1, 14], [0.3, 7], [0.2, 3], [-0.08, 0.12]],
     dish: [[-1, 9], [-1, 14], [0.4, 5], [0.01, 0.046]], trough: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.8, 6], [0.01, 0.046]] };
   const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
@@ -33766,6 +33804,108 @@ const GOLF_APP = (() => {
   function addHole(src){ const k = HOLES.length; HOLES.push(makeHole(src)); ensureKinds(k); return k; }
   function setHole(k, src){ const old = HOLES[k]; HOLES[k] = makeHole(src, old); ensureKinds(k); dropKinds(k, old); }
   const srcOf = k => k < BUILT ? HOLE_SRC[k] : HOLES[k].src;
+  /* THE GENERATED HOLES (Oct 9, as above). genSrc makes a hole as written, in cells, from a board's index alone: a seeded
+     generator, so the same index always makes the same hole. Its ground first: a little rough on every green, then two or
+     three of hill, hollow, ridge, gully, terrace, wave, plateau (raised or sunk), ramp, ring, crater, dish, trough,
+     saddle, moguls, tilt or moat; sometimes a stream with a bridge, sand, or a wall with a gap; up to two toys kept clear
+     of the tee and the cup; a material, a name and a par. It goes through cleanSrc like any hole from outside, so every
+     number is in range. holeAt makes a board's hole the first time it is wanted and keeps it; past GEN_CAP the hole not
+     played longest ago gives up its place (its meshes dropped), so flying over thousands of boards holds a few thousand
+     holes at most, and a hole in play is never taken back. */
+  const GEN = new Map(), GEN_CAP = 1500;
+  function seeded(seed){ let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  const GEN_ADJ = ['windy', 'long', 'crooked', 'quiet', 'high', 'low', 'green', 'old', 'twisting', 'hidden', 'sunny', 'misty', 'stony', 'deep',
+    'wide', 'narrow', 'lazy', 'wild', 'gentle', 'steep', 'lonely', 'golden', 'mossy', 'broken', 'little', 'great', 'far', 'secret'];
+  const GEN_NOUN = { hill: 'knoll', hollow: 'hollow', ridge: 'ridge', gully: 'gully', terrace: 'terraces', wave: 'swell', plateau: 'mesa', sunk: 'sunken lawn',
+    ramp: 'ramp', ring: 'rings', crater: 'crater', dish: 'basin', trough: 'channel', saddle: 'saddle', moguls: 'moguls', tilt: 'slope', moat: 'moat' };
+  function genSrc(idx){
+    const R = seeded(Math.imul(idx + 1, 2654435761) ^ 0x5bd1e995), u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)];
+    const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+    const map = Array.from({ length: NY }, () => Array(NX).fill('.'));
+    const tc = 1 + Math.floor(R() * (NX - 2)), tr = NY - 1 - (R() < 0.3 ? 1 : 0), cc = 1 + Math.floor(R() * (NX - 2)), cr = Math.floor(R() * 4);
+    map[tr][tc] = 'T'; map[cr][cc] = 'O';
+    const clear = (x, y, d) => Math.hypot(x - tc - 0.5, y - tr - 0.5) > d && Math.hypot(x - cc - 0.5, y - cr - 0.5) > d;
+    const free = (i, j) => map[j] && map[j][i] === '.' && clear(i + 0.5, j + 0.5, 1.6);
+    let water = false, wall = false;
+    if (R() < 0.25){                                          // a stream across, with a bridge
+      const j0 = 5 + Math.floor(R() * 3), b = Math.floor(R() * NX), w = R() < 0.5 ? 2 : 1;
+      for (let j = j0; j < j0 + w; j++) for (let i = 0; i < NX; i++) map[j][i] = i === b ? '=' : '~';
+      water = true;
+    }
+    const nS = R() < 0.55 ? 1 + Math.floor(R() * 3) : 0;      // sand
+    for (let q = 0; q < nS; q++){
+      const i0 = Math.floor(R() * (NX - 1)), j0 = 1 + Math.floor(R() * 10), w = 2 + Math.floor(R() * 2), h = 2 + Math.floor(R() * 2);
+      for (let j = j0; j < Math.min(NY - 1, j0 + h); j++) for (let i = i0; i < Math.min(NX, i0 + w); i++) if (free(i, j)) map[j][i] = 's';
+    }
+    if (!water && R() < 0.2){                                 // a wall across, with a gap three cells wide
+      const j = 5 + Math.floor(R() * 4), gap = Math.floor(R() * (NX - 2));
+      for (let i = 0; i < NX; i++) if ((i < gap || i >= gap + 3) && map[j][i] !== 'T' && map[j][i] !== 'O') map[j][i] = '#';
+      wall = true;
+    }
+    const land = [{ rough: [r3(u(0.005, 0.015)), r2(u(1.5, 3)), Math.floor(R() * 997)] }];
+    const X = () => r2(u(1, NX - 1)), Y = () => r2(u(2, NY - 2));
+    const cl = (v, lo, hi) => r2(Math.max(lo, Math.min(hi, v)));
+    const ex = (x0, y0, a, L, m) => [cl(x0 - L * Math.cos(a), -m, NX + m), cl(y0 - L * Math.sin(a), -m, NY + m), cl(x0 + L * Math.cos(a), -m, NX + m), cl(y0 + L * Math.sin(a), -m, NY + m)];   // a line's ends, in range
+    const KINDS = ['hill', 'hollow', 'ridge', 'gully', 'terrace', 'wave', 'plateau', 'sunk', 'ramp', 'ring', 'crater', 'dish', 'trough', 'saddle', 'moguls', 'tilt', 'moat'];
+    const n = 2 + Math.floor(R() * 2), kinds = [];
+    while (kinds.length < n){ const k = pick(KINDS); if (!kinds.includes(k)) kinds.push(k); }
+    for (const k of kinds){
+      const x = X(), y = Y();
+      if (k === 'hill') land.push({ bump: [x, y, r2(u(1.2, 2.8)), r3(u(0.025, 0.07))] });
+      else if (k === 'hollow') land.push({ bump: [x, y, r2(u(1, 2)), -r3(u(0.02, 0.04))] });
+      else if (k === 'ridge' || k === 'gully'){ const a = u(0, Math.PI), L = u(2.5, 5);
+        land.push({ ridge: [...ex(x, y, a, L, 1), r2(u(0.8, 1.6)), k === 'ridge' ? r3(u(0.03, 0.06)) : -r3(u(0.025, 0.04))] }); }
+      else if (k === 'terrace') land.push(R() < 0.6 ? { step: [0, -1, -r2(u(3, 10)), r2(u(0.3, 0.5)), r3(u(0.025, 0.045))] }
+                                                   : { step: [R() < 0.5 ? 1 : -1, 0, r2(R() < 0.5 ? u(2, 6) : -u(2, 6)), r2(u(0.3, 0.5)), r3(u(0.025, 0.045))] });
+      else if (k === 'wave') land.push({ wave: [r3(u(0.008, 0.02)), r2(u(1.8, 4)), Math.round(u(0, 180)), r2(u(0, 6))] });
+      else if (k === 'plateau' || k === 'sunk'){ const w = u(2, 4), h = u(2, 4), x0 = r2(u(0.5, NX - 0.5 - w)), y0 = r2(u(1, NY - 2 - h));
+        land.push({ plateau: [x0, y0, r2(x0 + w), r2(y0 + h), k === 'plateau' ? r3(u(0.04, 0.08)) : -r3(u(0.03, 0.045))] }); }
+      else if (k === 'ramp') land.push({ ramp: [x, r2(Math.min(NY - 1, y + 1.5)), x, r2(Math.max(1, y - u(1.5, 3))), r2(u(1.4, 2.2)), r3(u(0.04, 0.07))] });
+      else if (k === 'ring') land.push({ ring: [x, y, r2(u(1.2, 2.6)), r2(u(0.6, 1.1)), r3(u(0.03, 0.06))] });
+      else if (k === 'moat') land.push({ ring: [x, y, r2(u(1.2, 2.4)), r2(u(0.6, 1)), -r3(u(0.025, 0.04))] });
+      else if (k === 'crater'){ const rad = u(1.4, 2.2); land.push({ ring: [x, y, r2(rad), r2(u(0.7, 1)), r3(u(0.04, 0.06))] }, { dish: [x, y, r2(rad * 0.75), r3(u(0.03, 0.045))] }); }
+      else if (k === 'dish') land.push({ dish: [x, y, r2(u(1.2, 2)), r3(u(0.03, 0.045))] });
+      else if (k === 'trough'){ const a = u(0, Math.PI), L = u(2.5, 5);
+        land.push({ trough: [...ex(x, y, a, L, 1), r2(u(1.8, 3)), r3(u(0.03, 0.045))] }); }
+      else if (k === 'saddle'){ const hh = r3(u(0.04, 0.065)), d = r3(u(0.025, 0.035));
+        land.push({ bump: [1.3, y, 1.7, hh] }, { bump: [NX - 1.3, y, 1.7, hh] }, { bump: [NX / 2, r2(Math.max(1.5, y - 3)), 1.4, -d] }); }
+      else if (k === 'moguls') land.push({ rough: [r3(u(0.014, 0.02)), r2(u(1.4, 2)), Math.floor(R() * 997)] });
+      else land.push({ tilt: [r3(u(-0.03, 0.03)), r3(u(-0.03, 0.03))] });
+    }
+    const toys = [], nT = Math.floor(R() * 3);
+    for (let q = 0, tries = 0; q < nT && tries < 30; tries++){
+      const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill']);
+      const x = r2(u(t === 'mill' || t === 'shuttle' ? 2 : 1, NX - (t === 'mill' || t === 'shuttle' ? 2 : 1))), y = r2(u(2.5, NY - 3));
+      const ch = map[Math.floor(y)][Math.floor(x)];
+      if (ch !== '.' && ch !== 's' || !clear(x, y, t === 'orbit' || t === 'mill' ? 3 : 2)) continue;
+      if (t === 'kick') toys.push({ kick: [x, y, 0.3] });
+      else if (t === 'rock') toys.push({ rock: [x, y, r2(u(0.35, 0.6))] });
+      else if (t === 'fence'){ const a = u(0, Math.PI), L = u(0.6, 1.1); toys.push({ fence: ex(x, y, a, L, 0) }); }
+      else if (t === 'orbit') toys.push({ orbit: [x, y, r2(u(1, 1.8)), 0.4, r2(u(5, 8) * (R() < 0.5 ? -1 : 1)), r2(u(0, 6))] });
+      else if (t === 'shuttle') toys.push({ shuttle: [r2(x - 1.5), y, r2(x + 1.5), y, 0.3, r2(u(2.5, 4))] });
+      else if (t === 'gate') toys.push({ gate: [r2(Math.max(0.4, x - 1.2)), y, r2(Math.min(NX - 0.4, x + 1.2)), y, r2(u(2.6, 4)), r2(u(0, 6))] });
+      else toys.push({ mill: [x, y, r2(u(1.1, 1.5)), r2(u(1, 1.6))] });
+      q++;
+    }
+    const d = Math.hypot(cc - tc, cr - tr), par = Math.max(2, Math.min(5, 2 + (d > 8 ? 1 : 0) + (water || wall ? 1 : 0) + (toys.length >= 2 ? 1 : 0)));
+    const main = kinds.find(k => k !== 'tilt' && k !== 'moguls') || kinds[0];
+    return { name: 'the ' + pick(GEN_ADJ) + ' ' + GEN_NOUN[main], par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) };
+  }
+  function holeAt(idx){
+    if (idx < COURSE) return idx;
+    let k = GEN.get(idx);
+    if (k != null){ GEN.delete(idx); GEN.set(idx, k); return k; }   // (kept in the order last wanted)
+    const src = cleanSrc(genSrc(idx));
+    if (!src) return idx % COURSE;
+    if (GEN.size >= GEN_CAP){
+      const busy = new Set([...GAMES.values()].map(g => g.hole));
+      for (const [oi, ok] of GEN) if (!busy.has(ok)){ GEN.delete(oi); setHole(ok, src); k = ok; break; }
+    }
+    if (k == null) k = addHole(src);
+    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1;
+    GEN.set(idx, k);
+    return k;
+  }
   // My holes: kept in this browser, each made into a hole the first time it is played
   const MINE = (() => { try { const a = JSON.parse(localStorage.getItem(MINE_KEY) || '[]'); return Array.isArray(a) ? a.map(cleanSrc).filter(Boolean) : []; } catch { return []; } })();
   const mineK = MINE.map(() => -1);
@@ -33980,6 +34120,7 @@ const GOLF_APP = (() => {
     if (f.bump) return Math.hypot(f.bump[0] - x, f.bump[1] - y);
     if (f.bowl) return Math.hypot(f.bowl[0] - x, f.bowl[1] - y);
     if (f.dish) return Math.hypot(f.dish[0] - x, f.dish[1] - y);
+    if (f.ring) return Math.abs(Math.hypot(f.ring[0] - x, f.ring[1] - y) - f.ring[2]);
     if (f.trough) return seg(...f.trough.slice(0, 4));
     if (f.ridge) return seg(...f.ridge.slice(0, 4));
     if (f.pipe) return seg(...f.pipe.slice(0, 4));
@@ -33995,11 +34136,11 @@ const GOLF_APP = (() => {
   }
   function moveLand(f, dx, dy){
     const R2 = n => Math.round(n * 100) / 100;
-    for (const k of ['bump', 'bowl', 'dish']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); }
+    for (const k of ['bump', 'bowl', 'dish', 'ring']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); }
     for (const k of ['ridge', 'pipe', 'ramp', 'plateau', 'trough']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); f[k][2] = R2(f[k][2] + dx); f[k][3] = R2(f[k][3] + dy); }
     if (f.step) f.step[2] = R2(f.step[2] + dx * f.step[0] + dy * f.step[1]);
   }
-  const HEIGHT_AT = { bump: 3, ridge: 5, bowl: 3, pipe: 5, plateau: 4, ramp: 5, step: 4, dish: 3, trough: 5 };
+  const HEIGHT_AT = { bump: 3, ridge: 5, bowl: 3, pipe: 5, plateau: 4, ramp: 5, step: 4, dish: 3, trough: 5, ring: 4 };
   const SUNK = { dish: 1, trough: 1 };                       // held as a depth: Higher makes them shallower, in smaller steps
   // a drag with Plateau, Ramp or Half-pipe ends: the box or the line it drew becomes ground
   function editDragEnd(){
@@ -34053,9 +34194,9 @@ const GOLF_APP = (() => {
     }
     if (a === 'level'){
       snapEdit(); const n = S.land.length, keep = ED.sel != null ? S.land[ED.sel] : null;
-      S.land = S.land.filter(f => !f.tilt && !f.wave);
+      S.land = S.land.filter(f => !f.tilt && !f.wave && !f.rough);
       ED.sel = keep && S.land.includes(keep) ? S.land.indexOf(keep) : null;   // (what was selected stays selected)
-      ED.msg = n === S.land.length ? 'no tilt or wave to level' : 'levelled'; editRefresh(true); return;
+      ED.msg = n === S.land.length ? 'no tilt, wave or rough to level' : 'levelled'; editRefresh(true); return;
     }
     if (a === 'mat'){ S.fence = FENCE_MATS[(FENCE_MATS.indexOf(S.fence) + 1) % FENCE_MATS.length]; editRefresh(true); return; }
     if (a === 'check'){
@@ -34095,7 +34236,7 @@ const GOLF_APP = (() => {
     // the piece of ground selected, outlined in gold; a box or line being dragged, in white
     const f = ED.sel != null && ED.src.land[ED.sel];
     if (f){ const k = Object.keys(f)[0], v = f[k], G = 0xffd23a;
-      if (k === 'bump' || k === 'bowl' || k === 'dish') ringAt(v[0], v[1], Math.max(0.4, k === 'bump' ? v[2] * 0.7 : v[2]), G);
+      if (k === 'bump' || k === 'bowl' || k === 'dish' || k === 'ring') ringAt(v[0], v[1], Math.max(0.4, k === 'bump' ? v[2] * 0.7 : v[2]), G);
       else if (k === 'plateau') boxAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
@@ -34172,12 +34313,13 @@ const GOLF_APP = (() => {
         on(){ WIRE.on = !WIRE.on; ARCADE.save('golf.wire', WIRE.on ? 'on' : 'off'); } },
       SND.item] }, { head: 'Hole editor', items: editorMenu() }]; },
     // an editor's hole is on a few boards at most: its ground needs no room for thousands (Oct 8)
-    itemCaps(kind){ const m = /^(land|wire)(\d+)$/.exec(kind); return m && +m[2] >= BUILT ? 64 : 0; },
+    // (since Oct 9 every hole's ground is on its own board, the course's too: none needs room for thousands)
+    itemCaps(kind){ return /^(land|wire)\d+$/.test(kind) ? 64 : 0; },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r)), H = HOLES[holeShown(c, r)];
       if (!g) return 'Mini golf — ' + H.name + ', par ' + H.par + ' (tap to play a round from here)';
       if (g.state === 'done') return 'Mini golf — round over, ' + totalOf(g) + ' strokes (' + fmtDiff(diffOf(g)) + ')';
-      return 'Mini golf — hole ' + (g.R.card.length + 1) + ' of ' + COURSE + ', ' + H.name + ', par ' + H.par + ' · stroke ' + g.strokes;
+      return 'Mini golf — hole ' + (g.R.card.length + 1) + ' of ' + ROUND + ', ' + H.name + ', par ' + H.par + ' · stroke ' + g.strokes;
     },
     // Who is winning: par against your strokes, for the bar in the margin.
     scoreBar(c, r){
@@ -34191,7 +34333,7 @@ const GOLF_APP = (() => {
       if (!g) return null;
       const H = HOLES[g.hole], d = diffOf(g), n = g.R.card.length + (g.state === 'play' ? 1 : 0);
       return [
-        { label: 'Hole', value: g.R.single ? 'yours' : Math.max(1, n) + '/' + COURSE, sub: H.name, color: '#ffffff' },
+        { label: 'Hole', value: g.R.single ? 'yours' : Math.max(1, n) + '/' + ROUND, sub: H.name, color: '#ffffff' },
         { label: 'Par', value: H.par, color: '#9fe3a0' },
         { label: 'Strokes', value: g.state === 'play' ? g.strokes : (g.R.card[g.R.card.length - 1] || {}).strokes || 0, sub: 'this hole', color: '#ffd23a' },
         { label: 'Total', value: fmtDiff(d), sub: totalOf(g) + ' strokes', color: d >= 0 ? '#9fe3a0' : '#ff8a7a' },
@@ -34288,7 +34430,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { games: GAMES, HOLES, holeAt, genSrc, boardIdx, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       editor: { ED, MINE, BUILT, TOOLS, ACTS, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
