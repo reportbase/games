@@ -196,6 +196,22 @@ try {
   // A hole for every board (Oct 9: "can you use the index to generate a unique board for each index?"): the same index
   // always makes the same hole, neighbouring indices make different ones, a board past the course shows the hole of its
   // own index, and a few hundred generated holes are all well formed
+  // mini golf opens framed (Oct 9: "when loading mini-golf load default view, dont load the zoomed view and then sweep to
+  // the default view."): switched to from another game, the view is at its default at once and does not glide
+  {
+    const sw = await page.evaluate(async () => {
+      const apps = window.FIELD_APPS, golf = window.getFieldApp(), other = apps.find(a => a !== golf && a.name === 'field chess') || apps.find(a => a !== golf);
+      window.setFieldApp(other); await new Promise(ok => setTimeout(ok, 300));
+      window.FIELD_WORLD.st.zoom = 800;                      // (far out, as an overview)
+      window.setFieldApp(golf);
+      const zs = [];
+      for (let q = 0; q < 16; q++){ zs.push(+window.FIELD_WORLD.st.zoom.toFixed(2)); await new Promise(ok => setTimeout(ok, 120)); }
+      return { zs, back: window.getFieldApp() === golf };
+    });
+    const range = Math.max(...sw.zs) - Math.min(...sw.zs);
+    if (!sw.back || range > 1 || sw.zs[0] > 400) failures.push(`[mini golf opens framed] zoom over the first 2 s: ${sw.zs.join(', ')}`);
+    else console.log('ok   mini golf opens framed');
+  }
   current = 'mini golf boards';
   const before10 = failures.length;
   const gb = await page.evaluate(() => {
@@ -618,8 +634,8 @@ try {
       const out = {};
       ED.src.toys = ED.src.toys.filter(T => !T.kick); ED.src.land = ED.src.land.filter(g => !g.bump);
       tool('kick'); tap(1.5, 5.5);
-      out.placed = ED.pick && ED.pick.type === 'toy' && !!ED.src.toys[ED.pick.i].kick;
-      out.acts = E.selActs().map(a => a.key).join();
+      out.placed = !ED.pick && !!ED.src.toys[ED.src.toys.length - 1].kick;   // (laid and let go of, Oct 9)
+      tap(1.5, 5.5); out.acts = E.selActs().map(a => a.key).join();         // (a tap takes it)
       A.onQuickAct(f.c, f.r, 'select'); out.tool = ED.tool;
       tap(6.5, 11.5); out.letGo = !(ED.pick && ED.pick.type === 'toy');
       tap(1.5, 5.5); const i = ED.pick && ED.pick.i;
@@ -636,7 +652,7 @@ try {
       E.selAct('kind'); out.kind = ED.src.toys[i].kick[3];
       E.selAct('dup'); out.dup = ED.src.toys.filter(T => T.kick).length; out.dupPicked = ED.pick && ED.pick.i !== i;
       E.selAct('del'); out.afterDel = ED.src.toys.filter(T => T.kick).length;
-      tool('shuttle'); { let at = [4, 3]; search: for (let y = 2.5; y < D.NY - 1; y += 0.5) for (let x = 1; x < D.NX - 1; x += 0.5) if (!E.pickAll(x, y).some(c => c.type === 'toy' || c.type === 'T' || c.type === 'O')){ at = [x, y]; break search; } tap(at[0], at[1]); } const sh = ED.src.toys[ED.pick.i].shuttle[5]; E.selAct('faster'); out.faster = ED.src.toys[ED.pick.i].shuttle[5] < sh;
+      tool('shuttle'); { let at = [4, 3]; search: for (let y = 2.5; y < D.NY - 1; y += 0.5) for (let x = 1; x < D.NX - 1; x += 0.5) if (!E.pickAll(x, y).some(c => c.type === 'toy' || c.type === 'T' || c.type === 'O')){ at = [x, y]; break search; } tap(at[0], at[1]); ED.pick = { type: 'toy', i: ED.src.toys.length - 1 }; } const sh = ED.src.toys[ED.pick.i].shuttle[5]; E.selAct('faster'); out.faster = ED.src.toys[ED.pick.i].shuttle[5] < sh;
       E.selAct('del');
       tool('select'); const t0 = ED.src.map.findIndex(r => r.includes('T')), ti = ED.src.map[t0].indexOf('T');
       const ni = ti > 3 ? ti - 2 : ti + 2, nj = Math.max(1, t0 - 1);
@@ -721,7 +737,7 @@ try {
       if (clear.length < 3) return { none: true };
       const n0 = ED.src.toys.length;
       tool('rock'); tap(...clear[0]);
-      const after1 = { tool: ED.tool, pick: ED.pick && ED.pick.type, n: ED.src.toys.length - n0 };
+      const after1 = { tool: ED.tool, pick: ED.pick ? ED.pick.type : null, n: ED.src.toys.length - n0 };   // (let go of, Oct 9)
       tap(...clear[1]); const after2 = { n: ED.src.toys.length - n0, pick: ED.pick && ED.pick.type };
       tool('gate'); for (const [x, y] of [[clear[2][0] - 1, clear[2][1]], [clear[2][0], clear[2][1]], [clear[2][0] + 1, clear[2][1]]]) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd();
       const gate = { tool: ED.tool, n: ED.src.toys.length - n0 };
@@ -729,7 +745,7 @@ try {
       ED.src.toys.splice(n0); ED.pick = null;
       return { after1, after2, gate, sandStays };
     });
-    if (once.none || once.after1.tool !== 'select' || once.after1.pick !== 'toy' || once.after1.n !== 1 || once.after2.n !== 1 || once.after2.pick !== 'dot' || once.gate.tool !== 'select' || once.gate.n !== 2 || once.sandStays !== 's')
+    if (once.none || once.after1.tool !== 'select' || once.after1.pick !== null || once.after1.n !== 1 || once.after2.n !== 1 || once.after2.pick !== 'dot' || once.gate.tool !== 'select' || once.gate.n !== 2 || once.sandStays !== 's')
       failures.push(`[${current}] one at a time: ${JSON.stringify(once)}`);
     // many dots at once, by the box only (Oct 9: "how do I select and move multiple points at once?" … "selection box works
     // badly. it selects only one point at a time. I only want the selection box to select multiple items."): a tap on a
@@ -790,6 +806,15 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 20000 }).catch(() => {});
     const qp = await page.evaluate(() => [...document.querySelectorAll('#bbQuick button')].map(b => b.title));
     if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
+    // Escape (Oct 9: "don't change the zoom level with escape, instead cancel the edit mode."): in the editor it leaves the
+    // editor and the view stays where it was; out of it, it does nothing to the view either
+    const escZ = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, W = window.FIELD_WORLD;
+      E.editStart(E.ED.k); return { on: E.ED.on, zoom: W.st.zoom }; });
+    await page.keyboard.press('Escape'); await page.waitForTimeout(600);
+    const escZ2 = await page.evaluate(() => ({ on: window.getFieldApp()._debug.editor.ED.on, zoom: window.FIELD_WORLD.st.zoom, target: window.FIELD_WORLD.target.zoom }));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(600);
+    const escZ3 = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
+    if (!escZ.on || escZ2.on || Math.abs(escZ2.zoom - escZ.zoom) > 0.5 || Math.abs(escZ3 - escZ.zoom) > 0.5) failures.push(`[${current}] Escape: ${JSON.stringify({ escZ, escZ2, escZ3 })}`);
     // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
     // it and the buttons go; the dots open it and they are back
     const qVis = () => page.evaluate(() => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0); });

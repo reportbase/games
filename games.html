@@ -34471,6 +34471,7 @@ const GOLF_APP = (() => {
      drag on its empty canvas draws a marquee; when the finger lifts the box stays on the hole in gold with every dot
      inside it selected (the Box quick button draws one from anywhere). A drag that starts inside the box raises or sinks
      all its dots together; a tap outside it, or Escape, closes it and lets them go. ED.box is the rectangle, in cells. */
+  const GOLF_ON = () => { try { return window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf'; } catch { return false; } };
   const boxOpen = () => !!ED.box && !!ED.pick && ED.pick.type === 'dot';
   const inBox = (x, y, m = 0.25) => !!ED.box && x >= ED.box.x0 - m && x <= ED.box.x1 + m && y >= ED.box.y0 - m && y <= ED.box.y1 + m;
   function boxDots(B){
@@ -34479,7 +34480,16 @@ const GOLF_APP = (() => {
     return got;
   }
   function closeBox(){ ED.box = null; ED.dots = []; if (ED.pick && ED.pick.type === 'dot') ED.pick = null; ED.msg = 'let go'; }
-  try { window.addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && (ED.box || ED.pick)){ ED.box ? closeBox() : (ED.pick = null, ED.dots = []); } }); } catch {}
+  /* ESCAPE IN MINI GOLF (Oct 9: "don't change the zoom level with escape, instead cancel the edit mode."). The field's
+     Escape flies the view out to the horizon; in mini golf it never moves the view. While editing it closes an open
+     selection box (Oct 9, earlier: "clicking away from the selection box or escape closes it"), and otherwise leaves
+     the editor, the hole kept as it is. Caught before the field sees it (a capturing listener, stopped there). */
+  try { window.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !GOLF_ON()) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (!ED.on) return;
+    if (ED.box) closeBox(); else editStop(false);
+  }, true); } catch {}
   const selDots = () => ED.pick && ED.pick.type === 'dot' ? (ED.dots && ED.dots.includes(ED.pick.i) ? ED.dots : [ED.pick.i]) : [];
   // a dot's height set (Oct 9), the list made when the first dot leaves level and dropped when the last comes back
   function setDot(i, h){
@@ -34733,12 +34743,15 @@ const GOLF_APP = (() => {
   /* ONE AT A TIME (Oct 9: "the user must select the item in the bottom object browser every time they want lay it on
      board. the board resets to default where I can again change the height of the grass."). A thing or a piece of
      ground, once laid on the hole, puts its tool down: the editor is back in Select, where the grass's dots are pulled
-     and the selection box drawn, with what was just laid selected (a drag on it moves it). Another needs its tile taken
+     and the selection box drawn, and nothing is selected (Oct 9, later: "after laying an object, deselect that object
+     from and reset the default mod"; a tap on it takes it again). Another needs its tile taken
      up again. The paints (grass, wall, sand, water, bridge) and Erase stay in hand, as brushes do. */
   function placedOnce(t){
     if (!t || t === 'select' || t === 'box' || t === 'erase' || (t.length === 1 && '.#s~='.includes(t))) return;
+    const n = pickName();
     ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null;
-    const n = pickName(); ED.msg = (n ? 'placed: ' + n + ' · ' : '') + 'take it up again below to lay another';
+    ED.pick = null; ED.dots = []; ED.box = null;             // (and let go of it: Oct 9, "after laying an object, deselect that object")
+    ED.msg = (n ? 'placed: ' + n + ' · ' : '') + 'take it up again below to lay another';
   }
   // a drag with Plateau, Ramp or Half-pipe ends: the box or the line it drew becomes ground
   function editDragEnd(){
@@ -38850,11 +38863,16 @@ function _defaultFitSoon(app){
       if (!target.shown){ target.shown = true; target.boardX = target.boardX || 0; target.boardZ = target.boardZ || 0; }
       st.yaw = ((((st.yaw || 0) % 360) + 540) % 360) - 180; target.yaw = 0; st.yawV = 0;
       zoomBoardToFit();
+      /* …AND IS THERE AT ONCE (Oct 9: "when loading mini-golf load default view, dont load the zoomed view and then sweep
+         to the default view"). zoomBoardToFit sets the camera's target, and its spring walked the view down from the
+         overview over a second or two; settled here, the game opens already framed, as the page itself does on load. */
+      settleCameraNow();
     } catch {}
   };
   // A few passes over the first frames drawn (each waits for a frame, however long that frame takes).
   let n = 0;
   const pass = () => { fit(); if (++n < 4 && _defFitArmed === id) setTimeout(() => requestAnimationFrame(pass), 500 * n); };
+  fit();                                                  // (at once too, so no frame is drawn from the overview first: Oct 9)
   requestAnimationFrame(pass);
 }
 for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, () => { _defFitArmed++; }, true);
