@@ -91,7 +91,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
   title, no text) in the band at the top right of the bottom pane (`#bbQuick`, `bbQuickTick`);
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Undo, Redo, Erase, Done while editing;
-  Start again and Edit while playing.
+  Start again and Edit while playing. They show only while the pane is open; the three dots
+  (`#bbHandle`) show on every game, whether or not its row has anything in it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 

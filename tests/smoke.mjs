@@ -73,6 +73,9 @@ try {
     await page.waitForTimeout(SETTLE_MS);
     const active = await page.evaluate(() => { const a = window.getFieldApp(); return a && (a.id || a.name); });
     if (active !== id) failures.push(`[${id}] switching did not take: the active app is ${active}`);
+    // the three dots are on every game (Oct 9: "always show the triple dots on bottom")
+    const dots = await page.evaluate(() => { const h = document.getElementById('bbHandle'), r = h && h.getBoundingClientRect(); return !!(h && getComputedStyle(h).display !== 'none' && r.width > 0 && r.bottom <= innerHeight + 1); });
+    if (!dots) failures.push(`[${id}] the three dots are not showing`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${id}`);
   }
 
@@ -507,6 +510,17 @@ try {
     await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 5000 }).catch(() => {});
     const qp = await page.evaluate(() => [...document.querySelectorAll('#bbQuick button')].map(b => b.title));
     if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
+    // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
+    // it and the buttons go; the dots open it and they are back
+    const qVis = () => page.evaluate(() => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0); });
+    const dotsAt = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    const shut0 = await page.evaluate(() => document.body.classList.contains('bb-collapsed'));
+    if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500); }
+    const openVis = await qVis();
+    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    const shutNow = await page.evaluate(() => document.body.classList.contains('bb-collapsed')), shutVis = await qVis();
+    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    if (!openVis || !shutNow || shutVis) failures.push(`[${current}] quick buttons with the pane open ${openVis}, shut ${shutNow} and still showing ${shutVis}`);
     // the share link opens the page on the hole
     await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });

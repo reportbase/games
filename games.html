@@ -225,6 +225,8 @@
                     border: 1px solid rgba(201, 199, 190, .30); background: rgba(18, 21, 28, .58); color: #fff;
                     font-size: 18px; line-height: 1; cursor: pointer; }
   #bbQuick button:disabled { opacity: .35; cursor: default; }
+  /* …and only while the pane is open (Oct 9: "dont show any buttons when the bottom panel is not visible"). */
+  body.bb-collapsed #bbQuick { display: none; }
   @media (max-width: 420px){ #bbQuick { right: 6px; gap: 4px; } #bbQuick button { width: 31px; height: 31px; font-size: 16px; } }
   #bbHandle svg circle { fill: #fff; transition: fill .12s ease; }     /* white (Sep 25), so they read on any field */
   #bbHandle:hover svg circle { fill: rgba(232, 200, 106, .95); }
@@ -12924,13 +12926,11 @@ function syncBrowserVisibility(){
   }
   const h = document.getElementById('bbHandle');
   if (h){
-    /* NO DOTS WHERE THERE IS NO ROW (Sep 26: "remove the three dots on the
-       bottom browser for games that don't use the bottom browser"). Only the
-       gallery (its prints) and chess (the moves of the game you are playing)
-       ever put anything in the row; everywhere else it is empty, and dots
-       that open onto nothing are a control that does nothing. */
-    const want = bbKeys.length ? '' : 'none';
-    if (h.style.display !== want) h.style.display = want;
+    /* THE DOTS ARE ALWAYS THERE (Oct 9: "always show the triple dots on bottom"). They were hidden where the row was
+       empty (Sep 26: "remove the three dots on the bottom browser for games that don't use the bottom browser"); since
+       then most games put their numbers in the row, and the dots are the one mark that says the pane is down there, so
+       they stay on every game. */
+    if (h.style.display) h.style.display = '';
     const t = on ? 'Hide the row of boards' : 'Show the row of boards';
     if (t !== _bbLabelLast){ _bbLabelLast = t; h.title = t; }
   }
