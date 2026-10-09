@@ -224,33 +224,51 @@ try {
   if (!(lod.small < lod.big / 2) || !lod.smallKinds.includes('landL') || lod.smallKinds.some(k => /^(railV_|railH_|propBumper|propRock|segH|segV)/.test(k)))
     failures.push(`[${current}] a small board's pieces: ${JSON.stringify(lod)}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
-  // objects that have orbits. the orbits should try to protect the golf hole."): every hole of the course and 300
-  // generated ones have boulders going round their cup, every cup two cells in from the sides and the top, all four kinds
-  // of bumper turn up, and an old bumper without a kind is read as the classic
+  // objects that have orbits. the orbits should try to protect the golf hole."): every cup two cells in from the sides and
+  // the top, all four kinds of bumper turn up, and an old bumper without a kind is read as the classic.
+  // (Oct 9, later: "golf holes are sometimes completely without protection. put barriers between the golfer opening shot and
+  //  the golf hole. create a variety of strategies of golf hole protection, such as elevating them or putting them on the
+  //  side of a bump, etc.": over 1000 generated holes every cup has a guard, every way of keeping one turns up, boulders
+  //  going round are fewer than one in twenty, and no hole leaves the straight line from the tee to the cup open)
   const gd = await page.evaluate(() => {
-    // (Oct 9: "to many holes have rocks circling protecting the hole. more variety, should be bumpers as well and not all
-    //  circling, some doing linear patterns": the ways of keeping a cup are counted over 300 generated holes)
-    const D = window.getFieldApp()._debug, E = D.editor, edge = [], kinds = new Set(), st = { none: 0, rocks: 0, bumpers: 0, linear: 0, ground: 0, sand: 0, still: 0 };
-    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O'), cx = c + 0.5, cy = j + 0.5;
-      const ring = s.toys.filter(T => T.orbit && T.orbit[0] === cx && T.orbit[1] === cy);
-      const lin = s.toys.filter(T => (T.shuttle || T.gate) && Math.min(Math.abs(Object.values(T)[0][1] - cy), Math.abs(Object.values(T)[0][0] - cx)) < 1.4);
-      const near = s.toys.filter(T => (T.fence || T.kick || T.rock) && Math.hypot(Object.values(T)[0][0] - cx, Object.values(T)[0][1] - cy) < 2.3);
-      const ground = s.land.some(f => (f.ring && f.ring[0] === cx && f.ring[1] === cy) || (f.plateau && Math.abs((f.plateau[0] + f.plateau[2]) / 2 - cx) < 0.01 && Math.abs((f.plateau[1] + f.plateau[3]) / 2 - cy) < 0.01));
-      const sandy = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([a, b2]) => (s.map[j + b2] || '')[c + a] === 's').length >= 3;
-      if (ring.some(T => T.orbit[6] === 1)) st.bumpers++; else if (ring.length) st.rocks++; else if (lin.length) st.linear++;
-      else if (ground) st.ground++; else if (sandy) st.sand++; else if (near.length >= 2) st.still++; else st.none++;
+    const D = window.getFieldApp()._debug, E = D.editor, edge = [], kinds = new Set(), st = {}, open = [], unguarded = [];
+    for (let i = 22; i < 1022; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O');
+      if (!s.guard) unguarded.push(i); else st[s.guard] = (st[s.guard] || 0) + 1;
+      if (s.open) open.push(i);
       if (c < 2 || c > D.NX - 3 || j < 2) edge.push(i);
       s.toys.forEach(T => { if (T.kick) kinds.add(T.kick[3]); }); }
+    const course = D.HOLES.filter(H => H.gen == null && !H.custom).length;
     const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }, { orbit: [4, 6, 1, 0.4, 6] }] });
-    return { st, edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.filter(T => T.kick).map(T => T.kick[3]), oldOrbit: old && old.toys.find(T => T.orbit),
-             tools: ['kick1', 'kick2', 'kick3'].every(t => E.TOOLS.some(x => x[0] === t)), cap: D.MAX_STROKES };
+    return { st, open: open.slice(0, 6), unguarded: unguarded.slice(0, 6), course, edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.filter(T => T.kick).map(T => T.kick[3]), oldOrbit: old && old.toys.find(T => T.orbit),
+             tools: ['kick1', 'kick2', 'kick3', 'arm', 'swing'].every(t => E.TOOLS.some(x => x[0] === t)), cap: D.MAX_STROKES };
   });
+  const STYLES = ['rocks', 'orbiters', 'sweep', 'cross', 'slide', 'gate', 'horseshoe', 'arc', 'scatter', 'apron', 'raised', 'crater', 'moat',
+                  'mound', 'hillside', 'berm', 'turnstile', 'door', 'pond', 'wall', 'chicane', 'pegs'];
+  if (gd.unguarded.length || gd.open.length) failures.push(`[${current}] holes left open: no guard ${gd.unguarded.join(',')}, the tee's line clear ${gd.open.join(',')}`);
+  if ((gd.st.rocks || 0) > 50 || STYLES.some(k => !(gd.st[k] >= 5))) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
-  // (Oct 9, again: "every hole pretty much rocks circling the golf hole. that should be one way of protecting the hole among
-  //  many": boulders going round are at most one cup in six, and every other way turns up)
-  if (gd.st.rocks > 50 || ['bumpers', 'linear', 'ground', 'sand', 'still', 'none'].some(k => gd.st[k] < 12)) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (!gd.oldOrbit || gd.oldOrbit.orbit[6] !== 0 || gd.oldOrbit.orbit[5] !== 0) failures.push(`[${current}] an old orbit was not read: ${JSON.stringify(gd.oldOrbit)}`);
   if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
+  // the turnstile and the door (Oct 9: "add new objects to explore how this might be done"): a bar turning or swinging
+  // knocks a ball lying in its way along with it, both are read from a link, and both are drawn on a board, turning
+  const tu = await page.evaluate(async () => {
+    const D = window.getFieldApp()._debug, E = D.editor, CW = D.CW, out = {};
+    const src = E.cleanSrc({ map: [...Array(12).fill('........'), '...T....'].map((r, j) => j === 2 ? '...O....' : r), toys: [{ arm: [4, 6, 1.2, 4, 0, 2] }, { swing: [1, 9, 1.2, 0, 90, 3] }] });
+    out.read = src && src.toys.map(T => Object.keys(T)[0] + ':' + Object.values(T)[0].length).join();
+    const H = D.compileHole(JSON.parse(JSON.stringify(src)));
+    for (const [name, x, y, vy] of [['arm', 4.6, 6.25, 0], ['swing', 1.6, 9.25, -0.3]]){   // (a door shut and still: the ball rolls into it)
+      const g = { ball: { x: x * CW, y: y * CW, vx: 0, vy }, t: 0.001 };
+      const hit = D.hitToys(g, H);
+      out[name] = { hit: +hit.toFixed(3), vy: +g.ball.vy.toFixed(3) };
+    }
+    let c = 0, r = 0, k = -1;
+    search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++){ k = D.holeOf(c, r); if ((D.HOLES[k].toys || []).some(T => T.arm)) break search; }
+    const bars = () => D.cellItems(c, r, 2000).filter(i => i.kind === 'armBar').map(i => i.yaw.toFixed(3)).join();
+    const a = bars(); await new Promise(ok => setTimeout(ok, 700));
+    out.drawn = { found: (D.HOLES[k].toys || []).some(T => T.arm), bars: a.split(',').filter(Boolean).length, turned: bars() !== a };
+    return out; });
+  if (tu.read !== 'arm:6,swing:6' || !(tu.arm.hit > 0 && tu.arm.vy > 0) || !(tu.swing.hit > 0 && tu.swing.vy > 0) || !tu.drawn.found || !(tu.drawn.bars >= 2) || !tu.drawn.turned)
+    failures.push(`[${current}] the turnstile and the door: ${JSON.stringify(tu)}`);
   // a board keeps its hole whatever the field's size, and names come round less (Oct 9): the index is made from the board's
   // column and row alone, every one its own, small near the corner; 300 boards have at least 270 names
   const bi = await page.evaluate(() => { const D = window.getFieldApp()._debug, seen = new Set(); let small = true;
@@ -563,6 +581,16 @@ try {
       return { kinds, track: sh ? +(sh[2] - sh[0]).toFixed(2) : 0, drawn: items.filter(k => /^(orbit|gate|shuttle)/.test(k)).length, n0, afterUndo, afterRedo }; });
     if (mv.kinds.join() !== 'shuttle,orbit,gate' || !(mv.track > 3) || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
       failures.push(`[${current}] movers in the editor: ${JSON.stringify(mv)}`);
+    // a turnstile placed by a tap and a door by a drag from its hinge (Oct 9), then both undone again
+    const td = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const n0 = ED.src.toys.length;
+      tool('arm'); A.onCellTap(f.c, f.r, 2 / D.NX, 8 / D.NY);
+      tool('swing'); for (const [cx, cy] of [[5, 8], [5.6, 8], [6.4, 8]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY }); A.onPanEnd();
+      const added = ED.src.toys.slice(n0), items = D.cellItems(f.c, f.r).filter(i => i.kind === 'armBar').length;
+      act('undo'); act('undo');
+      return { kinds: added.map(T => Object.keys(T)[0]).join(), door: (added.find(T => T.swing) || {}).swing, items, back: ED.src.toys.length === n0 }; });
+    if (td.kinds !== 'arm,swing' || !td.door || !(td.door[2] > 1) || !(td.items >= 3) || !td.back) failures.push(`[${current}] turnstile and door in the editor: ${JSON.stringify(td)}`);
     // the quick buttons (Oct 9): icon buttons at the top right of the bottom pane; a real click on Undo takes the gate away
     await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 4, null, { timeout: 20000 }).catch(() => {});
     const qb = await page.evaluate(() => { const bs = [...document.querySelectorAll('#bbQuick button')], u = bs.find(b => b.title === 'Undo'), r = u && u.getBoundingClientRect();

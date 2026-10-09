@@ -69,12 +69,20 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   board gets a hole generated from its index (`genSrc`, seeded, so always the same; `holeAt`
   makes it on first want and keeps up to `GEN_CAP` = 1500, the least recently wanted giving up
   its slot). A round is `ROUND` = 18 holes, board after board, and there is no stroke limit
-  (Oct 9: stay on a hole as long as you like). Each hole draws one of fourteen ways of keeping its cup
-  (`guardCup`, Oct 9): nothing, boulders or bumpers going round (an `orbit`'s 7th number, 1),
+  (Oct 9: stay on a hole as long as you like). Each hole draws one of twenty-two ways of keeping its cup
+  (`guardCup`, Oct 9; never none): boulders or bumpers going round (an `orbit`'s 7th number, 1),
   a bumper sweeping across the way in, two crossing, one sliding beside it, a gate, a horseshoe of
-  fences open at the back, an arc of bumpers, a scatter of boulders, a sand apron, a raised
-  green with a ramp, a crater's rim or a moat; a cup with a stream, a wall or things of its own
-  near it gets only a light one, and the hardest add a stroke to par. Cups are kept two cells in
+  fences open at the back, an arc of bumpers, a scatter of boulders, a sand apron with a bumper, a raised
+  green with a ramp, a crater's rim, a moat, the cup on a mound, the cup on a hill's side, a berm, a
+  turnstile, a door or two, a pond in front, a short wall, a chicane of fences, a fan of pegs. A cup with
+  toys of its own near gets a ground guard, one on ground of its own a toy, a hole with a stream or wall
+  across a gentle one; nothing lands on water or by a bridge; the hardest add a stroke to par. Then, if
+  nothing crosses the straight line from the tee to the cup, a screen goes on it about halfway (fence,
+  boulders, bumper, berm, turnstile, pegs or door). A generated hole's source keeps `guard`, `screen`
+  and `open` (true only if no screen could be placed) for the tests. Two toys came with it:
+  `arm [col, row, length, seconds a turn, phase, bars]`, a turnstile, and `swing [col, row, length,
+  shut °, open °, seconds]`, a door; both are bars about a post (`barsOf`, drawn as `armBar`), in the
+  editor as Turnstile and Door (drag out from the post). Cups are kept two cells in
   from the sides and top. (The cannon was taken out on Oct 9.) Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
   1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
   `tests/golf-course.mjs` plays the

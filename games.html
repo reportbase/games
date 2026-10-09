@@ -32785,6 +32785,8 @@ const GOLF_APP = (() => {
   // the movers (Oct 8): shuttle [c0, r0, c1, r1, r, seconds] a bumper riding to and fro · orbit [col, row, radius, r, seconds
   //       (less than nothing the other way), phase] a boulder going round · gate [c0, r0, c1, r1, seconds, phase] a bar that
   //       rises out of the ground across the way and sinks again
+  // two more (Oct 9): arm [col, row, length, seconds a turn, phase, bars] a turnstile, one to four bars turning low about a
+  //       post · swing [col, row, length, shut (°), open (°), seconds] a door, one bar hinged at its post, opening and shutting
   // more land (Oct 8): wave [height, length (cells), heading (°), phase] rolls · ridge [c0, r0, c1, r1, width, height] a long
   //       hump along a line, or a gully when the height is less than nothing; a bump of negative height is a hollow
   // skate park (Oct 8): bowl [col, row, radius, lip height] · pipe [c0, r0, c1, r1, width, lip height], a half-pipe
@@ -32888,52 +32890,152 @@ const GOLF_APP = (() => {
     let R = 0.9;
     for (let r = 1.5; r >= 0.9; r -= 0.1) if (near.every(v => Math.abs(Math.hypot(v[0] - cx, v[1] - cy) - r) > 0.8)){ R = r; break; }
     /* NOT ALL GUARDS GO ROUND (Oct 9: "to many holes have rocks circling protecting the hole. more variety, should be
-       bumpers as well and not all circling, some doing linear patterns."). Each hole draws one way of keeping its cup:
-       nothing at all; a boulder or two going round; bumpers going round; a bumper sweeping to and fro across the way in;
-       two bumpers crossing, one across the way in and one up and down beside the cup; a bumper sliding up and down beside
-       it; or a gate rising across the way in. The way in is the side toward the tee. */
-    const r2 = v => Math.round(v * 100) / 100, cl = (v, lo, hi) => r2(Math.max(lo, Math.min(hi, v)));
+       bumpers as well and not all circling, some doing linear patterns."). Each hole draws one way of keeping its cup. */
+    const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000, cl = (v, lo, hi) => r2(Math.max(lo, Math.min(hi, v)));
     const per = r2((5 + rnd() * 4) * (rnd() < 0.5 ? -1 : 1)), ph = r2(rnd() * 6), br = r2(0.32 + rnd() * 0.1);
     let ti = 4, tj = NY - 1;
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === 'T'){ ti = i; tj = j; } }));
+    const tx = ti + 0.5, ty = tj + 0.5;
     const fy = cl(cy + (tj >= cj ? 1.3 : -1.3), 0.6, NY - 0.6), side = cx + 1.3 <= NX - 0.6 ? cx + 1.3 : cx - 1.3;
     const ring = (n, kind) => Array.from({ length: n }, (_, q) => ({ orbit: [cx, cy, r2(R), kind ? 0.3 : br, per, r2((ph + q * 2 * Math.PI / n) % 6.28), kind] }));
     const sweep = secs => ({ shuttle: [cl(cx - 2.2, 0.6, NX - 0.6), fy, cl(cx + 2.2, 0.6, NX - 0.6), fy, 0.3, r2(secs)] });
     const slide = secs => ({ shuttle: [r2(side), cl(cy - 1.2, 0.6, NY - 0.6), r2(side), cl(cy + 1.6, 0.6, NY - 0.6), 0.3, r2(secs)] });
+    const d = tj >= cj ? 1 : -1, land = [], sand = [];
+    let hard = 0;                                             // a stroke more on par for the hardest ways in
+    const toward = (rr, a) => [cl(cx + rr * Math.sin(a), 0.5, NX - 0.5), cl(cy + d * rr * Math.cos(a), 0.5, NY - 0.5)];
+    const X = v => cl(v, 0.4, NX - 0.4), Y = v => cl(v, 0.4, NY - 0.4), turn = () => rnd() < 0.5 ? -1 : 1;
+    const kickAt = (x, y, kind) => ({ kick: [r2(x), r2(y), [0.28, 0.26, 0.34, 0.3][kind], kind] });
+    const free = (i, j) => j > 0 && j < NY - 1 && i >= 0 && i < NX && (map[j][i] === '.' || map[j][i] === 's');
     /* MANY WAYS OF KEEPING A CUP (Oct 9: "every hole pretty much rocks circling the golf hole. that should be one way of
        protecting the hole among many. use other strategies to protect the golf hole."). The movers are seven of
        fourteen; the rest stand still or are ground: a horseshoe of fences open at the back, an arc of bumpers of mixed
        kinds facing the tee, a scatter of boulders in front, a sand apron round the cup, a raised green reached by a ramp,
-       a crater's rim to roll over, a moat dug round the cup. Boulders going round are one hole in about twelve. */
-    const d = tj >= cj ? 1 : -1, land = [], sand = [];
-    let hard = 0;                                             // a stroke more on par for the hardest ways in
-    const toward = (rr, a) => [cl(cx + rr * Math.sin(a), 0.5, NX - 0.5), cl(cy + d * rr * Math.cos(a), 0.5, NY - 0.5)];
-    const pickW = rnd(), styles = [
-      [0.07, () => []],
-      [0.15, () => { const n = 1 + Math.floor(rnd() * 2); hard = n - 1; return ring(n, 0); }],
-      [0.23, () => { const n = 1 + Math.floor(rnd() * 2); hard = n - 1; return ring(n, 1); }],
-      [0.30, () => [sweep(2.5 + rnd() * 1.5)]],
-      [0.36, () => { hard = 1; return [sweep(2.6 + rnd()), slide(3.4 + rnd())]; }],
-      [0.42, () => [slide(2.8 + rnd() * 1.2)]],
-      [0.49, () => (hard = 1, [{ gate: [cl(cx - 1.3, 0.4, NX - 0.4), fy, cl(cx + 1.3, 0.4, NX - 0.4), fy, r2(2.8 + rnd() * 1.2), ph] }])],
-      [0.57, () => { hard = 1; const e = 1.2, fz = cl(cy + d * e, 0.4, NY - 0.4), bz = cl(cy + d * 0.1, 0.4, NY - 0.4);   // a horseshoe, open at the back
-        return [{ fence: [cl(cx - e, 0.4, NX - 0.4), fz, cl(cx + e, 0.4, NX - 0.4), fz] }, { fence: [cl(cx - e, 0.4, NX - 0.4), fz, cl(cx - e, 0.4, NX - 0.4), bz] },
-                { fence: [cl(cx + e, 0.4, NX - 0.4), fz, cl(cx + e, 0.4, NX - 0.4), bz] }]; }],
-      [0.65, () => [-0.8, 0, 0.8].map(a => { const [x, y] = toward(1.35, a), kind = Math.floor(rnd() * 4); return { kick: [x, y, [0.28, 0.26, 0.34, 0.3][kind], kind] }; })],
-      [0.72, () => [0, 1, 2].map(() => { const [x, y] = toward(1.2 + rnd() * 0.9, (rnd() - 0.5) * 2); return { rock: [x, y, r2(0.3 + rnd() * 0.15)] }; })],
-      [0.79, () => { for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) if (map[j] && map[j][i] === '.') sand.push([i, j]); return []; }],
-      [0.87, () => { land.push({ plateau: [r2(cx - 1.3), r2(cy - 1.3), r2(cx + 1.3), r2(cy + 1.3), 0.05] },
-                               { ramp: [r2(cx), cl(cy + d * 3.3, 0.5, NY - 0.5), r2(cx), r2(cy + d * 1.35), 1.4, 0.05] }); return []; }],
-      [0.94, () => { land.push({ ring: [cx, cy, 1.15, 0.7, 0.05] }); return []; }],
-      [1, () => { land.push({ ring: [cx, cy, 1.35, 0.6, -0.035] }); return []; }]];
-    /* (a cup that already has things about it, toys or ground of the hole's own within a few cells, gets a light guard
-       only: nothing, a sand apron or one bumper going round. Two defences stacked made holes no one could finish.) */
-    const crossing = map.some(r => r.includes('=') || r.filter(ch => ch === '#').length >= 3);   // a stream or a wall across is a defence already
-    const busy = crossing || toys.some(T => { const v = Object.values(T)[0]; return Math.hypot(v[0] - cx, v[1] - cy) < 3.2 || (v.length > 3 && !T.kick && !T.rock && Math.hypot(v[2] - cx, v[3] - cy) < 3.2); })
-      || (src.land || []).some(f => { const k = Object.keys(f)[0], v = f[k]; return ['ring', 'dish', 'bowl', 'bump', 'plateau'].includes(k) && Math.hypot(v[0] - cx, v[1] - cy) < 3 && Math.abs(v[k === 'plateau' ? 4 : 3]) > 0.035; });
-    const guards = busy ? (pickW < 0.45 ? [] : pickW < 0.75 ? styles[10][1]() : ring(1, 1)) : styles.find(([w]) => pickW < w)[1]();
-    for (const [i, j] of sand) map[j][i] = 's';
-    return { ...src, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards], land: [...(src.land || []), ...land] };
+       a crater's rim to roll over, a moat dug round the cup. Boulders going round are one hole in about twelve.
+       NONE GO WITHOUT (Oct 9: "golf holes are sometimes completely without protection. put barriers between the golfer
+       opening shot and the golf hole. create a variety of strategies of golf hole protection, such as elevating them or
+       putting them on the side of a bump, etc. the idea is variety of methods. add new objects to explore how this might be
+       done."). "Nothing at all" is gone, the sand apron has a bumper in front of it, and eight more ways came: the cup on
+       top of a mound, the cup on the side of a hill, a berm across the way in, a turnstile (`arm`, new: bars turning low
+       about a post), a swinging door or a pair of them (`swing`, new: a bar hinged at one end, opening and closing), a
+       pond in front with or without a plank over it, a short wall to go round, a chicane of two fences, and a fan of pegs. */
+    const STYLES = {
+      rocks: [0.6, () => { const n = 1 + Math.floor(rnd() * 2); hard = n - 1; return ring(n, 0); }],
+      orbiters: [0.9, () => { const n = soft ? 1 : 1 + Math.floor(rnd() * 2); hard = n - 1; return ring(n, 1); }],
+      sweep: [0.9, () => [sweep(2.5 + rnd() * 1.5)]],
+      cross: [0.6, () => { hard = 1; return [sweep(2.6 + rnd()), slide(3.4 + rnd())]; }],
+      slide: [0.7, () => [slide(2.8 + rnd() * 1.2)]],
+      gate: [0.8, () => (hard = 1, [{ gate: [X(cx - 1.3), fy, X(cx + 1.3), fy, r2(2.8 + rnd() * 1.2), ph] }])],
+      horseshoe: [0.8, () => { hard = 1; const e = 1.2, fz = Y(cy + d * e), bz = Y(cy + d * 0.1);   // open at the back
+        return [{ fence: [X(cx - e), fz, X(cx + e), fz] }, { fence: [X(cx - e), fz, X(cx - e), bz] }, { fence: [X(cx + e), fz, X(cx + e), bz] }]; }],
+      arc: [0.8, () => [-0.8, 0, 0.8].map(a => { const [x, y] = toward(1.35, a); return kickAt(x, y, Math.floor(rnd() * 4)); })],
+      scatter: [0.7, () => [0, 1, 2].map(() => { const [x, y] = toward(1.2 + rnd() * 0.9, (rnd() - 0.5) * 2); return { rock: [x, y, r2(0.3 + rnd() * 0.15)] }; })],
+      apron: [0.7, () => { for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) if (map[j] && map[j][i] === '.') sand.push([i, j]);
+        const [x, y] = toward(1.8, (rnd() - 0.5) * 0.6); return [kickAt(x, y, Math.floor(rnd() * 4))]; }],
+      raised: [0.9, () => { land.push({ plateau: [r2(cx - 1.3), r2(cy - 1.3), r2(cx + 1.3), r2(cy + 1.3), 0.05] },
+                                       { ramp: [r2(cx), Y(cy + d * 3.3), r2(cx), r2(cy + d * 1.35), 1.4, 0.05] }); return []; }],
+      crater: [0.8, () => { land.push({ ring: [cx, cy, 1.15, 0.7, 0.05] }); return []; }],
+      moat: [0.7, () => { land.push({ ring: [cx, cy, 1.35, 0.6, -0.035] }); return []; }],
+      // the new ways (Oct 9)
+      mound: [0.9, () => { land.push({ bump: [cx, cy, r2(1.5 + rnd() * 0.6), r3(0.045 + rnd() * 0.02)] }); return []; }],   // the cup on top: too hard and it runs off
+      hillside: [0.9, () => { const a = rnd() * 2 * Math.PI, o = 1.1 + rnd() * 0.4;                                     // the cup on a hill's flank
+        land.push({ bump: [cl(cx + o * Math.cos(a), 0, NX), cl(cy + o * Math.sin(a), 0, NY), r2(1.7 + rnd() * 0.5), r3(0.05 + rnd() * 0.02)] }); return []; }],
+      berm: [0.8, () => { const y = Y(cy + d * (1.6 + rnd() * 0.4));                                                    // a long hump across the way in
+        land.push({ ridge: [cl(cx - 2.8, -1, NX + 1), y, cl(cx + 2.8, -1, NX + 1), y, r2(0.8 + rnd() * 0.3), r3(0.04 + rnd() * 0.015)] }); return []; }],
+      turnstile: [0.9, () => { const [x, y] = toward(1.75, (rnd() - 0.5) * 0.5);
+        return [{ arm: [x, y, r2(0.95 + rnd() * 0.25), r2((3.5 + rnd() * 1.5) * turn()), ph, 2 + Math.floor(rnd() * 2)] }]; }],
+      door: [0.9, () => { const y = Y(cy + d * (1.4 + rnd() * 0.3)), L = 1.25, s = r2(2.6 + rnd() * 1.2), out = [];
+        const two = rnd() < 0.5, left = rnd() < 0.5;                                                                    // closed across the way in, open toward the cup
+        if (two || left) out.push({ swing: [X(cx - L), y, L, 0, -d * 85, s] });
+        if (two || !left) out.push({ swing: [X(cx + L), y, L, 180, 180 + d * 85, s] });
+        hard = two ? 1 : 0; return out; }],
+      pond: [0.8, () => { const j = cj + 2 * d, cells = [-2, -1, 0, 1, 2].map(a => [ci + a, j]).filter(([i]) => i >= 0 && i < NX);
+        if (j === tj || cells.some(([i, jj]) => !free(i, jj))) return (style = 'berm', STYLES.berm[1]());
+        for (const [i, jj] of cells) map[jj][i] = '~';
+        for (const a of [-1, 0, 1]) if (free(ci + a, j + d) && j + d !== tj) map[j + d][ci + a] = '~';
+        if (rnd() < 0.5) map[j][ci] = '=';                       // a plank over, or none: round it or over the top
+        return []; }],
+      wall: [0.7, () => { const j = cj + 2 * d, cells = [-1, 0, 1].map(a => [ci + a, j]);
+        if (j === tj || cells.some(([i, jj]) => !free(i, jj))) return (style = 'chicane', STYLES.chicane[1]());
+        for (const [i, jj] of cells) map[jj][i] = '#'; return []; }],
+      chicane: [0.7, () => { hard = 1; const y1 = Y(cy + d * 1.4), y2 = Y(cy + d * 2.6), m = turn();   // two fences, staggered: zig, then zag
+        return [{ fence: [X(cx - m * 2.4), y1, X(cx + m * 0.3), y1] }, { fence: [X(cx - m * 0.3), y2, X(cx + m * 2.4), y2] }]; }],
+      pegs: [0.7, () => [[1.3, 0], [1.9, -0.55], [1.9, 0.55], [2.5, -1.1], [2.5, 0], [2.5, 1.1]]   // a fan of small posts
+        .map(([rr, o]) => ({ rock: [X(cx + o), Y(cy + d * rr), 0.17] }))],
+    };
+    /* (a cup that already has things about it gets a guard that does not pile onto them: a cup with toys of the hole's own
+       close by is kept by the ground (lifted under it or beside it, a berm, a rim, a moat, sand); a cup on ground of its
+       own (a hill, a dish, a rim) by things that stand or move on it; a hole with a stream or a wall across it, which is a
+       defence already, by one of the gentler ways. Two hard defences stacked made holes no one could finish.) */
+    const crossing = map.some(r => r.includes('=') || r.filter(ch => ch === '#').length >= 3);
+    const busyLand = (src.land || []).some(f => { const k = Object.keys(f)[0], v = f[k]; return ['ring', 'dish', 'bowl', 'bump', 'plateau'].includes(k) && Math.hypot(v[0] - cx, v[1] - cy) < 1.8 && Math.abs(v[k === 'plateau' ? 4 : 3]) > 0.035; });
+    const busyToys = toys.some(T => { const v = Object.values(T)[0]; return Math.hypot(v[0] - cx, v[1] - cy) < 2.4 || (v.length > 3 && (T.fence || T.shuttle || T.gate || T.pipe || T.slide) && Math.hypot(v[2] - cx, v[3] - cy) < 2.4); });
+    // (and the cup is lifted, or put on a hill's side, only where the ground about it is not already high or low: a mound on
+    //  a hillside ran every putt off)
+    const hilly = (src.land || []).some(f => { const k = Object.keys(f)[0], v = f[k]; return ['ring', 'dish', 'bowl', 'bump', 'plateau'].includes(k) && Math.hypot(v[0] - cx, v[1] - cy) < 3.2 && Math.abs(v[k === 'plateau' ? 4 : 3]) > 0.03; });
+    const soft = crossing || busyLand || busyToys;            // (one bumper going round, not two)
+    const names = Object.keys(STYLES), flat = n => !hilly || !['mound', 'hillside', 'raised', 'crater'].includes(n);
+    const gentle = ['orbiters', 'sweep', 'apron', 'hillside', 'berm', 'crater', 'moat', 'mound'];
+    let allow = (busyToys ? ['mound', 'hillside', 'berm', 'crater', 'moat', 'apron'] : busyLand ? ['orbiters', 'sweep', 'arc', 'pegs', 'turnstile', 'scatter'] : names)
+      .filter(n => flat(n) && (!crossing || gentle.includes(n)));
+    if (!allow.length) allow = busyToys ? ['apron'] : ['orbiters', 'apron'];
+    const tot = allow.reduce((s, n) => s + STYLES[n][0], 0);
+    let w = rnd() * tot, style = allow.find(n => (w -= STYLES[n][0]) < 0) || allow[0];
+    // (nothing a guard sets down stands in water, on a plank or in the one way over: Oct 9, a bumper on the bridge)
+    const narrows = [];
+    map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (ch === '.' && row.filter(c => c === '#').length >= 3)) narrows.push([i + 0.5, j + 0.5]); }));
+    const wayOver = (x, y, m) => narrows.some(([a, b]) => Math.hypot(x - a, y - b) < m);
+    let guards = STYLES[style][1]().filter(T => !(T.kick || T.rock) || (free(Math.floor(Object.values(T)[0][0]), Math.floor(Object.values(T)[0][1])) && !wayOver(...Object.values(T)[0], 1.6)));
+    if (busyToys && style === 'apron') guards = [];              // (sand alone: the cup already has things about it)
+    for (const [i, j] of sand) if (map[j][i] === '.') map[j][i] = 's';
+    /* SOMETHING IN THE WAY OF THE FIRST SHOT (Oct 9, the same request). If nothing stands across the straight line from the
+       tee to the cup (a wall, water, a toy, a ridge or a rim), a screen is put on it, somewhere about halfway: a fence across,
+       two boulders with a gap, one big boulder, a bumper, a berm, a turnstile, a row of pegs or a swinging door. */
+    const all = [...toys, ...guards], L0 = Math.hypot(cx - tx, cy - ty) || 1, nx = -(cy - ty) / L0, ny = (cx - tx) / L0;
+    const lineD = (px, py) => { const ux = cx - tx, uy = cy - ty, q = Math.max(0, Math.min(1, ((px - tx) * ux + (py - ty) * uy) / (L0 * L0))); return Math.hypot(tx + ux * q - px, ty + uy * q - py); };
+    const segLineD = (x0, y0, x1, y1) => { let m = Infinity; for (let q = 0; q <= 16; q++) m = Math.min(m, lineD(x0 + (x1 - x0) * q / 16, y0 + (y1 - y0) * q / 16)); return m; };
+    const across = () => {
+      for (let q = 0.06; q < 0.94; q += 0.02){ const i = Math.floor(tx + (cx - tx) * q), j = Math.floor(ty + (cy - ty) * q), ch = map[j] && map[j][i]; if (ch === '#' || ch === '~' || ch === '=') return true; }
+      if (all.some(T => { const k = Object.keys(T)[0], v = T[k];
+        if (k === 'kick' || k === 'rock') return lineD(v[0], v[1]) < v[2] + 0.3;
+        if (k === 'fence' || k === 'gate' || k === 'shuttle') return segLineD(v[0], v[1], v[2], v[3]) < 0.35;
+        if (k === 'orbit') return lineD(v[0], v[1]) < v[2] + v[3];
+        if (k === 'mill' || k === 'arm' || k === 'swing') return lineD(v[0], v[1]) < v[2];
+        return false; })) return true;
+      return [...(src.land || []), ...land].some(f => { const k = Object.keys(f)[0], v = f[k];
+        if (k === 'ridge') return Math.abs(v[5]) >= 0.035 && segLineD(v[0], v[1], v[2], v[3]) < v[4] * 0.5;
+        if (k === 'ring') return Math.abs(v[4]) >= 0.03 && Math.abs(lineD(v[0], v[1]) - 0) < v[2] && Math.hypot(tx - v[0], ty - v[1]) > v[2];
+        if (k === 'plateau') return v[4] >= 0.04 && cx >= Math.min(v[0], v[2]) && cx <= Math.max(v[0], v[2]) && cy >= Math.min(v[1], v[3]) && cy <= Math.max(v[1], v[3]);
+        return false; });
+    };
+    const screens = [];
+    let screen = null, open = false;
+    if (!across()){
+      open = true;
+      for (const f of [0.5, 0.42, 0.58, 0.35, 0.65]){
+        const px = tx + (cx - tx) * f, py = ty + (cy - ty) * f;
+        if (Math.hypot(px - tx, py - ty) < 1.8 || Math.hypot(px - cx, py - cy) < 1.9 || !free(Math.floor(px), Math.floor(py))) continue;
+        if (wayOver(px, py, 2.2) || all.some(T => { const v = Object.values(T)[0]; return Math.hypot(v[0] - px, v[1] - py) < 1.3; })) continue;
+        const P = (o, k = 1) => [X(px + nx * o * k), Y(py + ny * o * k)], deg = Math.round(Math.atan2(ny, nx) * 180 / Math.PI);
+        const KINDS = ['fence', 'pair', 'boulder', 'bumper', 'berm', 'turnstile', 'pegs', 'door'];
+        screen = KINDS[Math.floor(rnd() * KINDS.length)];
+        if (screen === 'fence') screens.push({ fence: [...P(-1.1), ...P(1.1)] });
+        else if (screen === 'pair') screens.push({ rock: [...P(-0.78), 0.36] }, { rock: [...P(0.78), 0.36] });
+        else if (screen === 'boulder') screens.push({ rock: [...P(0), r2(0.5 + rnd() * 0.1)] });
+        else if (screen === 'bumper') screens.push(kickAt(...P(0), Math.floor(rnd() * 4)));
+        else if (screen === 'berm') land.push({ ridge: [...P(-2.4).map(v => r2(v)), ...P(2.4), 0.85, r3(0.04 + rnd() * 0.012)] });
+        else if (screen === 'turnstile') screens.push({ arm: [...P(0), 0.95, r2((3.5 + rnd() * 1.5) * turn()), ph, 2] });
+        else if (screen === 'pegs') screens.push(...[-0.95, 0, 0.95].map(o => ({ rock: [...P(o), 0.18] })));
+        else screens.push({ swing: [...P(-1.25), 1.25, deg, deg + turn() * 85, r2(2.6 + rnd())] });
+        open = false; break;
+      }
+      if (open){                                              // nowhere about halfway: a bumper just before the cup, then
+        const ux = (tx - cx) / L0, uy = (ty - cy) / L0;
+        for (const rr of [1.5, 1.8, 1.2, 2.2]){ const px = X(cx + ux * rr), py = Y(cy + uy * rr);
+          if (!free(Math.floor(px), Math.floor(py)) || wayOver(px, py, 1.6)) continue;
+          screens.push(kickAt(px, py, Math.floor(rnd() * 4))); screen = 'bumper'; open = false; break; }
+      }
+    }
+    return { ...src, guard: style, screen, open, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards, ...screens], land: [...(src.land || []), ...land] };
   }
   HOLES.forEach((H, k) => { const g = guardCup(H, seeded(Math.imul(k + 7, 40503))); H.map = g.map; H.toys = g.toys; H.land = g.land; H.par = g.par; });
   const HOLE_SRC = HOLES.map(H => JSON.parse(JSON.stringify(H)));
@@ -32966,6 +33068,8 @@ const GOLF_APP = (() => {
       if (T.shuttle) T.shuttle = [...T.shuttle.slice(0, 5).map(P), T.shuttle[5]];
       if (T.orbit) T.orbit = [P(T.orbit[0]), P(T.orbit[1]), P(T.orbit[2]), P(T.orbit[3]), T.orbit[4], T.orbit[5] || 0, T.orbit[6] || 0];   // (the 7th: 1 a bumper going round, Oct 9)
       if (T.gate) T.gate = [...T.gate.slice(0, 4).map(P), T.gate[4], T.gate[5] || 0];
+      if (T.arm) T.arm = [P(T.arm[0]), P(T.arm[1]), P(T.arm[2]), T.arm[3] || 4, T.arm[4] || 0, Math.max(1, Math.min(4, Math.round(T.arm[5] || 2)))];
+      if (T.swing) T.swing = [P(T.swing[0]), P(T.swing[1]), P(T.swing[2]), T.swing[3] * Math.PI / 180, T.swing[4] * Math.PI / 180, T.swing[5] || 3];
     }
     H.map.forEach((row, j) => [...row].forEach((ch, i) => {
       if (ch === 'T') H.tee = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
@@ -33255,11 +33359,26 @@ const GOLF_APP = (() => {
       const [cx, cy, R, , per, ph] = T.orbit, w = 2 * Math.PI / per, a = ph + w * t;
       return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), vx: -R * w * Math.sin(a), vy: R * w * Math.cos(a), a };
     }
+    if (T.arm){ const w = 2 * Math.PI / T.arm[3]; return { a: T.arm[4] + w * t, w }; }   // a turnstile: its first bar's heading, and its turn rate
+    if (T.swing){                                            // a door: from shut to open and back, easing at each end
+      const [, , , a0, a1, per] = T.swing, w = 2 * Math.PI / per, f = 0.5 - 0.5 * Math.cos(w * t);
+      return { a: a0 + (a1 - a0) * f, w: (a1 - a0) * 0.5 * w * Math.sin(w * t) };
+    }
     if (T.gate){                                             // up a while, down a while, a quick rise and fall between
       const [, , , , per, ph] = T.gate, u = clamp(0.5 + 1.4 * Math.sin(2 * Math.PI * t / per + ph), 0, 1);
       return { up: u };
     }
     return null;
+  }
+  /* THE TURNSTILE AND THE DOOR (Oct 9: "add new objects to explore how this might be done"). Both are bars turning about
+     a post low over the grass: a turnstile's (`arm` [col, row, length, seconds a turn (less than nothing the other way),
+     phase, bars]) go round and round, one to four of them spaced evenly; a door's (`swing` [col, row, length, shut (°),
+     open (°), seconds]) is one bar hinged at the post, opening and shutting. Where it is now: each bar's post, heading and
+     length, and the turn rate, so the ball is hit by the bar's own speed where they touch, as by a windmill's arm. */
+  const ARM_T = CW * 0.11;                                   // a turnstile's or a door's bar, half its thickness
+  function barsOf(T, t){
+    const S = toyAt(T, t), v = T.arm || T.swing, n = T.arm ? T.arm[5] : 1;
+    return Array.from({ length: n }, (_, q) => ({ x: v[0], y: v[1], L: v[2], a: S.a + q * 2 * Math.PI / n, w: S.w }));
   }
   // A ball against something moving at (vx, vy) where they touch: out along n, bounced on their relative speed.
   function knockOff(b, nx, ny, px, py, r, vx, vy, e){
@@ -33292,6 +33411,13 @@ const GOLF_APP = (() => {
         }
         const dx = b.x - mx, dy = b.y - my, d = Math.hypot(dx, dy);           // the hub
         if (d < BR + 0.02 && d > 1e-9) hit = Math.max(hit, knockOff(b, dx / d, dy / d, mx, my, BR + 0.02, 0, 0, E));
+      } else if (T.arm || T.swing){
+        for (const B of barsOf(T, t)){
+          const ux = Math.cos(B.a), uy = Math.sin(B.a), s = clamp((b.x - B.x) * ux + (b.y - B.y) * uy, 0, B.L);
+          const px = B.x + ux * s, py = B.y + uy * s, dx = b.x - px, dy = b.y - py, d = Math.hypot(dx, dy);
+          if (d >= BR + ARM_T || d < 1e-9) continue;
+          hit = Math.max(hit, knockOff(b, dx / d, dy / d, px, py, BR + ARM_T, -B.w * (py - B.y), B.w * (px - B.x), E));
+        }
       } else if (T.fence){
         // a fence: a low wall along a line, the ball off it as off a wall
         const [x0, y0, x1, y1] = T.fence, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
@@ -33634,6 +33760,7 @@ const GOLF_APP = (() => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
+    armBar: T => { const g = new T.BoxGeometry(1, 1.4, 1); g.translate(0, 0.75, 0); return g; },   // a turnstile's or a door's bar (stretched along x)
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
     pole: T => { const g = new T.CylinderGeometry(0.025, 0.025, 1, 6); g.translate(0, 0.5, 0); return g; },
@@ -33763,6 +33890,21 @@ const GOLF_APP = (() => {
             out.push({ kind: 'gateSeg', u: x, v: y, scale: L / n, lift: hOf(H, x, y) - (1 - S.up) * 0.3 * (L / n), yaw, color: q & 1 ? 0xf2f2f2 : 0xd9473c });
           }
         }
+      } else if (T.arm || T.swing){
+        // a turnstile or a door: a post, and each bar a box laid along it (yellow and black, a door white and red), over a
+        // dotted circle where the bars sweep (Oct 9)
+        const [px, py, L] = T.arm || T.swing, hp = hOf(H, px, py);
+        if (near){ const n = Math.max(10, Math.round(2 * Math.PI * L / (CW * 0.5)));
+          for (let q = 0; q < n; q++){ const a = 2 * Math.PI * q / n, x = px + L * Math.cos(a), y = py + L * Math.sin(a);
+            if (T.swing){ const [, , , a0, a1] = T.swing, lo = Math.min(a0, a1), hi = Math.max(a0, a1), aa = lo + (((a - lo) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); if (aa > hi) continue; }
+            out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); } }
+        out.push({ kind: 'hub', u: px, v: py, scale: ARM_T * 2.2, lift: hp, color: T.arm ? 0x2a2a2a : 0x8a6240 });
+        barsOf(T, t).forEach((B, q) => {
+          const x = B.x + Math.cos(B.a) * B.L / 2, y = B.y + Math.sin(B.a) * B.L / 2;
+          out.push({ kind: 'armBar', u: x, v: y, scale: ARM_T * 2, sx: B.L / (ARM_T * 2), lift: Math.max(hp, hOf(H, x, y)), yaw: B.a,
+                     color: T.arm ? (q & 1 ? 0x2a2a2a : 0xf2c81a) : 0xf2f2f2 });
+          if (T.swing) out.push({ kind: 'armBar', u: B.x + Math.cos(B.a) * B.L * 0.85, v: B.y + Math.sin(B.a) * B.L * 0.85, scale: ARM_T * 2.05, sx: B.L * 0.3 / (ARM_T * 2.05), lift: hOf(H, x, y), yaw: B.a, color: 0xd9473c });
+        });
       } else if (T.kick){
         const [kx, ky, kr] = T.kick, kind = T.kick[3] | 0, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
         const tint = [0xffffff, 0xff8a4a, 0x7fd67a, 0x6fb2ff][kind] || 0xffffff, plain = [0xe0443a, 0xff8a1a, 0x4cae4c, 0x3a7fd9][kind] || 0xe0443a;   // classic, power, sponge, spinner
@@ -33859,10 +34001,11 @@ const GOLF_APP = (() => {
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
     mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
     shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7], [0, 1]],
-    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]] };
+    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]],
+    arm: [[0, 8], [0, 13], [0.3, 3], [-30, 30], [-7, 7], [1, 4]], swing: [[0, 8], [0, 13], [0.4, 3], [-360, 360], [-360, 360], [0.8, 20]] };
   // numbers that may be left off the end, from this one on, each then 0 (a bumper's kind came on Oct 9, an older bumper is a
   // classic; an orbit's phase, and since Oct 9 its kind, 1 for a bumper going round)
-  const OPTIONAL_FROM = { orbit: 5, gate: 5, kick: 3 };
+  const OPTIONAL_FROM = { orbit: 5, gate: 5, kick: 3, arm: 4 };
   function cleanList(list, spec, max){
     const out = [];
     for (const f of Array.isArray(list) ? list : []){
@@ -33877,6 +34020,8 @@ const GOLF_APP = (() => {
       });
       if (nums.some(x => !isFinite(x))) continue;
       if (key === 'orbit' && !nums[4]) nums[4] = 6;
+      if (key === 'arm'){ if (Math.abs(nums[3]) < 1) nums[3] = nums[3] < 0 ? -4 : 4; if (!nums[5]) nums[5] = 2; nums[5] = Math.round(nums[5]); }
+      if (key === 'swing' && nums[3] === nums[4]) nums[4] = nums[3] + 90;
       out.push({ [key]: nums });
     }
     return out;
@@ -33993,10 +34138,10 @@ const GOLF_APP = (() => {
     const toys = [], nT = Math.floor(R() * 3), narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (wall && ch === '.' && row.includes('#'))) narrows.push([i, j]); }));
     for (let q = 0, tries = 0; q < nT && tries < 30; tries++){
-      const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill']);
+      const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill', 'arm', 'swing']);
       const x = r2(u(t === 'mill' || t === 'shuttle' ? 2 : 1, NX - (t === 'mill' || t === 'shuttle' ? 2 : 1))), y = r2(u(2.5, NY - 3));
       const ch = map[Math.floor(y)][Math.floor(x)];
-      if (ch !== '.' && ch !== 's' || !clear(x, y, t === 'orbit' || t === 'mill' ? 3 : 2)) continue;
+      if (ch !== '.' && ch !== 's' || !clear(x, y, t === 'orbit' || t === 'mill' || t === 'arm' ? 3 : 2)) continue;
       if (narrows.some(([i, j]) => Math.hypot(x - i - 0.5, y - j - 0.5) < 2.2)) continue;   // (not in the way of the one way over: Oct 9)
       if (t === 'kick'){ const kind = Math.floor(R() * 4); toys.push({ kick: [x, y, [0.3, 0.28, 0.4, 0.32][kind], kind] }); }
       else if (t === 'rock') toys.push({ rock: [x, y, r2(u(0.35, 0.6))] });
@@ -34004,6 +34149,8 @@ const GOLF_APP = (() => {
       else if (t === 'orbit') toys.push({ orbit: [x, y, r2(u(1, 1.8)), 0.4, r2(u(5, 8) * (R() < 0.5 ? -1 : 1)), r2(u(0, 6)), 0] });
       else if (t === 'shuttle') toys.push({ shuttle: [r2(x - 1.5), y, r2(x + 1.5), y, 0.3, r2(u(2.5, 4))] });
       else if (t === 'gate') toys.push({ gate: [r2(Math.max(0.4, x - 1.2)), y, r2(Math.min(NX - 0.4, x + 1.2)), y, r2(u(2.6, 4)), r2(u(0, 6))] });
+      else if (t === 'arm') toys.push({ arm: [x, y, r2(u(0.9, 1.3)), r2(u(3.5, 5) * (R() < 0.5 ? -1 : 1)), r2(u(0, 6)), 2 + Math.floor(R() * 3)] });
+      else if (t === 'swing'){ const a = Math.round(u(-180, 180)); toys.push({ swing: [x, y, 1.2, a, a + (R() < 0.5 ? -90 : 90), r2(u(2.6, 4))] }); }
       else toys.push({ mill: [x, y, r2(u(1.1, 1.5)), r2(u(1, 1.6))] });
       q++;
     }
@@ -34192,12 +34339,14 @@ const GOLF_APP = (() => {
     /* THE MOVERS (Oct 9: "add 1,2" — 2 being the moving obstacles in the editor). A shuttle (a bumper riding to and fro)
        and a gate (a bar rising out of the ground and sinking) are drawn by a drag along their track, a boulder going
        round (orbit) by a drag from its centre out to the circle it rides; a tap places any of them at a default size. */
-    if (t === 'shuttle' || t === 'orbit' || t === 'gate'){
+    if (t === 'shuttle' || t === 'orbit' || t === 'gate' || t === 'arm' || t === 'swing'){
       if (drag){ if (!ED.drag) ED.drag = { from: { x, y } }; ED.drag.to = { x, y }; return false; }
       if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
       const cx = v => R2(Math.max(0.4, Math.min(NX - 0.4, v))), cy = v => R2(Math.max(0.4, Math.min(NY - 0.4, v)));
       if (t === 'shuttle') S.toys.push({ shuttle: [cx(x - 1.5), cy(y), cx(x + 1.5), cy(y), 0.3, 3] });
       else if (t === 'gate') S.toys.push({ gate: [cx(x - 1.2), cy(y), cx(x + 1.2), cy(y), 3, 0] });
+      else if (t === 'arm') S.toys.push({ arm: [cx(x), cy(y), 1.1, 4, 0, 2] });
+      else if (t === 'swing') S.toys.push({ swing: [cx(x - 0.6), cy(y), 1.2, 0, -85, 3] });
       else S.toys.push({ orbit: [cx(x), cy(y), 1.2, 0.45, 6, 0] });
       return true;
     }
@@ -34268,12 +34417,16 @@ const GOLF_APP = (() => {
     const D = ED.drag; ED.drag = null;
     if (!D || !D.to || !ED.on) return;
     const S = ED.src, t = ED.tool, R2 = n => Math.round(n * 100) / 100, { from: a, to: b } = D;
-    if (t === 'shuttle' || t === 'orbit' || t === 'gate'){
+    if (t === 'shuttle' || t === 'orbit' || t === 'gate' || t === 'arm' || t === 'swing'){
       if (S.toys.length >= 40) return;
       const cx = v => R2(Math.max(0.4, Math.min(NX - 0.4, v))), cy = v => R2(Math.max(0.4, Math.min(NY - 0.4, v))), L = Math.hypot(b.x - a.x, b.y - a.y);
       if (t === 'orbit'){
         if (L < 0.5){ ED.msg = 'drag further out from the centre'; return; }
         S.toys.push({ orbit: [cx(a.x), cy(a.y), R2(Math.min(4, L)), 0.45, 6, 0] });
+      } else if (t === 'arm' || t === 'swing'){                // from the post out to the bar's end; a door shuts along the drag
+        if (L < 0.4){ ED.msg = 'drag further out from the post'; return; }
+        const deg = Math.round(Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI);
+        S.toys.push(t === 'arm' ? { arm: [cx(a.x), cy(a.y), R2(Math.min(3, L)), 4, 0, 2] } : { swing: [cx(a.x), cy(a.y), R2(Math.min(3, L)), deg, deg - 85, 3] });
       } else {
         if (L < 0.8){ ED.msg = 'drag a longer track'; return; }
         S.toys.push(t === 'shuttle' ? { shuttle: [cx(a.x), cy(a.y), cx(b.x), cy(b.y), 0.3, Math.round(Math.max(2, Math.min(8, L * 0.8)) * 10) / 10] }
@@ -34361,7 +34514,7 @@ const GOLF_APP = (() => {
       else if (k === 'plateau') boxAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
-    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
+    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
   /* THE TOOLS ARE THE BOTTOM PANEL'S TILES (Oct 8: "the hole editor should use the bottom fisheye panel, not its own panel.
@@ -34375,6 +34528,7 @@ const GOLF_APP = (() => {
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
     ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],
+    ['arm', 'Turnstile', '✴️', 'drag out'], ['swing', 'Door', '↪️', 'drag out'],
     ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
     ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
     ['erase', 'Erase', '🧽', 'take away']];
@@ -34560,7 +34714,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, holeAt, genSrc, boardIdx, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { games: GAMES, HOLES, holeAt, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       editor: { ED, MINE, BUILT, TOOLS, ACTS, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
