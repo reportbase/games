@@ -124,7 +124,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   first, then toys within a fingertip, then the grass (its nearest dot), and ground of the hole's own
   only by a second tap on the same spot (`pickAll`, `toyReach`, `landReach`). With any other tool in
   hand (Erase and Box aside) a tap on the body of a thing, the tee or the cup selects it and takes up
-  Select, so the next drag moves it (Oct 9: "taping an object should select it allow it to be moved"). A drag that starts on a thing moves it
+  Select, so the next drag moves it (Oct 9: "taping an object should select it allow it to be moved").
+  **One at a time** (Oct 9): a thing or a piece of ground laid on the hole puts its tool down
+  (`placedOnce`): back in Select with it selected; another needs its tile taken up again. The paints
+  and Erase stay in hand. A drag that starts on a thing moves it
   (`dragPick`): from where the finger pressed, its anchor snapped to half cells and into line with
   other things (`snapAnchor`, a white guide line; Ctrl/Alt/Shift held moves freely); the tee and cup
   go cell by cell. The one selection is `ED.pick` ({type: 'toy'|'land'|'T'|'O', i}); `ED.sel` (the

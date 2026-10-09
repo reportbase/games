@@ -34730,6 +34730,16 @@ const GOLF_APP = (() => {
   }
   const HEIGHT_AT = { bump: 3, ridge: 5, bowl: 3, pipe: 5, plateau: 4, ramp: 5, step: 4, dish: 3, trough: 5, ring: 4 };
   const SUNK = { dish: 1, trough: 1 };                       // held as a depth: Higher makes them shallower, in smaller steps
+  /* ONE AT A TIME (Oct 9: "the user must select the item in the bottom object browser every time they want lay it on
+     board. the board resets to default where I can again change the height of the grass."). A thing or a piece of
+     ground, once laid on the hole, puts its tool down: the editor is back in Select, where the grass's dots are pulled
+     and the selection box drawn, with what was just laid selected (a drag on it moves it). Another needs its tile taken
+     up again. The paints (grass, wall, sand, water, bridge) and Erase stay in hand, as brushes do. */
+  function placedOnce(t){
+    if (!t || t === 'select' || t === 'box' || t === 'erase' || (t.length === 1 && '.#s~='.includes(t))) return;
+    ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null;
+    const n = pickName(); ED.msg = (n ? 'placed: ' + n + ' · ' : '') + 'take it up again below to lay another';
+  }
   // a drag with Plateau, Ramp or Half-pipe ends: the box or the line it drew becomes ground
   function editDragEnd(){
     const D = ED.drag, boxing = ED.boxing; ED.drag = null; ED.boxing = false;
@@ -34751,6 +34761,7 @@ const GOLF_APP = (() => {
                                     : { gate: [cx(a.x), cy(a.y), cx(b.x), cy(b.y), 3, 0] });
       }
       ED.pick = { type: 'toy', i: S.toys.length - 1 };
+      placedOnce(t);
       return;
     }
     if (t === 'box' || boxing){
@@ -34770,6 +34781,7 @@ const GOLF_APP = (() => {
       S.land.push(t === 'ramp' ? { ramp: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 1.6, 0.05] } : { trough: [R2(a.x), R2(a.y), R2(b.x), R2(b.y), 2.4, 0.045] });
     } else return;
     ED.sel = S.land.length - 1;
+    placedOnce(t);
   }
   function editAction(a){
     if (!ED.on) return;
@@ -34994,7 +35006,7 @@ const GOLF_APP = (() => {
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       if (ED.on){
-        if (gkey(c, r) === ED.key){ snapEdit(); if (editApply(u, v, false)) editRefresh(true); else ED.undo.pop(); return true; }
+        if (gkey(c, r) === ED.key){ const t0 = ED.tool; snapEdit(); if (editApply(u, v, false)){ editRefresh(true); placedOnce(t0); } else ED.undo.pop(); return true; }
         /* THE EDITOR GOES WHERE YOU TAP (Oct 8: "in edit mode, i should be able to add features to any board, not just the
            selected board."). A tap on another board used to leave the editor; now the editor moves there, the tool in hand
            kept, and that board's hole is the one being edited (a hole of the course is copied, as Edit this hole does; one

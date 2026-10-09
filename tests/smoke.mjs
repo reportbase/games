@@ -710,6 +710,27 @@ try {
       return { noHill, took, ri, moved, grass }; });
     if (!ob.noHill || ob.took.tool !== 'select' || ob.took.pick !== 'toy' || ob.took.i !== ob.ri || ob.took.wall || !ob.moved || !(ob.moved[0] > 5.2) || ob.grass !== 'dot')
       failures.push(`[${current}] a tap takes an object, a tap on grass the grass: ${JSON.stringify(ob)}`);
+    // one at a time (Oct 9: "the user must select the item in the bottom object browser every time they want lay it on
+    // board. the board resets to default where I can again change the height of the grass."): a boulder laid puts the
+    // tool down (Select, the boulder selected); the next tap on grass lays nothing and takes the grass; a gate drawn by a
+    // drag does the same; Wall, a paint, stays in hand
+    const once = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
+      const clear = []; for (let y = 2.5; y < D.NY - 1 && clear.length < 3; y += 1) for (let x = 1.5; x < D.NX - 1 && clear.length < 3; x += 1)
+        if (!E.pickAll(x, y).some(c => c.type !== 'dot') && !clear.some(([a, b]) => Math.hypot(a - x, b - y) < 2)) clear.push([x, y]);
+      if (clear.length < 3) return { none: true };
+      const n0 = ED.src.toys.length;
+      tool('rock'); tap(...clear[0]);
+      const after1 = { tool: ED.tool, pick: ED.pick && ED.pick.type, n: ED.src.toys.length - n0 };
+      tap(...clear[1]); const after2 = { n: ED.src.toys.length - n0, pick: ED.pick && ED.pick.type };
+      tool('gate'); for (const [x, y] of [[clear[2][0] - 1, clear[2][1]], [clear[2][0], clear[2][1]], [clear[2][0] + 1, clear[2][1]]]) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd();
+      const gate = { tool: ED.tool, n: ED.src.toys.length - n0 };
+      tool('s'); const sandStays = ED.tool; tool('select');
+      ED.src.toys.splice(n0); ED.pick = null;
+      return { after1, after2, gate, sandStays };
+    });
+    if (once.none || once.after1.tool !== 'select' || once.after1.pick !== 'toy' || once.after1.n !== 1 || once.after2.n !== 1 || once.after2.pick !== 'dot' || once.gate.tool !== 'select' || once.gate.n !== 2 || once.sandStays !== 's')
+      failures.push(`[${current}] one at a time: ${JSON.stringify(once)}`);
     // many dots at once, by the box only (Oct 9: "how do I select and move multiple points at once?" … "selection box works
     // badly. it selects only one point at a time. I only want the selection box to select multiple items."): a tap on a
     // second dot takes it alone, not with the first; a drag from grass that starts right beside a dot (within a fingertip)
