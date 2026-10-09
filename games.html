@@ -34259,7 +34259,7 @@ const GOLF_APP = (() => {
     return { sunk, strokes };
   }
   /* ─── the editing itself ─── */
-  const ED = { on: false, k: -1, src: null, key: null, tool: 'select', pick: null, grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], last: null, stroke: false, timer: 0, msg: '' };
+  const ED = { on: false, k: -1, src: null, key: null, tool: 'select', pick: null, dots: [], grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], last: null, stroke: false, timer: 0, msg: '' };
   function editStart(from){                               // from: a HOLES index to take in, or null for a new hole
     const L = framedHere();
     if (!L){ say('Select a hole on the field first, then choose Edit.', 2600); return false; }
@@ -34272,8 +34272,7 @@ const GOLF_APP = (() => {
       src = cleanSrc(src) || blankSrc();
       k = addHole(src);
     }
-    Object.assign(ED, { on: true, k, src, key: L.key, pick: null, grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], redo: [], last: null, stroke: false, msg: '', saved: false });
-    selBarStart();
+    Object.assign(ED, { on: true, k, src, key: L.key, pick: null, dots: [], grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], redo: [], last: null, stroke: false, msg: '', saved: false });
     LIVE = L;
     const g = holeGame({ start: k, card: [], single: true }, k); g.state = 'edit';
     GAMES.set(L.key, g);
@@ -34453,6 +34452,19 @@ const GOLF_APP = (() => {
     if (gx != null || gy != null) ED.guide = { x: gx, y: gy };
     return [sx, sy];
   }
+  /* MANY DOTS AT ONCE (Oct 9: "how do I select and move multiple points at once?"). With a dot selected, a tap on another
+     dot adds it and a tap on one already selected takes it out again; the Box quick button (⬚) takes every dot inside a
+     box dragged over the hole. A drag on any of the selected dots then raises or sinks them all together, each by the same
+     amount from where it was, and Higher, Lower and Level act on them all. The set is ED.dots, read only while the
+     selection is a dot (selDots), so taking anything else lets them all go. */
+  const selDots = () => ED.pick && ED.pick.type === 'dot' ? (ED.dots && ED.dots.includes(ED.pick.i) ? ED.dots : [ED.pick.i]) : [];
+  function tapDot(i){
+    const cur = selDots();
+    if (cur.length){ const k = cur.indexOf(i); ED.dots = k >= 0 ? cur.filter(n => n !== i) : [...cur, i]; }
+    else ED.dots = [i];
+    ED.pick = ED.dots.length ? { type: 'dot', i: ED.dots[ED.dots.length - 1] } : null;
+    ED.msg = ED.dots.length > 1 ? ED.dots.length + ' dots selected' : ED.pick ? 'selected: ' + pickName() : 'let go';
+  }
   // a dot's height set (Oct 9), the list made when the first dot leaves level and dropped when the last comes back
   function setDot(i, h){
     const S = ED.src;
@@ -34465,6 +34477,7 @@ const GOLF_APP = (() => {
     return true;
   }
   const DOT_PER_PX = 0.0004;                                  // a dot rises 0.04 for a finger moved 100 px up the screen
+  function moveDots(G){ let ch = false; for (const [i, h0] of G.dots) ch = setDot(i, h0 - G.sy * DOT_PER_PX) || ch; if (G.dots.length > 1) ED.msg = G.dots.length + ' dots'; return ch; }
   // a drag with Select: the press takes what is under it (what is selected, if the press is on it), the moves carry it
   function dragPick(x, y){
     const S = ED.src;
@@ -34473,15 +34486,19 @@ const GOLF_APP = (() => {
       const here = pickAll(x, y), p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here[0];
       if (!p){ ED.grab = { none: true }; return false; }
       ED.pick = { type: p.type, i: p.i };
-      if (p.type === 'dot'){ const h0 = (S.lift && S.lift[p.i]) || 0; ED.grab = { dot: true, h0, sy: ED.panDy || 0 }; ED.msg = 'pull up or down: ' + pickName();
-        return setDot(p.i, h0 - ED.grab.sy * DOT_PER_PX); }   // (the finger's first move counts too)
+      if (p.type === 'dot'){                                   // (a dot of the selected ones carries them all; another dot is taken alone)
+        const set = ED.dots && ED.dots.includes(p.i) && selDots().length ? ED.dots : [p.i];
+        ED.dots = set; ED.pick = { type: 'dot', i: p.i };
+        ED.grab = { dot: true, dots: set.map(i => [i, (S.lift && S.lift[i]) || 0]), sy: ED.panDy || 0 };
+        ED.msg = 'pull up or down: ' + (set.length > 1 ? set.length + ' dots' : pickName());
+        return moveDots(ED.grab); }                          // (the finger's first move counts too)
       ED.grab = { from: { x, y }, anchor: anchorOf(ED.pick), orig: p.type === 'toy' ? clone(S.toys[p.i]) : p.type === 'land' ? clone(S.land[p.i]) : null };
       ED.msg = 'moving: ' + pickName();
       return false;
     }
     const G = ED.grab, P = ED.pick;
     if (G.none || !pickValid(P)) return false;
-    if (G.dot){ G.sy += ED.panDy || 0; return setDot(P.i, G.h0 - G.sy * DOT_PER_PX); }   // up the screen is up
+    if (G.dot){ G.sy += ED.panDy || 0; return moveDots(G); }   // up the screen is up
     if (P.type === 'T' || P.type === 'O'){                    // the tee and the cup go cell by cell, onto grass or sand
       const i = Math.floor(x), j = Math.floor(y);
       if (i < 0 || j < 0 || i >= NX || j >= NY || !'.s'.includes(S.map[j][i])) return false;
@@ -34496,7 +34513,7 @@ const GOLF_APP = (() => {
     list[P.i] = moved;
     return true;
   }
-  /* THE BAR BESIDE WHAT IS SELECTED: its buttons, by what the thing is, and what each does. */
+  /* WHAT CAN BE DONE TO WHAT IS SELECTED, by what it is (the bar beside it showed these until Oct 9). */
   const KICK_GLYPH = ['🔴', '🟠', '🟢', '🔵'], KICK_R = [0.32, 0.28, 0.4, 0.32];
   const PERIOD_AT = { shuttle: 5, orbit: 4, gate: 4, arm: 3, swing: 5 };    // seconds there and back, round or up and down
   function selActs(){
@@ -34520,8 +34537,9 @@ const GOLF_APP = (() => {
     if (key === 'deselect'){ ED.pick = null; ED.guide = null; return true; }
     if (!pickValid(P)) return false;
     if (P.type === 'dot' && (key === 'higher' || key === 'lower' || key === 'flat')){
-      const h = (S.lift && S.lift[P.i]) || 0; snapEdit();
-      if (setDot(P.i, key === 'flat' ? 0 : h + (key === 'higher' ? 0.01 : -0.01))) editRefresh(true); else ED.undo.pop();
+      snapEdit(); let ch = false;
+      for (const i of selDots()){ const h = (S.lift && S.lift[i]) || 0; ch = setDot(i, key === 'flat' ? 0 : h + (key === 'higher' ? 0.01 : -0.01)) || ch; }
+      if (ch) editRefresh(true); else ED.undo.pop();
       return true;
     }
     if (key === 'higher' || key === 'lower'){ editAction(key); return true; }
@@ -34546,54 +34564,8 @@ const GOLF_APP = (() => {
     }
     return false;
   }
-  // the bar itself: a row of round buttons over the thing, following it on the screen while the editor is on
-  let selBar = null, selRaf = 0, selKeys = '';
-  function selBarEl(){
-    if (selBar) return selBar;
-    selBar = document.createElement('div'); selBar.id = 'golfSelBar';
-    selBar.style.cssText = 'position:fixed;z-index:60;display:none;align-items:center;gap:4px;padding:4px 6px;border-radius:22px;background:rgba(20,24,30,.82);' +
-      'box-shadow:0 2px 10px rgba(0,0,0,.4);font:12px system-ui,sans-serif;color:#ffd23a;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none';
-    const stop = e => { e.stopPropagation(); };
-    for (const ev of ['mousedown', 'touchstart', 'click', 'contextmenu', 'wheel']) selBar.addEventListener(ev, stop);
-    selBar.addEventListener('pointerdown', e => {                // (on the press, as draw's buttons are: a wobbling finger never makes it a drag)
-      e.stopPropagation(); e.preventDefault();
-      const b = e.target.closest && e.target.closest('button');
-      if (b && b._key){ selAct(b._key); selKeys = ''; }
-    });
-    document.body.appendChild(selBar);
-    return selBar;
-  }
-  function selBarTick(){
-    selRaf = 0;
-    if (!ED.on){ if (selBar) selBar.style.display = 'none'; return; }
-    selRaf = requestAnimationFrame(selBarTick);
-    const bar = selBarEl(), acts = selActs(), L = LIVE;
-    let at = null;
-    try {
-      const f = framedCell(), W = window.FIELD_WORLD;
-      if (acts.length && L && L.key === ED.key && f && gkey(f.c, f.r) === ED.key && W.target.shown){
-        const a = anchorOf(ED.pick) || [NX / 2, NY / 2], T = W.target, bW = W.boardW(), LB = window.LAB || {}, bWX = bW * (LB.cellW || 1), bWZ = bW * (LB.cellH || 1);
-        const H = HOLES[ED.k], lift = H ? hOf(H, Math.min(WD, a[0] * CW), Math.min(1, a[1] * CW)) / WD * bWX : 0;
-        const p = new W.THREE.Vector3(T.boardX + (0.5 - a[0] / NX) * bWX, lift, T.boardZ + (0.5 - a[1] / NY) * bWZ).project(W.camera);
-        if (p.z < 1 && Math.abs(p.x) < 1.2 && Math.abs(p.y) < 1.2) at = { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight };
-      }
-    } catch {}
-    if (!at){ bar.style.display = 'none'; return; }
-    const keys = acts.map(a => a.key + a.glyph).join() + '|' + pickName();
-    if (keys !== selKeys){
-      selKeys = keys; bar.textContent = '';
-      const lab = document.createElement('span'); lab.textContent = pickName(); lab.style.cssText = 'padding:0 6px 0 4px;white-space:nowrap'; bar.appendChild(lab);
-      for (const a of acts){ const b = document.createElement('button'); b._key = a.key; b.textContent = a.glyph; b.title = a.title; b.setAttribute('aria-label', a.title);
-        b.style.cssText = 'width:34px;height:34px;border:0;border-radius:17px;background:rgba(255,255,255,.12);color:#fff;font-size:16px;line-height:34px;padding:0;cursor:pointer';
-        bar.appendChild(b); }
-    }
-    bar.style.display = 'flex';
-    const w = bar.offsetWidth || 200, h = bar.offsetHeight || 42;
-    let y = at.y - h - 34; if (y < 8) y = at.y + 34;
-    bar.style.left = Math.round(Math.max(8, Math.min(innerWidth - w - 8, at.x - w / 2))) + 'px';
-    bar.style.top = Math.round(Math.max(8, Math.min(innerHeight - h - 8, y))) + 'px';
-  }
-  const selBarStart = () => { if (!selRaf) selRaf = requestAnimationFrame(selBarTick); };
+  /* (Oct 9: "remove that popup panel, its not needed." The bar of buttons that followed the selection on the screen is
+     gone; what it did is still done by the tiles below (Higher, Lower, Delete) and by selAct, the keys' way in later.) */
   // (u, v) on the board, 0 to 1 across and down; drag: part of a stroke rather than a tap. True if the hole changed.
   function editApply(u, v, drag){
     if (!ED.on || u == null || v == null) return false;
@@ -34626,8 +34598,18 @@ const GOLF_APP = (() => {
       S.land.push({ dish: [R2(x), R2(y), 1.6, 0.045] }); ED.sel = S.land.length - 1; return true;
     }
     if (t === 'select'){                                     // (Oct 9: anything, not only the ground; see SELECT AND MOVE)
-      if (!drag){ ED.pick = pickAt(x, y); ED.grab = null; ED.guide = null; ED.msg = ED.pick ? 'selected: ' + pickName() : 'nothing here'; return false; }
+      if (!drag){
+        ED.grab = null; ED.guide = null;
+        const here = pickAll(x, y);
+        if (selDots().length && here[0] && here[0].type === 'dot'){ ED.lastTap = { x, y }; tapDot(here[0].i); return false; }   // (adding to the dots selected)
+        ED.pick = pickAt(x, y); ED.dots = ED.pick && ED.pick.type === 'dot' ? [ED.pick.i] : [];
+        ED.msg = ED.pick ? 'selected: ' + pickName() : 'nothing here'; return false;
+      }
       return dragPick(x, y);
+    }
+    if (t === 'box'){                                          // a box dragged over the hole: the dots inside it (Oct 9)
+      if (drag){ if (!ED.drag) ED.drag = { from: ED.pressAt ? { ...ED.pressAt } : { x, y } }; ED.drag.to = { x, y }; }
+      return false;
     }
     if (t === 'up' || t === 'down'){
       if (drag && ED.last && Math.hypot(x - ED.last.x, y - ED.last.y) < 0.8) return false;
@@ -34740,6 +34722,15 @@ const GOLF_APP = (() => {
       ED.pick = { type: 'toy', i: S.toys.length - 1 };
       return;
     }
+    if (t === 'box'){
+      const x0 = Math.ceil(Math.min(a.x, b.x) - 0.15), x1 = Math.floor(Math.max(a.x, b.x) + 0.15), y0 = Math.ceil(Math.min(a.y, b.y) - 0.15), y1 = Math.floor(Math.max(a.y, b.y) + 0.15), got = [];
+      for (let j = Math.max(0, y0); j <= Math.min(LIFT_H - 1, y1); j++) for (let i = Math.max(0, x0); i <= Math.min(LIFT_W - 1, x1); i++) got.push(j * LIFT_W + i);
+      ED.tool = 'select';
+      if (!got.length){ ED.msg = 'no dots in that box'; return; }
+      ED.dots = [...new Set([...selDots(), ...got])]; ED.pick = { type: 'dot', i: ED.dots[ED.dots.length - 1] };
+      ED.msg = ED.dots.length + ' dots selected: drag one to move them all';
+      return;
+    }
     if (S.land.length >= 40) return;
     if (t === 'plat'){
       if (Math.abs(b.x - a.x) < 0.6 || Math.abs(b.y - a.y) < 0.6){ ED.msg = 'drag a bigger box'; return; }
@@ -34758,6 +34749,7 @@ const GOLF_APP = (() => {
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
     if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
     if (a === 'higher' || a === 'lower'){
+      if (ED.pick && ED.pick.type === 'dot'){ selAct(a); return; }   // (the selected dots, Oct 9)
       const f = ED.sel != null && S.land[ED.sel];
       if (!f){ ED.msg = 'select some ground first'; return; }
       snapEdit();
@@ -34820,7 +34812,7 @@ const GOLF_APP = (() => {
     // what is selected, outlined in gold (Oct 9: anything, not only ground), and the line a move has snapped into, in white
     const P = ED.pick, G = 0xffd23a;
     if (P && pickValid(P) && P.type !== 'land'){
-      if (P.type === 'dot'){ const x = P.i % LIFT_W, y = Math.floor(P.i / LIFT_W); dotAt(x, y, G, 0.02); ringAt(x, y, 0.3, G); }
+      if (P.type === 'dot'){ for (const i of selDots()){ const x = i % LIFT_W, y = Math.floor(i / LIFT_W); dotAt(x, y, G, 0.02); ringAt(x, y, 0.3, G); } }
       else if (P.type === 'T' || P.type === 'O'){ const c = cellOf(P.type); ringAt(c[0], c[1], 0.55, G); }
       else { const T = ED.src.toys[P.i], k = Object.keys(T)[0], v = T[k];
         if (TWO_ENDS[k]){ lineAt(v[0], v[1], v[2], v[3], G); if (k === 'pipe') ringAt(v[2], v[3], v[5] + 0.2, G); }
@@ -34836,7 +34828,7 @@ const GOLF_APP = (() => {
       else if (k === 'plateau') boxAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
-    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
+    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat' || ED.tool === 'box') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
   /* THE TOOLS ARE THE BOTTOM PANEL'S TILES (Oct 8: "the hole editor should use the bottom fisheye panel, not its own panel.
@@ -34950,12 +34942,13 @@ const GOLF_APP = (() => {
     /* THE QUICK BUTTONS (Oct 9: "small icon buttons, no text, for most common things"): while editing, Undo, Redo, the
        eraser and Done; while playing, start this hole again and edit it. */
     quickActs(){
-      if (ED.on) return [{ key: 'select', glyph: '👆', title: 'Select', dim: ED.tool === 'select' }, { key: 'undo', glyph: '↶', title: 'Undo', dim: !ED.undo.length }, { key: 'redo', glyph: '↷', title: 'Redo', dim: !(ED.redo && ED.redo.length) },
+      if (ED.on) return [{ key: 'select', glyph: '👆', title: 'Select', dim: ED.tool === 'select' }, { key: 'box', glyph: '⬚', title: 'Select dots in a box', dim: ED.tool === 'box' }, { key: 'undo', glyph: '↶', title: 'Undo', dim: !ED.undo.length }, { key: 'redo', glyph: '↷', title: 'Redo', dim: !(ED.redo && ED.redo.length) },
                          { key: 'erase', glyph: '🧽', title: 'Erase' }, { key: 'done', glyph: '✓', title: 'Done editing' }];
       return framedHere() ? [{ key: 'restart', glyph: '↺', title: 'Start this hole again' }, { key: 'edit', glyph: '✎', title: 'Edit this hole' }] : null;
     },
     onQuickAct(c, r, key){
-      if (key === 'select'){ if (ED.on){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tap anything to select it, drag it to move it'; } return true; }
+      if (key === 'select'){ if (ED.on){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.pick = null; ED.dots = []; ED.msg = 'tap anything to select it, drag it to move it'; } return true; }
+      if (key === 'box'){ if (ED.on){ ED.tool = 'box'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'drag a box over the dots to take'; } return true; }
       if (key === 'erase'){ if (ED.on){ ED.tool = 'erase'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tap what to take away'; } return true; }
       if (key === 'restart'){
         const L = framedHere(); if (!L) return false;
@@ -35040,7 +35033,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
   };
   return app;
 })();

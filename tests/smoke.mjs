@@ -595,14 +595,14 @@ try {
       return { kinds: added.map(T => Object.keys(T)[0]).join(), door: (added.find(T => T.swing) || {}).swing, items, back: ED.src.toys.length === n0 }; });
     if (td.kinds !== 'arm,swing' || !td.door || !(td.door[2] > 1) || !(td.items >= 3) || !td.back) failures.push(`[${current}] turnstile and door in the editor: ${JSON.stringify(td)}`);
     // the quick buttons (Oct 9): icon buttons at the top right of the bottom pane; a real click on Undo takes the gate away
-    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 5, null, { timeout: 20000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 6, null, { timeout: 20000 }).catch(() => {});
     const qb = await page.evaluate(() => { const bs = [...document.querySelectorAll('#bbQuick button')], u = bs.find(b => b.title === 'Undo'), r = u && u.getBoundingClientRect();
       return { n: bs.length, text: bs.map(b => b.textContent).join(''), titles: bs.map(b => b.title), at: r && { x: r.x + r.width / 2, y: r.y + r.height / 2, right: innerWidth - r.right, w: r.width } }; });
     let qbUndo = -1;
     if (qb.at){ const before = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
       await page.mouse.click(qb.at.x, qb.at.y); await page.waitForTimeout(300);
       qbUndo = before - await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length); }
-    if (qb.n !== 5 || !qb.at || qb.at.right > 220 || qb.at.w > 40 || /[a-z]/i.test(qb.text) || qbUndo !== 1) failures.push(`[${current}] quick buttons: ${JSON.stringify(qb)}, undo took ${qbUndo}`);
+    if (qb.n !== 6 || !qb.at || qb.at.right > 220 || qb.at.w > 40 || /[a-z]/i.test(qb.text) || qbUndo !== 1) failures.push(`[${current}] quick buttons: ${JSON.stringify(qb)}, undo took ${qbUndo}`);
     // select and move in place (Oct 9: "editing the boards is clumsy. lets make it better, like the draw project … I want
     // to edit the boards as much as possible in place"): what is placed is selected; Select takes a thing by a tap and a
     // drag moves it, snapped to the half cells; a second tap on the same spot takes what is under it; the bar beside the
@@ -685,15 +685,32 @@ try {
       const after = await page.evaluate(i => { const ED = window.getFieldApp()._debug.editor.ED; return { lift: (ED.src.lift && ED.src.lift[i]) || 0, pick: ED.pick }; }, scr.idx);
       if (!(after.lift - scr.h0 > 0.01) || !after.pick || after.pick.type !== 'dot' || after.pick.i !== scr.idx) failures.push(`[${current}] a real drag up from a dot: ${JSON.stringify({ scr, after })}`);
     }
-    await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const T = ED.src.toys.findIndex(t => t.kick || t.rock || t.fence || t.gate || t.pipe); if (T >= 0) ED.pick = { type: 'toy', i: T }; });
-    await page.waitForFunction(() => { const b = document.getElementById('golfSelBar'); return b && b.style.display !== 'none' && b.querySelector('button[title="Delete"]'); }, null, { timeout: 20000 }).catch(() => {});
-    const barDel = await page.evaluate(() => { const b = document.getElementById('golfSelBar'), d = b && b.querySelector('button[title="Delete"]'), r = d && d.getBoundingClientRect();
-      return r && r.width > 10 ? { x: r.x + r.width / 2, y: r.y + r.height / 2, n: window.getFieldApp()._debug.editor.ED.src.toys.length } : null; });
-    if (!barDel) failures.push(`[${current}] no bar beside the selection`);
-    else { await page.mouse.click(barDel.x, barDel.y); await page.waitForTimeout(300);
-      const n1 = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
-      if (n1 !== barDel.n - 1) failures.push(`[${current}] the bar's Delete took ${barDel.n - n1} things`); }
+    // many dots at once (Oct 9: "remove that popup panel, its not needed. how do I select and move multiple points at
+    // once?"): no bar follows the selection; with a dot selected a tap on another adds it, a drag on either raises both by
+    // the same amount, a tap on a selected one takes it out; Box takes every dot inside a dragged box, and Higher (its
+    // tile) raises them all
+    const md = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const lift = i => (ED.src.lift && ED.src.lift[i]) || 0, W8 = D.LIFT_W;
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.lift = undefined; delete ED.src.lift;
+      const clear = (i, j) => { const p = E.pickAll(i, j); return p[0] && p[0].type === 'dot' && !p.some(q => q.type === 'toy' || q.type === 'T' || q.type === 'O'); };
+      let c = null; search: for (let j = 3; j < D.NY - 3; j++) for (let i = 1; i < D.NX - 2; i++) if (clear(i, j) && clear(i + 1, j) && clear(i, j + 1) && clear(i + 1, j + 1)){ c = [i, j]; break search; }
+      if (!c) return { none: true };
+      const [i, j] = c, a = j * W8 + i, b = j * W8 + i + 1;
+      tap(i, j); tap(i + 1, j);
+      const two = E.selDots().slice().sort((x, y) => x - y).join();
+      for (let q = 0; q < 4; q++) A.onPan(0, -25, { c: f.c, r: f.r, u: i / D.NX, v: j / D.NY }); A.onPanEnd();
+      const both = [lift(a), lift(b)];
+      tap(i + 1, j); const one = E.selDots().join();
+      A.onQuickAct(f.c, f.r, 'box'); const boxTool = ED.tool;
+      for (const [x, y] of [[i - 0.2, j - 0.2], [i + 0.6, j + 0.5], [i + 1.2, j + 1.2]]) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd();
+      const boxed = E.selDots().length, back = ED.tool;
+      const before = [j * W8 + i, j * W8 + i + 1, (j + 1) * W8 + i, (j + 1) * W8 + i + 1].map(lift);
+      act('higher');
+      const after = [j * W8 + i, j * W8 + i + 1, (j + 1) * W8 + i, (j + 1) * W8 + i + 1].map(lift);
+      return { c, two, want: [a, b].join(), both, one, boxTool, boxed, back, rise: after.map((h, n) => +(h - before[n]).toFixed(3)), bar: !!document.getElementById('golfSelBar') }; });
+    if (md.none || md.two !== md.want || !(md.both[0] > 0.03) || md.both[0] !== md.both[1] || md.one !== String(md.want.split(',')[0]) || md.boxTool !== 'box' || md.boxed !== 4 || md.back !== 'select'
+        || md.rise.some(r => r !== 0.01) || md.bar) failures.push(`[${current}] many dots at once: ${JSON.stringify(md)}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });

@@ -127,10 +127,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   other things (`snapAnchor`, a white guide line; Ctrl/Alt/Shift held moves freely); the tee and cup
   go cell by cell. The one selection is `ED.pick` ({type: 'toy'|'land'|'T'|'O', i}); `ED.sel` (the
   ground index the older code uses) is an accessor over it. What a tool places is selected, and a
-  tap with Bumper, Boulder or Windmill on a thing already there selects it. Beside the selection a
-  bar of buttons follows it on screen (`#golfSelBar`, `selActs`/`selAct`, projected from the board
-  each frame by `selBarTick`): a bumper's kind, a mover's Faster/Slower, the ground Higher/Lower,
-  Duplicate, Delete, let go. Undo keeps the selection. Draw.html has no selection library to lift
+  tap with Bumper, Boulder or Windmill on a thing already there selects it. `selActs`/`selAct` hold
+  what can be done to a selection (kind, Faster/Slower, Higher/Lower, Duplicate, Delete); the bar that
+  showed them beside it was taken out on Oct 9 ("not needed"), so they are reached by the tiles
+  (Higher, Lower, Delete) and, later, keys. Undo keeps the selection. Draw.html has no selection library to lift
   (its selection is spread through its app), so its ways are rewritten here. Still to come: handles
   per kind (size rings, line ends, plateau corners, turning grips) and drag-to-create, box select,
   keys, copy and paste.
@@ -141,11 +141,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   near a dot takes it (`pickAll`, after things, before ground; "near" is a fingertip on screen,
   `DOT_PX`/`PICK_PX` over `cellPx`, and on bare grass the nearest dot is taken anyway); a drag is
   hit-tested where the finger pressed (`ED.pressAt`, from `claimsPan(u, v)`), and up or down the screen raises
-  or sinks it (`DOT_PER_PX`, the pan's dy passed in as `ED.panDy`); its bar has Higher, Lower and Level
-  this dot. Lifted dots draw warm, sunk ones cool; Level (the tile) also levels every dot.
+  or sinks it (`DOT_PER_PX`, the pan's dy passed in as `ED.panDy`). **Many dots** (Oct 9): with a dot
+  selected a tap on another adds it and a tap on a selected one takes it out (`tapDot`); the Box quick
+  button (⬚, tool `box`) takes every dot inside a dragged box; a drag on any selected dot moves them
+  all by the same amount (`moveDots`), and the Higher/Lower tiles act on them all. The set is
+  `ED.dots`, read through `selDots()` only while the selection is a dot. Lifted dots draw warm, sunk
+  ones cool; Level (the tile) also levels every dot.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
   title, no text) in the band at the top right of the bottom pane (`#bbQuick`, `bbQuickTick`);
-  a click reaches `onQuickAct(c, r, key)`. Mini golf: Undo, Redo, Erase, Done while editing;
+  a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing;
   Start again and Edit while playing. They show only while the pane is open; the three dots
   (`#bbHandle`) show on every game, whether or not its row has anything in it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
