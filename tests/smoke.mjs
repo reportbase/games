@@ -251,6 +251,14 @@ try {
   if (gd.st.rocks > 50 || ['bumpers', 'linear', 'ground', 'sand', 'still', 'none'].some(k => gd.st[k] < 12)) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (!gd.oldOrbit || gd.oldOrbit.orbit[6] !== 0 || gd.oldOrbit.orbit[5] !== 0) failures.push(`[${current}] an old orbit was not read: ${JSON.stringify(gd.oldOrbit)}`);
   if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
+  // a board keeps its hole whatever the field's size, and names come round less (Oct 9): the index is made from the board's
+  // column and row alone, every one its own, small near the corner; 300 boards have at least 270 names
+  const bi = await page.evaluate(() => { const D = window.getFieldApp()._debug, seen = new Set(); let small = true;
+    for (let r = 0; r < 40; r++) for (let c = 0; c < 40; c++){ const i = D.boardIdx(c, r); seen.add(i); if (c < 5 && r < 5 && i >= 25) small = false; }
+    const N0 = window.FIELD_WORLD.st.N, a = D.boardIdx(3, 2); window.FIELD_WORLD.st.N = N0 * 4; const b2 = D.boardIdx(3, 2); window.FIELD_WORLD.st.N = N0;
+    return { unique: seen.size, small, stable: a === b2 }; });
+  if (bi.unique !== 1600 || !bi.small || !bi.stable) failures.push(`[${current}] board indices: ${JSON.stringify(bi)}`);
+  if (gb.names < 270) failures.push(`[${current}] only ${gb.names} names in 300 boards`);
   console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand

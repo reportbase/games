@@ -33140,7 +33140,15 @@ const GOLF_APP = (() => {
      written, and every other board gets a hole of its own made from its index (genSrc, below; holeAt), the same hole
      every time for the same board. A round is ROUND holes, board after board. */
   const ROUND = 18;
-  const boardIdx = (c, r) => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return ((r % GS) + GS) % GS * GS + ((c % GS) + GS) % GS; };
+  /* A BOARD KEEPS ITS HOLE (Oct 9, after "could it scale millions of boards"): the index was row × the field's width +
+     column, so a field grown or shrunk renumbered every board and moved every hole. It is now made from the board's own
+     column and row alone (Szudzik's pairing: every pair its own number, small ones near the corner), whatever the
+     field's size; the course's 22 holes are the boards of the first corner block. */
+  const boardIdx = (c, r) => {
+    let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {}
+    const a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS;
+    return a >= b ? a * a + a + b : b * b + a;
+  };
   const holeOf = (c, r) => holeAt(boardIdx(c, r));
 
   function holeGame(R, hole){
@@ -33916,10 +33924,18 @@ const GOLF_APP = (() => {
      holes at most, and a hole in play is never taken back. */
   const GEN = new Map(), GEN_CAP = 1500;
   function seeded(seed){ let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  // (Oct 9: more words, so a name comes round less often: some sixty adjectives and three or four nouns for each kind of
+  //  ground, about ten thousand names where there were under five hundred)
   const GEN_ADJ = ['windy', 'long', 'crooked', 'quiet', 'high', 'low', 'green', 'old', 'twisting', 'hidden', 'sunny', 'misty', 'stony', 'deep',
-    'wide', 'narrow', 'lazy', 'wild', 'gentle', 'steep', 'lonely', 'golden', 'mossy', 'broken', 'little', 'great', 'far', 'secret'];
-  const GEN_NOUN = { hill: 'knoll', hollow: 'hollow', ridge: 'ridge', gully: 'gully', terrace: 'terraces', wave: 'swell', plateau: 'mesa', sunk: 'sunken lawn',
-    ramp: 'ramp', ring: 'rings', crater: 'crater', dish: 'basin', trough: 'channel', saddle: 'saddle', moguls: 'moguls', tilt: 'slope', moat: 'moat' };
+    'wide', 'narrow', 'lazy', 'wild', 'gentle', 'steep', 'lonely', 'golden', 'mossy', 'broken', 'little', 'great', 'far', 'secret',
+    'silver', 'amber', 'restless', 'sleepy', 'humming', 'whispering', 'tangled', 'shady', 'breezy', 'frosty', 'dusky', 'bright', 'crimson',
+    'emerald', 'velvet', 'rugged', 'tilted', 'wandering', 'forgotten', 'sudden', 'patient', 'proud', 'curious', 'merry', 'stubborn',
+    'echoing', 'ancient', 'distant', 'northern', 'southern', 'eastern', 'western', 'glassy', 'rolling'];
+  const GEN_NOUN = { hill: ['knoll', 'hillock', 'brow', 'rise'], hollow: ['hollow', 'dell', 'dip'], ridge: ['ridge', 'spine', 'crest'],
+    gully: ['gully', 'ditch', 'gulch'], terrace: ['terraces', 'steps', 'ledges'], wave: ['swell', 'ripples', 'billows'],
+    plateau: ['mesa', 'table', 'shelf'], sunk: ['sunken lawn', 'pit', 'cellar'], ramp: ['ramp', 'kicker', 'launch'], ring: ['rings', 'halo', 'circle'],
+    crater: ['crater', 'caldera', 'cauldron'], dish: ['basin', 'bowl', 'saucer'], trough: ['channel', 'trench', 'runnel'],
+    saddle: ['saddle', 'pass', 'col'], moguls: ['moguls', 'bumps', 'hummocks'], tilt: ['slope', 'lean', 'incline'], moat: ['moat', 'ring ditch', 'trench ring'] };
   function genSrc(idx){
     const R = seeded(Math.imul(idx + 1, 2654435761) ^ 0x5bd1e995), u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)];
     const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
@@ -33993,7 +34009,7 @@ const GOLF_APP = (() => {
     }
     const d = Math.hypot(cc - tc, cr - tr), par = Math.max(2, Math.min(5, 2 + (d > 8 ? 1 : 0) + (water || wall ? 1 : 0) + (toys.length >= 2 ? 1 : 0)));
     const main = kinds.find(k => k !== 'tilt' && k !== 'moguls') || kinds[0];
-    return guardCup({ name: 'the ' + pick(GEN_ADJ) + ' ' + GEN_NOUN[main], par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) }, R);
+    return guardCup({ name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) }, R);
   }
   function holeAt(idx){
     if (idx < COURSE) return idx;
