@@ -28,9 +28,13 @@ if (process.env.LIBS_DIR){
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 await page.goto(`http://127.0.0.1:${server.address().port}/games.html?app=minigolf`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
-const report = await page.evaluate(() => {
+// (Oct 9: a hole for every board, made from the board's index. The course's own holes are all played, and a sample of the
+//  generated ones, spread over the indices: GEN_SAMPLE of them, 40 unless asked.)
+const report = await page.evaluate(SAMPLE => {
   const D = window.getFieldApp()._debug, { HOLES, NX, NY, CW } = D, out = [];
-  for (let k = 0; k < HOLES.length; k++){
+  const ks = HOLES.map((H, k) => k).filter(k => HOLES[k].gen == null && !HOLES[k].custom);
+  for (let i = 0; i < SAMPLE; i++) ks.push(D.holeAt(22 + i * 97 + 3));
+  for (const k of ks){
     const H = HOLES[k];
     // the way round to the cup, cell by cell: walls and water block, pipes carry
     const dist = new Map(), key = (i, j) => i + ',' + j, ci = Math.floor(H.cup.x / CW), cj = Math.floor(H.cup.y / CW), q = [[ci, cj]];
@@ -59,13 +63,13 @@ const report = await page.evaluate(() => {
       }
       if (best) g = best;
     }
-    out.push({ hole: k + 1, name: H.name, par: H.par, strokes, sunk });
+    out.push({ hole: H.num || k + 1, name: H.name, par: H.par, strokes, sunk });
   }
   return out;
-});
+}, Number(process.env.GEN_SAMPLE || 40));
 let bad = 0;
 for (const r of report){ const ok = r.sunk && r.strokes <= r.par + 3; if (!ok) bad++;
-  console.log(`${ok ? 'ok  ' : 'FAIL'} ${String(r.hole).padStart(2)} ${r.name.padEnd(16)} par ${r.par}: ${r.sunk ? r.strokes + ' strokes' : 'not sunk in ' + r.strokes}`); }
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${String(r.hole).padStart(4)} ${r.name.padEnd(22)} par ${r.par}: ${r.sunk ? r.strokes + ' strokes' : 'not sunk in ' + r.strokes}`); }
 if (errors.length){ bad++; console.log('uncaught: ' + errors.join(' · ')); }
 await browser.close(); server.close();
 console.log(bad ? `\n${bad} hole(s) failed` : '\nevery hole can be played');

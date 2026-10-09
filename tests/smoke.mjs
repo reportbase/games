@@ -173,6 +173,7 @@ try {
   const mv = await page.evaluate(async () => {
     const D = window.getFieldApp()._debug, res = [], KINDS = { shuttle: 'propBumper', orbit: 'propRock', gate: 'gateSeg' };
     for (const [k, H] of D.HOLES.entries()){
+      if (H.gen != null) continue;                           // (the course's own holes; the generated ones are checked below)
       const kinds = Object.keys(KINDS).filter(n => (H.toys || []).some(T => T[n]));
       if (!kinds.length) continue;
       let c = 0, r = 0;
@@ -191,6 +192,27 @@ try {
   if (mv.old.length) failures.push(`[${current}] fountains or waterfalls are left on ${mv.old.join(', ')}`);
   if (mv.flat.length) failures.push(`[${current}] holes with one feature of ground or none: ${mv.flat.join(', ')}`);
   console.log(`${failures.length === before5 ? 'ok  ' : 'FAIL'} ${current} (${mv.res.map(w => w.name).join(', ')})`);
+  // A hole for every board (Oct 9: "can you use the index to generate a unique board for each index?"): the same index
+  // always makes the same hole, neighbouring indices make different ones, a board past the course shows the hole of its
+  // own index, and a few hundred generated holes are all well formed
+  current = 'mini golf boards';
+  const before10 = failures.length;
+  const gb = await page.evaluate(() => {
+    const D = window.getFieldApp()._debug, E = D.editor, J = o => JSON.stringify(o);
+    const same = J(D.genSrc(5000)) === J(D.genSrc(5000)), names = new Set(), maps = new Set(), bad = [];
+    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), c = E.cleanSrc(s); names.add(s.name); maps.add(J([s.land, s.map, s.toys]));
+      if (!c || J(c.land) !== J(s.land) || J(c.toys) !== J(s.toys) || J(c.map) !== J(s.map) || c.land.length < 3) bad.push(i); }
+    const k1 = D.holeAt(5000), k2 = D.holeAt(5000), k3 = D.holeAt(5001);
+    let c = 0, r = 0, found = null;
+    search: for (r = 0; r < 60; r++) for (c = 0; c < 60; c++) if (D.boardIdx(c, r) >= 22){ found = { c, r }; break search; }
+    const kb = found && D.holeOf(found.c, found.r);
+    return { same, distinct: maps.size, names: names.size, bad: bad.slice(0, 5), k: [k1, k2, k3], board: found && { idx: D.boardIdx(found.c, found.r), gen: D.HOLES[kb].gen, num: D.HOLES[kb].num },
+             course: D.holeOf(0, 0) };
+  });
+  if (!gb.same || gb.distinct < 300 || gb.bad.length) failures.push(`[${current}] generated holes: same ${gb.same}, ${gb.distinct} of 300 different, ill-formed ${gb.bad.join(',')}`);
+  if (gb.k[0] !== gb.k[1] || gb.k[0] === gb.k[2]) failures.push(`[${current}] holeAt kept ${JSON.stringify(gb.k)}`);
+  if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
+  console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
   // never crosses: a 6° roll turns nothing, a 60° twist turns about 48°, clockwise for clockwise, about
