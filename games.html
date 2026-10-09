@@ -34379,12 +34379,16 @@ const GOLF_APP = (() => {
     const S = ED.src, out = [], cp = cellPx();
     PICK_TOL = Math.min(0.8, Math.max(0.35, PICK_PX / cp));
     const dotTol = Math.min(0.5, Math.max(DOT_TOL, DOT_PX / cp));
-    S.toys.forEach((T, i) => { const d = toyReach(T, x, y); if (d < PICK_TOL) out.push({ type: 'toy', i, d: Math.max(0, d) - 0.05 }); });
-    for (const ch of ['T', 'O']){ const c = cellOf(ch); if (c){ const d = Math.hypot(x - c[0], y - c[1]) - 0.4; if (d < PICK_TOL) out.push({ type: ch, i: 0, d: Math.max(0, d) - 0.1 }); } }
+    /* (Oct 9: "taping an object should select it allow it to be moved. taping the grass should allow me to edit it again."
+       The things come first whenever the tap is within a fingertip of one, the tee and the cup before them; then the
+       grass, its nearest dot, wherever else the tap lands, ground of a hole's own included; that ground (a plateau, a
+       bowl) only by a second tap on the same spot, after the grass.) */
+    S.toys.forEach((T, i) => { const d = toyReach(T, x, y); if (d < PICK_TOL) out.push({ type: 'toy', i, d: -0.06 + Math.max(0, d) * 0.01 }); });
+    for (const ch of ['T', 'O']){ const c = cellOf(ch); if (c){ const d = Math.hypot(x - c[0], y - c[1]) - 0.4; if (d < PICK_TOL) out.push({ type: ch, i: 0, d: -0.1 + Math.max(0, d) * 0.01 }); } }
     // a dot of the grass (Oct 9): a press close to one takes it before the ground it stands on, after the things
-    // (within a fingertip, before the ground under it; farther, after the ground: bare grass still gives its nearest dot)
+    // (always before the ground under it: the grass is what a tap there takes)
     const di = Math.max(0, Math.min(LIFT_W - 1, Math.round(x))), dj = Math.max(0, Math.min(LIFT_H - 1, Math.round(y))), dd = Math.hypot(x - di, y - dj);
-    out.push({ type: 'dot', i: dj * LIFT_W + di, d: dd < dotTol ? -0.03 + dd * 0.01 : 1 + dd });
+    out.push({ type: 'dot', i: dj * LIFT_W + di, d: dd < dotTol ? -0.03 + dd * 0.01 : -0.02 });
     // (ground is large: its own body, and a little round it, not a fingertip more, or no grass is left bare to box: Oct 9)
     S.land.forEach((f, i) => { const d = landReach(f, x, y); if (d < LAND_TOL) out.push({ type: 'land', i, d: Math.max(0, d) }); });
     return out.sort((a, b) => a.d - b.d);
@@ -34601,6 +34605,15 @@ const GOLF_APP = (() => {
     if (i < 0 || j < 0 || i >= NX || j >= NY) return false;
     const R2 = n => Math.round(n * 100) / 100, cell = S.map[j][i];
     const set = ch => { const row = [...S.map[j]]; row[i] = ch; S.map[j] = row.join(''); };
+    /* A TAP ON A THING TAKES IT, whatever tool is in hand (Oct 9: "taping an object should select it allow it to be
+       moved"): a tap on the body of a bumper, a fence, a mover, the tee or the cup selects it and takes up Select, so the
+       next drag moves it, rather than painting under it or piling another thing on top. (Erase still erases, and a tap
+       beside a thing still places or paints there.) */
+    if (!drag && t !== 'select' && t !== 'erase' && t !== 'box'){
+      const ti = S.toys.findIndex(T => toyReach(T, x, y) <= 0), tc = ['T', 'O'].find(ch => { const c = cellOf(ch); return c && Math.hypot(x - c[0], y - c[1]) < 0.45; });
+      if (ti >= 0 || tc){ ED.pick = ti >= 0 ? { type: 'toy', i: ti } : { type: tc, i: 0 }; ED.dots = []; ED.box = null; ED.tool = 'select';
+        ED.pipeAt = ED.fenceAt = null; ED.msg = 'selected: ' + pickName() + ' (drag it to move it)'; return false; }
+    }
     if (t.length === 1 && '.#s~='.includes(t)){ if ('TO'.includes(cell) || cell === t) return false; set(t); return true; }
     if (t === 'T' || t === 'O'){
       if (drag || cell === t || 'TO#'.includes(cell)) return false;
@@ -34638,13 +34651,7 @@ const GOLF_APP = (() => {
       if (drag){ if (!ED.drag) ED.drag = { from: ED.pressAt ? { ...ED.pressAt } : { x, y } }; ED.drag.to = { x, y }; }
       return false;
     }
-    if (t === 'up' || t === 'down'){
-      if (drag && ED.last && Math.hypot(x - ED.last.x, y - ED.last.y) < 0.8) return false;
-      if (S.land.length >= 40) { say('That is as much ground as a hole can hold — erase some first.', 2000); return false; }
-      ED.last = { x, y };
-      S.land.push({ bump: [R2(x), R2(y), 1.4, t === 'up' ? 0.03 : -0.025] });
-      return true;
-    }
+    // (Hill and Hollow were tools until Oct 9: "remove hallow and hill edit options." The dots shape the grass now.)
     /* THE MOVERS (Oct 9: "add 1,2" — 2 being the moving obstacles in the editor). A shuttle (a bumper riding to and fro)
        and a gate (a bar rising out of the ground and sinking) are drawn by a drag along their track, a boulder going
        round (orbit) by a drag from its centre out to the circle it rides; a tap places any of them at a default size. */
@@ -34674,9 +34681,6 @@ const GOLF_APP = (() => {
       return false;
     }
     if (cell === '#') return false;
-    // (a tap ON a thing already there takes it, as Select does, rather than piling another on top: Oct 9)
-    if (/^(kick[123]?|rock|mill)$/.test(t)){ const on = S.toys.findIndex(T => toyReach(T, x, y) <= 0);
-      if (on >= 0){ ED.pick = { type: 'toy', i: on }; ED.msg = 'selected: ' + pickName(); return false; } }
     if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
     if (t === 'kick') S.toys.push({ kick: [R2(x), R2(y), 0.32, 0] });
     else if (/^kick[123]$/.test(t)) S.toys.push({ kick: [R2(x), R2(y), [0, 0.28, 0.4, 0.32][+t[4]], +t[4]] });
@@ -34865,7 +34869,7 @@ const GOLF_APP = (() => {
      tap on a tile (onStatTap) takes up that tool or does that thing, and the row stays open while editing however the
      board is tapped or dragged (statsStay). The tiles are read again a few times a second, so they follow the editor. */
   const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
-    ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'], ['up', 'Hill', '⛰️', 'ground'], ['down', 'Hollow', '🕳️', 'ground'],
+    ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
     ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],

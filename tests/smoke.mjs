@@ -468,7 +468,8 @@ try {
     const st2 = await page.evaluate(async () => {
       const D = window.getFieldApp()._debug, E = D.editor, ED = E.ED, A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const tap = (tool, u, v) => { ED.tool = tool; A.onCellTap(f.c, f.r, u, v); };
-      tap('rock', 0.25, 0.2); tap('up', 0.7, 0.35); tap('pipe', 0.2, 0.8); tap('pipe', 0.8, 0.3);
+      tap('rock', 0.25, 0.2); tap('bowl', 0.7, 0.35);   // (a bowl: Hill went on Oct 9)
+      tap('pipe', 0.2, 0.8); tap('pipe', 0.8, 0.3);
       const toys = ED.src.toys.length, land = ED.src.land.length, k = ED.k;
       const kinds = D.cellItems(f.c, f.r).map(i => i.kind);
       tap('kick', 0.6, 0.6); E.editAction('undo');
@@ -510,7 +511,8 @@ try {
       const plat = ED.src.land.find(g => g.plateau), raised = hAt(2.5, 3) - hAt(6.5, 9);
       tool('ramp'); A.onCellTap(f.c, f.r, 6 / D.NX, 9 / D.NY);
       const ramp = ED.src.land.find(g => g.ramp);
-      tool('select'); A.onCellTap(f.c, f.r, 2.5 / D.NX, 3 / D.NY);
+      // (a tap on ground takes the grass first since Oct 9; a second tap on the same spot takes the plateau under it)
+      tool('select'); ED.lastTap = null; A.onCellTap(f.c, f.r, 3.5 / D.NX, 3.5 / D.NY); A.onCellTap(f.c, f.r, 3.5 / D.NX, 3.5 / D.NY);
       const selKind = ED.sel != null && Object.keys(ED.src.land[ED.sel])[0];
       const before = ED.src.land[ED.sel].plateau.slice();
       for (const [cx, cy] of [[2.5, 3], [3.5, 4], [4.5, 5]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY });
@@ -588,7 +590,9 @@ try {
     const td = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
       const n0 = ED.src.toys.length;
-      tool('arm'); A.onCellTap(f.c, f.r, 2 / D.NX, 8 / D.NY);
+      // (on grass clear of things: a tap on a thing selects it since Oct 9)
+      let at = [2, 8]; search: for (let y = 2.5; y < D.NY - 1; y += 0.5) for (let x = 1; x < D.NX - 1; x += 0.5) if (!ED.src.toys.some(T => E.pickAll(x, y).some(c => c.type === 'toy'))){ at = [x, y]; break search; }
+      tool('arm'); A.onCellTap(f.c, f.r, at[0] / D.NX, at[1] / D.NY);
       tool('swing'); for (const [cx, cy] of [[5, 8], [5.6, 8], [6.4, 8]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY }); A.onPanEnd();
       const added = ED.src.toys.slice(n0), items = D.cellItems(f.c, f.r).filter(i => i.kind === 'armBar').length;
       act('undo'); act('undo');
@@ -632,7 +636,7 @@ try {
       E.selAct('kind'); out.kind = ED.src.toys[i].kick[3];
       E.selAct('dup'); out.dup = ED.src.toys.filter(T => T.kick).length; out.dupPicked = ED.pick && ED.pick.i !== i;
       E.selAct('del'); out.afterDel = ED.src.toys.filter(T => T.kick).length;
-      tool('shuttle'); tap(4, 3); const sh = ED.src.toys[ED.pick.i].shuttle[5]; E.selAct('faster'); out.faster = ED.src.toys[ED.pick.i].shuttle[5] < sh;
+      tool('shuttle'); { let at = [4, 3]; search: for (let y = 2.5; y < D.NY - 1; y += 0.5) for (let x = 1; x < D.NX - 1; x += 0.5) if (!E.pickAll(x, y).some(c => c.type === 'toy' || c.type === 'T' || c.type === 'O')){ at = [x, y]; break search; } tap(at[0], at[1]); } const sh = ED.src.toys[ED.pick.i].shuttle[5]; E.selAct('faster'); out.faster = ED.src.toys[ED.pick.i].shuttle[5] < sh;
       E.selAct('del');
       tool('select'); const t0 = ED.src.map.findIndex(r => r.includes('T')), ti = ED.src.map[t0].indexOf('T');
       const ni = ti > 3 ? ti - 2 : ti + 2, nj = Math.max(1, t0 - 1);
@@ -642,7 +646,7 @@ try {
       tap(k[0], k[1]); out.barFor = ED.pick && ED.pick.type;
       return out; });
     if (!sm.placed || !/kind/.test(sm.acts) || !/dup/.test(sm.acts) || sm.tool !== 'select' || !sm.letGo || !sm.moved || Math.abs(sm.moved[0] - 4) > 0.01 || Math.abs(sm.moved[1] - 7.5) > 0.01
-        || !sm.still || !sm.undone || sm.undone[0] !== 1.5 || !sm.keptPick || !/^toy>(land|dot)$/.test(sm.cycle) || sm.kind !== 1 || sm.dup !== 2 || !sm.dupPicked || sm.afterDel !== 1 || !sm.faster || !sm.tee || sm.barFor !== 'toy')
+        || !sm.still || !sm.undone || sm.undone[0] !== 1.5 || !sm.keptPick || !/^toy>(land|dot|toy)$/.test(sm.cycle) || sm.kind !== 1 || sm.dup !== 2 || !sm.dupPicked || sm.afterDel !== 1 || !sm.faster || !sm.tee || sm.barFor !== 'toy')
       failures.push(`[${current}] select and move: ${JSON.stringify(sm)}`);
     // the dots lift the grass (Oct 9: "the grass has dots on them, can we use them to pull up and down to change the
     // grass."): a press on a dot and a drag up the screen raises the ground there by the dot's height exactly, the ground
@@ -687,6 +691,25 @@ try {
       const after = await page.evaluate(i => { const ED = window.getFieldApp()._debug.editor.ED; return { lift: (ED.src.lift && ED.src.lift[i]) || 0, pick: ED.pick }; }, scr.idx);
       if (!(after.lift - scr.h0 > 0.01) || !after.pick || after.pick.type !== 'dot' || after.pick.i !== scr.idx) failures.push(`[${current}] a real drag up from a dot: ${JSON.stringify({ scr, after })}`);
     }
+    // (Oct 9: "remove hallow and hill edit options. taping an object should select it allow it to be moved. taping the grass
+    // should allow me to edit it again."): no Hill or Hollow tool; with Wall in hand a tap on a boulder selects it and takes
+    // up Select, and a drag from it moves it; a tap on the grass then takes the grass (a dot), even where ground of the
+    // hole's own lies
+    const ob = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
+      const noHill = !E.TOOLS.some(t => t[0] === 'up' || t[0] === 'down');
+      ED.src.toys.push({ rock: [4.5, 9.5, 0.45] }); const ri = ED.src.toys.length - 1;
+      ED.src.land.push({ plateau: [0.6, 6.2, 3.4, 8.8, 0.04] });
+      tool('#'); tap(4.6, 9.5);
+      const took = { tool: ED.tool, pick: ED.pick && ED.pick.type, i: ED.pick && ED.pick.i, wall: ED.src.map[9][4] === '#' };
+      for (const [x, y] of [[4.6, 9.5], [5.2, 10], [5.6, 10.5]]) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd();
+      const moved = ED.src.toys[ri] && ED.src.toys[ri].rock.slice(0, 2);
+      let gp = null; for (let y = 6.5; y < 8.6 && !gp; y += 0.25) for (let x = 0.9; x < 3.2 && !gp; x += 0.25) if (!E.pickAll(x, y).some(c => c.type !== 'dot' && c.type !== 'land')) gp = [x, y];
+      ED.lastTap = null; if (gp) tap(gp[0], gp[1]); const grass = gp ? ED.pick && ED.pick.type : 'no clear spot';
+      ED.src.land.pop(); ED.src.toys.splice(ri, 1); ED.pick = null;
+      return { noHill, took, ri, moved, grass }; });
+    if (!ob.noHill || ob.took.tool !== 'select' || ob.took.pick !== 'toy' || ob.took.i !== ob.ri || ob.took.wall || !ob.moved || !(ob.moved[0] > 5.2) || ob.grass !== 'dot')
+      failures.push(`[${current}] a tap takes an object, a tap on grass the grass: ${JSON.stringify(ob)}`);
     // many dots at once, by the box only (Oct 9: "how do I select and move multiple points at once?" … "selection box works
     // badly. it selects only one point at a time. I only want the selection box to select multiple items."): a tap on a
     // second dot takes it alone, not with the first; a drag from grass that starts right beside a dot (within a fingertip)
@@ -719,7 +742,7 @@ try {
       const tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY), drag = pts => { for (const [x, y] of pts) A.onPan(0, -25, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd(); };
       const lift = i => (ED.src.lift && ED.src.lift[i]) || 0;
       A.onQuickAct(f.c, f.r, 'select');
-      const bare = (x, y) => { const p = E.pickAll(x, y); return p.length === 1 && p[0].type === 'dot' && p[0].d >= 1; };
+      const bare = (x, y) => { const p = E.pickAll(x, y); return p.length === 1 && p[0].type === 'dot' && p[0].d === -0.02; };
       let c = null; search: for (let j = 2; j < D.NY - 3; j++) for (let i = 0; i < D.NX - 3; i++) if (bare(i + 0.5, j + 0.5)){ c = [i, j]; break search; }
       if (!c) return { none: true };
       const [i, j] = c;
