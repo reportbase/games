@@ -34458,7 +34458,7 @@ const GOLF_APP = (() => {
     return [sx, sy];
   }
   /* MANY DOTS AT ONCE (Oct 9: "how do I select and move multiple points at once?"). With a dot selected, a tap on another
-     dot adds it and a tap on one already selected takes it out again; the Box quick button (⬚) takes every dot inside a
+     dot added it (until the box took over that, later the same day); the Box quick button (⬚) takes every dot inside a
      box dragged over the hole. A drag on any of the selected dots then raises or sinks them all together, each by the same
      amount from where it was, and Higher, Lower and Level act on them all. The set is ED.dots, read only while the
      selection is a dot (selDots), so taking anything else lets them all go. */
@@ -34477,13 +34477,6 @@ const GOLF_APP = (() => {
   function closeBox(){ ED.box = null; ED.dots = []; if (ED.pick && ED.pick.type === 'dot') ED.pick = null; ED.msg = 'let go'; }
   try { window.addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && (ED.box || ED.pick)){ ED.box ? closeBox() : (ED.pick = null, ED.dots = []); } }); } catch {}
   const selDots = () => ED.pick && ED.pick.type === 'dot' ? (ED.dots && ED.dots.includes(ED.pick.i) ? ED.dots : [ED.pick.i]) : [];
-  function tapDot(i){
-    const cur = selDots();
-    if (cur.length){ const k = cur.indexOf(i); ED.dots = k >= 0 ? cur.filter(n => n !== i) : [...cur, i]; }
-    else ED.dots = [i];
-    ED.pick = ED.dots.length ? { type: 'dot', i: ED.dots[ED.dots.length - 1] } : null;
-    ED.msg = ED.dots.length > 1 ? ED.dots.length + ' dots selected' : ED.pick ? 'selected: ' + pickName() : 'let go';
-  }
   // a dot's height set (Oct 9), the list made when the first dot leaves level and dropped when the last comes back
   function setDot(i, h){
     const S = ED.src;
@@ -34508,13 +34501,17 @@ const GOLF_APP = (() => {
         return moveDots(ED.grab);
       }
       if (ED.box) closeBox();                                  // (a drag outside it lets it go, and does what it does)
+      /* THE BOX IS THE DRAG ON THE GRASS (Oct 9: "selection box works badly. it selects only one point at a time. I only
+         want the selection box to select multiple items."). A press within a fingertip of a dot used to take that one dot,
+         and on a phone a fingertip covers most of the grass, so a drag meant as a box pulled one dot. Now a drag takes a
+         thing only when it starts on a bumper, a fence or any other thing, the tee or the cup, or on what is already
+         selected (a dot or a piece of ground tapped first); anywhere else it draws the selection box. */
       const here = pickAll(x, y);
-      if (here[0] && here[0].type === 'dot' && here[0].d >= 1){  // bare grass, no dot under the finger: a selection box
+      const p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O');   // (what is selected first)
+      if (!p){
         ED.grab = { none: true }; ED.boxing = true; ED.drag = { from: { x, y }, to: { x, y } }; ED.pick = null; ED.dots = [];
         ED.msg = 'drag a box over the dots'; return false;
       }
-      const p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here[0];
-      if (!p){ ED.grab = { none: true }; return false; }
       ED.pick = { type: p.type, i: p.i };
       if (p.type === 'dot'){                                   // (a dot of the selected ones carries them all; another dot is taken alone)
         const set = ED.dots && ED.dots.includes(p.i) && selDots().length ? ED.dots : [p.i];
@@ -34632,8 +34629,6 @@ const GOLF_APP = (() => {
       if (!drag){
         ED.grab = null; ED.guide = null;
         if (boxOpen()){ if (!inBox(x, y)) closeBox(); return false; }   // a tap away from the box closes it; inside, it stays
-        const here = pickAll(x, y);
-        if (selDots().length && here[0] && here[0].type === 'dot'){ ED.lastTap = { x, y }; tapDot(here[0].i); return false; }   // (adding to the dots selected)
         ED.pick = pickAt(x, y); ED.dots = ED.pick && ED.pick.type === 'dot' ? [ED.pick.i] : [];
         ED.msg = ED.pick ? 'selected: ' + pickName() : 'nothing here'; return false;
       }
