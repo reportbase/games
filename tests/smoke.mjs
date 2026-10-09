@@ -382,10 +382,11 @@ try {
       tap('kick', 0.6, 0.6); E.editAction('undo');
       const afterUndo = ED.src.toys.length;
       const r = await E.editAction('check');
+      const autoSaved = JSON.parse(localStorage.getItem('golf.myholes') || '[]').some(h => JSON.stringify(h.toys) === JSON.stringify(ED.src.toys));
       E.editAction('save');
       const link = E.shareLink(ED.src), back = E.readLink(new URL(link).searchParams.get('hole'));
       const evil = E.cleanSrc({ name: '<img src=x onerror=alert(1)>', par: 99, map: Array(13).fill('########ZZZ'), toys: [{ rock: ['x', 1, 2] }, { nope: [1] }], land: 'no' });
-      return { toys, land, k, hasLand: kinds.includes('land' + k), hasRock: kinds.some(x => /rock/i.test(x)), afterUndo, check: r, par: ED.src.par, msg: ED.msg,
+      return { toys, land, k, hasLand: kinds.includes('land' + k), hasRock: kinds.some(x => /rock/i.test(x)), afterUndo, autoSaved, check: r, par: ED.src.par, msg: ED.msg,
                stored: JSON.parse(localStorage.getItem('golf.myholes') || '[]').length, same: JSON.stringify(back) === JSON.stringify(E.cleanSrc(ED.src)), link,
                evil: evil && { par: evil.par, toys: evil.toys.length, land: evil.land.length, rows: evil.map.every(r => r.length === 8 && /^[.#s~=TO]+$/.test(r)), T: evil.map.join('').split('T').length - 1, O: evil.map.join('').split('O').length - 1 } };
     });
@@ -394,6 +395,7 @@ try {
     if (st2.afterUndo !== 2) failures.push(`[${current}] undo left ${st2.afterUndo} things`);
     if (!st2.check || !st2.check.sunk || st2.par !== Math.max(2, Math.min(6, st2.check.strokes + 1))) failures.push(`[${current}] Check: ${JSON.stringify(st2.check)}, par ${st2.par}, "${st2.msg}"`);
     if (st2.stored < 1) failures.push(`[${current}] Save kept nothing`);
+    if (!st2.autoSaved) failures.push(`[${current}] the edited hole was not saved as it changed (Oct 9: saved as you go)`);
     if (!st2.same) failures.push(`[${current}] the share link does not carry the hole back`);
     if (!st2.evil || st2.evil.par !== 9 || st2.evil.toys !== 0 || st2.evil.land !== 0 || !st2.evil.rows || st2.evil.T !== 1 || st2.evil.O !== 1) failures.push(`[${current}] a bad link was not cleaned: ${JSON.stringify(st2.evil)}`);
     // a fence by two taps, and Material: the hole is rebuilt in stone
@@ -473,12 +475,38 @@ try {
       return out; });
     for (const [t, want] of [['bowl', 'dish'], ['hpipe', 'trough']]){ const r = sunkB[t];
       if (!r || r.added !== 1 || r.kind !== want || !(r.drop > 0.01) || !(r.farMoved < 1e-6)) failures.push(`[${current}] ${t} sinks into the ground: ${JSON.stringify(r)}`); }
+    // the movers (Oct 9): a shuttle drawn by a drag along its track, a boulder going round placed by a tap, a gate by a tap;
+    // then Redo puts back what Undo took
+    const mv = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const n0 = ED.src.toys.length;
+      tool('shuttle'); for (const [cx, cy] of [[1.5, 6.5], [3, 6.5], [5, 6.5]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY }); A.onPanEnd();
+      tool('orbit'); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
+      tool('gate'); A.onCellTap(f.c, f.r, 4 / D.NX, 10 / D.NY);
+      const kinds = ED.src.toys.slice(n0).map(T => Object.keys(T)[0]), sh = (ED.src.toys.find(T => T.shuttle) || {}).shuttle;
+      const items = D.cellItems(f.c, f.r).map(i => i.kind);
+      act('undo'); const afterUndo = ED.src.toys.length; act('redo'); const afterRedo = ED.src.toys.length;
+      return { kinds, track: sh ? +(sh[2] - sh[0]).toFixed(2) : 0, drawn: items.filter(k => /^(orbit|gate|shuttle)/.test(k)).length, n0, afterUndo, afterRedo }; });
+    if (mv.kinds.join() !== 'shuttle,orbit,gate' || !(mv.track > 3) || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
+      failures.push(`[${current}] movers in the editor: ${JSON.stringify(mv)}`);
+    // the quick buttons (Oct 9): icon buttons at the top right of the bottom pane; a real click on Undo takes the gate away
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 4, null, { timeout: 5000 }).catch(() => {});
+    const qb = await page.evaluate(() => { const bs = [...document.querySelectorAll('#bbQuick button')], u = bs.find(b => b.title === 'Undo'), r = u && u.getBoundingClientRect();
+      return { n: bs.length, text: bs.map(b => b.textContent).join(''), titles: bs.map(b => b.title), at: r && { x: r.x + r.width / 2, y: r.y + r.height / 2, right: innerWidth - r.right, w: r.width } }; });
+    let qbUndo = -1;
+    if (qb.at){ const before = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
+      await page.mouse.click(qb.at.x, qb.at.y); await page.waitForTimeout(300);
+      qbUndo = before - await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length); }
+    if (qb.n !== 4 || !qb.at || qb.at.right > 220 || qb.at.w > 40 || /[a-z]/i.test(qb.text) || qbUndo !== 1) failures.push(`[${current}] quick buttons: ${JSON.stringify(qb)}, undo took ${qbUndo}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
     const st3 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const g = [...D.games.values()].find(g => g.hole === E.ED.k), t = A.statTiles(f.c, f.r) || []; return { on: E.ED.on, first: t[0] && t[0].label, state: g && g.state, single: g && g.R.single }; });
     if (st3.on || st3.first !== 'Hole' || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 5000 }).catch(() => {});
+    const qp = await page.evaluate(() => [...document.querySelectorAll('#bbQuick button')].map(b => b.title));
+    if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
     // the share link opens the page on the hole
     await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });

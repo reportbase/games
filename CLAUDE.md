@@ -84,7 +84,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   BASE deep; the skate holes' `bowl` and `pipe` keep the ground beyond their lip at the lip's
   height, which raised a whole board when dropped on an ordinary hole. A tap on another board while
   editing moves the editor there, the tool kept (`onCellTap`); the next tap paints.
+  Every change is saved to My holes as it is drawn (`keepMine`, Oct 9); a hole only looked at
+  is not. The movers are tools too: Shuttle and Gate (drag a track), Orbit (drag out from the
+  centre), each placed at a default size by a tap. Undo has Redo (`ED.redo`).
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
+- **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
+  title, no text) in the band at the top right of the bottom pane (`#bbQuick`, `bbQuickTick`);
+  a click reaches `onQuickAct(c, r, key)`. Mini golf: Undo, Redo, Erase, Done while editing;
+  Start again and Edit while playing.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
