@@ -416,7 +416,9 @@ try {
       const ts = [...st.querySelectorAll('*')].filter(t => t.parentElement === st && t._key && /^stat_\d+$/.test(t._key) && t.style.display !== 'none').map(t => ({ i: +t._key.slice(5), r: t.getBoundingClientRect() }))
         .filter(t => t.i >= 1 && t.i <= E.TOOLS.length && t.r.width > 10 && t.r.left > 0 && t.r.right < innerWidth && t.r.top > 0 && t.r.bottom < innerHeight);
       const t = ts[0]; return t ? { i: t.i, x: t.r.left + t.r.width / 2, y: t.r.top + t.r.height / 2, tool: E.TOOLS[t.i - 1][0] } : null; };
-    await page.waitForFunction(findTile, null, { timeout: 10000, polling: 200 }).catch(() => {});   // (the row slides up when it opens)
+    // (the row slides up when it opens, a frame at a time; mini golf in software rendering can take seconds a frame, as on
+    //  CI, where 10 s was not always enough: Oct 9)
+    await page.waitForFunction(findTile, null, { timeout: 30000, polling: 200 }).catch(() => {});
     await page.waitForTimeout(400);
     const tile = await page.evaluate(findTile);
     const why = tile ? null : await page.evaluate(() => { const st = document.getElementById('boardBrowser'); return st ? { hidden: st.hidden, rect: st.getBoundingClientRect().toJSON(), keys: [...st.children].filter(t => t._key).map(t => t._key + ':' + t.style.display).slice(0, 12) } : 'no strip'; });
@@ -556,7 +558,7 @@ try {
     if (mv.kinds.join() !== 'shuttle,orbit,gate' || !(mv.track > 3) || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
       failures.push(`[${current}] movers in the editor: ${JSON.stringify(mv)}`);
     // the quick buttons (Oct 9): icon buttons at the top right of the bottom pane; a real click on Undo takes the gate away
-    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 4, null, { timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 4, null, { timeout: 20000 }).catch(() => {});
     const qb = await page.evaluate(() => { const bs = [...document.querySelectorAll('#bbQuick button')], u = bs.find(b => b.title === 'Undo'), r = u && u.getBoundingClientRect();
       return { n: bs.length, text: bs.map(b => b.textContent).join(''), titles: bs.map(b => b.title), at: r && { x: r.x + r.width / 2, y: r.y + r.height / 2, right: innerWidth - r.right, w: r.width } }; });
     let qbUndo = -1;
@@ -570,7 +572,7 @@ try {
     const st3 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const g = [...D.games.values()].find(g => g.hole === E.ED.k), t = A.statTiles(f.c, f.r) || []; return { on: E.ED.on, first: t[0] && t[0].label, state: g && g.state, single: g && g.R.single }; });
     if (st3.on || st3.first !== 'Hole' || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
-    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 20000 }).catch(() => {});
     const qp = await page.evaluate(() => [...document.querySelectorAll('#bbQuick button')].map(b => b.title));
     if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
     // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
