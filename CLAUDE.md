@@ -109,7 +109,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `?app=minigolf&hole=…` carries one (base64 JSON). Anything from a link or storage
   goes through `cleanSrc` (map letters, one tee and cup, known kinds, numbers in range).
   Check runs the course test's plain player in the page (`solveHole`) and sets par.
-  Its ground tools: Hill and Hollow, Plateau (drag a box), Ramp and Half-pipe (drag a line),
+  Its ground tools: Plateau (drag a box), Ramp and Half-pipe (drag a line) (Hill and Hollow were taken out on Oct 9),
   Bowl, and Select (`nearestLand`, `moveLand`) with Higher, Lower, Delete and Level. The
   editor's Bowl and Half-pipe are sunk into the ground (`dish`, `trough`, Oct 9), at most
   BASE deep; the skate holes' `bowl` and `pipe` keep the ground beyond their lip at the lip's
@@ -121,8 +121,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
   **Select and move in place** (Oct 9, step 1 of making the editor like draw.html): Select is the
   tool in hand at the start (and a quick button). A tap takes anything under it, the tee and cup
-  first, then toys, then ground (`pickAll`, `toyReach`, `landReach`); a second tap on the same spot
-  takes the next thing under it; bare grass lets go. A drag that starts on a thing moves it
+  first, then toys within a fingertip, then the grass (its nearest dot), and ground of the hole's own
+  only by a second tap on the same spot (`pickAll`, `toyReach`, `landReach`). With any other tool in
+  hand (Erase and Box aside) a tap on the body of a thing, the tee or the cup selects it and takes up
+  Select, so the next drag moves it (Oct 9: "taping an object should select it allow it to be moved").
+  **One at a time** (Oct 9): a thing or a piece of ground laid on the hole puts its tool down
+  (`placedOnce`): back in Select with it selected; another needs its tile taken up again. The paints
+  and Erase stay in hand. A drag that starts on a thing moves it
   (`dragPick`): from where the finger pressed, its anchor snapped to half cells and into line with
   other things (`snapAnchor`, a white guide line; Ctrl/Alt/Shift held moves freely); the tee and cup
   go cell by cell. The one selection is `ED.pick` ({type: 'toy'|'land'|'T'|'O', i}); `ED.sel` (the
