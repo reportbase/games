@@ -32800,7 +32800,7 @@ const GOLF_APP = (() => {
      goes at most BASE down (the board is under it); high ground is what makes the deep places deep. */
   const HOLES = [
     { name: 'the meadow', par: 2, fence: 'wood', land: [{ rough: [0.014, 2.4, 1] }, { bump: [4, 6.5, 2.4, 0.035] }, { bump: [2, 3, 1.3, -0.025] }],
-      toys: [{ cannon: [0.9, 8, 180] }],
+      toys: [],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
     { name: 'the crater', par: 3, fence: 'stone', land: [{ ring: [4, 4.5, 2.1, 1, 0.06] }, { dish: [4, 4.5, 1.6, 0.04] }, { rough: [0.008, 2, 2] }],
       toys: [{ kick: [1.4, 9, 0.28, 1] }],
@@ -32809,7 +32809,7 @@ const GOLF_APP = (() => {
       toys: [{ fence: [0.4, 9, 2.2, 9] }, { fence: [5.8, 5, 7.6, 5] }],
       map: ['.....O..', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '..T.....'] },
     { name: 'the moguls', par: 3, fence: 'wood', land: [{ rough: [0.018, 1.7, 7] }, { rough: [0.012, 3.2, 4] }, { tilt: [0, 0.02] }],
-      toys: [{ cannon: [7.1, 7, 0] }],
+      toys: [],
       map: ['...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
     { name: 'the sinkhole', par: 3, fence: 'stone', land: [{ dish: [3.5, 7, 1.9, 0.045] }, { ring: [3.5, 7, 2.2, 0.7, 0.025] }, { rough: [0.008, 2.5, 5] }],
       toys: [{ orbit: [3.5, 7, 2.6, 0.4, 7, 0] }],
@@ -32887,11 +32887,55 @@ const GOLF_APP = (() => {
     const near = toys.filter(T => !T.orbit && !T.shuttle && !T.gate).map(T => Object.values(T)[0]).filter(v => Math.hypot(v[0] - cx, v[1] - cy) < 2.5);
     let R = 0.9;
     for (let r = 1.5; r >= 0.9; r -= 0.1) if (near.every(v => Math.abs(Math.hypot(v[0] - cx, v[1] - cy) - r) > 0.8)){ R = r; break; }
-    const n = 1 + Math.floor(rnd() * 3), per = Math.round((5 + rnd() * 4) * (rnd() < 0.5 ? -1 : 1) * 10) / 10, ph = Math.round(rnd() * 60) / 10, br = Math.round((0.32 + rnd() * 0.1) * 100) / 100;
-    const guards = Array.from({ length: n }, (_, q) => ({ orbit: [cx, cy, Math.round(R * 100) / 100, br, per, Math.round((ph + q * 2 * Math.PI / n) % 6.28 * 100) / 100] }));
-    return { ...src, map: map.map(r => r.join('')), toys: [...toys, ...guards] };
+    /* NOT ALL GUARDS GO ROUND (Oct 9: "to many holes have rocks circling protecting the hole. more variety, should be
+       bumpers as well and not all circling, some doing linear patterns."). Each hole draws one way of keeping its cup:
+       nothing at all; a boulder or two going round; bumpers going round; a bumper sweeping to and fro across the way in;
+       two bumpers crossing, one across the way in and one up and down beside the cup; a bumper sliding up and down beside
+       it; or a gate rising across the way in. The way in is the side toward the tee. */
+    const r2 = v => Math.round(v * 100) / 100, cl = (v, lo, hi) => r2(Math.max(lo, Math.min(hi, v)));
+    const per = r2((5 + rnd() * 4) * (rnd() < 0.5 ? -1 : 1)), ph = r2(rnd() * 6), br = r2(0.32 + rnd() * 0.1);
+    let ti = 4, tj = NY - 1;
+    map.forEach((row, j) => row.forEach((ch, i) => { if (ch === 'T'){ ti = i; tj = j; } }));
+    const fy = cl(cy + (tj >= cj ? 1.3 : -1.3), 0.6, NY - 0.6), side = cx + 1.3 <= NX - 0.6 ? cx + 1.3 : cx - 1.3;
+    const ring = (n, kind) => Array.from({ length: n }, (_, q) => ({ orbit: [cx, cy, r2(R), kind ? 0.3 : br, per, r2((ph + q * 2 * Math.PI / n) % 6.28), kind] }));
+    const sweep = secs => ({ shuttle: [cl(cx - 2.2, 0.6, NX - 0.6), fy, cl(cx + 2.2, 0.6, NX - 0.6), fy, 0.3, r2(secs)] });
+    const slide = secs => ({ shuttle: [r2(side), cl(cy - 1.2, 0.6, NY - 0.6), r2(side), cl(cy + 1.6, 0.6, NY - 0.6), 0.3, r2(secs)] });
+    /* MANY WAYS OF KEEPING A CUP (Oct 9: "every hole pretty much rocks circling the golf hole. that should be one way of
+       protecting the hole among many. use other strategies to protect the golf hole."). The movers are seven of
+       fourteen; the rest stand still or are ground: a horseshoe of fences open at the back, an arc of bumpers of mixed
+       kinds facing the tee, a scatter of boulders in front, a sand apron round the cup, a raised green reached by a ramp,
+       a crater's rim to roll over, a moat dug round the cup. Boulders going round are one hole in about twelve. */
+    const d = tj >= cj ? 1 : -1, land = [], sand = [];
+    let hard = 0;                                             // a stroke more on par for the hardest ways in
+    const toward = (rr, a) => [cl(cx + rr * Math.sin(a), 0.5, NX - 0.5), cl(cy + d * rr * Math.cos(a), 0.5, NY - 0.5)];
+    const pickW = rnd(), styles = [
+      [0.07, () => []],
+      [0.15, () => { const n = 1 + Math.floor(rnd() * 2); hard = n - 1; return ring(n, 0); }],
+      [0.23, () => { const n = 1 + Math.floor(rnd() * 2); hard = n - 1; return ring(n, 1); }],
+      [0.30, () => [sweep(2.5 + rnd() * 1.5)]],
+      [0.36, () => { hard = 1; return [sweep(2.6 + rnd()), slide(3.4 + rnd())]; }],
+      [0.42, () => [slide(2.8 + rnd() * 1.2)]],
+      [0.49, () => (hard = 1, [{ gate: [cl(cx - 1.3, 0.4, NX - 0.4), fy, cl(cx + 1.3, 0.4, NX - 0.4), fy, r2(2.8 + rnd() * 1.2), ph] }])],
+      [0.57, () => { hard = 1; const e = 1.2, fz = cl(cy + d * e, 0.4, NY - 0.4), bz = cl(cy + d * 0.1, 0.4, NY - 0.4);   // a horseshoe, open at the back
+        return [{ fence: [cl(cx - e, 0.4, NX - 0.4), fz, cl(cx + e, 0.4, NX - 0.4), fz] }, { fence: [cl(cx - e, 0.4, NX - 0.4), fz, cl(cx - e, 0.4, NX - 0.4), bz] },
+                { fence: [cl(cx + e, 0.4, NX - 0.4), fz, cl(cx + e, 0.4, NX - 0.4), bz] }]; }],
+      [0.65, () => [-0.8, 0, 0.8].map(a => { const [x, y] = toward(1.35, a), kind = Math.floor(rnd() * 4); return { kick: [x, y, [0.28, 0.26, 0.34, 0.3][kind], kind] }; })],
+      [0.72, () => [0, 1, 2].map(() => { const [x, y] = toward(1.2 + rnd() * 0.9, (rnd() - 0.5) * 2); return { rock: [x, y, r2(0.3 + rnd() * 0.15)] }; })],
+      [0.79, () => { for (let j = cj - 1; j <= cj + 1; j++) for (let i = ci - 1; i <= ci + 1; i++) if (map[j] && map[j][i] === '.') sand.push([i, j]); return []; }],
+      [0.87, () => { land.push({ plateau: [r2(cx - 1.3), r2(cy - 1.3), r2(cx + 1.3), r2(cy + 1.3), 0.05] },
+                               { ramp: [r2(cx), cl(cy + d * 3.3, 0.5, NY - 0.5), r2(cx), r2(cy + d * 1.35), 1.4, 0.05] }); return []; }],
+      [0.94, () => { land.push({ ring: [cx, cy, 1.15, 0.7, 0.05] }); return []; }],
+      [1, () => { land.push({ ring: [cx, cy, 1.35, 0.6, -0.035] }); return []; }]];
+    /* (a cup that already has things about it, toys or ground of the hole's own within a few cells, gets a light guard
+       only: nothing, a sand apron or one bumper going round. Two defences stacked made holes no one could finish.) */
+    const crossing = map.some(r => r.includes('=') || r.filter(ch => ch === '#').length >= 3);   // a stream or a wall across is a defence already
+    const busy = crossing || toys.some(T => { const v = Object.values(T)[0]; return Math.hypot(v[0] - cx, v[1] - cy) < 3.2 || (v.length > 3 && !T.kick && !T.rock && Math.hypot(v[2] - cx, v[3] - cy) < 3.2); })
+      || (src.land || []).some(f => { const k = Object.keys(f)[0], v = f[k]; return ['ring', 'dish', 'bowl', 'bump', 'plateau'].includes(k) && Math.hypot(v[0] - cx, v[1] - cy) < 3 && Math.abs(v[k === 'plateau' ? 4 : 3]) > 0.035; });
+    const guards = busy ? (pickW < 0.45 ? [] : pickW < 0.75 ? styles[10][1]() : ring(1, 1)) : styles.find(([w]) => pickW < w)[1]();
+    for (const [i, j] of sand) map[j][i] = 's';
+    return { ...src, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards], land: [...(src.land || []), ...land] };
   }
-  HOLES.forEach((H, k) => { const g = guardCup(H, seeded(Math.imul(k + 7, 40503))); H.map = g.map; H.toys = g.toys; });
+  HOLES.forEach((H, k) => { const g = guardCup(H, seeded(Math.imul(k + 7, 40503))); H.map = g.map; H.toys = g.toys; H.land = g.land; H.par = g.par; });
   const HOLE_SRC = HOLES.map(H => JSON.parse(JSON.stringify(H)));
   // cells to the board's own units, and the tee and cup found on the map: one hole, the course's or one from the editor
   function compileHole(H){
@@ -32912,7 +32956,6 @@ const GOLF_APP = (() => {
     }
     for (const T of H.toys || []){
       if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
-      if (T.cannon) T.cannon = [P(T.cannon[0]), P(T.cannon[1]), T.cannon[2] * Math.PI / 180];
       if (T.slide) T.slide = [P(T.slide[0]), P(T.slide[1]), P(T.slide[2]), P(T.slide[3]), P(T.slide[4]), P(T.slide[5]), T.slide[6]];
       // a tree (the course's before Oct 8) became a bush, and a bush (Oct 8, an afternoon) is a short fence across where it stood
       if (T.tree){ T.bush = [T.tree[0], T.tree[1], Math.max(0.32, T.tree[2] * 1.5)]; delete T.tree; }
@@ -32921,7 +32964,7 @@ const GOLF_APP = (() => {
       if (T.fence) T.fence = T.fence.slice(0, 4).map(P);
       if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
       if (T.shuttle) T.shuttle = [...T.shuttle.slice(0, 5).map(P), T.shuttle[5]];
-      if (T.orbit) T.orbit = [P(T.orbit[0]), P(T.orbit[1]), P(T.orbit[2]), P(T.orbit[3]), T.orbit[4], T.orbit[5] || 0];
+      if (T.orbit) T.orbit = [P(T.orbit[0]), P(T.orbit[1]), P(T.orbit[2]), P(T.orbit[3]), T.orbit[4], T.orbit[5] || 0, T.orbit[6] || 0];   // (the 7th: 1 a bumper going round, Oct 9)
       if (T.gate) T.gate = [...T.gate.slice(0, 4).map(P), T.gate[4], T.gate[5] || 0];
     }
     H.map.forEach((row, j) => [...row].forEach((ch, i) => {
@@ -33077,7 +33120,7 @@ const GOLF_APP = (() => {
   const GRAV = 4;                                          // how hard the ground's slope pulls the ball
   const WIRE = { on: ARCADE.load('golf.wire', 'off') === 'on' };   // off unless turned on (Oct 9: "turn off wireframe by default")
   const NUMS = { on: ARCADE.load('golf.nums', 'on') !== 'off' };     // the hole's number in the corner (Oct 2: "add a menu option to show the hole #")
-  const BR = 0.02, E = 0.78, VMAX = 2.0, DRAG = 0.5, FULL = 0.4, MAX_STROKES = 8, SINK_T = 1.4;
+  const BR = 0.02, E = 0.78, VMAX = 2.0, DRAG = 0.5, FULL = 0.4, SINK_T = 1.4;
   const DIFF = { easy:   { mu: 0.6,  cup: 0.042, cap: 1.25 },
                  normal: { mu: 0.45, cup: 0.033, cap: 0.95 },
                  hard:   { mu: 0.36, cup: 0.027, cap: 0.72 } };
@@ -33150,12 +33193,6 @@ const GOLF_APP = (() => {
     SND.play(d <= 0 ? 'win' : 'good');
     g.state = 'sunk'; g.sunkT = SINK_T;
   }
-  function pickUp(g){
-    const H = HOLES[g.hole];
-    g.R.card.push({ hole: g.hole, par: H.par, strokes: g.strokes });
-    say('Picked up after ' + g.strokes + ' — on to the next', 1800); SND.play('bad');
-    g.state = 'sunk'; g.sunkT = SINK_T;
-  }
   // On to the next hole: the board to the right, the view following.
   function nextHole(g){
     const R = g.R;
@@ -33223,53 +33260,6 @@ const GOLF_APP = (() => {
     if (vn < 0){ b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; return -vn; }
     return 0;
   }
-  const CANNON_R = CW * 0.32, CANNON_DUR = 1.5;
-  // which board a cannon points at (one of the four next to this one), and where on it the ball comes down: just inside
-  // the side facing the cannon, on the first open cell along it
-  function fireCannon(g, T, cx, cy, a){
-    let key = null;
-    for (const [k, v] of GAMES) if (v === g){ key = k; break; }
-    if (!key || g.state !== 'play') return false;
-    const [c, r] = key.split('_').map(Number), dc = -Math.round(Math.cos(a)), dr = -Math.round(Math.sin(a));
-    if (!dc && !dr) return false;
-    let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {}
-    const tc = ((c + dc) % GS + GS) % GS, tr = ((r + dr) % GS + GS) % GS, H2 = HOLES[holeOf(tc, tr)];
-    // the landing spot, in the target board's own cells
-    const sx = Math.min(NX - 1, Math.max(0, Math.floor(cx / CW))), sy = Math.min(NY - 1, Math.max(0, Math.floor(cy / CW)));
-    let li = dc < 0 ? 0 : dc > 0 ? NX - 1 : sx, lj = dr < 0 ? 0 : dr > 0 ? NY - 1 : sy, best = null, bd = Infinity;
-    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
-      const ch = H2.map[j][i]; if (ch !== '.' && ch !== 's') continue;
-      const dd = Math.hypot(i - li, j - lj) + (Math.hypot(i + 0.5 - H2.cup.x / CW, j + 0.5 - H2.cup.y / CW) < 2.2 ? 9 : 0);
-      if (dd < bd){ bd = dd; best = [i, j]; }
-    }
-    if (!best) return false;
-    const land = { x: (best[0] + 0.5) * CW, y: (best[1] + 0.5) * CW };
-    // the same spot as seen from this board, for drawing the flight: the next board is a board's pitch away
-    let px = 1.3, py = 1.3;
-    try { const W = window.FIELD_WORLD, sp = W.spacing(), bw = W.boardW(); px = sp[0] / (bw * ((window.LAB && window.LAB.cellW) || 1)); py = sp[1] / (bw * ((window.LAB && window.LAB.cellH) || 1)); } catch {}
-    const b = g.ball;
-    g.moving = false; b.vx = b.vy = 0;
-    g.state = 'fly';
-    g.fly = { at: performance.now(), dur: CANNON_DUR, x0: cx, y0: cy, x1: land.x - dc * px * WD, y1: land.y - dr * py, key, tc, tr, land,
-              h0: hOf(HOLES[g.hole], cx, cy), h1: hOf(H2, land.x, land.y) };
-    (g.fired = g.fired || {})[T.cannon.join()] = g.t || 0;
-    SND.play('flag');
-    say('Boom! Over to the next board…', 1500);
-    try { if (typeof gotoCell === 'function'){ const w = { x: target.cellX, z: target.cellZ }; gotoCell(w.x + dc, w.z + dr); } } catch {}
-    setTimeout(() => { if (g.state === 'fly') cannonLand(g); }, CANNON_DUR * 1000 + 400);   // (even if the board leaves the screen)
-    return true;
-  }
-  function cannonLand(g){
-    const F = g.fly; if (!F || g.state !== 'fly') return;
-    const tk = gkey(F.tc, F.tr), hole = holeOf(F.tc, F.tr), H2 = HOLES[hole];
-    const ng = holeGame(g.R.single ? { start: hole, card: [], single: true } : g.R, hole);
-    ng.strokes = g.strokes; ng.ball.x = ng.rest.x = F.land.x; ng.ball.y = ng.rest.y = F.land.y;
-    g.state = 'done'; g.fly = null;
-    if (GAMES.get(F.key) === g) GAMES.delete(F.key);
-    GAMES.set(tk, ng);
-    LIVE = { key: tk, c: F.tc, r: F.tr };
-    say('Landed on ' + H2.name + ', par ' + H2.par + ' — ' + ng.strokes + (ng.strokes === 1 ? ' stroke' : ' strokes') + ' so far.', 2600);
-  }
   function toys(g, H){
     const b = g.ball, t = g.t || 0;
     let hit = 0;
@@ -33306,15 +33296,6 @@ const GOLF_APP = (() => {
         const [cx, cy, cr] = T.rock, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
         if (d >= BR + cr || d < 1e-9) return;
         hit = Math.max(hit, knockOff(b, dx / d, dy / d, cx, cy, BR + cr, 0, 0, E));
-      } else if (T.cannon){
-        /* A CANNON (Oct 9: "is there a way to shoot a ball like a canyon onta different board. some boards have cannons.").
-           Roll the ball into it and it fires the ball high over the rail onto the next board the way it points; the view
-           follows, and the round goes on there, on that board's hole, from where the ball lands, the strokes so far kept.
-           A ball the page is only trying out (the course test, Check) is not on any board: for it a cannon is a post. */
-        const [cx, cy, a] = T.cannon, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
-        if (d >= BR + CANNON_R || d < 1e-9) return;
-        if (fireCannon(g, T, cx, cy, a)){ hit = Math.max(hit, 0.5); return; }
-        hit = Math.max(hit, knockOff(b, dx / d, dy / d, cx, cy, BR + CANNON_R, 0, 0, E));
       } else if (T.pipe){
         // a pipe: the ball goes in at one mouth and comes out of the other, heading the exit's way at the speed it went in
         const [x0, y0, x1, y1, a, pr] = T.pipe;
@@ -33329,6 +33310,13 @@ const GOLF_APP = (() => {
            touch, so a boulder coming at the ball knocks it on, and one going away lets it by. */
         const S = toyAt(T, t), cr = T.orbit[3], dx = b.x - S.x, dy = b.y - S.y, d = Math.hypot(dx, dy);
         if (d >= BR + cr || d < 1e-9) return;
+        if (T.orbit[6] === 1){                                // a bumper going round (Oct 9): it kicks, as a bumper does
+          const nx = dx / d, ny = dy / d, vn = (b.vx - S.vx) * nx + (b.vy - S.vy) * ny;
+          b.x = S.x + nx * (BR + cr); b.y = S.y + ny * (BR + cr);
+          if (vn < 0.6){ const out = Math.max(0.6, -vn * 1.15); b.vx += (out - vn) * nx; b.vy += (out - vn) * ny; }
+          (g.kicked = g.kicked || {})[k] = t; hit = Math.max(hit, 0.6); SND.play('flag');
+          return;
+        }
         hit = Math.max(hit, knockOff(b, dx / d, dy / d, S.x, S.y, BR + cr, S.vx, S.vy, E));
       } else if (T.gate){
         // a gate: a bar across the way, solid while it stands more than half out of the ground, and nothing while it is down
@@ -33388,7 +33376,6 @@ const GOLF_APP = (() => {
   function step(g, dt){
     g.t = (g.t || 0) + dt;                                   // the toys' clock runs whether the ball rolls or not
     if (g.state === 'sunk'){ if ((g.sunkT -= dt) <= 0) nextHole(g); return; }
-    if (g.state === 'fly'){ if (performance.now() - g.fly.at >= g.fly.dur * 1000) cannonLand(g); return; }
     if (g.state !== 'play') return;
     const H = HOLES[g.hole], b = g.ball, P = D();
     if (!g.moving){                                          // a ball at rest can still be knocked by a toy: a free push
@@ -33426,7 +33413,7 @@ const GOLF_APP = (() => {
       if (s < 0.05) g.slowT += h; else g.slowT = 0;
       if ((s < 0.012 && Math.hypot(gx, gy) * GRAV < P.mu * 0.9) || g.slowT > 1.5){ g.moving = false; b.vx = b.vy = 0; }
     }
-    if (!g.moving && g.state === 'play' && g.strokes >= MAX_STROKES) pickUp(g);
+    // (no picking up: Oct 9, "remove max tries, player should be able to stay on hole as long as he wants")
   }
 
   /* ─── WHAT A BOARD SHOWS ───────────────────────────────────────────── */
@@ -33443,8 +33430,8 @@ const GOLF_APP = (() => {
      lighter up high and darker down low, mown in stripes; sand; water; walls under their blocks. */
   // (in the board's own units: x across WD, y down 1, placed by the item at the board's middle)
   const MESH = 104;                                        // (eight a cell, so the rounded shores read round)
-  function groundGeo(T, H){
-    const ny = MESH, nx = Math.round(MESH * WD), pos = [], col = [], idx = [], c = new T.Color();
+  function groundGeo(T, H, mesh){
+    const ny = mesh || MESH, nx = Math.round(ny * WD), pos = [], col = [], idx = [], c = new T.Color();
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
       const x = i / nx * WD, y = j / ny, h = hOf(H, x, y), ci = Math.min(NX - 1, Math.floor(x / CW)), cj = Math.min(NY - 1, Math.floor(y / CW));
       const ch = at(H, ci, cj) === '#' ? '#' : groundAt(H, x, y), wet = ch === '~' || ch === '=';
@@ -33639,8 +33626,6 @@ const GOLF_APP = (() => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
-    cannonBase: T => { const g = new T.CylinderGeometry(0.42, 0.5, 0.36, 18); g.translate(0, 0.18, 0); return g; },
-    cannonBarrel: T => { const g = new T.CylinderGeometry(0.17, 0.22, 1.1, 16); g.rotateZ(-Math.PI / 2); g.translate(0.4, 0, 0); g.rotateZ(0.45); g.translate(0, 0.42, 0); return g; },   // along +x, cocked up
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
     pole: T => { const g = new T.CylinderGeometry(0.025, 0.025, 1, 6); g.translate(0, 0.5, 0); return g; },
@@ -33658,7 +33643,10 @@ const GOLF_APP = (() => {
     ...Object.fromEntries(HOLES.flatMap((H, k) => (H.toys || []).map((T, j) => T.slide && ['slide' + k + '_' + j, T3 => {
       const g = new T3.BoxGeometry(T.slide[4], 0.06, T.slide[5]); g.translate(0, 0.005, 0); return g; }]).filter(Boolean))),
     // Each hole's ground, one board wide (placed at the middle, scale 1): +u is −x, +v is −z, the height is y.
-    ...Object.fromEntries(HOLES.map((H, k) => ['land' + k, T => groundGeo(T, H)])),
+    ...Object.fromEntries(HOLES.flatMap((H, k) => [['land' + k, T => groundGeo(T, H)], ['landM' + k, T => groundGeo(T, H, 26)], ['landL' + k, T => groundGeo(T, H, 13)]])),
+    // the rail as a plain box, for boards too small on screen to show its planks or bricks (Oct 9)
+    railPV: T => { const g = new T.BoxGeometry(2 * RT / CW, 1.76, 1.02); g.translate(0, -1.2 + 0.88, 0); return g; },
+    railPH: T => { const g = new T.BoxGeometry(1.02, 1.76, 2 * RT / CW); g.translate(0, -1.2 + 0.88, 0); return g; },
     ...Object.fromEntries(HOLES.map((H, k) => ['wire' + k, T => wireGeo(T, H)])),
   };
   /* THE HOLE NUMBER, in the board's far left corner: seven-segment digits on a dark plate, up above
@@ -33687,8 +33675,15 @@ const GOLF_APP = (() => {
       if (segs.includes('c')) put('segV', x + W, v0 + 1.5 * HH, HH);
     });
   }
-  function cellItems(c, r){
-    const g = GAMES.get(gkey(c, r)), live = g && ((LIVE && LIVE.key === gkey(c, r)) || g.state === 'fly');   // (a ball in the air flies on)
+  function cellItems(c, r, bp){
+    /* HOW MUCH TO DRAW, by the board's size on screen in pixels (Oct 9, "is getting heavy"). Measured on a field of the
+       new holes: some 2.7 million triangles a frame, from rails of bricks and stones (576 triangles a half-cell piece,
+       84 pieces a board), bumpers modelled at 9,400 triangles and ground at 13,000, on every board in view, the smallest
+       too. Now only a board large on screen gets all that; smaller ones get the rail in longer pieces, then as plain
+       boxes, plain bumpers and boulders, coarser ground, and no number or dotted tracks. */
+    const T3 = bp == null || bp >= 1500, T2 = bp == null || bp >= 600, T1 = bp == null || bp >= 300;
+    const near = T2, mid = T1, fine = T2;
+    const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
     if (live){
       const now = performance.now(), dt = g.last ? Math.min(0.05, (now - g.last) / 1000) : 0;
       g.last = now; step(g, dt);
@@ -33696,20 +33691,22 @@ const GOLF_APP = (() => {
     const G = GAMES.get(gkey(c, r));                  // (a sunk ball may have moved the round on)
     const H = HOLES[G ? G.hole : holeOf(c, r)], out = [];
     const k = HOLES.indexOf(H);
-    out.push({ kind: 'land' + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
+    out.push({ kind: (T2 ? 'land' : T1 ? 'landM' : 'landL') + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
-    if (NUMS.on && !H.custom) numberItems(out, H, H.num || k + 1);                // (a hole of your own has no number on the course)
+    if (NUMS.on && !H.custom && mid) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
-    for (let j = 0; j < 2 * NY; j++) for (const i of [0, 1]){
-      const u = i ? WD - RT / 2 : RT / 2, v = (j + 0.5) * CW / 2;
-      out.push({ kind: 'railV_' + matOf(H), u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0xffffff });
+    // (Oct 9: a board further off draws its rail in pieces a cell long, or two, stretched along the rail, not thickened)
+    const rs = T3 ? 1 : T1 ? 2 : 4, nv = Math.ceil(2 * NY / rs), nh = Math.ceil(2 * NX / rs), plainRail = !T2, railCol = (MAT_COL[matOf(H)] || MAT_COL.wood).far;
+    for (let j = 0; j < nv; j++) for (const i of [0, 1]){
+      const v0 = j * rs * CW / 2, v1 = Math.min(1, (j + 1) * rs * CW / 2), u = i ? WD - RT / 2 : RT / 2, v = (v0 + v1) / 2;
+      out.push({ kind: plainRail ? 'railPV' : 'railV_' + matOf(H), u, v, scale: CW / 2, sz: (v1 - v0) / (CW / 2), lift: hOf(H, u, v), color: plainRail ? railCol : 0xffffff });
     }
-    for (let i = 0; i < 2 * NX; i++) for (const j of [0, 1]){
-      const u = (i + 0.5) * CW / 2, v = j ? 1 - RT / 2 : RT / 2;
-      out.push({ kind: 'railH_' + matOf(H), u, v, scale: CW / 2, lift: hOf(H, u, v), color: 0xffffff });
+    for (let q = 0; q < nh; q++) for (const j of [0, 1]){
+      const u0 = q * rs * CW / 2, u1 = Math.min(WD, (q + 1) * rs * CW / 2), u = (u0 + u1) / 2, v = j ? 1 - RT / 2 : RT / 2;
+      out.push({ kind: plainRail ? 'railPH' : 'railH_' + matOf(H), u, v, scale: CW / 2, sx: (u1 - u0) / (CW / 2), lift: hOf(H, u, v), color: plainRail ? railCol : 0xffffff });
     }
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
       const u = (i + 0.5) * CW, v = (j + 0.5) * CW;
@@ -33739,13 +33736,17 @@ const GOLF_APP = (() => {
         const S = toyAt(T, t);
         if (T.shuttle){
           const [x0, y0, x1, y1, kr] = T.shuttle, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / (CW * 0.5)));
-          for (let q = 0; q <= n; q++){ const x = x0 + (x1 - x0) * q / n, y = y0 + (y1 - y0) * q / n; out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
-          if (propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: kr * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xbfe0ff });
+          if (near) for (let q = 0; q <= n; q++){ const x = x0 + (x1 - x0) * q / n, y = y0 + (y1 - y0) * q / n; out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
+          if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: kr * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xbfe0ff });
           else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: kr * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : 0x3a7fe0 });
         } else if (T.orbit){
           const [cx, cy, R, r] = T.orbit, n = Math.max(12, Math.round(2 * Math.PI * R / (CW * 0.5)));
-          for (let q = 0; q < n; q++){ const a = 2 * Math.PI * q / n, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a); out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
-          if (propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a * R / r, color: 0xffffff });   // rolling as it goes
+          if (near) for (let q = 0; q < n; q++){ const a = 2 * Math.PI * q / n, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a); out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
+          if (T.orbit[6] === 1){                              // a bumper going round (Oct 9)
+            const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
+            if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xd9b3ff });
+            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : 0x9a5ae0 });
+          } else if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a * R / r, color: 0xffffff });   // rolling as it goes
           else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
         } else {
           const [x0, y0, x1, y1] = T.gate, L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / CW)), yaw = Math.atan2(y1 - y0, x1 - x0);
@@ -33754,18 +33755,14 @@ const GOLF_APP = (() => {
             out.push({ kind: 'gateSeg', u: x, v: y, scale: L / n, lift: hOf(H, x, y) - (1 - S.up) * 0.3 * (L / n), yaw, color: q & 1 ? 0xf2f2f2 : 0xd9473c });
           }
         }
-      } else if (T.cannon){
-        const [cx, cy, a] = T.cannon, fired = G && G.fired && t - (G.fired[T.cannon.join()] ?? -9) < 0.4, sc = CW * 0.85, hc = hOf(H, cx, cy);
-        out.push({ kind: 'cannonBase', u: cx, v: cy, scale: sc, lift: hc, yaw: a, color: 0x6b4a2c },
-                 { kind: 'cannonBarrel', u: cx, v: cy, scale: sc, lift: hc, yaw: a, color: fired ? 0xff9a3a : 0x2e2e33 });
       } else if (T.kick){
         const [kx, ky, kr] = T.kick, kind = T.kick[3] | 0, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
         const tint = [0xffffff, 0xff8a4a, 0x7fd67a, 0x6fb2ff][kind] || 0xffffff, plain = [0xe0443a, 0xff8a1a, 0x4cae4c, 0x3a7fd9][kind] || 0xe0443a;   // classic, power, sponge, spinner
-        if (propGeo('bumper')) out.push({ kind: 'propBumper', u: kx, v: ky, scale: kr * PROP_K.bumper, lift: hOf(H, kx, ky), color: lit ? 0xffe680 : tint });
+        if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: kx, v: ky, scale: kr * PROP_K.bumper, lift: hOf(H, kx, ky), color: lit ? 0xffe680 : tint });
         else out.push({ kind: 'kicker', u: kx, v: ky, scale: kr * 2, lift: hOf(H, kx, ky), color: lit ? 0xffffff : plain });
       } else if (T.rock){
         const [x, y, r] = T.rock;
-        if (propGeo('rock')) out.push({ kind: 'propRock', u: x, v: y, scale: r * PROP_K.rock, lift: hOf(H, x, y) - 0.002, yaw: (x * 37 + y * 11) % 6.28, color: 0xffffff });
+        if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: x, v: y, scale: r * PROP_K.rock, lift: hOf(H, x, y) - 0.002, yaw: (x * 37 + y * 11) % 6.28, color: 0xffffff });
         else out.push({ kind: 'rockPlain', u: x, v: y, scale: r * 2, lift: hOf(H, x, y), color: 0x8a857c });
       } else if (T.fence){
         // a fence, in pieces about a cell long, each on the ground under it and turned along the line
@@ -33785,10 +33782,6 @@ const GOLF_APP = (() => {
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     const b = G ? G.ball : H.tee;
     if (!G || G.state === 'play' || G.state === 'done' || G.state === 'edit') out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
-    if (G && G.state === 'fly' && G.fly){                    // a ball fired from a cannon, high over the rail to the next board
-      const F = G.fly, f = Math.min(1, (performance.now() - F.at) / (F.dur * 1000));
-      out.push({ kind: 'ball', u: F.x0 + (F.x1 - F.x0) * f, v: F.y0 + (F.y1 - F.y0) * f, scale: BR * 2, lift: F.h0 + (F.h1 - F.h0) * f + 1.6 * 4 * f * (1 - f) * 0.35, color: 0xffffff });
-    }
     if (G && G.state === 'edit') editOverlay(out, H);
     // The aim: dots from the ball, the way it will go, longer and redder the harder.
     if (G && G.state === 'play' && !G.moving && (G.pull.x || G.pull.y)){
@@ -33857,9 +33850,11 @@ const GOLF_APP = (() => {
   const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1], [0, 3]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
     mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
-    shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7]],
-    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]], cannon: [[0, 8], [0, 13], [-360, 360]] };
-  const OPTIONAL_LAST = { orbit: 1, gate: 1, kick: 1 };   // (a bumper's kind came on Oct 9: an older bumper is a classic)
+    shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7], [0, 1]],
+    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]] };
+  // numbers that may be left off the end, from this one on, each then 0 (a bumper's kind came on Oct 9, an older bumper is a
+  // classic; an orbit's phase, and since Oct 9 its kind, 1 for a bumper going round)
+  const OPTIONAL_FROM = { orbit: 5, gate: 5, kick: 3 };
   function cleanList(list, spec, max){
     const out = [];
     for (const f of Array.isArray(list) ? list : []){
@@ -33869,7 +33864,7 @@ const GOLF_APP = (() => {
       const lim = spec[key], v = f[key];
       const nums = lim.map(([lo, hi], i) => {
         const x = Number(v[i]);
-        if (!isFinite(x)) return (i === lim.length - 1 && OPTIONAL_LAST[key]) ? 0 : NaN;
+        if (!isFinite(x)) return (OPTIONAL_FROM[key] != null && i >= OPTIONAL_FROM[key]) ? 0 : NaN;
         return Math.round(Math.max(lo, Math.min(hi, x)) * 1000) / 1000;
       });
       if (nums.some(x => !isFinite(x))) continue;
@@ -33895,6 +33890,8 @@ const GOLF_APP = (() => {
      is now; after an edit the old meshes are dropped (fieldDropItemKind), so the next frame makes them again. */
   function ensureKinds(k){
     itemGeometries['land' + k] = T => groundGeo(T, HOLES[k]);
+    itemGeometries['landM' + k] = T => groundGeo(T, HOLES[k], 26);   // (coarser ground for smaller boards: Oct 9)
+    itemGeometries['landL' + k] = T => groundGeo(T, HOLES[k], 13);
     itemGeometries['wire' + k] = T => wireGeo(T, HOLES[k]);
     (HOLES[k].toys || []).forEach((T, j) => { if (T.slide) itemGeometries['slide' + k + '_' + j] = T3 => {
       const S = HOLES[k].toys[j] && HOLES[k].toys[j].slide; if (!S) return null;
@@ -33902,7 +33899,7 @@ const GOLF_APP = (() => {
   }
   function dropKinds(k, old){
     const drop = n => { try { window.fieldDropItemKind && window.fieldDropItemKind(n); } catch {} };
-    drop('land' + k); drop('wire' + k);
+    drop('land' + k); drop('landM' + k); drop('landL' + k); drop('wire' + k);
     ((old && old.toys) || []).forEach((T, j) => drop('slide' + k + '_' + j));
   }
   function makeHole(src, keep){ const H = compileHole(clone(src)); H.src = clone(src); H.custom = true; if (keep) H.mine = keep.mine; return H; }
@@ -33977,25 +33974,22 @@ const GOLF_APP = (() => {
       else if (k === 'moguls') land.push({ rough: [r3(u(0.014, 0.02)), r2(u(1.4, 2)), Math.floor(R() * 997)] });
       else land.push({ tilt: [r3(u(-0.03, 0.03)), r3(u(-0.03, 0.03))] });
     }
-    const toys = [], nT = Math.floor(R() * 3);
+    const toys = [], nT = Math.floor(R() * 3), narrows = [];
+    map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (wall && ch === '.' && row.includes('#'))) narrows.push([i, j]); }));
     for (let q = 0, tries = 0; q < nT && tries < 30; tries++){
       const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill']);
       const x = r2(u(t === 'mill' || t === 'shuttle' ? 2 : 1, NX - (t === 'mill' || t === 'shuttle' ? 2 : 1))), y = r2(u(2.5, NY - 3));
       const ch = map[Math.floor(y)][Math.floor(x)];
       if (ch !== '.' && ch !== 's' || !clear(x, y, t === 'orbit' || t === 'mill' ? 3 : 2)) continue;
+      if (narrows.some(([i, j]) => Math.hypot(x - i - 0.5, y - j - 0.5) < 2.2)) continue;   // (not in the way of the one way over: Oct 9)
       if (t === 'kick'){ const kind = Math.floor(R() * 4); toys.push({ kick: [x, y, [0.3, 0.28, 0.4, 0.32][kind], kind] }); }
       else if (t === 'rock') toys.push({ rock: [x, y, r2(u(0.35, 0.6))] });
       else if (t === 'fence'){ const a = u(0, Math.PI), L = u(0.6, 1.1); toys.push({ fence: ex(x, y, a, L, 0) }); }
-      else if (t === 'orbit') toys.push({ orbit: [x, y, r2(u(1, 1.8)), 0.4, r2(u(5, 8) * (R() < 0.5 ? -1 : 1)), r2(u(0, 6))] });
+      else if (t === 'orbit') toys.push({ orbit: [x, y, r2(u(1, 1.8)), 0.4, r2(u(5, 8) * (R() < 0.5 ? -1 : 1)), r2(u(0, 6)), 0] });
       else if (t === 'shuttle') toys.push({ shuttle: [r2(x - 1.5), y, r2(x + 1.5), y, 0.3, r2(u(2.5, 4))] });
       else if (t === 'gate') toys.push({ gate: [r2(Math.max(0.4, x - 1.2)), y, r2(Math.min(NX - 0.4, x + 1.2)), y, r2(u(2.6, 4)), r2(u(0, 6))] });
       else toys.push({ mill: [x, y, r2(u(1.1, 1.5)), r2(u(1, 1.6))] });
       q++;
-    }
-    if (R() < 0.18){                                          // some boards have a cannon, on a side, pointing over it
-      const side = R() < 0.5 ? 0 : 1, x = side ? NX - 0.9 : 0.9;
-      for (let q = 0; q < 6; q++){ const y = r2(u(4, NY - 3)), ch = map[Math.floor(y)][Math.floor(x)];
-        if (ch === '.' && clear(x, y, 2.2)){ toys.push({ cannon: [x, y, side ? 0 : 180] }); break; } }
     }
     const d = Math.hypot(cc - tc, cr - tr), par = Math.max(2, Math.min(5, 2 + (d > 8 ? 1 : 0) + (water || wall ? 1 : 0) + (toys.length >= 2 ? 1 : 0)));
     const main = kinds.find(k => k !== 'tilt' && k !== 'moguls') || kinds[0];
@@ -34209,10 +34203,6 @@ const GOLF_APP = (() => {
     if (t === 'kick') S.toys.push({ kick: [R2(x), R2(y), 0.32, 0] });
     else if (/^kick[123]$/.test(t)) S.toys.push({ kick: [R2(x), R2(y), [0, 0.28, 0.4, 0.32][+t[4]], +t[4]] });
     else if (t === 'rock') S.toys.push({ rock: [R2(x), R2(y), 0.5] });
-    else if (t === 'cannon'){                                 // pointing out over the nearest side, at the board beyond it
-      const dl = x, dr = NX - x, du = y, dd = NY - y, m = Math.min(dl, dr, du, dd);
-      S.toys.push({ cannon: [R2(x), R2(y), m === dr ? 0 : m === dd ? 90 : m === dl ? 180 : -90] });
-    }
     else if (t === 'fence'){                                  // a fence takes two taps, one at each end
       if (!ED.fenceAt){ ED.fenceAt = { x: R2(x), y: R2(y) }; ED.msg = 'now tap where the fence ends'; updateEditBar(); return false; }
       const a = ED.fenceAt; ED.fenceAt = null;
@@ -34367,7 +34357,7 @@ const GOLF_APP = (() => {
   const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
     ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'], ['up', 'Hill', '⛰️', 'ground'], ['down', 'Hollow', '🕳️', 'ground'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
-    ['rock', 'Boulder', '🪨', 'place'], ['cannon', 'Cannon', '💣', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
+    ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],
     ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
     ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
@@ -34413,7 +34403,15 @@ const GOLF_APP = (() => {
     claimMargin: 0.12,                                 // …and so is one pressed just past the rail, on a ball against it (Oct 7)
     firstTapPlays: true,                               // one tap on a hole selects it and tees off (Oct 8)
     cellFar: { light: GRASS[0], dark: GRASS[0] },
-    itemMinPx: 4,
+    /* LIGHTER ON A FIELD OF THOUSANDS (Oct 9: "yes, is getting heavy. what can we do to reduce that. we can resrict the
+       tilt, clamp it, so less boards can be shown at once"). Every board now has a hole of its own, each with its own
+       ground, and looking far across the field drew dozens of them in full: a board as small as 4 pixels got its rail,
+       its number, its toys and their tracks, some 136 pieces a board. Now the view cannot tilt below 50° (35° for the
+       other games), so the field never runs out to the horizon; a board under 20 pixels shows only its tile of colours;
+       and smaller boards draw their rail in longer pieces and leave out their number and the toys' dotted tracks
+       (cellItems, by the board's size in pixels). */
+    pitchMin: 50,
+    itemMinPx: 20,
     itemGeometries,
     fabricCell(ctx, rect){
       const tx = rect.w / NX, ty = rect.h / NY;
@@ -34430,7 +34428,7 @@ const GOLF_APP = (() => {
       SND.item] }, { head: 'Hole editor', items: editorMenu() }]; },
     // an editor's hole is on a few boards at most: its ground needs no room for thousands (Oct 8)
     // (since Oct 9 every hole's ground is on its own board, the course's too: none needs room for thousands)
-    itemCaps(kind){ return /^(land|wire)\d+$/.test(kind) ? 64 : 0; },
+    itemCaps(kind){ return /^(land[ML]?|wire)\d+$/.test(kind) ? 64 : 0; },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r)), H = HOLES[holeShown(c, r)];
       if (!g) return 'Mini golf — ' + H.name + ', par ' + H.par + ' (tap to play a round from here)';
@@ -38546,7 +38544,9 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
   const s = (it.scale || 0.25) * bWX;
   // `lift`: raise the item off the board (a fraction of the board, as u and v are).
   _ip.set(cx + (0.5 - u) * bWX, 0.02 + (it.lift || 0) * bWX, cz + (0.5 - v) * bWZ);
-  _is.set(s, s, s);
+  /* `sx`, `sy`, `sz` (Oct 9): an item stretched along one of its own axes, so a long thin piece (mini golf's rail) can be
+     drawn as fewer, longer pieces without growing thicker. Unset, an item is scaled the same every way, as before. */
+  _is.set(s * (it.sx || 1), s * (it.sy || 1), s * (it.sz || 1));
   /* `yaw` (Oct 6, mini golf's windmill from the 3d studio): an item turned about the upright,
      in the board's own terms. Its +x then points along (cos yaw, sin yaw) in u and v. The
      board runs +u to −x and +v to −z, so that is a turn of π − yaw about +y. Until now every

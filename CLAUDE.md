@@ -67,14 +67,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`boardIdx`, row by row) picks it; the first 22 boards are the course as written, every other
   board gets a hole generated from its index (`genSrc`, seeded, so always the same; `holeAt`
   makes it on first want and keeps up to `GEN_CAP` = 1500, the least recently wanted giving up
-  its slot). A round is `ROUND` = 18 holes, board after board. Every hole has one to three
-  boulders orbiting its cup as guards (`guardCup`, Oct 9), so cups are kept two cells in from
-  the sides and top. Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
+  its slot). A round is `ROUND` = 18 holes, board after board, and there is no stroke limit
+  (Oct 9: stay on a hole as long as you like). Each hole draws one of fourteen ways of keeping its cup
+  (`guardCup`, Oct 9): nothing, boulders or bumpers going round (an `orbit`'s 7th number, 1),
+  a bumper sweeping across the way in, two crossing, one sliding beside it, a gate, a horseshoe of
+  fences open at the back, an arc of bumpers, a scatter of boulders, a sand apron, a raised
+  green with a ramp, a crater's rim or a moat; a cup with a stream, a wall or things of its own
+  near it gets only a light one, and the hardest add a stroke to par. Cups are kept two cells in
+  from the sides and top. (The cannon was taken out on Oct 9.) Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
   1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
-  A **cannon** (`cannon [col, row, heading°]`, Oct 9) fires a ball rolled into it onto the next
-  board the way it points (`fireCannon`, state `'fly'`, `cannonLand`): the view follows and the
-  round goes on there, on that board's hole, strokes kept. Some generated boards and the meadow
-  and the moguls have one; to a ball only being tried out (the course test, Check) it is a post. `tests/golf-course.mjs` plays the
+  `tests/golf-course.mjs` plays the
   course and a sample of generated holes (`GEN_SAMPLE`, 40). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
@@ -82,6 +84,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   bumper riding to and fro), `orbit` (a boulder going round) and `gate` (a bar rising out
   of the ground and sinking), each drawn over a dotted track. The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
+  **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 50`, a board
+  under 20 px gets no pieces (`itemMinPx`), and `cellItems(c, r, bp)` draws by the board's size on
+  screen: under 1500 px the rail in cell-long pieces, under 600 plain box rails (`railPV`/`railPH`),
+  plain bumpers and boulders and quarter-detail ground (`landM`), under 300 two-cell rails, coarse
+  ground (`landL`), no number and no dotted tracks. Items may be stretched (`sx`/`sy`/`sz`).
 - **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
   puts its tools in the bottom panel: while editing, `statTiles` gives the editor's tiles
   and a tap on a tile reaches the app's `onStatTap` (the field offers stat-tile taps to any

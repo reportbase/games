@@ -182,7 +182,8 @@ try {
       const a = D.cellItems(c, r);
       let moved = false;                                     // (a gate stands up or lies down a while: give it a few seconds)
       for (let q = 0; q < 10 && !moved; q++){ await new Promise(ok => setTimeout(ok, 400)); moved = sig(D.cellItems(c, r)) !== sig(a); }
-      res.push({ name: H.name, kinds, drawn: kinds.every(n => a.some(i => i.kind === KINDS[n])), moved,
+      // (an orbit may be a bumper going round, drawn as a bumper: Oct 9)
+      res.push({ name: H.name, kinds, drawn: kinds.every(n => a.some(i => i.kind === KINDS[n] || (n === 'orbit' && i.kind === 'propBumper'))), moved,
                  water: a.some(i => /^(drop|foam|ripple|fountBowl|cliff)$/.test(i.kind)) });
     }
     return { res, flat: D.HOLES.filter(H => (H.land || []).length < 2).map(H => H.name), old: D.HOLES.filter(H => (H.toys || []).some(T => T.fountain || T.fall)).map(H => H.name) };
@@ -213,42 +214,43 @@ try {
   if (gb.k[0] !== gb.k[1] || gb.k[0] === gb.k[2]) failures.push(`[${current}] holeAt kept ${JSON.stringify(gb.k)}`);
   if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
   if (gb.wire !== false) failures.push(`[${current}] the wireframe is on by default (Oct 9: off unless turned on)`);
+  // lighter on a field of thousands (Oct 9: "is getting heavy … we can resrict the tilt, clamp it"): mini golf's tilt floor
+  // is 50°, and a board small on screen is drawn with far fewer pieces: coarse ground, a plain rail, no number, no models
+  const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
+    let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
+    const big = D.cellItems(c, r, 2000), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '')))];
+    return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, small: small.length, smallKinds: kinds(small), bigKinds: kinds(big) }; });
+  if (lod.floor !== 50 || lod.appFloor !== 50) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 50 for mini golf)`);
+  if (!(lod.small < lod.big / 2) || !lod.smallKinds.includes('landL') || lod.smallKinds.some(k => /^(railV_|railH_|propBumper|propRock|segH|segV)/.test(k)))
+    failures.push(`[${current}] a small board's pieces: ${JSON.stringify(lod)}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
   // objects that have orbits. the orbits should try to protect the golf hole."): every hole of the course and 300
   // generated ones have boulders going round their cup, every cup two cells in from the sides and the top, all four kinds
   // of bumper turn up, and an old bumper without a kind is read as the classic
   const gd = await page.evaluate(() => {
-    const D = window.getFieldApp()._debug, E = D.editor, bare = [], edge = [], kinds = new Set();
-    D.HOLES.forEach((H, k) => { if (H.gen != null || H.custom) return;
-      if (!(H.toys || []).some(T => T.orbit && Math.abs(T.orbit[0] - H.cup.x) < 1e-6 && Math.abs(T.orbit[1] - H.cup.y) < 1e-6)) bare.push(H.name); });
-    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O');
-      if (!s.toys.some(T => T.orbit && T.orbit[0] === c + 0.5 && T.orbit[1] === j + 0.5)) bare.push(i);
+    // (Oct 9: "to many holes have rocks circling protecting the hole. more variety, should be bumpers as well and not all
+    //  circling, some doing linear patterns": the ways of keeping a cup are counted over 300 generated holes)
+    const D = window.getFieldApp()._debug, E = D.editor, edge = [], kinds = new Set(), st = { none: 0, rocks: 0, bumpers: 0, linear: 0, ground: 0, sand: 0, still: 0 };
+    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O'), cx = c + 0.5, cy = j + 0.5;
+      const ring = s.toys.filter(T => T.orbit && T.orbit[0] === cx && T.orbit[1] === cy);
+      const lin = s.toys.filter(T => (T.shuttle || T.gate) && Math.min(Math.abs(Object.values(T)[0][1] - cy), Math.abs(Object.values(T)[0][0] - cx)) < 1.4);
+      const near = s.toys.filter(T => (T.fence || T.kick || T.rock) && Math.hypot(Object.values(T)[0][0] - cx, Object.values(T)[0][1] - cy) < 2.3);
+      const ground = s.land.some(f => (f.ring && f.ring[0] === cx && f.ring[1] === cy) || (f.plateau && Math.abs((f.plateau[0] + f.plateau[2]) / 2 - cx) < 0.01 && Math.abs((f.plateau[1] + f.plateau[3]) / 2 - cy) < 0.01));
+      const sandy = [[-1, 0], [1, 0], [0, -1], [0, 1]].filter(([a, b2]) => (s.map[j + b2] || '')[c + a] === 's').length >= 3;
+      if (ring.some(T => T.orbit[6] === 1)) st.bumpers++; else if (ring.length) st.rocks++; else if (lin.length) st.linear++;
+      else if (ground) st.ground++; else if (sandy) st.sand++; else if (near.length >= 2) st.still++; else st.none++;
       if (c < 2 || c > D.NX - 3 || j < 2) edge.push(i);
       s.toys.forEach(T => { if (T.kick) kinds.add(T.kick[3]); }); }
-    const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }] });
-    return { bare: bare.slice(0, 6), edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.map(T => T.kick[3]),
-             tools: ['kick1', 'kick2', 'kick3'].every(t => E.TOOLS.some(x => x[0] === t)) };
+    const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }, { orbit: [4, 6, 1, 0.4, 6] }] });
+    return { st, edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.filter(T => T.kick).map(T => T.kick[3]), oldOrbit: old && old.toys.find(T => T.orbit),
+             tools: ['kick1', 'kick2', 'kick3'].every(t => E.TOOLS.some(x => x[0] === t)), cap: D.MAX_STROKES };
   });
-  if (gd.bare.length || gd.edge.length) failures.push(`[${current}] cups without guards ${gd.bare.join(',')}, cups near the edge ${gd.edge.join(',')}`);
+  if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
+  // (Oct 9, again: "every hole pretty much rocks circling the golf hole. that should be one way of protecting the hole among
+  //  many": boulders going round are at most one cup in six, and every other way turns up)
+  if (gd.st.rocks > 50 || ['bumpers', 'linear', 'ground', 'sand', 'still', 'none'].some(k => gd.st[k] < 12)) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
+  if (!gd.oldOrbit || gd.oldOrbit.orbit[6] !== 0 || gd.oldOrbit.orbit[5] !== 0) failures.push(`[${current}] an old orbit was not read: ${JSON.stringify(gd.oldOrbit)}`);
   if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
-  // a cannon (Oct 9: "is there a way to shoot a ball like a canyon onta different board. some boards have cannons."): a
-  // ball rolled into one flies to the next board the way it points, and the round goes on there with its strokes kept;
-  // some generated boards have one
-  const cn = await page.evaluate(async () => {
-    const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the meadow');
-    let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
-    A.onCellTap(c, r, 0.5, 0.9);                              // a round on the meadow's board
-    const g = D.games.get(c + '_' + r), T = D.HOLES[k].toys.find(T => T.cannon).cannon;
-    g.state = 'play'; g.strokes = 2; g.ball.x = T[0] + 0.03; g.ball.y = T[1]; g.ball.vx = -0.3; g.ball.vy = 0; g.moving = true;
-    for (let n = 0; n < 60 && g.state === 'play'; n++) D.step(g, 1 / 60);
-    const flew = g.state;
-    await new Promise(ok => setTimeout(ok, 2200));
-    const keys = [...D.games.keys()], g2 = keys.map(kk => D.games.get(kk)).find(x => x !== g && x.strokes === 2 && x.state === 'play');
-    let withCannon = 0; for (let i = 22; i < 322; i++) if (D.genSrc(i).toys.some(T => T.cannon)) withCannon++;
-    return { flew, left: !D.games.get(c + '_' + r) || D.games.get(c + '_' + r) !== g, landed: !!g2, onBoard: g2 && keys.find(kk => D.games.get(kk) === g2) !== c + '_' + r, withCannon };
-  });
-  if (cn.flew !== 'fly' || !cn.left || !cn.landed || !cn.onBoard) failures.push(`[${current}] a cannon shot: ${JSON.stringify(cn)}`);
-  if (cn.withCannon < 15) failures.push(`[${current}] only ${cn.withCannon} of 300 generated boards have a cannon`);
   console.log(`${failures.length === before10 ? 'ok  ' : 'FAIL'} ${current} (${gb.names} names in 300)`);
 
   // Two-finger twist turns the view, in every app (Oct 7), but only past a dead zone a panning hand
@@ -412,7 +414,9 @@ try {
       const ts = [...st.querySelectorAll('*')].filter(t => t.parentElement === st && t._key && /^stat_\d+$/.test(t._key) && t.style.display !== 'none').map(t => ({ i: +t._key.slice(5), r: t.getBoundingClientRect() }))
         .filter(t => t.i >= 1 && t.i <= E.TOOLS.length && t.r.width > 10 && t.r.left > 0 && t.r.right < innerWidth && t.r.top > 0 && t.r.bottom < innerHeight);
       const t = ts[0]; return t ? { i: t.i, x: t.r.left + t.r.width / 2, y: t.r.top + t.r.height / 2, tool: E.TOOLS[t.i - 1][0] } : null; };
-    await page.waitForFunction(findTile, null, { timeout: 10000, polling: 200 }).catch(() => {});   // (the row slides up when it opens)
+    // (the row slides up when it opens, a frame at a time; mini golf in software rendering can take seconds a frame, as on
+    //  CI, where 10 s was not always enough: Oct 9)
+    await page.waitForFunction(findTile, null, { timeout: 30000, polling: 200 }).catch(() => {});
     await page.waitForTimeout(400);
     const tile = await page.evaluate(findTile);
     const why = tile ? null : await page.evaluate(() => { const st = document.getElementById('boardBrowser'); return st ? { hidden: st.hidden, rect: st.getBoundingClientRect().toJSON(), keys: [...st.children].filter(t => t._key).map(t => t._key + ':' + t.style.display).slice(0, 12) } : 'no strip'; });
@@ -552,7 +556,7 @@ try {
     if (mv.kinds.join() !== 'shuttle,orbit,gate' || !(mv.track > 3) || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
       failures.push(`[${current}] movers in the editor: ${JSON.stringify(mv)}`);
     // the quick buttons (Oct 9): icon buttons at the top right of the bottom pane; a real click on Undo takes the gate away
-    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 4, null, { timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 4, null, { timeout: 20000 }).catch(() => {});
     const qb = await page.evaluate(() => { const bs = [...document.querySelectorAll('#bbQuick button')], u = bs.find(b => b.title === 'Undo'), r = u && u.getBoundingClientRect();
       return { n: bs.length, text: bs.map(b => b.textContent).join(''), titles: bs.map(b => b.title), at: r && { x: r.x + r.width / 2, y: r.y + r.height / 2, right: innerWidth - r.right, w: r.width } }; });
     let qbUndo = -1;
@@ -566,7 +570,7 @@ try {
     const st3 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const g = [...D.games.values()].find(g => g.hole === E.ED.k), t = A.statTiles(f.c, f.r) || []; return { on: E.ED.on, first: t[0] && t[0].label, state: g && g.state, single: g && g.R.single }; });
     if (st3.on || st3.first !== 'Hole' || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
-    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 20000 }).catch(() => {});
     const qp = await page.evaluate(() => [...document.querySelectorAll('#bbQuick button')].map(b => b.title));
     if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
     // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
