@@ -218,18 +218,22 @@ try {
   // generated ones have boulders going round their cup, every cup two cells in from the sides and the top, all four kinds
   // of bumper turn up, and an old bumper without a kind is read as the classic
   const gd = await page.evaluate(() => {
-    const D = window.getFieldApp()._debug, E = D.editor, bare = [], edge = [], kinds = new Set();
-    D.HOLES.forEach((H, k) => { if (H.gen != null || H.custom) return;
-      if (!(H.toys || []).some(T => T.orbit && Math.abs(T.orbit[0] - H.cup.x) < 1e-6 && Math.abs(T.orbit[1] - H.cup.y) < 1e-6)) bare.push(H.name); });
-    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O');
-      if (!s.toys.some(T => T.orbit && T.orbit[0] === c + 0.5 && T.orbit[1] === j + 0.5)) bare.push(i);
+    // (Oct 9: "to many holes have rocks circling protecting the hole. more variety, should be bumpers as well and not all
+    //  circling, some doing linear patterns": the ways of keeping a cup are counted over 300 generated holes)
+    const D = window.getFieldApp()._debug, E = D.editor, edge = [], kinds = new Set(), st = { none: 0, rocks: 0, bumpers: 0, linear: 0 };
+    for (let i = 22; i < 322; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O'), cx = c + 0.5, cy = j + 0.5;
+      const ring = s.toys.filter(T => T.orbit && T.orbit[0] === cx && T.orbit[1] === cy);
+      const lin = s.toys.filter(T => (T.shuttle || T.gate) && Math.min(Math.abs(Object.values(T)[0][1] - cy), Math.abs(Object.values(T)[0][0] - cx)) < 1.4);
+      if (ring.some(T => T.orbit[6] === 1)) st.bumpers++; else if (ring.length) st.rocks++; else if (lin.length) st.linear++; else st.none++;
       if (c < 2 || c > D.NX - 3 || j < 2) edge.push(i);
       s.toys.forEach(T => { if (T.kick) kinds.add(T.kick[3]); }); }
-    const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }] });
-    return { bare: bare.slice(0, 6), edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.map(T => T.kick[3]),
-             tools: ['kick1', 'kick2', 'kick3'].every(t => E.TOOLS.some(x => x[0] === t)) };
+    const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }, { orbit: [4, 6, 1, 0.4, 6] }] });
+    return { st, edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.filter(T => T.kick).map(T => T.kick[3]), oldOrbit: old && old.toys.find(T => T.orbit),
+             tools: ['kick1', 'kick2', 'kick3'].every(t => E.TOOLS.some(x => x[0] === t)), cap: D.MAX_STROKES };
   });
-  if (gd.bare.length || gd.edge.length) failures.push(`[${current}] cups without guards ${gd.bare.join(',')}, cups near the edge ${gd.edge.join(',')}`);
+  if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
+  if (gd.st.rocks > 120 || gd.st.bumpers < 20 || gd.st.linear < 40 || gd.st.none < 30) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
+  if (!gd.oldOrbit || gd.oldOrbit.orbit[6] !== 0 || gd.oldOrbit.orbit[5] !== 0) failures.push(`[${current}] an old orbit was not read: ${JSON.stringify(gd.oldOrbit)}`);
   if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
   // a cannon (Oct 9: "is there a way to shoot a ball like a canyon onta different board. some boards have cannons."): a
   // ball rolled into one flies to the next board the way it points, and the round goes on there with its strokes kept;
