@@ -145,12 +145,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   selected a tap on another adds it and a tap on a selected one takes it out (`tapDot`); the Box quick
   button (⬚, tool `box`) takes every dot inside a dragged box; a drag on any selected dot moves them
   all by the same amount (`moveDots`), and the Higher/Lower tiles act on them all. The set is
-  `ED.dots`, read through `selDots()` only while the selection is a dot. Lifted dots draw warm, sunk
+  `ED.dots`, read through `selDots()` only while the selection is a dot. **The selection box** (Oct 9):
+  a drag with Select that starts on bare grass (no thing, no ground of the hole's own within `LAND_TOL`,
+  no dot within a fingertip) draws a box (`ED.boxing`); it stays open in gold (`ED.box`, cells) with
+  its dots selected (`boxDots`); a drag inside it moves them all, a tap outside it or Escape closes it
+  (`closeBox`); Box (⬚) draws one from anywhere. Lifted dots draw warm, sunk
   ones cool; Level (the tile) also levels every dot.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
   title, no text) in the band at the top right of the bottom pane (`#bbQuick`, `bbQuickTick`);
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing;
-  Start again and Edit while playing. They show only while the pane is open; the three dots
+  Start again and Edit while playing. The row stops short of the middle and its buttons narrow to fit. They show only while the pane is open; the three dots
   (`#bbHandle`) show on every game, whether or not its row has anything in it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
