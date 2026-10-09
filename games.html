@@ -215,6 +215,17 @@
     background: none; border: 0; padding: 0; cursor: pointer; z-index: 3;
   }
   #bbHandle svg { display: block; width: 24px; height: 6px; }
+  /* THE QUICK BUTTONS (Oct 9: "add small icon buttons, no text, for most common things, in the top of the bottom pane on
+     the right side"). An app that offers quickActs gets a few square icon buttons in the band at the top of the bottom
+     pane, on the right, clear of the dots in the middle; they take their own presses (the band lets every other press
+     through to the field while the pane is shut), and their names are their tooltips. */
+  #bbQuick { position: absolute; top: 0; right: 10px; height: var(--bb-peek); display: flex; align-items: center; gap: 6px;
+             z-index: 4; pointer-events: auto; }
+  #bbQuick button { width: 36px; height: 36px; padding: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+                    border: 1px solid rgba(201, 199, 190, .30); background: rgba(18, 21, 28, .58); color: #fff;
+                    font-size: 18px; line-height: 1; cursor: pointer; }
+  #bbQuick button:disabled { opacity: .35; cursor: default; }
+  @media (max-width: 420px){ #bbQuick { right: 6px; gap: 4px; } #bbQuick button { width: 31px; height: 31px; font-size: 16px; } }
   #bbHandle svg circle { fill: #fff; transition: fill .12s ease; }     /* white (Sep 25), so they read on any field */
   #bbHandle:hover svg circle { fill: rgba(232, 200, 106, .95); }
   /* Open, the dots are the way to shut it again, so they stay lit rather than
@@ -13379,11 +13390,41 @@ function bbStatsAway(){
   try { const _a = window.getFieldApp && window.getFieldApp(); if (_a && _a.statsStay && _a.statsStay()) return; } catch {}   // (an editor's tools stay up)
   toggleBoardBrowser(false);
 }
+let _bbQuickSig = null;
+function bbQuickTick(a){
+  const host = document.getElementById('boardBrowser');
+  if (!host) return;
+  let f = null, L = null;
+  try { f = bbFramedCell(); } catch {}
+  try { L = a && a.quickActs ? a.quickActs(f && f.c, f && f.r) : null; } catch {}
+  const sig = L && L.length ? L.map(q => q.key + (q.dim ? '-' : '+')).join(',') : '';
+  if (sig === _bbQuickSig) return;
+  _bbQuickSig = sig;
+  let bar = document.getElementById('bbQuick');
+  if (!sig){ if (bar) bar.remove(); return; }
+  if (!bar){
+    bar = document.createElement('div'); bar.id = 'bbQuick';
+    for (const ev of ['pointerdown', 'pointerup', 'pointermove', 'pointercancel', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'wheel', 'click']) bar.addEventListener(ev, e => e.stopPropagation());
+    host.appendChild(bar);
+  }
+  bar.textContent = '';
+  for (const q of L){
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = q.glyph; b.title = q.title; b.setAttribute('aria-label', q.title); b.disabled = !!q.dim;
+    b.addEventListener('click', () => {
+      try { const a2 = window.getFieldApp && window.getFieldApp(), f2 = bbFramedCell(); if (a2 && a2.onQuickAct) a2.onQuickAct(f2 && f2.c, f2 && f2.r, q.key); }
+      catch (err){ _reportError('quick button', err); }
+      _bbStatT = 0; _bbQuickSig = null; bbStatTick();
+    });
+    bar.appendChild(b);
+  }
+}
 function bbStatTick(){
   const now = performance.now();
   if (now - _bbStatT < 200) return;
   _bbStatT = now;
   const a = window.getFieldApp && window.getFieldApp();
+  try { bbQuickTick(a); } catch {}
   if (!a || !a.statTiles){ if (_bbStatSig){ _bbStatSig = ''; _bbStatNow = null; rebuildBoardBrowser(); } return; }
   if (bbKeys.length && !String(bbKeys[0]).startsWith('stat_') && !_bbStatSig) return;   // the row is busy with something else
   const L = bbStatList(), sig = L ? L.length + '@' + bbStatOwner() : '';
@@ -33799,7 +33840,7 @@ const GOLF_APP = (() => {
       src = cleanSrc(src) || blankSrc();
       k = addHole(src);
     }
-    Object.assign(ED, { on: true, k, src, key: L.key, pipeAt: null, undo: [], last: null, stroke: false, msg: '' });
+    Object.assign(ED, { on: true, k, src, key: L.key, pipeAt: null, undo: [], redo: [], last: null, stroke: false, msg: '', saved: false });
     LIVE = L;
     const g = holeGame({ start: k, card: [], single: true }, k); g.state = 'edit';
     GAMES.set(L.key, g);
@@ -33818,12 +33859,24 @@ const GOLF_APP = (() => {
     if (!quiet) say('Playing ' + HOLES[ED.k].name + ' — Hole editor in the menu to change it again.', 2600);
     try { renderAppMenu(); } catch {}
   }
-  function snapEdit(){ ED.undo.push(JSON.stringify(ED.src)); if (ED.undo.length > 60) ED.undo.shift(); }
+  function snapEdit(){ ED.undo.push(JSON.stringify(ED.src)); if (ED.undo.length > 60) ED.undo.shift(); ED.redo = []; }
+  /* SAVED AS YOU GO (Oct 9: "add 1,2" — 1 being "save automatically while editing"). Every change to a hole, once it is
+     drawn, is put in My holes in this browser: a hole of the course taken into the editor becomes one of yours at its
+     first change, and a hole only looked at (the editor moved to its board and nothing done) is not saved. Save still
+     says so out loud. */
+  function keepMine(){
+    if (!ED.on || !HOLES[ED.k]) return false;
+    let i = HOLES[ED.k].mine;
+    if (i == null || !MINE[i]){ i = MINE.length; MINE.push(null); mineK.push(ED.k); }
+    MINE[i] = clone(ED.src); mineK[i] = ED.k; HOLES[ED.k].mine = i;
+    return (ED.saved = storeMine());
+  }
   function editRefresh(now){
     clearTimeout(ED.timer); ED.timer = 0;
     const go = () => {
       ED.timer = 0;
       setHole(ED.k, ED.src);
+      keepMine();
       const g = GAMES.get(ED.key), H = HOLES[ED.k];
       if (g && g.state === 'edit'){ g.ball.x = g.rest.x = H.tee.x; g.ball.y = g.rest.y = H.tee.y; }
       ED.msg = ''; updateEditBar();
@@ -33876,12 +33929,24 @@ const GOLF_APP = (() => {
       S.land.push({ bump: [R2(x), R2(y), 1.4, t === 'up' ? 0.03 : -0.025] });
       return true;
     }
+    /* THE MOVERS (Oct 9: "add 1,2" — 2 being the moving obstacles in the editor). A shuttle (a bumper riding to and fro)
+       and a gate (a bar rising out of the ground and sinking) are drawn by a drag along their track, a boulder going
+       round (orbit) by a drag from its centre out to the circle it rides; a tap places any of them at a default size. */
+    if (t === 'shuttle' || t === 'orbit' || t === 'gate'){
+      if (drag){ if (!ED.drag) ED.drag = { from: { x, y } }; ED.drag.to = { x, y }; return false; }
+      if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
+      const cx = v => R2(Math.max(0.4, Math.min(NX - 0.4, v))), cy = v => R2(Math.max(0.4, Math.min(NY - 0.4, v)));
+      if (t === 'shuttle') S.toys.push({ shuttle: [cx(x - 1.5), cy(y), cx(x + 1.5), cy(y), 0.3, 3] });
+      else if (t === 'gate') S.toys.push({ gate: [cx(x - 1.2), cy(y), cx(x + 1.2), cy(y), 3, 0] });
+      else S.toys.push({ orbit: [cx(x), cy(y), 1.2, 0.45, 6, 0] });
+      return true;
+    }
     if (drag) return false;                                 // things are placed by a tap
     if (t === 'erase'){
       let best = -1, bd = 1;
       S.toys.forEach((T, n) => { const a = Object.values(T)[0];
         let d = Math.min(Math.hypot(a[0] - x, a[1] - y), T.pipe ? Math.hypot(a[2] - x, a[3] - y) : 9);
-        if (T.fence){ const ux = a[2] - a[0], uy = a[3] - a[1], q = Math.max(0, Math.min(1, ((x - a[0]) * ux + (y - a[1]) * uy) / (ux * ux + uy * uy || 1))); d = Math.hypot(a[0] + ux * q - x, a[1] + uy * q - y); }
+        if (T.fence || T.shuttle || T.gate){ const ux = a[2] - a[0], uy = a[3] - a[1], q = Math.max(0, Math.min(1, ((x - a[0]) * ux + (y - a[1]) * uy) / (ux * ux + uy * uy || 1))); d = Math.hypot(a[0] + ux * q - x, a[1] + uy * q - y); }
         if (d < bd){ bd = d; best = n; } });
       if (best >= 0){ S.toys.splice(best, 1); return true; }
       const lb = nearestLand(x, y, 1.6);
@@ -33941,6 +34006,19 @@ const GOLF_APP = (() => {
     const D = ED.drag; ED.drag = null;
     if (!D || !D.to || !ED.on) return;
     const S = ED.src, t = ED.tool, R2 = n => Math.round(n * 100) / 100, { from: a, to: b } = D;
+    if (t === 'shuttle' || t === 'orbit' || t === 'gate'){
+      if (S.toys.length >= 40) return;
+      const cx = v => R2(Math.max(0.4, Math.min(NX - 0.4, v))), cy = v => R2(Math.max(0.4, Math.min(NY - 0.4, v))), L = Math.hypot(b.x - a.x, b.y - a.y);
+      if (t === 'orbit'){
+        if (L < 0.5){ ED.msg = 'drag further out from the centre'; return; }
+        S.toys.push({ orbit: [cx(a.x), cy(a.y), R2(Math.min(4, L)), 0.45, 6, 0] });
+      } else {
+        if (L < 0.8){ ED.msg = 'drag a longer track'; return; }
+        S.toys.push(t === 'shuttle' ? { shuttle: [cx(a.x), cy(a.y), cx(b.x), cy(b.y), 0.3, Math.round(Math.max(2, Math.min(8, L * 0.8)) * 10) / 10] }
+                                    : { gate: [cx(a.x), cy(a.y), cx(b.x), cy(b.y), 3, 0] });
+      }
+      return;
+    }
     if (S.land.length >= 40) return;
     if (t === 'plat'){
       if (Math.abs(b.x - a.x) < 0.6 || Math.abs(b.y - a.y) < 0.6){ ED.msg = 'drag a bigger box'; return; }
@@ -33954,7 +34032,8 @@ const GOLF_APP = (() => {
   function editAction(a){
     if (!ED.on) return;
     const S = ED.src;
-    if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.src = JSON.parse(u); ED.sel = null; editRefresh(true); } return; }
+    if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.redo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); ED.sel = null; editRefresh(true); } else ED.msg = 'nothing to undo'; return; }
+    if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); ED.sel = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
     if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
     if (a === 'higher' || a === 'lower'){
@@ -33990,10 +34069,7 @@ const GOLF_APP = (() => {
       }, 30));
     }
     if (a === 'save'){
-      let i = HOLES[ED.k].mine;
-      if (i == null || !MINE[i]){ i = MINE.length; MINE.push(null); mineK.push(ED.k); }
-      MINE[i] = clone(S); mineK[i] = ED.k; HOLES[ED.k].mine = i;
-      ED.msg = storeMine() ? 'saved (My holes: ' + MINE.length + ')' : 'could not save in this browser';
+      ED.msg = keepMine() ? 'saved (My holes: ' + MINE.length + ')' : 'could not save in this browser';
       updateEditBar(); return;
     }
     if (a === 'share'){
@@ -34023,7 +34099,7 @@ const GOLF_APP = (() => {
       else if (k === 'plateau') boxAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
-    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
+    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat') boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
   /* THE TOOLS ARE THE BOTTOM PANEL'S TILES (Oct 8: "the hole editor should use the bottom fisheye panel, not its own panel.
@@ -34035,13 +34111,14 @@ const GOLF_APP = (() => {
   const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
     ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'], ['up', 'Hill', '⛰️', 'ground'], ['down', 'Hollow', '🕳️', 'ground'],
     ['kick', 'Bumper', '🔴', 'place'], ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
-    ['pipe', 'Pipe', '🟢', 'two taps'], ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
+    ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],
+    ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
     ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
     ['erase', 'Erase', '🧽', 'take away']];
-  const ACTS = [['undo', 'Undo', '↶'], ['higher', 'Higher', '⬆️'], ['lower', 'Lower', '⬇️'], ['del', 'Delete', '✖️'], ['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['name', 'Name', '✎'], ['par', 'Par', '#'], ['check', 'Check', '✓'],
+  const ACTS = [['undo', 'Undo', '↶'], ['redo', 'Redo', '↷'], ['higher', 'Higher', '⬆️'], ['lower', 'Lower', '⬇️'], ['del', 'Delete', '✖️'], ['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['name', 'Name', '✎'], ['par', 'Par', '#'], ['check', 'Check', '✓'],
     ['save', 'Save', '💾'], ['share', 'Share', '🔗'], ['done', 'Done', '▶']];
   function editTiles(){
-    const S = ED.src, out = [{ label: ED.msg || 'editing', value: S.name, sub: 'par ' + S.par + ' · ' + S.fence, color: '#ffd23a' }];
+    const S = ED.src, out = [{ label: ED.msg || 'editing', value: S.name, sub: 'par ' + S.par + ' · ' + S.fence + (ED.saved ? ' · saved' : ''), color: '#ffd23a' }];
     for (const [t, name, glyph, how] of TOOLS) out.push({ label: t === ED.tool ? 'in hand' : how, glyph, value: name, color: t === ED.tool ? '#ffd23a' : '#ffffff', dim: false });
     for (const [a, name, glyph] of ACTS) out.push({ label: a === 'mat' ? S.fence : a === 'par' ? 'par ' + S.par : '', glyph, value: name, color: a === 'done' ? '#9fe3a0' : '#c9ccd2' });
     return out;
@@ -34122,6 +34199,24 @@ const GOLF_APP = (() => {
     },
     onReset(c, r){ startRound(c, r); return true; },
     onStatTap(c, r, i){ return editTileTap(i); },             // the editor's tiles (Oct 8)
+    /* THE QUICK BUTTONS (Oct 9: "small icon buttons, no text, for most common things"): while editing, Undo, Redo, the
+       eraser and Done; while playing, start this hole again and edit it. */
+    quickActs(){
+      if (ED.on) return [{ key: 'undo', glyph: '↶', title: 'Undo', dim: !ED.undo.length }, { key: 'redo', glyph: '↷', title: 'Redo', dim: !(ED.redo && ED.redo.length) },
+                         { key: 'erase', glyph: '🧽', title: 'Erase' }, { key: 'done', glyph: '✓', title: 'Done editing' }];
+      return framedHere() ? [{ key: 'restart', glyph: '↺', title: 'Start this hole again' }, { key: 'edit', glyph: '✎', title: 'Edit this hole' }] : null;
+    },
+    onQuickAct(c, r, key){
+      if (key === 'erase'){ if (ED.on){ ED.tool = 'erase'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tap what to take away'; } return true; }
+      if (key === 'restart'){
+        const L = framedHere(); if (!L) return false;
+        const g = GAMES.get(L.key);
+        if (g && g.state !== 'edit') GAMES.set(L.key, holeGame(g.R, g.hole)); else if (!g) startRound(L.c, L.r);
+        say('Again from the tee.', 1400); return true;
+      }
+      if (key === 'edit'){ const L = framedHere(), g = L && GAMES.get(L.key); return editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); }
+      editAction(key); return true;
+    },
     statsStay(){ return ED.on; },                             // …and its row stays up while the hole is painted
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
