@@ -307,15 +307,15 @@ try {
   const before8 = failures.length;
   {
     const r = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, CW = D.CW, isl = D.HOLES.find(H => H.name === 'the island'), box = D.HOLES.find(H => H.name === 'the boulders');
+      const D = window.getFieldApp()._debug, CW = D.CW, isl = D.HOLES.find(H => H.name === 'the island'), box = D.HOLES.find(H => H.name === 'the bunkers');
       return {
         corner: D.groundAt(isl, 1.06 * CW, 1.06 * CW), mid: D.groundAt(isl, 3.5 * CW, 1.5 * CW),
         sandCorner: D.groundAt(box, 1.04 * CW, 2.04 * CW), sandMid: D.groundAt(box, 2.5 * CW, 3.5 * CW),
-        skate: D.HOLES.filter(H => (H.land || []).some(f => f.bowl || f.pipe)).map(H => H.name),
+        skate: D.HOLES.filter(H => (H.land || []).some(f => f.bowl || f.pipe || f.dish || f.trough)).map(H => H.name),
       };
     });
     if (r.corner !== '.' || r.mid !== '~') failures.push(`[${current}] the island's moat: corner ${r.corner}, middle ${r.mid} (wanted grass at the rounded corner, water in the middle)`);
-    if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the boulders' bunker: corner ${r.sandCorner}, middle ${r.sandMid}`);
+    if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the bunkers' sand: corner ${r.sandCorner}, middle ${r.sandMid}`);
     if (r.skate.length < 4) failures.push(`[${current}] skate-park holes: ${r.skate.join(', ')}`);
     // fences, not bushes (Oct 8): every hole one of wood, stone or brick, all three used, fences drawn in their hole's
     // material, walls and rail too; and every cup clear of the rail by a quarter of its width

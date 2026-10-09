@@ -59,8 +59,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   of the rail by a quarter of its width (`compileHole`, `CUP_R_MAX`). The ground (`land`, read by
   `rawH`) sums bumps (negative ones are hollows), tilts, steps, waves and ridges
   (negative ones are gullies), two or more per hole, the skate park's bowls and
-  pipes (Oct 8: the half-pipe, the bowl, the mega ramp, the skate park), and plateaus
-  (a raised box) and ramps (a kicker along a line); water lies
+  pipes, plateaus (a raised box) and ramps (a kicker along a line), sunken dishes and
+  troughs, `rough` (the green perturbed every way, by a seed) and `ring` (a round rim, or a
+  moat when negative). The course was rebuilt on Oct 9 ("reset all the boards"): 22 holes
+  made first of their ground (the crater, the terraces, the moguls, the mesa, the
+  amphitheatre, the sunken garden, …). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
   alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`): `shuttle` (a
