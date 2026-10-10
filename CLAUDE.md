@@ -108,6 +108,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   rounds of one (`R.single`). Saved holes live in localStorage (`golf.myholes`); a link
   `?app=minigolf&hole=…` carries one (base64 JSON). Anything from a link or storage
   goes through `cleanSrc` (map letters, one tee and cup, known kinds, numbers in range).
+  **Holes as text files** (Oct 10, as chess has Export PGN): the menu's Save this hole to a file, Save My holes to a
+  file and Open holes from a file; a `.golf` file is JSON `{format: 'minigolf', v: 1, holes: [...]}` laid out to be read
+  (`holeText`: the map as its 13 rows, a thing or a piece of ground a line, the dots a row to a line). `readHoles` also
+  takes a bare hole, a list, or text with a `?hole=` link; every hole goes through `cleanSrc` into My holes (not twice),
+  and the first is played. A `.golf` opened with the field's Open button or dropped on the window goes the same way
+  (`_loadFiles` → `GOLF_APP.importHoleFiles`, switching to mini golf). A hole is 0.2–1.5 KB.
   Check runs the course test's plain player in the page (`solveHole`) and sets par.
   Its ground tools: Plateau (drag a box), Ramp and Half-pipe (drag a line) (Hill and Hollow were taken out on Oct 9),
   Bowl, and Select (`nearestLand`, `moveLand`) with Higher, Lower, Delete and Level. The
