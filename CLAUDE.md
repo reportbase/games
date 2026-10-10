@@ -146,9 +146,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
   in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the five paints,
   the bumpers, Boulder, Fence, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
-  Undo, Redo, Copy, Paste, Delete, Level, Material (named by the material). Copy, Paste and Delete act on the whole
-  board (Oct 10): Copy keeps the hole as written (`CLIP`, and localStorage `golf.clip`), Paste lays it over the hole
-  being edited (its name kept), Delete clears it to a new hole's; both undo. The delete-object tile and the text-only
+  Level, Material (named by the material). **Undo, Redo, Copy, Paste and Delete are in mini golf's menu** while editing
+  (Oct 10, later: "remove copy,paste,delete,undo,redo from the bottom object browser"). With a thing or a piece of
+  ground selected (`selObj`) Copy keeps that one, Paste lays a copy of it on the hole (half a cell along if one is
+  already there) and selects it, Delete takes it away; with nothing selected they act on the whole board: Copy keeps
+  the hole as written, Paste lays it over the hole being edited (its name kept), Delete clears it to a new hole's.
+  The clipboard is `CLIP` ({board} | {toy} | {land}, and localStorage `golf.clip`); a menu item may be `disabled`. The delete-object tile and the text-only
   first tile (name, par, material) went, so tile i is `TOOLS[i]`, then `ACTS`. Par, Check, Save, Share, Done, Tee, Cup,
   Ramp, Bowl, Half-pipe, Select, Higher, Lower and Name lost their tiles (Done and Select are quick
   buttons; the actions remain in `editAction`).

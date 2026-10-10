@@ -16680,6 +16680,7 @@ function _menuButtonFor(it){
      the thing you cannot see. Same exemption bRelease already has, declared
      rather than hard-coded by id. */
   if (it.keepOpen) b.dataset.keepOpen = '1';
+  if (it.disabled) b.disabled = true;               // (an item with nothing to do yet, as Undo with nothing to undo: Oct 10)
   b.addEventListener('click', () => {
     try { it.on && it.on(); } catch {}
     try { b.textContent = text(); } catch {}      // a label may name its own state
@@ -35068,6 +35069,14 @@ const GOLF_APP = (() => {
     ED.sel = S.land.length - 1;
     placedOnce(t);
   }
+  // the thing or piece of ground selected, if one is (Copy and Delete act on it, Oct 10); the tee, the cup or dots are not
+  function selObj(){
+    const P = ED.pick;
+    if (!ED.on || !pickValid(P)) return null;
+    if (P.type === 'toy') return { type: 'toy', obj: ED.src.toys[P.i] };
+    if (P.type === 'land') return { type: 'land', obj: ED.src.land[P.i] };
+    return null;
+  }
   function editAction(a){
     if (!ED.on) return;
     const S = ED.src;
@@ -35097,18 +35106,36 @@ const GOLF_APP = (() => {
        kept in localStorage too so it can be pasted on another board or after a reload; Paste lays it over the hole being
        edited, which keeps its own name so My holes still tells them apart; Delete clears the board to a new hole's
        (the tee, the cup and grass), the name kept. Both can be undone. */
+    /* (Oct 10, later: "add copy,paste,delete to the menu. if no object is selected, copy the board. if an object is
+       selected, copy the object.") With a thing or a piece of ground selected, Copy keeps that one ({toy} or {land}),
+       Paste lays a copy of it on the hole being edited (where it stood, or half a cell along if one is already there; it
+       may be another board) and selects it, and Delete takes it away. With nothing selected they act on the whole board
+       ({board}). The clipboard is kept in localStorage too; one written before (a bare hole) reads as a board. */
     if (a === 'copy'){
-      CLIP = clone(S); try { localStorage.setItem(CLIP_KEY, JSON.stringify(CLIP)); } catch {}
-      ED.msg = 'hole copied'; return;
+      const o = selObj();
+      CLIP = o ? { [o.type]: clone(o.obj) } : { board: clone(S) };
+      try { localStorage.setItem(CLIP_KEY, JSON.stringify(CLIP)); } catch {}
+      ED.msg = o ? 'copied: ' + pickName() : 'hole copied'; return;
     }
     if (a === 'paste'){
-      if (!CLIP) try { CLIP = cleanSrc(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null')); } catch {}
-      const c = CLIP && cleanSrc(clone(CLIP));
+      if (!CLIP) try { const o = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'); CLIP = o && o.map ? { board: o } : o; } catch {}
+      if (CLIP && (CLIP.toy || CLIP.land)){
+        const isToy = !!CLIP.toy, list = isToy ? S.toys : S.land, one = (isToy ? cleanList([CLIP.toy], SPEC_TOY, 1) : cleanList([CLIP.land], SPEC_LAND, 1))[0];
+        if (!one){ ED.msg = 'nothing copied yet'; return; }
+        if (list.length >= 40){ ED.msg = 'that is as many as a hole can hold'; return; }
+        snapEdit();
+        let c = one;
+        for (let n = 1; n < 8 && list.some(x => JSON.stringify(x) === JSON.stringify(c)); n++) c = shifted(one, 0.5 * n, 0.5 * n, isToy);
+        list.push(c); ED.pick = { type: isToy ? 'toy' : 'land', i: list.length - 1 }; ED.box = null; ED.dots = [];
+        ED.msg = 'pasted: ' + pickName(); editRefresh(true); return;
+      }
+      const c = CLIP && CLIP.board && cleanSrc(clone(CLIP.board));
       if (!c){ ED.msg = 'nothing copied yet'; return; }
       snapEdit(); c.name = S.name; delete c.from; delete c.at; if (S.from) c.from = S.from; if (S.at) c.at = S.at; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'hole pasted'; editRefresh(true); return;
     }
     if (a === 'clear'){
+      if (selObj()){ editAction('del'); return; }              // (what is selected; the board only when nothing is)
       snapEdit(); const c = blankSrc(); c.name = S.name; if (S.from) c.from = S.from; if (S.at) c.at = S.at; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'board cleared'; editRefresh(true); return;
     }
@@ -35202,8 +35229,9 @@ const GOLF_APP = (() => {
      Done are quick buttons, the tee and cup are dragged, every change is saved as it is made.) */
   /* (Oct 10: "remove the delete object button." Its tile went; a selected thing is still deleted from editAction('del').
      Copy, Paste and Delete act on the whole board: see editAction.) */
-  const ACTS = [['undo', 'Undo', '↶'], ['redo', 'Redo', '↷'], ['copy', 'Copy', '📋'], ['paste', 'Paste', '📥'], ['clear', 'Delete', '🗑️'],
-    ['level', 'Level', '➖'], ['mat', 'Material', '🧱']];
+  /* (Oct 10, later: "add undo,redo to the menu. remove copy,paste,delete,undo,redo from the menu." Undo, Redo, Copy,
+     Paste and Delete left the tiles for mini golf's menu: see editorMenu.) */
+  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱']];
   function editTiles(){
     /* (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is selected,
        change the color of the button to selected. the buttons should toggle on/off thats it." No top line on any tile;
@@ -35230,6 +35258,14 @@ const GOLF_APP = (() => {
   function editorMenu(){
     const items = [];
     if (ED.on) items.push({ label: 'Leave the editor', title: 'Stop editing and play the hole.', on(){ editStop(false); } });
+    if (ED.on){                                               // (Oct 10: the editor's Undo, Redo, Copy, Paste and Delete, here)
+      const o = selObj(), what = o ? pickName() : 'the board', cl = CLIP || (() => { try { const x = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'); return x && x.map ? { board: x } : x; } catch { return null; } })();
+      items.push({ label: 'Undo', title: 'Take back the last change.', disabled: !ED.undo.length, on(){ editAction('undo'); } },
+        { label: 'Redo', title: 'Make the last change taken back again.', disabled: !(ED.redo && ED.redo.length), on(){ editAction('redo'); } },
+        { label: 'Copy ' + what, title: o ? 'Copy what is selected.' : 'Copy the whole hole (nothing is selected).', on(){ editAction('copy'); } },
+        { label: 'Paste' + (cl ? (cl.board ? ' the board' : ' ' + (cl.toy ? TOY_NAME[Object.keys(cl.toy)[0]] || 'thing' : 'ground')) : ''), title: 'Lay what was copied on this hole.', disabled: !cl, on(){ editAction('paste'); } },
+        { label: 'Delete ' + what, title: o ? 'Take away what is selected.' : 'Clear the whole board to a new hole (nothing is selected).', on(){ editAction('clear'); } });
+    }
     items.push({ label: 'Edit this hole', title: 'Take the hole on the selected board into the editor. A hole of the course is copied; it is never changed.',
       on(){ const L = framedHere(), g = L && GAMES.get(L.key); editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); } });
     items.push({ label: 'New hole', title: 'Start a hole of your own on the selected board.', on(){ editStart(null); } });
