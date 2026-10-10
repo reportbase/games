@@ -256,7 +256,9 @@ try {
   //  going round are fewer than one in twenty, and no hole leaves the straight line from the tee to the cup open)
   const gd = await page.evaluate(() => {
     const D = window.getFieldApp()._debug, E = D.editor, edge = [], kinds = new Set(), st = {}, open = [], unguarded = [];
-    for (let i = 22; i < 1022; i++){ const s = D.genSrc(i), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O');
+    // (every level in turn: since Oct 10 the corner's boards are gentler and leave out the guards of ground, and a pond, being
+    //  water, is mostly kept for the higher levels)
+    for (let i = 22; i < 1022; i++){ const s = D.genSrc(i, 1 + i % 5), j = s.map.findIndex(r => r.includes('O')), c = s.map[j].indexOf('O');
       if (!s.guard) unguarded.push(i); else st[s.guard] = (st[s.guard] || 0) + 1;
       if (s.open) open.push(i);
       if (c < 2 || c > D.NX - 3 || j < 2) edge.push(i);
@@ -481,7 +483,8 @@ try {
         else if (k === 'shuttle') for (let q = 0; q <= 24; q++) out.push([v[0] + (v[2] - v[0]) * q / 24, v[1] + (v[3] - v[1]) * q / 24]);
         else if (k === 'path'){ const m = (v.length - 4) >> 1; for (let q = 0; q < m; q++){ const a = q, b = (q + 1) % m; for (let s = 0; s < 6; s++) out.push([v[2 * a] + (v[2 * b] - v[2 * a]) * s / 6, v[2 * a + 1] + (v[2 * b + 1] - v[2 * a + 1]) * s / 6]); } }
         return out; };
-      for (let i = 22; i < 222; i++){ const s = D.genSrc(i); if (!s.weave) continue; n++; kinds[s.weave] = (kinds[s.weave] || 0) + 1;
+      for (let i = 22; i < 222; i++){ const s = D.genSrc(i, 3); if (!s.weave) continue;   // (level 3, the generator as it was: the levels, Oct 10)
+        n++; kinds[s.weave] = (kinds[s.weave] || 0) + 1;
         const ts = s.toys.filter(T => T.path).map(track); let best = Infinity;
         for (let a = 0; a < ts.length; a++) for (let b = a + 1; b < ts.length; b++) for (const p of ts[a]) for (const q of ts[b]) best = Math.min(best, Math.hypot(p[0] - q[0], p[1] - q[1]));
         if (!(best < 0.35)) apart.push([i, s.weave, +best.toFixed(2)]); }
@@ -489,6 +492,30 @@ try {
     if (wv.n < 80 || Object.keys(wv.kinds).length < 5 || wv.nApart) failures.push(`[${current}] ${JSON.stringify(wv)}`);
   }
   console.log(`${failures.length === beforeW ? 'ok  ' : 'FAIL'} ${current}`);
+
+  // THE LEVELS (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"): a generated hole's level
+  // comes from its board's ring (doubling out from the corner) and the menu's Difficulty (kept in this browser), and the
+  // level's dials show in what is made: more riders, more often a weave, wider bridges low down
+  current = 'mini golf levels';
+  const beforeL = failures.length;
+  {
+    const lv = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor;
+      const rings = [0, 30, 49, 300, 1000, 5000].map(i => E.ringLevel(i));
+      const item = () => A.menu[0].items.find(i => typeof i.label === 'function' && /^Difficulty/.test(i.label()));
+      const lab0 = item().label(), k0 = D.holeAt(17 * 17), l0 = D.HOLES[k0].level;
+      item().on(); const lab1 = item().label(), stored = localStorage.getItem('golf.level'), k1 = D.holeAt(17 * 17), l1 = D.HOLES[k1].level;
+      item().on(); item().on(); item().on(); const lab2 = item().label(), l2 = D.HOLES[D.holeAt(17 * 17)].level;
+      const avg = (L, f) => { let s = 0; for (let i = 0; i < 30; i++) s += f(D.genSrc(500 + i * 41, L)); return s / 30; };
+      const riders = [1, 3, 5].map(L => +avg(L, s => s.toys.filter(T => T.path).length).toFixed(2));
+      const weaves = [1, 3, 5].map(L => +avg(L, s => s.weave ? 1 : 0).toFixed(2));
+      let bridge = 9; for (let i = 0; i < 200; i++){ const s = D.genSrc(500 + i * 13, 1); const row = s.map.find(r => r.includes('=') && r.includes('~')); if (row) bridge = Math.min(bridge, row.split('=').length - 1); }
+      return { rings, lab0, lab1, lab2, stored, l0, l1, l2, other: k1 !== k0, riders, weaves, bridge };
+    });
+    if (lv.rings.join() !== '1,1,2,3,4,5' || lv.lab0 !== 'Difficulty: Normal' || lv.lab1 !== 'Difficulty: Hard' || lv.lab2 !== 'Difficulty: Normal' || lv.stored !== 'hard'
+        || lv.l0 !== 3 || lv.l1 !== 4 || lv.l2 !== 3 || !lv.other || !(lv.riders[0] < lv.riders[1] && lv.riders[1] < lv.riders[2]) || !(lv.weaves[0] < lv.weaves[2]) || lv.bridge < 3)
+      failures.push(`[${current}] ${JSON.stringify(lv)}`);
+  }
+  console.log(`${failures.length === beforeL ? 'ok  ' : 'FAIL'} ${current}`);
 
   // The hole editor (Oct 8: "yes, build the editor"): a new hole on the selected board, painted with a real drag after
   // choosing a tool on the bar, things placed, undo, Check sets the par, Save keeps it, Share's link opens the page on it.
@@ -554,7 +581,7 @@ try {
     if (st2.toys !== 2 || st2.land !== 1) failures.push(`[${current}] after a boulder, a hill and a pipe: ${st2.toys} things, ${st2.land} ground`);
     if (!st2.hasLand || !st2.hasRock) failures.push(`[${current}] the board does not draw the edited hole (land ${st2.hasLand}, boulder ${st2.hasRock})`);
     if (st2.afterUndo !== 2) failures.push(`[${current}] undo left ${st2.afterUndo} things`);
-    if (!st2.check || !st2.check.sunk || st2.par !== Math.max(2, Math.min(6, st2.check.strokes + 1))) failures.push(`[${current}] Check: ${JSON.stringify(st2.check)}, par ${st2.par}, "${st2.msg}"`);
+    if (!st2.check || !st2.check.sunk || !(st2.check.stars >= 1 && st2.check.stars <= 5) || st2.par !== st2.check.par) failures.push(`[${current}] Check (a rating since Oct 10): ${JSON.stringify(st2.check)}, par ${st2.par}, "${st2.msg}"`);
     if (st2.stored < 1) failures.push(`[${current}] Save kept nothing`);
     if (!st2.autoSaved) failures.push(`[${current}] the edited hole was not saved as it changed (Oct 9: saved as you go)`);
     if (!st2.same) failures.push(`[${current}] the share link does not carry the hole back`);
@@ -1022,6 +1049,20 @@ try {
     if (cp.textOnly || cp.gone.length || cp.first !== 'Grass' || !cp.cleared || !cp.pasted || !cp.undone || !cp.redone || cp.objLabel !== 'Copy boulder'
         || !cp.second || !cp.delOne || !cp.stored || !['Undo', 'Redo', 'Copy the board', 'Paste', 'Delete the board'].every(l => cp.labels.some(x => x.startsWith(l))))
       failures.push(`[${current}] copy, paste, delete in the menu: ${JSON.stringify(cp)}`);
+    // HARDER AND EASIER (the levels, Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
+    // the two tiles, tapped, make every mover faster and its rider bigger and the ground steeper, and back again; the menu's
+    // Rate this hole, while editing, rates it and sets its par
+    const hd = await page.evaluate(async () => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      ED.pick = null; ED.src.toys = [E.pathify({ orbit: [4, 7, 1.4, 0.36, 6, 0, 0] })]; ED.src.land = [{ bump: [4, 4, 1.5, 0.04] }]; E.editRefresh && E.editRefresh(true);
+      const names = (A.statTiles(f.c, f.r) || []).map(t => t.value), hi = names.indexOf('Harder'), lo = names.indexOf('Easier');
+      const read = () => { const v = ED.src.toys[0].path, n = (v.length - 4) / 2; return { r: v[2 * n], sec: v[2 * n + 1], h: ED.src.land[0].bump[3] }; };
+      const a = read(); A.onStatTap(f.c, f.r, hi); const b = read(), msg = ED.msg; A.onStatTap(f.c, f.r, lo); const c = read();
+      const rate = window.getFieldApp().menu[0].items.find(i => i.label === 'Rate this hole');
+      const r = rate ? await rate.on() : null;
+      return { hi, lo, a, b, c, msg, rated: r && { stars: r.stars, par: r.par }, par: ED.src.par, rmsg: ED.msg }; });
+    if (hd.hi < 0 || hd.lo < 0 || !(hd.b.sec < hd.a.sec && hd.b.r > hd.a.r && hd.b.h > hd.a.h) || Math.abs(hd.c.sec - hd.a.sec) > 0.05 || Math.abs(hd.c.h - hd.a.h) > 0.002
+        || !hd.rated || !(hd.rated.stars >= 1) || hd.par !== hd.rated.par || !/★/.test(hd.rmsg))
+      failures.push(`[${current}] Harder, Easier and Rate this hole: ${JSON.stringify(hd)}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       E.editAction('done'); });   // (its tile went on Oct 10; Done is a quick button)

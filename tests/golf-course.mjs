@@ -67,7 +67,24 @@ const report = await page.evaluate(SAMPLE => {
   }
   return out;
 }, Number(process.env.GEN_SAMPLE || 40));
+// THE LEVELS, RATED (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"). Holes made at
+// levels 1, 3 and 5 (LEVEL_SAMPLE of each, 6 unless asked) are rated by the page's own rater (a player with a person's
+// small errors of aim, strength and timing); each level must come out harder on average than the one below it, level 5
+// by a stroke more than level 1, and no level so hard that its holes average more than 7 strokes.
+const levels = await page.evaluate(N => {
+  const D = window.getFieldApp()._debug, E = D.editor, out = {};
+  for (const lv of [1, 3, 5]){
+    const ms = [];
+    for (let i = 0; i < N; i++){ const k = E.addHole(E.cleanSrc(D.genSrc(70000 + i * 977, lv))); ms.push(E.rateHole(k).mean); }
+    out[lv] = { mean: +(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(2), each: ms };
+  }
+  return out;
+}, Number(process.env.LEVEL_SAMPLE || 6));
 let bad = 0;
+for (const lv of [1, 3, 5]) console.log(`level ${lv}: ${levels[lv].mean} strokes on average (${levels[lv].each.join(' ')})`);
+if (!(levels[1].mean < levels[3].mean && levels[3].mean < levels[5].mean && levels[5].mean - levels[1].mean >= 1) || [1, 3, 5].some(lv => levels[lv].mean > 7)){
+  bad++; console.log('FAIL the levels do not climb: ' + JSON.stringify(levels));
+}
 for (const r of report){ const ok = r.sunk && r.strokes <= r.par + 3; if (!ok) bad++;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${String(r.hole).padStart(4)} ${r.name.padEnd(22)} par ${r.par}: ${r.sunk ? r.strokes + ' strokes' : 'not sunk in ' + r.strokes}`); }
 if (errors.length){ bad++; console.log('uncaught: ' + errors.join(' · ')); }

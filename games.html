@@ -34561,7 +34561,9 @@ const GOLF_APP = (() => {
      round its cup, spaced evenly round one circle, so the way in is open only between them. The circle is as wide as it
      can be without running into the hole's other things near the cup (tried from 1.5 cells down to 0.9), and the cup is
      kept at least two cells in from the sides and the top so the circle never runs into the rail. */
-  function guardCup(src, rnd){
+  // the ways of keeping a cup that are ground (or water), the hardest for a person's hands (the levels, Oct 10: see wt)
+  const GROUND_GUARDS = ['mound', 'crater', 'apron', 'moat', 'hillside', 'pond'];
+  function guardCup(src, rnd, lv){
     const map = src.map.map(r => [...r]);
     let ci = 4, cj = 2;
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === 'O'){ ci = i; cj = j; } }));
@@ -34665,8 +34667,15 @@ const GOLF_APP = (() => {
     let allow = (busyToys ? ['mound', 'hillside', 'berm', 'crater', 'moat', 'apron'] : busyLand ? ['orbiters', 'sweep', 'arc', 'pegs', 'turnstile', 'scatter'] : names)
       .filter(n => flat(n) && (!crossing || gentle.includes(n)));
     if (!allow.length) allow = busyToys ? ['apron'] : ['orbiters', 'apron'];
-    const tot = allow.reduce((s, n) => s + STYLES[n][0], 0);
-    let w = rnd() * tot, style = allow.find(n => (w -= STYLES[n][0]) < 0) || allow[0];
+    /* (by level, Oct 10. The rater found the ways of ground the hardest for a person's hands, not the movers: a cup on a
+       mound took 3.6 strokes on average, on a crater's rim 3.5, in a sand apron 3.3, in a moat 3.2, on a hill's side 3.1,
+       while a turnstile, a door, a gate, a chicane or a fan of pegs took 2.5 to 2.9 (a careful shot waits for a mover; a
+       slope takes every shot a little off). So the ways of ground are left out at level 1, made rarer at 2, and twice and
+       three times as likely at 4 and 5; a hole with no level, the course's, is as before.) */
+    const wt = n => STYLES[n][0] * (!lv || lv === 3 || !GROUND_GUARDS.includes(n) ? 1 : [0, 0.35, 1, 2, 3][lv - 1]);
+    if (allow.some(n => wt(n) > 0)) allow = allow.filter(n => wt(n) > 0);
+    const tot = allow.reduce((s, n) => s + wt(n), 0);
+    let w = rnd() * tot, style = allow.find(n => (w -= wt(n)) < 0) || allow[0];
     // (nothing a guard sets down stands in water, on a plank or in the one way over: Oct 9, a bumper on the bridge)
     const narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (ch === '.' && row.filter(c => c === '#').length >= 3)) narrows.push([i + 0.5, j + 0.5]); }));
@@ -34696,7 +34705,8 @@ const GOLF_APP = (() => {
     };
     const screens = [];
     let screen = null, open = false;
-    if (!across()){
+    const crossed = across();
+    if (!crossed || lv >= 5){                                // (at level 5 a screen goes on even where something crosses)
       open = true;
       for (const f of [0.5, 0.42, 0.58, 0.35, 0.65]){
         const px = tx + (cx - tx) * f, py = ty + (cy - ty) * f;
@@ -34722,7 +34732,7 @@ const GOLF_APP = (() => {
           screens.push(kickAt(px, py, Math.floor(rnd() * 4))); screen = 'bumper'; open = false; break; }
       }
     }
-    return { ...src, guard: style, screen, open, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards, ...screens], land: [...(src.land || []), ...land] };
+    return { ...src, guard: style, screen, open: open && !crossed, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards, ...screens], land: [...(src.land || []), ...land] };
   }
   HOLES.forEach((H, k) => { const g = guardCup(H, seeded(Math.imul(k + 7, 40503))); H.map = g.map; H.toys = g.toys; H.land = g.land; H.par = g.par; });
   HOLES.forEach(H => { H.toys = (H.toys || []).map(pathify); });   // (the course's orbits and shuttles, as paths: Oct 10)
@@ -34934,7 +34944,14 @@ const GOLF_APP = (() => {
   const DIFF = { easy:   { mu: 0.6,  cup: 0.042, cap: 1.25 },
                  normal: { mu: 0.45, cup: 0.033, cap: 0.95 },
                  hard:   { mu: 0.36, cup: 0.027, cap: 0.72 } };
-  const DL = ARCADE.difficulty('golf.level', 'Easy: slower grass, and the cup takes the ball more readily. Hard: faster grass, and a smaller cup that only takes a slow ball.');
+  /* ONE DIFFICULTY (Oct 10: "Now we way to adjust the difficulty" … "ok, proceed"). Mini golf's Difficulty was the arcade
+     kit's easy, normal or hard, the grass's speed and the cup's size. It now also sets how hard the holes are made (see HOW
+     HARD, AND WHERE): Easy, Normal, Hard and Expert, kept as before in golf.level; Expert plays on Hard's grass and cup. The
+     rater (THE RATING) always plays on Normal's (EVEN), so a hole's stars and par are its own, whatever the setting. */
+  const LEVEL_WORDS = ['easy', 'normal', 'hard', 'expert'], LEVEL_NAMES = ['Easy', 'Normal', 'Hard', 'Expert'];
+  let LEVEL_SET = LEVEL_WORDS.indexOf(ARCADE.load('golf.level', 'normal')), EVEN = false;
+  if (LEVEL_SET < 0) LEVEL_SET = 1;
+  const DL = { get: () => EVEN ? 'normal' : ['easy', 'normal', 'hard', 'hard'][LEVEL_SET] };
   const SND = ARCADE.sounds('golf.sound', 'A tap for each putt, a knock off the walls, a chime in the cup.');
   const D = () => DIFF[DL.get()] || DIFF.normal;
   const GAMES = new Map();
@@ -34974,7 +34991,7 @@ const GOLF_APP = (() => {
     GAMES.set(gkey(c, r), g);
     LIVE = { key: gkey(c, r), c, r };
     const H = HOLES[h];
-    say('Hole 1 of ' + ROUND + ' — ' + H.name + ', par ' + H.par + '. Drag anywhere to pull back, let go to putt.', 3200);
+    say('Hole 1 of ' + ROUND + ' — ' + H.name + ', par ' + H.par + lvTag(H) + '. Drag anywhere to pull back, let go to putt.', 3200);
     return g;
   }
   const liveGame = () => {
@@ -35047,7 +35064,7 @@ const GOLF_APP = (() => {
     if (!ng) ng = holeGame(R, hole);
     H = HOLES[hole];
     if (!moved) GAMES.set(LIVE.key, ng);
-    say('Hole ' + (R.card.length + 1) + ' of ' + ROUND + ' — ' + H.name + ', par ' + H.par, 2200);
+    say('Hole ' + (R.card.length + 1) + ' of ' + ROUND + ' — ' + H.name + ', par ' + H.par + lvTag(H), 2200);
   }
 
   /* ─── THE TOYS ─────────────────────────────────────────────────────── */
@@ -35854,7 +35871,7 @@ const GOLF_APP = (() => {
      staggered cage, the zipper) share one. Riders are boulders and bumpers of every kind. A pattern that will not fit is
      tried again elsewhere, then another; the hole keeps `weave` (the pattern's name) for the tests; par goes up by one,
      and by one more when four or more riders are out. */
-  function weave(src, R){
+  function weave(src, R, most, lv){
     const u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)], r2 = v => Math.round(v * 100) / 100, TAU = 2 * Math.PI;
     const at = ch => { for (let j = 0; j < NY; j++){ const i = src.map[j].indexOf(ch); if (i >= 0) return [i + 0.5, j + 0.5]; } return null; };
     const T = at('T'), O = at('O'); if (!T || !O) return;
@@ -35862,8 +35879,12 @@ const GOLF_APP = (() => {
     const along = q => [T[0] + dx * L * q, T[1] + dy * L * q], base = Math.atan2(dy, dx);
     const rider = () => pick([0, 0, 0, 1, 1, 2, 3, 4]), RR = k => (k ? 0.3 : 0.36);
     const per = (lo, hi, used) => { for (let n = 0; n < 12; n++){ const p = r2(u(lo, hi)); if (used.every(q => { const a = Math.max(p, q) / Math.min(p, q); return Math.abs(a - Math.round(a)) > 0.12; })){ used.push(p); return p; } } const p = r2(u(lo, hi)); used.push(p); return p; };
+    /* (and off the banks and well clear of a bridge: the levels, Oct 10. Riders running along a stream knocked balls in,
+       or stood in the mouth of its bridge, and the rater could not get over in ten strokes) */
+    const wet = [], planks = [];
+    src.map.forEach((row, j) => [...row].forEach((ch, i) => { if (ch === '~') wet.push([i + 0.5, j + 0.5]); if (ch === '=') planks.push([i + 0.5, j + 0.5]); }));
     const okAt = (x, y, r) => x > 0.55 && x < NX - 0.55 && y > 0.55 && y < NY - 0.55 && Math.hypot(x - T[0], y - T[1]) > 1.3 && Math.hypot(x - O[0], y - O[1]) > r + 0.45
-      && !'#~='.includes(src.map[Math.floor(y)][Math.floor(x)]);
+      && !'#~='.includes(src.map[Math.floor(y)][Math.floor(x)]) && wet.every(([a, b]) => Math.hypot(x - a, y - b) > r + 0.75) && planks.every(([a, b]) => Math.hypot(x - a, y - b) > r + 1.4);
     const dense = pts => { const out = []; for (let q = 0; q < pts.length; q++){ const a = pts[q], b = pts[(q + 1) % pts.length]; for (let s = 0; s < 4; s++) out.push([a[0] + (b[0] - a[0]) * s / 4, a[1] + (b[1] - a[1]) * s / 4]); } return out; };
     const fits = (pts, r) => dense(pts).every(([x, y]) => okAt(x, y, r));
     const curve = (f, n) => Array.from({ length: n }, (_, q) => f((q + 0.5) / n * TAU));   // (TVF's leaf spacing, Oct 10)
@@ -35925,18 +35946,95 @@ const GOLF_APP = (() => {
         if (!fits(pts, 0.36)) return null;
         return train(pts, 3, r2(u(7, 10)), u(0, 1)); },
     };
-    const order = Object.keys(MAKE).sort(() => R() - 0.5);
+    // (no cage round the cup below level 3, nor a rose or a serpent at level 1: the rater found the cage the hardest of
+    //  the weaves, 4.5 strokes on average where the others took 2.8 to 3.5; the levels, Oct 10)
+    const order = Object.keys(MAKE).sort(() => R() - 0.5).filter(n => !(lv && lv < 3 && n === 'cage') && !(lv === 1 && (n === 'rose' || n === 'serpent')));
     for (const name of order) for (let tr = 0; tr < 10; tr++){
       const add = MAKE[name]();
-      if (add && src.toys.length + add.length <= 40){
-        src.toys.push(...add); src.weave = name;
+      if (add && src.toys.length + add.length <= 40 && add.length <= (most || 99)){
+        src.toys.push(...add); if (src.weave) src.weave2 = name; else src.weave = name;
         src.par = Math.min(6, src.par + 1 + (add.length >= 4 ? 1 : 0));
         return;
       }
     }
   }
-  function genSrc(idx){
-    const R = seeded(Math.imul(idx + 1, 2654435761) ^ 0x5bd1e995), u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)];
+  /* HOW HARD, AND WHERE (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"). Every
+     generated hole is made for a level, 1 to 5. The level comes from how far its board is from the corner, in rings that
+     double (out to the 7th ring level 1, to the 15th level 2, to the 31st level 3, to the 63rd level 4, beyond that level
+     5: flying out is a climb), shifted by the player's setting in mini golf's menu (Easy one down, Normal none, Hard one
+     up, Expert two up). The level sets the generator's dials (LEVEL_DIALS): how often a weave of crossing paths comes
+     (and at the top a second), how many riders it may have, how fast they go and how big they are, how high the ground
+     rolls and how many pieces it has, how often a stream or a wall crosses, how many loose toys, and which guards keep
+     the cup (only gentle ones at level 1, the ones that add a stroke more often high up, and at level 5 a screen across
+     the first shot even where something already crosses it). Level 3 is the generator as it was. What says a level is
+     right is the rating (rateHole): tests/golf-course.mjs rates holes made at every level and fails if a level does not
+     come out harder than the one below. A board's hole at another level is its hole made again from the same seed with
+     other dials, so it is a different hole. */
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(Math.floor(Math.sqrt(Math.max(0, idx))) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + LEVEL_SET - 1));
+  const LEVEL_DIALS = [
+    // weave: the chance of crossing paths; extra: of a second; riders: the most a weave may bring; speed: the movers'
+    // seconds a turn multiplied by it (under 1 is faster); size: the riders'; amp: the ground's heights; feats: how many
+    // pieces of ground; water, wall, sand: their chances; toys: how many loose ones
+    { weave: 0.25, extra: 0, riders: 2, speed: 1.7, size: 0.8, amp: 0.5, feats: [2, 2], water: 0.08, wall: 0.06, sand: 0.4, toys: [0, 1] },
+    { weave: 0.6, extra: 0, riders: 3, speed: 1.3, size: 0.9, amp: 0.75, feats: [2, 2], water: 0.16, wall: 0.12, sand: 0.5, toys: [0, 2] },
+    { weave: 0.85, extra: 0, riders: 99, speed: 1, size: 1, amp: 1, feats: [2, 3], water: 0.25, wall: 0.2, sand: 0.55, toys: [0, 2] },
+    { weave: 1, extra: 0.3, riders: 99, speed: 0.9, size: 1.05, amp: 1.1, feats: [2, 3], water: 0.3, wall: 0.25, sand: 0.6, toys: [1, 3] },
+    { weave: 1, extra: 0.6, riders: 99, speed: 0.8, size: 1.1, amp: 1.2, feats: [3, 4], water: 0.35, wall: 0.3, sand: 0.65, toys: [1, 3] },
+  ];
+  // the ground's heights, by kind: which numbers of a piece are heights (scaled by a level's amp)
+  const HEIGHTS = { bump: [3], ridge: [5], step: [4], wave: [0], plateau: [4], ramp: [5], ring: [4], dish: [3], trough: [5], tilt: [0, 1], rough: [0] };
+  // the movers' speed and the riders' size, by a level's dials (the seconds a turn are a path's second number from the end
+  // but two, a gate's 5th, a turnstile's 4th and a door's 6th)
+  function tuneMovers(src, K){
+    if (K.speed === 1 && K.size === 1) return src;
+    const r2 = v => Math.round(v * 100) / 100, sec = v => r2(Math.sign(v) * Math.max(1.2, Math.abs(v) * K.speed));
+    src.toys = src.toys.map(T => {
+      if (T.path){ const v = T.path.slice(), n = (v.length - 4) >> 1; v[2 * n] = r2(Math.max(0.15, Math.min(0.6, v[2 * n] * K.size))); v[2 * n + 1] = sec(v[2 * n + 1]); return { path: v }; }
+      if (T.gate){ const v = T.gate.slice(); v[4] = sec(v[4]); return { gate: v }; }
+      if (T.arm){ const v = T.arm.slice(); v[3] = sec(v[3]); return { arm: v }; }
+      if (T.swing){ const v = T.swing.slice(); v[5] = sec(v[5]); return { swing: v }; }
+      return T;
+    });
+    return src;
+  }
+  /* MADE AGAIN UNTIL IT FITS ITS LEVEL (Oct 10). The dials move a level's holes on average, but holes within a level
+     still differed more than the levels did: rating 200 generated holes, forty a level, the means came out 2.6, 3.6,
+     3.3, 4.3 and 4.7 strokes. A board can't be rated as it is flown over (a rating is seconds of play, and a view holds
+     hundreds of boards), so the ratings were used to fit a guess: the strokes a hole will take, from what is on it
+     (guessMean: water, the riders' size and speed, a wall, windmills, the cage round the cup, turnstiles, doors and
+     gates, the length and the ground; it says about 57 in 100 of how ratings vary, on holes it was not fitted to). A
+     board's hole is made from its seed, and if the guess falls outside its level's band (LEVEL_BAND) it is made again
+     from the next seed, up to eight times, keeping the nearest; a hole the guess thinks no one could finish is never
+     kept if another will do. Fitted again on 400 rated holes once the guards were weighed by what the rater found (a
+     guard of ground counts too); on holes it was not fitted to, the guess and the rating go together at about 0.7. */
+  const GUESS_W = [2.894, 1.575, 0.162, 0.311, 0.416, 0.448, 0.289, 0.604, 0.114, -0.696, 0.1, 0.284];
+  const LEVEL_BAND = [[0, 2.6], [2.6, 3.1], [3.1, 3.7], [3.7, 4.5], [4.5, 6.5]];
+  function guessMean(src){
+    const T = src.toys || [], P = T.filter(t => t.path), tail = (t, b) => t.path[t.path.length - b];
+    const map = src.map.join(''), at = ch => { for (let j = 0; j < NY; j++){ const i = src.map[j].indexOf(ch); if (i >= 0) return [i + 0.5, j + 0.5]; } return [4, 6]; };
+    const [tx, ty] = at('T'), [cx, cy] = at('O'), water = map.includes('~') ? 1 : 0, big = P.reduce((a, t) => a + tail(t, 4), 0);
+    let amp = 0; for (const f of src.land || []){ const k = Object.keys(f)[0]; for (const i of HEIGHTS[k] || []) amp += Math.abs(f[k][i]); }
+    const x = [1, water, water * big, big, P.reduce((a, t) => a + 1 / Math.max(0.5, Math.abs(tail(t, 3))), 0), (map.match(/#/g) || []).length / 8,
+      T.filter(t => t.mill).length, src.weave === 'cage' || src.weave2 === 'cage' ? 1 : 0, T.filter(t => t.arm || t.swing || t.gate).length,
+      Math.hypot(cx - tx, cy - ty) / 10, amp * 10, GROUND_GUARDS.includes(src.guard) ? 1 : 0];
+    return x.reduce((s, v, i) => s + v * GUESS_W[i], 0);
+  }
+  function genSrc(idx, lv){
+    lv = lv || levelAt(idx);
+    const [lo, hi] = LEVEL_BAND[lv - 1], off = m => m < lo ? lo - m : m > hi ? m - hi : 0;
+    let best = null, bd = Infinity;
+    for (let a = 0; a < 8; a++){
+      const s = genOnce(idx, lv, a), m = guessMean(s), d = off(m) + (m > LEVEL_BAND[4][1] ? 10 : 0);
+      s.guess = Math.round(m * 100) / 100;
+      if (d === 0) return s;
+      if (d < bd){ bd = d; best = s; }
+    }
+    return best;
+  }
+  function genOnce(idx, lv, a){
+    const K = LEVEL_DIALS[lv - 1];
+    const R = seeded((Math.imul(idx + 1, 2654435761) ^ 0x5bd1e995) + Math.imul(a, 0x9E3779B1)), u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)];
     const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
     const map = Array.from({ length: NY }, () => Array(NX).fill('.'));
     const tc = 1 + Math.floor(R() * (NX - 2)), tr = NY - 1 - (R() < 0.3 ? 1 : 0), cc = 2 + Math.floor(R() * (NX - 4)), cr = 2 + Math.floor(R() * 2);
@@ -35944,17 +36042,20 @@ const GOLF_APP = (() => {
     const clear = (x, y, d) => Math.hypot(x - tc - 0.5, y - tr - 0.5) > d && Math.hypot(x - cc - 0.5, y - cr - 0.5) > d;
     const free = (i, j) => map[j] && map[j][i] === '.' && clear(i + 0.5, j + 0.5, 1.6);
     let water = false, wall = false;
-    if (R() < 0.25){                                          // a stream across, with a bridge
-      const j0 = 5 + Math.floor(R() * 3), b = Math.floor(R() * NX), w = R() < 0.5 ? 2 : 1;
-      for (let j = j0; j < j0 + w; j++) for (let i = 0; i < NX; i++) map[j][i] = i === b ? '=' : '~';
+    if (R() < K.water){                                       // a stream across, with a bridge
+      /* (the bridge two planks wide, three at level 1: the levels, Oct 10. A one-plank bridge over a stream whose banks are
+         rounded let 2 shots in 100 across from right in front of it, with perfect aim; the rater, with a person's hands,
+         never got over one in ten strokes) */
+      const bw = lv === 1 ? 3 : 2, j0 = 5 + Math.floor(R() * 3), b = Math.min(NX - bw, Math.floor(R() * NX)), w = R() < 0.5 ? 2 : 1;
+      for (let j = j0; j < j0 + w; j++) for (let i = 0; i < NX; i++) map[j][i] = i >= b && i < b + bw ? '=' : '~';
       water = true;
     }
-    const nS = R() < 0.55 ? 1 + Math.floor(R() * 3) : 0;      // sand
+    const nS = R() < K.sand ? 1 + Math.floor(R() * 3) : 0;    // sand
     for (let q = 0; q < nS; q++){
       const i0 = Math.floor(R() * (NX - 1)), j0 = 1 + Math.floor(R() * 10), w = 2 + Math.floor(R() * 2), h = 2 + Math.floor(R() * 2);
       for (let j = j0; j < Math.min(NY - 1, j0 + h); j++) for (let i = i0; i < Math.min(NX, i0 + w); i++) if (free(i, j)) map[j][i] = 's';
     }
-    if (!water && R() < 0.2){                                 // a wall across, with a gap three cells wide
+    if (!water && R() < K.wall){                              // a wall across, with a gap three cells wide
       const j = 5 + Math.floor(R() * 4), gap = Math.floor(R() * (NX - 2));
       for (let i = 0; i < NX; i++) if ((i < gap || i >= gap + 3) && map[j][i] !== 'T' && map[j][i] !== 'O') map[j][i] = '#';
       wall = true;
@@ -35964,7 +36065,7 @@ const GOLF_APP = (() => {
     const cl = (v, lo, hi) => r2(Math.max(lo, Math.min(hi, v)));
     const ex = (x0, y0, a, L, m) => [cl(x0 - L * Math.cos(a), -m, NX + m), cl(y0 - L * Math.sin(a), -m, NY + m), cl(x0 + L * Math.cos(a), -m, NX + m), cl(y0 + L * Math.sin(a), -m, NY + m)];   // a line's ends, in range
     const KINDS = ['hill', 'hollow', 'ridge', 'gully', 'terrace', 'wave', 'plateau', 'sunk', 'ramp', 'ring', 'crater', 'dish', 'trough', 'saddle', 'moguls', 'tilt', 'moat'];
-    const n = 2 + Math.floor(R() * 2), kinds = [];
+    const n = K.feats[0] + Math.floor(R() * (K.feats[1] - K.feats[0] + 1)), kinds = [];
     while (kinds.length < n){ const k = pick(KINDS); if (!kinds.includes(k)) kinds.push(k); }
     for (const k of kinds){
       const x = X(), y = Y();
@@ -35989,7 +36090,8 @@ const GOLF_APP = (() => {
       else if (k === 'moguls') land.push({ rough: [r3(u(0.014, 0.02)), r2(u(1.4, 2)), Math.floor(R() * 997)] });
       else land.push({ tilt: [r3(u(-0.03, 0.03)), r3(u(-0.03, 0.03))] });
     }
-    const toys = [], nT = Math.floor(R() * 3), narrows = [];
+    if (K.amp !== 1) for (const f of land){ const k = Object.keys(f)[0], v = f[k].slice(); for (const i of HEIGHTS[k] || []) v[i] = r3(v[i] * K.amp); f[k] = v; }
+    const toys = [], nT = K.toys[0] + Math.floor(R() * (K.toys[1] - K.toys[0] + 1)), narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (wall && ch === '.' && row.includes('#'))) narrows.push([i, j]); }));
     for (let q = 0, tries = 0; q < nT && tries < 30; tries++){
       const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill', 'arm', 'swing']);
@@ -36011,22 +36113,26 @@ const GOLF_APP = (() => {
     const d = Math.hypot(cc - tc, cr - tr), par = Math.max(2, Math.min(5, 2 + (d > 8 ? 1 : 0) + (water || wall ? 1 : 0) + (toys.length >= 2 ? 1 : 0)));
     const main = kinds.find(k => k !== 'tilt' && k !== 'moguls') || kinds[0];
     const hole = { name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) };
-    if (R() < 0.85) weave(hole, R);                         // (crossing tracks, Oct 10: see weave)
-    return guardCup(hole, R);
+    if (R() < K.weave) weave(hole, R, K.riders, lv);        // (crossing tracks, Oct 10: see weave)
+    if (K.extra && R() < K.extra) weave(hole, R, K.riders, lv);   // (and at the top, a second weave: the levels, Oct 10)
+    const out = tuneMovers(guardCup(hole, R, lv), K);
+    out.level = lv;
+    return out;
   }
   function holeAt(idx){
     if (idx < COURSE) return idx;
-    let k = GEN.get(idx);
-    if (k != null){ GEN.delete(idx); GEN.set(idx, k); return k; }   // (kept in the order last wanted)
-    const src = cleanSrc(genSrc(idx));
+    const lv = levelAt(idx), gk = idx * 8 + lv;              // (a board's hole at each level is a hole of its own: the levels, Oct 10)
+    let k = GEN.get(gk);
+    if (k != null){ GEN.delete(gk); GEN.set(gk, k); return k; }   // (kept in the order last wanted)
+    const src = cleanSrc(genSrc(idx, lv));
     if (!src) return idx % COURSE;
     if (GEN.size >= GEN_CAP){
       const busy = new Set([...GAMES.values()].map(g => g.hole));
       for (const [oi, ok] of GEN) if (!busy.has(ok)){ GEN.delete(oi); setHole(ok, src); k = ok; break; }
     }
     if (k == null) k = addHole(src);
-    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1;
-    GEN.set(idx, k);
+    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv;
+    GEN.set(gk, k);
     return k;
   }
   // My holes: kept in this browser, each made into a hole the first time it is played
@@ -36233,6 +36339,145 @@ const GOLF_APP = (() => {
     } } finally { SND.on = wasOn; SILENT = false; }
     return { sunk, strokes };
   }
+  /* THE RATING (Oct 10: "with tvf, we can create golf holes of great complexity and variety. we can import shapes from
+     tvf and objects from 3d. Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"). How hard a hole
+     is can't be read off its parts any more: one loop is easy at fourteen seconds a turn and cruel at five, and a shape
+     from draw or a prop from 3d is whatever it is. So a hole is rated by playing it. The plain player above aims
+     perfectly and starts the toys at the start, and so sinks nearly every hole in one; the rater is a player with a
+     person's hands: its aim is off by a few degrees (RATE.aim, radians, one standard deviation), its strength by some
+     per cent (RATE.power), and it hits a little after it meant to (RATE.late seconds, half a bell), so the movers are
+     never quite where it planned. At each stroke it looks for the best shots as if its hands were perfect (RATE.heads
+     headings at the strengths in RATE.pows), tries the best few RATE.tries times each with its hands as they are, takes
+     the one that does best on average, and plays it once more for real. It plays RATE.rounds rounds, each from its own
+     moment of the toys' clock, and a round stops at RATE.cap strokes. Its luck is seeded by the hole as written, so a
+     hole always gets the same rating. The rating is the strokes it took on average (`mean`), how much they varied
+     (`sd`), the share of rounds it finished (`sunk`), and stars, 1 to 5, from the mean (STAR_AT). A run is a generator,
+     so the page can play it a slice at a time (rateSoon) and the tests all at once (rateHole); o.trace, an array, gets a
+     line a stroke, for looking into a rating. */
+  const RATE = { rounds: 8, heads: 32, pows: [0.25, 0.45, 0.65, 0.85, 1], top: 8, tries: 3, aim: 0.07, power: 0.12, late: 0.5, cap: 10, wet: 3 };
+  // a mean of strokes up to each of these is 1, 2, 3, 4 stars, more is 5: halfway between the medians of holes made at
+  // levels 1 to 5 (2.5, 2.9, 3.1, 3.75, 5.6 strokes, forty holes a level), so a hole of level n is mostly n stars
+  const STAR_AT = [2.7, 3.0, 3.45, 4.6];
+  const starsOf = m => 1 + STAR_AT.filter(v => m > v).length;
+  function scorer(H){                                         // the way round to the cup, cell by cell (as solveHole's)
+    const dist = new Map(), key = (i, j) => i + ',' + j, ci = Math.floor(H.cup.x / CW), cj = Math.floor(H.cup.y / CW), q = [[ci, cj]];
+    dist.set(key(ci, cj), 0);
+    const pipes = (H.toys || []).filter(T => T.pipe).map(T => T.pipe);
+    while (q.length){ const [i, j] = q.shift(), d = dist.get(key(i, j));
+      const nb = [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]];
+      for (const p of pipes) if (Math.floor(p[2] / CW) === i && Math.floor(p[3] / CW) === j) nb.push([Math.floor(p[0] / CW), Math.floor(p[1] / CW)]);
+      for (const [a, b] of nb){ if (a < 0 || b < 0 || a >= NX || b >= NY || '#~'.includes(H.map[b][a]) || dist.has(key(a, b))) continue; dist.set(key(a, b), d + 1); q.push([a, b]); } }
+    return b => { const d = dist.get(key(Math.floor(b.x / CW), Math.floor(b.y / CW))); return (d == null ? 99 : d) + Math.hypot(b.x - H.cup.x, b.y - H.cup.y) / CW * 0.3; };
+  }
+  const srcHash = src => { let h = 0x811c9dc5; const t = JSON.stringify(src); for (let i = 0; i < t.length; i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  function* rater(k, o){
+    o = Object.assign({}, RATE, o || {});
+    const H = HOLES[k], score = scorer(H), R = seeded(srcHash(srcOf(k)) ^ 0x2545f491);
+    const gauss = () => { let u = 0; while (!u) u = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * R()); };
+    const copy = g => ({ ...clone({ ...g, R: null, trail: null }), R: { start: k, card: [], single: true } });
+    // (the search steps at 1/40 s and the shots played at 1/60: the ball's own sub-steps keep it to a fraction of its
+    //  radius a step either way, and a shot ends within a quarter of a cell of where 1/120 puts it, well inside the
+    //  rater's own hands, at a third of the cost)
+    const play = (g0, a, p, late, dt) => {
+      const g1 = copy(g0); g1.t += late || 0; g1.pull = { x: -Math.cos(a) * FULL * p, y: -Math.sin(a) * FULL * p };
+      if (!putt(g1)) return null;
+      dt = dt || 1 / 40;
+      for (let n = 0, N = 20 / dt; n < N && g1.state === 'play' && (g1.moving || n < 2); n++) step(g1, dt);
+      if (g1.moving){ g1.moving = false; g1.ball.vx = g1.ball.vy = 0; }   // (still knocked about after twenty seconds: played from there)
+      return g1;
+    };
+    const done = g1 => g1.state === 'sunk' || g1.state === 'done';
+    // (a stroke lost to the water counts as RATE.wet cells farther from the cup, or a shot over a one-plank bridge from
+    //  far off looks no worse than laying up in front of it: the ball comes back to where it was)
+    const val = (g0, g1) => g1 ? (done(g1) ? -1 : score(g1.ball)) + (g1.strokes - g0.strokes - 1) * o.wet : 99;
+    const hands = (g, a, p) => play(g, a + gauss() * o.aim, Math.max(0.07, Math.min(1, p * (1 + gauss() * o.power))), Math.abs(gauss()) * o.late, 1 / 60);
+    const got = [];
+    let sunkN = 0;
+    for (let rd = 0; rd < o.rounds; rd++){
+      let g = holeGame({ start: k, card: [], single: true }, k);
+      g.t = R() * 60;                                       // (each round from its own moment of the toys' clock)
+      let fin = false;
+      while (g.strokes < o.cap && !fin){
+        const cand = [];
+        for (let ai = 0; ai < o.heads; ai++) for (const p of o.pows){
+          const a = (ai + R() * 0.5) / o.heads * 2 * Math.PI, g1 = play(g, a, p);
+          if (g1) cand.push({ a, p, v: val(g, g1), at: done(g1) ? 'in' : Math.floor(g1.ball.x / CW * 2) + ',' + Math.floor(g1.ball.y / CW * 2) });
+        }
+        yield;
+        if (!cand.length) break;
+        cand.sort((x, y) => x.v - y.v);
+        // (the best few that end in different places, half a cell apart, so a safe shot to the near side of a hazard is
+        //  weighed against the bold ones over it)
+        const seen = new Set(), pool = [];
+        for (const c of cand){ if (seen.has(c.at)) continue; seen.add(c.at); pool.push(c); if (pool.length >= o.top) break; }
+        let best = cand[0], bv = Infinity;
+        for (const c of pool){
+          let s = 0; for (let n = 0; n < o.tries; n++) s += val(g, hands(g, c.a, c.p));
+          if (s / o.tries < bv){ bv = s / o.tries; best = c; }
+        }
+        yield;
+        const g1 = hands(g, best.a, best.p);
+        if (o.trace) o.trace.push([rd, g.strokes, +(g.ball.x / CW).toFixed(2), +(g.ball.y / CW).toFixed(2), +best.v.toFixed(2), +bv.toFixed(2), g1 && +(g1.ball.x / CW).toFixed(2), g1 && +(g1.ball.y / CW).toFixed(2), g1 && g1.strokes]);
+        if (!g1){ g.strokes++; continue; }
+        g = g1; fin = done(g1);
+      }
+      if (fin) sunkN++;
+      got.push(Math.min(g.strokes, o.cap));
+    }
+    const mean = got.reduce((s, v) => s + v, 0) / got.length, sd = Math.sqrt(got.reduce((s, v) => s + (v - mean) * (v - mean), 0) / got.length);
+    return { mean: Math.round(mean * 100) / 100, sd: Math.round(sd * 100) / 100, sunk: sunkN / o.rounds, stars: starsOf(mean), got };
+  }
+  function rateHole(k, o){
+    const wasOn = SND.on; SND.on = false; SILENT = true; EVEN = true;
+    try { const it = rater(k, o); let r; while (!(r = it.next()).done); return r.value; }
+    finally { SND.on = wasOn; SILENT = false; EVEN = false; }
+  }
+  // par from a rating: a stroke over what the rater took on average, rounded up (the course's pars, as written, agree)
+  const parOfRating = r => Math.max(2, Math.min(6, Math.ceil(r.mean + 1 - 1e-9)));
+  const starText = n => '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
+  /* the page's way: a slice of about ten milliseconds at a time between frames, so the game goes on while a hole is rated
+     (a few seconds here, longer on a phone); progress(i, n) after each round. The result is kept on the hole (H.rated),
+     which a changed hole loses, since setHole makes it anew. */
+  function rateSoon(k, done, progress){
+    const H = HOLES[k];
+    if (H && H.rated){ setTimeout(() => done(H.rated), 0); return () => {}; }
+    const it = rater(k), o = RATE;
+    let stop = false, laps = 0;
+    const slice = () => {
+      if (stop) return;
+      const wasOn = SND.on; SND.on = false; SILENT = true; EVEN = true;
+      let r = null;
+      try { const t0 = performance.now(); while (performance.now() - t0 < 10){ const x = it.next(); laps++; if (x.done){ r = x.value; break; } } }
+      catch (e){ stop = true; SND.on = wasOn; SILENT = false; EVEN = false; done(null, e); return; }
+      SND.on = wasOn; SILENT = false; EVEN = false;
+      if (r){ if (HOLES[k] === H) H.rated = r; done(r); return; }
+      if (progress) try { progress(laps); } catch {}
+      setTimeout(slice, 0);
+    };
+    setTimeout(slice, 0);
+    return () => { stop = true; };
+  }
+  /* RATE THIS HOLE (the menu): the hole on the selected board, or the one being edited (whose par it then sets). */
+  function rateHere(){
+    if (ED.on) return editAction('check');
+    const L = framedHere(), g = L && GAMES.get(L.key), k = g ? g.hole : L ? holeOf(L.c, L.r) : null;
+    if (k == null || !HOLES[k]){ say('Select a hole on the field first.', 2400); return null; }
+    const H = HOLES[k];
+    say('Rating ' + H.name + '…', 1500);
+    return new Promise(ok => rateSoon(k, r => {
+      if (r) say(starText(r.stars) + ' ' + H.name + ': ' + r.mean.toFixed(1) + ' strokes on average for a fair player (par ' + H.par + (H.level ? ', level ' + H.level + ' of 5' : '') + ')', 4500);
+      ok(r);
+    }));
+  }
+  /* THE DIFFICULTY SETTING (the menu): Easy, Normal, Hard, Expert, kept in this browser. The boards' holes are made again
+     at their new levels as they are next drawn (holeAt keeps a board's hole at each level apart); a hole being played
+     stays as it is until it is left. It is the one Difficulty: the grass and the cup follow it too (see ONE DIFFICULTY). */
+  function setLevel(v){
+    LEVEL_SET = ((v % 4) + 4) % 4;
+    ARCADE.save('golf.level', LEVEL_WORDS[LEVEL_SET]);
+    say('Difficulty: ' + LEVEL_NAMES[LEVEL_SET] + ' — the boards near the corner are level ' + levelAt(30) + ' of 5, and they get harder farther out.', 3200);
+  }
+  const lvTag = H => H && H.level ? ' (level ' + H.level + ' of 5)' : '';
   /* ─── the editing itself ─── */
   const ED = { on: false, k: -1, src: null, key: null, tool: 'select', pick: null, dots: [], box: null, boxing: false, grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], last: null, stroke: false, timer: 0, msg: '' };
   function editStart(from){                               // from: a HOLES index to take in, or null for a new hole
@@ -36948,14 +37193,36 @@ const GOLF_APP = (() => {
       ED.msg = n === S.land.length && !hadLift ? 'no tilt, wave, rough or dots to level' : 'levelled'; editRefresh(true); return;
     }
     if (a === 'mat'){ S.fence = FENCE_MATS[(FENCE_MATS.indexOf(S.fence) + 1) % FENCE_MATS.length]; editRefresh(true); return; }
+    /* HARDER AND EASIER (the levels, Oct 10): every mover on the hole a sixth faster or slower and its rider a little
+       bigger or smaller, and the ground's slopes a sixth steeper or gentler; the rating is then out of date. */
+    if (a === 'harder' || a === 'easier'){
+      const up = a === 'harder', f = up ? 1.18 : 1 / 1.18, movers = S.toys.filter(T => T.path || T.gate || T.arm || T.swing).length;
+      const shaped = S.land.filter(x => HEIGHTS[Object.keys(x)[0]]).length;
+      if (!movers && !shaped){ ED.msg = 'nothing to make ' + (up ? 'harder' : 'easier') + ': no movers or ground'; return; }
+      snapEdit();
+      tuneMovers(S, { speed: 1 / f, size: up ? 1.06 : 1 / 1.06 });
+      S.land = S.land.map(x => { const k = Object.keys(x)[0], v = x[k].slice(); for (const i of HEIGHTS[k] || []) v[i] = Math.round(v[i] * f * 1000) / 1000; return { [k]: v }; });
+      ED.rating = null;
+      ED.msg = (up ? 'harder' : 'easier') + ': ' + (movers ? movers + ' mover' + (movers > 1 ? 's ' : ' ') + (up ? 'faster' : 'slower') : '') + (movers && shaped ? ', ' : '') + (shaped ? 'ground ' + (up ? 'steeper' : 'gentler') : '');
+      editRefresh(true); return;
+    }
+    /* CHECK, NOW A RATING (Oct 10): the plain player first, to say whether the cup can be reached at all; then the rater
+       (THE RATING) plays it with a person's hands, and its strokes on average give the stars and the par. Resolves with
+       { sunk, strokes, mean, stars, par }. */
     if (a === 'check'){
       ED.msg = 'checking…'; updateEditBar();
       return new Promise(done => setTimeout(() => {
         setHole(ED.k, S);
         const r = solveHole(ED.k, 8);
-        if (r.sunk){ S.par = Math.max(2, Math.min(6, r.strokes + 1)); setHole(ED.k, S); ED.msg = 'playable: sunk in ' + r.strokes + ', par ' + S.par; }
-        else ED.msg = 'not sunk in 8: open a way to the cup';
-        updateEditBar(); done(r);
+        if (!r.sunk){ ED.msg = 'not sunk in 8: open a way to the cup'; updateEditBar(); done(r); return; }
+        ED.msg = 'rating…';
+        const k = ED.k, snap = JSON.stringify(S);
+        rateSoon(k, R => {
+          if (!R || !ED.on || ED.k !== k || JSON.stringify(ED.src) !== snap){ done({ ...r, rating: R }); return; }   // (changed meanwhile: not this hole's)
+          const S = ED.src; S.par = parOfRating(R); setHole(k, S); HOLES[k].rated = R; ED.rating = R;
+          ED.msg = starText(R.stars) + ' ' + R.mean.toFixed(1) + ' strokes on average, par ' + S.par;
+          keepMine(); updateEditBar(); done({ ...r, mean: R.mean, stars: R.stars, par: S.par });
+        }, n => { ED.msg = 'rating… ' + Math.min(99, Math.round(n / (RATE.rounds * 6) * 100)) + '%'; });
       }, 30));
     }
     if (a === 'save'){
@@ -37031,7 +37298,7 @@ const GOLF_APP = (() => {
      Copy, Paste and Delete act on the whole board: see editAction.) */
   /* (Oct 10, later: "add undo,redo to the menu. remove copy,paste,delete,undo,redo from the menu." Undo, Redo, Copy,
      Paste and Delete left the tiles for mini golf's menu: see editorMenu.) */
-  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱']];
+  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['harder', 'Harder', '🔺'], ['easier', 'Easier', '🔻']];   // (Harder, Easier: the levels, Oct 10)
   function editTiles(){
     /* (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is selected,
        change the color of the button to selected. the buttons should toggle on/off thats it." No top line on any tile;
@@ -37166,7 +37433,11 @@ const GOLF_APP = (() => {
     cellGrid(c, r){ return gridOf(holeShown(c, r)); },
     cellItems,
     get menu(){ return [{ head: 'Mini golf', items: [
-      DL.item,
+      // (Oct 10: "Now we way to adjust the difficulty" … "ok, proceed": see ONE DIFFICULTY, HOW HARD, AND WHERE)
+      { label: () => 'Difficulty: ' + LEVEL_NAMES[LEVEL_SET], title: 'Easy, Normal, Hard or Expert: the grass\'s speed, the cup\'s size, and how hard the holes are made. Boards near the corner are gentlest and they get harder the farther out you fly; this shifts the whole field easier or harder.',
+        on(){ setLevel(LEVEL_SET + 1); } },
+      { label: 'Rate this hole', title: 'A fair player plays the hole on the selected board a few times, with a person\'s small errors of aim, strength and timing; its strokes on average give the stars (and, while editing, the par).',
+        on(){ return rateHere(); } },
       { label: () => 'Hole numbers: ' + (NUMS.on ? 'on' : 'off'), title: 'Each board shows its hole number in the far left corner.',
         on(){ NUMS.on = !NUMS.on; ARCADE.save('golf.nums', NUMS.on ? 'on' : 'off'); } },
       { label: () => 'Wireframe: ' + (WIRE.on ? 'on' : 'off'), title: 'A grid draped over the grass, so the hills and hollows show as the lines bend.',
@@ -37290,7 +37561,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, pathify, pathToTvf, tvfToPaths, addTvfPaths, loopOf, fly: (c, r) => gotoCell(c, r) } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, addHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, LEVEL_DIALS, pathify, pathToTvf, tvfToPaths, addTvfPaths, loopOf, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10)
   };

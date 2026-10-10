@@ -98,7 +98,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   from the sides and top. (The cannon was taken out on Oct 9.) Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
   1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
   `tests/golf-course.mjs` plays the
-  course and a sample of generated holes (`GEN_SAMPLE`, 40). Sunken ground goes at most BASE deep; water lies
+  course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates `LEVEL_SAMPLE` (6) holes at each of levels 1, 3 and 5
+  and fails unless they climb (see Difficulty). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
   alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
@@ -111,6 +112,46 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   screen: under 1500 px the rail in cell-long pieces, under 600 plain box rails (`railPV`/`railPH`),
   plain bumpers and boulders and quarter-detail ground (`landM`), under 300 two-cell rails, coarse
   ground (`landL`), no number and no dotted tracks. Items may be stretched (`sx`/`sy`/`sz`).
+- **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
+  - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
+    its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each
+    from its own moment of the toys' clock, up to `RATE.cap` (10) strokes.
+    - At each stroke it searches as if its hands were perfect: 32 headings × 5 strengths, stepping at 1/40 s.
+    - It tries the best 8 that end half a cell apart 3 times each with its own hands (at 1/60 s), and keeps the best on
+      average. A stroke lost to water counts as `RATE.wet` cells farther from the cup.
+    - It is seeded by the hole as written, so a hole always gets the same rating. It returns {mean, sd, sunk, stars}.
+    - Stars come from the mean (`STAR_AT`: 2.7, 3.0, 3.45, 4.6, halfway between the levels' medians, so a level-n hole is
+      mostly n stars); par from a rating is `parOfRating` = ceil(mean + 1).
+    - A hole takes 1–8 s; `rateSoon` runs it in 10 ms slices and keeps the result on the hole (`H.rated`).
+    - The plain player (`solveHole`) aims perfectly and sinks nearly everything in one, so it only says whether the cup
+      can be reached.
+  - **The menu:** Rate this hole (stars for the selected hole; while editing it is Check, which also sets par), and
+    Difficulty: Easy / Normal / Hard / Expert (`LEVEL_SET`, kept in `golf.level` as before).
+    - It is the one Difficulty: it was the arcade kit's (the grass's speed and the cup's size, `DIFF`), and now it shifts
+      the holes' levels too. Expert plays on Hard's grass and cup.
+    - The rater always plays on Normal's (`EVEN`), so a hole's stars and par don't depend on the setting.
+  - **The levels:** a generated hole is made for a level from 1 to 5, given by `levelAt` = the ring level plus the
+    setting minus 1.
+    - Ring levels (`ringLevel`) double out from the corner: rings 0–6 are level 1, 7–14 level 2, 15–30 level 3, 31–62
+      level 4, and beyond that level 5.
+    - `holeAt` keeps a board's hole at each level apart (GEN key idx·8 + level), and sets `H.level`, which the tee
+      message shows.
+    - `LEVEL_DIALS` set each level: weave chance (a second weave at 4–5), riders per weave, mover speed and rider size
+      (`tuneMovers`), ground height (`HEIGHTS`) and number of pieces, water, wall, sand, and loose toys. Level 3 is the
+      generator as it was.
+    - Guards are weighed by what the rater found (`GROUND_GUARDS`: mound, crater, apron, moat, hillside and pond were the
+      hardest), left out at level 1 and favoured at 4–5. There is no cage below level 3, and no rose or serpent at level 1.
+    - Level 5 always gets a screen. Bridges are 2 planks wide (3 at level 1). Weave tracks keep off the banks and away
+      from bridges: riders by water made holes no one could finish.
+  - **Remade until it fits:** `genSrc(idx, lv)` makes `genOnce(idx, lv, a)` for a = 0…7 until `guessMean` falls in
+    `LEVEL_BAND[lv]`, keeping the nearest.
+    - Rated on 200 fresh holes, the levels came out 2.6, 3.0, 3.1, 3.9 and 5.4 strokes on average.
+    - `guessMean` is a straight-line guess (`GUESS_W`) fitted to 400 rated holes; on fresh holes it goes with the
+      rating at 0.73. Its features are water, the riders'
+      size and speed, walls, windmills, the cage, turnstiles/doors/gates, length, ground and a ground guard.
+    - The hole keeps `guess`. If the generator changes much, rate a few hundred holes and refit.
+  - **The editor:** Harder and Easier tiles make every mover 18% faster or slower, its rider 6% bigger or smaller, and
+    the ground 18% steeper or gentler.
 - **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
   puts its tools in the bottom panel. **The row is the editor** (Oct 10: "remove the game mode"): opening mini golf's
   bottom row (the dots) starts the editor on the selected hole, shutting it leaves the editor, and leaving the editor any
