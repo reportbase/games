@@ -35313,7 +35313,7 @@ const GOLF_APP = (() => {
     return ch === '#' ? (MAT_COL[matOf(H)] || MAT_COL.wood).far : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
   }) }); };
   const holeShown = (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.hole : holeOf(c, r); };
-  const POLE_H = 0.16;
+  const POLE_H = 0.16, FLAG_W = 0.62, FLAG_H = 0.3, FLAG_Y = 0.85;   // (the flag, in the pole's heights: wider since Oct 10)
   /* THE GRASS, as a surface: a 60×60 mesh on the ground's heights, coloured by what it is — grass
      lighter up high and darker down low, mown in stripes; sand; water; walls under their blocks. */
   // (in the board's own units: x across WD, y down 1, placed by the item at the board's middle)
@@ -35518,7 +35518,20 @@ const GOLF_APP = (() => {
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
     pole: T => { const g = new T.CylinderGeometry(0.025, 0.025, 1, 6); g.translate(0, 0.5, 0); return g; },
-    pennant: T => { const g = new T.BoxGeometry(0.45, 0.26, 0.03); g.translate(-0.225, 0.86, 0); return g; },   // flies toward +u (−x)
+    // (Oct 10, later: "make the flag a little wider and show the dificulty as dots on the flag." The flag was 0.45 by 0.26
+    //  of the pole's height; it is 0.62 by 0.3 now, and a generated hole's flag carries its level as dots in a row, one to
+    //  five, each a disc through the flag so it shows on both faces: flagDots1 … flagDots5)
+    pennant: T => { const g = new T.BoxGeometry(FLAG_W, FLAG_H, 0.03); g.translate(-FLAG_W / 2, FLAG_Y, 0); return g; },   // flies toward +u (−x)
+    ...Object.fromEntries([1, 2, 3, 4, 5].map(n => ['flagDots' + n, T => {
+      const pos = [], nrm = [], step = FLAG_W / (n + 1);
+      for (let q = 1; q <= n; q++){
+        const d = new T.CylinderGeometry(0.046, 0.046, 0.05, 14).toNonIndexed();
+        d.rotateX(Math.PI / 2); d.translate(-step * q, FLAG_Y, 0);
+        pos.push(...d.attributes.position.array); nrm.push(...d.attributes.normal.array);
+      }
+      const g = new T.BufferGeometry();
+      g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+      g.userData.unlit = true; return g; }])),
     // The hole number's parts: a dark plate, and the bars of seven-segment digits lying on it.
     plate: T => { const g = new T.BoxGeometry(1, 0.08, 0.78); g.translate(0, 0.04, 0); return g; },
     segH: T => { const g = new T.BoxGeometry(1, 0.15, 0.22); g.translate(0, 0.075, 0); g.userData.unlit = true; return g; },
@@ -35606,6 +35619,8 @@ const GOLF_APP = (() => {
     out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
              { kind: 'pennant', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level ? LEVEL_FLAG[H.level - 1] : 0xe0443a });
+    // the level as dots on the flag, white (dark on the yellow of level 3), on a board near enough to see them
+    if (H.level && mid) out.push({ kind: 'flagDots' + H.level, u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level === 3 ? 0x2a2a2a : 0xffffff });
     // The toys, where the clock has them: the game's own clock on the board in play, the wall clock elsewhere.
     const t = G ? (G.t || 0) : performance.now() / 1000;
     /* (Oct 10, later: "if wireframe is off, don't show the orbit path." The movers' dotted tracks, a path's loop and the

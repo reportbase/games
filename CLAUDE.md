@@ -137,7 +137,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     - Ring levels (`ringLevel`) double out from the corner: rings 0–6 are level 1, 7–14 level 2, 15–30 level 3, 31–62
       level 4, and beyond that level 5. The ring (`ringOf`) is the distance from the corner the short way round the wrapped
       field, so the boards left of and above the corner are ring 1, not the farthest.
-    - A generated hole's flag is its level's colour (`LEVEL_FLAG`: green, blue, yellow, orange, black); the course keeps red.
+    - A generated hole's flag is its level's colour (`LEVEL_FLAG`: green, blue, yellow, orange, black) and carries the level
+      as one to five dots (`flagDots1`…`5`, discs through the flag so both faces show them; boards over 300 px). The flag is
+      `FLAG_W` × `FLAG_H` (0.62 × 0.3) of the pole's height. The course keeps red flags with no dots.
     - The course's 22 holes have no level, but their movers follow the setting (`COURSE_TUNE`, `tuneCourse`: slower on
       Easy, faster on Hard and Expert; Normal is the course as made, which the course test plays).
     - `holeAt` keeps a board's hole at each level apart (GEN key idx·8 + level), and sets `H.level`, which the tee

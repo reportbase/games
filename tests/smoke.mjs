@@ -516,7 +516,10 @@ try {
       const sec = () => { const T = D.HOLES.slice(0, 22).flatMap(H => H.toys).find(T => T.path); return T && T.path[T.path.length - 3]; };
       E.setLevel(1); const sN = sec(); E.setLevel(3); const sX = sec(); E.setLevel(0); const sE = sec(); E.setLevel(1);
       let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.boardIdx(c, r) >= 22) break search;
-      const kb = D.holeOf(c, r), flag = D.cellItems(c, r, 2000).find(i => i.kind === 'pennant'), fl = flag && flag.color === E.LEVEL_FLAG[D.HOLES[kb].level - 1];
+      // (and the level as dots on the flag: Oct 10, later, "make the flag a little wider and show the dificulty as dots on the flag")
+      const its = D.cellItems(c, r, 2000), kb = D.holeOf(c, r), flag = its.find(i => i.kind === 'pennant'), dots = its.find(i => /^flagDots/.test(i.kind));
+      const fl = flag && flag.color === E.LEVEL_FLAG[D.HOLES[kb].level - 1] && dots && dots.kind === 'flagDots' + D.HOLES[kb].level
+        && !D.cellItems(0, 0, 2000).some(i => /^flagDots/.test(i.kind));   // (the course's holes have no level, and no dots)
       return { rings, lab0, lab1, lab2, stored, l0, l1, l2, other: k1 !== k0, riders, weaves, bridge, wrap, corner, sec: [sE, sN, sX], fl };
     });
     if (lv.rings.join() !== '1,1,2,3,4,5' || lv.lab0 !== 'Difficulty: Normal' || lv.lab1 !== 'Difficulty: Hard' || lv.lab2 !== 'Difficulty: Normal' || lv.stored !== 'hard'
