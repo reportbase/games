@@ -1046,8 +1046,10 @@
      same as the tilt scrollbar, but horizontal across the top"). The tilt
      rail laid on its side: the same accent line, dark backing and nub, along
      the top edge between the two side rails (which keep their corners). Left
-     end is −180°, the middle is facing forward, right end +180°. */
-  #yawZone { top: 0; left: min(32px, 5.25vw); right: min(32px, 5.25vw); height: min(64px, 11vh); z-index: 5;
+     end is −180°, the middle is facing forward, right end +180°.
+     (Oct 10: "the top slider for rotation should be the same height as the side sliders are wide." It was
+     min(64px, 11vh), twice the side rails' band; now the very same measure as their width.) */
+  #yawZone { top: 0; left: min(32px, 5.25vw); right: min(32px, 5.25vw); height: min(32px, 5.25vw); z-index: 5;
              cursor: ew-resize; touch-action: none;
              background: transparent !important; border: none !important;
              border-radius: 0; backdrop-filter: none !important;
@@ -13366,16 +13368,19 @@ function bbPaintStat(ico, s, S){
   if (!s) return;
   const w = S.w, h = S.h, F = '-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif';
   c.globalAlpha = s.dim ? 0.4 : 1;
-  c.fillStyle = '#1c1d21'; c.beginPath(); c.roundRect ? c.roundRect(0, 0, w, h, 6) : c.rect(0, 0, w, h); c.fill();
+  /* (Oct 10, mini golf's editor: "remove the in hand, paint, editing anything on the top line of the button. when the
+     object is selected, change the color of the button to selected." A tile may give its own background, bg, and a
+     tile with no label puts its glyph and name in the middle, with no empty line above them.) */
+  c.fillStyle = s.bg || '#1c1d21'; c.beginPath(); c.roundRect ? c.roundRect(0, 0, w, h, 6) : c.rect(0, 0, w, h); c.fill();
   c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillStyle = '#c9ccd2'; c.font = '600 ' + Math.round(h * 0.13) + 'px ' + F;
-  c.fillText(String(s.label || ''), w / 2, h * 0.16, w - 8);
+  const lab = !!s.label;
+  if (lab){ c.fillStyle = '#c9ccd2'; c.font = '600 ' + Math.round(h * 0.13) + 'px ' + F; c.fillText(String(s.label), w / 2, h * 0.16, w - 8); }
   const col = s.color || '#ffffff';
   if (s.glyph){
     c.fillStyle = col; c.font = Math.round(h * 0.34) + 'px ' + F;
-    c.fillText(s.glyph, w / 2, h * 0.45);
+    c.fillText(s.glyph, w / 2, h * (lab ? 0.45 : 0.38));
     c.fillStyle = '#ffffff'; c.font = '700 ' + Math.round(h * 0.2) + 'px ' + F;
-    c.fillText(String(s.value), w / 2, h * 0.78, w - 8);
+    c.fillText(String(s.value), w / 2, h * (lab ? 0.78 : 0.74), w - 8);
   } else {
     c.fillStyle = col; c.font = '700 ' + Math.round(h * (String(s.value).length > 5 ? 0.22 : 0.32)) + 'px ' + F;
     c.fillText(String(s.value), w / 2, h * 0.5, w - 8);
@@ -34012,6 +34017,8 @@ const GOLF_APP = (() => {
      (index BUILT and on), so they are on no board until you play one; a round of one of them is that one hole. */
   const BUILT = HOLES.length;
   const MINE_KEY = 'golf.myholes';
+  const CLIP_KEY = 'golf.clip';                               // the editor's Copy (Oct 10): a whole hole as written
+  let CLIP = null;
   const clone = o => JSON.parse(JSON.stringify(o));
   /* Anything read from a link or from storage is checked before it is believed: a map of the right size with only the
      map's own letters, one tee and one cup, and only the kinds of ground and toy the course knows, each number held in
@@ -34836,6 +34843,26 @@ const GOLF_APP = (() => {
       snapEdit();
       S.land.splice(ED.sel, 1); ED.sel = null; editRefresh(true); return;
     }
+    /* (Oct 10: "add copy, paste delete . the three should copy/paste/delete the complete board not the object.") Copy
+       keeps the whole hole as written (map, things, ground, dots, material, par) on a clipboard of the editor's own,
+       kept in localStorage too so it can be pasted on another board or after a reload; Paste lays it over the hole being
+       edited, which keeps its own name so My holes still tells them apart; Delete clears the board to a new hole's
+       (the tee, the cup and grass), the name kept. Both can be undone. */
+    if (a === 'copy'){
+      CLIP = clone(S); try { localStorage.setItem(CLIP_KEY, JSON.stringify(CLIP)); } catch {}
+      ED.msg = 'hole copied'; return;
+    }
+    if (a === 'paste'){
+      if (!CLIP) try { CLIP = cleanSrc(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null')); } catch {}
+      const c = CLIP && cleanSrc(clone(CLIP));
+      if (!c){ ED.msg = 'nothing copied yet'; return; }
+      snapEdit(); c.name = S.name; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
+      ED.msg = 'hole pasted'; editRefresh(true); return;
+    }
+    if (a === 'clear'){
+      snapEdit(); const c = blankSrc(); c.name = S.name; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
+      ED.msg = 'board cleared'; editRefresh(true); return;
+    }
     if (a === 'level'){
       snapEdit(); const n = S.land.length, keep = ED.sel != null ? S.land[ED.sel] : null;
       S.land = S.land.filter(f => !f.tilt && !f.wave && !f.rough);
@@ -34910,30 +34937,39 @@ const GOLF_APP = (() => {
      tap on a tile (onStatTap) takes up that tool or does that thing, and the row stays open while editing however the
      board is tapped or dragged (statsStay). The tiles are read again a few times a second, so they follow the editor. */
   const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
-    ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'],
+    ['=', 'Bridge', '🌉', 'paint'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
     ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],
     ['arm', 'Turnstile', '✴️', 'drag out'], ['swing', 'Door', '↪️', 'drag out'],
-    ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
-    ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
+    ['plat', 'Plateau', '🟫', 'drag a box'],
     ['erase', 'Erase', '🧽', 'take away']];
-  const ACTS = [['undo', 'Undo', '↶'], ['redo', 'Redo', '↷'], ['higher', 'Higher', '⬆️'], ['lower', 'Lower', '⬇️'], ['del', 'Delete', '✖️'], ['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['name', 'Name', '✎'], ['par', 'Par', '#'], ['check', 'Check', '✓'],
-    ['save', 'Save', '💾'], ['share', 'Share', '🔗'], ['done', 'Done', '▶']];
+  /* (Oct 10: "remove the following buttons: par, check, save, share, done, tee, cup, ramp, bowl, half-pipe, select,
+     higher, lower, name." Their tiles are gone; what they did is still in editAction and the quick buttons: Select and
+     Done are quick buttons, the tee and cup are dragged, every change is saved as it is made.) */
+  /* (Oct 10: "remove the delete object button." Its tile went; a selected thing is still deleted from editAction('del').
+     Copy, Paste and Delete act on the whole board: see editAction.) */
+  const ACTS = [['undo', 'Undo', '↶'], ['redo', 'Redo', '↷'], ['copy', 'Copy', '📋'], ['paste', 'Paste', '📥'], ['clear', 'Delete', '🗑️'],
+    ['level', 'Level', '➖'], ['mat', 'Material', '🧱']];
   function editTiles(){
-    const S = ED.src, out = [{ label: ED.msg || 'editing', value: S.name, sub: 'par ' + S.par + ' · ' + S.fence + (ED.saved ? ' · saved' : ''), color: '#ffd23a' }];
-    for (const [t, name, glyph, how] of TOOLS) out.push({ label: t === ED.tool ? 'in hand' : how, glyph, value: name, color: t === ED.tool ? '#ffd23a' : '#ffffff', dim: false });
-    for (const [a, name, glyph] of ACTS) out.push({ label: a === 'mat' ? S.fence : a === 'par' ? 'par ' + S.par : '', glyph, value: name, color: a === 'done' ? '#9fe3a0' : '#c9ccd2' });
+    /* (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is selected,
+       change the color of the button to selected. the buttons should toggle on/off thats it." No top line on any tile;
+       the tool in hand is the tile lit gold; a tap takes it up or puts it down.) */
+    // (Oct 10: "remove the middle button that is only text." The tile with the hole's name, par and material went; the
+    //  tools start the row, so tile i is TOOLS[i], then the acts.)
+    const S = ED.src, SEL = '#a07c12', out = [];
+    for (const [t, name, glyph] of TOOLS) out.push({ glyph, value: name, color: '#ffffff', bg: t === ED.tool ? SEL : null, dim: false });
+    for (const [a, name, glyph] of ACTS) out.push({ glyph, value: a === 'mat' ? S.fence[0].toUpperCase() + S.fence.slice(1) : name, color: '#c9ccd2' });
     return out;
   }
   function editTileTap(i){
-    if (!ED.on || i < 1) return false;
-    const t = TOOLS[i - 1];
+    if (!ED.on || i < 0) return false;
+    const t = TOOLS[i];
     /* (Oct 10: "when I select wall, I can't deselect it." A tap on the tile of the tool in hand puts it down: Select is
        in hand again. Escape does the same, before it closes a box or leaves the editor.) */
     if (t && ED.tool === t[0] && t[0] !== 'select'){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = t[1] + ' put down'; return true; }
     if (t){ ED.tool = t[0]; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = t[3] === 'two taps' ? 'tap where it starts' : t[3].startsWith('drag') ? t[3] + ' (or tap)' : ''; return true; }
-    const a = ACTS[i - 1 - TOOLS.length];
+    const a = ACTS[i - TOOLS.length];
     if (a){ editAction(a[0]); return true; }
     return false;
   }

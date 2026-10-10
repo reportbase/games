@@ -119,6 +119,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   is not. The movers are tools too: Shuttle and Gate (drag a track), Orbit (drag out from the
   centre), each placed at a default size by a tap. Undo has Redo (`ED.redo`).
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
+  **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
+  in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the five paints,
+  the bumpers, Boulder, Fence, Windmill, Pipe, the movers, Turnstile, Door, Plateau, Erase; the acts:
+  Undo, Redo, Copy, Paste, Delete, Level, Material (named by the material). Copy, Paste and Delete act on the whole
+  board (Oct 10): Copy keeps the hole as written (`CLIP`, and localStorage `golf.clip`), Paste lays it over the hole
+  being edited (its name kept), Delete clears it to a new hole's; both undo. The delete-object tile and the text-only
+  first tile (name, par, material) went, so tile i is `TOOLS[i]`, then `ACTS`. Par, Check, Save, Share, Done, Tee, Cup,
+  Ramp, Bowl, Half-pipe, Select, Higher, Lower and Name lost their tiles (Done and Select are quick
+  buttons; the actions remain in `editAction`).
   **Select and move in place** (Oct 9, step 1 of making the editor like draw.html): Select is the
   tool in hand at the start (and a quick button). A tap takes a thing, the tee or the cup; a tap on
   the grass takes NO dot and lets go (Oct 10: a tapped dot made the next drag from that spot pull one
@@ -169,6 +178,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing;
   Start again and Edit while playing. The row stops short of the middle and its buttons narrow to fit. They show only while the pane is open; the three dots
   (`#bbHandle`) show on every game, whether or not its row has anything in it.
+- **The rails** (Oct 10): the turn rail across the top (`#yawZone`) is as tall as the side rails (`#tiltZone`,
+  `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
