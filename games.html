@@ -33299,7 +33299,10 @@ const GOLF_APP = (() => {
 
   function holeGame(R, hole){
     const H = HOLES[hole];
-    return { state: 'play', R, hole, strokes: 0, ball: { x: H.tee.x, y: H.tee.y, vx: 0, vy: 0 }, rest: { x: H.tee.x, y: H.tee.y },
+    /* (Oct 10: "when i click a board, dont reset the animation. just continue where its at currently.") The toys' clock
+       starts where the boards no one is playing have theirs, the page's own clock, so a bumper going round carries on
+       from where it was when the board was tapped instead of jumping back to its start. */
+    return { t: performance.now() / 1000, state: 'play', R, hole, strokes: 0, ball: { x: H.tee.x, y: H.tee.y, vx: 0, vy: 0 }, rest: { x: H.tee.x, y: H.tee.y },
              pull: { x: 0, y: 0 }, moving: false, aiming: false, prevAt: null, sunkT: 0, slowT: 0, lipped: false, last: 0 };
   }
   function startRound(c, r){
@@ -33912,7 +33915,7 @@ const GOLF_APP = (() => {
     if (live){
       const now = performance.now(), dt = g.last ? Math.min(0.05, (now - g.last) / 1000) : 0;
       g.last = now; step(g, dt);
-    } else if (g) g.last = 0;
+    } else if (g){ g.last = 0; g.t = performance.now() / 1000; }   // (a board left keeps its toys on the page's clock: Oct 10)
     const G = GAMES.get(gkey(c, r));                  // (a sunk ball may have moved the round on)
     const H = HOLES[G ? G.hole : holeOf(c, r)], out = [];
     const k = HOLES.indexOf(H);
@@ -34510,6 +34513,7 @@ const GOLF_APP = (() => {
       return g1;
     };
     let g = holeGame({ start: k, card: [], single: true }, k), strokes = 0, sunk = false;
+    g.t = 0;                                                 // (the plain player always starts the toys at the start, so Check's par is the same each time)
     const wasOn = SND.on; SND.on = false; SILENT = true;
     try { for (; strokes < maxStrokes && !sunk; strokes++){
       let best = null, bs = Infinity;

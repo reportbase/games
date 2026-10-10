@@ -452,6 +452,21 @@ try {
   }
   console.log(`${failures.length === before8 ? 'ok  ' : 'FAIL'} ${current}`);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  // The toys carry on when a board is tapped (Oct 10: "when i click a board, dont reset the animation. just continue where
+  // its at currently."): a board no one plays runs its toys on the page's clock; the game a tap starts takes its clock
+  // from there, not from nought
+  current = 'mini golf toys carry on';
+  const beforeT = failures.length;
+  {
+    const tc = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      let spot = null; for (let dc = -3; dc <= 3 && !spot; dc++) for (let dr = -3; dr <= 3 && !spot; dr++){ const c = f.c + dc, r = f.r + dr; if (c >= 0 && r >= 0 && !D.games.get(c + '_' + r)) spot = [c, r]; }
+      if (!spot) return { none: true };
+      const now = performance.now() / 1000; A.onCellTap(spot[0], spot[1], 0.5, 0.5);
+      const g = D.games.get(spot[0] + '_' + spot[1]); return { t: g && g.t, now, lag: g ? Math.abs(g.t - now) : null }; });
+    if (tc.none || !(tc.lag < 1)) failures.push(`[${current}] a tapped board's toys' clock: ${JSON.stringify(tc)}`);
+  }
+  console.log(`${failures.length === beforeT ? 'ok  ' : 'FAIL'} ${current}`);
+
   // Crossing tracks (Oct 10: "seems like the golfe game could be more creative with orbits of the generated games. it gets
   // interesting with a variety of crossing paths that create complicated paths to golf hole."): of 200 generated holes,
   // at least four in ten carry a weave, of at least five patterns, and in every one two movers' tracks come within a
