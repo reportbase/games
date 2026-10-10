@@ -79,7 +79,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   across a gentle one; nothing lands on water or by a bridge; the hardest add a stroke to par. Then, if
   nothing crosses the straight line from the tee to the cup, a screen goes on it about halfway (fence,
   boulders, bumper, berm, turnstile, pegs or door). A generated hole's source keeps `guard`, `screen`
-  and `open` (true only if no screen could be placed) for the tests. Two toys came with it:
+  and `open` (true only if no screen could be placed) for the tests. **Crossing tracks** (Oct 10: "a variety of crossing
+  paths that create complicated paths to golf hole"): before the guard, about six generated holes in ten get a weave
+  (`weave`): crossing orbits across the way in, a figure-eight ridden by two riders half a loop apart, two crossed
+  ellipses, a three-petalled loop round the cup with an orbit crossing it, a cage of crossing shuttles round the cup, or
+  a lumpy loop with an orbit crossing it; tracks keep off the tee, the cup, walls and water, periods never fall into
+  step, riders are of every kind, par goes up one, and the source keeps `weave` (the smoke test checks that the tracks
+  cross). Two toys came with it:
   `arm [col, row, length, seconds a turn, phase, bars]`, a turnstile, and `swing [col, row, length,
   shut °, open °, seconds]`, a door; both are bars about a post (`barsOf`, drawn as `armBar`), in the
   editor as Turnstile and Door (drag out from the post). Cups are kept two cells in

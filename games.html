@@ -33021,6 +33021,7 @@ const GOLF_APP = (() => {
         if (k === 'kick' || k === 'rock') return lineD(v[0], v[1]) < v[2] + 0.3;
         if (k === 'fence' || k === 'gate' || k === 'shuttle') return segLineD(v[0], v[1], v[2], v[3]) < 0.35;
         if (k === 'orbit') return lineD(v[0], v[1]) < v[2] + v[3];
+        if (k === 'path'){ const n = (v.length - 4) >> 1; for (let q = 0; q < n; q++) if (lineD(v[2 * q], v[2 * q + 1]) < 0.5) return true; return false; }
         if (k === 'mill' || k === 'arm' || k === 'swing') return lineD(v[0], v[1]) < v[2];
         return false; })) return true;
       return [...(src.land || []), ...land].some(f => { const k = Object.keys(f)[0], v = f[k];
@@ -34199,6 +34200,81 @@ const GOLF_APP = (() => {
     plateau: ['mesa', 'table', 'shelf'], sunk: ['sunken lawn', 'pit', 'cellar'], ramp: ['ramp', 'kicker', 'launch'], ring: ['rings', 'halo', 'circle'],
     crater: ['crater', 'caldera', 'cauldron'], dish: ['basin', 'bowl', 'saucer'], trough: ['channel', 'trench', 'runnel'],
     saddle: ['saddle', 'pass', 'col'], moguls: ['moguls', 'bumps', 'hummocks'], tilt: ['slope', 'lean', 'incline'], moat: ['moat', 'ring ditch', 'trench ring'] };
+  /* CROSSING TRACKS (Oct 10: "seems like the golfe game could be more creative with orbits of the generated games. it
+     gets interesting with a variety of crossing paths that create complicated paths to golf hole."). About six holes in
+     ten get a weave of movers whose tracks cross, so the way to the cup is a matter of timing gaps between them:
+       orbits     two or three orbits side by side across the way in, their circles overlapping, turning opposite ways
+       eight      a figure-eight across the way in, ridden by two riders half a loop apart, meeting at its waist
+       ellipses   two long ellipses crossed like an X over the way in, going round opposite ways
+       rose       a three-petalled loop round the cup, an orbit crossing its petals
+       cage       three or four shuttles whose tracks cross round the cup (the lazy crest's, which Tom liked)
+       wander     a lumpy loop through the middle of the board, an orbit crossing one side of it
+     Every track keeps off the tee, off the cup (by its rider and a little more), off walls and water, and on the board;
+     the periods differ (never a simple multiple), so the gaps never fall into step; riders are boulders and bumpers of
+     every kind. A pattern that will not fit is tried again elsewhere, then another; the hole keeps `weave` (the
+     pattern's name) for the tests, and its par goes up by one. */
+  function weave(src, R){
+    const u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)], r2 = v => Math.round(v * 100) / 100;
+    const at = ch => { for (let j = 0; j < NY; j++){ const i = src.map[j].indexOf(ch); if (i >= 0) return [i + 0.5, j + 0.5]; } return null; };
+    const T = at('T'), O = at('O'); if (!T || !O) return;
+    const L = Math.hypot(O[0] - T[0], O[1] - T[1]) || 1, dx = (O[0] - T[0]) / L, dy = (O[1] - T[1]) / L, nx = -dy, ny = dx;
+    const along = q => [T[0] + dx * L * q, T[1] + dy * L * q];
+    const rider = () => pick([0, 0, 0, 1, 1, 2, 3, 4]), RR = k => (k ? 0.3 : 0.38);
+    const per = (lo, hi, used) => { for (let n = 0; n < 12; n++){ const p = r2(u(lo, hi)); if (used.every(q => { const a = Math.max(p, q) / Math.min(p, q); return Math.abs(a - Math.round(a)) > 0.12; })){ used.push(p); return p; } } const p = r2(u(lo, hi)); used.push(p); return p; };
+    const sideOK = (x, y, r) => x > 0.55 && x < NX - 0.55 && y > 0.55 && y < NY - 0.55 && Math.hypot(x - T[0], y - T[1]) > 1.3 && Math.hypot(x - O[0], y - O[1]) > r + 0.45
+      && !'#~='.includes(src.map[Math.floor(y)][Math.floor(x)]);
+    const ptsOK = (pts, r) => pts.every(([x, y]) => sideOK(x, y, r));
+    const circle = (cx, cy, Rr) => Array.from({ length: 24 }, (_, q) => [cx + Rr * Math.cos(q / 24 * 6.283), cy + Rr * Math.sin(q / 24 * 6.283)]);
+    const curve = (f, n) => Array.from({ length: n }, (_, q) => f(q / n * 2 * Math.PI));
+    const pathOf = (pts, k, p, ph) => ({ path: [...pts.flatMap(([x, y]) => [r2(x), r2(y)]), RR(k), p, r2(ph) % 1, k] });   // (a phase of 1 is 0)
+    const dense = pts => { const out = []; for (let q = 0; q < pts.length; q++){ const a = pts[q], b = pts[(q + 1) % pts.length]; for (let s = 0; s < 4; s++) out.push([a[0] + (b[0] - a[0]) * s / 4, a[1] + (b[1] - a[1]) * s / 4]); } return out; };
+    const rot = (cx, cy, a) => ([x, y]) => [cx + x * Math.cos(a) - y * Math.sin(a), cy + x * Math.sin(a) + y * Math.cos(a)];
+    const base = Math.atan2(dy, dx);
+    const MAKE = {
+      orbits(){ const n = R() < 0.5 ? 2 : 3, Rr = u(1.05, 1.5), q = u(0.4, 0.62), [mx, my] = along(q), sp = Rr * u(1.0, 1.35), used = [], out = [];
+        for (let i = 0; i < n; i++){ const o = (i - (n - 1) / 2) * sp, cx = mx + nx * o, cy = my + ny * o, k = rider();
+          if (!ptsOK(circle(cx, cy, Rr), RR(k))) return null;
+          out.push({ orbit: [r2(cx), r2(cy), r2(Rr), RR(k), r2(per(5, 9, used) * (i % 2 ? -1 : 1)), r2(u(0, 6.28)), k] }); }
+        return out; },
+      eight(){ const a = u(1.6, 2.3), b = a * u(0.55, 0.8), [mx, my] = along(u(0.42, 0.6)), f = rot(mx, my, base + Math.PI / 2);
+        const pts = curve(t => f([a * Math.sin(t), b * Math.sin(t) * Math.cos(t)]), 12), k1 = rider(), k2 = rider(), p = r2(u(6, 9));
+        if (!ptsOK(dense(pts), 0.38)) return null;
+        return [pathOf(pts, k1, p, 0), pathOf(pts, k2, p, 0.5)]; },
+      ellipses(){ const a = u(1.8, 2.5), b = u(0.65, 1.0), [mx, my] = along(u(0.42, 0.6)), w = u(0.6, 1.0), used = [], out = [];
+        for (const s of [1, -1]){ const f = rot(mx, my, base + s * w), pts = curve(t => f([a * Math.cos(t), b * Math.sin(t)]), 10), k = rider();
+          if (!ptsOK(dense(pts), RR(k))) return null; out.push(pathOf(pts, k, r2(per(5, 9, used) * s), u(0, 1))); }
+        return out; },
+      rose(){ const R0 = u(1.45, 1.9), A = u(0.35, 0.6), ph = u(0, 6.28), k = rider();
+        if (R0 - A < RR(k) + 0.55) return null;
+        const pts = curve(t => [O[0] + (R0 + A * Math.cos(3 * t + ph)) * Math.cos(t), O[1] + (R0 + A * Math.cos(3 * t + ph)) * Math.sin(t)], 15);
+        if (!ptsOK(dense(pts), RR(k))) return null;
+        // the orbit is centred on the loop where it faces the tee, so its circle always crosses the petals there
+        const [ox, oy] = pts.reduce((a, b) => Math.hypot(b[0] - T[0], b[1] - T[1]) < Math.hypot(a[0] - T[0], a[1] - T[1]) ? b : a), Ro = u(0.9, 1.3), k2 = rider(), used = [];
+        if (!ptsOK(circle(ox, oy, Ro), RR(k2))) return null;
+        return [pathOf(pts, k, r2(per(7, 11, used) * (R() < 0.5 ? -1 : 1)), u(0, 1)), { orbit: [r2(ox), r2(oy), r2(Ro), RR(k2), r2(per(5, 8, used)), r2(u(0, 6.28)), k2] }]; },
+      cage(){ const [cx, cy] = O, d = u(1.0, 1.35), h = u(1.6, 2.2), used = [], out = [];
+        const tracks = [[cx - h, cy + d, cx + h, cy + d], [cx + d, cy - h, cx + d, cy + h], [cx - d, cy - h, cx - d, cy + h]];
+        if (R() < 0.5) tracks.push([cx - h, cy - d, cx + h, cy - d]);
+        for (const [x0, y0, x1, y1] of tracks){
+          const pts = Array.from({ length: 9 }, (_, q) => [x0 + (x1 - x0) * q / 8, y0 + (y1 - y0) * q / 8]);
+          if (!pts.every(([x, y]) => x > 0.5 && x < NX - 0.5 && y > 0.5 && y < NY - 0.5 && !'#~='.includes(src.map[Math.floor(y)][Math.floor(x)]) && Math.hypot(x - T[0], y - T[1]) > 1.3)) return null;
+          out.push({ shuttle: [r2(x0), r2(y0), r2(x1), r2(y1), 0.3, per(2.6, 3.8, used)] }); }
+        return out; },
+      wander(){ const Rb = u(1.7, 2.3), [mx, my] = along(u(0.4, 0.6)), p1 = u(0, 6.28), p2 = u(0, 6.28), k = rider();
+        const pts = curve(t => { const rr = Rb * (1 + 0.28 * Math.sin(2 * t + p1) + 0.18 * Math.sin(3 * t + p2)); return [mx + rr * Math.cos(t), my + rr * Math.sin(t) * 1.15]; }, 12);
+        if (!ptsOK(dense(pts), RR(k))) return null;
+        const used = [], out = [pathOf(pts, k, r2(per(7, 11, used) * (R() < 0.5 ? -1 : 1)), u(0, 1))];
+        const e = pts[Math.floor(R() * pts.length)], Ro = u(0.9, 1.3), k2 = rider();   // (centred on the loop, so it crosses it)
+        if (!ptsOK(circle(e[0], e[1], Ro), RR(k2))) return null;
+        out.push({ orbit: [r2(e[0]), r2(e[1]), r2(Ro), RR(k2), r2(per(4.5, 7.5, used) * -1), r2(u(0, 6.28)), k2] });
+        return out; },
+    };
+    const order = Object.keys(MAKE).sort(() => R() - 0.5);
+    for (const name of order) for (let tr = 0; tr < 10; tr++){
+      const add = MAKE[name]();
+      if (add && src.toys.length + add.length <= 40){ src.toys.push(...add); src.weave = name; src.par = Math.min(6, src.par + 1); return; }
+    }
+  }
   function genSrc(idx){
     const R = seeded(Math.imul(idx + 1, 2654435761) ^ 0x5bd1e995), u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)];
     const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
@@ -34274,7 +34350,9 @@ const GOLF_APP = (() => {
     }
     const d = Math.hypot(cc - tc, cr - tr), par = Math.max(2, Math.min(5, 2 + (d > 8 ? 1 : 0) + (water || wall ? 1 : 0) + (toys.length >= 2 ? 1 : 0)));
     const main = kinds.find(k => k !== 'tilt' && k !== 'moguls') || kinds[0];
-    return guardCup({ name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) }, R);
+    const hole = { name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) };
+    if (R() < 0.6) weave(hole, R);                          // (crossing tracks, Oct 10: see weave)
+    return guardCup(hole, R);
   }
   function holeAt(idx){
     if (idx < COURSE) return idx;

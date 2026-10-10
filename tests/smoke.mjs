@@ -452,6 +452,28 @@ try {
   }
   console.log(`${failures.length === before8 ? 'ok  ' : 'FAIL'} ${current}`);
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  // Crossing tracks (Oct 10: "seems like the golfe game could be more creative with orbits of the generated games. it gets
+  // interesting with a variety of crossing paths that create complicated paths to golf hole."): of 200 generated holes,
+  // at least four in ten carry a weave, of at least five patterns, and in every one two movers' tracks come within a
+  // rider's width of each other (they cross)
+  current = 'mini golf weaves';
+  const beforeW = failures.length;
+  {
+    const wv = await page.evaluate(() => { const D = window.getFieldApp()._debug, kinds = {}; let n = 0, apart = [];
+      const track = T => { const k = Object.keys(T)[0], v = T[k], out = [];
+        if (k === 'orbit') for (let q = 0; q < 48; q++) out.push([v[0] + v[2] * Math.cos(q / 48 * 6.283), v[1] + v[2] * Math.sin(q / 48 * 6.283)]);
+        else if (k === 'shuttle') for (let q = 0; q <= 24; q++) out.push([v[0] + (v[2] - v[0]) * q / 24, v[1] + (v[3] - v[1]) * q / 24]);
+        else if (k === 'path'){ const m = (v.length - 4) >> 1; for (let q = 0; q < m; q++){ const a = q, b = (q + 1) % m; for (let s = 0; s < 6; s++) out.push([v[2 * a] + (v[2 * b] - v[2 * a]) * s / 6, v[2 * a + 1] + (v[2 * b + 1] - v[2 * a + 1]) * s / 6]); } }
+        return out; };
+      for (let i = 22; i < 222; i++){ const s = D.genSrc(i); if (!s.weave) continue; n++; kinds[s.weave] = (kinds[s.weave] || 0) + 1;
+        const ts = s.toys.filter(T => T.orbit || T.shuttle || T.path).map(track); let best = Infinity;
+        for (let a = 0; a < ts.length; a++) for (let b = a + 1; b < ts.length; b++) for (const p of ts[a]) for (const q of ts[b]) best = Math.min(best, Math.hypot(p[0] - q[0], p[1] - q[1]));
+        if (!(best < 0.35)) apart.push([i, s.weave, +best.toFixed(2)]); }
+      return { n, kinds, apart: apart.slice(0, 5), nApart: apart.length }; });
+    if (wv.n < 80 || Object.keys(wv.kinds).length < 5 || wv.nApart) failures.push(`[${current}] ${JSON.stringify(wv)}`);
+  }
+  console.log(`${failures.length === beforeW ? 'ok  ' : 'FAIL'} ${current}`);
+
   // The hole editor (Oct 8: "yes, build the editor"): a new hole on the selected board, painted with a real drag after
   // choosing a tool on the bar, things placed, undo, Check sets the par, Save keeps it, Share's link opens the page on it.
   current = 'hole editor';
