@@ -949,6 +949,41 @@ try {
       if (fo.app !== 'mini golf' || fo.mine !== st4.mine + 1 || fo.has !== 1 || fo.playing !== 'from a file' || fo2 !== fo.mine || rd.bare !== 1 || rd.list !== 2 || rd.link !== 1 || rd.junk !== 0)
         failures.push(`[${current}] open holes from a file: ${JSON.stringify({ fo, fo2, rd })}`);
     }
+    // My holes, one menu item and a list (Oct 10: "what is all that menu noise, ive got 50 items in the menu to various golf
+    // holes?" … "yes"): the menu has no item per hole; the list plays and deletes by real clicks; a course hole edited twice
+    // is one copy; exact copies kept in storage are merged when the page loads
+    const mh = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onCellTap(f.c, f.r, 0.5, 0.5);
+      const n0 = E.MINE.length;
+      E.editStart(5); E.editAction('mat'); const k1 = E.ED.k, f1 = E.ED.src.fence; E.editStop(true);
+      const n1 = E.MINE.length;
+      E.editStart(5); const k2 = E.ED.k, mat = E.ED.src.fence; E.editAction('mat'); E.editStop(true);
+      const n2 = E.MINE.length, items = E.editorMenu().map(i => i.label);
+      return { n0, n1, n2, k1, k2, mat, f1, items, perHole: items.filter(l => /^(Play|Delete): /.test(l)).length, my: items.filter(l => /^My holes \(\d+\)/.test(l)).length }; });
+    if (mh.n1 !== mh.n0 + 1 || mh.n2 !== mh.n1 || mh.k1 !== mh.k2 || mh.mat !== mh.f1 || mh.perHole || mh.my !== 1)
+      failures.push(`[${current}] My holes in the menu, and one copy a hole: ${JSON.stringify(mh)}`);
+    await page.evaluate(() => window.getFieldApp()._debug.editor.openMineBox());
+    const rows0 = await page.locator('#golfMineBox .golfMineRow').count();
+    await page.locator('#golfMineBox .golfMineRow').last().getByRole('button', { name: 'Delete' }).click();
+    const rows1 = await page.locator('#golfMineBox .golfMineRow').count();
+    await page.locator('#golfMineBox .golfMineRow').first().getByRole('button', { name: 'Play' }).click();
+    const played = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.games.get(f.c + '_' + f.r);
+      return { open: !!document.getElementById('golfMineBox'), name: g && D.HOLES[g.hole].name, first: D.editor.MINE[0].name }; });
+    await page.evaluate(() => window.getFieldApp()._debug.editor.openMineBox());
+    await page.keyboard.press('Escape'); const escShut = !(await page.evaluate(() => !!document.getElementById('golfMineBox')));
+    await page.evaluate(() => window.getFieldApp()._debug.editor.openMineBox());
+    await page.locator('#golfMineBox').getByRole('button', { name: 'Delete all' }).click();
+    await page.locator('#confirmBox').getByRole('button', { name: 'Delete all' }).click();
+    const left = await page.evaluate(() => window.getFieldApp()._debug.editor.MINE.length);
+    if (rows0 < 2 || rows1 !== rows0 - 1 || played.open || played.name !== played.first || !escShut || left !== 0)
+      failures.push(`[${current}] the My holes list: ${JSON.stringify({ rows0, rows1, played, escShut, left })}`);
+    // exact copies in storage are kept once after a reload
+    await page.evaluate(() => { const h = { name: 'twin', par: 3, map: Array.from({ length: 13 }, (_, j) => j === 1 ? '...O....' : j === 11 ? '...T....' : '........') };
+      localStorage.setItem('golf.myholes', JSON.stringify([h, h, h, { ...h, name: 'other' }])); });
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
+    const merged = await page.evaluate(() => ({ mine: window.getFieldApp()._debug.editor.MINE.map(m => m.name), stored: JSON.parse(localStorage.getItem('golf.myholes')).length }));
+    if (merged.mine.join('|') !== 'twin|other' || merged.stored !== 2) failures.push(`[${current}] copies merged on load: ${JSON.stringify(merged)}`);
   }
   console.log(`${failures.length === before9 ? 'ok  ' : 'FAIL'} ${current}`);
 } catch (e){
