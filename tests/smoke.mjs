@@ -674,7 +674,8 @@ try {
       if (!c) return { none: true };
       const H0 = () => D.HOLES[ED.k], at = () => D.rawH(H0(), c[0] * D.CW, c[1] * D.CW), mid = () => D.rawH(H0(), (c[0] + 0.5) * D.CW, c[1] * D.CW);
       const h0 = at(), m0 = mid();
-      A.onCellTap(f.c, f.r, c[0] / D.NX, c[1] / D.NY);       // (taken by a tap first: a drag on grass is the box since Oct 9)
+      // (taken by a small box round it: since Oct 10 only the box takes dots)
+      A.onQuickAct(f.c, f.r, 'box'); for (const [x, y] of [[c[0] - 0.4, c[1] - 0.4], [c[0] + 0.4, c[1] + 0.4]]) A.onPan(0, 0, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd();
       for (let q = 0; q < 5; q++) A.onPan(0, -20, { c: f.c, r: f.r, u: (c[0] + 0.01) / D.NX, v: (c[1] + 0.01) / D.NY });
       A.onPanEnd();
       const idx = c[1] * D.LIFT_W + c[0], lift = ED.src.lift && ED.src.lift[idx], rose = at() - h0, half = mid() - m0, pick = ED.pick && ED.pick.type;
@@ -695,7 +696,7 @@ try {
       let c = null; search: for (let j = 3; j < D.NY - 2; j++) for (let i = 2; i < D.NX - 1; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot')){ c = [i, j]; break search; } }
       if (!c) return null;
       const v = new W.THREE.Vector3(T.boardX + (0.5 - c[0] / D.NX) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - c[1] / D.NY) * bW * (L.cellH || 1)).project(W.camera);
-      ED.pick = { type: 'dot', i: c[1] * D.LIFT_W + c[0] }; ED.dots = [ED.pick.i];   // (selected first, by a tap, as since Oct 9)
+      ED.pick = { type: 'dot', i: c[1] * D.LIFT_W + c[0] }; ED.dots = [ED.pick.i]; ED.box = { x0: c[0] - 0.45, x1: c[0] + 0.45, y0: c[1] - 0.45, y1: c[1] + 0.45 };   // (boxed first: only the box takes dots, Oct 10)
       return { c, idx: c[1] * D.LIFT_W + c[0], x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, h0: (ED.src.lift && ED.src.lift[c[1] * D.LIFT_W + c[0]]) || 0 }; });
     if (!scr) failures.push(`[${current}] no clear dot to pull`);
     else {
@@ -724,7 +725,7 @@ try {
       ED.lastTap = null; if (gp) tap(gp[0], gp[1]); const grass = gp ? ED.pick && ED.pick.type : 'no clear spot';
       ED.src.land.pop(); ED.src.toys.splice(ri, 1); ED.pick = null;
       return { noHill, took, ri, moved, grass }; });
-    if (!ob.noHill || ob.took.tool !== 'select' || ob.took.pick !== 'toy' || ob.took.i !== ob.ri || ob.took.wall || !ob.moved || !(ob.moved[0] > 5.2) || ob.grass !== 'dot')
+    if (!ob.noHill || ob.took.tool !== 'select' || ob.took.pick !== 'toy' || ob.took.i !== ob.ri || ob.took.wall || !ob.moved || !(ob.moved[0] > 5.2) || ob.grass !== null)
       failures.push(`[${current}] a tap takes an object, a tap on grass the grass: ${JSON.stringify(ob)}`);
     // one at a time (Oct 9: "the user must select the item in the bottom object browser every time they want lay it on
     // board. the board resets to default where I can again change the height of the grass."): a boulder laid puts the
@@ -745,7 +746,7 @@ try {
       ED.src.toys.splice(n0); ED.pick = null;
       return { after1, after2, gate, sandStays };
     });
-    if (once.none || once.after1.tool !== 'select' || once.after1.pick !== null || once.after1.n !== 1 || once.after2.n !== 1 || once.after2.pick !== 'dot' || once.gate.tool !== 'select' || once.gate.n !== 2 || once.sandStays !== 's')
+    if (once.none || once.after1.tool !== 'select' || once.after1.pick !== null || once.after1.n !== 1 || once.after2.n !== 1 || once.after2.pick !== null || once.gate.tool !== 'select' || once.gate.n !== 2 || once.sandStays !== 's')
       failures.push(`[${current}] one at a time: ${JSON.stringify(once)}`);
     // many dots at once, by the box only (Oct 9: "how do I select and move multiple points at once?" … "selection box works
     // badly. it selects only one point at a time. I only want the selection box to select multiple items."): a tap on a
@@ -770,7 +771,7 @@ try {
       const boxed = E.selDots().length, back = ED.tool;
       const before = four.map(lift); act('higher'); const after = four.map(lift);
       return { c, tapped, wantOne: String(j * W8 + i + 1), dragged, want: four.join(), pulled, boxTool, boxed, back, rise: after.map((h, n) => +(h - before[n]).toFixed(3)), bar: !!document.getElementById('golfSelBar') }; });
-    if (md.none || md.tapped !== md.wantOne || md.dragged !== md.want || md.pulled || md.boxTool !== 'box' || md.boxed !== 4 || md.back !== 'select'
+    if (md.none || md.tapped !== '' || md.dragged !== md.want || md.pulled || md.boxTool !== 'box' || md.boxed !== 4 || md.back !== 'select'
         || md.rise.some(r => r !== 0.01) || md.bar) failures.push(`[${current}] many dots at once: ${JSON.stringify(md)}`);
     // the selection box (Oct 9: "use a selection box to select points. clicking away from the selection box or escape
     // closes it."): a drag from bare grass draws a box that stays, its dots selected; a drag inside it raises them all; a
@@ -797,6 +798,56 @@ try {
     const esc = await page.evaluate(() => { const ED = window.getFieldApp()._debug.editor.ED; return { box: !!ED.box, pick: ED.pick }; });
     if (sb.none || !sb.box || sb.n !== 2 || !(sb.rose[0] > 0.01) || sb.rose[0] !== sb.rose[1] || !sb.still || !sb.tapInside || sb.afterAway.box || sb.afterAway.dots || !sb.again || esc.box || esc.pick)
       failures.push(`[${current}] the selection box: ${JSON.stringify({ sb, esc })}`);
+    // REAL TOUCHES (Oct 10: "why have you not fixed the selection problem? ive asked 4 times now."): touch events sent
+    // to the canvas the way a phone sends them, tap then drag, not the editor's own functions (which is how the earlier
+    // checks passed while the phone did not). A tap on the grass takes no dot; a drag from that same spot draws the box
+    // over several dots and pulls none; a drag inside the box raises them all alike; a tap away closes it; a bumper laid,
+    // tapped and dragged moves; and the Wall tile tapped again puts Wall down (Oct 10: "when I select wall, I can't
+    // deselect it"), as Escape does
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const rt = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector("canvas"), wait = ms => new Promise(ok => setTimeout(ok, ms)), GAP = 300;
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      // (a tap's press and lift go together: this software renderer can take a second a frame, which would stretch a
+      //  tap past the long press; a phone's frame is a sixtieth of that)
+      // (as a phone does: a pointer event before each touch, which the page counts to drop a tap's echoed click)
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async pts => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } if (pts.length > 1) await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(GAP); };
+      const tap = (x, y) => gest([S(x, y)]);
+      const drag = (a, b, n = 12) => { const p = S(...a), q = S(...b), pts = []; for (let k = 0; k <= n; k++) pts.push([p[0] + (q[0] - p[0]) * k / n, p[1] + (q[1] - p[1]) * k / n]); return gest(pts); };
+      const lifted = () => (ED.src.lift || []).filter(v => v).length;
+      const taps = [], oTap = A.onCellTap; A.onCellTap = function(c, r, u, v){ taps.push([+(+u).toFixed(2), +(+v).toFixed(2), ED.tool]); return oTap.call(this, c, r, u, v); };
+      const evs = []; for (const ty of ['touchstart', 'touchend', 'mousedown', 'mouseup', 'pointerdown']) window.addEventListener(ty, () => evs.push(ty[0] + ty.slice(-2)), true);
+      A.onQuickAct(f.c, f.r, 'select'); delete ED.src.lift; ED.src.toys = ED.src.toys.filter(T => T.kick || T.rock || T.fence); ED.src.land = []; E.editAction('level');
+      let c = null; const bare = (x, y) => !E.pickAll(x, y).some(q => q.type !== 'dot');
+      search: for (let j = 3; j < D.NY - 4; j++) for (let i = 1; i < D.NX - 3; i++) if ([[0, 0], [1, 1], [2, 2], [2, 0], [0, 2], [1, 3]].every(([a, b]) => bare(i + a + 0.5, j + b + 0.5))){ c = [i + 0.5, j + 0.5]; break search; }
+      if (!c) return { none: true };
+      await tap(...c); const afterTap = { pick: ED.pick, lifted: lifted() };
+      await drag(c, [c[0] + 2, c[1] + 2]); const box = { open: !!ED.box, dots: E.selDots().length, lifted: lifted() };
+      await drag([c[0] + 1, c[1] + 1.2], [c[0] + 1, c[1] - 0.8]);
+      const raised = (ED.src.lift || []).filter(v => v), alike = raised.length === box.dots && raised.every(v => v === raised[0]) && raised[0] > 0;
+      await tap(c[0] + 2.5, c[1] + 3.2); const away = { box: !!ED.box, dots: E.selDots().length };
+      let spot = null; for (let j = 1; j < D.NY - 1 && !spot; j++) for (let i = 1; i < D.NX - 2 && !spot; i++){ const x = i + 0.5, y = j + 0.5;
+        if (ED.src.map[j][i] === '.' && ED.src.map[j][i + 1] === '.' && bare(x, y) && bare(x + 1.5, y) && (y > c[1] + 3 || y < c[1] - 1)) spot = [x, y]; }
+      if (!spot) return { none: 'no spot for a bumper' };
+      A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === 'kick')); await tap(...spot); const n = ED.src.toys.length;
+      const laid = ED.src.toys[n - 1].kick && { tool: ED.tool, pick: ED.pick };
+      await tap(...spot); const tapped = ED.pick && ED.pick.type === 'toy' && ED.pick.i === n - 1;
+      await drag(spot, [spot[0] + 1.5, spot[1]]); const moved = ED.src.toys[n - 1].kick ? ED.src.toys[n - 1].kick[0] - spot[0] : 0;
+      const wallI = 1 + E.TOOLS.findIndex(x => x[0] === '#');
+      A.onStatTap(f.c, f.r, wallI); const wallOn = ED.tool; A.onStatTap(f.c, f.r, wallI); const wallOff = ED.tool;
+      A.onStatTap(f.c, f.r, wallI); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); const escOff = ED.tool, stillOn = ED.on;
+      ED.src.toys.splice(n - 1, 1); delete ED.src.lift;
+      A.onCellTap = oTap;
+      return { c, afterTap, box, alike, away, laid, tapped, moved, wallOn, wallOff, escOff, stillOn, taps, evs: evs.join(' ') };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    if (rt.none || rt.afterTap.pick !== null || rt.afterTap.lifted || !rt.box.open || !(rt.box.dots >= 4) || rt.box.lifted || !rt.alike || rt.away.box || rt.away.dots
+        || !rt.laid || rt.laid.tool !== 'select' || rt.laid.pick !== null || !rt.tapped || !(rt.moved > 1) || rt.wallOn !== '#' || rt.wallOff !== 'select' || rt.escOff !== 'select' || !rt.stillOn)
+      failures.push(`[${current}] real touches: ${JSON.stringify(rt)}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
@@ -808,13 +859,15 @@ try {
     if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
     // Escape (Oct 9: "don't change the zoom level with escape, instead cancel the edit mode."): in the editor it leaves the
     // editor and the view stays where it was; out of it, it does nothing to the view either
+    await page.waitForTimeout(2500);                          // (the view settled first)
     const escZ = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, W = window.FIELD_WORLD;
-      E.editStart(E.ED.k); return { on: E.ED.on, zoom: W.st.zoom }; });
+      E.editStart(E.ED.k); return { on: E.ED.on, zoom: W.st.zoom, target: W.target.zoom }; });
     await page.keyboard.press('Escape'); await page.waitForTimeout(600);
     const escZ2 = await page.evaluate(() => ({ on: window.getFieldApp()._debug.editor.ED.on, zoom: window.FIELD_WORLD.st.zoom, target: window.FIELD_WORLD.target.zoom }));
     await page.keyboard.press('Escape'); await page.waitForTimeout(600);
     const escZ3 = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
-    if (!escZ.on || escZ2.on || Math.abs(escZ2.zoom - escZ.zoom) > 0.5 || Math.abs(escZ3 - escZ.zoom) > 0.5) failures.push(`[${current}] Escape: ${JSON.stringify({ escZ, escZ2, escZ3 })}`);
+    // (the view may still be finishing a settle of its own: Escape must set no flight of its own, nor move it far)
+    if (!escZ.on || escZ2.on || escZ2.target !== escZ.target || Math.abs(escZ2.zoom - escZ.zoom) > 5 || Math.abs(escZ3 - escZ.zoom) > 5) failures.push(`[${current}] Escape: ${JSON.stringify({ escZ, escZ2, escZ3 })}`);
     // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
     // it and the buttons go; the dots open it and they are back
     const qVis = () => page.evaluate(() => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0); });
