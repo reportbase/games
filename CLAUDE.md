@@ -120,9 +120,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   centre), each placed at a default size by a tap. Undo has Redo (`ED.redo`).
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
   **Select and move in place** (Oct 9, step 1 of making the editor like draw.html): Select is the
-  tool in hand at the start (and a quick button). A tap takes anything under it, the tee and cup
-  first, then toys within a fingertip, then the grass (its nearest dot), and ground of the hole's own
-  only by a second tap on the same spot (`pickAll`, `toyReach`, `landReach`). With any other tool in
+  tool in hand at the start (and a quick button). A tap takes a thing, the tee or the cup; a tap on
+  the grass takes NO dot and lets go (Oct 10: a tapped dot made the next drag from that spot pull one
+  dot instead of drawing the box, "selects only one point at a time"); a second tap on the same bare
+  spot takes ground of the hole's own (`pickAll`, `toyReach`, `landReach`). Dots are taken only by the
+  selection box. A tap on the tile of the tool in hand puts it down (Select again), as Escape does
+  first. While editing, `noDoubleTap()` makes the field pass a quick second tap to the app instead of
+  reading a double-tap (which reframed the view and swallowed the tap). With any other tool in
   hand (Erase and Box aside) a tap on the body of a thing, the tee or the cup selects it and takes up
   Select, so the next drag moves it (Oct 9: "taping an object should select it allow it to be moved").
   **One at a time** (Oct 9): a thing or a piece of ground laid on the hole puts its tool down
@@ -176,6 +180,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   asking.
 
 ## Testing
+- **Test the editor with real input.** The smoke test's "real touches" check sends touch events (with
+  the pointer events a phone sends before them) to the canvas; checks that call `onCellTap`/`onPan`
+  directly passed for a week while the phone did not. A tap's touchstart and touchend go together
+  there, because the software renderer can take a second a frame.
 - `npm test` runs `tests/smoke.mjs`: it loads the page in headless Chromium,
   switches to every app in `FIELD_APPS`, and fails on any uncaught error. Run it
   before every PR, and add checks there for new behaviour. It then runs

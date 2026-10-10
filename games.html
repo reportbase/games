@@ -15961,7 +15961,11 @@ function handleGroundTap(hit){
       // NAVIGATION-DIAL coast: a click is the brake, and the braking click
       // is EATEN — it stops the flight and selects nothing.
       if (st.heldPanRate){ resetThrust(); return; }
-      if (tapIsDouble(hit)){
+      /* AN APP MAY TAKE BOTH TAPS OF A DOUBLE (Oct 10, mini golf's editor): a quick second tap on the same spot was a
+         double-tap, which reframes the view and never reaches the app, so a bumper laid and then tapped to take it was
+         eaten, and the view jumped. While noDoubleTap() says so, every tap is a tap. */
+      let _noDbl = false; try { const _da = window.getFieldApp && window.getFieldApp(); _noDbl = !!(_da && _da.noDoubleTap && _da.noDoubleTap()); } catch {}
+      if (!_noDbl && tapIsDouble(hit)){
         cancelSidePanelToggle();     // the first tap of this pair was not a toggle
         if (autoMode){ setAutoMode(false); return; }   // eaten here too
         // Doubling on the piece the hint points at PLAYS the hint. Checked
@@ -34488,6 +34492,7 @@ const GOLF_APP = (() => {
     if (e.key !== 'Escape' || !GOLF_ON()) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (!ED.on) return;
+    if (ED.tool !== 'select'){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tool put down'; return; }   // (Oct 10)
     if (ED.box) closeBox(); else editStop(false);
   }, true); } catch {}
   const selDots = () => ED.pick && ED.pick.type === 'dot' ? (ED.dots && ED.dots.includes(ED.pick.i) ? ED.dots : [ED.pick.i]) : [];
@@ -34521,7 +34526,8 @@ const GOLF_APP = (() => {
          thing only when it starts on a bumper, a fence or any other thing, the tee or the cup, or on what is already
          selected (a dot or a piece of ground tapped first); anywhere else it draws the selection box. */
       const here = pickAll(x, y);
-      const p = (ED.pick && here.find(c => samePick(c, ED.pick))) || here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O');   // (what is selected first)
+      // (what is selected first, a dot excepted: a dot is carried only from inside the box, above; Oct 10)
+      const p = (ED.pick && ED.pick.type !== 'dot' && here.find(c => samePick(c, ED.pick))) || here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O');
       if (!p){
         ED.grab = { none: true }; ED.boxing = true; ED.drag = { from: { x, y }, to: { x, y } }; ED.pick = null; ED.dots = [];
         ED.msg = 'drag a box over the dots'; return false;
@@ -34651,9 +34657,19 @@ const GOLF_APP = (() => {
     if (t === 'select'){                                     // (Oct 9: anything, not only the ground; see SELECT AND MOVE)
       if (!drag){
         ED.grab = null; ED.guide = null;
-        if (boxOpen()){ if (!inBox(x, y)) closeBox(); return false; }   // a tap away from the box closes it; inside, it stays
-        ED.pick = pickAt(x, y); ED.dots = ED.pick && ED.pick.type === 'dot' ? [ED.pick.i] : [];
-        ED.msg = ED.pick ? 'selected: ' + pickName() : 'nothing here'; return false;
+        /* THE GRASS IS TAKEN ONLY BY THE BOX (Oct 10: "why have you not fixed the selection problem? ive asked 4 times
+           now."). A tap on the grass used to take its nearest dot, and the drag that followed from the same spot then
+           pulled that one dot instead of drawing the box: on a phone, tap then drag, that was the "selects only one point
+           at a time" asked about four times (found by real touches; the tests had dragged without tapping first). Now a
+           tap on the grass takes no dot and lets go of what was selected; dots, one or many, are taken only by the box.
+           A tap takes a thing, the tee or the cup; a second tap on the same bare spot takes ground of the hole's own
+           (a plateau, a bowl) lying there. */
+        if (boxOpen()){ if (inBox(x, y)) return false; closeBox(); }   // a tap inside the box keeps it; outside closes it
+        const here = pickAll(x, y), again = ED.lastTap && Math.hypot(x - ED.lastTap.x, y - ED.lastTap.y) < 0.3 && !ED.pick;
+        ED.lastTap = { x, y };
+        const p = here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O') || (again && here.find(c => c.type === 'land'));
+        ED.pick = p ? { type: p.type, i: p.i } : null; ED.dots = []; ED.box = null;
+        ED.msg = ED.pick ? 'selected: ' + pickName() : 'drag on the grass to box the dots'; return false;
       }
       return dragPick(x, y);
     }
@@ -34913,6 +34929,9 @@ const GOLF_APP = (() => {
   function editTileTap(i){
     if (!ED.on || i < 1) return false;
     const t = TOOLS[i - 1];
+    /* (Oct 10: "when I select wall, I can't deselect it." A tap on the tile of the tool in hand puts it down: Select is
+       in hand again. Escape does the same, before it closes a box or leaves the editor.) */
+    if (t && ED.tool === t[0] && t[0] !== 'select'){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = t[1] + ' put down'; return true; }
     if (t){ ED.tool = t[0]; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = t[3] === 'two taps' ? 'tap where it starts' : t[3].startsWith('drag') ? t[3] + ' (or tap)' : ''; return true; }
     const a = ACTS[i - 1 - TOOLS.length];
     if (a){ editAction(a[0]); return true; }
@@ -35015,7 +35034,8 @@ const GOLF_APP = (() => {
       if (key === 'edit'){ const L = framedHere(), g = L && GAMES.get(L.key); return editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); }
       editAction(key); return true;
     },
-    statsStay(){ return ED.on; },                             // …and its row stays up while the hole is painted
+    statsStay(){ return ED.on; },
+    noDoubleTap(){ return ED.on; },                           // (while editing, a quick second tap is a tap: Oct 10)                             // …and its row stays up while the hole is painted
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       if (ED.on){
