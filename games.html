@@ -34069,7 +34069,7 @@ const GOLF_APP = (() => {
     }
     return { name: String(o.name || 'my hole').replace(/\s+/g, ' ').slice(0, 40), par: Math.max(1, Math.min(9, Math.round(Number(o.par)) || 3)),
              map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40), fence: FENCE_MATS.includes(o.fence) ? o.fence : 'wood',
-             ...cleanLift(o.lift) };
+             ...cleanLift(o.lift), ...(typeof o.from === 'string' && /^[a-z0-9]{1,12}$/.test(o.from) ? { from: o.from } : {}) };
   }
   // the dots' heights (Oct 9): a list of LIFT_W × LIFT_H numbers in range, kept only when some dot is off level
   function cleanLift(L){
@@ -34214,9 +34214,29 @@ const GOLF_APP = (() => {
     return k;
   }
   // My holes: kept in this browser, each made into a hole the first time it is played
-  const MINE = (() => { try { const a = JSON.parse(localStorage.getItem(MINE_KEY) || '[]'); return Array.isArray(a) ? a.map(cleanSrc).filter(Boolean) : []; } catch { return []; } })();
+  /* (Oct 10: "what is all that menu noise, ive got 50 items in the menu to various golf holes?" … "yes". My holes had
+     piled up: every hole touched in the editor is kept, and a course hole edited again made another copy each time.
+     Holes that are exactly the same are now kept once, here as they are read, and a copy remembers the hole it came
+     from (`from`, a short hash of that hole as written: originOf) so editing that hole again reopens the copy.) */
+  let mineMerged = 0;
+  const MINE = (() => { try { const a = JSON.parse(localStorage.getItem(MINE_KEY) || '[]'); if (!Array.isArray(a)) return [];
+    const seen = new Set(), out = [];
+    for (const h of a.map(cleanSrc).filter(Boolean)){ const j = JSON.stringify(h); if (seen.has(j)){ mineMerged++; continue; } seen.add(j); out.push(h); }
+    return out; } catch { return []; } })();
   const mineK = MINE.map(() => -1);
   function storeMine(){ try { localStorage.setItem(MINE_KEY, JSON.stringify(MINE)); return true; } catch { return false; } }
+  if (mineMerged) storeMine();
+  const originOf = src => { let h = 0x811c9dc5; const t = JSON.stringify(cleanSrc(src) || src); for (let i = 0; i < t.length; i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  function deleteMine(i){
+    if (!MINE[i]) return;
+    MINE.splice(i, 1); const k = mineK.splice(i, 1)[0]; if (k >= 0 && HOLES[k]) HOLES[k].mine = null;
+    for (let n = i; n < mineK.length; n++) if (mineK[n] >= 0 && HOLES[mineK[n]]) HOLES[mineK[n]].mine = n;
+    storeMine();
+  }
+  function deleteAllMine(){
+    for (const k of mineK) if (k >= 0 && HOLES[k]) HOLES[k].mine = null;
+    MINE.length = 0; mineK.length = 0; storeMine();
+  }
   function holeOfMine(i){ if (mineK[i] < 0 || !HOLES[mineK[i]]){ mineK[i] = addHole(MINE[i]); HOLES[mineK[i]].mine = i; } return mineK[i]; }
   // A link carries a hole: the page opened with ?hole=… plays it on the first board you select (or tap)
   function shareLink(src){
@@ -34353,10 +34373,13 @@ const GOLF_APP = (() => {
     if (!L){ say('Select a hole on the field first, then choose Edit.', 2600); return false; }
     if (ED.on) editStop(true);
     let k, src;
+    const org = from != null && !(HOLES[from] && HOLES[from].custom) ? originOf(srcOf(from)) : null;
+    const had = org ? MINE.findIndex(m => m.from === org) : -1;   // (Oct 10: edited before, so its copy is reopened, not copied again)
+    if (had >= 0) from = holeOfMine(had);
     if (from != null && HOLES[from] && HOLES[from].custom){ k = from; src = clone(HOLES[from].src); }   // your own: edited in place
     else {
       src = from == null ? blankSrc() : clone(srcOf(from));
-      if (from != null) src.name = String(src.name).slice(0, 33) + ' (mine)';
+      if (from != null){ src.name = String(src.name).slice(0, 33) + ' (mine)'; src.from = org; }
       src = cleanSrc(src) || blankSrc();
       k = addHole(src);
     }
@@ -34571,6 +34594,7 @@ const GOLF_APP = (() => {
   try { window.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !GOLF_ON()) return;
     e.preventDefault(); e.stopImmediatePropagation();
+    if (document.getElementById('golfMineBox')){ closeMineBox(); return; }   // (the My holes list, Oct 10)
     if (!ED.on) return;
     if (ED.tool !== 'select'){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tool put down'; return; }   // (Oct 10)
     if (ED.box) closeBox(); else editStop(false);
@@ -34929,11 +34953,11 @@ const GOLF_APP = (() => {
       if (!CLIP) try { CLIP = cleanSrc(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null')); } catch {}
       const c = CLIP && cleanSrc(clone(CLIP));
       if (!c){ ED.msg = 'nothing copied yet'; return; }
-      snapEdit(); c.name = S.name; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
+      snapEdit(); c.name = S.name; delete c.from; if (S.from) c.from = S.from; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'hole pasted'; editRefresh(true); return;
     }
     if (a === 'clear'){
-      snapEdit(); const c = blankSrc(); c.name = S.name; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
+      snapEdit(); const c = blankSrc(); c.name = S.name; if (S.from) c.from = S.from; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'board cleared'; editRefresh(true); return;
     }
     if (a === 'level'){
@@ -35061,15 +35085,53 @@ const GOLF_APP = (() => {
       exportHole(srcOf(k)); } });
     if (MINE.length) items.push({ label: 'Save My holes to a file', title: 'Download every hole in My holes as one .golf text file.', on(){ exportMine(); } });
     items.push({ label: 'Open holes from a file', title: 'Open a .golf file: its holes join My holes, and the first is played on the selected board. Dropping the file on the window does the same.', on(){ pickHoleFile(); } });
-    MINE.forEach((src, i) => {
-      items.push({ label: 'Play: ' + src.name, title: 'Play your hole on the selected board.', on(){ playHoleHere(holeOfMine(i)); } });
-      items.push({ label: 'Delete: ' + src.name, title: 'Take this hole out of My holes (in this browser).', on(){
-        const go = () => { MINE.splice(i, 1); const k = mineK.splice(i, 1)[0]; if (k >= 0 && HOLES[k]) HOLES[k].mine = null;
-          for (let n = i; n < mineK.length; n++) if (mineK[n] >= 0 && HOLES[mineK[n]]) HOLES[mineK[n]].mine = n;
-          storeMine(); try { renderAppMenu(); } catch {} };
-        try { confirmAction('Delete "' + src.name + '" from My holes?', 'Delete', go); } catch { go(); } } });
-    });
+    // (Oct 10: "ive got 50 items in the menu": each of My holes had a Play and a Delete here; now one item opens the list)
+    if (MINE.length) items.push({ label: 'My holes (' + MINE.length + ')…', title: 'Your holes, kept in this browser: play one on the selected board, or delete one or all.', on(){ openMineBox(); } });
     return items;
+  }
+  /* MY HOLES, A LIST OF ITS OWN (Oct 10, as above). A plain window like the confirm box: a row a hole (its name and par,
+     Play and Delete), and at the foot Save all to a file, Delete all and Close. Escape closes it; so does a tap outside it. */
+  function closeMineBox(){ const b = document.getElementById('golfMineBox'); if (b) b.remove(); }
+  function openMineBox(){
+    closeMineBox();
+    const F = 'font:15px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;';
+    const BTN = 'font:600 13px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
+    const HOT = 'color:#1a1206;background:#f0a95e;border:1px solid #f0a95e;';
+    const veil = document.createElement('div');
+    veil.id = 'golfMineBox';
+    veil.style.cssText = 'position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,.35)';
+    const box = document.createElement('div');
+    box.className = 'panel';
+    box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,90vw);max-height:80vh;'
+      + 'display:flex;flex-direction:column;gap:10px;padding:14px 16px;background:#1c1d21;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;'
+      + 'border:1px solid #55585f;border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.6)';
+    const btn = (label, title, on, hot) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.style.cssText = BTN + (hot ? HOT : ''); b.addEventListener('click', e => { e.stopPropagation(); on(); }); return b; };
+    const head = document.createElement('div'); head.style.cssText = F + 'font-weight:600;color:#ffd23a';
+    head.textContent = 'My holes (' + MINE.length + ')';
+    const list = document.createElement('div'); list.style.cssText = 'overflow-y:auto;display:flex;flex-direction:column;gap:6px;min-height:0';
+    MINE.forEach((src, i) => {
+      const row = document.createElement('div'); row.className = 'golfMineRow'; row.style.cssText = 'display:flex;align-items:center;gap:8px';
+      const name = document.createElement('div'); name.style.cssText = F + 'color:#ffffff;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      name.textContent = src.name + '  ·  par ' + src.par;
+      row.append(name,
+        btn('Play', 'Play this hole on the selected board.', () => { closeMineBox(); if (ED.on) editStop(true); playHoleHere(holeOfMine(i)); }, true),
+        btn('Delete', 'Take this hole out of My holes.', () => { deleteMine(i); try { renderAppMenu(); } catch {} if (MINE.length) openMineBox(); else closeMineBox(); }));
+      list.appendChild(row);
+    });
+    const foot = document.createElement('div'); foot.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap';
+    foot.append(
+      btn('Save all to a file', 'Download every hole here as one .golf text file.', () => exportMine()),
+      btn('Delete all', 'Take every hole out of My holes.', () => {
+        const go = () => { deleteAllMine(); closeMineBox(); try { renderAppMenu(); } catch {} say('My holes is empty.', 2000); };
+        closeMineBox();
+        try { confirmAction('Delete all ' + MINE.length + ' holes from My holes? Save them to a file first if you want them later.', 'Delete all', go); } catch { go(); } }),
+      btn('Close', 'Close this list.', closeMineBox));
+    box.append(head, list, foot);
+    box.addEventListener('click', e => e.stopPropagation());
+    veil.addEventListener('click', closeMineBox);
+    veil.appendChild(box);
+    document.body.appendChild(veil);
+    return veil;
   }
 
   const app = {
@@ -35226,7 +35288,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
   };
   return app;
