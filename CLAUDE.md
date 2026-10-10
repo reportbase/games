@@ -132,19 +132,26 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   centre), each placed at a default size by a tap. Undo has Redo (`ED.redo`).
   **The path** (Oct 10: "drawing the orbits in place and moving the leaves would be best"): a mover riding a closed
   loop of its own shape, as a shape in draw.html rides its motion orbit. `path [x0, y0, …, xn, yn, r, seconds, phase
-  (fraction), kind (0 boulder, 1 bumper)]`, 3–24 leaves in cells; the loop is a closed Catmull-Rom curve through the
+  (fraction), rider (see Riders)]`, 3–24 leaves in cells; the loop is a closed Catmull-Rom curve through the
   leaves (`loopOf`, cached by array, so a changed path is a new array), ridden at an even speed (`loopAt`, `toyAt`).
   The Path tile: a drag draws the loop in place (`ED.drag.pts`, laid down as 5–16 leaves evenly along it in
   `editDragEnd`), a tap lays a round loop of eight; the path stays selected (`placedOnce` keeps it), its leaves drawn
   large in gold, and a press on a leaf of the selected path drags that leaf alone (`dragPick`, `ED.grab.leaf`); a press
   elsewhere on it moves the whole loop (`shifted` moves every leaf).
+  **Riders** (Oct 10: "clicking inside the shape would move to the next object"): an orbit's 7th number and a path's
+  last are its rider, 0 a boulder, 1 a bumper, 2 power, 3 sponge, 4 spinner (a bumper rider acts as that kind of
+  standing bumper: `bump`, shared with `kick` and `shuttle`). With Select, a tap inside an orbit's circle or a path's
+  loop, clear of its track and of other things (`loopInside`, the innermost), moves its rider on and selects it.
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
   **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
   in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the five paints,
   the bumpers, Boulder, Fence, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
-  Undo, Redo, Copy, Paste, Delete, Level, Material (named by the material). Copy, Paste and Delete act on the whole
-  board (Oct 10): Copy keeps the hole as written (`CLIP`, and localStorage `golf.clip`), Paste lays it over the hole
-  being edited (its name kept), Delete clears it to a new hole's; both undo. The delete-object tile and the text-only
+  Level, Material (named by the material). **Undo, Redo, Copy, Paste and Delete are in mini golf's menu** while editing
+  (Oct 10, later: "remove copy,paste,delete,undo,redo from the bottom object browser"). With a thing or a piece of
+  ground selected (`selObj`) Copy keeps that one, Paste lays a copy of it on the hole (half a cell along if one is
+  already there) and selects it, Delete takes it away; with nothing selected they act on the whole board: Copy keeps
+  the hole as written, Paste lays it over the hole being edited (its name kept), Delete clears it to a new hole's.
+  The clipboard is `CLIP` ({board} | {toy} | {land}, and localStorage `golf.clip`); a menu item may be `disabled`. The delete-object tile and the text-only
   first tile (name, par, material) went, so tile i is `TOOLS[i]`, then `ACTS`. Par, Check, Save, Share, Done, Tee, Cup,
   Ramp, Bowl, Half-pipe, Select, Higher, Lower and Name lost their tiles (Done and Select are quick
   buttons; the actions remain in `editAction`).

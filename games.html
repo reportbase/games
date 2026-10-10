@@ -16680,6 +16680,7 @@ function _menuButtonFor(it){
      the thing you cannot see. Same exemption bRelease already has, declared
      rather than hard-coded by id. */
   if (it.keepOpen) b.dataset.keepOpen = '1';
+  if (it.disabled) b.disabled = true;               // (an item with nothing to do yet, as Undo with nothing to undo: Oct 10)
   b.addEventListener('click', () => {
     try { it.on && it.on(); } catch {}
     try { b.textContent = text(); } catch {}      // a label may name its own state
@@ -33385,6 +33386,8 @@ const GOLF_APP = (() => {
      the other way), phase (a fraction of the loop), kind (0 a boulder, 1 a bumper)], 3 to 24 leaves, in cells as written.
      It goes round at an even speed along the curve, whatever the leaves' spacing. */
   const LOOP = new WeakMap();
+  // a rider's colours by its bumper kind, as the standing bumpers' (power, sponge, spinner; a classic rider keeps its own)
+  const RIDER_TINT = [0, 0xff8a4a, 0x7fd67a, 0x6fb2ff], RIDER_PLAIN = [0, 0xff8a1a, 0x4cae4c, 0x3a7fd9];
   const pathN = v => (v.length - 4) >> 1;
   function loopOf(v){                                         // the curve as points, with the length run along it
     let L = LOOP.get(v); if (L) return L;
@@ -33507,10 +33510,8 @@ const GOLF_APP = (() => {
         // a path's rider (Oct 10): met as an orbit's is, a boulder knocking by its own speed or a bumper kicking
         const v = T.path, n = pathN(v), S = toyAt(T, t), cr = v[2 * n], dx = b.x - S.x, dy = b.y - S.y, d = Math.hypot(dx, dy);
         if (d >= BR + cr || d < 1e-9) return;
-        if (v[2 * n + 3] === 1){
-          const nx = dx / d, ny = dy / d, vn = (b.vx - S.vx) * nx + (b.vy - S.vy) * ny;
-          b.x = S.x + nx * (BR + cr); b.y = S.y + ny * (BR + cr);
-          if (vn < 0.6){ const out = Math.max(0.6, -vn * 1.15); b.vx += (out - vn) * nx; b.vy += (out - vn) * ny; }
+        if (v[2 * n + 3] >= 1){                              // a bumper of any kind riding it (1 classic … 4 spinner: Oct 10)
+          bump(b, S, cr, v[2 * n + 3] - 1);
           (g.kicked = g.kicked || {})[k] = t; hit = Math.max(hit, 0.6); SND.play('flag');
           return;
         }
@@ -33521,10 +33522,8 @@ const GOLF_APP = (() => {
            touch, so a boulder coming at the ball knocks it on, and one going away lets it by. */
         const S = toyAt(T, t), cr = T.orbit[3], dx = b.x - S.x, dy = b.y - S.y, d = Math.hypot(dx, dy);
         if (d >= BR + cr || d < 1e-9) return;
-        if (T.orbit[6] === 1){                                // a bumper going round (Oct 9): it kicks, as a bumper does
-          const nx = dx / d, ny = dy / d, vn = (b.vx - S.vx) * nx + (b.vy - S.vy) * ny;
-          b.x = S.x + nx * (BR + cr); b.y = S.y + ny * (BR + cr);
-          if (vn < 0.6){ const out = Math.max(0.6, -vn * 1.15); b.vx += (out - vn) * nx; b.vy += (out - vn) * ny; }
+        if (T.orbit[6] >= 1){                                 // a bumper going round (Oct 9): it kicks, as a bumper of its kind does (Oct 10)
+          bump(b, S, cr, T.orbit[6] - 1);
           (g.kicked = g.kicked || {})[k] = t; hit = Math.max(hit, 0.6); SND.play('flag');
           return;
         }
@@ -33541,24 +33540,29 @@ const GOLF_APP = (() => {
       } else if (T.kick || T.shuttle){
         // a bumper, standing or riding to and fro: it kicks the ball away, faster than it came, on top of its own speed
         const S = T.shuttle ? toyAt(T, t) : { x: T.kick[0], y: T.kick[1], vx: 0, vy: 0 };
-        const kx = S.x, ky = S.y, kr = (T.kick || T.shuttle)[T.kick ? 2 : 4], dx = b.x - kx, dy = b.y - ky, d = Math.hypot(dx, dy);
+        const kr = (T.kick || T.shuttle)[T.kick ? 2 : 4], d = Math.hypot(b.x - S.x, b.y - S.y);
         if (d >= BR + kr || d < 1e-9) return;
-        const nx = dx / d, ny = dy / d, vn = (b.vx - S.vx) * nx + (b.vy - S.vy) * ny, kind = T.kick ? (T.kick[3] | 0) : 0;
-        b.x = kx + nx * (BR + kr); b.y = ky + ny * (BR + kr);
-        /* KINDS OF BUMPER (Oct 9: "there should different types of bumpers"): the classic kicks the ball away a little
-           faster than it came; the power bumper much faster; the sponge swallows most of the speed and lets the ball drop
-           off it; the spinner sends it away as the classic does and flicks it sideways too, round the bumper. */
-        if (kind === 2){ if (vn < 0){ const out = -vn * 0.3; b.vx += (out - vn) * nx; b.vy += (out - vn) * ny; b.vx *= 0.6; b.vy *= 0.6; } }
-        else if (vn < 0.6){
-          const out = kind === 1 ? Math.max(1.1, -vn * 1.6) : Math.max(0.6, -vn * 1.15);
-          b.vx += (out - vn) * nx; b.vy += (out - vn) * ny;
-          if (kind === 3){ const sp = Math.max(0.5, -vn * 0.8); b.vx += -ny * sp; b.vy += nx * sp; }
-        }
+        bump(b, S, kr, T.kick ? (T.kick[3] | 0) : 0);
         (g.kicked = g.kicked || {})[k] = t; hit = Math.max(hit, 0.6);
         SND.play('flag');
       }
     });
     return hit;
+  }
+
+  /* KINDS OF BUMPER (Oct 9: "there should different types of bumpers"): the classic kicks the ball away a little faster
+     than it came; the power bumper much faster; the sponge swallows most of the speed and lets the ball drop off it; the
+     spinner sends it away as the classic does and flicks it sideways too, round the bumper. S is where the bumper is and
+     how fast it moves (a standing one, a shuttle's, or since Oct 10 an orbit's or a path's rider). */
+  function bump(b, S, kr, kind){
+    const dx = b.x - S.x, dy = b.y - S.y, d = Math.hypot(dx, dy) || 1e-9, nx = dx / d, ny = dy / d, vn = (b.vx - S.vx) * nx + (b.vy - S.vy) * ny;
+    b.x = S.x + nx * (BR + kr); b.y = S.y + ny * (BR + kr);
+    if (kind === 2){ if (vn < 0){ const out = -vn * 0.3; b.vx += (out - vn) * nx; b.vy += (out - vn) * ny; b.vx *= 0.6; b.vy *= 0.6; } }
+    else if (vn < 0.6){
+      const out = kind === 1 ? Math.max(1.1, -vn * 1.6) : Math.max(0.6, -vn * 1.15);
+      b.vx += (out - vn) * nx; b.vy += (out - vn) * ny;
+      if (kind === 3){ const sp = Math.max(0.5, -vn * 0.8); b.vx += -ny * sp; b.vy += nx * sp; }
+    }
   }
 
   /* ─── THE ROLL ─────────────────────────────────────────────────────── */
@@ -33949,10 +33953,10 @@ const GOLF_APP = (() => {
         if (T.path){                                          // its loop dotted, and its rider (Oct 10)
           const v = T.path, n = pathN(v), r = v[2 * n], P = loopOf(v), m = Math.max(8, Math.round(P.L / (CW * 0.5)));
           if (near) for (let q = 0; q < m; q++){ const A = loopAt(v, q / m); out.push({ kind: 'ghost', u: A.x, v: A.y, scale: 0.012, lift: hOf(H, A.x, A.y) + 0.001, color: 0xd8efd0 }); }
-          if (v[2 * n + 3] === 1){
-            const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
-            if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xffc2e0 });
-            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : 0xe05a9a });
+          if (v[2 * n + 3] >= 1){
+            const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, kd = v[2 * n + 3] - 1;
+            if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0 });
+            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : kd ? RIDER_PLAIN[kd] : 0xe05a9a });
           } else if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff });
           else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
         } else if (T.shuttle){
@@ -33963,10 +33967,10 @@ const GOLF_APP = (() => {
         } else if (T.orbit){
           const [cx, cy, R, r] = T.orbit, n = Math.max(12, Math.round(2 * Math.PI * R / (CW * 0.5)));
           if (near) for (let q = 0; q < n; q++){ const a = 2 * Math.PI * q / n, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a); out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
-          if (T.orbit[6] === 1){                              // a bumper going round (Oct 9)
-            const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
-            if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xd9b3ff });
-            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : 0x9a5ae0 });
+          if (T.orbit[6] >= 1){                               // a bumper going round (Oct 9), of any kind (Oct 10)
+            const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, kd = T.orbit[6] - 1;
+            if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : kd ? RIDER_TINT[kd] : 0xd9b3ff });
+            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : kd ? RIDER_PLAIN[kd] : 0x9a5ae0 });
           } else if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a * R / r, color: 0xffffff });   // rolling as it goes
           else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
         } else {
@@ -34088,7 +34092,7 @@ const GOLF_APP = (() => {
   const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1], [0, 3]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
     mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
-    shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7], [0, 1]],
+    shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7], [0, 4]],
     gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]],
     arm: [[0, 8], [0, 13], [0.3, 3], [-30, 30], [-7, 7], [1, 4]], swing: [[0, 8], [0, 13], [0.4, 3], [-360, 360], [-360, 360], [0.8, 20]] };
   // numbers that may be left off the end, from this one on, each then 0 (a bumper's kind came on Oct 9, an older bumper is a
@@ -34104,7 +34108,7 @@ const GOLF_APP = (() => {
         const R3 = x => Math.round(x * 1000) / 1000, nums = [];
         for (let q = 0; q < n; q++) nums.push(R3(Math.max(0, Math.min(NX, v[2 * q]))), R3(Math.max(0, Math.min(NY, v[2 * q + 1]))));
         const tail = v.slice(v.length - 4), per = Math.max(-30, Math.min(30, tail[1]));
-        nums.push(R3(Math.max(0.1, Math.min(1, tail[0]))), Math.abs(per) < 1 ? 6 : R3(per), R3(((tail[2] % 1) + 1) % 1), tail[3] === 1 ? 1 : 0);
+        nums.push(R3(Math.max(0.1, Math.min(1, tail[0]))), Math.abs(per) < 1 ? 6 : R3(per), R3(((tail[2] % 1) + 1) % 1), Math.max(0, Math.min(4, Math.round(tail[3]) || 0)));
         out.push({ path: nums }); continue;
       }
       const key = f && typeof f === 'object' && Object.keys(spec).find(k => Array.isArray(f[k]));
@@ -34117,6 +34121,7 @@ const GOLF_APP = (() => {
       });
       if (nums.some(x => !isFinite(x))) continue;
       if (key === 'orbit' && !nums[4]) nums[4] = 6;
+      if (key === 'orbit') nums[6] = Math.round(nums[6]);          // (its rider: 0 a boulder, 1–4 a bumper by kind, Oct 10)
       if (key === 'arm'){ if (Math.abs(nums[3]) < 1) nums[3] = nums[3] < 0 ? -4 : 4; if (!nums[5]) nums[5] = 2; nums[5] = Math.round(nums[5]); }
       if (key === 'swing' && nums[3] === nums[4]) nums[4] = nums[3] + 90;
       out.push({ [key]: nums });
@@ -34538,6 +34543,24 @@ const GOLF_APP = (() => {
     if (k === 'fence' || k === 'gate' || k === 'shuttle' || k === 'slide') return segDist(x, y, v[0], v[1], v[2], v[3]) - 0.18;
     return Infinity;
   }
+  // the innermost orbit or path whose loop (x, y) lies inside, clear of its track; -1 if none (Oct 10)
+  function loopInside(x, y){
+    let best = -1, area = Infinity;
+    ED.src.toys.forEach((T, i) => {
+      if (T.orbit){ const [cx, cy, R, r] = T.orbit, d = Math.hypot(x - cx, y - cy);
+        if (d < R - r - 0.15 && Math.PI * R * R < area){ area = Math.PI * R * R; best = i; } return; }
+      if (!T.path) return;
+      const P = loopOf(T.path); let inside = false, a = 0, near = Infinity;
+      for (let q = 0, w = P.M - 1; q < P.M; w = q++){
+        const xi = P.pts[2 * q], yi = P.pts[2 * q + 1], xj = P.pts[2 * w], yj = P.pts[2 * w + 1];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+        a += xj * yi - xi * yj; near = Math.min(near, Math.hypot(x - xi, y - yi));
+      }
+      a = Math.abs(a) / 2;
+      if (inside && near > T.path[2 * pathN(T.path)] + 0.15 && a < area){ area = a; best = i; }
+    });
+    return best;
+  }
   function landReach(f, x, y){
     const k = Object.keys(f)[0], v = f[k];
     if (k === 'bump' || k === 'bowl' || k === 'dish') return Math.hypot(x - v[0], y - v[1]) - v[2] * 0.5;
@@ -34579,6 +34602,7 @@ const GOLF_APP = (() => {
   Object.defineProperty(ED, 'sel', { enumerable: true,
     get(){ return ED.pick && ED.pick.type === 'land' ? ED.pick.i : null; },
     set(n){ ED.pick = n == null ? null : { type: 'land', i: n }; } });
+  const RIDER_NAME = ['boulder', 'bumper', 'power bumper', 'sponge', 'spinner'];
   const TOY_NAME = { kick: 'bumper', rock: 'boulder', mill: 'windmill', arm: 'turnstile', swing: 'door', orbit: 'orbit', path: 'path', pipe: 'pipe', fence: 'fence', gate: 'gate', shuttle: 'shuttle', slide: 'slide' };
   const LAND_NAME = { dish: 'bowl', trough: 'half-pipe', bump: 'hill', ring: 'rim', plateau: 'plateau', ramp: 'ramp', ridge: 'ridge', step: 'terrace', bowl: 'skate bowl', pipe: 'skate pipe' };
   function pickName(p = ED.pick){
@@ -34586,7 +34610,7 @@ const GOLF_APP = (() => {
     if (p.type === 'T') return 'tee';
     if (p.type === 'O') return 'cup';
     if (p.type === 'dot'){ const h = (ED.src.lift && ED.src.lift[p.i]) || 0; return 'dot ' + (h ? (h > 0 ? 'up ' : 'down ') + Math.abs(h).toFixed(3) : 'level'); }
-    if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'orbit' && T.orbit[6] === 1 ? 'bumper going round' : k === 'path' ? (T.path[T.path.length - 1] === 1 ? 'bumper on a path' : 'boulder on a path') : TOY_NAME[k] || k); }
+    if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'orbit' ? RIDER_NAME[T.orbit[6] | 0] + ' going round' : k === 'path' ? RIDER_NAME[T.path[T.path.length - 1] | 0] + ' on a path' : TOY_NAME[k] || k); }
     const f = ED.src.land[p.i], k = Object.keys(f)[0];
     return k === 'bump' && f.bump[3] < 0 ? 'hollow' : k === 'ring' && f.ring[4] < 0 ? 'moat' : k === 'ridge' && f.ridge[5] < 0 ? 'gully' : LAND_NAME[k] || k;
   }
@@ -34851,6 +34875,18 @@ const GOLF_APP = (() => {
         if (boxOpen()){ if (inBox(x, y)) return false; closeBox(); }   // a tap inside the box keeps it; outside closes it
         const here = pickAll(x, y), again = ED.lastTap && Math.hypot(x - ED.lastTap.x, y - ED.lastTap.y) < 0.3 && !ED.pick;
         ED.lastTap = { x, y };
+        /* A TAP INSIDE A LOOP CHANGES ITS RIDER (Oct 10: "how do we change the object in the obrit?" … "clicking inside the
+           shape would move to the next object"). Inside an orbit's circle or a path's loop, clear of its track and of any
+           other thing, the tee and the cup, a tap moves its rider on: boulder, bumper, power bumper, sponge, spinner, and
+           round again. The innermost loop takes it; the mover is selected; Undo takes it back. */
+        const inner = loopInside(x, y);
+        if (inner >= 0 && !here.some(c => (c.type === 'toy' && c.i !== inner) || c.type === 'T' || c.type === 'O')){
+          const T = S.toys[inner];
+          if (T.orbit){ const o = T.orbit.slice(); o[6] = ((o[6] | 0) + 1) % 5; S.toys[inner] = { orbit: o }; }
+          else { const v = T.path.slice(); v[v.length - 1] = ((v[v.length - 1] | 0) + 1) % 5; S.toys[inner] = { path: v }; }
+          ED.pick = { type: 'toy', i: inner }; ED.dots = []; ED.box = null;
+          ED.msg = 'now ' + pickName() + ' (tap inside again for the next)'; return true;
+        }
         const p = here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O') || (again && here.find(c => c.type === 'land'));
         ED.pick = p ? { type: p.type, i: p.i } : null; ED.dots = []; ED.box = null;
         ED.msg = ED.pick ? 'selected: ' + pickName() : 'drag on the grass to box the dots'; return false;
@@ -35033,6 +35069,14 @@ const GOLF_APP = (() => {
     ED.sel = S.land.length - 1;
     placedOnce(t);
   }
+  // the thing or piece of ground selected, if one is (Copy and Delete act on it, Oct 10); the tee, the cup or dots are not
+  function selObj(){
+    const P = ED.pick;
+    if (!ED.on || !pickValid(P)) return null;
+    if (P.type === 'toy') return { type: 'toy', obj: ED.src.toys[P.i] };
+    if (P.type === 'land') return { type: 'land', obj: ED.src.land[P.i] };
+    return null;
+  }
   function editAction(a){
     if (!ED.on) return;
     const S = ED.src;
@@ -35062,18 +35106,36 @@ const GOLF_APP = (() => {
        kept in localStorage too so it can be pasted on another board or after a reload; Paste lays it over the hole being
        edited, which keeps its own name so My holes still tells them apart; Delete clears the board to a new hole's
        (the tee, the cup and grass), the name kept. Both can be undone. */
+    /* (Oct 10, later: "add copy,paste,delete to the menu. if no object is selected, copy the board. if an object is
+       selected, copy the object.") With a thing or a piece of ground selected, Copy keeps that one ({toy} or {land}),
+       Paste lays a copy of it on the hole being edited (where it stood, or half a cell along if one is already there; it
+       may be another board) and selects it, and Delete takes it away. With nothing selected they act on the whole board
+       ({board}). The clipboard is kept in localStorage too; one written before (a bare hole) reads as a board. */
     if (a === 'copy'){
-      CLIP = clone(S); try { localStorage.setItem(CLIP_KEY, JSON.stringify(CLIP)); } catch {}
-      ED.msg = 'hole copied'; return;
+      const o = selObj();
+      CLIP = o ? { [o.type]: clone(o.obj) } : { board: clone(S) };
+      try { localStorage.setItem(CLIP_KEY, JSON.stringify(CLIP)); } catch {}
+      ED.msg = o ? 'copied: ' + pickName() : 'hole copied'; return;
     }
     if (a === 'paste'){
-      if (!CLIP) try { CLIP = cleanSrc(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null')); } catch {}
-      const c = CLIP && cleanSrc(clone(CLIP));
+      if (!CLIP) try { const o = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'); CLIP = o && o.map ? { board: o } : o; } catch {}
+      if (CLIP && (CLIP.toy || CLIP.land)){
+        const isToy = !!CLIP.toy, list = isToy ? S.toys : S.land, one = (isToy ? cleanList([CLIP.toy], SPEC_TOY, 1) : cleanList([CLIP.land], SPEC_LAND, 1))[0];
+        if (!one){ ED.msg = 'nothing copied yet'; return; }
+        if (list.length >= 40){ ED.msg = 'that is as many as a hole can hold'; return; }
+        snapEdit();
+        let c = one;
+        for (let n = 1; n < 8 && list.some(x => JSON.stringify(x) === JSON.stringify(c)); n++) c = shifted(one, 0.5 * n, 0.5 * n, isToy);
+        list.push(c); ED.pick = { type: isToy ? 'toy' : 'land', i: list.length - 1 }; ED.box = null; ED.dots = [];
+        ED.msg = 'pasted: ' + pickName(); editRefresh(true); return;
+      }
+      const c = CLIP && CLIP.board && cleanSrc(clone(CLIP.board));
       if (!c){ ED.msg = 'nothing copied yet'; return; }
       snapEdit(); c.name = S.name; delete c.from; delete c.at; if (S.from) c.from = S.from; if (S.at) c.at = S.at; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'hole pasted'; editRefresh(true); return;
     }
     if (a === 'clear'){
+      if (selObj()){ editAction('del'); return; }              // (what is selected; the board only when nothing is)
       snapEdit(); const c = blankSrc(); c.name = S.name; if (S.from) c.from = S.from; if (S.at) c.at = S.at; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'board cleared'; editRefresh(true); return;
     }
@@ -35167,8 +35229,9 @@ const GOLF_APP = (() => {
      Done are quick buttons, the tee and cup are dragged, every change is saved as it is made.) */
   /* (Oct 10: "remove the delete object button." Its tile went; a selected thing is still deleted from editAction('del').
      Copy, Paste and Delete act on the whole board: see editAction.) */
-  const ACTS = [['undo', 'Undo', '↶'], ['redo', 'Redo', '↷'], ['copy', 'Copy', '📋'], ['paste', 'Paste', '📥'], ['clear', 'Delete', '🗑️'],
-    ['level', 'Level', '➖'], ['mat', 'Material', '🧱']];
+  /* (Oct 10, later: "add undo,redo to the menu. remove copy,paste,delete,undo,redo from the menu." Undo, Redo, Copy,
+     Paste and Delete left the tiles for mini golf's menu: see editorMenu.) */
+  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱']];
   function editTiles(){
     /* (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is selected,
        change the color of the button to selected. the buttons should toggle on/off thats it." No top line on any tile;
@@ -35195,6 +35258,14 @@ const GOLF_APP = (() => {
   function editorMenu(){
     const items = [];
     if (ED.on) items.push({ label: 'Leave the editor', title: 'Stop editing and play the hole.', on(){ editStop(false); } });
+    if (ED.on){                                               // (Oct 10: the editor's Undo, Redo, Copy, Paste and Delete, here)
+      const o = selObj(), what = o ? pickName() : 'the board', cl = CLIP || (() => { try { const x = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'); return x && x.map ? { board: x } : x; } catch { return null; } })();
+      items.push({ label: 'Undo', title: 'Take back the last change.', disabled: !ED.undo.length, on(){ editAction('undo'); } },
+        { label: 'Redo', title: 'Make the last change taken back again.', disabled: !(ED.redo && ED.redo.length), on(){ editAction('redo'); } },
+        { label: 'Copy ' + what, title: o ? 'Copy what is selected.' : 'Copy the whole hole (nothing is selected).', on(){ editAction('copy'); } },
+        { label: 'Paste' + (cl ? (cl.board ? ' the board' : ' ' + (cl.toy ? TOY_NAME[Object.keys(cl.toy)[0]] || 'thing' : 'ground')) : ''), title: 'Lay what was copied on this hole.', disabled: !cl, on(){ editAction('paste'); } },
+        { label: 'Delete ' + what, title: o ? 'Take away what is selected.' : 'Clear the whole board to a new hole (nothing is selected).', on(){ editAction('clear'); } });
+    }
     items.push({ label: 'Edit this hole', title: 'Take the hole on the selected board into the editor. A hole of the course is copied; it is never changed.',
       on(){ const L = framedHere(), g = L && GAMES.get(L.key); editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); } });
     items.push({ label: 'New hole', title: 'Start a hole of your own on the selected board.', on(){ editStart(null); } });

@@ -889,12 +889,26 @@ try {
       // a tap with Path lays a round loop of eight leaves
       A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'path')); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
       const last = ED.src.toys[ED.src.toys.length - 1], tapN = last && last.path ? (last.path.length - 4) / 2 : 0;
+      // a tap inside a loop moves its rider on (Oct 10: "clicking inside the shape would move to the next object"), by
+      // real taps: an orbit round (4, 9.5) and the path round (4, 3), each tapped inside five times, round to a boulder;
+      // a tap on a bumper standing inside the orbit takes the bumper and leaves the rider be
+      ED.src.toys = [{ path: last.path.slice() }, { orbit: [4, 9.5, 1.8, 0.4, 6, 0, 0] }]; A.onQuickAct(f.c, f.r, 'select');
+      const riders = { orbit: [], path: [] };
+      for (let q = 0; q < 5; q++){ await gest([S(4.6, 9.3)]); riders.orbit.push(ED.src.toys[1].orbit[6]); }
+      for (let q = 0; q < 5; q++){ await gest([S(4, 3.3)]); const v = ED.src.toys[0].path; riders.path.push(v[v.length - 1]); }
+      const named = (await gest([S(4.6, 9.3)]), ED.pick && ED.pick.type === 'toy' ? ED.pick.i : null);
+      ED.src.toys.push({ kick: [3.3, 9.6, 0.3, 0] }); E.editRefresh && E.editRefresh(true);
+      const k0 = ED.src.toys[1].orbit[6]; await gest([S(3.3, 9.6)]);
+      const onBumper = { pick: ED.pick && ED.pick.i, rider: ED.src.toys[1].orbit[6] === k0 };
+      E.editAction('undo'); const undone = ED.src.toys.length === 3 ? ED.src.toys[1].orbit[6] : null;
       ED.src.toys = []; E.editAction('level');
-      return { tool, drawn, moved: +moved.toFixed(2), others, went: +went.toFixed(4), kept, inFile, fileSame, tapN };
+      return { tool, drawn, moved: +moved.toFixed(2), others, went: +went.toFixed(4), kept, inFile, fileSame, tapN, riders, named, onBumper, k0, undone };
     });
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     if (pa.tool !== 'path' || pa.drawn.paths !== 1 || pa.drawn.n < 5 || pa.drawn.n > 16 || pa.drawn.rMin < 1.4 || pa.drawn.rMax > 2.6 || pa.drawn.tool !== 'select' || !pa.drawn.sel
-        || !(pa.moved > 0.6) || !pa.others || !(pa.went > 0.01) || !pa.kept || !pa.inFile || !pa.fileSame || pa.tapN !== 8)
+        || !(pa.moved > 0.6) || !pa.others || !(pa.went > 0.01) || !pa.kept || !pa.inFile || !pa.fileSame || pa.tapN !== 8
+        || pa.riders.orbit.join() !== '1,2,3,4,0' || pa.riders.path.join() !== '1,2,3,4,0' || pa.named !== 1
+        || pa.onBumper.pick !== 2 || !pa.onBumper.rider)
       failures.push(`[${current}] the path drawn in place: ${JSON.stringify(pa)}`);
     // the tiles (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is
     // selected, change the color of the button to selected. the buttons should toggle on/off thats it. remove the
@@ -908,23 +922,33 @@ try {
       A.onStatTap(f.c, f.r, wi); const off = tiles()[wi].bg, tool = E.ED.tool;
       return { gone, labels, on, lit, off, tool }; });
     if (tl.gone.length || tl.labels || !tl.on || tl.lit !== 1 || tl.off || tl.tool !== 'select') failures.push(`[${current}] the tiles: ${JSON.stringify(tl)}`);
-    // the board's Copy, Paste and Delete (Oct 10: "add copy, paste delete . the three should copy/paste/delete the complete
-    // board not the object. remove the delete object button. remove the middle button that is only text."), by their tiles
+    // Copy, Paste and Delete in the menu (Oct 10: "add copy, paste delete . the three should copy/paste/delete the complete
+    // board not the object", then "add copy,paste,delete to the menu. if no object is selected, copy the board. if an
+    // object is selected, copy the object. add undo,redo to the menu. remove copy,paste,delete,undo,redo from the menu."):
+    // none of the five is a tile now; with nothing selected they act on the board, with a thing selected on the thing;
+    // Undo and Redo are in the menu too
     const cp = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tiles = A.statTiles(f.c, f.r) || [], names = tiles.map(t => t.value), at = a => E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a);
-      const textOnly = tiles.filter(t => !t.glyph).length, delObj = E.ACTS.some(x => x[0] === 'del'), first = names[0];
+      const tiles = A.statTiles(f.c, f.r) || [], names = tiles.map(t => t.value);
+      const menu = l => E.editorMenu().find(i => i.label.startsWith(l)), run = l => { const i = menu(l); if (i && !i.disabled) i.on(); return !!i; };
+      const textOnly = tiles.filter(t => !t.glyph).length, gone = ['Undo', 'Redo', 'Copy', 'Paste', 'Delete'].filter(n => names.includes(n)), first = names[0];
       const body = s => { const { name, ...rest } = s; return JSON.stringify(E.cleanSrc(rest)); };
-      ED.src.toys.push({ rock: [2, 6, 0.4] }); ED.src.lift = Array.from({ length: 9 * 14 }, (_, i) => i === 40 ? 0.05 : 0);
-      const name = ED.src.name, was = body(ED.src);
-      A.onStatTap(f.c, f.r, at('copy'));
-      A.onStatTap(f.c, f.r, at('clear')); const cleared = !ED.src.toys.length && !ED.src.land.length && !ED.src.lift && ED.src.name === name;
-      A.onStatTap(f.c, f.r, at('paste')); const pasted = body(ED.src) === was && ED.src.name === name;
-      A.onStatTap(f.c, f.r, at('undo')); const undone = !ED.src.toys.length;
-      A.onStatTap(f.c, f.r, at('redo')); const redone = body(ED.src) === was;
+      ED.pick = null; ED.src.toys.push({ rock: [2, 6, 0.4] }); ED.src.lift = Array.from({ length: 9 * 14 }, (_, i) => i === 40 ? 0.05 : 0);
+      const name = ED.src.name, was = body(ED.src), labels = E.editorMenu().map(i => i.label);
+      run('Copy the board');
+      run('Delete the board'); const cleared = !ED.src.toys.length && !ED.src.land.length && !ED.src.lift && ED.src.name === name;
+      run('Paste the board'); const pasted = body(ED.src) === was && ED.src.name === name;
+      run('Undo'); const undone = !ED.src.toys.length;
+      run('Redo'); const redone = body(ED.src) === was;
+      // a thing selected: Copy and Paste make a second one beside it, selected; Delete takes the selected one only
+      ED.pick = { type: 'toy', i: ED.src.toys.findIndex(T => T.rock) }; const objLabel = menu('Copy ').label;
+      run('Copy '); const n0 = ED.src.toys.length; run('Paste');
+      const second = ED.src.toys.length === n0 + 1 && !!ED.src.toys[n0].rock && ED.pick && ED.pick.i === n0 && ED.src.toys[n0].rock[0] !== 2;
+      run('Delete '); const delOne = ED.src.toys.length === n0 && !!ED.src.lift;
       const stored = !!localStorage.getItem('golf.clip');
-      return { textOnly, delObj, first, cleared, pasted, undone, redone, stored, names: names.slice(-7) }; });
-    if (cp.textOnly || cp.delObj || cp.first !== 'Grass' || !cp.cleared || !cp.pasted || !cp.undone || !cp.redone || !cp.stored ||
-        !['Copy', 'Paste', 'Delete'].every(n => cp.names.includes(n))) failures.push(`[${current}] copy, paste, delete the board: ${JSON.stringify(cp)}`);
+      return { textOnly, gone, first, cleared, pasted, undone, redone, objLabel, second, delOne, stored, labels: labels.slice(0, 7) }; });
+    if (cp.textOnly || cp.gone.length || cp.first !== 'Grass' || !cp.cleared || !cp.pasted || !cp.undone || !cp.redone || cp.objLabel !== 'Copy boulder'
+        || !cp.second || !cp.delOne || !cp.stored || !['Undo', 'Redo', 'Copy the board', 'Paste', 'Delete the board'].every(l => cp.labels.some(x => x.startsWith(l))))
+      failures.push(`[${current}] copy, paste, delete in the menu: ${JSON.stringify(cp)}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       E.editAction('done'); });   // (its tile went on Oct 10; Done is a quick button)
