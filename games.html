@@ -35605,9 +35605,13 @@ const GOLF_APP = (() => {
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
     out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
-             { kind: 'pennant', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xe0443a });
+             { kind: 'pennant', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level ? LEVEL_FLAG[H.level - 1] : 0xe0443a });
     // The toys, where the clock has them: the game's own clock on the board in play, the wall clock elsewhere.
     const t = G ? (G.t || 0) : performance.now() / 1000;
+    /* (Oct 10, later: "if wireframe is off, don't show the orbit path." The movers' dotted tracks, a path's loop and the
+       circle a turnstile or a door sweeps, show only with Wireframe on, or on the hole being edited, where a path is
+       drawn and its leaves moved.) */
+    const tracks = near && (WIRE.on || (ED.on && ED.k === k));
     (H.toys || []).forEach((T, j) => {
       if (T.slide){ const S = toyAt(T, t); out.push({ kind: 'slide' + k + '_' + j, u: S.x, v: S.y, scale: 1, lift: hOf(H, S.x, S.y), color: 0x7a4fd0 }); }
       else if (T.mill){
@@ -35625,7 +35629,7 @@ const GOLF_APP = (() => {
         const S = toyAt(T, t);
         if (T.path){                                          // its loop dotted, and its rider (Oct 10)
           const v = T.path, n = pathN(v), r = v[2 * n], P = loopOf(v), m = Math.max(8, Math.round(P.L / (CW * 0.5)));
-          if (near) for (let q = 0; q < m; q++){ const A = loopAt(v, q / m); out.push({ kind: 'ghost', u: A.x, v: A.y, scale: 0.012, lift: hOf(H, A.x, A.y) + 0.001, color: 0xd8efd0 }); }
+          if (tracks) for (let q = 0; q < m; q++){ const A = loopAt(v, q / m); out.push({ kind: 'ghost', u: A.x, v: A.y, scale: 0.012, lift: hOf(H, A.x, A.y) + 0.001, color: 0xd8efd0 }); }
           if (v[2 * n + 3] >= 1){
             const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, kd = v[2 * n + 3] - 1;
             if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0 });
@@ -35643,7 +35647,7 @@ const GOLF_APP = (() => {
         // a turnstile or a door: a post, and each bar a box laid along it (yellow and black, a door white and red), over a
         // dotted circle where the bars sweep (Oct 9)
         const [px, py, L] = T.arm || T.swing, hp = hOf(H, px, py);
-        if (near){ const n = Math.max(10, Math.round(2 * Math.PI * L / (CW * 0.5)));
+        if (tracks){ const n = Math.max(10, Math.round(2 * Math.PI * L / (CW * 0.5)));
           for (let q = 0; q < n; q++){ const a = 2 * Math.PI * q / n, x = px + L * Math.cos(a), y = py + L * Math.sin(a);
             if (T.swing){ const [, , , a0, a1] = T.swing, lo = Math.min(a0, a1), hi = Math.max(a0, a1), aa = lo + (((a - lo) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); if (aa > hi) continue; }
             out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); } }
@@ -35970,8 +35974,21 @@ const GOLF_APP = (() => {
      right is the rating (rateHole): tests/golf-course.mjs rates holes made at every level and fails if a level does not
      come out harder than the one below. A board's hole at another level is its hole made again from the same seed with
      other dials, so it is a different hole. */
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(Math.floor(Math.sqrt(Math.max(0, idx))) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + LEVEL_SET - 1));
+  /* (Oct 10, later: "what happens when the diffuculty mode changes, I dont notice any difference." Two reasons. The field
+     wraps round, and the ring was the larger of the board's column and row as numbered, so the boards just left of and
+     above the corner, numbered 9,999, counted as the farthest ring and were level 5 under Normal, Hard and Expert alike;
+     the ring is now the distance from the corner the short way round. And Easy and Normal both made the corner level 1;
+     now every step of the setting moves every board a level: the corner's rings are level 1 on Easy, 2 on Normal, 3 on
+     Hard, 4 on Expert. A board's ring needs the field's width, as boardIdx does.) */
+  function ringOf(idx){
+    idx = Math.max(0, Math.floor(idx));
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q;   // (Szudzik's pairing, undone)
+    let GS = 0; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {}
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + LEVEL_SET));
   const LEVEL_DIALS = [
     // weave: the chance of crossing paths; extra: of a second; riders: the most a weave may bring; speed: the movers'
     // seconds a turn multiplied by it (under 1 is faster); size: the riders'; amp: the ground's heights; feats: how many
@@ -35988,7 +36005,7 @@ const GOLF_APP = (() => {
   // but two, a gate's 5th, a turnstile's 4th and a door's 6th)
   function tuneMovers(src, K){
     if (K.speed === 1 && K.size === 1) return src;
-    const r2 = v => Math.round(v * 100) / 100, sec = v => r2(Math.sign(v) * Math.max(1.2, Math.abs(v) * K.speed));
+    const r2 = v => Math.round(v * 100) / 100, sec = v => isFinite(v) && v ? r2(Math.sign(v) * Math.max(1.2, Math.abs(v) * K.speed)) : v;
     src.toys = src.toys.map(T => {
       if (T.path){ const v = T.path.slice(), n = (v.length - 4) >> 1; v[2 * n] = r2(Math.max(0.15, Math.min(0.6, v[2 * n] * K.size))); v[2 * n + 1] = sec(v[2 * n + 1]); return { path: v }; }
       if (T.gate){ const v = T.gate.slice(); v[4] = sec(v[4]); return { gate: v }; }
@@ -36090,7 +36107,9 @@ const GOLF_APP = (() => {
       else if (k === 'moguls') land.push({ rough: [r3(u(0.014, 0.02)), r2(u(1.4, 2)), Math.floor(R() * 997)] });
       else land.push({ tilt: [r3(u(-0.03, 0.03)), r3(u(-0.03, 0.03))] });
     }
-    if (K.amp !== 1) for (const f of land){ const k = Object.keys(f)[0], v = f[k].slice(); for (const i of HEIGHTS[k] || []) v[i] = r3(v[i] * K.amp); f[k] = v; }
+    // (each height scaled by the level's amp, and kept in the range cleanSrc keeps it in: a dish sinks at most BASE deep)
+    if (K.amp !== 1) for (const f of land){ const k = Object.keys(f)[0], v = f[k].slice(), sp = SPEC_LAND[k] || [];
+      for (const i of HEIGHTS[k] || []) v[i] = r3(sp[i] ? Math.max(sp[i][0], Math.min(sp[i][1], v[i] * K.amp)) : v[i] * K.amp); f[k] = v; }
     const toys = [], nT = K.toys[0] + Math.floor(R() * (K.toys[1] - K.toys[0] + 1)), narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (wall && ch === '.' && row.includes('#'))) narrows.push([i, j]); }));
     for (let q = 0, tries = 0; q < nT && tries < 30; tries++){
@@ -36475,9 +36494,28 @@ const GOLF_APP = (() => {
   function setLevel(v){
     LEVEL_SET = ((v % 4) + 4) % 4;
     ARCADE.save('golf.level', LEVEL_WORDS[LEVEL_SET]);
-    say('Difficulty: ' + LEVEL_NAMES[LEVEL_SET] + ' — the boards near the corner are level ' + levelAt(30) + ' of 5, and they get harder farther out.', 3200);
+    tuneCourse();
+    say('Difficulty: ' + LEVEL_NAMES[LEVEL_SET] + ' — ' + ['slower grass and a bigger cup', 'the grass and cup as made', 'faster grass and a smaller cup', 'faster grass and a smaller cup'][LEVEL_SET]
+      + '; the course\'s movers ' + ['slower', 'as made', 'faster', 'faster still'][LEVEL_SET] + '; the boards near the corner level ' + levelAt(30)
+      + ' of 5, harder farther out (the flags: green 1, blue 2, yellow 3, orange 4, black 5).', 5000);
   }
+  /* THE COURSE FOLLOWS THE SETTING TOO (Oct 10, later, as above). The 22 holes of the corner are written by hand and have no
+     level, so the setting changed nothing there but the grass and the cup, and they are what you see first. Their movers
+     now go slower on Easy and faster on Hard and Expert, the riders a little smaller or bigger (COURSE_TUNE, by tuneMovers
+     on the holes as written); Normal is the course as made, which the course test plays. */
+  const COURSE_TUNE = [{ speed: 1.35, size: 0.9 }, { speed: 1, size: 1 }, { speed: 0.85, size: 1.06 }, { speed: 0.72, size: 1.12 }];
+  function tuneCourse(){
+    for (let k = 0; k < COURSE; k++){
+      const src = tuneMovers({ toys: clone(HOLE_SRC[k].toys || []) }, COURSE_TUNE[LEVEL_SET]);
+      HOLES[k].toys = compileHole({ map: HOLE_SRC[k].map, land: [], toys: src.toys }).toys;
+      delete HOLES[k].rated;
+    }
+  }
+  if (LEVEL_SET !== 1) tuneCourse();
   const lvTag = H => H && H.level ? ' (level ' + H.level + ' of 5)' : '';
+  // a generated hole's flag is the colour of its level, as ski runs are marked, so a change of setting shows across the
+  // field at a glance (Oct 10, later); the course's holes keep their red flags
+  const LEVEL_FLAG = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];
   /* ─── the editing itself ─── */
   const ED = { on: false, k: -1, src: null, key: null, tool: 'select', pick: null, dots: [], box: null, boxing: false, grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], last: null, stroke: false, timer: 0, msg: '' };
   function editStart(from){                               // from: a HOLES index to take in, or null for a new hole
@@ -37561,7 +37599,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, addHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, LEVEL_DIALS, pathify, pathToTvf, tvfToPaths, addTvfPaths, loopOf, fly: (c, r) => gotoCell(c, r) } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, addHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, loopOf, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10)
   };

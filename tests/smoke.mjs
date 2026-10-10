@@ -509,11 +509,27 @@ try {
       const riders = [1, 3, 5].map(L => +avg(L, s => s.toys.filter(T => T.path).length).toFixed(2));
       const weaves = [1, 3, 5].map(L => +avg(L, s => s.weave ? 1 : 0).toFixed(2));
       let bridge = 9; for (let i = 0; i < 200; i++){ const s = D.genSrc(500 + i * 13, 1); const row = s.map.find(r => r.includes('=') && r.includes('~')); if (row) bridge = Math.min(bridge, row.split('=').length - 1); }
-      return { rings, lab0, lab1, lab2, stored, l0, l1, l2, other: k1 !== k0, riders, weaves, bridge };
+      // (Oct 10, later: "what happens when the diffuculty mode changes, I dont notice any difference."): the board left of the
+      // corner, across the wrap, is the first ring, not the farthest; every step of the setting moves the corner's boards a
+      // level; the course's movers follow the setting; a generated hole's flag is its level's colour
+      const wrap = E.ringOf(D.boardIdx(9999, 0)), corner = [0, 1, 2, 3].map(v => { E.setLevel(v); return E.levelAt(30); });
+      const sec = () => { const T = D.HOLES.slice(0, 22).flatMap(H => H.toys).find(T => T.path); return T && T.path[T.path.length - 3]; };
+      E.setLevel(1); const sN = sec(); E.setLevel(3); const sX = sec(); E.setLevel(0); const sE = sec(); E.setLevel(1);
+      let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.boardIdx(c, r) >= 22) break search;
+      const kb = D.holeOf(c, r), flag = D.cellItems(c, r, 2000).find(i => i.kind === 'pennant'), fl = flag && flag.color === E.LEVEL_FLAG[D.HOLES[kb].level - 1];
+      return { rings, lab0, lab1, lab2, stored, l0, l1, l2, other: k1 !== k0, riders, weaves, bridge, wrap, corner, sec: [sE, sN, sX], fl };
     });
     if (lv.rings.join() !== '1,1,2,3,4,5' || lv.lab0 !== 'Difficulty: Normal' || lv.lab1 !== 'Difficulty: Hard' || lv.lab2 !== 'Difficulty: Normal' || lv.stored !== 'hard'
-        || lv.l0 !== 3 || lv.l1 !== 4 || lv.l2 !== 3 || !lv.other || !(lv.riders[0] < lv.riders[1] && lv.riders[1] < lv.riders[2]) || !(lv.weaves[0] < lv.weaves[2]) || lv.bridge < 3)
+        || lv.l0 !== 4 || lv.l1 !== 5 || lv.l2 !== 4 || !lv.other || !(lv.riders[0] < lv.riders[1] && lv.riders[1] < lv.riders[2]) || !(lv.weaves[0] < lv.weaves[2]) || lv.bridge < 3
+        || lv.wrap !== 1 || lv.corner.join() !== '1,2,3,4' || !(Math.abs(lv.sec[0]) > Math.abs(lv.sec[1]) && Math.abs(lv.sec[1]) > Math.abs(lv.sec[2])) || !lv.fl)
       failures.push(`[${current}] ${JSON.stringify(lv)}`);
+    // (Oct 10, later: "if wireframe is off, don't show the orbit path."): a board with a path draws no dotted track while
+    // Wireframe is off, and draws it with Wireframe on
+    const tr = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, item = A.menu[0].items.find(i => typeof i.label === 'function' && /^Wireframe/.test(i.label()));
+      let c = 0, r = 0; search: for (r = 0; r < 60; r++) for (c = 0; c < 60; c++) if (D.HOLES[D.holeOf(c, r)].toys.some(T => T.path)) break search;
+      const dots = () => D.cellItems(c, r, 2000).filter(i => i.kind === 'ghost' && i.color === 0xd8efd0).length;
+      const off = dots(); item.on(); const on = dots(); item.on(); return { off, on, wire: item.label() }; });
+    if (tr.off !== 0 || !(tr.on > 8) || tr.wire !== 'Wireframe: off') failures.push(`[${current}] the movers' tracks and Wireframe: ${JSON.stringify(tr)}`);
   }
   console.log(`${failures.length === beforeL ? 'ok  ' : 'FAIL'} ${current}`);
 
