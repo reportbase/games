@@ -105,7 +105,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
   or one left, runs them on the page's clock, and a new game starts its clock there, so a tap never resets them, Oct 10): the `path`
   (a rider round a loop, see the editor's notes; the shuttle and the orbit became paths on Oct 10) and the `gate` (a bar rising out
-  of the ground and sinking), each drawn over a dotted track. The grass is one colour,
+  of the ground and sinking). A path's loop and a turnstile's or door's sweep are dotted only with Wireframe on, or on the hole
+  being edited (Oct 10: "if wireframe is off, don't show the orbit path"). The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
   **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 50`, a board
   under 20 px gets no pieces (`itemMinPx`), and `cellItems(c, r, bp)` draws by the board's size on
@@ -131,9 +132,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       the holes' levels too. Expert plays on Hard's grass and cup.
     - The rater always plays on Normal's (`EVEN`), so a hole's stars and par don't depend on the setting.
   - **The levels:** a generated hole is made for a level from 1 to 5, given by `levelAt` = the ring level plus the
-    setting minus 1.
+    setting (Easy 0, Normal 1, Hard 2, Expert 3), so every step of the setting moves every board a level (Oct 10, later:
+    "I dont notice any difference").
     - Ring levels (`ringLevel`) double out from the corner: rings 0–6 are level 1, 7–14 level 2, 15–30 level 3, 31–62
-      level 4, and beyond that level 5.
+      level 4, and beyond that level 5. The ring (`ringOf`) is the distance from the corner the short way round the wrapped
+      field, so the boards left of and above the corner are ring 1, not the farthest.
+    - A generated hole's flag is its level's colour (`LEVEL_FLAG`: green, blue, yellow, orange, black); the course keeps red.
+    - The course's 22 holes have no level, but their movers follow the setting (`COURSE_TUNE`, `tuneCourse`: slower on
+      Easy, faster on Hard and Expert; Normal is the course as made, which the course test plays).
     - `holeAt` keeps a board's hole at each level apart (GEN key idx·8 + level), and sets `H.level`, which the tee
       message shows.
     - `LEVEL_DIALS` set each level: weave chance (a second weave at 4–5), riders per weave, mover speed and rider size
