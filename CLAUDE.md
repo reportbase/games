@@ -85,7 +85,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   ellipses, a three-petalled loop round the cup with an orbit crossing it, a cage of crossing shuttles round the cup, or
   a lumpy loop with an orbit crossing it; tracks keep off the tee, the cup, walls and water, periods never fall into
   step, riders are of every kind, par goes up one, and the source keeps `weave` (the smoke test checks that the tracks
-  cross). Two toys came with it:
+  cross). Two toys came with the guards:
   `arm [col, row, length, seconds a turn, phase, bars]`, a turnstile, and `swing [col, row, length,
   shut °, open °, seconds]`, a door; both are bars about a post (`barsOf`, drawn as `armBar`), in the
   editor as Turnstile and Door (drag out from the post). Cups are kept two cells in
