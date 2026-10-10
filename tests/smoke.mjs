@@ -366,6 +366,9 @@ try {
   // "if all subpanels can fit on the bottom panel dont use fisheye and center them. this applies to all applications.")
   current = 'bottom row centred';
   const before6 = failures.length;
+  // (mini golf's row is the editor's since Oct 10, "remove the game mode", so four stand-in tiles are lent it for this)
+  await page.evaluate(() => { const A = window.getFieldApp(); A._statTiles0 = A.statTiles; A.statTiles = () => [1, 2, 3, 4].map(n => ({ label: 'T' + n, value: n }));
+    try { window.refreshFieldBrowser && window.refreshFieldBrowser(); } catch {} });
   await page.waitForTimeout(600);
   const row = await page.evaluate(() => {
     const st = document.getElementById('boardBrowser');
@@ -378,6 +381,7 @@ try {
     const gaps = row.xs.slice(1).map((x, i) => x - row.xs[i]), mid = (row.xs[0] + row.xs[row.xs.length - 1]) / 2;
     if (Math.max(...gaps) - Math.min(...gaps) > 1 || Math.abs(mid - row.W / 2) > 1) failures.push(`[${current}] tiles at ${row.xs.map(x => x.toFixed(0)).join(', ')} in ${row.W}: not one even row, centred`);
   }
+  await page.evaluate(() => { const A = window.getFieldApp(); A.statTiles = A._statTiles0; delete A._statTiles0; try { window.refreshFieldBrowser && window.refreshFieldBrowser(); } catch {} });
   console.log(`${failures.length === before6 ? 'ok  ' : 'FAIL'} ${current}`);
 
   // The first tap on a board you are not on selects it and, in mini golf, tees off (Oct 8: "the first tap should select
@@ -472,9 +476,11 @@ try {
     const why = tile ? null : await page.evaluate(() => { const st = document.getElementById('boardBrowser'); return st ? { hidden: st.hidden, rect: st.getBoundingClientRect().toJSON(), keys: [...st.children].filter(t => t._key).map(t => t._key + ':' + t.style.display).slice(0, 12) } : 'no strip'; });
     if (!tile) failures.push(`[${current}] no tool tile in view on the bottom panel: ${JSON.stringify(why)}`);
     else {
+      const before = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), b = window.tvf.browser;
+        return { tool: A._debug.editor.ED.tool, on: A._debug.editor.ED.on, shut: document.body.classList.contains('bb-collapsed'), keys: b.keys.length, visible: b.visible, mode: b.mode, tiles: (A.statTiles(f.c, f.r) || []).length }; });
       await page.mouse.click(tile.x, tile.y); await page.waitForTimeout(300);
       const inHand = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.tool);
-      if (inHand !== tile.tool) failures.push(`[${current}] clicking the ${tile.tool} tile left ${inHand} in hand`);
+      if (inHand !== tile.tool) failures.push(`[${current}] clicking the ${tile.tool} tile left ${inHand} in hand ${JSON.stringify(before)}`);
     }
     // the row stays up while painting; take up Wall (by its tile) and drag across the middle of the hole with the mouse
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -629,7 +635,8 @@ try {
     let qbUndo = -1;
     if (qb.at){ const before = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
       await page.mouse.click(qb.at.x, qb.at.y); await page.waitForTimeout(300);
-      qbUndo = before - await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length); }
+      qbUndo = before - await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
+      if (qbUndo !== 1) qb.dbg = await page.evaluate(at => { const E = window.getFieldApp()._debug.editor, el = document.elementFromPoint(at.x, at.y); return { el: el && (el.id || el.tagName) + '/' + (el.parentElement && el.parentElement.id), on: E.ED.on, undo: E.ED.undo.length, redo: (E.ED.redo || []).length, shut: document.body.classList.contains('bb-collapsed') }; }, qb.at); }
     if (qb.n !== 6 || !qb.at || qb.at.right > 220 || qb.at.w > 40 || /[a-z]/i.test(qb.text) || qbUndo !== 1) failures.push(`[${current}] quick buttons: ${JSON.stringify(qb)}, undo took ${qbUndo}`);
     // select and move in place (Oct 9: "editing the boards is clumsy. lets make it better, like the draw project … I want
     // to edit the boards as much as possible in place"): what is placed is selected; Select takes a thing by a tap and a
@@ -952,12 +959,30 @@ try {
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       E.editAction('done'); });   // (its tile went on Oct 10; Done is a quick button)
+    await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
     const st3 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const g = [...D.games.values()].find(g => g.hole === E.ED.k), t = A.statTiles(f.c, f.r) || []; return { on: E.ED.on, first: t[0] && t[0].label, state: g && g.state, single: g && g.R.single }; });
-    if (st3.on || st3.first !== 'Hole' || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
-    await page.waitForFunction(() => document.querySelectorAll('#bbQuick button').length === 2, null, { timeout: 20000 }).catch(() => {});
-    const qp = await page.evaluate(() => [...document.querySelectorAll('#bbQuick button')].map(b => b.title));
-    if (qp.join('|') !== 'Start this hole again|Edit this hole') failures.push(`[${current}] quick buttons while playing: ${JSON.stringify(qp)}`);
+      const g = [...D.games.values()].find(g => g.hole === E.ED.k), t = A.statTiles(f.c, f.r) || []; return { on: E.ED.on, tiles: t.length, state: g && g.state, single: g && g.R.single, shut: document.body.classList.contains('bb-collapsed') }; });
+    if (st3.on || st3.tiles || st3.state !== 'play' || !st3.single || !st3.shut) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);
+    // THE ROW IS THE EDITOR (Oct 10: "the bottom browser in the golf application should turn edit mode on when it displayed
+    // and turned off when not displayed. remove the game mode of the bottom browser."): the dots, clicked, open the row
+    // and the editor with it; clicked again they shut both; no playing tiles or buttons are ever in the row
+    await page.waitForTimeout(800);                           // (the pane slides shut first; the dots ride on it)
+    const dotsXY = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    const pre = await page.evaluate(at => { const el = document.elementFromPoint(at.x, at.y), b = window.tvf.browser, E = window.getFieldApp()._debug.editor; return { at, el: el && (el.id || el.tagName), on: E.ED.on, shut: document.body.classList.contains('bb-collapsed'), vis: b.visible, vw: innerWidth, vh: innerHeight }; }, dotsXY);
+    await page.mouse.click(dotsXY.x, dotsXY.y);
+    await page.waitForFunction(() => !document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
+    const rowOn = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      return { on: E.ED.on, open: !document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, first: ((A.statTiles(f.c, f.r) || [])[0] || {}).value }; });
+    await page.waitForTimeout(800);
+    const dotsXY2 = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    await page.mouse.click(dotsXY2.x, dotsXY2.y);
+    await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const rowOff = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = A._debug.games.get(f.c + '_' + f.r);
+      return { on: E.ED.on, shut: document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, quick: (A.quickActs(f.c, f.r) || []).length, state: g && g.state }; });
+    if (!rowOn.on) rowOn.dbg = await page.evaluate(at => { const el = document.elementFromPoint(at.x, at.y), b = window.tvf.browser; return { el: el && (el.id || el.tagName), visible: b.visible, mode: b.mode }; }, dotsXY);
+    if (!rowOn.on || !rowOn.open || rowOn.first !== 'Grass' || rowOff.on || !rowOff.shut || rowOff.tiles || rowOff.quick || rowOff.state !== 'play')
+      failures.push(`[${current}] the row is the editor: ${JSON.stringify({ pre, rowOn, rowOff })}`);
     // Escape (Oct 9: "don't change the zoom level with escape, instead cancel the edit mode."): in the editor it leaves the
     // editor and the view stays where it was; out of it, it does nothing to the view either
     await page.waitForTimeout(2500);                          // (the view settled first)

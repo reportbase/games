@@ -99,7 +99,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   plain bumpers and boulders and quarter-detail ground (`landM`), under 300 two-cell rails, coarse
   ground (`landL`), no number and no dotted tracks. Items may be stretched (`sx`/`sy`/`sz`).
 - **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
-  puts its tools in the bottom panel: while editing, `statTiles` gives the editor's tiles
+  puts its tools in the bottom panel. **The row is the editor** (Oct 10: "remove the game mode"): opening mini golf's
+  bottom row (the dots) starts the editor on the selected hole, shutting it leaves the editor, and leaving the editor any
+  other way shuts the row (`onBrowserToggle`, the field asks an app before the row moves; `paneTo` moves it without
+  asking; `editStop` shuts it only after `ED.on` is false). The row never shows the round's numbers or playing buttons;
+  `statTiles` gives the editor's tiles whenever the editor is on. `bbRefreshNow` (field) rebuilds the row and its quick
+  buttons at once, since an idle view draws no frames to do it. while editing, `statTiles` gives the editor's tiles
   and a tap on a tile reaches the app's `onStatTap` (the field offers stat-tile taps to any
   app that has it); `statsStay` keeps the row up while the hole is painted. It edits a hole as written, in cells (`ED.src`); the course's own holes are kept as
   written in `HOLE_SRC` and compiled by `compileHole`. Editor holes come after the
@@ -202,8 +207,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`settleCameraNow`), so a game no longer glides down from the overview when it opens.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
   title, no text) in the band at the top right of the bottom pane (`#bbQuick`, `bbQuickTick`);
-  a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing;
-  Start again and Edit while playing. The row stops short of the middle and its buttons narrow to fit. They show only while the pane is open; the three dots
+  a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing
+  (none while playing: the row is the editor's, Oct 10). The row stops short of the middle and its buttons narrow to fit. They show only while the pane is open; the three dots
   (`#bbHandle`) show on every game, whether or not its row has anything in it.
 - **The rails** (Oct 10): the turn rail across the top (`#yawZone`) is as tall as the side rails (`#tiltZone`,
   `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
