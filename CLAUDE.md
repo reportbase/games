@@ -122,7 +122,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
   in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the five paints,
   the bumpers, Boulder, Fence, Windmill, Pipe, the movers, Turnstile, Door, Plateau, Erase; the acts:
-  Undo, Redo, Delete, Level, Material (named by the material). Par, Check, Save, Share, Done, Tee, Cup,
+  Undo, Redo, Copy, Paste, Delete, Level, Material (named by the material). Copy, Paste and Delete act on the whole
+  board (Oct 10): Copy keeps the hole as written (`CLIP`, and localStorage `golf.clip`), Paste lays it over the hole
+  being edited (its name kept), Delete clears it to a new hole's; both undo. The delete-object tile and the text-only
+  first tile (name, par, material) went, so tile i is `TOOLS[i]`, then `ACTS`. Par, Check, Save, Share, Done, Tee, Cup,
   Ramp, Bowl, Half-pipe, Select, Higher, Lower and Name lost their tiles (Done and Select are quick
   buttons; the actions remain in `editAction`).
   **Select and move in place** (Oct 9, step 1 of making the editor like draw.html): Select is the
