@@ -12965,6 +12965,10 @@ function toggleBoardBrowser(on){
   // Asking for it overrules the automatic answer for as long as the situation
   // lasts — this game, or this gap between games — and no longer.
   const want = (on == null) ? !bbVisible : !!on;
+  /* AN APP MAY TAKE THE ROW'S OPENING AS ITS OWN SWITCH (Oct 10: mini golf, "the bottom browser in the golf application
+     should turn edit mode on when it displayed and turned off when not displayed"): onBrowserToggle(open) is told first,
+     and answering false leaves the row as it was. */
+  try { const A = window.getFieldApp && window.getFieldApp(); if (A && A.onBrowserToggle && A.onBrowserToggle(want) === false) return; } catch {}
   bbOverride = want;
   bbVisible = want;
   try { localStorage.setItem(BROWSER_KEY, '1'); } catch {}
@@ -13428,6 +13432,10 @@ function bbQuickTick(a){
     bar.appendChild(b);
   }
 }
+/* THE ROW AND ITS QUICK BUTTONS NOW, not on the next frame (Oct 10): they follow the app a fifth of a second apart, from
+   the frame loop, and a view standing still draws no frames, so a button greyed out a moment ago (Undo, with nothing yet
+   to undo) stayed grey. An app calls this when what its row shows has just changed. */
+function bbRefreshNow(){ _bbStatT = 0; _bbQuickSig = null; try { bbStatTick(); } catch {} try { syncBrowserVisibility(); } catch {} }
 function bbStatTick(){
   const now = performance.now();
   if (now - _bbStatT < 200) return;
@@ -34441,7 +34449,7 @@ const GOLF_APP = (() => {
   function editStart(from){                               // from: a HOLES index to take in, or null for a new hole
     const L = framedHere();
     if (!L){ say('Select a hole on the field first, then choose Edit.', 2600); return false; }
-    if (ED.on) editStop(true);
+    if (ED.on) editStop(true, true);
     let k, src;
     const org = from != null && !(HOLES[from] && HOLES[from].custom) ? originOf(srcOf(from)) : null;
     const had = org ? MINE.findIndex(m => m.from === org) : -1;   // (Oct 10: edited before, so its copy is reopened, not copied again)
@@ -34458,19 +34466,35 @@ const GOLF_APP = (() => {
     LIVE = L;
     const g = holeGame({ start: k, card: [], single: true }, k); g.state = 'edit';
     GAMES.set(L.key, g);
-    try { toggleBoardBrowser(false); } catch {}
-    try { toggleBoardBrowser(true); } catch {}
+    paneTo(false); paneTo(true);                             // (the row, opened afresh on the editor's tiles)
     say('Editing — tap anything on the hole to select it, drag it to move it; tools are below.', 3000);
     return true;
   }
-  function editStop(quiet){
+  /* THE ROW IS THE EDITOR (Oct 10: "currently the bottom browser is either the game mode or the edit mode. remove the
+     game mode, the bottom browser in the golf application should turn edit mode on when it displayed and turned off when
+     not displayed."). Opening the bottom row starts the editor on the selected hole, shutting it leaves the editor; the
+     row never shows the round's numbers (Hole, Par, Strokes, Total) or the playing quick buttons any more. Leaving the
+     editor any other way (Done, Escape, the menu) shuts the row with it. paneTo moves the row without asking the editor
+     again (BB_BUSY), as the editor's own start and stop do. */
+  let BB_BUSY = false;
+  // (and shown at once: the row's open or shut look follows on the next frame, and an idle view draws none)
+  function paneTo(open){ BB_BUSY = true; try { toggleBoardBrowser(open); bbRefreshNow(); } catch {} BB_BUSY = false; }
+  function onBrowserToggle(open){
+    if (BB_BUSY) return true;
+    if (open && !ED.on){ const L = framedHere(), g = L && GAMES.get(L.key); return editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null) ? true : false; }
+    if (!open && ED.on){ BB_BUSY = true; try { editStop(false, true); } finally { BB_BUSY = false; } }
+    return true;
+  }
+  function editStop(quiet, keepPane){
     if (!ED.on) return;
     clearTimeout(ED.timer); ED.timer = 0;
     setHole(ED.k, ED.src);
     ED.on = false; ED.stroke = false;
     const g = GAMES.get(ED.key);
     if (g && g.state === 'edit') GAMES.set(ED.key, holeGame({ start: ED.k, card: [], single: true }, ED.k));
-    if (!quiet) say('Playing ' + HOLES[ED.k].name + ' — Hole editor in the menu to change it again.', 2600);
+    if (!quiet) say('Playing ' + HOLES[ED.k].name + ' — open the row below (the dots) to change it again.', 2600);
+    // (the row goes with the editor, Oct 10; shut once the editor is off, or the row's "the editor's tools stay up" puts it back)
+    if (!keepPane) paneTo(false);
     try { renderAppMenu(); } catch {}
   }
   function snapEdit(){ ED.undo.push(JSON.stringify(ED.src)); if (ED.undo.length > 60) ED.undo.shift(); ED.redo = []; }
@@ -34495,6 +34519,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(ED.key), H = HOLES[ED.k];
       if (g && g.state === 'edit'){ g.ball.x = g.rest.x = H.tee.x; g.ball.y = g.rest.y = H.tee.y; }
       ED.msg = ''; updateEditBar();
+      try { bbRefreshNow(); } catch {}                       // (its Undo and Redo lit or greyed at once: Oct 10)
     };
     if (now) go(); else ED.timer = setTimeout(go, 90);       // a drag repaints the ground a few times a second, not every move
   }
@@ -35385,17 +35410,11 @@ const GOLF_APP = (() => {
       return 1 / (1 + Math.exp(-0.5 * diffOf(g)));
     },
     statTiles(c, r){
-      const g = GAMES.get(gkey(c, r));
-      if (g && g.state === 'edit') return ED.on && gkey(c, r) === ED.key ? editTiles() : null;
-      if (!g) return null;
-      const H = HOLES[g.hole], d = diffOf(g), n = g.R.card.length + (g.state === 'play' ? 1 : 0);
-      return [
-        { label: 'Hole', value: g.R.single ? 'yours' : Math.max(1, n) + '/' + ROUND, sub: H.name, color: '#ffffff' },
-        { label: 'Par', value: H.par, color: '#9fe3a0' },
-        { label: 'Strokes', value: g.state === 'play' ? g.strokes : (g.R.card[g.R.card.length - 1] || {}).strokes || 0, sub: 'this hole', color: '#ffd23a' },
-        { label: 'Total', value: fmtDiff(d), sub: totalOf(g) + ' strokes', color: d >= 0 ? '#9fe3a0' : '#ff8a7a' },
-      ];
+      // (the editor's tiles only: the round's own numbers left the row on Oct 10, "remove the game mode")
+      // (and while the editor is on, whichever board is framed: the row is the editor's, so it never empties under it)
+      return ED.on ? editTiles() : null;
     },
+    onBrowserToggle,
     onReset(c, r){ startRound(c, r); return true; },
     onStatTap(c, r, i){ return editTileTap(i); },             // the editor's tiles (Oct 8)
     /* THE QUICK BUTTONS (Oct 9: "small icon buttons, no text, for most common things"): while editing, Undo, Redo, the
@@ -35403,7 +35422,7 @@ const GOLF_APP = (() => {
     quickActs(){
       if (ED.on) return [{ key: 'select', glyph: '👆', title: 'Select', dim: ED.tool === 'select' }, { key: 'box', glyph: '⬚', title: 'Select dots in a box', dim: ED.tool === 'box' }, { key: 'undo', glyph: '↶', title: 'Undo', dim: !ED.undo.length }, { key: 'redo', glyph: '↷', title: 'Redo', dim: !(ED.redo && ED.redo.length) },
                          { key: 'erase', glyph: '🧽', title: 'Erase' }, { key: 'done', glyph: '✓', title: 'Done editing' }];
-      return framedHere() ? [{ key: 'restart', glyph: '↺', title: 'Start this hole again' }, { key: 'edit', glyph: '✎', title: 'Edit this hole' }] : null;
+      return null;                                           // (no playing buttons: the row is the editor's, Oct 10)
     },
     onQuickAct(c, r, key){
       if (key === 'select'){ if (ED.on){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.pick = null; ED.dots = []; ED.box = null; ED.msg = 'tap anything to select it, drag it to move it'; } return true; }
@@ -35430,7 +35449,7 @@ const GOLF_APP = (() => {
            of yours is edited in place). The hole just edited keeps its changes on its board. The tap only moves the
            editor: the next one paints or places. */
         const prev = GAMES.get(gkey(c, r)), from = prev ? prev.hole : holeOf(c, r);
-        editStop(true);
+        editStop(true, true);
         LIVE = { key: gkey(c, r), c, r };
         if (editStart(from)){ say('Editing ' + ED.src.name + ' — the tool in hand is ' + (TOOLS.find(t => t[0] === ED.tool) || ['', 'the same'])[1] + '.', 2400); return true; }
       }
