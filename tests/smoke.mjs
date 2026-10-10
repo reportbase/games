@@ -962,6 +962,20 @@ try {
       return { n0, n1, n2, k1, k2, mat, f1, items, perHole: items.filter(l => /^(Play|Delete): /.test(l)).length, my: items.filter(l => /^My holes \(\d+\)/.test(l)).length }; });
     if (mh.n1 !== mh.n0 + 1 || mh.n2 !== mh.n1 || mh.k1 !== mh.k2 || mh.mat !== mh.f1 || mh.perHole || mh.my !== 1)
       failures.push(`[${current}] My holes in the menu, and one copy a hole: ${JSON.stringify(mh)}`);
+    // Play in the list flies to the hole's own board (Oct 10: "my holes dialog does not let me move to the hole"): the copy
+    // of hole 5 was made on the framed board; fly two boards away, open the list, press its Play, and the view is back
+    const home = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), E = window.getFieldApp()._debug.editor;
+      const i = E.MINE.findIndex(m => m.from && m.at && m.at[0] === f.c && m.at[1] === f.r);
+      E.fly(f.c + 2, f.r + 1); return { c: f.c, r: f.r, i, name: i >= 0 ? E.MINE[i].name : null }; });
+    await page.waitForTimeout(1500);
+    const away = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return [f.c, f.r]; });
+    await page.evaluate(() => window.getFieldApp()._debug.editor.openMineBox());
+    if (home.i >= 0) await page.locator('#golfMineBox .golfMineRow').nth(home.i).getByRole('button', { name: 'Play' }).click();
+    await page.waitForTimeout(1500);
+    const back = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.games.get(f.c + '_' + f.r);
+      return { at: [f.c, f.r], name: g && D.HOLES[g.hole].name, open: !!document.getElementById('golfMineBox') }; });
+    if (home.i < 0 || (away[0] === home.c && away[1] === home.r) || back.at[0] !== home.c || back.at[1] !== home.r || back.name !== home.name || back.open)
+      failures.push(`[${current}] Play flies to the hole: ${JSON.stringify({ home, away, back })}`);
     await page.evaluate(() => window.getFieldApp()._debug.editor.openMineBox());
     const rows0 = await page.locator('#golfMineBox .golfMineRow').count();
     await page.locator('#golfMineBox .golfMineRow').last().getByRole('button', { name: 'Delete' }).click();

@@ -34069,7 +34069,8 @@ const GOLF_APP = (() => {
     }
     return { name: String(o.name || 'my hole').replace(/\s+/g, ' ').slice(0, 40), par: Math.max(1, Math.min(9, Math.round(Number(o.par)) || 3)),
              map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40), fence: FENCE_MATS.includes(o.fence) ? o.fence : 'wood',
-             ...cleanLift(o.lift), ...(typeof o.from === 'string' && /^[a-z0-9]{1,12}$/.test(o.from) ? { from: o.from } : {}) };
+             ...cleanLift(o.lift), ...(typeof o.from === 'string' && /^[a-z0-9]{1,12}$/.test(o.from) ? { from: o.from } : {}),
+             ...(Array.isArray(o.at) && o.at.length === 2 && o.at.every(v => Number.isInteger(v) && v >= 0 && v < 10000) ? { at: [o.at[0], o.at[1]] } : {}) };
   }
   // the dots' heights (Oct 9): a list of LIFT_W × LIFT_H numbers in range, kept only when some dot is off level
   function cleanLift(L){
@@ -34383,6 +34384,7 @@ const GOLF_APP = (() => {
       src = cleanSrc(src) || blankSrc();
       k = addHole(src);
     }
+    if (L.c != null) src.at = [L.c, L.r];                   // the board it is made on (Oct 10: the list flies back to it)
     Object.assign(ED, { on: true, k, src, key: L.key, pick: null, dots: [], box: null, boxing: false, grab: null, guide: null, lastTap: null, pipeAt: null, undo: [], redo: [], last: null, stroke: false, msg: '', saved: false });
     LIVE = L;
     const g = holeGame({ start: k, card: [], single: true }, k); g.state = 'edit';
@@ -34953,11 +34955,11 @@ const GOLF_APP = (() => {
       if (!CLIP) try { CLIP = cleanSrc(JSON.parse(localStorage.getItem(CLIP_KEY) || 'null')); } catch {}
       const c = CLIP && cleanSrc(clone(CLIP));
       if (!c){ ED.msg = 'nothing copied yet'; return; }
-      snapEdit(); c.name = S.name; delete c.from; if (S.from) c.from = S.from; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
+      snapEdit(); c.name = S.name; delete c.from; delete c.at; if (S.from) c.from = S.from; if (S.at) c.at = S.at; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'hole pasted'; editRefresh(true); return;
     }
     if (a === 'clear'){
-      snapEdit(); const c = blankSrc(); c.name = S.name; if (S.from) c.from = S.from; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
+      snapEdit(); const c = blankSrc(); c.name = S.name; if (S.from) c.from = S.from; if (S.at) c.at = S.at; ED.src = c; ED.pick = null; ED.box = null; ED.dots = [];
       ED.msg = 'board cleared'; editRefresh(true); return;
     }
     if (a === 'level'){
@@ -35091,6 +35093,19 @@ const GOLF_APP = (() => {
   }
   /* MY HOLES, A LIST OF ITS OWN (Oct 10, as above). A plain window like the confirm box: a row a hole (its name and par,
      Play and Delete), and at the foot Save all to a file, Delete all and Close. Escape closes it; so does a tap outside it. */
+  /* (Oct 10: "my holes dialog does not let me move to the hole". Play put the hole on whatever board was selected and
+     left the view where it was, or with none selected only said so. Now a hole keeps the board it was made on (`at`,
+     set by editStart, kept by cleanSrc), and Play flies there (the field's gotoCell) and plays it; a hole with no board
+     yet (opened from a file) takes the selected board, or the corner's, and keeps it.) */
+  function goMine(i){
+    const S = MINE[i]; if (!S) return false;
+    if (ED.on) editStop(true);
+    let at = S.at;
+    if (!at){ const L = framedHere(); at = L && L.c != null ? [L.c, L.r] : [0, 0]; S.at = at; storeMine(); }
+    try { gotoCell(at[0], at[1]); } catch {}
+    LIVE = { key: gkey(at[0], at[1]), c: at[0], r: at[1] };
+    return playHoleHere(holeOfMine(i));
+  }
   function closeMineBox(){ const b = document.getElementById('golfMineBox'); if (b) b.remove(); }
   function openMineBox(){
     closeMineBox();
@@ -35114,7 +35129,7 @@ const GOLF_APP = (() => {
       const name = document.createElement('div'); name.style.cssText = F + 'color:#ffffff;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
       name.textContent = src.name + '  ·  par ' + src.par;
       row.append(name,
-        btn('Play', 'Play this hole on the selected board.', () => { closeMineBox(); if (ED.on) editStop(true); playHoleHere(holeOfMine(i)); }, true),
+        btn('Play', 'Fly to the board this hole was made on and play it there.', () => { closeMineBox(); goMine(i); }, true),
         btn('Delete', 'Take this hole out of My holes.', () => { deleteMine(i); try { renderAppMenu(); } catch {} if (MINE.length) openMineBox(); else closeMineBox(); }));
       list.appendChild(row);
     });
@@ -35288,7 +35303,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
   };
   return app;
