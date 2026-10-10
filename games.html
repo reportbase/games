@@ -32899,7 +32899,7 @@ const GOLF_APP = (() => {
       if (best){ map[cj][ci] = '.'; map[best[1]][best[0]] = 'O'; ci = best[0]; cj = best[1]; }
     }
     const cx = ci + 0.5, cy = cj + 0.5, toys = src.toys || [];
-    const near = toys.filter(T => !T.orbit && !T.shuttle && !T.gate).map(T => Object.values(T)[0]).filter(v => Math.hypot(v[0] - cx, v[1] - cy) < 2.5);
+    const near = toys.filter(T => !T.orbit && !T.shuttle && !T.gate && !T.path).map(T => Object.values(T)[0]).filter(v => Math.hypot(v[0] - cx, v[1] - cy) < 2.5);
     let R = 0.9;
     for (let r = 1.5; r >= 0.9; r -= 0.1) if (near.every(v => Math.abs(Math.hypot(v[0] - cx, v[1] - cy) - r) > 0.8)){ R = r; break; }
     /* NOT ALL GUARDS GO ROUND (Oct 9: "to many holes have rocks circling protecting the hole. more variety, should be
@@ -33079,6 +33079,7 @@ const GOLF_APP = (() => {
       if (T.fence) T.fence = T.fence.slice(0, 4).map(P);
       if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
       if (T.shuttle) T.shuttle = [...T.shuttle.slice(0, 5).map(P), T.shuttle[5]];
+      if (T.path){ const n = pathN(T.path); T.path = [...T.path.slice(0, 2 * n).map(P), P(T.path[2 * n]), T.path[2 * n + 1], T.path[2 * n + 2] || 0, T.path[2 * n + 3] || 0]; }
       if (T.orbit) T.orbit = [P(T.orbit[0]), P(T.orbit[1]), P(T.orbit[2]), P(T.orbit[3]), T.orbit[4], T.orbit[5] || 0, T.orbit[6] || 0];   // (the 7th: 1 a bumper going round, Oct 9)
       if (T.gate) T.gate = [...T.gate.slice(0, 4).map(P), T.gate[4], T.gate[5] || 0];
       if (T.arm) T.arm = [P(T.arm[0]), P(T.arm[1]), P(T.arm[2]), T.arm[3] || 4, T.arm[4] || 0, Math.max(1, Math.min(4, Math.round(T.arm[5] || 2)))];
@@ -33376,7 +33377,40 @@ const GOLF_APP = (() => {
   const MILL_T = 0.011;                                    // a windmill arm's half thickness
   // Where a toy is at time t: a slide's middle and velocity; a mill's angle and turn rate.
   const GATE_T = CW * 0.14;                                  // a gate's half thickness
+  /* THE PATH (Oct 10: "could we just use a shape from draw.html to create orbits?" … "drawing the orbits in place and
+     moving the leaves would be best."). A mover that rides a closed loop of its own shape, as a shape in draw.html rides
+     its motion orbit: the loop is given by its leaves, points it passes through, and drawn smooth between them (a closed
+     Catmull-Rom curve, which keeps each leaf's pull local, so a dragged leaf bends only its own stretch; draw's own read
+     is a global one through the same kind of points). `path` [x0, y0, x1, y1, …, r, seconds a loop (less than nothing
+     the other way), phase (a fraction of the loop), kind (0 a boulder, 1 a bumper)], 3 to 24 leaves, in cells as written.
+     It goes round at an even speed along the curve, whatever the leaves' spacing. */
+  const LOOP = new WeakMap();
+  const pathN = v => (v.length - 4) >> 1;
+  function loopOf(v){                                         // the curve as points, with the length run along it
+    let L = LOOP.get(v); if (L) return L;
+    const n = pathN(v), M = n * 12, pts = new Float64Array(2 * M), cum = new Float64Array(M + 1);
+    const X = q => v[2 * (((q % n) + n) % n)], Y = q => v[2 * (((q % n) + n) % n) + 1];
+    for (let q = 0; q < n; q++) for (let s = 0; s < 12; s++){
+      const u = s / 12, u2 = u * u, u3 = u2 * u, a = -0.5 * u3 + u2 - 0.5 * u, b = 1.5 * u3 - 2.5 * u2 + 1, c = -1.5 * u3 + 2 * u2 + 0.5 * u, d = 0.5 * u3 - 0.5 * u2, m = q * 12 + s;
+      pts[2 * m] = a * X(q - 1) + b * X(q) + c * X(q + 1) + d * X(q + 2);
+      pts[2 * m + 1] = a * Y(q - 1) + b * Y(q) + c * Y(q + 1) + d * Y(q + 2);
+    }
+    for (let m = 0; m < M; m++){ const m2 = (m + 1) % M; cum[m + 1] = cum[m] + Math.hypot(pts[2 * m2] - pts[2 * m], pts[2 * m2 + 1] - pts[2 * m + 1]); }
+    L = { pts, cum, M, L: cum[M] || 1e-9 }; LOOP.set(v, L); return L;
+  }
+  function loopAt(v, f){                                      // the point a fraction f of the way round, and the way it heads
+    const P = loopOf(v), s = (((f % 1) + 1) % 1) * P.L;
+    let lo = 0, hi = P.M;
+    while (hi - lo > 1){ const mid = (lo + hi) >> 1; if (P.cum[mid] <= s) lo = mid; else hi = mid; }
+    const m2 = (lo + 1) % P.M, seg = (P.cum[lo + 1] - P.cum[lo]) || 1e-9, w = (s - P.cum[lo]) / seg;
+    const x0 = P.pts[2 * lo], y0 = P.pts[2 * lo + 1], x1 = P.pts[2 * m2], y1 = P.pts[2 * m2 + 1];
+    return { x: x0 + (x1 - x0) * w, y: y0 + (y1 - y0) * w, tx: (x1 - x0) / seg, ty: (y1 - y0) / seg, s, L: P.L };
+  }
   function toyAt(T, t){
+    if (T.path){
+      const v = T.path, n = pathN(v), per = v[2 * n + 1] || 6, A = loopAt(v, v[2 * n + 2] + t / per), sp = A.L / per;
+      return { x: A.x, y: A.y, vx: A.tx * sp, vy: A.ty * sp, a: A.s / Math.max(1e-6, v[2 * n]) };
+    }
     if (T.slide){
       const [x0, y0, x1, y1, , , per] = T.slide, w = 2 * Math.PI / per, f = 0.5 - 0.5 * Math.cos(w * t), df = 0.5 * w * Math.sin(w * t);
       return { x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f, vx: (x1 - x0) * df, vy: (y1 - y0) * df };
@@ -33469,6 +33503,18 @@ const GOLF_APP = (() => {
         b.x = x1 + ux * (pr + BR + 0.006); b.y = y1 + uy * (pr + BR + 0.006); b.vx = ux * sp; b.vy = uy * sp;
         (g.piped = g.piped || {})[k] = t; g.moving = true; g.slowT = 0; hit = Math.max(hit, 0.02);
         SND.play('flag');
+      } else if (T.path){
+        // a path's rider (Oct 10): met as an orbit's is, a boulder knocking by its own speed or a bumper kicking
+        const v = T.path, n = pathN(v), S = toyAt(T, t), cr = v[2 * n], dx = b.x - S.x, dy = b.y - S.y, d = Math.hypot(dx, dy);
+        if (d >= BR + cr || d < 1e-9) return;
+        if (v[2 * n + 3] === 1){
+          const nx = dx / d, ny = dy / d, vn = (b.vx - S.vx) * nx + (b.vy - S.vy) * ny;
+          b.x = S.x + nx * (BR + cr); b.y = S.y + ny * (BR + cr);
+          if (vn < 0.6){ const out = Math.max(0.6, -vn * 1.15); b.vx += (out - vn) * nx; b.vy += (out - vn) * ny; }
+          (g.kicked = g.kicked || {})[k] = t; hit = Math.max(hit, 0.6); SND.play('flag');
+          return;
+        }
+        hit = Math.max(hit, knockOff(b, dx / d, dy / d, S.x, S.y, BR + cr, S.vx, S.vy, E));
       } else if (T.orbit){
         /* THE MOVERS (Oct 8: "remove the water fall and water fountain. lets try moving obsticals instead."). A boulder
            going round meets the ball as a standing one does, but moving: it bounces off the boulder's own speed where they
@@ -33897,10 +33943,19 @@ const GOLF_APP = (() => {
         out.push({ kind: 'hub', u: mx, v: my, scale: 0.04, lift: hm, color: 0xd9d2c0 });
         for (const a of [M.a, M.a + Math.PI / 2]) for (let s = -arm; s <= arm + 1e-9; s += arm / 6)
           out.push({ kind: 'blade', u: mx + Math.cos(a) * s, v: my + Math.sin(a) * s, scale: MILL_T * 2.2, lift: hm + 0.01, color: (Math.abs(s) < arm / 4) ? 0xd9d2c0 : 0xc0392b });
-      } else if (T.shuttle || T.orbit || T.gate){
+      } else if (T.shuttle || T.orbit || T.gate || T.path){
         /* The movers, where the clock has them, each over a faint dotted track so you can see where it will be. */
         const S = toyAt(T, t);
-        if (T.shuttle){
+        if (T.path){                                          // its loop dotted, and its rider (Oct 10)
+          const v = T.path, n = pathN(v), r = v[2 * n], P = loopOf(v), m = Math.max(8, Math.round(P.L / (CW * 0.5)));
+          if (near) for (let q = 0; q < m; q++){ const A = loopAt(v, q / m); out.push({ kind: 'ghost', u: A.x, v: A.y, scale: 0.012, lift: hOf(H, A.x, A.y) + 0.001, color: 0xd8efd0 }); }
+          if (v[2 * n + 3] === 1){
+            const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15;
+            if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xffc2e0 });
+            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : 0xe05a9a });
+          } else if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff });
+          else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
+        } else if (T.shuttle){
           const [x0, y0, x1, y1, kr] = T.shuttle, lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / (CW * 0.5)));
           if (near) for (let q = 0; q <= n; q++){ const x = x0 + (x1 - x0) * q / n, y = y0 + (y1 - y0) * q / n; out.push({ kind: 'ghost', u: x, v: y, scale: 0.012, lift: hOf(H, x, y) + 0.001, color: 0xd8efd0 }); }
           if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: kr * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : 0xbfe0ff });
@@ -34043,6 +34098,15 @@ const GOLF_APP = (() => {
     const out = [];
     for (const f of Array.isArray(list) ? list : []){
       if (out.length >= max) break;
+      if (spec === SPEC_TOY && f && Array.isArray(f.path)){     // a path (Oct 10): its leaves, then its four numbers
+        const v = f.path.map(Number), n = Math.min(24, (v.length - 4) >> 1);
+        if (n < 3 || v.some(x => !isFinite(x))) continue;
+        const R3 = x => Math.round(x * 1000) / 1000, nums = [];
+        for (let q = 0; q < n; q++) nums.push(R3(Math.max(0, Math.min(NX, v[2 * q]))), R3(Math.max(0, Math.min(NY, v[2 * q + 1]))));
+        const tail = v.slice(v.length - 4), per = Math.max(-30, Math.min(30, tail[1]));
+        nums.push(R3(Math.max(0.1, Math.min(1, tail[0]))), Math.abs(per) < 1 ? 6 : R3(per), R3(((tail[2] % 1) + 1) % 1), tail[3] === 1 ? 1 : 0);
+        out.push({ path: nums }); continue;
+      }
       const key = f && typeof f === 'object' && Object.keys(spec).find(k => Array.isArray(f[k]));
       if (!key) continue;
       const lim = spec[key], v = f[key];
@@ -34469,6 +34533,7 @@ const GOLF_APP = (() => {
     if (k === 'arm') return d0 - Math.min(v[2], 0.7);
     if (k === 'swing'){ const a = v[3] * Math.PI / 180; return Math.min(d0 - 0.3, segDist(x, y, v[0], v[1], v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a)) - 0.15); }
     if (k === 'orbit') return Math.min(Math.abs(d0 - v[2]) - v[3], d0 - 0.3);
+    if (k === 'path'){ const P = loopOf(v); let m = Infinity; for (let q = 0; q < P.M; q++) m = Math.min(m, Math.hypot(x - P.pts[2 * q], y - P.pts[2 * q + 1])); return m - Math.max(0.2, v[2 * pathN(v)]); }
     if (k === 'pipe') return Math.min(d0, Math.hypot(x - v[2], y - v[3])) - v[5];
     if (k === 'fence' || k === 'gate' || k === 'shuttle' || k === 'slide') return segDist(x, y, v[0], v[1], v[2], v[3]) - 0.18;
     return Infinity;
@@ -34514,14 +34579,14 @@ const GOLF_APP = (() => {
   Object.defineProperty(ED, 'sel', { enumerable: true,
     get(){ return ED.pick && ED.pick.type === 'land' ? ED.pick.i : null; },
     set(n){ ED.pick = n == null ? null : { type: 'land', i: n }; } });
-  const TOY_NAME = { kick: 'bumper', rock: 'boulder', mill: 'windmill', arm: 'turnstile', swing: 'door', orbit: 'orbit', pipe: 'pipe', fence: 'fence', gate: 'gate', shuttle: 'shuttle', slide: 'slide' };
+  const TOY_NAME = { kick: 'bumper', rock: 'boulder', mill: 'windmill', arm: 'turnstile', swing: 'door', orbit: 'orbit', path: 'path', pipe: 'pipe', fence: 'fence', gate: 'gate', shuttle: 'shuttle', slide: 'slide' };
   const LAND_NAME = { dish: 'bowl', trough: 'half-pipe', bump: 'hill', ring: 'rim', plateau: 'plateau', ramp: 'ramp', ridge: 'ridge', step: 'terrace', bowl: 'skate bowl', pipe: 'skate pipe' };
   function pickName(p = ED.pick){
     if (!pickValid(p)) return '';
     if (p.type === 'T') return 'tee';
     if (p.type === 'O') return 'cup';
     if (p.type === 'dot'){ const h = (ED.src.lift && ED.src.lift[p.i]) || 0; return 'dot ' + (h ? (h > 0 ? 'up ' : 'down ') + Math.abs(h).toFixed(3) : 'level'); }
-    if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'orbit' && T.orbit[6] === 1 ? 'bumper going round' : TOY_NAME[k] || k); }
+    if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'orbit' && T.orbit[6] === 1 ? 'bumper going round' : k === 'path' ? (T.path[T.path.length - 1] === 1 ? 'bumper on a path' : 'boulder on a path') : TOY_NAME[k] || k); }
     const f = ED.src.land[p.i], k = Object.keys(f)[0];
     return k === 'bump' && f.bump[3] < 0 ? 'hollow' : k === 'ring' && f.ring[4] < 0 ? 'moat' : k === 'ridge' && f.ridge[5] < 0 ? 'gully' : LAND_NAME[k] || k;
   }
@@ -34548,7 +34613,7 @@ const GOLF_APP = (() => {
   function shifted(obj, dx, dy, isToy){
     const o = clone(obj), k = Object.keys(o)[0], v = o[k], R2 = n => Math.round(n * 100) / 100;
     if (!isToy){ moveLand(o, dx, dy); return o; }
-    const pts = TWO_ENDS[k] ? [0, 2] : [0];
+    const pts = k === 'path' ? Array.from({ length: pathN(v) }, (_, q) => 2 * q) : TWO_ENDS[k] ? [0, 2] : [0];   // (a path moves all its leaves)
     for (const q of pts){ dx = Math.max(0.2 - v[q], Math.min(NX - 0.2 - v[q], dx)); dy = Math.max(0.2 - v[q + 1], Math.min(NY - 0.2 - v[q + 1], dy)); }
     for (const q of pts){ v[q] = R2(v[q] + dx); v[q + 1] = R2(v[q + 1] + dy); }
     return o;
@@ -34634,6 +34699,11 @@ const GOLF_APP = (() => {
       const here = pickAll(x, y);
       // (what is selected first, a dot excepted: a dot is carried only from inside the box, above; Oct 10)
       const p = (ED.pick && ED.pick.type !== 'dot' && here.find(c => samePick(c, ED.pick))) || here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O');
+      // a leaf of the path selected (Oct 10: "moving the leaves"): the press nearest a leaf, within a fingertip, bends the loop there
+      const sp = ED.pick && ED.pick.type === 'toy' && S.toys[ED.pick.i] && S.toys[ED.pick.i].path;
+      if (sp){ let best = -1, bd = Math.min(0.7, Math.max(0.3, PICK_PX / cellPx()));
+        for (let q = 0; q < pathN(sp); q++){ const d = Math.hypot(x - sp[2 * q], y - sp[2 * q + 1]); if (d < bd){ bd = d; best = q; } }
+        if (best >= 0){ ED.grab = { leaf: best, from: { x, y }, orig: sp.slice() }; ED.msg = 'bending the loop: leaf ' + (best + 1) + ' of ' + pathN(sp); return false; } }
       if (!p){
         ED.grab = { none: true }; ED.boxing = true; ED.drag = { from: { x, y }, to: { x, y } }; ED.pick = null; ED.dots = [];
         ED.msg = 'drag a box over the dots'; return false;
@@ -34653,6 +34723,14 @@ const GOLF_APP = (() => {
     if (ED.boxing){ ED.drag.to = { x, y }; return false; }
     if (G.none || !pickValid(P)) return false;
     if (G.dot){ G.sy += ED.panDy || 0; return moveDots(G); }   // up the screen is up
+    if (G.leaf != null){                                      // a path's leaf, where the finger takes it (a new list, so the loop is drawn again)
+      const T = S.toys[P.i]; if (!T || !T.path) return false;
+      const v = G.orig.slice(), R2 = n => Math.round(n * 100) / 100;
+      v[2 * G.leaf] = R2(Math.max(0.3, Math.min(NX - 0.3, G.orig[2 * G.leaf] + x - G.from.x)));
+      v[2 * G.leaf + 1] = R2(Math.max(0.3, Math.min(NY - 0.3, G.orig[2 * G.leaf + 1] + y - G.from.y)));
+      if (v[2 * G.leaf] === T.path[2 * G.leaf] && v[2 * G.leaf + 1] === T.path[2 * G.leaf + 1]) return false;
+      S.toys[P.i] = { path: v }; return true;
+    }
     if (P.type === 'T' || P.type === 'O'){                    // the tee and the cup go cell by cell, onto grass or sand
       const i = Math.floor(x), j = Math.floor(y);
       if (i < 0 || j < 0 || i >= NX || j >= NY || !'.s'.includes(S.map[j][i])) return false;
@@ -34787,6 +34865,23 @@ const GOLF_APP = (() => {
     /* THE MOVERS (Oct 9: "add 1,2" — 2 being the moving obstacles in the editor). A shuttle (a bumper riding to and fro)
        and a gate (a bar rising out of the ground and sinking) are drawn by a drag along their track, a boulder going
        round (orbit) by a drag from its centre out to the circle it rides; a tap places any of them at a default size. */
+    /* THE PATH, DRAWN IN PLACE (Oct 10: "drawing the orbits in place and moving the leaves would be best."). A drag draws
+       the loop where the finger goes, closed back to where it started, and laid down as leaves evenly along it; a tap
+       lays a round loop of eight. The path is then selected, its leaves shown, and a leaf dragged bends the loop. */
+    if (t === 'path'){
+      if (drag){
+        if (!ED.drag){ const p0 = ED.pressAt ? { ...ED.pressAt } : { x, y }; ED.drag = { from: p0, pts: [p0] }; }
+        const L = ED.drag.pts[ED.drag.pts.length - 1];
+        if (Math.hypot(x - L.x, y - L.y) > 0.15) ED.drag.pts.push({ x, y });
+        ED.drag.to = { x, y }; return false;
+      }
+      if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
+      const cx = Math.max(1.6, Math.min(NX - 1.6, x)), cy = Math.max(1.6, Math.min(NY - 1.6, y)), lv = [];
+      for (let q = 0; q < 8; q++){ const a = q / 8 * 2 * Math.PI; lv.push(R2(cx + 1.3 * Math.cos(a)), R2(cy + 1.3 * Math.sin(a))); }
+      S.toys.push({ path: [...lv, 0.4, 6, 0, 0] });
+      ED.pick = { type: 'toy', i: S.toys.length - 1 };
+      return true;
+    }
     if (t === 'shuttle' || t === 'orbit' || t === 'gate' || t === 'arm' || t === 'swing'){
       if (drag){ if (!ED.drag) ED.drag = { from: { x, y } }; ED.drag.to = { x, y }; return false; }
       if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
@@ -34804,6 +34899,7 @@ const GOLF_APP = (() => {
       let best = -1, bd = 1;
       S.toys.forEach((T, n) => { const a = Object.values(T)[0];
         let d = Math.min(Math.hypot(a[0] - x, a[1] - y), T.pipe ? Math.hypot(a[2] - x, a[3] - y) : 9);
+        if (T.path) d = Math.max(0, toyReach(T, x, y));
         if (T.fence || T.shuttle || T.gate){ const ux = a[2] - a[0], uy = a[3] - a[1], q = Math.max(0, Math.min(1, ((x - a[0]) * ux + (y - a[1]) * uy) / (ux * ux + uy * uy || 1))); d = Math.hypot(a[0] + ux * q - x, a[1] + uy * q - y); }
         if (d < bd){ bd = d; best = n; } });
       if (best >= 0){ S.toys.splice(best, 1); ED.pick = null; return true; }
@@ -34872,14 +34968,33 @@ const GOLF_APP = (() => {
     if (!t || t === 'select' || t === 'box' || t === 'erase' || (t.length === 1 && '.#s~='.includes(t))) return;
     const n = pickName();
     ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null;
+    const keep = t === 'path' && ED.pick;                    // (a path stays selected, its leaves shown to be dragged: Oct 10)
     ED.pick = null; ED.dots = []; ED.box = null;             // (and let go of it: Oct 9, "after laying an object, deselect that object")
     ED.msg = (n ? 'placed: ' + n + ' · ' : '') + 'take it up again below to lay another';
+    if (keep){ ED.pick = keep; ED.msg = 'drag a leaf to bend the loop, or the loop to move it'; }
   }
   // a drag with Plateau, Ramp or Half-pipe ends: the box or the line it drew becomes ground
   function editDragEnd(){
     const D = ED.drag, boxing = ED.boxing; ED.drag = null; ED.boxing = false;
     if (!D || !D.to || !ED.on) return;
     const S = ED.src, t = ED.tool, R2 = n => Math.round(n * 100) / 100, { from: a, to: b } = D;
+    if (t === 'path'){                                        // the drawn loop, closed and laid down as leaves (Oct 10)
+      if (S.toys.length >= 40) return;
+      const pts = (D.pts || [a, b]).concat([D.to]), cum = [0];
+      for (let q = 1; q <= pts.length; q++){ const p0 = pts[q - 1], p1 = pts[q % pts.length]; cum.push(cum[q - 1] + Math.hypot(p1.x - p0.x, p1.y - p0.y)); }
+      const L = cum[cum.length - 1];
+      if (L < 2.5){ ED.msg = 'draw a bigger loop'; return; }
+      const n = Math.max(5, Math.min(16, Math.round(L / 1.1))), lv = [];
+      for (let q = 0, m = 0; q < n; q++){
+        const s = q / n * L; while (m < pts.length - 1 && cum[m + 1] < s) m++;
+        const p0 = pts[m], p1 = pts[(m + 1) % pts.length], w = (s - cum[m]) / ((cum[m + 1] - cum[m]) || 1);
+        lv.push(R2(Math.max(0.3, Math.min(NX - 0.3, p0.x + (p1.x - p0.x) * w))), R2(Math.max(0.3, Math.min(NY - 0.3, p0.y + (p1.y - p0.y) * w))));
+      }
+      S.toys.push({ path: [...lv, 0.4, Math.round(Math.max(3, Math.min(12, L * 0.7)) * 10) / 10, 0, 0] });
+      ED.pick = { type: 'toy', i: S.toys.length - 1 };
+      placedOnce(t);
+      return;
+    }
     if (t === 'shuttle' || t === 'orbit' || t === 'gate' || t === 'arm' || t === 'swing'){
       if (S.toys.length >= 40) return;
       const cx = v => R2(Math.max(0.4, Math.min(NX - 0.4, v))), cy = v => R2(Math.max(0.4, Math.min(NY - 0.4, v))), L = Math.hypot(b.x - a.x, b.y - a.y);
@@ -35014,6 +35129,9 @@ const GOLF_APP = (() => {
       else { const T = ED.src.toys[P.i], k = Object.keys(T)[0], v = T[k];
         if (TWO_ENDS[k]){ lineAt(v[0], v[1], v[2], v[3], G); if (k === 'pipe') ringAt(v[2], v[3], v[5] + 0.2, G); }
         else if (k === 'orbit') ringAt(v[0], v[1], v[2], G);
+        else if (k === 'path'){ const n = pathN(v), P = loopOf(v);   // its loop, and its leaves larger, to be dragged (Oct 10)
+          for (let q = 0; q < P.M; q += 3) dotAt(P.pts[2 * q], P.pts[2 * q + 1], G, 0.009);
+          for (let q = 0; q < n; q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
         else if (k === 'swing'){ const a = v[3] * Math.PI / 180; lineAt(v[0], v[1], v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a), G); }
         else ringAt(v[0], v[1], Math.max(0.35, (k === 'kick' || k === 'rock' ? v[2] : Math.min(v[2], 1.4)) + 0.2), G); }
     }
@@ -35026,7 +35144,8 @@ const GOLF_APP = (() => {
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
     if (boxOpen()) boxAt(ED.box.x0, ED.box.y0, ED.box.x1, ED.box.y1, G);   // the selection box, while it is open (Oct 9)
-    if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat' || ED.tool === 'box' || ED.boxing) boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
+    if (ED.drag && ED.drag.pts && ED.tool === 'path') for (const p of ED.drag.pts) dotAt(p.x, p.y, 0xffffff, 0.012);   // the loop as drawn so far
+    else if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat' || ED.tool === 'box' || ED.boxing) boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
   /* THE TOOLS ARE THE BOTTOM PANEL'S TILES (Oct 8: "the hole editor should use the bottom fisheye panel, not its own panel.
@@ -35039,7 +35158,7 @@ const GOLF_APP = (() => {
     ['=', 'Bridge', '🌉', 'paint'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
     ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
-    ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],
+    ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['path', 'Path', '➰', 'draw a loop'], ['gate', 'Gate', '🚪', 'drag a track'],
     ['arm', 'Turnstile', '✴️', 'drag out'], ['swing', 'Door', '↪️', 'drag out'],
     ['plat', 'Plateau', '🟫', 'drag a box'],
     ['erase', 'Erase', '🧽', 'take away']];
