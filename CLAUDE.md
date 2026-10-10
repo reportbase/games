@@ -80,12 +80,18 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   nothing crosses the straight line from the tee to the cup, a screen goes on it about halfway (fence,
   boulders, bumper, berm, turnstile, pegs or door). A generated hole's source keeps `guard`, `screen`
   and `open` (true only if no screen could be placed) for the tests. **Crossing tracks** (Oct 10: "a variety of crossing
-  paths that create complicated paths to golf hole"): before the guard, about six generated holes in ten get a weave
-  (`weave`): crossing orbits across the way in, a figure-eight ridden by two riders half a loop apart, two crossed
-  ellipses, a three-petalled loop round the cup with an orbit crossing it, a cage of crossing shuttles round the cup, or
-  a lumpy loop with an orbit crossing it; tracks keep off the tee, the cup, walls and water, periods never fall into
-  step, riders are of every kind, par goes up one, and the source keeps `weave` (the smoke test checks that the tracks
-  cross). Two toys came with the guards:
+  paths that create complicated paths to golf hole", then "everything should use path … object coordination … increase
+  the diffficulty level"): before the guard, about 85 generated holes in 100 get a weave of paths (`weave`): circles
+  overlapping across the way in, a figure-eight with a train of riders, two crossed ellipses whose riders reach the
+  crossings by turns, a petalled loop round the cup with a crossing circle, a cage of staggered sweeping bumpers round
+  the cup, a lumpy loop with a train and a crossing circle, a zipper (two circles touching on the tee-cup line, riders
+  there half a turn apart), or a serpent (a snaking loop with a train of three). A train is riders evenly round one loop
+  at one speed; speeds not meant to be in step never are. Tracks keep off the tee, the cup, walls and water; par goes up
+  one, two with four or more riders; the source keeps `weave` (the smoke test checks that the tracks cross).
+  **Everything rides a path** (Oct 10: "remove the shuttle and orbit"): there is no orbit or shuttle any more, in the
+  editor (no tiles), the generator, physics or drawing. `pathify` turns an old `orbit` (a circle of leaves, started where
+  it was, turning the same way, its rider kept) or `shuttle` (a thin loop out and back, a bumper on it) into a path, for
+  the course's holes (as they load), `compileHole` and `cleanList` (saved holes, links, files). Two toys came with the guards:
   `arm [col, row, length, seconds a turn, phase, bars]`, a turnstile, and `swing [col, row, length,
   shut °, open °, seconds]`, a door; both are bars about a post (`barsOf`, drawn as `armBar`), in the
   editor as Turnstile and Door (drag out from the post). Cups are kept two cells in
@@ -96,8 +102,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
   alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
-  or one left, runs them on the page's clock, and a new game starts its clock there, so a tap never resets them, Oct 10): `shuttle` (a
-  bumper riding to and fro), `orbit` (a boulder going round) and `gate` (a bar rising out
+  or one left, runs them on the page's clock, and a new game starts its clock there, so a tap never resets them, Oct 10): the `path`
+  (a rider round a loop, see the editor's notes; the shuttle and the orbit became paths on Oct 10) and the `gate` (a bar rising out
   of the ground and sinking), each drawn over a dotted track. The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
   **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 50`, a board
@@ -140,8 +146,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   height, which raised a whole board when dropped on an ordinary hole. A tap on another board while
   editing moves the editor there, the tool kept (`onCellTap`); the next tap paints.
   Every change is saved to My holes as it is drawn (`keepMine`, Oct 9); a hole only looked at
-  is not. The movers are tools too: Shuttle and Gate (drag a track), Orbit (drag out from the
-  centre), each placed at a default size by a tap. Undo has Redo (`ED.redo`).
+  is not. The movers are tools too: Path (draw a loop, or tap for a round one) and Gate (drag a
+  track), each placed at a default size by a tap (Shuttle and Orbit went on Oct 10). Undo has Redo (`ED.redo`).
   **The path** (Oct 10: "drawing the orbits in place and moving the leaves would be best"): a mover riding a closed
   loop of its own shape, as a shape in draw.html rides its motion orbit. `path [x0, y0, …, xn, yn, r, seconds, phase
   (fraction), rider (see Riders)]`, 3–24 leaves in cells; the loop is a closed Catmull-Rom curve through the

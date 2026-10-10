@@ -179,19 +179,19 @@ try {
   current = 'mini golf movers';
   const before5 = failures.length;
   const mv = await page.evaluate(async () => {
-    const D = window.getFieldApp()._debug, res = [], KINDS = { shuttle: 'propBumper', orbit: 'propRock', gate: 'gateSeg' };
+    // (paths and gates: the shuttle and the orbit are paths since Oct 10, "everything should use path")
+    const D = window.getFieldApp()._debug, res = [], KINDS = { path: ['propBumper', 'propRock', 'kicker', 'rockPlain'], gate: ['gateSeg'] }, ALL = [].concat(...Object.values(KINDS));
     for (const [k, H] of D.HOLES.entries()){
       if (H.gen != null) continue;                           // (the course's own holes; the generated ones are checked below)
       const kinds = Object.keys(KINDS).filter(n => (H.toys || []).some(T => T[n]));
       if (!kinds.length) continue;
       let c = 0, r = 0;
       search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
-      const sig = its => its.filter(i => Object.values(KINDS).includes(i.kind)).map(i => i.kind + i.u.toFixed(4) + i.v.toFixed(4) + i.lift.toFixed(4)).join();
+      const sig = its => its.filter(i => ALL.includes(i.kind)).map(i => i.kind + i.u.toFixed(4) + i.v.toFixed(4) + i.lift.toFixed(4)).join();
       const a = D.cellItems(c, r);
       let moved = false;                                     // (a gate stands up or lies down a while: give it a few seconds)
       for (let q = 0; q < 10 && !moved; q++){ await new Promise(ok => setTimeout(ok, 400)); moved = sig(D.cellItems(c, r)) !== sig(a); }
-      // (an orbit may be a bumper going round, drawn as a bumper: Oct 9)
-      res.push({ name: H.name, kinds, drawn: kinds.every(n => a.some(i => i.kind === KINDS[n] || (n === 'orbit' && i.kind === 'propBumper'))), moved,
+      res.push({ name: H.name, kinds, drawn: kinds.every(n => a.some(i => KINDS[n].includes(i.kind))), moved,
                  water: a.some(i => /^(drop|foam|ripple|fountBowl|cliff)$/.test(i.kind)) });
     }
     return { res, flat: D.HOLES.filter(H => (H.land || []).length < 2).map(H => H.name), old: D.HOLES.filter(H => (H.toys || []).some(T => T.fountain || T.fall)).map(H => H.name) };
@@ -263,7 +263,7 @@ try {
       s.toys.forEach(T => { if (T.kick) kinds.add(T.kick[3]); }); }
     const course = D.HOLES.filter(H => H.gen == null && !H.custom).length;
     const old = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ kick: [2, 3, 0.3] }, { kick: [4, 5, 0.3, 2] }, { orbit: [4, 6, 1, 0.4, 6] }] });
-    return { st, open: open.slice(0, 6), unguarded: unguarded.slice(0, 6), course, edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.filter(T => T.kick).map(T => T.kick[3]), oldOrbit: old && old.toys.find(T => T.orbit),
+    return { st, open: open.slice(0, 6), unguarded: unguarded.slice(0, 6), course, edge: edge.slice(0, 6), kinds: [...kinds].sort(), old: old && old.toys.filter(T => T.kick).map(T => T.kick[3]), oldOrbit: old && old.toys.find(T => T.path), stillOrbit: old && old.toys.some(T => T.orbit || T.shuttle),
              tools: ['kick1', 'kick2', 'kick3', 'arm', 'swing'].every(t => E.TOOLS.some(x => x[0] === t)), cap: D.MAX_STROKES };
   });
   const STYLES = ['rocks', 'orbiters', 'sweep', 'cross', 'slide', 'gate', 'horseshoe', 'arc', 'scatter', 'apron', 'raised', 'crater', 'moat',
@@ -271,7 +271,8 @@ try {
   if (gd.unguarded.length || gd.open.length) failures.push(`[${current}] holes left open: no guard ${gd.unguarded.join(',')}, the tee's line clear ${gd.open.join(',')}`);
   if ((gd.st.rocks || 0) > 50 || STYLES.some(k => !(gd.st[k] >= 5))) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
-  if (!gd.oldOrbit || gd.oldOrbit.orbit[6] !== 0 || gd.oldOrbit.orbit[5] !== 0) failures.push(`[${current}] an old orbit was not read: ${JSON.stringify(gd.oldOrbit)}`);
+  // (an old orbit is read as a path round its circle since Oct 10: a boulder, from its start)
+  if (!gd.oldOrbit || gd.stillOrbit || gd.oldOrbit.path.slice(-2).join() !== '0,0' || (gd.oldOrbit.path.length - 4) / 2 < 8) failures.push(`[${current}] an old orbit was not read as a path: ${JSON.stringify(gd.oldOrbit)}`);
   if (gd.kinds.join() !== '0,1,2,3' || (gd.old || []).join() !== '0,2' || !gd.tools) failures.push(`[${current}] bumper kinds: ${JSON.stringify(gd)}`);
   // the turnstile and the door (Oct 9: "add new objects to explore how this might be done"): a bar turning or swinging
   // knocks a ball lying in its way along with it, both are read from a link, and both are drawn on a board, turning
@@ -481,7 +482,7 @@ try {
         else if (k === 'path'){ const m = (v.length - 4) >> 1; for (let q = 0; q < m; q++){ const a = q, b = (q + 1) % m; for (let s = 0; s < 6; s++) out.push([v[2 * a] + (v[2 * b] - v[2 * a]) * s / 6, v[2 * a + 1] + (v[2 * b + 1] - v[2 * a + 1]) * s / 6]); } }
         return out; };
       for (let i = 22; i < 222; i++){ const s = D.genSrc(i); if (!s.weave) continue; n++; kinds[s.weave] = (kinds[s.weave] || 0) + 1;
-        const ts = s.toys.filter(T => T.orbit || T.shuttle || T.path).map(track); let best = Infinity;
+        const ts = s.toys.filter(T => T.path).map(track); let best = Infinity;
         for (let a = 0; a < ts.length; a++) for (let b = a + 1; b < ts.length; b++) for (const p of ts[a]) for (const q of ts[b]) best = Math.min(best, Math.hypot(p[0] - q[0], p[1] - q[1]));
         if (!(best < 0.35)) apart.push([i, s.weave, +best.toFixed(2)]); }
       return { n, kinds, apart: apart.slice(0, 5), nApart: apart.length }; });
@@ -639,19 +640,21 @@ try {
       return out; });
     for (const [t, want] of [['bowl', 'dish'], ['hpipe', 'trough']]){ const r = sunkB[t];
       if (!r || r.added !== 1 || r.kind !== want || !(r.drop > 0.01) || !(r.farMoved < 1e-6)) failures.push(`[${current}] ${t} sinks into the ground: ${JSON.stringify(r)}`); }
-    // the movers (Oct 9): a shuttle drawn by a drag along its track, a boulder going round placed by a tap, a gate by a tap;
-    // then Redo puts back what Undo took
+    // the movers (Oct 9): since Oct 10 ("remove the shuttle and orbit. everything should use path") a path drawn by a drag
+    // along a track and back, a round path laid by a tap, a gate by a tap; no Shuttle or Orbit tile; then Redo puts back
+    // what Undo took
     const mv = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t)), act = a => (E.ACTS.some(x => x[0] === a) ? A.onStatTap(f.c, f.r, E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a)) : E.editAction(a));
       const n0 = ED.src.toys.length;
-      tool('shuttle'); for (const [cx, cy] of [[1.5, 6.5], [3, 6.5], [5, 6.5]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY }); A.onPanEnd();
-      tool('orbit'); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
+      tool('path'); for (const [cx, cy] of [[1.5, 6.5], [3, 6.5], [5, 6.5], [3, 6.8]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY }); A.onPanEnd();
+      tool('path'); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
       tool('gate'); A.onCellTap(f.c, f.r, 4 / D.NX, 10 / D.NY);
-      const kinds = ED.src.toys.slice(n0).map(T => Object.keys(T)[0]), sh = (ED.src.toys.find(T => T.shuttle) || {}).shuttle;
-      const items = D.cellItems(f.c, f.r).map(i => i.kind);
+      const kinds = ED.src.toys.slice(n0).map(T => Object.keys(T)[0]), p0 = (ED.src.toys.slice(n0).find(T => T.path) || {}).path;
+      const xs = p0 ? p0.slice(0, p0.length - 4).filter((_, q) => q % 2 === 0) : [0];
+      const noOld = !E.TOOLS.some(x => x[0] === 'shuttle' || x[0] === 'orbit');
       act('undo'); const afterUndo = ED.src.toys.length; act('redo'); const afterRedo = ED.src.toys.length;
-      return { kinds, track: sh ? +(sh[2] - sh[0]).toFixed(2) : 0, drawn: items.filter(k => /^(orbit|gate|shuttle)/.test(k)).length, n0, afterUndo, afterRedo }; });
-    if (mv.kinds.join() !== 'shuttle,orbit,gate' || !(mv.track > 3) || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
+      return { kinds, track: +(Math.max(...xs) - Math.min(...xs)).toFixed(2), noOld, n0, afterUndo, afterRedo }; });
+    if (mv.kinds.join() !== 'path,path,gate' || !(mv.track > 3) || !mv.noOld || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
       failures.push(`[${current}] movers in the editor: ${JSON.stringify(mv)}`);
     // a turnstile placed by a tap and a door by a drag from its hinge (Oct 9), then both undone again
     const td = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -704,7 +707,7 @@ try {
       E.selAct('kind'); out.kind = ED.src.toys[i].kick[3];
       E.selAct('dup'); out.dup = ED.src.toys.filter(T => T.kick).length; out.dupPicked = ED.pick && ED.pick.i !== i;
       E.selAct('del'); out.afterDel = ED.src.toys.filter(T => T.kick).length;
-      tool('shuttle'); { let at = [4, 3]; search: for (let y = 2.5; y < D.NY - 1; y += 0.5) for (let x = 1; x < D.NX - 1; x += 0.5) if (!E.pickAll(x, y).some(c => c.type === 'toy' || c.type === 'T' || c.type === 'O')){ at = [x, y]; break search; } tap(at[0], at[1]); ED.pick = { type: 'toy', i: ED.src.toys.length - 1 }; } const sh = ED.src.toys[ED.pick.i].shuttle[5]; E.selAct('faster'); out.faster = ED.src.toys[ED.pick.i].shuttle[5] < sh;
+      tool('gate'); { let at = [4, 3]; search: for (let y = 2.5; y < D.NY - 1; y += 0.5) for (let x = 1; x < D.NX - 1; x += 0.5) if (!E.pickAll(x, y).some(c => c.type === 'toy' || c.type === 'T' || c.type === 'O')){ at = [x, y]; break search; } tap(at[0], at[1]); ED.pick = { type: 'toy', i: ED.src.toys.length - 1 }; } const sh = ED.src.toys[ED.pick.i].gate[4]; E.selAct('faster'); out.faster = ED.src.toys[ED.pick.i].gate[4] < sh;
       E.selAct('del');
       tool('select'); const t0 = ED.src.map.findIndex(r => r.includes('T')), ti = ED.src.map[t0].indexOf('T');
       const ni = ti > 3 ? ti - 2 : ti + 2, nj = Math.max(1, t0 - 1);
@@ -936,15 +939,16 @@ try {
       // a tap inside a loop moves its rider on (Oct 10: "clicking inside the shape would move to the next object"), by
       // real taps: an orbit round (4, 9.5) and the path round (4, 3), each tapped inside five times, round to a boulder;
       // a tap on a bumper standing inside the orbit takes the bumper and leaves the rider be
-      ED.src.toys = [{ path: last.path.slice() }, { orbit: [4, 9.5, 1.8, 0.4, 6, 0, 0] }]; A.onQuickAct(f.c, f.r, 'select');
-      const riders = { orbit: [], path: [] };
-      for (let q = 0; q < 5; q++){ await gest([S(4.6, 9.3)]); riders.orbit.push(ED.src.toys[1].orbit[6]); }
+      // (the round one a path too since Oct 10: "everything should use path")
+      ED.src.toys = [{ path: last.path.slice() }, E.pathify({ orbit: [4, 9.5, 1.8, 0.4, 6, 0, 0] })]; A.onQuickAct(f.c, f.r, 'select');
+      const riders = { orbit: [], path: [] }, rd = i => ED.src.toys[i].path[ED.src.toys[i].path.length - 1];
+      for (let q = 0; q < 5; q++){ await gest([S(4.6, 9.3)]); riders.orbit.push(rd(1)); }
       for (let q = 0; q < 5; q++){ await gest([S(4, 3.3)]); const v = ED.src.toys[0].path; riders.path.push(v[v.length - 1]); }
       const named = (await gest([S(4.6, 9.3)]), ED.pick && ED.pick.type === 'toy' ? ED.pick.i : null);
       ED.src.toys.push({ kick: [3.3, 9.6, 0.3, 0] }); E.editRefresh && E.editRefresh(true);
-      const k0 = ED.src.toys[1].orbit[6]; await gest([S(3.3, 9.6)]);
-      const onBumper = { pick: ED.pick && ED.pick.i, rider: ED.src.toys[1].orbit[6] === k0 };
-      E.editAction('undo'); const undone = ED.src.toys.length === 3 ? ED.src.toys[1].orbit[6] : null;
+      const k0 = rd(1); await gest([S(3.3, 9.6)]);
+      const onBumper = { pick: ED.pick && ED.pick.i, rider: rd(1) === k0 };
+      E.editAction('undo'); const undone = ED.src.toys.length === 3 ? rd(1) : null;
       ED.src.toys = []; E.editAction('level');
       return { tool, drawn, moved: +moved.toFixed(2), others, went: +went.toFixed(4), kept, inFile, fileSame, tapN, riders, named, onBumper, k0, undone };
     });
