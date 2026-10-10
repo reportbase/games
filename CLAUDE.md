@@ -112,6 +112,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`openMineBox`, `#golfMineBox`: Play and Delete a row, Save all to a file, Delete all, Close; Escape closes it).
   Exact copies in storage are merged as the page loads. A copy of a course or generated hole carries `from` (a
   short hash of the hole as written, `originOf`, kept by `cleanSrc`), and editing that hole again reopens the copy.
+  A hole keeps the board it was made on (`at: [c, r]`, set by `editStart`); the list's Play flies there (`goMine`,
+  the field's `gotoCell`) and plays it. One with no board yet takes the selected board, or the corner's, and keeps it.
   **Holes as text files** (Oct 10, as chess has Export PGN): the menu's Save this hole to a file, Save My holes to a
   file and Open holes from a file; a `.golf` file is JSON `{format: 'minigolf', v: 1, holes: [...]}` laid out to be read
   (`holeText`: the map as its 13 rows, a thing or a piece of ground a line, the dots a row to a line). `readHoles` also
