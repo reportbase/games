@@ -856,6 +856,46 @@ try {
     if (rt.none || rt.afterTap.pick !== null || rt.afterTap.lifted || !rt.box.open || !(rt.box.dots >= 4) || rt.box.lifted || !rt.alike || rt.away.box || rt.away.dots
         || !rt.laid || rt.laid.tool !== 'select' || rt.laid.pick !== null || !rt.tapped || !(rt.moved > 1) || rt.wallOn !== '#' || rt.wallOff !== 'select' || rt.escOff !== 'select' || !rt.stillOn)
       failures.push(`[${current}] real touches: ${JSON.stringify(rt)}`);
+    // THE PATH, DRAWN IN PLACE (Oct 10: "could we just use a shape from draw.html to create orbits?" … "drawing the orbits in
+    // place and moving the leaves would be best."), by real touches: the Path tile, a loop drawn round with a finger,
+    // laid down as leaves and left selected; a leaf dragged moves that leaf alone; the rider goes round on the clock; the
+    // loop survives a cleanSrc and a .golf file; a tap with Path lays a round loop of eight
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const pa = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async pts => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(300); };
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.toys = []; ED.src.land = []; delete ED.src.lift; E.editAction('level');
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'path')); const tool = ED.tool;
+      const cx = 4, cy = 6.5, R = 2, loop = []; for (let q = 0; q <= 28; q++){ const a = q / 28 * 2 * Math.PI * 0.97; loop.push(S(cx + R * Math.cos(a), cy + R * Math.sin(a))); }
+      await gest(loop);
+      const paths = ED.src.toys.filter(T => T.path), P = paths[0] && paths[0].path, n = P ? (P.length - 4) / 2 : 0;
+      const radii = []; for (let q = 0; q < n; q++) radii.push(Math.hypot(P[2 * q] - cx, P[2 * q + 1] - cy));
+      const drawn = { paths: paths.length, n, rMin: Math.min(...radii), rMax: Math.max(...radii), tool: ED.tool, sel: ED.pick && ED.pick.type === 'toy' && !!ED.src.toys[ED.pick.i].path };
+      // a leaf dragged a cell further out, by a finger from the leaf itself
+      const i0 = ED.pick ? ED.pick.i : 0, before = ED.src.toys[i0].path.slice(), lx = before[0], ly = before[1], ux = (lx - cx) / R, uy = (ly - cy) / R;
+      const pts = []; for (let k = 0; k <= 10; k++) pts.push(S(lx + ux * k / 10, ly + uy * k / 10));
+      await gest(pts);
+      const after = ED.src.toys[i0].path, moved = Math.hypot(after[0] - lx, after[1] - ly), others = after.slice(2, 2 * n).every((v, q) => Math.abs(v - before[q + 2]) < 1e-9);
+      // the rider goes round on the clock, and the loop is kept by cleanSrc and written to a .golf file
+      const H = D.HOLES[ED.k], T = H.toys.find(T => T.path), a0 = T && D.toyAt(T, 0), a1 = T && D.toyAt(T, 1.5);
+      const went = a0 && a1 ? Math.hypot(a1.x - a0.x, a1.y - a0.y) : 0;
+      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = E.holesText([ED.src]).includes('"path"');
+      const back = E.readHoles(E.holesText([ED.src]))[0], fileSame = back && JSON.stringify(back.toys) === JSON.stringify(ED.src.toys);
+      // a tap with Path lays a round loop of eight leaves
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'path')); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
+      const last = ED.src.toys[ED.src.toys.length - 1], tapN = last && last.path ? (last.path.length - 4) / 2 : 0;
+      ED.src.toys = []; E.editAction('level');
+      return { tool, drawn, moved: +moved.toFixed(2), others, went: +went.toFixed(4), kept, inFile, fileSame, tapN };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    if (pa.tool !== 'path' || pa.drawn.paths !== 1 || pa.drawn.n < 5 || pa.drawn.n > 16 || pa.drawn.rMin < 1.4 || pa.drawn.rMax > 2.6 || pa.drawn.tool !== 'select' || !pa.drawn.sel
+        || !(pa.moved > 0.6) || !pa.others || !(pa.went > 0.01) || !pa.kept || !pa.inFile || !pa.fileSame || pa.tapN !== 8)
+      failures.push(`[${current}] the path drawn in place: ${JSON.stringify(pa)}`);
     // the tiles (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is
     // selected, change the color of the button to selected. the buttons should toggle on/off thats it. remove the
     // following buttons: par, check, save, share, done, tee, cup, ramp, bowl, half-pipe, select, higher, lower, name.")
