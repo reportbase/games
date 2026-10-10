@@ -269,7 +269,10 @@ try {
              tools: ['kick1', 'kick2', 'kick3', 'arm', 'swing'].every(t => E.TOOLS.some(x => x[0] === t)), cap: D.MAX_STROKES };
   });
   const STYLES = ['rocks', 'orbiters', 'sweep', 'cross', 'slide', 'gate', 'horseshoe', 'arc', 'scatter', 'apron', 'raised', 'crater', 'moat',
-                  'mound', 'hillside', 'berm', 'turnstile', 'door', 'pond', 'wall', 'chicane', 'pegs'];
+                  'mound', 'hillside', 'berm', 'turnstile', 'door', 'pond', 'wall', 'chicane', 'pegs', 'hook', 'sbend'];   // (the curved ones: Oct 10)
+  // (the snail, the hardest, comes only at level 5, about one hole in a hundred: some in 800 of them)
+  const snails = await page.evaluate(() => { const D = window.getFieldApp()._debug; let n = 0; for (let i = 22; i < 822; i++) if (D.genSrc(i, 5).guard === 'snail') n++; return n; });
+  if (snails < 3) failures.push(`[${current}] snails at level 5: ${snails} in 800`);
   if (gd.unguarded.length || gd.open.length) failures.push(`[${current}] holes left open: no guard ${gd.unguarded.join(',')}, the tee's line clear ${gd.open.join(',')}`);
   if ((gd.st.rocks || 0) > 50 || STYLES.some(k => !(gd.st[k] >= 5))) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
@@ -533,6 +536,28 @@ try {
       const dots = () => D.cellItems(c, r, 2000).filter(i => i.kind === 'ghost' && i.color === 0xd8efd0).length;
       const off = dots(); item.on(); const on = dots(); item.on(); return { off, on, wire: item.label() }; });
     if (tr.off !== 0 || !(tr.on > 8) || tr.wire !== 'Wireframe: off') failures.push(`[${current}] the movers' tracks and Wireframe: ${JSON.stringify(tr)}`);
+  }
+  // RATED AS YOU PLAY, AND THE SCORECARD (Oct 10: "6,4,2,3", 4 being "rate each hole quietly while you play it, then show
+  // its stars and par at the end of the round"): a round started on a generated board rates its hole in the background;
+  // a hole sunk once rated carries its stars into the message and onto the card; the scorecard lists every hole of the
+  // round with its par, strokes and stars, and closes by a real click on Close and by Escape
+  {
+    const sc = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor;
+      let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.boardIdx(c, r) >= 22) break search;
+      const g = D.startRound(c, r), job = E.bgRating(), k = g.hole;
+      E.stopRating();
+      D.HOLES[k].rated = { mean: 3.1, sd: 1, sunk: 1, stars: 3 };
+      const g2 = D.holeGame({ start: k, card: [] }, k); g2.strokes = 2; E.sink(g2);
+      const card = g2.R.card[0];
+      E.openCardBox({ card: [card, { hole: 0, par: 3, strokes: 4, name: 'the meadow', num: 1, stars: 0 }] });
+      const box = document.getElementById('golfCardBox'), rows = box ? box.querySelectorAll('.golfCardRow').length : 0, text = box ? box.textContent : '';
+      return { job: !!job && job.k === k, stars: card && card.stars, name: card && card.name === D.HOLES[k].name, rows, head: /Round over — 6 strokes, par/.test(text), shown: text.includes('★★★☆☆') }; });
+    await page.click('#golfCardBox button').catch(() => {});
+    const closed = await page.evaluate(() => !document.getElementById('golfCardBox'));
+    await page.evaluate(() => window.getFieldApp()._debug.editor.openCardBox({ card: [] }));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+    const esc = await page.evaluate(() => !document.getElementById('golfCardBox'));
+    if (!sc.job || sc.stars !== 3 || !sc.name || sc.rows !== 3 || !sc.head || !sc.shown || !closed || !esc) failures.push(`[${current}] rated as you play, and the scorecard: ${JSON.stringify({ ...sc, closed, esc })}`);
   }
   console.log(`${failures.length === beforeL ? 'ok  ' : 'FAIL'} ${current}`);
 
@@ -1029,6 +1054,52 @@ try {
     if (!tv.lib || tv.round > 0.01 || tv.off > 0.03 || !/^TVF \d+ 1 2$/.test(tv.head) || !tv.same || tvIn.none || tvIn.added !== 1 || tvIn.n !== 40 || Math.abs(tvIn.w - 5) > 0.2
         || Math.abs(tvIn.h - 3) > 0.2 || Math.abs(tvIn.cx - 4) > 0.2 || Math.abs(tvIn.cy - 6.5) > 0.2 || !tvIn.drawn || !tvIn.sel)
       failures.push(`[${current}] paths as TVF curves: ${JSON.stringify({ tv, tvIn })}`);
+    // CURVED FENCES, AND LEAVES ADDED AND TAKEN AWAY (Oct 10: "6,4,2,3", 2 curved fences as TVF curves, 3 "a tap on the loop
+    // between two leaves adds one, a double-tap on a leaf removes it"), by real touches: a curved fence drawn with its tool
+    // runs through its leaves from end to end, is drawn in fence pieces and kept in files; a tap on its line adds a leaf
+    // and two quick taps on a leaf take it away, on a path's loop as on a fence; a ball putted at a fence across the board
+    // does not get through it
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const cf = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async (pts, after = 300) => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(after); };
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.toys = []; ED.src.land = []; delete ED.src.lift; E.editAction('level');
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'curve')); const tool = ED.tool;
+      const line = []; for (let q = 0; q <= 24; q++) line.push(S(1.2 + 5.6 * q / 24, 7 - 1.5 * Math.sin(Math.PI * q / 24)));
+      await gest(line);
+      const ci = ED.src.toys.findIndex(T => T.curve), v0 = ci >= 0 ? ED.src.toys[ci].curve : null, n0 = v0 ? v0.length / 2 : 0;
+      const ends = v0 ? [+Math.hypot(v0[0] - 1.2, v0[1] - 7).toFixed(2), +Math.hypot(v0[v0.length - 2] - 6.8, v0[v0.length - 1] - 7).toFixed(2)] : null;
+      const through = v0 ? +Math.max(...Array.from({ length: n0 }, (_, q) => E.curveNear(v0, v0[2 * q], v0[2 * q + 1]).d)).toFixed(4) : 9;
+      const sel = !!(ED.pick && ED.src.toys[ED.pick.i] && ED.src.toys[ED.pick.i].curve);
+      const pieces = D.cellItems(f.c, f.r, 2000).filter(i => /^fence_/.test(i.kind)).length;
+      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = E.holesText([ED.src]).includes('"curve"');
+      // a tap on the fence's line halfway between its first two leaves, then two quick taps on the leaf it made
+      const C = v0 && E.curveOf(v0), mx = C ? C.pts[8] : 0, my = C ? C.pts[9] : 0;
+      await gest([S(mx, my)]); const nAdd = ED.src.toys[ci].curve.length / 2, added = ED.src.toys[ci].curve.slice(2, 4);
+      await gest([S(added[0], added[1])], 40); await gest([S(added[0], added[1])]); const nDel = ED.src.toys[ci].curve.length / 2;
+      // the same on a path's loop: a tap with Path lays a round loop of eight round (4, 3); a tap on the loop between its
+      // first two leaves (at 22.5° and 67.5°) adds one; two quick taps on it take it away
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'path')); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
+      const pi = ED.src.toys.findIndex(T => T.path), pN0 = (ED.src.toys[pi].path.length - 4) / 2, pSel = ED.pick && ED.pick.i === pi;
+      await gest([S(4 + 1.3 * Math.cos(Math.PI / 4), 3 + 1.3 * Math.sin(Math.PI / 4))]); const pN1 = (ED.src.toys[pi].path.length - 4) / 2, pl = ED.src.toys[pi].path.slice(2, 4);
+      await gest([S(pl[0], pl[1])], 40); await gest([S(pl[0], pl[1])]); const pN2 = (ED.src.toys[pi].path.length - 4) / 2;
+      // a ball putted straight up the board at a fence right across it stays below the fence
+      const k = E.addHole(E.cleanSrc({ name: 'fence test', par: 3, land: [], toys: [{ curve: [0.2, 6.5, 2, 6.1, 4, 6.7, 6, 6.1, 7.8, 6.5] }],
+        map: ['........', '........', '...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] }));
+      const g = D.holeGame({ start: k, card: [], single: true }, k); g.pull = { x: 0, y: 0.4 }; D.putt(g);
+      let minY = 9; for (let q = 0; q < 1200 && g.state === 'play' && (g.moving || q < 2); q++){ D.step(g, 1 / 120); minY = Math.min(minY, g.ball.y / D.CW); }
+      ED.src.toys = []; E.editRefresh && E.editRefresh(true);
+      return { tool, n0, ends, through, sel, pieces, kept, inFile, nAdd, nDel, pN0, pSel, pN1, pN2, minY: +minY.toFixed(2) };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
+        || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
+      failures.push(`[${current}] curved fences and leaves: ${JSON.stringify(cf)}`);
     // the tiles (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is
     // selected, change the color of the button to selected. the buttons should toggle on/off thats it. remove the
     // following buttons: par, check, save, share, done, tee, cup, ramp, bowl, half-pipe, select, higher, lower, name.")

@@ -160,6 +160,28 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     - The hole keeps `guess`. If the generator changes much, rate a few hundred holes and refit.
   - **The editor:** Harder and Easier tiles make every mover 18% faster or slower, its rider 6% bigger or smaller, and
     the ground 18% steeper or gentler.
+  - **Rated as you play** (Oct 10: "6,4,2,3", 4 being stars on the scorecard): `rateAhead` rates the hole in play in the
+    background (`rateSoon` with `gentle`: 5 ms slices, 40 ms apart), then the next board's (`nextBoard`). One runs at a time
+    (`BGR`); a new hole stops it. A rated hole's stars show on the tee and when sunk (`starTag`) and ride on the card
+    (`R.card` entries carry `stars`, `name`, `num`). A round ends on a scorecard (`openCardBox`, `#golfCardBox`: a row a
+    hole with par, strokes and stars, the average stars, Close; Escape closes it).
+- **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
+  an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
+  curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
+  cached by array).
+  - The ball meets the nearest point of its line (`curveNear`), as it meets a fence. It is drawn as half-cell fence pieces in
+    the hole's material, stretched along each chord (`sx`).
+  - The editor's Curved fence tool (〰️): a drag draws it, a tap lays an arc of five. It stays selected with its leaves
+    shown, a leaf drags alone, and the line drags the whole fence.
+  - Generated holes only (the course keeps its guards) get three guards: a hook (a round fence about the cup open at the
+    back), an S-bend across the way in, and a snail (a fence spiralling one turn out from the cup, arms 1.25 cells apart,
+    nothing riding or standing inside it: `clearR`). A screen may also be an arc bowed toward the tee.
+  - Rated against holes like them without curves (2.9 strokes): hook 3.5, S-bend 3.8, snail 6.3. So hooks and S-bends
+    come from level 2 (`CURVE_FROM`), snails only at level 5, and the guess counts them (`CURVE_GUESS`).
+  - No cage goes on a hole with a stream: together they made a hole the plain player could not finish.
+- **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
+  line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
+  is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).
 - **The hole editor** (Oct 8, in mini golf's menu: Edit this hole, New hole, My holes)
   puts its tools in the bottom panel. **The row is the editor** (Oct 10: "remove the game mode"): opening mini golf's
   bottom row (the dots) starts the editor on the selected hole, shutting it leaves the editor, and leaving the editor any
