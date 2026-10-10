@@ -926,6 +926,29 @@ try {
       return { hole: g && g.hole, built: D.editor.BUILT, name: g && D.HOLES[g.hole].name, mine: D.editor.MINE.length}; });
     if (!(st4.hole >= st4.built) || st4.name !== 'my hole') failures.push(`[${current}] the shared link opened ${JSON.stringify(st4)}`);
     if (st4.mine < 1) failures.push(`[${current}] My holes did not survive the reload`);
+    // holes saved to a text file and opened again (Oct 10: "I meant to save them to a text file" … "how does chess handle
+    // this?" … "yes"): Save My holes downloads a .golf file laid out to be read; the same file, renamed and opened through
+    // the field's own Open input, joins My holes and is played; opened twice it is not added twice
+    const [gdl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.evaluate(() => window.getFieldApp()._debug.editor.exportMine())]);
+    const golfText = await readFile(await gdl.path(), 'utf8');
+    let golf = null; try { golf = JSON.parse(golfText); } catch {}
+    const rowLines = golfText.split('\n').filter(l => /^\s+"[.#s~=TO]{8}",?$/.test(l)).length;
+    if (!golf || golf.format !== 'minigolf' || golf.v !== 1 || !Array.isArray(golf.holes) || golf.holes.length !== st4.mine || rowLines !== 13 * st4.mine || !/\.golf$/.test(gdl.suggestedFilename()))
+      failures.push(`[${current}] Save My holes: ${JSON.stringify({ name: gdl.suggestedFilename(), format: golf && golf.format, holes: golf && golf.holes && golf.holes.length, mine: st4.mine, rowLines })}`);
+    else {
+      const h = golf.holes[0]; h.name = 'from a file'; h.toys = [...(h.toys || []), { rock: [1.5, 6.5, 0.4] }];
+      const buffer = Buffer.from(JSON.stringify({ format: 'minigolf', v: 1, holes: [h] }, null, 1));
+      const openIt = async () => { await page.setInputFiles('#importImageFile', { name: 'mine.golf', mimeType: 'application/json', buffer }); await page.waitForTimeout(1500); };
+      await openIt();
+      const fo = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+        const g = D.games.get(f.c + '_' + f.r); return { app: A.name, mine: E.MINE.length, has: E.MINE.filter(m => m.name === 'from a file').length, playing: g && D.HOLES[g.hole].name }; });
+      await openIt();
+      const fo2 = await page.evaluate(() => window.getFieldApp()._debug.editor.MINE.length);
+      const rd = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, one = E.MINE[0];
+        return { bare: E.readHoles(JSON.stringify(one)).length, list: E.readHoles(JSON.stringify([one, one])).length, link: E.readHoles('look: ' + E.shareLink(one)).length, junk: E.readHoles('nonsense').length }; });
+      if (fo.app !== 'mini golf' || fo.mine !== st4.mine + 1 || fo.has !== 1 || fo.playing !== 'from a file' || fo2 !== fo.mine || rd.bare !== 1 || rd.list !== 2 || rd.link !== 1 || rd.junk !== 0)
+        failures.push(`[${current}] open holes from a file: ${JSON.stringify({ fo, fo2, rd })}`);
+    }
   }
   console.log(`${failures.length === before9 ? 'ok  ' : 'FAIL'} ${current}`);
 } catch (e){

@@ -1208,7 +1208,7 @@
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
     <button id="bLoadImage" title="Open anything into the field: images, a PDF or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
-    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.pgn,.pdn,.sgf,.tvf3d" multiple hidden>
+    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.pgn,.pdn,.sgf,.tvf3d,.golf" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution (1024px long side) instead of scaling down as the collection grows. Costs real GPU memory: ~5MB per print at 1024, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to the next load."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
     <button id="bSelfCheck" title="Run the field's invariant checks: do the geometry and fabric tiers agree about which picture hangs where, does every print hang somewhere, can the ordered walk reach them all, is any board drawing the backdrop instead of its image. Also on the V key.">Self&#8209;check &#10003;</button>
@@ -34227,6 +34227,79 @@ const GOLF_APP = (() => {
     try { const b = String(q).replace(/-/g, '+').replace(/_/g, '/'); return cleanSrc(JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))))); }
     catch { return null; }
   }
+  /* HOLES AS TEXT FILES (Oct 10: "I meant to save them to a text file" … "how does chess handle this?" … "yes": as chess
+     has Export PGN and Export session, the holes can be saved to a file and opened again). A `.golf` file is JSON,
+     laid out to be read: the hole's settings one to a line, its map as the 13 rows of 8 it is drawn as, each thing and
+     each piece of ground on a line, the dots' heights a row of the board to a line. One hole or many:
+     {format: 'minigolf', v: 1, holes: [...]}. Opening takes that, a bare hole, a list of holes, or a ?hole= link, every
+     hole through cleanSrc as a link is, into My holes (one already there is not added twice), and plays the first on
+     the selected board. Opened from the menu, from the field's Open button, or dropped on the window. */
+  const GOLF_FORMAT = 'minigolf';
+  function holeText(src, ind){
+    const S = cleanSrc(src); if (!S) return null;
+    const J = JSON.stringify, i1 = ind + ' ', i2 = i1 + ' ', rows = [];
+    for (const k of Object.keys(S)){
+      const v = S[k];
+      if (k === 'map') rows.push(i1 + J(k) + ': [\n' + v.map(r => i2 + J(r)).join(',\n') + '\n' + i1 + ']');
+      else if (k === 'lift'){ const L = []; for (let j = 0; j < v.length; j += LIFT_W) L.push(i2 + v.slice(j, j + LIFT_W).join(', ')); rows.push(i1 + J(k) + ': [\n' + L.join(',\n') + '\n' + i1 + ']'); }
+      else if (Array.isArray(v) && v.length && typeof v[0] === 'object') rows.push(i1 + J(k) + ': [\n' + v.map(o => i2 + J(o)).join(',\n') + '\n' + i1 + ']');
+      else rows.push(i1 + J(k) + ': ' + J(v));
+    }
+    return ind + '{\n' + rows.join(',\n') + '\n' + ind + '}';
+  }
+  function holesText(list){
+    const hs = list.map(s => holeText(s, '  ')).filter(Boolean);
+    return '{\n "format": "' + GOLF_FORMAT + '",\n "v": 1,\n "holes": [\n' + hs.join(',\n') + '\n ]\n}\n';
+  }
+  function saveText(text, name){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  const fileSlug = s => String(s || 'hole').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'hole';
+  function exportHole(src){ const t = src && holesText([src]); if (!t) return null; saveText(t, fileSlug(src.name) + '.golf'); return t; }
+  function exportMine(){ if (!MINE.length) return null; const t = holesText(MINE); saveText(t, 'my-holes.golf'); return t; }
+  // what a file holds, as cleaned holes: a .golf file, a bare hole, a list of them, or a link with ?hole=
+  function readHoles(text){
+    const t = String(text || '').trim();
+    let o = null;
+    try { o = JSON.parse(t); } catch {
+      const m = t.match(/[?&]hole=([A-Za-z0-9_-]+)/); const one = m && readLink(m[1]); return one ? [one] : [];
+    }
+    const list = Array.isArray(o) ? o : o && Array.isArray(o.holes) ? o.holes : [o];
+    return list.slice(0, 500).map(cleanSrc).filter(Boolean);
+  }
+  function importHoles(text){
+    const got = readHoles(text);
+    if (!got.length){ say('No holes in that file.', 2400); return 0; }
+    let first = -1, added = 0;
+    for (const h of got){
+      const j = JSON.stringify(h), at = MINE.findIndex(m => JSON.stringify(m) === j);
+      if (at >= 0){ if (first < 0) first = at; continue; }
+      MINE.push(h); mineK.push(-1); added++;
+      if (first < 0) first = MINE.length - 1;
+    }
+    storeMine();
+    try { renderAppMenu(); } catch {}
+    const note = (added ? added + (added === 1 ? ' hole' : ' holes') + ' added to My holes' : 'Already in My holes') +
+      (got.length > 1 ? ' (' + got.length + ' in the file)' : '') + '. Playing ' + MINE[first].name + '.';
+    if (ED.on) editStop(true);
+    if (!playHoleHere(holeOfMine(first), note)){ PENDING = holeOfMine(first); say(note + ' Select a board to play it.', 3000); }
+    return added;
+  }
+  function importHoleFiles(files){
+    const fs = Array.prototype.slice.call(files || []).filter(f => f && /\.golf$/i.test(f.name || ''));
+    if (!fs.length) return 0;
+    if (window.getFieldApp && window.getFieldApp() !== app){ try { window.setFieldApp(app); syncAppSelect(); } catch {} }
+    fs.forEach(f => { const rd = new FileReader(); rd.onload = () => importHoles(String(rd.result || '')); rd.readAsText(f); });
+    return fs.length;
+  }
+  function pickHoleFile(){
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.golf,application/json,text/plain'; inp.multiple = true;
+    inp.onchange = () => { const fs = [...(inp.files || [])]; fs.forEach(f => { const rd = new FileReader(); rd.onload = () => importHoles(String(rd.result || '')); rd.readAsText(f); }); };
+    inp.click();
+  }
   let PENDING = null;
   try { const q = new URLSearchParams(location.search).get('hole'); const src = q && readLink(q); if (src) PENDING = addHole(src); } catch {}
   const framedHere = () => {
@@ -34980,6 +35053,14 @@ const GOLF_APP = (() => {
     items.push({ label: 'Edit this hole', title: 'Take the hole on the selected board into the editor. A hole of the course is copied; it is never changed.',
       on(){ const L = framedHere(), g = L && GAMES.get(L.key); editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); } });
     items.push({ label: 'New hole', title: 'Start a hole of your own on the selected board.', on(){ editStart(null); } });
+    // (Oct 10: the holes saved to text files and opened again, as chess does with PGN: see holeText)
+    items.push({ label: 'Save this hole to a file', title: 'Download the hole on the selected board (or the one being edited) as a .golf text file.', on(){
+      if (ED.on){ exportHole(ED.src); return; }
+      const L = framedHere(), g = L && GAMES.get(L.key), k = g ? g.hole : L ? holeOf(L.c, L.r) : null;
+      if (k == null || !HOLES[k]){ say('Select a hole on the field first.', 2400); return; }
+      exportHole(srcOf(k)); } });
+    if (MINE.length) items.push({ label: 'Save My holes to a file', title: 'Download every hole in My holes as one .golf text file.', on(){ exportMine(); } });
+    items.push({ label: 'Open holes from a file', title: 'Open a .golf file: its holes join My holes, and the first is played on the selected board. Dropping the file on the window does the same.', on(){ pickHoleFile(); } });
     MINE.forEach((src, i) => {
       items.push({ label: 'Play: ' + src.name, title: 'Play your hole on the selected board.', on(){ playHoleHere(holeOfMine(i)); } });
       items.push({ label: 'Delete: ' + src.name, title: 'Take this hole out of My holes (in this browser).', on(){
@@ -35145,7 +35226,8 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine } },
+    importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
   };
   return app;
 })();
@@ -41915,6 +41997,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     // A chess piece from the 3d studio: swapped in for this session.
     const _pieces = all.filter(f => f && /\.tvf3d$/i.test(f.name || ''));
     if (_pieces.length) loadPieceFiles(_pieces);
+    // Mini golf holes saved to a file (Oct 10): they open in mini golf, into My holes.
+    try { GOLF_APP.importHoleFiles(all); } catch {}
     // .cbz/.cbr ride the zip path — a comic archive IS a folder of pages, and
     // _loadZip's numeric name sort is already the page order. The bytes decide
     // whether it can actually be read; see _sniffArchive.
