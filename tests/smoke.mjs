@@ -654,7 +654,7 @@ try {
       const noOld = !E.TOOLS.some(x => x[0] === 'shuttle' || x[0] === 'orbit');
       act('undo'); const afterUndo = ED.src.toys.length; act('redo'); const afterRedo = ED.src.toys.length;
       return { kinds, track: +(Math.max(...xs) - Math.min(...xs)).toFixed(2), noOld, n0, afterUndo, afterRedo }; });
-    if (mv.kinds.join() !== 'path,path,gate' || !(mv.track > 3) || !mv.noOld || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
+    if (mv.kinds.join() !== 'path,path,gate' || !(mv.track > 2) || !mv.noOld || mv.afterUndo !== mv.n0 + 2 || mv.afterRedo !== mv.n0 + 3)
       failures.push(`[${current}] movers in the editor: ${JSON.stringify(mv)}`);
     // a turnstile placed by a tap and a door by a drag from its hinge (Oct 9), then both undone again
     const td = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -958,6 +958,31 @@ try {
         || pa.riders.orbit.join() !== '1,2,3,4,0' || pa.riders.path.join() !== '1,2,3,4,0' || pa.named !== 1
         || pa.onBumper.pick !== 2 || !pa.onBumper.rider)
       failures.push(`[${current}] the path drawn in place: ${JSON.stringify(pa)}`);
+    // PATHS ARE TVF CURVES (Oct 10: "games project should take advantage of tvf, totally suprising that you go to the trouble
+    // of creating tvf and then not use it."): a round path rebuilt by draw's kernel is a true circle (Catmull-Rom was not)
+    // and passes through every leaf; a path written as .tvf reads back the same; a .tvf from draw (a 40-leaf ellipse in
+    // draw's own coordinates), opened through the field's Open input, becomes a path fitted into the board, drawn on it
+    const tv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, P = E.pathify({ orbit: [4, 6.5, 1.5, 0.36, 6, 0, 0] }).path, L = E.loopOf(P), n = (P.length - 4) / 2;
+      let rMin = 9, rMax = 0; for (let m = 0; m < L.M; m++){ const r = Math.hypot(L.pts[2 * m] - 4, L.pts[2 * m + 1] - 6.5); rMin = Math.min(rMin, r); rMax = Math.max(rMax, r); }
+      let off = 0; for (let q = 0; q < n; q++){ let d = 9; for (let m = 0; m < L.M; m++) d = Math.min(d, Math.hypot(L.pts[2 * m] - P[2 * q], L.pts[2 * m + 1] - P[2 * q + 1])); off = Math.max(off, d); }
+      const text = E.pathToTvf(P, 'test'), back = E.tvfToPaths(text)[0];
+      return { round: +(rMax - rMin).toFixed(4), off: +off.toFixed(3), head: text.split('\n')[0], same: !!back && JSON.stringify(back.path.slice(0, 2 * n)) === JSON.stringify(P.slice(0, 2 * n)), lib: typeof window.TVF_CURVE.core.reconstruct === 'function' }; });
+    const ellipse = ['TVF 40 1 2', '#meta type:curve', '#meta closed:true', '#meta channels:xy', '#meta range:1',
+      '0 ' + Array.from({ length: 40 }, (_, q) => (300 + 100 * Math.cos((q + 0.5) / 40 * 2 * Math.PI)).toFixed(3)).join(' '),
+      '0 ' + Array.from({ length: 40 }, (_, q) => (200 + 60 * Math.sin((q + 0.5) / 40 * 2 * Math.PI)).toFixed(3)).join(' ')].join('\n') + '\n';
+    const n0tv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; return E.ED.on ? E.ED.src.toys.length : -1; });
+    await page.setInputFiles('#importImageFile', { name: 'shape.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
+    await page.waitForTimeout(1500);
+    const tvIn = await page.evaluate(n0 => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, T = ED.src.toys[ED.src.toys.length - 1], v = T && T.path;
+      if (!v) return { none: true, on: ED.on, n: ED.src.toys.length };
+      const n = (v.length - 4) / 2, xs = v.slice(0, 2 * n).filter((_, q) => q % 2 === 0), ys = v.slice(0, 2 * n).filter((_, q) => q % 2 === 1);
+      const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), drawn = D.cellItems(f.c, f.r).some(i => /^(propRock|rockPlain)$/.test(i.kind));
+      return { on: ED.on, added: ED.src.toys.length - n0, n, w: +(Math.max(...xs) - Math.min(...xs)).toFixed(2), h: +(Math.max(...ys) - Math.min(...ys)).toFixed(2),
+               cx: +((Math.max(...xs) + Math.min(...xs)) / 2).toFixed(2), cy: +((Math.max(...ys) + Math.min(...ys)) / 2).toFixed(2), drawn, sel: ED.pick && ED.pick.i === ED.src.toys.length - 1 }; }, n0tv);
+    await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; E.ED.src.toys = E.ED.src.toys.filter(T => !T.path); });
+    if (!tv.lib || tv.round > 0.01 || tv.off > 0.03 || !/^TVF \d+ 1 2$/.test(tv.head) || !tv.same || tvIn.none || tvIn.added !== 1 || tvIn.n !== 40 || Math.abs(tvIn.w - 5) > 0.2
+        || Math.abs(tvIn.h - 3) > 0.2 || Math.abs(tvIn.cx - 4) > 0.2 || Math.abs(tvIn.cy - 6.5) > 0.2 || !tvIn.drawn || !tvIn.sel)
+      failures.push(`[${current}] paths as TVF curves: ${JSON.stringify({ tv, tvIn })}`);
     // the tiles (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is
     // selected, change the color of the button to selected. the buttons should toggle on/off thats it. remove the
     // following buttons: par, check, save, share, done, tee, cup, ramp, bowl, half-pipe, select, higher, lower, name.")

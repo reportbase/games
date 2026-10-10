@@ -150,8 +150,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   track), each placed at a default size by a tap (Shuttle and Orbit went on Oct 10). Undo has Redo (`ED.redo`).
   **The path** (Oct 10: "drawing the orbits in place and moving the leaves would be best"): a mover riding a closed
   loop of its own shape, as a shape in draw.html rides its motion orbit. `path [x0, y0, …, xn, yn, r, seconds, phase
-  (fraction), rider (see Riders)]`, 3–24 leaves in cells; the loop is a closed Catmull-Rom curve through the
-  leaves (`loopOf`, cached by array, so a changed path is a new array), ridden at an even speed (`loopAt`, `toyAt`).
+  (fraction), rider (see Riders)]`, 3–64 leaves in cells. **A path is a TVF curve** (Oct 10: "games project should
+  take advantage of tvf"): its xs and ys are a closed `.tvf` curve's two rows, leaves at φ = (k + ½)·2π/N, and the loop
+  is draw's own reconstruction through them (`TVF_CURVE.core.reconstruct` in `loopOf`, cached by array, so a changed
+  path is a new array), ridden at an even speed (`loopAt`, `toyAt`); a drawn loop is laid down by draw's
+  `arcLengthResample`. While editing, the menu has Open a .tvf as a path (`tvfToPaths`: up to 6 subpaths, 64 leaves; a
+  curve from draw is fitted into a 5×7 box at the board's centre, one saved here, `source: minigolf`, keeps its cells)
+  and, with a path selected, Save this path as .tvf (`pathToTvf`); a `.tvf` dropped or opened with the field's Open
+  button goes the same way (`importTvfFiles`).
   The Path tile: a drag draws the loop in place (`ED.drag.pts`, laid down as 5–16 leaves evenly along it in
   `editDragEnd`), a tap lays a round loop of eight; the path stays selected (`placedOnce` keeps it), its leaves drawn
   large in gold, and a press on a leaf of the selected path drags that leaf alone (`dragPick`, `ED.grab.leaf`); a press
@@ -228,6 +234,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
+## Shared with draw: change with care
+`games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:
+the tvf-core library (`// >>> copied from draw.html, unchanged: tvf-core`) and `parseTvfText`
+(`… unchanged: tvf-reader`), each ending at its `// <<< end of NAME`. Don't edit inside them: fix draw first, then copy
+across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails when they drift from draw's `main`
+(`DRAW_HTML=../draw/draw.html` compares with a local draw). `TVF_CURVE` is the curve library; the older `TVF` is the
+3D shape helper the field-lib uses, a different thing.
+
 ## Conventions
 - Comments explain *why*, at length, and often quote the owner's request with a
   date, e.g. `(Sep 22: "…")`. There are hundreds of these. Keep the voice: when a
@@ -252,4 +266,4 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 ## Related repos
 - **3d:** the shape studio; it exports `.tvf3d`, the chess piece format read here.
 - **flare:** the storage Worker this page reads buckets from.
-- **draw:** the 2D shape editor.
+- **draw:** the 2D shape editor; the source of the TVF blocks above (mini golf's paths are its curves).

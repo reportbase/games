@@ -1,0 +1,23 @@
+name: Draw sync
+
+# games.html carries code copied from draw (Oct 10: mini golf's paths are TVF curves). This checks the copies still match
+# draw's main branch: on every pull request, and weekly, so a change made in draw
+# is noticed here even when nothing in games changes.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  draw-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tests/draw-sync.mjs
