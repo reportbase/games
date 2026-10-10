@@ -518,7 +518,7 @@ try {
     // shaping the ground (Oct 8): a plateau by a drag, a ramp by a tap, Select a terrace-less piece and drag it, Higher,
     // Delete, Level; and the tool tiles as wide as their widest name
     const sh = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t)), act = a => (E.ACTS.some(x => x[0] === a) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a)) : E.editAction(a));
       const H0 = () => D.HOLES[ED.k], hAt = (cx, cy) => D.rawH(H0(), cx * D.CW, cy * D.CW);
       const n0 = ED.src.land.length;
       tool('plat');                                       // a drag from (1, 2) to (4, 4) in cells, through onPan
@@ -576,7 +576,7 @@ try {
     // Bowl and Half-pipe sink into the ground (Oct 9: "why did they elevate the boards?"): where one is placed the ground
     // goes down, and the ground away from it stays where it was
     const sunkB = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t));
+      const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t));
       const hAt = (cx, cy) => D.hOf(D.HOLES[ED.k], cx * D.CW, cy * D.CW);
       const out = {};
       for (const [t, cx, cy] of [['bowl', 4, 4], ['hpipe', 2, 9]]){
@@ -591,7 +591,7 @@ try {
     // the movers (Oct 9): a shuttle drawn by a drag along its track, a boulder going round placed by a tap, a gate by a tap;
     // then Redo puts back what Undo took
     const mv = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t)), act = a => (E.ACTS.some(x => x[0] === a) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a)) : E.editAction(a));
       const n0 = ED.src.toys.length;
       tool('shuttle'); for (const [cx, cy] of [[1.5, 6.5], [3, 6.5], [5, 6.5]]) A.onPan(1, 1, { c: f.c, r: f.r, u: cx / D.NX, v: cy / D.NY }); A.onPanEnd();
       tool('orbit'); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
@@ -604,7 +604,7 @@ try {
       failures.push(`[${current}] movers in the editor: ${JSON.stringify(mv)}`);
     // a turnstile placed by a tap and a door by a drag from its hinge (Oct 9), then both undone again
     const td = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t)), act = a => (E.ACTS.some(x => x[0] === a) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a)) : E.editAction(a));
       const n0 = ED.src.toys.length;
       // (on grass clear of things: a tap on a thing selects it since Oct 9)
       let at = [2, 8]; search: for (let y = 2.5; y < D.NY - 1; y += 0.5) for (let x = 1; x < D.NX - 1; x += 0.5) if (!ED.src.toys.some(T => E.pickAll(x, y).some(c => c.type === 'toy'))){ at = [x, y]; break search; }
@@ -629,7 +629,7 @@ try {
     // selection changes a bumper's kind, a mover's speed, duplicates and deletes; undo keeps the selection; the tee is
     // dragged cell by cell; and a real click on the bar's Delete takes the thing away
     const sm = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
+      const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
       const drag = pts => { for (const [x, y] of pts) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd(); };
       const out = {};
       ED.src.toys = ED.src.toys.filter(T => !T.kick); ED.src.land = ED.src.land.filter(g => !g.bump);
@@ -713,7 +713,7 @@ try {
     // up Select, and a drag from it moves it; a tap on the grass then takes the grass (a dot), even where ground of the
     // hole's own lies
     const ob = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
+      const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
       const noHill = !E.TOOLS.some(t => t[0] === 'up' || t[0] === 'down');
       ED.src.toys.push({ rock: [4.5, 9.5, 0.45] }); const ri = ED.src.toys.length - 1;
       ED.src.land.push({ plateau: [0.6, 6.2, 3.4, 8.8, 0.04] });
@@ -732,7 +732,7 @@ try {
     // tool down (Select, the boulder selected); the next tap on grass lays nothing and takes the grass; a gate drawn by a
     // drag does the same; Wall, a paint, stays in hand
     const once = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tool = t => A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
+      const tool = t => (E.TOOLS.some(x => x[0] === t) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.findIndex(x => x[0] === t)) : (E.ED.tool = t)), tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY);
       const clear = []; for (let y = 2.5; y < D.NY - 1 && clear.length < 3; y += 1) for (let x = 1.5; x < D.NX - 1 && clear.length < 3; x += 1)
         if (!E.pickAll(x, y).some(c => c.type !== 'dot') && !clear.some(([a, b]) => Math.hypot(a - x, b - y) < 2)) clear.push([x, y]);
       if (clear.length < 3) return { none: true };
@@ -753,7 +753,7 @@ try {
     // second dot takes it alone, not with the first; a drag from grass that starts right beside a dot (within a fingertip)
     // draws a box over four dots, not a pull on the one; Box (⬚) does the same; Higher raises them all; no bar on the page
     const md = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY), act = a => A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a));
+      const tap = (x, y) => A.onCellTap(f.c, f.r, x / D.NX, y / D.NY), act = a => (E.ACTS.some(x => x[0] === a) ? A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(x => x[0] === a)) : E.editAction(a));
       const drag = pts => { for (const [x, y] of pts) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd(); };
       const lift = i => (ED.src.lift && ED.src.lift[i]) || 0, W8 = D.LIFT_W;
       A.onQuickAct(f.c, f.r, 'select'); delete ED.src.lift;
@@ -848,9 +848,21 @@ try {
     if (rt.none || rt.afterTap.pick !== null || rt.afterTap.lifted || !rt.box.open || !(rt.box.dots >= 4) || rt.box.lifted || !rt.alike || rt.away.box || rt.away.dots
         || !rt.laid || rt.laid.tool !== 'select' || rt.laid.pick !== null || !rt.tapped || !(rt.moved > 1) || rt.wallOn !== '#' || rt.wallOff !== 'select' || rt.escOff !== 'select' || !rt.stillOn)
       failures.push(`[${current}] real touches: ${JSON.stringify(rt)}`);
+    // the tiles (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is
+    // selected, change the color of the button to selected. the buttons should toggle on/off thats it. remove the
+    // following buttons: par, check, save, share, done, tee, cup, ramp, bowl, half-pipe, select, higher, lower, name.")
+    const tl = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const tiles = () => A.statTiles(f.c, f.r) || [], names = tiles().map(t => t.value);
+      const gone = ['Par', 'Check', 'Save', 'Share', 'Done', 'Tee', 'Cup', 'Ramp', 'Bowl', 'Half-pipe', 'Select', 'Higher', 'Lower', 'Name'].filter(n => names.includes(n));
+      const labels = tiles().filter(t => t.label).length;
+      const wi = 1 + E.TOOLS.findIndex(x => x[0] === '#');
+      E.ED.tool = 'select'; A.onStatTap(f.c, f.r, wi); const on = tiles()[wi].bg, lit = tiles().filter(t => t.bg).length;
+      A.onStatTap(f.c, f.r, wi); const off = tiles()[wi].bg, tool = E.ED.tool;
+      return { gone, labels, on, lit, off, tool }; });
+    if (tl.gone.length || tl.labels || !tl.on || tl.lit !== 1 || tl.off || tl.tool !== 'select') failures.push(`[${current}] the tiles: ${JSON.stringify(tl)}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      A.onStatTap(f.c, f.r, 1 + E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'done')); });
+      E.editAction('done'); });   // (its tile went on Oct 10; Done is a quick button)
     const st3 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const g = [...D.games.values()].find(g => g.hole === E.ED.k), t = A.statTiles(f.c, f.r) || []; return { on: E.ED.on, first: t[0] && t[0].label, state: g && g.state, single: g && g.R.single }; });
     if (st3.on || st3.first !== 'Hole' || st3.state !== 'play' || !st3.single) failures.push(`[${current}] Done: ${JSON.stringify(st3)}`);

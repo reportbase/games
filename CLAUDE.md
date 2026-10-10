@@ -119,6 +119,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   is not. The movers are tools too: Shuttle and Gate (drag a track), Orbit (drag out from the
   centre), each placed at a default size by a tap. Undo has Redo (`ED.redo`).
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
+  **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
+  in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the five paints,
+  the bumpers, Boulder, Fence, Windmill, Pipe, the movers, Turnstile, Door, Plateau, Erase; the acts:
+  Undo, Redo, Delete, Level, Material (named by the material). Par, Check, Save, Share, Done, Tee, Cup,
+  Ramp, Bowl, Half-pipe, Select, Higher, Lower and Name lost their tiles (Done and Select are quick
+  buttons; the actions remain in `editAction`).
   **Select and move in place** (Oct 9, step 1 of making the editor like draw.html): Select is the
   tool in hand at the start (and a quick button). A tap takes a thing, the tee or the cup; a tap on
   the grass takes NO dot and lets go (Oct 10: a tapped dot made the next drag from that spot pull one

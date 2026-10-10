@@ -13366,16 +13366,19 @@ function bbPaintStat(ico, s, S){
   if (!s) return;
   const w = S.w, h = S.h, F = '-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif';
   c.globalAlpha = s.dim ? 0.4 : 1;
-  c.fillStyle = '#1c1d21'; c.beginPath(); c.roundRect ? c.roundRect(0, 0, w, h, 6) : c.rect(0, 0, w, h); c.fill();
+  /* (Oct 10, mini golf's editor: "remove the in hand, paint, editing anything on the top line of the button. when the
+     object is selected, change the color of the button to selected." A tile may give its own background, bg, and a
+     tile with no label puts its glyph and name in the middle, with no empty line above them.) */
+  c.fillStyle = s.bg || '#1c1d21'; c.beginPath(); c.roundRect ? c.roundRect(0, 0, w, h, 6) : c.rect(0, 0, w, h); c.fill();
   c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillStyle = '#c9ccd2'; c.font = '600 ' + Math.round(h * 0.13) + 'px ' + F;
-  c.fillText(String(s.label || ''), w / 2, h * 0.16, w - 8);
+  const lab = !!s.label;
+  if (lab){ c.fillStyle = '#c9ccd2'; c.font = '600 ' + Math.round(h * 0.13) + 'px ' + F; c.fillText(String(s.label), w / 2, h * 0.16, w - 8); }
   const col = s.color || '#ffffff';
   if (s.glyph){
     c.fillStyle = col; c.font = Math.round(h * 0.34) + 'px ' + F;
-    c.fillText(s.glyph, w / 2, h * 0.45);
+    c.fillText(s.glyph, w / 2, h * (lab ? 0.45 : 0.38));
     c.fillStyle = '#ffffff'; c.font = '700 ' + Math.round(h * 0.2) + 'px ' + F;
-    c.fillText(String(s.value), w / 2, h * 0.78, w - 8);
+    c.fillText(String(s.value), w / 2, h * (lab ? 0.78 : 0.74), w - 8);
   } else {
     c.fillStyle = col; c.font = '700 ' + Math.round(h * (String(s.value).length > 5 ? 0.22 : 0.32)) + 'px ' + F;
     c.fillText(String(s.value), w / 2, h * 0.5, w - 8);
@@ -34910,20 +34913,24 @@ const GOLF_APP = (() => {
      tap on a tile (onStatTap) takes up that tool or does that thing, and the row stays open while editing however the
      board is tapped or dragged (statsStay). The tiles are read again a few times a second, so they follow the editor. */
   const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
-    ['=', 'Bridge', '🌉', 'paint'], ['T', 'Tee', '⚪', 'move'], ['O', 'Cup', '⛳', 'move'],
+    ['=', 'Bridge', '🌉', 'paint'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
     ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['shuttle', 'Shuttle', '↔️', 'drag a track'], ['orbit', 'Orbit', '🔄', 'drag out'], ['gate', 'Gate', '🚪', 'drag a track'],
     ['arm', 'Turnstile', '✴️', 'drag out'], ['swing', 'Door', '↪️', 'drag out'],
-    ['plat', 'Plateau', '🟫', 'drag a box'], ['ramp', 'Ramp', '📐', 'drag a line'],
-    ['bowl', 'Bowl', '🥣', 'place'], ['hpipe', 'Half-pipe', '🛹', 'drag a line'], ['select', 'Select', '👆', 'tap, then drag'],
+    ['plat', 'Plateau', '🟫', 'drag a box'],
     ['erase', 'Erase', '🧽', 'take away']];
-  const ACTS = [['undo', 'Undo', '↶'], ['redo', 'Redo', '↷'], ['higher', 'Higher', '⬆️'], ['lower', 'Lower', '⬇️'], ['del', 'Delete', '✖️'], ['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['name', 'Name', '✎'], ['par', 'Par', '#'], ['check', 'Check', '✓'],
-    ['save', 'Save', '💾'], ['share', 'Share', '🔗'], ['done', 'Done', '▶']];
+  /* (Oct 10: "remove the following buttons: par, check, save, share, done, tee, cup, ramp, bowl, half-pipe, select,
+     higher, lower, name." Their tiles are gone; what they did is still in editAction and the quick buttons: Select and
+     Done are quick buttons, the tee and cup are dragged, every change is saved as it is made.) */
+  const ACTS = [['undo', 'Undo', '↶'], ['redo', 'Redo', '↷'], ['del', 'Delete', '✖️'], ['level', 'Level', '➖'], ['mat', 'Material', '🧱']];
   function editTiles(){
-    const S = ED.src, out = [{ label: ED.msg || 'editing', value: S.name, sub: 'par ' + S.par + ' · ' + S.fence + (ED.saved ? ' · saved' : ''), color: '#ffd23a' }];
-    for (const [t, name, glyph, how] of TOOLS) out.push({ label: t === ED.tool ? 'in hand' : how, glyph, value: name, color: t === ED.tool ? '#ffd23a' : '#ffffff', dim: false });
-    for (const [a, name, glyph] of ACTS) out.push({ label: a === 'mat' ? S.fence : a === 'par' ? 'par ' + S.par : '', glyph, value: name, color: a === 'done' ? '#9fe3a0' : '#c9ccd2' });
+    /* (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is selected,
+       change the color of the button to selected. the buttons should toggle on/off thats it." No top line on any tile;
+       the tool in hand is the tile lit gold; a tap takes it up or puts it down.) */
+    const S = ED.src, SEL = '#a07c12', out = [{ value: S.name, sub: 'par ' + S.par + ' · ' + S.fence + (ED.saved ? ' · saved' : ''), color: '#ffd23a' }];
+    for (const [t, name, glyph] of TOOLS) out.push({ glyph, value: name, color: '#ffffff', bg: t === ED.tool ? SEL : null, dim: false });
+    for (const [a, name, glyph] of ACTS) out.push({ glyph, value: a === 'mat' ? S.fence[0].toUpperCase() + S.fence.slice(1) : name, color: '#c9ccd2' });
     return out;
   }
   function editTileTap(i){
