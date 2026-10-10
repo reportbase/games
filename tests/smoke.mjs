@@ -79,6 +79,14 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${id}`);
   }
 
+  // The turn rail across the top is as tall as the side rails are wide (Oct 10: "the top slider for rotation should be
+  // the same height as the side sliders are wide.")
+  {
+    const rr = await page.evaluate(() => { const g = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
+      const y = g('yawZone'), t = g('tiltZone'), h = g('thrustZone'); return y && t && h ? { yaw: y.height, tilt: t.width, thrust: h.width } : null; });
+    if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two

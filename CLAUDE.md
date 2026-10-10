@@ -178,6 +178,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing;
   Start again and Edit while playing. The row stops short of the middle and its buttons narrow to fit. They show only while the pane is open; the three dots
   (`#bbHandle`) show on every game, whether or not its row has anything in it.
+- **The rails** (Oct 10): the turn rail across the top (`#yawZone`) is as tall as the side rails (`#tiltZone`,
+  `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 

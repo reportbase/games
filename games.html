@@ -1046,8 +1046,10 @@
      same as the tilt scrollbar, but horizontal across the top"). The tilt
      rail laid on its side: the same accent line, dark backing and nub, along
      the top edge between the two side rails (which keep their corners). Left
-     end is −180°, the middle is facing forward, right end +180°. */
-  #yawZone { top: 0; left: min(32px, 5.25vw); right: min(32px, 5.25vw); height: min(64px, 11vh); z-index: 5;
+     end is −180°, the middle is facing forward, right end +180°.
+     (Oct 10: "the top slider for rotation should be the same height as the side sliders are wide." It was
+     min(64px, 11vh), twice the side rails' band; now the very same measure as their width.) */
+  #yawZone { top: 0; left: min(32px, 5.25vw); right: min(32px, 5.25vw); height: min(32px, 5.25vw); z-index: 5;
              cursor: ew-resize; touch-action: none;
              background: transparent !important; border: none !important;
              border-radius: 0; backdrop-filter: none !important;
