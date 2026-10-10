@@ -274,7 +274,8 @@ try {
   const snails = await page.evaluate(() => { const D = window.getFieldApp()._debug; let n = 0; for (let i = 22; i < 822; i++) if (D.genSrc(i, 5).guard === 'snail') n++; return n; });
   if (snails < 3) failures.push(`[${current}] snails at level 5: ${snails} in 800`);
   if (gd.unguarded.length || gd.open.length) failures.push(`[${current}] holes left open: no guard ${gd.unguarded.join(',')}, the tee's line clear ${gd.open.join(',')}`);
-  if ((gd.st.rocks || 0) > 50 || STYLES.some(k => !(gd.st[k] >= 5))) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
+  // (a pond, water, is mostly kept for the higher levels by the guess: two or more will do; Oct 10)
+  if ((gd.st.rocks || 0) > 50 || STYLES.some(k => !(gd.st[k] >= (k === 'pond' ? 2 : 5)))) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
   // (an old orbit is read as a path round its circle since Oct 10: a boulder, from its start)
   if (!gd.oldOrbit || gd.stillOrbit || gd.oldOrbit.path.slice(-2).join() !== '0,0' || (gd.oldOrbit.path.length - 4) / 2 < 8) failures.push(`[${current}] an old orbit was not read as a path: ${JSON.stringify(gd.oldOrbit)}`);
@@ -1096,6 +1097,47 @@ try {
       ED.src.toys = []; E.editRefresh && E.editRefresh(true);
       return { tool, n0, ends, through, sel, pieces, kept, inFile, nAdd, nDel, pN0, pSel, pN1, pN2, minY: +minY.toFixed(2) };
     });
+    // LAKES, SAND AND GREENS AS TVF SHAPES (Oct 10: "yes, lakes, sand and greens could use tvf."), by real touches: a lake drawn
+    // with its tool is a closed shape of leaves, selected; a tap on its line adds a leaf, two quick taps on a leaf take it
+    // away; a tap with Bunker lays a round bunker; in play a point inside the lake is water and inside the bunker sand, a
+    // ball putted into the lake costs a stroke, and a green stands its height above the grass round it
+    const shp = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async (pts, after = 300) => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(after); };
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.toys = []; ED.src.land = []; delete ED.src.lift; E.editAction('level');
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'lake')); const tool = ED.tool;
+      const loop = []; for (let q = 0; q <= 28; q++){ const a = q / 28 * 2 * Math.PI * 0.97; loop.push(S(4 + 2 * Math.cos(a), 6.5 + 1.5 * Math.sin(a))); }
+      await gest(loop);
+      const li = ED.src.land.findIndex(x => x.lake), v0 = li >= 0 ? ED.src.land[li].lake : null, n0 = v0 ? v0.length / 2 : 0;
+      const sel = !!(ED.pick && ED.pick.type === 'land' && ED.pick.i === li);
+      // a tap on its line between its first two leaves (the loop's point between them), then two quick taps on the new leaf
+      const B = v0 && E.blobOf(v0, n0), mq = B ? Math.round(B.M / n0) : 0, mx = B ? B.pts[2 * mq] : 0, my = B ? B.pts[2 * mq + 1] : 0;
+      await gest([S(mx, my)]); const nAdd = ED.src.land[li].lake.length / 2, nl = ED.src.land[li].lake.slice(2, 4);
+      await gest([S(nl[0], nl[1])], 40); await gest([S(nl[0], nl[1])]); const nDel = ED.src.land[li].lake.length / 2;
+      // a tap with Bunker, away from the lake
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'bunker')); A.onCellTap(f.c, f.r, 4 / D.NX, 2.5 / D.NY);
+      const bunker = !!ED.src.land.find(x => x.sand);
+      const kept = JSON.stringify(E.cleanSrc(ED.src).land) === JSON.stringify(ED.src.land), inFile = E.holesText([ED.src]).includes('"lake"');
+      ED.src.land = []; E.editRefresh && E.editRefresh(true);
+      // in play: water, sand, a green's height, and a stroke lost to the lake
+      const k = E.addHole(E.cleanSrc({ name: 'shapes', par: 3, toys: [], land: [{ lake: [2.5, 6, 5.5, 6, 5.5, 8, 2.5, 8] }, { sand: [5, 2, 7, 2, 7, 4, 5, 4] }, { green: [1, 1, 3, 1, 3, 4, 1, 4, 0.06] }],
+        map: ['........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...O....', '...T....'].map((r, j) => j === 11 ? '........' : j === 2 ? '....O...' : r) }));
+      const H = D.HOLES[k], CW = D.CW, at = (x, y) => D.groundAt(H, x * CW, y * CW);
+      const ground = { lake: at(4, 7), sand: at(6, 3), grass: at(4, 10), shore: at(4, 9.2) };
+      const lift = +(D.rawH(H, 2 * CW, 2.5 * CW) - D.rawH(H, 5 * CW, 10 * CW)).toFixed(3);
+      const g = D.holeGame({ start: k, card: [], single: true }, k); g.pull = { x: 0, y: 0.4 }; D.putt(g);
+      for (let q = 0; q < 1500 && g.state === 'play' && (g.moving || q < 2); q++) D.step(g, 1 / 120);
+      const blocked = D.cellBlocked(H, 4, 7) && !D.cellBlocked(H, 4, 10);
+      return { tool, n0, sel, nAdd, nDel, bunker, kept, inFile, ground, lift, strokes: g.strokes, back: Math.abs(g.ball.y / CW - 12.5) < 0.6, blocked };
+    });
+    if (shp.tool !== 'lake' || !(shp.n0 >= 5 && shp.n0 <= 16) || !shp.sel || shp.nAdd !== shp.n0 + 1 || shp.nDel !== shp.n0 || !shp.bunker || !shp.kept || !shp.inFile
+        || shp.ground.lake !== '~' || shp.ground.sand !== 's' || shp.ground.grass !== '.' || shp.ground.shore !== '.' || !(shp.lift > 0.04) || shp.strokes !== 2 || !shp.back || !shp.blocked)
+      failures.push(`[${current}] lakes, sand and greens as shapes: ${JSON.stringify(shp)}`);
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
         || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
