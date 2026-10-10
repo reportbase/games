@@ -889,12 +889,26 @@ try {
       // a tap with Path lays a round loop of eight leaves
       A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'path')); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
       const last = ED.src.toys[ED.src.toys.length - 1], tapN = last && last.path ? (last.path.length - 4) / 2 : 0;
+      // a tap inside a loop moves its rider on (Oct 10: "clicking inside the shape would move to the next object"), by
+      // real taps: an orbit round (4, 9.5) and the path round (4, 3), each tapped inside five times, round to a boulder;
+      // a tap on a bumper standing inside the orbit takes the bumper and leaves the rider be
+      ED.src.toys = [{ path: last.path.slice() }, { orbit: [4, 9.5, 1.8, 0.4, 6, 0, 0] }]; A.onQuickAct(f.c, f.r, 'select');
+      const riders = { orbit: [], path: [] };
+      for (let q = 0; q < 5; q++){ await gest([S(4.6, 9.3)]); riders.orbit.push(ED.src.toys[1].orbit[6]); }
+      for (let q = 0; q < 5; q++){ await gest([S(4, 3.3)]); const v = ED.src.toys[0].path; riders.path.push(v[v.length - 1]); }
+      const named = (await gest([S(4.6, 9.3)]), ED.pick && ED.pick.type === 'toy' ? ED.pick.i : null);
+      ED.src.toys.push({ kick: [3.3, 9.6, 0.3, 0] }); E.editRefresh && E.editRefresh(true);
+      const k0 = ED.src.toys[1].orbit[6]; await gest([S(3.3, 9.6)]);
+      const onBumper = { pick: ED.pick && ED.pick.i, rider: ED.src.toys[1].orbit[6] === k0 };
+      E.editAction('undo'); const undone = ED.src.toys.length === 3 ? ED.src.toys[1].orbit[6] : null;
       ED.src.toys = []; E.editAction('level');
-      return { tool, drawn, moved: +moved.toFixed(2), others, went: +went.toFixed(4), kept, inFile, fileSame, tapN };
+      return { tool, drawn, moved: +moved.toFixed(2), others, went: +went.toFixed(4), kept, inFile, fileSame, tapN, riders, named, onBumper, k0, undone };
     });
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     if (pa.tool !== 'path' || pa.drawn.paths !== 1 || pa.drawn.n < 5 || pa.drawn.n > 16 || pa.drawn.rMin < 1.4 || pa.drawn.rMax > 2.6 || pa.drawn.tool !== 'select' || !pa.drawn.sel
-        || !(pa.moved > 0.6) || !pa.others || !(pa.went > 0.01) || !pa.kept || !pa.inFile || !pa.fileSame || pa.tapN !== 8)
+        || !(pa.moved > 0.6) || !pa.others || !(pa.went > 0.01) || !pa.kept || !pa.inFile || !pa.fileSame || pa.tapN !== 8
+        || pa.riders.orbit.join() !== '1,2,3,4,0' || pa.riders.path.join() !== '1,2,3,4,0' || pa.named !== 1
+        || pa.onBumper.pick !== 2 || !pa.onBumper.rider)
       failures.push(`[${current}] the path drawn in place: ${JSON.stringify(pa)}`);
     // the tiles (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is
     // selected, change the color of the button to selected. the buttons should toggle on/off thats it. remove the
