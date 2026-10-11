@@ -1320,6 +1320,48 @@ try {
       g.rollT = 14.99; D.step(g, 1 / 30); return { early, rollT: typeof g.rollT, late: g.moving }; });
     if (!roll.early || roll.rollT !== 'number' || roll.late) failures.push(`[${current}] a roll stops after ROLL_MAX: ${JSON.stringify(roll)}`);
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    // SMOOTHER AND ROUGHER (Oct 11: "proceed on 2"): with a closed curve selected, the quick buttons ◯ and ✺ (and the menu)
+    // make its outline smoother or rougher, clicked for real: Smoother takes a wobbly bunker's wiggles down and leaves its
+    // place and leaf count; Undo puts it back; a round lake gets no smoother, and Rougher gives it coves, the same each
+    // time and never crossing itself however often it is pressed; a planter, a path and a green keep what follows their
+    // leaves; a bumper selected brings no such buttons
+    // (a tap selects it, as a finger would, and the quick buttons follow the selection)
+    const srPrep = async (js, want) => { await page.evaluate(js); await page.waitForFunction(n => document.querySelectorAll('#bbQuick button[title="Smoother"]').length === n, want, { timeout: 5000 }).catch(() => {}); };
+    const srBtn = t => page.locator(`#bbQuick button[title="${t}"]`);
+    const srClick = async t => { await srBtn(t).click(); await page.waitForTimeout(120); };
+    await srPrep(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, wob = [];
+      for (let q = 0; q < 16; q++){ const a = (q + 0.5) / 16 * 2 * Math.PI, r = 1.3 + 0.28 * Math.cos(5 * a) + 0.12 * Math.cos(7 * a + 1); wob.push(+(4 + r * Math.cos(a)).toFixed(2), +(6.5 + 0.8 * r * Math.sin(a)).toFixed(2)); }
+      window.getFieldApp().onQuickAct(0, 0, 'select'); ED.src.toys = []; ED.src.land = [{ sand: wob }]; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 6.5 / A._debug.NY); window.__wob = wob; }, 1);
+    const sr = { buttons: await srBtn('Smoother').count() + await srBtn('Rougher').count() };
+    const srRead = () => page.evaluate(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, f = ED.src.land[0], k = Object.keys(f)[0], v = f[k], n = k === 'green' ? (v.length - 1) >> 1 : v.length >> 1;
+      let x = 0, y = 0; for (let q = 0; q < n; q++){ x += v[2 * q]; y += v[2 * q + 1]; } return { w: +E.wiggleOf(v, n).toFixed(3), n, c: [+(x / n).toFixed(3), +(y / n).toFixed(3)], v: v.join(' '), msg: ED.msg }; });
+    const w0 = await srRead();
+    sr.menu = await page.evaluate(() => window.getFieldApp()._debug.editor.editorMenu().filter(m => /^(Smoother|Rougher)$/.test(m.label)).length);
+    if (sr.buttons === 2){ await srClick('Smoother'); const w1 = await srRead(); sr.smooth = [w0.w, w1.w]; sr.kept = w1.n === 16 && Math.hypot(w1.c[0] - w0.c[0], w1.c[1] - w0.c[1]) < 0.02;
+      await page.evaluate(() => window.getFieldApp()._debug.editor.editAction('undo')); sr.undone = (await srRead()).v === w0.v; }
+    await srPrep(() => { const ED = window.getFieldApp()._debug.editor.ED, lake = [];
+      for (let q = 0; q < 12; q++){ const a = (q + 0.5) / 12 * 2 * Math.PI; lake.push(+(4 + 1.6 * Math.cos(a)).toFixed(2), +(6.5 + 1.36 * Math.sin(a)).toFixed(2)); }
+      ED.src.land = [{ lake }]; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 6.5 / A._debug.NY); window.__lake = lake.slice(); }, 1);
+    if (sr.buttons === 2){ const l0 = await srRead(); await srClick('Smoother'); sr.roundSame = (await srRead()).v === l0.v;
+      await srClick('Rougher'); const l1 = await srRead(); sr.coves = l1.w;
+      sr.same = await page.evaluate(v => { const E = window.getFieldApp()._debug.editor; return E.reshaped('lake', window.__lake, 12, true).join(' ') === v; }, l1.v);
+      for (let i = 0; i < 11; i++) await srClick('Rougher');
+      sr.crossed = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, v = E.ED.src.land[0].lake, xs = [], ys = []; for (let q = 0; q < 12; q++){ xs.push(v[2 * q]); ys.push(v[2 * q + 1]); } return E.crossesItself(xs, ys); });
+      sr.rough = (await srRead()).w; }
+    sr.tails = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED, star = [], loop = [], gr = [];
+      for (let q = 0; q < 15; q++){ const a = (q + 0.5) / 15 * 2 * Math.PI, rr = 1 + 0.3 * Math.cos(5 * a); star.push(+(4 + rr * Math.cos(a)).toFixed(2), +(6.5 + rr * Math.sin(a)).toFixed(2)); }
+      for (let q = 0; q < 10; q++){ const a = (q + 0.5) / 10 * 2 * Math.PI, rr = 1.5 + 0.3 * Math.cos(3 * a); loop.push(+(4 + rr * Math.cos(a)).toFixed(2), +(6.5 + rr * Math.sin(a)).toFixed(2)); gr.push(+(4 + rr * Math.cos(a)).toFixed(2), +(9 + rr * 0.7 * Math.sin(a)).toFixed(2)); }
+      ED.src.toys = [{ planter: star }, { path: [...loop, 0.33, 6, 0.25, 1] }]; ED.src.land = [{ green: [...gr, 0.05] }];
+      const go = (type, i) => { ED.pick = { type, i }; E.editAction('smoother'); };
+      go('toy', 0); go('toy', 1); go('land', 0);
+      const p = ED.src.toys[1].path, g = ED.src.land[0].green;
+      return { planter: E.wiggleOf(ED.src.toys[0].planter, 15) < E.wiggleOf(star, 15), path: p.length === 24 && p.slice(20).join() === '0.33,6,0.25,1' && p.slice(0, 20).join() !== loop.join(), green: g.length === 21 && g[20] === 0.05 && g.slice(0, 20).join() !== gr.join() }; });
+    await srPrep(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = [{ kick: [4, 4, 0.3, 0] }]; ED.src.land = []; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 4 / A._debug.NY); }, 0);
+    sr.bumper = await srBtn('Smoother').count();
+    await page.evaluate(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = []; ED.pick = null; });
+    if (sr.buttons !== 2 || sr.menu !== 2 || !sr.smooth || !(sr.smooth[1] < sr.smooth[0] * 0.8) || !sr.kept || !sr.undone || !sr.roundSame || !(sr.coves > 0.05) || !sr.same
+        || sr.crossed !== false || !(sr.rough > sr.coves) || !sr.tails.planter || !sr.tails.path || !sr.tails.green || sr.bumper !== 0)
+      failures.push(`[${current}] smoother and rougher: ${JSON.stringify(sr)}`);
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
         || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
       failures.push(`[${current}] curved fences and leaves: ${JSON.stringify(cf)}`);

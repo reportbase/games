@@ -37737,6 +37737,71 @@ const GOLF_APP = (() => {
   /* WHAT CAN BE DONE TO WHAT IS SELECTED, by what it is (the bar beside it showed these until Oct 9). */
   const KICK_GLYPH = ['🔴', '🟠', '🟢', '🔵'], KICK_R = [0.32, 0.28, 0.4, 0.32];
   const PERIOD_AT = { gate: 4, arm: 3, swing: 5 };    // seconds there and back, round or up and down
+  /* SMOOTHER AND ROUGHER (Oct 11: "proceed on 2", from "what else can we do with tvf?": "Smoother and Rougher buttons for
+     shapes. Smoother takes the fine wiggles out of a lake's or bunker's outline and keeps its overall form; Rougher adds some
+     back. It works because a TVF curve's leaves describe its outline as broad waves plus finer ones."). A closed curve's
+     leaves sit evenly round it, so their discrete Fourier transform (x + iy, leaf by leaf) is the outline as waves: the 0th
+     is where it is, the 1st and the −1st together the ellipse it is drawn on, and each further one a wave going round that
+     many times, its coves and lobes. Both keep the place and the ellipse and work on the rest, and the leaves stay as many.
+     - Smoother shrinks the ±2nd waves to 0.75, the ±3rd to 0.56, each finer one by 0.75 more, so the finest go first and a
+       few presses leave the ellipse. (At 0.6 one press took out most of a bunker's wiggle.)
+     - Rougher makes every wave half as big again; and where one is fainter than a floor (0.035 of the ellipse's size at the
+       2nd, less for finer ones, to the 6th) it lays one there, with the phase it had or one from the leaves, so a round
+       lake laid by a tap gets coves too, and the same shape always comes out the same.
+     - Neither may cross the line over itself (nor bring a planter or a path to the rail): a step that would is halved, up
+       to three times, and if it still would, nothing changes and Rougher says it can go no rougher. */
+  const ROUGH = { smooth: 0.75, rough: 1.5, floor: 0.035, floorTo: 6 };
+  function leafWaves(xs, ys){                                  // the waves, by index j; j > n/2 is the wave n − j going backward
+    const n = xs.length, re = new Float64Array(n), im = new Float64Array(n);
+    for (let j = 0; j < n; j++){ let sr = 0, si = 0;
+      for (let k = 0; k < n; k++){ const a = -2 * Math.PI * j * k / n, c = Math.cos(a), sn = Math.sin(a); sr += xs[k] * c - ys[k] * sn; si += xs[k] * sn + ys[k] * c; }
+      re[j] = sr / n; im[j] = si / n; }
+    return { re, im, n, order: j => Math.min(j, n - j) };
+  }
+  function wavesLeaves(W){
+    const { re, im, n } = W, xs = new Float64Array(n), ys = new Float64Array(n);
+    for (let k = 0; k < n; k++){ let sx = 0, sy = 0;
+      for (let j = 0; j < n; j++){ const a = 2 * Math.PI * j * k / n, c = Math.cos(a), sn = Math.sin(a); sx += re[j] * c - im[j] * sn; sy += re[j] * sn + im[j] * c; }
+      xs[k] = sx; ys[k] = sy; }
+    return [xs, ys];
+  }
+  // how wiggly an outline is: the size of its waves beyond the ellipse, against the ellipse's (for the tests and messages)
+  function wiggleOf(v, n){
+    const W = leafWaves(Float64Array.from({ length: n }, (_, q) => v[2 * q]), Float64Array.from({ length: n }, (_, q) => v[2 * q + 1]));
+    let e = 0, f = 0; for (let j = 1; j < n; j++){ const a = Math.hypot(W.re[j], W.im[j]); if (W.order(j) === 1) e += a; else f += a; }
+    return f / (e || 1e-9);
+  }
+  function crossesItself(xs, ys){                              // does the curve through these leaves cross its own line?
+    const n = xs.length, M = Math.max(48, n * 8), X = TVF_CURVE.core.reconstruct(xs, M), Y = TVF_CURVE.core.reconstruct(ys, M);
+    const side = (ax, ay, bx, by, cx, cy) => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    for (let a = 0; a < M; a++){ const a2 = (a + 1) % M;
+      for (let b = a + 2; b < M; b++){ const b2 = (b + 1) % M; if (b2 === a) continue;
+        const d1 = side(X[a], Y[a], X[a2], Y[a2], X[b], Y[b]), d2 = side(X[a], Y[a], X[a2], Y[a2], X[b2], Y[b2]);
+        if ((d1 > 0) === (d2 > 0)) continue;
+        const d3 = side(X[b], Y[b], X[b2], Y[b2], X[a], Y[a]), d4 = side(X[b], Y[b], X[b2], Y[b2], X[a2], Y[a2]);
+        if ((d3 > 0) !== (d4 > 0)) return true; } }
+    return false;
+  }
+  // the leaves of a closed curve (n of them, then any numbers after them kept) made smoother or rougher; null if it cannot be
+  function reshaped(key, v, n, rougher){
+    const xs = Float64Array.from({ length: n }, (_, q) => v[2 * q]), ys = Float64Array.from({ length: n }, (_, q) => v[2 * q + 1]);
+    const W = leafWaves(xs, ys), size = Math.hypot(W.re[1], W.im[1]) + Math.hypot(W.re[n - 1], W.im[n - 1]);
+    let hs = 2166136261; for (let q = 0; q < 2 * n; q++) hs = Math.imul(hs ^ Math.round(v[q] * 100), 16777619);
+    const R = seeded(hs >>> 0), T = { re: Float64Array.from(W.re), im: Float64Array.from(W.im), n };
+    for (let j = 0; j < n; j++){ const h = W.order(j), ph = R() * 2 * Math.PI; if (h < 2) continue;
+      let k = rougher ? ROUGH.rough : Math.pow(ROUGH.smooth, h - 1);
+      T.re[j] *= k; T.im[j] *= k;
+      const fl = size * ROUGH.floor / (h - 1), a = Math.hypot(T.re[j], T.im[j]);
+      if (rougher && h <= ROUGH.floorTo && a < fl){ const p = a > 1e-6 ? Math.atan2(T.im[j], T.re[j]) : ph; T.re[j] = fl * Math.cos(p); T.im[j] = fl * Math.sin(p); } }
+    const [tx, ty] = wavesLeaves(T), lo = SHAPE_KINDS.includes(key) ? -0.5 : 0, R2 = x => Math.round(x * 100) / 100;
+    for (let t = 1; t >= 0.12; t /= 2){                        // the whole step, or half of it, a quarter, an eighth
+      const nx = xs.map((x, q) => R2(Math.max(lo, Math.min(NX - lo, x + (tx[q] - x) * t)))), ny = ys.map((y, q) => R2(Math.max(lo, Math.min(NY - lo, y + (ty[q] - y) * t))));
+      if (crossesItself(nx, ny)) continue;
+      const out = v.slice(); for (let q = 0; q < n; q++){ out[2 * q] = nx[q]; out[2 * q + 1] = ny[q]; }
+      return out;
+    }
+    return null;
+  }
   function selActs(){
     const P = ED.pick;
     if (!ED.on || !pickValid(P)) return [];
@@ -38191,6 +38256,17 @@ const GOLF_APP = (() => {
     if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
     if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
+    if (a === 'smoother' || a === 'rougher'){                // a closed curve's outline (Oct 11: see SMOOTHER AND ROUGHER)
+      const LS = leafSel();
+      if (!LS || !LS.closed){ ED.msg = 'select a lake, bunker, green, planter or path first'; return; }
+      const nv = reshaped(LS.key, LS.v, LS.n, a === 'rougher'), what = { path: 'path', planter: 'planter' }[LS.key] || pickName();
+      if (!nv){ ED.msg = 'the ' + what + ' can go no ' + (a === 'rougher' ? 'rougher' : 'smoother') + ' without crossing itself'; return; }
+      if (nv.every((x, q) => Math.abs(x - LS.v[q]) < 0.005)){ ED.msg = 'the ' + what + ' is as ' + (a === 'rougher' ? 'rough' : 'smooth') + ' as it gets'; return; }
+      snapEdit();
+      LS.list[LS.i] = { ...LS.list[LS.i], [LS.key]: nv };     // (a new list, so its line is drawn again)
+      ED.msg = 'the ' + what + ' ' + (a === 'rougher' ? 'rougher' : 'smoother');
+      editRefresh(true); return;
+    }
     if (a === 'higher' || a === 'lower'){
       if (ED.pick && ED.pick.type === 'dot'){ selAct(a); return; }   // (the selected dots, Oct 9)
       const f = ED.sel != null && S.land[ED.sel];
@@ -38408,6 +38484,7 @@ const GOLF_APP = (() => {
     return false;
   }
   const updateEditBar = () => {};                            // (the tiles follow by themselves: see above)
+  const closedSel = () => { const LS = ED.on && leafSel(); return !!(LS && LS.closed); };
   const landHigh = f => { const k = Object.keys(f)[0]; return HEIGHT_AT[k] != null || k === 'green' || LINE_KINDS.includes(k); };
   function editorMenu(){
     const items = [];
@@ -38422,6 +38499,9 @@ const GOLF_APP = (() => {
         // (Oct 11: the selected ground's height in the menu, now that a curved ridge, gully or ramp has one to change)
         ...(o && o.type === 'land' && landHigh(o.obj) ? [{ label: 'Higher', title: 'Raise the selected ' + what + ' a little.', on(){ editAction('higher'); } },
           { label: 'Lower', title: 'Lower the selected ' + what + ' a little.', on(){ editAction('lower'); } }] : []),
+        // (and a closed curve's outline smoother or rougher, as the quick buttons ◯ and ✺ do: Oct 11)
+        ...(closedSel() ? [{ label: 'Smoother', title: 'Take the fine wiggles out of the selected ' + what + "'s outline, keeping its overall form.", on(){ editAction('smoother'); } },
+          { label: 'Rougher', title: 'Give the selected ' + what + "'s outline more coves and lobes.", on(){ editAction('rougher'); } }] : []),
         { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } });
       // (and the selected path, lake, bunker or green saved as a .tvf curve, which draw opens: Oct 11, shapes as well as paths)
       const sk = o && o.type === 'land' && SHAPE_KINDS.find(k => Array.isArray(o.obj[k])), sw = sk && TVF_WORD[sk][0];
@@ -38566,7 +38646,10 @@ const GOLF_APP = (() => {
        eraser and Done; while playing, start this hole again and edit it. */
     quickActs(){
       if (ED.on) return [{ key: 'select', glyph: '👆', title: 'Select', dim: ED.tool === 'select' }, { key: 'box', glyph: '⬚', title: 'Select dots in a box', dim: ED.tool === 'box' }, { key: 'undo', glyph: '↶', title: 'Undo', dim: !ED.undo.length }, { key: 'redo', glyph: '↷', title: 'Redo', dim: !(ED.redo && ED.redo.length) },
-                         { key: 'erase', glyph: '🧽', title: 'Erase' }, { key: 'done', glyph: '✓', title: 'Done editing' }];
+                         { key: 'erase', glyph: '🧽', title: 'Erase' },
+                         // (and with a closed curve selected, its outline smoother or rougher: Oct 11)
+                         ...(closedSel() ? [{ key: 'smoother', glyph: '◯', title: 'Smoother' }, { key: 'rougher', glyph: '✺', title: 'Rougher' }] : []),
+                         { key: 'done', glyph: '✓', title: 'Done editing' }];
       return null;                                           // (no playing buttons: the row is the editor's, Oct 10)
     },
     onQuickAct(c, r, key){
@@ -38589,7 +38672,9 @@ const GOLF_APP = (() => {
       if (ED.on){
         const at = ED.ateTap; ED.ateTap = null;
         if (at && gkey(c, r) === ED.key && performance.now() - at.t < 400 && Math.hypot(u * NX - at.x, v * NY - at.y) < 0.05) return true;   // (the end of a drag: see onPanEnd)
-        if (gkey(c, r) === ED.key){ const t0 = ED.tool; snapEdit(); if (editApply(u, v, false)){ editRefresh(true); placedOnce(t0); } else ED.undo.pop(); return true; }
+        if (gkey(c, r) === ED.key){ const t0 = ED.tool; snapEdit(); if (editApply(u, v, false)){ editRefresh(true); placedOnce(t0); } else ED.undo.pop();
+          try { bbRefreshNow(); } catch {}                     // (the quick buttons follow the selection: Smoother and Rougher, Oct 11)
+          return true; }
         /* THE EDITOR GOES WHERE YOU TAP (Oct 8: "in edit mode, i should be able to add features to any board, not just the
            selected board."). A tap on another board used to leave the editor; now the editor moves there, the tool in hand
            kept, and that board's hole is the one being edited (a hole of the course is copied, as Edit this hole does; one
@@ -38665,7 +38750,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, fly: (c, r) => gotoCell(c, r) } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
   };

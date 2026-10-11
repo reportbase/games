@@ -302,6 +302,22 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The tap that ends a drag** (found here): on a phone the field hands a finger to the editor after about 10 px but
     still calls a press that went under 16 px a tap, so a short drag of a gully's leaf bent it and then added a leaf where
     the finger had pressed. A drag that changed something now keeps that one tap (`ED.ateTap`: at the press point, at once).
+- **Smoother and Rougher** (Oct 11: "proceed on 2", from "what else can we do with tvf?": "Smoother takes the fine wiggles
+  out of a lake's or bunker's outline and keeps its overall form; Rougher adds some back"). With a closed curve selected (a
+  lake, bunker, green, planter or path), the quick buttons ◯ and ✺ and the menu's Smoother and Rougher work on its outline
+  (`editAction('smoother' | 'rougher')`, `reshaped`).
+  - The leaves' discrete Fourier transform (x + iy, leaf by leaf; `leafWaves`, `wavesLeaves`) is the outline as waves: the
+    0th is its place, the ±1st its ellipse, each further one a wave going round that many times. Both keep the place and the
+    ellipse, and the leaves stay as many.
+  - Smoother shrinks the ±h-th wave by `ROUGH.smooth`^(h − 1) (0.75), so the finest go first. Rougher makes every wave
+    `ROUGH.rough` (1.5) times as big, and lays one where a wave is fainter than a floor (0.035 of the ellipse's size at the
+    2nd, less for finer ones, up to the 6th), its phase seeded by the leaves, so a round lake gets coves and the same shape
+    always comes out the same.
+  - Neither may cross the line over itself (`crossesItself`) or bring a planter or path to the rail. A step that would is
+    halved, up to three times; if it still would, nothing changes and the message says so. `wiggleOf` measures it (the
+    waves beyond the ellipse against the ellipse) for the tests.
+  - A tap in the editor refreshes the quick buttons (`bbRefreshNow`), since they follow the selection and a still view draws
+    no frames.
 - **A roll stops after `ROLL_MAX`** (15 s, Oct 11). A bumper kicks a ball out at a speed of its own, so a slope that runs back
   down into one (a curved ridge's flank by a power bumper) kept a ball going for ever, and neither a person nor the players
   could take the next shot. Shots stop in a few seconds. Of the four unplayable level-5 holes found while checking curves,
