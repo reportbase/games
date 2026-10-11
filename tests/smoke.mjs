@@ -463,6 +463,27 @@ try {
         || np.read.water !== '~' || np.read.top !== '~' || np.read.right !== '~' || np.read.island !== '.' || np.read.plank !== '=' || np.read.end === '~' || np.read.sand !== 's' || np.read.grass !== '.'
         || !(np.flat < 0.002) || !(np.over > 0.003 && np.over < 0.012) || np.ends)
       failures.push(`[${current}] no painted water or sand: ${JSON.stringify(np)}`);
+    // WINDING STREAMS (Oct 11: "4", a stream that meanders down the hole): a generated stream is a lake winding across the
+    // board (its bank swings more than a cell up and down on most), its planks over water with dry ground at both their ends,
+    // the tee and the cup clear of it
+    const ws = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, E = D.editor, CW = D.CW; let n = 0, winding = 0, under = 0, dry = 0, clear = Infinity;
+      for (let idx = 22; idx < 2000 && n < 40; idx++){ const H = D.HOLES[D.holeAt(idx)];
+        const st = E.shapesOf(H).lake.find(s => s.B.box[0] < -0.2 * CW && s.B.box[2] > D.WD + 0.2 * CW); if (!st) continue; n++;
+        const rows = H.map.map((r, j) => r.split('=').length > 2 && (j + 1) * CW > st.B.box[1] - 0.5 * CW && j * CW < st.B.box[3] + 0.5 * CW ? j : -1).filter(j => j >= 0);
+        if (!rows.length) continue;
+        const j0 = Math.min(...rows), j1 = Math.max(...rows) + 1, cols = [...H.map[j0]].map((c, i) => c === '=' ? i : -1).filter(i => i >= 0);
+        if (cols.some(i => { for (let y = j0; y < j1; y += 0.05) if (E.blobIn(st.B, (i + 0.5) * CW, y * CW)) return true; return false; })) under++;
+        let wet = false; for (const i of cols) for (const f of [0.05, 0.5, 0.95]) for (const y of [j0 - 0.25, j0 - 0.05, j1 + 0.05, j1 + 0.25]) if (D.groundAt(H, (i + f) * CW, y * CW) === '~') wet = true;
+        if (!wet) dry++;
+        let lo = Infinity, hi = -Infinity;
+        for (let x = 0.3; x < 7.7; x += 0.2) for (let y = 1.5; y < 12; y += 0.02) if (E.blobIn(st.B, x * CW, y * CW)){ lo = Math.min(lo, y); hi = Math.max(hi, y); break; }
+        if (hi - lo > 1) winding++;
+        for (const p of [H.tee, H.cup]) for (let q = 0; q < st.B.M; q++) clear = Math.min(clear, Math.hypot(st.B.pts[2 * q] - p.x, st.B.pts[2 * q + 1] - p.y) / CW);
+      }
+      return { n, winding, under, dry, clear: +clear.toFixed(2) }; });
+    if (ws.n < 30 || ws.winding < ws.n * 0.7 || ws.under !== ws.n || ws.dry !== ws.n || !(ws.clear > 1))
+      failures.push(`[${current}] winding streams: ${JSON.stringify(ws)}`);
     // fences, not bushes (Oct 8): every hole one of wood, stone or brick, all three used, fences drawn in their hole's
     // material, walls and rail too; and every cup clear of the rail by a quarter of its width
     const fe = await page.evaluate(() => {

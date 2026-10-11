@@ -225,6 +225,23 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     lies across a bridge's end. `cellBlocked` lets planks pass.
   - The smoke test checks there is no paint for them, no painted cells on the course or 300 generated holes, an old hole
     with a ringed pond, planks and sand read right, and the rapids' bridge flat over its water and dry at its ends.
+- **Winding streams** (Oct 11: "4", from "what else can we do with tvf?": a stream that meanders down the hole as a curve):
+  a generated stream is a lake whose middle is a sine-generated curve (as rivers' meanders are drawn: the heading swings
+  θ(s) = ±Θ·sin(2πs/Λ) along its length), straight under the bridge for the bridge's width and 0.3 of a cell either side,
+  each side of it its own wave, on past both rails. No bend is tighter than Λ/(2πΘ), held to the half width + 0.6 of a cell,
+  so the inner bank never folds. It keeps 1.3 cells off the tee and the cup (turned the other way on one side, the other, both,
+  then gentler, else straight). The banks are the line put out half the width (0.85–1.05, or 1.5–1.8) either side, laid down
+  as up to 32 leaves. The planks (still cells, 2 or 3 across, `rows` = ceil(width + 0.5) long) span it with a quarter cell or
+  more to spare at each end. While the hole is made the cells the water touches are marked `~` (`stream.cells`), so the weave
+  and the guards keep off it as before; `lay` puts them back to grass and adds the lake at the end of `genOnce`. On 200
+  streams the bank swings 1.6 cells up and down across the board (1.1 to 2.3), every bridge spans water with dry ends, and the
+  tee and cup are 1.3 cells or more clear. The course's rapids keep their straight stream.
+  - A lake's shore is drawn as a colour blend a quarter of a cell across its line (`lakeMix`), as the sand's is, not the
+    mesh's stairs.
+  - A shape's line is held in a grid of 16 × 16 boxes over its own box (`blobGrid`, made when first wanted): `blobIn` tries
+    only the pieces of line in the point's row of boxes, and `blobEdge(B, x, y, max)` only those within `max` (nearer is
+    exact, farther is `max`; without `max` it tries them all). `rawH` (lakes to `LAKE_EDGE`, greens to `GREEN_EDGE`),
+    `sandMix` and `lakeMix` pass their reach. The answers are the same as before; a stream hole rates in 4–5 s, not 7–10.
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).
