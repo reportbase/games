@@ -264,11 +264,22 @@ try {
   // is 50°, and a board small on screen is drawn with far fewer pieces: coarse ground, a plain rail, no number, no models
   const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
     let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
-    const big = D.cellItems(c, r, 2000), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '')))];
-    return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, small: small.length, smallKinds: kinds(small), bigKinds: kinds(big) }; });
+    const big = D.cellItems(c, r, 2000), small = D.cellItems(c, r, 200), tiny = D.cellItems(c, r, 100), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '')))];
+    // (Oct 11, the GPU's load on the boards not selected: under 600 px walls, fences, planter walls, windmills and the ball are
+    //  plain; under 150 px there is no ground mesh, the pieces stand flat, and the tiles are the ground, lit as the mesh is)
+    const mk = D.HOLES.findIndex(H => (H.toys || []).some(T => T.mill)); let mc = 0, mr = 0;
+    search2: for (mr = 0; mr < 40; mr++) for (mc = 0; mc < 40; mc++) if (D.holeOf(mc, mr) === mk) break search2;
+    const mill = kinds(D.cellItems(mc, mr, 200)), lit = A.cellGrid(c, r, 100), flat = A.cellGrid(c, r, 400);
+    return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, small: small.length, smallKinds: kinds(small), bigKinds: kinds(big),
+             tinyKinds: kinds(tiny), tinyLifts: [...new Set(tiny.map(i => +(i.lift * D.WD).toFixed(4)))], mill, face: A.faceMinPx,
+             litShades: new Set(lit.colors).size, plainGrass: flat.colors.includes(0x63b86a) }; });
   if (lod.floor !== 50 || lod.appFloor !== 50) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 50 for mini golf)`);
-  if (!(lod.small < lod.big / 2) || !lod.smallKinds.includes('landL') || lod.smallKinds.some(k => /^(railV_|railH_|propBumper|propRock|segH|segV)/.test(k)))
+  if (!(lod.small < lod.big / 2) || !lod.smallKinds.includes('landL') || lod.smallKinds.some(k => /^(railV_|railH_|propBumper|propRock|segH|segV|wall_|fence_|planterWall_|ball$)/.test(k))
+      || !lod.smallKinds.includes('fenceP') || !lod.bigKinds.some(k => /^fence_/.test(k)))
     failures.push(`[${current}] a small board's pieces: ${JSON.stringify(lod)}`);
+  if (lod.tinyKinds.some(k => /^land|^ball$|^ballP$/.test(k)) || lod.tinyLifts.length !== 1 || lod.tinyLifts[0] !== 0.004 || lod.face !== 20
+      || !(lod.litShades > 12) || !lod.plainGrass || lod.mill.includes('millSails') || (lod.mill.includes('millTower') && !lod.mill.includes('millTowerP')))
+    failures.push(`[${current}] a board under 150 px, its tiles and its windmill: ${JSON.stringify({ ...lod, smallKinds: undefined, bigKinds: undefined })}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
   // objects that have orbits. the orbits should try to protect the golf hole."): every cup two cells in from the sides and
   // the top, all four kinds of bumper turn up, and an old bumper without a kind is read as the classic.
