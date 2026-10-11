@@ -34438,6 +34438,7 @@ const GOLF_APP = (() => {
      height. blobOf keeps a shape's line by its array (a changed shape is a new array), with its box, for the in-and-out
      tests. The map's cells still work as before (the course is written in them, and a stream needs its bridge). */
   const BLOBS = new WeakMap(), SHAPE_KINDS = ['lake', 'sand', 'green'];
+  const LINES = new WeakMap(), LINE_KINDS = ['crest', 'incline'], lineN = v => (v.length - 2) >> 1;   // (curved ridges and ramps, Oct 11: see lineOf)
   function shapeN(k, v){ return k === 'green' ? (v.length - 1) >> 1 : v.length >> 1; }
   function blobOf(v, n){
     let B = BLOBS.get(v); if (B) return B;
@@ -34596,8 +34597,9 @@ const GOLF_APP = (() => {
   function cellBlocked(H, i, j){
     if (H.map[j][i] === '=') return false;
     if ('#~'.includes(H.map[j][i])) return true;
-    const L = shapesOf(H).lake; if (!L.length) return false;
     const x = (i + 0.5) * CW, y = (j + 0.5) * CW;
+    if (inPlanter(H, x, y)) return true;                     // (a planter is a wall: Oct 11)
+    const L = shapesOf(H).lake; if (!L.length) return false;
     return L.some(s => blobIn(s.B, x, y));
   }
   const EDGE = CW * 0.6;                                    // how wide a plateau's or a ramp's sloping side is
@@ -34768,7 +34770,9 @@ const GOLF_APP = (() => {
     const X = v => cl(v, 0.4, NX - 0.4), Y = v => cl(v, 0.4, NY - 0.4), turn = () => rnd() < 0.5 ? -1 : 1;
     const kickAt = (x, y, kind) => ({ kick: [r2(x), r2(y), [0.28, 0.26, 0.34, 0.3][kind], kind] });
     const lakesG = (src.land || []).filter(f => f.lake).map(f => blobOf(f.lake, f.lake.length >> 1));   // (a pond's a shape since Oct 10)
-    const free = (i, j) => j > 0 && j < NY - 1 && i >= 0 && i < NX && (map[j][i] === '.' || map[j][i] === 's') && !lakesG.some(B => blobIn(B, i + 0.5, j + 0.5));
+    const plG = (src.toys || []).filter(T => Array.isArray(T.planter)).map(T => planterOf(T.planter));   // (and the planters: Oct 11)
+    const offPl = (x, y, m) => plG.every(B => !blobIn(B, x, y) && blobEdge(B, x, y, m) >= m);
+    const free = (i, j) => j > 0 && j < NY - 1 && i >= 0 && i < NX && (map[j][i] === '.' || map[j][i] === 's') && !lakesG.some(B => blobIn(B, i + 0.5, j + 0.5)) && offPl(i + 0.5, j + 0.5, 0.7);
     /* MANY WAYS OF KEEPING A CUP (Oct 9: "every hole pretty much rocks circling the golf hole. that should be one way of
        protecting the hole among many. use other strategies to protect the golf hole."). The movers are seven of
        fourteen; the rest stand still or are ground: a horseshoe of fences open at the back, an arc of bumpers of mixed
@@ -34809,6 +34813,10 @@ const GOLF_APP = (() => {
       hillside: [0.9, () => { const a = rnd() * 2 * Math.PI, o = 1.1 + rnd() * 0.4;                                     // the cup on a hill's flank
         land.push({ bump: [cl(cx + o * Math.cos(a), 0, NX), cl(cy + o * Math.sin(a), 0, NY), r2(1.7 + rnd() * 0.5), r3(0.05 + rnd() * 0.02)] }); return []; }],
       berm: [0.8, () => { const y = Y(cy + d * (1.6 + rnd() * 0.4));                                                    // a long hump across the way in
+        /* (Oct 11, "proceed on 5": on a generated hole, one berm in two curls about the cup, a curved ridge bowed toward the
+           tee, its ends a cell nearer the cup than its middle) */
+        if (lv && rnd() < 0.5){ const lvs = bentLeaves(cx - 2.6, y - d, cx + 2.6, y - d, 5, d * (1 + rnd() * 0.3));
+          land.push({ crest: [...lvs.map((v, q) => cl(v, -1, (q & 1 ? NY : NX) + 1)), r2(0.8 + rnd() * 0.3), r3(0.04 + rnd() * 0.015)] }); return []; }
         land.push({ ridge: [cl(cx - 2.8, -1, NX + 1), y, cl(cx + 2.8, -1, NX + 1), y, r2(0.8 + rnd() * 0.3), r3(0.04 + rnd() * 0.015)] }); return []; }],
       turnstile: [0.9, () => { const [x, y] = toward(1.75, (rnd() - 0.5) * 0.5);
         return [{ arm: [x, y, r2(0.95 + rnd() * 0.25), r2((3.5 + rnd() * 1.5) * turn()), ph, 2 + Math.floor(rnd() * 2)] }]; }],
@@ -34852,12 +34860,12 @@ const GOLF_APP = (() => {
         return [{ curve: pts.flatMap(([x, y]) => [r2(x), r2(y)]) }]; }],
     };
     // (a shape fits where it is on the board, off water, walls and bridges, and clear of the tee)
-    function shapeOk(x, y){ return x > 0.3 && x < NX - 0.3 && y > 0.3 && y < NY - 0.3 && !'#~='.includes(map[Math.floor(y)][Math.floor(x)]) && Math.hypot(x - tx, y - ty) > 1.3 && !lakesG.some(B => blobIn(B, x, y)); }
+    function shapeOk(x, y){ return x > 0.3 && x < NX - 0.3 && y > 0.3 && y < NY - 0.3 && !'#~='.includes(map[Math.floor(y)][Math.floor(x)]) && Math.hypot(x - tx, y - ty) > 1.3 && !lakesG.some(B => blobIn(B, x, y)) && offPl(x, y, 0.3); }   // (off the planters: Oct 11)
     // (a curved fence fits where its whole line is on the board, off water and walls, and clear of the tee)
     function curveFits(pts){
       const v = pts.flatMap(p => p), C = curveOf(v);
       for (let q = 0; q < C.m; q++){ const x = C.pts[2 * q], y = C.pts[2 * q + 1];
-        if (x < 0.4 || x > NX - 0.4 || y < 0.4 || y > NY - 0.4 || '#~='.includes(map[Math.floor(y)][Math.floor(x)]) || Math.hypot(x - tx, y - ty) < 1.4) return false; }
+        if (x < 0.4 || x > NX - 0.4 || y < 0.4 || y > NY - 0.4 || '#~='.includes(map[Math.floor(y)][Math.floor(x)]) || Math.hypot(x - tx, y - ty) < 1.4 || !offPl(x, y, 0.4)) return false; }
       return true;
     }
     /* (a cup that already has things about it gets a guard that does not pile onto them: a cup with toys of the hole's own
@@ -34894,11 +34902,18 @@ const GOLF_APP = (() => {
     const narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (ch === '.' && row.filter(c => c === '#').length >= 3)) narrows.push([i + 0.5, j + 0.5]); }));
     const wayOver = (x, y, m) => narrows.some(([a, b]) => Math.hypot(x - a, y - b) < m);
+    // (a pond in front, an S-bend across the way in or a snail round the cup reaches about three cells out, past the cup's
+    //  room, and is hard enough alone: its planters go first, Oct 11, or a planter in its way made it fall back to another)
+    if (style === 'pond' || style === 'snail' || style === 'sbend'){ toys = toys.filter(T => !T.planter); plG.length = 0; }
     let guards = STYLES[style][1]();
     if (clearR) toys = toys.filter(T => { const k = Object.keys(T)[0], v = T[k];
       if (k === 'path'){ const P = loopOf(v); for (let q = 0; q < P.M; q++) if (Math.hypot(P.pts[2 * q] - cx, P.pts[2 * q + 1] - cy) < clearR) return false; return true; }
       return Math.hypot(v[0] - cx, v[1] - cy) >= clearR; });
     guards = guards.filter(T => !(T.kick || T.rock) || (free(Math.floor(Object.values(T)[0][0]), Math.floor(Object.values(T)[0][1])) && !wayOver(...Object.values(T)[0], 1.6)));
+    // (a planter that a guard would stand on gives way to the guard: Oct 11; the cup's guards reach farther than its room)
+    toys = toys.filter(T => { if (!Array.isArray(T.planter)) return true; const B = planterOf(T.planter);
+      return !guards.some(U => toyPoints(U).some(([x, y, r]) => blobIn(B, x, y) || blobEdge(B, x, y, r + 0.3) < r + 0.3)); });
+    plG.length = 0; for (const T of toys) if (Array.isArray(T.planter)) plG.push(planterOf(T.planter));
     if (busyToys && style === 'apron') guards = [];              // (sand alone: the cup already has things about it)
     for (const [i, j] of sand) if (map[j][i] === '.') map[j][i] = 's';
     /* SOMETHING IN THE WAY OF THE FIRST SHOT (Oct 9, the same request). If nothing stands across the straight line from the
@@ -34916,9 +34931,13 @@ const GOLF_APP = (() => {
         if (k === 'path'){ const n = (v.length - 4) >> 1; for (let q = 0; q < n; q++) if (lineD(v[2 * q], v[2 * q + 1]) < 0.5) return true; return false; }
         if (k === 'mill' || k === 'arm' || k === 'swing') return lineD(v[0], v[1]) < v[2];
         if (k === 'curve'){ const C = curveOf(v); for (let q = 0; q < C.m; q++) if (lineD(C.pts[2 * q], C.pts[2 * q + 1]) < 0.35) return true; return false; }
+        // (a planter across it, or so near it that a ball rolling straight would clip its wall: Oct 11)
+        if (k === 'planter'){ const B = planterOf(v); for (let q = 0.06; q < 0.94; q += 0.02){ const x = tx + (cx - tx) * q, y = ty + (cy - ty) * q; if (blobIn(B, x, y) || blobEdge(B, x, y, 0.35) < 0.3) return true; } return false; }
         return false; })) return true;
       return [...(src.land || []), ...land].some(f => { const k = Object.keys(f)[0], v = f[k];
         if (k === 'ridge') return Math.abs(v[5]) >= 0.035 && segLineD(v[0], v[1], v[2], v[3]) < v[4] * 0.5;
+        if (k === 'crest'){ const n = lineN(v); if (Math.abs(v[2 * n + 1]) < 0.035) return false;   // (a curved ridge or gully across it: Oct 11)
+          const C = curveOf(v.slice(0, 2 * n)); for (let q = 0; q < C.m; q++) if (lineD(C.pts[2 * q], C.pts[2 * q + 1]) < v[2 * n] * 0.5) return true; return false; }
         if (k === 'ring') return Math.abs(v[4]) >= 0.03 && Math.abs(lineD(v[0], v[1]) - 0) < v[2] && Math.hypot(tx - v[0], ty - v[1]) > v[2];
         if (k === 'plateau') return v[4] >= 0.04 && cx >= Math.min(v[0], v[2]) && cx <= Math.max(v[0], v[2]) && cy >= Math.min(v[1], v[3]) && cy <= Math.max(v[1], v[3]);
         return false; });
@@ -34931,20 +34950,33 @@ const GOLF_APP = (() => {
       for (const f of [0.5, 0.42, 0.58, 0.35, 0.65]){
         const px = tx + (cx - tx) * f, py = ty + (cy - ty) * f;
         if (Math.hypot(px - tx, py - ty) < 1.8 || Math.hypot(px - cx, py - cy) < 1.9 || !free(Math.floor(px), Math.floor(py))) continue;
+        if (!offPl(px, py, 1.5)) continue;                      // (a screen reaches about a cell and a quarter: clear of the planters, Oct 11)
         if (wayOver(px, py, 2.2) || all.some(T => { const v = Object.values(T)[0]; return Math.hypot(v[0] - px, v[1] - py) < 1.3; })) continue;
         const P = (o, k = 1) => [X(px + nx * o * k), Y(py + ny * o * k)], deg = Math.round(Math.atan2(ny, nx) * 180 / Math.PI);
-        const KINDS = ['fence', 'pair', 'boulder', 'bumper', 'berm', 'turnstile', 'pegs', 'door', ...(lv ? ['arc'] : [])];   // (an arc of curved fence: generated holes, Oct 10)
+        const KINDS = ['fence', 'pair', 'boulder', 'bumper', 'berm', 'turnstile', 'pegs', 'door', ...(lv ? ['arc', 'planter'] : [])];   // (an arc of curved fence: generated holes, Oct 10; a planter, Oct 11)
         screen = KINDS[Math.floor(rnd() * KINDS.length)];
         if (screen === 'arc'){                                  // a curved fence bowed toward the tee across the way in
           const ux = (tx - cx) / L0, uy = (ty - cy) / L0, pts = [];
           for (let q = 0; q < 5; q++){ const a = -Math.PI / 2 + q / 4 * Math.PI, o = Math.sin(a) * 1.2, w = Math.cos(a) * 0.7; pts.push([px + nx * o + ux * w, py + ny * o + uy * w]); }
           if (curveFits(pts)) screens.push({ curve: pts.flatMap(([x, y]) => [r2(x), r2(y)]) }); else { screen = 'fence'; }
         }
+        if (screen === 'planter'){                              // a kidney planter lying across the way in, bowed toward the tee (Oct 11)
+          const v = planterLeaves(px, py, 0.72, 'kidney', Math.atan2(ny, nx) + (((tx - px) * -ny + (ty - py) * nx) > 0 ? Math.PI : 0), rnd), B = planterOf(v);
+          let ok = true;
+          for (let m = 0; m < B.M && ok; m++){ const x = B.pts[2 * m], y = B.pts[2 * m + 1];
+            ok = x > 0.5 && x < NX - 0.5 && y > 0.5 && y < NY - 0.5 && free(Math.floor(x), Math.floor(y)) && !wayOver(x, y, 1.6) && Math.hypot(x - cx, y - cy) > 1.6 && Math.hypot(x - tx, y - ty) > 1.4; }
+          if (ok) ok = all.every(U => !toyPoints(U).some(([x, y, r]) => blobIn(B, x, y) || blobEdge(B, x, y, r + 0.3) < r + 0.3));   // (off every track and thing on the hole)
+          if (ok) screens.push({ planter: v }); else screen = 'fence';
+        }
         if (screen === 'fence') screens.push({ fence: [...P(-1.1), ...P(1.1)] });
         else if (screen === 'pair') screens.push({ rock: [...P(-0.78), 0.36] }, { rock: [...P(0.78), 0.36] });
         else if (screen === 'boulder') screens.push({ rock: [...P(0), r2(0.5 + rnd() * 0.1)] });
         else if (screen === 'bumper') screens.push(kickAt(...P(0), Math.floor(rnd() * 4)));
-        else if (screen === 'berm') land.push({ ridge: [...P(-2.4).map(v => r2(v)), ...P(2.4), 0.85, r3(0.04 + rnd() * 0.012)] });
+        else if (screen === 'berm'){                          // (on a generated hole, one in two bowed toward the tee: Oct 11)
+          const ux = (tx - cx) / L0, uy = (ty - cy) / L0, hb = r3(0.04 + rnd() * 0.012);
+          if (lv && rnd() < 0.5) land.push({ crest: [...[-2.4, -1.2, 0, 1.2, 2.4].flatMap(o => { const w = Math.cos(o / 2.4 * Math.PI / 2) * 0.9;
+            return [cl(px + nx * o + ux * w, -1, NX + 1), cl(py + ny * o + uy * w, -1, NY + 1)]; }), 0.85, hb] });
+          else land.push({ ridge: [...P(-2.4).map(v => r2(v)), ...P(2.4), 0.85, hb] }); }
         else if (screen === 'turnstile') screens.push({ arm: [...P(0), 0.95, r2((3.5 + rnd() * 1.5) * turn()), ph, 2] });
         else if (screen === 'pegs') screens.push(...[-0.95, 0, 0.95].map(o => ({ rock: [...P(o), 0.18] })));
         else if (screen === 'door') screens.push({ swing: [...P(-1.25), 1.25, deg, deg + turn() * 85, r2(2.6 + rnd())] });
@@ -34971,6 +35003,7 @@ const GOLF_APP = (() => {
       if (f.step) f.step = [f.step[0], f.step[1], P(f.step[2]), P(f.step[3]), f.step[4]];
       if (f.wave) f.wave = [f.wave[0], P(f.wave[1]), f.wave[2] * Math.PI / 180, f.wave[3]];
       if (f.ridge) f.ridge = [P(f.ridge[0]), P(f.ridge[1]), P(f.ridge[2]), P(f.ridge[3]), P(f.ridge[4]), f.ridge[5]];
+      for (const k of LINE_KINDS) if (f[k]){ const n = lineN(f[k]); f[k] = [...f[k].slice(0, 2 * n).map(P), P(f[k][2 * n]), f[k][2 * n + 1]]; }   // (a curved ridge, gully or ramp: Oct 11)
       if (f.bowl) f.bowl = [P(f.bowl[0]), P(f.bowl[1]), P(f.bowl[2]), f.bowl[3]];
       if (f.plateau) f.plateau = [...f.plateau.slice(0, 4).map(P), f.plateau[4]];
       if (f.ramp) f.ramp = [...f.ramp.slice(0, 5).map(P), f.ramp[5]];
@@ -34992,6 +35025,7 @@ const GOLF_APP = (() => {
       for (const k of ['kick', 'rock']) if (T[k]) T[k] = T[k].map(P);
       if (T.fence) T.fence = T.fence.slice(0, 4).map(P);
       if (T.curve) T.curve = T.curve.map(P);                 // (a curved fence: its leaves, Oct 10)
+      if (T.planter) T.planter = T.planter.map(P);           // (a planter: its leaves, Oct 11)
       if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
       if (T.orbit || T.shuttle){ T.path = pathify(T).path; delete T.orbit; delete T.shuttle; }   // (written before Oct 10)
       if (T.path){ const n = pathN(T.path); T.path = [...T.path.slice(0, 2 * n).map(P), P(T.path[2 * n]), T.path[2 * n + 1], T.path[2 * n + 2] || 0, T.path[2 * n + 3] || 0]; }
@@ -35145,6 +35179,15 @@ const GOLF_APP = (() => {
         const [x0, y0, x1, y1, w, a] = f.ridge, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1;
         const q = Math.max(0, Math.min(1, ((x - x0) * ux + (y - y0) * uy) / L2)), d2 = (x - x0 - q * ux) ** 2 + (y - y0 - q * uy) ** 2;
         h += a * Math.exp(-d2 / (w * w / 4));
+      }
+      // (a curved ridge or gully, and a curved ramp: Oct 11, see lineOf)
+      if (f.crest){ const C = lineOf(f.crest), N = lineNear(C, x, y, C.w * 1.5); if (N) h += C.a * Math.exp(-N.d * N.d / (C.w * C.w / 4)); }
+      if (f.incline){
+        const C = lineOf(f.incline), N = lineNear(C, x, y, C.w / 2 + EDGE * 1.2);
+        if (N && !(N.q === 1 && N.fu < 0)){                    // (nothing before its first leaf)
+          const past = N.q === C.m - 1 && N.fu > 1, up = past ? Math.max(0, 1 - (N.fu - 1) * N.len / (EDGE * 0.6)) : N.s / C.L;
+          h += C.a * up * sm01((C.w / 2 - (past ? N.perp : N.d)) / EDGE + 0.5);
+        }
       }
     }
     // the greens (Oct 10): raised or sunk inside their outline, sloping over GREEN_EDGE at the rim (half in, half out)
@@ -35327,7 +35370,7 @@ const GOLF_APP = (() => {
     if (p < 0.06 || g.moving || g.state !== 'play') return false;
     g.rest = { x: g.ball.x, y: g.ball.y };
     g.ball.vx = -qx / L * p * VMAX; g.ball.vy = -qy / L * p * VMAX;
-    g.moving = true; g.slowT = 0; g.strokes++;
+    g.moving = true; g.slowT = 0; g.rollT = 0; g.strokes++;
     g.trail = [[g.ball.x, g.ball.y]];                        // the last putt's ghost gives way to this one's
     SND.play('tap');
     return true;
@@ -35448,6 +35491,108 @@ const GOLF_APP = (() => {
     }
     return { d: bd, x: px, y: py };
   }
+  /* PLANTERS (Oct 11: "#6", from "what else can we do with tvf?": "Closed curved walls. Rock islands or planters of any
+     outline that the ball banks off, like a curved fence closed into a loop. Kidney-shaped or star-shaped obstacles would
+     give bank shots you can't get from straight fences."). `planter [x0, y0, …]`, 3–32 leaves in cells: a closed TVF curve
+     through its leaves (planterOf, a lake's line by another name), walled along its line in the hole's material and planted
+     inside, a hedge raised in the ground's drawing only. The ball meets the nearest point of the line from outside, as it
+     meets a curved fence, and a ball that ever lands inside (too fast for a step) is put back out over the nearest point.
+     The players' way round treats a cell whose middle is inside as a wall (cellBlocked). */
+  const PLANTER_RISE = CW * 0.42;                            // (the hedge's top, a little under the wall's)
+  const planterOf = v => blobOf(v, v.length >> 1);
+  // the point of a shape's line nearest (x, y) and how far, looking only as far as max (null when nothing is that near)
+  function blobNear(B, x, y, max){
+    let bd = max == null ? Infinity : max, px = 0, py = 0, got = false;
+    const seg = q => { const w = (q + B.M - 1) % B.M, ax = B.pts[2 * w], ay = B.pts[2 * w + 1], ux = B.pts[2 * q] - ax, uy = B.pts[2 * q + 1] - ay;
+      const f = Math.max(0, Math.min(1, ((x - ax) * ux + (y - ay) * uy) / (ux * ux + uy * uy || 1e-12))), qx = ax + ux * f, qy = ay + uy * f, d = Math.hypot(x - qx, y - qy);
+      if (d < bd){ bd = d; px = qx; py = qy; got = true; } };
+    if (!isFinite(bd)){ for (let q = 0; q < B.M; q++) seg(q); return got ? { d: bd, x: px, y: py } : null; }
+    const [x0, y0, x1, y1] = B.box; if (x < x0 - bd || x > x1 + bd || y < y0 - bd || y > y1 + bd) return null;
+    const G = blobGrid(B), i0 = G.gx(x - bd), i1 = G.gx(x + bd), j0 = G.gy(y - bd), j1 = G.gy(y + bd);
+    if (++G.tick === 0xffffffff){ G.stamp.fill(0); G.tick = 1; }
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) for (const q of G.cells[j * BG + i]) if (G.stamp[q] !== G.tick){ G.stamp[q] = G.tick; seg(q); }
+    return got ? { d: bd, x: px, y: py } : null;
+  }
+  // a hole's planters' lines (kept on the compiled hole), and whether (x, y) is inside one
+  const plantersOf = H => H._planters || (H._planters = (H.toys || []).filter(T => Array.isArray(T.planter)).map(T => planterOf(T.planter)));
+  const inPlanter = (H, x, y) => { const P = plantersOf(H); return P.length > 0 && P.some(B => blobIn(B, x, y)); };
+  /* a planter's leaves, in cells, about r across: round (a little uneven), a kidney (a bean, bowed in on one side) or a
+     star of five round lobes, turned by rot (the generator's and the editor's tap's) */
+  function planterLeaves(cx, cy, r, kind, rot, rnd){
+    const n = kind === 'star' ? 15 : 12, p = rnd() * 6.283, out = [], R2 = v => Math.round(v * 100) / 100;
+    for (let q = 0; q < n; q++){
+      const a = (q + 0.5) / n * 2 * Math.PI;
+      let lx, ly;
+      if (kind === 'kidney'){ lx = 1.35 * r * Math.cos(a); ly = r * (0.72 * Math.sin(a) + 0.3 * Math.cos(2 * a)); }
+      else { const rr = r * (kind === 'star' ? 1 + 0.3 * Math.cos(5 * a + p) : 1 + 0.08 * Math.sin(3 * a + p)); lx = rr * Math.cos(a); ly = rr * Math.sin(a); }
+      out.push(R2(cx + lx * Math.cos(rot) - ly * Math.sin(rot)), R2(cy + lx * Math.sin(rot) + ly * Math.cos(rot)));
+    }
+    return out;
+  }
+  /* CURVED RIDGES, GULLIES AND RAMPS (Oct 11: "proceed on 5", from "what else can we do with tvf?": "Curved ridges,
+     gullies and ramps. Ridges, gullies and ramps are straight lines now; they'd follow a drawn curve, the way curved fences
+     do, such as a ridge snaking across the hole or a gully bending round the cup"). Two kinds of ground along an open TVF
+     curve, held as a curved fence's line is (curveOf, through every leaf, from the first to the last): `crest [x0, y0, …,
+     xn, yn, width, height]`, a hump along the line as a straight ridge is (the same bell across, rounded off past its
+     ends), a gully when its height is less than nothing; and `incline [x0, y0, …, xn, yn, width, height]`, a ramp that
+     rises evenly along the line from nothing at its first leaf to its height at its last and drops away just past it, a
+     kicker that bends. 3–24 leaves in cells, then the width and the height. lineOf keeps a line by its array, with its
+     length so far at every point; lineNear finds the nearest point within a reach (the shapes' grid of boxes, open). */
+  function lineOf(v){
+    let C = LINES.get(v); if (C) return C;
+    const n = lineN(v), K = curveOf(v.slice(0, 2 * n)), m = K.m, cum = new Float64Array(m);
+    for (let q = 1; q < m; q++) cum[q] = cum[q - 1] + Math.hypot(K.pts[2 * q] - K.pts[2 * q - 2], K.pts[2 * q + 1] - K.pts[2 * q - 1]);
+    C = { pts: K.pts, m, cum, L: cum[m - 1] || 1e-9, box: K.box, n, w: v[2 * n], a: v[2 * n + 1] };
+    LINES.set(v, C); return C;
+  }
+  function lineGrid(C){
+    if (C.grid) return C.grid;
+    const [x0, y0, x1, y1] = C.box, gw = (x1 - x0) / BG || 1e-9, gh = (y1 - y0) / BG || 1e-9, cells = Array.from({ length: BG * BG }, () => []);
+    const gx = x => Math.max(0, Math.min(BG - 1, Math.floor((x - x0) / gw))), gy = y => Math.max(0, Math.min(BG - 1, Math.floor((y - y0) / gh)));
+    for (let q = 1; q < C.m; q++){
+      const ax = C.pts[2 * q - 2], ay = C.pts[2 * q - 1], bx = C.pts[2 * q], by = C.pts[2 * q + 1];
+      for (let j = gy(Math.min(ay, by)); j <= gy(Math.max(ay, by)); j++) for (let i = gx(Math.min(ax, bx)); i <= gx(Math.max(ax, bx)); i++) cells[j * BG + i].push(q);
+    }
+    return (C.grid = { cells, gx, gy, stamp: new Uint32Array(C.m), tick: 0 });
+  }
+  // the nearest point of a line to (x, y) within max: how far, which piece (q, from point q - 1 to q), how far along that
+  // piece unclamped (fu: below 0 before the first point, above 1 past the last), the length so far, and how far off the
+  // piece's own line; null if nothing is that near
+  function lineNear(C, x, y, max){
+    const [x0, y0, x1, y1] = C.box; if (x < x0 - max || x > x1 + max || y < y0 - max || y > y1 + max) return null;
+    const G = lineGrid(C), i0 = G.gx(x - max), i1 = G.gx(x + max), j0 = G.gy(y - max), j1 = G.gy(y + max);
+    if (++G.tick === 0xffffffff){ G.stamp.fill(0); G.tick = 1; }
+    let bd = max, bq = -1, bf = 0, bfu = 0;
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) for (const q of G.cells[j * BG + i]) if (G.stamp[q] !== G.tick){ G.stamp[q] = G.tick;
+      const ax = C.pts[2 * q - 2], ay = C.pts[2 * q - 1], ux = C.pts[2 * q] - ax, uy = C.pts[2 * q + 1] - ay, fu = ((x - ax) * ux + (y - ay) * uy) / (ux * ux + uy * uy || 1e-12);
+      const f = Math.max(0, Math.min(1, fu)), d = Math.hypot(ax + ux * f - x, ay + uy * f - y);
+      if (d < bd){ bd = d; bq = q; bf = f; bfu = fu; } }
+    if (bq < 0) return null;
+    const ax = C.pts[2 * bq - 2], ay = C.pts[2 * bq - 1], ux = C.pts[2 * bq] - ax, uy = C.pts[2 * bq + 1] - ay, len = Math.hypot(ux, uy) || 1e-12;
+    return { d: bd, q: bq, fu: bfu, s: C.cum[bq - 1] + bf * len, len, perp: Math.abs((x - ax) * uy - (y - ay) * ux) / len };
+  }
+  // a curved line's leaves for the generator, in cells: n leaves from (x0, y0) to (x1, y1), bowed (once) or snaking (twice)
+  // across by A
+  function bentLeaves(x0, y0, x1, y1, n, A, snake){
+    const L = Math.hypot(x1 - x0, y1 - y0) || 1, nx = -(y1 - y0) / L, ny = (x1 - x0) / L, out = [], R2 = v => Math.round(v * 100) / 100;
+    for (let q = 0; q < n; q++){ const t = q / (n - 1), o = A * Math.sin((snake ? 2 : 1) * Math.PI * t);
+      out.push(R2(x0 + (x1 - x0) * t + nx * o), R2(y0 + (y1 - y0) * t + ny * o)); }
+    return out;
+  }
+  // where a thing stands, as points with a reach each, in the units it is written in (for keeping things off one another)
+  function toyPoints(U){
+    const k = Object.keys(U)[0], v = U[k], out = [];
+    const seg = (x0, y0, x1, y1, r) => { const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 0.25)); for (let q = 0; q <= n; q++) out.push([x0 + (x1 - x0) * q / n, y0 + (y1 - y0) * q / n, r]); };
+    if (k === 'kick' || k === 'rock') out.push([v[0], v[1], v[2]]);
+    else if (k === 'fence' || k === 'gate') seg(v[0], v[1], v[2], v[3], 0.15);
+    else if (k === 'curve'){ const C = curveOf(v); for (let q = 0; q < C.m; q += 2) out.push([C.pts[2 * q], C.pts[2 * q + 1], 0.15]); }
+    else if (k === 'planter'){ const B = planterOf(v); for (let q = 0; q < B.M; q += 2) out.push([B.pts[2 * q], B.pts[2 * q + 1], 0.12]); }
+    else if (k === 'path'){ const P = loopOf(v), r = v[2 * pathN(v)] || 0.3; for (let q = 0; q < P.M; q += 3) out.push([P.pts[2 * q], P.pts[2 * q + 1], r]); }
+    else if (k === 'mill' || k === 'arm' || k === 'swing') out.push([v[0], v[1], v[2]]);
+    else if (k === 'pipe') out.push([v[0], v[1], v[5]], [v[2], v[3], v[5]]);
+    else if (v && v.length >= 2) out.push([v[0], v[1], 0.3]);
+    return out;
+  }
   function toyAt(T, t){
     if (T.path){
       const v = T.path, n = pathN(v), per = v[2 * n + 1] || 6, A = loopAt(v, v[2 * n + 2] + t / per), sp = A.L / per;
@@ -35532,6 +35677,14 @@ const GOLF_APP = (() => {
         const N = curveNear(T.curve, b.x, b.y), dx = b.x - N.x, dy = b.y - N.y, d = N.d;
         if (d >= R0 || d < 1e-9) return;
         hit = Math.max(hit, knockOff(b, dx / d, dy / d, N.x, N.y, R0, 0, 0, E));
+      } else if (T.planter){
+        // a planter (Oct 11): off the nearest point of its closed line from outside; from inside, out over it
+        const B = planterOf(T.planter), [bx0, by0, bx1, by1] = B.box, R0 = BR + FENCE_T;
+        if (b.x < bx0 - R0 || b.x > bx1 + R0 || b.y < by0 - R0 || b.y > by1 + R0) return;
+        const inside = blobIn(B, b.x, b.y), N = blobNear(B, b.x, b.y, inside ? Infinity : R0);
+        if (!N || N.d < 1e-9) return;
+        const sg = inside ? -1 : 1, nx = sg * (b.x - N.x) / N.d, ny = sg * (b.y - N.y) / N.d;
+        hit = Math.max(hit, knockOff(b, nx, ny, N.x, N.y, R0, 0, 0, E));
       } else if (T.rock){
         // a boulder: it stands still, and the ball bounces off it as off a wall
         const [cx, cy, cr] = T.rock, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
@@ -35614,13 +35767,14 @@ const GOLF_APP = (() => {
     }
     if (knock > 0.15) SND.play('tap');
   }
+  const ROLL_MAX = 15;                                       // seconds a roll may last (see the rest, below)
   function step(g, dt){
     g.t = (g.t || 0) + dt;                                   // the toys' clock runs whether the ball rolls or not
     if (g.state === 'sunk'){ if ((g.sunkT -= dt) <= 0) nextHole(g); return; }
     if (g.state !== 'play') return;
     const H = HOLES[g.hole], b = g.ball, P = D();
     if (!g.moving){                                          // a ball at rest can still be knocked by a toy: a free push
-      if (H.toys && toys(g, H) > 0.01){ collide(g, H); g.moving = true; g.slowT = 0; }
+      if (H.toys && toys(g, H) > 0.01){ collide(g, H); g.moving = true; g.slowT = 0; g.rollT = 0; }
       if (!g.moving) return;
     }
     const n = Math.min(400, Math.max(1, Math.ceil(Math.hypot(b.vx, b.vy) * dt / (BR * 0.4))));
@@ -35652,18 +35806,24 @@ const GOLF_APP = (() => {
       } else if (cd > P.cup * 1.6) g.lipped = false;
       // Rest: slow, where the slope is too gentle to start it again — or stuck rocking against a wall.
       if (s < 0.05) g.slowT += h; else g.slowT = 0;
-      if ((s < 0.012 && Math.hypot(gx, gy) * GRAV < P.mu * 0.9) || g.slowT > 1.5){ g.moving = false; b.vx = b.vy = 0; }
+      /* …or rolling for longer than any shot rolls (Oct 11). A bumper kicks a ball out at a speed of its own, so a slope
+         that runs back down into one, the flank of a curved ridge by a power bumper on one generated hole, sent the ball
+         up and back for ever and no next shot could be played. Shots stop in a few seconds; one still going after
+         ROLL_MAX is stopped where it is. */
+      g.rollT = (g.rollT || 0) + h;
+      if ((s < 0.012 && Math.hypot(gx, gy) * GRAV < P.mu * 0.9) || g.slowT > 1.5 || g.rollT > ROLL_MAX){ g.moving = false; b.vx = b.vy = 0; }
     }
     // (no picking up: Oct 9, "remove max tries, player should be able to stay on hole as long as he wants")
   }
 
   /* ─── WHAT A BOARD SHOWS ───────────────────────────────────────────── */
-  const GRASS = [0x63b86a, 0x58ad60];
+  const GRASS = [0x63b86a, 0x58ad60], HEDGE = 0x2f6b34;
   // the far board: NY × NY tiles over the WD × 1 board, each the colour of the cell under its middle
   // (made when first wanted and kept on the hole, so an editor's hole gets its own: Oct 8)
   const gridOf = hk => { const H = HOLES[hk]; return H._grid || (H._grid = { n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
     const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, c0 = H.map[j][i];
     const ch = c0 === '#' || c0 === '=' ? c0 : groundAt(H, (k % NY + 0.5) * WD / NY, (j + 0.5) * CW);   // (the shapes show too: Oct 10)
+    if (ch !== '#' && inPlanter(H, (k % NY + 0.5) * WD / NY, (j + 0.5) * CW)) return HEDGE;   // (and the planters: Oct 11)
     return ch === '#' ? (MAT_COL[matOf(H)] || MAT_COL.wood).far : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
   }) }); };
   const holeShown = (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.hole : holeOf(c, r); };
@@ -35677,11 +35837,13 @@ const GOLF_APP = (() => {
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
       const x = i / nx * WD, y = j / ny, h = hOf(H, x, y), ci = Math.min(NX - 1, Math.floor(x / CW)), cj = Math.min(NY - 1, Math.floor(y / CW));
       const ch = at(H, ci, cj) === '#' ? '#' : groundAt(H, x, y), wet = ch === '~' || ch === '=';
-      pos.push(WD / 2 - x, wet ? waterAt(H, x, y) : h, 0.5 - y);     // water lies level, below its banks, however the land rolls (a lake at its own level: Oct 11)
+      const hedge = inPlanter(H, x, y);                       // (a planter's hedge, raised inside its wall: Oct 11)
+      pos.push(WD / 2 - x, wet ? waterAt(H, x, y) : hedge ? h + PLANTER_RISE : h, 0.5 - y);     // water lies level, below its banks, however the land rolls (a lake at its own level: Oct 11)
       /* (a lake's shore drawn as a blend of a quarter of a cell across its line, as the sand's is, not the mesh's stairs: Oct 11,
           when the streams began to wind and the stairs showed along every bend) */
-      const lm = ch === '#' || ch === '=' ? 0 : lakeMix(H, x, y);
-      if (ch === '=' || (wet && !lm)) c.setHex(0x2f6cc4); else if (ch === '#') c.setHex(0x6b4f33);
+      const lm = ch === '#' || ch === '=' || hedge ? 0 : lakeMix(H, x, y);
+      if (hedge){ c.setHex(HEDGE); c.multiplyScalar(0.82 + 0.3 * (Math.sin(x * 211) * Math.sin(y * 197) * 0.5 + 0.5)); }   // (leafy, a little uneven)
+      else if (ch === '=' || (wet && !lm)) c.setHex(0x2f6cc4); else if (ch === '#') c.setHex(0x6b4f33);
       /* ONE GRASS (Oct 8: "remove the checkerboard pattern"). The cells were mown in alternate shades, which ruled every hole
          into squares and fought the slopes for the eye; now the grass is one green, lighter up high and darker down low, so
          what shows is the shape of the ground. */
@@ -35869,6 +36031,7 @@ const GOLF_APP = (() => {
       ['railV_' + m, T => cladGeo(T, m, 2 * RT / CW, 1.76, 1.02, -1.2, 0.5, 23)],                       // half-cell rail pieces (scale CW/2)
       ['railH_' + m, T => cladGeo(T, m, 1.02, 1.76, 2 * RT / CW, -1.2, 0.5, 37)],
       ['fence_' + m, m === 'wood' ? (T => picketGeo(T)) : (T => cladGeo(T, m, 1, 0.75, 2 * FENCE_T / CW, -0.25, 0.25, 51))],   // a fence piece a cell long
+      ['planterWall_' + m, T => cladGeo(T, m, 1, 0.8, 2 * FENCE_T / CW, -0.25, 0.25, 77)],              // a planter's wall piece: solid, even in wood (Oct 11)
     ])),
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
@@ -36059,6 +36222,19 @@ const GOLF_APP = (() => {
           const [ax, ay] = at(C.L * q / np), [bx, by] = at(C.L * (q + 1) / np), x = (ax + bx) / 2, y = (ay + by) / 2, l = Math.hypot(bx - ax, by - ay);
           out.push({ kind: 'fence_' + matOf(H), u: x, v: y, scale: CW, sx: l * 1.12 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: 0xffffff });
         }
+      } else if (T.planter){
+        // a planter (Oct 11): its wall in pieces about a third of a cell long round its closed line, as a curved fence's;
+        // the hedge inside is the ground's drawing (groundGeo)
+        const B = planterOf(T.planter), cum = [0];
+        for (let q = 1; q <= B.M; q++){ const a = q - 1, c = q % B.M; cum.push(cum[q - 1] + Math.hypot(B.pts[2 * c] - B.pts[2 * a], B.pts[2 * c + 1] - B.pts[2 * a + 1])); }
+        const L = cum[B.M], np = Math.max(8, Math.round(L / (CW * 0.35))), at = s => {   // (short, for a star's lobes)
+          let q = 1; while (q < B.M && cum[q] < s) q++;
+          const a = q - 1, c = q % B.M, f = (s - cum[a]) / ((cum[q] - cum[a]) || 1);
+          return [B.pts[2 * a] + (B.pts[2 * c] - B.pts[2 * a]) * f, B.pts[2 * a + 1] + (B.pts[2 * c + 1] - B.pts[2 * a + 1]) * f]; };
+        for (let q = 0; q < np; q++){
+          const [ax, ay] = at(L * q / np), [bx, by] = at(L * (q + 1) / np), x = (ax + bx) / 2, y = (ay + by) / 2, l = Math.hypot(bx - ax, by - ay);
+          out.push({ kind: 'planterWall_' + matOf(H), u: x, v: y, scale: CW, sx: l * 1.15 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: 0xffffff });
+        }
       } else if (T.pipe){
         const [x0, y0, x1, y1, , pr] = T.pipe, lit = G && G.piped && t - (G.piped[j] ?? -9) < 0.3;
         for (const [x, y, c] of [[x0, y0, lit ? 0xfff2a0 : 0xffffff], [x1, y1, 0xbcd6ff]])   // the exit a little blue, so you can tell them apart
@@ -36138,6 +36314,7 @@ const GOLF_APP = (() => {
     plateau: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [-0.15, 0.25]], ramp: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.3, 8], [-0.2, 0.25]],
     rough: [[0, 0.04], [0.8, 8], [0, 999]], ring: [[-1, 9], [-1, 14], [0.3, 7], [0.2, 3], [-0.08, 0.12]],
     dish: [[-1, 9], [-1, 14], [0.4, 5], [0.01, 0.046]], trough: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.8, 6], [0.01, 0.046]] };
+  const LINE_HEIGHT = { crest: [-0.05, 0.08], incline: [0, 0.08] };   // (a curved ridge or gully, a curved ramp: Oct 11)
   const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1], [0, 3]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
     mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
@@ -36169,12 +36346,29 @@ const GOLF_APP = (() => {
         if (shK === 'green') nums.push(R3(Math.max(-0.045, Math.min(0.1, v[v.length - 1]))));
         out.push({ [shK]: nums }); continue;
       }
+      const lnK = spec === SPEC_LAND && f && LINE_KINDS.find(k => Array.isArray(f[k]));
+      if (lnK){                                                 // a curved ridge, gully or ramp (Oct 11): 3 to 24 leaves, its width and height
+        const v = f[lnK].map(Number), n = Math.min(24, lineN(v));
+        if (n < 3 || v.some(x => !isFinite(x))) continue;
+        const R3 = x => Math.round(x * 1000) / 1000, nums = [];
+        for (let q = 0; q < n; q++) nums.push(R3(Math.max(-1, Math.min(NX + 1, v[2 * q]))), R3(Math.max(-1, Math.min(NY + 1, v[2 * q + 1]))));
+        const w = v[2 * lineN(v)], a = v[2 * lineN(v) + 1], lim = LINE_HEIGHT[lnK];
+        nums.push(R3(Math.max(0.4, Math.min(3, w))), R3(Math.max(lim[0], Math.min(lim[1], a))));
+        out.push({ [lnK]: nums }); continue;
+      }
       if (spec === SPEC_TOY && f && Array.isArray(f.curve)){    // a curved fence (Oct 10): its leaves, 3 to 24
         const v = f.curve.map(Number), n = Math.min(24, v.length >> 1);
         if (n < 3 || v.some(x => !isFinite(x))) continue;
         const R3 = x => Math.round(x * 1000) / 1000, nums = [];
         for (let q = 0; q < n; q++) nums.push(R3(Math.max(0, Math.min(NX, v[2 * q]))), R3(Math.max(0, Math.min(NY, v[2 * q + 1]))));
         out.push({ curve: nums }); continue;
+      }
+      if (spec === SPEC_TOY && f && Array.isArray(f.planter)){  // a planter (Oct 11): its leaves, 3 to 32
+        const v = f.planter.map(Number), n = Math.min(32, v.length >> 1);
+        if (n < 3 || v.some(x => !isFinite(x))) continue;
+        const R3 = x => Math.round(x * 1000) / 1000, nums = [];
+        for (let q = 0; q < n; q++) nums.push(R3(Math.max(0, Math.min(NX, v[2 * q]))), R3(Math.max(0, Math.min(NY, v[2 * q + 1]))));
+        out.push({ planter: nums }); continue;
       }
       const key = f && typeof f === 'object' && Object.keys(spec).find(k => Array.isArray(f[k]));
       if (!key) continue;
@@ -36434,7 +36628,7 @@ const GOLF_APP = (() => {
      guard of ground counts too); on holes it was not fitted to, the guess and the rating go together at about 0.7. */
   const GUESS_W = [2.894, 1.575, 0.162, 0.311, 0.416, 0.448, 0.289, 0.604, 0.114, -0.696, 0.1, 0.284];
   const LEVEL_BAND = [[0, 2.6], [2.6, 3.1], [3.1, 3.7], [3.7, 4.5], [4.5, 6.5]];
-  const CURVE_GUESS = { snail: 2, hook: 0.6, sbend: 0.9 };   // (a snail with nothing riding inside it: rated 5.7 on average at level 5)
+  const CURVE_GUESS = { snail: 2, hook: 0.6, sbend: 0.9 }, PLANTER_GUESS = 0.25;   // (a snail with nothing riding inside it: rated 5.7 on average at level 5)
   function guessMean(src){
     const T = src.toys || [], P = T.filter(t => t.path), tail = (t, b) => t.path[t.path.length - b];
     const map = src.map.join(''), at = ch => { for (let j = 0; j < NY; j++){ const i = src.map[j].indexOf(ch); if (i >= 0) return [i + 0.5, j + 0.5]; } return [4, 6]; };
@@ -36445,12 +36639,13 @@ const GOLF_APP = (() => {
     for (const f of src.land || []) if (f.lake && water < 1){ const B = blobOf(f.lake, f.lake.length >> 1); let on = false;
       for (let q = 0.05; q < 0.95 && !on; q += 0.05) on = blobIn(B, tx + (cx - tx) * q, ty + (cy - ty) * q);
       water = Math.max(water, on ? 1 : 0.33); }
-    let amp = 0; for (const f of src.land || []){ const k = Object.keys(f)[0]; for (const i of HEIGHTS[k] || []) amp += Math.abs(f[k][i]); }
+    let amp = 0; for (const f of src.land || []){ const k = Object.keys(f)[0]; for (const i of HEIGHTS[k] || []) amp += Math.abs(f[k][i]); if (LINE_KINDS.includes(k)) amp += Math.abs(f[k][f[k].length - 1]); }   // (curved ridges and ramps count as straight ones: Oct 11)
     const x = [1, water, water * big, big, P.reduce((a, t) => a + 1 / Math.max(0.5, Math.abs(tail(t, 3))), 0), (map.match(/#/g) || []).length / 8,
       T.filter(t => t.mill).length, src.weave === 'cage' || src.weave2 === 'cage' ? 1 : 0, T.filter(t => t.arm || t.swing || t.gate).length,
       Math.hypot(cx - tx, cy - ty) / 10, amp * 10, GROUND_GUARDS.includes(src.guard) ? 1 : 0];
-    // (and the curved guards, as rated against holes like them without: Oct 10)
-    return x.reduce((s, v, i) => s + v * GUESS_W[i], 0) + (CURVE_GUESS[src.guard] || 0);
+    // (and the curved guards, as rated against holes like them without: Oct 10; and a quarter of a stroke a planter, Oct 11:
+    //  rated with and without theirs, 50 holes of every level took 0.13 more with, 11 at level 5 took 0.36 more)
+    return x.reduce((s, v, i) => s + v * GUESS_W[i], 0) + (CURVE_GUESS[src.guard] || 0) + PLANTER_GUESS * T.filter(t => t.planter).length;
   }
   function genSrc(idx, lv){
     lv = lv || levelAt(idx);
@@ -36557,8 +36752,12 @@ const GOLF_APP = (() => {
       const x = X(), y = Y();
       if (k === 'hill') land.push({ bump: [x, y, r2(u(1.2, 2.8)), r3(u(0.025, 0.07))] });
       else if (k === 'hollow') land.push({ bump: [x, y, r2(u(1, 2)), -r3(u(0.02, 0.04))] });
-      else if (k === 'ridge' || k === 'gully'){ const a = u(0, Math.PI), L = u(2.5, 5);
-        land.push({ ridge: [...ex(x, y, a, L, 1), r2(u(0.8, 1.6)), k === 'ridge' ? r3(u(0.03, 0.06)) : -r3(u(0.025, 0.04))] }); }
+      else if (k === 'ridge' || k === 'gully'){ const a = u(0, Math.PI), L = u(2.5, 5), e = ex(x, y, a, L, 1), w = r2(u(0.8, 1.6)), h = k === 'ridge' ? r3(u(0.03, 0.06)) : -r3(u(0.025, 0.04));
+        /* (Oct 11: "proceed on 5", curved ridges, gullies and ramps: two in three ridges and gullies follow a curve, bowed once
+           or snaking, a leaf about every one and a half cells) */
+        if (R() < 0.65){ const sn = R() < 0.4, bl = bentLeaves(e[0], e[1], e[2], e[3], 5 + Math.floor(R() * 3), (R() < 0.5 ? 1 : -1) * u(0.8, 1.8) * (sn ? 0.8 : 1), sn);
+          land.push({ crest: [...bl.map((v, q) => cl(v, -1, (q & 1 ? NY : NX) + 1)), w, h] }); }
+        else land.push({ ridge: [...e, w, h] }); }
       else if (k === 'terrace') land.push(R() < 0.6 ? { step: [0, -1, -r2(u(3, 10)), r2(u(0.3, 0.5)), r3(u(0.025, 0.045))] }
                                                    : { step: [R() < 0.5 ? 1 : -1, 0, r2(R() < 0.5 ? u(2, 6) : -u(2, 6)), r2(u(0.3, 0.5)), r3(u(0.025, 0.045))] });
       else if (k === 'wave') land.push({ wave: [r3(u(0.008, 0.02)), r2(u(1.8, 4)), Math.round(u(0, 180)), r2(u(0, 6))] });
@@ -36566,7 +36765,10 @@ const GOLF_APP = (() => {
         // (a TVF green since Oct 10: the box's outline rounded and waved, raised or sunk as the box was)
         const gv = blobLeaves(x0 + w / 2, y0 + h / 2, Math.min(w, h) / 2, 12 + Math.floor(R() * 5), R, { sx: Math.max(1, w / h), sy: Math.max(1, h / w), wob: 0.18 });
         land.push({ green: [...gv, k === 'plateau' ? r3(u(0.04, 0.08)) : -r3(u(0.03, 0.045))] }); }
-      else if (k === 'ramp') land.push({ ramp: [x, r2(Math.min(NY - 1, y + 1.5)), x, r2(Math.max(1, y - u(1.5, 3))), r2(u(1.4, 2.2)), r3(u(0.04, 0.07))] });
+      else if (k === 'ramp'){ const y0 = r2(Math.min(NY - 1, y + 1.5)), y1 = r2(Math.max(1, y - u(1.5, 3))), w = r2(u(1.4, 2.2)), h = r3(u(0.04, 0.07));
+        // (and two ramps in five bend, a kicker on a curve: Oct 11)
+        if (R() < 0.4) land.push({ incline: [...bentLeaves(x, y0, x, y1, 4 + Math.floor(R() * 2), (R() < 0.5 ? 1 : -1) * u(0.6, 1.3)).map((v, q) => cl(v, -1, (q & 1 ? NY : NX) + 1)), w, h] });
+        else land.push({ ramp: [x, y0, x, y1, w, h] }); }
       else if (k === 'ring') land.push({ ring: [x, y, r2(u(1.2, 2.6)), r2(u(0.6, 1.1)), r3(u(0.03, 0.06))] });
       else if (k === 'moat') land.push({ ring: [x, y, r2(u(1.2, 2.4)), r2(u(0.6, 1)), -r3(u(0.025, 0.04))] });
       else if (k === 'crater'){ const rad = u(1.4, 2.2); land.push({ ring: [x, y, r2(rad), r2(u(0.7, 1)), r3(u(0.04, 0.06))] }, { dish: [x, y, r2(rad * 0.75), r3(u(0.03, 0.045))] }); }
@@ -36582,6 +36784,7 @@ const GOLF_APP = (() => {
     if (K.amp !== 1) for (const f of land){ const k = Object.keys(f)[0], v = f[k].slice(), sp = SPEC_LAND[k] || [];
       for (const i of HEIGHTS[k] || []) v[i] = r3(sp[i] ? Math.max(sp[i][0], Math.min(sp[i][1], v[i] * K.amp)) : v[i] * K.amp);
       if (k === 'green') v[v.length - 1] = r3(Math.max(-0.045, Math.min(0.1, v[v.length - 1] * K.amp)));   // (a green's height, its last number)
+      if (LINE_KINDS.includes(k)) v[v.length - 1] = r3(Math.max(LINE_HEIGHT[k][0], Math.min(LINE_HEIGHT[k][1], v[v.length - 1] * K.amp)));   // (and a curved ridge's or ramp's: Oct 11)
       f[k] = v; }
     const toys = [], nT = K.toys[0] + Math.floor(R() * (K.toys[1] - K.toys[0] + 1)), narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (wall && ch === '.' && row.includes('#'))) narrows.push([i, j]); }));
@@ -36609,6 +36812,30 @@ const GOLF_APP = (() => {
     const hole = { name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) };
     if (R() < K.weave) weave(hole, R, K.riders, lv);        // (crossing tracks, Oct 10: see weave)
     if (K.extra && R() < K.extra) weave(hole, R, K.riders, lv);   // (and at the top, a second weave: the levels, Oct 10)
+    /* PLANTERS (Oct 11: "#6"): on some holes (one in five at level 1 to two in five at level 5, a second at 4 and 5), a
+       walled bed of a kidney, a star or a round, out in the open middle of the board: every point of its line on dry
+       ground, off the board's edge, clear of the tee and the cup by 2.7 cells (the guards' room), off water, away from a
+       bridge and a wall, and off every thing and track already on the hole (toyPoints). Laid after the weave, not before:
+       the weave's tracks kept off a planter laid first, curled up by the cup more often, and the cup, having things about
+       it already, was only ever kept by the ground, so ponds, snails and S-bends came a third as often at level 5. */
+    const plB = [], bridgeAt = [], wallAt = [];
+    map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=') bridgeAt.push([i + 0.5, j + 0.5]); if (ch === '#') wallAt.push([i + 0.5, j + 0.5]); }));
+    const onHole = hole.toys.flatMap(toyPoints);
+    for (let k = 0; k < (lv >= 4 ? 2 : 1); k++){
+      if (R() >= [0.35, 0.45, 0.5, 0.6, 0.65][lv - 1] * (k ? 0.5 : 1)) continue;   // (asked for more often than it fits: the tracks take room)
+      for (let tries = 0; tries < 30; tries++){
+        // (a star a little bigger, so its lobes are rounder than a wall piece is long)
+        const kind = pick(['kidney', 'kidney', 'star', 'round']), rr = kind === 'star' ? u(0.95, 1.15) : kind === 'kidney' ? u(0.7, 1) : u(0.6, 0.9);
+        const v = planterLeaves(u(1.6, NX - 1.6), u(4, NY - 4), rr, kind, u(0, 3.14), R), B = blobOf(v, v.length >> 1);
+        let ok = true;
+        for (let m = 0; m < B.M && ok; m++){ const x = B.pts[2 * m], y = B.pts[2 * m + 1];
+          // (and 1.4 cells off a wall: one landed in the gap of a wall across and all but shut it, and a level-2 hole took 7.6)
+          ok = onMap(x, y, 0.5) && dry(x, y) && clear(x, y, 2.7) && !inLake(x, y, 0.5) && bridgeAt.every(([a, b]) => Math.hypot(x - a, y - b) > 1.6)
+            && wallAt.every(([a, b]) => Math.hypot(x - a, y - b) > 1.4) && plB.every(P => !blobIn(P, x, y) && blobEdge(P, x, y, 1) > 0.8); }
+        if (ok) ok = !onHole.some(([x, y, r]) => blobIn(B, x, y) || blobEdge(B, x, y, r + 0.3) < r + 0.3);
+        if (ok){ hole.toys.push({ planter: v }); plB.push(B); break; }
+      }
+    }
     // (at the end, the winding stream's cells back to grass and the stream laid down as its lake, and a guard's pond or apron
     //  that fell back to cells read as shapes: Oct 11. Until then they are cells, which the weave and the guards keep off as
     //  they always did)
@@ -36766,7 +36993,7 @@ const GOLF_APP = (() => {
     const meta = P.meta || {}, ours = meta.source === 'minigolf';
     const curves = P.subpaths.slice(0, 6).map(sp => ({ xs: Array.from(sp.leafX), ys: Array.from(sp.leafY) }))
       .filter(c => c.xs.length >= 3 && c.xs.length === c.ys.length && c.xs.every(isFinite) && c.ys.every(isFinite));
-    return { curves, ours, kind: ours && ['path', 'lake', 'sand', 'green'].includes(meta.kind) ? meta.kind : null, height: Number(meta.height) };
+    return { curves, ours, kind: ours && ['path', 'lake', 'sand', 'green', 'planter'].includes(meta.kind) ? meta.kind : null, height: Number(meta.height) };
   }
   // a curve from elsewhere into a w × h box at the middle of the board, its proportions kept (one of ours stays where it was)
   function fitMiddle(c, w, h){
@@ -36786,7 +37013,7 @@ const GOLF_APP = (() => {
       return cleanList([{ path: [...lv, 0.36, r2(Math.max(4, Math.min(14, L * 0.7))), 0, 0] }], SPEC_TOY, 1)[0] || null;
     }).filter(Boolean);
   }
-  const SHAPE_FIT = { lake: [4, 6], sand: [3, 4], green: [4, 5] };   // (the box a curve from draw is fitted into, in cells)
+  const SHAPE_FIT = { lake: [4, 6], sand: [3, 4], green: [4, 5], planter: [3, 3] };   // (the box a curve from draw is fitted into, in cells; a planter's: Oct 11)
   function tvfToShapes(text, key){
     const T = tvfCurves(text), r2 = v => Math.round(v * 100) / 100, hgt = isFinite(T.height) ? T.height : 0.05;
     return T.curves.map(c0 => {
@@ -36796,19 +37023,20 @@ const GOLF_APP = (() => {
         const rs = TVF_CURVE.core.arcLengthResample(Array.from(X), Array.from(Y), 32); c = { xs: Array.from(rs.x), ys: Array.from(rs.y) }; }
       if (!T.ours) c = fitMiddle(c, ...SHAPE_FIT[key]);
       const lv = []; for (let q = 0; q < c.xs.length; q++) lv.push(r2(c.xs[q]), r2(c.ys[q]));
-      return cleanList([{ [key]: key === 'green' ? [...lv, hgt] : lv }], SPEC_LAND, 1)[0] || null;
+      return cleanList([{ [key]: key === 'green' ? [...lv, hgt] : lv }], key === 'planter' ? SPEC_TOY : SPEC_LAND, 1)[0] || null;   // (a planter is a thing, not ground)
     }).filter(Boolean);
   }
   const TVF_WORD = { path: ['path', 'paths', 'drag a leaf to bend it, the loop to move it'], lake: ['lake', 'lakes', 'drag a leaf to reshape it'],
-                     sand: ['bunker', 'bunkers', 'drag a leaf to reshape it'], green: ['green', 'greens', 'drag a leaf to reshape it; Higher and Lower lift it'] };
+                     sand: ['bunker', 'bunkers', 'drag a leaf to reshape it'], green: ['green', 'greens', 'drag a leaf to reshape it; Higher and Lower lift it'],
+                     planter: ['planter', 'planters', 'drag a leaf to reshape it'] };
   // the curves of a .tvf file onto the hole being edited, as kind (the editor started if it was not)
   function addTvfAs(text, kind){
     const got = kind === 'path' ? tvfToPaths(text) : tvfToShapes(text, kind);
     if (!got.length){ say('No closed curve in that .tvf file.', 2400); return 0; }
     if (!ED.on){ const L = framedHere(), g = L && GAMES.get(L.key); if (!editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null)) return 0; }
-    const list = kind === 'path' ? ED.src.toys : ED.src.land, room = Math.max(0, 40 - list.length), add = got.slice(0, room);
-    if (!add.length){ say(kind === 'path' ? 'That is as many things as a hole can hold — erase some first.' : 'That is as much ground as a hole can hold — delete some first.', 2000); return 0; }
-    snapEdit(); list.push(...add); ED.pick = { type: kind === 'path' ? 'toy' : 'land', i: list.length - 1 }; ED.tool = 'select';
+    const thing = kind === 'path' || kind === 'planter', list = thing ? ED.src.toys : ED.src.land, room = Math.max(0, 40 - list.length), add = got.slice(0, room);
+    if (!add.length){ say(thing ? 'That is as many things as a hole can hold — erase some first.' : 'That is as much ground as a hole can hold — delete some first.', 2000); return 0; }
+    snapEdit(); list.push(...add); ED.pick = { type: thing ? 'toy' : 'land', i: list.length - 1 }; ED.tool = 'select';
     editRefresh(true);
     const W = TVF_WORD[kind];
     say(add.length + ' ' + (add.length === 1 ? W[0] : W[1]) + ' from the .tvf file — ' + W[2] + '.', 2800);
@@ -36833,7 +37061,8 @@ const GOLF_APP = (() => {
     const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
     const next = () => { veil.remove(); const q = TVF_Q.shift(); if (q) openTvfBox(q[0], q[1]); };
     for (const [kind, label, title] of [['lake', '🌊 Lake', 'Water, the shape of the curve.'], ['sand', '🏖️ Bunker', 'Sand, the shape of the curve.'],
-                                        ['green', '⛳ Green', 'Raised ground, the shape of the curve.'], ['path', '➰ Path', 'A boulder riding round the curve.']]){
+                                        ['green', '⛳ Green', 'Raised ground, the shape of the curve.'], ['planter', '🪴 Planter', 'A walled bed the ball banks off, the shape of the curve.'],
+                                        ['path', '➰ Path', 'A boulder riding round the curve.']]){
       const b = document.createElement('button'); b.type = 'button'; b.className = 'golfTvfKind'; b.dataset.kind = kind; b.textContent = label; b.title = title; b.style.cssText = BTN;
       b.addEventListener('click', e => { e.stopPropagation(); next(); addTvfAs(text, kind); });
       row.appendChild(b);
@@ -37261,6 +37490,7 @@ const GOLF_APP = (() => {
     if (k === 'pipe') return Math.min(d0, Math.hypot(x - v[2], y - v[3])) - v[5];
     if (k === 'fence' || k === 'gate' || k === 'slide') return segDist(x, y, v[0], v[1], v[2], v[3]) - 0.18;
     if (k === 'curve') return curveNear(v, x, y).d - 0.18;    // (a curved fence: Oct 10)
+    if (k === 'planter'){ const B = planterOf(v); return blobIn(B, x, y) ? -0.1 : blobEdge(B, x, y) - 0.18; }   // (inside is on it: Oct 11)
     return Infinity;
   }
   // the innermost path whose loop (x, y) lies inside, clear of its track; -1 if none (Oct 10)
@@ -37287,6 +37517,7 @@ const GOLF_APP = (() => {
     if (k === 'ridge' || k === 'ramp' || k === 'trough' || k === 'pipe') return landDist(f, x, y) - v[4] / 2;
     if (k === 'step') return landDist(f, x, y) - v[3] / 2;
     if (SHAPE_KINDS.includes(k)) return landDist(f, x, y);    // (a lake, sand or a green: Oct 10)
+    if (LINE_KINDS.includes(k)) return landDist(f, x, y) - Math.max(0.3, lineOf(v).w / 2);   // (a curved ridge, gully or ramp: Oct 11)
     return Infinity;                                          // (a tilt, a wave or the rough cover the whole hole)
   }
   const cellOf = ch => { for (let j = 0; j < NY; j++){ const i = ED.src.map[j].indexOf(ch); if (i >= 0) return [i + 0.5, j + 0.5]; } return null; };
@@ -37295,10 +37526,11 @@ const GOLF_APP = (() => {
   function leafSel(){
     const P = ED.pick, S = ED.src; if (!P || (P.type !== 'toy' && P.type !== 'land')) return null;
     const list = P.type === 'toy' ? S.toys : S.land, o = list[P.i]; if (!o) return null;
-    const key = ['path', 'curve', ...SHAPE_KINDS].find(k => Array.isArray(o[k])); if (!key) return null;
-    const v = o[key], n = key === 'path' ? pathN(v) : key === 'curve' ? curveN(v) : shapeN(key, v);
-    const L = key === 'path' ? loopOf(v) : key === 'curve' ? null : blobOf(v, n);
-    return { list, i: P.i, key, v, n, line: L ? { pts: L.pts, M: L.M } : { pts: curveOf(v).pts, M: curveOf(v).m }, closed: key !== 'curve' };
+    const key = ['path', 'curve', 'planter', ...SHAPE_KINDS, ...LINE_KINDS].find(k => Array.isArray(o[k])); if (!key) return null;   // (a planter, a curved ridge or ramp: Oct 11)
+    const v = o[key], open = key === 'curve' || LINE_KINDS.includes(key), n = key === 'path' ? pathN(v) : key === 'curve' ? curveN(v) : LINE_KINDS.includes(key) ? lineN(v) : shapeN(key, v);
+    if (open){ const C = key === 'curve' ? curveOf(v) : lineOf(v); return { list, i: P.i, key, v, n, line: { pts: C.pts, M: C.m }, closed: false }; }
+    const L = key === 'path' ? loopOf(v) : blobOf(v, n);
+    return { list, i: P.i, key, v, n, line: { pts: L.pts, M: L.M }, closed: true };
   }
   // everything under (x, y), nearest first: the tee and the cup before the things, the things before the ground
   function pickAll(x, y){
@@ -37332,8 +37564,8 @@ const GOLF_APP = (() => {
     get(){ return ED.pick && ED.pick.type === 'land' ? ED.pick.i : null; },
     set(n){ ED.pick = n == null ? null : { type: 'land', i: n }; } });
   const RIDER_NAME = ['boulder', 'bumper', 'power bumper', 'sponge', 'spinner'];
-  const TOY_NAME = { kick: 'bumper', rock: 'boulder', mill: 'windmill', arm: 'turnstile', swing: 'door', path: 'path', pipe: 'pipe', fence: 'fence', curve: 'curved fence', gate: 'gate', slide: 'slide' };
-  const LAND_NAME = { dish: 'bowl', trough: 'half-pipe', bump: 'hill', ring: 'rim', plateau: 'plateau', ramp: 'ramp', ridge: 'ridge', step: 'terrace', bowl: 'skate bowl', pipe: 'skate pipe', lake: 'lake', sand: 'bunker', green: 'green' };
+  const TOY_NAME = { kick: 'bumper', rock: 'boulder', mill: 'windmill', arm: 'turnstile', swing: 'door', path: 'path', pipe: 'pipe', fence: 'fence', curve: 'curved fence', planter: 'planter', gate: 'gate', slide: 'slide' };
+  const LAND_NAME = { crest: 'curved ridge', incline: 'curved ramp', dish: 'bowl', trough: 'half-pipe', bump: 'hill', ring: 'rim', plateau: 'plateau', ramp: 'ramp', ridge: 'ridge', step: 'terrace', bowl: 'skate bowl', pipe: 'skate pipe', lake: 'lake', sand: 'bunker', green: 'green' };
   function pickName(p = ED.pick){
     if (!pickValid(p)) return '';
     if (p.type === 'T') return 'tee';
@@ -37341,7 +37573,7 @@ const GOLF_APP = (() => {
     if (p.type === 'dot'){ const h = (ED.src.lift && ED.src.lift[p.i]) || 0; return 'dot ' + (h ? (h > 0 ? 'up ' : 'down ') + Math.abs(h).toFixed(3) : 'level'); }
     if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'path' ? RIDER_NAME[T.path[T.path.length - 1] | 0] + ' on a path' : TOY_NAME[k] || k); }
     const f = ED.src.land[p.i], k = Object.keys(f)[0];
-    return k === 'bump' && f.bump[3] < 0 ? 'hollow' : k === 'ring' && f.ring[4] < 0 ? 'moat' : k === 'ridge' && f.ridge[5] < 0 ? 'gully' : k === 'green' && f.green[f.green.length - 1] < 0 ? 'sunken green' : LAND_NAME[k] || k;
+    return k === 'bump' && f.bump[3] < 0 ? 'hollow' : k === 'ring' && f.ring[4] < 0 ? 'moat' : k === 'ridge' && f.ridge[5] < 0 ? 'gully' : k === 'crest' && f.crest[f.crest.length - 1] < 0 ? 'curved gully' : k === 'green' && f.green[f.green.length - 1] < 0 ? 'sunken green' : LAND_NAME[k] || k;
   }
   // a tap with Select: the thing under the finger, or the next one under it if the tap is again where the last one was
   function pickAt(x, y){
@@ -37366,7 +37598,7 @@ const GOLF_APP = (() => {
   function shifted(obj, dx, dy, isToy){
     const o = clone(obj), k = Object.keys(o)[0], v = o[k], R2 = n => Math.round(n * 100) / 100;
     if (!isToy){ moveLand(o, dx, dy); return o; }
-    const pts = k === 'path' ? Array.from({ length: pathN(v) }, (_, q) => 2 * q) : k === 'curve' ? Array.from({ length: curveN(v) }, (_, q) => 2 * q) : TWO_ENDS[k] ? [0, 2] : [0];   // (a path, or a curved fence, moves all its leaves)
+    const pts = k === 'path' ? Array.from({ length: pathN(v) }, (_, q) => 2 * q) : k === 'curve' || k === 'planter' ? Array.from({ length: v.length >> 1 }, (_, q) => 2 * q) : TWO_ENDS[k] ? [0, 2] : [0];   // (a path, a curved fence or a planter moves all its leaves)
     for (const q of pts){ dx = Math.max(0.2 - v[q], Math.min(NX - 0.2 - v[q], dx)); dy = Math.max(0.2 - v[q + 1], Math.min(NY - 0.2 - v[q + 1], dy)); }
     for (const q of pts){ v[q] = R2(v[q] + dx); v[q + 1] = R2(v[q + 1] + dy); }
     return o;
@@ -37460,7 +37692,7 @@ const GOLF_APP = (() => {
       const LS = leafSel();
       if (LS){ let best = -1, bd = Math.min(0.7, Math.max(0.3, PICK_PX / cellPx()));
         for (let q = 0; q < LS.n; q++){ const d = Math.hypot(x - LS.v[2 * q], y - LS.v[2 * q + 1]); if (d < bd){ bd = d; best = q; } }
-        if (best >= 0){ ED.grab = { leaf: best, from: { x, y }, orig: LS.v.slice() }; ED.msg = 'bending the ' + ({ path: 'loop', curve: 'fence' }[LS.key] || LAND_NAME[LS.key]) + ': leaf ' + (best + 1) + ' of ' + LS.n; return false; } }
+        if (best >= 0){ ED.grab = { leaf: best, from: { x, y }, orig: LS.v.slice() }; ED.msg = 'bending the ' + ({ path: 'loop', curve: 'fence', planter: 'planter' }[LS.key] || pickName()) + ': leaf ' + (best + 1) + ' of ' + LS.n; return false; } }
       if (!p){
         ED.grab = { none: true }; ED.boxing = true; ED.drag = { from: { x, y }, to: { x, y } }; ED.pick = null; ED.dots = [];
         ED.msg = 'drag a box over the dots'; return false;
@@ -37482,7 +37714,7 @@ const GOLF_APP = (() => {
     if (G.dot){ G.sy += ED.panDy || 0; return moveDots(G); }   // up the screen is up
     if (G.leaf != null){                                      // a path's leaf, where the finger takes it (a new list, so the loop is drawn again)
       const LS = leafSel(); if (!LS) return false;
-      const v = G.orig.slice(), R2 = n => Math.round(n * 100) / 100, cur = LS.v, m = SHAPE_KINDS.includes(LS.key) ? -0.3 : 0.3;   // (a shape may reach a little past the rail)
+      const v = G.orig.slice(), R2 = n => Math.round(n * 100) / 100, cur = LS.v, m = SHAPE_KINDS.includes(LS.key) || LINE_KINDS.includes(LS.key) ? -0.3 : 0.3;   // (a shape, a curved ridge or ramp may reach a little past the rail)
       v[2 * G.leaf] = R2(Math.max(m, Math.min(NX - m, G.orig[2 * G.leaf] + x - G.from.x)));
       v[2 * G.leaf + 1] = R2(Math.max(m, Math.min(NY - m, G.orig[2 * G.leaf + 1] + y - G.from.y)));
       if (v[2 * G.leaf] === cur[2 * G.leaf] && v[2 * G.leaf + 1] === cur[2 * G.leaf + 1]) return false;
@@ -37505,6 +37737,71 @@ const GOLF_APP = (() => {
   /* WHAT CAN BE DONE TO WHAT IS SELECTED, by what it is (the bar beside it showed these until Oct 9). */
   const KICK_GLYPH = ['🔴', '🟠', '🟢', '🔵'], KICK_R = [0.32, 0.28, 0.4, 0.32];
   const PERIOD_AT = { gate: 4, arm: 3, swing: 5 };    // seconds there and back, round or up and down
+  /* SMOOTHER AND ROUGHER (Oct 11: "proceed on 2", from "what else can we do with tvf?": "Smoother and Rougher buttons for
+     shapes. Smoother takes the fine wiggles out of a lake's or bunker's outline and keeps its overall form; Rougher adds some
+     back. It works because a TVF curve's leaves describe its outline as broad waves plus finer ones."). A closed curve's
+     leaves sit evenly round it, so their discrete Fourier transform (x + iy, leaf by leaf) is the outline as waves: the 0th
+     is where it is, the 1st and the −1st together the ellipse it is drawn on, and each further one a wave going round that
+     many times, its coves and lobes. Both keep the place and the ellipse and work on the rest, and the leaves stay as many.
+     - Smoother shrinks the ±2nd waves to 0.75, the ±3rd to 0.56, each finer one by 0.75 more, so the finest go first and a
+       few presses leave the ellipse. (At 0.6 one press took out most of a bunker's wiggle.)
+     - Rougher makes every wave half as big again; and where one is fainter than a floor (0.035 of the ellipse's size at the
+       2nd, less for finer ones, to the 6th) it lays one there, with the phase it had or one from the leaves, so a round
+       lake laid by a tap gets coves too, and the same shape always comes out the same.
+     - Neither may cross the line over itself (nor bring a planter or a path to the rail): a step that would is halved, up
+       to three times, and if it still would, nothing changes and Rougher says it can go no rougher. */
+  const ROUGH = { smooth: 0.75, rough: 1.5, floor: 0.035, floorTo: 6 };
+  function leafWaves(xs, ys){                                  // the waves, by index j; j > n/2 is the wave n − j going backward
+    const n = xs.length, re = new Float64Array(n), im = new Float64Array(n);
+    for (let j = 0; j < n; j++){ let sr = 0, si = 0;
+      for (let k = 0; k < n; k++){ const a = -2 * Math.PI * j * k / n, c = Math.cos(a), sn = Math.sin(a); sr += xs[k] * c - ys[k] * sn; si += xs[k] * sn + ys[k] * c; }
+      re[j] = sr / n; im[j] = si / n; }
+    return { re, im, n, order: j => Math.min(j, n - j) };
+  }
+  function wavesLeaves(W){
+    const { re, im, n } = W, xs = new Float64Array(n), ys = new Float64Array(n);
+    for (let k = 0; k < n; k++){ let sx = 0, sy = 0;
+      for (let j = 0; j < n; j++){ const a = 2 * Math.PI * j * k / n, c = Math.cos(a), sn = Math.sin(a); sx += re[j] * c - im[j] * sn; sy += re[j] * sn + im[j] * c; }
+      xs[k] = sx; ys[k] = sy; }
+    return [xs, ys];
+  }
+  // how wiggly an outline is: the size of its waves beyond the ellipse, against the ellipse's (for the tests and messages)
+  function wiggleOf(v, n){
+    const W = leafWaves(Float64Array.from({ length: n }, (_, q) => v[2 * q]), Float64Array.from({ length: n }, (_, q) => v[2 * q + 1]));
+    let e = 0, f = 0; for (let j = 1; j < n; j++){ const a = Math.hypot(W.re[j], W.im[j]); if (W.order(j) === 1) e += a; else f += a; }
+    return f / (e || 1e-9);
+  }
+  function crossesItself(xs, ys){                              // does the curve through these leaves cross its own line?
+    const n = xs.length, M = Math.max(48, n * 8), X = TVF_CURVE.core.reconstruct(xs, M), Y = TVF_CURVE.core.reconstruct(ys, M);
+    const side = (ax, ay, bx, by, cx, cy) => (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    for (let a = 0; a < M; a++){ const a2 = (a + 1) % M;
+      for (let b = a + 2; b < M; b++){ const b2 = (b + 1) % M; if (b2 === a) continue;
+        const d1 = side(X[a], Y[a], X[a2], Y[a2], X[b], Y[b]), d2 = side(X[a], Y[a], X[a2], Y[a2], X[b2], Y[b2]);
+        if ((d1 > 0) === (d2 > 0)) continue;
+        const d3 = side(X[b], Y[b], X[b2], Y[b2], X[a], Y[a]), d4 = side(X[b], Y[b], X[b2], Y[b2], X[a2], Y[a2]);
+        if ((d3 > 0) !== (d4 > 0)) return true; } }
+    return false;
+  }
+  // the leaves of a closed curve (n of them, then any numbers after them kept) made smoother or rougher; null if it cannot be
+  function reshaped(key, v, n, rougher){
+    const xs = Float64Array.from({ length: n }, (_, q) => v[2 * q]), ys = Float64Array.from({ length: n }, (_, q) => v[2 * q + 1]);
+    const W = leafWaves(xs, ys), size = Math.hypot(W.re[1], W.im[1]) + Math.hypot(W.re[n - 1], W.im[n - 1]);
+    let hs = 2166136261; for (let q = 0; q < 2 * n; q++) hs = Math.imul(hs ^ Math.round(v[q] * 100), 16777619);
+    const R = seeded(hs >>> 0), T = { re: Float64Array.from(W.re), im: Float64Array.from(W.im), n };
+    for (let j = 0; j < n; j++){ const h = W.order(j), ph = R() * 2 * Math.PI; if (h < 2) continue;
+      let k = rougher ? ROUGH.rough : Math.pow(ROUGH.smooth, h - 1);
+      T.re[j] *= k; T.im[j] *= k;
+      const fl = size * ROUGH.floor / (h - 1), a = Math.hypot(T.re[j], T.im[j]);
+      if (rougher && h <= ROUGH.floorTo && a < fl){ const p = a > 1e-6 ? Math.atan2(T.im[j], T.re[j]) : ph; T.re[j] = fl * Math.cos(p); T.im[j] = fl * Math.sin(p); } }
+    const [tx, ty] = wavesLeaves(T), lo = SHAPE_KINDS.includes(key) ? -0.5 : 0, R2 = x => Math.round(x * 100) / 100;
+    for (let t = 1; t >= 0.12; t /= 2){                        // the whole step, or half of it, a quarter, an eighth
+      const nx = xs.map((x, q) => R2(Math.max(lo, Math.min(NX - lo, x + (tx[q] - x) * t)))), ny = ys.map((y, q) => R2(Math.max(lo, Math.min(NY - lo, y + (ty[q] - y) * t))));
+      if (crossesItself(nx, ny)) continue;
+      const out = v.slice(); for (let q = 0; q < n; q++){ out[2 * q] = nx[q]; out[2 * q + 1] = ny[q]; }
+      return out;
+    }
+    return null;
+  }
   function selActs(){
     const P = ED.pick;
     if (!ED.on || !pickValid(P)) return [];
@@ -37636,16 +37933,16 @@ const GOLF_APP = (() => {
             }
             ED.leafTap = { i: ED.pick.i, leaf, t: now }; ED.msg = 'leaf ' + (leaf + 1) + ' of ' + n + ' (tap it again to take it away)'; return false;
           }
-          const cap = sKey === 'path' ? 64 : sKey === 'curve' ? 24 : 32;   // (a shape may have 32 leaves: Oct 11)
+          const cap = sKey === 'path' ? 64 : sKey === 'curve' || LINE_KINDS.includes(sKey) ? 24 : 32;   // (a shape may have 32 leaves: Oct 11)
           if (n < cap){
             let at = -1, best = null;
             if (LS.closed){ const P = LS.line; let bd = tol;
               for (let m = 0; m < P.M; m++){ const d = Math.hypot(x - P.pts[2 * m], y - P.pts[2 * m + 1]); if (d < bd){ bd = d; best = m; } }
               // (leaf k sits at the loop's point (k + ½)·M/N, so the leaves this point falls between are known from its index)
               if (best != null) at = ((Math.floor(best * n / P.M - 0.5) % n) + n) % n + 1, best = [P.pts[2 * best], P.pts[2 * best + 1]];
-            } else { const C = curveOf(v); let bd = tol, bq = -1;
-              for (let q = 0; q < C.m; q++){ const d = Math.hypot(x - C.pts[2 * q], y - C.pts[2 * q + 1]); if (d < bd){ bd = d; bq = q; } }
-              if (bq >= 0){ at = Math.min(n - 1, Math.floor(bq / CURVE_S) + 1); best = [C.pts[2 * bq], C.pts[2 * bq + 1]]; } }
+            } else { const P = LS.line; let bd = tol, bq = -1;   // (an open line, CURVE_S points a leaf from the first leaf: a curved fence, ridge or ramp)
+              for (let q = 0; q < P.M; q++){ const d = Math.hypot(x - P.pts[2 * q], y - P.pts[2 * q + 1]); if (d < bd){ bd = d; bq = q; } }
+              if (bq >= 0){ at = Math.min(n - 1, Math.floor(bq / CURVE_S) + 1); best = [P.pts[2 * bq], P.pts[2 * bq + 1]]; } }
             if (at >= 0){
               const w = v.slice(); w.splice(2 * at, 0, R2(best[0]), R2(best[1])); LS.list[ED.pick.i] = { [sKey]: w };
               ED.leafTap = { i: ED.pick.i, leaf: at, t: 0 };
@@ -37661,7 +37958,7 @@ const GOLF_APP = (() => {
           ED.msg = 'now ' + pickName() + ' (tap inside again for the next)'; return true;
         }
         // (a lake, sand or a green is taken by one tap, as a thing is: Oct 10; other ground by a second tap on the same spot)
-        const p = here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O') || here.find(c => c.type === 'land' && S.land[c.i] && SHAPE_KINDS.some(k => S.land[c.i][k]))
+        const p = here.find(c => c.type === 'toy' || c.type === 'T' || c.type === 'O') || here.find(c => c.type === 'land' && S.land[c.i] && [...SHAPE_KINDS, ...LINE_KINDS].some(k => S.land[c.i][k]))
           || (again && here.find(c => c.type === 'land'));
         ED.pick = p ? { type: p.type, i: p.i } : null; ED.dots = []; ED.box = null;
         ED.msg = ED.pick ? 'selected: ' + pickName() : 'drag on the grass to box the dots'; return false;
@@ -37690,6 +37987,26 @@ const GOLF_APP = (() => {
       ED.pick = { type: 'toy', i: S.toys.length - 1 };
       return true;
     }
+    /* A PLANTER, DRAWN IN PLACE (Oct 11: "#6"): a drag draws its outline, closed back to its start and laid down as leaves
+       evenly along it, as a lake's; a tap lays a kidney over the spot. Its leaves are then shown and dragged as a lake's are. */
+    if (t === 'planter' && !drag){
+      if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
+      const cx = Math.max(1.4, Math.min(NX - 1.4, x)), cy = Math.max(1.2, Math.min(NY - 1.2, y));
+      S.toys.push({ planter: planterLeaves(cx, cy, 0.8, 'kidney', 0, () => 0.5) });
+      ED.pick = { type: 'toy', i: S.toys.length - 1 };
+      return true;
+    }
+    /* A CURVED RIDGE, GULLY OR RAMP, DRAWN IN PLACE (Oct 11: "proceed on 5"): a drag draws its line, laid down as leaves
+       evenly along it (a ramp rises toward where the drag ended); a tap lays an arc of five over the spot. Its leaves are
+       then shown and dragged as a curved fence's are. */
+    if (LINE_TOOLS[t] && !drag){
+      if (S.land.length >= 40){ say('That is as much ground as a hole can hold — delete some first.', 2000); return false; }
+      const T = LINE_TOOLS[t], cx = Math.max(1.6, Math.min(NX - 1.6, x)), cy = Math.max(1.6, Math.min(NY - 1.2, y)), lv = [];
+      for (let q = 0; q < 5; q++){ const a = Math.PI + q / 4 * Math.PI; lv.push(R2(cx + 1.4 * Math.cos(a)), R2(cy + 1.1 * Math.sin(a))); }
+      S.land.push({ [T.key]: [...lv, T.w, T.a] });
+      ED.pick = { type: 'land', i: S.land.length - 1 };
+      return true;
+    }
     /* LAKES, BUNKERS AND GREENS, DRAWN IN PLACE (Oct 10: "yes, lakes, sand and greens could use tvf."): a drag draws the
        shape's outline, closed back to its start and laid down as leaves evenly along it; a tap lays a round one. It is then
        selected, its leaves shown to be dragged; a tap on its line adds a leaf, two quick taps on a leaf take it away. */
@@ -37701,7 +38018,7 @@ const GOLF_APP = (() => {
       ED.pick = { type: 'land', i: S.land.length - 1 };
       return true;
     }
-    if (t === 'path' || t === 'curve' || SHAPE_TOOLS[t]){
+    if (t === 'path' || t === 'curve' || t === 'planter' || SHAPE_TOOLS[t] || LINE_TOOLS[t]){
       if (drag){
         if (!ED.drag){ const p0 = ED.pressAt ? { ...ED.pressAt } : { x, y }; ED.drag = { from: p0, pts: [p0] }; }
         const L = ED.drag.pts[ED.drag.pts.length - 1];
@@ -37730,7 +38047,7 @@ const GOLF_APP = (() => {
       let best = -1, bd = 1;
       S.toys.forEach((T, n) => { const a = Object.values(T)[0];
         let d = Math.min(Math.hypot(a[0] - x, a[1] - y), T.pipe ? Math.hypot(a[2] - x, a[3] - y) : 9);
-        if (T.path || T.curve) d = Math.max(0, toyReach(T, x, y));
+        if (T.path || T.curve || T.planter) d = Math.max(0, toyReach(T, x, y));
         if (T.fence || T.gate){ const ux = a[2] - a[0], uy = a[3] - a[1], q = Math.max(0, Math.min(1, ((x - a[0]) * ux + (y - a[1]) * uy) / (ux * ux + uy * uy || 1))); d = Math.hypot(a[0] + ux * q - x, a[1] + uy * q - y); }
         if (d < bd){ bd = d; best = n; } });
       if (best >= 0){ S.toys.splice(best, 1); ED.pick = null; return true; }
@@ -37776,6 +38093,8 @@ const GOLF_APP = (() => {
     if (f.step) return Math.abs(x * f.step[0] + y * f.step[1] - f.step[2]);
     const sk = SHAPE_KINDS.find(k => Array.isArray(f[k]));   // a lake, sand or a green (Oct 10): on it inside, else how far from its line
     if (sk){ const B = blobOf(f[sk], shapeN(sk, f[sk])); return blobIn(B, x, y) ? 0 : blobEdge(B, x, y); }
+    const lk = LINE_KINDS.find(k => Array.isArray(f[k]));    // a curved ridge, gully or ramp (Oct 11): how far from its line
+    if (lk){ const N = lineNear(lineOf(f[lk]), x, y, 99); return N ? N.d : Infinity; }
     return Infinity;                                        // a tilt or a wave covers the whole hole: Level takes those away
   }
   function nearestLand(x, y, max){
@@ -37788,6 +38107,8 @@ const GOLF_APP = (() => {
     for (const k of ['bump', 'bowl', 'dish', 'ring']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); }
     for (const k of ['ridge', 'pipe', 'ramp', 'plateau', 'trough']) if (f[k]){ f[k][0] = R2(f[k][0] + dx); f[k][1] = R2(f[k][1] + dy); f[k][2] = R2(f[k][2] + dx); f[k][3] = R2(f[k][3] + dy); }
     if (f.step) f.step[2] = R2(f.step[2] + dx * f.step[0] + dy * f.step[1]);
+    for (const k of LINE_KINDS) if (f[k]){ const v = f[k].slice(), n = lineN(v);   // (a curved ridge or ramp too: Oct 11)
+      for (let q = 0; q < n; q++){ v[2 * q] = R2(v[2 * q] + dx); v[2 * q + 1] = R2(v[2 * q + 1] + dy); } f[k] = v; }
     for (const k of SHAPE_KINDS) if (f[k]){ const v = f[k].slice(), n = shapeN(k, v);   // (a shape moves all its leaves, a new list: Oct 10)
       for (let q = 0; q < n; q++){ v[2 * q] = R2(v[2 * q] + dx); v[2 * q + 1] = R2(v[2 * q + 1] + dy); } f[k] = v; }
   }
@@ -37803,7 +38124,7 @@ const GOLF_APP = (() => {
     if (!t || t === 'select' || t === 'box' || t === 'erase' || (t.length === 1 && '#='.includes(t))) return;
     const n = pickName();
     ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null;
-    const keep = (t === 'path' || t === 'curve' || SHAPE_TOOLS[t]) && ED.pick;   // (a path, a curved fence or a shape stays selected, its leaves shown to be dragged: Oct 10)
+    const keep = (t === 'path' || t === 'curve' || t === 'planter' || SHAPE_TOOLS[t] || LINE_TOOLS[t]) && ED.pick;   // (a path, a curved fence or a shape stays selected, its leaves shown to be dragged: Oct 10)
     ED.pick = null; ED.dots = []; ED.box = null;             // (and let go of it: Oct 9, "after laying an object, deselect that object")
     ED.msg = (n ? 'placed: ' + n + ' · ' : '') + 'take it up again below to lay another';
     if (keep){ ED.pick = keep; ED.msg = 'drag a leaf to bend it, or the line to move it; tap the line to add a leaf, a leaf twice to take it away'; }
@@ -37822,6 +38143,35 @@ const GOLF_APP = (() => {
       for (let q = 0; q < n; q++) lv.push(R2(Math.max(-0.3, Math.min(NX + 0.3, rs.x[q]))), R2(Math.max(-0.3, Math.min(NY + 0.3, rs.y[q]))));
       const key = SHAPE_TOOLS[t].key;
       S.land.push({ [key]: key === 'green' ? [...lv, 0.05] : lv });
+      ED.pick = { type: 'land', i: S.land.length - 1 };
+      placedOnce(t);
+      return;
+    }
+    if (t === 'planter'){                                     // the drawn outline, closed and laid down as leaves (Oct 11)
+      if (S.toys.length >= 40) return;
+      const pts = (D.pts || [a, b]).concat([D.to]);
+      let L = 0; for (let q = 1; q <= pts.length; q++){ const p0 = pts[q - 1], p1 = pts[q % pts.length]; L += Math.hypot(p1.x - p0.x, p1.y - p0.y); }
+      if (L < 2){ ED.msg = 'draw a bigger shape'; return; }
+      const n = Math.max(8, Math.min(24, Math.round(L / 0.6))), lv = [], rs = TVF_CURVE.core.arcLengthResample(pts.map(p => p.x), pts.map(p => p.y), n);
+      for (let q = 0; q < n; q++) lv.push(R2(Math.max(0.2, Math.min(NX - 0.2, rs.x[q]))), R2(Math.max(0.2, Math.min(NY - 0.2, rs.y[q]))));
+      S.toys.push({ planter: lv });
+      ED.pick = { type: 'toy', i: S.toys.length - 1 };
+      placedOnce(t);
+      return;
+    }
+    if (LINE_TOOLS[t]){                                       // a curved ridge's, gully's or ramp's line, laid down as leaves (Oct 11)
+      if (S.land.length >= 40) return;
+      const pts = (D.pts || [a]).concat([D.to]), cum = [0];
+      for (let q = 1; q < pts.length; q++) cum.push(cum[q - 1] + Math.hypot(pts[q].x - pts[q - 1].x, pts[q].y - pts[q - 1].y));
+      const L = cum[cum.length - 1];
+      if (L < 1.2){ ED.msg = 'draw a longer line'; return; }
+      const n = Math.max(3, Math.min(16, Math.round(L / 1) + 1)), lv = [], T = LINE_TOOLS[t];
+      for (let q = 0, w = 0; q < n; q++){                     // (open: the first and last leaves at its ends)
+        const s0 = L * q / (n - 1); while (w < cum.length - 2 && cum[w + 1] < s0) w++;
+        const f = (s0 - cum[w]) / ((cum[w + 1] - cum[w]) || 1), px = pts[w].x + (pts[w + 1].x - pts[w].x) * f, py = pts[w].y + (pts[w + 1].y - pts[w].y) * f;
+        lv.push(R2(Math.max(-0.5, Math.min(NX + 0.5, px))), R2(Math.max(-0.5, Math.min(NY + 0.5, py))));
+      }
+      S.land.push({ [T.key]: [...lv, T.w, T.a] });
       ED.pick = { type: 'land', i: S.land.length - 1 };
       placedOnce(t);
       return;
@@ -37906,18 +38256,30 @@ const GOLF_APP = (() => {
     if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
     if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
+    if (a === 'smoother' || a === 'rougher'){                // a closed curve's outline (Oct 11: see SMOOTHER AND ROUGHER)
+      const LS = leafSel();
+      if (!LS || !LS.closed){ ED.msg = 'select a lake, bunker, green, planter or path first'; return; }
+      const nv = reshaped(LS.key, LS.v, LS.n, a === 'rougher'), what = { path: 'path', planter: 'planter' }[LS.key] || pickName();
+      if (!nv){ ED.msg = 'the ' + what + ' can go no ' + (a === 'rougher' ? 'rougher' : 'smoother') + ' without crossing itself'; return; }
+      if (nv.every((x, q) => Math.abs(x - LS.v[q]) < 0.005)){ ED.msg = 'the ' + what + ' is as ' + (a === 'rougher' ? 'rough' : 'smooth') + ' as it gets'; return; }
+      snapEdit();
+      LS.list[LS.i] = { ...LS.list[LS.i], [LS.key]: nv };     // (a new list, so its line is drawn again)
+      ED.msg = 'the ' + what + ' ' + (a === 'rougher' ? 'rougher' : 'smoother');
+      editRefresh(true); return;
+    }
     if (a === 'higher' || a === 'lower'){
       if (ED.pick && ED.pick.type === 'dot'){ selAct(a); return; }   // (the selected dots, Oct 9)
       const f = ED.sel != null && S.land[ED.sel];
       if (!f){ ED.msg = 'select some ground first'; return; }
       const k = Object.keys(f)[0];
       if (k === 'lake' || k === 'sand'){ ED.msg = 'a ' + (k === 'lake' ? 'lake' : 'bunker') + ' has no height'; return; }
-      if (HEIGHT_AT[k] == null && k !== 'green'){ ED.msg = 'that ground has no height to change'; return; }
+      const last = k === 'green' || LINE_KINDS.includes(k);    // (a green's height is its last number, Oct 10; a curved ridge's or ramp's too, Oct 11)
+      if (HEIGHT_AT[k] == null && !last){ ED.msg = 'that ground has no height to change'; return; }
       snapEdit();
-      const i = k === 'green' ? f[k].length - 1 : HEIGHT_AT[k], lim = k === 'green' ? [-0.045, 0.1] : SPEC_LAND[k][i];   // (a green's height is its last number: Oct 10)
-      const step = (a === 'higher' ? 1 : -1) * (SUNK[k] ? -0.01 : 0.02);
+      const i = last ? f[k].length - 1 : HEIGHT_AT[k], lim = k === 'green' ? [-0.045, 0.1] : LINE_KINDS.includes(k) ? LINE_HEIGHT[k] : SPEC_LAND[k][i];
+      const step = (a === 'higher' ? 1 : -1) * (SUNK[k] ? -0.01 : LINE_KINDS.includes(k) ? 0.01 : 0.02);
       f[k][i] = Math.round(Math.max(lim[0], Math.min(lim[1], f[k][i] + step)) * 1000) / 1000;
-      ED.msg = SUNK[k] ? (k === 'dish' ? 'bowl' : 'half-pipe') + ' ' + f[k][i].toFixed(2) + ' deep' : k + ' ' + (f[k][i] >= 0 ? 'up ' : 'down ') + Math.abs(f[k][i]).toFixed(2);
+      ED.msg = SUNK[k] ? (k === 'dish' ? 'bowl' : 'half-pipe') + ' ' + f[k][i].toFixed(2) + ' deep' : (LINE_KINDS.includes(k) ? pickName() : k) + ' ' + (f[k][i] >= 0 ? 'up ' : 'down ') + Math.abs(f[k][i]).toFixed(2);
       editRefresh(true); return;
     }
     if (a === 'del'){
@@ -37976,11 +38338,14 @@ const GOLF_APP = (() => {
        bigger or smaller, and the ground's slopes a sixth steeper or gentler; the rating is then out of date. */
     if (a === 'harder' || a === 'easier'){
       const up = a === 'harder', f = up ? 1.18 : 1 / 1.18, movers = S.toys.filter(T => T.path || T.gate || T.arm || T.swing).length;
-      const shaped = S.land.filter(x => HEIGHTS[Object.keys(x)[0]] || x.green).length;
+      const shaped = S.land.filter(x => HEIGHTS[Object.keys(x)[0]] || x.green || LINE_KINDS.some(k => x[k])).length;
       if (!movers && !shaped){ ED.msg = 'nothing to make ' + (up ? 'harder' : 'easier') + ': no movers or ground'; return; }
       snapEdit();
       tuneMovers(S, { speed: 1 / f, size: up ? 1.06 : 1 / 1.06 });
-      S.land = S.land.map(x => { const k = Object.keys(x)[0], v = x[k].slice(); for (const i of (k === 'green' ? [v.length - 1] : HEIGHTS[k] || [])) v[i] = Math.round(v[i] * f * 1000) / 1000; return { [k]: v }; });
+      S.land = S.land.map(x => { const k = Object.keys(x)[0], v = x[k].slice(), ln = LINE_KINDS.includes(k);
+        for (const i of (k === 'green' || ln ? [v.length - 1] : HEIGHTS[k] || [])) v[i] = Math.round(v[i] * f * 1000) / 1000;
+        if (ln) v[v.length - 1] = Math.max(LINE_HEIGHT[k][0], Math.min(LINE_HEIGHT[k][1], v[v.length - 1]));   // (a curved ridge's or ramp's height, in its range: Oct 11)
+        return { [k]: v }; });
       ED.rating = null;
       ED.msg = (up ? 'harder' : 'easier') + ': ' + (movers ? movers + ' mover' + (movers > 1 ? 's ' : ' ') + (up ? 'faster' : 'slower') : '') + (movers && shaped ? ', ' : '') + (shaped ? 'ground ' + (up ? 'steeper' : 'gentler') : '');
       editRefresh(true); return;
@@ -38040,6 +38405,9 @@ const GOLF_APP = (() => {
         else if (k === 'path'){ const n = pathN(v), P = loopOf(v);   // its loop, and its leaves larger, to be dragged (Oct 10)
           for (let q = 0; q < P.M; q += 3) dotAt(P.pts[2 * q], P.pts[2 * q + 1], G, 0.009);
           for (let q = 0; q < n; q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
+        else if (k === 'planter'){ const B = planterOf(v);             // its line, and its leaves larger, to be dragged (Oct 11)
+          for (let q = 0; q < B.M; q += 2) dotAt(B.pts[2 * q], B.pts[2 * q + 1], G, 0.009);
+          for (let q = 0; q < v.length >> 1; q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
         else if (k === 'curve'){ const C = curveOf(v);                 // its line, and its leaves larger, to be dragged (Oct 10)
           for (let q = 0; q < C.m; q += 3) dotAt(C.pts[2 * q], C.pts[2 * q + 1], G, 0.009);
           for (let q = 0; q < curveN(v); q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
@@ -38050,7 +38418,10 @@ const GOLF_APP = (() => {
     // the piece of ground selected, outlined in gold; a box or line being dragged, in white
     const f = ED.sel != null && ED.src.land[ED.sel];
     if (f){ const k = Object.keys(f)[0], v = f[k];
-      if (SHAPE_KINDS.includes(k)){ const n = shapeN(k, v), B = blobOf(v, n);   // a lake's, sand's or green's line, and its leaves to drag (Oct 10)
+      if (LINE_KINDS.includes(k)){ const C = lineOf(v);         // a curved ridge's, gully's or ramp's line, and its leaves to drag (Oct 11)
+        for (let q = 0; q < C.m; q += 3) dotAt(C.pts[2 * q], C.pts[2 * q + 1], G, 0.009);
+        for (let q = 0; q < C.n; q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
+      else if (SHAPE_KINDS.includes(k)){ const n = shapeN(k, v), B = blobOf(v, n);   // a lake's, sand's or green's line, and its leaves to drag (Oct 10)
         for (let q = 0; q < B.M; q += 2) dotAt(B.pts[2 * q], B.pts[2 * q + 1], G, 0.009);
         for (let q = 0; q < n; q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
       else if (k === 'bump' || k === 'bowl' || k === 'dish' || k === 'ring') ringAt(v[0], v[1], Math.max(0.4, k === 'bump' ? v[2] * 0.7 : v[2]), G);
@@ -38058,7 +38429,7 @@ const GOLF_APP = (() => {
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
     if (boxOpen()) boxAt(ED.box.x0, ED.box.y0, ED.box.x1, ED.box.y1, G);   // the selection box, while it is open (Oct 9)
-    if (ED.drag && ED.drag.pts && (ED.tool === 'path' || ED.tool === 'curve' || SHAPE_TOOLS[ED.tool])) for (const p of ED.drag.pts) dotAt(p.x, p.y, 0xffffff, 0.012);   // the loop (a curved fence, a shape) as drawn so far
+    if (ED.drag && ED.drag.pts && (ED.tool === 'path' || ED.tool === 'curve' || ED.tool === 'planter' || SHAPE_TOOLS[ED.tool] || LINE_TOOLS[ED.tool])) for (const p of ED.drag.pts) dotAt(p.x, p.y, 0xffffff, 0.012);   // the loop (a curved fence, a shape) as drawn so far
     else if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat' || ED.tool === 'box' || ED.boxing) boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
@@ -38069,14 +38440,17 @@ const GOLF_APP = (() => {
      tap on a tile (onStatTap) takes up that tool or does that thing, and the row stays open while editing however the
      board is tapped or dragged (statsStay). The tiles are read again a few times a second, so they follow the editor. */
   const SHAPE_TOOLS = { lake: { key: 'lake', r: 1.3 }, bunker: { key: 'sand', r: 1 }, green: { key: 'green', r: 1.5 } };   // (the shapes' tools: Oct 10)
+  const LINE_TOOLS = { crest: { key: 'crest', w: 1.1, a: 0.045 }, gully: { key: 'crest', w: 1, a: -0.035 }, incline: { key: 'incline', w: 1.4, a: 0.05 } };   // (curved ground: Oct 11)
   /* (Oct 11: "then water, grass and sand are not needed. remove them." The Grass, Sand and Water paints went: a lake and a
      bunker are drawn as shapes, with leaves (see shapify), and Erase puts grass back on a walled or planked cell.) */
   const TOOLS = [['#', 'Wall', '🧱', 'paint'], ['=', 'Bridge', '🌉', 'paint'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
-    ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['curve', 'Curved fence', '〰️', 'draw a line'], ['mill', 'Windmill', '✳️', 'place'],
+    ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['curve', 'Curved fence', '〰️', 'draw a line'], ['planter', 'Planter', '🪴', 'draw a shape'],   // (a closed curved wall: Oct 11)
+    ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['path', 'Path', '➰', 'draw a loop'], ['gate', 'Gate', '🚪', 'drag a track'],
     ['arm', 'Turnstile', '✴️', 'drag out'], ['swing', 'Door', '↪️', 'drag out'],
     ['plat', 'Plateau', '🟫', 'drag a box'],
+    ['crest', 'Ridge', '⛰️', 'draw a line'], ['gully', 'Gully', '🏞️', 'draw a line'], ['incline', 'Curved ramp', '📐', 'draw a line'],   // (along a curve: Oct 11; "Curved ramp", as the straight Ramp's tile went on Oct 10)
     ['lake', 'Lake', '🌊', 'draw a shape'], ['bunker', 'Bunker', '🏖️', 'draw a shape'], ['green', 'Green', '⛳', 'draw a shape'],   // (TVF shapes: Oct 10)
     ['erase', 'Erase', '🧽', 'take away']];
   /* (Oct 10: "remove the following buttons: par, check, save, share, done, tee, cup, ramp, bowl, half-pipe, select,
@@ -38110,6 +38484,8 @@ const GOLF_APP = (() => {
     return false;
   }
   const updateEditBar = () => {};                            // (the tiles follow by themselves: see above)
+  const closedSel = () => { const LS = ED.on && leafSel(); return !!(LS && LS.closed); };
+  const landHigh = f => { const k = Object.keys(f)[0]; return HEIGHT_AT[k] != null || k === 'green' || LINE_KINDS.includes(k); };
   function editorMenu(){
     const items = [];
     if (ED.on) items.push({ label: 'Leave the editor', title: 'Stop editing and play the hole.', on(){ editStop(false); } });
@@ -38120,11 +38496,19 @@ const GOLF_APP = (() => {
         { label: 'Copy ' + what, title: o ? 'Copy what is selected.' : 'Copy the whole hole (nothing is selected).', on(){ editAction('copy'); } },
         { label: 'Paste' + (cl ? (cl.board ? ' the board' : ' ' + (cl.toy ? TOY_NAME[Object.keys(cl.toy)[0]] || 'thing' : 'ground')) : ''), title: 'Lay what was copied on this hole.', disabled: !cl, on(){ editAction('paste'); } },
         { label: 'Delete ' + what, title: o ? 'Take away what is selected.' : 'Clear the whole board to a new hole (nothing is selected).', on(){ editAction('clear'); } },
-        { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green or a path on this hole.', on(){ pickTvfFile(); } });
+        // (Oct 11: the selected ground's height in the menu, now that a curved ridge, gully or ramp has one to change)
+        ...(o && o.type === 'land' && landHigh(o.obj) ? [{ label: 'Higher', title: 'Raise the selected ' + what + ' a little.', on(){ editAction('higher'); } },
+          { label: 'Lower', title: 'Lower the selected ' + what + ' a little.', on(){ editAction('lower'); } }] : []),
+        // (and a closed curve's outline smoother or rougher, as the quick buttons ◯ and ✺ do: Oct 11)
+        ...(closedSel() ? [{ label: 'Smoother', title: 'Take the fine wiggles out of the selected ' + what + "'s outline, keeping its overall form.", on(){ editAction('smoother'); } },
+          { label: 'Rougher', title: 'Give the selected ' + what + "'s outline more coves and lobes.", on(){ editAction('rougher'); } }] : []),
+        { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } });
       // (and the selected path, lake, bunker or green saved as a .tvf curve, which draw opens: Oct 11, shapes as well as paths)
       const sk = o && o.type === 'land' && SHAPE_KINDS.find(k => Array.isArray(o.obj[k])), sw = sk && TVF_WORD[sk][0];
       if (o && o.type === 'toy' && o.obj.path) items.push({ label: 'Save this path as .tvf', title: 'Download the selected path as a .tvf curve, which draw opens.', on(){
         saveText(pathToTvf(o.obj.path, ED.src.name + ' path'), fileSlug(ED.src.name + '-path') + '.tvf'); } });
+      if (o && o.type === 'toy' && o.obj.planter) items.push({ label: 'Save this planter as .tvf', title: 'Download the selected planter as a .tvf curve, which draw opens and this page opens again as a planter.', on(){
+        saveText(shapeToTvf('planter', o.obj.planter, ED.src.name + ' planter'), fileSlug(ED.src.name + '-planter') + '.tvf'); } });
       if (sk) items.push({ label: 'Save this ' + sw + ' as .tvf', title: 'Download the selected ' + sw + ' as a .tvf curve, which draw opens and this page opens again as a ' + sw + '.', on(){
         saveText(shapeToTvf(sk, o.obj[sk], ED.src.name + ' ' + sw), fileSlug(ED.src.name + '-' + sw) + '.tvf'); } });
     }
@@ -38262,7 +38646,10 @@ const GOLF_APP = (() => {
        eraser and Done; while playing, start this hole again and edit it. */
     quickActs(){
       if (ED.on) return [{ key: 'select', glyph: '👆', title: 'Select', dim: ED.tool === 'select' }, { key: 'box', glyph: '⬚', title: 'Select dots in a box', dim: ED.tool === 'box' }, { key: 'undo', glyph: '↶', title: 'Undo', dim: !ED.undo.length }, { key: 'redo', glyph: '↷', title: 'Redo', dim: !(ED.redo && ED.redo.length) },
-                         { key: 'erase', glyph: '🧽', title: 'Erase' }, { key: 'done', glyph: '✓', title: 'Done editing' }];
+                         { key: 'erase', glyph: '🧽', title: 'Erase' },
+                         // (and with a closed curve selected, its outline smoother or rougher: Oct 11)
+                         ...(closedSel() ? [{ key: 'smoother', glyph: '◯', title: 'Smoother' }, { key: 'rougher', glyph: '✺', title: 'Rougher' }] : []),
+                         { key: 'done', glyph: '✓', title: 'Done editing' }];
       return null;                                           // (no playing buttons: the row is the editor's, Oct 10)
     },
     onQuickAct(c, r, key){
@@ -38283,7 +38670,11 @@ const GOLF_APP = (() => {
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       if (ED.on){
-        if (gkey(c, r) === ED.key){ const t0 = ED.tool; snapEdit(); if (editApply(u, v, false)){ editRefresh(true); placedOnce(t0); } else ED.undo.pop(); return true; }
+        const at = ED.ateTap; ED.ateTap = null;
+        if (at && gkey(c, r) === ED.key && performance.now() - at.t < 400 && Math.hypot(u * NX - at.x, v * NY - at.y) < 0.05) return true;   // (the end of a drag: see onPanEnd)
+        if (gkey(c, r) === ED.key){ const t0 = ED.tool; snapEdit(); if (editApply(u, v, false)){ editRefresh(true); placedOnce(t0); } else ED.undo.pop();
+          try { bbRefreshNow(); } catch {}                     // (the quick buttons follow the selection: Smoother and Rougher, Oct 11)
+          return true; }
         /* THE EDITOR GOES WHERE YOU TAP (Oct 8: "in edit mode, i should be able to add features to any board, not just the
            selected board."). A tap on another board used to leave the editor; now the editor moves there, the tool in hand
            kept, and that board's hole is the one being edited (a hole of the course is copied, as Edit this hole does; one
@@ -38332,8 +38723,13 @@ const GOLF_APP = (() => {
       return true;
     },
     onPanEnd(){
-      if (ED.stroke){ ED.stroke = false; ED.last = null; ED.selLast = null; ED.grab = null; ED.guide = null; ED.pressAt = null; editDragEnd();
+      if (ED.stroke){ const pa = ED.pressAt; ED.stroke = false; ED.last = null; ED.selLast = null; ED.grab = null; ED.guide = null; ED.pressAt = null; editDragEnd();
         if (ED.undo.length && ED.undo[ED.undo.length - 1] === JSON.stringify(ED.src)) ED.undo.pop();   // (a drag that changed nothing leaves no undo)
+        /* (Oct 11: a drag that changed something keeps the tap the field reads in the same release. On a phone the field
+           hands a finger to the editor after about 10 px and still calls a press that went under 16 px a tap, so a short
+           drag of a curved gully's leaf bent it and then added a leaf where the finger had pressed, on the line by then.
+           That tap is where the finger pressed, at once; a press that never moved 10 px is no drag, and stays a tap.) */
+        else if (pa) ED.ateTap = { t: performance.now(), x: pa.x, y: pa.y };
         editRefresh(true); return; }
       const g = liveGame();
       if (!g) return;
@@ -38346,14 +38742,15 @@ const GOLF_APP = (() => {
       const H = HOLES[holeShown(c, r)], t = sz / NY, x0 = (sz - NX * t) / 2;
       ctx.fillStyle = '#1d3a22'; ctx.fillRect(0, 0, sz, sz);
       for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){ const c0 = H.map[j][i], ch = c0 === '#' || c0 === '=' ? c0 : groundAt(H, (i + 0.5) * CW, (j + 0.5) * CW);   // (the shapes: Oct 10)
-        ctx.fillStyle = ch === '#' ? '#' + ((MAT_COL[matOf(H)] || MAT_COL.wood).far).toString(16).padStart(6, '0') : ch === 's' ? '#e6d39a' : ch === '~' ? '#3d7fd9' : ch === '=' ? '#9a7048' : '#63b86a';
+        ctx.fillStyle = ch === '#' ? '#' + ((MAT_COL[matOf(H)] || MAT_COL.wood).far).toString(16).padStart(6, '0') : ch === 's' ? '#e6d39a' : ch === '~' ? '#3d7fd9' : ch === '=' ? '#9a7048'
+          : inPlanter(H, (i + 0.5) * CW, (j + 0.5) * CW) ? '#2f6b34' : '#63b86a';   // (a planter's hedge: Oct 11)
         ctx.fillRect(x0 + i * t, j * t, t + 0.5, t + 0.5); }
       ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(x0 + H.cup.x / CW * t, H.cup.y / CW * t, t * 0.32, 0, 7); ctx.fill();
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, fly: (c, r) => gotoCell(c, r) } },
+    _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
   };

@@ -253,6 +253,75 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   from draw is fitted into the middle of the board, its proportions kept, in a box for what it becomes (`SHAPE_FIT`: lake
   4 × 6, bunker 3 × 4, green 4 × 5; a path 5 × 7, `fitMiddle`); a shape takes up to 32 leaves, laid evenly along the curve
   itself if it has more (`tvfToShapes`). Draw's y runs down the page, as the board's does, so a heart comes in upright.
+- **Planters** (Oct 11: "#6", from "what else can we do with tvf?": "Closed curved walls. Rock islands or planters of any
+  outline that the ball banks off, like a curved fence closed into a loop. Kidney-shaped or star-shaped obstacles"):
+  `planter [x0, y0, …]`, 3–32 leaves in cells, a closed TVF curve through its leaves (`planterOf`, a lake's line by another
+  name). It is walled along its line in the hole's material (`planterWall_` pieces, solid even in wood) and planted inside:
+  the ground's drawing raises the inside by `PLANTER_RISE` in hedge green (`HEDGE`, `inPlanter`; the far boards and the icon
+  show it too). Physics is untouched underneath.
+  - The ball meets the nearest point of the line from outside, as a curved fence's (`blobNear`, the shapes' grid); a ball
+    that ever lands inside is put back out over the nearest point. `cellBlocked` treats a cell whose middle is inside as a
+    wall, so the players go round. `plantersOf` keeps a hole's lines on the compiled hole.
+  - Editor: the Planter tool (🪴): a drag draws the outline, a tap lays a kidney (`planterLeaves`: round, kidney or a
+    five-lobed star). It stays selected; its leaves drag, are added and taken away; the line or the inside moves it whole.
+    `.tvf`: the open box offers Planter (fitted 3 × 3), and Save this planter as .tvf (`#meta kind:planter`).
+  - Generated holes: laid after the weave, asked for at 35–65% by level (a second at 4–5) and kept only where one fits, so
+    15% of level-1 holes to 36% at level 3 have one (about a quarter in all). Stars are 0.95–1.15 across, kidneys 0.7–1,
+    rounds 0.6–0.9 (a star's lobes rounder than a wall piece, a third of a cell, is long). Every point of its line is on dry
+    ground, 2.7 cells off the tee and the cup (the guards' room), off water, 1.6 off a bridge, 1.4 off a wall (one in a
+    wall's gap all but shut it), and clear of every thing and track already on the hole (`toyPoints`, each thing's
+    footprint). Laid before the weave, the tracks curled up by the cup to keep off it, and a cup with things about it is only
+    kept by the ground, so ponds, snails and S-bends came a third as often at level 5.
+  - A planter gives way to a guard that would stand on it, and to a pond, an S-bend or a snail entirely (they reach about
+    three cells out and are hard enough alone). Guard shapes and curved guards keep off planters (`offPl`); a screen keeps
+    1.5 cells off one; a planter so near the tee-cup line that a ball rolling straight would clip it counts as crossing it.
+    A screen may be a kidney planter across the way in, bowed toward the tee, if it clears every track and thing.
+  - Rated with and without theirs, 50 holes of every level took 0.13 strokes more with, 11 at level 5 0.36 more, so the
+    guess counts a quarter of a stroke a planter (`PLANTER_GUESS`).
+- **Curved ridges, gullies and ramps** (Oct 11: "proceed on 5", from "what else can we do with tvf?": ridges, gullies and
+  ramps that follow a drawn curve): ground pieces `crest [x0, y0, …, xn, yn, width, height]`, a ridge along the line (a gully
+  when the height is below nothing), and `incline [same]`, a ramp that rises evenly along the line from nothing at its first
+  leaf to its height at its last and drops away just past it. 3–24 leaves in cells, kept within [-1, NX + 1] × [-1, NY + 1];
+  width 0.4–3; height in `LINE_HEIGHT` (crest −0.05 to 0.08, incline 0 to 0.08). `LINE_KINDS` lists both.
+  - The line is a curved fence's (`curveOf` through every leaf). `lineOf` keeps it by array with its length so far at every
+    point; `lineNear(C, x, y, max)` finds the nearest point within a reach on a grid of boxes like the shapes' (`lineGrid`).
+  - `rawH`: a crest is the straight ridge's bell across its line, rounded off past its ends. An incline rises with the
+    distance along (s / L), smoothed over `EDGE` at its sides.
+  - Editor: Ridge (⛰️), Gully (🏞️) and Curved ramp (📐; not "Ramp", whose straight tile went on Oct 10). A drag draws the line
+    (a leaf about every cell, 3–16); a tap lays an arc of five. It stays selected, and its leaves drag, are added and taken
+    away as a curved fence's are. A press on the ground near the line moves it whole.
+  - The menu has Higher and Lower whenever ground with a height is selected (a crest's height moves by 0.01). Harder and
+    Easier scale them too.
+  - Generated holes: two in three ridges and gullies are crests (bowed once or snaking, `bentLeaves`), and two in five ramps
+    are inclines. In 300 holes that came to 37 curved ridges, 25 gullies and 15 curved ramps.
+    - One berm guard in two curls about the cup: its ends sit a cell nearer the cup than its middle. One screen berm in two
+      bows toward the tee. `across` counts a crest of 0.035 or more within half its width of the tee-cup line.
+    - The course keeps its straight ones.
+  - Rated against the same holes with each curve straightened between its ends, 27 holes took 0.29 strokes fewer with the
+    curves. That is within the noise, so the guess counts them by height, as it does the straight kinds.
+  - **The tap that ends a drag** (found here): on a phone the field hands a finger to the editor after about 10 px but
+    still calls a press that went under 16 px a tap, so a short drag of a gully's leaf bent it and then added a leaf where
+    the finger had pressed. A drag that changed something now keeps that one tap (`ED.ateTap`: at the press point, at once).
+- **Smoother and Rougher** (Oct 11: "proceed on 2", from "what else can we do with tvf?": "Smoother takes the fine wiggles
+  out of a lake's or bunker's outline and keeps its overall form; Rougher adds some back"). With a closed curve selected (a
+  lake, bunker, green, planter or path), the quick buttons ◯ and ✺ and the menu's Smoother and Rougher work on its outline
+  (`editAction('smoother' | 'rougher')`, `reshaped`).
+  - The leaves' discrete Fourier transform (x + iy, leaf by leaf; `leafWaves`, `wavesLeaves`) is the outline as waves: the
+    0th is its place, the ±1st its ellipse, each further one a wave going round that many times. Both keep the place and the
+    ellipse, and the leaves stay as many.
+  - Smoother shrinks the ±h-th wave by `ROUGH.smooth`^(h − 1) (0.75), so the finest go first. Rougher makes every wave
+    `ROUGH.rough` (1.5) times as big, and lays one where a wave is fainter than a floor (0.035 of the ellipse's size at the
+    2nd, less for finer ones, up to the 6th), its phase seeded by the leaves, so a round lake gets coves and the same shape
+    always comes out the same.
+  - Neither may cross the line over itself (`crossesItself`) or bring a planter or path to the rail. A step that would is
+    halved, up to three times; if it still would, nothing changes and the message says so. `wiggleOf` measures it (the
+    waves beyond the ellipse against the ellipse) for the tests.
+  - A tap in the editor refreshes the quick buttons (`bbRefreshNow`), since they follow the selection and a still view draws
+    no frames.
+- **A roll stops after `ROLL_MAX`** (15 s, Oct 11). A bumper kicks a ball out at a speed of its own, so a slope that runs back
+  down into one (a curved ridge's flank by a power bumper) kept a ball going for ever, and neither a person nor the players
+  could take the next shot. Shots stop in a few seconds. Of the four unplayable level-5 holes found while checking curves,
+  this fixed three, one of them without curves.
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).
@@ -315,7 +384,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
   **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
   in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the two paints (Wall,
-  Bridge; Grass, Sand and Water went on Oct 11), the bumpers, Boulder, Fence, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
+  Bridge; Grass, Sand and Water went on Oct 11), the bumpers, Boulder, Fence, Curved fence, Planter, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
   Level, Material (named by the material). **Undo, Redo, Copy, Paste and Delete are in mini golf's menu** while editing
   (Oct 10, later: "remove copy,paste,delete,undo,redo from the bottom object browser"). With a thing or a piece of
   ground selected (`selObj`) Copy keeps that one, Paste lays a copy of it on the hole (half a cell along if one is

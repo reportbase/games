@@ -1135,7 +1135,7 @@ try {
     const tvfEscOpen = await page.evaluate(() => !!document.getElementById('golfTvfBox'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     const tvfEsc = await page.evaluate(() => ({ box: !!document.getElementById('golfTvfBox'), on: window.getFieldApp()._debug.editor.ED.on }));
-    if (asked !== 'lake,sand,green,path' || shTv.none || shTv.box || shTv.n !== 32 || Math.abs(shTv.w - 4) > 0.15 || Math.abs(shTv.cx - 4) > 0.2 || Math.abs(shTv.cy - 6.5) > 0.2
+    if (asked !== 'lake,sand,green,planter,path' || shTv.none || shTv.box || shTv.n !== 32 || Math.abs(shTv.w - 4) > 0.15 || Math.abs(shTv.cx - 4) > 0.2 || Math.abs(shTv.cy - 6.5) > 0.2
         || !shTv.sel || !shTv.save || !shTv.open || !shTv.back.lake || !shTv.back.sand || !shTv.back.green || !shTv.kindLine || !tvfEscOpen || tvfEsc.box || !tvfEsc.on)
       failures.push(`[${current}] lakes, bunkers and greens as .tvf: ${JSON.stringify({ asked, shTv, tvfEscOpen, tvfEsc })}`);
     // CURVED FENCES, AND LEAVES ADDED AND TAKEN AWAY (Oct 10: "6,4,2,3", 2 curved fences as TVF curves, 3 "a tap on the loop
@@ -1221,7 +1221,147 @@ try {
     if (shp.tool !== 'lake' || !(shp.n0 >= 8 && shp.n0 <= 24) || !shp.sel || shp.nAdd !== shp.n0 + 1 || shp.nDel !== shp.n0 || !shp.bunker || !shp.kept || !shp.inFile
         || shp.ground.lake !== '~' || shp.ground.sand !== 's' || shp.ground.grass !== '.' || shp.ground.shore !== '.' || !(shp.lift > 0.04) || shp.strokes !== 2 || !shp.back || !shp.blocked)
       failures.push(`[${current}] lakes, sand and greens as shapes: ${JSON.stringify(shp)}`);
+    // PLANTERS (Oct 11: "#6", closed curved walls the ball banks off), by real touches: a planter drawn with its tool is a
+    // closed shape of leaves, selected, walled on the board; a tap with Planter lays a kidney; a leaf of it dragged moves
+    // that leaf alone; it is kept by cleaning and files; in play a ball shot hard at a star never gets inside it and comes
+    // back off it, and the players' way round goes round it
+    const pl = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async (pts, after = 300) => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(after); };
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.toys = []; ED.src.land = []; delete ED.src.lift; E.editAction('level');
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'planter')); const tool = ED.tool;
+      const loop = []; for (let q = 0; q <= 28; q++){ const a = q / 28 * 2 * Math.PI * 0.97; loop.push(S(4 + 1.6 * Math.cos(a), 6.5 + 1.1 * Math.sin(a))); }
+      await gest(loop);
+      const pi = ED.src.toys.findIndex(x => x.planter), n0 = pi >= 0 ? ED.src.toys[pi].planter.length / 2 : 0, sel = !!(ED.pick && ED.pick.type === 'toy' && ED.pick.i === pi);
+      const walls = D.cellItems(f.c, f.r).filter(i => /^planterWall_/.test(i.kind)).length;
+      // a tap with Planter lays a kidney, selected; its first leaf dragged half a cell right moves that leaf alone
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'planter')); A.onCellTap(f.c, f.r, 4 / D.NX, 9.6 / D.NY);
+      const ki = ED.src.toys.length - 1, kv = ED.src.toys[ki] && ED.src.toys[ki].planter, kSel = !!(ED.pick && ED.pick.i === ki), kn = kv ? kv.length / 2 : 0;
+      let leafMoved = null;
+      if (kv){ const [lx, ly] = [kv[0], kv[1]], drag = []; for (let q = 0; q <= 8; q++) drag.push(S(lx + 0.5 * q / 8, ly)); await gest(drag);
+        // (the finger's first few pixels go to telling a drag from a tap, so the leaf goes most of the way, not all of it)
+        const nv = ED.src.toys[ki].planter; leafMoved = nv[0] - lx > 0.2 && nv[0] - lx < 0.6 && Math.abs(nv[1] - ly) < 0.1 && nv.slice(2).every((x, q) => Math.abs(x - kv[q + 2]) < 1e-9); }
+      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = E.holesText([ED.src]).includes('"planter"');
+      ED.src.toys = []; E.editRefresh && E.editRefresh(true);
+      // in play: a star in the middle, the ball shot hard straight at it from the tee and every way about
+      const star = []; for (let q = 0; q < 15; q++){ const a = (q + 0.5) / 15 * 2 * Math.PI, rr = 1 + 0.3 * Math.cos(5 * a); star.push(+(4 + rr * Math.cos(a)).toFixed(2), +(6.5 + rr * Math.sin(a)).toFixed(2)); }
+      const k = E.addHole(E.cleanSrc({ name: 'planter test', par: 3, land: [], toys: [{ planter: star }], map: ['........', '........', '...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] }));
+      const H = D.HOLES[k], B = E.blobOf(H.toys[0].planter, 15), CW = D.CW; let inside = 0, minY = 99;
+      for (let a = -0.4; a <= 0.41; a += 0.1){ const g = D.holeGame({ start: k, card: [], single: true }, k); g.pull = { x: Math.sin(a) * 0.45, y: Math.cos(a) * 0.45 }; D.putt(g);
+        for (let q = 0; q < 2400 && g.state === 'play' && (g.moving || q < 2); q++){ D.step(g, 1 / 120); if (E.blobIn(B, g.ball.x, g.ball.y)) inside++; if (Math.abs(a) < 0.01) minY = Math.min(minY, g.ball.y / CW); } }
+      return { tool, n0, sel, walls, kn, kSel, leafMoved, kept, inFile, inside, minY: +minY.toFixed(2), blocked: D.cellBlocked(H, 4, 6) && !D.cellBlocked(H, 1, 6) };
+    });
+    // and on generated holes: some have planters, kept off the tee, the cup and everything else
+    const plGen = await page.evaluate(() => { const D = window.getFieldApp()._debug, E = D.editor; let n = 0, bad = [];
+      for (let i = 22; i < 322; i++){ const s = D.genSrc(i, 1 + i % 5), at = ch => { for (let j = 0; j < 13; j++){ const c = s.map[j].indexOf(ch); if (c >= 0) return [c + 0.5, j + 0.5]; } };
+        const T = at('T'), O = at('O');
+        for (const P of s.toys.filter(U => U.planter)){ n++; const B = E.blobOf(P.planter, P.planter.length >> 1);
+          for (let m = 0; m < B.M; m++){ const x = B.pts[2 * m], y = B.pts[2 * m + 1]; if (Math.hypot(x - T[0], y - T[1]) < 1.3 || Math.hypot(x - O[0], y - O[1]) < 1.5) { bad.push(i); break; } }
+          for (const U of s.toys) if (U !== P){ const k = Object.keys(U)[0], v = U[k];
+            const pts = k === 'path' ? (L => Array.from({ length: L.M }, (_, q) => [L.pts[2 * q], L.pts[2 * q + 1]]))(E.loopOf(v)) : k === 'curve' ? (C => Array.from({ length: C.m }, (_, q) => [C.pts[2 * q], C.pts[2 * q + 1]]))(E.curveOf(v)) : [[v[0], v[1]]];
+            if (pts.some(([x, y]) => E.blobIn(B, x, y))) bad.push(i + k); } } }
+      return { n, bad: [...new Set(bad)].slice(0, 6) }; });
+    if (pl.tool !== 'planter' || !(pl.n0 >= 8 && pl.n0 <= 24) || !pl.sel || !(pl.walls >= 8) || pl.kn !== 12 || !pl.kSel || !pl.leafMoved || !pl.kept || !pl.inFile
+        || pl.inside || !(pl.minY > 7.6) || !pl.blocked || plGen.n < 40 || plGen.bad.length)
+      failures.push(`[${current}] planters: ${JSON.stringify({ pl, plGen })}`);
+    // CURVED RIDGES, GULLIES AND RAMPS (Oct 11: "proceed on 5"), by real touches: a line drawn with Ridge is a curved ridge
+    // of leaves, selected, the ground raised along it and not beside it; a tap with Gully lays an arc of five sunk below the
+    // grass; a leaf of it dragged moves that leaf alone; the menu's Higher raises it; a tap with Ramp lays a curved ramp
+    // that rises from its first leaf to its last; all are kept by cleaning and files; and generated holes have them
+    const cr = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), CW = D.CW;
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async (pts, after = 300) => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(after); };
+      const tile = k => A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === k)), H = () => D.HOLES[ED.k], h = (x, y) => D.rawH(H(), x * CW, y * CW);
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.toys = []; ED.src.land = []; delete ED.src.lift; E.editAction('level');
+      tile('crest'); const tool = ED.tool, line = [];
+      for (let q = 0; q <= 24; q++){ const t = q / 24; line.push(S(1.5 + 5 * t, 6.5 - 1.5 * Math.sin(Math.PI * t))); }
+      await gest(line);
+      const ri = ED.src.land.findIndex(x => x.crest), rv = ri >= 0 ? ED.src.land[ri].crest : null, n0 = rv ? (rv.length - 2) / 2 : 0;
+      const sel = !!(ED.pick && ED.pick.type === 'land' && ED.pick.i === ri), rise = +(h(4, 5) - h(4, 7.5)).toFixed(3);
+      // a tap with Gully: an arc of five, sunk, selected; its first leaf dragged half a cell right moves that leaf alone
+      tile('gully'); A.onCellTap(f.c, f.r, 4 / D.NX, 9.6 / D.NY);
+      const gi = ED.src.land.length - 1, gv = ED.src.land[gi] && ED.src.land[gi].crest, gn = gv ? (gv.length - 2) / 2 : 0, gSel = !!(ED.pick && ED.pick.i === gi);
+      const sunk = gv ? +(h(gv[4], gv[5]) - h(4, 12)).toFixed(3) : null;
+      let leafMoved = null;
+      if (gv){ const [lx, ly] = [gv[0], gv[1]], drag = []; for (let q = 0; q <= 8; q++) drag.push(S(lx + 0.5 * q / 8, ly)); await gest(drag);
+        // (a short drag, as on a phone, under the 16 px a tap may go: the press is not read as a tap on the line as well)
+        const nv = ED.src.land[gi].crest; leafMoved = [+(nv[0] - lx).toFixed(2), +(nv[1] - ly).toFixed(2), nv.slice(2).every((x, q) => Math.abs(x - gv[q + 2]) < 1e-9)]; }
+      // the menu's Higher and Lower, with it selected
+      const g0 = ED.src.land[gi].crest.slice(-1)[0], mi = E.editorMenu().find(x => x.label === 'Higher'); if (mi) mi.on();
+      const higher = +(ED.src.land[gi].crest.slice(-1)[0] - g0).toFixed(3), name = E.editorMenu().some(x => /^Delete curved gully$/.test(x.label));
+      // a tap with Ramp: a curved ramp rising from its first leaf to its last
+      tile('incline'); A.onCellTap(f.c, f.r, 2 / D.NX, 9 / D.NY);
+      const ii = ED.src.land.length - 1, iv = ED.src.land[ii] && ED.src.land[ii].incline, inN = iv ? (iv.length - 2) / 2 : 0;
+      const climb = iv ? [0, 2, 4].map(q => { const a = Math.min(q, inN - 1) * 2; return +h(iv[a] + (q === 0 ? 0.3 * (iv[2] - iv[0]) : 0), iv[a + 1] + (q === 0 ? 0.3 * (iv[3] - iv[1]) : 0)).toFixed(3); }) : null;
+      const kept = JSON.stringify(E.cleanSrc(ED.src).land) === JSON.stringify(ED.src.land), txt = E.holesText([ED.src]), inFile = txt.includes('"crest"') && txt.includes('"incline"');
+      ED.src.land = []; E.editRefresh && E.editRefresh(true);
+      return { tool, n0, sel, rise, gn, gSel, sunk, leafMoved, higher, name, inN, climb, kept, inFile };
+    });
+    const crGen = await page.evaluate(() => { const D = window.getFieldApp()._debug; const n = { crest: 0, gully: 0, incline: 0 };
+      for (let i = 22; i < 322; i++) for (const f of D.genSrc(i, 1 + i % 5).land){ if (f.crest) n[f.crest[f.crest.length - 1] < 0 ? 'gully' : 'crest']++; if (f.incline) n.incline++; }
+      return n; });
+    if (cr.tool !== 'crest' || !(cr.n0 >= 3 && cr.n0 <= 16) || !cr.sel || !(cr.rise > 0.03) || cr.gn !== 5 || !cr.gSel || !(cr.sunk < -0.02) || !cr.leafMoved || !(cr.leafMoved[0] > 0.2 && cr.leafMoved[0] < 0.6 && Math.abs(cr.leafMoved[1]) < 0.1 && cr.leafMoved[2])
+        || cr.higher !== 0.01 || !cr.name || !(cr.inN >= 3) || !cr.climb || !(cr.climb[1] > cr.climb[0] + 0.01 && cr.climb[2] > cr.climb[1] + 0.01) || !cr.kept || !cr.inFile
+        || crGen.crest < 20 || crGen.gully < 10 || crGen.incline < 10)
+      failures.push(`[${current}] curved ridges, gullies and ramps: ${JSON.stringify({ cr, crGen })}`);
+    // a roll stops after ROLL_MAX (Oct 11): a putt just struck stops at once once it has rolled that long, and not before
+    const roll = await page.evaluate(() => { const D = window.getFieldApp()._debug, k = D.HOLES.findIndex(H => H.gen == null && !H.custom);
+      const g = D.holeGame({ start: k, card: [], single: true }, k); g.pull = { x: 0, y: 0.45 }; D.putt(g); D.step(g, 1 / 120); const early = g.moving;
+      g.rollT = 14.99; D.step(g, 1 / 30); return { early, rollT: typeof g.rollT, late: g.moving }; });
+    if (!roll.early || roll.rollT !== 'number' || roll.late) failures.push(`[${current}] a roll stops after ROLL_MAX: ${JSON.stringify(roll)}`);
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    // SMOOTHER AND ROUGHER (Oct 11: "proceed on 2"): with a closed curve selected, the quick buttons ◯ and ✺ (and the menu)
+    // make its outline smoother or rougher, clicked for real: Smoother takes a wobbly bunker's wiggles down and leaves its
+    // place and leaf count; Undo puts it back; a round lake gets no smoother, and Rougher gives it coves, the same each
+    // time and never crossing itself however often it is pressed; a planter, a path and a green keep what follows their
+    // leaves; a bumper selected brings no such buttons
+    // (a tap selects it, as a finger would, and the quick buttons follow the selection)
+    const srPrep = async (js, want) => { await page.evaluate(js); await page.waitForFunction(n => document.querySelectorAll('#bbQuick button[title="Smoother"]').length === n, want, { timeout: 5000 }).catch(() => {}); };
+    const srBtn = t => page.locator(`#bbQuick button[title="${t}"]`);
+    const srClick = async t => { await srBtn(t).click(); await page.waitForTimeout(120); };
+    await srPrep(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, wob = [];
+      for (let q = 0; q < 16; q++){ const a = (q + 0.5) / 16 * 2 * Math.PI, r = 1.3 + 0.28 * Math.cos(5 * a) + 0.12 * Math.cos(7 * a + 1); wob.push(+(4 + r * Math.cos(a)).toFixed(2), +(6.5 + 0.8 * r * Math.sin(a)).toFixed(2)); }
+      window.getFieldApp().onQuickAct(0, 0, 'select'); ED.src.toys = []; ED.src.land = [{ sand: wob }]; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 6.5 / A._debug.NY); window.__wob = wob; }, 1);
+    const sr = { buttons: await srBtn('Smoother').count() + await srBtn('Rougher').count() };
+    const srRead = () => page.evaluate(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, f = ED.src.land[0], k = Object.keys(f)[0], v = f[k], n = k === 'green' ? (v.length - 1) >> 1 : v.length >> 1;
+      let x = 0, y = 0; for (let q = 0; q < n; q++){ x += v[2 * q]; y += v[2 * q + 1]; } return { w: +E.wiggleOf(v, n).toFixed(3), n, c: [+(x / n).toFixed(3), +(y / n).toFixed(3)], v: v.join(' '), msg: ED.msg }; });
+    const w0 = await srRead();
+    sr.menu = await page.evaluate(() => window.getFieldApp()._debug.editor.editorMenu().filter(m => /^(Smoother|Rougher)$/.test(m.label)).length);
+    if (sr.buttons === 2){ await srClick('Smoother'); const w1 = await srRead(); sr.smooth = [w0.w, w1.w]; sr.kept = w1.n === 16 && Math.hypot(w1.c[0] - w0.c[0], w1.c[1] - w0.c[1]) < 0.02;
+      await page.evaluate(() => window.getFieldApp()._debug.editor.editAction('undo')); sr.undone = (await srRead()).v === w0.v; }
+    await srPrep(() => { const ED = window.getFieldApp()._debug.editor.ED, lake = [];
+      for (let q = 0; q < 12; q++){ const a = (q + 0.5) / 12 * 2 * Math.PI; lake.push(+(4 + 1.6 * Math.cos(a)).toFixed(2), +(6.5 + 1.36 * Math.sin(a)).toFixed(2)); }
+      ED.src.land = [{ lake }]; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 6.5 / A._debug.NY); window.__lake = lake.slice(); }, 1);
+    if (sr.buttons === 2){ const l0 = await srRead(); await srClick('Smoother'); sr.roundSame = (await srRead()).v === l0.v;
+      await srClick('Rougher'); const l1 = await srRead(); sr.coves = l1.w;
+      sr.same = await page.evaluate(v => { const E = window.getFieldApp()._debug.editor; return E.reshaped('lake', window.__lake, 12, true).join(' ') === v; }, l1.v);
+      for (let i = 0; i < 11; i++) await srClick('Rougher');
+      sr.crossed = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, v = E.ED.src.land[0].lake, xs = [], ys = []; for (let q = 0; q < 12; q++){ xs.push(v[2 * q]); ys.push(v[2 * q + 1]); } return E.crossesItself(xs, ys); });
+      sr.rough = (await srRead()).w; }
+    sr.tails = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED, star = [], loop = [], gr = [];
+      for (let q = 0; q < 15; q++){ const a = (q + 0.5) / 15 * 2 * Math.PI, rr = 1 + 0.3 * Math.cos(5 * a); star.push(+(4 + rr * Math.cos(a)).toFixed(2), +(6.5 + rr * Math.sin(a)).toFixed(2)); }
+      for (let q = 0; q < 10; q++){ const a = (q + 0.5) / 10 * 2 * Math.PI, rr = 1.5 + 0.3 * Math.cos(3 * a); loop.push(+(4 + rr * Math.cos(a)).toFixed(2), +(6.5 + rr * Math.sin(a)).toFixed(2)); gr.push(+(4 + rr * Math.cos(a)).toFixed(2), +(9 + rr * 0.7 * Math.sin(a)).toFixed(2)); }
+      ED.src.toys = [{ planter: star }, { path: [...loop, 0.33, 6, 0.25, 1] }]; ED.src.land = [{ green: [...gr, 0.05] }];
+      const go = (type, i) => { ED.pick = { type, i }; E.editAction('smoother'); };
+      go('toy', 0); go('toy', 1); go('land', 0);
+      const p = ED.src.toys[1].path, g = ED.src.land[0].green;
+      return { planter: E.wiggleOf(ED.src.toys[0].planter, 15) < E.wiggleOf(star, 15), path: p.length === 24 && p.slice(20).join() === '0.33,6,0.25,1' && p.slice(0, 20).join() !== loop.join(), green: g.length === 21 && g[20] === 0.05 && g.slice(0, 20).join() !== gr.join() }; });
+    await srPrep(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = [{ kick: [4, 4, 0.3, 0] }]; ED.src.land = []; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 4 / A._debug.NY); }, 0);
+    sr.bumper = await srBtn('Smoother').count();
+    await page.evaluate(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = []; ED.pick = null; });
+    if (sr.buttons !== 2 || sr.menu !== 2 || !sr.smooth || !(sr.smooth[1] < sr.smooth[0] * 0.8) || !sr.kept || !sr.undone || !sr.roundSame || !(sr.coves > 0.05) || !sr.same
+        || sr.crossed !== false || !(sr.rough > sr.coves) || !sr.tails.planter || !sr.tails.path || !sr.tails.green || sr.bumper !== 0)
+      failures.push(`[${current}] smoother and rougher: ${JSON.stringify(sr)}`);
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
         || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
       failures.push(`[${current}] curved fences and leaves: ${JSON.stringify(cf)}`);
