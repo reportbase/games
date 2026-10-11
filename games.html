@@ -24487,7 +24487,7 @@ const CROSSING_APP = (() => {
     onFramed(c, r){
       LIVE = (c == null) ? null : { key: gkey(c, r), c, r };
       if (ED.on && (!LIVE || LIVE.key !== ED.key)) editStop(true);
-      if (LIVE && PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'); }
+      if (LIVE && PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, pendingNote(k)); }
     },
     /* A TAP HOPS TOWARD WHERE YOU TAPPED (Sep 22: "add left and right
        capability"). Measured from the pawn: tap beside it and it steps left
@@ -35339,6 +35339,7 @@ const GOLF_APP = (() => {
   const GRAV = 4;                                          // how hard the ground's slope pulls the ball
   const WIRE = { on: ARCADE.load('golf.wire', 'off') === 'on' };   // off unless turned on (Oct 9: "turn off wireframe by default")
   const NUMS = { on: ARCADE.load('golf.nums', 'on') !== 'off' };     // the hole's number in the corner (Oct 2: "add a menu option to show the hole #")
+  const GHOST = { on: ARCADE.load('golf.ghost', 'on') !== 'off' };   // your best line's ghost races you (Oct 11, see THE BEST LINE)
   const BR = 0.02, E = 0.78, VMAX = 2.0, DRAG = 0.5, FULL = 0.4, SINK_T = 1.4;
   const DIFF = { easy:   { mu: 0.6,  cup: 0.042, cap: 1.25 },
                  normal: { mu: 0.45, cup: 0.033, cap: 0.95 },
@@ -35418,16 +35419,124 @@ const GOLF_APP = (() => {
     g.ball.vx = -qx / L * p * VMAX; g.ball.vy = -qy / L * p * VMAX;
     g.moving = true; g.slowT = 0; g.rollT = 0; g.strokes++;
     g.trail = [[g.ball.x, g.ball.y]];                        // the last putt's ghost gives way to this one's
+    // (the best line: the hole in play is recorded from its first putt, the stroke starting where the ball lay)
+    if (!g.rec && g.strokes === 1 && g.state === 'play' && liveGame() === g) g.rec = { t0: null, raw: [], pts: [] };
+    const R = g.rec;
+    if (R){ if (R.t0 == null) R.t0 = g.t; recFlush(g); R.raw.push(g.t - R.t0, g.ball.x, g.ball.y); }
     SND.play('tap');
     return true;
+  }
+
+  /* ─── THE BEST LINE, AND ITS GHOST ─────────────────────────────────── (Oct 11: "proceed", on "Shots saved as curves:
+     your best line on a hole is kept as a curve, so you can replay it, share it, or race it as a ghost ball on your next
+     try"). The hole in play is recorded from its first putt where the physics steps the ball, at each of its own sub-steps,
+     so a bounce off a rail is kept to the step: the time on the toys' clock, x and y. When the ball stops, the stroke is
+     laid down as a curve in time: the fewest points that, joined straight and ridden at their times, never leave the ball
+     more than GHOST_TOL (0.03 of a cell) from where it was (Douglas and Peucker's thinning, with time as the curve's
+     parameter, so the points gather at the bounces and the slopes' bends and thin out on the straights: some 10 to 40 a
+     stroke). It is a line of points and not a TVF curve: a TVF curve is smooth all round and a bounce is a corner, so
+     rounded off, the ghost would cut through the rails. A hole sunk in fewer strokes than its line, or in as many sooner,
+     becomes its line: kept in this browser (golf.ghosts, the last GHOST_CAP), by the hole as written and the Difficulty
+     (`lineKey`: a changed hole is another hole, and the setting is the grass's speed), in whole milliseconds and hundredths
+     of a cell, each point as its step from the last. Playing the hole again, a pale ball rides the line from your first
+     putt (Ghost: on, in the menu), so you race your best; Watch my best line rides it from now with the line dotted; Share
+     my best line copies a link carrying the hole and the line, which opens on the hole with that line to race. */
+  const GHOST_KEY = 'golf.ghosts', GHOST_CAP = 200, GHOST_TOL = CW * 0.03;
+  const GHOSTS = (() => { try { const o = JSON.parse(localStorage.getItem(GHOST_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; } })();
+  function ghostsSave(){
+    try {
+      const ks = Object.keys(GHOSTS);
+      if (ks.length > GHOST_CAP){ ks.sort((a, b) => (GHOSTS[a].at || 0) - (GHOSTS[b].at || 0)); for (const k of ks.slice(0, ks.length - GHOST_CAP)) delete GHOSTS[k]; }
+      localStorage.setItem(GHOST_KEY, JSON.stringify(GHOSTS));
+    } catch {}
+  }
+  const lineKey = k => { const H = HOLES[k]; if (!H) return null; if (!H._org) H._org = originOf(srcOf(k)); return H._org + '@' + LEVEL_SET; };
+  // the fewest of the points [t, x, y, …] whose straight joins, ridden in time, keep within tol of every one
+  function thinLine(a, tol){
+    const n = a.length / 3; if (n <= 2) return a.slice();
+    const keep = new Uint8Array(n), st = [[0, n - 1]], t2 = tol * tol; keep[0] = keep[n - 1] = 1;
+    while (st.length){
+      const [i, j] = st.pop(); if (j - i < 2) continue;
+      const ti = a[3 * i], span = a[3 * j] - ti; let worst = -1, wk = -1;
+      for (let k = i + 1; k < j; k++){
+        const f = span > 0 ? (a[3 * k] - ti) / span : 0.5;
+        const ex = a[3 * i + 1] + (a[3 * j + 1] - a[3 * i + 1]) * f - a[3 * k + 1], ey = a[3 * i + 2] + (a[3 * j + 2] - a[3 * i + 2]) * f - a[3 * k + 2], e = ex * ex + ey * ey;
+        if (e > worst){ worst = e; wk = k; }
+      }
+      if (worst > t2){ keep[wk] = 1; st.push([i, wk], [wk, j]); }
+    }
+    const out = []; for (let k = 0; k < n; k++) if (keep[k]) out.push(a[3 * k], a[3 * k + 1], a[3 * k + 2]);
+    return out;
+  }
+  // the stroke under way laid down as its curve, after the strokes before it
+  function recFlush(g){ const R = g.rec; if (!R || !R.raw.length) return; for (const v of thinLine(R.raw, GHOST_TOL)) R.pts.push(v); R.raw = []; }
+  // a line kept: [ms, x, y] in hundredths of a cell, each point as its step from the last
+  function lineCode(pts){
+    const out = []; let pt = 0, px = 0, py = 0;
+    for (let i = 0; i < pts.length; i += 3){
+      const t = Math.round(pts[i] * 1000), x = Math.round(pts[i + 1] / CW * 100), y = Math.round(pts[i + 2] / CW * 100);
+      out.push(t - pt, x - px, y - py); pt = t; px = x; py = y;
+    }
+    return out;
+  }
+  function lineDecode(p){
+    if (!Array.isArray(p) || p.length < 3 || p.length % 3 || p.length > 30000) return null;
+    const out = []; let t = 0, x = 0, y = 0;
+    for (let i = 0; i < p.length; i += 3){
+      const a = +p[i], b = +p[i + 1], c = +p[i + 2]; if (![a, b, c].every(Number.isFinite) || a < 0) return null;
+      t += a; x += b; y += c;
+      out.push(t / 1000, clamp(x / 100 * CW, 0, WD), clamp(y / 100 * CW, 0, 1));
+    }
+    return out;
+  }
+  // where the line's ball is at time u (seconds from its first putt), or null before its start and after its end
+  function lineAt(L, u){
+    const n = L.length / 3; if (!n || u < 0 || u > L[3 * (n - 1)]) return null;
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1){ const m = (lo + hi) >> 1; if (L[3 * m] <= u) lo = m; else hi = m; }
+    const ta = L[3 * lo], tb = L[3 * hi], f = tb > ta ? clamp((u - ta) / (tb - ta), 0, 1) : 1;
+    return { x: L[3 * lo + 1] + (L[3 * hi + 1] - L[3 * lo + 1]) * f, y: L[3 * lo + 2] + (L[3 * hi + 2] - L[3 * lo + 2]) * f };
+  }
+  const lineOfHole = k => { const key = lineKey(k), o = key && GHOSTS[key]; return o || null; };
+  const better = (a, b) => !b || a.s < b.s || (a.s === b.s && a.ms < b.ms);
+  // the hole is sunk: its recording finished, kept if it is the best, and a word for the tee's message
+  function lineDone(g){
+    const R = g.rec;
+    if (!R || R.t0 == null){ g.rec = null; return ''; }
+    R.raw.push(Math.max(0, g.t - R.t0), g.ball.x, g.ball.y); recFlush(g); g.rec = null;   // (the last stroke laid down first)
+    if (R.pts.length < 6) return '';
+    const H = HOLES[g.hole], key = lineKey(g.hole), old = GHOSTS[key];
+    const L = { v: 1, s: g.strokes, ms: Math.round(R.pts[R.pts.length - 3] * 1000), n: H.name, lv: LEVEL_SET, at: Date.now(), p: lineCode(R.pts) };
+    if (!better(L, old)) return ' · best ' + old.s + (old.shared ? ' (shared)' : '');
+    GHOSTS[key] = L; ghostsSave(); g.line = undefined;
+    return old ? ' · new best line, beating ' + (old.shared ? 'the shared ' : 'your ') + old.s : '';
+  }
+  // the line's ball and, while watching, the line itself as dots: on the board in play only
+  function ghostItems(out, G, H){
+    if (G.line === undefined){ const o = lineOfHole(G.hole); G.line = o ? lineDecode(o.p) : null; }
+    const L = G.line; if (!L) return;
+    const watching = G.watch != null, u = watching ? G.t - G.watch : G.rec && G.rec.t0 != null && GHOST.on ? G.t - G.rec.t0 : null;
+    if (watching){
+      let px = null, py = null, n = 0;
+      for (let i = 0; i < L.length && n < 600; i += 3){
+        const x = L[i + 1], y = L[i + 2];
+        if (px != null && Math.hypot(x - px, y - py) < 0.014){ continue; }
+        if (px != null){ const d = Math.hypot(x - px, y - py), m = Math.min(30, Math.floor(d / 0.014)); for (let q = 1; q < m && n < 600; q++, n++){ const f = q / m, qx = px + (x - px) * f, qy = py + (y - py) * f; out.push({ kind: 'ghost', u: qx, v: qy, scale: 0.01, lift: hOf(H, qx, qy) + 0.002, color: 0xbfe3ff }); } }
+        out.push({ kind: 'ghost', u: x, v: y, scale: 0.01, lift: hOf(H, x, y) + 0.002, color: 0xbfe3ff }); n++; px = x; py = y;
+      }
+      if (u > L[L.length - 3] + 1) G.watch = null;
+    }
+    const at = u == null ? null : lineAt(L, u);
+    if (at) out.push({ kind: 'ghostBall', u: at.x, v: at.y, scale: BR * 2, lift: hOf(H, at.x, at.y), color: 0xcfe8ff });
   }
   function sink(g){
     const H = HOLES[g.hole];
     g.moving = false; g.ball.vx = g.ball.vy = 0; g.ball.x = H.cup.x; g.ball.y = H.cup.y;
+    const best = lineDone(g);                                // (the best line: Oct 11)
     g.R.card.push({ hole: g.hole, par: H.par, strokes: g.strokes, name: H.name, num: H.num || g.hole + 1, stars: H.rated ? H.rated.stars : 0 });
     const d = g.strokes - H.par;
     const word = g.strokes === 1 ? 'Hole in one!' : d <= -2 ? 'Eagle!' : d === -1 ? 'Birdie!' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : d === 2 ? 'Double bogey' : '+' + d;
-    say(word + ' — ' + g.strokes + (g.strokes === 1 ? ' stroke' : ' strokes') + ' on par ' + H.par + starTag(g.hole) + ' · ' + fmtDiff(diffOf(g)) + ' for the round', 1800);
+    say(word + ' — ' + g.strokes + (g.strokes === 1 ? ' stroke' : ' strokes') + ' on par ' + H.par + starTag(g.hole) + ' · ' + fmtDiff(diffOf(g)) + ' for the round' + best, best ? 2600 : 1800);
     SND.play(d <= 0 ? 'win' : 'good');
     g.state = 'sunk'; g.sunkT = SINK_T;
   }
@@ -36081,8 +36190,9 @@ const GOLF_APP = (() => {
     if (g.state === 'sunk'){ if ((g.sunkT -= dt) <= 0) nextHole(g); return; }
     if (g.state !== 'play') return;
     const H = HOLES[g.hole], b = g.ball, P = D();
+    const R = g.rec && g.rec.t0 != null ? g.rec : null, tb = g.t - dt - (R ? R.t0 : 0);   // (the best line's recording)
     if (!g.moving){                                          // a ball at rest can still be knocked by a toy: a free push
-      if (H.toys && toys(g, H) > 0.01){ collide(g, H); g.moving = true; g.slowT = 0; g.rollT = 0; }
+      if (H.toys && toys(g, H) > 0.01){ if (R) R.raw.push(tb, b.x, b.y); collide(g, H); g.moving = true; g.slowT = 0; g.rollT = 0; }
       if (!g.moving) return;
     }
     const n = Math.min(400, Math.max(1, Math.ceil(Math.hypot(b.vx, b.vy) * dt / (BR * 0.4))));
@@ -36091,6 +36201,7 @@ const GOLF_APP = (() => {
       const ch = groundAt(H, b.x, b.y);
       if (ch === '~'){                                         // in the water: a stroke, and back where you putted from
         g.moving = false; b.vx = b.vy = 0; b.x = g.rest.x; b.y = g.rest.y; g.strokes++;
+        if (R) R.raw.push(tb + k * h, b.x, b.y);               // (the line jumps back with it)
         say('In the water — one stroke penalty', 1500); SND.play('bad');
         break;
       }
@@ -36105,6 +36216,7 @@ const GOLF_APP = (() => {
       b.x += b.vx * h; b.y += b.vy * h;
       collide(g, H);
       if (H.toys){ const hit = toys(g, H); if (hit) collide(g, H); if (hit > 0.15) SND.play('tap'); }   // (a toy never pushes a ball into a wall)
+      if (R) R.raw.push(tb + (k + 1) * h, b.x, b.y);          // (the best line: every sub-step, so a bounce is kept to the step)
       // The ghost: the path, a dot every so often.
       const tr = g.trail || (g.trail = []), lp = tr[tr.length - 1];
       if (!lp || Math.hypot(b.x - lp[0], b.y - lp[1]) > 0.014){ if (tr.length < 400) tr.push([b.x, b.y]); }
@@ -36121,6 +36233,7 @@ const GOLF_APP = (() => {
       g.rollT = (g.rollT || 0) + h;
       if ((s < 0.012 && Math.hypot(gx, gy) * GRAV < P.mu * 0.9) || g.slowT > 1.5 || g.rollT > ROLL_MAX){ g.moving = false; b.vx = b.vy = 0; }
     }
+    if (R && !g.moving) recFlush(g);                         // (a stroke ended: laid down as its curve)
     // (no picking up: Oct 9, "remove max tries, player should be able to stay on hole as long as he wants")
   }
 
@@ -36344,6 +36457,7 @@ const GOLF_APP = (() => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
+    ghostBall: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); g.userData.opacity = 0.45; return g; },   // the best line's ball (Oct 11)
     armBar: T => { const g = new T.BoxGeometry(1, 1.4, 1); g.translate(0, 0.75, 0); return g; },   // a turnstile's or a door's bar (stretched along x)
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
@@ -36552,6 +36666,8 @@ const GOLF_APP = (() => {
     });
     // The ghost: the last putt's path, as faint dots on the grass.
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
+    // the best line's ghost, racing you on the board in play (Oct 11)
+    if (G && G.state === 'play' && LIVE && LIVE.key === gkey(c, r)) ghostItems(out, G, H);
     const b = G ? G.ball : H.tee;
     if (!G || G.state === 'play' || G.state === 'done' || G.state === 'edit') out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
     if (G && G.state === 'edit') editOverlay(out, H);
@@ -37462,8 +37578,60 @@ const GOLF_APP = (() => {
     inp.onchange = () => { const fs = [...(inp.files || [])]; fs.forEach(f => { const rd = new FileReader(); rd.onload = () => importHoles(String(rd.result || '')); rd.readAsText(f); }); };
     inp.click();
   }
-  let PENDING = null;
+  let PENDING = null, PENDING_NOTE = null;
   try { const q = new URLSearchParams(location.search).get('hole'); const src = q && readLink(q); if (src) PENDING = addHole(src); } catch {}
+  const pendingNote = k => { const n = PENDING_NOTE; PENDING_NOTE = null; return n || 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'; };
+  /* A LINK CARRIES A LINE (Oct 11, see THE BEST LINE): ?line=… holds a hole as written and its best line. The hole is
+     played on the first board you select, as a shared hole is, and the line is kept as the line to race on it (marked
+     shared) unless yours there is better. A course hole on Easy, Hard or Expert goes with its movers as they were played. */
+  function lineLink(k){
+    const o = lineOfHole(k); if (!o) return null;
+    const src = clone(srcOf(k));
+    if (k < COURSE && LEVEL_SET !== 1) src.toys = tuneMovers({ toys: clone(src.toys || []) }, COURSE_TUNE[LEVEL_SET]).toys;
+    const pay = { hole: src, line: { s: o.s, ms: o.ms, lv: o.lv, p: o.p } };
+    const b = btoa(unescape(encodeURIComponent(JSON.stringify(pay)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return location.origin + location.pathname + '?app=minigolf&line=' + b;
+  }
+  function takeLineLink(q){
+    try {
+      const b = String(q).replace(/-/g, '+').replace(/_/g, '/'), o = JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))));
+      const src = o && cleanSrc(o.hole), ln = o && o.line, pts = ln && lineDecode(ln.p);
+      if (!src || !pts) return null;
+      const st = Math.round(+ln.s), ms = Math.round(+ln.ms);
+      if (!(st >= 1 && st <= 99) || !(ms >= 0 && ms < 36e5)) return null;
+      const k = addHole(src), key = lineKey(k), lv = [0, 1, 2, 3].includes(ln.lv) ? ln.lv : LEVEL_SET;
+      const L = { v: 1, s: st, ms, n: HOLES[k].name, lv, at: Date.now(), p: ln.p, shared: true }, mine = GHOSTS[key];
+      const kept = better(L, mine);
+      if (kept){ GHOSTS[key] = L; ghostsSave(); }
+      PENDING_NOTE = 'A line someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + ', sunk in ' + st + (st === 1 ? ' stroke' : ' strokes')
+        + (lv !== LEVEL_SET ? ' on ' + LEVEL_NAMES[lv] : '') + (kept ? '. Its ghost races you from your first putt.' : '; your own line here is better (' + mine.s + '), so the ghost is yours.');
+      return k;
+    } catch { return null; }
+  }
+  try { const q = new URLSearchParams(location.search).get('line'); const k = q && takeLineLink(q); if (k != null) PENDING = k; } catch {}
+  // the selected board's hole and game, for the menu's line items
+  function hereHole(){ const L = framedHere(); if (!L) return null; const g = GAMES.get(L.key); return { L, g, k: g && g.state !== 'edit' ? g.hole : holeOf(L.c, L.r) }; }
+  const hereLine = () => { if (ED.on) return null; const h = hereHole(); return h && lineOfHole(h.k); };
+  // Watch my best line: the selected hole's line played by its ball from now, the line dotted (a game is started if none)
+  function watchLine(){
+    const h = hereHole(), o = h && !ED.on && lineOfHole(h.k);
+    if (!o){ say('No line kept for this hole yet: sink it, and your line is kept.', 2400); return false; }
+    let g = h.g; LIVE = h.L;
+    if (g && g.state === 'sunk'){ say('After this hole.', 1400); return false; }
+    if (!g || g.state === 'done'){ if (g && g.R.single) GAMES.set(h.L.key, g = holeGame({ start: g.hole, card: [], single: true }, g.hole)); else g = startRound(h.L.c, h.L.r); }
+    g.watch = g.t; g.line = undefined;
+    say((o.shared ? 'The shared line' : 'Your best line') + ' on ' + HOLES[g.hole].name + ': ' + o.s + (o.s === 1 ? ' stroke' : ' strokes') + ' in ' + (o.ms / 1000).toFixed(1) + ' s.', 2400);
+    try { window.fieldWake && window.fieldWake(); } catch {}
+    return true;
+  }
+  function shareLine(){
+    const h = hereHole(), url = h && !ED.on && lineLink(h.k);
+    if (!url){ say('No line kept for this hole yet.', 2000); return null; }
+    const o = lineOfHole(h.k), told = () => say('Link copied: it opens on ' + HOLES[h.k].name + ' with this line of ' + o.s + ' to race.', 2600);
+    try { navigator.clipboard.writeText(url).then(told, () => { prompt('Copy this link to share the line', url); }); }
+    catch { prompt('Copy this link to share the line', url); }
+    return url;
+  }
   const framedHere = () => {
     if (LIVE) return LIVE;
     try { const f = framedCell(); if (f) return { key: gkey(f.c, f.r), c: f.c, r: f.r }; } catch {}
@@ -37545,7 +37713,7 @@ const GOLF_APP = (() => {
     o = Object.assign({}, RATE, o || {});
     const H = HOLES[k], score = scorer(H), R = seeded(srcHash(srcOf(k)) ^ 0x2545f491);
     const gauss = () => { let u = 0; while (!u) u = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * R()); };
-    const copy = g => ({ ...clone({ ...g, R: null, trail: null }), R: { start: k, card: [], single: true } });
+    const copy = g => ({ ...clone({ ...g, R: null, trail: null, rec: null, line: null }), R: { start: k, card: [], single: true } });
     // (the search steps at 1/40 s and the shots played at 1/60: the ball's own sub-steps keep it to a fraction of its
     //  radius a step either way, and a shot ends within a quarter of a cell of where 1/120 puts it, well inside the
     //  rater's own hands, at a third of the cost)
@@ -39002,6 +39170,13 @@ const GOLF_APP = (() => {
         on(){ setLevel(LEVEL_SET + 1); } },
       { label: 'Rate this hole', title: 'A fair player plays the hole on the selected board a few times, with a person\'s small errors of aim, strength and timing; its strokes on average give the stars (and, while editing, the par).',
         on(){ return rateHere(); } },
+      // (Oct 11, "proceed" on shots saved as curves: see THE BEST LINE, AND ITS GHOST)
+      { label: () => 'Ghost: ' + (GHOST.on ? 'on' : 'off'), title: 'Your best line on each hole is kept as you play. Play the hole again and it rides beside you as a pale ball from your first putt: race it.',
+        on(){ GHOST.on = !GHOST.on; ARCADE.save('golf.ghost', GHOST.on ? 'on' : 'off'); } },
+      { label: 'Watch my best line', title: 'The best line kept on the selected hole, played by its pale ball from the tee, the line dotted.', disabled: !hereLine(),
+        on(){ return watchLine(); } },
+      { label: 'Share my best line', title: 'Copy a link that opens on this hole with your best line on it to race.', disabled: !hereLine(),
+        on(){ return shareLine(); } },
       { label: () => 'Hole numbers: ' + (NUMS.on ? 'on' : 'off'), title: 'Each board shows its hole number in the far left corner.',
         on(){ NUMS.on = !NUMS.on; ARCADE.save('golf.nums', NUMS.on ? 'on' : 'off'); } },
       { label: () => 'Wireframe: ' + (WIRE.on ? 'on' : 'off'), title: 'A grid draped over the grass, so the hills and hollows show as the lines bend.',
@@ -39078,7 +39253,7 @@ const GOLF_APP = (() => {
         if (editStart(from)){ say('Editing ' + ED.src.name + ' — the tool in hand is ' + (TOOLS.find(t => t[0] === ED.tool) || ['', 'the same'])[1] + '.', 2400); return true; }
       }
       LIVE = { key: gkey(c, r), c, r };
-      if (PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'); return true; }
+      if (PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, pendingNote(k)); return true; }
       const g = GAMES.get(gkey(c, r));
       if (g && g.state === 'done' && g.R.single){ GAMES.set(gkey(c, r), holeGame({ start: g.hole, card: [], single: true }, g.hole)); return true; }
       if (!g || g.state === 'done') startRound(c, r);
@@ -39142,6 +39317,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+      line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
