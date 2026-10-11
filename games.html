@@ -5605,6 +5605,25 @@ function buildPartsGeometry(K, C, opts = {}){
      rebuildBudgetMs
                  — time-budget per frame for progressive (re)builds.
                    Default 6. Cold-start spreads invisibly. */
+/* POOLS THAT GROW (Oct 11: "proceed", on "Smaller piece pools: about 270 MB is reserved up front, mostly empty; chess's
+   pools exist even in mini golf"). Every instanced pool was made at the most it could ever hold: forty-two piece pools of
+   33,334 for chess, 48,000 for every kind of piece a game draws, 400,000 board tiles and 600,000 whole boards, some 4.2
+   million instances and 270 MB of matrices, most never used. A pool now starts at POOL_START (or as many as it asks for)
+   and doubles when full, up to the size it had: growInstanced makes the bigger one with the same geometry and material,
+   copies what is there, puts it in the old one's place in the scene (the same order of drawing) and lets the old go. */
+const POOL_START = 256;
+function growInstanced(mesh, cap){
+  const m = new THREE.InstancedMesh(mesh.geometry, mesh.material, cap);
+  m.frustumCulled = mesh.frustumCulled; m.renderOrder = mesh.renderOrder; m.visible = mesh.visible; m.name = mesh.name;
+  m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const old = mesh.instanceMatrix.array; m.instanceMatrix.array.set(old.length <= cap * 16 ? old : old.subarray(0, cap * 16));
+  if (mesh.instanceColor){ m.setColorAt(0, new THREE.Color(1, 1, 1)); const oc = mesh.instanceColor.array; m.instanceColor.array.set(oc.length <= cap * 3 ? oc : oc.subarray(0, cap * 3)); }
+  m.count = Math.min(mesh.count, cap);
+  const parent = mesh.parent;
+  if (parent){ const i = parent.children.indexOf(mesh); parent.children[i] = m; m.parent = parent; mesh.parent = null; }
+  try { mesh.dispose && mesh.dispose(); } catch {}             // (its buffers on the GPU go; the geometry and material are shared)
+  return m;
+}
 function createRungLadder(opts){
   const scene    = opts.scene;
   const material = opts.material;
@@ -5656,7 +5675,8 @@ function createRungLadder(opts){
       return;
     }
     slot.geo  = newGeo;
-    slot.mesh = new THREE.InstancedMesh(newGeo, material, capacity);
+    slot.cap  = Math.min(capacity, slot.cap || POOL_START);    // (a pool that grows: see POOL_START)
+    slot.mesh = new THREE.InstancedMesh(newGeo, material, slot.cap);
     slot.mesh.frustumCulled = false;
     slot.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     slot.mesh.setColorAt(0, primeColor);
@@ -5714,7 +5734,7 @@ function createRungLadder(opts){
     const idx = rungIndexForK(K);
     const slot = rungs[type][idx];
     if (!slot.mesh) return -1;
-    if (slot.n >= capacity) return -1;
+    if (slot.n >= slot.cap){ if (slot.cap >= capacity) return -1; slot.cap = Math.min(capacity, slot.cap * 2); slot.mesh = growInstanced(slot.mesh, slot.cap); }
     _p.set(x, y, z); _s.set(scale, scale, scale);
     _m.compose(_p, _q, _s);
     slot.mesh.setMatrixAt(slot.n, _m);
@@ -5731,7 +5751,7 @@ function createRungLadder(opts){
     const idx = rungIndexForK(K);
     const slot = rungs[type][idx];
     if (!slot.mesh) return -1;
-    if (slot.n >= capacity) return -1;
+    if (slot.n >= slot.cap){ if (slot.cap >= capacity) return -1; slot.cap = Math.min(capacity, slot.cap * 2); slot.mesh = growInstanced(slot.mesh, slot.cap); }
     slot.mesh.setMatrixAt(slot.n, matrix);
     if (color) slot.mesh.setColorAt(slot.n, color);
     slot.n++;
@@ -5993,7 +6013,7 @@ tileGeo.rotateX(-Math.PI / 2);
 const boardMat = new THREE.MeshBasicMaterial({
   side: THREE.DoubleSide, vertexColors: false, fog: true,
 });
-const boardMesh = new THREE.InstancedMesh(tileGeo, boardMat, MAXI);
+let boardMesh = new THREE.InstancedMesh(tileGeo, boardMat, 4096);   // (grows to MAXI as boards ask: see POOL_START)
 boardMesh.frustumCulled = false;
 boardMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 boardMesh.setColorAt(0, new THREE.Color(0xf0d9b5));      // prime instanceColor at full cap
@@ -6035,13 +6055,14 @@ const wholeMat = new THREE.MeshBasicMaterial({
   map: _checkerTex, side: THREE.DoubleSide, fog: true,
 });
 const MAXW = 600000;                                  // whole boards; 1 instance each
-const wholeMesh = new THREE.InstancedMesh(tileGeo, wholeMat, MAXW);
+let wholeMesh = new THREE.InstancedMesh(tileGeo, wholeMat, 4096);   // (grows to MAXW: see POOL_START)
 wholeMesh.frustumCulled = false;
 wholeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(wholeMesh);
 let _wholeN = 0;
 function setWholeBoard(x, z, size){
   if (_wholeN >= MAXW) return false;
+  if (_wholeN >= wholeMesh.instanceMatrix.count) wholeMesh = growInstanced(wholeMesh, Math.min(MAXW, wholeMesh.instanceMatrix.count * 2));
   _p.set(x, 0.01, z); _s.set(size, size, size);
   _m.compose(_p, _q, _s);
   wholeMesh.setMatrixAt(_wholeN, _m);
@@ -8084,7 +8105,10 @@ const _p = new THREE.Vector3(),    _s = new THREE.Vector3();
 const _heatLight = new THREE.Color(), _heatDark = new THREE.Color();
 const _doppLight = new THREE.Color(), _doppDark = new THREE.Color();
 
+// (a board tile past the pool's end makes it twice as big, to MAXI: see POOL_START)
+function _tileRoom(i){ if (i >= boardMesh.instanceMatrix.count && i < MAXI) boardMesh = growInstanced(boardMesh, Math.min(MAXI, Math.max(i + 1, boardMesh.instanceMatrix.count * 2))); }
 function setTile(i, x, z, size, light, override, zSize){
+  _tileRoom(i);
   _p.set(x, 0.01, z); _s.set(size, size, zSize == null ? size : zSize);
   _m.compose(_p, _q, _s);
   boardMesh.setMatrixAt(i, _m);
@@ -8093,6 +8117,7 @@ function setTile(i, x, z, size, light, override, zSize){
 /* Non-square board-mesh instance for the red selection-margin strips
    framing the click-target board. Y=0.01 keeps it coplanar with tiles. */
 function setMarginTile(i, x, z, xSize, zSize, color){
+  _tileRoom(i);
   _p.set(x, 0.01, z); _s.set(xSize, 0.02, zSize);
   _m.compose(_p, _q, _s);
   boardMesh.setMatrixAt(i, _m);
@@ -8102,6 +8127,7 @@ function setMarginTile(i, x, z, xSize, zSize, color){
    perspective depth precision collapses at far ranges — without the lift,
    horizon pieces lose the depth test and disappear into the boards. */
 function setPieceDot(i, x, z, size, color){
+  _tileRoom(i);
   _p.set(x, 0.1, z); _s.set(size, 0.02, size);
   _m.compose(_p, _q, _s);
   boardMesh.setMatrixAt(i, _m);
@@ -13435,7 +13461,7 @@ function bbQuickTick(a){
 /* THE ROW AND ITS QUICK BUTTONS NOW, not on the next frame (Oct 10): they follow the app a fifth of a second apart, from
    the frame loop, and a view standing still draws no frames, so a button greyed out a moment ago (Undo, with nothing yet
    to undo) stayed grey. An app calls this when what its row shows has just changed. */
-function bbRefreshNow(){ _bbStatT = 0; _bbQuickSig = null; try { bbStatTick(); } catch {} try { syncBrowserVisibility(); } catch {} }
+function bbRefreshNow(){ _bbStatT = 0; _bbQuickSig = null; try { bbStatTick(); } catch {} try { syncBrowserVisibility(); } catch {} try { restWake(); } catch {} }
 function bbStatTick(){
   const now = performance.now();
   if (now - _bbStatT < 200) return;
@@ -17118,6 +17144,16 @@ function frame(now){
     try { if (_wa && _wa.onWorld) _wa.onWorld(ARCADE.paused ? 0 : dt / 1000); } catch (e) { console.warn('onWorld', e); }
   }
 
+  /* THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still": the page built and drew every frame with
+     the view standing still and nothing on the boards moving, and a phone's battery paid for it). See _restDecide: a frame
+     that has nothing new to show is not built or drawn; the light watchers run, and the next frame is asked for as ever. */
+  _frameStamp++;
+  if (_restDecide(now)){
+    watchFramedCell(); watchStripSource(); watchIconTurn(); updateStripMarkers(dt);
+    requestAnimationFrame(frame);
+    return;
+  }
+  REST.lastDraw = now;
   const tWork0 = performance.now();
   const n = buildInstances();
   updateBoardLabels();
@@ -42859,6 +42895,7 @@ function _defaultFitSoon(app){
 }
 for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, () => { _defFitArmed++; }, true);
 window.setFieldApp = app => {
+  try { restWake(); } catch {}                                // (another game: the field wakes from rest, Oct 11)
   try { ARCADE.paused = false; } catch {}
   try { if (FIELD_APP && FIELD_APP.onFramed) FIELD_APP.onFramed(null, null); } catch {}
   try { if (typeof PLAY !== 'undefined' && PLAY.on) exitPlay(); } catch {}
@@ -43028,14 +43065,62 @@ function _resetAppItems(){ for (const rec of _itemMeshes.values()) rec.n = 0; _i
    movers in bigger steps, never slower. */
 const _itemCache = new Map();
 let _itemFrame = 0, _itemEpoch = 0, _itemApp = null, _itemVP = null;
+/* RESTING (Oct 11: "proceed", after "Rest when still: the page redraws every frame even when nothing moves"). Each frame
+   _restDecide says whether it may be skipped:
+   - never while the camera moves (its numbers differ from the last frame's), a finger or a key is down, the view glides,
+     or within 0.8 s of any input, an app switch or fieldItemsChanged (REST.wakeAt);
+   - never for an app without pieces of its own (chess draws its own, with moves played out on the boards), one that moves
+     things over the field (onWorld), one that says alwaysAnimate, or while a board still waits for its picture;
+   - the framed board is asked for its pieces every frame even so (its game steps there, by the clock), and if they differ
+     from the last frame's (a ball rolling, a rider on the hole you are playing) every frame is drawn;
+   - otherwise, while any other board's pieces changed in the last 2.5 s (_boardItems compares each list it is given with
+     the one it kept), a third of the frames are drawn, and when nothing has, one frame in half a second, to look.
+   A frame not drawn leaves the last one on the screen. */
+const REST = { sig: '', active: 0, change: 0, lastDraw: 0, wakeAt: 0, n: 0, framed: '', fh: 0, skipped: 0, drawn: 0 };
+let _frameStamp = 0, _framedPre = null, _framedBpLast = 0;
+function restWake(){ REST.wakeAt = performance.now(); }
+window.fieldWake = restWake;
+window.fieldRest = REST;                                     // (frames drawn and skipped, for the tests)
+function _itemsHash(L){
+  let h = 0;
+  if (!L) return -1;
+  for (const it of L){ h = (h * 31 + (it.kind ? it.kind.length * 7 + it.kind.charCodeAt(0) : 0)) | 0;
+    // (to a ten-thousandth of the board: a piece easing to its square changes by less for ever, which no one can see)
+    for (const v of [it.u, it.v, it.scale, it.lift, it.yaw, it.sx, it.sy, it.sz]) h = (h * 31 + (v == null ? 1 : Math.round(v * 1e4))) | 0;
+    h = (h * 31 + (typeof it.color === 'number' ? it.color : 7)) | 0; }
+  return h ^ L.length;
+}
+function _restDecide(now){
+  // (the camera, and the dial's own state, which tints the boards and springs back after it is let go)
+  const sig = [st.camX, st.camZ, st.yaw, st.pitch, st.zoom, st.objSize, st.N, st.heldTheta, st.beta, st.beta_perp, st.rung, st.heatmap, st.doppler, innerWidth, innerHeight].map(v => typeof v === 'number' ? v.toFixed(5) : String(v)).join() + (target.active ? 'a' : '') + (target.shown ? 's' : '');
+  const input = turn.active || semiState.dragging || PAN.dragging || Math.abs(PAN.vx || 0) + Math.abs(PAN.vz || 0) > 1e-7 || (ctl.keys && ctl.keys.size > 0) || st.heldPanRate;
+  if (sig !== REST.sig || input){ REST.why = input ? 'input' : 'camera'; REST.sig = sig; REST.active = now; }
+  let a = null; try { a = window.getFieldApp && window.getFieldApp(); } catch {}
+  if (!a || !a.cellItems || a.onWorld || a.alwaysAnimate || _photoHoles){ REST.why = 'app'; REST.drawn++; return false; }
+  // the framed board, asked now (and kept for this frame's build): a change in it is play to be seen at full speed
+  if (target.shown){
+    const W = window.FIELD_WORLD, f = W && W.cellAt(target.boardX, target.boardZ);
+    if (f && _framedBpLast >= (a.itemMinPx || 40)){
+      let L = null; try { L = a.cellItems(f.c, f.r, _framedBpLast); } catch {}
+      _framedPre = { key: f.c * 100003 + f.r, L, stamp: _frameStamp };
+      const h = _itemsHash(L), k = f.c + ',' + f.r;
+      if (k !== REST.framed || h !== REST.fh){ REST.why = 'framed'; REST.framed = k; REST.fh = h; REST.active = now; }
+    }
+  }
+  if (now - REST.active < 800 || now - REST.wakeAt < 800){ REST.drawn++; return false; }
+  const skip = now - REST.change < 2500 ? (++REST.n % 3) !== 0 : now - REST.lastDraw < 500;
+  if (skip) REST.skipped++; else REST.drawn++;
+  return skip;
+}
 const _ITEM_EVERY = bp => bp >= 300 ? 3 : bp >= 100 ? 6 : 12;
 const _vpM = new THREE.Matrix4(), _vpE = _vpM.elements;
-function fieldItemsChanged(){ _itemEpoch++; }
+function fieldItemsChanged(){ _itemEpoch++; restWake(); }
 window.fieldItemsChanged = fieldItemsChanged;
 try {
-  const wake = () => { _itemEpoch++; };
+  const wake = () => { _itemEpoch++; restWake(); };
   for (const ev of ['click', 'drop', 'change', 'input', 'pointerup']) window.addEventListener(ev, wake, true);
-  window.addEventListener('keydown', e => { if (!/^(w|a|s|d|q|e|r|f|arrow\w+|shift|control|alt|meta)$/i.test(e.key || '')) wake(); }, true);
+  for (const ev of ['pointerdown', 'pointermove', 'wheel', 'touchstart', 'touchmove', 'resize', 'keyup']) window.addEventListener(ev, restWake, { capture: true, passive: true });   // (wake from rest: see REST)
+  window.addEventListener('keydown', e => { restWake(); if (!/^(w|a|s|d|q|e|r|f|arrow\w+|shift|control|alt|meta)$/i.test(e.key || '')) wake(); }, true);
 } catch {}
 // how much of a board (centre cx, cz, size bWX × bWZ) the last frame showed: 16 points of it, inside the view or not
 function _onScreen(cx, cz, bWX, bWZ){
@@ -43052,15 +43137,19 @@ function _onScreen(cx, cz, bWX, bWZ){
 function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
   if (app !== _itemApp){ _itemCache.clear(); _itemApp = app; }
   const key = ix * 100003 + iz;
-  if (framed || app.itemsEveryFrame){ const L = app.cellItems(ix, iz, bp); _itemCache.delete(key); return L; }
+  if (framed || app.itemsEveryFrame){
+    if (framed) _framedBpLast = bp;
+    const L = framed && _framedPre && _framedPre.key === key && _framedPre.stamp === _frameStamp ? _framedPre.L : app.cellItems(ix, iz, bp);
+    _itemCache.delete(key); return L; }
   const C = _itemCache.get(key), every = _ITEM_EVERY(bp);
   if (C && C.epoch === _itemEpoch){
     C.seen = _itemFrame;
     if ((_itemFrame + key) % every !== 0 || C.at === _itemFrame) return C.items;   // not this board's turn
     if (_onScreen(cx, cz, bWX, bWZ) <= 0.5) return C.items;                         // half on screen or less: left as it is
   }
-  const L = app.cellItems(ix, iz, app.degradedPx ? Math.min(bp, app.degradedPx) : bp);
-  _itemCache.set(key, { items: L, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch });
+  const L = app.cellItems(ix, iz, app.degradedPx ? Math.min(bp, app.degradedPx) : bp), h = _itemsHash(L);
+  if (!C || C.h !== h) REST.change = performance.now();      // (something on the boards moved: the field does not rest yet)
+  _itemCache.set(key, { items: L, h, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch });
   if (_itemCache.size > 4000) for (const [k, c] of _itemCache) if (_itemFrame - c.seen > 120) _itemCache.delete(k);   // boards long out of view
   return L;
 }
@@ -43101,7 +43190,7 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
        instances — 3 MB of matrices each — which is right for a kind on every
        board and wasteful for one that only ever shows a few at once (an
        explosion's pieces): an app lists those in itemCaps. */
-    const cap = (app.itemCaps && app.itemCaps(kind)) || _ITEM_CAP;
+    const max = (app.itemCaps && app.itemCaps(kind)) || _ITEM_CAP, cap = Math.min(max, POOL_START);   // (it grows: POOL_START)
     /* A KIND MAY BE SEE-THROUGH (Sep 27): geometry.userData.opacity makes its
        material transparent at that opacity, writing no depth — a soft
        shadow, a puff of smoke. */
@@ -43119,10 +43208,10 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
     mesh.setColorAt(0, new THREE.Color(1, 1, 1));   // allocate the color buffer
     mesh.count = 0;
     scene.add(mesh);
-    rec = { mesh, n: 0, cap };
+    rec = { mesh, n: 0, cap, max };
     _itemMeshes.set(kind, rec);
   }
-  if (rec.n >= rec.cap) return;
+  if (rec.n >= rec.cap){ if (rec.cap >= rec.max) return; rec.cap = Math.min(rec.max, rec.cap * 2); rec.mesh = growInstanced(rec.mesh, rec.cap); }
   const u = (it.u == null) ? 0.5 : it.u;
   const v = (it.v == null) ? 0.5 : it.v;
   const s = (it.scale || 0.25) * bWX;

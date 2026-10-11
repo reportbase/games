@@ -87,6 +87,28 @@ try {
     if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
   }
 
+  // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing
+  // on any board moving, draws only now and then (a look twice a second); a finger on the screen wakes it to draw every
+  // frame; and chess, which plays moves out on its boards itself, never rests
+  current = 'the field rests when still';
+  {
+    const before = failures.length;
+    const rs = await page.evaluate(async () => {
+      const R = window.fieldRest, wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const count = async ms => { const d0 = R.drawn, s0 = R.skipped; let f = 0, on = true; const t = () => { f++; if (on) requestAnimationFrame(t); }; requestAnimationFrame(t); await wait(ms); on = false; return { frames: f, drawn: R.drawn - d0, skipped: R.skipped - s0 }; };
+      window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')); await wait(2500);
+      const still = await count(2000);
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 10, clientY: 10 }));
+      const woke = await count(400);
+      window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'field chess') || window.FIELD_APPS[0]); await wait(1500);
+      const chess = await count(1500);
+      return { still, woke, chess };
+    });
+    if (!(rs.still.skipped > rs.still.frames * 0.6) || !(rs.woke.drawn >= rs.woke.frames * 0.7) || rs.chess.skipped)
+      failures.push(`[${current}] ${JSON.stringify(rs)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (still: ${rs.still.drawn} of ${rs.still.frames} frames drawn)`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two
@@ -634,6 +656,10 @@ try {
     if (!(dc.framed >= dc.frames * 0.8) || dc.othersMax > Math.ceil(dc.frames / 3) + 1 || dc.bpMax > 599 || !(dc.woke > dc.boards))
       failures.push(`[${current}] ${JSON.stringify({ ...dc, others: undefined })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (framed asked ${dc.framed} of ${dc.frames} frames, others ${dc.othersSum} times in all, ${dc.woke} after a click)`);
+    // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
+    // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
+    const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
+    if (!(pools.grown >= 1) || !(pools.slots < 1e6)) failures.push(`[${current}] pools that grow: ${JSON.stringify(pools)}`);
   }
   // MOVERS KEEP APART (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where the
   // golfball bounce away", "Keep them apart"): on the course and 120 generated holes, watched for half a minute from the

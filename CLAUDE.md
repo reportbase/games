@@ -489,9 +489,27 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     `window.fieldItemsChanged()` (mini golf calls it whenever a hole is set: `dropKinds`). `app.itemsEveryFrame` opts out.
   - The games step only their framed board, by the clock, so a board asked less often shows its movers in bigger steps,
     never slower. Measured: framed, 1.6 boards asked a frame instead of 43; zoomed out, 48 instead of 772.
-  - Still to do (found then): the frame loop never rests while nothing changes; every mini golf hole's ground is its own draw
-    (about 800 draws zoomed out); about 4.2 million instance slots (some 270 MB) are reserved up front, chess's piece pools
-    even in mini golf.
+  - Still to do (found then): every mini golf hole's ground is its own draw (about 800 draws zoomed out).
+- **The field rests when nothing changes** (Oct 11, "proceed" on "Rest when still": the page built and drew every frame with
+  the view still). `_restDecide` runs first in `frame`; a frame it skips is not built or drawn (the last one stays on the
+  screen), only the light watchers run.
+  - Never skipped: while the camera's numbers (and the dial's) differ from the last frame's, a finger or key is down, the
+    view glides, or within 0.8 s of any input, an app switch, `bbRefreshNow` or `fieldItemsChanged` (`REST.wakeAt`,
+    `window.fieldWake`); and never for an app without pieces of its own (chess), one with `onWorld` or `alwaysAnimate`,
+    or while a board still waits for its picture (`_photoHoles`).
+  - The framed board is asked for its pieces every frame even so (its game steps there; `_framedPre` passes the list on to
+    the build) and any change in it (`_itemsHash`, to a ten-thousandth of the board) means every frame is drawn.
+  - Otherwise a third of the frames are drawn while other boards' lists change (`REST.change`, set by `_boardItems`), and
+    one in half a second when nothing has. `window.fieldRest` counts frames drawn and skipped for the tests.
+  - Measured: Sokoban framed and still, 10 of 299 frames drawn; mini golf on a hole without movers, a third (the
+    neighbours' riders move); a hole with riders on it, every frame, as it should be.
+- **Pools that grow** (Oct 11, "proceed" on "Smaller piece pools"): every instanced pool was made at the most it could hold
+  (chess's 42 piece pools of 33,334 even in mini golf, 48,000 for every kind of piece, 400,000 board tiles, 600,000 whole
+  boards: 4.2 million instances). Now each starts at `POOL_START` (256; the tiles at 4,096) and doubles when full up to
+  that size (`growInstanced`: same geometry and material, contents copied, put in the old one's place in the scene, the old
+  one disposed). Rung ladder slots (`slot.cap`), app item kinds (`rec.cap`, `rec.max`), `boardMesh` (`_tileRoom`) and
+  `wholeMesh` (now `let`). Measured: mini golf framed 307 MB of instance buffers before, 3 MB after (18 MB zoomed out);
+  chess 183 MB before, 3–6 MB after.
 - **The rails** (Oct 10): the turn rail across the top (`#yawZone`) is as tall as the side rails (`#tiltZone`,
   `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
