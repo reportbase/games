@@ -316,12 +316,44 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Neither may cross the line over itself (`crossesItself`) or bring a planter or path to the rail. A step that would is
     halved, up to three times; if it still would, nothing changes and the message says so. `wiggleOf` measures it (the
     waves beyond the ellipse against the ellipse) for the tests.
-  - A tap in the editor refreshes the quick buttons (`bbRefreshNow`), since they follow the selection and a still view draws
-    no frames.
+  - A tap in the editor refreshes the quick buttons (`bbRefreshNow`) at once, since they follow the selection and the row
+    otherwise catches up only on a later frame.
 - **A roll stops after `ROLL_MAX`** (15 s, Oct 11). A bumper kicks a ball out at a speed of its own, so a slope that runs back
   down into one (a curved ridge's flank by a power bumper) kept a ball going for ever, and neither a person nor the players
   could take the next shot. Shots stop in a few seconds. Of the four unplayable level-5 holes found while checking curves,
   this fixed three, one of them without curves.
+- **Movers keep apart** (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where
+  the golfball bounce away", then "Keep them apart" of the two ways offered; the other was making them bounce). Movers still
+  go where the clock says (any moment of a hole can be shown at once, which the rater, the plain player and the boards no one
+  plays need); the clock is arranged so they never meet. `keepApart(src, mode, tiers, anchor)` on a hole as written:
+  - Units (`kaUnits`): a path's riders (a train on one loop at one speed is one unit, kept in its spacing), a turnstile, a
+    door, a windmill, a gate. Each is tabled as its shape at `KA.Q` (256) fractions of its turn (`kaTable`), with its sweep
+    and its fastest part's speed. A door now has a 7th number and a windmill a 5th: its phase (cleanSrc keeps them; a windmill's
+    turn rate is kept to six places so a beat stays exact).
+  - A train whose riders would meet on their own loop (a figure of eight, an even train) is spaced off those offsets
+    (`kaTrain`), or loses riders.
+  - A thing standing still on a sweep (`kaStatics`: bumpers, boulders, fences, curved fences, planters, pipe mouths) is nudged
+    off it (1.8 cells for a loose one, 0.8 for a guard's, a screen's or the course's), else the less needed goes: tiers loose
+    1, weave and planters 2, screen 3, guard 4, the course's own 5 (never dropped); a piece on a track with two riders or more
+    gives way to it.
+  - Units whose sweeps reach one another go on one beat (`kaBeat`, at least 1.7 s, a multiple of 2 ms): each period becomes
+    the nearest of 1, 1½, 2, 3, 4 or 6 beats, so a pair comes round together within 12 beats. The most needed and the longest
+    trains first, each takes the first of 48 phases (nearest period first, then the others) at which it never comes within
+    `KA.gap` (0.08 cell) of one placed before it over that cycle (`kaClear`, which skips ahead while they are far apart and
+    allows half a table step each). Failing that, a train tries a rider shorter; then the unit goes ('gen'), or keeps its best
+    and is marked. `KA.budget` (400,000 gap tests) caps the trying, counted, not timed, so a hole is the same on any machine.
+  - Modes: 'gen' (a generated hole: `genSrc` keeps apart each attempt near its band and guesses it again, as dropped riders
+    made holes easier; the hole keeps `apart` {dropped, meets, why}), 'course' (at load, after the guards: rider sizes allowed
+    12% for Expert), 'time' (the editor, on every change: timing only, the selected mover keeps its period and sets the beat
+    so Faster and Slower stand; things that still meet are ringed red, `ED.meets`) and 'fit' (the menu's Keep movers apart:
+    nudges too, never drops).
+  - `tuneMovers` no longer rounds periods and scales windmills too, so a beat survives the Difficulty setting. Screens and the
+    fallback bumper keep off every track (`toyPoints`), and the serpent's way back lies a rider's width beside its way out.
+  - Measured: before, 185 of 274 generated holes with movers had something pass through something in 40 s (815 pairs of
+    riders met). After, none on the course or 300 generated holes, from the start, an hour on and two. The weave keeps 679 of
+    the 811 riders it made on 300 holes; a hole takes about 6.7 ms to make, against 3.6. Levels 1, 3 and 5 rate 2.1, 3.3
+    and 5.8 strokes (2.4, 3.3 and 6.0 before). Unplayable level-5 holes: 0 in 400 (1 in 400 before), though one that was
+    playable, 11763, is not now.
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).
@@ -444,6 +476,40 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing
   (none while playing: the row is the editor's, Oct 10). The row stops short of the middle and its buttons narrow to fit. They show only while the pane is open; the three dots
   (`#bbHandle`) show on every game, whether or not its row has anything in it.
+- **Only the selected board is drawn perfectly** (Oct 11: "only the selected board needs to be presented perfectly, all other
+  boards can be drawn in degraded presentation to save GPU. ideally, if the board is not even visible or if it is only 1/2 or
+  less visible, you don't need to update it at all."). `buildInstances` walks only the boards in view (cost by what is on the
+  screen, not by the field's size). Their apps' pieces used to be asked for every frame, the view still or not (mini golf:
+  43 boards and 2,848 pieces framed, 772 and 33,197 zoomed out). Now `_boardItems` keeps each board's list (`_itemCache`):
+  - the framed board is asked every frame at its full size;
+  - any other board is asked at the app's `degradedPx` at most (mini golf: 599, so plain rails, bumpers and boulders and
+    quarter-detail ground), and only every 3 frames (300 px and over), 6 (100 px) or 12, each on its own beat;
+  - a board half on screen or less (`_onScreen`: 16 points against the last frame's view) is not asked while it stays so;
+  - every list is asked again after another app, a click, a key that is not flying, a drop, a change, or
+    `window.fieldItemsChanged()` (mini golf calls it whenever a hole is set: `dropKinds`). `app.itemsEveryFrame` opts out.
+  - The games step only their framed board, by the clock, so a board asked less often shows its movers in bigger steps,
+    never slower. Measured: framed, 1.6 boards asked a frame instead of 43; zoomed out, 48 instead of 772.
+  - Still to do (found then): every mini golf hole's ground is its own draw (about 800 draws zoomed out).
+- **The field rests when nothing changes** (Oct 11, "proceed" on "Rest when still": the page built and drew every frame with
+  the view still). `_restDecide` runs first in `frame`; a frame it skips is not built or drawn (the last one stays on the
+  screen), only the light watchers run.
+  - Never skipped: while the camera's numbers (and the dial's) differ from the last frame's, a finger or key is down, the
+    view glides, or within 0.8 s of any input, an app switch, `bbRefreshNow` or `fieldItemsChanged` (`REST.wakeAt`,
+    `window.fieldWake`); and never for an app without pieces of its own (chess), one with `onWorld` or `alwaysAnimate`,
+    or while a board still waits for its picture (`_photoHoles`).
+  - The framed board is asked for its pieces every frame even so (its game steps there; `_framedPre` passes the list on to
+    the build) and any change in it (`_itemsHash`, to a ten-thousandth of the board) means every frame is drawn.
+  - Otherwise a third of the frames are drawn while other boards' lists change (`REST.change`, set by `_boardItems`), and
+    one in half a second when nothing has. `window.fieldRest` counts frames drawn and skipped for the tests.
+  - Measured: Sokoban framed and still, 10 of 299 frames drawn; mini golf on a hole without movers, a third (the
+    neighbours' riders move); a hole with riders on it, every frame, as it should be.
+- **Pools that grow** (Oct 11, "proceed" on "Smaller piece pools"): every instanced pool was made at the most it could hold
+  (chess's 42 piece pools of 33,334 even in mini golf, 48,000 for every kind of piece, 400,000 board tiles, 600,000 whole
+  boards: 4.2 million instances). Now each starts at `POOL_START` (256; the tiles at 4,096) and doubles when full up to
+  that size (`growInstanced`: same geometry and material, contents copied, put in the old one's place in the scene, the old
+  one disposed). Rung ladder slots (`slot.cap`), app item kinds (`rec.cap`, `rec.max`), `boardMesh` (`_tileRoom`) and
+  `wholeMesh` (now `let`). Measured: mini golf framed 307 MB of instance buffers before, 3 MB after (18 MB zoomed out);
+  chess 183 MB before, 3–6 MB after.
 - **The rails** (Oct 10): the turn rail across the top (`#yawZone`) is as tall as the side rails (`#tiltZone`,
   `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
