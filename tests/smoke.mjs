@@ -299,7 +299,8 @@ try {
     const a = bars(); await new Promise(ok => setTimeout(ok, 700));
     out.drawn = { found: (D.HOLES[k].toys || []).some(T => T.arm), bars: a.split(',').filter(Boolean).length, turned: bars() !== a };
     return out; });
-  if (tu.read !== 'arm:6,swing:6' || !(tu.arm.hit > 0 && tu.arm.vy > 0) || !(tu.swing.hit > 0 && tu.swing.vy > 0) || !tu.drawn.found || !(tu.drawn.bars >= 2) || !tu.drawn.turned)
+  // (a door has seven numbers since Oct 11, the last its phase, filled in as nothing: movers kept apart)
+  if (tu.read !== 'arm:6,swing:7' || !(tu.arm.hit > 0 && tu.arm.vy > 0) || !(tu.swing.hit > 0 && tu.swing.vy > 0) || !tu.drawn.found || !(tu.drawn.bars >= 2) || !tu.drawn.turned)
     failures.push(`[${current}] the turnstile and the door: ${JSON.stringify(tu)}`);
   // a board keeps its hole whatever the field's size, and names come round less (Oct 9): the index is made from the board's
   // column and row alone, every one its own, small near the corner; 300 boards have at least 270 names
@@ -608,6 +609,78 @@ try {
     if (!sc.job || sc.stars !== 3 || !sc.name || sc.rows !== 3 || !sc.head || !sc.shown || !closed || !esc) failures.push(`[${current}] rated as you play, and the scorecard: ${JSON.stringify({ ...sc, closed, esc })}`);
   }
   console.log(`${failures.length === beforeL ? 'ok  ' : 'FAIL'} ${current}`);
+
+  // ONLY THE SELECTED BOARD IS DRAWN PERFECTLY (Oct 11: "only the selected board needs to be presented perfectly, all other
+  // boards can be drawn in degraded presentation to save GPU. ideally, if the board is not even visible or if it is only 1/2
+  // or less visible, you don't need to update it at all."): with the view still, the framed board is asked for its pieces
+  // every frame at its full size, every other board at most every third frame and as if under 600 px, far fewer boards are
+  // asked a frame than are drawn, and a click asks them all again
+  current = 'only the selected board drawn fully';
+  {
+    const before = failures.length;
+    const dc = await page.evaluate(async () => {
+      const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), fk = f.c + ',' + f.r, orig = A.cellItems;
+      const wait = ms => new Promise(ok => setTimeout(ok, ms)), calls = new Map(), bps = []; let frames = 0, on = true, fbp = 0;
+      A.cellItems = function(c, r, bp){ const k = c + ',' + r; calls.set(k, (calls.get(k) || 0) + 1); if (k === fk) fbp = Math.max(fbp, bp); else bps.push(bp); return orig.call(this, c, r, bp); };
+      const tick = () => { frames++; if (on) requestAnimationFrame(tick); };
+      await wait(400); calls.clear(); bps.length = 0; requestAnimationFrame(tick);
+      await wait(2500); on = false;
+      const still = { frames, framed: calls.get(fk) || 0, fbp, others: [...calls].filter(([k]) => k !== fk).map(([, n]) => n), bpMax: bps.length ? Math.max(...bps) : 0, boards: calls.size };
+      calls.clear(); frames = 0; on = true; requestAnimationFrame(tick);
+      window.dispatchEvent(new Event('click')); await wait(600); on = false;
+      A.cellItems = orig;
+      return { ...still, othersMax: Math.max(0, ...still.others), othersSum: still.others.reduce((a, b) => a + b, 0), woke: calls.size, wokeFrames: frames };
+    });
+    if (!(dc.framed >= dc.frames * 0.8) || dc.othersMax > Math.ceil(dc.frames / 3) + 1 || dc.bpMax > 599 || !(dc.woke > dc.boards))
+      failures.push(`[${current}] ${JSON.stringify({ ...dc, others: undefined })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (framed asked ${dc.framed} of ${dc.frames} frames, others ${dc.othersSum} times in all, ${dc.woke} after a click)`);
+  }
+  // MOVERS KEEP APART (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where the
+  // golfball bounce away", "Keep them apart"): on the course and 120 generated holes, watched for half a minute from the
+  // start and again an hour on, no rider comes onto another, onto a bar, a bumper, a boulder or a fence, and no bar onto a
+  // thing; a door's and a windmill's phase is kept by cleaning and moves them
+  current = 'mini golf movers keep apart';
+  {
+    const before = failures.length;
+    const ka = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, E = D.editor, CW = D.CW, ARM = CW * 0.11;
+      const seg = (px, py, s) => { const ux = s[2] - s[0], uy = s[3] - s[1], f = Math.max(0, Math.min(1, ((px - s[0]) * ux + (py - s[1]) * uy) / (ux * ux + uy * uy || 1e-12))); return Math.hypot(s[0] + ux * f - px, s[1] + uy * f - py); };
+      const gap = (a, b) => a.c && b.c ? Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) - a.c[2] - b.c[2] : a.c ? seg(a.c[0], a.c[1], b.s) - a.c[2] - b.h : b.c ? seg(b.c[0], b.c[1], a.s) - b.c[2] - a.h
+        : Math.min(seg(a.s[0], a.s[1], b.s), seg(a.s[2], a.s[3], b.s), seg(b.s[0], b.s[1], a.s), seg(b.s[2], b.s[3], a.s)) - a.h - b.h;
+      const bad = [], kinds = {};
+      const look = (H, name) => {
+        const mv = [], st = [];
+        (H.toys || []).forEach((T, j) => { const k = Object.keys(T)[0], v = T[k];
+          if (k === 'path') mv.push({ j, k: 'rider', at: t => { const S = D.toyAt(T, t), n = (v.length - 4) >> 1; return [{ c: [S.x, S.y, v[2 * n]] }]; } });
+          else if (k === 'arm' || k === 'swing') mv.push({ j, k, at: t => { const S = D.toyAt(T, t), nb = k === 'arm' ? v[5] : 1; return Array.from({ length: nb }, (_, q) => { const a = S.a + q * 2 * Math.PI / nb; return { s: [v[0], v[1], v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a)], h: ARM }; }); } });
+          else if (k === 'mill') mv.push({ j, k, at: t => { const S = D.toyAt(T, t); return [S.a, S.a + Math.PI / 2].map(a => ({ s: [v[0] - v[2] * Math.cos(a), v[1] - v[2] * Math.sin(a), v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a)], h: 0.011 })); } });
+          else if (k === 'gate') mv.push({ j, k, at: t => D.toyAt(T, t).up >= 0.5 ? [{ s: v.slice(0, 4), h: CW * 0.14 }] : [] });
+          else if (k === 'kick' || k === 'rock') st.push({ j, k, els: [{ c: [v[0], v[1], v[2]] }] });
+          else if (k === 'fence') st.push({ j, k, els: [{ s: v.slice(0, 4), h: CW * 0.12 }] });
+        });
+        if (!mv.length) return 0;
+        for (const t0 of [0, 3600]) for (let t = t0; t < t0 + 30; t += 0.05){
+          const now = mv.map(M => M.at(t));
+          for (let a = 0; a < mv.length; a++){
+            for (let b = a + 1; b < mv.length; b++) for (const x of now[a]) for (const y of now[b]) if (gap(x, y) < -0.01 * CW){ const key = mv[a].k + '/' + mv[b].k; kinds[key] = (kinds[key] || 0) + 1; if (bad.length < 6) bad.push(name + ' ' + key + ' t ' + t.toFixed(2)); return 1; }
+            for (const S of st) for (const x of now[a]) for (const y of S.els) if (gap(x, y) < -0.01 * CW){ const key = mv[a].k + '/' + S.k; kinds[key] = (kinds[key] || 0) + 1; if (bad.length < 6) bad.push(name + ' ' + key + ' t ' + t.toFixed(2)); return 1; }
+          }
+        }
+        return 0;
+      };
+      let n = 0;
+      D.HOLES.forEach((H, k) => { if (H.gen == null && !H.custom){ n++; look(H, 'course ' + H.name); } });
+      for (let i = 22; i < 142; i++){ const k = E.addHole(E.cleanSrc(D.genSrc(i, 1 + i % 5))); n++; look(D.HOLES[k], 'gen ' + i); }
+      // a door's and a windmill's phase: kept by cleaning, and it moves them
+      const c = E.cleanSrc({ map: Array(13).fill('........'), toys: [{ swing: [4, 6, 1.2, 0, 90, 3, 0.25] }, { mill: [4, 9, 1.2, 1.234567, 1.5] }] });
+      const sw = c && c.toys.find(T => T.swing), ml = c && c.toys.find(T => T.mill);
+      const phase = !!(sw && sw.swing[6] === 0.25 && ml && ml.mill[4] === 1.5 && ml.mill[3] === 1.234567
+        && Math.abs(D.toyAt({ swing: [0, 0, 1, 0, Math.PI / 2, 3, 0.25] }, 0).a - Math.PI / 4) < 1e-9 && Math.abs(D.toyAt({ mill: [0, 0, 1, 1, 1.5] }, 0).a - 1.5) < 1e-9);
+      return { n, bad, kinds, phase };
+    });
+    if (ka.bad.length || !ka.phase) failures.push(`[${current}] ${JSON.stringify(ka)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${ka.n} holes)`);
+  }
 
   // The hole editor (Oct 8: "yes, build the editor"): a new hole on the selected board, painted with a real drag after
   // choosing a tool on the bar, things placed, undo, Check sets the par, Save keeps it, Share's link opens the page on it.
@@ -1362,6 +1435,26 @@ try {
     if (sr.buttons !== 2 || sr.menu !== 2 || !sr.smooth || !(sr.smooth[1] < sr.smooth[0] * 0.8) || !sr.kept || !sr.undone || !sr.roundSame || !(sr.coves > 0.05) || !sr.same
         || sr.crossed !== false || !(sr.rough > sr.coves) || !sr.tails.planter || !sr.tails.path || !sr.tails.green || sr.bumper !== 0)
       failures.push(`[${current}] smoother and rougher: ${JSON.stringify(sr)}`);
+    // movers kept apart in the editor (Oct 11): two loops drawn crossing are put on one beat and never meet; a bumper laid on
+    // a track is ringed in red and left where it is; Keep movers apart, in the menu, moves it off and nothing is ringed
+    const ke = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED;
+      const circ = (cx, cy, r, n) => { const v = []; for (let q = 0; q < n; q++){ const a = (q + 0.5) / n * 2 * Math.PI; v.push(+(cx + r * Math.cos(a)).toFixed(2), +(cy + r * Math.sin(a)).toFixed(2)); } return v; };
+      ED.src.toys = [{ path: [...circ(3.2, 6.5, 1.5, 8), 0.35, 5, 0, 1] }, { path: [...circ(4.8, 6.5, 1.5, 8), 0.35, -7.3, 0.5, 0] }]; ED.src.land = []; ED.pick = null;
+      E.editRefresh(true);
+      const P = ED.src.toys.map(T => T.path), per = P.map(v => v[17]);
+      let minGap = Infinity; for (let t = 0; t < 90; t += 0.02){ const a = D.toyAt({ path: P[0] }, t), b = D.toyAt({ path: P[1] }, t); minGap = Math.min(minGap, Math.hypot(a.x - b.x, a.y - b.y) - 0.7); }
+      const meets0 = (ED.meets || []).length;
+      ED.src.toys.push({ kick: [3.2, 5, 0.3, 0] }); E.editRefresh(true);
+      const ringed = (ED.meets || []).length, stayed = !!ED.src.toys[2] && ED.src.toys[2].kick[0] === 3.2 && ED.src.toys[2].kick[1] === 5;
+      const item = E.editorMenu().find(m => m.label === 'Keep movers apart'); if (item) item.on();
+      const k2 = ED.src.toys.find(T => T.kick), moved = !!k2 && (k2.kick[0] !== 3.2 || k2.kick[1] !== 5), after = (ED.meets || []).length;
+      ED.src.toys = []; ED.meets = []; E.editRefresh(true);
+      return { per, minGap: +minGap.toFixed(3), meets0, ringed, stayed, item: !!item, moved, after };
+    });
+    const ratio = Math.abs(ke.per[1] / ke.per[0]), onBeat = [1, 1.5, 2, 3, 4, 6].some(m => Math.abs(ratio - m) < 1e-3 || Math.abs(ratio - 1 / m) < 1e-3);
+    if (!onBeat || !(ke.minGap > 0) || ke.meets0 || !(ke.ringed >= 1) || !ke.stayed || !ke.item || !ke.moved || ke.after)
+      failures.push(`[${current}] movers kept apart in the editor: ${JSON.stringify(ke)}`);
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
         || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
       failures.push(`[${current}] curved fences and leaves: ${JSON.stringify(cf)}`);

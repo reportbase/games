@@ -15629,7 +15629,7 @@ function buildInstances(){
       const _app = window.getFieldApp && window.getFieldApp();
       if (_app && _app.cellItems && bp >= (_app.itemMinPx || 40)){
         let _items = null;
-        try { _items = _app.cellItems(ix, iz, bp); } catch {}
+        try { _items = _boardItems(_app, ix, iz, bp, _framed, cx, cz, bWX, bWZ); } catch {}
         /* A CHESS PIECE IS DRAWN AS CHESS DRAWS IT. An item that names a
            `piece` (a letter: upper case white, lower case black) goes to the
            chess ladder instead of the app's own pool, so it gets the same
@@ -34438,6 +34438,8 @@ const GOLF_APP = (() => {
      height. blobOf keeps a shape's line by its array (a changed shape is a new array), with its box, for the in-and-out
      tests. The map's cells still work as before (the course is written in them, and a stream needs its bridge). */
   const BLOBS = new WeakMap(), SHAPE_KINDS = ['lake', 'sand', 'green'];
+  const LOOP = new WeakMap();                                 // (a path's loop, by its array: loopOf. Up here since Oct 11, as the course's
+                                                               //  guards and screens are laid at load and keep off its tracks)
   const LINES = new WeakMap(), LINE_KINDS = ['crest', 'incline'], lineN = v => (v.length - 2) >> 1;   // (curved ridges and ramps, Oct 11: see lineOf)
   function shapeN(k, v){ return k === 'green' ? (v.length - 1) >> 1 : v.length >> 1; }
   function blobOf(v, n){
@@ -34942,7 +34944,7 @@ const GOLF_APP = (() => {
         if (k === 'plateau') return v[4] >= 0.04 && cx >= Math.min(v[0], v[2]) && cx <= Math.max(v[0], v[2]) && cy >= Math.min(v[1], v[3]) && cy <= Math.max(v[1], v[3]);
         return false; });
     };
-    const screens = [];
+    const screens = [], allPts = all.flatMap(toyPoints);       // (every thing's and every track's points, once: Oct 11)
     let screen = null, open = false;
     const crossed = across();
     if (!crossed || lv >= 5){                                // (at level 5 a screen goes on even where something crosses)
@@ -34951,7 +34953,9 @@ const GOLF_APP = (() => {
         const px = tx + (cx - tx) * f, py = ty + (cy - ty) * f;
         if (Math.hypot(px - tx, py - ty) < 1.8 || Math.hypot(px - cx, py - cy) < 1.9 || !free(Math.floor(px), Math.floor(py))) continue;
         if (!offPl(px, py, 1.5)) continue;                      // (a screen reaches about a cell and a quarter: clear of the planters, Oct 11)
-        if (wayOver(px, py, 2.2) || all.some(T => { const v = Object.values(T)[0]; return Math.hypot(v[0] - px, v[1] - py) < 1.3; })) continue;
+        // (off every thing and every track, not only each one's first point: a screen on a weave's track made the two meet,
+        //  and keeping them apart then cost the whole train, Oct 11)
+        if (wayOver(px, py, 2.2) || allPts.some(([x, y, r]) => Math.hypot(x - px, y - py) < r + 1.35)) continue;
         const P = (o, k = 1) => [X(px + nx * o * k), Y(py + ny * o * k)], deg = Math.round(Math.atan2(ny, nx) * 180 / Math.PI);
         const KINDS = ['fence', 'pair', 'boulder', 'bumper', 'berm', 'turnstile', 'pegs', 'door', ...(lv ? ['arc', 'planter'] : [])];   // (an arc of curved fence: generated holes, Oct 10; a planter, Oct 11)
         screen = KINDS[Math.floor(rnd() * KINDS.length)];
@@ -34985,13 +34989,19 @@ const GOLF_APP = (() => {
       if (open){                                              // nowhere about halfway: a bumper just before the cup, then
         const ux = (tx - cx) / L0, uy = (ty - cy) / L0;
         for (const rr of [1.5, 1.8, 1.2, 2.2]){ const px = X(cx + ux * rr), py = Y(cy + uy * rr);
+          if (!free(Math.floor(px), Math.floor(py)) || wayOver(px, py, 1.6) || allPts.some(([x, y, r]) => Math.hypot(x - px, y - py) < r + 0.5)) continue;   // (off the tracks: Oct 11)
+          screens.push(kickAt(px, py, Math.floor(rnd() * 4))); screen = 'bumper'; open = false; break; }
+        if (open) for (const rr of [1.5, 1.8, 1.2, 2.2]){ const px = X(cx + ux * rr), py = Y(cy + uy * rr);   // (and if none is off them, as before: keepApart nudges it)
           if (!free(Math.floor(px), Math.floor(py)) || wayOver(px, py, 1.6)) continue;
           screens.push(kickAt(px, py, Math.floor(rnd() * 4))); screen = 'bumper'; open = false; break; }
       }
     }
-    return { ...src, guard: style, screen, open: open && !crossed, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards, ...screens], land: [...(src.land || []), ...land] };
+    return { ...src, guard: style, screen, open: open && !crossed, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards, ...screens], land: [...(src.land || []), ...land],
+      nBase: toys.length, nGuard: guards.length };            // (where its guards and its screens start, for keepApart: Oct 11)
   }
-  HOLES.forEach((H, k) => { const g = guardCup(H, seeded(Math.imul(k + 7, 40503))); H.map = g.map; H.toys = g.toys; H.land = g.land; H.par = g.par; });
+  const COURSE_TIERS = [];                                  // (what keepApart may move or drop on the course: Oct 11)
+  HOLES.forEach((H, k) => { const g = guardCup(H, seeded(Math.imul(k + 7, 40503))); H.map = g.map; H.toys = g.toys; H.land = g.land; H.par = g.par;
+    COURSE_TIERS[k] = g.toys.map((T, i) => i < g.nBase ? 5 : i < g.nBase + g.nGuard ? 4 : 3); });
   HOLES.forEach(H => { const s = shapify(H); H.map = s.map; H.land = s.land; });   // (the course's water and sand, as shapes: Oct 11)
   HOLES.forEach(H => { H.toys = (H.toys || []).map(pathify); });   // (the course's orbits and shuttles, as paths: Oct 10)
   const HOLE_SRC = HOLES.map(H => JSON.parse(JSON.stringify(H)));
@@ -35017,7 +35027,7 @@ const GOLF_APP = (() => {
       if (f.green) f.green = [...f.green.slice(0, f.green.length - 1).map(P), f.green[f.green.length - 1]];
     }
     for (const T of H.toys || []){
-      if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3]];
+      if (T.mill) T.mill = [P(T.mill[0]), P(T.mill[1]), P(T.mill[2]), T.mill[3], T.mill[4] || 0];
       if (T.slide) T.slide = [P(T.slide[0]), P(T.slide[1]), P(T.slide[2]), P(T.slide[3]), P(T.slide[4]), P(T.slide[5]), T.slide[6]];
       // a tree (the course's before Oct 8) became a bush, and a bush (Oct 8, an afternoon) is a short fence across where it stood
       if (T.tree){ T.bush = [T.tree[0], T.tree[1], Math.max(0.32, T.tree[2] * 1.5)]; delete T.tree; }
@@ -35031,7 +35041,7 @@ const GOLF_APP = (() => {
       if (T.path){ const n = pathN(T.path); T.path = [...T.path.slice(0, 2 * n).map(P), P(T.path[2 * n]), T.path[2 * n + 1], T.path[2 * n + 2] || 0, T.path[2 * n + 3] || 0]; }
       if (T.gate) T.gate = [...T.gate.slice(0, 4).map(P), T.gate[4], T.gate[5] || 0];
       if (T.arm) T.arm = [P(T.arm[0]), P(T.arm[1]), P(T.arm[2]), T.arm[3] || 4, T.arm[4] || 0, Math.max(1, Math.min(4, Math.round(T.arm[5] || 2)))];
-      if (T.swing) T.swing = [P(T.swing[0]), P(T.swing[1]), P(T.swing[2]), T.swing[3] * Math.PI / 180, T.swing[4] * Math.PI / 180, T.swing[5] || 3];
+      if (T.swing) T.swing = [P(T.swing[0]), P(T.swing[1]), P(T.swing[2]), T.swing[3] * Math.PI / 180, T.swing[4] * Math.PI / 180, T.swing[5] || 3, T.swing[6] || 0];
     }
     H.map.forEach((row, j) => [...row].forEach((ch, i) => {
       if (ch === 'T') H.tee = { x: (i + 0.5) * CW, y: (j + 0.5) * CW };
@@ -35436,7 +35446,6 @@ const GOLF_APP = (() => {
      closed Catmull-Rom curve for a day; with draw's kernel a dragged leaf moves the whole loop a little, as in draw.) `path` [x0, y0, x1, y1, …, r, seconds a loop (less than nothing
      the other way), phase (a fraction of the loop), kind (0 a boulder, 1 a bumper)], 3 to 24 leaves, in cells as written.
      It goes round at an even speed along the curve, whatever the leaves' spacing. */
-  const LOOP = new WeakMap();
   // a rider's colours by its bumper kind, as the standing bumpers' (power, sponge, spinner; a classic rider keeps its own)
   const RIDER_TINT = [0, 0xff8a4a, 0x7fd67a, 0x6fb2ff], RIDER_PLAIN = [0, 0xff8a1a, 0x4cae4c, 0x3a7fd9];
   function pathN(v){ return (v.length - 4) >> 1; }          // (a declaration: the course's holes are compiled before this line runs)
@@ -35602,12 +35611,12 @@ const GOLF_APP = (() => {
       const [x0, y0, x1, y1, , , per] = T.slide, w = 2 * Math.PI / per, f = 0.5 - 0.5 * Math.cos(w * t), df = 0.5 * w * Math.sin(w * t);
       return { x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f, vx: (x1 - x0) * df, vy: (y1 - y0) * df };
     }
-    if (T.mill) return { a: T.mill[3] * t, w: T.mill[3] };
+    if (T.mill) return { a: T.mill[3] * t + (T.mill[4] || 0), w: T.mill[3] };   // (and its phase, Oct 11: see MOVERS KEEP APART)
     // (the shuttle's and the orbit's own motions went on Oct 10: both are paths now, see pathify)
     if (T.arm){ const w = 2 * Math.PI / T.arm[3]; return { a: T.arm[4] + w * t, w }; }   // a turnstile: its first bar's heading, and its turn rate
     if (T.swing){                                            // a door: from shut to open and back, easing at each end
-      const [, , , a0, a1, per] = T.swing, w = 2 * Math.PI / per, f = 0.5 - 0.5 * Math.cos(w * t);
-      return { a: a0 + (a1 - a0) * f, w: (a1 - a0) * 0.5 * w * Math.sin(w * t) };
+      const [, , , a0, a1, per, ph] = T.swing, w = 2 * Math.PI / per, wt = w * t + 2 * Math.PI * (ph || 0), f = 0.5 - 0.5 * Math.cos(wt);   // (its phase, a fraction of its swing: Oct 11)
+      return { a: a0 + (a1 - a0) * f, w: (a1 - a0) * 0.5 * w * Math.sin(wt) };
     }
     if (T.gate){                                             // up a while, down a while, a quick rise and fall between
       const [, , , , per, ph] = T.gate, u = clamp(0.5 + 1.4 * Math.sin(2 * Math.PI * t / per + ph), 0, 1);
@@ -35624,6 +35633,269 @@ const GOLF_APP = (() => {
   function barsOf(T, t){
     const S = toyAt(T, t), v = T.arm || T.swing, n = T.arm ? T.arm[5] : 1;
     return Array.from({ length: n }, (_, q) => ({ x: v[0], y: v[1], L: v[2], a: S.a + q * 2 * Math.PI / n, w: S.w }));
+  }
+  /* MOVERS KEEP APART (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where
+     the golfball bounce away", and of the two ways offered, "Keep them apart"). A mover goes where the clock says, so
+     nothing it meets can turn it, and on 300 generated holes, run for 40 s, 185 of the 274 with movers had something pass
+     through something: 815 pairs of riders met, riders went through bumpers 107 times and boulders 82, doors 51,
+     windmills 29. A mover still goes where the clock says, so any moment of a hole can be shown at once (the rater, the
+     plain player and the boards no one plays all need that); what changes is that the clock is arranged so they never
+     meet. keepApart, on a hole as written (cells):
+     - Movers are units: a path's riders, a train of them on one loop at one speed (kept in their spacing), a turnstile, a
+       door, a windmill, a gate. Each is a shape at every fraction of its turn (KA.Q of them) and goes round at its own
+       period from its own phase (a door and a windmill take a phase of their own now, their last number).
+     - A thing standing still on a mover's sweep (its track and its rider, a bar's turn, a gate's line) is nudged off it, up
+       to 1.8 cells for a loose one and 0.8 for a guard's, a screen's or the course's; if nowhere will do, the less needed
+       of the two goes (on a generated hole only: KA tiers, loose toys first, then the weave, the screen, the guard, the
+       course's own).
+     - Movers whose sweeps reach one another go on one beat: every period becomes one of 1, 1½, 2, 3, 4 or 6 beats
+       (the beat 1.7 s or more, a multiple of 2 ms, so the numbers a hole is saved with keep it exact and Expert's speeds
+       stay above their floor), whichever is nearest, so the two come round together every few beats. Then each, the most
+       needed first, takes the first of 24 phases at which, over that whole cycle, it never comes within KA.gap of any
+       placed before it; failing that, the next nearest period; failing that it goes (a generated hole) or keeps its best
+       and is marked (yours, in the editor).
+     - Riders of one train that meet each other on their own loop (a figure of eight with an even train) lose one.
+     The tests count the meetings: see the smoke test. */
+  const KA = { gap: 0.08, beatMin: 1.7, beatMax: 6, mults: [1, 1.5, 2, 3, 4, 6], phases: 48, Q: 256, dt: 0.05, budget: 4e5 };
+  function kaUnits(toys){
+    const units = [], loops = new Map();
+    toys.forEach((T, i) => {
+      const k = Object.keys(T)[0], v = T[k];
+      if (!Array.isArray(v)) return;
+      if (k === 'path'){
+        const n = pathN(v), per = v[2 * n + 1];
+        if (!per) return;
+        const key = v.slice(0, 2 * n).join(',') + '|' + per;
+        let U = loops.get(key);
+        if (!U){ U = { kind: 'path', idx: [], per, u0: v[2 * n + 2] || 0, d: [], r: [] }; loops.set(key, U); units.push(U); }
+        U.idx.push(i); U.d.push((v[2 * n + 2] || 0) - U.u0); U.r.push(v[2 * n]);
+      } else if (k === 'arm' && v[3]) units.push({ kind: k, idx: [i], per: v[3], u0: (v[4] || 0) / (2 * Math.PI) });
+      else if (k === 'swing' && v[5]) units.push({ kind: k, idx: [i], per: Math.abs(v[5]), u0: v[6] || 0 });
+      else if (k === 'gate' && v[4]) units.push({ kind: k, idx: [i], per: Math.abs(v[4]), u0: (v[5] || 0) / (2 * Math.PI) });
+      else if (k === 'mill' && v[3]) units.push({ kind: k, idx: [i], per: 2 * Math.PI / v[3], u0: (v[4] || 0) / (2 * Math.PI) });
+    });
+    return units;
+  }
+  // a unit's shape at every fraction of its turn: circles {c: [x, y, r]} and bars {s: [x0, y0, x1, y1], h}, in cells
+  function kaTable(U, toys, big){
+    const Q = KA.Q, tab = [], T = toys[U.idx[0]], k = U.kind, v = T[k], h = { arm: ARM_T, swing: ARM_T, mill: MILL_T, gate: GATE_T }[k] / CW;
+    for (let q = 0; q < Q; q++){
+      const u = q / Q, out = [];
+      if (k === 'path'){ for (let m = 0; m < U.idx.length; m++){ const A = loopAt(v, u + U.d[m]); out.push({ c: [A.x, A.y, U.r[m] * big] }); } }
+      else if (k === 'arm'){ const nb = v[5] || 2; out.push({ c: [v[0], v[1], 0.12] });
+        for (let b = 0; b < nb; b++){ const a = 2 * Math.PI * u + b * 2 * Math.PI / nb; out.push({ s: [v[0], v[1], v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a)], h }); } }
+      else if (k === 'swing'){ const f = 0.5 - 0.5 * Math.cos(2 * Math.PI * u), a = (v[3] + (v[4] - v[3]) * f) * Math.PI / 180; out.push({ c: [v[0], v[1], 0.12] });
+        out.push({ s: [v[0], v[1], v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a)], h }); }
+      else if (k === 'gate'){ if (clamp(0.5 + 1.4 * Math.sin(2 * Math.PI * u), 0, 1) > 0.25) out.push({ s: [v[0], v[1], v[2], v[3]], h }); }
+      else if (k === 'mill'){ out.push({ c: [v[0], v[1], 0.2] });
+        for (const a of [2 * Math.PI * u, 2 * Math.PI * u + Math.PI / 2]) out.push({ s: [v[0] - v[2] * Math.cos(a), v[1] - v[2] * Math.sin(a), v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a)], h }); }
+      tab.push(out);
+    }
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const out of tab) for (const e of out){ const pts = e.c ? [[e.c[0], e.c[1], e.c[2]]] : [[e.s[0], e.s[1], e.h], [e.s[2], e.s[3], e.h]];
+      for (const [x, y, r] of pts){ x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r); } }
+    // (and how fast its fastest part goes, cells a second, so two are compared often enough not to pass through between looks)
+    let mv = 0;
+    for (let q = 0; q < Q; q++){ const a = tab[q], b = tab[(q + 1) % Q]; if (a.length !== b.length) continue;
+      for (let e = 0; e < a.length; e++){ const A = a[e], B = b[e]; mv = Math.max(mv, A.c ? Math.hypot(A.c[0] - B.c[0], A.c[1] - B.c[1]) : Math.max(Math.hypot(A.s[0] - B.s[0], A.s[1] - B.s[1]), Math.hypot(A.s[2] - B.s[2], A.s[3] - B.s[3]))); } }
+    U.tab = tab; U.box = [x0, y0, x1, y1]; U.step = mv;      // (cells a table step: times Q over the period is the speed)
+    // (its sweep, every other step, each piece with its box, for what stands still: kaSweepHit)
+    U.sw = [];
+    for (let q = 0; q < Q; q += 2) for (const e of tab[q]) U.sw.push({ e, b: e.c ? [e.c[0] - e.c[2], e.c[1] - e.c[2], e.c[0] + e.c[2], e.c[1] + e.c[2]] : [Math.min(e.s[0], e.s[2]) - e.h, Math.min(e.s[1], e.s[3]) - e.h, Math.max(e.s[0], e.s[2]) + e.h, Math.max(e.s[1], e.s[3]) + e.h] });
+    return U;
+  }
+  function kaStatics(toys){
+    const out = [];
+    toys.forEach((T, i) => {
+      const k = Object.keys(T)[0], v = T[k];
+      if (!Array.isArray(v)) return;
+      if (k === 'kick' || k === 'rock') out.push({ i, k, els: [{ c: [v[0], v[1], v[2]] }], move: true });
+      else if (k === 'fence') out.push({ i, k, els: [{ s: v.slice(0, 4), h: FENCE_T / CW }], move: true });
+      else if (k === 'pipe') out.push({ i, k, els: [{ c: [v[0], v[1], v[5] || 0.4] }, { c: [v[2], v[3], v[5] || 0.4] }], move: false });
+      else if (k === 'curve' || k === 'planter'){ const C = k === 'curve' ? curveOf(v) : planterOf(v), m = k === 'curve' ? C.m : C.M, els = [];
+        for (let q = 1; q < m + (k === 'planter' ? 1 : 0); q++){ const a = (q - 1) % m, b = q % m; els.push({ s: [C.pts[2 * a], C.pts[2 * a + 1], C.pts[2 * b], C.pts[2 * b + 1]], h: FENCE_T / CW }); }
+        out.push({ i, k, els, move: false }); }
+    });
+    return out;
+  }
+  const kaSeg = (px, py, s) => { const ux = s[2] - s[0], uy = s[3] - s[1], f = clamp(((px - s[0]) * ux + (py - s[1]) * uy) / (ux * ux + uy * uy || 1e-12), 0, 1); return Math.hypot(s[0] + ux * f - px, s[1] + uy * f - py); };
+  function kaGap(a, b){                                        // how far apart two shapes are, edge to edge (cells)
+    if (a.c && b.c) return Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1]) - a.c[2] - b.c[2];
+    if (a.c) return kaSeg(a.c[0], a.c[1], b.s) - a.c[2] - b.h;
+    if (b.c) return kaSeg(b.c[0], b.c[1], a.s) - b.c[2] - a.h;
+    const s = a.s, r = b.s;
+    return Math.min(kaSeg(s[0], s[1], r), kaSeg(s[2], s[3], r), kaSeg(r[0], r[1], s), kaSeg(r[2], r[3], s)) - a.h - b.h;
+  }
+  const kaBoxes = (A, B, m) => A[0] - m < B[2] && B[0] - m < A[2] && A[1] - m < B[3] && B[1] - m < A[3];
+  const kaGcd = (a, b) => b ? kaGcd(b, a % b) : a;
+  // the nearest gap between two units over the whole time it takes them to come round together; stops early below `stop`
+  let kaWork = 0;                                             // (gap tests made by one keepApart: see KA.budget)
+  function kaClear(A, B, beat, stop){
+    const ka = Math.round(Math.abs(A.per) / beat * 2), kb = Math.round(Math.abs(B.per) / beat * 2);
+    const P = (ka && kb && Math.abs(ka * beat / 2 - Math.abs(A.per)) < 1e-6 && Math.abs(kb * beat / 2 - Math.abs(B.per)) < 1e-6) ? ka * kb / kaGcd(ka, kb) * beat / 2 : 120;
+    const Q = KA.Q, vel = A.step * Q / Math.abs(A.per) + B.step * Q / Math.abs(B.per), dt = Math.min(KA.dt, KA.gap / Math.max(1e-6, vel)), slack = (A.step + B.step) / 2;
+    let best = Infinity;
+    for (let t = 0; t < P;){
+      const ua = A.u0 + t / A.per, ub = B.u0 + t / B.per;
+      const ta = A.tab[((Math.round((ua - Math.floor(ua)) * Q) % Q) + Q) % Q], tb = B.tab[((Math.round((ub - Math.floor(ub)) * Q) % Q) + Q) % Q];
+      kaWork += ta.length * tb.length;
+      let lo = Infinity;
+      for (const a of ta) for (const b of tb){ const g = kaGap(a, b); if (g < lo) lo = g; }
+      lo -= slack;                                             // (each shape is its nearest table entry, up to half a step out)
+      if (lo < best){ best = lo; if (best < stop) return best; }
+      // (two far apart cannot close faster than their speeds together: skip ahead the time that takes, Oct 11)
+      t += Math.max(dt, lo < Infinity ? (lo - KA.gap) / Math.max(1e-6, vel) * 0.9 : dt);
+    }
+    return best;
+  }
+  function kaRespace(U, toys, big){                           // a train one rider shorter, the rest spaced again (kaTrain)
+    U.idx.pop(); U.r.pop(); U.d = U.idx.map((_, m) => m / U.idx.length); kaTable(U, toys, big);
+    if (U.idx.length > 1 && kaSelf(U) < KA.gap){ const T = kaTrain(U, toys, big); if (!T.lost.length){ U.d = T.ds; kaTable(U, toys, big); } }
+  }
+  /* (a train's riders spaced as evenly as they can be while no two are ever at offsets on the loop where they would meet: a
+      figure of eight brings the riders half a turn apart together at its crossing, so two riders, or four, evenly round one
+      always met there. The offsets where two riders would come within KA.gap are found by trying the loop against itself.) */
+  function kaTrain(U, toys, big){
+    if (U.kind !== 'path' || U.idx.length < 2) return [];
+    const Q = KA.Q, v = toys[U.idx[0]].path, r = Math.max(...U.r) * big, need = 2 * r + KA.gap + (U.step || 0), P = [];
+    for (let q = 0; q < Q; q++){ const A = loopAt(v, q / Q); P.push(A.x, A.y); }
+    const safe = new Uint8Array(Q);
+    for (let j = 1; j < Q; j++){ let ok = 1; for (let q = 0; q < Q && ok; q++){ const b = (q + j) % Q; if (Math.hypot(P[2 * q] - P[2 * b], P[2 * q + 1] - P[2 * b + 1]) < need) ok = 0; } safe[j] = ok; }
+    const N = U.idx.length, ds = [0], lost = [];
+    for (let k = 1; k < N; k++){
+      const ideal = Math.round(k / N * Q); let got = -1;
+      for (let t = 0; t <= Q / (2 * N) && got < 0; t++) for (const c of t ? [ideal + t, ideal - t] : [ideal]){
+        const cq = ((c % Q) + Q) % Q; if (ds.every(d => safe[((cq - d) % Q + Q) % Q] && safe[((d - cq) % Q + Q) % Q])){ got = cq; break; } }
+      if (got >= 0) ds.push(got); else lost.push(k);
+    }
+    return { ds: ds.map(d => d / Q), lost };
+  }
+  function kaSelf(U){                                          // riders of one train against each other on their loop
+    let best = Infinity;
+    if (U.kind !== 'path' || U.idx.length < 2) return best;
+    for (const out of U.tab) for (let a = 0; a < out.length; a++) for (let b = a + 1; b < out.length; b++) best = Math.min(best, kaGap(out[a], out[b]));
+    return best - U.step;                                      // (between two table entries they may come a step nearer)
+  }
+  function kaBeat(units){
+    const pers = units.map(U => Math.abs(U.per)).filter(p => p > 0);
+    if (!pers.length) return 0;
+    const err = b => pers.reduce((s, p) => s + Math.min(...KA.mults.map(m => Math.abs(Math.log(p / (m * b))))), 0);
+    let best = 0, be = Infinity;
+    for (const p of pers) for (const m of KA.mults){ let b = p / m; if (b < KA.beatMin || b > KA.beatMax) continue; b = Math.round(b / 0.002) * 0.002; const e = err(b) - b * 1e-4; if (e < be){ be = e; best = b; } }
+    return best || Math.max(KA.beatMin, Math.min(KA.beatMax, Math.round(Math.min(...pers) / 0.002) * 0.002));
+  }
+  function kaLead(L, units){                                  // a beat the lead's own period is a whole number of (1, 1½, 2, … beats)
+    const p = Math.abs(L.per), others = units.filter(U => U !== L).map(U => Math.abs(U.per));
+    let best = 0, be = Infinity;
+    for (const m of KA.mults){ const b = p / m; if (b < KA.beatMin || b > KA.beatMax) continue;
+      const e = others.reduce((s, q) => s + Math.min(...KA.mults.map(k => Math.abs(Math.log(q / (k * b))))), 0) - b * 1e-4; if (e < be){ be = e; best = b; } }
+    return best || kaBeat(units);
+  }
+  // keepApart(src, mode, tiers): mode 'gen' (a generated hole: may drop), 'course' (may drop only guards and screens),
+  // 'fit' (the editor's Keep movers apart: nudges, never drops) or 'time' (the editor as you draw: only the timing).
+  // Returns { src, meets: [[x, y], …] } where something still meets.
+  function keepApart(src, mode, tiers, anchor){
+    const toys = clone(src.toys || []), tier = i => (tiers && tiers[i]) || (mode === 'course' ? 5 : 2), meets = [];
+    kaWork = 0;
+    const big = mode === 'course' ? 1.12 : 1;                 // (the course's riders grow 12% on Expert)
+    let units = kaUnits(toys).map(U => kaTable(U, toys, big));
+    const drop = new Set(), canDrop = i => mode === 'gen' || (mode === 'course' && tier(i) < 5), why = [];
+    const gone = (i, r) => { if (!drop.has(i)){ drop.add(i); why.push(Object.keys(toys[i])[0] + ':' + tier(i) + ':' + r); } };
+    const uTier = U => Math.max(...U.idx.map(tier));
+    // 1. the riders of one train apart on their own loop
+    for (const U of units){
+      if (U.kind !== 'path' || U.idx.length < 2 || kaSelf(U) >= KA.gap) continue;
+      if (!canDrop(U.idx[0]) && mode !== 'fit'){ meets.push([U.tab[0][0].c[0], U.tab[0][0].c[1]]); continue; }
+      const T = kaTrain(U, toys, big), keep = U.idx.filter((_, m) => !T.lost.includes(m));
+      for (const m of T.lost) if (canDrop(U.idx[m])) gone(U.idx[m], 'train'); else meets.push([U.tab[0][0].c[0], U.tab[0][0].c[1]]);
+      U.idx = keep; U.r = U.r.slice(0, keep.length); U.d = T.ds.slice(0, keep.length); kaTable(U, toys, big);
+    }
+    // 2. what stands still off every sweep
+    const tc = (() => { let T = [4.5, 12.5], O = [4.5, 2.5]; (src.map || []).forEach((row, j) => { const a = row.indexOf('T'), b = row.indexOf('O'); if (a >= 0) T = [a + 0.5, j + 0.5]; if (b >= 0) O = [b + 0.5, j + 0.5]; }); return [T, O]; })();
+    const lakes = (src.land || []).filter(f => Array.isArray(f.lake)).map(f => blobOf(f.lake, f.lake.length >> 1));
+    const elBox = e => e.c ? [e.c[0] - e.c[2], e.c[1] - e.c[2], e.c[0] + e.c[2], e.c[1] + e.c[2]] : [Math.min(e.s[0], e.s[2]) - e.h, Math.min(e.s[1], e.s[3]) - e.h, Math.max(e.s[0], e.s[2]) + e.h, Math.max(e.s[1], e.s[3]) + e.h];
+    const sweepHit = (els, U) => { for (const e of els){ const eb = elBox(e); if (!kaBoxes(eb, U.box, KA.gap)) continue;
+      for (const w of U.sw) if (kaBoxes(eb, w.b, KA.gap + U.step) && kaGap(w.e, e) < KA.gap + U.step) return [e.c ? e.c[0] : (e.s[0] + e.s[2]) / 2, e.c ? e.c[1] : (e.s[1] + e.s[3]) / 2]; } return null; };
+    {
+      let statics = kaStatics(toys);
+      for (const S of statics){
+        if (drop.has(S.i)) continue;
+        const hitU = units.filter(U => U.idx.length && !U.idx.every(i => drop.has(i)) && kaBoxes(U.box, [Math.min(...S.els.map(e => e.c ? e.c[0] - e.c[2] : Math.min(e.s[0], e.s[2]))), Math.min(...S.els.map(e => e.c ? e.c[1] - e.c[2] : Math.min(e.s[1], e.s[3]))), Math.max(...S.els.map(e => e.c ? e.c[0] + e.c[2] : Math.max(e.s[0], e.s[2]))), Math.max(...S.els.map(e => e.c ? e.c[1] + e.c[2] : Math.max(e.s[1], e.s[3])))], KA.gap) && sweepHit(S.els, U));
+        if (!hitU.length) continue;
+        if (mode === 'time'){ meets.push(sweepHit(S.els, hitU[0])); continue; }   // (the editor as you draw: marked, not moved)
+        let fixed = false;
+        if (S.move){                                          // nudged off, the nearest place that clears everything
+          const R = tier(S.i) <= 2 || mode === 'fit' ? 1.8 : 0.8, T = toys[S.i], k = S.k, v = T[k], others = statics.filter(O => O !== S && !drop.has(O.i));
+          for (let rr = 0.2; rr <= R + 1e-9 && !fixed; rr += 0.2) for (let q = 0; q < 16 && !fixed; q++){
+            const a = q / 16 * 2 * Math.PI + rr, dx = rr * Math.cos(a), dy = rr * Math.sin(a);
+            const els = S.els.map(e => e.c ? { c: [e.c[0] + dx, e.c[1] + dy, e.c[2]] } : { s: [e.s[0] + dx, e.s[1] + dy, e.s[2] + dx, e.s[3] + dy], h: e.h });
+            const ok = els.every(e => { const pts = e.c ? [[e.c[0], e.c[1], e.c[2]]] : [[e.s[0], e.s[1], 0.1], [e.s[2], e.s[3], 0.1]];
+              return pts.every(([x, y, r]) => x - r > 0.3 && x + r < NX - 0.3 && y - r > 0.3 && y + r < NY - 0.3 && '.s'.includes((src.map[Math.floor(y)] || '')[Math.floor(x)] || '#')
+                && !lakes.some(B => blobIn(B, x, y) || blobEdge(B, x, y, r + 0.2) < r + 0.2) && Math.hypot(x - tc[0][0], y - tc[0][1]) > r + 0.6 && Math.hypot(x - tc[1][0], y - tc[1][1]) > r + 0.5); })
+              && units.every(U => !U.idx.length || U.idx.every(i => drop.has(i)) || !sweepHit(els, U))
+              && others.every(O => O.els.every(o => els.every(e => kaGap(o, e) > 0.08)));
+            if (ok){ S.els = els; fixed = true;
+              if (k === 'fence') toys[S.i] = { fence: [...els[0].s.map(x => Math.round(x * 100) / 100)] };
+              else toys[S.i] = { [k]: [Math.round(els[0].c[0] * 100) / 100, Math.round(els[0].c[1] * 100) / 100, ...v.slice(2)] }; }
+          }
+        }
+        if (fixed) continue;
+        // nowhere to go: the less needed goes, where it may; a guard's or a loose piece gives way to a track with two riders
+        // or more on it rather than the whole track going (a peg of a fan, a boulder of a scatter, against a weave's train)
+        const top = Math.max(...hitU.map(uTier)), riders = hitU.reduce((n, U) => n + U.idx.length, 0);
+        if ((tier(S.i) <= top || riders >= 2) && canDrop(S.i)) gone(S.i, 'stands');
+        else if (hitU.every(U => U.idx.every(canDrop))) for (const U of hitU) for (const i of U.idx) gone(i, 'sweeps');
+        else meets.push(sweepHit(S.els, hitU[0]));
+      }
+    }
+    units = units.filter(U => U.idx.length && !U.idx.every(i => drop.has(i)));
+    // 3. the movers that reach one another, on one beat, each at a phase where it meets none placed before it
+    const near = U => units.some(V => V !== U && kaBoxes(U.box, V.box, KA.gap));
+    // (in the editor the mover in hand sets the beat and keeps its pace: Faster and Slower would be undone by the snapping)
+    const lead = anchor != null && anchor >= 0 ? units.find(U => U.idx.includes(anchor)) : null;
+    const linked = units.filter(near), beat = lead && linked.includes(lead) ? kaLead(lead, linked) : kaBeat(linked);
+    const order = units.slice().sort((A, B) => (B === lead) - (A === lead) || uTier(B) - uTier(A) || B.idx.length - A.idx.length || A.idx[0] - B.idx[0]), placed = [];   // (the most needed, then the longest trains)
+    for (const U of order){
+      if (!linked.includes(U)){ placed.push(U); continue; }
+      const p0 = Math.abs(U.per), sg = Math.sign(U.per) || 1, u00 = U.u0;
+      const mults = KA.mults.slice().sort((a, b) => Math.abs(Math.log(p0 / (a * beat))) - Math.abs(Math.log(p0 / (b * beat))));
+      const partners = placed.filter(V => kaBoxes(U.box, V.box, KA.gap));
+      let got = null, best = null;
+      const search = () => { for (const m of mults){
+        if (kaWork > KA.budget) return;                          // (a hole that has taken its share of trying: what is left goes, or is marked)
+        U.per = sg * m * beat;
+        for (let q = 0; q < KA.phases && !got; q++){
+          U.u0 = u00 + q / KA.phases;
+          const c = partners.reduce((lo, V) => lo < KA.gap ? lo : Math.min(lo, kaClear(U, V, beat, KA.gap)), Infinity);
+          if (c >= KA.gap) got = { per: U.per, u0: U.u0 };
+        }
+        if (got) break;
+      } };
+      search();
+      // (a train that fits nowhere tries again a rider shorter, before it goes)
+      while (!got && U.kind === 'path' && U.idx.length > 1 && canDrop(U.idx[U.idx.length - 1])){ gone(U.idx[U.idx.length - 1], 'timing'); kaRespace(U, toys, big); search(); }
+      if (!got){
+        if (U.idx.every(canDrop)){ for (const i of U.idx) gone(i, 'timing'); continue; }
+        for (const m of mults){ U.per = sg * m * beat;           // keep its best, and mark where it meets
+          for (let q = 0; q < KA.phases; q++){ U.u0 = u00 + q / KA.phases; const c = partners.reduce((lo, V) => Math.min(lo, kaClear(U, V, beat, -Infinity)), Infinity); if (!best || c > best.c) best = { per: U.per, u0: U.u0, c }; } }
+        got = best; U.per = best.per; U.u0 = best.u0;
+        const e = U.tab[0][0]; meets.push(e.c ? [e.c[0], e.c[1]] : [e.s[0], e.s[1]]);
+      }
+      U.per = got.per; U.u0 = got.u0; placed.push(U);
+    }
+    // written back, every unit (a train spaced again on its own counts too, linked or not): the period and the phase, in each
+    // kind's own numbers
+    const fr = x => Math.round((((x % 1) + 1) % 1) * 1000) / 1000, rad = x => Math.round(Math.atan2(Math.sin(2 * Math.PI * x), Math.cos(2 * Math.PI * x)) * 1000) / 1000, p3 = x => Math.round(x * 1000) / 1000;
+    for (const U of units){
+      U.idx.forEach((i, m) => { const T = toys[i], k = U.kind, v = T[k].slice();
+        if (k === 'path'){ const n = pathN(v); v[2 * n + 1] = p3(U.per); v[2 * n + 2] = fr(U.u0 + U.d[m]); }
+        else if (k === 'arm'){ v[3] = p3(U.per); v[4] = rad(U.u0); }
+        else if (k === 'swing'){ v[5] = p3(Math.abs(U.per)); v[6] = fr(U.u0); }
+        else if (k === 'gate'){ v[4] = p3(Math.abs(U.per)); v[5] = rad(U.u0); }
+        else if (k === 'mill'){ v[3] = Math.round(2 * Math.PI / U.per * 1e6) / 1e6; v[4] = rad(U.u0); }
+        toys[i] = { [k]: v }; });
+    }
+    return { src: { ...src, toys: toys.filter((T, i) => !drop.has(i)) }, meets, dropped: drop.size, why, beat, work: kaWork };
   }
   // A ball against something moving at (vx, vy) where they touch: out along n, bounced on their relative speed.
   function knockOff(b, nx, ny, px, py, r, vx, vy, e){
@@ -36317,13 +36589,13 @@ const GOLF_APP = (() => {
   const LINE_HEIGHT = { crest: [-0.05, 0.08], incline: [0, 0.08] };   // (a curved ridge or gully, a curved ramp: Oct 11)
   const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1], [0, 3]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
     fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
-    mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
+    mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4], [-7, 7]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
     shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7], [0, 4]],
     gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]],
-    arm: [[0, 8], [0, 13], [0.3, 3], [-30, 30], [-7, 7], [1, 4]], swing: [[0, 8], [0, 13], [0.4, 3], [-360, 360], [-360, 360], [0.8, 20]] };
+    arm: [[0, 8], [0, 13], [0.3, 3], [-30, 30], [-7, 7], [1, 4]], swing: [[0, 8], [0, 13], [0.4, 3], [-360, 360], [-360, 360], [0.8, 20], [-1, 1]] };
   // numbers that may be left off the end, from this one on, each then 0 (a bumper's kind came on Oct 9, an older bumper is a
   // classic; an orbit's phase, and since Oct 9 its kind, 1 for a bumper going round)
-  const OPTIONAL_FROM = { orbit: 5, gate: 5, kick: 3, arm: 4 };
+  const OPTIONAL_FROM = { orbit: 5, gate: 5, kick: 3, arm: 4, mill: 4, swing: 6 };   // (a windmill's and a door's phase: Oct 11)
   function cleanList(list, spec, max){
     const out = [];
     for (const f of Array.isArray(list) ? list : []){
@@ -36376,7 +36648,8 @@ const GOLF_APP = (() => {
       const nums = lim.map(([lo, hi], i) => {
         const x = Number(v[i]);
         if (!isFinite(x)) return (OPTIONAL_FROM[key] != null && i >= OPTIONAL_FROM[key]) ? 0 : NaN;
-        return Math.round(Math.max(lo, Math.min(hi, x)) * 1000) / 1000;
+        const k = key === 'mill' && i === 3 ? 1e6 : 1000;     // (a windmill's turn rate to six places, so a beat it keeps stays kept: Oct 11)
+        return Math.round(Math.max(lo, Math.min(hi, x)) * k) / k;
       });
       if (nums.some(x => !isFinite(x))) continue;
       if (key === 'orbit' && !nums[4]) nums[4] = 6;
@@ -36420,6 +36693,7 @@ const GOLF_APP = (() => {
       const g = new T3.BoxGeometry(S[4], 0.06, S[5]); g.translate(0, 0.005, 0); return g; }; });
   }
   function dropKinds(k, old){
+    try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {}   // (boards drawn from a kept list are asked again: Oct 11)
     const drop = n => { try { window.fieldDropItemKind && window.fieldDropItemKind(n); } catch {} };
     drop('land' + k); drop('landM' + k); drop('landL' + k); drop('wire' + k);
     ((old && old.toys) || []).forEach((T, j) => drop('slide' + k + '_' + j));
@@ -36542,9 +36816,11 @@ const GOLF_APP = (() => {
         // B half a turn later, going the other way: one or the other is always near the point
         const fa = (((Math.atan2(-ny, -nx) / TAU) % 1) + 1) % 1, fb = (((Math.atan2(ny, nx) / TAU) % 1) + 1) % 1;
         return [ride(A, rider(), p, fa), ride(B, rider(), -p, fb + 0.5)]; },
-      // (a smooth closed snake: out along a sine and back a hair beside it, one curve TVF holds with sixteen leaves)
+      // (a smooth closed snake: out along a sine and back beside it, one curve TVF holds with sixteen leaves. Back a hair beside
+      //  it until Oct 11, when movers were kept apart: riders going out and coming back passed through each other, so only one
+      //  could ride it; now the way back is a rider's width and a little over beside the way out)
       serpent(){ const [mx, my] = along(u(0.42, 0.58)), W = u(2.4, 3.0), amp = u(0.6, 0.9), f = rot(mx, my, base + Math.PI / 2);
-        const pts = curve(t => { const x = -W * Math.cos(t); return f([x, amp * Math.sin(x * 1.6) + 0.08 * Math.sin(t)]); }, 16);
+        const pts = curve(t => { const x = -W * Math.cos(t); return f([x, amp * Math.sin(x * 1.6) + 0.5 * Math.sin(t)]); }, 16);
         if (!fits(pts, 0.36)) return null;
         return train(pts, 3, r2(u(7, 10)), u(0, 1)); },
     };
@@ -36606,12 +36882,16 @@ const GOLF_APP = (() => {
   // but two, a gate's 5th, a turnstile's 4th and a door's 6th)
   function tuneMovers(src, K){
     if (K.speed === 1 && K.size === 1) return src;
-    const r2 = v => Math.round(v * 100) / 100, sec = v => isFinite(v) && v ? r2(Math.sign(v) * Math.max(1.2, Math.abs(v) * K.speed)) : v;
+    // (periods scaled as they are, not rounded to hundredths: movers kept on one beat stay on it, Oct 11)
+    const r2 = v => Math.round(v * 100) / 100, sec = v => isFinite(v) && v ? Math.sign(v) * Math.max(1.2, Math.abs(v) * K.speed) : v;
     src.toys = src.toys.map(T => {
       if (T.path){ const v = T.path.slice(), n = (v.length - 4) >> 1; v[2 * n] = r2(Math.max(0.15, Math.min(0.6, v[2 * n] * K.size))); v[2 * n + 1] = sec(v[2 * n + 1]); return { path: v }; }
       if (T.gate){ const v = T.gate.slice(); v[4] = sec(v[4]); return { gate: v }; }
       if (T.arm){ const v = T.arm.slice(); v[3] = sec(v[3]); return { arm: v }; }
       if (T.swing){ const v = T.swing.slice(); v[5] = sec(v[5]); return { swing: v }; }
+      // (and a windmill, Oct 11: it kept its pace while every other mover took the setting's, and two kept on one beat fell
+      //  out of it on Hard and Easy)
+      if (T.mill && T.mill[3]){ const v = T.mill.slice(); v[3] = 2 * Math.PI / sec(2 * Math.PI / v[3]); return { mill: v }; }
       return T;
     });
     return src;
@@ -36651,13 +36931,20 @@ const GOLF_APP = (() => {
     lv = lv || levelAt(idx);
     const [lo, hi] = LEVEL_BAND[lv - 1], off = m => m < lo ? lo - m : m > hi ? m - hi : 0;
     let best = null, bd = Infinity;
+    /* (Oct 11: each attempt near its level's band has its movers kept apart, see MOVERS KEEP APART, and is guessed again as
+       it then is: keeping them apart takes a rider in seven off the weave, and guessed before, the holes came out easier
+       than their level. What that dropped or still meets is kept on the hole for the tests.) */
+    const apart = s => { if (s.apart) return s; const r = keepApart(s, 'gen', s._tiers), o = r.src; delete o._tiers;
+      o.apart = { dropped: r.dropped, meets: r.meets.length, why: r.why }; o.guess = Math.round(guessMean(o) * 100) / 100; return o; };
     for (let a = 0; a < 8; a++){
-      const s = genOnce(idx, lv, a), m = guessMean(s), d = off(m) + (m > LEVEL_BAND[4][1] ? 10 : 0);
+      let s = genOnce(idx, lv, a), m = guessMean(s);
+      if (off(m) < 0.6){ s = apart(s); m = s.guess; }
+      const d = off(m) + (m > LEVEL_BAND[4][1] ? 10 : 0);
       s.guess = Math.round(m * 100) / 100;
-      if (d === 0) return s;
+      if (d === 0 && s.apart){ best = s; break; }
       if (d < bd){ bd = d; best = s; }
     }
-    return best;
+    return apart(best);
   }
   function genOnce(idx, lv, a){
     const K = LEVEL_DIALS[lv - 1];
@@ -36810,6 +37097,7 @@ const GOLF_APP = (() => {
     const d = Math.hypot(cc - tc, cr - tr), par = Math.max(2, Math.min(5, 2 + (d > 8 ? 1 : 0) + (water || wall || pond ? 1 : 0) + (toys.length >= 2 ? 1 : 0)));
     const main = kinds.find(k => k !== 'tilt' && k !== 'moguls') || kinds[0];
     const hole = { name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) };
+    const loose = new Set(toys);                              // (the loose toys, the least needed when movers are kept apart: Oct 11)
     if (R() < K.weave) weave(hole, R, K.riders, lv);        // (crossing tracks, Oct 10: see weave)
     if (K.extra && R() < K.extra) weave(hole, R, K.riders, lv);   // (and at the top, a second weave: the levels, Oct 10)
     /* PLANTERS (Oct 11: "#6"): on some holes (one in five at level 1 to two in five at level 5, a second at 4 and 5), a
@@ -36841,8 +37129,9 @@ const GOLF_APP = (() => {
     //  they always did)
     const lay = g => { if (!stream) return g; const m = g.map.map(r => [...r]); for (const [i, j] of stream.cells) if (m[j][i] === '~') m[j][i] = '.';
       return { ...g, map: m.map(r => r.join('')), land: [...g.land, { lake: stream.leaves }] }; };
-    const out = shapify(tuneMovers(lay(guardCup(hole, R, lv)), K));
-    out.level = lv;
+    const g = guardCup(hole, R, lv), tiers = g.toys.map((T, i) => i >= g.nBase + g.nGuard ? 3 : i >= g.nBase ? 4 : loose.has(T) ? 1 : 2);
+    const out = shapify(tuneMovers(lay(g), K));
+    out.level = lv; out._tiers = tiers; delete out.nBase; delete out.nGuard;
     return out;
   }
   function holeAt(idx){
@@ -37294,6 +37583,15 @@ const GOLF_APP = (() => {
      level, so the setting changed nothing there but the grass and the cup, and they are what you see first. Their movers
      now go slower on Easy and faster on Hard and Expert, the riders a little smaller or bigger (COURSE_TUNE, by tuneMovers
      on the holes as written); Normal is the course as made, which the course test plays. */
+  /* (Oct 11: the course's movers kept apart as well, its own pieces never dropped: see MOVERS KEEP APART. Before this, three
+     of its fourteen holes with movers had a rider through a boulder, two riders meeting, or a windmill's arm through a
+     boulder, and every pair of movers on different periods meets in the end.) */
+  for (let k = 0; k < COURSE; k++){
+    const r = keepApart(HOLE_SRC[k], 'course', COURSE_TIERS[k]);
+    if (JSON.stringify(r.src.toys) === JSON.stringify(HOLE_SRC[k].toys)) continue;
+    HOLE_SRC[k].toys = r.src.toys;
+    HOLES[k].toys = compileHole({ map: HOLE_SRC[k].map, land: [], toys: clone(r.src.toys) }).toys;
+  }
   const COURSE_TUNE = [{ speed: 1.35, size: 0.9 }, { speed: 1, size: 1 }, { speed: 0.85, size: 1.06 }, { speed: 0.72, size: 1.12 }];
   function tuneCourse(){
     for (let k = 0; k < COURSE; k++){
@@ -37438,6 +37736,10 @@ const GOLF_APP = (() => {
     clearTimeout(ED.timer); ED.timer = 0;
     const go = () => {
       ED.timer = 0;
+      /* (Oct 11, movers kept apart as you draw: once a change is made, the movers that reach one another are put on one
+         beat and phased so they never meet, as a generated hole's are; nothing is moved or taken away, and where a thing
+         still meets one, it is ringed in red, for Keep movers apart in the menu or a hand to put right) */
+      if (now){ const r = keepApart(ED.src, 'time', null, ED.pick && ED.pick.type === 'toy' ? ED.pick.i : -1); ED.meets = r.meets; if (JSON.stringify(r.src.toys) !== JSON.stringify(ED.src.toys)) ED.src.toys = r.src.toys; }
       setHole(ED.k, ED.src);
       keepMine();
       const g = GAMES.get(ED.key), H = HOLES[ED.k];
@@ -38256,6 +38558,15 @@ const GOLF_APP = (() => {
     if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
     if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
+    if (a === 'apart'){                                       // Keep movers apart (Oct 11): timing, and things nudged off the tracks
+      snapEdit();
+      const r = keepApart(ED.src, 'fit');
+      if (JSON.stringify(r.src.toys) === JSON.stringify(ED.src.toys) && !r.meets.length){ ED.undo.pop(); ED.meets = []; say('Nothing meets: the movers keep apart already.', 2200); return; }
+      ED.src.toys = r.src.toys; ED.meets = r.meets;
+      editRefresh(true);
+      say(r.meets.length ? r.meets.length + (r.meets.length > 1 ? ' places still meet' : ' place still meets') + ', ringed in red: move a thing or a track by hand.' : 'Movers kept apart.', 2600);
+      return;
+    }
     if (a === 'smoother' || a === 'rougher'){                // a closed curve's outline (Oct 11: see SMOOTHER AND ROUGHER)
       const LS = leafSel();
       if (!LS || !LS.closed){ ED.msg = 'select a lake, bunker, green, planter or path first'; return; }
@@ -38395,6 +38706,8 @@ const GOLF_APP = (() => {
     const lineAt = (x0, y0, x1, y1, col) => { const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) * 3)); for (let q = 0; q <= n; q++) dotAt(x0 + (x1 - x0) * q / n, y0 + (y1 - y0) * q / n, col); };
     const boxAt = (x0, y0, x1, y1, col) => { lineAt(x0, y0, x1, y0, col); lineAt(x1, y0, x1, y1, col); lineAt(x1, y1, x0, y1, col); lineAt(x0, y1, x0, y0, col); };
     const ringAt = (cx, cy, r, col) => { for (let q = 0; q < 24; q++) dotAt(cx + r * Math.cos(q / 24 * 6.283), cy + r * Math.sin(q / 24 * 6.283), col); };
+    // (where movers still meet something, ringed in red: Oct 11, see MOVERS KEEP APART and Keep movers apart in the menu)
+    for (const [x, y] of ED.meets || []) ringAt(x, y, 0.45, 0xff3b30);
     // what is selected, outlined in gold (Oct 9: anything, not only ground), and the line a move has snapped into, in white
     const P = ED.pick, G = 0xffd23a;
     if (P && pickValid(P) && P.type !== 'land'){
@@ -38502,7 +38815,9 @@ const GOLF_APP = (() => {
         // (and a closed curve's outline smoother or rougher, as the quick buttons ◯ and ✺ do: Oct 11)
         ...(closedSel() ? [{ label: 'Smoother', title: 'Take the fine wiggles out of the selected ' + what + "'s outline, keeping its overall form.", on(){ editAction('smoother'); } },
           { label: 'Rougher', title: 'Give the selected ' + what + "'s outline more coves and lobes.", on(){ editAction('rougher'); } }] : []),
-        { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } });
+        { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } },
+        // (Oct 11: the timing is kept as you draw; this also moves what stands on a track, and says where something still meets)
+        { label: 'Keep movers apart', title: 'Time the movers so they never meet, and nudge anything standing on a track off it. What still meets is ringed in red.', on(){ editAction('apart'); } });
       // (and the selected path, lake, bunker or green saved as a .tvf curve, which draw opens: Oct 11, shapes as well as paths)
       const sk = o && o.type === 'land' && SHAPE_KINDS.find(k => Array.isArray(o.obj[k])), sw = sk && TVF_WORD[sk][0];
       if (o && o.type === 'toy' && o.obj.path) items.push({ label: 'Save this path as .tvf', title: 'Download the selected path as a .tvf curve, which draw opens.', on(){
@@ -38622,6 +38937,10 @@ const GOLF_APP = (() => {
     // an editor's hole is on a few boards at most: its ground needs no room for thousands (Oct 8)
     // (since Oct 9 every hole's ground is on its own board, the course's too: none needs room for thousands)
     itemCaps(kind){ return /^(land[ML]?|wire)\d+$/.test(kind) ? 64 : 0; },
+    /* (Oct 11: "only the selected board needs to be presented perfectly, all other boards can be drawn in degraded
+       presentation to save GPU": a board not framed is drawn as if under 600 px across, its rail in plain two-cell boxes,
+       plain bumpers and boulders, the ground at a quarter of the detail; see _boardItems in the field) */
+    degradedPx: 599,
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r)), H = HOLES[holeShown(c, r)];
       if (!g) return 'Mini golf — ' + H.name + ', par ' + H.par + ' (tap to play a round from here)';
@@ -38750,7 +39069,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, fly: (c, r) => gotoCell(c, r) } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
   };
@@ -42691,7 +43010,60 @@ let _itemLightsOn = false;
    whether an app had emitted an item yet. Kept as a call site so the item
    emitter reads the same as before; it simply has nothing left to do. */
 function _ensureItemLights(){ _itemLightsOn = true; }
-function _resetAppItems(){ for (const rec of _itemMeshes.values()) rec.n = 0; }
+function _resetAppItems(){ for (const rec of _itemMeshes.values()) rec.n = 0; _itemFrame++; _itemVP = null; }
+/* ONLY THE SELECTED BOARD IS DRAWN PERFECTLY (Oct 11: "only the selected board needs to be presented perfectly, all other
+   boards can be drawn in degraded presentation to save GPU. ideally, if the board is not even visible or if it is only 1/2
+   or less visible, you don't need to update it at all."). Every board in view used to have its app asked for its pieces
+   every frame, the view standing still or not: 43 boards and 2,848 pieces a frame with a mini golf hole framed, 772 boards
+   and 33,197 pieces zoomed out. Now each board's list is kept (_itemCache) and:
+   - the selected board (the one framed) is asked every frame, at its full size on screen, as before;
+   - any other board is asked at the app's degradedPx at most (mini golf: plain rails and bumpers, coarser ground), and
+     only every few frames (3 for a board 300 px or more across, 6 from 100 px, else 12), each board on its own beat so
+     they do not all come due together; between times its kept list is drawn where it stands;
+   - a board half on screen or less (_onScreen, 16 points of it tried against the last frame's view) is not asked at all
+     while it stays so, as a board off the screen never was;
+   - every list is asked again after anything that may change what boards show: another app, a click, a key that is not
+     flying, a file dropped or opened, a setting changed (_itemEpoch, and window.fieldItemsChanged for an app to call).
+   The games keep their own time (each steps only its framed board, by the clock), so a board asked less often shows its
+   movers in bigger steps, never slower. */
+const _itemCache = new Map();
+let _itemFrame = 0, _itemEpoch = 0, _itemApp = null, _itemVP = null;
+const _ITEM_EVERY = bp => bp >= 300 ? 3 : bp >= 100 ? 6 : 12;
+const _vpM = new THREE.Matrix4(), _vpE = _vpM.elements;
+function fieldItemsChanged(){ _itemEpoch++; }
+window.fieldItemsChanged = fieldItemsChanged;
+try {
+  const wake = () => { _itemEpoch++; };
+  for (const ev of ['click', 'drop', 'change', 'input', 'pointerup']) window.addEventListener(ev, wake, true);
+  window.addEventListener('keydown', e => { if (!/^(w|a|s|d|q|e|r|f|arrow\w+|shift|control|alt|meta)$/i.test(e.key || '')) wake(); }, true);
+} catch {}
+// how much of a board (centre cx, cz, size bWX × bWZ) the last frame showed: 16 points of it, inside the view or not
+function _onScreen(cx, cz, bWX, bWZ){
+  if (!_itemVP){ try { camera.updateMatrixWorld(); _vpM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _itemVP = _vpE; } catch { return 1; } }
+  const e = _itemVP; let k = 0;
+  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++){
+    const x = cx + ((i + 0.5) / 4 - 0.5) * bWX, z = cz + ((j + 0.5) / 4 - 0.5) * bWZ, y = 0.02;
+    const w = e[3] * x + e[7] * y + e[11] * z + e[15]; if (w <= 1e-6) continue;
+    const X = (e[0] * x + e[4] * y + e[8] * z + e[12]) / w, Y = (e[1] * x + e[5] * y + e[9] * z + e[13]) / w;
+    if (X >= -1 && X <= 1 && Y >= -1 && Y <= 1) k++;
+  }
+  return k / 16;
+}
+function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
+  if (app !== _itemApp){ _itemCache.clear(); _itemApp = app; }
+  const key = ix * 100003 + iz;
+  if (framed || app.itemsEveryFrame){ const L = app.cellItems(ix, iz, bp); _itemCache.delete(key); return L; }
+  const C = _itemCache.get(key), every = _ITEM_EVERY(bp);
+  if (C && C.epoch === _itemEpoch){
+    C.seen = _itemFrame;
+    if ((_itemFrame + key) % every !== 0 || C.at === _itemFrame) return C.items;   // not this board's turn
+    if (_onScreen(cx, cz, bWX, bWZ) <= 0.5) return C.items;                         // half on screen or less: left as it is
+  }
+  const L = app.cellItems(ix, iz, app.degradedPx ? Math.min(bp, app.degradedPx) : bp);
+  _itemCache.set(key, { items: L, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch });
+  if (_itemCache.size > 4000) for (const [k, c] of _itemCache) if (_itemFrame - c.seen > 120) _itemCache.delete(k);   // boards long out of view
+  return L;
+}
 function _flushAppItems(){
   for (const rec of _itemMeshes.values()){
     rec.mesh.count = rec.n;
