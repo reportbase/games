@@ -98,7 +98,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   from the sides and top. (The cannon was taken out on Oct 9.) Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
   1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
   `tests/golf-course.mjs` plays the
-  course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates `LEVEL_SAMPLE` (6) holes at each of levels 1, 3 and 5
+  course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates `LEVEL_SAMPLE` (10) holes at each of levels 1, 3 and 5
   and fails unless they climb (see Difficulty). Sunken ground goes at most BASE deep; water lies
   level below its banks (`waterLevel`). Water and sand are rounded: what a point is
   comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
@@ -179,6 +179,35 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Rated against holes like them without curves (2.9 strokes): hook 3.5, S-bend 3.8, snail 6.3. So hooks and S-bends
     come from level 2 (`CURVE_FROM`), snails only at level 5, and the guess counts them (`CURVE_GUESS`).
   - No cage goes on a hole with a stream: together they made a hole the plain player could not finish.
+- **Lakes, sand and greens as TVF shapes** (Oct 10: "yes, lakes, sand and greens could use tvf."): ground pieces
+  `lake [x0, y0, …]`, `sand [same]` and `green [x0, y0, …, height]`, 3–32 leaves in cells (24 until Oct 11). Each is a
+  closed TVF curve through its leaves, like a path's loop (`blobOf`, sampled at 8 points a leaf and at least 48, cached by
+  array; `blobIn`, `blobEdge`; a hole's shapes by kind, `shapesOf`, kept on the compiled hole as `H._shapes`).
+  - `groundAt` reads inside a lake as water and inside sand as sand, so the ball, the drawing, the far boards (`gridOf`)
+    and the icon take them as they take cells. The players' way round (`cellBlocked`: the scorer, `solveHole`, the course
+    test) treats a cell whose middle is in a lake as water.
+  - `rawH` raises or sinks a green inside its outline, sloping over `GREEN_EDGE`.
+  - **A lake lies in a basin** (Oct 11): each lake has its own water level (`lakeLevel`, kept on its shape as `level`), a
+    little under the lowest ground round its rim, worked out once with the lakes left out (`LAKE_BUSY`). `rawH` carves the
+    ground to it: inside, just under the water; outside, ground higher than the water slopes down to the shore over
+    `LAKE_EDGE` (1.8 cells); ground lower than it is left alone. The drawing lays a lake's water at its own level
+    (`waterAt`); `waterLevel` is the cells' water alone. (Levelled to its lowest point inside, a lake over a hill stood in a
+    pit with a blue cliff; to its average, one over a hollow stood as a mesa with the water under it.)
+  - Sand's colour is blended over its edge (`sandMix`), cells and shapes alike.
+  - Editor: tools Lake, Bunker and Green (a drag draws the outline, a tap lays a round one, `SHAPE_TOOLS`). One tap selects
+    a shape, unlike other ground, which needs a second tap on the same spot. Its leaves drag, and are added and taken away
+    as a path's are (`leafSel` gives any selected thing with leaves). Higher and Lower change a green's height (its last
+    number).
+  - Generated holes: bunkers are shapes (`blobLeaves`: round or long, off the tee, cup and stream). A hole with no stream
+    may get a pond. The plateau and sunk ground kinds became greens. The apron, raised-green and pond guards are shapes
+    on generated holes and cells on the course.
+  - **More leaves** (Oct 11: "could you add more leaves to lake, sand and grass"): bunkers and greens have 12–16 leaves,
+    ponds 16–20, the apron's sand 12, the raised green 14 and the pond guard 16 (seven or eight until then). With ten or
+    more the rim takes the 4th and 5th waves as well as the 2nd and 3rd, each smaller, so a pond has coves and a bunker
+    lobes. In the editor a tap lays twelve, and a drawn outline gets a leaf every 0.6 cells (8–24); a tap on the line
+    adds one, up to 32.
+  - The guess counts a pond across the tee-cup line as water, and one off to the side as a third of it. Rated on 240 fresh
+    holes, the levels came out 2.5, 2.8, 3.5, 4.1 and 5.3 strokes.
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).

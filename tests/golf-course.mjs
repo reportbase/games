@@ -43,7 +43,7 @@ const report = await page.evaluate(SAMPLE => {
     while (q.length){ const [i, j] = q.shift(), d = dist.get(key(i, j));
       const nb = [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]];
       for (const p of pipes) if (Math.floor(p[2] / CW) === i && Math.floor(p[3] / CW) === j) nb.push([Math.floor(p[0] / CW), Math.floor(p[1] / CW)]);   // backwards: in at the mouth, out here
-      for (const [a, b] of nb){ if (a < 0 || b < 0 || a >= NX || b >= NY || '#~'.includes(H.map[b][a]) || dist.has(key(a, b))) continue; dist.set(key(a, b), d + 1); q.push([a, b]); } }
+      for (const [a, b] of nb){ if (a < 0 || b < 0 || a >= NX || b >= NY || (D.cellBlocked ? D.cellBlocked(H, a, b) : '#~'.includes(H.map[b][a])) || dist.has(key(a, b))) continue; dist.set(key(a, b), d + 1); q.push([a, b]); } }   // (a lake's cells too: Oct 10)
     const score = b => { const d = dist.get(key(Math.floor(b.x / CW), Math.floor(b.y / CW))); return (d == null ? 99 : d) + Math.hypot(b.x - H.cup.x, b.y - H.cup.y) / CW * 0.3; };
     const clone = g => JSON.parse(JSON.stringify({ ...g, R: { start: k, card: [] } }));
     let g = D.holeGame({ start: k, card: [] }, k), strokes = 0, sunk = false;
@@ -68,7 +68,7 @@ const report = await page.evaluate(SAMPLE => {
   return out;
 }, Number(process.env.GEN_SAMPLE || 40));
 // THE LEVELS, RATED (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"). Holes made at
-// levels 1, 3 and 5 (LEVEL_SAMPLE of each, 6 unless asked) are rated by the page's own rater (a player with a person's
+// levels 1, 3 and 5 (LEVEL_SAMPLE of each, 10 unless asked: six were too few, Oct 10) are rated by the page's own rater (a player with a person's
 // small errors of aim, strength and timing); each level must come out harder on average than the one below it, level 5
 // by a stroke more than level 1, and no level so hard that its holes average more than 7 strokes.
 const levels = await page.evaluate(N => {
@@ -79,7 +79,7 @@ const levels = await page.evaluate(N => {
     out[lv] = { mean: +(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(2), each: ms };
   }
   return out;
-}, Number(process.env.LEVEL_SAMPLE || 6));
+}, Number(process.env.LEVEL_SAMPLE || 10));
 let bad = 0;
 for (const lv of [1, 3, 5]) console.log(`level ${lv}: ${levels[lv].mean} strokes on average (${levels[lv].each.join(' ')})`);
 if (!(levels[1].mean < levels[3].mean && levels[3].mean < levels[5].mean && levels[5].mean - levels[1].mean >= 1) || [1, 3, 5].some(lv => levels[lv].mean > 7)){
