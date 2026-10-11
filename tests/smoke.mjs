@@ -1289,14 +1289,24 @@ try {
     // and turned off when not displayed. remove the game mode of the bottom browser."): the dots, clicked, open the row
     // and the editor with it; clicked again they shut both; no playing tiles or buttons are ever in the row
     await page.waitForTimeout(800);                           // (the pane slides shut first; the dots ride on it)
-    const dotsXY = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    // (the dots are clicked only once they stay where they are and nothing covers them: the pane slides a frame at a time,
+    //  and a software renderer under load, as on CI, can take seconds a frame, so a fixed wait was sometimes too short and
+    //  the click fell on the board: Oct 11)
+    const dotsReady = async () => {
+      await page.evaluate(() => { window._dotsAt = null; });
+      await page.waitForFunction(() => { const h = document.getElementById('bbHandle'); if (!h) return false;
+        const r = h.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2, el = r.width > 0 ? document.elementFromPoint(x, y) : null, k = x.toFixed(1) + ',' + y.toFixed(1);
+        const ok = !!el && (el === h || h.contains(el)) && window._dotsAt === k; window._dotsAt = k; return ok; }, null, { timeout: 15000, polling: 250 }).catch(() => {});
+      return page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    };
+    const dotsXY = await dotsReady();
     const pre = await page.evaluate(at => { const el = document.elementFromPoint(at.x, at.y), b = window.tvf.browser, E = window.getFieldApp()._debug.editor; return { at, el: el && (el.id || el.tagName), on: E.ED.on, shut: document.body.classList.contains('bb-collapsed'), vis: b.visible, vw: innerWidth, vh: innerHeight }; }, dotsXY);
     await page.mouse.click(dotsXY.x, dotsXY.y);
     await page.waitForFunction(() => !document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
     const rowOn = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       return { on: E.ED.on, open: !document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, first: ((A.statTiles(f.c, f.r) || [])[0] || {}).value }; });
     await page.waitForTimeout(800);
-    const dotsXY2 = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    const dotsXY2 = await dotsReady();
     await page.mouse.click(dotsXY2.x, dotsXY2.y);
     await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(800);
@@ -1319,13 +1329,16 @@ try {
     // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
     // it and the buttons go; the dots open it and they are back
     const qVis = () => page.evaluate(() => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0); });
-    const dotsAt = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    // (the dots found again before each click, as they ride on the pane, and each change waited for, not a fixed half second)
+    const isShut = shut => page.waitForFunction(w => document.body.classList.contains('bb-collapsed') === w, shut, { timeout: 15000 }).catch(() => {});
+    const quickIs = vis => page.waitForFunction(w => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0) === w; }, vis, { timeout: 15000, polling: 200 }).catch(() => {});
+    let dotsAt = await dotsReady();
     const shut0 = await page.evaluate(() => document.body.classList.contains('bb-collapsed'));
-    if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500); }
-    const openVis = await qVis();
-    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false); dotsAt = await dotsReady(); }
+    await quickIs(true); const openVis = await qVis();
+    await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(true); await quickIs(false);
     const shutNow = await page.evaluate(() => document.body.classList.contains('bb-collapsed')), shutVis = await qVis();
-    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    dotsAt = await dotsReady(); await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false);
     if (!openVis || !shutNow || shutVis) failures.push(`[${current}] quick buttons with the pane open ${openVis}, shut ${shutNow} and still showing ${shutVis}`);
     // the share link opens the page on the hole
     await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
