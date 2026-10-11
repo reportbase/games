@@ -34490,8 +34490,90 @@ const GOLF_APP = (() => {
     for (const f of H.land || []){ const k = SHAPE_KINDS.find(k => Array.isArray(f[k])); if (k){ const v = f[k]; S[k].push({ B: blobOf(v, shapeN(k, v)), h: k === 'green' ? v[v.length - 1] : 0 }); } }
     return (H._shapes = S);
   }
-  // a cell the way round may not pass: a wall, water, or its middle in a lake (the players' maps of the way to the cup)
+  /* NO PAINTED WATER OR SAND (Oct 11: "then water, grass and sand are not needed. remove them.", after "how do I show the
+     lakes leaves?"). Lakes and bunkers are TVF shapes whose leaves are dragged; water and sand painted cell by cell had no
+     leaves, and the editor's Grass, Sand and Water paints went (Erase puts grass back on a cell). Whatever is still written
+     in cells (the course's rapids, island, dunes and bunkers, a generated hole's stream, a guard's pond or apron that fell
+     back to cells, holes saved or shared before) is read as shapes: each run of water cells, with any planks over it, is a
+     lake, and each run of sand a bunker. Its outline is traced round its cells, pushed out under the rail where it meets the
+     board's edge (the cells carried on past it), its corners cut as the old soft brush rounded them, and laid down as
+     leaves evenly along it, a leaf about every half cell (8 to 32). The cells go back to grass; a bridge's planks stay, over
+     the lake. A run that rings round something (the island's water round its green) is cut in two down the middle of what
+     it rings, so each half is one closed curve; the halves overlap and lie as one water (lakeLevel). In cells, as written. */
+  function shapify(src){
+    if (!src || !Array.isArray(src.map) || !src.map.some(r => /[~s]/.test(r))) return src;
+    const map = src.map.map(r => [...r]), land = (src.land || []).slice(), done = [];
+    for (const [ch, key] of [['~', 'lake'], ['s', 'sand']]){
+      const joins = (i, j) => i >= 0 && j >= 0 && i < NX && j < NY && (map[j][i] === ch || (ch === '~' && map[j][i] === '='));
+      const seen = new Set();
+      for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
+        if (map[j][i] !== ch || seen.has(j * NX + i)) continue;   // (a run starts from water or sand: planks alone on the grass stay planks)
+        const run = [], st = [[i, j]]; seen.add(j * NX + i);
+        while (st.length){ const [a, b] = st.pop(); run.push([a, b]);
+          for (const [p, q] of [[a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]]) if (joins(p, q) && !seen.has(q * NX + p)){ seen.add(q * NX + p); st.push([p, q]); } }
+        const parts = unringed(run).map(outlineLeaves);
+        if (parts.some(v => !v)) continue;                     // (an outline that would not close: the cells stay as they were)
+        for (const v of parts) land.push({ [key]: v });
+        for (const [a, b] of run) if (map[b][a] === ch) done.push([a, b]);
+      }
+    }
+    for (const [a, b] of done) map[b][a] = '.';
+    return { ...src, map: map.map(r => r.join('')), land };
+  }
+  // the cells of a list joined side by side, as lists
+  function cellRuns(cells){
+    const has = new Map(cells.map(c => [c[1] * 64 + c[0], c])), seen = new Set(), out = [];
+    for (const c of cells){ const k0 = c[1] * 64 + c[0]; if (seen.has(k0)) continue;
+      const run = [], st = [c]; seen.add(k0);
+      while (st.length){ const [a, b] = st.pop(); run.push([a, b]);
+        for (const k of [b * 64 + a + 1, b * 64 + a - 1, (b + 1) * 64 + a, (b - 1) * 64 + a]) if (has.has(k) && !seen.has(k)){ seen.add(k); st.push(has.get(k)); } }
+      out.push(run); }
+    return out;
+  }
+  // a run that rings round cells not its own, cut down the column of the first of them (again, until none rings), the two
+  // sides sharing that column so they overlap
+  function unringed(run){
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [a, b] of run){ x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, a); y1 = Math.max(y1, b); }
+    const W = x1 - x0 + 3, Hh = y1 - y0 + 3, inn = new Uint8Array(W * Hh), out = new Uint8Array(W * Hh), st = [0];
+    for (const [a, b] of run) inn[(b - y0 + 1) * W + (a - x0 + 1)] = 1;
+    out[0] = 1;
+    while (st.length){ const m = st.pop(), a = m % W, b = (m / W) | 0;
+      for (const [p, q] of [[a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]]) if (p >= 0 && q >= 0 && p < W && q < Hh){ const k = q * W + p; if (!inn[k] && !out[k]){ out[k] = 1; st.push(k); } } }
+    for (let m = 0; m < W * Hh; m++) if (!inn[m] && !out[m]){
+      const cut = m % W - 1 + x0;
+      return [...cellRuns(run.filter(([a]) => a <= cut)), ...cellRuns(run.filter(([a]) => a >= cut))].flatMap(unringed);
+    }
+    return [run];
+  }
+  // a run's outline (it rings round nothing), as leaves: traced round its cells' corners, out under the rail at the board's
+  // edge, its corners cut, and laid down evenly along it; null if it would not close
+  function outlineLeaves(run){
+    const has = new Set(run.map(([a, b]) => b * 64 + a)), inn = (a, b) => has.has(b * 64 + a), K = (x, y) => y * 128 + x, nxt = new Map();
+    for (const [a, b] of run){                                // each edge with the run on its right, going round it clockwise
+      if (!inn(a, b - 1)) nxt.set(K(a, b), [a + 1, b]);
+      if (!inn(a + 1, b)) nxt.set(K(a + 1, b), [a + 1, b + 1]);
+      if (!inn(a, b + 1)) nxt.set(K(a + 1, b + 1), [a, b + 1]);
+      if (!inn(a - 1, b)) nxt.set(K(a, b + 1), [a, b]);
+    }
+    const k0 = nxt.keys().next().value; let k = k0; const P = [];
+    for (let g = 0; g <= nxt.size; g++){ const x = k % 128, y = (k - x) / 128; P.push([x, y]); const n = nxt.get(k); if (!n) return null; k = K(n[0], n[1]); if (k === k0) break; }
+    if (k !== k0 || P.length < 4) return null;
+    const C = P.filter((p, q) => { const a = P[(q + P.length - 1) % P.length], b = P[(q + 1) % P.length]; return (p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0]) !== 0; })
+      .map(([x, y]) => [x <= 0 ? -0.45 : x >= NX ? NX + 0.45 : x, y <= 0 ? -0.45 : y >= NY ? NY + 0.45 : y]);
+    const xs = [], ys = [];
+    C.forEach((p, q) => { const a = C[(q + C.length - 1) % C.length], b = C[(q + 1) % C.length], la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+      const c = Math.min(0.35, la / 2.2, lb / 2.2);              // (the corner cut, about as the old brush rounded it)
+      xs.push(p[0] + (a[0] - p[0]) * c / la, p[0] + (b[0] - p[0]) * c / lb); ys.push(p[1] + (a[1] - p[1]) * c / la, p[1] + (b[1] - p[1]) * c / lb); });
+    let L = 0; for (let q = 0; q < xs.length; q++){ const w = (q + 1) % xs.length; L += Math.hypot(xs[w] - xs[q], ys[w] - ys[q]); }
+    const n = Math.max(8, Math.min(32, Math.round(L / 0.5))), rs = TVF_CURVE.core.arcLengthResample(xs, ys, n), v = [];
+    for (let q = 0; q < n; q++) v.push(Math.round(rs.x[q] * 100) / 100, Math.round(rs.y[q] * 100) / 100);
+    return v;
+  }
+  // a cell the way round may not pass: a wall, water, or its middle in a lake (the players' maps of the way to the cup);
+  // a bridge's planks always pass, over a lake as over water
   function cellBlocked(H, i, j){
+    if (H.map[j][i] === '=') return false;
     if ('#~'.includes(H.map[j][i])) return true;
     const L = shapesOf(H).lake; if (!L.length) return false;
     const x = (i + 0.5) * CW, y = (j + 0.5) * CW;
@@ -34857,6 +34939,7 @@ const GOLF_APP = (() => {
     return { ...src, guard: style, screen, open: open && !crossed, par: Math.min(6, (src.par || 3) + hard), map: map.map(r => r.join('')), toys: [...toys, ...guards, ...screens], land: [...(src.land || []), ...land] };
   }
   HOLES.forEach((H, k) => { const g = guardCup(H, seeded(Math.imul(k + 7, 40503))); H.map = g.map; H.toys = g.toys; H.land = g.land; H.par = g.par; });
+  HOLES.forEach(H => { const s = shapify(H); H.map = s.map; H.land = s.land; });   // (the course's water and sand, as shapes: Oct 11)
   HOLES.forEach(H => { H.toys = (H.toys || []).map(pathify); });   // (the course's orbits and shuttles, as paths: Oct 10)
   const HOLE_SRC = HOLES.map(H => JSON.parse(JSON.stringify(H)));
   // cells to the board's own units, and the tee and cup found on the map: one hole, the course's or one from the editor
@@ -34935,12 +35018,19 @@ const GOLF_APP = (() => {
     }
     return v;
   }
+  /* (a lake's line, a curve, lies within a few hundredths of a cell of the cells it was read from, so a sliver of water
+      could lie across a bridge's end, where the old cells met it square: water within BRIDGE_M of a plank is planks, Oct 11) */
+  const BRIDGE_M = 0.08;
+  function nearBridge(H, x, y){
+    const gx = x / CW, gy = y / CW, i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j;
+    return (fx < BRIDGE_M && at(H, i - 1, j) === '=') || (fx > 1 - BRIDGE_M && at(H, i + 1, j) === '=') || (fy < BRIDGE_M && at(H, i, j - 1) === '=') || (fy > 1 - BRIDGE_M && at(H, i, j + 1) === '=');
+  }
   function groundAt(H, x, y){
     const ch = cellAt(H, x, y);
     if (ch === '#' || ch === '=' || ch === 'T' || ch === 'O') return ch;
-    if (softAmount(H, x, y, '~=') > 0.5) return '~';
+    if ((H._wet != null ? H._wet : (H._wet = H.map.some(r => r.includes('~')))) && softAmount(H, x, y, '~=') > 0.5) return '~';   // (painted water, from before Oct 11: a bridge alone is no water)
     const sh = H.land && H.land.length ? shapesOf(H) : null;   // (the shapes: Oct 10)
-    if (sh && sh.lake.length && sh.lake.some(s => blobIn(s.B, x, y))) return '~';
+    if (sh && sh.lake.length && sh.lake.some(s => blobIn(s.B, x, y))) return nearBridge(H, x, y) ? '=' : '~';
     if (softAmount(H, x, y, 's') > 0.5) return 's';
     if (sh && sh.sand.length && sh.sand.some(s => blobIn(s.B, x, y))) return 's';
     return '.';
@@ -35054,17 +35144,31 @@ const GOLF_APP = (() => {
       lakeLevel(H, s);
       const e = blobEdge(s.B, x, y) * (blobIn(s.B, x, y) ? 1 : -1), T = s.level - (e > 0 ? 0.012 * sm01(e / (CW * 0.6)) : 0);
       if (h > T) h -= (h - T) * sm01((e + LAKE_EDGE) / LAKE_EDGE);
+      /* (a bridge's planks lie flat just over the water, Oct 11: since the streams became lakes, carved under their water,
+          a bridge that followed the ground went down into the stream and up again) */
+      if (cellAt(H, x, y) === '=') h = Math.max(h, s.level + 0.006);
     }
     return h;
   }
   const GREEN_EDGE = CW * 0.7, LAKE_EDGE = CW * 1.8;
   let LAKE_BUSY = false;
-  // a lake's water level: a little under the lowest ground round its rim, the lakes left out (kept on the lake's entry)
+  /* a lake's water level: a little under the lowest ground round its rim on the board (a stream's ends run on under the
+     rail), worked out once for all a hole's lakes with the lakes left out, and kept on each lake's entry. Lakes that
+     overlap are one water, at the lowest of their levels (Oct 11: the island's water, read as two lakes, one each side). */
   function lakeLevel(H, s){
     if (s.level != null) return s.level;
+    const LK = shapesOf(H).lake;
     LAKE_BUSY = true;
-    try { let m = Infinity; for (let q = 0; q < s.B.M; q += 2) m = Math.min(m, rawH(H, s.B.pts[2 * q], s.B.pts[2 * q + 1])); s.level = isFinite(m) ? m - 0.004 : BASE; }
+    try { for (const t of LK){ let m = Infinity, all = Infinity;
+      for (let q = 0; q < t.B.M; q += 2){ const x = t.B.pts[2 * q], y = t.B.pts[2 * q + 1], h = rawH(H, x, y); all = Math.min(all, h); if (x >= 0 && x <= WD && y >= 0 && y <= 1) m = Math.min(m, h); }
+      t.level = isFinite(m) ? m - 0.004 : isFinite(all) ? all - 0.004 : BASE; } }
     finally { LAKE_BUSY = false; }
+    const meet = (A, B) => { const a = A.box, b = B.box; if (a[2] < b[0] || b[2] < a[0] || a[3] < b[1] || b[3] < a[1]) return false;
+      for (let q = 0; q < A.M; q += 2) if (blobIn(B, A.pts[2 * q], A.pts[2 * q + 1])) return true;
+      for (let q = 0; q < B.M; q += 2) if (blobIn(A, B.pts[2 * q], B.pts[2 * q + 1])) return true; return false; };
+    for (let moved = true; moved;){ moved = false;
+      for (let a = 0; a < LK.length; a++) for (let b = a + 1; b < LK.length; b++) if (LK[a].level !== LK[b].level && meet(LK[a].B, LK[b].B)){
+        LK[a].level = LK[b].level = Math.min(LK[a].level, LK[b].level); moved = true; } }
     return s.level;
   }
   // where the water is drawn at (x, y): its lake's own level inside a lake, else the hole's one level (the cells' water)
@@ -35972,7 +36076,8 @@ const GOLF_APP = (() => {
      way HOLES are written above, and the hole on the board is made again from it after every stroke.
        · Choose Edit this hole (a copy of the hole on the selected board) or New hole from the menu. The board becomes the
          editor's and its tools come up as the bottom panel's tiles.
-       · Grass, wall, sand, water and bridge are painted: tap a cell, or drag across cells. Tee and cup are moved by a tap.
+       · Wall and bridge are painted: tap a cell, or drag across cells. Tee and cup are moved by a tap. (Grass, sand and water
+         were paints until Oct 11; a lake and a bunker are drawn as shapes now, and Erase puts grass back on a cell.)
        · Hill and hollow raise or lower the ground round where you tap (or along a drag), a little each time.
        · Bumper, boulder and windmill are placed by a tap; a pipe takes two (in, then out), and so does a fence (one end, then
          the other); Material sets what the hole is built of (wood, stone, brick); Erase takes away the
@@ -36060,10 +36165,10 @@ const GOLF_APP = (() => {
       map = map.map(r => [...r].map(c => c !== ch ? c : seen ? '.' : (seen = true, c)).join(''));
       if (!seen){ const row = [...map[j]]; row[NX >> 1] = ch; map[j] = row.join(''); }
     }
-    return { name: String(o.name || 'my hole').replace(/\s+/g, ' ').slice(0, 40), par: Math.max(1, Math.min(9, Math.round(Number(o.par)) || 3)),
+    return shapify({ name: String(o.name || 'my hole').replace(/\s+/g, ' ').slice(0, 40), par: Math.max(1, Math.min(9, Math.round(Number(o.par)) || 3)),
              map, land: cleanList(o.land, SPEC_LAND, 40), toys: cleanList(o.toys, SPEC_TOY, 40), fence: FENCE_MATS.includes(o.fence) ? o.fence : 'wood',
              ...cleanLift(o.lift), ...(typeof o.from === 'string' && /^[a-z0-9]{1,12}$/.test(o.from) ? { from: o.from } : {}),
-             ...(Array.isArray(o.at) && o.at.length === 2 && o.at.every(v => Number.isInteger(v) && v >= 0 && v < 10000) ? { at: [o.at[0], o.at[1]] } : {}) };
+             ...(Array.isArray(o.at) && o.at.length === 2 && o.at.every(v => Number.isInteger(v) && v >= 0 && v < 10000) ? { at: [o.at[0], o.at[1]] } : {}) });   // (painted water and sand, as shapes: Oct 11)
   }
   // the dots' heights (Oct 9): a list of LIFT_W × LIFT_H numbers in range, kept only when some dot is off level
   function cleanLift(L){
@@ -36428,7 +36533,9 @@ const GOLF_APP = (() => {
     const hole = { name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) };
     if (R() < K.weave) weave(hole, R, K.riders, lv);        // (crossing tracks, Oct 10: see weave)
     if (K.extra && R() < K.extra) weave(hole, R, K.riders, lv);   // (and at the top, a second weave: the levels, Oct 10)
-    const out = tuneMovers(guardCup(hole, R, lv), K);
+    // (the stream, and a guard's pond or apron that fell back to cells, laid down as shapes at the end: Oct 11. Until then
+    //  they are cells, which the weave and the guards keep off as they always did)
+    const out = shapify(tuneMovers(guardCup(hole, R, lv), K));
     out.level = lv;
     return out;
   }
@@ -37304,7 +37411,7 @@ const GOLF_APP = (() => {
       if (ti >= 0 || tc){ ED.pick = ti >= 0 ? { type: 'toy', i: ti } : { type: tc, i: 0 }; ED.dots = []; ED.box = null; ED.tool = 'select';
         ED.pipeAt = ED.fenceAt = null; ED.msg = 'selected: ' + pickName() + ' (drag it to move it)'; return false; }
     }
-    if (t.length === 1 && '.#s~='.includes(t)){ if ('TO'.includes(cell) || cell === t) return false; set(t); return true; }
+    if (t.length === 1 && '#='.includes(t)){ if ('TO'.includes(cell) || cell === t) return false; set(t); return true; }
     if (t === 'T' || t === 'O'){
       if (drag || cell === t || 'TO#'.includes(cell)) return false;
       S.map = S.map.map(r => r.replace(t, '.')); set(t); return true;
@@ -37533,7 +37640,7 @@ const GOLF_APP = (() => {
      from and reset the default mod"; a tap on it takes it again). Another needs its tile taken
      up again. The paints (grass, wall, sand, water, bridge) and Erase stay in hand, as brushes do. */
   function placedOnce(t){
-    if (!t || t === 'select' || t === 'box' || t === 'erase' || (t.length === 1 && '.#s~='.includes(t))) return;
+    if (!t || t === 'select' || t === 'box' || t === 'erase' || (t.length === 1 && '#='.includes(t))) return;
     const n = pickName();
     ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null;
     const keep = (t === 'path' || t === 'curve' || SHAPE_TOOLS[t]) && ED.pick;   // (a path, a curved fence or a shape stays selected, its leaves shown to be dragged: Oct 10)
@@ -37802,8 +37909,9 @@ const GOLF_APP = (() => {
      tap on a tile (onStatTap) takes up that tool or does that thing, and the row stays open while editing however the
      board is tapped or dragged (statsStay). The tiles are read again a few times a second, so they follow the editor. */
   const SHAPE_TOOLS = { lake: { key: 'lake', r: 1.3 }, bunker: { key: 'sand', r: 1 }, green: { key: 'green', r: 1.5 } };   // (the shapes' tools: Oct 10)
-  const TOOLS = [['.', 'Grass', '🟩', 'paint'], ['#', 'Wall', '🧱', 'paint'], ['s', 'Sand', '🟨', 'paint'], ['~', 'Water', '💧', 'paint'],
-    ['=', 'Bridge', '🌉', 'paint'],
+  /* (Oct 11: "then water, grass and sand are not needed. remove them." The Grass, Sand and Water paints went: a lake and a
+     bunker are drawn as shapes, with leaves (see shapify), and Erase puts grass back on a walled or planked cell.) */
+  const TOOLS = [['#', 'Wall', '🧱', 'paint'], ['=', 'Bridge', '🌉', 'paint'],
     ['kick', 'Bumper', '🔴', 'place'], ['kick1', 'Power', '🟠', 'place'], ['kick2', 'Sponge', '🟢', 'place'], ['kick3', 'Spinner', '🔵', 'place'],
     ['rock', 'Boulder', '🪨', 'place'], ['fence', 'Fence', '🚧', 'two taps'], ['curve', 'Curved fence', '〰️', 'draw a line'], ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['path', 'Path', '➰', 'draw a loop'], ['gate', 'Gate', '🚪', 'drag a track'],
@@ -38081,7 +38189,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, loopOf, fly: (c, r) => gotoCell(c, r) } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, loopOf, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10)
   };
