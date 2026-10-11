@@ -440,6 +440,50 @@ try {
     if (r.corner !== '.' || r.mid !== '~') failures.push(`[${current}] the island's moat: corner ${r.corner}, middle ${r.mid} (wanted grass at the rounded corner, water in the middle)`);
     if (r.sandCorner !== '.' || r.sandMid !== 's') failures.push(`[${current}] the bunkers' sand: corner ${r.sandCorner}, middle ${r.sandMid}`);
     if (r.skate.length < 4) failures.push(`[${current}] skate-park holes: ${r.skate.join(', ')}`);
+    // NO PAINTED WATER OR SAND (Oct 11: "then water, grass and sand are not needed. remove them."): no paint for them in the
+    // editor; the course and the generated holes have none in their cells (their water and sand are shapes); an old hole with
+    // painted water ringing round an island, planks over it, and sand reads as lakes and a bunker, the cells grass and the
+    // planks kept; the rapids' bridge lies flat just over its water, with no water across its ends
+    const np = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, E = D.editor, CW = D.CW;
+      const paints = E.TOOLS.filter(t => ['.', 's', '~'].includes(t[0])).map(t => t[1]);
+      const painted = s => s.map.some(r => /[~s]/.test(r));
+      const course = [...D.HOLES.slice(0, 22), ...E.HOLE_SRC].filter(painted).map(H => H.name);
+      let gen = 0; for (let i = 22; i < 322; i++) if (painted(D.genSrc(i, 1 + i % 5))) gen++;
+      const old = E.cleanSrc({ map: ['........', '.~~~~~~.', '.~~O.~~.', '.~~..~~.', '.~~==~~.', '........', '........', '.sss....', '.sss....', '........', '........', '........', '...T....'] });
+      const lakes = old.land.filter(f => f.lake).length, sands = old.land.filter(f => f.sand).length, cells = old.map.join('');
+      const H = D.HOLES[E.addHole(old)], g = (x, y) => D.groundAt(H, x * CW, y * CW);
+      const read = { water: g(1.5, 2.5), top: g(3.5, 1.5), right: g(6.5, 3), island: g(3.5, 3.2), plank: g(3.5, 4.5), end: g(3.5, 5.03), sand: g(2, 8), grass: g(6, 8) };
+      const rp = D.HOLES.find(H => H.name === 'the rapids'), deck = [5.03, 5.5, 6.5, 7.5, 7.97].map(y => D.hOf(rp, 3.5 * CW, y * CW)), lv = E.shapesOf(rp).lake[0].level;
+      const ends = [4.97, 4.9, 8.03, 8.1].flatMap(y => [3.05, 3.5, 3.95].map(x => D.groundAt(rp, x * CW, y * CW))).filter(c => c === '~').length;
+      return { paints, course, gen, lakes, sands, cells: { water: cells.includes('~'), sand: cells.includes('s'), planks: cells.split('=').length - 1 }, read,
+               flat: Math.max(...deck) - Math.min(...deck), over: Math.min(...deck) - lv, ends };
+    });
+    if (np.paints.length || np.course.length || np.gen || np.lakes < 2 || np.sands !== 1 || np.cells.water || np.cells.sand || np.cells.planks !== 2
+        || np.read.water !== '~' || np.read.top !== '~' || np.read.right !== '~' || np.read.island !== '.' || np.read.plank !== '=' || np.read.end === '~' || np.read.sand !== 's' || np.read.grass !== '.'
+        || !(np.flat < 0.002) || !(np.over > 0.003 && np.over < 0.012) || np.ends)
+      failures.push(`[${current}] no painted water or sand: ${JSON.stringify(np)}`);
+    // WINDING STREAMS (Oct 11: "4", a stream that meanders down the hole): a generated stream is a lake winding across the
+    // board (its bank swings more than a cell up and down on most), its planks over water with dry ground at both their ends,
+    // the tee and the cup clear of it
+    const ws = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, E = D.editor, CW = D.CW; let n = 0, winding = 0, under = 0, dry = 0, clear = Infinity;
+      for (let idx = 22; idx < 2000 && n < 40; idx++){ const H = D.HOLES[D.holeAt(idx)];
+        const st = E.shapesOf(H).lake.find(s => s.B.box[0] < -0.2 * CW && s.B.box[2] > D.WD + 0.2 * CW); if (!st) continue; n++;
+        const rows = H.map.map((r, j) => r.split('=').length > 2 && (j + 1) * CW > st.B.box[1] - 0.5 * CW && j * CW < st.B.box[3] + 0.5 * CW ? j : -1).filter(j => j >= 0);
+        if (!rows.length) continue;
+        const j0 = Math.min(...rows), j1 = Math.max(...rows) + 1, cols = [...H.map[j0]].map((c, i) => c === '=' ? i : -1).filter(i => i >= 0);
+        if (cols.some(i => { for (let y = j0; y < j1; y += 0.05) if (E.blobIn(st.B, (i + 0.5) * CW, y * CW)) return true; return false; })) under++;
+        let wet = false; for (const i of cols) for (const f of [0.05, 0.5, 0.95]) for (const y of [j0 - 0.25, j0 - 0.05, j1 + 0.05, j1 + 0.25]) if (D.groundAt(H, (i + f) * CW, y * CW) === '~') wet = true;
+        if (!wet) dry++;
+        let lo = Infinity, hi = -Infinity;
+        for (let x = 0.3; x < 7.7; x += 0.2) for (let y = 1.5; y < 12; y += 0.02) if (E.blobIn(st.B, x * CW, y * CW)){ lo = Math.min(lo, y); hi = Math.max(hi, y); break; }
+        if (hi - lo > 1) winding++;
+        for (const p of [H.tee, H.cup]) for (let q = 0; q < st.B.M; q++) clear = Math.min(clear, Math.hypot(st.B.pts[2 * q] - p.x, st.B.pts[2 * q + 1] - p.y) / CW);
+      }
+      return { n, winding, under, dry, clear: +clear.toFixed(2) }; });
+    if (ws.n < 30 || ws.winding < ws.n * 0.7 || ws.under !== ws.n || ws.dry !== ws.n || !(ws.clear > 1))
+      failures.push(`[${current}] winding streams: ${JSON.stringify(ws)}`);
     // fences, not bushes (Oct 8): every hole one of wood, stone or brick, all three used, fences drawn in their hole's
     // material, walls and rail too; and every cup clear of the rail by a quarter of its width
     const fe = await page.evaluate(() => {
@@ -513,7 +557,9 @@ try {
       const avg = (L, f) => { let s = 0; for (let i = 0; i < 30; i++) s += f(D.genSrc(500 + i * 41, L)); return s / 30; };
       const riders = [1, 3, 5].map(L => +avg(L, s => s.toys.filter(T => T.path).length).toFixed(2));
       const weaves = [1, 3, 5].map(L => +avg(L, s => s.weave ? 1 : 0).toFixed(2));
-      let bridge = 9; for (let i = 0; i < 200; i++){ const s = D.genSrc(500 + i * 13, 1); const row = s.map.find(r => r.includes('=') && r.includes('~')); if (row) bridge = Math.min(bridge, row.split('=').length - 1); }
+      // (a stream is a lake across the board since Oct 11, its planks the row's '=')
+      const across = s => (s.land || []).some(f => f.lake && Math.min(...f.lake.filter((_, q) => q % 2 === 0)) < 0 && Math.max(...f.lake.filter((_, q) => q % 2 === 0)) > D.NX);
+      let bridge = 9; for (let i = 0; i < 200; i++){ const s = D.genSrc(500 + i * 13, 1); const row = across(s) && s.map.find(r => r.includes('=')); if (row) bridge = Math.min(bridge, row.split('=').length - 1); }
       // (Oct 10, later: "what happens when the diffuculty mode changes, I dont notice any difference."): the board left of the
       // corner, across the wrap, is the first ring, not the farthest; every step of the setting moves the corner's boards a
       // level; the course's movers follow the setting; a generated hole's flag is its level's colour
@@ -594,8 +640,9 @@ try {
       if (inHand !== tile.tool) failures.push(`[${current}] clicking the ${tile.tool} tile left ${inHand} in hand ${JSON.stringify(before)}`);
     }
     // the row stays up while painting; take up Wall (by its tile) and drag across the middle of the hole with the mouse
+    // (unless it is in hand already: the first tile is Wall since Oct 11, and a second tap on it would put it down)
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(t => t[0] === '#')); });
+      if (E.ED.tool !== '#') A.onStatTap(f.c, f.r, E.TOOLS.findIndex(t => t[0] === '#')); });
     const P = await page.evaluate(() => {
       const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, bWX = bW * L.cellW;
       const S = dx => { const v = new W.THREE.Vector3(T.boardX + dx * bWX, 0.05, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; };
@@ -870,11 +917,11 @@ try {
       tap(...clear[1]); const after2 = { n: ED.src.toys.length - n0, pick: ED.pick && ED.pick.type };
       tool('gate'); for (const [x, y] of [[clear[2][0] - 1, clear[2][1]], [clear[2][0], clear[2][1]], [clear[2][0] + 1, clear[2][1]]]) A.onPan(1, 1, { c: f.c, r: f.r, u: x / D.NX, v: y / D.NY }); A.onPanEnd();
       const gate = { tool: ED.tool, n: ED.src.toys.length - n0 };
-      tool('s'); const sandStays = ED.tool; tool('select');
+      tool('#'); const wallStays = ED.tool; tool('select');   // (Wall since Oct 11, when the Sand paint went)
       ED.src.toys.splice(n0); ED.pick = null;
-      return { after1, after2, gate, sandStays };
+      return { after1, after2, gate, wallStays };
     });
-    if (once.none || once.after1.tool !== 'select' || once.after1.pick !== null || once.after1.n !== 1 || once.after2.n !== 1 || once.after2.pick !== null || once.gate.tool !== 'select' || once.gate.n !== 2 || once.sandStays !== 's')
+    if (once.none || once.after1.tool !== 'select' || once.after1.pick !== null || once.after1.n !== 1 || once.after2.n !== 1 || once.after2.pick !== null || once.gate.tool !== 'select' || once.gate.n !== 2 || once.wallStays !== '#')
       failures.push(`[${current}] one at a time: ${JSON.stringify(once)}`);
     // many dots at once, by the box only (Oct 9: "how do I select and move multiple points at once?" … "selection box works
     // badly. it selects only one point at a time. I only want the selection box to select multiple items."): a tap on a
@@ -1179,7 +1226,7 @@ try {
       run('Delete '); const delOne = ED.src.toys.length === n0 && !!ED.src.lift;
       const stored = !!localStorage.getItem('golf.clip');
       return { textOnly, gone, first, cleared, pasted, undone, redone, objLabel, second, delOne, stored, labels: labels.slice(0, 7) }; });
-    if (cp.textOnly || cp.gone.length || cp.first !== 'Grass' || !cp.cleared || !cp.pasted || !cp.undone || !cp.redone || cp.objLabel !== 'Copy boulder'
+    if (cp.textOnly || cp.gone.length || cp.first !== 'Wall' || !cp.cleared || !cp.pasted || !cp.undone || !cp.redone || cp.objLabel !== 'Copy boulder'
         || !cp.second || !cp.delOne || !cp.stored || !['Undo', 'Redo', 'Copy the board', 'Paste', 'Delete the board'].every(l => cp.labels.some(x => x.startsWith(l))))
       failures.push(`[${current}] copy, paste, delete in the menu: ${JSON.stringify(cp)}`);
     // HARDER AND EASIER (the levels, Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
@@ -1221,7 +1268,7 @@ try {
     const rowOff = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = A._debug.games.get(f.c + '_' + f.r);
       return { on: E.ED.on, shut: document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, quick: (A.quickActs(f.c, f.r) || []).length, state: g && g.state }; });
     if (!rowOn.on) rowOn.dbg = await page.evaluate(at => { const el = document.elementFromPoint(at.x, at.y), b = window.tvf.browser; return { el: el && (el.id || el.tagName), visible: b.visible, mode: b.mode }; }, dotsXY);
-    if (!rowOn.on || !rowOn.open || rowOn.first !== 'Grass' || rowOff.on || !rowOff.shut || rowOff.tiles || rowOff.quick || rowOff.state !== 'play')
+    if (!rowOn.on || !rowOn.open || rowOn.first !== 'Wall' || rowOff.on || !rowOff.shut || rowOff.tiles || rowOff.quick || rowOff.state !== 'play')
       failures.push(`[${current}] the row is the editor: ${JSON.stringify({ pre, rowOn, rowOff })}`);
     // Escape (Oct 9: "don't change the zoom level with escape, instead cancel the edit mode."): in the editor it leaves the
     // editor and the view stays where it was; out of it, it does nothing to the view either

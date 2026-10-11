@@ -99,10 +99,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
   `tests/golf-course.mjs` plays the
   course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates `LEVEL_SAMPLE` (10) holes at each of levels 1, 3 and 5
-  and fails unless they climb (see Difficulty). Sunken ground goes at most BASE deep; water lies
-  level below its banks (`waterLevel`). Water and sand are rounded: what a point is
-  comes from the map's cells blurred (`groundAt`, `softAmount`), for physics and drawing
-  alike. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
+  and fails unless they climb (see Difficulty). Sunken ground goes at most BASE deep. All water and sand are shapes
+  (`lake`, `sand`, see below): water and sand written in cells (`~`, `s`) are read as shapes (`shapify`, see "No painted
+  water or sand"); the old reading of cells blurred (`groundAt`, `softAmount`) is still there but nothing reaches it. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
   or one left, runs them on the page's clock, and a new game starts its clock there, so a tap never resets them, Oct 10): the `path`
   (a rider round a loop, see the editor's notes; the shuttle and the orbit became paths on Oct 10) and the `gate` (a bar rising out
   of the ground and sinking). A path's loop and a turnstile's or door's sweep are dotted only with Wireframe on, or on the hole
@@ -200,7 +199,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     number).
   - Generated holes: bunkers are shapes (`blobLeaves`: round or long, off the tee, cup and stream). A hole with no stream
     may get a pond. The plateau and sunk ground kinds became greens. The apron, raised-green and pond guards are shapes
-    on generated holes and cells on the course.
+    on generated holes; on the course they are cells (since Oct 11 the apron's and the pond's are read as shapes, `shapify`).
   - **More leaves** (Oct 11: "could you add more leaves to lake, sand and grass"): bunkers and greens have 12–16 leaves,
     ponds 16–20, the apron's sand 12, the raised green 14 and the pond guard 16 (seven or eight until then). With ten or
     more the rim takes the 4th and 5th waves as well as the 2nd and 3rd, each smaller, so a pond has coves and a bunker
@@ -208,6 +207,41 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     adds one, up to 32.
   - The guess counts a pond across the tee-cup line as water, and one off to the side as a third of it. Rated on 240 fresh
     holes, the levels came out 2.5, 2.8, 3.5, 4.1 and 5.3 strokes.
+- **No painted water or sand** (Oct 11: "then water, grass and sand are not needed. remove them.", after "how do I show
+  the lakes leaves?"): the editor's Grass, Sand and Water paints went (Erase puts grass back on a walled or planked cell).
+  Water and sand still written in cells (the rapids, the island, the dunes and the bunkers, a generated stream, a guard's
+  pond or apron that fell back to cells, holes saved or shared before) are read as shapes by `shapify`: each run of water
+  cells, with the planks over it, becomes a lake, each run of sand a bunker; the outline is traced round the cells
+  (`outlineLeaves`), pushed 0.45 out under the rail where it meets the board's edge, its corners cut by 0.35, and laid
+  down a leaf about every half cell (8–32). The cells become grass; planks (`=`) stay, over the lake. A run that rings
+  round something (the island's water) is cut down the middle of what it rings (`unringed`), the halves overlapping.
+  - It runs on the course after its guards (so `HOLE_SRC` has shapes), at the end of `genOnce` (the weave and the guards
+    still keep off the cells as they always did), and in `cleanSrc` (links, storage, files, generated holes).
+  - Lakes that overlap are one water, at the lowest of their levels (`lakeLevel`). A lake's level comes from its rim on the
+    board only (a stream's ends run on under the rail).
+  - **Bridges over lakes:** planks lie flat just over the water (`rawH`: at least the lake's level + 0.006 in a `=` cell),
+    since a carved stream took a bridge that followed the ground down and up again. A stream's line lies within 0.04 of a
+    cell of its old rows, so water within `BRIDGE_M` (0.08 cell) of a plank reads as planks (`nearBridge`), and no water
+    lies across a bridge's end. `cellBlocked` lets planks pass.
+  - The smoke test checks there is no paint for them, no painted cells on the course or 300 generated holes, an old hole
+    with a ringed pond, planks and sand read right, and the rapids' bridge flat over its water and dry at its ends.
+- **Winding streams** (Oct 11: "4", from "what else can we do with tvf?": a stream that meanders down the hole as a curve):
+  a generated stream is a lake whose middle is a sine-generated curve (as rivers' meanders are drawn: the heading swings
+  θ(s) = ±Θ·sin(2πs/Λ) along its length), straight under the bridge for the bridge's width and 0.3 of a cell either side,
+  each side of it its own wave, on past both rails. No bend is tighter than Λ/(2πΘ), held to the half width + 0.6 of a cell,
+  so the inner bank never folds. It keeps 1.3 cells off the tee and the cup (turned the other way on one side, the other, both,
+  then gentler, else straight). The banks are the line put out half the width (0.85–1.05, or 1.5–1.8) either side, laid down
+  as up to 32 leaves. The planks (still cells, 2 or 3 across, `rows` = ceil(width + 0.5) long) span it with a quarter cell or
+  more to spare at each end. While the hole is made the cells the water touches are marked `~` (`stream.cells`), so the weave
+  and the guards keep off it as before; `lay` puts them back to grass and adds the lake at the end of `genOnce`. On 200
+  streams the bank swings 1.6 cells up and down across the board (1.1 to 2.3), every bridge spans water with dry ends, and the
+  tee and cup are 1.3 cells or more clear. The course's rapids keep their straight stream.
+  - A lake's shore is drawn as a colour blend a quarter of a cell across its line (`lakeMix`), as the sand's is, not the
+    mesh's stairs.
+  - A shape's line is held in a grid of 16 × 16 boxes over its own box (`blobGrid`, made when first wanted): `blobIn` tries
+    only the pieces of line in the point's row of boxes, and `blobEdge(B, x, y, max)` only those within `max` (nearer is
+    exact, farther is `max`; without `max` it tries them all). `rawH` (lakes to `LAKE_EDGE`, greens to `GREEN_EDGE`),
+    `sandMix` and `lakeMix` pass their reach. The answers are the same as before; a stream hole rates in 4–5 s, not 7–10.
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).
@@ -268,8 +302,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   loop, clear of its track and of other things (`loopInside`, the innermost), moves its rider on and selects it.
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
   **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
-  in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the five paints,
-  the bumpers, Boulder, Fence, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
+  in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the two paints (Wall,
+  Bridge; Grass, Sand and Water went on Oct 11), the bumpers, Boulder, Fence, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
   Level, Material (named by the material). **Undo, Redo, Copy, Paste and Delete are in mini golf's menu** while editing
   (Oct 10, later: "remove copy,paste,delete,undo,redo from the bottom object browser"). With a thing or a piece of
   ground selected (`selObj`) Copy keeps that one, Paste lays a copy of it on the hole (half a cell along if one is
