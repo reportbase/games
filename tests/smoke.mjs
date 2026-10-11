@@ -274,8 +274,9 @@ try {
   const snails = await page.evaluate(() => { const D = window.getFieldApp()._debug; let n = 0; for (let i = 22; i < 822; i++) if (D.genSrc(i, 5).guard === 'snail') n++; return n; });
   if (snails < 3) failures.push(`[${current}] snails at level 5: ${snails} in 800`);
   if (gd.unguarded.length || gd.open.length) failures.push(`[${current}] holes left open: no guard ${gd.unguarded.join(',')}, the tee's line clear ${gd.open.join(',')}`);
-  // (a pond, water, is mostly kept for the higher levels by the guess: two or more will do; Oct 10)
-  if ((gd.st.rocks || 0) > 50 || STYLES.some(k => !(gd.st[k] >= (k === 'pond' ? 2 : 5)))) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
+  // (a pond, water, is mostly kept for the higher levels by the guess: two or more will do; Oct 10. So with the S-bend, which
+  //  comes about five times in a thousand (15 and 16 in 3000 before and after Oct 11's leaves), so five was a coin toss)
+  if ((gd.st.rocks || 0) > 50 || STYLES.some(k => !(gd.st[k] >= (k === 'pond' || k === 'sbend' ? 2 : 5)))) failures.push(`[${current}] the ways of keeping a cup: ${JSON.stringify(gd.st)}`);
   if (gd.edge.length) failures.push(`[${current}] cups near the edge ${gd.edge.join(',')}`);
   // (an old orbit is read as a path round its circle since Oct 10: a boulder, from its start)
   if (!gd.oldOrbit || gd.stillOrbit || gd.oldOrbit.path.slice(-2).join() !== '0,0' || (gd.oldOrbit.path.length - 4) / 2 < 8) failures.push(`[${current}] an old orbit was not read as a path: ${JSON.stringify(gd.oldOrbit)}`);
@@ -1135,7 +1136,7 @@ try {
       const blocked = D.cellBlocked(H, 4, 7) && !D.cellBlocked(H, 4, 10);
       return { tool, n0, sel, nAdd, nDel, bunker, kept, inFile, ground, lift, strokes: g.strokes, back: Math.abs(g.ball.y / CW - 12.5) < 0.6, blocked };
     });
-    if (shp.tool !== 'lake' || !(shp.n0 >= 5 && shp.n0 <= 16) || !shp.sel || shp.nAdd !== shp.n0 + 1 || shp.nDel !== shp.n0 || !shp.bunker || !shp.kept || !shp.inFile
+    if (shp.tool !== 'lake' || !(shp.n0 >= 8 && shp.n0 <= 24) || !shp.sel || shp.nAdd !== shp.n0 + 1 || shp.nDel !== shp.n0 || !shp.bunker || !shp.kept || !shp.inFile
         || shp.ground.lake !== '~' || shp.ground.sand !== 's' || shp.ground.grass !== '.' || shp.ground.shore !== '.' || !(shp.lift > 0.04) || shp.strokes !== 2 || !shp.back || !shp.blocked)
       failures.push(`[${current}] lakes, sand and greens as shapes: ${JSON.stringify(shp)}`);
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
