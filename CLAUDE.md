@@ -253,6 +253,27 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   from draw is fitted into the middle of the board, its proportions kept, in a box for what it becomes (`SHAPE_FIT`: lake
   4 × 6, bunker 3 × 4, green 4 × 5; a path 5 × 7, `fitMiddle`); a shape takes up to 32 leaves, laid evenly along the curve
   itself if it has more (`tvfToShapes`). Draw's y runs down the page, as the board's does, so a heart comes in upright.
+- **Planters** (Oct 11: "#6", from "what else can we do with tvf?": "Closed curved walls. Rock islands or planters of any
+  outline that the ball banks off, like a curved fence closed into a loop. Kidney-shaped or star-shaped obstacles"):
+  `planter [x0, y0, …]`, 3–32 leaves in cells, a closed TVF curve through its leaves (`planterOf`, a lake's line by another
+  name). It is walled along its line in the hole's material (`planterWall_` pieces, solid even in wood) and planted inside:
+  the ground's drawing raises the inside by `PLANTER_RISE` in hedge green (`HEDGE`, `inPlanter`; the far boards and the icon
+  show it too). Physics is untouched underneath.
+  - The ball meets the nearest point of the line from outside, as a curved fence's (`blobNear`, the shapes' grid); a ball
+    that ever lands inside is put back out over the nearest point. `cellBlocked` treats a cell whose middle is inside as a
+    wall, so the players go round. `plantersOf` keeps a hole's lines on the compiled hole.
+  - Editor: the Planter tool (🪴): a drag draws the outline, a tap lays a kidney (`planterLeaves`: round, kidney or a
+    five-lobed star). It stays selected; its leaves drag, are added and taken away; the line or the inside moves it whole.
+    `.tvf`: the open box offers Planter (fitted 3 × 3), and Save this planter as .tvf (`#meta kind:planter`).
+  - Generated holes: one in five at level 1 to two in five at level 5 (a second at 4–5) get one (stars 0.95–1.15 across,
+    kidneys 0.7–1, rounds 0.6–0.9, so a star's lobes are rounder than a wall piece, a third of a cell, is long), out in the middle: every
+    point of its line on dry ground, 2.7 cells off the tee and the cup (the guards' room), off water, 1.6 off a bridge, 1.4
+    off a wall (one in a wall's gap all but shut it). Loose things keep off it (`nearPl`), the weave's tracks too (`plW`),
+    and a planter gives way to a guard that would stand on it (`toyPoints`, each thing's footprint). A screen may be a
+    kidney planter across the way in, bowed toward the tee, if it clears every track and thing. About a third of
+    generated holes have one.
+  - Rated with and without theirs, 50 holes of every level took 0.13 strokes more with, 11 at level 5 0.36 more, so the
+    guess counts a quarter of a stroke a planter (`PLANTER_GUESS`).
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).
@@ -315,7 +336,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   A row of stat tiles is as wide as its widest words (`bbStatWidth`, at most 150px).
   **The tiles** (Oct 10): no top line (a stat tile with no `label` centres its glyph and name); the tool
   in hand is lit by the tile's `bg`; a tap takes a tool up or puts it down. The tools: the two paints (Wall,
-  Bridge; Grass, Sand and Water went on Oct 11), the bumpers, Boulder, Fence, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
+  Bridge; Grass, Sand and Water went on Oct 11), the bumpers, Boulder, Fence, Curved fence, Planter, Windmill, Pipe, the movers (Path among them), Turnstile, Door, Plateau, Erase; the acts:
   Level, Material (named by the material). **Undo, Redo, Copy, Paste and Delete are in mini golf's menu** while editing
   (Oct 10, later: "remove copy,paste,delete,undo,redo from the bottom object browser"). With a thing or a piece of
   ground selected (`selObj`) Copy keeps that one, Paste lays a copy of it on the hole (half a cell along if one is

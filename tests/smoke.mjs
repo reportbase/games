@@ -1135,7 +1135,7 @@ try {
     const tvfEscOpen = await page.evaluate(() => !!document.getElementById('golfTvfBox'));
     await page.keyboard.press('Escape'); await page.waitForTimeout(300);
     const tvfEsc = await page.evaluate(() => ({ box: !!document.getElementById('golfTvfBox'), on: window.getFieldApp()._debug.editor.ED.on }));
-    if (asked !== 'lake,sand,green,path' || shTv.none || shTv.box || shTv.n !== 32 || Math.abs(shTv.w - 4) > 0.15 || Math.abs(shTv.cx - 4) > 0.2 || Math.abs(shTv.cy - 6.5) > 0.2
+    if (asked !== 'lake,sand,green,planter,path' || shTv.none || shTv.box || shTv.n !== 32 || Math.abs(shTv.w - 4) > 0.15 || Math.abs(shTv.cx - 4) > 0.2 || Math.abs(shTv.cy - 6.5) > 0.2
         || !shTv.sel || !shTv.save || !shTv.open || !shTv.back.lake || !shTv.back.sand || !shTv.back.green || !shTv.kindLine || !tvfEscOpen || tvfEsc.box || !tvfEsc.on)
       failures.push(`[${current}] lakes, bunkers and greens as .tvf: ${JSON.stringify({ asked, shTv, tvfEscOpen, tvfEsc })}`);
     // CURVED FENCES, AND LEAVES ADDED AND TAKEN AWAY (Oct 10: "6,4,2,3", 2 curved fences as TVF curves, 3 "a tap on the loop
@@ -1221,6 +1221,54 @@ try {
     if (shp.tool !== 'lake' || !(shp.n0 >= 8 && shp.n0 <= 24) || !shp.sel || shp.nAdd !== shp.n0 + 1 || shp.nDel !== shp.n0 || !shp.bunker || !shp.kept || !shp.inFile
         || shp.ground.lake !== '~' || shp.ground.sand !== 's' || shp.ground.grass !== '.' || shp.ground.shore !== '.' || !(shp.lift > 0.04) || shp.strokes !== 2 || !shp.back || !shp.blocked)
       failures.push(`[${current}] lakes, sand and greens as shapes: ${JSON.stringify(shp)}`);
+    // PLANTERS (Oct 11: "#6", closed curved walls the ball banks off), by real touches: a planter drawn with its tool is a
+    // closed shape of leaves, selected, walled on the board; a tap with Planter lays a kidney; a leaf of it dragged moves
+    // that leaf alone; it is kept by cleaning and files; in play a ball shot hard at a star never gets inside it and comes
+    // back off it, and the players' way round goes round it
+    const pl = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async (pts, after = 300) => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(after); };
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.toys = []; ED.src.land = []; delete ED.src.lift; E.editAction('level');
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'planter')); const tool = ED.tool;
+      const loop = []; for (let q = 0; q <= 28; q++){ const a = q / 28 * 2 * Math.PI * 0.97; loop.push(S(4 + 1.6 * Math.cos(a), 6.5 + 1.1 * Math.sin(a))); }
+      await gest(loop);
+      const pi = ED.src.toys.findIndex(x => x.planter), n0 = pi >= 0 ? ED.src.toys[pi].planter.length / 2 : 0, sel = !!(ED.pick && ED.pick.type === 'toy' && ED.pick.i === pi);
+      const walls = D.cellItems(f.c, f.r).filter(i => /^planterWall_/.test(i.kind)).length;
+      // a tap with Planter lays a kidney, selected; its first leaf dragged half a cell right moves that leaf alone
+      A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'planter')); A.onCellTap(f.c, f.r, 4 / D.NX, 9.6 / D.NY);
+      const ki = ED.src.toys.length - 1, kv = ED.src.toys[ki] && ED.src.toys[ki].planter, kSel = !!(ED.pick && ED.pick.i === ki), kn = kv ? kv.length / 2 : 0;
+      let leafMoved = null;
+      if (kv){ const [lx, ly] = [kv[0], kv[1]], drag = []; for (let q = 0; q <= 8; q++) drag.push(S(lx + 0.5 * q / 8, ly)); await gest(drag);
+        // (the finger's first few pixels go to telling a drag from a tap, so the leaf goes most of the way, not all of it)
+        const nv = ED.src.toys[ki].planter; leafMoved = nv[0] - lx > 0.2 && nv[0] - lx < 0.6 && Math.abs(nv[1] - ly) < 0.1 && nv.slice(2).every((x, q) => Math.abs(x - kv[q + 2]) < 1e-9); }
+      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = E.holesText([ED.src]).includes('"planter"');
+      ED.src.toys = []; E.editRefresh && E.editRefresh(true);
+      // in play: a star in the middle, the ball shot hard straight at it from the tee and every way about
+      const star = []; for (let q = 0; q < 15; q++){ const a = (q + 0.5) / 15 * 2 * Math.PI, rr = 1 + 0.3 * Math.cos(5 * a); star.push(+(4 + rr * Math.cos(a)).toFixed(2), +(6.5 + rr * Math.sin(a)).toFixed(2)); }
+      const k = E.addHole(E.cleanSrc({ name: 'planter test', par: 3, land: [], toys: [{ planter: star }], map: ['........', '........', '...O....', '........', '........', '........', '........', '........', '........', '........', '........', '........', '...T....'] }));
+      const H = D.HOLES[k], B = E.blobOf(H.toys[0].planter, 15), CW = D.CW; let inside = 0, minY = 99;
+      for (let a = -0.4; a <= 0.41; a += 0.1){ const g = D.holeGame({ start: k, card: [], single: true }, k); g.pull = { x: Math.sin(a) * 0.45, y: Math.cos(a) * 0.45 }; D.putt(g);
+        for (let q = 0; q < 2400 && g.state === 'play' && (g.moving || q < 2); q++){ D.step(g, 1 / 120); if (E.blobIn(B, g.ball.x, g.ball.y)) inside++; if (Math.abs(a) < 0.01) minY = Math.min(minY, g.ball.y / CW); } }
+      return { tool, n0, sel, walls, kn, kSel, leafMoved, kept, inFile, inside, minY: +minY.toFixed(2), blocked: D.cellBlocked(H, 4, 6) && !D.cellBlocked(H, 1, 6) };
+    });
+    // and on generated holes: some have planters, kept off the tee, the cup and everything else
+    const plGen = await page.evaluate(() => { const D = window.getFieldApp()._debug, E = D.editor; let n = 0, bad = [];
+      for (let i = 22; i < 322; i++){ const s = D.genSrc(i, 1 + i % 5), at = ch => { for (let j = 0; j < 13; j++){ const c = s.map[j].indexOf(ch); if (c >= 0) return [c + 0.5, j + 0.5]; } };
+        const T = at('T'), O = at('O');
+        for (const P of s.toys.filter(U => U.planter)){ n++; const B = E.blobOf(P.planter, P.planter.length >> 1);
+          for (let m = 0; m < B.M; m++){ const x = B.pts[2 * m], y = B.pts[2 * m + 1]; if (Math.hypot(x - T[0], y - T[1]) < 1.3 || Math.hypot(x - O[0], y - O[1]) < 1.5) { bad.push(i); break; } }
+          for (const U of s.toys) if (U !== P){ const k = Object.keys(U)[0], v = U[k];
+            const pts = k === 'path' ? (L => Array.from({ length: L.M }, (_, q) => [L.pts[2 * q], L.pts[2 * q + 1]]))(E.loopOf(v)) : k === 'curve' ? (C => Array.from({ length: C.m }, (_, q) => [C.pts[2 * q], C.pts[2 * q + 1]]))(E.curveOf(v)) : [[v[0], v[1]]];
+            if (pts.some(([x, y]) => E.blobIn(B, x, y))) bad.push(i + k); } } }
+      return { n, bad: [...new Set(bad)].slice(0, 6) }; });
+    if (pl.tool !== 'planter' || !(pl.n0 >= 8 && pl.n0 <= 24) || !pl.sel || !(pl.walls >= 8) || pl.kn !== 12 || !pl.kSel || !pl.leafMoved || !pl.kept || !pl.inFile
+        || pl.inside || !(pl.minY > 7.6) || !pl.blocked || plGen.n < 40 || plGen.bad.length)
+      failures.push(`[${current}] planters: ${JSON.stringify({ pl, plGen })}`);
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
         || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
