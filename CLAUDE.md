@@ -164,6 +164,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (`BGR`); a new hole stops it. A rated hole's stars show on the tee and when sunk (`starTag`) and ride on the card
     (`R.card` entries carry `stars`, `name`, `num`). A round ends on a scorecard (`openCardBox`, `#golfCardBox`: a row a
     hole with par, strokes and stars, the average stars, Close; Escape closes it).
+  - **Holes no one could finish, made again** (Oct 11: "proceed", on "Catch the near-unplayable holes"): about one level-5
+    hole in 400 the guess called fair could hardly be finished (112107; 11763 "the amber saddle" once movers kept apart, sunk
+    once in 8 by the rater). Rating every hole as it is made would take seconds a board, so the ratings `rateAhead` already
+    makes are used. `vetRated(k, R)` (from `rateSoon`): a generated hole sunk in fewer than half its rounds (`R.sunk < 0.5`)
+    is remembered in `REMADE` (GEN key → times remade, localStorage `golf.remade`, the latest 1000), and the board gets the
+    hole of its next eight attempts (`genSrc(idx, lv, from)`, from = 8 × times), in its own slot (`remakeIn`: number, level,
+    board kept; `H.remadeN`). A hole someone is playing (`holeBusy`: a game on it not done) is not swapped: the tee says so,
+    and `holeAt` remakes it the next time the board is wanted. After three it is left as it is. Of 55 fresh level-5 holes
+    rated, none sank fewer than half (the worst five in eight). The course test rates a generated hole its player cannot
+    finish (`vetHole`); if the page would make it again, it plays the new one, and fails if more than one in 33 of its sample
+    was made again.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,

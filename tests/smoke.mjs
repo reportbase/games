@@ -707,6 +707,32 @@ try {
     if (ka.bad.length || !ka.phase) failures.push(`[${current}] ${JSON.stringify(ka)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${ka.n} holes)`);
   }
+  // HOLES NO ONE COULD FINISH, MADE AGAIN (Oct 11: "proceed", on "Catch the near-unplayable holes"): a generated hole rated as
+  // sunk in fewer than half its rounds is remembered and its board given the hole of its next eight attempts, in its own slot
+  // (number, level and board kept); one sunk in half or more, or a course hole, is left alone; one being played is not swapped
+  // until no one is; after three it is left as it is
+  current = 'mini golf holes no one could finish';
+  {
+    const before = failures.length;
+    const rm = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, E = D.editor, idx = 98765, k = D.holeAt(idx), H0 = D.HOLES[k], lv = H0.level, gk = idx * 8 + lv;
+      const nameAt = n => E.cleanSrc(D.genSrc(idx, lv, 8 * n)).name, out = { first: H0.name === nameAt(0) };
+      out.fair = E.vetRated(k, { sunk: 0.5 }) === false && D.HOLES[k] === H0 && !E.REMADE[gk];
+      out.course = E.vetRated(0, { sunk: 0 }) === false;
+      out.bad = E.vetRated(k, { sunk: 0.125 }) === true && E.REMADE[gk] === 1;
+      const H1 = D.HOLES[k];
+      out.remade = H1 !== H0 && H1.remadeN === 1 && H1.name === nameAt(1) && H1.gen === idx && H1.num === idx + 1 && H1.level === lv && D.holeAt(idx) === k;
+      D.games.set('smoke-busy', D.holeGame({ start: k, card: [] }, k));
+      out.busy = E.vetRated(k, { sunk: 0 }) === true && E.REMADE[gk] === 2 && D.HOLES[k] === H1 && D.holeAt(idx) === k && D.HOLES[k] === H1;
+      D.games.delete('smoke-busy');
+      out.later = D.holeAt(idx) === k && D.HOLES[k].remadeN === 2 && D.HOLES[k].name === nameAt(2);
+      out.third = E.vetRated(k, { sunk: 0 }) === true && D.HOLES[k].remadeN === 3 && E.vetRated(k, { sunk: 0 }) === false && E.REMADE[gk] === 3;
+      out.kept = JSON.parse(localStorage.getItem('golf.remade') || '{}')[gk] === 3;
+      return out;
+    });
+    if (Object.values(rm).some(v => !v)) failures.push(`[${current}] ${JSON.stringify(rm)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
 
   // The hole editor (Oct 8: "yes, build the editor"): a new hole on the selected board, painted with a real drag after
   // choosing a tool on the bar, things placed, undo, Check sets the par, Save keeps it, Share's link opens the page on it.

@@ -36747,6 +36747,40 @@ const GOLF_APP = (() => {
      played longest ago gives up its place (its meshes dropped), so flying over thousands of boards holds a few thousand
      holes at most, and a hole in play is never taken back. */
   const GEN = new Map(), GEN_CAP = 1500;
+  /* HOLES NO ONE COULD FINISH, MADE AGAIN (Oct 11: "proceed", on "Catch the near-unplayable holes": about one level-5 hole in
+     400 could hardly be finished, the guess calling it fair: 112107, and 11763 once its movers were kept apart, which the rater,
+     with a person's hands, sank once in eight). Rating every hole as it is made would take seconds a board; but the hole in
+     play and the next board's are rated already, in the background (rateAhead). A generated hole the rater sinks in fewer than
+     half its rounds is remembered here (REMADE, its GEN key to the times it was remade, kept in this browser) and the board
+     gets the hole of its next eight attempts (genSrc's from): the next board before you reach it, the one in play next time.
+     After three it is left as it is. Rated on 55 fresh level-5 holes, none sank fewer than half (the worst five in eight);
+     those two sink one in eight. */
+  const REMADE_KEY = 'golf.remade', REMADE = (() => { try { const o = JSON.parse(localStorage.getItem(REMADE_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+  const remadeSave = () => { try { const ks = Object.keys(REMADE); if (ks.length > 1000) for (const k of ks.slice(0, ks.length - 1000)) delete REMADE[k]; localStorage.setItem(REMADE_KEY, JSON.stringify(REMADE)); } catch {} };
+  const timesIn8 = f => { const n = Math.round(f * 8); return n === 0 ? 'no times' : n === 1 ? 'once' : n === 2 ? 'twice' : n + ' times'; };
+  const holeBusy = k => [...GAMES.values()].some(g => g.hole === k && g.state !== 'done');
+  // the board's hole made again from its next attempts, in its own slot (its number, level and board kept)
+  function remakeIn(k, idx, lv, n){
+    const src = cleanSrc(genSrc(idx, lv, 8 * n));
+    if (!src) return false;
+    setHole(k, src);
+    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv; H.remadeN = n;
+    return true;
+  }
+  // a generated hole the rater found next to unplayable: remembered, and made again now if no one is playing it
+  function vetRated(k, R){
+    const H = HOLES[k];
+    if (!H || H.gen == null || H.custom || !R || !(R.sunk < 0.5)) return false;
+    const lv = H.level || levelAt(H.gen), gk = H.gen * 8 + lv, n = (REMADE[gk] || 0) + 1;
+    if (n > 3) return false;
+    REMADE[gk] = n; remadeSave();
+    if (!holeBusy(k)) return remakeIn(k, H.gen, lv, n);
+    if (LIVE && GAMES.get(LIVE.key) && GAMES.get(LIVE.key).hole === k)
+      say('This hole is far harder than its level (sunk ' + timesIn8(R.sunk) + ' in 8 tries): the board will have a new one next time.', 3600);
+    return true;
+  }
+  // (for the course test: rate a generated hole now, and make it again if it is one of those; the hole's index, kept)
+  function vetHole(k){ const n0 = HOLES[k].remadeN || 0, R = rateHole(k); vetRated(k, R); return { remade: (HOLES[k].remadeN || 0) !== n0, sunk: R.sunk, mean: R.mean, name: HOLES[k].name }; }
   function seeded(seed){ let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   // (Oct 9: more words, so a name comes round less often: some sixty adjectives and three or four nouns for each kind of
   //  ground, about ten thousand names where there were under five hundred)
@@ -36963,8 +36997,8 @@ const GOLF_APP = (() => {
     //  rated with and without theirs, 50 holes of every level took 0.13 more with, 11 at level 5 took 0.36 more)
     return x.reduce((s, v, i) => s + v * GUESS_W[i], 0) + (CURVE_GUESS[src.guard] || 0) + PLANTER_GUESS * T.filter(t => t.planter).length;
   }
-  function genSrc(idx, lv){
-    lv = lv || levelAt(idx);
+  function genSrc(idx, lv, from){
+    lv = lv || levelAt(idx); from = from || 0;                // (from: the first attempt, 8 a time a hole is remade: REMADE)
     const [lo, hi] = LEVEL_BAND[lv - 1], off = m => m < lo ? lo - m : m > hi ? m - hi : 0;
     let best = null, bd = Infinity;
     /* (Oct 11: each attempt near its level's band has its movers kept apart, see MOVERS KEEP APART, and is guessed again as
@@ -36972,7 +37006,7 @@ const GOLF_APP = (() => {
        than their level. What that dropped or still meets is kept on the hole for the tests.) */
     const apart = s => { if (s.apart) return s; const r = keepApart(s, 'gen', s._tiers), o = r.src; delete o._tiers;
       o.apart = { dropped: r.dropped, meets: r.meets.length, why: r.why }; o.guess = Math.round(guessMean(o) * 100) / 100; return o; };
-    for (let a = 0; a < 8; a++){
+    for (let a = from; a < from + 8; a++){
       let s = genOnce(idx, lv, a), m = guessMean(s);
       if (off(m) < 0.6){ s = apart(s); m = s.guess; }
       const d = off(m) + (m > LEVEL_BAND[4][1] ? 10 : 0);
@@ -37174,15 +37208,18 @@ const GOLF_APP = (() => {
     if (idx < COURSE) return idx;
     const lv = levelAt(idx), gk = idx * 8 + lv;              // (a board's hole at each level is a hole of its own: the levels, Oct 10)
     let k = GEN.get(gk);
-    if (k != null){ GEN.delete(gk); GEN.set(gk, k); return k; }   // (kept in the order last wanted)
-    const src = cleanSrc(genSrc(idx, lv));
+    const want = REMADE[gk] || 0;                            // (a hole no one could finish, made again: REMADE)
+    if (k != null){
+      if ((HOLES[k].remadeN || 0) !== want && !holeBusy(k)) remakeIn(k, idx, lv, want);
+      GEN.delete(gk); GEN.set(gk, k); return k; }            // (kept in the order last wanted)
+    const src = cleanSrc(genSrc(idx, lv, 8 * want));
     if (!src) return idx % COURSE;
     if (GEN.size >= GEN_CAP){
       const busy = new Set([...GAMES.values()].map(g => g.hole));
       for (const [oi, ok] of GEN) if (!busy.has(ok)){ GEN.delete(oi); setHole(ok, src); k = ok; break; }
     }
     if (k == null) k = addHole(src);
-    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv;
+    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv; H.remadeN = want;
     GEN.set(gk, k);
     return k;
   }
@@ -37585,7 +37622,7 @@ const GOLF_APP = (() => {
       try { const t0 = performance.now(); while (performance.now() - t0 < ms){ const x = it.next(); laps++; if (x.done){ r = x.value; break; } } }
       catch (e){ stop = true; SND.on = wasOn; SILENT = false; EVEN = false; done(null, e); return; }
       SND.on = wasOn; SILENT = false; EVEN = false;
-      if (r){ if (HOLES[k] === H) H.rated = r; done(r); return; }
+      if (r){ if (HOLES[k] === H){ H.rated = r; vetRated(k, r); } done(r); return; }   // (and a hole no one could finish made again: REMADE)
       if (progress) try { progress(laps); } catch {}
       setTimeout(slice, gap);
     };
@@ -39105,7 +39142,7 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, fly: (c, r) => gotoCell(c, r) } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
   };
