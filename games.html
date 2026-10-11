@@ -34855,7 +34855,7 @@ const GOLF_APP = (() => {
         return [{ curve: pts.flatMap(([x, y]) => [r2(x), r2(y)]) }]; }],
     };
     // (a shape fits where it is on the board, off water, walls and bridges, and clear of the tee)
-    function shapeOk(x, y){ return x > 0.3 && x < NX - 0.3 && y > 0.3 && y < NY - 0.3 && !'#~='.includes(map[Math.floor(y)][Math.floor(x)]) && Math.hypot(x - tx, y - ty) > 1.3 && !lakesG.some(B => blobIn(B, x, y)); }
+    function shapeOk(x, y){ return x > 0.3 && x < NX - 0.3 && y > 0.3 && y < NY - 0.3 && !'#~='.includes(map[Math.floor(y)][Math.floor(x)]) && Math.hypot(x - tx, y - ty) > 1.3 && !lakesG.some(B => blobIn(B, x, y)) && offPl(x, y, 0.3); }   // (off the planters: Oct 11)
     // (a curved fence fits where its whole line is on the board, off water and walls, and clear of the tee)
     function curveFits(pts){
       const v = pts.flatMap(p => p), C = curveOf(v);
@@ -34897,6 +34897,9 @@ const GOLF_APP = (() => {
     const narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (ch === '.' && row.filter(c => c === '#').length >= 3)) narrows.push([i + 0.5, j + 0.5]); }));
     const wayOver = (x, y, m) => narrows.some(([a, b]) => Math.hypot(x - a, y - b) < m);
+    // (a pond in front, an S-bend across the way in or a snail round the cup reaches about three cells out, past the cup's
+    //  room, and is hard enough alone: its planters go first, Oct 11, or a planter in its way made it fall back to another)
+    if (style === 'pond' || style === 'snail' || style === 'sbend'){ toys = toys.filter(T => !T.planter); plG.length = 0; }
     let guards = STYLES[style][1]();
     if (clearR) toys = toys.filter(T => { const k = Object.keys(T)[0], v = T[k];
       if (k === 'path'){ const P = loopOf(v); for (let q = 0; q < P.M; q++) if (Math.hypot(P.pts[2 * q] - cx, P.pts[2 * q + 1] - cy) < clearR) return false; return true; }
@@ -36393,10 +36396,9 @@ const GOLF_APP = (() => {
     const wet = [], planks = [];
     src.map.forEach((row, j) => [...row].forEach((ch, i) => { if (ch === '~') wet.push([i + 0.5, j + 0.5]); if (ch === '=') planks.push([i + 0.5, j + 0.5]); }));
     const lakesW = (src.land || []).filter(f => f.lake).map(f => blobOf(f.lake, f.lake.length >> 1));   // (and off a pond's banks: Oct 10)
-    const plW = (src.toys || []).filter(T => Array.isArray(T.planter)).map(T => planterOf(T.planter));   // (and off the planters: Oct 11)
     const okAt = (x, y, r) => x > 0.55 && x < NX - 0.55 && y > 0.55 && y < NY - 0.55 && Math.hypot(x - T[0], y - T[1]) > 1.3 && Math.hypot(x - O[0], y - O[1]) > r + 0.45
       && !'#~='.includes(src.map[Math.floor(y)][Math.floor(x)]) && wet.every(([a, b]) => Math.hypot(x - a, y - b) > r + 0.75) && planks.every(([a, b]) => Math.hypot(x - a, y - b) > r + 1.4)
-      && lakesW.every(B => !blobIn(B, x, y) && blobEdge(B, x, y) > r + 0.6) && plW.every(B => !blobIn(B, x, y) && blobEdge(B, x, y, r + 0.5) >= r + 0.45);
+      && lakesW.every(B => !blobIn(B, x, y) && blobEdge(B, x, y) > r + 0.6);
     const dense = pts => { const out = []; for (let q = 0; q < pts.length; q++){ const a = pts[q], b = pts[(q + 1) % pts.length]; for (let s = 0; s < 4; s++) out.push([a[0] + (b[0] - a[0]) * s / 4, a[1] + (b[1] - a[1]) * s / 4]); } return out; };
     const fits = (pts, r) => dense(pts).every(([x, y]) => okAt(x, y, r));
     const curve = (f, n) => Array.from({ length: n }, (_, q) => f((q + 0.5) / n * TAU));   // (TVF's leaf spacing, Oct 10)
@@ -36688,28 +36690,7 @@ const GOLF_APP = (() => {
       for (const i of HEIGHTS[k] || []) v[i] = r3(sp[i] ? Math.max(sp[i][0], Math.min(sp[i][1], v[i] * K.amp)) : v[i] * K.amp);
       if (k === 'green') v[v.length - 1] = r3(Math.max(-0.045, Math.min(0.1, v[v.length - 1] * K.amp)));   // (a green's height, its last number)
       f[k] = v; }
-    /* PLANTERS (Oct 11: "#6"): on some holes (one in five at level 1 to two in five at level 5, a second at 4 and 5), a
-       walled bed of a kidney, a star or a round, out in the open middle of the board: every point of its line on dry
-       ground, off the board's edge, clear of the tee and the cup by 2.7 cells (the guards' room), off water and away from a
-       bridge. The loose things, the weave's tracks and the guards keep off it. */
-    const toys = [], plB = [], bridgeAt = [], wallAt = [];
-    map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=') bridgeAt.push([i + 0.5, j + 0.5]); if (ch === '#') wallAt.push([i + 0.5, j + 0.5]); }));
-    for (let k = 0; k < (lv >= 4 ? 2 : 1); k++){
-      if (R() >= [0.2, 0.25, 0.3, 0.35, 0.4][lv - 1] * (k ? 0.5 : 1)) continue;
-      for (let tries = 0; tries < 12; tries++){
-        // (a star a little bigger, so its lobes are rounder than a wall piece is long)
-        const kind = pick(['kidney', 'kidney', 'star', 'round']), rr = kind === 'star' ? u(0.95, 1.15) : kind === 'kidney' ? u(0.7, 1) : u(0.6, 0.9);
-        const v = planterLeaves(u(1.6, NX - 1.6), u(4, NY - 4), rr, kind, u(0, 3.14), R), B = blobOf(v, v.length >> 1);
-        let ok = true;
-        for (let m = 0; m < B.M && ok; m++){ const x = B.pts[2 * m], y = B.pts[2 * m + 1];
-          // (and 1.4 cells off a wall: one landed in the gap of a wall across and all but shut it, and a level-2 hole took 7.6)
-          ok = onMap(x, y, 0.5) && dry(x, y) && clear(x, y, 2.7) && !inLake(x, y, 0.5) && bridgeAt.every(([a, b]) => Math.hypot(x - a, y - b) > 1.6)
-            && wallAt.every(([a, b]) => Math.hypot(x - a, y - b) > 1.4) && plB.every(P => !blobIn(P, x, y) && blobEdge(P, x, y, 1) > 0.8); }
-        if (ok){ toys.push({ planter: v }); plB.push(B); break; }
-      }
-    }
-    const nearPl = (x, y, m) => plB.some(B => blobIn(B, x, y) || blobEdge(B, x, y, m) < m);
-    const nT = K.toys[0] + Math.floor(R() * (K.toys[1] - K.toys[0] + 1)), narrows = [];
+    const toys = [], nT = K.toys[0] + Math.floor(R() * (K.toys[1] - K.toys[0] + 1)), narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (wall && ch === '.' && row.includes('#'))) narrows.push([i, j]); }));
     for (let q = 0, tries = 0; q < nT && tries < 30; tries++){
       const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill', 'arm', 'swing']);
@@ -36718,7 +36699,6 @@ const GOLF_APP = (() => {
       if (ch !== '.' && ch !== 's' || !clear(x, y, t === 'orbit' || t === 'mill' || t === 'arm' ? 3 : 2)) continue;
       if (narrows.some(([i, j]) => Math.hypot(x - i - 0.5, y - j - 0.5) < 2.2)) continue;   // (not in the way of the one way over: Oct 9)
       if (inLake(x, y, 0.6)) continue;                         // (nor in a pond: Oct 10)
-      if (nearPl(x, y, t === 'orbit' ? 2.3 : t === 'shuttle' || t === 'gate' ? 1.8 : t === 'mill' || t === 'arm' || t === 'swing' || t === 'fence' ? 1.6 : 0.8)) continue;   // (nor on a planter, by its reach: Oct 11)
       if (t === 'kick'){ const kind = Math.floor(R() * 4); toys.push({ kick: [x, y, [0.3, 0.28, 0.4, 0.32][kind], kind] }); }
       else if (t === 'rock') toys.push({ rock: [x, y, r2(u(0.35, 0.6))] });
       else if (t === 'fence'){ const a = u(0, Math.PI), L = u(0.6, 1.1); toys.push({ fence: ex(x, y, a, L, 0) }); }
@@ -36736,6 +36716,30 @@ const GOLF_APP = (() => {
     const hole = { name: 'the ' + pick(GEN_ADJ) + ' ' + pick(GEN_NOUN[main]), par, fence: pick(FENCE_MATS), land, toys, map: map.map(r => r.join('')) };
     if (R() < K.weave) weave(hole, R, K.riders, lv);        // (crossing tracks, Oct 10: see weave)
     if (K.extra && R() < K.extra) weave(hole, R, K.riders, lv);   // (and at the top, a second weave: the levels, Oct 10)
+    /* PLANTERS (Oct 11: "#6"): on some holes (one in five at level 1 to two in five at level 5, a second at 4 and 5), a
+       walled bed of a kidney, a star or a round, out in the open middle of the board: every point of its line on dry
+       ground, off the board's edge, clear of the tee and the cup by 2.7 cells (the guards' room), off water, away from a
+       bridge and a wall, and off every thing and track already on the hole (toyPoints). Laid after the weave, not before:
+       the weave's tracks kept off a planter laid first, curled up by the cup more often, and the cup, having things about
+       it already, was only ever kept by the ground, so ponds, snails and S-bends came a third as often at level 5. */
+    const plB = [], bridgeAt = [], wallAt = [];
+    map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=') bridgeAt.push([i + 0.5, j + 0.5]); if (ch === '#') wallAt.push([i + 0.5, j + 0.5]); }));
+    const onHole = hole.toys.flatMap(toyPoints);
+    for (let k = 0; k < (lv >= 4 ? 2 : 1); k++){
+      if (R() >= [0.35, 0.45, 0.5, 0.6, 0.65][lv - 1] * (k ? 0.5 : 1)) continue;   // (asked for more often than it fits: the tracks take room)
+      for (let tries = 0; tries < 30; tries++){
+        // (a star a little bigger, so its lobes are rounder than a wall piece is long)
+        const kind = pick(['kidney', 'kidney', 'star', 'round']), rr = kind === 'star' ? u(0.95, 1.15) : kind === 'kidney' ? u(0.7, 1) : u(0.6, 0.9);
+        const v = planterLeaves(u(1.6, NX - 1.6), u(4, NY - 4), rr, kind, u(0, 3.14), R), B = blobOf(v, v.length >> 1);
+        let ok = true;
+        for (let m = 0; m < B.M && ok; m++){ const x = B.pts[2 * m], y = B.pts[2 * m + 1];
+          // (and 1.4 cells off a wall: one landed in the gap of a wall across and all but shut it, and a level-2 hole took 7.6)
+          ok = onMap(x, y, 0.5) && dry(x, y) && clear(x, y, 2.7) && !inLake(x, y, 0.5) && bridgeAt.every(([a, b]) => Math.hypot(x - a, y - b) > 1.6)
+            && wallAt.every(([a, b]) => Math.hypot(x - a, y - b) > 1.4) && plB.every(P => !blobIn(P, x, y) && blobEdge(P, x, y, 1) > 0.8); }
+        if (ok) ok = !onHole.some(([x, y, r]) => blobIn(B, x, y) || blobEdge(B, x, y, r + 0.3) < r + 0.3);
+        if (ok){ hole.toys.push({ planter: v }); plB.push(B); break; }
+      }
+    }
     // (at the end, the winding stream's cells back to grass and the stream laid down as its lake, and a guard's pond or apron
     //  that fell back to cells read as shapes: Oct 11. Until then they are cells, which the weave and the guards keep off as
     //  they always did)
@@ -38510,7 +38514,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)

@@ -265,13 +265,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Editor: the Planter tool (🪴): a drag draws the outline, a tap lays a kidney (`planterLeaves`: round, kidney or a
     five-lobed star). It stays selected; its leaves drag, are added and taken away; the line or the inside moves it whole.
     `.tvf`: the open box offers Planter (fitted 3 × 3), and Save this planter as .tvf (`#meta kind:planter`).
-  - Generated holes: one in five at level 1 to two in five at level 5 (a second at 4–5) get one (stars 0.95–1.15 across,
-    kidneys 0.7–1, rounds 0.6–0.9, so a star's lobes are rounder than a wall piece, a third of a cell, is long), out in the middle: every
-    point of its line on dry ground, 2.7 cells off the tee and the cup (the guards' room), off water, 1.6 off a bridge, 1.4
-    off a wall (one in a wall's gap all but shut it). Loose things keep off it (`nearPl`), the weave's tracks too (`plW`),
-    and a planter gives way to a guard that would stand on it (`toyPoints`, each thing's footprint). A screen may be a
-    kidney planter across the way in, bowed toward the tee, if it clears every track and thing. About a third of
-    generated holes have one.
+  - Generated holes: laid after the weave, asked for at 35–65% by level (a second at 4–5) and kept only where one fits, so
+    15% of level-1 holes to 36% at level 3 have one (about a quarter in all). Stars are 0.95–1.15 across, kidneys 0.7–1,
+    rounds 0.6–0.9 (a star's lobes rounder than a wall piece, a third of a cell, is long). Every point of its line is on dry
+    ground, 2.7 cells off the tee and the cup (the guards' room), off water, 1.6 off a bridge, 1.4 off a wall (one in a
+    wall's gap all but shut it), and clear of every thing and track already on the hole (`toyPoints`, each thing's
+    footprint). Laid before the weave, the tracks curled up by the cup to keep off it, and a cup with things about it is only
+    kept by the ground, so ponds, snails and S-bends came a third as often at level 5.
+  - A planter gives way to a guard that would stand on it, and to a pond, an S-bend or a snail entirely (they reach about
+    three cells out and are hard enough alone). Guard shapes and curved guards keep off planters (`offPl`); a screen keeps
+    1.5 cells off one; a planter so near the tee-cup line that a ball rolling straight would clip it counts as crossing it.
+    A screen may be a kidney planter across the way in, bowed toward the tee, if it clears every track and thing.
   - Rated with and without theirs, 50 holes of every level took 0.13 strokes more with, 11 at level 5 0.36 more, so the
     guess counts a quarter of a stroke a planter (`PLANTER_GUESS`).
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
