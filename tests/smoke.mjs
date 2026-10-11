@@ -1092,6 +1092,9 @@ try {
       '0 ' + Array.from({ length: 40 }, (_, q) => (200 + 60 * Math.sin((q + 0.5) / 40 * 2 * Math.PI)).toFixed(3)).join(' ')].join('\n') + '\n';
     const n0tv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; return E.ED.on ? E.ED.src.toys.length : -1; });
     await page.setInputFiles('#importImageFile', { name: 'shape.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
+    // (a curve from draw is asked about since Oct 11: a lake, a bunker, a green or a path; Path, clicked)
+    await page.waitForSelector('#golfTvfBox .golfTvfKind[data-kind="path"]', { timeout: 15000 }).catch(() => {});
+    await page.click('#golfTvfBox .golfTvfKind[data-kind="path"]').catch(() => {});
     await page.waitForTimeout(1500);
     const tvIn = await page.evaluate(n0 => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, T = ED.src.toys[ED.src.toys.length - 1], v = T && T.path;
       if (!v) return { none: true, on: ED.on, n: ED.src.toys.length };
@@ -1103,6 +1106,38 @@ try {
     if (!tv.lib || tv.round > 0.01 || tv.off > 0.03 || !/^TVF \d+ 1 2$/.test(tv.head) || !tv.same || tvIn.none || tvIn.added !== 1 || tvIn.n !== 40 || Math.abs(tvIn.w - 5) > 0.2
         || Math.abs(tvIn.h - 3) > 0.2 || Math.abs(tvIn.cx - 4) > 0.2 || Math.abs(tvIn.cy - 6.5) > 0.2 || !tvIn.drawn || !tvIn.sel)
       failures.push(`[${current}] paths as TVF curves: ${JSON.stringify({ tv, tvIn })}`);
+    // LAKES, BUNKERS AND GREENS AS .tvf (Oct 11, "proceed": a curve from draw opened as a lake, a bunker or a green, and a
+    // shape saved back out): the ellipse from draw, opened through the field's Open input, asks what it should be; Lake,
+    // clicked, lays a lake of 32 leaves fitted 4 cells across in the middle of the board, selected, and the menu offers to save
+    // it; a lake, bunker or green saved here opens again as what it was, where it was, without asking (a green its height);
+    // Escape closes the box unanswered
+    await page.setInputFiles('#importImageFile', { name: 'pond.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
+    await page.waitForSelector('#golfTvfBox .golfTvfKind[data-kind="lake"]', { timeout: 15000 }).catch(() => {});
+    const asked = await page.evaluate(() => { const b = document.getElementById('golfTvfBox'); return b ? [...b.querySelectorAll('.golfTvfKind')].map(x => x.dataset.kind).join(',') : null; });
+    await page.click('#golfTvfBox .golfTvfKind[data-kind="lake"]').catch(() => {});
+    await page.waitForTimeout(1500);
+    const shTv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, f = ED.src.land[ED.src.land.length - 1], v = f && f.lake;
+      if (!v) return { none: true, box: !!document.getElementById('golfTvfBox') };
+      const xs = v.filter((_, q) => q % 2 === 0), ys = v.filter((_, q) => q % 2 === 1);
+      const out = { box: !!document.getElementById('golfTvfBox'), n: xs.length, w: +(Math.max(...xs) - Math.min(...xs)).toFixed(2), cx: +((Math.max(...xs) + Math.min(...xs)) / 2).toFixed(2),
+        cy: +((Math.max(...ys) + Math.min(...ys)) / 2).toFixed(2), sel: !!ED.pick && ED.pick.type === 'land' && ED.pick.i === ED.src.land.length - 1,
+        save: E.editorMenu().some(i => i.label === 'Save this lake as .tvf'), open: E.editorMenu().some(i => i.label === 'Open a .tvf curve') };
+      // saved and opened again: each kind as it was, where it was, no box
+      const n0 = ED.src.land.length, J = o => JSON.stringify(o), back = {};
+      for (const [key, val] of [['lake', v], ['sand', [5, 2, 7, 2.2, 6.8, 4, 5.1, 3.8]], ['green', [1, 1, 3, 1, 3, 3.5, 1, 3.5, 0.07]]]){
+        const text = E.shapeToTvf(key, val, 'test ' + key); E.takeTvf(text, 'test.tvf');
+        const g = ED.src.land[ED.src.land.length - 1]; back[key] = !!g && J(g[key]) === J(val) && !document.getElementById('golfTvfBox'); }
+      out.back = back; out.kindLine = E.shapeToTvf('green', [1, 1, 3, 1, 3, 3.5, 0.07], 'g').includes('#meta kind:green');
+      ED.src.land = ED.src.land.slice(0, n0 - 1);
+      return out; });
+    await page.setInputFiles('#importImageFile', { name: 'again.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
+    await page.waitForSelector('#golfTvfBox', { timeout: 15000 }).catch(() => {});
+    const tvfEscOpen = await page.evaluate(() => !!document.getElementById('golfTvfBox'));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+    const tvfEsc = await page.evaluate(() => ({ box: !!document.getElementById('golfTvfBox'), on: window.getFieldApp()._debug.editor.ED.on }));
+    if (asked !== 'lake,sand,green,path' || shTv.none || shTv.box || shTv.n !== 32 || Math.abs(shTv.w - 4) > 0.15 || Math.abs(shTv.cx - 4) > 0.2 || Math.abs(shTv.cy - 6.5) > 0.2
+        || !shTv.sel || !shTv.save || !shTv.open || !shTv.back.lake || !shTv.back.sand || !shTv.back.green || !shTv.kindLine || !tvfEscOpen || tvfEsc.box || !tvfEsc.on)
+      failures.push(`[${current}] lakes, bunkers and greens as .tvf: ${JSON.stringify({ asked, shTv, tvfEscOpen, tvfEsc })}`);
     // CURVED FENCES, AND LEAVES ADDED AND TAKEN AWAY (Oct 10: "6,4,2,3", 2 curved fences as TVF curves, 3 "a tap on the loop
     // between two leaves adds one, a double-tap on a leaf removes it"), by real touches: a curved fence drawn with its tool
     // runs through its leaves from end to end, is drawn in fence pieces and kept in files; a tap on its line adds a leaf
