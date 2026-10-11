@@ -34,7 +34,7 @@ const report = await page.evaluate(SAMPLE => {
   const D = window.getFieldApp()._debug, { HOLES, NX, NY, CW } = D, out = [];
   const ks = HOLES.map((H, k) => k).filter(k => HOLES[k].gen == null && !HOLES[k].custom);
   for (let i = 0; i < SAMPLE; i++) ks.push(D.holeAt(22 + i * 97 + 3));
-  for (const k of ks){
+  const playHole = k => {
     const H = HOLES[k];
     // the way round to the cup, cell by cell: walls and water block, pipes carry
     const dist = new Map(), key = (i, j) => i + ',' + j, ci = Math.floor(H.cup.x / CW), cj = Math.floor(H.cup.y / CW), q = [[ci, cj]];
@@ -63,7 +63,19 @@ const report = await page.evaluate(SAMPLE => {
       }
       if (best) g = best;
     }
-    out.push({ hole: H.num || k + 1, name: H.name, par: H.par, strokes, sunk });
+    return { hole: H.num || k + 1, name: H.name, par: H.par, strokes, sunk };
+  };
+  /* (Oct 11: a generated hole the page's rater, with a person's hands, sinks in fewer than half its rounds is one the page
+     makes again (REMADE) once it rates it as it is played; one this player cannot finish is rated so, and if the page would
+     make it again, its new hole is played instead and the old one is counted. More than one in thirty-three of the sample
+     made again fails the run, as does a new hole that cannot be finished either.) */
+  for (const k of ks){
+    let r = playHole(k);
+    if (!(r.sunk && r.strokes <= r.par + 3) && HOLES[k].gen != null){
+      const was = r.name, v = D.editor.vetHole(k);
+      if (v.remade){ r = { ...playHole(k), remadeFrom: was, rated: v.sunk }; }
+    }
+    out.push(r);
   }
   return out;
 }, Number(process.env.GEN_SAMPLE || 40));
@@ -86,7 +98,10 @@ if (!(levels[1].mean < levels[3].mean && levels[3].mean < levels[5].mean && leve
   bad++; console.log('FAIL the levels do not climb: ' + JSON.stringify(levels));
 }
 for (const r of report){ const ok = r.sunk && r.strokes <= r.par + 3; if (!ok) bad++;
-  console.log(`${ok ? 'ok  ' : 'FAIL'} ${String(r.hole).padStart(4)} ${r.name.padEnd(22)} par ${r.par}: ${r.sunk ? r.strokes + ' strokes' : 'not sunk in ' + r.strokes}`); }
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${String(r.hole).padStart(4)} ${r.name.padEnd(22)} par ${r.par}: ${r.sunk ? r.strokes + ' strokes' : 'not sunk in ' + r.strokes}`
+    + (r.remadeFrom ? ` (made again: ${r.remadeFrom} was sunk ${[0, 1, 2].includes(Math.round(r.rated * 8)) ? ['no times', 'once', 'twice'][Math.round(r.rated * 8)] : Math.round(r.rated * 8) + ' times'} in 8 by the rater)` : '')); }
+const remade = report.filter(r => r.remadeFrom).length, gen = Number(process.env.GEN_SAMPLE || 40);
+if (remade > Math.max(1, Math.floor(gen / 33))){ bad++; console.log(`FAIL ${remade} generated holes in ${gen} had to be made again`); }
 if (errors.length){ bad++; console.log('uncaught: ' + errors.join(' · ')); }
 await browser.close(); server.close();
 console.log(bad ? `\n${bad} hole(s) failed` : '\nevery hole can be played');

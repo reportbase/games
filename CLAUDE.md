@@ -164,6 +164,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (`BGR`); a new hole stops it. A rated hole's stars show on the tee and when sunk (`starTag`) and ride on the card
     (`R.card` entries carry `stars`, `name`, `num`). A round ends on a scorecard (`openCardBox`, `#golfCardBox`: a row a
     hole with par, strokes and stars, the average stars, Close; Escape closes it).
+  - **Holes no one could finish, made again** (Oct 11: "proceed", on "Catch the near-unplayable holes"): about one level-5
+    hole in 400 the guess called fair could hardly be finished (112107; 11763 "the amber saddle" once movers kept apart, sunk
+    once in 8 by the rater). Rating every hole as it is made would take seconds a board, so the ratings `rateAhead` already
+    makes are used. `vetRated(k, R)` (from `rateSoon`): a generated hole sunk in fewer than half its rounds (`R.sunk < 0.5`)
+    is remembered in `REMADE` (GEN key → times remade, localStorage `golf.remade`, the latest 1000), and the board gets the
+    hole of its next eight attempts (`genSrc(idx, lv, from)`, from = 8 × times), in its own slot (`remakeIn`: number, level,
+    board kept; `H.remadeN`). A hole someone is playing (`holeBusy`: a game on it not done) is not swapped: the tee says so,
+    and `holeAt` remakes it the next time the board is wanted. After three it is left as it is. Of 55 fresh level-5 holes
+    rated, none sank fewer than half (the worst five in eight). The course test rates a generated hole its player cannot
+    finish (`vetHole`); if the page would make it again, it plays the new one, and fails if more than one in 33 of its sample
+    was made again.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
@@ -354,6 +365,29 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the 811 riders it made on 300 holes; a hole takes about 6.7 ms to make, against 3.6. Levels 1, 3 and 5 rate 2.1, 3.3
     and 5.8 strokes (2.4, 3.3 and 6.0 before). Unplayable level-5 holes: 0 in 400 (1 in 400 before), though one that was
     playable, 11763, is not now.
+- **The best line and its ghost** (Oct 11: "proceed", on "Shots saved as curves: your best line on a hole is kept as a
+  curve, so you can replay it, share it, or race it as a ghost ball on your next try"):
+  - **Recorded:** the hole in play (`g.rec`, made at its first putt only for the live game, never the rater's or the
+    players' copies) is recorded where `step` moves the ball, at each sub-step, from the first putt: seconds on the toys'
+    clock, x, y. A putt, a free push and a ball sent back from the water add a point where the ball lay.
+  - **Laid down as a curve** when the ball stops (`recFlush`, `thinLine`): the fewest points that, joined straight and ridden
+    at their times, keep within `GHOST_TOL` (0.03 cell) of the ball: Douglas and Peucker with time as the parameter, so the
+    points gather at bounces and bends (about 20 a stroke). Not a TVF curve: a bounce is a corner, and a smooth curve would
+    take the ghost through the rails.
+  - **Kept:** when sunk, `lineDone` makes it the hole's line if it took fewer strokes, or as many in less time. It is kept in
+    localStorage `golf.ghosts` (the last `GHOST_CAP` = 200) by `lineKey` = `originOf` the hole as written + `@` the
+    Difficulty, since a changed hole is another hole and the setting changes the grass. A line is `{v, s, ms, n, lv, at, p,
+    shared?}`, where `p` is [ms, x, y] in hundredths of a cell, each point stored as its step from the last (`lineCode`,
+    `lineDecode`, which refuses nonsense). The sunk message adds "best N" or "new best line, beating your N".
+  - **Raced:** on the board in play a pale ball (`ghostBall`, 45% opaque) rides the line from your first putt (`lineAt`,
+    `ghostItems`). The menu has Ghost: on/off (`golf.ghost`).
+  - **Watch my best line** (`watchLine`) plays it from now on the selected board, starting a game if there is none, with
+    the line dotted.
+  - **Share my best line** (`shareLine`, `lineLink`) copies `?app=minigolf&line=…`, base64 JSON `{hole, line}`, about
+    1.5 KB. A course hole on another setting goes with its movers as played. Opening one (`takeLineLink`, at load) plays the
+    hole as a shared hole is played (`PENDING`, `pendingNote`) and keeps the line marked shared, unless yours there is better.
+  - Played again with the same putts at the same moment, the ghost stays within 0.03 cell of the ball (the smoke test
+    checks it, after a real touch's putt starts a recording).
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).

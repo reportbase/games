@@ -707,6 +707,95 @@ try {
     if (ka.bad.length || !ka.phase) failures.push(`[${current}] ${JSON.stringify(ka)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${ka.n} holes)`);
   }
+  // HOLES NO ONE COULD FINISH, MADE AGAIN (Oct 11: "proceed", on "Catch the near-unplayable holes"): a generated hole rated as
+  // sunk in fewer than half its rounds is remembered and its board given the hole of its next eight attempts, in its own slot
+  // (number, level and board kept); one sunk in half or more, or a course hole, is left alone; one being played is not swapped
+  // until no one is; after three it is left as it is
+  current = 'mini golf holes no one could finish';
+  {
+    const before = failures.length;
+    const rm = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, E = D.editor, idx = 98765, k = D.holeAt(idx), H0 = D.HOLES[k], lv = H0.level, gk = idx * 8 + lv;
+      const nameAt = n => E.cleanSrc(D.genSrc(idx, lv, 8 * n)).name, out = { first: H0.name === nameAt(0) };
+      out.fair = E.vetRated(k, { sunk: 0.5 }) === false && D.HOLES[k] === H0 && !E.REMADE[gk];
+      out.course = E.vetRated(0, { sunk: 0 }) === false;
+      out.bad = E.vetRated(k, { sunk: 0.125 }) === true && E.REMADE[gk] === 1;
+      const H1 = D.HOLES[k];
+      out.remade = H1 !== H0 && H1.remadeN === 1 && H1.name === nameAt(1) && H1.gen === idx && H1.num === idx + 1 && H1.level === lv && D.holeAt(idx) === k;
+      D.games.set('smoke-busy', D.holeGame({ start: k, card: [] }, k));
+      out.busy = E.vetRated(k, { sunk: 0 }) === true && E.REMADE[gk] === 2 && D.HOLES[k] === H1 && D.holeAt(idx) === k && D.HOLES[k] === H1;
+      D.games.delete('smoke-busy');
+      out.later = D.holeAt(idx) === k && D.HOLES[k].remadeN === 2 && D.HOLES[k].name === nameAt(2);
+      out.third = E.vetRated(k, { sunk: 0 }) === true && D.HOLES[k].remadeN === 3 && E.vetRated(k, { sunk: 0 }) === false && E.REMADE[gk] === 3;
+      out.kept = JSON.parse(localStorage.getItem('golf.remade') || '{}')[gk] === 3;
+      return out;
+    });
+    if (Object.values(rm).some(v => !v)) failures.push(`[${current}] ${JSON.stringify(rm)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
+  // THE BEST LINE, AND ITS GHOST (Oct 11: "proceed", on "Shots saved as curves: your best line on a hole is kept as a curve,
+  // so you can replay it, share it, or race it as a ghost ball on your next try"): a real touch's putt starts the hole's
+  // recording; a hole played to the cup keeps its line, a few points a stroke; the same putts played again at the same
+  // moment of the toys' clock have the ghost on the ball all the way; Watch dots the line and plays its ball; with the
+  // ghost off a race shows none; a link carries the hole and the line, and one claiming nothing sensible is refused
+  current = 'mini golf best line and its ghost';
+  {
+    const before = failures.length;
+    await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r); });
+    await page.waitForTimeout(300);
+    const S0 = await scr();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(S0.mid) });
+    await page.waitForTimeout(200);
+    for (let k = 1; k <= 8; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at({ x: S0.mid.x, y: S0.mid.y + 7 * k }) }); await page.waitForTimeout(16); }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(200);
+    const bl = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, L = D.line, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), out = {};
+      const g0 = [...D.games.values()].find(g => g.state === 'play');
+      out.touched = !!(g0 && g0.strokes === 1 && g0.rec && g0.rec.t0 != null);
+      const fresh = () => { for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r); return D.games.values().next().value; };
+      const roll = g => { let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; } };
+      // played to the cup with straight putts, the moment kept so it can be played again
+      let g = fresh(); const H = D.HOLES[g.hole], t = g.t, pulls = [];
+      for (let s = 0; s < 10 && g.state === 'play'; s++){
+        const dx = H.cup.x - g.ball.x, dy = H.cup.y - g.ball.y, d = Math.hypot(dx, dy), p = Math.min(1, 0.12 + d * 0.9);
+        pulls.push({ x: -dx / d * 0.4 * p, y: -dy / d * 0.4 * p }); g.pull = { ...pulls[pulls.length - 1] }; D.putt(g); roll(g);
+      }
+      const o = L.lineOfHole(g.hole), ln = o && L.lineDecode(o.p);
+      out.kept = !!(g.state === 'sunk' && o && ln && o.s === g.strokes && ln.length / 3 >= 2 * o.s && ln.length / 3 <= 40 * o.s && JSON.stringify(o).length < 4000
+        && JSON.parse(localStorage.getItem('golf.ghosts') || '{}')[L.lineKey(g.hole)]);
+      out.points = ln && ln.length / 3; out.strokes = o && o.s;
+      // the same putts again: the ghost rides on the ball
+      g = fresh(); g.t = t; let worst = 0, seen = 0;
+      for (const q of pulls){ if (g.state !== 'play') break; g.pull = { ...q }; D.putt(g);
+        let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; g.last = 0;
+          const its = D.cellItems(f.c, f.r, 2000), gb = its.find(i => i.kind === 'ghostBall'), b = its.find(i => i.kind === 'ball');
+          if (gb && b){ seen++; worst = Math.max(worst, Math.hypot(gb.u - b.u, gb.v - b.v) * D.WD / D.CW); } } }
+      out.race = seen > 30 && worst < 0.045; out.worst = +worst.toFixed(4); out.seen = seen;
+      // Watch: the line dotted and its ball, from now
+      g = fresh(); out.watch = L.watchLine() === true && g.watch != null;
+      for (let n = 0; n < 20; n++) D.step(g, 1 / 60); g.last = 0;
+      let its = D.cellItems(f.c, f.r, 2000);
+      out.watched = its.filter(i => i.kind === 'ghost').length > 10 && its.filter(i => i.kind === 'ghostBall').length === 1;
+      // the ghost off: none in a race
+      L.GHOST.on = false; g = fresh(); g.pull = { ...pulls[0] }; D.putt(g); for (let n = 0; n < 10; n++) D.step(g, 1 / 60); g.last = 0;
+      its = D.cellItems(f.c, f.r, 2000); out.off = !its.some(i => i.kind === 'ghostBall'); L.GHOST.on = true;
+      its = D.cellItems(f.c, f.r, 2000); out.on = its.some(i => i.kind === 'ghostBall');
+      // the link: the hole and the line, on a hole of its own with the same key; nonsense refused
+      const url = L.lineLink(g.hole), q = new URL(url).searchParams.get('line'), k2 = L.takeLineLink(q);
+      out.link = k2 != null && D.HOLES[k2].custom && L.lineKey(k2) === L.lineKey(g.hole) && !L.GHOSTS[L.lineKey(g.hole)].shared;
+      const enc = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const pay = JSON.parse(decodeURIComponent(escape(atob(q.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - q.length % 4) % 4)))));
+      out.refused = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 0 } })) === null && L.takeLineLink(enc({ ...pay, line: { ...pay.line, p: [5, 'x', 2] } })) === null;
+      // a shared line better than yours becomes the line to race, marked shared
+      const k3 = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 1 } }));
+      out.shared = k3 != null && L.GHOSTS[L.lineKey(k3)].shared === true && L.GHOSTS[L.lineKey(k3)].s === 1;
+      return out;
+    });
+    if (['touched', 'kept', 'race', 'watch', 'watched', 'off', 'on', 'link', 'refused', 'shared'].some(k => !bl[k])) failures.push(`[${current}] ${JSON.stringify(bl)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${bl.strokes} strokes kept as ${bl.points} points; the ghost within ${bl.worst} of a cell over ${bl.seen} frames)`);
+  }
 
   // The hole editor (Oct 8: "yes, build the editor"): a new hole on the selected board, painted with a real drag after
   // choosing a tool on the bar, things placed, undo, Check sets the par, Save keeps it, Share's link opens the page on it.
