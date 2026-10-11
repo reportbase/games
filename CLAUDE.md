@@ -278,6 +278,34 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     A screen may be a kidney planter across the way in, bowed toward the tee, if it clears every track and thing.
   - Rated with and without theirs, 50 holes of every level took 0.13 strokes more with, 11 at level 5 0.36 more, so the
     guess counts a quarter of a stroke a planter (`PLANTER_GUESS`).
+- **Curved ridges, gullies and ramps** (Oct 11: "proceed on 5", from "what else can we do with tvf?": ridges, gullies and
+  ramps that follow a drawn curve): ground pieces `crest [x0, y0, …, xn, yn, width, height]`, a ridge along the line (a gully
+  when the height is below nothing), and `incline [same]`, a ramp that rises evenly along the line from nothing at its first
+  leaf to its height at its last and drops away just past it. 3–24 leaves in cells, kept within [-1, NX + 1] × [-1, NY + 1];
+  width 0.4–3; height in `LINE_HEIGHT` (crest −0.05 to 0.08, incline 0 to 0.08). `LINE_KINDS` lists both.
+  - The line is a curved fence's (`curveOf` through every leaf). `lineOf` keeps it by array with its length so far at every
+    point; `lineNear(C, x, y, max)` finds the nearest point within a reach on a grid of boxes like the shapes' (`lineGrid`).
+  - `rawH`: a crest is the straight ridge's bell across its line, rounded off past its ends. An incline rises with the
+    distance along (s / L), smoothed over `EDGE` at its sides.
+  - Editor: Ridge (⛰️), Gully (🏞️) and Curved ramp (📐; not "Ramp", whose straight tile went on Oct 10). A drag draws the line
+    (a leaf about every cell, 3–16); a tap lays an arc of five. It stays selected, and its leaves drag, are added and taken
+    away as a curved fence's are. A press on the ground near the line moves it whole.
+  - The menu has Higher and Lower whenever ground with a height is selected (a crest's height moves by 0.01). Harder and
+    Easier scale them too.
+  - Generated holes: two in three ridges and gullies are crests (bowed once or snaking, `bentLeaves`), and two in five ramps
+    are inclines. In 300 holes that came to 37 curved ridges, 25 gullies and 15 curved ramps.
+    - One berm guard in two curls about the cup: its ends sit a cell nearer the cup than its middle. One screen berm in two
+      bows toward the tee. `across` counts a crest of 0.035 or more within half its width of the tee-cup line.
+    - The course keeps its straight ones.
+  - Rated against the same holes with each curve straightened between its ends, 27 holes took 0.29 strokes fewer with the
+    curves. That is within the noise, so the guess counts them by height, as it does the straight kinds.
+  - **The tap that ends a drag** (found here): on a phone the field hands a finger to the editor after about 10 px but
+    still calls a press that went under 16 px a tap, so a short drag of a gully's leaf bent it and then added a leaf where
+    the finger had pressed. A drag that changed something now keeps that one tap (`ED.ateTap`: at the press point, at once).
+- **A roll stops after `ROLL_MAX`** (15 s, Oct 11). A bumper kicks a ball out at a speed of its own, so a slope that runs back
+  down into one (a curved ridge's flank by a power bumper) kept a ball going for ever, and neither a person nor the players
+  could take the next shot. Shots stop in a few seconds. Of the four unplayable level-5 holes found while checking curves,
+  this fixed three, one of them without curves.
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).

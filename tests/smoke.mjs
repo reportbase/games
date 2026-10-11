@@ -1269,6 +1269,56 @@ try {
     if (pl.tool !== 'planter' || !(pl.n0 >= 8 && pl.n0 <= 24) || !pl.sel || !(pl.walls >= 8) || pl.kn !== 12 || !pl.kSel || !pl.leafMoved || !pl.kept || !pl.inFile
         || pl.inside || !(pl.minY > 7.6) || !pl.blocked || plGen.n < 40 || plGen.bad.length)
       failures.push(`[${current}] planters: ${JSON.stringify({ pl, plGen })}`);
+    // CURVED RIDGES, GULLIES AND RAMPS (Oct 11: "proceed on 5"), by real touches: a line drawn with Ridge is a curved ridge
+    // of leaves, selected, the ground raised along it and not beside it; a tap with Gully lays an arc of five sunk below the
+    // grass; a leaf of it dragged moves that leaf alone; the menu's Higher raises it; a tap with Ramp lays a curved ramp
+    // that rises from its first leaf to its last; all are kept by cleaning and files; and generated holes have them
+    const cr = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), CW = D.CW;
+      const S = (x, y) => { const T = W.target, bW = W.boardW(), L = window.LAB; const v = new W.THREE.Vector3(T.boardX + (0.5 - x / D.NX) * bW * L.cellW, 0.02, T.boardZ + (0.5 - y / D.NY) * bW * L.cellH).project(W.camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const gest = async (pts, after = 300) => { ptr('pointerdown', pts[0]); let t = mk(pts[0]); fire('touchstart', t); for (let q = 1; q < pts.length; q++){ await wait(16); t = mk(pts[q]); fire('touchmove', t); } await wait(16); ptr('pointerup', pts[pts.length - 1]); fire('touchend', t); await wait(after); };
+      const tile = k => A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === k)), H = () => D.HOLES[ED.k], h = (x, y) => D.rawH(H(), x * CW, y * CW);
+      A.onQuickAct(f.c, f.r, 'select'); ED.src.toys = []; ED.src.land = []; delete ED.src.lift; E.editAction('level');
+      tile('crest'); const tool = ED.tool, line = [];
+      for (let q = 0; q <= 24; q++){ const t = q / 24; line.push(S(1.5 + 5 * t, 6.5 - 1.5 * Math.sin(Math.PI * t))); }
+      await gest(line);
+      const ri = ED.src.land.findIndex(x => x.crest), rv = ri >= 0 ? ED.src.land[ri].crest : null, n0 = rv ? (rv.length - 2) / 2 : 0;
+      const sel = !!(ED.pick && ED.pick.type === 'land' && ED.pick.i === ri), rise = +(h(4, 5) - h(4, 7.5)).toFixed(3);
+      // a tap with Gully: an arc of five, sunk, selected; its first leaf dragged half a cell right moves that leaf alone
+      tile('gully'); A.onCellTap(f.c, f.r, 4 / D.NX, 9.6 / D.NY);
+      const gi = ED.src.land.length - 1, gv = ED.src.land[gi] && ED.src.land[gi].crest, gn = gv ? (gv.length - 2) / 2 : 0, gSel = !!(ED.pick && ED.pick.i === gi);
+      const sunk = gv ? +(h(gv[4], gv[5]) - h(4, 12)).toFixed(3) : null;
+      let leafMoved = null;
+      if (gv){ const [lx, ly] = [gv[0], gv[1]], drag = []; for (let q = 0; q <= 8; q++) drag.push(S(lx + 0.5 * q / 8, ly)); await gest(drag);
+        // (a short drag, as on a phone, under the 16 px a tap may go: the press is not read as a tap on the line as well)
+        const nv = ED.src.land[gi].crest; leafMoved = [+(nv[0] - lx).toFixed(2), +(nv[1] - ly).toFixed(2), nv.slice(2).every((x, q) => Math.abs(x - gv[q + 2]) < 1e-9)]; }
+      // the menu's Higher and Lower, with it selected
+      const g0 = ED.src.land[gi].crest.slice(-1)[0], mi = E.editorMenu().find(x => x.label === 'Higher'); if (mi) mi.on();
+      const higher = +(ED.src.land[gi].crest.slice(-1)[0] - g0).toFixed(3), name = E.editorMenu().some(x => /^Delete curved gully$/.test(x.label));
+      // a tap with Ramp: a curved ramp rising from its first leaf to its last
+      tile('incline'); A.onCellTap(f.c, f.r, 2 / D.NX, 9 / D.NY);
+      const ii = ED.src.land.length - 1, iv = ED.src.land[ii] && ED.src.land[ii].incline, inN = iv ? (iv.length - 2) / 2 : 0;
+      const climb = iv ? [0, 2, 4].map(q => { const a = Math.min(q, inN - 1) * 2; return +h(iv[a] + (q === 0 ? 0.3 * (iv[2] - iv[0]) : 0), iv[a + 1] + (q === 0 ? 0.3 * (iv[3] - iv[1]) : 0)).toFixed(3); }) : null;
+      const kept = JSON.stringify(E.cleanSrc(ED.src).land) === JSON.stringify(ED.src.land), txt = E.holesText([ED.src]), inFile = txt.includes('"crest"') && txt.includes('"incline"');
+      ED.src.land = []; E.editRefresh && E.editRefresh(true);
+      return { tool, n0, sel, rise, gn, gSel, sunk, leafMoved, higher, name, inN, climb, kept, inFile };
+    });
+    const crGen = await page.evaluate(() => { const D = window.getFieldApp()._debug; const n = { crest: 0, gully: 0, incline: 0 };
+      for (let i = 22; i < 322; i++) for (const f of D.genSrc(i, 1 + i % 5).land){ if (f.crest) n[f.crest[f.crest.length - 1] < 0 ? 'gully' : 'crest']++; if (f.incline) n.incline++; }
+      return n; });
+    if (cr.tool !== 'crest' || !(cr.n0 >= 3 && cr.n0 <= 16) || !cr.sel || !(cr.rise > 0.03) || cr.gn !== 5 || !cr.gSel || !(cr.sunk < -0.02) || !cr.leafMoved || !(cr.leafMoved[0] > 0.2 && cr.leafMoved[0] < 0.6 && Math.abs(cr.leafMoved[1]) < 0.1 && cr.leafMoved[2])
+        || cr.higher !== 0.01 || !cr.name || !(cr.inN >= 3) || !cr.climb || !(cr.climb[1] > cr.climb[0] + 0.01 && cr.climb[2] > cr.climb[1] + 0.01) || !cr.kept || !cr.inFile
+        || crGen.crest < 20 || crGen.gully < 10 || crGen.incline < 10)
+      failures.push(`[${current}] curved ridges, gullies and ramps: ${JSON.stringify({ cr, crGen })}`);
+    // a roll stops after ROLL_MAX (Oct 11): a putt just struck stops at once once it has rolled that long, and not before
+    const roll = await page.evaluate(() => { const D = window.getFieldApp()._debug, k = D.HOLES.findIndex(H => H.gen == null && !H.custom);
+      const g = D.holeGame({ start: k, card: [], single: true }, k); g.pull = { x: 0, y: 0.45 }; D.putt(g); D.step(g, 1 / 120); const early = g.moving;
+      g.rollT = 14.99; D.step(g, 1 / 30); return { early, rollT: typeof g.rollT, late: g.moving }; });
+    if (!roll.early || roll.rollT !== 'number' || roll.late) failures.push(`[${current}] a roll stops after ROLL_MAX: ${JSON.stringify(roll)}`);
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
         || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
