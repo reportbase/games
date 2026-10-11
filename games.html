@@ -36744,42 +36744,122 @@ const GOLF_APP = (() => {
   function pathToTvf(v, name){
     const n = pathN(v), xs = [], ys = [];
     for (let q = 0; q < n; q++){ xs.push(v[2 * q]); ys.push(v[2 * q + 1]); }
-    return ['TVF ' + n + ' 1 2', '#meta type:curve', '#meta closed:true', '#meta channels:xy', '#meta range:1', '#meta source:minigolf',
+    return ['TVF ' + n + ' 1 2', '#meta type:curve', '#meta closed:true', '#meta channels:xy', '#meta range:1', '#meta source:minigolf', '#meta kind:path',
       '#meta name:' + String(name || 'golf path').replace(/[\r\n]+/g, ' '), '0 ' + xs.join(' '), '0 ' + ys.join(' ')].join('\n') + '\n';
   }
+  /* LAKES, BUNKERS AND GREENS AS .tvf (Oct 11, "proceed", the first of the TVF ideas left: "Open a .tvf as a lake, bunker
+     or green ... a heart drawn in draw becomes a heart-shaped pond. Saving a shape back out as .tvf would come with it").
+     A shape is a closed TVF curve, as a path is, so it is written the same way, with what it is (#meta kind:lake, sand or
+     green, and a green's height); one written here opens as what it was, in the cells it was in. A curve from draw is
+     asked about (openTvfBox: a path, a lake, a bunker or a green) and fitted into the middle of the board at a size for
+     what it becomes, its proportions kept; a shape takes up to 32 leaves, laid evenly along the curve if it has more. */
+  function shapeToTvf(key, v, name){
+    const n = shapeN(key, v), xs = [], ys = [];
+    for (let q = 0; q < n; q++){ xs.push(v[2 * q]); ys.push(v[2 * q + 1]); }
+    return ['TVF ' + n + ' 1 2', '#meta type:curve', '#meta closed:true', '#meta channels:xy', '#meta range:1', '#meta source:minigolf', '#meta kind:' + key,
+      ...(key === 'green' ? ['#meta height:' + v[v.length - 1]] : []), '#meta name:' + String(name || 'golf ' + key).replace(/[\r\n]+/g, ' '),
+      '0 ' + xs.join(' '), '0 ' + ys.join(' ')].join('\n') + '\n';
+  }
+  // a .tvf file's closed curves (up to 6), each as its leaves; ours says so, and what it was
+  function tvfCurves(text){
+    let P = null; try { P = TVF_CURVE.parse(String(text || '')); } catch { return { curves: [] }; }
+    const meta = P.meta || {}, ours = meta.source === 'minigolf';
+    const curves = P.subpaths.slice(0, 6).map(sp => ({ xs: Array.from(sp.leafX), ys: Array.from(sp.leafY) }))
+      .filter(c => c.xs.length >= 3 && c.xs.length === c.ys.length && c.xs.every(isFinite) && c.ys.every(isFinite));
+    return { curves, ours, kind: ours && ['path', 'lake', 'sand', 'green'].includes(meta.kind) ? meta.kind : null, height: Number(meta.height) };
+  }
+  // a curve from elsewhere into a w × h box at the middle of the board, its proportions kept (one of ours stays where it was)
+  function fitMiddle(c, w, h){
+    const x0 = Math.min(...c.xs), x1 = Math.max(...c.xs), y0 = Math.min(...c.ys), y1 = Math.max(...c.ys);
+    const k = Math.min(w / ((x1 - x0) || 1), h / ((y1 - y0) || 1)), mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+    return { xs: c.xs.map(x => NX / 2 + (x - mx) * k), ys: c.ys.map(y => NY / 2 + (y - my) * k) };
+  }
   function tvfToPaths(text){
-    let P = null; try { P = TVF_CURVE.parse(String(text || '')); } catch { return []; }
-    const ours = P.meta && P.meta.source === 'minigolf', r2 = v => Math.round(v * 100) / 100;
-    return P.subpaths.slice(0, 6).map(sp => {
-      let xs = Array.from(sp.leafX), ys = Array.from(sp.leafY);
-      if (xs.length < 3 || xs.some(v => !isFinite(v)) || ys.some(v => !isFinite(v))) return null;
-      if (xs.length > 64){ const rs = TVF_CURVE.core.arcLengthResample(xs, ys, 64); xs = Array.from(rs.x); ys = Array.from(rs.y); }
-      if (!ours){
-        const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), w = (x1 - x0) || 1, h = (y1 - y0) || 1;
-        const k = Math.min(5 / w, 7 / h), mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-        xs = xs.map(x => NX / 2 + (x - mx) * k); ys = ys.map(y => NY / 2 + (y - my) * k);
-      }
+    const T = tvfCurves(text), r2 = v => Math.round(v * 100) / 100;
+    return T.curves.map(c0 => {
+      let c = c0;
+      if (c.xs.length > 64){ const rs = TVF_CURVE.core.arcLengthResample(c.xs, c.ys, 64); c = { xs: Array.from(rs.x), ys: Array.from(rs.y) }; }
+      if (!T.ours) c = fitMiddle(c, 5, 7);
+      const { xs, ys } = c;
       let L = 0; for (let q = 0; q < xs.length; q++){ const b = (q + 1) % xs.length; L += Math.hypot(xs[b] - xs[q], ys[b] - ys[q]); }
       const lv = []; for (let q = 0; q < xs.length; q++) lv.push(r2(Math.max(0, Math.min(NX, xs[q]))), r2(Math.max(0, Math.min(NY, ys[q]))));
       return cleanList([{ path: [...lv, 0.36, r2(Math.max(4, Math.min(14, L * 0.7))), 0, 0] }], SPEC_TOY, 1)[0] || null;
     }).filter(Boolean);
   }
-  function addTvfPaths(text){
-    const got = tvfToPaths(text);
+  const SHAPE_FIT = { lake: [4, 6], sand: [3, 4], green: [4, 5] };   // (the box a curve from draw is fitted into, in cells)
+  function tvfToShapes(text, key){
+    const T = tvfCurves(text), r2 = v => Math.round(v * 100) / 100, hgt = isFinite(T.height) ? T.height : 0.05;
+    return T.curves.map(c0 => {
+      let c = c0;
+      if (c.xs.length > 32){                                   // (laid evenly along the curve itself, not its leaves' polygon)
+        const M = Math.max(256, c.xs.length * 4), X = TVF_CURVE.core.reconstruct(Float64Array.from(c.xs), M), Y = TVF_CURVE.core.reconstruct(Float64Array.from(c.ys), M);
+        const rs = TVF_CURVE.core.arcLengthResample(Array.from(X), Array.from(Y), 32); c = { xs: Array.from(rs.x), ys: Array.from(rs.y) }; }
+      if (!T.ours) c = fitMiddle(c, ...SHAPE_FIT[key]);
+      const lv = []; for (let q = 0; q < c.xs.length; q++) lv.push(r2(c.xs[q]), r2(c.ys[q]));
+      return cleanList([{ [key]: key === 'green' ? [...lv, hgt] : lv }], SPEC_LAND, 1)[0] || null;
+    }).filter(Boolean);
+  }
+  const TVF_WORD = { path: ['path', 'paths', 'drag a leaf to bend it, the loop to move it'], lake: ['lake', 'lakes', 'drag a leaf to reshape it'],
+                     sand: ['bunker', 'bunkers', 'drag a leaf to reshape it'], green: ['green', 'greens', 'drag a leaf to reshape it; Higher and Lower lift it'] };
+  // the curves of a .tvf file onto the hole being edited, as kind (the editor started if it was not)
+  function addTvfAs(text, kind){
+    const got = kind === 'path' ? tvfToPaths(text) : tvfToShapes(text, kind);
     if (!got.length){ say('No closed curve in that .tvf file.', 2400); return 0; }
     if (!ED.on){ const L = framedHere(), g = L && GAMES.get(L.key); if (!editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null)) return 0; }
-    const room = Math.max(0, 40 - ED.src.toys.length), add = got.slice(0, room);
-    if (!add.length){ say('That is as many things as a hole can hold — erase some first.', 2000); return 0; }
-    snapEdit(); ED.src.toys.push(...add); ED.pick = { type: 'toy', i: ED.src.toys.length - 1 }; ED.tool = 'select';
+    const list = kind === 'path' ? ED.src.toys : ED.src.land, room = Math.max(0, 40 - list.length), add = got.slice(0, room);
+    if (!add.length){ say(kind === 'path' ? 'That is as many things as a hole can hold — erase some first.' : 'That is as much ground as a hole can hold — delete some first.', 2000); return 0; }
+    snapEdit(); list.push(...add); ED.pick = { type: kind === 'path' ? 'toy' : 'land', i: list.length - 1 }; ED.tool = 'select';
     editRefresh(true);
-    say(add.length + (add.length === 1 ? ' path' : ' paths') + ' from the .tvf file — drag a leaf to bend it, the loop to move it.', 2800);
+    const W = TVF_WORD[kind];
+    say(add.length + ' ' + (add.length === 1 ? W[0] : W[1]) + ' from the .tvf file — ' + W[2] + '.', 2800);
     return add.length;
+  }
+  function addTvfPaths(text){ return addTvfAs(text, 'path'); }
+  // a curve from draw: what should it be? (one of ours already knows)
+  const TVF_Q = [];
+  function closeTvfBox(){ const b = document.getElementById('golfTvfBox'); if (b) b.remove(); TVF_Q.length = 0; }
+  function openTvfBox(text, name){
+    if (document.getElementById('golfTvfBox')){ TVF_Q.push([text, name]); return; }   // (several files: one after another)
+    const BTN = 'font:600 13px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:8px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
+    const veil = document.createElement('div');
+    veil.id = 'golfTvfBox';
+    veil.style.cssText = 'position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,.35)';
+    const box = document.createElement('div');
+    box.className = 'panel';
+    box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(400px,90vw);display:flex;flex-direction:column;gap:10px;padding:14px 16px;'
+      + 'background:#1c1d21;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid #55585f;border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.6)';
+    const head = document.createElement('div'); head.style.cssText = 'font:600 15px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#ffd23a';
+    head.textContent = 'What should ' + (name ? '“' + String(name).slice(0, 40) + '”' : 'this curve') + ' be?';
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+    const next = () => { veil.remove(); const q = TVF_Q.shift(); if (q) openTvfBox(q[0], q[1]); };
+    for (const [kind, label, title] of [['lake', '🌊 Lake', 'Water, the shape of the curve.'], ['sand', '🏖️ Bunker', 'Sand, the shape of the curve.'],
+                                        ['green', '⛳ Green', 'Raised ground, the shape of the curve.'], ['path', '➰ Path', 'A boulder riding round the curve.']]){
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'golfTvfKind'; b.dataset.kind = kind; b.textContent = label; b.title = title; b.style.cssText = BTN;
+      b.addEventListener('click', e => { e.stopPropagation(); next(); addTvfAs(text, kind); });
+      row.appendChild(b);
+    }
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel'; cancel.style.cssText = BTN + 'margin-left:auto';
+    cancel.addEventListener('click', e => { e.stopPropagation(); next(); });
+    row.appendChild(cancel);
+    box.append(head, row);
+    box.addEventListener('click', e => e.stopPropagation());
+    veil.addEventListener('click', () => next());
+    veil.appendChild(box);
+    document.body.appendChild(veil);
+  }
+  // a .tvf file's text: one of ours goes back as what it was, any other is asked about
+  function takeTvf(text, name){
+    const T = tvfCurves(text);
+    if (!T.curves.length){ say('No closed curve in that .tvf file.', 2400); return 0; }
+    if (T.kind) return addTvfAs(text, T.kind);
+    openTvfBox(text, String(name || '').replace(/\.tvf$/i, ''));
+    return 0;
   }
   function importTvfFiles(files){
     const fs = Array.prototype.slice.call(files || []).filter(f => f && /\.tvf$/i.test(f.name || ''));
     if (!fs.length) return 0;
     if (window.getFieldApp && window.getFieldApp() !== app){ try { window.setFieldApp(app); syncAppSelect(); } catch {} }
-    fs.forEach(f => { const rd = new FileReader(); rd.onload = () => addTvfPaths(String(rd.result || '')); rd.readAsText(f); });
+    fs.forEach(f => { const rd = new FileReader(); rd.onload = () => takeTvf(String(rd.result || ''), f.name); rd.readAsText(f); });
     return fs.length;
   }
   function pickTvfFile(){
@@ -37335,6 +37415,7 @@ const GOLF_APP = (() => {
     if (e.key !== 'Escape' || !GOLF_ON()) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (document.getElementById('golfMineBox')){ closeMineBox(); return; }   // (the My holes list, Oct 10)
+    if (document.getElementById('golfTvfBox')){ closeTvfBox(); return; }     // (what a curve from draw should be, Oct 11)
     if (document.getElementById('golfCardBox')){ closeCardBox(); return; }   // (the scorecard, Oct 10)
     if (!ED.on) return;
     if (ED.tool !== 'select'){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tool put down'; return; }   // (Oct 10)
@@ -38039,9 +38120,13 @@ const GOLF_APP = (() => {
         { label: 'Copy ' + what, title: o ? 'Copy what is selected.' : 'Copy the whole hole (nothing is selected).', on(){ editAction('copy'); } },
         { label: 'Paste' + (cl ? (cl.board ? ' the board' : ' ' + (cl.toy ? TOY_NAME[Object.keys(cl.toy)[0]] || 'thing' : 'ground')) : ''), title: 'Lay what was copied on this hole.', disabled: !cl, on(){ editAction('paste'); } },
         { label: 'Delete ' + what, title: o ? 'Take away what is selected.' : 'Clear the whole board to a new hole (nothing is selected).', on(){ editAction('clear'); } },
-        { label: 'Open a .tvf as a path', title: 'A closed curve from draw (a .tvf file) becomes a path on this hole.', on(){ pickTvfFile(); } });
+        { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green or a path on this hole.', on(){ pickTvfFile(); } });
+      // (and the selected path, lake, bunker or green saved as a .tvf curve, which draw opens: Oct 11, shapes as well as paths)
+      const sk = o && o.type === 'land' && SHAPE_KINDS.find(k => Array.isArray(o.obj[k])), sw = sk && TVF_WORD[sk][0];
       if (o && o.type === 'toy' && o.obj.path) items.push({ label: 'Save this path as .tvf', title: 'Download the selected path as a .tvf curve, which draw opens.', on(){
         saveText(pathToTvf(o.obj.path, ED.src.name + ' path'), fileSlug(ED.src.name + '-path') + '.tvf'); } });
+      if (sk) items.push({ label: 'Save this ' + sw + ' as .tvf', title: 'Download the selected ' + sw + ' as a .tvf curve, which draw opens and this page opens again as a ' + sw + '.', on(){
+        saveText(shapeToTvf(sk, o.obj[sk], ED.src.name + ' ' + sw), fileSlug(ED.src.name + '-' + sw) + '.tvf'); } });
     }
     items.push({ label: 'Edit this hole', title: 'Take the hole on the selected board into the editor. A hole of the course is copied; it is never changed.',
       on(){ const L = framedHere(), g = L && GAMES.get(L.key); editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); } });
@@ -38268,9 +38353,9 @@ const GOLF_APP = (() => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, loopOf, fly: (c, r) => gotoCell(c, r) } },
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
-    importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10)
+    importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
   };
   return app;
 })();

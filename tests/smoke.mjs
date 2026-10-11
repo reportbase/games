@@ -1092,6 +1092,9 @@ try {
       '0 ' + Array.from({ length: 40 }, (_, q) => (200 + 60 * Math.sin((q + 0.5) / 40 * 2 * Math.PI)).toFixed(3)).join(' ')].join('\n') + '\n';
     const n0tv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; return E.ED.on ? E.ED.src.toys.length : -1; });
     await page.setInputFiles('#importImageFile', { name: 'shape.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
+    // (a curve from draw is asked about since Oct 11: a lake, a bunker, a green or a path; Path, clicked)
+    await page.waitForSelector('#golfTvfBox .golfTvfKind[data-kind="path"]', { timeout: 15000 }).catch(() => {});
+    await page.click('#golfTvfBox .golfTvfKind[data-kind="path"]').catch(() => {});
     await page.waitForTimeout(1500);
     const tvIn = await page.evaluate(n0 => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, T = ED.src.toys[ED.src.toys.length - 1], v = T && T.path;
       if (!v) return { none: true, on: ED.on, n: ED.src.toys.length };
@@ -1103,6 +1106,38 @@ try {
     if (!tv.lib || tv.round > 0.01 || tv.off > 0.03 || !/^TVF \d+ 1 2$/.test(tv.head) || !tv.same || tvIn.none || tvIn.added !== 1 || tvIn.n !== 40 || Math.abs(tvIn.w - 5) > 0.2
         || Math.abs(tvIn.h - 3) > 0.2 || Math.abs(tvIn.cx - 4) > 0.2 || Math.abs(tvIn.cy - 6.5) > 0.2 || !tvIn.drawn || !tvIn.sel)
       failures.push(`[${current}] paths as TVF curves: ${JSON.stringify({ tv, tvIn })}`);
+    // LAKES, BUNKERS AND GREENS AS .tvf (Oct 11, "proceed": a curve from draw opened as a lake, a bunker or a green, and a
+    // shape saved back out): the ellipse from draw, opened through the field's Open input, asks what it should be; Lake,
+    // clicked, lays a lake of 32 leaves fitted 4 cells across in the middle of the board, selected, and the menu offers to save
+    // it; a lake, bunker or green saved here opens again as what it was, where it was, without asking (a green its height);
+    // Escape closes the box unanswered
+    await page.setInputFiles('#importImageFile', { name: 'pond.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
+    await page.waitForSelector('#golfTvfBox .golfTvfKind[data-kind="lake"]', { timeout: 15000 }).catch(() => {});
+    const asked = await page.evaluate(() => { const b = document.getElementById('golfTvfBox'); return b ? [...b.querySelectorAll('.golfTvfKind')].map(x => x.dataset.kind).join(',') : null; });
+    await page.click('#golfTvfBox .golfTvfKind[data-kind="lake"]').catch(() => {});
+    await page.waitForTimeout(1500);
+    const shTv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, f = ED.src.land[ED.src.land.length - 1], v = f && f.lake;
+      if (!v) return { none: true, box: !!document.getElementById('golfTvfBox') };
+      const xs = v.filter((_, q) => q % 2 === 0), ys = v.filter((_, q) => q % 2 === 1);
+      const out = { box: !!document.getElementById('golfTvfBox'), n: xs.length, w: +(Math.max(...xs) - Math.min(...xs)).toFixed(2), cx: +((Math.max(...xs) + Math.min(...xs)) / 2).toFixed(2),
+        cy: +((Math.max(...ys) + Math.min(...ys)) / 2).toFixed(2), sel: !!ED.pick && ED.pick.type === 'land' && ED.pick.i === ED.src.land.length - 1,
+        save: E.editorMenu().some(i => i.label === 'Save this lake as .tvf'), open: E.editorMenu().some(i => i.label === 'Open a .tvf curve') };
+      // saved and opened again: each kind as it was, where it was, no box
+      const n0 = ED.src.land.length, J = o => JSON.stringify(o), back = {};
+      for (const [key, val] of [['lake', v], ['sand', [5, 2, 7, 2.2, 6.8, 4, 5.1, 3.8]], ['green', [1, 1, 3, 1, 3, 3.5, 1, 3.5, 0.07]]]){
+        const text = E.shapeToTvf(key, val, 'test ' + key); E.takeTvf(text, 'test.tvf');
+        const g = ED.src.land[ED.src.land.length - 1]; back[key] = !!g && J(g[key]) === J(val) && !document.getElementById('golfTvfBox'); }
+      out.back = back; out.kindLine = E.shapeToTvf('green', [1, 1, 3, 1, 3, 3.5, 0.07], 'g').includes('#meta kind:green');
+      ED.src.land = ED.src.land.slice(0, n0 - 1);
+      return out; });
+    await page.setInputFiles('#importImageFile', { name: 'again.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
+    await page.waitForSelector('#golfTvfBox', { timeout: 15000 }).catch(() => {});
+    const tvfEscOpen = await page.evaluate(() => !!document.getElementById('golfTvfBox'));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+    const tvfEsc = await page.evaluate(() => ({ box: !!document.getElementById('golfTvfBox'), on: window.getFieldApp()._debug.editor.ED.on }));
+    if (asked !== 'lake,sand,green,path' || shTv.none || shTv.box || shTv.n !== 32 || Math.abs(shTv.w - 4) > 0.15 || Math.abs(shTv.cx - 4) > 0.2 || Math.abs(shTv.cy - 6.5) > 0.2
+        || !shTv.sel || !shTv.save || !shTv.open || !shTv.back.lake || !shTv.back.sand || !shTv.back.green || !shTv.kindLine || !tvfEscOpen || tvfEsc.box || !tvfEsc.on)
+      failures.push(`[${current}] lakes, bunkers and greens as .tvf: ${JSON.stringify({ asked, shTv, tvfEscOpen, tvfEsc })}`);
     // CURVED FENCES, AND LEAVES ADDED AND TAKEN AWAY (Oct 10: "6,4,2,3", 2 curved fences as TVF curves, 3 "a tap on the loop
     // between two leaves adds one, a double-tap on a leaf removes it"), by real touches: a curved fence drawn with its tool
     // runs through its leaves from end to end, is drawn in fence pieces and kept in files; a tap on its line adds a leaf
@@ -1254,14 +1289,24 @@ try {
     // and turned off when not displayed. remove the game mode of the bottom browser."): the dots, clicked, open the row
     // and the editor with it; clicked again they shut both; no playing tiles or buttons are ever in the row
     await page.waitForTimeout(800);                           // (the pane slides shut first; the dots ride on it)
-    const dotsXY = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    // (the dots are clicked only once they stay where they are and nothing covers them: the pane slides a frame at a time,
+    //  and a software renderer under load, as on CI, can take seconds a frame, so a fixed wait was sometimes too short and
+    //  the click fell on the board: Oct 11)
+    const dotsReady = async () => {
+      await page.evaluate(() => { window._dotsAt = null; });
+      await page.waitForFunction(() => { const h = document.getElementById('bbHandle'); if (!h) return false;
+        const r = h.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2, el = r.width > 0 ? document.elementFromPoint(x, y) : null, k = x.toFixed(1) + ',' + y.toFixed(1);
+        const ok = !!el && (el === h || h.contains(el)) && window._dotsAt === k; window._dotsAt = k; return ok; }, null, { timeout: 15000, polling: 250 }).catch(() => {});
+      return page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    };
+    const dotsXY = await dotsReady();
     const pre = await page.evaluate(at => { const el = document.elementFromPoint(at.x, at.y), b = window.tvf.browser, E = window.getFieldApp()._debug.editor; return { at, el: el && (el.id || el.tagName), on: E.ED.on, shut: document.body.classList.contains('bb-collapsed'), vis: b.visible, vw: innerWidth, vh: innerHeight }; }, dotsXY);
     await page.mouse.click(dotsXY.x, dotsXY.y);
     await page.waitForFunction(() => !document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
     const rowOn = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       return { on: E.ED.on, open: !document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, first: ((A.statTiles(f.c, f.r) || [])[0] || {}).value }; });
     await page.waitForTimeout(800);
-    const dotsXY2 = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    const dotsXY2 = await dotsReady();
     await page.mouse.click(dotsXY2.x, dotsXY2.y);
     await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(800);
@@ -1284,13 +1329,16 @@ try {
     // no buttons while the pane is shut (Oct 9: "dont show any buttons when the bottom panel is not visible"): the dots shut
     // it and the buttons go; the dots open it and they are back
     const qVis = () => page.evaluate(() => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0); });
-    const dotsAt = await page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+    // (the dots found again before each click, as they ride on the pane, and each change waited for, not a fixed half second)
+    const isShut = shut => page.waitForFunction(w => document.body.classList.contains('bb-collapsed') === w, shut, { timeout: 15000 }).catch(() => {});
+    const quickIs = vis => page.waitForFunction(w => { const q = document.getElementById('bbQuick'); return !!(q && q.offsetParent && q.getBoundingClientRect().width > 0) === w; }, vis, { timeout: 15000, polling: 200 }).catch(() => {});
+    let dotsAt = await dotsReady();
     const shut0 = await page.evaluate(() => document.body.classList.contains('bb-collapsed'));
-    if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500); }
-    const openVis = await qVis();
-    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false); dotsAt = await dotsReady(); }
+    await quickIs(true); const openVis = await qVis();
+    await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(true); await quickIs(false);
     const shutNow = await page.evaluate(() => document.body.classList.contains('bb-collapsed')), shutVis = await qVis();
-    await page.mouse.click(dotsAt.x, dotsAt.y); await page.waitForTimeout(500);
+    dotsAt = await dotsReady(); await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false);
     if (!openVis || !shutNow || shutVis) failures.push(`[${current}] quick buttons with the pane open ${openVis}, shut ${shutNow} and still showing ${shutVis}`);
     // the share link opens the page on the hole
     await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
