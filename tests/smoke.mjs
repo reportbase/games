@@ -1115,9 +1115,11 @@ try {
     // moved up the screen pulls that dot up, though it pressed beside the dot and the first move the field passes on is far off it
     const scr = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
       A.onQuickAct(null, null, 'select'); ED.pick = null;
-      let c = null; search: for (let j = 3; j < D.NY - 2; j++) for (let i = 2; i < D.NX - 1; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot')){ c = [i, j]; break search; } }
+      // (a dot with room above it on the screen to drag into: at mini golf's steeper tilt, Oct 12, the far rows sit at its top)
+      const proj = (i, j) => new W.THREE.Vector3(T.boardX + (0.5 - i / D.NX) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - j / D.NY) * bW * (L.cellH || 1)).project(W.camera);
+      let c = null; search: for (let j = 3; j < D.NY - 2; j++) for (let i = 2; i < D.NX - 1; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot') && (1 - proj(i, j).y) / 2 * innerHeight > 150){ c = [i, j]; break search; } }
       if (!c) return null;
-      const v = new W.THREE.Vector3(T.boardX + (0.5 - c[0] / D.NX) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - c[1] / D.NY) * bW * (L.cellH || 1)).project(W.camera);
+      const v = proj(c[0], c[1]);
       ED.pick = { type: 'dot', i: c[1] * D.LIFT_W + c[0] }; ED.dots = [ED.pick.i]; ED.box = { x0: c[0] - 0.45, x1: c[0] + 0.45, y0: c[1] - 0.45, y1: c[1] + 0.45 };   // (boxed first: only the box takes dots, Oct 10)
       return { c, idx: c[1] * D.LIFT_W + c[0], x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, h0: (ED.src.lift && ED.src.lift[c[1] * D.LIFT_W + c[0]]) || 0 }; });
     if (!scr) failures.push(`[${current}] no clear dot to pull`);
