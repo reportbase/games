@@ -35336,7 +35336,6 @@ const GOLF_APP = (() => {
     return (H.wl = isFinite(m) ? Math.max(0.006, m - 0.006) : BASE);
   }
   const gradOf = (H, x, y) => { const e = 0.002; return [(hOf(H, x + e, y) - hOf(H, x - e, y)) / (2 * e), (hOf(H, x, y + e) - hOf(H, x, y - e)) / (2 * e)]; };
-  const hOfFull = (H, x, y) => hOf(H, x, y), hFlat = () => 0.004;   // (a board under FLAT_PX lays its pieces flat: see gridOf)
   const GRAV = 4;                                          // how hard the ground's slope pulls the ball
   const WIRE = { on: ARCADE.load('golf.wire', 'off') === 'on' };   // off unless turned on (Oct 9: "turn off wireframe by default")
   const NUMS = { on: ARCADE.load('golf.nums', 'on') !== 'off' };     // the hole's number in the corner (Oct 2: "add a menu option to show the hole #")
@@ -35513,7 +35512,7 @@ const GOLF_APP = (() => {
     return old ? ' · new best line, beating ' + (old.shared ? 'the shared ' : 'your ') + old.s : '';
   }
   // the line's ball and, while watching, the line itself as dots: on the board in play only
-  function ghostItems(out, G, H, hOf){
+  function ghostItems(out, G, H){
     if (G.line === undefined){ const o = lineOfHole(G.hole); G.line = o ? lineDecode(o.p) : null; }
     const L = G.line; if (!L) return;
     const watching = G.watch != null, u = watching ? G.t - G.watch : G.rec && G.rec.t0 != null && GHOST.on ? G.t - G.rec.t0 : null;
@@ -36242,51 +36241,12 @@ const GOLF_APP = (() => {
   const GRASS = [0x63b86a, 0x58ad60], HEDGE = 0x2f6b34;
   // the far board: NY × NY tiles over the WD × 1 board, each the colour of the cell under its middle
   // (made when first wanted and kept on the hole, so an editor's hole gets its own: Oct 8)
-  /* THE FAR BOARD'S GROUND, IN THE TILES (Oct 11: "is there a way we could optimize the drawing by reducing the gpu load
-     when drawing non-selected boards?" … "yes"). Zoomed out, 773 of the 802 draws a frame were holes' grounds, each its own
-     mesh, over these tiles, which the field draws for every board anyway (one instanced draw for them all). A board under
-     FLAT_PX (150) across now has no ground mesh: its tiles are its ground, each coloured as the mesh colours its grass (one
-     green, lighter up high and darker down low, sand and water blended in) and lit as the mesh is lit (the scene's ambient,
-     sky and sun at (0.4, 1, 0.3) on the slope there), since the tiles' material is unlit. Its pieces stand flat on them
-     (cellItems' hFlat): the hills show as light and shade. Boards from 150 px keep their meshes, the coarse one to 300. */
-  const FLAT_PX = 150;
-  const SUN = (() => { const l = Math.hypot(0.4, 1, 0.3); return [0.4 / l, 1 / l, 0.3 / l]; })();
-  const rgbOf = hex => [(hex >> 16 & 255) / 255, (hex >> 8 & 255) / 255, (hex & 255) / 255];
-  const hexOf = c => (Math.round(Math.min(1, c[0]) * 255) << 16) | (Math.round(Math.min(1, c[1]) * 255) << 8) | Math.round(Math.min(1, c[2]) * 255);
-  const mixC = (a, b, f) => a.map((v, i) => v + (b[i] - v) * f);
-  // (lit: the far board's ground, shaded; plain, as before, for a board drawing its own ground over them, whose tiles show only
-  //  where they peep out under a raised hole's edge, as the mesa's do: shaded there, they showed the hole's hills a second time)
-  const gridOf = (hk, lit) => { const H = HOLES[hk], key = lit ? '_gridLit' : '_grid'; if (H[key]) return H[key];
-    if (!lit) return (H._grid = { n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
-      const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, c0 = H.map[j][i];
-      const ch = c0 === '#' || c0 === '=' ? c0 : groundAt(H, (k % NY + 0.5) * WD / NY, (j + 0.5) * CW);   // (the shapes show too: Oct 10)
-      if (ch !== '#' && inPlanter(H, (k % NY + 0.5) * WD / NY, (j + 0.5) * CW)) return HEDGE;   // (and the planters: Oct 11)
-      return ch === '#' ? (MAT_COL[matOf(H)] || MAT_COL.wood).far : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
-    }) });
-    // heights at the tiles' corners, once: each tile's height is their mean and its slope their differences, so a tile is lit
-    // as the ground under the whole of it is, not at one point (and a fifth of the height readings a point and its slope took)
-    const sandC = rgbOf(0xd8c287), waterC = rgbOf(0x2f6cc4), N1 = NY + 1, hc = new Float32Array(N1 * N1), dx = WD / NY, dy = 1 / NY;
-    for (let j = 0; j <= NY; j++) for (let i = 0; i <= NY; i++) hc[j * N1 + i] = hOf(H, Math.min(WD - 1e-6, i * dx), Math.min(1 - 1e-6, j * dy));
-    return (H._gridLit = { n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
-      const ti = k % NY, tj = k / NY | 0, x = (ti + 0.5) * dx, y = (tj + 0.5) * dy;
-      const i = Math.min(NX - 1, Math.floor(x / CW)), j = Math.min(NY - 1, Math.floor(y / CW)), c0 = H.map[j][i];
-      const ch = c0 === '#' || c0 === '=' ? c0 : groundAt(H, x, y);   // (the shapes show too: Oct 10)
-      if (ch === '#') return (MAT_COL[matOf(H)] || MAT_COL.wood).far;
-      if (ch === '=') return 0x9a7048;
-      const hedge = inPlanter(H, x, y);                       // (and the planters: Oct 11)
-      const a = hc[tj * N1 + ti], b = hc[tj * N1 + ti + 1], c = hc[(tj + 1) * N1 + ti], d = hc[(tj + 1) * N1 + ti + 1], h = (a + b + c + d) / 4;
-      let col;
-      if (hedge) col = rgbOf(HEDGE);
-      else if (ch === '~') col = waterC.slice();
-      else { const f = 0.72 * Math.max(0.5, Math.min(1.45, 1 + (h - BASE) * 9)); col = rgbOf(GRASS[0]).map(v => v * f);
-             const sf = sandMix(H, x, y); if (sf > 0) col = mixC(col, sandC, sf);
-             const lm = lakeMix(H, x, y); if (lm > 0) col = mixC(col, waterC, lm); }
-      // the light the mesh would have had there: board x runs to world −x and y to world −z, so the slope's normal is (gx, 1, gy)
-      // (and 5% over the sum of the scene's lights, which came out that much darker than the meshes beside them, measured)
-      const gx = ch === '~' || hedge ? 0 : (b + d - a - c) / (2 * dx), gy = ch === '~' || hedge ? 0 : (c + d - a - b) / (2 * dy), nl = Math.hypot(gx, 1, gy);
-      const lit = 1.05 * (0.62 + 0.76 * Math.max(0, (gx * SUN[0] + SUN[1] + gy * SUN[2]) / nl));
-      return hexOf(col.map(v => v * lit));
-    }) }); };
+  const gridOf = hk => { const H = HOLES[hk]; return H._grid || (H._grid = { n: NY, colors: Array.from({ length: NY * NY }, (_, k) => {
+    const i = Math.min(NX - 1, Math.floor((k % NY + 0.5) * NX / NY)), j = (k / NY) | 0, c0 = H.map[j][i];
+    const ch = c0 === '#' || c0 === '=' ? c0 : groundAt(H, (k % NY + 0.5) * WD / NY, (j + 0.5) * CW);   // (the shapes show too: Oct 10)
+    if (ch !== '#' && inPlanter(H, (k % NY + 0.5) * WD / NY, (j + 0.5) * CW)) return HEDGE;   // (and the planters: Oct 11)
+    return ch === '#' ? (MAT_COL[matOf(H)] || MAT_COL.wood).far : ch === 's' ? 0xe6d39a : ch === '~' ? 0x3d7fd9 : ch === '=' ? 0x9a7048 : GRASS[0];   // (no checks, Oct 8)
+  }) }); };
   const holeShown = (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.hole : holeOf(c, r); };
   const POLE_H = 0.16, FLAG_W = 0.62, FLAG_H = 0.3, FLAG_Y = 0.85;   // (the flag, in the pole's heights: wider since Oct 10)
   /* THE GRASS, as a surface: a 60×60 mesh on the ground's heights, coloured by what it is — grass
@@ -36533,20 +36493,6 @@ const GOLF_APP = (() => {
     // the rail as a plain box, for boards too small on screen to show its planks or bricks (Oct 9)
     railPV: T => { const g = new T.BoxGeometry(2 * RT / CW, 1.76, 1.02); g.translate(0, -1.2 + 0.88, 0); return g; },
     railPH: T => { const g = new T.BoxGeometry(1.02, 1.76, 2 * RT / CW); g.translate(0, -1.2 + 0.88, 0); return g; },
-    // …and the rest of what a board under 600 px shows plain (Oct 11, the GPU's load on the boards not selected): a wall cell,
-    // a fence piece and a planter's wall piece as the boxes their cladding is laid on, a windmill as its tower's box and two
-    // flat sails across its sails' reach, a ball of 48 triangles for 352, a boulder of 40 for 252 under 300 px
-    wallP: T => { const g = new T.BoxGeometry(1, 0.88, 1); g.translate(0, -0.6 + 0.44, 0); return g; },
-    fenceP: T => { const g = new T.BoxGeometry(1, 0.75, 2 * FENCE_T / CW); g.translate(0, -0.25 + 0.375, 0); return g; },
-    planterWallP: T => { const g = new T.BoxGeometry(1, 0.8, 2 * FENCE_T / CW); g.translate(0, -0.25 + 0.4, 0); return g; },
-    millTowerP: T => { const M = millGeos(); if (!M || !M.tower) return null; M.tower.computeBoundingBox(); const b = M.tower.boundingBox;
-      const g = new T.BoxGeometry(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z); g.translate((b.max.x + b.min.x) / 2, (b.max.y + b.min.y) / 2, (b.max.z + b.min.z) / 2); return g; },
-    millSailsP: T => { const M = millGeos(); if (!M) return null; M.sails.computeBoundingBox(); const b = M.sails.boundingBox;
-      const r = Math.max(-b.min.x, b.max.x, -b.min.z, b.max.z), h = Math.max(0.02, b.max.y - b.min.y), y = (b.max.y + b.min.y) / 2, pos = [], nrm = [];
-      for (const [sx, sz] of [[2 * r, 0.16], [0.16, 2 * r]]){ const d = new T.BoxGeometry(sx, h, sz).toNonIndexed(); d.translate(0, y, 0); pos.push(...d.attributes.position.array); nrm.push(...d.attributes.normal.array); }
-      const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3)); return g; },
-    ballP: T => { const g = new T.SphereGeometry(0.5, 8, 4); g.translate(0, 0.5, 0); return g; },
-    rockLow: T => { const g = new T.SphereGeometry(0.5, 6, 4); g.scale(1, 0.7, 1); g.translate(0, 0.3, 0); return g; },
     ...Object.fromEntries(HOLES.map((H, k) => ['wire' + k, T => wireGeo(T, H)])),
   };
   /* THE HOLE NUMBER, in the board's far left corner: seven-segment digits on a dark plate, up above
@@ -36583,12 +36529,6 @@ const GOLF_APP = (() => {
        boxes, plain bumpers and boulders, coarser ground, and no number or dotted tracks. */
     const T3 = bp == null || bp >= 1500, T2 = bp == null || bp >= 600, T1 = bp == null || bp >= 300;
     const near = T2, mid = T1, fine = T2;
-    /* (Oct 11: "is there a way we could optimize the drawing by reducing the gpu load when drawing non-selected boards?" …
-       "yes". Zoomed out, a frame drew 6.2 million triangles, most of them pieces no board this small could show: planter
-       walls of 1,212 triangles a brick piece, walls and fences in their cladding, windmills of 34,000, and a 352-triangle
-       ball on every tee; and 773 grounds, a draw each. Under 600 px every piece is plain now, as the rails already were; under
-       FLAT_PX the ground is the field's tiles (gridOf) and everything stands flat on them.) */
-    const FLAT = bp != null && bp < FLAT_PX, hOf = FLAT ? hFlat : hOfFull, plain = !T2;
     const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
     if (live){
       const now = performance.now(), dt = g.last ? Math.min(0.05, (now - g.last) / 1000) : 0;
@@ -36597,8 +36537,7 @@ const GOLF_APP = (() => {
     const G = GAMES.get(gkey(c, r));                  // (a sunk ball may have moved the round on)
     const H = HOLES[G ? G.hole : holeOf(c, r)], out = [];
     const k = HOLES.indexOf(H);
-    if (!FLAT) out.push({ kind: (T2 ? 'land' : T1 ? 'landM' : 'landL') + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
-    const farC = (MAT_COL[matOf(H)] || MAT_COL.wood).far;      // (the plain pieces' colour, the material's far one, as the rail's)
+    out.push({ kind: (T2 ? 'land' : T1 ? 'landM' : 'landL') + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
@@ -36617,7 +36556,7 @@ const GOLF_APP = (() => {
     }
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
       const u = (i + 0.5) * CW, v = (j + 0.5) * CW;
-      if (H.map[j][i] === '#') out.push({ kind: plain ? 'wallP' : 'wall_' + matOf(H), u, v, scale: CW, lift: hOf(H, u, v), color: plain ? farC : 0xffffff });
+      if (H.map[j][i] === '#') out.push({ kind: 'wall_' + matOf(H), u, v, scale: CW, lift: hOf(H, u, v), color: 0xffffff });
       if (H.map[j][i] === '=') out.push({ kind: 'plank', u, v, scale: CW, lift: hOf(H, u, v) + 0.004, color: (i + j) & 1 ? 0x9a7048 : 0x8a6240 });
     }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
@@ -36636,11 +36575,6 @@ const GOLF_APP = (() => {
       if (T.slide){ const S = toyAt(T, t); out.push({ kind: 'slide' + k + '_' + j, u: S.x, v: S.y, scale: 1, lift: hOf(H, S.x, S.y), color: 0x7a4fd0 }); }
       else if (T.mill){
         const [mx, my, arm] = T.mill, M = toyAt(T, t), hm = hOf(H, mx, my), MG = millGeos();
-        if (MG && plain){                                     // (a plain tower and two flat sails, from the file's own bounds)
-          out.push({ kind: 'millTowerP', u: mx, v: my, scale: arm, lift: hm, color: 0xd9d2c0 },
-                   { kind: 'millSailsP', u: mx, v: my, scale: arm, lift: hm, yaw: M.a, color: 0xc0392b });
-          return;
-        }
         if (MG){
           if (MG.tower) out.push({ kind: 'millTower', u: mx, v: my, scale: arm, lift: hm, color: 0xffffff });
           out.push({ kind: 'millSails', u: mx, v: my, scale: arm, lift: hm, yaw: M.a, color: 0xffffff });
@@ -36660,7 +36594,7 @@ const GOLF_APP = (() => {
             if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0 });
             else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : kd ? RIDER_PLAIN[kd] : 0xe05a9a });
           } else if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff });
-          else out.push({ kind: mid ? 'rockPlain' : 'rockLow', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
+          else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
         } else {
           const [x0, y0, x1, y1] = T.gate, L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / CW)), yaw = Math.atan2(y1 - y0, x1 - x0);
           for (let q = 0; q < n; q++){                        // CW-long pieces, red and white, sunk by how far down the gate is
@@ -36691,13 +36625,13 @@ const GOLF_APP = (() => {
       } else if (T.rock){
         const [x, y, r] = T.rock;
         if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: x, v: y, scale: r * PROP_K.rock, lift: hOf(H, x, y) - 0.002, yaw: (x * 37 + y * 11) % 6.28, color: 0xffffff });
-        else out.push({ kind: mid ? 'rockPlain' : 'rockLow', u: x, v: y, scale: r * 2, lift: hOf(H, x, y), color: 0x8a857c });
+        else out.push({ kind: 'rockPlain', u: x, v: y, scale: r * 2, lift: hOf(H, x, y), color: 0x8a857c });
       } else if (T.fence){
         // a fence, in pieces about a cell long, each on the ground under it and turned along the line
         const [x0, y0, x1, y1] = T.fence, L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / CW)), yaw = Math.atan2(y1 - y0, x1 - x0);
         for (let q = 0; q < n; q++){
           const f = (q + 0.5) / n, x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f;
-          out.push({ kind: plain ? 'fenceP' : 'fence_' + matOf(H), u: x, v: y, scale: L / n, lift: hOf(H, x, y), yaw, color: plain ? farC : 0xffffff });
+          out.push({ kind: 'fence_' + matOf(H), u: x, v: y, scale: L / n, lift: hOf(H, x, y), yaw, color: 0xffffff });
         }
       } else if (T.curve){
         // a curved fence (Oct 10), in pieces about half a cell long along its line, each a fence's height, stretched to its
@@ -36708,7 +36642,7 @@ const GOLF_APP = (() => {
           return [C.pts[0], C.pts[1]]; };
         for (let q = 0; q < np; q++){
           const [ax, ay] = at(C.L * q / np), [bx, by] = at(C.L * (q + 1) / np), x = (ax + bx) / 2, y = (ay + by) / 2, l = Math.hypot(bx - ax, by - ay);
-          out.push({ kind: plain ? 'fenceP' : 'fence_' + matOf(H), u: x, v: y, scale: CW, sx: l * 1.12 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: plain ? farC : 0xffffff });
+          out.push({ kind: 'fence_' + matOf(H), u: x, v: y, scale: CW, sx: l * 1.12 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: 0xffffff });
         }
       } else if (T.planter){
         // a planter (Oct 11): its wall in pieces about a third of a cell long round its closed line, as a curved fence's;
@@ -36721,7 +36655,7 @@ const GOLF_APP = (() => {
           return [B.pts[2 * a] + (B.pts[2 * c] - B.pts[2 * a]) * f, B.pts[2 * a + 1] + (B.pts[2 * c + 1] - B.pts[2 * a + 1]) * f]; };
         for (let q = 0; q < np; q++){
           const [ax, ay] = at(L * q / np), [bx, by] = at(L * (q + 1) / np), x = (ax + bx) / 2, y = (ay + by) / 2, l = Math.hypot(bx - ax, by - ay);
-          out.push({ kind: plain ? 'planterWallP' : 'planterWall_' + matOf(H), u: x, v: y, scale: CW, sx: l * 1.15 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: plain ? farC : 0xffffff });
+          out.push({ kind: 'planterWall_' + matOf(H), u: x, v: y, scale: CW, sx: l * 1.15 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: 0xffffff });
         }
       } else if (T.pipe){
         const [x0, y0, x1, y1, , pr] = T.pipe, lit = G && G.piped && t - (G.piped[j] ?? -9) < 0.3;
@@ -36733,11 +36667,9 @@ const GOLF_APP = (() => {
     // The ghost: the last putt's path, as faint dots on the grass.
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     // the best line's ghost, racing you on the board in play (Oct 11)
-    const inPlay = LIVE && LIVE.key === gkey(c, r);
-    if (G && G.state === 'play' && inPlay) ghostItems(out, G, H, hOf);
+    if (G && G.state === 'play' && LIVE && LIVE.key === gkey(c, r)) ghostItems(out, G, H);
     const b = G ? G.ball : H.tee;
-    // (a plainer ball under 600 px, and none on a tee under FLAT_PX but the board in play's: a pixel across, Oct 11)
-    if ((!G || G.state === 'play' || G.state === 'done' || G.state === 'edit') && (!FLAT || inPlay)) out.push({ kind: plain ? 'ballP' : 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
+    if (!G || G.state === 'play' || G.state === 'done' || G.state === 'edit') out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
     if (G && G.state === 'edit') editOverlay(out, H);
     // The aim: dots from the ball, the way it will go, longer and redder the harder.
     if (G && G.state === 'play' && !G.moving && (G.pull.x || G.pull.y)){
@@ -39225,13 +39157,12 @@ const GOLF_APP = (() => {
        (cellItems, by the board's size in pixels). */
     pitchMin: 50,
     itemMinPx: 20,
-    faceMinPx: 20,                                     // (the tiles from 20 px: under FLAT_PX they are the ground, Oct 11)
     itemGeometries,
     fabricCell(ctx, rect){
       const tx = rect.w / NX, ty = rect.h / NY;
       ctx.fillStyle = '#63b86a'; ctx.fillRect(rect.x, rect.y, NX * tx, NY * ty);   // one grass (Oct 8)
     },
-    cellGrid(c, r, px){ return gridOf(holeShown(c, r), px == null || px < FLAT_PX * 4 / 3); },   // (lit where it is the ground: Oct 11)
+    cellGrid(c, r){ return gridOf(holeShown(c, r)); },
     cellItems,
     get menu(){ return [{ head: 'Mini golf', items: [
       // (Oct 10: "Now we way to adjust the difficulty" … "ok, proceed": see ONE DIFFICULTY, HOW HARD, AND WHERE)

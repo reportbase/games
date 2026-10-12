@@ -523,32 +523,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     `window.fieldItemsChanged()` (mini golf calls it whenever a hole is set: `dropKinds`). `app.itemsEveryFrame` opts out.
   - The games step only their framed board, by the clock, so a board asked less often shows its movers in bigger steps,
     never slower. Measured: framed, 1.6 boards asked a frame instead of 43; zoomed out, 48 instead of 772.
-  - Every mini golf hole's ground was its own draw (about 800 zoomed out): see "Lighter boards not selected", below.
-- **Lighter boards not selected** (Oct 11: "is there a way we could optimize the drawing by reducing the gpu load when
-  drawing non-selected boards?" … "yes"). Measured in a 1280 × 800 window, zoomed out (772 boards about 96 px across): 802
-  draws and 6.2 million triangles a frame. 773 of the draws were holes' grounds. Most of the triangles were pieces drawn at
-  full detail on every board: planter walls (1,212 triangles a brick piece), walls and fences in their cladding, windmills
-  (34,000), and a 352-triangle ball on every tee. Mini golf's `cellItems` now, by the board's size on screen:
-  - **under 600 px** (every board but the selected one, by `degradedPx`): walls, fences, curved fences and planter walls are
-    the plain boxes their cladding is laid on (`wallP`, `fenceP`, `planterWallP`, in the material's far colour, as the
-    rails were already). A windmill is its tower's box and two flat sails across its sails' reach (`millTowerP`,
-    `millSailsP`, from the studio file's own bounds). The ball has 48 triangles (`ballP`).
-  - **under 300 px**: boulders of 40 triangles (`rockLow`).
-  - **under `FLAT_PX` (150 px)**: no ground mesh. The field's tiles, which it draws for every board anyway in one instanced
-    draw, are the ground: golf's `faceMinPx` is 20, and `cellGrid` gives the lit grid (`gridOf(hk, true)`, `_gridLit`).
-    Each of the 13 × 13 tiles is coloured as the mesh colours its grass and lit as the mesh is lit. Its height and slope
-    come from the heights at its four corners, under the scene's ambient, sky and sun at (0.4, 1, 0.3), +5% (measured
-    against the meshes). Everything stands flat on the tiles (`hFlat` in place of `hOf`), so the hills show as light and
-    shade. There is no ball on a tee, only the board in play's.
-  - From 200 px the tiles stay plain (`_grid`, as before). They peep out only under a raised hole's edge (the mesa's),
-    where shaded ones showed its hills twice.
-  - Measured after: zoomed out 172 draws and 0.94 million triangles (802 and 6.2 million before); halfway out 145 and 0.49
-    million (354 and 2.9 million); a hole framed 71 and 0.12 million (74 and 0.39 million, its neighbours' walls and planters
-    plain now). Far boards read as a map of shaded squares, not smooth ground.
-  - Not done: the field's tiles are never told "no tiles here" under a board that draws its own ground. A board's pieces are
-    kept a few frames, so one zoomed in fast could have neither its ground nor its tiles for a moment. A smooth far ground in
-    one draw (every hole's coarse ground from a texture of heights, read in the vertex shader) would bring back the smooth
-    look.
+  - Still to do (found then): every mini golf hole's ground is its own draw (about 800 draws zoomed out).
 - **The field rests when nothing changes** (Oct 11, "proceed" on "Rest when still": the page built and drew every frame with
   the view still). `_restDecide` runs first in `frame`; a frame it skips is not built or drawn (the last one stays on the
   screen), only the light watchers run.
