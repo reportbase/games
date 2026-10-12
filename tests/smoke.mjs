@@ -661,6 +661,32 @@ try {
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
     if (!(pools.grown >= 1) || !(pools.slots < 1e6)) failures.push(`[${current}] pools that grow: ${JSON.stringify(pools)}`);
   }
+  // NOTHING MOVES WHILE THE VIEW DOES (Oct 12: "restore last update. lets try something different, when panning, no object
+  // motion anywhere, turn it off."): with a round going on the selected board, a real drag elsewhere pans the view; while it
+  // moves the hold is on, the selected board is not asked for its pieces, its game's clock and the animation clock stand
+  // still; a moment after it stops, all of them go on
+  current = 'nothing moves while the view does';
+  {
+    const before = failures.length;
+    await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r);
+      const orig = A.cellItems; window.__ph = { f, n: 0, orig }; A.cellItems = function(c, r, bp){ if (c === f.c && r === f.r) window.__ph.n++; return orig.call(this, c, r, bp); }; });
+    await page.waitForTimeout(800);
+    const sample = () => page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.games.values()].find(g => g.state === 'play'), W = window.FIELD_WORLD;
+      return { on: window.fieldPanHold.on, n: window.__ph.n, gt: g ? +g.t.toFixed(4) : null, at: +window.fieldAnimTime().toFixed(1), cam: +(W.st.camX + W.st.camZ).toFixed(4) }; });
+    const s0 = await sample(), during = [];
+    await page.mouse.move(200, 650); await page.mouse.down();
+    for (let k = 1; k <= 12; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
+    await page.mouse.up();
+    const held = during.filter(d => d.on), first = held[0], last = held[held.length - 1];
+    await page.waitForTimeout(2000);
+    const after = await sample();
+    await page.evaluate(() => { window.getFieldApp().cellItems = window.__ph.orig; });
+    const ok = held.length >= 6 && first && last.n === first.n && last.gt === first.gt && last.at === first.at && last.cam !== s0.cam
+      && !after.on && after.n > last.n && after.gt > last.gt && after.at > last.at;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ s0, during, after })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (held for ${held.length} of 12 samples of a drag)`);
+  }
   // MOVERS KEEP APART (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where the
   // golfball bounce away", "Keep them apart"): on the course and 120 generated holes, watched for half a minute from the
   // start and again an hour on, no rider comes onto another, onto a bar, a bumper, a boulder or a fence, and no bar onto a

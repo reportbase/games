@@ -524,6 +524,22 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The games step only their framed board, by the clock, so a board asked less often shows its movers in bigger steps,
     never slower. Measured: framed, 1.6 boards asked a frame instead of 43; zoomed out, 48 instead of 772.
   - Still to do (found then): every mini golf hole's ground is its own draw (about 800 draws zoomed out).
+- **Nothing moves while the view does** (Oct 12: "restore last update. lets try something different, when panning, no
+  object motion anywhere, turn it off."; the update restored was "Lighter boards not selected", #59, reverted). While the
+  camera's numbers (`st.camX`, `camZ`, `yaw`, `pitch`, `zoom`) change from frame to frame, and for `PANHOLD.linger` (250 ms)
+  after, the pan hold is on (`_panCheck`, first in `frame`; `window.fieldPanHold`). This covers a drag, a pinch, a swipe's
+  glide, keys and a flight to a board.
+  - No board's pieces are asked for, the selected board's included. `_boardItems` draws each from its last list (the
+    framed board's list is kept in `_itemCache` too now), and `_restDecide` skips its ask of the framed board. A board coming
+    into view meanwhile is asked once and held.
+  - The games step only when their board is asked, so they wait. Mini golf's ball in play stops and its clock (`g.t`)
+    with it; boards no one plays jump to the page's clock after.
+  - The animation clock chess reads (`animTime`) is held (`holdAnimForPan`, `animPanHeld`) and the time held is taken out
+    after, so boards playing themselves go on from where they stopped. A pause begun while held keeps the held moment. Time
+    dilation does not run while held.
+  - When the camera stops, the selected board is asked at once and the others on their beats.
+  - Left out: an app with `onWorld` (air raid's bomber steers the camera as its game).
+  - Without the linger, a slow drag's frames did not all move the camera, and the boards came alive between them.
 - **The field rests when nothing changes** (Oct 11, "proceed" on "Rest when still": the page built and drew every frame with
   the view still). `_restDecide` runs first in `frame`; a frame it skips is not built or drawn (the last one stays on the
   screen), only the light watchers run.
