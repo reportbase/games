@@ -109,13 +109,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
   **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 50`, a board
   under 20 px gets no pieces (`itemMinPx`). Items may be stretched (`sx`/`sy`/`sz`).
-  **One look, or none** (Oct 12: "why do the object change when I pan around. they should never change from one thing
-  to antoher." … "then don't show the objects until they are in their final state. changing them looks terrible."):
-  until then `cellItems(c, r, bp)` swapped pieces by the board's size on screen (longer rail pieces under 1500 px, plain
-  rails, bumpers and boulders under 600, no number under 300), which panning a tilted view does constantly. Now a board's
-  pieces are always the full ones; a board under `PIECES_PX` (300) shows its ground alone (`landL`), with full ground
-  (`land`) and all its pieces appearing together once it is that big. The selected board, and the one being edited,
-  always has them. `railPV`/`railPH` and `landM` are no longer drawn.
+  **Full drawing** (Oct 12: "why do the object change when I pan around. they should never change from one thing
+  to antoher.", then "still not very good. restore full drawing functionaility. no special handeling. only thing is dont
+  draw non-visible boards and no animation when panning or resizing."): until then `cellItems(c, r, bp)` swapped pieces by
+  the board's size on screen (longer rail pieces under 1500 px, plain rails, bumpers and boulders under 600, no number
+  under 300), and for a while a board under 300 px showed its ground alone. Now every board has all its full pieces,
+  whatever its size (the field still asks for none under `itemMinPx`, 20). `railPV`/`railPH`, `landM` and `landL` are no
+  longer drawn.
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
   - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
     its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each
@@ -514,27 +514,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   a click reaches `onQuickAct(c, r, key)`. Mini golf: Select, Box, Undo, Redo, Erase, Done while editing
   (none while playing: the row is the editor's, Oct 10). The row stops short of the middle and its buttons narrow to fit. They show only while the pane is open; the three dots
   (`#bbHandle`) show on every game, whether or not its row has anything in it.
-- **Only the selected board is drawn perfectly** (Oct 11: "only the selected board needs to be presented perfectly, all other
-  boards can be drawn in degraded presentation to save GPU. ideally, if the board is not even visible or if it is only 1/2 or
-  less visible, you don't need to update it at all."). `buildInstances` walks only the boards in view (cost by what is on the
-  screen, not by the field's size). Their apps' pieces used to be asked for every frame, the view still or not (mini golf:
-  43 boards and 2,848 pieces framed, 772 and 33,197 zoomed out). Now `_boardItems` keeps each board's list (`_itemCache`):
-  - the framed board is asked every frame at its full size;
-  - any other board is asked at its own size on screen, as the framed one is, but only every 3 frames (300 px and over),
-    6 (100 px) or 12, each on its own beat. Until Oct 12 it was asked as if under the app's `degradedPx` (mini golf's
-    599: plain rails, bumpers and boulders, quarter-detail ground); that went with "dont show the objects differently on
-    non-selected boards." A board's pieces now depend on its size on screen alone (see "Lighter on a field of thousands");
-  - a board half on screen or less (`_onScreen`: 16 points against the last frame's view) is not asked while it stays so;
-  - every list is asked again after another app, a click, a key that is not flying, a drop, a change, or
-    `window.fieldItemsChanged()` (mini golf calls it whenever a hole is set: `dropKinds`). `app.itemsEveryFrame` opts out.
-  - The games step only their framed board, by the clock, so a board asked less often shows its movers in bigger steps,
-    never slower. Measured: framed, 1.6 boards asked a frame instead of 43; zoomed out, 48 instead of 772.
-  - Still to do (found then): every mini golf hole's ground is its own draw (about 800 draws zoomed out).
+- **Every board in view, in full, every frame** (Oct 12: "restore full drawing functionaility. no special handeling. only
+  thing is dont draw non-visible boards and no animation when panning or resizing."). From Oct 11 ("only the selected board
+  needs to be presented perfectly …") boards other than the selected one were asked for their pieces every 3, 6 or 12
+  frames by size, at a degraded size, and not at all while half off the screen; all of that went. `buildInstances` walks the
+  boards in the view's reach, and `_boardItems` asks every one of them on the screen (`_boardVisible`: its corners, and a
+  board's width above them, projected through the camera overlap the screen, with a tenth to spare, since the camera is
+  the last frame's) every frame at its own size; one off the screen gets nothing. The lists are kept (`_itemCache`) only for
+  the pan hold to draw, and asked again after another app, a click, a drop, a change or `window.fieldItemsChanged()`.
 - **Nothing moves while the view does** (Oct 12: "restore last update. lets try something different, when panning, no
   object motion anywhere, turn it off."; the update restored was "Lighter boards not selected", #59, reverted). While the
-  camera's numbers (`st.camX`, `camZ`, `yaw`, `pitch`, `zoom`) change from frame to frame, and for `PANHOLD.linger` (250 ms)
-  after, the pan hold is on (`_panCheck`, first in `frame`; `window.fieldPanHold`). This covers a drag, a pinch, a swipe's
-  glide, keys and a flight to a board.
+  camera's numbers (`st.camX`, `camZ`, `yaw`, `pitch`, `zoom`) or the window's size change from frame to frame, and for
+  `PANHOLD.linger` (250 ms) after, the pan hold is on (`_panCheck`, first in `frame`; `window.fieldPanHold`). This covers a drag, a pinch, a swipe's
+  glide, keys, a flight to a board and resizing the window ("no animation when panning or resizing").
   - No board's pieces are asked for, the selected board's included. `_boardItems` draws each from its last list (the
     framed board's list is kept in `_itemCache` too now), and `_restDecide` skips its ask of the framed board. A board coming
     into view meanwhile is asked once and held.
@@ -543,7 +535,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The animation clock chess reads (`animTime`) is held (`holdAnimForPan`, `animPanHeld`) and the time held is taken out
     after, so boards playing themselves go on from where they stopped. A pause begun while held keeps the held moment. Time
     dilation does not run while held.
-  - When the camera stops, the selected board is asked at once and the others on their beats.
+  - When the camera stops, every board is asked again.
   - Left out: an app with `onWorld` (air raid's bomber steers the camera as its game).
   - Without the linger, a slow drag's frames did not all move the camera, and the boards came alive between them.
   - A hand that is panning holds it too, whatever the camera did that frame (`turn`: a drag past its deadzone, a hold
@@ -558,10 +550,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     or while a board still waits for its picture (`_photoHoles`).
   - The framed board is asked for its pieces every frame even so (its game steps there; `_framedPre` passes the list on to
     the build) and any change in it (`_itemsHash`, to a ten-thousandth of the board) means every frame is drawn.
-  - Otherwise a third of the frames are drawn while other boards' lists change (`REST.change`, set by `_boardItems`), and
-    one in half a second when nothing has. `window.fieldRest` counts frames drawn and skipped for the tests.
-  - Measured: Sokoban framed and still, 10 of 299 frames drawn; mini golf on a hole without movers, a third (the
-    neighbours' riders move); a hole with riders on it, every frame, as it should be.
+  - Otherwise every frame is drawn while any board's list changed in the last 2.5 s (`REST.change`, set by `_boardItems`;
+    a third of them until Oct 12, "no special handeling"), and one in half a second when nothing has. `window.fieldRest`
+    counts frames drawn and skipped for the tests.
+  - Measured: Sokoban framed and still, 10 of 299 frames drawn; a mini golf field with riders anywhere in view, every frame.
 - **Pools that grow** (Oct 11, "proceed" on "Smaller piece pools"): every instanced pool was made at the most it could hold
   (chess's 42 piece pools of 33,334 even in mini golf, 48,000 for every kind of piece, 400,000 board tiles, 600,000 whole
   boards: 4.2 million instances). Now each starts at `POOL_START` (256; the tiles at 4,096) and doubles when full up to

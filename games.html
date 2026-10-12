@@ -36535,7 +36535,6 @@ const GOLF_APP = (() => {
       if (segs.includes('c')) put('segV', x + W, v0 + 1.5 * HH, HH);
     });
   }
-  const PIECES_PX = 300;                                      // (a board's pieces show whole from this many px across: Oct 12)
   function cellItems(c, r, bp){
     /* HOW MUCH TO DRAW, by the board's size on screen in pixels (Oct 9, "is getting heavy"). Measured on a field of the
        new holes: some 2.7 million triangles a frame, from rails of bricks and stones (576 triangles a half-cell piece,
@@ -36546,9 +36545,11 @@ const GOLF_APP = (() => {
        one thing to antoher." … "then don't show the objects until they are in their final state. changing them looks
        terrible."). The steps above swapped a board's pieces as it grew or shrank on the screen, which panning in a tilted
        view does all the time. Now a board's pieces are always the full ones, the selected board's look; a board under
-       PIECES_PX across shows its ground alone, and its pieces appear, whole, once it is that big. The selected board (and
-       the one being edited) always has them, however small. */
-    const PIECES = bp == null || bp >= PIECES_PX || (LIVE && LIVE.key === gkey(c, r)) || (ED.on && ED.key === gkey(c, r));
+       PIECES_PX across showed its ground alone, its pieces appearing, whole, once it was that big. That went too (Oct 12,
+       later: "still not very good. restore full drawing functionaility. no special handeling. only thing is dont draw
+       non-visible boards and no animation when panning or resizing."): every board in view has all its pieces, whatever
+       its size (the field still asks for none under itemMinPx, as for every app). */
+    const PIECES = true;
     const T3 = PIECES, T2 = PIECES, T1 = PIECES;
     const near = T2, mid = T1, fine = T2;
     const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
@@ -43284,22 +43285,13 @@ let _itemLightsOn = false;
    emitter reads the same as before; it simply has nothing left to do. */
 function _ensureItemLights(){ _itemLightsOn = true; }
 function _resetAppItems(){ for (const rec of _itemMeshes.values()) rec.n = 0; _itemFrame++; _itemVP = null; }
-/* ONLY THE SELECTED BOARD IS DRAWN PERFECTLY (Oct 11: "only the selected board needs to be presented perfectly, all other
-   boards can be drawn in degraded presentation to save GPU. ideally, if the board is not even visible or if it is only 1/2
-   or less visible, you don't need to update it at all."). Every board in view used to have its app asked for its pieces
-   every frame, the view standing still or not: 43 boards and 2,848 pieces a frame with a mini golf hole framed, 772 boards
-   and 33,197 pieces zoomed out. Now each board's list is kept (_itemCache) and:
-   - the selected board (the one framed) is asked every frame, at its full size on screen, as before;
-   - any other board is asked at its own size on screen too (it was asked as if under an app's degradedPx, mini golf's
-     599, until Oct 12: "dont show the objects differently on non-selected boards."), but only every few frames (3 for a
-     board 300 px or more across, 6 from 100 px, else 12), each board on its own beat so they do not all come due
-     together; between times its kept list is drawn where it stands;
-   - a board half on screen or less (_onScreen, 16 points of it tried against the last frame's view) is not asked at all
-     while it stays so, as a board off the screen never was;
-   - every list is asked again after anything that may change what boards show: another app, a click, a key that is not
-     flying, a file dropped or opened, a setting changed (_itemEpoch, and window.fieldItemsChanged for an app to call).
-   The games keep their own time (each steps only its framed board, by the clock), so a board asked less often shows its
-   movers in bigger steps, never slower. */
+/* EVERY BOARD IN VIEW, IN FULL, EVERY FRAME (Oct 12: "still not very good. restore full drawing functionaility. no special
+   handeling. only thing is dont draw non-visible boards and no animation when panning or resizing."). From Oct 11 ("only
+   the selected board needs to be presented perfectly …") boards other than the selected one were asked for their pieces
+   every 3, 6 or 12 frames by their size, and not at all while half off the screen; that is gone. Every board on the screen
+   (_boardVisible) is asked every frame at its own size, as the selected one is. The lists are still kept (_itemCache), for
+   the pan hold to draw while the view moves (PANHOLD), and refreshed after anything that may change what boards show
+   (_itemEpoch, window.fieldItemsChanged). */
 const _itemCache = new Map();
 let _itemFrame = 0, _itemEpoch = 0, _itemApp = null, _itemVP = null;
 /* RESTING (Oct 11: "proceed", after "Rest when still: the page redraws every frame even when nothing moves"). Each frame
@@ -43343,7 +43335,7 @@ function _itemsHash(L){
 const PANHOLD = { on: false, sig: '', since: 0, n: 0, last: -1e9, linger: 250 };
 window.fieldPanHold = PANHOLD;                               // (for the tests)
 function _panCheck(now){
-  const sig = [st.camX, st.camZ, st.yaw, st.pitch, st.zoom].map(v => (+v || 0).toFixed(5)).join(',');
+  const sig = [st.camX, st.camZ, st.yaw, st.pitch, st.zoom, innerWidth, innerHeight].map(v => (+v || 0).toFixed(5)).join(',');
   let a = null; try { a = window.getFieldApp && window.getFieldApp(); } catch {}
   if (PANHOLD.sig && sig !== PANHOLD.sig) PANHOLD.last = now;
   const hand = !!(turn.active && !turn.appPan && (turn.panned || turn.tilted || turn.turned || turn.multi));
@@ -43370,11 +43362,10 @@ function _restDecide(now){
     }
   }
   if (now - REST.active < 800 || now - REST.wakeAt < 800){ REST.drawn++; return false; }
-  const skip = now - REST.change < 2500 ? (++REST.n % 3) !== 0 : now - REST.lastDraw < 500;
+  const skip = now - REST.change < 2500 ? false : now - REST.lastDraw < 500;   // (every frame while anything moved: Oct 12, "no special handeling")
   if (skip) REST.skipped++; else REST.drawn++;
   return skip;
 }
-const _ITEM_EVERY = bp => bp >= 300 ? 3 : bp >= 100 ? 6 : 12;
 const _vpM = new THREE.Matrix4(), _vpE = _vpM.elements;
 function fieldItemsChanged(){ _itemEpoch++; restWake(); }
 window.fieldItemsChanged = fieldItemsChanged;
@@ -43384,20 +43375,25 @@ try {
   for (const ev of ['pointerdown', 'pointermove', 'wheel', 'touchstart', 'touchmove', 'resize', 'keyup']) window.addEventListener(ev, restWake, { capture: true, passive: true });   // (wake from rest: see REST)
   window.addEventListener('keydown', e => { restWake(); if (!/^(w|a|s|d|q|e|r|f|arrow\w+|shift|control|alt|meta)$/i.test(e.key || '')) wake(); }, true);
 } catch {}
-// how much of a board (centre cx, cz, size bWX × bWZ) the last frame showed: 16 points of it, inside the view or not
-function _onScreen(cx, cz, bWX, bWZ){
-  if (!_itemVP){ try { camera.updateMatrixWorld(); _vpM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _itemVP = _vpE; } catch { return 1; } }
-  const e = _itemVP; let k = 0;
-  for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++){
-    const x = cx + ((i + 0.5) / 4 - 0.5) * bWX, z = cz + ((j + 0.5) / 4 - 0.5) * bWZ, y = 0.02;
-    const w = e[3] * x + e[7] * y + e[11] * z + e[15]; if (w <= 1e-6) continue;
+/* ONLY BOARDS ON THE SCREEN (Oct 12: "only thing is dont draw non-visible boards"): the walk takes the boards in the view's
+   reach, rows a little wide of it, so a board's pieces are asked for, and drawn, only when some of it is on the screen: its
+   corners on the ground and a board's width above them (pieces stand up), projected through the camera, overlap the
+   screen. A corner behind the camera counts as seen, to be safe. */
+function _boardVisible(cx, cz, bWX, bWZ){
+  if (!_itemVP){ try { camera.updateMatrixWorld(); _vpM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _itemVP = _vpE; } catch { return true; } }
+  const e = _itemVP, H = Math.max(bWX, bWZ);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const sx of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) for (const y of [0, H]){
+    const x = cx + sx * bWX, z = cz + sz * bWZ;
+    const w = e[3] * x + e[7] * y + e[11] * z + e[15]; if (w <= 1e-6) return true;
     const X = (e[0] * x + e[4] * y + e[8] * z + e[12]) / w, Y = (e[1] * x + e[5] * y + e[9] * z + e[13]) / w;
-    if (X >= -1 && X <= 1 && Y >= -1 && Y <= 1) k++;
+    if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y;
   }
-  return k / 16;
+  return x1 >= -1.2 && x0 <= 1.2 && y1 >= -1.2 && y0 <= 1.2;   // (a tenth of the screen wide: the camera is last frame's, applyCamera follows the build)
 }
 function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
   if (app !== _itemApp){ _itemCache.clear(); _itemApp = app; }
+  if (!framed && !_boardVisible(cx, cz, bWX, bWZ)) return null;   // (off the screen: nothing asked, nothing drawn)
   const key = ix * 100003 + iz;
   const C = _itemCache.get(key);
   if (C && PANHOLD.on){ C.seen = _itemFrame; return C.items; }   // (the view moving: every board as it was, the selected one too)
@@ -43406,12 +43402,6 @@ function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
     const L = framed && _framedPre && _framedPre.key === key && _framedPre.stamp === _frameStamp ? _framedPre.L : app.cellItems(ix, iz, bp);
     // (kept, so the view moving can hold it; h 0, so a board no longer selected is asked again on its beat and counts as a change)
     _itemCache.set(key, { items: L, h: 0, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch }); return L; }
-  const every = _ITEM_EVERY(bp);
-  if (C && C.epoch === _itemEpoch){
-    C.seen = _itemFrame;
-    if ((_itemFrame + key) % every !== 0 || C.at === _itemFrame) return C.items;   // not this board's turn
-    if (_onScreen(cx, cz, bWX, bWZ) <= 0.5) return C.items;                         // half on screen or less: left as it is
-  }
   const L = app.cellItems(ix, iz, bp), h = _itemsHash(L);   // (at its own size, as the selected board is: Oct 12)
   if (!C || C.h !== h) REST.change = performance.now();      // (something on the boards moved: the field does not rest yet)
   _itemCache.set(key, { items: L, h, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch });
