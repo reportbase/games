@@ -441,6 +441,10 @@ try {
     await page.mouse.move(N.x, N.y); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up();
     let now = await held();
     if (!now || now.c !== N.from.c || now.r !== N.from.r) failures.push(`[${current}] a long press went to ${JSON.stringify(now)}`);
+    // (a hold and let go toggles the bottom row, and mini golf's row is its editor, Oct 10: whether the hold's timer fires
+    //  before the release depends on how long the frames take, so on CI it opened the editor and the tap below moved the
+    //  editor there instead of teeing off; the editor is shut again here, Oct 12)
+    await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; if (E.ED.on) E.editStop(true); });
     const before = await playing();
     await page.waitForTimeout(700);                                // (not a double with the release above)
     await page.mouse.click(N.x, N.y);
@@ -1676,12 +1680,12 @@ try {
     await page.waitForTimeout(800);                           // (the pane slides shut first; the dots ride on it)
     // (the dots are clicked only once they stay where they are and nothing covers them: the pane slides a frame at a time,
     //  and a software renderer under load, as on CI, can take seconds a frame, so a fixed wait was sometimes too short and
-    //  the click fell on the board: Oct 11)
+    //  the click fell on the board: Oct 11; and 15 s was still too short once every board drew its full pieces: Oct 12)
     const dotsReady = async () => {
       await page.evaluate(() => { window._dotsAt = null; });
       await page.waitForFunction(() => { const h = document.getElementById('bbHandle'); if (!h) return false;
         const r = h.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2, el = r.width > 0 ? document.elementFromPoint(x, y) : null, k = x.toFixed(1) + ',' + y.toFixed(1);
-        const ok = !!el && (el === h || h.contains(el)) && window._dotsAt === k; window._dotsAt = k; return ok; }, null, { timeout: 15000, polling: 250 }).catch(() => {});
+        const ok = !!el && (el === h || h.contains(el)) && window._dotsAt === k; window._dotsAt = k; return ok; }, null, { timeout: 60000, polling: 250 }).catch(() => {});
       return page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
     };
     const dotsXY = await dotsReady();

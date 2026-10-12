@@ -546,6 +546,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - When the camera stops, the selected board is asked at once and the others on their beats.
   - Left out: an app with `onWorld` (air raid's bomber steers the camera as its game).
   - Without the linger, a slow drag's frames did not all move the camera, and the boards came alive between them.
+  - A hand that is panning holds it too, whatever the camera did that frame (`turn`: a drag past its deadzone, a hold
+    pulling to tilt or turn, two fingers; not the app's own drags, such as mini golf's aim). On CI's slow frames a
+    finger's moves came further apart than the linger, and the boards came alive mid-drag (Oct 12).
 - **The field rests when nothing changes** (Oct 11, "proceed" on "Rest when still": the page built and drew every frame with
   the view still). `_restDecide` runs first in `frame`; a frame it skips is not built or drawn (the last one stays on the
   screen), only the light watchers run.
