@@ -116,6 +116,52 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (still: ${rs.still.drawn} of ${rs.still.frames} frames drawn)`);
   }
 
+  // SOKOBAN, EVERY BOARD ITS OWN LEVEL (Oct 12: "what ideas from mini-golf can we extend to the other games." … "ok, proceed"):
+  // a board keeps its level and its neighbours have others; the corner block keeps the worked-out levels; dealt levels
+  // are levels 1 to 5 by the ring and the Difficulty, their pars (the fewest pushes, from dealing backwards) climb, a
+  // forward solve finds the same par, each board's demo ends solved, and a solved board's tap goes on to the next board
+  current = 'sokoban boards';
+  {
+    const before = failures.length;
+    const sk = await page.evaluate(async () => {
+      window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')); await new Promise(ok => setTimeout(ok, 800));
+      const A = window.getFieldApp(), D = A._debug, sig = L => Array.from(L.wall).join('') + '|' + L.boxes.join(',') + '|' + Array.from(L.goal).join('');
+      const corner = D.boardLevel(0, 0, true), far = [[40, 3], [3, 40], [41, 3]].map(([c, r]) => D.boardLevel(c, r, true));
+      const again = D.boardLevel(40, 3, true);
+      const lv = [], opt = [], demo = [];
+      for (let l = 1; l <= 5; l++){
+        const pars = [];
+        for (let k = 0; k < 6; k++){ const L = D.makeLevel(3000 + l * 97 + k * 13, l); pars.push(L.par);
+          if (l <= 3 && k < 3){ const S = D.solve(L); opt.push(S ? S.pushes === L.par : 'none'); }
+          if (k === 0){ const F = D.framesOf(L); demo.push(F[F.length - 1].done && !F[0].done); } }
+        lv.push(pars.reduce((a, b) => a + b, 0) / pars.length);
+      }
+      const idx = D.boardIdx(40, 3), l0 = D.levelAt(idx);
+      return { corner: !!corner.classic, same: sig(far[0]) === sig(again), differ: sig(far[0]) !== sig(far[1]) && sig(far[0]) !== sig(far[2]),
+               level: far[0].level, l0, lv, opt, demo };
+    });
+    if (!sk.corner || !sk.same || !sk.differ || sk.level !== sk.l0 || !(sk.lv.every((p, i) => !i || p > sk.lv[i - 1])) || !sk.opt.every(x => x === true) || !sk.demo.every(Boolean))
+      failures.push(`[${current}] ${JSON.stringify(sk)}`);
+    // the Difficulty moves every dealt board a level; a solved board's tap goes on to the next board
+    const sk2 = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, idx = D.boardIdx(40, 3), a = D.levelAt(idx);
+      const item = A.menu[0].items[0]; item.on(); const b = D.levelAt(idx); item.on(); item.on();   // (round to where it was)
+      const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onCellTap(f.c, f.r); const g = D.games.get(f.c + '_' + f.r);
+      const L = g.L, path = L.sol ? null : L.pushes;
+      g.player = L.player; g.boxes = L.boxes.slice(); g.solved = false; g.queue = [];
+      if (L.sol) for (const ch of L.sol) D.step(g, 'URDL'.indexOf(ch));
+      else for (const [at, e] of path){ const n = L.n, Dn = [-n, 1, n, -1]; for (const di of D.path(g, at - Dn[e]) || []) D.step(g, di); D.step(g, e); }
+      const solved = g.solved;
+      A.onCellTap(f.c, f.r); await new Promise(ok => setTimeout(ok, 1500));
+      const f2 = W.cellAt(W.target.boardX, W.target.boardZ);
+      return { a, b, solved, from: f, to: f2 };
+    });
+    if (sk2.b !== Math.min(5, sk2.a + 1) && !(sk2.a === 5 && sk2.b === 5) || !sk2.solved || !sk2.to || (sk2.to.c === sk2.from.c && sk2.to.r === sk2.from.r))
+      failures.push(`[${current}] difficulty and the next board: ${JSON.stringify(sk2)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (pars by level ${sk.lv.map(p => p.toFixed(1)).join(', ')})`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two
