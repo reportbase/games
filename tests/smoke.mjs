@@ -711,6 +711,7 @@ try {
     await page.mouse.move(200, 650); await page.mouse.down();
     for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during2.push(await sample()); }
     await page.mouse.up();
+    await page.waitForTimeout(2000);                         // (its glide spent before the view is put back: CI, Oct 12)
     const g1 = during2[during2.length - 1];
     if (during2.some(d => d.on) || !(g1.gt > g0.gt) || g1.cam === g0.cam) failures.push(`[${current}] mini golf's movers stopped while the view moved: ${JSON.stringify({ g0, during2 })}`);
     await page.evaluate(v => { const W = window.FIELD_WORLD; window.getFieldApp().cellItems = window.__ph.orig; Object.assign(W.target, v.target); Object.assign(W.st, v.st); }, view0);
