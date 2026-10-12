@@ -39200,9 +39200,9 @@ const GOLF_APP = (() => {
     // (since Oct 9 every hole's ground is on its own board, the course's too: none needs room for thousands)
     itemCaps(kind){ return /^(land[ML]?|wire)\d+$/.test(kind) ? 64 : 0; },
     /* (Oct 11: "only the selected board needs to be presented perfectly, all other boards can be drawn in degraded
-       presentation to save GPU": a board not framed is drawn as if under 600 px across, its rail in plain two-cell boxes,
-       plain bumpers and boulders, the ground at a quarter of the detail; see _boardItems in the field) */
-    degradedPx: 599,
+       presentation to save GPU": a board not framed was drawn as if under 600 px across, its rail in plain boxes, plain
+       bumpers and boulders, the ground at a quarter of the detail. Oct 12: "dont show the objects differently on
+       non-selected boards." Every board is drawn by its size on screen alone now, as the selected one is: see _boardItems.) */
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r)), H = HOLES[holeShown(c, r)];
       if (!g) return 'Mini golf — ' + H.name + ', par ' + H.par + ' (tap to play a round from here)';
@@ -43281,9 +43281,10 @@ function _resetAppItems(){ for (const rec of _itemMeshes.values()) rec.n = 0; _i
    every frame, the view standing still or not: 43 boards and 2,848 pieces a frame with a mini golf hole framed, 772 boards
    and 33,197 pieces zoomed out. Now each board's list is kept (_itemCache) and:
    - the selected board (the one framed) is asked every frame, at its full size on screen, as before;
-   - any other board is asked at the app's degradedPx at most (mini golf: plain rails and bumpers, coarser ground), and
-     only every few frames (3 for a board 300 px or more across, 6 from 100 px, else 12), each board on its own beat so
-     they do not all come due together; between times its kept list is drawn where it stands;
+   - any other board is asked at its own size on screen too (it was asked as if under an app's degradedPx, mini golf's
+     599, until Oct 12: "dont show the objects differently on non-selected boards."), but only every few frames (3 for a
+     board 300 px or more across, 6 from 100 px, else 12), each board on its own beat so they do not all come due
+     together; between times its kept list is drawn where it stands;
    - a board half on screen or less (_onScreen, 16 points of it tried against the last frame's view) is not asked at all
      while it stays so, as a board off the screen never was;
    - every list is asked again after anything that may change what boards show: another app, a click, a key that is not
@@ -43397,7 +43398,7 @@ function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
     if ((_itemFrame + key) % every !== 0 || C.at === _itemFrame) return C.items;   // not this board's turn
     if (_onScreen(cx, cz, bWX, bWZ) <= 0.5) return C.items;                         // half on screen or less: left as it is
   }
-  const L = app.cellItems(ix, iz, app.degradedPx ? Math.min(bp, app.degradedPx) : bp), h = _itemsHash(L);
+  const L = app.cellItems(ix, iz, bp), h = _itemsHash(L);   // (at its own size, as the selected board is: Oct 12)
   if (!C || C.h !== h) REST.change = performance.now();      // (something on the boards moved: the field does not rest yet)
   _itemCache.set(key, { items: L, h, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch });
   if (_itemCache.size > 4000) for (const [k, c] of _itemCache) if (_itemFrame - c.seen > 120) _itemCache.delete(k);   // boards long out of view
