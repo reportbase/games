@@ -42227,18 +42227,25 @@ function screenToBoardDirs(){
    on the menu starts over. Tap a solved board for the next level.
    The levels were worked out ahead of time, each with its shortest known
    solution, so every one can be solved — and the other boards are playing
-   those solutions. Taking a board carries on from where it is. */
+   those solutions. Taking a board carries on from where it is.
+   EVERY BOARD ITS OWN LEVEL (Oct 12: "what ideas from mini-golf can we extend to the other games." … "ok, proceed", on
+   "every board its own puzzle, harder further out" and "rated by a simulated player, rebuilt until it fits"): as mini
+   golf gives every board its own hole, the corner block keeps the worked-out levels, one a board (as golf keeps its
+   course there), and every other board deals a level of its own from its column and row (boardIdx, the same every time),
+   at a level from 1 to 5 by its ring from the corner plus the Difficulty (levelAt). A solver (solve: the fewest pushes,
+   breadth first over where the crates stand and where he can walk) rates each one, and a level is dealt again, up to
+   eight times, until its pushes fall in its level's band (LV_DIALS). That count is the level's par; a board shows its
+   level as a frame in mini golf's flag colours, a solved board says how many stars your pushes earned against par, and a
+   tap takes you on to the next board. The other boards play their own levels' solutions. */
 const SOKOBAN_APP = (() => {
   /* The levels are 10×10 with a wall all round; the board shows only the 8×8
      inside it (Sep 24: "why the large gray margin?") — the board's own edge
      is the outer wall. N is the level's width, V the board's, SQ a square. */
   let N = 10, V = N - 2, SQ = 1 / V;
-  /* THREE BOARD SIZES (Sep 30: "add three board sizes to sokoban"), chosen by Difficulty: Easy a 6×6
-     board with two crates, Normal the 8×8 levels as before, Hard 10×10 with four. The 8×8 levels are
-     the worked-out set; the others are DEALT — crates set on their spots, then the keeper walks
-     about PULLING them off at random, so pushing them back is always possible. A level knows its
-     map width (L.n); use() puts it in force. */
-  const SETS = { easy: { n: 8, boxes: 2 }, normal: { n: 10 }, hard: { n: 12, boxes: 4 } };
+  /* THREE BOARD SIZES (Sep 30: "add three board sizes to sokoban"): 6×6, 8×8 and 10×10, now chosen by a board's level
+     (LV_DIALS, Oct 12), not by the Difficulty. A dealt level is crates set on their spots, then the keeper walking about
+     PULLING them off at random, so pushing them back is always possible. A level knows its map width (L.n); use() puts
+     it in force. */
   const use = n => { n = n || 10; if (n !== N){ N = n; V = n - 2; SQ = 1 / V; D[0] = -N; D[2] = N; } };
   const toLevel = k => (((k / V) | 0) + 1) * N + (k % V) + 1;       // board square → level square
   const toBoard = i => (((i / N) | 0) - 1) * V + (i % N) - 1;       // level square → board square
@@ -42248,7 +42255,7 @@ const SOKOBAN_APP = (() => {
   const FLOOR = 0xe4e4e4, LINE = 0x9a9a9a;
   const WALL = 0x3a3d42, CRATE = 0xb5651d, HOME = 0x2e9e3e, SPOT = 0xd9342b, KEEPER = 0xffffff;
   const D = [-N, 1, N, -1], DCH = 'URDL';
-  const DL = ARCADE.difficulty('sokoban.level', 'Easy: a 6×6 board, two crates. Normal: the 8×8 levels. Hard: 10×10, four crates. The board you are on starts again at the new size.');
+  const DL = ARCADE.difficulty('sokoban.level', 'Every board deals its own level, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up (the corner block keeps the worked-out levels). The board you are on starts again.');
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, DRAG = null;
@@ -42272,63 +42279,209 @@ const SOKOBAN_APP = (() => {
       if (ch === '$' || ch === '*') boxes.push(i);
       if (ch === '@') player = i;
     }
-    return { n: 10, wall, goal, boxes, player, sol };
+    // (its par: the pushes its known shortest solution makes, Oct 12)
+    let pl = player, bx = boxes.slice(), par = 0;
+    for (const ch of sol){ const d = [-10, 1, 10, -1]['URDL'.indexOf(ch)], k = bx.indexOf(pl + d); if (k >= 0){ bx[k] += d; par++; } pl += d; }
+    return { n: 10, wall, goal, boxes, player, sol, par, classic: true };
   });
-  // A dealt level, the same every time for its size and number.
-  const GEN = { easy: [], hard: [] };
-  function genLevel(set, k){
-    const { n, boxes: nb } = SETS[set];
-    let a = (0x50c0 + k * 7919 + n * 104729) >>> 0;
-    const rnd = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a;
-                        t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-                        return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-    const Dn = [-n, 1, n, -1];
-    for (let tries = 0; tries < 400; tries++){
-      const wall = new Uint8Array(n * n), goal = new Uint8Array(n * n);
-      for (let i = 0; i < n * n; i++){ const r = (i / n) | 0, c = i % n; if (!r || !c || r === n - 1 || c === n - 1) wall[i] = 1; }
-      const inner = [];
-      for (let i = 0; i < n * n; i++) if (!wall[i]) inner.push(i);
-      const walls = Math.round(inner.length * (0.1 + rnd() * 0.08));
-      for (let w = 0; w < walls; w++) wall[inner[(rnd() * inner.length) | 0]] = 1;
-      const floor = inner.filter(i => !wall[i]);
-      // One room: every floor square reachable.
-      const seen = new Set([floor[0]]), q = [floor[0]];
-      for (let h = 0; h < q.length; h++) for (const d of Dn){ const j = q[h] + d; if (!wall[j] && !seen.has(j)){ seen.add(j); q.push(j); } }
-      if (seen.size !== floor.length || floor.length < nb * 5) continue;
-      const pick = () => floor[(rnd() * floor.length) | 0];
-      const boxes = [];
-      while (boxes.length < nb){ const i = pick(); if (!boxes.includes(i)) boxes.push(i); }
-      boxes.forEach(i => { goal[i] = 1; });
-      let player; do { player = pick(); } while (boxes.includes(player));
-      let pulls = 0;
-      const pullLog = [];                                  // each pull: where the crate came to, and which way
-      for (let s = 0; s < nb * 160; s++){
-        const d = (rnd() * 4) | 0, to = player + Dn[d];
-        if (wall[to] || boxes.includes(to)) continue;
-        const k2 = boxes.indexOf(player - Dn[d]);
-        if (k2 >= 0 && rnd() < 0.6){ boxes[k2] = player; pulls++; pullLog.push([player, d]); }     // pull the crate behind him along
-        player = to;
-      }
-      if (boxes.some(i => goal[i]) || pulls < nb * 4) continue;
-      // The way back, as pushes: the pulls undone in reverse — push the crate at `at` the other way.
-      const pushes = pullLog.reverse().map(([at, d]) => [at, (d + 2) & 3]);
-      return { n, wall, goal, boxes, player, sol: null, pushes };
-    }
-    return MAP[k % MAP.length];                    // (never, in practice)
+  MAP.forEach((L, k) => { L.num = k; });
+  /* ─── EVERY BOARD ITS OWN LEVEL (Oct 12) ─────────────────────────────── */
+  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  /* Each level's board (n is the map's width with its wall round, so 8 is a 6×6 board), crates, share of the floor
+     walled, and the band its fewest pushes must fall in. */
+  const LV_DIALS = [
+    { n: 8,  boxes: 2, walls: 0.14, band: [4, 9] },
+    { n: 8,  boxes: 3, walls: 0.16, band: [9, 16] },
+    { n: 10, boxes: 3, walls: 0.22, band: [16, 24], cap: 25000 },
+    { n: 10, boxes: 3, walls: 0.24, band: [22, 34], cap: 25000 },
+    { n: 12, boxes: 3, walls: 0.26, band: [30, 48], cap: 30000 },
+  ];
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  // (mini golf's: a board's own number from its column and row, Szudzik's pairing, small ones near the corner)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){                         // (its distance from the corner, the short way round the wrapped field)
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
   }
-  const levelOf = (set, lv) => {
-    if (!set || set === 'normal') return MAP[((lv % MAP.length) + MAP.length) % MAP.length];
-    return GEN[set][lv] || (GEN[set][lv] = genLevel(set, lv));
-  };
-  const lvl = g => levelOf(g.set, g.lv);
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  /* THE SOLVER (Oct 12, the mini golf rater's part here): the fewest pushes, breadth first. A state is where the crates
+     stand and the squares he can walk to (named by the least of them); each step is one push of a crate he can reach.
+     A crate is never pushed onto a square from which no pull could bring it back to a spot (live), or into a 2×2 block of
+     walls and crates with a crate off its spot. Gives up past `cap` states (null). Returns { pushes, path: [[crate, way]],
+     states }. */
+  function solve(L, cap){
+    cap = cap || 60000;
+    const n = L.n, NN = n * n, Dn = [-n, 1, n, -1], W = L.wall, G = L.goal;
+    const live = new Uint8Array(NN), lq = [];
+    for (let i = 0; i < NN; i++) if (G[i]){ live[i] = 1; lq.push(i); }
+    for (let h = 0; h < lq.length; h++){ const x = lq[h]; for (const d of Dn){ const y = x + d, p = y + d; if (y < 0 || p < 0 || y >= NN || p >= NN) continue; if (!W[y] && !W[p] && !live[y]){ live[y] = 1; lq.push(y); } } }
+    const occ = new Uint8Array(NN), mark = new Int32Array(NN); let stamp = 0;
+    const flood = pl => { stamp++; const list = [pl]; mark[pl] = stamp; let mn = pl;
+      for (let h = 0; h < list.length; h++){ const x = list[h]; for (const d of Dn){ const y = x + d; if (!W[y] && !occ[y] && mark[y] !== stamp){ mark[y] = stamp; list.push(y); if (y < mn) mn = y; } } }
+      return mn; };
+    const blocked = y => W[y] || occ[y];
+    const frozen = to => {                       // a 2×2 block of walls and crates, a crate in it off its spot
+      for (const [a, b] of [[-1, -n], [1, -n], [-1, n], [1, n]]){
+        const sq = [to, to + a, to + b, to + a + b];
+        if (sq.every(blocked) && sq.some(y => occ[y] && !G[y])) return true;
+      }
+      return false;
+    };
+    const start = L.boxes.slice().sort((a, b) => a - b);
+    for (const b of start) occ[b] = 1;
+    const c0 = flood(L.player);
+    for (const b of start) occ[b] = 0;
+    const states = [{ b: start, pl: L.player, par: -1, mv: null }], seen = new Set([start.join(',') + '|' + c0]);
+    const done = bs => bs.every(b => G[b]);
+    if (done(start)) return { pushes: 0, path: [], states: 1 };
+    const reach = new Int32Array(NN); let rs = 0;
+    for (let h = 0; h < states.length; h++){
+      const S = states[h];
+      for (const b of S.b) occ[b] = 1;
+      flood(S.pl); rs++;
+      for (let i = 0; i < NN; i++) if (mark[i] === stamp) reach[i] = rs;
+      for (let j = 0; j < S.b.length; j++){
+        const b = S.b[j];
+        for (let d = 0; d < 4; d++){
+          const from = b - Dn[d], to = b + Dn[d];
+          if (reach[from] !== rs || W[to] || occ[to] || !live[to]) continue;
+          occ[b] = 0; occ[to] = 1;
+          if (!G[to] && frozen(to)){ occ[to] = 0; occ[b] = 1; continue; }
+          const nb = S.b.slice(); nb[j] = to; nb.sort((x, y) => x - y);
+          const key = nb.join(',') + '|' + flood(b);
+          occ[to] = 0; occ[b] = 1;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          states.push({ b: nb, pl: b, par: h, mv: [b, d] });
+          if (done(nb)){
+            for (const y of S.b) occ[y] = 0;
+            const path = []; for (let k = states.length - 1; k > 0; k = states[k].par) path.unshift(states[k].mv);
+            return { pushes: path.length, path, states: states.length };
+          }
+          if (states.length > cap){ for (const y of S.b) occ[y] = 0; return null; }
+        }
+      }
+      for (const b of S.b) occ[b] = 0;
+    }
+    return null;                                 // (no way: never, for a dealt level)
+  }
+  /* DEALT BACKWARDS (Oct 12): random pulls left every level about as hard as the next (13 to 16 pushes, measured, however
+     long he walked), and solving the big ones took seconds. So a level is found the other way: the crates on their spots,
+     and every position that pulling can reach, breadth first (he can stand anywhere at the start). A position first
+     reached at depth d needs exactly d pushes, the fewest, to solve; so a board picks one at a depth in its band, with as
+     few crates on their spots as there are, and its par is that depth. The pulls back to it, reversed, are its solution.
+     Gives up past `cap` positions or the band's top; null if the map's deepest position falls short of the band. */
+  function dealBack(dial, seed){
+    const { n, boxes: nb, walls: wf } = dial, [lo, hi] = dial.band, rnd = rngOf(seed), Dn = [-n, 1, n, -1], NN = n * n;
+    const cap = dial.cap || 40000;
+    const wall = new Uint8Array(NN), goal = new Uint8Array(NN);
+    for (let i = 0; i < NN; i++){ const r = (i / n) | 0, c = i % n; if (!r || !c || r === n - 1 || c === n - 1) wall[i] = 1; }
+    const inner = []; for (let i = 0; i < NN; i++) if (!wall[i]) inner.push(i);
+    const walls = Math.round(inner.length * (wf + rnd() * 0.06));
+    for (let w = 0; w < walls; w++) wall[inner[(rnd() * inner.length) | 0]] = 1;
+    const floor = inner.filter(i => !wall[i]);
+    const seen0 = new Set([floor[0]]), q0 = [floor[0]];
+    for (let h = 0; h < q0.length; h++) for (const d of Dn){ const j2 = q0[h] + d; if (!wall[j2] && !seen0.has(j2)){ seen0.add(j2); q0.push(j2); } }
+    if (seen0.size !== floor.length || floor.length < nb * 5) return null;
+    const goals = [];
+    while (goals.length < nb){ const i = floor[(rnd() * floor.length) | 0]; if (!goals.includes(i)) goals.push(i); }
+    goals.sort((a, b) => a - b); goals.forEach(i => { goal[i] = 1; });
+    const occ = new Uint8Array(NN), mark = new Int32Array(NN); let stamp = 0;
+    const flood = pl => { stamp++; const list = [pl]; mark[pl] = stamp; let mn = pl;
+      for (let h = 0; h < list.length; h++){ const x = list[h]; for (const d of Dn){ const y = x + d; if (!wall[y] && !occ[y] && mark[y] !== stamp){ mark[y] = stamp; list.push(y); if (y < mn) mn = y; } } }
+      return mn; };
+    // the solved positions: the crates home, he in any one of the rooms they leave
+    const states = [], seen = new Set();
+    for (const b of goals) occ[b] = 1;
+    const done = new Uint8Array(NN);
+    for (const f of floor){
+      if (occ[f] || done[f]) continue;
+      const mn = flood(f); for (let i = 0; i < NN; i++) if (mark[i] === stamp) done[i] = 1;
+      const key = goals.join(',') + '|' + mn;
+      if (!seen.has(key)){ seen.add(key); states.push({ b: goals, pl: mn, par: -1, mv: null, dep: 0 }); }
+    }
+    for (const b of goals) occ[b] = 0;
+    const reach = new Int32Array(NN); let rs = 0, top = 0;
+    for (let h = 0; h < states.length; h++){
+      const S = states[h];
+      if (S.dep >= hi) break;
+      for (const b of S.b) occ[b] = 1;
+      flood(S.pl); rs++;
+      for (let i = 0; i < NN; i++) if (mark[i] === stamp) reach[i] = rs;
+      for (let j2 = 0; j2 < S.b.length; j2++){
+        const b = S.b[j2];
+        for (let d = 0; d < 4; d++){
+          const p = b + Dn[d], to = p + Dn[d];                       // he stands at p, steps back to `to`, the crate follows to p
+          if (reach[p] !== rs || wall[to] || occ[to]) continue;
+          const nbx = S.b.slice(); nbx[j2] = p; nbx.sort((x, y) => x - y);
+          occ[b] = 0; occ[p] = 1;
+          const key = nbx.join(',') + '|' + flood(to);
+          occ[p] = 0; occ[b] = 1;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          states.push({ b: nbx, pl: to, par: h, mv: [p, (d + 2) & 3], dep: S.dep + 1 });
+          if (S.dep + 1 > top) top = S.dep + 1;
+        }
+      }
+      for (const b of S.b) occ[b] = 0;
+      if (states.length > cap) break;
+    }
+    if (!top) return null;
+    // a depth in the band (as deep as was reached), then of its positions one with the fewest crates home
+    const want = Math.min(top, lo + Math.floor(rnd() * (hi - lo + 1)));
+    let pick = null, home = Infinity, k = 0;
+    for (const S of states) if (S.dep === want){ const hm = S.b.filter(b => goal[b]).length; k++;
+      if (hm < home || (hm === home && rnd() < 1 / k)){ home = hm; pick = S; } }
+    if (!pick) return null;
+    const pushes = []; for (let S = pick; S.par >= 0; S = states[S.par]) pushes.push(S.mv);   // (pulls back to it, reversed: its pushes)
+    return { n, wall, goal, boxes: pick.b.slice(), player: pick.pl, sol: null, par: want, pushes, positions: states.length, short: top < lo };
+  }
+  // A board's level at its level number: dealt backwards, a new map for each try until one reaches the band (eight; else
+  // the deepest of them, its par a little under the band).
+  function makeLevel(idx, lv){
+    const dial = LV_DIALS[lv - 1];
+    let best = null;
+    for (let a = 0; a < 8; a++){
+      const L = dealBack(dial, (Math.imul(idx + 1, 0x9E3779B1) ^ Math.imul(lv, 0x85EBCA6B) ^ Math.imul(a + 1, 0xC2B2AE35)) >>> 0);
+      if (!L) continue;
+      L.level = lv; L.idx = idx; L.tries = a + 1;
+      if (!L.short) return L;
+      if (!best || L.par > best.par) best = L;
+    }
+    return best || MAP[idx % MAP.length];
+  }
+  const BOARDS = new Map();                      // idx·8 + level → its level, the latest wanted kept (1,500)
+  /* (A level takes from a millisecond to most of a second to deal, level 5 the longest, measured. Boards only looked at
+     are dealt one at a time, the next no sooner than 50 ms after the last was done, and show their bare floor until then:
+     a board appears whole or not at all, as mini golf's pieces do. A board played is dealt at once: `force`.) */
+  let MAKE_FREE = 0;
+  function boardLevel(c, r, force){
+    const idx = boardIdx(c, r);
+    if (idx < MAP.length) return MAP[idx];        // the corner block: the worked-out levels, as mini golf's course
+    const lv = levelAt(idx), key = idx * 8 + lv;
+    let L = BOARDS.get(key);
+    if (L){ BOARDS.delete(key); BOARDS.set(key, L); return L; }
+    if (!force && performance.now() < MAKE_FREE) return null;
+    L = makeLevel(idx, lv);
+    MAKE_FREE = performance.now() + 50;
+    try { restWake(); } catch {}
+    BOARDS.set(key, L);
+    if (BOARDS.size > 1500) BOARDS.delete(BOARDS.keys().next().value);
+    return L;
+  }
+  const lvl = g => g.L;
+  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const starsFor = (L, pushes) => !L.par ? 0 : pushes <= L.par ? 3 : pushes <= Math.ceil(L.par * 1.5) ? 2 : 1;
 
   const solvedAll = (L, boxes) => boxes.every(b => L.goal[b]);
-  function deal(lv, set){
-    set = set || 'normal';
-    if (set === 'normal') lv = ((lv % MAP.length) + MAP.length) % MAP.length;
-    const L = levelOf(set, lv);
+  function deal(L){
     use(L.n);
-    return { set, lv, boxes: L.boxes.slice(), player: L.player, moves: 0, pushes: 0, hist: [], queue: [],
+    return { L, boxes: L.boxes.slice(), player: L.player, moves: 0, pushes: 0, hist: [], queue: [],
              solved: false, sp: L.player, sb: Float32Array.from(L.boxes), last: 0, next: 0 };
   }
   // One step toward direction di: walk, or push the crate there. Returns whether he moved.
@@ -42347,7 +42500,8 @@ const SOKOBAN_APP = (() => {
     if (solvedAll(L, g.boxes)){
       SND.play('win', QUIET);
       g.solved = true; g.queue = [];
-      say('Solved in ' + g.moves + ' moves, ' + g.pushes + ' pushes. Tap the board for the next level.', 4000);
+      const sN = starsFor(L, g.pushes);
+      say('Solved in ' + g.moves + ' moves, ' + g.pushes + ' pushes' + (L.par ? ' (par ' + L.par + ') ' + '★'.repeat(sN) + '☆'.repeat(3 - sN) : '') + '. Tap the board for the next one.', 4000);
     }
     return true;
   }
@@ -42397,6 +42551,11 @@ const SOKOBAN_APP = (() => {
       out.push({ kind: 'lineV' + V, u: k * SQ, v: 0.5, scale: SQ, color: LINE });
       out.push({ kind: 'lineH' + V, u: 0.5, v: k * SQ, scale: SQ, color: LINE });
     }
+    // a dealt board's level, as a frame in mini golf's flag colours (Oct 12)
+    if (L.level) for (const k of [0.04, 0.96]){
+      out.push({ kind: 'frameV' + V, u: k, v: 0.5, scale: SQ, color: LV_COL[L.level - 1] });
+      out.push({ kind: 'frameH' + V, u: 0.5, v: k, scale: SQ, color: LV_COL[L.level - 1] });
+    }
     return out;
   }
   const uvOf = i => [((i % N) - 0.5) * SQ, (((i / N) | 0) - 0.5) * SQ];
@@ -42433,42 +42592,44 @@ const SOKOBAN_APP = (() => {
   /* EVERY BOARD AT THE DIFFICULTY'S SIZE (Sep 30: "when you change the difficulty, change all the
      boards"): a recording per difficulty. A dealt level is played by its pushes, walking the
      shortest way to each; changing the difficulty drops every game in play. */
-  const REEL_SETS = {};
-  function bakeReel(set){
-    set = set || 'normal';
-    const count = set === 'normal' ? MAP.length : 24;
-    const frames = [], order = Array.from({ length: count }, (_, k) => (k * 23) % count), wasQ = QUIET;
+  // (Oct 12: every board plays its own level, by its solution's pushes, walking the shortest way to each)
+  function framesOf(L){
+    if (L.frames) return L.frames;
+    const frames = [], wasQ = QUIET;
     QUIET = true;
-    try { for (const lv of order){
-      const g = deal(lv, set), L = lvl(g), shot = () => frames.push({ set, lv, player: g.player, boxes: g.boxes.slice(), done: g.solved });
+    try {
+      const g = deal(L), shot = () => frames.push({ L, player: g.player, boxes: g.boxes.slice(), done: g.solved });
       for (let k = 0; k < 4; k++) shot();
       if (L.sol) for (const ch of L.sol){ step(g, DCH.indexOf(ch)); shot(); }
-      else for (const [at, e] of L.pushes){
+      else for (const [at, e] of L.pushes || []){
         const walk = path(g, at - D[e]) || [];
         for (const di of walk){ step(g, di); shot(); }
         step(g, e); shot();
       }
       for (let k = 0; k < 8; k++) shot();
-    } } finally { QUIET = wasQ; }
-    return frames;
+    } finally { QUIET = wasQ; }
+    return (L.frames = frames);
   }
-  function reelFrame(c, r){
-    const set = DL.get(), REEL = REEL_SETS[set] || (REEL_SETS[set] = bakeReel(set));
+  function reelFrame(c, r, force){
+    const L0 = boardLevel(c, r, force);
+    if (!L0) return null;
+    const REEL = framesOf(L0);
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x50c0;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, t = now() / 1000 * 5 + (h % REEL.length), k = Math.floor(t) % REEL.length;
-    return { A: REEL[k], B: REEL[(k + 1) % REEL.length], e: Math.min(1, (t % 1) * 1.6) };
+    return { A: REEL[k], B: REEL[(k + 1) % REEL.length], e: Math.min(1, (t % 1) * 1.6), wrap: k === REEL.length - 1 };
   }
   function reelItems(c, r){
-    const { A, B, e } = reelFrame(c, r);
-    const LA = levelOf(A.set, A.lv);
+    const F = reelFrame(c, r);
+    if (!F) return [];                            // (not dealt yet: the bare floor)
+    const { A, B, e, wrap } = F, LA = A.L;
     use(LA.n);
-    if (B.lv !== A.lv || B.set !== A.set || e <= 0) return itemsOf(LA, A.player, A.boxes);
+    if (wrap || e <= 0) return itemsOf(LA, A.player, A.boxes);   // (back to its start: no glide)
     return itemsOf(LA, mix(A.player, B.player, e), A.boxes.map((b, j) => b === B.boxes[j] ? b : mix(b, B.boxes[j], e)));
   }
   // Taking a board carries on from what it is showing.
   function adopt(c, r){
-    const { A } = reelFrame(c, r), g = deal(A.lv, A.set);
+    const { A } = reelFrame(c, r, true), g = deal(A.L);
     g.player = A.player; g.boxes = A.boxes.slice(); g.solved = A.done;
     return g;
   }
@@ -42489,7 +42650,7 @@ const SOKOBAN_APP = (() => {
   const FAR_PX = 16;
   const CHECKERS = new Map();
   const checker = v => { if (!CHECKERS.has(v)) CHECKERS.set(v, { n: v, colors: new Array(v * v).fill(FLOOR) }); return CHECKERS.get(v); };
-  const levelOfState = s => s.set ? levelOf(s.set, s.lv) : MAP[s.lv];
+  const levelOfState = s => s.L;
   function colorsOf(L, player, boxes){
     use(L.n);
     const cols = checker(V).colors.slice();
@@ -42498,7 +42659,7 @@ const SOKOBAN_APP = (() => {
     cols[toBoard(player)] = KEEPER;
     return { n: V, colors: cols };
   }
-  const shownState = (c, r) => { const g = GAMES.get(gkey(c, r)); if (g) return g; const { A } = reelFrame(c, r); return A; };
+  const shownState = (c, r) => { const g = GAMES.get(gkey(c, r)); if (g) return g; const F = reelFrame(c, r); return F && F.A; };
   const paint = (ctx, x0, y0, t, cols) => {
     for (let k = 0; k < V * V; k++){
       ctx.fillStyle = '#' + cols[k].toString(16).padStart(6, '0');
@@ -42524,7 +42685,7 @@ const SOKOBAN_APP = (() => {
     menu: [{ head: 'Sokoban', items: [
       // (Sep 30: "remove restart level menu option" — Reset, first in the menu, starts over.)
       { label: DL.item.label, title: DL.item.title,
-        on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(0, DL.get())); } },
+        on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(boardLevel(LIVE.c, LIVE.r, true))); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want him to walk; hold the tip and he keeps going. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
@@ -42538,12 +42699,16 @@ const SOKOBAN_APP = (() => {
       ball: T => { const g = new T.SphereGeometry(0.36, 24, 16); g.translate(0, 0.36, 0); return g; },
       ...Object.fromEntries([6, 8, 10].flatMap(v => [
         ['lineV' + v, T => { const g = new T.BoxGeometry(0.05, 0.004, v); g.translate(0, 0.002, 0); return g; }],
-        ['lineH' + v, T => { const g = new T.BoxGeometry(v, 0.004, 0.05); g.translate(0, 0.002, 0); return g; }]])),
+        ['lineH' + v, T => { const g = new T.BoxGeometry(v, 0.004, 0.05); g.translate(0, 0.002, 0); return g; }],
+        ['frameV' + v, T => { const g = new T.BoxGeometry(0.16, 0.008, v * 0.92); g.translate(0, 0.004, 0); return g; }],
+        ['frameH' + v, T => { const g = new T.BoxGeometry(v * 0.92, 0.008, 0.16); g.translate(0, 0.004, 0); return g; }]])),
       spot: () => TVF.shape('star', TVF.R.star, 0.05, 2, 12),    // a flat TVF star to push the crate onto
     },
     cellGrid(c, r, px){
       if (LIVE && LIVE.key === gkey(c, r)) gameAt(c, r);
-      const s = shownState(c, r), L = levelOfState(s);
+      const s = shownState(c, r);
+      if (!s) return checker(8);                  // (not dealt yet)
+      const L = levelOfState(s);
       use(L.n);
       if (px >= FAR_PX){                       // near: the pieces are drawn; walls' squares go dark under them
         const cols = checker(V).colors.slice();
@@ -42553,9 +42718,8 @@ const SOKOBAN_APP = (() => {
       return colorsOf(L, s.player, s.boxes);
     },
     fabricCellAt(ctx, rect, i, j){
-      const set = DL.get(), REEL = REEL_SETS[set] || (REEL_SETS[set] = bakeReel(set));
-      const f = REEL[(i * 131 + j * 71) % REEL.length];
-      const cols = colorsOf(levelOf(f.set, f.lv), f.player, f.boxes).colors;
+      const L = MAP[(i * 131 + j * 71) % MAP.length];      // (far off, the worked-out levels as they start)
+      const cols = colorsOf(L, L.player, L.boxes).colors;
       paint(ctx, rect.x, rect.y, rect.w / V, cols);
     },
     cellItems(c, r){
@@ -42565,20 +42729,23 @@ const SOKOBAN_APP = (() => {
       return reelItems(c, r);
     },
     cellTitle(c, r){
-      const g = GAMES.get(gkey(c, r));
-      if (!g) return 'Sokoban — board ' + c + '·' + r;
-      return 'Sokoban ' + V + '×' + V + ' — level ' + (g.lv + 1) + (g.set === 'normal' ? ' of ' + MAP.length : '') + ' · ' + (g.solved ? 'solved · ' : '')
+      const g = GAMES.get(gkey(c, r)), L = g ? g.L : boardLevel(c, r, true);
+      const what = L.classic ? 'worked-out level ' + (L.num + 1) + ' of ' + MAP.length : 'level ' + L.level;
+      if (!g) return 'Sokoban — board ' + c + '·' + r + ', ' + what + ', par ' + L.par + ' pushes';
+      use(L.n);
+      return 'Sokoban ' + V + '×' + V + ' — ' + what + ' · par ' + L.par + ' pushes · ' + (g.solved ? 'solved · ' : '')
            + g.moves + ' moves, ' + g.pushes + ' pushes';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), deal(0, DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), deal(boardLevel(c, r, true))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     // Tap: walk to the square, or push the crate beside him.
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.solved){ GAMES.set(gkey(c, r), deal(g.lv + 1, g.set)); return true; }
+      // solved: on to the next board, as mini golf goes on to the next hole (Oct 12)
+      if (g.solved){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { key: gkey(nc, nr), c: nc, r: nr }; gameAt(nc, nr); return true; }
       if (u == null) return true;
       use(lvl(g).n);
       const i = cellOf(u, v), di = D.indexOf(i - g.player);
@@ -42619,10 +42786,12 @@ const SOKOBAN_APP = (() => {
       return true;
     },
     drawIcon(ctx, sz, c, r){
-      const s = shownState(c, r), cols = colorsOf(levelOfState(s), s.player, s.boxes).colors;
+      const s = shownState(c, r);
+      if (!s){ ctx.fillStyle = '#e4e4e4'; ctx.fillRect(0, 0, sz, sz); return; }
+      const cols = colorsOf(levelOfState(s), s.player, s.boxes).colors;
       paint(ctx, 0, 0, sz / V, cols);
     },
-    _debug: { MAP, levelOf, deal, step, undo, path, bakeReel, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
+    _debug: { MAP, deal, step, undo, path, framesOf, boardLevel, boardIdx, ringOf, levelAt, makeLevel, dealBack, solve, starsFor, LV_DIALS, BOARDS, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
   };
   return app;
 })();

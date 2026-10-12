@@ -180,6 +180,25 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     rated, none sank fewer than half (the worst five in eight). The course test rates a generated hole its player cannot
     finish (`vetHole`); if the page would make it again, it plays the new one, and fails if more than one in 33 of its sample
     was made again.
+- **Sokoban: every board its own level** (Oct 12: "what ideas from mini-golf can we extend to the other games." … "ok,
+  proceed", on "every board its own puzzle, harder further out" and "rated by a simulated player, rebuilt until it fits"):
+  - The corner block keeps the worked-out levels (`MAP`, one a board, as golf keeps its course there; their par is the pushes
+    their known solution makes). Every other board deals its own (`boardLevel`, by `boardIdx`, golf's Szudzik pairing),
+    at a level from 1 to 5: golf's ring level (`ringOf`, `ringLevel`) plus the Difficulty (Easy 0, Normal 1, Hard 2:
+    `levelAt`). The Difficulty no longer picks the board's size; the level does (`LV_DIALS`: 6×6 with 2 or 3 crates, 8×8
+    with 3, 10×10 with 3; walls, a band of pushes, a cap).
+  - **Dealt backwards** (`dealBack`): the crates on their spots, then every position pulling can reach, breadth first (he
+    may stand anywhere). A position first reached at depth d needs exactly d pushes, so the board takes one at a depth in
+    its band, with the fewest crates home; that depth is its par, and the pulls back to it, reversed, are its solution
+    (the board's demo, `framesOf`). Random pulls (the dealer before) made every level about 13–16 pushes. A new map is
+    tried up to eight times (`makeLevel`); one that falls short keeps its level, its par a little under.
+  - `solve` (the fewest pushes, forwards) checks it: the smoke test finds the same par.
+  - Measured on 20 boards a level: pars 6.5, 11.5, 20, 23 and 29 pushes; 1 ms, 5 ms, 50 ms, 65 ms and 290 ms to deal. So
+    boards only looked at are dealt one at a time, 50 ms apart, and show their bare floor until then (whole or not at all);
+    a board played is dealt at once. `BOARDS` keeps 1,500.
+  - A dealt board shows its level as a frame in golf's flag colours (`frameV`/`frameH`). Solved, it says your pushes
+    against par as stars (`starsFor`: at par 3, within half again 2, else 1), and a tap goes on to the next board (golf's
+    `nextBoard`).
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
