@@ -42458,15 +42458,15 @@ const SOKOBAN_APP = (() => {
   const BOARDS = new Map();                      // idx·8 + level → its level, the latest wanted kept (1,500)
   /* (A level takes from a millisecond to most of a second to deal, level 5 the longest, measured. Boards only looked at
      are dealt one at a time, the next no sooner than 50 ms after the last was done, and show their bare floor until then:
-     a board appears whole or not at all, as mini golf's pieces do. A board played is dealt at once: `now`.) */
+     a board appears whole or not at all, as mini golf's pieces do. A board played is dealt at once: `force`.) */
   let MAKE_FREE = 0;
-  function boardLevel(c, r, now){
+  function boardLevel(c, r, force){
     const idx = boardIdx(c, r);
     if (idx < MAP.length) return MAP[idx];        // the corner block: the worked-out levels, as mini golf's course
     const lv = levelAt(idx), key = idx * 8 + lv;
     let L = BOARDS.get(key);
     if (L){ BOARDS.delete(key); BOARDS.set(key, L); return L; }
-    if (!now && performance.now() < MAKE_FREE) return null;
+    if (!force && performance.now() < MAKE_FREE) return null;
     L = makeLevel(idx, lv);
     MAKE_FREE = performance.now() + 50;
     try { restWake(); } catch {}
@@ -42610,8 +42610,8 @@ const SOKOBAN_APP = (() => {
     } finally { QUIET = wasQ; }
     return (L.frames = frames);
   }
-  function reelFrame(c, r, now){
-    const L0 = boardLevel(c, r, now);
+  function reelFrame(c, r, force){
+    const L0 = boardLevel(c, r, force);
     if (!L0) return null;
     const REEL = framesOf(L0);
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x50c0;
