@@ -36266,7 +36266,10 @@ const GOLF_APP = (() => {
   /* THE GRASS, as a surface: a 60×60 mesh on the ground's heights, coloured by what it is — grass
      lighter up high and darker down low, mown in stripes; sand; water; walls under their blocks. */
   // (in the board's own units: x across WD, y down 1, placed by the item at the board's middle)
-  const MESH = 104;                                        // (eight a cell, so the rounded shores read round)
+  /* (eight a cell, so the rounded shores read round, until Oct 12; six now: "its heavy" … "yes, proceed". The ground was
+     13,312 triangles a board, 18% of a framed field; at six a cell it is 7,488, and the shores are drawn as a colour blend
+     across their line, lakeMix, not by the mesh's steps, so the screenshots before and after show the same holes.) */
+  const MESH = 78;
   function groundGeo(T, H, mesh){
     const ny = mesh || MESH, nx = Math.round(ny * WD), pos = [], col = [], idx = [], c = new T.Color(), sandC = new T.Color(0xd8c287), waterC = new T.Color(0x2f6cc4);
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
@@ -36371,12 +36374,19 @@ const GOLF_APP = (() => {
     let seed = seedBase || 4242;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
     const M = MAT_COL[mat] || MAT_COL.wood, pos = [], nrm = [], col = [], c = new T3.Color();
-    const box = (cx, cy, cz, sx, sy, sz, hex, jit) => {
+    /* FACES NO ONE CAN SEE (Oct 12, "its heavy" … "yes, proceed"): a unit's back, against the core, faces into the wall, and
+       every underside faces down, and the camera is always above (mini golf's tilt floor is 62°); both were only ever culled.
+       They are left out (skip: the box's faces as three.js orders them, 0 +x, 1 −x, 2 +y, 3 −y, 4 +z, 5 −z), a third of the
+       triangles of every rail, wall, fence and planter piece, and nothing on the screen changes. */
+    const box = (cx, cy, cz, sx, sy, sz, hex, jit, skip) => {
       const g = new T3.BoxGeometry(sx, sy, sz).toNonIndexed(); g.translate(cx, cy, cz);
       const P = g.attributes.position.array, N = g.attributes.normal.array;
       c.setHex(hex).multiplyScalar(1 - (jit == null ? 0.12 : jit) * rnd());
-      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); }
-      for (let i = 0; i < P.length / 3; i++) col.push(c.r, c.g, c.b);
+      for (let f = 0; f < 6; f++){
+        if (f === 3 || (skip && skip.includes(f))) continue;
+        for (let i = f * 18; i < f * 18 + 18; i++){ pos.push(P[i]); nrm.push(N[i]); }
+        for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
+      }
     };
     const unit = () => M.units[Math.floor(rnd() * M.units.length)];
     box(0, y0 + Hh / 2, 0, W, Hh, D, M.core, 0);
@@ -36386,7 +36396,7 @@ const GOLF_APP = (() => {
     function face(len, axis, n, off){
       const place = (a0, a1, b0, b1, hex) => {
         const am = (a0 + a1) / 2, bm = (b0 + b1) / 2, la = a1 - a0 - gap, lb = b1 - b0 - gap, o = off + t / 2 * (0.6 + 0.8 * rnd());
-        if (axis === 'x') box(am, bm, n * o, la, lb, t, hex); else box(n * o, bm, am, t, lb, la, hex);
+        if (axis === 'x') box(am, bm, n * o, la, lb, t, hex, null, [n > 0 ? 5 : 4]); else box(n * o, bm, am, t, lb, la, hex, null, [n > 0 ? 1 : 0]);   // (its back, against the core: left out)
       };
       if (mat === 'brick'){
         const bh = 0.09 * u / 0.25, bl = 0.25 * u / 0.25;
@@ -36424,7 +36434,8 @@ const GOLF_APP = (() => {
     const M = MAT_COL.wood, pos = [], nrm = [], col = [], c = new T3.Color();
     const box = (cx, cy, cz, sx, sy, sz, hex) => { const g = new T3.BoxGeometry(sx, sy, sz).toNonIndexed(); g.translate(cx, cy, cz);
       const P = g.attributes.position.array, N = g.attributes.normal.array; c.setHex(hex).multiplyScalar(1 - 0.15 * rnd());
-      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); } for (let i = 0; i < P.length / 3; i++) col.push(c.r, c.g, c.b); };
+      for (let f = 0; f < 6; f++){ if (f === 3) continue;              // (no underside: the camera is always above, as cladGeo's)
+        for (let i = f * 18; i < f * 18 + 18; i++){ pos.push(P[i]); nrm.push(N[i]); } for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b); } };
     for (const x of [-0.46, 0.46]) box(x, 0.2, 0, 0.09, 0.8, 0.09, 0x5e4128);                  // posts, sunk a little
     for (const y of [0.16, 0.42]) box(0, y, 0.06, 1.0, 0.06, 0.035, 0x6e4c2e);                // rails
     for (let x = -0.42; x <= 0.42; x += 0.12){ const h = 0.5 + 0.03 * rnd();
@@ -36444,7 +36455,10 @@ const GOLF_APP = (() => {
     const C = propC(name);
     if (!C || !C.parts) return null;
     if (_props[name] && _props[name].C === C) return _props[name].g;
-    const g = buildPartsGeometry(24, C, { shadeFn: () => 1 }), P = g.attributes.position.array;
+    /* (Oct 12: "mini-golf game is great but its heavy, and its not as fast as all the other games." … "yes, proceed".
+       At 24 a bumper or a boulder was 9,408 triangles, 30% of all a framed field drew, measured, for a thing a few dozen
+       pixels across; at 12 it is a quarter of that, and looks the same at that size: the screenshots before and after.) */
+    const g = buildPartsGeometry(12, C, { shadeFn: () => 1 }), P = g.attributes.position.array;
     let reach = 0;
     for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2]));
     g.scale(1 / reach, 1 / reach, 1 / reach); g.userData.vertexColors = true;

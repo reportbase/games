@@ -721,6 +721,12 @@ try {
     if (!(dc.drawn >= 3) || !(dc.othersMax >= dc.drawn * 0.8) || !(dc.bpMax >= 600) || dc.offN > 2)
       failures.push(`[${current}] ${JSON.stringify(dc)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${dc.boards} boards asked over ${dc.drawn} frames drawn, each up to ${dc.othersMax} times, the largest at ${Math.round(dc.bpMax)} px, ${dc.offN} off the screen)`);
+    // LIGHTER (Oct 12: "its heavy, and its not as fast as all the other games." … "yes, proceed"): a framed field of holes drew
+    // 958,000 triangles, bumpers and boulders at 9,408 each, every brick's back and underside, the ground at eight rows a
+    // cell; now 540,000 in the same view, and it must stay under 700,000
+    const tris = await page.evaluate(() => { let t = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isMesh && o.visible){ const g = o.geometry, n = g.index ? g.index.count / 3 : g.attributes.position.count / 3; t += n * (o.isInstancedMesh ? o.count : 1); } }); return Math.round(t); });
+    if (!(tris < 700000)) failures.push(`[${current}] a framed field of holes draws ${tris} triangles (under 700,000 wanted)`);
+    console.log(`     (${(tris / 1000).toFixed(0)}k triangles framed)`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
