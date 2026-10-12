@@ -635,8 +635,10 @@ try {
   // ONLY THE SELECTED BOARD IS DRAWN PERFECTLY (Oct 11: "only the selected board needs to be presented perfectly, all other
   // boards can be drawn in degraded presentation to save GPU. ideally, if the board is not even visible or if it is only 1/2
   // or less visible, you don't need to update it at all."): with the view still, the framed board is asked for its pieces
-  // every frame at its full size, every other board at most every third frame and as if under 600 px, far fewer boards are
-  // asked a frame than are drawn, and a click asks them all again
+  // every frame at its full size, every other board at most every third frame, far fewer boards are asked a frame than are
+  // drawn, and a click asks them all again. Each at its own size (Oct 12: "dont show the objects differently on
+  // non-selected boards."): framed in this window, the nearer neighbours are over 600 px across and asked so, where until
+  // then they were asked as if under 600
   current = 'only the selected board drawn fully';
   {
     const before = failures.length;
@@ -653,9 +655,9 @@ try {
       A.cellItems = orig;
       return { ...still, othersMax: Math.max(0, ...still.others), othersSum: still.others.reduce((a, b) => a + b, 0), woke: calls.size, wokeFrames: frames };
     });
-    if (!(dc.framed >= dc.frames * 0.8) || dc.othersMax > Math.ceil(dc.frames / 3) + 1 || dc.bpMax > 599 || !(dc.woke > dc.boards))
+    if (!(dc.framed >= dc.frames * 0.8) || dc.othersMax > Math.ceil(dc.frames / 3) + 1 || !(dc.bpMax >= 600) || !(dc.woke > dc.boards))
       failures.push(`[${current}] ${JSON.stringify({ ...dc, others: undefined })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (framed asked ${dc.framed} of ${dc.frames} frames, others ${dc.othersSum} times in all, ${dc.woke} after a click)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (framed asked ${dc.framed} of ${dc.frames} frames, others ${dc.othersSum} times in all, the largest at ${Math.round(dc.bpMax)} px, ${dc.woke} after a click)`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
@@ -673,7 +675,11 @@ try {
       const orig = A.cellItems; window.__ph = { f, n: 0, orig }; A.cellItems = function(c, r, bp){ if (c === f.c && r === f.r) window.__ph.n++; return orig.call(this, c, r, bp); }; });
     await page.waitForTimeout(800);
     const sample = () => page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.games.values()].find(g => g.state === 'play'), W = window.FIELD_WORLD;
-      return { on: window.fieldPanHold.on, n: window.__ph.n, gt: g ? +g.t.toFixed(4) : null, at: +window.fieldAnimTime().toFixed(1), cam: +(W.st.camX + W.st.camZ).toFixed(4) }; });
+      return { on: window.fieldPanHold.on, n: window.__ph.n, gt: g ? +g.t.toFixed(4) : null, at: +window.fieldAnimTime().toFixed(1), cam: [W.st.camX, W.st.camZ, W.st.yaw, W.st.pitch, W.st.zoom].map(v => (+v).toFixed(4)).join(',') }; });   // (the view: a drag may slide it or tilt it)
+    // (the view as it was, to put back after: on a slow frame the drag may turn or tilt it instead of sliding it, and a turned
+    //  view sent the editor's real touches across the board where they meant to go up it, Oct 12)
+    const view0 = await page.evaluate(() => { const W = window.FIELD_WORLD; return { st: { camX: W.st.camX, camZ: W.st.camZ, yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom },
+      target: Object.fromEntries(Object.entries(W.target).filter(([, v]) => v === null || typeof v !== 'object' && typeof v !== 'function')) }; });
     const s0 = await sample(), during = [];
     await page.mouse.move(200, 650); await page.mouse.down();
     for (let k = 1; k <= 12; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
@@ -681,7 +687,8 @@ try {
     const held = during.filter(d => d.on), first = held[0], last = held[held.length - 1];
     await page.waitForTimeout(2000);
     const after = await sample();
-    await page.evaluate(() => { window.getFieldApp().cellItems = window.__ph.orig; });
+    await page.evaluate(v => { const W = window.FIELD_WORLD; window.getFieldApp().cellItems = window.__ph.orig; Object.assign(W.target, v.target); Object.assign(W.st, v.st); }, view0);
+    await page.waitForTimeout(1500);
     const ok = held.length >= 6 && first && last.n === first.n && last.gt === first.gt && last.at === first.at && last.cam !== s0.cam
       && !after.on && after.n > last.n && after.gt > last.gt && after.at > last.at;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ s0, during, after })}`);

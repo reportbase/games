@@ -516,8 +516,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   screen, not by the field's size). Their apps' pieces used to be asked for every frame, the view still or not (mini golf:
   43 boards and 2,848 pieces framed, 772 and 33,197 zoomed out). Now `_boardItems` keeps each board's list (`_itemCache`):
   - the framed board is asked every frame at its full size;
-  - any other board is asked at the app's `degradedPx` at most (mini golf: 599, so plain rails, bumpers and boulders and
-    quarter-detail ground), and only every 3 frames (300 px and over), 6 (100 px) or 12, each on its own beat;
+  - any other board is asked at its own size on screen, as the framed one is, but only every 3 frames (300 px and over),
+    6 (100 px) or 12, each on its own beat. Until Oct 12 it was asked as if under the app's `degradedPx` (mini golf's
+    599: plain rails, bumpers and boulders, quarter-detail ground); that went with "dont show the objects differently on
+    non-selected boards." A board's pieces now depend on its size on screen alone (see "Lighter on a field of thousands");
   - a board half on screen or less (`_onScreen`: 16 points against the last frame's view) is not asked while it stays so;
   - every list is asked again after another app, a click, a key that is not flying, a drop, a change, or
     `window.fieldItemsChanged()` (mini golf calls it whenever a hole is set: `dropKinds`). `app.itemsEveryFrame` opts out.
