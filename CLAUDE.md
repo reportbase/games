@@ -108,10 +108,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   being edited (Oct 10: "if wireframe is off, don't show the orbit path"). The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
   **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 50`, a board
-  under 20 px gets no pieces (`itemMinPx`), and `cellItems(c, r, bp)` draws by the board's size on
-  screen: under 1500 px the rail in cell-long pieces, under 600 plain box rails (`railPV`/`railPH`),
-  plain bumpers and boulders and quarter-detail ground (`landM`), under 300 two-cell rails, coarse
-  ground (`landL`), no number and no dotted tracks. Items may be stretched (`sx`/`sy`/`sz`).
+  under 20 px gets no pieces (`itemMinPx`). Items may be stretched (`sx`/`sy`/`sz`).
+  **One look, or none** (Oct 12: "why do the object change when I pan around. they should never change from one thing
+  to antoher." … "then don't show the objects until they are in their final state. changing them looks terrible."):
+  until then `cellItems(c, r, bp)` swapped pieces by the board's size on screen (longer rail pieces under 1500 px, plain
+  rails, bumpers and boulders under 600, no number under 300), which panning a tilted view does constantly. Now a board's
+  pieces are always the full ones; a board under `PIECES_PX` (300) shows its ground alone (`landL`), with full ground
+  (`land`) and all its pieces appearing together once it is that big. The selected board, and the one being edited,
+  always has them. `railPV`/`railPH` and `landM` are no longer drawn.
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
   - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
     its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each

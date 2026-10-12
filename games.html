@@ -36535,13 +36535,21 @@ const GOLF_APP = (() => {
       if (segs.includes('c')) put('segV', x + W, v0 + 1.5 * HH, HH);
     });
   }
+  const PIECES_PX = 300;                                      // (a board's pieces show whole from this many px across: Oct 12)
   function cellItems(c, r, bp){
     /* HOW MUCH TO DRAW, by the board's size on screen in pixels (Oct 9, "is getting heavy"). Measured on a field of the
        new holes: some 2.7 million triangles a frame, from rails of bricks and stones (576 triangles a half-cell piece,
        84 pieces a board), bumpers modelled at 9,400 triangles and ground at 13,000, on every board in view, the smallest
        too. Now only a board large on screen gets all that; smaller ones get the rail in longer pieces, then as plain
        boxes, plain bumpers and boulders, coarser ground, and no number or dotted tracks. */
-    const T3 = bp == null || bp >= 1500, T2 = bp == null || bp >= 600, T1 = bp == null || bp >= 300;
+    /* ONE LOOK, OR NONE (Oct 12: "i dont get it. why do the object change when I pan around. they should never change from
+       one thing to antoher." … "then don't show the objects until they are in their final state. changing them looks
+       terrible."). The steps above swapped a board's pieces as it grew or shrank on the screen, which panning in a tilted
+       view does all the time. Now a board's pieces are always the full ones, the selected board's look; a board under
+       PIECES_PX across shows its ground alone, and its pieces appear, whole, once it is that big. The selected board (and
+       the one being edited) always has them, however small. */
+    const PIECES = bp == null || bp >= PIECES_PX || (LIVE && LIVE.key === gkey(c, r)) || (ED.on && ED.key === gkey(c, r));
+    const T3 = PIECES, T2 = PIECES, T1 = PIECES;
     const near = T2, mid = T1, fine = T2;
     const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
     if (live){
@@ -36551,10 +36559,11 @@ const GOLF_APP = (() => {
     const G = GAMES.get(gkey(c, r));                  // (a sunk ball may have moved the round on)
     const H = HOLES[G ? G.hole : holeOf(c, r)], out = [];
     const k = HOLES.indexOf(H);
-    out.push({ kind: (T2 ? 'land' : T1 ? 'landM' : 'landL') + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
+    out.push({ kind: (PIECES ? 'land' : 'landL') + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
+    if (!PIECES){ for (const it of out){ it.u /= WD; it.scale = (it.scale || 0.25) / WD; it.lift = (it.lift || 0) / WD; } return out; }   // (the ground alone, Oct 12)
     if (NUMS.on && !H.custom && mid) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
