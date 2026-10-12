@@ -518,9 +518,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   thing is dont draw non-visible boards and no animation when panning or resizing."). From Oct 11 ("only the selected board
   needs to be presented perfectly …") boards other than the selected one were asked for their pieces every 3, 6 or 12
   frames by size, at a degraded size, and not at all while half off the screen; all of that went. `buildInstances` walks the
-  boards in the view's reach, and `_boardItems` asks every one of them on the screen (`_boardVisible`: its corners, and a
-  board's width above them, projected through the camera overlap the screen, with a tenth to spare, since the camera is
-  the last frame's) every frame at its own size; one off the screen gets nothing. The lists are kept (`_itemCache`) only for
+  boards in the view's reach, and `_boardItems` asks every one of them on the screen (`_boardVisible`: its box, from the ground to a
+  board's width up and a tenth wider each way, meets the camera's frustum; the camera is the last frame's) every frame at its own size; one off the screen gets nothing. The lists are kept (`_itemCache`) only for
   the pan hold to draw, and asked again after another app, a click, a drop, a change or `window.fieldItemsChanged()`.
 - **Nothing moves while the view does** (Oct 12: "restore last update. lets try something different, when panning, no
   object motion anywhere, turn it off."; the update restored was "Lighter boards not selected", #59, reverted). While the
@@ -553,7 +552,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Otherwise every frame is drawn while any board's list changed in the last 2.5 s (`REST.change`, set by `_boardItems`;
     a third of them until Oct 12, "no special handeling"), and one in half a second when nothing has. `window.fieldRest`
     counts frames drawn and skipped for the tests.
-  - Measured: Sokoban framed and still, 10 of 299 frames drawn; a mini golf field with riders anywhere in view, every frame.
+  - Every game's boards play themselves, so with every board drawn something is nearly always moving and the field rests
+    only when nothing is (the smoke test holds each board's pieces to check it: Sokoban, 3 of 108 frames drawn).
 - **Pools that grow** (Oct 11, "proceed" on "Smaller piece pools"): every instanced pool was made at the most it could hold
   (chess's 42 piece pools of 33,334 even in mini golf, 48,000 for every kind of piece, 400,000 board tiles, 600,000 whole
   boards: 4.2 million instances). Now each starts at `POOL_START` (256; the tiles at 4,096) and doubles when full up to

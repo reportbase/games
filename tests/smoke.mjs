@@ -89,22 +89,29 @@ try {
 
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing
   // on any board moving, draws only now and then (a look twice a second); a finger on the screen wakes it to draw every
-  // frame; and chess, which plays moves out on its boards itself, never rests
+  // frame; and chess, which plays moves out on its boards itself, never rests. (Sokoban's boards play themselves, and since
+  // every board in view is drawn every frame, Oct 12, they are seen to; so here each board's pieces are held as first asked,
+  // which makes nothing move. Left as they are, the field draws every frame, as it should.)
   current = 'the field rests when still';
   {
     const before = failures.length;
     const rs = await page.evaluate(async () => {
       const R = window.fieldRest, wait = ms => new Promise(ok => setTimeout(ok, ms));
       const count = async ms => { const d0 = R.drawn, s0 = R.skipped; let f = 0, on = true; const t = () => { f++; if (on) requestAnimationFrame(t); }; requestAnimationFrame(t); await wait(ms); on = false; return { frames: f, drawn: R.drawn - d0, skipped: R.skipped - s0 }; };
-      window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')); await wait(2500);
+      window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')); await wait(1000);
+      const moving = await count(1500);
+      const A = window.getFieldApp(), orig = A.cellItems, kept = new Map();
+      A.cellItems = function(c, r, bp){ const k = c + ',' + r; if (!kept.has(k)) kept.set(k, orig.call(this, c, r, bp)); return kept.get(k); };
+      await wait(2500);
       const still = await count(2000);
+      A.cellItems = orig;
       window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 10, clientY: 10 }));
       const woke = await count(400);
       window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'field chess') || window.FIELD_APPS[0]); await wait(1500);
       const chess = await count(1500);
-      return { still, woke, chess };
+      return { moving, still, woke, chess };
     });
-    if (!(rs.still.skipped > rs.still.frames * 0.6) || !(rs.woke.drawn >= rs.woke.frames * 0.7) || rs.chess.skipped)
+    if (!(rs.still.skipped > rs.still.frames * 0.6) || !(rs.moving.drawn >= rs.moving.frames * 0.7) || !(rs.woke.drawn >= rs.woke.frames * 0.7) || rs.chess.skipped)
       failures.push(`[${current}] ${JSON.stringify(rs)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (still: ${rs.still.drawn} of ${rs.still.frames} frames drawn)`);
   }
@@ -652,14 +659,14 @@ try {
       const wait = ms => new Promise(ok => setTimeout(ok, ms)), calls = new Map(), bps = [], off = new Set();
       const cam = W.camera, [sx, sz] = W.spacing(), T = W.THREE, bW = W.boardW();
       const seen = (c, r) => { const cell = W.cellAt(W.target.boardX, W.target.boardZ);   // (the board's centre from the framed one, by the spacing)
-        const gx = W.cellAt(W.target.boardX + sx, W.target.boardZ).c - cell.c, gz = W.cellAt(W.target.boardX, W.target.boardZ + sz).r - cell.r;   // (which way c and r run)
-        const cx = W.target.boardX + (c - cell.c) * gx * sx, cz = W.target.boardZ + (r - cell.r) * gz * sz; let any = false;
-        for (const dx of [-0.6, 0, 0.6]) for (const dz of [-0.6, 0, 0.6]) for (const y of [0, bW]){ const v = new T.Vector3(cx + dx * bW, y, cz + dz * bW).project(cam);
-          if (v.z < 1 && Math.abs(v.x) <= 1.3 && Math.abs(v.y) <= 1.3) any = true; }
-        return any; };
+        const GS = Math.max(1, Math.round(Math.sqrt(W.st.N))), d = v => ((v % GS) + GS + Math.floor(GS / 2)) % GS - Math.floor(GS / 2);   // (the field wraps: the nearer way round)
+        const cx = W.target.boardX + d(c - cell.c) * sx, cz = W.target.boardZ + d(r - cell.r) * sz;
+        cam.updateMatrixWorld(); const F = new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+        return F.intersectsBox(new T.Box3(new T.Vector3(cx - 0.8 * bW, -0.2 * bW, cz - 0.8 * bW), new T.Vector3(cx + 0.8 * bW, 1.2 * bW, cz + 0.8 * bW))); };
       A.cellItems = function(c, r, bp){ const k = c + ',' + r; calls.set(k, (calls.get(k) || 0) + 1); if (k !== fk){ bps.push(bp); if (!seen(c, r)) off.add(k); } return orig.call(this, c, r, bp); };
       window.dispatchEvent(new Event('click')); await wait(400); calls.clear(); bps.length = 0; off.clear();
-      const d0 = R.drawn; await wait(2500); const drawn = R.drawn - d0;
+      const d0 = R.drawn, t0 = performance.now(); await wait(2500); while (R.drawn - d0 < 3 && performance.now() - t0 < 20000) await wait(250);   // (a software renderer may take seconds a frame)
+      const drawn = R.drawn - d0;
       A.cellItems = orig;
       const others = [...calls].filter(([k]) => k !== fk).map(([, n]) => n);
       return { drawn, framed: calls.get(fk) || 0, boards: calls.size, othersMin: others.length ? Math.min(...others) : 0, othersMax: Math.max(0, ...others), bpMax: bps.length ? Math.max(...bps) : 0, off: [...off].slice(0, 6), offN: off.size };
