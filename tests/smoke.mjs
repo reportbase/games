@@ -262,8 +262,8 @@ try {
   if (gb.wire !== false) failures.push(`[${current}] the wireframe is on by default (Oct 9: off unless turned on)`);
   // lighter on a field of thousands (Oct 9: "is getting heavy … we can resrict the tilt, clamp it"): mini golf's tilt floor
   // is 50°. One look, or none (Oct 12: "they should never change from one thing to antoher" … "then don't show the objects
-  // until they are in their final state"): a board at 400 px has the very pieces it has at 2000, kind for kind and as many;
-  // one at 200 px has its ground alone; the selected board has them whatever its size
+  // until they are in their final state"), then full drawing (Oct 12, later: "restore full drawing functionaility. no special
+  // handeling."): a board at 400 px and at 200 px has the very pieces it has at 2000, kind for kind and as many
   const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
     let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
     const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -271,8 +271,8 @@ try {
     return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, mid: mid.length, small: small.length, smallKinds: kinds(small), midKinds: kinds(mid), bigKinds: kinds(big),
              framedSmall: D.cellItems(f.c, f.r, 100).length }; });
   if (lod.floor !== 50 || lod.appFloor !== 50) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 50 for mini golf)`);
-  if (lod.mid !== lod.big || lod.midKinds !== lod.bigKinds || lod.smallKinds !== 'landL' || !(lod.framedSmall > 20))
-    failures.push(`[${current}] one look, or none: ${JSON.stringify(lod)}`);
+  if (lod.mid !== lod.big || lod.midKinds !== lod.bigKinds || lod.small !== lod.big || lod.smallKinds !== lod.bigKinds || !(lod.framedSmall > 20))
+    failures.push(`[${current}] full drawing at every size: ${JSON.stringify(lod)}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
   // objects that have orbits. the orbits should try to protect the golf hole."): every cup two cells in from the sides and
   // the top, all four kinds of bumper turn up, and an old bumper without a kind is read as the classic.
@@ -441,6 +441,10 @@ try {
     await page.mouse.move(N.x, N.y); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up();
     let now = await held();
     if (!now || now.c !== N.from.c || now.r !== N.from.r) failures.push(`[${current}] a long press went to ${JSON.stringify(now)}`);
+    // (a hold and let go toggles the bottom row, and mini golf's row is its editor, Oct 10: whether the hold's timer fires
+    //  before the release depends on how long the frames take, so on CI it opened the editor and the tap below moved the
+    //  editor there instead of teeing off; the editor is shut again here, Oct 12)
+    await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; if (E.ED.on) E.editStop(true); });
     const before = await playing();
     await page.waitForTimeout(700);                                // (not a double with the release above)
     await page.mouse.click(N.x, N.y);
@@ -636,32 +640,34 @@ try {
   }
   console.log(`${failures.length === beforeL ? 'ok  ' : 'FAIL'} ${current}`);
 
-  // ONLY THE SELECTED BOARD IS DRAWN PERFECTLY (Oct 11: "only the selected board needs to be presented perfectly, all other
-  // boards can be drawn in degraded presentation to save GPU. ideally, if the board is not even visible or if it is only 1/2
-  // or less visible, you don't need to update it at all."): with the view still, the framed board is asked for its pieces
-  // every frame at its full size, every other board at most every third frame, far fewer boards are asked a frame than are
-  // drawn, and a click asks them all again. Each at its own size (Oct 12: "dont show the objects differently on
-  // non-selected boards."): framed in this window, the nearer neighbours are over 600 px across and asked so, where until
-  // then they were asked as if under 600
-  current = 'only the selected board drawn fully';
+  // EVERY BOARD IN VIEW, IN FULL, EVERY FRAME (Oct 12: "restore full drawing functionaility. no special handeling. only thing
+  // is dont draw non-visible boards and no animation when panning or resizing."): with the view still, every frame drawn asks
+  // every board on the screen for its pieces, each at its own size (framed in this window the nearer neighbours are over
+  // 600 px across), and no board wholly off the screen is asked
+  current = 'every board in view drawn in full';
   {
     const before = failures.length;
     const dc = await page.evaluate(async () => {
-      const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), fk = f.c + ',' + f.r, orig = A.cellItems;
-      const wait = ms => new Promise(ok => setTimeout(ok, ms)), calls = new Map(), bps = []; let frames = 0, on = true, fbp = 0;
-      A.cellItems = function(c, r, bp){ const k = c + ',' + r; calls.set(k, (calls.get(k) || 0) + 1); if (k === fk) fbp = Math.max(fbp, bp); else bps.push(bp); return orig.call(this, c, r, bp); };
-      const tick = () => { frames++; if (on) requestAnimationFrame(tick); };
-      await wait(400); calls.clear(); bps.length = 0; requestAnimationFrame(tick);
-      await wait(2500); on = false;
-      const still = { frames, framed: calls.get(fk) || 0, fbp, others: [...calls].filter(([k]) => k !== fk).map(([, n]) => n), bpMax: bps.length ? Math.max(...bps) : 0, boards: calls.size };
-      calls.clear(); frames = 0; on = true; requestAnimationFrame(tick);
-      window.dispatchEvent(new Event('click')); await wait(600); on = false;
+      const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), fk = f.c + ',' + f.r, orig = A.cellItems, R = window.fieldRest;
+      const wait = ms => new Promise(ok => setTimeout(ok, ms)), calls = new Map(), bps = [], off = new Set();
+      const cam = W.camera, [sx, sz] = W.spacing(), T = W.THREE, bW = W.boardW();
+      const seen = (c, r) => { const cell = W.cellAt(W.target.boardX, W.target.boardZ);   // (the board's centre from the framed one, by the spacing)
+        const gx = W.cellAt(W.target.boardX + sx, W.target.boardZ).c - cell.c, gz = W.cellAt(W.target.boardX, W.target.boardZ + sz).r - cell.r;   // (which way c and r run)
+        const cx = W.target.boardX + (c - cell.c) * gx * sx, cz = W.target.boardZ + (r - cell.r) * gz * sz; let any = false;
+        for (const dx of [-0.6, 0, 0.6]) for (const dz of [-0.6, 0, 0.6]) for (const y of [0, bW]){ const v = new T.Vector3(cx + dx * bW, y, cz + dz * bW).project(cam);
+          if (v.z < 1 && Math.abs(v.x) <= 1.3 && Math.abs(v.y) <= 1.3) any = true; }
+        return any; };
+      A.cellItems = function(c, r, bp){ const k = c + ',' + r; calls.set(k, (calls.get(k) || 0) + 1); if (k !== fk){ bps.push(bp); if (!seen(c, r)) off.add(k); } return orig.call(this, c, r, bp); };
+      window.dispatchEvent(new Event('click')); await wait(400); calls.clear(); bps.length = 0; off.clear();
+      const d0 = R.drawn; await wait(2500); const drawn = R.drawn - d0;
       A.cellItems = orig;
-      return { ...still, othersMax: Math.max(0, ...still.others), othersSum: still.others.reduce((a, b) => a + b, 0), woke: calls.size, wokeFrames: frames };
+      const others = [...calls].filter(([k]) => k !== fk).map(([, n]) => n);
+      return { drawn, framed: calls.get(fk) || 0, boards: calls.size, othersMin: others.length ? Math.min(...others) : 0, othersMax: Math.max(0, ...others), bpMax: bps.length ? Math.max(...bps) : 0, off: [...off].slice(0, 6), offN: off.size };
     });
-    if (!(dc.framed >= dc.frames * 0.8) || dc.othersMax > Math.ceil(dc.frames / 3) + 1 || !(dc.bpMax >= 600) || !(dc.woke >= dc.boards))   // (a click asks every board again: on slow frames every board is asked in the still spell too)
-      failures.push(`[${current}] ${JSON.stringify({ ...dc, others: undefined })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (framed asked ${dc.framed} of ${dc.frames} frames, others ${dc.othersSum} times in all, the largest at ${Math.round(dc.bpMax)} px, ${dc.woke} after a click)`);
+    // (the wrapped field's spacing may not match a far board's place, so a few at the screen's corners are let off)
+    if (!(dc.drawn >= 3) || !(dc.othersMax >= dc.drawn * 0.8) || !(dc.bpMax >= 600) || dc.offN > 2)
+      failures.push(`[${current}] ${JSON.stringify(dc)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${dc.boards} boards asked over ${dc.drawn} frames drawn, each up to ${dc.othersMax} times, the largest at ${Math.round(dc.bpMax)} px, ${dc.offN} off the screen)`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
@@ -1676,12 +1682,12 @@ try {
     await page.waitForTimeout(800);                           // (the pane slides shut first; the dots ride on it)
     // (the dots are clicked only once they stay where they are and nothing covers them: the pane slides a frame at a time,
     //  and a software renderer under load, as on CI, can take seconds a frame, so a fixed wait was sometimes too short and
-    //  the click fell on the board: Oct 11)
+    //  the click fell on the board: Oct 11; and 15 s was still too short once every board drew its full pieces: Oct 12)
     const dotsReady = async () => {
       await page.evaluate(() => { window._dotsAt = null; });
       await page.waitForFunction(() => { const h = document.getElementById('bbHandle'); if (!h) return false;
         const r = h.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2, el = r.width > 0 ? document.elementFromPoint(x, y) : null, k = x.toFixed(1) + ',' + y.toFixed(1);
-        const ok = !!el && (el === h || h.contains(el)) && window._dotsAt === k; window._dotsAt = k; return ok; }, null, { timeout: 15000, polling: 250 }).catch(() => {});
+        const ok = !!el && (el === h || h.contains(el)) && window._dotsAt === k; window._dotsAt = k; return ok; }, null, { timeout: 60000, polling: 250 }).catch(() => {});
       return page.evaluate(() => { const r = document.getElementById('bbHandle').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
     };
     const dotsXY = await dotsReady();
