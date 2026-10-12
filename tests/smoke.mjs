@@ -268,7 +268,7 @@ try {
   if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
   if (gb.wire !== false) failures.push(`[${current}] the wireframe is on by default (Oct 9: off unless turned on)`);
   // lighter on a field of thousands (Oct 9: "is getting heavy … we can resrict the tilt, clamp it"): mini golf's tilt floor
-  // is 50°. One look, or none (Oct 12: "they should never change from one thing to antoher" … "then don't show the objects
+  // is 62° (50° until Oct 12). One look, or none (Oct 12: "they should never change from one thing to antoher" … "then don't show the objects
   // until they are in their final state"), then full drawing (Oct 12, later: "restore full drawing functionaility. no special
   // handeling."): a board at 400 px and at 200 px has the very pieces it has at 2000, kind for kind and as many
   const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
@@ -277,7 +277,7 @@ try {
     const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '')))].sort().join(',');
     return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, mid: mid.length, small: small.length, smallKinds: kinds(small), midKinds: kinds(mid), bigKinds: kinds(big),
              framedSmall: D.cellItems(f.c, f.r, 100).length }; });
-  if (lod.floor !== 50 || lod.appFloor !== 50) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 50 for mini golf)`);
+  if (lod.floor !== 62 || lod.appFloor !== 62) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 62 for mini golf: Oct 12, "clamp the tilt so that the horizon is reduced")`);
   if (lod.mid !== lod.big || lod.midKinds !== lod.bigKinds || lod.small !== lod.big || lod.smallKinds !== lod.bigKinds || !(lod.framedSmall > 20))
     failures.push(`[${current}] full drawing at every size: ${JSON.stringify(lod)}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
@@ -689,6 +689,7 @@ try {
     const before = failures.length;
     await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r);
+      A.panMoves = false;   // (mini golf's own movers run on while the view moves, Oct 12; the hold is checked here without that)
       const orig = A.cellItems; window.__ph = { f, n: 0, orig }; A.cellItems = function(c, r, bp){ if (c === f.c && r === f.r) window.__ph.n++; return orig.call(this, c, r, bp); }; });
     await page.waitForTimeout(800);
     const sample = () => page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.games.values()].find(g => g.state === 'play'), W = window.FIELD_WORLD;
@@ -704,6 +705,14 @@ try {
     const held = during.filter(d => d.on), first = held[0], last = held[held.length - 1];
     await page.waitForTimeout(2000);
     const after = await sample();
+    // and mini golf as it is (Oct 12: "don't stop it during panning."): a drag holds nothing, and the round's clock goes on
+    await page.evaluate(() => { window.getFieldApp().panMoves = true; });
+    const g0 = await sample(), during2 = [];
+    await page.mouse.move(200, 650); await page.mouse.down();
+    for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during2.push(await sample()); }
+    await page.mouse.up();
+    const g1 = during2[during2.length - 1];
+    if (during2.some(d => d.on) || !(g1.gt > g0.gt) || g1.cam === g0.cam) failures.push(`[${current}] mini golf's movers stopped while the view moved: ${JSON.stringify({ g0, during2 })}`);
     await page.evaluate(v => { const W = window.FIELD_WORLD; window.getFieldApp().cellItems = window.__ph.orig; Object.assign(W.target, v.target); Object.assign(W.st, v.st); }, view0);
     await page.waitForTimeout(1500);
     const ok = held.length >= 6 && first && last.n === first.n && last.gt === first.gt && last.at === first.at && last.cam !== s0.cam

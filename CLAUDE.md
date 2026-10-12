@@ -107,7 +107,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   of the ground and sinking). A path's loop and a turnstile's or door's sweep are dotted only with Wireframe on, or on the hole
   being edited (Oct 10: "if wireframe is off, don't show the orbit path"). The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
-  **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 50`, a board
+  **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 62` (50 until Oct 12: "clamp the tilt so that the
+  horizon is reduced, so that less boards can be shown"; the top of the screen looks 32° below the horizon, not 20°), a board
   under 20 px gets no pieces (`itemMinPx`). Items may be stretched (`sx`/`sy`/`sz`).
   **Full drawing** (Oct 12: "why do the object change when I pan around. they should never change from one thing
   to antoher.", then "still not very good. restore full drawing functionaility. no special handeling. only thing is dont
@@ -535,7 +536,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     after, so boards playing themselves go on from where they stopped. A pause begun while held keeps the held moment. Time
     dilation does not run while held.
   - When the camera stops, every board is asked again.
-  - Left out: an app with `onWorld` (air raid's bomber steers the camera as its game).
+  - Left out: an app with `onWorld` (air raid's bomber steers the camera as its game), and one with `panMoves`: mini golf
+    (Oct 12: "first turn motion back on in mini-golf., don't stop it during panning."), whose movers and ball run on.
   - Without the linger, a slow drag's frames did not all move the camera, and the boards came alive between them.
   - A hand that is panning holds it too, whatever the camera did that frame (`turn`: a drag past its deadzone, a hold
     pulling to tilt or turn, two fingers; not the app's own drags, such as mini golf's aim). On CI's slow frames a
