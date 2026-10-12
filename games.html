@@ -39179,7 +39179,13 @@ const GOLF_APP = (() => {
        other games), so the field never runs out to the horizon; a board under 20 pixels shows only its tile of colours;
        and smaller boards draw their rail in longer pieces and leave out their number and the toys' dotted tracks
        (cellItems, by the board's size in pixels). */
-    pitchMin: 50,
+    /* HIGHER STILL (Oct 12: "clamp the tilt so that the horizon is reduced, so that less boards can be shown."): 62°. With
+       the camera's 60° field of view the top of the screen then looks 32° below the horizon, not 20°, so the field runs
+       out about half as far (1.6 times the camera's height ahead, not 2.7). */
+    pitchMin: 62,
+    /* ITS MOVERS RUN WHILE THE VIEW MOVES (Oct 12: "first turn motion back on in mini-golf., don't stop it during panning."):
+       the pan hold (PANHOLD) leaves an app with panMoves alone, as it does one with onWorld. */
+    panMoves: true,
     itemMinPx: 20,
     itemGeometries,
     fabricCell(ctx, rect){
@@ -43340,7 +43346,7 @@ function _panCheck(now){
   if (PANHOLD.sig && sig !== PANHOLD.sig) PANHOLD.last = now;
   const hand = !!(turn.active && !turn.appPan && (turn.panned || turn.tilted || turn.turned || turn.multi));
   if (hand) PANHOLD.last = now;
-  const moving = now - PANHOLD.last < PANHOLD.linger && !(a && a.onWorld);
+  const moving = now - PANHOLD.last < PANHOLD.linger && !(a && (a.onWorld || a.panMoves));   // (mini golf's movers run on: Oct 12)
   PANHOLD.sig = sig;
   if (moving !== PANHOLD.on){ PANHOLD.on = moving; if (moving){ PANHOLD.since = now; PANHOLD.n++; } holdAnimForPan(moving); }
 }
@@ -43377,19 +43383,16 @@ try {
 } catch {}
 /* ONLY BOARDS ON THE SCREEN (Oct 12: "only thing is dont draw non-visible boards"): the walk takes the boards in the view's
    reach, rows a little wide of it, so a board's pieces are asked for, and drawn, only when some of it is on the screen: its
-   corners on the ground and a board's width above them (pieces stand up), projected through the camera, overlap the
-   screen. A corner behind the camera counts as seen, to be safe. */
+   box, from the ground to a board's width above it (pieces stand up), meets the camera's frustum. (Its corners projected,
+   with any corner behind the camera counted as seen, let through the rows under a tilted camera.) */
+const _visFr = new THREE.Frustum(), _visBox = new THREE.Box3(), _visA = new THREE.Vector3(), _visB = new THREE.Vector3();
+let _visAt = -1;
 function _boardVisible(cx, cz, bWX, bWZ){
-  if (!_itemVP){ try { camera.updateMatrixWorld(); _vpM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _itemVP = _vpE; } catch { return true; } }
-  const e = _itemVP, H = Math.max(bWX, bWZ);
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (const sx of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) for (const y of [0, H]){
-    const x = cx + sx * bWX, z = cz + sz * bWZ;
-    const w = e[3] * x + e[7] * y + e[11] * z + e[15]; if (w <= 1e-6) return true;
-    const X = (e[0] * x + e[4] * y + e[8] * z + e[12]) / w, Y = (e[1] * x + e[5] * y + e[9] * z + e[13]) / w;
-    if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y;
-  }
-  return x1 >= -1.2 && x0 <= 1.2 && y1 >= -1.2 && y0 <= 1.2;   // (a tenth of the screen wide: the camera is last frame's, applyCamera follows the build)
+  if (_visAt !== _itemFrame){ try { camera.updateMatrixWorld(); _vpM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _visFr.setFromProjectionMatrix(_vpM); _visAt = _itemFrame; } catch { return true; } }
+  // (a tenth of a board to spare each way: the camera is last frame's, applyCamera follows the build)
+  const H = Math.max(bWX, bWZ), mx = bWX * 0.6, mz = bWZ * 0.6;
+  _visBox.set(_visA.set(cx - mx, -0.1 * H, cz - mz), _visB.set(cx + mx, H, cz + mz));
+  return _visFr.intersectsBox(_visBox);
 }
 function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
   if (app !== _itemApp){ _itemCache.clear(); _itemApp = app; }

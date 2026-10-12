@@ -89,22 +89,29 @@ try {
 
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing
   // on any board moving, draws only now and then (a look twice a second); a finger on the screen wakes it to draw every
-  // frame; and chess, which plays moves out on its boards itself, never rests
+  // frame; and chess, which plays moves out on its boards itself, never rests. (Sokoban's boards play themselves, and since
+  // every board in view is drawn every frame, Oct 12, they are seen to; so here each board's pieces are held as first asked,
+  // which makes nothing move. Left as they are, the field draws every frame, as it should.)
   current = 'the field rests when still';
   {
     const before = failures.length;
     const rs = await page.evaluate(async () => {
       const R = window.fieldRest, wait = ms => new Promise(ok => setTimeout(ok, ms));
       const count = async ms => { const d0 = R.drawn, s0 = R.skipped; let f = 0, on = true; const t = () => { f++; if (on) requestAnimationFrame(t); }; requestAnimationFrame(t); await wait(ms); on = false; return { frames: f, drawn: R.drawn - d0, skipped: R.skipped - s0 }; };
-      window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')); await wait(2500);
+      window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')); await wait(1000);
+      const moving = await count(1500);
+      const A = window.getFieldApp(), orig = A.cellItems, kept = new Map();
+      A.cellItems = function(c, r, bp){ const k = c + ',' + r; if (!kept.has(k)) kept.set(k, orig.call(this, c, r, bp)); return kept.get(k); };
+      await wait(2500);
       const still = await count(2000);
+      A.cellItems = orig;
       window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 10, clientY: 10 }));
       const woke = await count(400);
       window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'field chess') || window.FIELD_APPS[0]); await wait(1500);
       const chess = await count(1500);
-      return { still, woke, chess };
+      return { moving, still, woke, chess };
     });
-    if (!(rs.still.skipped > rs.still.frames * 0.6) || !(rs.woke.drawn >= rs.woke.frames * 0.7) || rs.chess.skipped)
+    if (!(rs.still.skipped > rs.still.frames * 0.6) || !(rs.moving.drawn >= rs.moving.frames * 0.7) || !(rs.woke.drawn >= rs.woke.frames * 0.7) || rs.chess.skipped)
       failures.push(`[${current}] ${JSON.stringify(rs)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (still: ${rs.still.drawn} of ${rs.still.frames} frames drawn)`);
   }
@@ -261,7 +268,7 @@ try {
   if (!gb.board || gb.board.gen !== gb.board.idx || gb.board.num !== gb.board.idx + 1 || gb.course !== 0) failures.push(`[${current}] a board's hole: ${JSON.stringify(gb)}`);
   if (gb.wire !== false) failures.push(`[${current}] the wireframe is on by default (Oct 9: off unless turned on)`);
   // lighter on a field of thousands (Oct 9: "is getting heavy … we can resrict the tilt, clamp it"): mini golf's tilt floor
-  // is 50°. One look, or none (Oct 12: "they should never change from one thing to antoher" … "then don't show the objects
+  // is 62° (50° until Oct 12). One look, or none (Oct 12: "they should never change from one thing to antoher" … "then don't show the objects
   // until they are in their final state"), then full drawing (Oct 12, later: "restore full drawing functionaility. no special
   // handeling."): a board at 400 px and at 200 px has the very pieces it has at 2000, kind for kind and as many
   const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
@@ -270,7 +277,7 @@ try {
     const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '')))].sort().join(',');
     return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, mid: mid.length, small: small.length, smallKinds: kinds(small), midKinds: kinds(mid), bigKinds: kinds(big),
              framedSmall: D.cellItems(f.c, f.r, 100).length }; });
-  if (lod.floor !== 50 || lod.appFloor !== 50) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 50 for mini golf)`);
+  if (lod.floor !== 62 || lod.appFloor !== 62) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 62 for mini golf: Oct 12, "clamp the tilt so that the horizon is reduced")`);
   if (lod.mid !== lod.big || lod.midKinds !== lod.bigKinds || lod.small !== lod.big || lod.smallKinds !== lod.bigKinds || !(lod.framedSmall > 20))
     failures.push(`[${current}] full drawing at every size: ${JSON.stringify(lod)}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
@@ -652,14 +659,14 @@ try {
       const wait = ms => new Promise(ok => setTimeout(ok, ms)), calls = new Map(), bps = [], off = new Set();
       const cam = W.camera, [sx, sz] = W.spacing(), T = W.THREE, bW = W.boardW();
       const seen = (c, r) => { const cell = W.cellAt(W.target.boardX, W.target.boardZ);   // (the board's centre from the framed one, by the spacing)
-        const gx = W.cellAt(W.target.boardX + sx, W.target.boardZ).c - cell.c, gz = W.cellAt(W.target.boardX, W.target.boardZ + sz).r - cell.r;   // (which way c and r run)
-        const cx = W.target.boardX + (c - cell.c) * gx * sx, cz = W.target.boardZ + (r - cell.r) * gz * sz; let any = false;
-        for (const dx of [-0.6, 0, 0.6]) for (const dz of [-0.6, 0, 0.6]) for (const y of [0, bW]){ const v = new T.Vector3(cx + dx * bW, y, cz + dz * bW).project(cam);
-          if (v.z < 1 && Math.abs(v.x) <= 1.3 && Math.abs(v.y) <= 1.3) any = true; }
-        return any; };
+        const GS = Math.max(1, Math.round(Math.sqrt(W.st.N))), d = v => ((v % GS) + GS + Math.floor(GS / 2)) % GS - Math.floor(GS / 2);   // (the field wraps: the nearer way round)
+        const cx = W.target.boardX + d(c - cell.c) * sx, cz = W.target.boardZ + d(r - cell.r) * sz;
+        cam.updateMatrixWorld(); const F = new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+        return F.intersectsBox(new T.Box3(new T.Vector3(cx - 0.8 * bW, -0.2 * bW, cz - 0.8 * bW), new T.Vector3(cx + 0.8 * bW, 1.2 * bW, cz + 0.8 * bW))); };
       A.cellItems = function(c, r, bp){ const k = c + ',' + r; calls.set(k, (calls.get(k) || 0) + 1); if (k !== fk){ bps.push(bp); if (!seen(c, r)) off.add(k); } return orig.call(this, c, r, bp); };
       window.dispatchEvent(new Event('click')); await wait(400); calls.clear(); bps.length = 0; off.clear();
-      const d0 = R.drawn; await wait(2500); const drawn = R.drawn - d0;
+      const d0 = R.drawn, t0 = performance.now(); await wait(2500); while (R.drawn - d0 < 3 && performance.now() - t0 < 20000) await wait(250);   // (a software renderer may take seconds a frame)
+      const drawn = R.drawn - d0;
       A.cellItems = orig;
       const others = [...calls].filter(([k]) => k !== fk).map(([, n]) => n);
       return { drawn, framed: calls.get(fk) || 0, boards: calls.size, othersMin: others.length ? Math.min(...others) : 0, othersMax: Math.max(0, ...others), bpMax: bps.length ? Math.max(...bps) : 0, off: [...off].slice(0, 6), offN: off.size };
@@ -682,6 +689,7 @@ try {
     const before = failures.length;
     await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r);
+      A.panMoves = false;   // (mini golf's own movers run on while the view moves, Oct 12; the hold is checked here without that)
       const orig = A.cellItems; window.__ph = { f, n: 0, orig }; A.cellItems = function(c, r, bp){ if (c === f.c && r === f.r) window.__ph.n++; return orig.call(this, c, r, bp); }; });
     await page.waitForTimeout(800);
     const sample = () => page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.games.values()].find(g => g.state === 'play'), W = window.FIELD_WORLD;
@@ -697,6 +705,15 @@ try {
     const held = during.filter(d => d.on), first = held[0], last = held[held.length - 1];
     await page.waitForTimeout(2000);
     const after = await sample();
+    // and mini golf as it is (Oct 12: "don't stop it during panning."): a drag holds nothing, and the round's clock goes on
+    await page.evaluate(() => { window.getFieldApp().panMoves = true; });
+    const g0 = await sample(), during2 = [];
+    await page.mouse.move(200, 650); await page.mouse.down();
+    for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during2.push(await sample()); }
+    await page.mouse.up();
+    await page.waitForTimeout(2000);                         // (its glide spent before the view is put back: CI, Oct 12)
+    const g1 = during2[during2.length - 1];
+    if (during2.some(d => d.on) || !(g1.gt > g0.gt) || g1.cam === g0.cam) failures.push(`[${current}] mini golf's movers stopped while the view moved: ${JSON.stringify({ g0, during2 })}`);
     await page.evaluate(v => { const W = window.FIELD_WORLD; window.getFieldApp().cellItems = window.__ph.orig; Object.assign(W.target, v.target); Object.assign(W.st, v.st); }, view0);
     await page.waitForTimeout(1500);
     const ok = held.length >= 6 && first && last.n === first.n && last.gt === first.gt && last.at === first.at && last.cam !== s0.cam
@@ -1099,9 +1116,11 @@ try {
     // moved up the screen pulls that dot up, though it pressed beside the dot and the first move the field passes on is far off it
     const scr = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
       A.onQuickAct(null, null, 'select'); ED.pick = null;
-      let c = null; search: for (let j = 3; j < D.NY - 2; j++) for (let i = 2; i < D.NX - 1; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot')){ c = [i, j]; break search; } }
+      // (a dot with room above it on the screen to drag into: at mini golf's steeper tilt, Oct 12, the far rows sit at its top)
+      const proj = (i, j) => new W.THREE.Vector3(T.boardX + (0.5 - i / D.NX) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - j / D.NY) * bW * (L.cellH || 1)).project(W.camera);
+      let c = null; search: for (let j = 3; j < D.NY - 2; j++) for (let i = 2; i < D.NX - 1; i++){ const p = E.pickAll(i, j); if (p[0] && p[0].type === 'dot' && !p.some(q => q.type !== 'dot') && (1 - proj(i, j).y) / 2 * innerHeight > 150){ c = [i, j]; break search; } }
       if (!c) return null;
-      const v = new W.THREE.Vector3(T.boardX + (0.5 - c[0] / D.NX) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - c[1] / D.NY) * bW * (L.cellH || 1)).project(W.camera);
+      const v = proj(c[0], c[1]);
       ED.pick = { type: 'dot', i: c[1] * D.LIFT_W + c[0] }; ED.dots = [ED.pick.i]; ED.box = { x0: c[0] - 0.45, x1: c[0] + 0.45, y0: c[1] - 0.45, y1: c[1] + 0.45 };   // (boxed first: only the box takes dots, Oct 10)
       return { c, idx: c[1] * D.LIFT_W + c[0], x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, h0: (ED.src.lift && ED.src.lift[c[1] * D.LIFT_W + c[0]]) || 0 }; });
     if (!scr) failures.push(`[${current}] no clear dot to pull`);

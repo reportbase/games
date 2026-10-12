@@ -9,7 +9,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30                  # (smoke takes ~12 min since every board in view is drawn in full, Oct 12, then the course test)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
