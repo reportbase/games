@@ -3789,6 +3789,8 @@ window.FIELD_WORLD = {
   boardW: () => gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize)),
   // where a point on the screen falls on the framed board, as a tap there is read (u, v), or null (for the tests' real clicks, Oct 13)
   uvAt: (x, y) => _framedUV(x, y),
+  // the board whose pieces are being asked for, its middle on the ground (x, z), while cellItems runs (Levels, Oct 13)
+  get itemAt(){ return _itemAt; },
   back: () => camGeom().back,
   zoomFor: h => Math.max(0, Math.min(1000, (h - 0.75) / (CAM_H_MAX - 0.75) * 1000)),
   cellAt(x, z){
@@ -44147,7 +44149,177 @@ const SOKOBAN_APP = (() => {
   return app;
 })();
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, GALLERY_APP];
+/* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
+   (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
+   project to help show how LOD works? maybe an application devoted to the concept?", then "yes." to an app like wander's
+   flight.html with the field as its ground.) The theory is wander's (flight.html, levels.html, zoom.html and the papers
+   there); this is the field playing it, with real boards, a real camera and a real count of what is drawn.
+   - Every board carries one body, a ball with relief in bands of doubling frequency (as wander's res/ bodies are a ball
+     plus relief in bands). Its level of detail is a level: level 0 has every band on a fine mesh, and each level out drops
+     the finest band and halves the mesh's grain both ways, so it costs a quarter of the one before (LV_GEO). Past level 4
+     a body is a plain ball and goes no coarser.
+   - v is the eye's height above the ground, h a board's distance along the ground from the point under the eye, as in
+     flight.html. The corner is where h = v. By v/h (the default), level 0 is the near field, h ≤ v, and the levels split
+     at v, 2v, 4v, …: level k from 2^(k−1)·v to 2^k·v. By metres, the engine's way, the same split is made at fixed
+     distances (METRES_D, 2^k of them), so its edges stay where they are on the ground as the eye climbs and slide across
+     the screen. None draws every board at level 0. The bottom row picks one (?lod=none|metres|vh) and counts, every
+     frame, the boards and triangles at each level.
+   - What it shows, if wander's reading holds: by v/h a level has about four times the ground of the one inside it and a
+     quarter of the detail a board, so about the same cost; the cost grows with the number of levels, the log of the range,
+     not with the number of boards. Rings on the ground mark the corner (gold) and each doubling past it.
+   - Its boards change level only when the eye moves, so it sets panMoves: the pan hold would otherwise keep every board
+     at the level it had when the view began to move. */
+const LEVELS_APP = (() => {
+  const TINT = [0xe8b84a, 0x5fb35f, 0x4a8fd8, 0x9b6fd8, 0xd86f9b, 0xd8884a, 0x9aa0a8, 0x6a6f78];
+  const tintOf = k => TINT[Math.min(k, TINT.length - 1)];
+  const css = n => '#' + n.toString(16).padStart(6, '0');
+  const MODES = ['none', 'metres', 'vh'], MODE_NAME = { none: 'None', metres: 'By metres', vh: 'By v/h' };
+  let mode = 'vh';
+  try { const q = new URLSearchParams(location.search).get('lod'); if (MODES.includes(q)) mode = q; else { const s = localStorage.getItem('levels.mode'); if (MODES.includes(s)) mode = s; } } catch {}
+  // (the body's relief: four bands of five waves, frequency 3, 6, 12, 24, each half as tall as the last; seeded, so every
+  //  board's body is the same shape, and only its level of detail differs)
+  const WAVES = (() => { let s = 20261013; const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; const W = [];
+    for (let b = 0; b < 4; b++) for (let j = 0; j < 5; j++){ const z = rnd() * 2 - 1, a = rnd() * 2 * Math.PI, q = Math.sqrt(1 - z * z);
+      W.push({ b, f: 3 * 2 ** b, A: 0.07 / 2 ** b, d: [q * Math.cos(a), z, q * Math.sin(a)], ph: rnd() * 2 * Math.PI }); }
+    return W; })();
+  // level k: every band b ≤ 3 − k, on a mesh of 64 >> k around and half as many up (no coarser than 6 × 3)
+  const LV_GEO = 5, segOf = k => Math.max(6, 64 >> k), ringsOf = k => Math.max(3, 32 >> k);
+  function bodyGeo(T, k){
+    const seg = segOf(k), rings = ringsOf(k), P = [], C = [], I = [], W = WAVES.filter(w => w.b <= 3 - k);
+    for (let i = 0; i <= rings; i++){
+      const th = Math.PI * i / rings, y = Math.cos(th), q = Math.sin(th);
+      for (let j = 0; j <= seg; j++){
+        const ph = 2 * Math.PI * j / seg, x = q * Math.cos(ph), z = q * Math.sin(ph);
+        let rel = 0; for (const w of W) rel += w.A * Math.cos(w.f * (x * w.d[0] + y * w.d[1] + z * w.d[2]) + w.ph);
+        const R = 0.5 * (1 + rel);
+        P.push(x * R, 0.5 + y * R, z * R);
+        const g = Math.max(0.45, Math.min(1.1, 0.8 + 2.2 * rel)); C.push(g, g, g);
+      }
+    }
+    for (let i = 0; i < rings; i++) for (let j = 0; j < seg; j++){
+      const a = i * (seg + 1) + j, b = a + seg + 1;
+      if (i > 0) I.push(a, b, a + 1);
+      if (i < rings - 1) I.push(a + 1, b, b + 1);
+    }
+    const G = new T.BufferGeometry();
+    G.setAttribute('position', new T.Float32BufferAttribute(P, 3));
+    G.setAttribute('color', new T.Float32BufferAttribute(C, 3));
+    G.setIndex(I); G.computeVertexNormals();
+    G.userData = { vertexColors: true, tris: I.length / 3 };
+    return G;
+  }
+  const TRIS = [];
+  const geos = {};
+  for (let k = 0; k < LV_GEO; k++){
+    geos['lvBody' + k] = T => { const G = bodyGeo(T, k); TRIS[k] = G.userData.tris; return G; };
+    geos['lvWire' + k] = T => { const G = bodyGeo(T, k); G.userData.wireframe = true; return G; };
+  }
+  // Wireframe (the bodies drawn as their meshes' lines, so each level's grain shows; on at first, as flight.html is wire frame)
+  let wire = true;
+  try { const w = localStorage.getItem('levels.wire'); if (w === 'off') wire = false; } catch {}
+  for (let k = 0; k < LV_GEO; k++){ const s = segOf(k), r = ringsOf(k); TRIS[k] = 2 * s * r - 2 * s; }
+  // By metres: the split made at fixed distances along the ground, in board spacings (an engine's 500 m, 1 km, 2 km …)
+  const METRES_D = 2;
+  const W = () => window.FIELD_WORLD;
+  const levelAt = (h, v) => {
+    if (mode === 'none') return 0;
+    const D = mode === 'vh' ? Math.max(1e-6, v) : METRES_D * (W().spacing ? Math.max(...W().spacing()) : 1);
+    const s = h / D; return s <= 1 ? 0 : Math.ceil(Math.log2(s));
+  };
+  /* THE NEAR FIELD'S GRAIN FOLLOWS v (zoom.html: inside the corner the finest difference told apart is εH, one address of
+     the near field, absolute). A reader holds a count of addresses across its near field whatever v is, so when the eye
+     climbs to twice V0, the height a board is framed at, every near-field board gets a quarter of the detail, and every level
+     past the corner with it: then the near field costs the same at any height, as each level past it does. By metres the
+     near field is full at any height, as an engine's first tier is. */
+  const V0 = 3.5, OPEN_V = 8;
+  let pitchWas = null;
+  const grainOf = (k, v) => Math.min(LV_GEO - 1, k + (mode === 'vh' ? Math.max(0, Math.round(Math.log2(v / V0))) : 0));
+  // the counts: this frame's as the boards are asked, and the last whole frame's for the row
+  let cur = { n: [], t: [] }, shown = { n: [], t: [] }, ticking = false, last = new Map();
+  // (a frame the field rests on asks the framed board alone, so only a frame it drew stands for the field: Oct 13)
+  let drawnSeen = -1;
+  const roll = () => { const d = window.fieldRest ? window.fieldRest.drawn : 0; if (d !== drawnSeen && cur.n.length) shown = cur; drawnSeen = d; cur = { n: [], t: [] }; };
+  // the rings on the ground: the corner and each doubling past it, round the point under the eye
+  let rings = null;
+  function ringsMake(){
+    const T = W().THREE, g = new T.Group(), pts = []; for (let i = 0; i <= 128; i++){ const a = 2 * Math.PI * i / 128; pts.push(new T.Vector3(Math.cos(a), 0, Math.sin(a))); }
+    for (let k = 0; k <= 7; k++){
+      const geo = new T.BufferGeometry().setFromPoints(pts);
+      const m = new T.LineBasicMaterial({ color: k === 0 ? 0xffd34a : tintOf(k + 1), transparent: true, opacity: k === 0 ? 0.95 : 0.7, depthTest: false });
+      const L = new T.Line(geo, m); L.scale.setScalar(2 ** k); L.renderOrder = 5; g.add(L);
+    }
+    g.position.y = 0.03; W().scene.add(g); return g;
+  }
+  function tick(){
+    if (window.getFieldApp && window.getFieldApp() !== LEVELS_APP){ ticking = false; if (rings) rings.visible = false; return; }
+    roll();
+    try {
+      if (!rings) rings = ringsMake();
+      const cam = W().camera, v = Math.max(1e-6, cam.position.y), D = mode === 'vh' ? v : METRES_D * Math.max(...W().spacing());
+      rings.visible = mode !== 'none'; rings.position.set(cam.position.x, 0.03, cam.position.z); rings.scale.set(D, 1, D);
+    } catch {}
+    requestAnimationFrame(tick);
+  }
+  const startTick = () => { if (!ticking){ ticking = true; requestAnimationFrame(tick); } };
+  const say = (m, ms) => { try { engineNotice(m, ms || 2200); } catch {} };
+  function setMode(m){
+    if (!MODES.includes(m)) return; mode = m; try { localStorage.setItem('levels.mode', m); } catch {}
+    say(MODE_NAME[m] + (m === 'vh' ? ': the levels split at v, 2v, 4v … from the point under the eye' : m === 'metres' ? ': the levels split at fixed distances on the ground' : ': every board in full'));
+    try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {}
+  }
+  function setWire(on){ wire = !!on; try { localStorage.setItem('levels.wire', wire ? 'on' : 'off'); } catch {} try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {} }
+  const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+  return {
+    name: 'levels',
+    panMoves: true,
+    itemMinPx: 1,
+    /* (opened, it looks out toward the horizon at the field's lowest tilt, from OPEN_V, a little over twice V0, so the eye
+       sees the near field at the foot of the screen and four or five levels past it: framed looking down, two levels were in
+       view; at 35° the top of the screen is about 5° under the horizon) */
+    fitView(F){ if (pitchWas == null) pitchWas = F.st.pitch; F.st.pitch = window.LAB ? window.LAB.pitchMin : 35; F.frameAt(F.zoomFor(OPEN_V)); },
+    // (and left, the tilt goes back to what it was, so the next game opens as it would have)
+    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; },
+    itemGeometries: geos,
+    cellItems(c, r, bp){
+      startTick();
+      const at = W().itemAt, cam = W().camera;
+      if (!at || !cam) return null;
+      const v = Math.max(1e-6, cam.position.y), h = Math.hypot(at.x - cam.position.x, at.z - cam.position.z), k = levelAt(h, v), g = grainOf(k, v);
+      cur.n[k] = (cur.n[k] || 0) + 1; cur.t[k] = (cur.t[k] || 0) + TRIS[g];
+      last.set(c + '_' + r, { k, g, s: h / v });
+      if (last.size > 5000) last.clear();
+      return [{ kind: (wire ? 'lvWire' : 'lvBody') + g, u: 0.5, v: 0.5, scale: 0.5, color: tintOf(k) }];
+    },
+    cellTitle(c, r){
+      const L = last.get(c + '_' + r);
+      if (!L) return 'Levels — board ' + c + '·' + r;
+      return 'Levels — board ' + c + '·' + r + ': ' + (L.k === 0 ? 'the near field' : 'level ' + L.k) + ', h/v = ' + L.s.toFixed(2);
+    },
+    onCellTap(c, r){
+      const L = last.get(c + '_' + r); if (!L) return false;
+      say((L.k === 0 ? 'The near field' : 'Level ' + L.k) + ': h/v = ' + L.s.toFixed(2) + ', ' + fmt(TRIS[L.g]) + ' triangles' + (mode === 'none' ? ' (None: every board in full)' : ''), 2600);
+      return false;
+    },
+    statTiles(){
+      const T = MODES.map(m => ({ glyph: m === 'none' ? '⊘' : m === 'metres' ? '📏' : '◐', value: MODE_NAME[m], bg: m === mode ? '#3a4f6a' : undefined }));
+      T.push({ glyph: '▦', value: 'Wireframe', bg: wire ? '#3a4f6a' : undefined });
+      const S = shown, max = S.n.length;
+      let tot = 0, nb = 0;
+      for (let k = 0; k < max; k++){ if (!S.n[k]) continue; tot += S.t[k]; nb += S.n[k];
+        T.push({ label: k === 0 ? 'near field' : 'level ' + k, value: S.n[k] + (S.n[k] === 1 ? ' board' : ' boards'), sub: fmt(S.t[k]) + ' ▲', color: css(tintOf(k)) }); }
+      T.push({ label: 'drawn', value: fmt(tot) + ' ▲', sub: nb + ' boards' });
+      return T;
+    },
+    onStatTap(c, r, i){ if (i < MODES.length){ setMode(MODES[i]); return true; } if (i === MODES.length){ setWire(!wire); return true; } return false; },
+    menu: [{ head: 'Levels', items: [
+      ...MODES.map(m => ({ label: () => (m === mode ? '✓ ' : '') + MODE_NAME[m], title: m === 'vh' ? 'Levels split at v, 2v, 4v … along the ground, v the eye\'s height: the corner is where h = v.' : m === 'metres' ? 'Levels split at fixed distances on the ground, as an engine sets them once.' : 'Every board in full.', on(){ setMode(m); } })),
+      { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
+      { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
+    ]}],
+    _debug: { get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
+  };
+})();
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -44161,7 +44333,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
  [CONNECT4_APP, 'connectfour'], [LOA_APP, 'linesofaction'],
- [ATAXX_APP, 'ataxx'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
+ [ATAXX_APP, 'ataxx'], [LEVELS_APP, 'levels'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
 SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own share link, Oct 13)
 let FIELD_APP = CHESS_APP;               // ...unless you left it somewhere else
 /* WHICH APP YOU WERE LAST IN. Chess is the build's opening move and stays the
@@ -44647,6 +44819,8 @@ function _defaultFitSoon(app){
       if (!target.shown){ target.shown = true; target.boardX = target.boardX || 0; target.boardZ = target.boardZ || 0; }
       st.yaw = ((((st.yaw || 0) % 360) + 540) % 360) - 180; target.yaw = 0; st.yawV = 0;
       zoomBoardToFit();
+      // (an app may open on a view of its own after the fit: Levels looks out toward the horizon, from higher, Oct 13)
+      if (app.fitView){ try { app.fitView({ st, frameAt: frameSelectedBoardAt, zoomFor: h => window.FIELD_WORLD.zoomFor(h) }); } catch {} }
       /* …AND IS THERE AT ONCE (Oct 9: "when loading mini-golf load default view, dont load the zoomed view and then sweep
          to the default view"). zoomBoardToFit sets the camera's target, and its spring walked the view down from the
          overview over a second or two; settled here, the game opens already framed, as the page itself does on load. */
@@ -44661,6 +44835,8 @@ function _defaultFitSoon(app){
 }
 for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, () => { _defFitArmed++; }, true);
 window.setFieldApp = app => {
+  // (the app being left may put back what it changed for its own view: Levels its tilt, Oct 13)
+  try { if (FIELD_APP && FIELD_APP !== app && FIELD_APP.onLeave) FIELD_APP.onLeave(); } catch {}
   try { restWake(); } catch {}                                // (another game: the field wakes from rest, Oct 11)
   try { ARCADE.paused = false; } catch {}
   try { if (FIELD_APP && FIELD_APP.onFramed) FIELD_APP.onFramed(null, null); } catch {}
@@ -44884,6 +45060,7 @@ function _restDecide(now){
   if (target.shown && !PANHOLD.on){                           // (not while the view moves: nothing on the boards does then)
     const W = window.FIELD_WORLD, f = W && W.cellAt(target.boardX, target.boardZ);
     if (f && _framedBpLast >= (a.itemMinPx || 40)){
+      _itemAt.x = target.boardX; _itemAt.z = target.boardZ;
       let L = null; try { L = a.cellItems(f.c, f.r, _framedBpLast); } catch {}
       _framedPre = { key: f.c * 100003 + f.r, L, stamp: _frameStamp };
       const h = _itemsHash(L), k = f.c + ',' + f.r;
@@ -44917,7 +45094,10 @@ function _boardVisible(cx, cz, bWX, bWZ){
   _visBox.set(_visA.set(cx - mx, -0.1 * H, cz - mz), _visB.set(cx + mx, H, cz + mz));
   return _visFr.intersectsBox(_visBox);
 }
+/* (Oct 13, Levels: an app may want to know where the board it is asked about stands, for its distance from the eye.) */
+const _itemAt = { x: 0, z: 0 };
 function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
+  _itemAt.x = cx; _itemAt.z = cz;
   if (app !== _itemApp){ _itemCache.clear(); _itemApp = app; }
   if (!framed && !_boardVisible(cx, cz, bWX, bWZ)) return null;   // (off the screen: nothing asked, nothing drawn)
   const key = ix * 100003 + iz;
@@ -44983,6 +45163,8 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
     /* …and a kind may carry its own colours (geometry.userData.vertexColors, Oct 2, Mini golf's grass):
        a colour per vertex, times the item's colour — give the item white to show them as they are. */
     if (geo.userData && geo.userData.vertexColors) _mo.vertexColors = true;
+    // …and a kind may be drawn as its mesh's lines (geometry.userData.wireframe, Oct 13: Levels shows each level's grain)
+    if (geo.userData && geo.userData.wireframe) _mo.wireframe = true;
     const mesh = new THREE.InstancedMesh(geo, (geo.userData && geo.userData.unlit) ? new THREE.MeshBasicMaterial(_mo) : new THREE.MeshLambertMaterial(_mo), cap);
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);

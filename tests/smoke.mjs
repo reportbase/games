@@ -196,6 +196,41 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (pars by level ${sk.lv.map(p => p.toFixed(1)).join(', ')})`);
   }
 
+  // LEVELS (Oct 13: "is there is anything we can do in the games project to help show how LOD works? maybe an application
+  // devoted to the concept?", then "yes."): it opens looking out toward the horizon with several levels in view; a board's
+  // level is the doubling of h/v past the corner; by v/h it draws far fewer triangles than None, and climbing takes in many
+  // more boards for about the same count; the row's tiles change the way and the wireframe; leaving it puts the tilt back
+  current = 'levels';
+  {
+    const before = failures.length;
+    const pitch0 = await page.evaluate(() => window.FIELD_WORLD.st.pitch);
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.name === 'levels'); A._debug.setMode('vh'); window.setFieldApp(A); });
+    await page.waitForTimeout(6000);
+    const look = () => page.evaluate(() => { const A = window.getFieldApp(), S = A._debug.shown, c = window.FIELD_WORLD.camera.position;
+      return { v: c.y, pitch: window.FIELD_WORLD.st.pitch, levels: S.n.filter(Boolean).length, boards: S.n.reduce((a, b) => a + (b || 0), 0), tris: S.t.reduce((a, b) => a + (b || 0), 0),
+               rings: !!A._debug.rings && A._debug.rings.visible && Math.hypot(A._debug.rings.position.x - c.x, A._debug.rings.position.z - c.z) < 1e-6 && Math.abs(A._debug.rings.scale.x - c.y) < 1e-6 }; });
+    const L0 = await look();
+    const lv = await page.evaluate(() => { const D = window.getFieldApp()._debug; return [D.levelAt(0.5, 1), D.levelAt(1, 1), D.levelAt(1.5, 1), D.levelAt(3, 1), D.levelAt(5, 1), D.levelAt(10, 2)]; });
+    for (let i = 0; i < 6; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, -400); await page.waitForTimeout(400); }
+    await page.waitForTimeout(3500);
+    const L1 = await look();
+    const tiles = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ);
+      const names = A.statTiles(f.c, f.r).map(t => t.value);
+      A.onStatTap(f.c, f.r, names.indexOf('None')); await new Promise(ok => setTimeout(ok, 3000));
+      const none = D.shown.t.reduce((a, b) => a + (b || 0), 0), noneLv = D.shown.n.filter(Boolean).length;
+      A.onStatTap(f.c, f.r, names.indexOf('By v/h')); const w0 = D.wire; A.onStatTap(f.c, f.r, names.indexOf('Wireframe')); const w1 = D.wire; D.setWire(w0);
+      await new Promise(ok => setTimeout(ok, 1500));
+      return { names, none, noneLv, mode: D.mode, flipped: w1 === !w0 }; });
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'field chess' || a === window.FIELD_APPS[0])));
+    await page.waitForTimeout(1500);
+    const pitch1 = await page.evaluate(() => window.FIELD_WORLD.st.pitch);
+    if (L0.pitch > 36 || L0.levels < 3 || !L0.rings || JSON.stringify(lv) !== '[0,0,1,2,3,3]'
+        || L1.boards < 3 * L0.boards || L1.tris > 3 * L0.tris || tiles.none < 30 * L1.tris || tiles.noneLv !== 1 || tiles.mode !== 'vh' || !tiles.flipped
+        || !['None', 'By metres', 'By v/h', 'Wireframe'].every(n => tiles.names.includes(n)) || Math.abs(pitch1 - pitch0) > 1e-6)
+      failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, tiles, pitch0, pitch1 })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; None: ${tiles.none})`);
+  }
+
   // CHESS: THE ROW IS A POSITION EDITOR (Oct 13: "lets use it in chess to create custom chess games instead of selecting a
   // board. similar to mini-golf"): the dots, clicked, open the editor on the framed board with its tiles; taps put pieces on
   // squares (a pawn on the last rank refused); without a king Done says why and stays; with kings Done puts the position on
