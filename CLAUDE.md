@@ -224,6 +224,24 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
     row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
   - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.
+- **Tower defense: the row is a map editor** (Oct 13: "tower defense", on "what other games could benifit from this kind of
+  thing", after chess's position editor): `ED`, `ed…` and `MAPS` inside `TD_APP`, with chess's hooks (`onBrowserToggle`,
+  `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`); taps reach `edTap` from `onCellTap`.
+  - There is no road (the towers are the walls), so a map is what the floor starts with: rocks (kept in `g.towers` as 6,
+    `ROCK`: they block the way as a tower does, and never fire, raise or sell), the entrance and exit on any edge (`g.doors`,
+    `doorsOf`; a piece comes in from outside its entrance and leaves past its exit, `outOf`), towers standing from the start
+    (level 1), the size (12, 16, 20) and the gold.
+  - Opening the row (the dots, or the menu's Make a map for this board…) edits the board the field has framed (`framedCell`;
+    `LIVE` can be a board left earlier): its map if it has one, else its own doors on an empty floor. The draft is a game never
+    stepped (state 'edit'), so the board draws it with the way lit.
+  - Tiles: Rock, Entrance, Exit, the five towers, Erase, then Clear, Size, Gold, Play. The same tool again takes a thing off;
+    anything that would shut the exit off from the entrance is refused, and a door must be on the edge. Quick buttons: Erase,
+    Clear, Cancel, Done.
+  - Done (✓, Play, the menu, or shutting the row) keeps the map on the board (`MAPS`, localStorage `td.maps`, the latest 300,
+    each read back through `cleanMap`) and starts a game on it (`newGame(l, n, map)`). Escape or Cancel leaves the board as it
+    was. A tap on another board moves the editor there.
+  - A board with a map shows it waiting, not the bot's recording; Reset and Difficulty start it again (the waves and the
+    pieces' strength are still the Difficulty's). The menu's Forget this board's map puts the board back.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,

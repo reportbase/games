@@ -29078,6 +29078,7 @@ const TD_APP = (() => {
   // A light checkerboard floor (Sep 28), two pale greys.
   const FLOOR = 0xeeeeee, FLOOR2 = 0xd9d9d9, LINE = 0x9a9a9a, EXIT = 0xe8c86a, ENTRY = 0x8d9299, LIVES = 3;
   const PATH = 0xf6dc8c, PATH2 = 0xe9c96e;
+  const ROCK = 6, CELL = '.PNBRQx', ROCK_COL = 0x7c8088, ROCK_FLOOR = 0xa9adb3;   // (a map's squares: empty, the five towers, a rock)
   const floorAt = i => (((i % N) + ((i / N) | 0)) % 2) ? FLOOR2 : FLOOR;
   const TOWER_COL = [0, 0x6b7b8c, 0x3b82c4, 0xd4a017], BALL = 0x2a2a2e;
   // The tower pieces: 1 pawn, 2 knight, 3 bishop, 4 rook, 5 queen — cost, damage, seconds between shots.
@@ -29171,19 +29172,29 @@ const TD_APP = (() => {
     out.push(i);
     return out;
   }
-  function reflow(g){ use(g.n); const D = DOORS[g.l]; g.flow = flowOf(g.towers, D.exit); g.way = wayOf(g.flow, D.entry); }
+  /* A board with a map of its own (Oct 13, THE MAP EDITOR below) carries its doors (g.doors) and its
+     rocks, kept in g.towers as 6 (ROCK): a rock blocks the way as a tower does, but never fires,
+     raises or sells. The doors may be on any edge; a piece comes in from outside its entrance and
+     leaves through the far side of its exit (outOf). */
+  const doorsOf = g => g.doors || DOORS[g.l];
+  const outOf = i => { const r = (i / N) | 0, c = i % N; return c === 0 ? [-1, 0] : c === N - 1 ? [1, 0] : r === 0 ? [0, -1] : r === N - 1 ? [0, 1] : [0, 0]; };
+  function reflow(g){ use(g.n); const D = doorsOf(g); g.flow = flowOf(g.towers, D.exit); g.way = wayOf(g.flow, D.entry); }
 
-  function newGame(l, n){
-    use(n || (QUIET ? 16 : SIZE[LEVEL]));
+  function newGame(l, n, map){
+    use(map ? map.n : n || (QUIET ? 16 : SIZE[LEVEL]));
     const g = { n: N, state: 'ready', l: l || 0, t: 0, gold: D().gold, lives: LIVES, wave: 0, killed: 0, leaked: 0,
                 towers: new Uint8Array(N * N), tlv: new Uint8Array(N * N), reach: {}, cool: new Float32Array(N * N), menu: null, waitT: 0,
                 creeps: [], balls: [], sparks: [], queue: [], spawnT: 0, pause: 2, think: 0, id: 0, booms: [], last: 0 };
+    if (map){
+      g.map = map; g.doors = { entry: map.entry, exit: map.exit }; g.gold = map.gold;
+      for (let i = 0; i < N * N; i++){ const v = CELL.indexOf(map.cells[i]); if (v > 0){ g.towers[i] = v; if (v < ROCK){ g.tlv[i] = 1; g.reach[i] = reachOf(v, 1, i); } } }
+    }
     reflow(g);
     return g;
   }
   function start(g){
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
-    Object.assign(g, newGame(g.l, g.n));
+    Object.assign(g, newGame(g.l, g.n, g.map));
     g.state = 'play';
     say('Tap a square to build a chess-piece tower · tap the grey entrance to send the first wave · three out through the gold exit and it is lost', 3600);
   }
@@ -29203,7 +29214,7 @@ const TD_APP = (() => {
   // Build a tower of kind t on an empty square.
   function build(g, i, t){
     use(g.n);
-    const D2 = DOORS[g.l];
+    const D2 = doorsOf(g);
     if (i === D2.entry || i === D2.exit || g.towers[i]) return false;
     const cost = TCOST[t];
     if (g.gold < cost){ say('A ' + TNAME[t] + ' needs ' + cost + ' gold', 1000); beep('no'); return false; }
@@ -29219,7 +29230,7 @@ const TD_APP = (() => {
   function raise(g, i){
     use(g.n);
     const t = g.towers[i], lv = g.tlv[i];
-    if (!t || lv >= 3) return false;
+    if (!t || t >= ROCK || lv >= 3) return false;
     const cost = upCost(t, lv);
     if (g.gold < cost){ say('Raising it needs ' + cost + ' gold', 1000); beep('no'); return false; }
     g.gold -= cost; g.tlv[i] = lv + 1; g.reach[i] = reachOf(t, lv + 1, i); beep('raise');
@@ -29228,7 +29239,7 @@ const TD_APP = (() => {
   function sell(g, i){
     use(g.n);
     const t = g.towers[i], lv = g.tlv[i];
-    if (!t) return false;
+    if (!t || t >= ROCK) return false;
     let paid = TCOST[t]; for (let k = 1; k < lv; k++) paid += upCost(t, k);
     g.gold += Math.floor(paid / 2); g.towers[i] = 0; g.tlv[i] = 0; delete g.reach[i];
     reflow(g); beep('sell');
@@ -29252,7 +29263,7 @@ const TD_APP = (() => {
   const coverOf = (pass, i, t, lv) => reachOf(t, lv, i).reduce((s, j) => s + pass[j], 0);
   function bot(g){
     use(g.n);
-    const D2 = DOORS[g.l], len0 = g.flow[D2.entry], pass0 = passOf(g.towers, g.flow, D2.entry);
+    const D2 = doorsOf(g), len0 = g.flow[D2.entry], pass0 = passOf(g.towers, g.flow, D2.entry);
     let best = null, bs = 0;
     const near = new Set();
     for (let j = 0; j < N * N; j++){ if (!pass0[j]) continue; const r = (j / N) | 0, c = j % N;
@@ -29273,7 +29284,7 @@ const TD_APP = (() => {
     }
     for (let i = 0; i < N * N; i++){
       const t = g.towers[i], lv = g.tlv[i];
-      if (!t || lv >= 3 || g.gold < upCost(t, lv)) continue;
+      if (!t || t >= ROCK || lv >= 3 || g.gold < upCost(t, lv)) continue;
       const v = (coverOf(pass0, i, t, lv + 1) * dpsOf(t, lv + 1) - coverOf(pass0, i, t, lv) * dpsOf(t, lv)) / upCost(t, lv);
       if (v > bs){ bs = v; best = ['raise', i]; }
     }
@@ -29285,7 +29296,7 @@ const TD_APP = (() => {
     use(g.n);
     if (g.state !== 'play') return;
     g.t += dt;
-    const Dr = DOORS[g.l];
+    const Dr = doorsOf(g);
     if (inp && (g.think += dt) > 0.5){ g.think = 0; bot(g); }
     // Waves: a pause, then the pieces one after another.
     // Between waves: a bot sends the next after a moment; you send it (the entrance, or the menu) —
@@ -29296,8 +29307,8 @@ const TD_APP = (() => {
     }
     if (g.queue.length && (g.spawnT -= dt) <= 0){
       const k = g.queue.shift(), [hp, sp, pay] = KINDS[k];
-      const er = (Dr.entry / N) | 0;
-      g.creeps.push({ id: ++g.id, k, x: -0.8, y: er, at: -1, to: Dr.entry, hp: hp * hpScale(g), max: hp * hpScale(g), sp, pay });
+      const er = (Dr.entry / N) | 0, ec = Dr.entry % N, [ox, oy] = outOf(Dr.entry);
+      g.creeps.push({ id: ++g.id, k, x: ec + ox * 0.8, y: er + oy * 0.8, at: -1, to: Dr.entry, hp: hp * hpScale(g), max: hp * hpScale(g), sp, pay });
       g.spawnT = g.gap;
     }
     // Each piece walks square to square, each time to the neighbour nearer the exit.
@@ -29309,7 +29320,8 @@ const TD_APP = (() => {
         c.x = tc; c.y = tr; mv -= d; c.at = c.to;
         if (c.at === Dr.exit){                        // out through the exit
           g.creeps.splice(g.creeps.indexOf(c), 1);
-          BOOM.add(g, (tc + 1 + 0.5) * SQ, (tr + 0.5) * SQ, 'p', rnd);
+          const [ox, oy] = outOf(Dr.exit);
+          BOOM.add(g, (tc + ox + 0.5) * SQ, (tr + oy + 0.5) * SQ, 'p', rnd);
           g.leaked = (g.leaked || 0) + 1;
           if (--g.lives <= 0) return lose(g);
           say('A piece got out — ' + g.lives + ' more and it is lost', 1400); beep('out');
@@ -29326,10 +29338,10 @@ const TD_APP = (() => {
     // Towers: each strikes at the piece on one of its squares that is nearest the exit.
     const left = c => g.flow[c.to] >= 0 ? g.flow[c.to] : 999;          // squares still to go: fewest first
     const onSq = new Map();
-    for (const c of g.creeps){ const j = Math.round(c.y) * N + Math.round(c.x); if (Math.round(c.x) >= 0) (onSq.get(j) || onSq.set(j, []).get(j)).push(c); }
+    for (const c of g.creeps){ const rx = Math.round(c.x), ry = Math.round(c.y), j = ry * N + rx; if (rx >= 0 && rx < N && ry >= 0 && ry < N) (onSq.get(j) || onSq.set(j, []).get(j)).push(c); }
     for (let i = 0; i < N * N; i++){
       const t = g.towers[i];
-      if (!t || (g.cool[i] -= dt) > 0) continue;
+      if (!t || t >= ROCK || (g.cool[i] -= dt) > 0) continue;
       const reach = g.reach[i] || (g.reach[i] = reachOf(t, g.tlv[i] || 1, i));
       let best = null;
       for (const j of reach){ const cs = onSq.get(j); if (cs) for (const c of cs) if (!best || left(c) < left(best)) best = c; }
@@ -29357,7 +29369,7 @@ const TD_APP = (() => {
     g.sparks = g.sparks.filter(s => g.t - s.t0 < SHOT[s.t || 1].life);
   }
   function lose(g){
-    if (QUIET){ const l = g.l, t = g.t, booms = g.booms; Object.assign(g, newGame(l, g.n), { state: 'play', t, booms }); return; }
+    if (QUIET){ const l = g.l, t = g.t, booms = g.booms; Object.assign(g, newGame(l, g.n, g.map), { state: 'play', t, booms }); return; }
     g.state = 'over'; beep('over');
     say('Three pieces found the exit — lost on wave ' + g.wave + ', ' + g.killed + ' pieces taken. Tap the board to play again.', 5000);
   }
@@ -29372,7 +29384,7 @@ const TD_APP = (() => {
     for (const b of g.balls) dyn.push(5, (b.x + 0.5) * SQ, (b.y + 0.5) * SQ, b.f || 0, b.t || 1);
     for (const s of g.sparks) dyn.push(6, (s.x + 0.5) * SQ, (s.y + 0.5) * SQ, g.t - s.t0, s.t || 1);
     for (const [u, v, e, seed, mix] of BOOM.burning(g)) dyn.push(7 + PIECES.indexOf(mix), u, v, e, seed & 0xffffff);
-    return { n: g.n, l: g.l, towers: g.towers.slice(), tlv: g.tlv.slice(), dyn: Float32Array.from(dyn), way: g.way ? g.way.slice() : [], menu: g.menu, gold: g.gold };
+    return { n: g.n, l: g.l, doors: g.doors, towers: g.towers.slice(), tlv: g.tlv.slice(), dyn: Float32Array.from(dyn), way: g.way ? g.way.slice() : [], menu: g.menu, gold: g.gold };
   }
   const REEL_FPS = 30, REEL_SECS = 45, WARM = 40;
   /* EVERY BOARD AT THE DIFFICULTY'S SIZE (Sep 30: "when you change the difficulty, change all the
@@ -29419,11 +29431,13 @@ const TD_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     // Normal carries on from the 16×16 recording on the board; Easy and Hard start their own size.
-    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play' || g0.state === 'ready') g0.state = 'wait'; GAMES.set(k, g0); }
+    if (!GAMES.has(k)){ const m = MAPS.get(k), g0 = m ? newGame(roadOf(c, r), 0, m) : adopt(c, r); if (g0.state === 'play' || g0.state === 'ready') g0.state = 'wait'; GAMES.set(k, g0); }
     use(GAMES.get(k).n);
     return GAMES.get(k);
   };
   const shown = (c, r) => {
+    if (ED.on && ED.key === gkey(c, r)) return snap(ED.g);      // (the map being made)
+    if (MAPS.has(gkey(c, r))) return snap(gameAt(c, r));        // (a board with its own map waits for you on it)
     const g = GAMES.get(gkey(c, r));
     if (g && g.state !== 'ready') return snap(g);
     if (LIVE && LIVE.key === gkey(c, r)) return snap(gameAt(c, r));
@@ -29480,7 +29494,7 @@ const TD_APP = (() => {
                                         { kind: 'lineH', u: 0.5, v: k * SQ, scale: SQ, color: LINE });
   function asItems(s){
     use(s.n);
-    const out = [], D = DOORS[s.l];                  // the checkerboard is the floor; no ruled lines
+    const out = [], D = doorsOf(s);                  // the checkerboard is the floor; no ruled lines
     // The doors, and the way the pieces will take, dotted.
     out.push({ kind: 'door', u: (D.exit % N + 0.5) * SQ, v: (((D.exit / N) | 0) + 0.5) * SQ, scale: SQ, color: EXIT },
              { kind: 'door', u: (D.entry % N + 0.5) * SQ, v: (((D.entry / N) | 0) + 0.5) * SQ, scale: SQ, color: ENTRY });
@@ -29489,6 +29503,7 @@ const TD_APP = (() => {
     for (let i = 0; i < N * N; i++){
       const t = s.towers[i];
       if (!t) continue;
+      if (t === ROCK){ out.push({ kind: 'rock', u: (i % N + 0.5) * SQ, v: (((i / N) | 0) + 0.5) * SQ, scale: SQ * 0.95, color: ROCK_COL, seed: i }); continue; }
       const lv = (s.tlv && s.tlv[i]) || 1, u = (i % N + 0.5) * SQ, v = (((i / N) | 0) + 0.5) * SQ;
       out.push({ kind: 'base', u, v, scale: SQ * 0.95, color: TOWER_COL[lv] }, { kind: 'tp' + t, piece: TP[t], u, v, scale: SQ * 0.95, lift: SQ * 0.06 });
     }
@@ -29520,8 +29535,8 @@ const TD_APP = (() => {
   // The squares: the floor and the two doors; from far off the towers and pieces too.
   function gridOf(s, far){
     use(s.n);
-    const D = DOORS[s.l], colors = new Array(N * N);
-    for (let i = 0; i < N * N; i++) colors[i] = i === D.exit ? EXIT : i === D.entry ? ENTRY : far && s.towers[i] ? 0xf4f4f4 : floorAt(i);
+    const D = doorsOf(s), colors = new Array(N * N);
+    for (let i = 0; i < N * N; i++) colors[i] = i === D.exit ? EXIT : i === D.entry ? ENTRY : s.towers[i] === ROCK ? ROCK_FLOOR : far && s.towers[i] ? 0xf4f4f4 : floorAt(i);
     // The fastest way to the exit, lit (Sep 30: "highlight the fastest path").
     for (const i of s.way || []) if (i !== D.exit && i !== D.entry) colors[i] = floorAt(i) === FLOOR ? PATH : PATH2;
     if (far) for (let j = 0; j < s.dyn.length; j += 5) if (s.dyn[j] <= 4){
@@ -29557,6 +29572,148 @@ const TD_APP = (() => {
   const turret = lv => (h, th) => h < 0.3 ? 0.36 + 0.02 * Math.cos(8 * th)
                                  : h < 0.85 ? 0.2 + 0.04 * lv + 0.02 * Math.cos(8 * th)
                                  : (0.3 + 0.03 * lv) * (1 + 0.25 * Math.pow(Math.max(0, Math.cos(4 * th)), 6));   // battlements
+
+  /* ─── THE MAP EDITOR ──────────────────────────────────────────────────
+     (Oct 13: "tower defense", asked on "what other games could benefit from this kind of thing", after
+     chess's position editor in the bottom row, "similar to mini-golf".) There is no road in this game, the
+     towers are the walls, so a map is what the floor starts with: ROCKS that block the way and take no
+     tower, the ENTRANCE and the EXIT on any edge, TOWERS standing from the start, the SIZE (12, 16 or 20)
+     and the GOLD you start with. Opening the bottom row (the dots, or the menu's Make a map…) makes a map
+     of the framed board: its own if it has one, else its doors on an empty floor. Its tiles are the tools
+     (Rock, Entrance, Exit, the five towers, Erase) and the acts (Clear, Size, Gold, Play). A tap puts the
+     tool on that square, the same tool again takes it off; nothing may shut the exit off from the
+     entrance (the lit way shows the walk as it stands). Done (✓, Play, the menu, or shutting the row) keeps
+     the map on the board (MAPS, localStorage td.maps) and starts a game on it; Escape or Cancel leaves the
+     board as it was. A tap on another board moves the editor there. A board with a map shows it waiting
+     instead of the bot's recording, and Reset and Difficulty start it again; the waves and the pieces'
+     strength are the Difficulty's, as on any board. The menu's Forget this board's map puts it back. */
+  const MAPS = new Map(), MAP_CAP = 300, GOLDS = [30, 50, 70, 100, 150, 250, 500];
+  const isEdge = (i, n) => { const r = (i / n) | 0, c = i % n; return r === 0 || c === 0 || r === n - 1 || c === n - 1; };
+  // Anything read back from storage is checked: sizes, doors on the edge, known squares, an open way.
+  function cleanMap(m){
+    if (!m || typeof m !== 'object') return null;
+    const n = +m.n, entry = m.entry | 0, exit = m.exit | 0, cells = String(m.cells || '');
+    if (![12, 16, 20].includes(n) || cells.length !== n * n || /[^.PNBRQx]/.test(cells)) return null;
+    if (entry === exit || entry < 0 || exit < 0 || entry >= n * n || exit >= n * n || !isEdge(entry, n) || !isEdge(exit, n)) return null;
+    if (cells[entry] !== '.' || cells[exit] !== '.') return null;
+    const gold = Math.max(0, Math.min(999, Math.round(+m.gold || 70)));
+    const was = N; use(n);
+    const tw = Uint8Array.from(cells, ch => CELL.indexOf(ch)), ok = flowOf(tw, exit)[entry] >= 0;
+    use(was);
+    return ok ? { n, entry, exit, cells, gold } : null;
+  }
+  function saveMaps(){
+    try { const o = {}; [...MAPS.entries()].slice(-MAP_CAP).forEach(([k, m]) => { o[k] = m; }); localStorage.setItem('td.maps', JSON.stringify(o)); } catch {}
+  }
+  try { const o = JSON.parse(localStorage.getItem('td.maps') || '{}'); for (const k in o){ const m = cleanMap(o[k]); if (m) MAPS.set(k, m); } } catch {}
+  const mapOf = g => ({ n: g.n, entry: g.doors.entry, exit: g.doors.exit, cells: Array.from(g.towers, v => CELL[v] || '.').join(''), gold: g.gold });
+
+  const ED = { on: false, key: null, c: 0, r: 0, g: null, tool: 'rock', busy: false };
+  const ED_TOOLS = [['rock', '🪨', 'Rock'], ['entry', '🚪', 'Entrance'], ['exit', '🏁', 'Exit'],
+                    [1, '♙', 'Pawn'], [2, '♘', 'Knight'], [3, '♗', 'Bishop'], [4, '♖', 'Rook'], [5, '♕', 'Queen'], ['erase', '🧽', 'Erase']];
+  const ED_ACTS = ['clear', 'size', 'gold', 'play'];
+  const edSay = (m, ms) => { ED.msg = m; try { engineNotice(m, ms || 2600); } catch {} };
+  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  // A draft: a game on the map, never stepped (state 'edit'), so the board draws it, the way lit.
+  function edDraft(map){ const g = newGame(roadOf(ED.c, ED.r), 0, map); g.state = 'edit'; return g; }
+  function bareMap(c, r, n){
+    use(n);
+    const D0 = DOORS[roadOf(c, r)];
+    return { n, entry: D0.entry, exit: D0.exit, cells: '.'.repeat(n * n), gold: DIFF[LEVEL].gold };
+  }
+  function edStart(c, r){
+    const k = gkey(c, r);
+    Object.assign(ED, { on: true, key: k, c, r });
+    LIVE = { key: k, c, r };
+    const g0 = GAMES.get(k);
+    ED.g = edDraft(MAPS.get(k) || bareMap(c, r, g0 ? g0.n : SIZE[LEVEL]));
+    try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {}
+  }
+  // The board on the screen, as the field frames it (LIVE can be a board left earlier: found when the editor opened on
+  // 0·0 with 4·3 framed, Oct 13).
+  function framedCell(){
+    try { const W = window.FIELD_WORLD, T = W && W.target; if (T && T.shown){ const f = W.cellAt(T.boardX, T.boardZ); if (f) return f; } } catch {}
+    return LIVE;
+  }
+  function edOpen(){
+    const f = framedCell();
+    if (!f){ say('Pick a board first, then open the row to make its map', 2000); return false; }
+    edStart(f.c, f.r);
+    const T = ED_TOOLS.find(t => t[0] === ED.tool);
+    edSay('Making a map: ' + ED.g.n + '×' + ED.g.n + ', ' + ED.g.gold + ' gold. Tap squares to put ' + (T ? T[2].toLowerCase() + 's' : 'rocks') + ' there; ✓ plays it.', 3600);
+    return true;
+  }
+  function edStop(){ ED.on = false; ED.g = null; try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {} }
+  function edDone(){
+    if (!ED.on) return true;
+    const k = ED.key, map = cleanMap(mapOf(ED.g));
+    if (!map){ edSay('This map has no way from the entrance to the exit.'); return false; }
+    MAPS.delete(k); MAPS.set(k, map); saveMaps();
+    const g = newGame(roadOf(ED.c, ED.r), 0, map);
+    GAMES.set(k, g); LIVE = { key: k, c: ED.c, r: ED.r };
+    edStop(); edPane(false);
+    start(g);
+    edSay('Your map, ' + map.n + '×' + map.n + ' with ' + map.gold + ' gold — tap the grey entrance to send the first wave.', 3200);
+    return true;
+  }
+  function edCancel(){ if (!ED.on) return; edStop(); edPane(false); edSay('Left the board as it was.', 1800); }
+  // The tool in hand on square i. The way must stay open: what would shut it is refused.
+  function edPlace(i){
+    const g = ED.g; use(g.n);
+    const D2 = g.doors, t = ED.tool, was = g.towers[i], wasT = g.tlv[i], wasD = { ...D2 };
+    const undo = why => { g.towers[i] = was; g.tlv[i] = wasT; Object.assign(D2, wasD); reflow(g); edSay(why); return false; };
+    if (t === 'erase'){ g.towers[i] = 0; g.tlv[i] = 0; delete g.reach[i]; reflow(g); return true; }
+    if (t === 'entry' || t === 'exit'){
+      if (!isEdge(i, g.n)) return undo('The ' + (t === 'entry' ? 'entrance' : 'exit') + ' goes on the edge of the board.');
+      if (i === (t === 'entry' ? D2.exit : D2.entry)) return undo('The entrance and the exit need squares of their own.');
+      g.towers[i] = 0; g.tlv[i] = 0; delete g.reach[i];
+      D2[t] = i;
+    } else {
+      if (i === D2.entry || i === D2.exit) return undo('That is the ' + (i === D2.entry ? 'entrance' : 'exit') + '.');
+      const v = t === 'rock' ? ROCK : t;
+      if (was === v){ g.towers[i] = 0; g.tlv[i] = 0; delete g.reach[i]; reflow(g); return true; }   // (the same again takes it off)
+      g.towers[i] = v; g.tlv[i] = v < ROCK ? 1 : 0;
+      if (v < ROCK) g.reach[i] = reachOf(v, 1, i); else delete g.reach[i];
+    }
+    if (flowOf(g.towers, D2.exit)[D2.entry] < 0) return undo('That would shut the exit off from the entrance.');
+    reflow(g);
+    return true;
+  }
+  function edTiles(){
+    const sel = '#6b5a1e', g = ED.g;
+    const out = ED_TOOLS.map(([k, gl, name]) => ({ glyph: gl, value: name, bg: ED.tool === k ? sel : null }));
+    out.push({ glyph: '⌫', value: 'Clear' }, { glyph: '▦', value: 'Size ' + g.n + '×' + g.n }, { glyph: '🪙', value: 'Gold ' + g.gold }, { glyph: '▶', value: 'Play' });
+    return out;
+  }
+  function edTile(i){
+    if (!ED.on) return false;
+    if (i < ED_TOOLS.length){
+      const [k, , name] = ED_TOOLS[i]; ED.tool = k;
+      edSay(k === 'erase' ? 'Tap a rock or a tower to take it off.' : k === 'entry' || k === 'exit' ? 'Tap a square on the edge for the ' + name.toLowerCase() + '.'
+          : 'Tap squares to put ' + name.toLowerCase() + 's there' + (k === 'rock' ? ' (they block the way and take no tower).' : ' (they stand from the start).'));
+    } else {
+      const a = ED_ACTS[i - ED_TOOLS.length], g = ED.g;
+      if (a === 'clear'){ g.towers.fill(0); g.tlv.fill(0); g.reach = {}; reflow(g); edSay('The floor is clear.'); }
+      else if (a === 'size'){
+        const n = g.n === 12 ? 16 : g.n === 16 ? 20 : 12, m = bareMap(ED.c, ED.r, n); m.gold = g.gold;
+        ED.g = edDraft(m); edSay('A ' + n + '×' + n + ' floor (the rocks and towers start again).');
+      }
+      else if (a === 'gold'){ g.gold = GOLDS[(GOLDS.indexOf(g.gold) + 1) % GOLDS.length]; edSay('You start with ' + g.gold + ' gold.'); }
+      else if (a === 'play') edDone();
+    }
+    try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  // A tap on the board being made puts the tool there; on another board, the editor moves there (as golf's does).
+  function edTap(c, r, u, v){
+    if (gkey(c, r) !== ED.key){ edStart(c, r); edSay('Making a map for this board.', 1500); return true; }
+    if (u == null) return true;
+    use(ED.g.n);
+    const i = cellOf(u, v);
+    if (i >= 0) edPlace(i);
+    return true;
+  }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); edCancel(); } }, true);
   const app = {
     name: 'tower defense',
     realtime: true,
@@ -29569,6 +29726,7 @@ const TD_APP = (() => {
       tw1: () => TVF.shape('tw1', turret(1), 0.7, 10, 16),
       tw2: () => TVF.shape('tw2', turret(2), 0.95, 10, 16),
       tw3: () => TVF.shape('tw3', turret(3), 1.2, 10, 16),
+      rock: T => { const g = new T.DodecahedronGeometry(0.46, 0); g.scale(1, 0.62, 1); g.translate(0, 0.27, 0); return g; },
       ball: T => { const g = new T.SphereGeometry(0.5, 12, 8); g.translate(0, 0.5, 0); return g; },
       orb:   T => new T.SphereGeometry(0.5, 12, 8),
       spike: T => new T.OctahedronGeometry(0.5),
@@ -29588,7 +29746,29 @@ const TD_APP = (() => {
     /* THE NUMBERS, in the row along the bottom (Sep 30): gold, lives, wave, pieces taken, then the
        five towers at their prices — dim when you cannot pay — and, with a tower picked, what raising
        and selling it come to. */
+    /* THE ROW IS THE MAP EDITOR (Oct 13, ED above): opening it makes a map of the framed board,
+       shutting it plays the map. */
+    onBrowserToggle(open){
+      if (ED.busy) return true;
+      if (open && !ED.on) return edOpen();
+      if (!open && ED.on) return edDone();
+      return true;
+    },
+    statsStay(){ return ED.on; },
+    onStatTap(c, r, i){ return edTile(i); },
+    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase', dim: ED.tool === 'erase' }, { key: 'clear', glyph: '⌫', title: 'Clear the floor' },
+                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this map' }] : null; },
+    onQuickAct(c, r, key){
+      if (!ED.on) return false;
+      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a rock or a tower to take it off.'); }
+      else if (key === 'clear') edTile(ED_TOOLS.length + ED_ACTS.indexOf('clear'));
+      else if (key === 'cancel') edCancel();
+      else if (key === 'done') edDone();
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
     statTiles(c, r){
+      if (ED.on) return edTiles();
       const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null);
       if (!g) return null;
       const between = g.state === 'play' && !g.queue.length && !g.creeps.length;
@@ -29617,6 +29797,7 @@ const TD_APP = (() => {
       for (let k = 0; k < N * N; k++){ ctx.fillStyle = css(cols[k]); ctx.fillRect(rect.x + (k % N) * t, rect.y + ((k / N) | 0) * t, t + 0.5, t + 0.5); }
     },
     cellItems(c, r){
+      if (ED.on && ED.key === gkey(c, r)) return asItems(snap(ED.g));   // (its game, if any, waits while the map is made)
       const g = GAMES.get(gkey(c, r));
       const framed = !!(LIVE && LIVE.key === gkey(c, r));
       if (g && g.state !== 'ready'){
@@ -29630,12 +29811,18 @@ const TD_APP = (() => {
       return asItems(shown(c, r));
     },
     menu: [{ head: 'Tower defense', items: [
+      { label: () => ED.on ? 'Done: play this map' : 'Make a map for this board…', title: 'The bottom row becomes a map editor: rocks, where the entrance and exit are, towers to start with, the size and the gold. Done plays it.',
+        on(){ if (ED.on) edDone(); else edOpen(); } },
+      { label: 'Cancel the map', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
+      { label: "Forget this board's map", title: 'Back to the board as it came, its own doors and an empty floor.',
+        get disabled(){ const f = framedCell(); return !(f && MAPS.has(gkey(f.c, f.r))); },
+        on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MAPS.delete(k); saveMaps(); GAMES.delete(k); say('The board is as it came', 1500); try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {} } },
       { label: 'Send next wave', title: 'Send the next wave now (tapping the grey entrance does the same).',
         on(){ try { const g = LIVE && GAMES.get(LIVE.key); if (g && g.state === 'play' && !g.queue.length && !g.creeps.length){ g.waitT = 0; nextWave(g); } } catch {} } },
       { label: () => 'Difficulty: ' + LEVEL, title: 'Easy: a 12×12 board, more gold to start, weaker pieces and fewer of them. Normal: 16×16. Hard: 20×20, the other way. The board you are on starts again at the new size.',
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('td.level', LEVEL);
               GAMES.clear();
-              if (LIVE){ const g = newGame(roadOf(LIVE.c, LIVE.r)); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
+              if (LIVE){ const m = MAPS.get(LIVE.key), g = newGame(roadOf(LIVE.c, LIVE.r), 0, m); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
       { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Shots, hits, explosions, building and fanfares — made in the browser.',
         on(){ SND.on = !SND.on; ARCADE.save('td.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
     ]}],
@@ -29658,6 +29845,7 @@ const TD_APP = (() => {
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     // A tap: on a ring option, that; on the entrance, the next wave; on a square, open its ring.
     onCellTap(c, r, u, v){
+      if (ED.on) return edTap(c, r, u, v);
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
       if (g.state !== 'play'){ start(g); return true; }
@@ -29672,8 +29860,9 @@ const TD_APP = (() => {
           return true;
         }
       }
-      const i = cellOf(u, v), D2 = DOORS[g.l];
+      const i = cellOf(u, v), D2 = doorsOf(g);
       if (i < 0) return true;
+      if (g.towers[i] === ROCK) return true;
       if (i === D2.entry){ if (!g.queue.length && !g.creeps.length){ g.waitT = 0; nextWave(g); } return true; }
       if (i === D2.exit) return true;
       openRing(g, i);
@@ -29686,7 +29875,7 @@ const TD_APP = (() => {
       const cols = gridOf(shown(c, r), true).colors, t = sz / N;
       for (let k = 0; k < N * N; k++){ ctx.fillStyle = css(cols[k]); ctx.fillRect((k % N) * t, ((k / N) | 0) * t, t + 0.5, t + 0.5); }
     },
-    _debug: { newGame, start, step, build, raise, sell, openRing, reachOf, nextWave, bakeReel, adopt, doors: DOORS, games: GAMES, flowOf, setLevel: v => { LEVEL = v; } },
+    _debug: { fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edPlace, edTile, edTiles, maps: MAPS, gameAt, live: () => LIVE, newGame, start, step, build, raise, sell, openRing, reachOf, nextWave, bakeReel, adopt, doors: DOORS, games: GAMES, flowOf, setLevel: v => { LEVEL = v; } },
   };
   return app;
 })();
