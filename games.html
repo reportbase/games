@@ -13006,7 +13006,9 @@ function toggleBoardBrowser(on){
   /* (A row with nothing in it is drawn shut whatever bbVisible says, so a press on the dots goes by what it looks like: a
      shut-looking row opens. Chess with no game in play had an empty row left "open", and the first press shut it and did
      nothing, the second opened the position editor: Oct 13.) */
-  const want = (on == null) ? !(bbVisible && bbKeys.length > 0) : !!on;
+  /* (…and then by the page itself, as drawn: on CI, with a game in play, the row had tiles and bbVisible set and was still
+     drawn shut when the dots were pressed, and the press shut it again. The class is what a person sees.) */
+  const want = (on == null) ? (document.body.classList.contains('bb-collapsed') || !(bbVisible && bbKeys.length > 0)) : !!on;
   /* AN APP MAY TAKE THE ROW'S OPENING AS ITS OWN SWITCH (Oct 10: mini golf, "the bottom browser in the golf application
      should turn edit mode on when it displayed and turned off when not displayed"): onBrowserToggle(open) is told first,
      and answering false leaves the row as it was. */
