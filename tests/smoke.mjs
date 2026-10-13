@@ -217,7 +217,8 @@ try {
     const td = await page.evaluate(async () => {
       const wait = ms => new Promise(ok => setTimeout(ok, ms));
       const A = window.FIELD_APPS.find(a => a.name === 'tower defense'); window.setFieldApp(A); await wait(2500);
-      const D = A._debug;
+      const D = A._debug, W0 = window.FIELD_WORLD, T0 = W0.target, home = T0.shown ? W0.cellAt(T0.boardX, T0.boardZ) : null;
+      window.__tdHome = home;                                      // (flown back after: the boards' frame is every game's, and the later checks expect theirs)
       D.fly(4, 3); await wait(1500);
       if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
       document.getElementById('bbHandle').click(); await wait(800);
@@ -262,7 +263,8 @@ try {
       return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.g.towers[2 * n + 9] };
     });
     await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
-    const rc2 = await page.evaluate(n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.g && E.g.towers[2 * n + 9]; D.edCancel(); return v; }, rc.n);
+    const rc2 = await page.evaluate(async n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.g && E.g.towers[2 * n + 9]; D.edCancel();
+      const h = window.__tdHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.n);
     if (rc.before !== 0 || rc2 !== 6) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
     const n = 12;
     if (!td.open || td.tiles !== 13 || td.keys !== 13 || !td.midRefused || !/edge/.test(td.midMsg) || !/shut/.test(td.shutMsg) || !td.rockOpen
@@ -1005,7 +1007,8 @@ try {
       its = D.cellItems(f.c, f.r, 2000); out.off = !its.some(i => i.kind === 'ghostBall'); L.GHOST.on = true;
       its = D.cellItems(f.c, f.r, 2000); out.on = its.some(i => i.kind === 'ghostBall');
       // the link: the hole and the line, on a hole of its own with the same key; nonsense refused
-      const url = L.lineLink(g.hole), q = new URL(url).searchParams.get('line'), k2 = L.takeLineLink(q);
+      const url = L.lineLink(g.hole); if (!url){ out.noLine = g.hole; return out; }   // (no line kept: reported, not thrown)
+      const q = new URL(url).searchParams.get('line'), k2 = L.takeLineLink(q);
       out.link = k2 != null && D.HOLES[k2].custom && L.lineKey(k2) === L.lineKey(g.hole) && !L.GHOSTS[L.lineKey(g.hole)].shared;
       const enc = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       const pay = JSON.parse(decodeURIComponent(escape(atob(q.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - q.length % 4) % 4)))));
