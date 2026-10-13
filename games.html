@@ -44176,16 +44176,29 @@ const LEVELS_APP = (() => {
   const MODES = ['none', 'metres', 'vh'], MODE_NAME = { none: 'None', metres: 'By metres', vh: 'By v/h' };
   let mode = 'vh';
   try { const q = new URLSearchParams(location.search).get('lod'); if (MODES.includes(q)) mode = q; else { const s = localStorage.getItem('levels.mode'); if (MODES.includes(s)) mode = s; } } catch {}
-  // (the body's relief: four bands of five waves, frequency 3, 6, 12, 24, each half as tall as the last; seeded, so every
-  //  board's body is the same shape, and only its level of detail differs)
-  const WAVES = (() => { let s = 20261013; const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; const W = [];
-    for (let b = 0; b < 4; b++) for (let j = 0; j < 5; j++){ const z = rnd() * 2 - 1, a = rnd() * 2 * Math.PI, q = Math.sqrt(1 - z * z);
-      W.push({ b, f: 3 * 2 ** b, A: 0.07 / 2 ** b, d: [q * Math.cos(a), z, q * Math.sin(a)], ph: rnd() * 2 * Math.PI }); }
-    return W; })();
+  /* EVERY BOARD ITS OWN BODY (Oct 13: "the object in each board should be unique, generated from the board Id."): a board's id
+     is golf's and Sokoban's (Szudzik's pairing of its column and row on the wrapped field, boardIdx), and seeds its body: four
+     bands of five waves, frequency 3, 6, 12, 24, each band half as tall as the last and then weighed by the board (0.3 to 1.7
+     of that), each wave its own way round and its own phase, and the whole stretched a little up or across (BODY.s). So a
+     board is always the same body, and no two boards are; only its level of detail changes with the eye. */
+  const boardIdx = (c, r) => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(W().st.N))); } catch {} const a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  const BODY = new Map();
+  function bodyOf(idx){
+    let B = BODY.get(idx);
+    if (B) return B;
+    let s = (Math.imul(idx + 1, 2654435761) ^ 0x9e3779b9) >>> 0;
+    const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296, waves = [];
+    for (let b = 0; b < 4; b++){ const m = 0.3 + 1.4 * rnd();
+      for (let j = 0; j < 5; j++){ const z = rnd() * 2 - 1, a = rnd() * 2 * Math.PI, q = Math.sqrt(1 - z * z);
+        waves.push({ b, f: 3 * 2 ** b, A: 0.07 / 2 ** b * m, d: [q * Math.cos(a), z, q * Math.sin(a)], ph: rnd() * 2 * Math.PI }); } }
+    B = { waves, s: [0.85 + 0.3 * rnd(), 0.8 + 0.5 * rnd(), 0.85 + 0.3 * rnd()] };
+    if (BODY.size > 6000) BODY.clear();
+    BODY.set(idx, B); return B;
+  }
   // level k: every band b ≤ 3 − k, on a mesh of 64 >> k around and half as many up (no coarser than 6 × 3)
   const LV_GEO = 5, segOf = k => Math.max(6, 64 >> k), ringsOf = k => Math.max(3, 32 >> k);
-  function bodyGeo(T, k){
-    const seg = segOf(k), rings = ringsOf(k), P = [], C = [], I = [], W = WAVES.filter(w => w.b <= 3 - k);
+  function bodyGeo(T, k, waves){
+    const seg = segOf(k), rings = ringsOf(k), P = [], C = [], I = [], W = waves.filter(w => w.b <= 3 - k);
     for (let i = 0; i <= rings; i++){
       const th = Math.PI * i / rings, y = Math.cos(th), q = Math.sin(th);
       for (let j = 0; j <= seg; j++){
@@ -44198,8 +44211,10 @@ const LEVELS_APP = (() => {
     }
     for (let i = 0; i < rings; i++) for (let j = 0; j < seg; j++){
       const a = i * (seg + 1) + j, b = a + seg + 1;
-      if (i > 0) I.push(a, b, a + 1);
-      if (i < rings - 1) I.push(a + 1, b, b + 1);
+      // (wound to face out: wound the other way, the near side was culled and the inside of the far side showed, so every body
+      //  looked hollow and pushed back off its board's middle, Oct 13: "the object in each levels board is not centered.")
+      if (i > 0) I.push(a, a + 1, b);
+      if (i < rings - 1) I.push(a + 1, b + 1, b);
     }
     const G = new T.BufferGeometry();
     G.setAttribute('position', new T.Float32BufferAttribute(P, 3));
@@ -44209,10 +44224,20 @@ const LEVELS_APP = (() => {
     return G;
   }
   const TRIS = [];
-  const geos = {};
-  for (let k = 0; k < LV_GEO; k++){
-    geos['lvBody' + k] = T => { const G = bodyGeo(T, k); TRIS[k] = G.userData.tris; return G; };
-    geos['lvWire' + k] = T => { const G = bodyGeo(T, k); G.userData.wireframe = true; return G; };
+  /* A kind a board and a grain: lvB<id>_<g> (solid) or lvW<id>_<g> (wire), made when first wanted (the field asks
+     itemGeometries[kind]). Kinds no board has wanted for KIND_IDLE ms are dropped (fieldDropItemKind), so a flight across the
+     field does not keep every body it passed. */
+  /* (the coarsest grain keeps no band at all, so there every board's body is the plain ball, its own only in its stretch,
+     which the item carries: those share one kind, lvBfar or lvWfar. Tilted to the horizon a kind a board was 5,800 meshes,
+     a draw each, Oct 13.) */
+  const KIND_RE = /^lv([BW])(\d+)_(\d)$/, USED = new Map(), KIND_IDLE = 4000;
+  const geos = new Proxy({}, { get(_, kind){
+    if (kind === 'lvBfar' || kind === 'lvWfar') return T => { const G = bodyGeo(T, LV_GEO - 1, []); if (kind === 'lvWfar') G.userData.wireframe = true; return G; };
+    const m = KIND_RE.exec(String(kind)); if (!m) return undefined;
+    return T => { const G = bodyGeo(T, +m[3], bodyOf(+m[2]).waves); if (m[1] === 'W') G.userData.wireframe = true; return G; };
+  } });
+  function dropIdle(now){
+    for (const [k, t] of USED) if (now - t > KIND_IDLE){ USED.delete(k); try { window.fieldDropItemKind && window.fieldDropItemKind(k); } catch {} }
   }
   // Wireframe (the bodies drawn as their meshes' lines, so each level's grain shows; on at first, as flight.html is wire frame)
   let wire = true;
@@ -44231,7 +44256,7 @@ const LEVELS_APP = (() => {
      climbs to twice V0, the height a board is framed at, every near-field board gets a quarter of the detail, and every level
      past the corner with it: then the near field costs the same at any height, as each level past it does. By metres the
      near field is full at any height, as an engine's first tier is. */
-  const V0 = 3.5, OPEN_V = 8;
+  const V0 = 3.5, OPEN_V = 8, OPEN_PITCH = 35;   // (it opens at 35°, the field's own floor, and tilts on from there to pitchFloor)
   let pitchWas = null;
   const grainOf = (k, v) => Math.min(LV_GEO - 1, k + (mode === 'vh' ? Math.max(0, Math.round(Math.log2(v / V0))) : 0));
   // the counts: this frame's as the boards are asked, and the last whole frame's for the row
@@ -44253,6 +44278,7 @@ const LEVELS_APP = (() => {
   function tick(){
     if (window.getFieldApp && window.getFieldApp() !== LEVELS_APP){ ticking = false; if (rings) rings.visible = false; return; }
     roll();
+    { const now = performance.now(); if (now - (tick.dropAt || 0) > 1000){ tick.dropAt = now; dropIdle(now); } }
     try {
       if (!rings) rings = ringsMake();
       const cam = W().camera, v = Math.max(1e-6, cam.position.y), D = mode === 'vh' ? v : METRES_D * Math.max(...W().spacing());
@@ -44273,12 +44299,14 @@ const LEVELS_APP = (() => {
     name: 'levels',
     panMoves: true,
     itemMinPx: 1,
+    // (Oct 13: "don't clamp the tilt in levels.": the field's floor is 35°; here the eye may tilt to 2° under the horizon)
+    pitchFloor: 2,
     /* (opened, it looks out toward the horizon at the field's lowest tilt, from OPEN_V, a little over twice V0, so the eye
        sees the near field at the foot of the screen and four or five levels past it: framed looking down, two levels were in
        view; at 35° the top of the screen is about 5° under the horizon) */
-    fitView(F){ if (pitchWas == null) pitchWas = F.st.pitch; F.st.pitch = window.LAB ? window.LAB.pitchMin : 35; F.frameAt(F.zoomFor(OPEN_V)); },
+    fitView(F){ if (pitchWas == null) pitchWas = F.st.pitch; F.st.pitch = OPEN_PITCH; F.frameAt(F.zoomFor(OPEN_V)); },
     // (and left, the tilt goes back to what it was, so the next game opens as it would have)
-    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; },
+    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; USED.clear(); },
     itemGeometries: geos,
     cellItems(c, r, bp){
       startTick();
@@ -44286,14 +44314,16 @@ const LEVELS_APP = (() => {
       if (!at || !cam) return null;
       const v = Math.max(1e-6, cam.position.y), h = Math.hypot(at.x - cam.position.x, at.z - cam.position.z), k = levelAt(h, v), g = grainOf(k, v);
       cur.n[k] = (cur.n[k] || 0) + 1; cur.t[k] = (cur.t[k] || 0) + TRIS[g];
-      last.set(c + '_' + r, { k, g, s: h / v });
+      const idx = boardIdx(c, r), B = bodyOf(idx), kind = (wire ? 'lvW' : 'lvB') + (g >= LV_GEO - 1 ? 'far' : idx + '_' + g);
+      if (g < LV_GEO - 1) USED.set(kind, performance.now());
+      last.set(c + '_' + r, { k, g, s: h / v, idx });
       if (last.size > 5000) last.clear();
-      return [{ kind: (wire ? 'lvWire' : 'lvBody') + g, u: 0.5, v: 0.5, scale: 0.5, color: tintOf(k) }];
+      return [{ kind, u: 0.5, v: 0.5, scale: 0.5, sx: B.s[0], sy: B.s[1], sz: B.s[2], color: tintOf(k) }];
     },
     cellTitle(c, r){
       const L = last.get(c + '_' + r);
       if (!L) return 'Levels — board ' + c + '·' + r;
-      return 'Levels — board ' + c + '·' + r + ': ' + (L.k === 0 ? 'the near field' : 'level ' + L.k) + ', h/v = ' + L.s.toFixed(2);
+      return 'Levels — board ' + c + '·' + r + ' (body ' + L.idx + '): ' + (L.k === 0 ? 'the near field' : 'level ' + L.k) + ', h/v = ' + L.s.toFixed(2);
     },
     onCellTap(c, r){
       const L = last.get(c + '_' + r); if (!L) return false;
@@ -44316,7 +44346,7 @@ const LEVELS_APP = (() => {
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
-    _debug: { get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
+    _debug: { boardIdx, bodyOf, get kinds(){ return USED.size; }, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
 window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
@@ -45990,8 +46020,13 @@ function syncAppSelect(){
      board app with a lot moving on every board (the RTS) asks for a steeper
      least tilt: looking down more, fewer boards run off to the horizon. */
   try {
-    const L = window.LAB, _pm = FIELD_APP && FIELD_APP.pitchMin;
-    if (L && _pm){
+    const L = window.LAB, _pm = FIELD_APP && FIELD_APP.pitchMin, _pf = FIELD_APP && FIELD_APP.pitchFloor;
+    /* (…and an app may lower it, pitchFloor: Levels, Oct 13: "don't clamp the tilt in levels.", since its point is the field
+       out to the horizon, drawn by level) */
+    if (L && _pf != null){
+      if (_pitchMinWas === null) _pitchMinWas = L.pitchMin;
+      L.pitchMin = _pf;
+    } else if (L && _pm){
       if (_pitchMinWas === null) _pitchMinWas = L.pitchMin;
       L.pitchMin = Math.max(_pitchMinWas, _pm);
       if (st.pitch < L.pitchMin) st.pitch = L.pitchMin;

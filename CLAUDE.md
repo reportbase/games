@@ -303,9 +303,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   is there is anything we can do in the games project to help show how LOD works? maybe an application devoted to the
   concept?", then "yes."): `LEVELS_APP`, id `levels`, before `window.FIELD_APPS`. The theory is wander's (`flight.html`,
   `levels.html`, `zoom.html`); this plays it on real boards with a real count of what is drawn.
-  - Every board carries one body, a ball with relief in four bands of doubling frequency (`WAVES`, seeded, the same on every
-    board). Its grain `g` (0–4, `LV_GEO`) keeps the bands b ≤ 3 − g on a mesh of 64 >> g around and 32 >> g up, so each grain
-    costs a quarter of the one before (`TRIS`: 3,968, 960, 224, 48, 24 triangles).
+  - Every board carries one body of its own (Oct 13: "the object in each board should be unique, generated from the board
+    Id."): a ball with relief in four bands of doubling frequency, seeded by the board's id (`boardIdx`, golf's and Sokoban's
+    Szudzik pairing; `bodyOf`: each band weighed 0.3–1.7, each wave its own way round and phase, the whole stretched a little,
+    `B.s`, carried by the item's sx/sy/sz). Its grain `g` (0–4, `LV_GEO`) keeps the bands b ≤ 3 − g on a mesh of 64 >> g
+    around and 32 >> g up, so each grain costs a quarter of the one before (`TRIS`: 3,968, 960, 224, 48, 24 triangles).
+  - A kind a board and a grain (`lvB<id>_<g>`, `lvW…` for wire), made when first wanted (`itemGeometries` is a Proxy), and
+    dropped after `KIND_IDLE` (4 s) unwanted (`fieldDropItemKind`). Grain 4 keeps no band, so every board there shares one kind
+    (`lvBfar`/`lvWfar`) and keeps its stretch: tilted to the horizon, a kind a board was 5,800 meshes; now about 70.
+  - The triangles face out (Oct 13: "the object in each levels board is not centered."): wound the other way, the near side
+    was culled and the inside of the far side showed, so every body looked hollow and pushed back off its board's middle.
+  - The tilt is not clamped (Oct 13: "don't clamp the tilt in levels."): an app's `pitchFloor` sets the field's tilt floor,
+    lower than its 35° if it likes (`pitchMin` can only raise it); Levels' is 2°. It still opens at 35° (`OPEN_PITCH`).
+    Tilted to 6° from its opening height: 5,788 boards in 7 levels for 143,208 triangles.
   - v is the eye's height, h a board's distance along the ground from the point under the eye (as flight.html). By v/h (the
     default) the corner is h = v: level 0, the near field, is h ≤ v, and level k runs from 2^(k−1)·v to 2^k·v (`levelAt`).
     By metres the split is at fixed distances (`METRES_D`, 2 board spacings, doubling). None draws every board at grain 0.
@@ -318,7 +328,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     frame it rests on asks the framed board alone).
   - The bottom row: None, By metres, By v/h, Wireframe (on at first; `?lod=`, localStorage `levels.mode`, `levels.wire`),
     then boards and triangles at each level and the total. A tap on a board says its level, h/v and triangles.
-  - Field hooks it added: `FIELD_WORLD.itemAt` (the board being asked about, its middle on the ground, set in `_boardItems`
+  - Field hooks it added: `pitchFloor`; `FIELD_WORLD.itemAt` (the board being asked about, its middle on the ground, set in `_boardItems`
     and for the framed board in `_restDecide`); an item kind's `geometry.userData.wireframe`; an app's `fitView(F)`, called by
     the default fit (Levels opens at the lowest tilt, 35°, from `OPEN_V` = 8, so four or five levels are in view); and
     `onLeave()`, called by `setFieldApp` on the app being left (Levels puts the tilt back). It sets `panMoves` so its boards
