@@ -17526,6 +17526,39 @@ const HELLO_APP = {
    rank, the side not to move not in check. Escape, or Cancel in the menu, leaves the board as it was. Castling rights are
    read off kings and rooks on their home squares (gridToFen). The position becomes the board's own game (userGames), so it
    is saved with the session and exported in PGN with its [FEN] header as any game is. */
+/* ═══ SHARE LINKS FOR WHAT THE EDITORS MAKE ════════════════════════════════
+   (Oct 13: "1,2", the second being "share links: Sokoban levels, tower defense maps and chess positions are only saved in
+   your own browser; a link like mini golf's ?hole=… would let you send one".) A link is the page with ?app=<the game's
+   id>&setup=<base64 JSON of what was made>, as mini golf's ?hole= is. Each editor's menu has a Share item that copies one
+   (link); opening it, the game takes it onto the first board framed (install wraps the app's onFramed: the field calls it
+   with the board in frame as the page settles), checks it as its own editor's Done would, and plays it. A setup is taken
+   once a page; anything a link carries goes through the game's own checks, never in as it came. */
+const SHARE = (() => {
+  const enc = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const dec = q => { try { const b = String(q).replace(/-/g, '+').replace(/_/g, '/'); return JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4))))); } catch { return null; } };
+  let used = false;
+  function pending(app){
+    if (used) return null;
+    try { const p = new URLSearchParams(location.search); if (!app.id || p.get('app') !== app.id) return null; const q = p.get('setup'); return q ? dec(q) : null; } catch { return null; }
+  }
+  const link = (app, payload) => location.origin + location.pathname + '?app=' + encodeURIComponent(app.id || '') + '&setup=' + enc(payload);
+  function copy(url, told){
+    const say = m => { try { engineNotice(m, 2600); } catch {} };
+    try { navigator.clipboard.writeText(url).then(() => say(told || 'Link copied.'), () => { prompt('Copy this link to share it', url); }); }
+    catch { try { prompt('Copy this link to share it', url); } catch {} }
+    return url;
+  }
+  // apply(c, r, payload): take it onto that board
+  function install(app, apply){
+    const own = app.onFramed;
+    app.onFramed = function(c, r){
+      const res = own ? own.apply(this, arguments) : undefined;
+      if (c != null && !used){ const P = pending(app); if (P){ used = true; setTimeout(() => { try { apply(c, r, P); } catch {} }, 0); } }
+      return res;
+    };
+  }
+  return { enc, dec, link, copy, install, pending, get used(){ return used; } };
+})();
 const CHESS_ED = { on: false, key: null, bx: 0, bz: 0, bd: null, turn: 'w', you: 'w', tool: 'Q', msg: '', busy: false };
 const CHESS_ED_TOOLS = [
   ['K', '♔', 'King'], ['Q', '♕', 'Queen'], ['R', '♖', 'Rook'], ['B', '♗', 'Bishop'], ['N', '♘', 'Knight'], ['P', '♙', 'Pawn'],
@@ -17536,9 +17569,8 @@ const CHESS_ED_ACTS = ['clear', 'start', 'turn', 'you', 'play'];
 const _chEdSay = (m, ms) => { CHESS_ED.msg = m; try { engineNotice(m, ms || 3200); } catch {} };
 // the row moved without asking the editor again (golf's paneTo)
 function _chEdPane(open){ CHESS_ED.busy = true; try { toggleBoardBrowser(open); } catch {} CHESS_ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
-function chessEdStart(){
-  if (!target.shown){ _chEdSay('Pick a board first, then open the row to set up its position.'); return false; }
-  const key = cellKey(target.boardX, target.boardZ);
+// the framed board's position as it stands: the game in play, the board's own game, or what it is showing
+function chessHere(key){
   let bd = null, turn = 'w';
   const own = userGames.get(key), real = g => g && typeof g.fen === 'function';
   try {
@@ -17547,6 +17579,12 @@ function chessEdStart(){
     else { const cb = currentBakedPosition(); if (cb && cb.bd){ bd = cb.bd; turn = cb.turn || 'w'; } }
   } catch {}
   if (!bd) bd = liveBoard(new Chess());
+  return { bd, turn };
+}
+function chessEdStart(){
+  if (!target.shown){ _chEdSay('Pick a board first, then open the row to set up its position.'); return false; }
+  const key = cellKey(target.boardX, target.boardZ);
+  const { bd, turn } = chessHere(key);
   if (PLAY.on){ try { exitPlay(); } catch {} }
   Object.assign(CHESS_ED, { on: true, key, bx: target.boardX, bz: target.boardZ, bd: bd.map(row => row.slice()), turn, you: turn, youSet: false });
   _chEdSay('Setting up this board: pick a piece below, tap its squares; ✓ plays it.');
@@ -17640,6 +17678,21 @@ function chessEdTap(hit){
   }
   return true;
 }
+// SHARE (Oct 13): the framed board's position as a link, its FEN and the side you play; taken onto the first board framed
+function chessShare(){
+  if (!target.shown){ _chEdSay('Pick a board first.'); return null; }
+  const P = CHESS_ED.on ? { bd: CHESS_ED.bd, turn: CHESS_ED.turn } : chessHere(cellKey(target.boardX, target.boardZ));
+  const you = CHESS_ED.on ? CHESS_ED.you : (PLAY.on ? (PLAY.youAreWhite ? 'w' : 'b') : P.turn);
+  return SHARE.copy(SHARE.link(CHESS_APP, { fen: gridToFen(P.bd, P.turn), you }), 'Link copied: it opens on this position, ' + (P.turn === 'w' ? 'White' : 'Black') + ' to move.');
+}
+function chessTakeSetup(P){
+  let g = null; try { g = P && typeof P.fen === 'string' && P.fen.length < 120 ? new Chess(P.fen) : null; } catch {}
+  if (!g){ _chEdSay('The shared position could not be read.'); return; }
+  if (!chessEdStart()) return;
+  CHESS_ED.bd = liveBoard(g); CHESS_ED.turn = g.turn();
+  CHESS_ED.you = P.you === 'b' || P.you === 'w' ? P.you : CHESS_ED.turn; CHESS_ED.youSet = true;
+  if (!chessEdDone()){ const why = CHESS_ED.msg; chessEdCancel(); _chEdSay('The shared position cannot be played: ' + why); }
+}
 addEventListener('keydown', e => { if (e.key === 'Escape' && CHESS_ED.on){ e.preventDefault(); e.stopPropagation(); chessEdCancel(); } }, true);
 /* ═══ FIELD-CHESS — the migration pathfinder ══════════════════════════════
    A playable chess app written ENTIRELY against the seam above: the far
@@ -17677,7 +17730,7 @@ const CHESS_APP = {
     return true;
   },
   worldTap(hit){ return chessEdTap(hit); },
-  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r) },
+  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
   /* For the move traces and capture bursts drawn on chess boards (Sep 24:
      "add these changes to chess as well"). Lazy, because BOOM is defined
      further down the file than chess is. */
@@ -17696,6 +17749,7 @@ const CHESS_APP = {
       { label: () => CHESS_ED.on ? 'Done: play this position' : 'Set up a position…', title: 'Put any pieces on the selected board with the tiles in the bottom row, then play it against the engine (Oct 13).',
         on(){ if (CHESS_ED.on) chessEdDone(); else if (chessEdStart()) _chEdPane(true); } },
       { label: 'Cancel the setup', title: 'Leave the board as it was.', get disabled(){ return !CHESS_ED.on; }, on(){ chessEdCancel(); } },
+      { label: 'Share this position', title: 'Copy a link that opens the page on this position, to be played from there (Oct 13).', on(){ chessShare(); } },
       { ref: 'bHint' }, { ref: 'bCoords' }, { ref: 'eloWrap' },
       { ref: 'bUndo' }, { ref: 'bResign' }, { ref: 'bReset' },
       { ref: 'bGameInfo' }, { ref: 'bGameIndex' },
@@ -18068,6 +18122,205 @@ const ARCADE = (() => {
     return pick;
   }
   return { audio, tone, hiss, tilt, setTilt, load, save, sounds, difficulty, boardMove, noise, twoPly };
+})();
+/* ═══ A POSITION EDITOR FOR THE BOARD GAMES ════════════════════════════════
+   (Oct 13: "1,2", on "a position editor for checkers, Reversi, Ataxx, Gomoku and Go in one PR: each already has a computer
+   opponent, so set up a position and play it, as in chess", after chess's, tower defense's and Sokoban's editors in the
+   bottom row.) One editor for five games: each app carries `_ed`, a small description of itself (its pieces as numbers,
+   how its board reads and writes as a list of them, a check, and how to hand the move to its computer player), and
+   BOARD_ED.wrap gives it the bottom row's hooks. Opening the row (the dots, or the menu's Set up a position…) takes the
+   framed board's position as it stands into the editor; the board shows the draft as it is made (the draft stands in
+   the app's own map of games, never stepped: the computer is only asked after a move, and taps come here first). Tiles:
+   the game's pieces and Erase, then Clear, Start, whose move it is, which side you play (the side to move, unless you
+   choose: chess's lesson), the size where the game has sizes, and Play. A tap on the board puts the piece in hand on that
+   square; the same piece again takes it off. Done (✓, Play, the menu, or shutting the row) checks the position and puts
+   it on the board as a game of its own, and the computer moves if it is its turn; Escape or Cancel leaves the board as it
+   was. A tap on another board moves the editor there. */
+const BOARD_ED = (() => {
+  const ED = { on: false, app: null, G: null, key: null, c: 0, r: 0, n: 8, cells: null, turn: 1, you: 1, youSet: false, tool: 1, busy: false, was: undefined, msg: '' };
+  const say = (m, ms) => { ED.msg = m; try { engineNotice(m, ms || 3000); } catch {} };
+  const side = v => v === 1 ? 'Black' : 'White';
+  const changed = () => { try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {} };
+  function pane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  function stage(){ ED.G.map.set(ED.key, ED.G.stateOf(ED.n, ED.cells, ED.turn, ED.you, true, ED.c, ED.r)); changed(); }
+  function start(app, G, c, r){
+    const key = G.keyOf(c, r), P = G.cellsOf(G.shown(c, r));
+    Object.assign(ED, { on: true, app, G, key, c, r, n: P.n, cells: P.cells.slice(), turn: P.turn === 2 ? 2 : 1, youSet: false,
+                        was: G.map.has(key) ? G.map.get(key) : undefined });
+    ED.you = ED.turn;
+    if (ED.tool !== 0 && !G.pieces.some(p => p[0] === ED.tool)) ED.tool = G.pieces[0][0];
+    stage();
+  }
+  function restore(){ if (ED.was === undefined) ED.G.map.delete(ED.key); else ED.G.map.set(ED.key, ED.was); }
+  function stop(){ ED.on = false; changed(); }
+  function open(app, G){
+    let f = null; try { f = framedCell(); } catch {}
+    if (!f){ say('Pick a board first, then open the row to set up a position.'); return false; }
+    start(app, G, f.c, f.r);
+    say('Setting up a position: tap squares to put pieces there. ✓ plays it.', 3200);
+    return true;
+  }
+  function cancel(){ if (!ED.on) return; restore(); stop(); pane(false); say('Left the board as it was.', 1800); }
+  function done(){
+    if (!ED.on) return true;
+    const G = ED.G, why = G.check(ED.n, ED.cells, ED.turn);
+    if (why){ say(why + ' (Cancel leaves the board as it was.)', 3600); return false; }
+    const st = G.stateOf(ED.n, ED.cells, ED.turn, ED.you, false, ED.c, ED.r), { c, r, you, turn } = ED;
+    G.map.set(ED.key, st);
+    stop(); pane(false);
+    try { if (window.refreshFieldBrowser) window.refreshFieldBrowser(); } catch {}
+    say('Your position, ' + side(turn) + ' to move; you play ' + side(you) + '.', 2600);
+    try { G.go(c, r, st, you); } catch {}
+    return true;
+  }
+  function place(i){
+    const t = ED.tool, cells = ED.cells;
+    if (i < 0 || i >= cells.length) return;
+    if (t === 0 || cells[i] === t){ cells[i] = 0; return; }
+    const why = ED.G.canPut ? ED.G.canPut(ED.n, i, t) : null;
+    if (why){ say(why); return; }
+    cells[i] = t;
+  }
+  const acts = G => ['clear', 'start', 'turn', 'you'].concat(G.sizes ? ['size'] : [], ['play']);
+  function tiles(){
+    const G = ED.G, sel = '#6b5a1e', dark = '#2b2e35';
+    const out = G.pieces.map(([k, gl, name, light]) => ({ glyph: gl, value: name, bg: ED.tool === k ? sel : (light ? null : dark) }));
+    out.push({ glyph: '🧽', value: 'Erase', bg: ED.tool === 0 ? sel : null });
+    for (const a of acts(G)) out.push(
+      a === 'clear' ? { glyph: '⌫', value: 'Clear' } : a === 'start' ? { glyph: '↺', value: 'Start' }
+      : a === 'turn' ? { glyph: ED.turn === 1 ? '●' : '○', value: side(ED.turn) + ' to move' }
+      : a === 'you' ? { glyph: '🙂', value: 'You: ' + side(ED.you) }
+      : a === 'size' ? { glyph: '▦', value: 'Size ' + ED.n + '×' + ED.n } : { glyph: '▶', value: 'Play' });
+    return out;
+  }
+  function tile(i){
+    if (!ED.on) return false;
+    const G = ED.G, P = G.pieces.length;
+    if (i < P){ ED.tool = G.pieces[i][0]; say('Tap squares to put ' + G.pieces[i][2].toLowerCase() + 's there (again to take one off).', 2200); }
+    else if (i === P){ ED.tool = 0; say('Tap a piece to take it off.', 1800); }
+    else {
+      const a = acts(G)[i - P - 1];
+      if (a === 'clear'){ ED.cells = new Array(ED.n * ED.n).fill(0); say('The board is clear.', 1500); }
+      else if (a === 'start'){ ED.cells = G.startCells(ED.n, ED.c, ED.r).slice(); ED.turn = 1; if (!ED.youSet) ED.you = 1; say('The starting position.', 1500); }
+      else if (a === 'turn'){ ED.turn = ED.turn === 1 ? 2 : 1; if (!ED.youSet) ED.you = ED.turn; say(side(ED.turn) + ' to move' + (ED.youSet ? '.' : '; you play it.'), 1800); }
+      else if (a === 'you'){ ED.you = ED.you === 1 ? 2 : 1; ED.youSet = true; say('You will play ' + side(ED.you) + '.', 1800); }
+      else if (a === 'size'){ const S = G.sizes, k = S.indexOf(ED.n); ED.n = S[(k + 1) % S.length]; ED.cells = G.startCells(ED.n, ED.c, ED.r).slice(); say('A ' + ED.n + '×' + ED.n + ' board.', 1500); }
+      else if (a === 'play') done();
+    }
+    if (ED.on) stage();
+    try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  // a tap on the edited board puts the piece in hand on that square; on another board, the editor moves there
+  function tap(app, G, c, r, u, v){
+    if (G.keyOf(c, r) !== ED.key){ const tool = ED.tool; restore(); start(app, G, c, r); ED.tool = tool; say('Setting up a position on this board.', 1500); return true; }
+    if (u == null) return true;
+    const n = ED.n, q = Math.max(0, Math.min(n - 1, Math.floor(u * n))), w = Math.max(0, Math.min(n - 1, Math.floor(v * n)));
+    place(w * n + q); stage();
+    return true;
+  }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); cancel(); } }, true);
+
+  // SHARE (Oct 13): the framed board's position (the draft while editing) as a link; taken onto the first board framed
+  function share(app, G){
+    let f = null; try { f = framedCell(); } catch {}
+    if (!f){ say('Pick a board first.'); return null; }
+    const P = ED.on && ED.app === app ? { n: ED.n, cells: ED.cells, turn: ED.turn, you: ED.you } : (() => { const q = G.cellsOf(G.shown(f.c, f.r)); return { n: q.n, cells: q.cells, turn: q.turn === 2 ? 2 : 1 }; })();
+    const own = G.map.get(G.keyOf(f.c, f.r)), you = P.you || (own && own.human != null ? (own.human === true ? 1 : own.human === false ? 2 : own.human) : P.turn);
+    return SHARE.copy(SHARE.link(app, { n: P.n, cells: Array.from(P.cells), turn: P.turn, you }), 'Link copied: it opens on this position, ' + side(P.turn) + ' to move.');
+  }
+  function take(app, G, c, r, P){
+    const here = G.cellsOf(G.shown(c, r)), n = +P.n, codes = new Set([0, ...G.pieces.map(p => p[0])]);
+    const fail = why => say(G.title + ': the shared position cannot be played. ' + why, 4000);
+    if (!(G.sizes ? G.sizes.includes(n) : n === here.n)) return fail('Its board is not a size this game has.');
+    if (!Array.isArray(P.cells) || P.cells.length !== n * n || P.cells.some(v => !codes.has(v))) return fail('It could not be read.');
+    if (G.canPut) for (let i = 0; i < P.cells.length; i++) if (P.cells[i] && G.canPut(n, i, P.cells[i])) return fail(G.canPut(n, i, P.cells[i]));
+    const turn = P.turn === 2 ? 2 : 1, you = P.you === 1 || P.you === 2 ? P.you : turn, why = G.check(n, P.cells, turn);
+    if (why) return fail(why);
+    const st = G.stateOf(n, P.cells.slice(), turn, you, false, c, r);
+    G.map.set(G.keyOf(c, r), st); changed();
+    try { if (window.refreshFieldBrowser) window.refreshFieldBrowser(); } catch {}
+    say('A shared position, ' + side(turn) + ' to move; you play ' + side(you) + '.', 3000);
+    try { G.go(c, r, st, you); } catch {}
+  }
+
+  // Helpers the games' checks share: five in a row, and a group of stones with no liberty left.
+  function fiveIn(cells, n){
+    for (let i = 0; i < cells.length; i++){
+      const v = cells[i]; if (v !== 1 && v !== 2) continue;
+      const q = i % n, w = (i / n) | 0;
+      for (const [dq, dw] of [[1, 0], [0, 1], [1, 1], [1, -1]]){
+        let k = 1; while (k < 5){ const x = q + dq * k, y = w + dw * k; if (x < 0 || y < 0 || x >= n || y >= n || cells[y * n + x] !== v) break; k++; }
+        if (k >= 5) return v;
+      }
+    }
+    return 0;
+  }
+  function deadGroup(cells, n){
+    const seen = new Uint8Array(cells.length);
+    for (let i = 0; i < cells.length; i++){
+      if (!cells[i] || seen[i]) continue;
+      const v = cells[i], stack = [i]; seen[i] = 1; let libs = 0;
+      while (stack.length){
+        const k = stack.pop(), q = k % n, w = (k / n) | 0;
+        for (const [x, y] of [[q - 1, w], [q + 1, w], [q, w - 1], [q, w + 1]]){
+          if (x < 0 || y < 0 || x >= n || y >= n) continue;
+          const j = y * n + x;
+          if (!cells[j]) libs++;
+          else if (cells[j] === v && !seen[j]){ seen[j] = 1; stack.push(j); }
+        }
+      }
+      if (!libs) return v;
+    }
+    return 0;
+  }
+
+  function wrap(app, G){
+    const mine = () => ED.on && ED.app === app;
+    const own = { onCellTap: app.onCellTap, statTiles: app.statTiles, statsStay: app.statsStay, onStatTap: app.onStatTap,
+                  quickActs: app.quickActs, onQuickAct: app.onQuickAct, onBrowserToggle: app.onBrowserToggle, cellTitle: app.cellTitle };
+    app.onBrowserToggle = function(open_){
+      if (ED.busy) return true;
+      if (open_ && !ED.on) return open(app, G);
+      if (!open_ && mine()) return done();
+      return own.onBrowserToggle ? own.onBrowserToggle.call(this, open_) : true;
+    };
+    app.statTiles = function(c, r){ return mine() ? tiles() : own.statTiles ? own.statTiles.call(this, c, r) : null; };
+    app.statsStay = function(){ return mine() || !!(own.statsStay && own.statsStay.call(this)); };
+    app.onStatTap = function(c, r, i){ return mine() ? tile(i) : own.onStatTap ? own.onStatTap.call(this, c, r, i) : false; };
+    app.quickActs = function(c, r){
+      return mine() ? [{ key: 'erase', glyph: '🧽', title: 'Erase', dim: ED.tool === 0 }, { key: 'clear', glyph: '⌫', title: 'Clear the board' },
+                       { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this position' }]
+                    : own.quickActs ? own.quickActs.call(this, c, r) : null;
+    };
+    app.onQuickAct = function(c, r, key){
+      if (!mine()) return own.onQuickAct ? own.onQuickAct.call(this, c, r, key) : false;
+      if (key === 'erase'){ ED.tool = 0; say('Tap a piece to take it off.', 1800); }
+      else if (key === 'clear') tile(G.pieces.length + 1);
+      else if (key === 'cancel') cancel();
+      else if (key === 'done') done();
+      try { bbRefreshNow(); } catch {}
+      return true;
+    };
+    app.onCellTap = function(c, r, u, v){ return mine() ? tap(app, G, c, r, u, v) : own.onCellTap.call(this, c, r, u, v); };
+    app.cellTitle = function(c, r){
+      if (mine() && G.keyOf(c, r) === ED.key) return G.title + ' — setting up a position, ' + side(ED.turn) + ' to move, you ' + side(ED.you);
+      return own.cellTitle ? own.cellTitle.call(this, c, r) : G.title;
+    };
+    const items = [
+      { label: () => mine() ? 'Done: play this position' : 'Set up a position…', title: 'The bottom row becomes a position editor: put pieces on the board, choose who moves and which side you play, then play it against the computer.',
+        on(){ if (mine()) done(); else if (open(app, G)) pane(true); } },
+      { label: 'Cancel the setup', title: 'Leave the board as it was.', get disabled(){ return !mine(); }, on(){ cancel(); } },
+      { label: 'Share this position', title: 'Copy a link that opens the page on this position, to be played from there.', on(){ share(app, G); } },
+    ];
+    SHARE.install(app, (c, r, P) => take(app, G, c, r, P));
+    if (Array.isArray(app.menu) && app.menu.length && app.menu[0].head) app.menu[0].items.push(...items);
+    else if (Array.isArray(app.menu)) app.menu.push(...items);
+    else app.menu = [{ head: G.title, items }];
+    app._edDebug = { ed: () => ED, open: () => open(app, G), done, cancel, tile, place, map: G.map, keyOf: G.keyOf, fly: (c, r) => gotoCell(c, r), share: () => share(app, G), take: (c, r, P) => take(app, G, c, r, P) };
+    return app;
+  }
+  return { wrap, ED, fiveIn, deadGroup, share, take };
 })();
 /* ═══ FIELD CHECKERS — the second game, to prove the seam generalizes ═════
    American draughts through the same hooks chess used while migrating:
@@ -18580,6 +18833,31 @@ const CHECKERS_APP = (() => {
   });
   return {
     name: 'field checkers',
+    /* THE POSITION EDITOR (Oct 13, BOARD_ED): men and kings on the dark squares, a man never on the row that would crown it. */
+    _ed: { title: 'Checkers', map: GAMES, keyOf: (c, r) => c + '_' + r, shown: shownBoard,
+      pieces: [[1, '⛂', 'Black man'], [3, '⛃', 'Black king'], [2, '⛀', 'White man', true], [4, '⛁', 'White king', true]],
+      cellsOf: g => ({ n: 8, cells: g.bd.map(p => !p ? 0 : (p.red ? (p.k === 'k' ? 3 : 1) : (p.k === 'k' ? 4 : 2))), turn: g.red ? 1 : 2 }),
+      startCells: () => startBd().map(p => !p ? 0 : (p.red ? 1 : 2)),
+      canPut(n, i, t){
+        const r = i >> 3, c = i & 7;
+        if ((r + c) % 2 === 0) return 'Pieces stand on the dark squares.';
+        if (t === 1 && r === 0) return 'A black man there would be crowned: put a black king.';
+        if (t === 2 && r === 7) return 'A white man there would be crowned: put a white king.';
+        return null;
+      },
+      stateOf(n, cells, turn, you, draft){
+        const bd = cells.map(v => v ? { k: v > 2 ? 'k' : 'm', red: v % 2 === 1 } : null);
+        const g = { bd, red: turn === 1, human: you === 1, sel: null, tg: [], chain: null, over: null };
+        g.hist = [ckSnap(g)]; g.view = 0;
+        return g;
+      },
+      check(n, cells, turn){
+        if (!cells.some(v => v === 1 || v === 3) || !cells.some(v => v === 2 || v === 4)) return 'Each side needs a piece or more.';
+        const g = this.stateOf(n, cells, turn, turn, true);
+        if (!sideHasMove(g)) return (turn === 1 ? 'Black' : 'White') + ' has no move: the game would already be over.';
+        return null;
+      },
+      go: (c, r, g) => scheduleAI(g) },
     /* DRAUGHTS' ONE ITEM, and the only rule this app has that is genuinely a
        choice. The opponent plays forced captures either way — its generator is
        untouched — so this governs what YOU may reach: off, every quiet move
@@ -19377,6 +19655,15 @@ const GO_APP = (() => {
 
   const GO_APP_SHAPE = {
     name: 'field go',
+    /* THE POSITION EDITOR (Oct 13, BOARD_ED): stones on a 9, 13 or 19 board, none in a group with no liberty. The engine is
+       sent the stones as they stand, so a set-up position needs nothing more. */
+    _ed: { title: 'Go', map: BOARDS, keyOf: bkey, shown: (c, r) => at(c, r),
+      pieces: [[1, '●', 'Black'], [2, '○', 'White', true]], sizes: [9, 13, 19],
+      cellsOf: s => ({ n: s.n, cells: Array.from(s.bd), turn: s.turn || 1 }),
+      startCells: n => new Array(n * n).fill(0),
+      stateOf(n, cells, turn){ const s = { n, bd: Uint8Array.from(cells), turn, caps: [0, 0, 0], last: -1, composed: false, name: null }; s.hist = [s]; s.view = 0; return s; },
+      check(n, cells){ const v = BOARD_ED.deadGroup(cells, n); return v ? 'A ' + (v === 1 ? 'black' : 'white') + ' group has no liberty left: it would already be off the board.' : null; },
+      go(c, r, s, you){ if (you !== s.turn) goOpponentTurn(c, r); } },
     /* GO'S ONE ITEM — and the seam it finally reaches. onPass has been here
        since the app was written and nothing ever called it: a board where you
        must always play somewhere is not the game, and two passes are how a
@@ -19840,6 +20127,18 @@ const REVERSI_APP = (() => {
 
   return {
     name: 'field reversi',
+    /* THE POSITION EDITOR (Oct 13, BOARD_ED): stones on a 6, 8 or 10 board; a side to move with no move passes, as the rules say. */
+    _ed: { title: 'Reversi', map: GAMES, keyOf: gkey, shown: at,
+      pieces: [[1, '●', 'Black'], [2, '○', 'White', true]], sizes: [6, 8, 10],
+      cellsOf: st => ({ n: sideOf(st.bd), cells: Array.from(st.bd), turn: st.turn || 1 }),
+      startCells: n => Array.from(startBd(n)),
+      stateOf(n, cells, turn, you, draft){
+        const bd = Uint8Array.from(cells), opp = turn === 1 ? 2 : 1;
+        const t = draft ? turn : legal(bd, turn).length ? turn : opp;
+        const st = { bd, turn: t, human: you, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; return st;
+      },
+      check(n, cells){ const bd = Uint8Array.from(cells); return !legal(bd, 1).length && !legal(bd, 2).length ? 'Neither side has a move: the game would already be over.' : null; },
+      go: (c, r) => ai(c, r) },
     menu: [{ head: 'Reversi', items: [
       { label: () => 'Board: ' + SIZE + '×' + SIZE, title: '6×6, 8×8 or 10×10. The board you are on starts again at the new size.', keepOpen: true,
         on(){ SIZE = SIZE === 6 ? 8 : SIZE === 8 ? 10 : 6; ARCADE.save('reversi.size', String(SIZE));
@@ -20192,6 +20491,18 @@ const GOMOKU_APP = (() => {
 
   return {
     name: 'field gomoku',
+    /* THE POSITION EDITOR (Oct 13, BOARD_ED): stones on the 15×15 board, no five in a row already, a square left to play. */
+    _ed: { title: 'Gomoku', map: GAMES, keyOf: gkey, shown: at,
+      pieces: [[1, '●', 'Black'], [2, '○', 'White', true]],
+      cellsOf: st => ({ n: N, cells: Array.from(st.bd), turn: st.turn || 1 }),
+      startCells: () => new Array(N * N).fill(0),
+      stateOf(n, cells, turn, you){ const st = { bd: Uint8Array.from(cells), turn, human: you, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; return st; },
+      check(n, cells){
+        const v = BOARD_ED.fiveIn(cells, n);
+        if (v) return (v === 1 ? 'Black' : 'White') + ' already has five in a row.';
+        return cells.every(x => x) ? 'The board is full.' : null;
+      },
+      go: (c, r) => ai(c, r) },
     menu: [{ head: 'Gomoku', items: [DL.item, SND.item] }],
     _debug: { games: GAMES, play, hardPick, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
     cellFar: { light: WOOD_INT, dark: WOOD_INT },     // one wood, near and far
@@ -21141,6 +21452,18 @@ const ATAXX_APP = (() => {
 
   return {
     name: 'field ataxx',
+    /* THE POSITION EDITOR (Oct 13, BOARD_ED): pieces and blocks on the 7×7 board; a side to move with no move passes. */
+    _ed: { title: 'Ataxx', map: GAMES, keyOf: gkey, shown: at,
+      pieces: [[1, '●', 'Black'], [2, '○', 'White', true], [BLOCK, '▩', 'Block']],
+      cellsOf: st => ({ n: N, cells: Array.from(st.bd), turn: st.turn || 1 }),
+      startCells: (n, c, r) => Array.from(layoutFor(layoutOf(c, r))),
+      stateOf(n, cells, turn, you, draft){
+        const bd = Uint8Array.from(cells);
+        const s0 = draft ? { bd, turn, a: 0, b: 0, over: null } : settle(bd, turn);
+        const st = { ...s0, human: you, sel: null, over: s0.over || null }; st.hist = [st]; st.view = 0; return st;
+      },
+      check(n, cells, turn){ const s0 = settle(Uint8Array.from(cells), turn); return s0.over ? 'Neither side can move: the game would already be over.' : null; },
+      go: (c, r) => ai(c, r) },
     menu: [{ head: 'Ataxx', items: [DL.item, SND.item] }],
     _debug: { games: GAMES, play, hardPick, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
     cellFar: { light: BOARD_SQ, dark: BOARD_SQ },     // one green, near and far
@@ -29714,6 +30037,23 @@ const TD_APP = (() => {
     return true;
   }
   addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); edCancel(); } }, true);
+  // SHARE (Oct 13): a board's map (the draft while editing) as a link; taken onto the first board framed, through cleanMap
+  function shareMap(){
+    const f = framedCell(), m = ED.on ? mapOf(ED.g) : f && MAPS.get(gkey(f.c, f.r));
+    if (!m){ say('This board has no map of its own to share: make one first', 2000); return null; }
+    return SHARE.copy(SHARE.link(app, m), 'Link copied: it opens on this map, ' + m.n + '×' + m.n + ' with ' + m.gold + ' gold.');
+  }
+  function takeMap(c, r, P){
+    const map = cleanMap(P);
+    if (!map){ say('The shared map cannot be played: its doors, squares or way to the exit are not right.', 3500); return; }
+    const k = gkey(c, r);
+    MAPS.delete(k); MAPS.set(k, map); saveMaps();
+    const g = newGame(roadOf(c, r), 0, map);
+    GAMES.set(k, g); LIVE = { key: k, c, r };
+    start(g);
+    say('A shared map, ' + map.n + '×' + map.n + ' with ' + map.gold + ' gold — tap the grey entrance to send the first wave.', 3200);
+    try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {}
+  }
   const app = {
     name: 'tower defense',
     realtime: true,
@@ -29814,6 +30154,8 @@ const TD_APP = (() => {
       { label: () => ED.on ? 'Done: play this map' : 'Make a map for this board…', title: 'The bottom row becomes a map editor: rocks, where the entrance and exit are, towers to start with, the size and the gold. Done plays it.',
         on(){ if (ED.on) edDone(); else edOpen(); } },
       { label: 'Cancel the map', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
+      { label: "Share this board's map", title: 'Copy a link that opens the page on this map, to be played from there (Oct 13).',
+        get disabled(){ const f = framedCell(); return !(ED.on || (f && MAPS.has(gkey(f.c, f.r)))); }, on(){ shareMap(); } },
       { label: "Forget this board's map", title: 'Back to the board as it came, its own doors and an empty floor.',
         get disabled(){ const f = framedCell(); return !(f && MAPS.has(gkey(f.c, f.r))); },
         on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MAPS.delete(k); saveMaps(); GAMES.delete(k); say('The board is as it came', 1500); try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {} } },
@@ -29875,8 +30217,9 @@ const TD_APP = (() => {
       const cols = gridOf(shown(c, r), true).colors, t = sz / N;
       for (let k = 0; k < N * N; k++){ ctx.fillStyle = css(cols[k]); ctx.fillRect((k % N) * t, ((k / N) | 0) * t, t + 0.5, t + 0.5); }
     },
-    _debug: { fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edPlace, edTile, edTiles, maps: MAPS, gameAt, live: () => LIVE, newGame, start, step, build, raise, sell, openRing, reachOf, nextWave, bakeReel, adopt, doors: DOORS, games: GAMES, flowOf, setLevel: v => { LEVEL = v; } },
+    _debug: { shareMap, takeMap, fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edPlace, edTile, edTiles, maps: MAPS, gameAt, live: () => LIVE, newGame, start, step, build, raise, sell, openRing, reachOf, nextWave, bakeReel, adopt, doors: DOORS, games: GAMES, flowOf, setLevel: v => { LEVEL = v; } },
   };
+  SHARE.install(app, takeMap);
   return app;
 })();
 /* ═══ AIR RAID (Sep 25: "replace the rts game play with armies that shoot
@@ -43204,6 +43547,24 @@ const SOKOBAN_APP = (() => {
     return true;
   }
   addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); edCancel(); } }, true);
+  // SHARE (Oct 13): a board's level (the draft while editing) as a link; taken onto the first board framed, through cleanMine
+  function shareLevel(){
+    const f = framedCell(), m = ED.on ? { n: ED.L.n, cells: cellsOf(ED.L) } : f && MINE.get(gkey(f.c, f.r));
+    if (!m){ say('This board has no level of its own to share: make one first', 2000); return null; }
+    return SHARE.copy(SHARE.link(app, m), 'Link copied: it opens on this level.');
+  }
+  function takeLevel(c, r, P){
+    const m = cleanMine(P);
+    if (!m){ say('The shared level cannot be played: it needs one keeper and as many crates as spots, walled all round.', 3500); return; }
+    const info = {}, S = solve(levelFrom(m), MINE_CAP, info);
+    if (!S && !info.capped){ say('The shared level has no way to push every crate onto a spot.', 3500); return; }
+    const k = gkey(c, r), L = levelFrom(m);
+    Object.assign(L, { sol: null, pushes: S ? S.path : [], par: S ? S.pushes : 0, mine: true });
+    MINE.delete(k); MINE.set(k, m); MINE_L.set(k, L); saveMine();
+    GAMES.set(k, deal(L)); LIVE = { key: k, c, r };
+    say('A shared level' + (L.par ? ', par ' + L.par + (L.par === 1 ? ' push' : ' pushes') : '') + '. Push every crate onto a spot.', 3200);
+    try { fieldItemsChanged(); } catch {}
+  }
 
   const box = (w, h) => T => { const g = new T.BoxGeometry(w, h, w); g.translate(0, h / 2, 0); return g; };
   const app = {
@@ -43216,6 +43577,8 @@ const SOKOBAN_APP = (() => {
       { label: () => ED.on ? 'Done: play this level' : 'Make a level for this board…', title: 'The bottom row becomes a level editor: walls, crates, spots and the keeper. The solver checks it can be done and sets par; Done plays it.',
         on(){ if (ED.on) edDone(); else edOpen(); } },
       { label: 'Cancel the level', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
+      { label: "Share this board's level", title: 'Copy a link that opens the page on this level, to be played from there (Oct 13).',
+        get disabled(){ const f = framedCell(); return !(ED.on || (f && MINE.has(gkey(f.c, f.r)))); }, on(){ shareLevel(); } },
       { label: "Forget this board's level", title: 'Back to the level the board deals itself.',
         get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
         on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_L.delete(k); saveMine(); GAMES.delete(k); say('The board deals its own level again', 1800); try { fieldItemsChanged(); } catch {} } },
@@ -43349,12 +43712,15 @@ const SOKOBAN_APP = (() => {
       const cols = colorsOf(levelOfState(s), s.player, s.boxes).colors;
       paint(ctx, 0, 0, sz / V, cols);
     },
-    _debug: { fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edCheck, edPlace, edTile, edTiles, mine: MINE, mineLevel, gameAt, MAP, deal, step, undo, path, framesOf, boardLevel, boardIdx, ringOf, levelAt, makeLevel, dealBack, solve, starsFor, LV_DIALS, BOARDS, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
+    _debug: { shareLevel, takeLevel, fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edCheck, edPlace, edTile, edTiles, mine: MINE, mineLevel, gameAt, MAP, deal, step, undo, path, framesOf, boardLevel, boardIdx, ringOf, levelAt, makeLevel, dealBack, solve, starsFor, LV_DIALS, BOARDS, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
   };
+  SHARE.install(app, takeLevel);
   return app;
 })();
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, GALLERY_APP];
+// the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
+window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
    from the url"): short, lower case, one word — ?app=tron, #app=pacman, --app 2048. The names stay
    as they were (they are what the last-app memory stores); the id is only for asking. */
@@ -43367,6 +43733,7 @@ window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
  [CONNECT4_APP, 'connectfour'], [LOA_APP, 'linesofaction'],
  [ATAXX_APP, 'ataxx'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
+SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own share link, Oct 13)
 let FIELD_APP = CHESS_APP;               // ...unless you left it somewhere else
 /* WHICH APP YOU WERE LAST IN. Chess is the build's opening move and stays the
    answer for a first visit, but coming back to a field you have been using as

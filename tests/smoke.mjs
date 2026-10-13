@@ -341,6 +341,145 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
   }
 
+  // THE BOARD GAMES' POSITION EDITOR (Oct 13: "1,2", the first being a position editor for checkers, Reversi, Ataxx, Gomoku
+  // and Go): in each, the dots open it on the framed board; a position the game would refuse is refused with its reason (and a
+  // checkers man on a light square); a good one, with you on the side not to move, is put on the board and the computer
+  // answers it; Escape leaves a board as it was; a real click puts a Reversi stone on its square
+  current = 'board games position editor';
+  {
+    const before = failures.length;
+    const CASES = [
+      { app: 'field reversi', n: 8, put: [[1, 27], [2, 28], [2, 36]], bad: [], badWhy: /Neither/ },
+      { app: 'field gomoku', n: 15, put: [[1, 112]], turn: 2, bad: [[1, 0], [1, 1], [1, 2], [1, 3], [1, 4]], badWhy: /five in a row/ },
+      { app: 'field ataxx', n: 7, put: [[1, 0], [2, 48]], bad: [], badWhy: /Neither/ },
+      { app: 'field checkers', n: 8, put: [[1, 40], [2, 17]], bad: [[1, 40]], badWhy: /Each side/, light: 0 },
+      { app: 'field go', n: 9, put: [[1, 40]], turn: 2, bad: [[2, 0], [1, 1], [1, 9]], badWhy: /no liberty/ },
+    ];
+    const out = [];
+    for (const K of CASES){
+      const r = await page.evaluate(async K => {
+        const wait = ms => new Promise(ok => setTimeout(ok, ms));
+        const A = window.FIELD_APPS.find(a => a.name === K.app); window.setFieldApp(A); await wait(2000);
+        const D = A._edDebug, W = window.FIELD_WORLD;
+        D.fly(6, 4); await wait(1500);
+        if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
+        document.getElementById('bbHandle').click(); await wait(700);
+        const E = D.ed(), fr = W.cellAt(W.target.boardX, W.target.boardZ);
+        if (!E.on) return { app: K.app, open: false };
+        if (!fr || E.c !== fr.c || E.r !== fr.r) return { app: K.app, onFramed: false, ed: [E.c, E.r], fr };
+        const c = E.c, r = E.r, tiles = A.statTiles(c, r) || [];
+        const tile = name => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => String(t.value).startsWith(name)));
+        const pieceTile = code => A.onStatTap(c, r, E.G.pieces.findIndex(p => p[0] === code));
+        const at = i => A.onCellTap(c, r, (i % E.n + 0.5) / E.n, (((i / E.n) | 0) + 0.5) / E.n);
+        while (E.n !== K.n) tile('Size');
+        tile('Clear');
+        let light = null;
+        if (K.light != null){ pieceTile(1); at(K.light); light = { msg: E.msg, empty: !E.cells[K.light] }; }
+        for (const [v, i] of K.bad){ pieceTile(v); at(i); }
+        const badOk = D.done(), badMsg = E.msg, stillOn = E.on;
+        tile('Clear');
+        for (const [v, i] of K.put){ pieceTile(v); at(i); }
+        if ((K.turn || 1) !== E.turn) tile(E.turn === 1 ? 'Black to move' : 'White to move');
+        tile('You');                                              // you the other side: the computer answers first
+        const want = E.cells.slice(), you = E.you, turn = E.turn, key = E.key;
+        const ok = D.done();
+        const st0 = D.map.get(key), same = st0 && Array.from(st0.bd).every((x, i) => (x ? (typeof x === 'object' ? (x.red ? (x.k === 'k' ? 3 : 1) : (x.k === 'k' ? 4 : 2)) : x) : 0) === want[i]);
+        await wait(400);
+        const shut = document.body.classList.contains('bb-collapsed');
+        let moved = false;
+        for (let k = 0; k < 40 && !moved; k++){ await wait(150); const s1 = D.map.get(key); moved = !!s1 && Array.from(s1.bd).some((x, i) => (x ? (typeof x === 'object' ? (x.red ? (x.k === 'k' ? 3 : 1) : (x.k === 'k' ? 4 : 2)) : x) : 0) !== want[i]); }
+        // Escape leaves the board as it was
+        const kept = D.map.get(key);
+        D.open(); tile('Clear');
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(300);
+        const escOk = !E.on && D.map.get(key) === kept;
+        return { app: K.app, open: true, tiles: tiles.length, light, badOk, badMsg, stillOn, ok, shut, same, you, turn, moved, escOk };
+      }, K);
+      out.push(r);
+      if (!r.open || r.onFramed === false || r.badOk !== false || !K.badWhy.test(r.badMsg || '') || !r.stillOn || r.ok !== true || !r.shut || !r.same
+          || r.you === r.turn || !r.moved || !r.escOk || (K.light != null && !(r.light && r.light.empty && /dark squares/.test(r.light.msg))))
+        failures.push(`[${current}] ${JSON.stringify(r)}`);
+    }
+    // a real click on a Reversi square puts a stone there
+    const rc = await page.evaluate(async () => {
+      const A = window.FIELD_APPS.find(a => a.name === 'field reversi'); window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 1500));
+      const D = A._edDebug, W = window.FIELD_WORLD, T = W.target;
+      D.fly(6, 4); await new Promise(ok => setTimeout(ok, 1500));
+      D.open(); const E = D.ed(); A.onStatTap(E.c, E.r, 0); A.onStatTap(E.c, E.r, E.G.pieces.length + 1);   // Black in hand, a clear board
+      await new Promise(ok => setTimeout(ok, 1000));
+      const n = E.n, bW = W.boardW(), L = window.LAB || {};
+      const v = new W.THREE.Vector3(T.boardX + (0.5 - 2.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 5.5 / n) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n };
+    });
+    await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    rc.got = await page.evaluate(n => { const D = window.getFieldApp()._edDebug, E = D.ed(); const v = E.cells && E.cells[5 * n + 2]; D.cancel(); return v; }, rc.n);
+    if (rc.got !== 1) failures.push(`[${current}] a real click: ${JSON.stringify(rc)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${out.map(o => o.app.replace('field ', '') + (o.moved ? ' answered' : '')).join(', ')})`);
+  }
+
+  // SHARE LINKS (Oct 13: "1,2", the second being share links for what the editors make): a Sokoban level, a tower defense map,
+  // a Reversi position and a chess position are shared from their boards; each link, opened in a page of its own, puts the
+  // same thing on the board framed there, ready to play; a Reversi link that is not a position is refused
+  current = 'share links';
+  {
+    const before = failures.length;
+    const urls = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms)), out = {};
+      const use = async (name, c, r) => { const A = window.FIELD_APPS.find(a => a.name === name); window.setFieldApp(A); await wait(1500); const D = A._edDebug || A._debug; D.fly(c, r); await wait(1500); return { A, D }; };
+      // a level and a map made for the purpose (the editors' own checks above made theirs on other boards)
+      let { A, D } = await use('sokoban', 7, 3);
+      D.edOpen(); let E = D.ed(); const tS = n => A.onStatTap(E.c, E.r, A.statTiles(E.c, E.r).findIndex(t => String(t.value).startsWith(n)));
+      tS('Clear'); while (E.L.n !== 8) tS('Size');
+      const sq = (row, col) => A.onCellTap(E.c, E.r, (col - 0.5) / 6, (row - 0.5) / 6);
+      tS('Keeper'); sq(2, 1); tS('Crate'); sq(2, 3); tS('Spot'); sq(2, 4); D.edDone(); await wait(300);
+      out.sokoban = { url: D.shareLevel(), cells: D.mine.get(E.key).cells };
+      ({ A, D } = await use('tower defense', 7, 3));
+      D.edOpen(); E = D.ed(); const tT = n => A.onStatTap(E.c, E.r, A.statTiles(E.c, E.r).findIndex(t => String(t.value).startsWith(n)));
+      tT('Clear'); tT('Rock'); A.onCellTap(E.c, E.r, 5.5 / E.g.n, 5.5 / E.g.n); tT('Gold'); D.edDone(); await wait(300);
+      const tk = E.key; out.td = { url: D.shareMap(), map: JSON.stringify(D.maps.get(tk)) };
+      ({ A, D } = await use('field reversi', 7, 3));
+      D.open(); E = D.ed(); const tR = n => A.onStatTap(E.c, E.r, A.statTiles(E.c, E.r).findIndex(t => String(t.value).startsWith(n)));
+      tR('Start'); tR('You');                                     // the starting position, and you play White
+      const rc = E.cells.slice(); out.reversi = { url: D.share(), cells: rc.join('') }; D.cancel();
+      ({ A, D } = await use('field chess', 7, 3));
+      const cu = D.share(), fen = JSON.parse(decodeURIComponent(escape(atob(new URL(cu).searchParams.get('setup').replace(/-/g, '+').replace(/_/g, '/'))))).fen;
+      out.chess = { url: cu, fen };
+      return out;
+    });
+    const open = async (url, check) => {
+      const pg = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      if (process.env.LIBS_DIR){
+        const lib = f => readFile(join(process.env.LIBS_DIR, f));
+        await pg.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
+        await pg.route(/cdn\.jsdelivr\.net\/npm\/chess\.js@1\.4\.0\/\+esm/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('chess.js/dist/esm/chess.js') }));
+      }
+      const errs = []; pg.on('pageerror', e => errs.push(e.message));
+      const u = new URL(url), here = new URL('games.html', base); here.search = u.search;
+      await pg.goto(here.href, { waitUntil: 'load' });
+      await pg.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.getFieldApp && window.getFieldApp(), null, { timeout: 60000 });
+      await pg.waitForTimeout(6000);
+      const got = await pg.evaluate(check).catch(e => ({ err: String(e) }));
+      await pg.close();
+      return { ...got, errs };
+    };
+    const res = {};
+    res.sokoban = await open(urls.sokoban.url, () => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), k = f.c + '_' + f.r, m = A._debug.mine.get(k); return { app: A.name, cells: m && m.cells, par: A._debug.mineLevel(k) && A._debug.mineLevel(k).par }; });
+    res.td = await open(urls.td.url, () => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), k = f.c + '_' + f.r, g = A._debug.games.get(k); return { app: A.name, map: JSON.stringify(A._debug.maps.get(k)), playing: g && g.state }; });
+    res.reversi = await open(urls.reversi.url, () => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), st = A._edDebug.map.get(A._edDebug.keyOf(f.c, f.r)); return { app: A.name, cells: st && Array.from(st.hist[0].bd).join(''), human: st && st.human }; });
+    const bad = urls.reversi.url.replace(/setup=[^&]+/, 'setup=' + Buffer.from(JSON.stringify({ n: 8, cells: [1, 2], turn: 1 })).toString('base64url'));
+    res.bad = await open(bad, () => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: A.name, msg: A._edDebug.ed().msg, own: A._edDebug.map.has(A._edDebug.keyOf(f.c, f.r)) }; });
+    res.chess = await open(urls.chess.url, () => { const A = window.getFieldApp(), W = window.FIELD_WORLD, D = A._debug, k = D.cellKey(W.target.boardX, W.target.boardZ), g = D.userGames().get(k); return { app: A.name, fen: g && g.fen() }; });
+    const R = res;
+    if (!urls.sokoban.url || R.sokoban.cells !== urls.sokoban.cells || R.sokoban.par !== 1
+        || !urls.td.url || R.td.map !== urls.td.map || R.td.playing !== 'play'
+        || R.reversi.cells !== urls.reversi.cells || R.reversi.human !== 2
+        || !/cannot be played/.test(R.bad.msg || '') || R.bad.own
+        || !urls.chess.fen || R.chess.fen !== urls.chess.fen
+        || Object.values(R).some(x => x.errs && x.errs.length))
+      failures.push(`[${current}] ${JSON.stringify({ urls: Object.fromEntries(Object.entries(urls).map(([k, v]) => [k, { ...v, url: v.url && v.url.slice(0, 60) }])), res: R })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two

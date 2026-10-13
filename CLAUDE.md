@@ -255,6 +255,28 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     was. A tap on another board moves the editor there.
   - A board with a map shows it waiting, not the bot's recording; Reset and Difficulty start it again (the waves and the
     pieces' strength are still the Difficulty's). The menu's Forget this board's map puts the board back.
+- **The board games: one position editor** (Oct 13: "1,2", the first being "a position editor for checkers, Reversi,
+  Ataxx, Gomoku and Go in one PR"): `BOARD_ED`, before `CHECKERS_APP`. Each of the five apps carries `_ed`, a description
+  of itself: `title`, `map` (its own map of games) and `keyOf`, `shown(c, r)`, `pieces` ([code, glyph, name, light?]),
+  `sizes` where it has them, `cellsOf(state)` → {n, cells, turn}, `startCells(n, c, r)`, `stateOf(n, cells, turn, you,
+  draft)`, `check(n, cells, turn)` → why or null, optional `canPut(n, i, code)`, and `go(c, r, state, you)`, which hands
+  the move to its computer player. After `window.FIELD_APPS`, `BOARD_ED.wrap(app, app._ed)` gives each app the bottom
+  row's hooks (chaining any it had), menu items, and `_edDebug`.
+  - The draft stands in the app's own map while it is made (so the app draws it), never stepped: the computer players are
+    only asked after a move, and taps reach the editor first. Escape or Cancel puts back what was there.
+  - Tiles: the pieces, Erase, Clear, Start, whose move, which side you play (the side to move unless chosen), Size (Go 9,
+    13, 19; Reversi 6, 8, 10), Play. Checks: checkers, a piece each, a move for the side to move, men only on dark squares
+    and never on the row that would crown them (kings: ⛃ ⛁); Go, no group without a liberty (`deadGroup`); Reversi and
+    Ataxx, someone can move; Gomoku, no five in a row already (`fiveIn`), a square left.
+  - Checkers' squares hold {k, red} (red is Black); the editor's codes are 1 black man, 2 white man, 3 black king, 4 white
+    king. Go has no `human`: `go` asks its opponent when you are not the side to move. Ataxx's Block is code 3 (`BLOCK`).
+- **Share links** (Oct 13: "1,2", the second being share links for what the editors make): `SHARE`, before `CHESS_ED`.
+  A link is `?app=<id>&setup=<base64 JSON>`; `SHARE.install(app, apply)` wraps the app's `onFramed` so the first board
+  framed after load takes it (once a page), through the game's own checks. Menu items: chess's Share this position (its
+  FEN and your side, `chessShare`, `chessTakeSetup`, which runs the editor's Done), the board games' Share this position
+  (the framed board's position, any position, or the draft), tower defense's Share this board's map (`shareMap`,
+  `takeMap` through `cleanMap`) and Sokoban's Share this board's level (`shareLevel`, `takeLevel`: `cleanMine`, then the
+  solver; a level with no way is refused). Mini golf keeps its own `?hole=` and `?line=`.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
