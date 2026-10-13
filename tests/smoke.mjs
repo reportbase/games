@@ -338,18 +338,22 @@ try {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Rock in hand
       await window.__settle(E.c, E.r);   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
-      const n = E.g.n, bW = W.boardW(), L = window.LAB || {};
-      let v = window.__aim(n, 9, 2);
-      if (!v.ok){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = window.__aim(n, 9, 2); }   // (on CI it was aimed above the screen twice, Oct 13)
-      return { x: v.x, y: v.y, aimed: v.ok, n, before: E.g.towers[2 * n + 9] };
+      const n = E.g.n;
+      /* (the first empty square away from the edges that is on the canvas: twice on CI the one asked for fell above the screen,
+         and once the Sokoban check's below it, in a view turned about, Oct 13) */
+      const pick = () => { for (let row = 2; row < n - 2; row++) for (let col = 2; col < n - 2; col++){ const i = row * n + col; if (E.g.towers[i]) continue; const v = window.__aim(n, col, row); if (v.ok) return { ...v, i }; } return null; };
+      let v = pick();
+      if (!v){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = pick(); }
+      if (!v) return { aimed: false, n, view: { yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom } };
+      return { x: v.x, y: v.y, aimed: v.ok, n, i: v.i, before: E.g.towers[v.i] };
     });
     // (where the click went, for a failure: in one full run it placed nothing, Oct 13)
     await page.evaluate(() => { const A = window.getFieldApp(); window.__tdTaps = []; const o = A.onCellTap; A.__tdTap = o;
       A.onCellTap = function(c, r, u, v){ window.__tdTaps.push([c, r, u == null ? null : +u.toFixed(3), v == null ? null : +v.toFixed(3)]); return o.apply(this, arguments); }; });
-    await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    if (rc.aimed) await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
     rc.taps = await page.evaluate(() => { const A = window.getFieldApp(); A.onCellTap = A.__tdTap; delete A.__tdTap; const W = window.FIELD_WORLD, T = W.target; return { taps: window.__tdTaps, ed: [A._debug.ed().c, A._debug.ed().r], framed: T.shown && W.cellAt(T.boardX, T.boardZ) }; });
-    const rc2 = await page.evaluate(async n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.g && E.g.towers[2 * n + 9]; D.edCancel();
-      const h = window.__tdHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.n);
+    const rc2 = await page.evaluate(async i => { const D = window.getFieldApp()._debug, E = D.ed(); const v = i == null ? null : E.g && E.g.towers[i]; D.edCancel();
+      const h = window.__tdHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.i);
     if (rc.before !== 0 || rc2 !== 6) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
     const n = 12;
     if (!td.open || td.tiles !== 13 || td.keys !== 13 || !td.midRefused || !/edge/.test(td.midMsg) || !/shut/.test(td.shutMsg) || !td.rockOpen
@@ -406,14 +410,19 @@ try {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Wall in hand
       await window.__settle(E.c, E.r);   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
-      const n = E.L.n, V = n - 2, bW = W.boardW(), L = window.LAB || {};
-      let v = window.__aim(V, 4, 0);
-      if (!v.ok){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = window.__aim(V, 4, 0); }   // (on CI it was aimed off the screen once, Oct 13)
-      return { x: v.x, y: v.y, aimed: v.ok, n, before: E.L.wall[1 * n + 5] };
+      const n = E.L.n, V = n - 2, L0 = E.L;
+      /* (the first empty square that is on the canvas: twice on CI the far row's square fell below the screen, at the foot of a
+         view turned about, under the bottom row, Oct 13) */
+      const free = i => !L0.wall[i] && L0.player !== i && !(L0.boxes || []).includes(i) && !(L0.goal && L0.goal[i]) && !((L0.goals || []).includes && (L0.goals || []).includes(i));
+      const pick = () => { for (let row = 0; row < V; row++) for (let col = 0; col < V; col++){ const i = (row + 1) * n + col + 1; if (!free(i)) continue; const v = window.__aim(V, col, row); if (v.ok) return { ...v, i }; } return null; };
+      let v = pick();
+      if (!v){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = pick(); }
+      if (!v) return { aimed: false, n, view: { yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom } };
+      return { x: v.x, y: v.y, aimed: v.ok, n, i: v.i, before: E.L.wall[v.i] };
     });
-    await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
-    const rc2 = await page.evaluate(async n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.L && E.L.wall[1 * n + 5]; D.edCancel();
-      const h = window.__skHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.n);
+    if (rc.aimed) await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    const rc2 = await page.evaluate(async i => { const D = window.getFieldApp()._debug, E = D.ed(); const v = i == null ? null : E.L && E.L.wall[i]; D.edCancel();
+      const h = window.__skHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.i);
     if (rc.before !== 0 || rc2 !== 1) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
     if (!sk.open || sk.tiles !== 9 || sk.keys !== 9 || sk.noSpot !== false || !/as many/.test(sk.whyCount) || !sk.stillOn || !/no way/.test(sk.hopeless)
         || !/2 pushes/.test(sk.checked) || sk.ok !== true || !sk.shut || sk.par !== 2 || !sk.mine || !sk.player || sk.boxes !== sk.want
