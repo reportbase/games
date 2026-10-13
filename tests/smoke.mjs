@@ -162,6 +162,50 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (pars by level ${sk.lv.map(p => p.toFixed(1)).join(', ')})`);
   }
 
+  // CHESS: THE ROW IS A POSITION EDITOR (Oct 13: "lets use it in chess to create custom chess games instead of selecting a
+  // board. similar to mini-golf"): the dots, clicked, open the editor on the framed board with its tiles; taps put pieces on
+  // squares (a pawn on the last rank refused); without a king Done says why and stays; with kings Done puts the position on
+  // the board as its own game and shuts the row; Escape leaves a board as it was
+  current = 'chess position editor';
+  {
+    const before = failures.length;
+    const ce = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const A = window.FIELD_APPS.find(a => a.name === 'field chess'); window.setFieldApp(A); await wait(2500);
+      const D = A._debug, W = window.FIELD_WORLD;
+      D.fly(3, 2); await wait(1500);                               // (a board framed: the editor sets up the selected board)
+      // (the row shut first: an earlier check may have left it open, and then the dots would shut it)
+      const was = { shut: document.body.classList.contains('bb-collapsed'), shown: !!W.target.shown, vis: window.tvf.browser.visible, app: window.getFieldApp().name };
+      if (!was.shut){ document.getElementById('bbHandle').click(); await wait(800); }
+      document.getElementById('bbHandle').click(); await wait(800);
+      if (!D.ed.on) return { was, nowShut: document.body.classList.contains('bb-collapsed'), vis: window.tvf.browser.visible, shown: !!W.target.shown, msg: D.ed.msg, busy: D.ed.busy };
+      const on = D.ed.on, tiles = (A.statTiles() || []).length, keys = window.tvf.browser.keys.filter(k => String(k).startsWith('stat_')).length;
+      const bw = W.boardW(), sq = (r, c) => ({ x: D.ed.bx - bw / 2 + (c + 0.5) * bw / 8, y: 0, z: D.ed.bz - bw / 2 + (r + 0.5) * bw / 8 });
+      A.onStatTap(0, 0, 13);                                     // Clear
+      if (D.ed.turn !== 'w') A.onStatTap(0, 0, 15);                // (White to move: the board's own turn came in with it)
+      A.onStatTap(0, 0, 0); D.tap(sq(7, 4));                       // a white king alone
+      const noKing = D.done(), stillOn = D.ed.on, why = D.ed.msg;
+      A.onStatTap(0, 0, 1); D.tap(sq(7, 3));                       // a white queen
+      A.onStatTap(0, 0, 6); D.tap(sq(0, 4));                       // the black king
+      A.onStatTap(0, 0, 11); D.tap(sq(0, 0)); const pawnMsg = D.ed.msg, pawnOff = !!D.ed.bd && !D.ed.bd[0][0];
+      const youW = D.ed.you === 'w';                               // (the side to move set White, you follow it)
+      const key = D.ed.key, ok = D.done();
+      const fenAtDone = D.userGames().get(key) && D.userGames().get(key).fen(); await wait(800);
+      const stored = D.userGames().get(key), shut = document.body.classList.contains('bb-collapsed');
+      // Escape leaves a board as it was
+      const before2 = stored && stored.fen();
+      D.start(); A.onStatTap(0, 0, 13);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(300);
+      const after2 = D.userGames().get(key);
+      return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, youW, fen: fenAtDone, now: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2 };
+    });
+    if (!ce.on || ce.tiles !== 18 || ce.keys !== 18 || ce.noKing !== false || !ce.stillOn || !/king/.test(ce.why) || !/pawn/i.test(ce.pawnMsg) || !ce.pawnOff
+        || ce.ok !== true || !ce.youW || ce.fen !== '4k3/8/8/8/8/8/8/3QK3 w - - 0 1' || ce.now !== ce.fen || !ce.shut || !ce.escOff || !ce.kept)
+      // (where the piece set loads, as on CI, the game then starts; you play White, so the engine waits: the position stays)
+      failures.push(`[${current}] ${JSON.stringify(ce)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two
@@ -721,6 +765,12 @@ try {
     if (!(dc.drawn >= 3) || !(dc.othersMax >= dc.drawn * 0.8) || !(dc.bpMax >= 600) || dc.offN > 2)
       failures.push(`[${current}] ${JSON.stringify(dc)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${dc.boards} boards asked over ${dc.drawn} frames drawn, each up to ${dc.othersMax} times, the largest at ${Math.round(dc.bpMax)} px, ${dc.offN} off the screen)`);
+    // LIGHTER (Oct 12: "its heavy, and its not as fast as all the other games." … "yes, proceed"): a framed field of holes drew
+    // 958,000 triangles, bumpers and boulders at 9,408 each, every brick's back and underside, the ground at eight rows a
+    // cell; now 540,000 in the same view, and it must stay under 700,000
+    const tris = await page.evaluate(() => { let t = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isMesh && o.visible){ const g = o.geometry, n = g.index ? g.index.count / 3 : g.attributes.position.count / 3; t += n * (o.isInstancedMesh ? o.count : 1); } }); return Math.round(t); });
+    if (!(tris < 700000)) failures.push(`[${current}] a framed field of holes draws ${tris} triangles (under 700,000 wanted)`);
+    console.log(`     (${(tris / 1000).toFixed(0)}k triangles framed)`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
@@ -895,7 +945,8 @@ try {
       const pay = JSON.parse(decodeURIComponent(escape(atob(q.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - q.length % 4) % 4)))));
       out.refused = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 0 } })) === null && L.takeLineLink(enc({ ...pay, line: { ...pay.line, p: [5, 'x', 2] } })) === null;
       // a shared line better than yours becomes the line to race, marked shared
-      const k3 = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 1 } }));
+      // (one stroke and half the time: yours may have sunk in one, and then only a quicker line is better, Oct 13)
+      const k3 = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 1, ms: Math.max(1, Math.floor((pay.line.ms || 2) / 2)) } }));
       out.shared = k3 != null && L.GHOSTS[L.lineKey(k3)].shared === true && L.GHOSTS[L.lineKey(k3)].s === 1;
       return out;
     });

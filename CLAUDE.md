@@ -110,6 +110,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 62` (50 until Oct 12: "clamp the tilt so that the
   horizon is reduced, so that less boards can be shown"; the top of the screen looks 32° below the horizon, not 20°), a board
   under 20 px gets no pieces (`itemMinPx`). Items may be stretched (`sx`/`sy`/`sz`).
+  **Half the triangles** (Oct 12: "mini-golf game is great but its heavy, and its not as fast as all the other games." …
+  "yes, proceed"): a framed field of holes drew 958,000 triangles a frame against 50,000–180,000 for the other games, and
+  ran 3–8 times slower a frame, measured (making the pieces was 3 ms of it). Bumpers and boulders (`propGeo`) are built at
+  12, not 24 (2,352 triangles, not 9,408); rail, wall, fence and planter boxes (`cladGeo`, `picketGeo`) leave out every
+  face no one can see, a unit's back against the core and every underside (the camera is always above); the ground
+  (`groundGeo`, `MESH`) is 6 rows a cell, not 8 (the shores are a colour blend, `lakeMix`, not the mesh's steps). The same
+  view is 540,000 triangles, and screenshots before and after show the same holes. The smoke test fails over 700,000.
   **Full drawing** (Oct 12: "why do the object change when I pan around. they should never change from one thing
   to antoher.", then "still not very good. restore full drawing functionaility. no special handeling. only thing is dont
   draw non-visible boards and no animation when panning or resizing."): until then `cellItems(c, r, bp)` swapped pieces by
@@ -199,6 +206,24 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - A dealt board shows its level as a frame in golf's flag colours (`frameV`/`frameH`). Solved, it says your pushes
     against par as stars (`starsFor`: at par 3, within half again 2, else 1), and a tap goes on to the next board (golf's
     `nextBoard`).
+- **Chess: the row is a position editor** (Oct 13: "I really like that bottom browser. lets use it in chess to create custom
+  chess games instead of selecting a board. similar to mini-golf"): `CHESS_ED`, `chessEd…`, before `CHESS_APP`, which now has
+  golf's hooks (`onBrowserToggle`, `statTiles`, `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`) and `worldTap`, the one tap
+  hook chess's own play does not reach first.
+  - Opening the row (the dots, or the menu's Set up a position…) takes the framed board's position as it stands (the game in
+    play, the board's own game, or what it is showing) into the editor; play stops. The board draws the editor's position
+    (`buildInstances`, before `cellSource`'s answer).
+  - Tiles: the twelve pieces and Erase, then Clear, Start, whose move it is, which side you play, Play. A tap on the edited
+    board puts the piece in hand on that square (the same arithmetic as `handlePlayClick`); the same piece again takes it off,
+    a second king of a colour moves it, a pawn on the first or last rank is refused. A tap on another board moves the editor
+    there. Quick buttons: Erase, Clear, Cancel, Done.
+  - Done (✓, Play, the menu, or shutting the row) checks the position (`chessEdCheck`: a king each, no pawn on the back
+    ranks, the side not to move not in check, not already over) and puts it on the board as its own game (`userGames`,
+    `setGameMeta` src 'setup', saved with the session; PGN export carries its [FEN]), then plays it (`enterPlay`, you the
+    side chosen; the engine is told `position fen`). Escape or Cancel leaves the board as it was.
+  - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
+    row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
+  - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,

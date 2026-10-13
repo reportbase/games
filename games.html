@@ -13003,7 +13003,12 @@ function toggleBoardBrowser(on){
   const was = bbVisible;
   // Asking for it overrules the automatic answer for as long as the situation
   // lasts — this game, or this gap between games — and no longer.
-  const want = (on == null) ? !bbVisible : !!on;
+  /* (A row with nothing in it is drawn shut whatever bbVisible says, so a press on the dots goes by what it looks like: a
+     shut-looking row opens. Chess with no game in play had an empty row left "open", and the first press shut it and did
+     nothing, the second opened the position editor: Oct 13.) */
+  /* (…and then by the page itself, as drawn: on CI, with a game in play, the row had tiles and bbVisible set and was still
+     drawn shut when the dots were pressed, and the press shut it again. The class is what a person sees.) */
+  const want = (on == null) ? (document.body.classList.contains('bb-collapsed') || !(bbVisible && bbKeys.length > 0)) : !!on;
   /* AN APP MAY TAKE THE ROW'S OPENING AS ITS OWN SWITCH (Oct 10: mini golf, "the bottom browser in the golf application
      should turn edit mode on when it displayed and turned off when not displayed"): onBrowserToggle(open) is told first,
      and answering false leaves the row as it was. */
@@ -13712,7 +13717,9 @@ function rebuildBoardBrowser(){
      gone. A board with no moves on it now means an EMPTY strip, which hides
      itself — the right answer to "there is nothing to show" is nothing.
      Every game behaves the same way here; that is the whole point. */
-  const _ply = _gal ? null : bbPlyData();
+  // (an app's editor, while it is on, has the row: chess's position editor over its move tiles, Oct 13)
+  let _edit = false; try { const _ea = window.getFieldApp && window.getFieldApp(); _edit = !!(_ea && _ea.statTiles && _ea.statsStay && _ea.statsStay()); } catch {}
+  const _ply = (_gal || _edit) ? null : bbPlyData();
   const _sts = (_gal || _ply) ? null : bbStatList();
   /* DENSE, and it matters. `_list.map` looked right and was not: LIST is a
      SPARSE array under demand loading — a bucket announces 10,000 and fills
@@ -15702,7 +15709,7 @@ function buildInstances(){
       // Full 3D pieces. The focused play board reads the live chess.js game;
       // every other board reads its baked self-play chain.
       let bd, mv, tw, tw_raw;
-      const _ugKey = userGames.size ? cellKey(cx, cz) : null;
+      const _ugKey = (userGames.size || CHESS_ED.on) ? cellKey(cx, cz) : null;
       /* GOING TO A RECORDED GAME DOES NOT STOP IT (Sep 9: "when I click a pgn
          game board, it moves to the last position and it stuck").
          A tap frames a board and takes the side (enterPlay), which is right
@@ -15717,7 +15724,9 @@ function buildInstances(){
          the live game is what you want to see. Framing it is none of those:
          you are looking at it. */
       const _src = cellSource(_ugKey, isPlayBoard, true);
-      if (_src.kind === 'reel'){
+      if (CHESS_ED.on && _ugKey === CHESS_ED.key){
+        bd = CHESS_ED.bd; mv = null; tw = 0; tw_raw = 0;              // (the position being set up: Oct 13)
+      } else if (_src.kind === 'reel'){
         ({ bd, mv, tw, tw_raw } = chainFrame(_src.chain, _src.phase, animNow));
       } else if (_src.kind === 'live'){
         const lp = livePly();
@@ -17507,6 +17516,131 @@ const HELLO_APP = {
     ctx.fillText('c ' + col, s / 2, s * 0.72);
   },
 };
+/* ═══ CHESS: THE BOTTOM ROW IS A POSITION EDITOR (Oct 13: "I really like that bottom browser. lets use it in chess to create
+   custom chess games instead of selecting a board. similar to mini-golf, but for chess to create custom chess games.") ══
+   As mini golf's row is its hole editor, chess's is a board editor: opening the row (the three dots, or Set up a position
+   in the menu) takes the framed board's position as it stands into the editor; its tiles are the twelve pieces and Erase,
+   then Clear, Start position, whose move it is and which side you take. A tap on a square puts the piece in hand there (the
+   same piece again takes it off; a second king of a colour moves that king). Shutting the row, Done (✓) or the menu plays
+   the position on that board against the engine, if it is one chess allows: a king each, no pawn on the first or last
+   rank, the side not to move not in check. Escape, or Cancel in the menu, leaves the board as it was. Castling rights are
+   read off kings and rooks on their home squares (gridToFen). The position becomes the board's own game (userGames), so it
+   is saved with the session and exported in PGN with its [FEN] header as any game is. */
+const CHESS_ED = { on: false, key: null, bx: 0, bz: 0, bd: null, turn: 'w', you: 'w', tool: 'Q', msg: '', busy: false };
+const CHESS_ED_TOOLS = [
+  ['K', '♔', 'King'], ['Q', '♕', 'Queen'], ['R', '♖', 'Rook'], ['B', '♗', 'Bishop'], ['N', '♘', 'Knight'], ['P', '♙', 'Pawn'],
+  ['k', '♚', 'King'], ['q', '♛', 'Queen'], ['r', '♜', 'Rook'], ['b', '♝', 'Bishop'], ['n', '♞', 'Knight'], ['p', '♟', 'Pawn'],
+  ['erase', '🧽', 'Erase'],
+];
+const CHESS_ED_ACTS = ['clear', 'start', 'turn', 'you', 'play'];
+const _chEdSay = (m, ms) => { CHESS_ED.msg = m; try { engineNotice(m, ms || 3200); } catch {} };
+// the row moved without asking the editor again (golf's paneTo)
+function _chEdPane(open){ CHESS_ED.busy = true; try { toggleBoardBrowser(open); } catch {} CHESS_ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+function chessEdStart(){
+  if (!target.shown){ _chEdSay('Pick a board first, then open the row to set up its position.'); return false; }
+  const key = cellKey(target.boardX, target.boardZ);
+  let bd = null, turn = 'w';
+  const own = userGames.get(key), real = g => g && typeof g.fen === 'function';
+  try {
+    if (PLAY.on && PLAY.activeKey === key && real(PLAY.game)){ bd = liveBoard(PLAY.game); turn = PLAY.game.turn(); }
+    else if (real(own)){ bd = liveBoard(own); turn = own.turn(); }
+    else { const cb = currentBakedPosition(); if (cb && cb.bd){ bd = cb.bd; turn = cb.turn || 'w'; } }
+  } catch {}
+  if (!bd) bd = liveBoard(new Chess());
+  if (PLAY.on){ try { exitPlay(); } catch {} }
+  Object.assign(CHESS_ED, { on: true, key, bx: target.boardX, bz: target.boardZ, bd: bd.map(row => row.slice()), turn, you: turn, youSet: false });
+  _chEdSay('Setting up this board: pick a piece below, tap its squares; ✓ plays it.');
+  try { rebuildBoardBrowser(); bbRefreshNow(); } catch {}
+  return true;
+}
+function chessEdStop(){
+  CHESS_ED.on = false;
+  try { rebuildBoardBrowser(); bbRefreshNow(); } catch {}
+}
+// the position as chess allows it, or why not
+function chessEdCheck(){
+  const bd = CHESS_ED.bd, n = ch => bd.reduce((a, row) => a + row.filter(p => p === ch).length, 0);
+  if (n('K') !== 1 || n('k') !== 1) return { why: 'Each side needs one king.' };
+  for (const r of [0, 7]) if (bd[r].some(p => p === 'P' || p === 'p')) return { why: 'No pawn may stand on the first or last rank.' };
+  let g = null;
+  try { g = new Chess(gridToFen(bd, CHESS_ED.turn)); } catch (e){ return { why: 'Chess does not allow this position (' + String(e && e.message || e).slice(0, 80) + ').' }; }
+  try { const o = new Chess(gridToFen(bd, CHESS_ED.turn === 'w' ? 'b' : 'w')); if (o.inCheck()) return { why: (CHESS_ED.turn === 'w' ? 'Black' : 'White') + ' is in check, but it is ' + (CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move.' }; } catch {}
+  if (g.isGameOver()) return { why: g.isCheckmate() ? 'That position is already checkmate.' : 'That position is already over (stalemate or a draw).' };
+  return { g };
+}
+function chessEdDone(){
+  if (!CHESS_ED.on) return true;
+  const ck = chessEdCheck();
+  if (!ck.g){ _chEdSay(ck.why + ' Fix it, or press Escape to leave the board as it was.', 4200); return false; }
+  const key = CHESS_ED.key;
+  CHESS_ED.on = false;
+  userGames.set(key, ck.g);
+  try { endPgnReel(key); } catch {}
+  try { setGameMeta(key, { src: 'setup', fen: ck.g.fen() }); } catch {}
+  try { if (cellKey(target.boardX, target.boardZ) !== key){ target.boardX = CHESS_ED.bx; target.boardZ = CHESS_ED.bz; } } catch {}
+  try { enterPlay(); } catch {}
+  PLAY.youAreWhite = CHESS_ED.you === 'w';
+  try { updatePlayStatus(); afterSettle(); } catch {}
+  try { saveSession(); } catch {}
+  _chEdPane(false);
+  // (with no piece set chess is watch-only, enterPlay says so: the position stays on the board as its own game)
+  if (PLAY.on) _chEdSay('Your position, ' + (CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move; you play ' + (CHESS_ED.you === 'w' ? 'White' : 'Black') + '.');
+  return true;
+}
+function chessEdCancel(){ if (!CHESS_ED.on) return; chessEdStop(); _chEdPane(false); _chEdSay('Left the board as it was.'); }
+function chessEdPlace(r, c){
+  const bd = CHESS_ED.bd, t = CHESS_ED.tool, had = bd[r][c];
+  if (t === 'erase'){ bd[r][c] = null; return; }
+  if (had === t){ bd[r][c] = null; return; }                      // (the same piece again takes it off)
+  if ((t === 'P' || t === 'p') && (r === 0 || r === 7)){ _chEdSay('A pawn cannot stand on the first or last rank.'); return; }
+  if (t === 'K' || t === 'k') for (const row of bd) for (let i = 0; i < 8; i++) if (row[i] === t) row[i] = null;   // (one king a side: it moves)
+  bd[r][c] = t;
+}
+function chessEdTiles(){
+  const sel = '#6b5a1e', blk = '#2b2e35';
+  const out = CHESS_ED_TOOLS.map(([k, g, name]) => ({ glyph: g, value: name, bg: CHESS_ED.tool === k ? sel : (k !== 'erase' && k === k.toLowerCase() ? blk : null) }));
+  out.push({ glyph: '⌫', value: 'Clear' }, { glyph: '♙', value: 'Start' },
+           { glyph: CHESS_ED.turn === 'w' ? '○' : '●', value: (CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move' },
+           { glyph: CHESS_ED.you === 'w' ? '♔' : '♚', value: 'You: ' + (CHESS_ED.you === 'w' ? 'White' : 'Black') },
+           { glyph: '▶', value: 'Play' });
+  return out;
+}
+function chessEdTileTap(i){
+  if (!CHESS_ED.on) return false;
+  if (i < CHESS_ED_TOOLS.length){ const k = CHESS_ED_TOOLS[i][0]; CHESS_ED.tool = k; _chEdSay(k === 'erase' ? 'Tap a piece to take it off.' : 'Tap squares to put ' + (k === k.toUpperCase() ? 'white ' : 'black ') + CHESS_ED_TOOLS[i][2].toLowerCase() + 's there.'); }
+  else {
+    const a = CHESS_ED_ACTS[i - CHESS_ED_TOOLS.length];
+    if (a === 'clear'){ CHESS_ED.bd = Array.from({ length: 8 }, () => Array(8).fill(null)); _chEdSay('The board is clear.'); }
+    else if (a === 'start'){ CHESS_ED.bd = liveBoard(new Chess()); CHESS_ED.turn = CHESS_ED.you = 'w'; _chEdSay('The starting position.'); }
+    // (you play the side to move unless you chose a side yourself: found when CI's engine, the piece set loaded there, rightly
+    //  moved White's queen for a player left on Black after the turn was changed, Oct 13)
+    else if (a === 'turn'){ CHESS_ED.turn = CHESS_ED.turn === 'w' ? 'b' : 'w'; if (!CHESS_ED.youSet) CHESS_ED.you = CHESS_ED.turn; _chEdSay((CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move' + (CHESS_ED.youSet ? '.' : '; you play it.')); }
+    else if (a === 'you'){ CHESS_ED.you = CHESS_ED.you === 'w' ? 'b' : 'w'; CHESS_ED.youSet = true; _chEdSay('You will play ' + (CHESS_ED.you === 'w' ? 'White' : 'Black') + '.'); }
+    else if (a === 'play') chessEdDone();
+  }
+  try { bbRefreshNow(); } catch {}
+  return true;
+}
+// a tap on the edited board puts the piece in hand; on another board, the editor moves there (as golf's does)
+function chessEdTap(hit){
+  if (!CHESS_ED.on || !hit) return false;
+  const boardW = window.FIELD_WORLD.boardW(), half = boardW / 2;
+  const dx = hit.x - CHESS_ED.bx, dz = hit.z - CHESS_ED.bz;
+  if (Math.abs(dx) <= half && Math.abs(dz) <= half){
+    const t8 = boardW / 8, c = Math.max(0, Math.min(7, Math.floor((dx + half) / t8))), r = Math.max(0, Math.min(7, Math.floor((dz + half) / t8)));
+    chessEdPlace(r, c);
+    return true;
+  }
+  const cell = window.FIELD_WORLD.cellAt(hit.x, hit.z);
+  if (cell){
+    const gx = Math.round(hit.x / gridSpacingX()), gz = Math.round(hit.z / gridSpacingZ());
+    try { gotoCell(gx, gz); } catch {}
+    if (PLAY.on){ try { exitPlay(); } catch {} }
+    const tool = CHESS_ED.tool; CHESS_ED.on = false; chessEdStart(); CHESS_ED.tool = tool;
+  }
+  return true;
+}
+addEventListener('keydown', e => { if (e.key === 'Escape' && CHESS_ED.on){ e.preventDefault(); e.stopPropagation(); chessEdCancel(); } }, true);
 /* ═══ FIELD-CHESS — the migration pathfinder ══════════════════════════════
    A playable chess app written ENTIRELY against the seam above: the far
    field is the fabric checker, near boards are cellGrid squares, pieces are
@@ -17523,6 +17657,27 @@ const CHESS_APP = {
      native piece pipeline. */
   name: 'field chess',
   nativePieces: true,
+  /* THE ROW IS THE POSITION EDITOR (Oct 13, CHESS_ED above): as mini golf's. */
+  onBrowserToggle(open){
+    if (CHESS_ED.busy) return true;
+    if (open && !CHESS_ED.on) return chessEdStart();
+    if (!open && CHESS_ED.on) return chessEdDone();
+    return true;
+  },
+  statTiles(){ return CHESS_ED.on ? chessEdTiles() : null; },
+  statsStay(){ return CHESS_ED.on; },
+  onStatTap(c, r, i){ return chessEdTileTap(i); },
+  quickActs(){ return CHESS_ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase', dim: CHESS_ED.tool === 'erase' }, { key: 'clear', glyph: '⌫', title: 'Clear the board' }, { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this position' }] : null; },
+  onQuickAct(c, r, key){
+    if (!CHESS_ED.on) return false;
+    if (key === 'erase') CHESS_ED.tool = 'erase';
+    else if (key === 'clear') chessEdTileTap(CHESS_ED_TOOLS.length);
+    else if (key === 'cancel') chessEdCancel();
+    else if (key === 'done') chessEdDone();
+    return true;
+  },
+  worldTap(hit){ return chessEdTap(hit); },
+  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r) },
   /* For the move traces and capture bursts drawn on chess boards (Sep 24:
      "add these changes to chess as well"). Lazy, because BOOM is defined
      further down the file than chess is. */
@@ -17538,6 +17693,9 @@ const CHESS_APP = {
      images is the one door in and opens .pgn as readily as a photograph. */
   menu: [
     { head: 'Play', items: [
+      { label: () => CHESS_ED.on ? 'Done: play this position' : 'Set up a position…', title: 'Put any pieces on the selected board with the tiles in the bottom row, then play it against the engine (Oct 13).',
+        on(){ if (CHESS_ED.on) chessEdDone(); else if (chessEdStart()) _chEdPane(true); } },
+      { label: 'Cancel the setup', title: 'Leave the board as it was.', get disabled(){ return !CHESS_ED.on; }, on(){ chessEdCancel(); } },
       { ref: 'bHint' }, { ref: 'bCoords' }, { ref: 'eloWrap' },
       { ref: 'bUndo' }, { ref: 'bResign' }, { ref: 'bReset' },
       { ref: 'bGameInfo' }, { ref: 'bGameIndex' },
@@ -36266,7 +36424,10 @@ const GOLF_APP = (() => {
   /* THE GRASS, as a surface: a 60×60 mesh on the ground's heights, coloured by what it is — grass
      lighter up high and darker down low, mown in stripes; sand; water; walls under their blocks. */
   // (in the board's own units: x across WD, y down 1, placed by the item at the board's middle)
-  const MESH = 104;                                        // (eight a cell, so the rounded shores read round)
+  /* (eight a cell, so the rounded shores read round, until Oct 12; six now: "its heavy" … "yes, proceed". The ground was
+     13,312 triangles a board, 18% of a framed field; at six a cell it is 7,488, and the shores are drawn as a colour blend
+     across their line, lakeMix, not by the mesh's steps, so the screenshots before and after show the same holes.) */
+  const MESH = 78;
   function groundGeo(T, H, mesh){
     const ny = mesh || MESH, nx = Math.round(ny * WD), pos = [], col = [], idx = [], c = new T.Color(), sandC = new T.Color(0xd8c287), waterC = new T.Color(0x2f6cc4);
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
@@ -36371,12 +36532,19 @@ const GOLF_APP = (() => {
     let seed = seedBase || 4242;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
     const M = MAT_COL[mat] || MAT_COL.wood, pos = [], nrm = [], col = [], c = new T3.Color();
-    const box = (cx, cy, cz, sx, sy, sz, hex, jit) => {
+    /* FACES NO ONE CAN SEE (Oct 12, "its heavy" … "yes, proceed"): a unit's back, against the core, faces into the wall, and
+       every underside faces down, and the camera is always above (mini golf's tilt floor is 62°); both were only ever culled.
+       They are left out (skip: the box's faces as three.js orders them, 0 +x, 1 −x, 2 +y, 3 −y, 4 +z, 5 −z), a third of the
+       triangles of every rail, wall, fence and planter piece, and nothing on the screen changes. */
+    const box = (cx, cy, cz, sx, sy, sz, hex, jit, skip) => {
       const g = new T3.BoxGeometry(sx, sy, sz).toNonIndexed(); g.translate(cx, cy, cz);
       const P = g.attributes.position.array, N = g.attributes.normal.array;
       c.setHex(hex).multiplyScalar(1 - (jit == null ? 0.12 : jit) * rnd());
-      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); }
-      for (let i = 0; i < P.length / 3; i++) col.push(c.r, c.g, c.b);
+      for (let f = 0; f < 6; f++){
+        if (f === 3 || (skip && skip.includes(f))) continue;
+        for (let i = f * 18; i < f * 18 + 18; i++){ pos.push(P[i]); nrm.push(N[i]); }
+        for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
+      }
     };
     const unit = () => M.units[Math.floor(rnd() * M.units.length)];
     box(0, y0 + Hh / 2, 0, W, Hh, D, M.core, 0);
@@ -36386,7 +36554,7 @@ const GOLF_APP = (() => {
     function face(len, axis, n, off){
       const place = (a0, a1, b0, b1, hex) => {
         const am = (a0 + a1) / 2, bm = (b0 + b1) / 2, la = a1 - a0 - gap, lb = b1 - b0 - gap, o = off + t / 2 * (0.6 + 0.8 * rnd());
-        if (axis === 'x') box(am, bm, n * o, la, lb, t, hex); else box(n * o, bm, am, t, lb, la, hex);
+        if (axis === 'x') box(am, bm, n * o, la, lb, t, hex, null, [n > 0 ? 5 : 4]); else box(n * o, bm, am, t, lb, la, hex, null, [n > 0 ? 1 : 0]);   // (its back, against the core: left out)
       };
       if (mat === 'brick'){
         const bh = 0.09 * u / 0.25, bl = 0.25 * u / 0.25;
@@ -36424,7 +36592,8 @@ const GOLF_APP = (() => {
     const M = MAT_COL.wood, pos = [], nrm = [], col = [], c = new T3.Color();
     const box = (cx, cy, cz, sx, sy, sz, hex) => { const g = new T3.BoxGeometry(sx, sy, sz).toNonIndexed(); g.translate(cx, cy, cz);
       const P = g.attributes.position.array, N = g.attributes.normal.array; c.setHex(hex).multiplyScalar(1 - 0.15 * rnd());
-      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); } for (let i = 0; i < P.length / 3; i++) col.push(c.r, c.g, c.b); };
+      for (let f = 0; f < 6; f++){ if (f === 3) continue;              // (no underside: the camera is always above, as cladGeo's)
+        for (let i = f * 18; i < f * 18 + 18; i++){ pos.push(P[i]); nrm.push(N[i]); } for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b); } };
     for (const x of [-0.46, 0.46]) box(x, 0.2, 0, 0.09, 0.8, 0.09, 0x5e4128);                  // posts, sunk a little
     for (const y of [0.16, 0.42]) box(0, y, 0.06, 1.0, 0.06, 0.035, 0x6e4c2e);                // rails
     for (let x = -0.42; x <= 0.42; x += 0.12){ const h = 0.5 + 0.03 * rnd();
@@ -36444,7 +36613,10 @@ const GOLF_APP = (() => {
     const C = propC(name);
     if (!C || !C.parts) return null;
     if (_props[name] && _props[name].C === C) return _props[name].g;
-    const g = buildPartsGeometry(24, C, { shadeFn: () => 1 }), P = g.attributes.position.array;
+    /* (Oct 12: "mini-golf game is great but its heavy, and its not as fast as all the other games." … "yes, proceed".
+       At 24 a bumper or a boulder was 9,408 triangles, 30% of all a framed field drew, measured, for a thing a few dozen
+       pixels across; at 12 it is a quarter of that, and looks the same at that size: the screenshots before and after.) */
+    const g = buildPartsGeometry(12, C, { shadeFn: () => 1 }), P = g.attributes.position.array;
     let reach = 0;
     for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2]));
     g.scale(1 / reach, 1 / reach, 1 / reach); g.userData.vertexColors = true;
