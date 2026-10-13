@@ -308,9 +308,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     Szudzik pairing; `bodyOf`: each band weighed 0.3–1.7, each wave its own way round and phase, the whole stretched a little,
     `B.s`, carried by the item's sx/sy/sz). Its grain `g` (0–4, `LV_GEO`) keeps the bands b ≤ 3 − g on a mesh of 64 >> g
     around and 32 >> g up, so each grain costs a quarter of the one before (`TRIS`: 3,968, 960, 224, 48, 24 triangles).
+  - **Invariant, locked by the board's id** (Oct 13: "why do object change color and shape. they should be invariant, locked
+    by the id of the board."): a body's colour is its own (`B.color`, from the id), not its level's, in every mode; and every
+    grain keeps band 0, its broad lumps, and its stretch, so only the finer bumps come and go with distance (until then the
+    coarsest grain was one plain ball for every board, and the bodies wore their level's colour). The level still shows in the
+    rings and the row.
   - A kind a board and a grain (`lvB<id>_<g>`, `lvW…` for wire), made when first wanted (`itemGeometries` is a Proxy), and
-    dropped after `KIND_IDLE` (4 s) unwanted (`fieldDropItemKind`). Grain 4 keeps no band, so every board there shares one kind
-    (`lvBfar`/`lvWfar`) and keeps its stretch: tilted to the horizon, a kind a board was 5,800 meshes; now about 70.
+    dropped after `KIND_IDLE` (4 s) unwanted (`fieldDropItemKind`). The coarsest grain (`FAR_G`, 4) is drawn as one batch
+    instead (`FAR`, `farBuild`): each far board asked goes into `BAT`, and the field's new `afterItems` hook (every board asked,
+    nothing drawn yet) lays them, each its own coarse mesh (`farGeoOf`, made once a board), stretch and colour, into one mesh.
+    Tilted to 6°: 5,788 boards, 53 kinds and the batch (137,640 of 142,472 triangles); a kind a board there was 5,800 meshes.
   - The triangles face out (Oct 13: "the object in each levels board is not centered."): wound the other way, the near side
     was culled and the inside of the far side showed, so every body looked hollow and pushed back off its board's middle.
   - The tilt is not clamped (Oct 13: "don't clamp the tilt in levels."): an app's `pitchFloor` sets the field's tilt floor,
@@ -337,7 +344,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     frame it rests on asks the framed board alone).
   - The bottom row: None, By metres, By v/h, Wireframe (on at first; `?lod=`, localStorage `levels.mode`, `levels.wire`),
     then boards and triangles at each level and the total. A tap on a board says its level, h/v and triangles.
-  - Field hooks it added: `pitchFloor`; `FIELD_WORLD.itemAt` (the board being asked about, its middle on the ground, set in `_boardItems`
+  - Field hooks it added: `afterItems()` (called from `_flushAppItems`); `pitchFloor`; `FIELD_WORLD.itemAt` (the board being asked about, its middle on the ground, set in `_boardItems`
     and for the framed board in `_restDecide`); an item kind's `geometry.userData.wireframe`; an app's `fitView(F)`, called by
     the default fit (Levels opens at the lowest tilt, 35°, from `OPEN_V` = 8, so four or five levels are in view); and
     `onLeave()`, called by `setFieldApp` on the app being left (Levels puts the tilt back). It sets `panMoves` so its boards
