@@ -455,10 +455,15 @@ try {
       }
       const errs = []; pg.on('pageerror', e => errs.push(e.message));
       const u = new URL(url), here = new URL('games.html', base); here.search = u.search;
-      await pg.goto(here.href, { waitUntil: 'load' });
-      await pg.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.getFieldApp && window.getFieldApp(), null, { timeout: 60000 });
-      await pg.waitForTimeout(6000);
-      const got = await pg.evaluate(check).catch(e => ({ err: String(e) }));
+      // (not 'load': it waits on every outside file, the CDNs and the engines, and on CI a second page took over 30 s to
+      //  reach it, Oct 13; the script running and the games ready is what this needs)
+      let got;
+      try {
+        await pg.goto(here.href, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        await pg.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.getFieldApp && window.getFieldApp(), null, { timeout: 90000 });
+        await pg.waitForTimeout(6000);
+        got = await pg.evaluate(check);
+      } catch (e){ got = { err: String(e).slice(0, 300) }; }
       await pg.close();
       return { ...got, errs };
     };
