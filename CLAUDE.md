@@ -327,7 +327,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     was culled and the inside of the far side showed, so every body looked hollow and pushed back off its board's middle.
   - The tilt is not clamped (Oct 13: "don't clamp the tilt in levels."): an app's `pitchFloor` sets the field's tilt floor,
     lower than its 35° if it likes (`pitchMin` can only raise it); Levels' is 2°. It still opens at 35° (`OPEN_PITCH`).
-    Tilted to 6° from its opening height: 5,788 boards in 7 levels for 143,208 triangles.
+    Tilted to 6° from its opening height the bodies reach the horizon's haze: 16,000 boards (the cap, `PAST_MAX`) out to
+    h ≈ 720, about 1.4 million triangles, built in about 23 ms in the sandbox.
+  - **Past the tiles** (Oct 13: "the objects are not visible in the far horizon. when i select the board in the far horizon,
+    I can see the object again."): the field's walk stopped when its 400,000 tiles were spent (6,250 boards of 64), so every
+    board past them was ground alone, and a far board came back only when flown to. An app's `itemsPastTiles()` keeps the
+    walk going, nearest first, every tile declined, asking for items until it says enough; Levels' says so up to `PAST_MAX`.
   - v is the eye's height, h a board's distance along the ground from the point under the eye (as flight.html). By v/h (the
     default) the corner is h = v: level 0, the near field, is h ≤ v, and level k runs from 2^(k−1)·v to 2^k·v (`levelAt`).
     By metres the split is at fixed distances (`METRES_D`, 2 board spacings, doubling). None draws every board at grain 0.

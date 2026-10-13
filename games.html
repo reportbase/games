@@ -15441,8 +15441,16 @@ function buildInstances(){
      walk's to spend. */
   const MAXI_WALK = MAXI - (target.shown ? 4 : 0);
   let n = 0, boards = 0;
+  /* PAST THE TILES, THE ITEMS (Oct 13, Levels: "the objects are not visible in the far horizon. when i select the board in
+     the far horizon, I can see the object again."). The walk ended when the pool was spent: 6,250 boards of 64 tiles, and
+     every board past them was the fabric's alone, so a field of thousands of bodies stopped at row 86 while the ground went
+     on to the horizon (flying to a far board brought it inside the first 6,250, so its body came back). An app whose items
+     stand up off the ground can say it still wants boards (`itemsPastTiles()`, asked as the walk goes): the walk goes on,
+     nearest first, every tile declined (each tile write already makes room for itself), asking the app for its items until
+     it says it has enough. */
+  const _appPast = (() => { const a = window.getFieldApp && window.getFieldApp(); return a && a.itemsPastTiles ? a : null; })();
   for (const cell of cells){
-    if (n >= MAXI_WALK - 64) break;
+    if (n >= MAXI_WALK - 64 && !(_appPast && _appPast.itemsPastTiles())) break;
     const { ox, oz, dz, lat } = cell;
     const gx = cgx + ox, gz = cgz + oz;
     const ix = wrap(gx), iz = wrap(gz);
@@ -44271,6 +44279,9 @@ const LEVELS_APP = (() => {
      board asked, nothing drawn yet) lays them all into one mesh, each at its own weight, stretch and colour, lit here, so
      nothing is a kind of the field's and the whole field is one draw. */
   const BAT = new Map();
+  /* How many bodies the field may ask for past its tiles (itemsPastTiles): the nearest first, so the cap ends the far horizon,
+     not a patch of it. Under the caches' 20,000, or every body would be made again every frame. */
+  const PAST_MAX = 16000;
   let BODIES = null, capV = 0, capI = 0, lastList = [];
   const LIGHT = (() => { const l = Math.hypot(0.4, 0.8, 0.3); return [0.4 / l, 0.8 / l, 0.3 / l]; })();
   /* (Laid naively, the horizon's 5,800 bodies took 170 ms a frame here. A body with no band fading looks the same every frame,
@@ -44414,6 +44425,8 @@ const LEVELS_APP = (() => {
     name: 'levels',
     panMoves: true,
     itemMinPx: 1,
+    // (the field's walk goes on past its tiles while this says so: Oct 13, "the objects are not visible in the far horizon")
+    itemsPastTiles(){ return BAT.size < PAST_MAX; },
     // (Oct 13: "don't clamp the tilt in levels.": the field's floor is 35°; here the eye may tilt to 2° under the horizon)
     pitchFloor: 2,
     /* (opened, it looks out toward the horizon at the field's lowest tilt, from OPEN_V, a little over twice V0, so the eye
