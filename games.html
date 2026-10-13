@@ -30294,9 +30294,8 @@ const TD_APP = (() => {
       lineV: T => { const g = new T.BoxGeometry(0.05, 0.004, N); g.translate(0, 0.002, 0); return g; },
       lineH: T => { const g = new T.BoxGeometry(N, 0.004, 0.05); g.translate(0, 0.002, 0); return g; },
     },
-    /* THE NUMBERS, in the row along the bottom (Sep 30): gold, lives, wave, pieces taken, then the
-       five towers at their prices — dim when you cannot pay — and, with a tower picked, what raising
-       and selling it come to. */
+    /* (THE NUMBERS were in the row along the bottom from Sep 30: gold, lives, wave, pieces taken and the towers' prices.
+       Since Oct 13 the row is the map editor's; see statTiles.) */
     /* THE ROW IS THE MAP EDITOR (Oct 13, ED above): opening it makes a map of the framed board,
        shutting it plays the map. */
     onBrowserToggle(open){
@@ -30318,26 +30317,12 @@ const TD_APP = (() => {
       try { bbRefreshNow(); } catch {}
       return true;
     },
+    /* (Oct 13: the row is the map editor's alone, as mini golf's is the hole editor's. Its numbers showed in the row, and the
+       field opens the row by itself when an app's numbers first appear: in a game that opening started the editor and
+       stopped the game. Gold, wave and pieces out are in the board's title.) */
     statTiles(c, r){
       if (ED.on) return edTiles();
-      const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null);
-      if (!g) return null;
-      const between = g.state === 'play' && !g.queue.length && !g.creeps.length;
-      const L = [
-        { label: 'Gold', value: g.gold, color: '#ffd23a' },
-        { label: 'Lives', value: g.lives, sub: 'of ' + LIVES, color: g.lives <= 1 ? '#ff6a5a' : '#ffffff' },
-        { label: 'Wave', value: g.wave, sub: g.state === 'over' ? 'lost' : between || g.state !== 'play' ? 'tap entrance' : (g.queue.length + g.creeps.length) + ' coming' },
-        { label: 'Taken', value: g.killed, sub: 'pieces' },
-      ];
-      for (let t = 1; t <= 5; t++) L.push({ label: TNAME[t], glyph: ' \u2659\u2658\u2657\u2656\u2655'[t], value: TCOST[t], dim: g.gold < TCOST[t] });
-      const M = g.menu;
-      if (M && M.tower){
-        const t = g.towers[M.i], lv = g.tlv[M.i];
-        let paid = TCOST[t]; for (let k = 1; k < lv; k++) paid += upCost(t, k);
-        L.push({ label: 'Level ' + lv + ' ' + TNAME[t], glyph: ' \u2659\u2658\u2657\u2656\u2655'[t], value: lv < 3 ? 'raise ' + upCost(t, lv) : 'top level' });
-        L.push({ label: 'Sell', value: Math.floor(paid / 2), sub: 'gold back', color: '#ff8a7a' });
-      }
-      return L;
+      return null;
     },
     cellGrid(c, r, px){
       if (LIVE && LIVE.key === gkey(c, r)) gameAt(c, r);

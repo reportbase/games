@@ -253,6 +253,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Done (✓, Play, the menu, or shutting the row) keeps the map on the board (`MAPS`, localStorage `td.maps`, the latest 300,
     each read back through `cleanMap`) and starts a game on it (`newGame(l, n, map)`). Escape or Cancel leaves the board as it
     was. A tap on another board moves the editor there.
+  - The row is the editor's alone (`statTiles` gives nothing while playing): its gold, lives and wave tiles went, since the
+    field opens the row by itself when an app's numbers first appear, and in a game that started the editor. The title keeps
+    gold, wave and pieces out.
   - A board with a map shows it waiting, not the bot's recording; Reset and Difficulty start it again (the waves and the
     pieces' strength are still the Difficulty's). The menu's Forget this board's map puts the board back.
 - **The board games: one position editor** (Oct 13: "1,2", the first being "a position editor for checkers, Reversi,
