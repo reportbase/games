@@ -88,7 +88,10 @@ try {
       const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - (col + 0.5) / n) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - (row + 0.5) / nh) * bW * (L.cellH || 1)).project(W.camera);
       const x0 = (pv.x + 1) / 2 * innerWidth, y0 = (1 - pv.y) / 2 * innerHeight;
-      const hit = (x, y) => { const q = W.uvAt(x, y); return !!q && Math.floor(q.u * n) === col && Math.floor(q.v * nh) === row; };
+      // (on the screen and on the canvas too: a square's projection off the screen still reads as that square, and a click
+      //  there reached nothing, Oct 13)
+      const hit = (x, y) => { if (!(x >= 0 && y >= 0 && x < innerWidth && y < innerHeight)) return false; const el = document.elementFromPoint(x, y); if (!el || el.tagName !== 'CANVAS') return false;
+        const q = W.uvAt(x, y); return !!q && Math.floor(q.u * n) === col && Math.floor(q.v * nh) === row; };
       if (hit(x0, y0)) return { x: x0, y: y0, ok: true };
       for (let R = 3; R <= 90; R += 3) for (let a = 0; a < 16; a++){ const x = x0 + R * Math.cos(a * Math.PI / 8), y = y0 + R * Math.sin(a * Math.PI / 8); if (hit(x, y)) return { x, y, ok: true }; }
       return { x: x0, y: y0, ok: false };
@@ -356,9 +359,10 @@ try {
     const rc = await page.evaluate(async () => {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Wall in hand
-      await window.__settle();   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
+      await window.__settle(E.c, E.r);   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.L.n, V = n - 2, bW = W.boardW(), L = window.LAB || {};
-      const v = window.__aim(V, 4, 0);
+      let v = window.__aim(V, 4, 0);
+      if (!v.ok){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = window.__aim(V, 4, 0); }   // (on CI it was aimed off the screen once, Oct 13)
       return { x: v.x, y: v.y, aimed: v.ok, n, before: E.L.wall[1 * n + 5] };
     });
     await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
@@ -480,6 +484,11 @@ try {
       out.chess = { url: cu, fen };
       return out;
     });
+    // the main page waits on a game that rests: chess (the last above) never does, and on CI's two cores its drawing every frame
+    // in software kept every link page from loading in 90 s, while the puzzle makers' pages, opened with a resting game behind
+    // them, loaded (Oct 13)
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')));
+    await page.waitForTimeout(1500);
     const open = async (url, check) => {
       // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
       //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)
@@ -606,6 +615,11 @@ try {
       return { attacked, refused, many, one, clues, ok, n0, stays, white: A.cellItems(c, r).filter(it => it.piece === 'Q').length, url: P.share() };
     });
     // the links, each opened in a page of its own
+    // the main page waits on a game that rests: chess (the last above) never does, and on CI's two cores its drawing every frame
+    // in software kept every link page from loading in 90 s, while the puzzle makers' pages, opened with a resting game behind
+    // them, loaded (Oct 13)
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')));
+    await page.waitForTimeout(1500);
     const open = async (url, check) => {
       // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
       //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)
