@@ -258,11 +258,16 @@ try {
     const rc = await page.evaluate(async () => {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Rock in hand
+      await new Promise(ok => setTimeout(ok, 1000));                    // (the view settled before it is aimed at)
       const n = E.g.n, bW = W.boardW(), L = window.LAB || {};
       const v = new W.THREE.Vector3(T.boardX + (0.5 - 9.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 2.5 / n) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.g.towers[2 * n + 9] };
     });
+    // (where the click went, for a failure: in one full run it placed nothing, Oct 13)
+    await page.evaluate(() => { const A = window.getFieldApp(); window.__tdTaps = []; const o = A.onCellTap; A.__tdTap = o;
+      A.onCellTap = function(c, r, u, v){ window.__tdTaps.push([c, r, u == null ? null : +u.toFixed(3), v == null ? null : +v.toFixed(3)]); return o.apply(this, arguments); }; });
     await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    rc.taps = await page.evaluate(() => { const A = window.getFieldApp(); A.onCellTap = A.__tdTap; delete A.__tdTap; const W = window.FIELD_WORLD, T = W.target; return { taps: window.__tdTaps, ed: [A._debug.ed().c, A._debug.ed().r], framed: T.shown && W.cellAt(T.boardX, T.boardZ) }; });
     const rc2 = await page.evaluate(async n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.g && E.g.towers[2 * n + 9]; D.edCancel();
       const h = window.__tdHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.n);
     if (rc.before !== 0 || rc2 !== 6) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
@@ -320,6 +325,7 @@ try {
     const rc = await page.evaluate(async () => {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Wall in hand
+      await new Promise(ok => setTimeout(ok, 1000));                    // (the view settled before it is aimed at)
       const n = E.L.n, V = n - 2, bW = W.boardW(), L = window.LAB || {};
       const v = new W.THREE.Vector3(T.boardX + (0.5 - 4.5 / V) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 0.5 / V) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.L.wall[1 * n + 5] };
