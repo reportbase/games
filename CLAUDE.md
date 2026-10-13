@@ -1,6 +1,6 @@
 # games: notes for Claude
 
-A 3D field of boards you fly over, with ~37 games in one page (chess against
+A 3D field of boards you fly over, with ~37 games in one page (and Levels, a demonstration of level of detail) (chess against
 Stockfish with a Claude coach, checkers, Go, Tetris, Pac-Man, Sokoban, …), served
 by GitHub Pages at https://reportbase.github.io/games/. The owner works through
 Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
@@ -299,6 +299,30 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **Eight Queens** (`queens.mine`): this game is the classic eight queens, no regions, so a puzzle is clue queens (`GIVEN`,
     drawn white, a tap on one says it stays) and the rest to find. No clue may attack another; `waysOf` counts the ways to
     place the rest, and Done wants exactly one (else it says how many and asks for another clue).
+- **Levels: level of detail, shown on the field** (Oct 13: "we are making signifcant progress in the wander project about LOD.
+  is there is anything we can do in the games project to help show how LOD works? maybe an application devoted to the
+  concept?", then "yes."): `LEVELS_APP`, id `levels`, before `window.FIELD_APPS`. The theory is wander's (`flight.html`,
+  `levels.html`, `zoom.html`); this plays it on real boards with a real count of what is drawn.
+  - Every board carries one body, a ball with relief in four bands of doubling frequency (`WAVES`, seeded, the same on every
+    board). Its grain `g` (0–4, `LV_GEO`) keeps the bands b ≤ 3 − g on a mesh of 64 >> g around and 32 >> g up, so each grain
+    costs a quarter of the one before (`TRIS`: 3,968, 960, 224, 48, 24 triangles).
+  - v is the eye's height, h a board's distance along the ground from the point under the eye (as flight.html). By v/h (the
+    default) the corner is h = v: level 0, the near field, is h ≤ v, and level k runs from 2^(k−1)·v to 2^k·v (`levelAt`).
+    By metres the split is at fixed distances (`METRES_D`, 2 board spacings, doubling). None draws every board at grain 0.
+  - By v/h the near field's grain follows v (`grainOf`, after zoom.html: inside the corner one address is a share of H):
+    above `V0` (3.5, the height a board is framed at) every doubling of v makes every board one grain coarser. So the near
+    field, like each level past it, costs about the same at any height. Measured at 1280×800: opened, 138 boards in 4 levels
+    for 10,816 triangles; climbed, 813 boards for 20,592; None at that height 3.4 million; by metres 29,920.
+  - Rings on the ground (gold at the corner, then each doubling) follow the point under the eye, scaled by v (or METRES_D),
+    drawn from its own frame loop (`tick`), which also takes the counts of each frame the field drew (`fieldRest.drawn`: a
+    frame it rests on asks the framed board alone).
+  - The bottom row: None, By metres, By v/h, Wireframe (on at first; `?lod=`, localStorage `levels.mode`, `levels.wire`),
+    then boards and triangles at each level and the total. A tap on a board says its level, h/v and triangles.
+  - Field hooks it added: `FIELD_WORLD.itemAt` (the board being asked about, its middle on the ground, set in `_boardItems`
+    and for the framed board in `_restDecide`); an item kind's `geometry.userData.wireframe`; an app's `fitView(F)`, called by
+    the default fit (Levels opens at the lowest tilt, 35°, from `OPEN_V` = 8, so four or five levels are in view); and
+    `onLeave()`, called by `setFieldApp` on the app being left (Levels puts the tilt back). It sets `panMoves` so its boards
+    change level while the view moves, and `itemMinPx: 1`.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
