@@ -253,6 +253,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Done (✓, Play, the menu, or shutting the row) keeps the map on the board (`MAPS`, localStorage `td.maps`, the latest 300,
     each read back through `cleanMap`) and starts a game on it (`newGame(l, n, map)`). Escape or Cancel leaves the board as it
     was. A tap on another board moves the editor there.
+  - The row is the editor's alone (`statTiles` gives nothing while playing): its gold, lives and wave tiles went, since the
+    field opens the row by itself when an app's numbers first appear, and in a game that started the editor. The title keeps
+    gold, wave and pieces out.
   - A board with a map shows it waiting, not the bot's recording; Reset and Difficulty start it again (the waves and the
     pieces' strength are still the Difficulty's). The menu's Forget this board's map puts the board back.
 - **The board games: one position editor** (Oct 13: "1,2", the first being "a position editor for checkers, Reversi,
@@ -277,6 +280,25 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (the framed board's position, any position, or the draft), tower defense's Share this board's map (`shareMap`,
   `takeMap` through `cleanMap`) and Sokoban's Share this board's level (`shareLevel`, `takeLevel`: `cleanMine`, then the
   solver; a level with no way is refused). Mini golf keeps its own `?hole=` and `?line=`.
+- **Puzzle makers: Unblock Me, Flow and Eight Queens** (Oct 13: "ok, proceed", on puzzle makers where the solver checks the
+  puzzle): `PUZZLE_ED`, after `BOARD_ED`. `PUZZLE_ED.make(app, G)` gives an app the bottom row's hooks, the menu's Make a
+  puzzle for this board…, Cancel, Share this board's puzzle and Forget this board's puzzle, Escape, the puzzles kept on their
+  boards (localStorage `G.store`, read back through `G.clean`) and the share link (`SHARE`). The game gives `draftOf`,
+  `tools`, `acts`, `tap`, `check` (its solver: `{why}` or `{data, note}`), `clean`, `fromData`, `play` and `forget`; it
+  draws `P.draft(key)` while one is made and uses `P.mine(key)` for a board's own (its gameAt, Reset, Difficulty, and a tap
+  on a solved board start that puzzle again). Drags pan while making. Check and Play are the last two tiles; quick buttons
+  Check, Cancel, Done.
+  - **Unblock Me** (`unblock.mine`): the red block (across, two long, in the gap's row), blocks across and down of 2 and 3,
+    Erase, Clear, Size 6/8/10. `solveUB`: breadth first, a move one block sliding any distance (as the dealt ones count),
+    300,000 positions; the fewest moves is the best to beat. A puzzle is the PUZZLES' own code (`h231…`, `encUB`/`decUB`).
+  - **Flow** (`flow.mine`): a tile a colour (the game's nine) and Erase, Clear, Size 6/8/10; two dots a colour. `solveFlow`
+    looks for pipes joining every pair that fill every square: one colour's pipe a square at a time, toward its goal first,
+    a branch given up where an empty square has fewer than two ways through it, a pair's ends share no empty room, or a room
+    touches no pair that could fill it; `FLOW_CAP` (400,000) steps, past which the puzzle is kept but said to be unchecked.
+    The dealt puzzles solve in 0–21 ms at 6×6 and 8×8, up to 1.3 s at 10×10.
+  - **Eight Queens** (`queens.mine`): this game is the classic eight queens, no regions, so a puzzle is clue queens (`GIVEN`,
+    drawn white, a tap on one says it stays) and the rest to find. No clue may attack another; `waysOf` counts the ways to
+    place the rest, and Done wants exactly one (else it says how many and asks for another clue).
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
