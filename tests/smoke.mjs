@@ -71,13 +71,14 @@ try {
     // (still means unchanged at full precision over four looks a quarter second apart; with a board asked for, that board
     //  framed: a glide not yet begun, or creeping, passed a looser test and the click landed a row off, Oct 13)
     window.__settle = async (c, r) => {
-      const W = window.FIELD_WORLD; let a = null, same = 0;
-      for (let k = 0; k < 80 && same < 4; k++){
+      const W = window.FIELD_WORLD, t0 = performance.now(); let a = null, same = 0, there = false;
+      for (let k = 0; k < (c == null ? 80 : 240) && same < 4; k++){       // (a flight across boards being recorded can take long on CI)
         await new Promise(ok => setTimeout(ok, 250));
         const p = W.camera.position, T = W.target, f = T.shown ? W.cellAt(T.boardX, T.boardZ) : null;
-        const there = !!f && (c == null || (f.c === c && f.r === r)), q = p.x + ',' + p.y + ',' + p.z;
+        there = !!f && (c == null || (f.c === c && f.r === r)); const q = p.x + ',' + p.y + ',' + p.z;
         same = (q === a && there) ? same + 1 : 0; a = q;
       }
+      window.__lastSettle = { asked: c == null ? null : [c, r], there, ms: Math.round(performance.now() - t0) };
     };
     window.__still = () => window.__settle();
   });
@@ -254,7 +255,7 @@ try {
       document.getElementById('bbHandle').click(); await wait(800);
       const E = D.ed(), W = window.FIELD_WORLD, fr = W.cellAt(W.target.boardX, W.target.boardZ);
       if (!E.on) return { open: false, live: D.live(), shut: document.body.classList.contains('bb-collapsed') };
-      if (!fr || E.c !== fr.c || E.r !== fr.r) return { open: true, onFramed: false, ed: [E.c, E.r], fr };   // (the board on the screen)
+      if (!fr || E.c !== fr.c || E.r !== fr.r){ const out = { open: true, onFramed: false, ed: [E.c, E.r], fr, settle: window.__lastSettle }; try { D.edCancel(); } catch {} return out; }   // (the board on the screen)
       const c = E.c, r = E.r, tiles = (A.statTiles(c, r) || []).length, keys = window.tvf.browser.keys.filter(k => String(k).startsWith('stat_')).length;
       const tile = name => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => t.value === name || String(t.value).startsWith(name)));
       tile('Clear');

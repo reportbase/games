@@ -17697,7 +17697,7 @@ function chessTakeSetup(P){
 }
 // (stopped outright, as mini golf's is: the field's own Escape flies the view out to the horizon, and a key sent to the window
 //  itself reached it too, so the framed board moved under the editors' Cancel, Oct 13)
-addEventListener('keydown', e => { if (e.key === 'Escape' && CHESS_ED.on){ e.preventDefault(); e.stopImmediatePropagation(); chessEdCancel(); } }, true);
+addEventListener('keydown', e => { if (e.key === 'Escape' && CHESS_ED.on && window.getFieldApp && window.getFieldApp() === CHESS_APP){ e.preventDefault(); e.stopImmediatePropagation(); chessEdCancel(); } }, true);
 /* ═══ FIELD-CHESS — the migration pathfinder ══════════════════════════════
    A playable chess app written ENTIRELY against the seam above: the far
    field is the fabric checker, near boards are cellGrid squares, pieces are
@@ -18223,7 +18223,7 @@ const BOARD_ED = (() => {
     place(w * n + q); stage();
     return true;
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopImmediatePropagation(); cancel(); } }, true);
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === ED.app){ e.preventDefault(); e.stopImmediatePropagation(); cancel(); } }, true);
 
   // SHARE (Oct 13): the framed board's position (the draft while editing) as a link; taken onto the first board framed
   function share(app, G){
@@ -18344,7 +18344,7 @@ const PUZZLE_ED = (() => {
   const say = (m, ms) => { if (CUR) CUR.msg = m; try { engineNotice(m, ms || 2800); } catch {} };
   const changed = () => { try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {} };
   function pane(open){ BUSY = true; try { toggleBoardBrowser(open); } catch {} BUSY = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && CUR){ e.preventDefault(); e.stopImmediatePropagation(); CUR.P.cancel(); } }, true);
+  addEventListener('keydown', e => { if (e.key === 'Escape' && CUR && window.getFieldApp && window.getFieldApp() === CUR.app){ e.preventDefault(); e.stopImmediatePropagation(); CUR.P.cancel(); } }, true);
   function make(app, G){
     const mine = new Map(), CAP = 300;
     try { const o = JSON.parse(localStorage.getItem(G.store) || '{}'); for (const k in o){ const m = G.clean(o[k]); if (m) mine.set(k, m); } } catch {}
@@ -30246,7 +30246,8 @@ const TD_APP = (() => {
     if (i >= 0) edPlace(i);
     return true;
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
+  // (only while this game is the one on show: an editor left open in another game caught Escape here, Oct 13)
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE (Oct 13): a board's map (the draft while editing) as a link; taken onto the first board framed, through cleanMap
   function shareMap(){
     const f = framedCell(), m = ED.on ? mapOf(ED.g) : f && MAPS.get(gkey(f.c, f.r));
@@ -43988,7 +43989,8 @@ const SOKOBAN_APP = (() => {
     try { fieldItemsChanged(); } catch {}
     return true;
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
+  // (only while this game is the one on show: an editor left open in another game caught Escape here, Oct 13)
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE (Oct 13): a board's level (the draft while editing) as a link; taken onto the first board framed, through cleanMine
   function shareLevel(){
     const f = framedCell(), m = ED.on ? { n: ED.L.n, cells: cellsOf(ED.L) } : f && MINE.get(gkey(f.c, f.r));
