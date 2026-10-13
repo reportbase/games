@@ -175,10 +175,10 @@ try {
       const D = A._debug, W = window.FIELD_WORLD;
       D.fly(3, 2); await wait(1500);                               // (a board framed: the editor sets up the selected board)
       // (the row shut first: an earlier check may have left it open, and then the dots would shut it)
-      const was = { shut: document.body.classList.contains('bb-collapsed'), shown: !!W.target.shown };
+      const was = { shut: document.body.classList.contains('bb-collapsed'), shown: !!W.target.shown, vis: window.tvf.browser.visible, app: window.getFieldApp().name };
       if (!was.shut){ document.getElementById('bbHandle').click(); await wait(800); }
       document.getElementById('bbHandle').click(); await wait(800);
-      if (!D.ed.on) return { was, nowShut: document.body.classList.contains('bb-collapsed'), shown: !!W.target.shown, msg: D.ed.msg };
+      if (!D.ed.on) return { was, nowShut: document.body.classList.contains('bb-collapsed'), vis: window.tvf.browser.visible, shown: !!W.target.shown, msg: D.ed.msg, busy: D.ed.busy };
       const on = D.ed.on, tiles = (A.statTiles() || []).length, keys = window.tvf.browser.keys.filter(k => String(k).startsWith('stat_')).length;
       const bw = W.boardW(), sq = (r, c) => ({ x: D.ed.bx - bw / 2 + (c + 0.5) * bw / 8, y: 0, z: D.ed.bz - bw / 2 + (r + 0.5) * bw / 8 });
       A.onStatTap(0, 0, 13);                                     // Clear
