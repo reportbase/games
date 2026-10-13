@@ -306,18 +306,23 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Every board carries one body of its own (Oct 13: "the object in each board should be unique, generated from the board
     Id."): a ball with relief in four bands of doubling frequency, seeded by the board's id (`boardIdx`, golf's and Sokoban's
     Szudzik pairing; `bodyOf`: each band weighed 0.3–1.7, each wave its own way round and phase, the whole stretched a little,
-    `B.s`, carried by the item's sx/sy/sz). Its grain `g` (0–4, `LV_GEO`) keeps the bands b ≤ 3 − g on a mesh of 64 >> g
-    around and 32 >> g up, so each grain costs a quarter of the one before (`TRIS`: 3,968, 960, 224, 48, 24 triangles).
+    `B.s`, and its own colour, `B.color`). Grain `g` (0–3, `LV_GEO`) is a mesh of 64 >> g around and 32 >> g up, each a
+    quarter of the one before (`TRIS`: 3,968, 960, 224, 48 triangles).
   - **Invariant, locked by the board's id** (Oct 13: "why do object change color and shape. they should be invariant, locked
-    by the id of the board."): a body's colour is its own (`B.color`, from the id), not its level's, in every mode; and every
-    grain keeps band 0, its broad lumps, and its stretch, so only the finer bumps come and go with distance (until then the
-    coarsest grain was one plain ball for every board, and the bodies wore their level's colour). The level still shows in the
-    rings and the row.
-  - A kind a board and a grain (`lvB<id>_<g>`, `lvW…` for wire), made when first wanted (`itemGeometries` is a Proxy), and
-    dropped after `KIND_IDLE` (4 s) unwanted (`fieldDropItemKind`). The coarsest grain (`FAR_G`, 4) is drawn as one batch
-    instead (`FAR`, `farBuild`): each far board asked goes into `BAT`, and the field's new `afterItems` hook (every board asked,
-    nothing drawn yet) lays them, each its own coarse mesh (`farGeoOf`, made once a board), stretch and colour, into one mesh.
-    Tilted to 6°: 5,788 boards, 53 kinds and the batch (137,640 of 142,472 triangles); a kind a board there was 5,800 meshes.
+    by the id of the board."): a body keeps its colour in every mode and at every distance, and every grain keeps band 0, its
+    broad lumps, and its stretch, so only the finer bumps come and go. The level shows in the rings and the row.
+  - **Smooth, not snapped** (Oct 13: "LOD does not snap, it is smooth between levels. between levels use the proportion part
+    of the level."): a board's detail is a number, `gc` (`detailOf`): one address is h/n past the corner, the board's own
+    place in its level, and H/n inside it. At gc = g + t the mesh is grain g, holding bands b ≤ 2 − g in full and band 3 − g
+    at weight 1 − t (`fadeOf`, `bandWeights`), so that band is gone just as the mesh steps down to g + 1, which holds the same
+    bands: a step changes only how finely the surface is sampled. By metres keeps an engine's snapped tiers, None grain 0.
+  - **One mesh** (`BODIES`, `bodiesBuild`): with weights moving every frame, nothing is a kind of the field's (`cellItems` gives
+    no items). Each board asked goes into `BAT`, and the field's `afterItems` hook (every board asked, nothing drawn yet) lays
+    them all into one mesh, lit here (`LIGHT`, a basic material). A body's parts at a grain are made once (`partsOf`: the point
+    with its full bands and the step to the fading one, the normals and shades of both); a body with nothing fading is kept in
+    the world as laid (`STILL`) and copied; bodies go grain by grain, so the index is written only when a grain's count changes.
+    Measured: 1 ms a frame opened (138 bodies), 8 ms tilted to 6° (5,784 bodies, 280,656 triangles, one draw). The caches hold
+    20,000: at 3,000 the horizon's bodies were made again every frame, 150 ms.
   - The triangles face out (Oct 13: "the object in each levels board is not centered."): wound the other way, the near side
     was culled and the inside of the far side showed, so every body looked hollow and pushed back off its board's middle.
   - The tilt is not clamped (Oct 13: "don't clamp the tilt in levels."): an app's `pitchFloor` sets the field's tilt floor,

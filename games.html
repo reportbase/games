@@ -44195,25 +44195,18 @@ const LEVELS_APP = (() => {
       for (let j = 0; j < 5; j++){ const z = rnd() * 2 - 1, a = rnd() * 2 * Math.PI, q = Math.sqrt(1 - z * z);
         waves.push({ b, f: 3 * 2 ** b, A: 0.07 / 2 ** b * m, d: [q * Math.cos(a), z, q * Math.sin(a)], ph: rnd() * 2 * Math.PI }); } }
     B = { waves, s: [0.85 + 0.3 * rnd(), 0.8 + 0.5 * rnd(), 0.85 + 0.3 * rnd()], color: hsl(rnd(), 0.45 + 0.25 * rnd(), 0.52 + 0.14 * rnd()) };
-    if (BODY.size > 6000) BODY.clear();
+    if (BODY.size > 20000) BODY.clear();
     BODY.set(idx, B); return B;
   }
-  // level k: every band b ≤ 3 − k, on a mesh of 64 >> k around and half as many up (no coarser than 6 × 3)
-  const LV_GEO = 5, segOf = k => Math.max(6, 64 >> k), ringsOf = k => Math.max(3, 32 >> k);
-  function bodyGeo(T, k, waves){
-    /* (every grain keeps band 0, the body's broad lumps, and its stretch, so a body is the same body at every distance and only
-       its finer bumps come and go: until Oct 13 the coarsest grain kept no band, a plain ball the same on every board) */
-    const seg = segOf(k), rings = ringsOf(k), P = [], C = [], I = [], W = waves.filter(w => w.b <= Math.max(0, 3 - k));
-    for (let i = 0; i <= rings; i++){
-      const th = Math.PI * i / rings, y = Math.cos(th), q = Math.sin(th);
-      for (let j = 0; j <= seg; j++){
-        const ph = 2 * Math.PI * j / seg, x = q * Math.cos(ph), z = q * Math.sin(ph);
-        let rel = 0; for (const w of W) rel += w.A * Math.cos(w.f * (x * w.d[0] + y * w.d[1] + z * w.d[2]) + w.ph);
-        const R = 0.5 * (1 + rel);
-        P.push(x * R, 0.5 + y * R, z * R);
-        const g = Math.max(0.45, Math.min(1.1, 0.8 + 2.2 * rel)); C.push(g, g, g);
-      }
-    }
+  /* GRAINS. Grain g is a mesh of 64 >> g around and 32 >> g up (64, 32, 16, 8; LV_GEO of them), each a quarter of the one
+     before (TRIS). At grain g a body holds its bands b ≤ 2 − g in full and band 3 − g fading, and always band 0, its broad
+     lumps (Oct 13: "they should be invariant, locked by the id of the board."). */
+  const LV_GEO = 4, segOf = g => 64 >> g, ringsOf = g => 32 >> g, TRIS = [];
+  for (let g = 0; g < LV_GEO; g++){ const sg = segOf(g), rg = ringsOf(g); TRIS[g] = 2 * sg * rg - 2 * sg; }
+  const TOPO = [];                                     // a grain's triangles, the same for every body
+  function topoOf(g){
+    if (TOPO[g]) return TOPO[g];
+    const seg = segOf(g), rings = ringsOf(g), I = [];
     for (let i = 0; i < rings; i++) for (let j = 0; j < seg; j++){
       const a = i * (seg + 1) + j, b = a + seg + 1;
       // (wound to face out: wound the other way, the near side was culled and the inside of the far side showed, so every body
@@ -44221,83 +44214,121 @@ const LEVELS_APP = (() => {
       if (i > 0) I.push(a, a + 1, b);
       if (i < rings - 1) I.push(a + 1, b + 1, b);
     }
-    const G = new T.BufferGeometry();
-    G.setAttribute('position', new T.Float32BufferAttribute(P, 3));
-    G.setAttribute('color', new T.Float32BufferAttribute(C, 3));
-    G.setIndex(I); G.computeVertexNormals();
-    G.userData = { vertexColors: true, tris: I.length / 3 };
-    return G;
+    return (TOPO[g] = { I: Uint32Array.from(I), nv: (rings + 1) * (seg + 1) });
   }
-  const TRIS = [];
-  /* A kind a board and a grain: lvB<id>_<g> (solid) or lvW<id>_<g> (wire), made when first wanted (the field asks
-     itemGeometries[kind]). Kinds no board has wanted for KIND_IDLE ms are dropped (fieldDropItemKind), so a flight across the
-     field does not keep every body it passed. */
-  const KIND_RE = /^lv([BW])(\d+)_(\d)$/, USED = new Map(), KIND_IDLE = 4000;
-  const geos = new Proxy({}, { get(_, kind){
-    const m = KIND_RE.exec(String(kind)); if (!m) return undefined;
-    return T => { const G = bodyGeo(T, +m[3], bodyOf(+m[2]).waves); if (m[1] === 'W') G.userData.wireframe = true; return G; };
-  } });
-  /* THE FAR BATCH. The coarsest grain (FAR_G) is most of the field when the eye looks out to the horizon (5,800 boards tilted
-     to 6°), and a kind a board there was a mesh and a draw each. It was one shared plain ball until Oct 13 ("why do object
-     change color and shape. they should be invariant, locked by the id of the board."); now each far body keeps its own
-     broad lumps, stretch and colour, and they are laid into one mesh of their own (FAR) each frame the field draws, from the
-     boards it asked (BAT), in afterItems: every board asked, nothing drawn yet. A body's coarse mesh is made once (FAR_GEO,
-     its positions, normals and shades about its own middle); the frame only places and colours it. */
-  const FAR_G = LV_GEO - 1, FAR_GEO = new Map(), BAT = new Map();
-  let FAR = null, FAR_CAP = 0, FAR_TOPO = null;
-  function farGeoOf(idx){
-    let F = FAR_GEO.get(idx);
-    if (F) return F;
-    const G = bodyGeo(W().THREE, FAR_G, bodyOf(idx).waves);
-    F = { P: G.attributes.position.array.slice(), N: G.attributes.normal.array.slice(), C: G.attributes.color.array.slice() };
-    if (!FAR_TOPO) FAR_TOPO = { I: Array.from(G.index.array), nv: F.P.length / 3 };
-    G.dispose();
-    if (FAR_GEO.size > 8000) FAR_GEO.clear();
-    FAR_GEO.set(idx, F); return F;
+  function vnormals(P, I){
+    const N = new Float32Array(P.length);
+    for (let t = 0; t < I.length; t += 3){
+      const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      for (const k of [a, b, c]){ N[k] += nx; N[k + 1] += ny; N[k + 2] += nz; }
+    }
+    for (let k = 0; k < N.length; k += 3){ const l = Math.hypot(N[k], N[k + 1], N[k + 2]) || 1; N[k] /= l; N[k + 1] /= l; N[k + 2] /= l; }
+    return N;
   }
-  function farBuild(){
-    const T = W().THREE, list = [...BAT.values()]; BAT.clear();
-    if (!FAR){
-      FAR = new T.Mesh(new T.BufferGeometry(), new T.MeshLambertMaterial({ vertexColors: true }));
-      FAR.frustumCulled = false; W().scene.add(FAR);
-    }
-    FAR.visible = list.length > 0; FAR.material.wireframe = wire;
-    if (!list.length) return;
-    farGeoOf(list[0].idx);
-    const nv = FAR_TOPO.nv, I0 = FAR_TOPO.I;
-    if (list.length > FAR_CAP){
-      FAR_CAP = Math.max(256, 1 << Math.ceil(Math.log2(list.length)));
-      const G = FAR.geometry, idx = new Uint32Array(FAR_CAP * I0.length);
-      for (let b = 0; b < FAR_CAP; b++) for (let j = 0; j < I0.length; j++) idx[b * I0.length + j] = I0[j] + b * nv;
-      G.setIndex(new T.BufferAttribute(idx, 1));
-      G.setAttribute('position', new T.BufferAttribute(new Float32Array(FAR_CAP * nv * 3), 3).setUsage(T.DynamicDrawUsage));
-      G.setAttribute('normal', new T.BufferAttribute(new Float32Array(FAR_CAP * nv * 3), 3).setUsage(T.DynamicDrawUsage));
-      G.setAttribute('color', new T.BufferAttribute(new Float32Array(FAR_CAP * nv * 3), 3).setUsage(T.DynamicDrawUsage));
-    }
-    const G = FAR.geometry, P = G.attributes.position.array, N = G.attributes.normal.array, C = G.attributes.color.array;
-    let o = 0;
-    for (const e of list){
-      const F = farGeoOf(e.idx), B = bodyOf(e.idx), sx = e.s * B.s[0], sy = e.s * B.s[1], sz = e.s * B.s[2];
-      const cr = ((B.color >> 16) & 255) / 255, cg = ((B.color >> 8) & 255) / 255, cb = (B.color & 255) / 255;
-      for (let v = 0; v < nv; v++, o += 3){
-        const j = v * 3;
-        P[o] = e.x + F.P[j] * sx; P[o + 1] = 0.02 + F.P[j + 1] * sy; P[o + 2] = e.z + F.P[j + 2] * sz;
-        let nx = F.N[j] / sx, ny = F.N[j + 1] / sy, nz = F.N[j + 2] / sz; const l = Math.hypot(nx, ny, nz) || 1;
-        N[o] = nx / l; N[o + 1] = ny / l; N[o + 2] = nz / l;
-        C[o] = F.C[j] * cr; C[o + 1] = F.C[j + 1] * cg; C[o + 2] = F.C[j + 2] * cb;
+  /* A BODY'S PARTS AT A GRAIN (made once, kept in PARTS): for every vertex the point at its full bands (P0) and its step to the
+     band fading in (D), the normals of both (N0, N1), and the shade of both (S0, S1). A frame lays the body at its weight w:
+     P0 + w·D, the normal between N0 and N1. */
+  const PARTS = new Map();
+  function partsOf(idx, g){
+    const key = idx * 8 + g;
+    let Q = PARTS.get(key);
+    if (Q) return Q;
+    const { I, nv } = topoOf(g), seg = segOf(g), rings = ringsOf(g), waves = bodyOf(idx).waves, fb = g < 3 ? 3 - g : -1;
+    const P0 = new Float32Array(nv * 3), P1 = new Float32Array(nv * 3), S0 = new Float32Array(nv), S1 = new Float32Array(nv);
+    let v = 0;
+    for (let i = 0; i <= rings; i++){
+      const th = Math.PI * i / rings, y = Math.cos(th), q = Math.sin(th);
+      for (let j = 0; j <= seg; j++, v++){
+        const ph = 2 * Math.PI * j / seg, x = q * Math.cos(ph), z = q * Math.sin(ph);
+        let r0 = 0, rf = 0;
+        for (const w of waves){
+          const d = w.A * Math.cos(w.f * (x * w.d[0] + y * w.d[1] + z * w.d[2]) + w.ph);
+          if (w.b === 0 || w.b <= 2 - g) r0 += d; else if (w.b === fb) rf += d;
+        }
+        const R0 = 0.5 * (1 + r0), R1 = 0.5 * (1 + r0 + rf);
+        P0[v * 3] = x * R0; P0[v * 3 + 1] = 0.5 + y * R0; P0[v * 3 + 2] = z * R0;
+        P1[v * 3] = x * R1; P1[v * 3 + 1] = 0.5 + y * R1; P1[v * 3 + 2] = z * R1;
+        S0[v] = Math.max(0.45, Math.min(1.1, 0.8 + 2.2 * r0)); S1[v] = Math.max(0.45, Math.min(1.1, 0.8 + 2.2 * (r0 + rf)));
       }
     }
-    G.setDrawRange(0, list.length * I0.length);
-    G.attributes.position.needsUpdate = G.attributes.normal.needsUpdate = G.attributes.color.needsUpdate = true;
+    const D = new Float32Array(nv * 3); for (let k = 0; k < D.length; k++) D[k] = P1[k] - P0[k];
+    Q = { P0, D, N0: vnormals(P0, I), N1: vnormals(P1, I), S0, S1, fades: fb >= 0 };
+    if (PARTS.size > 20000) PARTS.clear();          // (more than the boards in a view to the horizon, 5,800, or it was made again every frame)
+    PARTS.set(key, Q); return Q;
+  }
+  /* SMOOTH, NOT SNAPPED (Oct 13: "LOD does not snap, it is smooth between levels. between levels use the proportion part of the
+     level."). A board's detail is a number, gc, not a step: past the corner one address is h/n, the board's own place in its
+     level (2^(k−1)·H at the level's near edge, 2^k·H at its far one), inside the corner H/n. At gc = g + t the mesh is grain g
+     and its fading band's weight is 1 − t, so the band is gone just as the mesh steps down to g + 1, which holds the same
+     bands: the step changes how finely the surface is sampled, never what it is. By metres keeps an engine's snapped tiers (t
+     = 0, grain = level), and None every board at grain 0. */
+  const fadeOf = gc => { const g = Math.max(0, Math.min(LV_GEO - 1, Math.floor(gc))); return { g, w: g >= LV_GEO - 1 || gc < 0 ? 1 : 1 - (gc - g) }; };
+  // (the band weights a detail gives, for the tests: band 0 always, then each finer band full, fading, or gone)
+  const bandWeights = gc => { const { g, w } = fadeOf(gc); return [0, 1, 2, 3].map(b => b === 0 || b <= 2 - g ? 1 : b === 3 - g ? w : 0); };
+  /* THE BODIES, ONE MESH (BODIES). Every board asked goes into BAT with its place and detail, and the field's afterItems (every
+     board asked, nothing drawn yet) lays them all into one mesh, each at its own weight, stretch and colour, lit here, so
+     nothing is a kind of the field's and the whole field is one draw. */
+  const BAT = new Map();
+  let BODIES = null, capV = 0, capI = 0, lastList = [];
+  const LIGHT = (() => { const l = Math.hypot(0.4, 0.8, 0.3); return [0.4 / l, 0.8 / l, 0.3 / l]; })();
+  /* (Laid naively, the horizon's 5,800 bodies took 170 ms a frame here. A body with no band fading looks the same every frame,
+     so its points and colours in the world are kept (STILL, by board, place and grain) and only copied; and the bodies are laid
+     grain by grain, so the triangles' index is written again only when the count at some grain changes.) */
+  const STILL = new Map();
+  let idxSig = '';
+  function layBody(e, P, C, o){
+    const Q = partsOf(e.idx, e.g), nv = topoOf(e.g).nv, B = bodyOf(e.idx), w = Q.fades ? e.w : 0;
+    const still = !Q.fades || w >= 1 || w <= 0, key = still ? e.key + ':' + e.g + ':' + w + ':' + e.x.toFixed(2) + ':' + e.z.toFixed(2) + ':' + wire : null;
+    if (still){ const K = STILL.get(key); if (K){ P.set(K.P, o); C.set(K.C, o); return; } }
+    const sx = e.s * B.s[0], sy = e.s * B.s[1], sz = e.s * B.s[2];
+    const cr = ((B.color >> 16) & 255) / 255, cg = ((B.color >> 8) & 255) / 255, cb = (B.color & 255) / 255;
+    for (let v = 0, q = o; v < nv; v++, q += 3){
+      const j = v * 3;
+      P[q] = e.x + (Q.P0[j] + w * Q.D[j]) * sx; P[q + 1] = 0.02 + (Q.P0[j + 1] + w * Q.D[j + 1]) * sy; P[q + 2] = e.z + (Q.P0[j + 2] + w * Q.D[j + 2]) * sz;
+      const nx = (Q.N0[j] + w * (Q.N1[j] - Q.N0[j])) / sx, ny = (Q.N0[j + 1] + w * (Q.N1[j + 1] - Q.N0[j + 1])) / sy, nz = (Q.N0[j + 2] + w * (Q.N1[j + 2] - Q.N0[j + 2])) / sz;
+      const l = Math.hypot(nx, ny, nz) || 1, lit = 0.35 + 0.65 * Math.max(0, (nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]) / l);
+      const sh = (Q.S0[v] + w * (Q.S1[v] - Q.S0[v])) * lit;
+      C[q] = cr * sh; C[q + 1] = cg * sh; C[q + 2] = cb * sh;
+    }
+    if (still){ if (STILL.size > 20000) STILL.clear(); STILL.set(key, { P: P.slice(o, o + nv * 3), C: C.slice(o, o + nv * 3) }); }
+  }
+  function bodiesBuild(){
+    const T = W().THREE, list = [...BAT.values()]; BAT.clear();
+    list.sort((a, b) => a.g - b.g); lastList = list;
+    if (!BODIES){
+      BODIES = new T.Mesh(new T.BufferGeometry(), new T.MeshBasicMaterial({ vertexColors: true }));
+      BODIES.frustumCulled = false; W().scene.add(BODIES);
+    }
+    BODIES.visible = list.length > 0; BODIES.material.wireframe = wire;
+    if (!list.length) return;
+    const counts = [0, 0, 0, 0]; let nv = 0, ni = 0;
+    for (const e of list){ const t = topoOf(e.g); nv += t.nv; ni += t.I.length; counts[e.g]++; }
+    const G = BODIES.geometry;
+    if (nv > capV || ni > capI){
+      capV = Math.max(4096, 1 << Math.ceil(Math.log2(nv))); capI = Math.max(8192, 1 << Math.ceil(Math.log2(ni)));
+      G.setIndex(new T.BufferAttribute(new Uint32Array(capI), 1).setUsage(T.DynamicDrawUsage));
+      G.setAttribute('position', new T.BufferAttribute(new Float32Array(capV * 3), 3).setUsage(T.DynamicDrawUsage));
+      G.setAttribute('color', new T.BufferAttribute(new Float32Array(capV * 3), 3).setUsage(T.DynamicDrawUsage));
+      idxSig = '';
+    }
+    const P = G.attributes.position.array, C = G.attributes.color.array;
+    let o = 0;
+    for (const e of list){ layBody(e, P, C, o); o += topoOf(e.g).nv * 3; }
+    const sig = counts.join(',');
+    if (sig !== idxSig){
+      const IX = G.index.array; let base = 0, io = 0;
+      for (const e of list){ const t = topoOf(e.g); for (let k = 0; k < t.I.length; k++) IX[io + k] = t.I[k] + base; io += t.I.length; base += t.nv; }
+      idxSig = sig; G.index.needsUpdate = true;
+    }
+    G.setDrawRange(0, ni);
+    G.attributes.position.needsUpdate = G.attributes.color.needsUpdate = true;
     G.boundingSphere = null;
   }
-  function dropIdle(now){
-    for (const [k, t] of USED) if (now - t > KIND_IDLE){ USED.delete(k); try { window.fieldDropItemKind && window.fieldDropItemKind(k); } catch {} }
-  }
-  // Wireframe (the bodies drawn as their meshes' lines, so each level's grain shows; on at first, as flight.html is wire frame)
+  // Wireframe (the bodies drawn as their meshes' lines, so each grain shows; on at first, as flight.html is wire frame)
   let wire = true;
   try { const w = localStorage.getItem('levels.wire'); if (w === 'off') wire = false; } catch {}
-  for (let k = 0; k < LV_GEO; k++){ const s = segOf(k), r = ringsOf(k); TRIS[k] = 2 * s * r - 2 * s; }
   // By metres: the split made at fixed distances along the ground, in board spacings (an engine's 500 m, 1 km, 2 km …)
   const METRES_D = 2;
   const W = () => window.FIELD_WORLD;
@@ -44332,11 +44363,13 @@ const LEVELS_APP = (() => {
   const Hof = v => v * 2 ** hs;
   let farR = 0;                                       // the farthest board asked in the last frame drawn (R)
   const shareOf = H => { const R = Math.max(H, farR || 16 * H), lv = Math.max(0, Math.ceil(Math.log2(R / H))); return { n: ADDR / (1 + lv), lv }; };
-  function grainOf(k, v){
+  // (a board's detail, gc: by v/h from its own distance h, by metres its level, None 0; see SMOOTH, NOT SNAPPED)
+  function detailOf(k, v, h){
     if (mode !== 'vh') return Math.min(LV_GEO - 1, mode === 'none' ? 0 : k);
-    const H = Hof(v), { n } = shareOf(H), unit = (k <= 0 ? H : 2 ** (k - 1) * H) / n, a = BODY_B / unit;
-    return Math.max(0, Math.min(LV_GEO - 1, Math.round(Math.log2(64 / Math.max(1e-6, a)))));
+    const H = Hof(v), { n } = shareOf(H), unit = Math.max(h == null ? (k <= 0 ? H : 2 ** (k - 1) * H) : h, H) / n, a = BODY_B / unit;
+    return Math.max(0, Math.min(LV_GEO - 1, Math.log2(64 / Math.max(1e-6, a))));
   }
+  const grainOf = (k, v, h) => fadeOf(detailOf(k, v, h)).g;
   // the counts: this frame's as the boards are asked, and the last whole frame's for the row
   let cur = { n: [], t: [], R: 0 }, shown = { n: [], t: [], R: 0 }, ticking = false, last = new Map();
   // (a frame the field rests on asks the framed board alone, so only a frame it drew stands for the field: Oct 13)
@@ -44354,9 +44387,8 @@ const LEVELS_APP = (() => {
     g.position.y = 0.03; W().scene.add(g); return g;
   }
   function tick(){
-    if (window.getFieldApp && window.getFieldApp() !== LEVELS_APP){ ticking = false; if (rings) rings.visible = false; if (FAR) FAR.visible = false; return; }
+    if (window.getFieldApp && window.getFieldApp() !== LEVELS_APP){ ticking = false; if (rings) rings.visible = false; if (BODIES) BODIES.visible = false; return; }
     roll();
-    { const now = performance.now(); if (now - (tick.dropAt || 0) > 1000){ tick.dropAt = now; dropIdle(now); } }
     try {
       if (!rings) rings = ringsMake();
       const cam = W().camera, v = Math.max(1e-6, cam.position.y), D = mode === 'vh' ? Hof(v) : METRES_D * Math.max(...W().spacing());
@@ -44389,23 +44421,21 @@ const LEVELS_APP = (() => {
        view; at 35° the top of the screen is about 5° under the horizon) */
     fitView(F){ if (pitchWas == null) pitchWas = F.st.pitch; F.st.pitch = OPEN_PITCH; F.frameAt(F.zoomFor(OPEN_V)); },
     // (and left, the tilt goes back to what it was, so the next game opens as it would have)
-    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; USED.clear(); BAT.clear(); if (FAR) FAR.visible = false; },
-    itemGeometries: geos,
-    afterItems(){ try { farBuild(); } catch (e) { console.warn('levels far', e); } },
+    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; BAT.clear(); if (BODIES) BODIES.visible = false; },
+    itemGeometries: {},
+    afterItems(){ try { bodiesBuild(); } catch (e) { console.warn('levels bodies', e); } },
     cellItems(c, r, bp){
       startTick();
       const at = W().itemAt, cam = W().camera;
       if (!at || !cam) return null;
-      const v = Math.max(1e-6, cam.position.y), h = Math.hypot(at.x - cam.position.x, at.z - cam.position.z), k = levelAt(h, v), g = grainOf(k, v);
+      const v = Math.max(1e-6, cam.position.y), h = Math.hypot(at.x - cam.position.x, at.z - cam.position.z), k = levelAt(h, v), gc = detailOf(k, v, h), { g, w } = fadeOf(mode === 'vh' ? gc : Math.round(gc));
       cur.n[k] = (cur.n[k] || 0) + 1; cur.t[k] = (cur.t[k] || 0) + TRIS[g]; if (h > cur.R) cur.R = h;
-      const idx = boardIdx(c, r), B = bodyOf(idx);
-      last.set(c + '_' + r, { k, g, s: h / (mode === 'vh' ? Hof(v) : v), idx });
+      const idx = boardIdx(c, r);
+      last.set(c + '_' + r, { k, g, gc, s: h / (mode === 'vh' ? Hof(v) : v), idx });
       if (last.size > 5000) last.clear();
-      // (the coarsest go to the far batch, laid in afterItems; the rest are kinds of their own, a board and a grain)
-      if (g >= FAR_G){ const bW = W().boardW(); BAT.set(c + '_' + r, { idx, x: at.x, z: at.z, s: 0.5 * bW }); return []; }
-      const kind = (wire ? 'lvW' : 'lvB') + idx + '_' + g;
-      USED.set(kind, performance.now());
-      return [{ kind, u: 0.5, v: 0.5, scale: 0.5, sx: B.s[0], sy: B.s[1], sz: B.s[2], color: B.color }];
+      // (every body goes into the one mesh, laid in afterItems at its own detail: nothing is a piece of the field's)
+      BAT.set(c + '_' + r, { key: c + '_' + r, idx, g, w, k, x: at.x, z: at.z, s: 0.5 * W().boardW() });
+      return [];
     },
     cellTitle(c, r){
       const L = last.get(c + '_' + r);
@@ -44414,7 +44444,7 @@ const LEVELS_APP = (() => {
     },
     onCellTap(c, r){
       const L = last.get(c + '_' + r); if (!L) return false;
-      say((L.k === 0 ? 'The near field' : 'Level ' + L.k) + ': h/H = ' + L.s.toFixed(2) + ', grain ' + L.g + ', ' + fmt(TRIS[L.g]) + ' triangles' + (mode === 'none' ? ' (None: every board in full)' : ''), 2600);
+      say((L.k === 0 ? 'The near field' : 'Level ' + L.k) + ': h/H = ' + L.s.toFixed(2) + ', detail ' + L.gc.toFixed(2) + ' (grain ' + L.g + '), ' + fmt(TRIS[L.g]) + ' triangles' + (mode === 'none' ? ' (None: every board in full)' : ''), 2600);
       return false;
     },
     statTiles(){
@@ -44440,7 +44470,7 @@ const LEVELS_APP = (() => {
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
-    _debug: { get far(){ return FAR; }, farGeoOf, FAR_G, get hs(){ return hs; }, setH, shareOf, grainOf: (k, v) => grainOf(k, v), get farR(){ return farR; }, ADDR, boardIdx, bodyOf, get kinds(){ return USED.size; }, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
+    _debug: { get bodies(){ return BODIES; }, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, ADDR, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
 window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
