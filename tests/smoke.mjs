@@ -205,7 +205,11 @@ try {
     const before = failures.length;
     const pitch0 = await page.evaluate(() => window.FIELD_WORLD.st.pitch);
     await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.name === 'levels'); A._debug.setMode('vh'); window.setFieldApp(A); });
-    await page.waitForTimeout(6000);
+    await page.waitForTimeout(3000);
+    // (until the camera is still and a frame drawn after it counted: on CI the first look came mid-flight, the eye at 3.9 on its
+    //  way to 8 and the rings a frame behind it, Oct 13)
+    await page.evaluate(() => window.__settle());
+    await page.waitForTimeout(2000);
     const look = () => page.evaluate(() => { const A = window.getFieldApp(), S = A._debug.shown, c = window.FIELD_WORLD.camera.position;
       return { v: c.y, pitch: window.FIELD_WORLD.st.pitch, levels: S.n.filter(Boolean).length, boards: S.n.reduce((a, b) => a + (b || 0), 0), tris: S.t.reduce((a, b) => a + (b || 0), 0),
                rings: !!A._debug.rings && A._debug.rings.visible && Math.hypot(A._debug.rings.position.x - c.x, A._debug.rings.position.z - c.z) < 1e-6 && Math.abs(A._debug.rings.scale.x - c.y) < 1e-6 }; });
