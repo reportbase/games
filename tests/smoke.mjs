@@ -162,6 +162,41 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (pars by level ${sk.lv.map(p => p.toFixed(1)).join(', ')})`);
   }
 
+  // CHESS: THE ROW IS A POSITION EDITOR (Oct 13: "lets use it in chess to create custom chess games instead of selecting a
+  // board. similar to mini-golf"): the dots, clicked, open the editor on the framed board with its tiles; taps put pieces on
+  // squares (a pawn on the last rank refused); without a king Done says why and stays; with kings Done puts the position on
+  // the board as its own game and shuts the row; Escape leaves a board as it was
+  current = 'chess position editor';
+  {
+    const before = failures.length;
+    const ce = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const A = window.FIELD_APPS.find(a => a.name === 'field chess'); window.setFieldApp(A); await wait(2500);
+      const D = A._debug, W = window.FIELD_WORLD;
+      document.getElementById('bbHandle').click(); await wait(800);
+      const on = D.ed.on, tiles = (A.statTiles() || []).length, keys = window.tvf.browser.keys.filter(k => String(k).startsWith('stat_')).length;
+      const bw = W.boardW(), sq = (r, c) => ({ x: D.ed.bx - bw / 2 + (c + 0.5) * bw / 8, y: 0, z: D.ed.bz - bw / 2 + (r + 0.5) * bw / 8 });
+      A.onStatTap(0, 0, 13);                                     // Clear
+      A.onStatTap(0, 0, 0); D.tap(sq(7, 4));                       // a white king alone
+      const noKing = D.done(), stillOn = D.ed.on, why = D.ed.msg;
+      A.onStatTap(0, 0, 1); D.tap(sq(7, 3));                       // a white queen
+      A.onStatTap(0, 0, 6); D.tap(sq(0, 4));                       // the black king
+      A.onStatTap(0, 0, 11); D.tap(sq(0, 0)); const pawnMsg = D.ed.msg, pawnOff = !D.ed.bd[0][0];
+      const key = D.ed.key, ok = D.done(); await wait(800);
+      const stored = D.userGames().get(key), shut = document.body.classList.contains('bb-collapsed');
+      // Escape leaves a board as it was
+      const before2 = stored && stored.fen();
+      D.start(); A.onStatTap(0, 0, 13);
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(300);
+      const after2 = D.userGames().get(key);
+      return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, fen: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2 };
+    });
+    if (!ce.on || ce.tiles !== 18 || ce.keys !== 18 || ce.noKing !== false || !ce.stillOn || !/king/.test(ce.why) || !/pawn/i.test(ce.pawnMsg) || !ce.pawnOff
+        || ce.ok !== true || ce.fen !== '4k3/8/8/8/8/8/8/3QK3 w - - 0 1' || !ce.shut || !ce.escOff || !ce.kept)
+      failures.push(`[${current}] ${JSON.stringify(ce)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two

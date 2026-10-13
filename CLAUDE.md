@@ -206,6 +206,24 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - A dealt board shows its level as a frame in golf's flag colours (`frameV`/`frameH`). Solved, it says your pushes
     against par as stars (`starsFor`: at par 3, within half again 2, else 1), and a tap goes on to the next board (golf's
     `nextBoard`).
+- **Chess: the row is a position editor** (Oct 13: "I really like that bottom browser. lets use it in chess to create custom
+  chess games instead of selecting a board. similar to mini-golf"): `CHESS_ED`, `chessEd…`, before `CHESS_APP`, which now has
+  golf's hooks (`onBrowserToggle`, `statTiles`, `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`) and `worldTap`, the one tap
+  hook chess's own play does not reach first.
+  - Opening the row (the dots, or the menu's Set up a position…) takes the framed board's position as it stands (the game in
+    play, the board's own game, or what it is showing) into the editor; play stops. The board draws the editor's position
+    (`buildInstances`, before `cellSource`'s answer).
+  - Tiles: the twelve pieces and Erase, then Clear, Start, whose move it is, which side you play, Play. A tap on the edited
+    board puts the piece in hand on that square (the same arithmetic as `handlePlayClick`); the same piece again takes it off,
+    a second king of a colour moves it, a pawn on the first or last rank is refused. A tap on another board moves the editor
+    there. Quick buttons: Erase, Clear, Cancel, Done.
+  - Done (✓, Play, the menu, or shutting the row) checks the position (`chessEdCheck`: a king each, no pawn on the back
+    ranks, the side not to move not in check, not already over) and puts it on the board as its own game (`userGames`,
+    `setGameMeta` src 'setup', saved with the session; PGN export carries its [FEN]), then plays it (`enterPlay`, you the
+    side chosen; the engine is told `position fen`). Escape or Cancel leaves the board as it was.
+  - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
+    row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
+  - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
