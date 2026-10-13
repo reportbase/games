@@ -485,6 +485,127 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
   }
 
+  // THE PUZZLE MAKERS (Oct 13: "ok, proceed", on puzzle makers for Unblock Me, Flow and Queens, the solver checking each):
+  // in each the dots open the maker on the framed board; a hopeless puzzle is refused with its reason; a good one is kept,
+  // shuts the row and is played; a real click lays a piece; Escape leaves a board as it was; each one's share link, opened in
+  // a page of its own, puts the same puzzle on the board framed there
+  current = 'puzzle makers';
+  {
+    const before = failures.length;
+    const res = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms)), still = async () => { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await wait(250); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } };
+      const out = {};
+      const begin = async name => {
+        const A = window.FIELD_APPS.find(a => a.name === name); window.setFieldApp(A); await wait(1500);
+        const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(1500);
+        if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
+        document.getElementById('bbHandle').click(); await wait(700);
+        const P = D.pz(), E = P.ed, fr = W.cellAt(W.target.boardX, W.target.boardZ);
+        if (!E || E.c !== fr.c || E.r !== fr.r) return null;
+        const c = E.c, r = E.r, tile = n => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => String(t.value).startsWith(n)));
+        return { A, D, P, c, r, tile };
+      };
+      // Unblock Me
+      let B = await begin('unblock me');
+      if (!B) return { open: 'unblock' };
+      { const { A, D, P, c, r, tile } = B;
+        while (P.ed.d.n !== 6) tile('Size');
+        const at = (row, col) => A.onCellTap(c, r, (col + 0.5) / 6, (row + 0.5) / 6);
+        tile('Red block'); at(2, 0);
+        tile('Across 2'); at(2, 3); tile('Check'); const hopeless = P.ed.msg; at(2, 3);
+        tile('Down 2'); at(1, 3); tile('Check'); const fine = P.ed.msg;
+        const ok = P.done(); await wait(400);
+        const g = D.games.get(c + '_' + r);
+        out.unblock = { hopeless, fine, ok, shut: document.body.classList.contains('bb-collapsed'), best: g && g.best, mine: !!P.mine(c + '_' + r), url: P.share() };
+      }
+      // Flow
+      B = await begin('flow');
+      if (!B) return { open: 'flow', out };
+      { const { A, D, P, c, r, tile } = B;
+        while (P.ed.d.n !== 6) tile('Size');
+        tile('Clear');
+        const put = (k, i) => { A.onStatTap(c, r, k); A.onCellTap(c, r, (i % 6 + 0.5) / 6, (((i / 6) | 0) + 0.5) / 6); };
+        put(0, 2); tile('Check'); const half = P.ed.msg;
+        put(0, 32); put(2, 12); put(2, 17); tile('Check'); const crossed = P.ed.msg;    // red down the middle, blue across it
+        tile('Clear');
+        const g0 = D.deal('easy'); g0.dots.forEach(([a, b], k) => { put(k, a); put(k, b); });
+        tile('Check'); const fine = P.ed.msg;
+        const ok = P.done(); await wait(400);
+        const g = D.games.get(c + '_' + r);
+        out.flow = { half, crossed, fine, ok, shut: document.body.classList.contains('bb-collapsed'), same: !!g && JSON.stringify(g.dots) === JSON.stringify(g0.dots), url: P.share() };
+        // a real click lays a dot
+        P.open(); A.onStatTap(c, r, 3); tile('Clear'); await still();
+        const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, n = P.ed.d.n;
+        const v = new W.THREE.Vector3(T.boardX + (0.5 - 1.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 4.5 / n) * bW * (L.cellH || 1)).project(W.camera);
+        out.flowClick = { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, i: 4 * n + 1 };
+      }
+      return out;
+    });
+    let click = null;
+    if (res.flowClick){
+      await page.mouse.click(res.flowClick.x, res.flowClick.y); await page.waitForTimeout(800);
+      click = await page.evaluate(async i => { const P = window.getFieldApp()._debug.pz(), d = P.ed && P.ed.d, got = !!d && d.dots[3].includes(i);
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise(ok => setTimeout(ok, 400));
+        const f = window.FIELD_WORLD, k = P.ed ? null : true; return { got, escOff: !P.ed, kept: !!k }; }, res.flowClick.i);
+    }
+    // Eight queens
+    const q = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const A = window.FIELD_APPS.find(a => a.name === 'eight queens'); window.setFieldApp(A); await wait(1500);
+      const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(1500);
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
+      document.getElementById('bbHandle').click(); await wait(700);
+      const P = D.pz(), E = P.ed; if (!E) return { open: false };
+      const c = E.c, r = E.r, tile = n => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => String(t.value).startsWith(n)));
+      const at = i => A.onCellTap(c, r, (i % 8 + 0.5) / 8, (((i / 8) | 0) + 0.5) / 8);
+      const sol = [0, 4, 7, 5, 2, 6, 1, 3].map((col, row) => row * 8 + col);
+      tile('Clear'); tile('Clue queen');
+      at(sol[0]); at(1); const attacked = P.ed.msg, refused = !P.ed.d.given.has(1);
+      tile('Check'); const many = P.ed.msg;
+      let k = 1; while (D.ways([...P.ed.d.given]) > 1 && k < 7) at(sol[k++]);
+      tile('Check'); const one = P.ed.msg, clues = P.ed.d.given.size;
+      const ok = P.done(); await wait(400);
+      const key = c + '_' + r, s0 = D.games.get(key), n0 = s0 && s0.size;
+      A.onCellTap(c, r, (sol[0] % 8 + 0.5) / 8, 0.5 / 8); const stays = D.games.get(key).has(sol[0]);
+      return { attacked, refused, many, one, clues, ok, n0, stays, white: A.cellItems(c, r).filter(it => it.piece === 'Q').length, url: P.share() };
+    });
+    // the links, each opened in a page of its own
+    const open = async (url, check) => {
+      const pg = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      if (process.env.LIBS_DIR){
+        const lib = f => readFile(join(process.env.LIBS_DIR, f));
+        await pg.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
+        await pg.route(/cdn\.jsdelivr\.net\/npm\/chess\.js@1\.4\.0\/\+esm/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('chess.js/dist/esm/chess.js') }));
+      }
+      const errs = []; pg.on('pageerror', e => errs.push(e.message));
+      let got;
+      try {
+        const u = new URL(url), here = new URL('games.html', base); here.search = u.search;
+        await pg.goto(here.href, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        await pg.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.getFieldApp && window.getFieldApp(), null, { timeout: 90000 });
+        await pg.waitForTimeout(6000);
+        got = await pg.evaluate(check);
+      } catch (e){ got = { err: String(e).slice(0, 300) }; }
+      await pg.close();
+      return { ...got, errs };
+    };
+    const mineHere = () => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: A.name, mine: JSON.stringify(A._debug.pz().mine(f.c + '_' + f.r) || null) }; };
+    const links = {};
+    if (res.unblock && res.unblock.url) links.unblock = await open(res.unblock.url, mineHere);
+    if (res.flow && res.flow.url) links.flow = await open(res.flow.url, mineHere);
+    if (q.url) links.queens = await open(q.url, mineHere);
+    const dec = u => { try { return JSON.stringify(JSON.parse(Buffer.from(new URL(u).searchParams.get('setup'), 'base64url').toString())); } catch { return null; } };
+    const U = res.unblock || {}, F = res.flow || {};
+    if (res.open || !/no way out/.test(U.hopeless || '') || !/2 moves/.test(U.fine || '') || U.ok !== true || !U.shut || U.best !== 2 || !U.mine
+        || !/only one dot/.test(F.half || '') || !/cannot be joined/.test(F.crossed || '') || !/can be solved/.test(F.fine || '') || F.ok !== true || !F.shut || !F.same
+        || !click || !click.got || !click.escOff
+        || !/attacks/.test(q.attacked || '') || !q.refused || !/ways to finish/.test(q.many || '') || !/Exactly one way/.test(q.one || '') || q.ok !== true || q.n0 !== q.clues || !q.stays || q.white !== q.clues
+        || !links.unblock || links.unblock.mine !== dec(U.url) || !links.flow || links.flow.mine !== dec(F.url) || !links.queens || links.queens.mine !== dec(q.url)
+        || Object.values(links).some(x => x.errs && x.errs.length))
+      failures.push(`[${current}] ${JSON.stringify({ res: { ...res, unblock: { ...U, url: !!U.url }, flow: { ...F, url: !!F.url } }, click, q: { ...q, url: !!q.url }, links })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two

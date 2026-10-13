@@ -18324,6 +18324,144 @@ const BOARD_ED = (() => {
   }
   return { wrap, ED, fiveIn, deadGroup, share, take };
 })();
+/* ═══ A PUZZLE MAKER FOR THE PUZZLES ═══════════════════════════════════════
+   (Oct 13: "ok, proceed", on "puzzle makers for Unblock Me, Flow and Queens, where the solver checks the puzzle", after the
+   position editors in the bottom row and the share links.) The scaffolding the three share: PUZZLE_ED.make(app, G) gives the
+   app the bottom row's hooks, menu items (Make a puzzle for this board…, Cancel, Share this board's puzzle, Forget this board's
+   puzzle), Escape, the puzzles kept on their boards (localStorage G.store, each read back through G.clean) and a share link
+   taken onto the first board framed (SHARE). The game says the rest, G: title, keyOf, draftOf(c, r) (the framed board's
+   puzzle as a draft to edit), tools ([key, glyph, name, css colour?]) and acts ([key, glyph, label(d), run(d) → new draft or
+   undefined]), tap(d, u, v, tool) → a message or nothing, check(d) → { why } or { data, note } (its solver's verdict),
+   clean(data) → data or null, fromData(data) → draft, play(c, r, data) (puts it on the board as a game), forget(c, r). The app
+   asks P.draft(key) to draw the puzzle being made, and P.mine(key) for a board's own. Opening the row (the dots) makes a
+   puzzle of the framed board; Done (✓, Play, or shutting the row) checks it and plays it; Escape or Cancel leaves the board as
+   it was; a tap on another board moves the maker there; drags pan the view while making. */
+const PUZZLE_ED = (() => {
+  let CUR = null;                                   // { app, G, key, c, r, d, tool }
+  let BUSY = false;
+  const say = (m, ms) => { if (CUR) CUR.msg = m; try { engineNotice(m, ms || 2800); } catch {} };
+  const changed = () => { try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {} };
+  function pane(open){ BUSY = true; try { toggleBoardBrowser(open); } catch {} BUSY = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && CUR){ e.preventDefault(); e.stopImmediatePropagation(); CUR.P.cancel(); } }, true);
+  function make(app, G){
+    const mine = new Map(), CAP = 300;
+    try { const o = JSON.parse(localStorage.getItem(G.store) || '{}'); for (const k in o){ const m = G.clean(o[k]); if (m) mine.set(k, m); } } catch {}
+    const save = () => { try { const o = {}; [...mine.entries()].slice(-CAP).forEach(([k, m]) => { o[k] = m; }); localStorage.setItem(G.store, JSON.stringify(o)); } catch {} };
+    const on = () => !!(CUR && CUR.app === app);
+    const framed = () => { try { return framedCell(); } catch { return null; } };
+    const P = {
+      on, mine: k => mine.get(k), draft: k => on() && CUR.key === k ? CUR.d : null,
+      get ed(){ return on() ? CUR : null },
+      start(c, r){
+        const tool = on() ? CUR.tool : G.tools[0][0];
+        CUR = { app, G, P, key: G.keyOf(c, r), c, r, d: G.draftOf(c, r), tool, msg: '' };
+        changed();
+      },
+      open(){
+        const f = framed();
+        if (!f){ say('Pick a board first, then open the row to make its puzzle.'); return false; }
+        P.start(f.c, f.r);
+        say('Making a puzzle: pick a tile below and tap the board. ✔ checks it, ✓ plays it.', 3200);
+        return true;
+      },
+      stop(){ CUR = null; changed(); },
+      cancel(){ if (!on()) return; P.stop(); pane(false); say('Left the board as it was.', 1800); },
+      check(tell){ const R = G.check(CUR.d); if (tell) say(R.why || R.note, 3600); return R; },
+      done(){
+        if (!on()) return true;
+        const R = G.check(CUR.d);
+        if (R.why){ say(R.why + ' (Cancel leaves the board as it was.)', 3600); return false; }
+        const { key, c, r } = CUR;
+        mine.delete(key); mine.set(key, R.data); save();
+        P.stop(); pane(false);
+        G.play(c, r, R.data); changed();
+        say('Your puzzle. ' + R.note, 3200);
+        return true;
+      },
+      tiles(){
+        const sel = '#6b5a1e', d = CUR.d;
+        const out = G.tools.map(([k, gl, name, col]) => ({ glyph: gl, value: name, bg: CUR.tool === k ? sel : null, color: col || undefined }));
+        for (const a of G.acts) out.push({ glyph: a[1], value: a[2](d) });
+        out.push({ glyph: '✔', value: 'Check' }, { glyph: '▶', value: 'Play' });
+        return out;
+      },
+      tile(i){
+        if (!on()) return false;
+        const T = G.tools.length, A = G.acts.length;
+        if (i < T){ CUR.tool = G.tools[i][0]; say(G.toolSays ? G.toolSays(CUR.tool) : 'Tap the board to put ' + G.tools[i][2].toLowerCase() + ' there.', 2200); }
+        else if (i < T + A){ const R = G.acts[i - T][3](CUR.d); if (R && R.d) CUR.d = R.d; if (R && R.msg) say(R.msg, 1800); }
+        else if (i === T + A) P.check(true);
+        else P.done();
+        changed();
+        try { bbRefreshNow(); } catch {}
+        return true;
+      },
+      tap(c, r, u, v){
+        if (G.keyOf(c, r) !== CUR.key){ P.start(c, r); say('Making a puzzle for this board.', 1500); return true; }
+        if (u == null) return true;
+        const m = G.tap(CUR.d, u, v, CUR.tool);
+        if (m) say(m, 2400);
+        changed();
+        return true;
+      },
+      share(){
+        const f = framed(), data = on() ? (G.check(CUR.d).data || null) : f && mine.get(G.keyOf(f.c, f.r));
+        if (!data){ say(on() ? 'Finish the puzzle first: ✔ says what it lacks.' : 'This board has no puzzle of its own to share: make one first.', 2600); return null; }
+        return SHARE.copy(SHARE.link(app, data), 'Link copied: it opens on this puzzle.');
+      },
+      take(c, r, raw){
+        const data = G.clean(raw), fail = why => say(G.title + ': the shared puzzle cannot be played. ' + why, 4000);
+        if (!data) return fail('It could not be read.');
+        const R = G.check(G.fromData(data));
+        if (R.why) return fail(R.why);
+        const key = G.keyOf(c, r);
+        mine.delete(key); mine.set(key, R.data); save();
+        G.play(c, r, R.data); changed();
+        say('A shared puzzle. ' + R.note, 3200);
+      },
+    };
+    const own = { onCellTap: app.onCellTap, claimsPan: app.claimsPan, cellTitle: app.cellTitle, onCellHold: app.onCellHold };
+    app.onBrowserToggle = function(open){
+      if (BUSY) return true;
+      if (open && !on()) return P.open();
+      if (!open && on()) return P.done();
+      return true;
+    };
+    app.statTiles = function(){ return on() ? P.tiles() : null; };
+    app.statsStay = function(){ return on(); };
+    app.onStatTap = function(c, r, i){ return P.tile(i); };
+    app.quickActs = function(){ return on() ? [{ key: 'check', glyph: '✔', title: 'Check: can it be solved?' }, { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' },
+                                                { key: 'done', glyph: '✓', title: 'Done: play this puzzle' }] : null; };
+    app.onQuickAct = function(c, r, key){
+      if (!on()) return false;
+      if (key === 'check') P.check(true); else if (key === 'cancel') P.cancel(); else if (key === 'done') P.done();
+      try { bbRefreshNow(); } catch {}
+      return true;
+    };
+    app.onCellTap = function(c, r, u, v){ return on() ? P.tap(c, r, u, v) : own.onCellTap.call(this, c, r, u, v); };
+    app.claimsPan = function(u, v){ return on() ? false : own.claimsPan ? own.claimsPan.call(this, u, v) : false; };
+    if (own.onCellHold) app.onCellHold = function(c, r){ return on() ? true : own.onCellHold.call(this, c, r); };
+    app.cellTitle = function(c, r){
+      if (P.draft(G.keyOf(c, r))) return G.title + ' — making a puzzle for board ' + c + '·' + r;
+      return own.cellTitle ? own.cellTitle.call(this, c, r) : G.title;
+    };
+    const items = [
+      { label: () => on() ? 'Done: play this puzzle' : 'Make a puzzle for this board…', title: 'The bottom row becomes a puzzle maker; the solver checks the puzzle, and Done plays it (Oct 13).',
+        on(){ if (on()) P.done(); else if (P.open()) pane(true); } },
+      { label: 'Cancel the puzzle', title: 'Leave the board as it was.', get disabled(){ return !on(); }, on(){ P.cancel(); } },
+      { label: "Share this board's puzzle", title: 'Copy a link that opens the page on this puzzle.', on(){ P.share(); } },
+      { label: "Forget this board's puzzle", title: 'Back to the puzzle the board came with.',
+        get disabled(){ const f = framed(); return !(f && mine.has(G.keyOf(f.c, f.r))); },
+        on(){ const f = framed(); if (!f) return; mine.delete(G.keyOf(f.c, f.r)); save(); G.forget(f.c, f.r); changed(); say('The board is as it came.', 1800); } },
+    ];
+    if (Array.isArray(app.menu) && app.menu.length && app.menu[0].head) app.menu[0].items.push(...items);
+    else app.menu = [{ head: G.title, items }];
+    SHARE.install(app, (c, r, raw) => P.take(c, r, raw));
+    app._pz = P;
+    return P;
+  }
+  return { make };
+})();
 /* ═══ FIELD CHECKERS — the second game, to prove the seam generalizes ═════
    American draughts through the same hooks chess used while migrating:
    fabricCell for the far field, cellGrid for squares and highlights,
@@ -25124,10 +25262,22 @@ const QUEENS_APP = (() => {
   }
   // Whose queens a board shows: yours if you have touched it, the search's if not.
   function queensOf(c, r){
-    const s = GAMES.get(gkey(c, r));
+    const d = PZ.draft(gkey(c, r));
+    if (d) return [...d.given].sort((a, b) => a - b);           // (the puzzle being made, Oct 13)
+    const s = GAMES.get(gkey(c, r)) || startOf(gkey(c, r));
     if (s) return [...s].sort((a, b) => a - b);
     return reelQueens(c, r);
   }
+  /* A BOARD'S OWN PUZZLE (Oct 13, the maker below): its clue queens stand from the start (GIVEN) and stay; you place the
+     rest. startOf gives a board with a puzzle its starting queens, and null for any other board. */
+  const GIVEN = new Map();
+  function startOf(k){
+    const m = PZ.mine(k);
+    if (!m) return null;
+    if (!GIVEN.has(k)) GIVEN.set(k, new Set(m.g));
+    return new Set(m.g);
+  }
+  const givenOf = k => { startOf(k); return GIVEN.get(k) || null; };
 
   const SND = ARCADE.sounds('queens.sound', 'A tap for each queen, a buzz when it is attacked, a fanfare for a solution.');
   const app = {
@@ -25140,7 +25290,7 @@ const QUEENS_APP = (() => {
         on(){
           const f = (typeof framedCell === 'function') ? framedCell() : null;
           const k = f ? gkey(f.c, f.r) : (LIVE && LIVE.key);
-          if (k) GAMES.set(k, new Set());
+          if (k) GAMES.set(k, startOf(k) || new Set());           // (a puzzle's clues stay)
         } },
       SND.item,
     ]}],
@@ -25157,7 +25307,9 @@ const QUEENS_APP = (() => {
       }
     },
     cellItems(c, r){
-      return queensOf(c, r).map(i => ({ kind: 'q', piece: 'q',
+      const d = PZ.draft(gkey(c, r)), G = d ? d.given : givenOf(gkey(c, r));
+      // (a clue is a white queen, Oct 13)
+      return queensOf(c, r).map(i => ({ kind: 'q', piece: G && G.has(i) ? 'Q' : 'q',
         u: ((i % N) + 0.5) * SQ, v: (((i / N) | 0) + 0.5) * SQ, scale: SQ }));
     },
     cellTitle(c, r){
@@ -25168,20 +25320,21 @@ const QUEENS_APP = (() => {
            + ' · ' + FOUND.size + ' of 92 found';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), new Set()); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), startOf(gkey(c, r)) || new Set()); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     // Taking a board carries on from the queens it is showing.
     onFramed(c, r){
       LIVE = (c == null) ? null : { key: gkey(c, r), c, r };
-      if (LIVE && !GAMES.has(LIVE.key)) GAMES.set(LIVE.key, new Set(reelQueens(c, r)));
+      if (LIVE && !GAMES.has(LIVE.key)) GAMES.set(LIVE.key, startOf(LIVE.key) || new Set(reelQueens(c, r)));
     },
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       let s = GAMES.get(gkey(c, r));
-      if (!s){ s = new Set(reelQueens(c, r)); GAMES.set(gkey(c, r), s); }
+      if (!s){ s = startOf(gkey(c, r)) || new Set(reelQueens(c, r)); GAMES.set(gkey(c, r), s); }
       const col = Math.max(0, Math.min(N - 1, Math.floor(u * N)));
       const row = Math.max(0, Math.min(N - 1, Math.floor(v * N)));
       const i = row * N + col;
+      { const G = givenOf(gkey(c, r)); if (G && G.has(i)){ try { engineNotice('That queen is a clue: it stays.', 1600); } catch {} return true; } }
       const put = !s.has(i);
       if (put) s.add(i); else s.delete(i);
       const qs = [...s].sort((a, b) => a - b);
@@ -25207,8 +25360,61 @@ const QUEENS_APP = (() => {
         ctx.beginPath(); ctx.arc(((i % N) + 0.5) * t, (((i / N) | 0) + 0.5) * t, t * 0.32, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { games: GAMES, found: FOUND, gridFor, bakeReel, reel: () => REEL },
+    _debug: { pz: () => PZ, ways: q => waysOf(q), given: GIVEN, fly: (c, r) => gotoCell(c, r), games: GAMES, found: FOUND, gridFor, bakeReel, reel: () => REEL },
   };
+
+  /* ─── THE PUZZLE MAKER (Oct 13: "ok, proceed", on puzzle makers for Unblock Me, Flow and Queens; PUZZLE_ED) ───
+     This is Eight Queens, with no regions, so its puzzle is some queens standing as clues and the rest to be found. Clue
+     queen and Erase; Clear. No clue may attack another. The solver counts the ways to place the rest (waysOf: a queen a
+     rank, as the board's own search does), and Done wants exactly one: a fair puzzle has one answer, so with more it says
+     how many and asks for another clue. */
+  function waysOf(given, cap){
+    cap = cap || 100;
+    const cols = new Int8Array(N).fill(-1);
+    for (const q of given) cols[(q / N) | 0] = q % N;
+    let ways = 0;
+    const safe = (r, c) => { for (let k = 0; k < N; k++){ if (k === r || cols[k] < 0) continue; const d = cols[k]; if (d === c || Math.abs(d - c) === Math.abs(r - k)) return false; } return true; };
+    (function go(r){
+      if (ways >= cap) return;
+      if (r === N){ ways++; return; }
+      if (cols[r] >= 0){ if (safe(r, cols[r])) go(r + 1); return; }
+      for (let c = 0; c < N; c++){ if (!safe(r, c)) continue; cols[r] = c; go(r + 1); cols[r] = -1; }
+    })(0);
+    return ways;
+  }
+  const PZ = PUZZLE_ED.make(app, {
+    title: 'Eight queens', store: 'queens.mine', keyOf: gkey,
+    draftOf(c, r){ const m = PZ.mine(gkey(c, r)); return { given: new Set(m ? m.g : []) }; },
+    tools: [['Q', '♕', 'Clue queen'], ['erase', '🧽', 'Erase']],
+    toolSays: t => t === 'erase' ? 'Tap a clue to take it off.' : 'Tap squares for the clue queens (again on one takes it off).',
+    acts: [['clear', '⌫', () => 'Clear', () => ({ d: { given: new Set() }, msg: 'No clues.' })]],
+    tap(d, u, v, tool){
+      const i = Math.max(0, Math.min(N - 1, Math.floor(v * N))) * N + Math.max(0, Math.min(N - 1, Math.floor(u * N)));
+      if (d.given.has(i)){ d.given.delete(i); return; }
+      if (tool === 'erase') return;
+      if ([...d.given].some(q => attacks(q, i))) return 'Another clue attacks that square.';
+      d.given.add(i);
+    },
+    check(d){
+      const g = [...d.given].sort((a, b) => a - b);
+      if (!g.length) return { why: 'Put a queen or more as clues: with none there are 92 ways.' };
+      if (g.length >= N) return { why: 'That is every queen: leave some to find.' };
+      const w = waysOf(g);
+      if (!w) return { why: 'There is no way to place the rest so that none attack.' };
+      if (w > 1) return { why: (w >= 100 ? 'Many' : w) + ' ways to finish: add a clue until there is only one.' };
+      return { data: { g }, note: 'Exactly one way to place the other ' + (N - g.length) + (N - g.length === 1 ? ' queen.' : ' queens.') };
+    },
+    clean(m){
+      if (!m || !Array.isArray(m.g) || !m.g.length || m.g.length >= N) return null;
+      const g = m.g.filter(x => Number.isInteger(x) && x >= 0 && x < N * N);
+      if (g.length !== m.g.length || new Set(g).size !== g.length) return null;
+      for (const a of g) for (const b of g) if (a !== b && attacks(a, b)) return null;
+      return { g: g.slice().sort((a, b) => a - b) };
+    },
+    fromData: m => ({ given: new Set(m.g) }),
+    play(c, r, m){ const k = gkey(c, r); GIVEN.set(k, new Set(m.g)); GAMES.set(k, new Set(m.g)); LIVE = { key: k, c, r }; },
+    forget(c, r){ GIVEN.delete(gkey(c, r)); GAMES.delete(gkey(c, r)); },
+  });
   return app;
 })();
 /* ═══ SNAKE vs SNAKE (Sep 22: "add snake game"; Sep 24: "snake vs snake, make
@@ -41529,7 +41735,7 @@ const FLOW_APP = (() => {
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
-    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(DL.get()));
+    if (!GAMES.has(k)) GAMES.set(k, PZ.mine(k) ? mineGame(k) : (adopt(c, r) || deal(DL.get())));
     return GAMES.get(k);
   };
   const dotOf = (g, i) => g.dots.findIndex(d => d[0] === i || d[1] === i);
@@ -41642,12 +41848,12 @@ const FLOW_APP = (() => {
   const checker = n => CHECKERS.get(n) || (CHECKERS.set(n, { n, colors: Array.from({ length: n * n }, (_, i) =>
     (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) }), CHECKERS.get(n));
   // How many squares a side the board shows: its own game's, else the recording's (Normal).
-  const sizeAt = (c, r) => { const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : SIZES[DL.get()][0]; };
+  const sizeAt = (c, r) => { const d = PZ.draft(gkey(c, r)); if (d) return d.n; if (PZ.mine(gkey(c, r))) return gameAt(c, r).n; const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : SIZES[DL.get()][0]; };
 
   const app = {
     name: 'flow',
     menu: [{ head: 'Flow', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(DL.get())); } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, PZ.mine(LIVE.key) ? mineGame(LIVE.key) : deal(DL.get())); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: {
@@ -41666,7 +41872,9 @@ const FLOW_APP = (() => {
       }
     },
     cellItems(c, r){
-      const g = GAMES.get(gkey(c, r));
+      const d = PZ.draft(gkey(c, r));
+      if (d) return draftItems(d);                              // (the puzzle being made, Oct 13)
+      const g = GAMES.get(gkey(c, r)) || (PZ.mine(gkey(c, r)) ? gameAt(c, r) : null);
       if (g) return itemsOf(frameOf(g));
       return itemsOf((LIVE && LIVE.key === gkey(c, r)) ? frameOf(gameAt(c, r)) : reelFrame(c, r));
     },
@@ -41678,14 +41886,14 @@ const FLOW_APP = (() => {
       return 'Flow ' + g.n + '×' + g.n + ' — ' + (g.solved ? 'solved' : done + ' of ' + g.k + ' flows · ' + fill + '%') + ' · ' + g.moves + ' moves';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     // A tap clears the flow under it; on a solved board, deals a new one.
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.solved){ GAMES.set(gkey(c, r), deal(DL.get())); return true; }
+      if (g.solved){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get())); return true; }   // (a board's own puzzle again)
       const i = cellOf(u, v, g.n), k = pathOf(g, i) >= 0 ? pathOf(g, i) : dotOf(g, i);
       if (k >= 0){ g.paths[k] = []; g.warned = false; }
       return true;
@@ -41734,8 +41942,137 @@ const FLOW_APP = (() => {
         ctx.beginPath(); ctx.arc(x, y, s, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { deal, stepTo, check, bakeReel, games: GAMES, complete },
+    _debug: { pz: () => PZ, solveFlow, fly: (c, r) => gotoCell(c, r), deal, stepTo, check, bakeReel, games: GAMES, complete },
   };
+
+  /* ─── THE PUZZLE MAKER (Oct 13: "ok, proceed", on puzzle makers for Unblock Me, Flow and Queens; PUZZLE_ED) ───
+     A tile a colour (nine, the game's own) and Erase; Clear and Size (6, 8, 10). A tap puts that colour's dot on the square,
+     two a colour; the same colour again takes it off. The solver (solveFlow) looks for pipes joining every pair that fill
+     every square, as a dealt board's do: it extends one colour's pipe a square at a time, and gives up a branch where some
+     empty square could no longer be passed through (fewer than two ways in), where a pair's two ends no longer share any
+     empty room, or where a room of empty squares touches no pair that could fill it. Past FLOW_CAP steps it stops: the puzzle
+     is kept, said to be too big to check. */
+  const FLOW_NAMES = ['Red', 'Green', 'Blue', 'Yellow', 'Orange', 'Cyan', 'Pink', 'Maroon', 'Purple'], FLOW_CAP = 400000;
+  const css = v => '#' + v.toString(16).padStart(6, '0');
+  function solveFlow(n, dots, cap){
+    const NN = n * n, K = dots.length, own = new Int8Array(NN).fill(-1), head = dots.map(d => d[0]), goal = dots.map(d => d[1]);
+    const done = new Uint8Array(K), paths = dots.map(d => [d[0]]);
+    dots.forEach(([x, y], k) => { own[x] = k; own[y] = k; });
+    const N4 = [];
+    for (let i = 0; i < NN; i++) N4.push(nb(i, n));
+    const order = dots.map((d, k) => k).sort((p, q) => { const D = k => { const [x, y] = dots[k]; return Math.abs(x % n - y % n) + Math.abs(((x / n) | 0) - ((y / n) | 0)); }; return D(p) - D(q); });
+    const comp = new Int32Array(NN);
+    let steps = 0;
+    const ends = new Set();
+    function ok(){
+      // every empty square has two ways through it (empty squares, or the unfinished pipes' heads and goals)
+      ends.clear();
+      for (let k = 0; k < K; k++) if (!done[k]){ ends.add(head[k]); ends.add(goal[k]); }
+      for (let i = 0; i < NN; i++){
+        if (own[i] >= 0) continue;
+        let w = 0; for (const j of N4[i]) if (own[j] < 0 || ends.has(j)) w++;
+        if (w < 2) return false;
+      }
+      // rooms of empty squares
+      comp.fill(-1); let rooms = 0;
+      for (let i = 0; i < NN; i++){
+        if (own[i] >= 0 || comp[i] >= 0) continue;
+        const st = [i]; comp[i] = rooms;
+        while (st.length){ const x = st.pop(); for (const j of N4[x]) if (own[j] < 0 && comp[j] < 0){ comp[j] = rooms; st.push(j); } }
+        rooms++;
+      }
+      const fed = new Uint8Array(rooms);
+      for (let k = 0; k < K; k++){
+        if (done[k]) continue;
+        const h = head[k], g = goal[k];
+        const A = new Set(), shared = [];
+        for (const j of N4[h]) if (own[j] < 0) A.add(comp[j]);
+        for (const j of N4[g]) if (own[j] < 0 && A.has(comp[j])) shared.push(comp[j]);
+        if (!shared.length && !N4[h].includes(g)) return false;
+        for (const q of shared) fed[q] = 1;
+      }
+      for (let q = 0; q < rooms; q++) if (!fed[q]) return false;
+      return true;
+    }
+    function go(ci){
+      if (++steps > cap) throw 'cap';
+      if (ci === K){ for (let i = 0; i < NN; i++) if (own[i] < 0) return false; return true; }
+      const k = order[ci], h = head[k], g = goal[k];
+      // toward the goal first
+      const tries = N4[h].slice().sort((p, q) => (Math.abs(p % n - g % n) + Math.abs(((p / n) | 0) - ((g / n) | 0))) - (Math.abs(q % n - g % n) + Math.abs(((q / n) | 0) - ((g / n) | 0))));
+      for (const j of tries){
+        if (j === g){
+          done[k] = 1; paths[k].push(g);
+          if (ok() && go(ci + 1)) return true;
+          done[k] = 0; paths[k].pop();
+        } else if (own[j] < 0){
+          own[j] = k; head[k] = j; paths[k].push(j);
+          if (ok() && go(ci)) return true;
+          own[j] = -1; head[k] = h; paths[k].pop();
+        }
+      }
+      return false;
+    }
+    try { return go(0) ? { paths: paths.map(p => p.slice()) } : null; }
+    catch (e){ if (e === 'cap') return { capped: true }; throw e; }
+  }
+  const pairsOf = d => d.dots.filter(([x, y]) => x >= 0 && y >= 0);
+  function mineGame(k){
+    const m = PZ.mine(k);
+    return { n: m.n, k: m.dots.length, dots: m.dots.map(p => p.slice()), sol: null, paths: m.dots.map(() => []), solved: false, moves: 0 };
+  }
+  function draftItems(d){
+    const out = [], SQ = 1 / d.n;
+    d.dots.forEach((p, k) => p.forEach(i => { if (i >= 0) out.push({ kind: 'dot', u: ((i % d.n) + 0.5) * SQ, v: (((i / d.n) | 0) + 0.5) * SQ, scale: SQ, color: COLS[k] }); }));
+    return out;
+  }
+  const blankDots = () => COLS.map(() => [-1, -1]);
+  const PZ = PUZZLE_ED.make(app, {
+    title: 'Flow', store: 'flow.mine', keyOf: gkey,
+    draftOf(c, r){
+      const k = gkey(c, r), m = PZ.mine(k), src = m || GAMES.get(k) || adopt(c, r), dots = blankDots();
+      src.dots.forEach((p, i) => { if (i < dots.length) dots[i] = p.slice(); });
+      return { n: src.n, dots };
+    },
+    tools: COLS.map((v, k) => [k, '●', FLOW_NAMES[k], css(v)]).concat([['erase', '🧽', 'Erase']]),
+    toolSays: t => t === 'erase' ? 'Tap a dot to take it off.' : 'Tap two squares for the ' + FLOW_NAMES[t].toLowerCase() + ' pair (again on a dot takes it off).',
+    acts: [
+      ['clear', '⌫', () => 'Clear', d => ({ d: { n: d.n, dots: blankDots() }, msg: 'The board is clear.' })],
+      ['size', '▦', d => 'Size ' + d.n + '×' + d.n, d => { const n = d.n === 6 ? 8 : d.n === 8 ? 10 : 6; return { d: { n, dots: blankDots() }, msg: 'A ' + n + '×' + n + ' board.' }; }],
+    ],
+    tap(d, u, v, tool){
+      const i = cellOf(u, v, d.n), at = d.dots.findIndex(p => p.includes(i));
+      if (tool === 'erase'){ if (at >= 0) d.dots[at][d.dots[at].indexOf(i)] = -1; return; }
+      if (at >= 0 && at !== tool) return 'The ' + FLOW_NAMES[at].toLowerCase() + ' pair has a dot there.';
+      const p = d.dots[tool];
+      if (at === tool){ p[p.indexOf(i)] = -1; return; }
+      const slot = p.indexOf(-1);
+      if (slot < 0) return 'The ' + FLOW_NAMES[tool].toLowerCase() + ' pair has both its dots: tap one to take it off first.';
+      p[slot] = i;
+    },
+    check(d){
+      const half = d.dots.findIndex(([x, y]) => (x >= 0) !== (y >= 0));
+      if (half >= 0) return { why: 'The ' + FLOW_NAMES[half].toLowerCase() + ' pair has only one dot.' };
+      const dots = pairsOf(d);
+      if (!dots.length) return { why: 'Put a pair of dots or more on the board.' };
+      const S = solveFlow(d.n, dots, FLOW_CAP);
+      if (!S) return { why: 'These dots cannot be joined so that every square is filled.' };
+      return { data: { n: d.n, dots: dots.map(p => p.slice()) },
+               note: S.capped ? 'Too big for the solver to finish checking: it may not have a way to fill the board.' : 'Every pair joins with the whole board filled: it can be solved.' };
+    },
+    clean(m){
+      if (!m || ![6, 8, 10].includes(+m.n) || !Array.isArray(m.dots) || !m.dots.length || m.dots.length > COLS.length) return null;
+      const n = +m.n, seen = new Set();
+      for (const p of m.dots){
+        if (!Array.isArray(p) || p.length !== 2) return null;
+        for (const i of p){ if (!Number.isInteger(i) || i < 0 || i >= n * n || seen.has(i)) return null; seen.add(i); }
+      }
+      return { n, dots: m.dots.map(p => p.slice()) };
+    },
+    fromData(m){ const dots = blankDots(); m.dots.forEach((p, i) => { dots[i] = p.slice(); }); return { n: m.n, dots }; },
+    play(c, r, m){ const k = gkey(c, r); GAMES.set(k, mineGame(k)); LIVE = { key: k, c, r }; },
+    forget(c, r){ GAMES.delete(gkey(c, r)); },
+  });
   return app;
 })();
 /* ═══ NETSLIDE (Sep 23: "Netslide add game") ═════════════════════════════
@@ -42410,7 +42747,7 @@ const UNBLOCK_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     // Normal carries on from the 8×8 recording on the board; Easy and Hard deal their own size.
-    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(DL.get()));
+    if (!GAMES.has(k)) GAMES.set(k, PZ.mine(k) ? mineGame(k) : (adopt(c, r) || deal(DL.get())));
     use(GAMES.get(k).n);
     return GAMES.get(k);
   };
@@ -42498,7 +42835,7 @@ const UNBLOCK_APP = (() => {
      draw all the time. At that size a square is a couple of pixels and the
      two look alike, so the handover does not show. */
   const FAR_PX = 16;
-  const shown = (c, r) => GAMES.get(gkey(c, r)) || reelFrame(c, r);
+  const shown = (c, r) => { const k = gkey(c, r), d = PZ.draft(k); return d ? d : GAMES.get(k) || (PZ.mine(k) ? gameAt(c, r) : reelFrame(c, r)); };
   function colorsOf(blocks, pos, n){
     use(n);
     const cols = checker(N).colors.slice();
@@ -42516,7 +42853,7 @@ const UNBLOCK_APP = (() => {
   const app = {
     name: 'unblock me',
     menu: [{ head: 'Unblock me', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(DL.get())); } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, PZ.mine(LIVE.key) ? mineGame(LIVE.key) : deal(DL.get())); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     faceMinPx: 1,
     itemMinPx: FAR_PX,
@@ -42530,7 +42867,9 @@ const UNBLOCK_APP = (() => {
       return colorsOf(f.blocks, f.pos, n);
     },
     cellItems(c, r){
-      const g = GAMES.get(gkey(c, r));
+      const d = PZ.draft(gkey(c, r));
+      if (d) return itemsOf(d.blocks, Float32Array.from(d.pos), d.n);   // (the puzzle being made, Oct 13)
+      const g = GAMES.get(gkey(c, r)) || (PZ.mine(gkey(c, r)) ? gameAt(c, r) : null);
       if (g) return itemsOfGame(g);
       return (LIVE && LIVE.key === gkey(c, r)) ? itemsOfGame(gameAt(c, r)) : reelItems(c, r);
     },
@@ -42547,13 +42886,13 @@ const UNBLOCK_APP = (() => {
       return 'Unblock Me ' + g.n + '×' + g.n + ' — ' + (g.solved ? 'out' : 'sliding') + ' · ' + g.moves + ' moves (best ' + g.best + ')';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.solved) GAMES.set(gkey(c, r), deal(DL.get()));
+      if (g.solved) GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get()));   // (a board's own puzzle again)
       return true;
     },
     // A press on a block takes the drag.
@@ -42593,8 +42932,107 @@ const UNBLOCK_APP = (() => {
       const f = shown(c, r), cols = colorsOf(f.blocks, f.pos, f.n || 8).colors;
       paintColors(ctx, 0, 0, sz / N, cols);
     },
-    _debug: { deal, genPuzzle, decode, room, grid, bakeReel, puzzles: PUZZLES, games: GAMES },
+    _debug: { pz: () => PZ, solveUB, fly: (c, r) => gotoCell(c, r), deal, genPuzzle, decode, room, grid, bakeReel, puzzles: PUZZLES, games: GAMES },
   };
+
+  /* ─── THE PUZZLE MAKER (Oct 13: "ok, proceed", on puzzle makers for Unblock Me, Flow and Queens; PUZZLE_ED) ───
+     The red block (always across, two long, in the row of the gold gap), blocks across and down two or three long, and
+     Erase; Clear and Size (6, 8, 10). A tap lays a block from the square tapped, rightward or downward (pulled back to fit),
+     or takes the one there off. The solver (solveUB: breadth first over where the blocks stand, a move being one block
+     sliding any distance, as the dealt puzzles count) gives the fewest moves out: that is the best to beat. */
+  const encUB = (blocks, pos) => blocks.map((b, i) => (b.h ? 'h' : 'v') + b.len + b.line + pos[i]).join('');
+  function solveUB(n, blocks, pos, cap){
+    use(n);
+    const key = p => p.join(','), prev = new Map([[key(pos), null]]), q = [pos];
+    for (let h = 0; h < q.length; h++){
+      const p = q[h];
+      if (p[0] === n - 2){
+        const path = [];
+        for (let x = p; x && key(x) !== key(pos); x = prev.get(key(x))) path.unshift(x);
+        return { moves: path.length, path };
+      }
+      const og = grid(blocks, p);
+      for (let i = 0; i < blocks.length; i++){
+        const [lo, hi] = room(blocks, p, i, og);
+        for (let x = lo; x <= hi; x++){
+          if (x === p[i]) continue;
+          const np = p.slice(); np[i] = x;
+          const k = key(np);
+          if (prev.has(k)) continue;
+          prev.set(k, p); q.push(np);
+          if (q.length > cap) return { capped: true };
+        }
+      }
+    }
+    return null;
+  }
+  function decUB(m){
+    use(m.n);
+    const blocks = [], pos = [];
+    for (let k = 0; k < m.enc.length; k += 4){ blocks.push({ h: m.enc[k] === 'h', len: +m.enc[k + 1], line: +m.enc[k + 2] }); pos.push(+m.enc[k + 3]); }
+    return { n: m.n, blocks, pos };
+  }
+  function mineGame(k){
+    const m = PZ.mine(k), D = decUB(m);
+    return { n: m.n, blocks: D.blocks, pos: D.pos.slice(), start: D.pos.slice(), best: m.best || '?', path: null, moves: 0, solved: false, show: Float32Array.from(D.pos), last: 0 };
+  }
+  const PZ = PUZZLE_ED.make(app, {
+    title: 'Unblock Me', store: 'unblock.mine', keyOf: gkey,
+    draftOf(c, r){
+      const k = gkey(c, r), m = PZ.mine(k);
+      if (m) return decUB(m);
+      const g = GAMES.get(k) || reelFrame(c, r);
+      use(g.n || 8);
+      const pos = (g.start || g.pos).map((p, i) => i === 0 ? Math.min(p, N - 2) : p);
+      return { n: g.n || 8, blocks: g.blocks.map(b => ({ ...b })), pos };
+    },
+    tools: [['red', '🟥', 'Red block'], ['h2', '▬', 'Across 2'], ['h3', '▬▬', 'Across 3'], ['v2', '▮', 'Down 2'], ['v3', '▮▮', 'Down 3'], ['erase', '🧽', 'Erase']],
+    toolSays: t => t === 'red' ? 'Tap a square in the gap’s row to move the red block there.' : t === 'erase' ? 'Tap a block to take it off.' : 'Tap a square: the block starts there (again on a block takes it off).',
+    acts: [
+      ['clear', '⌫', () => 'Clear', d => ({ d: { n: d.n, blocks: [d.blocks[0]], pos: [d.pos[0]] }, msg: 'Only the red block left.' })],
+      ['size', '▦', d => 'Size ' + d.n + '×' + d.n, d => { const n = d.n === 6 ? 8 : d.n === 8 ? 10 : 6; use(n); return { d: { n, blocks: [{ h: true, len: 2, line: ROW }], pos: [0] }, msg: 'A ' + n + '×' + n + ' board.' }; }],
+    ],
+    tap(d, u, v, tool){
+      const n = d.n; use(n);
+      const col = Math.max(0, Math.min(n - 1, Math.floor(u * n))), row = Math.max(0, Math.min(n - 1, Math.floor(v * n)));
+      const o = grid(d.blocks, d.pos), at = o[row * n + col];
+      const drop = i => { d.blocks.splice(i, 1); d.pos.splice(i, 1); };
+      if (tool === 'erase'){ if (at > 0) drop(at); else if (at === 0) return 'The red block stays: move it with its own tile.'; return; }
+      if (tool === 'red'){
+        if (row !== ROW) return 'The red block runs along the row of the gap (the gold mark on the right).';
+        const st = Math.min(col, n - 2);
+        if ([st, st + 1].some(x => o[row * n + x] > 0)) return 'Something is in the way.';
+        d.pos[0] = st; return;
+      }
+      if (at === 0) return 'That is the red block.';
+      if (at > 0){ drop(at); return; }
+      const h = tool[0] === 'h', len = +tool[1], st = Math.min(h ? col : row, n - len), b = { h, len, line: h ? row : col };
+      if (cellsOf(b, st).some(j => o[j] >= 0)) return 'There is no room for it there.';
+      d.blocks.push(b); d.pos.push(st);
+    },
+    check(d){
+      const n = d.n; use(n);
+      if (d.pos[0] === n - 2) return { why: 'The red block is already at the gap: put it further back.' };
+      const S = solveUB(n, d.blocks, d.pos, 300000);
+      if (!S) return { why: 'There is no way out for the red block.' };
+      return { data: { n, enc: encUB(d.blocks, d.pos), best: S.capped ? 0 : S.moves },
+               note: S.capped ? 'Too big for the solver to finish: there is a way out, but no best to beat.' : 'The red block can get out in ' + S.moves + (S.moves === 1 ? ' move' : ' moves') + ' at best.' };
+    },
+    clean(m){
+      if (!m || ![6, 8, 10].includes(+m.n) || typeof m.enc !== 'string' || !m.enc.length || m.enc.length % 4 || m.enc.length > 240 || /[^hv0-9]/.test(m.enc)) return null;
+      const n = +m.n, D = decUB({ n, enc: m.enc }), row = (n >> 1) - 1, seen = new Set();
+      if (!D.blocks.length || !D.blocks[0].h || D.blocks[0].len !== 2 || D.blocks[0].line !== row) return null;
+      for (let i = 0; i < D.blocks.length; i++){
+        const b = D.blocks[i];
+        if (![2, 3].includes(b.len) || b.line >= n || D.pos[i] > n - b.len) return null;
+        for (const j of cellsOf(b, D.pos[i])){ if (seen.has(j)) return null; seen.add(j); }
+      }
+      return { n, enc: m.enc, best: Math.max(0, m.best | 0) };
+    },
+    fromData: decUB,
+    play(c, r, m){ const k = gkey(c, r); GAMES.set(k, mineGame(k)); LIVE = { key: k, c, r }; },
+    forget(c, r){ GAMES.delete(gkey(c, r)); },
+  });
   return app;
 })();
 /* ═══ 2048 (Sep 23: "2048") ═══════════════════════════════════════════════
