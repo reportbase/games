@@ -242,7 +242,7 @@ try {
       const D = A._debug, W0 = window.FIELD_WORLD, T0 = W0.target, home = T0.shown ? W0.cellAt(T0.boardX, T0.boardZ) : null;
       window.__tdHome = home;                                      // (flown back after: the boards' frame is every game's, and the later checks expect theirs)
       D.fly(4, 3); await wait(300); await window.__settle();
-      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); await window.__settle(); }
       document.getElementById('bbHandle').click(); await wait(800);
       const E = D.ed(), W = window.FIELD_WORLD, fr = W.cellAt(W.target.boardX, W.target.boardZ);
       if (!E.on) return { open: false, live: D.live(), shut: document.body.classList.contains('bb-collapsed') };
@@ -314,7 +314,7 @@ try {
       const D = A._debug, W = window.FIELD_WORLD, T0 = W.target, home = T0.shown ? W.cellAt(T0.boardX, T0.boardZ) : null;
       window.__skHome = home;                                      // (flown back after, as the tower defense check is)
       D.fly(5, 2); await wait(300); await window.__settle();
-      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); await window.__settle(); }
       document.getElementById('bbHandle').click(); await wait(800);
       const E = D.ed(), fr = W.cellAt(W.target.boardX, W.target.boardZ);
       if (!E.on) return { open: false, shut: document.body.classList.contains('bb-collapsed') };
@@ -387,7 +387,7 @@ try {
         const A = window.FIELD_APPS.find(a => a.name === K.app); window.setFieldApp(A); await wait(2000);
         const D = A._edDebug, W = window.FIELD_WORLD;
         D.fly(6, 4); await wait(300); await window.__settle();
-        if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
+        if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); await window.__settle(); }
         document.getElementById('bbHandle').click(); await wait(700);
         const E = D.ed(), fr = W.cellAt(W.target.boardX, W.target.boardZ);
         if (!E.on) return { app: K.app, open: false };
@@ -523,7 +523,7 @@ try {
       const begin = async name => {
         const A = window.FIELD_APPS.find(a => a.name === name); window.setFieldApp(A); await wait(1500);
         const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(300); await window.__settle();
-        if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
+        if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); await window.__settle(); }
         document.getElementById('bbHandle').click(); await wait(700);
         const P = D.pz(), E = P.ed, fr = W.cellAt(W.target.boardX, W.target.boardZ);
         if (!E || E.c !== fr.c || E.r !== fr.r) return null;
@@ -578,7 +578,7 @@ try {
       const wait = ms => new Promise(ok => setTimeout(ok, ms));
       const A = window.FIELD_APPS.find(a => a.name === 'eight queens'); window.setFieldApp(A); await wait(1500);
       const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(300); await window.__settle();
-      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); await window.__settle(); }
       document.getElementById('bbHandle').click(); await wait(700);
       const P = D.pz(), E = P.ed; if (!E) return { open: false };
       const c = E.c, r = E.r, tile = n => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => String(t.value).startsWith(n)));

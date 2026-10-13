@@ -30166,7 +30166,7 @@ const TD_APP = (() => {
   // 0·0 with 4·3 framed, Oct 13).
   function framedCell(){
     try { const W = window.FIELD_WORLD, T = W && W.target; if (T && T.shown){ const f = W.cellAt(T.boardX, T.boardZ); if (f) return f; } } catch {}
-    return LIVE;
+    return null;                                    // (not LIVE: a board left earlier is not the one on the screen, Oct 13)
   }
   function edOpen(){
     const f = framedCell();
@@ -43892,7 +43892,7 @@ const SOKOBAN_APP = (() => {
   // The board on the screen, as the field frames it (LIVE can be a board left earlier: tower defense's lesson, Oct 13).
   function framedCell(){
     try { const W = window.FIELD_WORLD, T = W && W.target; if (T && T.shown){ const f = W.cellAt(T.boardX, T.boardZ); if (f) return f; } } catch {}
-    return LIVE;
+    return null;                                    // (not LIVE: a board left earlier is not the one on the screen, Oct 13)
   }
   const copyLevel = L => ({ n: L.n, wall: L.wall.slice(), goal: L.goal.slice(), boxes: L.boxes.slice(), player: L.player });
   function bareLevel(n, player){
