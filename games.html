@@ -17546,7 +17546,7 @@ function chessEdStart(){
   } catch {}
   if (!bd) bd = liveBoard(new Chess());
   if (PLAY.on){ try { exitPlay(); } catch {} }
-  Object.assign(CHESS_ED, { on: true, key, bx: target.boardX, bz: target.boardZ, bd: bd.map(row => row.slice()), turn, you: turn });
+  Object.assign(CHESS_ED, { on: true, key, bx: target.boardX, bz: target.boardZ, bd: bd.map(row => row.slice()), turn, you: turn, youSet: false });
   _chEdSay('Setting up this board: pick a piece below, tap its squares; ✓ plays it.');
   try { rebuildBoardBrowser(); bbRefreshNow(); } catch {}
   return true;
@@ -17610,8 +17610,10 @@ function chessEdTileTap(i){
     const a = CHESS_ED_ACTS[i - CHESS_ED_TOOLS.length];
     if (a === 'clear'){ CHESS_ED.bd = Array.from({ length: 8 }, () => Array(8).fill(null)); _chEdSay('The board is clear.'); }
     else if (a === 'start'){ CHESS_ED.bd = liveBoard(new Chess()); CHESS_ED.turn = CHESS_ED.you = 'w'; _chEdSay('The starting position.'); }
-    else if (a === 'turn'){ CHESS_ED.turn = CHESS_ED.turn === 'w' ? 'b' : 'w'; _chEdSay((CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move.'); }
-    else if (a === 'you'){ CHESS_ED.you = CHESS_ED.you === 'w' ? 'b' : 'w'; _chEdSay('You will play ' + (CHESS_ED.you === 'w' ? 'White' : 'Black') + '.'); }
+    // (you play the side to move unless you chose a side yourself: found when CI's engine, the piece set loaded there, rightly
+    //  moved White's queen for a player left on Black after the turn was changed, Oct 13)
+    else if (a === 'turn'){ CHESS_ED.turn = CHESS_ED.turn === 'w' ? 'b' : 'w'; if (!CHESS_ED.youSet) CHESS_ED.you = CHESS_ED.turn; _chEdSay((CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move' + (CHESS_ED.youSet ? '.' : '; you play it.')); }
+    else if (a === 'you'){ CHESS_ED.you = CHESS_ED.you === 'w' ? 'b' : 'w'; CHESS_ED.youSet = true; _chEdSay('You will play ' + (CHESS_ED.you === 'w' ? 'White' : 'Black') + '.'); }
     else if (a === 'play') chessEdDone();
   }
   try { bbRefreshNow(); } catch {}

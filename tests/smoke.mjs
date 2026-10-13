@@ -188,17 +188,20 @@ try {
       A.onStatTap(0, 0, 1); D.tap(sq(7, 3));                       // a white queen
       A.onStatTap(0, 0, 6); D.tap(sq(0, 4));                       // the black king
       A.onStatTap(0, 0, 11); D.tap(sq(0, 0)); const pawnMsg = D.ed.msg, pawnOff = !!D.ed.bd && !D.ed.bd[0][0];
-      const key = D.ed.key, ok = D.done(); await wait(800);
+      const youW = D.ed.you === 'w';                               // (the side to move set White, you follow it)
+      const key = D.ed.key, ok = D.done();
+      const fenAtDone = D.userGames().get(key) && D.userGames().get(key).fen(); await wait(800);
       const stored = D.userGames().get(key), shut = document.body.classList.contains('bb-collapsed');
       // Escape leaves a board as it was
       const before2 = stored && stored.fen();
       D.start(); A.onStatTap(0, 0, 13);
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(300);
       const after2 = D.userGames().get(key);
-      return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, fen: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2 };
+      return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, youW, fen: fenAtDone, now: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2 };
     });
     if (!ce.on || ce.tiles !== 18 || ce.keys !== 18 || ce.noKing !== false || !ce.stillOn || !/king/.test(ce.why) || !/pawn/i.test(ce.pawnMsg) || !ce.pawnOff
-        || ce.ok !== true || ce.fen !== '4k3/8/8/8/8/8/8/3QK3 w - - 0 1' || !ce.shut || !ce.escOff || !ce.kept)
+        || ce.ok !== true || !ce.youW || ce.fen !== '4k3/8/8/8/8/8/8/3QK3 w - - 0 1' || ce.now !== ce.fen || !ce.shut || !ce.escOff || !ce.kept)
+      // (where the piece set loads, as on CI, the game then starts; you play White, so the engine waits: the position stays)
       failures.push(`[${current}] ${JSON.stringify(ce)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
   }
