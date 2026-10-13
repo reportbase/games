@@ -206,6 +206,72 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
   }
 
+  // TOWER DEFENSE: THE ROW IS A MAP EDITOR (Oct 13: "tower defense", on what else could have chess's and mini golf's editor):
+  // the dots open it on the framed board with its tiles; rocks and towers go on squares; a rock that would shut the exit off is
+  // refused; the entrance moves to another edge and not into the middle; Done keeps the map on the board, shuts the row and
+  // starts a game on it whose pieces come in at the new entrance and walk round the rocks; Escape leaves a board as it was;
+  // the map survives a reload's storage check (cleanMap)
+  current = 'tower defense map editor';
+  {
+    const before = failures.length;
+    const td = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const A = window.FIELD_APPS.find(a => a.name === 'tower defense'); window.setFieldApp(A); await wait(2500);
+      const D = A._debug;
+      D.fly(4, 3); await wait(1500);
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
+      document.getElementById('bbHandle').click(); await wait(800);
+      const E = D.ed(), W = window.FIELD_WORLD, fr = W.cellAt(W.target.boardX, W.target.boardZ);
+      if (!E.on) return { open: false, live: D.live(), shut: document.body.classList.contains('bb-collapsed') };
+      if (!fr || E.c !== fr.c || E.r !== fr.r) return { open: true, onFramed: false, ed: [E.c, E.r], fr };   // (the board on the screen)
+      const c = E.c, r = E.r, tiles = (A.statTiles(c, r) || []).length, keys = window.tvf.browser.keys.filter(k => String(k).startsWith('stat_')).length;
+      const tile = name => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => t.value === name || String(t.value).startsWith(name)));
+      tile('Clear');
+      while (E.g.n !== 12) tile('Size');                          // a 12×12 floor
+      const n = E.g.n, at = (row, col) => A.onCellTap(c, r, (col + 0.5) / n, (row + 0.5) / n);
+      tile('Entrance'); at(5, 5); const midMsg = E.msg, midRefused = E.g.doors.entry !== 5 * n + 5;
+      at(0, 3);                                                   // the entrance on the top edge
+      tile('Exit'); at(11, 8);                                    // the exit on the bottom edge
+      tile('Rock'); for (let col = 0; col < n - 1; col++) at(6, col);   // a wall of rocks across, open at the right
+      const len1 = E.g.way.length;
+      at(6, n - 1); const shutMsg = E.msg, open = E.g.towers[6 * n + n - 1] === 0;   // the last square would shut it: refused
+      tile('Rook'); at(4, 2);
+      tile('Gold'); const gold = E.g.gold;
+      const key = E.key, ok = D.edDone(); await wait(800);
+      const m = D.maps.get(key), g = D.gameAt(c, r), shut = document.body.classList.contains('bb-collapsed');
+      // send a wave and let the first piece walk in
+      A.onCellTap(c, r, (3 + 0.5) / n, 0.5 / n);
+      for (let k = 0; k < 400 && !g.creeps.length; k++) D.step(g, 1 / 30, true);
+      const first = g.creeps[0] ? { x: g.creeps[0].x, y: g.creeps[0].y } : null;
+      let crossed = false;
+      for (let k = 0; k < 30 * 40 && g.creeps.length; k++){ D.step(g, 1 / 30); for (const p of g.creeps){ const i = Math.round(p.y) * n + Math.round(p.x); if (Math.round(p.y) === 6 && g.towers[i] === 6) crossed = true; } }
+      // Escape leaves a board as it was
+      D.edOpen(); tile('Clear');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(300);
+      const kept = D.maps.get(key) && D.maps.get(key).cells === m.cells, escOff = !E.on;
+      const stored = JSON.parse(localStorage.getItem('td.maps') || '{}')[key];
+      return { open: true, tiles, keys, midRefused, midMsg, shutMsg, rockOpen: open, len1, ok, shut, gold, m, gn: g.n, ge: g.doors && g.doors.entry,
+               rook: g.towers[4 * n + 2], first, crossed, kept, escOff, stored: !!stored && stored.cells === m.cells };
+    });
+    // a real click on a square of the framed board puts the tool there (not the editor's own functions)
+    const rc = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
+      D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Rock in hand
+      const n = E.g.n, bW = W.boardW(), L = window.LAB || {};
+      const v = new W.THREE.Vector3(T.boardX + (0.5 - 9.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 2.5 / n) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.g.towers[2 * n + 9] };
+    });
+    await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    const rc2 = await page.evaluate(n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.g && E.g.towers[2 * n + 9]; D.edCancel(); return v; }, rc.n);
+    if (rc.before !== 0 || rc2 !== 6) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
+    const n = 12;
+    if (!td.open || td.tiles !== 13 || td.keys !== 13 || !td.midRefused || !/edge/.test(td.midMsg) || !/shut/.test(td.shutMsg) || !td.rockOpen
+        || td.ok !== true || !td.shut || !td.m || td.m.n !== n || td.m.entry !== 3 || td.m.exit !== 11 * n + 8 || td.m.gold !== td.gold
+        || td.gn !== n || td.ge !== 3 || td.rook !== 4 || !td.first || td.first.y >= 0 || Math.abs(td.first.x - 3) > 0.01 || td.crossed || !td.kept || !td.escOff || !td.stored)
+      failures.push(`[${current}] ${JSON.stringify(td)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two
