@@ -258,7 +258,7 @@ try {
     const rc = await page.evaluate(async () => {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Rock in hand
-      await new Promise(ok => setTimeout(ok, 1000));                    // (the view settled before it is aimed at)
+      { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } }   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.g.n, bW = W.boardW(), L = window.LAB || {};
       const v = new W.THREE.Vector3(T.boardX + (0.5 - 9.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 2.5 / n) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.g.towers[2 * n + 9] };
@@ -325,7 +325,7 @@ try {
     const rc = await page.evaluate(async () => {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Wall in hand
-      await new Promise(ok => setTimeout(ok, 1000));                    // (the view settled before it is aimed at)
+      { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } }   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.L.n, V = n - 2, bW = W.boardW(), L = window.LAB || {};
       const v = new W.THREE.Vector3(T.boardX + (0.5 - 4.5 / V) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 0.5 / V) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.L.wall[1 * n + 5] };
@@ -406,7 +406,7 @@ try {
       const D = A._edDebug, W = window.FIELD_WORLD, T = W.target;
       D.fly(6, 4); await new Promise(ok => setTimeout(ok, 1500));
       D.open(); const E = D.ed(); A.onStatTap(E.c, E.r, 0); A.onStatTap(E.c, E.r, E.G.pieces.length + 1);   // Black in hand, a clear board
-      await new Promise(ok => setTimeout(ok, 1000));
+      { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } }   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.n, bW = W.boardW(), L = window.LAB || {};
       const v = new W.THREE.Vector3(T.boardX + (0.5 - 2.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 5.5 / n) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n };

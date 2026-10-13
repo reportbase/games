@@ -17693,7 +17693,9 @@ function chessTakeSetup(P){
   CHESS_ED.you = P.you === 'b' || P.you === 'w' ? P.you : CHESS_ED.turn; CHESS_ED.youSet = true;
   if (!chessEdDone()){ const why = CHESS_ED.msg; chessEdCancel(); _chEdSay('The shared position cannot be played: ' + why); }
 }
-addEventListener('keydown', e => { if (e.key === 'Escape' && CHESS_ED.on){ e.preventDefault(); e.stopPropagation(); chessEdCancel(); } }, true);
+// (stopped outright, as mini golf's is: the field's own Escape flies the view out to the horizon, and a key sent to the window
+//  itself reached it too, so the framed board moved under the editors' Cancel, Oct 13)
+addEventListener('keydown', e => { if (e.key === 'Escape' && CHESS_ED.on){ e.preventDefault(); e.stopImmediatePropagation(); chessEdCancel(); } }, true);
 /* ═══ FIELD-CHESS — the migration pathfinder ══════════════════════════════
    A playable chess app written ENTIRELY against the seam above: the far
    field is the fabric checker, near boards are cellGrid squares, pieces are
@@ -18219,7 +18221,7 @@ const BOARD_ED = (() => {
     place(w * n + q); stage();
     return true;
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); cancel(); } }, true);
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopImmediatePropagation(); cancel(); } }, true);
 
   // SHARE (Oct 13): the framed board's position (the draft while editing) as a link; taken onto the first board framed
   function share(app, G){
@@ -30036,7 +30038,7 @@ const TD_APP = (() => {
     if (i >= 0) edPlace(i);
     return true;
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); edCancel(); } }, true);
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE (Oct 13): a board's map (the draft while editing) as a link; taken onto the first board framed, through cleanMap
   function shareMap(){
     const f = framedCell(), m = ED.on ? mapOf(ED.g) : f && MAPS.get(gkey(f.c, f.r));
@@ -43546,7 +43548,7 @@ const SOKOBAN_APP = (() => {
     try { fieldItemsChanged(); } catch {}
     return true;
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); edCancel(); } }, true);
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE (Oct 13): a board's level (the draft while editing) as a link; taken onto the first board framed, through cleanMine
   function shareLevel(){
     const f = framedCell(), m = ED.on ? { n: ED.L.n, cells: cellsOf(ED.L) } : f && MINE.get(gkey(f.c, f.r));
