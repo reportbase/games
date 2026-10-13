@@ -44248,7 +44248,7 @@ const LEVELS_APP = (() => {
   const W = () => window.FIELD_WORLD;
   const levelAt = (h, v) => {
     if (mode === 'none') return 0;
-    const D = mode === 'vh' ? Math.max(1e-6, v) : METRES_D * (W().spacing ? Math.max(...W().spacing()) : 1);
+    const D = mode === 'vh' ? Math.max(1e-6, v * 2 ** hs) : METRES_D * (W().spacing ? Math.max(...W().spacing()) : 1);
     const s = h / D; return s <= 1 ? 0 : Math.ceil(Math.log2(s));
   };
   /* THE NEAR FIELD'S GRAIN FOLLOWS v (zoom.html: inside the corner the finest difference told apart is εH, one address of
@@ -44258,12 +44258,35 @@ const LEVELS_APP = (() => {
      near field is full at any height, as an engine's first tier is. */
   const V0 = 3.5, OPEN_V = 8, OPEN_PITCH = 35;   // (it opens at 35°, the field's own floor, and tilts on from there to pitchFloor)
   let pitchWas = null;
-  const grainOf = (k, v) => Math.min(LV_GEO - 1, k + (mode === 'vh' ? Math.max(0, Math.round(Math.log2(v / V0))) : 0));
+  /* H, A DIAL OF ITS OWN (Oct 13: "small H gives good fidelity to nearby objects, large h gives good fidelity to far away
+     objects. larger H moves the corner further away from the observer, which gives more proportional space. reader has
+     fixed number of addresses, so more proportional space means each object is given less level of detail.")
+     - H = v·2^hs: hs = 0 is flight.html's V = H (the corner where h = v); H− and H+ halve and double it (hs from −3 to 3).
+     - The reader holds ADDR addresses, whatever H is, laid out from home to the farthest board in view, R: the near field
+       and each level past the corner get the same share, n = ADDR / (1 + levels), levels = ⌈log2(R / H)⌉.
+     - One address is H/n inside the corner (absolute) and 2^(k−1)·H/n in level k (relative: every doubling alike). A body of
+       size b gets a = b / address addresses across, and its grain is the mesh that holds that many (64 >> g ≈ a).
+     - So a small H gives the near field fine detail and spends the rest over many levels, each thin; a large H puts the
+       corner further out, more of the field in proportion, so each near body gets fewer addresses, but there are fewer
+       levels to the farthest board and each holds more, so far bodies get more.
+     By metres keeps an engine's fixed tiers (grain = level) and None every board in full. */
+  const ADDR = 512, BODY_B = 1.8;           // (BODY_B: a body's breadth on the ground, half a board at the field's size)
+  let hs = 0;
+  try { const q = +new URLSearchParams(location.search).get('H'); const sv = +localStorage.getItem('levels.H');
+        hs = Number.isFinite(q) && new URLSearchParams(location.search).has('H') ? q : (Number.isFinite(sv) ? sv : 0); hs = Math.max(-3, Math.min(3, Math.round(hs))); } catch {}
+  const Hof = v => v * 2 ** hs;
+  let farR = 0;                                       // the farthest board asked in the last frame drawn (R)
+  const shareOf = H => { const R = Math.max(H, farR || 16 * H), lv = Math.max(0, Math.ceil(Math.log2(R / H))); return { n: ADDR / (1 + lv), lv }; };
+  function grainOf(k, v){
+    if (mode !== 'vh') return Math.min(LV_GEO - 1, mode === 'none' ? 0 : k);
+    const H = Hof(v), { n } = shareOf(H), unit = (k <= 0 ? H : 2 ** (k - 1) * H) / n, a = BODY_B / unit;
+    return Math.max(0, Math.min(LV_GEO - 1, Math.round(Math.log2(64 / Math.max(1e-6, a)))));
+  }
   // the counts: this frame's as the boards are asked, and the last whole frame's for the row
-  let cur = { n: [], t: [] }, shown = { n: [], t: [] }, ticking = false, last = new Map();
+  let cur = { n: [], t: [], R: 0 }, shown = { n: [], t: [], R: 0 }, ticking = false, last = new Map();
   // (a frame the field rests on asks the framed board alone, so only a frame it drew stands for the field: Oct 13)
   let drawnSeen = -1;
-  const roll = () => { const d = window.fieldRest ? window.fieldRest.drawn : 0; if (d !== drawnSeen && cur.n.length) shown = cur; drawnSeen = d; cur = { n: [], t: [] }; };
+  const roll = () => { const d = window.fieldRest ? window.fieldRest.drawn : 0; if (d !== drawnSeen && cur.n.length){ shown = cur; if (cur.R) farR = cur.R; } drawnSeen = d; cur = { n: [], t: [], R: 0 }; };
   // the rings on the ground: the corner and each doubling past it, round the point under the eye
   let rings = null;
   function ringsMake(){
@@ -44281,7 +44304,7 @@ const LEVELS_APP = (() => {
     { const now = performance.now(); if (now - (tick.dropAt || 0) > 1000){ tick.dropAt = now; dropIdle(now); } }
     try {
       if (!rings) rings = ringsMake();
-      const cam = W().camera, v = Math.max(1e-6, cam.position.y), D = mode === 'vh' ? v : METRES_D * Math.max(...W().spacing());
+      const cam = W().camera, v = Math.max(1e-6, cam.position.y), D = mode === 'vh' ? Hof(v) : METRES_D * Math.max(...W().spacing());
       rings.visible = mode !== 'none'; rings.position.set(cam.position.x, 0.03, cam.position.z); rings.scale.set(D, 1, D);
     } catch {}
     requestAnimationFrame(tick);
@@ -44290,7 +44313,12 @@ const LEVELS_APP = (() => {
   const say = (m, ms) => { try { engineNotice(m, ms || 2200); } catch {} };
   function setMode(m){
     if (!MODES.includes(m)) return; mode = m; try { localStorage.setItem('levels.mode', m); } catch {}
-    say(MODE_NAME[m] + (m === 'vh' ? ': the levels split at v, 2v, 4v … from the point under the eye' : m === 'metres' ? ': the levels split at fixed distances on the ground' : ': every board in full'));
+    say(MODE_NAME[m] + (m === 'vh' ? ': the levels split at H, 2H, 4H … from the point under the eye' : m === 'metres' ? ': the levels split at fixed distances on the ground' : ': every board in full'));
+    try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {}
+  }
+  function setH(x){
+    hs = Math.max(-3, Math.min(3, Math.round(x))); try { localStorage.setItem('levels.H', String(hs)); } catch {}
+    say(hs === 0 ? 'H = v: the corner where a board is as far along the ground as the eye is high' : 'H = v ' + (hs > 0 ? '× ' + 2 ** hs + ': the corner further out, more of the field in proportion' : '÷ ' + 2 ** -hs + ': the corner nearer, the near field finer'));
     try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {}
   }
   function setWire(on){ wire = !!on; try { localStorage.setItem('levels.wire', wire ? 'on' : 'off'); } catch {} try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {} }
@@ -44313,26 +44341,30 @@ const LEVELS_APP = (() => {
       const at = W().itemAt, cam = W().camera;
       if (!at || !cam) return null;
       const v = Math.max(1e-6, cam.position.y), h = Math.hypot(at.x - cam.position.x, at.z - cam.position.z), k = levelAt(h, v), g = grainOf(k, v);
-      cur.n[k] = (cur.n[k] || 0) + 1; cur.t[k] = (cur.t[k] || 0) + TRIS[g];
+      cur.n[k] = (cur.n[k] || 0) + 1; cur.t[k] = (cur.t[k] || 0) + TRIS[g]; if (h > cur.R) cur.R = h;
       const idx = boardIdx(c, r), B = bodyOf(idx), kind = (wire ? 'lvW' : 'lvB') + (g >= LV_GEO - 1 ? 'far' : idx + '_' + g);
       if (g < LV_GEO - 1) USED.set(kind, performance.now());
-      last.set(c + '_' + r, { k, g, s: h / v, idx });
+      last.set(c + '_' + r, { k, g, s: h / (mode === 'vh' ? Hof(v) : v), idx });
       if (last.size > 5000) last.clear();
       return [{ kind, u: 0.5, v: 0.5, scale: 0.5, sx: B.s[0], sy: B.s[1], sz: B.s[2], color: tintOf(k) }];
     },
     cellTitle(c, r){
       const L = last.get(c + '_' + r);
       if (!L) return 'Levels — board ' + c + '·' + r;
-      return 'Levels — board ' + c + '·' + r + ' (body ' + L.idx + '): ' + (L.k === 0 ? 'the near field' : 'level ' + L.k) + ', h/v = ' + L.s.toFixed(2);
+      return 'Levels — board ' + c + '·' + r + ' (body ' + L.idx + '): ' + (L.k === 0 ? 'the near field' : 'level ' + L.k) + ', h/H = ' + L.s.toFixed(2);
     },
     onCellTap(c, r){
       const L = last.get(c + '_' + r); if (!L) return false;
-      say((L.k === 0 ? 'The near field' : 'Level ' + L.k) + ': h/v = ' + L.s.toFixed(2) + ', ' + fmt(TRIS[L.g]) + ' triangles' + (mode === 'none' ? ' (None: every board in full)' : ''), 2600);
+      say((L.k === 0 ? 'The near field' : 'Level ' + L.k) + ': h/H = ' + L.s.toFixed(2) + ', grain ' + L.g + ', ' + fmt(TRIS[L.g]) + ' triangles' + (mode === 'none' ? ' (None: every board in full)' : ''), 2600);
       return false;
     },
     statTiles(){
       const T = MODES.map(m => ({ glyph: m === 'none' ? '⊘' : m === 'metres' ? '📏' : '◐', value: MODE_NAME[m], bg: m === mode ? '#3a4f6a' : undefined }));
       T.push({ glyph: '▦', value: 'Wireframe', bg: wire ? '#3a4f6a' : undefined });
+      // (the H dial: smaller and larger by doublings, and what it is now, with the reader's addresses shared out)
+      const Hv = hs === 0 ? 'H = v' : 'H = v' + (hs > 0 ? '×' + 2 ** hs : '÷' + 2 ** -hs), sh = shareOf(Hof(Math.max(1e-6, W().camera ? W().camera.position.y : 1)));
+      T.push({ glyph: '−', value: 'H smaller', dim: hs <= -3 || mode !== 'vh' }, { glyph: '+', value: 'H larger', dim: hs >= 3 || mode !== 'vh' },
+             { label: mode === 'vh' ? Hv : 'H', value: mode === 'vh' ? Math.round(sh.n) + ' a level' : '—', sub: mode === 'vh' ? ADDR + ' addresses, ' + (1 + sh.lv) + ' parts' : 'by v/h only' });
       const S = shown, max = S.n.length;
       let tot = 0, nb = 0;
       for (let k = 0; k < max; k++){ if (!S.n[k]) continue; tot += S.t[k]; nb += S.n[k];
@@ -44340,13 +44372,16 @@ const LEVELS_APP = (() => {
       T.push({ label: 'drawn', value: fmt(tot) + ' ▲', sub: nb + ' boards' });
       return T;
     },
-    onStatTap(c, r, i){ if (i < MODES.length){ setMode(MODES[i]); return true; } if (i === MODES.length){ setWire(!wire); return true; } return false; },
+    onStatTap(c, r, i){ if (i < MODES.length){ setMode(MODES[i]); return true; } if (i === MODES.length){ setWire(!wire); return true; }
+      if (i === MODES.length + 1){ setH(hs - 1); return true; } if (i === MODES.length + 2){ setH(hs + 1); return true; } return false; },
     menu: [{ head: 'Levels', items: [
-      ...MODES.map(m => ({ label: () => (m === mode ? '✓ ' : '') + MODE_NAME[m], title: m === 'vh' ? 'Levels split at v, 2v, 4v … along the ground, v the eye\'s height: the corner is where h = v.' : m === 'metres' ? 'Levels split at fixed distances on the ground, as an engine sets them once.' : 'Every board in full.', on(){ setMode(m); } })),
+      ...MODES.map(m => ({ label: () => (m === mode ? '✓ ' : '') + MODE_NAME[m], title: m === 'vh' ? 'Levels split at H, 2H, 4H … along the ground; H is the eye\'s height v unless H smaller or H larger moved it.' : m === 'metres' ? 'Levels split at fixed distances on the ground, as an engine sets them once.' : 'Every board in full.', on(){ setMode(m); } })),
+      { label: 'H smaller', title: 'Halve H: the corner nearer the eye, near bodies finer, far bodies coarser.', on(){ setH(hs - 1); } },
+      { label: 'H larger', title: 'Double H: the corner further out, near bodies coarser, far bodies finer.', on(){ setH(hs + 1); } },
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
-    _debug: { boardIdx, bodyOf, get kinds(){ return USED.size; }, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
+    _debug: { get hs(){ return hs; }, setH, shareOf, grainOf: (k, v) => grainOf(k, v), get farR(){ return farR; }, ADDR, boardIdx, bodyOf, get kinds(){ return USED.size; }, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
 window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];

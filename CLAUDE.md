@@ -319,10 +319,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - v is the eye's height, h a board's distance along the ground from the point under the eye (as flight.html). By v/h (the
     default) the corner is h = v: level 0, the near field, is h ≤ v, and level k runs from 2^(k−1)·v to 2^k·v (`levelAt`).
     By metres the split is at fixed distances (`METRES_D`, 2 board spacings, doubling). None draws every board at grain 0.
-  - By v/h the near field's grain follows v (`grainOf`, after zoom.html: inside the corner one address is a share of H):
-    above `V0` (3.5, the height a board is framed at) every doubling of v makes every board one grain coarser. So the near
-    field, like each level past it, costs about the same at any height. Measured at 1280×800: opened, 138 boards in 4 levels
-    for 10,816 triangles; climbed, 813 boards for 20,592; None at that height 3.4 million; by metres 29,920.
+  - **H is a dial** (Oct 13: "small H gives good fidelity to nearby objects, large h gives good fidelity to far away objects.
+    larger H moves the corner further away from the observer, which gives more proportional space. reader has fixed number
+    of addresses, so more proportional space means each object is given less level of detail."): H = v·2^hs, hs −3 to 3
+    (`setH`, the row's H smaller / H larger, `?H=`, localStorage `levels.H`); hs = 0 is flight.html's V = H. By v/h the
+    levels split at H, 2H, 4H ….
+    - The reader holds `ADDR` (512) addresses, shared evenly between the near field and each level out to the farthest
+      board in the last frame drawn (`farR`): n = ADDR / (1 + ⌈log2(R / H)⌉) (`shareOf`). One address is H/n inside the
+      corner and 2^(k−1)·H/n in level k, so levels 0 and 1 share a grain. A body (`BODY_B`, 1.8 across) gets a = b / address
+      addresses, and its grain is round(log2(64 / a)), 0–4 (`grainOf`).
+    - Same view (eye at 8, farthest board 63 away): H = v ÷ 4, n = 85 over 6 parts, near grain 0, far (h 32–64) grain 4;
+      H = v, n = 128 over 4, near 1, far 3; H = v × 4, n = 256 over 2, near 2, far 2.
+    - By metres keeps an engine's fixed tiers (grain = level), None every board at grain 0. Measured at 1280×800, opened by
+      v/h: 157 boards in 4 levels for 30,992 triangles; climbed, 1,316 boards for 36,552; None at the opening 622,976.
   - Rings on the ground (gold at the corner, then each doubling) follow the point under the eye, scaled by v (or METRES_D),
     drawn from its own frame loop (`tick`), which also takes the counts of each frame the field drew (`fieldRest.drawn`: a
     frame it rests on asks the framed board alone).

@@ -222,6 +222,15 @@ try {
        be unique, generated from the board Id.") The tilt floor is Levels' own, 2°; each board's body comes from its id, the same
        twice and not another board's; and every triangle faces out of the body (wound inward, the near side was culled and the
        inside of the far side showed, which looked hollow and off the middle) */
+    /* (Oct 13: "small H gives good fidelity to nearby objects, large h gives good fidelity to far away objects. … reader has fixed
+       number of addresses, so more proportional space means each object is given less level of detail.") H halved twice and
+       doubled twice by the row's tiles: the near field's grain is finest at the small H and coarsest at the large one, the far
+       field's the other way round, and the reader's addresses are shared out the same, 512 in all */
+    const hd = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ), v = W.camera.position.y;
+      const tile = name => A.onStatTap(f.c, f.r, A.statTiles(f.c, f.r).findIndex(t => t.value === name));
+      const at = () => { const sh = D.shareOf(v * 2 ** D.hs), near = D.grainOf(0, v), far = D.grainOf(D.levelAt(D.farR * 0.75, v), v); return { hs: D.hs, near, far, total: Math.round(sh.n * (1 + sh.lv)) }; };
+      const out = { mid: at() }; tile('H smaller'); tile('H smaller'); out.small = at(); tile('H larger'); tile('H larger'); tile('H larger'); tile('H larger'); out.large = at();
+      D.setH(0); out.back = D.hs; return out; });
     const own = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, T = window.FIELD_WORLD.THREE;
       const i0 = D.boardIdx(0, 0), i1 = D.boardIdx(1, 0), i2 = D.boardIdx(0, 1), a = D.bodyOf(i0), b = D.bodyOf(i1), c = D.bodyOf(i2);
       const same = JSON.stringify(D.bodyOf(i0)) === JSON.stringify(a), differ = JSON.stringify(a) !== JSON.stringify(b) && JSON.stringify(a) !== JSON.stringify(c) && i0 !== i1 && i1 !== i2;
@@ -248,11 +257,13 @@ try {
     await page.evaluate(() => window.__settle());
     const pitch1 = await page.evaluate(() => window.FIELD_WORLD.st.pitch), floor1 = await page.evaluate(() => window.LAB.pitchMin);
     if (L0.pitch > 36 || L0.levels < 3 || !L0.rings || JSON.stringify(lv) !== '[0,0,1,2,3,3]'
-        || L1.boards < 3 * L0.boards || L1.tris > 4 * L0.tris || tiles.none < 30 * L0.tris || tiles.noneLv !== 1 || tiles.mode !== 'vh' || !tiles.flipped
+        || L1.boards < 3 * L0.boards || L1.tris > 4 * L0.tris || tiles.none < 15 * L0.tris || tiles.noneLv !== 1 || tiles.mode !== 'vh' || !tiles.flipped
         || !['None', 'By metres', 'By v/h', 'Wireframe'].every(n => tiles.names.includes(n)) || Math.abs(pitch1 - pitch0) > 1e-6
-        || own.floor !== 2 || floor1 !== 35 || !own.same || !own.differ || own.out < 0.95)
-      failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, tiles, pitch0, pitch1, own, floor1 })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; None at the opening view: ${tiles.none})`);
+        || own.floor !== 2 || floor1 !== 35 || !own.same || !own.differ || own.out < 0.95
+        || hd.small.hs !== -2 || hd.large.hs !== 2 || hd.back !== 0 || !(hd.small.near < hd.mid.near || hd.mid.near === 0) || !(hd.large.near > hd.mid.near)
+        || !(hd.small.far > hd.large.far) || [hd.small, hd.mid, hd.large].some(x => x.total !== 512))
+      failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, tiles, pitch0, pitch1, own, floor1, hd })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (H near/far grains ${hd.small.near}/${hd.small.far}, ${hd.mid.near}/${hd.mid.far}, ${hd.large.near}/${hd.large.far}; by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; None at the opening view: ${tiles.none})`);
   }
 
   // CHESS: THE ROW IS A POSITION EDITOR (Oct 13: "lets use it in chess to create custom chess games instead of selecting a
