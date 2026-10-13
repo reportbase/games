@@ -205,11 +205,14 @@ try {
     const before = failures.length;
     const pitch0 = await page.evaluate(() => window.FIELD_WORLD.st.pitch);
     await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.name === 'levels'); A._debug.setMode('vh'); window.setFieldApp(A); });
-    await page.waitForTimeout(3000);
-    // (until the camera is still and a frame drawn after it counted: on CI the first look came mid-flight, the eye at 3.9 on its
-    //  way to 8 and the rings a frame behind it, Oct 13)
-    await page.evaluate(() => window.__settle());
-    await page.waitForTimeout(2000);
+    // (until Levels has drawn: its first frame compiles new shaders, and the software renderer took 4 s over it here and longer
+    //  on CI, so a look at a fixed time read the last game's camera and the counts of the app loop's visit, Oct 13)
+    await page.evaluate(async () => {
+      const A = window.getFieldApp(), W = window.FIELD_WORLD, wait = ms => new Promise(ok => setTimeout(ok, ms));
+      for (let k = 0; k < 240; k++){ const R = A._debug.rings, v = W.camera.position.y; if (R && R.visible && v > 6 && Math.abs(R.scale.x - v) < 1e-6) break; await wait(250); }
+      await window.__settle();
+      const d = window.fieldRest.drawn; for (let k = 0; k < 120 && window.fieldRest.drawn < d + 3; k++) await wait(250);
+    });
     const look = () => page.evaluate(() => { const A = window.getFieldApp(), S = A._debug.shown, c = window.FIELD_WORLD.camera.position;
       return { v: c.y, pitch: window.FIELD_WORLD.st.pitch, levels: S.n.filter(Boolean).length, boards: S.n.reduce((a, b) => a + (b || 0), 0), tris: S.t.reduce((a, b) => a + (b || 0), 0),
                rings: !!A._debug.rings && A._debug.rings.visible && Math.hypot(A._debug.rings.position.x - c.x, A._debug.rings.position.z - c.z) < 1e-6 && Math.abs(A._debug.rings.scale.x - c.y) < 1e-6 }; });
@@ -334,9 +337,10 @@ try {
     const rc = await page.evaluate(async () => {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Rock in hand
-      await window.__settle();   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
+      await window.__settle(E.c, E.r);   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.g.n, bW = W.boardW(), L = window.LAB || {};
-      const v = window.__aim(n, 9, 2);
+      let v = window.__aim(n, 9, 2);
+      if (!v.ok){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = window.__aim(n, 9, 2); }   // (on CI it was aimed above the screen twice, Oct 13)
       return { x: v.x, y: v.y, aimed: v.ok, n, before: E.g.towers[2 * n + 9] };
     });
     // (where the click went, for a failure: in one full run it placed nothing, Oct 13)
