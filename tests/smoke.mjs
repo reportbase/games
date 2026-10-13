@@ -211,24 +211,27 @@ try {
                rings: !!A._debug.rings && A._debug.rings.visible && Math.hypot(A._debug.rings.position.x - c.x, A._debug.rings.position.z - c.z) < 1e-6 && Math.abs(A._debug.rings.scale.x - c.y) < 1e-6 }; });
     const L0 = await look();
     const lv = await page.evaluate(() => { const D = window.getFieldApp()._debug; return [D.levelAt(0.5, 1), D.levelAt(1, 1), D.levelAt(1.5, 1), D.levelAt(3, 1), D.levelAt(5, 1), D.levelAt(10, 2)]; });
+    // (None at the opening view: at the climbed one it is 3.4 million triangles, and the software renderer took more than 3 s
+    //  a frame, which held up the checks after it)
+    const tiles = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ);
+      const names = A.statTiles(f.c, f.r).map(t => t.value);
+      A.onStatTap(f.c, f.r, names.indexOf('None'));
+      for (let k = 0; k < 80 && D.shown.n.filter(Boolean).length !== 1; k++) await new Promise(ok => setTimeout(ok, 250));
+      const none = D.shown.t.reduce((a, b) => a + (b || 0), 0), noneLv = D.shown.n.filter(Boolean).length;
+      A.onStatTap(f.c, f.r, names.indexOf('By v/h')); const w0 = D.wire; A.onStatTap(f.c, f.r, names.indexOf('Wireframe')); const w1 = D.wire; D.setWire(w0);
+      for (let k = 0; k < 80 && D.shown.n.filter(Boolean).length < 2; k++) await new Promise(ok => setTimeout(ok, 250));
+      return { names, none, noneLv, mode: D.mode, flipped: w1 === !w0 }; });
     for (let i = 0; i < 6; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, -400); await page.waitForTimeout(400); }
     await page.waitForTimeout(3500);
     const L1 = await look();
-    const tiles = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ);
-      const names = A.statTiles(f.c, f.r).map(t => t.value);
-      A.onStatTap(f.c, f.r, names.indexOf('None')); await new Promise(ok => setTimeout(ok, 3000));
-      const none = D.shown.t.reduce((a, b) => a + (b || 0), 0), noneLv = D.shown.n.filter(Boolean).length;
-      A.onStatTap(f.c, f.r, names.indexOf('By v/h')); const w0 = D.wire; A.onStatTap(f.c, f.r, names.indexOf('Wireframe')); const w1 = D.wire; D.setWire(w0);
-      await new Promise(ok => setTimeout(ok, 1500));
-      return { names, none, noneLv, mode: D.mode, flipped: w1 === !w0 }; });
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'field chess' || a === window.FIELD_APPS[0])));
-    await page.waitForTimeout(1500);
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS[0]));
+    await page.evaluate(() => window.__settle());
     const pitch1 = await page.evaluate(() => window.FIELD_WORLD.st.pitch);
     if (L0.pitch > 36 || L0.levels < 3 || !L0.rings || JSON.stringify(lv) !== '[0,0,1,2,3,3]'
-        || L1.boards < 3 * L0.boards || L1.tris > 3 * L0.tris || tiles.none < 30 * L1.tris || tiles.noneLv !== 1 || tiles.mode !== 'vh' || !tiles.flipped
+        || L1.boards < 3 * L0.boards || L1.tris > 3 * L0.tris || tiles.none < 30 * L0.tris || tiles.noneLv !== 1 || tiles.mode !== 'vh' || !tiles.flipped
         || !['None', 'By metres', 'By v/h', 'Wireframe'].every(n => tiles.names.includes(n)) || Math.abs(pitch1 - pitch0) > 1e-6)
       failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, tiles, pitch0, pitch1 })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; None: ${tiles.none})`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; None at the opening view: ${tiles.none})`);
   }
 
   // CHESS: THE ROW IS A POSITION EDITOR (Oct 13: "lets use it in chess to create custom chess games instead of selecting a
