@@ -63,6 +63,20 @@ try {
   await page.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.FIELD_APPS.length > 0
                                    && typeof window.setFieldApp === 'function', null, { timeout: 60000 });
   await page.waitForTimeout(SETTLE_MS);
+  /* WHERE TO CLICK FOR A SQUARE (Oct 13): projected from the square's middle, then, if the field would read that pixel as
+     another square (a click once landed a row off), the nearest pixel it reads as this one. Returns { x, y, ok }. */
+  await page.evaluate(() => {
+    window.__aim = (n, col, row, nh) => {
+      nh = nh || n;
+      const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - (col + 0.5) / n) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - (row + 0.5) / nh) * bW * (L.cellH || 1)).project(W.camera);
+      const x0 = (pv.x + 1) / 2 * innerWidth, y0 = (1 - pv.y) / 2 * innerHeight;
+      const hit = (x, y) => { const q = W.uvAt(x, y); return !!q && Math.floor(q.u * n) === col && Math.floor(q.v * nh) === row; };
+      if (hit(x0, y0)) return { x: x0, y: y0, ok: true };
+      for (let R = 3; R <= 90; R += 3) for (let a = 0; a < 16; a++){ const x = x0 + R * Math.cos(a * Math.PI / 8), y = y0 + R * Math.sin(a * Math.PI / 8); if (hit(x, y)) return { x, y, ok: true }; }
+      return { x: x0, y: y0, ok: false };
+    };
+  });
   const ids = await page.evaluate(() => window.FIELD_APPS.map(a => a.id || a.name));
   console.log(`page loaded, ${ids.length} apps`);
 
@@ -260,8 +274,8 @@ try {
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Rock in hand
       { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } }   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.g.n, bW = W.boardW(), L = window.LAB || {};
-      const v = new W.THREE.Vector3(T.boardX + (0.5 - 9.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 2.5 / n) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.g.towers[2 * n + 9] };
+      const v = window.__aim(n, 9, 2);
+      return { x: v.x, y: v.y, aimed: v.ok, n, before: E.g.towers[2 * n + 9] };
     });
     // (where the click went, for a failure: in one full run it placed nothing, Oct 13)
     await page.evaluate(() => { const A = window.getFieldApp(); window.__tdTaps = []; const o = A.onCellTap; A.__tdTap = o;
@@ -327,8 +341,8 @@ try {
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Wall in hand
       { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } }   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.L.n, V = n - 2, bW = W.boardW(), L = window.LAB || {};
-      const v = new W.THREE.Vector3(T.boardX + (0.5 - 4.5 / V) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 0.5 / V) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.L.wall[1 * n + 5] };
+      const v = window.__aim(V, 4, 0);
+      return { x: v.x, y: v.y, aimed: v.ok, n, before: E.L.wall[1 * n + 5] };
     });
     await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
     const rc2 = await page.evaluate(async n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.L && E.L.wall[1 * n + 5]; D.edCancel();
@@ -345,6 +359,9 @@ try {
   // and Go): in each, the dots open it on the framed board; a position the game would refuse is refused with its reason (and a
   // checkers man on a light square); a good one, with you on the side not to move, is put on the board and the computer
   // answers it; Escape leaves a board as it was; a real click puts a Reversi stone on its square
+  // (these checks fly to boards of their own; the boards' frame is every game's, so it goes back after them, as the tower
+  //  defense check's does: the mini golf checks later expect the board they had, Oct 13)
+  const homeBefore = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; return T.shown ? W.cellAt(T.boardX, T.boardZ) : null; });
   current = 'board games position editor';
   {
     const before = failures.length;
@@ -408,8 +425,8 @@ try {
       D.open(); const E = D.ed(); A.onStatTap(E.c, E.r, 0); A.onStatTap(E.c, E.r, E.G.pieces.length + 1);   // Black in hand, a clear board
       { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } }   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.n, bW = W.boardW(), L = window.LAB || {};
-      const v = new W.THREE.Vector3(T.boardX + (0.5 - 2.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 5.5 / n) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n };
+      const v = window.__aim(n, 2, 5);
+      return { x: v.x, y: v.y, aimed: v.ok, n };
     });
     await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
     rc.got = await page.evaluate(n => { const D = window.getFieldApp()._edDebug, E = D.ed(); const v = E.cells && E.cells[5 * n + 2]; D.cancel(); return v; }, rc.n);
@@ -536,8 +553,8 @@ try {
         // a real click lays a dot
         P.open(); A.onStatTap(c, r, 3); tile('Clear'); await still();
         const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, n = P.ed.d.n;
-        const v = new W.THREE.Vector3(T.boardX + (0.5 - 1.5 / n) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 4.5 / n) * bW * (L.cellH || 1)).project(W.camera);
-        out.flowClick = { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, i: 4 * n + 1 };
+        const v = window.__aim(n, 1, 4);
+        out.flowClick = { x: v.x, y: v.y, aimed: v.ok, i: 4 * n + 1 };
       }
       return out;
     });
@@ -605,6 +622,8 @@ try {
       failures.push(`[${current}] ${JSON.stringify({ res: { ...res, unblock: { ...U, url: !!U.url }, flow: { ...F, url: !!F.url } }, click, q: { ...q, url: !!q.url }, links })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
   }
+
+  await page.evaluate(async h => { if (!h) return; const A = window.FIELD_APPS.find(a => a._debug && a._debug.fly); window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 1200)); A._debug.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); }, homeBefore);
 
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a

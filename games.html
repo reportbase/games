@@ -3787,6 +3787,8 @@ window.FIELD_WORLD = {
   get THREE(){ return THREE; }, get scene(){ return scene; }, get camera(){ return camera; }, get st(){ return st; }, get target(){ return target; },
   spacing: () => [gridSpacingX(), gridSpacingZ()],
   boardW: () => gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize)),
+  // where a point on the screen falls on the framed board, as a tap there is read (u, v), or null (for the tests' real clicks, Oct 13)
+  uvAt: (x, y) => _framedUV(x, y),
   back: () => camGeom().back,
   zoomFor: h => Math.max(0, Math.min(1000, (h - 0.75) / (CAM_H_MAX - 0.75) * 1000)),
   cellAt(x, z){
