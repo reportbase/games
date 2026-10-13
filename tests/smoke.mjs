@@ -65,6 +65,14 @@ try {
   await page.waitForTimeout(SETTLE_MS);
   /* WHERE TO CLICK FOR A SQUARE (Oct 13): projected from the square's middle, then, if the field would read that pixel as
      another square (a click once landed a row off), the nearest pixel it reads as this one. Returns { x, y, ok }. */
+  // (and after a flight to a board, until a board is framed and the camera has stopped: a check that pressed the dots
+  //  1.5 s after flying, mid-flight, opened its editor on the board left before, Oct 13)
+  await page.evaluate(() => {
+    window.__settle = async () => {
+      const W = window.FIELD_WORLD; let a = null;
+      for (let k = 0; k < 60; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4) + (W.target.shown ? 's' : ''); if (q === a && W.target.shown) break; a = q; }
+    };
+  });
   await page.evaluate(() => {
     window.__aim = (n, col, row, nh) => {
       nh = nh || n;
@@ -187,7 +195,7 @@ try {
       const wait = ms => new Promise(ok => setTimeout(ok, ms));
       const A = window.FIELD_APPS.find(a => a.name === 'field chess'); window.setFieldApp(A); await wait(2500);
       const D = A._debug, W = window.FIELD_WORLD;
-      D.fly(3, 2); await wait(1500);                               // (a board framed: the editor sets up the selected board)
+      D.fly(3, 2); await wait(300); await window.__settle();                               // (a board framed: the editor sets up the selected board)
       // (the row shut first: an earlier check may have left it open, and then the dots would shut it)
       const was = { shut: document.body.classList.contains('bb-collapsed'), shown: !!W.target.shown, vis: window.tvf.browser.visible, app: window.getFieldApp().name };
       if (!was.shut){ document.getElementById('bbHandle').click(); await wait(800); }
@@ -233,7 +241,7 @@ try {
       const A = window.FIELD_APPS.find(a => a.name === 'tower defense'); window.setFieldApp(A); await wait(2500);
       const D = A._debug, W0 = window.FIELD_WORLD, T0 = W0.target, home = T0.shown ? W0.cellAt(T0.boardX, T0.boardZ) : null;
       window.__tdHome = home;                                      // (flown back after: the boards' frame is every game's, and the later checks expect theirs)
-      D.fly(4, 3); await wait(1500);
+      D.fly(4, 3); await wait(300); await window.__settle();
       if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
       document.getElementById('bbHandle').click(); await wait(800);
       const E = D.ed(), W = window.FIELD_WORLD, fr = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -305,7 +313,7 @@ try {
       const A = window.FIELD_APPS.find(a => a.name === 'sokoban'); window.setFieldApp(A); await wait(2500);
       const D = A._debug, W = window.FIELD_WORLD, T0 = W.target, home = T0.shown ? W.cellAt(T0.boardX, T0.boardZ) : null;
       window.__skHome = home;                                      // (flown back after, as the tower defense check is)
-      D.fly(5, 2); await wait(1500);
+      D.fly(5, 2); await wait(300); await window.__settle();
       if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
       document.getElementById('bbHandle').click(); await wait(800);
       const E = D.ed(), fr = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -378,7 +386,7 @@ try {
         const wait = ms => new Promise(ok => setTimeout(ok, ms));
         const A = window.FIELD_APPS.find(a => a.name === K.app); window.setFieldApp(A); await wait(2000);
         const D = A._edDebug, W = window.FIELD_WORLD;
-        D.fly(6, 4); await wait(1500);
+        D.fly(6, 4); await wait(300); await window.__settle();
         if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
         document.getElementById('bbHandle').click(); await wait(700);
         const E = D.ed(), fr = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -421,7 +429,7 @@ try {
     const rc = await page.evaluate(async () => {
       const A = window.FIELD_APPS.find(a => a.name === 'field reversi'); window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 1500));
       const D = A._edDebug, W = window.FIELD_WORLD, T = W.target;
-      D.fly(6, 4); await new Promise(ok => setTimeout(ok, 1500));
+      D.fly(6, 4); await window.__settle();
       D.open(); const E = D.ed(); A.onStatTap(E.c, E.r, 0); A.onStatTap(E.c, E.r, E.G.pieces.length + 1);   // Black in hand, a clear board
       { const W0 = window.FIELD_WORLD; let a = null; for (let k = 0; k < 40; k++){ await new Promise(ok => setTimeout(ok, 250)); const p = W0.camera.position, q = p.x.toFixed(4) + p.y.toFixed(4) + p.z.toFixed(4); if (q === a) break; a = q; } }   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
       const n = E.n, bW = W.boardW(), L = window.LAB || {};
@@ -514,7 +522,7 @@ try {
       const out = {};
       const begin = async name => {
         const A = window.FIELD_APPS.find(a => a.name === name); window.setFieldApp(A); await wait(1500);
-        const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(1500);
+        const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(300); await window.__settle();
         if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
         document.getElementById('bbHandle').click(); await wait(700);
         const P = D.pz(), E = P.ed, fr = W.cellAt(W.target.boardX, W.target.boardZ);
@@ -569,7 +577,7 @@ try {
     const q = await page.evaluate(async () => {
       const wait = ms => new Promise(ok => setTimeout(ok, ms));
       const A = window.FIELD_APPS.find(a => a.name === 'eight queens'); window.setFieldApp(A); await wait(1500);
-      const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(1500);
+      const D = A._debug, W = window.FIELD_WORLD; D.fly(5, 4); await wait(300); await window.__settle();
       if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(700); }
       document.getElementById('bbHandle').click(); await wait(700);
       const P = D.pz(), E = P.ed; if (!E) return { open: false };
