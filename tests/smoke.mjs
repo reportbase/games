@@ -942,7 +942,8 @@ try {
       const pay = JSON.parse(decodeURIComponent(escape(atob(q.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - q.length % 4) % 4)))));
       out.refused = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 0 } })) === null && L.takeLineLink(enc({ ...pay, line: { ...pay.line, p: [5, 'x', 2] } })) === null;
       // a shared line better than yours becomes the line to race, marked shared
-      const k3 = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 1 } }));
+      // (one stroke and half the time: yours may have sunk in one, and then only a quicker line is better, Oct 13)
+      const k3 = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 1, ms: Math.max(1, Math.floor((pay.line.ms || 2) / 2)) } }));
       out.shared = k3 != null && L.GHOSTS[L.lineKey(k3)].shared === true && L.GHOSTS[L.lineKey(k3)].s === 1;
       return out;
     });
