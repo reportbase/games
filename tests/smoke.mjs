@@ -481,7 +481,9 @@ try {
       return out;
     });
     const open = async (url, check) => {
-      const pg = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
+      //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }), pg = await ctx.newPage();
       if (process.env.LIBS_DIR){
         const lib = f => readFile(join(process.env.LIBS_DIR, f));
         await pg.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
@@ -498,7 +500,7 @@ try {
         await pg.waitForTimeout(6000);
         got = await pg.evaluate(check);
       } catch (e){ got = { err: String(e).slice(0, 300) }; }
-      await pg.close();
+      await ctx.close();
       return { ...got, errs };
     };
     const res = {};
@@ -605,7 +607,9 @@ try {
     });
     // the links, each opened in a page of its own
     const open = async (url, check) => {
-      const pg = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
+      //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }), pg = await ctx.newPage();
       if (process.env.LIBS_DIR){
         const lib = f => readFile(join(process.env.LIBS_DIR, f));
         await pg.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
@@ -620,7 +624,7 @@ try {
         await pg.waitForTimeout(6000);
         got = await pg.evaluate(check);
       } catch (e){ got = { err: String(e).slice(0, 300) }; }
-      await pg.close();
+      await ctx.close();
       return { ...got, errs };
     };
     const mineHere = () => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: A.name, mine: JSON.stringify(A._debug.pz().mine(f.c + '_' + f.r) || null) }; };
