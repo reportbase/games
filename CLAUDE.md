@@ -206,6 +206,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - A dealt board shows its level as a frame in golf's flag colours (`frameV`/`frameH`). Solved, it says your pushes
     against par as stars (`starsFor`: at par 3, within half again 2, else 1), and a tap goes on to the next board (golf's
     `nextBoard`).
+  - **The row is a level editor** (Oct 13: "yes", on the Sokoban level editor): `ED`, `ed…`, `MINE` inside `SOKOBAN_APP`,
+    with the hooks chess and tower defense have; taps reach `edTap` from `onCellTap` (a drag or a hold does nothing while
+    editing, and the arrow keys don't walk him).
+    - Opening the row (the dots, or the menu's Make a level for this board…) takes the framed board's level as it starts (its
+      own, else the one it deals) into the editor (`framedCell`, not `LIVE`). Tiles: Wall, Crate, Spot, Keeper, Floor, then
+      Clear, Size (6, 8, 10), Check, Play; quick buttons Floor, Check, Cancel, Done. The same tool again takes a wall, crate
+      or spot off; the keeper is moved, never erased.
+    - Check and Done run `solve` (cap `MINE_CAP`, 150,000 positions; `solve(L, cap, info)` sets `info.capped` when it gives up
+      rather than finds no way). Done needs a crate or more, as many spots, and no proof it is hopeless: the fewest pushes are
+      its par and its pushes what the board plays when no one is on it; one too big to finish is kept without a par.
+    - Kept on the board (`MINE`, localStorage `sokoban.levels`, the latest 300, read back through `cleanMine`, made playable
+      by `mineLevel`, which `boardLevel` asks first) and played at once. Escape or Cancel leaves the board as it was; the
+      menu's Forget this board's level puts the dealt one back.
 - **Chess: the row is a position editor** (Oct 13: "I really like that bottom browser. lets use it in chess to create custom
   chess games instead of selecting a board. similar to mini-golf"): `CHESS_ED`, `chessEd…`, before `CHESS_APP`, which now has
   golf's hooks (`onBrowserToggle`, `statTiles`, `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`) and `worldTap`, the one tap

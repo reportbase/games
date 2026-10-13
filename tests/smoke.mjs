@@ -274,6 +274,67 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
   }
 
+  // SOKOBAN: THE ROW IS A LEVEL EDITOR (Oct 13: "yes", on the Sokoban level editor): the dots open it on the framed board;
+  // a 6×6 floor with the keeper, a crate and a spot in a row; Done refuses crates and spots that differ, Check finds a crate in
+  // a corner off its spot hopeless; with it taken off, Done keeps the level with par 2, shuts the row and plays it; pushing
+  // the crate home solves it at par; Escape keeps it; it is in storage; a real click lays a wall
+  current = 'sokoban level editor';
+  {
+    const before = failures.length;
+    const sk = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const A = window.FIELD_APPS.find(a => a.name === 'sokoban'); window.setFieldApp(A); await wait(2500);
+      const D = A._debug, W = window.FIELD_WORLD, T0 = W.target, home = T0.shown ? W.cellAt(T0.boardX, T0.boardZ) : null;
+      window.__skHome = home;                                      // (flown back after, as the tower defense check is)
+      D.fly(5, 2); await wait(1500);
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
+      document.getElementById('bbHandle').click(); await wait(800);
+      const E = D.ed(), fr = W.cellAt(W.target.boardX, W.target.boardZ);
+      if (!E.on) return { open: false, shut: document.body.classList.contains('bb-collapsed') };
+      if (!fr || E.c !== fr.c || E.r !== fr.r) return { open: true, onFramed: false, ed: [E.c, E.r], fr };
+      const c = E.c, r = E.r, tiles = (A.statTiles(c, r) || []).length, keys = window.tvf.browser.keys.filter(k => String(k).startsWith('stat_')).length;
+      const tile = name => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => t.value === name || String(t.value).startsWith(name)));
+      tile('Clear');
+      while (E.L.n !== 8) tile('Size');                           // a 6×6 floor (8 with its wall)
+      const n = 8, V = 6, at = (row, col) => A.onCellTap(c, r, (col - 0.5) / V, (row - 0.5) / V), sq = (row, col) => row * n + col;
+      tile('Keeper'); at(3, 1); tile('Crate'); at(3, 3);
+      const noSpot = D.edDone(), whyCount = E.msg, stillOn = E.on;
+      tile('Spot'); at(3, 5);
+      tile('Crate'); at(1, 1); tile('Spot'); at(6, 6);
+      tile('Check'); const hopeless = E.msg;
+      tile('Crate'); at(1, 1); tile('Spot'); at(6, 6);             // taken off again
+      tile('Check'); const checked = E.msg;
+      const key = E.key, ok = D.edDone(); await wait(800);
+      const L = D.mineLevel(key), g = D.gameAt(c, r), shut = document.body.classList.contains('bb-collapsed');
+      for (let k = 0; k < 3; k++) D.step(g, 1);                    // right, right, right: two pushes
+      const solved = g.solved, pushes = g.pushes;
+      D.edOpen(); tile('Clear');
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(300);
+      const escOff = !E.on;
+      const stored = JSON.parse(localStorage.getItem('sokoban.levels') || '{}')[key];
+      return { open: true, tiles, keys, noSpot, whyCount, stillOn, hopeless, checked, ok, shut, par: L && L.par, mine: L && L.mine,
+               player: L && L.player === sq(3, 1), boxes: L && L.boxes.join(), want: String(sq(3, 3)), solved, pushes, escOff,
+               cells: D.mine.get(key) && D.mine.get(key).cells, stored: stored && stored.cells };
+    });
+    // a real click on a square of the framed board lays the tool there
+    const rc = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
+      D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Wall in hand
+      const n = E.L.n, V = n - 2, bW = W.boardW(), L = window.LAB || {};
+      const v = new W.THREE.Vector3(T.boardX + (0.5 - 4.5 / V) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - 0.5 / V) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight, n, before: E.L.wall[1 * n + 5] };
+    });
+    await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    const rc2 = await page.evaluate(async n => { const D = window.getFieldApp()._debug, E = D.ed(); const v = E.L && E.L.wall[1 * n + 5]; D.edCancel();
+      const h = window.__skHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.n);
+    if (rc.before !== 0 || rc2 !== 1) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
+    if (!sk.open || sk.tiles !== 9 || sk.keys !== 9 || sk.noSpot !== false || !/as many/.test(sk.whyCount) || !sk.stillOn || !/no way/.test(sk.hopeless)
+        || !/2 pushes/.test(sk.checked) || sk.ok !== true || !sk.shut || sk.par !== 2 || !sk.mine || !sk.player || sk.boxes !== sk.want
+        || !sk.solved || sk.pushes !== 2 || !sk.escOff || !sk.cells || sk.stored !== sk.cells)
+      failures.push(`[${current}] ${JSON.stringify(sk)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
+  }
+
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two

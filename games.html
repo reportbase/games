@@ -42675,7 +42675,7 @@ const SOKOBAN_APP = (() => {
      A crate is never pushed onto a square from which no pull could bring it back to a spot (live), or into a 2×2 block of
      walls and crates with a crate off its spot. Gives up past `cap` states (null). Returns { pushes, path: [[crate, way]],
      states }. */
-  function solve(L, cap){
+  function solve(L, cap, info){
     cap = cap || 60000;
     const n = L.n, NN = n * n, Dn = [-n, 1, n, -1], W = L.wall, G = L.goal;
     const live = new Uint8Array(NN), lq = [];
@@ -42724,7 +42724,7 @@ const SOKOBAN_APP = (() => {
             const path = []; for (let k = states.length - 1; k > 0; k = states[k].par) path.unshift(states[k].mv);
             return { pushes: path.length, path, states: states.length };
           }
-          if (states.length > cap){ for (const y of S.b) occ[y] = 0; return null; }
+          if (states.length > cap){ for (const y of S.b) occ[y] = 0; if (info) info.capped = true; return null; }
         }
       }
       for (const b of S.b) occ[b] = 0;
@@ -42822,6 +42822,8 @@ const SOKOBAN_APP = (() => {
      a board appears whole or not at all, as mini golf's pieces do. A board played is dealt at once: `force`.) */
   let MAKE_FREE = 0;
   function boardLevel(c, r, force){
+    const mine = mineLevel(gkey(c, r));            // (a level made for this board in the editor, Oct 13)
+    if (mine) return mine;
     const idx = boardIdx(c, r);
     if (idx < MAP.length) return MAP[idx];        // the corner block: the worked-out levels, as mini golf's course
     const lv = levelAt(idx), key = idx * 8 + lv;
@@ -43020,7 +43022,8 @@ const SOKOBAN_APP = (() => {
     cols[toBoard(player)] = KEEPER;
     return { n: V, colors: cols };
   }
-  const shownState = (c, r) => { const g = GAMES.get(gkey(c, r)); if (g) return g; const F = reelFrame(c, r); return F && F.A; };
+  const shownState = (c, r) => { if (ED.on && ED.key === gkey(c, r)) return { L: ED.L, player: ED.L.player, boxes: ED.L.boxes };
+    const g = GAMES.get(gkey(c, r)); if (g) return g; const F = reelFrame(c, r); return F && F.A; };
   const paint = (ctx, x0, y0, t, cols) => {
     for (let k = 0; k < V * V; k++){
       ctx.fillStyle = '#' + cols[k].toString(16).padStart(6, '0');
@@ -43032,13 +43035,175 @@ const SOKOBAN_APP = (() => {
   addEventListener('keydown', e => {
     const key = KEYMAP[e.key];                 // 0 up, 1 right, 2 down, 3 left — on the SCREEN
     if (key == null || (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || ED.on) return;
     const g = liveGame();
     if (!g || g.solved) return;
     e.preventDefault(); e.stopPropagation();
     const dirs = screenToBoardDirs();
     g.queue.push(dirs ? dirs[key] : key);
   }, true);
+
+
+  /* ─── THE LEVEL EDITOR ─────────────────────────────────────────────────
+     (Oct 13: "yes", on the Sokoban level editor, first of "what other games could benefit from this kind of thing", after
+     chess's and tower defense's: the bottom row as mini golf's hole editor.) Opening the bottom row (the dots, or the
+     menu's Make a level…) takes the framed board's level as it starts (its own if it has one, else the one it deals) into
+     the editor. Its tiles are the tools (Wall, Crate, Spot, Keeper, Floor) and the acts (Clear, Size, Check, Play); a tap
+     on a square of the board lays the tool there, the same again takes a wall, crate or spot off. Check runs the solver
+     (the fewest pushes) and says what it finds. Done (✓, Play, the menu, or shutting the row) needs a keeper, a crate or
+     more and as many spots, and a solution: the solver's fewest pushes are its par, and its pushes are what the board
+     plays when no one is on it, as every dealt level's are. A level too big for the solver to finish within MINE_CAP
+     positions is kept without a par (no stars). It is kept on the board (MINE, localStorage sokoban.levels, the latest
+     300, each read back through cleanMine) and played at once; Escape or Cancel leaves the board as it was. The menu's
+     Forget this board's level puts the dealt one back. */
+  const MINE = new Map(), MINE_L = new Map(), MINE_KEEP = 300, MINE_CAP = 150000;
+  const CH = { wall: '#', floor: ' ', spot: '.', crate: '$', both: '*', keeper: '@', keeperSpot: '+' };
+  function cleanMine(m){
+    if (!m || typeof m !== 'object') return null;
+    const n = +m.n, cells = String(m.cells || '');
+    if (![8, 10, 12].includes(n) || cells.length !== n * n || /[^# .$*@+]/.test(cells)) return null;
+    for (let i = 0; i < n * n; i++){ const r = (i / n) | 0, c = i % n; if ((!r || !c || r === n - 1 || c === n - 1) && cells[i] !== '#') return null; }
+    const keepers = (cells.match(/[@+]/g) || []).length, crates = (cells.match(/[$*]/g) || []).length, spots = (cells.match(/[.*+]/g) || []).length;
+    if (keepers !== 1 || !crates || crates !== spots) return null;
+    return { n, cells };
+  }
+  function levelFrom(m){
+    const n = m.n, wall = new Uint8Array(n * n), goal = new Uint8Array(n * n), boxes = [];
+    let player = n + 1;
+    for (let i = 0; i < n * n; i++){
+      const ch = m.cells[i];
+      if (ch === '#') wall[i] = 1;
+      if (ch === '.' || ch === '*' || ch === '+') goal[i] = 1;
+      if (ch === '$' || ch === '*') boxes.push(i);
+      if (ch === '@' || ch === '+') player = i;
+    }
+    return { n, wall, goal, boxes, player };
+  }
+  const cellsOf = L => Array.from({ length: L.n * L.n }, (_, i) => {
+    const w = L.wall[i], g = L.goal[i], b = L.boxes.includes(i), k = L.player === i;
+    return w ? '#' : k ? (g ? '+' : '@') : b ? (g ? '*' : '$') : g ? '.' : ' ';
+  }).join('');
+  // A kept level, made playable: its par and pushes from the solver (once, when first wanted).
+  function mineLevel(k){
+    if (!MINE.has(k)) return null;
+    let L = MINE_L.get(k);
+    if (L) return L;
+    L = levelFrom(MINE.get(k));
+    const info = {}, S = solve(L, MINE_CAP, info);
+    Object.assign(L, { sol: null, pushes: S ? S.path : [], par: S ? S.pushes : 0, mine: true });
+    MINE_L.set(k, L);
+    return L;
+  }
+  function saveMine(){
+    try { const o = {}; [...MINE.entries()].slice(-MINE_KEEP).forEach(([k, m]) => { o[k] = m; }); localStorage.setItem('sokoban.levels', JSON.stringify(o)); } catch {}
+  }
+  try { const o = JSON.parse(localStorage.getItem('sokoban.levels') || '{}'); for (const k in o){ const m = cleanMine(o[k]); if (m) MINE.set(k, m); } } catch {}
+
+  const ED = { on: false, key: null, c: 0, r: 0, L: null, tool: 'wall', busy: false, msg: '' };
+  const ED_TOOLS = [['wall', '🧱', 'Wall'], ['crate', '📦', 'Crate'], ['spot', '⭐', 'Spot'], ['keeper', '⚪', 'Keeper'], ['floor', '🧽', 'Floor']];
+  const ED_ACTS = ['clear', 'size', 'check', 'play'];
+  const edSay = (m, ms) => { ED.msg = m; try { engineNotice(m, ms || 2800); } catch {} };
+  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  // The board on the screen, as the field frames it (LIVE can be a board left earlier: tower defense's lesson, Oct 13).
+  function framedCell(){
+    try { const W = window.FIELD_WORLD, T = W && W.target; if (T && T.shown){ const f = W.cellAt(T.boardX, T.boardZ); if (f) return f; } } catch {}
+    return LIVE;
+  }
+  const copyLevel = L => ({ n: L.n, wall: L.wall.slice(), goal: L.goal.slice(), boxes: L.boxes.slice(), player: L.player });
+  function bareLevel(n, player){
+    const wall = new Uint8Array(n * n);
+    for (let i = 0; i < n * n; i++){ const r = (i / n) | 0, c = i % n; if (!r || !c || r === n - 1 || c === n - 1) wall[i] = 1; }
+    const p = player != null && !wall[player] && player < n * n ? player : n + 1;
+    return { n, wall, goal: new Uint8Array(n * n), boxes: [], player: p };
+  }
+  function edStart(c, r){
+    const k = gkey(c, r);
+    Object.assign(ED, { on: true, key: k, c, r });
+    LIVE = { key: k, c, r };
+    ED.L = copyLevel(boardLevel(c, r, true));
+    try { fieldItemsChanged(); } catch {}
+  }
+  function edOpen(){
+    const f = framedCell();
+    if (!f){ say('Pick a board first, then open the row to make its level', 2000); return false; }
+    edStart(f.c, f.r);
+    use(ED.L.n);
+    edSay('Making a level, ' + V + '×' + V + ': walls, crates, spots and the keeper. ✔ checks it, ✓ plays it.', 3600);
+    return true;
+  }
+  function edStop(){ ED.on = false; ED.L = null; try { fieldItemsChanged(); } catch {} }
+  // What the level lacks, if anything; else the solver's answer: { why } or { L, S, capped }.
+  function edCheck(tell){
+    const L = ED.L, crates = L.boxes.length, spots = L.goal.reduce((a, v) => a + v, 0);
+    let why = null;
+    if (!crates) why = 'A level needs a crate or more.';
+    else if (crates !== spots) why = crates + (crates === 1 ? ' crate' : ' crates') + ' and ' + spots + (spots === 1 ? ' spot' : ' spots') + ': they must be as many.';
+    if (why){ if (tell) edSay(why); return { why }; }
+    const info = {}, S = solve(L, MINE_CAP, info);
+    if (!S && !info.capped){ why = 'There is no way to push every crate onto a spot.'; if (tell) edSay(why); return { why }; }
+    if (tell) edSay(S ? 'It can be solved in ' + S.pushes + (S.pushes === 1 ? ' push' : ' pushes') + ' at best: that is its par.' : 'Too big for the solver to finish; it would be kept without a par.', 3200);
+    return { S, capped: !S };
+  }
+  function edDone(){
+    if (!ED.on) return true;
+    const R = edCheck(false);
+    if (R.why){ edSay(R.why + ' (Cancel leaves the board as it was.)', 3200); return false; }
+    const k = ED.key, m = cleanMine({ n: ED.L.n, cells: cellsOf(ED.L) });
+    if (!m){ edSay('This level cannot be kept.'); return false; }
+    MINE.delete(k); MINE.set(k, m); saveMine();
+    const L = levelFrom(m);
+    Object.assign(L, { sol: null, pushes: R.S ? R.S.path : [], par: R.S ? R.S.pushes : 0, mine: true });
+    MINE_L.set(k, L);
+    GAMES.set(k, deal(L)); LIVE = { key: k, c: ED.c, r: ED.r };
+    edStop(); edPane(false);
+    edSay('Your level' + (L.par ? ', par ' + L.par + (L.par === 1 ? ' push' : ' pushes') : ' (no par: too big to check)') + '. Push every crate onto a spot.', 3200);
+    return true;
+  }
+  function edCancel(){ if (!ED.on) return; edStop(); edPane(false); edSay('Left the board as it was.', 1800); }
+  // The tool in hand on level square i (inside the outer wall).
+  function edPlace(i){
+    const L = ED.L, t = ED.tool, b = L.boxes.indexOf(i);
+    if (!inside(i)) return false;
+    const unCrate = () => { if (b >= 0) L.boxes.splice(b, 1); };
+    if (t === 'keeper'){ L.wall[i] = 0; unCrate(); L.player = i; return true; }
+    if (i === L.player && (t === 'wall' || t === 'crate')){ edSay('The keeper stands there: move him first.'); return false; }
+    if (t === 'wall'){ if (L.wall[i]){ L.wall[i] = 0; return true; } L.wall[i] = 1; L.goal[i] = 0; unCrate(); return true; }
+    if (t === 'crate'){ if (b >= 0){ unCrate(); return true; } L.wall[i] = 0; L.boxes.push(i); return true; }
+    if (t === 'spot'){ if (L.goal[i] && !L.wall[i]){ L.goal[i] = 0; return true; } L.wall[i] = 0; L.goal[i] = 1; return true; }
+    if (t === 'floor'){ L.wall[i] = 0; L.goal[i] = 0; unCrate(); return true; }
+    return false;
+  }
+  function edTiles(){
+    const sel = '#6b5a1e', L = ED.L; use(L.n);
+    const out = ED_TOOLS.map(([k, gl, name]) => ({ glyph: gl, value: name, bg: ED.tool === k ? sel : null }));
+    out.push({ glyph: '⌫', value: 'Clear' }, { glyph: '▦', value: 'Size ' + V + '×' + V }, { glyph: '✔', value: 'Check' }, { glyph: '▶', value: 'Play' });
+    return out;
+  }
+  function edTile(i){
+    if (!ED.on) return false;
+    if (i < ED_TOOLS.length){
+      const [k, , name] = ED_TOOLS[i]; ED.tool = k;
+      edSay(k === 'keeper' ? 'Tap a square for the keeper.' : k === 'floor' ? 'Tap squares to make them bare floor.' : 'Tap squares to put ' + name.toLowerCase() + 's there (again to take one off).');
+    } else {
+      const a = ED_ACTS[i - ED_TOOLS.length], L = ED.L;
+      if (a === 'clear'){ ED.L = bareLevel(L.n, L.player); edSay('A bare floor, the keeper kept.'); }
+      else if (a === 'size'){ const n = L.n === 8 ? 10 : L.n === 10 ? 12 : 8; ED.L = bareLevel(n); use(n); edSay('A bare ' + V + '×' + V + ' floor.'); }
+      else if (a === 'check') edCheck(true);
+      else if (a === 'play') edDone();
+    }
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
+  // A tap on the board being made lays the tool there; on another board, the editor moves there (as golf's does).
+  function edTap(c, r, u, v){
+    if (gkey(c, r) !== ED.key){ edStart(c, r); edSay('Making a level for this board.', 1500); return true; }
+    if (u == null) return true;
+    use(ED.L.n);
+    edPlace(cellOf(u, v));
+    try { fieldItemsChanged(); } catch {}
+    return true;
+  }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on){ e.preventDefault(); e.stopPropagation(); edCancel(); } }, true);
 
   const box = (w, h) => T => { const g = new T.BoxGeometry(w, h, w); g.translate(0, h / 2, 0); return g; };
   const app = {
@@ -43048,9 +43213,36 @@ const SOKOBAN_APP = (() => {
       { label: DL.item.label, title: DL.item.title,
         on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(boardLevel(LIVE.c, LIVE.r, true))); try { fieldItemsChanged(); } catch {} } },
       SND.item,
+      { label: () => ED.on ? 'Done: play this level' : 'Make a level for this board…', title: 'The bottom row becomes a level editor: walls, crates, spots and the keeper. The solver checks it can be done and sets par; Done plays it.',
+        on(){ if (ED.on) edDone(); else edOpen(); } },
+      { label: 'Cancel the level', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
+      { label: "Forget this board's level", title: 'Back to the level the board deals itself.',
+        get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
+        on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_L.delete(k); saveMine(); GAMES.delete(k); say('The board deals its own level again', 1800); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want him to walk; hold the tip and he keeps going. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
+    /* THE ROW IS THE LEVEL EDITOR (Oct 13, ED above): opening it makes a level for the framed board, shutting it plays it. */
+    onBrowserToggle(open){
+      if (ED.busy) return true;
+      if (open && !ED.on) return edOpen();
+      if (!open && ED.on) return edDone();
+      return true;
+    },
+    statTiles(){ return ED.on ? edTiles() : null; },
+    statsStay(){ return ED.on; },
+    onStatTap(c, r, i){ return edTile(i); },
+    quickActs(){ return ED.on ? [{ key: 'floor', glyph: '🧽', title: 'Erase: back to floor', dim: ED.tool === 'floor' }, { key: 'check', glyph: '✔', title: 'Check: can it be solved, and in how many pushes?' },
+                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this level' }] : null; },
+    onQuickAct(c, r, key){
+      if (!ED.on) return false;
+      if (key === 'floor'){ ED.tool = 'floor'; edSay('Tap squares to make them bare floor.'); }
+      else if (key === 'check') edCheck(true);
+      else if (key === 'cancel') edCancel();
+      else if (key === 'done') edDone();
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
     cellFar: { light: FLOOR, dark: FLOOR },
     faceMinPx: 1,
     itemMinPx: FAR_PX,
@@ -43066,7 +43258,7 @@ const SOKOBAN_APP = (() => {
       spot: () => TVF.shape('star', TVF.R.star, 0.05, 2, 12),    // a flat TVF star to push the crate onto
     },
     cellGrid(c, r, px){
-      if (LIVE && LIVE.key === gkey(c, r)) gameAt(c, r);
+      if (LIVE && LIVE.key === gkey(c, r) && !(ED.on && ED.key === LIVE.key)) gameAt(c, r);
       const s = shownState(c, r);
       if (!s) return checker(8);                  // (not dealt yet)
       const L = levelOfState(s);
@@ -43084,6 +43276,7 @@ const SOKOBAN_APP = (() => {
       paint(ctx, rect.x, rect.y, rect.w / V, cols);
     },
     cellItems(c, r){
+      if (ED.on && ED.key === gkey(c, r)) return itemsOf(ED.L, ED.L.player, ED.L.boxes);   // (the level being made)
       const g = GAMES.get(gkey(c, r));
       if (g) return itemsOfGame(g);
       if (LIVE && LIVE.key === gkey(c, r)) return itemsOfGame(gameAt(c, r));
@@ -43091,7 +43284,8 @@ const SOKOBAN_APP = (() => {
     },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r)), L = g ? g.L : boardLevel(c, r, true);
-      const what = L.classic ? 'worked-out level ' + (L.num + 1) + ' of ' + MAP.length : 'level ' + L.level;
+      if (ED.on && ED.key === gkey(c, r)) return 'Sokoban — making a level for board ' + c + '·' + r;
+      const what = L.mine ? 'your level' : L.classic ? 'worked-out level ' + (L.num + 1) + ' of ' + MAP.length : 'level ' + L.level;
       if (!g) return 'Sokoban — board ' + c + '·' + r + ', ' + what + ', par ' + L.par + ' pushes';
       use(L.n);
       return 'Sokoban ' + V + '×' + V + ' — ' + what + ' · par ' + L.par + ' pushes · ' + (g.solved ? 'solved · ' : '')
@@ -43103,6 +43297,7 @@ const SOKOBAN_APP = (() => {
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     // Tap: walk to the square, or push the crate beside him.
     onCellTap(c, r, u, v){
+      if (ED.on) return edTap(c, r, u, v);
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
       // solved: on to the next board, as mini golf goes on to the next hole (Oct 12)
@@ -43117,13 +43312,15 @@ const SOKOBAN_APP = (() => {
     },
     // Hold (or right-click): take back a step.
     onCellHold(c, r){
+      if (ED.on) return true;
       const g = GAMES.get(gkey(c, r));
       return !!(g && undo(g));
     },
     // A drag anywhere on the board steers him, a step per square of drag (Sep 28: as in the other games).
     claimsPan(u, v){
-      const g = liveGame();
       DRAG = null;
+      if (ED.on) return false;
+      const g = liveGame();
       if (!g || g.solved || u == null) return false;
       use(lvl(g).n);
       DRAG = { u, v };
@@ -43152,7 +43349,7 @@ const SOKOBAN_APP = (() => {
       const cols = colorsOf(levelOfState(s), s.player, s.boxes).colors;
       paint(ctx, 0, 0, sz / V, cols);
     },
-    _debug: { MAP, deal, step, undo, path, framesOf, boardLevel, boardIdx, ringOf, levelAt, makeLevel, dealBack, solve, starsFor, LV_DIALS, BOARDS, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
+    _debug: { fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edCheck, edPlace, edTile, edTiles, mine: MINE, mineLevel, gameAt, MAP, deal, step, undo, path, framesOf, boardLevel, boardIdx, ringOf, levelAt, makeLevel, dealBack, solve, starsFor, LV_DIALS, BOARDS, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
   };
   return app;
 })();
