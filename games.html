@@ -17670,7 +17670,7 @@ const CHESS_APP = {
     return true;
   },
   worldTap(hit){ return chessEdTap(hit); },
-  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z) },
+  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r) },
   /* For the move traces and capture bursts drawn on chess boards (Sep 24:
      "add these changes to chess as well"). Lazy, because BOOM is defined
      further down the file than chess is. */
