@@ -239,7 +239,13 @@ try {
         const u = [B0[0] - A0[0], B0[1] - A0[1], B0[2] - A0[2]], v = [C0[0] - A0[0], C0[1] - A0[1], C0[2] - A0[2]], n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
         const m = [(A0[0] + B0[0] + C0[0]) / 3, (A0[1] + B0[1] + C0[1]) / 3, (A0[2] + B0[2] + C0[2]) / 3]; all++; if (n[0] * m[0] + n[1] * m[1] + n[2] * m[2] > 0) out++; }
       G.dispose();
-      return { floor: window.LAB.pitchMin, same, differ, out: out / all }; });
+      /* (Oct 13: "why do object change color and shape. they should be invariant, locked by the id of the board.") A board's
+         item has its body's colour by v/h and by metres alike (different levels, different grains), and two boards' far bodies,
+         the coarsest grain, are each their own lumps, not one plain ball */
+      const W = window.FIELD_WORLD, Tg = W.target, f = W.cellAt(Tg.boardX, Tg.boardZ), col = m => { D.setMode(m); const at = W.itemAt; at.x = Tg.boardX; at.z = Tg.boardZ; const L = A.cellItems(f.c, f.r, 500); return L && L[0] ? L[0].color : 'far'; };
+      const cv = col('vh'), cm = col('metres'); D.setMode('vh');
+      const F1 = D.farGeoOf(i1).P, F2 = D.farGeoOf(i2).P, farOwn = F1.length === F2.length && F1.some((x, j) => Math.abs(x - F2[j]) > 1e-3);
+      return { floor: window.LAB.pitchMin, same, differ, out: out / all, colour: cv === D.bodyOf(D.boardIdx(f.c, f.r)).color && cm === cv, farOwn }; });
     // (None at the opening view: at the climbed one it is 3.4 million triangles, and the software renderer took more than 3 s
     //  a frame, which held up the checks after it)
     const tiles = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ);
@@ -259,7 +265,7 @@ try {
     if (L0.pitch > 36 || L0.levels < 3 || !L0.rings || JSON.stringify(lv) !== '[0,0,1,2,3,3]'
         || L1.boards < 3 * L0.boards || L1.tris > 4 * L0.tris || tiles.none < 15 * L0.tris || tiles.noneLv !== 1 || tiles.mode !== 'vh' || !tiles.flipped
         || !['None', 'By metres', 'By v/h', 'Wireframe'].every(n => tiles.names.includes(n)) || Math.abs(pitch1 - pitch0) > 1e-6
-        || own.floor !== 2 || floor1 !== 35 || !own.same || !own.differ || own.out < 0.95
+        || own.floor !== 2 || floor1 !== 35 || !own.same || !own.differ || own.out < 0.95 || !own.colour || !own.farOwn
         || hd.small.hs !== -2 || hd.large.hs !== 2 || hd.back !== 0 || !(hd.small.near < hd.mid.near || hd.mid.near === 0) || !(hd.large.near > hd.mid.near)
         || !(hd.small.far > hd.large.far) || [hd.small, hd.mid, hd.large].some(x => x.total !== 512))
       failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, tiles, pitch0, pitch1, own, floor1, hd })}`);
