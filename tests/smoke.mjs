@@ -1411,7 +1411,9 @@ try {
       const g0 = [...D.games.values()].find(g => g.state === 'play');
       out.touched = !!(g0 && g0.strokes === 1 && g0.rec && g0.rec.t0 != null);
       const fresh = () => { for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r); return D.games.values().next().value; };
-      const roll = g => { let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; } };
+      // (each step the board drawn too, as the race below does: drawing the board in play steps it by nothing, which still runs a
+      //  collision pass, so a race drawn and a play not drawn parted on holes with bumpers, 7 cells on CI, Oct 13)
+      const roll = g => { let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; g.last = 0; D.cellItems(f.c, f.r, 2000); } };
       // played to the cup with straight putts, the moment kept so it can be played again
       let g = fresh(); const H = D.HOLES[g.hole], t = g.t, pulls = [];
       for (let s = 0; s < 10 && g.state === 'play'; s++){
