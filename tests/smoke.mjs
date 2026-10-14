@@ -925,7 +925,7 @@ try {
     const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '').replace(/^land[ML]$/, 'land').replace(/~$/, '')))].sort().join(',');   // (the ground's grains are one ground, and a piece's plain twin the piece: Oct 14)
     return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, mid: mid.length, small: small.length, smallKinds: kinds(small), midKinds: kinds(mid), bigKinds: kinds(big),
              framedSmall: D.cellItems(f.c, f.r, 100).length }; });
-  if (lod.floor !== 62 || lod.appFloor !== 62) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 62 for mini golf: Oct 12, "clamp the tilt so that the horizon is reduced")`);
+  if (lod.floor !== 45 || lod.appFloor !== 45) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 45 for mini golf: 62 from Oct 12, "clamp the tilt so that the horizon is reduced", lowered on Oct 14 once its pieces fade)`);
   if (lod.mid !== lod.big || lod.midKinds !== lod.bigKinds || lod.small !== lod.big || lod.smallKinds !== lod.bigKinds || !(lod.framedSmall > 20))
     failures.push(`[${current}] full drawing at every size: ${JSON.stringify(lod)}`);
   // guards round every cup and kinds of bumper (Oct 9: "there should different types of bumpers. each board should have
