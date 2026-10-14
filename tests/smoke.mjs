@@ -1458,10 +1458,10 @@ try {
   current = 'mini golf zoom ceiling';
   {
     const view0 = await page.evaluate(() => { const W = window.FIELD_WORLD; return { camX: W.st.camX, camZ: W.st.camZ, yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom }; });
-    for (let i = 0; i < 12; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, 600); await page.waitForTimeout(150); }
+    for (let i = 0; i < 12; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, -600); await page.waitForTimeout(150); }
     await page.waitForTimeout(1500);
     const hi = await page.evaluate(() => { const W = window.FIELD_WORLD; return { up: W.camera.position.y / W.spacing()[0], zoom: W.st.zoom, cap: window.getFieldApp().zoomMaxH }; });
-    await page.mouse.wheel(0, -300); await page.waitForTimeout(1200);
+    await page.mouse.wheel(0, 300); await page.waitForTimeout(1200);
     const lo = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
     await page.evaluate(v => { const W = window.FIELD_WORLD; W.target.zoom = null; Object.assign(W.st, v); }, view0);
     await page.waitForTimeout(800);
