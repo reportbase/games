@@ -135,8 +135,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   and boulders), so they came next:
   **The pieces' grains** (Oct 14: "yes", on the pieces): a clad wall, rail, stone or brick fence or planter-wall piece fades
   to its plain core box in its material's far colour (`cladGeo` pulls every point into the core's box: `pos2`; `cladPlain` is
-  the box, 10 triangles), a bumper or a boulder from its K = 12 build (3,072 triangles) to its K = 4 one (768; `propMorph`,
-  on each part's grid of rings, `fieldGrid`, `PROP_GRAIN`), each exactly. `pieceGrain`: full on a board `PIECE_FULL` (480 px)
+  the box, 10 triangles), a bumper or a boulder from its K = 12 build (3,072 triangles) to its K = 4 one (768; `fieldMorph`, the field's own,
+  on each part's grid of rings, `fieldGridOf`, `PROP_GRAIN`), each exactly. `pieceGrain`: full on a board `PIECE_FULL` (480 px)
   or more across, fading on a log scale to `PIECE_PLAIN` (240), and under that the plain twin itself (the kind with `~`
   after it; `TWINNED`). The wooden picket fence stays as it is. Same zoomed-out view: 2.59 million triangles (4.18 before
   any of this); framed, 540,000 as before. At 640/320 it was 2.11 million, but boards about 250 px across lost the bricks'
@@ -259,6 +259,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
     row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
   - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.
+- **Chess's pieces fade between rungs** (Oct 14: "ok", after mini golf's ground and pieces): a piece is drawn at rung K (1, 2,
+  4 … 64 harmonics, `RUNG_LADDER`) by its board's size, and each rung but the coarsest now carries rung K/2's surface at its own
+  points (`fieldMorph`, shared with golf's bumpers: each part's grid of rings and segments, `fieldGridOf`, on the coarser grid's
+  own triangles; `pos2`, `col2`, `nrm2`), blended by a weight per piece in `pawnMat`'s vertex shader (`morphMaterial`, an
+  `instMorph` per instance, set by `setInstance`'s last argument). `rungFor` keeps the rungs where they were (floor of
+  x = log2(bp / `RUNG_BP0`) + 1, so the triangles too) and sets `_rungW` = 1 − 2·(x − L): full over the upper half of a rung's
+  range, at the bottom the rung below exactly, so a board flown toward never pops; the band against dithering is no longer
+  needed there. Rounding to the nearest rung instead put the far boards a rung finer: 11 million triangles became 35 in a
+  zoomed-out field of pieces. `window.fieldLOD` holds the builder and the rung choice for the tests.
 - **Tower defense: the row is a map editor** (Oct 13: "tower defense", on "what other games could benifit from this kind of
   thing", after chess's position editor): `ED`, `ed…` and `MAPS` inside `TD_APP`, with chess's hooks (`onBrowserToggle`,
   `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`); taps reach `edTap` from `onCellTap`.
