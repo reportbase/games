@@ -45437,7 +45437,10 @@ function _panCheck(now){
   if (PANHOLD.sig && sig !== PANHOLD.sig) PANHOLD.last = now;
   const hand = !!(turn.active && !turn.appPan && (turn.panned || turn.tilted || turn.turned || turn.multi));
   if (hand) PANHOLD.last = now;
-  const moving = now - PANHOLD.last < PANHOLD.linger && !(a && (a.onWorld || a.panMoves));   // (mini golf's movers run on: Oct 12)
+  // (Oct 14: "turn animation back on for chess when the chess board is in motion.", then "turn it back on for all games
+  //  except mini-golf.", whose movers already ran on, Oct 12): no game is held now unless it asks with panHolds; the
+  //  machinery stays for one that does, and panMoves still opts out of that)
+  const moving = now - PANHOLD.last < PANHOLD.linger && !!(a && a.panHolds && !a.onWorld && !a.panMoves);
   PANHOLD.sig = sig;
   if (moving !== PANHOLD.on){ PANHOLD.on = moving; if (moving){ PANHOLD.since = now; PANHOLD.n++; } holdAnimForPan(moving); }
 }
