@@ -290,6 +290,22 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (H near/far grains ${hd.small.near}/${hd.small.far}, ${hd.mid.near}/${hd.mid.far}, ${hd.large.near}/${hd.large.far}; by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; at 6°: ${far.bodies} bodies; None at the opening view: ${tiles.none})`);
   }
 
+  // CHESS PLAYS ON WHILE THE VIEW MOVES (Oct 14: "turn animation back on for chess when the chess board is in motion.",
+  // then "for all games except mini-golf"): a real drag pans the view, the pan hold stays off and the animation clock
+  // chess reads goes on
+  current = 'chess plays on while the view moves';
+  {
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'field chess')); await new Promise(r => setTimeout(r, 2000)); });
+    const at = () => page.evaluate(() => { const W = window.FIELD_WORLD; return { on: window.fieldPanHold.on, at: +window.fieldAnimTime().toFixed(1), cam: [W.st.camX, W.st.camZ, W.st.yaw, W.st.pitch, W.st.zoom].map(v => (+v).toFixed(4)).join(',') }; });
+    const a0 = await at(), during = [];
+    await page.mouse.move(200, 650); await page.mouse.down();
+    for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await at()); }
+    await page.mouse.up(); await page.waitForTimeout(1500);
+    const a1 = during[during.length - 1], ok = !during.some(d => d.on) && a1.at > a0.at && during.some(d => d.cam !== a0.cam);
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ a0, during })}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the clock ran ${(a1.at - a0.at).toFixed(0)} ms over the drag)`);
+  }
+
   // CHESS: THE ROW IS A POSITION EDITOR (Oct 13: "lets use it in chess to create custom chess games instead of selecting a
   // board. similar to mini-golf"): the dots, clicked, open the editor on the framed board with its tiles; taps put pieces on
   // squares (a pawn on the last rank refused); without a king Done says why and stays; with kings Done puts the position on
@@ -1388,7 +1404,7 @@ try {
     const before = failures.length;
     await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r);
-      A.panMoves = false;   // (mini golf's own movers run on while the view moves, Oct 12; the hold is checked here without that)
+      A.panMoves = false; A.panHolds = true;   // (no game is held now, Oct 14; the hold is checked here on mini golf asking for it)
       const orig = A.cellItems; window.__ph = { f, n: 0, orig }; A.cellItems = function(c, r, bp){ if (c === f.c && r === f.r) window.__ph.n++; return orig.call(this, c, r, bp); }; });
     await page.waitForTimeout(800);
     const sample = () => page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.games.values()].find(g => g.state === 'play'), W = window.FIELD_WORLD;
@@ -1405,7 +1421,7 @@ try {
     await page.waitForTimeout(2000);
     const after = await sample();
     // and mini golf as it is (Oct 12: "don't stop it during panning."): a drag holds nothing, and the round's clock goes on
-    await page.evaluate(() => { window.getFieldApp().panMoves = true; });
+    await page.evaluate(() => { const A = window.getFieldApp(); A.panMoves = true; delete A.panHolds; });
     const g0 = await sample(), during2 = [];
     await page.mouse.move(200, 650); await page.mouse.down();
     for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during2.push(await sample()); }

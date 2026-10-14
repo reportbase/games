@@ -758,6 +758,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - When the camera stops, every board is asked again.
   - Left out: an app with `onWorld` (air raid's bomber steers the camera as its game), and one with `panMoves`: mini golf
     (Oct 12: "first turn motion back on in mini-golf., don't stop it during panning."), whose movers and ball run on.
+  - **Off for every game now** (Oct 14: "turn animation back on for chess when the chess board is in motion.", then "turn it
+    back on for all games except mini-golf.", whose movers already ran on): the hold applies only to an app that sets
+    `panHolds` (none does), so every game's boards play on while the view moves. What follows is how it works when asked.
   - Without the linger, a slow drag's frames did not all move the camera, and the boards came alive between them.
   - A hand that is panning holds it too, whatever the camera did that frame (`turn`: a drag past its deadzone, a hold
     pulling to tilt or turn, two fingers; not the app's own drags, such as mini golf's aim). On CI's slow frames a
