@@ -373,6 +373,9 @@ try {
         const W2 = window.FIELD_WORLD, k = D.cellKey(W2.target.boardX, W2.target.boardZ), m = D.gameMeta(k);
         fenT.many = { put: D.userGames().size - n0, lab: box.firstChild.textContent, left: box.querySelector('textarea').value, first: m && m.fen, looks: D.looksLikeFens(L), notPgn: !D.looksLikeFens('[Event "x"]\n\n1. e4 e5') };
         box.hidden = true; }
+      // (back to the board this check began on: the selected board is every game's, and these FEN steps move it on purpose, so
+      //  the mini golf checks long after played another board's hole, one its straight putts could not sink: CI, Oct 14)
+      D.fly(3, 2); await window.__settle(3, 2);
       return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, youW, fen: fenAtDone, now: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2, fenT };
     });
     const F = ce.fenT || {};
