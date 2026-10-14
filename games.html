@@ -44467,7 +44467,7 @@ const LEVELS_APP = (() => {
     say(hs === 0 ? 'H = v: the corner where a board is as far along the ground as the eye is high' : 'H = v ' + (hs > 0 ? '× ' + 2 ** hs + ': the corner further out, more of the field in proportion' : '÷ ' + 2 ** -hs + ': the corner nearer, the near field finer'));
     try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {}
   }
-  function setWire(on){ wire = !!on; try { localStorage.setItem('levels.wire', wire ? 'on' : 'off'); } catch {} try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {} }
+  function setWire(on){ wire = !!on; if (BODIES){ const any = lastList.length > 0; BODIES.visible = any && !wire; BODYLINES.visible = any && wire; } try { localStorage.setItem('levels.wire', wire ? 'on' : 'off'); } catch {} try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {} }
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
   return {
     name: 'levels',

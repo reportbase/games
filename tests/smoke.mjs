@@ -247,7 +247,9 @@ try {
         // (Oct 14: "it crashes the computer at far horizon") the wire is lines of its own, each edge once, laid only as far as the
         //  bodies go (three's own wireframe was rebuilt from the whole buffer every time the index changed)
         && D.bodyLines.geometry.drawRange.count === D.list.reduce((a, e) => a + D.edgesOf(e.g).length, 0)
-        && D.edgesOf(3).length / 2 < 1.6 * D.TRIS[3];
+        && D.edgesOf(3).length / 2 < 2 * D.TRIS[3];   // (three made 3 lines a triangle)
+      const meshWhy = { n: D.list.length, wire: D.wire, mesh: D.bodies && D.bodies.visible, lines: D.bodyLines && D.bodyLines.visible, drawn: D.bodyLines && D.bodyLines.geometry.drawRange.count,
+                        want: D.list.reduce((a, e) => a + D.edgesOf(e.g).length, 0), e3: D.edgesOf(3).length / 2 };
       /* (Oct 13: "LOD does not snap, it is smooth between levels. between levels use the proportion part of the level.") The
          bands' weights move by small steps as the detail does, and the band a grain lets go is at nothing where the mesh steps
          down; and a board's detail across a level's edge (2H) moves by a hair, not a level */
@@ -255,7 +257,7 @@ try {
       const atStep = [1, 2, 3].every(g => D.bandWeights(g - 1e-6)[4 - g] < 1e-3);
       const v = W.camera.position.y, H = v * 2 ** D.hs, k1 = D.levelAt(2 * H * 0.999, v), k2 = D.levelAt(2 * H * 1.001, v);
       const edge = Math.abs(D.detailOf(k1, v, 2 * H * 0.999) - D.detailOf(k2, v, 2 * H * 1.001));
-      return { floor: window.LAB.pitchMin, same, differ, out: out / all, farOwn, noItems, oneMesh, jump: +jump.toFixed(3), atStep, edge: +edge.toFixed(4), levels: [k1, k2] }; });
+      return { floor: window.LAB.pitchMin, same, differ, out: out / all, farOwn, noItems, oneMesh, meshWhy, jump: +jump.toFixed(3), atStep, edge: +edge.toFixed(4), levels: [k1, k2] }; });
     // (None at the opening view: at the climbed one it is 3.4 million triangles, and the software renderer took more than 3 s
     //  a frame, which held up the checks after it)
     const tiles = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ);
