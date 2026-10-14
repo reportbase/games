@@ -36246,6 +36246,18 @@ const GOLF_APP = (() => {
     for (let q = 0; q < 12; q++) m = Math.min(m, rawH(H, x + 0.05 * Math.cos(q * Math.PI / 6), y + 0.05 * Math.sin(q * Math.PI / 6)));
     return (H.hc = m);
   }
+  /* THE HEIGHTS A BOARD'S PIECES STAND ON, KEPT (Oct 14, lowering mini golf's tilt floor: "ok, proceed"). A board's pieces
+     were three quarters ground heights, the rails' 84 pieces, the walls, the planks, the cup, each asked of rawH every frame
+     on every board, and the same answers every frame: a compiled hole does not change (it keeps its cup's and its water's
+     levels on itself the same way, H.hc, H.wl). So the drawing asks hOfDrawn, which keeps them on the hole (H._hd, at most
+     HD_MAX, then started again: a mover's places are new every frame); the physics asks hOf, as it always did. */
+  const HD_MAX = 6000;
+  function hOfDrawn(H, x, y){
+    let M = H._hd; if (!M || M.size > HD_MAX) M = H._hd = new Map();
+    const k = Math.round(x * 1e5) * 2e5 + Math.round(y * 1e5), v = M.get(k);
+    if (v !== undefined) return v;
+    const h = hOf(H, x, y); M.set(k, h); return h;
+  }
   function hOf(H, x, y){
     const h = rawH(H, x, y), d = Math.hypot(x - H.cup.x, y - H.cup.y), R1 = 0.05, R2 = 0.11;
     if (d >= R2) return Math.max(0.004, h);
@@ -37579,6 +37591,7 @@ const GOLF_APP = (() => {
     });
   }
   function cellItems(c, r, bp){
+    const hOf = hOfDrawn;                              // (the pieces' heights, kept on the hole: Oct 14)
     /* HOW MUCH TO DRAW, by the board's size on screen in pixels (Oct 9, "is getting heavy"). Measured on a field of the
        new holes: some 2.7 million triangles a frame, from rails of bricks and stones (576 triangles a half-cell piece,
        84 pieces a board), bumpers modelled at 9,400 triangles and ground at 13,000, on every board in view, the smallest
@@ -40230,7 +40243,11 @@ const GOLF_APP = (() => {
     /* HIGHER STILL (Oct 12: "clamp the tilt so that the horizon is reduced, so that less boards can be shown."): 62°. With
        the camera's 60° field of view the top of the screen then looks 32° below the horizon, not 20°, so the field runs
        out about half as far (1.6 times the camera's height ahead, not 2.7). */
-    pitchMin: 62,
+    /* LOWER AGAIN (Oct 14: "ok, proceed", on lowering it once the ground and the pieces fade, as Levels' bodies do): 45°.
+       Zoomed out, 62° drew 4.18 million triangles before they faded and 2.59 million after; at 45° it is 3.35 million, and
+       making the pieces 18 ms a frame against 20 at 62° before (the heights they stand on now kept, hOfDrawn), both measured
+       here. At 40° it would be 3.89 million for 417 boards a frame, so 45° it is. */
+    pitchMin: 45,
     /* ITS MOVERS RUN WHILE THE VIEW MOVES (Oct 12: "first turn motion back on in mini-golf., don't stop it during panning."):
        the pan hold (PANHOLD) leaves an app with panMoves alone, as it does one with onWorld. */
     panMoves: true,

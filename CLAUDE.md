@@ -107,7 +107,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   of the ground and sinking). A path's loop and a turnstile's or door's sweep are dotted only with Wireframe on, or on the hole
   being edited (Oct 10: "if wireframe is off, don't show the orbit path"). The grass is one colour,
   shaded by height. A new hole must pass `tests/golf-course.mjs`.
-  **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 62` (50 until Oct 12: "clamp the tilt so that the
+  **Lighter on a field of thousands** (Oct 9): mini golf's tilt floor is `pitchMin: 45` (Oct 14, once the ground and the pieces fade: see below; 62 from Oct 12, 50 before that: "clamp the tilt so that the
   horizon is reduced, so that less boards can be shown"; the top of the screen looks 32° below the horizon, not 20°), a board
   under 20 px gets no pieces (`itemMinPx`). Items may be stretched (`sx`/`sy`/`sz`).
   **Half the triangles** (Oct 12: "mini-golf game is great but its heavy, and its not as fast as all the other games." …
@@ -141,6 +141,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   after it; `TWINNED`). The wooden picket fence stays as it is. Same zoomed-out view: 2.59 million triangles (4.18 before
   any of this); framed, 540,000 as before. At 640/320 it was 2.11 million, but boards about 250 px across lost the bricks'
   texture visibly in screenshots; at 480/240 only the farther ones do.
+  **The floor lowered to 45°** (Oct 14: "ok, proceed"): a board's pieces were three quarters ground heights, the same
+  answers every frame, so the drawing asks `hOfDrawn`, which keeps them on the hole (`H._hd`, up to `HD_MAX`; a compiled hole
+  never changes, and an edit makes a new one); the physics still asks `hOf`. 0.37 ms a board became 0.10. Zoomed out, by floor:
+  62° 2.59 million triangles, 8 ms a frame making pieces; 55° 2.38 million, 10 ms; 50° 2.90 million, 18 ms; 45° 3.35 million,
+  18 ms (62° before the fading: 4.18 million, 20 ms); 40° would be 3.89 million for 417 boards a frame.
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
   - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
     its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each
