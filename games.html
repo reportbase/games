@@ -37246,6 +37246,15 @@ const GOLF_APP = (() => {
   /* A board's grain and its weight toward the next, from its width on the screen (bp): a grain is full while each of its
      columns is GROUND_PX pixels or more across, and fades into the next coarser one as the board shrinks, on a log scale, so
      the 39-row grain is reached at weight 1 just as the 78's columns fall to GROUND_PX / 2. */
+  /* THE PIECES' GRAINS (Oct 14: "yes", on the pieces after the ground, which were most of a zoomed-out view: the clad rail
+     and wall pieces 1.7 million triangles, the bumpers and boulders most of a million more). A clad piece fades to its plain
+     core box in its material's far colour and a bumper or a boulder to its coarser build, each exactly (cladGeo, propMorph),
+     as the board narrows from PIECE_FULL to PIECE_PLAIN px across; under that it is drawn as the plain twin itself (the
+     kind with ~ after it: 10 triangles for a rail piece, 768 for a bumper), so nothing on the screen jumps at the step. A
+     wooden fence is pickets and stays as it is. A brick is a 64th of the board long, 5 px on a board 320 px across. */
+  const PIECE_FULL = 480, PIECE_PLAIN = 240;
+  const TWINNED = new Set(['propBumper', 'propRock', ...FENCE_MATS.flatMap(m => ['wall_' + m, 'railV_' + m, 'railH_' + m, 'planterWall_' + m, ...(m === 'wood' ? [] : ['fence_' + m])])]);
+  const pieceGrain = bp => { bp = bp || 1e9; return bp >= PIECE_FULL ? { plain: false, w: 0 } : bp > PIECE_PLAIN ? { plain: false, w: Math.log(PIECE_FULL / bp) / Math.log(PIECE_FULL / PIECE_PLAIN) } : { plain: true, w: 1 }; };
   const GROUND_PX = 10;
   function groundGrain(bp){
     const cols = GROUND_ROWS.map(r => Math.round(r * WD)), q = (bp || 1e9) / GROUND_PX;
@@ -37382,6 +37391,29 @@ const GOLF_APP = (() => {
     g.setAttribute('normal', new T3.Float32BufferAttribute(nrm, 3));
     g.setAttribute('color', new T3.Float32BufferAttribute(col, 3));
     g.userData.vertexColors = true;
+    /* WHAT IT FADES TO (Oct 14, the pieces after the ground): every point pulled into the core's box and every colour to the
+       material's far colour, so at a weight of 1 the units lie flat on the core in one colour, a plain box exactly as
+       cladPlain draws it, and a board can step down to that with nothing changing on the screen. */
+    const far = new T3.Color(M.far), n = pos.length / 3, P2 = new Float32Array(n * 3), C2 = new Float32Array(n * 3);
+    const lo = [-W / 2, y0, -D / 2], hi = [W / 2, top, D / 2];
+    for (let i = 0; i < n * 3; i++) P2[i] = Math.max(lo[i % 3], Math.min(hi[i % 3], pos[i]));
+    for (let i = 0; i < n; i++){ C2[i * 3] = far.r; C2[i * 3 + 1] = far.g; C2[i * 3 + 2] = far.b; }
+    g.setAttribute('pos2', new T3.BufferAttribute(P2, 3)); g.setAttribute('col2', new T3.BufferAttribute(C2, 3));
+    g.setAttribute('nrm2', new T3.BufferAttribute(Float32Array.from(nrm), 3));
+    g.userData.morph = true;
+    return g;
+  }
+  // …and the plain box a clad piece fades to: its core, in the far colour, no underside (as cladGeo leaves it out)
+  function cladPlain(T3, mat, W, Hh, D, y0){
+    const far = new T3.Color((MAT_COL[mat] || MAT_COL.wood).far), b = new T3.BoxGeometry(W, Hh, D).toNonIndexed();
+    b.translate(0, y0 + Hh / 2, 0);
+    const P = b.attributes.position.array, N = b.attributes.normal.array, pos = [], nrm = [], col = [];
+    for (let f = 0; f < 6; f++){ if (f === 3) continue; for (let i = f * 18; i < f * 18 + 18; i++){ pos.push(P[i]); nrm.push(N[i]); } for (let v = 0; v < 6; v++) col.push(far.r, far.g, far.b); }
+    const g = new T3.BufferGeometry();
+    g.setAttribute('position', new T3.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T3.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('color', new T3.Float32BufferAttribute(col, 3));
+    g.userData.vertexColors = true;
     return g;
   }
   // a wooden fence: two posts, two rails, a row of pickets (a piece one cell long, along x)
@@ -37408,28 +37440,62 @@ const GOLF_APP = (() => {
   const matOf = H => FENCE_MATS.includes(H && H.fence) ? H.fence : 'wood';
   const PROP_K = { bumper: 1, rock: 1.05, pipe: 1.3 };
   const _props = {};
-  function propGeo(name){
-    const C = propC(name);
-    if (!C || !C.parts) return null;
-    if (_props[name] && _props[name].C === C) return _props[name].g;
-    /* (Oct 12: "mini-golf game is great but its heavy, and its not as fast as all the other games." … "yes, proceed".
-       At 24 a bumper or a boulder was 9,408 triangles, 30% of all a framed field drew, measured, for a thing a few dozen
-       pixels across; at 12 it is a quarter of that, and looks the same at that size: the screenshots before and after.) */
-    const g = buildPartsGeometry(12, C, { shadeFn: () => 1 }), P = g.attributes.position.array;
-    let reach = 0;
-    for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2]));
+  /* A BUMPER OR A BOULDER IN TWO GRAINS (Oct 14, the pieces after the ground): the file built at K = 12 (16 rings of 32, 3,072
+     triangles for a three-part bumper) carries the same file at K = 4 (8 rings of 16, 768) laid at its own points (each
+     part's grid of rings and segments, on the coarser grid's own triangles: propMorph), so a weight of 1 shows the coarser
+     build exactly and a board can step down to it with nothing changing. Both are scaled by the fine build's reach. */
+  const PROP_GRAIN = [12, 4];
+  function propBuild(C, K, reach){
+    const g = buildPartsGeometry(K, C, { shadeFn: () => 1 }), P = g.attributes.position.array;
+    if (reach == null){ reach = 0; for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2])); }
     g.scale(1 / reach, 1 / reach, 1 / reach); g.userData.vertexColors = true;
     const I = g.index.array;
     for (let t = 0; t < I.length; t += 3){ const k = I[t + 1]; I[t + 1] = I[t + 2]; I[t + 2] = k; }
     g.index.needsUpdate = true; g.computeVertexNormals();
-    _props[name] = { C, g };
-    return g;
+    return { g, reach };
+  }
+  // the size of one part's grid at K, as buildFieldGeometry lays it: rings of seg + 1, then the two caps' middles
+  const fieldGrid = K => { const rings = Math.max(4, Math.min(80, 4 + K)), seg = Math.max(8, Math.min(160, 8 + K * 2)); return { rings, seg, n: rings * (seg + 1) + 2 }; };
+  function propMorph(F, Cg, parts){
+    const f = fieldGrid(PROP_GRAIN[0]), c = fieldGrid(PROP_GRAIN[1]), FP = F.attributes.position.array;
+    const srcs = [Cg.attributes.position.array, Cg.attributes.color.array, Cg.attributes.normal.array];
+    const outs = srcs.map(() => new Float32Array(FP.length));
+    for (let p = 0; p < parts; p++){
+      const fo = p * f.n, co = p * c.n, cr = c.seg + 1;
+      for (let i = 0; i < f.rings; i++) for (let s = 0; s <= f.seg; s++){
+        const Y = i / (f.rings - 1) * (c.rings - 1), X = s / f.seg * c.seg, j = Math.min(c.rings - 2, Math.floor(Y)), k = Math.min(c.seg - 1, Math.floor(X));
+        const ty = Y - j, tx = X - k, a = co + j * cr + k, b = a + 1, d = a + cr, e = d + 1, o = (fo + i * (f.seg + 1) + s) * 3;
+        // (the coarse cell's two triangles as buildFieldGeometry lays them: p, p+1, p+row and p+1, p+row+1, p+row)
+        srcs.forEach((S, q) => { const O = outs[q]; for (let r = 0; r < 3; r++){
+          const A = S[a * 3 + r], B = S[b * 3 + r], Dd = S[d * 3 + r], E = S[e * 3 + r];
+          O[o + r] = tx + ty <= 1 ? A + tx * (B - A) + ty * (Dd - A) : E + (1 - tx) * (Dd - E) + (1 - ty) * (B - E); } });
+      }
+      for (const cap of [0, 1]){ const o = (fo + f.rings * (f.seg + 1) + cap) * 3, oc = (co + c.rings * cr + cap) * 3;
+        srcs.forEach((S, q) => { for (let r = 0; r < 3; r++) outs[q][o + r] = S[oc + r]; }); }
+    }
+    F.setAttribute('pos2', new THREE.BufferAttribute(outs[0], 3)); F.setAttribute('col2', new THREE.BufferAttribute(outs[1], 3));
+    F.setAttribute('nrm2', new THREE.BufferAttribute(outs[2], 3)); F.userData.morph = true;
+  }
+  function propGeo(name, coarse){
+    const C = propC(name);
+    if (!C || !C.parts) return null;
+    if (_props[name] && _props[name].C === C) return coarse ? _props[name].c : _props[name].g;
+    /* (Oct 12: "mini-golf game is great but its heavy, and its not as fast as all the other games." … "yes, proceed".
+       At 24 a bumper or a boulder was 9,408 triangles, 30% of all a framed field drew, measured, for a thing a few dozen
+       pixels across; at 12 it is a quarter of that, and looks the same at that size: the screenshots before and after.) */
+    const F = propBuild(C, PROP_GRAIN[0]), Cc = propBuild(C, PROP_GRAIN[1], F.reach);
+    // (only when every part is a plain grid of rings, as buildFieldGeometry lays it; anything else keeps its one grain)
+    if (F.g.attributes.position.count === C.parts.length * fieldGrid(PROP_GRAIN[0]).n && Cc.g.attributes.position.count === C.parts.length * fieldGrid(PROP_GRAIN[1]).n)
+      propMorph(F.g, Cc.g, C.parts.length);
+    _props[name] = { C, g: F.g, c: Cc.g };
+    return coarse ? Cc.g : F.g;
   }
   const itemGeometries = {
     // (null while the file loads: the emitter skips the kind without caching it, and tries again)
     millSails: () => { const M = millGeos(); return M && M.sails; },
     millTower: () => { const M = millGeos(); return M && M.tower; },
     propBumper: () => propGeo('bumper'), propRock: () => propGeo('rock'), propPipe: () => propGeo('pipe'),
+    'propBumper~': () => propGeo('bumper', true), 'propRock~': () => propGeo('rock', true),   // (the coarse grains: Oct 14)
     // stand-ins, and the bridge's planks
     rockPlain: T => { const g = new T.SphereGeometry(0.5, 14, 10); g.scale(1, 0.7, 1); g.translate(0, 0.3, 0); return g; },
     ...Object.fromEntries(FENCE_MATS.flatMap(m => [
@@ -37438,6 +37504,12 @@ const GOLF_APP = (() => {
       ['railH_' + m, T => cladGeo(T, m, 1.02, 1.76, 2 * RT / CW, -1.2, 0.5, 37)],
       ['fence_' + m, m === 'wood' ? (T => picketGeo(T)) : (T => cladGeo(T, m, 1, 0.75, 2 * FENCE_T / CW, -0.25, 0.25, 51))],   // a fence piece a cell long
       ['planterWall_' + m, T => cladGeo(T, m, 1, 0.8, 2 * FENCE_T / CW, -0.25, 0.25, 77)],              // a planter's wall piece: solid, even in wood (Oct 11)
+      // (and each one's plain box, what it fades to on a small board: Oct 14; a wooden fence is pickets and has none)
+      ['wall_' + m + '~', T => cladPlain(T, m, 1, 0.88, 1, -0.6)],
+      ['railV_' + m + '~', T => cladPlain(T, m, 2 * RT / CW, 1.76, 1.02, -1.2)],
+      ['railH_' + m + '~', T => cladPlain(T, m, 1.02, 1.76, 2 * RT / CW, -1.2)],
+      ...(m === 'wood' ? [] : [['fence_' + m + '~', T => cladPlain(T, m, 1, 0.75, 2 * FENCE_T / CW, -0.25)]]),
+      ['planterWall_' + m + '~', T => cladPlain(T, m, 1, 0.8, 2 * FENCE_T / CW, -0.25)],
     ])),
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
@@ -37675,6 +37747,9 @@ const GOLF_APP = (() => {
       for (let k = 1; k <= 7; k++){ const f = k / 7; const du = b.x + dx * len * f, dv = b.y + dy * len * f; out.push({ kind: 'dot', u: du, v: dv, scale: 0.012 + 0.006 * (1 - f), lift: hOf(H, clamp(du, 0, WD), clamp(dv, 0, 1)) + 0.004, color: col }); }
     }
     // to the board's units: the field lays u across the board's WD and v down its 1, and scales and lifts by its width
+    // (each clad piece, bumper and boulder at the board's grain, part way to its plain twin: see THE PIECES' GRAINS, Oct 14)
+    const PG = pieceGrain(bp);
+    for (const it of out) if (TWINNED.has(it.kind)){ if (PG.plain) it.kind += '~'; else it.morph = PG.w; }
     for (const it of out){ it.u /= WD; it.scale = (it.scale || 0.25) / WD; it.lift = (it.lift || 0) / WD; }
     return out;
   }
@@ -40319,7 +40394,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { groundGrain, groundGeo, GROUND_ROWS, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladGeo, cladPlain, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)

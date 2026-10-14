@@ -131,8 +131,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`groundGrain`: full while a column is `GROUND_PX`, 10 px, or more, fading on a log scale into the next). The field draws
   it as a morphing kind (`geometry.userData.morph`, an item's `morph`: an `instMorph` weight per instance, mixed in the
   vertex shader). Physics never reads it. Zoomed out at the 62° floor: the ground 741,000 triangles before, 466,000 after,
-  the view 4.18 million before, 3.91 million after. Most of that is the pieces (rail and wall pieces 1.7 million, bumpers
-  and boulders), which are next.
+  the view 4.18 million before, 3.91 million after. Most of that was the pieces (rail and wall pieces 1.7 million, bumpers
+  and boulders), so they came next:
+  **The pieces' grains** (Oct 14: "yes", on the pieces): a clad wall, rail, stone or brick fence or planter-wall piece fades
+  to its plain core box in its material's far colour (`cladGeo` pulls every point into the core's box: `pos2`; `cladPlain` is
+  the box, 10 triangles), a bumper or a boulder from its K = 12 build (3,072 triangles) to its K = 4 one (768; `propMorph`,
+  on each part's grid of rings, `fieldGrid`, `PROP_GRAIN`), each exactly. `pieceGrain`: full on a board `PIECE_FULL` (480 px)
+  or more across, fading on a log scale to `PIECE_PLAIN` (240), and under that the plain twin itself (the kind with `~`
+  after it; `TWINNED`). The wooden picket fence stays as it is. Same zoomed-out view: 2.59 million triangles (4.18 before
+  any of this); framed, 540,000 as before. At 640/320 it was 2.11 million, but boards about 250 px across lost the bricks'
+  texture visibly in screenshots; at 480/240 only the farther ones do.
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
   - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
     its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each

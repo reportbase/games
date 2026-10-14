@@ -922,7 +922,7 @@ try {
   const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
     let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
     const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-    const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '').replace(/^land[ML]$/, 'land')))].sort().join(',');   // (the ground's grains are one ground, Oct 14)
+    const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '').replace(/^land[ML]$/, 'land').replace(/~$/, '')))].sort().join(',');   // (the ground's grains are one ground, and a piece's plain twin the piece: Oct 14)
     return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, mid: mid.length, small: small.length, smallKinds: kinds(small), midKinds: kinds(mid), bigKinds: kinds(big),
              framedSmall: D.cellItems(f.c, f.r, 100).length }; });
   if (lod.floor !== 62 || lod.appFloor !== 62) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 62 for mini golf: Oct 12, "clamp the tilt so that the horizon is reduced")`);
@@ -1342,13 +1342,23 @@ try {
         out.d.push(d);
       }
       out.last = !D.groundGeo(T, H, R[2]).attributes.pos2;
+      // (the pieces: a clad piece's every point fades into its core box, a bumper's onto its coarser build exactly, Oct 14)
+      const cg = D.cladGeo(T, 'stone', 1, 0.88, 1, -0.6, 0.25, 11), cp = cg.attributes.pos2.array; let outside = 0;
+      for (let i = 0; i < cp.length; i += 3) if (Math.abs(cp[i]) > 0.5 + 1e-6 || cp[i + 1] < -0.6 - 1e-6 || cp[i + 1] > 0.28 + 1e-6 || Math.abs(cp[i + 2]) > 0.5 + 1e-6) outside++;
+      out.clad = { outside, plain: D.cladPlain(T, 'stone', 1, 0.88, 1, -0.6).attributes.position.count / 3 };
+      const PF = D.propGeo('bumper'), PC = D.propGeo('bumper', true);
+      if (PF && PF.attributes.pos2){ const fp = PF.attributes.pos2.array, pc = PC.attributes.position.array, fn = 16 * 33 + 2, cn = 8 * 17 + 2; let d = 0;
+        for (let q = 0; q < PF.attributes.position.count / fn; q++) for (let k = 0; k <= 32; k += 2) for (let r = 0; r < 3; r++) d = Math.max(d, Math.abs(fp[(q * fn + k) * 3 + r] - pc[(q * cn + k / 2) * 3 + r]));
+        out.prop = d; }
+      out.pieces = [800, 360, 200].map(bp => { const g = D.pieceGrain(bp); return g.plain ? 'plain' : +g.w.toFixed(2); });
       out.grains = [3000, 480, 360, 240, 120, 40].map(bp => { const g = D.groundGrain(bp); return [g.g, +g.w.toFixed(2)]; });
       let morphMeshes = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh && o.visible && o.count && o.geometry.attributes.instMorph) morphMeshes++; });
       out.morphMeshes = morphMeshes; return out; });
     const gOk = gg.d.every(d => d < 1e-6) && gg.last && JSON.stringify(gg.grains.map(x => x[0])) === '[0,0,0,1,1,2]'
-      && gg.grains[0][1] === 0 && gg.grains[2][1] > 0 && gg.grains[2][1] < 1 && gg.morphMeshes > 0;
+      && gg.grains[0][1] === 0 && gg.grains[2][1] > 0 && gg.grains[2][1] < 1 && gg.morphMeshes > 0
+      && gg.clad.outside === 0 && gg.clad.plain === 10 && (gg.prop == null || gg.prop < 1e-6) && gg.pieces[0] === 0 && gg.pieces[1] > 0 && gg.pieces[1] < 1 && gg.pieces[2] === 'plain';
     if (!gOk) failures.push(`[${current}] the ground's grains: ${JSON.stringify(gg)}`);
-    console.log(`${gOk ? 'ok  ' : 'FAIL'} the ground's grains (a grain at weight 1 is the next within ${Math.max(...gg.d)}; ${gg.morphMeshes} grounds morphing)`);
+    console.log(`${gOk ? 'ok  ' : 'FAIL'} the ground's and the pieces' grains (a grain at weight 1 is the next within ${Math.max(...gg.d)}; a bumper within ${gg.prop}; ${gg.morphMeshes} kinds morphing)`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
