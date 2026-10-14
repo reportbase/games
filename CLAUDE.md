@@ -268,6 +268,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     under 1 (puzzle books' `1 0`, which chess.js refuses) as 1, then asks chess.js; share links go through it too. The FEN is
     kept whole (`CHESS_ED.fen`), so castling, en passant and the counts are played as given until the board or the side to
     move is changed, when the editor's own reading (`gridToFen`) takes over.
+    With no board selected it takes the one in the middle of the view (`_chessMiddleBoard`), and either way the view flies
+    to the board it set (Oct 14: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1. did not work": it had worked, on a
+    selected board small and far up the screen, or said "Pick a board first").
   - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
     row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
   - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.

@@ -17728,10 +17728,23 @@ function chessFenNow(){
   try { if (target.shown){ const P = chessHere(cellKey(target.boardX, target.boardZ)); return gridToFen(P.bd, P.turn); } } catch {}
   return '';
 }
+/* WHERE IT GOES, AND SEEN GOING THERE (Oct 14: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1. did not work"):
+   it had worked, on the selected board, which may be a small one far up the screen or none at all ("Pick a board first").
+   So with no board selected it takes the one in the middle of the view, and either way the view flies to the board it set,
+   so the position is there to see. */
+function _chessMiddleBoard(){
+  try {
+    const d = new THREE.Vector3(); camera.getWorldDirection(d); if (d.y > -1e-3) return false;
+    const t = -camera.position.y / d.y, x = camera.position.x + d.x * t, z = camera.position.z + d.z * t;
+    gotoCell(Math.round(x / gridSpacingX()), Math.round(z / gridSpacingZ())); return !!target.shown;
+  } catch { return false; }
+}
 function chessAskFen(play){
   let text = null; try { text = prompt('Paste a FEN (the board, then who moves; the rest may be left off):', chessFenNow()); } catch {}
   if (text == null || !String(text).trim()) return false;
+  if (!CHESS_ED.on && !target.shown) _chessMiddleBoard();
   if (!chessEdFen(text)) return false;
+  try { gotoCell(Math.round(CHESS_ED.bx / gridSpacingX()), Math.round(CHESS_ED.bz / gridSpacingZ())); } catch {}
   if (play) return chessEdDone();
   try { _chEdPane(true); } catch {}
   return true;
@@ -17880,7 +17893,7 @@ const CHESS_APP = {
     return true;
   },
   worldTap(hit){ return chessEdTap(hit); },
-  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, fenTidy: chessFenTidy, fen: chessEdFen, fenNow: chessFenNow, askFen: chessAskFen, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
+  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, fenTidy: chessFenTidy, fen: chessEdFen, middleBoard: () => _chessMiddleBoard(), fenNow: chessFenNow, askFen: chessAskFen, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
   /* For the move traces and capture bursts drawn on chess boards (Sep 24:
      "add these changes to chess as well"). Lazy, because BOOM is defined
      further down the file than chess is. */
