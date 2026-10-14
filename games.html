@@ -15449,8 +15449,23 @@ function buildInstances(){
      nearest first, every tile declined (each tile write already makes room for itself), asking the app for its items until
      it says it has enough. */
   const _appPast = (() => { const a = window.getFieldApp && window.getFieldApp(); return a && a.itemsPastTiles ? a : null; })();
+  const _pastMin = _appPast ? (_appPast.itemMinPx || 40) : 0;
   for (const cell of cells){
-    if (n >= MAXI_WALK - 64 && !(_appPast && _appPast.itemsPastTiles())) break;
+    if (n >= MAXI_WALK - 64){
+      if (!(_appPast && _appPast.itemsPastTiles())) break;
+      /* PAST THE TILES, ONLY THE ITEMS (Oct 14: "it crashes the computer at far horizon"). Going on through the whole of each
+         board's work for every board past the tiles (its tiles declined one by one, its colours, marks and pieces worked out
+         for nothing) made the walk seven times as long, 3.6 s a frame here against 0.5: so a board past them is its items
+         and nothing else. */
+      const gx = cgx + cell.ox, gz = cgz + cell.oz, cx = gx * SPX, cz = gz * SPZ, bp = cell.row.boardPx;
+      if (bp < _pastMin) continue;
+      const _framed = target.shown && Math.abs(cx - target.boardX) < SPX * 0.5 && Math.abs(cz - target.boardZ) < SPZ * 0.5;
+      const bWX = boardWrow0 * ((window.LAB && window.LAB.cellW) || 1), bWZ = boardWrow0 * ((window.LAB && window.LAB.cellH) || 1);
+      let _items = null;
+      try { _items = _boardItems(_appPast, wrap(gx), wrap(gz), bp, _framed, cx, cz, bWX, bWZ); } catch {}
+      if (_items) for (const it of _items) if (!it.piece) _emitAppItem(_appPast, it, cx, cz, bWX, bWZ);
+      continue;
+    }
     const { ox, oz, dz, lat } = cell;
     const gx = cgx + ox, gz = cgz + oz;
     const ix = wrap(gx), iz = wrap(gz);
@@ -44305,37 +44320,70 @@ const LEVELS_APP = (() => {
     }
     if (still){ if (STILL.size > 20000) STILL.clear(); STILL.set(key, { P: P.slice(o, o + nv * 3), C: C.slice(o, o + nv * 3) }); }
   }
+  /* EACH GRAIN'S EDGES, ONCE (Oct 14: "it crashes the computer at far horizon"). three.js draws a wireframe by making its own
+     list of lines from the whole index, as long as the buffer is (4 million at the horizon, most of it unused), into a plain
+     array, again every time the index changes, which at the horizon is nearly every frame: hundreds of MB made and thrown away
+     and tens of MB sent to the graphics card a frame. So the wire is lines of its own (BODYLINES), each grain's edges listed
+     once (`edgesOf`: every edge once, not twice as three's are), laid only as far as the bodies go. */
+  const EDGES = [];
+  const edgesOf = g => {
+    if (EDGES[g]) return EDGES[g];
+    const I = topoOf(g).I, seen = new Set(), E = [];
+    for (let t = 0; t < I.length; t += 3) for (let k = 0; k < 3; k++){
+      const a = I[t + k], b = I[t + (k + 1) % 3], lo = Math.min(a, b), hi = Math.max(a, b), key = lo * 65536 + hi;
+      if (!seen.has(key)){ seen.add(key); E.push(lo, hi); }
+    }
+    return (EDGES[g] = Uint32Array.from(E));
+  };
+  let BODYLINES = null, capE = 0;
   function bodiesBuild(){
     const T = W().THREE, list = [...BAT.values()]; BAT.clear();
     list.sort((a, b) => a.g - b.g); lastList = list;
     if (!BODIES){
       BODIES = new T.Mesh(new T.BufferGeometry(), new T.MeshBasicMaterial({ vertexColors: true }));
       BODIES.frustumCulled = false; W().scene.add(BODIES);
+      BODYLINES = new T.LineSegments(new T.BufferGeometry(), new T.LineBasicMaterial({ vertexColors: true }));
+      BODYLINES.frustumCulled = false; W().scene.add(BODYLINES);
     }
-    BODIES.visible = list.length > 0; BODIES.material.wireframe = wire;
+    BODIES.visible = list.length > 0 && !wire; BODYLINES.visible = list.length > 0 && wire;
     if (!list.length) return;
-    const counts = [0, 0, 0, 0]; let nv = 0, ni = 0;
-    for (const e of list){ const t = topoOf(e.g); nv += t.nv; ni += t.I.length; counts[e.g]++; }
-    const G = BODIES.geometry;
-    if (nv > capV || ni > capI){
+    const counts = [0, 0, 0, 0]; let nv = 0, ni = 0, ne = 0;
+    for (const e of list){ const t = topoOf(e.g); nv += t.nv; ni += t.I.length; ne += edgesOf(e.g).length; counts[e.g]++; }
+    /* Room grows by doubling, in new geometries, the old ones disposed: an attribute put in another's place keeps its buffer on
+       the graphics card until its geometry is disposed. */
+    if (nv > capV || ni > capI || ne > capE){
       capV = Math.max(4096, 1 << Math.ceil(Math.log2(nv))); capI = Math.max(8192, 1 << Math.ceil(Math.log2(ni)));
-      G.setIndex(new T.BufferAttribute(new Uint32Array(capI), 1).setUsage(T.DynamicDrawUsage));
-      G.setAttribute('position', new T.BufferAttribute(new Float32Array(capV * 3), 3).setUsage(T.DynamicDrawUsage));
-      G.setAttribute('color', new T.BufferAttribute(new Float32Array(capV * 3), 3).setUsage(T.DynamicDrawUsage));
+      capE = Math.max(8192, 1 << Math.ceil(Math.log2(ne)));
+      const dyn = a => a.setUsage(T.DynamicDrawUsage);
+      const pos = dyn(new T.BufferAttribute(new Float32Array(capV * 3), 3)), col = dyn(new T.BufferAttribute(new Float32Array(capV * 3), 3));
+      const G1 = new T.BufferGeometry(), G2 = new T.BufferGeometry();
+      G1.setIndex(dyn(new T.BufferAttribute(new Uint32Array(capI), 1))); G1.setAttribute('position', pos); G1.setAttribute('color', col);
+      G2.setIndex(dyn(new T.BufferAttribute(new Uint32Array(capE), 1))); G2.setAttribute('position', pos); G2.setAttribute('color', col);
+      BODIES.geometry.dispose(); BODYLINES.geometry.dispose(); BODIES.geometry = G1; BODYLINES.geometry = G2;
       idxSig = '';
     }
-    const P = G.attributes.position.array, C = G.attributes.color.array;
+    const G = BODIES.geometry, GL = BODYLINES.geometry, PA = G.attributes.position, CA = G.attributes.color;
+    const P = PA.array, C = CA.array;
     let o = 0;
     for (const e of list){ layBody(e, P, C, o); o += topoOf(e.g).nv * 3; }
     const sig = counts.join(',');
     if (sig !== idxSig){
-      const IX = G.index.array; let base = 0, io = 0;
-      for (const e of list){ const t = topoOf(e.g); for (let k = 0; k < t.I.length; k++) IX[io + k] = t.I[k] + base; io += t.I.length; base += t.nv; }
-      idxSig = sig; G.index.needsUpdate = true;
+      const IX = G.index.array, EX = GL.index.array; let base = 0, io = 0, eo = 0;
+      for (const e of list){
+        const t = topoOf(e.g), E = edgesOf(e.g);
+        for (let k = 0; k < t.I.length; k++) IX[io + k] = t.I[k] + base;
+        for (let k = 0; k < E.length; k++) EX[eo + k] = E[k] + base;
+        io += t.I.length; eo += E.length; base += t.nv;
+      }
+      idxSig = sig;
+      // (only what is in use goes to the graphics card)
+      G.index.updateRange.offset = 0; G.index.updateRange.count = ni; G.index.needsUpdate = true;
+      GL.index.updateRange.offset = 0; GL.index.updateRange.count = ne; GL.index.needsUpdate = true;
     }
-    G.setDrawRange(0, ni);
-    G.attributes.position.needsUpdate = G.attributes.color.needsUpdate = true;
-    G.boundingSphere = null;
+    G.setDrawRange(0, ni); GL.setDrawRange(0, ne);
+    PA.updateRange.offset = CA.updateRange.offset = 0; PA.updateRange.count = CA.updateRange.count = nv * 3;
+    PA.needsUpdate = CA.needsUpdate = true;
+    G.boundingSphere = GL.boundingSphere = null;
   }
   // Wireframe (the bodies drawn as their meshes' lines, so each grain shows; on at first, as flight.html is wire frame)
   let wire = true;
@@ -44398,7 +44446,7 @@ const LEVELS_APP = (() => {
     g.position.y = 0.03; W().scene.add(g); return g;
   }
   function tick(){
-    if (window.getFieldApp && window.getFieldApp() !== LEVELS_APP){ ticking = false; if (rings) rings.visible = false; if (BODIES) BODIES.visible = false; return; }
+    if (window.getFieldApp && window.getFieldApp() !== LEVELS_APP){ ticking = false; if (rings) rings.visible = false; if (BODIES) BODIES.visible = BODYLINES.visible = false; return; }
     roll();
     try {
       if (!rings) rings = ringsMake();
@@ -44434,7 +44482,7 @@ const LEVELS_APP = (() => {
        view; at 35° the top of the screen is about 5° under the horizon) */
     fitView(F){ if (pitchWas == null) pitchWas = F.st.pitch; F.st.pitch = OPEN_PITCH; F.frameAt(F.zoomFor(OPEN_V)); },
     // (and left, the tilt goes back to what it was, so the next game opens as it would have)
-    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; BAT.clear(); if (BODIES) BODIES.visible = false; },
+    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; BAT.clear(); if (BODIES) BODIES.visible = BODYLINES.visible = false; },
     itemGeometries: {},
     afterItems(){ try { bodiesBuild(); } catch (e) { console.warn('levels bodies', e); } },
     cellItems(c, r, bp){
@@ -44483,7 +44531,7 @@ const LEVELS_APP = (() => {
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
-    _debug: { get bodies(){ return BODIES; }, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, ADDR, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
+    _debug: { get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, ADDR, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
 window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
@@ -45165,7 +45213,7 @@ function _resetAppItems(){ for (const rec of _itemMeshes.values()) rec.n = 0; _i
    the pan hold to draw while the view moves (PANHOLD), and refreshed after anything that may change what boards show
    (_itemEpoch, window.fieldItemsChanged). */
 const _itemCache = new Map();
-let _itemFrame = 0, _itemEpoch = 0, _itemApp = null, _itemVP = null;
+let _itemFrame = 0, _itemEpoch = 0, _itemApp = null, _itemVP = null, _itemPurged = -1;
 /* RESTING (Oct 11: "proceed", after "Rest when still: the page redraws every frame even when nothing moves"). Each frame
    _restDecide says whether it may be skipped:
    - never while the camera moves (its numbers differ from the last frame's), a finger or a key is down, the view glides,
@@ -45278,7 +45326,13 @@ function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
   const L = app.cellItems(ix, iz, bp), h = _itemsHash(L);   // (at its own size, as the selected board is: Oct 12)
   if (!C || C.h !== h) REST.change = performance.now();      // (something on the boards moved: the field does not rest yet)
   _itemCache.set(key, { items: L, h, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch });
-  if (_itemCache.size > 4000) for (const [k, c] of _itemCache) if (_itemFrame - c.seen > 120) _itemCache.delete(k);   // boards long out of view
+  /* boards long out of view, once a frame at most (Oct 14: "it crashes the computer at far horizon"): asked on every board
+     while the cache was over 4,000, it went through all of them each time, and with 16,000 boards in view, every one seen
+     lately, it took 16,000 × 16,000 steps a frame and dropped nothing. */
+  if (_itemCache.size > 4000 && _itemPurged !== _itemFrame){
+    _itemPurged = _itemFrame;
+    for (const [k, c] of _itemCache) if (_itemFrame - c.seen > 120) _itemCache.delete(k);
+  }
   return L;
 }
 function _flushAppItems(){

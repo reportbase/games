@@ -333,6 +333,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     I can see the object again."): the field's walk stopped when its 400,000 tiles were spent (6,250 boards of 64), so every
     board past them was ground alone, and a far board came back only when flown to. An app's `itemsPastTiles()` keeps the
     walk going, nearest first, every tile declined, asking for items until it says enough; Levels' says so up to `PAST_MAX`.
+  - **It crashed the computer** (Oct 14: "it crashes the computer at far horizon"), for three reasons, all fixed:
+    - `_boardItems` cleared old boards out of its cache on every board once the cache passed 4,000, going through all of
+      them each time; with 16,000 in view, all seen lately, that was 16,000 × 16,000 steps a frame. Now once a frame
+      (`_itemPurged`).
+    - A board past the tiles went through the whole of a board's work for nothing; now it is its items alone.
+    - three.js's wireframe made its own lines from the whole index buffer (4 million long) every time the index changed,
+      nearly every frame at the horizon. The wire is now lines of its own (`BODYLINES`, sharing the bodies' points and
+      colours), each grain's edges listed once (`edgesOf`), laid only as far as the bodies go. Only what is in use is sent to
+      the graphics card (`updateRange`), and grown buffers come in new geometries, the old disposed.
+    - Measured here at 6°: the walk 3.6 s a frame before, 0.22 s after (0.54 s with no bodies past the tiles at all).
   - v is the eye's height, h a board's distance along the ground from the point under the eye (as flight.html). By v/h (the
     default) the corner is h = v: level 0, the near field, is h ≤ v, and level k runs from 2^(k−1)·v to 2^k·v (`levelAt`).
     By metres the split is at fixed distances (`METRES_D`, 2 board spacings, doubling). None draws every board at grain 0.

@@ -243,7 +243,11 @@ try {
          the field's), in its board's own colour */
       const F1 = D.partsOf(i1, 3).P0, F2 = D.partsOf(i2, 3).P0, farOwn = F1.length === F2.length && F1.some((x, j) => Math.abs(x - F2[j]) > 1e-3);
       const W = window.FIELD_WORLD, Tg = W.target, f = W.cellAt(Tg.boardX, Tg.boardZ), at = W.itemAt; at.x = Tg.boardX; at.z = Tg.boardZ;
-      const noItems = (A.cellItems(f.c, f.r, 500) || []).length === 0, oneMesh = !!D.bodies && D.bodies.visible && D.list.length > 50;
+      const noItems = (A.cellItems(f.c, f.r, 500) || []).length === 0, oneMesh = !!D.bodies && D.list.length > 50 && D.bodies.visible === !D.wire && D.bodyLines.visible === D.wire
+        // (Oct 14: "it crashes the computer at far horizon") the wire is lines of its own, each edge once, laid only as far as the
+        //  bodies go (three's own wireframe was rebuilt from the whole buffer every time the index changed)
+        && D.bodyLines.geometry.drawRange.count === D.list.reduce((a, e) => a + D.edgesOf(e.g).length, 0)
+        && D.edgesOf(3).length / 2 < 1.6 * D.TRIS[3];
       /* (Oct 13: "LOD does not snap, it is smooth between levels. between levels use the proportion part of the level.") The
          bands' weights move by small steps as the detail does, and the band a grain lets go is at nothing where the mesh steps
          down; and a board's detail across a level's edge (2H) moves by a hair, not a level */
