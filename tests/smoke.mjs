@@ -1359,6 +1359,21 @@ try {
       && gg.clad.outside === 0 && gg.clad.plain === 10 && (gg.prop == null || gg.prop < 1e-6) && gg.pieces[0] === 0 && gg.pieces[1] > 0 && gg.pieces[1] < 1 && gg.pieces[2] === 'plain';
     if (!gOk) failures.push(`[${current}] the ground's grains: ${JSON.stringify(gg)}`);
     console.log(`${gOk ? 'ok  ' : 'FAIL'} the ground's and the pieces' grains (a grain at weight 1 is the next within ${Math.max(...gg.d)}; a bumper within ${gg.prop}; ${gg.morphMeshes} kinds morphing)`);
+    // CHESS'S PIECES FADE (Oct 14: "ok", on chess after mini golf): a rung carries the next coarser one at its points, exactly
+    // where their grids share points; the level drawn does not jump at any rung's boundary; and the rungs are the ones they were
+    // (floor of the level), so the triangles are too. A studio file stands in for the pieces, which the sandbox cannot fetch.
+    const cf = await page.evaluate(async () => {
+      const L = window.fieldLOD, C = L.parseTVF3D(await (await fetch('res/rock.tvf3d')).text());
+      const F = L.buildFieldGeometry(64, C), G = L.buildFieldGeometry(32, C), laid = L.fieldMorph(F, G, 64, 32);
+      const f = L.fieldGridOf(64), c = L.fieldGridOf(32), parts = F.attributes.position.count / f.n, P2 = F.attributes.pos2.array, GP = G.attributes.position.array; let d = 0;
+      for (let p = 0; p < parts; p++) for (let k = 0; k <= 136; k += 17) for (let r = 0; r < 3; r++) d = Math.max(d, Math.abs(P2[(p * f.n + k) * 3 + r] - GP[(p * c.n + k * 72 / 136) * 3 + r]));
+      const look = bp => { const K = L.rungFor(0, 0, bp, 64); return Math.log2(K) - L.rungW; };
+      let jump = 0; for (let k = 1; k <= 6; k++){ const b = 32 * 2 ** (k - 1); jump = Math.max(jump, Math.abs(look(b * 1.0001) - look(b * 0.9999))); }
+      const rungs = [20, 40, 100, 300, 900, 3000].map(bp => L.rungFor(0, 0, bp, 64));
+      return { laid, d, jump, rungs, parts }; });
+    const cOk = cf.laid && cf.d < 1e-6 && cf.jump < 0.01 && JSON.stringify(cf.rungs) === '[1,2,4,16,32,64]';
+    if (!cOk) failures.push(`[${current}] chess's pieces fading: ${JSON.stringify(cf)}`);
+    console.log(`${cOk ? 'ok  ' : 'FAIL'} chess's pieces fade between rungs (exact within ${cf.d}, a jump of ${cf.jump.toFixed(4)} rungs at most)`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
