@@ -1329,6 +1329,26 @@ try {
     const tris = await page.evaluate(() => { let t = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isMesh && o.visible){ const g = o.geometry, n = g.index ? g.index.count / 3 : g.attributes.position.count / 3; t += n * (o.isInstancedMesh ? o.count : 1); } }); return Math.round(t); });
     if (!(tris < 700000)) failures.push(`[${current}] a framed field of holes draws ${tris} triangles (under 700,000 wanted)`);
     console.log(`     (${(tris / 1000).toFixed(0)}k triangles framed)`);
+    // THE GROUND'S GRAINS (Oct 14: "could mini-golf and chess beneifit from better LOD handeling of this application." … "yes"):
+    // each grain carries the next coarser one's surface at its own points, exactly (at a weight of 1 it is that grain on the
+    // screen, positions and colours alike), the grain and weight follow the board's size, and the weights reach the GPU
+    const gg = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, T = window.FIELD_WORLD.THREE, H = D.HOLES[30], R = D.GROUND_ROWS, out = { d: [] };
+      for (const [a, b] of [[0, 1], [1, 2]]){
+        const F = D.groundGeo(T, H, R[a]), C = D.groundGeo(T, H, R[b]), fx = Math.round(R[a] * D.WD), cx = Math.round(R[b] * D.WD), r = fx / cx;
+        const P2 = F.attributes.pos2.array, C2 = F.attributes.col2.array, CP = C.attributes.position.array, CC = C.attributes.color.array; let d = 0;
+        for (let j = 0; j <= R[b]; j++) for (let i = 0; i <= cx; i++){ const fo = (j * r * (fx + 1) + i * r) * 3, co = (j * (cx + 1) + i) * 3;
+          for (let q = 0; q < 3; q++) d = Math.max(d, Math.abs(P2[fo + q] - CP[co + q]), Math.abs(C2[fo + q] - CC[co + q])); }
+        out.d.push(d);
+      }
+      out.last = !D.groundGeo(T, H, R[2]).attributes.pos2;
+      out.grains = [3000, 480, 360, 240, 120, 40].map(bp => { const g = D.groundGrain(bp); return [g.g, +g.w.toFixed(2)]; });
+      let morphMeshes = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh && o.visible && o.count && o.geometry.attributes.instMorph) morphMeshes++; });
+      out.morphMeshes = morphMeshes; return out; });
+    const gOk = gg.d.every(d => d < 1e-6) && gg.last && JSON.stringify(gg.grains.map(x => x[0])) === '[0,0,0,1,1,2]'
+      && gg.grains[0][1] === 0 && gg.grains[2][1] > 0 && gg.grains[2][1] < 1 && gg.morphMeshes > 0;
+    if (!gOk) failures.push(`[${current}] the ground's grains: ${JSON.stringify(gg)}`);
+    console.log(`${gOk ? 'ok  ' : 'FAIL'} the ground's grains (a grain at weight 1 is the next within ${Math.max(...gg.d)}; ${gg.morphMeshes} grounds morphing)`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });

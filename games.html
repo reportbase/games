@@ -8307,6 +8307,8 @@ function uploadInstances(mesh, used){
   if (!mesh || !(used > 0)) return;               // empty pool: nothing to send
   _uploadRange(mesh.instanceMatrix, used * 16);
   if (mesh.instanceColor) _uploadRange(mesh.instanceColor, used * 3);
+  const im = mesh.geometry && mesh.geometry.attributes && mesh.geometry.attributes.instMorph;   // (a morphing kind's weights)
+  if (im) _uploadRange(im, used);
 }
 function setInstanceCount(n){
   boardMesh.count = n;
@@ -37181,8 +37183,16 @@ const GOLF_APP = (() => {
      13,312 triangles a board, 18% of a framed field; at six a cell it is 7,488, and the shores are drawn as a colour blend
      across their line, lakeMix, not by the mesh's steps, so the screenshots before and after show the same holes.) */
   const MESH = 78;
-  function groundGeo(T, H, mesh){
-    const ny = mesh || MESH, nx = Math.round(ny * WD), pos = [], col = [], idx = [], c = new T.Color(), sandC = new T.Color(0xd8c287), waterC = new T.Color(0x2f6cc4);
+  /* THE GROUND'S GRAINS (Oct 14: "could mini-golf and chess beneifit from better LOD handeling of this application." … "yes",
+     on the ground first). Every board's ground was the full 78-row mesh, 7,488 triangles, near or far: most of a framed
+     field's triangles. Levels showed how detail can come and go with nothing seen to change: a grain fades toward the next
+     coarser one and steps down only once it looks exactly like it. So the ground has three grains, 78 rows, 39 and 13 (one a
+     cell: 7,488, 1,872 and 208 triangles), each carrying the next coarser one's surface laid at its own points (pos2, col2,
+     nrm2), and a board's weight (`morph`) takes it there: at 1 a grain IS the coarser grain on the screen, so the step to
+     it changes nothing. The physics never reads these; the ball, the rails and the rater use hOf as before. */
+  const GROUND_ROWS = [MESH, 39, 13];
+  function groundData(T, H, ny){
+    const nx = Math.round(ny * WD), pos = [], col = [], c = new T.Color(), sandC = new T.Color(0xd8c287), waterC = new T.Color(0x2f6cc4);
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
       const x = i / nx * WD, y = j / ny, h = hOf(H, x, y), ci = Math.min(NX - 1, Math.floor(x / CW)), cj = Math.min(NY - 1, Math.floor(y / CW));
       const ch = at(H, ci, cj) === '#' ? '#' : groundAt(H, x, y), wet = ch === '~' || ch === '=';
@@ -37201,13 +37211,49 @@ const GOLF_APP = (() => {
              if (lm > 0) c.lerp(waterC, lm); }
       col.push(c.r, c.g, c.b);
     }
+    const idx = [];
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++){ const a = j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1; idx.push(a, d, b, b, d, e); }
+    return { nx, ny, pos, col, idx };
+  }
+  function groundGeo(T, H, mesh){
+    const D = groundData(T, H, mesh || MESH);
     const g = new T.BufferGeometry();
-    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
-    g.setIndex(idx); g.computeVertexNormals();
+    g.setAttribute('position', new T.Float32BufferAttribute(D.pos, 3));
+    g.setAttribute('color', new T.Float32BufferAttribute(D.col, 3));
+    g.setIndex(D.idx); g.computeVertexNormals();
     g.userData.vertexColors = true;
+    const next = GROUND_ROWS[GROUND_ROWS.indexOf(D.ny) + 1];
+    if (next){
+      /* The coarser grain at this grain's points, on its own triangles (a, d, b and b, d, e of each cell, as it is drawn), so at
+         a weight of 1 every point lies on the coarser mesh exactly and takes the colour it would show there. */
+      const C = groundData(T, H, next), cg = new T.BufferGeometry();
+      cg.setAttribute('position', new T.Float32BufferAttribute(C.pos, 3)); cg.setIndex(C.idx); cg.computeVertexNormals();
+      const CN = cg.attributes.normal.array, cw = C.nx + 1, n = (D.nx + 1) * (D.ny + 1);
+      const P2 = new Float32Array(n * 3), C2 = new Float32Array(n * 3), N2 = new Float32Array(n * 3);
+      for (let J = 0; J <= D.ny; J++) for (let I = 0; I <= D.nx; I++){
+        const X = I * C.nx / D.nx, Y = J * C.ny / D.ny, i = Math.min(C.nx - 1, Math.floor(X)), j = Math.min(C.ny - 1, Math.floor(Y)), sx = X - i, sy = Y - j;
+        const a = j * cw + i, b = a + 1, d = a + cw, e = d + 1, o = (J * (D.nx + 1) + I) * 3;
+        const lay = (src, dst) => { for (let q = 0; q < 3; q++){
+          const A = src[a * 3 + q], B = src[b * 3 + q], Dd = src[d * 3 + q], E = src[e * 3 + q];
+          dst[o + q] = sx + sy <= 1 ? A + sx * (B - A) + sy * (Dd - A) : E + (1 - sx) * (Dd - E) + (1 - sy) * (B - E); } };
+        lay(C.pos, P2); lay(C.col, C2); lay(CN, N2);
+      }
+      g.setAttribute('pos2', new T.BufferAttribute(P2, 3)); g.setAttribute('col2', new T.BufferAttribute(C2, 3)); g.setAttribute('nrm2', new T.BufferAttribute(N2, 3));
+      g.userData.morph = true;
+    }
     return g;
+  }
+  /* A board's grain and its weight toward the next, from its width on the screen (bp): a grain is full while each of its
+     columns is GROUND_PX pixels or more across, and fades into the next coarser one as the board shrinks, on a log scale, so
+     the 39-row grain is reached at weight 1 just as the 78's columns fall to GROUND_PX / 2. */
+  const GROUND_PX = 10;
+  function groundGrain(bp){
+    const cols = GROUND_ROWS.map(r => Math.round(r * WD)), q = (bp || 1e9) / GROUND_PX;
+    for (let g = 0; g < cols.length - 1; g++){
+      if (q >= cols[g]) return { g, w: 0 };
+      if (q > cols[g + 1]) return { g, w: Math.log(cols[g] / q) / Math.log(cols[g] / cols[g + 1]) };
+    }
+    return { g: cols.length - 1, w: 0 };
   }
   /* THE WIREFRAME (Oct 2: "what about wireframe so you can see the elevations"): a square grid
      draped over the ground — twenty lines each way, as thin ribbons just above it — so a slope
@@ -37428,7 +37474,7 @@ const GOLF_APP = (() => {
     ...Object.fromEntries(HOLES.flatMap((H, k) => (H.toys || []).map((T, j) => T.slide && ['slide' + k + '_' + j, T3 => {
       const g = new T3.BoxGeometry(T.slide[4], 0.06, T.slide[5]); g.translate(0, 0.005, 0); return g; }]).filter(Boolean))),
     // Each hole's ground, one board wide (placed at the middle, scale 1): +u is −x, +v is −z, the height is y.
-    ...Object.fromEntries(HOLES.flatMap((H, k) => [['land' + k, T => groundGeo(T, H)], ['landM' + k, T => groundGeo(T, H, 26)], ['landL' + k, T => groundGeo(T, H, 13)]])),
+    ...Object.fromEntries(HOLES.flatMap((H, k) => [['land' + k, T => groundGeo(T, H)], ['landM' + k, T => groundGeo(T, H, GROUND_ROWS[1])], ['landL' + k, T => groundGeo(T, H, GROUND_ROWS[2])]])),
     // the rail as a plain box, for boards too small on screen to show its planks or bricks (Oct 9)
     railPV: T => { const g = new T.BoxGeometry(2 * RT / CW, 1.76, 1.02); g.translate(0, -1.2 + 0.88, 0); return g; },
     railPH: T => { const g = new T.BoxGeometry(1.02, 1.76, 2 * RT / CW); g.translate(0, -1.2 + 0.88, 0); return g; },
@@ -37485,7 +37531,9 @@ const GOLF_APP = (() => {
     const G = GAMES.get(gkey(c, r));                  // (a sunk ball may have moved the round on)
     const H = HOLES[G ? G.hole : holeOf(c, r)], out = [];
     const k = HOLES.indexOf(H);
-    out.push({ kind: (PIECES ? 'land' : 'landL') + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff });
+    // (the ground at the grain the board's size on the screen asks, part way to the next: see THE GROUND'S GRAINS, Oct 14)
+    const GG = groundGrain(bp);
+    out.push({ kind: ['land', 'landM', 'landL'][GG.g] + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff, morph: GG.w });
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
@@ -37786,8 +37834,8 @@ const GOLF_APP = (() => {
      is now; after an edit the old meshes are dropped (fieldDropItemKind), so the next frame makes them again. */
   function ensureKinds(k){
     itemGeometries['land' + k] = T => groundGeo(T, HOLES[k]);
-    itemGeometries['landM' + k] = T => groundGeo(T, HOLES[k], 26);   // (coarser ground for smaller boards: Oct 9)
-    itemGeometries['landL' + k] = T => groundGeo(T, HOLES[k], 13);
+    itemGeometries['landM' + k] = T => groundGeo(T, HOLES[k], GROUND_ROWS[1]);   // (the ground's coarser grains: Oct 14)
+    itemGeometries['landL' + k] = T => groundGeo(T, HOLES[k], GROUND_ROWS[2]);
     itemGeometries['wire' + k] = T => wireGeo(T, HOLES[k]);
     (HOLES[k].toys || []).forEach((T, j) => { if (T.slide) itemGeometries['slide' + k + '_' + j] = T3 => {
       const S = HOLES[k].toys[j] && HOLES[k].toys[j].slide; if (!S) return null;
@@ -40271,7 +40319,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { groundGrain, groundGeo, GROUND_ROWS, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
@@ -45235,7 +45283,7 @@ function _itemsHash(L){
   if (!L) return -1;
   for (const it of L){ h = (h * 31 + (it.kind ? it.kind.length * 7 + it.kind.charCodeAt(0) : 0)) | 0;
     // (to a ten-thousandth of the board: a piece easing to its square changes by less for ever, which no one can see)
-    for (const v of [it.u, it.v, it.scale, it.lift, it.yaw, it.sx, it.sy, it.sz]) h = (h * 31 + (v == null ? 1 : Math.round(v * 1e4))) | 0;
+    for (const v of [it.u, it.v, it.scale, it.lift, it.yaw, it.sx, it.sy, it.sz, it.morph]) h = (h * 31 + (v == null ? 1 : Math.round(v * 1e4))) | 0;
     h = (h * 31 + (typeof it.color === 'number' ? it.color : 7)) | 0; }
   return h ^ L.length;
 }
@@ -45388,16 +45436,36 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
     if (geo.userData && geo.userData.vertexColors) _mo.vertexColors = true;
     // …and a kind may be drawn as its mesh's lines (geometry.userData.wireframe, Oct 13: Levels shows each level's grain)
     if (geo.userData && geo.userData.wireframe) _mo.wireframe = true;
-    const mesh = new THREE.InstancedMesh(geo, (geo.userData && geo.userData.unlit) ? new THREE.MeshBasicMaterial(_mo) : new THREE.MeshLambertMaterial(_mo), cap);
+    const mat = (geo.userData && geo.userData.unlit) ? new THREE.MeshBasicMaterial(_mo) : new THREE.MeshLambertMaterial(_mo);
+    /* …and a kind may MORPH (geometry.userData.morph, Oct 14: mini golf's ground, after Levels showed detail can change without
+       a jump): its geometry carries a second surface (pos2, nrm2, col2), the next coarser grain's laid at this grain's points,
+       and each item says how far toward it to go (`morph`, 0 to 1, a per-instance instMorph). At 1 it is drawn exactly as the
+       coarser grain is, so a board can step down to that grain with nothing on the screen changing. */
+    const morph = !!(geo.userData && geo.userData.morph);
+    if (morph){
+      geo.setAttribute('instMorph', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
+      mat.onBeforeCompile = sh => {
+        sh.vertexShader = 'attribute vec3 pos2;\nattribute vec3 nrm2;\nattribute vec3 col2;\nattribute float instMorph;\n' + sh.vertexShader
+          .replace('#include <begin_vertex>', 'vec3 transformed = mix(position, pos2, instMorph);')
+          .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = normalize(mix(normal, nrm2, instMorph));')
+          .replace('vColor *= color;', 'vColor *= mix(color, col2, instMorph);');
+      };
+      mat.customProgramCacheKey = () => 'morph';
+    }
+    const mesh = new THREE.InstancedMesh(geo, mat, cap);
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.setColorAt(0, new THREE.Color(1, 1, 1));   // allocate the color buffer
     mesh.count = 0;
     scene.add(mesh);
-    rec = { mesh, n: 0, cap, max };
+    rec = { mesh, n: 0, cap, max, morph };
     _itemMeshes.set(kind, rec);
   }
-  if (rec.n >= rec.cap){ if (rec.cap >= rec.max) return; rec.cap = Math.min(rec.max, rec.cap * 2); rec.mesh = growInstanced(rec.mesh, rec.cap); }
+  if (rec.n >= rec.cap){ if (rec.cap >= rec.max) return; rec.cap = Math.min(rec.max, rec.cap * 2); rec.mesh = growInstanced(rec.mesh, rec.cap);
+    if (rec.morph){   // (the weights live on the shared geometry: room for the new count, the old ones kept)
+      const G = rec.mesh.geometry, A = new THREE.InstancedBufferAttribute(new Float32Array(rec.cap), 1).setUsage(THREE.DynamicDrawUsage);
+      A.array.set(G.attributes.instMorph.array); G.setAttribute('instMorph', A);
+    } }
   const u = (it.u == null) ? 0.5 : it.u;
   const v = (it.v == null) ? 0.5 : it.v;
   const s = (it.scale || 0.25) * bWX;
@@ -45414,6 +45482,7 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
   _im.compose(_ip, _iq, _is);
   rec.mesh.setMatrixAt(rec.n, _im);
   rec.mesh.setColorAt(rec.n, _appColor(it.color == null ? 0xf0e6d2 : it.color));
+  if (rec.morph) rec.mesh.geometry.attributes.instMorph.array[rec.n] = it.morph || 0;
   rec.n++;
 }
 
