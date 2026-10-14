@@ -141,6 +141,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   after it; `TWINNED`). The wooden picket fence stays as it is. Same zoomed-out view: 2.59 million triangles (4.18 before
   any of this); framed, 540,000 as before. At 640/320 it was 2.11 million, but boards about 250 px across lost the bricks'
   texture visibly in screenshots; at 480/240 only the farther ones do.
+  **A ceiling** (Oct 14: "pinching zooms in to far show to many mini-golf boards, clamp zoom in mini-golf to keep the boards
+  from getting to small."): an app's `zoomMaxH` is the highest the eye may go, in board spacings across; the field holds
+  `st.zoom` (and a flight's `target.zoom`) under it once a frame, before the tilt floor, so a pinch, the wheel, the keys and
+  a drag's zoom rate all stop there. Mini golf's is 4: it opens at 1.4; at 3 boards are about 200 px across at 1280×800, at
+  5 dozens of 130 px ones (1.75 million triangles), and a pinch went on to 19 (2.9 million).
   **The floor lowered to 45°** (Oct 14: "ok, proceed"): a board's pieces were three quarters ground heights, the same
   answers every frame, so the drawing asks `hOfDrawn`, which keeps them on the hole (`H._hd`, up to `HD_MAX`; a compiled hole
   never changes, and an edit makes a new one); the physics still asks `hOf`. 0.37 ms a board became 0.10. Zoomed out, by floor:

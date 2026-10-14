@@ -17213,6 +17213,18 @@ function frame(now){
     turnLongPressed: turn.longPressed,
   });
 
+  /* A CEILING AN APP MAY SET (Oct 14: "pinching zooms in to far show to many mini-golf boards, clamp zoom in mini-golf to
+     keep the boards from getting to small."): `zoomMaxH`, the highest the eye may go, in board spacings across. Every way of
+     climbing (a pinch, the wheel, Q and the keys, a drag's zoom rate, a flight's spring) only moves st.zoom, so it is held
+     here, once a frame, before anything reads it: a climb past the ceiling stops at it, with no rate left to carry it on. */
+  {
+    let _za = null; try { _za = window.getFieldApp && window.getFieldApp(); } catch {}
+    if (_za && _za.zoomMaxH > 0){
+      const _zMax = window.FIELD_WORLD.zoomFor(_za.zoomMaxH * gridSpacingX());
+      if (st.zoom > _zMax){ st.zoom = _zMax; if (st.zoomV > 0) st.zoomV = 0; }
+      if (target.zoom != null && target.zoom > _zMax) target.zoom = _zMax;
+    }
+  }
   // Altitude-coupled pitch minimum, NON-STICKY: the lib's clamp only ever
   // raises pitch and forgets what you had. Here the pitch you asked for is
   // remembered (any change not made by this block is you — the slider or
@@ -40283,6 +40295,11 @@ const GOLF_APP = (() => {
        making the pieces 18 ms a frame against 20 at 62° before (the heights they stand on now kept, hOfDrawn), both measured
        here. At 40° it would be 3.89 million for 417 boards a frame, so 45° it is. */
     pitchMin: 45,
+    /* NO HIGHER THAN FOUR BOARDS UP (Oct 14: "pinching zooms in to far show to many mini-golf boards, clamp zoom in mini-golf
+       to keep the boards from getting to small."): the eye opens 1.4 board spacings up; at 3 the boards are still holes you can
+       play, about 200 px across at 1280×800, at 5 they are dozens of 130 px ones (1.75 million triangles), and the pinch went on
+       to 19 (2.9 million). The field holds it at zoomMaxH. */
+    zoomMaxH: 4,
     itemMinPx: 20,
     itemGeometries,
     fabricCell(ctx, rect){

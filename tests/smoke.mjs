@@ -1452,6 +1452,23 @@ try {
     await page.waitForTimeout(1500);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (the round's clock ran ${(g1.gt - g0.gt).toFixed(2)} s over the drag)`);
   }
+  // MINI GOLF'S CEILING (Oct 14: "pinching zooms in to far show to many mini-golf boards, clamp zoom in mini-golf to keep the
+  // boards from getting to small."): the real wheel, turned out far past it, leaves the eye at its zoomMaxH, four board
+  // spacings up, and turned back in, it comes down at once
+  current = 'mini golf zoom ceiling';
+  {
+    const view0 = await page.evaluate(() => { const W = window.FIELD_WORLD; return { camX: W.st.camX, camZ: W.st.camZ, yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom }; });
+    for (let i = 0; i < 12; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, 600); await page.waitForTimeout(150); }
+    await page.waitForTimeout(1500);
+    const hi = await page.evaluate(() => { const W = window.FIELD_WORLD; return { up: W.camera.position.y / W.spacing()[0], zoom: W.st.zoom, cap: window.getFieldApp().zoomMaxH }; });
+    await page.mouse.wheel(0, -300); await page.waitForTimeout(1200);
+    const lo = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
+    await page.evaluate(v => { const W = window.FIELD_WORLD; W.target.zoom = null; Object.assign(W.st, v); }, view0);
+    await page.waitForTimeout(800);
+    const ok = hi.cap === 4 && hi.up <= 4.02 && hi.up > 3.5 && lo < hi.zoom - 5;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ hi, lo })}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the wheel stopped ${hi.up.toFixed(2)} board spacings up)`);
+  }
   // MOVERS KEEP APART (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where the
   // golfball bounce away", "Keep them apart"): on the course and 120 generated holes, watched for half a minute from the
   // start and again an hour on, no rider comes onto another, onto a bar, a bumper, a boulder or a fence, and no bar onto a
