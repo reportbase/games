@@ -359,11 +359,32 @@ try {
       fenT.tile = fi; fenT.row0 = D.ed.bd[0].map(p => p || '.').join(''); fenT.check = D.check().g && D.check().g.fen(); fenT.turn = D.ed.turn;
       A.onStatTap(0, 0, 12); D.tap(sq(2, 0)); fenT.edited = D.fenNow();                 // (Erase on a6's pawn: the counts go)
       D.cancel();
+      // (Oct 14: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1. did not work": with no board selected the menu's Set
+      //  up from FEN… takes the board in the middle of the view, flies there, and plays the position on it)
+      { const T = window.FIELD_WORLD.target; T.shown = false; window.prompt = () => 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1.';
+        A.menu.flatMap(m => m.items).find(i => i.label === 'Set up from FEN…').on(); window.prompt = p0; await wait(1500);
+        const k = D.cellKey(T.boardX, T.boardZ), g2 = D.userGames().get(k); fenT.menu = { shown: !!T.shown, fen: g2 && g2.fen(), off: !D.ed.on }; }
+      /* (Oct 14: a list of board-only FENs, then "Yes" to Paste FENs…) one a line through the box: each good one on its own
+         board (a board alone White to move, one White cannot be to move given Black), the rest listed by line with why, and
+         only they left in the box */
+      { const L = ['8/8/8/8/8/5K2/7Q/k7', '1. 8/8/8/8/8/2k5/8/K1q5', '7/8/8/8/8/8/8/K6k', 'o1N6/8/8/8/8/8/8/K6k', '', '8/8/8/8/8/8/1Q6/k6K w - - 0 1'].join('\n');
+        const n0 = D.userGames().size, box = D.fenBox(); box.querySelector('textarea').value = L;
+        [...box.querySelectorAll('button')].find(b => b.textContent === 'Put on boards').click(); await wait(800);
+        const W2 = window.FIELD_WORLD, k = D.cellKey(W2.target.boardX, W2.target.boardZ), m = D.gameMeta(k);
+        fenT.many = { put: D.userGames().size - n0, lab: box.firstChild.textContent, left: box.querySelector('textarea').value, first: m && m.fen, looks: D.looksLikeFens(L), notPgn: !D.looksLikeFens('[Event "x"]\n\n1. e4 e5') };
+        box.hidden = true; }
+      // (back to the board this check began on: the selected board is every game's, and these FEN steps move it on purpose, so
+      //  the mini golf checks long after played another board's hole, one its straight putts could not sink: CI, Oct 14)
+      D.fly(3, 2); await window.__settle(3, 2);
       return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, youW, fen: fenAtDone, now: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2, fenT };
     });
     const F = ce.fenT || {};
     if (F.puz !== 'rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 1' || F.bare !== '8/8/8/8/8/8/8/K6k w - - 0 1' || !F.junk || !F.eight
-        || F.tile !== 18 || F.row0 !== 'rn.k...r' || F.check !== F.puz || F.turn !== 'w' || F.edited !== 'rn1k3r/1b1q1ppp/3P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 0 1')
+        || F.tile !== 18 || F.row0 !== 'rn.k...r' || F.check !== F.puz || F.turn !== 'w' || F.edited !== 'rn1k3r/1b1q1ppp/3P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 0 1'
+        || !F.many || F.many.put !== 2 || !/Put 2 positions on boards; 3 refused/.test(F.many.lab) || !/line 3 .*Rank 8 \(7\) covers 7 squares/.test(F.many.lab)
+        || !/line 4 .*"o" is not a piece letter/.test(F.many.lab) || !/line 6 .*in check/.test(F.many.lab) || F.many.left.split('\n').length !== 3
+        || F.many.first !== '8/8/8/8/8/5K2/7Q/k7 w - - 0 1' || !F.many.looks || !F.many.notPgn
+        || !F.menu || !F.menu.shown || F.menu.fen !== 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' || !F.menu.off)
       failures.push(`[${current}] the FEN: ${JSON.stringify(F)}`);
     if (!ce.on || ce.tiles !== 19 || ce.keys !== 19 || ce.noKing !== false || !ce.stillOn || !/king/.test(ce.why) || !/pawn/i.test(ce.pawnMsg) || !ce.pawnOff
         || ce.ok !== true || !ce.youW || ce.fen !== '4k3/8/8/8/8/8/8/3QK3 w - - 0 1' || ce.now !== ce.fen || !ce.shut || !ce.escOff || !ce.kept)
@@ -2601,6 +2622,48 @@ try {
     if (merged.mine.join('|') !== 'twin|other' || merged.stored !== 2) failures.push(`[${current}] copies merged on load: ${JSON.stringify(merged)}`);
   }
   console.log(`${failures.length === before9 ? 'ok  ' : 'FAIL'} ${current}`);
+  // TILT MAZE (Oct 14: "what are more games like mini-golf we could create", then "tilt maze"): every board its own maze, its
+  // size by level; the steady player finishes each; its marble never goes through a wall; the real arrow key rolls the marble;
+  // a hole drops it back to the start; the ring finishes it with stars and a best kept; a tap then goes on to the next board;
+  // a board no one plays shows the player's run moving
+  current = 'tilt maze';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tiltmaze')); await new Promise(ok => setTimeout(ok, 3000)); });   // (no __settle: the hole editor's check before this reloads the page, which drops the helpers)
+    const tm = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, out = { sizes: [], ok: 0, runs: 0, through: 0 };
+      for (let lv = 1; lv <= 5; lv++){ out.sizes.push(D.makeMaze(500 + lv, lv, 0).m);
+        for (let i = 0; i < 6; i++){ const L = D.makeMaze(2000 + i * 31 + lv, lv, 0), R = D.playRun(L); out.runs++; if (R.ok) out.ok++;
+          // (the same player again, its cell at every step: it only ever goes to a cell its own opens onto)
+          const [x0, y0] = D.centre(L, L.start), b = { x: x0, y: y0, vx: 0, vy: 0 }; let k = D.cellOf(L, b.x, b.y);
+          for (let n = 0; n < 240 * 40; n++){ if (n % 4 === 0) b.tilt = D.botTilt(L, b); const ev = D.stepBall(L, b, b.tilt[0], b.tilt[1], 1 / 240), k2 = D.cellOf(L, b.x, b.y);
+            if (k2 !== k && !D.nbrs(L, k).includes(k2)) out.through++; k = k2; if (ev === 'goal' || ev === 'fall') break; } } }
+      const a = D.makeMaze(7, 3, 0), b2 = D.makeMaze(8, 3, 0); out.differ = a.E.join('') + a.S.join('') !== b2.E.join('') + b2.S.join('');
+      return out; });
+    // the real arrow key, on the framed board
+    const f = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); A._debug.GAMES.clear(); A.onCellTap(f.c, f.r); const g = A._debug.gameAt(f.c, f.r); return { c: f.c, r: f.r, x: g.b.x, y: g.b.y }; });
+    await page.keyboard.down('ArrowRight'); await page.keyboard.down('ArrowDown'); await page.waitForTimeout(900); await page.keyboard.up('ArrowRight'); await page.keyboard.up('ArrowDown');
+    await page.waitForTimeout(300);
+    const live = await page.evaluate(async f => { const A = window.getFieldApp(), D = A._debug, g = D.gameAt(f.c, f.r), out = { moved: Math.hypot(g.b.x - f.x, g.b.y - f.y), state: g.state, t: g.t };
+      // a hole: the marble set on one drops, and is back at the start a moment later
+      const L = g.M.L;
+      if (L.holes.length){ g.state = 'play'; g.b = { x: L.holes[0].x, y: L.holes[0].y, vx: 0, vy: 0 }; g.last = performance.now() - 16; D.stepGame(g); out.fell = g.state === 'falling';
+        for (let w = 0; w < 30 && g.state === 'falling'; w++) await new Promise(ok => setTimeout(ok, 200)); const [sx, sy] = D.centre(L, L.start);   // (the drop is 0.6 s of the game's own time, a few frames)
+        out.back = Math.hypot(g.b.x - sx, g.b.y - sy) < 0.05 && g.falls === 1; }
+      else { out.fell = out.back = true; }
+      // the ring: through, with stars and a best kept
+      const [gx, gy] = D.centre(L, L.goal); g.state = 'play'; g.b = { x: gx, y: gy, vx: 0, vy: 0 }; g.last = performance.now() - 16; D.stepGame(g);
+      out.done = g.state === 'done'; out.stars = g.stars; out.best = D.BEST.has(L.idx + '@' + L.lv);
+      A.onCellTap(f.c, f.r); out.next = D.LIVE && (D.LIVE.c !== f.c || D.LIVE.r !== f.r);
+      // a board no one plays: the player's run, moving
+      const c2 = f.c + 2, r2 = f.r + 1; D.mazeFor(c2, r2); const at = () => { const its = A.cellItems(c2, r2), m = its.find(i => i.kind === 'tmMarble'); return m ? [m.u, m.v] : null; };
+      const p0 = at(); await new Promise(ok => setTimeout(ok, 700)); const p1 = at(); out.shown = !!(p0 && p1 && Math.hypot(p0[0] - p1[0], p0[1] - p1[1]) > 1e-4);
+      out.walls = A.cellItems(c2, r2).filter(i => i.kind === 'tmWall').length;
+      return out; }, f);
+    if (JSON.stringify(tm.sizes) !== '[5,6,7,8,10]' || tm.ok !== tm.runs || tm.through !== 0 || !tm.differ
+        || !(live.moved > 0.02) || live.state !== 'play' || !(live.t > 0) || !live.fell || !live.back || !live.done || !(live.stars >= 1 && live.stars <= 3) || !live.best || !live.next || !live.shown || !(live.walls > 8))
+      failures.push(`[${current}] ${JSON.stringify({ tm, live })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${tm.ok} of ${tm.runs} mazes finished by the steady player; the arrow keys rolled it ${live.moved.toFixed(3)})`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

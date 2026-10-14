@@ -525,8 +525,8 @@
   /* ── the paste box ── */
   /* An inline display:flex outranks the UA's [hidden]{display:none} — the
      same trap the game index documents above — so hiding needs !important. */
-  #pgnPasteBox[hidden]{ display: none !important; }
-  #pgnPasteBox{
+  #pgnPasteBox[hidden], #fenPasteBox[hidden]{ display: none !important; }
+  #pgnPasteBox, #fenPasteBox{
     border-radius: 12px;
     box-shadow: 0 18px 44px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
   }
@@ -12110,11 +12110,119 @@ function pastePgn(){
       txt => {
         if (settled) return;
         settled = true; clearTimeout(timer);
-        if (txt && txt.trim()) _pasteResult(importPgnText(txt, 'pasted PGN', true));
+        // (a list of FENs on the clipboard goes on boards as FENs: Oct 14)
+        if (txt && looksLikeFens(txt)){ const R = importFenText(txt); _flashBtn('bPastePgn', R.n ? 'Put ' + R.n + ' on boards ✓' : 'No position found'); if (R.refused.length){ const b = openFenPasteBox(); b.querySelector('textarea').value = txt; b.firstChild.textContent = _fenResultText(R); } }
+        else if (txt && txt.trim()) _pasteResult(importPgnText(txt, 'pasted PGN', true));
         else openPgnPasteBox();
       },
       () => { clearTimeout(timer); fallback(); });
   } else openPgnPasteBox();
+}
+/* ─── MANY FENS AT ONCE (Oct 14: a list of 96 board-only FENs pasted, then "Yes" to "a Paste FENs… item that takes the
+   whole list at once, like Paste PGN does for games") ─────────────────────────────────────────────────────────────────────
+   Each line one position, read as Set up from FEN… reads one (chessFenTidy: a line of the board alone is White to move; a
+   leading "12." or "12)" is a list's numbering, not the board). A line that names no side and cannot be White to move (the
+   side not to move in check, or the game over) is tried with Black. Each that chess allows goes on its own unused board,
+   nearest the framed board first, as a pasted PGN does, and is listed in the game index as one import; the first is framed.
+   What was refused comes back with its line and why. */
+function chessPositionWhy(fen){
+  let g = null; try { g = new Chess(fen); } catch (e){ return { why: String(e && e.message || e).replace(/^Invalid FEN:\s*/i, '').slice(0, 80) }; }
+  const board = fen.split(' ')[0], n = c => board.split('').filter(x => x === c).length, ranks = board.split('/');
+  if (n('K') !== 1 || n('k') !== 1) return { why: 'each side needs one king' };
+  if (/[pP]/.test(ranks[0] + ranks[7])) return { why: 'a pawn on the first or last rank' };
+  try { const f = fen.split(' '); f[1] = f[1] === 'w' ? 'b' : 'w'; f[3] = '-'; if (new Chess(f.join(' ')).inCheck()) return { why: (f[1] === 'w' ? 'White' : 'Black') + ' is in check with the other side to move' }; } catch {}
+  if (g.isGameOver()) return { why: g.isCheckmate() ? 'already checkmate' : 'already over (stalemate or a draw)' };
+  return { g };
+}
+function importFenText(raw){
+  const lines = String(raw || '').split(/\r?\n/), ok = [], refused = [];
+  lines.forEach((line0, i) => {
+    const line = line0.trim().replace(/^\d+\s*[.)]\s+/, '');
+    if (!line || /^(#|\/\/)/.test(line)) return;
+    let T = chessFenTidy(line), P = T.fen ? chessPositionWhy(T.fen) : T;
+    if (T.fen && !P.g && !/^\S+\s+[wb]\b/i.test(line)){            // (no side named: Black, if White cannot be to move)
+      const B = T.fen.replace(/^(\S+) w /, '$1 b '), PB = chessPositionWhy(B);
+      if (PB.g){ T = { fen: B }; P = PB; }
+    }
+    if (P.g) ok.push({ line: i + 1, fen: T.fen, g: P.g }); else refused.push({ line: i + 1, text: line.slice(0, 40), why: P.why });
+  });
+  if (!ok.length) return { n: 0, refused };
+  const agx = target.shown ? Math.round(target.boardX / gridSpacingX()) : Math.round(st.camX / gridSpacingX());
+  const agz = target.shown ? Math.round(target.boardZ / gridSpacingZ()) : Math.round(st.camZ / gridSpacingZ());
+  const free = [];
+  for (let ring = 0; free.length < ok.length && ring <= 64; ring++)
+    for (let dz = -ring; dz <= ring && free.length < ok.length; dz++)
+      for (let dx = -ring; dx <= ring && free.length < ok.length; dx++){
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+        const k = (agx + dx) + '_' + (agz + dz);
+        if (!userGames.has(k) && k !== PLAY.activeKey) free.push([agx + dx, agz + dz]);
+      }
+  const importId = newImportId(), keys = [];
+  let first = null;
+  ok.forEach((e, i) => {
+    if (!free[i]) return;
+    const x = free[i][0] * gridSpacingX(), z = free[i][1] * gridSpacingZ(), key = cellKey(x, z);
+    userGames.delete(key); userGames.set(key, e.g);
+    PGN_REEL.delete(key); REEL_OFF.delete(key);
+    setGameMeta(key, { src: 'setup', fen: e.fen, tags: { Event: 'Position ' + (i + 1) + ' of ' + ok.length + ' (line ' + e.line + ')', SetUp: '1', FEN: e.fen },
+                       file: 'pasted FENs', importId, idx: i, of: ok.length });
+    keys.push(key); if (!first) first = [x, z];
+  });
+  recordPgnImport(keys, 'pasted FENs', importId);
+  if (first){
+    target.cellX = Math.round(first[0] / gridSpacingX()); target.cellZ = Math.round(first[1] / gridSpacingZ());
+    target.boardX = first[0]; target.boardZ = first[1]; target.shown = true;
+    try { resetThrust(); resumeAnim(); frameBoard(); enterPlay(); } catch {}
+  }
+  try { saveSession(); rebuildBoardBrowser(); } catch {}
+  return { n: keys.length, refused };
+}
+// (does pasted text look like FENs rather than a PGN? most of its lines start with a board of eight ranks)
+function looksLikeFens(text){
+  const L = String(text || '').split(/\r?\n/).map(l => l.trim().replace(/^\d+\s*[.)]\s+/, '')).filter(Boolean);
+  return L.length > 0 && L.filter(l => /^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}(\s|$)/.test(l)).length >= Math.max(1, L.length * 0.5) && !/\[\w+\s+"/.test(text);
+}
+function _fenResultText(R){
+  const head = R.n ? 'Put ' + R.n + (R.n === 1 ? ' position' : ' positions') + ' on boards' : 'No position could be put on a board';
+  if (!R.refused.length) return head + '.';
+  return head + '; ' + R.refused.length + ' refused:\n' + R.refused.slice(0, 12).map(r => 'line ' + r.line + ' (' + r.text + '…): ' + r.why).join('\n')
+       + (R.refused.length > 12 ? '\n… and ' + (R.refused.length - 12) + ' more' : '');
+}
+function openFenPasteBox(){
+  let box = document.getElementById('fenPasteBox');
+  if (box){ box.hidden = false; box.querySelector('textarea').focus(); return box; }
+  box = document.createElement('div');
+  box.id = 'fenPasteBox';
+  box.className = 'panel';
+  box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;'
+    + 'display:flex;flex-direction:column;gap:8px;padding:12px;width:min(520px,92vw);box-sizing:border-box';
+  const lab = document.createElement('div');
+  lab.textContent = 'Paste FENs below, one a line (the board alone is White to move), then Put on boards';
+  lab.style.cssText = 'font-size:11px;color:#9fb0c4;white-space:pre-wrap;max-height:30vh;overflow:auto';
+  const ta = document.createElement('textarea');
+  ta.placeholder = 'rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 0\n4R3/8/8/2Pkp3/N7/4rnKB/1nb5/b1r5\n…';
+  ta.spellcheck = false;
+  ta.style.cssText = 'width:100%;height:200px;resize:vertical;background:rgba(255,255,255,.06);'
+    + 'color:inherit;border:1px solid rgba(201, 199, 190,.25);border-radius:6px;padding:8px;'
+    + 'font-family:ui-monospace,Menlo,monospace;font-size:11px;box-sizing:border-box;white-space:pre';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
+  const bCancel = document.createElement('button'); bCancel.textContent = 'Close';
+  const bGo = document.createElement('button'); bGo.textContent = 'Put on boards';
+  bCancel.addEventListener('click', () => { box.hidden = true; });
+  bGo.addEventListener('click', () => {
+    const R = importFenText(ta.value);
+    lab.textContent = _fenResultText(R);
+    // (all of them on boards: the box goes; anything refused: it stays, saying which, with only those lines left in it)
+    if (R.n && !R.refused.length){ ta.value = ''; box.hidden = true; try { engineNotice(lab.textContent, 3200); } catch {} }
+    else if (R.n){ const bad = new Set(R.refused.map(r => r.line)); ta.value = ta.value.split(/\r?\n/).filter((l, i) => bad.has(i + 1)).join('\n'); }
+  });
+  ta.addEventListener('keydown', e => { if (e.key === 'Escape'){ e.stopPropagation(); box.hidden = true; } });
+  row.append(bCancel, bGo);
+  box.append(lab, ta, row);
+  document.body.appendChild(box);
+  ta.focus();
+  return box;
 }
 /* A small centred panel with a textarea — where the clipboard can't be read
    programmatically, the user pastes with the keyboard instead. */
@@ -12143,6 +12251,7 @@ function openPgnPasteBox(){
   bGo.textContent = 'Import';
   bCancel.addEventListener('click', () => { box.hidden = true; });
   bGo.addEventListener('click', () => {
+    if (looksLikeFens(ta.value)){ const R = importFenText(ta.value); if (R.n){ ta.value = ''; box.hidden = true; } lab.textContent = _fenResultText(R); try { engineNotice(_fenResultText(R), 4200); } catch {} return; }
     const n = ta.value.trim() ? importPgnText(ta.value, 'pasted PGN', true) : 0;
     if (n > 0){ ta.value = ''; box.hidden = true; _pasteResult(n); }
     else lab.textContent = 'No readable game in that text — check the PGN and try again';
@@ -17698,7 +17807,12 @@ function chessEdStart(){
 function chessFenTidy(text){
   let t = String(text == null ? '' : text).trim().replace(/^["'`]+|["'`]+$/g, '').replace(/^fen\s*[:=]?\s*/i, '').trim();
   const f = t.split(/\s+/).filter(Boolean);
-  if (!f.length || !/^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}$/.test(f[0])) return { why: 'That is not a FEN: it should start with eight ranks of pieces, split by /.' };
+  // (what is wrong with the board, said plainly: chess.js calls a rank of seven "too many squares in rank", Oct 14)
+  const rk = (f[0] || '').split('/'), odd = f[0] && f[0].match(/[^pnbrqkPNBRQK1-8\/]/);
+  if (odd) return { why: 'That is not a FEN: "' + odd[0] + '" is not a piece letter (pnbrqk, PNBRQK) or a count of empty squares.' };
+  if (rk.length !== 8) return { why: 'That is not a FEN: it should start with eight ranks of pieces, split by /, and has ' + rk.length + '.' };
+  for (let i = 0; i < 8; i++){ const w = rk[i].replace(/[1-8]/g, d => '.'.repeat(+d)).length; if (w !== 8) return { why: 'Rank ' + (8 - i) + ' (' + rk[i] + ') covers ' + w + ' squares, not 8.' }; }
+  if (!/^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}$/.test(f[0])) return { why: 'That is not a FEN: it should start with eight ranks of pieces, split by /.' };
   const turn = /^[wb]$/i.test(f[1] || '') ? f[1].toLowerCase() : 'w';
   const castle = /^(-|[KQkq]{1,4})$/.test(f[2] || '') ? f[2] : '-';
   const ep = /^(-|[a-h][36])$/.test(f[3] || '') ? f[3] : '-';
@@ -17728,10 +17842,23 @@ function chessFenNow(){
   try { if (target.shown){ const P = chessHere(cellKey(target.boardX, target.boardZ)); return gridToFen(P.bd, P.turn); } } catch {}
   return '';
 }
+/* WHERE IT GOES, AND SEEN GOING THERE (Oct 14: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1. did not work"):
+   it had worked, on the selected board, which may be a small one far up the screen or none at all ("Pick a board first").
+   So with no board selected it takes the one in the middle of the view, and either way the view flies to the board it set,
+   so the position is there to see. */
+function _chessMiddleBoard(){
+  try {
+    const d = new THREE.Vector3(); camera.getWorldDirection(d); if (d.y > -1e-3) return false;
+    const t = -camera.position.y / d.y, x = camera.position.x + d.x * t, z = camera.position.z + d.z * t;
+    gotoCell(Math.round(x / gridSpacingX()), Math.round(z / gridSpacingZ())); return !!target.shown;
+  } catch { return false; }
+}
 function chessAskFen(play){
   let text = null; try { text = prompt('Paste a FEN (the board, then who moves; the rest may be left off):', chessFenNow()); } catch {}
   if (text == null || !String(text).trim()) return false;
+  if (!CHESS_ED.on && !target.shown) _chessMiddleBoard();
   if (!chessEdFen(text)) return false;
+  try { gotoCell(Math.round(CHESS_ED.bx / gridSpacingX()), Math.round(CHESS_ED.bz / gridSpacingZ())); } catch {}
   if (play) return chessEdDone();
   try { _chEdPane(true); } catch {}
   return true;
@@ -17880,7 +18007,7 @@ const CHESS_APP = {
     return true;
   },
   worldTap(hit){ return chessEdTap(hit); },
-  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, fenTidy: chessFenTidy, fen: chessEdFen, fenNow: chessFenNow, askFen: chessAskFen, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
+  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, fenTidy: chessFenTidy, fen: chessEdFen, importFens: t => importFenText(t), looksLikeFens: t => looksLikeFens(t), fenBox: () => openFenPasteBox(), gameMeta: k => gameMeta.get(k), middleBoard: () => _chessMiddleBoard(), fenNow: chessFenNow, askFen: chessAskFen, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
   /* For the move traces and capture bursts drawn on chess boards (Sep 24:
      "add these changes to chess as well"). Lazy, because BOOM is defined
      further down the file than chess is. */
@@ -17900,6 +18027,8 @@ const CHESS_APP = {
         on(){ if (CHESS_ED.on) chessEdDone(); else if (chessEdStart()) _chEdPane(true); } },
       { label: 'Set up from FEN…', title: 'Paste a FEN (the board and who moves; castling, en passant and the move counts may be left off, and a move number of 0 is read as 1) and play it on the selected board (Oct 14).',
         on(){ chessAskFen(true); } },
+      { label: 'Paste FENs…', title: 'Paste a list of FENs, one a line: each goes on its own unused board near the selected one, and any line that is not a position is listed with why (Oct 14).',
+        on(){ openFenPasteBox(); } },
       { label: 'Cancel the setup', title: 'Leave the board as it was.', get disabled(){ return !CHESS_ED.on; }, on(){ chessEdCancel(); } },
       { label: 'Share this position', title: 'Copy a link that opens the page on this position, to be played from there (Oct 13).', on(){ chessShare(); } },
       { ref: 'bHint' }, { ref: 'bCoords' }, { ref: 'eloWrap' },
@@ -44411,6 +44540,354 @@ const SOKOBAN_APP = (() => {
   SHARE.install(app, takeLevel);
   return app;
 })();
+/* ═══ TILT MAZE ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   (Oct 14: "what are more games like mini-golf we could create", then "tilt maze".) A marble on a board you tip: roll it
+   through the maze to the gold ring without dropping it down a hole. Mini golf's ways, in a smaller frame:
+   - EVERY BOARD ITS OWN MAZE: made from the board's own number (boardIdx, golf's Szudzik pairing), at a level from 1 to 5,
+     the ring level out from the corner plus the Difficulty (as golf and Sokoban). A level sets the maze's size, how many
+     loops it has, how many holes lie off the way and, from level 3, holes in the outside corner of a turn, where a marble
+     going too fast runs on (LV).
+   - PLAYED BY A HAND BEFORE YOU SEE IT: a steady player (botTilt: it tips toward the next cell of the shortest way, braking
+     on its own speed) rolls each maze from start to ring. A maze it cannot finish without a fall in TIME_CAP is made again
+     from the next seed (up to 8 times, then without its corner holes); its time is the board's par, and its run, sampled
+     30 times a second, is what the board shows when no one is playing it.
+   - THE BALL: tipping is a pull (G) times the tilt, rolling loses speed (ROLL), walls are boxes the marble bounces off
+     (BOUNCE), a few small steps a frame. Over a hole's middle it drops and comes back at the start.
+   - TIPPING: the arrow keys (or WASD) hold a tip; a drag tips the board toward your finger, more the further it is; the
+     menu's Tilt steering uses the phone's own tilt (ARCADE.tilt). They add up.
+   - Through: your time against par as stars (at most 1.3 × par 3, at most 2 × par 2, else 1) and your best on the board kept
+     (localStorage tiltmaze.best). A tap on a finished board goes on to the next, as golf goes on to the next hole. */
+const TILT_APP = (() => {
+  const FLOOR = 0xd8c9a6, FLOOR2 = 0xcfbe98, WALLC = 0x6b4a2b, HOLEC = 0x111111, RINGC = 0xe8b93a, MARBLE = 0xd9dde3;
+  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  const LV = [
+    { m: 5,  loops: 0.12, holes: 0.08, corner: 0 },
+    { m: 6,  loops: 0.09, holes: 0.12, corner: 0 },
+    { m: 7,  loops: 0.07, holes: 0.16, corner: 0.15 },
+    { m: 8,  loops: 0.05, holes: 0.2,  corner: 0.3 },
+    { m: 10, loops: 0.04, holes: 0.22, corner: 0.45 },
+  ];
+  const G = 2.2, ROLL = 0.9, BOUNCE = 0.35, VMAX = 1.6, SUB = 1 / 240, TIME_CAP = 120, REC_HZ = 30;
+  const WALL_T = 0.12, WALL_H = 0.42, BALL_R = 0.26, HOLE_R = 0.3, CORNER_R = 0.2, CORNER_OFF = 0.23, RING_R = 0.3;
+  const DL = ARCADE.difficulty('tiltmaze.level', 'Every board has its own maze, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up.');
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const SND = ARCADE.sounds('tiltmaze.sound', 'A tick off the walls, a drop down a hole, a chime at the ring.');
+  const TILT = ARCADE.tilt;
+  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  // (mini golf's and Sokoban's: a board's own number from its column and row, and its ring out from the corner)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+
+  /* ─── A MAZE ─── cells i (across), j (down); E[i + j·m]: a wall on the cell's east side, S[…]: on its south side; the
+     board's edge is walled all round. Made by a walk that backs up when it is boxed in (every cell reached once, one way
+     between any two), then a few walls taken out for loops. */
+  function makeMaze(idx, lv, attempt){
+    const D = LV[lv - 1], m = D.m, n = m * m, R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ (attempt * 97531));
+    const E = new Uint8Array(n).fill(1), S = new Uint8Array(n).fill(1), seen = new Uint8Array(n), stack = [0];
+    seen[0] = 1;
+    while (stack.length){
+      const k = stack[stack.length - 1], i = k % m, j = (k / m) | 0, nb = [];
+      if (i > 0 && !seen[k - 1]) nb.push(k - 1); if (i < m - 1 && !seen[k + 1]) nb.push(k + 1);
+      if (j > 0 && !seen[k - m]) nb.push(k - m); if (j < m - 1 && !seen[k + m]) nb.push(k + m);
+      if (!nb.length){ stack.pop(); continue; }
+      const q = nb[Math.floor(R() * nb.length)];
+      if (q === k + 1) E[k] = 0; else if (q === k - 1) E[q] = 0; else if (q === k + m) S[k] = 0; else S[q] = 0;
+      seen[q] = 1; stack.push(q);
+    }
+    for (let t = Math.round(D.loops * n); t > 0; t--){
+      const k = Math.floor(R() * n), i = k % m, j = (k / m) | 0;
+      if (R() < 0.5){ if (i < m - 1) E[k] = 0; } else if (j < m - 1) S[k] = 0;
+    }
+    const L = { idx, lv, attempt, m, s: 1 / m, E, S, holes: [], start: 0 };
+    // the ring: the cell farthest from the start along the maze, so the way is long
+    const dist = bfs(L, 0); let far = 0; for (let k = 0; k < n; k++) if (dist[k] > dist[far]) far = k;
+    L.goal = far; L.path = pathOf(L, 0, far);
+    const onPath = new Set(L.path);
+    // holes off the way, dead ends and branch cells first (where a marble running on would go)
+    const off = []; for (let k = 1; k < n; k++) if (!onPath.has(k) && k !== far) off.push(k);
+    off.sort((a, b) => (exits(L, a) - exits(L, b)) || (R() - 0.5));
+    const nh = Math.round(D.holes * n);
+    for (let t = 0; t < nh && t < off.length; t++) if (R() < 0.85) L.holes.push({ x: (off[t] % m + 0.5) / m, y: (((off[t] / m) | 0) + 0.5) / m, r: HOLE_R / m });
+    // holes in the outside corner of a turn on the way: overshoot it and the marble goes in
+    if (D.corner && attempt < 8){
+      for (let p = 1; p < L.path.length - 1; p++){
+        const a = L.path[p - 1], b = L.path[p], c = L.path[p + 1], d1 = b - a, d2 = c - b;
+        if (d1 === d2 || R() > D.corner) continue;
+        // (outside the turn: on from the way it came, and away from the way it goes)
+        const dir = d => d === 1 ? [1, 0] : d === -1 ? [-1, 0] : d === m ? [0, 1] : [0, -1];
+        const [ax, ay] = dir(d1), [bx, by] = dir(d2), cx = (b % m + 0.5) / m, cy = (((b / m) | 0) + 0.5) / m;
+        L.holes.push({ x: cx + (ax - bx) * CORNER_OFF / m, y: cy + (ay - by) * CORNER_OFF / m, r: CORNER_R / m, corner: true });
+      }
+    }
+    L.walls = wallsOf(L);
+    return L;
+  }
+  const exits = (L, k) => nbrs(L, k).length;
+  function nbrs(L, k){
+    const m = L.m, i = k % m, j = (k / m) | 0, out = [];
+    if (i < m - 1 && !L.E[k]) out.push(k + 1); if (i > 0 && !L.E[k - 1]) out.push(k - 1);
+    if (j < m - 1 && !L.S[k]) out.push(k + m); if (j > 0 && !L.S[k - m]) out.push(k - m);
+    return out;
+  }
+  function bfs(L, from){
+    const d = new Int32Array(L.m * L.m).fill(-1), q = [from]; d[from] = 0;
+    for (let h = 0; h < q.length; h++) for (const b of nbrs(L, q[h])) if (d[b] < 0){ d[b] = d[q[h]] + 1; q.push(b); }
+    return d;
+  }
+  function pathOf(L, a, b){
+    const d = bfs(L, b), out = [a];
+    let k = a; while (k !== b && d[k] > 0){ k = nbrs(L, k).find(q => d[q] === d[k] - 1); out.push(k); }
+    return out;
+  }
+  /* The walls as boxes [x0, y0, x1, y1] in board units, runs along a line laid as one, each a little longer than its cells so
+     the corners close; and by cell for the marble (WB: the boxes touching each cell). */
+  function wallsOf(L){
+    const m = L.m, s = 1 / m, t = WALL_T * s / 2, out = [];
+    for (let j = 0; j <= m; j++){          // horizontal lines: under row j - 1
+      let a = -1;
+      for (let i = 0; i <= m; i++){
+        const on = i < m && (j === 0 || j === m || L.S[i + (j - 1) * m]);
+        if (on && a < 0) a = i;
+        if (!on && a >= 0){ out.push({ b: [a * s - t, j * s - t, i * s + t, j * s + t], edge: j === 0 || j === m }); a = -1; }
+      }
+    }
+    for (let i = 0; i <= m; i++){          // vertical lines: east of column i - 1
+      let a = -1;
+      for (let j = 0; j <= m; j++){
+        const on = j < m && (i === 0 || i === m || L.E[(i - 1) + j * m]);
+        if (on && a < 0) a = j;
+        if (!on && a >= 0){ out.push({ b: [i * s - t, a * s - t, i * s + t, j * s + t], edge: i === 0 || i === m }); a = -1; }
+      }
+    }
+    const WB = Array.from({ length: m * m }, () => []);
+    out.forEach(w => { const [x0, y0, x1, y1] = w.b;
+      for (let j = Math.max(0, Math.floor(y0 / s - 1)); j <= Math.min(m - 1, Math.floor(y1 / s + 1)); j++)
+        for (let i = Math.max(0, Math.floor(x0 / s - 1)); i <= Math.min(m - 1, Math.floor(x1 / s + 1)); i++) WB[i + j * m].push(w.b); });
+    L.WB = WB;
+    return out;
+  }
+  const cellOf = (L, x, y) => Math.max(0, Math.min(L.m - 1, Math.floor(x * L.m))) + Math.max(0, Math.min(L.m - 1, Math.floor(y * L.m))) * L.m;
+  const centre = (L, k) => [(k % L.m + 0.5) / L.m, (((k / L.m) | 0) + 0.5) / L.m];
+
+  /* ─── THE MARBLE ─── one small step: pulled by the tilt, slowed by rolling, pushed out of any wall it overlaps and bounced
+     off it; over a hole's middle it falls. Returns 'fall', 'goal', 'hit' or null. */
+  function stepBall(L, b, tx, ty, dt){
+    const s = L.s, rb = BALL_R * s;
+    b.vx += G * tx * dt; b.vy += G * ty * dt;
+    const f = Math.exp(-ROLL * dt); b.vx *= f; b.vy *= f;
+    const sp = Math.hypot(b.vx, b.vy); if (sp > VMAX){ b.vx *= VMAX / sp; b.vy *= VMAX / sp; }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    let hit = null;
+    for (const w of L.WB[cellOf(L, b.x, b.y)]){
+      const qx = Math.max(w[0], Math.min(w[2], b.x)), qy = Math.max(w[1], Math.min(w[3], b.y)), dx = b.x - qx, dy = b.y - qy, d = Math.hypot(dx, dy);
+      if (d >= rb) continue;
+      let nx, ny;
+      if (d > 1e-9){ nx = dx / d; ny = dy / d; }
+      else { const l = b.x - w[0], r = w[2] - b.x, u = b.y - w[1], dn = w[3] - b.y, mn = Math.min(l, r, u, dn); nx = mn === l ? -1 : mn === r ? 1 : 0; ny = mn === u ? -1 : mn === dn ? 1 : 0; }
+      b.x = qx + nx * rb; b.y = qy + ny * rb;
+      const vn = b.vx * nx + b.vy * ny;
+      if (vn < 0){ b.vx -= (1 + BOUNCE) * vn * nx; b.vy -= (1 + BOUNCE) * vn * ny; if (-vn > 0.15) hit = 'hit'; }
+    }
+    for (const h of L.holes) if (Math.hypot(b.x - h.x, b.y - h.y) < h.r * 0.75) return 'fall';
+    const [gx, gy] = centre(L, L.goal);
+    if (Math.hypot(b.x - gx, b.y - gy) < RING_R * s * 0.8) return 'goal';
+    return hit;
+  }
+  /* THE STEADY PLAYER: the shortest way from the marble's own cell, toward the next cell's middle, braking on its speed.
+     Slower near holes in a turn's corner: it aims a little inside the turn. */
+  function botTilt(L, b){
+    const k = cellOf(L, b.x, b.y), p = k === L.goal ? [k] : pathOf(L, k, L.goal), nx = p.length > 1 ? p[1] : k;
+    let [tx, ty] = centre(L, nx);
+    if (p.length > 2){ const [ux, uy] = centre(L, p[2]); tx += (ux - tx) * 0.15; ty += (uy - ty) * 0.15; }
+    const s = L.s, kp = 9 / s, kd = 3.2 / s * 0.18;
+    const ax = (tx - b.x) * kp * 0.12 - b.vx * kd * 0.7, ay = (ty - b.y) * kp * 0.12 - b.vy * kd * 0.7;
+    const c = v => Math.max(-1, Math.min(1, v));
+    return [c(ax), c(ay)];
+  }
+  // the steady player's run: kept 30 times a second; ok only if it reached the ring without a fall
+  function playRun(L){
+    const [x0, y0] = centre(L, L.start), b = { x: x0, y: y0, vx: 0, vy: 0 }, rec = [x0, y0];
+    let t = 0, k = 0, next = 1 / REC_HZ;
+    for (; t < TIME_CAP; t += SUB){
+      if (k++ % 4 === 0) b.tilt = botTilt(L, b);
+      const ev = stepBall(L, b, b.tilt[0], b.tilt[1], SUB);
+      if (ev === 'fall') return { ok: false, why: 'fell', t };
+      if (t >= next){ rec.push(b.x, b.y); next += 1 / REC_HZ; }
+      if (ev === 'goal'){ const [gx, gy] = centre(L, L.goal); rec.push(gx, gy); return { ok: true, t, rec }; }
+    }
+    return { ok: false, why: 'too slow', t };
+  }
+  /* A board's maze: made, played, made again if the steady player could not finish it (up to 8 times, then once more with no
+     holes in the turns), kept (up to CAP boards, the least recently wanted giving way). */
+  const MAZES = new Map(), CAP = 1500;
+  function mazeFor(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let M = MAZES.get(key);
+    if (M){ MAZES.delete(key); MAZES.set(key, M); return M; }
+    let L = null, run = null;
+    for (let a = 0; a <= 8; a++){ L = makeMaze(idx, lv, a); run = playRun(L); if (run.ok) break; }
+    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: (idx * 0.618) % 1 };
+    MAZES.set(key, M); if (MAZES.size > CAP) MAZES.delete(MAZES.keys().next().value);
+    return M;
+  }
+  // (boards only looked at get their maze a few at a time, as Sokoban deals: until then a bare floor)
+  let budgetAt = 0, budget = 0;
+  function mazeSoon(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), M = MAZES.get(idx * 8 + lv);
+    if (M) return M;
+    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
+    if (budget <= 0) return null;
+    const t0 = performance.now(), out = mazeFor(c, r); budget -= performance.now() - t0;
+    return out;
+  }
+
+  /* ─── PLAYING ─── */
+  const GAMES = new Map();
+  let LIVE = null, DRAG = null;
+  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tiltmaze.best') || '{}'))); } catch { return new Map(); } })();
+  const saveBest = () => { try { const e = [...BEST].slice(-500); localStorage.setItem('tiltmaze.best', JSON.stringify(Object.fromEntries(e))); } catch {} };
+  const bestKey = M => M.L.idx + '@' + M.L.lv;
+  function fresh(c, r){
+    const M = mazeFor(c, r), [x, y] = centre(M.L, M.L.start);
+    return { M, c, r, b: { x, y, vx: 0, vy: 0 }, t: 0, falls: 0, state: 'ready', last: performance.now(), drop: 0 };
+  }
+  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const HELD = new Set();
+  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D', a: 'L', d: 'R', w: 'U', s: 'D', A: 'L', D: 'R', W: 'U', S: 'D' };
+  addEventListener('keydown', e => {
+    const k = KEYMAP[e.key];
+    if (!k || (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || g.state === 'done') return;
+    e.preventDefault(); e.stopPropagation(); HELD.add(k);
+  }, true);
+  addEventListener('keyup', e => { const k = KEYMAP[e.key]; if (k && HELD.delete(k)){ e.preventDefault(); e.stopPropagation(); } }, true);
+  addEventListener('blur', () => HELD.clear());
+  // the tilt you are giving: keys, the phone, a drag toward the finger; together, at most full in each direction
+  function tiltNow(g){
+    let x = (HELD.has('R') ? 1 : 0) - (HELD.has('L') ? 1 : 0), y = (HELD.has('D') ? 1 : 0) - (HELD.has('U') ? 1 : 0);
+    if (TILT.on){ x += TILT.x; y += TILT.y; }
+    if (DRAG && DRAG.at){ const s = g.M.L.s; x += (DRAG.at.u - g.b.x) / (2.5 * s); y += (DRAG.at.v - g.b.y) / (2.5 * s); }
+    const c = v => Math.max(-1, Math.min(1, v));
+    return [c(x), c(y)];
+  }
+  function stepGame(g){
+    // (a slow frame catches up, in the same small steps, up to a quarter of a second: at a few frames a second the marble ran
+    //  at a fifth of its speed with each frame held to a twentieth)
+    const t = performance.now(), dt = Math.min(0.25, (t - g.last) / 1000); g.last = t;
+    if (g.state === 'done') return;
+    if (g.state === 'falling'){ g.drop += dt; if (g.drop > 0.6){ const [x, y] = centre(g.M.L, g.M.L.start); g.b = { x, y, vx: 0, vy: 0 }; g.state = 'play'; g.drop = 0; } return; }
+    const [tx, ty] = tiltNow(g);
+    if (g.state === 'ready'){ if (Math.abs(tx) + Math.abs(ty) < 0.05) return; g.state = 'play'; }
+    g.t += dt;
+    for (let n = Math.max(1, Math.round(dt / SUB)); n > 0; n--){
+      const ev = stepBall(g.M.L, g.b, tx, ty, Math.min(SUB, dt));
+      if (ev === 'hit') SND.play('tap', true);
+      if (ev === 'fall'){ g.falls++; g.state = 'falling'; g.drop = 0; SND.play('bad'); say('Down a hole. Back to the start.', 1400); return; }
+      if (ev === 'goal'){ finish(g); return; }
+    }
+  }
+  function starsOf(t, par){ return !par ? 1 : t <= par * 1.3 ? 3 : t <= par * 2 ? 2 : 1; }
+  function finish(g){
+    const L = g.M.L, [gx, gy] = centre(L, L.goal); g.b = { x: gx, y: gy, vx: 0, vy: 0 }; g.state = 'done';
+    g.stars = starsOf(g.t, g.M.par);
+    const k = bestKey(g.M), was = BEST.get(k), t = Math.round(g.t * 10) / 10;
+    if (was == null || t < was){ BEST.delete(k); BEST.set(k, t); saveBest(); }
+    SND.play('win');
+    say('Through in ' + t.toFixed(1) + ' s' + (g.M.par ? ' (par ' + g.M.par.toFixed(1) + ' s)' : '') + ' ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars)
+        + (g.falls ? ', ' + g.falls + (g.falls === 1 ? ' fall' : ' falls') : '') + (was != null && t < was ? '. A new best, beating ' + was.toFixed(1) + ' s.' : was != null ? '. Best ' + was.toFixed(1) + ' s.' : '.') + ' Tap for the next board.', 4200);
+  }
+  // a board no one is playing: the steady player's run, round and round (with a rest at the ring)
+  function shownBall(M){
+    const R = M.run && M.run.rec; const L = M.L;
+    if (!R) return centre(L, L.start);
+    const n = R.length / 2, T = n / REC_HZ + 1.5, t = ((now() / 1000 + M.phase * T) % T) * REC_HZ, i = Math.min(n - 1, Math.floor(t)), f = Math.min(1, t - i), j = Math.min(n - 1, i + 1);
+    return [R[2 * i] + (R[2 * j] - R[2 * i]) * f, R[2 * i + 1] + (R[2 * j + 1] - R[2 * i + 1]) * f];
+  }
+  function itemsOf(M, ball, g){
+    const L = M.L, s = L.s, out = [], lc = LV_COL[L.lv - 1];
+    for (const w of L.walls){ const [x0, y0, x1, y1] = w.b, lx = x1 - x0, ly = y1 - y0, l = Math.max(lx, ly);
+      out.push({ kind: 'tmWall', u: (x0 + x1) / 2, v: (y0 + y1) / 2, scale: s, sx: lx / s, sy: WALL_H, sz: ly / s, color: w.edge ? lc : WALLC }); }
+    for (const h of L.holes) out.push({ kind: 'tmHole', u: h.x, v: h.y, scale: 2 * h.r, color: HOLEC });
+    const [gx, gy] = centre(L, L.goal);
+    out.push({ kind: 'tmRing', u: gx, v: gy, scale: 2 * RING_R * s, color: RINGC });
+    const [sx0, sy0] = centre(L, L.start);
+    out.push({ kind: 'tmStart', u: sx0, v: sy0, scale: 2 * RING_R * s, color: 0x8a7a5a });
+    const sink = g && g.state === 'falling' ? Math.min(1, g.drop / 0.4) : 0;
+    out.push({ kind: 'tmMarble', u: ball[0], v: ball[1], scale: 2 * BALL_R * s * (1 - 0.5 * sink), lift: -sink * BALL_R * s, color: MARBLE });
+    return out;
+  }
+  const box = T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; };
+  const app = {
+    name: 'tilt maze',
+    menu: [{ head: 'Tilt maze', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to tip the board. The way you hold it when you turn this on counts as level.',
+        on(){ ARCADE.setTilt(!TILT.on, say); } },
+      { label: 'Start this board again', title: 'The marble back at the start, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; } } },
+    ]}],
+    cellFar: { light: FLOOR, dark: FLOOR2 },
+    itemMinPx: 16,
+    itemGeometries: {
+      tmWall: box,
+      tmHole: T => FieldKit.disc(T, 0.5, 0.003),
+      tmRing: T => FieldKit.ring(T, 0.36, 0.5, 0.004),
+      tmStart: T => FieldKit.ring(T, 0.42, 0.5, 0.003),
+      tmMarble: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
+    },
+    cellGrid(c, r){
+      const M = (LIVE && LIVE.c === c && LIVE.r === r) ? mazeFor(c, r) : MAZES.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r)));
+      const m = M ? M.L.m : 8;
+      return { n: m, colors: Array.from({ length: m * m }, (_, k) => ((k % m) + ((k / m) | 0)) % 2 ? FLOOR2 : FLOOR) };
+    },
+    cellItems(c, r){
+      const k = gkey(c, r), live = LIVE && LIVE.c === c && LIVE.r === r;
+      const g = GAMES.get(k) || (live ? gameAt(c, r) : null);
+      if (g){ if (live) stepGame(g); return itemsOf(g.M, [g.b.x, g.b.y], g); }
+      const M = mazeSoon(c, r);
+      return M ? itemsOf(M, shownBall(M), null) : [];
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), M = MAZES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
+      if (!M) return 'Tilt maze — board ' + c + '·' + r + ', level ' + lv;
+      const best = BEST.get(bestKey(M));
+      return 'Tilt maze — level ' + lv + ', ' + M.L.m + '×' + M.L.m + (M.par ? ' · par ' + M.par.toFixed(1) + ' s' : '') + (best != null ? ' · best ' + best.toFixed(1) + ' s' : '')
+           + (g && g.state !== 'ready' ? ' · ' + g.t.toFixed(1) + ' s' + (g.falls ? ', ' + g.falls + (g.falls === 1 ? ' fall' : ' falls') : '') : '');
+    },
+    onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    onCellTap(c, r){
+      const g = gameAt(c, r);
+      if (LIVE && LIVE.c === c && LIVE.r === r && g.state === 'done'){
+        const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+      LIVE = { c, r };
+      if (g.state === 'ready') say('Tip the board: the arrow keys, a drag toward where it should roll, or the phone (the menu\'s Tilt steering). Get the marble to the gold ring.', 3600);
+      return true;
+    },
+    // (hold: start this board again)
+    onCellHold(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; say('From the start again.', 1200); return true; },
+    // a drag tips the board toward the finger, for as long as it is held
+    claimsPan(u, v){ const g = liveGame(); if (!g || g.state === 'done' || u == null) return false; DRAG = { at: { u, v } }; return true; },
+    onPan(dx, dy, at){ if (!DRAG) return false; if (at) DRAG.at = { u: at.u, v: at.v }; return true; },
+    onPanEnd(){ DRAG = null; },
+    _debug: { makeMaze, mazeFor, playRun, stepBall, botTilt, bfs, pathOf, nbrs, cellOf, centre, gameAt, fresh, stepGame, finish, starsOf, levelAt, boardIdx,
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, GAMES, MAZES, BEST, HELD, LV, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -44794,7 +45271,7 @@ const LEVELS_APP = (() => {
     _debug: { get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -44803,7 +45280,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

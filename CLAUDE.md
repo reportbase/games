@@ -214,6 +214,28 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     rated, none sank fewer than half (the worst five in eight). The course test rates a generated hole its player cannot
     finish (`vetHole`); if the page would make it again, it plays the new one, and fails if more than one in 33 of its sample
     was made again.
+- **Tilt maze** (Oct 14: "what are more games like mini-golf we could create", then "tilt maze"): `TILT_APP`, id `tiltmaze`,
+  after Sokoban. A marble on a board you tip, through a maze to the gold ring, past holes.
+  - **Every board its own maze** (`mazeFor`, `makeMaze`): from the board's number (`boardIdx`, golf's Szudzik pairing) at a level
+    1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as golf and Sokoban. `LV` sets each level: the maze's
+    size (5, 6, 7, 8, 10 cells a side), loops (walls taken out after a backtracking walk), holes off the way (dead ends and
+    branches first) and, from level 3, holes in the outside corner of a turn on the way (a marble going too fast runs on into
+    them). The ring is the cell farthest from the start. The outer wall is the level's colour (golf's flag colours).
+  - **Played before you see it**: a steady player (`botTilt`: toward the next cell of the shortest way from wherever the marble
+    is, braking on its speed) rolls each maze (`playRun`, `TIME_CAP` 120 s); a maze it cannot finish without a fall is made
+    again from the next seed (up to 8 times, then without corner holes). Its time is the board's par and its run, sampled 30
+    times a second, is what the board shows when no one plays it (`shownBall`, each board at its own phase). Measured on 30
+    boards a level: all finished on the first try; par 7.4, 9.4, 12.2, 14.6 and 20.7 s; 3–15 ms to make. Boards only looked at
+    get theirs a few at a time (`mazeSoon`, 8 ms in 30) and show a bare floor till then; `MAZES` keeps 1,500.
+  - **The marble** (`stepBall`): pulled by `G` times the tilt, slowed by rolling (`ROLL`), walls are boxes (`wallsOf`: runs along
+    a line laid as one box, `WB` by cell) it is pushed out of and bounces off (`BOUNCE`), in 1/240 s steps; a frame catches up
+    to a quarter of a second. Over a hole's middle it drops (0.6 s) and comes back at the start.
+  - **Tipping** (`tiltNow`): the arrow keys or WASD hold a tip, a drag tips the board toward the finger (more, the further it
+    is), and the menu's Tilt steering uses the phone (`ARCADE.tilt`); they add up. The clock starts at the first tip.
+  - **Through**: time against par as stars (`starsOf`: ≤ 1.3 × par 3, ≤ 2 × par 2, else 1), the best on each board kept
+    (localStorage `tiltmaze.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold starts again.
+  - The smoke test checks the sizes by level, the steady player finishing 30 mazes and never passing a wall, the real arrow
+    keys rolling the marble, a hole and the ring, and a board no one plays moving.
 - **Sokoban: every board its own level** (Oct 12: "what ideas from mini-golf can we extend to the other games." … "ok,
   proceed", on "every board its own puzzle, harder further out" and "rated by a simulated player, rebuilt until it fits"):
   - The corner block keeps the worked-out levels (`MAP`, one a board, as golf keeps its course there; their par is the pushes
@@ -268,6 +290,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     under 1 (puzzle books' `1 0`, which chess.js refuses) as 1, then asks chess.js; share links go through it too. The FEN is
     kept whole (`CHESS_ED.fen`), so castling, en passant and the counts are played as given until the board or the side to
     move is changed, when the editor's own reading (`gridToFen`) takes over.
+    With no board selected it takes the one in the middle of the view (`_chessMiddleBoard`), and either way the view flies
+    to the board it set (Oct 14: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1. did not work": it had worked, on a
+    selected board small and far up the screen, or said "Pick a board first").
+  - **Many FENs at once** (Oct 14: 96 board-only FENs pasted, then "Yes" to a Paste FENs… item): the menu's Paste FENs… opens
+    a box (`openFenPasteBox`, `#fenPasteBox`); `importFenText` reads it a line at a time through `chessFenTidy` (a list's
+    "12." numbering is dropped; a board alone is White to move, or Black if White cannot be: `chessPositionWhy`, the editor's
+    checks on a FEN) and puts each position on its own unused board, nearest the framed one first (a pasted PGN's ring
+    search), as one import in the game index (`recordPgnImport`, `gameMeta` src 'setup' with its FEN); the first is framed.
+    The box says how many went on and lists each refused line with why (a rank's squares counted by the page, since chess.js
+    calls seven "too many"), keeping only those lines in it. Paste PGN hands a clipboard or box of FENs here (`looksLikeFens`).
+    The owner's 96: 92 on boards, 4 refused (two ranks of 7, an `o`, and a line in another notation).
   - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
     row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
   - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.
