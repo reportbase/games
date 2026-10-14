@@ -922,7 +922,7 @@ try {
   const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
     let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
     const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-    const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '')))].sort().join(',');
+    const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '').replace(/^land[ML]$/, 'land')))].sort().join(',');   // (the ground's grains are one ground, Oct 14)
     return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, mid: mid.length, small: small.length, smallKinds: kinds(small), midKinds: kinds(mid), bigKinds: kinds(big),
              framedSmall: D.cellItems(f.c, f.r, 100).length }; });
   if (lod.floor !== 62 || lod.appFloor !== 62) failures.push(`[${current}] the tilt floor is ${lod.floor} (wanted 62 for mini golf: Oct 12, "clamp the tilt so that the horizon is reduced")`);
