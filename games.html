@@ -44585,7 +44585,15 @@ const LEVELS_APP = (() => {
        corner further out, more of the field in proportion, so each near body gets fewer addresses, but there are fewer
        levels to the farthest board and each holds more, so far bodies get more.
      By metres keeps an engine's fixed tiers (grain = level) and None every board in full. */
-  const ADDR = 512, BODY_B = 1.8;           // (BODY_B: a body's breadth on the ground, half a board at the field's size)
+  const BODY_B = 1.8;                       // (a body's breadth on the ground, half a board at the field's size)
+  /* THE LEAVES ARE A DIAL TOO (Oct 14: "let the user change the leaves of levels not chess to change ihe image size"): the
+     reader's addresses, its leaves, are the size of the image it reads the field into. ADDR = 512 · 2^as, as from −3 to 3
+     (64 to 4,096 leaves; the row's Fewer leaves / More leaves, ?leaves=, localStorage levels.leaves). Each doubling gives
+     every level twice the addresses, so every body one grain finer, as far as the finest; each halving the other way. */
+  let as = 0;
+  try { const P = new URLSearchParams(location.search), q = P.has('leaves') ? Math.log2(+P.get('leaves') / 512) : NaN, sv = localStorage.getItem('levels.leaves');
+        as = Number.isFinite(q) ? q : (sv != null && Number.isFinite(+sv) ? +sv : 0); as = Math.max(-3, Math.min(3, Math.round(as))); } catch {}
+  let ADDR = 512 * 2 ** as;
   let hs = 0;
   try { const q = +new URLSearchParams(location.search).get('H'); const sv = +localStorage.getItem('levels.H');
         hs = Number.isFinite(q) && new URLSearchParams(location.search).has('H') ? q : (Number.isFinite(sv) ? sv : 0); hs = Math.max(-3, Math.min(3, Math.round(hs))); } catch {}
@@ -44637,10 +44645,19 @@ const LEVELS_APP = (() => {
     say(hs === 0 ? 'H = v: the corner where a board is as far along the ground as the eye is high' : 'H = v ' + (hs > 0 ? '× ' + 2 ** hs + ': the corner further out, more of the field in proportion' : '÷ ' + 2 ** -hs + ': the corner nearer, the near field finer'));
     try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {}
   }
+  function setLeaves(x){
+    as = Math.max(-3, Math.min(3, Math.round(x))); ADDR = 512 * 2 ** as; try { localStorage.setItem('levels.leaves', String(as)); } catch {}
+    say(ADDR + ' leaves: ' + (as > 0 ? 'a larger image, every body finer' : as < 0 ? 'a smaller image, every body coarser' : 'the reader as it was'));
+    try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {}
+  }
   function setWire(on){ wire = !!on; if (BODIES){ const any = lastList.length > 0; BODIES.visible = any && !wire; BODYLINES.visible = any && wire; } try { localStorage.setItem('levels.wire', wire ? 'on' : 'off'); } catch {} try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {} }
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
   return {
     name: 'levels',
+    /* NO COLOURED BOARDS (Oct 14: "remove the colored background to boards in levels."): with no colours of its own a board
+       took the cell fill (window.CELL_FILL_CSS, the gallery's average print, a warm red here), and the bodies stood on a field
+       of red squares. Its far pair is the ground between the boards, so nothing is under a body but the field. */
+    cellFar: { light: 0x06080c, dark: 0x06080c },
     itemMinPx: 1,
     // (the field's walk goes on past its tiles while this says so: Oct 13, "the objects are not visible in the far horizon")
     itemsPastTiles(){ return BAT.size < PAST_MAX; },
@@ -44684,6 +44701,9 @@ const LEVELS_APP = (() => {
       const Hv = hs === 0 ? 'H = v' : 'H = v' + (hs > 0 ? '×' + 2 ** hs : '÷' + 2 ** -hs), sh = shareOf(Hof(Math.max(1e-6, W().camera ? W().camera.position.y : 1)));
       T.push({ glyph: '−', value: 'H smaller', dim: hs <= -3 || mode !== 'vh' }, { glyph: '+', value: 'H larger', dim: hs >= 3 || mode !== 'vh' },
              { label: mode === 'vh' ? Hv : 'H', value: mode === 'vh' ? Math.round(sh.n) + ' a level' : '—', sub: mode === 'vh' ? ADDR + ' addresses, ' + (1 + sh.lv) + ' parts' : 'by v/h only' });
+      // (and the leaves, the reader's image size: Oct 14)
+      T.push({ glyph: '−', value: 'Fewer leaves', dim: as <= -3 || mode !== 'vh' }, { glyph: '+', value: 'More leaves', dim: as >= 3 || mode !== 'vh' },
+             { label: 'leaves', value: String(ADDR), sub: mode === 'vh' ? 'the reader\'s image' : 'by v/h only' });
       const S = shown, max = S.n.length;
       let tot = 0, nb = 0;
       for (let k = 0; k < max; k++){ if (!S.n[k]) continue; tot += S.t[k]; nb += S.n[k];
@@ -44692,15 +44712,18 @@ const LEVELS_APP = (() => {
       return T;
     },
     onStatTap(c, r, i){ if (i < MODES.length){ setMode(MODES[i]); return true; } if (i === MODES.length){ setWire(!wire); return true; }
-      if (i === MODES.length + 1){ setH(hs - 1); return true; } if (i === MODES.length + 2){ setH(hs + 1); return true; } return false; },
+      if (i === MODES.length + 1){ setH(hs - 1); return true; } if (i === MODES.length + 2){ setH(hs + 1); return true; }
+      if (i === MODES.length + 4){ setLeaves(as - 1); return true; } if (i === MODES.length + 5){ setLeaves(as + 1); return true; } return false; },
     menu: [{ head: 'Levels', items: [
       ...MODES.map(m => ({ label: () => (m === mode ? '✓ ' : '') + MODE_NAME[m], title: m === 'vh' ? 'Levels split at H, 2H, 4H … along the ground; H is the eye\'s height v unless H smaller or H larger moved it.' : m === 'metres' ? 'Levels split at fixed distances on the ground, as an engine sets them once.' : 'Every board in full.', on(){ setMode(m); } })),
       { label: 'H smaller', title: 'Halve H: the corner nearer the eye, near bodies finer, far bodies coarser.', on(){ setH(hs - 1); } },
       { label: 'H larger', title: 'Double H: the corner further out, near bodies coarser, far bodies finer.', on(){ setH(hs + 1); } },
+      { label: 'Fewer leaves', title: 'Halve the reader\'s leaves, the size of its image: every body a grain coarser.', on(){ setLeaves(as - 1); } },
+      { label: 'More leaves', title: 'Double the reader\'s leaves, the size of its image: every body a grain finer.', on(){ setLeaves(as + 1); } },
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
-    _debug: { get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, ADDR, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
+    _debug: { get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
 window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];

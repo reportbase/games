@@ -401,6 +401,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       H = v, n = 128 over 4, near 1, far 3; H = v × 4, n = 256 over 2, near 2, far 2.
     - By metres keeps an engine's fixed tiers (grain = level), None every board at grain 0. Measured at 1280×800, opened by
       v/h: 157 boards in 4 levels for 30,992 triangles; climbed, 1,316 boards for 36,552; None at the opening 622,976.
+  - **The leaves are a dial** (Oct 14: "let the user change the leaves of levels not chess to change ihe image size"): the
+    reader's addresses are the size of the image it reads the field into, ADDR = 512·2^as, as −3 to 3 (64 to 4,096; the
+    row's Fewer leaves / More leaves and its leaves tile, the menu, `setLeaves`, `?leaves=`, localStorage `levels.leaves`).
+    Each doubling makes every body a grain finer, as far as the finest. The opening view's 157 boards: 7.5k triangles at 64
+    leaves, 27k at 512, 599k at 4,096.
+  - **No coloured boards** (Oct 14: "remove the colored background to boards in levels."): with no colours of its own a board
+    took the cell fill (`CELL_FILL_CSS`, a warm red), so Levels' `cellFar` is the ground's own colour (0x06080c) and the bodies
+    stand on the field alone.
   - Rings on the ground (gold at the corner, then each doubling) follow the point under the eye, scaled by v (or METRES_D),
     drawn from its own frame loop (`tick`), which also takes the counts of each frame the field drew (`fieldRest.drawn`: a
     frame it rests on asks the framed board alone).

@@ -230,7 +230,12 @@ try {
       const tile = name => A.onStatTap(f.c, f.r, A.statTiles(f.c, f.r).findIndex(t => t.value === name));
       const at = () => { const sh = D.shareOf(v * 2 ** D.hs), near = D.grainOf(0, v), far = D.grainOf(D.levelAt(D.farR * 0.75, v), v); return { hs: D.hs, near, far, total: Math.round(sh.n * (1 + sh.lv)) }; };
       const out = { mid: at() }; tile('H smaller'); tile('H smaller'); out.small = at(); tile('H larger'); tile('H larger'); tile('H larger'); tile('H larger'); out.large = at();
-      D.setH(0); out.back = D.hs; return out; });
+      D.setH(0); out.back = D.hs;
+      // (Oct 14: "let the user change the leaves of levels … to change ihe image size": More leaves doubles the reader's
+      //  addresses and every body is as fine or finer, Fewer halves them; and the boards have no colour of their own)
+      out.leaves = { a0: D.ADDR, near0: D.grainOf(0, v) }; tile('More leaves'); tile('More leaves'); out.leaves.a2 = D.ADDR; out.leaves.near2 = D.grainOf(0, v);
+      out.leaves.total2 = Math.round(D.shareOf(v).n * (1 + D.shareOf(v).lv)); tile('Fewer leaves'); tile('Fewer leaves'); tile('Fewer leaves'); out.leaves.a1 = D.ADDR; out.leaves.near1 = D.grainOf(0, v);
+      D.setLeaves(0); out.leaves.back = D.ADDR; out.plain = A.cellFar && A.cellFar.light === A.cellFar.dark && A.cellFar.light === 0x06080c; return out; });
     const own = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, T = window.FIELD_WORLD.THREE;
       const i0 = D.boardIdx(0, 0), i1 = D.boardIdx(1, 0), i2 = D.boardIdx(0, 1), a = D.bodyOf(i0), b = D.bodyOf(i1), c = D.bodyOf(i2);
       const same = JSON.stringify(D.bodyOf(i0)) === JSON.stringify(a), differ = JSON.stringify(a) !== JSON.stringify(b) && JSON.stringify(a) !== JSON.stringify(c) && i0 !== i1 && i1 !== i2;
@@ -285,7 +290,9 @@ try {
         || !['None', 'By metres', 'By v/h', 'Wireframe'].every(n => tiles.names.includes(n)) || Math.abs(pitch1 - pitch0) > 1e-6
         || own.floor !== 2 || floor1 !== 35 || !own.same || !own.differ || own.out < 0.95 || !own.farOwn || !own.noItems || !own.oneMesh || own.jump > 0.02 || !own.atStep || own.edge > 0.01 || own.levels[0] === own.levels[1]
         || hd.small.hs !== -2 || hd.large.hs !== 2 || hd.back !== 0 || !(hd.small.near < hd.mid.near || hd.mid.near === 0) || !(hd.large.near > hd.mid.near)
-        || !(hd.small.far > hd.large.far) || [hd.small, hd.mid, hd.large].some(x => x.total !== 512))
+        || !(hd.small.far > hd.large.far) || [hd.small, hd.mid, hd.large].some(x => x.total !== 512)
+        || hd.leaves.a0 !== 512 || hd.leaves.a2 !== 2048 || hd.leaves.a1 !== 256 || hd.leaves.back !== 512 || hd.leaves.total2 !== 2048
+        || !(hd.leaves.near2 <= hd.leaves.near0 && hd.leaves.near0 <= hd.leaves.near1 && hd.leaves.near2 < hd.leaves.near1) || !hd.plain)
       failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, far, tiles, pitch0, pitch1, own, floor1, hd })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (H near/far grains ${hd.small.near}/${hd.small.far}, ${hd.mid.near}/${hd.mid.far}, ${hd.large.near}/${hd.large.far}; by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; at 6°: ${far.bodies} bodies; None at the opening view: ${tiles.none})`);
   }
