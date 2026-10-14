@@ -364,11 +364,23 @@ try {
       { const T = window.FIELD_WORLD.target; T.shown = false; window.prompt = () => 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1.';
         A.menu.flatMap(m => m.items).find(i => i.label === 'Set up from FEN…').on(); window.prompt = p0; await wait(1500);
         const k = D.cellKey(T.boardX, T.boardZ), g2 = D.userGames().get(k); fenT.menu = { shown: !!T.shown, fen: g2 && g2.fen(), off: !D.ed.on }; }
+      /* (Oct 14: a list of board-only FENs, then "Yes" to Paste FENs…) one a line through the box: each good one on its own
+         board (a board alone White to move, one White cannot be to move given Black), the rest listed by line with why, and
+         only they left in the box */
+      { const L = ['8/8/8/8/8/5K2/7Q/k7', '1. 8/8/8/8/8/2k5/8/K1q5', '7/8/8/8/8/8/8/K6k', 'o1N6/8/8/8/8/8/8/K6k', '', '8/8/8/8/8/8/1Q6/k6K w - - 0 1'].join('\n');
+        const n0 = D.userGames().size, box = D.fenBox(); box.querySelector('textarea').value = L;
+        [...box.querySelectorAll('button')].find(b => b.textContent === 'Put on boards').click(); await wait(800);
+        const W2 = window.FIELD_WORLD, k = D.cellKey(W2.target.boardX, W2.target.boardZ), m = D.gameMeta(k);
+        fenT.many = { put: D.userGames().size - n0, lab: box.firstChild.textContent, left: box.querySelector('textarea').value, first: m && m.fen, looks: D.looksLikeFens(L), notPgn: !D.looksLikeFens('[Event "x"]\n\n1. e4 e5') };
+        box.hidden = true; }
       return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, youW, fen: fenAtDone, now: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2, fenT };
     });
     const F = ce.fenT || {};
     if (F.puz !== 'rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 1' || F.bare !== '8/8/8/8/8/8/8/K6k w - - 0 1' || !F.junk || !F.eight
         || F.tile !== 18 || F.row0 !== 'rn.k...r' || F.check !== F.puz || F.turn !== 'w' || F.edited !== 'rn1k3r/1b1q1ppp/3P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 0 1'
+        || !F.many || F.many.put !== 2 || !/Put 2 positions on boards; 3 refused/.test(F.many.lab) || !/line 3 .*Rank 8 \(7\) covers 7 squares/.test(F.many.lab)
+        || !/line 4 .*"o" is not a piece letter/.test(F.many.lab) || !/line 6 .*in check/.test(F.many.lab) || F.many.left.split('\n').length !== 3
+        || F.many.first !== '8/8/8/8/8/5K2/7Q/k7 w - - 0 1' || !F.many.looks || !F.many.notPgn
         || !F.menu || !F.menu.shown || F.menu.fen !== 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' || !F.menu.off)
       failures.push(`[${current}] the FEN: ${JSON.stringify(F)}`);
     if (!ce.on || ce.tiles !== 19 || ce.keys !== 19 || ce.noKing !== false || !ce.stillOn || !/king/.test(ce.why) || !/pawn/i.test(ce.pawnMsg) || !ce.pawnOff

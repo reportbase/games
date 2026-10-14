@@ -525,8 +525,8 @@
   /* ── the paste box ── */
   /* An inline display:flex outranks the UA's [hidden]{display:none} — the
      same trap the game index documents above — so hiding needs !important. */
-  #pgnPasteBox[hidden]{ display: none !important; }
-  #pgnPasteBox{
+  #pgnPasteBox[hidden], #fenPasteBox[hidden]{ display: none !important; }
+  #pgnPasteBox, #fenPasteBox{
     border-radius: 12px;
     box-shadow: 0 18px 44px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
   }
@@ -12110,11 +12110,119 @@ function pastePgn(){
       txt => {
         if (settled) return;
         settled = true; clearTimeout(timer);
-        if (txt && txt.trim()) _pasteResult(importPgnText(txt, 'pasted PGN', true));
+        // (a list of FENs on the clipboard goes on boards as FENs: Oct 14)
+        if (txt && looksLikeFens(txt)){ const R = importFenText(txt); _flashBtn('bPastePgn', R.n ? 'Put ' + R.n + ' on boards ✓' : 'No position found'); if (R.refused.length){ const b = openFenPasteBox(); b.querySelector('textarea').value = txt; b.firstChild.textContent = _fenResultText(R); } }
+        else if (txt && txt.trim()) _pasteResult(importPgnText(txt, 'pasted PGN', true));
         else openPgnPasteBox();
       },
       () => { clearTimeout(timer); fallback(); });
   } else openPgnPasteBox();
+}
+/* ─── MANY FENS AT ONCE (Oct 14: a list of 96 board-only FENs pasted, then "Yes" to "a Paste FENs… item that takes the
+   whole list at once, like Paste PGN does for games") ─────────────────────────────────────────────────────────────────────
+   Each line one position, read as Set up from FEN… reads one (chessFenTidy: a line of the board alone is White to move; a
+   leading "12." or "12)" is a list's numbering, not the board). A line that names no side and cannot be White to move (the
+   side not to move in check, or the game over) is tried with Black. Each that chess allows goes on its own unused board,
+   nearest the framed board first, as a pasted PGN does, and is listed in the game index as one import; the first is framed.
+   What was refused comes back with its line and why. */
+function chessPositionWhy(fen){
+  let g = null; try { g = new Chess(fen); } catch (e){ return { why: String(e && e.message || e).replace(/^Invalid FEN:\s*/i, '').slice(0, 80) }; }
+  const board = fen.split(' ')[0], n = c => board.split('').filter(x => x === c).length, ranks = board.split('/');
+  if (n('K') !== 1 || n('k') !== 1) return { why: 'each side needs one king' };
+  if (/[pP]/.test(ranks[0] + ranks[7])) return { why: 'a pawn on the first or last rank' };
+  try { const f = fen.split(' '); f[1] = f[1] === 'w' ? 'b' : 'w'; f[3] = '-'; if (new Chess(f.join(' ')).inCheck()) return { why: (f[1] === 'w' ? 'White' : 'Black') + ' is in check with the other side to move' }; } catch {}
+  if (g.isGameOver()) return { why: g.isCheckmate() ? 'already checkmate' : 'already over (stalemate or a draw)' };
+  return { g };
+}
+function importFenText(raw){
+  const lines = String(raw || '').split(/\r?\n/), ok = [], refused = [];
+  lines.forEach((line0, i) => {
+    const line = line0.trim().replace(/^\d+\s*[.)]\s+/, '');
+    if (!line || /^(#|\/\/)/.test(line)) return;
+    let T = chessFenTidy(line), P = T.fen ? chessPositionWhy(T.fen) : T;
+    if (T.fen && !P.g && !/^\S+\s+[wb]\b/i.test(line)){            // (no side named: Black, if White cannot be to move)
+      const B = T.fen.replace(/^(\S+) w /, '$1 b '), PB = chessPositionWhy(B);
+      if (PB.g){ T = { fen: B }; P = PB; }
+    }
+    if (P.g) ok.push({ line: i + 1, fen: T.fen, g: P.g }); else refused.push({ line: i + 1, text: line.slice(0, 40), why: P.why });
+  });
+  if (!ok.length) return { n: 0, refused };
+  const agx = target.shown ? Math.round(target.boardX / gridSpacingX()) : Math.round(st.camX / gridSpacingX());
+  const agz = target.shown ? Math.round(target.boardZ / gridSpacingZ()) : Math.round(st.camZ / gridSpacingZ());
+  const free = [];
+  for (let ring = 0; free.length < ok.length && ring <= 64; ring++)
+    for (let dz = -ring; dz <= ring && free.length < ok.length; dz++)
+      for (let dx = -ring; dx <= ring && free.length < ok.length; dx++){
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+        const k = (agx + dx) + '_' + (agz + dz);
+        if (!userGames.has(k) && k !== PLAY.activeKey) free.push([agx + dx, agz + dz]);
+      }
+  const importId = newImportId(), keys = [];
+  let first = null;
+  ok.forEach((e, i) => {
+    if (!free[i]) return;
+    const x = free[i][0] * gridSpacingX(), z = free[i][1] * gridSpacingZ(), key = cellKey(x, z);
+    userGames.delete(key); userGames.set(key, e.g);
+    PGN_REEL.delete(key); REEL_OFF.delete(key);
+    setGameMeta(key, { src: 'setup', fen: e.fen, tags: { Event: 'Position ' + (i + 1) + ' of ' + ok.length + ' (line ' + e.line + ')', SetUp: '1', FEN: e.fen },
+                       file: 'pasted FENs', importId, idx: i, of: ok.length });
+    keys.push(key); if (!first) first = [x, z];
+  });
+  recordPgnImport(keys, 'pasted FENs', importId);
+  if (first){
+    target.cellX = Math.round(first[0] / gridSpacingX()); target.cellZ = Math.round(first[1] / gridSpacingZ());
+    target.boardX = first[0]; target.boardZ = first[1]; target.shown = true;
+    try { resetThrust(); resumeAnim(); frameBoard(); enterPlay(); } catch {}
+  }
+  try { saveSession(); rebuildBoardBrowser(); } catch {}
+  return { n: keys.length, refused };
+}
+// (does pasted text look like FENs rather than a PGN? most of its lines start with a board of eight ranks)
+function looksLikeFens(text){
+  const L = String(text || '').split(/\r?\n/).map(l => l.trim().replace(/^\d+\s*[.)]\s+/, '')).filter(Boolean);
+  return L.length > 0 && L.filter(l => /^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}(\s|$)/.test(l)).length >= Math.max(1, L.length * 0.5) && !/\[\w+\s+"/.test(text);
+}
+function _fenResultText(R){
+  const head = R.n ? 'Put ' + R.n + (R.n === 1 ? ' position' : ' positions') + ' on boards' : 'No position could be put on a board';
+  if (!R.refused.length) return head + '.';
+  return head + '; ' + R.refused.length + ' refused:\n' + R.refused.slice(0, 12).map(r => 'line ' + r.line + ' (' + r.text + '…): ' + r.why).join('\n')
+       + (R.refused.length > 12 ? '\n… and ' + (R.refused.length - 12) + ' more' : '');
+}
+function openFenPasteBox(){
+  let box = document.getElementById('fenPasteBox');
+  if (box){ box.hidden = false; box.querySelector('textarea').focus(); return box; }
+  box = document.createElement('div');
+  box.id = 'fenPasteBox';
+  box.className = 'panel';
+  box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;'
+    + 'display:flex;flex-direction:column;gap:8px;padding:12px;width:min(520px,92vw);box-sizing:border-box';
+  const lab = document.createElement('div');
+  lab.textContent = 'Paste FENs below, one a line (the board alone is White to move), then Put on boards';
+  lab.style.cssText = 'font-size:11px;color:#9fb0c4;white-space:pre-wrap;max-height:30vh;overflow:auto';
+  const ta = document.createElement('textarea');
+  ta.placeholder = 'rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 0\n4R3/8/8/2Pkp3/N7/4rnKB/1nb5/b1r5\n…';
+  ta.spellcheck = false;
+  ta.style.cssText = 'width:100%;height:200px;resize:vertical;background:rgba(255,255,255,.06);'
+    + 'color:inherit;border:1px solid rgba(201, 199, 190,.25);border-radius:6px;padding:8px;'
+    + 'font-family:ui-monospace,Menlo,monospace;font-size:11px;box-sizing:border-box;white-space:pre';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
+  const bCancel = document.createElement('button'); bCancel.textContent = 'Close';
+  const bGo = document.createElement('button'); bGo.textContent = 'Put on boards';
+  bCancel.addEventListener('click', () => { box.hidden = true; });
+  bGo.addEventListener('click', () => {
+    const R = importFenText(ta.value);
+    lab.textContent = _fenResultText(R);
+    // (all of them on boards: the box goes; anything refused: it stays, saying which, with only those lines left in it)
+    if (R.n && !R.refused.length){ ta.value = ''; box.hidden = true; try { engineNotice(lab.textContent, 3200); } catch {} }
+    else if (R.n){ const bad = new Set(R.refused.map(r => r.line)); ta.value = ta.value.split(/\r?\n/).filter((l, i) => bad.has(i + 1)).join('\n'); }
+  });
+  ta.addEventListener('keydown', e => { if (e.key === 'Escape'){ e.stopPropagation(); box.hidden = true; } });
+  row.append(bCancel, bGo);
+  box.append(lab, ta, row);
+  document.body.appendChild(box);
+  ta.focus();
+  return box;
 }
 /* A small centred panel with a textarea — where the clipboard can't be read
    programmatically, the user pastes with the keyboard instead. */
@@ -12143,6 +12251,7 @@ function openPgnPasteBox(){
   bGo.textContent = 'Import';
   bCancel.addEventListener('click', () => { box.hidden = true; });
   bGo.addEventListener('click', () => {
+    if (looksLikeFens(ta.value)){ const R = importFenText(ta.value); if (R.n){ ta.value = ''; box.hidden = true; } lab.textContent = _fenResultText(R); try { engineNotice(_fenResultText(R), 4200); } catch {} return; }
     const n = ta.value.trim() ? importPgnText(ta.value, 'pasted PGN', true) : 0;
     if (n > 0){ ta.value = ''; box.hidden = true; _pasteResult(n); }
     else lab.textContent = 'No readable game in that text — check the PGN and try again';
@@ -17698,7 +17807,12 @@ function chessEdStart(){
 function chessFenTidy(text){
   let t = String(text == null ? '' : text).trim().replace(/^["'`]+|["'`]+$/g, '').replace(/^fen\s*[:=]?\s*/i, '').trim();
   const f = t.split(/\s+/).filter(Boolean);
-  if (!f.length || !/^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}$/.test(f[0])) return { why: 'That is not a FEN: it should start with eight ranks of pieces, split by /.' };
+  // (what is wrong with the board, said plainly: chess.js calls a rank of seven "too many squares in rank", Oct 14)
+  const rk = (f[0] || '').split('/'), odd = f[0] && f[0].match(/[^pnbrqkPNBRQK1-8\/]/);
+  if (odd) return { why: 'That is not a FEN: "' + odd[0] + '" is not a piece letter (pnbrqk, PNBRQK) or a count of empty squares.' };
+  if (rk.length !== 8) return { why: 'That is not a FEN: it should start with eight ranks of pieces, split by /, and has ' + rk.length + '.' };
+  for (let i = 0; i < 8; i++){ const w = rk[i].replace(/[1-8]/g, d => '.'.repeat(+d)).length; if (w !== 8) return { why: 'Rank ' + (8 - i) + ' (' + rk[i] + ') covers ' + w + ' squares, not 8.' }; }
+  if (!/^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}$/.test(f[0])) return { why: 'That is not a FEN: it should start with eight ranks of pieces, split by /.' };
   const turn = /^[wb]$/i.test(f[1] || '') ? f[1].toLowerCase() : 'w';
   const castle = /^(-|[KQkq]{1,4})$/.test(f[2] || '') ? f[2] : '-';
   const ep = /^(-|[a-h][36])$/.test(f[3] || '') ? f[3] : '-';
@@ -17893,7 +18007,7 @@ const CHESS_APP = {
     return true;
   },
   worldTap(hit){ return chessEdTap(hit); },
-  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, fenTidy: chessFenTidy, fen: chessEdFen, middleBoard: () => _chessMiddleBoard(), fenNow: chessFenNow, askFen: chessAskFen, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
+  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, fenTidy: chessFenTidy, fen: chessEdFen, importFens: t => importFenText(t), looksLikeFens: t => looksLikeFens(t), fenBox: () => openFenPasteBox(), gameMeta: k => gameMeta.get(k), middleBoard: () => _chessMiddleBoard(), fenNow: chessFenNow, askFen: chessAskFen, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
   /* For the move traces and capture bursts drawn on chess boards (Sep 24:
      "add these changes to chess as well"). Lazy, because BOOM is defined
      further down the file than chess is. */
@@ -17913,6 +18027,8 @@ const CHESS_APP = {
         on(){ if (CHESS_ED.on) chessEdDone(); else if (chessEdStart()) _chEdPane(true); } },
       { label: 'Set up from FEN…', title: 'Paste a FEN (the board and who moves; castling, en passant and the move counts may be left off, and a move number of 0 is read as 1) and play it on the selected board (Oct 14).',
         on(){ chessAskFen(true); } },
+      { label: 'Paste FENs…', title: 'Paste a list of FENs, one a line: each goes on its own unused board near the selected one, and any line that is not a position is listed with why (Oct 14).',
+        on(){ openFenPasteBox(); } },
       { label: 'Cancel the setup', title: 'Leave the board as it was.', get disabled(){ return !CHESS_ED.on; }, on(){ chessEdCancel(); } },
       { label: 'Share this position', title: 'Copy a link that opens the page on this position, to be played from there (Oct 13).', on(){ chessShare(); } },
       { ref: 'bHint' }, { ref: 'bCoords' }, { ref: 'eloWrap' },

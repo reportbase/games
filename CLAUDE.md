@@ -271,6 +271,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     With no board selected it takes the one in the middle of the view (`_chessMiddleBoard`), and either way the view flies
     to the board it set (Oct 14: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1. did not work": it had worked, on a
     selected board small and far up the screen, or said "Pick a board first").
+  - **Many FENs at once** (Oct 14: 96 board-only FENs pasted, then "Yes" to a Paste FENs… item): the menu's Paste FENs… opens
+    a box (`openFenPasteBox`, `#fenPasteBox`); `importFenText` reads it a line at a time through `chessFenTidy` (a list's
+    "12." numbering is dropped; a board alone is White to move, or Black if White cannot be: `chessPositionWhy`, the editor's
+    checks on a FEN) and puts each position on its own unused board, nearest the framed one first (a pasted PGN's ring
+    search), as one import in the game index (`recordPgnImport`, `gameMeta` src 'setup' with its FEN); the first is framed.
+    The box says how many went on and lists each refused line with why (a rank's squares counted by the page, since chess.js
+    calls seven "too many"), keeping only those lines in it. Paste PGN hands a clipboard or box of FENs here (`looksLikeFens`).
+    The owner's 96: 92 on boards, 4 refused (two ranks of 7, an `o`, and a line in another notation).
   - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
     row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
   - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.
