@@ -291,17 +291,17 @@ try {
   }
 
   // CHESS PLAYS ON WHILE THE VIEW MOVES (Oct 14: "turn animation back on for chess when the chess board is in motion.",
-  // then "for all games except mini-golf"): a real drag pans the view, the pan hold stays off and the animation clock
-  // chess reads goes on
+  // then "for all games except mini-golf"): a real drag pans the view and the animation clock chess
+  // reads goes on at every look (the pan hold that held it was taken out)
   current = 'chess plays on while the view moves';
   {
     await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'field chess')); await new Promise(r => setTimeout(r, 2000)); });
-    const at = () => page.evaluate(() => { const W = window.FIELD_WORLD; return { on: window.fieldPanHold.on, at: +window.fieldAnimTime().toFixed(1), cam: [W.st.camX, W.st.camZ, W.st.yaw, W.st.pitch, W.st.zoom].map(v => (+v).toFixed(4)).join(',') }; });
+    const at = () => page.evaluate(() => { const W = window.FIELD_WORLD; return { at: +window.fieldAnimTime().toFixed(1), cam: [W.st.camX, W.st.camZ, W.st.yaw, W.st.pitch, W.st.zoom].map(v => (+v).toFixed(4)).join(',') }; });
     const a0 = await at(), during = [];
     await page.mouse.move(200, 650); await page.mouse.down();
     for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await at()); }
     await page.mouse.up(); await page.waitForTimeout(1500);
-    const a1 = during[during.length - 1], ok = !during.some(d => d.on) && a1.at > a0.at && during.some(d => d.cam !== a0.cam);
+    const a1 = during[during.length - 1], ok = a1.at > a0.at && during.every((d, k) => k === 0 || d.at > during[k - 1].at) && during.some(d => d.cam !== a0.cam);
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ a0, during })}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the clock ran ${(a1.at - a0.at).toFixed(0)} ms over the drag)`);
   }
@@ -1390,51 +1390,60 @@ try {
     const cOk = cf.laid && cf.d < 1e-6 && cf.jump < 0.01 && JSON.stringify(cf.rungs) === '[1,2,4,16,32,64]';
     if (!cOk) failures.push(`[${current}] chess's pieces fading: ${JSON.stringify(cf)}`);
     console.log(`${cOk ? 'ok  ' : 'FAIL'} chess's pieces fade between rungs (exact within ${cf.d}, a jump of ${cf.jump.toFixed(4)} rungs at most)`);
+    // FLAT PIECES' GRAINS (Oct 14: "2,5"): a kit disc or ring carries the next coarser polygon at its points exactly (each of
+    // its corners on the coarser one's, the rest on its sides), and the field takes 48 sides to 12 to 6 as it shrinks
+    const fg = await page.evaluate(() => { const T = window.FIELD_WORLD.THREE, K = window.FieldKit, L = window.fieldLOD, out = {};
+      for (const [name, g, c] of [['disc', K.disc(T, 0.3, 0.004, 48), K.disc(T, 0.3, 0.004, 12)], ['disc12', K.disc(T, 0.3, 0.004, 12), K.disc(T, 0.3, 0.004, 6)], ['ring', K.ring(T, 0.1, 0.2, 0.006, 48), K.ring(T, 0.1, 0.2, 0.006, 12)]]){
+        if (!L.flatMorph(g)){ out[name] = 'no morph'; continue; }
+        const S = g.userData.flat.seg, cs = c.userData.flat.seg, per = S / cs, P = g.attributes.position, P2 = g.attributes.pos2, C = c.attributes.position, ring = name === 'ring';
+        let d = 0, side = 0;
+        for (let v = ring ? 0 : 1; v < P.count; v++){
+          const row = ring ? Math.floor(v / (S + 1)) : 0, i = ring ? v - row * (S + 1) : v - 1, R = ring ? (row ? 0.2 : 0.1) : 0.3;
+          // (off a corner, on the coarser polygon's side: at the apothem's distance along its middle)
+          const a = Math.atan2(-P2.getZ(v), P2.getX(v)), j = Math.floor(i / per), mid = (j + 0.5) * 2 * Math.PI / cs;
+          side = Math.max(side, Math.abs(Math.hypot(P2.getX(v), P2.getZ(v)) * Math.cos(a - mid) - R * Math.cos(Math.PI / cs)));
+          if (i % per) continue;
+          const cv = ring ? row * (cs + 1) + i / per : 1 + i / per;
+          d = Math.max(d, Math.hypot(P2.getX(v) - C.getX(cv), P2.getY(v) - C.getY(cv), P2.getZ(v) - C.getZ(cv)), Math.hypot(P.getX(v) - C.getX(cv), P.getZ(v) - C.getZ(cv)));
+        }
+        out[name] = +Math.max(d, side).toExponential(1);
+      }
+      out.grains = [60, 17, 10, 6, 2].map(px => { const G = L.flatGrain(px, 48); return G.seg + ':' + G.w.toFixed(2); });
+      out.trail = L.flatGrain(60, 12).seg;
+      return out; });
+    const fOk = [fg.disc, fg.disc12, fg.ring].every(d => typeof d === 'number' && d < 1e-6) && JSON.stringify(fg.grains) === '["48:0.00","48:0.50","12:0.00","12:0.42","6:0.00"]' && fg.trail === 12;
+    if (!fOk) failures.push(`[${current}] flat pieces' grains: ${JSON.stringify(fg)}`);
+    console.log(`${fOk ? 'ok  ' : 'FAIL'} flat pieces fade 48 → 12 → 6 sides (exact within ${Math.max(fg.disc, fg.disc12, fg.ring)})`);
     // and the pools grow as they are filled (Oct 11, "Smaller piece pools"): some pool has grown past its first 256 and
     // holds more than that, and all of them together hold under a million (4.2 million were set aside before)
     const pools = await page.evaluate(() => { let slots = 0, grown = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isInstancedMesh){ slots += o.instanceMatrix.count; if (o.instanceMatrix.count > 256 && o.count > 256) grown++; } }); return { slots, grown }; });
     if (!(pools.grown >= 1) || !(pools.slots < 1e6)) failures.push(`[${current}] pools that grow: ${JSON.stringify(pools)}`);
   }
-  // NOTHING MOVES WHILE THE VIEW DOES (Oct 12: "restore last update. lets try something different, when panning, no object
-  // motion anywhere, turn it off."): with a round going on the selected board, a real drag elsewhere pans the view; while it
-  // moves the hold is on, the selected board is not asked for its pieces, its game's clock and the animation clock stand
-  // still; a moment after it stops, all of them go on
-  current = 'nothing moves while the view does';
+  // MINI GOLF PLAYS ON WHILE THE VIEW MOVES (Oct 12: "don't stop it during panning."; and since Oct 14 every game does): with
+  // a round going on the selected board, a real drag elsewhere pans the view, and the round's clock and the board's asks
+  // go on through it
+  current = 'mini golf plays on while the view moves';
   {
     const before = failures.length;
     await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r);
-      A.panMoves = false; A.panHolds = true;   // (no game is held now, Oct 14; the hold is checked here on mini golf asking for it)
       const orig = A.cellItems; window.__ph = { f, n: 0, orig }; A.cellItems = function(c, r, bp){ if (c === f.c && r === f.r) window.__ph.n++; return orig.call(this, c, r, bp); }; });
     await page.waitForTimeout(800);
     const sample = () => page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.games.values()].find(g => g.state === 'play'), W = window.FIELD_WORLD;
-      return { on: window.fieldPanHold.on, n: window.__ph.n, gt: g ? +g.t.toFixed(4) : null, at: +window.fieldAnimTime().toFixed(1), cam: [W.st.camX, W.st.camZ, W.st.yaw, W.st.pitch, W.st.zoom].map(v => (+v).toFixed(4)).join(',') }; });   // (the view: a drag may slide it or tilt it)
-    // (the view as it was, to put back after: on a slow frame the drag may turn or tilt it instead of sliding it, and a turned
-    //  view sent the editor's real touches across the board where they meant to go up it, Oct 12)
+      return { n: window.__ph.n, gt: g ? +g.t.toFixed(4) : null, at: +window.fieldAnimTime().toFixed(1), cam: [W.st.camX, W.st.camZ, W.st.yaw, W.st.pitch, W.st.zoom].map(v => (+v).toFixed(4)).join(',') }; });
+    // (the view as it was, to put back after: a turned view sent the editor's real touches across the board, Oct 12)
     const view0 = await page.evaluate(() => { const W = window.FIELD_WORLD; return { st: { camX: W.st.camX, camZ: W.st.camZ, yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom },
       target: Object.fromEntries(Object.entries(W.target).filter(([, v]) => v === null || typeof v !== 'object' && typeof v !== 'function')) }; });
-    const s0 = await sample(), during = [];
+    const g0 = await sample(), during = [];
     await page.mouse.move(200, 650); await page.mouse.down();
-    for (let k = 1; k <= 12; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
-    await page.mouse.up();
-    const held = during.filter(d => d.on), first = held[0], last = held[held.length - 1];
-    await page.waitForTimeout(2000);
-    const after = await sample();
-    // and mini golf as it is (Oct 12: "don't stop it during panning."): a drag holds nothing, and the round's clock goes on
-    await page.evaluate(() => { const A = window.getFieldApp(); A.panMoves = true; delete A.panHolds; });
-    const g0 = await sample(), during2 = [];
-    await page.mouse.move(200, 650); await page.mouse.down();
-    for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during2.push(await sample()); }
+    for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
     await page.mouse.up();
     await page.waitForTimeout(2000);                         // (its glide spent before the view is put back: CI, Oct 12)
-    const g1 = during2[during2.length - 1];
-    if (during2.some(d => d.on) || !(g1.gt > g0.gt) || g1.cam === g0.cam) failures.push(`[${current}] mini golf's movers stopped while the view moved: ${JSON.stringify({ g0, during2 })}`);
+    const g1 = during[during.length - 1];
+    if (!(g1.gt > g0.gt) || !(g1.n > g0.n) || !(g1.at > g0.at) || !during.some(d => d.cam !== g0.cam)) failures.push(`[${current}] ${JSON.stringify({ g0, during })}`);
     await page.evaluate(v => { const W = window.FIELD_WORLD; window.getFieldApp().cellItems = window.__ph.orig; Object.assign(W.target, v.target); Object.assign(W.st, v.st); }, view0);
     await page.waitForTimeout(1500);
-    const ok = held.length >= 6 && first && last.n === first.n && last.gt === first.gt && last.at === first.at && last.cam !== s0.cam
-      && !after.on && after.n > last.n && after.gt > last.gt && after.at > last.at;
-    if (!ok) failures.push(`[${current}] ${JSON.stringify({ s0, during, after })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (held for ${held.length} of 12 samples of a drag)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (the round's clock ran ${(g1.gt - g0.gt).toFixed(2)} s over the drag)`);
   }
   // MOVERS KEEP APART (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where the
   // golfball bounce away", "Keep them apart"): on the course and 120 generated holes, watched for half a minute from the

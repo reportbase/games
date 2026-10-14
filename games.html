@@ -8447,10 +8447,16 @@ const FieldKit = {
      shader is not — 49 vertices against 23 is 2.35M against 1.10M at the
      instance cap. That is the price of a round piece, and it is worth it:
      the pieces are the thing you lean in to look at. */
+  /* GRAINS (Oct 14: "2,5", the second of "what's next": fading detail for the board games' pieces, as chess's and mini
+     golf's do). Zoomed out, these discs were most of what the board games drew: 48 sides each, 5.2 million of LOA's 7.9 million
+     triangles and nearly all of Go's 1.2 million, for discs a few pixels across. A disc or ring from here says what it is
+     (userData.flat), and the field draws it with fewer sides as it shrinks on the screen, fading one grain into the next
+     (_flatGrain, _flatMorph): 48 sides down to 12, 12 down to 6. */
   disc(T, radius, y = 0.004, seg = 48){
     const g = new T.CircleGeometry(radius, seg);
     g.rotateX(-Math.PI / 2);
     g.translate(0, y, 0);
+    g.userData.flat = { type: 'disc', r: radius, y, seg };
     return g;
   },
   /* …and a flat ring, for a mark laid ON a piece (a king's crown). Sits a
@@ -8459,6 +8465,7 @@ const FieldKit = {
     const g = new T.RingGeometry(inner, outer, seg);
     g.rotateX(-Math.PI / 2);
     g.translate(0, y, 0);
+    g.userData.flat = { type: 'ring', r: outer, inner, y, seg };
     return g;
   },
 
@@ -8907,22 +8914,13 @@ fetch('./games.json').then(r => r.json())
    the share of each frame lost to dilation. animTime() subtracts that
    running offset. Pause + dial together → animations freeze in two ways. */
 let animPaused = false, animPauseAt = 0, animOffset = 0;
-/* HELD WHILE THE VIEW MOVES (Oct 12: "restore last update. lets try something different, when panning, no object motion
-   anywhere, turn it off."). The pan hold (PANHOLD, in the frame loop) stops this clock while the camera moves and takes the
-   time held out after, so a board playing itself goes on from where it stopped rather than jumping ahead. A pause begun
-   while held keeps the held moment; one already on when the view began to move is left as it was. */
-let animPanHeld = false, animPanAt = 0;
-function holdAnimForPan(on){
-  if (on){ if (!animPanHeld){ animPanHeld = true; animPanAt = performance.now(); } return; }
-  if (!animPanHeld) return;
-  animPanHeld = false;
-  if (!animPaused) animOffset += performance.now() - animPanAt;
-  else if (animPauseAt > animPanAt) animOffset += animPauseAt - animPanAt;
-}
+/* (From Oct 12 to Oct 14 this clock was held while the view moved, the pan hold: "when panning, no object motion anywhere,
+   turn it off." It went on Oct 14, "turn animation back on for chess when the chess board is in motion.", then "turn it
+   back on for all games except mini-golf.", whose movers already ran on, so every board plays on while you pan.) */
 let animDilationOffset = 0, animDilationLast = null;
-function animTime(){ return (animPaused && animPanHeld ? Math.min(animPauseAt, animPanAt) : animPaused ? animPauseAt : animPanHeld ? animPanAt : performance.now()) - animOffset - animDilationOffset; }
+function animTime(){ return (animPaused ? animPauseAt : performance.now()) - animOffset - animDilationOffset; }
 function pauseAnim(){  if (!animPaused){ animPauseAt = performance.now(); animPaused = true; } }
-window.fieldAnimTime = () => animTime();      // (for the tests: held while the view moves)
+window.fieldAnimTime = () => animTime();      // (for the tests: it runs on while the view moves)
 function resumeAnim(){ if (animPaused){ animOffset += performance.now() - animPauseAt; animPaused = false; } }
 
 /* ─── LIVE PLAY on the selected board ─────────────────────────────────────
@@ -15143,7 +15141,8 @@ function rungFor(gx, gz, bp, capK){
   return Math.pow(2, L);
 }
 // (for the tests: the fade between rungs, its builder and the pieces' fields, Oct 14)
-window.fieldLOD = { fieldMorph, fieldGridOf, buildFieldGeometry, parseTVF3D, rungFor, get rungW(){ return _rungW; }, get fields(){ return FIELDS; } };
+window.fieldLOD = { fieldMorph, fieldGridOf, buildFieldGeometry, parseTVF3D, rungFor, get rungW(){ return _rungW; }, get fields(){ return FIELDS; },
+  flatGrain: (px, seg) => _flatGrain(px, seg), flatMorph: g => _flatMorph(g), get itemKinds(){ return [..._itemMeshes].map(([k, r]) => [k, r.n]); } };   // (and the flat pieces' grains: Oct 14)
 function clarityAt_ctx(camHt, alongNear){
   const Dnear = Math.sqrt(camHt * camHt + alongNear * alongNear);
   const SP    = gridSpacing();
@@ -15525,7 +15524,7 @@ function buildInstances(){
       const bWX = boardWrow0 * ((window.LAB && window.LAB.cellW) || 1), bWZ = boardWrow0 * ((window.LAB && window.LAB.cellH) || 1);
       let _items = null;
       try { _items = _boardItems(_appPast, wrap(gx), wrap(gz), bp, _framed, cx, cz, bWX, bWZ); } catch {}
-      if (_items) for (const it of _items) if (!it.piece) _emitAppItem(_appPast, it, cx, cz, bWX, bWZ);
+      if (_items) for (const it of _items) if (!it.piece) _emitAppItem(_appPast, it, cx, cz, bWX, bWZ, bp);
       continue;
     }
     const { ox, oz, dz, lat } = cell;
@@ -15781,7 +15780,7 @@ function buildInstances(){
               // `lift`: stand the piece on something (a fraction of the board, as u/v are).
               setPawnK(_pk, cx + (0.5 - u) * bWX, 0.02 + (it.lift || 0) * bWX, cz + (0.5 - v) * bWZ,
                        (it.scale || 0.125) * bWX * 1.05, it.piece !== it.piece.toLowerCase(), it.piece);
-            } else _emitAppItem(_app, it, cx, cz, bWX, bWZ);
+            } else _emitAppItem(_app, it, cx, cz, bWX, bWZ, bp);
           }
         }
       }
@@ -17170,7 +17169,7 @@ function frame(now){
   // observer reading the lab clock at rate cos θ. Reading semiCurrentTheta
   // here picks up both held-drag and spring-decay θ, so release thaws
   // smoothly. Pause freezes the accumulator too.
-  if (!animPaused && !animPanHeld){                // (and none while the view moves: PANHOLD)
+  if (!animPaused){
     if (animDilationLast == null) animDilationLast = now;
     const dtReal = Math.min(50, now - animDilationLast);
     animDilationLast = now;
@@ -17259,7 +17258,6 @@ function frame(now){
      the view standing still and nothing on the boards moving, and a phone's battery paid for it). See _restDecide: a frame
      that has nothing new to show is not built or drawn; the light watchers run, and the next frame is asked for as ever. */
   _frameStamp++;
-  _panCheck(now);                      // nothing moves on the boards while the view does (PANHOLD)
   if (_restDecide(now)){
     watchFramedCell(); watchStripSource(); watchIconTurn(); updateStripMarkers(dt);
     requestAnimationFrame(frame);
@@ -40285,9 +40283,6 @@ const GOLF_APP = (() => {
        making the pieces 18 ms a frame against 20 at 62° before (the heights they stand on now kept, hOfDrawn), both measured
        here. At 40° it would be 3.89 million for 417 boards a frame, so 45° it is. */
     pitchMin: 45,
-    /* ITS MOVERS RUN WHILE THE VIEW MOVES (Oct 12: "first turn motion back on in mini-golf., don't stop it during panning."):
-       the pan hold (PANHOLD) leaves an app with panMoves alone, as it does one with onWorld. */
-    panMoves: true,
     itemMinPx: 20,
     itemGeometries,
     fabricCell(ctx, rect){
@@ -44366,9 +44361,7 @@ const SOKOBAN_APP = (() => {
      frame, the boards and triangles at each level.
    - What it shows, if wander's reading holds: by v/h a level has about four times the ground of the one inside it and a
      quarter of the detail a board, so about the same cost; the cost grows with the number of levels, the log of the range,
-     not with the number of boards. Rings on the ground mark the corner (gold) and each doubling past it.
-   - Its boards change level only when the eye moves, so it sets panMoves: the pan hold would otherwise keep every board
-     at the level it had when the view began to move. */
+     not with the number of boards. Rings on the ground mark the corner (gold) and each doubling past it. */
 const LEVELS_APP = (() => {
   const TINT = [0xe8b84a, 0x5fb35f, 0x4a8fd8, 0x9b6fd8, 0xd86f9b, 0xd8884a, 0x9aa0a8, 0x6a6f78];
   const tintOf = k => TINT[Math.min(k, TINT.length - 1)];
@@ -44648,7 +44641,6 @@ const LEVELS_APP = (() => {
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
   return {
     name: 'levels',
-    panMoves: true,
     itemMinPx: 1,
     // (the field's walk goes on past its tiles while this says so: Oct 13, "the objects are not visible in the far horizon")
     itemsPastTiles(){ return BAT.size < PAST_MAX; },
@@ -45386,9 +45378,9 @@ function _resetAppItems(){ for (const rec of _itemMeshes.values()) rec.n = 0; _i
    handeling. only thing is dont draw non-visible boards and no animation when panning or resizing."). From Oct 11 ("only
    the selected board needs to be presented perfectly …") boards other than the selected one were asked for their pieces
    every 3, 6 or 12 frames by their size, and not at all while half off the screen; that is gone. Every board on the screen
-   (_boardVisible) is asked every frame at its own size, as the selected one is. The lists are still kept (_itemCache), for
-   the pan hold to draw while the view moves (PANHOLD), and refreshed after anything that may change what boards show
-   (_itemEpoch, window.fieldItemsChanged). */
+   (_boardVisible) is asked every frame at its own size, as the selected one is. The lists are still kept (_itemCache), to tell
+   whether a board's pieces changed (REST), and refreshed after anything that may change what boards show (_itemEpoch,
+   window.fieldItemsChanged). */
 const _itemCache = new Map();
 let _itemFrame = 0, _itemEpoch = 0, _itemApp = null, _itemVP = null, _itemPurged = -1;
 /* RESTING (Oct 11: "proceed", after "Rest when still: the page redraws every frame even when nothing moves"). Each frame
@@ -45416,34 +45408,9 @@ function _itemsHash(L){
     h = (h * 31 + (typeof it.color === 'number' ? it.color : 7)) | 0; }
   return h ^ L.length;
 }
-/* NOTHING MOVES WHILE THE VIEW DOES (Oct 12: "restore last update. lets try something different, when panning, no object
-   motion anywhere, turn it off."). While the camera's numbers change from one frame to the next (a drag, a pinch, a glide
-   after a swipe, keys, a flight to a board), no board's pieces are asked for, the selected board's included: each is drawn
-   as its last list had it (_boardItems), so movers, riders, balls and pieces stand still, and the games, which step only
-   when their board is asked, wait. A board coming into view meanwhile is asked once and then held too. The animation clock
-   chess reads (animTime) is held with them. The frame the camera stops, all of it goes on: the selected board at once,
-   the others on their beats, the clock from where it stopped. An app that moves the camera itself as its game (one with
-   onWorld, air raid's bomber) is left out: its view is always moving. The hold outlasts the camera by PANHOLD.linger (250 ms):
-   a drag's frames do not all move it (a finger's moves and the frames do not keep step), and the boards came alive and
-   froze again between them, measured. And a hand that is panning holds it whatever the camera did this frame (turn: a
-   one-finger drag past its deadzone, a hold that pulls to tilt or turn, two fingers), the app's own drags aside (mini
-   golf's aim): on a slow machine a finger's moves came further apart than the linger, and the boards came alive mid-drag
-   (CI, Oct 12). */
-const PANHOLD = { on: false, sig: '', since: 0, n: 0, last: -1e9, linger: 250 };
-window.fieldPanHold = PANHOLD;                               // (for the tests)
-function _panCheck(now){
-  const sig = [st.camX, st.camZ, st.yaw, st.pitch, st.zoom, innerWidth, innerHeight].map(v => (+v || 0).toFixed(5)).join(',');
-  let a = null; try { a = window.getFieldApp && window.getFieldApp(); } catch {}
-  if (PANHOLD.sig && sig !== PANHOLD.sig) PANHOLD.last = now;
-  const hand = !!(turn.active && !turn.appPan && (turn.panned || turn.tilted || turn.turned || turn.multi));
-  if (hand) PANHOLD.last = now;
-  // (Oct 14: "turn animation back on for chess when the chess board is in motion.", then "turn it back on for all games
-  //  except mini-golf.", whose movers already ran on, Oct 12): no game is held now unless it asks with panHolds; the
-  //  machinery stays for one that does, and panMoves still opts out of that)
-  const moving = now - PANHOLD.last < PANHOLD.linger && !!(a && a.panHolds && !a.onWorld && !a.panMoves);
-  PANHOLD.sig = sig;
-  if (moving !== PANHOLD.on){ PANHOLD.on = moving; if (moving){ PANHOLD.since = now; PANHOLD.n++; } holdAnimForPan(moving); }
-}
+/* (The pan hold, PANHOLD and _panCheck, held every board and the animation clock while the camera moved, from Oct 12, "when
+   panning, no object motion anywhere, turn it off.", with mini golf and Levels let off. It was taken out on Oct 14, "turn
+   it back on for all games except mini-golf.": every board now plays on while the view moves.) */
 function _restDecide(now){
   // (the camera, and the dial's own state, which tints the boards and springs back after it is let go)
   const sig = [st.camX, st.camZ, st.yaw, st.pitch, st.zoom, st.objSize, st.N, st.heldTheta, st.beta, st.beta_perp, st.rung, st.heatmap, st.doppler, innerWidth, innerHeight].map(v => typeof v === 'number' ? v.toFixed(5) : String(v)).join() + (target.active ? 'a' : '') + (target.shown ? 's' : '');
@@ -45452,7 +45419,7 @@ function _restDecide(now){
   let a = null; try { a = window.getFieldApp && window.getFieldApp(); } catch {}
   if (!a || !a.cellItems || a.onWorld || a.alwaysAnimate || _photoHoles){ REST.why = 'app'; REST.drawn++; return false; }
   // the framed board, asked now (and kept for this frame's build): a change in it is play to be seen at full speed
-  if (target.shown && !PANHOLD.on){                           // (not while the view moves: nothing on the boards does then)
+  if (target.shown){
     const W = window.FIELD_WORLD, f = W && W.cellAt(target.boardX, target.boardZ);
     if (f && _framedBpLast >= (a.itemMinPx || 40)){
       _itemAt.x = target.boardX; _itemAt.z = target.boardZ;
@@ -45497,11 +45464,10 @@ function _boardItems(app, ix, iz, bp, framed, cx, cz, bWX, bWZ){
   if (!framed && !_boardVisible(cx, cz, bWX, bWZ)) return null;   // (off the screen: nothing asked, nothing drawn)
   const key = ix * 100003 + iz;
   const C = _itemCache.get(key);
-  if (C && PANHOLD.on){ C.seen = _itemFrame; return C.items; }   // (the view moving: every board as it was, the selected one too)
   if (framed || app.itemsEveryFrame){
     if (framed) _framedBpLast = bp;
     const L = framed && _framedPre && _framedPre.key === key && _framedPre.stamp === _frameStamp ? _framedPre.L : app.cellItems(ix, iz, bp);
-    // (kept, so the view moving can hold it; h 0, so a board no longer selected is asked again on its beat and counts as a change)
+    // (kept with h 0, so a board no longer selected counts as a change when it is next asked)
     _itemCache.set(key, { items: L, h: 0, at: _itemFrame, seen: _itemFrame, epoch: _itemEpoch }); return L; }
   const L = app.cellItems(ix, iz, bp), h = _itemsHash(L);   // (at its own size, as the selected board is: Oct 12)
   if (!C || C.h !== h) REST.change = performance.now();      // (something on the boards moved: the field does not rest yet)
@@ -45540,15 +45506,74 @@ function _disposeAppItems(){
   }
   _itemMeshes.clear();
 }
-function _emitAppItem(app, it, cx, cz, bWX, bWZ){
-  const kind = it.kind || 'default';
+/* A FLAT PIECE'S GRAINS (Oct 14: "2,5"). A kit disc or ring (FieldKit.disc, .ring: userData.flat) is drawn with 48 sides
+   while it is FLAT_BANDS[0][0] (24 px) in radius or more on the screen, then fades to 12 sides by FLAT_BANDS[0][1] (12 px),
+   is drawn with 12 from there, and fades to 6 between 8 and 4 px. Each grain carries the next one's outline at its own
+   points (_flatMorph: every rim point slid along the coarser polygon's side it lies on), so at a weight of 1 it IS the
+   coarser polygon, and the step to the coarser kind (the same name with #12 or #6 after it) changes nothing on the
+   screen. A 12-gon 12 px across the middle is off a circle by 0.4 px at most, a hexagon 4 px across by 0.5. */
+const FLAT_SEGS = [48, 12, 6], FLAT_BANDS = [[24, 12], [8, 4]];
+function _flatGrain(px, seg){
+  const g0 = FLAT_SEGS.indexOf(seg);
+  let g = 0, w = 0;
+  if (px >= FLAT_BANDS[0][0]){ g = 0; w = 0; }
+  else if (px > FLAT_BANDS[0][1]){ g = 0; w = Math.log2(FLAT_BANDS[0][0] / px); }
+  else if (px >= FLAT_BANDS[1][0]){ g = 1; w = 0; }
+  else if (px > FLAT_BANDS[1][1]){ g = 1; w = Math.log2(FLAT_BANDS[1][0] / px); }
+  else { g = 2; w = 0; }
+  if (g < g0){ g = g0; w = 0; }                   // (a disc made coarse to begin with, a trail's dot, never gains sides)
+  return { seg: FLAT_SEGS[g], w: Math.max(0, Math.min(1, w)) };
+}
+function _flatMorph(geo){
+  const F = geo.userData && geo.userData.flat, k = F && FLAT_SEGS.indexOf(F.seg);
+  if (!F || !(k >= 0) || k >= FLAT_SEGS.length - 1) return false;
+  const seg = F.seg, nx = FLAT_SEGS[k + 1], per = seg / nx, P = geo.attributes.position, out = new Float32Array(P.count * 3);
+  const at = (R, i) => { const j = Math.floor(i / per), t = (i - j * per) / per, a0 = j * 2 * Math.PI / nx, a1 = (j + 1) * 2 * Math.PI / nx;
+    return [R * (Math.cos(a0) + (Math.cos(a1) - Math.cos(a0)) * t), R * (Math.sin(a0) + (Math.sin(a1) - Math.sin(a0)) * t)]; };
+  for (let v = 0; v < P.count; v++){
+    let q = null;
+    // (CircleGeometry: the middle, then the rim's seg + 1 points from angle 0; RingGeometry: the inner rim, then the outer)
+    if (F.type === 'disc'){ if (v > 0) q = at(F.r, v - 1); }
+    else { const row = Math.floor(v / (seg + 1)); q = at(row ? F.r : F.inner, v - row * (seg + 1)); }
+    // (laid flat as the kit lays it: rotateX(−π/2) takes the circle's (x, y) to (x, −y) in x and z)
+    if (q){ out[v * 3] = q[0]; out[v * 3 + 1] = F.y; out[v * 3 + 2] = -q[1]; }
+    else { out[v * 3] = P.getX(v); out[v * 3 + 1] = P.getY(v); out[v * 3 + 2] = P.getZ(v); }
+  }
+  geo.setAttribute('pos2', new THREE.BufferAttribute(out, 3));
+  geo.setAttribute('nrm2', geo.attributes.normal.clone());
+  if (geo.attributes.color) geo.setAttribute('col2', geo.attributes.color.clone());
+  geo.userData.morph = true;
+  return true;
+}
+function _emitAppItem(app, it, cx, cz, bWX, bWZ, bp){
+  let kind = it.kind || 'default';
+  let rec = _itemRec(app, kind);
+  if (!rec) return;
+  let flatW = -1;
+  if (rec.flat && bp){   // (a flat piece, by its radius on the screen: _flatGrain)
+    const G = _flatGrain(rec.flat.r * (it.scale || 0.25) * bp * Math.max(it.sx || 1, it.sz || 1), rec.flat.seg);
+    if (G.seg !== rec.flat.seg){ const r2 = _itemRec(app, kind + '#' + G.seg); if (r2) rec = r2; }
+    flatW = G.w;
+  }
+  _emitInto(rec, it, cx, cz, bWX, bWZ, flatW);
+}
+function _itemRec(app, kind){
   let rec = _itemMeshes.get(kind);
   if (!rec){
-    const build = (app.itemGeometries || {})[kind];
-    if (!build) return;
+    let build = (app.itemGeometries || {})[kind];
+    // (a flat piece's coarser grain, made from its own kind's numbers: _flatGrain)
+    let base = null;
+    if (!build){ const m = /^(.*)#(\d+)$/.exec(kind); base = m && _itemRec(app, m[1]);
+      if (base && base.flat){ const F = base.flat, n = +m[2];
+        build = T => { const g = F.type === 'disc' ? FieldKit.disc(T, F.r, F.y, n) : FieldKit.ring(T, F.inner, F.r, F.y, n);
+          const U = base.mesh.geometry.userData; for (const k of ['opacity', 'unlit', 'vertexColors']) if (U[k]) g.userData[k] = U[k]; return g; }; }
+      else build = null; }
+    if (!build) return null;
     let geo = null;
     try { geo = build(THREE); } catch {}
-    if (!geo) return;
+    if (!geo) return null;
+    const flat = geo.userData && geo.userData.flat && FLAT_SEGS.includes(geo.userData.flat.seg) ? geo.userData.flat : null;
+    if (flat) _flatMorph(geo);
     _ensureItemLights();
     /* A KIND MAY ASK FOR FEWER. Every kind reserved room for _ITEM_CAP
        instances — 3 MB of matrices each — which is right for a kind on every
@@ -45590,9 +45615,12 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
     mesh.setColorAt(0, new THREE.Color(1, 1, 1));   // allocate the color buffer
     mesh.count = 0;
     scene.add(mesh);
-    rec = { mesh, n: 0, cap, max, morph };
+    rec = { mesh, n: 0, cap, max, morph, flat };
     _itemMeshes.set(kind, rec);
   }
+  return rec;
+}
+function _emitInto(rec, it, cx, cz, bWX, bWZ, flatW){
   if (rec.n >= rec.cap){ if (rec.cap >= rec.max) return; rec.cap = Math.min(rec.max, rec.cap * 2); rec.mesh = growInstanced(rec.mesh, rec.cap);
     if (rec.morph){   // (the weights live on the shared geometry: room for the new count, the old ones kept)
       const G = rec.mesh.geometry, A = new THREE.InstancedBufferAttribute(new Float32Array(rec.cap), 1).setUsage(THREE.DynamicDrawUsage);
@@ -45614,7 +45642,7 @@ function _emitAppItem(app, it, cx, cz, bWX, bWZ){
   _im.compose(_ip, _iq, _is);
   rec.mesh.setMatrixAt(rec.n, _im);
   rec.mesh.setColorAt(rec.n, _appColor(it.color == null ? 0xf0e6d2 : it.color));
-  if (rec.morph) rec.mesh.geometry.attributes.instMorph.array[rec.n] = it.morph || 0;
+  if (rec.morph) rec.mesh.geometry.attributes.instMorph.array[rec.n] = flatW >= 0 ? flatW : (it.morph || 0);
   rec.n++;
 }
 
