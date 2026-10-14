@@ -2629,7 +2629,7 @@ try {
   current = 'tilt maze';
   {
     const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tiltmaze')); await new Promise(ok => setTimeout(ok, 2000)); await window.__settle(); });
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tiltmaze')); await new Promise(ok => setTimeout(ok, 3000)); });   // (no __settle: the hole editor's check before this reloads the page, which drops the helpers)
     const tm = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, out = { sizes: [], ok: 0, runs: 0, through: 0 };
       for (let lv = 1; lv <= 5; lv++){ out.sizes.push(D.makeMaze(500 + lv, lv, 0).m);
         for (let i = 0; i < 6; i++){ const L = D.makeMaze(2000 + i * 31 + lv, lv, 0), R = D.playRun(L); out.runs++; if (R.ok) out.ok++;
