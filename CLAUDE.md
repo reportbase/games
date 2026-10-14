@@ -268,6 +268,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   range, at the bottom the rung below exactly, so a board flown toward never pops; the band against dithering is no longer
   needed there. Rounding to the nearest rung instead put the far boards a rung finer: 11 million triangles became 35 in a
   zoomed-out field of pieces. `window.fieldLOD` holds the builder and the rung choice for the tests.
+- **Flat pieces fade too** (Oct 14: "2,5", the second being "smooth detail for the other board games"): zoomed out, the
+  kit's 48-sided discs were nearly all the board games drew (Go 1.22 million triangles, checkers 1.23, Reversi 0.84). A
+  `FieldKit.disc` or `.ring` now says what it is (`userData.flat`), and the field (`_emitAppItem`, which is told the board's
+  size) draws it by its radius on the screen (`_flatGrain`, `FLAT_SEGS` 48, 12, 6, `FLAT_BANDS`): 48 sides from 24 px,
+  fading to 12 by 12 px, 12 from there, fading to 6 between 8 and 4 px. Each grain carries the next one's polygon at its own
+  points (`_flatMorph`: `pos2`, the field's morphing kinds), so at weight 1 it is that polygon exactly and the step to the
+  coarser kind (the name with `#12` or `#6` after it, made by `_itemRec` from the base kind's numbers) changes nothing on
+  the screen. A disc made with 12 sides (a trail's dot) never gains any. Every app's kit discs get it, not only the board
+  games'. Zoomed out (×20 from the opening): Go 1.22M → 169k, checkers 1.23M → 253k, Reversi 844k → 199k, Gomoku 739k →
+  101k, Ataxx 614k → 133k, Lines of action 490k → 142k; framed, Go 34k → 22k, Gomoku 20k → 10k. `window.fieldLOD` has
+  `flatGrain`, `flatMorph` and `itemKinds` for the tests.
 - **Tower defense: the row is a map editor** (Oct 13: "tower defense", on "what other games could benifit from this kind of
   thing", after chess's position editor): `ED`, `ed…` and `MAPS` inside `TD_APP`, with chess's hooks (`onBrowserToggle`,
   `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`); taps reach `edTap` from `onCellTap`.
@@ -390,6 +401,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       H = v, n = 128 over 4, near 1, far 3; H = v × 4, n = 256 over 2, near 2, far 2.
     - By metres keeps an engine's fixed tiers (grain = level), None every board at grain 0. Measured at 1280×800, opened by
       v/h: 157 boards in 4 levels for 30,992 triangles; climbed, 1,316 boards for 36,552; None at the opening 622,976.
+  - **The leaves are a dial** (Oct 14: "let the user change the leaves of levels not chess to change ihe image size"): the
+    reader's addresses are the size of the image it reads the field into, ADDR = 512·2^as, as −3 to 3 (64 to 4,096; the
+    row's Fewer leaves / More leaves and its leaves tile, the menu, `setLeaves`, `?leaves=`, localStorage `levels.leaves`).
+    Each doubling makes every body a grain finer, as far as the finest. The opening view's 157 boards: 7.5k triangles at 64
+    leaves, 27k at 512, 599k at 4,096.
+  - **No coloured boards** (Oct 14: "remove the colored background to boards in levels."): with no colours of its own a board
+    took the cell fill (`CELL_FILL_CSS`, a warm red), so Levels' `cellFar` is the ground's own colour (0x06080c) and the bodies
+    stand on the field alone.
   - Rings on the ground (gold at the corner, then each doubling) follow the point under the eye, scaled by v (or METRES_D),
     drawn from its own frame loop (`tick`), which also takes the counts of each frame the field drew (`fieldRest.drawn`: a
     frame it rests on asks the framed board alone).
@@ -398,8 +417,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Field hooks it added: `afterItems()` (called from `_flushAppItems`); `pitchFloor`; `FIELD_WORLD.itemAt` (the board being asked about, its middle on the ground, set in `_boardItems`
     and for the framed board in `_restDecide`); an item kind's `geometry.userData.wireframe`; an app's `fitView(F)`, called by
     the default fit (Levels opens at the lowest tilt, 35°, from `OPEN_V` = 8, so four or five levels are in view); and
-    `onLeave()`, called by `setFieldApp` on the app being left (Levels puts the tilt back). It sets `panMoves` so its boards
-    change level while the view moves, and `itemMinPx: 1`.
+    `onLeave()`, called by `setFieldApp` on the app being left (Levels puts the tilt back). It sets `itemMinPx: 1`.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
@@ -741,30 +759,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   frames by size, at a degraded size, and not at all while half off the screen; all of that went. `buildInstances` walks the
   boards in the view's reach, and `_boardItems` asks every one of them on the screen (`_boardVisible`: its box, from the ground to a
   board's width up and a tenth wider each way, meets the camera's frustum; the camera is the last frame's) every frame at its own size; one off the screen gets nothing. The lists are kept (`_itemCache`) only for
-  the pan hold to draw, and asked again after another app, a click, a drop, a change or `window.fieldItemsChanged()`.
-- **Nothing moves while the view does** (Oct 12: "restore last update. lets try something different, when panning, no
-  object motion anywhere, turn it off."; the update restored was "Lighter boards not selected", #59, reverted). While the
-  camera's numbers (`st.camX`, `camZ`, `yaw`, `pitch`, `zoom`) or the window's size change from frame to frame, and for
-  `PANHOLD.linger` (250 ms) after, the pan hold is on (`_panCheck`, first in `frame`; `window.fieldPanHold`). This covers a drag, a pinch, a swipe's
-  glide, keys, a flight to a board and resizing the window ("no animation when panning or resizing").
-  - No board's pieces are asked for, the selected board's included. `_boardItems` draws each from its last list (the
-    framed board's list is kept in `_itemCache` too now), and `_restDecide` skips its ask of the framed board. A board coming
-    into view meanwhile is asked once and held.
-  - The games step only when their board is asked, so they wait. Mini golf's ball in play stops and its clock (`g.t`)
-    with it; boards no one plays jump to the page's clock after.
-  - The animation clock chess reads (`animTime`) is held (`holdAnimForPan`, `animPanHeld`) and the time held is taken out
-    after, so boards playing themselves go on from where they stopped. A pause begun while held keeps the held moment. Time
-    dilation does not run while held.
-  - When the camera stops, every board is asked again.
-  - Left out: an app with `onWorld` (air raid's bomber steers the camera as its game), and one with `panMoves`: mini golf
-    (Oct 12: "first turn motion back on in mini-golf., don't stop it during panning."), whose movers and ball run on.
-  - **Off for every game now** (Oct 14: "turn animation back on for chess when the chess board is in motion.", then "turn it
-    back on for all games except mini-golf.", whose movers already ran on): the hold applies only to an app that sets
-    `panHolds` (none does), so every game's boards play on while the view moves. What follows is how it works when asked.
-  - Without the linger, a slow drag's frames did not all move the camera, and the boards came alive between them.
-  - A hand that is panning holds it too, whatever the camera did that frame (`turn`: a drag past its deadzone, a hold
-    pulling to tilt or turn, two fingers; not the app's own drags, such as mini golf's aim). On CI's slow frames a
-    finger's moves came further apart than the linger, and the boards came alive mid-drag (Oct 12).
+  telling whether a board's pieces changed (the rest), and asked again after another app, a click, a drop, a change or
+  `window.fieldItemsChanged()`.
+- **Every board plays on while the view moves** (Oct 14: "turn animation back on for chess when the chess board is in
+  motion.", then "turn it back on for all games except mini-golf.", whose movers already ran on, and "5", taking the
+  machinery out). From Oct 12 ("when panning, no object motion anywhere, turn it off.") to Oct 14 a pan hold (`PANHOLD`,
+  `_panCheck`) held every board's pieces and the animation clock (`animTime`) while the camera moved, mini golf and Levels
+  let off by `panMoves`. It is gone: `animTime` is the page's clock less pauses and time dilation, and `_boardItems` asks
+  every board on the screen every frame, panning or not. The smoke test drags the view in chess and in mini golf and wants
+  their clocks running throughout.
 - **The field rests when nothing changes** (Oct 11, "proceed" on "Rest when still": the page built and drew every frame with
   the view still). `_restDecide` runs first in `frame`; a frame it skips is not built or drawn (the last one stays on the
   screen), only the light watchers run.
