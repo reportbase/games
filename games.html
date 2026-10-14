@@ -17664,7 +17664,7 @@ const CHESS_ED_TOOLS = [
   ['k', '♚', 'King'], ['q', '♛', 'Queen'], ['r', '♜', 'Rook'], ['b', '♝', 'Bishop'], ['n', '♞', 'Knight'], ['p', '♟', 'Pawn'],
   ['erase', '🧽', 'Erase'],
 ];
-const CHESS_ED_ACTS = ['clear', 'start', 'turn', 'you', 'play'];
+const CHESS_ED_ACTS = ['clear', 'start', 'turn', 'you', 'play', 'fen'];
 const _chEdSay = (m, ms) => { CHESS_ED.msg = m; try { engineNotice(m, ms || 3200); } catch {} };
 // the row moved without asking the editor again (golf's paneTo)
 function _chEdPane(open){ CHESS_ED.busy = true; try { toggleBoardBrowser(open); } catch {} CHESS_ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
@@ -17685,9 +17685,55 @@ function chessEdStart(){
   const key = cellKey(target.boardX, target.boardZ);
   const { bd, turn } = chessHere(key);
   if (PLAY.on){ try { exitPlay(); } catch {} }
-  Object.assign(CHESS_ED, { on: true, key, bx: target.boardX, bz: target.boardZ, bd: bd.map(row => row.slice()), turn, you: turn, youSet: false });
+  Object.assign(CHESS_ED, { on: true, key, bx: target.boardX, bz: target.boardZ, bd: bd.map(row => row.slice()), turn, you: turn, youSet: false, fen: null });
   _chEdSay('Setting up this board: pick a piece below, tap its squares; ✓ plays it.');
   try { rebuildBoardBrowser(); bbRefreshNow(); } catch {}
+  return true;
+}
+/* A FEN, AS PEOPLE PASTE THEM (Oct 14: "can I set the fen. with a string such as : rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/
+   PP3PPP/2R3K1 w - - 1 0", then "ok"). Puzzle books end theirs with a move number of 0, which chess.js refuses ("move number
+   must be a positive integer"), and many give only the board and the side to move. So: quotes and spaces trimmed, the fields
+   past the board filled in when missing (White to move, no castling, no en passant, 0, 1), a move number under 1 read as 1, a
+   half-move count that is no number read as 0; then chess.js says whether it is a position. {fen} or {why}. */
+function chessFenTidy(text){
+  let t = String(text == null ? '' : text).trim().replace(/^["'`]+|["'`]+$/g, '').replace(/^fen\s*[:=]?\s*/i, '').trim();
+  const f = t.split(/\s+/).filter(Boolean);
+  if (!f.length || !/^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}$/.test(f[0])) return { why: 'That is not a FEN: it should start with eight ranks of pieces, split by /.' };
+  const turn = /^[wb]$/i.test(f[1] || '') ? f[1].toLowerCase() : 'w';
+  const castle = /^(-|[KQkq]{1,4})$/.test(f[2] || '') ? f[2] : '-';
+  const ep = /^(-|[a-h][36])$/.test(f[3] || '') ? f[3] : '-';
+  const half = /^\d+$/.test(f[4] || '') ? +f[4] : 0;
+  const full = /^\d+$/.test(f[5] || '') && +f[5] >= 1 ? +f[5] : 1;
+  const fen = [f[0], turn, castle, ep, half, full].join(' ');
+  try { new Chess(fen); } catch (e){ return { why: 'Chess does not allow this position (' + String(e && e.message || e).replace(/^Invalid FEN:\s*/i, '').slice(0, 80) + ').' }; }
+  return { fen };
+}
+/* …taken into the editor (its tile FEN…, the menu's Set up from FEN…, a share link): the board and the side to move, and
+   the FEN kept whole (CHESS_ED.fen), so castling, en passant and the move counts it gave are played as given while the board
+   stays as it came; once a piece is moved or the side to move changed, the editor's own reading takes over (gridToFen). */
+function chessEdFen(text){
+  const T = chessFenTidy(text);
+  if (!T.fen){ _chEdSay(T.why, 4200); return false; }
+  if (!CHESS_ED.on && !chessEdStart()) return false;
+  const g = new Chess(T.fen);
+  CHESS_ED.bd = liveBoard(g); CHESS_ED.turn = g.turn(); if (!CHESS_ED.youSet) CHESS_ED.you = CHESS_ED.turn;
+  CHESS_ED.fen = T.fen;
+  _chEdSay('Read the FEN: ' + (CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move.' + (T.fen !== String(text).trim() ? ' (Tidied to ' + T.fen + '.)' : ''), 4200);
+  try { bbRefreshNow(); } catch {}
+  return true;
+}
+// (the FEN to offer for editing: the editor's position, else the framed board's)
+function chessFenNow(){
+  if (CHESS_ED.on) return CHESS_ED.fen && CHESS_ED.fen.split(' ').slice(0, 2).join(' ') === gridToFen(CHESS_ED.bd, CHESS_ED.turn).split(' ').slice(0, 2).join(' ') ? CHESS_ED.fen : gridToFen(CHESS_ED.bd, CHESS_ED.turn);
+  try { if (target.shown){ const P = chessHere(cellKey(target.boardX, target.boardZ)); return gridToFen(P.bd, P.turn); } } catch {}
+  return '';
+}
+function chessAskFen(play){
+  let text = null; try { text = prompt('Paste a FEN (the board, then who moves; the rest may be left off):', chessFenNow()); } catch {}
+  if (text == null || !String(text).trim()) return false;
+  if (!chessEdFen(text)) return false;
+  if (play) return chessEdDone();
+  try { _chEdPane(true); } catch {}
   return true;
 }
 function chessEdStop(){
@@ -17700,7 +17746,7 @@ function chessEdCheck(){
   if (n('K') !== 1 || n('k') !== 1) return { why: 'Each side needs one king.' };
   for (const r of [0, 7]) if (bd[r].some(p => p === 'P' || p === 'p')) return { why: 'No pawn may stand on the first or last rank.' };
   let g = null;
-  try { g = new Chess(gridToFen(bd, CHESS_ED.turn)); } catch (e){ return { why: 'Chess does not allow this position (' + String(e && e.message || e).slice(0, 80) + ').' }; }
+  try { g = new Chess(chessFenNow() || gridToFen(bd, CHESS_ED.turn)); } catch (e){ return { why: 'Chess does not allow this position (' + String(e && e.message || e).slice(0, 80) + ').' }; }
   try { const o = new Chess(gridToFen(bd, CHESS_ED.turn === 'w' ? 'b' : 'w')); if (o.inCheck()) return { why: (CHESS_ED.turn === 'w' ? 'Black' : 'White') + ' is in check, but it is ' + (CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move.' }; } catch {}
   if (g.isGameOver()) return { why: g.isCheckmate() ? 'That position is already checkmate.' : 'That position is already over (stalemate or a draw).' };
   return { g };
@@ -17739,7 +17785,7 @@ function chessEdTiles(){
   out.push({ glyph: '⌫', value: 'Clear' }, { glyph: '♙', value: 'Start' },
            { glyph: CHESS_ED.turn === 'w' ? '○' : '●', value: (CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move' },
            { glyph: CHESS_ED.you === 'w' ? '♔' : '♚', value: 'You: ' + (CHESS_ED.you === 'w' ? 'White' : 'Black') },
-           { glyph: '▶', value: 'Play' });
+           { glyph: '▶', value: 'Play' }, { glyph: '⌨', value: 'FEN…' });
   return out;
 }
 function chessEdTileTap(i){
@@ -17754,6 +17800,7 @@ function chessEdTileTap(i){
     else if (a === 'turn'){ CHESS_ED.turn = CHESS_ED.turn === 'w' ? 'b' : 'w'; if (!CHESS_ED.youSet) CHESS_ED.you = CHESS_ED.turn; _chEdSay((CHESS_ED.turn === 'w' ? 'White' : 'Black') + ' to move' + (CHESS_ED.youSet ? '.' : '; you play it.')); }
     else if (a === 'you'){ CHESS_ED.you = CHESS_ED.you === 'w' ? 'b' : 'w'; CHESS_ED.youSet = true; _chEdSay('You will play ' + (CHESS_ED.you === 'w' ? 'White' : 'Black') + '.'); }
     else if (a === 'play') chessEdDone();
+    else if (a === 'fen') chessAskFen(false);
   }
   try { bbRefreshNow(); } catch {}
   return true;
@@ -17785,10 +17832,12 @@ function chessShare(){
   return SHARE.copy(SHARE.link(CHESS_APP, { fen: gridToFen(P.bd, P.turn), you }), 'Link copied: it opens on this position, ' + (P.turn === 'w' ? 'White' : 'Black') + ' to move.');
 }
 function chessTakeSetup(P){
-  let g = null; try { g = P && typeof P.fen === 'string' && P.fen.length < 120 ? new Chess(P.fen) : null; } catch {}
-  if (!g){ _chEdSay('The shared position could not be read.'); return; }
+  // (through the same tidying as a pasted FEN, so a link made by hand from a puzzle's "… 1 0" opens too: Oct 14)
+  const T = P && typeof P.fen === 'string' && P.fen.length < 160 ? chessFenTidy(P.fen) : { why: 'no FEN' };
+  if (!T.fen){ _chEdSay('The shared position could not be read: ' + T.why); return; }
+  const g = new Chess(T.fen);
   if (!chessEdStart()) return;
-  CHESS_ED.bd = liveBoard(g); CHESS_ED.turn = g.turn();
+  CHESS_ED.bd = liveBoard(g); CHESS_ED.turn = g.turn(); CHESS_ED.fen = T.fen;
   CHESS_ED.you = P.you === 'b' || P.you === 'w' ? P.you : CHESS_ED.turn; CHESS_ED.youSet = true;
   if (!chessEdDone()){ const why = CHESS_ED.msg; chessEdCancel(); _chEdSay('The shared position cannot be played: ' + why); }
 }
@@ -17831,7 +17880,7 @@ const CHESS_APP = {
     return true;
   },
   worldTap(hit){ return chessEdTap(hit); },
-  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
+  _debug: { ed: CHESS_ED, start: chessEdStart, done: chessEdDone, cancel: chessEdCancel, place: chessEdPlace, tap: chessEdTap, tiles: chessEdTiles, check: chessEdCheck, fenTidy: chessFenTidy, fen: chessEdFen, fenNow: chessFenNow, askFen: chessAskFen, PLAY: () => PLAY, userGames: () => userGames, cellKey: (x, z) => cellKey(x, z), fly: (c, r) => gotoCell(c, r), share: () => chessShare() },
   /* For the move traces and capture bursts drawn on chess boards (Sep 24:
      "add these changes to chess as well"). Lazy, because BOOM is defined
      further down the file than chess is. */
@@ -17849,6 +17898,8 @@ const CHESS_APP = {
     { head: 'Play', items: [
       { label: () => CHESS_ED.on ? 'Done: play this position' : 'Set up a position…', title: 'Put any pieces on the selected board with the tiles in the bottom row, then play it against the engine (Oct 13).',
         on(){ if (CHESS_ED.on) chessEdDone(); else if (chessEdStart()) _chEdPane(true); } },
+      { label: 'Set up from FEN…', title: 'Paste a FEN (the board and who moves; castling, en passant and the move counts may be left off, and a move number of 0 is read as 1) and play it on the selected board (Oct 14).',
+        on(){ chessAskFen(true); } },
       { label: 'Cancel the setup', title: 'Leave the board as it was.', get disabled(){ return !CHESS_ED.on; }, on(){ chessEdCancel(); } },
       { label: 'Share this position', title: 'Copy a link that opens the page on this position, to be played from there (Oct 13).', on(){ chessShare(); } },
       { ref: 'bHint' }, { ref: 'bCoords' }, { ref: 'eloWrap' },

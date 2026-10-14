@@ -348,9 +348,24 @@ try {
       D.start(); A.onStatTap(0, 0, 13);
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(300);
       const after2 = D.userGames().get(key);
-      return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, youW, fen: fenAtDone, now: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2 };
+      /* (Oct 14: "can I set the fen. with a string such as : rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 0", then
+         "ok") the puzzle book's FEN, its move number 0 read as 1; a bare board given White to move; nonsense refused. The FEN…
+         tile, through the prompt, puts it in the editor whole, and Done would play it as given (counts and all); a piece moved
+         and the editor's own reading takes over */
+      const PUZ = 'rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 0';
+      const fenT = { puz: D.fenTidy(PUZ).fen, bare: D.fenTidy('"8/8/8/8/8/8/8/K6k"').fen, junk: !!D.fenTidy('hello').why, eight: !!D.fenTidy('8/8/8 w').why };
+      D.start(); const p0 = window.prompt; window.prompt = () => '  ' + PUZ + ' ';
+      const fi = A.statTiles().findIndex(t => t.value === 'FEN…'); A.onStatTap(0, 0, fi); window.prompt = p0;
+      fenT.tile = fi; fenT.row0 = D.ed.bd[0].map(p => p || '.').join(''); fenT.check = D.check().g && D.check().g.fen(); fenT.turn = D.ed.turn;
+      A.onStatTap(0, 0, 12); D.tap(sq(2, 0)); fenT.edited = D.fenNow();                 // (Erase on a6's pawn: the counts go)
+      D.cancel();
+      return { on, tiles, keys, noKing, stillOn, why, pawnMsg, pawnOff, ok, youW, fen: fenAtDone, now: stored && stored.fen(), shut, escOff: !D.ed.on, kept: after2 && after2.fen() === before2, fenT };
     });
-    if (!ce.on || ce.tiles !== 18 || ce.keys !== 18 || ce.noKing !== false || !ce.stillOn || !/king/.test(ce.why) || !/pawn/i.test(ce.pawnMsg) || !ce.pawnOff
+    const F = ce.fenT || {};
+    if (F.puz !== 'rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 1' || F.bare !== '8/8/8/8/8/8/8/K6k w - - 0 1' || !F.junk || !F.eight
+        || F.tile !== 18 || F.row0 !== 'rn.k...r' || F.check !== F.puz || F.turn !== 'w' || F.edited !== 'rn1k3r/1b1q1ppp/3P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 0 1')
+      failures.push(`[${current}] the FEN: ${JSON.stringify(F)}`);
+    if (!ce.on || ce.tiles !== 19 || ce.keys !== 19 || ce.noKing !== false || !ce.stillOn || !/king/.test(ce.why) || !/pawn/i.test(ce.pawnMsg) || !ce.pawnOff
         || ce.ok !== true || !ce.youW || ce.fen !== '4k3/8/8/8/8/8/8/3QK3 w - - 0 1' || ce.now !== ce.fen || !ce.shut || !ce.escOff || !ce.kept)
       // (where the piece set loads, as on CI, the game then starts; you play White, so the engine waits: the position stays)
       failures.push(`[${current}] ${JSON.stringify(ce)}`);

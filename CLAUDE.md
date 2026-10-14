@@ -261,6 +261,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     ranks, the side not to move not in check, not already over) and puts it on the board as its own game (`userGames`,
     `setGameMeta` src 'setup', saved with the session; PGN export carries its [FEN]), then plays it (`enterPlay`, you the
     side chosen; the engine is told `position fen`). Escape or Cancel leaves the board as it was.
+  - **A FEN** (Oct 14: "can I set the fen. with a string such as : rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 0",
+    then "ok"): the editor's last tile, FEN… (a prompt offering the position's own FEN, `chessFenNow`), puts a pasted FEN on the
+    board being set up (`chessEdFen`); the menu's Set up from FEN… does the same and plays it (`chessAskFen(true)`). `chessFenTidy`
+    trims quotes and spaces, fills in fields left off (White to move, no castling, no en passant, 0, 1), reads a move number
+    under 1 (puzzle books' `1 0`, which chess.js refuses) as 1, then asks chess.js; share links go through it too. The FEN is
+    kept whole (`CHESS_ED.fen`), so castling, en passant and the counts are played as given until the board or the side to
+    move is changed, when the editor's own reading (`gridToFen`) takes over.
   - While the editor is on, its tiles have the row (`rebuildBoardBrowser` asks `statsStay` before the move tiles), so the
     row no longer shows a game's moves: opening it sets up a position, as golf's edits a hole.
   - Without the piece set (as in the sandbox) chess is watch-only and `enterPlay` says so; the position is still the board's.
