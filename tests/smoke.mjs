@@ -2752,7 +2752,12 @@ try {
     if (fc){
       const [c, rr] = fc, key = c + '_' + rr;
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); }, fc);
-      const mid = await page.evaluate(() => window.__aim(1, 0, 0));
+      // (the point of the framed board at (u, v), projected here: the page was loaded again since the shared helpers were set,
+      //  by the hole editor's check, and they went with it)
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      const mid = await aimAt(0.5, 0.5);
       await page.mouse.click(mid.x, mid.y);
       await page.waitForTimeout(400);
       const started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
@@ -2760,8 +2765,8 @@ try {
       await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && g.state === 'input'; }, key, { timeout: 15000 }).catch(() => {});
       const want = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { p: g.S.at(0), P: g.S.D.pads, state: g.state } : null; }, key);
       if (want && want.state === 'input'){
-        const a = -Math.PI / 2 + (want.p + 0.5) * 2 * Math.PI / want.P, u = 0.5 + 0.31 * Math.cos(a), v = 0.5 + 0.31 * Math.sin(a), n = 40;
-        const pt = await page.evaluate(([n, col, row]) => window.__aim(n, col, row), [n, Math.floor(u * n), Math.floor(v * n)]);
+        const a = -Math.PI / 2 + (want.p + 0.5) * 2 * Math.PI / want.P, u = 0.5 + 0.31 * Math.cos(a), v = 0.5 + 0.31 * Math.sin(a);
+        const pt = await aimAt(u, v);
         await page.mouse.click(pt.x, pt.y);
         await page.waitForTimeout(400);
       }
