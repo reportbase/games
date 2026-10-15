@@ -2664,6 +2664,122 @@ try {
       failures.push(`[${current}] ${JSON.stringify({ tm, live })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${tm.ok} of ${tm.runs} mazes finished by the steady player; the arrow keys rolled it ${live.moved.toFixed(3)})`);
   }
+  // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+  // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the
+  // corner block, a step harder from ring 7 and another from ring 31. On Easy: board (0, 0) easy, (10, 0) normal, (40, 40)
+  // hard; a game started at (40, 40) is really harder than one at (0, 0), by what the game's difficulty changes.
+  {
+    current = 'harder farther out';
+    const SPEC = { checkers: 's:depth', reversi: 's:picker', gomoku: 's:picker', connectfour: 's:picker', linesofaction: 's:picker', ataxx: 's:picker',
+      flow: 'n', netslide: 'n', rolltheball: 'n', unblockme: 'n', minesweeper: 'n', memory: 'n', pipes: 'n', infinityloop: 'n', pipemania: 'n', towerdefense: 'n',
+      tron: 'lv', missilecommand: 'lv', asteroids: 'lv', bomberman: 'lv', invaders: 'lv', pacman: 'ghost', tetris: 'fall', tiles: 'base',
+      defender: 'warn', breakout: 'speed', crossing: 'n', snake: 'n' };
+    const bad = [];
+    for (const [id, how] of Object.entries(SPEC)){
+      const r = await page.evaluate(async ([id, how]) => {
+        const A = window.FIELD_APPS.find(a => a.id === id); if (!A) return { why: 'no app' };
+        window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 400));
+        const find = m => { for (const x of (m || [])){ if (x && typeof x.label === 'function' && /^Difficulty/.test(x.label())) return x; const y = x && find(x.items); if (y) return y; } return null; };
+        const item = find(A.menu); if (!item) return { why: 'no Difficulty item' };
+        const setTo = w => { for (let k = 0; k < 4 && !item.label().includes(w); k++) item.on(); return item.label().includes(w); };
+        if (!setTo('easy')) return { why: 'the item never says easy: ' + item.label() };
+        const label = item.label(), D = A._debug || {};
+        if (typeof D.levelOf !== 'function') return { why: 'no _debug.levelOf' };
+        const real = (c, r) => {
+          A.onReset && A.onReset(c, r);
+          if (/^(lv|ghost|fall|base|n|warn|speed)$/.test(how) && !/^(flow|netslide|rolltheball|unblockme|minesweeper|memory|pipes|infinityloop|pipemania|towerdefense)$/.test(id)) { A.onFramed && A.onFramed(c, r); A.onCellTap && A.onCellTap(c, r, 0.5, 0.5); }
+          const g = D.games && D.games.get(c + '_' + r), PICK = { loose: 0, 'one-ply': 1, 'two-ply': 2 };
+          if (how === 's:depth') return D.strengthOf(c, r).depth;
+          if (how === 's:picker') return PICK[D.strengthOf(c, r).picker];
+          if (!g) return null;
+          if (how === 'n') return g.n;
+          if (how === 'lv') return ['easy', 'normal', 'hard'].indexOf(g.lv);
+          if (how === 'ghost') return -g.ghosts[0].T;
+          if (how === 'fall') return -D.fallEvery(g);
+          if (how === 'base') return g.base;
+          if (how === 'warn') return -D.D(g).warn;
+          if (how === 'speed') return D.speedOf(g);
+        };
+        const lv = [D.levelOf(0, 0), D.levelOf(10, 0), D.levelOf(40, 40)];
+        const near = real(0, 0), far = real(40, 40);
+        setTo('normal');
+        return { label, lv, near, far };
+      }, [id, how]);
+      if (r.why || r.lv.join() !== 'easy,normal,hard' || !(r.far > r.near) || !/at the corner/.test(r.label)) bad.push(id + ' ' + JSON.stringify(r));
+    }
+    if (bad.length) failures.push('[harder farther out] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} harder farther out (${Object.keys(SPEC).length} games: the corner as set, ring 7 a step harder, ring 40 hard, a far game really harder)`);
+  }
+  // SIMON (Oct 15: "Are you familiar with the game called simon?", then "Yes"): every board its own sequence at a level by its
+  // ring (four pads near the corner, more and quicker farther out); a round played back right goes on to the next, a wrong
+  // pad ends it; real clicks on a pad reach it; a board no one plays lights its own sequence.
+  {
+    current = 'simon';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'simon')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.pads = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.seqOf(c, r).D.pads);
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      const a = D.seqOf(5, 2), b = D.seqOf(5, 2), cc = D.seqOf(6, 2);
+      out.same = [0, 1, 2, 3, 4, 5].map(k => a.at(k)).join() === [0, 1, 2, 3, 4, 5].map(k => b.at(k)).join();
+      out.differ = [...Array(12).keys()].map(k => a.at(k)).join() !== [...Array(12).keys()].map(k => cc.at(k)).join();
+      // a game played back by the sequence itself: three rounds right, then a wrong pad
+      const g = D.fresh(0, 0); D.GAMES.set('0_0', g); D.LIVE = { c: 0, r: 0 }; D.begin(g); g.t0 = performance.now() / 1000 - 999;
+      const settle = () => { for (let k = 0; k < 3; k++){ D.stepGame(g, true); } };
+      const rounds = [];
+      for (let round = 0; round < 3; round++){
+        g.state = 'show'; g.t0 = performance.now() / 1000 - 999; settle();
+        rounds.push(g.state);
+        for (let k = 0; k < g.n; k++) D.press(g, g.S.at(k), true);
+      }
+      out.afterThree = { state: g.state, score: g.score, n: g.n };
+      g.state = 'show'; g.t0 = performance.now() / 1000 - 999; settle();
+      D.press(g, (g.S.at(0) + 1) % g.S.D.pads, true);
+      out.wrong = { state: g.state, score: g.score, miss: g.miss, want: g.S.at(0) };
+      out.rounds = rounds;
+      out.hub = D.padAt(g.S.D, 0.5, 0.5); out.pad0 = D.padAt(g.S.D, 0.72, 0.28); out.pad2 = D.padAt(g.S.D, 0.28, 0.72);
+      return out;
+    });
+    const ok1 = r.pads.join() === '4,6,8,8' && r.levels.join() === '2,3,5,5' && r.same && r.differ && r.rounds.join() === 'input,input,input'
+      && r.afterThree.score === 3 && r.afterThree.n === 4 && r.wrong.state === 'over' && r.wrong.score === 3 && r.wrong.miss === r.wrong.want
+      && r.hub === 'hub' && r.pad0 === 0 && r.pad2 === 2;
+    // real clicks: one on the framed board starts it; when it waits for us, a click on the right pad is taken
+    await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'simon')._debug.fly(3, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const [c, rr] = fc, key = c + '_' + rr;
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); }, fc);
+      // (the point of the framed board at (u, v), projected here: the page was loaded again since the shared helpers were set,
+      //  by the hole editor's check, and they went with it)
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      const mid = await aimAt(0.5, 0.5);
+      await page.mouse.click(mid.x, mid.y);
+      await page.waitForTimeout(400);
+      const started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
+      // wait for the playback to end (a step is well under a second at any level)
+      await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && g.state === 'input'; }, key, { timeout: 15000 }).catch(() => {});
+      const want = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { p: g.S.at(0), P: g.S.D.pads, state: g.state } : null; }, key);
+      if (want && want.state === 'input'){
+        const a = -Math.PI / 2 + (want.p + 0.5) * 2 * Math.PI / want.P, u = 0.5 + 0.31 * Math.cos(a), v = 0.5 + 0.31 * Math.sin(a);
+        const pt = await aimAt(u, v);
+        await page.mouse.click(pt.x, pt.y);
+        await page.waitForTimeout(400);
+      }
+      const after = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { state: g.state, score: g.score } : null; }, key);
+      real = { started, want, after };
+    }
+    const ok2 = real && real.started === 'show' && real.after && real.after.score === 1 && (real.after.state === 'pause' || real.after.state === 'show');
+    // a board no one plays lights its pads in turn
+    const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
+      for (let k = 0; k < 40; k++){ seen.add(D.shownLit(S)); await new Promise(ok => setTimeout(ok, 60)); } return seen.size; });
+    if (!ok1 || !ok2 || demo < 2) failures.push('[simon] ' + JSON.stringify({ r, real, demo }));
+    console.log(`${ok1 && ok2 && demo >= 2 ? 'ok  ' : 'FAIL'} simon (pads ${r.pads.join('/')} by ring, three rounds played back then a wrong pad ends it at ${r.wrong.score}; a real click on the right pad took)`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

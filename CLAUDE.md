@@ -236,6 +236,35 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (localStorage `tiltmaze.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold starts again.
   - The smoke test checks the sizes by level, the steady player finishing 30 mazes and never passing a wall, the real arrow
     keys rolling the marble, a hole and the ring, and a board no one plays moving.
+- **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
+  Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
+  sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
+  longest sequence played back.
+  - **Every board its own sequence** (`seqOf`: drawn as wanted from a generator seeded by `boardIdx` and the level, no pad
+    three times running), at a level 1–5 by ring plus the Difficulty, as the tilt maze. `LV`: 4 pads (levels 1–2), 6 (3–4),
+    8 (5); each step lit `on` s with `gap` between, both quickening 3.5% a step as the sequence grows (`stepOf`, at most to
+    0.55 of themselves), and `wait` s to answer.
+  - States `ready`, `show`, `input`, `pause`, `over` (`stepGame`, `press`, `over`). Tap a pad (`padAt` by angle round the
+    middle), or press 1–8 (with four pads the arrows too); a tap on a board not begun or over starts it, a hold too. When it
+    is over the pad wanted flashes. Best a board in localStorage `simon.best`.
+  - A board no one plays lights its own sequence, rounds 1 to 8 and round again, each board at its own phase (`shownLit`).
+  - Pads are wedges of their own kinds (`smPad<P>_<p>`, `padGeo`, faces wound to look out); lit, a pad is its full colour
+    and raised a little, else 38% of it.
+  - The kit's `difficulty(key, title, own)`: `own` for games with levels by ring of their own (Sokoban, the tilt maze,
+    Simon) keeps the label plain and leaves out the steps at rings 7 and 31.
+  - The smoke test checks the pads by ring, the same sequence on a board each time, three rounds played back and a wrong
+    pad ending it, a real click starting a board and a real click on the right pad taken, and a board no one plays lighting.
+- **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+  move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
+  Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
+  - The rule is the ARCADE kit's (`HARDER FARTHER OUT`): the setting is the corner block's (rings 0–6, golf's `ringOf`: the
+    distance from the corner the short way round the wrapped field), a step harder from ring 7 and another from ring 31
+    (`RING_STEPS`), as far as Hard. Easy: easy, normal, hard going out; Normal: normal, then hard; Hard everywhere hard.
+  - `ARCADE.levelOn(setting, c, r)`; a kit switch's `DL.at(c, r)`. A game takes its board's level when it is made, dealt or
+    started and keeps it on the game, so speeds, sizes and the computer's strength are the board's own; boards of
+    different sizes sit side by side in the size games, each showing a recording of its own size.
+  - The menu says "Difficulty: normal at the corner", its title the rule (`ARCADE.FARTHER`). Each app's `_debug.levelOf(c, r)`
+    gives the level a board plays at; the smoke test checks it on every app with a Difficulty.
 - **Sokoban: every board its own level** (Oct 12: "what ideas from mini-golf can we extend to the other games." … "ok,
   proceed", on "every board its own puzzle, harder further out" and "rated by a simulated player, rebuilt until it fits"):
   - The corner block keeps the worked-out levels (`MAP`, one a board, as golf keeps its course there; their par is the pushes
