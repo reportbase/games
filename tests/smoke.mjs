@@ -2664,6 +2664,50 @@ try {
       failures.push(`[${current}] ${JSON.stringify({ tm, live })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${tm.ok} of ${tm.runs} mazes finished by the steady player; the arrow keys rolled it ${live.moved.toFixed(3)})`);
   }
+  // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+  // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the
+  // corner block, a step harder from ring 7 and another from ring 31. On Easy: board (0, 0) easy, (10, 0) normal, (40, 40)
+  // hard; a game started at (40, 40) is really harder than one at (0, 0), by what the game's difficulty changes.
+  {
+    current = 'harder farther out';
+    const SPEC = { checkers: 's:depth', reversi: 's:picker', gomoku: 's:picker', connectfour: 's:picker', linesofaction: 's:picker', ataxx: 's:picker',
+      flow: 'n', netslide: 'n', rolltheball: 'n', unblockme: 'n', minesweeper: 'n', memory: 'n', pipes: 'n', infinityloop: 'n', pipemania: 'n', towerdefense: 'n',
+      tron: 'lv', missilecommand: 'lv', asteroids: 'lv', bomberman: 'lv', invaders: 'lv', pacman: 'ghost', tetris: 'fall', tiles: 'base',
+      defender: 'lv', breakout: 'lv', crossing: 'n', snake: 'n' };
+    const bad = [];
+    for (const [id, how] of Object.entries(SPEC)){
+      const r = await page.evaluate(async ([id, how]) => {
+        const A = window.FIELD_APPS.find(a => a.id === id); if (!A) return { why: 'no app' };
+        window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 400));
+        const find = m => { for (const x of (m || [])){ if (x && typeof x.label === 'function' && /^Difficulty/.test(x.label())) return x; const y = x && find(x.items); if (y) return y; } return null; };
+        const item = find(A.menu); if (!item) return { why: 'no Difficulty item' };
+        const setTo = w => { for (let k = 0; k < 4 && !item.label().includes(w); k++) item.on(); return item.label().includes(w); };
+        if (!setTo('easy')) return { why: 'the item never says easy: ' + item.label() };
+        const label = item.label(), D = A._debug || {};
+        if (typeof D.levelOf !== 'function') return { why: 'no _debug.levelOf' };
+        const real = (c, r) => {
+          A.onReset && A.onReset(c, r);
+          if (/^(lv|ghost|fall|base|n)$/.test(how) && !/^(flow|netslide|rolltheball|unblockme|minesweeper|memory|pipes|infinityloop|pipemania|towerdefense)$/.test(id)) A.onCellTap && A.onCellTap(c, r);
+          const g = D.games && D.games.get(c + '_' + r), PICK = { loose: 0, 'one-ply': 1, 'two-ply': 2 };
+          if (how === 's:depth') return D.strengthOf(c, r).depth;
+          if (how === 's:picker') return PICK[D.strengthOf(c, r).picker];
+          if (!g) return null;
+          if (how === 'n') return g.n;
+          if (how === 'lv') return ['easy', 'normal', 'hard'].indexOf(g.lv);
+          if (how === 'ghost') return -g.ghosts[0].T;
+          if (how === 'fall') return -D.fallEvery(g);
+          if (how === 'base') return g.base;
+        };
+        const lv = [D.levelOf(0, 0), D.levelOf(10, 0), D.levelOf(40, 40)];
+        const near = real(0, 0), far = real(40, 40);
+        setTo('normal');
+        return { label, lv, near, far };
+      }, [id, how]);
+      if (r.why || r.lv.join() !== 'easy,normal,hard' || !(r.far > r.near) || !/at the corner/.test(r.label)) bad.push(id + ' ' + JSON.stringify(r));
+    }
+    if (bad.length) failures.push('[harder farther out] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} harder farther out (${Object.keys(SPEC).length} games: the corner as set, ring 7 a step harder, ring 40 hard, a far game really harder)`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
