@@ -23779,8 +23779,14 @@ const DEFENDER_APP = (() => {
                  hard:   { fire: 0.7, bolt: 1.25, warn: 0.75 } };
   let LEVEL = 'normal';
   { const v = ARCADE.load('defender.level', LEVEL); if (DIFF[v]) LEVEL = v; }
-  const D = () => DIFF[LEVEL];
-  const AIM = () => 0.8 * D().warn, BOLT_SPEED = () => 0.55 * D().bolt;
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the menu's setting is the corner block's, and a board farther out plays a step or two
+     harder (`ARCADE.levelOn`, by its ring). The level is worked out when a board's game is made or started (`levelAt`)
+     and kept on the game as `g.lv`, so a game keeps its level while it is played, and every rate below asks the game's
+     own level, not the setting. A game with none (the rest position) falls back to the setting. */
+  const levelAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
+  const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
+  const AIM = g => 0.8 * D(g).warn, BOLT_SPEED = g => 0.55 * D(g).bolt;
   /* THE BOSS (Sep 27): every fifth wave is the king alone with a guard — bigger, slow, a health
      bar over him, and he fires down all eight of his lines at once. Take him and it is checkmate. */
   const BOSS_EVERY = 5;
@@ -23792,23 +23798,23 @@ const DEFENDER_APP = (() => {
   const PICK = { S: 0x3aa8ff, R: 0xffd23a, H: 0x4be38a, B: 0xff4a3a };
   const PICK_NAME = { S: 'Spread shot', R: 'Rapid fire', H: 'Shield', B: 'Bomb!' };
 
-  function newGame(){
-    return { state: 'ready', score: 0, lives: 3, kills: 0, last: 0, t: 0, booms: [], wave: 1, pause: 0,
+  function newGame(lv){
+    return { lv: lv || LEVEL, state: 'ready', score: 0, lives: 3, kills: 0, last: 0, t: 0, booms: [], wave: 1, pause: 0,
              ship: { x: 0.5, y: 0.88, inv: 0, cool: 0 }, shots: [], foes: [], bolts: [], picks: [], flashes: [],
              pow: { spread: 0, rapid: 0, shield: 0 } };
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
-    if (!GAMES.has(k)) GAMES.set(k, newGame());     // Sep 27: a board you frame waits for you (tap to start)
+    if (!GAMES.has(k)) GAMES.set(k, newGame(levelAt(c, r)));     // Sep 27: a board you frame waits for you (tap to start)
     return GAMES.get(k);
   };
   const wave = g => g.wave || 1;
   const pace = g => 1 + 0.08 * (wave(g) - 1);
 
   // A piece at home, waiting `wait` seconds before it sets off.
-  function home(f, wait){
+  function home(f, wait, g){
     Object.assign(f, { x: (f.file + 0.5) * SQ, y: (f.rank + 0.5) * SQ, wait, to: null, aim: null,
-                       vx: (rnd() < 0.5 ? -1 : 1) * 0.12, hopIn: 0.5 + rnd() * 0.4, fireIn: 0.8 + rnd() * RATE[f.kind] * 0.5 * D().fire, hp: HP[f.kind] });
+                       vx: (rnd() < 0.5 ? -1 : 1) * 0.12, hopIn: 0.5 + rnd() * 0.4, fireIn: 0.8 + rnd() * RATE[f.kind] * 0.5 * D(g).fire, hp: HP[f.kind] });
   }
   // The army for wave w: a little bigger each time, the pawns giving way to heavier pieces.
   function army(w){
@@ -23834,15 +23840,15 @@ const DEFENDER_APP = (() => {
               ...row1.slice(0, N).map((kind, i) => ({ kind, file: f1[i], rank: 1 }))];
     const order = g.foes.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--){ const j = (rnd() * (i + 1)) | 0; [order[i], order[j]] = [order[j], order[i]]; }
-    order.forEach((fi, k) => home(g.foes[fi], 0.6 + ((k / WAVE) | 0) * WAVE_GAP + rnd() * 1.6));
+    order.forEach((fi, k) => home(g.foes[fi], 0.6 + ((k / WAVE) | 0) * WAVE_GAP + rnd() * 1.6, g));
     if (bossWave(wave(g))){
       const K = g.foes.find(f => f.kind === 'k');
-      if (K){ K.boss = true; K.hp = K.hpMax = BOSS_HP(wave(g)); K.file = 6; K.rank = 0; home(K, 1.5); K.hp = K.hpMax; K.fireIn = 2.5; }
+      if (K){ K.boss = true; K.hp = K.hpMax = BOSS_HP(wave(g)); K.file = 6; K.rank = 0; home(K, 1.5, g); K.hp = K.hpMax; K.fireIn = 2.5; }
       say('Wave ' + wave(g) + ' — the king himself', 2200);
     }
     g.bolts = []; g.flashes = [];
   }
-  const startOver = f => home(f, 2.5 + rnd() * 3);
+  const startOver = (f, g) => home(f, 2.5 + rnd() * 3, g);
 
   function moveFoe(g, f, dt){
     if (f.wait > 0){ f.wait -= dt; return; }
@@ -23911,10 +23917,10 @@ const DEFENDER_APP = (() => {
   // THE ATTACKS: take aim (the warning), then strike.
   function plan(g, f){
     const s = g.ship, dx = s.x - f.x, dy = s.y - f.y;
-    if (f.boss){ f.aim = { t: AIM() * 1.2, dirs: ALL8 }; beep('warn'); return; }
+    if (f.boss){ f.aim = { t: AIM(g) * 1.2, dirs: ALL8 }; beep('warn'); return; }
     if (SPOTS[f.kind]){
       const pts = SPOTS[f.kind].map(([a, b]) => [f.x + a * SQ, f.y + b * SQ]).filter(([x, y]) => x > 0 && x < 1 && y > 0 && y < 1);
-      f.aim = { t: AIM(), spots: pts };
+      f.aim = { t: AIM(g), spots: pts };
       beep('warn');
       return;
     }
@@ -23925,7 +23931,7 @@ const DEFENDER_APP = (() => {
       for (const d of LINES[f.kind]){ const c = (d[0] * dx + d[1] * dy) / Math.hypot(...d) / (Math.hypot(dx, dy) || 1); if (c > bc){ bc = c; best = d; } }
       dirs = [best];
     }
-    f.aim = { t: AIM(), dirs };
+    f.aim = { t: AIM(g), dirs };
     beep('warn');
   }
   const aimSquares = f => {
@@ -23946,14 +23952,14 @@ const DEFENDER_APP = (() => {
       }
     } else for (const [a, b] of f.aim.dirs){
       const d = Math.hypot(a, b);
-      g.bolts.push({ x: f.x, y: f.y, vx: a / d * BOLT_SPEED(), vy: b / d * BOLT_SPEED() });
+      g.bolts.push({ x: f.x, y: f.y, vx: a / d * BOLT_SPEED(g), vy: b / d * BOLT_SPEED(g) });
     }
     if (f.aim.dirs) beep(f.boss ? 'roar' : 'bolt');
   }
   function foeFire(g, f, dt){
     if (f.wait > 0 || f.to || f.y < 0.04) return;
     if (f.aim){
-      if ((f.aim.t -= dt) <= 0){ strike(g, f); f.aim = null; f.fireIn = (f.boss ? 2.6 : RATE[f.kind]) * D().fire * (0.7 + rnd() * 0.6) / pace(g); }
+      if ((f.aim.t -= dt) <= 0){ strike(g, f); f.aim = null; f.fireIn = (f.boss ? 2.6 : RATE[f.kind]) * D(g).fire * (0.7 + rnd() * 0.6) / pace(g); }
       return;
     }
     if ((f.fireIn -= dt) > 0) return;
@@ -24104,7 +24110,7 @@ const DEFENDER_APP = (() => {
         if (f.boss) hurt(g, 'Hit'); else { kill(g, f); hurt(g, 'Hit'); }
       } else if (f.y > 1.02){
         if (f.kind === 'p'){ f.kind = 'q'; f.promoted = true; f.hp = 2; f.y = 0.97; f.aim = null; f.fireIn = 1.5; say('A pawn promoted to a queen', 1600); beep('promo'); }
-        else { const at = { x: f.x, y: f.y, kind: f.kind }; startOver(f); loseLife(g, 'A piece got through', at); }
+        else { const at = { x: f.x, y: f.y, kind: f.kind }; startOver(f, g); loseLife(g, 'A piece got through', at); }
       }
     }
     g.foes = g.foes.filter(f => !f.dead);
@@ -24114,8 +24120,9 @@ const DEFENDER_APP = (() => {
       else if (g.pause > 0 && (g.pause -= dt) <= 0){ g.pause = 0; g.wave++; setUp(g); }
     }
   }
-  function start(g, framing){
-    Object.assign(g, newGame());
+  // lv: the board's level, worked out by the caller from its board (Oct 15); without one the game keeps its own.
+  function start(g, framing, lv){
+    Object.assign(g, newGame(lv || g.lv));
     g.state = 'play';
     setUp(g);
     say(TILT.on ? 'Tilt to steer — it fires by itself; watch for red squares' : 'Drag to move, tap to fire — watch for red squares', 2400);
@@ -24221,7 +24228,9 @@ const DEFENDER_APP = (() => {
                   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
                   return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     QUIET = true;
-    const frames = [], dt = 1 / 30, g = newGame();
+    // Recorded at Normal always (Oct 15), so a reel and the game a tap adopts from it are the same game whatever the
+    // setting; the adopted game then plays on at its own board's level.
+    const frames = [], dt = 1 / 30, g = newGame('normal');
     try {
       start(g, true);
       let over = 0;
@@ -24248,7 +24257,8 @@ const DEFENDER_APP = (() => {
   // Taking a board carries on from what it is showing: the reel's game, replayed up to now.
   function adopt(c, r){
     const { seed, k } = reelAt(c, r), g = bakeReel(seed, k);
-    return (g && g.ship) ? g : newGame();
+    if (g && g.ship){ g.lv = levelAt(c, r); return g; }
+    return newGame(levelAt(c, r));
   }
   function reelFrame(c, r){
     const { k, reel } = reelAt(c, r), fr = reel[k], out = [];
@@ -24275,7 +24285,7 @@ const DEFENDER_APP = (() => {
     if (g.state !== 'play'){
       if (k !== 'F') return;
       e.preventDefault(); e.stopPropagation();
-      if (!e.repeat) start(g);
+      if (!e.repeat) start(g, false, levelAt(LIVE.c, LIVE.r));
       return;
     }
     e.preventDefault(); e.stopPropagation();
@@ -24332,8 +24342,10 @@ const DEFENDER_APP = (() => {
       return frameOf(g, performance.now() / 1000).flatMap(itemOf);
     },
     menu: [{ head: 'Defender', items: [
-      { label: () => 'Difficulty: ' + LEVEL, title: 'Easy: pieces fire less often, bolts are slower and the red warning lasts longer. Hard: the other way. Press to switch.',
-        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('defender.level', LEVEL); } },
+      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: pieces fire less often, bolts are slower and the red warning lasts longer. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
+        // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
+        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('defender.level', LEVEL);
+              if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
       { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Shots, bolts, explosions and fanfares — all made in the browser.',
         on(){ SND.on = !SND.on; ARCADE.save('defender.sound', SND.on ? 'on' : 'off'); if (SND.on) audio(); } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to steer the ship; it fires by itself. The way you hold it when you turn this on counts as level.',
@@ -24345,7 +24357,7 @@ const DEFENDER_APP = (() => {
       return 'Defender — ' + g.score + ' points, wave ' + wave(g) + ', ' + g.lives + ' left';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), newGame()); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), newGame(levelAt(c, r))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){
       gameAt(c, r);                                  // framed and waiting: the first tap starts it
       return true;
@@ -24354,7 +24366,7 @@ const DEFENDER_APP = (() => {
     onCellTap(c, r){
       const g = gameAt(c, r);
       LIVE = { key: gkey(c, r), c, r };
-      if (g.state !== 'play') start(g); else fire(g);
+      if (g.state !== 'play') start(g, false, levelAt(c, r)); else fire(g);
       return true;
     },
     // A drag anywhere on the board steers the ship (Sep 27: "touch should move the player anywhere on the
@@ -24388,7 +24400,8 @@ const DEFENDER_APP = (() => {
         ctx.beginPath(); ctx.arc(x * sz, y * sz, t * (k === 'shot' ? 0.12 : 0.3), 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { TILT, SND, setLevel: v => { LEVEL = v; }, newGame, step, start, fire, games: GAMES, held: HELD, botInput, bakeReel, setUp, army, take, kill },
+    // levelOf(c, r): the level that board's game plays at, its own if it has one, else what it would start at now.
+    _debug: { TILT, SND, setLevel: v => { LEVEL = v; }, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state !== 'ready' && g.lv) || levelAt(c, r); }, D, newGame, step, start, fire, games: GAMES, held: HELD, botInput, bakeReel, setUp, army, take, kill },
   };
   return app;
 })();
@@ -24474,7 +24487,12 @@ const BREAKOUT_APP = (() => {
                  normal: { speed: 1,    width: 1,    drop: 1,   restless: 1 },
                  hard:   { speed: 1.18, width: 0.85, drop: 0.8, restless: 0.7 } };
   let LEVEL = ARCADE.load('breakout.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
-  const D = () => DIFF[LEVEL];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the setting is the corner block's, and each board farther out plays a step or two harder
+     (`ARCADE.levelOn`, by its ring). A board's game takes its level when it is made or started (`levelAt`) and keeps it as
+     `g.lv`, so the ball's speed, the paddle's width, the drops and the pieces' restlessness are that board's own. */
+  const levelAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
+  const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
 
   /* SOUND (Sep 27): made in the browser. Only the game you are playing makes a sound. */
   const SND = { on: ARCADE.load('breakout.sound', 'on') !== 'off', last: {} };
@@ -24502,8 +24520,8 @@ const BREAKOUT_APP = (() => {
   }
   addEventListener('pointerdown', () => { try { if (SND.on && window.getFieldApp() === app) ARCADE.audio(); } catch {} }, true);
 
-  function newGame(){
-    const g = { state: 'ready', score: 0, lives: 3, level: 1, last: 0, shake: {}, px: 0.5, balls: [], serveIn: 0, t: 0, booms: [],
+  function newGame(lv){
+    const g = { lv: lv || LEVEL, state: 'ready', score: 0, lives: 3, level: 1, last: 0, shake: {}, px: 0.5, balls: [], serveIn: 0, t: 0, booms: [],
                 picks: [], lasers: [], sparks: [], laserIn: 0, pow: { W: 0, L: 0, S: 0, F: 0, C: 0 }, creepIn: 6 };
     layOut(g);
     return g;
@@ -24511,11 +24529,11 @@ const BREAKOUT_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     let g = GAMES.get(k);
-    if (!g){ g = newGame(); GAMES.set(k, g); }       // Sep 27: a board you frame waits for you
+    if (!g){ g = newGame(levelAt(c, r)); GAMES.set(k, g); }       // Sep 27: a board you frame waits for you
     return g;
   };
-  const speedOf = g => SPEED0 * Math.pow(SPEED_UP, g.level - 1) * D().speed;
-  const padW = g => PADDLE_W * D().width * (g.pow && g.pow.W > 0 ? 1.6 : 1);
+  const speedOf = g => SPEED0 * Math.pow(SPEED_UP, g.level - 1) * D(g).speed;
+  const padW = g => PADDLE_W * D(g).width * (g.pow && g.pow.W > 0 ? 1.6 : 1);
   function serve(g){
     const a = (rnd() - 0.5) * 0.9;                 // up and a little to one side
     const sp = speedOf(g);
@@ -24567,7 +24585,7 @@ const BREAKOUT_APP = (() => {
   }
   function creep(g, dt){
     if ((g.creepIn -= dt) > 0) return;
-    g.creepIn = (4 + rnd() * 4) * D().restless;
+    g.creepIn = (4 + rnd() * 4) * D(g).restless;
     const pawns = [];
     for (let i = 0; i < CELLS; i++) if (KINDS[g.cells[i]] === 'p' && free(g, ((i / N) | 0) + 1, i % N)) pawns.push(i);
     if (pawns.length){ const i = pawns[(rnd() * pawns.length) | 0]; moveTo(g, i, i + N); }
@@ -24591,7 +24609,7 @@ const BREAKOUT_APP = (() => {
     g.cells[bit] = 0; g.dmg[bit] = 0; delete g.moves[bit];
     g.score += VALUE[kind];
     beep('boom');
-    if (rnd() < DROP[kind] * D().drop){ const ks = Object.keys(PICK); g.picks.push({ x: bitX(bit), y: bitY(bit), type: ks[(rnd() * ks.length) | 0] }); }
+    if (rnd() < DROP[kind] * D(g).drop){ const ks = Object.keys(PICK); g.picks.push({ x: bitX(bit), y: bitY(bit), type: ks[(rnd() * ks.length) | 0] }); }
     if (!left(g)){                                  // cleared: the next shape, a little faster
       g.level++; layOut(g); g.balls = []; g.serveIn = 1.2;
       g.picks = []; g.lasers = [];
@@ -24693,8 +24711,9 @@ const BREAKOUT_APP = (() => {
       }
     }
   }
-  function start(g, framing){
-    Object.assign(g, newGame());
+  // lv: the board's level, from its board (Oct 15); without one the game keeps its own.
+  function start(g, framing, lv){
+    Object.assign(g, newGame(lv || g.lv));
     g.state = 'play'; g.serveIn = 0.8;
     say(TILT.on ? 'Tilt to move the paddle' : 'Drag to move the paddle', 2000);
   }
@@ -24726,13 +24745,13 @@ const BREAKOUT_APP = (() => {
     const reel = { px: new Float32Array(n), bx: new Float32Array(n * 3), by: new Float32Array(n * 3),
                    cells: new Uint8Array(n * CELLS), n, booms: [] };   // booms: [frame, bit, seed, kind]
     try {
-      const g = newGame();
+      const g = newGame('normal');
       g.state = 'play'; g.serveIn = 0.5;
       const dt = 1 / REEL_FPS;
       let overFor = 0;
       for (let i = 0; i < n; i++){
         if (g.state === 'over'){
-          if ((overFor += dt) > 1.5){ Object.assign(g, newGame()); g.state = 'play'; g.serveIn = 0.5; overFor = 0; }
+          if ((overFor += dt) > 1.5){ Object.assign(g, newGame('normal')); g.state = 'play'; g.serveIn = 0.5; overFor = 0; }
         } else step(g, dt, botInput(g));
         if (i === upTo){ g.last = 0; return g; }
         for (const b of g.booms || []) if (!b.rec){ b.rec = 1; reel.booms.push([i, b.bit, b.seed, b.kind]); }
@@ -24802,7 +24821,7 @@ const BREAKOUT_APP = (() => {
     if (g.state !== 'play'){
       if (k !== 'F') return;
       e.preventDefault(); e.stopPropagation();
-      if (!e.repeat) start(g);
+      if (!e.repeat) start(g, false, levelAt(LIVE.c, LIVE.r));
       return;
     }
     e.preventDefault(); e.stopPropagation();
@@ -24871,8 +24890,10 @@ const BREAKOUT_APP = (() => {
       return out;
     },
     menu: [{ head: 'Breakout', items: [
-      { label: () => 'Difficulty: ' + LEVEL, title: 'Easy: a slower ball, a wider paddle, more power-ups and calmer pieces. Hard: the other way. Press to switch.',
-        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('breakout.level', LEVEL); } },
+      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: a slower ball, a wider paddle, more power-ups and calmer pieces. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
+        // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
+        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('breakout.level', LEVEL);
+              if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
       { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Bounces, knocks, explosions and fanfares — all made in the browser.',
         on(){ SND.on = !SND.on; ARCADE.save('breakout.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left and right to move the paddle. The way you hold it when you turn this on counts as level.',
@@ -24885,7 +24906,7 @@ const BREAKOUT_APP = (() => {
     },
     // Selecting a board frames it, waiting: the first tap starts it (Sep 27).
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), newGame()); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), newGame(levelAt(c, r))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ gameAt(c, r); return true; },
     onFramed(c, r){
       HELD.clear();
@@ -24894,7 +24915,7 @@ const BREAKOUT_APP = (() => {
     onCellTap(c, r){
       const g = gameAt(c, r);
       LIVE = { key: gkey(c, r), c, r };
-      if (g.state !== 'play') start(g);
+      if (g.state !== 'play') start(g, false, levelAt(c, r));
       return true;
     },
     /* ONE FINGER STEERS THE PADDLE, sideways only, by as far as the finger
@@ -24933,7 +24954,8 @@ const BREAKOUT_APP = (() => {
       ctx.fillRect((v.px - PADDLE_W / 2) * sz, (PADDLE_Y - 0.01) * sz, PADDLE_W * sz, 0.03 * sz);
       for (const q of v.balls || []){ ctx.fillStyle = '#fff0b0'; ctx.beginPath(); ctx.arc(q.x * sz, q.y * sz, t * 0.18, 0, Math.PI * 2); ctx.fill(); }
     },
-    _debug: { newGame, step, start, botInput, bakeReel, games: GAMES, held: HELD, take, hit, react, SHAPES, setLevel: v => { LEVEL = v; }, SND, TILT },
+    // levelOf(c, r): the level that board's game plays at, its own once started, else what it would start at now.
+    _debug: { levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state !== 'ready' && g.lv) || levelAt(c, r); }, D, speedOf, padW, newGame, step, start, botInput, bakeReel, games: GAMES, held: HELD, take, hit, react, SHAPES, setLevel: v => { LEVEL = v; }, SND, TILT },
   };
   return app;
 })();
@@ -25007,7 +25029,16 @@ const CROSSING_APP = (() => {
                  normal: { speed: 1,    every: 1,   warn: 1 },
                  hard:   { speed: 1.2,  every: 0.7, warn: 0.75 } };
   let LEVEL = ARCADE.load('crossing.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
-  const D = () => DIFF[LEVEL];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the setting is the corner block's, and each board farther out plays a step or two harder
+     (`ARCADE.levelOn`, by its ring), so on Easy the corner's boards are 8×8, the ones round them 10×10 and the far field
+     12×12, side by side. A board's game takes its level when it is made, adopted or started (`levelAt`) and keeps it as
+     `g.lv` beside its size `g.n`: the lanes' speed, the strikes and their warning are that game's own. A board no one plays
+     shows a recording of its own size (`reelAt`), and each size's recordings are played at that size's level (`LV_OF`),
+     so a far board's recording runs at Hard's pace. */
+  const levelAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
+  const LV_OF = { 8: 'easy', 10: 'normal', 12: 'hard' };
+  const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
   const SND = { on: ARCADE.load('crossing.sound', 'on') !== 'off', last: {} };
   const TILT = ARCADE.tilt;
   function beep(kind){
@@ -25030,7 +25061,7 @@ const CROSSING_APP = (() => {
     } catch {}
   }
   addEventListener('pointerdown', () => { try { if (SND.on && window.getFieldApp() === app) ARCADE.audio(); } catch {} }, true);
-  const speedUp = g => (1 + 0.12 * (g.level - 1)) * D().speed;
+  const speedUp = g => (1 + 0.12 * (g.level - 1)) * D(g).speed;
 
   /* YOU ARE THE WHITE KING (Sep 27: "player piece should be the king"). One square at a time, any
      of the eight ways: tap or swipe toward where you want to go — straight or diagonal — or use the
@@ -25056,7 +25087,7 @@ const CROSSING_APP = (() => {
     r: () => [[1, 0], [2, 0], [3, 0], [-1, 0]],
     q: () => [[1, 0], [2, 0], [1, 1], [1, -1], [2, 2], [2, -2], [-1, 0], [-1, 1], [-1, -1]],
   };
-  const WARN_T = () => 0.75 * D().warn;
+  const WARN_T = g => 0.75 * D(g).warn;
   function threatTick(g, dt, p){
     for (const th of g.threats){
       if (th.struck) continue;
@@ -25068,7 +25099,7 @@ const CROSSING_APP = (() => {
     }
     g.threats = g.threats.filter(th => !th.struck || g.t - th.flash < 0.25);
     if ((g.nextThreat = (g.nextThreat == null ? 2 : g.nextThreat) - dt) > 0) return null;
-    g.nextThreat = (2.2 + rnd() * 1.6) * D().every / Math.sqrt(g.level);
+    g.nextThreat = (2.2 + rnd() * 1.6) * D(g).every / Math.sqrt(g.level);
     // A piece within reach of where you are.
     const cand = [];
     for (const lane of LANES) lanePieces(lane, g.t, speedUp(g)).forEach(([x, vis]) => {
@@ -25080,7 +25111,7 @@ const CROSSING_APP = (() => {
     const { lane, col } = cand[(rnd() * cand.length) | 0];
     const sq = REACH[lane.kind]().map(([dr, dc]) => [lane.row + dr, col + dc]).filter(([r, c]) => r >= 0 && r < N && c >= 0 && c < N && r !== lane.row);
     if (!sq.length) return null;
-    g.threats.push({ sq, at: g.t + WARN_T(), kind: lane.kind, x: (col + 0.5) * SQ, row: lane.row });
+    g.threats.push({ sq, at: g.t + WARN_T(g), kind: lane.kind, x: (col + 0.5) * SQ, row: lane.row });
     beep('warn');
     if (sq.some(([r, c]) => r === p.row && c === Math.floor(p.x * N))) say('Check!', 700);
     return null;
@@ -25117,9 +25148,10 @@ const CROSSING_APP = (() => {
   }
   const hitAt = (g, row, x, t) => !!hitBy(g, row, x, t);
 
-  function newGame(n){
+  // lv: the game's level (Oct 15); by default the level whose size this is.
+  function newGame(n, lv){
     use(n || N);
-    return { n: N, state: 'ready', score: 0, lives: 3, level: 1, last: 0, t: 0,
+    return { n: N, lv: lv || LV_OF[N] || LEVEL, state: 'ready', score: 0, lives: 3, level: 1, last: 0, t: 0,
              row: START_ROW, col: START_COL, hop: null, dead: 0, best: START_ROW, crash: null, back: null,
              me: 'K', threats: [], nextThreat: 2, tiltIn: 0 };
   }
@@ -25205,9 +25237,11 @@ const CROSSING_APP = (() => {
       say('Caught — back to the start', 1400);
     }
   }
-  function start(g, framing){
+  // lv: the board's level, from its board (Oct 15); without one the game keeps its own.
+  function start(g, framing, lv){
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
-    Object.assign(g, newGame(SIZE[LEVEL]));
+    lv = lv || g.lv || LEVEL;
+    Object.assign(g, newGame(SIZE[lv], lv));
     g.state = 'play';
     say(TILT.on ? 'Tilt to move — watch for red squares' : 'Tap or swipe to move — watch for red squares', 2400);
   }
@@ -25303,7 +25337,7 @@ const CROSSING_APP = (() => {
     return frames;
   }
   function reelAt(c, r){
-    const sz = SIZE[LEVEL], REELS = REEL_SETS[sz] || (REEL_SETS[sz] = Array.from({ length: REEL_N }, (_, i) => bakeReel(0xf20 + i * 4099, undefined, sz)));
+    const sz = SIZE[levelAt(c, r)] /* the board's own size, Oct 15 */, REELS = REEL_SETS[sz] || (REEL_SETS[sz] = Array.from({ length: REEL_N }, (_, i) => bakeReel(0xf20 + i * 4099, undefined, sz)));
     const h = k => {
       let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ ((k + 71) * 0x9e3779b9);
       v = Math.imul(v ^ (v >>> 15), 0x85ebca6b);
@@ -25356,7 +25390,7 @@ const CROSSING_APP = (() => {
     if (g.state !== 'play'){
       if (!space) return;
       e.preventDefault(); e.stopPropagation();
-      if (!e.repeat) start(g);
+      if (!e.repeat) start(g, false, levelAt(LIVE.c, LIVE.r));
       return;
     }
     e.preventDefault(); e.stopPropagation();
@@ -25374,7 +25408,7 @@ const CROSSING_APP = (() => {
     itemCaps: BOOM.caps,
     // A board's own squares, when it is not the 8×8 the recordings play on.
     cellGrid(c, r){
-      const g = GAMES.get(gkey(c, r)), n = g ? g.n : SIZE[LEVEL];
+      const g = GAMES.get(gkey(c, r)), n = g ? g.n : SIZE[levelAt(c, r)];   // Oct 15: each board its own size
       if (n === 8) return null;
       return { n, colors: Array.from({ length: n * n }, (_, i) => (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) };
     },
@@ -25402,10 +25436,11 @@ const CROSSING_APP = (() => {
       return itemsOf(reelFrame(c, r));
     },
     menu: [{ head: 'Crossing', items: [
-      { label: () => 'Difficulty: ' + LEVEL, title: 'Easy: an 8×8 board, slower lanes, fewer strikes and longer warnings. Normal: 10×10. Hard: 12×12, faster, more strikes. The board you are on starts again at the new size.',
+      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: an 8×8 board, slower lanes, fewer strikes and longer warnings. Normal: 10×10. Hard: 12×12, faster, more strikes. The board you are on starts again at the new size.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('crossing.level', LEVEL);
               GAMES.clear();
-              if (LIVE){ const g = newGame(SIZE[LEVEL]); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
+              // The board in play starts again at its own new level (Oct 15): the setting moved by its ring.
+              if (LIVE){ const lv = levelAt(LIVE.c, LIVE.r), g = newGame(SIZE[lv], lv); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
       { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Hops, warnings, strikes and fanfares — all made in the browser.',
         on(){ SND.on = !SND.on; ARCADE.save('crossing.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to move — forward, back, left or right, one move at a time. The way you hold it when you turn this on counts as level.',
@@ -25418,12 +25453,12 @@ const CROSSING_APP = (() => {
     },
     // Selecting a board starts its game, as Defender does: no second tap.
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ const g = gameAt(c, r); g.state = 'over'; start(g); g.state = 'wait'; g.last = 0; LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ const g = gameAt(c, r); g.state = 'over'; start(g, false, levelAt(c, r)); g.state = 'wait'; g.last = 0; LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ gameAt(c, r); return true; },   // Sep 27: selecting frames the board; it waits for a tap
     onFramed(c, r){
       LIVE = (c == null) ? null : { key: gkey(c, r), c, r };
-      if (ED.on && (!LIVE || LIVE.key !== ED.key)) editStop(true);
-      if (LIVE && PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, pendingNote(k)); }
+      // (Oct 15: two of mini golf's lines, its editor's and its shared hole's, had strayed in here; with no `ED` in this
+      //  game they threw on every board framed, after LIVE was set, and the field swallowed it. Taken out.)
     },
     /* A TAP HOPS TOWARD WHERE YOU TAPPED (Sep 22: "add left and right
        capability"). Measured from the pawn: tap beside it and it steps left
@@ -25433,7 +25468,7 @@ const CROSSING_APP = (() => {
     onCellTap(c, r, u, v){
       const g = gameAt(c, r);
       LIVE = { key: gkey(c, r), c, r };
-      if (g.state !== 'play'){ start(g); return true; }
+      if (g.state !== 'play'){ start(g, false, levelAt(c, r)); return true; }
       use(g.n);
       const p = pawnPos(g);
       const dx = (u == null ? p.x : u) - p.x, dy = (v == null ? p.y - SQ : v) - p.y;
@@ -25475,7 +25510,8 @@ const CROSSING_APP = (() => {
         ctx.beginPath(); ctx.arc(fr[j + 1] * sz, fr[j + 2] * sz, t * 0.3 * fr[j + 3], 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { newGame, step, start, hop, bot, bakeReel, games: GAMES, lanePieces, hitAt, setLevel: v => { LEVEL = v; } },
+    // levelOf(c, r): the level that board's game plays at, its own if it has one, else what it would start at now.
+    _debug: { levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.lv) || levelAt(c, r); }, D, SIZE, gameAt, newGame, step, start, hop, bot, bakeReel, games: GAMES, lanePieces, hitAt, setLevel: v => { LEVEL = v; } },
   };
   return app;
 })();
@@ -25775,7 +25811,15 @@ const SNAKE_APP = (() => {
                  normal: { step: 1,    care: 0.85 },
                  hard:   { step: 0.75, care: 0.97 } };
   let LEVEL = ARCADE.load('snake.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
-  const D = () => QUIET ? DIFF.normal : DIFF[LEVEL];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the setting is the corner block's, and each board farther out plays a step or two harder
+     (`ARCADE.levelOn`, by its ring), so on Easy the corner's boards are 16×16, the ones round them 20×20 and the far field
+     24×24, side by side. A board's game takes its level when it is made, adopted or started (`levelAt`) and keeps it as
+     `g.lv` beside its size `g.n`, and the others' care is that game's own. A board no one plays shows a recording of its
+     own size (`reelAt`); the recordings are still played at Normal's care (QUIET), as before. */
+  const levelAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
+  const LV_OF = { 16: 'easy', 20: 'normal', 24: 'hard' };
+  const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
   /* SPEED IS ITS OWN SETTING (Oct 1: "add speed menu option, fast, medium, slow"): how fast the snakes
      move, apart from the difficulty, which keeps the board size and how carefully the others play. */
   const SPEEDS = { slow: 1.35, medium: 1, fast: 0.7 };
@@ -25816,9 +25860,10 @@ const SNAKE_APP = (() => {
   const startsFor = () => [[N - 3, N >> 1, [-1, 0]], [2, (N >> 1) - 1, [1, 0]], [(N >> 1) - 1, N - 3, [0, -1]], [N >> 1, 2, [0, 1]]];
   const newSnake = id => { const [r, c, d] = startsFor()[id]; return { id, body: bodyAt(r, c, d, 3), dir: d, queue: [], alive: true, grow: 0, mv: 0,
                                                                       pow: { S: 0, M: 0, G: 0, H: 0 }, combo: 0, lastEat: -9 }; };
-  function newGame(n){
-    use(n || (QUIET ? 20 : SIZE[LEVEL]));
-    const g = { n: N, state: 'ready', last: 0, t: 0, clock: 0, food: [], booms: [], snakes: [], hazards: [], threats: [], gems: [],
+  // lv: the game's level (Oct 15); by default the level whose size this is.
+  function newGame(n, lv){
+    use(n || (QUIET ? 20 : SIZE[lv || LEVEL]));
+    const g = { n: N, lv: lv || LV_OF[N] || LEVEL, state: 'ready', last: 0, t: 0, clock: 0, food: [], booms: [], snakes: [], hazards: [], threats: [], gems: [],
                 round: 1, wins: [0, 0, 0, 0], roundT: ROUND_T, pause: 0, slow: null, gemIn: 6, bonusIn: 8 };
     setRound(g);
     return g;
@@ -25865,9 +25910,11 @@ const SNAKE_APP = (() => {
     return null;
   }
   function addFood(g, kind, ttl){ const q = freeSquare(g); if (q) g.food.push({ r: q[0], c: q[1], kind, ttl: ttl || 0 }); }
-  function start(g){
+  // lv: the board's level, from its board (Oct 15); without one the game keeps its own.
+  function start(g, lv){
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
-    Object.assign(g, newGame());
+    lv = lv || g.lv || LEVEL;
+    Object.assign(g, newGame(SIZE[lv], lv));
     g.state = 'play';
     say((TILT.on ? 'Tilt' : 'Swipe') + ' to turn, tap to pause — last snake alive wins the round; the rounds go on for ever', 2600);
   }
@@ -26095,7 +26142,7 @@ const SNAKE_APP = (() => {
       let dist = 99;
       for (const f of targets) dist = Math.min(dist, (Math.abs(f.r - r) + Math.abs(f.c - c)) / Math.sqrt(f.w));
       const score = (space >= Math.min(60, sn.body.length + 4) ? 1000 : space * 10) - dist
-                  - (risky.has(r * N + c) && rnd() < D().care ? 400 : 0) + rnd() * 0.5;
+                  - (risky.has(r * N + c) && rnd() < D(g).care ? 400 : 0) + rnd() * 0.5;
       if (score > bestScore){ bestScore = score; best = d; }
     }
     if (best) sn.queue = [best];
@@ -26170,7 +26217,7 @@ const SNAKE_APP = (() => {
     return frames;
   }
   function reelAt(c, r){
-    const sz = SIZE[LEVEL], REELS = REEL_SETS[sz] || (REEL_SETS[sz] = Array.from({ length: REEL_N }, (_, i) => bakeReel(0x5a4e + i * 7331, undefined, sz)));
+    const sz = SIZE[levelAt(c, r)] /* the board's own size, Oct 15 */, REELS = REEL_SETS[sz] || (REEL_SETS[sz] = Array.from({ length: REEL_N }, (_, i) => bakeReel(0x5a4e + i * 7331, undefined, sz)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x6b43a9;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0;
@@ -26237,7 +26284,7 @@ const SNAKE_APP = (() => {
     if (g.state !== 'play'){
       if (!space) return;
       e.preventDefault(); e.stopPropagation();
-      if (!e.repeat) start(g);
+      if (!e.repeat) start(g, levelAt(LIVE.c, LIVE.r));
       return;
     }
     e.preventDefault(); e.stopPropagation();
@@ -26269,7 +26316,7 @@ const SNAKE_APP = (() => {
         ['lineV' + n, T => { const g = new T.BoxGeometry(0.05, 0.004, n); g.translate(0, 0.002, 0); return g; }],
         ['lineH' + n, T => { const g = new T.BoxGeometry(n, 0.004, 0.05); g.translate(0, 0.002, 0); return g; }]])),
     },
-    cellGrid(c, r){ const g = GAMES.get(gkey(c, r)); return checker(g ? g.n : SIZE[LEVEL]); },
+    cellGrid(c, r){ const g = GAMES.get(gkey(c, r)); return checker(g ? g.n : SIZE[levelAt(c, r)]); },   // Oct 15: each board its own size
     fabricCell(ctx, rect){ ctx.fillStyle = '#e4e4e4'; ctx.fillRect(rect.x, rect.y, rect.w, rect.h); },
     cellItems(c, r){
       const g = GAMES.get(gkey(c, r));
@@ -26287,10 +26334,11 @@ const SNAKE_APP = (() => {
       return asItems(reelFrame(c, r));
     },
     menu: [{ head: 'Snake', items: [
-      { label: () => 'Difficulty: ' + LEVEL, title: 'Easy: a 16×16 board, and the others blunder into you more. Normal: 20×20. Hard: 24×24, and they rarely do. The board you are on starts again at the new size.',
+      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: a 16×16 board, and the others blunder into you more. Normal: 20×20. Hard: 24×24, and they rarely do. The board you are on starts again at the new size.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('snake.level', LEVEL);
               GAMES.clear();
-              if (LIVE){ const g = newGame(); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
+              // The board in play starts again at its own new level (Oct 15): the setting moved by its ring.
+              if (LIVE){ const lv = levelAt(LIVE.c, LIVE.r), g = newGame(SIZE[lv], lv); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
       { label: () => 'Speed: ' + SPEED, title: 'How fast the snakes move: slow, medium or fast.', keepOpen: true,
         on(){ SPEED = SPEED === 'slow' ? 'medium' : SPEED === 'medium' ? 'fast' : 'slow'; ARCADE.save('snake.speed', SPEED); } },
       { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Turns, food, strikes, explosions and fanfares — made in the browser.',
@@ -26312,7 +26360,7 @@ const SNAKE_APP = (() => {
       const l0 = me.alive ? me.body.length : 0, lm = Math.max(1, ...g.snakes.slice(1).filter(s => s.alive).map(s => s.body.length));
       return 0.6 * (w0 + 1) / (w0 + wm + 2) + 0.4 * l0 / (l0 + lm);
     },
-    onReset(c, r){ const g = gameAt(c, r); g.state = 'over'; start(g); g.state = 'wait'; g.last = 0; LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ const g = gameAt(c, r); g.state = 'over'; start(g, levelAt(c, r)); g.state = 'wait'; g.last = 0; LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ gameAt(c, r); return true; },   // Sep 27: selecting frames the board; it waits for a tap
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     /* A TAP PAUSES (Oct 1: "in snake, tapping the board should toggle the pause"); the next tap
@@ -26320,7 +26368,7 @@ const SNAKE_APP = (() => {
     onCellTap(c, r, u, v){
       const g = gameAt(c, r);
       LIVE = { key: gkey(c, r), c, r };
-      if (g.state !== 'play'){ start(g); return true; }
+      if (g.state !== 'play'){ start(g, levelAt(c, r)); return true; }
       togglePause();
       return true;
     },
@@ -26359,7 +26407,8 @@ const SNAKE_APP = (() => {
         }
       }
     },
-    _debug: { newGame, step, start, turn, bot, bakeReel, games: GAMES, setLevel: v => { LEVEL = v; }, takeGem, setRound },
+    // levelOf(c, r): the level that board's game plays at, its own if it has one, else what it would start at now.
+    _debug: { levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.lv) || levelAt(c, r); }, D, SIZE, gameAt, newGame, step, start, turn, bot, bakeReel, games: GAMES, setLevel: v => { LEVEL = v; }, takeGem, setRound },
   };
   const CHECKERS = new Map();
   const checker = n => { if (!CHECKERS.has(n)) CHECKERS.set(n, { n, colors: new Array(n * n).fill(FLOOR) }); return CHECKERS.get(n); };
