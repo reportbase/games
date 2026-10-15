@@ -45352,11 +45352,12 @@ const SIMON_APP = (() => {
     SND.play('bad');
     say(why + ' ' + g.score + (g.score === 1 ? ' step' : ' steps') + (was != null && g.score > was ? '. A new best on this board, beating ' + was + '.' : was != null ? '. Best here ' + was + '.' : '.') + ' Tap to try again.', 3600);
   }
-  // which pad a point of the board is on: −1 off them, 'hub' on the middle
+  /* which pad a point of the board is on, 'hub' on the middle. Anywhere else on the board is the pad in that direction, the
+     gaps between pads and the corners past their rims too (Oct 15: "the simon buttons are very hard to push": a tap a little
+     past a pad's edge did nothing). */
   function padAt(D, u, v){
     const du = u - 0.5, dv = v - 0.5, rho = Math.hypot(du, dv);
-    if (rho < R_IN * 0.95) return 'hub';
-    if (rho > R_OUT * 1.08) return -1;
+    if (rho < R_IN * 0.8) return 'hub';
     const a = ((Math.atan2(dv, du) + Math.PI / 2) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
     return Math.floor(a / (2 * Math.PI / D.pads)) % D.pads;
   }
@@ -45459,6 +45460,10 @@ const SIMON_APP = (() => {
     onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    /* (Oct 15: "the simon buttons are very hard to push".) A sequence often has one pad twice running, and the field read a
+       second quick tap on the same spot as a double-tap, which reframes the view and never reaches the game: of five quick
+       taps on one pad, two were lost. While a game is going every tap is a tap, as in mini golf's editor. */
+    noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'show' || g.state === 'input' || g.state === 'pause'); },
     onCellTap(c, r, u, v){
       LIVE = { c, r };
       let g = gameAt(c, r);

@@ -247,6 +247,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - States `ready`, `show`, `input`, `pause`, `over` (`stepGame`, `press`, `over`). Tap a pad (`padAt` by angle round the
     middle), or press 1–8 (with four pads the arrows too); a tap on a board not begun or over starts it, a hold too. When it
     is over the pad wanted flashes. Best a board in localStorage `simon.best`.
+  - **Every tap a press** (Oct 15: "the simon buttons are very hard to push"): a sequence often has one pad twice running,
+    and the field read a quick second tap on the same spot as a double-tap (reframing, never reaching the game): of five
+    quick real touches on one pad, two were lost. `noDoubleTap()` says yes while a game shows, waits or pauses. And `padAt`
+    gives the whole board out: past a pad's rim, the gaps and the corners are the pad in that direction (the hub is the
+    middle 0.8 of its radius). The smoke test taps one pad five times quickly with real touches.
   - A board no one plays lights its own sequence, rounds 1 to 8 and round again, each board at its own phase (`shownLit`).
   - Pads are wedges of their own kinds (`smPad<P>_<p>`, `padGeo`, faces wound to look out); lit, a pad is its full colour
     and raised a little, else 38% of it.

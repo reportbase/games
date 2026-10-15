@@ -2774,6 +2774,27 @@ try {
       real = { started, want, after };
     }
     const ok2 = real && real.started === 'show' && real.after && real.after.score === 1 && (real.after.state === 'pause' || real.after.state === 'show');
+    // (Oct 15: "the simon buttons are very hard to push") five quick real touches on one pad, as a sequence with a pad over and
+    // over asks, are five presses: the field read every second one as a double-tap and the game never saw it
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const quick = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const tap = async (u, v, after) => { const p = S(u, v); ptr('pointerdown', p); const t = mk(p); fire('touchstart', t); ptr('pointerup', p); fire('touchend', t); await wait(after); };
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r };
+      g.S = Object.assign({}, g.S, { at: () => 0 }); g.n = 5; g.state = 'input'; g.i = 0; g.deadline = performance.now() / 1000 + 60;
+      const a = -Math.PI / 2 + Math.PI / g.S.D.pads, u = 0.5 + 0.31 * Math.cos(a), v = 0.5 + 0.31 * Math.sin(a);
+      for (let k = 0; k < 5; k++) await tap(u, v, 200);
+      return { score: g.score, state: g.state, corner: D.padAt(g.S.D, 0.97, 0.03) };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    const ok3 = quick.score === 5 && quick.state !== 'over' && quick.corner === 0;
+    if (!ok3) failures.push('[simon] quick taps on one pad: ' + JSON.stringify(quick));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} simon: five quick real touches on one pad are five presses (${quick.score}), a corner is its pad's`);
     // a board no one plays lights its pads in turn
     const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
       for (let k = 0; k < 40; k++){ seen.add(D.shownLit(S)); await new Promise(ok => setTimeout(ok, 60)); } return seen.size; });
