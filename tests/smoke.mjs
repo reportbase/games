@@ -2673,7 +2673,7 @@ try {
     const SPEC = { checkers: 's:depth', reversi: 's:picker', gomoku: 's:picker', connectfour: 's:picker', linesofaction: 's:picker', ataxx: 's:picker',
       flow: 'n', netslide: 'n', rolltheball: 'n', unblockme: 'n', minesweeper: 'n', memory: 'n', pipes: 'n', infinityloop: 'n', pipemania: 'n', towerdefense: 'n',
       tron: 'lv', missilecommand: 'lv', asteroids: 'lv', bomberman: 'lv', invaders: 'lv', pacman: 'ghost', tetris: 'fall', tiles: 'base',
-      defender: 'lv', breakout: 'lv', crossing: 'n', snake: 'n' };
+      defender: 'warn', breakout: 'speed', crossing: 'n', snake: 'n' };
     const bad = [];
     for (const [id, how] of Object.entries(SPEC)){
       const r = await page.evaluate(async ([id, how]) => {
@@ -2687,7 +2687,7 @@ try {
         if (typeof D.levelOf !== 'function') return { why: 'no _debug.levelOf' };
         const real = (c, r) => {
           A.onReset && A.onReset(c, r);
-          if (/^(lv|ghost|fall|base|n)$/.test(how) && !/^(flow|netslide|rolltheball|unblockme|minesweeper|memory|pipes|infinityloop|pipemania|towerdefense)$/.test(id)) A.onCellTap && A.onCellTap(c, r);
+          if (/^(lv|ghost|fall|base|n|warn|speed)$/.test(how) && !/^(flow|netslide|rolltheball|unblockme|minesweeper|memory|pipes|infinityloop|pipemania|towerdefense)$/.test(id)) { A.onFramed && A.onFramed(c, r); A.onCellTap && A.onCellTap(c, r, 0.5, 0.5); }
           const g = D.games && D.games.get(c + '_' + r), PICK = { loose: 0, 'one-ply': 1, 'two-ply': 2 };
           if (how === 's:depth') return D.strengthOf(c, r).depth;
           if (how === 's:picker') return PICK[D.strengthOf(c, r).picker];
@@ -2697,6 +2697,8 @@ try {
           if (how === 'ghost') return -g.ghosts[0].T;
           if (how === 'fall') return -D.fallEvery(g);
           if (how === 'base') return g.base;
+          if (how === 'warn') return -D.D(g).warn;
+          if (how === 'speed') return D.speedOf(g);
         };
         const lv = [D.levelOf(0, 0), D.levelOf(10, 0), D.levelOf(40, 40)];
         const near = real(0, 0), far = real(40, 40);
