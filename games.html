@@ -42186,6 +42186,16 @@ const FLOW_APP = (() => {
   const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
   // Sep 28, difficulty: easy draws two of the flows in for you; hard has no short pairs (every run six squares or more).
   const DL = ARCADE.difficulty('flow.level', 'Easy: 6×6, five pairs. Normal: 8×8, seven pairs. Hard: 10×10, nine pairs. The board you are on is dealt again at the new size.');
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the setting is the corner block's size, and every board farther out is dealt a size up
+     (ARCADE.levelOn, by its ring), so boards of every size lie side by side. A board's level is worked out when its puzzle
+     is dealt or taken from its recording, and kept on the game (g.lv), with its size (g.n): everything that asks a board
+     its size (sizeAt, drawIcon, a tap's square) asks that board, never the setting. A board's own made puzzle keeps its
+     own size, whatever the ring. `dealAt` deals a board at its own level. */
+  const lvAt = (c, r) => DL.at(c, r);
+  const dealAt = (c, r) => deal(lvAt(c, r));
+  // The far field's fabric is the boards past the last one drawn, all of them well past the 31st ring: as far as Hard.
+  const farLv = () => ARCADE.levelOn(DL.get(), ARCADE.RING_STEPS[1], 0);
   const SND = ARCADE.sounds('flow.sound', 'A tick for each square drawn, a chime when a pair joins, a fanfare when the board is full.');
   const nb = (i, n) => { const r = (i / n) | 0, c = i % n, o = [];
     if (r > 0) o.push(i - n); if (r < n - 1) o.push(i + n); if (c > 0) o.push(i - 1); if (c < n - 1) o.push(i + 1);
@@ -42219,11 +42229,11 @@ const FLOW_APP = (() => {
       sol.push(run); dots.push([run[0], run[run.length - 1]]);
     }
     const paths = dots.map(() => []);
-    return { n, k: K, dots, sol, paths, solved: false, moves: 0 };
+    return { n, k: K, dots, sol, paths, solved: false, moves: 0, lv: SIZES[lv] ? lv : 'normal' };
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
-    if (!GAMES.has(k)) GAMES.set(k, PZ.mine(k) ? mineGame(k) : (adopt(c, r) || deal(DL.get())));
+    if (!GAMES.has(k)) GAMES.set(k, PZ.mine(k) ? mineGame(k) : (adopt(c, r) || dealAt(c, r)));
     return GAMES.get(k);
   };
   const dotOf = (g, i) => g.dots.findIndex(d => d[0] === i || d[1] === i);
@@ -42300,10 +42310,11 @@ const FLOW_APP = (() => {
     return frames;
   }
   /* EVERY BOARD AT THE DIFFICULTY'S SIZE (Sep 30: "when you change the difficulty, change all the
-     boards"): the recordings are made per difficulty, and changing it drops every game in play. */
+     boards"): the recordings are made per difficulty, and changing it drops every game in play.
+     Since Oct 15 a board shows the recording of its own level (its ring from the corner), so sizes sit side by side. */
   const REEL_SETS = {};
   function reelFrame(c, r){
-    const lv = DL.get(), REELS = REEL_SETS[lv] || (REEL_SETS[lv] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x6f1 + i * 2203, lv)));
+    const lv = lvAt(c, r), REELS = REEL_SETS[lv] || (REEL_SETS[lv] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x6f1 + i * 2203, lv)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x7c3e;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, reel = REELS[h % REELS.length];
@@ -42313,7 +42324,7 @@ const FLOW_APP = (() => {
   }
   // Taking a board carries on from what it is showing: each flow followed out from its first dot.
   function adopt(c, r){
-    const f = reelFrame(c, r), n = f[0], K = f[1], H = 2, g = { n, k: K, dots: [], sol: null, paths: [], solved: false, moves: 0 };
+    const f = reelFrame(c, r), n = f[0], K = f[1], H = 2, g = { n, k: K, dots: [], sol: null, paths: [], solved: false, moves: 0, lv: lvAt(c, r) };
     for (let k = 0; k < K; k++){
       const a = f[H + n * n * 2 + 2 * k], p = [];
       g.dots.push([a, f[H + n * n * 2 + 2 * k + 1]]);
@@ -42335,13 +42346,14 @@ const FLOW_APP = (() => {
   const CHECKERS = new Map();
   const checker = n => CHECKERS.get(n) || (CHECKERS.set(n, { n, colors: Array.from({ length: n * n }, (_, i) =>
     (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) }), CHECKERS.get(n));
-  // How many squares a side the board shows: its own game's, else the recording's (Normal).
-  const sizeAt = (c, r) => { const d = PZ.draft(gkey(c, r)); if (d) return d.n; if (PZ.mine(gkey(c, r))) return gameAt(c, r).n; const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : SIZES[DL.get()][0]; };
+  // How many squares a side the board shows: its own game's, else its recording's, at the board's own level (Oct 15).
+  const sizeAt = (c, r) => { const d = PZ.draft(gkey(c, r)); if (d) return d.n; if (PZ.mine(gkey(c, r))) return gameAt(c, r).n; const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : SIZES[lvAt(c, r)][0]; };
 
   const app = {
     name: 'flow',
     menu: [{ head: 'Flow', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, PZ.mine(LIVE.key) ? mineGame(LIVE.key) : deal(DL.get())); } }, SND.item] }],
+      // The board in play is dealt again at its own level under the new setting (Oct 15).
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, PZ.mine(LIVE.key) ? mineGame(LIVE.key) : dealAt(LIVE.c, LIVE.r)); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: {
@@ -42353,7 +42365,7 @@ const FLOW_APP = (() => {
     },
     cellGrid(c, r){ return checker(sizeAt(c, r)); },
     fabricCell(ctx, rect){
-      const n = SIZES[DL.get()][0], t = rect.w / n;
+      const n = SIZES[farLv()][0], t = rect.w / n;
       for (let i = 0; i < n * n; i++){
         ctx.fillStyle = (((i % n) + ((i / n) | 0)) % 2) ? '#b58863' : '#f0d9b5';
         ctx.fillRect(rect.x + (i % n) * t, rect.y + ((i / n) | 0) * t, t + 0.5, t + 0.5);
@@ -42374,14 +42386,14 @@ const FLOW_APP = (() => {
       return 'Flow ' + g.n + '×' + g.n + ' — ' + (g.solved ? 'solved' : done + ' of ' + g.k + ' flows · ' + fill + '%') + ' · ' + g.moves + ' moves';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : dealAt(c, r)); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     // A tap clears the flow under it; on a solved board, deals a new one.
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.solved){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get())); return true; }   // (a board's own puzzle again)
+      if (g.solved){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : dealAt(c, r)); return true; }   // (a board's own puzzle again)
       const i = cellOf(u, v, g.n), k = pathOf(g, i) >= 0 ? pathOf(g, i) : dotOf(g, i);
       if (k >= 0){ g.paths[k] = []; g.warned = false; }
       return true;
@@ -42419,7 +42431,7 @@ const FLOW_APP = (() => {
       return true;
     },
     drawIcon(ctx, sz, c, r){
-      const g = GAMES.get(gkey(c, r)), n = g ? g.n : SIZES[DL.get()][0], t = sz / n;
+      const g = GAMES.get(gkey(c, r)), n = g ? g.n : SIZES[lvAt(c, r)][0], t = sz / n;
       for (let i = 0; i < n * n; i++){
         ctx.fillStyle = (((i % n) + ((i / n) | 0)) % 2) ? '#b58863' : '#f0d9b5';
         ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t + 0.5, t + 0.5);
@@ -42430,7 +42442,9 @@ const FLOW_APP = (() => {
         ctx.beginPath(); ctx.arc(x, y, s, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { pz: () => PZ, solveFlow, fly: (c, r) => gotoCell(c, r), deal, stepTo, check, bakeReel, games: GAMES, complete },
+    // levelOf: the level the board plays at, its game's if it has one (a made puzzle's by its size), else what it would be dealt.
+    _debug: { pz: () => PZ, solveFlow, fly: (c, r) => gotoCell(c, r), deal, stepTo, check, bakeReel, games: GAMES, complete, sizeAt,
+              levelOf(c, r){ const g = GAMES.get(gkey(c, r)); if (g) return g.lv || Object.keys(SIZES).find(l => SIZES[l][0] === g.n) || 'normal'; return lvAt(c, r); } },
   };
 
   /* ─── THE PUZZLE MAKER (Oct 13: "ok, proceed", on puzzle makers for Unblock Me, Flow and Queens; PUZZLE_ED) ───
@@ -42507,7 +42521,9 @@ const FLOW_APP = (() => {
   const pairsOf = d => d.dots.filter(([x, y]) => x >= 0 && y >= 0);
   function mineGame(k){
     const m = PZ.mine(k);
-    return { n: m.n, k: m.dots.length, dots: m.dots.map(p => p.slice()), sol: null, paths: m.dots.map(() => []), solved: false, moves: 0 };
+    // (a made puzzle keeps its own size whatever the ring: its level is its size's, Oct 15)
+    return { n: m.n, k: m.dots.length, dots: m.dots.map(p => p.slice()), sol: null, paths: m.dots.map(() => []), solved: false, moves: 0,
+             lv: Object.keys(SIZES).find(l => SIZES[l][0] === m.n) || 'normal' };
   }
   function draftItems(d){
     const out = [], SQ = 1 / d.n;
@@ -42589,7 +42605,16 @@ const NETSLIDE_APP = (() => {
   let rnd = Math.random;
   const say = msg => { try { engineNotice(msg, 3500); } catch {} };
   const DL = ARCADE.difficulty('netslide.level', 'Easy: 5×5. Normal: 7×7. Hard: 9×9. The board you are on is dealt again at the new size.');
-  const mixes = () => SIZE[DL.get()];                     // what deal() is handed: the size
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the setting is the corner block's, and every board farther out is a size up (ARCADE.levelOn,
+     by its ring), so 5×5, 7×7 or 9×9 boards lie side by side. mixes(c, r) is the size board (c, r) is dealt at (or shows in its
+     recording); a dealt game keeps its level (g.lv) and its size (g.n), which use() puts in force before any square is
+     picked. With no board it is the setting's (the corner's). */
+  const lvAt = (c, r) => DL.at(c, r);
+  const mixes = (c, r) => SIZE[lvAt(c, r)];                // what deal() is handed: the size
+  const dealAt = (c, r) => Object.assign(deal(mixes(c, r)), { lv: lvAt(c, r) });
+  // The far field's fabric is the boards past the last one drawn, all well past the 31st ring: as far as Hard.
+  const farLv = () => ARCADE.levelOn(DL.get(), ARCADE.RING_STEPS[1], 0);
   const SND = ARCADE.sounds('netslide.sound', 'A swish for each slide, a chime when the water reaches further, a fanfare when it is all connected.');
   const wetN = g => reached(g).on.reduce((s, x) => s + x, 0);
 
@@ -42653,7 +42678,7 @@ const NETSLIDE_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     // Normal carries on from the 7×7 recording on the board; Easy and Hard deal their own size.
-    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(mixes()));
+    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || dealAt(c, r));
     use(GAMES.get(k).n);
     return GAMES.get(k);
   };
@@ -42702,10 +42727,11 @@ const NETSLIDE_APP = (() => {
     return frames;
   }
   /* EVERY BOARD AT THE DIFFICULTY'S SIZE (Sep 30: "when you change the difficulty, change all the
-     boards"): the recordings are made per difficulty, and changing it drops every game in play. */
+     boards"): the recordings are made per difficulty, and changing it drops every game in play.
+     Since Oct 15 a board shows the recording of its own level (its ring from the corner), so sizes sit side by side. */
   const REEL_SETS = {};
   function reelFrame(c, r){
-    const n = mixes(), REELS = REEL_SETS[n] || (REEL_SETS[n] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x3b7 + i * 1753, n)));
+    const n = mixes(c, r), REELS = REEL_SETS[n] || (REEL_SETS[n] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x3b7 + i * 1753, n)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x1e97;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, reel = REELS[h % REELS.length];
@@ -42717,7 +42743,7 @@ const NETSLIDE_APP = (() => {
   function adopt(c, r){
     const f = reelFrame(c, r);
     use(Math.round(Math.sqrt(f.length - 1)));
-    const g = { n: N, m: f.slice(0, N * N).map(x => x & 15), src: f[N * N], moves: 0, solved: false, log: [] };
+    const g = { n: N, m: f.slice(0, N * N).map(x => x & 15), src: f[N * N], moves: 0, solved: false, log: [], lv: lvAt(c, r) };
     g.solved = reached(g).done;
     return g;
   }
@@ -42735,12 +42761,13 @@ const NETSLIDE_APP = (() => {
   const CHECKERS = new Map();
   const checker = n => { if (!CHECKERS.has(n)) CHECKERS.set(n, { n, colors: Array.from({ length: n * n }, (_, i) =>
     (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) }); return CHECKERS.get(n); };
-  const sizeAt = (c, r) => { const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : mixes(); };
+  const sizeAt = (c, r) => { const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : mixes(c, r); };   // (the board's own size, Oct 15)
 
   const app = {
     name: 'netslide',
     menu: [{ head: 'Netslide', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(mixes())); } }, SND.item] }],
+      // The board in play is dealt again at its own level under the new setting (Oct 15).
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, dealAt(LIVE.c, LIVE.r)); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: {
@@ -42753,7 +42780,7 @@ const NETSLIDE_APP = (() => {
     },
     cellGrid(c, r){ return checker(sizeAt(c, r)); },
     fabricCell(ctx, rect){
-      const n = mixes(), t = rect.w / n;
+      const n = SIZE[farLv()], t = rect.w / n;
       for (let i = 0; i < n * n; i++){
         ctx.fillStyle = (((i % n) + ((i / n) | 0)) % 2) ? '#b58863' : '#f0d9b5';
         ctx.fillRect(rect.x + (i % n) * t, rect.y + ((i / n) | 0) * t, t + 0.5, t + 0.5);
@@ -42770,13 +42797,13 @@ const NETSLIDE_APP = (() => {
       return 'Netslide ' + g.n + '×' + g.n + ' — ' + (g.solved ? 'solved' : 'sliding') + ' · ' + g.moves + ' slides';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), deal(mixes())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), dealAt(c, r)); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.solved) GAMES.set(gkey(c, r), deal(mixes()));
+      if (g.solved) GAMES.set(gkey(c, r), dealAt(c, r));
       return true;
     },
     // A press on the board takes the drag: it slides that tile's row or column.
@@ -42824,7 +42851,9 @@ const NETSLIDE_APP = (() => {
         ctx.beginPath(); ctx.moveTo(x - (hz ? t / 4 : 0), y - (hz ? 0 : t / 4)); ctx.lineTo(x + (hz ? t / 4 : 0), y + (hz ? 0 : t / 4)); ctx.stroke();
       }
     },
-    _debug: { deal, slide, reached, move, bakeReel, games: GAMES },
+    // levelOf: the level the board plays at, its game's if it has one, else what it would be dealt (Oct 15).
+    _debug: { levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.lv || Object.keys(SIZE).find(l => SIZE[l] === g.n) || 'normal' : lvAt(c, r); },
+              sizeAt, deal, slide, reached, move, bakeReel, games: GAMES },
   };
   return app;
 })();
@@ -42851,7 +42880,16 @@ const ROLL_APP = (() => {
   let rnd = Math.random;
   const say = msg => { try { engineNotice(msg, 3500); } catch {} };
   const DL = ARCADE.difficulty('roll.level', 'Easy: 5×5. Normal: 6×6. Hard: 7×7. The board you are on is dealt again at the new size.');
-  const mixes = () => SIZE[DL.get()];                      // what deal() is handed: the size
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the setting is the corner block's, and every board farther out is a size up (ARCADE.levelOn,
+     by its ring), so 5×5, 6×6 or 7×7 boards lie side by side. mixes(c, r) is the size board (c, r) is dealt at (or shows in its
+     recording); a dealt game keeps its level (g.lv) and its size (g.n), which use() puts in force before any square is
+     picked. With no board it is the setting's (the corner's). */
+  const lvAt = (c, r) => DL.at(c, r);
+  const mixes = (c, r) => SIZE[lvAt(c, r)];                // what deal() is handed: the size
+  const dealAt = (c, r) => Object.assign(deal(mixes(c, r)), { lv: lvAt(c, r) });
+  // The far field's fabric is the boards past the last one drawn, all well past the 31st ring: as far as Hard.
+  const farLv = () => ARCADE.levelOn(DL.get(), ARCADE.RING_STEPS[1], 0);
   const SND = ARCADE.sounds('roll.sound', 'A swish for each slide, a chime when the pipe reaches further, a fanfare when the ball gets home.');
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const step = (i, d) => { const r = ((i / N) | 0) + DR[d], c = i % N + DC[d];
@@ -42911,7 +42949,7 @@ const ROLL_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     // Normal carries on from the 6×6 recording on the board; Easy and Hard deal their own size.
-    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(mixes()));
+    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || dealAt(c, r));
     use(GAMES.get(k).n);
     return GAMES.get(k);
   };
@@ -42973,10 +43011,11 @@ const ROLL_APP = (() => {
     return frames;
   }
   /* EVERY BOARD AT THE DIFFICULTY'S SIZE (Sep 30: "when you change the difficulty, change all the
-     boards"): the recordings are made per difficulty, and changing it drops every game in play. */
+     boards"): the recordings are made per difficulty, and changing it drops every game in play.
+     Since Oct 15 a board shows the recording of its own level (its ring from the corner), so sizes sit side by side. */
   const REEL_SETS = {};
   function reelFrame(c, r){
-    const n = mixes(), REELS = REEL_SETS[n] || (REEL_SETS[n] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x5a1 + i * 1753, n)));
+    const n = mixes(c, r), REELS = REEL_SETS[n] || (REEL_SETS[n] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x5a1 + i * 1753, n)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x2b3;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, reel = REELS[h % REELS.length];
@@ -42986,7 +43025,7 @@ const ROLL_APP = (() => {
   function adopt(c, r){
     const f = reelFrame(c, r);
     use(Math.round(Math.sqrt(f.m.length)));
-    const g = { n: N, m: f.m.slice(), hole: f.hole, start: f.start, goal: f.goal, moves: 0, solved: false, solvedAt: 0, log: [] };
+    const g = { n: N, m: f.m.slice(), hole: f.hole, start: f.start, goal: f.goal, moves: 0, solved: false, solvedAt: 0, log: [], lv: lvAt(c, r) };
     if (reached(g).done){ g.solved = true; g.solvedAt = now() - Math.max(0, f.ball) * 250; }
     return g;
   }
@@ -43002,7 +43041,7 @@ const ROLL_APP = (() => {
   const CHECKERS = new Map();
   const checker = n => { if (!CHECKERS.has(n)) CHECKERS.set(n, { n, colors: Array.from({ length: n * n }, (_, i) =>
     (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) }); return CHECKERS.get(n); };
-  const sizeAt = (c, r) => { const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : mixes(); };
+  const sizeAt = (c, r) => { const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : mixes(c, r); };   // (the board's own size, Oct 15)
   const paintSquares = (ctx, x0, y0, t) => {
     for (let i = 0; i < N * N; i++){
       ctx.fillStyle = (((i % N) + ((i / N) | 0)) % 2) ? '#b58863' : '#f0d9b5';
@@ -43013,7 +43052,8 @@ const ROLL_APP = (() => {
   const app = {
     name: 'roll the ball',
     menu: [{ head: 'Roll the ball', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(mixes())); } }, SND.item] }],
+      // The board in play is dealt again at its own level under the new setting (Oct 15).
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, dealAt(LIVE.c, LIVE.r)); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: {
@@ -43026,7 +43066,7 @@ const ROLL_APP = (() => {
       ball: T => { const g = new T.SphereGeometry(0.24, 20, 14); g.translate(0, 0.46, 0); return g; },
     },
     cellGrid(c, r){ return checker(sizeAt(c, r)); },
-    fabricCell(ctx, rect){ use(mixes()); paintSquares(ctx, rect.x, rect.y, rect.w / N); },
+    fabricCell(ctx, rect){ use(SIZE[farLv()]); paintSquares(ctx, rect.x, rect.y, rect.w / N); },
     cellItems(c, r){
       const g = GAMES.get(gkey(c, r));
       if (g) return itemsOfGame(g);
@@ -43038,13 +43078,13 @@ const ROLL_APP = (() => {
       return 'Roll the Ball ' + g.n + '×' + g.n + ' — ' + (g.solved ? 'home' : 'sliding') + ' · ' + g.moves + ' slides';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), deal(mixes())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), dealAt(c, r)); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.solved){ GAMES.set(gkey(c, r), deal(mixes())); return true; }
+      if (g.solved){ GAMES.set(gkey(c, r), dealAt(c, r)); return true; }
       if (u != null){ use(g.n); slideIn(g, cellOf(u, v)); }
       return true;
     },
@@ -43085,7 +43125,9 @@ const ROLL_APP = (() => {
         }
       }
     },
-    _debug: { deal, reached, slideIn, movable, bakeReel, games: GAMES },
+    // levelOf: the level the board plays at, its game's if it has one, else what it would be dealt (Oct 15).
+    _debug: { levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.lv || Object.keys(SIZE).find(l => SIZE[l] === g.n) || 'normal' : lvAt(c, r); },
+              sizeAt, deal, reached, slideIn, movable, bakeReel, games: GAMES },
   };
   return app;
 })();
@@ -43114,6 +43156,16 @@ const UNBLOCK_APP = (() => {
   const say = msg => { try { engineNotice(msg, 3500); } catch {} };
   // Sep 28, the puzzle pass: difficulty picks from the puzzles by how many moves they need.
   const DL = ARCADE.difficulty('unblock.level', 'Easy: a 6×6 board. Normal: 8×8. Hard: 10×10. The board you are on is dealt again at the new size.');
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+     move away from the center."): the setting is the corner block's size, and every board farther out is a size up
+     (ARCADE.levelOn, by its ring), so 6×6, 8×8 and 10×10 boards lie side by side. A board is dealt, and shows the recording
+     of, its own level; a game keeps its level (g.lv) with its size (g.n), and use(g.n) is put in force before a square is
+     picked. A board's own made puzzle keeps its own size. */
+  const lvAt = (c, r) => DL.at(c, r);
+  const dealAt = (c, r) => Object.assign(deal(lvAt(c, r)), { lv: lvAt(c, r) });
+  // The far field's fabric is the boards past the last one drawn, all well past the 31st ring: as far as Hard.
+  const farLv = () => ARCADE.levelOn(DL.get(), ARCADE.RING_STEPS[1], 0);
+  const lvOfN = n => Object.keys(SIZE).find(l => SIZE[l] === n) || 'normal';
   const SND = ARCADE.sounds('unblock.sound', 'A swish for each square a block moves, a fanfare when the red block gets out.');
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
 
@@ -43235,7 +43287,7 @@ const UNBLOCK_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     // Normal carries on from the 8×8 recording on the board; Easy and Hard deal their own size.
-    if (!GAMES.has(k)) GAMES.set(k, PZ.mine(k) ? mineGame(k) : (adopt(c, r) || deal(DL.get())));
+    if (!GAMES.has(k)) GAMES.set(k, PZ.mine(k) ? mineGame(k) : (adopt(c, r) || dealAt(c, r)));
     use(GAMES.get(k).n);
     return GAMES.get(k);
   };
@@ -43287,7 +43339,7 @@ const UNBLOCK_APP = (() => {
     return frames;
   }
   function reelFrame(c, r){
-    const REEL = reelFor(DL.get());
+    const REEL = reelFor(lvAt(c, r));                           // (the board's own level's, Oct 15)
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x3c5;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, reel = REEL;
@@ -43305,7 +43357,7 @@ const UNBLOCK_APP = (() => {
     use(f.n);
     const pos = f.pos.map(p => Math.min(p, N - 2));
     return { n: f.n, blocks: f.blocks, pos, start: pos.slice(), best: f.left, path: null, moves: 0,
-             solved: pos[0] === N - 2, show: Float32Array.from(f.show), last: now() };
+             solved: pos[0] === N - 2, show: Float32Array.from(f.show), last: now(), lv: lvOfN(f.n) };
   }
   const cellOf = (u, v) => Math.max(0, Math.min(N - 1, Math.floor(v * N))) * N + Math.max(0, Math.min(N - 1, Math.floor(u * N)));
   const liveGame = () => {
@@ -43341,7 +43393,8 @@ const UNBLOCK_APP = (() => {
   const app = {
     name: 'unblock me',
     menu: [{ head: 'Unblock me', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, PZ.mine(LIVE.key) ? mineGame(LIVE.key) : deal(DL.get())); } }, SND.item] }],
+      // The board in play is dealt again at its own level under the new setting (Oct 15).
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, PZ.mine(LIVE.key) ? mineGame(LIVE.key) : dealAt(LIVE.c, LIVE.r)); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     faceMinPx: 1,
     itemMinPx: FAR_PX,
@@ -43363,7 +43416,7 @@ const UNBLOCK_APP = (() => {
     },
     // The fabric (the boards past the last one drawn) shows puzzles too.
     fabricCellAt(ctx, rect, i, j){
-      const REEL = reelFor(DL.get());
+      const REEL = reelFor(farLv());
       const f = REEL[(i * 131 + j * 71) % REEL.length];
       const cols = colorsOf(f.blocks, f.pos, f.n).colors;
       paintColors(ctx, rect.x, rect.y, rect.w / N, cols);
@@ -43374,13 +43427,13 @@ const UNBLOCK_APP = (() => {
       return 'Unblock Me ' + g.n + '×' + g.n + ' — ' + (g.solved ? 'out' : 'sliding') + ' · ' + g.moves + ' moves (best ' + g.best + ')';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : dealAt(c, r)); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.solved) GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : deal(DL.get()));   // (a board's own puzzle again)
+      if (g.solved) GAMES.set(gkey(c, r), PZ.mine(gkey(c, r)) ? mineGame(gkey(c, r)) : dealAt(c, r));   // (a board's own puzzle again)
       return true;
     },
     // A press on a block takes the drag.
@@ -43420,7 +43473,8 @@ const UNBLOCK_APP = (() => {
       const f = shown(c, r), cols = colorsOf(f.blocks, f.pos, f.n || 8).colors;
       paintColors(ctx, 0, 0, sz / N, cols);
     },
-    _debug: { pz: () => PZ, solveUB, fly: (c, r) => gotoCell(c, r), deal, genPuzzle, decode, room, grid, bakeReel, puzzles: PUZZLES, games: GAMES },
+    // levelOf: the level the board plays at, its game's if it has one (a made puzzle's by its size), else what it would be dealt (Oct 15).
+    _debug: { levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.lv || lvOfN(g.n) : lvAt(c, r); }, pz: () => PZ, solveUB, fly: (c, r) => gotoCell(c, r), deal, genPuzzle, decode, room, grid, bakeReel, puzzles: PUZZLES, games: GAMES },
   };
 
   /* ─── THE PUZZLE MAKER (Oct 13: "ok, proceed", on puzzle makers for Unblock Me, Flow and Queens; PUZZLE_ED) ───
@@ -43462,7 +43516,7 @@ const UNBLOCK_APP = (() => {
   }
   function mineGame(k){
     const m = PZ.mine(k), D = decUB(m);
-    return { n: m.n, blocks: D.blocks, pos: D.pos.slice(), start: D.pos.slice(), best: m.best || '?', path: null, moves: 0, solved: false, show: Float32Array.from(D.pos), last: 0 };
+    return { n: m.n, blocks: D.blocks, pos: D.pos.slice(), start: D.pos.slice(), best: m.best || '?', path: null, moves: 0, solved: false, show: Float32Array.from(D.pos), last: 0, lv: lvOfN(m.n) };
   }
   const PZ = PUZZLE_ED.make(app, {
     title: 'Unblock Me', store: 'unblock.mine', keyOf: gkey,
