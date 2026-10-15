@@ -40861,10 +40861,15 @@ const MINES_APP = (() => {
 
   /* A game: mine[] (null until the first tap, so that tap can be safe),
      count[], open[], flag[], state 'ready' | 'play' | 'won' | 'lost'. */
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): a game is dealt at its board's own level (`DL.at(c, r)`: the setting at the
+     corner block, a step harder from the 7th ring and another from the 31st), and keeps it as g.lv with its size, so a
+     9×9 corner and 16×16 far boards sit side by side, each showing the recording of its own size (`reelAt`). */
   function newGame(lv){
-    const [n, mines] = SIZE[lv || (QUIET ? 'normal' : DL.get())];
+    lv = lv || (QUIET ? 'normal' : DL.get());
+    const [n, mines] = SIZE[lv];
     use(n);
-    return { n, state: 'ready', mine: null, count: null, open: new Uint8Array(N * N),
+    return { n, lv, state: 'ready', mine: null, count: null, open: new Uint8Array(N * N),
              flag: new Uint8Array(N * N), boom: -1, t0: 0, t1: 0, opened: 0, mines };
   }
   const gameAt = (c, r) => {
@@ -41030,7 +41035,8 @@ const MINES_APP = (() => {
     return frames;
   }
   function reelAt(c, r){
-    const lv = DL.get(), REELS = REEL_SETS[lv] || (REEL_SETS[lv] = Array.from({ length: REEL_N }, (_, i) => bakeReel(0x3e5 + i * 2711, undefined, lv)));
+    // Each board shows the recording of its own level (Oct 15), so of its own size.
+    const lv = DL.at(c, r), REELS =REEL_SETS[lv] || (REEL_SETS[lv] = Array.from({ length: REEL_N }, (_, i) => bakeReel(0x3e5 + i * 2711, undefined, lv)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x71c3a5;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0;
@@ -41082,7 +41088,7 @@ const MINES_APP = (() => {
   const app = {
     name: 'minesweeper',
     menu: [{ head: 'Minesweeper', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, newGame()); } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, newGame(DL.at(LIVE.c, LIVE.r))); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     faceMinPx: 8,
@@ -41112,20 +41118,23 @@ const MINES_APP = (() => {
     },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r));
-      if (!g || g.state === 'ready') return 'Minesweeper' + (g ? ' ' + g.n + '×' + g.n : '') + ' — ' + (g ? minesOf(g) : MINES) + ' mines';
+      if (!g || g.state === 'ready'){
+        const [n, m] = g ? [g.n, minesOf(g)] : SIZE[DL.at(c, r)];
+        return 'Minesweeper ' + n + '×' + n + ' — ' + m + ' mines';
+      }
       const flags = g.flag.reduce((s, f) => s + f, 0);
       const secs = Math.round(((g.t1 || performance.now()) - g.t0) / 1000);
       return 'Minesweeper ' + g.n + '×' + g.n + ' — ' + (g.state === 'won' ? 'cleared' : g.state === 'lost' ? 'lost'
              : (minesOf(g) - flags) + ' mines left') + ' · ' + secs + 's';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), newGame()); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), newGame(DL.at(c, r))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       let g = gameAt(c, r);
-      if (g.state === 'won' || g.state === 'lost'){ GAMES.set(gkey(c, r), newGame()); return true; }
+      if (g.state === 'won' || g.state === 'lost'){ GAMES.set(gkey(c, r), newGame(DL.at(c, r))); return true; }
       use(g.n);
       const i = cellOf(u, v);
       if (g.open[i]) chord(g, i); else open(g, i);
@@ -41157,7 +41166,7 @@ const MINES_APP = (() => {
         ctx.beginPath(); ctx.arc(it.u * sz, it.v * sz, it.scale * sz * 0.5, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { setLevel: DL.set, newGame, open, chord, botMove, bakeReel, codesOf, games: GAMES },
+    _debug: { setLevel: DL.set, newGame, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.lv : DL.at(c, r); }, open, chord, botMove, bakeReel, codesOf, games: GAMES },
   };
   return app;
 })();
@@ -41206,11 +41215,17 @@ const MEMORY_APP = (() => {
     if (hole >= 0) faces.splice(hole, 0, -1);
     return faces;
   }
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): a board is dealt at its own level's size (`sizeAt`: `DL.at(c, r)`, the setting
+     at the corner block, a step harder from the 7th ring and another from the 31st), so 4×4s at the corner and 6×6s far
+     out sit side by side, each showing the recording of its own size. A game keeps its level (g.lv) with its size. */
+  const LV_OF = { 4: 'easy', 5: 'normal', 6: 'hard' };
+  const sizeAt = (c, r) => SIZE[DL.at(c, r)];
   function newGame(n){
     n = n || SIZE[LV()];
     const face = deal(n), done = new Uint8Array(n * n);
     face.forEach((f, i) => { if (f < 0) done[i] = 1; });
-    return { n, P: (n * n) >> 1, face, up: new Uint8Array(n * n), done,
+    return { n, lv: LV_OF[n], P: (n * n) >> 1, face, up: new Uint8Array(n * n), done,
              pick: [], wait: 0, turns: 0, pairs: 0, over: false };
   }
   const gameAt = (c, r) => {
@@ -41339,7 +41354,7 @@ const MEMORY_APP = (() => {
      boards"): the recordings are made per size, and changing the difficulty drops every game in play. */
   const REEL_SETS = {};
   function reelAt(c, r){
-    const sz = SIZE[DL.get()];
+    const sz = sizeAt(c, r);                            // each board its own level's size (Oct 15)
     const REELS = REEL_SETS[sz] || (REEL_SETS[sz] = Array.from({ length: REEL_N }, (_, i) => bakeReel(0x4e3 + i * 3571, undefined, sz)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x1d2c3b;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
@@ -41367,7 +41382,7 @@ const MEMORY_APP = (() => {
   const app = {
     name: 'memory',
     menu: [{ head: 'Memory', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, newGame()); } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, newGame(sizeAt(LIVE.c, LIVE.r))); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },     // the far field is the checkerboard (Sep 30)
     itemMinPx: 4,
     faceMinPx: 8,
@@ -41383,17 +41398,17 @@ const MEMORY_APP = (() => {
     cellItems(c, r){ return itemsOf(viewAt(c, r)); },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r));
-      if (!g) return 'Memory — ' + PAIRS + ' pairs';
+      if (!g){ const n = sizeAt(c, r); return 'Memory ' + n + '×' + n + ' — ' + ((n * n) >> 1) + ' pairs'; }
       return 'Memory ' + g.n + '×' + g.n + ' — ' + g.pairs + ' of ' + g.P + ' pairs · ' + g.turns + ' turns' + (g.over ? ' · cleared' : '');
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), newGame()); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), newGame(sizeAt(c, r))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      if (g.over){ GAMES.set(gkey(c, r), newGame()); return true; }
+      if (g.over){ GAMES.set(gkey(c, r), newGame(sizeAt(c, r))); return true; }
       settle(g);
       const n = g.n, i = Math.max(0, Math.min(n - 1, Math.floor(v * n))) * n + Math.max(0, Math.min(n - 1, Math.floor(u * n)));
       flip(g, i);
@@ -41411,7 +41426,7 @@ const MEMORY_APP = (() => {
         ctx.beginPath(); ctx.arc(it.u * sz, it.v * sz, t * 0.3, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { newGame, flip, settle, bakeReel, games: GAMES },
+    _debug: { newGame, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.lv : DL.at(c, r); }, flip, settle, bakeReel, games: GAMES },
   };
   return app;
 })();
@@ -41432,7 +41447,13 @@ const PIPES_APP = (() => {
   let N = 12, SQ = 1 / N;
   const use = n => { n = n || 12; if (n !== N){ N = n; SQ = 1 / n; } };
   const sideOf = f => Math.round(Math.sqrt(f.length));
-  const curN = () => SIZE[DL.get()];                // every board's size: the difficulty's (Sep 30)
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): every board's size is its own level's (`DL.at(c, r)`: the setting at the
+     corner block, a step harder from the 7th ring and another from the 31st), no longer one size for the field (Sep 30).
+     A puzzle keeps its level (p.lv) with its size, and a board no one plays shows the recording of its own size. With no
+     board (the far field's texture, one tile for every board) it is the corner's. */
+  const curN = (c, r) => SIZE[DL.at(c, r)];
+  const LV_OF = { 8: 'easy', 10: 'normal', 12: 'hard' };
   const LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const DRY = 0x7d838c, WET = 0x2f8fd8, SRC = 0x1d5fa8;
   const DR = [-1, 0, 1, 0], DC = [0, 1, 0, -1];           // N E S W, bits 1 2 4 8
@@ -41465,7 +41486,7 @@ const PIPES_APP = (() => {
       sol[i] |= 1 << d; sol[j] |= 1 << ((d + 2) & 3); seen[j] = 1; front.push(j);
     }
     const cur = sol.map(m => rot(m, (rnd() * 4) | 0));          // any tile, any way
-    return { n: N, src, sol, cur, moves: 0, solved: false };
+    return { n: N, lv: LV_OF[N], src, sol, cur, moves: 0, solved: false };
   }
   // Which tiles the water reaches, and whether that is everything, cleanly.
   function wet(p){
@@ -41489,7 +41510,7 @@ const PIPES_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     // Hard carries on from the 12×12 recording on the board; Easy and Normal deal their own size.
-    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(DL.get()));
+    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(DL.at(c, r)));
     use(GAMES.get(k).n);
     return GAMES.get(k);
   };
@@ -41557,7 +41578,7 @@ const PIPES_APP = (() => {
      boards"): the recordings are made per difficulty, and changing it drops every game in play. */
   const REEL_SETS = {};
   function reelFrame(c, r){
-    const lv = DL.get(), REELS = REEL_SETS[lv] || (REEL_SETS[lv] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x9e5 + i * 4447, lv)));
+    const lv = DL.at(c, r), REELS = REEL_SETS[lv] || (REEL_SETS[lv] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x9e5 + i * 4447, lv)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x5a1f;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, reel = REELS[h % REELS.length];
@@ -41569,7 +41590,7 @@ const PIPES_APP = (() => {
   function adopt(c, r){
     const f = reelFrame(c, r);
     use(sideOf(f));
-    const p = { n: N, src: 0, sol: null, cur: new Uint8Array(N * N), moves: 0, solved: false };
+    const p = { n: N, lv: LV_OF[N], src: 0, sol: null, cur: new Uint8Array(N * N), moves: 0, solved: false };
     for (let i = 0; i < N * N; i++){ p.cur[i] = f[i] & 15; if (f[i] & 32) p.src = i; }
     p.solved = wet(p).done;
     return p;
@@ -41593,12 +41614,12 @@ const PIPES_APP = (() => {
   const CHECKERS = new Map();
   const checker = n => { if (!CHECKERS.has(n)) CHECKERS.set(n, { n, colors: Array.from({ length: n * n }, (_, i) =>
     (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) }); return CHECKERS.get(n); };
-  const sizeAt = (c, r) => { const p = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return p ? p.n : curN(); };
+  const sizeAt = (c, r) => { const p = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return p ? p.n : curN(c, r); };
 
   const app = {
     name: 'pipes',
     menu: [{ head: 'Pipes', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(DL.get())); } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(DL.at(LIVE.c, LIVE.r))); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: {
@@ -41624,13 +41645,13 @@ const PIPES_APP = (() => {
       return 'Pipes ' + p.n + '×' + p.n + ' — ' + (p.solved ? 'connected' : 'turning') + ' · ' + p.moves + ' turns';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), deal(DL.at(c, r))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       const p = gameAt(c, r);
-      if (p.solved){ GAMES.set(gkey(c, r), deal(DL.get())); return true; }
+      if (p.solved){ GAMES.set(gkey(c, r), deal(DL.at(c, r))); return true; }
       use(p.n); turn(p, cellOf(u, v), 1);
       return true;
     },
@@ -41656,7 +41677,7 @@ const PIPES_APP = (() => {
         ctx.beginPath(); ctx.moveTo(x - (h ? t / 4 : 0), y - (h ? 0 : t / 4)); ctx.lineTo(x + (h ? t / 4 : 0), y + (h ? 0 : t / 4)); ctx.stroke();
       }
     },
-    _debug: { deal, wet, turn, bakeReel, games: GAMES },
+    _debug: { deal, levelOf: (c, r) => { const p = GAMES.get(gkey(c, r)); return p ? p.lv : DL.at(c, r); }, wet, turn, bakeReel, games: GAMES },
   };
   return app;
 })();
@@ -41674,7 +41695,13 @@ const LOOPS_APP = (() => {
      10x10,12x12"). A game carries its own size (p.n); the recordings are the 12×12. */
   const SIZE = { easy: 8, normal: 10, hard: 12 };
   const N = 12, SQ = 1 / N;
-  const curN = () => SIZE[DL.get()];                // every board's size: the difficulty's (Sep 30)
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): every board's size is its own level's (`DL.at(c, r)`: the setting at the
+     corner block, a step harder from the 7th ring and another from the 31st), no longer one size for the field (Sep 30).
+     A puzzle keeps its level (p.lv) with its size, and a board no one plays shows the recording of its own size. With no
+     board it is the corner's. */
+  const curN = (c, r) => SIZE[DL.at(c, r)];
+  const LV_OF = { 8: 'easy', 10: 'normal', 12: 'hard' };
   const LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const LOOSE = 0x9aa0a8, JOINED = 0x2b2f36, GOLD = 0xe8c86a;
   const DR = [-1, 0, 1, 0], DC = [0, 1, 0, -1];           // N E S W, bits 1 2 4 8
@@ -41697,7 +41724,7 @@ const LOOPS_APP = (() => {
       if (r < n - 1 && rnd() < 0.55){ sol[i] |= 4; sol[i + n] |= 1; }
     }
     const cur = sol.map(m => rot(m, (rnd() * 4) | 0));      // any tile, any way
-    return { n, sol, cur, moves: 0, solved: false };
+    return { n, lv: LV_OF[n], sol, cur, moves: 0, solved: false };
   }
   // Which tiles have every end met, and whether that is all of them.
   function joined(p){
@@ -41720,7 +41747,7 @@ const LOOPS_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     // Hard carries on from the 12×12 recording on the board; Easy and Normal deal their own size.
-    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(DL.get()));
+    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r) || deal(DL.at(c, r)));
     return GAMES.get(k);
   };
   function turn(p, i, k){
@@ -41778,7 +41805,7 @@ const LOOPS_APP = (() => {
      boards"): the recordings are made per difficulty, and changing it drops every game in play. */
   const REEL_SETS = {};
   function reelFrame(c, r){
-    const lv = DL.get(), REELS = REEL_SETS[lv] || (REEL_SETS[lv] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x1f0 + i * 5231, lv)));
+    const lv = DL.at(c, r), REELS = REEL_SETS[lv] || (REEL_SETS[lv] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x1f0 + i * 5231, lv)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x2e7c;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, reel = REELS[h % REELS.length];
@@ -41788,7 +41815,7 @@ const LOOPS_APP = (() => {
   }
   // Taking a board carries on from what it is showing.
   function adopt(c, r){
-    const f = reelFrame(c, r), n = Math.round(Math.sqrt(f.length)), p = { n, sol: null, cur: new Uint8Array(n * n), moves: 0, solved: false };
+    const f = reelFrame(c, r), n = Math.round(Math.sqrt(f.length)), p = { n, lv: LV_OF[n], sol: null, cur: new Uint8Array(n * n), moves: 0, solved: false };
     for (let i = 0; i < n * n; i++) p.cur[i] = f[i] & 15;
     p.solved = joined(p).done;
     return p;
@@ -41813,12 +41840,12 @@ const LOOPS_APP = (() => {
   const CHECKERS = new Map();
   const checker = n => { if (!CHECKERS.has(n)) CHECKERS.set(n, { n, colors: Array.from({ length: n * n }, (_, i) =>
     (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) }); return CHECKERS.get(n); };
-  const sizeAt = (c, r) => { const p = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return p ? p.n : curN(); };
+  const sizeAt = (c, r) => { const p = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return p ? p.n : curN(c, r); };
 
   const app = {
     name: 'infinity loop',
     menu: [{ head: 'Infinity loop', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(DL.get())); } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(DL.at(LIVE.c, LIVE.r))); } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: {
@@ -41842,13 +41869,13 @@ const LOOPS_APP = (() => {
       return 'Infinity Loop ' + p.n + '×' + p.n + ' — ' + (p.solved ? 'closed' : 'turning') + ' · ' + p.moves + ' turns';
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), deal(DL.get())); LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ GAMES.set(gkey(c, r), deal(DL.at(c, r))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       LIVE = { key: gkey(c, r), c, r };
       const p = gameAt(c, r);
-      if (p.solved){ GAMES.set(gkey(c, r), deal(DL.get())); return true; }
+      if (p.solved){ GAMES.set(gkey(c, r), deal(DL.at(c, r))); return true; }
       turn(p, cellOf(u, v, p.n), 1);
       return true;
     },
@@ -41860,7 +41887,7 @@ const LOOPS_APP = (() => {
       return true;
     },
     drawIcon(ctx, sz, c, r){
-      const g = GAMES.get(gkey(c, r)), n = g ? g.n : curN(), t = sz / n;
+      const g = GAMES.get(gkey(c, r)), n = g ? g.n : sizeAt(c, r), t = sz / n;
       for (let i = 0; i < n * n; i++){
         ctx.fillStyle = (((i % n) + ((i / n) | 0)) % 2) ? '#b58863' : '#f0d9b5';
         ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t + 0.5, t + 0.5);
@@ -41874,7 +41901,7 @@ const LOOPS_APP = (() => {
         ctx.beginPath(); ctx.moveTo(x - (h ? t / 4 : 0), y - (h ? 0 : t / 4)); ctx.lineTo(x + (h ? t / 4 : 0), y + (h ? 0 : t / 4)); ctx.stroke();
       }
     },
-    _debug: { deal, joined, turn, bakeReel, games: GAMES },
+    _debug: { deal, levelOf: (c, r) => { const p = GAMES.get(gkey(c, r)); return p ? p.lv : DL.at(c, r); }, joined, turn, bakeReel, games: GAMES },
   };
   return app;
 })();
@@ -41914,7 +41941,13 @@ const MANIA_APP = (() => {
   // Sep 28, the puzzle pass: difficulty sets how fast the water runs and how long it waits at an open end.
   const DL = ARCADE.difficulty('mania.level', 'Easy: an 8×8 board, slower water that waits 9 seconds at an open end. Normal: 10×10. Hard: 12×12, faster water that waits 4. The board you are on starts again at the new size.');
   const DIFF = { easy: { tile: 1.35, grace: 9 }, normal: { tile: 1, grace: 6 }, hard: { tile: 0.75, grace: 4 } };
-  const D = () => QUIET ? DIFF.normal : DIFF[DL.get()];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): a board starts at its own level (`DL.at(c, r)`: the setting at the corner
+     block, a step harder from the 7th ring and another from the 31st), its size, its water's speed and its wait at an
+     open end all that level's. A game keeps it as g.dl (g.lv is already the game's own level, 1, 2, … as it goes up),
+     and D(g) reads it, not the setting; the recordings still run at Normal's speed, each board at its own size. */
+  const LV_OF = { 8: 'easy', 10: 'normal', 12: 'hard' };
+  const D = g => QUIET ? DIFF.normal : DIFF[(g && g.dl) || DL.get()];
   const SND = ARCADE.sounds('mania.sound', 'A click for each piece, a buzz when the water is waiting at an open end, a fanfare for the next level.');
   const inFloor = (r, c) => r >= 0 && r < N && c >= 1 && c < N;
   /* THE DECK (Sep 23: "if the user runs out of pieces, just loop back to the
@@ -41938,10 +41971,13 @@ const MANIA_APP = (() => {
     const src = r * N + c;
     mask[src] = 1 << d;
     Object.assign(g, { lv, mask, wet, src, cur: src, din: -1, dout: d, frac: 0, run: 0,
-                       wait: Math.max(8, 16 - lv), blocked: 0, tile: 1.7 * Math.pow(0.88, lv - 1) * D().tile,
+                       wait: Math.max(8, 16 - lv), blocked: 0, tile: 1.7 * Math.pow(0.88, lv - 1) * D(g).tile,
                        goal: Math.round((10 + 2 * lv) * (N - 1) * N / 90) });   // the distance scales with the floor
   }
-  function newGame(n){ const g = { n: n || (QUIET ? 10 : SIZE[DL.get()]), state: 'ready', score: 0, last: 0, deck: shuffled(), at: 0 }; level(g, 1); return g; }
+  function newGame(n){
+    n = n || (QUIET ? 10 : SIZE[DL.get()]);
+    const g = { n, dl: LV_OF[n] || 'normal', state: 'ready', score: 0, last: 0, deck: shuffled(), at: 0 }; level(g, 1); return g;
+  }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     if (!GAMES.has(k)){
@@ -42005,7 +42041,7 @@ const MANIA_APP = (() => {
       // An open end with room to fix it: wait for a piece.
       if (inFloor(r, c) && !g.wet[j]){
         if (!g.blocked) SND.play('bad', QUIET);
-        if ((g.blocked = (g.blocked || 0) + dt) < D().grace) return;
+        if ((g.blocked = (g.blocked || 0) + dt) < D(g).grace) return;
       }
       return spill(g);
     }
@@ -42118,7 +42154,7 @@ const MANIA_APP = (() => {
     return frames;
   }
   function reelAt(c, r){
-    const sz = SIZE[DL.get()], REELS = REEL_SETS[sz] || (REEL_SETS[sz] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x7a1 + i * 3001, undefined, sz)));
+    const sz = SIZE[DL.at(c, r)], REELS = REEL_SETS[sz] || (REEL_SETS[sz] = [0, 1, 2, 3, 4, 5].map(i => bakeReel(0x7a1 + i * 3001, undefined, sz)));
     let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x4b91;
     v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
     const h = (v ^ (v >>> 16)) >>> 0, reel = REELS[h % REELS.length];
@@ -42136,14 +42172,14 @@ const MANIA_APP = (() => {
   const gridFor = n => { if (!GRIDS.has(n)) GRIDS.set(n, { n, colors: Array.from({ length: n * n }, (_, i) => (i % n) === 0 ? TRAY
     : (((i % n) + ((i / n) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ) }); return GRIDS.get(n); };
   const GRID = gridFor(10);
-  const sizeAt = (c, r) => { const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : SIZE[DL.get()]; };
+  const sizeAt = (c, r) => { const g = GAMES.get(gkey(c, r)) || ((LIVE && LIVE.key === gkey(c, r)) ? gameAt(c, r) : null); return g ? g.n : SIZE[DL.at(c, r)]; };
   const trayGeo = n => T => { const g = new T.BoxGeometry(0.9, TRAY_H, n - 0.1); g.translate(0, TRAY_H / 2, 0); return g; };
 
   const app = {
     name: 'pipe mania',
     realtime: true,
     menu: [{ head: 'Pipe mania', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE){ const g = newGame(); g.resume = 'play'; g.state = 'wait'; GAMES.set(LIVE.key, g); } } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE){ const g = newGame(SIZE[DL.at(LIVE.c, LIVE.r)]); g.resume = 'play'; g.state = 'wait'; GAMES.set(LIVE.key, g); } } }, SND.item] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: {
@@ -42179,11 +42215,12 @@ const MANIA_APP = (() => {
       if (!g || g.state === 'ready') return 'Pipe Mania — board ' + c + '·' + r;
       return 'Pipe Mania ' + g.n + '×' + g.n + ' — level ' + g.lv + ' · ' + g.run + ' of ' + g.goal
            + (g.wait > 0 && g.state === 'play' ? ' · water in ' + Math.ceil(g.wait) + 's' : '')
-           + (g.blocked > 0 && g.state === 'play' ? ' · blocked — ' + Math.ceil(D().grace - g.blocked) + 's to lay a piece' : '')
+           + (g.blocked > 0 && g.state === 'play' ? ' · blocked — ' + Math.ceil(D(g).grace - g.blocked) + 's to lay a piece' : '')
            + ' · ' + g.score + ' points' + (g.state === 'over' ? ' · spilled' : g.state === 'wait' ? ' · tap to go on' : '');
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ const g = gameAt(c, r); start(g); g.resume = 'play'; g.state = 'wait'; g.last = 0; LIVE = { key: gkey(c, r), c, r }; return true; },
+    onReset(c, r){ const g = gameAt(c, r); g.n = SIZE[DL.at(c, r)]; start(g);   // at the board's own level (Oct 15)
+      g.resume = 'play'; g.state = 'wait'; g.last = 0; LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ gameAt(c, r); return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
@@ -42210,7 +42247,7 @@ const MANIA_APP = (() => {
         ctx.beginPath(); ctx.moveTo(x - (h ? t / 4 : 0), y - (h ? 0 : t / 4)); ctx.lineTo(x + (h ? t / 4 : 0), y + (h ? 0 : t / 4)); ctx.stroke();
       }
     },
-    _debug: { newGame, start, step, place, bot, bakeReel, games: GAMES },
+    _debug: { newGame, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.dl : DL.at(c, r); }, D, start, step, place, bot, bakeReel, games: GAMES },
   };
   return app;
 })();
