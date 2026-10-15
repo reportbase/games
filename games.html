@@ -26394,7 +26394,17 @@ const TRON_APP = (() => {
   // Difficulty: seconds a step, and how often the others take their best line rather than any safe one.
   const DIFF = { easy: { step: 0.13, care: 0.55 }, normal: { step: 0.1, care: 0.85 }, hard: { step: 0.08, care: 1 } };
   const DL = ARCADE.difficulty('tron.level', 'Easy: slower, and the others ride carelessly. Normal: in between. Hard: faster, and they always take the most open way.');
-  const D = () => QUIET ? DIFF.normal : DIFF[DL.get()];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): the setting is the corner block's, and each board plays at its own level
+     (the ARCADE kit's `levelOn`: a step harder from the 7th ring out, another from the 31st, as far as Hard). A
+     board's game takes its level when it is made (`gameAt`) or started again (`start`) and keeps it as `g.lv` (its
+     board as `g.at`), so its speed and how carefully the others ride come from its own level while it is played, not
+     from the setting. The recordings stay at normal (QUIET), as before: a board's own level
+     shows once it is played. */
+  const lvAt = (c, r) => ARCADE.levelOn(DL.get(), c, r);
+  const D = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || DL.get()];
+  const LV_ITEM = { label: () => DL.item.label(), title: DL.item.title,   // the board in play takes its new level at once (Oct 15)
+                   on(){ DL.item.on(); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } };
   const SND = ARCADE.sounds('tron.sound', 'A click for each turn, the crashes, and the end of each round and match.');
   const TILT = ARCADE.tilt;
 
@@ -26413,6 +26423,7 @@ const TRON_APP = (() => {
   }
   const alive = g => [0, 1, 2, 3].filter(i => g.deadAt[i] === Infinity);
   function start(g){
+    if (g.at) g.lv = lvAt(g.at[0], g.at[1]);   // a game takes its board's level as the setting is when it starts, or goes on from waiting (Oct 15)
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }
     Object.assign(g, newGame());
     g.state = 'play';
@@ -26457,7 +26468,7 @@ const TRON_APP = (() => {
       if (q >= 0 && !occ[q]) safe.push([d, q]);
     }
     if (!safe.length) return dir;
-    if (rnd() > D().care) return safe[(rnd() * safe.length) | 0][0];
+    if (rnd() > D(g).care) return safe[(rnd() * safe.length) | 0][0];
     let best = dir, bs = -Infinity;
     for (const [d, q] of safe){
       occ[q] = 1;
@@ -26526,7 +26537,7 @@ const TRON_APP = (() => {
       const d = dirs ? dirs[sk] : sk;
       if (d !== g.dirs[0] && !g.queue.length) turn(g, d);
     }
-    const T = QUIET ? RT : D().step;
+    const T = QUIET ? RT : D(g).step;
     g.clock += dt;
     while (g.clock >= T && g.state === 'play' && !(g.pause > 0)){ g.clock -= T; tickOnce(g, inp); }
   }
@@ -26560,7 +26571,7 @@ const TRON_APP = (() => {
     return out;
   }
   function liveView(g){
-    const T = D().step, frac = g.pause > 0 ? 1 : Math.min(1, g.clock / T);
+    const T = D(g).step, frac = g.pause > 0 ? 1 : Math.min(1, g.clock / T);
     return view(g.paths, g.deadAt, g.tick, frac, BOOM.burning(g));
   }
 
@@ -26630,7 +26641,7 @@ const TRON_APP = (() => {
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     let g = GAMES.get(k);
-    if (!g){ g = adopt(c, r); if (g.state === 'play') g.state = 'wait'; GAMES.set(k, g); }
+    if (!g){ g = adopt(c, r); if (g.state === 'play') g.state = 'wait'; g.at = [c, r]; g.lv = lvAt(c, r); GAMES.set(k, g); }   // its own level (Oct 15)
     return g;
   };
   const shownList = (c, r) => {
@@ -26709,7 +26720,7 @@ const TRON_APP = (() => {
       }
       return shownList(c, r);
     },
-    menu: [{ head: 'Light cycles', items: [DL.item, SND.item,
+    menu: [{ head: 'Light cycles', items: [LV_ITEM, SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want to turn. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } }] }],
     cellTitle(c, r){
@@ -26762,7 +26773,7 @@ const TRON_APP = (() => {
       ctx.fillStyle = hex(FLOOR); ctx.fillRect(0, 0, sz, sz);
       for (let k = 0; k < N * N; k++) if (cols[k] !== FLOOR){ ctx.fillStyle = hex(cols[k]); ctx.fillRect((k % N) * t, ((k / N) | 0) * t, t + 0.5, t + 0.5); }
     },
-    _debug: { newGame, start, step, turn, bot, bakeReel, adopt, games: GAMES, setLevel: DL.set },
+    _debug: { newGame, start, step, turn, bot, bakeReel, adopt, games: GAMES, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
   };
   const FLOOR_COLORS = new Array(N * N).fill(FLOOR);
   return app;
@@ -26793,7 +26804,17 @@ const MISSILE_APP = (() => {
 
   const DIFF = { easy: { sp: 0.7, n: 0.8 }, normal: { sp: 1, n: 1 }, hard: { sp: 1.3, n: 1.25 } };
   const DL = ARCADE.difficulty('missile.level', 'Easy: slower missiles, and fewer. Normal: in between. Hard: faster, and more of them.');
-  const D = () => QUIET ? DIFF.normal : DIFF[DL.get()];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): the setting is the corner block's, and each board plays at its own level
+     (the ARCADE kit's `levelOn`: a step harder from the 7th ring out, another from the 31st, as far as Hard). A
+     board's game takes its level when it is made (`gameAt`) or started again (`start`) and keeps it as `g.lv` (its
+     board as `g.at`), so the missiles' speed and number come from its own level while it is played, not from the
+     setting. The recordings stay at normal (QUIET), as before: a board's own level
+     shows once it is played. */
+  const lvAt = (c, r) => ARCADE.levelOn(DL.get(), c, r);
+  const D = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || DL.get()];
+  const LV_ITEM = { label: () => DL.item.label(), title: DL.item.title,   // the board in play takes its new level at once (Oct 15)
+                   on(){ DL.item.on(); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } };
   const SND = ARCADE.sounds('missile.sound', 'Launches, bursts, cities lost, and the end of each wave.');
   function blastSound(){ if (!SND.on || QUIET) return; try { ARCADE.hiss(0.45, 0.22, 900); } catch {} }
 
@@ -26803,6 +26824,7 @@ const MISSILE_APP = (() => {
              queue: 0, spawnT: 0, pause: 1.5, booms: [], id: 0, cool: 0 };
   }
   function start(g){
+    if (g.at) g.lv = lvAt(g.at[0], g.at[1]);   // a game takes its board's level as the setting is when it starts, or goes on from waiting (Oct 15)
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }
     Object.assign(g, newGame());
     g.state = 'play';
@@ -26812,7 +26834,7 @@ const MISSILE_APP = (() => {
   const BLAST_T = 1.2;
   function nextWave(g){
     g.wave++;
-    g.queue = Math.round((8 + 2 * g.wave) * D().n);
+    g.queue = Math.round((8 + 2 * g.wave) * D(g).n);
     g.spawnT = 0.5;
     for (const b of g.bases){ b.ammo = AMMO; b.up = true; }
     say('Wave ' + g.wave, 1200);
@@ -26824,7 +26846,7 @@ const MISSILE_APP = (() => {
     g.bases.forEach(b => { if (b.up) targets.push(b.u); });
     if (!targets.length) return;
     const tx = targets[(rnd() * targets.length) | 0], x0 = 0.05 + rnd() * 0.9;
-    g.foes.push({ id: ++g.id, x0, y0: 0, x: x0, y: 0, tx, ty: GROUND_V, sp: (0.055 + 0.006 * g.wave) * D().sp });
+    g.foes.push({ id: ++g.id, x0, y0: 0, x: x0, y: 0, tx, ty: GROUND_V, sp: (0.055 + 0.006 * g.wave) * D(g).sp });
   }
   // Fire at (u, v) from the nearest base that can.
   function fire(g, u, v){
@@ -26884,7 +26906,7 @@ const MISSILE_APP = (() => {
       if ((g.pause -= dt) <= 0){ g.pause = 0; nextWave(g); }
       return;
     }
-    if (g.queue && (g.spawnT -= dt) <= 0){ spawn(g); g.queue--; g.spawnT = (0.35 + rnd() * 1.1) / D().sp; }
+    if (g.queue && (g.spawnT -= dt) <= 0){ spawn(g); g.queue--; g.spawnT = (0.35 + rnd() * 1.1) / D(g).sp; }
     // Your missiles fly to their spot and burst there.
     for (const s of g.shots.slice()){
       const dx = s.tx - s.x, dy = s.ty - s.y, d = Math.hypot(dx, dy), mv = SHOT_SP * dt;
@@ -26992,7 +27014,7 @@ const MISSILE_APP = (() => {
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
-    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; GAMES.set(k, g0); }
+    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; g0.at = [c, r]; g0.lv = lvAt(c, r); GAMES.set(k, g0); }   // its own level (Oct 15)
     return GAMES.get(k);
   };
   const shown = (c, r) => {
@@ -27057,7 +27079,7 @@ const MISSILE_APP = (() => {
       }
       return asItems(shown(c, r));
     },
-    menu: [{ head: 'Missile command', items: [DL.item, SND.item] }],
+    menu: [{ head: 'Missile command', items: [LV_ITEM, SND.item] }],
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r));
       if (!g || g.state === 'ready') return 'Missile command — board ' + c + '·' + r;
@@ -27090,7 +27112,7 @@ const MISSILE_APP = (() => {
       for (const [x0, y0, x, y] of s.foes){ ctx.strokeStyle = hex(FOE); ctx.beginPath(); ctx.moveTo(x0 * sz, y0 * sz); ctx.lineTo(x * sz, y * sz); ctx.stroke(); }
       for (const [x, y, e] of s.blasts){ const r = blastR(e); if (r > 0){ ctx.fillStyle = '#ffd966'; ctx.beginPath(); ctx.arc(x * sz, y * sz, r * sz, 0, Math.PI * 2); ctx.fill(); } }
     },
-    _debug: { newGame, start, step, fire, bot, bakeReel, adopt, games: GAMES, setLevel: DL.set },
+    _debug: { newGame, start, step, fire, bot, bakeReel, adopt, games: GAMES, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
   };
   return app;
 })();
@@ -27125,7 +27147,17 @@ const ASTEROIDS_APP = (() => {
 
   const DIFF = { easy: { sp: 0.75, n: 3 }, normal: { sp: 1, n: 4 }, hard: { sp: 1.3, n: 5 } };
   const DL = ARCADE.difficulty('asteroids.level', 'Easy: slower rocks, three to start. Normal: four. Hard: faster rocks, five to start.');
-  const D = () => QUIET ? DIFF.normal : DIFF[DL.get()];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): the setting is the corner block's, and each board plays at its own level
+     (the ARCADE kit's `levelOn`: a step harder from the 7th ring out, another from the 31st, as far as Hard). A
+     board's game takes its level when it is made (`gameAt`) or started again (`start`) and keeps it as `g.lv` (its
+     board as `g.at`), so the rocks' speed and number and the small saucer's aim come from its own level while it is
+     played, not from the setting. The recordings stay at normal (QUIET), as before: a board's own level
+     shows once it is played. */
+  const lvAt = (c, r) => ARCADE.levelOn(DL.get(), c, r);
+  const D = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || DL.get()];
+  const LV_ITEM = { label: () => DL.item.label(), title: DL.item.title,   // the board in play takes its new level at once (Oct 15)
+                   on(){ DL.item.on(); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } };
   const SND = ARCADE.sounds('asteroids.sound', 'Shots, rocks breaking, the ship lost, and each wave cleared.');
   const TILT = ARCADE.tilt;
   /* FLYING BETWEEN BOARDS (Sep 28: "can a fly between boards?"). Your ship does not wrap round
@@ -27179,7 +27211,7 @@ const ASTEROIDS_APP = (() => {
   const turnToward = (a, want, max) => { let d = Math.atan2(Math.sin(want - a), Math.cos(want - a)); return a + Math.max(-max, Math.min(max, d)); };
 
   function rockAt(g, x, y, size){
-    const sp = (0.04 + rnd() * 0.07) * D().sp * (1 + (3 - size) * 0.35) * (1 + g.wave * 0.04), th = rnd() * Math.PI * 2;
+    const sp = (0.04 + rnd() * 0.07) * D(g).sp * (1 + (3 - size) * 0.35) * (1 + g.wave * 0.04), th = rnd() * Math.PI * 2;
     return { x, y, size, vx: Math.cos(th) * sp, vy: Math.sin(th) * sp, k: (rnd() * 4) | 0 };
   }
   function newShip(){ return { x: 0.5, y: 0.5, vx: 0, vy: 0, a: 0, alive: true, safe: 2, thrust: 0 }; }
@@ -27194,19 +27226,19 @@ const ASTEROIDS_APP = (() => {
   const UFO = { L: { r: 0.035, sp: 0.11, pts: 200, every: 1.3 }, S: { r: 0.022, sp: 0.16, pts: 1000, every: 1.0 } };
   function sendUfo(g){
     const small = g.wave >= 3 && rnd() < Math.min(0.75, 0.25 + g.score / 40000), dir = rnd() < 0.5 ? 1 : -1, k = small ? 'S' : 'L';
-    g.ufo = { k, x: dir > 0 ? 0 : 0.999, y: 0.15 + rnd() * 0.7, vx: dir * UFO[k].sp * D().sp, vy: 0, turn: 1 + rnd() * 2, cool: 1 };
+    g.ufo = { k, x: dir > 0 ? 0 : 0.999, y: 0.15 + rnd() * 0.7, vx: dir * UFO[k].sp * D(g).sp, vy: 0, turn: 1 + rnd() * 2, cool: 1 };
   }
   function ufoTick(g, dt){
     const u = g.ufo, s = g.ship;
     if (!u){ if (g.rocks.length && (g.ufoIn -= dt) <= 0){ sendUfo(g); g.ufoIn = Math.max(8, 20 - g.wave) + rnd() * 8; } return; }
     u.x += u.vx * dt; u.y = wrap(u.y + u.vy * dt);
-    if ((u.turn -= dt) <= 0){ u.turn = 1 + rnd() * 2; u.vy = [0, 0.08, -0.08][(rnd() * 3) | 0] * D().sp; }
+    if ((u.turn -= dt) <= 0){ u.turn = 1 + rnd() * 2; u.vy = [0, 0.08, -0.08][(rnd() * 3) | 0] * D(g).sp; }
     if (u.x < 0 || u.x >= 1){ g.ufo = null; return; }               // gone off the far side
     if (((g.t * 3) | 0) !== (((g.t - dt) * 3) | 0)) beep('ufo');
     if ((u.cool -= dt) <= 0){
       u.cool = UFO[u.k].every;
       let th = rnd() * Math.PI * 2;
-      if (u.k === 'S' && s.alive){ const err = { easy: 0.5, normal: 0.3, hard: 0.12 }[QUIET ? 'normal' : DL.get()]; th = Math.atan2(dW(s.y - u.y), dW(s.x - u.x)) + (rnd() - 0.5) * err * 2; }
+      if (u.k === 'S' && s.alive){ const err = { easy: 0.5, normal: 0.3, hard: 0.12 }[QUIET ? 'normal' : (g.lv || DL.get())]; th = Math.atan2(dW(s.y - u.y), dW(s.x - u.x)) + (rnd() - 0.5) * err * 2; }
       g.eshots.push({ x: u.x, y: u.y, vx: Math.cos(th) * 0.45, vy: Math.sin(th) * 0.45, life: 1.4 });
       beep('eshot');
     }
@@ -27235,6 +27267,7 @@ const ASTEROIDS_APP = (() => {
     else { for (const r of g.rocks.slice()) breakRock(g, r, true, true); killUfo(g, true); }
   }
   function start(g){
+    if (g.at) g.lv = lvAt(g.at[0], g.at[1]);   // a game takes its board's level as the setting is when it starts, or goes on from waiting (Oct 15)
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }
     Object.assign(g, newGame());
     g.state = 'play';
@@ -27243,7 +27276,7 @@ const ASTEROIDS_APP = (() => {
   function nextWave(g){
     g.wave++;
     g.ufoIn = Math.max(8, 20 - g.wave) + rnd() * 8;
-    const n = D().n + g.wave - 1;
+    const n = D(g).n + g.wave - 1;
     for (let i = 0; i < n; i++){
       // From the edges, never on top of the ship.
       const edge = rnd() < 0.5, p = rnd();
@@ -27477,7 +27510,7 @@ const ASTEROIDS_APP = (() => {
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
-    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; GAMES.set(k, g0); }
+    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; g0.at = [c, r]; g0.lv = lvAt(c, r); GAMES.set(k, g0); }   // its own level (Oct 15)
     return GAMES.get(k);
   };
   const shown = (c, r) => {
@@ -27611,7 +27644,7 @@ const ASTEROIDS_APP = (() => {
       }
       return asItems(shown(c, r));
     },
-    menu: [{ head: 'Asteroids', items: [DL.item, SND.item,
+    menu: [{ head: 'Asteroids', items: [LV_ITEM, SND.item,
       { label: () => 'Fly between boards: ' + (HOP.on ? 'on' : 'off'), title: 'On: fly off an edge and you go on to the next board, and its game becomes yours. Off: the edges wrap round, as in the arcade.',
         on(){ HOP.on = !HOP.on; ARCADE.save('asteroids.hop', HOP.on ? 'on' : 'off'); } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want the ship to fly; it fires as it goes. The way you hold it when you turn this on counts as level.',
@@ -27662,7 +27695,7 @@ const ASTEROIDS_APP = (() => {
       for (const [x, y, size] of s.rocks){ ctx.beginPath(); ctx.arc(x * sz, y * sz, RAD[size] * sz, 0, Math.PI * 2); ctx.fill(); }
       if (s.ship){ ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.ship[0] * sz, s.ship[1] * sz, Math.max(1.5, 0.02 * sz), 0, Math.PI * 2); ctx.fill(); }
     },
-    _debug: { newGame, start, step, fire, pilot, bakeReel, adopt, games: GAMES, setLevel: DL.set },
+    _debug: { newGame, start, step, fire, pilot, bakeReel, adopt, games: GAMES, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
   };
   return app;
 })();
@@ -27724,7 +27757,15 @@ const TETRIS_APP = (() => {
                  normal: { speed: 0.7,  lock: 0.5 },
                  hard:   { speed: 0.45, lock: 0.3 } };
   let LEVEL = ARCADE.load('tetris.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
-  const D = () => QUIET ? DIFF.normal : DIFF[LEVEL];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): the setting is the corner block's, and each board plays at its own level
+     (the ARCADE kit's `levelOn`: a step harder from the 7th ring out, another from the 31st, as far as Hard). A
+     board's game takes its level when it is made (`gameAt`) or started again (`start`) and keeps it as `g.lv` (its
+     board as `g.at`), so how fast its pieces fall and how soon they lock come from its own level while it is played,
+     not from the setting. The recordings stay at normal (QUIET), as before: a board's own level
+     shows once it is played. */
+  const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
+  const D = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || LEVEL];
   const SND = { on: ARCADE.load('tetris.sound', 'on') !== 'off', last: {} };
   const TILT = ARCADE.tilt;
   function beep(kind, n){
@@ -27798,6 +27839,7 @@ const TETRIS_APP = (() => {
     beep('hold');
   }
   function start(g){
+    if (g.at) g.lv = lvAt(g.at[0], g.at[1]);   // a game takes its board's level as the setting is when it starts, or goes on from waiting (Oct 15)
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
     Object.assign(g, newGame());
     g.state = 'play';
@@ -27806,7 +27848,7 @@ const TETRIS_APP = (() => {
                 : 'Tap to rotate · drag to slide · drag down to drop · tap the box on the left to hold', 2800);
   }
   const level = g => 1 + Math.floor(g.lines / 10);
-  const speed = g => Math.max(0.05, D().speed * Math.pow(0.85, level(g) - 1));
+  const speed = g => Math.max(0.05, D(g).speed * Math.pow(0.85, level(g) - 1));
   const grounded = g => g.cur && !fits(g, { ...g.cur, y: g.cur.y + 1 });
   // A landed piece that is moved or turned gets its lock time back (up to fifteen times).
   const moved = g => { if (grounded(g) && g.resets < 15){ g.lockT = 0; g.resets++; } };
@@ -27919,7 +27961,7 @@ const TETRIS_APP = (() => {
     // Landed: it locks when its time runs out (at once if it is being dropped).
     if (g.state === 'play' && g.cur && grounded(g)){
       g.lockT += dt;
-      if (g.lockT >= D().lock || (g.drop && inp)) lock(g);
+      if (g.lockT >= D(g).lock || (g.drop && inp)) lock(g);
     }
     const p = g.cur;
     if (p){ p.fx = ease(p.fx, p.x, dt); p.fy = ease(p.fy, p.y, dt); }
@@ -28017,7 +28059,7 @@ const TETRIS_APP = (() => {
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
-    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; GAMES.set(k, g0); }
+    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; g0.at = [c, r]; g0.lv = lvAt(c, r); GAMES.set(k, g0); }   // its own level (Oct 15)
     return GAMES.get(k);
   };
   const shown = (c, r) => {
@@ -28130,8 +28172,8 @@ const TETRIS_APP = (() => {
       return itemsOf(shown(c, r));
     },
     menu: [{ head: 'Tetris', items: [
-      { label: () => 'Difficulty: ' + LEVEL, title: 'Easy: pieces start slower and can slide longer after landing. Hard: faster, and they lock quickly. Press to switch.',
-        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('tetris.level', LEVEL); } },
+      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: pieces start slower and can slide longer after landing. Hard: faster, and they lock quickly. Press to switch.' + ARCADE.FARTHER,
+        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('tetris.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
       { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns, locks, line clears and fanfares — made in the browser.',
         on(){ SND.on = !SND.on; ARCADE.save('tetris.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left or right to slide the piece, toward you to drop it faster. Tap still turns it.',
@@ -28183,7 +28225,7 @@ const TETRIS_APP = (() => {
       if (s.cur) for (const [r0, c0] of TURNS[s.cur[0]][s.cur[1]]) sq(s.cur[2] + c0, s.cur[3] + r0, s.cur[0]);
       if (s.queue && s.queue.length) for (const [r0, c0] of TURNS[s.queue[0]][0]) sq(NX - X0 + c0, NY + r0, s.queue[0]);
     },
-    _debug: { newGame, start, step, rotate, shift, hardDrop, hold, lock, bakeReel, adopt, plan, games: GAMES, setLevel: v => { LEVEL = v; } },
+    _debug: { newGame, start, step, rotate, shift, hardDrop, hold, lock, bakeReel, adopt, plan, games: GAMES, setLevel: v => { LEVEL = v; }, fallEvery: g => speed(g), lockAfter: g => D(g).lock, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
   };
   const CHECKER = (() => {
     const cols = new Array(N * N);
@@ -28615,7 +28657,15 @@ const BOMBER_APP = (() => {
                  normal: { think: 0.12, bold: 0.9 },
                  hard:   { think: 0.08, bold: 1 } };
   let LEVEL = ARCADE.load('bomber.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
-  const DF = () => QUIET ? DIFF.normal : DIFF[LEVEL];
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): the setting is the corner block's, and each board plays at its own level
+     (the ARCADE kit's `levelOn`: a step harder from the 7th ring out, another from the 31st, as far as Hard). A
+     board's game takes its level when it is made (`gameAt`) or started again (`start`) and keeps it as `g.lv` (its
+     board as `g.at`), so the bots' quickness and boldness come from its own level while it is played, not from the
+     setting. The recordings stay at normal (QUIET), as before: a board's own level
+     shows once it is played. */
+  const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
+  const DF = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || LEVEL];
   const SND = { on: ARCADE.load('bomber.sound', 'on') !== 'off', last: {} };
   const TILT = ARCADE.tilt;
   function beep(kind){
@@ -28681,6 +28731,7 @@ const BOMBER_APP = (() => {
     g.hide[i] = x < 0.14 ? PW_BOMB : x < 0.28 ? PW_RANGE : E;
   }
   function start(g){
+    if (g.at) g.lv = lvAt(g.at[0], g.at[1]);   // a game takes its board's level as the setting is when it starts, or goes on from waiting (Oct 15)
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
     Object.assign(g, newGame());
     g.state = 'play';
@@ -28835,7 +28886,7 @@ const BOMBER_APP = (() => {
     if ((p.out || 0) < p.cap && !bombAt(g, p.r, p.c)){
       const sq = cross(g, p.r, p.c, p.range, p.id);
       const hits = sq.some(([r, c]) => g.cell[r * N + c] === BOX) || others.some(o => sq.some(([r, c]) => r === o.r && c === o.c));
-      if (hits && rnd() < DF().bold){
+      if (hits && rnd() < DF(g).bold){
         const D2 = danger(g, { r: p.r, c: p.c, range: p.range, owner: p.id });
         const { dist } = walks(g, p, fire);
         let ok = false;
@@ -28900,7 +28951,7 @@ const BOMBER_APP = (() => {
           if (stepTo(g, p, HOLD.dir)) HOLD.going = HOLD.dir;
           else if (HOLD.going && HOLD.going !== HOLD.dir) stepTo(g, p, HOLD.going);
         }
-      } else if ((p.think -= dt) <= 0){ p.think = DF().think; bot(g, p); }
+      } else if ((p.think -= dt) <= 0){ p.think = DF(g).think; bot(g, p); }
     }
     // Fire takes whoever is (mostly) in its square.
     for (const f of g.fire) for (const p of g.players){
@@ -28975,7 +29026,7 @@ const BOMBER_APP = (() => {
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
-    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; GAMES.set(k, g0); }
+    if (!GAMES.has(k)){ const g0 = adopt(c, r); if (g0.state === 'play') g0.state = 'wait'; g0.at = [c, r]; g0.lv = lvAt(c, r); GAMES.set(k, g0); }   // its own level (Oct 15)
     return GAMES.get(k);
   };
   const shown = (c, r) => {
@@ -29138,8 +29189,8 @@ const BOMBER_APP = (() => {
       return asItems(shown(c, r));
     },
     menu: [{ head: 'Bomberman', items: [
-      { label: () => 'Difficulty: ' + LEVEL, title: 'Easy: the bots think slower and bomb less boldly. Hard: quick and bold. Press to switch.',
-        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('bomber.level', LEVEL); } },
+      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: the bots think slower and bomb less boldly. Hard: quick and bold. Press to switch.' + ARCADE.FARTHER,
+        on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('bomber.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
       { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Bombs, blasts, crates, pickups and fanfares — made in the browser.',
         on(){ SND.on = !SND.on; ARCADE.save('bomber.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want to walk. Tap yourself to drop a bomb.',
@@ -29197,7 +29248,7 @@ const BOMBER_APP = (() => {
       const t = sz / N, s = shown(c, r), cols = gridOf(s, true).colors;
       for (let k = 0; k < N * N; k++){ ctx.fillStyle = css(cols[k]); ctx.fillRect((k % N) * t, ((k / N) | 0) * t, t + 0.5, t + 0.5); }
     },
-    _debug: { HOLD, holdDir, follow, dragOn: () => { DRAG = { r: -1, c: -1 }; }, newGame, start, step, dropBomb, walkTo, bakeReel, adopt, games: GAMES, cross, setLevel: v => { LEVEL = v; }, SPIRAL },
+    _debug: { HOLD, holdDir, follow, dragOn: () => { DRAG = { r: -1, c: -1 }; }, newGame, start, step, dropBomb, walkTo, bakeReel, adopt, games: GAMES, cross, setLevel: v => { LEVEL = v; }, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); }, SPIRAL },
   };
   return app;
 })();
