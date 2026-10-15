@@ -18376,10 +18376,12 @@ const ARCADE = (() => {
   }
   const FARTHER = ' Boards farther from the corner are harder: a step from the 7th ring out, another from the 31st, as far as Hard.';
   // A difficulty switch, remembered: easy → normal → hard. It takes effect with the next puzzle. at(c, r): a board's own (above).
-  function difficulty(key, title){
+  // (own: the game has levels of its own by ring, 1 to 5, as Sokoban, the tilt maze and Simon do, so neither the label's
+  //  "at the corner" nor the steps at rings 7 and 31 apply: its title says how it goes)
+  function difficulty(key, title, own){
     let v = load(key, 'normal'); if (!/^(easy|normal|hard)$/.test(v)) v = 'normal';
     const L = { get: () => v, set: x => { v = x; }, at: (c, r) => levelOn(v, c, r) };
-    L.item = { label: () => 'Difficulty: ' + v + ' at the corner', title: (title || '') + FARTHER,
+    L.item = { label: () => 'Difficulty: ' + v + (own ? '' : ' at the corner'), title: (title || '') + (own ? '' : FARTHER),
                on(){ v = v === 'easy' ? 'normal' : v === 'normal' ? 'hard' : 'easy'; save(key, v); } };
     return L;
   }
@@ -44129,7 +44131,7 @@ const SOKOBAN_APP = (() => {
   const FLOOR = 0xe4e4e4, LINE = 0x9a9a9a;
   const WALL = 0x3a3d42, CRATE = 0xb5651d, HOME = 0x2e9e3e, SPOT = 0xd9342b, KEEPER = 0xffffff;
   const D = [-N, 1, N, -1], DCH = 'URDL';
-  const DL = ARCADE.difficulty('sokoban.level', 'Every board deals its own level, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up (the corner block keeps the worked-out levels). The board you are on starts again.');
+  const DL = ARCADE.difficulty('sokoban.level', 'Every board deals its own level, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up (the corner block keeps the worked-out levels). The board you are on starts again.', true);
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, DRAG = null;
@@ -44917,7 +44919,7 @@ const TILT_APP = (() => {
   ];
   const G = 2.2, ROLL = 0.9, BOUNCE = 0.35, VMAX = 1.6, SUB = 1 / 240, TIME_CAP = 120, REC_HZ = 30;
   const WALL_T = 0.12, WALL_H = 0.42, BALL_R = 0.26, HOLE_R = 0.3, CORNER_R = 0.2, CORNER_OFF = 0.23, RING_R = 0.3;
-  const DL = ARCADE.difficulty('tiltmaze.level', 'Every board has its own maze, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up.');
+  const DL = ARCADE.difficulty('tiltmaze.level', 'Every board has its own maze, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
   const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tiltmaze.sound', 'A tick off the walls, a drop down a hole, a chime at the ring.');
   const TILT = ARCADE.tilt;
@@ -45233,6 +45235,248 @@ const TILT_APP = (() => {
     onPanEnd(){ DRAG = null; },
     _debug: { makeMaze, mazeFor, playRun, stepBall, botTilt, bfs, pathOf, nbrs, cellOf, centre, gameAt, fresh, stepGame, finish, starsOf, levelAt, boardIdx,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, GAMES, MAZES, BEST, HELD, LV, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
+/* ═══ SIMON ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
+   (Oct 15: "Are you familiar with the game called simon?", then "Yes" to building it.) The 1978 memory game: coloured pads
+   round a hub, each with its own tone. It plays a sequence, you play it back; each round it adds one more. One wrong pad, or
+   too long a wait, and the game is over; your score is the longest sequence you played back.
+   - EVERY BOARD ITS OWN SEQUENCE: drawn from the board's own number (boardIdx, golf's Szudzik pairing) and its level, so a
+     board always plays the same sequence and you can come back to beat it. The level is 1 to 5, the ring level out from the
+     corner plus the Difficulty (Easy 0, Normal 1, Hard 2), as mini golf, Sokoban and the tilt maze (and, Oct 15, harder
+     farther out: "games that have a difficulty setting should switch to being more difficult as the boards move away from
+     the center."). A level sets the pads (4 near the corner, 6 farther, 8 far out), how long each lights, and how long you
+     have to answer (LV). As in the toy, the playback quickens as the sequence grows (`QUICKEN`).
+   - Tap a pad (or press 1 to 8; with four pads the arrow keys too). A tap on the hub, or on a board not yet started, starts
+     it. When it is over the pad you should have pressed flashes; a tap starts the board again, a hold too.
+   - A board no one is playing shows its own sequence lighting, round after round, each board at its own phase.
+   - Best on each board kept (localStorage simon.best, by board and level). */
+const SIMON_APP = (() => {
+  const BASE = 0x15161c, HUB = 0x24262f, RING_C = 0x0b0b0f;
+  const PAD = [0x22c55e, 0xef4444, 0xfacc15, 0x3b82f6, 0xa855f7, 0xf97316, 0x22d3ee, 0xec4899];   // green, red, yellow, blue (the toy's), then four more
+  // (the toy's four tones, then the rest of a pentatonic run above them, so six and eight pads still sound like Simon)
+  const TONE = [415, 310, 252, 209, 466, 349, 554, 622];
+  const LV = [
+    { pads: 4, on: 0.55, gap: 0.18, wait: 5 },
+    { pads: 4, on: 0.42, gap: 0.14, wait: 4 },
+    { pads: 6, on: 0.38, gap: 0.12, wait: 3.5 },
+    { pads: 6, on: 0.3,  gap: 0.1,  wait: 3 },
+    { pads: 8, on: 0.24, gap: 0.08, wait: 2.5 },
+  ];
+  const QUICKEN = 0.035, QUICK_MIN = 0.55, R_IN = 0.17, R_OUT = 0.46, GAP_A = 0.06, PAD_H = 0.012, LIT_UP = 0.012;
+  const DL = ARCADE.difficulty('simon.level', 'Every board plays its own sequence, harder the farther it is from the corner: four pads near it, six farther, eight far out, quicker and with less time to answer. Easy, Normal and Hard move every board a level up.', true);
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const SND = ARCADE.sounds('simon.sound', 'Each pad its own tone, a buzz when it is wrong.');
+  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  // (the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+
+  /* A board's sequence: as long as anyone gets, drawn as it is wanted from the board's own generator. No pad three times
+     running (the toy allowed it, but on a phone the third tap of one pad reads as a stuck finger). */
+  const SEQS = new Map(), CAP = 1500;
+  function seqOf(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let S = SEQS.get(key);
+    if (S){ SEQS.delete(key); SEQS.set(key, S); return S; }
+    const R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ 0x51a0), D = LV[lv - 1], list = [];
+    S = { idx, lv, D, phase: (idx * 0.618) % 1,
+          at(k){ while (list.length <= k){ let p; do p = Math.floor(R() * D.pads); while (list.length >= 2 && p === list[list.length - 1] && p === list[list.length - 2]); list.push(p); } return list[k]; } };
+    SEQS.set(key, S); if (SEQS.size > CAP) SEQS.delete(SEQS.keys().next().value);
+    return S;
+  }
+  // a step's length while round n plays back: the toy's quickening as the sequence grows
+  const stepOf = (D, n) => { const q = Math.max(QUICK_MIN, 1 - QUICKEN * (n - 1)); return { on: D.on * q, gap: D.gap * q }; };
+
+  /* ─── PLAYING ─── state: 'ready' (not begun), 'show' (it plays round n), 'input' (you play it back), 'pause' (a breath
+     before the next round), 'over'. Times on the page's own clock (performance.now), in seconds. */
+  const GAMES = new Map();
+  let LIVE = null;
+  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('simon.best') || '{}'))); } catch { return new Map(); } })();
+  const saveBest = () => { try { localStorage.setItem('simon.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const bestKey = S => S.idx + '@' + S.lv;
+  const clock = () => performance.now() / 1000;
+  const fresh = (c, r) => ({ S: seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1 });
+  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  function beep(p, dur, quiet){ if (quiet) return; try { if (SND.on && ARCADE.audio()) ARCADE.tone(TONE[p], TONE[p], Math.max(0.12, dur), 'triangle', 0.08); } catch {} }
+  function begin(g){ g.n = 1; g.score = 0; g.miss = -1; showRound(g, 0.5); }
+  function showRound(g, wait){ g.state = 'show'; g.t0 = clock() + (wait || 0); g.i = 0; g.shown = -1; }
+  function stepGame(g, quiet){
+    const t = clock();
+    if (g.state === 'show'){
+      const { on, gap } = stepOf(g.S.D, g.n), dt = t - g.t0;
+      if (dt < 0){ g.lit = -1; return; }
+      const k = Math.floor(dt / (on + gap));
+      if (k >= g.n){ g.lit = -1; g.state = 'input'; g.i = 0; g.deadline = t + g.S.D.wait; return; }
+      const into = dt - k * (on + gap);
+      g.lit = into < on ? g.S.at(k) : -1;
+      if (into < on && g.shown !== k){ g.shown = k; beep(g.S.at(k), on, quiet); }
+      return;
+    }
+    if (g.state === 'input'){
+      if (g.litTo && t > g.litTo){ g.lit = -1; g.litTo = 0; }
+      if (t > g.deadline) over(g, 'Too slow.', quiet);
+      return;
+    }
+    if (g.state === 'pause'){ if (g.litTo && t > g.litTo){ g.lit = -1; g.litTo = 0; } if (t >= g.t0) showRound(g, 0); return; }
+    if (g.state === 'over'){ g.lit = Math.floor(t * 3) % 2 ? g.miss : -1; }
+  }
+  // your press: right, the next one or the round done; wrong, the game over
+  function press(g, p, quiet){
+    if (g.state !== 'input') return false;
+    const t = clock(), want = g.S.at(g.i);
+    if (p !== want){ g.miss = want; over(g, 'Not that one.', quiet); return true; }
+    g.lit = p; g.litTo = t + 0.22; beep(p, 0.2, quiet);
+    g.i++; g.deadline = t + g.S.D.wait;
+    if (g.i >= g.n){ g.score = g.n; g.n++; g.state = 'pause'; g.t0 = t + 0.8; }
+    return true;
+  }
+  function over(g, why, quiet){
+    if (g.miss < 0) g.miss = g.S.at(g.i);
+    g.state = 'over'; g.lit = -1; g.litTo = 0;
+    const k = bestKey(g.S), was = BEST.get(k);
+    if (g.score > 0 && (was == null || g.score > was)){ BEST.delete(k); BEST.set(k, g.score); saveBest(); }
+    if (quiet) return;
+    SND.play('bad');
+    say(why + ' ' + g.score + (g.score === 1 ? ' step' : ' steps') + (was != null && g.score > was ? '. A new best on this board, beating ' + was + '.' : was != null ? '. Best here ' + was + '.' : '.') + ' Tap to try again.', 3600);
+  }
+  // which pad a point of the board is on: −1 off them, 'hub' on the middle
+  function padAt(D, u, v){
+    const du = u - 0.5, dv = v - 0.5, rho = Math.hypot(du, dv);
+    if (rho < R_IN * 0.95) return 'hub';
+    if (rho > R_OUT * 1.08) return -1;
+    const a = ((Math.atan2(dv, du) + Math.PI / 2) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    return Math.floor(a / (2 * Math.PI / D.pads)) % D.pads;
+  }
+  // a board no one is playing: its own sequence, round after round up to eight, on the page's clock
+  function shownLit(S){
+    const D = S.D, rounds = 8, step = D.on + D.gap, pause = 1.2;
+    let T = 0; for (let n = 1; n <= rounds; n++) T += n * step + pause;
+    let t = (now() / 1000 + S.phase * T) % T;
+    for (let n = 1; n <= rounds; n++){
+      const len = n * step;
+      if (t < len){ const k = Math.floor(t / step); return (t - k * step) < D.on ? S.at(k) : -1; }
+      t -= len + pause; if (t < 0) return -1;
+    }
+    return -1;
+  }
+  const dim = (c, f) => (((c >> 16 & 255) * f) << 16) | (((c >> 8 & 255) * f) << 8) | ((c & 255) * f);
+  function itemsOf(S, lit, g){
+    const P = S.D.pads, out = [{ kind: 'smBase', u: 0.5, v: 0.5, scale: 1, color: RING_C }];
+    for (let p = 0; p < P; p++){
+      const on = p === lit;
+      out.push({ kind: 'smPad' + P + '_' + p, u: 0.5, v: 0.5, scale: 1, lift: on ? LIT_UP : 0, color: on ? PAD[p] : dim(PAD[p], 0.38) });
+    }
+    const hc = g && g.state === 'over' ? 0x5a1f22 : g && (g.state === 'input' || g.state === 'pause') ? 0x1f3a2a : HUB;
+    out.push({ kind: 'smHub', u: 0.5, v: 0.5, scale: 1, color: hc });
+    return out;
+  }
+  /* A pad: a flat wedge of the ring between R_IN and R_OUT, a little gap either side, standing PAD_H high with its outer and
+     side walls, laid in the board's own terms (the field runs +u to −x and +v to −z), each face wound to face out. */
+  function padGeo(T, P, p){
+    const span = 2 * Math.PI / P, a0 = -Math.PI / 2 + p * span + GAP_A / 2, a1 = a0 + span - GAP_A, N = Math.max(6, Math.round(48 / P)), pos = [];
+    const at = (a, rho, y) => [-Math.cos(a) * rho, y, -Math.sin(a) * rho];
+    const tri = (A, B, C, want) => {      // (want: the way the face should look; the corners swapped if it would look away)
+      const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
+      const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+      if (n[0] * want[0] + n[1] * want[1] + n[2] * want[2] < 0) pos.push(...A, ...C, ...B); else pos.push(...A, ...B, ...C);
+    };
+    // (the inner edge sits a hair out so a pad's rim stays clear of the hub's)
+    const rIn = R_IN + 0.012, rOut = R_OUT;
+    for (let k = 0; k < N; k++){
+      const s0 = a0 + (a1 - a0) * k / N, s1 = a0 + (a1 - a0) * (k + 1) / N, m = (s0 + s1) / 2, out = [-Math.cos(m), 0, -Math.sin(m)];
+      const i0 = at(s0, rIn, PAD_H), i1 = at(s1, rIn, PAD_H), o0 = at(s0, rOut, PAD_H), o1 = at(s1, rOut, PAD_H);
+      tri(i0, o0, o1, [0, 1, 0]); tri(i0, o1, i1, [0, 1, 0]);
+      const b0 = at(s0, rOut, 0), b1 = at(s1, rOut, 0);
+      tri(b0, o0, o1, out); tri(b0, o1, b1, out);
+    }
+    for (const [a, side] of [[a0, -1], [a1, 1]]){
+      const n = [-Math.cos(a + side * Math.PI / 2), 0, -Math.sin(a + side * Math.PI / 2)];
+      const t0 = at(a, rIn, PAD_H), t1 = at(a, rOut, PAD_H), u0 = at(a, rIn, 0), u1 = at(a, rOut, 0);
+      tri(u0, t0, t1, n); tri(u0, t1, u1, n);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+  const padKinds = {};
+  for (const P of [4, 6, 8]) for (let p = 0; p < P; p++) padKinds['smPad' + P + '_' + p] = T => padGeo(T, P, p);
+  const KEYS = { ArrowUp: [0, 3], ArrowRight: [1, 0], ArrowDown: [2, 1], ArrowLeft: [3, 2] };
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g) return;
+    let p = -1;
+    if (/^[1-8]$/.test(e.key)) p = +e.key - 1;
+    // (with four pads the arrows: up the top right, right the bottom right, down the bottom left, left the top left, round as
+    //  the pads go; the second number is unused, kept for six- and eight-pad layouts if they ever want arrows)
+    else if (KEYS[e.key] && g.S.D.pads === 4) p = KEYS[e.key][0];
+    else if (e.key === 'Enter' || e.key === ' '){ if (g.state === 'ready' || g.state === 'over'){ e.preventDefault(); e.stopPropagation(); if (g.state === 'over') Object.assign(g, fresh(g.c, g.r)); begin(g); } return; }
+    if (p < 0 || p >= g.S.D.pads) return;
+    e.preventDefault(); e.stopPropagation();
+    if (g.state === 'ready' || g.state === 'over'){ if (g.state === 'over') Object.assign(g, fresh(g.c, g.r)); begin(g); return; }
+    press(g, p);
+  }, true);
+  const app = {
+    name: 'simon',
+    menu: [{ head: 'Simon', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: 'Start this board again', title: 'A new game of this board\'s sequence, from one step.', on(){ const f = framedCell(); if (f){ const g = fresh(f.c, f.r); GAMES.set(gkey(f.c, f.r), g); LIVE = { c: f.c, r: f.r }; begin(g); } } },
+    ]}],
+    cellFar: { light: BASE, dark: BASE },
+    itemMinPx: 12,
+    itemGeometries: {
+      smBase: T => FieldKit.disc(T, R_OUT + 0.025, 0.004),
+      smHub: T => FieldKit.disc(T, R_IN, 0.02),
+      ...padKinds,
+    },
+    cellGrid(){ return { n: 1, colors: [BASE] }; },
+    cellItems(c, r){
+      const g = GAMES.get(gkey(c, r));
+      if (g){ if (LIVE && LIVE.c === c && LIVE.r === r) stepGame(g); if (g.state !== 'ready') return itemsOf(g.S, g.lit, g); }
+      const S = seqOf(c, r);
+      return itemsOf(S, shownLit(S), g);
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), S = SEQS.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
+      const best = S ? BEST.get(bestKey(S)) : null;
+      return 'Simon — level ' + lv + ', ' + LV[lv - 1].pads + ' pads' + (best != null ? ' · best ' + best : '')
+           + (g && g.state !== 'ready' ? ' · ' + (g.state === 'over' ? 'over at ' + g.score : 'round ' + g.n) : '');
+    },
+    onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    onCellTap(c, r, u, v){
+      LIVE = { c, r };
+      let g = gameAt(c, r);
+      if (g.state === 'over'){ g = fresh(c, r); GAMES.set(gkey(c, r), g); begin(g); return true; }
+      if (g.state === 'ready'){ begin(g); say('Watch, then play it back: tap the pads (or press 1–' + g.S.D.pads + ').', 2600); return true; }
+      const p = u == null ? -1 : padAt(g.S.D, u, v);
+      if (typeof p === 'number' && p >= 0) press(g, p);
+      return true;
+    },
+    onCellHold(c, r){ const g = fresh(c, r); GAMES.set(gkey(c, r), g); LIVE = { c, r }; begin(g); say('From one step again.', 1200); return true; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#15161c'; ctx.fillRect(0, 0, sz, sz);
+      const cx = sz / 2, R = sz * R_OUT, r = sz * R_IN;
+      for (let p = 0; p < 4; p++){ const a0 = -Math.PI / 2 + p * Math.PI / 2 + 0.05, a1 = a0 + Math.PI / 2 - 0.1;
+        ctx.fillStyle = '#' + PAD[p].toString(16).padStart(6, '0'); ctx.beginPath(); ctx.arc(cx, cx, R, a0, a1); ctx.arc(cx, cx, r, a1, a0, true); ctx.closePath(); ctx.fill(); }
+    },
+    _debug: { seqOf, stepOf, padAt, gameAt, fresh, begin, press, stepGame, shownLit, levelAt, boardIdx, LV, GAMES, BEST, SEQS,
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
@@ -45619,7 +45863,7 @@ const LEVELS_APP = (() => {
     _debug: { get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -45628,7 +45872,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

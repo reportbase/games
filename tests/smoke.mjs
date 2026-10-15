@@ -2710,6 +2710,71 @@ try {
     if (bad.length) failures.push('[harder farther out] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} harder farther out (${Object.keys(SPEC).length} games: the corner as set, ring 7 a step harder, ring 40 hard, a far game really harder)`);
   }
+  // SIMON (Oct 15: "Are you familiar with the game called simon?", then "Yes"): every board its own sequence at a level by its
+  // ring (four pads near the corner, more and quicker farther out); a round played back right goes on to the next, a wrong
+  // pad ends it; real clicks on a pad reach it; a board no one plays lights its own sequence.
+  {
+    current = 'simon';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'simon')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.pads = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.seqOf(c, r).D.pads);
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      const a = D.seqOf(5, 2), b = D.seqOf(5, 2), cc = D.seqOf(6, 2);
+      out.same = [0, 1, 2, 3, 4, 5].map(k => a.at(k)).join() === [0, 1, 2, 3, 4, 5].map(k => b.at(k)).join();
+      out.differ = [...Array(12).keys()].map(k => a.at(k)).join() !== [...Array(12).keys()].map(k => cc.at(k)).join();
+      // a game played back by the sequence itself: three rounds right, then a wrong pad
+      const g = D.fresh(0, 0); D.GAMES.set('0_0', g); D.LIVE = { c: 0, r: 0 }; D.begin(g); g.t0 = performance.now() / 1000 - 999;
+      const settle = () => { for (let k = 0; k < 3; k++){ D.stepGame(g, true); } };
+      const rounds = [];
+      for (let round = 0; round < 3; round++){
+        g.state = 'show'; g.t0 = performance.now() / 1000 - 999; settle();
+        rounds.push(g.state);
+        for (let k = 0; k < g.n; k++) D.press(g, g.S.at(k), true);
+      }
+      out.afterThree = { state: g.state, score: g.score, n: g.n };
+      g.state = 'show'; g.t0 = performance.now() / 1000 - 999; settle();
+      D.press(g, (g.S.at(0) + 1) % g.S.D.pads, true);
+      out.wrong = { state: g.state, score: g.score, miss: g.miss, want: g.S.at(0) };
+      out.rounds = rounds;
+      out.hub = D.padAt(g.S.D, 0.5, 0.5); out.pad0 = D.padAt(g.S.D, 0.72, 0.28); out.pad2 = D.padAt(g.S.D, 0.28, 0.72);
+      return out;
+    });
+    const ok1 = r.pads.join() === '4,6,8,8' && r.levels.join() === '2,3,5,5' && r.same && r.differ && r.rounds.join() === 'input,input,input'
+      && r.afterThree.score === 3 && r.afterThree.n === 4 && r.wrong.state === 'over' && r.wrong.score === 3 && r.wrong.miss === r.wrong.want
+      && r.hub === 'hub' && r.pad0 === 0 && r.pad2 === 2;
+    // real clicks: one on the framed board starts it; when it waits for us, a click on the right pad is taken
+    await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'simon')._debug.fly(3, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const [c, rr] = fc, key = c + '_' + rr;
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); }, fc);
+      const mid = await page.evaluate(() => window.__aim(1, 0, 0));
+      await page.mouse.click(mid.x, mid.y);
+      await page.waitForTimeout(400);
+      const started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
+      // wait for the playback to end (a step is well under a second at any level)
+      await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && g.state === 'input'; }, key, { timeout: 15000 }).catch(() => {});
+      const want = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { p: g.S.at(0), P: g.S.D.pads, state: g.state } : null; }, key);
+      if (want && want.state === 'input'){
+        const a = -Math.PI / 2 + (want.p + 0.5) * 2 * Math.PI / want.P, u = 0.5 + 0.31 * Math.cos(a), v = 0.5 + 0.31 * Math.sin(a), n = 40;
+        const pt = await page.evaluate(([n, col, row]) => window.__aim(n, col, row), [n, Math.floor(u * n), Math.floor(v * n)]);
+        await page.mouse.click(pt.x, pt.y);
+        await page.waitForTimeout(400);
+      }
+      const after = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { state: g.state, score: g.score } : null; }, key);
+      real = { started, want, after };
+    }
+    const ok2 = real && real.started === 'show' && real.after && real.after.score === 1 && (real.after.state === 'pause' || real.after.state === 'show');
+    // a board no one plays lights its pads in turn
+    const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
+      for (let k = 0; k < 40; k++){ seen.add(D.shownLit(S)); await new Promise(ok => setTimeout(ok, 60)); } return seen.size; });
+    if (!ok1 || !ok2 || demo < 2) failures.push('[simon] ' + JSON.stringify({ r, real, demo }));
+    console.log(`${ok1 && ok2 && demo >= 2 ? 'ok  ' : 'FAIL'} simon (pads ${r.pads.join('/')} by ring, three rounds played back then a wrong pad ends it at ${r.wrong.score}; a real click on the right pad took)`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
