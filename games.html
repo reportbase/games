@@ -18353,11 +18353,33 @@ const ARCADE = (() => {
                on(){ S.on = !S.on; save(key, S.on ? 'on' : 'off'); if (S.on) audio(); } };
     return S;
   }
-  // A difficulty switch, remembered: easy → normal → hard. It takes effect with the next puzzle.
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): mini golf, Sokoban and the tilt maze already made every board harder the
+     farther it is from the corner, by its ring (golf's `ringOf`: the distance from the corner the short way round the
+     wrapped field, so the corner block is the field's middle). Every other game's Easy / Normal / Hard now does the
+     same: the setting is the corner block's, rings 0–6, and each board is a step harder from ring `RING_STEPS[0]` (7)
+     and another from `RING_STEPS[1]` (31), as far as Hard (golf's levels change at the same rings: 7 is its level 2,
+     31 its level 4). So on Easy the corner is easy, the boards round it normal and the far field hard; on Normal the
+     corner is normal and the rest hard; Hard is hard everywhere, since there is nothing above it. A game asks for a
+     board's level with `levelOn(setting, c, r)` (or a kit switch's `DL.at(c, r)`), when it deals or starts that board,
+     and keeps it on the game, so a board keeps its level while it is played. */
+  const LEVEL3 = ['easy', 'normal', 'hard'], RING_STEPS = [7, 31];
+  function ringAt(c, r){
+    let GS = 10000; try { GS = Math.max(1, Math.round(Math.sqrt((window.FIELD_ST && window.FIELD_ST.N) || 1e8))); } catch {}
+    const m = v => ((Math.floor(v) % GS) + GS) % GS, w = v => Math.min(v, GS - v);
+    return Math.max(w(m(c || 0)), w(m(r || 0)));
+  }
+  const stepsAt = (c, r) => { const k = ringAt(c, r); return k >= RING_STEPS[1] ? 2 : k >= RING_STEPS[0] ? 1 : 0; };
+  function levelOn(set, c, r){
+    const i = Math.max(0, LEVEL3.indexOf(set));
+    return (c == null || r == null) ? LEVEL3[i] : LEVEL3[Math.min(2, i + stepsAt(c, r))];
+  }
+  const FARTHER = ' Boards farther from the corner are harder: a step from the 7th ring out, another from the 31st, as far as Hard.';
+  // A difficulty switch, remembered: easy → normal → hard. It takes effect with the next puzzle. at(c, r): a board's own (above).
   function difficulty(key, title){
     let v = load(key, 'normal'); if (!/^(easy|normal|hard)$/.test(v)) v = 'normal';
-    const L = { get: () => v, set: x => { v = x; } };
-    L.item = { label: () => 'Difficulty: ' + v, title,
+    const L = { get: () => v, set: x => { v = x; }, at: (c, r) => levelOn(v, c, r) };
+    L.item = { label: () => 'Difficulty: ' + v + ' at the corner', title: (title || '') + FARTHER,
                on(){ v = v === 'easy' ? 'normal' : v === 'normal' ? 'hard' : 'easy'; save(key, v); } };
     return L;
   }
@@ -18402,7 +18424,7 @@ const ARCADE = (() => {
     }
     return pick;
   }
-  return { audio, tone, hiss, tilt, setTilt, load, save, sounds, difficulty, boardMove, noise, twoPly };
+  return { audio, tone, hiss, tilt, setTilt, load, save, sounds, difficulty, boardMove, noise, twoPly, ringAt, stepsAt, levelOn, LEVEL3, RING_STEPS, FARTHER };
 })();
 /* ═══ A POSITION EDITOR FOR THE BOARD GAMES ════════════════════════════════
    (Oct 13: "1,2", on "a position editor for checkers, Reversi, Ataxx, Gomoku and Go in one PR: each already has a computer
