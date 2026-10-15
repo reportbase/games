@@ -236,6 +236,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (localStorage `tiltmaze.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold starts again.
   - The smoke test checks the sizes by level, the steady player finishing 30 mazes and never passing a wall, the real arrow
     keys rolling the marble, a hole and the ring, and a board no one plays moving.
+- **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
+  move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
+  Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
+  - The rule is the ARCADE kit's (`HARDER FARTHER OUT`): the setting is the corner block's (rings 0–6, golf's `ringOf`: the
+    distance from the corner the short way round the wrapped field), a step harder from ring 7 and another from ring 31
+    (`RING_STEPS`), as far as Hard. Easy: easy, normal, hard going out; Normal: normal, then hard; Hard everywhere hard.
+  - `ARCADE.levelOn(setting, c, r)`; a kit switch's `DL.at(c, r)`. A game takes its board's level when it is made, dealt or
+    started and keeps it on the game, so speeds, sizes and the computer's strength are the board's own; boards of
+    different sizes sit side by side in the size games, each showing a recording of its own size.
+  - The menu says "Difficulty: normal at the corner", its title the rule (`ARCADE.FARTHER`). Each app's `_debug.levelOf(c, r)`
+    gives the level a board plays at; the smoke test checks it on every app with a Difficulty.
 - **Sokoban: every board its own level** (Oct 12: "what ideas from mini-golf can we extend to the other games." … "ok,
   proceed", on "every board its own puzzle, harder further out" and "rated by a simulated player, rebuilt until it fits"):
   - The corner block keeps the worked-out levels (`MAP`, one a board, as golf keeps its course there; their par is the pushes
