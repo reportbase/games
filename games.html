@@ -18964,7 +18964,7 @@ const CHECKERS_APP = (() => {
          replace the board you just touched with a different one. */
       const seen = reelBoard(c, r);
       g = { bd: seen.bd.slice(), red: seen.red, human: seen.red,
-            sel: null, tg: [], chain: null, over: null };
+            sel: null, tg: [], chain: null, over: null, lv: DL.at(c, r) };   // its board's level (Oct 15)
       g.hist = [ckSnap(g)]; g.view = 0;        // the game starts with one position in it
       GAMES.set(k, g);
     }
@@ -19077,8 +19077,23 @@ const CHECKERS_APP = (() => {
      was), hard 11 with a bigger budget; SOUND as the other games have it. */
   const DL = ARCADE.difficulty('checkers.level', 'Easy: the computer looks 3 moves ahead. Normal: 9. Hard: 11, and thinks longer.');
   const SND = ARCADE.sounds('checkers.sound', 'A click for each move, a chime when you jump or crown, a buzz when the computer jumps you, and the end of the game.');
-  const depth = () => ({ easy: 3, normal: AI_DEPTH, hard: 11 })[DL.get()];
-  const nodeCap = () => DL.get() === 'hard' ? 1000000 : NODE_CAP;
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): the Difficulty is the corner block's, and every board looks as far ahead as
+     its own level (`DL.at`, the kit's rule by ring: a step harder from the 7th ring, another from the 31st). A game
+     keeps its board's level as `g.lv`, set when it is taken over, reset or set up; a game that came in another way (a
+     record, an imported game) is given its board's on its first move, found by looking it up in GAMES, since the
+     search is handed the game and not its board. Changing the Difficulty re-levels every game on the field, so it
+     still takes effect with the computer's next move, as it did. */
+  const depth = lv => ({ easy: 3, normal: AI_DEPTH, hard: 11 })[lv || DL.get()];
+  const nodeCap = lv => (lv || DL.get()) === 'hard' ? 1000000 : NODE_CAP;
+  const atKey = (k, f) => { const [c, r] = k.split('_').map(Number); return f(c, r); };
+  function lvOfGame(g){
+    if (g.lv) return g.lv;
+    for (const [k, x] of GAMES) if (x === g) return (g.lv = atKey(k, DL.at));
+    return DL.get();
+  }
+  const levelOf = (c, r) => { const g = GAMES.get(c + '_' + r); return g ? lvOfGame(g) : DL.at(c, r); };
+  const DL_ITEM = Object.assign({}, DL.item, { on(){ DL.item.on(); for (const [k, g] of GAMES) g.lv = atKey(k, DL.at); } });
   let _nodes = 0, _cap = NODE_CAP;
   function stepsForState(bd, red, chain){
     const out = [];
@@ -19161,8 +19176,9 @@ const CHECKERS_APP = (() => {
     return best;
   }
   function bestStep(g){
-    _nodes = 0; _cap = nodeCap();
-    const D = depth();
+    const lv = lvOfGame(g);                        // the level of the board whose move it is (Oct 15)
+    _nodes = 0; _cap = nodeCap(lv);
+    const D = depth(lv);
     const steps = stepsForState(g.bd, g.red, g.chain);
     if (!steps.length) return null;
     let best = null, bestV = -Infinity;
@@ -19298,7 +19314,7 @@ const CHECKERS_APP = (() => {
         if (!sideHasMove(g)) return (turn === 1 ? 'Black' : 'White') + ' has no move: the game would already be over.';
         return null;
       },
-      go: (c, r, g) => scheduleAI(g) },
+      go: (c, r, g) => { g.lv = DL.at(c, r); scheduleAI(g); } },   // a set-up game plays at its board's level (Oct 15)
     /* DRAUGHTS' ONE ITEM, and the only rule this app has that is genuinely a
        choice. The opponent plays forced captures either way — its generator is
        untouched — so this governs what YOU may reach: off, every quiet move
@@ -19313,9 +19329,10 @@ const CHECKERS_APP = (() => {
              + 'and a chain you have started must still be finished. Takes effect on your '
              + 'next press — no game restarts.',
         on: () => { CAPTURE_FORCED = !CAPTURE_FORCED; }, keepOpen: true },
-      DL.item,
+      DL_ITEM,                                     // the kit's, re-levelling the games in play (Oct 15)
       SND.item,
     ],
+    _debug: { games: GAMES, levelOf, strengthOf: (c, r) => { const lv = levelOf(c, r); return { level: lv, depth: depth(lv), nodeCap: nodeCap(lv) }; } },
     /* What a draughts board is at a distance: the same two woods its squares
        and its fabric are made of, so a board crossing from face to plain
        tiles to fabric does not change colour on the way out. */
@@ -19386,7 +19403,7 @@ const CHECKERS_APP = (() => {
       for (const p of g.bd) if (p){ const w = p.k === 'm' ? 1 : 1.5; if (p.red === me) a += w; else b += w; }
       return a + b ? a / (a + b) : 0.5;
     },
-    onReset(c, r){ const g = { bd: startBd(), red: true, human: true, sel: null, tg: [], chain: null, over: null }; g.hist = [ckSnap(g)]; g.view = 0; GAMES.set(c + '_' + r, g); return true; },
+    onReset(c, r){ const g = { bd: startBd(), red: true, human: true, sel: null, tg: [], chain: null, over: null, lv: DL.at(c, r) }; g.hist = [ckSnap(g)]; g.view = 0; GAMES.set(c + '_' + r, g); return true; },
     onSelect(c, r){ game(c, r); },
     onCellTap(c, r, u, v){
       const g = game(c, r);
@@ -20382,6 +20399,22 @@ const REVERSI_APP = (() => {
   // Sep 28, the board-game pass: difficulty (how carefully the computer picks) and sound.
   const DL = ARCADE.difficulty('reversi.level', 'Easy: the computer plays loosely. Normal: as before. Hard: it looks two moves ahead — its move, then your best answer.');
   const SND = ARCADE.sounds('reversi.sound', 'A click for each move, a chime when you take pieces, a buzz when the computer does, and the end of the game.');
+  /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the
+     boards move away from the center."): the Difficulty is the corner block's, and every board's computer plays at its
+     own level (`DL.at`, the kit's rule by ring: a step harder from the 7th ring, another from the 31st), so on Easy the
+     corner plays loosely, the boards round it as before and the far field two moves ahead. A game keeps its board's
+     level in `LV` (by board, since a move makes a new state), set when the board is taken over, reset or set up; the
+     computer asks `levelOf` for the board whose move it is, and a board with nothing kept (a record, an imported game)
+     is its board's level now. Changing the Difficulty re-levels every game on the field, so it still takes effect with
+     the computer's next move, as it did. */
+  const LV = new Map();
+  const levelOf = (c, r) => LV.get(c + '_' + r) || DL.at(c, r);
+  const keepLv = (c, r) => { LV.set(c + '_' + r, DL.at(c, r)); };
+  const DL_ITEM = Object.assign({}, DL.item, { on(){
+    DL.item.on();
+    for (const k of LV.keys()){ const [c, r] = k.split('_').map(Number); LV.set(k, DL.at(c, r)); }
+  } });
+  const pickerOf = lv => lv === 'hard' ? 'two-ply' : lv === 'easy' ? 'loose' : 'one-ply';
   const LIGHT_SQ = 0x1f6b45, DARK_SQ = 0x1a5c3b;    // the cloth, two greens
   const SEL_SQ   = 0x3a6ea8;
   const PLAYABLE = 0xa8e6a0;                        // where a stone may go
@@ -20531,8 +20564,9 @@ const REVERSI_APP = (() => {
     setTimeout(() => {
       const s = GAMES.get(gkey(c, r));
       if (!s || !s.turn || s.human === s.turn) return;
-      const i = (DL.get() === 'hard' ? hardPick(s)
-        : bestMove(s, ARCADE.noise(DL.get())));
+      const lv = levelOf(c, r);            // the level of the board whose move it is (Oct 15)
+      const i = (lv === 'hard' ? hardPick(s)
+        : bestMove(s, ARCADE.noise(lv)));
       const nx = i == null ? null : play(s, i);
       if (!nx) return;
       nx.human = s.human;
@@ -20579,16 +20613,17 @@ const REVERSI_APP = (() => {
         const st = { bd, turn: t, human: you, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; return st;
       },
       check(n, cells){ const bd = Uint8Array.from(cells); return !legal(bd, 1).length && !legal(bd, 2).length ? 'Neither side has a move: the game would already be over.' : null; },
-      go: (c, r) => ai(c, r) },
+      go: (c, r) => { keepLv(c, r); ai(c, r); } },
     menu: [{ head: 'Reversi', items: [
       { label: () => 'Board: ' + SIZE + '×' + SIZE, title: '6×6, 8×8 or 10×10. The board you are on starts again at the new size.', keepOpen: true,
         on(){ SIZE = SIZE === 6 ? 8 : SIZE === 8 ? 10 : 6; ARCADE.save('reversi.size', String(SIZE));
-              GAMES.clear();
+              GAMES.clear(); LV.clear();
               let f = null; try { f = framedCell(); } catch {}
-              if (f){ const st = { bd: startBd(SIZE), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(f.c, f.r), st);
+              if (f){ const st = { bd: startBd(SIZE), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(f.c, f.r), st); keepLv(f.c, f.r);
                       if (window.refreshFieldBrowser) window.refreshFieldBrowser(); } } },
-      DL.item, SND.item] }],
-    _debug: { games: GAMES, play, hardPick, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
+      DL_ITEM, SND.item] }],
+    _debug: { games: GAMES, play, hardPick, levelOf, LV,
+      strengthOf: (c, r) => { const lv = levelOf(c, r); return { level: lv, picker: pickerOf(lv) }; }, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: { stone: T => FieldKit.disc(T, 0.32) },
@@ -20644,7 +20679,7 @@ const REVERSI_APP = (() => {
       for (const x of st.bd) if (x){ if (x === me) a++; else b++; }
       return a + b ? a / (a + b) : 0.5;
     },
-    onReset(c, r){ const st = { bd: startBd(SIZE), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); return true; },
+    onReset(c, r){ const st = { bd: startBd(SIZE), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); keepLv(c, r); return true; },
     onSelect(c, r){
       if (!GAMES.has(gkey(c, r))){
         /* Taking a board ADOPTS what is on screen, as every app here does —
@@ -20655,6 +20690,7 @@ const REVERSI_APP = (() => {
                      human: seen.turn || 1, last: seen.last ?? -1, sel: null, over: null };
         st.hist = [st]; st.view = 0;
         GAMES.set(gkey(c, r), st);
+        keepLv(c, r);                                 // its board's level (Oct 15)
       }
       return true;
     },
@@ -20723,6 +20759,15 @@ const GOMOKU_APP = (() => {
   // Sep 28, the board-game pass: difficulty (how carefully the computer picks) and sound.
   const DL = ARCADE.difficulty('gomoku.level', 'Easy: the computer plays loosely. Normal: as before. Hard: it looks two moves ahead — its move, then your best answer.');
   const SND = ARCADE.sounds('gomoku.sound', 'A click for each move, a chime when you take pieces, a buzz when the computer does, and the end of the game.');
+  // Harder farther out (Oct 15): every board's computer plays at its own level, kept in LV; see Reversi's note.
+  const LV = new Map();
+  const levelOf = (c, r) => LV.get(c + '_' + r) || DL.at(c, r);
+  const keepLv = (c, r) => { LV.set(c + '_' + r, DL.at(c, r)); };
+  const DL_ITEM = Object.assign({}, DL.item, { on(){
+    DL.item.on();
+    for (const k of LV.keys()){ const [c, r] = k.split('_').map(Number); LV.set(k, DL.at(c, r)); }
+  } });
+  const pickerOf = lv => lv === 'hard' ? 'two-ply' : lv === 'easy' ? 'loose' : 'one-ply';
   const N = 15;
   const WOOD = '#e8c88a', WOOD_INT = 0xe8c88a, LINE_CSS = '#7a5c2e';
   const GAMES = new Map();
@@ -20897,8 +20942,9 @@ const GOMOKU_APP = (() => {
     setTimeout(() => {
       const s = GAMES.get(gkey(c, r));
       if (!s || !s.turn || s.human === s.turn) return;
-      const i = (DL.get() === 'hard' ? hardPick(s)
-        : bestMove(s, ARCADE.noise(DL.get())));
+      const lv = levelOf(c, r);            // the level of the board whose move it is (Oct 15)
+      const i = (lv === 'hard' ? hardPick(s)
+        : bestMove(s, ARCADE.noise(lv)));
       const nx = i < 0 ? null : play(s, i);
       if (!nx) return;
       nx.human = s.human;
@@ -20943,9 +20989,10 @@ const GOMOKU_APP = (() => {
         if (v) return (v === 1 ? 'Black' : 'White') + ' already has five in a row.';
         return cells.every(x => x) ? 'The board is full.' : null;
       },
-      go: (c, r) => ai(c, r) },
-    menu: [{ head: 'Gomoku', items: [DL.item, SND.item] }],
-    _debug: { games: GAMES, play, hardPick, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
+      go: (c, r) => { keepLv(c, r); ai(c, r); } },
+    menu: [{ head: 'Gomoku', items: [DL_ITEM, SND.item] }],
+    _debug: { games: GAMES, play, hardPick, levelOf, LV,
+      strengthOf: (c, r) => { const lv = levelOf(c, r); return { level: lv, picker: pickerOf(lv) }; }, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
     cellFar: { light: WOOD_INT, dark: WOOD_INT },     // one wood, near and far
     /* The board is the same picture on every cell — the stones are items —
        so it is ONE shared texture, exactly as Go's is. */
@@ -20978,7 +21025,7 @@ const GOMOKU_APP = (() => {
         ({ kind: 'stone', color: v === 1 ? PIECE_DARK : PIECE_LIGHT }));
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ const st = { bd: new Uint8Array(N * N), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); return true; },
+    onReset(c, r){ const st = { bd: new Uint8Array(N * N), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); keepLv(c, r); return true; },
     onSelect(c, r){
       if (!GAMES.has(gkey(c, r))){
         const seen = reelBoard(c, r);
@@ -20986,6 +21033,7 @@ const GOMOKU_APP = (() => {
                      human: seen.turn || 1, last: seen.last ?? -1, over: seen.over || null };
         st.hist = [st]; st.view = 0;
         GAMES.set(gkey(c, r), st);
+        keepLv(c, r);                                 // its board's level (Oct 15)
       }
       return true;
     },
@@ -21049,6 +21097,15 @@ const CONNECT4_APP = (() => {
   // Sep 28, the board-game pass: difficulty (how carefully the computer picks) and sound.
   const DL = ARCADE.difficulty('connect4.level', 'Easy: the computer plays loosely. Normal: as before. Hard: it looks two moves ahead — its move, then your best answer.');
   const SND = ARCADE.sounds('connect4.sound', 'A click for each move, a chime when you take pieces, a buzz when the computer does, and the end of the game.');
+  // Harder farther out (Oct 15): every board's computer plays at its own level, kept in LV; see Reversi's note.
+  const LV = new Map();
+  const levelOf = (c, r) => LV.get(c + '_' + r) || DL.at(c, r);
+  const keepLv = (c, r) => { LV.set(c + '_' + r, DL.at(c, r)); };
+  const DL_ITEM = Object.assign({}, DL.item, { on(){
+    DL.item.on();
+    for (const k of LV.keys()){ const [c, r] = k.split('_').map(Number); LV.set(k, DL.at(c, r)); }
+  } });
+  const pickerOf = lv => lv === 'hard' ? 'two-ply' : lv === 'easy' ? 'loose' : 'one-ply';
   const W = 7, H = 7;                              // the board IS the face
   const BOARD = 0x2f4f7f, BOARD_HI = 0x3a5f96;     // the frame, two blues
   const GAMES = new Map();
@@ -21206,8 +21263,9 @@ const CONNECT4_APP = (() => {
     setTimeout(() => {
       const s = GAMES.get(gkey(c, r));
       if (!s || !s.turn || s.human === s.turn) return;
-      const col = (DL.get() === 'hard' ? hardPick(s)
-        : bestMove(s, ARCADE.noise(DL.get())));
+      const lv = levelOf(c, r);            // the level of the board whose move it is (Oct 15)
+      const col = (lv === 'hard' ? hardPick(s)
+        : bestMove(s, ARCADE.noise(lv)));
       const nx = col == null ? null : play(s, col);
       if (!nx) return;
       nx.human = s.human;
@@ -21237,8 +21295,9 @@ const CONNECT4_APP = (() => {
 
   return {
     name: 'field connect four',
-    menu: [{ head: 'Connect four', items: [DL.item, SND.item] }],
-    _debug: { games: GAMES, play, hardPick, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
+    menu: [{ head: 'Connect four', items: [DL_ITEM, SND.item] }],
+    _debug: { games: GAMES, play, hardPick, levelOf, LV,
+      strengthOf: (c, r) => { const lv = levelOf(c, r); return { level: lv, picker: pickerOf(lv) }; }, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
     cellFar: { light: BOARD_HI, dark: BOARD },
     itemMinPx: 4,
     itemGeometries: { disc: T => FieldKit.disc(T, 0.32) },
@@ -21273,7 +21332,7 @@ const CONNECT4_APP = (() => {
       }
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ const st = { bd: new Uint8Array(W * H), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); return true; },
+    onReset(c, r){ const st = { bd: new Uint8Array(W * H), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); keepLv(c, r); return true; },
     onSelect(c, r){
       if (!GAMES.has(gkey(c, r))){
         const seen = reelBoard(c, r);
@@ -21281,6 +21340,7 @@ const CONNECT4_APP = (() => {
                      human: seen.turn || 1, last: seen.last ?? -1, over: seen.over || null };
         st.hist = [st]; st.view = 0;
         GAMES.set(gkey(c, r), st);
+        keepLv(c, r);                                 // its board's level (Oct 15)
       }
       return true;
     },
@@ -21342,6 +21402,15 @@ const LOA_APP = (() => {
   // Sep 28, the board-game pass: difficulty (how carefully the computer picks) and sound.
   const DL = ARCADE.difficulty('loa.level', 'Easy: the computer plays loosely. Normal: as before. Hard: it looks two moves ahead — its move, then your best answer.');
   const SND = ARCADE.sounds('loa.sound', 'A click for each move, a chime when you take pieces, a buzz when the computer does, and the end of the game.');
+  // Harder farther out (Oct 15): every board's computer plays at its own level, kept in LV; see Reversi's note.
+  const LV = new Map();
+  const levelOf = (c, r) => LV.get(c + '_' + r) || DL.at(c, r);
+  const keepLv = (c, r) => { LV.set(c + '_' + r, DL.at(c, r)); };
+  const DL_ITEM = Object.assign({}, DL.item, { on(){
+    DL.item.on();
+    for (const k of LV.keys()){ const [c, r] = k.split('_').map(Number); LV.set(k, DL.at(c, r)); }
+  } });
+  const pickerOf = lv => lv === 'hard' ? 'two-ply' : lv === 'easy' ? 'loose' : 'one-ply';
   const N = 8;
   const LIGHT_SQ = 0xd8cbb4, DARK_SQ = 0x8f7d63;   // a cooler, greyer board
   const DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]];
@@ -21502,8 +21571,9 @@ const LOA_APP = (() => {
     setTimeout(() => {
       const s = GAMES.get(gkey(c, r));
       if (!s || !s.turn || s.human === s.turn) return;
-      const mv = (DL.get() === 'hard' ? hardPick(s)
-        : bestMove(s, ARCADE.noise(DL.get())));
+      const lv = levelOf(c, r);            // the level of the board whose move it is (Oct 15)
+      const mv = (lv === 'hard' ? hardPick(s)
+        : bestMove(s, ARCADE.noise(lv)));
       const nx = mv ? play(s, mv[0], mv[1]) : null;
       if (!nx) return;
       nx.human = s.human;
@@ -21532,8 +21602,9 @@ const LOA_APP = (() => {
 
   return {
     name: 'field lines of action',
-    menu: [{ head: 'Lines of action', items: [DL.item, SND.item] }],
-    _debug: { games: GAMES, play, hardPick, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
+    menu: [{ head: 'Lines of action', items: [DL_ITEM, SND.item] }],
+    _debug: { games: GAMES, play, hardPick, levelOf, LV,
+      strengthOf: (c, r) => { const lv = levelOf(c, r); return { level: lv, picker: pickerOf(lv) }; }, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     itemGeometries: { man: T => FieldKit.disc(T, 0.272) },
@@ -21570,7 +21641,7 @@ const LOA_APP = (() => {
       }
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ const st = { bd: startBd(), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); return true; },
+    onReset(c, r){ const st = { bd: startBd(), turn: 1, human: 1, last: -1, sel: null, over: null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); keepLv(c, r); return true; },
     onSelect(c, r){
       if (!GAMES.has(gkey(c, r))){
         const seen = reelBoard(c, r);
@@ -21578,6 +21649,7 @@ const LOA_APP = (() => {
                      human: seen.turn || 1, sel: null, over: seen.over || null };
         st.hist = [st]; st.view = 0;
         GAMES.set(gkey(c, r), st);
+        keepLv(c, r);                                 // its board's level (Oct 15)
       }
       return true;
     },
@@ -21645,6 +21717,15 @@ const ATAXX_APP = (() => {
   // Sep 28, the board-game pass: difficulty (how carefully the computer picks) and sound.
   const DL = ARCADE.difficulty('ataxx.level', 'Easy: the computer plays loosely. Normal: as before. Hard: it looks two moves ahead — its move, then your best answer.');
   const SND = ARCADE.sounds('ataxx.sound', 'A click for each move, a chime when you take pieces, a buzz when the computer does, and the end of the game.');
+  // Harder farther out (Oct 15): every board's computer plays at its own level, kept in LV; see Reversi's note.
+  const LV = new Map();
+  const levelOf = (c, r) => LV.get(c + '_' + r) || DL.at(c, r);
+  const keepLv = (c, r) => { LV.set(c + '_' + r, DL.at(c, r)); };
+  const DL_ITEM = Object.assign({}, DL.item, { on(){
+    DL.item.on();
+    for (const k of LV.keys()){ const [c, r] = k.split('_').map(Number); LV.set(k, DL.at(c, r)); }
+  } });
+  const pickerOf = lv => lv === 'hard' ? 'two-ply' : lv === 'easy' ? 'loose' : 'one-ply';
   const N = 7;
   const BLOCK = 3;                                  // a hole: not a piece, not empty
   /* GREEN, AND THE SQUARES ARE RAISED RATHER THAN PAINTED. The board is one
@@ -21859,8 +21940,9 @@ const ATAXX_APP = (() => {
     setTimeout(() => {
       const s = GAMES.get(gkey(c, r));
       if (!s || !s.turn || s.human === s.turn) return;
-      const mv = (DL.get() === 'hard' ? hardPick(s)
-        : bestMove(s, ARCADE.noise(DL.get())));
+      const lv = levelOf(c, r);            // the level of the board whose move it is (Oct 15)
+      const mv = (lv === 'hard' ? hardPick(s)
+        : bestMove(s, ARCADE.noise(lv)));
       const nx = mv ? play(s, mv[0], mv[1]) : null;
       if (!nx) return;
       nx.human = s.human;
@@ -21904,9 +21986,10 @@ const ATAXX_APP = (() => {
         const st = { ...s0, human: you, sel: null, over: s0.over || null }; st.hist = [st]; st.view = 0; return st;
       },
       check(n, cells, turn){ const s0 = settle(Uint8Array.from(cells), turn); return s0.over ? 'Neither side can move: the game would already be over.' : null; },
-      go: (c, r) => ai(c, r) },
-    menu: [{ head: 'Ataxx', items: [DL.item, SND.item] }],
-    _debug: { games: GAMES, play, hardPick, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
+      go: (c, r) => { keepLv(c, r); ai(c, r); } },
+    menu: [{ head: 'Ataxx', items: [DL_ITEM, SND.item] }],
+    _debug: { games: GAMES, play, hardPick, levelOf, LV,
+      strengthOf: (c, r) => { const lv = levelOf(c, r); return { level: lv, picker: pickerOf(lv) }; }, normalPick: s => bestMove(s, k => Math.floor(Math.random() * k)) },
     cellFar: { light: BOARD_SQ, dark: BOARD_SQ },     // one green, near and far
     itemMinPx: 4,
     /* THE BOARD IS ONE PICTURE, AND THE HOLES ARE PIECES. Drawn as a colour
@@ -21997,7 +22080,7 @@ const ATAXX_APP = (() => {
       }
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ const s0 = settle(layoutFor(layoutOf(c, r)), 1); const st = { ...s0, human: 1, sel: null, over: s0.over || null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); return true; },
+    onReset(c, r){ const s0 = settle(layoutFor(layoutOf(c, r)), 1); const st = { ...s0, human: 1, sel: null, over: s0.over || null }; st.hist = [st]; st.view = 0; GAMES.set(gkey(c, r), st); keepLv(c, r); return true; },
     onSelect(c, r){
       if (!GAMES.has(gkey(c, r))){
         const seen = reelBoard(c, r);
@@ -22006,6 +22089,7 @@ const ATAXX_APP = (() => {
                      a: seen.a, b: seen.b };
         st.hist = [st]; st.view = 0;
         GAMES.set(gkey(c, r), st);
+        keepLv(c, r);                                 // its board's level (Oct 15)
       }
       return true;
     },
