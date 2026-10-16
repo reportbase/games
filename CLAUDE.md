@@ -926,6 +926,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   its dots selected (`boxDots`); a drag inside it moves them all, a tap outside it or Escape closes it
   (`closeBox`); Box (⬚) draws one from anywhere. Lifted dots draw warm, sunk
   ones cool; Level (the tile) also levels every dot.
+- **The photo gallery reads in order** (Oct 16: "photo gallery: pdf and cbz are not loading in correct order"): print i of a
+  collection of N (pictures, a PDF's pages, a comic archive's) hangs where −(row + col) mod N = i (`pick`), page 1 on the
+  corner, the next page one board right and one board down. A board's column and row are first taken as a signed distance
+  from the corner (`_side`: the field wraps at GS = 10,000, so the board right of the corner is numbered 9,999 and is read as
+  −1). Folding the wrapped number straight onto N broke the order at the corner for any N that does not divide 10,000: a
+  12-page comic had page 10 beside page 1 and its row above read 10, 11, 12, 9, 10. `vpick` (which crop) folds the same way.
+  The one seam left is half the field away. The smoke test checks the order across the corner for 5, 12, 37 and 150 pages
+  (`GALLERY_APP._pick`).
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
   unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
   board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.
