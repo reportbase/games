@@ -3137,6 +3137,66 @@ try {
     if (!ok4) failures.push('[nonograms] a board no one plays: ' + JSON.stringify(demo));
     console.log(`${ok4 ? 'ok  ' : 'FAIL'} nonograms: a board no one plays fills itself in (${demo.stages} stages a cycle, ${demo.live} seen live)`);
   }
+  // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
+  // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
+  // the view comes to the default framing, the one the 0 key gives, even when the game in play keeps quick taps for itself
+  // (Lights Out, Nonograms, Simon, Whack-a-mole). On the board being played those games still take both taps.
+  {
+    current = 'double tap';
+    const bad = [], seen = [];
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    for (const id of ['chess', 'tetris', 'towerdefense', 'minigolf', 'sokoban', 'checkers', 'simon', 'lightsout', 'whackamole', 'nonograms']){
+      await page.evaluate(id => window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)), id);
+      await page.waitForTimeout(1500);
+      // a game under way on the framed board (a tap on it), then the view pulled back so the neighbours show
+      await page.evaluate(async () => {
+        const W = window.FIELD_WORLD, T = W.target, cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+        const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera), at = [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight];
+        const t = new Touch({ identifier: 7, target: cv, clientX: at[0], clientY: at[1], radiusX: 4, radiusY: 4 });
+        const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+        cv.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchstart', t);
+        cv.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchend', t);
+        await wait(700);
+      });
+      await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await page.waitForTimeout(1500);
+      const r = await page.evaluate(async () => {
+        const W = window.FIELD_WORLD, T = W.target, [spx, spz] = W.spacing(), cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+        let at = null, want = null;
+        for (const [dx, dz] of [[spx, 0], [-spx, 0], [0, spz], [0, -spz]]){
+          const v = new W.THREE.Vector3(T.boardX + dx, 0, T.boardZ + dz).project(W.camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+          if (x > 60 && y > 60 && x < innerWidth - 60 && y < innerHeight - 140 && document.elementFromPoint(x, y) === cv){ at = [x, y]; want = W.cellAt(T.boardX + dx, T.boardZ + dz); break; }
+        }
+        if (!at) return { why: 'no neighbour on the screen' };
+        // (the view at rest first: a tap while it still coasts from the wheel is the brake, and the field eats it, so on CI
+        //  tower defense's pair once lost its first tap and the second only selected)
+        const S = window.tvf && window.tvf.state;
+        for (let k = 0; k < 80 && (T.active || (S && S.heldPanRate) || (typeof ARCADE !== 'undefined' && ARCADE.paused)); k++) await wait(250);
+        const before = { active: !!T.active, held: !!(S && S.heldPanRate), paused: typeof ARCADE !== 'undefined' && !!ARCADE.paused, taps: window.tvf && window.tvf.tapCount };
+        const p0 = W.camera.position.clone();
+        const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: at[0], clientY: at[1], radiusX: 4, radiusY: 4 });
+          const fire = (type) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+          cv.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchstart');
+          cv.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchend'); };
+        // (the pair back to back: on CI's software renderer a frame can take longer than the whole double's window, and a
+        //  wait between the taps let one fall between them; a person's two taps are 100–250 ms apart on a real screen)
+        tap(); tap();
+        // settled where the 0 key would put it
+        // (landed when the field says so, not when the camera looks still: between slow frames it can look still mid-flight)
+        const landed = async () => { await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); };
+        await landed();
+        const a = W.camera.position.clone(), f = W.cellAt(T.boardX, T.boardZ);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }));
+        await landed();
+        const b = W.camera.position.clone();
+        return { want: [want.c, want.r], got: f && [f.c, f.r], moved: +a.distanceTo(p0).toFixed(2), off: +(a.distanceTo(b) / Math.max(1e-6, b.y)).toFixed(3), before, taps: window.tvf && (window.tvf.tapCount - before.taps) };
+      });
+      seen.push(id + ' ' + (r.off != null ? r.off : r.why));
+      if (r.why || !r.got || r.got.join() !== r.want.join() || !(r.off < 0.03) || !(r.moved > 0.1)) bad.push(id + ' ' + JSON.stringify(r));
+    }
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    if (bad.length) failures.push('[double tap] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} double tap on another board brings it in, framed as the 0 key frames it (${seen.join(', ')})`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

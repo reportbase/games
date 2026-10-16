@@ -926,6 +926,18 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   its dots selected (`boxDots`); a drag inside it moves them all, a tap outside it or Escape closes it
   (`closeBox`); Box (⬚) draws one from anywhere. Lifted dots draw warm, sunk
   ones cool; Level (the tile) also levels every dot.
+- **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
+  unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
+  board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.
+  - An app's `noDoubleTap()` (mini golf's editor; Simon, Lights Out, Whack-a-mole and Nonograms while a board is in play) is
+    heard only when the pair's first tap was on the board already framed (`_lastTapSelected`): two quick taps there are two
+    moves. A pair that began by selecting another board is always the field's, since that first tap made the new board the
+    framed one and the game was being asked about it (Lights Out and Nonograms say yes on any board not solved, so a double
+    on another board never came in).
+  - The pair is timed by the taps' own event times (`ev.timeStamp`, `tapIsDouble(hit, at)`), not when they were handled: a
+    heavy frame held the second back past the window (tower defense after snake, in the sandbox).
+  - Air raid keeps its taps while its plane flies (`worldTap`: they drop bombs). The smoke test double-taps a neighbour in ten
+    games with a game under way and wants the view where the 0 key puts it.
 - **A game opens framed** (Oct 9): `_defaultFitSoon` settles the camera at the default fit at once
   (`settleCameraNow`), so a game no longer glides down from the overview when it opens.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
