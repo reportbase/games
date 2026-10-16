@@ -49913,12 +49913,23 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         const it = m && items.get(m.getAttribute('content'));
         if (it && /image\//i.test(it.type)) cover = it.href;
       }
+      /* READ TOGETHER, PARSED IN TURN. Every read from the zip is a trip
+         through the event loop, and each trip waits behind a frame of the
+         field: read one after another, Pride and Prejudice's 164 pictures
+         took 48 s in the sandbox (whose frames are slow) against 1.3 s asked
+         for all at once, and its chapters 2.9 s against 0.8. */
+      const texts = await many(spine, it => find(it.href).text().catch(() => null));
       const chapters = [];
+      let slice = performance.now();
       for (let k = 0; k < spine.length; k++){
-        if (progress) progress(k + 1, spine.length);
-        try { chapters.push(blocksOf(await find(spine[k].href).text(), spine[k].href, /html?$/i.test(spine[k].type) && !/xhtml/i.test(spine[k].type), find, entries)); }
+        if (texts[k] == null) continue;
+        try { chapters.push(blocksOf(texts[k], spine[k].href, /html?$/i.test(spine[k].type) && !/xhtml/i.test(spine[k].type), find, entries)); }
         catch (e){ console.warn('[epub] chapter ' + spine[k].href + ' unreadable —', e && e.message); }
-        if (k % 4 === 3) await new Promise(r => setTimeout(r, 0));   // the field keeps drawing
+        if (performance.now() - slice > 60){             // the field keeps drawing
+          if (progress) progress(k + 1, spine.length);
+          await new Promise(r => setTimeout(r, 0));
+          slice = performance.now();
+        }
       }
       /* A cover the book names but never shows (many put it only in the
          package) goes on a page of its own in front. */
@@ -49928,21 +49939,29 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       /* Every picture's size, from its header (no pixels decoded), since a
          page cannot be laid out without knowing how tall its pictures are. */
       const sizes = new Map();
-      for (const ch of chapters) for (const b of ch){
-        if (b.t !== 'img' || sizes.has(b.key)) continue;
+      const keys = [...new Set(chapters.flat().filter(b => b.t === 'img').map(b => b.key))];
+      const got = await many(keys, async key => {
         let sz = null;
-        try { sz = imageSizeFromBytes(await entries[b.key].arrayBuffer()); } catch {}
+        try { sz = imageSizeFromBytes(await entries[key].arrayBuffer()); } catch {}
         if (!sz || !(sz.w > 0 && sz.h > 0)){
           try {   // an SVG, or a header the sniffer does not know
-            const im = await _decodeBlob(await entries[b.key].blob(mimeOf(b.key)));
+            const im = await _decodeBlob(await entries[key].blob(mimeOf(key)));
             sz = { w: im.width, h: im.height };
             if (im.close) im.close();
           } catch {}
         }
-        sizes.set(b.key, sz && sz.w > 0 && sz.h > 0 ? sz : null);
-      }
+        return sz && sz.w > 0 && sz.h > 0 ? sz : null;
+      });
+      keys.forEach((k, i) => sizes.set(k, got[i]));
       return { title, chapters, sizes };
     }
+    // Asked 32 at a time, so a book of large pictures is not all in memory at once.
+    const many = async (list, fn) => {
+      const out = [];
+      for (let k = 0; k < list.length; k += 32)
+        out.push(...await Promise.all(list.slice(k, k + 32).map(fn)));
+      return out;
+    };
     const mimeOf = k => {
       const x = k.split('.').pop().toLowerCase();
       return x === 'svg' ? 'image/svg+xml' : 'image/' + (x === 'jpg' ? 'jpeg' : x);

@@ -944,7 +944,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   anywhere. `open` reads `META-INF/container.xml`, the package's spine (linear="no" left out but at the front), chapters through
   the XHTML parser and, if not well-formed, the HTML one, and picture sizes from their headers; a book whose chapters are
   encrypted (DRM) is refused. `paint` draws a page at `_pdfPx`; pictures are decoded as pages want them (the latest
-  `EPUB_PICS`, 8). An epub's type, application/epub+zip, matched the archives' `/zip/` and opened as its pictures alone; it is
+  `EPUB_PICS`, 8). Reads from the zip go 32 at a time (`many`): one after another, each waited behind a frame, and Pride and
+  Prejudice (605 pages, 164 pictures) took 53 s to open in the sandbox; together, 4.7 s (Alice, 130 pages: 11 s, then 2.8 s).
+  Laying out is 34 ms for Alice, 150 ms for Pride and Prejudice. The canvas spells a font back its own way, so the font last set
+  is kept by hand (`mfont`), or it is parsed again for every word. An epub's type, application/epub+zip, matched the archives' `/zip/` and opened as its pictures alone; it is
   taken out first. The smoke test builds a book (a stored zip it writes itself) and opens it through the real picker:
   `GALLERY_APP._epub` has the pages and `EPUB.textOf`.
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
