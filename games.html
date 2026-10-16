@@ -46063,6 +46063,519 @@ const MOLE_APP = (() => {
   };
   return app;
 })();
+/* ═══ NONOGRAMS ══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole".) Picross, the paint-by-
+   numbers puzzle: a grid with numbers along the top of each column and the left of each row, each the runs of filled
+   squares in that line, in order ("3 1" is three filled, a gap of one or more, one filled). Fill the squares so every line
+   reads as its numbers, and the picture they hide comes out, in colour.
+   - EVERY BOARD ITS OWN PICTURE: drawn from the board's own number (boardIdx, golf's Szudzik pairing) and its level, so a
+     board always holds the same puzzle and you can come back to it. The level is 1 to 5, the ring level out from the corner
+     plus the Difficulty (Easy 0, Normal 1, Hard 2), as mini golf, Sokoban, the tilt maze and Simon. A level sets the grid
+     (5, 6, 8, 10, 12 a side), the share filled (fewer filled squares, more and shorter runs, more to work out) and how many
+     sweeps of the lines it must take at least (LV).
+   - ONE ANSWER, AND NO GUESSING: a picture is kept only if the clues allow it alone, and only if the line solver (the way a
+     person works: one line at a time, what every way of laying its runs agrees on) finishes it without a guess. A random
+     picture often has two answers (a 2×2 checker anywhere can be flipped), so every one is checked.
+   - Tap a square to fill it, tap again to clear it. In Cross mode (the two marks in the top left corner, the menu, or X on
+     the keys) a tap marks a square you know is empty with an X instead; a hold, or a right click, always does. A drag fills
+     (or crosses, or clears) a run of squares along its row or column, as the first square went. Fills are free, as on paper:
+     nothing says a fill is wrong, but each fill on a square the picture leaves empty is counted, and the stars at the end
+     are by those: none ★★★, one or two ★★, more ★. The time is kept too; the best (most stars, then quickest) on each board.
+   - A board no one is playing shows its own picture filled in, row by row, then in its colours, then again.
+   - Solved, a tap goes on to the next board (mini golf's `nextBoard`); a hold starts this one again. */
+const NONOGRAM_APP = (() => {
+  const BAND = 0x1b2130, BAND2 = 0x232b3d, CORNER = 0x12161f, PAPER = 0xece6d6, PAPER2 = 0xe2dac7, INK = 0x23447c, INK2 = 0x29508f;   // (ink a deep blue, not the bands' slate: filled squares by the left band ran into it)
+  const DIG = 0xf3ead6, DIG_DONE = 0x5d6578, CROSS = 0xa5452f, GOLD = 0xd9a73a;
+  const DL = ARCADE.difficulty('nonograms.level', 'Every board hides its own picture, harder the farther it is from the corner: 5×5 near it, then 6×6, 8×8, 10×10 and 12×12 far out, with fewer squares filled and more to work out. Easy, Normal and Hard move every board a level up.', true);
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const SND = ARCADE.sounds('nonograms.sound', 'A tick for each square, a chime when a line is right, a fanfare for the picture.');
+  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  // (Simon's, the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const LV = [
+    { n: 5,  dens: 0.62, blur: 1, minPasses: 0 },
+    { n: 6,  dens: 0.58, blur: 1, minPasses: 0 },
+    { n: 8,  dens: 0.54, blur: 1, minPasses: 3 },
+    { n: 10, dens: 0.52, blur: 1, minPasses: 4 },
+    { n: 12, dens: 0.5,  blur: 1, minPasses: 5 },
+  ];
+  const TRIES = 40, SEARCH_CAP = 4000;
+
+  /* ─── THE LINE SOLVER ─── A line is n cells, each 0 (not known), 1 (filled) or 2 (empty), held as two bit masks: F the cells
+     known filled, E the cells known empty. Every way of laying the clue's runs along the line that agrees with both is tried
+     (a run never starts on a known-empty cell's span nor leaves a known-filled one uncovered), and what every way agrees on is
+     known: a cell every way fills is filled, a cell no way fills is empty. Lines are at most 12 long and the ways a few hundred
+     at most, so trying them all is quicker than being clever. Null when no way fits: the line contradicts itself. */
+  function lineSolve(clue, n, F, E){
+    const full = (1 << n) - 1, k = clue.length;
+    if (!k) return (F & full) ? null : [0, full];
+    let orAll = 0, andAll = full, any = false;
+    const tail = new Array(k + 1).fill(0);           // the room the runs from j on need, a gap between each
+    for (let j = k - 1; j >= 0; j--) tail[j] = clue[j] + (j < k - 1 ? 1 + tail[j + 1] : 0);
+    (function lay(pos, j, P){
+      if (j === k){
+        const rest = full & ~((1 << pos) - 1);          // nothing filled may lie past the last run
+        if (rest & F) return;
+        any = true; orAll |= P; andAll &= P; return;
+      }
+      const len = clue[j];
+      for (let s = pos; s + tail[j] <= n; s++){
+        const gap = ((1 << s) - 1) & ~((1 << pos) - 1);   // the cells skipped before this run must not be filled
+        if (gap & F) break;                                // (and no later start skips fewer of them)
+        const run = ((1 << len) - 1) << s;
+        if (run & E) continue;
+        const after = s + len;
+        if (after < n && (F >> after & 1)) continue;       // the run may not be followed by a filled cell
+        lay(after + 1, j + 1, P | run);
+      }
+    })(0, 0, 0);
+    if (!any) return null;
+    return [andAll, full & ~orAll];
+  }
+  // a picture's clues: the runs of each row (left to right) and each column (top to bottom)
+  function cluesOf(sol, n){
+    const runs = get => { const out = []; let k = 0; for (let i = 0; i < n; i++){ if (get(i)) k++; else if (k){ out.push(k); k = 0; } } if (k) out.push(k); return out; };
+    const rows = [], cols = [];
+    for (let r = 0; r < n; r++) rows.push(runs(i => sol[r * n + i]));
+    for (let c = 0; c < n; c++) cols.push(runs(i => sol[i * n + c]));
+    return { rows, cols };
+  }
+  /* The whole grid by lines alone, to a fixed point: every row, then every column, again while anything new is learned.
+     `cells` (0/1/2 a square) is filled in place. Returns 'solved', 'stuck' (lines alone can go no further) or 'broken'
+     (a line has no way: the guess that led here was wrong), with the passes it took. */
+  function solveLines(rows, cols, n, cells){
+    let passes = 0;
+    for (let changed = true; changed; ){
+      changed = false; passes++;
+      for (let pass = 0; pass < 2; pass++){
+        for (let L = 0; L < n; L++){
+          const at = i => pass ? i * n + L : L * n + i;
+          let F = 0, E = 0;
+          for (let i = 0; i < n; i++){ const s = cells[at(i)]; if (s === 1) F |= 1 << i; else if (s === 2) E |= 1 << i; }
+          const got = lineSolve(pass ? cols[L] : rows[L], n, F, E);
+          if (!got) return { how: 'broken', passes };
+          const [nf, ne] = got;
+          if (nf === F && ne === E) continue;
+          for (let i = 0; i < n; i++){
+            if (cells[at(i)]) continue;
+            if (nf >> i & 1){ cells[at(i)] = 1; changed = true; }
+            else if (ne >> i & 1){ cells[at(i)] = 2; changed = true; }
+          }
+        }
+      }
+    }
+    for (let i = 0; i < n * n; i++) if (!cells[i]) return { how: 'stuck', passes };
+    return { how: 'solved', passes };
+  }
+  /* How many pictures fit the clues, counted to two: the lines first, then, where they stall, a square guessed both ways
+     (the lines again after each guess). `cap` bounds the guesses; past it the count is unknown (-1). */
+  function countSolutions(rows, cols, n, cap){
+    let nodes = 0;
+    function go(cells){
+      if (++nodes > cap) return -1;
+      const r = solveLines(rows, cols, n, cells);
+      if (r.how === 'broken') return 0;
+      if (r.how === 'solved') return 1;
+      const i = cells.indexOf(0);
+      let total = 0;
+      for (const v of [1, 2]){
+        const c2 = cells.slice(); c2[i] = v;
+        const k = go(c2);
+        if (k < 0) return -1;
+        total += k; if (total >= 2) return 2;
+      }
+      return total;
+    }
+    return go(new Uint8Array(n * n));
+  }
+  /* A picture: noise smoothed into blobs (one pass of a 3×3 blur), then the cells above a threshold filled, the threshold the
+     quantile that fills just the level's share. Some boards mirror their noise left to right (or top to bottom) first, so a
+     picture now and then has the symmetry of a face, a pot, a beetle. */
+  function pictureOf(R, n, dens, blur){
+    let f = Array.from({ length: n * n }, () => R());
+    const sym = R(), mirror = sym < 0.3 ? 'lr' : sym < 0.42 ? 'tb' : '';
+    if (mirror === 'lr') for (let r = 0; r < n; r++) for (let c = 0; c < n / 2; c++) f[r * n + (n - 1 - c)] = f[r * n + c];
+    if (mirror === 'tb') for (let r = 0; r < n / 2; r++) for (let c = 0; c < n; c++) f[(n - 1 - r) * n + c] = f[r * n + c];
+    for (let b = 0; b < blur; b++){
+      const g = f.slice();
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++){
+        let s = 2 * f[r * n + c], w = 2;
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]){ const rr = r + dr, cc = c + dc; if (rr >= 0 && rr < n && cc >= 0 && cc < n){ s += f[rr * n + cc]; w++; } }
+        g[r * n + c] = s / w;
+      }
+      f = g;
+    }
+    const sorted = f.slice().sort((a, b) => b - a), cut = sorted[Math.max(0, Math.round(dens * n * n) - 1)];
+    return { sol: Uint8Array.from(f, x => x >= cut ? 1 : 0), mirror };
+  }
+  /* A board's puzzle: pictures from the board's own generator until one is FAIR, finished by the lines alone with no guess
+     (so it can be solved by reasoning, a line at a time), and asking at least the level's `minPasses` sweeps of the lines,
+     so a far board is not a big easy one. A fair picture that is too quick is kept as the fallback (the slowest of them); a
+     picture whose lines stall is counted (countSolutions), and one that is unique but needs a guess is the fallback only when
+     there is no fair one. Two or more answers are never kept. If nothing comes in TRIES, the fallback; if there is none, the
+     share filled goes up (denser pictures are easier) and it tries again. */
+  function makePuzzle(idx, lv){
+    const t0 = performance.now(), D = LV[lv - 1], n = D.n, R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ 0x6e6f6e);
+    let back = null, tries = 0;
+    for (let dens = D.dens; ; dens = Math.min(0.8, dens + 0.05)){
+      for (let t = 0; t < TRIES; t++){
+        tries++;
+        const { sol, mirror } = pictureOf(R, n, dens, D.blur), { rows, cols } = cluesOf(sol, n), cells = new Uint8Array(n * n);
+        const r = solveLines(rows, cols, n, cells);
+        const P = { idx, lv, n, sol, rows, cols, fair: r.how === 'solved', passes: r.passes, mirror };
+        if (P.fair && r.passes >= D.minPasses) return Object.assign(P, { tries, ms: performance.now() - t0 });
+        if (P.fair){ if (!back || !back.fair || back.passes < P.passes) back = P; }
+        else if (!back && countSolutions(rows, cols, n, SEARCH_CAP) === 1) back = P;
+      }
+      if (back) return Object.assign(back, { tries, ms: performance.now() - t0 });
+    }
+  }
+
+  /* ─── A BOARD'S PUZZLE, LAID OUT ─── The board is a square of M × M squares: the clues in a band K deep along the top and the
+     left (K the most numbers any line has, at least two so the corner has room for the marks), the grid in the n × n left
+     over at the bottom right. Every square of the board is a tile of the field's (cellGrid), so the grid, the bands and the
+     picture cost no items at all; only the numbers and the crosses are pieces. */
+  const hsl = (h, s, l) => {
+    h = ((h % 360) + 360) % 360 / 60; const C = (1 - Math.abs(2 * l - 1)) * s, X = C * (1 - Math.abs(h % 2 - 1)), m = l - C / 2;
+    const [r, g, b] = h < 1 ? [C, X, 0] : h < 2 ? [X, C, 0] : h < 3 ? [0, C, X] : h < 4 ? [0, X, C] : h < 5 ? [X, 0, C] : [C, 0, X];
+    return (Math.round((r + m) * 255) << 16) | (Math.round((g + m) * 255) << 8) | Math.round((b + m) * 255);
+  };
+  /* The picture's colours, the board's own: a hue for the board, each patch of filled squares (joined edge to edge) a colour
+     near it, the biggest first, the ground a pale wash of the hue opposite. So a solved board looks painted, not stamped. */
+  function paletteOf(P){
+    const n = P.n, R = rngOf(P.idx * 7919 + P.lv * 104729 + 17), base = R() * 360, part = new Int32Array(n * n).fill(-1), sizes = [];
+    for (let i = 0; i < n * n; i++){
+      if (!P.sol[i] || part[i] >= 0) continue;
+      const k = sizes.length, stack = [i]; part[i] = k; let s = 0;
+      while (stack.length){ const j = stack.pop(); s++; const r = (j / n) | 0, c = j % n;
+        for (const q of [r > 0 ? j - n : -1, r < n - 1 ? j + n : -1, c > 0 ? j - 1 : -1, c < n - 1 ? j + 1 : -1])
+          if (q >= 0 && P.sol[q] && part[q] < 0){ part[q] = k; stack.push(q); } }
+      sizes.push(s);
+    }
+    const order = sizes.map((s, k) => k).sort((a, b) => sizes[b] - sizes[a]), hue = new Array(sizes.length);
+    order.forEach((k, j) => { hue[k] = [base + (j % 2 ? 1 : -1) * Math.ceil(j / 2) * 28 + (R() - 0.5) * 10, 0.55 + R() * 0.2, 0.42 + R() * 0.14]; });
+    P.col = Int32Array.from({ length: n * n }, (_, i) => part[i] < 0 ? 0 : hsl(...hue[part[i]]));
+    P.bg = hsl(base + 180, 0.3, 0.88);
+  }
+  const PUZZLES = new Map(), CAP = 1500;
+  function dress(P){
+    P.K = Math.max(2, ...P.rows.map(x => x.length), ...P.cols.map(x => x.length)); P.M = P.n + P.K;
+    P.phase = (P.idx * 0.618) % 1; paletteOf(P); return P;
+  }
+  function puzzleFor(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let P = PUZZLES.get(key);
+    if (P){ PUZZLES.delete(key); PUZZLES.set(key, P); return P; }
+    P = dress(makePuzzle(idx, lv));
+    PUZZLES.set(key, P); if (PUZZLES.size > CAP) PUZZLES.delete(PUZZLES.keys().next().value);
+    return P;
+  }
+  // (boards only looked at get their puzzle a few at a time, as the tilt maze's mazes: until then a plain board)
+  let budgetAt = 0, budget = 0;
+  function puzzleSoon(c, r){
+    const idx = boardIdx(c, r), P = PUZZLES.get(idx * 8 + levelAt(idx));
+    if (P) return P;
+    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
+    if (budget <= 0) return null;
+    const t0 = performance.now(), out = puzzleFor(c, r); budget -= performance.now() - t0;
+    return out;
+  }
+  // the grid square at (u, v) of the board, or -1 in the bands (clamped: the nearest square, for a drag that wanders off)
+  function cellAt(P, u, v, clamp){
+    let cc = Math.floor(u * P.M) - P.K, rr = Math.floor(v * P.M) - P.K;
+    if (clamp){ cc = Math.max(0, Math.min(P.n - 1, cc)); rr = Math.max(0, Math.min(P.n - 1, rr)); }
+    return cc >= 0 && cc < P.n && rr >= 0 && rr < P.n ? rr * P.n + cc : -1;
+  }
+  const centreOf = (P, i) => [(P.K + (i % P.n) + 0.5) / P.M, (P.K + ((i / P.n) | 0) + 0.5) / P.M];
+  // whether a line's filled squares read as its clue (a row L, or a column)
+  function lineDone(P, cells, L, col){
+    const n = P.n, want = col ? P.cols[L] : P.rows[L]; let k = 0, j = 0;
+    for (let i = 0; i <= n; i++){
+      const f = i < n && cells[col ? i * n + L : L * n + i] === 1;
+      if (f) k++; else if (k){ if (want[j] !== k) return false; j++; k = 0; }
+    }
+    return j === want.length;
+  }
+
+  /* ─── PLAYING ─── A game: its squares (0 blank, 1 filled, 2 crossed), 'ready' (not touched), 'play' or 'solved', the clock
+     from the first touch, and the fills made on squares the picture leaves empty (`wrong`, counted whether or not they are
+     taken back: a fill is a claim). `ver` goes up at every change, so the board's tiles and pieces are made again only then (`id` tells a game started again
+     from the one before). */
+  const GAMES = new Map();
+  let LIVE = null, DRAG = null;
+  let MODE = (() => { try { return localStorage.getItem('nonograms.mode') === 'cross' ? 'cross' : 'fill'; } catch { return 'fill'; } })();
+  const setMode = m => { MODE = m; try { localStorage.setItem('nonograms.mode', m); } catch {} try { fieldItemsChanged(); } catch {} };
+  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('nonograms.best') || '{}'))); } catch { return new Map(); } })();
+  const saveBest = () => { try { localStorage.setItem('nonograms.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const bestKey = P => P.idx + '@' + P.lv;
+  const clock = () => performance.now() / 1000;
+  let GID = 0;
+  const fresh = (c, r) => { const P = puzzleFor(c, r); return { P, c, r, id: ++GID, cells: new Uint8Array(P.n * P.n), state: 'ready', t0: 0, t: 0, wrong: 0, ver: 0, stars: 0 }; };
+  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  // what a touch makes of a square: 'fill' and 'cross' are the two modes' taps (each undoes itself), 'hold' always crosses
+  const nextOf = (s, how) => how === 'hold' ? (s === 2 ? 0 : 2) : how === 'cross' ? (s ? 0 : 2) : (s ? 0 : 1);
+  function setCell(g, i, s, quiet){
+    if (g.state === 'solved' || g.cells[i] === s) return false;
+    if (g.state === 'ready'){ g.state = 'play'; g.t0 = clock(); }
+    g.cells[i] = s; g.ver++;
+    if (s === 1 && !g.P.sol[i]) g.wrong++;
+    const P = g.P, n = P.n;
+    if (P.sol.every((v, k) => (g.cells[k] === 1) === !!v)){ finish(g, quiet); return true; }
+    if (!quiet) SND.play(s === 1 && (lineDone(P, g.cells, (i / n) | 0, false) || lineDone(P, g.cells, i % n, true)) ? 'good' : 'tap');
+    return true;
+  }
+  const act = (g, i, how, quiet) => setCell(g, i, nextOf(g.cells[i], how || MODE), quiet);
+  const starsOf = wrong => wrong === 0 ? 3 : wrong <= 2 ? 2 : 1;
+  function finish(g, quiet){
+    g.state = 'solved'; g.t = Math.round((clock() - g.t0) * 10) / 10; g.stars = starsOf(g.wrong);
+    for (let k = 0; k < g.cells.length; k++) if (g.cells[k] === 2) g.cells[k] = 0;   // (the crosses go: the picture is the thing)
+    const k = bestKey(g.P), was = BEST.get(k), better = !was || g.stars > was[0] || (g.stars === was[0] && g.t < was[1]);
+    if (better){ BEST.delete(k); BEST.set(k, [g.stars, g.t]); saveBest(); }
+    if (quiet) return;
+    SND.play('win');
+    say('The picture, in ' + g.t.toFixed(1) + ' s ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars)
+        + (g.wrong ? ', ' + g.wrong + (g.wrong === 1 ? ' fill' : ' fills') + ' on a square it leaves empty' : ', not a square wrong')
+        + (was && better ? '. A new best on this board.' : was ? '. Best here ' + '★'.repeat(was[0]) + ' in ' + (+was[1]).toFixed(1) + ' s.' : '.') + ' Tap for the next board.', 4200);
+  }
+  /* A board no one is playing: its picture filled in a square at a time, row by row, then shown in its colours, then blank
+     a moment and again, on the page's clock, each board at its own phase. */
+  const ROW_S = 0.42, HOLD_S = 3.2, BLANK_S = 0.8;
+  const cycleOf = P => P.n * ROW_S + HOLD_S + BLANK_S;
+  // (`at`, seconds on the page's clock, for the tests: a sample of a few seconds can fall wholly in the picture's rest)
+  function shownView(P, at){
+    const n = P.n, fill = n * ROW_S, T = cycleOf(P), t = ((at == null ? now() / 1000 : at) + P.phase * T) % T;
+    const k = t < fill ? Math.floor(t / ROW_S * n) : t < fill + HOLD_S ? -1 : 0, stamp = 'd' + k;
+    if (P._dv && P._dv.stamp === stamp) return P._dv;
+    const cells = k < 0 ? Uint8Array.from(P.sol) : Uint8Array.from(P.sol, (v, i) => v && i < k ? 1 : 0);
+    return (P._dv = { stamp, cells, pic: k < 0 });
+  }
+  const gameView = g => ({ stamp: 'g' + g.id + '.' + g.ver + g.state, cells: g.cells, pic: g.state === 'solved' });
+  // what a board shows: the game on it if it is framed or has been played, else its own picture being filled in
+  function viewAt(c, r, soon){
+    const live = !!LIVE && LIVE.c === c && LIVE.r === r, g0 = GAMES.get(gkey(c, r));
+    if (live || (g0 && g0.state !== 'ready')){ const g = g0 || gameAt(c, r); return { P: g.P, V: gameView(g), g, live }; }
+    const P = soon ? puzzleSoon(c, r) : puzzleFor(c, r);
+    return P ? { P, V: shownView(P), g: null, live: false } : null;
+  }
+  const mix = (a, b, t) => FieldKit.mixInt(a, b, t);
+  function colorsOf(P, V){
+    if (P._gc && P._gc.stamp === V.stamp) return P._gc.colors;
+    const n = P.n, K = P.K, M = P.M, out = new Array(M * M);
+    for (let rr = 0; rr < M; rr++) for (let cc = 0; cc < M; cc++){
+      let col;
+      if (rr < K && cc < K) col = CORNER;
+      else if (rr < K) col = (cc - K) % 2 ? BAND2 : BAND;          // (a stripe a column, so a column's numbers read as one)
+      else if (cc < K) col = (rr - K) % 2 ? BAND2 : BAND;
+      else {
+        const r0 = rr - K, c0 = cc - K, i = r0 * n + c0, s = V.cells[i], chk = (r0 + c0) % 2;
+        // (squares in blocks of five, a shade apart, so a count along a line of ten or twelve need not start from the edge)
+        const blk = n >= 8 && (((r0 / 5) | 0) + ((c0 / 5) | 0)) % 2;
+        if (V.pic) col = s === 1 ? mix(P.col[i], 0, chk ? 0.08 : 0) : mix(P.bg, 0xffffff, chk ? 0.25 : 0);
+        else if (s === 1) col = chk ? INK2 : INK;
+        else col = mix(mix(PAPER, PAPER2, blk ? 0.75 : 0), PAPER2, chk ? 0.4 : 0);
+      }
+      out[rr * M + cc] = col;
+    }
+    P._gc = { stamp: V.stamp, colors: out };
+    return out;
+  }
+  // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
+  function numItems(out, num, u, v, h, color){
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    for (let k = 0; k < ds.length; k++) out.push({ kind: 'ngD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
+  }
+  const DIGIT_PX = 120;         // (a board under this many pixels across shows its picture alone: a 12×12's numbers would be specks)
+  function itemsOf(P, V, g, live, bp){
+    const words = !(bp > 0) || bp >= DIGIT_PX, stamp = V.stamp + (live ? 'L' + MODE : '') + (words ? 'w' : '');
+    if (P._ic && P._ic.stamp === stamp) return P._ic.items;
+    const n = P.n, K = P.K, M = P.M, s = 1 / M, h = 0.6 * s, out = [];
+    if (words){
+      const busy = !!g && g.state !== 'ready';
+      for (let L = 0; L < n; L++) for (const col of [false, true]){
+        const cl = (col ? P.cols[L] : P.rows[L]).length ? (col ? P.cols[L] : P.rows[L]) : [0];
+        const done = V.pic || ((busy || !g) && lineDone(P, V.cells, L, col)), color = done ? DIG_DONE : DIG;
+        cl.forEach((x, t) => { const at = K - cl.length + t + 0.5;
+          if (col) numItems(out, x, (K + L + 0.5) * s, at * s, h, color); else numItems(out, x, at * s, (K + L + 0.5) * s, h, color); });
+      }
+    }
+    if (g && !V.pic) for (let i = 0; i < n * n; i++) if (V.cells[i] === 2){ const [u, v] = centreOf(P, i); out.push({ kind: 'ngX', u, v, scale: s, lift: 0.002, color: CROSS }); }
+    // the two marks in the corner, the one a tap makes lit (a tap on either picks it)
+    if (live && !V.pic){
+      const cs = K * s, z = Math.min(0.34 * cs, 1.6 * s);
+      for (const [m, fu] of [['fill', 0.3], ['cross', 0.7]]){
+        const on = MODE === m, u = fu * cs, v = 0.5 * cs;
+        // (each a clear step above the last: at a hair apart the depth buffer put the ink under its paper)
+        if (on) out.push({ kind: 'ngQuad', u, v, scale: z * 1.3, lift: 0.002, color: GOLD });
+        out.push({ kind: 'ngQuad', u, v, scale: z, lift: 0.005, color: on ? PAPER : 0x5a6070 });
+        if (m === 'fill') out.push({ kind: 'ngQuad', u, v, scale: z * 0.7, lift: 0.008, color: on ? INK : 0x3a4152 });
+        else out.push({ kind: 'ngX', u, v, scale: z, lift: 0.008, color: on ? CROSS : 0x3a4152 });
+      }
+    }
+    P._ic = { stamp, items: out };
+    return out;
+  }
+  /* The pieces' shapes: flat, unlit quads lying on the board (a number has to read the same at any light), laid in the board's
+     own terms (the field runs +u to −x and +v to −z), each wound to face up. */
+  function flatGeo(T, quads){
+    const pos = [];
+    const at = ([u, v]) => [-u, 0.003, -v];
+    const tri = (A, B, C) => { const n = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]); if (n < 0) pos.push(...A, ...C, ...B); else pos.push(...A, ...B, ...C); };
+    for (const q of quads){ const [a, b, c, d] = q.map(at); tri(a, b, c); tri(a, c, d); }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals(); g.userData.unlit = true;
+    return g;
+  }
+  const rect = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+  // (mini golf's seven segments: a top, f top left, b top right, g middle, e bottom left, c bottom right, d bottom)
+  const SEGS = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
+  function digitGeo(T, d){
+    const w = 0.25, t = 0.12, q = [];
+    const S = { a: rect(-w, -0.5, w, -0.5 + t), g: rect(-w, -t / 2, w, t / 2), d: rect(-w, 0.5 - t, w, 0.5),
+                f: rect(-w, -0.5, -w + t, 0), b: rect(w - t, -0.5, w, 0), e: rect(-w, 0, -w + t, 0.5), c: rect(w - t, 0, w, 0.5) };
+    for (const k of SEGS[d]) q.push(S[k]);
+    return flatGeo(T, q);
+  }
+  function crossGeo(T){
+    const L = 0.3, t = 0.06, q = [];
+    for (const s of [1, -1]){ const ax = [Math.SQRT1_2, s * Math.SQRT1_2], nx = [-ax[1], ax[0]];
+      q.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [a * L * ax[0] + b * t * nx[0], a * L * ax[1] + b * t * nx[1]])); }
+    return flatGeo(T, q);
+  }
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key !== 'x' && e.key !== 'X') return;
+    const g = liveGame(); if (!g || g.state === 'solved') return;
+    e.preventDefault(); e.stopPropagation();
+    setMode(MODE === 'fill' ? 'cross' : 'fill'); say(MODE === 'fill' ? 'A tap fills.' : 'A tap crosses a square out.', 1200);
+  }, true);
+  const app = {
+    name: 'nonograms',
+    menu: [{ head: 'Nonograms', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: () => 'Taps: ' + (MODE === 'fill' ? 'fill' : 'cross out'), title: 'What a tap on a square does: fill it, or mark it empty with an X. A hold always crosses. The two marks in the board\'s top left corner, or X on the keys, switch it too.',
+        on(){ setMode(MODE === 'fill' ? 'cross' : 'fill'); } },
+      { label: 'Start this board again', title: 'This board\'s puzzle blank again, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
+    ]}],
+    cellFar: { light: BAND, dark: BAND },
+    faceMinPx: 8,
+    itemMinPx: 30,
+    itemGeometries: {
+      ...Object.fromEntries([...Array(10).keys()].map(d => ['ngD' + d, T => digitGeo(T, d)])),
+      ngX: crossGeo,
+      ngQuad: T => flatGeo(T, [rect(-0.5, -0.5, 0.5, 0.5)]),
+    },
+    cellGrid(c, r){
+      const W = viewAt(c, r, true);
+      if (!W) return { n: 1, colors: [BAND] };
+      return { n: W.P.M, colors: colorsOf(W.P, W.V) };
+    },
+    cellItems(c, r, bp){
+      const W = viewAt(c, r, true);
+      return W ? itemsOf(W.P, W.V, W.g, W.live, bp) : [];
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), P = PUZZLES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r)), n = LV[lv - 1].n;
+      const best = P ? BEST.get(bestKey(P)) : null;
+      return 'Nonograms — level ' + lv + ', ' + n + '×' + n + (P && !P.fair ? ' (needs a guess)' : '')
+           + (best ? ' · best ' + '★'.repeat(best[0]) + ' ' + (+best[1]).toFixed(1) + ' s' : '')
+           + (g && g.state === 'solved' ? ' · solved in ' + g.t.toFixed(1) + ' s' : g && g.state === 'play' ? ' · ' + g.cells.reduce((a, s) => a + (s === 1), 0) + ' filled' : '');
+    },
+    onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    /* (Oct 15, Simon: "the simon buttons are very hard to push".) Two quick taps on one square, filling and clearing it, or
+       filling two squares side by side, read as a double-tap, which reframes the view and never reaches the game. While a
+       puzzle is on the framed board every tap is a tap. */
+    noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'solved'; },
+    onCellTap(c, r, u, v){
+      // (the tap the field still calls at the end of a short drag: the drag has done what it meant, as in golf's editor)
+      if (DRAG && DRAG.moved){ DRAG = null; return true; }
+      DRAG = null;
+      const live = LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      const g = gameAt(c, r);
+      if (live && g.state === 'solved'){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+      if (u == null || g.state === 'solved') return true;
+      const P = g.P, i = cellAt(P, u, v);
+      if (i < 0){
+        if (u < P.K / P.M && v < P.K / P.M){ setMode(u < 0.5 * P.K / P.M ? 'fill' : 'cross'); say(MODE === 'fill' ? 'A tap fills a square.' : 'A tap crosses a square out.', 1200); }
+        else if (g.state === 'ready') say('Fill the squares so each row and column reads as its numbers: the runs of filled squares, in order. A tap fills, a hold crosses out.', 3600);
+        return true;
+      }
+      act(g, i);
+      return true;
+    },
+    onCellHold(c, r, u, v){
+      const g = GAMES.get(gkey(c, r));
+      if (g && g.state === 'solved'){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; say('This board blank again.', 1200); return true; }
+      if (!g || u == null) return false;
+      const i = cellAt(g.P, u, v);
+      if (i < 0) return false;
+      act(g, i, 'hold');
+      return true;
+    },
+    /* A DRAG ALONG A LINE: pressed on a square, the drag takes what a tap would make of that square and does the same to each
+       square it passes in that square's row or column (the first move decides which) that was as the first one was, so a drag
+       over a row fills its blanks and leaves its crosses, and one begun on a filled square clears. */
+    claimsPan(u, v){
+      DRAG = null;
+      const g = liveGame();
+      if (!g || g.state === 'solved' || u == null) return false;
+      const i = cellAt(g.P, u, v);
+      if (i < 0) return false;
+      DRAG = { i0: i, from: g.cells[i], to: nextOf(g.cells[i], MODE), axis: null, moved: false, last: i };
+      return true;
+    },
+    onPan(dx, dy, at){
+      const g = liveGame();
+      if (!g || !DRAG) return false;
+      if (!at || g.state === 'solved') return true;
+      const P = g.P, n = P.n, j = cellAt(P, at.u, at.v, true);
+      if (j === DRAG.last) return true;
+      DRAG.last = j;
+      const r0 = (DRAG.i0 / n) | 0, c0 = DRAG.i0 % n, r1 = (j / n) | 0, c1 = j % n;
+      if (!DRAG.axis){ if (r1 === r0 && c1 === c0) return true; DRAG.axis = Math.abs(c1 - c0) >= Math.abs(r1 - r0) ? 'row' : 'col'; }
+      if (!DRAG.moved){ DRAG.moved = true; setCell(g, DRAG.i0, DRAG.to); }
+      const [a, b] = DRAG.axis === 'row' ? [c0, c1] : [r0, r1], dir = Math.sign(b - a);
+      for (let k = a + dir; dir && k !== b + dir; k += dir){
+        const i = DRAG.axis === 'row' ? r0 * n + k : k * n + c0;
+        if (g.state === 'solved') break;
+        if (g.cells[i] === DRAG.from) setCell(g, i, DRAG.to);
+      }
+      return true;
+    },
+    drawIcon(ctx, sz){
+      // (a heart, its numbers as bars in the bands)
+      const pic = ['01010', '11111', '11111', '01110', '00100'], K = 2, M = 7, s = sz / M;
+      ctx.fillStyle = '#1b2130'; ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = '#ece6d6'; ctx.fillRect(K * s, K * s, 5 * s, 5 * s);
+      ctx.fillStyle = '#d0453f';
+      pic.forEach((row, r) => [...row].forEach((x, c) => { if (x === '1') ctx.fillRect((K + c) * s + 0.5, (K + r) * s + 0.5, s - 1, s - 1); }));
+      ctx.fillStyle = '#f3ead6';
+      for (let k = 0; k < 5; k++){ ctx.fillRect((K + k + 0.4) * s, 1.2 * s, 0.2 * s, 0.6 * s); ctx.fillRect(1.2 * s, (K + k + 0.4) * s, 0.6 * s, 0.2 * s); }
+    },
+    _debug: { makePuzzle, puzzleFor, lineSolve, solveLines, countSolutions, cluesOf, pictureOf, lineDone, cellAt, centreOf, gameAt, fresh, act, setCell,
+              finish, starsOf, shownView, cycleOf, viewAt, itemsOf, levelAt, boardIdx, LV, GAMES, BEST, PUZZLES,
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; },
+              get MODE(){ return MODE; }, set MODE(v){ MODE = v; }, get DRAG(){ return DRAG; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -46446,7 +46959,7 @@ const LEVELS_APP = (() => {
     _debug: { get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -46455,7 +46968,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

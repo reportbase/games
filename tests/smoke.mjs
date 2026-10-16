@@ -3011,6 +3011,132 @@ try {
     if (!ok1 || !ok2 || demo < 3) failures.push('[whackamole] ' + JSON.stringify({ r, real, demo }));
     console.log(`${ok1 && ok2 && demo >= 3 ? 'ok  ' : 'FAIL'} whackamole (holes ${r.holes.join('/')} by ring, pops ${gr.map(x => x.pops).join('/')} and par ${gr.map(x => x.par).join('/')} by level, the same round each time; real clicks on a mole scored and on an empty hole cost: ${real && real.scores.join(',')})`);
   }
+  // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
+  // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
+  // find; real clicks fill exactly the squares clicked and the corner's marks switch to crosses; a real drag fills a row; the
+  // whole picture filled by real clicks reads as solved and a click then goes on; quick real taps on one square are each a tap;
+  // a board no one plays fills itself in.
+  {
+    current = 'nonograms';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'nonograms')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { bad: [] }, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      out.sizes = [1, 2, 3, 4, 5].map(lv => D.makePuzzle(1234, lv).n);
+      // (every sampled puzzle: its clues are its picture's, it has one answer, and the lines alone reach that answer)
+      const t0 = performance.now();
+      for (let lv = 1; lv <= 5; lv++) for (let k = 0; k < 12; k++){
+        const idx = 50 + k * 97, P = D.makePuzzle(idx, lv), cl = D.cluesOf(P.sol, P.n), dens = P.sol.reduce((a, b) => a + b, 0) / (P.n * P.n);
+        const cells = new Uint8Array(P.n * P.n), how = D.solveLines(P.rows, P.cols, P.n, cells).how;
+        const ok = same(cl.rows, P.rows) && same(cl.cols, P.cols) && D.countSolutions(P.rows, P.cols, P.n, 1e5) === 1 && how === 'solved' && P.fair
+          && [...cells].every((s, i) => (s === 1) === !!P.sol[i]) && dens > 0.4 && dens < 0.75 && P.n === D.LV[lv - 1].n && P.passes >= D.LV[lv - 1].minPasses;
+        if (!ok) out.bad.push({ lv, idx, how, dens });
+      }
+      out.ms = Math.round(performance.now() - t0);
+      out.two = D.countSolutions([[1], [1]], [[1], [1]], 2, 100);           // (a 2×2 diagonal: two answers)
+      out.line = D.lineSolve([3, 1], 6, 0, 0);                              // (3 1 in six: the middle two of the three known)
+      out.sameBoard = same([...D.makePuzzle(777, 3).sol], [...D.makePuzzle(777, 3).sol]);
+      out.differ = !same([...D.makePuzzle(777, 3).sol], [...D.makePuzzle(778, 3).sol]);
+      // the rules by hand: a wrong fill and its clearing is counted, a cross is not, and the picture filled reads as solved
+      const g = D.fresh(0, 0); D.GAMES.set('0_0', g);
+      const P = g.P, wrongAt = P.sol.indexOf(0);
+      D.act(g, wrongAt, 'fill', true); D.act(g, wrongAt, 'fill', true); D.act(g, wrongAt, 'cross', true);
+      out.cross = g.cells[wrongAt];
+      let half = null;
+      for (let i = 0; i < P.n * P.n; i++) if (P.sol[i]){ D.act(g, i, 'fill', true); if (!half) half = g.state; }
+      out.solved = { half, state: g.state, wrong: g.wrong, stars: g.stars, crossesGone: g.cells[wrongAt] === 0 };
+      D.GAMES.delete('0_0');
+      return out;
+    });
+    const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '5,6,8,10,12' && !r.bad.length && r.two === 2 && r.line && r.line[0] === 0b000110
+      && r.sameBoard && r.differ && r.cross === 2 && r.solved.half === 'play' && r.solved.state === 'solved' && r.solved.wrong === 1 && r.solved.stars === 2 && r.solved.crossesGone;
+    if (!ok1) failures.push('[nonograms] puzzles and rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} nonograms: sizes ${r.sizes.join('/')} by level, 60 sampled puzzles each with one answer the lines alone find (${r.ms} ms), a wrong fill costs a star`);
+    // real clicks on the framed board
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      const info = await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug; D.MODE = 'fill'; const g = D.fresh(c, r); D.GAMES.set(k, g); D.LIVE = { c, r };
+        const P = g.P; return { n: P.n, K: P.K, M: P.M, sol: [...P.sol], centres: [...P.sol.keys()].map(i => D.centreOf(P, i)) }; }, [...fc, key]);
+      const cellsNow = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { cells: [...g.cells], state: g.state, mode: window.getFieldApp()._debug.MODE } : null; }, key);
+      const click = async i => { const p = await aimAt(...info.centres[i]); await page.mouse.click(p.x, p.y); await page.waitForTimeout(350); };
+      const filled = info.sol.map((s, i) => s ? i : -1).filter(i => i >= 0), empty = info.sol.map((s, i) => s ? -1 : i).filter(i => i >= 0);
+      const three = [filled[0], filled[Math.floor(filled.length / 2)], filled[filled.length - 1]];
+      for (const i of three) await click(i);
+      const a = await cellsNow();
+      const exact = a && a.cells.every((s, i) => s === (three.includes(i) ? 1 : 0));
+      await click(three[0]);
+      const b = await cellsNow();
+      // the corner's cross mark, then a square crossed, then the fill mark again
+      const K = info.K / info.M, cp = await aimAt(0.7 * K, 0.5 * K); await page.mouse.click(cp.x, cp.y); await page.waitForTimeout(350);
+      const modeX = (await cellsNow()).mode;
+      await click(empty[0]);
+      const crossed = (await cellsNow()).cells[empty[0]];
+      const fp = await aimAt(0.3 * K, 0.5 * K); await page.mouse.click(fp.x, fp.y); await page.waitForTimeout(350);
+      const modeF = (await cellsNow()).mode;
+      // a real drag along a row with no cross in it fills its blanks
+      const n = info.n, before = (await cellsNow()).cells, row = [...Array(n).keys()].find(rr => before.slice(rr * n, rr * n + n).every(x => x === 0));
+      const p0 = await aimAt(...info.centres[row * n]), p1 = await aimAt(...info.centres[row * n + n - 1]);
+      await page.mouse.move(p0.x, p0.y); await page.mouse.down();
+      for (let s = 1; s <= 12; s++){ await page.mouse.move(p0.x + (p1.x - p0.x) * s / 12, p0.y + (p1.y - p0.y) * s / 12); await page.waitForTimeout(40); }
+      await page.mouse.up(); await page.waitForTimeout(400);
+      const d = await cellsNow();
+      const dragRow = d.cells.slice(row * n, row * n + n);
+      // the whole picture by real clicks, from a blank board: solved, and a click then goes to the next board
+      await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug; D.GAMES.set(k, D.fresh(c, r)); }, [...fc, key]);
+      for (const i of filled) await click(i);
+      const s = await cellsNow();
+      await click(0);
+      const next = await page.evaluate(() => { const L = window.getFieldApp()._debug.LIVE; return L ? [L.c, L.r] : null; });
+      real = { exact, cleared: b.cells[three[0]] === 0 && b.cells[three[1]] === 1, modeX, crossed, modeF, dragRow, solved: s.state, next, from: fc };
+    }
+    const ok2 = real && real.exact && real.cleared && real.modeX === 'cross' && real.crossed === 2 && real.modeF === 'fill' && real.dragRow.every(x => x === 1)
+      && real.solved === 'solved' && real.next && real.next.join() !== real.from.join();
+    if (!ok2) failures.push('[nonograms] real clicks: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} nonograms: real clicks fill exactly the squares clicked, the corner switches to crosses, a real drag fills a row, the picture by real clicks is solved and a click goes on`);
+    // (Oct 15, Simon's lesson: "the simon buttons are very hard to push") quick real touches on one square are each a tap:
+    // filled, cleared, filled, cleared, and the view never reframed
+    await page.waitForTimeout(3000);
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const quick = await page.evaluate(async () => {
+      const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const tap = async (u, v, after) => { const p = S(u, v); ptr('pointerdown', p); const t = mk(p); fire('touchstart', t); ptr('pointerup', p); fire('touchend', t); await wait(after); };
+      D.MODE = 'fill';
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r };
+      const i = g.P.n + 1, [u, v] = D.centreOf(g.P, i), seen = [];
+      for (let k = 0; k < 4; k++){ await tap(u, v, 200); seen.push(g.cells[i]); }
+      const f2 = W.cellAt(W.target.boardX, W.target.boardZ);
+      return { seen, still: !!f2 && f2.c === f.c && f2.r === f.r, noDbl: window.getFieldApp().noDoubleTap() };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    const ok3 = quick.seen.join() === '1,0,1,0' && quick.still && quick.noDbl;
+    if (!ok3) failures.push('[nonograms] quick taps on one square: ' + JSON.stringify(quick));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} nonograms: four quick real touches on one square are four taps (${quick.seen.join(', ')})`);
+    // a board no one plays fills its picture in, square by square, shows it in colour and starts again: over one cycle of its
+    // clock every stage is seen, and on the page's own clock it moves (sampled for a whole cycle: a few seconds can fall in the
+    // picture's rest)
+    const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, P = D.puzzleFor(9, 9), T = D.cycleOf(P), seen = new Set();
+      let pic = false, blank = false;
+      for (let k = 0; k < 400; k++){ const V = D.shownView(P, 1000 + T * k / 400); seen.add(V.stamp); pic = pic || V.pic; blank = blank || (!V.pic && !V.cells.some(x => x)); }
+      const live = new Set(), t0 = performance.now();
+      while (performance.now() - t0 < (T + 1) * 1000){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
+      return { stages: seen.size, filled: P.sol.reduce((a, b) => a + b, 0), pic, blank, live: live.size }; });
+    const ok4 = demo.stages >= demo.filled && demo.pic && demo.blank && demo.live >= 3;
+    if (!ok4) failures.push('[nonograms] a board no one plays: ' + JSON.stringify(demo));
+    console.log(`${ok4 ? 'ok  ' : 'FAIL'} nonograms: a board no one plays fills itself in (${demo.stages} stages a cycle, ${demo.live} seen live)`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
