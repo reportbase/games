@@ -14,7 +14,9 @@
 
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, access } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { deflateSync } from 'node:zlib';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +52,10 @@ if (process.env.LIBS_DIR){
     r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
   await page.route(/cdn\.jsdelivr\.net\/npm\/chess\.js@1\.4\.0\/\+esm/, async r =>
     r.fulfill({ contentType: 'text/javascript', body: await lib('chess.js/dist/esm/chess.js') }));
+  // unzipit too, if it is there (unzipit@2.0.1): the EPUB check needs it.
+  if (await access(join(process.env.LIBS_DIR, 'unzipit/dist/unzipit.min.js')).then(() => true, () => false))
+    await page.route(/unpkg\.com\/unzipit@2\.0\.1\/dist\/unzipit\.min\.js/, async r =>
+      r.fulfill({ contentType: 'text/javascript', body: await lib('unzipit/dist/unzipit.min.js') }));
 }
 
 let current = 'page load';
@@ -3221,6 +3227,100 @@ try {
     });
     if (r.length) failures.push('[gallery order] ' + r.join('; '));
     console.log(`${r.length ? 'FAIL' : 'ok  '} gallery order: page 1 on the corner, the next page right and down across it (5, 12, 37, 150 pages)`);
+  }
+  // AN EPUB IS READ (Oct 16: "Could you add an epub reader"): a book built here (a zip of a package, two chapters, one XHTML
+  // with a list and a figure, one HTML that is not well-formed XML with a word too long for a line and a line of Japanese,
+  // and a cover named only in the package) is opened through the real file picker. It must come up as the gallery with a
+  // page count, the cover first and alone, each chapter starting a page, every word of the book on the pages in order, the
+  // figure on a page, and the pages actually painted onto the boards.
+  {
+    current = 'epub';
+    const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+    const crc = b => { let c = ~0; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (~c) >>> 0; };
+    const zipOf = files => {          // a stored (uncompressed) zip
+      const parts = [], cen = []; let off = 0;
+      for (const [name, d0] of files){
+        const d = Buffer.isBuffer(d0) ? d0 : Buffer.from(d0), nm = Buffer.from(name), c = crc(d);
+        const h = Buffer.alloc(30); h.writeUInt32LE(0x04034b50, 0); h.writeUInt16LE(20, 4); h.writeUInt32LE(c, 14);
+        h.writeUInt32LE(d.length, 18); h.writeUInt32LE(d.length, 22); h.writeUInt16LE(nm.length, 26);
+        parts.push(h, nm, d);
+        const e = Buffer.alloc(46); e.writeUInt32LE(0x02014b50, 0); e.writeUInt16LE(20, 4); e.writeUInt16LE(20, 6); e.writeUInt32LE(c, 16);
+        e.writeUInt32LE(d.length, 20); e.writeUInt32LE(d.length, 24); e.writeUInt16LE(nm.length, 28); e.writeUInt32LE(off, 42);
+        cen.push(e, nm); off += 30 + nm.length + d.length;
+      }
+      const cd = Buffer.concat(cen), end = Buffer.alloc(22);
+      end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10);
+      end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(off, 16);
+      return Buffer.concat([...parts, cd, end]);
+    };
+    const pngOf = (w, h, rgb) => {     // a plain picture
+      const chunk = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]);
+                                const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([l, td, c]); };
+      const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+      const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: w }, () => rgb).flat())]);
+      return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr),
+                            chunk('IDAT', deflateSync(Buffer.concat(Array.from({ length: h }, () => row)))), chunk('IEND', Buffer.alloc(0))]);
+    };
+    const words = 'the quick brown fox jumps over a lazy dog while seven old sailors sing of distant harbours and silver rain'.split(' ');
+    let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const paras = Array.from({ length: 50 }, () => Array.from({ length: 40 + Math.floor(rnd() * 60) }, () => words[Math.floor(rnd() * words.length)]).join(' '));
+    const long = 'Supercalifragilistic' + 'x'.repeat(120);
+    const ch1 = '<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>one</title></head><body>' +
+      '<h1>Chapter One</h1>' + paras.slice(0, 25).map((p, k) => k === 3 ? `<p>${p} <i>leaning words</i> and <b>heavy</b>.</p>` : `<p>${p}</p>`).join('\n') +
+      '<div><img src="../images/fig.png" alt=""/></div><ul><li>first item</li><li>second item</li></ul></body></html>';
+    const ch2 = '<html><head></head><body><h2>Chapter&nbsp;Two</h2><p>' + long + '</p>' + paras.slice(25).map(p => `<p>${p}</p>`).join('\n') +
+      '<p>日本語の文章です。</p></body></html>';
+    const opf = '<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">' +
+      '<dc:title>The Smoke Book</dc:title><meta name="cover" content="cov"/></metadata><manifest>' +
+      '<item id="c1" href="text/one.xhtml" media-type="application/xhtml+xml"/><item id="c2" href="text/two%20b.html" media-type="text/html"/>' +
+      '<item id="cov" href="images/cover.png" media-type="image/png"/><item id="fig" href="images/fig.png" media-type="image/png"/></manifest>' +
+      '<spine><itemref idref="c1"/><itemref idref="c2"/></spine></package>';
+    const dir = await mkdtemp(join(tmpdir(), 'epub-'));
+    const file = join(dir, 'smoke.epub');
+    await writeFile(file, zipOf([['mimetype', 'application/epub+zip'],
+      ['META-INF/container.xml', '<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>'],
+      ['OEBPS/content.opf', opf], ['OEBPS/text/one.xhtml', ch1], ['OEBPS/text/two b.html', ch2],
+      ['OEBPS/images/cover.png', pngOf(60, 90, [200, 40, 40])], ['OEBPS/images/fig.png', pngOf(300, 120, [40, 90, 200])]]));
+    const has = await page.evaluate(() => !!window.unzipit);
+    if (!has) console.log('skip epub: unzipit did not load (offline? put unzipit@2.0.1 in LIBS_DIR)');
+    else {
+      await page.setInputFiles('#importImageFile', file);
+      await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._epub && G._epub.label === 'The Smoke Book'; }, null, { timeout: 30000 }).catch(() => {});
+      await page.waitForTimeout(4000);
+      const r = await page.evaluate(() => {
+        const G = window.FIELD_APPS.find(a => a.id === 'gallery'), E = G._epub;
+        if (!E) return { why: 'no book laid out' };
+        const P = E.pages;
+        const text = P.map(p => E.EPUB.textOf(p));
+        const firstOf = s => text.findIndex(t => t.includes(s));
+        return { n: P.length, app: window.getFieldApp && window.getFieldApp() === G, expect: G._expect,
+                 cover: P[0].full && P[0].imgs.length === 1 && !P[0].lines.length,
+                 one: firstOf('Chapter One'), two: firstOf('Chapter'), twoAt: text.findIndex(t => /Chapter\s+Two/.test(t)),
+                 twoTop: (() => { const k = text.findIndex(t => /Chapter\s+Two/.test(t)); return k > 0 && P[k].lines[0].items.some(it => it.s === 'Two'); })(),
+                 fig: P.some(p => !p.full && p.imgs.length), text: text.join(' '), loaded: G._list.filter(Boolean).length };
+      });
+      const bad = [];
+      if (r.why) bad.push(r.why);
+      else {
+        const flat = r.text.replace(/\s+/g, ' ');
+        // every paragraph in order (the long word may be cut, the Japanese is broken a character at a time)
+        let at = 0;
+        for (const p of paras){ const k = flat.indexOf(p, at); if (k < 0){ bad.push('a paragraph is missing or out of order'); break; } at = k + p.length; }
+        if (!/leaning words and heavy/.test(flat)) bad.push('italic and bold runs lost');
+        if (!/first item.*second item/.test(flat)) bad.push('the list lost');
+        if (flat.replace(/ /g, '').indexOf(long) < 0) bad.push('the long word lost');
+        if (flat.replace(/ /g, '').indexOf('日本語の文章です。') < 0) bad.push('the Japanese lost');
+        if (!r.app) bad.push('the gallery did not come forward');
+        if (!r.cover) bad.push('the cover is not alone on the first page');
+        if (r.one !== 1) bad.push('chapter one starts on page ' + (r.one + 1));
+        if (!r.twoTop) bad.push('chapter two does not start a page');
+        if (!r.fig) bad.push('the figure is on no page');
+        if (r.expect !== r.n) bad.push(`the gallery expects ${r.expect} prints for ${r.n} pages`);
+        if (!(r.loaded >= 1)) bad.push('no page painted onto a board');
+      }
+      if (bad.length) failures.push('[epub] ' + bad.join('; '));
+      console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted`);
+    }
   }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
