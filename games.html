@@ -16093,6 +16093,7 @@ mountDials({
    the second undoes the piece selection and leaves the board framed. */
 const DOUBLE_TAP_MS = 400;
 let _lastTap = { x: 0, z: 0, at: -1e9 };
+let _lastTapSelected = { at: -1e9, sel: false };   // (was the last tap on a board not yet framed: see noDoubleTap, Oct 16)
 /* ── One gesture, one tap ────────────────────────────────────────────────
    A touch fires pointerdown, and then the browser SYNTHESISES a mouse event
    pair for compatibility. The controls module answers both, so a single
@@ -16112,11 +16113,15 @@ function tapGestureIsFresh(){
   _tapGestureUsed = _tapGesture;
   return true;
 }
-function tapIsDouble(hit){
+/* (Oct 16: "double click should select the board and move it into the default position …".) The pair is timed by when the
+   taps were made (the event's timeStamp, on performance.now()'s clock), not when they were handled: a heavy frame (tower
+   defense's field, played after snake, in the software renderer) held the second click back past DOUBLE_TAP_MS, and a quick
+   double read as two slow taps. */
+function tapIsDouble(hit, at){
   const SP = gridSpacing();
   const boardW = SP * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
   const near = (boardW / 8) * 0.75;                 // under one square
-  const now = performance.now();
+  const now = at != null ? at : performance.now();
   const isDouble = (now - _lastTap.at) < DOUBLE_TAP_MS
     && Math.hypot(hit.x - _lastTap.x, hit.z - _lastTap.z) < near;
   // A consumed double resets the clock, so a third click starts a fresh pair
@@ -16199,7 +16204,7 @@ function templateSelectCell(gx, gz){
   try { rebuildBoardBrowser(); } catch (e){ _reportError('board browser', e); }
 }
 
-function handleGroundTap(hit){
+function handleGroundTap(hit, ev){
       // Drop the synthesised duplicate of a touch tap before anything else.
       if (!tapGestureIsFresh()) return;
       _tapCount++;
@@ -16223,7 +16228,21 @@ function handleGroundTap(hit){
          double-tap, which reframes the view and never reaches the app, so a bumper laid and then tapped to take it was
          eaten, and the view jumped. While noDoubleTap() says so, every tap is a tap. */
       let _noDbl = false; try { const _da = window.getFieldApp && window.getFieldApp(); _noDbl = !!(_da && _da.noDoubleTap && _da.noDoubleTap()); } catch {}
-      if (!_noDbl && tapIsDouble(hit)){
+      /* …BUT A DOUBLE ON ANOTHER BOARD ALWAYS GOES THERE (Oct 16: "double click should select the board and move it into the
+         default position, unless the game has a good reason not to."). noDoubleTap() speaks for the board being played: two
+         quick taps on one Simon pad, one Lights Out square or one mole's hole are two moves. But the first tap of a double on
+         a board you are not on only selects it, and that board becomes the framed one, so the game's answer was asked about
+         the new board: in Lights Out and Nonograms, where every board not yet solved says yes, and in Simon or Whack-a-mole
+         while their board was in play, a double click on another board selected it and never brought it in. So the game is
+         heard only on a pair whose first tap was on the board already framed; a pair that began by selecting is always the
+         field's double. The pair is still checked (tapIsDouble) when the game keeps it, so its clock stays honest. */
+      const _gx0 = Math.round(hit.x / gridSpacingX()), _gz0 = Math.round(hit.z / gridSpacingZ());
+      const _onFramedNow = !!target.shown && Math.round(target.boardX / gridSpacingX()) === _gx0 && Math.round(target.boardZ / gridSpacingZ()) === _gz0;
+      const _tapAt = (ev && ev.timeStamp > 0 && ev.timeStamp <= performance.now() + 1) ? ev.timeStamp : performance.now();
+      if (_noDbl && _lastTapSelected.sel && _tapAt - _lastTapSelected.at < DOUBLE_TAP_MS) _noDbl = false;
+      _lastTapSelected = { at: _tapAt, sel: !_onFramedNow };
+      const _isDbl = tapIsDouble(hit, _tapAt);
+      if (!_noDbl && _isDbl){
         cancelSidePanelToggle();     // the first tap of this pair was not a toggle
         if (autoMode){ setAutoMode(false); return; }   // eaten here too
         // Doubling on the piece the hint points at PLAYS the hint. Checked
@@ -16637,7 +16656,7 @@ function handleGroundTap(hit){
 const ctl = mountControls({
   canvas: renderer.domElement, camera, three: THREE, gridSpacing,
   hooks: {
-    onClickGround(hit){ handleGroundTap(hit); },
+    onClickGround(hit, e){ handleGroundTap(hit, e); },
     /* THE LONG PRESS HAS NOTHING LEFT TO DO — FLAGGED, NOT DECIDED.
        Sep 9, in order: the board's action dialog was taken off this gesture;
        the gesture was given the strip instead ("add long press shows the
