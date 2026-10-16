@@ -259,6 +259,68 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     Simon) keeps the label plain and leaves out the steps at rings 7 and 31.
   - The smoke test checks the pads by ring, the same sequence on a board each time, three rounds played back and a wrong
     pad ending it, a real click starting a board and a real click on the right pad taken, and a board no one plays lighting.
+- **Lights Out** (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): `LIGHTS_APP`,
+  id `lightsout`, after Simon. A grid of lights; a press flips its square and the four beside it; put every light out in as
+  few presses as you can.
+  - **Every board its own pattern** (`dealOf`, `makeDeal`): from the board's number (`boardIdx`, golf's Szudzik pairing) at a
+    level 1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as Simon. `LV`: 4, 5, 5, 6 and 7 squares a side,
+    and a band the fewest presses must fall in (3–5, 5–7, 8–10, 10–13, 14–18). A pattern is dealt by pressing k different
+    seeded squares on a dark board, so it can always be put out; up to `TRIES` (24) are made until the par lands in the band,
+    else the nearest is kept. `DEALS` keeps 1,500.
+  - **Par exact** (`solveLO`, `reducedOf`): Gaussian elimination over GF(2) on the press matrix (done once a size, keeping what
+    it does to the right-hand side), then every combination of the free columns tried for the lightest way out. The matrix is
+    singular on 4×4 (four free) and 5×5 (two), so a pattern there has 16 or 4 ways out and the pressed set is often not the
+    shortest; on 6×6 and 7×7 the way out is unique. The fewest presses is the board's par.
+  - Measured on 100 boards a level: par 3.9, 6.1, 8.9, 11.7 and 15.8 presses (every one in its band), 1.2, 1.8, 1.5, 1 and 1
+    tries, about 0.04 ms a deal.
+  - Tap a square (`cellOf`). Through: presses against par as stars (`starsOf`, as Sokoban's: at par 3, within half again 2,
+    else 1), the fewest on each board kept (localStorage `lightsout.best`, by board and level); a tap on a board put out goes on
+    to the next (golf's `nextBoard`), a hold or Start this board again deals it afresh. The menu's Hint flashes one press of a
+    shortest way out from the lights as they are (`hint`, a blue halo).
+  - The squares are the board's colours (`cellGrid`: off a dark checker, lit a warm floor), and each lit square stands up as a
+    glowing tile (`loOn`, unlit); the square just pressed has a pale halo for a moment (`loHalo`). A board no one plays
+    presses its own way out a square at a time, holds dark, and lights again (`shownOf`, each board at its own phase); the
+    board you are on shows its lights as dealt.
+  - **Every tap a press**: `noDoubleTap()` says yes while the framed board is not out, so two quick presses on one square
+    (Simon's lesson of Oct 15) both reach the game.
+  - The smoke test checks the sizes by ring, the same deal on a board each time, par against the fewest presses found by light
+    chasing (every top row, then each row pressed under the lights above: a different way) on 15 boards a level, each in its
+    band and rising, the way out putting it out with three stars, a hint being one press of a shortest way, three real clicks
+    (an inner square, a corner, an edge) flipping exactly their cross, five quick real touches on one square being five
+    presses, and a board no one plays moving.
+- **Whack-a-mole** (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): `MOLE_APP`,
+  id `whackamole`, after Simon. A grid of holes; moles pop up for a moment and you bonk them before they duck back, for a round of
+  `ROUND_T` (30 s) after a "3, 2, 1" (`COUNT`, 1.5 s).
+  - **The rules**: a mole is a point, a golden one three, a bomb costs three and a tap on an empty hole one (`VALUE`, `MISS`); the
+    score never goes under nothing. A second whack on a mole still squashed (`BONK`, 0.3 s) is free, unless another has come up in
+    that hole. A tap anywhere in a hole's square is that hole (`holeAt`); with nine holes the number pad works too (7 top left).
+    States `ready`, `count`, `play`, `over` (`begin`, `stepGame`, `tap`, `over`), on the page's own clock.
+  - **Every board its own round** (`makeRound`, kept by `roundAt` in `ROUNDS`, 1,500): every pop (when, which hole, how long up,
+    mole, gold or bomb) drawn from a generator seeded by `boardIdx` and the level, so a board's round is always the same. A pop
+    takes a hole with nothing in it, not the last one if it can, and waits while `most` are out. The level is the ring level plus
+    the Difficulty (Easy 0, Normal 1, Hard 2), as Simon. `LV`: holes 3×3 (levels 1–2), 4×4 (3–4), 5×5 (5); a mole up 1.3, 1.1,
+    0.95, 0.88, 0.82 s; a pop every 0.95, 0.75, 0.6, 0.5, 0.42 s on average; at most 1, 2, 2, 3, 3 out at once; bombs 12–18% and
+    golden moles 6–8% from level 3. Stays and waits shorten 30% over the round (`QUICKEN`).
+  - **Par, from a steady player** (`steady`): one tap at a time, seeing a mole 0.35 s after it shows (`REACT`), moving the mallet in
+    0.08 s + 0.3 s a board's width (`TRAVEL`), going for the mole it can reach first and never a bomb. Its score is the board's
+    par; stars are yours against it (`starsOf`: par 3, 60% of it 2, else 1). Its taps (`hits`) are what a board no one plays shows
+    bonked. Measured on 30 boards a level: par 25.4, 44.4, 48.1, 51.4 and 52.4 points; pops 25.5, 45.2, 55.5, 69.3 and 82.1 a
+    round; it reaches 99%, 98%, 89%, 78% and 63% of the moles (with stays of 1.25 down to 0.68 s it reached 22% at level 5 and par
+    fell as the levels rose); 0.1–0.8 ms to make a round with its par.
+  - A board no one is playing plays its round on the page's clock with the steady player's bonks, each board at its own phase
+    (`shownT`), a 2.5 s rest between rounds. Played, a bar along the bottom edge is the time left.
+  - Looks: holes are dark discs in an earth rim (kit discs), a mole a body and dome with eyes, nose and belly in one vertex-coloured
+    kind (`wmMole`; the item colour makes it brown, gold, or white for the bonk's flash), rising through the board's face (a
+    negative `lift`, so the part still under it is hidden); a bonk squashes it (`sy` 0.45) with a ring of light; a bomb is black
+    with a red fuse and a spark (`wmBomb`); a miss reddens the hole's rim.
+  - `noDoubleTap()` is true while counting and in play (Simon's lesson). Finished, a tap goes on to the next board (golf's
+    `nextBoard`), after a 0.8 s grace (`GRACE`) so the last whacks of a round don't fly you off; a hold starts it again. Best a
+    board in localStorage `whackamole.best`.
+  - The smoke test checks the holes by ring, a board's round the same each time and another's different, pops rising, stays
+    shortening and bombs only from level 3, the scoring (mole, free second whack, gold, miss, bomb, the floor), the round ending
+    at its time with the score kept as best, a real click starting a board's count and real clicks on two up moles scoring and on
+    an empty hole costing, five quick real touches on one hole (moles there one after another) all taken, and a board no one plays
+    popping.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
