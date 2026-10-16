@@ -22693,6 +22693,14 @@ const GALLERY_APP = (() => {
      the fabric's ceiling (cap² prints — cap is 64, so 4096) the block
      saturates and the surplus does not hang; fieldSelfCheck() counts that
      rather than leaving it silent. */
+  /* A BOARD'S PLACE AS A SIGNED DISTANCE FROM THE CORNER (Oct 16: "photo gallery: pdf and cbz are not loading in correct
+     order"). Through GS was right, and not enough: the wrapped number of the board just right of the corner is 9,999, and
+     9,999 mod N is N − 1 only when N divides 10,000. A 12-page comic opened with page 1 on the corner and page 10 beside it,
+     the row above reading 10, 11, 12, 9, 10: every collection whose size does not divide the field broke at the one place
+     the gallery opens. Folded to −GS/2 … GS/2 first, the board left of the corner is −1 whoever asks (raw cell numbers and
+     wrapped ones alike), so the pages run on across the corner as everywhere else; the one seam left is half the field away.
+     It is also how the far field's fabric already counts (its cell is the world position modulo the block, signed). */
+  const _side = (v, g) => { const w = _wrapN(v | 0, g); return w > g / 2 ? w - g : w; };
   const pick = (c, r) => {
     const n = blockN(), g = fieldGS();
     /* −(row + col) mod N — see rebuildBlock. THROUGH GS FIRST: the renderer
@@ -22707,7 +22715,7 @@ const GALLERY_APP = (() => {
        collection read backwards on screen, right to left and bottom to top.
        Negating makes the next print one step RIGHT and one step DOWN, which
        is what stepBoardScreen already promises and what the eye expects. */
-    return _wrapN(-(_wrapN(_wrapN(r | 0, g), n) + _wrapN(_wrapN(c | 0, g), n)), n);
+    return _wrapN(-(_wrapN(_side(r, g), n) + _wrapN(_side(c, g), n)), n);
   };
   /* WHICH CROP of that print — hashed from the board's coordinates, ON THE
      BLOCK. The wrap is the whole point and it was missing: the geometry
@@ -22742,7 +22750,7 @@ const GALLERY_APP = (() => {
     const n = blockN(), g = fieldGS();
     // Through GS first, for exactly the reason pick does it — otherwise the
     // same board shows a different WINDOW depending on who asked.
-    const cb = _wrapN(_wrapN(c | 0, g), n), rb = _wrapN(_wrapN(r | 0, g), n);
+    const cb = _wrapN(_side(c, g), n), rb = _wrapN(_side(r, g), n);   // (signed from the corner, as pick: Oct 16)
     let h = (Math.imul(cb, 2654435761) ^ Math.imul(rb, 40503)) >>> 0;
     h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b) >>> 0; h ^= h >>> 16;
     return (h >>> 0) % m;              // ^= yields a SIGNED int32; re-unsign it
@@ -22805,6 +22813,7 @@ const GALLERY_APP = (() => {
     _wanted: takeWanted,                  // what the view asked for since last time
     _seen:   takeSeen,                    // everything it hung, for prefetching around
     _has: i => !!LIST[i],
+    _pick: (c, r) => pick(c, r),          // which print a board hangs (for the tests: the order across the corner, Oct 16)
     /* WHAT A PRINT COSTS, in megabytes of canvas, measured off the last one
        cut. Every print in a uniform collection is this size and no print in
        any collection is far from it, so it is the number a loader wants when

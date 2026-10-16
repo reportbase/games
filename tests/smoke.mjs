@@ -3197,6 +3197,31 @@ try {
     if (bad.length) failures.push('[double tap] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} double tap on another board brings it in, framed as the 0 key frames it (${seen.join(', ')})`);
   }
+  // THE GALLERY READS IN ORDER ACROSS THE CORNER (Oct 16: "photo gallery: pdf and cbz are not loading in correct order"): a
+  // print's board is −(row + col) mod N with the board's place taken as a signed distance from the corner, so the next page is
+  // one board to the right (cell c − 1) and one board down (row r − 1) everywhere near where the gallery opens, for sizes that
+  // divide the field's 10,000 and those that do not (12 pages opened with page 10 beside page 1).
+  {
+    current = 'gallery order';
+    const r = await page.evaluate(() => {
+      const G = window.FIELD_APPS.find(a => a.id === 'gallery'), was = G._expect, bad = [];
+      for (const n of [5, 12, 37, 150]){
+        G._expect = Math.max(n, G._list.length);
+        const N = Math.max(n, G._list.length);
+        for (let r = -3; r <= 3; r++) for (let c = -3; c <= 3; c++){
+          const p = G._pick(c, r), right = G._pick(c - 1, r), down = G._pick(c, r - 1);
+          // (and the renderer's own wrapped numbers name the same print as the signed ones)
+          const wrapped = G._pick(((c % 10000) + 10000) % 10000, ((r % 10000) + 10000) % 10000);
+          if (right !== (p + 1) % N || down !== (p + 1) % N || wrapped !== p) bad.push([N, c, r, p, right, down, wrapped].join('/'));
+        }
+        if (G._pick(0, 0) !== 0) bad.push(N + ': the corner is not the first page');
+      }
+      G._expect = was;
+      return bad.slice(0, 6);
+    });
+    if (r.length) failures.push('[gallery order] ' + r.join('; '));
+    console.log(`${r.length ? 'FAIL' : 'ok  '} gallery order: page 1 on the corner, the next page right and down across it (5, 12, 37, 150 pages)`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
