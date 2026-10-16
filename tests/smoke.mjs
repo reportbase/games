@@ -3172,12 +3172,16 @@ try {
           const fire = (type) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
           cv.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchstart');
           cv.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchend'); };
-        tap(); await wait(90); tap();
+        // (the pair back to back: on CI's software renderer a frame can take longer than the whole double's window, and a
+        //  wait between the taps let one fall between them; a person's two taps are 100–250 ms apart on a real screen)
+        tap(); tap();
         // settled where the 0 key would put it
-        let prev = null, still = 0; for (let k = 0; k < 80 && still < 4; k++){ await wait(250); const q = W.camera.position; still = (prev && q.distanceTo(prev) < 1e-5) ? still + 1 : 0; prev = q.clone(); }
+        // (landed when the field says so, not when the camera looks still: between slow frames it can look still mid-flight)
+        const landed = async () => { await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); };
+        await landed();
         const a = W.camera.position.clone(), f = W.cellAt(T.boardX, T.boardZ);
         document.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }));
-        prev = null; still = 0; for (let k = 0; k < 80 && still < 4; k++){ await wait(250); const q = W.camera.position; still = (prev && q.distanceTo(prev) < 1e-5) ? still + 1 : 0; prev = q.clone(); }
+        await landed();
         const b = W.camera.position.clone();
         return { want: [want.c, want.r], got: f && [f.c, f.r], moved: +a.distanceTo(p0).toFixed(2), off: +(a.distanceTo(b) / Math.max(1e-6, b.y)).toFixed(3) };
       });
