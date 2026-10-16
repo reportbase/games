@@ -3167,6 +3167,11 @@ try {
           if (x > 60 && y > 60 && x < innerWidth - 60 && y < innerHeight - 140 && document.elementFromPoint(x, y) === cv){ at = [x, y]; want = W.cellAt(T.boardX + dx, T.boardZ + dz); break; }
         }
         if (!at) return { why: 'no neighbour on the screen' };
+        // (the view at rest first: a tap while it still coasts from the wheel is the brake, and the field eats it, so on CI
+        //  tower defense's pair once lost its first tap and the second only selected)
+        const S = window.tvf && window.tvf.state;
+        for (let k = 0; k < 80 && (T.active || (S && S.heldPanRate) || (typeof ARCADE !== 'undefined' && ARCADE.paused)); k++) await wait(250);
+        const before = { active: !!T.active, held: !!(S && S.heldPanRate), paused: typeof ARCADE !== 'undefined' && !!ARCADE.paused, taps: window.tvf && window.tvf.tapCount };
         const p0 = W.camera.position.clone();
         const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: at[0], clientY: at[1], radiusX: 4, radiusY: 4 });
           const fire = (type) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
@@ -3183,7 +3188,7 @@ try {
         document.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true }));
         await landed();
         const b = W.camera.position.clone();
-        return { want: [want.c, want.r], got: f && [f.c, f.r], moved: +a.distanceTo(p0).toFixed(2), off: +(a.distanceTo(b) / Math.max(1e-6, b.y)).toFixed(3) };
+        return { want: [want.c, want.r], got: f && [f.c, f.r], moved: +a.distanceTo(p0).toFixed(2), off: +(a.distanceTo(b) / Math.max(1e-6, b.y)).toFixed(3), before, taps: window.tvf && (window.tvf.tapCount - before.taps) };
       });
       seen.push(id + ' ' + (r.off != null ? r.off : r.why));
       if (r.why || !r.got || r.got.join() !== r.want.join() || !(r.off < 0.03) || !(r.moved > 0.1)) bad.push(id + ' ' + JSON.stringify(r));
