@@ -2801,6 +2801,342 @@ try {
     if (!ok1 || !ok2 || demo < 2) failures.push('[simon] ' + JSON.stringify({ r, real, demo }));
     console.log(`${ok1 && ok2 && demo >= 2 ? 'ok  ' : 'FAIL'} simon (pads ${r.pads.join('/')} by ring, three rounds played back then a wrong pad ends it at ${r.wrong.score}; a real click on the right pad took)`);
   }
+  // LIGHTS OUT (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
+  // its own pattern at a level by its ring, its par the fewest presses (checked here by light chasing, a different way to
+  // the page's elimination); the way out puts it out; real clicks flip the right cross; five quick real touches on one
+  // square are five presses; a board no one plays presses its own way out.
+  {
+    current = 'lightsout';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'lightsout')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.sizes = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.dealOf(c, r).n);
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      out.same = D.makeDeal(1234, 3).start.join('') === D.makeDeal(1234, 3).start.join('');
+      out.differ = D.makeDeal(1234, 3).start.join('') !== D.makeDeal(1235, 3).start.join('');
+      // the fewest presses by light chasing: every choice of the top row's presses, each row then pressed under the lights
+      // left above it; the bottom row dark is a way out. Exact for any size, and nothing like the page's elimination.
+      const chase = (n, L0) => { let best = Infinity;
+        for (let m = 0; m < (1 << n); m++){ const L = L0.slice(); let w = 0;
+          for (let x = 0; x < n; x++) if (m >> x & 1){ D.pressOn(L, n, x); w++; }
+          for (let y = 1; y < n; y++) for (let x = 0; x < n; x++) if (L[(y - 1) * n + x]){ D.pressOn(L, n, y * n + x); w++; }
+          if (!L.some(v => v)) best = Math.min(best, w); }
+        return best; };
+      out.bad = []; out.par = {}; out.ms = {};
+      for (let lv = 1; lv <= 5; lv++){
+        const pars = [], t0 = performance.now(), K = 15;
+        for (let k = 0; k < K; k++){
+          const S = D.makeDeal(500 + 37 * k + lv * 1000, lv), want = chase(S.n, S.start);
+          const L = S.start.slice(); for (const i of S.sol) D.pressOn(L, S.n, i);
+          if (S.par !== want || L.some(v => v) || S.sol.length !== S.par || S.n !== D.LV[lv - 1].n) out.bad.push({ lv, k, par: S.par, want, n: S.n });
+          pars.push(S.par);
+        }
+        out.ms[lv] = +((performance.now() - t0) / K).toFixed(2);
+        out.par[lv] = { mean: +(pars.reduce((a, b) => a + b, 0) / K).toFixed(1), min: Math.min(...pars), max: Math.max(...pars), inBand: pars.filter(p => p >= D.LV[lv - 1].lo && p <= D.LV[lv - 1].hi).length };
+      }
+      // a game played by its own way out: out, three stars; a hint is a press of a shortest way, one fewer after it
+      const g = D.fresh(0, 0); D.GAMES.set('0_0', g);
+      const h = D.hint(g), before = D.solveLO(g.n, g.L).length; D.press(g, h, true); const afterHint = D.solveLO(g.n, g.L).length;
+      for (const i of D.solveLO(g.n, g.L)) D.press(g, i, true);
+      out.played = { done: g.done, moves: g.moves, par: g.S.par, stars: D.starsOf(g.moves, g.S.par), hintStep: before - afterHint };
+      out.stars = [D.starsOf(6, 6), D.starsOf(9, 6), D.starsOf(10, 6)].join();
+      D.GAMES.delete('0_0');
+      return out;
+    });
+    const ok1 = r.sizes.join() === '5,5,7,7' && r.levels.join() === '2,3,5,5' && r.same && r.differ && !r.bad.length
+      && r.played.done && r.played.moves === r.played.par && r.played.stars === 3 && r.played.hintStep === 1 && r.stars === '3,2,1'
+      && [1, 2, 3, 4, 5].every(lv => r.par[lv].inBand === 15) && r.par[1].mean < r.par[3].mean && r.par[3].mean < r.par[5].mean;
+    if (!ok1) failures.push('[lightsout] rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} lightsout: par is the fewest presses on 75 boards (by light chasing), pars ${[1, 2, 3, 4, 5].map(l => r.par[l].mean).join('/')} by level, the way out puts it out`);
+    // real clicks: fly to a board, click a square, and the cross about it (and nothing else) flips
+    await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'lightsout')._debug.fly(3, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      // (the point of the framed board at (u, v), projected here, as Simon's check does)
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      const flips = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; return D.gameAt(c, r).n; }, fc);
+      const n = flips, picks = [[1, 2], [0, 0], [n - 1, n - 2]];
+      const got = [];
+      for (const [x, y] of picks){
+        const before = await page.evaluate(k => Array.from(window.getFieldApp()._debug.GAMES.get(k).L), key);
+        const pt = await aimAt((x + 0.5) / n, (y + 0.5) / n);
+        await page.mouse.click(pt.x, pt.y);
+        await page.waitForTimeout(700);    // (more than a double-tap's reach apart, as a person's clicks on different squares)
+        const after = await page.evaluate(k => Array.from(window.getFieldApp()._debug.GAMES.get(k).L), key);
+        const changed = after.map((v, i) => v !== before[i] ? i : -1).filter(i => i >= 0).join();
+        const want = await page.evaluate(([n, i]) => window.getFieldApp()._debug.crossOf(n, i).sort((a, b) => a - b).join(), [n, y * n + x]);
+        got.push({ changed, want });
+      }
+      const moves = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).moves, key);
+      real = { n, got, moves };
+    }
+    const ok2 = real && real.moves === 3 && real.got.every(g => g.changed === g.want);
+    if (!ok2) failures.push('[lightsout] real clicks: ' + JSON.stringify({ fc, real }));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} lightsout: three real clicks flip the cross about each square clicked, corner and edge too`);
+    // five quick real touches on one square are five presses, each a flip (Simon's lesson: a quick second tap on one spot
+    // was read as a double-tap and never reached the game)
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const quick = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const tap = async (u, v, after) => { const p = S(u, v); ptr('pointerdown', p); const t = mk(p); fire('touchstart', t); ptr('pointerup', p); fire('touchend', t); await wait(after); };
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r };
+      const n = g.n, i = 1 * n + 1, start = g.S.start, seen = [];
+      for (let k = 0; k < 5; k++){ await tap((1 + 0.5) / n, (1 + 0.5) / n, 200); seen.push(g.L.some((v, j) => v !== start[j]) ? 1 : 0); }
+      const cross = D.crossOf(n, i), odd = Array.from(g.L).every((v, j) => v === (cross.includes(j) ? 1 - start[j] : start[j]));
+      return { moves: g.moves, seen: seen.join(''), odd, noDbl: A.noDoubleTap() };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    const ok3 = quick.moves === 5 && quick.seen === '10101' && quick.odd;
+    if (!ok3) failures.push('[lightsout] quick taps on one square: ' + JSON.stringify(quick));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} lightsout: five quick real touches on one square are five presses (${quick.moves}), flipping it each time (${quick.seen})`);
+    // a board no one plays presses its own way out, one square at a time
+    const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.dealOf(9, 9), seen = new Set();
+      for (let k = 0; k < 40; k++){ seen.add(D.shownOf(S).m); await new Promise(ok => setTimeout(ok, 100)); } return seen.size; });
+    if (demo < 3) failures.push('[lightsout] demo board did not move: ' + demo);
+    console.log(`${demo >= 3 ? 'ok  ' : 'FAIL'} lightsout: a board no one plays presses its own way out (${demo} steps seen in 4 s)`);
+  }
+  // WHACK-A-MOLE (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
+  // its own round of pops, the same each time, at a level by its ring (more holes, shorter stays, a quicker pace farther out,
+  // bombs and golden moles from level 3); a mole is a point, a gold one three, a bomb and an empty hole cost; the round ends
+  // at its time and the score is kept as the board's best; real clicks reach the holes, five quick real touches on one hole
+  // are five whacks; a board no one plays pops its own moles.
+  {
+    current = 'whackamole';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'whackamole')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      out.holes = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.roundOf(c, r).D.n);
+      const sched = G => JSON.stringify(G.pops.map(p => [p.t.toFixed(3), p.i, p.up.toFixed(3), p.type]));
+      const a = sched(D.roundAt(77, 3)); D.ROUNDS.clear(); const b = sched(D.roundAt(77, 3)), c = sched(D.roundAt(78, 3));
+      out.same = a === b; out.differ = a !== c;
+      // what grows with the level, over ten boards: pops in a round, the stays, the holes, bombs
+      out.grow = [1, 2, 3, 4, 5].map(lv => { let pops = 0, up = 0, bombs = 0, par = 0, okPar = true;
+        for (let k = 0; k < 10; k++){ const G = D.roundAt(500 + k * 13, lv); pops += G.pops.length; up += G.pops.reduce((s, p) => s + p.up, 0) / G.pops.length;
+          bombs += G.pops.filter(p => p.type === 'bomb').length; par += G.par; if (!(G.par >= 1 && G.par <= G.pops.reduce((s, p) => s + Math.max(0, { mole: 1, gold: 3, bomb: 0 }[p.type]), 0))) okPar = false;
+          for (let j = 1; j < G.pops.length; j++) if (G.pops[j].t < G.pops[j - 1].t) okPar = false; }
+        return { n: D.LV[lv - 1].n, pops: pops / 10, up: +(up / 10).toFixed(3), bombs: bombs / 10, par: par / 10, okPar }; });
+      // the rules on a round of our own: a mole (and a second whack on it while squashed, free), a gold one, an empty hole,
+      // a bomb, the floor at nothing
+      const g = D.fresh(0, 0); D.GAMES.set('0_0', g); D.LIVE = { c: 0, r: 0 };
+      g.G = Object.assign({}, g.G, { pops: [{ t: 0, i: 0, up: 5, type: 'mole' }, { t: 0, i: 1, up: 5, type: 'gold' }, { t: 0, i: 2, up: 5, type: 'bomb' }, { t: 8, i: 0, up: 1, type: 'mole' }] });
+      g.state = 'play'; g.t0 = D.clock() - 1;
+      const seq = [D.tap(g, 0, true, 1), g.score, D.tap(g, 0, true, 1.05), g.score, D.tap(g, 1, true, 1.1), g.score, D.tap(g, 4, true, 1.2), g.score, D.tap(g, 2, true, 1.3), g.score,
+                   D.tap(g, 0, true, 3), g.score, D.tap(g, 0, true, 8.5), g.score];
+      out.rules = seq.join();
+      out.cell = [D.holeAt(3, 0.01, 0.01), D.holeAt(3, 0.65, 0.34), D.holeAt(3, 0.99, 0.99), D.holeAt(5, 0.5, 0.5)].join();
+      // the round ends at its time, and its score is the board's best
+      const was = D.BEST.get(g.G.idx + '@' + g.G.lv);
+      g.t0 = D.clock() - D.ROUND_T - 0.1; D.stepGame(g, true);
+      out.end = { state: g.state, score: g.score, best: D.BEST.get(g.G.idx + '@' + g.G.lv), was };
+      return out;
+    });
+    const gr = r.grow;
+    const ok1 = r.levels.join() === '2,3,5,5' && r.holes.join() === '3,4,5,5' && r.same && r.differ
+      && gr.every((x, k) => x.okPar && (k === 0 || (x.pops > gr[k - 1].pops && x.up < gr[k - 1].up && x.n >= gr[k - 1].n)))
+      && gr[0].bombs === 0 && gr[1].bombs === 0 && gr[2].bombs > 0 && gr[4].bombs > gr[2].bombs
+      && r.rules === 'mole,1,bonked,1,gold,4,miss,3,bomb,0,miss,0,mole,1' && r.cell === '0,4,8,12'
+      && r.end.state === 'over' && r.end.best === 1;
+    // real clicks: one on the framed board starts the count; in play a click on an up mole scores, one on an empty hole costs
+    await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'whackamole')._debug.fly(3, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); }, fc);
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      const mid = await aimAt(0.5, 0.5);
+      await page.mouse.click(mid.x, mid.y);
+      await page.waitForTimeout(300);
+      const started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
+      await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && g.state === 'play'; }, key, { timeout: 15000 }).catch(() => {});
+      // (two moles of our own, up for a minute, on the first two holes; the board's own pops taken away)
+      const n = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); if (!g) return 0;
+        g.G = Object.assign({}, g.G, { pops: [{ t: 0, i: 0, up: 60, type: 'mole' }, { t: 0, i: 1, up: 60, type: 'mole' }] }); g.t0 = D.clock() - 0.5; g.score = 0; g.got = 0; g.missed = 0; return g.G.D.n; }, key);
+      const scores = [];
+      if (n){
+        for (const i of [0, 1, n * n - 1]){
+          const pt = await aimAt(((i % n) + 0.5) / n, (((i / n) | 0) + 0.5) / n);
+          await page.mouse.click(pt.x, pt.y);
+          await page.waitForTimeout(350);
+          scores.push(await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).score, key));
+        }
+      }
+      real = { started, n, scores };
+    }
+    const ok2 = real && real.started === 'count' && real.scores.join() === '1,2,1';
+    // (Simon's lesson, Oct 15: "the simon buttons are very hard to push") five quick real touches on one hole, moles popping
+    // there one after another, are five whacks: the field must not read every second one as a double-tap
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const quick = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const tap = async (u, v, after) => { const p = S(u, v); ptr('pointerdown', p); const t = mk(p); fire('touchstart', t); ptr('pointerup', p); fire('touchend', t); await wait(after); };
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r };
+      const n = g.G.D.n, i = Math.floor(n * n / 2);
+      // (five moles in that hole, each up as soon as the last is whacked)
+      g.G = Object.assign({}, g.G, { pops: [0, 1, 2, 3, 4].map(k => ({ t: k * 0.01, i, up: 60, type: 'mole' })) });
+      g.state = 'play'; g.t0 = D.clock() - 1;
+      const [u, v] = D.holeUV(n, i);
+      for (let k = 0; k < 5; k++) await tap(u + 0.1 / n, v - 0.1 / n, 200);
+      return { got: g.got, missed: g.missed, score: g.score, state: g.state, dbl: A.noDoubleTap() };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    const ok3 = quick.got === 5 && quick.missed === 0 && quick.dbl;
+    if (!ok3) failures.push('[whackamole] quick touches on one hole: ' + JSON.stringify(quick));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} whackamole: five quick real touches on one hole are five whacks (${quick.got}, ${quick.missed} missed)`);
+    // a board no one plays pops its own moles on the page's clock
+    const demo = await page.evaluate(async () => { const A = window.getFieldApp(), seen = new Set();
+      for (let k = 0; k < 30; k++){ seen.add(A.cellItems(9, 9).filter(x => x.kind === 'wmMole' || x.kind === 'wmBomb').map(x => x.u.toFixed(2) + x.v.toFixed(2)).join()); await new Promise(ok => setTimeout(ok, 100)); }
+      return seen.size; });
+    if (!ok1 || !ok2 || demo < 3) failures.push('[whackamole] ' + JSON.stringify({ r, real, demo }));
+    console.log(`${ok1 && ok2 && demo >= 3 ? 'ok  ' : 'FAIL'} whackamole (holes ${r.holes.join('/')} by ring, pops ${gr.map(x => x.pops).join('/')} and par ${gr.map(x => x.par).join('/')} by level, the same round each time; real clicks on a mole scored and on an empty hole cost: ${real && real.scores.join(',')})`);
+  }
+  // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
+  // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
+  // find; real clicks fill exactly the squares clicked and the corner's marks switch to crosses; a real drag fills a row; the
+  // whole picture filled by real clicks reads as solved and a click then goes on; quick real taps on one square are each a tap;
+  // a board no one plays fills itself in.
+  {
+    current = 'nonograms';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'nonograms')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { bad: [] }, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      out.sizes = [1, 2, 3, 4, 5].map(lv => D.makePuzzle(1234, lv).n);
+      // (every sampled puzzle: its clues are its picture's, it has one answer, and the lines alone reach that answer)
+      const t0 = performance.now();
+      for (let lv = 1; lv <= 5; lv++) for (let k = 0; k < 12; k++){
+        const idx = 50 + k * 97, P = D.makePuzzle(idx, lv), cl = D.cluesOf(P.sol, P.n), dens = P.sol.reduce((a, b) => a + b, 0) / (P.n * P.n);
+        const cells = new Uint8Array(P.n * P.n), how = D.solveLines(P.rows, P.cols, P.n, cells).how;
+        const ok = same(cl.rows, P.rows) && same(cl.cols, P.cols) && D.countSolutions(P.rows, P.cols, P.n, 1e5) === 1 && how === 'solved' && P.fair
+          && [...cells].every((s, i) => (s === 1) === !!P.sol[i]) && dens > 0.4 && dens < 0.75 && P.n === D.LV[lv - 1].n && P.passes >= D.LV[lv - 1].minPasses;
+        if (!ok) out.bad.push({ lv, idx, how, dens });
+      }
+      out.ms = Math.round(performance.now() - t0);
+      out.two = D.countSolutions([[1], [1]], [[1], [1]], 2, 100);           // (a 2×2 diagonal: two answers)
+      out.line = D.lineSolve([3, 1], 6, 0, 0);                              // (3 1 in six: the middle two of the three known)
+      out.sameBoard = same([...D.makePuzzle(777, 3).sol], [...D.makePuzzle(777, 3).sol]);
+      out.differ = !same([...D.makePuzzle(777, 3).sol], [...D.makePuzzle(778, 3).sol]);
+      // the rules by hand: a wrong fill and its clearing is counted, a cross is not, and the picture filled reads as solved
+      const g = D.fresh(0, 0); D.GAMES.set('0_0', g);
+      const P = g.P, wrongAt = P.sol.indexOf(0);
+      D.act(g, wrongAt, 'fill', true); D.act(g, wrongAt, 'fill', true); D.act(g, wrongAt, 'cross', true);
+      out.cross = g.cells[wrongAt];
+      let half = null;
+      for (let i = 0; i < P.n * P.n; i++) if (P.sol[i]){ D.act(g, i, 'fill', true); if (!half) half = g.state; }
+      out.solved = { half, state: g.state, wrong: g.wrong, stars: g.stars, crossesGone: g.cells[wrongAt] === 0 };
+      D.GAMES.delete('0_0');
+      return out;
+    });
+    const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '5,6,8,10,12' && !r.bad.length && r.two === 2 && r.line && r.line[0] === 0b000110
+      && r.sameBoard && r.differ && r.cross === 2 && r.solved.half === 'play' && r.solved.state === 'solved' && r.solved.wrong === 1 && r.solved.stars === 2 && r.solved.crossesGone;
+    if (!ok1) failures.push('[nonograms] puzzles and rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} nonograms: sizes ${r.sizes.join('/')} by level, 60 sampled puzzles each with one answer the lines alone find (${r.ms} ms), a wrong fill costs a star`);
+    // real clicks on the framed board
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      const info = await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug; D.MODE = 'fill'; const g = D.fresh(c, r); D.GAMES.set(k, g); D.LIVE = { c, r };
+        const P = g.P; return { n: P.n, K: P.K, M: P.M, sol: [...P.sol], centres: [...P.sol.keys()].map(i => D.centreOf(P, i)) }; }, [...fc, key]);
+      const cellsNow = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { cells: [...g.cells], state: g.state, mode: window.getFieldApp()._debug.MODE } : null; }, key);
+      const click = async i => { const p = await aimAt(...info.centres[i]); await page.mouse.click(p.x, p.y); await page.waitForTimeout(350); };
+      const filled = info.sol.map((s, i) => s ? i : -1).filter(i => i >= 0), empty = info.sol.map((s, i) => s ? -1 : i).filter(i => i >= 0);
+      const three = [filled[0], filled[Math.floor(filled.length / 2)], filled[filled.length - 1]];
+      for (const i of three) await click(i);
+      const a = await cellsNow();
+      const exact = a && a.cells.every((s, i) => s === (three.includes(i) ? 1 : 0));
+      await click(three[0]);
+      const b = await cellsNow();
+      // the corner's cross mark, then a square crossed, then the fill mark again
+      const K = info.K / info.M, cp = await aimAt(0.7 * K, 0.5 * K); await page.mouse.click(cp.x, cp.y); await page.waitForTimeout(350);
+      const modeX = (await cellsNow()).mode;
+      await click(empty[0]);
+      const crossed = (await cellsNow()).cells[empty[0]];
+      const fp = await aimAt(0.3 * K, 0.5 * K); await page.mouse.click(fp.x, fp.y); await page.waitForTimeout(350);
+      const modeF = (await cellsNow()).mode;
+      // a real drag along a row with no cross in it fills its blanks
+      const n = info.n, before = (await cellsNow()).cells, row = [...Array(n).keys()].find(rr => before.slice(rr * n, rr * n + n).every(x => x === 0));
+      const p0 = await aimAt(...info.centres[row * n]), p1 = await aimAt(...info.centres[row * n + n - 1]);
+      await page.mouse.move(p0.x, p0.y); await page.mouse.down();
+      for (let s = 1; s <= 12; s++){ await page.mouse.move(p0.x + (p1.x - p0.x) * s / 12, p0.y + (p1.y - p0.y) * s / 12); await page.waitForTimeout(40); }
+      await page.mouse.up(); await page.waitForTimeout(400);
+      const d = await cellsNow();
+      const dragRow = d.cells.slice(row * n, row * n + n);
+      // the whole picture by real clicks, from a blank board: solved, and a click then goes to the next board
+      await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug; D.GAMES.set(k, D.fresh(c, r)); }, [...fc, key]);
+      for (const i of filled) await click(i);
+      const s = await cellsNow();
+      await click(0);
+      const next = await page.evaluate(() => { const L = window.getFieldApp()._debug.LIVE; return L ? [L.c, L.r] : null; });
+      real = { exact, cleared: b.cells[three[0]] === 0 && b.cells[three[1]] === 1, modeX, crossed, modeF, dragRow, solved: s.state, next, from: fc };
+    }
+    const ok2 = real && real.exact && real.cleared && real.modeX === 'cross' && real.crossed === 2 && real.modeF === 'fill' && real.dragRow.every(x => x === 1)
+      && real.solved === 'solved' && real.next && real.next.join() !== real.from.join();
+    if (!ok2) failures.push('[nonograms] real clicks: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} nonograms: real clicks fill exactly the squares clicked, the corner switches to crosses, a real drag fills a row, the picture by real clicks is solved and a click goes on`);
+    // (Oct 15, Simon's lesson: "the simon buttons are very hard to push") quick real touches on one square are each a tap:
+    // filled, cleared, filled, cleared, and the view never reframed
+    await page.waitForTimeout(3000);
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const quick = await page.evaluate(async () => {
+      const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const tap = async (u, v, after) => { const p = S(u, v); ptr('pointerdown', p); const t = mk(p); fire('touchstart', t); ptr('pointerup', p); fire('touchend', t); await wait(after); };
+      D.MODE = 'fill';
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r };
+      const i = g.P.n + 1, [u, v] = D.centreOf(g.P, i), seen = [];
+      for (let k = 0; k < 4; k++){ await tap(u, v, 200); seen.push(g.cells[i]); }
+      const f2 = W.cellAt(W.target.boardX, W.target.boardZ);
+      return { seen, still: !!f2 && f2.c === f.c && f2.r === f.r, noDbl: window.getFieldApp().noDoubleTap() };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    const ok3 = quick.seen.join() === '1,0,1,0' && quick.still && quick.noDbl;
+    if (!ok3) failures.push('[nonograms] quick taps on one square: ' + JSON.stringify(quick));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} nonograms: four quick real touches on one square are four taps (${quick.seen.join(', ')})`);
+    // a board no one plays fills its picture in, square by square, shows it in colour and starts again: over one cycle of its
+    // clock every stage is seen, and on the page's own clock it moves (sampled for a whole cycle: a few seconds can fall in the
+    // picture's rest)
+    const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, P = D.puzzleFor(9, 9), T = D.cycleOf(P), seen = new Set();
+      let pic = false, blank = false;
+      for (let k = 0; k < 400; k++){ const V = D.shownView(P, 1000 + T * k / 400); seen.add(V.stamp); pic = pic || V.pic; blank = blank || (!V.pic && !V.cells.some(x => x)); }
+      const live = new Set(), t0 = performance.now();
+      while (performance.now() - t0 < (T + 1) * 1000){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
+      return { stages: seen.size, filled: P.sol.reduce((a, b) => a + b, 0), pic, blank, live: live.size }; });
+    const ok4 = demo.stages >= demo.filled && demo.pic && demo.blank && demo.live >= 3;
+    if (!ok4) failures.push('[nonograms] a board no one plays: ' + JSON.stringify(demo));
+    console.log(`${ok4 ? 'ok  ' : 'FAIL'} nonograms: a board no one plays fills itself in (${demo.stages} stages a cycle, ${demo.live} seen live)`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
