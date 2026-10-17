@@ -934,6 +934,22 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   12-page comic had page 10 beside page 1 and its row above read 10, 11, 12, 9, 10. `vpick` (which crop) folds the same way.
   The one seam left is half the field away. The smoke test checks the order across the corner for 5, 12, 37 and 150 pages
   (`GALLERY_APP._pick`).
+- **Books: an EPUB reader** (Oct 16: "Could you add an epub reader"): a `.epub` opened, dropped or in a bucket hangs one page
+  a board in the photo gallery, as a PDF does (`EPUB`, `_loadEpub`, after `_loadPdf`). A book has no pages of its own, so it is
+  laid out here, once, before the pour is told the count: onto 2:3 pages (`PAGE_W` × `PAGE_H`, 640 × 960), Georgia at 20, words
+  measured with the canvas's `measureText` (kept by word), broken greedily and justified (ragged where a gap would pass 0.9 em),
+  paragraphs indented but the first after a heading, headings centred and kept with two lines, every chapter on a fresh page, a
+  chapter that is one picture alone on its page edge to edge (a cover; a cover named only in the package goes in front), other
+  pictures fitted to the column, a page number at the foot. The book's CSS is not read; tables become lines; CJK breaks
+  anywhere. `open` reads `META-INF/container.xml`, the package's spine (linear="no" left out but at the front), chapters through
+  the XHTML parser and, if not well-formed, the HTML one, and picture sizes from their headers; a book whose chapters are
+  encrypted (DRM) is refused. `paint` draws a page at `_pdfPx`; pictures are decoded as pages want them (the latest
+  `EPUB_PICS`, 8). Reads from the zip go 32 at a time (`many`): one after another, each waited behind a frame, and Pride and
+  Prejudice (605 pages, 164 pictures) took 53 s to open in the sandbox; together, 4.7 s (Alice, 130 pages: 11 s, then 2.8 s).
+  Laying out is 34 ms for Alice, 150 ms for Pride and Prejudice. The canvas spells a font back its own way, so the font last set
+  is kept by hand (`mfont`), or it is parsed again for every word. An epub's type, application/epub+zip, matched the archives' `/zip/` and opened as its pictures alone; it is
+  taken out first. The smoke test builds a book (a stored zip it writes itself) and opens it through the real picker:
+  `GALLERY_APP._epub` has the pages and `EPUB.textOf`.
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
   unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
   board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.

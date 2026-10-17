@@ -935,7 +935,7 @@
 <button id="fitBtn" class="panel chip" aria-label="fit window or fit image" hidden
         title="How a picture meets its board. Fit window fills the board and loses whatever does not fit. Fit image shows the whole picture, with bars where the shapes disagree."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="fitFill"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></g><g class="fitWhole" style="display:none"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></g></svg></button>
 <button id="openBtn" class="panel chip" aria-label="open pictures"
-        title="Open anything into the field - images, a PDF or a comic archive (.cbz, .cbr, .cb7), each hanging on its own board; or a game record (.pgn, .pdn, .sgf), which lays its boards out and switches app. Dropping files anywhere on the window does the same."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5m0 0L8.2 8.3M12 4.5l3.8 3.8"/><path d="M4.8 14.5v3.2a1.8 1.8 0 0 0 1.8 1.8h10.8a1.8 1.8 0 0 0 1.8-1.8v-3.2"/></svg></button>
+        title="Open anything into the field - images, a PDF, a book (.epub) or a comic archive (.cbz, .cbr, .cb7), each hanging on its own board; or a game record (.pgn, .pdn, .sgf), which lays its boards out and switches app. Dropping files anywhere on the window does the same."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5m0 0L8.2 8.3M12 4.5l3.8 3.8"/><path d="M4.8 14.5v3.2a1.8 1.8 0 0 0 1.8 1.8h10.8a1.8 1.8 0 0 0 1.8-1.8v-3.2"/></svg></button>
 <!-- THE GAME INDEX: every game in the field, by name. A list, drawn as one. -->
 <button id="indexBtn" class="panel chip" aria-label="game index" hidden
         title="Every game in the field, by name - jump to any of them."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6.5h10M9 12h10M9 17.5h10"/><path d="M5 6.5h.01M5 12h.01M5 17.5h.01"/></svg></button>
@@ -1207,8 +1207,8 @@
          switches the app to them — but the bar's open chip is the field's own
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
-    <button id="bLoadImage" title="Open anything into the field: images, a PDF or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
-    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf" multiple hidden>
+    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
+    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution (1024px long side) instead of scaling down as the collection grows. Costs real GPU memory: ~5MB per print at 1024, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to the next load."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
     <button id="bSelfCheck" title="Run the field's invariant checks: do the geometry and fabric tiers agree about which picture hangs where, does every print hang somewhere, can the ordered walk reach them all, is any board drawing the backdrop instead of its image. Also on the V key.">Self&#8209;check &#10003;</button>
@@ -49809,6 +49809,510 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       try { if (doc) doc.destroy(); } catch {}
     }
   };
+  /* ═══ EPUB → gallery (Oct 16: "Could you add an epub reader") ═══════════
+     A BOOK IS A COLLECTION OF PAGES TOO, but unlike a PDF or a comic it does
+     not come with any: an EPUB is a zip of XHTML chapters that a reader is
+     meant to flow onto whatever screen it has. So this lays the book out
+     itself, once, onto pages of one fixed shape (2:3, a paperback's), and
+     from then on the book is exactly a PDF to everything downstream: page i is
+     print i, the pour declares the count, the demand loop asks only for the
+     pages the boards are hanging, and `render` paints one onto a canvas.
+     WHY OUR OWN LAYOUT AND NOT THE BROWSER'S. The page could draw a chapter's
+     HTML into a canvas through an SVG foreignObject, but it would have to be
+     cut into pages, and finding where a page ends in laid-out HTML means
+     measuring the DOM line by line anyway; it also drops the book's pictures
+     (a foreignObject cannot reach the zip's images) and taints the canvas in
+     some browsers, which would stop the print cut reading it. Paragraphs,
+     headings, italics and bold, lists, quotes, pictures and the page breaks
+     between chapters are what a novel or most non-fiction is made of, and
+     those are laid out here: the words measured with the canvas's own
+     measureText, broken greedily and justified, a chapter always starting on
+     a fresh page, a chapter that is a single picture (a cover, a plate) given
+     the whole page. The book's CSS is not read; its tables become lines.
+     Laid out up front, because the count must be known before the pour can
+     place a single page; a 500-page novel is about 150,000 words, a few
+     hundred milliseconds of measuring with the widths kept by word. */
+  const EPUB = (() => {
+    const PAGE_W = 640, PAGE_H = 960, ASPECT = PAGE_W / PAGE_H;
+    const M = { l: 58, r: 58, t: 72, b: 86 };
+    const CW = PAGE_W - M.l - M.r, BOTTOM = PAGE_H - M.b;
+    const SERIF = 'Georgia, "Times New Roman", Times, "DejaVu Serif", serif';
+    const MONO = 'Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace';
+    const BODY = 20, LEAD = 1.45, SMALL = 17;
+    const HEAD = [0, 34, 29, 25, 22, 21, 20];
+    const PAPER = '#fbf8f1', INK = '#1d1b18', FAINT = '#8f877b';
+    const fontOf = (r, size) => (r.i ? 'italic ' : '') + (r.b ? 'bold ' : '') + size + 'px ' + (r.mono ? MONO : SERIF);
+
+    /* ── the zip: paths, lookups, the package ── */
+    const dirOf = p => (p.includes('/') ? p.slice(0, p.lastIndexOf('/') + 1) : '');
+    const joinPath = (dir, href) => {
+      href = String(href || '').trim().split('#')[0];
+      try { href = decodeURIComponent(href); } catch {}
+      if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return '';   // empty, or a link out of the book
+      const out = [];
+      for (const s of (href.charAt(0) === '/' ? href.slice(1) : dir + href).split('/')){
+        if (s === '..') out.pop(); else if (s && s !== '.') out.push(s);
+      }
+      return out.join('/');
+    };
+    const finder = entries => {
+      const low = new Map();
+      for (const k of Object.keys(entries)) low.set(k.toLowerCase(), k);
+      // Books made on Windows name their files in one case and link them in another.
+      return p => (p && (entries[p] || entries[low.get(p.toLowerCase())])) || null;
+    };
+    const keyOf = (entries, find, p) => { const e = find(p); return e ? Object.keys(entries).find(k => entries[k] === e) : ''; };
+    const byTag = (d, n) => Array.from(d.getElementsByTagNameNS('*', n));
+    const parse = (s, html) => {
+      if (!html){
+        const d = new DOMParser().parseFromString(s, 'application/xhtml+xml');
+        if (!d.getElementsByTagName('parsererror').length) return d;
+      }
+      /* XHTML that is not well-formed XML (a bare &nbsp; with no DTD, an
+         unclosed <br>) is common in the wild; the HTML parser takes it. */
+      return new DOMParser().parseFromString(s, 'text/html');
+    };
+
+    async function open(entries, progress){
+      const find = finder(entries);
+      let opfPath = '';
+      const cont = find('META-INF/container.xml');
+      if (cont){
+        const rf = byTag(parse(await cont.text()), 'rootfile')[0];
+        if (rf) opfPath = joinPath('', rf.getAttribute('full-path'));
+      }
+      if (!opfPath || !find(opfPath)) opfPath = Object.keys(entries).find(k => /\.opf$/i.test(k)) || '';
+      if (!opfPath) throw new Error('not an EPUB (no package file)');
+      /* DRM. A store's lock encrypts the chapters themselves; font
+         obfuscation lists only fonts here, and those are never read. */
+      const enc = find('META-INF/encryption.xml');
+      if (enc && /URI\s*=\s*["'][^"']+\.(x?html?|xml)["']/i.test(await enc.text()))
+        throw new Error('this book is locked (DRM), and cannot be read here');
+      const opf = parse(await find(opfPath).text());
+      const base = dirOf(opfPath);
+      const items = new Map();
+      for (const it of byTag(opf, 'item'))
+        items.set(it.getAttribute('id'), { href: joinPath(base, it.getAttribute('href')),
+                                           type: it.getAttribute('media-type') || '',
+                                           props: it.getAttribute('properties') || '' });
+      /* The spine is the reading order. An item marked linear="no" is read
+         out of order (notes, an answer key), so it is left out, except at the
+         very front, where it is nearly always the cover. */
+      const refs = byTag(opf, 'itemref');
+      const spine = refs.filter((r, k) => k === 0 || r.getAttribute('linear') !== 'no')
+        .map(r => items.get(r.getAttribute('idref')))
+        .filter(it => it && find(it.href) && !/image\//i.test(it.type));
+      if (!spine.length) throw new Error('the book has no chapters');
+      const t = byTag(opf, 'title')[0];
+      const title = (t && t.textContent.replace(/\s+/g, ' ').trim()) || '';
+      // The cover: EPUB 3's properties, else EPUB 2's <meta name="cover">.
+      let cover = '';
+      for (const it of items.values()) if (/\bcover-image\b/.test(it.props)) cover = it.href;
+      if (!cover){
+        const m = byTag(opf, 'meta').find(m => m.getAttribute('name') === 'cover');
+        const it = m && items.get(m.getAttribute('content'));
+        if (it && /image\//i.test(it.type)) cover = it.href;
+      }
+      /* READ TOGETHER, PARSED IN TURN. Every read from the zip is a trip
+         through the event loop, and each trip waits behind a frame of the
+         field: read one after another, Pride and Prejudice's 164 pictures
+         took 48 s in the sandbox (whose frames are slow) against 1.3 s asked
+         for all at once, and its chapters 2.9 s against 0.8. */
+      const texts = await many(spine, it => find(it.href).text().catch(() => null));
+      const chapters = [];
+      let slice = performance.now();
+      for (let k = 0; k < spine.length; k++){
+        if (texts[k] == null) continue;
+        try { chapters.push(blocksOf(texts[k], spine[k].href, /html?$/i.test(spine[k].type) && !/xhtml/i.test(spine[k].type), find, entries)); }
+        catch (e){ console.warn('[epub] chapter ' + spine[k].href + ' unreadable —', e && e.message); }
+        if (performance.now() - slice > 60){             // the field keeps drawing
+          if (progress) progress(k + 1, spine.length);
+          await new Promise(r => setTimeout(r, 0));
+          slice = performance.now();
+        }
+      }
+      /* A cover the book names but never shows (many put it only in the
+         package) goes on a page of its own in front. */
+      cover = keyOf(entries, find, cover);
+      if (cover && !chapters.slice(0, 2).some(ch => ch.some(b => b.t === 'img' && b.key === cover)))
+        chapters.unshift([{ t: 'img', key: cover }]);
+      /* Every picture's size, from its header (no pixels decoded), since a
+         page cannot be laid out without knowing how tall its pictures are. */
+      const sizes = new Map();
+      const keys = [...new Set(chapters.flat().filter(b => b.t === 'img').map(b => b.key))];
+      const got = await many(keys, async key => {
+        let sz = null;
+        try { sz = imageSizeFromBytes(await entries[key].arrayBuffer()); } catch {}
+        if (!sz || !(sz.w > 0 && sz.h > 0)){
+          try {   // an SVG, or a header the sniffer does not know
+            const im = await _decodeBlob(await entries[key].blob(mimeOf(key)));
+            sz = { w: im.width, h: im.height };
+            if (im.close) im.close();
+          } catch {}
+        }
+        return sz && sz.w > 0 && sz.h > 0 ? sz : null;
+      });
+      keys.forEach((k, i) => sizes.set(k, got[i]));
+      return { title, chapters, sizes };
+    }
+    // Asked 32 at a time, so a book of large pictures is not all in memory at once.
+    const many = async (list, fn) => {
+      const out = [];
+      for (let k = 0; k < list.length; k += 32)
+        out.push(...await Promise.all(list.slice(k, k + 32).map(fn)));
+      return out;
+    };
+    const mimeOf = k => {
+      const x = k.split('.').pop().toLowerCase();
+      return x === 'svg' ? 'image/svg+xml' : 'image/' + (x === 'jpg' ? 'jpeg' : x);
+    };
+
+    /* ── a chapter into blocks ──
+       A block is a paragraph ({t: 'p', runs, h, inset, align, pre, small}),
+       a picture ({t: 'img', key}) or a rule ({t: 'hr'}). A run is a piece of
+       text in one style ({s, b, i, mono}). */
+    const SKIP = new Set(['script', 'style', 'head', 'title', 'noscript', 'template', 'iframe', 'object', 'embed', 'audio', 'video', 'button', 'input', 'select', 'textarea']);
+    const BLOCK = new Set(['p', 'div', 'li', 'blockquote', 'pre', 'section', 'article', 'figure', 'figcaption', 'header',
+                           'footer', 'aside', 'nav', 'tr', 'dt', 'dd', 'table', 'tbody', 'thead', 'tfoot', 'ul', 'ol', 'dl',
+                           'body', 'main', 'center', 'address', 'caption', 'hgroup', 'details', 'summary', 'h1', 'h2',
+                           'h3', 'h4', 'h5', 'h6']);
+    function blocksOf(src, path, html, find, entries){
+      const doc = parse(src, html);
+      const body = byTag(doc, 'body')[0] || doc.documentElement;
+      const dir = dirOf(path);
+      const out = [];
+      let runs = [];
+      let blk = { inset: 0 };
+      const flush = () => {
+        if (runs.some(r => /\S/.test(r.s))) out.push(Object.assign({ t: 'p', runs }, blk));
+        runs = [];
+      };
+      const image = el => {
+        const src = el.getAttribute('src') || el.getAttribute('xlink:href') ||
+                    el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || el.getAttribute('href');
+        const key = keyOf(entries, find, joinPath(dir, src));
+        if (!key) return;
+        flush();
+        out.push({ t: 'img', key });
+      };
+      const walk = (n, st) => {
+        if (n.nodeType === 3){
+          const s = st.pre ? n.nodeValue : n.nodeValue.replace(/[\s­]+/g, m => (/\s/.test(m) ? ' ' : ''));
+          if (s) runs.push({ s, b: st.b, i: st.i, mono: st.mono });
+          return;
+        }
+        if (n.nodeType !== 1) return;
+        const tag = (n.localName || '').toLowerCase();
+        if (SKIP.has(tag) || n.hasAttribute('hidden')) return;
+        if (/\bpagebreak\b/.test(n.getAttribute('epub:type') || n.getAttribute('role') || '')) return;
+        if (tag === 'br'){ runs.push({ s: '\n' }); return; }
+        if (tag === 'img' || tag === 'image'){ image(n); return; }
+        if (tag === 'hr'){ flush(); out.push({ t: 'hr' }); return; }
+        if (tag === 'svg'){ for (const im of byTag(n, 'image')) image(im); return; }
+        let s2 = st;
+        if (/^(em|i|cite|var|dfn|address)$/.test(tag)) s2 = Object.assign({}, st, { i: !st.i });
+        else if (/^(strong|b|th)$/.test(tag)) s2 = Object.assign({}, st, { b: true });
+        else if (/^(code|tt|kbd|samp)$/.test(tag)) s2 = Object.assign({}, st, { mono: true });
+        if (tag === 'td' || tag === 'th'){ if (n.previousElementSibling) runs.push({ s: ' ' }); }
+        if (!BLOCK.has(tag)){ for (const c of n.childNodes) walk(c, s2); return; }
+        flush();
+        const was = blk;
+        blk = Object.assign({}, was);
+        const h = /^h([1-6])$/.exec(tag);
+        if (h){ blk.h = +h[1]; blk.align = 'center'; s2 = Object.assign({}, s2, { b: true }); }
+        if (tag === 'blockquote') blk.inset = (was.inset || 0) + 32;
+        if (tag === 'ul' || tag === 'ol' || tag === 'dd') blk.inset = (was.inset || 0) + 24;
+        if (tag === 'pre'){ blk.pre = true; s2 = Object.assign({}, s2, { mono: true, pre: true }); }
+        if (tag === 'figcaption' || tag === 'caption'){ blk.align = 'center'; blk.small = true; }
+        if (tag === 'center') blk.align = 'center';
+        if (tag === 'li'){
+          const p = n.parentNode, ol = p && (p.localName || '').toLowerCase() === 'ol';
+          let k = 1;
+          if (ol){ for (let e = n.previousElementSibling; e; e = e.previousElementSibling) k++;
+                   k += (parseInt(p.getAttribute('start'), 10) || 1) - 1; }
+          runs.push({ s: ol ? k + '. ' : '• ' });
+          blk.list = true;
+        }
+        for (const c of n.childNodes) walk(c, s2);
+        flush();
+        blk = was;
+      };
+      walk(body, {});
+      return out;
+    }
+
+    /* ── the layout ── */
+    const mctx = document.createElement('canvas').getContext('2d');
+    const widths = new Map();
+    /* The font last set, kept here: the canvas hands back its own spelling of
+       a font (quotes and spaces its way), so asking it never matched, and the
+       font was parsed again for every word, ten seconds for Alice. */
+    let mfont = '';
+    const wid = (s, font) => {
+      const k = font + '\u0001' + s;
+      let w = widths.get(k);
+      if (w === undefined){
+        if (mfont !== font){ mctx.font = font; mfont = font; }
+        w = mctx.measureText(s).width;
+        if (widths.size > 200000) widths.clear();
+        widths.set(k, w);
+      }
+      return w;
+    };
+    // CJK and fullwidth characters break anywhere; everything else at spaces.
+    const TOK = /\n|[^\S\n]+|[⺀-鿿가-힯豈-﫿＀-￯]|[^\s⺀-鿿가-힯豈-﫿＀-￯]+/g;
+    const CJK = /^[⺀-鿿가-힯豈-﫿＀-￯]$/;
+    /* Runs into words: a word is what may not be broken (its parts can be in
+       different styles: "<i>wor</i>d"), with the width of the space before it
+       and whether a forced line break comes first. */
+    function wordsOf(runs, size, pre){
+      const words = [];
+      let cur = null, space = 0, nl = false;
+      for (const r of runs){
+        const font = fontOf(r, size);
+        for (const m of r.s.matchAll(TOK)){
+          const s = m[0];
+          if (s === '\n'){ cur = null; nl = true; space = 0; continue; }
+          if (!/\S/.test(s)){
+            cur = null;
+            if (pre) space += wid(s.replace(/\t/g, '    '), font);
+            else if (!space) space = wid(' ', font);
+            continue;
+          }
+          const cjk = CJK.test(s);
+          if (!cur || cjk || cur.cjk){
+            cur = { parts: [], wd: 0, sp: space, nl, cjk };
+            words.push(cur);
+            space = 0; nl = false;
+          }
+          cur.parts.push({ s, font, wd: wid(s, font) });
+          cur.wd += cur.parts[cur.parts.length - 1].wd;
+        }
+      }
+      return words;
+    }
+    // A word wider than the line, cut where it must be, a character at a time.
+    function cut(w, room){
+      const out = [];
+      let cur = { parts: [], wd: 0, sp: w.sp, nl: w.nl };
+      for (const p of w.parts) for (const ch of p.s){
+        const cw = wid(ch, p.font);
+        if (cur.wd + cw > room && cur.wd > 0){ out.push(cur); cur = { parts: [], wd: 0, sp: 0, nl: false }; }
+        const last = cur.parts[cur.parts.length - 1];
+        if (last && last.font === p.font){ last.s += ch; last.wd += cw; }
+        else cur.parts.push({ s: ch, font: p.font, wd: cw });
+        cur.wd += cw;
+      }
+      if (cur.parts.length) out.push(cur);
+      return out;
+    }
+    /* Greedy lines, justified but for a paragraph's last line and any line a
+       break ends. A line is {items: [{x, s, font}], w}, x from its own left. */
+    function linesOf(b, size, width, indent){
+      const words = wordsOf(b.runs, size, b.pre);
+      const lines = [];
+      let line = [], lw = 0;
+      const room = () => width - (lines.length ? 0 : indent);
+      const end = (last) => {
+        if (!line.length && !last) return;
+        const r = room();
+        const gaps = line.filter((e, k) => k > 0 && e.sp > 0).length;
+        let extra = 0;
+        if (!last && !b.pre && b.align !== 'center' && gaps){
+          extra = (r - lw) / gaps;
+          if (extra > size * 0.9) extra = 0;   // three long words on a line: ragged beats rivers
+        }
+        const items = [];
+        let x = lines.length ? 0 : indent;
+        line.forEach((e, k) => {
+          if (k > 0) x += e.sp + (e.sp > 0 ? extra : 0);
+          for (const p of e.w.parts){ items.push({ x, s: p.s, font: p.font }); x += p.wd; }
+        });
+        lines.push({ items, w: x });
+        line = []; lw = 0;
+      };
+      const queue = words.slice();
+      while (queue.length){
+        let w = queue.shift();
+        if (w.nl && (line.length || lines.length || b.pre)){ end(true); }
+        const sp = line.length ? w.sp : 0;
+        if (line.length && lw + sp + w.wd > room()){ end(false); }
+        if (!line.length && w.wd > room()){
+          const bits = cut(w, room());
+          queue.unshift(...bits.slice(1));
+          w = bits[0];
+        }
+        line.push({ w, sp: line.length ? w.sp : 0 });
+        lw += (line.length > 1 ? w.sp : 0) + w.wd;
+      }
+      end(true);
+      // Leading spaces at the start of a paragraph never show.
+      return lines.filter(l => l.items.length);
+    }
+
+    function layout(book){
+      const pages = [];
+      let pg = null, y = 0;
+      const newPage = () => { pg = { lines: [], imgs: [], rules: [], full: false }; pages.push(pg); y = M.t; };
+      const blank = () => !pg.lines.length && !pg.imgs.length && !pg.rules.length;
+      for (const ch of book.chapters){
+        if (!ch.length) continue;
+        if (!pg || !blank()) newPage();
+        /* A chapter that is one picture and nothing else (a cover, a plate, a
+           map) has the page to itself, edge to edge in the paper. */
+        if (ch.length === 1 && ch[0].t === 'img'){
+          const sz = book.sizes.get(ch[0].key);
+          if (sz){
+            const s = Math.min(PAGE_W / sz.w, PAGE_H / sz.h);
+            const w = sz.w * s, h = sz.h * s;
+            pg.imgs.push({ key: ch[0].key, x: (PAGE_W - w) / 2, y: (PAGE_H - h) / 2, w, h });
+            pg.full = true;
+          }
+          continue;
+        }
+        let afterHead = true;   // the first paragraph of a chapter, and after a heading, is not indented
+        for (let k = 0; k < ch.length; k++){
+          const b = ch[k];
+          if (b.t === 'hr'){
+            if (y > M.t){ y += BODY * 0.6; pg.rules.push({ y: y + BODY * 0.3 }); y += BODY * 1.2; }
+            afterHead = true;
+            continue;
+          }
+          if (b.t === 'img'){
+            const sz = book.sizes.get(b.key);
+            if (!sz) continue;
+            const room = CW - 2 * (b.inset || 0);
+            const s = Math.min(room / sz.w, (BOTTOM - M.t) / sz.h, 1);
+            const w = sz.w * s, h = sz.h * s;
+            const gap = y > M.t ? BODY * 0.6 : 0;
+            if (y + gap + h > BOTTOM) newPage();
+            else y += gap;
+            pg.imgs.push({ key: b.key, x: M.l + (CW - w) / 2, y, w, h });
+            y += h + BODY * 0.6;
+            afterHead = false;
+            continue;
+          }
+          const size = b.h ? HEAD[b.h] : (b.small ? SMALL : BODY);
+          const lh = Math.round(size * (b.h ? 1.25 : LEAD));
+          const inset = b.inset || 0;
+          const indent = (!b.h && !afterHead && !b.list && !b.pre && b.align !== 'center') ? Math.round(BODY * 1.4) : 0;
+          const lines = linesOf(b, size, CW - 2 * inset, indent);
+          if (!lines.length) continue;
+          let gap = b.h ? (y > M.t ? size * 1.1 : size * 0.4) : (y > M.t ? BODY * 0.3 : 0);
+          /* A heading keeps two lines of what follows it on its page. */
+          if (b.h && y + gap + lines.length * lh + 2 * BODY * LEAD > BOTTOM && y > M.t){ newPage(); gap = size * 0.4; }
+          y += gap;
+          for (const ln of lines){
+            if (y + lh > BOTTOM && y > M.t) newPage();
+            const left = M.l + inset + (b.align === 'center' ? (CW - 2 * inset - ln.w) / 2 : 0);
+            const base = y + (lh - size) / 2 + size * 0.8;
+            for (const it of ln.items) it.x += left;
+            pg.lines.push({ y: base, items: ln.items });
+            y += lh;
+          }
+          if (b.h) y += size * 0.5;
+          afterHead = !!b.h;
+        }
+      }
+      while (pages.length && !pages[pages.length - 1].lines.length && !pages[pages.length - 1].imgs.length) pages.pop();
+      pages.forEach((p, i) => { p.num = i + 1; });
+      return pages;
+    }
+
+    /* One page onto a canvas `px` tall: the paper, the pictures (decoded by
+       the caller, keyed as laid out), the words, the rules, the number. */
+    function paint(cv, pg, px, pics){
+      const s = px / PAGE_H;
+      cv.width = Math.max(1, Math.round(PAGE_W * s));
+      cv.height = Math.max(1, Math.round(px));
+      const cx = cv.getContext('2d', { alpha: false });
+      cx.setTransform(s, 0, 0, s, 0, 0);
+      cx.fillStyle = PAPER;
+      cx.fillRect(0, 0, PAGE_W, PAGE_H);
+      cx.imageSmoothingQuality = 'high';
+      for (const im of pg.imgs){
+        const pic = pics.get(im.key);
+        if (pic) cx.drawImage(pic, im.x, im.y, im.w, im.h);
+      }
+      cx.fillStyle = INK;
+      cx.textBaseline = 'alphabetic';
+      let font = '';
+      for (const ln of pg.lines) for (const it of ln.items){
+        if (font !== it.font){ cx.font = it.font; font = it.font; }
+        cx.fillText(it.s, it.x, ln.y);
+      }
+      cx.strokeStyle = FAINT;
+      cx.lineWidth = 1;
+      for (const r of pg.rules){
+        cx.beginPath(); cx.moveTo(PAGE_W / 2 - 48, r.y); cx.lineTo(PAGE_W / 2 + 48, r.y); cx.stroke();
+      }
+      if (!pg.full){
+        cx.fillStyle = FAINT;
+        cx.font = '15px ' + SERIF;
+        cx.textAlign = 'center';
+        cx.fillText(String(pg.num), PAGE_W / 2, PAGE_H - M.b / 2 + 6);
+        cx.textAlign = 'left';
+      }
+      return cv;
+    }
+    // The words of a laid-out page, in order, for the smoke test.
+    const textOf = pg => pg.lines.map(l => l.items.map(it => it.s).join(' ')).join(' ');
+    return { open, layout, paint, mimeOf, textOf, ASPECT, PAGE_W, PAGE_H };
+  })();
+  /* Pictures in a book are decoded when a page that shows them is painted,
+     and a few are kept, since a picture is often on the page after its own
+     (a figure that carried over) and a board flown past twice asks twice. */
+  const EPUB_PICS = 8;
+  let _epubGen = 0;
+  const _loadEpub = async (f, join, pour, slot) => {
+    const gen = join ? _epubGen : ++_epubGen;
+    const superseded = () => gen !== _epubGen;
+    let label = (f.name || 'book').replace(/\.epub$/i, '');
+    try {
+      if (!window.unzipit) throw new Error('unzipit not available');
+      _setLoadBtn('Opening ' + f.name + ' …');
+      const { entries } = await unzipit.unzip(f);
+      const book = await EPUB.open(entries, (k, n) => _setLoadBtn('Reading ' + label + ' … ' + k + '/' + n));
+      if (superseded()) return;
+      if (book.title) label = book.title;
+      _setLoadBtn('Laying out ' + label + ' …');
+      await new Promise(r => setTimeout(r, 0));
+      const pages = EPUB.layout(book);
+      if (!pages.length) throw new Error('nothing to show in ' + f.name);
+      const base = await POUR.claim(pour, slot, pages.length, [EPUB.ASPECT]);
+      _zipShowsGallery();                       // a book IS the picture app
+      try { GALLERY_APP._finish(); } catch {}
+      try { GALLERY_APP._epub = { label, base, pages, book, EPUB }; } catch {}
+      const pics = new Map();                   // key → decoded picture, the latest EPUB_PICS
+      const pic = async key => {
+        if (pics.has(key)){ const p = pics.get(key); pics.delete(key); pics.set(key, p); return p; }
+        const p = await _decodeBlob(await entries[key].blob(EPUB.mimeOf(key))).catch(() => null);
+        pics.set(key, p);
+        while (pics.size > EPUB_PICS){
+          const [k0, p0] = pics.entries().next().value;
+          pics.delete(k0);
+          try { if (p0 && p0.close) p0.close(); } catch {}
+        }
+        return p;
+      };
+      const render = async i => {
+        const pg = pages[i - base];
+        const have = new Map();
+        for (const im of pg.imgs) have.set(im.key, await pic(im.key));
+        return EPUB.paint(_pdfCanvas(), pg, _pdfPx(), have);
+      };
+      POUR.serve(pour, {
+        base, n: pages.length, label, tag: 'epub', width: PDF_WIDTH,
+        dead: superseded, render,
+        name: i => label + ' · ' + (i - base + 1),
+        placed: cv => _pdfRelease(cv),
+      });
+    } catch (e){
+      console.warn('[epub] load failed:', f && f.name, e);
+      _setLoadBtn('EPUB failed: ' + (e.message || e));
+      setTimeout(() => _setLoadBtn('Load images ⇧'), 4000);
+    }
+  };
   /* BUCKET -> gallery. tangent.fit already holds the Cloudflare hookup: its
      Worker lists an R2 bucket (`/bucket?bucket=NAME` -> {success, objects})
      and streams any object back (`...&key=NAME`) — the same API bucket.js
@@ -49889,6 +50393,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 1);
       const pdfs = objects.filter(o => /\.pdf$/i.test(o.name))
         .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 1);
+      const books = objects.filter(o => /\.epub$/i.test(o.name))
+        .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 1);
 
       /* JSON manifests expand into more image entries. Accepted shapes:
          a bare array of slices, or {result:[...]} — the two forms
@@ -49952,6 +50458,17 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
            fills in as you fly — the same shape the local drop has. */
         await _loadPdf(new File([blob], d.name, { type: 'application/pdf' }),
                        false, POUR.open(1, false), 0);
+        _zipShowsGallery();
+        _setBucketBtn(_bucketBtnIdle());
+        return;
+      }
+      if (books.length){                        // a book, as a PDF is (Oct 16)
+        const d = books[0];
+        _setBucketBtn('Fetching ' + d.name + ' \u2026');
+        const dr = await fetch(urlOf(d));
+        if (!dr.ok) throw new Error('epub HTTP ' + dr.status);
+        await _loadEpub(new File([await dr.blob()], d.name, { type: 'application/epub+zip' }),
+                        false, POUR.open(1, false), 0);
         _zipShowsGallery();
         _setBucketBtn(_bucketBtnIdle());
         return;
@@ -50186,7 +50703,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      libarchive opens, PDFs, and the game records. A row that opens fine but
      looks greyed out is the same lie as a row that is missing, in a quieter
      voice. */
-  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|pgn|pdn|sgf|json)$/i;
+  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|pgn|pdn|sgf|json)$/i;
   /* A CONTAINER, conservatively: an explicit prefix (trailing slash), or a
      name with no extension AND no bytes. Anything with a size or an
      extension is an object, whatever the extension happens to be — being
@@ -50597,7 +51114,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
   /* Everything a bucket holds that ends up on a BOARD as a picture: an
      archive, a single image, or a manifest naming images. The counterpart of
      FIELD_RECORD.EXT, which names everything that ends up as a game. */
-  const _isPictureFile = n => /\.(zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|jpe?g|png|gif|webp|bmp|avif|json)$/i.test(n);
+  const _isPictureFile = n => /\.(zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|jpe?g|png|gif|webp|bmp|avif|json)$/i.test(n);
   /* Run a parsed argument set. Returns a promise so a caller in devtools can
      await the pour; errors land on the Bucket button the same as a click,
      because a run started from a URL has no other place to say anything.
@@ -50694,13 +51211,18 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     // .cbz/.cbr ride the zip path — a comic archive IS a folder of pages, and
     // _loadZip's numeric name sort is already the page order. The bytes decide
     // whether it can actually be read; see _sniffArchive.
-    const zips = all.filter(f => f && (/\.(zip|cbz|cbr|cb7|cbt|7z|tar|tgz|tar\.gz)$/i.test(f.name || '') || /zip/.test(f.type || '')));
+    /* A book (Oct 16: "Could you add an epub reader") is a zip too, and its type,
+       application/epub+zip, matched the archives' /zip/: it opened as the handful of
+       pictures inside it. It is taken out first and goes to its own reader. */
+    const _isBook = f => /\.epub$/i.test(f.name || '') || /epub/i.test(f.type || '');
+    const books = all.filter(f => f && _isBook(f));
+    const zips = all.filter(f => f && !_isBook(f) && (/\.(zip|cbz|cbr|cb7|cbt|7z|tar|tgz|tar\.gz)$/i.test(f.name || '') || /zip/.test(f.type || '')));
     // A PDF is a gallery of pages: same entry point, same app, its own reader.
     const pdfs = all.filter(f => f && (/\.pdf$/i.test(f.name || '') || /pdf/.test(f.type || '')));
     const list = all.filter(f => f && /^image\//.test(f.type))
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined,
                                                    { numeric: true, sensitivity: 'base' }));
-    if (!zips.length && !list.length && !pdfs.length) return;
+    if (!zips.length && !list.length && !pdfs.length && !books.length) return;
     /* CONCATENATED, AND THEREFORE SEQUENTIAL (Sep 9: "concatonated").
        Three archives dropped together used to be fired off at once, and each
        one's _begin cleared what the last had built — so the field ended up
@@ -50756,9 +51278,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const jobs = [];
       for (const f of zips) jobs.push(j => _loadZip(f, j.join, j.pour, j.slot));
       for (const f of pdfs) jobs.push(j => _loadPdf(f, j.join, j.pour, j.slot));
+      for (const f of books) jobs.push(j => _loadEpub(f, j.join, j.pour, j.slot));
       if (list.length)      jobs.push(j => _loadLoose(list, j.join, j.pour, j.slot));
       if (!jobs.length) return;
-      const onlyLoose = !zips.length && !pdfs.length;
+      const onlyLoose = !zips.length && !pdfs.length && !books.length;
       let addsToWhatIsThere = false;
       try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded; } catch {}
       const pour = POUR.open(jobs.length, addsToWhatIsThere);
