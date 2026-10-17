@@ -12,7 +12,7 @@
 // Console errors (a CDN hiccup, the coach's sign-in check) are printed but do
 // not fail the run; uncaught exceptions do.
 
-import { chromium } from 'playwright';
+import { chromium, devices } from 'playwright';
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdtemp, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -125,6 +125,44 @@ try {
     const rr = await page.evaluate(() => { const g = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
       const y = g('yawZone'), t = g('tiltZone'), h = g('thrustZone'); return y && t && h ? { yaw: y.height, tilt: t.width, thrust: h.width } : null; });
     if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
+    // THE SPEED RAIL'S TOP IS HALF WHAT IT WAS (Oct 17: "velocity scroll bar maximum value is to fast, reduce by 1/2."): a real
+    // press at the top of the rail travels to a speed of half the old top (β ≈ 0.5, not ≈ 1), and a press on its middle brakes.
+    {
+      const box = await page.evaluate(() => { const r = document.getElementById('thrustZone').getBoundingClientRect(); return { x: r.x + r.width / 2, top: r.y + 2, mid: r.y + r.height / 2 }; });
+      await page.mouse.click(box.x, box.top);
+      await page.waitForFunction(() => { const L = window.__thrustLever; return L && !L.active; }, null, { timeout: 20000 }).catch(() => {});
+      const top = await page.evaluate(() => +window.FIELD_WORLD.st.heldBeta.toFixed(3));
+      await page.mouse.click(box.x, box.mid);
+      await page.waitForFunction(() => { const L = window.__thrustLever; return L && !L.active; }, null, { timeout: 20000 }).catch(() => {});
+      const mid = await page.evaluate(() => +window.FIELD_WORLD.st.heldBeta.toFixed(3));
+      if (!(top > 0.45 && top <= 0.5) || Math.abs(mid) > 0.01) failures.push(`[speed rail] the top of the rail gave β ${top} (want about 0.5) and its middle ${mid} (want 0)`);
+      else console.log(`ok   speed rail: its top gives β ${top}, half the old top, and its middle stops`);
+    }
+  }
+
+  // BIGGER ON A TOUCH SCREEN (Oct 17: "why is the button and menu so small in mobile, but not desktop.", then "yes"): with a
+  // mouse the menu button stays 40 px and the menu's rows 11 px words; on a phone (a context with a finger for a pointer)
+  // the button is 48 px, the rows at least 44 px tall with 15 px words, and the menu opens below the bigger button.
+  {
+    const sizes = p => p.evaluate(() => { const b = document.getElementById('menuBtn').getBoundingClientRect(), m = document.getElementById('menu');
+      const was = m.hidden; m.hidden = false; const i = m.querySelector('button'), ir = i.getBoundingClientRect(), mr = m.getBoundingClientRect();
+      const out = { btn: Math.round(b.height), row: Math.round(ir.height), font: getComputedStyle(i).fontSize, below: mr.top >= b.bottom, inside: mr.left >= 0 && mr.right <= innerWidth };
+      m.hidden = was; return out; });
+    const desk = await sizes(page);
+    if (desk.btn !== 40 || desk.font !== '11px') failures.push(`[touch sizes] with a mouse the menu changed: ${JSON.stringify(desk)}`);
+    const ctx = await browser.newContext(devices['iPhone 14']), phone = await ctx.newPage();
+    if (process.env.LIBS_DIR){
+      const lib = f => readFile(join(process.env.LIBS_DIR, f));
+      await phone.route(/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
+      await phone.route(/chess\.js@1\.4\.0/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('chess.js/dist/esm/chess.js') }));
+    }
+    phone.on('pageerror', e => failures.push(`[touch sizes, phone] ${e.message}`));
+    await phone.goto(new URL('games.html?app=checkers', base).href, { waitUntil: 'load' });
+    await phone.waitForFunction(() => document.querySelector('#menu button'), null, { timeout: 60000 });
+    const mob = await sizes(phone);
+    await ctx.close();
+    if (mob.btn !== 48 || mob.row < 44 || mob.font !== '15px' || !mob.below || !mob.inside) failures.push(`[touch sizes] on a phone: ${JSON.stringify(mob)} (want a 48 px button, rows of 44 px or more with 15 px words, the menu below it and on the screen)`);
+    else console.log(`ok   touch sizes: a mouse keeps the 40 px button and 11 px menu; a phone gets ${mob.btn} px and ${mob.row} px rows of ${mob.font}`);
   }
 
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing

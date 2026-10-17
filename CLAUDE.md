@@ -1030,6 +1030,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   chess 183 MB before, 3–6 MB after.
 - **The rails** (Oct 10): the turn rail across the top (`#yawZone`) is as tall as the side rails (`#tiltZone`,
   `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
+  **The speed rail half as fast** (Oct 17: "velocity scroll bar maximum value is to fast, reduce by 1/2."): the speed is sin θ
+  of the lever, and every place on `#thrustZone` asks for half the speed it did (`EdgeGauge.THRUST_SCALE`, 0.5, in
+  `thrustFromFrac` and back in `thrustToFrac`): the top gives β 0.50, not 1.0. A swipe's drift and the keys are unchanged. The
+  smoke test presses the rail's top and middle.
+- **Bigger on a touch screen** (Oct 17: "why is the button and menu so small in mobile, but not desktop.", then "yes"): nothing
+  shrank on a phone (the menu button 40 px and the menu's words 11 px everywhere), but a phone's pixel is about 0.17 mm against a
+  monitor's 0.26. Under `@media (pointer: coarse)` (a finger, never a mouse) the menu button is 48 px (`--menu-chip`), the menu's
+  rows at least 44 px with 15 px words and 300 px wide, and the application picker (`.ap-row`), game index and bucket picker
+  follow; fields are 16 px, below which iOS zooms the page when one is touched. `--chip-size` stays 40, since the strip's band
+  and tiles are sums on it. A desktop is unchanged. The smoke test measures both, the phone in an iPhone 14 context.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
