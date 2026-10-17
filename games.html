@@ -568,6 +568,42 @@
   /* A control with nothing to act on says so by looking spent, and stops
      taking clicks. Same weight as the data-off convention above. */
   #menu button[disabled]{ opacity: .38; cursor: default; }
+
+  /* ═══ BIGGER ON A TOUCH SCREEN (Oct 17: "why is the button and menu so small in mobile, but not desktop.", then
+     "yes") ═══════════════════════════════════════════════════════════════
+     Nothing shrank on the phone: the menu button was 40 px and the menu's words 11 px on every screen, measured the
+     same on a desktop, a Pixel 7 and an iPhone 14. But a phone's pixel is about 0.17 mm against a monitor's 0.26 (more
+     with Windows' scaling), so the same 11 px is 1.8 mm of text there and 3 mm here, and a 31 px row is under the 44
+     to 48 px a finger is given by Apple and Google. So where the pointer is a finger (`pointer: coarse`, a phone or a
+     tablet, never a mouse) the menu button is 48 px, the menu's rows 44 px with 15 px words, and the panels it opens
+     (the application picker, the game index, the bucket picker) follow. Fields are 16 px: smaller, and iOS zooms the
+     whole page in when one is touched. A desktop keeps every number above. --chip-size stays 40, since the strip's
+     band and its tiles are sums on it; the menu's top is the same sum on the bigger button. */
+  @media (pointer: coarse){
+    :root { --menu-chip: 48px; }
+    body #menuBtn { width: var(--menu-chip); height: var(--menu-chip); font-size: 21px; border-radius: 11px; }
+    body #menu {
+      top: calc(var(--chip-top) + var(--menu-chip) + var(--panel-gap));
+      width: min(300px, calc(100vw - 2 * var(--chip-top)));
+      padding: 14px; gap: 14px; font-size: 15px;
+    }
+    #menu .m-sec { gap: 7px; }
+    #menu .m-hd { font-size: 11px; }
+    body #menu button { font-size: 15px; padding: 11px 14px; min-height: 44px; border-radius: 11px; }
+    #menu .m-row { gap: 8px; }
+    #menu input[type="password"], #menu select { font-size: 16px; min-height: 44px; }
+    #appPicker, body.has-browser #appPicker { top: calc(var(--chip-top) + var(--menu-chip) + var(--panel-gap)); }
+    #appPicker .ap-row { font-size: 15px !important; padding: 9px 11px !important; min-height: 48px; }
+    #gameIndexFilter { font-size: 16px; padding: 10px 12px; }
+    #gameIndexList .gi-hd { font-size: 12px; }
+    #gameIndexList .gi-row { font-size: 15px; padding: 10px 12px; min-height: 44px; }
+    #gameIndexList .gi-row .gi-s { font-size: 12px; }
+    #gameIndexList .gi-empty { font-size: 15px; }
+    #bucketPicker { font-size: 15px; }
+    #bucketPicker .bpk-head input { font-size: 16px; padding: 8px 10px; }
+    #bucketPicker .bpk-chip { font-size: 13px; padding: 6px 12px; }
+    #bucketPicker .bpk-row { min-height: 40px; align-items: center; }
+  }
   #menu button[disabled]:hover{ background: rgba(127,119,221,.08); }
 
   /* ── iOS: keep the system off our gestures ────────────────────────────
@@ -48939,6 +48975,7 @@ function openAppPicker(){
     row.setAttribute('role', 'option');
     row.setAttribute('aria-selected', on ? 'true' : 'false');
     if (a.id) row.title = '?app=' + a.id;                 // the name to ask for it by, in a link
+    row.className = 'ap-row';                             // so a touch screen can make it bigger (Oct 17)
     row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;'
       + 'padding:7px 9px;border:1px solid transparent;border-radius:5px;background:none;'
       + 'font:12px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;'
