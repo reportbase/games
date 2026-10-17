@@ -962,6 +962,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     heavy frame held the second back past the window (tower defense after snake, in the sandbox).
   - Air raid keeps its taps while its plane flies (`worldTap`: they drop bombs). The smoke test double-taps a neighbour in ten
     games with a game under way and wants the view where the 0 key puts it.
+- **The dots, full screen, Tab from the board in view** (Oct 17: "1) the three dots on the bottom for the bottom panel should be
+  2px larger and have a shadow. 2) add full screen option to the menu. 3) tab and enter should move to next board, from the
+  current visible board that is in the default position."):
+  - The bottom row's dots (`#bbHandle`) are 6px across (viewBox 30 × 8, r 3), with a drop shadow.
+  - The menu's Full screen (`#bFullScreen`, after Application…) puts the whole page in full screen and back; its label follows
+    the state (Escape leaves too); hidden where the browser can't (an iPhone's Safari).
+  - Tab and Enter (`stepRight`) step right from the board in view (`viewBoardCell`: `frameSelectedBoardAt` and `frameBoard`'s
+    sums run backwards from where the eye stands), not from the board selected before a pan; while the view is where its framing
+    put it, or still flying there, from the selected board as before. Games that use Enter themselves (the arcade games, golf's
+    putt, Simon's start) keep it; Tab always steps. The smoke test slides the view two boards along in the gallery and checkers.
 - **A game opens framed** (Oct 9): `_defaultFitSoon` settles the camera at the default fit at once
   (`settleCameraNow`), so a game no longer glides down from the overview when it opens.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
