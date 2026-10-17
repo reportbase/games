@@ -1030,6 +1030,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   chess 183 MB before, 3–6 MB after.
 - **The rails** (Oct 10): the turn rail across the top (`#yawZone`) is as tall as the side rails (`#tiltZone`,
   `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
+  **The speed rail half as fast** (Oct 17: "velocity scroll bar maximum value is to fast, reduce by 1/2."): the speed is sin θ
+  of the lever, and every place on `#thrustZone` asks for half the speed it did (`EdgeGauge.THRUST_SCALE`, 0.5, in
+  `thrustFromFrac` and back in `thrustToFrac`): the top gives β 0.50, not 1.0. A swipe's drift and the keys are unchanged. The
+  smoke test presses the rail's top and middle.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 

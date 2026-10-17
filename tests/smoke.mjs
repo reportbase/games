@@ -125,6 +125,19 @@ try {
     const rr = await page.evaluate(() => { const g = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
       const y = g('yawZone'), t = g('tiltZone'), h = g('thrustZone'); return y && t && h ? { yaw: y.height, tilt: t.width, thrust: h.width } : null; });
     if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
+    // THE SPEED RAIL'S TOP IS HALF WHAT IT WAS (Oct 17: "velocity scroll bar maximum value is to fast, reduce by 1/2."): a real
+    // press at the top of the rail travels to a speed of half the old top (β ≈ 0.5, not ≈ 1), and a press on its middle brakes.
+    {
+      const box = await page.evaluate(() => { const r = document.getElementById('thrustZone').getBoundingClientRect(); return { x: r.x + r.width / 2, top: r.y + 2, mid: r.y + r.height / 2 }; });
+      await page.mouse.click(box.x, box.top);
+      await page.waitForFunction(() => { const L = window.__thrustLever; return L && !L.active; }, null, { timeout: 20000 }).catch(() => {});
+      const top = await page.evaluate(() => +window.FIELD_WORLD.st.heldBeta.toFixed(3));
+      await page.mouse.click(box.x, box.mid);
+      await page.waitForFunction(() => { const L = window.__thrustLever; return L && !L.active; }, null, { timeout: 20000 }).catch(() => {});
+      const mid = await page.evaluate(() => +window.FIELD_WORLD.st.heldBeta.toFixed(3));
+      if (!(top > 0.45 && top <= 0.5) || Math.abs(mid) > 0.01) failures.push(`[speed rail] the top of the rail gave β ${top} (want about 0.5) and its middle ${mid} (want 0)`);
+      else console.log(`ok   speed rail: its top gives β ${top}, half the old top, and its middle stops`);
+    }
   }
 
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing

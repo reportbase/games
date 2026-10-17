@@ -2637,8 +2637,16 @@ const EdgeGauge = {
   // The turn rail: left end −180°, middle 0 (facing forward), right end +180°.
   yawFromFrac: f => (Math.max(0, Math.min(1, f)) - 0.5) * 360,
   yawToFrac:   y => Math.max(0, Math.min(1, ((((y % 360) + 540) % 360) - 180) / 360 + 0.5)),
-  thrustFromFrac: f => EdgeGauge.THETA_CAP * Math.max(-1, Math.min(1, 1 - 2 * Math.max(0, Math.min(1, f)))),
-  thrustToFrac:   th => Math.max(0, Math.min(1, 0.5 - (th / EdgeGauge.THETA_CAP) * 0.5)),
+  /* HALF AS FAST (Oct 17: "velocity scroll bar maximum value is to fast, reduce by 1/2."): the speed is sin θ, and every
+     place on the rail now asks for half the speed it did (THRUST_SCALE), so the top is half the old top and the rail keeps its
+     feel along the way. The nub reads back through the same scale, so it stays under the thumb; a speed past the rail's
+     (a swipe's or a key's) sits at the end. */
+  THRUST_SCALE: 0.5,
+  thrustFromFrac: f => Math.asin(EdgeGauge.THRUST_SCALE * Math.sin(EdgeGauge.THETA_CAP * Math.max(-1, Math.min(1, 1 - 2 * Math.max(0, Math.min(1, f)))))),
+  thrustToFrac:   th => {
+    const s = Math.max(-1, Math.min(1, Math.sin(th) / EdgeGauge.THRUST_SCALE));
+    return Math.max(0, Math.min(1, 0.5 - (Math.asin(s) / EdgeGauge.THETA_CAP) * 0.5));
+  },
 };
 /* CEILING ON THE CAMERA. The zoom leg is a straight lerp from 0.75 world
    units (standing on a board) to this, and every reader of "how high am I"
