@@ -50400,6 +50400,16 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      it is (GALLERY_APP._gen, moved on by any other pour, which ends the row). */
   let BOOK = null;
   const bookLive = () => !!(BOOK && BOOK.pages && BOOK.gen === GALLERY_APP._gen);
+  /* A BOOK OPENED WITH OTHER FILES (Oct 17, "proceed on fixes"): a setting hung the book again alone and the pictures and
+     comics opened beside it went. So the drop a book came in with is kept (_loadFiles), a change from the row opens that drop
+     again in the new settings, and BOOK_GO takes the view to the book's page holding the words it was on once it hangs. */
+  let _bookDrop = null, BOOK_GO = null;
+  const goToWords = (B, at) => {
+    let j = 0;
+    for (let q = 0; q < B.pages.length; q++){ if (B.pages[q].at <= at) j = q; else break; }
+    const cell = GALLERY_APP._cellFor(B.base + j, target.cellX | 0, target.cellZ | 0);
+    if (cell && target.shown) gotoCell(cell.c, cell.r);
+  };
   /* Lay the book out (or keep its layout, for a colour), declare its pages to the pour and serve them: the first hanging and
      every change from the row alike. */
   async function _hangBook(B, pour, slot, dead, relayout = true){
@@ -50409,6 +50419,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     _zipShowsGallery();                       // a book IS the picture app
     try { GALLERY_APP._finish(); } catch {}
     Object.assign(B, { pages, base, gen: GALLERY_APP._gen });
+    if (BOOK_GO && BOOK_GO.label === B.label){ const at = BOOK_GO.at; BOOK_GO = null; setTimeout(() => goToWords(B, at), 0); }
     try { GALLERY_APP._epub = { label: B.label, base, pages, book: B.book, EPUB }; } catch {}
     const pic = async key => {
       const pics = B.pics;
@@ -50449,14 +50460,12 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       if (target.shown && B.pages[i]) at = B.pages[i].at;
     } catch {}
     const relayout = EPUB.set(k, v);
+    if (_bookDrop){ BOOK_GO = { label: B.label, at }; _loadFiles(_bookDrop); return; }
     _bookBusy = true;
     try {
       const gen = ++_epubGen;
       await _hangBook(B, POUR.open(1, false), 0, () => gen !== _epubGen, relayout);
-      let j = 0;
-      for (let q = 0; q < B.pages.length; q++){ if (B.pages[q].at <= at) j = q; else break; }
-      const cell = GALLERY_APP._cellFor(B.base + j, target.cellX | 0, target.cellZ | 0);
-      if (cell && target.shown) gotoCell(cell.c, cell.r);
+      goToWords(B, at);
       _setLoadBtn(B.label + ' \u00b7 ' + B.pages.length + ' pages');
       setTimeout(() => _setLoadBtn('Load images \u21e7'), 2500);
     } finally { _bookBusy = false; }
@@ -50496,6 +50505,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const gen = join ? _epubGen : ++_epubGen;
     const superseded = () => gen !== _epubGen;
     let label = (f.name || 'book').replace(/\.epub$/i, '');
+    if (_bookDrop && !_bookDrop.includes(f)) _bookDrop = null;   // (a book from a bucket, or alone: no drop to open again)
     try {
       if (!window.unzipit) throw new Error('unzipit not available');
       _setLoadBtn('Opening ' + f.name + ' …');
@@ -51416,6 +51426,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
        pictures inside it. It is taken out first and goes to its own reader. */
     const _isBook = f => /\.epub$/i.test(f.name || '') || /epub/i.test(f.type || '');
     const books = all.filter(f => f && _isBook(f));
+    // (a book that comes with other files keeps the whole drop, to open again when its settings change; see BOOK_GO)
+    if (books.length) _bookDrop = all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '')).length > 1 ? all.slice() : null;
     const zips = all.filter(f => f && !_isBook(f) && (/\.(zip|cbz|cbr|cb7|cbt|7z|tar|tgz|tar\.gz)$/i.test(f.name || '') || /zip/.test(f.type || '')));
     // A PDF is a gallery of pages: same entry point, same app, its own reader.
     const pdfs = all.filter(f => f && (/\.pdf$/i.test(f.name || '') || /pdf/.test(f.type || '')));

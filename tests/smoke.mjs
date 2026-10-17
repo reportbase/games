@@ -452,13 +452,20 @@ try {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Rock in hand
       await window.__settle(E.c, E.r);   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
+      /* (then the default framing, the 0 key, and still again: the view left by opening the row could hold the board at 90 px,
+         low on the screen, and on CI its every square fell under the open row, so no square could be clicked, Oct 17) */
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true })); await window.__settle(E.c, E.r);
       const n = E.g.n;
       /* (the first empty square away from the edges that is on the canvas: twice on CI the one asked for fell above the screen,
          and once the Sokoban check's below it, in a view turned about, Oct 13) */
       const pick = () => { for (let row = 2; row < n - 2; row++) for (let col = 2; col < n - 2; col++){ const i = row * n + col; if (E.g.towers[i]) continue; const v = window.__aim(n, col, row); if (v.ok) return { ...v, i }; } return null; };
       let v = pick();
       if (!v){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = pick(); }
-      if (!v) return { aimed: false, n, view: { yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom } };
+      if (!v){   // (what lies where the board's middle is, for a failure)
+        const pv = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera), x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, el = document.elementFromPoint(x, y);
+        return { aimed: false, n, view: { yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom }, middle: [Math.round(x), Math.round(y)], under: el && (el.tagName + '#' + el.id),
+                 framed: T.shown && W.cellAt(T.boardX, T.boardZ), ed: [E.c, E.r], settle: window.__lastSettle };
+      }
       return { x: v.x, y: v.y, aimed: v.ok, n, i: v.i, before: E.g.towers[v.i] };
     });
     // (where the click went, for a failure: in one full run it placed nothing, Oct 13)
@@ -524,6 +531,9 @@ try {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, T = W.target;
       D.edOpen(); const E = D.ed(); A.onStatTap(E.c, E.r, 0);           // Wall in hand
       await window.__settle(E.c, E.r);   // (until the camera is still: shutting the row refits the view, and a click aimed mid-glide landed on the next board, Oct 13)
+      /* (then the default framing, the 0 key, and still again: the view left by opening the row could hold the board at 90 px,
+         low on the screen, and on CI its every square fell under the open row, so no square could be clicked, Oct 17) */
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', bubbles: true })); await window.__settle(E.c, E.r);
       const n = E.L.n, V = n - 2, L0 = E.L;
       /* (the first empty square that is on the canvas: twice on CI the far row's square fell below the screen, at the foot of a
          view turned about, under the bottom row, Oct 13) */
@@ -531,7 +541,11 @@ try {
       const pick = () => { for (let row = 0; row < V; row++) for (let col = 0; col < V; col++){ const i = (row + 1) * n + col + 1; if (!free(i)) continue; const v = window.__aim(V, col, row); if (v.ok) return { ...v, i }; } return null; };
       let v = pick();
       if (!v){ D.fly(E.c, E.r); await window.__settle(E.c, E.r); v = pick(); }
-      if (!v) return { aimed: false, n, view: { yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom } };
+      if (!v){   // (what lies where the board's middle is, for a failure)
+        const pv = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera), x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, el = document.elementFromPoint(x, y);
+        return { aimed: false, n, view: { yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom }, middle: [Math.round(x), Math.round(y)], under: el && (el.tagName + '#' + el.id),
+                 framed: T.shown && W.cellAt(T.boardX, T.boardZ), ed: [E.c, E.r], settle: window.__lastSettle };
+      }
       return { x: v.x, y: v.y, aimed: v.ok, n, i: v.i, before: E.L.wall[v.i] };
     });
     if (rc.aimed) await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
@@ -3356,8 +3370,23 @@ try {
           await page.evaluate(async () => { const B = window.FIELD_APPS.find(a => a.id === 'gallery')._book; for (let k = 0; k < 5; k++) await B.tap(8); await B.tap(0); });   // back as it was
         }
       }
+      // A BOOK OPENED WITH A PICTURE KEEPS IT (Oct 17, "proceed on fixes"): a change from the row opened the book again alone and
+      // the files beside it went; now the drop is opened again in the new settings, the picture still hanging after the pages.
+      if (!r.why){
+        const png = join(dir, 'beside.png');
+        await writeFile(png, pngOf(40, 60, [30, 160, 60]));
+        await page.setInputFiles('#importImageFile', [file, png]);
+        await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._book.live() && G._expect === G._epub.pages.length + 1 && G._epub.EPUB.style.size === 20; }, null, { timeout: 30000 }).catch(() => {});
+        const n0 = await page.evaluate(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._book.live() ? G._epub.pages.length : -1; });
+        await page.evaluate(() => { window.FIELD_APPS.find(a => a.id === 'gallery')._book.tap(2); });
+        await page.waitForFunction(n0 => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._book.live() && G._epub.EPUB.style.size === 22 && G._epub.pages.length > n0; }, n0, { timeout: 30000 }).catch(() => {});
+        const both = await page.evaluate(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return { n: G._epub.pages.length, expect: G._expect, size: G._epub.EPUB.style.size }; });
+        if (n0 < 0 || both.size !== 22 || !(both.n > n0) || both.expect !== both.n + 1) bad.push(`a book opened with a picture, after Larger: ${JSON.stringify({ n0, ...both })} (the picture should still hang after the pages)`);
+        await page.evaluate(() => { window.FIELD_APPS.find(a => a.id === 'gallery')._book.tap(0); });
+        await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._book.live() && G._epub.EPUB.style.size === 20; }, null, { timeout: 30000 }).catch(() => {});
+      }
       if (bad.length) failures.push('[epub] ' + bad.join('; '));
-      console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted; the row its settings (Larger re-laid it, the place kept; Page painted it white)`);
+      console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted; the row its settings (Larger re-laid it, the place kept; Page painted it white; a picture opened with it kept)`);
     }
   }
   // THE DOTS, FULL SCREEN, AND TAB FROM THE BOARD IN VIEW (Oct 17: "1) the three dots on the bottom for the bottom panel should

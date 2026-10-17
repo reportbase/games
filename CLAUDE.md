@@ -958,8 +958,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     holding it open as an editor's `statsStay` does. A face or a size lays the book out again (`EPUB.set` says so; `laidAs`)
     and hangs it afresh (`_hangBook`, the pour declared again), and the view goes to the page whose words began where the
     framed page's did (a page's `at`, pieces of words before it). A colour only paints the pages again. A page colour the
-    text would not read on (dark ink on Night) takes the first ink that does. Kept in localStorage `epub.style`. A book hung
-    with other files in one drop is hung alone after a change.
+    text would not read on (dark ink on Night) takes the first ink that does. Kept in localStorage `epub.style`.
+  - **A book opened with other files keeps them** (Oct 17, "proceed on fixes"): a change hung the book again alone and the
+    pictures and comics dropped beside it went. The drop a book came in with is kept (`_bookDrop`, set in `_loadFiles`); a
+    change opens that drop again in the new settings, and `BOOK_GO` takes the view to the book's page holding the words it
+    was on (`goToWords`) once the book hangs. A book alone, or from a bucket, is hung again on its own as before.
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
   unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
   board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.
