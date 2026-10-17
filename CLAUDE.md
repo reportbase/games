@@ -1064,8 +1064,11 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   directly passed for a week while the phone did not. A tap's touchstart and touchend go together
   there, because the software renderer can take a second a frame.
 - `npm test` runs `tests/smoke.mjs`: it loads the page in headless Chromium,
-  switches to every app in `FIELD_APPS`, and fails on any uncaught error. Run it
-  before every PR, and add checks there for new behaviour. It then runs
+  switches to every app in `FIELD_APPS`, and fails on any uncaught error. Add checks there for new behaviour.
+  **Not for every change** (Oct 17: "its not needed for every change."): CI runs it once, on the PR
+  (`.github/workflows/smoke.yml`: not again on `main` after the merge, not for a PR of Markdown alone, and by hand
+  from the Actions tab). Locally, a small contained change is checked with a probe of what it touches and left to
+  CI; the full run (about 20 minutes in a sandbox) is for changes to the field, the shared kits or many games. It then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
