@@ -598,6 +598,18 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     and for the framed board in `_restDecide`); an item kind's `geometry.userData.wireframe`; an app's `fitView(F)`, called by
     the default fit (Levels opens at the lowest tilt, 35°, from `OPEN_V` = 8, so four or five levels are in view); and
     `onLeave()`, called by `setFieldApp` on the app being left (Levels puts the tilt back). It sets `itemMinPx: 1`.
+  - **Recover a body** (Oct 17: "In draw.html we uses the address to recover the shape of two d shapes with cauchy. Let's
+    create a new lab that recovers 3d shapes."; "Let's do this in levels application of games.html. it has the 3d shapes."):
+    draw's RCC and UDV labs in three dimensions, on Levels' bodies (every band in full). Predictions and runs are in wander's
+    `plans/rsh-plan.md`, written first. `recover(idx, k)`: one reader at the body's centre sweeps 4,096 directions (a
+    Fibonacci lattice); each meets the surface once and reads its direction [h : v : v₂], the same for every body, so the
+    census is a unit sphere; three readers inside (a triangle 0.12 of the least half-extent about the centre, tipped out of
+    every axis plane), holding only directions to each point (which point is given), cross the squarest pair's rays: the
+    body in |AB| (their own spacing), and with |AB| carried in, the body. `k` scales the world. Run 1 (200 bodies): readings
+    the lattice's to 3e-16, points to 1e-13 of the mean radius, every point seen by all three readers. Menu "Recover a body:
+    on/off", then a tap on a board: `recoverShow` draws the census (gold, left), the readers' points with |AB| (teal, on the
+    body) and in |AB| alone at one drawn length (violet, right), the readers red, in a row across the screen, over everything.
+    Hooks `_debug.recover`, `bodyFrame`, `recoverShow`, `recoverOn`, `recoverGroup`; the smoke test checks bodies 0 and 7.
 - **Curved fences** (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves): `curve [x0, y0, …]`, 3–24 leaves in cells,
   an open fence through its leaves. TVF curves are closed, so `curveOf` mirrors the leaves (x0…xn, xn…x0) into a closed
   curve, rebuilds it with draw's kernel, and keeps the half from the first leaf to the last (`CURVE_S` points a leaf,
