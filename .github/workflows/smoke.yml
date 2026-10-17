@@ -1,9 +1,12 @@
 name: Smoke test
 
+# Once a change, on its PR (Oct 17: "its not needed for every change."). Not again on main after the merge, which ran
+# the same code the PR just passed, and not for a PR that only touches notes (Markdown). Run by hand from the Actions
+# tab when wanted.
 on:
   pull_request:
-  push:
-    branches: [main]
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:
 
 jobs:

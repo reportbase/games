@@ -985,6 +985,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     on another board never came in).
   - The pair is timed by the taps' own event times (`ev.timeStamp`, `tapIsDouble(hit, at)`), not when they were handled: a
     heavy frame held the second back past the window (tower defense after snake, in the sandbox).
+  - **A touch is timed by its own event** (Oct 17): the touchend went to `turnEnd` without its event, so a touch's double was
+    timed by when it was handled; selecting a board in tower defense builds its game, and on CI (or a slow phone) the second
+    tap came a second late and the pair was two taps. `turnEnd(e)` now passes it on. The smoke test makes both taps' events
+    before sending either, since a synthetic event's time is when it is made.
   - Air raid keeps its taps while its plane flies (`worldTap`: they drop bombs). The smoke test double-taps a neighbour in ten
     games with a game under way and wants the view where the 0 key puts it.
 - **The dots, full screen, Tab from the board in view** (Oct 17: "1) the three dots on the bottom for the bottom panel should be
@@ -997,6 +1001,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     sums run backwards from where the eye stands), not from the board selected before a pan; while the view is where its framing
     put it, or still flying there, from the selected board as before. Games that use Enter themselves (the arcade games, golf's
     putt, Simon's start) keep it; Tab always steps. The smoke test slides the view two boards along in the gallery and checkers.
+- **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
+  physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
+  v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
+  `MIN_V`, at most `MAX_V` 8). A thousand pixels a second carries the row about three tiles. Speeds are pixels, turned into
+  the row's angle a frame at a time by `bbDragAngle`. The finger's speed (`bbVelTracker`) is the distance over its last
+  100 ms of moves, by the events' own times; a finger still for 80 ms when it lifts has none. Until then the coast was per
+  frame (a third of the release speed, 10% off a frame): a hard flick went half a tile and stalled on heavy frames. And a
+  rebuild of the same kind of row (pictures or pages arriving) keeps the item in the middle and the coast running
+  (`rebuildBoardBrowser`); it used to stop the coast and let the row creep as the count grew. `window.tvf.bottomRow` reads
+  the row for the smoke test, which swipes it with timed mouse events.
 - **A game opens framed** (Oct 9): `_defaultFitSoon` settles the camera at the default fit at once
   (`settleCameraNow`), so a game no longer glides down from the overview when it opens.
 - **Quick buttons** (Oct 9): an app's `quickActs(c, r)` gives small icon buttons (glyph and
@@ -1076,8 +1090,11 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   directly passed for a week while the phone did not. A tap's touchstart and touchend go together
   there, because the software renderer can take a second a frame.
 - `npm test` runs `tests/smoke.mjs`: it loads the page in headless Chromium,
-  switches to every app in `FIELD_APPS`, and fails on any uncaught error. Run it
-  before every PR, and add checks there for new behaviour. It then runs
+  switches to every app in `FIELD_APPS`, and fails on any uncaught error. Add checks there for new behaviour.
+  **Not for every change** (Oct 17: "its not needed for every change."): CI runs it once, on the PR
+  (`.github/workflows/smoke.yml`: not again on `main` after the merge, not for a PR of Markdown alone, and by hand
+  from the Actions tab). Locally, a small contained change is checked with a probe of what it touches and left to
+  CI; the full run (about 20 minutes in a sandbox) is for changes to the field, the shared kits or many games. It then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and

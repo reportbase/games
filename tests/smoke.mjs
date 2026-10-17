@@ -3072,8 +3072,10 @@ try {
     if (!ok3) failures.push('[whackamole] quick touches on one hole: ' + JSON.stringify(quick));
     console.log(`${ok3 ? 'ok  ' : 'FAIL'} whackamole: five quick real touches on one hole are five whacks (${quick.got}, ${quick.missed} missed)`);
     // a board no one plays pops its own moles on the page's clock
+    // (watched until three layouts are seen, up to 8 s, Oct 17: a board rests 2.5 s between rounds, and a 3 s look that
+    //  fell mostly in the rest saw two and failed on CI)
     const demo = await page.evaluate(async () => { const A = window.getFieldApp(), seen = new Set();
-      for (let k = 0; k < 30; k++){ seen.add(A.cellItems(9, 9).filter(x => x.kind === 'wmMole' || x.kind === 'wmBomb').map(x => x.u.toFixed(2) + x.v.toFixed(2)).join()); await new Promise(ok => setTimeout(ok, 100)); }
+      for (let k = 0; k < 80 && seen.size < 3; k++){ seen.add(A.cellItems(9, 9).filter(x => x.kind === 'wmMole' || x.kind === 'wmBomb').map(x => x.u.toFixed(2) + x.v.toFixed(2)).join()); await new Promise(ok => setTimeout(ok, 100)); }
       return seen.size; });
     if (!ok1 || !ok2 || demo < 3) failures.push('[whackamole] ' + JSON.stringify({ r, real, demo }));
     console.log(`${ok1 && ok2 && demo >= 3 ? 'ok  ' : 'FAIL'} whackamole (holes ${r.holes.join('/')} by ring, pops ${gr.map(x => x.pops).join('/')} and par ${gr.map(x => x.par).join('/')} by level, the same round each time; real clicks on a mole scored and on an empty hole cost: ${real && real.scores.join(',')})`);
@@ -3240,13 +3242,19 @@ try {
         for (let k = 0; k < 80 && (T.active || (S && S.heldPanRate) || (typeof ARCADE !== 'undefined' && ARCADE.paused)); k++) await wait(250);
         const before = { active: !!T.active, held: !!(S && S.heldPanRate), paused: typeof ARCADE !== 'undefined' && !!ARCADE.paused, taps: window.tvf && window.tvf.tapCount };
         const p0 = W.camera.position.clone();
+        // (each tap's events MADE before either is sent, Oct 17: an event's time is when it is made, and sending is
+        //  synchronous, so the second tap made after the first was handled carried the first's handling in its time. In
+        //  tower defense selecting a board builds its game, about a second on CI, and the pair, a second apart, was no
+        //  double: failed twice running there, and every time here with the CPU slowed 4×. A phone stamps a touch when the
+        //  finger lands, however busy the page.)
         const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: at[0], clientY: at[1], radiusX: 4, radiusY: 4 });
-          const fire = (type) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
-          cv.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchstart');
-          cv.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchend'); };
+          const te = (type) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] });
+          const pe = (type) => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] });
+          return [pe('pointerdown'), te('touchstart'), pe('pointerup'), te('touchend')]; };
         // (the pair back to back: on CI's software renderer a frame can take longer than the whole double's window, and a
         //  wait between the taps let one fall between them; a person's two taps are 100–250 ms apart on a real screen)
-        tap(); tap();
+        const pair = [...tap(), ...tap()];
+        for (const e of pair) cv.dispatchEvent(e);
         // settled where the 0 key would put it
         // (landed when the field says so, not when the camera looks still: between slow frames it can look still mid-flight)
         const landed = async () => { await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); };
@@ -3288,6 +3296,46 @@ try {
     });
     if (r.length) failures.push('[gallery order] ' + r.join('; '));
     console.log(`${r.length ? 'FAIL' : 'ok  '} gallery order: page 1 on the corner, the next page right and down across it (5, 12, 37, 150 pages)`);
+  }
+  // THE BOTTOM ROW COASTS ON PHYSICS (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use physics."):
+  // forty pictures in the gallery, a swipe on the row at a thousand pixels a second (mouse events timed as a hand makes them,
+  // since this browser handles them far apart) leaves the row coasting on after the release, more than a tile, slowing to a
+  // stop on its own; a swipe that stops before it lifts leaves the row where it was put.
+  {
+    current = 'bottom row coast';
+    const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+    const crc = b => { let c = ~0; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (~c) >>> 0; };
+    const pngOf = (w, h, rgb) => { const chunk = (t, d) => { const l = Buffer.alloc(4); l.writeUInt32BE(d.length); const td = Buffer.concat([Buffer.from(t), d]);
+        const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([l, td, c]); };
+      const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+      const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: w }, () => rgb).flat())]);
+      return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(Buffer.concat(Array.from({ length: h }, () => row)))), chunk('IEND', Buffer.alloc(0))]); };
+    await page.setInputFiles('#importImageFile', Array.from({ length: 40 }, (_, i) => ({ name: `row${String(i).padStart(2, '0')}.png`, mimeType: 'image/png',
+      buffer: pngOf(48, 36, [(i * 37) % 255, (i * 91) % 255, (i * 53) % 255]) })));
+    await page.waitForFunction(() => window.tvf.bottomRow.n === 40, null, { timeout: 60000 }).catch(() => {});
+    await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); });
+    await page.waitForTimeout(1500);
+    const y = await page.evaluate(() => { const r = document.getElementById('boardBrowser').getBoundingClientRect(); return r.top + r.height * 0.6; });
+    const cdp2 = await page.context().newCDPSession(page);
+    const swipe = async (liftAfter) => {          // 10 moves of 16 px, 16 ms apart, then the lift liftAfter steps after the last
+      const T = Date.now() / 1000, ev = (type, x, k, buttons) => cdp2.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1, timestamp: T + k * 0.016 });
+      await ev('mousePressed', 900, 0, 1);
+      for (let k = 1; k <= 10; k++) await ev('mouseMoved', 900 - 16 * k, k, 1);
+      await ev('mouseReleased', 740, 10 + liftAfter, 0);
+      return page.evaluate(() => window.tvf.bottomRow.angle);
+    };
+    const moved = (a0, a1) => page.evaluate(([a0, a1]) => { let d = a1 - a0; if (d > Math.PI / 2) d -= Math.PI; if (d < -Math.PI / 2) d += Math.PI; return window.tvf.bottomRow.px(d); }, [a0, a1]);
+    const a0 = await swipe(0.2);
+    const st0 = await page.evaluate(() => window.tvf.bottomRow);
+    await page.waitForFunction(() => !window.tvf.bottomRow.coasting, null, { timeout: 8000 }).catch(() => {});
+    const coast = await moved(a0, await page.evaluate(() => window.tvf.bottomRow.angle));
+    const b0 = await swipe(10);                 // the finger stops 160 ms before it lifts
+    const still = await page.evaluate(() => window.tvf.bottomRow.coasting);
+    await page.waitForTimeout(800);
+    const after = await moved(b0, await page.evaluate(() => window.tvf.bottomRow.angle));
+    const ok = st0.n === 40 && st0.coasting && -coast > st0.itemW && !still && Math.abs(after) < 1;
+    if (!ok) failures.push('[bottom row coast] ' + JSON.stringify({ n: st0.n, coastingAtRelease: st0.coasting, vel: st0.vel, coast, still, after }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bottom row coast: a swipe at 1 px/ms coasts ${Math.round(-coast)} px after the release and stops; one that stops before lifting stays put`);
   }
   // AN EPUB IS READ (Oct 16: "Could you add an epub reader"): a book built here (a zip of a package, two chapters, one XHTML
   // with a list and a figure, one HTML that is not well-formed XML with a word too long for a line and a line of Japanese,
