@@ -215,6 +215,10 @@
     background: none; border: 0; padding: 0; cursor: pointer; z-index: 3;
   }
   #bbHandle svg { display: block; width: 24px; height: 6px; }
+  /* BIGGER, WITH A SHADOW (Oct 17: "the three dots on the bottom for the bottom panel should be 2px larger and have a
+     shadow"): each dot 6px across, not 4, and a soft dark shadow under them so they read on a pale board as well as a dark
+     field. The viewBox grew with them, so the circles are drawn at their size, not scaled. */
+  #bbHandle svg { width: 30px; height: 8px; overflow: visible; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .75)); }
   /* THE QUICK BUTTONS (Oct 9: "add small icon buttons, no text, for most common things, in the top of the bottom pane on
      the right side"). An app that offers quickActs gets a few square icon buttons in the band at the top of the bottom
      pane, on the right, clear of the dots in the middle; they take their own presses (the band lets every other press
@@ -1098,7 +1102,10 @@
        ABOVE the field's own sections because the app is what you came to the
        menu for; the field reads the same whichever app is up. -->
   <!-- THE APPLICATION, first line of the menu (Sep 27: moved here from its chip). -->
-  <div class="m-sec"><button id="bApp" title="Choose what the field is - chess, Go, draughts, the photo gallery, the games and the rest.">Application&#8230;</button></div>
+  <div class="m-sec"><button id="bApp" title="Choose what the field is - chess, Go, draughts, the photo gallery, the games and the rest.">Application&#8230;</button>
+  <!-- FULL SCREEN (Oct 17: "add full screen option to the menu"): the field fills the screen, the browser's bars gone;
+       the same item, or Escape, brings them back. Hidden where the browser cannot (an iPhone's Safari takes only video). -->
+  <button id="bFullScreen" title="Fill the whole screen with the field, the browser's own bars hidden. Choose it again, or press Escape, to leave.">Full screen</button></div>
   <div id="appMenu"></div>
   <div class="m-sec" data-debug>
     <div class="m-hd">Boards</div>
@@ -1221,7 +1228,7 @@
      for a rebuild to decide whether there was anything worth showing, which
      left the screen without its lock and turn until the first board was
      picked. -->
-<div id="boardBrowser"><button id="bbHandle" type="button" aria-label="Show or hide the row of boards"><svg viewBox="0 0 24 6" aria-hidden="true"><circle cx="3" cy="3" r="2"/><circle cx="12" cy="3" r="2"/><circle cx="21" cy="3" r="2"/></svg></button></div>
+<div id="boardBrowser"><button id="bbHandle" type="button" aria-label="Show or hide the row of boards"><svg viewBox="0 0 30 8" aria-hidden="true"><circle cx="4" cy="4" r="3"/><circle cx="15" cy="4" r="3"/><circle cx="26" cy="4" r="3"/></svg></button></div>
 
 <!-- Bucket browser: field.html's answer to tangent.fit's ResultPanel file
      list (result.js) — same job, DOM instead of canvas. Opened by the
@@ -7811,10 +7818,37 @@ function gotoCell(gx, gz){
    heading: the camera's right is (−cos yaw, sin yaw) in x, z, snapped to the
    nearest cell direction. In lattice cells on each axis, so a rectangular
    gallery lattice steps one print, not a fraction of one. */
+/* FROM THE BOARD IN VIEW (Oct 17: "tab and enter should move to next board, from the current visible board that is in the
+   default position"). The step went from the SELECTED board, which a pan leaves behind: after flying a few boards along,
+   Tab jumped back to a board no longer on the screen. Now it starts from the board standing where the default framing puts
+   one (frameBoard, frameSelectedBoardAt), found from where the eye stands. On the framed board, untouched since, that is the
+   selected board, as before. */
+function viewBoardCell(){
+  /* frameSelectedBoardAt run backwards: it puts the eye futureH up and futureH / tan(pitch) back from the aim point along
+     the heading, so the aim point is that far ahead of where the eye stands now; frameBoard aims BOARD_LIFT_ROWS rows nearer
+     than the board, so the board is that much further on. The same numbers both ways, so on a settled framed board this is
+     that board exactly (a ray from the drawn camera was a row off on mini golf's tall boards and two on chess's). */
+  try {
+    const pitch = Math.max((window.LAB ? window.LAB.pitchMin : 35), Math.min(PITCH_MAX, st.pitch)) * Math.PI / 180;
+    const h = THREE.MathUtils.lerp(0.75, CAM_H_MAX, st.zoom / 1000);
+    const back = h / Math.tan(pitch);
+    const yaw = (st.yaw || 0) * Math.PI / 180;
+    const t1 = (gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize))) / 8;
+    const ahead = back + t1 * BOARD_LIFT_ROWS;
+    const x = st.camX + Math.sin(yaw) * ahead, z = st.camZ + Math.cos(yaw) * ahead;
+    if (!isFinite(x) || !isFinite(z)) return null;
+    return { c: Math.round(x / gridSpacingX()), r: Math.round(z / gridSpacingZ()) };
+  } catch { return null; }
+}
 function stepRight(dir){
   const SPX = gridSpacingX(), SPZ = gridSpacingZ();
-  const gx = Math.round((target.shown ? target.boardX : st.camX) / SPX);
-  const gz = Math.round((target.shown ? target.boardZ : st.camZ) / SPZ);
+  /* The selected board while the view is where its framing put it, or still flying there (a second Tab mid-flight goes on
+     from where the first was going; chess opens on an overview of its corner board, framed, but not in the default
+     position); once the view has been moved off it, the board in view. */
+  const still = target.shown && (target.active || Math.hypot(st.camX - target.x, st.camZ - target.z) < 0.25 * Math.min(SPX, SPZ));
+  const at = still ? null : viewBoardCell();
+  const gx = at ? at.c : Math.round((target.shown ? target.boardX : st.camX) / SPX);
+  const gz = at ? at.r : Math.round((target.shown ? target.boardZ : st.camZ) / SPZ);
   const yaw = (st.yaw || 0) * Math.PI / 180;
   let rx = Math.round(-Math.cos(yaw)), rz = Math.round(Math.sin(yaw));
   if (rx === 0 && rz === 0) rx = -1;                                      // ~45° heading guard
@@ -17040,6 +17074,31 @@ applyMenuDebug();
    it parks the button itself mid-press — which is fine, the event has already
    left it, and the menu closes behind it the way any other choice does. */
 document.getElementById('bDebugTier')?.addEventListener('click', () => setMenuDebug(false));
+
+/* FULL SCREEN (Oct 17: "add full screen option to the menu"). The whole page, not the canvas alone, so the bar, the
+   menu and the bottom row come along. The label follows the state, whichever way it changed (Escape leaves full screen
+   without the menu knowing). The prefixed names are Safari's on an iPad and older Macs. */
+(() => {
+  const b = document.getElementById('bFullScreen');
+  if (!b) return;
+  const el = document.documentElement;
+  const on = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const can = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled) && !!(el.requestFullscreen || el.webkitRequestFullscreen);
+  if (!can){ b.hidden = true; return; }
+  const sync = () => { b.textContent = on() ? 'Leave full screen' : 'Full screen'; };
+  b.addEventListener('click', () => {
+    try {
+      if (on()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else {
+        const r = (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' });
+        if (r && r.catch) r.catch(e => console.warn('[full screen] refused —', e && e.message));
+      }
+    } catch (e){ console.warn('[full screen]', e && e.message); }
+  });
+  document.addEventListener('fullscreenchange', sync);
+  document.addEventListener('webkitfullscreenchange', sync);
+  sync();
+})();
 
 // Menu show/hide.
 const menuEl    = document.getElementById('menu');
@@ -52391,7 +52450,7 @@ window.tvf = {
   setRowMinBp(v){ ROW_MIN_BP = v; },
   get frame(){ return { ..._frameStats, tileCap: MAXI, wholeCap: MAXW,
                         wholeDrawn: _wholeN, boardsAtCap: MAXW }; },
-  fn: { _framedUV, historyLen, navTo, navRel, enterPlay, exitPlay, resetGame, commitReview,
+  fn: { viewBoardCell, stepRight, gotoCell, _framedUV, historyLen, navTo, navRel, enterPlay, exitPlay, resetGame, commitReview,
         cancelReview, reviewButtonAt, reviewHitAt, panelScrubAt, panelScrub,
         sidePanelSafeAt, sidePanelSwallows, userButtonAt, eloSliderTap,
         actionButtonAt, boardActionsShown, actArmed, resignGame, gameIsFinished,

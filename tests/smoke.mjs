@@ -3322,6 +3322,48 @@ try {
       console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted`);
     }
   }
+  // THE DOTS, FULL SCREEN, AND TAB FROM THE BOARD IN VIEW (Oct 17: "1) the three dots on the bottom for the bottom panel should
+  // be 2px larger and have a shadow. 2) add full screen option to the menu. 3) tab and enter should move to next board, from the
+  // current visible board that is in the default position."): the dots 6px across with a drop shadow; a Full screen item on the
+  // menu that the browser here can use; and Tab, after the view has slid two boards along and one down with nothing selected
+  // there, going to the board right of the one now in view, not right of the board selected before the slide. Then Enter, in
+  // an app that leaves Enter to the field, one further.
+  {
+    current = 'dots, full screen, tab';
+    const bad = [];
+    const d = await page.evaluate(() => {
+      const svg = document.querySelector('#bbHandle svg'), c = svg && svg.querySelector('circle');
+      const r = c && c.getBoundingClientRect();
+      return { w: r && Math.round(r.width), shadow: svg && getComputedStyle(svg).filter,
+               fs: (() => { const b = document.getElementById('bFullScreen'); return b ? { hidden: b.hidden, text: b.textContent, inMenu: !!b.closest('#menu') } : null; })() };
+    });
+    if (d.w !== 6) bad.push('a dot is ' + d.w + 'px across, not 6');
+    if (!/drop-shadow/.test(d.shadow || '')) bad.push('the dots have no shadow');
+    if (!d.fs || !d.fs.inMenu || d.fs.hidden || d.fs.text !== 'Full screen') bad.push('no Full screen item on the menu: ' + JSON.stringify(d.fs));
+    const steps = [];
+    for (const id of ['gallery', 'checkers']){
+      await page.evaluate(id => { const a = window.FIELD_APPS.find(a => a.id === id); window.setFieldApp(a); }, id);
+      await page.waitForTimeout(2500);
+      await page.evaluate(() => { FIELD_WORLD.st.yaw = 0; tvf.target.yaw = null; tvf.fn.gotoCell(0, 0); });   // facing forward, so right is −x
+      await page.waitForFunction(() => !tvf.target.active, null, { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(500);
+      const slid = await page.evaluate(() => { const st = FIELD_WORLD.st, [sx, sz] = FIELD_WORLD.spacing(); st.camX -= 2 * sx; st.camZ -= sz;
+                                                const v = tvf.fn.viewBoardCell(); return [v.c, v.r]; });
+      await page.waitForTimeout(800);
+      await page.keyboard.press('Tab');
+      await page.waitForFunction(() => !tvf.target.active, null, { timeout: 15000 }).catch(() => {});
+      const afterTab = await page.evaluate(() => [tvf.target.cellX, tvf.target.cellZ]);
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => !tvf.target.active, null, { timeout: 15000 }).catch(() => {});
+      const afterEnter = await page.evaluate(() => [tvf.target.cellX, tvf.target.cellZ]);
+      steps.push(id + ' ' + [slid, afterTab, afterEnter].map(c => c.join(',')).join(' → '));
+      if (slid.join() !== '-2,-1') bad.push(id + ': the board in view after the slide is ' + slid);
+      if (afterTab.join() !== '-3,-1') bad.push(id + ': Tab went to ' + afterTab + ', not the board right of ' + slid);
+      if (afterEnter.join() !== '-4,-1') bad.push(id + ': Enter went to ' + afterEnter);
+    }
+    if (bad.length) failures.push('[dots, full screen, tab] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} the dots 6px with a shadow, Full screen on the menu, Tab and Enter step from the board in view (${steps.join('; ')})`);
+  }
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
