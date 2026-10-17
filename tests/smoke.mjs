@@ -326,6 +326,14 @@ try {
     for (let i = 0; i < 6; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, -400); await page.waitForTimeout(400); }
     await page.waitForTimeout(3500);
     const L1 = await look();
+    /* (Oct 17: "Let's create a new lab that recovers 3d shapes" … "in levels application"; wander plans/rsh-plan.md) One reader at a
+       body's centre reads the sweep's own directions, the same for every body, the census a unit sphere; three readers inside,
+       directions only, place every point exactly in |AB|, and scaling the world moves nothing; Recover on, a tap shows the clouds */
+    const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, a = D.recover(0), b = D.recover(7), k = D.recover(7, 1e3);
+      let cross = 0, kk = 0; for (let i = 0; i < a.N; i++) for (let j = 0; j < 3; j++){ cross = Math.max(cross, Math.abs(a.reads[i][j] - b.reads[i][j])); if (k.rec[i] && b.rec[i]) kk = Math.max(kk, Math.abs(k.rec[i][j] - b.rec[i][j])); }
+      const L = D.list[0], [c, r] = L.key.split('_').map(Number); D.recoverOn = true; window.getFieldApp().onCellTap(c, r);
+      const G = D.recoverGroup, shown = !!(G && G.parent && G.children.length === 4); D.recoverOn = false;
+      return { rd: Math.max(a.rdErr, b.rdErr), cross, vh: a.vh, both: a.both, rec: Math.max(a.recErr, b.recErr), fewest: Math.min(a.fewest, b.fewest), kk, shown }; });
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS[0]));
     await page.evaluate(() => window.__settle());
     const pitch1 = await page.evaluate(() => window.FIELD_WORLD.st.pitch), floor1 = await page.evaluate(() => window.LAB.pitchMin);
@@ -336,9 +344,10 @@ try {
         || hd.small.hs !== -2 || hd.large.hs !== 2 || hd.back !== 0 || !(hd.small.near < hd.mid.near || hd.mid.near === 0) || !(hd.large.near > hd.mid.near)
         || !(hd.small.far > hd.large.far) || [hd.small, hd.mid, hd.large].some(x => x.total !== 512)
         || hd.leaves.a0 !== 512 || hd.leaves.a2 !== 2048 || hd.leaves.a1 !== 256 || hd.leaves.back !== 512 || hd.leaves.total2 !== 2048
-        || !(hd.leaves.near2 <= hd.leaves.near0 && hd.leaves.near0 <= hd.leaves.near1 && hd.leaves.near2 < hd.leaves.near1) || !hd.plain)
-      failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, far, tiles, pitch0, pitch1, own, floor1, hd })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (H near/far grains ${hd.small.near}/${hd.small.far}, ${hd.mid.near}/${hd.mid.far}, ${hd.large.near}/${hd.large.far}; by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; at 6°: ${far.bodies} bodies; None at the opening view: ${tiles.none})`);
+        || !(hd.leaves.near2 <= hd.leaves.near0 && hd.leaves.near0 <= hd.leaves.near1 && hd.leaves.near2 < hd.leaves.near1) || !hd.plain
+        || rec.rd > 1e-12 || rec.cross > 1e-12 || Math.abs(rec.vh - 0.5) > 0.01 || Math.abs(rec.both - 1 / 3) > 0.01 || rec.rec > 1e-9 || rec.fewest < 2 || rec.kk > 1e-9 || !rec.shown)
+      failures.push(`[${current}] ${JSON.stringify({ L0, lv, L1, far, tiles, pitch0, pitch1, own, floor1, hd, rec })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (H near/far grains ${hd.small.near}/${hd.small.far}, ${hd.mid.near}/${hd.mid.far}, ${hd.large.near}/${hd.large.far}; by v/h: ${L0.boards} boards in ${L0.levels} levels, ${L0.tris} triangles; climbed: ${L1.boards} boards, ${L1.tris}; at 6°: ${far.bodies} bodies; None at the opening view: ${tiles.none}; recovered from directions to ${rec.rec.toExponential(0)})`);
   }
 
   // CHESS PLAYS ON WHILE THE VIEW MOVES (Oct 14: "turn animation back on for chess when the chess board is in motion.",

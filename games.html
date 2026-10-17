@@ -47018,6 +47018,96 @@ const LEVELS_APP = (() => {
   }
   function setWire(on){ wire = !!on; if (BODIES){ const any = lastList.length > 0; BODIES.visible = any && !wire; BODYLINES.visible = any && wire; } try { localStorage.setItem('levels.wire', wire ? 'on' : 'off'); } catch {} try { window.fieldItemsChanged && window.fieldItemsChanged(); bbRefreshNow(); } catch {} }
   const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'k' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
+  /* RECOVER A BODY FROM ITS ADDRESSES (Oct 17: "In draw.html we uses the address to recover the shape of two d shapes with
+     cauchy. Let's create a new lab that recovers 3d shapes."; "Let's do this in levels application of games.html. it has the
+     3d shapes."). Draw's RCC and UDV labs in three dimensions; the predictions are wander's plans/rsh-plan.md, written first.
+     A body, all four bands in full, is c + diag(s)·R(u)·u in the direction u from its centre c (bodyOf; star-shaped from c).
+     - One reader at the centre sweeps N directions d, even over the sphere (a Fibonacci lattice). Each meets the surface once,
+       and its reading is the direction to the point met, [h : v : v₂] = |d| in each octant: the sweep's own addresses, the
+       same for every body. The census (each direction drawn at the one length H) is the unit sphere, from every body.
+     - Three readers inside (the centre plus 0.12 of the body's least half-extent along three directions of a triangle tipped
+       out of every axis plane), facing one frame, hold only the unit direction to each surface point (which point is given).
+       A point is placed where the rays of the two readers that see it squarest cross; every length is laid in the one length
+       the readers know of themselves, |AB|. That is the body up to its size; |AB| carried in gives the size. */
+  const RC_N = 4096;
+  const fib = (() => { let L = null; return () => { if (L) return L; L = []; const ga = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < RC_N; i++){ const y = 1 - 2 * (i + 0.5) / RC_N, q = Math.sqrt(1 - y * y), a = ga * i; L.push([q * Math.cos(a), y, q * Math.sin(a)]); } return L; }; })();
+  const nrm = p => { const l = Math.hypot(p[0], p[1], p[2]); return [p[0] / l, p[1] / l, p[2] / l]; };
+  // (a body's frame, in its own units: centre, stretch, and its radius R(u) with every band in full)
+  function bodyFrame(idx, k = 1){
+    const B = bodyOf(idx), s = B.s.map(x => x * k), c = [0, 0.5 * s[1], 0];
+    const R = u => { let r = 0; for (const w of B.waves) r += w.A * Math.cos(w.f * (u[0] * w.d[0] + u[1] * w.d[1] + u[2] * w.d[2]) + w.ph); return 0.5 * (1 + r); };
+    // the surface met going from the centre in the direction d (any length), and whether a point q is inside
+    const hit = d => { const u = nrm([d[0] / s[0], d[1] / s[1], d[2] / s[2]]), r = R(u); return [c[0] + s[0] * r * u[0], c[1] + s[1] * r * u[1], c[2] + s[2] * r * u[2]]; };
+    const inside = q => { const w = [q[0] - c[0], q[1] - c[1], q[2] - c[2]], l = Math.hypot(...w); if (l < 1e-12) return true; const p = hit(w); return l < Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) * (1 - 1e-9); };
+    return { B, s, c, R, hit, inside };
+  }
+  const TRI = [[2, -1, -1], [-1, 2, -1], [-1, -1, 2]].map(nrm);
+  function recover(idx, k = 1){
+    const F = bodyFrame(idx, k), D = fib(), m = 0.12 * 0.5 * Math.min(...F.s);
+    const RD = TRI.map(e => [F.c[0] + m * e[0], F.c[1] + m * e[1], F.c[2] + m * e[2]]);
+    const AB = Math.hypot(RD[1][0] - RD[0][0], RD[1][1] - RD[0][1], RD[1][2] - RD[0][2]);
+    const P = D.map(d => F.hit(d));
+    // one reader at the centre: its readings, the octant's shares, the census
+    let rdErr = 0, vh = 0, both = 0;
+    const reads = P.map((p, i) => { const r = nrm([p[0] - F.c[0], p[1] - F.c[1], p[2] - F.c[2]]), d = D[i];
+      rdErr = Math.max(rdErr, Math.abs(r[0] - d[0]), Math.abs(r[1] - d[1]), Math.abs(r[2] - d[2]));
+      const h = Math.abs(r[0]), v = Math.abs(r[1]), v2 = Math.abs(r[2]); if (v <= h) vh++; if (v <= h && v2 <= h) both++; return r; });
+    const census = reads;                                  // each direction at the one length: the unit sphere
+    // three readers, directions only, and what each sees
+    const seen = p => RD.map(a => { for (let t = 1; t < 64; t++){ const q = [a[0] + (p[0] - a[0]) * t / 64, a[1] + (p[1] - a[1]) * t / 64, a[2] + (p[2] - a[2]) * t / 64]; if (!F.inside(q)) return false; } return true; });
+    let fewest = 3, recErr = 0, meanR = 0; const rec = [];
+    for (const p of P) meanR += Math.hypot(p[0] - F.c[0], p[1] - F.c[1], p[2] - F.c[2]); meanR /= P.length;
+    for (const p of P){
+      const S = seen(p), dirs = RD.map(a => nrm([p[0] - a[0], p[1] - a[1], p[2] - a[2]]));   // what the readers hold
+      const who = [0, 1, 2].filter(i => S[i]); fewest = Math.min(fewest, who.length);
+      if (who.length < 2){ rec.push(null); continue; }
+      // the pair crossing squarest, in the readers' own frame: their triangle in |AB|
+      let best = null;
+      for (let x = 0; x < who.length; x++) for (let y = x + 1; y < who.length; y++){ const a = dirs[who[x]], b = dirs[who[y]];
+        const cr = Math.hypot(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]); if (!best || cr > best.cr) best = { i: who[x], j: who[y], cr }; }
+      const A = RD[best.i].map(x => x / AB), Bp = RD[best.j].map(x => x / AB), a = dirs[best.i], b = dirs[best.j];
+      const w0 = [A[0] - Bp[0], A[1] - Bp[1], A[2] - Bp[2]], ab = a[0] * b[0] + a[1] * b[1] + a[2] * b[2], dd = a[0] * w0[0] + a[1] * w0[1] + a[2] * w0[2], ee = b[0] * w0[0] + b[1] * w0[1] + b[2] * w0[2], den = 1 - ab * ab;
+      const t = (ab * ee - dd) / den, u = (ee - ab * dd) / den;
+      const q = [0, 1, 2].map(i => 0.5 * (A[i] + t * a[i] + Bp[i] + u * b[i]));       // the place, in |AB|
+      rec.push(q);
+      recErr = Math.max(recErr, Math.hypot(q[0] - p[0] / AB, q[1] - p[1] / AB, q[2] - p[2] / AB) / (meanR / AB));
+    }
+    const ext = L => [0, 1, 2].map(i => { let lo = Infinity, hi = -Infinity; for (const p of L) if (p){ lo = Math.min(lo, p[i]); hi = Math.max(hi, p[i]); } return hi - lo; });
+    return { idx, k, N: P.length, s: F.s, AB, meanR, rdErr, vh: vh / P.length, both: both / P.length, fewest, recErr, reads, census, rec, P, RD, c: F.c,
+             ext: { truth: ext(P), rec: ext(rec), census: ext(census) } };
+  }
+  /* Shown on the field: tap a board with Recover on and three point clouds stand in a row across the screen, drawn over
+     everything: on the body itself the readers' points with |AB| carried in (teal, they land on it), to its left the census
+     (gold, the unit sphere, drawn at the body's mean radius) and to its right the readers' body in |AB| alone, |AB| drawn at
+     one length for every body (violet: the shape, at a size of the readers' choosing), the three readers as red dots. */
+  let recoverOn = false, RCG = null;
+  const RC_AB_DRAWN = 0.06;
+  function recoverShow(c, r){
+    const T = W().THREE, at = W().itemAt; if (RCG){ W().scene.remove(RCG); RCG.traverse(o => { o.geometry && o.geometry.dispose(); o.material && o.material.dispose(); }); RCG = null; }
+    const L = last.get(c + '_' + r); if (!L) return null;
+    const R = recover(L.idx), sc = 0.5 * W().boardW(), B = R.s.map(x => x * sc);
+    const x0 = L.x, z0 = L.z, cy = R.c[1] * sc;
+    const cloud = (pts, col, map, size) => { const a = new Float32Array(pts.length * 3); let n = 0; for (const p of pts){ if (!p) continue; const q = map(p); a[n++] = q[0]; a[n++] = q[1]; a[n++] = q[2]; }
+      const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(a.subarray(0, n), 3)); const o = new T.Points(g, new T.PointsMaterial({ color: col, size, sizeAttenuation: true })); o.frustumCulled = false; return o; };
+    RCG = new T.Group();
+    const lift = 0.02, step = 1.3 * sc * Math.max(...R.s), dot = 0.012 * sc;
+    // (side by side across the screen: the camera's right, along the ground)
+    const cam = W().camera; cam.updateMatrixWorld(); const e = cam.matrixWorld.elements, rl = Math.hypot(e[0], e[2]) || 1, rx = e[0] / rl, rz = e[2] / rl;
+    const at3 = (o, p) => [x0 + o * rx * step + p[0], lift + p[1], z0 + o * rz * step + p[2]];
+    // on the body: the readers' points with |AB| carried in (teal; they land on it)
+    RCG.add(cloud(R.rec, 0x8ce6cd, q => at3(0, [q[0] * R.AB * sc, q[1] * R.AB * sc, q[2] * R.AB * sc]), dot));
+    // to its left: the census, the unit sphere (gold, drawn at the body's mean radius about its centre)
+    RCG.add(cloud(R.census, 0xd4a052, d => at3(-1, [d[0] * R.meanR * sc, cy + d[1] * R.meanR * sc, d[2] * R.meanR * sc]), dot));
+    // to its right: the readers' body in |AB| alone, |AB| drawn at one length for every body (violet)
+    const S = RC_AB_DRAWN * sc, cAB = R.c.map(x => x / R.AB);
+    RCG.add(cloud(R.rec, 0x9b6fd8, q => at3(1, [(q[0] - cAB[0]) * S, cy + (q[1] - cAB[1]) * S, (q[2] - cAB[2]) * S]), dot));
+    RCG.add(cloud(R.RD, 0xd96e5b, p => at3(0, [p[0] * sc, p[1] * sc, p[2] * sc]), 0.05 * sc));
+    RCG.traverse(o => { if (o.material) o.material.depthTest = false; o.renderOrder = 20; });
+    W().scene.add(RCG);
+    try { window.fieldWake && window.fieldWake(); } catch {}
+    return R;
+  }
   return {
     name: 'levels',
     /* NO COLOURED BOARDS (Oct 14: "remove the colored background to boards in levels."): with no colours of its own a board
@@ -47034,7 +47124,7 @@ const LEVELS_APP = (() => {
        view; at 35° the top of the screen is about 5° under the horizon) */
     fitView(F){ if (pitchWas == null) pitchWas = F.st.pitch; F.st.pitch = OPEN_PITCH; F.frameAt(F.zoomFor(OPEN_V)); },
     // (and left, the tilt goes back to what it was, so the next game opens as it would have)
-    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; BAT.clear(); if (BODIES) BODIES.visible = BODYLINES.visible = false; },
+    onLeave(){ try { if (pitchWas != null) W().st.pitch = pitchWas; } catch {} pitchWas = null; try { if (RCG){ W().scene.remove(RCG); RCG = null; } } catch {} BAT.clear(); if (BODIES) BODIES.visible = BODYLINES.visible = false; },
     itemGeometries: {},
     afterItems(){ try { bodiesBuild(); } catch (e) { console.warn('levels bodies', e); } },
     cellItems(c, r, bp){
@@ -47044,7 +47134,7 @@ const LEVELS_APP = (() => {
       const v = Math.max(1e-6, cam.position.y), h = Math.hypot(at.x - cam.position.x, at.z - cam.position.z), k = levelAt(h, v), gc = detailOf(k, v, h), { g, w } = fadeOf(mode === 'vh' ? gc : Math.round(gc));
       cur.n[k] = (cur.n[k] || 0) + 1; cur.t[k] = (cur.t[k] || 0) + TRIS[g]; if (h > cur.R) cur.R = h;
       const idx = boardIdx(c, r);
-      last.set(c + '_' + r, { k, g, gc, s: h / (mode === 'vh' ? Hof(v) : v), idx });
+      last.set(c + '_' + r, { k, g, gc, s: h / (mode === 'vh' ? Hof(v) : v), idx, x: at.x, z: at.z });
       if (last.size > 5000) last.clear();
       // (every body goes into the one mesh, laid in afterItems at its own detail: nothing is a piece of the field's)
       BAT.set(c + '_' + r, { key: c + '_' + r, idx, g, w, k, x: at.x, z: at.z, s: 0.5 * W().boardW() });
@@ -47057,6 +47147,9 @@ const LEVELS_APP = (() => {
     },
     onCellTap(c, r){
       const L = last.get(c + '_' + r); if (!L) return false;
+      if (recoverOn){ const R = recoverShow(c, r);
+        if (R) say('Body ' + L.idx + ': one reader reads its own ' + R.N + ' directions (off by ' + R.rdErr.toExponential(0) + '), the census a unit sphere; three readers, directions only, place every point to ' + R.recErr.toExponential(0) + ' in |AB|. Gold: the census (one reader), the same sphere for every body. Violet: three readers, the body up to size. Teal: with |AB| carried in, the body itself.', 6000);
+        return false; }
       say((L.k === 0 ? 'The near field' : 'Level ' + L.k) + ': h/H = ' + L.s.toFixed(2) + ', detail ' + L.gc.toFixed(2) + ' (grain ' + L.g + '), ' + fmt(TRIS[L.g]) + ' triangles' + (mode === 'none' ? ' (None: every board in full)' : ''), 2600);
       return false;
     },
@@ -47086,10 +47179,11 @@ const LEVELS_APP = (() => {
       { label: 'H larger', title: 'Double H: the corner further out, near bodies coarser, far bodies finer.', on(){ setH(hs + 1); } },
       { label: 'Fewer leaves', title: 'Halve the reader\'s leaves, the size of its image: every body a grain coarser.', on(){ setLeaves(as - 1); } },
       { label: 'More leaves', title: 'Double the reader\'s leaves, the size of its image: every body a grain finer.', on(){ setLeaves(as + 1); } },
+      { label: () => 'Recover a body: ' + (recoverOn ? 'on' : 'off'), title: 'Tap a board: one reader at its body\'s centre reads only directions (the census gives a unit sphere, gold); three readers inside, directions only, give the body up to size (violet) and, with their spacing carried in, the body itself (teal, on it).', on(){ recoverOn = !recoverOn; if (!recoverOn && RCG){ W().scene.remove(RCG); RCG = null; } say(recoverOn ? 'Recover: tap a board to recover its body from directions alone' : 'Recover off'); } },
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
-    _debug: { get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
+    _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
 window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
