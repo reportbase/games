@@ -3318,8 +3318,46 @@ try {
         if (r.expect !== r.n) bad.push(`the gallery expects ${r.expect} prints for ${r.n} pages`);
         if (!(r.loaded >= 1)) bad.push('no page painted onto a board');
       }
+      // THE ROW IS THE BOOK'S SETTINGS (Oct 17: "the epub reader should use the bottom browser for settings such as font
+      // size and font and color and background color, similar to how the games do it"): with the book hanging the row holds
+      // its settings, not page thumbnails; a real click on Larger lays it out again bigger (more pages) and keeps the reader
+      // on the page holding the words they were on; Page steps the paper colour without moving a word.
+      if (!r.why){
+        const row = await page.evaluate(() => {
+          const G = window.FIELD_APPS.find(a => a.id === 'gallery');
+          const live = [...document.querySelectorAll('#boardBrowser .bb-tile')].filter(t => t.style.display !== 'none').map(t => t._key);
+          return { tiles: (G.statTiles() || []).map(t => t.value), keys: live };
+        });
+        if (row.tiles.join() !== 'Smaller,20,Larger,Serif,Sans,Book,Mono,Text: Ink,Page: Paper') bad.push('the settings row is ' + row.tiles.join());
+        if (!row.keys.length || !row.keys.every(k => String(k).startsWith('stat_'))) bad.push('the row shows ' + row.keys.slice(0, 3).join() + ', not the settings');
+        const before = await page.evaluate(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'), E = G._epub, i = G._pick(tvf.target.cellX, tvf.target.cellZ) - E.base;
+                                                    return { n: E.pages.length, at: E.pages[i] && E.pages[i].at, i }; });
+        const box = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none');
+                                                const b = t && t.getBoundingClientRect(); return b && { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+        if (!box) bad.push('no Larger tile on the screen');
+        else {
+          await page.mouse.click(box.x, box.y);
+          await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._epub.EPUB.style.size === 22 && !G._book.busy; }, null, { timeout: 20000 }).catch(() => {});
+          await page.waitForTimeout(1500);
+          const big = await page.evaluate(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'), E = G._epub, i = G._pick(tvf.target.cellX, tvf.target.cellZ) - E.base;
+                                                  return { n: E.pages.length, size: E.EPUB.style.size, from: E.pages[i] && E.pages[i].at, to: E.pages[i + 1] ? E.pages[i + 1].at : 1e9 }; });
+          if (big.size !== 22) bad.push('Larger left the size at ' + big.size);
+          if (!(big.n > before.n)) bad.push(`larger type made ${big.n} pages from ${before.n}`);
+          if (before.at != null && !(big.from <= before.at && before.at < big.to)) bad.push('the framed page does not hold the words the reader was on');
+          const paper = await page.evaluate(async () => {
+            const G = window.FIELD_APPS.find(a => a.id === 'gallery'); const n = G._epub.pages.length;
+            await G._book.tap(8);
+            const E = G._epub, cv = document.createElement('canvas'); E.EPUB.paint(cv, E.pages[1], 96, new Map());
+            const d = cv.getContext('2d').getImageData(2, 2, 1, 1).data;
+            return { n0: n, n: E.pages.length, paper: E.EPUB.style.paper, px: [d[0], d[1], d[2]] };
+          });
+          if (paper.paper !== 'white' || paper.px.join() !== '255,255,255') bad.push('Page did not paint the pages white: ' + JSON.stringify(paper));
+          if (paper.n !== paper.n0) bad.push('a page colour moved the words');
+          await page.evaluate(async () => { const B = window.FIELD_APPS.find(a => a.id === 'gallery')._book; for (let k = 0; k < 5; k++) await B.tap(8); await B.tap(0); });   // back as it was
+        }
+      }
       if (bad.length) failures.push('[epub] ' + bad.join('; '));
-      console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted`);
+      console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted; the row its settings (Larger re-laid it, the place kept; Page painted it white)`);
     }
   }
   // THE DOTS, FULL SCREEN, AND TAB FROM THE BOARD IN VIEW (Oct 17: "1) the three dots on the bottom for the bottom panel should

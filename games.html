@@ -13899,7 +13899,7 @@ function rebuildBoardBrowser(){
   if (!strip) return;
   bbStopMomentum();
   const _iapp = window.getFieldApp && window.getFieldApp();
-  const _gal  = _iapp && _iapp._list && _iapp._list.length ? _iapp : null;
+  let _gal  = _iapp && _iapp._list && _iapp._list.length ? _iapp : null;
   /* WHAT THE STRIP IS, in two cases and no third:
        · IMAGE MODE — the gallery is showing and holds prints, so the strip
          is an image browser: every loaded picture in arrival order, zip,
@@ -13914,7 +13914,9 @@ function rebuildBoardBrowser(){
      itself — the right answer to "there is nothing to show" is nothing.
      Every game behaves the same way here; that is the whole point. */
   // (an app's editor, while it is on, has the row: chess's position editor over its move tiles, Oct 13)
-  let _edit = false; try { const _ea = window.getFieldApp && window.getFieldApp(); _edit = !!(_ea && _ea.statTiles && _ea.statsStay && _ea.statsStay()); } catch {}
+  let _edit = false; try { const _ea = window.getFieldApp && window.getFieldApp(); _edit = !!(_ea && _ea.statTiles && ((_ea.statsStay && _ea.statsStay()) || (_ea.statsFirst && _ea.statsFirst()))); } catch {}
+  // (a book's settings take the gallery's row from its pages' thumbnails: statsFirst, Oct 17)
+  if (_edit) _gal = null;
   const _ply = (_gal || _edit) ? null : bbPlyData();
   const _sts = (_gal || _ply) ? null : bbStatList();
   /* DENSE, and it matters. `_list.map` looked right and was not: LIST is a
@@ -49895,11 +49897,59 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const PAGE_W = 640, PAGE_H = 960, ASPECT = PAGE_W / PAGE_H;
     const M = { l: 58, r: 58, t: 72, b: 86 };
     const CW = PAGE_W - M.l - M.r, BOTTOM = PAGE_H - M.b;
-    const SERIF = 'Georgia, "Times New Roman", Times, "DejaVu Serif", serif';
-    const MONO = 'Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace';
-    const BODY = 20, LEAD = 1.45, SMALL = 17;
-    const HEAD = [0, 34, 29, 25, 22, 21, 20];
-    const PAPER = '#fbf8f1', INK = '#1d1b18', FAINT = '#8f877b';
+    /* THE READER'S SETTINGS (Oct 17: "the epub reader should use the bottom browser for settings such as font size and font
+       and color and background color, similar to how the games do it"): the face, the size and the two colours are the
+       reader's, chosen in the bottom row (BOOK_ROW, below) and kept (localStorage epub.style). A face or a size lays the
+       book out again (the words fall on other pages); a colour only paints them again. */
+    const FONTS = [
+      { key: 'serif', name: 'Serif', css: 'Georgia, "Times New Roman", Times, "DejaVu Serif", serif' },
+      { key: 'sans',  name: 'Sans',  css: '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif' },
+      { key: 'book',  name: 'Book',  css: 'Palatino, "Palatino Linotype", "Book Antiqua", "URW Palladio L", Georgia, serif' },
+      { key: 'mono',  name: 'Mono',  css: 'Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace' },
+    ];
+    const INKS = [
+      { key: 'ink', name: 'Ink', css: '#1d1b18' }, { key: 'brown', name: 'Brown', css: '#4a3426' },
+      { key: 'navy', name: 'Navy', css: '#1f2f4d' }, { key: 'grey', name: 'Grey', css: '#4d4d4d' },
+      { key: 'cream', name: 'Cream', css: '#ece4d3' }, { key: 'white', name: 'White', css: '#f5f5f5' },
+    ];
+    const PAPERS = [
+      { key: 'paper', name: 'Paper', css: '#fbf8f1' }, { key: 'white', name: 'White', css: '#ffffff' },
+      { key: 'sepia', name: 'Sepia', css: '#f1e3c6' }, { key: 'grey', name: 'Grey', css: '#d9d9d6' },
+      { key: 'night', name: 'Night', css: '#1e2024' }, { key: 'black', name: 'Black', css: '#000000' },
+    ];
+    const SIZES = [14, 16, 18, 20, 22, 24, 26, 28, 32];
+    const STYLE0 = { font: 'serif', size: 20, ink: 'ink', paper: 'paper' };
+    const STYLE_KEY = 'epub.style';
+    const style = Object.assign({}, STYLE0);
+    try {
+      const k = JSON.parse(localStorage.getItem(STYLE_KEY) || 'null');
+      if (k && FONTS.some(f => f.key === k.font)) style.font = k.font;
+      if (k && SIZES.includes(k.size)) style.size = k.size;
+      if (k && INKS.some(f => f.key === k.ink)) style.ink = k.ink;
+      if (k && PAPERS.some(f => f.key === k.paper)) style.paper = k.paper;
+    } catch {}
+    const saveStyle = () => { try { localStorage.setItem(STYLE_KEY, JSON.stringify(style)); } catch {} };
+    const of = (L, k) => L.find(f => f.key === k) || L[0];
+    // The faces and sizes a layout is made in, set from the style as it starts (laidAs).
+    let SERIF = FONTS[0].css;
+    const MONO = FONTS[3].css;
+    let BODY = 20, SMALL = 17, HEAD = [0, 34, 29, 25, 22, 21, 20];
+    const LEAD = 1.45;
+    const laidAs = () => {
+      SERIF = of(FONTS, style.font).css;
+      BODY = style.size;
+      const k = BODY / 20;
+      SMALL = Math.round(17 * k);
+      HEAD = [0, 34, 29, 25, 22, 21, 20].map(v => Math.round(v * k));
+      return style.font + '/' + style.size;
+    };
+    // How bright a colour is (sRGB's weights, near enough), for keeping the words readable on the page.
+    const lum = css => { const n = parseInt(css.slice(1), 16); return (0.2126 * (n >> 16 & 255) + 0.7152 * (n >> 8 & 255) + 0.0722 * (n & 255)) / 255; };
+    const colours = () => {
+      const ink = of(INKS, style.ink).css, paper = of(PAPERS, style.paper).css;
+      const mix = (a, b, t) => '#' + [16, 8, 0].map(sh => Math.round(((parseInt(a.slice(1), 16) >> sh) & 255) * (1 - t) + ((parseInt(b.slice(1), 16) >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
+      return { ink, paper, faint: mix(ink, paper, 0.45) };
+    };
     const fontOf = (r, size) => (r.i ? 'italic ' : '') + (r.b ? 'bold ' : '') + size + 'px ' + (r.mono ? MONO : SERIF);
 
     /* ── the zip: paths, lookups, the package ── */
@@ -50210,9 +50260,13 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     }
 
     function layout(book){
+      const as = laidAs();
       const pages = [];
-      let pg = null, y = 0;
-      const newPage = () => { pg = { lines: [], imgs: [], rules: [], full: false }; pages.push(pg); y = M.t; };
+      pages.as = as;
+      let pg = null, y = 0, words = 0;
+      /* `at` is how many pieces of words came before the page: the same text falls on other pages in another size, and
+         this is how the reader finds the page that now holds the words it was on. */
+      const newPage = () => { pg = { lines: [], imgs: [], rules: [], full: false, at: words }; pages.push(pg); y = M.t; };
       const blank = () => !pg.lines.length && !pg.imgs.length && !pg.rules.length;
       for (const ch of book.chapters){
         if (!ch.length) continue;
@@ -50267,6 +50321,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             const base = y + (lh - size) / 2 + size * 0.8;
             for (const it of ln.items) it.x += left;
             pg.lines.push({ y: base, items: ln.items });
+            words += ln.items.length;
             y += lh;
           }
           if (b.h) y += size * 0.5;
@@ -50286,27 +50341,28 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       cv.height = Math.max(1, Math.round(px));
       const cx = cv.getContext('2d', { alpha: false });
       cx.setTransform(s, 0, 0, s, 0, 0);
-      cx.fillStyle = PAPER;
+      const C = colours();
+      cx.fillStyle = C.paper;
       cx.fillRect(0, 0, PAGE_W, PAGE_H);
       cx.imageSmoothingQuality = 'high';
       for (const im of pg.imgs){
         const pic = pics.get(im.key);
         if (pic) cx.drawImage(pic, im.x, im.y, im.w, im.h);
       }
-      cx.fillStyle = INK;
+      cx.fillStyle = C.ink;
       cx.textBaseline = 'alphabetic';
       let font = '';
       for (const ln of pg.lines) for (const it of ln.items){
         if (font !== it.font){ cx.font = it.font; font = it.font; }
         cx.fillText(it.s, it.x, ln.y);
       }
-      cx.strokeStyle = FAINT;
+      cx.strokeStyle = C.faint;
       cx.lineWidth = 1;
       for (const r of pg.rules){
         cx.beginPath(); cx.moveTo(PAGE_W / 2 - 48, r.y); cx.lineTo(PAGE_W / 2 + 48, r.y); cx.stroke();
       }
       if (!pg.full){
-        cx.fillStyle = FAINT;
+        cx.fillStyle = C.faint;
         cx.font = '15px ' + SERIF;
         cx.textAlign = 'center';
         cx.fillText(String(pg.num), PAGE_W / 2, PAGE_H - M.b / 2 + 6);
@@ -50316,13 +50372,126 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     }
     // The words of a laid-out page, in order, for the smoke test.
     const textOf = pg => pg.lines.map(l => l.items.map(it => it.s).join(' ')).join(' ');
-    return { open, layout, paint, mimeOf, textOf, ASPECT, PAGE_W, PAGE_H };
+    /* A setting changed from the row: true if the book must be laid out again (a face or a size), false if a repaint will
+       do (a colour). A page colour that would leave the words unreadable (dark ink on Night) takes the first ink that
+       reads on it; the text colour itself is left as chosen. */
+    function set(k, v){
+      const was = style.font + '/' + style.size;
+      if (k === 'font' && FONTS.some(f => f.key === v)) style.font = v;
+      if (k === 'size'){ const i = Math.max(0, Math.min(SIZES.length - 1, SIZES.indexOf(style.size) + v)); style.size = SIZES[i]; }
+      if (k === 'ink'){ const i = INKS.findIndex(f => f.key === style.ink); style.ink = INKS[(i + 1) % INKS.length].key; }
+      if (k === 'paper'){
+        const i = PAPERS.findIndex(f => f.key === style.paper); style.paper = PAPERS[(i + 1) % PAPERS.length].key;
+        const P = lum(of(PAPERS, style.paper).css);
+        if (Math.abs(lum(of(INKS, style.ink).css) - P) < 0.45){ const ok = INKS.find(f => Math.abs(lum(f.css) - P) >= 0.45); if (ok) style.ink = ok.key; }
+      }
+      saveStyle();
+      return style.font + '/' + style.size !== was;
+    }
+    return { open, layout, paint, mimeOf, textOf, ASPECT, PAGE_W, PAGE_H, style, set, FONTS, INKS, PAPERS, SIZES,
+             names: () => ({ font: of(FONTS, style.font).name, ink: of(INKS, style.ink), paper: of(PAPERS, style.paper) }) };
   })();
   /* Pictures in a book are decoded when a page that shows them is painted,
      and a few are kept, since a picture is often on the page after its own
      (a figure that carried over) and a board flown past twice asks twice. */
   const EPUB_PICS = 8;
   let _epubGen = 0;
+  /* THE BOOK HANGING NOW, kept for the settings row: its words, its zip, the pictures decoded lately, and which collection
+     it is (GALLERY_APP._gen, moved on by any other pour, which ends the row). */
+  let BOOK = null;
+  const bookLive = () => !!(BOOK && BOOK.pages && BOOK.gen === GALLERY_APP._gen);
+  /* Lay the book out (or keep its layout, for a colour), declare its pages to the pour and serve them: the first hanging and
+     every change from the row alike. */
+  async function _hangBook(B, pour, slot, dead, relayout = true){
+    const pages = relayout || !B.pages ? EPUB.layout(B.book) : B.pages;
+    if (!pages.length) return false;
+    const base = await POUR.claim(pour, slot, pages.length, [EPUB.ASPECT]);
+    _zipShowsGallery();                       // a book IS the picture app
+    try { GALLERY_APP._finish(); } catch {}
+    Object.assign(B, { pages, base, gen: GALLERY_APP._gen });
+    try { GALLERY_APP._epub = { label: B.label, base, pages, book: B.book, EPUB }; } catch {}
+    const pic = async key => {
+      const pics = B.pics;
+      if (pics.has(key)){ const p = pics.get(key); pics.delete(key); pics.set(key, p); return p; }
+      const p = await _decodeBlob(await B.entries[key].blob(EPUB.mimeOf(key))).catch(() => null);
+      pics.set(key, p);
+      while (pics.size > EPUB_PICS){
+        const [k0, p0] = pics.entries().next().value;
+        pics.delete(k0);
+        try { if (p0 && p0.close) p0.close(); } catch {}
+      }
+      return p;
+    };
+    const render = async i => {
+      const pg = pages[i - base];
+      const have = new Map();
+      for (const im of pg.imgs) have.set(im.key, await pic(im.key));
+      return EPUB.paint(_pdfCanvas(), pg, _pdfPx(), have);
+    };
+    POUR.serve(pour, {
+      base, n: pages.length, label: B.label, tag: 'epub', width: PDF_WIDTH,
+      dead, render,
+      name: i => B.label + ' \u00b7 ' + (i - base + 1),
+      placed: cv => _pdfRelease(cv),
+    });
+    try { rebuildBoardBrowser(); bbRefreshNow(); } catch {}
+    return true;
+  }
+  /* A SETTING FROM THE ROW: the book hung again in the new size or face (or only painted again, for a colour), and the view
+     taken to the page that now holds the words the framed page began with, so the reader keeps their place. */
+  let _bookBusy = false;
+  async function bookSet(k, v){
+    if (!bookLive() || _bookBusy) return;
+    const B = BOOK;
+    let at = 0;
+    try {
+      const i = GALLERY_APP._pick(target.cellX | 0, target.cellZ | 0) - B.base;
+      if (target.shown && B.pages[i]) at = B.pages[i].at;
+    } catch {}
+    const relayout = EPUB.set(k, v);
+    _bookBusy = true;
+    try {
+      const gen = ++_epubGen;
+      await _hangBook(B, POUR.open(1, false), 0, () => gen !== _epubGen, relayout);
+      let j = 0;
+      for (let q = 0; q < B.pages.length; q++){ if (B.pages[q].at <= at) j = q; else break; }
+      const cell = GALLERY_APP._cellFor(B.base + j, target.cellX | 0, target.cellZ | 0);
+      if (cell && target.shown) gotoCell(cell.c, cell.r);
+      _setLoadBtn(B.label + ' \u00b7 ' + B.pages.length + ' pages');
+      setTimeout(() => _setLoadBtn('Load images \u21e7'), 2500);
+    } finally { _bookBusy = false; }
+  }
+  /* THE ROW IS THE BOOK'S SETTINGS while a book hangs (Oct 17), as a game's row holds its own (golf's editor, chess's
+     position): smaller and larger with the size between them, the four faces (the one in use lit), and the text and page
+     colours, each a tile that steps to the next, its swatch the colour. statsFirst gives the row to these tiles over the
+     pages' thumbnails; unlike an editor's statsStay it does not hold the row open, so it can be shut to read. */
+  {
+    const LIT = '#3a4f6a';
+    const tiles = () => {
+      const S = EPUB.style, N = EPUB.names();
+      const T = [
+        { glyph: 'A\u2212', value: 'Smaller', dim: S.size <= EPUB.SIZES[0] },
+        { label: 'Size', value: String(S.size) },
+        { glyph: 'A+', value: 'Larger', dim: S.size >= EPUB.SIZES[EPUB.SIZES.length - 1] },
+      ];
+      for (const f of EPUB.FONTS) T.push({ glyph: 'Aa', value: f.name, bg: f.key === S.font ? LIT : undefined });
+      // (a mid grey under the swatches, so Ink and Black show as well as Cream and White)
+      T.push({ glyph: '\u25cf', value: 'Text: ' + N.ink.name, color: N.ink.css, bg: '#5d6069' });
+      T.push({ glyph: '\u25a0', value: 'Page: ' + N.paper.name, color: N.paper.css, bg: '#5d6069' });
+      return T;
+    };
+    const tap = i => {
+      if (i === 0) return bookSet('size', -1);
+      if (i === 2) return bookSet('size', 1);
+      if (i >= 3 && i < 3 + EPUB.FONTS.length) return EPUB.FONTS[i - 3].key === EPUB.style.font ? null : bookSet('font', EPUB.FONTS[i - 3].key);
+      if (i === 3 + EPUB.FONTS.length) return bookSet('ink');
+      if (i === 4 + EPUB.FONTS.length) return bookSet('paper');
+    };
+    GALLERY_APP.statTiles = () => (bookLive() ? tiles() : null);
+    GALLERY_APP.statsFirst = () => bookLive();
+    GALLERY_APP.onStatTap = (c, r, i) => { if (bookLive()) tap(i); };
+    GALLERY_APP._book = { live: bookLive, set: bookSet, tiles: () => (bookLive() ? tiles() : null), tap, get busy(){ return _bookBusy; } };
+  }
   const _loadEpub = async (f, join, pour, slot) => {
     const gen = join ? _epubGen : ++_epubGen;
     const superseded = () => gen !== _epubGen;
@@ -50336,36 +50505,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       if (book.title) label = book.title;
       _setLoadBtn('Laying out ' + label + ' …');
       await new Promise(r => setTimeout(r, 0));
-      const pages = EPUB.layout(book);
-      if (!pages.length) throw new Error('nothing to show in ' + f.name);
-      const base = await POUR.claim(pour, slot, pages.length, [EPUB.ASPECT]);
-      _zipShowsGallery();                       // a book IS the picture app
-      try { GALLERY_APP._finish(); } catch {}
-      try { GALLERY_APP._epub = { label, base, pages, book, EPUB }; } catch {}
-      const pics = new Map();                   // key → decoded picture, the latest EPUB_PICS
-      const pic = async key => {
-        if (pics.has(key)){ const p = pics.get(key); pics.delete(key); pics.set(key, p); return p; }
-        const p = await _decodeBlob(await entries[key].blob(EPUB.mimeOf(key))).catch(() => null);
-        pics.set(key, p);
-        while (pics.size > EPUB_PICS){
-          const [k0, p0] = pics.entries().next().value;
-          pics.delete(k0);
-          try { if (p0 && p0.close) p0.close(); } catch {}
-        }
-        return p;
-      };
-      const render = async i => {
-        const pg = pages[i - base];
-        const have = new Map();
-        for (const im of pg.imgs) have.set(im.key, await pic(im.key));
-        return EPUB.paint(_pdfCanvas(), pg, _pdfPx(), have);
-      };
-      POUR.serve(pour, {
-        base, n: pages.length, label, tag: 'epub', width: PDF_WIDTH,
-        dead: superseded, render,
-        name: i => label + ' · ' + (i - base + 1),
-        placed: cv => _pdfRelease(cv),
-      });
+      BOOK = { book, entries, label, pics: new Map(), gen: -1, pages: null, base: 0 };
+      if (!await _hangBook(BOOK, pour, slot, superseded)) throw new Error('nothing to show in ' + f.name);
     } catch (e){
       console.warn('[epub] load failed:', f && f.name, e);
       _setLoadBtn('EPUB failed: ' + (e.message || e));
