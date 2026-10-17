@@ -1253,7 +1253,7 @@
     <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
     <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
-    <label id="bFullPrintsRow" title="Bake prints at full resolution (1024px long side) instead of scaling down as the collection grows. Costs real GPU memory: ~5MB per print at 1024, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to the next load."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
+    <label id="bFullPrintsRow" title="Bake prints at full resolution: up to 4096px on the long side (PDF and book pages 3072) instead of 2048 (1536). Costs about four times the graphics memory per print, ~90MB at 4096, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to pictures opened after it is ticked."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
     <button id="bSelfCheck" title="Run the field's invariant checks: do the geometry and fabric tiers agree about which picture hangs where, does every print hang somewhere, can the ordered walk reach them all, is any board drawing the backdrop instead of its image. Also on the V key.">Self&#8209;check &#10003;</button>
 </div>
 
@@ -4881,7 +4881,11 @@ function mountControls(opts){
     }
     // turnEnd reads turn.multi, so the latch is released AFTER it, and only
     // once every finger is off the glass.
-    if (e.touches.length === 0){ turnEnd(); turn.multi = false; }
+    /* THE TOUCH GOES WITH IT (Oct 17): a tap's double is timed by its event (tapIsDouble), and here it had none, so a
+       touch was timed by when it was handled. Selecting a board can be slow (tower defense builds the board's game), and
+       a double whose first tap selected arrived a second late and was two taps: on CI, and on a slow phone. The touchend
+       carries the time the finger lifted. */
+    if (e.touches.length === 0){ turnEnd(e); turn.multi = false; }
   });
   _canvas.addEventListener('touchcancel', () => {
     _lastTouchAt = performance.now();
@@ -13941,7 +13945,13 @@ function rebuildBoardBrowser(){
   _bbFocusApplied = -1;
   const strip = document.getElementById('boardBrowser');
   if (!strip) return;
-  bbStopMomentum();
+  /* PICTURES ARRIVING ARE NOT A NEW ROW (Oct 17, with the coast above). Dropped files and a PDF's or a book's pages come
+     in one by one, and each one rebuilt the row: the coast stopped dead, and the angle, kept while the count grew, put a
+     different picture in the middle (the focus is a share of the whole row), so the row crept on its own while things
+     loaded. A rebuild that is the same kind of row (the same key prefix: prints, moves, numbers) keeps the item in the
+     middle where it was and lets a coast run on; only a different kind of row stops it. */
+  const _wasN = bbKeys.length, _wasKind = _wasN ? String(bbKeys[0]).slice(0, 4) : '';
+  const _wasU = _wasN ? ((-VCP.foldFocus(bbAngle) * _wasN / Math.PI) % _wasN + _wasN) % _wasN : 0;
   const _iapp = window.getFieldApp && window.getFieldApp();
   let _gal  = _iapp && _iapp._list && _iapp._list.length ? _iapp : null;
   /* WHAT THE STRIP IS, in two cases and no third:
@@ -13982,6 +13992,8 @@ function rebuildBoardBrowser(){
                     .slice(Math.max(0, _ply.n - BB_PLY_MAX))
          : _sts ? _sts.map((_, i) => 'stat_' + i)
          : [];
+  if (!(_wasKind && bbKeys.length && String(bbKeys[0]).slice(0, 4) === _wasKind)) bbStopMomentum();
+  else if (bbKeys.length !== _wasN) bbAngle = VCP.foldFocus(-_wasU * Math.PI / bbKeys.length);
   _bbStatSig = _sts ? _sts.length + '@' + bbStatOwner() : '';
   _bbStatW = _sts ? bbStatWidth(_sts) : 0;                  // (see bbStatWidth)
   BB_ITEM_W = bbIcoSize().w + BB_ITEM_PAD;
@@ -14094,44 +14106,63 @@ function bbFollowActive(){
 }
 
 /* Flick to spin, friction to settle. */
-const bbMomentum = { raf: 0, vel: 0, FRICTION: 0.90, MIN_VEL: 0.0004 };
+/* ═══ THE COAST IS PHYSICS, NOT FRAMES (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
+   physics.") ═══════════════════════════════════════════════════════════════
+   It was per frame: the release speed cut to a third ("raw swipe reads ~3× too fast"), then 10% off it every frame. A
+   hard flick on a phone, about a thousand pixels a second, carried the row half a tile after the finger left, the coast
+   was over in 150 ms, and on a heavy frame (a gallery hanging prints) it stalled or jumped, since a frame was the unit.
+   Measured in the sandbox: a 400 px swipe coasted 21 px.
+   Now it is a body let go at the finger's own speed and slowed by a drag proportional to its speed, as a phone's own
+   scrolling is: v(t) = v0·e^(−t/τ), so it has gone x(t) = v0·τ·(1 − e^(−t/τ)), read off the clock each frame, whatever
+   the frame rate. A thousand pixels a second carries the row τ·v0 = 325 px, about three tiles; it stops when it is down
+   to MIN_V. The speed is in PIXELS, the finger's own unit, and turned into the row's angle a frame at a time by
+   bbDragAngle, the drag's own map, so the coast carries on exactly as the finger was moving the row. */
+const bbMomentum = { raf: 0, vel: 0, TAU: 325, MIN_V: 0.03, START_V: 0.2, MAX_V: 8 };   // ms; px/ms
 function bbStopMomentum(){
-  if (bbMomentum.raf){ cancelAnimationFrame(bbMomentum.raf); bbMomentum.raf = 0; }
+  if (bbMomentum.raf) cancelAnimationFrame(bbMomentum.raf);
+  bbMomentum.raf = 0;
   bbMomentum.vel = 0;
   _bbInMotion = false;
 }
-/* Returns true if a coast began — the caller settles at once if it did not. */
-function bbStartMomentum(vel){
+/* Returns true if a coast began — the caller settles at once if it did not. v is the finger's speed at release, px/ms. */
+function bbStartMomentum(v){
   bbStopMomentum();
-  if (bbKeys.length <= 1) return false;
-  vel *= 0.33;                                   // raw swipe reads ~3× too fast
-  if (Math.abs(vel) < bbMomentum.MIN_VEL) return false;
-  bbMomentum.vel = Math.max(-0.25, Math.min(0.25, vel));
-  _bbInMotion = true;
+  if (bbKeys.length <= 1 || !isFinite(v) || Math.abs(v) < bbMomentum.START_V) return false;
+  const M = bbMomentum, v0 = Math.max(-M.MAX_V, Math.min(M.MAX_V, v)), t0 = performance.now();
+  let gone = 0;                                   // pixels already turned into angle
+  M.vel = v0; _bbInMotion = true;
   const step = () => {
-    bbAngle = VCP.foldFocus(bbAngle + bbMomentum.vel);
+    const t = Math.max(0, performance.now() - t0), k = Math.exp(-t / M.TAU), x = v0 * M.TAU * (1 - k);
+    bbAngle = VCP.foldFocus(bbAngle + bbDragAngle(x - gone)); gone = x;
+    M.vel = v0 * k;
     layoutBoardBrowser();
-    bbMomentum.vel *= bbMomentum.FRICTION;
-    if (Math.abs(bbMomentum.vel) < bbMomentum.MIN_VEL){ bbMomentum.raf = 0; bbMomentum.vel = 0; bbSettle(); return; }
-    bbMomentum.raf = requestAnimationFrame(step);
+    bbNoteSpin();
+    if (Math.abs(M.vel) < M.MIN_V){ M.raf = 0; M.vel = 0; bbSettle(); return; }
+    M.raf = requestAnimationFrame(step);
   };
-  bbMomentum.raf = requestAnimationFrame(step);
+  M.raf = requestAnimationFrame(step);
   return true;
 }
+/* THE FINGER'S SPEED, in px/ms, from the last tenth of a second of its movement (Oct 17). It was an average of every move's
+   own speed, in the row's angle per 16 ms, with no clock at the release: a finger that stopped and then lifted still
+   flung the row. Now the speed is the distance over the last 100 ms of samples (each timed by its event, not by when it
+   was handled), and a finger that has not moved for 80 ms when it lifts has no speed: it put the row down. */
 function bbVelTracker(){
-  let lastT = 0, lastAngle = 0, vpf = 0;
+  let pts = [];
   return {
-    reset(a){ lastT = performance.now(); lastAngle = a; vpf = 0; },
-    sample(a){
-      const now = performance.now(), dt = Math.max(1, now - lastT);
-      // A DELTA, so angleDelta — not normalizeAngle, which turned every
-      // leftward drag into a near-π rightward one and sent the flick the
-      // wrong way at the clamp's top speed.
-      const inst = (VCP.focusDelta(a, lastAngle) / dt) * 16;
-      vpf = vpf * 0.4 + inst * 0.6;
-      lastT = now; lastAngle = a;
+    reset(x, t){ pts = [{ x, t: t || performance.now() }]; },
+    sample(x, t){
+      t = t || performance.now();
+      pts.push({ x, t });
+      while (pts.length > 2 && pts[1].t < t - 100) pts.shift();   // keep one sample at or before the window's start
     },
-    get(){ return vpf; },
+    get(t){
+      if (pts.length < 2) return 0;
+      const last = pts[pts.length - 1];
+      if ((t || performance.now()) - last.t > 80) return 0;
+      const first = pts[0], dt = last.t - first.t;
+      return dt >= 4 ? (last.x - first.x) / dt : 0;
+    },
   };
 }
 /* A tap goes to that board; a press-and-drag spins the strip. */
@@ -14185,7 +14216,7 @@ function bbAttachTile(tile){
        itself was rebuilt under the press. */
     down = { x: e.clientX, startAngle: bbAngle, dragging: false,
              idx: idxOf(), key: bbKeys[idxOf()] };
-    vt.reset(bbAngle);
+    vt.reset(e.clientX, e.timeStamp);
     tile.setPointerCapture(e.pointerId);
     /* THE RELEASE IS HEARD ON THE WINDOW, not on this element — because this
        element may not survive the drag. Tiles are RECYCLED: one that leaves
@@ -14219,6 +14250,7 @@ function bbAttachTile(tile){
      cursor crossing the row still does nothing. */
   function winMove(e){
     if (!down) return;
+    vt.sample(e.clientX, e.timeStamp);
     // A finger never lands and lifts inside two pixels, so a mouse threshold
     // turns every touch pick into a flick and no board is ever chosen.
     if (!down.dragging && Math.abs(e.clientX - down.x) > (e.pointerType === "mouse" ? 2 : 12)){
@@ -14227,7 +14259,6 @@ function bbAttachTile(tile){
     }
     if (!down.dragging || bbKeys.length <= 1) return;
     bbAngle = VCP.foldFocus(down.startAngle + bbDragAngle(e.clientX - down.x));
-    vt.sample(bbAngle);
     layoutBoardBrowser();
     bbNoteSpin();
   }
@@ -14236,8 +14267,8 @@ function bbAttachTile(tile){
     removeEventListener('pointerup', winUp, true);
     removeEventListener('pointercancel', winUp, true);
   }
-  function winUp(){ winOff(); up(); }
-  const up = () => {
+  function winUp(e){ winOff(); up(e); }
+  const up = e => {
     winOff();
     if (!down) return;
     const wasDrag = down.dragging;
@@ -14245,7 +14276,7 @@ function bbAttachTile(tile){
     const key = down.key;
     down = null;
     document.getElementById('boardBrowser')?.classList.remove('spinning');
-    if (wasDrag){ if (!bbStartMomentum(vt.get())) bbSettle(); return; }     // a flick coasts then picks once; a stop picks once; a tap picks
+    if (wasDrag){ if (!bbStartMomentum(vt.get(e && e.timeStamp))) bbSettle(); return; }     // a flick coasts then picks once; a stop picks once; a tap picks
     if (!key) return;
     /* (A DOUBLE ON A TILE USED TO ASK CLAUDE. Removed: the strip's tiles are
        for walking a game, and a second tap on the same tile means the next
@@ -14356,7 +14387,7 @@ function bbAttachTile(tile){
     if (e.target.closest('.bb-tile') || e.target.closest('#bbHandle') || e.button !== 0) return;
     bbStopMomentum();
     spin = { x: e.clientX, startAngle: bbAngle };
-    vt.reset(bbAngle);
+    vt.reset(e.clientX, e.timeStamp);
     strip.classList.add('spinning');
     strip.setPointerCapture(e.pointerId);
     addEventListener('pointermove', onMove, true);   // the drag outlives the element
@@ -14370,17 +14401,17 @@ function bbAttachTile(tile){
     if (bbKeys.length <= 1) return;
     if (Math.abs(e.clientX - spin.x) > 2){ spin.moved = true; _bbInMotion = true; }
     bbAngle = VCP.foldFocus(spin.startAngle + bbDragAngle(e.clientX - spin.x));
-    vt.sample(bbAngle);
+    vt.sample(e.clientX, e.timeStamp);
     layoutBoardBrowser();
     bbNoteSpin();
   }
-  function end(){
+  function end(e){
     removeEventListener('pointermove', onMove, true);
     removeEventListener('pointerup', end, true);
     removeEventListener('pointercancel', end, true);
     if (!spin) return;
     const moved = spin.moved; spin = null; strip.classList.remove('spinning');
-    if (moved && !bbStartMomentum(vt.get())) bbSettle();      // a press that never moved picks nothing
+    if (moved && !bbStartMomentum(vt.get(e && e.timeStamp))) bbSettle();      // a press that never moved picks nothing
   }
   strip.addEventListener('pointerup', end);
   strip.addEventListener('pointercancel', end);
@@ -49400,6 +49431,9 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         batch.forEach(i => inFlight.add(i));
         const got = await Promise.all(batch.map(i => {
           const s = owner(i);
+          // (no owner now: a drop that came in during an earlier batch of this pass replaced the sources, Oct 17, found
+          //  opening a book while forty pictures were still arriving; the catch below read s.tag off null, uncaught)
+          if (!s) return null;
           return Promise.resolve().then(() => s.render(i)).catch(e => {
             console.warn('[' + (s.tag || 'src') + '] ' + (i - s.base + 1) + ' failed', e);
             return null;
@@ -52644,6 +52678,9 @@ window.tvf = {
      that got a board, and the apparent board size at each end. The horizon you
      see is dzMax — compare it against the depth the camera asked for. */
   /* Horizon tunable, live: the floor below which a row is not drawn at all. */
+  // the bottom row's place and coast, for the smoke test (Oct 17: the coast is physics)
+  get bottomRow(){ return { angle: bbAngle, n: bbKeys.length, vel: bbMomentum.vel, coasting: !!bbMomentum.raf, itemW: BB_ITEM_W,
+                            px: angle => angle * bbKeys.length * BB_ITEM_W / Math.PI }; },
   get horizon(){ return { rowMinBp: ROW_MIN_BP, wholeBoards: _wholeN, maxWhole: MAXW }; },
   setRowMinBp(v){ ROW_MIN_BP = v; },
   get frame(){ return { ..._frameStats, tileCap: MAXI, wholeCap: MAXW,
