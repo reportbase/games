@@ -3475,15 +3475,22 @@ try {
       const c = 9999, r = 7; D.GAMES.delete(c + '_' + r); const g = D.gameAt(c, r);
       const k0 = A.cellPhoto(c, r, 400), kSmall = A.cellPhoto(c, r, 100);
       out.sizes = [A.photoCanvas(k0).width, A.photoCanvas(kSmall).width];
+      // (Oct 20: "add sound effects to tanks.") each sound counted as it is asked for, through the real calls
+      const heard = {}, kept = {}; for (const k of Object.keys(D.SFX)){ kept[k] = D.SFX[k]; D.SFX[k] = (...a) => { heard[k] = (heard[k] || 0) + 1; return kept[k](...a); }; }
       const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind); g.a[0] = b.a; g.p[0] = b.p; D.fire(g);
       const kinds = new Set();
       for (let n = 0; n < 60 && g.state !== 'aim' && g.state !== 'over'; n++){ g.lastT = performance.now() - 100; D.stepGame(g); if (g.state === 'blast' || g.turn === 1) for (const it of D.itemsOf(D.viewOf(c, r))) kinds.add(it.kind); }
       out.kinds = ['tkFire', 'tkClod', 'tkPuff', 'tkRing'].filter(k => kinds.has(k));
       out.redrawn = A.cellPhoto(c, r, 400) !== k0;
+      out.heard = heard; Object.assign(D.SFX, kept);
       const V = D.viewOf(c, r), cl = v => D.itemsOf(Object.assign({}, v)).filter(i => i.kind === 'tkCloud').map(i => i.u);
       const a0 = cl(Object.assign({}, V, { cloud: 0, fx: [] })), a1 = cl(Object.assign({}, V, { cloud: 0.05, fx: [] }));
       out.clouds = a0.length > 0 && a0.some((u, i) => Math.abs(u - a1[i]) > 0.01);
-      const tk = D.itemsOf(V).filter(i => i.kind === 'tkHull'); out.tilt = tk.map(i => +(i.yaw || 0).toFixed(3)); out.slope = g.S.xs.map(x => +D.slopeAt(g.S.H, x).toFixed(3));
+      const its = D.itemsOf(V), tk = its.filter(i => /^tkHull/.test(i.kind)); out.tilt = tk.map(i => +(i.yaw || 0).toFixed(3));
+      // (Oct 20: "sometimes the tanks are up side down": the field leaves an item with a yaw of exactly 0 unturned, half a turn
+      //  from every turned one, so no part of a tank may ask for 0; and the computer's tank is its own mirrored kinds)
+      out.upright = its.filter(i => /^tk(Tracks|Hull|Gun)/.test(i.kind)).every(i => typeof i.yaw === 'number' && i.yaw !== 0);
+      out.facing = tk.map(i => i.kind).join(); out.slope = g.S.xs.map(x => +D.slopeAt(g.S.H, x).toFixed(3));
       D.GAMES.delete(c + '_' + r);
       return out; });
     const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.hills[0] === 0 && r.hills[1] > 10 && r.hits >= 18
@@ -3494,7 +3501,8 @@ try {
       && live.win && live.win.state === 'over' && live.win.won && live.win.stars >= 1 && live.win.best
       && shown.looks >= 3 && shown.shells > 10 && shown.blasts > 2
       && looks.earth < 40 && looks.sky < 40 && looks.sizes.join() === '512,256' && looks.kinds.length === 4 && looks.redrawn && looks.clouds
-      && looks.tilt.join() === looks.slope.join();
+      && looks.tilt.join() === looks.slope.join() && looks.upright && looks.facing === 'tkHull,tkHullL'
+      && ['cannon', 'whistle', 'blast', 'whirr'].every(k => looks.heard[k] >= 1);
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown, looks })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; 10 duels ended (${r.duels.join(', ')}); a real tap fired, the computer answered, a real drag fired, a steady shot won ${live.win && live.win.stars} stars; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
   }

@@ -492,7 +492,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       skirt; the side's colour on lighter and darker parts) and `tkGun` (barrel, muzzle brake, a boss over the pivot, lying
       on the turret's face), all vertex-coloured, the turret's middle where the game aims from. A tank sits along the slope
       under it (`slopeAt`, at most `TILT_MAX` 0.5 rad), flashes white when hit, and once out is charred, burning and smoking
-      (`wreckFx`).
+      (`wreckFx`). The computer's tank is the same one mirrored along its length (`tkTracksL`, `tkHullL`, each triangle wound
+      back), so it faces you.
+    - **Never a yaw of exactly 0** (Oct 20: "sometimes the tanks are up side down."): the field turns an item by π − yaw
+      only `if (it.yaw)`, so a yaw of 0 left it unturned, half a turn from every turned item. The ground under each tank is
+      flattened at the start, so a tank there stood on its turret, tracks up, until a burst tilted the ground. `yawOf` gives
+      1e-6 for 0, for the hull, the tracks and the gun.
     - **Effects** (`fxItems`), worked out from how long ago each happened and its seed, so a duel shows them with nothing
       kept: the muzzle's flash and smoke along the gun; the shell glowing, a smoke trail behind it, each puff growing and
       thinning; the burst's fireball in six lobes going white, yellow, orange, red and dark, a ring of shock, sixteen clods
@@ -500,11 +505,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       drifting on the wind. Clouds cross the top of the sky with the wind (`cloudsOf`, `cloud`: how far it has carried them).
     - Measured in the sandbox's software renderer at 1280×800: zoomed out 11 frames a second against 6.5 for the boxes;
       framed, the first loop of the boards' duels is slower while their pictures are made, then 11.
+  - **Sounds** (Oct 20: "add sound effects to tanks."; `SFX`, made from noise and tones with the browser's audio, each set
+    left or right by where it happens, `pan`): the gun's crack, thump and click (`cannon`); the shell's whistle, quiet as it
+    climbs and falling louder as it comes down, panned from the gun to where it will land for as long as the flight (the game
+    flies the shot ahead to know, in `fire`; stopped when it lands); the burst's roar and drop, crackle and earth falling back
+    (`blast`); a hit's ring of struck metal (`clang`); a tank put out cooking off (`cookoff`); the computer's turret turning
+    (`whirr`); a tick every 3° or 4% as you aim (`aimTick`). Only the board being played sounds; the menu's Sound turns it off.
   - The smoke test checks the levels by ring, the same ground on a board each time, hills only past level 1, the steady
     computer's hits, a burst's dig and harm, ten duels ending, a real tap firing toward it and the computer answering, a
     real drag from the tank firing, a steady shot winning with stars and a best, a board no one plays moving, the picture the
     right way round (earth at the near edge, sky at the far), a new picture after a burst, 512 and 256 px by size, a burst's
-    fireball, ring, clods and smoke, the clouds going with the wind, and each tank turned to the slope under it.
+    fireball, ring, clods and smoke, the clouds going with the wind, each tank turned to the slope under it, no part of a tank
+    asking for a yaw of 0, the computer's tank its mirrored kinds, and the gun, the whistle, the burst and the whirr asked for
+    in a live exchange.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
