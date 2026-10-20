@@ -1688,9 +1688,15 @@ try {
       const roll = g => { let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; g.last = 0; D.cellItems(f.c, f.r, 2000); } };
       // played to the cup with straight putts, the moment kept so it can be played again
       let g = fresh(); const H = D.HOLES[g.hole], t = g.t, pulls = [];
-      for (let s = 0; s < 10 && g.state === 'play'; s++){
-        const dx = H.cup.x - g.ball.x, dy = H.cup.y - g.ball.y, d = Math.hypot(dx, dy), p = Math.min(1, 0.12 + d * 0.9);
-        pulls.push({ x: -dx / d * 0.4 * p, y: -dy / d * 0.4 * p }); g.pull = { ...pulls[pulls.length - 1] }; D.putt(g); roll(g);
+      // (each putt the best of 24 headings at 3 strengths, tried on copies of the game, as the plain player chooses: a straight
+      //  putt at the cup from the tee box was shut on some holes, Oct 20. The same every run, so the putts can be played again)
+      const tryOn = (g0, q) => { const g1 = { ...JSON.parse(JSON.stringify({ ...g0, R: null, rec: null, line: null, trail: null })), R: { start: g0.hole, card: [], single: true } };
+        g1.pull = q; if (!D.putt(g1)) return 99; for (let n = 0; n < 1800 && g1.state === 'play' && g1.moving; n++) D.step(g1, 1 / 60);
+        return g1.state !== 'play' ? -1 : Math.hypot(g1.ball.x - H.cup.x, g1.ball.y - H.cup.y); };
+      for (let s = 0; s < 12 && g.state === 'play'; s++){
+        let best = null, bd = Infinity;
+        for (let i = 0; i < 24 && bd > -1; i++) for (const p of [0.3, 0.6, 1]){ const a = i / 24 * 2 * Math.PI, q = { x: -Math.cos(a) * 0.4 * p, y: -Math.sin(a) * 0.4 * p }, d = tryOn(g, q); if (d < bd){ bd = d; best = q; } if (bd <= -1) break; }
+        pulls.push(best); g.pull = { ...best }; D.putt(g); roll(g);
       }
       const o = L.lineOfHole(g.hole), ln = o && L.lineDecode(o.p);
       out.kept = !!(g.state === 'sunk' && o && ln && o.s === g.strokes && ln.length / 3 >= 2 * o.s && ln.length / 3 <= 40 * o.s && JSON.stringify(o).length < 4000
@@ -2798,15 +2804,18 @@ try {
       return out; });
     if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.5 && t.inX >= 1.5 && t.inX <= 8 - 1.5) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
     // the par set through the menu's own prompt
+    // (a board framed first: Set par acts on the framed one, and CI may have none framed here, Oct 20)
+    await page.evaluate(async () => { const D = window.getFieldApp()._debug; D.editor.fly(2, 1); await new Promise(ok => setTimeout(ok, 2500)); });
     const p1 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const item = !!A.menu[0].items.find(m => m.label === 'Set par for this hole…');
       // (the hole on the board the menu acts on, the one framed: setParHere says which)
-      const r1 = D.setParHere('5'), k = r1 && r1.k, set = r1 && D.HOLES[k].par, own = D.HOLES[k].par0;
+      const r1 = D.setParHere('5'); if (!r1 || r1.k == null) return { none: true, item };
+      const k = r1.k, set = D.HOLES[k].par, own = D.HOLES[k].par0;
       const back = D.setParHere('').par; D.setParHere('5');
       return { k, own, set, back, item, stored: Object.values(JSON.parse(localStorage.getItem('golf.pars') || '{}')) }; });
     await page.goto(new URL('games.html?app=minigolf', base).href, { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
-    const p2 = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.holeGame({ start: k, card: [], single: true }, k); return D.HOLES[k].par; }, p1.k);
+    const p2 = p1.none ? null : await page.evaluate(k => { const D = window.getFieldApp()._debug; if (!D.HOLES[k]) return null; D.holeGame({ start: k, card: [], single: true }, k); return D.HOLES[k].par; }, p1.k);
     const ep = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED; E.editStart(null); const p0 = ED.src.par;
       A.onStatTap(0, 0, E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'par')); const p1 = ED.src.par; E.editAction('parDown'); E.editAction('parDown'); const p2 = ED.src.par;
       const tile = A.statTiles ? (A.statTiles(0, 0) || []).find(t => /^Par /.test(t.value)) : null; E.editStop(true); return { p0, p1, p2, tile: tile && tile.value }; });
