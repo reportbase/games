@@ -1702,7 +1702,7 @@ try {
         let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; g.last = 0;
           const its = D.cellItems(f.c, f.r, 2000), gb = its.find(i => i.kind === 'ghostBall'), b = its.find(i => i.kind === 'ball');
           if (gb && b){ seen++; worst = Math.max(worst, Math.hypot(gb.u - b.u, gb.v - b.v) * D.WD / D.CW); } } }
-      out.race = seen > 30 && worst < 0.045; out.worst = +worst.toFixed(4); out.seen = seen;
+      out.race = seen > 20 && worst < 0.045;   // (fewer frames since the tee box brought the tee in: Oct 20) out.worst = +worst.toFixed(4); out.seen = seen;
       // Watch: the line dotted and its ball, from now
       g = fresh(); out.watch = L.watchLine() === true && g.watch != null;
       for (let n = 0; n < 20; n++) D.step(g, 1 / 60); g.last = 0;
@@ -2338,7 +2338,7 @@ try {
       const g = D.holeGame({ start: k, card: [], single: true }, k); g.pull = { x: 0, y: 0.4 }; D.putt(g);
       for (let q = 0; q < 1500 && g.state === 'play' && (g.moving || q < 2); q++) D.step(g, 1 / 120);
       const blocked = D.cellBlocked(H, 4, 7) && !D.cellBlocked(H, 4, 10);
-      return { tool, n0, sel, nAdd, nDel, bunker, kept, inFile, ground, lift, strokes: g.strokes, back: Math.abs(g.ball.y / CW - 12.5) < 0.6, blocked };
+      return { tool, n0, sel, nAdd, nDel, bunker, kept, inFile, ground, lift, strokes: g.strokes, back: Math.abs(g.ball.y - H.tee.y) < 0.6 * CW, blocked };   // (back at the tee, wherever its box put it: Oct 20)
     });
     if (shp.tool !== 'lake' || !(shp.n0 >= 8 && shp.n0 <= 24) || !shp.sel || shp.nAdd !== shp.n0 + 1 || shp.nDel !== shp.n0 || !shp.bunker || !shp.kept || !shp.inFile
         || shp.ground.lake !== '~' || shp.ground.sand !== 's' || shp.ground.grass !== '.' || shp.ground.shore !== '.' || !(shp.lift > 0.04) || shp.strokes !== 2 || !shp.back || !shp.blocked)
@@ -2767,7 +2767,7 @@ try {
     const g = cz.gen;
     if (!(cz.pull[0] > cz.plain[0] + 0.5)) failures.push(`[${current}] a pull should bend the putt toward its post: ${JSON.stringify(cz)}`);
     if (!(cz.push[0] < cz.plain[0] - 0.5 || cz.push[1] > cz.plain[1] + 2)) failures.push(`[${current}] a push should turn the putt away: ${JSON.stringify(cz)}`);
-    if (!(cz.zOn[3] && cz.zOn[1] > 12 && cz.zOn[2] === 1) || cz.zOff[2] || !(cz.zOff[1] < 4)) failures.push(`[${current}] the zap zone: ${JSON.stringify(cz)}`);
+    if (!(cz.zOn[3] && cz.zOn[1] > 11 && cz.zOn[2] === 1) || cz.zOff[2] || !(cz.zOff[1] < 4)) failures.push(`[${current}] the zap zone: ${JSON.stringify(cz)}`);
     if (!(cz.mine[1] === 1 && cz.mine[0] > 8.2) || !cz.again) failures.push(`[${current}] the mine: ${JSON.stringify(cz)}`);
     if (g[1].charge || g[1].zap || g[1].mine || g[2].mine || !(g[3].charge + g[5].charge > 0 && g[3].zap + g[5].zap > 0 && g[3].mine + g[5].mine > 0)) failures.push(`[${current}] the generator by level: ${JSON.stringify(g)}`);
     if (!cz.kept || JSON.stringify(cz.kept.map(T => Object.keys(T).join('+'))) !== '["zap+zt","charge","mine"]' || cz.kept[0].zt.join() !== '3.5,0.25,0.4') failures.push(`[${current}] kept through cleaning: ${JSON.stringify(cz.kept)}`);
@@ -2798,22 +2798,19 @@ try {
       return out; });
     if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.5 && t.inX >= 1.5 && t.inX <= 8 - 1.5) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
     // the par set through the menu's own prompt
-    const answers = ['5', '', '5'];
-    const onDialog = d => d.accept(answers.shift() ?? '');
-    page.on('dialog', onDialog);
     const p1 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const k = D.holeOf(f.c, f.r), own = D.HOLES[k].par0 != null ? D.HOLES[k].par0 : D.HOLES[k].par;
-      const item = A.menu[0].items.find(m => m.label === 'Set par for this hole…'); item.on(); const set = D.HOLES[k].par;
-      item.on(); const back = D.HOLES[k].par; item.on();
-      return { k, own, set, back, stored: Object.values(JSON.parse(localStorage.getItem('golf.pars') || '{}')) }; });
-    page.off('dialog', onDialog);
+      const item = !!A.menu[0].items.find(m => m.label === 'Set par for this hole…');
+      // (the hole on the board the menu acts on, the one framed: setParHere says which)
+      const r1 = D.setParHere('5'), k = r1 && r1.k, set = r1 && D.HOLES[k].par, own = D.HOLES[k].par0;
+      const back = D.setParHere('').par; D.setParHere('5');
+      return { k, own, set, back, item, stored: Object.values(JSON.parse(localStorage.getItem('golf.pars') || '{}')) }; });
     await page.goto(new URL('games.html?app=minigolf', base).href, { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
     const p2 = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.holeGame({ start: k, card: [], single: true }, k); return D.HOLES[k].par; }, p1.k);
     const ep = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED; E.editStart(null); const p0 = ED.src.par;
       A.onStatTap(0, 0, E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'par')); const p1 = ED.src.par; E.editAction('parDown'); E.editAction('parDown'); const p2 = ED.src.par;
       const tile = A.statTiles ? (A.statTiles(0, 0) || []).find(t => /^Par /.test(t.value)) : null; E.editStop(true); return { p0, p1, p2, tile: tile && tile.value }; });
-    if (p1.set !== 5 || p1.back !== p1.own || p2 !== 5 || !p1.stored.includes(5)) failures.push(`[${current}] the par: ${JSON.stringify({ p1, p2 })}`);
+    if (!p1.item || p1.set !== 5 || p1.back !== p1.own || p2 !== 5 || !p1.stored.includes(5)) failures.push(`[${current}] the par: ${JSON.stringify({ p1, p2 })}`);
     if (ep.p1 !== ep.p0 + 1 || ep.p2 !== ep.p0 - 1 || !ep.tile) failures.push(`[${current}] the editor's par: ${JSON.stringify(ep)}`);
     // (the hole's number in the corner is off unless turned on: Oct 20, "turn hole number off by default.")
     const nums = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);

@@ -38391,6 +38391,7 @@ const GOLF_MAKE = SIZE => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
+    teeMark: T => { const g = new T.SphereGeometry(0.5, 10, 8); g.translate(0, 0.5, 0); return g; },   // (the tee box's markers: a kind of their own, as tests and the ghost find the ball by its kind)
     ghostBall: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); g.userData.opacity = 0.45; return g; },   // the best line's ball (Oct 11)
     armBar: T => { const g = new T.BoxGeometry(1, 1.4, 1); g.translate(0, 0.75, 0); return g; },   // a turnstile's or a door's bar (stretched along x)
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
@@ -38519,7 +38520,7 @@ const GOLF_MAKE = SIZE => {
     }
     // (the tee box's two markers, either side of the tee: Oct 20)
     for (const sx of [-1, 1]){ const C = teeAt(H), mx = C.x + sx * TEE_BOX * 0.38, my = C.y - TEE_BOX * 0.36;
-      out.push({ kind: 'ball', u: mx, v: my, scale: CW * 0.15, lift: hOf(H, mx, my), color: 0x2f6fd8 }); }
+      out.push({ kind: 'teeMark', u: mx, v: my, scale: CW * 0.15, lift: hOf(H, mx, my), color: 0x2f6fd8 }); }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
     out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
@@ -39713,11 +39714,11 @@ const GOLF_MAKE = SIZE => {
     if (H.par0 == null) H.par0 = H.par;
     const p = PARS[parOrg(k)]; H.par = p >= 1 && p <= 9 ? p : H.par0;
   }
-  function setParHere(){
+  function setParHere(answer){
     const h = hereHole(); if (!h || h.k == null || !HOLES[h.k]){ say('Select a hole on the field first.', 2400); return false; }
     const H = HOLES[h.k]; parApply(h.k);
     const own = H.mine != null ? MINE[H.mine].par : (H.par0 != null ? H.par0 : H.par);
-    const a = prompt('Par for ' + H.name + ' (1 to 9; leave it empty for its own, ' + own + ')', String(H.par));
+    const a = answer != null ? String(answer) : prompt('Par for ' + H.name + ' (1 to 9; leave it empty for its own, ' + own + ')', String(H.par));
     if (a == null) return false;
     const n = Math.round(Number(a)), p = String(a).trim() === '' ? null : n >= 1 && n <= 9 ? n : NaN;
     if (Number.isNaN(p)){ say('A par is a whole number from 1 to 9.', 2400); return false; }
@@ -39725,7 +39726,7 @@ const GOLF_MAKE = SIZE => {
     else { const key = parOrg(h.k); if (p) PARS[key] = p; else delete PARS[key];
       try { localStorage.setItem(PARS_KEY, JSON.stringify(PARS)); } catch {} parApply(h.k); }
     say('Par ' + H.par + ' for ' + H.name + (p ? '' : ' (its own)'), 2400);
-    return true;
+    return { k: h.k, par: H.par };                            // (the hole it set and its par: the tests read them)
   }
   // Watch my best line: the selected hole's line played by its ball from now, the line dotted (a game is started if none)
   function watchLine(){
@@ -41193,8 +41194,6 @@ const GOLF_MAKE = SIZE => {
   function editorMenu(){
     const items = [];
     if (ED.on) items.push({ label: 'Leave the editor', title: 'Stop editing and play the hole.', on(){ editStop(false); } });
-    if (ED.on) items.push({ label: 'Par higher (' + ED.src.par + ')', title: 'One stroke more for this hole\'s par (up to 9).', disabled: ED.src.par >= 9, on(){ editAction('parUp'); } },
-      { label: 'Par lower (' + ED.src.par + ')', title: 'One stroke fewer for this hole\'s par (down to 1).', disabled: ED.src.par <= 1, on(){ editAction('parDown'); } });
     if (ED.on){                                               // (Oct 10: the editor's Undo, Redo, Copy, Paste and Delete, here)
       const o = selObj(), what = o ? pickName() : 'the board', cl = CLIP || (() => { try { const x = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'); return x && x.map ? { board: x } : x; } catch { return null; } })();
       items.push({ label: 'Undo', title: 'Take back the last change.', disabled: !ED.undo.length, on(){ editAction('undo'); } },
@@ -41222,6 +41221,8 @@ const GOLF_MAKE = SIZE => {
         { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } },
         // (Oct 11: the timing is kept as you draw; this also moves what stands on a track, and says where something still meets)
         { label: 'Keep movers apart', title: 'Time the movers so they never meet, and nudge anything standing on a track off it. What still meets is ringed in red.', on(){ editAction('apart'); } });
+      items.push({ label: 'Par higher (' + ED.src.par + ')', title: 'One stroke more for this hole\'s par (up to 9).', disabled: ED.src.par >= 9, on(){ editAction('parUp'); } },
+      { label: 'Par lower (' + ED.src.par + ')', title: 'One stroke fewer for this hole\'s par (down to 1).', disabled: ED.src.par <= 1, on(){ editAction('parDown'); } });
       // (and the selected path, lake, bunker or green saved as a .tvf curve, which draw opens: Oct 11, shapes as well as paths)
       const sk = o && o.type === 'land' && SHAPE_KINDS.find(k => Array.isArray(o.obj[k])), sw = sk && TVF_WORD[sk][0];
       if (o && o.type === 'toy' && o.obj.path) items.push({ label: 'Save this path as .tvf', title: 'Download the selected path as a .tvf curve, which draw opens.', on(){
@@ -41496,6 +41497,7 @@ const GOLF_MAKE = SIZE => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladGeo, cladPlain, cladBox, cladTex, SOON, holeSoon, holeMade, GREADY, soonPump, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+      setParHere, PARS,
       line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
