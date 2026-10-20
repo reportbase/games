@@ -2706,6 +2706,34 @@ try {
     if (merged.mine.join('|') !== 'twin|other' || merged.stored !== 2) failures.push(`[${current}] copies merged on load: ${JSON.stringify(merged)}`);
   }
   console.log(`${failures.length === before9 ? 'ok  ' : 'FAIL'} ${current}`);
+  // THE BOARD'S SIZE (Oct 20: "could you provide a board size option for mini-golf. small is current size. add a medium and
+  // tall size."): the menu's Board size goes Small, Medium, Tall; each is mini golf made again at its size, its boards that
+  // shape and its holes generated to fill them (the course stays Small's), kept over a reload, then back to Small
+  current = 'mini golf board size';
+  {
+    const before = failures.length, out = {};
+    const look = () => page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const g = D.games.get(f.c + '_' + f.r), H = g ? D.HOLES[g.hole] : D.HOLES[0], map = H && H.map;
+      const item = A.menu.flatMap(g => g.items || []).find(m => m && m.label && /^Board size/.test(typeof m.label === 'function' ? m.label() : m.label));
+      return { name: A.name, size: A._size, nx: D.NX, ny: D.NY, shape: A.boardShape && [+A.boardShape.cellW.toFixed(4), A.boardShape.cellH], rows: map ? map.length : 0, cols: map ? map[0].length : 0,
+        label: item ? (typeof item.label === 'function' ? item.label() : item.label) : null, items: A.cellItems(f.c, f.r, 600).length, stored: localStorage.getItem('golf.size') }; });
+    for (const s of ['medium', 'tall']){
+      await page.evaluate(s => window.setGolfSize(s), s);
+      await page.waitForTimeout(1500);
+      out[s] = await look();
+    }
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
+    out.reloaded = await look();
+    await page.evaluate(() => window.setGolfSize('small')); await page.waitForTimeout(1000);
+    out.small = await look();
+    const want = { medium: [13, 21], tall: [8, 21], small: [8, 13] };
+    for (const k of ['medium', 'tall', 'small']){ const o = out[k], [nx, ny] = want[k];
+      if (o.name !== 'mini golf' || o.size !== k || o.nx !== nx || o.ny !== ny || !o.shape || Math.abs(o.shape[0] - nx / ny) > 1e-3 || !o.label || !o.label.includes(nx + ' × ' + ny) || o.rows !== ny || o.cols !== nx || !(o.items > 0) || o.stored !== k)
+        failures.push(`[${current}] ${k}: ${JSON.stringify(o)}`); }
+    if (out.reloaded.size !== 'tall') failures.push(`[${current}] the size kept over a reload: ${JSON.stringify(out.reloaded)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (medium ${out.medium.nx} × ${out.medium.ny}, tall ${out.tall.nx} × ${out.tall.ny}, kept over a reload, back to small)`);
+  }
   // TILT MAZE (Oct 14: "what are more games like mini-golf we could create", then "tilt maze"): every board its own maze, its
   // size by level; the steady player finishes each; its marble never goes through a wall; the real arrow key rolls the marble;
   // a hole drops it back to the start; the ring finishes it with stars and a best kept; a tap then goes on to the next board;

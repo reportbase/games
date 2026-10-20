@@ -36053,10 +36053,34 @@ return { core: tvf, parse: parseTvfText };
 })();
 try { window.TVF_CURVE = TVF_CURVE; } catch {}
 
-const GOLF_APP = (() => {
+/* ═══ THE BOARD'S SIZE (Oct 20: "could you provide a board size option for mini-golf. small is current size. add a medium and
+   tall size.", then "Medium 13×21, Tall 8×21" and "Generated holes" for the course). Mini golf was written for one grid, 8 × 13
+   cells, as constants (NX, NY, CW, WD) read in some two hundred places: the physics, the generator, the drawing, the editor,
+   the maps' rows. So the whole game is made for a size (GOLF_MAKE): Small is 8 × 13 as it was, Medium 13 × 21 (the next golden
+   board, 2.6 times the cells), Tall 8 × 21 (the same width, longer: a phone held upright). Changing it makes the game again at
+   the new size and puts it in mini golf's place (setGolfSize; the field's board shape follows the app's boardShape). The 22
+   holes of the hand-made course are drawn at 8 × 13, so they are Small's: at Medium and Tall every board has a generated hole
+   of that size. What a player keeps (My holes, best lines, holes made again, the editor's clipboard) is kept for each size
+   apart, Small's under the names it always had. Kept in localStorage `golf.size`; a link to a hole (?hole=, ?line=) opens at
+   the size its map was made at. */
+const GOLF_SIZES = { small: [8, 13], medium: [13, 21], tall: [8, 21] };
+const GOLF_SIZE_NAMES = { small: 'Small', medium: 'Medium', tall: 'Tall' };
+function golfSizeAtLoad(){
+  // (a shared hole carries its size in its map: read it, so the link plays at that size, without changing the saved one)
+  try {
+    const q = new URLSearchParams(location.search), raw = q.get('hole') || q.get('line');
+    if (raw){ const b = String(raw).replace(/-/g, '+').replace(/_/g, '/'), o = JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))));
+      const m = (o && (o.hole ? o.hole.map : o.map)) || null;
+      if (Array.isArray(m)) for (const [k, [nx, ny]] of Object.entries(GOLF_SIZES)) if (m.length === ny && m.every(r => String(r).length === nx)) return k; }
+  } catch {}
+  try { const s = localStorage.getItem('golf.size'); if (GOLF_SIZES[s]) return s; } catch {}
+  return 'small';
+}
+const GOLF_MAKE = SIZE => {
   // The grid: NX across, NY deep, square cells of CW; the board is WD wide by 1 deep in these units (the physics' own,
-  // isotropic). The field draws the board WD : 1 (boardShape), so board u is x / WD and v is y.
-  const NX = 8, NY = 13, CW = 1 / NY, WD = NX * CW;
+  // isotropic). The field draws the board WD : 1 (boardShape), so board u is x / WD and v is y. (Its size: GOLF_SIZES, Oct 20.)
+  const [NX, NY] = GOLF_SIZES[SIZE] || GOLF_SIZES.small, CW = 1 / NY, WD = NX * CW;
+  const SIZED = k => SIZE === 'small' ? k : k + '.' + SIZE;      // (what is kept, kept for each size apart: Oct 20)
   // THE RAIL (Oct 7: "why such a large margin in each hole?"): the holes used to be walled by a ring of whole wall cells, a
   // thirteenth of the board on every side and two on some, so the green was 6 × 11 in an 8 × 13 board. Now every cell is
   // the hole's and the board's edge is the wall, drawn as a rail RT thick standing just inside it.
@@ -36275,7 +36299,7 @@ const GOLF_APP = (() => {
      sunken garden, the skate park's bowl and pipe, every green roughened a little so no putt runs quite straight. The
      toys are fewer than before and placed for the ground: an orbit round a sinkhole, a gate across a saddle. Sunken ground
      goes at most BASE down (the board is under it); high ground is what makes the deep places deep. */
-  const HOLES = [
+  const HOLES = SIZE !== 'small' ? [] : [               // (the course is drawn at 8 × 13: Small's alone, Oct 20)
     { name: 'the meadow', par: 2, fence: 'wood', land: [{ rough: [0.014, 2.4, 1] }, { bump: [4, 6.5, 2.4, 0.035] }, { bump: [2, 3, 1.3, -0.025] }],
       toys: [],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
@@ -37053,7 +37077,7 @@ const GOLF_APP = (() => {
      of a cell, each point as its step from the last. Playing the hole again, a pale ball rides the line from your first
      putt (Ghost: on, in the menu), so you race your best; Watch my best line rides it from now with the line dotted; Share
      my best line copies a link carrying the hole and the line, which opens on the hole with that line to race. */
-  const GHOST_KEY = 'golf.ghosts', GHOST_CAP = 200, GHOST_TOL = CW * 0.03;
+  const GHOST_KEY = SIZED('golf.ghosts'), GHOST_CAP = 200, GHOST_TOL = CW * 0.03;
   const GHOSTS = (() => { try { const o = JSON.parse(localStorage.getItem(GHOST_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; } })();
   function ghostsSave(){
     try {
@@ -37867,7 +37891,7 @@ const GOLF_APP = (() => {
   /* (eight a cell, so the rounded shores read round, until Oct 12; six now: "its heavy" … "yes, proceed". The ground was
      13,312 triangles a board, 18% of a framed field; at six a cell it is 7,488, and the shores are drawn as a colour blend
      across their line, lakeMix, not by the mesh's steps, so the screenshots before and after show the same holes.) */
-  const MESH = 78;
+  const MESH = 6 * NY;                                       // (78 on Small; six rows a cell at every size, Oct 20)
   /* THE GROUND'S GRAINS (Oct 14: "could mini-golf and chess beneifit from better LOD handeling of this application." … "yes",
      on the ground first). Every board's ground was the full 78-row mesh, 7,488 triangles, near or far: most of a framed
      field's triangles. Levels showed how detail can come and go with nothing seen to change: a grain fades toward the next
@@ -37875,7 +37899,7 @@ const GOLF_APP = (() => {
      cell: 7,488, 1,872 and 208 triangles), each carrying the next coarser one's surface laid at its own points (pos2, col2,
      nrm2), and a board's weight (`morph`) takes it there: at 1 a grain IS the coarser grain on the screen, so the step to
      it changes nothing. The physics never reads these; the ball, the rails and the rater use hOf as before. */
-  const GROUND_ROWS = [MESH, 39, 13];
+  const GROUND_ROWS = [MESH, 3 * NY, NY];
   function groundData(T, H, ny){
     const nx = Math.round(ny * WD), pos = [], col = [], c = new T.Color(), sandC = new T.Color(0xd8c287), waterC = new T.Color(0x2f6cc4);
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
@@ -38539,8 +38563,8 @@ const GOLF_APP = (() => {
      The course's own holes are never changed: editing one edits a copy. Holes made here come after the course's in HOLES
      (index BUILT and on), so they are on no board until you play one; a round of one of them is that one hole. */
   const BUILT = HOLES.length;
-  const MINE_KEY = 'golf.myholes';
-  const CLIP_KEY = 'golf.clip';                               // the editor's Copy (Oct 10): a whole hole as written
+  const MINE_KEY = SIZED('golf.myholes');
+  const CLIP_KEY = SIZED('golf.clip');                               // the editor's Copy (Oct 10): a whole hole as written
   let CLIP = null;
   const clone = o => JSON.parse(JSON.stringify(o));
   /* Anything read from a link or from storage is checked before it is believed: a map of the right size with only the
@@ -38687,7 +38711,7 @@ const GOLF_APP = (() => {
      gets the hole of its next eight attempts (genSrc's from): the next board before you reach it, the one in play next time.
      After three it is left as it is. Rated on 55 fresh level-5 holes, none sank fewer than half (the worst five in eight);
      those two sink one in eight. */
-  const REMADE_KEY = 'golf.remade', REMADE = (() => { try { const o = JSON.parse(localStorage.getItem(REMADE_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+  const REMADE_KEY = SIZED('golf.remade'), REMADE = (() => { try { const o = JSON.parse(localStorage.getItem(REMADE_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
   const remadeSave = () => { try { const ks = Object.keys(REMADE); if (ks.length > 1000) for (const k of ks.slice(0, ks.length - 1000)) delete REMADE[k]; localStorage.setItem(REMADE_KEY, JSON.stringify(REMADE)); } catch {} };
   const timesIn8 = f => { const n = Math.round(f * 8); return n === 0 ? 'no times' : n === 1 ? 'once' : n === 2 ? 'twice' : n + ' times'; };
   const holeBusy = k => [...GAMES.values()].some(g => g.hole === k && g.state !== 'done');
@@ -39145,7 +39169,7 @@ const GOLF_APP = (() => {
       if ((HOLES[k].remadeN || 0) !== want && !holeBusy(k)) remakeIn(k, idx, lv, want);
       GEN.delete(gk); GEN.set(gk, k); return k; }            // (kept in the order last wanted)
     const src = cleanSrc(genSrc(idx, lv, 8 * want));
-    if (!src) return idx % COURSE;
+    if (!src) return COURSE ? idx % COURSE : addHole(blankSrc());   // (no course at Medium and Tall: Oct 20)
     if (GEN.size >= GEN_CAP){
       const busy = new Set([...GAMES.values()].map(g => g.hole));
       for (const [oi, ok] of GEN) if (!busy.has(ok)){ GEN.delete(oi); setHole(ok, src); k = ok; break; }
@@ -40051,7 +40075,7 @@ const GOLF_APP = (() => {
      drag on its empty canvas draws a marquee; when the finger lifts the box stays on the hole in gold with every dot
      inside it selected (the Box quick button draws one from anywhere). A drag that starts inside the box raises or sinks
      all its dots together; a tap outside it, or Escape, closes it and lets them go. ED.box is the rectangle, in cells. */
-  const GOLF_ON = () => { try { return window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf'; } catch { return false; } };
+  const GOLF_ON = () => { try { return window.getFieldApp && window.getFieldApp() === app; } catch { return false; } };   // (this size's game: Oct 20)
   const boxOpen = () => !!ED.box && !!ED.pick && ED.pick.type === 'dot';
   const inBox = (x, y, m = 0.25) => !!ED.box && x >= ED.box.x0 - m && x <= ED.box.x1 + m && y >= ED.box.y0 - m && y <= ED.box.y1 + m;
   function boxDots(B){
@@ -41056,6 +41080,8 @@ const GOLF_APP = (() => {
     cellItems,
     get menu(){ return [{ head: 'Mini golf', items: [
       // (Oct 10: "Now we way to adjust the difficulty" … "ok, proceed": see ONE DIFFICULTY, HOW HARD, AND WHERE)
+      { label: () => 'Board size: ' + GOLF_SIZE_NAMES[SIZE] + ' (' + NX + ' × ' + NY + ')', title: 'Small 8 × 13 (the course near the corner), Medium 13 × 21 or Tall 8 × 21: every board\'s hole is made at that size. Each size keeps its own holes and best lines.',
+        on(){ const ks = Object.keys(GOLF_SIZES); setGolfSize(ks[(ks.indexOf(SIZE) + 1) % ks.length]); } },   // (Oct 20)
       { label: () => 'Difficulty: ' + LEVEL_NAMES[LEVEL_SET], title: 'Easy, Normal, Hard or Expert: the grass\'s speed, the cup\'s size, and how hard the holes are made. Boards near the corner are gentlest and they get harder the farther out you fly; this shifts the whole field easier or harder.',
         on(){ setLevel(LEVEL_SET + 1); } },
       { label: 'Rate this hole', title: 'A fair player plays the hole on the selected board a few times, with a person\'s small errors of aim, strength and timing; its strokes on average give the stars (and, while editing, the par).',
@@ -41212,8 +41238,23 @@ const GOLF_APP = (() => {
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
   };
+  app._size = SIZE;
   return app;
-})();
+};
+let GOLF_APP = GOLF_MAKE(golfSizeAtLoad());
+// a size made again in mini golf's place, and gone to (the menu's Board size, Oct 20)
+function setGolfSize(size, keep){
+  if (!GOLF_SIZES[size] || (GOLF_APP && GOLF_APP._size === size)) return GOLF_APP;
+  if (!keep) try { localStorage.setItem('golf.size', size); } catch {}
+  const old = GOLF_APP, nu = GOLF_MAKE(size);
+  nu.id = old.id;
+  const i = window.FIELD_APPS ? window.FIELD_APPS.indexOf(old) : -1;
+  if (i >= 0) window.FIELD_APPS[i] = nu;
+  GOLF_APP = nu;
+  try { if (window.getFieldApp && window.getFieldApp() === old) window.setFieldApp(nu); } catch {}
+  return nu;
+}
+try { window.setGolfSize = setGolfSize; } catch {}
 /* ═══ MINESWEEPER (Sep 22: "lets try minesweeper") ════════════════════════
    12×12, 22 mines. TAP a covered square to open it; the first tap is always
    safe, and opens a patch. An open square shows how many of its eight

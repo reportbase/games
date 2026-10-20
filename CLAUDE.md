@@ -171,6 +171,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   else the next coarser made, the 13-row one at once; the fine grains are made ahead (`GCACHE`, taken by `takeGround`).
   Entries not asked for in a second leave the queue. Measured panning thirty boards: 11 frames in 6.5 s before, 27 after;
   standing still framed, 10 then 48.
+  **Board size** (Oct 20: "could you provide a board size option for mini-golf. small is current size. add a medium and tall
+  size.", then "Medium 13×21, Tall 8×21" and "Generated holes"): the menu's first item, Board size, goes Small (8 × 13, as
+  before), Medium (13 × 21) and Tall (8 × 21) (`GOLF_SIZES`, localStorage `golf.size`). `GOLF_APP` is made by `GOLF_MAKE(size)`,
+  so NX, NY, CW, WD, the ground's rows (`MESH` = 6·NY, `GROUND_ROWS` = 6, 3 and 1 rows a cell) and `boardShape` follow the size;
+  `setGolfSize(size, keep)` makes the app again at the new size, puts it in `FIELD_APPS` in the old one's place (same id) and
+  switches to it, so a board's game is begun afresh. Only Small has the course (its 22 holes are drawn at 8 × 13): at Medium and
+  Tall every board's hole is generated. Each size keeps its own My holes, best lines, clipboard and remade holes (the keys get
+  `.medium` / `.tall` after them, `SIZED`). A `?hole=` or `?line=` link opens at the size its map is (`golfSizeAtLoad`).
+  `GOLF_SIZE=medium node tests/golf-course.mjs` plays a size's generated holes; both pass. Framed: Medium 447k triangles, Tall
+  475k (Small 253k). The generator was not retuned for the room: pars came out 4–6, and the test's greedy player sank
+  most in one or two.
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
   - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
     its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each
