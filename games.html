@@ -47514,7 +47514,74 @@ const TANKS_APP = (() => {
   const PHOTO_PX = 20, HI_PX = 320, HI_DUEL = 480, TILT_MAX = 0.5;
   const DL = ARCADE.difficulty('tanks.level', 'Every board has its own ground, harder the farther it is from the corner: gentle ground, no wind and a wild shot from the computer near it; hills between the tanks, a stronger wind and a sharper eye farther out. Easy, Normal and Hard move every board a level up.', true);
   const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const SND = ARCADE.sounds('tanks.sound', 'A thump for each shot, a blast where it lands, a fanfare for the win.');
+  const SND = ARCADE.sounds('tanks.sound', 'The gun, the shell\'s whistle, the burst, a hit on armour, the turret turning: from where each happens, left or right.');
+  /* THE SOUNDS (Oct 20: "add sound effects to tanks."). The kit's blips (a tap, a chime) were all the game had: a slide for a
+     shot, the kit's boom for a burst. Now each is made here with the browser's audio, from noise and tones, and set left or
+     right by where it happens on the board (`pan`, a stereo panner):
+     - the gun (`cannon`): a crack of bright noise falling to a rumble, a low thump under it, a click at the start;
+     - the shell's whistle (`whistle`): silent as it climbs, then a falling tone growing louder as it comes down, carried
+       across from the gun to where it will land, for as long as the flight (the game flies the shot ahead of itself to
+       know); stopped the moment it lands;
+     - the burst (`blast`): a long roar of noise closing down, a deep drop under it, then crackle and earth pattering back;
+     - a hit on a tank (`clang`): struck metal, four partials ringing down; a tank put out cooks off a moment later
+       (`cookoff`: a second burst, then crackling);
+     - the computer's turret turning to its aim (`whirr`), and a tick every few degrees as you aim (`tick`).
+     Only the board being played makes a sound; the duels of boards no one plays are quiet. The kit's Sound switch (SND)
+     turns all of it off, and the win and the loss keep the kit's fanfares. */
+  const SFX = (() => {
+    let noiseBuf = null;
+    const ctx = () => { if (!SND.on) return null; try { return ARCADE.audio(); } catch { return null; } };
+    const pan = u => clamp((u - 0.5) * 1.6, -1, 1);
+    function noise(A){
+      if (!noiseBuf){ const n = A.sampleRate * 2; noiseBuf = A.createBuffer(1, n, A.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; }
+      const src = A.createBufferSource(); src.buffer = noiseBuf; src.loop = true; return src;
+    }
+    function out(A, u){
+      const g = A.createGain(); g.gain.value = 1;
+      let p = null;
+      if (A.createStereoPanner){ p = A.createStereoPanner(); p.pan.value = pan(u); g.connect(p); p.connect(A.destination); } else g.connect(A.destination);
+      return { g, p };
+    }
+    function env(g, t, a, peak, d){ g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
+    function burst(A, dest, t, dur, vol, f0, f1, type){
+      const src = noise(A), f = A.createBiquadFilter(), g = A.createGain();
+      f.type = type || 'lowpass'; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      env(g, t, 0.004, vol, dur); src.connect(f).connect(g).connect(dest); src.start(t, Math.random() * 1.5); src.stop(t + dur + 0.05);
+    }
+    function osc(A, dest, t, type, f0, f1, dur, vol, a){
+      const o = A.createOscillator(), g = A.createGain(); o.type = type;
+      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+      env(g, t, a || 0.004, vol, dur); o.connect(g).connect(dest); o.start(t); o.stop(t + dur + 0.05);
+    }
+    const play = f => { const A = ctx(); if (!A) return null; try { return f(A, A.currentTime); } catch { return null; } };
+    return {
+      cannon: u => play((A, t) => { const d = out(A, u).g;
+        burst(A, d, t, 0.5, 0.5, 2600, 160); osc(A, d, t, 'sine', 130, 36, 0.38, 0.55); osc(A, d, t, 'square', 1100, 260, 0.025, 0.06); }),
+      whistle: (u0, u1, dur) => play((A, t) => {
+        if (!(dur > 0.35)) return null;
+        const { g, p } = out(A, u0), o = A.createOscillator(); o.type = 'sine';
+        o.frequency.setValueAtTime(1500, t); o.frequency.exponentialRampToValueAtTime(1150, t + dur * 0.5); o.frequency.exponentialRampToValueAtTime(480, t + dur);
+        g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.0001, t + dur * 0.4); g.gain.linearRampToValueAtTime(0.032, t + dur * 0.97); g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.04);
+        if (p) p.pan.linearRampToValueAtTime(pan(u1), t + dur);
+        o.connect(g); o.start(t); o.stop(t + dur + 0.1);
+        return { stop(){ try { const n = A.currentTime; g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(0.0001, n); o.stop(n + 0.02); } catch {} } };
+      }),
+      blast: u => play((A, t) => { const d = out(A, u).g;
+        burst(A, d, t, 1.25, 0.65, 1900, 110); osc(A, d, t, 'sine', 95, 26, 0.95, 0.7, 0.008);
+        for (let k = 0; k < 6; k++) burst(A, d, t + 0.12 + Math.random() * 0.5, 0.04, 0.1 + Math.random() * 0.12, 4000, 900);    // crackle
+        for (let k = 0; k < 8; k++) burst(A, d, t + 0.45 + Math.random() * 0.75, 0.03, 0.05 + Math.random() * 0.06, 1400, 500); }),  // earth falling back
+      clang: u => play((A, t) => { const d = out(A, u).g;
+        for (const [f, v] of [[523, 0.1], [811, 0.07], [1247, 0.05], [1693, 0.035]]) osc(A, d, t, 'triangle', f, f * 0.97, 0.6, v); burst(A, d, t, 0.06, 0.15, 6000, 2000, 'highpass'); }),
+      cookoff: u => play((A, t) => { const d = out(A, u).g, t1 = t + 0.35;
+        burst(A, d, t1, 1.0, 0.5, 2400, 140); osc(A, d, t1, 'sine', 80, 30, 0.7, 0.5, 0.01);
+        for (let k = 0; k < 10; k++) burst(A, d, t1 + 0.2 + Math.random() * 1.4, 0.035, 0.05 + Math.random() * 0.08, 5000, 1500); }),
+      whirr: (u, dur) => play((A, t) => { const d = out(A, u).g, o = A.createOscillator(), f = A.createBiquadFilter(), g = A.createGain();
+        o.type = 'sawtooth'; o.frequency.setValueAtTime(70, t); o.frequency.linearRampToValueAtTime(115, t + dur * 0.6); o.frequency.linearRampToValueAtTime(60, t + dur);
+        f.type = 'lowpass'; f.frequency.value = 520; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.035, t + 0.08); g.gain.linearRampToValueAtTime(0.03, t + dur - 0.1); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+        o.connect(f).connect(g).connect(d); o.start(t); o.stop(t + dur + 0.05); }),
+      tick: u => play((A, t) => { osc(A, out(A, u).g, t, 'square', 1700, 1500, 0.012, 0.018); }),
+    };
+  })();
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
@@ -47706,25 +47773,36 @@ const TANKS_APP = (() => {
     const x = g.S.xs[0], y = surfAt(g.S.H, x) - TURRET, dx = u - x, dy = y - v;
     g.a[0] = clamp(Math.atan2(Math.max(0, dy), dx) * 180 / Math.PI, 0, 180);
     g.p[0] = clamp(Math.hypot(dx, dy) / AIM_FULL, 0.08, 1);
+    aimTick(g);
+  }
+  // a tick every 3° or 4% of power the aim moves (THE SOUNDS)
+  function aimTick(g){
+    const q = Math.round(g.a[0] / 3) * 1000 + Math.round(g.p[0] * 25);
+    if (g.tickAt != null && q !== g.tickAt) SFX.tick(g.S.xs[0]);
+    g.tickAt = q;
   }
   function fire(g){
     const who = g.turn;
     g.shell = launch(g.S.H, g.S.xs[who], g.a[who], g.p[who]); g.path = [g.shell.x, g.shell.y]; g.acc = 0;
     g.fx.push({ k: 'muzzle', t0: g.t, x: g.shell.x, y: g.shell.y, a: g.a[who], seed: (g.R() * 4294967296) >>> 0 }, { k: 'trail', t0: g.t, path: g.path });
-    g.state = 'fly'; g.shots[who]++; SND.play('slide');
+    g.state = 'fly'; g.shots[who]++;
+    // the gun, and the whistle for as long as the flight will be (the shot flown ahead of itself, as the game will fly it)
+    const x = g.S.xs[who], s0 = { ...g.shell }; let e = null; for (let n = 0; n < 1200 && !e; n++) e = flyStep(g.S.H, g.S.xs, s0, g.S.wind, SUB, who);
+    SFX.cannon(x); if (g.whistle) g.whistle.stop(); g.whistle = e ? SFX.whistle(x, clamp(e.x, 0, 1), s0.t) : null;
   }
   function land(g, e){
     const who = g.turn;
     g.path.push(e.x, e.y);
     if (who === 0) g.last = g.path.slice();
     g.shell = null;
+    if (g.whistle){ g.whistle.stop(); g.whistle = null; }
     if (e.off){ g.blast = null; if (who === 0) say('Off the board.', 1200); return endTurn(g); }
     const dmg = blastAt(g.S, e.x, e.y); g.ver++;
     g.fx.push({ k: 'blast', t0: g.t, x: e.x, y: e.y, seed: (g.R() * 4294967296) >>> 0 }); g.craters.push([e.x, e.y]);
     for (let k = 0; k < 2; k++) if (dmg[k] > 0) g.hitT[k].push(g.t);
     g.blast = { x: e.x, y: e.y, e: 0 }; g.state = 'blast';
-    SND.play('boom');
-    if (dmg[1 - who] > 0) SND.play(who === 0 ? 'good' : 'bad');
+    SFX.blast(e.x);
+    for (let k = 0; k < 2; k++) if (dmg[k] > 0){ SFX.clang(g.S.xs[k]); if (g.S.hp[k] <= 0) SFX.cookoff(g.S.xs[k]); }
     if (who === 0) say(dmg[1] ? 'A hit: ' + dmg[1] + ' off them' + (dmg[0] ? ', ' + dmg[0] + ' off you' : '') + '.' : dmg[0] ? dmg[0] + ' off you.' : 'A miss.', 1400);
     else if (dmg[0]) say('Hit: ' + dmg[0] + ' off you.', 1400);
   }
@@ -47732,7 +47810,7 @@ const TANKS_APP = (() => {
     const hp = g.S.hp;
     if (hp[0] <= 0 || hp[1] <= 0) return over(g);
     g.turn = 1 - g.turn; g.S.wind = (g.R() * 2 - 1) * LV[g.S.lv - 1].wind;
-    if (g.turn === 1){ g.plan = foeShot(g.S, 1, g.k[1]++, g.R); g.state = 'think'; g.timer = AIM_T; g.from = g.a[1]; }
+    if (g.turn === 1){ g.plan = foeShot(g.S, 1, g.k[1]++, g.R); g.state = 'think'; g.timer = AIM_T; g.from = g.a[1]; SFX.whirr(g.S.xs[1], AIM_T); }
     else g.state = 'aim';
   }
   function over(g){
@@ -47772,6 +47850,7 @@ const TANKS_APP = (() => {
       const turn = (HELD.has('L') ? 1 : 0) - (HELD.has('R') ? 1 : 0), push = (HELD.has('U') ? 1 : 0) - (HELD.has('D') ? 1 : 0);
       if (turn) g.a[0] = clamp(g.a[0] + turn * 40 * dt, 0, 180);
       if (push) g.p[0] = clamp(g.p[0] + push * 0.4 * dt, 0.08, 1);
+      if (turn || push) aimTick(g);
     } else if (g.state === 'think'){
       g.timer -= dt; const f = clamp(1 - g.timer / AIM_T, 0, 1), w = f * f * (3 - 2 * f);
       g.a[1] = g.from + (g.plan.a - g.from) * w;
@@ -47975,6 +48054,7 @@ const TANKS_APP = (() => {
      health over it; your last shot faint, the aim line, the shell, and the effects. */
   const TANK_L = 0.05, GUNC = 0x2c3326;
   const hpCol = hp => hp > 60 ? 0x6fd36a : hp > 30 ? 0xf2c14e : 0xe0564a;
+  const yawOf = q => q || 1e-6;               // (never exactly 0: the field reads a yaw of 0 as none, THE TANKS' SHAPES)
   const slopeAt = (H, x) => clamp(Math.atan2(surfAt(H, x + 0.025) - surfAt(H, x - 0.025), 0.05), -TILT_MAX, TILT_MAX);
   function itemsOf(V){
     const out = [], H = V.H, w = V.wind || 0;
@@ -47982,9 +48062,10 @@ const TANKS_APP = (() => {
     for (let k = 0; k < 2; k++){
       const x = V.xs[k], pv = surfAt(H, x) - TURRET, alive = V.hp[k] > 0, tilt = slopeAt(H, x);
       const flash = (V.hitT[k] || []).some(h => V.t - h >= 0 && V.t - h < 0.16);
-      out.push({ kind: 'tkTracks', u: x, v: pv, scale: TANK_L, yaw: tilt, color: alive ? 0xffffff : 0x6a6a6a });
-      out.push({ kind: 'tkHull', u: x, v: pv, scale: TANK_L, yaw: tilt, color: flash ? 0xffffff : alive ? (k ? FOE : ME) : WRECK });
-      out.push({ kind: 'tkGun', u: x, v: pv, scale: BARREL, yaw: -V.a[k] * Math.PI / 180, color: alive ? GUNC : 0x222222 });
+      const side = k ? 'L' : '';             // (the computer's tank faces left, toward you)
+      out.push({ kind: 'tkTracks' + side, u: x, v: pv, scale: TANK_L, yaw: yawOf(tilt), color: alive ? 0xffffff : 0x6a6a6a });
+      out.push({ kind: 'tkHull' + side, u: x, v: pv, scale: TANK_L, yaw: yawOf(tilt), color: flash ? 0xffffff : alive ? (k ? FOE : ME) : WRECK });
+      out.push({ kind: 'tkGun', u: x, v: pv, scale: BARREL, yaw: yawOf(-V.a[k] * Math.PI / 180), color: alive ? GUNC : 0x222222 });
       const by = pv - 0.042;
       out.push({ kind: 'tkBox', u: x, v: by, scale: 0.06, sx: 1, sy: 0.08, sz: 0.12, lift: 0.01, color: BARBG });
       if (alive){ const f = V.hp[k] / 100; out.push({ kind: 'tkBox', u: x - 0.03 + 0.03 * f, v: by, scale: 0.06, sx: f, sy: 0.14, sz: 0.1, lift: 0.01, color: hpCol(V.hp[k]) }); }
@@ -48014,10 +48095,16 @@ const TANKS_APP = (() => {
     return Gd;
   }
   /* The tanks' shapes, in relief: a side drawn in (x along, s up) in tank lengths, the turret's middle at the origin and the
-     ground 0.45 below it, stood up off the board by its thickness (the extrusion), then turned so the side lies on the board
-     (s up the side is −v; the thickness is up off the board). One kind each for the tracks (their own greys), the hull and
-     turret (the side's colour on lighter and darker parts) and the gun (along +x from the turret's middle). */
-  function mergeParts(T, parts, lay){
+     ground 0.45 below it, stood up off the board by its thickness (the extrusion), then laid so the side lies on the board
+     and the thickness stands up off it. One kind each for the tracks (their own greys), the hull and turret (the side's
+     colour on lighter and darker parts) and the gun (along +x from the turret's middle).
+     (Oct 20: "sometimes the tanks are up side down." The field turns an item by π − yaw, but only when it has a yaw:
+     `if (it.yaw)` reads a yaw of exactly 0 as none and leaves the item unturned, half a turn from every turned one. The
+     ground under each tank is flattened at the start, so a tank on it had a slope of exactly 0 and stood on its turret with
+     its tracks in the air, until a burst tilted the ground. So a tank, and the gun, never ask for exactly 0 (`yawOf`).
+     And the computer's tank is the same tank mirrored along its length, its own kinds with "L" after them, so it faces you
+     rather than backing toward you; a mirror turns every triangle inside out, so each is wound back the other way.) */
+  function mergeParts(T, parts, lay, mirror){
     const pos = [], nrm = [], col = [];
     for (const [g0, rgb] of parts){
       const g = g0.index ? g0.toNonIndexed() : g0, P = g.getAttribute('position').array, Nn = g.getAttribute('normal').array;
@@ -48026,13 +48113,20 @@ const TANKS_APP = (() => {
     }
     const g = new T.BufferGeometry();
     g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3)); g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
-    if (lay) g.rotateX(-Math.PI / 2);
+    if (lay) g.rotateX(-Math.PI / 2);          // (x, s, thickness) → (x, thickness, −s)
+    if (mirror){                                // along its length, each triangle wound back so its faces still look out
+      g.applyMatrix4(new T.Matrix4().makeScale(-1, 1, 1));
+      for (const name of ['position', 'normal', 'color']){
+        const A = g.getAttribute(name).array;
+        for (let i = 0; i < A.length; i += 9) for (let k = 0; k < 3; k++){ const x = A[i + 3 + k]; A[i + 3 + k] = A[i + 6 + k]; A[i + 6 + k] = x; }
+      }
+    }
     g.userData.vertexColors = true;
     return g;
   }
   const extrude = (T, shape, depth, bevel) => new T.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 10 });
   const poly = (T, pts) => { const s = new T.Shape(); pts.forEach(([x, y], i) => i ? s.lineTo(x, y) : s.moveTo(x, y)); s.closePath(); return s; };
-  const tankGeos = {
+  const tankGeoOf = mirror => ({
     tkTracks: T => {
       const r = 0.11, tr = new T.Shape();
       tr.moveTo(-0.5 + r, -0.45); tr.lineTo(0.5 - r, -0.45); tr.absarc(0.5 - r, -0.34, r, -Math.PI / 2, Math.PI / 2, false);
@@ -48043,7 +48137,7 @@ const TANKS_APP = (() => {
         wh.rotateX(Math.PI / 2); wh.translate(x, -0.34, 0.235); hub.rotateX(Math.PI / 2); hub.translate(x, -0.34, 0.25);
         parts.push([wh, [0.36, 0.36, 0.34]], [hub, [0.66, 0.64, 0.58]]);
       }
-      return mergeParts(T, parts, true);
+      return mergeParts(T, parts, true, mirror);
     },
     tkHull: T => {
       const hull = extrude(T, poly(T, [[-0.47, -0.27], [0.44, -0.27], [0.53, -0.17], [0.36, -0.07], [-0.44, -0.07], [-0.51, -0.16]]), 0.24, 0.02); hull.translate(0, 0, 0.03);
@@ -48054,7 +48148,7 @@ const TANKS_APP = (() => {
       const cup = new T.CylinderGeometry(0.055, 0.055, 0.16, 14); cup.rotateX(Math.PI / 2); cup.translate(-0.05, 0.14, 0.17);
       const aer = new T.CylinderGeometry(0.008, 0.012, 0.36, 6); aer.rotateZ(0.5); aer.translate(-0.24, 0.24, 0.2);
       const skirt = new T.BoxGeometry(0.76, 0.045, 0.02); skirt.translate(-0.03, -0.2, 0.29);
-      return mergeParts(T, [[hull, [0.78, 0.78, 0.78]], [turret, [1, 1, 1]], [cup, [0.74, 0.74, 0.74]], [aer, [0.3, 0.3, 0.3]], [skirt, [0.58, 0.58, 0.58]]], true);
+      return mergeParts(T, [[hull, [0.78, 0.78, 0.78]], [turret, [1, 1, 1]], [cup, [0.74, 0.74, 0.74]], [aer, [0.3, 0.3, 0.3]], [skirt, [0.58, 0.58, 0.58]]], true, mirror);
     },
     tkGun: T => {
       // (it lies on the turret's face, its axis 0.5 of a gun length up: lower, its mantlet came out through the turret as a dark patch)
@@ -48062,7 +48156,8 @@ const TANKS_APP = (() => {
       const boss = new T.CylinderGeometry(0.15, 0.15, 0.1, 18); boss.translate(0, 0.42, 0);
       return mergeParts(T, [along(0.09, 0.075, 1, 0.05, [1, 1, 1]), along(0.13, 0.13, 0.13, 0.92, [0.8, 0.8, 0.8]), [boss, [0.85, 0.85, 0.85]]], false);
     },
-  };
+  });
+  const tankGeos = (() => { const R = tankGeoOf(false), L = tankGeoOf(true); return { tkTracks: R.tkTracks, tkHull: R.tkHull, tkGun: R.tkGun, tkTracksL: L.tkTracks, tkHullL: L.tkHull }; })();
   const hex = n => '#' + n.toString(16).padStart(6, '0');
 
   const restart = (c, r) => { GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} };
@@ -48136,7 +48231,7 @@ const TANKS_APP = (() => {
       for (let i = 0; i <= 20; i++){ const x = 0.2 + 0.6 * i / 20, y = 0.52 - 1.6 * (x - 0.2) * (0.8 - x) * 1.6; i ? ctx.lineTo(x * sz, y * sz) : ctx.moveTo(x * sz, y * sz); }
       ctx.stroke(); ctx.setLineDash([]);
     },
-    _debug: { terrainOf, terrainAt, duelOf, duelSoon, shownOf, paint, photoState, photoKey, fxItems, SPECS, PALETTES, slopeAt, aimFor, foeShot, simLand, launch, flyStep, blastAt, surfAt, fresh, gameAt, fire, aimAt, stepGame, starsOf, itemsOf, viewOf,
+    _debug: { SFX, terrainOf, terrainAt, duelOf, duelSoon, shownOf, paint, photoState, photoKey, fxItems, SPECS, PALETTES, slopeAt, aimFor, foeShot, simLand, launch, flyStep, blastAt, surfAt, fresh, gameAt, fire, aimAt, stepGame, starsOf, itemsOf, viewOf,
               boardIdx, levelAt, LV, GAMES, BEST, DUELS, TERRAINS, myTurn, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
