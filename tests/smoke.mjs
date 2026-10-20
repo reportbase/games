@@ -2863,7 +2863,9 @@ try {
       A.onCellTap(f.c, f.r); out.next = D.LIVE && (D.LIVE.c !== f.c || D.LIVE.r !== f.r);
       // a board no one plays: the player's run, moving
       const c2 = f.c + 2, r2 = f.r + 1; D.mazeFor(c2, r2); const at = () => { const its = A.cellItems(c2, r2), m = its.find(i => i.kind === 'tmMarble'); return m ? [m.u, m.v] : null; };
-      const p0 = at(); await new Promise(ok => setTimeout(ok, 700)); const p1 = at(); out.shown = !!(p0 && p1 && Math.hypot(p0[0] - p1[0], p0[1] - p1[1]) > 1e-4);
+      // (sampled over 2.1 s, longer than the 1.5 s rest at the ring: one 0.7 s look could fall wholly in it, and did on CI, Oct 20)
+      const ps = [at()]; for (let w = 0; w < 3; w++){ await new Promise(ok => setTimeout(ok, 700)); ps.push(at()); }
+      out.shown = ps.every(p => p) && ps.some((p, i) => i && Math.hypot(p[0] - ps[i - 1][0], p[1] - ps[i - 1][1]) > 1e-4);
       out.walls = A.cellItems(c2, r2).filter(i => i.kind === 'tmWall').length;
       return out; }, f);
     if (JSON.stringify(tm.sizes) !== '[7,9,11,13,15]' || tm.ok !== tm.runs || tm.through !== 0 || !tm.differ
