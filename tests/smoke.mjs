@@ -2785,6 +2785,39 @@ try {
     if (!(ed.charge === 1 && ed.mine === 1 && ed.zap === 1) || !(ed.charge2 < 0) || ed.zt[2] !== 0.6 || ed.zt[0] !== 3.2 || ed.menu.length !== 2) failures.push(`[${current}] the editor: ${JSON.stringify(ed)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (a pull bent the putt to ${cz.pull[0].toFixed(2)} from ${cz.plain[0].toFixed(2)}; zapped back with ${cz.zOn[2]} stroke; holes with mines at level 5: ${g[5].mine} of 60)`);
   }
+  // THE TEE BOX AND YOUR PAR (Oct 20: "1) user should be able to set the par. 2) the first shot should be from an elevated
+  // vantage on a tea box"): every hole's tee stands level on a raised box, the ball on top of it; the menu's Set par for this
+  // hole… sets the par a board is played to, kept over a reload, and an empty answer puts back the hole's own; the editor's
+  // Par tile steps a hole's par
+  current = 'mini golf tee box and par';
+  {
+    const before = failures.length;
+    const tb = await page.evaluate(() => { const D = window.getFieldApp()._debug, CW = 1 / D.NY, out = [];
+      for (const k of [0, 5, 11, 21]){ const H = D.HOLES[k], T = H.tee, h0 = D.hOf(H, T.x, T.y), lvl = Math.max(...[[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]].map(([a, b]) => Math.abs(D.hOf(H, T.x + a * CW, T.y + b * CW) - h0)));
+        out.push({ k, rise: +(h0 - D.hOf(H, T.x, T.y - 1.6 * CW)).toFixed(3), lvl: +lvl.toFixed(5), inX: T.x / CW, inY: T.y / CW }); }
+      return out; });
+    if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.2 && t.inX >= 1.2 && t.inX <= 8 - 1.2) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
+    // the par set through the menu's own prompt
+    const answers = ['5', '', '5'];
+    const onDialog = d => d.accept(answers.shift() ?? '');
+    page.on('dialog', onDialog);
+    const p1 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const k = D.holeOf(f.c, f.r), own = D.HOLES[k].par0 != null ? D.HOLES[k].par0 : D.HOLES[k].par;
+      const item = A.menu[0].items.find(m => m.label === 'Set par for this hole…'); item.on(); const set = D.HOLES[k].par;
+      item.on(); const back = D.HOLES[k].par; item.on();
+      return { k, own, set, back, stored: Object.values(JSON.parse(localStorage.getItem('golf.pars') || '{}')) }; });
+    page.off('dialog', onDialog);
+    await page.goto(new URL('games.html?app=minigolf', base).href, { waitUntil: 'load' });
+    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
+    const p2 = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.holeGame({ start: k, card: [], single: true }, k); return D.HOLES[k].par; }, p1.k);
+    const ep = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED; E.editStart(null); const p0 = ED.src.par;
+      A.onStatTap(0, 0, E.TOOLS.length + E.ACTS.findIndex(a => a[0] === 'par')); const p1 = ED.src.par; E.editAction('parDown'); E.editAction('parDown'); const p2 = ED.src.par;
+      const tile = A.statTiles ? (A.statTiles(0, 0) || []).find(t => /^Par /.test(t.value)) : null; E.editStop(true); return { p0, p1, p2, tile: tile && tile.value }; });
+    if (p1.set !== 5 || p1.back !== p1.own || p2 !== 5 || !p1.stored.includes(5)) failures.push(`[${current}] the par: ${JSON.stringify({ p1, p2 })}`);
+    if (ep.p1 !== ep.p0 + 1 || ep.p2 !== ep.p0 - 1 || !ep.tile) failures.push(`[${current}] the editor's par: ${JSON.stringify(ep)}`);
+    await page.evaluate(() => localStorage.removeItem('golf.pars'));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (tees up ${Math.max(...tb.map(t => t.rise)).toFixed(3)} and level; par set to 5, its own ${p1.own} put back, 5 kept over a reload)`);
+  }
   // TILT MAZE (Oct 14: "what are more games like mini-golf we could create", then "tilt maze"): every board its own maze, its
   // size by level; the steady player finishes each; its marble never goes through a wall; the real arrow key rolls the marble;
   // a hole drops it back to the start; the ring finishes it with stars and a best kept; a tap then goes on to the next board;

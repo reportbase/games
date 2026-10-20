@@ -36735,6 +36735,10 @@ const GOLF_MAKE = SIZE => {
        between it and the rail, whichever cell the map puts it in. */
     const m = RT + CUP_R_MAX * 1.5;
     if (H.cup){ H.cup.x = Math.min(WD - m, Math.max(m, H.cup.x)); H.cup.y = Math.min(1 - m, Math.max(m, H.cup.y)); }
+    // (and the tee kept in from the rail far enough for its box and the box's sides to stand on the board, so the ball starts
+    //  on top of it and the rail does not climb over it: THE TEE BOX, Oct 20)
+    const mt = RT + CW * (1.2 / 2 + 0.45);
+    if (H.tee){ H.tee.x = Math.min(WD - mt, Math.max(mt, H.tee.x)); H.tee.y = Math.min(1 - mt, Math.max(mt, H.tee.y)); }
     if (!FENCE_MATS.includes(H.fence)) H.fence = null;
     return H;
   }
@@ -36889,6 +36893,14 @@ const GOLF_MAKE = SIZE => {
       const e = blobEdge(s.B, x, y, GREEN_EDGE) * (blobIn(s.B, x, y) ? 1 : -1);
       h += s.h * sm01(e / GREEN_EDGE + 0.5);
     }
+    /* THE TEE BOX (Oct 20: "the first shot should be from an elevated vantage on a tea box"): every hole's tee stands on a
+       box of level grass, TEE_BOX across, TEE_RISE above the highest ground under it (the ground there without it: teeTop),
+       its sides falling to the ground round it over TEE_EDGE. So the first putt is played from up on it and runs down off
+       its front, the way a tee shot is played from a raised tee, and on a slope the box is still level to stand on. */
+    if (H.tee && !TEE_BUSY){
+      const C = teeAt(H), q = Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) - TEE_BOX / 2;
+      if (q < TEE_EDGE){ const top = teeTop(H); h += (top - h) * (q <= 0 ? 1 : 1 - sm01(q / TEE_EDGE)); }
+    }
     /* A LAKE LIES IN A BASIN (Oct 10; Oct 11). Water lies level, so a lake drawn over a hill stood in a pit with a blue cliff
        up its far side, and one over a hollow, levelled to the average, stood as a mesa with its water drawn under it. Now
        each lake has its own water level, a little under the lowest ground round its rim (its level, worked out once with
@@ -36907,6 +36919,20 @@ const GOLF_MAKE = SIZE => {
     return h;
   }
   const GREEN_EDGE = CW * 0.7, LAKE_EDGE = CW * 1.8;
+  const TEE_BOX = CW * 1.2, TEE_EDGE = CW * 0.45, TEE_RISE = 0.045;   // (the tee box: Oct 20)
+  let TEE_BUSY = false;
+  // (the box's middle is the tee, which compileHole keeps in from the rail far enough for the box and its sides)
+  const teeAt = H => H.tee;
+  // the tee box's level: TEE_RISE over the highest ground under it, worked out once with the box left out
+  function teeTop(H){
+    if (H._teeTop != null) return H._teeTop;
+    TEE_BUSY = true; let m = -Infinity;
+    const C = teeAt(H);
+    try { for (const a of [-0.5, 0, 0.5]) for (const b of [-0.5, 0, 0.5]) m = Math.max(m, rawH(H, C.x + a * TEE_BOX, C.y + b * TEE_BOX)); }
+    finally { TEE_BUSY = false; }
+    return (H._teeTop = m + TEE_RISE);
+  }
+  const onTeeBox = (H, x, y) => { if (!H.tee) return false; const C = teeAt(H); return Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) <= TEE_BOX / 2; };
   let LAKE_BUSY = false;
   /* a lake's water level: a little under the lowest ground round its rim on the board (a stream's ends run on under the
      rail), worked out once for all a hole's lakes with the lakes left out, and kept on each lake's entry. Lakes that
@@ -37038,6 +37064,7 @@ const GOLF_MAKE = SIZE => {
 
   function holeGame(R, hole){
     const H = HOLES[hole];
+    parApply(hole);                                          // (a par you set for this hole: YOUR PAR, Oct 20)
     /* (Oct 10: "when i click a board, dont reset the animation. just continue where its at currently.") The toys' clock
        starts where the boards no one is playing have theirs, the page's own clock, so a bumper going round carries on
        from where it was when the board was tapped instead of jumping back to its start. */
@@ -38002,7 +38029,8 @@ const GOLF_MAKE = SIZE => {
       else { c.setHex(GRASS[0]); c.multiplyScalar(0.72 * Math.max(0.5, Math.min(1.45, 1 + (h - BASE) * 9)));
              const sf = sandMix(H, x, y); if (sf > 0) c.lerp(sandC, sf);   // (sand blended in at its edge: Oct 10)
              if (lm > 0) c.lerp(waterC, lm);
-             if (inZap(H, x, y)) c.lerp(zapC, 0.28); }       // (a zap zone's ground, a little blue-grey: Oct 20)
+             if (inZap(H, x, y)) c.lerp(zapC, 0.28);
+             if (onTeeBox(H, x, y)){ c.setHex(0x8fd47f); c.multiplyScalar(0.92 + 0.08 * (Math.floor((x - teeAt(H).x) / (CW * 0.2) + 100) & 1)); } }   // (mown in stripes)   // (the tee box's top, mown lighter: Oct 20)       // (a zap zone's ground, a little blue-grey: Oct 20)
       col.push(c.r, c.g, c.b);
     }
     const idx = [];
@@ -38486,6 +38514,9 @@ const GOLF_MAKE = SIZE => {
       if (H.map[j][i] === '#') out.push({ kind: 'wall_' + matOf(H), u, v, scale: CW, lift: hOf(H, u, v), color: 0xffffff });
       if (H.map[j][i] === '=') out.push({ kind: 'plank', u, v, scale: CW, lift: hOf(H, u, v) + 0.004, color: (i + j) & 1 ? 0x9a7048 : 0x8a6240 });
     }
+    // (the tee box's two markers, either side of the tee: Oct 20)
+    for (const sx of [-1, 1]){ const C = teeAt(H), mx = C.x + sx * TEE_BOX * 0.38, my = C.y - TEE_BOX * 0.36;
+      out.push({ kind: 'ball', u: mx, v: my, scale: CW * 0.15, lift: hOf(H, mx, my), color: 0x2f6fd8 }); }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
     out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
@@ -39667,6 +39698,32 @@ const GOLF_MAKE = SIZE => {
   // the selected board's hole and game, for the menu's line items
   function hereHole(){ const L = framedHere(); if (!L) return null; const g = GAMES.get(L.key); return { L, g, k: g && g.state !== 'edit' ? g.hole : holeOf(L.c, L.r) }; }
   const hereLine = () => { if (ED.on) return null; const h = hereHole(); return h && lineOfHole(h.k); };
+  /* YOUR PAR (Oct 20: "user should be able to set the par"). The menu's Set par for this hole… asks for a number from 1 to 9
+     (nothing puts back the hole's own). A hole of your own takes it into its source, as the editor's Par does; a hole of the
+     course or a generated one keeps it in this browser by the hole as written (`originOf`, as the best lines are kept), so
+     the board plays to it from then on: the tee's message, the sunk message and the scorecard. */
+  const PARS_KEY = SIZED('golf.pars');
+  const PARS = (() => { try { const o = JSON.parse(localStorage.getItem(PARS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+  const parOrg = k => { const H = HOLES[k]; if (!H._org) H._org = originOf(srcOf(k)); return H._org; };
+  function parApply(k){
+    const H = HOLES[k]; if (!H || H.mine != null) return;   // (one of My holes keeps its par in its source)
+    if (H.par0 == null) H.par0 = H.par;
+    const p = PARS[parOrg(k)]; H.par = p >= 1 && p <= 9 ? p : H.par0;
+  }
+  function setParHere(){
+    const h = hereHole(); if (!h || h.k == null || !HOLES[h.k]){ say('Select a hole on the field first.', 2400); return false; }
+    const H = HOLES[h.k]; parApply(h.k);
+    const own = H.mine != null ? MINE[H.mine].par : (H.par0 != null ? H.par0 : H.par);
+    const a = prompt('Par for ' + H.name + ' (1 to 9; leave it empty for its own, ' + own + ')', String(H.par));
+    if (a == null) return false;
+    const n = Math.round(Number(a)), p = String(a).trim() === '' ? null : n >= 1 && n <= 9 ? n : NaN;
+    if (Number.isNaN(p)){ say('A par is a whole number from 1 to 9.', 2400); return false; }
+    if (H.mine != null){ MINE[H.mine].par = p || own; H.par = p || own; if (H.src) H.src.par = H.par; storeMine(); }
+    else { const key = parOrg(h.k); if (p) PARS[key] = p; else delete PARS[key];
+      try { localStorage.setItem(PARS_KEY, JSON.stringify(PARS)); } catch {} parApply(h.k); }
+    say('Par ' + H.par + ' for ' + H.name + (p ? '' : ' (its own)'), 2400);
+    return true;
+  }
   // Watch my best line: the selected hole's line played by its ball from now, the line dotted (a game is started if none)
   function watchLine(){
     const h = hereHole(), o = h && !ED.on && lineOfHole(h.k);
@@ -40883,7 +40940,9 @@ const GOLF_MAKE = SIZE => {
     if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.redo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to undo'; return; }
     if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
-    if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
+    // (the Par tile steps 1 to 9 and round again; the menu's Par higher and lower step one way: Oct 20)
+    if (a === 'par' || a === 'parUp' || a === 'parDown'){ snapEdit(); S.par = a === 'parDown' ? Math.max(1, S.par - 1) : a === 'parUp' ? Math.min(9, S.par + 1) : S.par >= 9 ? 1 : S.par + 1;
+      ED.msg = 'par ' + S.par; editRefresh(true); return; }
     if (a === 'apart'){                                       // Keep movers apart (Oct 11): timing, and things nudged off the tracks
       snapEdit();
       const r = keepApart(ED.src, 'fit');
@@ -41102,7 +41161,7 @@ const GOLF_MAKE = SIZE => {
      Copy, Paste and Delete act on the whole board: see editAction.) */
   /* (Oct 10, later: "add undo,redo to the menu. remove copy,paste,delete,undo,redo from the menu." Undo, Redo, Copy,
      Paste and Delete left the tiles for mini golf's menu: see editorMenu.) */
-  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['harder', 'Harder', '🔺'], ['easier', 'Easier', '🔻']];   // (Harder, Easier: the levels, Oct 10)
+  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['harder', 'Harder', '🔺'], ['easier', 'Easier', '🔻'], ['par', 'Par', '⛳']];   // (Par again, Oct 20: "user should be able to set the par")   // (Harder, Easier: the levels, Oct 10)
   function editTiles(){
     /* (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is selected,
        change the color of the button to selected. the buttons should toggle on/off thats it." No top line on any tile;
@@ -41111,7 +41170,7 @@ const GOLF_MAKE = SIZE => {
     //  tools start the row, so tile i is TOOLS[i], then the acts.)
     const S = ED.src, SEL = '#a07c12', out = [];
     for (const [t, name, glyph] of TOOLS) out.push({ glyph, value: name, color: '#ffffff', bg: t === ED.tool ? SEL : null, dim: false });
-    for (const [a, name, glyph] of ACTS) out.push({ glyph, value: a === 'mat' ? S.fence[0].toUpperCase() + S.fence.slice(1) : name, color: '#c9ccd2' });
+    for (const [a, name, glyph] of ACTS) out.push({ glyph, value: a === 'mat' ? S.fence[0].toUpperCase() + S.fence.slice(1) : a === 'par' ? 'Par ' + S.par : name, color: '#c9ccd2' });
     return out;
   }
   function editTileTap(i){
@@ -41131,6 +41190,8 @@ const GOLF_MAKE = SIZE => {
   function editorMenu(){
     const items = [];
     if (ED.on) items.push({ label: 'Leave the editor', title: 'Stop editing and play the hole.', on(){ editStop(false); } });
+    if (ED.on) items.push({ label: 'Par higher (' + ED.src.par + ')', title: 'One stroke more for this hole\'s par (up to 9).', disabled: ED.src.par >= 9, on(){ editAction('parUp'); } },
+      { label: 'Par lower (' + ED.src.par + ')', title: 'One stroke fewer for this hole\'s par (down to 1).', disabled: ED.src.par <= 1, on(){ editAction('parDown'); } });
     if (ED.on){                                               // (Oct 10: the editor's Undo, Redo, Copy, Paste and Delete, here)
       const o = selObj(), what = o ? pickName() : 'the board', cl = CLIP || (() => { try { const x = JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'); return x && x.map ? { board: x } : x; } catch { return null; } })();
       items.push({ label: 'Undo', title: 'Take back the last change.', disabled: !ED.undo.length, on(){ editAction('undo'); } },
@@ -41283,6 +41344,8 @@ const GOLF_MAKE = SIZE => {
         on(){ setLevel(LEVEL_SET + 1); } },
       { label: 'Rate this hole', title: 'A fair player plays the hole on the selected board a few times, with a person\'s small errors of aim, strength and timing; its strokes on average give the stars (and, while editing, the par).',
         on(){ return rateHere(); } },
+      { label: 'Set par for this hole…', title: 'Choose the par the hole on the selected board is played to (1 to 9), or put back its own. Kept in this browser.',
+        on(){ return setParHere(); } },
       // (Oct 11, "proceed" on shots saved as curves: see THE BEST LINE, AND ITS GHOST)
       { label: () => 'Ghost: ' + (GHOST.on ? 'on' : 'off'), title: 'Your best line on each hole is kept as you play. Play the hole again and it rides beside you as a pale ball from your first putt: race it.',
         on(){ GHOST.on = !GHOST.on; ARCADE.save('golf.ghost', GHOST.on ? 'on' : 'off'); } },
