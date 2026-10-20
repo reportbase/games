@@ -37938,7 +37938,8 @@ const GOLF_APP = (() => {
      kind with ~ after it: 10 triangles for a rail piece, 768 for a bumper), so nothing on the screen jumps at the step. A
      wooden fence is pickets and stays as it is. A brick is a 64th of the board long, 5 px on a board 320 px across. */
   const PIECE_FULL = 480, PIECE_PLAIN = 240;
-  const TWINNED = new Set(['propBumper', 'propRock', ...FENCE_MATS.flatMap(m => ['wall_' + m, 'railV_' + m, 'railH_' + m, 'planterWall_' + m, ...(m === 'wood' ? [] : ['fence_' + m])])]);
+  // (the clad pieces left on Oct 20: a painted box is 10 triangles at any size, and its picture's mipmaps do the fading)
+  const TWINNED = new Set(['propBumper', 'propRock']);
   const pieceGrain = bp => { bp = bp || 1e9; return bp >= PIECE_FULL ? { plain: false, w: 0 } : bp > PIECE_PLAIN ? { plain: false, w: Math.log(PIECE_FULL / bp) / Math.log(PIECE_FULL / PIECE_PLAIN) } : { plain: true, w: 1 }; };
   const GROUND_PX = 10;
   function groundGrain(bp){
@@ -38088,6 +38089,79 @@ const GOLF_APP = (() => {
     g.userData.morph = true;
     return g;
   }
+  /* PAINTED, NOT BUILT (Oct 20: "the mini-golf application is to slow, what is expensive?" … "yes"). Measured: a framed field
+     of holes drew 595,000 triangles a frame, ten times a board game's, and half of them were the rails: each half-cell rail
+     piece was 126 to 392 triangles of bricks, stones or planks each standing proud of the core (cladGeo), about 12,000 a
+     board, more than its ground; zoomed out, 850,000 of 1.76 million. Now a rail, wall, fence or planter-wall piece is the
+     core box alone, 10 triangles (no underside, as before), wearing a picture of its material: the same units at the same
+     size, coloured from the same lists, each a little lighter along its top and darker along its foot for the relief that
+     is no longer there. The picture is painted once a material (cladTex) and laid on in the piece's own units divided by u,
+     as cladGeo laid its units, so a brick is a brick's size on every piece. Up close the faces are flat; from the height the
+     game is played at they read as before. Far off, the picture's smaller copies (its mipmaps) blend toward its average,
+     which is what fading to the far colour did, so these pieces need no grains of their own. */
+  const CLAD_TILE = { brick: [1.0, 0.72], stone: [1.0, 0.75], wood: [1.04, 2.0] };   // the picture's size, in units of u/0.25
+  const _cladTex = {};
+  function cladTex(T3, mat){
+    if (_cladTex[mat]) return _cladTex[mat];
+    let seed = { brick: 811, stone: 977, wood: 433 }[mat] || 5;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    const M = MAT_COL[mat] || MAT_COL.wood, [TW, TH] = CLAD_TILE[mat] || CLAD_TILE.wood, S = 512;
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const x = cv.getContext('2d'), px = a => a / TW * S, py = b => b / TH * S, col = new T3.Color();
+    const hex = (h, f) => { col.setHex(h).multiplyScalar(f); return '#' + col.getHexString(); };
+    x.fillStyle = hex(M.core, 1); x.fillRect(0, 0, S, S);
+    const gap = 0.014;
+    // one unit, wrapped round the picture's edges so the picture repeats without a seam
+    const unit = (a0, a1, b0, b1, round) => {
+      const h = M.units[Math.floor(rnd() * M.units.length)], f = 1 - 0.12 * rnd();
+      const X0 = px(a0 + gap / 2), X1 = px(a1 - gap / 2), Y0 = py(b0 + gap / 2), Y1 = py(b1 - gap / 2), hh = Y1 - Y0;
+      for (const dx of [-S, 0, S]){
+        const r = (X, Y, W, H, c) => { x.fillStyle = c; if (round && x.roundRect){ x.beginPath(); x.roundRect(X + dx, Y, W, H, Math.min(W, H) * 0.18); x.fill(); } else x.fillRect(X + dx, Y, W, H); };
+        r(X0, Y0, X1 - X0, hh, hex(h, f));
+        r(X0, Y0, X1 - X0, hh * 0.16, hex(h, f * 1.16));                    // the lit top edge
+        r(X0, Y1 - hh * 0.16, X1 - X0, hh * 0.16, hex(h, f * 0.78));        // the shaded foot
+      }
+    };
+    if (mat === 'brick'){
+      const bh = TH / 8, bl = TW / 4;
+      for (let r = 0; r < 8; r++) for (let a = -(r & 1 ? bl / 2 : 0); a < TW - 1e-6; a += bl) unit(a, a + bl, r * bh, (r + 1) * bh);
+    } else if (mat === 'stone'){
+      // courses of 0.11–0.19, stones of 0.14–0.36, each row stretched to fit the picture's width exactly so it repeats
+      let hs = []; for (let t = 0; t < TH - 0.05;){ const h = 0.11 + rnd() * 0.08; hs.push(h); t += h; }
+      const sh = TH / hs.reduce((a, b) => a + b, 0); let b = 0;
+      for (const h0 of hs){ const h = h0 * sh, ls = []; for (let t = 0; t < TW - 0.07;){ const l = 0.14 + rnd() * 0.22; ls.push(l); t += l; }
+        const sl = TW / ls.reduce((a, c) => a + c, 0), off = rnd() * TW; let a = off;
+        for (const l0 of ls){ const l = l0 * sl; unit(a - TW * (a >= TW), a + l - TW * (a >= TW), b, b + h, true); a += l; }
+        b += h; }
+    } else {
+      const pw = TW / 8;
+      for (let k = 0; k < 8; k++){ unit(k * pw, (k + 1) * pw, 0, TH);
+        x.strokeStyle = 'rgba(40,24,12,0.25)'; x.lineWidth = 1;                // a little grain down each plank
+        for (let g = 0; g < 3; g++){ const gx = px(k * pw + pw * (0.25 + 0.5 * rnd())); x.beginPath(); x.moveTo(gx, 0); x.bezierCurveTo(gx + 3, S / 3, gx - 3, 2 * S / 3, gx + 1, S); x.stroke(); } }
+    }
+    const t = new T3.CanvasTexture(cv);
+    t.wrapS = t.wrapT = T3.RepeatWrapping;
+    return _cladTex[mat] = t;
+  }
+  // the box a clad piece is, painted: its core W × Hh × D from y0, no underside, the picture laid on in units of u/0.25
+  function cladBox(T3, mat, W, Hh, D, y0, u){
+    const k = u / 0.25, [TW, TH] = CLAD_TILE[mat] || CLAD_TILE.wood, from = Math.max(y0, -0.12 * k);
+    const b = new T3.BoxGeometry(W, Hh, D).toNonIndexed(); b.translate(0, y0 + Hh / 2, 0);
+    const P = b.attributes.position.array, N = b.attributes.normal.array, pos = [], nrm = [], uv = [];
+    for (let f = 0; f < 6; f++){ if (f === 3) continue;
+      for (let i = f * 6; i < f * 6 + 6; i++){
+        const X = P[3 * i], Y = P[3 * i + 1], Z = P[3 * i + 2], nx = N[3 * i], ny = N[3 * i + 1];
+        pos.push(X, Y, Z); nrm.push(nx, ny, N[3 * i + 2]);
+        const [a, c] = ny > 0.5 ? [X, Z] : Math.abs(nx) > 0.5 ? [Z, Y - from] : [X, Y - from];
+        uv.push(a / k / TW, c / k / TH);
+      } }
+    const g = new T3.BufferGeometry();
+    g.setAttribute('position', new T3.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T3.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('uv', new T3.Float32BufferAttribute(uv, 2));
+    g.userData.map = cladTex(T3, mat);
+    return g;
+  }
   // …and the plain box a clad piece fades to: its core, in the far colour, no underside (as cladGeo leaves it out)
   function cladPlain(T3, mat, W, Hh, D, y0){
     const far = new T3.Color((MAT_COL[mat] || MAT_COL.wood).far), b = new T3.BoxGeometry(W, Hh, D).toNonIndexed();
@@ -38161,11 +38235,12 @@ const GOLF_APP = (() => {
     // stand-ins, and the bridge's planks
     rockPlain: T => { const g = new T.SphereGeometry(0.5, 14, 10); g.scale(1, 0.7, 1); g.translate(0, 0.3, 0); return g; },
     ...Object.fromEntries(FENCE_MATS.flatMap(m => [
-      ['wall_' + m, T => cladGeo(T, m, 1, 0.88, 1, -0.6, 0.25, 11)],                                   // a wall cell (scale CW), standing 0.28 up
-      ['railV_' + m, T => cladGeo(T, m, 2 * RT / CW, 1.76, 1.02, -1.2, 0.5, 23)],                       // half-cell rail pieces (scale CW/2)
-      ['railH_' + m, T => cladGeo(T, m, 1.02, 1.76, 2 * RT / CW, -1.2, 0.5, 37)],
-      ['fence_' + m, m === 'wood' ? (T => picketGeo(T)) : (T => cladGeo(T, m, 1, 0.75, 2 * FENCE_T / CW, -0.25, 0.25, 51))],   // a fence piece a cell long
-      ['planterWall_' + m, T => cladGeo(T, m, 1, 0.8, 2 * FENCE_T / CW, -0.25, 0.25, 77)],              // a planter's wall piece: solid, even in wood (Oct 11)
+      // (painted boxes since Oct 20, cladBox: they were cladGeo's units built one by one, half of every frame's triangles)
+      ['wall_' + m, T => cladBox(T, m, 1, 0.88, 1, -0.6, 0.25)],                                        // a wall cell (scale CW), standing 0.28 up
+      ['railV_' + m, T => cladBox(T, m, 2 * RT / CW, 1.76, 1.02, -1.2, 0.5)],                            // half-cell rail pieces (scale CW/2)
+      ['railH_' + m, T => cladBox(T, m, 1.02, 1.76, 2 * RT / CW, -1.2, 0.5)],
+      ['fence_' + m, m === 'wood' ? (T => picketGeo(T)) : (T => cladBox(T, m, 1, 0.75, 2 * FENCE_T / CW, -0.25, 0.25))],   // a fence piece a cell long
+      ['planterWall_' + m, T => cladBox(T, m, 1, 0.8, 2 * FENCE_T / CW, -0.25, 0.25)],                   // a planter's wall piece: solid, even in wood (Oct 11)
       // (and each one's plain box, what it fades to on a small board: Oct 14; a wooden fence is pickets and has none)
       ['wall_' + m + '~', T => cladPlain(T, m, 1, 0.88, 1, -0.6)],
       ['railV_' + m + '~', T => cladPlain(T, m, 2 * RT / CW, 1.76, 1.02, -1.2)],
@@ -38208,7 +38283,7 @@ const GOLF_APP = (() => {
     ...Object.fromEntries(HOLES.flatMap((H, k) => (H.toys || []).map((T, j) => T.slide && ['slide' + k + '_' + j, T3 => {
       const g = new T3.BoxGeometry(T.slide[4], 0.06, T.slide[5]); g.translate(0, 0.005, 0); return g; }]).filter(Boolean))),
     // Each hole's ground, one board wide (placed at the middle, scale 1): +u is −x, +v is −z, the height is y.
-    ...Object.fromEntries(HOLES.flatMap((H, k) => [['land' + k, T => groundGeo(T, H)], ['landM' + k, T => groundGeo(T, H, GROUND_ROWS[1])], ['landL' + k, T => groundGeo(T, H, GROUND_ROWS[2])]])),
+    ...Object.fromEntries(HOLES.flatMap((H, k) => [['land' + k, takeGround('land' + k, T => groundGeo(T, H))], ['landM' + k, takeGround('landM' + k, T => groundGeo(T, H, GROUND_ROWS[1]))], ['landL' + k, T => groundGeo(T, H, GROUND_ROWS[2])]])),
     // the rail as a plain box, for boards too small on screen to show its planks or bricks (Oct 9)
     railPV: T => { const g = new T.BoxGeometry(2 * RT / CW, 1.76, 1.02); g.translate(0, -1.2 + 0.88, 0); return g; },
     railPH: T => { const g = new T.BoxGeometry(1.02, 1.76, 2 * RT / CW); g.translate(0, -1.2 + 0.88, 0); return g; },
@@ -38264,11 +38339,16 @@ const GOLF_APP = (() => {
       g.last = now; step(g, dt);
     } else if (g){ g.last = 0; g.t = performance.now() / 1000; }   // (a board left keeps its toys on the page's clock: Oct 10)
     const G = GAMES.get(gkey(c, r));                  // (a sunk ball may have moved the round on)
-    const H = HOLES[G ? G.hole : holeOf(c, r)], out = [];
+    // (a board not made yet is queued and shows its plain grass meanwhile: NEW BOARDS A FEW AT A TIME, Oct 20)
+    const hk = G ? G.hole : holeSoon(c, r);
+    if (hk == null) return [];
+    const H = HOLES[hk], out = [];
     const k = HOLES.indexOf(H);
-    // (the ground at the grain the board's size on the screen asks, part way to the next: see THE GROUND'S GRAINS, Oct 14)
-    const GG = groundGrain(bp);
-    out.push({ kind: ['land', 'landM', 'landL'][GG.g] + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff, morph: GG.w });
+    // (the ground at the grain the board's size on the screen asks, part way to the next: see THE GROUND'S GRAINS, Oct 14;
+    //  a grain not made yet waits for its turn, the board drawn meanwhile at the next coarser one made, Oct 20)
+    const GG = groundGrain(bp), fr = framedHere(), gNow = !!(G || (fr && fr.c === c && fr.r === r));
+    const gi = groundSoon(k, GG.g, c, r, gNow);
+    out.push({ kind: ['land', 'landM', 'landL'][gi] + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff, morph: gi === GG.g ? GG.w : 0 });
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
@@ -38571,8 +38651,8 @@ const GOLF_APP = (() => {
   /* An editor's hole on the field: its ground, wireframe and any slide are kinds of their own, made from HOLES[k] as it
      is now; after an edit the old meshes are dropped (fieldDropItemKind), so the next frame makes them again. */
   function ensureKinds(k){
-    itemGeometries['land' + k] = T => groundGeo(T, HOLES[k]);
-    itemGeometries['landM' + k] = T => groundGeo(T, HOLES[k], GROUND_ROWS[1]);   // (the ground's coarser grains: Oct 14)
+    itemGeometries['land' + k] = takeGround('land' + k, T => groundGeo(T, HOLES[k]));
+    itemGeometries['landM' + k] = takeGround('landM' + k, T => groundGeo(T, HOLES[k], GROUND_ROWS[1]));   // (the ground's coarser grains: Oct 14)
     itemGeometries['landL' + k] = T => groundGeo(T, HOLES[k], GROUND_ROWS[2]);
     itemGeometries['wire' + k] = T => wireGeo(T, HOLES[k]);
     (HOLES[k].toys || []).forEach((T, j) => { if (T.slide) itemGeometries['slide' + k + '_' + j] = T3 => {
@@ -38583,6 +38663,7 @@ const GOLF_APP = (() => {
     try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {}   // (boards drawn from a kept list are asked again: Oct 11)
     const drop = n => { try { window.fieldDropItemKind && window.fieldDropItemKind(n); } catch {} };
     drop('land' + k); drop('landM' + k); drop('landL' + k); drop('wire' + k);
+    for (const n of ['land' + k, 'landM' + k, 'landL' + k]){ GREADY.delete(n); const g = GCACHE.get(n); if (g){ g.dispose(); GCACHE.delete(n); } }   // (made ahead: SOON)
     ((old && old.toys) || []).forEach((T, j) => drop('slide' + k + '_' + j));
   }
   function makeHole(src, keep){ const H = compileHole(clone(src)); H.src = clone(src); H.custom = true; if (keep) H.mine = keep.mine; return H; }
@@ -39073,6 +39154,68 @@ const GOLF_APP = (() => {
     const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv; H.remadeN = want;
     GEN.set(gk, k);
     return k;
+  }
+  /* ═══ NEW BOARDS A FEW AT A TIME (Oct 20: "the mini-golf application is to slow, what is expensive?" … "yes") ═══════════
+     Measured: sliding the view over boards not seen yet quadrupled the page's work. Each new board made its hole there and
+     then (genSrc, the movers kept apart: keepApart) and, the first time it was drawn, its ground's mesh (groundGeo: the
+     height and colour at every point of a 78-row grid and of the 39-row one it fades to, through every hill, shore and
+     ridge), about 20 ms a board in the sandbox, and a row of new boards arrives in one frame: the frame stalled, and the
+     view stuttered as it panned. The far boards were worse: their tiles' colours (cellGrid) made a hole each.
+     Now a board not made yet is asked for, not made: it is queued (SOON) and shows plain grass until its turn, and the
+     queue is worked through after each frame for at most SOON.BUDGET ms (one at least), nearest the board you are on
+     first, boards with pieces before the far ones' colours. A hole's ground comes coarse first: its 13-row grain is cheap
+     and is drawn at once; the finer grains are made ahead in the queue (takeGround hands the field the one made) and the
+     board takes them as they come. A board asked for no longer (passed by) leaves the queue. The board you are on, or one
+     with a game on it, is made at once, as before. */
+  const SOON = { holes: new Map(), far: new Map(), ground: new Map(), BUDGET: 6, raf: 0, made: 0, grounds: 0 };
+  const GCACHE = new Map(), GREADY = new Set();               // ground made ahead; ground kinds the field has or can take
+  const PLAIN_GRID = { n: NY, colors: Array.from({ length: NY * NY }, () => GRASS[0]) };
+  function takeGround(name, make){ return T => { const g = GCACHE.get(name); if (g){ GCACHE.delete(name); return g; } return make(T); }; }
+  const holeMade = idx => idx < COURSE || GEN.has(idx * 8 + levelAt(idx));
+  function soonPump(dl){
+    SOON.raf = 0;
+    const now = performance.now(), t0 = now, fr = framedHere(), GSZ = 10000;
+    // (in the browser's idle time when it says how much there is, else a slice after the frame: at least one each turn)
+    const budget = dl && dl.timeRemaining ? Math.max(2, Math.min(40, dl.timeRemaining())) : SOON.BUDGET;
+    const far = (c, r) => { if (!fr) return 0; const dc = Math.abs(c - fr.c) % GSZ, dr = Math.abs(r - fr.r) % GSZ; return Math.min(dc, GSZ - dc) + Math.min(dr, GSZ - dr); };
+    const order = M => { for (const [k, e] of M) if (now - e.at > 1000) M.delete(k); return [...M].sort((a, b) => far(a[1].c, a[1].r) - far(b[1].c, b[1].r)); };
+    let did = 0;
+    const spent = () => did && performance.now() - t0 > budget;
+    for (const [idx, e] of order(SOON.holes)){ if (spent()) break; SOON.holes.delete(idx); if (!holeMade(idx)){ holeAt(idx); SOON.made++; did++; } }
+    if (!spent()) for (const [name, e] of order(SOON.ground)){ if (spent()) break; SOON.ground.delete(name);
+      if (!GREADY.has(name) && HOLES[e.k]){ try { GCACHE.set(name, groundGeo(window.FIELD_WORLD.THREE, HOLES[e.k], GROUND_ROWS[e.g])); GREADY.add(name); SOON.grounds++; did++; } catch {} } }
+    if (!spent()) for (const [idx, e] of order(SOON.far)){ if (spent()) break; SOON.far.delete(idx); if (!holeMade(idx)){ holeAt(idx); SOON.made++; did++; } }
+    if (did) try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {}
+    if (SOON.holes.size || SOON.ground.size || SOON.far.size) soonArm();
+  }
+  function soonArm(){
+    if (SOON.raf) return;
+    SOON.raf = typeof requestIdleCallback === 'function' ? requestIdleCallback(soonPump, { timeout: 120 })
+                                                       : requestAnimationFrame(() => setTimeout(soonPump, 0));   // (after the frame is drawn)
+  }
+  // the board's hole if it is made (or must be: the board you are on, or one with a game), else null and it is queued
+  function holeSoon(c, r, far){
+    const g = GAMES.get(gkey(c, r));
+    if (g) return g.hole;
+    const idx = boardIdx(c, r);
+    if (holeMade(idx)) return holeAt(idx);
+    const fr = framedHere();
+    if (fr && fr.c === c && fr.r === r) return holeAt(idx);
+    const M = far ? SOON.far : SOON.holes, e = M.get(idx);
+    if (e) e.at = performance.now(); else M.set(idx, { c, r, at: performance.now() });
+    if (!far) SOON.far.delete(idx);
+    soonArm();
+    return null;
+  }
+  // which of a hole's ground grains to draw: the one wanted if it is made, else the next coarser made (the coarsest always)
+  function groundSoon(k, g, c, r, now){
+    for (let j = g; j < GROUND_ROWS.length - 1; j++){
+      const n = ['land', 'landM'][j] + k;
+      if (GREADY.has(n)) return j;
+      if (now){ GREADY.add(n); return j; }                     // (made by the field as it draws it, as before)
+      if (j === g){ const e = SOON.ground.get(n); if (e) e.at = performance.now(); else SOON.ground.set(n, { k, g: j, c, r, at: performance.now() }); soonArm(); }
+    }
+    return GROUND_ROWS.length - 1;
   }
   // My holes: kept in this browser, each made into a hole the first time it is played
   /* (Oct 10: "what is all that menu noise, ive got 50 items in the menu to various golf holes?" … "yes". My holes had
@@ -40909,7 +41052,7 @@ const GOLF_APP = (() => {
       const tx = rect.w / NX, ty = rect.h / NY;
       ctx.fillStyle = '#63b86a'; ctx.fillRect(rect.x, rect.y, NX * tx, NY * ty);   // one grass (Oct 8)
     },
-    cellGrid(c, r){ return gridOf(holeShown(c, r)); },
+    cellGrid(c, r){ const g = GAMES.get(gkey(c, r)), k = g ? g.hole : holeSoon(c, r, true); return k == null ? PLAIN_GRID : gridOf(k); },   // (Oct 20: SOON)
     cellItems,
     get menu(){ return [{ head: 'Mini golf', items: [
       // (Oct 10: "Now we way to adjust the difficulty" … "ok, proceed": see ONE DIFFICULTY, HOW HARD, AND WHERE)
@@ -41063,7 +41206,7 @@ const GOLF_APP = (() => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladGeo, cladPlain, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladGeo, cladPlain, cladBox, cladTex, SOON, holeSoon, holeMade, GREADY, soonPump, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
@@ -48107,6 +48250,13 @@ function _itemRec(app, kind){
     if (geo.userData && geo.userData.vertexColors) _mo.vertexColors = true;
     // …and a kind may be drawn as its mesh's lines (geometry.userData.wireframe, Oct 13: Levels shows each level's grain)
     if (geo.userData && geo.userData.wireframe) _mo.wireframe = true;
+    /* …and a kind may wear a picture (geometry.userData.map, a texture, Oct 20: mini golf's rails and walls, their bricks and
+       stones painted on a box rather than built of hundreds of boxes). Seen at a slant along a rail, a picture blurs unless it
+       is read across its slant, so it takes the most anisotropy the graphics card offers. */
+    if (geo.userData && geo.userData.map){
+      _mo.map = geo.userData.map;
+      try { geo.userData.map.anisotropy = renderer.capabilities.getMaxAnisotropy(); geo.userData.map.needsUpdate = true; } catch {}
+    }
     const mat = (geo.userData && geo.userData.unlit) ? new THREE.MeshBasicMaterial(_mo) : new THREE.MeshLambertMaterial(_mo);
     /* …and a kind may MORPH (geometry.userData.morph, Oct 14: mini golf's ground, after Levels showed detail can change without
        a jump): its geometry carries a second surface (pos2, nrm2, col2), the next coarser grain's laid at this grain's points,

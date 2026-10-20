@@ -151,6 +151,26 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   never changes, and an edit makes a new one); the physics still asks `hOf`. 0.37 ms a board became 0.10. Zoomed out, by floor:
   62° 2.59 million triangles, 8 ms a frame making pieces; 55° 2.38 million, 10 ms; 50° 2.90 million, 18 ms; 45° 3.35 million,
   18 ms (62° before the fading: 4.18 million, 20 ms); 40° would be 3.89 million for 417 boards a frame.
+  **Painted, not built** (Oct 20: "the mini-golf application is to slow, what is expensive?" … "yes"): measured, a framed
+  field of holes drew 595,000 triangles a frame, ten times a board game's (checkers 57,000, Sokoban 49,000), and the page
+  waited on the graphics card: 10 frames in 6 s against 57. Half were the rails (each half-cell piece 126–392 triangles of
+  units standing proud, about 12,000 a board). Now a rail, wall, stone or brick fence or planter-wall piece is its core box,
+  10 triangles, wearing a picture of its material (`cladBox`; `cladTex` paints one 512² picture a material from `MAT_COL`,
+  each unit lit along its top and shaded along its foot, repeating without a seam; laid on in the piece's units over u, so a
+  brick is the same size everywhere). The field gives an item kind a picture from `geometry.userData.map`, read at the most
+  anisotropy the card has. Far off the picture's mipmaps blend toward its average, so these kinds left `TWINNED` (bumpers and
+  boulders still fade). `cladGeo` stays for the tests. Same views: framed 595k → 253k triangles, zoomed in 263k → 102k, at the
+  zoom ceiling 1.76M → 841k; screenshots before and after show the same holes. The smoke test fails over 350,000 framed.
+  **New boards a few at a time** (the same request): sliding over boards not seen yet quadrupled the page's work, each new
+  board making its hole (`genSrc`, `keepApart`) and its ground mesh (`groundGeo`) the frame it appeared, about 20 ms a board
+  in the sandbox, and the far boards' colours (`cellGrid`) made a hole each too. Now `holeSoon(c, r, far)` gives a board's hole
+  only if it is made (or the board is framed or has a game), else queues it (`SOON.holes`, the far ones `SOON.far`) and the
+  board is plain grass (no pieces, `PLAIN_GRID`) meanwhile; `soonPump` works through the queue in the browser's idle time
+  (`requestIdleCallback`, at most 40 ms a turn, one item at least), nearest the framed board first, boards with pieces before
+  far ones, then their fine ground. The ground comes coarse first: `groundSoon` draws the wanted grain if made (`GREADY`),
+  else the next coarser made, the 13-row one at once; the fine grains are made ahead (`GCACHE`, taken by `takeGround`).
+  Entries not asked for in a second leave the queue. Measured panning thirty boards: 11 frames in 6.5 s before, 27 after;
+  standing still framed, 10 then 48.
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
   - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
     its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each

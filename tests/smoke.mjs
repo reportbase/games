@@ -1453,7 +1453,24 @@ try {
     // 958,000 triangles, bumpers and boulders at 9,408 each, every brick's back and underside, the ground at eight rows a
     // cell; now 540,000 in the same view, and it must stay under 700,000
     const tris = await page.evaluate(() => { let t = 0; window.FIELD_WORLD.scene.traverse(o => { if (o.isMesh && o.visible){ const g = o.geometry, n = g.index ? g.index.count / 3 : g.attributes.position.count / 3; t += n * (o.isInstancedMesh ? o.count : 1); } }); return Math.round(t); });
-    if (!(tris < 700000)) failures.push(`[${current}] a framed field of holes draws ${tris} triangles (under 700,000 wanted)`);
+    // (and the rails, walls and fences painted on boxes, Oct 20: "the mini-golf application is to slow" … "yes": 595,000 to
+    //  253,000 in the same view; a painted piece is 10 triangles wearing its material's picture)
+    if (!(tris < 350000)) failures.push(`[${current}] a framed field of holes draws ${tris} triangles (under 350,000 wanted)`);
+    const pr = await page.evaluate(() => { const D = window.getFieldApp()._debug, T = window.FIELD_WORLD.THREE, out = {};
+      for (const m of ['brick', 'stone', 'wood']){ const g = D.cladBox(T, m, 1, 0.88, 1, -0.6, 0.25); out[m] = { tris: g.attributes.position.count / 3, map: !!g.userData.map, uv: !!g.attributes.uv }; }
+      return out; });
+    if (!Object.values(pr).every(x => x.tris === 10 && x.map && x.uv)) failures.push(`[${current}] the painted pieces: ${JSON.stringify(pr)}`);
+    // NEW BOARDS A FEW AT A TIME (Oct 20, the same request): a board not made yet and not the one you are on is asked for, not
+    // made (no pieces, plain grass), and its turn comes in the browser's idle time, after which it has its hole; the framed
+    // board is always made at once
+    const sq = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const c = 4321, r = 1234, idx = D.boardIdx(c, r), before = D.holeMade(idx), items = A.cellItems(c, r, 600).length;
+      const queued = D.SOON.holes.has(idx), framed = A.cellItems(f.c, f.r, 600).length;
+      const t0 = performance.now(); while (!D.holeMade(idx) && performance.now() - t0 < 10000){ A.cellItems(c, r, 600); await new Promise(ok => setTimeout(ok, 50)); }
+      return { before, items, queued, framed, made: D.holeMade(idx), after: A.cellItems(c, r, 600).length, ms: Math.round(performance.now() - t0) }; });
+    if (sq.before || sq.items !== 0 || !sq.queued || !(sq.framed > 0) || !sq.made || !(sq.after > 0)) failures.push(`[${current}] new boards a few at a time: ${JSON.stringify(sq)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} mini golf lighter: ${tris} triangles framed, the rails painted (10 triangles a piece); a new board queued and made ${sq.ms} ms later`);
     console.log(`     (${(tris / 1000).toFixed(0)}k triangles framed)`);
     // THE GROUND'S GRAINS (Oct 14: "could mini-golf and chess beneifit from better LOD handeling of this application." … "yes"):
     // each grain carries the next coarser one's surface at its own points, exactly (at a weight of 1 it is that grain on the
