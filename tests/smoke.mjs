@@ -2796,7 +2796,7 @@ try {
       for (const k of [0, 5, 11, 21]){ const H = D.HOLES[k], T = H.tee, h0 = D.hOf(H, T.x, T.y), lvl = Math.max(...[[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]].map(([a, b]) => Math.abs(D.hOf(H, T.x + a * CW, T.y + b * CW) - h0)));
         out.push({ k, rise: +(h0 - D.hOf(H, T.x, T.y - 1.6 * CW)).toFixed(3), lvl: +lvl.toFixed(5), inX: T.x / CW, inY: T.y / CW }); }
       return out; });
-    if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.2 && t.inX >= 1.2 && t.inX <= 8 - 1.2) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
+    if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.5 && t.inX >= 1.5 && t.inX <= 8 - 1.5) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
     // the par set through the menu's own prompt
     const answers = ['5', '', '5'];
     const onDialog = d => d.accept(answers.shift() ?? '');

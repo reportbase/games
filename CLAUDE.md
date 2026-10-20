@@ -210,7 +210,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     `TEE_EDGE` (in `rawH`, before the lakes), so the first putt runs down off it. It is mown in stripes (`onTeeBox`) with two
     blue markers.
   - `compileHole` keeps the tee in from the rail far enough for the box and its sides, as it keeps the cup in, so the ball
-    starts on top and the rail never climbs over it. A tee in the last row is 0.75 of a cell nearer the cup than before.
+    starts on top and the rail never climbs over it, with a strip of grass 0.35 of a cell wide between the foot of its sides
+    and the rail (Oct 20: "the tee box should have a small margin so its not next to the border"). A tee in the last row is
+    1.1 cells nearer the cup than before.
   - **Your par:** the menu's Set par for this hole… asks for 1 to 9; an empty answer puts back the hole's own (`setParHere`).
     One of My holes takes it into its source. Any other hole keeps it in localStorage `golf.pars` (by size, `SIZED`) under
     `originOf` the hole as written, put on the hole when a game starts on it (`parApply`, in `holeGame`; `H.par0` is its own).

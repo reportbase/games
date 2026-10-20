@@ -36736,8 +36736,9 @@ const GOLF_MAKE = SIZE => {
     const m = RT + CUP_R_MAX * 1.5;
     if (H.cup){ H.cup.x = Math.min(WD - m, Math.max(m, H.cup.x)); H.cup.y = Math.min(1 - m, Math.max(m, H.cup.y)); }
     // (and the tee kept in from the rail far enough for its box and the box's sides to stand on the board, so the ball starts
-    //  on top of it and the rail does not climb over it: THE TEE BOX, Oct 20)
-    const mt = RT + CW * (1.2 / 2 + 0.45);
+    //  on top of it and the rail does not climb over it: THE TEE BOX, Oct 20; with a strip of grass a third of a cell wide
+    //  between the foot of its sides and the rail, Oct 20: "the tee box should have a small margin so its not next to the border")
+    const mt = RT + CW * (1.2 / 2 + 0.45 + 0.35);
     if (H.tee){ H.tee.x = Math.min(WD - mt, Math.max(mt, H.tee.x)); H.tee.y = Math.min(1 - mt, Math.max(mt, H.tee.y)); }
     if (!FENCE_MATS.includes(H.fence)) H.fence = null;
     return H;
