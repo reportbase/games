@@ -36735,6 +36735,11 @@ const GOLF_MAKE = SIZE => {
        between it and the rail, whichever cell the map puts it in. */
     const m = RT + CUP_R_MAX * 1.5;
     if (H.cup){ H.cup.x = Math.min(WD - m, Math.max(m, H.cup.x)); H.cup.y = Math.min(1 - m, Math.max(m, H.cup.y)); }
+    // (and the tee kept in from the rail far enough for its box and the box's sides to stand on the board, so the ball starts
+    //  on top of it and the rail does not climb over it: THE TEE BOX, Oct 20; with a strip of grass a third of a cell wide
+    //  between the foot of its sides and the rail, Oct 20: "the tee box should have a small margin so its not next to the border")
+    const mt = RT + CW * (1.2 / 2 + 0.45 + 0.35);
+    if (H.tee){ H.tee.x = Math.min(WD - mt, Math.max(mt, H.tee.x)); H.tee.y = Math.min(1 - mt, Math.max(mt, H.tee.y)); }
     if (!FENCE_MATS.includes(H.fence)) H.fence = null;
     return H;
   }
@@ -36889,6 +36894,14 @@ const GOLF_MAKE = SIZE => {
       const e = blobEdge(s.B, x, y, GREEN_EDGE) * (blobIn(s.B, x, y) ? 1 : -1);
       h += s.h * sm01(e / GREEN_EDGE + 0.5);
     }
+    /* THE TEE BOX (Oct 20: "the first shot should be from an elevated vantage on a tea box"): every hole's tee stands on a
+       box of level grass, TEE_BOX across, TEE_RISE above the highest ground under it (the ground there without it: teeTop),
+       its sides falling to the ground round it over TEE_EDGE. So the first putt is played from up on it and runs down off
+       its front, the way a tee shot is played from a raised tee, and on a slope the box is still level to stand on. */
+    if (H.tee && !TEE_BUSY){
+      const C = teeAt(H), q = Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) - TEE_BOX / 2;
+      if (q < TEE_EDGE){ const top = teeTop(H); h += (top - h) * (q <= 0 ? 1 : 1 - sm01(q / TEE_EDGE)); }
+    }
     /* A LAKE LIES IN A BASIN (Oct 10; Oct 11). Water lies level, so a lake drawn over a hill stood in a pit with a blue cliff
        up its far side, and one over a hollow, levelled to the average, stood as a mesa with its water drawn under it. Now
        each lake has its own water level, a little under the lowest ground round its rim (its level, worked out once with
@@ -36907,6 +36920,20 @@ const GOLF_MAKE = SIZE => {
     return h;
   }
   const GREEN_EDGE = CW * 0.7, LAKE_EDGE = CW * 1.8;
+  const TEE_BOX = CW * 1.2, TEE_EDGE = CW * 0.45, TEE_RISE = 0.045;   // (the tee box: Oct 20)
+  let TEE_BUSY = false;
+  // (the box's middle is the tee, which compileHole keeps in from the rail far enough for the box and its sides)
+  const teeAt = H => H.tee;
+  // the tee box's level: TEE_RISE over the highest ground under it, worked out once with the box left out
+  function teeTop(H){
+    if (H._teeTop != null) return H._teeTop;
+    TEE_BUSY = true; let m = -Infinity;
+    const C = teeAt(H);
+    try { for (const a of [-0.5, 0, 0.5]) for (const b of [-0.5, 0, 0.5]) m = Math.max(m, rawH(H, C.x + a * TEE_BOX, C.y + b * TEE_BOX)); }
+    finally { TEE_BUSY = false; }
+    return (H._teeTop = m + TEE_RISE);
+  }
+  const onTeeBox = (H, x, y) => { if (!H.tee) return false; const C = teeAt(H); return Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) <= TEE_BOX / 2; };
   let LAKE_BUSY = false;
   /* a lake's water level: a little under the lowest ground round its rim on the board (a stream's ends run on under the
      rail), worked out once for all a hole's lakes with the lakes left out, and kept on each lake's entry. Lakes that
@@ -36996,7 +37023,9 @@ const GOLF_MAKE = SIZE => {
   const gradOf = (H, x, y) => { const e = 0.002; return [(hOf(H, x + e, y) - hOf(H, x - e, y)) / (2 * e), (hOf(H, x, y + e) - hOf(H, x, y - e)) / (2 * e)]; };
   const GRAV = 4;                                          // how hard the ground's slope pulls the ball
   const WIRE = { on: ARCADE.load('golf.wire', 'off') === 'on' };   // off unless turned on (Oct 9: "turn off wireframe by default")
-  const NUMS = { on: ARCADE.load('golf.nums', 'on') !== 'off' };     // the hole's number in the corner (Oct 2: "add a menu option to show the hole #")
+  // the hole's number in the corner (Oct 2: "add a menu option to show the hole #"), off unless turned on (Oct 20: "turn hole
+  // number off by default.")
+  const NUMS = { on: ARCADE.load('golf.nums', 'off') === 'on' };
   const GHOST = { on: ARCADE.load('golf.ghost', 'on') !== 'off' };   // your best line's ghost races you (Oct 11, see THE BEST LINE)
   const BR = 0.02, E = 0.78, VMAX = 2.0, DRAG = 0.5, FULL = 0.4, SINK_T = 1.4;
   const DIFF = { easy:   { mu: 0.6,  cup: 0.042, cap: 1.25 },
@@ -37038,6 +37067,7 @@ const GOLF_MAKE = SIZE => {
 
   function holeGame(R, hole){
     const H = HOLES[hole];
+    parApply(hole);                                          // (a par you set for this hole: YOUR PAR, Oct 20)
     /* (Oct 10: "when i click a board, dont reset the animation. just continue where its at currently.") The toys' clock
        starts where the boards no one is playing have theirs, the page's own clock, so a bumper going round carries on
        from where it was when the board was tapped instead of jumping back to its start. */
@@ -38002,7 +38032,8 @@ const GOLF_MAKE = SIZE => {
       else { c.setHex(GRASS[0]); c.multiplyScalar(0.72 * Math.max(0.5, Math.min(1.45, 1 + (h - BASE) * 9)));
              const sf = sandMix(H, x, y); if (sf > 0) c.lerp(sandC, sf);   // (sand blended in at its edge: Oct 10)
              if (lm > 0) c.lerp(waterC, lm);
-             if (inZap(H, x, y)) c.lerp(zapC, 0.28); }       // (a zap zone's ground, a little blue-grey: Oct 20)
+             if (inZap(H, x, y)) c.lerp(zapC, 0.28);
+             if (onTeeBox(H, x, y)){ c.setHex(0x8fd47f); c.multiplyScalar(0.92 + 0.08 * (Math.floor((x - teeAt(H).x) / (CW * 0.2) + 100) & 1)); } }   // (mown in stripes)   // (the tee box's top, mown lighter: Oct 20)       // (a zap zone's ground, a little blue-grey: Oct 20)
       col.push(c.r, c.g, c.b);
     }
     const idx = [];
@@ -38360,6 +38391,7 @@ const GOLF_MAKE = SIZE => {
     pipePlain: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.3, 20); g.translate(0, 0.15, 0); return g; },
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
+    teeMark: T => { const g = new T.SphereGeometry(0.5, 10, 8); g.translate(0, 0.5, 0); return g; },   // (the tee box's markers: a kind of their own, as tests and the ghost find the ball by its kind)
     ghostBall: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); g.userData.opacity = 0.45; return g; },   // the best line's ball (Oct 11)
     armBar: T => { const g = new T.BoxGeometry(1, 1.4, 1); g.translate(0, 0.75, 0); return g; },   // a turnstile's or a door's bar (stretched along x)
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
@@ -38486,6 +38518,9 @@ const GOLF_MAKE = SIZE => {
       if (H.map[j][i] === '#') out.push({ kind: 'wall_' + matOf(H), u, v, scale: CW, lift: hOf(H, u, v), color: 0xffffff });
       if (H.map[j][i] === '=') out.push({ kind: 'plank', u, v, scale: CW, lift: hOf(H, u, v) + 0.004, color: (i + j) & 1 ? 0x9a7048 : 0x8a6240 });
     }
+    // (the tee box's two markers, either side of the tee: Oct 20)
+    for (const sx of [-1, 1]){ const C = teeAt(H), mx = C.x + sx * TEE_BOX * 0.38, my = C.y - TEE_BOX * 0.36;
+      out.push({ kind: 'teeMark', u: mx, v: my, scale: CW * 0.15, lift: hOf(H, mx, my), color: 0x2f6fd8 }); }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
     out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
@@ -39667,6 +39702,32 @@ const GOLF_MAKE = SIZE => {
   // the selected board's hole and game, for the menu's line items
   function hereHole(){ const L = framedHere(); if (!L) return null; const g = GAMES.get(L.key); return { L, g, k: g && g.state !== 'edit' ? g.hole : holeOf(L.c, L.r) }; }
   const hereLine = () => { if (ED.on) return null; const h = hereHole(); return h && lineOfHole(h.k); };
+  /* YOUR PAR (Oct 20: "user should be able to set the par"). The menu's Set par for this hole… asks for a number from 1 to 9
+     (nothing puts back the hole's own). A hole of your own takes it into its source, as the editor's Par does; a hole of the
+     course or a generated one keeps it in this browser by the hole as written (`originOf`, as the best lines are kept), so
+     the board plays to it from then on: the tee's message, the sunk message and the scorecard. */
+  const PARS_KEY = SIZED('golf.pars');
+  const PARS = (() => { try { const o = JSON.parse(localStorage.getItem(PARS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+  const parOrg = k => { const H = HOLES[k]; if (!H._org) H._org = originOf(srcOf(k)); return H._org; };
+  function parApply(k){
+    const H = HOLES[k]; if (!H || H.mine != null) return;   // (one of My holes keeps its par in its source)
+    if (H.par0 == null) H.par0 = H.par;
+    const p = PARS[parOrg(k)]; H.par = p >= 1 && p <= 9 ? p : H.par0;
+  }
+  function setParHere(answer){
+    const h = hereHole(); if (!h || h.k == null || !HOLES[h.k]){ say('Select a hole on the field first.', 2400); return false; }
+    const H = HOLES[h.k]; parApply(h.k);
+    const own = H.mine != null ? MINE[H.mine].par : (H.par0 != null ? H.par0 : H.par);
+    const a = answer != null ? String(answer) : prompt('Par for ' + H.name + ' (1 to 9; leave it empty for its own, ' + own + ')', String(H.par));
+    if (a == null) return false;
+    const n = Math.round(Number(a)), p = String(a).trim() === '' ? null : n >= 1 && n <= 9 ? n : NaN;
+    if (Number.isNaN(p)){ say('A par is a whole number from 1 to 9.', 2400); return false; }
+    if (H.mine != null){ MINE[H.mine].par = p || own; H.par = p || own; if (H.src) H.src.par = H.par; storeMine(); }
+    else { const key = parOrg(h.k); if (p) PARS[key] = p; else delete PARS[key];
+      try { localStorage.setItem(PARS_KEY, JSON.stringify(PARS)); } catch {} parApply(h.k); }
+    say('Par ' + H.par + ' for ' + H.name + (p ? '' : ' (its own)'), 2400);
+    return { k: h.k, par: H.par };                            // (the hole it set and its par: the tests read them)
+  }
   // Watch my best line: the selected hole's line played by its ball from now, the line dotted (a game is started if none)
   function watchLine(){
     const h = hereHole(), o = h && !ED.on && lineOfHole(h.k);
@@ -40883,7 +40944,9 @@ const GOLF_MAKE = SIZE => {
     if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.redo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to undo'; return; }
     if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
-    if (a === 'par'){ S.par = S.par >= 6 ? 2 : S.par + 1; editRefresh(true); return; }
+    // (the Par tile steps 1 to 9 and round again; the menu's Par higher and lower step one way: Oct 20)
+    if (a === 'par' || a === 'parUp' || a === 'parDown'){ snapEdit(); S.par = a === 'parDown' ? Math.max(1, S.par - 1) : a === 'parUp' ? Math.min(9, S.par + 1) : S.par >= 9 ? 1 : S.par + 1;
+      ED.msg = 'par ' + S.par; editRefresh(true); return; }
     if (a === 'apart'){                                       // Keep movers apart (Oct 11): timing, and things nudged off the tracks
       snapEdit();
       const r = keepApart(ED.src, 'fit');
@@ -41102,7 +41165,7 @@ const GOLF_MAKE = SIZE => {
      Copy, Paste and Delete act on the whole board: see editAction.) */
   /* (Oct 10, later: "add undo,redo to the menu. remove copy,paste,delete,undo,redo from the menu." Undo, Redo, Copy,
      Paste and Delete left the tiles for mini golf's menu: see editorMenu.) */
-  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['harder', 'Harder', '🔺'], ['easier', 'Easier', '🔻']];   // (Harder, Easier: the levels, Oct 10)
+  const ACTS = [['level', 'Level', '➖'], ['mat', 'Material', '🧱'], ['harder', 'Harder', '🔺'], ['easier', 'Easier', '🔻'], ['par', 'Par', '⛳']];   // (Par again, Oct 20: "user should be able to set the par")   // (Harder, Easier: the levels, Oct 10)
   function editTiles(){
     /* (Oct 10: "remove the in hand, paint, editing anything on the top line of the button. when the object is selected,
        change the color of the button to selected. the buttons should toggle on/off thats it." No top line on any tile;
@@ -41111,7 +41174,7 @@ const GOLF_MAKE = SIZE => {
     //  tools start the row, so tile i is TOOLS[i], then the acts.)
     const S = ED.src, SEL = '#a07c12', out = [];
     for (const [t, name, glyph] of TOOLS) out.push({ glyph, value: name, color: '#ffffff', bg: t === ED.tool ? SEL : null, dim: false });
-    for (const [a, name, glyph] of ACTS) out.push({ glyph, value: a === 'mat' ? S.fence[0].toUpperCase() + S.fence.slice(1) : name, color: '#c9ccd2' });
+    for (const [a, name, glyph] of ACTS) out.push({ glyph, value: a === 'mat' ? S.fence[0].toUpperCase() + S.fence.slice(1) : a === 'par' ? 'Par ' + S.par : name, color: '#c9ccd2' });
     return out;
   }
   function editTileTap(i){
@@ -41158,6 +41221,8 @@ const GOLF_MAKE = SIZE => {
         { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } },
         // (Oct 11: the timing is kept as you draw; this also moves what stands on a track, and says where something still meets)
         { label: 'Keep movers apart', title: 'Time the movers so they never meet, and nudge anything standing on a track off it. What still meets is ringed in red.', on(){ editAction('apart'); } });
+      items.push({ label: 'Par higher (' + ED.src.par + ')', title: 'One stroke more for this hole\'s par (up to 9).', disabled: ED.src.par >= 9, on(){ editAction('parUp'); } },
+      { label: 'Par lower (' + ED.src.par + ')', title: 'One stroke fewer for this hole\'s par (down to 1).', disabled: ED.src.par <= 1, on(){ editAction('parDown'); } });
       // (and the selected path, lake, bunker or green saved as a .tvf curve, which draw opens: Oct 11, shapes as well as paths)
       const sk = o && o.type === 'land' && SHAPE_KINDS.find(k => Array.isArray(o.obj[k])), sw = sk && TVF_WORD[sk][0];
       if (o && o.type === 'toy' && o.obj.path) items.push({ label: 'Save this path as .tvf', title: 'Download the selected path as a .tvf curve, which draw opens.', on(){
@@ -41283,6 +41348,8 @@ const GOLF_MAKE = SIZE => {
         on(){ setLevel(LEVEL_SET + 1); } },
       { label: 'Rate this hole', title: 'A fair player plays the hole on the selected board a few times, with a person\'s small errors of aim, strength and timing; its strokes on average give the stars (and, while editing, the par).',
         on(){ return rateHere(); } },
+      { label: 'Set par for this hole…', title: 'Choose the par the hole on the selected board is played to (1 to 9), or put back its own. Kept in this browser.',
+        on(){ return setParHere(); } },
       // (Oct 11, "proceed" on shots saved as curves: see THE BEST LINE, AND ITS GHOST)
       { label: () => 'Ghost: ' + (GHOST.on ? 'on' : 'off'), title: 'Your best line on each hole is kept as you play. Play the hole again and it rides beside you as a pale ball from your first putt: race it.',
         on(){ GHOST.on = !GHOST.on; ARCADE.save('golf.ghost', GHOST.on ? 'on' : 'off'); } },
@@ -41430,6 +41497,7 @@ const GOLF_MAKE = SIZE => {
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
     _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladGeo, cladPlain, cladBox, cladTex, SOON, holeSoon, holeMade, GREADY, soonPump, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+      setParHere, PARS,
       line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
@@ -45455,15 +45523,20 @@ const SOKOBAN_APP = (() => {
 const TILT_APP = (() => {
   const FLOOR = 0xd8c9a6, FLOOR2 = 0xcfbe98, WALLC = 0x6b4a2b, HOLEC = 0x111111, RINGC = 0xe8b93a, MARBLE = 0xd9dde3;
   const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  /* HARDER (Oct 20: "the title maze should be more difficult. all levels are to easy."): the mazes are bigger (7 to 15 cells a
+     side, 5 to 10 before), with fewer loops, so more dead ends to take; more holes off the way; holes in the outside corner of
+     a turn from level 1 (from 3 before) and far more often; holes beside the way on a straight from level 2 (`side`: ride the
+     wall there and the marble drops); and the board tips harder the farther out (`g`, on G), so it runs faster and is harder to
+     hold back. The steady player still has to finish every maze, or it is made again. */
   const LV = [
-    { m: 5,  loops: 0.12, holes: 0.08, corner: 0 },
-    { m: 6,  loops: 0.09, holes: 0.12, corner: 0 },
-    { m: 7,  loops: 0.07, holes: 0.16, corner: 0.15 },
-    { m: 8,  loops: 0.05, holes: 0.2,  corner: 0.3 },
-    { m: 10, loops: 0.04, holes: 0.22, corner: 0.45 },
+    { m: 7,  loops: 0.06, holes: 0.16, corner: 0.25, side: 0,    g: 1 },
+    { m: 9,  loops: 0.05, holes: 0.2,  corner: 0.4,  side: 0.15, g: 1.12 },
+    { m: 11, loops: 0.04, holes: 0.24, corner: 0.55, side: 0.25, g: 1.25 },
+    { m: 13, loops: 0.03, holes: 0.27, corner: 0.7,  side: 0.35, g: 1.38 },
+    { m: 15, loops: 0.02, holes: 0.3,  corner: 0.85, side: 0.45, g: 1.5 },
   ];
   const G = 2.2, ROLL = 0.9, BOUNCE = 0.35, VMAX = 1.6, SUB = 1 / 240, TIME_CAP = 120, REC_HZ = 30;
-  const WALL_T = 0.12, WALL_H = 0.42, BALL_R = 0.26, HOLE_R = 0.3, CORNER_R = 0.2, CORNER_OFF = 0.23, RING_R = 0.3;
+  const WALL_T = 0.12, WALL_H = 0.42, BALL_R = 0.26, HOLE_R = 0.3, CORNER_R = 0.2, CORNER_OFF = 0.23, RING_R = 0.3, SIDE_R = 0.2, SIDE_OFF = 0.33;
   const DL = ARCADE.difficulty('tiltmaze.level', 'Every board has its own maze, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
   const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tiltmaze.sound', 'A tick off the walls, a drop down a hole, a chime at the ring.');
@@ -45504,7 +45577,7 @@ const TILT_APP = (() => {
       const k = Math.floor(R() * n), i = k % m, j = (k / m) | 0;
       if (R() < 0.5){ if (i < m - 1) E[k] = 0; } else if (j < m - 1) S[k] = 0;
     }
-    const L = { idx, lv, attempt, m, s: 1 / m, E, S, holes: [], start: 0 };
+    const L = { idx, lv, attempt, m, s: 1 / m, E, S, holes: [], start: 0, g: D.g || 1 };
     // the ring: the cell farthest from the start along the maze, so the way is long
     const dist = bfs(L, 0); let far = 0; for (let k = 0; k < n; k++) if (dist[k] > dist[far]) far = k;
     L.goal = far; L.path = pathOf(L, 0, far);
@@ -45523,6 +45596,15 @@ const TILT_APP = (() => {
         const dir = d => d === 1 ? [1, 0] : d === -1 ? [-1, 0] : d === m ? [0, 1] : [0, -1];
         const [ax, ay] = dir(d1), [bx, by] = dir(d2), cx = (b % m + 0.5) / m, cy = (((b / m) | 0) + 0.5) / m;
         L.holes.push({ x: cx + (ax - bx) * CORNER_OFF / m, y: cy + (ay - by) * CORNER_OFF / m, r: CORNER_R / m, corner: true });
+      }
+    }
+    // (and beside the way on a straight, to one side: a marble riding the wall there drops: Oct 20)
+    if (D.side && attempt < 8){
+      for (let p = 2; p < L.path.length - 2; p++){
+        const a = L.path[p - 1], b = L.path[p], c = L.path[p + 1];
+        if (b - a !== c - b || R() > D.side) continue;
+        const across = Math.abs(b - a) === 1 ? [0, 1] : [1, 0], sg = R() < 0.5 ? -1 : 1, cx = (b % m + 0.5) / m, cy = (((b / m) | 0) + 0.5) / m;
+        L.holes.push({ x: cx + across[0] * sg * SIDE_OFF / m, y: cy + across[1] * sg * SIDE_OFF / m, r: SIDE_R / m, side: true });
       }
     }
     L.walls = wallsOf(L);
@@ -45579,7 +45661,7 @@ const TILT_APP = (() => {
      off it; over a hole's middle it falls. Returns 'fall', 'goal', 'hit' or null. */
   function stepBall(L, b, tx, ty, dt){
     const s = L.s, rb = BALL_R * s;
-    b.vx += G * tx * dt; b.vy += G * ty * dt;
+    const gg = G * (L.g || 1); b.vx += gg * tx * dt; b.vy += gg * ty * dt;
     const f = Math.exp(-ROLL * dt); b.vx *= f; b.vy *= f;
     const sp = Math.hypot(b.vx, b.vy); if (sp > VMAX){ b.vx *= VMAX / sp; b.vy *= VMAX / sp; }
     b.x += b.vx * dt; b.y += b.vy * dt;
@@ -45627,6 +45709,7 @@ const TILT_APP = (() => {
      holes in the turns), kept (up to CAP boards, the least recently wanted giving way). */
   const MAZES = new Map(), CAP = 1500;
   function mazeFor(c, r){
+    const own = mineMaze(c, r); if (own) return own;          // (a maze of your own on this board: Oct 20)
     const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
     let M = MAZES.get(key);
     if (M){ MAZES.delete(key); MAZES.set(key, M); return M; }
@@ -45639,6 +45722,7 @@ const TILT_APP = (() => {
   // (boards only looked at get their maze a few at a time, as Sokoban deals: until then a bare floor)
   let budgetAt = 0, budget = 0;
   function mazeSoon(c, r){
+    if (MINE.has(gkey(c, r))) return mineMaze(c, r);
     const idx = boardIdx(c, r), lv = levelAt(idx), M = MAZES.get(idx * 8 + lv);
     if (M) return M;
     const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
@@ -45693,7 +45777,8 @@ const TILT_APP = (() => {
       if (ev === 'goal'){ finish(g); return; }
     }
   }
-  function starsOf(t, par){ return !par ? 1 : t <= par * 1.3 ? 3 : t <= par * 2 ? 2 : 1; }
+  // (tighter since Oct 20, with the harder mazes: at most 1.15 × par for three stars, 1.6 × par for two; 1.3 and 2 before)
+  function starsOf(t, par){ return !par ? 1 : t <= par * 1.15 ? 3 : t <= par * 1.6 ? 2 : 1; }
   function finish(g){
     const L = g.M.L, [gx, gy] = centre(L, L.goal); g.b = { x: gx, y: gy, vx: 0, vy: 0 }; g.state = 'done';
     g.stars = starsOf(g.t, g.M.par);
@@ -45711,7 +45796,7 @@ const TILT_APP = (() => {
     return [R[2 * i] + (R[2 * j] - R[2 * i]) * f, R[2 * i + 1] + (R[2 * j + 1] - R[2 * i + 1]) * f];
   }
   function itemsOf(M, ball, g){
-    const L = M.L, s = L.s, out = [], lc = LV_COL[L.lv - 1];
+    const L = M.L, s = L.s, out = [], lc = L.mine ? MINE_COL : LV_COL[L.lv - 1];   // (a maze of your own framed in violet: Oct 20)
     for (const w of L.walls){ const [x0, y0, x1, y1] = w.b, lx = x1 - x0, ly = y1 - y0, l = Math.max(lx, ly);
       out.push({ kind: 'tmWall', u: (x0 + x1) / 2, v: (y0 + y1) / 2, scale: s, sx: lx / s, sy: WALL_H, sz: ly / s, color: w.edge ? lc : WALLC }); }
     for (const h of L.holes) out.push({ kind: 'tmHole', u: h.x, v: h.y, scale: 2 * h.r, color: HOLEC });
@@ -45723,6 +45808,195 @@ const TILT_APP = (() => {
     out.push({ kind: 'tmMarble', u: ball[0], v: ball[1], scale: 2 * BALL_R * s * (1 - 0.5 * sink), lift: -sink * BALL_R * s, color: MARBLE });
     return out;
   }
+  /* ─── YOUR OWN MAZES ─── (Oct 20: "let the user create their own mazes."). The bottom row is a maze editor, as Sokoban's is
+     a level editor: opening it (the dots, or the menu's Make a maze for this board…) takes the framed board's maze as it is
+     (its own, or the one it makes) into the editor. Tools: Wall (a tap toggles the edge between two cells nearest the tap; a
+     drag paints edges as the first one went), Hole (a tap lays one, snapped to a quarter cell; on a hole, takes it off),
+     Start, Ring, Erase (the hole or wall nearest); acts: Clear (no walls inside), Fill (every wall), Size (7, 9, 11, 13, 15
+     cells a side), Generate (a maze the board would make at that size), Check, Play. Check and Done want the ring reachable
+     from the start; the steady player then rolls it, and its time is the maze's par (a maze it cannot finish without a fall is
+     kept without a par). Kept on the board (MINE, localStorage tiltmaze.mine, the latest 300, each read back through
+     cleanMaze) and played at once; Escape or Cancel leaves the board as it was; the menu's Forget puts the board's own back,
+     and Share copies a link to it. */
+  const MINE = new Map(), MINE_M = new Map(), MINE_KEEP = 300, SIZES = [7, 9, 11, 13, 15], MINE_COL = 0x8a4fd0, MINE_G = 1.12;
+  const hashOf = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  // a maze as written: { m, E, S (strings of 0 and 1, a cell's east and south walls), holes: [[x, y]] in cells, start, goal }
+  function cleanMaze(d){
+    if (!d || typeof d !== 'object') return null;
+    const m = +d.m, n = m * m, E = String(d.E || ''), S = String(d.S || '');
+    if (!SIZES.includes(m) || E.length !== n || S.length !== n || /[^01]/.test(E + S)) return null;
+    const start = +d.start, goal = +d.goal;
+    if (!(Number.isInteger(start) && Number.isInteger(goal) && start >= 0 && goal >= 0 && start < n && goal < n && start !== goal)) return null;
+    // (each hole [x, y] in cells, or [x, y, r] with its own size: a turn's or a straight's smaller holes, from a made maze)
+    const holes = (Array.isArray(d.holes) ? d.holes : []).slice(0, 400).map(h => Array.isArray(h) && isFinite(+h[0]) && isFinite(+h[1])
+        ? [Math.round(+h[0] * 100) / 100, Math.round(+h[1] * 100) / 100, ...(h.length > 2 && isFinite(+h[2]) ? [Math.max(0.15, Math.min(0.35, Math.round(+h[2] * 100) / 100))] : [])] : null)
+      .filter(h => h && h[0] >= 0 && h[0] <= m && h[1] >= 0 && h[1] <= m);
+    // (the board's edge is walled all round, whatever was written)
+    const e = [...E], s = [...S]; for (let k = 0; k < n; k++){ if (k % m === m - 1) e[k] = '1'; if (k >= n - m) s[k] = '1'; }
+    return { m, E: e.join(''), S: s.join(''), holes, start, goal };
+  }
+  function mazeOfData(d, idx){
+    const m = d.m, n = m * m, L = { idx, lv: 'u' + hashOf(JSON.stringify(d)), mine: true, m, s: 1 / m, E: Uint8Array.from(d.E, c => +c), S: Uint8Array.from(d.S, c => +c),
+      holes: d.holes.map(([x, y, r]) => ({ x: x / m, y: y / m, r: (r || HOLE_R) / m })), start: d.start, goal: d.goal, g: MINE_G };
+    L.path = pathOf(L, L.start, L.goal); L.walls = wallsOf(L);
+    return L;
+  }
+  const reaches = L => bfs(L, L.start)[L.goal] >= 0;
+  function dataOf(L){
+    const m = L.m, r2 = v => Math.round(v * 100) / 100;
+    return { m, E: Array.from(L.E).join(''), S: Array.from(L.S).join(''), holes: L.holes.map(h => { const r = r2(h.r * m); return r === HOLE_R ? [r2(h.x * m), r2(h.y * m)] : [r2(h.x * m), r2(h.y * m), r]; }), start: L.start, goal: L.goal };
+  }
+  // a kept maze, made playable (its run and par from the steady player, once, when first wanted)
+  function mineMaze(c, r){
+    const k = gkey(c, r), d = MINE.get(k); if (!d) return null;
+    let M = MINE_M.get(k); if (M) return M;
+    const L = mazeOfData(d, boardIdx(c, r)), run = playRun(L);
+    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: (L.idx * 0.618) % 1, mine: true };
+    MINE_M.set(k, M); return M;
+  }
+  function saveMine(){ try { const o = {}; [...MINE.entries()].slice(-MINE_KEEP).forEach(([k, d]) => { o[k] = d; }); localStorage.setItem('tiltmaze.mine', JSON.stringify(o)); } catch {} }
+  try { const o = JSON.parse(localStorage.getItem('tiltmaze.mine') || '{}'); for (const k in o){ const d = cleanMaze(o[k]); if (d) MINE.set(k, d); } } catch {}
+
+  const ED = { on: false, key: null, c: 0, r: 0, L: null, tool: 'wall', busy: false, drag: null, ateAt: 0 };
+  const ED_TOOLS = [['wall', '🧱', 'Wall'], ['hole', '⚫', 'Hole'], ['start', '⚪', 'Start'], ['ring', '⭕', 'Ring'], ['erase', '🧽', 'Erase']];
+  const ED_ACTS = ['clear', 'fill', 'size', 'gen', 'check', 'play'];
+  const edSay = (m, ms) => say(m, ms || 2800);
+  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const copyMaze = L => mazeOfData(dataOf(L), L.idx);
+  function bareMaze(m, idx, full){
+    const n = m * m, E = new Uint8Array(n), S = new Uint8Array(n);
+    for (let k = 0; k < n; k++){ E[k] = full || k % m === m - 1 ? 1 : 0; S[k] = full || k >= n - m ? 1 : 0; }
+    return mazeOfData(dataOf({ m, E, S, holes: [], start: 0, goal: n - 1 }), idx);
+  }
+  // the editor's draft, kept current: its path and walls again after every change
+  function edRebuild(){ const L = ED.L; L.path = reaches(L) ? pathOf(L, L.start, L.goal) : [L.start]; L.walls = wallsOf(L); try { fieldItemsChanged(); } catch {} }
+  function edStart(c, r){
+    Object.assign(ED, { on: true, key: gkey(c, r), c, r });
+    LIVE = { c, r };
+    ED.L = copyMaze(mazeFor(c, r).L);
+    edRebuild();
+  }
+  function edOpen(){
+    const f = framedCell();
+    if (!f){ say('Pick a board first, then open the row to make its maze', 2000); return false; }
+    edStart(f.c, f.r);
+    edSay('Making a maze, ' + ED.L.m + '×' + ED.L.m + ': tap an edge for a wall (or drag along edges), holes, the start and the ring. ✔ checks it, ✓ plays it.', 4000);
+    return true;
+  }
+  function edStop(){ ED.on = false; ED.L = null; ED.drag = null; try { fieldItemsChanged(); } catch {} }
+  // what the maze lacks, if anything; else the steady player's run: { why } or { run }
+  function edCheck(tell){
+    const L = ED.L;
+    if (!reaches(L)){ const why = 'The ring cannot be reached from the start: open a way through.'; if (tell) edSay(why); return { why }; }
+    const run = playRun(L);
+    if (tell) edSay(run.ok ? 'The steady player gets through in ' + run.t.toFixed(1) + ' s: that is its par.' : 'There is a way, but the steady player could not get through without a fall (' + run.why + '): it would be kept without a par.', 3400);
+    return { run };
+  }
+  function edDone(){
+    if (!ED.on) return true;
+    const R = edCheck(false);
+    if (R.why){ edSay(R.why + ' (Cancel leaves the board as it was.)', 3200); return false; }
+    const k = ED.key, d = cleanMaze(dataOf(ED.L));
+    if (!d){ edSay('This maze cannot be kept.'); return false; }
+    MINE.delete(k); MINE.set(k, d); MINE_M.delete(k); saveMine();
+    const M = mineMaze(ED.c, ED.r);
+    GAMES.set(k, fresh(ED.c, ED.r)); LIVE = { c: ED.c, r: ED.r };
+    edStop(); edPane(false);
+    edSay('Your maze' + (M.par ? ', par ' + M.par.toFixed(1) + ' s' : ' (no par: the steady player could not finish it)') + '. Tip the marble to the ring.', 3200);
+    return true;
+  }
+  function edCancel(){ if (!ED.on) return; edStop(); edPane(false); edSay('Left the board as it was.', 1800); }
+  // the edge nearest (fx, fy) in cells, inside the board: ['E' | 'S', k], or null on the board's own edge
+  function edgeAt(L, fx, fy){
+    const m = L.m, i = Math.max(0, Math.min(m - 1, Math.floor(fx))), j = Math.max(0, Math.min(m - 1, Math.floor(fy))), dx = fx - i - 0.5, dy = fy - j - 0.5;
+    if (Math.abs(dx) > Math.abs(dy)){ const ii = dx > 0 ? i : i - 1; return ii >= 0 && ii < m - 1 ? ['E', ii + j * m] : null; }
+    const jj = dy > 0 ? j : j - 1; return jj >= 0 && jj < m - 1 ? ['S', i + jj * m] : null;
+  }
+  function edPlace(u, v){
+    const L = ED.L, m = L.m, fx = u * m, fy = v * m, k = cellOf(L, u, v), t = ED.tool;
+    const near = L.holes.findIndex(h => Math.hypot(h.x - u, h.y - v) < h.r * 1.4);
+    if (t === 'wall'){ const e = edgeAt(L, fx, fy); if (!e) return false; L[e[0]][e[1]] ^= 1; return true; }
+    if (t === 'hole'){
+      if (near >= 0){ L.holes.splice(near, 1); return true; }
+      const x = Math.round(fx * 4) / 4, y = Math.round(fy * 4) / 4;
+      if (cellOf(L, x / m, y / m) === L.start || cellOf(L, x / m, y / m) === L.goal){ edSay('Not on the start or the ring.'); return false; }
+      L.holes.push({ x: x / m, y: y / m, r: HOLE_R / m }); return true;
+    }
+    if (t === 'start' || t === 'ring'){
+      if ((t === 'start' ? L.goal : L.start) === k){ edSay('The start and the ring need cells of their own.'); return false; }
+      L[t === 'start' ? 'start' : 'goal'] = k;
+      L.holes = L.holes.filter(h => cellOf(L, h.x, h.y) !== k); return true;
+    }
+    if (t === 'erase'){
+      if (near >= 0){ L.holes.splice(near, 1); return true; }
+      const e = edgeAt(L, fx, fy); if (e && L[e[0]][e[1]]){ L[e[0]][e[1]] = 0; return true; }
+      return false;
+    }
+    return false;
+  }
+  function edTiles(){
+    const sel = '#5a3e8a', L = ED.L;
+    const out = ED_TOOLS.map(([k, gl, name]) => ({ glyph: gl, value: name, bg: ED.tool === k ? sel : null }));
+    out.push({ glyph: '⌫', value: 'Clear' }, { glyph: '▦', value: 'Fill' }, { glyph: '⤢', value: 'Size ' + L.m + '×' + L.m }, { glyph: '🎲', value: 'Generate' },
+             { glyph: '✔', value: 'Check' }, { glyph: '▶', value: 'Play' });
+    return out;
+  }
+  function edTile(i){
+    if (!ED.on) return false;
+    const L = ED.L;
+    if (i < ED_TOOLS.length){
+      const [k] = ED_TOOLS[i]; ED.tool = k;
+      edSay({ wall: 'Tap the edge between two cells for a wall (again to take it off), or drag along edges.', hole: 'Tap to lay a hole, on one to take it off.',
+              start: 'Tap a cell for the start.', ring: 'Tap a cell for the gold ring.', erase: 'Tap a hole or a wall to take it away.' }[k]);
+    } else {
+      const a = ED_ACTS[i - ED_TOOLS.length];
+      if (a === 'clear'){ const s0 = L.start, g0 = L.goal; ED.L = bareMaze(L.m, L.idx); ED.L.start = s0; ED.L.goal = g0; edSay('No walls inside: draw your own.'); }
+      else if (a === 'fill'){ const s0 = L.start, g0 = L.goal; ED.L = bareMaze(L.m, L.idx, true); ED.L.start = s0; ED.L.goal = g0; edSay('Every wall up: take some away to make the way.'); }
+      else if (a === 'size'){ const m = SIZES[(SIZES.indexOf(L.m) + 1) % SIZES.length]; ED.L = bareMaze(m, L.idx); edSay('A bare ' + m + '×' + m + ' board.'); }
+      else if (a === 'gen'){ const lv = Math.max(1, SIZES.indexOf(L.m) + 1); ED.L = copyMaze(makeMaze(L.idx + Math.floor(Math.random() * 1e6), lv, 0)); edSay('A maze of ' + ED.L.m + '×' + ED.L.m + ' to start from.'); }
+      else if (a === 'check') edCheck(true);
+      else if (a === 'play') return edDone();
+    }
+    if (ED.on) edRebuild();
+    try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  // a tap on the board being made lays the tool there; on another board, the editor moves there (as golf's and Sokoban's do)
+  function edTap(c, r, u, v){
+    if (gkey(c, r) !== ED.key){ edStart(c, r); edSay('Making a maze for this board.', 1500); return true; }
+    if (u == null || performance.now() - ED.ateAt < 350) return true;   // (the tap the field still sends after a short drag)
+    if (edPlace(u, v)) edRebuild();
+    return true;
+  }
+  // a drag with Wall paints the edges it crosses as the first one went
+  function edDragStart(u, v){
+    if (ED.tool !== 'wall' || u == null) return false;
+    const L = ED.L, e = edgeAt(L, u * L.m, v * L.m); if (!e) return false;
+    ED.drag = { set: L[e[0]][e[1]] ? 0 : 1, done: new Set(), moved: false };
+    return true;
+  }
+  function edDragAt(u, v){
+    const D = ED.drag, L = ED.L; if (!D || !L) return;
+    const e = edgeAt(L, u * L.m, v * L.m); if (!e) return;
+    const id = e[0] + e[1]; if (D.done.has(id)) return;
+    D.done.add(id); if (L[e[0]][e[1]] !== D.set){ L[e[0]][e[1]] = D.set; D.moved = true; edRebuild(); }
+  }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
+  // SHARE: a board's maze (the draft while editing) as a link, taken onto the first board framed, through cleanMaze
+  function shareMaze(){
+    const f = framedCell(), d = ED.on ? dataOf(ED.L) : f && MINE.get(gkey(f.c, f.r));
+    if (!d){ say('This board has no maze of its own to share: make one first', 2000); return null; }
+    return SHARE.copy(SHARE.link(app, d), 'Link copied: it opens on this maze.');
+  }
+  function takeMaze(c, r, P){
+    const d = cleanMaze(P);
+    if (!d || !reaches(mazeOfData(d, 0))){ say('The shared maze cannot be played: its ring cannot be reached from its start.', 3500); return; }
+    const k = gkey(c, r); MINE.delete(k); MINE.set(k, d); MINE_M.delete(k); saveMine();
+    const M = mineMaze(c, r); GAMES.set(k, fresh(c, r)); LIVE = { c, r };
+    say('A shared maze' + (M.par ? ', par ' + M.par.toFixed(1) + ' s' : '') + '. Tip the marble to the ring.', 3200);
+    try { fieldItemsChanged(); } catch {}
+  }
+
   const box = T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; };
   const app = {
     name: 'tilt maze',
@@ -45732,6 +46006,15 @@ const TILT_APP = (() => {
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to tip the board. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
       { label: 'Start this board again', title: 'The marble back at the start, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; } } },
+      // (your own mazes: Oct 20, "let the user create their own mazes.")
+      { label: () => ED.on ? 'Done: play this maze' : 'Make a maze for this board…', title: 'The bottom row becomes a maze editor: walls, holes, the start and the ring. The steady player checks it can be done and sets par; Done plays it.',
+        on(){ if (ED.on) edDone(); else edOpen(); } },
+      { label: 'Cancel the maze', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
+      { label: "Share this board's maze", title: 'Copy a link that opens the page on this maze.',
+        get disabled(){ const f = framedCell(); return !(ED.on || (f && MINE.has(gkey(f.c, f.r)))); }, on(){ shareMaze(); } },
+      { label: "Forget this board's maze", title: 'Back to the maze the board makes itself.',
+        get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
+        on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_M.delete(k); saveMine(); GAMES.delete(k); say('The board makes its own maze again', 1800); try { fieldItemsChanged(); } catch {} } },
     ]}],
     cellFar: { light: FLOOR, dark: FLOOR2 },
     itemMinPx: 16,
@@ -45743,18 +46026,22 @@ const TILT_APP = (() => {
       tmMarble: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
     },
     cellGrid(c, r){
-      const M = (LIVE && LIVE.c === c && LIVE.r === r) ? mazeFor(c, r) : MAZES.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r)));
+      const M = ED.on && ED.key === gkey(c, r) ? { L: ED.L } : (LIVE && LIVE.c === c && LIVE.r === r) || MINE.has(gkey(c, r)) ? mazeFor(c, r) : MAZES.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r)));
       const m = M ? M.L.m : 8;
       return { n: m, colors: Array.from({ length: m * m }, (_, k) => ((k % m) + ((k / m) | 0)) % 2 ? FLOOR2 : FLOOR) };
     },
     cellItems(c, r){
       const k = gkey(c, r), live = LIVE && LIVE.c === c && LIVE.r === r;
+      if (ED.on && ED.key === k) return itemsOf({ L: ED.L }, centre(ED.L, ED.L.start), null);   // (the maze being made: Oct 20)
       const g = GAMES.get(k) || (live ? gameAt(c, r) : null);
       if (g){ if (live) stepGame(g); return itemsOf(g.M, [g.b.x, g.b.y], g); }
       const M = mazeSoon(c, r);
       return M ? itemsOf(M, shownBall(M), null) : [];
     },
     cellTitle(c, r){
+      if (ED.on && ED.key === gkey(c, r)) return 'Tilt maze — making a maze, ' + ED.L.m + '×' + ED.L.m;
+      const own = MINE.has(gkey(c, r)) ? mineMaze(c, r) : null;
+      if (own){ const best = BEST.get(bestKey(own)); return 'Tilt maze — your maze, ' + own.L.m + '×' + own.L.m + (own.par ? ' · par ' + own.par.toFixed(1) + ' s' : '') + (best != null ? ' · best ' + best.toFixed(1) + ' s' : ''); }
       const idx = boardIdx(c, r), lv = levelAt(idx), M = MAZES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
       if (!M) return 'Tilt maze — board ' + c + '·' + r + ', level ' + lv;
       const best = BEST.get(bestKey(M));
@@ -45764,7 +46051,8 @@ const TILT_APP = (() => {
     onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
-    onCellTap(c, r){
+    onCellTap(c, r, u, v){
+      if (ED.on) return edTap(c, r, u, v);
       const g = gameAt(c, r);
       if (LIVE && LIVE.c === c && LIVE.r === r && g.state === 'done'){
         const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
@@ -45773,14 +46061,42 @@ const TILT_APP = (() => {
       return true;
     },
     // (hold: start this board again)
-    onCellHold(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; say('From the start again.', 1200); return true; },
+    onCellHold(c, r){ if (ED.on) return true; GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; say('From the start again.', 1200); return true; },
     // a drag tips the board toward the finger, for as long as it is held
-    claimsPan(u, v){ const g = liveGame(); if (!g || g.state === 'done' || u == null) return false; DRAG = { at: { u, v } }; return true; },
-    onPan(dx, dy, at){ if (!DRAG) return false; if (at) DRAG.at = { u: at.u, v: at.v }; return true; },
-    onPanEnd(){ DRAG = null; },
+    claimsPan(u, v){
+      if (ED.on) return edDragStart(u, v);                     // (while making a maze a drag paints walls, or pans: Oct 20)
+      const g = liveGame(); if (!g || g.state === 'done' || u == null) return false; DRAG = { at: { u, v } }; return true; },
+    onPan(dx, dy, at){
+      if (ED.on){ if (ED.drag && at) edDragAt(at.u, at.v); return !!ED.drag; }
+      if (!DRAG) return false; if (at) DRAG.at = { u: at.u, v: at.v }; return true; },
+    onPanEnd(){ if (ED.drag){ if (ED.drag.moved) ED.ateAt = performance.now(); ED.drag = null; } DRAG = null; },
+    noDoubleTap(){ return ED.on; },                            // (two quick taps on an edge are two walls: Simon's lesson)
+    /* THE ROW IS THE MAZE EDITOR (Oct 20, YOUR OWN MAZES above): opening it makes a maze for the framed board, shutting it plays it. */
+    onBrowserToggle(open){
+      if (ED.busy) return true;
+      if (open && !ED.on) return edOpen();
+      if (!open && ED.on) return edDone();
+      return true;
+    },
+    statTiles(){ return ED.on ? edTiles() : null; },
+    statsStay(){ return ED.on; },
+    onStatTap(c, r, i){ return edTile(i); },
+    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase: a hole or a wall away', dim: ED.tool === 'erase' }, { key: 'check', glyph: '✔', title: 'Check: can it be done, and how fast?' },
+                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this maze' }] : null; },
+    onQuickAct(c, r, key){
+      if (!ED.on) return false;
+      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a hole or a wall to take it away.'); }
+      else if (key === 'check') edCheck(true);
+      else if (key === 'cancel') edCancel();
+      else if (key === 'done') edDone();
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
     _debug: { makeMaze, mazeFor, playRun, stepBall, botTilt, bfs, pathOf, nbrs, cellOf, centre, gameAt, fresh, stepGame, finish, starsOf, levelAt, boardIdx,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, GAMES, MAZES, BEST, HELD, LV, fly: (c, r) => gotoCell(c, r) },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, GAMES, MAZES, BEST, HELD, LV, fly: (c, r) => gotoCell(c, r),
+              ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edgeAt, cleanMaze, dataOf, mineMaze, MINE, shareMaze, takeMaze, ED_TOOLS, ED_ACTS },
   };
+  SHARE.install(app, takeMaze);
   return app;
 })();
 /* ═══ SIMON ══════════════════════════════════════════════════════════════════════════════════════════════════════════════

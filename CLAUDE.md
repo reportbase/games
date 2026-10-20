@@ -203,6 +203,22 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Generated holes only (the course keeps its guards): guards `charge` and `zapgate` from level 2, `minefield` (an arc of
     five) from level 3 (`CURVE_FROM`); loose charges from level 2 and mines from 3; the guess adds `NEW_GUESS` a thing.
     Rated at level 3, five holes each: minefield 2.95 strokes, zap zone 2.93, charge 2.85, every round finished.
+- **The tee box and your par** (Oct 20: "1) user should be able to set the par. 2) the first shot should be from an elevated
+  vantage on a tea box"):
+  - Every hole's tee stands on a box of level grass, `TEE_BOX` (1.2 cells) across and `TEE_RISE` (0.045) above the highest
+    ground under it (`teeTop`, worked out with the box left out: `TEE_BUSY`). Its sides fall to the ground round it over
+    `TEE_EDGE` (in `rawH`, before the lakes), so the first putt runs down off it. It is mown in stripes (`onTeeBox`) with two
+    blue markers.
+  - `compileHole` keeps the tee in from the rail far enough for the box and its sides, as it keeps the cup in, so the ball
+    starts on top and the rail never climbs over it, with a strip of grass 0.35 of a cell wide between the foot of its sides
+    and the rail (Oct 20: "the tee box should have a small margin so its not next to the border"). A tee in the last row is
+    1.1 cells nearer the cup than before.
+  - **Your par:** the menu's Set par for this hole… asks for 1 to 9; an empty answer puts back the hole's own (`setParHere`).
+    One of My holes takes it into its source. Any other hole keeps it in localStorage `golf.pars` (by size, `SIZED`) under
+    `originOf` the hole as written, put on the hole when a game starts on it (`parApply`, in `holeGame`; `H.par0` is its own).
+  - The editor has a Par tile again (it steps 1 to 9), and the menu's Par higher and Par lower.
+- **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
+  `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
   - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
     its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each
@@ -270,9 +286,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   after Sokoban. A marble on a board you tip, through a maze to the gold ring, past holes.
   - **Every board its own maze** (`mazeFor`, `makeMaze`): from the board's number (`boardIdx`, golf's Szudzik pairing) at a level
     1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as golf and Sokoban. `LV` sets each level: the maze's
-    size (5, 6, 7, 8, 10 cells a side), loops (walls taken out after a backtracking walk), holes off the way (dead ends and
-    branches first) and, from level 3, holes in the outside corner of a turn on the way (a marble going too fast runs on into
-    them). The ring is the cell farthest from the start. The outer wall is the level's colour (golf's flag colours).
+    size, loops (walls taken out after a backtracking walk), holes off the way (dead ends and branches first), holes in the
+    outside corner of a turn on the way (a marble going too fast runs on into them), holes beside the way on a straight
+    (`side`, `SIDE_R`, `SIDE_OFF`: ride the wall and it drops) and how hard the board tips (`g`, on `G`). The ring is the cell
+    farthest from the start. The outer wall is the level's colour (golf's flag colours).
+  - **Harder** (Oct 20: "the title maze should be more difficult. all levels are to easy."): 7, 9, 11, 13 and 15 cells a side
+    (5, 6, 7, 8, 10 before), loops 0.06 down to 0.02, holes off the way 0.16–0.3, corner holes from level 1 at 0.25–0.85 (from
+    level 3 before), side holes from level 2 at 0.15–0.45, the tip 1 to 1.5 times as strong; stars tighter (`starsOf`: 1.15 ×
+    par for three, 1.6 × for two). Measured on 12 boards a level: every one finished by the steady player on its first try;
+    par 12.1, 17.8, 23.1, 32.7 and 43.6 s; 11 to 145 holes; 6 to 71 ms to make.
   - **Played before you see it**: a steady player (`botTilt`: toward the next cell of the shortest way from wherever the marble
     is, braking on its speed) rolls each maze (`playRun`, `TIME_CAP` 120 s); a maze it cannot finish without a fall is made
     again from the next seed (up to 8 times, then without corner holes). Its time is the board's par and its run, sampled 30
@@ -286,8 +308,20 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     is), and the menu's Tilt steering uses the phone (`ARCADE.tilt`); they add up. The clock starts at the first tip.
   - **Through**: time against par as stars (`starsOf`: ≤ 1.3 × par 3, ≤ 2 × par 2, else 1), the best on each board kept
     (localStorage `tiltmaze.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold starts again.
-  - The smoke test checks the sizes by level, the steady player finishing 30 mazes and never passing a wall, the real arrow
-    keys rolling the marble, a hole and the ring, and a board no one plays moving.
+  - **Your own mazes** (Oct 20: "let the user create their own mazes."): the bottom row is a maze editor, as Sokoban's (`ED`,
+    `ed…`, `MINE` inside `TILT_APP`, with the same hooks). Opening it (the dots, or the menu's Make a maze for this board…) takes
+    the framed board's maze into the editor. Tools: Wall (a tap toggles the edge between two cells nearest it, `edgeAt`; a drag
+    paints edges as the first one went), Hole (a tap lays one, again takes it off), Start, Ring, Erase; acts: Clear, Fill, Size
+    (7–15), Generate (a made maze of that size to start from), Check, Play; quick buttons Erase, Check, Cancel, Done. Check and
+    Done want the ring reachable; the steady player's time is its par, or it is kept without a par if the player cannot finish
+    it. A maze is `{ m, E, S, holes: [[x, y, r?]], start, goal }` (`dataOf`, `cleanMaze`), kept on the board (localStorage
+    `tiltmaze.mine`, the latest 300; `mineMaze`, which `mazeFor` asks first), framed in violet (`MINE_COL`), tipping as level 2
+    does (`MINE_G`). Escape or Cancel leaves the board as it was; the menu has Share this board's maze (`SHARE`, `takeMaze`) and
+    Forget this board's maze.
+  - The smoke test checks the sizes by level, the steady player finishing 30 mazes (each made again until it does) and never
+    passing a wall, the real arrow keys rolling the marble, a hole and the ring, a board no one plays moving, and the editor:
+    opened by the real dots, a walled-up maze refused, walls, a hole, the start and the ring laid by taps, Done keeping it with
+    a par in storage (read back as the page reads it on load), and a shared copy on another board.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
@@ -1145,8 +1179,9 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   switches to every app in `FIELD_APPS`, and fails on any uncaught error. Add checks there for new behaviour.
   **Not for every change** (Oct 17: "its not needed for every change."): CI runs it once, on the PR
   (`.github/workflows/smoke.yml`: not again on `main` after the merge, not for a PR of Markdown alone, and by hand
-  from the Actions tab). Locally, a small contained change is checked with a probe of what it touches and left to
-  CI; the full run (about 20 minutes in a sandbox) is for changes to the field, the shared kits or many games. It then runs
+  from the Actions tab). Locally, a change is checked with a probe of what it touches and left to CI. **Don't run the full
+  smoke test (about 20 minutes in a sandbox) or the whole course test locally unless the owner asks** (Oct 20: "the smoke test
+  takes to long. stop doing them unless I ask."). It then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
