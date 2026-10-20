@@ -450,7 +450,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.
   - **The board lies as Missile Command's does**: v down the board is down, the ground filling it from `H[i]` (a height a
-    column, `W` = 64) to the near edge. A shot is an angle and a power (`launch`, at most `VMAX` 1.3 boards a second), pulled
+    column, `W` = 256) to the near edge. A shot is an angle and a power (`launch`, at most `VMAX` 1.3 boards a second), pulled
     down by `G` and pushed along by the wind, in 1/120 s steps (`flyStep`); it ends on a tank, the ground, or off the sides.
   - **A burst** (`blastAt`, `BR` 0.06): the ground in its circle is dug out and the earth above falls in (a column stays one
     height); a tank inside is hurt up to `DMG` (55) at its middle, and by `FALL` × how far it drops as the ground goes. 100
@@ -471,11 +471,40 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     deals it afresh.
   - **A board no one plays** shows its own duel (`duelOf`: two computer players at its level from the left until one is out,
     30 shots at most, each flight sampled `REC_HZ` 30 a second; `shownOf(Dl, at)` on the page's clock, each board at its own
-    phase), made a few at a time (`duelSoon`, 8 ms in 30); 3–21 shots, 3–22 ms a duel. Far off (`FAR_PX` 16) a board is
-    its tiles alone (`gridOf`: the ground coarsely).
+    phase), made a few at a time (`duelSoon`, 8 ms in 30); 3–21 shots, 3–22 ms a duel. A duel keeps what each shot set off
+    (`fx`: muzzle, trail, burst, with their times and seeds) and when each tank was hit (`hitT`).
+  - **The look** (Oct 20: "how can we make this with perfect graphics", then "yes" to painting the scene, real tank models
+    and effects; until then the ground was 64 boxes, a staircase on every hillside, and a tank three boxes):
+    - **A picture a board** (the photo tier: `cellPhoto` → a key, `photoCanvas(key)` → `paint`): the board's own sky
+      (`PALETTES` by its seed: day, dusk, night with stars and a full moon, desert), sun and glow, two ranges of far hills
+      in haze, the ground's line through all 256 columns, the earth deepening, strata where the ground was laid (`H0`, so a
+      burst digs through them), stones, grass along the top, bare scorched earth where a burst dug, a scorch round each
+      crater. The photo tier lays a canvas's top left at the board's far right (u = 1, v = 1), so `paint` draws it turned a
+      half turn. 1 ms a picture.
+    - A key is one state of one board's ground (`photoState`: the live game's `ver`, or a duel's shots so far), painted
+      again only when that changes; `SPECS` keeps what to paint for a key, since the field asks by key alone. 512 px a side
+      for a board large on the screen, 256 under (`photoKey`: from `HI_PX` 320 for the board being played, `HI_DUEL` 480 for
+      a duel's, a tenth either way so a board on the line does not flip; each new picture is a texture sent to the graphics
+      card). A board under `PHOTO_PX` (20) is its tiles (`gridOf`, the palette's colours), as is any frame whose picture is
+      not built yet, so a board is never a hole.
+    - **The tanks in relief** (`tankGeos`): the tank's side lies on the board, as the game does, standing up off it by its
+      thickness. `tkTracks` (track, road wheels, hubs), `tkHull` (hull with a sloped front, domed turret, cupola, aerial,
+      skirt; the side's colour on lighter and darker parts) and `tkGun` (barrel, muzzle brake, a boss over the pivot, lying
+      on the turret's face), all vertex-coloured, the turret's middle where the game aims from. A tank sits along the slope
+      under it (`slopeAt`, at most `TILT_MAX` 0.5 rad), flashes white when hit, and once out is charred, burning and smoking
+      (`wreckFx`).
+    - **Effects** (`fxItems`), worked out from how long ago each happened and its seed, so a duel shows them with nothing
+      kept: the muzzle's flash and smoke along the gun; the shell glowing, a smoke trail behind it, each puff growing and
+      thinning; the burst's fireball in six lobes going white, yellow, orange, red and dark, a ring of shock, sixteen clods
+      and ten sparks falling under the shell's gravity (a clod that reaches the ground is gone), and smoke rising and
+      drifting on the wind. Clouds cross the top of the sky with the wind (`cloudsOf`, `cloud`: how far it has carried them).
+    - Measured in the sandbox's software renderer at 1280×800: zoomed out 11 frames a second against 6.5 for the boxes;
+      framed, the first loop of the boards' duels is slower while their pictures are made, then 11.
   - The smoke test checks the levels by ring, the same ground on a board each time, hills only past level 1, the steady
     computer's hits, a burst's dig and harm, ten duels ending, a real tap firing toward it and the computer answering, a
-    real drag from the tank firing, a steady shot winning with stars and a best, and a board no one plays moving.
+    real drag from the tank firing, a steady shot winning with stars and a best, a board no one plays moving, the picture the
+    right way round (earth at the near edge, sky at the far), a new picture after a burst, 512 and 256 px by size, a burst's
+    fireball, ring, clods and smoke, the clouds going with the wind, and each tank turned to the slope under it.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

@@ -3444,8 +3444,15 @@ try {
       // a win: their tank all but out, your steady shot, through with stars and a best kept
       live.win = await page.evaluate(async ([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r);
         for (let w = 0; w < 60 && !(g.state === 'aim' && g.turn === 0); w++) await new Promise(ok => setTimeout(ok, 250));
-        g.S.hp[1] = 1; const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind); g.a[0] = b.a; g.p[0] = b.p; D.fire(g);
-        for (let w = 0; w < 40 && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+        // (the computer aims at 1/60 s and the game flies at 1/120, so a steady shot can miss by a hair: up to six of them, your
+        //  tank whole each time so the computer's answers cannot end it first)
+        g.S.hp[1] = 1;
+        for (let n = 0; n < 6 && g.state !== 'over'; n++){
+          for (let w = 0; w < 60 && !(g.state === 'aim' && g.turn === 0); w++) await new Promise(ok => setTimeout(ok, 250));
+          g.S.hp[0] = 100; const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind); g.a[0] = b.a; g.p[0] = b.p; D.fire(g);
+          for (let w = 0; w < 40 && g.state === 'fly'; w++) await new Promise(ok => setTimeout(ok, 100));
+          for (let w = 0; w < 20 && g.state === 'blast'; w++) await new Promise(ok => setTimeout(ok, 100));
+        }
         return { state: g.state, won: g.won, stars: g.stars, best: D.BEST.get(g.T.idx + '@' + g.T.lv) === g.S.hp[0] }; }, fc);
     }
     // a board no one plays: its own duel, moving on the page's clock
@@ -3453,17 +3460,43 @@ try {
       const T = D.terrainAt(c2, r2); D.DUELS.set(T.idx * 8 + T.lv, D.duelOf(T));
       const look = () => JSON.stringify(A.cellItems(c2, r2).filter(i => i.kind !== 'tkBox' || i.yaw).map(i => [i.kind, i.u.toFixed(4), i.v.toFixed(4), i.yaw || 0]));
       const seen = new Set(); for (let w = 0; w < 8; w++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 500)); }
-      const Dl = D.DUELS.get(T.idx * 8 + T.lv); let shells = 0, blasts = 0; for (let t = 0; t < Dl.len; t += 0.1){ const V = D.shownOf(Dl, t - T.phase * Dl.len); if (V.shell) shells++; if (V.blast) blasts++; }
+      const Dl = D.DUELS.get(T.idx * 8 + T.lv); let shells = 0, blasts = 0; for (let t = 0; t < Dl.len; t += 0.1){ const V = D.shownOf(Dl, t - T.phase * Dl.len); if (V.shell) shells++; if (V.fx.some(e => e.k === 'blast' && V.t - e.t0 >= 0 && V.t - e.t0 < 0.5)) blasts++; }
       return { looks: seen.size, shells, blasts }; }, fc || [0, 0]);
+    /* THE LOOK (Oct 20: "how can we make this with perfect graphics", then "yes"): the sky and the ground are a picture a board,
+       the right way round (the earth at the near edge, the sky at the far), painted again when a burst digs and sharper for a
+       board large on the screen; a burst sets off its fireball, clods and smoke; the clouds go with the wind; the tanks lie
+       along the slope under them. */
+    const looks = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, out = {};
+      let T = null; for (let i = 0; i < 40 && !T; i++){ const t = D.terrainOf(600 + i, 3); if (D.PALETTES[t.pal].name === 'day') T = t; }
+      const cv = D.paint(T, T.H0, [], 256), cx = cv.getContext('2d'), P = D.PALETTES[T.pal];
+      const at = (u, v) => Array.from(cx.getImageData(Math.round(255 - u * 255), Math.round(255 - v * 255), 1, 1).data).slice(0, 3);
+      const near = (px, hex) => Math.hypot(px[0] - parseInt(hex.slice(1, 3), 16), px[1] - parseInt(hex.slice(3, 5), 16), px[2] - parseInt(hex.slice(5, 7), 16));
+      out.earth = Math.round(near(at(0.5, 0.985), P.deep)); out.sky = Math.min(...[0.03, 0.5, 0.97].map(u => Math.round(near(at(u, 0.005), P.sky[0]))));
+      const c = 9999, r = 7; D.GAMES.delete(c + '_' + r); const g = D.gameAt(c, r);
+      const k0 = A.cellPhoto(c, r, 400), kSmall = A.cellPhoto(c, r, 100);
+      out.sizes = [A.photoCanvas(k0).width, A.photoCanvas(kSmall).width];
+      const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind); g.a[0] = b.a; g.p[0] = b.p; D.fire(g);
+      const kinds = new Set();
+      for (let n = 0; n < 60 && g.state !== 'aim' && g.state !== 'over'; n++){ g.lastT = performance.now() - 100; D.stepGame(g); if (g.state === 'blast' || g.turn === 1) for (const it of D.itemsOf(D.viewOf(c, r))) kinds.add(it.kind); }
+      out.kinds = ['tkFire', 'tkClod', 'tkPuff', 'tkRing'].filter(k => kinds.has(k));
+      out.redrawn = A.cellPhoto(c, r, 400) !== k0;
+      const V = D.viewOf(c, r), cl = v => D.itemsOf(Object.assign({}, v)).filter(i => i.kind === 'tkCloud').map(i => i.u);
+      const a0 = cl(Object.assign({}, V, { cloud: 0, fx: [] })), a1 = cl(Object.assign({}, V, { cloud: 0.05, fx: [] }));
+      out.clouds = a0.length > 0 && a0.some((u, i) => Math.abs(u - a1[i]) > 0.01);
+      const tk = D.itemsOf(V).filter(i => i.kind === 'tkHull'); out.tilt = tk.map(i => +(i.yaw || 0).toFixed(3)); out.slope = g.S.xs.map(x => +D.slopeAt(g.S.H, x).toFixed(3));
+      D.GAMES.delete(c + '_' + r);
+      return out; });
     const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.hills[0] === 0 && r.hills[1] > 10 && r.hits >= 18
       && r.dug > 0.03 && r.dmg[1] >= 50 && r.dmg[0] === 0 && r.farDmg.join() === '0,0' && r.ended
       && live.tap && live.tap.state === 'fly' && live.tap.shots[0] === 1 && Math.abs(live.tap.a - live.want) < 2
       && live.answered && live.answered.shots[1] === 1 && live.answered.state === 'aim'
       && live.dragged && live.dragged.shots[0] === 2 && live.dragged.state !== 'aim'
       && live.win && live.win.state === 'over' && live.win.won && live.win.stars >= 1 && live.win.best
-      && shown.looks >= 3 && shown.shells > 10 && shown.blasts > 2;
-    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; 10 duels ended (${r.duels.join(', ')}); a real tap fired, the computer answered, a real drag fired, a steady shot won ${live.win && live.win.stars} stars; a board no one plays showed ${shown.looks} looks in 4 s)`);
+      && shown.looks >= 3 && shown.shells > 10 && shown.blasts > 2
+      && looks.earth < 40 && looks.sky < 40 && looks.sizes.join() === '512,256' && looks.kinds.length === 4 && looks.redrawn && looks.clouds
+      && looks.tilt.join() === looks.slope.join();
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown, looks })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; 10 duels ended (${r.duels.join(', ')}); a real tap fired, the computer answered, a real drag fired, a steady shot won ${live.win && live.win.stars} stars; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and

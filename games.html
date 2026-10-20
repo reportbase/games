@@ -47462,10 +47462,33 @@ const NONOGRAM_APP = (() => {
      or Start this board again deals it afresh.
    - A board no one plays shows its own duel (`duelOf`: two of the computer's players, each at the board's level, until one
      is out), a few boards at a time in the browser's spare moments (`duelSoon`), each board at its own phase; until it is
-     ready, its ground and the two tanks waiting. */
+     ready, its ground and the two tanks waiting.
+   - THE LOOK (Oct 20: "how can we make this with perfect graphics", then "yes" to painting the scene, real tank models and
+     effects): until then the ground was 64 boxes standing side by side, a staircase on every hillside, and the tanks three
+     boxes each.
+     - The sky and the ground are a picture a board (`paint`, the field's photo tier: `cellPhoto` and `photoCanvas`, as the
+       gallery hangs prints): a sky of the board's own (`PALETTES`: day, dusk, night with stars and a moon, desert), its sun
+       and glow, two ranges of far hills, the ground's line through all `W` (256) columns, the earth shading deeper, strata
+       where the ground was laid (they stay put when a burst digs through them), stones, grass along the top, bare scorched
+       earth where a burst dug, and a scorch round each crater.
+     - It is painted again only when the ground changes (a key per state: the live game's `ver`, a duel's shots so far), at
+       512 px a side for a board 320 px or more across on the screen and 256 below (`HI_PX`, with a margin either way so a
+       board on the line does not flip), so a field of them costs the memory of a field of stamps.
+     - A board under `PHOTO_PX` is the coarse tiles alone (`gridOf`, the palette's colours), and a frame whose picture is not
+       built yet shows the tiles too, never a hole.
+     - The tanks are models in relief (`tankGeos`): the side of a tank lies on the board, as the game does, standing up off
+       it by its thickness. Tracks with road wheels and hubs (`tkTracks`), a hull with a sloped front and a domed turret with
+       a hatch (`tkHull`, the side's colour), a gun with a mantlet and a muzzle brake (`tkGun`). A tank sits along the slope
+       under it (`slopeAt`, at most `TILT_MAX`), its turret where the game aims from. A tank hit flashes white; one out is
+       charred, burning and smoking (`wreckFx`).
+     - Effects (`fxItems`), worked out from when each happened, so a board's duel shows them with nothing kept: a muzzle
+       flash and smoke where the gun points; a smoke trail behind the shell, each puff growing and thinning as it ages; at
+       the burst a fireball of several lobes going white, yellow, orange, red and dark, a ring of shock, clods of earth and
+       sparks thrown up and falling under the same gravity as the shell, and smoke rising and drifting on the wind.
+     - Clouds cross the top of the sky with the wind (`cloudsOf`), so its strength and way show without reading a number. */
 const TANKS_APP = (() => {
-  const W = 64, G = 1, VMAX = 1.3, SUB = 1 / 120, REC_HZ = 30, TR = 0.024, BR = 0.06, DMG = 55, FALL = 100, TURRET = 0.022, BARREL = 0.036;
-  const AIM_T = 0.9, BLAST_T = 0.55, REST_T = 2.5, FLOOR = 0.3, FAR_PX = 16;
+  const W = 256, G = 1, VMAX = 1.3, SUB = 1 / 120, REC_HZ = 30, TR = 0.024, BR = 0.06, DMG = 55, FALL = 100, TURRET = 0.022, BARREL = 0.036;
+  const AIM_T = 0.9, BLAST_T = 0.55, REST_T = 2.5, FLOOR = 0.3, FAR_PX = 20, CLOUD_K = 0.5;
   const SKY_T = 0x0b1630, SKY_B = 0x24486e, EARTH = 0x6a4a2a, GRASS = 0x4f8a34, ME = 0x6fd36a, FOE = 0xe0564a, WRECK = 0x2e2e2e,
         SHELL = 0xfff1c9, AIMC = 0xffffff, TRAILC = 0xffe08a, LASTC = 0x9fd8ff, WINDC = 0x9fd8ff, BARBG = 0x1a1a1a;
   const LV = [
@@ -47476,6 +47499,19 @@ const TANKS_APP = (() => {
     { amp: 0.17, hill: 0.3,  hillP: 0.7, wind: 0.25, ea: 2.5, ep: 0.035, learn: 0.62 },
   ];
   const EDGE = [0.2, 0.16, 0.12, 0.09, 0.07];
+  // each board's sky and ground (`paint`): picked by the board's own seed
+  const PALETTES = [
+    { name: 'day',    sky: ['#2f6fc4', '#8fc6ea', '#d6edf7'], sun: '#fffbe0', glow: 'rgba(255,250,210,', far: '#9db8cb', near: '#7b9e94',
+      top: '#7a5534', deep: '#2e1c10', grass: '#4f9a34', grassHi: '#9ad35a', strata: '#563a22', rock: '#3f3128', stars: 0, cloud: 0xffffff },
+    { name: 'dusk',   sky: ['#1d1640', '#7b3f6e', '#f2925a'], sun: '#ffd27a', glow: 'rgba(255,170,90,', far: '#6d4a70', near: '#4c3556',
+      top: '#6e4a33', deep: '#24140c', grass: '#4a8236', grassHi: '#8cc25e', strata: '#4a3122', rock: '#33251e', stars: 0.25, cloud: 0xf6c6b0 },
+    { name: 'night',  sky: ['#03060f', '#0c1834', '#24426e'], sun: '#e8eefc', glow: 'rgba(200,215,255,', far: '#1f2d4a', near: '#17233b',
+      top: '#4a3a2c', deep: '#140e09', grass: '#2f6a3a', grassHi: '#5a9a5e', strata: '#33281e', rock: '#251c16', stars: 1, moon: true, cloud: 0x8a96b4 },
+    { name: 'desert', sky: ['#4f94d4', '#a8d4ee', '#f7e2b0'], sun: '#ffffff', glow: 'rgba(255,245,220,', far: '#d6b07c', near: '#c08c57',
+      top: '#c99a5e', deep: '#6e4a2a', grass: '#b09848', grassHi: '#e0c878', strata: '#a07444', rock: '#7e6040', stars: 0, cloud: 0xffffff },
+  ];
+  const num = s => parseInt(s.slice(1), 16);
+  const PHOTO_PX = 20, HI_PX = 320, HI_DUEL = 480, TILT_MAX = 0.5;
   const DL = ARCADE.difficulty('tanks.level', 'Every board has its own ground, harder the farther it is from the corner: gentle ground, no wind and a wild shot from the computer near it; hills between the tanks, a stronger wind and a sharper eye farther out. Easy, Normal and Hard move every board a level up.', true);
   const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tanks.sound', 'A thump for each shot, a blast where it lands, a fanfare for the win.');
@@ -47517,7 +47553,7 @@ const TANKS_APP = (() => {
     }
     const e = EDGE[lv - 1], xs = [e + (R() - 0.5) * 0.06, 1 - e + (R() - 0.5) * 0.06];
     for (const x of xs) flatten(H, x, 0.035);
-    return { idx, lv, H0: H, xs, hill: !!hill, seed: (idx * 40503 + lv * 7919 + 17) >>> 0, phase: (idx * 0.618) % 1 };
+    return { idx, lv, H0: H, xs, hill: !!hill, seed: (idx * 40503 + lv * 7919 + 17) >>> 0, phase: (idx * 0.618) % 1, pal: Math.floor(R() * PALETTES.length) };
   }
   function terrainAt(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
@@ -47598,13 +47634,23 @@ const TANKS_APP = (() => {
       let e = null, acc = 0;
       while (!e){ e = flyStep(S.H, S.xs, s, S.wind, SUB, who); acc += SUB; if (!e && acc >= 1 / REC_HZ - 1e-9){ acc = 0; path.push(s.x, s.y); } }
       path.push(e.x, e.y);
-      if (!e.off) blastAt(S, e.x, e.y);
-      shots.push({ who, as: a.slice(), a: f.a, p: f.p, wind: S.wind, path: Float32Array.from(path), at: [e.x, e.y], off: !!e.off, H: S.H.slice(), hp: S.hp.slice() });
+      const dmg = e.off ? [0, 0] : blastAt(S, e.x, e.y);
+      shots.push({ who, as: a.slice(), a: f.a, p: f.p, wind: S.wind, path: Float32Array.from(path), at: [e.x, e.y], off: !!e.off, H: S.H.slice(), hp: S.hp.slice(), dmg });
       a[who] = f.a; who = 1 - who;
     }
-    let t = 0;
-    for (const s of shots){ s.t0 = t; s.fly = (s.path.length / 2 - 1) / REC_HZ; t += AIM_T + s.fly + BLAST_T; }
-    return { T, shots, len: t + REST_T, as: a.slice() };
+    // the timeline, and what it sets off: the muzzle's flash, the trail, the burst, as fxItems reads them; the clouds' drift
+    let t = 0, drift = 0, prevH = T.H0; const fx = [], craters = [], hitT = [[], []];
+    for (const s of shots){
+      s.t0 = t; s.fly = (s.path.length / 2 - 1) / REC_HZ; s.drift = drift;
+      const go = t + AIM_T, at = go + s.fly, m = muzzle(prevH, T.xs[s.who], s.a); s.Hb = prevH; prevH = s.H;
+      fx.push({ k: 'muzzle', t0: go, x: m[0], y: m[1], a: s.a, seed: (T.seed + fx.length * 7919) >>> 0 });
+      fx.push({ k: 'trail', t0: go, path: s.path });
+      if (!s.off){ fx.push({ k: 'blast', t0: at, x: s.at[0], y: s.at[1], seed: (T.seed + fx.length * 7919) >>> 0 }); craters.push([s.at[0], s.at[1]]); }
+      s.craters = craters.slice();
+      for (let k = 0; k < 2; k++) if (s.dmg[k] > 0) hitT[k].push(at);
+      const len = AIM_T + s.fly + BLAST_T; drift += s.wind * len * CLOUD_K; t += len;
+    }
+    return { T, shots, len: t + REST_T, as: a.slice(), fx, hitT };
   }
   const DUELS = new Map();
   let budgetAt = 0, budget = 0;
@@ -47620,16 +47666,18 @@ const TANKS_APP = (() => {
   // the duel at the page's clock: the ground, health and barrels before the shot in hand, then its aim, flight and burst
   function shownOf(Dl, at){
     const T = Dl.T, t = (((at == null ? now() / 1000 : at) + T.phase * Dl.len) % Dl.len + Dl.len) % Dl.len;
-    const V = { H: T.H0, xs: T.xs, hp: [100, 100], a: [45, 135], wind: 0, shell: null, trail: null, n: 0, blast: null, k: -1 };
+    const V = { T, H: T.H0, xs: T.xs, hp: [100, 100], a: Dl.shots.length ? [45, 135] : [45, 135], wind: 0, shell: null, t, fx: Dl.fx, hitT: Dl.hitT,
+                craters: [], applied: 0, cloud: 0 };
     for (let k = 0; k < Dl.shots.length; k++){
-      const s = Dl.shots[k], e = t - s.t0;
-      if (e >= AIM_T + s.fly + BLAST_T){ V.H = s.H; V.hp = s.hp; V.a = s.as.slice(); V.a[s.who] = s.a; continue; }
+      const s = Dl.shots[k], e = t - s.t0, len = AIM_T + s.fly + BLAST_T;
+      V.wind = s.wind; V.cloud = s.drift + s.wind * Math.min(e, len) * CLOUD_K;
+      if (e >= len){ V.H = s.H; V.hp = s.hp; V.craters = s.craters; V.applied = k + 1; V.a = s.as.slice(); V.a[s.who] = s.a; continue; }
       if (e < 0) break;
-      V.k = k; V.wind = s.wind; V.a = s.as.slice();
+      V.a = s.as.slice();
       if (e < AIM_T){ const f = e / AIM_T, w = f * f * (3 - 2 * f); V.a[s.who] = s.as[s.who] + (s.a - s.as[s.who]) * w; break; }
       V.a[s.who] = s.a;
-      if (e < AIM_T + s.fly){ const i = Math.min(s.path.length / 2 - 1, Math.floor((e - AIM_T) * REC_HZ)); V.shell = [s.path[2 * i], s.path[2 * i + 1]]; V.trail = s.path; V.n = i + 1; break; }
-      V.H = s.H; V.hp = s.hp; if (!s.off) V.blast = { x: s.at[0], y: s.at[1], e: e - AIM_T - s.fly };
+      if (e < AIM_T + s.fly){ const i = Math.min(s.path.length / 2 - 1, Math.floor((e - AIM_T) * REC_HZ)); V.shell = [s.path[2 * i], s.path[2 * i + 1]]; break; }
+      V.H = s.H; V.hp = s.hp; V.craters = s.craters; V.applied = k + 1;      // (the burst has dug: the ground is the shot's after)
       break;
     }
     return V;
@@ -47647,7 +47695,7 @@ const TANKS_APP = (() => {
     const S = { lv: T.lv, H: T.H0.slice(), xs: T.xs, hp: [100, 100], wind: 0 };
     S.wind = (R() * 2 - 1) * LV[T.lv - 1].wind;
     return { T, S, c, r, R, a: [45, 135], p: [0.6, 0.6], turn: 0, state: 'aim', shell: null, path: null, blast: null, timer: 0, plan: null,
-             k: [0, 0], shots: [0, 0], last: null, ver: 0, lastT: performance.now() };
+             k: [0, 0], shots: [0, 0], last: null, ver: 0, lastT: performance.now(), t: 0, fx: [], craters: [], hitT: [[], []], cloud: 0 };
   }
   function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
   const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
@@ -47662,6 +47710,7 @@ const TANKS_APP = (() => {
   function fire(g){
     const who = g.turn;
     g.shell = launch(g.S.H, g.S.xs[who], g.a[who], g.p[who]); g.path = [g.shell.x, g.shell.y]; g.acc = 0;
+    g.fx.push({ k: 'muzzle', t0: g.t, x: g.shell.x, y: g.shell.y, a: g.a[who], seed: (g.R() * 4294967296) >>> 0 }, { k: 'trail', t0: g.t, path: g.path });
     g.state = 'fly'; g.shots[who]++; SND.play('slide');
   }
   function land(g, e){
@@ -47671,6 +47720,8 @@ const TANKS_APP = (() => {
     g.shell = null;
     if (e.off){ g.blast = null; if (who === 0) say('Off the board.', 1200); return endTurn(g); }
     const dmg = blastAt(g.S, e.x, e.y); g.ver++;
+    g.fx.push({ k: 'blast', t0: g.t, x: e.x, y: e.y, seed: (g.R() * 4294967296) >>> 0 }); g.craters.push([e.x, e.y]);
+    for (let k = 0; k < 2; k++) if (dmg[k] > 0) g.hitT[k].push(g.t);
     g.blast = { x: e.x, y: e.y, e: 0 }; g.state = 'blast';
     SND.play('boom');
     if (dmg[1 - who] > 0) SND.play(who === 0 ? 'good' : 'bad');
@@ -47715,6 +47766,8 @@ const TANKS_APP = (() => {
     // (a slow frame catches up in the same small steps, up to a quarter of a second, as the tilt maze's marble does)
     const t = performance.now(), dt = Math.min(0.25, (t - g.lastT) / 1000); g.lastT = t;
     if (ARCADE.paused) return;
+    g.t += dt; g.cloud += g.S.wind * dt * CLOUD_K;
+    if (g.fx.length > 12) g.fx = g.fx.filter(e => g.t - e.t0 < FX_LIFE + (e.k === 'trail' ? 10 : 0));
     if (myTurn(g)){
       const turn = (HELD.has('L') ? 1 : 0) - (HELD.has('R') ? 1 : 0), push = (HELD.has('U') ? 1 : 0) - (HELD.has('D') ? 1 : 0);
       if (turn) g.a[0] = clamp(g.a[0] + turn * 40 * dt, 0, 180);
@@ -47734,63 +47787,282 @@ const TANKS_APP = (() => {
     }
   }
   function liveView(g){
-    return { H: g.S.H, xs: g.S.xs, hp: g.S.hp, a: g.a, wind: g.S.wind, shell: g.shell ? [g.shell.x, g.shell.y] : null, trail: g.path, n: g.shell && g.path ? g.path.length / 2 : 0,
-             blast: g.blast, aim: myTurn(g) ? g.p[0] : 0, last: g.last, ver: g.ver, g };
+    return { T: g.T, H: g.S.H, xs: g.S.xs, hp: g.S.hp, a: g.a, wind: g.S.wind, shell: g.shell ? [g.shell.x, g.shell.y] : null, t: g.t, fx: g.fx, hitT: g.hitT,
+             craters: g.craters, cloud: g.cloud, aim: myTurn(g) ? g.p[0] : 0, last: g.last, ver: g.ver, g };
   }
   function viewOf(c, r){
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
     if (g){ if (here) stepGame(g); return liveView(g); }
     const T = terrainAt(c, r), Dl = duelSoon(T);
-    if (!Dl) return { H: T.H0, xs: T.xs, hp: [100, 100], a: [45, 135], wind: 0, k: -1 };
+    if (!Dl) return { T, H: T.H0, xs: T.xs, hp: [100, 100], a: [45, 135], wind: 0, t: now() / 1000, fx: null, hitT: [[], []], craters: [], applied: 0, cloud: 0 };
     return shownOf(Dl);
   }
 
-  /* ─── WHAT A BOARD DRAWS ─── the earth a box a column standing on the sky, with a strip of grass along its top; each tank
-     a hull, a turret and a barrel turned to its aim, its health over it; the shell and its trail, the burst, your last
-     shot faint, the aim line, and the wind as a bar along the top from the middle. */
+  /* ─── THE PICTURE A BOARD HANGS ─── (THE LOOK, above). `paint` draws the sky and the ground in the board's own terms, u
+     across and v down, at S pixels a side; a key names one state of one board's ground, and `SPECS` remembers what to paint
+     for it until the field asks (`photoCanvas`), since the field asks by key alone. */
+  function paint(T, H, craters, S){
+    const P = PALETTES[T.pal], R = rngOf(T.seed ^ 0x51ed), cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const c = cv.getContext('2d'); if (!c) return null;
+    // (the photo tier lays a picture's top-left at the board's far right corner: u = 1, v = 1; so it is drawn turned a half turn)
+    c.setTransform(-S, 0, 0, -S, S, S);
+    const H0 = T.H0, px = i => (i + 0.5) / W;
+    let top = 1, mean = 0; for (let i = 0; i < W; i++){ top = Math.min(top, H0[i]); mean += H0[i] / W; }
+    // the sky, its stars, its sun (or moon) and glow
+    const gS = c.createLinearGradient(0, 0, 0, mean); gS.addColorStop(0, P.sky[0]); gS.addColorStop(0.55, P.sky[1]); gS.addColorStop(1, P.sky[2]);
+    c.fillStyle = gS; c.fillRect(0, 0, 1, 1);
+    const nStars = Math.round(110 * P.stars);
+    for (let i = 0; i < nStars; i++){ const x = R(), y = R() * mean * 0.85, r = 0.0011 + R() * 0.0021; c.globalAlpha = 0.35 + R() * 0.65; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+    c.globalAlpha = 1;
+    const sx = 0.15 + R() * 0.7, sy = 0.08 + R() * Math.max(0.05, top - 0.25), sr = P.moon ? 0.032 : 0.042;
+    const gl = c.createRadialGradient(sx, sy, 0, sx, sy, sr * 6); gl.addColorStop(0, P.glow + '0.55)'); gl.addColorStop(0.35, P.glow + '0.18)'); gl.addColorStop(1, P.glow + '0)');
+    c.fillStyle = gl; c.fillRect(0, 0, 1, 1);
+    c.fillStyle = P.sun; c.beginPath(); c.arc(sx, sy, sr, 0, 7); c.fill();
+    if (P.moon){ c.fillStyle = 'rgba(150,160,185,0.45)';          // a full moon's seas
+      for (const [mx, my, mr] of [[-0.3, -0.25, 0.32], [0.25, -0.1, 0.24], [0.05, 0.35, 0.28], [-0.35, 0.3, 0.16]]){ c.beginPath(); c.arc(sx + mx * sr, sy + my * sr, mr * sr, 0, 7); c.fill(); } }
+    // two ranges of far hills, the farther paler, a haze over their feet
+    const ridge = (base, amp, col) => {
+      const f = [1 + R() * 1.5, 3 + R() * 3, 8 + R() * 5], p = [R() * 7, R() * 7, R() * 7];
+      c.fillStyle = col; c.beginPath(); c.moveTo(0, 1);
+      for (let i = 0; i <= 160; i++){ const x = i / 160; c.lineTo(x, base - amp * (0.6 * Math.sin(f[0] * x * 6.2832 + p[0]) + 0.28 * Math.sin(f[1] * x * 6.2832 + p[1]) + 0.12 * Math.sin(f[2] * x * 6.2832 + p[2]))); }
+      c.lineTo(1, 1); c.closePath(); c.fill();
+    };
+    ridge(mean - 0.1, 0.07, P.far); ridge(mean - 0.03, 0.06, P.near);
+    const hz = c.createLinearGradient(0, mean - 0.2, 0, mean + 0.05); hz.addColorStop(0, 'rgba(0,0,0,0)'); hz.addColorStop(1, P.sky[2]);
+    c.globalAlpha = 0.45; c.fillStyle = hz; c.fillRect(0, mean - 0.2, 1, 0.3); c.globalAlpha = 1;
+    // the ground: its line through every column, the earth deepening
+    const ground = () => { c.beginPath(); c.moveTo(-0.01, 1.01); c.lineTo(-0.01, H[0]); for (let i = 0; i < W; i++) c.lineTo(px(i), H[i]); c.lineTo(1.01, H[W - 1]); c.lineTo(1.01, 1.01); c.closePath(); };
+    const gG = c.createLinearGradient(0, top, 0, 1); gG.addColorStop(0, P.top); gG.addColorStop(1, P.deep);
+    ground(); c.fillStyle = gG; c.fill();
+    c.save(); ground(); c.clip();
+    // strata where the ground was laid (a burst digs through them, they stay put), and stones
+    for (const [d, w, al] of [[0.035, 0.011, 0.28], [0.075, 0.02, 0.18], [0.13, 0.014, 0.24], [0.2, 0.028, 0.16], [0.29, 0.018, 0.22], [0.38, 0.03, 0.14]]){
+      c.strokeStyle = P.strata; c.globalAlpha = al; c.lineWidth = w; c.beginPath();
+      for (let i = 0; i < W; i += 2){ const y = H0[i] + d + 0.007 * Math.sin(i * 0.13 + d * 41); i ? c.lineTo(px(i), y) : c.moveTo(px(i), y); }
+      c.stroke();
+    }
+    for (let k = 0; k < 90; k++){
+      const x = R(), i = Math.min(W - 1, Math.floor(x * W)), y = H0[i] + 0.015 + R() * (1 - H0[i]), rx = 0.0025 + R() * 0.008, ry = rx * (0.45 + R() * 0.4), rot = R() * 3;
+      c.globalAlpha = 0.3 + R() * 0.45; c.fillStyle = P.rock; c.beginPath(); c.ellipse(x, y, rx, ry, rot, 0, 7); c.fill();
+      c.globalAlpha *= 0.6; c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(x - rx * 0.2, y - ry * 0.35, rx * 0.45, ry * 0.3, rot, 0, 7); c.fill();
+    }
+    // a scorch round each crater, and a shade just under the top
+    c.globalAlpha = 1;
+    for (const [x, y] of craters){
+      const gr = c.createRadialGradient(x, y, 0, x, y, BR * 1.8); gr.addColorStop(0, 'rgba(14,8,4,0.8)'); gr.addColorStop(0.55, 'rgba(24,14,8,0.45)'); gr.addColorStop(1, 'rgba(24,14,8,0)');
+      c.fillStyle = gr; c.fillRect(x - BR * 2, y - BR * 2, BR * 4, BR * 4);
+    }
+    c.globalAlpha = 0.3; c.strokeStyle = '#000000'; c.lineWidth = 0.014; c.beginPath();
+    for (let i = 0; i < W; i++) i ? c.lineTo(px(i), H[i] + 0.01) : c.moveTo(px(i), H[i] + 0.01);
+    c.stroke(); c.restore(); c.globalAlpha = 1;
+    // the top: grass where the ground lies as it was laid, bare scorched earth where a burst dug it
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    const dug = i => H[i] - H0[i] > 0.003;
+    for (let i = 0; i < W; ){
+      let j = i; const d = dug(i); while (j < W - 1 && dug(j + 1) === d) j++;
+      const run = (w, col, dy) => { c.lineWidth = w; c.strokeStyle = col; c.beginPath(); for (let k = Math.max(0, i - 1); k <= Math.min(W - 1, j + 1); k++){ const x = k === 0 ? 0 : k === W - 1 ? 1 : px(k); k === Math.max(0, i - 1) ? c.moveTo(x, H[k] + dy) : c.lineTo(x, H[k] + dy); } c.stroke(); };
+      if (d) run(0.007, '#2a1a10', 0.001); else { run(0.012, P.grass, 0.002); run(0.0035, P.grassHi, -0.002); }
+      i = j + 1;
+    }
+    c.strokeStyle = P.grassHi; c.lineWidth = 0.0022;
+    for (let i = 1; i < W - 1; i++) if (!dug(i) && R() < 0.4){ const x = px(i) + (R() - 0.5) / W, y = H[i]; c.globalAlpha = 0.5 + R() * 0.5; c.beginPath(); c.moveTo(x, y); c.lineTo(x + (R() - 0.5) * 0.008, y - 0.006 - R() * 0.009); c.stroke(); }
+    c.globalAlpha = 1;
+    return cv;
+  }
+  const SPECS = new Map(), HIRES = new Map();
+  // the state a board's picture shows: the live game's ground, or its duel's after the shots so far
+  function photoState(c, r){
+    const g = GAMES.get(gkey(c, r));
+    if (g) return { T: g.T, H: g.S.H, craters: g.craters, id: 'g' + gkey(c, r) + ':' + g.ver + '@' + g.T.lv };
+    const T = terrainAt(c, r), Dl = DUELS.get(T.idx * 8 + T.lv), V = Dl ? shownOf(Dl) : null, n = V ? V.applied : 0;
+    return { T, H: n ? Dl.shots[n - 1].H : T.H0, craters: V ? V.craters : [], id: T.idx + '@' + T.lv + '#' + n };
+  }
+  function photoKey(c, r, bp){
+    // (a duel's picture changes after every burst, and each change is a texture made and sent to the graphics card, so a board
+    //  no one plays has the fine one only when it is large: HI_DUEL; the board being played, from HI_PX)
+    const k = gkey(c, r), at = GAMES.has(k) ? HI_PX : HI_DUEL; let hi = HIRES.get(k) || false;
+    if (bp > at * 1.1) hi = true; else if (bp < at * 0.9) hi = false;
+    if (hi) HIRES.set(k, true); else HIRES.delete(k);
+    const P = photoState(c, r), key = 'tk' + P.id + (hi ? ':h' : ':l');
+    if (!SPECS.has(key)){ SPECS.set(key, { T: P.T, H: P.H.slice(), craters: P.craters.slice(), S: hi ? 512 : 256 }); if (SPECS.size > 1500) SPECS.delete(SPECS.keys().next().value); }
+    return key;
+  }
+
+  /* ─── EFFECTS ─── worked out from how long ago each thing happened and its seed, so a board's duel shows them with
+     nothing kept (THE LOOK, above). */
+  const FX_LIFE = 2.6;
+  const FIRE = [0xfff6d0, 0xffe07a, 0xffa53a, 0xf0632a, 0xb8361b, 0x5a2a20, 0x3a3434];
+  const fireAt = f => FIRE[Math.min(FIRE.length - 1, Math.max(0, Math.round(f * (FIRE.length - 1))))];
+  const smokeAt = f => { const k = Math.round(64 + clamp(f, 0, 1) * 100); return k * 65536 + k * 256 + k; };
+  const fade = (f, from) => f > from ? Math.max(0, (1 - f) / (1 - from)) : 1;
+  function trailFx(out, e, a, w){
+    const P = e.path, n = Math.min(P.length / 2, Math.floor(a * REC_HZ) + 1);
+    if (a - (n - 1) / REC_HZ > 1.5) return;
+    for (let i = 0; i < n; i += 2){
+      const age = a - i / REC_HZ; if (age < 0.06 || age > 1.5) continue;
+      const f = age / 1.5;
+      out.push({ kind: 'tkPuff', u: P[2 * i] + w * age * age * 0.3, v: P[2 * i + 1] - age * 0.012, scale: (0.006 + age * 0.014) * fade(f, 0.6), lift: 0.006, color: smokeAt(0.5 + f * 0.5) });
+    }
+  }
+  function muzzleFx(out, e, a, w){
+    const R = rngOf(e.seed), q = e.a * Math.PI / 180, dx = Math.cos(q), dy = -Math.sin(q);
+    if (a < 0.11){ const f = a / 0.11;
+      out.push({ kind: 'tkFire', u: e.x + dx * 0.008, v: e.y + dy * 0.008, scale: 0.03 * (1 - f) + 0.008, lift: 0.012, color: fireAt(f * 0.5) });
+      out.push({ kind: 'tkFire', u: e.x + dx * 0.022, v: e.y + dy * 0.022, scale: 0.016 * (1 - f), lift: 0.012, color: 0xfff6d0 }); }
+    for (let k = 0; k < 4; k++){
+      const sp = 0.06 + R() * 0.08, sw = (R() - 0.5) * 0.6, life = 0.9 + R() * 0.6, s0 = 0.006 + R() * 0.006;
+      if (a > life) continue;
+      const f = a / life, go = sp * (1 - Math.exp(-3 * a)) / 3, cx = Math.cos(q + sw), cy = -Math.sin(q + sw);
+      out.push({ kind: 'tkPuff', u: e.x + cx * go + w * a * a * 0.3, v: e.y + cy * go - a * 0.01, scale: (s0 + f * 0.03) * fade(f, 0.7), lift: 0.01, color: smokeAt(0.55 + f * 0.4) });
+    }
+  }
+  function blastFx(out, e, a, w, H, T){
+    const R = rngOf(e.seed), x = e.x, y = e.y, P = PALETTES[T.pal], earth = num(P.top), deep = num(P.deep);
+    for (let k = 0; k < 6; k++){          // the fireball, in lobes
+      const ox = (R() - 0.5) * BR * 0.9, oy = (R() - 0.75) * BR * 0.8, s0 = BR * (0.5 + R() * 0.5), d = R() * 0.07, b = a - d;
+      if (b < 0 || b > 0.75) continue;
+      const grow = b < 0.1 ? b / 0.1 : 1 + (b - 0.1) * 0.7, f = b / 0.75;
+      out.push({ kind: 'tkFire', u: x + ox * grow, v: y + oy * grow - b * 0.035, scale: 2 * s0 * grow * fade(f, 0.5), lift: 0.004 + k * 0.0015, color: fireAt(f + k * 0.03) });
+    }
+    if (a < 0.32) out.push({ kind: 'tkRing', u: x, v: y, scale: 2 * BR * (0.6 + a / 0.32 * 1.8), lift: 0.002, color: a < 0.16 ? 0xfff1c9 : 0xffc46a });
+    for (let k = 0; k < 16; k++){         // clods of earth, falling as the shell fell
+      const th = -Math.PI * (0.08 + R() * 0.84), sp = 0.3 + R() * 0.7, life = 0.7 + R() * 0.8, sz = 0.004 + R() * 0.008, col = R() < 0.5 ? earth : deep;
+      if (a > life) continue;
+      const cx = x + Math.cos(th) * sp * a + 0.5 * w * a * a, cy = y + Math.sin(th) * sp * a + 0.5 * G * a * a;
+      if (a > 0.1 && cx >= 0 && cx <= 1 && cy > surfAt(H, cx) + 0.004) continue;
+      out.push({ kind: 'tkClod', u: cx, v: cy, scale: 2 * sz, lift: 0.006, yaw: a * 9 + k, color: col });
+    }
+    for (let k = 0; k < 10; k++){         // sparks
+      const th = -Math.PI * R(), sp = 0.6 + R() * 0.8, life = 0.25 + R() * 0.35;
+      if (a > life) continue;
+      out.push({ kind: 'tkDot', u: x + Math.cos(th) * sp * a, v: y + Math.sin(th) * sp * a + 0.5 * G * a * a, scale: 0.005 * (1 - a / life) + 0.002, lift: 0.01, color: 0xffe9a8 });
+    }
+    for (let k = 0; k < 7; k++){          // smoke, rising and drifting on the wind
+      const d = 0.12 + R() * 0.3, life = 1.5 + R() * 0.9, ox = (R() - 0.5) * BR, rise = 0.04 + R() * 0.06, s0 = 0.02 + R() * 0.02, b = a - d;
+      if (b < 0 || b > life) continue;
+      const f = b / life;
+      out.push({ kind: 'tkPuff', u: x + ox + w * b * 0.8, v: y - BR * 0.3 - rise * b, scale: (s0 + f * 0.06) * fade(f, 0.75), lift: 0.014, color: smokeAt(f * 0.8) });
+    }
+  }
+  function wreckFx(out, x, y, t, k, w){
+    for (let j = 0; j < 2; j++) out.push({ kind: 'tkFire', u: x + (j - 0.5) * 0.014, v: y - 0.004, scale: 0.016 + 0.006 * Math.sin(t * 23 + j * 2 + k), lift: 0.016, color: fireAt(0.15 + 0.25 * (0.5 + 0.5 * Math.sin(t * 17 + j))) });
+    for (let j = 0; j < 6; j++){
+      const age = ((t * 0.45 + j / 6 + k * 0.37) % 1) * 2.2, f = age / 2.2;
+      out.push({ kind: 'tkPuff', u: x + w * age * 0.5 + 0.006 * Math.sin(j * 3 + age * 2), v: y - 0.015 - age * 0.05, scale: (0.012 + age * 0.02) * fade(f, 0.7), lift: 0.018, color: smokeAt(f * 0.6) });
+    }
+  }
+  function fxItems(out, V){
+    const t = V.t, w = V.wind || 0;
+    for (const e of V.fx || []){
+      const a = t - e.t0; if (a < 0) continue;
+      if (e.k === 'trail'){ if (a < 12) trailFx(out, e, a, w); continue; }
+      if (a > FX_LIFE) continue;
+      if (e.k === 'blast') blastFx(out, e, a, w, V.H, V.T); else muzzleFx(out, e, a, w);
+    }
+  }
+  // clouds across the top of the sky, carried by the wind (V.cloud: how far it has carried them)
+  function cloudsOf(out, V){
+    const P = PALETTES[V.T.pal], R = rngOf(V.T.seed ^ 0xc10d);
+    for (let k = 0; k < 3; k++){
+      const u0 = R(), v = 0.06 + k * 0.055 + R() * 0.03, sp = 0.7 + R() * 0.6, size = 0.035 + R() * 0.025;
+      const f = (((u0 + (V.cloud || 0) * sp) % 1) + 1) % 1, u = -0.06 + f * 1.12, edge = clamp(Math.min(u, 1 - u) / 0.1, 0, 1);
+      if (edge <= 0) continue;
+      for (let j = 0; j < 4; j++) out.push({ kind: 'tkCloud', u: u + (j - 1.5) * size * 0.55, v: v - (j === 1 || j === 2 ? size * 0.2 : 0), scale: size * (j === 1 || j === 2 ? 1.1 : 0.8) * edge, lift: 0.02, color: P.cloud });
+    }
+  }
+
+  /* ─── WHAT A BOARD DRAWS ─── over its picture: the clouds; each tank along the slope under it, its gun at its aim, its
+     health over it; your last shot faint, the aim line, the shell, and the effects. */
+  const TANK_L = 0.05, GUNC = 0x2c3326;
   const hpCol = hp => hp > 60 ? 0x6fd36a : hp > 30 ? 0xf2c14e : 0xe0564a;
+  const slopeAt = (H, x) => clamp(Math.atan2(surfAt(H, x + 0.025) - surfAt(H, x - 0.025), 0.05), -TILT_MAX, TILT_MAX);
   function itemsOf(V){
-    const out = [], H = V.H, s = 1 / W;
-    for (let i = 0; i < W; i++){
-      const u = (i + 0.5) * s, h = H[i];
-      out.push({ kind: 'tkBox', u, v: (h + 1) / 2, scale: s, sx: 1.02, sy: 0.35, sz: (1 - h) * W, color: EARTH });
-      out.push({ kind: 'tkBox', u, v: h + 0.005, scale: s, sx: 1.02, sy: 0.5, sz: 0.01 * W, color: GRASS });
-    }
+    const out = [], H = V.H, w = V.wind || 0;
+    cloudsOf(out, V);
     for (let k = 0; k < 2; k++){
-      const x = V.xs[k], y = surfAt(H, x), alive = V.hp[k] > 0, col = alive ? (k ? FOE : ME) : WRECK;
-      out.push({ kind: 'tkBox', u: x, v: y - TR * 0.4, scale: TR * 2, sx: 1, sy: 0.45, sz: 0.4, color: col });
-      out.push({ kind: 'tkDome', u: x, v: y - TURRET, scale: TURRET * 1.1, color: col });
-      out.push({ kind: 'tkBarrel', u: x, v: y - TURRET, scale: BARREL, sx: 1, sy: 0.16, sz: 0.16, lift: 0.004, yaw: -V.a[k] * Math.PI / 180, color: alive ? 0x2a2a2a : WRECK });
-      out.push({ kind: 'tkBox', u: x, v: y - 0.075, scale: 0.06, sx: 1, sy: 0.08, sz: 0.12, color: BARBG });
-      if (V.hp[k] > 0){ const f = V.hp[k] / 100; out.push({ kind: 'tkBox', u: x - 0.03 + 0.03 * f, v: y - 0.075, scale: 0.06, sx: f, sy: 0.14, sz: 0.1, color: hpCol(V.hp[k]) }); }
+      const x = V.xs[k], pv = surfAt(H, x) - TURRET, alive = V.hp[k] > 0, tilt = slopeAt(H, x);
+      const flash = (V.hitT[k] || []).some(h => V.t - h >= 0 && V.t - h < 0.16);
+      out.push({ kind: 'tkTracks', u: x, v: pv, scale: TANK_L, yaw: tilt, color: alive ? 0xffffff : 0x6a6a6a });
+      out.push({ kind: 'tkHull', u: x, v: pv, scale: TANK_L, yaw: tilt, color: flash ? 0xffffff : alive ? (k ? FOE : ME) : WRECK });
+      out.push({ kind: 'tkGun', u: x, v: pv, scale: BARREL, yaw: -V.a[k] * Math.PI / 180, color: alive ? GUNC : 0x222222 });
+      const by = pv - 0.042;
+      out.push({ kind: 'tkBox', u: x, v: by, scale: 0.06, sx: 1, sy: 0.08, sz: 0.12, lift: 0.01, color: BARBG });
+      if (alive){ const f = V.hp[k] / 100; out.push({ kind: 'tkBox', u: x - 0.03 + 0.03 * f, v: by, scale: 0.06, sx: f, sy: 0.14, sz: 0.1, lift: 0.01, color: hpCol(V.hp[k]) }); }
+      else wreckFx(out, x, pv, V.t, k, w);
     }
-    if (V.last) for (let i = 0; i < V.last.length / 2; i += 2) out.push({ kind: 'tkDot', u: V.last[2 * i], v: V.last[2 * i + 1], scale: 0.006, color: LASTC });
-    if (V.trail && V.n) for (let i = 0; i < V.n; i += 2) out.push({ kind: 'tkTrail', u: V.trail[2 * i], v: V.trail[2 * i + 1], scale: 0.008, color: TRAILC });
-    if (V.shell) out.push({ kind: 'tkDot', u: V.shell[0], v: V.shell[1], scale: 0.016, lift: 0.01, color: SHELL });
-    if (V.blast){ const e = V.blast.e, r = BR * Math.min(1, e / 0.15) * (e > 0.3 ? Math.max(0, 1 - (e - 0.3) / (BLAST_T - 0.3)) : 1);
-      if (r > 0.002) out.push({ kind: 'tkBlast', u: V.blast.x, v: V.blast.y, scale: 2 * r, color: ((e * 14) | 0) % 2 ? 0xfff4c2 : 0xff8a3a }); }
+    if (V.last) for (let i = 0; i < V.last.length / 2; i += 2) out.push({ kind: 'tkDot', u: V.last[2 * i], v: V.last[2 * i + 1], scale: 0.005, lift: 0.004, color: LASTC });
     if (V.aim){
       const x = V.xs[0], y = surfAt(H, x) - TURRET, q = V.a[0] * Math.PI / 180, n = 2 + Math.round(V.aim * 9);
-      for (let j = 1; j <= n; j++){ const d = BARREL + j * 0.02; out.push({ kind: 'tkDot', u: x + Math.cos(q) * d, v: y - Math.sin(q) * d, scale: 0.007, color: AIMC }); }
+      for (let j = 1; j <= n; j++){ const d = BARREL + j * 0.02; out.push({ kind: 'tkDot', u: x + Math.cos(q) * d, v: y - Math.sin(q) * d, scale: 0.0065, lift: 0.008, color: AIMC }); }
     }
-    const w = V.wind || 0;
-    if (Math.abs(w) > 0.004){ const L = w / 0.25 * 0.2; out.push({ kind: 'tkBox', u: 0.5 + L / 2, v: 0.05, scale: 0.01, sx: Math.abs(L) / 0.01, sy: 0.4, sz: 0.5, color: WINDC });
-      out.push({ kind: 'tkDot', u: 0.5 + L, v: 0.05, scale: 0.014, color: WINDC }); }
-    else out.push({ kind: 'tkDot', u: 0.5, v: 0.05, scale: 0.008, color: WINDC });
+    if (V.shell){ out.push({ kind: 'tkFire', u: V.shell[0], v: V.shell[1], scale: 0.022, lift: 0.008, color: 0xffc46a });
+      out.push({ kind: 'tkDot', u: V.shell[0], v: V.shell[1], scale: 0.011, lift: 0.014, color: SHELL }); }
+    fxItems(out, V);
+    if (Math.abs(w) > 0.004){ const L = w / 0.25 * 0.12; out.push({ kind: 'tkBox', u: 0.5 + L / 2, v: 0.03, scale: 0.006, sx: Math.abs(L) / 0.006, sy: 0.4, sz: 0.6, lift: 0.01, color: WINDC });
+      out.push({ kind: 'tkDot', u: 0.5 + L, v: 0.03, scale: 0.01, lift: 0.01, color: WINDC }); }
     return out;
   }
-  // the board's tiles: the sky, shading down; far off (no pieces), the ground too, coarsely
-  const N = 16, SKY_ROW = Array.from({ length: N }, (_, j) => { const f = j / (N - 1), a = [SKY_T >> 16, SKY_T >> 8 & 255, SKY_T & 255], b = [SKY_B >> 16, SKY_B >> 8 & 255, SKY_B & 255];
-    return a.map((x, i) => Math.round(x + (b[i] - x) * f)).reduce((s, x) => s * 256 + x, 0); });
-  const SKY_GRID = { n: N, colors: Array.from({ length: N * N }, (_, i) => SKY_ROW[(i / N) | 0]) };
-  const GRIDS = new Map();
-  function gridOf(H, key){
+  // the board's tiles, for boards too small for a picture and any frame its picture is not yet built: the picture's colours, coarsely
+  const N = 16, GRIDS = new Map();
+  const mixHex = (a, b, f) => { const A = num(a), B = num(b); let o = 0; for (const s of [16, 8, 0]) o += Math.round(((A >> s) & 255) + (((B >> s) & 255) - ((A >> s) & 255)) * f) << s; return o; };
+  function gridOf(T, H, key){
     let Gd = GRIDS.get(key); if (Gd) return Gd;
+    const P = PALETTES[T.pal];
     Gd = { n: N, colors: Array.from({ length: N * N }, (_, i) => { const x = ((i % N) + 0.5) / N, y = (((i / N) | 0) + 0.5) / N, h = surfAt(H, x);
-      return y >= h + 0.5 / N ? EARTH : y >= h - 0.5 / N ? GRASS : SKY_ROW[(i / N) | 0]; }) };
+      return y >= h + 0.5 / N ? mixHex(P.top, P.deep, (y - h) / (1 - h + 1e-6)) : y >= h - 0.5 / N ? num(P.grass) : y < 0.5 ? mixHex(P.sky[0], P.sky[1], y / 0.5) : mixHex(P.sky[1], P.sky[2], (y - 0.5) / 0.5); }) };
     GRIDS.set(key, Gd); if (GRIDS.size > 4000) GRIDS.delete(GRIDS.keys().next().value);
     return Gd;
   }
+  /* The tanks' shapes, in relief: a side drawn in (x along, s up) in tank lengths, the turret's middle at the origin and the
+     ground 0.45 below it, stood up off the board by its thickness (the extrusion), then turned so the side lies on the board
+     (s up the side is −v; the thickness is up off the board). One kind each for the tracks (their own greys), the hull and
+     turret (the side's colour on lighter and darker parts) and the gun (along +x from the turret's middle). */
+  function mergeParts(T, parts, lay){
+    const pos = [], nrm = [], col = [];
+    for (const [g0, rgb] of parts){
+      const g = g0.index ? g0.toNonIndexed() : g0, P = g.getAttribute('position').array, Nn = g.getAttribute('normal').array;
+      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(Nn[i]); }
+      for (let i = 0; i < P.length / 3; i++) col.push(rgb[0], rgb[1], rgb[2]);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3)); g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    if (lay) g.rotateX(-Math.PI / 2);
+    g.userData.vertexColors = true;
+    return g;
+  }
+  const extrude = (T, shape, depth, bevel) => new T.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 10 });
+  const poly = (T, pts) => { const s = new T.Shape(); pts.forEach(([x, y], i) => i ? s.lineTo(x, y) : s.moveTo(x, y)); s.closePath(); return s; };
+  const tankGeos = {
+    tkTracks: T => {
+      const r = 0.11, tr = new T.Shape();
+      tr.moveTo(-0.5 + r, -0.45); tr.lineTo(0.5 - r, -0.45); tr.absarc(0.5 - r, -0.34, r, -Math.PI / 2, Math.PI / 2, false);
+      tr.lineTo(-0.5 + r, -0.23); tr.absarc(-0.5 + r, -0.34, r, Math.PI / 2, Math.PI * 1.5, false);
+      const parts = [[extrude(T, tr, 0.2, 0.015), [0.15, 0.15, 0.16]]];
+      for (const x of [-0.39, -0.2, 0, 0.2, 0.39]){
+        const R0 = Math.abs(x) > 0.3 ? 0.085 : 0.072, wh = new T.CylinderGeometry(R0, R0, 0.05, 18), hub = new T.CylinderGeometry(0.028, 0.028, 0.07, 10);
+        wh.rotateX(Math.PI / 2); wh.translate(x, -0.34, 0.235); hub.rotateX(Math.PI / 2); hub.translate(x, -0.34, 0.25);
+        parts.push([wh, [0.36, 0.36, 0.34]], [hub, [0.66, 0.64, 0.58]]);
+      }
+      return mergeParts(T, parts, true);
+    },
+    tkHull: T => {
+      const hull = extrude(T, poly(T, [[-0.47, -0.27], [0.44, -0.27], [0.53, -0.17], [0.36, -0.07], [-0.44, -0.07], [-0.51, -0.16]]), 0.24, 0.02); hull.translate(0, 0, 0.03);
+      const ts = new T.Shape(); ts.moveTo(0.2, -0.07); ts.absarc(-0.01, -0.07, 0.21, 0, Math.PI, false); ts.lineTo(0.2, -0.07);
+      const turret = extrude(T, ts, 0.22, 0.03); turret.translate(0, 0, 0.06);
+      // (a cupola standing out of the dome's top, and an aerial off its back: laid flat in the turret's thickness, a hatch showed
+      //  only its shaded edge, a black patch)
+      const cup = new T.CylinderGeometry(0.055, 0.055, 0.16, 14); cup.rotateX(Math.PI / 2); cup.translate(-0.05, 0.14, 0.17);
+      const aer = new T.CylinderGeometry(0.008, 0.012, 0.36, 6); aer.rotateZ(0.5); aer.translate(-0.24, 0.24, 0.2);
+      const skirt = new T.BoxGeometry(0.76, 0.045, 0.02); skirt.translate(-0.03, -0.2, 0.29);
+      return mergeParts(T, [[hull, [0.78, 0.78, 0.78]], [turret, [1, 1, 1]], [cup, [0.74, 0.74, 0.74]], [aer, [0.3, 0.3, 0.3]], [skirt, [0.58, 0.58, 0.58]]], true);
+    },
+    tkGun: T => {
+      // (it lies on the turret's face, its axis 0.5 of a gun length up: lower, its mantlet came out through the turret as a dark patch)
+      const along = (r0, r1, len, x0, rgb) => { const g = new T.CylinderGeometry(r1, r0, len, 14); g.rotateZ(-Math.PI / 2); g.translate(x0 + len / 2, 0.5, 0); return [g, rgb]; };
+      const boss = new T.CylinderGeometry(0.15, 0.15, 0.1, 18); boss.translate(0, 0.42, 0);
+      return mergeParts(T, [along(0.09, 0.075, 1, 0.05, [1, 1, 1]), along(0.13, 0.13, 0.13, 0.92, [0.8, 0.8, 0.8]), [boss, [0.85, 0.85, 0.85]]], false);
+    },
+  };
   const hex = n => '#' + n.toString(16).padStart(6, '0');
 
   const restart = (c, r) => { GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} };
@@ -47804,22 +48076,21 @@ const TANKS_APP = (() => {
     cellFar: { light: SKY_B, dark: EARTH },
     itemMinPx: FAR_PX,
     faceMinPx: 1,
+    // the sky and the ground are a picture a board (THE LOOK, above); a board under PHOTO_PX is its tiles
+    photoMinPx: PHOTO_PX,
+    cellPhoto(c, r, bp){ return photoKey(c, r, bp || 0); },
+    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.T, P.H, P.craters, P.S) : null; },
     itemGeometries: {
+      ...tankGeos,
       tkBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
-      tkDome: T => { const g = new T.SphereGeometry(0.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2); return g; },
-      tkBarrel: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0.5, 0.5, 0); return g; },
       tkDot: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.translate(0, 0.6, 0); g.userData.unlit = true; return g; },
-      tkTrail: T => { const g = new T.SphereGeometry(0.5, 6, 4); g.translate(0, 0.6, 0); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
-      tkBlast: T => { const g = new T.SphereGeometry(0.5, 16, 10); g.scale(1, 0.6, 1); g.translate(0, 0.1, 0); g.userData.unlit = true; g.userData.opacity = 0.85; return g; },
+      tkFire: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.7, 1); g.translate(0, 0.35, 0); g.userData.unlit = true; g.userData.opacity = 0.9; return g; },
+      tkPuff: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.6, 1); g.translate(0, 0.3, 0); g.userData.opacity = 0.5; return g; },
+      tkCloud: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.3, 0.62); g.translate(0, 0.15, 0); g.userData.unlit = true; g.userData.opacity = 0.72; return g; },
+      tkClod: T => { const g = new T.IcosahedronGeometry(0.5, 0); g.translate(0, 0.5, 0); return g; },
+      tkRing: T => { const g = FieldKit.ring(T, 0.4, 0.5, 0.004); g.userData.unlit = true; g.userData.opacity = 0.7; return g; },
     },
-    cellGrid(c, r, px){
-      if (px >= FAR_PX) return SKY_GRID;
-      const g = GAMES.get(gkey(c, r));
-      if (g) return gridOf(g.S.H, 'g' + gkey(c, r) + '#' + g.ver + '@' + g.T.lv);
-      const T = terrainAt(c, r), Dl = DUELS.get(T.idx * 8 + T.lv);
-      if (!Dl) return gridOf(T.H0, 't' + T.idx + '@' + T.lv);
-      const V = shownOf(Dl); return gridOf(V.H, 't' + T.idx + '@' + T.lv + '#' + (V.H === T.H0 ? -1 : Dl.shots.findIndex(s => s.H === V.H)));
-    },
+    cellGrid(c, r){ const P = photoState(c, r); return gridOf(P.T, P.H, P.id); },
     cellItems(c, r){ return itemsOf(viewOf(c, r)); },
     cellTitle(c, r){
       const T = terrainAt(c, r), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(T));
@@ -47865,7 +48136,7 @@ const TANKS_APP = (() => {
       for (let i = 0; i <= 20; i++){ const x = 0.2 + 0.6 * i / 20, y = 0.52 - 1.6 * (x - 0.2) * (0.8 - x) * 1.6; i ? ctx.lineTo(x * sz, y * sz) : ctx.moveTo(x * sz, y * sz); }
       ctx.stroke(); ctx.setLineDash([]);
     },
-    _debug: { terrainOf, terrainAt, duelOf, duelSoon, shownOf, aimFor, foeShot, simLand, launch, flyStep, blastAt, surfAt, fresh, gameAt, fire, aimAt, stepGame, starsOf, itemsOf, viewOf,
+    _debug: { terrainOf, terrainAt, duelOf, duelSoon, shownOf, paint, photoState, photoKey, fxItems, SPECS, PALETTES, slopeAt, aimFor, foeShot, simLand, launch, flyStep, blastAt, surfAt, fresh, gameAt, fire, aimAt, stepGame, starsOf, itemsOf, viewOf,
               boardIdx, levelAt, LV, GAMES, BEST, DUELS, TERRAINS, myTurn, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
