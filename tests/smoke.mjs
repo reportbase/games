@@ -2907,18 +2907,17 @@ try {
       out.cleanRefused = D.cleanMaze({ m: 7, E: 'x', S: '', start: 0, goal: 1 }) === null && D.cleanMaze({ ...d, m: 8 }) === null;
       return { ...out, c, r };
     });
-    // kept over a reload
-    await page.goto(new URL('games.html?app=tiltmaze', base).href, { waitUntil: 'load' });
-    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'tilt maze', null, { timeout: 60000 });
-    const back = await page.evaluate(te => { const D = window.getFieldApp()._debug, M = D.mineMaze(te.c, te.r);
-      const ok = !!M && M.L.start === 42 && M.L.goal === 0;
-      // and forgotten: the board's own maze again
-      D.MINE.delete(te.c + '_' + te.r); return ok; }, te);
+    // kept: what is stored reads back as the same maze (read as the page reads it on load: not a reload here, which changed
+    // what the checks after this one met on CI, Oct 20); then forgotten, the board's own maze again
+    const back = await page.evaluate(te => { const D = window.getFieldApp()._debug, k = te.c + '_' + te.r, M = D.mineMaze(te.c, te.r);
+      const d = D.cleanMaze(JSON.parse(localStorage.getItem('tiltmaze.mine') || '{}')[k]);
+      const ok = !!M && !!d && d.start === 42 && d.goal === 0 && JSON.stringify(d) === JSON.stringify(D.cleanMaze(D.dataOf(M.L)));
+      D.MINE.delete(k); D.MINE.delete((te.c + 3) + '_' + te.r); D.GAMES.clear(); return ok; }, te);
     if (!te.open || !te.onFramed || !te.refused || !te.walls || JSON.stringify(te.holes) !== '[1,0,1]' || JSON.stringify(te.ends) !== '[42,0]' || !te.done || !te.mine
         || !(te.par > 0) || !te.stored || !te.game || !te.shared || !te.cleanRefused || !back)
       failures.push(`[${current}] ${JSON.stringify({ te, back })}`);
     await page.evaluate(() => localStorage.removeItem('tiltmaze.mine'));
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (a 7×7 maze made by taps, par ${te.par}, kept over a reload and shared)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (a 7×7 maze made by taps, par ${te.par}, kept and shared)`);
   }
   // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the

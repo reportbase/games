@@ -321,7 +321,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test checks the sizes by level, the steady player finishing 30 mazes (each made again until it does) and never
     passing a wall, the real arrow keys rolling the marble, a hole and the ring, a board no one plays moving, and the editor:
     opened by the real dots, a walled-up maze refused, walls, a hole, the start and the ring laid by taps, Done keeping it with
-    a par over a reload, and a shared copy on another board.
+    a par in storage (read back as the page reads it on load), and a shared copy on another board.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
