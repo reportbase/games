@@ -2829,7 +2829,8 @@ try {
     await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tiltmaze')); await new Promise(ok => setTimeout(ok, 3000)); });   // (no __settle: the hole editor's check before this reloads the page, which drops the helpers)
     const tm = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, out = { sizes: [], ok: 0, runs: 0, through: 0 };
       for (let lv = 1; lv <= 5; lv++){ out.sizes.push(D.makeMaze(500 + lv, lv, 0).m);
-        for (let i = 0; i < 6; i++){ const L = D.makeMaze(2000 + i * 31 + lv, lv, 0), R = D.playRun(L); out.runs++; if (R.ok) out.ok++;
+        // (made again until the steady player finishes it, as a board's maze is: up to 8 times, Oct 20, with the harder mazes)
+        for (let i = 0; i < 6; i++){ let L, R; for (let a = 0; a <= 8; a++){ L = D.makeMaze(2000 + i * 31 + lv, lv, a); R = D.playRun(L); if (R.ok) break; } out.runs++; if (R.ok) out.ok++;
           // (the same player again, its cell at every step: it only ever goes to a cell its own opens onto)
           const [x0, y0] = D.centre(L, L.start), b = { x: x0, y: y0, vx: 0, vy: 0 }; let k = D.cellOf(L, b.x, b.y);
           for (let n = 0; n < 240 * 40; n++){ if (n % 4 === 0) b.tilt = D.botTilt(L, b); const ev = D.stepBall(L, b, b.tilt[0], b.tilt[1], 1 / 240), k2 = D.cellOf(L, b.x, b.y);
@@ -2856,10 +2857,59 @@ try {
       const p0 = at(); await new Promise(ok => setTimeout(ok, 700)); const p1 = at(); out.shown = !!(p0 && p1 && Math.hypot(p0[0] - p1[0], p0[1] - p1[1]) > 1e-4);
       out.walls = A.cellItems(c2, r2).filter(i => i.kind === 'tmWall').length;
       return out; }, f);
-    if (JSON.stringify(tm.sizes) !== '[5,6,7,8,10]' || tm.ok !== tm.runs || tm.through !== 0 || !tm.differ
+    if (JSON.stringify(tm.sizes) !== '[7,9,11,13,15]' || tm.ok !== tm.runs || tm.through !== 0 || !tm.differ
         || !(live.moved > 0.02) || live.state !== 'play' || !(live.t > 0) || !live.fell || !live.back || !live.done || !(live.stars >= 1 && live.stars <= 3) || !live.best || !live.next || !live.shown || !(live.walls > 8))
       failures.push(`[${current}] ${JSON.stringify({ tm, live })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${tm.ok} of ${tm.runs} mazes finished by the steady player; the arrow keys rolled it ${live.moved.toFixed(3)})`);
+  }
+  // YOUR OWN MAZES (Oct 20: "let the user create their own mazes."): the dots open the row as a maze editor on the framed
+  // board; a maze with no way to the ring is refused; walls laid by taps on edges, a hole laid and taken off, the start and the
+  // ring moved; Done keeps it on the board (over a reload too) with the steady player's par; a link takes it onto another board;
+  // Forget puts the board's own back
+  current = 'tilt maze editor';
+  {
+    const before = failures.length;
+    const te = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const A = window.FIELD_APPS.find(a => a.id === 'tiltmaze'); if (window.getFieldApp() !== A){ window.setFieldApp(A); await wait(2500); }
+      const D = A._debug, W = window.FIELD_WORLD;
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
+      document.getElementById('bbHandle').click(); await wait(800);
+      const E = D.ed(), fr = W.cellAt(W.target.boardX, W.target.boardZ);
+      if (!E.on) return { open: false };
+      const c = E.c, r = E.r, out = { open: true, onFramed: !!fr && fr.c === c && fr.r === r };
+      const tile = name => A.onStatTap(c, r, A.statTiles(c, r).findIndex(t => t.value === name || String(t.value).startsWith(name)));
+      while (E.L.m !== 7) tile('Size');
+      tile('Fill'); out.refused = D.edDone() === false && E.on;           // every wall up: no way to the ring
+      tile('Clear');
+      const m = 7, tap = (x, y) => A.onCellTap(c, r, x / m, y / m);
+      tile('Wall'); for (let i = 0; i < 6; i++) tap(i + 0.5, 4);             // a wall under row 3, a gap at the right
+      out.walls = [...Array(6).keys()].every(i => E.L.S[i + 3 * m] === 1) && E.L.S[6 + 3 * m] === 0;
+      tile('Hole'); tap(3.5, 1.5); const h1 = E.L.holes.length; tap(3.5, 1.5); const h0 = E.L.holes.length; tap(2.5, 5.5);
+      out.holes = [h1, h0, E.L.holes.length];
+      tile('Start'); tap(0.5, 6.5); tile('Ring'); tap(0.5, 0.5);
+      out.ends = [E.L.start, E.L.goal];
+      const key = E.key; out.done = D.edDone() === true && !E.on; await wait(600);
+      const M = D.mineMaze(c, r); out.mine = !!M && M.L.mine && M.L.start === 6 * m && M.L.goal === 0 && M.L.S[3 * m] === 1;
+      out.par = M && M.par; out.stored = !!JSON.parse(localStorage.getItem('tiltmaze.mine') || '{}')[key];
+      out.game = D.gameAt(c, r).M === M;
+      const d = D.dataOf(M.L); D.takeMaze(c + 3, r, JSON.parse(JSON.stringify(d))); const M2 = D.mineMaze(c + 3, r);
+      out.shared = !!M2 && JSON.stringify(D.dataOf(M2.L)) === JSON.stringify(d);
+      out.cleanRefused = D.cleanMaze({ m: 7, E: 'x', S: '', start: 0, goal: 1 }) === null && D.cleanMaze({ ...d, m: 8 }) === null;
+      return { ...out, c, r };
+    });
+    // kept over a reload
+    await page.goto(new URL('games.html?app=tiltmaze', base).href, { waitUntil: 'load' });
+    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'tilt maze', null, { timeout: 60000 });
+    const back = await page.evaluate(te => { const D = window.getFieldApp()._debug, M = D.mineMaze(te.c, te.r);
+      const ok = !!M && M.L.start === 42 && M.L.goal === 0;
+      // and forgotten: the board's own maze again
+      D.MINE.delete(te.c + '_' + te.r); return ok; }, te);
+    if (!te.open || !te.onFramed || !te.refused || !te.walls || JSON.stringify(te.holes) !== '[1,0,1]' || JSON.stringify(te.ends) !== '[42,0]' || !te.done || !te.mine
+        || !(te.par > 0) || !te.stored || !te.game || !te.shared || !te.cleanRefused || !back)
+      failures.push(`[${current}] ${JSON.stringify({ te, back })}`);
+    await page.evaluate(() => localStorage.removeItem('tiltmaze.mine'));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (a 7×7 maze made by taps, par ${te.par}, kept over a reload and shared)`);
   }
   // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the

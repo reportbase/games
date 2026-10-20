@@ -286,9 +286,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   after Sokoban. A marble on a board you tip, through a maze to the gold ring, past holes.
   - **Every board its own maze** (`mazeFor`, `makeMaze`): from the board's number (`boardIdx`, golf's Szudzik pairing) at a level
     1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as golf and Sokoban. `LV` sets each level: the maze's
-    size (5, 6, 7, 8, 10 cells a side), loops (walls taken out after a backtracking walk), holes off the way (dead ends and
-    branches first) and, from level 3, holes in the outside corner of a turn on the way (a marble going too fast runs on into
-    them). The ring is the cell farthest from the start. The outer wall is the level's colour (golf's flag colours).
+    size, loops (walls taken out after a backtracking walk), holes off the way (dead ends and branches first), holes in the
+    outside corner of a turn on the way (a marble going too fast runs on into them), holes beside the way on a straight
+    (`side`, `SIDE_R`, `SIDE_OFF`: ride the wall and it drops) and how hard the board tips (`g`, on `G`). The ring is the cell
+    farthest from the start. The outer wall is the level's colour (golf's flag colours).
+  - **Harder** (Oct 20: "the title maze should be more difficult. all levels are to easy."): 7, 9, 11, 13 and 15 cells a side
+    (5, 6, 7, 8, 10 before), loops 0.06 down to 0.02, holes off the way 0.16–0.3, corner holes from level 1 at 0.25–0.85 (from
+    level 3 before), side holes from level 2 at 0.15–0.45, the tip 1 to 1.5 times as strong; stars tighter (`starsOf`: 1.15 ×
+    par for three, 1.6 × for two). Measured on 12 boards a level: every one finished by the steady player on its first try;
+    par 12.1, 17.8, 23.1, 32.7 and 43.6 s; 11 to 145 holes; 6 to 71 ms to make.
   - **Played before you see it**: a steady player (`botTilt`: toward the next cell of the shortest way from wherever the marble
     is, braking on its speed) rolls each maze (`playRun`, `TIME_CAP` 120 s); a maze it cannot finish without a fall is made
     again from the next seed (up to 8 times, then without corner holes). Its time is the board's par and its run, sampled 30
@@ -302,8 +308,20 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     is), and the menu's Tilt steering uses the phone (`ARCADE.tilt`); they add up. The clock starts at the first tip.
   - **Through**: time against par as stars (`starsOf`: ≤ 1.3 × par 3, ≤ 2 × par 2, else 1), the best on each board kept
     (localStorage `tiltmaze.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold starts again.
-  - The smoke test checks the sizes by level, the steady player finishing 30 mazes and never passing a wall, the real arrow
-    keys rolling the marble, a hole and the ring, and a board no one plays moving.
+  - **Your own mazes** (Oct 20: "let the user create their own mazes."): the bottom row is a maze editor, as Sokoban's (`ED`,
+    `ed…`, `MINE` inside `TILT_APP`, with the same hooks). Opening it (the dots, or the menu's Make a maze for this board…) takes
+    the framed board's maze into the editor. Tools: Wall (a tap toggles the edge between two cells nearest it, `edgeAt`; a drag
+    paints edges as the first one went), Hole (a tap lays one, again takes it off), Start, Ring, Erase; acts: Clear, Fill, Size
+    (7–15), Generate (a made maze of that size to start from), Check, Play; quick buttons Erase, Check, Cancel, Done. Check and
+    Done want the ring reachable; the steady player's time is its par, or it is kept without a par if the player cannot finish
+    it. A maze is `{ m, E, S, holes: [[x, y, r?]], start, goal }` (`dataOf`, `cleanMaze`), kept on the board (localStorage
+    `tiltmaze.mine`, the latest 300; `mineMaze`, which `mazeFor` asks first), framed in violet (`MINE_COL`), tipping as level 2
+    does (`MINE_G`). Escape or Cancel leaves the board as it was; the menu has Share this board's maze (`SHARE`, `takeMaze`) and
+    Forget this board's maze.
+  - The smoke test checks the sizes by level, the steady player finishing 30 mazes (each made again until it does) and never
+    passing a wall, the real arrow keys rolling the marble, a hole and the ring, a board no one plays moving, and the editor:
+    opened by the real dots, a walled-up maze refused, walls, a hole, the start and the ring laid by taps, Done keeping it with
+    a par over a reload, and a shared copy on another board.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
