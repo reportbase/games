@@ -1,6 +1,6 @@
 # games: notes for Claude
 
-A 3D field of boards you fly over, with ~37 games in one page (and Levels, a demonstration of level of detail) (chess against
+A 3D field of boards you fly over, with ~38 games in one page (and Levels, a demonstration of level of detail) (chess against
 Stockfish with a Claude coach, checkers, Go, Tetris, Pac-Man, Sokoban, …), served
 by GitHub Pages at https://reportbase.github.io/games/. The owner works through
 Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
@@ -446,6 +446,36 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     touches on one square read as four taps; and a board no one plays going through every stage of its cycle (`shownView(P,
     at)`, `cycleOf`: a few seconds sampled on the page's clock can fall wholly in the picture's rest, which failed once) and
     moving on the page's clock over a whole cycle.
+- **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
+  `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
+  firing in turns.
+  - **The board lies as Missile Command's does**: v down the board is down, the ground filling it from `H[i]` (a height a
+    column, `W` = 64) to the near edge. A shot is an angle and a power (`launch`, at most `VMAX` 1.3 boards a second), pulled
+    down by `G` and pushed along by the wind, in 1/120 s steps (`flyStep`); it ends on a tank, the ground, or off the sides.
+  - **A burst** (`blastAt`, `BR` 0.06): the ground in its circle is dug out and the earth above falls in (a column stays one
+    height); a tank inside is hurt up to `DMG` (55) at its middle, and by `FALL` × how far it drops as the ground goes. 100
+    health each.
+  - **Every board its own ground** (`terrainOf`, by `boardIdx` and a level 1–5, the ring level plus the Difficulty, Easy 0,
+    Normal 1, Hard 2, as Lights Out): `LV` sets how rough (`amp`), how often a hill stands between the tanks and how high
+    (`hillP`, `hill`; none at level 1), the wind (drawn again every turn, none at level 1, up to 0.25), how far apart the
+    tanks stand (`EDGE`), and the computer's hands: the spread of its angle (`ea`, 9° down to 2.5°) and power (`ep`), tighter
+    by `learn` a shot as a player zeroing in, to `FLOOR` (0.3) of where it began.
+  - **The computer** (`aimFor`, `foeShot`): 14 angles × 14 powers flown in the game's own physics (at 1/60 s), then the 7 × 7
+    about the best, the one landing nearest your tank and not on itself; then its hands' spread. With no spread its first
+    shot hit on 20 of 20 boards. About 1 ms a shot.
+  - **Controls**: a tap aims toward it (power by the distance, full at `AIM_FULL` 0.42) and fires; a press on your tank and a
+    drag aims as the finger goes and fires on letting go (`claimsPan`, the tap after it eaten); arrows (or WASD) turn and
+    push, Enter or Space fires. The aim line from the barrel shows the power; your last shot's path stays faint.
+  - **Through**: stars by the health left on a win (`starsOf`: 70 three, 35 two), the most left kept a board (localStorage
+    `tanks.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold or Start this board again
+    deals it afresh.
+  - **A board no one plays** shows its own duel (`duelOf`: two computer players at its level from the left until one is out,
+    30 shots at most, each flight sampled `REC_HZ` 30 a second; `shownOf(Dl, at)` on the page's clock, each board at its own
+    phase), made a few at a time (`duelSoon`, 8 ms in 30); 3–21 shots, 3–22 ms a duel. Far off (`FAR_PX` 16) a board is
+    its tiles alone (`gridOf`: the ground coarsely).
+  - The smoke test checks the levels by ring, the same ground on a board each time, hills only past level 1, the steady
+    computer's hits, a burst's dig and harm, ten duels ending, a real tap firing toward it and the computer answering, a
+    real drag from the tank firing, a steady shot winning with stars and a best, and a board no one plays moving.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

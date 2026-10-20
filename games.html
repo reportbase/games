@@ -47437,6 +47437,440 @@ const NONOGRAM_APP = (() => {
   };
   return app;
 })();
+/* ═══ TANKS: AN ARTILLERY DUEL ═════════════════════════════════════════════════════════════════════════════════════════
+   (Oct 20: "what tank games could we build", then "1", of five: the artillery duel, as Scorched Earth and Worms play it.)
+   Two tanks on rolling ground, yours on the left, the computer's on the right, firing in turns. A shot is an angle and a
+   power; gravity pulls it down the board (the board's near edge is the ground's bottom, as Missile Command lies) and the
+   wind pushes it along. Where it lands it bursts: the ground in its circle is dug out, the earth above falling in (a
+   column of earth, so the ground stays one height a column), and a tank inside the burst is hurt, most at its middle
+   (DMG), a tank that falls as the ground goes from under it a little more (FALL). A tank is out at no health left.
+   - EVERY BOARD ITS OWN GROUND (`terrainOf`): from the board's number (`boardIdx`, golf's Szudzik pairing) at a level 1–5,
+     the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as Lights Out. `LV` sets each level: how rough the
+     ground is (`amp`), how often a hill stands between the tanks and how high (`hillP`, `hill`), how strong the wind may
+     blow (`wind`, drawn again every turn), how far apart the tanks stand (`EDGE`), and the computer's hands (`ea`, `ep`:
+     the spread of its angle in degrees and of its power, a share; `learn`: how much tighter each shot it fires, as a
+     player zeroing in, down to `FLOOR` of where it began).
+   - THE COMPUTER (`aimFor`, `foeShot`): it tries 14 angles × 14 powers, flying each shot in the game's own physics (the
+     ground, the wind), then the 7 × 7 about the best, and takes the one that lands nearest your tank without landing on
+     its own; then its hands put the spread on it.
+   - Controls: tap where to aim and it fires (the angle toward the tap, the power by how far it is, as the aim line from the
+     barrel shows); or press on your tank and drag, the aim following the finger, and let go to fire; or the arrow keys
+     (left and right the angle, up and down the power) and Enter or Space to fire. Your last shot's path stays faint on the
+     board, to correct from.
+   - Through: won, stars by the health you have left (`starsOf`: 70 or more three, 35 two, else one); the most left on
+     each board kept (localStorage tanks.best). A tap on a finished board goes on to the next (golf's `nextBoard`), a hold
+     or Start this board again deals it afresh.
+   - A board no one plays shows its own duel (`duelOf`: two of the computer's players, each at the board's level, until one
+     is out), a few boards at a time in the browser's spare moments (`duelSoon`), each board at its own phase; until it is
+     ready, its ground and the two tanks waiting. */
+const TANKS_APP = (() => {
+  const W = 64, G = 1, VMAX = 1.3, SUB = 1 / 120, REC_HZ = 30, TR = 0.024, BR = 0.06, DMG = 55, FALL = 100, TURRET = 0.022, BARREL = 0.036;
+  const AIM_T = 0.9, BLAST_T = 0.55, REST_T = 2.5, FLOOR = 0.3, FAR_PX = 16;
+  const SKY_T = 0x0b1630, SKY_B = 0x24486e, EARTH = 0x6a4a2a, GRASS = 0x4f8a34, ME = 0x6fd36a, FOE = 0xe0564a, WRECK = 0x2e2e2e,
+        SHELL = 0xfff1c9, AIMC = 0xffffff, TRAILC = 0xffe08a, LASTC = 0x9fd8ff, WINDC = 0x9fd8ff, BARBG = 0x1a1a1a;
+  const LV = [
+    { amp: 0.05, hill: 0,    hillP: 0,   wind: 0,    ea: 9,   ep: 0.12,  learn: 0.8 },
+    { amp: 0.08, hill: 0.12, hillP: 0.3, wind: 0.08, ea: 7,   ep: 0.09,  learn: 0.76 },
+    { amp: 0.11, hill: 0.18, hillP: 0.5, wind: 0.14, ea: 5,   ep: 0.07,  learn: 0.72 },
+    { amp: 0.14, hill: 0.24, hillP: 0.6, wind: 0.2,  ea: 3.5, ep: 0.05,  learn: 0.68 },
+    { amp: 0.17, hill: 0.3,  hillP: 0.7, wind: 0.25, ea: 2.5, ep: 0.035, learn: 0.62 },
+  ];
+  const EDGE = [0.2, 0.16, 0.12, 0.09, 0.07];
+  const DL = ARCADE.difficulty('tanks.level', 'Every board has its own ground, harder the farther it is from the corner: gentle ground, no wind and a wild shot from the computer near it; hills between the tanks, a stronger wind and a sharper eye farther out. Easy, Normal and Hard move every board a level up.', true);
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const SND = ARCADE.sounds('tanks.sound', 'A thump for each shot, a blast where it lands, a fanfare for the win.');
+  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  // (Lights Out's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const gauss = R => Math.sqrt(-2 * Math.log(1 - R())) * Math.cos(2 * Math.PI * R());
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+
+  /* ─── THE GROUND ─── H[i] is where the ground's top is in column i, as v (0 the far edge, the sky's top; 1 the near edge). */
+  function flatten(H, x, w){
+    const a = Math.max(0, Math.floor((x - w) * W)), b = Math.min(W - 1, Math.floor((x + w) * W));
+    let s = 0; for (let i = a; i <= b; i++) s += H[i]; s /= (b - a + 1); for (let i = a; i <= b; i++) H[i] = s;
+  }
+  const surfAt = (H, x) => { const f = x * W - 0.5, i = Math.floor(f); if (i < 0) return H[0]; if (i >= W - 1) return H[W - 1]; const t = f - i; return H[i] + (H[i + 1] - H[i]) * t; };
+  const TERRAINS = new Map(), CAP = 1500;
+  function terrainOf(idx, lv){
+    const D = LV[lv - 1], R = rngOf((idx * 2654435761) ^ (lv * 9973) ^ 0x7a11), H = new Float32Array(W);
+    const base = 0.6 + (R() - 0.5) * 0.08;
+    const waves = [1, 2, 3, 5].map((f, k) => ({ f: f + R() * 0.6, a: D.amp * (0.4 + R() * 0.6) / (1 + k * 0.7), p: R() * Math.PI * 2 }));
+    const hill = R() < D.hillP ? { x: 0.42 + R() * 0.16, w: 0.07 + R() * 0.06, a: D.hill * (0.7 + R() * 0.3) } : null;
+    for (let i = 0; i < W; i++){
+      const x = (i + 0.5) / W; let h = base;
+      for (const w of waves) h += w.a * Math.sin(2 * Math.PI * w.f * x + w.p);
+      if (hill) h -= hill.a * Math.exp(-(((x - hill.x) / hill.w) ** 2));
+      H[i] = clamp(h, 0.22, 0.93);
+    }
+    const e = EDGE[lv - 1], xs = [e + (R() - 0.5) * 0.06, 1 - e + (R() - 0.5) * 0.06];
+    for (const x of xs) flatten(H, x, 0.035);
+    return { idx, lv, H0: H, xs, hill: !!hill, seed: (idx * 40503 + lv * 7919 + 17) >>> 0, phase: (idx * 0.618) % 1 };
+  }
+  function terrainAt(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let T = TERRAINS.get(key);
+    if (!T){ T = terrainOf(idx, lv); TERRAINS.set(key, T); if (TERRAINS.size > CAP) TERRAINS.delete(TERRAINS.keys().next().value); }
+    return T;
+  }
+
+  /* ─── A SHOT ─── from the barrel's end; a step of the flight; and where it ends: a tank, the ground, or off the sides. */
+  const tankY = (H, x) => surfAt(H, x) - TR * 0.5;
+  function muzzle(H, x, a){ const y = surfAt(H, x) - TURRET, q = a * Math.PI / 180; return [x + Math.cos(q) * BARREL, y - Math.sin(q) * BARREL]; }
+  function launch(H, x, a, p){ const [mx, my] = muzzle(H, x, a), q = a * Math.PI / 180, v = p * VMAX; return { x: mx, y: my, vx: Math.cos(q) * v, vy: -Math.sin(q) * v, t: 0 }; }
+  function flyStep(H, xs, s, wind, dt, who){
+    s.vx += wind * dt; s.vy += G * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.t += dt;
+    if (s.x < -0.05 || s.x > 1.05 || s.t > 8) return { x: s.x, y: s.y, hit: -1, off: true };
+    for (let k = 0; k < 2; k++){
+      if (k === who && s.t < 0.1) continue;                 // (a shot leaving its own barrel)
+      if (Math.hypot(s.x - xs[k], s.y - tankY(H, xs[k])) < TR) return { x: s.x, y: s.y, hit: k };
+    }
+    if (s.x >= 0 && s.x <= 1){ const y = surfAt(H, s.x); if (s.y >= y) return { x: s.x, y, hit: -1 }; }
+    return null;
+  }
+  // a burst at (x, y) on S ({H, xs, hp}): the ground dug and fallen in, the tanks hurt; returns the harm to each
+  function blastAt(S, x, y){
+    const H = S.H, dmg = [0, 0], y0 = S.xs.map(x => surfAt(H, x));
+    for (let k = 0; k < 2; k++){
+      const d = Math.hypot(x - S.xs[k], y - tankY(H, S.xs[k]));
+      if (d < BR + TR) dmg[k] += Math.round(DMG * clamp(1 - (d - TR * 0.5) / (BR + TR * 0.5), 0, 1));
+    }
+    const a = Math.max(0, Math.floor((x - BR) * W)), b = Math.min(W - 1, Math.floor((x + BR) * W));
+    for (let i = a; i <= b; i++){
+      const dx = (i + 0.5) / W - x; if (Math.abs(dx) >= BR) continue;
+      const hh = Math.sqrt(BR * BR - dx * dx), cut = Math.max(0, (y + hh) - Math.max(H[i], y - hh));
+      if (cut > 0) H[i] = Math.min(0.985, H[i] + cut);
+    }
+    for (let k = 0; k < 2; k++){ const drop = surfAt(H, S.xs[k]) - y0[k]; if (drop > 0.01) dmg[k] += Math.round(drop * FALL); }
+    for (let k = 0; k < 2; k++) S.hp[k] = Math.max(0, S.hp[k] - dmg[k]);
+    return dmg;
+  }
+
+  /* ─── THE COMPUTER ─── flies its candidate shots in the game's own physics (at 1/60 s: near enough, and its hands are
+     rougher than the difference), the nearest to the other tank wins; one that would land on itself is no answer. */
+  function simLand(H, xs, who, a, p, wind){
+    const s = launch(H, xs[who], a, p);
+    for (let n = 0; n < 600; n++){ const e = flyStep(H, xs, s, wind, 1 / 60, who); if (e) return e; }
+    return { x: s.x, y: s.y, hit: -1, off: true };
+  }
+  function missOf(H, xs, who, e){
+    const o = 1 - who;
+    if (e.hit === o) return 0;
+    if (e.off) return 2;
+    const self = Math.hypot(e.x - xs[who], e.y - tankY(H, xs[who])) < BR + TR * 2 ? 1 : 0;
+    return Math.hypot(e.x - xs[o], e.y - tankY(H, xs[o])) + self;
+  }
+  function aimFor(H, xs, who, wind){
+    let best = null;
+    const tryOne = (a, p) => { if (p < 0.08 || p > 1 || a < 2 || a > 178) return;
+      const m = missOf(H, xs, who, simLand(H, xs, who, a, p, wind)); if (!best || m < best.m - 1e-9) best = { a, p, m }; };
+    const lo = who ? 96 : 6;
+    for (let k = 0; k < 14; k++) for (let j = 0; j < 14; j++) tryOne(lo + k * 6, 0.22 + j * 0.06);
+    const b0 = best;
+    for (let da = -3; da <= 3; da++) for (let dp = -3; dp <= 3; dp++) tryOne(b0.a + da * 1.5, b0.p + dp * 0.012);
+    return best;
+  }
+  function foeShot(S, who, k, R){
+    const D = LV[S.lv - 1], b = aimFor(S.H, S.xs, who, S.wind), f = Math.max(FLOOR, Math.pow(D.learn, k));
+    return { a: clamp(b.a + gauss(R) * D.ea * f, 2, 178), p: clamp(b.p * (1 + gauss(R) * D.ep * f), 0.08, 1), m: b.m };
+  }
+
+  /* ─── A BOARD'S OWN DUEL ─── what a board no one plays shows: two of the computer's players at the board's level,
+     turn about from the left, until one is out (or 30 shots), each shot's flight sampled REC_HZ times a second. */
+  function duelOf(T){
+    const R = rngOf(T.seed), S = { lv: T.lv, H: T.H0.slice(), xs: T.xs, hp: [100, 100] }, D = LV[T.lv - 1], shots = [], k = [0, 0], a = [45, 135];
+    let who = 0;
+    for (let n = 0; n < 30 && S.hp[0] > 0 && S.hp[1] > 0; n++){
+      S.wind = (R() * 2 - 1) * D.wind;
+      const f = foeShot(S, who, k[who]++, R), s = launch(S.H, S.xs[who], f.a, f.p), path = [s.x, s.y];
+      let e = null, acc = 0;
+      while (!e){ e = flyStep(S.H, S.xs, s, S.wind, SUB, who); acc += SUB; if (!e && acc >= 1 / REC_HZ - 1e-9){ acc = 0; path.push(s.x, s.y); } }
+      path.push(e.x, e.y);
+      if (!e.off) blastAt(S, e.x, e.y);
+      shots.push({ who, as: a.slice(), a: f.a, p: f.p, wind: S.wind, path: Float32Array.from(path), at: [e.x, e.y], off: !!e.off, H: S.H.slice(), hp: S.hp.slice() });
+      a[who] = f.a; who = 1 - who;
+    }
+    let t = 0;
+    for (const s of shots){ s.t0 = t; s.fly = (s.path.length / 2 - 1) / REC_HZ; t += AIM_T + s.fly + BLAST_T; }
+    return { T, shots, len: t + REST_T, as: a.slice() };
+  }
+  const DUELS = new Map();
+  let budgetAt = 0, budget = 0;
+  function duelSoon(T){
+    const key = T.idx * 8 + T.lv; let Dl = DUELS.get(key);
+    if (Dl) return Dl;
+    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
+    if (budget <= 0) return null;
+    Dl = duelOf(T); budget -= performance.now() - t;
+    DUELS.set(key, Dl); if (DUELS.size > CAP) DUELS.delete(DUELS.keys().next().value);
+    return Dl;
+  }
+  // the duel at the page's clock: the ground, health and barrels before the shot in hand, then its aim, flight and burst
+  function shownOf(Dl, at){
+    const T = Dl.T, t = (((at == null ? now() / 1000 : at) + T.phase * Dl.len) % Dl.len + Dl.len) % Dl.len;
+    const V = { H: T.H0, xs: T.xs, hp: [100, 100], a: [45, 135], wind: 0, shell: null, trail: null, n: 0, blast: null, k: -1 };
+    for (let k = 0; k < Dl.shots.length; k++){
+      const s = Dl.shots[k], e = t - s.t0;
+      if (e >= AIM_T + s.fly + BLAST_T){ V.H = s.H; V.hp = s.hp; V.a = s.as.slice(); V.a[s.who] = s.a; continue; }
+      if (e < 0) break;
+      V.k = k; V.wind = s.wind; V.a = s.as.slice();
+      if (e < AIM_T){ const f = e / AIM_T, w = f * f * (3 - 2 * f); V.a[s.who] = s.as[s.who] + (s.a - s.as[s.who]) * w; break; }
+      V.a[s.who] = s.a;
+      if (e < AIM_T + s.fly){ const i = Math.min(s.path.length / 2 - 1, Math.floor((e - AIM_T) * REC_HZ)); V.shell = [s.path[2 * i], s.path[2 * i + 1]]; V.trail = s.path; V.n = i + 1; break; }
+      V.H = s.H; V.hp = s.hp; if (!s.off) V.blast = { x: s.at[0], y: s.at[1], e: e - AIM_T - s.fly };
+      break;
+    }
+    return V;
+  }
+
+  /* ─── PLAYING ─── */
+  const GAMES = new Map();
+  let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
+  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tanks.best') || '{}'))); } catch { return new Map(); } })();
+  const saveBest = () => { try { localStorage.setItem('tanks.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const bestKey = T => T.idx + '@' + T.lv;
+  const starsOf = hp => hp >= 70 ? 3 : hp >= 35 ? 2 : 1;
+  function fresh(c, r){
+    const T = terrainAt(c, r), R = rngOf((T.seed ^ (Date.now() & 0xffffff) ^ ((Math.random() * 1e9) | 0)) >>> 0);
+    const S = { lv: T.lv, H: T.H0.slice(), xs: T.xs, hp: [100, 100], wind: 0 };
+    S.wind = (R() * 2 - 1) * LV[T.lv - 1].wind;
+    return { T, S, c, r, R, a: [45, 135], p: [0.6, 0.6], turn: 0, state: 'aim', shell: null, path: null, blast: null, timer: 0, plan: null,
+             k: [0, 0], shots: [0, 0], last: null, ver: 0, lastT: performance.now() };
+  }
+  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const myTurn = g => !!g && g.state === 'aim' && g.turn === 0;
+  // the aim toward a point on the board: the angle from the turret, the power by the distance (full at AIM_FULL)
+  const AIM_FULL = 0.42;
+  function aimAt(g, u, v){
+    const x = g.S.xs[0], y = surfAt(g.S.H, x) - TURRET, dx = u - x, dy = y - v;
+    g.a[0] = clamp(Math.atan2(Math.max(0, dy), dx) * 180 / Math.PI, 0, 180);
+    g.p[0] = clamp(Math.hypot(dx, dy) / AIM_FULL, 0.08, 1);
+  }
+  function fire(g){
+    const who = g.turn;
+    g.shell = launch(g.S.H, g.S.xs[who], g.a[who], g.p[who]); g.path = [g.shell.x, g.shell.y]; g.acc = 0;
+    g.state = 'fly'; g.shots[who]++; SND.play('slide');
+  }
+  function land(g, e){
+    const who = g.turn;
+    g.path.push(e.x, e.y);
+    if (who === 0) g.last = g.path.slice();
+    g.shell = null;
+    if (e.off){ g.blast = null; if (who === 0) say('Off the board.', 1200); return endTurn(g); }
+    const dmg = blastAt(g.S, e.x, e.y); g.ver++;
+    g.blast = { x: e.x, y: e.y, e: 0 }; g.state = 'blast';
+    SND.play('boom');
+    if (dmg[1 - who] > 0) SND.play(who === 0 ? 'good' : 'bad');
+    if (who === 0) say(dmg[1] ? 'A hit: ' + dmg[1] + ' off them' + (dmg[0] ? ', ' + dmg[0] + ' off you' : '') + '.' : dmg[0] ? dmg[0] + ' off you.' : 'A miss.', 1400);
+    else if (dmg[0]) say('Hit: ' + dmg[0] + ' off you.', 1400);
+  }
+  function endTurn(g){
+    const hp = g.S.hp;
+    if (hp[0] <= 0 || hp[1] <= 0) return over(g);
+    g.turn = 1 - g.turn; g.S.wind = (g.R() * 2 - 1) * LV[g.S.lv - 1].wind;
+    if (g.turn === 1){ g.plan = foeShot(g.S, 1, g.k[1]++, g.R); g.state = 'think'; g.timer = AIM_T; g.from = g.a[1]; }
+    else g.state = 'aim';
+  }
+  function over(g){
+    g.state = 'over';
+    const hp = g.S.hp, won = hp[1] <= 0 && hp[0] > 0;
+    g.won = won;
+    if (won){
+      const k = bestKey(g.T), was = BEST.get(k), stars = starsOf(hp[0]);
+      g.stars = stars;
+      if (was == null || hp[0] > was){ BEST.delete(k); BEST.set(k, hp[0]); saveBest(); }
+      SND.play('win');
+      say('Their tank is out, in ' + g.shots[0] + (g.shots[0] === 1 ? ' shot' : ' shots') + ', with ' + hp[0] + ' health left: ' + '★'.repeat(stars) + '☆'.repeat(3 - stars)
+        + (was != null && hp[0] > was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + ' left.' : '.') + ' Tap for the next board.', 4200);
+    } else {
+      SND.play('lose');
+      say((hp[0] <= 0 && hp[1] <= 0 ? 'Both tanks are out.' : 'Your tank is out.') + ' Hold the board to try it again, or tap for the next.', 4200);
+    }
+  }
+  const HELD = new Set();
+  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D', a: 'L', d: 'R', w: 'U', s: 'D', A: 'L', D: 'R', W: 'U', S: 'D' };
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || g.state === 'over') return;
+    const k = KEYMAP[e.key];
+    if (k){ e.preventDefault(); e.stopPropagation(); HELD.add(k); return; }
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); if (!e.repeat && myTurn(g)) fire(g); }
+  }, true);
+  addEventListener('keyup', e => { const k = KEYMAP[e.key]; if (k && HELD.delete(k)){ e.preventDefault(); e.stopPropagation(); } }, true);
+  addEventListener('blur', () => HELD.clear());
+  function stepGame(g){
+    // (a slow frame catches up in the same small steps, up to a quarter of a second, as the tilt maze's marble does)
+    const t = performance.now(), dt = Math.min(0.25, (t - g.lastT) / 1000); g.lastT = t;
+    if (ARCADE.paused) return;
+    if (myTurn(g)){
+      const turn = (HELD.has('L') ? 1 : 0) - (HELD.has('R') ? 1 : 0), push = (HELD.has('U') ? 1 : 0) - (HELD.has('D') ? 1 : 0);
+      if (turn) g.a[0] = clamp(g.a[0] + turn * 40 * dt, 0, 180);
+      if (push) g.p[0] = clamp(g.p[0] + push * 0.4 * dt, 0.08, 1);
+    } else if (g.state === 'think'){
+      g.timer -= dt; const f = clamp(1 - g.timer / AIM_T, 0, 1), w = f * f * (3 - 2 * f);
+      g.a[1] = g.from + (g.plan.a - g.from) * w;
+      if (g.timer <= 0){ g.a[1] = g.plan.a; g.p[1] = g.plan.p; fire(g); }
+    } else if (g.state === 'fly'){
+      for (let n = Math.max(1, Math.round(dt / SUB)); n > 0 && g.shell; n--){
+        const e = flyStep(g.S.H, g.S.xs, g.shell, g.S.wind, SUB, g.turn);
+        if (e){ land(g, e); break; }
+        if ((g.acc += SUB) >= 1 / REC_HZ - 1e-9){ g.acc = 0; g.path.push(g.shell.x, g.shell.y); }
+      }
+    } else if (g.state === 'blast'){
+      g.blast.e += dt; if (g.blast.e > BLAST_T){ g.blast = null; endTurn(g); }
+    }
+  }
+  function liveView(g){
+    return { H: g.S.H, xs: g.S.xs, hp: g.S.hp, a: g.a, wind: g.S.wind, shell: g.shell ? [g.shell.x, g.shell.y] : null, trail: g.path, n: g.shell && g.path ? g.path.length / 2 : 0,
+             blast: g.blast, aim: myTurn(g) ? g.p[0] : 0, last: g.last, ver: g.ver, g };
+  }
+  function viewOf(c, r){
+    const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
+    if (g){ if (here) stepGame(g); return liveView(g); }
+    const T = terrainAt(c, r), Dl = duelSoon(T);
+    if (!Dl) return { H: T.H0, xs: T.xs, hp: [100, 100], a: [45, 135], wind: 0, k: -1 };
+    return shownOf(Dl);
+  }
+
+  /* ─── WHAT A BOARD DRAWS ─── the earth a box a column standing on the sky, with a strip of grass along its top; each tank
+     a hull, a turret and a barrel turned to its aim, its health over it; the shell and its trail, the burst, your last
+     shot faint, the aim line, and the wind as a bar along the top from the middle. */
+  const hpCol = hp => hp > 60 ? 0x6fd36a : hp > 30 ? 0xf2c14e : 0xe0564a;
+  function itemsOf(V){
+    const out = [], H = V.H, s = 1 / W;
+    for (let i = 0; i < W; i++){
+      const u = (i + 0.5) * s, h = H[i];
+      out.push({ kind: 'tkBox', u, v: (h + 1) / 2, scale: s, sx: 1.02, sy: 0.35, sz: (1 - h) * W, color: EARTH });
+      out.push({ kind: 'tkBox', u, v: h + 0.005, scale: s, sx: 1.02, sy: 0.5, sz: 0.01 * W, color: GRASS });
+    }
+    for (let k = 0; k < 2; k++){
+      const x = V.xs[k], y = surfAt(H, x), alive = V.hp[k] > 0, col = alive ? (k ? FOE : ME) : WRECK;
+      out.push({ kind: 'tkBox', u: x, v: y - TR * 0.4, scale: TR * 2, sx: 1, sy: 0.45, sz: 0.4, color: col });
+      out.push({ kind: 'tkDome', u: x, v: y - TURRET, scale: TURRET * 1.1, color: col });
+      out.push({ kind: 'tkBarrel', u: x, v: y - TURRET, scale: BARREL, sx: 1, sy: 0.16, sz: 0.16, lift: 0.004, yaw: -V.a[k] * Math.PI / 180, color: alive ? 0x2a2a2a : WRECK });
+      out.push({ kind: 'tkBox', u: x, v: y - 0.075, scale: 0.06, sx: 1, sy: 0.08, sz: 0.12, color: BARBG });
+      if (V.hp[k] > 0){ const f = V.hp[k] / 100; out.push({ kind: 'tkBox', u: x - 0.03 + 0.03 * f, v: y - 0.075, scale: 0.06, sx: f, sy: 0.14, sz: 0.1, color: hpCol(V.hp[k]) }); }
+    }
+    if (V.last) for (let i = 0; i < V.last.length / 2; i += 2) out.push({ kind: 'tkDot', u: V.last[2 * i], v: V.last[2 * i + 1], scale: 0.006, color: LASTC });
+    if (V.trail && V.n) for (let i = 0; i < V.n; i += 2) out.push({ kind: 'tkTrail', u: V.trail[2 * i], v: V.trail[2 * i + 1], scale: 0.008, color: TRAILC });
+    if (V.shell) out.push({ kind: 'tkDot', u: V.shell[0], v: V.shell[1], scale: 0.016, lift: 0.01, color: SHELL });
+    if (V.blast){ const e = V.blast.e, r = BR * Math.min(1, e / 0.15) * (e > 0.3 ? Math.max(0, 1 - (e - 0.3) / (BLAST_T - 0.3)) : 1);
+      if (r > 0.002) out.push({ kind: 'tkBlast', u: V.blast.x, v: V.blast.y, scale: 2 * r, color: ((e * 14) | 0) % 2 ? 0xfff4c2 : 0xff8a3a }); }
+    if (V.aim){
+      const x = V.xs[0], y = surfAt(H, x) - TURRET, q = V.a[0] * Math.PI / 180, n = 2 + Math.round(V.aim * 9);
+      for (let j = 1; j <= n; j++){ const d = BARREL + j * 0.02; out.push({ kind: 'tkDot', u: x + Math.cos(q) * d, v: y - Math.sin(q) * d, scale: 0.007, color: AIMC }); }
+    }
+    const w = V.wind || 0;
+    if (Math.abs(w) > 0.004){ const L = w / 0.25 * 0.2; out.push({ kind: 'tkBox', u: 0.5 + L / 2, v: 0.05, scale: 0.01, sx: Math.abs(L) / 0.01, sy: 0.4, sz: 0.5, color: WINDC });
+      out.push({ kind: 'tkDot', u: 0.5 + L, v: 0.05, scale: 0.014, color: WINDC }); }
+    else out.push({ kind: 'tkDot', u: 0.5, v: 0.05, scale: 0.008, color: WINDC });
+    return out;
+  }
+  // the board's tiles: the sky, shading down; far off (no pieces), the ground too, coarsely
+  const N = 16, SKY_ROW = Array.from({ length: N }, (_, j) => { const f = j / (N - 1), a = [SKY_T >> 16, SKY_T >> 8 & 255, SKY_T & 255], b = [SKY_B >> 16, SKY_B >> 8 & 255, SKY_B & 255];
+    return a.map((x, i) => Math.round(x + (b[i] - x) * f)).reduce((s, x) => s * 256 + x, 0); });
+  const SKY_GRID = { n: N, colors: Array.from({ length: N * N }, (_, i) => SKY_ROW[(i / N) | 0]) };
+  const GRIDS = new Map();
+  function gridOf(H, key){
+    let Gd = GRIDS.get(key); if (Gd) return Gd;
+    Gd = { n: N, colors: Array.from({ length: N * N }, (_, i) => { const x = ((i % N) + 0.5) / N, y = (((i / N) | 0) + 0.5) / N, h = surfAt(H, x);
+      return y >= h + 0.5 / N ? EARTH : y >= h - 0.5 / N ? GRASS : SKY_ROW[(i / N) | 0]; }) };
+    GRIDS.set(key, Gd); if (GRIDS.size > 4000) GRIDS.delete(GRIDS.keys().next().value);
+    return Gd;
+  }
+  const hex = n => '#' + n.toString(16).padStart(6, '0');
+
+  const restart = (c, r) => { GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} };
+  const app = {
+    name: 'tanks',
+    menu: [{ head: 'Tanks', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: 'Start this board again', title: 'This board\'s ground as it was, both tanks whole.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+    ]}],
+    cellFar: { light: SKY_B, dark: EARTH },
+    itemMinPx: FAR_PX,
+    faceMinPx: 1,
+    itemGeometries: {
+      tkBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
+      tkDome: T => { const g = new T.SphereGeometry(0.5, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2); return g; },
+      tkBarrel: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0.5, 0.5, 0); return g; },
+      tkDot: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.translate(0, 0.6, 0); g.userData.unlit = true; return g; },
+      tkTrail: T => { const g = new T.SphereGeometry(0.5, 6, 4); g.translate(0, 0.6, 0); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
+      tkBlast: T => { const g = new T.SphereGeometry(0.5, 16, 10); g.scale(1, 0.6, 1); g.translate(0, 0.1, 0); g.userData.unlit = true; g.userData.opacity = 0.85; return g; },
+    },
+    cellGrid(c, r, px){
+      if (px >= FAR_PX) return SKY_GRID;
+      const g = GAMES.get(gkey(c, r));
+      if (g) return gridOf(g.S.H, 'g' + gkey(c, r) + '#' + g.ver + '@' + g.T.lv);
+      const T = terrainAt(c, r), Dl = DUELS.get(T.idx * 8 + T.lv);
+      if (!Dl) return gridOf(T.H0, 't' + T.idx + '@' + T.lv);
+      const V = shownOf(Dl); return gridOf(V.H, 't' + T.idx + '@' + T.lv + '#' + (V.H === T.H0 ? -1 : Dl.shots.findIndex(s => s.H === V.H)));
+    },
+    cellItems(c, r){ return itemsOf(viewOf(c, r)); },
+    cellTitle(c, r){
+      const T = terrainAt(c, r), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(T));
+      const w = g ? g.S.wind : 0, wind = Math.abs(w) < 0.004 ? 'no wind' : 'wind ' + (w > 0 ? '→ ' : '← ') + Math.round(Math.abs(w) * 100);
+      return 'Tanks — level ' + T.lv + (T.hill ? ', a hill between' : '') + (best != null ? ' · best ' + best + ' left' : '')
+           + (g ? ' · you ' + g.S.hp[0] + ', them ' + g.S.hp[1] + ' · ' + wind + (myTurn(g) ? ' · angle ' + Math.round(g.a[0]) + '°, power ' + Math.round(g.p[0] * 100) + '%' : '')
+                + (g.state === 'over' ? (g.won ? ' · won' : ' · lost') : '') : '');
+    },
+    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); if (!g) return null; const [a, b] = g.S.hp; return (a + 1) / (a + b + 2); },
+    onReset(c, r){ restart(c, r); return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){
+      LIVE = c == null ? null : { c, r };
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is on the left. Tap where to aim and it fires (the line from the barrel is the power), or drag from your tank and let go; the arrow keys and Enter too.', 4200); }
+    },
+    noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'over'; },
+    onCellTap(c, r, u, v){
+      if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
+      LIVE = { c, r };
+      const g = gameAt(c, r);
+      if (g.state === 'over'){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+      if (u == null || !myTurn(g)) return true;
+      aimAt(g, u, v); fire(g);
+      return true;
+    },
+    onCellHold(c, r){ restart(c, r); say('The ground as it was, both tanks whole.', 1400); return true; },
+    // a press on your own tank (or near it) and a drag aims, the aim following the finger; letting go fires
+    claimsPan(u, v){
+      const g = liveGame(); if (!myTurn(g) || u == null) return false;
+      const x = g.S.xs[0], y = surfAt(g.S.H, x); if (Math.hypot(u - x, v - y) > 0.12) return false;
+      DRAG = { g, moved: false }; return true;
+    },
+    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ aimAt(DRAG.g, at.u, at.v); DRAG.moved = true; } return true; },
+    onPanEnd(){ if (DRAG){ if (DRAG.moved && myTurn(DRAG.g)){ fire(DRAG.g); ateAt = performance.now(); } DRAG = null; } },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = hex(SKY_T); ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = hex(EARTH); ctx.beginPath(); ctx.moveTo(0, sz);
+      for (let i = 0; i <= 20; i++){ const x = i / 20; ctx.lineTo(x * sz, (0.66 - 0.1 * Math.sin(x * 5.5 + 0.4) - 0.12 * Math.exp(-(((x - 0.5) / 0.12) ** 2))) * sz); }
+      ctx.lineTo(sz, sz); ctx.fill();
+      const tank = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect((x - 0.06) * sz, (y - 0.05) * sz, 0.12 * sz, 0.05 * sz); ctx.beginPath(); ctx.arc(x * sz, (y - 0.05) * sz, 0.035 * sz, Math.PI, 0); ctx.fill(); };
+      tank(0.16, 0.62, hex(ME)); tank(0.84, 0.6, hex(FOE));
+      ctx.strokeStyle = hex(TRAILC); ctx.lineWidth = Math.max(1, sz / 50); ctx.setLineDash([sz / 30, sz / 40]); ctx.beginPath();
+      for (let i = 0; i <= 20; i++){ const x = 0.2 + 0.6 * i / 20, y = 0.52 - 1.6 * (x - 0.2) * (0.8 - x) * 1.6; i ? ctx.lineTo(x * sz, y * sz) : ctx.moveTo(x * sz, y * sz); }
+      ctx.stroke(); ctx.setLineDash([]);
+    },
+    _debug: { terrainOf, terrainAt, duelOf, duelSoon, shownOf, aimFor, foeShot, simLand, launch, flyStep, blastAt, surfAt, fresh, gameAt, fire, aimAt, stepGame, starsOf, itemsOf, viewOf,
+              boardIdx, levelAt, LV, GAMES, BEST, DUELS, TERRAINS, myTurn, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -47914,7 +48348,7 @@ const LEVELS_APP = (() => {
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, TANKS_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -47923,7 +48357,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [TANKS_APP, 'tanks'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
