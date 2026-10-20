@@ -2706,6 +2706,85 @@ try {
     if (merged.mine.join('|') !== 'twin|other' || merged.stored !== 2) failures.push(`[${current}] copies merged on load: ${JSON.stringify(merged)}`);
   }
   console.log(`${failures.length === before9 ? 'ok  ' : 'FAIL'} ${current}`);
+  // THE BOARD'S SIZE (Oct 20: "could you provide a board size option for mini-golf. small is current size. add a medium and
+  // tall size."): the menu's Board size goes Small, Medium, Tall; each is mini golf made again at its size, its boards that
+  // shape and its holes generated to fill them (the course stays Small's), kept over a reload, then back to Small
+  current = 'mini golf board size';
+  {
+    const before = failures.length, out = {};
+    const look = () => page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const g = D.games.get(f.c + '_' + f.r), H = g ? D.HOLES[g.hole] : D.HOLES[0], map = H && H.map;
+      const item = A.menu.flatMap(g => g.items || []).find(m => m && m.label && /^Board size/.test(typeof m.label === 'function' ? m.label() : m.label));
+      return { name: A.name, size: A._size, nx: D.NX, ny: D.NY, shape: A.boardShape && [+A.boardShape.cellW.toFixed(4), A.boardShape.cellH], rows: map ? map.length : 0, cols: map ? map[0].length : 0,
+        label: item ? (typeof item.label === 'function' ? item.label() : item.label) : null, items: A.cellItems(f.c, f.r, 600).length, stored: localStorage.getItem('golf.size') }; });
+    for (const s of ['medium', 'tall']){
+      await page.evaluate(s => window.setGolfSize(s), s);
+      await page.waitForTimeout(1500);
+      out[s] = await look();
+    }
+    // (a page opened from a hole's link takes that hole's size, so a plain page, not a reload of whatever link the page is on)
+    await page.goto(new URL('games.html?app=minigolf', base).href, { waitUntil: 'load' });
+    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
+    out.reloaded = await look();
+    await page.evaluate(() => window.setGolfSize('small')); await page.waitForTimeout(1000);
+    out.small = await look();
+    const want = { medium: [13, 21], tall: [8, 21], small: [8, 13] };
+    for (const k of ['medium', 'tall', 'small']){ const o = out[k], [nx, ny] = want[k];
+      if (o.name !== 'mini golf' || o.size !== k || o.nx !== nx || o.ny !== ny || !o.shape || Math.abs(o.shape[0] - nx / ny) > 1e-3 || !o.label || !o.label.includes(nx + ' × ' + ny) || o.rows !== ny || o.cols !== nx || !(o.items > 0) || o.stored !== k)
+        failures.push(`[${current}] ${k}: ${JSON.stringify(o)}`); }
+    if (out.reloaded.size !== 'tall') failures.push(`[${current}] the size kept over a reload: ${JSON.stringify(out.reloaded)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (medium ${out.medium.nx} × ${out.medium.ny}, tall ${out.tall.nx} × ${out.tall.ny}, kept over a reload, back to small)`);
+  }
+  // CHARGES, ZAP ZONES AND MINES (Oct 20: "could you objects that add more complexity like electirc fields and land mines?" …
+  // "yes"): a pull bends a straight putt toward its post and a push turns it away; a zap zone on sends the ball back where it
+  // was putted from with no stroke more, and off lets it through; a mine throws a ball rolling over it back, once a stroke,
+  // and is ready again at the next putt; generated holes get them from their levels; the editor lays each and keeps its dials
+  current = 'mini golf charges, zap zones and mines';
+  {
+    const before = failures.length;
+    const cz = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, E = D.editor, CW = 1 / D.NY;
+      const base = toys => E.cleanSrc({ name: 'probe', par: 3, fence: 'wood', land: [], toys, map: Array.from({ length: 13 }, (_, j) => j === 1 ? '....O...' : j === 12 ? '....T...' : '........') });
+      const play = (toys, t0, g0) => { const k = E.addHole(base(toys)), g = g0 || D.holeGame({ start: k, card: [], single: true }, k); g.t = t0 || 0;
+        g.pull = { x: 0, y: 0.4 * 0.55 }; D.putt(g); let blasts = 0, seen = new Set();
+        for (let n = 0; n < 1500 && g.state === 'play' && g.moving; n++){ D.step(g, 1 / 120); for (const [j, v] of Object.entries(g.blown || {})) if (v >= 0 && !seen.has(j)){ seen.add(j); blasts++; } }
+        return { x: g.ball.x / CW, y: g.ball.y / CW, strokes: g.strokes, zapped: g.zapped != null, blasts, g, k }; };
+      const plain = play([]), pull = play([{ charge: [5.6, 7, 1.2, 2.5] }]), push = play([{ charge: [4.7, 7, -1.2, 2.5] }]);
+      const zone = [2.5, 6.6, 5.5, 6.6, 5.5, 7.4, 2.5, 7.4];
+      const zOn = play([{ zap: zone, zt: [4, 0, 0.8] }], 0), zOff = play([{ zap: zone, zt: [4, 0, 0.3] }], 1.6);
+      const mine = play([{ mine: [4.5, 8, 1] }]);
+      // (a second putt from where the mine left the ball: the mine is ready again)
+      const g2 = mine.g; g2.pull = { x: 0, y: 0.4 * 0.5 }; D.putt(g2); let again = 0;
+      for (let n = 0; n < 1500 && g2.moving; n++){ D.step(g2, 1 / 120); if (g2.blown && Object.values(g2.blown).some(v => v >= 0)) again = 1; }
+      // the generator: by level, how many holes have each
+      const gen = {}; for (const lv of [1, 2, 3, 5]){ const c = { charge: 0, zap: 0, mine: 0 };
+        for (let i = 0; i < 60; i++){ const s = D.genSrc(5000 + i * 31, lv); for (const k of Object.keys(c)) if ((s.toys || []).some(T => T[k])) c[k]++; } gen[lv] = c; }
+      // the source kept through a link's cleaning
+      const kept = E.cleanSrc(JSON.parse(JSON.stringify(base([{ zap: zone, zt: [3.5, 0.25, 0.4] }, { charge: [2, 3, -0.8, 1.5] }, { mine: [3, 4, 1.5] }]))));
+      return { plain: [plain.x, plain.y], pull: [pull.x, pull.y], push: [push.x, push.y], zOn: [zOn.x, zOn.y, zOn.strokes, zOn.zapped], zOff: [zOff.x, zOff.y, zOff.zapped],
+        mine: [mine.y, mine.blasts], again, gen, kept: kept && kept.toys };
+    });
+    const g = cz.gen;
+    if (!(cz.pull[0] > cz.plain[0] + 0.5)) failures.push(`[${current}] a pull should bend the putt toward its post: ${JSON.stringify(cz)}`);
+    if (!(cz.push[0] < cz.plain[0] - 0.5 || cz.push[1] > cz.plain[1] + 2)) failures.push(`[${current}] a push should turn the putt away: ${JSON.stringify(cz)}`);
+    if (!(cz.zOn[3] && cz.zOn[1] > 12 && cz.zOn[2] === 1) || cz.zOff[2] || !(cz.zOff[1] < 4)) failures.push(`[${current}] the zap zone: ${JSON.stringify(cz)}`);
+    if (!(cz.mine[1] === 1 && cz.mine[0] > 8.2) || !cz.again) failures.push(`[${current}] the mine: ${JSON.stringify(cz)}`);
+    if (g[1].charge || g[1].zap || g[1].mine || g[2].mine || !(g[3].charge + g[5].charge > 0 && g[3].zap + g[5].zap > 0 && g[3].mine + g[5].mine > 0)) failures.push(`[${current}] the generator by level: ${JSON.stringify(g)}`);
+    if (!cz.kept || JSON.stringify(cz.kept.map(T => Object.keys(T).join('+'))) !== '["zap+zt","charge","mine"]' || cz.kept[0].zt.join() !== '3.5,0.25,0.4') failures.push(`[${current}] kept through cleaning: ${JSON.stringify(cz.kept)}`);
+    // the editor: each laid by a tap with its tile, the charge's dial pushes past nothing, the zap's timing kept as its leaves move
+    const ed = await page.evaluate(() => {
+      const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED;
+      E.editStart(null); const tile = n => E.TOOLS.findIndex(t => t[0] === n), out = {};
+      for (const n of ['charge', 'mine', 'zap']){ A.onStatTap && A.onStatTap(0, 0, tile(n)); ED.tool = n; E.editApply(3.5 / 8, (n === 'zap' ? 5 : n === 'mine' ? 8 : 10) / 13, false); out[n] = E.TOOLS[tile(n)] ? ED.src.toys.filter(T => T[n]).length : -1; }
+      const ci = ED.src.toys.findIndex(T => T.charge); ED.pick = { type: 'toy', i: ci };
+      for (let q = 0; q < 6; q++) E.editAction('tdial', 'down');
+      out.charge2 = ED.src.toys[ci].charge[2];
+      const zi = ED.src.toys.findIndex(T => T.zap); ED.pick = { type: 'toy', i: zi }; E.editAction('tdial', 'up'); E.editAction('tdial', 'far');
+      out.zt = ED.src.toys[zi].zt.slice(); out.menu = E.editorMenu().map(m => m.label).filter(l => /On longer|Faster/.test(l));
+      E.editStop(true); return out; });
+    if (!(ed.charge === 1 && ed.mine === 1 && ed.zap === 1) || !(ed.charge2 < 0) || ed.zt[2] !== 0.6 || ed.zt[0] !== 3.2 || ed.menu.length !== 2) failures.push(`[${current}] the editor: ${JSON.stringify(ed)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (a pull bent the putt to ${cz.pull[0].toFixed(2)} from ${cz.plain[0].toFixed(2)}; zapped back with ${cz.zOn[2]} stroke; holes with mines at level 5: ${g[5].mine} of 60)`);
+  }
   // TILT MAZE (Oct 14: "what are more games like mini-golf we could create", then "tilt maze"): every board its own maze, its
   // size by level; the steady player finishes each; its marble never goes through a wall; the real arrow key rolls the marble;
   // a hole drops it back to the start; the ring finishes it with stars and a best kept; a tap then goes on to the next board;

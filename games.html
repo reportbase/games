@@ -36053,10 +36053,34 @@ return { core: tvf, parse: parseTvfText };
 })();
 try { window.TVF_CURVE = TVF_CURVE; } catch {}
 
-const GOLF_APP = (() => {
+/* ═══ THE BOARD'S SIZE (Oct 20: "could you provide a board size option for mini-golf. small is current size. add a medium and
+   tall size.", then "Medium 13×21, Tall 8×21" and "Generated holes" for the course). Mini golf was written for one grid, 8 × 13
+   cells, as constants (NX, NY, CW, WD) read in some two hundred places: the physics, the generator, the drawing, the editor,
+   the maps' rows. So the whole game is made for a size (GOLF_MAKE): Small is 8 × 13 as it was, Medium 13 × 21 (the next golden
+   board, 2.6 times the cells), Tall 8 × 21 (the same width, longer: a phone held upright). Changing it makes the game again at
+   the new size and puts it in mini golf's place (setGolfSize; the field's board shape follows the app's boardShape). The 22
+   holes of the hand-made course are drawn at 8 × 13, so they are Small's: at Medium and Tall every board has a generated hole
+   of that size. What a player keeps (My holes, best lines, holes made again, the editor's clipboard) is kept for each size
+   apart, Small's under the names it always had. Kept in localStorage `golf.size`; a link to a hole (?hole=, ?line=) opens at
+   the size its map was made at. */
+const GOLF_SIZES = { small: [8, 13], medium: [13, 21], tall: [8, 21] };
+const GOLF_SIZE_NAMES = { small: 'Small', medium: 'Medium', tall: 'Tall' };
+function golfSizeAtLoad(){
+  // (a shared hole carries its size in its map: read it, so the link plays at that size, without changing the saved one)
+  try {
+    const q = new URLSearchParams(location.search), raw = q.get('hole') || q.get('line');
+    if (raw){ const b = String(raw).replace(/-/g, '+').replace(/_/g, '/'), o = JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))));
+      const m = (o && (o.hole ? o.hole.map : o.map)) || null;
+      if (Array.isArray(m)) for (const [k, [nx, ny]] of Object.entries(GOLF_SIZES)) if (m.length === ny && m.every(r => String(r).length === nx)) return k; }
+  } catch {}
+  try { const s = localStorage.getItem('golf.size'); if (GOLF_SIZES[s]) return s; } catch {}
+  return 'small';
+}
+const GOLF_MAKE = SIZE => {
   // The grid: NX across, NY deep, square cells of CW; the board is WD wide by 1 deep in these units (the physics' own,
-  // isotropic). The field draws the board WD : 1 (boardShape), so board u is x / WD and v is y.
-  const NX = 8, NY = 13, CW = 1 / NY, WD = NX * CW;
+  // isotropic). The field draws the board WD : 1 (boardShape), so board u is x / WD and v is y. (Its size: GOLF_SIZES, Oct 20.)
+  const [NX, NY] = GOLF_SIZES[SIZE] || GOLF_SIZES.small, CW = 1 / NY, WD = NX * CW;
+  const SIZED = k => SIZE === 'small' ? k : k + '.' + SIZE;      // (what is kept, kept for each size apart: Oct 20)
   // THE RAIL (Oct 7: "why such a large margin in each hole?"): the holes used to be walled by a ring of whole wall cells, a
   // thirteenth of the board on every side and two on some, so the green was 6 × 11 in an 8 × 13 board. Now every cell is
   // the hole's and the board's edge is the wall, drawn as a rail RT thick standing just inside it.
@@ -36275,7 +36299,7 @@ const GOLF_APP = (() => {
      sunken garden, the skate park's bowl and pipe, every green roughened a little so no putt runs quite straight. The
      toys are fewer than before and placed for the ground: an orbit round a sinkhole, a gate across a saddle. Sunken ground
      goes at most BASE down (the board is under it); high ground is what makes the deep places deep. */
-  const HOLES = [
+  const HOLES = SIZE !== 'small' ? [] : [               // (the course is drawn at 8 × 13: Small's alone, Oct 20)
     { name: 'the meadow', par: 2, fence: 'wood', land: [{ rough: [0.014, 2.4, 1] }, { bump: [4, 6.5, 2.4, 0.035] }, { bump: [2, 3, 1.3, -0.025] }],
       toys: [],
       map: ['....O...', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '........', '....T...'] },
@@ -36480,6 +36504,22 @@ const GOLF_APP = (() => {
         return [{ fence: [X(cx - m * 2.4), y1, X(cx + m * 0.3), y1] }, { fence: [X(cx - m * 0.3), y2, X(cx + m * 2.4), y2] }]; }],
       pegs: [0.7, () => [[1.3, 0], [1.9, -0.55], [1.9, 0.55], [2.5, -1.1], [2.5, 0], [2.5, 1.1]]   // a fan of small posts
         .map(([rr, o]) => ({ rock: [X(cx + o), Y(cy + d * rr), 0.17] }))],
+      /* A CHARGE, A ZAP ZONE, A MINEFIELD (Oct 20: "could you objects that add more complexity like electirc fields and land
+         mines?" … "yes"), for generated holes only (see CHARGES, ZAP ZONES AND MINES): a charge in front of the cup pushing a
+         ball off it, or off to one side pulling the ball wide; a zap zone across the way in, to be crossed while it is off; an
+         arc of mines across the way in with gaps a ball can just go through. Each falls back to another way if it won't fit. */
+      charge: [0.8, () => { const push = rnd() < 0.55, [x, y] = push ? toward(1.45, (rnd() - 0.5) * 0.4) : toward(1.6, (rnd() < 0.5 ? -1 : 1) * (0.9 + rnd() * 0.4));
+        if (!free(Math.floor(x), Math.floor(y)) || Math.hypot(x - cx, y - cy) < 1.1) return (style = 'arc', STYLES.arc[1]());
+        return [{ charge: [x, y, push ? -r2(0.6 + rnd() * 0.4) : r2(0.7 + rnd() * 0.5), r2(1.5 + rnd() * 0.5)] }]; }],
+      zapgate: [0.8, () => { const [x, y] = toward(1.6, 0), lv0 = [];
+        for (let q = 0; q < 12; q++){ const a = (q + 0.5) / 12 * 2 * Math.PI; lv0.push([x + 1.25 * Math.cos(a), y + 0.55 * Math.sin(a)]); }
+        if (!lv0.every(([a, b]) => shapeOk(a, b) && Math.hypot(a - cx, b - cy) > 0.7)) return (style = 'gate', STYLES.gate[1]());
+        hard = 0; return [{ zap: lv0.flatMap(([a, b]) => [r2(a), r2(b)]), zt: [r2(3 + rnd() * 2), r2(rnd()), r2(0.4 + rnd() * 0.15)] }]; }],
+      minefield: [0.8, () => { const n = 5, out = [];
+        for (let q = 0; q < n; q++){ const a = (q / (n - 1) - 0.5) * 2.2, [x, y] = toward(1.5, a);
+          if (free(Math.floor(x), Math.floor(y)) && Math.hypot(x - tx, y - ty) > 1.4) out.push({ mine: [x, y, r2(0.9 + rnd() * 0.4)] }); }
+        if (out.length < 3) return (style = 'pegs', STYLES.pegs[1]());
+        return out; }],
       /* CURVED FENCES (Oct 10: "6,4,2,3", 2 being curved fences as TVF curves; see curveOf), for generated holes only:
          a hook, a round fence about the cup open at the back; a snail, a fence spiralling one turn out from the cup, so the
          way in winds round it; an S-bend across the way in. Each falls back to a straight-fenced way if it won't fit. */
@@ -36531,7 +36571,7 @@ const GOLF_APP = (() => {
        them, Oct 10: a snail took 6.3 strokes on average where holes like it without curves took 2.9, so it comes only at
        level 5, and clears the movers and loose things out of its reach (clearR); a hook took 3.5 and an S-bend 3.8, so they
        come from level 2) */
-    const CURVE_FROM = { hook: 2, sbend: 2, snail: 5 };
+    const CURVE_FROM = { hook: 2, sbend: 2, snail: 5, charge: 2, zapgate: 2, minefield: 3 };   // (and the charge, the zap zone and the mines: Oct 20)
     const wt = n => (CURVE_FROM[n] && !(lv >= CURVE_FROM[n]) ? 0 : 1) * STYLES[n][0] * (!lv || lv === 3 || !GROUND_GUARDS.includes(n) ? 1 : [0, 0.35, 1, 2, 3][lv - 1]);
     if (allow.some(n => wt(n) > 0)) allow = allow.filter(n => wt(n) > 0);
     const tot = allow.reduce((s, n) => s + wt(n), 0);
@@ -36547,7 +36587,7 @@ const GOLF_APP = (() => {
     if (clearR) toys = toys.filter(T => { const k = Object.keys(T)[0], v = T[k];
       if (k === 'path'){ const P = loopOf(v); for (let q = 0; q < P.M; q++) if (Math.hypot(P.pts[2 * q] - cx, P.pts[2 * q + 1] - cy) < clearR) return false; return true; }
       return Math.hypot(v[0] - cx, v[1] - cy) >= clearR; });
-    guards = guards.filter(T => !(T.kick || T.rock) || (free(Math.floor(Object.values(T)[0][0]), Math.floor(Object.values(T)[0][1])) && !wayOver(...Object.values(T)[0], 1.6)));
+    guards = guards.filter(T => !(T.kick || T.rock || T.mine || T.charge) || (free(Math.floor(Object.values(T)[0][0]), Math.floor(Object.values(T)[0][1])) && !wayOver(...Object.values(T)[0], 1.6)));
     // (a planter that a guard would stand on gives way to the guard: Oct 11; the cup's guards reach farther than its room)
     toys = toys.filter(T => { if (!Array.isArray(T.planter)) return true; const B = planterOf(T.planter);
       return !guards.some(U => toyPoints(U).some(([x, y, r]) => blobIn(B, x, y) || blobEdge(B, x, y, r + 0.3) < r + 0.3)); });
@@ -36568,6 +36608,9 @@ const GOLF_APP = (() => {
         if (k === 'fence' || k === 'gate') return segLineD(v[0], v[1], v[2], v[3]) < 0.35;
         if (k === 'path'){ const n = (v.length - 4) >> 1; for (let q = 0; q < n; q++) if (lineD(v[2 * q], v[2 * q + 1]) < 0.5) return true; return false; }
         if (k === 'mill' || k === 'arm' || k === 'swing') return lineD(v[0], v[1]) < v[2];
+        if (k === 'mine') return lineD(v[0], v[1]) < 0.45;                    // (Oct 20)
+        if (k === 'charge') return lineD(v[0], v[1]) < v[3] * 0.5;
+        if (k === 'zap'){ const B = zapOf(v); for (let q = 0.06; q < 0.94; q += 0.02) if (blobIn(B, tx + (cx - tx) * q, ty + (cy - ty) * q)) return true; return false; }
         if (k === 'curve'){ const C = curveOf(v); for (let q = 0; q < C.m; q++) if (lineD(C.pts[2 * q], C.pts[2 * q + 1]) < 0.35) return true; return false; }
         // (a planter across it, or so near it that a ball rolling straight would clip its wall: Oct 11)
         if (k === 'planter'){ const B = planterOf(v); for (let q = 0.06; q < 0.94; q += 0.02){ const x = tx + (cx - tx) * q, y = ty + (cy - ty) * q; if (blobIn(B, x, y) || blobEdge(B, x, y, 0.35) < 0.3) return true; } return false; }
@@ -36672,6 +36715,9 @@ const GOLF_APP = (() => {
       if (T.fence) T.fence = T.fence.slice(0, 4).map(P);
       if (T.curve) T.curve = T.curve.map(P);                 // (a curved fence: its leaves, Oct 10)
       if (T.planter) T.planter = T.planter.map(P);           // (a planter: its leaves, Oct 11)
+      if (T.zap){ T.zap = T.zap.map(P); T.zt = (T.zt || [4, 0, 0.5]).slice(0, 3); }   // (a zap zone: its leaves, and its seconds, phase and share on: Oct 20)
+      if (T.charge) T.charge = [P(T.charge[0]), P(T.charge[1]), T.charge[2], P(T.charge[3])];
+      if (T.mine) T.mine = [P(T.mine[0]), P(T.mine[1]), T.mine[2] || 1];
       if (T.pipe){ const [c0, r0, c1, r1, deg, r] = T.pipe; T.pipe = [P(c0), P(r0), P(c1), P(r1), deg * Math.PI / 180, P(r)]; }
       if (T.orbit || T.shuttle){ T.path = pathify(T).path; delete T.orbit; delete T.shuttle; }   // (written before Oct 10)
       if (T.path){ const n = pathN(T.path); T.path = [...T.path.slice(0, 2 * n).map(P), P(T.path[2 * n]), T.path[2 * n + 1], T.path[2 * n + 2] || 0, T.path[2 * n + 3] || 0]; }
@@ -37028,6 +37074,8 @@ const GOLF_APP = (() => {
     g.pull = { x: 0, y: 0 }; g.aiming = false;
     if (p < 0.06 || g.moving || g.state !== 'play') return false;
     g.rest = { x: g.ball.x, y: g.ball.y };
+    // (the mines ready again, all but one the ball is sitting on: Oct 20)
+    g.blown = {}; (HOLES[g.hole] && HOLES[g.hole].toys || []).forEach((T, k) => { if (T.mine && Math.hypot(g.ball.x - T.mine[0], g.ball.y - T.mine[1]) < MINE_R + BR) g.blown[k] = -1; });
     g.ball.vx = -qx / L * p * VMAX; g.ball.vy = -qy / L * p * VMAX;
     g.moving = true; g.slowT = 0; g.rollT = 0; g.strokes++;
     g.trail = [[g.ball.x, g.ball.y]];                        // the last putt's ghost gives way to this one's
@@ -37053,7 +37101,7 @@ const GOLF_APP = (() => {
      of a cell, each point as its step from the last. Playing the hole again, a pale ball rides the line from your first
      putt (Ghost: on, in the menu), so you race your best; Watch my best line rides it from now with the line dotted; Share
      my best line copies a link carrying the hole and the line, which opens on the hole with that line to race. */
-  const GHOST_KEY = 'golf.ghosts', GHOST_CAP = 200, GHOST_TOL = CW * 0.03;
+  const GHOST_KEY = SIZED('golf.ghosts'), GHOST_CAP = 200, GHOST_TOL = CW * 0.03;
   const GHOSTS = (() => { try { const o = JSON.parse(localStorage.getItem(GHOST_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; } })();
   function ghostsSave(){
     try {
@@ -37282,6 +37330,39 @@ const GOLF_APP = (() => {
   // a hole's planters' lines (kept on the compiled hole), and whether (x, y) is inside one
   const plantersOf = H => H._planters || (H._planters = (H.toys || []).filter(T => Array.isArray(T.planter)).map(T => planterOf(T.planter)));
   const inPlanter = (H, x, y) => { const P = plantersOf(H); return P.length > 0 && P.some(B => blobIn(B, x, y)); };
+  /* CHARGES, ZAP ZONES AND MINES (Oct 20: "could you objects that add more complexity like electirc fields and land mines?",
+     then "yes" to a charge, a zap zone and a mine). Three things that do to the ball what nothing else on the course does:
+       · A charge (`charge [col, row, strength, reach]`) is a post with a field about it, reaching `reach` cells. Above
+         nothing it pulls the ball in, below nothing it pushes it away, hardest near the post and nothing at its reach
+         (CHARGE_A × strength × (1 − (d/reach)²)² / (1 + (d/0.7 cell)²)), so a ball passing bends round it, is slung past it,
+         or rolls in and stops against the post, which it bounces off as off a boulder. It acts only on a ball rolling: a
+         ball at rest stays where it stopped, as on a gentle slope.
+       · A zap zone (`zap [x0, y0, …]`, a closed TVF curve of 3–32 leaves, and `zt [seconds, phase, share on]`) is a patch
+         that is on for a share of each turn of the toys' clock and off for the rest. A ball rolling in it while it is on
+         goes back to where it was putted from (no stroke more: the stroke is lost already). Timing is all.
+       · A mine (`mine [col, row, power]`) is buried: a ball rolling over its middle sets it off and is thrown straight out
+         from it, at MINE_V × power, keeping half of the speed it had across that way. The ball meets it on its near side,
+         so straight on it is thrown back the way it came, clipped at its edge it is flicked aside. It goes off once a
+         stroke (`g.blown`) and is ready again at the next putt, so a hole plays the same every time; a ball putted from on
+         top of one leaves without setting it off. */
+  const CHARGE_A = 4, CHARGE_POST = CW * 0.13, MINE_R = CW * 0.26, MINE_V = 1.1;
+  const zapOf = v => blobOf(v, v.length >> 1);
+  const chargesOf = H => H._charges || (H._charges = (H.toys || []).filter(T => T.charge).map(T => T.charge));
+  const zapsOf = H => H._zaps || (H._zaps = (H.toys || []).filter(T => Array.isArray(T.zap)).map(T => ({ T, B: zapOf(T.zap) })));
+  // is a zap zone on at t (its share of each turn from its phase on), and how far through its turn
+  function zapOn(T, t){ const [per, ph, on] = T.zt || [4, 0, 0.5], f = (((t / per + ph) % 1) + 1) % 1; return f < on; }
+  const inZap = (H, x, y) => zapsOf(H).some(Z => blobIn(Z.B, x, y));
+  // a charge's pull on a ball rolling at (x, y), as an acceleration
+  function chargePull(H, x, y){
+    let ax = 0, ay = 0;
+    for (const [qx, qy, s, reach] of chargesOf(H)){
+      const dx = qx - x, dy = qy - y, d = Math.hypot(dx, dy);
+      if (d >= reach || d < 1e-6) continue;
+      const e = 1 - (d / reach) * (d / reach), f = s * CHARGE_A * e * e / (1 + (d / (0.7 * CW)) * (d / (0.7 * CW)));
+      ax += dx / d * f; ay += dy / d * f;
+    }
+    return [ax, ay];
+  }
   /* a planter's leaves, in cells, about r across: round (a little uneven), a kidney (a bean, bowed in on one side) or a
      star of five round lobes, turned by rot (the generator's and the editor's tap's) */
   function planterLeaves(cx, cy, r, kind, rot, rnd){
@@ -37353,6 +37434,9 @@ const GOLF_APP = (() => {
     else if (k === 'fence' || k === 'gate') seg(v[0], v[1], v[2], v[3], 0.15);
     else if (k === 'curve'){ const C = curveOf(v); for (let q = 0; q < C.m; q += 2) out.push([C.pts[2 * q], C.pts[2 * q + 1], 0.15]); }
     else if (k === 'planter'){ const B = planterOf(v); for (let q = 0; q < B.M; q += 2) out.push([B.pts[2 * q], B.pts[2 * q + 1], 0.12]); }
+    else if (k === 'zap'){ const B = zapOf(v); for (let q = 0; q < B.M; q += 3) out.push([B.pts[2 * q], B.pts[2 * q + 1], 0.12]); }   // (Oct 20)
+    else if (k === 'charge') out.push([v[0], v[1], 0.3]);
+    else if (k === 'mine') out.push([v[0], v[1], 0.3]);
     else if (k === 'path'){ const P = loopOf(v), r = v[2 * pathN(v)] || 0.3; for (let q = 0; q < P.M; q += 3) out.push([P.pts[2 * q], P.pts[2 * q + 1], r]); }
     else if (k === 'mill' || k === 'arm' || k === 'swing') out.push([v[0], v[1], v[2]]);
     else if (k === 'pipe') out.push([v[0], v[1], v[5]], [v[2], v[3], v[5]]);
@@ -37467,6 +37551,7 @@ const GOLF_APP = (() => {
       const k = Object.keys(T)[0], v = T[k];
       if (!Array.isArray(v)) return;
       if (k === 'kick' || k === 'rock') out.push({ i, k, els: [{ c: [v[0], v[1], v[2]] }], move: true });
+      else if (k === 'charge' || k === 'mine') out.push({ i, k, els: [{ c: [v[0], v[1], k === 'mine' ? 0.26 : 0.13] }], move: true });   // (Oct 20)
       else if (k === 'fence') out.push({ i, k, els: [{ s: v.slice(0, 4), h: FENCE_T / CW }], move: true });
       else if (k === 'pipe') out.push({ i, k, els: [{ c: [v[0], v[1], v[5] || 0.4] }, { c: [v[2], v[3], v[5] || 0.4] }], move: false });
       else if (k === 'curve' || k === 'planter'){ const C = k === 'curve' ? curveOf(v) : planterOf(v), m = k === 'curve' ? C.m : C.M, els = [];
@@ -37714,6 +37799,21 @@ const GOLF_APP = (() => {
         if (!N || N.d < 1e-9) return;
         const sg = inside ? -1 : 1, nx = sg * (b.x - N.x) / N.d, ny = sg * (b.y - N.y) / N.d;
         hit = Math.max(hit, knockOff(b, nx, ny, N.x, N.y, R0, 0, 0, E));
+      } else if (T.charge){
+        // a charge's post (Oct 20): the ball off it as off a small boulder; its field is the roll's (step)
+        const [qx, qy] = T.charge, dx = b.x - qx, dy = b.y - qy, d = Math.hypot(dx, dy);
+        if (d >= BR + CHARGE_POST || d < 1e-9) return;
+        hit = Math.max(hit, knockOff(b, dx / d, dy / d, qx, qy, BR + CHARGE_POST, 0, 0, E));
+      } else if (T.mine){
+        // a mine (Oct 20): a ball rolling over its middle sets it off, once a stroke, and is thrown out from it
+        if (!g.moving || (g.blown && g.blown[k] != null)) return;
+        const [mx, my, pw] = T.mine, dx = b.x - mx, dy = b.y - my, d = Math.hypot(dx, dy);
+        if (d >= MINE_R) return;
+        let nx, ny; if (d > 1e-6){ nx = dx / d; ny = dy / d; } else { const sp = Math.hypot(b.vx, b.vy) || 1; nx = -b.vx / sp; ny = -b.vy / sp; }
+        const vt = -b.vx * ny + b.vy * nx, out = MINE_V * (pw || 1);   // (what it had across the way it is thrown, half of it kept)
+        b.vx = nx * out - ny * vt * 0.5; b.vy = ny * out + nx * vt * 0.5;
+        (g.blown = g.blown || {})[k] = t; hit = Math.max(hit, 0.6); g.slowT = 0;
+        SND.play('bad');
       } else if (T.rock){
         // a boulder: it stands still, and the ball bounces off it as off a wall
         const [cx, cy, cr] = T.rock, dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
@@ -37817,8 +37917,16 @@ const GOLF_APP = (() => {
         say('In the water — one stroke penalty', 1500); SND.play('bad');
         break;
       }
+      // in a zap zone while it is on (Oct 20): back where you putted from, the stroke lost but no stroke more
+      if (H.toys && zapsOf(H).some(Z => zapOn(Z.T, g.t) && blobIn(Z.B, b.x, b.y))){
+        g.moving = false; b.vx = b.vy = 0; b.x = g.rest.x; b.y = g.rest.y; g.zapped = g.t;
+        if (R) R.raw.push(tb + k * h, b.x, b.y);
+        say('Zapped — back where you putted from', 1500); SND.play('bad');
+        break;
+      }
       const [gx, gy] = gradOf(H, b.x, b.y);                  // downhill pulls
       b.vx -= gx * GRAV * h; b.vy -= gy * GRAV * h;
+      if (H.toys && chargesOf(H).length){ const [ax, ay] = chargePull(H, b.x, b.y); b.vx += ax * h; b.vy += ay * h; }   // (and the charges: Oct 20)
       // The cup draws a ball that comes close.
       const cx = H.cup.x - b.x, cy = H.cup.y - b.y, cd = Math.hypot(cx, cy);
       if (cd < P.cup * 1.4 && cd > 1e-6){ b.vx += cx / cd * 1.2 * h; b.vy += cy / cd * 1.2 * h; }
@@ -37867,7 +37975,7 @@ const GOLF_APP = (() => {
   /* (eight a cell, so the rounded shores read round, until Oct 12; six now: "its heavy" … "yes, proceed". The ground was
      13,312 triangles a board, 18% of a framed field; at six a cell it is 7,488, and the shores are drawn as a colour blend
      across their line, lakeMix, not by the mesh's steps, so the screenshots before and after show the same holes.) */
-  const MESH = 78;
+  const MESH = 6 * NY;                                       // (78 on Small; six rows a cell at every size, Oct 20)
   /* THE GROUND'S GRAINS (Oct 14: "could mini-golf and chess beneifit from better LOD handeling of this application." … "yes",
      on the ground first). Every board's ground was the full 78-row mesh, 7,488 triangles, near or far: most of a framed
      field's triangles. Levels showed how detail can come and go with nothing seen to change: a grain fades toward the next
@@ -37875,9 +37983,9 @@ const GOLF_APP = (() => {
      cell: 7,488, 1,872 and 208 triangles), each carrying the next coarser one's surface laid at its own points (pos2, col2,
      nrm2), and a board's weight (`morph`) takes it there: at 1 a grain IS the coarser grain on the screen, so the step to
      it changes nothing. The physics never reads these; the ball, the rails and the rater use hOf as before. */
-  const GROUND_ROWS = [MESH, 39, 13];
+  const GROUND_ROWS = [MESH, 3 * NY, NY];
   function groundData(T, H, ny){
-    const nx = Math.round(ny * WD), pos = [], col = [], c = new T.Color(), sandC = new T.Color(0xd8c287), waterC = new T.Color(0x2f6cc4);
+    const nx = Math.round(ny * WD), pos = [], col = [], c = new T.Color(), sandC = new T.Color(0xd8c287), waterC = new T.Color(0x2f6cc4), zapC = new T.Color(0x6a7fa0);
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++){
       const x = i / nx * WD, y = j / ny, h = hOf(H, x, y), ci = Math.min(NX - 1, Math.floor(x / CW)), cj = Math.min(NY - 1, Math.floor(y / CW));
       const ch = at(H, ci, cj) === '#' ? '#' : groundAt(H, x, y), wet = ch === '~' || ch === '=';
@@ -37893,7 +38001,8 @@ const GOLF_APP = (() => {
          what shows is the shape of the ground. */
       else { c.setHex(GRASS[0]); c.multiplyScalar(0.72 * Math.max(0.5, Math.min(1.45, 1 + (h - BASE) * 9)));
              const sf = sandMix(H, x, y); if (sf > 0) c.lerp(sandC, sf);   // (sand blended in at its edge: Oct 10)
-             if (lm > 0) c.lerp(waterC, lm); }
+             if (lm > 0) c.lerp(waterC, lm);
+             if (inZap(H, x, y)) c.lerp(zapC, 0.28); }       // (a zap zone's ground, a little blue-grey: Oct 20)
       col.push(c.r, c.g, c.b);
     }
     const idx = [];
@@ -38278,6 +38387,12 @@ const GOLF_APP = (() => {
     ghost: T => { const g = new T.SphereGeometry(0.5, 6, 4); g.scale(1, 0.4, 1); g.translate(0, 0.2, 0); g.userData.unlit = true; g.userData.opacity = 0.6; return g; },
     kicker: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.9, 20); g.translate(0, 0.45, 0); return g; },
     hub: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1.6, 16); g.translate(0, 0.8, 0); return g; },
+    // a charge's glowing ball, the dots of its field and of a zap zone's sparks, a zap zone's rim, a mine and its light (Oct 20)
+    orb: T => { const g = new T.SphereGeometry(0.5, 12, 8); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
+    fieldDot: T => { const g = new T.CircleGeometry(0.5, 6); g.rotateX(-Math.PI / 2); g.translate(0, 0.02, 0); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
+    zapEdge: T => { const g = new T.BoxGeometry(1, 0.2, 0.16); g.translate(0, 0.06, 0); g.userData.unlit = true; return g; },
+    mineDisc: T => { const g = new T.CylinderGeometry(0.46, 0.5, 0.1, 10); g.translate(0, 0.03, 0); return g; },
+    mineLight: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.scale(1, 0.6, 1); g.translate(0, 0.25, 0); g.userData.unlit = true; return g; },
     blade: T => { const g = new T.BoxGeometry(1, 0.7, 1); g.translate(0, 0.6, 0); return g; },
     // each slide its own size: width across u, depth along v, standing on the ground and reaching into it
     ...Object.fromEntries(HOLES.flatMap((H, k) => (H.toys || []).map((T, j) => T.slide && ['slide' + k + '_' + j, T3 => {
@@ -38469,6 +38584,46 @@ const GOLF_APP = (() => {
           const [ax, ay] = at(L * q / np), [bx, by] = at(L * (q + 1) / np), x = (ax + bx) / 2, y = (ay + by) / 2, l = Math.hypot(bx - ax, by - ay);
           out.push({ kind: 'planterWall_' + matOf(H), u: x, v: y, scale: CW, sx: l * 1.15 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: 0xffffff });
         }
+      } else if (T.charge){
+        /* a charge (Oct 20): a dark post with a glowing ball, red pulling and blue pushing, and its field as two rings of
+           faint dots drifting in toward the post for a pull, out from it for a push, so you can see which and how far */
+        const [qx, qy, sg, reach] = T.charge, hq = hOf(H, qx, qy), pull = sg > 0, glow = 0.75 + 0.25 * Math.sin(t * 5 + qx * 9);
+        const hex = pull ? 0xff5a4a : 0x4aa8ff, dim = sh => Math.round(((hex >> sh) & 255) * glow) << sh;
+        out.push({ kind: 'hub', u: qx, v: qy, scale: CHARGE_POST * 2, lift: hq, color: 0x3a3f48 },
+                 { kind: 'orb', u: qx, v: qy, scale: CW * 0.3, lift: hq + CHARGE_POST * 2 * 1.5, color: dim(16) | dim(8) | dim(0) });
+        for (let q = 0; q < 2; q++){
+          const f0 = (((t * 0.35 * Math.min(1.5, Math.abs(sg) + 0.3)) + q / 2) % 1), f = pull ? 1 - f0 : f0;
+          if (f < 0.15) continue;
+          const rr = reach * f, m = Math.max(8, Math.round(2 * Math.PI * rr / (CW * 0.45)));
+          for (let i = 0; i < m; i++){ const a = (i + q * 0.5) / m * 2 * Math.PI, x = qx + rr * Math.cos(a), y = qy + rr * Math.sin(a);
+            if (x < RT || x > WD - RT || y < RT || y > 1 - RT) continue;
+            out.push({ kind: 'fieldDot', u: x, v: y, scale: CW * 0.09, lift: hOf(H, x, y) + 0.002, color: pull ? 0xffa08f : 0x9fd2ff }); }
+        }
+      } else if (Array.isArray(T.zap)){
+        // a zap zone (Oct 20): its rim, bright while it is on and dim while it is off, and sparks inside it while on
+        const B = zapOf(T.zap), on = zapOn(T, t), cum = [0];
+        for (let q = 1; q <= B.M; q++){ const a = q - 1, c = q % B.M; cum.push(cum[q - 1] + Math.hypot(B.pts[2 * c] - B.pts[2 * a], B.pts[2 * c + 1] - B.pts[2 * a + 1])); }
+        const L = cum[B.M], np = Math.max(8, Math.round(L / (CW * 0.4))), at = s => {
+          let q = 1; while (q < B.M && cum[q] < s) q++;
+          const a = q - 1, c = q % B.M, f = (s - cum[a]) / ((cum[q] - cum[a]) || 1);
+          return [B.pts[2 * a] + (B.pts[2 * c] - B.pts[2 * a]) * f, B.pts[2 * a + 1] + (B.pts[2 * c + 1] - B.pts[2 * a + 1]) * f]; };
+        for (let q = 0; q < np; q++){
+          const [ax, ay] = at(L * q / np), [bx, by] = at(L * (q + 1) / np), x = (ax + bx) / 2, y = (ay + by) / 2, l = Math.hypot(bx - ax, by - ay);
+          out.push({ kind: 'zapEdge', u: x, v: y, scale: CW, sx: l * 1.1 / CW, lift: hOf(H, x, y), yaw: Math.atan2(by - ay, bx - ax), color: on ? ((q + Math.floor(t * 10)) % 3 ? 0x7fe8ff : 0xe8fbff) : 0x2e4a5c });
+        }
+        if (on){ let cx = 0, cy = 0; for (let m = 0; m < B.M; m++){ cx += B.pts[2 * m]; cy += B.pts[2 * m + 1]; } cx /= B.M; cy /= B.M;
+          for (let q = 0; q < 7; q++){ const sd = Math.floor(t * 12) * 7 + q * 13, m = (sd * 37) % B.M, f = 0.15 + ((sd * 0.618) % 1) * 0.7;
+            const x = B.pts[2 * m] + (cx - B.pts[2 * m]) * f, y = B.pts[2 * m + 1] + (cy - B.pts[2 * m + 1]) * f;
+            out.push({ kind: 'fieldDot', u: x, v: y, scale: CW * 0.12, lift: hOf(H, x, y) + 0.003, color: 0xe8fbff }); } }
+      } else if (T.mine){
+        // a mine (Oct 20): a low dark disc in the grass with a light that blinks while it is ready, and a flash going out
+        // when it goes off; until the next putt its light is out
+        const [mx, my] = T.mine, hm = hOf(H, mx, my), bt = G && G.blown ? G.blown[j] : null, gone = bt != null;
+        out.push({ kind: 'mineDisc', u: mx, v: my, scale: CW * 0.46, lift: hm - 0.002, color: 0x55574a },
+                 { kind: 'mineLight', u: mx, v: my, scale: CW * 0.12, lift: hm + CW * 0.02, color: gone ? 0x3a2020 : (((t * 1.6 + mx * 3) % 1) < 0.45 ? 0xff3a22 : 0x7a2018) });
+        if (gone && bt >= 0 && t - bt < 0.45){ const rr = CW * (0.25 + 1.6 * (t - bt) / 0.45), m = 14;
+          for (let i = 0; i < m; i++){ const a = i / m * 2 * Math.PI, x = mx + rr * Math.cos(a), y = my + rr * Math.sin(a);
+            out.push({ kind: 'fieldDot', u: x, v: y, scale: CW * 0.14, lift: hOf(H, clamp(x, 0, WD), clamp(y, 0, 1)) + 0.003, color: 0xffb040 }); } }
       } else if (T.pipe){
         const [x0, y0, x1, y1, , pr] = T.pipe, lit = G && G.piped && t - (G.piped[j] ?? -9) < 0.3;
         for (const [x, y, c] of [[x0, y0, lit ? 0xfff2a0 : 0xffffff], [x1, y1, 0xbcd6ff]])   // the exit a little blue, so you can tell them apart
@@ -38539,30 +38694,31 @@ const GOLF_APP = (() => {
      The course's own holes are never changed: editing one edits a copy. Holes made here come after the course's in HOLES
      (index BUILT and on), so they are on no board until you play one; a round of one of them is that one hole. */
   const BUILT = HOLES.length;
-  const MINE_KEY = 'golf.myholes';
-  const CLIP_KEY = 'golf.clip';                               // the editor's Copy (Oct 10): a whole hole as written
+  const MINE_KEY = SIZED('golf.myholes');
+  const CLIP_KEY = SIZED('golf.clip');                               // the editor's Copy (Oct 10): a whole hole as written
   let CLIP = null;
   const clone = o => JSON.parse(JSON.stringify(o));
   /* Anything read from a link or from storage is checked before it is believed: a map of the right size with only the
      map's own letters, one tee and one cup, and only the kinds of ground and toy the course knows, each number held in
      range. A link is anyone's, so nothing in it is ever run or put in the page as markup. */
-  const SPEC_LAND = { bump: [[-1, 9], [-1, 14], [0.2, 8], [-0.08, 0.25]], tilt: [[-0.1, 0.1], [-0.1, 0.1]],
+  const SPEC_LAND = { bump: [[-1, NX + 1], [-1, NY + 1], [0.2, 8], [-0.08, 0.25]], tilt: [[-0.1, 0.1], [-0.1, 0.1]],
     step: [[-1, 1], [-1, 1], [-14, 14], [0.1, 4], [-0.25, 0.25]], wave: [[-0.05, 0.05], [0.5, 14], [-360, 360], [-7, 7]],
-    ridge: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.2, 8], [-0.1, 0.25]], bowl: [[-1, 9], [-1, 14], [0.3, 8], [0, 0.25]],
-    pipe: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.5, 12], [0, 0.25]],
-    plateau: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [-0.15, 0.25]], ramp: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.3, 8], [-0.2, 0.25]],
-    rough: [[0, 0.04], [0.8, 8], [0, 999]], ring: [[-1, 9], [-1, 14], [0.3, 7], [0.2, 3], [-0.08, 0.12]],
-    dish: [[-1, 9], [-1, 14], [0.4, 5], [0.01, 0.046]], trough: [[-1, 9], [-1, 14], [-1, 9], [-1, 14], [0.8, 6], [0.01, 0.046]] };
+    ridge: [[-1, NX + 1], [-1, NY + 1], [-1, NX + 1], [-1, NY + 1], [0.2, 8], [-0.1, 0.25]], bowl: [[-1, NX + 1], [-1, NY + 1], [0.3, 8], [0, 0.25]],
+    pipe: [[-1, NX + 1], [-1, NY + 1], [-1, NX + 1], [-1, NY + 1], [0.5, 12], [0, 0.25]],
+    plateau: [[-1, NX + 1], [-1, NY + 1], [-1, NX + 1], [-1, NY + 1], [-0.15, 0.25]], ramp: [[-1, NX + 1], [-1, NY + 1], [-1, NX + 1], [-1, NY + 1], [0.3, 8], [-0.2, 0.25]],
+    rough: [[0, 0.04], [0.8, 8], [0, 999]], ring: [[-1, NX + 1], [-1, NY + 1], [0.3, 7], [0.2, 3], [-0.08, 0.12]],
+    dish: [[-1, NX + 1], [-1, NY + 1], [0.4, 5], [0.01, 0.046]], trough: [[-1, NX + 1], [-1, NY + 1], [-1, NX + 1], [-1, NY + 1], [0.8, 6], [0.01, 0.046]] };
   const LINE_HEIGHT = { crest: [-0.05, 0.08], incline: [0, 0.08] };   // (a curved ridge or gully, a curved ramp: Oct 11)
-  const SPEC_TOY = { kick: [[0, 8], [0, 13], [0.1, 1], [0, 3]], rock: [[0, 8], [0, 13], [0.1, 1.5]], tree: [[0, 8], [0, 13], [0.1, 0.6]], bush: [[0, 8], [0, 13], [0.15, 1.2]],
-    fence: [[0, 8], [0, 13], [0, 8], [0, 13]],
-    mill: [[0, 8], [0, 13], [0.4, 3], [-4, 4], [-7, 7]], pipe: [[0, 8], [0, 13], [0, 8], [0, 13], [-360, 360], [0.2, 0.8]],
-    shuttle: [[0, 8], [0, 13], [0, 8], [0, 13], [0.1, 1], [0.8, 20]], orbit: [[0, 8], [0, 13], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7], [0, 4]],
-    gate: [[0, 8], [0, 13], [0, 8], [0, 13], [0.8, 20], [-7, 7]],
-    arm: [[0, 8], [0, 13], [0.3, 3], [-30, 30], [-7, 7], [1, 4]], swing: [[0, 8], [0, 13], [0.4, 3], [-360, 360], [-360, 360], [0.8, 20], [-1, 1]] };
+  const SPEC_TOY = { kick: [[0, NX], [0, NY], [0.1, 1], [0, 3]], rock: [[0, NX], [0, NY], [0.1, 1.5]], tree: [[0, NX], [0, NY], [0.1, 0.6]], bush: [[0, NX], [0, NY], [0.15, 1.2]],
+    fence: [[0, NX], [0, NY], [0, NX], [0, NY]],
+    mill: [[0, NX], [0, NY], [0.4, 3], [-4, 4], [-7, 7]], pipe: [[0, NX], [0, NY], [0, NX], [0, NY], [-360, 360], [0.2, 0.8]],
+    shuttle: [[0, NX], [0, NY], [0, NX], [0, NY], [0.1, 1], [0.8, 20]], orbit: [[0, NX], [0, NY], [0.3, 6], [0.1, 1.5], [-30, 30], [-7, 7], [0, 4]],
+    gate: [[0, NX], [0, NY], [0, NX], [0, NY], [0.8, 20], [-7, 7]],
+    charge: [[0, NX], [0, NY], [-1.5, 1.5], [0.8, 4]], mine: [[0, NX], [0, NY], [0.5, 2]],   // (a charge and a mine: Oct 20)
+    arm: [[0, NX], [0, NY], [0.3, 3], [-30, 30], [-7, 7], [1, 4]], swing: [[0, NX], [0, NY], [0.4, 3], [-360, 360], [-360, 360], [0.8, 20], [-1, 1]] };
   // numbers that may be left off the end, from this one on, each then 0 (a bumper's kind came on Oct 9, an older bumper is a
   // classic; an orbit's phase, and since Oct 9 its kind, 1 for a bumper going round)
-  const OPTIONAL_FROM = { orbit: 5, gate: 5, kick: 3, arm: 4, mill: 4, swing: 6 };   // (a windmill's and a door's phase: Oct 11)
+  const OPTIONAL_FROM = { orbit: 5, gate: 5, kick: 3, arm: 4, mill: 4, swing: 6, mine: 2 };   // (a windmill's and a door's phase: Oct 11)
   function cleanList(list, spec, max){
     const out = [];
     for (const f of Array.isArray(list) ? list : []){
@@ -38602,6 +38758,14 @@ const GOLF_APP = (() => {
         for (let q = 0; q < n; q++) nums.push(R3(Math.max(0, Math.min(NX, v[2 * q]))), R3(Math.max(0, Math.min(NY, v[2 * q + 1]))));
         out.push({ curve: nums }); continue;
       }
+      if (spec === SPEC_TOY && f && Array.isArray(f.zap)){      // a zap zone (Oct 20): its leaves, 3 to 32, and its timing
+        const v = f.zap.map(Number), n = Math.min(32, v.length >> 1), z = (Array.isArray(f.zt) ? f.zt : []).map(Number);
+        if (n < 3 || v.some(x => !isFinite(x))) continue;
+        const R3 = x => Math.round(x * 1000) / 1000, nums = [];
+        for (let q = 0; q < n; q++) nums.push(R3(Math.max(0, Math.min(NX, v[2 * q]))), R3(Math.max(0, Math.min(NY, v[2 * q + 1]))));
+        const per = isFinite(z[0]) ? Math.max(1, Math.min(20, z[0])) : 4, ph = isFinite(z[1]) ? ((z[1] % 1) + 1) % 1 : 0, on = isFinite(z[2]) ? Math.max(0.2, Math.min(0.8, z[2])) : 0.5;
+        out.push({ zap: nums, zt: [R3(per), R3(ph), R3(on)] }); continue;
+      }
       if (spec === SPEC_TOY && f && Array.isArray(f.planter)){  // a planter (Oct 11): its leaves, 3 to 32
         const v = f.planter.map(Number), n = Math.min(32, v.length >> 1);
         if (n < 3 || v.some(x => !isFinite(x))) continue;
@@ -38623,6 +38787,8 @@ const GOLF_APP = (() => {
       if (key === 'orbit') nums[6] = Math.round(nums[6]);          // (its rider: 0 a boulder, 1–4 a bumper by kind, Oct 10)
       if (key === 'arm'){ if (Math.abs(nums[3]) < 1) nums[3] = nums[3] < 0 ? -4 : 4; if (!nums[5]) nums[5] = 2; nums[5] = Math.round(nums[5]); }
       if (key === 'swing' && nums[3] === nums[4]) nums[4] = nums[3] + 90;
+      if (key === 'mine' && !nums[2]) nums[2] = 1;               // (an old mine with no power, or none given: Oct 20)
+      if (key === 'charge' && Math.abs(nums[2]) < 0.1) nums[2] = nums[2] < 0 ? -0.1 : 0.1;   // (a charge is never nothing)
       out.push(key === 'orbit' || key === 'shuttle' ? pathify({ [key]: nums }) : { [key]: nums });   // (as paths since Oct 10)
     }
     return out;
@@ -38687,7 +38853,7 @@ const GOLF_APP = (() => {
      gets the hole of its next eight attempts (genSrc's from): the next board before you reach it, the one in play next time.
      After three it is left as it is. Rated on 55 fresh level-5 holes, none sank fewer than half (the worst five in eight);
      those two sink one in eight. */
-  const REMADE_KEY = 'golf.remade', REMADE = (() => { try { const o = JSON.parse(localStorage.getItem(REMADE_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+  const REMADE_KEY = SIZED('golf.remade'), REMADE = (() => { try { const o = JSON.parse(localStorage.getItem(REMADE_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
   const remadeSave = () => { try { const ks = Object.keys(REMADE); if (ks.length > 1000) for (const k of ks.slice(0, ks.length - 1000)) delete REMADE[k]; localStorage.setItem(REMADE_KEY, JSON.stringify(REMADE)); } catch {} };
   const timesIn8 = f => { const n = Math.round(f * 8); return n === 0 ? 'no times' : n === 1 ? 'once' : n === 2 ? 'twice' : n + ' times'; };
   const holeBusy = k => [...GAMES.values()].some(g => g.hole === k && g.state !== 'done');
@@ -38910,7 +39076,8 @@ const GOLF_APP = (() => {
      guard of ground counts too); on holes it was not fitted to, the guess and the rating go together at about 0.7. */
   const GUESS_W = [2.894, 1.575, 0.162, 0.311, 0.416, 0.448, 0.289, 0.604, 0.114, -0.696, 0.1, 0.284];
   const LEVEL_BAND = [[0, 2.6], [2.6, 3.1], [3.1, 3.7], [3.7, 4.5], [4.5, 6.5]];
-  const CURVE_GUESS = { snail: 2, hook: 0.6, sbend: 0.9 }, PLANTER_GUESS = 0.25;   // (a snail with nothing riding inside it: rated 5.7 on average at level 5)
+  const CURVE_GUESS = { snail: 2, hook: 0.6, sbend: 0.9 }, PLANTER_GUESS = 0.25;
+  const NEW_GUESS = { charge: 0.25, zap: 0.4, mine: 0.12 };   // (a charge, a zap zone, a mine: see CHARGES, ZAP ZONES AND MINES, Oct 20)   // (a snail with nothing riding inside it: rated 5.7 on average at level 5)
   function guessMean(src){
     const T = src.toys || [], P = T.filter(t => t.path), tail = (t, b) => t.path[t.path.length - b];
     const map = src.map.join(''), at = ch => { for (let j = 0; j < NY; j++){ const i = src.map[j].indexOf(ch); if (i >= 0) return [i + 0.5, j + 0.5]; } return [4, 6]; };
@@ -38927,7 +39094,8 @@ const GOLF_APP = (() => {
       Math.hypot(cx - tx, cy - ty) / 10, amp * 10, GROUND_GUARDS.includes(src.guard) ? 1 : 0];
     // (and the curved guards, as rated against holes like them without: Oct 10; and a quarter of a stroke a planter, Oct 11:
     //  rated with and without theirs, 50 holes of every level took 0.13 more with, 11 at level 5 took 0.36 more)
-    return x.reduce((s, v, i) => s + v * GUESS_W[i], 0) + (CURVE_GUESS[src.guard] || 0) + PLANTER_GUESS * T.filter(t => t.planter).length;
+    return x.reduce((s, v, i) => s + v * GUESS_W[i], 0) + (CURVE_GUESS[src.guard] || 0) + PLANTER_GUESS * T.filter(t => t.planter).length
+      + T.reduce((a, t) => a + (NEW_GUESS[Object.keys(t)[0]] || 0), 0);
   }
   function genSrc(idx, lv, from){
     lv = lv || levelAt(idx); from = from || 0;                // (from: the first attempt, 8 a time a hole is remade: REMADE)
@@ -38950,6 +39118,11 @@ const GOLF_APP = (() => {
   }
   function genOnce(idx, lv, a){
     const K = LEVEL_DIALS[lv - 1];
+    /* (a bigger board, more on it: Oct 20, the board's size. The counts below were drawn for 8 × 13, so a Medium board got a
+        Small board's few things spread over two and a half times the grass, and its stream and wall stood in its top half.
+        The ground's pieces and the loose toys are scaled by the board's area against Small's, the stream's and the wall's
+        rows by its height; on Small both are 1 and every hole comes out as it did) */
+    const AREA = NX * NY / 104, TALL = NY / 13, more = n => AREA === 1 ? n : Math.round(n * AREA), down = j => TALL === 1 ? j : Math.round(j * TALL);
     const R = seeded((Math.imul(idx + 1, 2654435761) ^ 0x5bd1e995) + Math.imul(a, 0x9E3779B1)), u = (a, b) => a + (b - a) * R(), pick = a => a[Math.floor(R() * a.length)];
     const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
     const map = Array.from({ length: NY }, () => Array(NX).fill('.'));
@@ -38971,7 +39144,7 @@ const GOLF_APP = (() => {
          is, or the stream runs straight. Until the hole is finished the cells the water touches are marked as water, so the
          weave and the guards keep off it as before. */
       const bw = lv === 1 ? 3 : 2, b = Math.min(NX - bw, Math.floor(R() * NX)), wide = R() < 0.5;
-      const w = wide ? u(1.5, 1.8) : u(0.85, 1.05), rows = Math.ceil(w + 0.5), j0 = 5 + Math.floor(R() * (wide ? 2 : 3)), yb = j0 + rows / 2, xb = b + bw / 2;
+      const w = wide ? u(1.5, 1.8) : u(0.85, 1.05), rows = Math.ceil(w + 0.5), j0 = down(5 + Math.floor(R() * (wide ? 2 : 3))), yb = j0 + rows / 2, xb = b + bw / 2;
       /* (the line is a sine-generated curve, as rivers' meanders are drawn: its heading swings to and fro along its length,
           θ(s) = ±Θ·sin(2πs/Λ), from the straight under the bridge outward, each side its own, so no bend is ever tighter than
           Λ/(2πΘ), which is held to the half width and 0.6 of a cell) */
@@ -39025,7 +39198,7 @@ const GOLF_APP = (() => {
       if (v){ shapes.push({ lake: v }); pond = true; }
     }
     if (!water && R() < K.wall){                              // a wall across, with a gap three cells wide
-      const j = 5 + Math.floor(R() * 4), gap = Math.floor(R() * (NX - 2));
+      const j = down(5 + Math.floor(R() * 4)), gap = Math.floor(R() * (NX - 2));
       for (let i = 0; i < NX; i++) if ((i < gap || i >= gap + 3) && map[j][i] !== 'T' && map[j][i] !== 'O') map[j][i] = '#';
       wall = true;
     }
@@ -39035,7 +39208,8 @@ const GOLF_APP = (() => {
     const cl = (v, lo, hi) => r2(Math.max(lo, Math.min(hi, v)));
     const ex = (x0, y0, a, L, m) => [cl(x0 - L * Math.cos(a), -m, NX + m), cl(y0 - L * Math.sin(a), -m, NY + m), cl(x0 + L * Math.cos(a), -m, NX + m), cl(y0 + L * Math.sin(a), -m, NY + m)];   // a line's ends, in range
     const KINDS = ['hill', 'hollow', 'ridge', 'gully', 'terrace', 'wave', 'plateau', 'sunk', 'ramp', 'ring', 'crater', 'dish', 'trough', 'saddle', 'moguls', 'tilt', 'moat'];
-    const n = K.feats[0] + Math.floor(R() * (K.feats[1] - K.feats[0] + 1)), kinds = [];
+    const KINDS_N = KINDS.length;
+    const n = Math.min(KINDS_N, more(K.feats[0] + Math.floor(R() * (K.feats[1] - K.feats[0] + 1)))), kinds = [];
     while (kinds.length < n){ const k = pick(KINDS); if (!kinds.includes(k)) kinds.push(k); }
     for (const k of kinds){
       const x = X(), y = Y();
@@ -39075,10 +39249,11 @@ const GOLF_APP = (() => {
       if (k === 'green') v[v.length - 1] = r3(Math.max(-0.045, Math.min(0.1, v[v.length - 1] * K.amp)));   // (a green's height, its last number)
       if (LINE_KINDS.includes(k)) v[v.length - 1] = r3(Math.max(LINE_HEIGHT[k][0], Math.min(LINE_HEIGHT[k][1], v[v.length - 1] * K.amp)));   // (and a curved ridge's or ramp's: Oct 11)
       f[k] = v; }
-    const toys = [], nT = K.toys[0] + Math.floor(R() * (K.toys[1] - K.toys[0] + 1)), narrows = [];
+    const toys = [], nT = more(K.toys[0] + Math.floor(R() * (K.toys[1] - K.toys[0] + 1))), narrows = [];
     map.forEach((row, j) => row.forEach((ch, i) => { if (ch === '=' || (wall && ch === '.' && row.includes('#'))) narrows.push([i, j]); }));
-    for (let q = 0, tries = 0; q < nT && tries < 30; tries++){
-      const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill', 'arm', 'swing']);
+    for (let q = 0, tries = 0; q < nT && tries < 30 * Math.max(1, AREA); tries++){
+      // (a charge from level 2, a mine from level 3: Oct 20)
+      const t = pick(['kick', 'kick', 'rock', 'rock', 'fence', 'orbit', 'shuttle', 'gate', 'mill', 'arm', 'swing', ...(lv >= 2 ? ['charge'] : []), ...(lv >= 3 ? ['mine', 'mine'] : [])]);
       const x = r2(u(t === 'mill' || t === 'shuttle' ? 2 : 1, NX - (t === 'mill' || t === 'shuttle' ? 2 : 1))), y = r2(u(2.5, NY - 3));
       const ch = map[Math.floor(y)][Math.floor(x)];
       if (ch !== '.' && ch !== 's' || !clear(x, y, t === 'orbit' || t === 'mill' || t === 'arm' ? 3 : 2)) continue;
@@ -39092,6 +39267,8 @@ const GOLF_APP = (() => {
       else if (t === 'gate') toys.push({ gate: [r2(Math.max(0.4, x - 1.2)), y, r2(Math.min(NX - 0.4, x + 1.2)), y, r2(u(2.6, 4)), r2(u(0, 6))] });
       else if (t === 'arm') toys.push({ arm: [x, y, r2(u(0.9, 1.3)), r2(u(3.5, 5) * (R() < 0.5 ? -1 : 1)), r2(u(0, 6)), 2 + Math.floor(R() * 3)] });
       else if (t === 'swing'){ const a = Math.round(u(-180, 180)); toys.push({ swing: [x, y, 1.2, a, a + (R() < 0.5 ? -90 : 90), r2(u(2.6, 4))] }); }
+      else if (t === 'charge') toys.push({ charge: [x, y, R() < 0.5 ? r2(u(0.6, 1.2)) : -r2(u(0.5, 1)), r2(u(1.4, 2.4))] });
+      else if (t === 'mine') toys.push({ mine: [x, y, r2(u(0.8, 1.3))] });
       else toys.push({ mill: [x, y, r2(u(1.1, 1.5)), r2(u(1, 1.6))] });
       q++;
     }
@@ -39145,7 +39322,7 @@ const GOLF_APP = (() => {
       if ((HOLES[k].remadeN || 0) !== want && !holeBusy(k)) remakeIn(k, idx, lv, want);
       GEN.delete(gk); GEN.set(gk, k); return k; }            // (kept in the order last wanted)
     const src = cleanSrc(genSrc(idx, lv, 8 * want));
-    if (!src) return idx % COURSE;
+    if (!src) return COURSE ? idx % COURSE : addHole(blankSrc());   // (no course at Medium and Tall: Oct 20)
     if (GEN.size >= GEN_CAP){
       const busy = new Set([...GAMES.values()].map(g => g.hole));
       for (const [oi, ok] of GEN) if (!busy.has(ok)){ GEN.delete(oi); setHole(ok, src); k = ok; break; }
@@ -39912,6 +40089,8 @@ const GOLF_APP = (() => {
     if (k === 'fence' || k === 'gate' || k === 'slide') return segDist(x, y, v[0], v[1], v[2], v[3]) - 0.18;
     if (k === 'curve') return curveNear(v, x, y).d - 0.18;    // (a curved fence: Oct 10)
     if (k === 'planter'){ const B = planterOf(v); return blobIn(B, x, y) ? -0.1 : blobEdge(B, x, y) - 0.18; }   // (inside is on it: Oct 11)
+    if (k === 'zap'){ const B = zapOf(v); return blobIn(B, x, y) ? -0.05 : blobEdge(B, x, y) - 0.18; }   // (a zap zone, inside it as a planter's: Oct 20)
+    if (k === 'charge' || k === 'mine') return d0 - 0.3;
     return Infinity;
   }
   // the innermost path whose loop (x, y) lies inside, clear of its track; -1 if none (Oct 10)
@@ -39947,7 +40126,7 @@ const GOLF_APP = (() => {
   function leafSel(){
     const P = ED.pick, S = ED.src; if (!P || (P.type !== 'toy' && P.type !== 'land')) return null;
     const list = P.type === 'toy' ? S.toys : S.land, o = list[P.i]; if (!o) return null;
-    const key = ['path', 'curve', 'planter', ...SHAPE_KINDS, ...LINE_KINDS].find(k => Array.isArray(o[k])); if (!key) return null;   // (a planter, a curved ridge or ramp: Oct 11)
+    const key = ['path', 'curve', 'planter', 'zap', ...SHAPE_KINDS, ...LINE_KINDS].find(k => Array.isArray(o[k])); if (!key) return null;   // (a planter, a curved ridge or ramp: Oct 11; a zap zone, Oct 20)
     const v = o[key], open = key === 'curve' || LINE_KINDS.includes(key), n = key === 'path' ? pathN(v) : key === 'curve' ? curveN(v) : LINE_KINDS.includes(key) ? lineN(v) : shapeN(key, v);
     if (open){ const C = key === 'curve' ? curveOf(v) : lineOf(v); return { list, i: P.i, key, v, n, line: { pts: C.pts, M: C.m }, closed: false }; }
     const L = key === 'path' ? loopOf(v) : blobOf(v, n);
@@ -39985,14 +40164,17 @@ const GOLF_APP = (() => {
     get(){ return ED.pick && ED.pick.type === 'land' ? ED.pick.i : null; },
     set(n){ ED.pick = n == null ? null : { type: 'land', i: n }; } });
   const RIDER_NAME = ['boulder', 'bumper', 'power bumper', 'sponge', 'spinner'];
-  const TOY_NAME = { kick: 'bumper', rock: 'boulder', mill: 'windmill', arm: 'turnstile', swing: 'door', path: 'path', pipe: 'pipe', fence: 'fence', curve: 'curved fence', planter: 'planter', gate: 'gate', slide: 'slide' };
+  const TOY_NAME = { kick: 'bumper', rock: 'boulder', mill: 'windmill', arm: 'turnstile', swing: 'door', path: 'path', pipe: 'pipe', fence: 'fence', curve: 'curved fence', planter: 'planter', gate: 'gate', slide: 'slide', zap: 'zap zone', mine: 'mine', charge: 'charge' };
   const LAND_NAME = { crest: 'curved ridge', incline: 'curved ramp', dish: 'bowl', trough: 'half-pipe', bump: 'hill', ring: 'rim', plateau: 'plateau', ramp: 'ramp', ridge: 'ridge', step: 'terrace', bowl: 'skate bowl', pipe: 'skate pipe', lake: 'lake', sand: 'bunker', green: 'green' };
   function pickName(p = ED.pick){
     if (!pickValid(p)) return '';
     if (p.type === 'T') return 'tee';
     if (p.type === 'O') return 'cup';
     if (p.type === 'dot'){ const h = (ED.src.lift && ED.src.lift[p.i]) || 0; return 'dot ' + (h ? (h > 0 ? 'up ' : 'down ') + Math.abs(h).toFixed(3) : 'level'); }
-    if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'path' ? RIDER_NAME[T.path[T.path.length - 1] | 0] + ' on a path' : TOY_NAME[k] || k); }
+    if (p.type === 'toy'){ const T = ED.src.toys[p.i], k = Object.keys(T)[0]; if (k === 'charge') return (T.charge[2] > 0 ? 'pulling' : 'pushing') + ' charge ' + Math.abs(T.charge[2]).toFixed(2);   // (Oct 20)
+      if (k === 'mine') return 'mine, power ' + (+T.mine[2]).toFixed(2);
+      if (k === 'zap') return 'zap zone, on ' + Math.round(T.zt[2] * 100) + '% of ' + T.zt[0] + ' s';
+      return k === 'kick' ? ['bumper', 'power bumper', 'sponge', 'spinner'][T.kick[3] | 0] : (k === 'path' ? RIDER_NAME[T.path[T.path.length - 1] | 0] + ' on a path' : TOY_NAME[k] || k); }
     const f = ED.src.land[p.i], k = Object.keys(f)[0];
     return k === 'bump' && f.bump[3] < 0 ? 'hollow' : k === 'ring' && f.ring[4] < 0 ? 'moat' : k === 'ridge' && f.ridge[5] < 0 ? 'gully' : k === 'crest' && f.crest[f.crest.length - 1] < 0 ? 'curved gully' : k === 'green' && f.green[f.green.length - 1] < 0 ? 'sunken green' : LAND_NAME[k] || k;
   }
@@ -40019,7 +40201,7 @@ const GOLF_APP = (() => {
   function shifted(obj, dx, dy, isToy){
     const o = clone(obj), k = Object.keys(o)[0], v = o[k], R2 = n => Math.round(n * 100) / 100;
     if (!isToy){ moveLand(o, dx, dy); return o; }
-    const pts = k === 'path' ? Array.from({ length: pathN(v) }, (_, q) => 2 * q) : k === 'curve' || k === 'planter' ? Array.from({ length: v.length >> 1 }, (_, q) => 2 * q) : TWO_ENDS[k] ? [0, 2] : [0];   // (a path, a curved fence or a planter moves all its leaves)
+    const pts = k === 'path' ? Array.from({ length: pathN(v) }, (_, q) => 2 * q) : k === 'curve' || k === 'planter' || k === 'zap' ? Array.from({ length: v.length >> 1 }, (_, q) => 2 * q) : TWO_ENDS[k] ? [0, 2] : [0];   // (a path, a curved fence or a planter moves all its leaves)
     for (const q of pts){ dx = Math.max(0.2 - v[q], Math.min(NX - 0.2 - v[q], dx)); dy = Math.max(0.2 - v[q + 1], Math.min(NY - 0.2 - v[q + 1], dy)); }
     for (const q of pts){ v[q] = R2(v[q] + dx); v[q + 1] = R2(v[q + 1] + dy); }
     return o;
@@ -40051,7 +40233,7 @@ const GOLF_APP = (() => {
      drag on its empty canvas draws a marquee; when the finger lifts the box stays on the hole in gold with every dot
      inside it selected (the Box quick button draws one from anywhere). A drag that starts inside the box raises or sinks
      all its dots together; a tap outside it, or Escape, closes it and lets them go. ED.box is the rectangle, in cells. */
-  const GOLF_ON = () => { try { return window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf'; } catch { return false; } };
+  const GOLF_ON = () => { try { return window.getFieldApp && window.getFieldApp() === app; } catch { return false; } };   // (this size's game: Oct 20)
   const boxOpen = () => !!ED.box && !!ED.pick && ED.pick.type === 'dot';
   const inBox = (x, y, m = 0.25) => !!ED.box && x >= ED.box.x0 - m && x <= ED.box.x1 + m && y >= ED.box.y0 - m && y <= ED.box.y1 + m;
   function boxDots(B){
@@ -40139,7 +40321,7 @@ const GOLF_APP = (() => {
       v[2 * G.leaf] = R2(Math.max(m, Math.min(NX - m, G.orig[2 * G.leaf] + x - G.from.x)));
       v[2 * G.leaf + 1] = R2(Math.max(m, Math.min(NY - m, G.orig[2 * G.leaf + 1] + y - G.from.y)));
       if (v[2 * G.leaf] === cur[2 * G.leaf] && v[2 * G.leaf + 1] === cur[2 * G.leaf + 1]) return false;
-      LS.list[P.i] = { [LS.key]: v }; return true;
+      LS.list[P.i] = { ...LS.list[P.i], [LS.key]: v }; return true;   // (and anything else the thing carries: a zap zone's timing, Oct 20)
     }
     if (P.type === 'T' || P.type === 'O'){                    // the tee and the cup go cell by cell, onto grass or sand
       const i = Math.floor(x), j = Math.floor(y);
@@ -40349,7 +40531,7 @@ const GOLF_APP = (() => {
             if (L && L.i === ED.pick.i && L.leaf === leaf && now - L.t < 500){
               ED.leafTap = null;
               if (n <= 3){ ED.msg = 'three leaves is the fewest'; return false; }
-              const w = v.slice(); w.splice(2 * leaf, 2); LS.list[ED.pick.i] = { [sKey]: w };
+              const w = v.slice(); w.splice(2 * leaf, 2); LS.list[ED.pick.i] = { ...LS.list[ED.pick.i], [sKey]: w };
               ED.msg = 'leaf taken away: ' + (n - 1) + ' left'; return true;
             }
             ED.leafTap = { i: ED.pick.i, leaf, t: now }; ED.msg = 'leaf ' + (leaf + 1) + ' of ' + n + ' (tap it again to take it away)'; return false;
@@ -40365,7 +40547,7 @@ const GOLF_APP = (() => {
               for (let q = 0; q < P.M; q++){ const d = Math.hypot(x - P.pts[2 * q], y - P.pts[2 * q + 1]); if (d < bd){ bd = d; bq = q; } }
               if (bq >= 0){ at = Math.min(n - 1, Math.floor(bq / CURVE_S) + 1); best = [P.pts[2 * bq], P.pts[2 * bq + 1]]; } }
             if (at >= 0){
-              const w = v.slice(); w.splice(2 * at, 0, R2(best[0]), R2(best[1])); LS.list[ED.pick.i] = { [sKey]: w };
+              const w = v.slice(); w.splice(2 * at, 0, R2(best[0]), R2(best[1])); LS.list[ED.pick.i] = { ...LS.list[ED.pick.i], [sKey]: w };
               ED.leafTap = { i: ED.pick.i, leaf: at, t: 0 };
               ED.msg = 'leaf added: ' + (n + 1) + ' now (drag it to bend the line)'; return true;
             }
@@ -40410,6 +40592,15 @@ const GOLF_APP = (() => {
     }
     /* A PLANTER, DRAWN IN PLACE (Oct 11: "#6"): a drag draws its outline, closed back to its start and laid down as leaves
        evenly along it, as a lake's; a tap lays a kidney over the spot. Its leaves are then shown and dragged as a lake's are. */
+    // (a zap zone, Oct 20: a drag draws its outline, as a planter's; a tap lays a round one, on two seconds in four)
+    if (t === 'zap' && !drag){
+      if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
+      const cx = Math.max(1.2, Math.min(NX - 1.2, x)), cy = Math.max(1.2, Math.min(NY - 1.2, y)), lv = [];
+      for (let q = 0; q < 10; q++){ const a = (q + 0.5) / 10 * 2 * Math.PI; lv.push(R2(cx + 1 * Math.cos(a)), R2(cy + 0.8 * Math.sin(a))); }
+      S.toys.push({ zap: lv, zt: [4, 0, 0.5] });
+      ED.pick = { type: 'toy', i: S.toys.length - 1 };
+      return true;
+    }
     if (t === 'planter' && !drag){
       if (S.toys.length >= 40){ say('That is as many things as a hole can hold — erase some first.', 2000); return false; }
       const cx = Math.max(1.4, Math.min(NX - 1.4, x)), cy = Math.max(1.2, Math.min(NY - 1.2, y));
@@ -40439,7 +40630,7 @@ const GOLF_APP = (() => {
       ED.pick = { type: 'land', i: S.land.length - 1 };
       return true;
     }
-    if (t === 'path' || t === 'curve' || t === 'planter' || SHAPE_TOOLS[t] || LINE_TOOLS[t]){
+    if (t === 'path' || t === 'curve' || t === 'planter' || t === 'zap' || SHAPE_TOOLS[t] || LINE_TOOLS[t]){
       if (drag){
         if (!ED.drag){ const p0 = ED.pressAt ? { ...ED.pressAt } : { x, y }; ED.drag = { from: p0, pts: [p0] }; }
         const L = ED.drag.pts[ED.drag.pts.length - 1];
@@ -40468,7 +40659,7 @@ const GOLF_APP = (() => {
       let best = -1, bd = 1;
       S.toys.forEach((T, n) => { const a = Object.values(T)[0];
         let d = Math.min(Math.hypot(a[0] - x, a[1] - y), T.pipe ? Math.hypot(a[2] - x, a[3] - y) : 9);
-        if (T.path || T.curve || T.planter) d = Math.max(0, toyReach(T, x, y));
+        if (T.path || T.curve || T.planter || T.zap) d = Math.max(0, toyReach(T, x, y));
         if (T.fence || T.gate){ const ux = a[2] - a[0], uy = a[3] - a[1], q = Math.max(0, Math.min(1, ((x - a[0]) * ux + (y - a[1]) * uy) / (ux * ux + uy * uy || 1))); d = Math.hypot(a[0] + ux * q - x, a[1] + uy * q - y); }
         if (d < bd){ bd = d; best = n; } });
       if (best >= 0){ S.toys.splice(best, 1); ED.pick = null; return true; }
@@ -40482,6 +40673,8 @@ const GOLF_APP = (() => {
     if (t === 'kick') S.toys.push({ kick: [R2(x), R2(y), 0.32, 0] });
     else if (/^kick[123]$/.test(t)) S.toys.push({ kick: [R2(x), R2(y), [0, 0.28, 0.4, 0.32][+t[4]], +t[4]] });
     else if (t === 'rock') S.toys.push({ rock: [R2(x), R2(y), 0.5] });
+    else if (t === 'charge') S.toys.push({ charge: [R2(x), R2(y), 1, 2] });   // (Oct 20: a pulling charge reaching two cells; Lower makes it push)
+    else if (t === 'mine') S.toys.push({ mine: [R2(x), R2(y), 1] });
     else if (t === 'fence'){                                  // a fence takes two taps, one at each end
       if (!ED.fenceAt){ ED.fenceAt = { x: R2(x), y: R2(y) }; ED.msg = 'now tap where the fence ends'; updateEditBar(); return false; }
       const a = ED.fenceAt; ED.fenceAt = null;
@@ -40545,7 +40738,7 @@ const GOLF_APP = (() => {
     if (!t || t === 'select' || t === 'box' || t === 'erase' || (t.length === 1 && '#='.includes(t))) return;
     const n = pickName();
     ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null;
-    const keep = (t === 'path' || t === 'curve' || t === 'planter' || SHAPE_TOOLS[t] || LINE_TOOLS[t]) && ED.pick;   // (a path, a curved fence or a shape stays selected, its leaves shown to be dragged: Oct 10)
+    const keep = (t === 'path' || t === 'curve' || t === 'planter' || t === 'zap' || SHAPE_TOOLS[t] || LINE_TOOLS[t]) && ED.pick;   // (a path, a curved fence or a shape stays selected, its leaves shown to be dragged: Oct 10)
     ED.pick = null; ED.dots = []; ED.box = null;             // (and let go of it: Oct 9, "after laying an object, deselect that object")
     ED.msg = (n ? 'placed: ' + n + ' · ' : '') + 'take it up again below to lay another';
     if (keep){ ED.pick = keep; ED.msg = 'drag a leaf to bend it, or the line to move it; tap the line to add a leaf, a leaf twice to take it away'; }
@@ -40568,14 +40761,14 @@ const GOLF_APP = (() => {
       placedOnce(t);
       return;
     }
-    if (t === 'planter'){                                     // the drawn outline, closed and laid down as leaves (Oct 11)
+    if (t === 'planter' || t === 'zap'){                      // the drawn outline, closed and laid down as leaves (Oct 11; a zap zone's, Oct 20)
       if (S.toys.length >= 40) return;
       const pts = (D.pts || [a, b]).concat([D.to]);
       let L = 0; for (let q = 1; q <= pts.length; q++){ const p0 = pts[q - 1], p1 = pts[q % pts.length]; L += Math.hypot(p1.x - p0.x, p1.y - p0.y); }
       if (L < 2){ ED.msg = 'draw a bigger shape'; return; }
       const n = Math.max(8, Math.min(24, Math.round(L / 0.6))), lv = [], rs = TVF_CURVE.core.arcLengthResample(pts.map(p => p.x), pts.map(p => p.y), n);
       for (let q = 0; q < n; q++) lv.push(R2(Math.max(0.2, Math.min(NX - 0.2, rs.x[q]))), R2(Math.max(0.2, Math.min(NY - 0.2, rs.y[q]))));
-      S.toys.push({ planter: lv });
+      S.toys.push(t === 'zap' ? { zap: lv, zt: [4, 0, 0.5] } : { planter: lv });
       ED.pick = { type: 'toy', i: S.toys.length - 1 };
       placedOnce(t);
       return;
@@ -40670,9 +40863,23 @@ const GOLF_APP = (() => {
     if (P.type === 'land') return { type: 'land', obj: ED.src.land[P.i] };
     return null;
   }
-  function editAction(a){
+  function editAction(a, arg){
     if (!ED.on) return;
     const S = ED.src;
+    if (a === 'tdial'){                                       // a charge's, a mine's or a zap zone's dials (Oct 20)
+      const P = ED.pick, T = P && P.type === 'toy' && S.toys[P.i]; if (!T) return;
+      const R2 = n => Math.round(n * 100) / 100, cl = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      snapEdit();
+      if (T.charge){ const v = T.charge;
+        if (arg === 'up' || arg === 'down'){ let s = R2(v[2] + (arg === 'up' ? 0.25 : -0.25)); if (Math.abs(s) < 0.1) s = arg === 'up' ? 0.25 : -0.25; v[2] = cl(s, -1.5, 1.5); }
+        else v[3] = R2(cl(v[3] + (arg === 'far' ? 0.5 : -0.5), 0.8, 4)); }
+      else if (T.mine) T.mine[2] = R2(cl(T.mine[2] + (arg === 'up' ? 0.25 : -0.25), 0.5, 2));
+      else if (T.zap){ const z = T.zt = (T.zt || [4, 0, 0.5]).slice();
+        if (arg === 'up' || arg === 'down') z[2] = R2(cl(z[2] + (arg === 'up' ? 0.1 : -0.1), 0.2, 0.8));
+        else z[0] = R2(cl(z[0] * (arg === 'far' ? 0.8 : 1.25), 1, 20)); }
+      else { ED.undo.pop(); return; }
+      ED.msg = pickName(); editRefresh(true); return;
+    }
     if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.redo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to undo'; return; }
     if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
     if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
@@ -40837,13 +41044,15 @@ const GOLF_APP = (() => {
         else if (k === 'path'){ const n = pathN(v), P = loopOf(v);   // its loop, and its leaves larger, to be dragged (Oct 10)
           for (let q = 0; q < P.M; q += 3) dotAt(P.pts[2 * q], P.pts[2 * q + 1], G, 0.009);
           for (let q = 0; q < n; q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
-        else if (k === 'planter'){ const B = planterOf(v);             // its line, and its leaves larger, to be dragged (Oct 11)
+        else if (k === 'planter' || k === 'zap'){ const B = k === 'zap' ? zapOf(v) : planterOf(v);   // its line, and its leaves larger, to be dragged (Oct 11; a zap zone, Oct 20)
           for (let q = 0; q < B.M; q += 2) dotAt(B.pts[2 * q], B.pts[2 * q + 1], G, 0.009);
           for (let q = 0; q < v.length >> 1; q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
         else if (k === 'curve'){ const C = curveOf(v);                 // its line, and its leaves larger, to be dragged (Oct 10)
           for (let q = 0; q < C.m; q += 3) dotAt(C.pts[2 * q], C.pts[2 * q + 1], G, 0.009);
           for (let q = 0; q < curveN(v); q++) dotAt(v[2 * q], v[2 * q + 1], G, 0.026); }
         else if (k === 'swing'){ const a = v[3] * Math.PI / 180; lineAt(v[0], v[1], v[0] + v[2] * Math.cos(a), v[1] + v[2] * Math.sin(a), G); }
+        else if (k === 'charge'){ ringAt(v[0], v[1], 0.4, G); ringAt(v[0], v[1], v[3], G); }   // (its post, and how far its field reaches: Oct 20)
+        else if (k === 'mine') ringAt(v[0], v[1], 0.45, G);
         else ringAt(v[0], v[1], Math.max(0.35, (k === 'kick' || k === 'rock' ? v[2] : Math.min(v[2], 1.4)) + 0.2), G); }
     }
     if (ED.guide){ if (ED.guide.x != null) lineAt(ED.guide.x, 0.2, ED.guide.x, NY - 0.2, 0xffffff); if (ED.guide.y != null) lineAt(0.2, ED.guide.y, NX - 0.2, ED.guide.y, 0xffffff); }
@@ -40861,7 +41070,7 @@ const GOLF_APP = (() => {
       else if (k === 'ridge' || k === 'pipe' || k === 'ramp' || k === 'trough') lineAt(v[0], v[1], v[2], v[3], G);
       else if (k === 'step'){ if (Math.abs(v[1]) > Math.abs(v[0])) lineAt(0.2, v[2] / v[1], NX - 0.2, v[2] / v[1], G); else lineAt(v[2] / v[0], 0.2, v[2] / v[0], NY - 0.2, G); } }
     if (boxOpen()) boxAt(ED.box.x0, ED.box.y0, ED.box.x1, ED.box.y1, G);   // the selection box, while it is open (Oct 9)
-    if (ED.drag && ED.drag.pts && (ED.tool === 'path' || ED.tool === 'curve' || ED.tool === 'planter' || SHAPE_TOOLS[ED.tool] || LINE_TOOLS[ED.tool])) for (const p of ED.drag.pts) dotAt(p.x, p.y, 0xffffff, 0.012);   // the loop (a curved fence, a shape) as drawn so far
+    if (ED.drag && ED.drag.pts && (ED.tool === 'path' || ED.tool === 'curve' || ED.tool === 'planter' || ED.tool === 'zap' || SHAPE_TOOLS[ED.tool] || LINE_TOOLS[ED.tool])) for (const p of ED.drag.pts) dotAt(p.x, p.y, 0xffffff, 0.012);   // the loop (a curved fence, a shape) as drawn so far
     else if (ED.drag && ED.drag.to){ const { from: a, to: b } = ED.drag; if (ED.tool === 'plat' || ED.tool === 'box' || ED.boxing) boxAt(a.x, a.y, b.x, b.y, 0xffffff); else if (ED.tool === 'orbit' || ED.tool === 'arm') ringAt(a.x, a.y, Math.max(0.3, Math.hypot(b.x - a.x, b.y - a.y)), 0xffffff); else lineAt(a.x, a.y, b.x, b.y, 0xffffff); }
     for (const at of [ED.pipeAt, ED.fenceAt]) if (at){ const x = at.x * CW, y = at.y * CW; out.push({ kind: 'dot', u: x, v: y, scale: 0.03, lift: hOf(H, x, y) + 0.004, color: 0xffd23a }); }
   }
@@ -40881,6 +41090,7 @@ const GOLF_APP = (() => {
     ['mill', 'Windmill', '✳️', 'place'],
     ['pipe', 'Pipe', '🟢', 'two taps'], ['path', 'Path', '➰', 'draw a loop'], ['gate', 'Gate', '🚪', 'drag a track'],
     ['arm', 'Turnstile', '✴️', 'drag out'], ['swing', 'Door', '↪️', 'drag out'],
+    ['charge', 'Charge', '🧲', 'place'], ['zap', 'Zap zone', '⚡', 'draw a shape'], ['mine', 'Mine', '💣', 'place'],   // (Oct 20)
     ['plat', 'Plateau', '🟫', 'drag a box'],
     ['crest', 'Ridge', '⛰️', 'draw a line'], ['gully', 'Gully', '🏞️', 'draw a line'], ['incline', 'Curved ramp', '📐', 'draw a line'],   // (along a curve: Oct 11; "Curved ramp", as the straight Ramp's tile went on Oct 10)
     ['lake', 'Lake', '🌊', 'draw a shape'], ['bunker', 'Bunker', '🏖️', 'draw a shape'], ['green', 'Green', '⛳', 'draw a shape'],   // (TVF shapes: Oct 10)
@@ -40934,6 +41144,17 @@ const GOLF_APP = (() => {
         // (and a closed curve's outline smoother or rougher, as the quick buttons ◯ and ✺ do: Oct 11)
         ...(closedSel() ? [{ label: 'Smoother', title: 'Take the fine wiggles out of the selected ' + what + "'s outline, keeping its overall form.", on(){ editAction('smoother'); } },
           { label: 'Rougher', title: 'Give the selected ' + what + "'s outline more coves and lobes.", on(){ editAction('rougher'); } }] : []),
+        // (a charge's, a mine's and a zap zone's own dials: Oct 20)
+        ...(o && o.type === 'toy' && o.obj.charge ? [{ label: 'Pull harder', title: 'More pull (or, pushing, less push: past nothing it starts to pull).', on(){ editAction('tdial', 'up'); } },
+          { label: 'Push harder', title: 'More push (or, pulling, less pull: past nothing it starts to push).', on(){ editAction('tdial', 'down'); } },
+          { label: 'Reach farther', title: 'Its field reaches half a cell farther.', on(){ editAction('tdial', 'far'); } },
+          { label: 'Reach less far', title: 'Its field reaches half a cell less far.', on(){ editAction('tdial', 'near'); } }] : []),
+        ...(o && o.type === 'toy' && o.obj.mine ? [{ label: 'Stronger', title: 'The ball thrown harder.', on(){ editAction('tdial', 'up'); } },
+          { label: 'Weaker', title: 'The ball thrown less hard.', on(){ editAction('tdial', 'down'); } }] : []),
+        ...(o && o.type === 'toy' && o.obj.zap ? [{ label: 'On longer', title: 'On for more of each turn.', on(){ editAction('tdial', 'up'); } },
+          { label: 'On shorter', title: 'On for less of each turn.', on(){ editAction('tdial', 'down'); } },
+          { label: 'Faster', title: 'Each turn shorter.', on(){ editAction('tdial', 'far'); } },
+          { label: 'Slower', title: 'Each turn longer.', on(){ editAction('tdial', 'near'); } }] : []),
         { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } },
         // (Oct 11: the timing is kept as you draw; this also moves what stands on a track, and says where something still meets)
         { label: 'Keep movers apart', title: 'Time the movers so they never meet, and nudge anything standing on a track off it. What still meets is ringed in red.', on(){ editAction('apart'); } });
@@ -41056,6 +41277,8 @@ const GOLF_APP = (() => {
     cellItems,
     get menu(){ return [{ head: 'Mini golf', items: [
       // (Oct 10: "Now we way to adjust the difficulty" … "ok, proceed": see ONE DIFFICULTY, HOW HARD, AND WHERE)
+      { label: () => 'Board size: ' + GOLF_SIZE_NAMES[SIZE] + ' (' + NX + ' × ' + NY + ')', title: 'Small 8 × 13 (the course near the corner), Medium 13 × 21 or Tall 8 × 21: every board\'s hole is made at that size. Each size keeps its own holes and best lines.',
+        on(){ const ks = Object.keys(GOLF_SIZES); setGolfSize(ks[(ks.indexOf(SIZE) + 1) % ks.length]); } },   // (Oct 20)
       { label: () => 'Difficulty: ' + LEVEL_NAMES[LEVEL_SET], title: 'Easy, Normal, Hard or Expert: the grass\'s speed, the cup\'s size, and how hard the holes are made. Boards near the corner are gentlest and they get harder the farther out you fly; this shifts the whole field easier or harder.',
         on(){ setLevel(LEVEL_SET + 1); } },
       { label: 'Rate this hole', title: 'A fair player plays the hole on the selected board a few times, with a person\'s small errors of aim, strength and timing; its strokes on average give the stars (and, while editing, the par).',
@@ -41212,8 +41435,23 @@ const GOLF_APP = (() => {
     importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
     importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
   };
+  app._size = SIZE;
   return app;
-})();
+};
+let GOLF_APP = GOLF_MAKE(golfSizeAtLoad());
+// a size made again in mini golf's place, and gone to (the menu's Board size, Oct 20)
+function setGolfSize(size, keep){
+  if (!GOLF_SIZES[size] || (GOLF_APP && GOLF_APP._size === size)) return GOLF_APP;
+  if (!keep) try { localStorage.setItem('golf.size', size); } catch {}
+  const old = GOLF_APP, nu = GOLF_MAKE(size);
+  nu.id = old.id;
+  const i = window.FIELD_APPS ? window.FIELD_APPS.indexOf(old) : -1;
+  if (i >= 0) window.FIELD_APPS[i] = nu;
+  GOLF_APP = nu;
+  try { if (window.getFieldApp && window.getFieldApp() === old) window.setFieldApp(nu); } catch {}
+  return nu;
+}
+try { window.setGolfSize = setGolfSize; } catch {}
 /* ═══ MINESWEEPER (Sep 22: "lets try minesweeper") ════════════════════════
    12×12, 22 mines. TAP a covered square to open it; the first tap is always
    safe, and opens a patch. An open square shows how many of its eight

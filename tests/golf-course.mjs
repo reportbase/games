@@ -28,6 +28,8 @@ if (process.env.LIBS_DIR){
 const errors = []; page.on('pageerror', e => errors.push(e.message));
 await page.goto(`http://127.0.0.1:${server.address().port}/games.html?app=minigolf`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
+// (another board size, Oct 20: GOLF_SIZE=medium or tall plays that size's generated holes; it has no hand-made course)
+if (process.env.GOLF_SIZE) await page.evaluate(s => window.setGolfSize(s, true), process.env.GOLF_SIZE);
 // (Oct 9: a hole for every board, made from the board's index. The course's own holes are all played, and a sample of the
 //  generated ones, spread over the indices: GEN_SAMPLE of them, 40 unless asked.)
 const report = await page.evaluate(SAMPLE => {
