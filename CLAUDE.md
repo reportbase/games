@@ -596,11 +596,47 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     usually two tanks firing straight at each other at once.
   - Drawn: walls as boxes (the outer one the level's colour, golf's flags), each tank tracks, hull, turret and gun turned to its
     heading (`mzTracks`, `mzHull`, `mzTurret`, `mzGun`; never a yaw of 0, `yawOf`), shells, and a burst of fire and smoke.
+  - **More to it** (Oct 21: "1,2,3" of the ideas offered: power-ups, three or four tanks, an aim line):
+    - **Power-ups** (`POWERS`, the menu's Power-ups, localStorage `tankmaze.powers`): a crate drops every `CRATE_GAP` (4–7 s,
+      the first at `CRATE_FIRST` 2.5 s) while fewer than `crateMax` (1 + tanks/2) lie about, in a cell 1.6 cells from every
+      tank (`G.crates`, each with t0 and t1, the time taken). A tank driving over one with nothing held takes it (`t.power`, a
+      light over its turret), and its next fire is it (`firePower`):
+      - laser (`firstHit`, `cutAt`): the whole way at once, `LASER_LEN` 40 cells off up to `LASER_SEG` 14 walls, the first tank
+        on it out, its own tank once it is `LASER_SAFE` 0.7 cells along (a laser at a wall beside you comes back for you);
+        drawn as thin bars fading over `LASER_SHOW`;
+      - frag: a shell, bigger and orange, that after `FRAG_T` 0.9 s bursts into `SHARDS` 14 short shards (`SHARD_LIFE`, at
+        `SHARD_V`, `grace` 0: they hit anyone); a shot's own speed is `b.v`, and its grace `b.grace`;
+      - spread: three shells `SPREAD` (0.2 rad) apart;
+      - mine (`G.mines`): laid under the tank, armed after `MINE_ARM` 1.2 s, then any tank within `MINE_R` sets it off and every
+        tank within `MINE_BLAST` goes;
+      - homing (`G.missiles`, `stepMissile`): at `HOME_V` of a shell's speed, toward the nearest other tank along the maze (the
+        next cell's middle, the one after once nearly there), straight at it once a ray reaches it, turning `HOME_TURN` a
+        second, sliding along a wall it meets (spent on every corner it clipped, it found its tank 13 times in 20; sliding, 19),
+        spent on a tank or after `HOME_T` 7 s; its `trail` is where it was, so a recording plays it back.
+      The computer goes for a crate within three cells when it has nothing held, lays a mine where ways meet or near a tank,
+      sends a missile when it has no shot, and fires a laser (`findShot(…, laser)`: not led, off more walls), frag or spread
+      where a shell would hit. Rounds and recordings carry `sounds` (a crate taken, a power fired, a frag's burst, a mine).
+    - **Three or four tanks** (the menu's Tanks, `SET.n`, localStorage `tankmaze.count`): `makeMaze(idx, lv, round, tanks)` is a
+      cell larger a side for each tank past two (5×5 to 11×11) and starts each tank after the first two in the cell farthest
+      along the maze from those placed. Seats: you (or you and Player 2), then the computer's tanks, Red, Orange, Violet
+      (`colsOf`, `namesOf`); every tank pushes off every other; a round ends `BOOM_T` after one or none is left (`downAt`,
+      `kill`); `score` a seat each, the best kept by board, level and count (`#3`, `#4`). The computer goes for the nearest
+      tank along the maze and shoots at any it can hit. A board no one plays records that many computer tanks (`recKey`).
+      Measured over 12 rounds each (powers on): 3 tanks 5.4, 8.6 and 19 s a round at levels 1, 3 and 5, 4 tanks 6.9, 11.4 and
+      27 s; working one out took up to 0.25 s on average at 4 tanks and level 5 (0.4 at most), done a little at a time.
+    - **The aim line** (`aimOf`, the menu's Aim line, localStorage `tankmaze.aim`): for each person's tank in play, dots a fifth
+      of a cell apart along where its shell would go from its gun (`trace`): `AIM_SEG` pieces of the way, 4 at level 1, 3, 2,
+      then the straight run alone at levels 4 and 5, at most `AIM_CELLS` 12 cells; with a laser held, the laser's own way.
+      Kept on the tank (`t._aim`) until it moves or turns.
   - The smoke test checks the levels and sizes by ring, the same maze each time and another each round, a shell's way staying in
     the board and coming back off a wall, your own shell killing you at 0.18 s, computer rounds at levels 2, 4 and 5 ending with
     hits off walls, a computer tank getting out of a shell's way, a real key driving, a real click firing, a real drag steering,
     a round won counted with a new maze, a match won with three stars and a best, two players each on their own keys, a board no
-    one plays moving, and the drawing (every wall, two tanks turned, a shell, a burst).
+    one plays moving, and the drawing (every wall, two tanks turned, a shell, a burst); since Oct 21 also the mazes for 2, 3 and
+    4 tanks, four tanks started apart, 3- and 4-tank rounds ending with crates taken and powers used, a laser coming back off
+    the wall beside you, a frag's 14 shards, a spread's 3 shells, a mine armed and set off, a missile finding its tank, a crate
+    dropped and taken, the aim line from the gun along its heading (3 pieces at level 1, 1 at level 5), and the crates, mines,
+    beams, missiles and aim dots drawn.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
