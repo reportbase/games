@@ -1,6 +1,6 @@
 # games: notes for Claude
 
-A 3D field of boards you fly over, with ~38 games in one page (and Levels, a demonstration of level of detail) (chess against
+A 3D field of boards you fly over, with ~39 games in one page (and Levels, a demonstration of level of detail) (chess against
 Stockfish with a Claude coach, checkers, Go, Tetris, Pac-Man, Sokoban, …), served
 by GitHub Pages at https://reportbase.github.io/games/. The owner works through
 Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
@@ -466,10 +466,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The computer** (`aimFor`, `foeShot`): 14 angles × 14 powers flown in the game's own physics (at 1/60 s), then the 7 × 7
     about the best, the one landing nearest your tank and not on itself; then its hands' spread. With no spread its first
     shot hit on 20 of 20 boards. About 1 ms a shot.
-  - **Controls**: a tap aims toward it (power by the distance, full at `AIM_FULL` 0.42) and fires; a press on your tank and a
-    drag aims as the finger goes and fires on letting go (`claimsPan`, the tap after it eaten; `keepsPress`, since on a slow
-    frame the field's hold timer took the press back before the finger's moves were read); arrows turn and push (W and S
-    push too), A and D drive, 1–6 choose a shell, Enter or Space fires. The aim line from the barrel shows the power; your last shot's path stays faint.
+  - **Controls** (Oct 21: "the aiming mechanism is hard, can it be improved?"): a tap on the board aims toward it (power by the
+    distance, full at `AIM_FULL` 0.42) and fires nothing; a press anywhere and a drag aims as the finger goes, and letting go
+    leaves it there (`claimsPan` on your turn, `keepsPress`, since on a slow frame the field's hold timer took the press back
+    before the finger's moves were read; the tap after a drag eaten). A tap on your own tank (`onTank`), the row's Fire or Enter
+    or Space fires. Until then a tap aimed and fired at once, and a drag had to start on the tank and fired as it let go.
+    Arrows turn and push (W and S push too), A and D drive, 1–6 choose a shell.
+  - **The shot shown before it is fired** (`previewOf`, `PREVIEW`): the shell's own path flown ahead in the game's physics, wind
+    and all, and dotted from the muzzle: the whole flight to where it lands at level 1, 60%, 45%, 35% and 25% of it at levels
+    2–5. Kept on the game (`g._pv`) until the aim, the tank, the wind or the ground changes. Your last shot's path stays faint.
+  - **The row** (`tilesOf`): Fire (the shell in hand under it), Aim ◀ ▶ (a degree, `nudge`), Power − + (two in a hundred,
+    snapped to them), the weapons, then Drive ◀ ▶; `AIM_TILES` (5) come before the weapons.
   - **Through**: stars by the health left on a win (`starsOf`: 70 three, 35 two), the most left kept a board (localStorage
     `tanks.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold or Start this board again
     deals it afresh.
@@ -547,14 +554,53 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (`pop`), a digger grinding (`scrape`), a tank's tracks (`rumble`), and a burst as big as its weapon's. Each plays as its
     moment on the game's clock comes (`stepGame` reads `g.fx`). Only the board being played sounds; the menu's Sound turns it off.
   - The smoke test checks the levels by ring, the same ground on a board each time, hills only past level 1, the steady
-    computer's hits, a burst's dig and harm, ten duels ending, a real tap firing toward it and the computer answering, a
-    real drag from the tank firing, a steady shot winning with stars and a best, a board no one plays moving, the picture the
+    computer's hits, a burst's dig and harm, ten duels ending, a real tap aiming toward it (since Oct 21 with the shot's way
+    dotted, the whole flight at level 1 landing where the shot does and a quarter of it at level 5) and a tap on the tank
+    firing, the computer answering, a real drag anywhere aiming and the real Enter firing, the row's aim and power nudged, a steady shot winning with stars and a best, a board no one plays moving, the picture the
     right way round (earth at the near edge, sky at the far), a new picture after a burst, 512 and 256 px by size, a burst's
     fireball, ring, clods and smoke, the clouds going with the wind, each tank turned to the slope under it, no part of a tank
     asking for a yaw of 0, the computer's tank its mirrored kinds, and the gun, the whistle, the burst and the whirr asked for
     in a live exchange; since Oct 21 also what each weapon does, duels of two, three and four tanks ending, a real key (D)
     driving on fuel, the row's big shell chosen and spent, and three tanks with two players: after Player 1 and the computer,
     Player 2's turn with the controls theirs.
+- **Tank maze** (Oct 21: "maze tank battle", the second of the tank games offered): `TANKMAZE_APP`, id `tankmaze`, after Tanks.
+  Two tanks seen from above in a maze, as Tank Trouble plays it: drive, turn and fire; a shell runs on for `LIFE` (9 s) bouncing
+  off every wall, and hits whichever tank it finds, the one that fired it too once it is `GRACE` (0.17 s) out. The last tank
+  standing takes the round, the first to `WIN` (5) the match; every round is a new maze.
+  - **Every board its own mazes** (`makeMaze(idx, lv, round)`: the tilt maze's backtracking walk with many more loops, the two
+    tanks in cells far apart along it, each facing an open side), at a level 1–5, the ring level plus the Difficulty (Easy 0,
+    Normal 1, Hard 2). `LV`: 5 to 9 cells a side, loops 0.32 down to 0.2, and the computer's hand: `aim` (bounces it looks for,
+    none at level 1), `rays` (48–120 headings tried), `think` (0.32 s down to 0.11 between plans), `err` (6° down to 1.2°),
+    `lead` (aims where you will be, from level 3), `dodge` (the chance it sees a shell coming, 0 to 1), `cool` and `most` (its
+    shells in the air, 1 to 3; yours `MAXB`, 5).
+  - **One physics for shells and the computer's eye** (`trace`): a shell's whole way is laid down when it is fired, a ray
+    against the walls widened by its radius (slab test), mirrored at each face it meets; where it is is how far along it has
+    gone (`along`), and a hit is the way coming within `HIT_R` + its radius of a tank between two steps (`nearest`, which also
+    takes a moving point, for leading). The computer looks for shots along the same rays (`findShot`: the straight line and
+    `rays` headings, each off up to `aim` walls, that reach you before coming back through itself, and that do not come back
+    through it in the 2.5 s after); a shell coming its way, it tries seven moves for 0.7 s and takes the one keeping farthest
+    from every shell (`escape`); else it drives toward you along the maze (`pathOf`).
+  - **Controls**: the arrow keys or WASD drive (up forward, down back at 0.7, left and right turn), Space, Enter, Q or M fire;
+    a drag steers the tank toward the finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`); a tap
+    fires. A press of fire is kept until the tank can fire, up to `REQ_T` (0.6 s): a tap in a tank's first 0.4 s, while its
+    first cooldown ran, was lost. Two players (the menu's Players, localStorage `tankmaze.players`): Player 1 green on WASD with
+    Q or Space, Player 2 blue on the arrows with M or Enter, and a finger steers or fires the tank nearest it (`seatNear`).
+  - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a round ends `BOOM_T` (1.5 s) after
+    the first tank goes, or at `ROUND_CAP` (60 s), so both can go (no one scores). Through: stars by the match (5–0 or 5–1
+    three, to 5–3 two, else one), the most a board kept (localStorage `tankmaze.best`); a tap on a finished board goes on to the
+    next (golf's `nextBoard`), a hold starts it again.
+  - **A board no one plays** shows a round of two computer tanks on its first maze (`recSoon`, worked out STEP by STEP in about
+    6 ms in 30 and kept for `REC_CAP` 500 boards: the tanks sampled `REC_HZ` 15 a second, the shells as their ways, the bursts),
+    played back on the page's clock with a 1.5 s rest (`shownOf`). Measured over 20 rounds a level: 4.6, 5, 6, 8.4 and 12.2 s a
+    round, 2 to 37 ms to work one out (112 at most), half the hits or more off a wall from level 2; a round with no one left is
+    usually two tanks firing straight at each other at once.
+  - Drawn: walls as boxes (the outer one the level's colour, golf's flags), each tank tracks, hull, turret and gun turned to its
+    heading (`mzTracks`, `mzHull`, `mzTurret`, `mzGun`; never a yaw of 0, `yawOf`), shells, and a burst of fire and smoke.
+  - The smoke test checks the levels and sizes by ring, the same maze each time and another each round, a shell's way staying in
+    the board and coming back off a wall, your own shell killing you at 0.18 s, computer rounds at levels 2, 4 and 5 ending with
+    hits off walls, a computer tank getting out of a shell's way, a real key driving, a real click firing, a real drag steering,
+    a round won counted with a new maze, a match won with three stars and a best, two players each on their own keys, a board no
+    one plays moving, and the drawing (every wall, two tanks turned, a shell, a burst).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

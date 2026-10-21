@@ -3398,7 +3398,7 @@ try {
   }
   // TANKS (Oct 20: "what tank games could we build", then "1", the artillery duel; Oct 21: weapons, more tanks, two players on
   // one device, driving): every board its own ground at a level by its ring; the computer's steady aim hits; a burst digs and
-  // hurts; every weapon does its own thing; duels of two, three and four tanks end; real taps and drags fire, the computer
+  // hurts; every weapon does its own thing; duels of two, three and four tanks end; real taps and drags aim and a tap on the tank fires, the computer
   // answers, a real key drives; a weapon chosen from the row is spent; two players pass turns past a computer's tank; a steady
   // shot wins with stars; a board no one plays shows its duel; the picture, the effects, the tanks upright, the sounds.
   {
@@ -3429,6 +3429,10 @@ try {
       const by = Object.fromEntries(shot.map(s => [s.id, s]));
       out.weapons = { big: by.big.dug > 2 * by.shell.dug, cluster: by.cluster.blasts >= 4 && by.cluster.tracks >= 5, dirt: by.dirt.raised > 0.5 && by.dirt.dug === 0,
                       roller: by.roller.end > by.shell.end + 0.1 && by.roller.blasts === 1, digger: by.digger.digs >= 3 && by.digger.dug > by.shell.dug };
+      // the shot shown before it is fired: the whole flight at level 1, landing where the shot lands; a quarter of it at level 5
+      out.preview = [1, 5].map(lv => { const T = D.terrainOf(4242, lv, 2), g = { T, S: { H: T.H0.slice(), xs: T.xs.slice(), hp: [100, 100], wind: 0.05 }, a: [50, 130], p: [0.7, 0.7], turn: 0, turns: [] };
+        const P = D.previewOf(g), e = D.simLand(g.S.H, g.S.xs, 0, 50, 0.7, 0.05, [true, true]), n = P.length / 2;
+        return { n, land: Math.hypot(P[P.length - 2] - e.x, P[P.length - 1] - e.y), whole: g._pv.whole }; });
       return out; });
     // real input on the framed board: a tap aims there and fires; the computer answers; a drag from your tank fires on letting go
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
@@ -3443,32 +3447,47 @@ try {
     const live = {};
     if (fc){
       const tank = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); return [g.S.xs[0], D.surfAt(g.S.H, g.S.xs[0])]; }, fc);
+      // a tap aims (and fires nothing); a tap on your own tank fires
       const tx = tank[0] + 0.45, ty = 0.3, pt = await at(tx, ty); await page.mouse.click(pt.x, pt.y);
       // (the software renderer can take a second a frame, so the tap lands when it lands: wait for it before reading)
+      for (let w = 0; w < 40 && (await gs()).a === 45; w++) await page.waitForTimeout(250);
+      live.aimed = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
+      live.arc = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.viewOf(...k.split('_').map(Number)); return V.preview ? V.preview.length / 2 : 0; }, fc[0] + '_' + fc[1]);
+      const pk = await at(tank[0], tank[1] - 0.022); await page.mouse.click(pk.x, pk.y);
       for (let w = 0; w < 40 && !((await gs()).turns >= 1); w++) await page.waitForTimeout(250);
-      live.tap = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
+      live.tap = await gs();
       live.answered = await waitAim();
       // a real key drives (D, held), on fuel
       const x0 = (await gs()).x; await page.keyboard.down('d');
       for (let w = 0; w < 24 && !((await gs()).x > x0 + 0.01); w++) await page.waitForTimeout(250);
       await page.keyboard.up('d'); await page.waitForTimeout(100);
       live.drove = await gs(); live.x0 = x0;
-      const p0 = await at(live.drove.x, tank[1] - 0.012), p1 = await at(live.drove.x + 0.15, tank[1] - 0.2), p2 = await at(live.drove.x + 0.25, tank[1] - 0.3);
+      // a real drag anywhere on the board aims and fires nothing; then the real Enter key fires
+      const a0 = (await gs()).a, p0 = await at(live.drove.x + 0.5, 0.45), p1 = await at(live.drove.x + 0.4, 0.3), p2 = await at(live.drove.x + 0.3, 0.2);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 6 }); await page.mouse.move(p2.x, p2.y, { steps: 6 });
       await page.mouse.up();
+      for (let w = 0; w < 40 && Math.abs((await gs()).a - a0) < 0.5; w++) await page.waitForTimeout(250);
+      await page.waitForTimeout(600);
+      live.dragged = await gs(); live.a0 = a0;
+      await page.keyboard.press('Enter');
       for (let w = 0; w < 40 && !((await gs()).turns >= 3); w++) await page.waitForTimeout(250);
-      live.dragged = await gs();
+      live.entered = await gs();
       // the row's Big shell, then a shot: one fewer left
       live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
         for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
         if (g.state === 'over') return { over: true };
-        const ready = g.state + g.turn, tiles = A.statTiles(c, r); A.onStatTap(c, r, 1); const wid = g.wid[0]; D.fire(g);
-        return { ready, tiles: tiles && tiles.length, wid, big: g.S.ammo[0][1] }; }, fc);
+        // (the row's ◀ a degree up, − two in a hundred of the power down, then Big shell and the row's Fire)
+        const ready = g.state + g.turn, tiles = A.statTiles(c, r), a = g.a[0], p = g.p[0];
+        A.onStatTap(c, r, 1); A.onStatTap(c, r, 3); const nudged = [+(g.a[0] - Math.round(a)).toFixed(3), +(g.p[0] - p).toFixed(3)];
+        A.onStatTap(c, r, D.AIM_TILES + 1); const wid = g.wid[0]; A.onStatTap(c, r, 0);
+        return { ready, tiles: tiles && tiles.length, fire: tiles && tiles[0].value, wid, big: g.S.ammo[0][1], nudged, fired: g.state === 'play' }; }, fc);
       // a win: the others all but out, your steady shots, through with stars and a best kept
       live.win = await page.evaluate(async ([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r);
         g.S.hp.forEach((h, k) => { if (k) g.S.hp[k] = Math.min(h, 1) || 0; });
         for (let n = 0; n < 6 && g.state !== 'over'; n++){
-          for (let w = 0; w < 80 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+          // (your tank kept whole while it waits: the computer's answer to the big shell before this could be a big shell too, and
+          //  put you out before a steady shot was fired, on CI, Oct 21)
+          for (let w = 0; w < 80 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
           if (g.state === 'over') break;
           g.S.hp[0] = 100; const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind, 1); g.a[0] = b.a; g.p[0] = b.p; g.wid[0] = 0; D.fire(g);
           for (let w = 0; w < 80 && g.state === 'play'; w++) await new Promise(ok => setTimeout(ok, 100));
@@ -3525,11 +3544,14 @@ try {
       return out; });
     const r = rules, wpn = Object.values(r.weapons).every(x => x), ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.hills[0] === 0 && r.hills[1] > 10 && r.hits >= 18
       && r.dug > 0.03 && r.dmg[1] >= 50 && r.dmg[0] === 0 && r.farDmg.join() === '0,0' && r.ended && wpn
-      && live.tap && live.tap.state === 'play' && live.tap.turns === 1 && Math.abs(live.tap.a - live.want) < 2
+      && r.preview[0].whole && r.preview[0].land < 0.03 && !r.preview[1].whole && r.preview[1].n < r.preview[0].n * 0.45
+      && live.aimed && live.aimed.state === 'aim' && live.aimed.turns === 0 && Math.abs(live.aimed.a - live.want) < 2 && live.arc > 5
+      && live.tap && live.tap.state === 'play' && live.tap.turns === 1
       && live.answered && live.answered.turns >= 2 && live.answered.state === 'aim'
       && live.drove && live.drove.x > live.x0 + 0.01 && live.drove.fuel < 100
-      && live.dragged && live.dragged.turns === 3 && live.dragged.state !== 'aim'
-      && live.chose && (live.chose.over || (live.chose.tiles === 8 && live.chose.wid === 1 && live.chose.big === 1))
+      && live.dragged && live.dragged.turns === 2 && live.dragged.state === 'aim' && Math.abs(live.dragged.a - live.a0) > 2
+      && live.entered && live.entered.turns === 3
+      && live.chose && (live.chose.over || (live.chose.tiles === 13 && live.chose.fire === 'Fire' && live.chose.wid === 1 && live.chose.big === 1 && live.chose.fired && live.chose.nudged[0] === 1 && live.chose.nudged[1] < -0.009 && live.chose.nudged[1] > -0.031))
       && live.win && live.win.state === 'over' && live.win.won && live.win.stars >= 1 && live.win.best
       && two.seats === 'you,cpu,p2' && /Player 1/.test(two.names) && /Player 2/.test(two.names) && two.mine && two.turn === 2 && two.whoFired === '0,1' && two.p2 === 2
       && shown.looks >= 3 && shown.shells > 10 && shown.blasts > 2
@@ -3537,7 +3559,117 @@ try {
       && looks.tilt.join() === looks.slope.join() && looks.upright && looks.facing === 'tkHull,tkHullL'
       && ['cannon', 'whistle', 'blast', 'whirr'].every(k => looks.heard[k] >= 1);
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, two, shown, looks })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; duels of 2, 3 and 4 tanks ended (${r.duels.join(', ')}); every weapon its own (${Object.entries(r.weapons).map(([k, v]) => k + (v ? '' : ' NOT')).join(', ')}); a real tap fired, the computer answered, a real key drove ${live.drove ? (live.drove.x - live.x0).toFixed(3) : '?'}, a real drag fired, the row's big shell spent, a steady shot won ${live.win && live.win.stars} stars; two players passed turns past a computer's tank; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; duels of 2, 3 and 4 tanks ended (${r.duels.join(', ')}); every weapon its own (${Object.entries(r.weapons).map(([k, v]) => k + (v ? '' : ' NOT')).join(', ')}); a real tap aimed with the shot's way dotted, a tap on the tank fired, the computer answered, a real key drove ${live.drove ? (live.drove.x - live.x0).toFixed(3) : '?'}, a real drag aimed and Enter fired, the row nudged the aim and fired a big shell, a steady shot won ${live.win && live.win.stars} stars; two players passed turns past a computer's tank; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
+  }
+  // TANK MAZE (Oct 21: "maze tank battle"): every board its own maze at a level by its ring; a shell's way stays in the board
+  // and bounces back off a wall; your own shell kills you once clear of the barrel; rounds of two computer tanks end, with bank
+  // shots among their hits; a computer tank sees a shell coming and moves; real keys drive, a real click fires, a real drag
+  // steers; a round won counts and starts the next maze; a match won gives stars and a best; two players each have their keys;
+  // a board no one plays moves; the drawing.
+  {
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); A._debug.SET.players = 1; });
+    await page.waitForTimeout(1500);
+    current = 'tankmaze';
+    const before = failures.length;
+    const rules = await page.evaluate(() => { const D = window.getFieldApp()._debug, out = {};
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      const a = D.makeMaze(77, 3, 0), b = D.makeMaze(77, 3, 0), c = D.makeMaze(77, 3, 1);
+      out.same = a.E.join() === b.E.join() && a.S.join() === b.S.join() && a.spawn[0].x === b.spawn[0].x;
+      out.differ = a.E.join() + a.S.join() !== c.E.join() + c.S.join();
+      out.sizes = [1, 3, 5].map(lv => D.makeMaze(5, lv, 0).m);
+      const sp = a.spawn.map(p => D.cellOf(a, p.x, p.y)); out.apart = D.bfs(a, sp[0])[sp[1]];
+      // a shell's way: nine seconds long, never out of the board; fired at a wall, it comes back the way it went
+      const P = D.trace(a, a.spawn[0].x, a.spawn[0].y, 0.7, D.LIFE * D.BV * a.s);
+      let inside = true; for (let i = 0; i < P.length; i += 3) if (P[i] < 0 || P[i] > 1 || P[i + 1] < 0 || P[i + 1] > 1) inside = false;
+      out.way = { inside, len: +(P[P.length - 1] / (D.LIFE * D.BV * a.s)).toFixed(3), bounces: P.length / 3 - 2 };
+      const k = [...a.E.keys()].find(k => a.E[k] && k % a.m < a.m - 1), [cx, cy] = D.centre(a, k), Q = D.trace(a, cx, cy, 0, a.s * 0.8);
+      out.back = Q.length >= 9 && Math.abs(Q[Q.length - 3] - cx) < 1e-9 + a.s * 0.3 && Q[3] > cx;
+      // your own shell, back off that wall: it kills you, once it is clear of the barrel
+      const G = D.roundNew(a, ['you', 'you'], 1); G.tanks[0].x = cx; G.tanks[0].y = cy; G.tanks[0].h = 1e-6;
+      const far = D.centre(a, (k + Math.floor(a.m * a.m / 2)) % (a.m * a.m)); G.tanks[1].x = far[0]; G.tanks[1].y = far[1]; G.tanks[1].alive = false;
+      G.tanks[0].cool = 0; D.stepRound(G, [{ drive: 0, turn: 0, fire: true }, null], D.STEP);
+      for (let n = 0; n < 120 && !G.booms.length; n++) D.stepRound(G, [{ drive: 0, turn: 0, fire: false }, null], D.STEP);
+      out.self = G.booms.length ? { k: G.booms[0].k, by: G.booms[0].by, t: +G.booms[0].t.toFixed(2) } : null;
+      // rounds of two computer tanks end, and some hits come off a wall
+      out.rounds = [2, 4, 5].map(lv => { let ended = 0, bank = 0, hits = 0;
+        for (let i = 0; i < 6; i++){ const L = D.makeMaze(300 + i * 11, lv, 0), R = D.roundNew(L, ['cpu', 'cpu'], i + 1);
+          while (!R.over) D.stepRound(R, [D.cpuCmd(R, 0), D.cpuCmd(R, 1)], D.STEP);
+          if (R.t < 59.9) ended++; for (const B of R.booms){ hits++; if (B.seg > 0) bank++; } }
+        return { lv, ended, hits, bank }; });
+      // a computer tank at level 5 with a shell on its way at it gets out of the way
+      const E = D.roundNew(a, ['cpu', 'cpu'], 3), me = E.tanks[1], foe = E.tanks[0];
+      const ang = Math.atan2(me.y - foe.y, me.x - foe.x), W = D.trace(a, foe.x, foe.y, ang, 3);
+      const bv = D.BV * a.s, hyp = Math.hypot(me.x - foe.x, me.y - foe.y);
+      E.shots.push({ k: 0, t0: -(hyp - 0.12) / bv, end: 9, P: [foe.x, foe.y, 0, me.x, me.y, Math.hypot(me.x - foe.x, me.y - foe.y), ...W.slice(-3)] });
+      out.dodge = D.escape(E, 1, 0.7);
+      return out; });
+    // real input on the framed board
+    await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+    const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); if (!g) return null; const t = g.G.tanks[0];
+      return { state: g.state, x: t.x, y: t.y, h: t.h, mine: g.G.shots.filter(b => b.k === 0).length, score: g.score.slice(), round: g.round, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
+    const live = {};
+    if (fc){
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
+        // (the computer's tank out of it here, so it neither moves into the way nor fires while the real input is checked)
+        g.G.tanks[1].alive = false; }, fc);
+      live.ready = await gs();
+      await page.keyboard.down('w');
+      for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.hypot(s.x - live.ready.x, s.y - live.ready.y) > 0.02) break; await page.waitForTimeout(250); }
+      await page.keyboard.up('w');
+      live.drove = await gs();
+      const tk = await gs(), pt = await at(tk.x < 0.5 ? 0.85 : 0.15, 0.5);
+      await page.mouse.click(pt.x, pt.y);
+      for (let w = 0; w < 24 && (await gs()).mine < 1; w++) await page.waitForTimeout(250);
+      live.fired = await gs();
+      // a real drag toward a point behind the tank: it turns that way
+      const t2 = await gs(), want = Math.atan2(0.5 - t2.y, (t2.x < 0.5 ? 0.9 : 0.1) - t2.x), p0 = await at(0.5, 0.2), p1 = await at(t2.x < 0.5 ? 0.9 : 0.1, 0.5);
+      await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
+      for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.abs(Math.atan2(Math.sin(s.h - want), Math.cos(s.h - want))) < 0.3) break; await page.waitForTimeout(250); }
+      await page.mouse.up();
+      live.steered = await gs(); live.want = want;
+      // a round won: counted, and the next round on a maze of its own; then the match, with stars and a best
+      live.match = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r), out = {};
+        const m0 = g.G.L.E.join() + g.G.L.S.join();
+        g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        out.after = { score: g.score.join(), round: g.round, state: g.state, newMaze: g.G.L.E.join() + g.G.L.S.join() !== m0 };
+        g.score = [4, 1]; g.state = 'play'; g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        out.end = { state: g.state, stars: g.stars, best: D.BEST.get(g.idx + '@' + g.lv) };
+        return out; }, fc);
+      // two players: Player 2 drives on the arrows, Player 1 on WASD
+      live.two = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.SET.players = 2; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
+        return { seats: g.seats.join(), p1: [g.G.tanks[0].x, g.G.tanks[0].y], p2: [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc);
+      await page.keyboard.down('ArrowUp');
+      for (let w = 0; w < 24; w++){ const s = await gs(); if (s.t1 && Math.hypot(s.t1[0] - live.two.p2[0], s.t1[1] - live.two.p2[1]) > 0.02) break; await page.waitForTimeout(250); }
+      await page.keyboard.up('ArrowUp');
+      const s2 = await gs(); live.two.moved2 = Math.hypot(s2.t1[0] - live.two.p2[0], s2.t1[1] - live.two.p2[1]); live.two.moved1 = Math.hypot(s2.x - live.two.p1[0], s2.y - live.two.p1[1]);
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.SET.players = 1; D.GAMES.delete(c + '_' + r); }, fc);
+    }
+    // a board no one plays: its round worked out, played back on the page's clock; and what a board draws
+    const shown = await page.evaluate(async fc => { const D = window.getFieldApp()._debug, c = fc[0] + 3, r = fc[1] + 1; D.GAMES.delete(c + '_' + r);
+      const E = D.recSoon(c, r, true), a = D.shownOf(E); await new Promise(ok => setTimeout(ok, 1500)); const b = D.shownOf(E);
+      const moved = Math.hypot(a.tanks[0].x - b.tanks[0].x, a.tanks[0].y - b.tanks[0].y) + Math.hypot(a.tanks[1].x - b.tanks[1].x, a.tanks[1].y - b.tanks[1].y) + Math.abs(a.t - b.t);
+      // the drawing at a moment with a shell in flight and a burst going
+      const sh = E.shots[0], B = E.booms[0], at1 = sh ? sh.t0 + 0.2 : 0, V = { ...D.shownOf(E), t: at1 };
+      const it = D.itemsOf(V), V2 = B ? { ...V, t: B.t + 0.2 } : V, it2 = D.itemsOf(V2);
+      const kinds = k => it.filter(i => i.kind === k);
+      return { done: E.done, T: E.T, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, guns: kinds('mzGun').length,
+               yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shot: kinds('mzShot').length, fire: it2.filter(i => i.kind === 'mzFire').length }; }, fc);
+    const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '5,7,9' && r.apart >= 2
+      && r.way.inside && r.way.len > 0.99 && r.way.bounces > 3 && r.back && r.self && r.self.k === 0 && r.self.by === 0
+      && r.rounds.every(x => x.ended === 6 && x.hits >= 4) && r.rounds.reduce((n, x) => n + x.bank, 0) >= 3 && r.dodge
+      && live.drove && Math.hypot(live.drove.x - live.ready.x, live.drove.y - live.ready.y) > 0.02 && live.ready.state === 'ready'
+      && live.fired && live.fired.mine >= 1 && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
+      && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.newMaze
+      && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
+      && live.two && live.two.seats === 'you,p2' && live.two.moved2 > 0.02 && live.two.moved1 < 0.005
+      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.fire >= 1;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side; a shell's way bounced ${r.way.bounces} times inside the board and came back off a wall; your own shell killed you at ${r.self && r.self.t} s; computer rounds ended with ${r.rounds.map(x => x.hits + ' hits, ' + x.bank + ' off walls').join('; ')}; a computer tank dodged; a real key drove, a real click fired, a real drag steered; a round won counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; two players on their own keys; a board no one plays moved)`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
