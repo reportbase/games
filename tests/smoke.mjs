@@ -3485,7 +3485,9 @@ try {
       live.win = await page.evaluate(async ([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r);
         g.S.hp.forEach((h, k) => { if (k) g.S.hp[k] = Math.min(h, 1) || 0; });
         for (let n = 0; n < 6 && g.state !== 'over'; n++){
-          for (let w = 0; w < 80 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+          // (your tank kept whole while it waits: the computer's answer to the big shell before this could be a big shell too, and
+          //  put you out before a steady shot was fired, on CI, Oct 21)
+          for (let w = 0; w < 80 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
           if (g.state === 'over') break;
           g.S.hp[0] = 100; const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind, 1); g.a[0] = b.a; g.p[0] = b.p; g.wid[0] = 0; D.fire(g);
           for (let w = 0; w < 80 && g.state === 'play'; w++) await new Promise(ok => setTimeout(ok, 100));
