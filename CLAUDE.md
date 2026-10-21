@@ -449,9 +449,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.
-  - **The board lies as Missile Command's does**: v down the board is down, the ground filling it from `H[i]` (a height a
-    column, `W` = 256) to the near edge. A shot is an angle and a power (`launch`, at most `VMAX` 1.3 boards a second), pulled
-    down by `G` and pushed along by the wind, in 1/120 s steps (`flyStep`); it ends on a tank, the ground, or off the sides.
+  - **The board lies as Missile Command's does**: y down the board is down, the ground filling it from `H[i]` (a height a
+    column, `W` = 384) to the near edge. Since Oct 21 the board is half again as wide as it is tall (`ASP` 1.5, the app's
+    `boardShape`), and the game runs in its own x (0 to `ASP`) and y, as mini golf's does; `itemsOf` divides u, scale and lift
+    by `ASP` at the end, and the picture is `ASP` times as wide as it is tall. A shot is an angle and a power (`launch`, at most
+    `VMAX` 1.45 heights a second), pulled down by `G` and pushed along by the wind, in 1/120 s steps (`flyStep`); it ends on a
+    tank still in it, the ground, or off the sides.
   - **A burst** (`blastAt`, `BR` 0.06): the ground in its circle is dug out and the earth above falls in (a column stays one
     height); a tank inside is hurt up to `DMG` (55) at its middle, and by `FALL` × how far it drops as the ground goes. 100
     health each.
@@ -505,19 +508,52 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       drifting on the wind. Clouds cross the top of the sky with the wind (`cloudsOf`, `cloud`: how far it has carried them).
     - Measured in the sandbox's software renderer at 1280×800: zoomed out 11 frames a second against 6.5 for the boxes;
       framed, the first loop of the boards' duels is slower while their pictures are made, then 11.
+  - **More to it** (Oct 21: "Growing the artillery duel", the four ideas offered: weapons, more tanks, two players on one
+    device, driving):
+    - **Weapons** (`WEAPONS`, `simShot`): a shell (always), a big shell (a burst 1.8 times as wide, 80), a cluster (opens at the
+      top of its arc into five bomblets spread across its way, each a small burst; one landing before its top bursts as a
+      bigger bomblet), a dirt bomb (lays a mound of earth the shape of its upper half, `dirtAt`), a roller (lands, rolls down
+      the slope at `ROLL_V` until the ground ahead rises, it meets a tank, or 3.5 s, then bursts) and a digger (goes on into the
+      ground the way it was going at `DIG_V` for 0.55 s, the earth falling in behind it, `cut`, a trench since a heightfield
+      holds no caves, then a small burst; a tank it went under is hurt by the fall). Two of each a tank (`S.ammo`), chosen with
+      1–6 or in the bottom row (`tilesOf`: a tile a weapon with what is left on its top line, the one in hand lit, then Drive ◀
+      and Drive ▶ with the fuel; `statsStay` keeps the row up, since a tap on the field shuts a row of numbers).
+    - **Two to four tanks** (the menu's Tanks, `SET.n`, localStorage `tanks.count`), every one for itself, spread across the
+      board with a hill in a gap now and then; each computer goes for the nearest tank or the weakest, as its board drew its
+      mind (`T.minds`, `targetOf`). The tanks on the right half are the mirrored kinds, facing left.
+    - **Two players on one device** (the menu's Players, `tanks.players`; `seatsOf`): Player 1 the leftmost tank, Player 2 the
+      rightmost, the computer's between, in seat colours (`ME`, `P2C`, `CPU_COL`); on a person's turn (`myTurn`) the controls
+      are theirs and the board says whose turn it is; a marker bobs over the tank whose turn it is. Stars and a best only with
+      one player.
+    - **Driving** (`driveBy`, `drive`): A and D held, or a tap on a Drive tile (`DRIVE_STEP`), at `DRIVE_V`, `FUEL` (100)
+      carrying a tank `FUEL_RANGE` (0.2) of the board, no steeper than `CLIMB` up, never off the board or into another tank (a
+      wreck too). A computer whose best shot is blocked (a miss over 0.1) tries 0.1 either way and drives if it does better.
+    - **One way of playing turns** (TURNS): a game (`gameNew`) is the state S, the seats, the turns so far and the effects they
+      set off on its own clock (`G.fx`). A turn (`makeTurn`) is a drive, the gun turning (a computer's; yours is where you put
+      it) and the shot, worked out whole when it starts; `viewAt(G, t)` reads any moment of it (the tank driving, the gun
+      turning, the shells along their tracks, the ground as it was until the first burst, the health falling as each comes).
+      A board no one plays is a game of the computer's tanks made a turn at a time as it is wanted (`duelNew`, `duelStep`,
+      `duelSoon`: within 8 s of its clock, 8 ms in 30), its clock waiting at the last turn made, then round and round; the game
+      you play (`fresh`) is the same with your seats in it, on `g.t`.
+    - The computer's choice of weapon: a big shell once it has the range on a tank still strong, a cluster to open, a roller
+      onto a tank below it, else the shell.
   - **Sounds** (Oct 20: "add sound effects to tanks."; `SFX`, made from noise and tones with the browser's audio, each set
     left or right by where it happens, `pan`): the gun's crack, thump and click (`cannon`); the shell's whistle, quiet as it
     climbs and falling louder as it comes down, panned from the gun to where it will land for as long as the flight (the game
     flies the shot ahead to know, in `fire`; stopped when it lands); the burst's roar and drop, crackle and earth falling back
     (`blast`); a hit's ring of struck metal (`clang`); a tank put out cooking off (`cookoff`); the computer's turret turning
-    (`whirr`); a tick every 3° or 4% as you aim (`aimTick`). Only the board being played sounds; the menu's Sound turns it off.
+    (`whirr`); a tick every 3° or 4% as you aim (`aimTick`); and since Oct 21 a dirt bomb's thump (`thud`), a cluster opening
+    (`pop`), a digger grinding (`scrape`), a tank's tracks (`rumble`), and a burst as big as its weapon's. Each plays as its
+    moment on the game's clock comes (`stepGame` reads `g.fx`). Only the board being played sounds; the menu's Sound turns it off.
   - The smoke test checks the levels by ring, the same ground on a board each time, hills only past level 1, the steady
     computer's hits, a burst's dig and harm, ten duels ending, a real tap firing toward it and the computer answering, a
     real drag from the tank firing, a steady shot winning with stars and a best, a board no one plays moving, the picture the
     right way round (earth at the near edge, sky at the far), a new picture after a burst, 512 and 256 px by size, a burst's
     fireball, ring, clods and smoke, the clouds going with the wind, each tank turned to the slope under it, no part of a tank
     asking for a yaw of 0, the computer's tank its mirrored kinds, and the gun, the whistle, the burst and the whirr asked for
-    in a live exchange.
+    in a live exchange; since Oct 21 also what each weapon does, duels of two, three and four tanks ending, a real key (D)
+    driving on fuel, the row's big shell chosen and spent, and three tanks with two players: after Player 1 and the computer,
+    Player 2's turn with the controls theirs.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

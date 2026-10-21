@@ -47485,10 +47485,24 @@ const NONOGRAM_APP = (() => {
        flash and smoke where the gun points; a smoke trail behind the shell, each puff growing and thinning as it ages; at
        the burst a fireball of several lobes going white, yellow, orange, red and dark, a ring of shock, clods of earth and
        sparks thrown up and falling under the same gravity as the shell, and smoke rising and drifting on the wind.
-     - Clouds cross the top of the sky with the wind (`cloudsOf`), so its strength and way show without reading a number. */
+     - Clouds cross the top of the sky with the wind (`cloudsOf`), so its strength and way show without reading a number.
+   - MORE TO IT (Oct 21: "Growing the artillery duel", 6 to 9 of the ideas offered: weapons, more tanks, two players on one
+     device, and moving):
+     - The board is half again as wide as it is tall (`ASP`, the app's `boardShape`), its ground 384 columns across.
+     - Weapons (THE WEAPONS, below): the shell, a big shell, a cluster, a dirt bomb, a roller and a digger, two of each but the
+       shell a tank, chosen in the bottom row (a tile a weapon, with what is left) or with 1 to 6.
+     - Two, three or four tanks on a board (the menu's Tanks; `SET.n`, localStorage tanks.count), every one for itself; each
+       computer goes for the nearest tank or the weakest, as its board drew its mind (`targetOf`).
+     - Two players on one device (the menu's Players, tanks.players): Player 1 the leftmost tank, Player 2 the rightmost, the
+       computer's between; on each person's turn the controls are theirs, and the board says whose turn it is.
+     - Driving (`driveBy`, `drive`): A and D, or the row's Drive ◀ and Drive ▶ (a short way a tap), on fuel, as far as the
+       ground lets a tank climb; the computer drives too when a hill is in its way.
+     - The boards no one plays show duels of as many tanks as the menu says, with the same weapons and moves. */
 const TANKS_APP = (() => {
-  const W = 256, G = 1, VMAX = 1.3, SUB = 1 / 120, REC_HZ = 30, TR = 0.024, BR = 0.06, DMG = 55, FALL = 100, TURRET = 0.022, BARREL = 0.036;
+  const ASP = 1.5, W = 384, G = 1, VMAX = 1.45, SUB = 1 / 120, REC_HZ = 30, TR = 0.024, BR = 0.06, DMG = 55, FALL = 100, TURRET = 0.022, BARREL = 0.036;
   const AIM_T = 0.9, BLAST_T = 0.55, REST_T = 2.5, FLOOR = 0.3, FAR_PX = 20, CLOUD_K = 0.5;
+  const FUEL = 100, DRIVE_V = 0.12, FUEL_RANGE = 0.2, CLIMB = 1.2, DRIVE_STEP = 0.04, MAX_TURNS = 40;
+  const P2C = 0x4aa3ff, CPU_COL = [0xe0564a, 0xf2a23a, 0xb56cf0];
   const SKY_T = 0x0b1630, SKY_B = 0x24486e, EARTH = 0x6a4a2a, GRASS = 0x4f8a34, ME = 0x6fd36a, FOE = 0xe0564a, WRECK = 0x2e2e2e,
         SHELL = 0xfff1c9, AIMC = 0xffffff, TRAILC = 0xffe08a, LASTC = 0x9fd8ff, WINDC = 0x9fd8ff, BARBG = 0x1a1a1a;
   const LV = [
@@ -47566,8 +47580,8 @@ const TANKS_APP = (() => {
         o.connect(g); o.start(t); o.stop(t + dur + 0.1);
         return { stop(){ try { const n = A.currentTime; g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(0.0001, n); o.stop(n + 0.02); } catch {} } };
       }),
-      blast: u => play((A, t) => { const d = out(A, u).g;
-        burst(A, d, t, 1.25, 0.65, 1900, 110); osc(A, d, t, 'sine', 95, 26, 0.95, 0.7, 0.008);
+      blast: (u, size) => play((A, t) => { const d = out(A, u).g, s = clamp(size || 1, 0.5, 2), dur = 0.75 + 0.5 * s;   // (a big shell longer and deeper, a bomblet short)
+        burst(A, d, t, dur, 0.4 + 0.25 * s, 1900, 110); osc(A, d, t, 'sine', 95 / Math.sqrt(s), 26, dur * 0.8, 0.45 + 0.25 * s, 0.008);
         for (let k = 0; k < 6; k++) burst(A, d, t + 0.12 + Math.random() * 0.5, 0.04, 0.1 + Math.random() * 0.12, 4000, 900);    // crackle
         for (let k = 0; k < 8; k++) burst(A, d, t + 0.45 + Math.random() * 0.75, 0.03, 0.05 + Math.random() * 0.06, 1400, 500); }),  // earth falling back
       clang: u => play((A, t) => { const d = out(A, u).g;
@@ -47580,6 +47594,14 @@ const TANKS_APP = (() => {
         f.type = 'lowpass'; f.frequency.value = 520; g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.035, t + 0.08); g.gain.linearRampToValueAtTime(0.03, t + dur - 0.1); g.gain.linearRampToValueAtTime(0.0001, t + dur);
         o.connect(f).connect(g).connect(d); o.start(t); o.stop(t + dur + 0.05); }),
       tick: u => play((A, t) => { osc(A, out(A, u).g, t, 'square', 1700, 1500, 0.012, 0.018); }),
+      // (Oct 21, the new weapons and driving: a dirt bomb's dull thump and earth falling, a cluster opening, a digger grinding,
+      //  a tank's tracks)
+      thud: u => play((A, t) => { const d = out(A, u).g; osc(A, d, t, 'sine', 110, 45, 0.3, 0.5); burst(A, d, t, 0.5, 0.25, 700, 200);
+        for (let k = 0; k < 8; k++) burst(A, d, t + 0.1 + Math.random() * 0.6, 0.03, 0.05 + Math.random() * 0.05, 1200, 400); }),
+      pop: u => play((A, t) => { const d = out(A, u).g; burst(A, d, t, 0.12, 0.25, 3000, 800); osc(A, d, t, 'square', 600, 300, 0.05, 0.05); }),
+      scrape: u => play((A, t) => { burst(A, out(A, u).g, t, 0.09, 0.08, 2200, 600, 'bandpass'); }),
+      rumble: (u, dur) => play((A, t) => { const d = out(A, u).g, len = Math.max(0.12, dur || 0.12);
+        osc(A, d, t, 'sawtooth', 55, 48, len, 0.03, 0.02); burst(A, d, t, len, 0.05, 400, 300); }),
     };
   })();
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
@@ -47599,33 +47621,41 @@ const TANKS_APP = (() => {
   const gauss = R => Math.sqrt(-2 * Math.log(1 - R())) * Math.cos(2 * Math.PI * R());
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const SET = { n: clamp(+ARCADE.load('tanks.count', '2') || 2, 2, 4), players: clamp(+ARCADE.load('tanks.players', '1') || 1, 1, 2) };
 
-  /* ─── THE GROUND ─── H[i] is where the ground's top is in column i, as v (0 the far edge, the sky's top; 1 the near edge). */
+  /* ─── THE GROUND ─── H[i] is where the ground's top is in column i, as y (0 the far edge, the sky's top; 1 the near edge),
+     the columns across the board's width, x from 0 to ASP. */
+  const colOf = x => x / ASP * W - 0.5;
   function flatten(H, x, w){
-    const a = Math.max(0, Math.floor((x - w) * W)), b = Math.min(W - 1, Math.floor((x + w) * W));
-    let s = 0; for (let i = a; i <= b; i++) s += H[i]; s /= (b - a + 1); for (let i = a; i <= b; i++) H[i] = s;
+    const a = Math.max(0, Math.ceil(colOf(x - w))), b = Math.min(W - 1, Math.floor(colOf(x + w)));
+    let s = 0; for (let i = a; i <= b; i++) s += H[i]; s /= Math.max(1, b - a + 1); for (let i = a; i <= b; i++) H[i] = s;
   }
-  const surfAt = (H, x) => { const f = x * W - 0.5, i = Math.floor(f); if (i < 0) return H[0]; if (i >= W - 1) return H[W - 1]; const t = f - i; return H[i] + (H[i + 1] - H[i]) * t; };
+  const surfAt = (H, x) => { const f = colOf(x), i = Math.floor(f); if (i < 0) return H[0]; if (i >= W - 1) return H[W - 1]; const t = f - i; return H[i] + (H[i + 1] - H[i]) * t; };
   const TERRAINS = new Map(), CAP = 1500;
-  function terrainOf(idx, lv){
+  // (the board's ground, its n tanks' places, a hill in a gap between tanks now and then, each computer's mind, its palette)
+  function terrainOf(idx, lv, n){
+    n = n || SET.n;
     const D = LV[lv - 1], R = rngOf((idx * 2654435761) ^ (lv * 9973) ^ 0x7a11), H = new Float32Array(W);
     const base = 0.6 + (R() - 0.5) * 0.08;
-    const waves = [1, 2, 3, 5].map((f, k) => ({ f: f + R() * 0.6, a: D.amp * (0.4 + R() * 0.6) / (1 + k * 0.7), p: R() * Math.PI * 2 }));
-    const hill = R() < D.hillP ? { x: 0.42 + R() * 0.16, w: 0.07 + R() * 0.06, a: D.hill * (0.7 + R() * 0.3) } : null;
+    const waves = [1, 2, 3, 5].map((f, k) => ({ f: (f + R() * 0.6) * ASP, a: D.amp * (0.4 + R() * 0.6) / (1 + k * 0.7), p: R() * Math.PI * 2 }));
+    const e = EDGE[lv - 1] * ASP * 0.75, xs = [];
+    for (let k = 0; k < n; k++) xs.push(e + (ASP - 2 * e) * k / (n - 1) + (R() - 0.5) * 0.06);
+    const hills = [];
+    for (let k = 0; k + 1 < n; k++) if (R() < D.hillP){ const gap = xs[k + 1] - xs[k]; hills.push({ x: xs[k] + gap * (0.4 + R() * 0.2), w: Math.min(gap * 0.22, 0.07 + R() * 0.06), a: D.hill * (0.7 + R() * 0.3) }); }
     for (let i = 0; i < W; i++){
-      const x = (i + 0.5) / W; let h = base;
-      for (const w of waves) h += w.a * Math.sin(2 * Math.PI * w.f * x + w.p);
-      if (hill) h -= hill.a * Math.exp(-(((x - hill.x) / hill.w) ** 2));
+      const x = (i + 0.5) / W * ASP; let h = base;
+      for (const w of waves) h += w.a * Math.sin(2 * Math.PI * w.f * x / ASP + w.p);
+      for (const hl of hills) h -= hl.a * Math.exp(-(((x - hl.x) / hl.w) ** 2));
       H[i] = clamp(h, 0.22, 0.93);
     }
-    const e = EDGE[lv - 1], xs = [e + (R() - 0.5) * 0.06, 1 - e + (R() - 0.5) * 0.06];
     for (const x of xs) flatten(H, x, 0.035);
-    return { idx, lv, H0: H, xs, hill: !!hill, seed: (idx * 40503 + lv * 7919 + 17) >>> 0, phase: (idx * 0.618) % 1, pal: Math.floor(R() * PALETTES.length) };
+    const minds = xs.map(() => R() < 0.5 ? 'nearest' : 'weakest');
+    return { idx, lv, n, H0: H, xs, hill: hills.length > 0, minds, seed: (idx * 40503 + lv * 7919 + n * 131 + 17) >>> 0, phase: (idx * 0.618) % 1, pal: Math.floor(R() * PALETTES.length) };
   }
   function terrainAt(c, r){
-    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    const idx = boardIdx(c, r), lv = levelAt(idx), n = SET.n, key = (idx * 8 + lv) * 8 + n;
     let T = TERRAINS.get(key);
-    if (!T){ T = terrainOf(idx, lv); TERRAINS.set(key, T); if (TERRAINS.size > CAP) TERRAINS.delete(TERRAINS.keys().next().value); }
+    if (!T){ T = terrainOf(idx, lv, n); TERRAINS.set(key, T); if (TERRAINS.size > CAP) TERRAINS.delete(TERRAINS.keys().next().value); }
     return T;
   }
 
@@ -47633,269 +47663,487 @@ const TANKS_APP = (() => {
   const tankY = (H, x) => surfAt(H, x) - TR * 0.5;
   function muzzle(H, x, a){ const y = surfAt(H, x) - TURRET, q = a * Math.PI / 180; return [x + Math.cos(q) * BARREL, y - Math.sin(q) * BARREL]; }
   function launch(H, x, a, p){ const [mx, my] = muzzle(H, x, a), q = a * Math.PI / 180, v = p * VMAX; return { x: mx, y: my, vx: Math.cos(q) * v, vy: -Math.sin(q) * v, t: 0 }; }
-  function flyStep(H, xs, s, wind, dt, who){
+  // (alive: which tanks a shot can hit; a wreck lets it by. who: the tank it left, which it passes for its first 0.1 s)
+  function flyStep(H, xs, s, wind, dt, who, alive){
     s.vx += wind * dt; s.vy += G * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.t += dt;
-    if (s.x < -0.05 || s.x > 1.05 || s.t > 8) return { x: s.x, y: s.y, hit: -1, off: true };
-    for (let k = 0; k < 2; k++){
-      if (k === who && s.t < 0.1) continue;                 // (a shot leaving its own barrel)
+    if (s.x < -0.05 || s.x > ASP + 0.05 || s.t > 8) return { x: s.x, y: s.y, hit: -1, off: true };
+    for (let k = 0; k < xs.length; k++){
+      if ((alive && !alive[k]) || (k === who && s.t < 0.1)) continue;
       if (Math.hypot(s.x - xs[k], s.y - tankY(H, xs[k])) < TR) return { x: s.x, y: s.y, hit: k };
     }
-    if (s.x >= 0 && s.x <= 1){ const y = surfAt(H, s.x); if (s.y >= y) return { x: s.x, y, hit: -1 }; }
+    if (s.x >= 0 && s.x <= ASP){ const y = surfAt(H, s.x); if (s.y >= y) return { x: s.x, y, hit: -1 }; }
     return null;
   }
-  // a burst at (x, y) on S ({H, xs, hp}): the ground dug and fallen in, the tanks hurt; returns the harm to each
-  function blastAt(S, x, y){
-    const H = S.H, dmg = [0, 0], y0 = S.xs.map(x => surfAt(H, x));
-    for (let k = 0; k < 2; k++){
-      const d = Math.hypot(x - S.xs[k], y - tankY(H, S.xs[k]));
-      if (d < BR + TR) dmg[k] += Math.round(DMG * clamp(1 - (d - TR * 0.5) / (BR + TR * 0.5), 0, 1));
-    }
-    const a = Math.max(0, Math.floor((x - BR) * W)), b = Math.min(W - 1, Math.floor((x + BR) * W));
+  // the earth in a circle dug out, the earth above falling in (a column stays one height)
+  function cut(H, x, y, r){
+    const a = Math.max(0, Math.ceil(colOf(x - r))), b = Math.min(W - 1, Math.floor(colOf(x + r)));
     for (let i = a; i <= b; i++){
-      const dx = (i + 0.5) / W - x; if (Math.abs(dx) >= BR) continue;
-      const hh = Math.sqrt(BR * BR - dx * dx), cut = Math.max(0, (y + hh) - Math.max(H[i], y - hh));
-      if (cut > 0) H[i] = Math.min(0.985, H[i] + cut);
+      const dx = (i + 0.5) / W * ASP - x; if (Math.abs(dx) >= r) continue;
+      const hh = Math.sqrt(r * r - dx * dx), dig = Math.max(0, (y + hh) - Math.max(H[i], y - hh));
+      if (dig > 0) H[i] = Math.min(0.985, H[i] + dig);
     }
-    for (let k = 0; k < 2; k++){ const drop = surfAt(H, S.xs[k]) - y0[k]; if (drop > 0.01) dmg[k] += Math.round(drop * FALL); }
-    for (let k = 0; k < 2; k++) S.hp[k] = Math.max(0, S.hp[k] - dmg[k]);
+  }
+  // a burst of radius r at (x, y) on S ({H, xs, hp}): the ground dug and fallen in, the tanks hurt; returns the harm to each
+  function blastAt(S, x, y, r, dmgMax){
+    r = r || BR; dmgMax = dmgMax == null ? DMG : dmgMax;
+    const H = S.H, n = S.xs.length, dmg = new Array(n).fill(0), y0 = S.xs.map(x => surfAt(H, x));
+    for (let k = 0; k < n; k++){
+      if (!(S.hp[k] > 0)) continue;
+      const d = Math.hypot(x - S.xs[k], y - tankY(H, S.xs[k]));
+      if (d < r + TR) dmg[k] += Math.round(dmgMax * clamp(1 - (d - TR * 0.5) / (r + TR * 0.5), 0, 1));
+    }
+    cut(H, x, y, r);
+    for (let k = 0; k < n; k++){ const drop = surfAt(H, S.xs[k]) - y0[k]; if (S.hp[k] > 0 && drop > 0.01) dmg[k] += Math.round(drop * FALL); }
+    for (let k = 0; k < n; k++) S.hp[k] = Math.max(0, S.hp[k] - dmg[k]);
     return dmg;
+  }
+  // a dirt bomb: the earth it carries laid over where it lands, a mound the shape of its upper half (WEAPONS, below)
+  function dirtAt(S, x, y, r){
+    const H = S.H, a = Math.max(0, Math.ceil(colOf(x - r))), b = Math.min(W - 1, Math.floor(colOf(x + r)));
+    for (let i = a; i <= b; i++){ const dx = (i + 0.5) / W * ASP - x; if (Math.abs(dx) >= r) continue; H[i] = Math.max(0.12, Math.min(H[i], y - Math.sqrt(r * r - dx * dx))); }
+  }
+
+  /* ─── THE WEAPONS ─── (Oct 21: "Weapons. Choose a shell each turn, each with limited ammo: a big burst; cluster bomblets; a dirt
+     bomb that piles up earth instead of digging it; a roller that runs downhill; a digger that tunnels.") Each tank carries
+     its own ammunition (`S.ammo`, the count a weapon starts with; the shell never runs out). `simShot` flies a shot through
+     everything it does, at once, in the game's own steps, the world changed as it goes, so the board shows it afterwards:
+     - the big shell: a burst `BIG` times as wide, harder;
+     - the cluster: at the top of its arc it opens into five bomblets, spread across the way it was going, each a small
+       burst (one that lands before its top bursts as a bigger bomblet);
+     - the dirt bomb: lays a mound of earth where it lands (`dirtAt`), to bury a foe's line of fire or lift your own tank;
+     - the roller: lands, then rolls down the slope at `ROLL_V` until the ground ahead rises (the foot of the slope), it meets
+       a tank, or 3.5 s pass, and bursts;
+     - the digger: goes on into the ground the way it was going, at `DIG_V`, for its own time, the earth falling in behind it
+       (a heightfield holds no caves, so a tunnel is a trench), and bursts small at the end: dug under a tank, the tank
+       drops and is hurt by the fall. */
+  const WEAPONS = [
+    { id: 'shell',   name: 'Shell',     glyph: '●', ammo: Infinity, r: BR,        dmg: DMG },
+    { id: 'big',     name: 'Big shell', glyph: '⬤', ammo: 2,        r: BR * 1.8,  dmg: 80 },
+    { id: 'cluster', name: 'Cluster',   glyph: '⁘', ammo: 2,        r: BR * 0.55, dmg: 26, n: 5 },
+    { id: 'dirt',    name: 'Dirt bomb', glyph: '⛰', ammo: 2,        r: BR * 1.4 },
+    { id: 'roller',  name: 'Roller',    glyph: '◉', ammo: 2,        r: BR * 1.1,  dmg: 60 },
+    { id: 'digger',  name: 'Digger',    glyph: '⛏', ammo: 2,        r: BR * 0.7,  dmg: 35, dig: 0.55 },
+  ];
+  const WID = Object.fromEntries(WEAPONS.map((w, i) => [w.id, i]));
+  const ROLL_V = 0.3, DIG_V = 0.4, DIG_R = 0.022;
+  function simShot(S, who, a, p, wid, seed){
+    const Wp = WEAPONS[wid], Hb = S.H.slice(), hpb = S.hp.slice(), ev = [], P = [], R = rngOf(seed), n = S.xs.length;
+    const alive = S.hp.map(h => h > 0);
+    const add = q => { q.path = [q.x, q.y]; q.acc = 0; P.push(q); return q; };
+    add({ ...launch(S.H, S.xs[who], a, p), kind: Wp.id === 'cluster' ? 'carrier' : Wp.id, mode: 'fly', t0: 0, own: true });
+    let t = 0;
+    const end = q => { q.done = true; q.tEnd = t; };
+    const boom = (q, x, y, r, dmg) => { const d = blastAt(S, x, y, r, dmg); ev.push({ k: 'blast', t, x, y, r, dmg: d, seed: (seed + ev.length * 7919) >>> 0 }); end(q); return ev[ev.length - 1]; };
+    const tankAt = (x, y, reach) => S.xs.findIndex((tx, k) => alive[k] && Math.hypot(x - tx, y - tankY(S.H, tx)) < reach);
+    while (t < 14 && P.some(q => !q.done)){
+      t += SUB;
+      for (let i = 0; i < P.length; i++){
+        const q = P[i]; if (q.done) continue;
+        if (q.mode === 'fly'){
+          const vy0 = q.vy, e = flyStep(S.H, S.xs, q, S.wind, SUB, q.own ? who : -1, alive);
+          if (!e && q.kind === 'carrier' && vy0 < 0 && q.vy >= 0){           // the top of its arc: it opens
+            end(q);
+            for (let k = 0; k < Wp.n; k++) add({ x: q.x, y: q.y, vx: q.vx + (k - (Wp.n - 1) / 2) * 0.13, vy: q.vy - 0.05 * R(), t: 0, kind: 'bomblet', mode: 'fly', t0: t });
+            ev.push({ k: 'pop', t, x: q.x, y: q.y, seed: (seed + ev.length * 7919) >>> 0 });
+          } else if (e){
+            if (e.off){ q.x = e.x; q.y = e.y; end(q); }
+            else if (q.kind === 'dirt'){ q.x = e.x; q.y = e.y; dirtAt(S, e.x, e.y, Wp.r); ev.push({ k: 'dirt', t, x: e.x, y: e.y, r: Wp.r, dmg: new Array(n).fill(0), seed: (seed + ev.length * 7919) >>> 0 }); end(q); }
+            else if (q.kind === 'roller' && e.hit < 0){
+              q.mode = 'roll'; q.x = e.x; q.y = e.y - 0.008; q.rt = 0;
+              const s = surfAt(S.H, e.x + 0.01) - surfAt(S.H, e.x - 0.01); q.dir = Math.abs(s) > 0.0004 ? Math.sign(s) : (Math.sign(q.vx) || 1);
+            } else if (q.kind === 'digger' && e.hit < 0){
+              const v = Math.hypot(q.vx, q.vy) || 1; q.mode = 'dig'; q.x = e.x; q.y = e.y; q.dx = q.vx / v; q.dy = Math.max(0.25, q.vy / v); q.dt = 0; q.step = 0;
+              q.y0s = S.xs.map(x => surfAt(S.H, x));
+            } else {
+              q.x = e.x; q.y = e.y;
+              const C = WEAPONS[WID.cluster], r = q.kind === 'bomblet' ? C.r : q.kind === 'carrier' ? C.r * 1.5 : Wp.r;
+              const dmg = q.kind === 'bomblet' ? C.dmg : q.kind === 'carrier' ? C.dmg * 1.5 : (Wp.dmg || DMG);
+              boom(q, e.x, e.y, r, dmg);
+            }
+          }
+        } else if (q.mode === 'roll'){
+          q.rt += SUB; const nx = q.x + q.dir * ROLL_V * SUB;
+          if (nx < 0 || nx > ASP) end(q);
+          else {
+            const rises = surfAt(S.H, nx) < surfAt(S.H, q.x) - 0.0004;       // the ground goes up ahead: the foot of the slope
+            q.x = nx; q.y = surfAt(S.H, nx) - 0.008;
+            if (tankAt(q.x, q.y, TR * 1.3) >= 0 || (rises && q.rt > 0.12) || q.rt > 3.5) boom(q, q.x, q.y, Wp.r, Wp.dmg);
+          }
+        } else if (q.mode === 'dig'){
+          q.dt += SUB; q.x += q.dx * DIG_V * SUB; q.y += q.dy * DIG_V * SUB;
+          if (++q.step % 2 === 0) cut(S.H, q.x, q.y, DIG_R);
+          if (q.step % 10 === 0) ev.push({ k: 'dig', t, x: q.x, y: q.y, seed: (seed + ev.length * 7919) >>> 0 });
+          if (q.x < 0 || q.x > ASP || q.y > 0.985 || q.dt > Wp.dig || tankAt(q.x, q.y, TR) >= 0){
+            // (the ground fell in behind it: a tank it went under drops, and is hurt by the fall as a burst's would be)
+            const last = boom(q, clamp(q.x, 0, ASP), Math.min(q.y, 0.985), Wp.r, Wp.dmg);
+            S.xs.forEach((x, k) => { const drop = surfAt(S.H, x) - q.y0s[k]; if (alive[k] && S.hp[k] > 0 && drop > 0.01){ const d = Math.round(drop * FALL); S.hp[k] = Math.max(0, S.hp[k] - d); last.dmg[k] += d; } });
+          }
+        }
+        if ((q.acc += SUB) >= 1 / REC_HZ - 1e-9){ q.acc = 0; q.path.push(q.x, q.y); }
+      }
+    }
+    for (const q of P){ if (!q.done) end(q); q.path.push(q.x, q.y); }
+    const tracks = P.map(q => ({ t0: q.t0, path: Float32Array.from(q.path), kind: q.kind }));
+    return { who, a, p, w: wid, wind: S.wind, tracks, ev, end: Math.max(...P.map(q => q.tEnd)), Hb, H: S.H.slice(), hpb, hp: S.hp.slice() };
   }
 
   /* ─── THE COMPUTER ─── flies its candidate shots in the game's own physics (at 1/60 s: near enough, and its hands are
-     rougher than the difference), the nearest to the other tank wins; one that would land on itself is no answer. */
-  function simLand(H, xs, who, a, p, wind){
+     rougher than the difference), the nearest to its target wins; one that would land on itself is no answer. */
+  function simLand(H, xs, who, a, p, wind, alive){
     const s = launch(H, xs[who], a, p);
-    for (let n = 0; n < 600; n++){ const e = flyStep(H, xs, s, wind, 1 / 60, who); if (e) return e; }
+    for (let n = 0; n < 600; n++){ const e = flyStep(H, xs, s, wind, 1 / 60, who, alive); if (e) return e; }
     return { x: s.x, y: s.y, hit: -1, off: true };
   }
-  function missOf(H, xs, who, e){
-    const o = 1 - who;
-    if (e.hit === o) return 0;
+  const othersOf = (xs, who, alive) => xs.map((_, k) => k).filter(k => k !== who && (!alive || alive[k]));
+  const nearestOf = (xs, who, alive) => othersOf(xs, who, alive).sort((a, b) => Math.abs(xs[a] - xs[who]) - Math.abs(xs[b] - xs[who]))[0];
+  function missOf(H, xs, who, tgt, e){
+    if (e.hit === tgt) return 0;
     if (e.off) return 2;
     const self = Math.hypot(e.x - xs[who], e.y - tankY(H, xs[who])) < BR + TR * 2 ? 1 : 0;
-    return Math.hypot(e.x - xs[o], e.y - tankY(H, xs[o])) + self;
+    return Math.hypot(e.x - xs[tgt], e.y - tankY(H, xs[tgt])) + self;
   }
-  function aimFor(H, xs, who, wind){
+  function aimFor(H, xs, who, wind, tgt, alive){
+    if (tgt == null) tgt = nearestOf(xs, who, alive);
     let best = null;
     const tryOne = (a, p) => { if (p < 0.08 || p > 1 || a < 2 || a > 178) return;
-      const m = missOf(H, xs, who, simLand(H, xs, who, a, p, wind)); if (!best || m < best.m - 1e-9) best = { a, p, m }; };
-    const lo = who ? 96 : 6;
+      const m = missOf(H, xs, who, tgt, simLand(H, xs, who, a, p, wind, alive)); if (!best || m < best.m - 1e-9) best = { a, p, m, tgt }; };
+    const lo = xs[tgt] < xs[who] ? 96 : 6;
     for (let k = 0; k < 14; k++) for (let j = 0; j < 14; j++) tryOne(lo + k * 6, 0.22 + j * 0.06);
     const b0 = best;
     for (let da = -3; da <= 3; da++) for (let dp = -3; dp <= 3; dp++) tryOne(b0.a + da * 1.5, b0.p + dp * 0.012);
     return best;
   }
-  function foeShot(S, who, k, R){
-    const D = LV[S.lv - 1], b = aimFor(S.H, S.xs, who, S.wind), f = Math.max(FLOOR, Math.pow(D.learn, k));
-    return { a: clamp(b.a + gauss(R) * D.ea * f, 2, 178), p: clamp(b.p * (1 + gauss(R) * D.ep * f), 0.08, 1), m: b.m };
+  /* (Oct 21: "More tanks. Three or four tanks on a wider board, each turning on whoever is nearest or weakest.") Each computer
+     has its own mind, drawn with the board (`T.minds`): one goes for the nearest tank still in it, the other for the weakest
+     (the nearest of those tied). */
+  function targetOf(S, who, mind){
+    const alive = S.hp.map(h => h > 0), others = othersOf(S.xs, who, alive);
+    if (mind === 'weakest'){ const lo = Math.min(...others.map(k => S.hp[k])); return others.filter(k => S.hp[k] === lo).sort((a, b) => Math.abs(S.xs[a] - S.xs[who]) - Math.abs(S.xs[b] - S.xs[who]))[0]; }
+    return nearestOf(S.xs, who, alive);
   }
+  /* DRIVING (Oct 21: "Moving. Spend fuel to drive a little along the ground before firing, to get out of a crater or around a
+     hill."): a tank goes along the ground, `FUEL` (100) of it carrying it `FUEL_RANGE` of the board, no steeper than `CLIMB`
+     up, never off the board or into another tank (a wreck too). `driveBy` says where a drive of dx would stop. */
+  function driveBy(S, who, dx){
+    const dir = Math.sign(dx); if (!dir) return S.xs[who];
+    let x = S.xs[who], left = Math.min(Math.abs(dx), S.fuel[who] / FUEL * FUEL_RANGE);
+    while (left > 1e-6){
+      const st = Math.min(0.004, left), nx = x + dir * st;
+      if (nx < 0.04 || nx > ASP - 0.04) break;
+      if (S.xs.some((ox, k) => k !== who && Math.abs(nx - ox) < 0.065)) break;
+      if (surfAt(S.H, x) - surfAt(S.H, nx) > CLIMB * st) break;             // too steep to climb
+      x = nx; left -= st;
+    }
+    return x;
+  }
+  function drive(S, who, x2){ const d = Math.abs(x2 - S.xs[who]); S.fuel[who] = Math.max(0, S.fuel[who] - d / FUEL_RANGE * FUEL); S.xs[who] = x2; return d; }
+  // a computer's turn: its target, a move if its own place is no good (a hill in the way), a weapon, its shot with its hands' spread
+  function cpuPlan(S, who, k, R, mind){
+    const D = LV[S.lv - 1], alive = S.hp.map(h => h > 0), tgt = targetOf(S, who, mind);
+    let b = aimFor(S.H, S.xs, who, S.wind, tgt, alive), moveTo = null;
+    if (b.m > 0.1 && S.fuel[who] > 25){
+      for (const dx of [-0.1, 0.1]){
+        const x2 = driveBy(S, who, dx); if (Math.abs(x2 - S.xs[who]) < 0.04) continue;
+        const xs2 = S.xs.slice(); xs2[who] = x2; const b2 = aimFor(S.H, xs2, who, S.wind, tgt, alive);
+        if (b2.m < b.m - 0.03){ b = b2; moveTo = x2; }
+      }
+    }
+    // (a big shell once it has the range on a tank still strong, a cluster for an opening shot, a roller down onto one below it)
+    const has = id => S.ammo[who][WID[id]] > 0, below = tankY(S.H, S.xs[tgt]) - tankY(S.H, moveTo != null ? moveTo : S.xs[who]);
+    const wid = has('big') && k >= 1 && b.m < 0.05 && S.hp[tgt] > 45 ? WID.big : has('cluster') && k === 0 ? WID.cluster
+              : has('roller') && below > 0.08 && b.m > 0.05 ? WID.roller : WID.shell;
+    const f = Math.max(FLOOR, Math.pow(D.learn, k));
+    return { a: clamp(b.a + gauss(R) * D.ea * f, 2, 178), p: clamp(b.p * (1 + gauss(R) * D.ep * f), 0.08, 1), wid, moveTo, tgt, m: b.m };
+  }
+  // the earlier one shot, for the tests and the old smoke check: the other tank, steady hands but for the spread
+  function foeShot(S, who, k, R){ const P = cpuPlan(S, who, k, R, 'nearest'); return { a: P.a, p: P.p, m: P.m }; }
 
-  /* ─── A BOARD'S OWN DUEL ─── what a board no one plays shows: two of the computer's players at the board's level,
-     turn about from the left, until one is out (or 30 shots), each shot's flight sampled REC_HZ times a second. */
-  function duelOf(T){
-    const R = rngOf(T.seed), S = { lv: T.lv, H: T.H0.slice(), xs: T.xs, hp: [100, 100] }, D = LV[T.lv - 1], shots = [], k = [0, 0], a = [45, 135];
-    let who = 0;
-    for (let n = 0; n < 30 && S.hp[0] > 0 && S.hp[1] > 0; n++){
-      S.wind = (R() * 2 - 1) * D.wind;
-      const f = foeShot(S, who, k[who]++, R), s = launch(S.H, S.xs[who], f.a, f.p), path = [s.x, s.y];
-      let e = null, acc = 0;
-      while (!e){ e = flyStep(S.H, S.xs, s, S.wind, SUB, who); acc += SUB; if (!e && acc >= 1 / REC_HZ - 1e-9){ acc = 0; path.push(s.x, s.y); } }
-      path.push(e.x, e.y);
-      const dmg = e.off ? [0, 0] : blastAt(S, e.x, e.y);
-      shots.push({ who, as: a.slice(), a: f.a, p: f.p, wind: S.wind, path: Float32Array.from(path), at: [e.x, e.y], off: !!e.off, H: S.H.slice(), hp: S.hp.slice(), dmg });
-      a[who] = f.a; who = 1 - who;
-    }
-    // the timeline, and what it sets off: the muzzle's flash, the trail, the burst, as fxItems reads them; the clouds' drift
-    let t = 0, drift = 0, prevH = T.H0; const fx = [], craters = [], hitT = [[], []];
-    for (const s of shots){
-      s.t0 = t; s.fly = (s.path.length / 2 - 1) / REC_HZ; s.drift = drift;
-      const go = t + AIM_T, at = go + s.fly, m = muzzle(prevH, T.xs[s.who], s.a); s.Hb = prevH; prevH = s.H;
-      fx.push({ k: 'muzzle', t0: go, x: m[0], y: m[1], a: s.a, seed: (T.seed + fx.length * 7919) >>> 0 });
-      fx.push({ k: 'trail', t0: go, path: s.path });
-      if (!s.off){ fx.push({ k: 'blast', t0: at, x: s.at[0], y: s.at[1], seed: (T.seed + fx.length * 7919) >>> 0 }); craters.push([s.at[0], s.at[1]]); }
-      s.craters = craters.slice();
-      for (let k = 0; k < 2; k++) if (s.dmg[k] > 0) hitT[k].push(at);
-      const len = AIM_T + s.fly + BLAST_T; drift += s.wind * len * CLOUD_K; t += len;
-    }
-    return { T, shots, len: t + REST_T, as: a.slice(), fx, hitT };
+  /* ─── TURNS ─── one way of playing for a board no one plays (a duel of the computer's tanks, `duelNew`) and for the game you
+     play (`fresh`, seats of yours among them): a game G holds the state S, the seats, the turns so far, each with when it
+     began on G's own clock, and the effects they set off at their times (`G.fx`, read by THE LOOK's effects). A turn
+     (`makeTurn`) is a drive, the gun turning to its aim (a computer's; yours is already where you put it), and the shot
+     (`simShot`), worked out whole when it starts; what the board shows at any moment of it is read off it (`viewAt`). */
+  const seatsOf = (n, players) => Array.from({ length: n }, (_, k) => k === 0 ? 'you' : players === 2 && k === n - 1 ? 'p2' : 'cpu');
+  const NAMES = { you: 'You', p2: 'Player 2' }, CPU_NAMES = ['Red', 'Orange', 'Violet'];
+  function stateOf(T){
+    const n = T.xs.length;
+    return { lv: T.lv, n, H: T.H0.slice(), xs: T.xs.slice(), hp: new Array(n).fill(100), fuel: new Array(n).fill(FUEL), ammo: T.xs.map(() => WEAPONS.map(w => w.ammo)), wind: 0 };
   }
+  function gameNew(T, seats, R){
+    const n = T.xs.length, S = stateOf(T);
+    let cpu = 0; const cols = seats.map(s => s === 'you' ? ME : s === 'p2' ? P2C : CPU_COL[cpu++ % CPU_COL.length]);
+    cpu = 0; const names = seats.map(s => s !== 'cpu' ? NAMES[s] : CPU_NAMES[cpu++ % CPU_NAMES.length]);
+    if (seats.filter(s => s !== 'cpu').length === 2) names[0] = 'Player 1';
+    const G = { T, S, seats, cols, names, R, n, a: T.xs.map(x => x < ASP / 2 ? 45 : 135), p: new Array(n).fill(0.6), wid: new Array(n).fill(0),
+                turn: 0, turns: [], fx: [], hitT: T.xs.map(() => []), k: new Array(n).fill(0), shots: new Array(n).fill(0), clouds: [[0, 0, 0]], last: [] };
+    return G;
+  }
+  const aliveOf = S => S.hp.map(h => h > 0);
+  const nextAlive = (S, k) => { for (let j = 1; j <= S.n; j++){ const q = (k + j) % S.n; if (S.hp[q] > 0) return q; } return k; };
+  const cloudAt = (G, t) => { let c = G.clouds[0]; for (const s of G.clouds) if (s[0] <= t) c = s; return c[2] + c[1] * (t - c[0]) * CLOUD_K; };
+  // a new turn's wind, and the clouds' drift from then
+  function windFor(G, t){ G.S.wind = (G.R() * 2 - 1) * LV[G.S.lv - 1].wind; G.clouds.push([t, G.S.wind, cloudAt(G, t)]); }
+  function makeTurn(G, plan, t0){
+    const S = G.S, who = G.turn, xsB = S.xs.slice(), asB = G.a.slice();
+    let moveT = 0;
+    if (plan.moveTo != null && Math.abs(plan.moveTo - S.xs[who]) > 1e-4) moveT = drive(S, who, plan.moveTo) / DRIVE_V;
+    const aimT = plan.human ? 0 : AIM_T, wid = plan.wid || 0;
+    if (S.ammo[who][wid] !== Infinity) S.ammo[who][wid] = Math.max(0, S.ammo[who][wid] - 1);
+    const craters0 = G.turns.length ? G.turns[G.turns.length - 1].craters : [];
+    const rec = simShot(S, who, plan.a, plan.p, wid, (G.T.seed + G.turns.length * 104729 + (plan.human ? (G.R() * 1e6) | 0 : 0)) >>> 0);
+    G.a[who] = plan.a; G.p[who] = plan.p; G.shots[who]++; G.k[who]++;
+    const go = t0 + moveT + aimT, craters = craters0.concat(rec.ev.filter(e => e.k === 'blast').map(e => [e.x, e.y, e.r]));
+    const turn = { who, xsB, xsA: S.xs.slice(), moveT, aimT, asB, a: plan.a, wid, rec, t0, go, len: moveT + aimT + rec.end + BLAST_T, craters,
+                   terrainAt: Math.min(...rec.ev.filter(e => e.k === 'blast' || e.k === 'dirt').map(e => e.t), rec.end) };
+    const m = muzzle(rec.Hb, S.xs[who], plan.a);
+    G.fx.push({ k: 'muzzle', t0: go, x: m[0], y: m[1], a: plan.a, seed: (rec.ev.length * 31 + G.turns.length * 7) >>> 0, who, turn });
+    for (const tr of rec.tracks) G.fx.push({ k: 'trail', t0: go + tr.t0, path: tr.path });
+    for (const e of rec.ev){ G.fx.push({ ...e, t0: go + e.t }); if (e.dmg) e.dmg.forEach((d, k) => { if (d > 0) G.hitT[k].push(go + e.t); }); }
+    if (!plan.human) G.last[who] = null;
+    G.turns.push(turn);
+    return turn;
+  }
+  const overOf = G => { const al = aliveOf(G.S), people = G.seats.filter((s, k) => s !== 'cpu' && al[k]).length, left = al.filter(x => x).length;
+    return left <= 1 || (G.seats.some(s => s !== 'cpu') && people === 0); };
+
+  /* ─── A BOARD'S OWN DUEL ─── what a board no one plays shows: the computer's tanks at the board's level, turn about from the
+     left, until one is left (or MAX_TURNS); made a turn at a time as it is wanted (`duelSoon`: the board shows what is made,
+     its clock waiting at the last turn made if it ever catches up), then round and round, each board at its own phase. */
+  function duelNew(T){
+    const G = gameNew(T, T.xs.map(() => 'cpu'), rngOf(T.seed)), now0 = now() / 1000;
+    G.len = 0; G.done = false; G.start = now0 - T.phase * 20;
+    return G;
+  }
+  function duelStep(G){
+    if (G.done) return;
+    if (overOf(G) || G.turns.length >= MAX_TURNS){ G.done = true; G.len += REST_T; return; }
+    const who = G.turn; windFor(G, G.len);
+    const plan = cpuPlan(G.S, who, G.k[who], G.R, G.T.minds[who]);
+    const turn = makeTurn(G, plan, G.len);
+    G.len += turn.len; G.turn = nextAlive(G.S, who);
+  }
+  function duelOf(T){ const G = duelNew(T); while (!G.done) duelStep(G); return G; }
   const DUELS = new Map();
   let budgetAt = 0, budget = 0;
   function duelSoon(T){
-    const key = T.idx * 8 + T.lv; let Dl = DUELS.get(key);
-    if (Dl) return Dl;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
-    if (budget <= 0) return null;
-    Dl = duelOf(T); budget -= performance.now() - t;
-    DUELS.set(key, Dl); if (DUELS.size > CAP) DUELS.delete(DUELS.keys().next().value);
-    return Dl;
-  }
-  // the duel at the page's clock: the ground, health and barrels before the shot in hand, then its aim, flight and burst
-  function shownOf(Dl, at){
-    const T = Dl.T, t = (((at == null ? now() / 1000 : at) + T.phase * Dl.len) % Dl.len + Dl.len) % Dl.len;
-    const V = { T, H: T.H0, xs: T.xs, hp: [100, 100], a: Dl.shots.length ? [45, 135] : [45, 135], wind: 0, shell: null, t, fx: Dl.fx, hitT: Dl.hitT,
-                craters: [], applied: 0, cloud: 0 };
-    for (let k = 0; k < Dl.shots.length; k++){
-      const s = Dl.shots[k], e = t - s.t0, len = AIM_T + s.fly + BLAST_T;
-      V.wind = s.wind; V.cloud = s.drift + s.wind * Math.min(e, len) * CLOUD_K;
-      if (e >= len){ V.H = s.H; V.hp = s.hp; V.craters = s.craters; V.applied = k + 1; V.a = s.as.slice(); V.a[s.who] = s.a; continue; }
-      if (e < 0) break;
-      V.a = s.as.slice();
-      if (e < AIM_T){ const f = e / AIM_T, w = f * f * (3 - 2 * f); V.a[s.who] = s.as[s.who] + (s.a - s.as[s.who]) * w; break; }
-      V.a[s.who] = s.a;
-      if (e < AIM_T + s.fly){ const i = Math.min(s.path.length / 2 - 1, Math.floor((e - AIM_T) * REC_HZ)); V.shell = [s.path[2 * i], s.path[2 * i + 1]]; break; }
-      V.H = s.H; V.hp = s.hp; V.craters = s.craters; V.applied = k + 1;      // (the burst has dug: the ground is the shot's after)
-      break;
+    const key = (T.idx * 8 + T.lv) * 8 + T.n; let G = DUELS.get(key);
+    if (!G){ G = duelNew(T); DUELS.set(key, G); if (DUELS.size > CAP) DUELS.delete(DUELS.keys().next().value); }
+    // (a turn more while the board's clock is within 8 s of the last one made, a few turns' worth of time in 30 ms)
+    if (!G.done && G.len - loopT(G) < 8){
+      const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
+      if (budget > 0){ duelStep(G); budget -= performance.now() - t; }
     }
+    return G;
+  }
+  const loopT = (G, at) => { const t = at != null ? at : now() / 1000 - G.start; return G.done ? ((t % G.len) + G.len) % G.len : clamp(t, 0, G.len); };
+
+  /* What a game shows at time t of its clock: the turn in hand (the last begun), and in it the tank driving, the gun turning,
+     the shells along their tracks, the ground as it was until the shot's first burst and as it is after, the health falling
+     as each burst comes. */
+  function viewAt(G, t){
+    let j = -1; for (let i = G.turns.length - 1; i >= 0; i--) if (G.turns[i].t0 <= t){ j = i; break; }
+    const T = G.T, prev = j > 0 ? G.turns[j - 1] : null, base = { H: prev ? prev.rec.H : T.H0, hp: prev ? prev.rec.hp : new Array(G.n).fill(100), xs: prev ? prev.xsA : T.xs, craters: prev ? prev.craters : [] };
+    const V = { T, G, H: base.H, xs: base.xs.slice(), hp: base.hp.slice(), a: (j >= 0 ? G.turns[j].asB : G.a).slice(), shells: [], t, fx: G.fx, hitT: G.hitT,
+                craters: base.craters, cloud: cloudAt(G, t), wind: 0, cols: G.cols, active: -1, hk: 'a' + (j - 1) };
+    if (j < 0) return V;
+    const tr = G.turns[j], e = t - tr.t0, rec = tr.rec; V.wind = rec.wind;
+    if (e >= tr.len){ V.H = rec.H; V.hp = rec.hp.slice(); V.xs = tr.xsA.slice(); V.craters = tr.craters; V.a[tr.who] = tr.a; V.hk = 'a' + j; return V; }
+    V.active = tr.who;
+    if (e < tr.moveT){ const f = e / tr.moveT; V.xs[tr.who] = tr.xsB[tr.who] + (tr.xsA[tr.who] - tr.xsB[tr.who]) * f; return V; }
+    V.xs = tr.xsA.slice();
+    const ea = e - tr.moveT;
+    if (ea < tr.aimT){ const f = ea / tr.aimT, w = f * f * (3 - 2 * f); V.a[tr.who] = tr.asB[tr.who] + (tr.a - tr.asB[tr.who]) * w; return V; }
+    V.a[tr.who] = tr.a;
+    const e2 = ea - tr.aimT;
+    for (const k of rec.tracks){ const n = k.path.length / 2, i = Math.floor((e2 - k.t0) * REC_HZ); if (e2 >= k.t0 && i < n - 1) V.shells.push([k.path[2 * i], k.path[2 * i + 1], k.kind]); }
+    if (e2 >= tr.terrainAt){ V.H = rec.H; V.craters = tr.craters; V.hk = 'a' + j; }
+    for (const ev of rec.ev) if (ev.dmg && ev.t <= e2) ev.dmg.forEach((d, k) => { V.hp[k] = Math.max(0, V.hp[k] - d); });
     return V;
   }
+  function shownOf(Dl, at){ return viewAt(Dl, loopT(Dl, at)); }
 
-  /* ─── PLAYING ─── */
+  /* ─── PLAYING ─── the game you play is a game as above with your seats in it (Oct 21: "Two players on one device. You and a
+     friend pass the phone and take turns."; the menu's Players: one, you against the computer's tanks, or two, Player 1 the
+     leftmost tank and Player 2 the rightmost). On a person's turn the controls are theirs (`myTurn`); a computer's turn plays
+     itself on the game's clock (`g.t`), its sounds as their moments come. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
   const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tanks.best') || '{}'))); } catch { return new Map(); } })();
   const saveBest = () => { try { localStorage.setItem('tanks.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
-  const bestKey = T => T.idx + '@' + T.lv;
+  const bestKey = T => T.idx + '@' + T.lv + (T.n > 2 ? '#' + T.n : '');
   const starsOf = hp => hp >= 70 ? 3 : hp >= 35 ? 2 : 1;
   function fresh(c, r){
     const T = terrainAt(c, r), R = rngOf((T.seed ^ (Date.now() & 0xffffff) ^ ((Math.random() * 1e9) | 0)) >>> 0);
-    const S = { lv: T.lv, H: T.H0.slice(), xs: T.xs, hp: [100, 100], wind: 0 };
-    S.wind = (R() * 2 - 1) * LV[T.lv - 1].wind;
-    return { T, S, c, r, R, a: [45, 135], p: [0.6, 0.6], turn: 0, state: 'aim', shell: null, path: null, blast: null, timer: 0, plan: null,
-             k: [0, 0], shots: [0, 0], last: null, ver: 0, lastT: performance.now(), t: 0, fx: [], craters: [], hitT: [[], []], cloud: 0 };
+    const g = gameNew(T, seatsOf(T.xs.length, SET.players), R);
+    Object.assign(g, { gen: ++GEN, c, r, state: 'aim', t: 0, lastT: performance.now(), ver: 0, heard: 0, drive: null, whistle: null });
+    windFor(g, 0);
+    return g;
   }
   function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
   const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
-  const myTurn = g => !!g && g.state === 'aim' && g.turn === 0;
-  // the aim toward a point on the board: the angle from the turret, the power by the distance (full at AIM_FULL)
+  const isPerson = (g, k) => g.seats[k] !== 'cpu';
+  const myTurn = g => !!g && g.state === 'aim' && isPerson(g, g.turn);
+  // the aim toward a point on the board (in the board's own x and y): the angle from the turret, the power by the distance
   const AIM_FULL = 0.42;
-  function aimAt(g, u, v){
-    const x = g.S.xs[0], y = surfAt(g.S.H, x) - TURRET, dx = u - x, dy = y - v;
-    g.a[0] = clamp(Math.atan2(Math.max(0, dy), dx) * 180 / Math.PI, 0, 180);
-    g.p[0] = clamp(Math.hypot(dx, dy) / AIM_FULL, 0.08, 1);
+  function aimAt(g, x, y){
+    const k = g.turn, tx = g.S.xs[k], ty = surfAt(g.S.H, tx) - TURRET, dx = x - tx, dy = ty - y;
+    g.a[k] = clamp(Math.atan2(Math.max(0, dy), dx) * 180 / Math.PI, 0, 180);
+    g.p[k] = clamp(Math.hypot(dx, dy) / AIM_FULL, 0.08, 1);
     aimTick(g);
   }
   // a tick every 3° or 4% of power the aim moves (THE SOUNDS)
   function aimTick(g){
-    const q = Math.round(g.a[0] / 3) * 1000 + Math.round(g.p[0] * 25);
-    if (g.tickAt != null && q !== g.tickAt) SFX.tick(g.S.xs[0]);
+    const k = g.turn, q = Math.round(g.a[k] / 3) * 1000 + Math.round(g.p[k] * 25);
+    if (g.tickAt != null && q !== g.tickAt) SFX.tick(g.S.xs[k] / ASP);
     g.tickAt = q;
   }
-  function fire(g){
-    const who = g.turn;
-    g.shell = launch(g.S.H, g.S.xs[who], g.a[who], g.p[who]); g.path = [g.shell.x, g.shell.y]; g.acc = 0;
-    g.fx.push({ k: 'muzzle', t0: g.t, x: g.shell.x, y: g.shell.y, a: g.a[who], seed: (g.R() * 4294967296) >>> 0 }, { k: 'trail', t0: g.t, path: g.path });
-    g.state = 'fly'; g.shots[who]++;
-    // the gun, and the whistle for as long as the flight will be (the shot flown ahead of itself, as the game will fly it)
-    const x = g.S.xs[who], s0 = { ...g.shell }; let e = null; for (let n = 0; n < 1200 && !e; n++) e = flyStep(g.S.H, g.S.xs, s0, g.S.wind, SUB, who);
-    SFX.cannon(x); if (g.whistle) g.whistle.stop(); g.whistle = e ? SFX.whistle(x, clamp(e.x, 0, 1), s0.t) : null;
+  function chooseWeapon(g, i){
+    const k = g.turn; if (!myTurn(g) || i < 0 || i >= WEAPONS.length) return false;
+    if (!(g.S.ammo[k][i] > 0)){ say(WEAPONS[i].name + ': none left.', 1200); return false; }
+    g.wid[k] = i; SFX.tick(g.S.xs[k] / ASP);
+    say(WEAPONS[i].name + (g.S.ammo[k][i] === Infinity ? '' : ', ' + g.S.ammo[k][i] + ' left') + '.', 1000);
+    try { bbRefreshNow(); } catch {}
+    return true;
   }
-  function land(g, e){
-    const who = g.turn;
-    g.path.push(e.x, e.y);
-    if (who === 0) g.last = g.path.slice();
-    g.shell = null;
-    if (g.whistle){ g.whistle.stop(); g.whistle = null; }
-    if (e.off){ g.blast = null; if (who === 0) say('Off the board.', 1200); return endTurn(g); }
-    const dmg = blastAt(g.S, e.x, e.y); g.ver++;
-    g.fx.push({ k: 'blast', t0: g.t, x: e.x, y: e.y, seed: (g.R() * 4294967296) >>> 0 }); g.craters.push([e.x, e.y]);
-    for (let k = 0; k < 2; k++) if (dmg[k] > 0) g.hitT[k].push(g.t);
-    g.blast = { x: e.x, y: e.y, e: 0 }; g.state = 'blast';
-    SFX.blast(e.x);
-    for (let k = 0; k < 2; k++) if (dmg[k] > 0){ SFX.clang(g.S.xs[k]); if (g.S.hp[k] <= 0) SFX.cookoff(g.S.xs[k]); }
-    if (who === 0) say(dmg[1] ? 'A hit: ' + dmg[1] + ' off them' + (dmg[0] ? ', ' + dmg[0] + ' off you' : '') + '.' : dmg[0] ? dmg[0] + ' off you.' : 'A miss.', 1400);
-    else if (dmg[0]) say('Hit: ' + dmg[0] + ' off you.', 1400);
+  function fire(g){
+    if (!myTurn(g)) return false;
+    const k = g.turn;
+    if (!(g.S.ammo[k][g.wid[k]] > 0)) g.wid[k] = 0;
+    g.drive = null;
+    const tr = makeTurn(g, { a: g.a[k], p: g.p[k], wid: g.wid[k], human: true }, g.t);
+    g.last[k] = tr.rec.tracks[0].path;
+    g.state = 'play';
+    try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  // a turn begun on the game's clock: a person's waits for them; a computer's is planned and played
+  function beginTurn(g){
+    windFor(g, g.t);
+    const k = g.turn;
+    if (isPerson(g, k)){
+      g.state = 'aim'; g.tickAt = null;
+      if (g.seats.filter(s => s !== 'cpu').length > 1) say(g.names[k] + ': your turn.', 1800);
+    } else {
+      makeTurn(g, cpuPlan(g.S, k, g.k[k], g.R, g.T.minds[k]), g.t);
+      g.state = 'play';
+    }
+    try { bbRefreshNow(); } catch {}
   }
   function endTurn(g){
-    const hp = g.S.hp;
-    if (hp[0] <= 0 || hp[1] <= 0) return over(g);
-    g.turn = 1 - g.turn; g.S.wind = (g.R() * 2 - 1) * LV[g.S.lv - 1].wind;
-    if (g.turn === 1){ g.plan = foeShot(g.S, 1, g.k[1]++, g.R); g.state = 'think'; g.timer = AIM_T; g.from = g.a[1]; SFX.whirr(g.S.xs[1], AIM_T); }
-    else g.state = 'aim';
+    const tr = g.turns[g.turns.length - 1]; g.ver++;
+    // (what the shot did, in words: yours, or a computer's that hit a person)
+    const hurt = tr.rec.hpb.map((h, k) => h - tr.rec.hp[k]), who = tr.who;
+    const parts = hurt.map((d, k) => d > 0 ? (k === who ? 'itself' : g.names[k]) + ' ' + d : null).filter(x => x);
+    if (isPerson(g, who)) say(parts.length ? 'Hit: ' + parts.join(', ') + '.' : tr.rec.ev.some(e => e.k === 'dirt') ? 'Earth laid.' : 'A miss.', 1500);
+    else if (hurt.some((d, k) => d > 0 && isPerson(g, k))) say(g.names[who] + ' hit ' + hurt.map((d, k) => d > 0 && isPerson(g, k) ? g.names[k].toLowerCase() + ' for ' + d : null).filter(x => x).join(', ') + '.', 1500);
+    if (overOf(g)) return over(g);
+    g.turn = nextAlive(g.S, who);
+    beginTurn(g);
   }
   function over(g){
     g.state = 'over';
-    const hp = g.S.hp, won = hp[1] <= 0 && hp[0] > 0;
-    g.won = won;
-    if (won){
-      const k = bestKey(g.T), was = BEST.get(k), stars = starsOf(hp[0]);
+    const al = aliveOf(g.S), winner = al.indexOf(true), people = g.seats.filter(s => s !== 'cpu').length;
+    g.winner = al.filter(x => x).length === 1 ? winner : -1;
+    g.won = g.winner >= 0 && isPerson(g, g.winner);
+    if (people === 1 && g.won){
+      const hp = g.S.hp[0], k = bestKey(g.T), was = BEST.get(k), stars = starsOf(hp);
       g.stars = stars;
-      if (was == null || hp[0] > was){ BEST.delete(k); BEST.set(k, hp[0]); saveBest(); }
+      if (was == null || hp > was){ BEST.delete(k); BEST.set(k, hp); saveBest(); }
       SND.play('win');
-      say('Their tank is out, in ' + g.shots[0] + (g.shots[0] === 1 ? ' shot' : ' shots') + ', with ' + hp[0] + ' health left: ' + '★'.repeat(stars) + '☆'.repeat(3 - stars)
-        + (was != null && hp[0] > was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + ' left.' : '.') + ' Tap for the next board.', 4200);
+      say('The last tank standing, in ' + g.shots[0] + (g.shots[0] === 1 ? ' shot' : ' shots') + ', with ' + hp + ' health left: ' + '★'.repeat(stars) + '☆'.repeat(3 - stars)
+        + (was != null && hp > was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + ' left.' : '.') + ' Tap for the next board.', 4200);
+    } else if (people > 1 && g.winner >= 0){
+      SND.play('win'); say(g.names[g.winner] + (isPerson(g, g.winner) ? ' wins!' : ' wins: both players are out.') + ' Hold the board to play again, or tap for the next.', 4200);
     } else {
       SND.play('lose');
-      say((hp[0] <= 0 && hp[1] <= 0 ? 'Both tanks are out.' : 'Your tank is out.') + ' Hold the board to try it again, or tap for the next.', 4200);
+      say((g.winner < 0 ? 'Every tank is out.' : 'Your tank is out.') + ' Hold the board to try it again, or tap for the next.', 4200);
     }
+    try { bbRefreshNow(); } catch {}
   }
   const HELD = new Set();
-  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D', a: 'L', d: 'R', w: 'U', s: 'D', A: 'L', D: 'R', W: 'U', S: 'D' };
+  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D', w: 'U', s: 'D', W: 'U', S: 'D', a: 'DL', d: 'DR', A: 'DL', D: 'DR' };
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     const g = liveGame(); if (!g || g.state === 'over') return;
     const k = KEYMAP[e.key];
     if (k){ e.preventDefault(); e.stopPropagation(); HELD.add(k); return; }
-    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); if (!e.repeat && myTurn(g)) fire(g); }
+    if (/^[1-6]$/.test(e.key) && myTurn(g)){ e.preventDefault(); e.stopPropagation(); chooseWeapon(g, +e.key - 1); return; }
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); e.stopPropagation(); if (!e.repeat) fire(g); }
   }, true);
   addEventListener('keyup', e => { const k = KEYMAP[e.key]; if (k && HELD.delete(k)){ e.preventDefault(); e.stopPropagation(); } }, true);
   addEventListener('blur', () => HELD.clear());
   function stepGame(g){
     // (a slow frame catches up in the same small steps, up to a quarter of a second, as the tilt maze's marble does)
-    const t = performance.now(), dt = Math.min(0.25, (t - g.lastT) / 1000); g.lastT = t;
+    const tn = performance.now(), dt = Math.min(0.25, (tn - g.lastT) / 1000); g.lastT = tn;
     if (ARCADE.paused) return;
-    g.t += dt; g.cloud += g.S.wind * dt * CLOUD_K;
-    if (g.fx.length > 12) g.fx = g.fx.filter(e => g.t - e.t0 < FX_LIFE + (e.k === 'trail' ? 10 : 0));
+    const t0 = g.t; g.t += dt;
     if (myTurn(g)){
-      const turn = (HELD.has('L') ? 1 : 0) - (HELD.has('R') ? 1 : 0), push = (HELD.has('U') ? 1 : 0) - (HELD.has('D') ? 1 : 0);
-      if (turn) g.a[0] = clamp(g.a[0] + turn * 40 * dt, 0, 180);
-      if (push) g.p[0] = clamp(g.p[0] + push * 0.4 * dt, 0.08, 1);
+      const k = g.turn, turn = (HELD.has('L') ? 1 : 0) - (HELD.has('R') ? 1 : 0), push = (HELD.has('U') ? 1 : 0) - (HELD.has('D') ? 1 : 0);
+      if (turn) g.a[k] = clamp(g.a[k] + turn * 40 * dt, 0, 180);
+      if (push) g.p[k] = clamp(g.p[k] + push * 0.4 * dt, 0.08, 1);
       if (turn || push) aimTick(g);
-    } else if (g.state === 'think'){
-      g.timer -= dt; const f = clamp(1 - g.timer / AIM_T, 0, 1), w = f * f * (3 - 2 * f);
-      g.a[1] = g.from + (g.plan.a - g.from) * w;
-      if (g.timer <= 0){ g.a[1] = g.plan.a; g.p[1] = g.plan.p; fire(g); }
-    } else if (g.state === 'fly'){
-      for (let n = Math.max(1, Math.round(dt / SUB)); n > 0 && g.shell; n--){
-        const e = flyStep(g.S.H, g.S.xs, g.shell, g.S.wind, SUB, g.turn);
-        if (e){ land(g, e); break; }
-        if ((g.acc += SUB) >= 1 / REC_HZ - 1e-9){ g.acc = 0; g.path.push(g.shell.x, g.shell.y); }
-      }
-    } else if (g.state === 'blast'){
-      g.blast.e += dt; if (g.blast.e > BLAST_T){ g.blast = null; endTurn(g); }
+      // driving: held keys, or a tap on a Drive tile (DRIVE_STEP along)
+      let dir = (HELD.has('DR') ? 1 : 0) - (HELD.has('DL') ? 1 : 0);
+      if (!dir && g.drive){ dir = g.drive.dir; }
+      if (dir){
+        const want = DRIVE_V * dt * dir, x2 = driveBy(g.S, k, g.drive && !HELD.has('DL') && !HELD.has('DR') ? Math.sign(want) * Math.min(Math.abs(want), g.drive.left) : want);
+        const moved = Math.abs(x2 - g.S.xs[k]);
+        if (moved > 1e-6){ drive(g.S, k, x2); if ((g.rumbleAt = (g.rumbleAt || 0) + moved) > 0.012){ g.rumbleAt = 0; SFX.rumble(x2 / ASP); } }
+        if (g.drive){ g.drive.left -= moved; if (g.drive.left <= 1e-6 || moved < 1e-6) g.drive = null; }
+        if (moved < 1e-6 && !g.toldStuck){ g.toldStuck = true; say(g.S.fuel[k] < 1 ? 'Out of fuel.' : 'It will not go that way: too steep, the edge, or another tank.', 1400); }
+      } else g.toldStuck = false;
+    } else if (g.state === 'play'){
+      const tr = g.turns[g.turns.length - 1];
+      if (g.t - tr.t0 >= tr.len) endTurn(g);
     }
+    // the sounds whose moments have come (THE SOUNDS)
+    for (; g.heard < g.fx.length && g.fx[g.heard].t0 <= g.t; g.heard++){
+      const e = g.fx[g.heard]; if (e.t0 < t0 - 0.5) continue;         // (long past: a game come back to after a while)
+      const u = (e.x != null ? e.x : 0) / ASP;
+      if (e.k === 'muzzle'){ SFX.cannon(u); const P = e.turn.rec.tracks[0].path, n = P.length / 2; if (g.whistle) g.whistle.stop(); g.whistle = SFX.whistle(u, P[2 * n - 2] / ASP, (n - 1) / REC_HZ); }
+      else if (e.k === 'blast'){ if (g.whistle){ g.whistle.stop(); g.whistle = null; } SFX.blast(u, e.r / BR); e.dmg.forEach((d, k) => { if (d > 0) SFX.clang(g.S.xs[k] / ASP); }); }
+      else if (e.k === 'dirt'){ if (g.whistle){ g.whistle.stop(); g.whistle = null; } SFX.thud(u); }
+      else if (e.k === 'pop') SFX.pop(u);
+      else if (e.k === 'dig') SFX.scrape(u);
+    }
+    // a computer's gun turning to its aim, and a tank put out cooking off, as each comes
+    const tr = g.turns[g.turns.length - 1];
+    if (tr && !tr.whirred && !isPerson(g, tr.who) && g.t >= tr.t0 + tr.moveT){ tr.whirred = true; SFX.whirr(tr.xsA[tr.who] / ASP, tr.aimT); }
+    if (tr && !tr.cooked && g.t >= tr.go + tr.rec.end){ tr.cooked = true; tr.rec.hp.forEach((h, k) => { if (h <= 0 && tr.rec.hpb[k] > 0) SFX.cookoff(tr.xsA[k] / ASP); }); }
+    if (tr && !tr.rolled && g.t >= tr.t0 && tr.moveT > 0){ tr.rolled = true; SFX.rumble(tr.xsB[tr.who] / ASP, tr.moveT); }
   }
+  // the live game's view: as viewAt, and on a person's turn their aim line and their last shot faint
   function liveView(g){
-    return { T: g.T, H: g.S.H, xs: g.S.xs, hp: g.S.hp, a: g.a, wind: g.S.wind, shell: g.shell ? [g.shell.x, g.shell.y] : null, t: g.t, fx: g.fx, hitT: g.hitT,
-             craters: g.craters, cloud: g.cloud, aim: myTurn(g) ? g.p[0] : 0, last: g.last, ver: g.ver, g };
+    const V = viewAt(g, g.t);
+    if (g.state === 'aim'){ V.xs = g.S.xs.slice(); V.a = g.a.slice(); V.H = g.S.H; V.hp = g.S.hp.slice(); if (g.turns.length) V.craters = g.turns[g.turns.length - 1].craters; }
+    if (myTurn(g)){ V.aim = g.p[g.turn]; V.aimer = g.turn; V.last = g.last[g.turn]; V.active = g.turn; V.wind = g.S.wind; }
+    return V;
   }
   function viewOf(c, r){
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
     if (g){ if (here) stepGame(g); return liveView(g); }
-    const T = terrainAt(c, r), Dl = duelSoon(T);
-    if (!Dl) return { T, H: T.H0, xs: T.xs, hp: [100, 100], a: [45, 135], wind: 0, t: now() / 1000, fx: null, hitT: [[], []], craters: [], applied: 0, cloud: 0 };
-    return shownOf(Dl);
+    return shownOf(duelSoon(terrainAt(c, r)));
   }
 
   /* ─── THE PICTURE A BOARD HANGS ─── (THE LOOK, above). `paint` draws the sky and the ground in the board's own terms, u
      across and v down, at S pixels a side; a key names one state of one board's ground, and `SPECS` remembers what to paint
      for it until the field asks (`photoCanvas`), since the field asks by key alone. */
   function paint(T, H, craters, S){
-    const P = PALETTES[T.pal], R = rngOf(T.seed ^ 0x51ed), cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const P = PALETTES[T.pal], R = rngOf(T.seed ^ 0x51ed), cv = document.createElement('canvas'); cv.width = Math.round(S * ASP); cv.height = S;
     const c = cv.getContext('2d'); if (!c) return null;
     // (the photo tier lays a picture's top-left at the board's far right corner: u = 1, v = 1; so it is drawn turned a half turn)
-    c.setTransform(-S, 0, 0, -S, S, S);
-    const H0 = T.H0, px = i => (i + 0.5) / W;
+    c.setTransform(-S, 0, 0, -S, cv.width, S);
+    const H0 = T.H0, px = i => (i + 0.5) / W * ASP;
     let top = 1, mean = 0; for (let i = 0; i < W; i++){ top = Math.min(top, H0[i]); mean += H0[i] / W; }
     // the sky, its stars, its sun (or moon) and glow
     const gS = c.createLinearGradient(0, 0, 0, mean); gS.addColorStop(0, P.sky[0]); gS.addColorStop(0.55, P.sky[1]); gS.addColorStop(1, P.sky[2]);
-    c.fillStyle = gS; c.fillRect(0, 0, 1, 1);
-    const nStars = Math.round(110 * P.stars);
-    for (let i = 0; i < nStars; i++){ const x = R(), y = R() * mean * 0.85, r = 0.0011 + R() * 0.0021; c.globalAlpha = 0.35 + R() * 0.65; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+    c.fillStyle = gS; c.fillRect(0, 0, ASP, 1);
+    const nStars = Math.round(165 * P.stars);
+    for (let i = 0; i < nStars; i++){ const x = R() * ASP, y = R() * mean * 0.85, r = 0.0011 + R() * 0.0021; c.globalAlpha = 0.35 + R() * 0.65; c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
     c.globalAlpha = 1;
-    const sx = 0.15 + R() * 0.7, sy = 0.08 + R() * Math.max(0.05, top - 0.25), sr = P.moon ? 0.032 : 0.042;
+    const sx = 0.15 + R() * (ASP - 0.3), sy = 0.08 + R() * Math.max(0.05, top - 0.25), sr = P.moon ? 0.032 : 0.042;
     const gl = c.createRadialGradient(sx, sy, 0, sx, sy, sr * 6); gl.addColorStop(0, P.glow + '0.55)'); gl.addColorStop(0.35, P.glow + '0.18)'); gl.addColorStop(1, P.glow + '0)');
-    c.fillStyle = gl; c.fillRect(0, 0, 1, 1);
+    c.fillStyle = gl; c.fillRect(0, 0, ASP, 1);
     c.fillStyle = P.sun; c.beginPath(); c.arc(sx, sy, sr, 0, 7); c.fill();
     if (P.moon){ c.fillStyle = 'rgba(150,160,185,0.45)';          // a full moon's seas
       for (const [mx, my, mr] of [[-0.3, -0.25, 0.32], [0.25, -0.1, 0.24], [0.05, 0.35, 0.28], [-0.35, 0.3, 0.16]]){ c.beginPath(); c.arc(sx + mx * sr, sy + my * sr, mr * sr, 0, 7); c.fill(); } }
@@ -47903,14 +48151,14 @@ const TANKS_APP = (() => {
     const ridge = (base, amp, col) => {
       const f = [1 + R() * 1.5, 3 + R() * 3, 8 + R() * 5], p = [R() * 7, R() * 7, R() * 7];
       c.fillStyle = col; c.beginPath(); c.moveTo(0, 1);
-      for (let i = 0; i <= 160; i++){ const x = i / 160; c.lineTo(x, base - amp * (0.6 * Math.sin(f[0] * x * 6.2832 + p[0]) + 0.28 * Math.sin(f[1] * x * 6.2832 + p[1]) + 0.12 * Math.sin(f[2] * x * 6.2832 + p[2]))); }
-      c.lineTo(1, 1); c.closePath(); c.fill();
+      for (let i = 0; i <= 240; i++){ const x = i / 240 * ASP; c.lineTo(x, base - amp * (0.6 * Math.sin(f[0] * x * 6.2832 + p[0]) + 0.28 * Math.sin(f[1] * x * 6.2832 + p[1]) + 0.12 * Math.sin(f[2] * x * 6.2832 + p[2]))); }
+      c.lineTo(ASP, 1); c.closePath(); c.fill();
     };
     ridge(mean - 0.1, 0.07, P.far); ridge(mean - 0.03, 0.06, P.near);
     const hz = c.createLinearGradient(0, mean - 0.2, 0, mean + 0.05); hz.addColorStop(0, 'rgba(0,0,0,0)'); hz.addColorStop(1, P.sky[2]);
-    c.globalAlpha = 0.45; c.fillStyle = hz; c.fillRect(0, mean - 0.2, 1, 0.3); c.globalAlpha = 1;
+    c.globalAlpha = 0.45; c.fillStyle = hz; c.fillRect(0, mean - 0.2, ASP, 0.3); c.globalAlpha = 1;
     // the ground: its line through every column, the earth deepening
-    const ground = () => { c.beginPath(); c.moveTo(-0.01, 1.01); c.lineTo(-0.01, H[0]); for (let i = 0; i < W; i++) c.lineTo(px(i), H[i]); c.lineTo(1.01, H[W - 1]); c.lineTo(1.01, 1.01); c.closePath(); };
+    const ground = () => { c.beginPath(); c.moveTo(-0.01, 1.01); c.lineTo(-0.01, H[0]); for (let i = 0; i < W; i++) c.lineTo(px(i), H[i]); c.lineTo(ASP + 0.01, H[W - 1]); c.lineTo(ASP + 0.01, 1.01); c.closePath(); };
     const gG = c.createLinearGradient(0, top, 0, 1); gG.addColorStop(0, P.top); gG.addColorStop(1, P.deep);
     ground(); c.fillStyle = gG; c.fill();
     c.save(); ground(); c.clip();
@@ -47920,16 +48168,16 @@ const TANKS_APP = (() => {
       for (let i = 0; i < W; i += 2){ const y = H0[i] + d + 0.007 * Math.sin(i * 0.13 + d * 41); i ? c.lineTo(px(i), y) : c.moveTo(px(i), y); }
       c.stroke();
     }
-    for (let k = 0; k < 90; k++){
-      const x = R(), i = Math.min(W - 1, Math.floor(x * W)), y = H0[i] + 0.015 + R() * (1 - H0[i]), rx = 0.0025 + R() * 0.008, ry = rx * (0.45 + R() * 0.4), rot = R() * 3;
+    for (let k = 0; k < 135; k++){
+      const x = R() * ASP, i = Math.min(W - 1, Math.floor(x / ASP * W)), y = H0[i] + 0.015 + R() * (1 - H0[i]), rx = 0.0025 + R() * 0.008, ry = rx * (0.45 + R() * 0.4), rot = R() * 3;
       c.globalAlpha = 0.3 + R() * 0.45; c.fillStyle = P.rock; c.beginPath(); c.ellipse(x, y, rx, ry, rot, 0, 7); c.fill();
       c.globalAlpha *= 0.6; c.fillStyle = '#ffffff'; c.beginPath(); c.ellipse(x - rx * 0.2, y - ry * 0.35, rx * 0.45, ry * 0.3, rot, 0, 7); c.fill();
     }
     // a scorch round each crater, and a shade just under the top
     c.globalAlpha = 1;
-    for (const [x, y] of craters){
-      const gr = c.createRadialGradient(x, y, 0, x, y, BR * 1.8); gr.addColorStop(0, 'rgba(14,8,4,0.8)'); gr.addColorStop(0.55, 'rgba(24,14,8,0.45)'); gr.addColorStop(1, 'rgba(24,14,8,0)');
-      c.fillStyle = gr; c.fillRect(x - BR * 2, y - BR * 2, BR * 4, BR * 4);
+    for (const [x, y, r0] of craters){
+      const rr = (r0 || BR) * 1.8, gr = c.createRadialGradient(x, y, 0, x, y, rr); gr.addColorStop(0, 'rgba(14,8,4,0.8)'); gr.addColorStop(0.55, 'rgba(24,14,8,0.45)'); gr.addColorStop(1, 'rgba(24,14,8,0)');
+      c.fillStyle = gr; c.fillRect(x - rr, y - rr, rr * 2, rr * 2);
     }
     c.globalAlpha = 0.3; c.strokeStyle = '#000000'; c.lineWidth = 0.014; c.beginPath();
     for (let i = 0; i < W; i++) i ? c.lineTo(px(i), H[i] + 0.01) : c.moveTo(px(i), H[i] + 0.01);
@@ -47939,22 +48187,26 @@ const TANKS_APP = (() => {
     const dug = i => H[i] - H0[i] > 0.003;
     for (let i = 0; i < W; ){
       let j = i; const d = dug(i); while (j < W - 1 && dug(j + 1) === d) j++;
-      const run = (w, col, dy) => { c.lineWidth = w; c.strokeStyle = col; c.beginPath(); for (let k = Math.max(0, i - 1); k <= Math.min(W - 1, j + 1); k++){ const x = k === 0 ? 0 : k === W - 1 ? 1 : px(k); k === Math.max(0, i - 1) ? c.moveTo(x, H[k] + dy) : c.lineTo(x, H[k] + dy); } c.stroke(); };
+      const run = (w, col, dy) => { c.lineWidth = w; c.strokeStyle = col; c.beginPath(); for (let k = Math.max(0, i - 1); k <= Math.min(W - 1, j + 1); k++){ const x = k === 0 ? 0 : k === W - 1 ? ASP : px(k); k === Math.max(0, i - 1) ? c.moveTo(x, H[k] + dy) : c.lineTo(x, H[k] + dy); } c.stroke(); };
       if (d) run(0.007, '#2a1a10', 0.001); else { run(0.012, P.grass, 0.002); run(0.0035, P.grassHi, -0.002); }
       i = j + 1;
     }
     c.strokeStyle = P.grassHi; c.lineWidth = 0.0022;
-    for (let i = 1; i < W - 1; i++) if (!dug(i) && R() < 0.4){ const x = px(i) + (R() - 0.5) / W, y = H[i]; c.globalAlpha = 0.5 + R() * 0.5; c.beginPath(); c.moveTo(x, y); c.lineTo(x + (R() - 0.5) * 0.008, y - 0.006 - R() * 0.009); c.stroke(); }
+    for (let i = 1; i < W - 1; i++) if (!dug(i) && R() < 0.4){ const x = px(i) + (R() - 0.5) / W * ASP, y = H[i]; c.globalAlpha = 0.5 + R() * 0.5; c.beginPath(); c.moveTo(x, y); c.lineTo(x + (R() - 0.5) * 0.008, y - 0.006 - R() * 0.009); c.stroke(); }
     c.globalAlpha = 1;
     return cv;
   }
   const SPECS = new Map(), HIRES = new Map();
-  // the state a board's picture shows: the live game's ground, or its duel's after the shots so far
+  let GEN = 0;
+  // the state a board's picture shows: the ground as the game in hand shows it, named by the turn whose ground it is
   function photoState(c, r){
     const g = GAMES.get(gkey(c, r));
-    if (g) return { T: g.T, H: g.S.H, craters: g.craters, id: 'g' + gkey(c, r) + ':' + g.ver + '@' + g.T.lv };
-    const T = terrainAt(c, r), Dl = DUELS.get(T.idx * 8 + T.lv), V = Dl ? shownOf(Dl) : null, n = V ? V.applied : 0;
-    return { T, H: n ? Dl.shots[n - 1].H : T.H0, craters: V ? V.craters : [], id: T.idx + '@' + T.lv + '#' + n };
+    if (g){
+      if (g.state === 'aim' || g.state === 'over') return { T: g.T, H: g.S.H, craters: g.turns.length ? g.turns[g.turns.length - 1].craters : [], id: 'g' + g.gen + ':a' + (g.turns.length - 1) };
+      const V = viewAt(g, g.t); return { T: g.T, H: V.H, craters: V.craters, id: 'g' + g.gen + ':' + V.hk };
+    }
+    const T = terrainAt(c, r), Dl = DUELS.get((T.idx * 8 + T.lv) * 8 + T.n), V = Dl ? shownOf(Dl) : null;
+    return { T, H: V ? V.H : T.H0, craters: V ? V.craters : [], id: T.idx + '@' + T.lv + '#' + T.n + ':' + (V ? V.hk : 'a-1') };
   }
   function photoKey(c, r, bp){
     // (a duel's picture changes after every burst, and each change is a texture made and sent to the graphics card, so a board
@@ -47967,6 +48219,59 @@ const TANKS_APP = (() => {
     return key;
   }
 
+  /* ─── WHAT A BOARD DRAWS ─── over its picture: the clouds; each tank along the slope under it in its seat's colour, its gun
+     at its aim, its health over it, the tank whose turn it is marked; your last shot faint, the aim line, the shells, and the
+     effects. Laid out in the board's own x (0 to ASP) and y, then put in the field's terms: across the board's width u is
+     x / ASP, and sizes and lifts are in widths (as mini golf's are). */
+  const TANK_L = 0.05, GUNC = 0x2c3326;
+  const hpCol = hp => hp > 60 ? 0x6fd36a : hp > 30 ? 0xf2c14e : 0xe0564a;
+  const yawOf = q => q || 1e-6;               // (never exactly 0: the field reads a yaw of 0 as none, THE TANKS' SHAPES)
+  const slopeAt = (H, x) => clamp(Math.atan2(surfAt(H, x + 0.025) - surfAt(H, x - 0.025), 0.05), -TILT_MAX, TILT_MAX);
+  function itemsOf(V){
+    const out = [], H = V.H, w = V.wind || 0, n = V.xs.length;
+    cloudsOf(out, V);
+    for (let k = 0; k < n; k++){
+      const x = V.xs[k], pv = surfAt(H, x) - TURRET, alive = V.hp[k] > 0, tilt = slopeAt(H, x);
+      const flash = (V.hitT[k] || []).some(h => V.t - h >= 0 && V.t - h < 0.16);
+      const side = x > ASP / 2 ? 'L' : '';    // (the tanks on the right half face left, toward the rest)
+      out.push({ kind: 'tkTracks' + side, u: x, v: pv, scale: TANK_L, yaw: yawOf(tilt), color: alive ? 0xffffff : 0x6a6a6a });
+      out.push({ kind: 'tkHull' + side, u: x, v: pv, scale: TANK_L, yaw: yawOf(tilt), color: flash ? 0xffffff : alive ? V.cols[k] : WRECK });
+      out.push({ kind: 'tkGun', u: x, v: pv, scale: BARREL, yaw: yawOf(-V.a[k] * Math.PI / 180), color: alive ? GUNC : 0x222222 });
+      const by = pv - 0.042;
+      out.push({ kind: 'tkBox', u: x, v: by, scale: 0.06, sx: 1, sy: 0.08, sz: 0.12, lift: 0.01, color: BARBG });
+      if (alive){ const f = V.hp[k] / 100; out.push({ kind: 'tkBox', u: x - 0.03 + 0.03 * f, v: by, scale: 0.06, sx: f, sy: 0.14, sz: 0.1, lift: 0.01, color: hpCol(V.hp[k]) }); }
+      else wreckFx(out, x, pv, V.t, k, w);
+      if (k === V.active && alive) out.push({ kind: 'tkDot', u: x, v: by - 0.022 - 0.005 * Math.abs(Math.sin(V.t * 5)), scale: 0.013, lift: 0.012, color: V.cols[k] });
+    }
+    if (V.last) for (let i = 0; i < V.last.length / 2; i += 2) out.push({ kind: 'tkDot', u: V.last[2 * i], v: V.last[2 * i + 1], scale: 0.005, lift: 0.004, color: LASTC });
+    if (V.aim){
+      const x = V.xs[V.aimer], y = surfAt(H, x) - TURRET, q = V.a[V.aimer] * Math.PI / 180, m = 2 + Math.round(V.aim * 9);
+      for (let j = 1; j <= m; j++){ const d = BARREL + j * 0.02; out.push({ kind: 'tkDot', u: x + Math.cos(q) * d, v: y - Math.sin(q) * d, scale: 0.0065, lift: 0.008, color: AIMC }); }
+    }
+    for (const [x, y, kind] of V.shells){
+      const small = kind === 'bomblet', ground = kind === 'roller' || kind === 'digger';
+      if (!ground) out.push({ kind: 'tkFire', u: x, v: y, scale: small ? 0.013 : kind === 'big' ? 0.03 : 0.022, lift: 0.008, color: kind === 'dirt' ? 0xc9a070 : 0xffc46a });
+      out.push({ kind: 'tkDot', u: x, v: y, scale: small ? 0.007 : kind === 'big' ? 0.016 : 0.011, lift: 0.014, color: kind === 'dirt' ? 0x8a5a30 : kind === 'roller' ? 0x2a2a2a : SHELL });
+    }
+    fxItems(out, V);
+    if (Math.abs(w) > 0.004){ const L = w / 0.25 * 0.12; out.push({ kind: 'tkBox', u: ASP / 2 + L / 2, v: 0.03, scale: 0.006, sx: Math.abs(L) / 0.006, sy: 0.4, sz: 0.6, lift: 0.01, color: WINDC });
+      out.push({ kind: 'tkDot', u: ASP / 2 + L, v: 0.03, scale: 0.01, lift: 0.01, color: WINDC }); }
+    for (const it of out){ it.u /= ASP; it.scale /= ASP; if (it.lift) it.lift /= ASP; }
+    return out;
+  }
+  // the board's tiles, for boards too small for a picture and any frame its picture is not yet built: the picture's colours, coarsely
+  const N = 16, GRIDS = new Map();
+  const mixHex = (a, b, f) => { const A = num(a), B = num(b); let o = 0; for (const s of [16, 8, 0]) o += Math.round(((A >> s) & 255) + (((B >> s) & 255) - ((A >> s) & 255)) * f) << s; return o; };
+  function gridOf(T, H, key){
+    let Gd = GRIDS.get(key); if (Gd) return Gd;
+    const P = PALETTES[T.pal];
+    Gd = { n: N, colors: Array.from({ length: N * N }, (_, i) => { const x = ((i % N) + 0.5) / N * ASP, y = (((i / N) | 0) + 0.5) / N, h = surfAt(H, x);
+      return y >= h + 0.5 / N ? mixHex(P.top, P.deep, (y - h) / (1 - h + 1e-6)) : y >= h - 0.5 / N ? num(P.grass) : y < 0.5 ? mixHex(P.sky[0], P.sky[1], y / 0.5) : mixHex(P.sky[1], P.sky[2], (y - 0.5) / 0.5); }) };
+    GRIDS.set(key, Gd); if (GRIDS.size > 4000) GRIDS.delete(GRIDS.keys().next().value);
+    return Gd;
+  }
+
+  const BR0 = BR;
   /* ─── EFFECTS ─── worked out from how long ago each thing happened and its seed, so a board's duel shows them with
      nothing kept (THE LOOK, above). */
   const FX_LIFE = 2.6;
@@ -47996,7 +48301,7 @@ const TANKS_APP = (() => {
     }
   }
   function blastFx(out, e, a, w, H, T){
-    const R = rngOf(e.seed), x = e.x, y = e.y, P = PALETTES[T.pal], earth = num(P.top), deep = num(P.deep);
+    const R = rngOf(e.seed), x = e.x, y = e.y, P = PALETTES[T.pal], earth = num(P.top), deep = num(P.deep), BR = e.r || BR0, sz = BR / BR0;   // (a burst's own size: the big shell's, a bomblet's)
     for (let k = 0; k < 6; k++){          // the fireball, in lobes
       const ox = (R() - 0.5) * BR * 0.9, oy = (R() - 0.75) * BR * 0.8, s0 = BR * (0.5 + R() * 0.5), d = R() * 0.07, b = a - d;
       if (b < 0 || b > 0.75) continue;
@@ -48005,11 +48310,11 @@ const TANKS_APP = (() => {
     }
     if (a < 0.32) out.push({ kind: 'tkRing', u: x, v: y, scale: 2 * BR * (0.6 + a / 0.32 * 1.8), lift: 0.002, color: a < 0.16 ? 0xfff1c9 : 0xffc46a });
     for (let k = 0; k < 16; k++){         // clods of earth, falling as the shell fell
-      const th = -Math.PI * (0.08 + R() * 0.84), sp = 0.3 + R() * 0.7, life = 0.7 + R() * 0.8, sz = 0.004 + R() * 0.008, col = R() < 0.5 ? earth : deep;
+      const th = -Math.PI * (0.08 + R() * 0.84), sp = (0.3 + R() * 0.7) * Math.sqrt(sz), life = 0.7 + R() * 0.8, cs = (0.004 + R() * 0.008) * Math.sqrt(sz), col = R() < 0.5 ? earth : deep;
       if (a > life) continue;
       const cx = x + Math.cos(th) * sp * a + 0.5 * w * a * a, cy = y + Math.sin(th) * sp * a + 0.5 * G * a * a;
       if (a > 0.1 && cx >= 0 && cx <= 1 && cy > surfAt(H, cx) + 0.004) continue;
-      out.push({ kind: 'tkClod', u: cx, v: cy, scale: 2 * sz, lift: 0.006, yaw: a * 9 + k, color: col });
+      out.push({ kind: 'tkClod', u: cx, v: cy, scale: 2 * cs, lift: 0.006, yaw: a * 9 + k, color: col });
     }
     for (let k = 0; k < 10; k++){         // sparks
       const th = -Math.PI * R(), sp = 0.6 + R() * 0.8, life = 0.25 + R() * 0.35;
@@ -48017,11 +48322,32 @@ const TANKS_APP = (() => {
       out.push({ kind: 'tkDot', u: x + Math.cos(th) * sp * a, v: y + Math.sin(th) * sp * a + 0.5 * G * a * a, scale: 0.005 * (1 - a / life) + 0.002, lift: 0.01, color: 0xffe9a8 });
     }
     for (let k = 0; k < 7; k++){          // smoke, rising and drifting on the wind
-      const d = 0.12 + R() * 0.3, life = 1.5 + R() * 0.9, ox = (R() - 0.5) * BR, rise = 0.04 + R() * 0.06, s0 = 0.02 + R() * 0.02, b = a - d;
+      const d = 0.12 + R() * 0.3, life = 1.5 + R() * 0.9, ox = (R() - 0.5) * BR, rise = 0.04 + R() * 0.06, s0 = (0.02 + R() * 0.02) * Math.sqrt(sz), b = a - d;
       if (b < 0 || b > life) continue;
       const f = b / life;
-      out.push({ kind: 'tkPuff', u: x + ox + w * b * 0.8, v: y - BR * 0.3 - rise * b, scale: (s0 + f * 0.06) * fade(f, 0.75), lift: 0.014, color: smokeAt(f * 0.8) });
+      out.push({ kind: 'tkPuff', u: x + ox + w * b * 0.8, v: y - BR * 0.3 - rise * b, scale: (s0 + f * 0.06 * Math.sqrt(sz)) * fade(f, 0.75), lift: 0.014, color: smokeAt(f * 0.8) });
     }
+  }
+  // a dirt bomb landing: earth thrown up and falling back, a brown dust drifting; a cluster opening: a puff and a flash; a digger: dust
+  function dirtFx(out, e, a, w, H, T){
+    const R = rngOf(e.seed), P = PALETTES[T.pal], earth = num(P.top), deep = num(P.deep);
+    for (let k = 0; k < 20; k++){
+      const th = -Math.PI * (0.15 + R() * 0.7), sp = 0.15 + R() * 0.45, life = 0.5 + R() * 0.6, cs = 0.005 + R() * 0.008, col = R() < 0.5 ? earth : deep;
+      if (a > life) continue;
+      const cx = e.x + Math.cos(th) * sp * a, cy = e.y + Math.sin(th) * sp * a + 0.5 * G * a * a;
+      if (a > 0.1 && cx >= 0 && cx <= ASP && cy > surfAt(H, cx) + 0.004) continue;
+      out.push({ kind: 'tkClod', u: cx, v: cy, scale: 2 * cs, lift: 0.006, yaw: a * 7 + k, color: col });
+    }
+    for (let k = 0; k < 5; k++){ const d = R() * 0.2, life = 1.4 + R() * 0.6, ox = (R() - 0.5) * e.r * 1.4, b = a - d; if (b < 0 || b > life) continue;
+      const f = b / life; out.push({ kind: 'tkPuff', u: e.x + ox + w * b * 0.8, v: e.y - 0.01 - 0.03 * b, scale: (0.025 + f * 0.05) * fade(f, 0.7), lift: 0.012, color: earth }); }
+  }
+  function popFx(out, e, a){
+    if (a < 0.12) out.push({ kind: 'tkFire', u: e.x, v: e.y, scale: 0.03 * (1 - a / 0.12) + 0.01, lift: 0.012, color: 0xfff1c9 });
+    if (a < 0.9) out.push({ kind: 'tkPuff', u: e.x, v: e.y - a * 0.02, scale: (0.012 + a * 0.03) * fade(a / 0.9, 0.5), lift: 0.012, color: smokeAt(0.7) });
+  }
+  function digFx(out, e, a, H, T){
+    if (a > 0.7) return;
+    const P = PALETTES[T.pal]; out.push({ kind: 'tkPuff', u: e.x, v: surfAt(H, e.x) - 0.006 - a * 0.02, scale: (0.012 + a * 0.02) * fade(a / 0.7, 0.4), lift: 0.01, color: num(P.top) });
   }
   function wreckFx(out, x, y, t, k, w){
     for (let j = 0; j < 2; j++) out.push({ kind: 'tkFire', u: x + (j - 0.5) * 0.014, v: y - 0.004, scale: 0.016 + 0.006 * Math.sin(t * 23 + j * 2 + k), lift: 0.016, color: fireAt(0.15 + 0.25 * (0.5 + 0.5 * Math.sin(t * 17 + j))) });
@@ -48036,7 +48362,8 @@ const TANKS_APP = (() => {
       const a = t - e.t0; if (a < 0) continue;
       if (e.k === 'trail'){ if (a < 12) trailFx(out, e, a, w); continue; }
       if (a > FX_LIFE) continue;
-      if (e.k === 'blast') blastFx(out, e, a, w, V.H, V.T); else muzzleFx(out, e, a, w);
+      if (e.k === 'blast') blastFx(out, e, a, w, V.H, V.T); else if (e.k === 'muzzle') muzzleFx(out, e, a, w);
+      else if (e.k === 'dirt') dirtFx(out, e, a, w, V.H, V.T); else if (e.k === 'pop') popFx(out, e, a); else if (e.k === 'dig') digFx(out, e, a, V.H, V.T);
     }
   }
   // clouds across the top of the sky, carried by the wind (V.cloud: how far it has carried them)
@@ -48044,56 +48371,12 @@ const TANKS_APP = (() => {
     const P = PALETTES[V.T.pal], R = rngOf(V.T.seed ^ 0xc10d);
     for (let k = 0; k < 3; k++){
       const u0 = R(), v = 0.06 + k * 0.055 + R() * 0.03, sp = 0.7 + R() * 0.6, size = 0.035 + R() * 0.025;
-      const f = (((u0 + (V.cloud || 0) * sp) % 1) + 1) % 1, u = -0.06 + f * 1.12, edge = clamp(Math.min(u, 1 - u) / 0.1, 0, 1);
+      const f = (((u0 + (V.cloud || 0) * sp / ASP) % 1) + 1) % 1, u = (-0.06 + f * 1.12) * ASP, edge = clamp(Math.min(u, ASP - u) / 0.12, 0, 1);
       if (edge <= 0) continue;
       for (let j = 0; j < 4; j++) out.push({ kind: 'tkCloud', u: u + (j - 1.5) * size * 0.55, v: v - (j === 1 || j === 2 ? size * 0.2 : 0), scale: size * (j === 1 || j === 2 ? 1.1 : 0.8) * edge, lift: 0.02, color: P.cloud });
     }
   }
 
-  /* ─── WHAT A BOARD DRAWS ─── over its picture: the clouds; each tank along the slope under it, its gun at its aim, its
-     health over it; your last shot faint, the aim line, the shell, and the effects. */
-  const TANK_L = 0.05, GUNC = 0x2c3326;
-  const hpCol = hp => hp > 60 ? 0x6fd36a : hp > 30 ? 0xf2c14e : 0xe0564a;
-  const yawOf = q => q || 1e-6;               // (never exactly 0: the field reads a yaw of 0 as none, THE TANKS' SHAPES)
-  const slopeAt = (H, x) => clamp(Math.atan2(surfAt(H, x + 0.025) - surfAt(H, x - 0.025), 0.05), -TILT_MAX, TILT_MAX);
-  function itemsOf(V){
-    const out = [], H = V.H, w = V.wind || 0;
-    cloudsOf(out, V);
-    for (let k = 0; k < 2; k++){
-      const x = V.xs[k], pv = surfAt(H, x) - TURRET, alive = V.hp[k] > 0, tilt = slopeAt(H, x);
-      const flash = (V.hitT[k] || []).some(h => V.t - h >= 0 && V.t - h < 0.16);
-      const side = k ? 'L' : '';             // (the computer's tank faces left, toward you)
-      out.push({ kind: 'tkTracks' + side, u: x, v: pv, scale: TANK_L, yaw: yawOf(tilt), color: alive ? 0xffffff : 0x6a6a6a });
-      out.push({ kind: 'tkHull' + side, u: x, v: pv, scale: TANK_L, yaw: yawOf(tilt), color: flash ? 0xffffff : alive ? (k ? FOE : ME) : WRECK });
-      out.push({ kind: 'tkGun', u: x, v: pv, scale: BARREL, yaw: yawOf(-V.a[k] * Math.PI / 180), color: alive ? GUNC : 0x222222 });
-      const by = pv - 0.042;
-      out.push({ kind: 'tkBox', u: x, v: by, scale: 0.06, sx: 1, sy: 0.08, sz: 0.12, lift: 0.01, color: BARBG });
-      if (alive){ const f = V.hp[k] / 100; out.push({ kind: 'tkBox', u: x - 0.03 + 0.03 * f, v: by, scale: 0.06, sx: f, sy: 0.14, sz: 0.1, lift: 0.01, color: hpCol(V.hp[k]) }); }
-      else wreckFx(out, x, pv, V.t, k, w);
-    }
-    if (V.last) for (let i = 0; i < V.last.length / 2; i += 2) out.push({ kind: 'tkDot', u: V.last[2 * i], v: V.last[2 * i + 1], scale: 0.005, lift: 0.004, color: LASTC });
-    if (V.aim){
-      const x = V.xs[0], y = surfAt(H, x) - TURRET, q = V.a[0] * Math.PI / 180, n = 2 + Math.round(V.aim * 9);
-      for (let j = 1; j <= n; j++){ const d = BARREL + j * 0.02; out.push({ kind: 'tkDot', u: x + Math.cos(q) * d, v: y - Math.sin(q) * d, scale: 0.0065, lift: 0.008, color: AIMC }); }
-    }
-    if (V.shell){ out.push({ kind: 'tkFire', u: V.shell[0], v: V.shell[1], scale: 0.022, lift: 0.008, color: 0xffc46a });
-      out.push({ kind: 'tkDot', u: V.shell[0], v: V.shell[1], scale: 0.011, lift: 0.014, color: SHELL }); }
-    fxItems(out, V);
-    if (Math.abs(w) > 0.004){ const L = w / 0.25 * 0.12; out.push({ kind: 'tkBox', u: 0.5 + L / 2, v: 0.03, scale: 0.006, sx: Math.abs(L) / 0.006, sy: 0.4, sz: 0.6, lift: 0.01, color: WINDC });
-      out.push({ kind: 'tkDot', u: 0.5 + L, v: 0.03, scale: 0.01, lift: 0.01, color: WINDC }); }
-    return out;
-  }
-  // the board's tiles, for boards too small for a picture and any frame its picture is not yet built: the picture's colours, coarsely
-  const N = 16, GRIDS = new Map();
-  const mixHex = (a, b, f) => { const A = num(a), B = num(b); let o = 0; for (const s of [16, 8, 0]) o += Math.round(((A >> s) & 255) + (((B >> s) & 255) - ((A >> s) & 255)) * f) << s; return o; };
-  function gridOf(T, H, key){
-    let Gd = GRIDS.get(key); if (Gd) return Gd;
-    const P = PALETTES[T.pal];
-    Gd = { n: N, colors: Array.from({ length: N * N }, (_, i) => { const x = ((i % N) + 0.5) / N, y = (((i / N) | 0) + 0.5) / N, h = surfAt(H, x);
-      return y >= h + 0.5 / N ? mixHex(P.top, P.deep, (y - h) / (1 - h + 1e-6)) : y >= h - 0.5 / N ? num(P.grass) : y < 0.5 ? mixHex(P.sky[0], P.sky[1], y / 0.5) : mixHex(P.sky[1], P.sky[2], (y - 0.5) / 0.5); }) };
-    GRIDS.set(key, Gd); if (GRIDS.size > 4000) GRIDS.delete(GRIDS.keys().next().value);
-    return Gd;
-  }
   /* The tanks' shapes, in relief: a side drawn in (x along, s up) in tank lengths, the turret's middle at the origin and the
      ground 0.45 below it, stood up off the board by its thickness (the extrusion), then laid so the side lies on the board
      and the thickness stands up off it. One kind each for the tracks (their own greys), the hull and turret (the side's
@@ -48159,14 +48442,33 @@ const TANKS_APP = (() => {
   });
   const tankGeos = (() => { const R = tankGeoOf(false), L = tankGeoOf(true); return { tkTracks: R.tkTracks, tkHull: R.tkHull, tkGun: R.tkGun, tkTracksL: L.tkTracks, tkHullL: L.tkHull }; })();
   const hex = n => '#' + n.toString(16).padStart(6, '0');
-
   const restart = (c, r) => { GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} };
+  // (the menu's Tanks and Players: every board begun afresh, and the boards no one plays made again with as many tanks)
+  function setMode(n, players){
+    if (n != null){ SET.n = clamp(n | 0, 2, 4); ARCADE.save('tanks.count', String(SET.n)); }
+    if (players != null){ SET.players = clamp(players | 0, 1, 2); ARCADE.save('tanks.players', String(SET.players)); }
+    GAMES.clear(); DUELS.clear();
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+  }
+  // the bottom row (Oct 21): the weapons of the tank whose turn it is, with what each has left, then Drive ◀ and Drive ▶
+  function tilesOf(g){
+    const k = myTurn(g) ? g.turn : g.seats.indexOf('you'), A = g.S.ammo[k], mine = myTurn(g);
+    // (a tile with a glyph draws its top line, the label, and not its sub: the count and the fuel go there)
+    const out = WEAPONS.map((w, i) => ({ label: A[i] === Infinity ? 'always' : A[i] + ' left', glyph: w.glyph, value: w.name, bg: mine && g.wid[k] === i ? '#2f5e3a' : null, dim: !mine || !(A[i] > 0) }));
+    out.push({ label: 'fuel ' + Math.round(g.S.fuel[k]), glyph: '◀', value: 'Drive', dim: !mine || g.S.fuel[k] < 1 },
+             { label: 'fuel ' + Math.round(g.S.fuel[k]), glyph: '▶', value: 'Drive', dim: !mine || g.S.fuel[k] < 1 });
+    return out;
+  }
   const app = {
     name: 'tanks',
+    // (Oct 21: "Three or four tanks on a wider board": every board is half again as wide as it is tall, ASP)
+    boardShape: { cellW: 1, cellH: 1 / ASP },
     menu: [{ head: 'Tanks', items: [
-      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); DUELS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Tanks: ' + SET.n, title: 'Two, three or four tanks on each board, every one for itself.', on(){ setMode(SET.n === 4 ? 2 : SET.n + 1, null); } },
+      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s tanks. Two: you and a friend on this device, passing it between turns (Player 1 the leftmost tank, Player 2 the rightmost).', on(){ setMode(null, SET.players === 2 ? 1 : 2); } },
       SND.item,
-      { label: 'Start this board again', title: 'This board\'s ground as it was, both tanks whole.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+      { label: 'Start this board again', title: 'This board\'s ground as it was, every tank whole.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
     ]}],
     cellFar: { light: SKY_B, dark: EARTH },
     itemMinPx: FAR_PX,
@@ -48188,18 +48490,29 @@ const TANKS_APP = (() => {
     cellGrid(c, r){ const P = photoState(c, r); return gridOf(P.T, P.H, P.id); },
     cellItems(c, r){ return itemsOf(viewOf(c, r)); },
     cellTitle(c, r){
-      const T = terrainAt(c, r), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(T));
-      const w = g ? g.S.wind : 0, wind = Math.abs(w) < 0.004 ? 'no wind' : 'wind ' + (w > 0 ? '→ ' : '← ') + Math.round(Math.abs(w) * 100);
-      return 'Tanks — level ' + T.lv + (T.hill ? ', a hill between' : '') + (best != null ? ' · best ' + best + ' left' : '')
-           + (g ? ' · you ' + g.S.hp[0] + ', them ' + g.S.hp[1] + ' · ' + wind + (myTurn(g) ? ' · angle ' + Math.round(g.a[0]) + '°, power ' + Math.round(g.p[0] * 100) + '%' : '')
-                + (g.state === 'over' ? (g.won ? ' · won' : ' · lost') : '') : '');
+      const T = terrainAt(c, r), g = GAMES.get(gkey(c, r)), best = SET.players === 1 ? BEST.get(bestKey(T)) : null;
+      const head = 'Tanks — level ' + T.lv + ', ' + T.n + ' tanks' + (SET.players === 2 ? ', two players' : '') + (T.hill ? ', hills between' : '') + (best != null ? ' · best ' + best + ' left' : '');
+      if (!g) return head;
+      const w = g.S.wind, wind = Math.abs(w) < 0.004 ? 'no wind' : 'wind ' + (w > 0 ? '→ ' : '← ') + Math.round(Math.abs(w) * 100), k = g.turn;
+      return head + ' · ' + g.names.map((nm, i) => nm + ' ' + g.S.hp[i]).join(', ') + ' · ' + wind
+           + (myTurn(g) ? ' · ' + g.names[k] + ': ' + WEAPONS[g.wid[k]].name.toLowerCase() + ', angle ' + Math.round(g.a[k]) + '°, power ' + Math.round(g.p[k] * 100) + '%, fuel ' + Math.round(g.S.fuel[k]) : '')
+           + (g.state === 'over' ? (g.winner >= 0 ? ' · ' + g.names[g.winner] + ' won' : ' · no one left') : '');
     },
-    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); if (!g) return null; const [a, b] = g.S.hp; return (a + 1) / (a + b + 2); },
+    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); if (!g) return null; const you = g.S.hp[0], rest = g.S.hp.slice(1).reduce((s, h) => s + h, 0) / Math.max(1, g.n - 1); return (you + 1) / (you + rest + 2); },
+    statTiles(c, r){ const g = GAMES.get(gkey(c, r)); return g && g.state !== 'over' && LIVE && LIVE.c === c && LIVE.r === r ? tilesOf(g) : null; },
+    // (a tap on the field shuts a row of numbers, bbStatsAway; this row is what you fire with, so it stays up through a game)
+    statsStay(){ const g = liveGame(); return !!g && g.state !== 'over'; },
+    onStatTap(c, r, i){
+      const g = GAMES.get(gkey(c, r)); if (!g || !myTurn(g)) return false;
+      if (i < WEAPONS.length) return chooseWeapon(g, i);
+      if (i === WEAPONS.length || i === WEAPONS.length + 1){ g.drive = { dir: i === WEAPONS.length ? -1 : 1, left: DRIVE_STEP }; g.toldStuck = false; return true; }
+      return false;
+    },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is on the left. Tap where to aim and it fires (the line from the barrel is the power), or drag from your tank and let go; the arrow keys and Enter too.', 4200); }
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is on the left. Tap where to aim and it fires (the line from the barrel is the power), or drag from your tank and let go; arrows aim, A and D drive, 1–6 or the row below choose a shell, Enter fires.', 5200); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'over'; },
     onCellTap(c, r, u, v){
@@ -48208,17 +48521,17 @@ const TANKS_APP = (() => {
       const g = gameAt(c, r);
       if (g.state === 'over'){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
       if (u == null || !myTurn(g)) return true;
-      aimAt(g, u, v); fire(g);
+      aimAt(g, u * ASP, v); fire(g);
       return true;
     },
-    onCellHold(c, r){ restart(c, r); say('The ground as it was, both tanks whole.', 1400); return true; },
-    // a press on your own tank (or near it) and a drag aims, the aim following the finger; letting go fires
+    onCellHold(c, r){ restart(c, r); say('The ground as it was, every tank whole.', 1400); return true; },
+    // a press on the tank whose turn it is (or near it) and a drag aims, the aim following the finger; letting go fires
     claimsPan(u, v){
       const g = liveGame(); if (!myTurn(g) || u == null) return false;
-      const x = g.S.xs[0], y = surfAt(g.S.H, x); if (Math.hypot(u - x, v - y) > 0.12) return false;
+      const x = g.S.xs[g.turn], y = surfAt(g.S.H, x); if (Math.hypot(u * ASP - x, v - y) > 0.12) return false;
       DRAG = { g, moved: false }; return true;
     },
-    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ aimAt(DRAG.g, at.u, at.v); DRAG.moved = true; } return true; },
+    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ aimAt(DRAG.g, at.u * ASP, at.v); DRAG.moved = true; } return true; },
     onPanEnd(){ if (DRAG){ if (DRAG.moved && myTurn(DRAG.g)){ fire(DRAG.g); ateAt = performance.now(); } DRAG = null; } },
     drawIcon(ctx, sz){
       ctx.fillStyle = hex(SKY_T); ctx.fillRect(0, 0, sz, sz);
@@ -48226,12 +48539,13 @@ const TANKS_APP = (() => {
       for (let i = 0; i <= 20; i++){ const x = i / 20; ctx.lineTo(x * sz, (0.66 - 0.1 * Math.sin(x * 5.5 + 0.4) - 0.12 * Math.exp(-(((x - 0.5) / 0.12) ** 2))) * sz); }
       ctx.lineTo(sz, sz); ctx.fill();
       const tank = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect((x - 0.06) * sz, (y - 0.05) * sz, 0.12 * sz, 0.05 * sz); ctx.beginPath(); ctx.arc(x * sz, (y - 0.05) * sz, 0.035 * sz, Math.PI, 0); ctx.fill(); };
-      tank(0.16, 0.62, hex(ME)); tank(0.84, 0.6, hex(FOE));
+      tank(0.16, 0.62, hex(ME)); tank(0.84, 0.6, hex(CPU_COL[0]));
       ctx.strokeStyle = hex(TRAILC); ctx.lineWidth = Math.max(1, sz / 50); ctx.setLineDash([sz / 30, sz / 40]); ctx.beginPath();
       for (let i = 0; i <= 20; i++){ const x = 0.2 + 0.6 * i / 20, y = 0.52 - 1.6 * (x - 0.2) * (0.8 - x) * 1.6; i ? ctx.lineTo(x * sz, y * sz) : ctx.moveTo(x * sz, y * sz); }
       ctx.stroke(); ctx.setLineDash([]);
     },
-    _debug: { SFX, terrainOf, terrainAt, duelOf, duelSoon, shownOf, paint, photoState, photoKey, fxItems, SPECS, PALETTES, slopeAt, aimFor, foeShot, simLand, launch, flyStep, blastAt, surfAt, fresh, gameAt, fire, aimAt, stepGame, starsOf, itemsOf, viewOf,
+    _debug: { SFX, terrainOf, terrainAt, duelOf, duelNew, duelStep, duelSoon, shownOf, viewAt, paint, photoState, photoKey, fxItems, SPECS, PALETTES, slopeAt, aimFor, foeShot, cpuPlan, simLand, launch, flyStep, blastAt, cut, dirtAt, simShot,
+              surfAt, driveBy, fresh, gameAt, fire, aimAt, chooseWeapon, stepGame, starsOf, itemsOf, viewOf, tilesOf, setMode, SET, WEAPONS, WID, ASP, FUEL,
               boardIdx, levelAt, LV, GAMES, BEST, DUELS, TERRAINS, myTurn, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
