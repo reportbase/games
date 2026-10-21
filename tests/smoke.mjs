@@ -3567,7 +3567,7 @@ try {
   // steers; a round won counts and starts the next maze; a match won gives stars and a best; two players each have their keys;
   // a board no one plays moves; the drawing.
   {
-    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); A._debug.SET.players = 1; });
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, n: 2, powers: false, aim: true }); });
     await page.waitForTimeout(1500);
     current = 'tankmaze';
     const before = failures.length;
@@ -3659,6 +3659,50 @@ try {
       const kinds = k => it.filter(i => i.kind === k);
       return { done: E.done, T: E.T, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, guns: kinds('mzGun').length,
                yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shot: kinds('mzShot').length, fire: it2.filter(i => i.kind === 'mzFire').length }; }, fc);
+    // (Oct 21: "1,2,3"): three or four tanks, the power-ups one by one, a crate dropped and taken, the aim line, their drawing
+    const more = await page.evaluate(() => { const D = window.getFieldApp()._debug, out = {};
+      out.sizes = [2, 3, 4].map(n => D.makeMaze(5, 1, 0, n).m);
+      const L4 = D.makeMaze(91, 3, 0, 4), cells = L4.spawn.map(p => D.cellOf(L4, p.x, p.y)); out.spawn4 = new Set(cells).size;
+      out.apart4 = Math.min(...cells.flatMap((a, i) => cells.slice(i + 1).map(b => D.bfs(L4, a)[b])));
+      out.rounds = [3, 4].map(n => { let ended = 0, used = 0, taken = 0;
+        for (let i = 0; i < 5; i++){ const L = D.makeMaze(400 + i * 13, 5, 0, n), G = D.roundNew(L, Array(n).fill('cpu'), i + 7, true);
+          while (!G.over) D.stepRound(G, G.tanks.map((_, k) => D.cpuCmd(G, k)), D.STEP);
+          if (G.t < 59.9) ended++; taken += G.crates.filter(C => C.t1 < Infinity).length; used += G.sounds.filter(e => !e.startsWith('crate') && e !== 'burst').length; }
+        return { n, ended, taken, used }; });
+      // each power on a maze, by hand: your tank in a cell with a wall to its east, the other far off and still
+      const L = D.makeMaze(77, 3, 0), N = L.m * L.m, k0 = [...L.E.keys()].find(k => L.E[k] && k % L.m < L.m - 1), [cx, cy] = D.centre(L, k0), kf = (k0 + Math.floor(N / 2)) % N;
+      const setup = () => { const G = D.roundNew(L, ['you', 'you'], 1, false), [fx, fy] = D.centre(L, kf); Object.assign(G.tanks[0], { x: cx, y: cy, h: 1e-6, cool: 0 }); Object.assign(G.tanks[1], { x: fx, y: fy }); return G; };
+      const idle = [null, null];
+      let G = setup(); D.firePower(G, 0, 'laser');                     // (at the wall beside you: it comes straight back)
+      out.laser = { lasers: G.lasers.length, self: G.booms.length === 1 && G.booms[0].k === 0 && G.booms[0].by === 0 };
+      G = setup(); G.tanks[0].h = Math.PI; D.firePower(G, 0, 'frag'); G.tanks[0].alive = false; for (let n = 0; n < 70; n++) D.stepRound(G, idle, D.STEP);
+      out.frag = { shards: G.shots.filter(b => b.shard).length, burst: G.shots.some(b => b.frag && (b.burst || b.hit)) };
+      G = setup(); D.firePower(G, 0, 'spread'); out.spread = G.shots.length;
+      G = setup(); D.firePower(G, 0, 'mine'); const q = [0, 1, 2].find(q => q !== k0 && q !== kf), [qx, qy] = D.centre(L, q); G.tanks[0].x = qx; G.tanks[0].y = qy;
+      for (let n = 0; n < 90; n++) D.stepRound(G, idle, D.STEP); const armed = G.tanks[1].alive && G.mines[0].end === Infinity;
+      G.tanks[1].x = cx; G.tanks[1].y = cy; D.stepRound(G, idle, D.STEP);
+      out.mine = { armed, blew: !G.tanks[1].alive && G.mines[0].end < Infinity, owner: G.tanks[0].alive };
+      G = setup(); D.firePower(G, 0, 'homing'); const M = G.missiles[0];
+      while (M.end > G.t && G.tanks[1].alive) D.stepRound(G, idle, D.STEP);
+      out.homing = { hit: !G.tanks[1].alive, t: +G.t.toFixed(2) };
+      // a crate: dropped in a few seconds, taken by driving over it, its power held
+      G = D.roundNew(L, ['you', 'you'], 3, true); for (let n = 0; n < 60 * 6 && !G.crates.length; n++) D.stepRound(G, idle, D.STEP);
+      const C = G.crates[0]; if (C){ G.tanks[0].x = C.x; G.tanks[0].y = C.y; D.stepRound(G, idle, D.STEP); }
+      out.crate = { dropped: !!C, at: C ? +C.t0.toFixed(2) : null, held: G.tanks[0].power, taken: !!C && C.t1 < Infinity };
+      // the aim line: from the tank along its gun, more pieces of the way at level 1 than at level 5
+      out.aim = [1, 5].map(lv => { const g = D.fresh(0, 0); g.G = D.roundNew(D.makeMaze(33, lv, 0), ['you', 'cpu'], 1, false); g.state = 'play';
+        const A = D.aimOf(g)[0], t = g.G.tanks[0]; if (!A) return null; const a = Math.atan2(A.P[4] - A.P[1], A.P[3] - A.P[0]);
+        return { segs: A.P.length / 3 - 1, from: Math.hypot(A.P[0] - t.x, A.P[1] - t.y), dir: Math.abs(Math.atan2(Math.sin(a - t.h), Math.cos(a - t.h))) }; });
+      // and all of it drawn
+      G = setup(); G.crates.push({ x: 0.5, y: 0.5, kind: 0, t0: 0, t1: Infinity }); D.firePower(G, 0, 'mine'); D.firePower(G, 1, 'homing'); D.stepRound(G, idle, D.STEP); D.firePower(G, 0, 'laser');
+      const V = { L, tanks: G.tanks, shots: G.shots, booms: G.booms, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles, t: G.t, seats: ['you', 'you'], cols: [1, 2], aim: [{ k: 0, P: D.trace(L, cx, cy, 0.3, 0.5, 2), col: 3 }] };
+      const it = D.itemsOf(V); out.drawn = ['mzCrate', 'mzMine', 'mzBeam', 'mzMissile', 'mzDot'].filter(k => it.some(i => i.kind === k));
+      return out; });
+    const mo = more, moreOk = mo.sizes.join() === '5,6,7' && mo.spawn4 === 4 && mo.apart4 >= 2 && mo.rounds.every(x => x.ended === 5) && mo.rounds.reduce((n, x) => n + x.taken, 0) >= 1
+      && mo.rounds.reduce((n, x) => n + x.used, 0) >= 1 && mo.laser.lasers === 1 && mo.laser.self && mo.frag.shards === 14 && mo.frag.burst && mo.spread === 3
+      && mo.mine.armed && mo.mine.blew && mo.mine.owner && mo.homing.hit && mo.crate.dropped && mo.crate.at < 5 && mo.crate.held && mo.crate.taken
+      && mo.aim[0] && mo.aim[1] && mo.aim[0].segs > mo.aim[1].segs && mo.aim[1].segs === 1 && mo.aim[0].from < 1e-9 && mo.aim[0].dir < 1e-6 && mo.drawn.length === 5;
+    if (!moreOk) failures.push(`[${current}: more] ${JSON.stringify(more)}`);
     const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '5,7,9' && r.apart >= 2
       && r.way.inside && r.way.len > 0.99 && r.way.bounces > 3 && r.back && r.self && r.self.k === 0 && r.self.by === 0
       && r.rounds.every(x => x.ended === 6 && x.hits >= 4) && r.rounds.reduce((n, x) => n + x.bank, 0) >= 3 && r.dodge
@@ -3669,7 +3713,7 @@ try {
       && live.two && live.two.seats === 'you,p2' && live.two.moved2 > 0.02 && live.two.moved1 < 0.005
       && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.fire >= 1;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side; a shell's way bounced ${r.way.bounces} times inside the board and came back off a wall; your own shell killed you at ${r.self && r.self.t} s; computer rounds ended with ${r.rounds.map(x => x.hits + ' hits, ' + x.bank + ' off walls').join('; ')}; a computer tank dodged; a real key drove, a real click fired, a real drag steered; a round won counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; two players on their own keys; a board no one plays moved)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side; a shell's way bounced ${r.way.bounces} times inside the board and came back off a wall; your own shell killed you at ${r.self && r.self.t} s; computer rounds ended with ${r.rounds.map(x => x.hits + ' hits, ' + x.bank + ' off walls').join('; ')}; a computer tank dodged; a real key drove, a real click fired, a real drag steered; a round won counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; two players on their own keys; a board no one plays moved; mazes ${mo.sizes.join('/')} for 2/3/4 tanks, 3- and 4-tank rounds ended with ${mo.rounds.map(x => x.taken).join('/')} crates taken and ${mo.rounds.map(x => x.used).join('/')} powers used; a laser came back off the wall, a frag burst into ${mo.frag.shards}, a spread of ${mo.spread}, a mine blew, a missile found its tank in ${mo.homing.t} s, a crate dropped at ${mo.crate.at} s and was taken; the aim line ${mo.aim.map(a => a && a.segs).join(' pieces at level 1, ')} at level 5)`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
