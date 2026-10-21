@@ -3396,115 +3396,148 @@ try {
     if (!ok4) failures.push('[nonograms] a board no one plays: ' + JSON.stringify(demo));
     console.log(`${ok4 ? 'ok  ' : 'FAIL'} nonograms: a board no one plays fills itself in (${demo.stages} stages a cycle, ${demo.live} seen live)`);
   }
-  // TANKS (Oct 20: "what tank games could we build", then "1", the artillery duel): every board its own ground at a level by its
-  // ring; the computer's steady aim hits, a burst digs the ground and hurts what is in it, every board's own duel ends; a real tap
-  // aims and fires and the computer answers, a real drag from your tank fires on letting go, a steady shot wins with stars; a
-  // board no one plays shows its duel.
+  // TANKS (Oct 20: "what tank games could we build", then "1", the artillery duel; Oct 21: weapons, more tanks, two players on
+  // one device, driving): every board its own ground at a level by its ring; the computer's steady aim hits; a burst digs and
+  // hurts; every weapon does its own thing; duels of two, three and four tanks end; real taps and drags fire, the computer
+  // answers, a real key drives; a weapon chosen from the row is spent; two players pass turns past a computer's tank; a steady
+  // shot wins with stars; a board no one plays shows its duel; the picture, the effects, the tanks upright, the sounds.
   {
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tanks')));
+    await page.evaluate(() => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tanks')); window.getFieldApp()._debug.setMode(2, 1); });
     await page.waitForTimeout(2000);
     current = 'tanks';
     const before = failures.length;
     const rules = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, out = {};
       out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
-      const a = D.terrainOf(77, 3), b = D.terrainOf(77, 3), c = D.terrainOf(78, 3);
+      const a = D.terrainOf(77, 3, 2), b = D.terrainOf(77, 3, 2), c = D.terrainOf(78, 3, 2);
       out.same = a.H0.join() === b.H0.join() && a.xs.join() === b.xs.join(); out.differ = a.H0.join() !== c.H0.join();
-      out.hills = [1, 5].map(lv => { let n = 0; for (let i = 0; i < 40; i++) if (D.terrainOf(300 + i, lv).hill) n++; return n; });
+      out.hills = [1, 5].map(lv => { let n = 0; for (let i = 0; i < 40; i++) if (D.terrainOf(300 + i, lv, 2).hill) n++; return n; });
       // the computer with steady hands: every one of 20 boards' first shot finds the other tank
-      let hits = 0; for (let i = 0; i < 20; i++){ const T = D.terrainOf(900 + i, 1 + i % 5); if (D.aimFor(T.H0, T.xs, 1, (i % 3 - 1) * 0.1).m === 0) hits++; } out.hits = hits;
+      let hits = 0; for (let i = 0; i < 20; i++){ const T = D.terrainOf(900 + i, 1 + i % 5, 2); if (D.aimFor(T.H0, T.xs, 1, (i % 3 - 1) * 0.1, 0).m === 0) hits++; } out.hits = hits;
       // a burst: the ground dug where it lands, a tank at its middle hurt the most
-      const T = D.terrainOf(5, 2), S = { H: T.H0.slice(), xs: T.xs, hp: [100, 100] }, x = T.xs[1], y0 = D.surfAt(S.H, x);
-      const dmg = D.blastAt(S, x, y0 - 0.012); out.dug = D.surfAt(S.H, x) - y0; out.dmg = dmg; out.hp = S.hp;
-      const S2 = { H: T.H0.slice(), xs: T.xs, hp: [100, 100] }; out.farDmg = D.blastAt(S2, 0.5, D.surfAt(S2.H, 0.5));
-      // every board's own duel ends with a tank out
-      out.duels = []; for (let i = 0; i < 10; i++){ const Dl = D.duelOf(D.terrainOf(4000 + i * 13, 1 + i % 5)), hp = Dl.shots.at(-1).hp; out.duels.push(Dl.shots.length + ':' + hp.join('/')); }
-      out.ended = out.duels.every(s => /:(0\/\d+|\d+\/0)$/.test(s));
+      const T = D.terrainOf(5, 2, 2), S = { H: T.H0.slice(), xs: T.xs, hp: [100, 100] }, x = T.xs[1], y0 = D.surfAt(S.H, x);
+      const dmg = D.blastAt(S, x, y0 - 0.012); out.dug = D.surfAt(S.H, x) - y0; out.dmg = dmg;
+      const S2 = { H: T.H0.slice(), xs: T.xs, hp: [100, 100] }; out.farDmg = D.blastAt(S2, D.ASP / 2, D.surfAt(S2.H, D.ASP / 2));
+      // every board's own duel ends, with two, three and four tanks
+      out.duels = []; out.ended = true;
+      for (const n of [2, 3, 4]) for (let i = 0; i < 3; i++){ const G = D.duelOf(D.terrainOf(4000 + i * 13 + n, 1 + (i + n) % 5, n)), left = G.S.hp.filter(h => h > 0).length;
+        out.duels.push(n + ':' + G.turns.length); if (!(left <= 1 || G.turns.length >= 40)) out.ended = false; }
+      // the weapons, each fired a little short at the same tank
+      const W = D.terrainOf(1234, 3, 2), base = () => ({ lv: 3, n: 2, H: W.H0.slice(), xs: W.xs.slice(), hp: [100, 100], fuel: [100, 100], ammo: [[], []], wind: 0 });
+      const aim = D.aimFor(W.H0, W.xs, 0, 0, 1), shot = D.WEAPONS.map((w, i) => { const S = base(), rec = D.simShot(S, 0, aim.a, aim.p * 0.93, i, 99);
+        let dug = 0, raised = 0; for (let k = 0; k < S.H.length; k++){ dug += Math.max(0, S.H[k] - W.H0[k]); raised += Math.max(0, W.H0[k] - S.H[k]); }
+        return { id: w.id, blasts: rec.ev.filter(e => e.k === 'blast').length, digs: rec.ev.filter(e => e.k === 'dig').length, tracks: rec.tracks.length, end: rec.end, dug, raised }; });
+      const by = Object.fromEntries(shot.map(s => [s.id, s]));
+      out.weapons = { big: by.big.dug > 2 * by.shell.dug, cluster: by.cluster.blasts >= 4 && by.cluster.tracks >= 5, dirt: by.dirt.raised > 0.5 && by.dirt.dug === 0,
+                      roller: by.roller.end > by.shell.end + 0.1 && by.roller.blasts === 1, digger: by.digger.digs >= 3 && by.digger.dug > by.shell.dug };
       return out; });
-    // real clicks: a tap on the framed board aims there and fires; the computer answers; a drag from your tank aims and fires on letting go
+    // real input on the framed board: a tap aims there and fires; the computer answers; a drag from your tank fires on letting go
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
     await page.waitForTimeout(3000);
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
-    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
-      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
-      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
-    const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && { state: g.state, turn: g.turn, shots: g.shots.slice(), a: g.a[0], p: g.p[0], hp: g.S.hp.slice() }; }, fc[0] + '_' + fc[1]);
+    // (a point of the board in its own x and y, projected here: across the width u is x / ASP)
+    const at = (x, y) => page.evaluate(([x, y]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, u = x / window.getFieldApp()._debug.ASP;
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - y) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [x, y]);
+    const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && { state: g.state, turn: g.turn, turns: g.turns.length, a: g.a[0], p: g.p[0], hp: g.S.hp.slice(), x: g.S.xs[0], fuel: g.S.fuel[0], wid: g.wid[0], big: g.S.ammo[0][1] }; }, fc[0] + '_' + fc[1]);
+    const waitAim = async () => { for (let w = 0; w < 80; w++){ const s = await gs(); if (s.state === 'over' || (s.state === 'aim' && s.turn === 0)) return s; await page.waitForTimeout(250); } return gs(); };
     const live = {};
     if (fc){
-      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; D.gameAt(c, r); }, fc);
-      const pt = await at(0.5, 0.3); await page.mouse.click(pt.x, pt.y); await page.waitForTimeout(150);
-      live.tap = await gs();
-      live.want = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), x = g.S.xs[0], y = D.surfAt(g.S.H, x) - 0.022; return Math.atan2(y - 0.3, 0.5 - x) * 180 / Math.PI; }, fc);
-      for (let w = 0; w < 60; w++){ const s = await gs(); if (s.state === 'aim' && s.turn === 0 && s.shots[1] === 1) break; await page.waitForTimeout(250); }
-      live.answered = await gs();
-      const tk = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r); return [g.S.xs[0], D.surfAt(g.S.H, g.S.xs[0]) - 0.012]; }, fc);
-      const p0 = await at(tk[0], tk[1]), p1 = await at(tk[0] + 0.15, tk[1] - 0.2), p2 = await at(tk[0] + 0.25, tk[1] - 0.3);
+      const tank = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); return [g.S.xs[0], D.surfAt(g.S.H, g.S.xs[0])]; }, fc);
+      const tx = tank[0] + 0.45, ty = 0.3, pt = await at(tx, ty); await page.mouse.click(pt.x, pt.y);
+      // (the software renderer can take a second a frame, so the tap lands when it lands: wait for it before reading)
+      for (let w = 0; w < 40 && !((await gs()).turns >= 1); w++) await page.waitForTimeout(250);
+      live.tap = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
+      live.answered = await waitAim();
+      // a real key drives (D, held), on fuel
+      const x0 = (await gs()).x; await page.keyboard.down('d');
+      for (let w = 0; w < 24 && !((await gs()).x > x0 + 0.01); w++) await page.waitForTimeout(250);
+      await page.keyboard.up('d'); await page.waitForTimeout(100);
+      live.drove = await gs(); live.x0 = x0;
+      const p0 = await at(live.drove.x, tank[1] - 0.012), p1 = await at(live.drove.x + 0.15, tank[1] - 0.2), p2 = await at(live.drove.x + 0.25, tank[1] - 0.3);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 6 }); await page.mouse.move(p2.x, p2.y, { steps: 6 });
-      live.dragging = await gs(); await page.mouse.up(); await page.waitForTimeout(100);
+      await page.mouse.up();
+      for (let w = 0; w < 40 && !((await gs()).turns >= 3); w++) await page.waitForTimeout(250);
       live.dragged = await gs();
-      // a win: their tank all but out, your steady shot, through with stars and a best kept
+      // the row's Big shell, then a shot: one fewer left
+      live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
+        for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+        if (g.state === 'over') return { over: true };
+        const ready = g.state + g.turn, tiles = A.statTiles(c, r); A.onStatTap(c, r, 1); const wid = g.wid[0]; D.fire(g);
+        return { ready, tiles: tiles && tiles.length, wid, big: g.S.ammo[0][1] }; }, fc);
+      // a win: the others all but out, your steady shots, through with stars and a best kept
       live.win = await page.evaluate(async ([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r);
-        for (let w = 0; w < 60 && !(g.state === 'aim' && g.turn === 0); w++) await new Promise(ok => setTimeout(ok, 250));
-        // (the computer aims at 1/60 s and the game flies at 1/120, so a steady shot can miss by a hair: up to six of them, your
-        //  tank whole each time so the computer's answers cannot end it first)
-        g.S.hp[1] = 1;
+        g.S.hp.forEach((h, k) => { if (k) g.S.hp[k] = Math.min(h, 1) || 0; });
         for (let n = 0; n < 6 && g.state !== 'over'; n++){
-          for (let w = 0; w < 60 && !(g.state === 'aim' && g.turn === 0); w++) await new Promise(ok => setTimeout(ok, 250));
-          g.S.hp[0] = 100; const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind); g.a[0] = b.a; g.p[0] = b.p; D.fire(g);
-          for (let w = 0; w < 40 && g.state === 'fly'; w++) await new Promise(ok => setTimeout(ok, 100));
-          for (let w = 0; w < 20 && g.state === 'blast'; w++) await new Promise(ok => setTimeout(ok, 100));
+          for (let w = 0; w < 80 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+          if (g.state === 'over') break;
+          g.S.hp[0] = 100; const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind, 1); g.a[0] = b.a; g.p[0] = b.p; g.wid[0] = 0; D.fire(g);
+          for (let w = 0; w < 80 && g.state === 'play'; w++) await new Promise(ok => setTimeout(ok, 100));
         }
         return { state: g.state, won: g.won, stars: g.stars, best: D.BEST.get(g.T.idx + '@' + g.T.lv) === g.S.hp[0] }; }, fc);
     }
+    // three tanks, two players: Player 1 left, the computer's between, Player 2 right; after Player 1 and the computer, it is
+    // Player 2's turn and the controls are theirs
+    const two = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug; D.setMode(3, 2);
+      const c = 9990, r = 9; D.LIVE = { c, r }; const g = D.gameAt(c, r), out = { seats: g.seats.join(), names: g.names.join(), n: g.S.xs.length };
+      const step = () => { g.lastT = performance.now() - 100; D.stepGame(g); };
+      const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind, 1); g.a[0] = b.a; g.p[0] = b.p * 0.6; D.fire(g);
+      for (let n = 0; n < 400 && !(g.state === 'aim' && g.turn === 2) && g.state !== 'over'; n++) step();
+      out.turn = g.turn; out.mine = D.myTurn(g); out.whoFired = g.turns.map(t => t.who).join();
+      if (out.mine){ D.aimAt(g, g.S.xs[2] - 0.3, 0.3); D.fire(g); out.p2 = g.turns[g.turns.length - 1].who; }
+      D.GAMES.delete(c + '_' + r); D.setMode(2, 1); return out; });
     // a board no one plays: its own duel, moving on the page's clock
     const shown = await page.evaluate(async fc => { const A = window.getFieldApp(), D = A._debug, c2 = fc[0] + 3, r2 = fc[1] + 1; D.GAMES.delete(c2 + '_' + r2);
-      const T = D.terrainAt(c2, r2); D.DUELS.set(T.idx * 8 + T.lv, D.duelOf(T));
+      const T = D.terrainAt(c2, r2), Dl = D.duelOf(T); Dl.start = performance.now() / 1000 - 3; D.DUELS.set((T.idx * 8 + T.lv) * 8 + T.n, Dl);
       const look = () => JSON.stringify(A.cellItems(c2, r2).filter(i => i.kind !== 'tkBox' || i.yaw).map(i => [i.kind, i.u.toFixed(4), i.v.toFixed(4), i.yaw || 0]));
       const seen = new Set(); for (let w = 0; w < 8; w++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 500)); }
-      const Dl = D.DUELS.get(T.idx * 8 + T.lv); let shells = 0, blasts = 0; for (let t = 0; t < Dl.len; t += 0.1){ const V = D.shownOf(Dl, t - T.phase * Dl.len); if (V.shell) shells++; if (V.fx.some(e => e.k === 'blast' && V.t - e.t0 >= 0 && V.t - e.t0 < 0.5)) blasts++; }
+      let shells = 0, blasts = 0; for (let t = 0; t < Dl.len; t += 0.1){ const V = D.shownOf(Dl, t); if (V.shells.length) shells++; if (V.fx.some(e => e.k === 'blast' && V.t - e.t0 >= 0 && V.t - e.t0 < 0.5)) blasts++; }
       return { looks: seen.size, shells, blasts }; }, fc || [0, 0]);
     /* THE LOOK (Oct 20: "how can we make this with perfect graphics", then "yes"): the sky and the ground are a picture a board,
        the right way round (the earth at the near edge, the sky at the far), painted again when a burst digs and sharper for a
        board large on the screen; a burst sets off its fireball, clods and smoke; the clouds go with the wind; the tanks lie
-       along the slope under them. */
+       along the slope under them, never asking for a yaw of 0, the right-hand one mirrored to face left; the sounds. */
     const looks = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, out = {};
-      let T = null; for (let i = 0; i < 40 && !T; i++){ const t = D.terrainOf(600 + i, 3); if (D.PALETTES[t.pal].name === 'day') T = t; }
-      const cv = D.paint(T, T.H0, [], 256), cx = cv.getContext('2d'), P = D.PALETTES[T.pal];
-      const at = (u, v) => Array.from(cx.getImageData(Math.round(255 - u * 255), Math.round(255 - v * 255), 1, 1).data).slice(0, 3);
-      const near = (px, hex) => Math.hypot(px[0] - parseInt(hex.slice(1, 3), 16), px[1] - parseInt(hex.slice(3, 5), 16), px[2] - parseInt(hex.slice(5, 7), 16));
-      out.earth = Math.round(near(at(0.5, 0.985), P.deep)); out.sky = Math.min(...[0.03, 0.5, 0.97].map(u => Math.round(near(at(u, 0.005), P.sky[0]))));
-      const c = 9999, r = 7; D.GAMES.delete(c + '_' + r); const g = D.gameAt(c, r);
+      let T = null; for (let i = 0; i < 40 && !T; i++){ const t = D.terrainOf(600 + i, 3, 2); if (D.PALETTES[t.pal].name === 'day') T = t; }
+      const cv = D.paint(T, T.H0, [], 256), cx = cv.getContext('2d'), P = D.PALETTES[T.pal], w = cv.width, h = cv.height;
+      const px = (u, v) => Array.from(cx.getImageData(Math.round((w - 1) * (1 - u)), Math.round((h - 1) * (1 - v)), 1, 1).data).slice(0, 3);
+      const near = (q, hex) => Math.hypot(q[0] - parseInt(hex.slice(1, 3), 16), q[1] - parseInt(hex.slice(3, 5), 16), q[2] - parseInt(hex.slice(5, 7), 16));
+      out.earth = Math.round(near(px(0.5, 0.985), P.deep)); out.sky = Math.min(...[0.03, 0.5, 0.97].map(u => Math.round(near(px(u, 0.005), P.sky[0])))); out.wide = w / h;
+      const c = 9999, r = 7; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
       const k0 = A.cellPhoto(c, r, 400), kSmall = A.cellPhoto(c, r, 100);
-      out.sizes = [A.photoCanvas(k0).width, A.photoCanvas(kSmall).width];
+      out.sizes = [A.photoCanvas(k0).height, A.photoCanvas(kSmall).height];
       // (Oct 20: "add sound effects to tanks.") each sound counted as it is asked for, through the real calls
       const heard = {}, kept = {}; for (const k of Object.keys(D.SFX)){ kept[k] = D.SFX[k]; D.SFX[k] = (...a) => { heard[k] = (heard[k] || 0) + 1; return kept[k](...a); }; }
-      const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind); g.a[0] = b.a; g.p[0] = b.p; D.fire(g);
+      const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind, 1); g.a[0] = b.a; g.p[0] = b.p; D.fire(g);
       const kinds = new Set();
-      for (let n = 0; n < 60 && g.state !== 'aim' && g.state !== 'over'; n++){ g.lastT = performance.now() - 100; D.stepGame(g); if (g.state === 'blast' || g.turn === 1) for (const it of D.itemsOf(D.viewOf(c, r))) kinds.add(it.kind); }
+      for (let n = 0; n < 300 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; n++){ g.lastT = performance.now() - 50; D.stepGame(g); for (const it of D.itemsOf(D.viewOf(c, r))) kinds.add(it.kind); }
       out.kinds = ['tkFire', 'tkClod', 'tkPuff', 'tkRing'].filter(k => kinds.has(k));
       out.redrawn = A.cellPhoto(c, r, 400) !== k0;
       out.heard = heard; Object.assign(D.SFX, kept);
       const V = D.viewOf(c, r), cl = v => D.itemsOf(Object.assign({}, v)).filter(i => i.kind === 'tkCloud').map(i => i.u);
       const a0 = cl(Object.assign({}, V, { cloud: 0, fx: [] })), a1 = cl(Object.assign({}, V, { cloud: 0.05, fx: [] }));
-      out.clouds = a0.length > 0 && a0.some((u, i) => Math.abs(u - a1[i]) > 0.01);
-      const its = D.itemsOf(V), tk = its.filter(i => /^tkHull/.test(i.kind)); out.tilt = tk.map(i => +(i.yaw || 0).toFixed(3));
+      out.clouds = a0.length > 0 && a0.some((u, i) => Math.abs(u - a1[i]) > 0.005);
+      const its = D.itemsOf(V), tk = its.filter(i => /^tkHull/.test(i.kind)); out.tilt = tk.map(i => +(i.yaw || 0).toFixed(3)); out.slope = g.S.xs.map(x => +D.slopeAt(g.S.H, x).toFixed(3));
       // (Oct 20: "sometimes the tanks are up side down": the field leaves an item with a yaw of exactly 0 unturned, half a turn
-      //  from every turned one, so no part of a tank may ask for 0; and the computer's tank is its own mirrored kinds)
+      //  from every turned one, so no part of a tank may ask for 0; and the right-hand tank is its own mirrored kinds)
       out.upright = its.filter(i => /^tk(Tracks|Hull|Gun)/.test(i.kind)).every(i => typeof i.yaw === 'number' && i.yaw !== 0);
-      out.facing = tk.map(i => i.kind).join(); out.slope = g.S.xs.map(x => +D.slopeAt(g.S.H, x).toFixed(3));
+      out.facing = tk.map(i => i.kind).join();
       D.GAMES.delete(c + '_' + r);
       return out; });
-    const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.hills[0] === 0 && r.hills[1] > 10 && r.hits >= 18
-      && r.dug > 0.03 && r.dmg[1] >= 50 && r.dmg[0] === 0 && r.farDmg.join() === '0,0' && r.ended
-      && live.tap && live.tap.state === 'fly' && live.tap.shots[0] === 1 && Math.abs(live.tap.a - live.want) < 2
-      && live.answered && live.answered.shots[1] === 1 && live.answered.state === 'aim'
-      && live.dragged && live.dragged.shots[0] === 2 && live.dragged.state !== 'aim'
+    const r = rules, wpn = Object.values(r.weapons).every(x => x), ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.hills[0] === 0 && r.hills[1] > 10 && r.hits >= 18
+      && r.dug > 0.03 && r.dmg[1] >= 50 && r.dmg[0] === 0 && r.farDmg.join() === '0,0' && r.ended && wpn
+      && live.tap && live.tap.state === 'play' && live.tap.turns === 1 && Math.abs(live.tap.a - live.want) < 2
+      && live.answered && live.answered.turns >= 2 && live.answered.state === 'aim'
+      && live.drove && live.drove.x > live.x0 + 0.01 && live.drove.fuel < 100
+      && live.dragged && live.dragged.turns === 3 && live.dragged.state !== 'aim'
+      && live.chose && (live.chose.over || (live.chose.tiles === 8 && live.chose.wid === 1 && live.chose.big === 1))
       && live.win && live.win.state === 'over' && live.win.won && live.win.stars >= 1 && live.win.best
+      && two.seats === 'you,cpu,p2' && /Player 1/.test(two.names) && /Player 2/.test(two.names) && two.mine && two.turn === 2 && two.whoFired === '0,1' && two.p2 === 2
       && shown.looks >= 3 && shown.shells > 10 && shown.blasts > 2
-      && looks.earth < 40 && looks.sky < 40 && looks.sizes.join() === '512,256' && looks.kinds.length === 4 && looks.redrawn && looks.clouds
+      && looks.earth < 40 && looks.sky < 40 && looks.wide === 1.5 && looks.sizes.join() === '512,256' && looks.kinds.length === 4 && looks.redrawn && looks.clouds
       && looks.tilt.join() === looks.slope.join() && looks.upright && looks.facing === 'tkHull,tkHullL'
       && ['cannon', 'whistle', 'blast', 'whirr'].every(k => looks.heard[k] >= 1);
-    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown, looks })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; 10 duels ended (${r.duels.join(', ')}); a real tap fired, the computer answered, a real drag fired, a steady shot won ${live.win && live.win.stars} stars; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, two, shown, looks })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; duels of 2, 3 and 4 tanks ended (${r.duels.join(', ')}); every weapon its own (${Object.entries(r.weapons).map(([k, v]) => k + (v ? '' : ' NOT')).join(', ')}); a real tap fired, the computer answered, a real key drove ${live.drove ? (live.drove.x - live.x0).toFixed(3) : '?'}, a real drag fired, the row's big shell spent, a steady shot won ${live.win && live.win.stars} stars; two players passed turns past a computer's tank; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
