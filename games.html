@@ -48526,6 +48526,9 @@ const TANKS_APP = (() => {
     },
     onCellHold(c, r){ restart(c, r); say('The ground as it was, every tank whole.', 1400); return true; },
     // a press on the tank whose turn it is (or near it) and a drag aims, the aim following the finger; letting go fires
+    // (and the press stays the drag's however long the finger rests first: on a slow frame the field's hold timer went off
+    //  before the finger's first moves were read, took the press back for the view, and the drag never aimed or fired, Oct 21)
+    keepsPress: true,
     claimsPan(u, v){
       const g = liveGame(); if (!myTurn(g) || u == null) return false;
       const x = g.S.xs[g.turn], y = surfAt(g.S.H, x); if (Math.hypot(u * ASP - x, v - y) > 0.12) return false;

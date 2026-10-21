@@ -467,8 +467,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     about the best, the one landing nearest your tank and not on itself; then its hands' spread. With no spread its first
     shot hit on 20 of 20 boards. About 1 ms a shot.
   - **Controls**: a tap aims toward it (power by the distance, full at `AIM_FULL` 0.42) and fires; a press on your tank and a
-    drag aims as the finger goes and fires on letting go (`claimsPan`, the tap after it eaten); arrows (or WASD) turn and
-    push, Enter or Space fires. The aim line from the barrel shows the power; your last shot's path stays faint.
+    drag aims as the finger goes and fires on letting go (`claimsPan`, the tap after it eaten; `keepsPress`, since on a slow
+    frame the field's hold timer took the press back before the finger's moves were read); arrows turn and push (W and S
+    push too), A and D drive, 1–6 choose a shell, Enter or Space fires. The aim line from the barrel shows the power; your last shot's path stays faint.
   - **Through**: stars by the health left on a win (`starsOf`: 70 three, 35 two), the most left kept a board (localStorage
     `tanks.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold or Start this board again
     deals it afresh.

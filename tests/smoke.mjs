@@ -3443,22 +3443,27 @@ try {
     const live = {};
     if (fc){
       const tank = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); return [g.S.xs[0], D.surfAt(g.S.H, g.S.xs[0])]; }, fc);
-      const tx = tank[0] + 0.45, ty = 0.3, pt = await at(tx, ty); await page.mouse.click(pt.x, pt.y); await page.waitForTimeout(150);
+      const tx = tank[0] + 0.45, ty = 0.3, pt = await at(tx, ty); await page.mouse.click(pt.x, pt.y);
+      // (the software renderer can take a second a frame, so the tap lands when it lands: wait for it before reading)
+      for (let w = 0; w < 40 && !((await gs()).turns >= 1); w++) await page.waitForTimeout(250);
       live.tap = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
       live.answered = await waitAim();
       // a real key drives (D, held), on fuel
-      const x0 = (await gs()).x; await page.keyboard.down('d'); await page.waitForTimeout(700); await page.keyboard.up('d'); await page.waitForTimeout(100);
+      const x0 = (await gs()).x; await page.keyboard.down('d');
+      for (let w = 0; w < 24 && !((await gs()).x > x0 + 0.01); w++) await page.waitForTimeout(250);
+      await page.keyboard.up('d'); await page.waitForTimeout(100);
       live.drove = await gs(); live.x0 = x0;
       const p0 = await at(live.drove.x, tank[1] - 0.012), p1 = await at(live.drove.x + 0.15, tank[1] - 0.2), p2 = await at(live.drove.x + 0.25, tank[1] - 0.3);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 6 }); await page.mouse.move(p2.x, p2.y, { steps: 6 });
-      await page.mouse.up(); await page.waitForTimeout(100);
+      await page.mouse.up();
+      for (let w = 0; w < 40 && !((await gs()).turns >= 3); w++) await page.waitForTimeout(250);
       live.dragged = await gs();
       // the row's Big shell, then a shot: one fewer left
       live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
-        for (let w = 0; w < 80 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+        for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
         if (g.state === 'over') return { over: true };
-        const tiles = A.statTiles(c, r); A.onStatTap(c, r, 1); const wid = g.wid[0]; D.fire(g);
-        return { tiles: tiles && tiles.length, wid, big: g.S.ammo[0][1] }; }, fc);
+        const ready = g.state + g.turn, tiles = A.statTiles(c, r); A.onStatTap(c, r, 1); const wid = g.wid[0]; D.fire(g);
+        return { ready, tiles: tiles && tiles.length, wid, big: g.S.ammo[0][1] }; }, fc);
       // a win: the others all but out, your steady shots, through with stars and a best kept
       live.win = await page.evaluate(async ([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r);
         g.S.hp.forEach((h, k) => { if (k) g.S.hp[k] = Math.min(h, 1) || 0; });
