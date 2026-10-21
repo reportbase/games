@@ -48589,6 +48589,583 @@ const TANKS_APP = (() => {
   };
   return app;
 })();
+/* ═══ TANK MAZE: A MAZE TANK BATTLE ══════════════════════════════════════════════════════════════════════════════════════
+   (Oct 21: "maze tank battle", the second of the tank games offered, after the artillery duel.) Two tanks seen from above in
+   a maze, as Tank Trouble plays it: drive, turn and fire; a shell runs on for LIFE seconds, bouncing off every wall it meets,
+   and hits whichever tank it finds, the one that fired it too once it is clear of its barrel. The last tank standing takes
+   the round; the first to WIN rounds takes the match. Every round is a new maze.
+   - EVERY BOARD ITS OWN MAZES: made from the board's own number (boardIdx, golf's Szudzik pairing) and the round, at a level
+     from 1 to 5, the ring level out from the corner plus the Difficulty (Easy 0, Normal 1, Hard 2), as the tilt maze. A level
+     sets the maze's size and loops and the computer's hand (LV): how many bounces it looks for in a shot (`aim`, none at level
+     1: only straight at you), how many of its shells it keeps in the air (`most`), how many ways round it looks (`rays`), how often it thinks, how far off its aim is (`err`, in
+     degrees), whether it leads a moving tank, how often it sees a shell coming and gets out of its way (`dodge`), and how
+     long between its shots (`cool`).
+   - ONE PHYSICS FOR THE SHELLS AND THE COMPUTER'S EYE: a shell's whole way is laid down when it is fired (`trace`: a ray,
+     the walls widened by the shell's radius, mirrored at each one it meets), since the walls never move; where it is at any
+     moment is how far along that way it has gone. The computer looks for its shots along the same rays, so what it sees is
+     where its shell goes.
+   - THE COMPUTER (`think`, `findShot`, `escape`): a shell coming its way, it tries the moves it could make for the next
+     moment and takes the one keeping it farthest from every shell; a way to hit you (straight, or off as many walls as its
+     level looks for, and not through itself), it turns to it and fires; else it drives toward you along the maze (`pathOf`).
+   - CONTROLS: the arrow keys or WASD drive (up forward, down back, left and right turn), Space, Enter, Q or M fire; a drag
+     steers the tank toward the finger, driving while it is more than half a cell off; a tap fires. Two players on one device
+     (the menu's Players): Player 1 green on WASD with Q or Space, Player 2 blue on the arrows with M or Enter, and a finger
+     steers or fires the tank nearest it.
+   - A BOARD NO ONE PLAYS shows a round of two computer tanks, worked out a little at a time (`recSoon`) and played back on
+     the page's clock, each board at its own phase.
+   - Through: stars by how the match went (5–0 or 5–1 three, to 5–3 two, else one), the most a board kept (localStorage
+     tankmaze.best). A tap on a finished board goes on to the next, as golf goes on to the next hole. */
+const TANKMAZE_APP = (() => {
+  const FLOOR = 0xdcd8c9, FLOOR2 = 0xd1cdbc, WALLC = 0x434a58, SHOTC = 0x1c1c1c, TRACKC = 0x2b2b2b, WRECK = 0x3a3530, GUNC = 0x30352c;
+  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  const SEAT = { you: 0x5a9e3e, cpu: 0xc8463c, p2: 0x3f7fd6 }, NAME = { you: 'You', cpu: 'Red', p2: 'Player 2' };
+  const LV = [
+    { m: 5, loops: 0.32, aim: 0, rays: 48,  think: 0.32, err: 6,   lead: false, dodge: 0,    cool: 1.1, most: 1 },
+    { m: 6, loops: 0.3,  aim: 1, rays: 64,  think: 0.25, err: 4.5, lead: false, dodge: 0.3,  cool: 0.9, most: 2 },
+    { m: 7, loops: 0.27, aim: 1, rays: 80,  think: 0.2,  err: 3,   lead: true,  dodge: 0.55, cool: 0.7, most: 2 },
+    { m: 8, loops: 0.24, aim: 2, rays: 96,  think: 0.15, err: 2,   lead: true,  dodge: 0.8,  cool: 0.55, most: 3 },
+    { m: 9, loops: 0.2,  aim: 3, rays: 120, think: 0.11, err: 1.2, lead: true,  dodge: 1,    cool: 0.45, most: 3 },
+  ];
+  // sizes in cells (a cell is L.s of the board), speeds in cells a second
+  const TR = 0.26, HIT_R = 0.22, BRAD = 0.065, WALL_T = 0.1, WALL_H = 0.5, TV = 1.7, TURN = 3.3, BV = 3.6, LIFE = 9, MAXB = 5, GRACE = 0.17;
+  const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, MAX_SEG = 64;
+  const TAU = Math.PI * 2;
+  const DL = ARCADE.difficulty('tankmaze.level', 'Every board has its own mazes, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const SND = ARCADE.sounds('tankmaze.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
+  const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('tankmaze.players', '1') || 1)) };
+  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  // (mini golf's and the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+
+  /* ─── A MAZE ─── (the tilt maze's: E[k] a wall on cell k's east side, S[k] on its south; a walk that backs up when boxed in,
+     then walls taken out for loops, many more than the tilt maze's, since a tank battle wants ways round and lines of fire).
+     The two tanks start in cells far apart along the maze, each facing an open side. */
+  function makeMaze(idx, lv, round){
+    const D = LV[lv - 1], m = D.m, n = m * m, R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ (round * 97531) ^ 0x7a2c);
+    const E = new Uint8Array(n).fill(1), S = new Uint8Array(n).fill(1), seen = new Uint8Array(n), first = Math.floor(R() * n), stack = [first];
+    seen[first] = 1;
+    while (stack.length){
+      const k = stack[stack.length - 1], i = k % m, j = (k / m) | 0, nb = [];
+      if (i > 0 && !seen[k - 1]) nb.push(k - 1); if (i < m - 1 && !seen[k + 1]) nb.push(k + 1);
+      if (j > 0 && !seen[k - m]) nb.push(k - m); if (j < m - 1 && !seen[k + m]) nb.push(k + m);
+      if (!nb.length){ stack.pop(); continue; }
+      const q = nb[Math.floor(R() * nb.length)];
+      if (q === k + 1) E[k] = 0; else if (q === k - 1) E[q] = 0; else if (q === k + m) S[k] = 0; else S[q] = 0;
+      seen[q] = 1; stack.push(q);
+    }
+    for (let t = Math.round(D.loops * n); t > 0; t--){
+      const k = Math.floor(R() * n), i = k % m, j = (k / m) | 0;
+      if (R() < 0.5){ if (i < m - 1) E[k] = 0; } else if (j < m - 1) S[k] = 0;
+    }
+    const L = { idx, lv, round, m, s: 1 / m, E, S };
+    L.walls = wallsOf(L);
+    const a = Math.floor(R() * n), d = bfs(L, a), far = [];
+    let most = 0; for (let k = 0; k < n; k++) most = Math.max(most, d[k]);
+    for (let k = 0; k < n; k++) if (d[k] >= Math.max(2, Math.min(most, m))) far.push(k);
+    const b = far.length ? far[Math.floor(R() * far.length)] : d.indexOf(most);
+    L.spawn = [a, b].map(k => { const [x, y] = centre(L, k), o = nbrs(L, k), q = o[Math.floor(R() * o.length)];
+      const [qx, qy] = q == null ? [x + 1, y] : centre(L, q); return { x, y, h: Math.atan2(qy - y, qx - x) }; });
+    return L;
+  }
+  function nbrs(L, k){
+    const m = L.m, i = k % m, j = (k / m) | 0, out = [];
+    if (i < m - 1 && !L.E[k]) out.push(k + 1); if (i > 0 && !L.E[k - 1]) out.push(k - 1);
+    if (j < m - 1 && !L.S[k]) out.push(k + m); if (j > 0 && !L.S[k - m]) out.push(k - m);
+    return out;
+  }
+  function bfs(L, from){
+    const d = new Int32Array(L.m * L.m).fill(-1), q = [from]; d[from] = 0;
+    for (let h = 0; h < q.length; h++) for (const b of nbrs(L, q[h])) if (d[b] < 0){ d[b] = d[q[h]] + 1; q.push(b); }
+    return d;
+  }
+  function pathOf(L, a, b){
+    const d = bfs(L, b), out = [a];
+    let k = a; while (k !== b && d[k] > 0){ k = nbrs(L, k).find(q => d[q] === d[k] - 1); out.push(k); }
+    return out;
+  }
+  // (the tilt maze's walls: runs along a line laid as one box, a little longer than its cells so the corners close; WB by cell)
+  function wallsOf(L){
+    const m = L.m, s = 1 / m, t = WALL_T * s / 2, out = [];
+    for (let j = 0; j <= m; j++){
+      let a = -1;
+      for (let i = 0; i <= m; i++){
+        const on = i < m && (j === 0 || j === m || L.S[i + (j - 1) * m]);
+        if (on && a < 0) a = i;
+        if (!on && a >= 0){ out.push({ b: [a * s - t, j * s - t, i * s + t, j * s + t], edge: j === 0 || j === m }); a = -1; }
+      }
+    }
+    for (let i = 0; i <= m; i++){
+      let a = -1;
+      for (let j = 0; j <= m; j++){
+        const on = j < m && (i === 0 || i === m || L.E[(i - 1) + j * m]);
+        if (on && a < 0) a = j;
+        if (!on && a >= 0){ out.push({ b: [i * s - t, a * s - t, i * s + t, j * s + t], edge: i === 0 || i === m }); a = -1; }
+      }
+    }
+    const WB = Array.from({ length: m * m }, () => []);
+    out.forEach(w => { const [x0, y0, x1, y1] = w.b;
+      for (let j = Math.max(0, Math.floor(y0 / s - 1)); j <= Math.min(m - 1, Math.floor(y1 / s + 1)); j++)
+        for (let i = Math.max(0, Math.floor(x0 / s - 1)); i <= Math.min(m - 1, Math.floor(x1 / s + 1)); i++) WB[i + j * m].push(w.b); });
+    L.WB = WB;
+    return out;
+  }
+  const cellOf = (L, x, y) => Math.max(0, Math.min(L.m - 1, Math.floor(x * L.m))) + Math.max(0, Math.min(L.m - 1, Math.floor(y * L.m))) * L.m;
+  const centre = (L, k) => [(k % L.m + 0.5) / L.m, (((k / L.m) | 0) + 0.5) / L.m];
+
+  /* ─── A SHELL'S WAY ─── from (x, y) at angle a for len (board units), at most maxSeg straight pieces: [x, y, d, …], d the
+     distance along it so far. Each wall is a box widened by the shell's radius, met by the slab test; the shell is mirrored in
+     the face it meets (the x faces flip its x, the others its y). The board is walled all round, so every way ends. */
+  function trace(L, x, y, a, len, maxSeg){
+    const r = BRAD * L.s, P = [x, y, 0], W = L.walls;
+    let dx = Math.cos(a), dy = Math.sin(a), d = 0, seg = 0;
+    while (d < len - 1e-9 && seg < (maxSeg || MAX_SEG)){
+      let best = len - d, face = 0;
+      for (let q = 0; q < W.length; q++){
+        const b = W[q].b, x0 = b[0] - r, y0 = b[1] - r, x1 = b[2] + r, y1 = b[3] + r;
+        let txa, txb, tya, tyb;
+        if (dx > 1e-12 || dx < -1e-12){ const t1 = (x0 - x) / dx, t2 = (x1 - x) / dx; txa = t1 < t2 ? t1 : t2; txb = t1 < t2 ? t2 : t1; }
+        else { if (x <= x0 || x >= x1) continue; txa = -Infinity; txb = Infinity; }
+        if (dy > 1e-12 || dy < -1e-12){ const t1 = (y0 - y) / dy, t2 = (y1 - y) / dy; tya = t1 < t2 ? t1 : t2; tyb = t1 < t2 ? t2 : t1; }
+        else { if (y <= y0 || y >= y1) continue; tya = -Infinity; tyb = Infinity; }
+        const tin = txa > tya ? txa : tya, tout = txb < tyb ? txb : tyb;
+        if (tout < tin || tin <= 1e-9 || tin >= best) continue;
+        best = tin; face = txa > tya ? 1 : 2;
+      }
+      x += dx * best; y += dy * best; d += best; seg++; P.push(x, y, d);
+      if (!face) break;
+      if (face === 1) dx = -dx; else dy = -dy;
+    }
+    return P;
+  }
+  // where a way is at distance d along it
+  function along(P, d){
+    for (let i = 3; i < P.length; i += 3) if (P[i + 2] >= d){
+      const d0 = P[i - 1], f = (d - d0) / Math.max(1e-12, P[i + 2] - d0);
+      return [P[i - 3] + (P[i] - P[i - 3]) * f, P[i - 2] + (P[i + 1] - P[i - 2]) * f];
+    }
+    return [P[P.length - 3], P[P.length - 2]];
+  }
+  /* How near the way between d0 and d1 comes to a point moving (vx, vy) a board unit of the way (its speed over the shell's),
+     and at what distance along: [nearest, d]. A point standing still has vx = vy = 0. */
+  function nearest(P, d0, d1, cx, cy, vx, vy){
+    let best = Infinity, at = Infinity;
+    for (let i = 3; i < P.length; i += 3){
+      const a0 = P[i - 1], a1 = P[i + 2]; if (a1 < d0 || a0 > d1 || a1 <= a0) continue;
+      const L = a1 - a0, ux = (P[i] - P[i - 3]) / L, uy = (P[i + 1] - P[i - 2]) / L;
+      // the shell at d: P0 + u (d − a0); the point at d: c + v d. Their difference is linear in d.
+      const s0 = Math.max(d0, a0), s1 = Math.min(d1, a1);
+      const px = P[i - 3] + ux * (s0 - a0) - (cx + vx * s0), py = P[i - 2] + uy * (s0 - a0) - (cy + vy * s0), wx = ux - vx, wy = uy - vy;
+      const ww = wx * wx + wy * wy, t = ww > 1e-18 ? clamp(-(px * wx + py * wy) / ww, 0, s1 - s0) : 0;
+      const qx = px + wx * t, qy = py + wy * t, dd = Math.hypot(qx, qy);
+      if (dd < best){ best = dd; at = s0 + t; }
+    }
+    return [best, at];
+  }
+
+  /* ─── A ROUND ─── the maze, the tanks (x, y, heading h, velocity for leading, alive), the shells (who fired, when, the way)
+     and the bursts, on the round's own clock, stepped at STEP. Each tank's command each step is { drive, turn, fire }:
+     a person's from the keys and the finger, the computer's from `think`. */
+  function roundNew(L, seats, seed){
+    return { L, seats, t: 0, R: rngOf(seed), shots: [], booms: [], downAt: null, over: false, winner: -1,
+             tanks: L.spawn.map((p, k) => ({ x: p.x, y: p.y, h: p.h, vx: 0, vy: 0, alive: true, cool: 0.4, plan: null, nextThink: 0.25 + 0.1 * k })) };
+  }
+  const shotsOf = (G, k) => { let n = 0; for (const b of G.shots) if (b.k === k && b.end > G.t) n++; return n; };
+  // a tank moved for dt: turned, driven, pushed out of the walls round it and off the other tank
+  function moveTank(L, t, drive, turn, dt, other){
+    const s = L.s, rb = TR * s, x0 = t.x, y0 = t.y;
+    t.h += turn * TURN * dt;
+    const v = drive * TV * s; t.x += Math.cos(t.h) * v * dt; t.y += Math.sin(t.h) * v * dt;
+    for (let pass = 0; pass < 2; pass++) for (const w of L.WB[cellOf(L, t.x, t.y)]){
+      const qx = Math.max(w[0], Math.min(w[2], t.x)), qy = Math.max(w[1], Math.min(w[3], t.y)), dx = t.x - qx, dy = t.y - qy, d = Math.hypot(dx, dy);
+      if (d >= rb) continue;
+      if (d > 1e-9){ t.x = qx + dx / d * rb; t.y = qy + dy / d * rb; }
+      else { const l = t.x - w[0], r = w[2] - t.x, u = t.y - w[1], dn = w[3] - t.y, mn = Math.min(l, r, u, dn);
+             if (mn === l) t.x = w[0] - rb; else if (mn === r) t.x = w[2] + rb; else if (mn === u) t.y = w[1] - rb; else t.y = w[3] + rb; }
+    }
+    if (other && other.alive){ const dx = t.x - other.x, dy = t.y - other.y, d = Math.hypot(dx, dy); if (d < 2 * rb && d > 1e-9){ t.x = other.x + dx / d * 2 * rb; t.y = other.y + dy / d * 2 * rb; } }
+    if (dt > 0){ t.vx = (t.x - x0) / dt; t.vy = (t.y - y0) / dt; }
+  }
+  function fireShell(G, k){
+    const t = G.tanks[k];
+    G.shots.push({ k, t0: G.t, end: G.t + LIFE, P: trace(G.L, t.x, t.y, t.h, LIFE * BV * G.L.s, MAX_SEG) });
+    G.fired = (G.fired || 0) + 1; (G.lastFire = G.lastFire || [])[k] = G.t;
+  }
+  function stepRound(G, cmds, dt){
+    const L = G.L, s = L.s, bv = BV * s;
+    G.tanks.forEach((t, k) => {
+      if (!t.alive) return;
+      const c = cmds[k] || { drive: 0, turn: 0, fire: false };
+      moveTank(L, t, clamp(c.drive, -0.7, 1), clamp(c.turn, -1, 1), dt, G.tanks[1 - k]);
+      t.cool -= dt;
+      if (c.fire && t.cool <= 0 && shotsOf(G, k) < MAXB){ fireShell(G, k); t.cool = c.cool != null ? c.cool : 0.14; G.pops = (G.pops || []); G.pops.push(G.t); }
+    });
+    for (const b of G.shots){
+      if (b.end <= G.t) continue;
+      const d0 = (G.t - b.t0) * bv, d1 = Math.min(b.P[b.P.length - 1], d0 + dt * bv);
+      G.tanks.forEach((t, k) => {
+        if (!t.alive || b.end <= G.t || (k === b.k && G.t - b.t0 < GRACE)) return;
+        const [n, at] = nearest(b.P, d0, d1, t.x, t.y, 0, 0);
+        if (n < (HIT_R + BRAD) * s){ t.alive = false; b.end = G.t + (at - d0) / bv; G.booms.push({ t: G.t, x: t.x, y: t.y, k, by: b.k, seg: segAt(b.P, at) }); if (G.downAt == null) G.downAt = G.t; }
+      });
+      if (d1 >= b.P[b.P.length - 1] - 1e-9) b.end = Math.min(b.end, G.t + dt);
+    }
+    G.t += dt;
+    if (G.shots.length > 40) G.shots = G.shots.filter(b => b.end > G.t - 0.5);
+    const alive = G.tanks.filter(t => t.alive).length;
+    if ((G.downAt != null && G.t - G.downAt >= BOOM_T) || G.t >= ROUND_CAP){
+      G.over = true; G.winner = alive === 1 ? G.tanks.findIndex(t => t.alive) : -1;
+    }
+  }
+  const segAt = (P, d) => { for (let i = 3; i < P.length; i += 3) if (P[i + 2] >= d) return i / 3 - 1; return P.length / 3 - 2; };
+
+  /* ─── THE COMPUTER ─── `think` every D.think seconds makes a plan, which `cpuCmd` follows every step. */
+  function cpuCmd(G, k){
+    const me = G.tanks[k], D = LV[G.L.lv - 1];
+    if (G.t >= me.nextThink){ me.nextThink = G.t + D.think; me.plan = think(G, k, D); }
+    const p = me.plan || {};
+    if (p.dodge) return { drive: p.dodge[0], turn: p.dodge[1], fire: false };
+    if (p.aim != null){
+      const da = angDiff(p.aim, me.h), fire = Math.abs(da) < 0.035;
+      if (fire) me.plan = null;
+      return { drive: 0, turn: clamp(da / (TURN * STEP * 1.5), -1, 1), fire, cool: D.cool };
+    }
+    if (p.go){ const da = angDiff(Math.atan2(p.go[1] - me.y, p.go[0] - me.x), me.h);
+      return { drive: Math.abs(da) < 0.45 ? 1 : Math.abs(da) < 1.1 ? 0.35 : 0, turn: clamp(da * 4, -1, 1), fire: false }; }
+    return { drive: 0, turn: 0, fire: false };
+  }
+  function think(G, k, D){
+    const me = G.tanks[k], L = G.L, R = G.R, foe = G.tanks[1 - k];
+    if (!foe || !foe.alive) return {};
+    if (D.dodge && R() < D.dodge){ const e = escape(G, k, 0.7); if (e) return { dodge: e }; }
+    if (me.cool <= 0 && shotsOf(G, k) < D.most){
+      const a = findShot(G, k, foe, D);
+      if (a != null) return { aim: a + (R() - 0.5) * 2 * D.err * Math.PI / 180 };
+    }
+    const p = pathOf(L, cellOf(L, me.x, me.y), cellOf(L, foe.x, foe.y));
+    // (a cell or two away with no shot found, it backs off a cell rather than drive into a shot of yours)
+    if (p.length > 2) return { go: centre(L, p[1]) };
+    return { go: [foe.x, foe.y] };
+  }
+  /* A way to hit the other tank: the straight line to it, and D.rays headings round from its own, each followed off as many
+     walls as its level looks for; one that comes within reach of the other tank (where it will be, if the level leads it)
+     before it comes back through its own. The nearest hit wins, with a little for the turning. */
+  function findShot(G, k, foe, D){
+    const me = G.tanks[k], L = G.L, s = L.s, bv = BV * s, hitR = (HIT_R * 0.85 + BRAD) * s, selfR = (TR + BRAD) * s * 1.15, reach = Math.min(LIFE * bv, (D.aim + 1) * 4 * s + 2 * s);
+    const vx = D.lead ? foe.vx / bv : 0, vy = D.lead ? foe.vy / bv : 0;
+    const cands = [Math.atan2(foe.y - me.y, foe.x - me.x)];
+    for (let i = 0; i < D.rays; i++) cands.push(me.h + i * TAU / D.rays);
+    let best = null, cost = Infinity;
+    for (const a of cands){
+      const P = trace(L, me.x, me.y, a, reach, D.aim + 1), end = P[P.length - 1];
+      const [nf, df] = nearest(P, 0, end, foe.x, foe.y, vx, vy);
+      if (nf > hitR) continue;
+      const [nm] = nearest(P, GRACE * bv * 1.3, df, me.x, me.y, 0, 0);
+      if (nm < selfR) continue;
+      const c = df + Math.abs(angDiff(a, me.h)) * 0.6 * s;
+      if (c >= cost) continue;
+      // (and not back through itself for a while after, should the other tank get out of its way: the whole way traced)
+      const F = trace(L, me.x, me.y, a, Math.min(LIFE * bv, df + 2.5 * bv), MAX_SEG);
+      if (nearest(F, df, F[F.length - 1], me.x, me.y, 0, 0)[0] < selfR * 1.2) continue;
+      cost = c; best = a;
+    }
+    return best;
+  }
+  /* A shell coming: the moves it could make (forward, back, either way round, still) tried for `horizon` seconds against every
+     shell's way, the one that keeps it farthest from any; null if none comes near. */
+  const MOVES = [[1, 0], [-0.7, 0], [1, 1], [1, -1], [-0.7, 1], [-0.7, -1], [0, 0]];
+  function escape(G, k, horizon){
+    const me = G.tanks[k], L = G.L, s = L.s, bv = BV * s, near = (HIT_R + BRAD) * s * 1.8;
+    const live = G.shots.filter(b => b.end > G.t && !(b.k === k && G.t - b.t0 < GRACE));
+    const threat = live.filter(b => { const d0 = (G.t - b.t0) * bv; return nearest(b.P, d0, d0 + horizon * bv, me.x, me.y, 0, 0)[0] < near; });
+    if (!threat.length) return null;
+    let best = null, score = -1;
+    for (const [dr, tu] of MOVES){
+      const t = { x: me.x, y: me.y, h: me.h, vx: 0, vy: 0 }; let worst = Infinity;
+      for (let tau = 0.05; tau <= horizon + 1e-9; tau += 0.05){
+        moveTank(L, t, dr, tu, 0.05, null);
+        for (const b of threat){ const d = (G.t + tau - b.t0) * bv; if (d > b.P[b.P.length - 1]) continue; const [x, y] = along(b.P, d); worst = Math.min(worst, Math.hypot(x - t.x, y - t.y)); }
+      }
+      if (worst > score){ score = worst; best = [dr, tu]; }
+    }
+    return best;
+  }
+
+  /* ─── A BOARD NO ONE PLAYS ─── a round of two computer tanks on the board's first maze, worked out a little at a time
+     (RECS, `recSoon`: STEP by STEP while the page has time, about 6 ms in 30) and played back: the tanks sampled REC_HZ times a
+     second, the shells as their ways, the bursts as they came. Kept for the latest REC_CAP boards. */
+  const RECS = new Map(), REC_CAP = 500;
+  let budgetAt = 0, budget = 0;
+  function recSoon(c, r, force){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let E = RECS.get(key);
+    if (!E){
+      const L = makeMaze(idx, lv, 0);
+      E = { L, G: roundNew(L, ['cpu', 'cpu'], idx * 31 + lv), F: [], phase: (idx * 0.618) % 1, done: false };
+      RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
+    } else { RECS.delete(key); RECS.set(key, E); }
+    if (E.done) return E;
+    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 6; }
+    if (budget <= 0 && !force) return E;
+    const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
+    let n = 0;
+    while (!G.over){
+      if (Math.round(G.t / STEP) % every === 0) for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
+      stepRound(G, [cpuCmd(G, 0), cpuCmd(G, 1)], STEP);
+      if (++n % 30 === 0 && !force && performance.now() - t0 > budget) break;
+    }
+    budget -= performance.now() - t0;
+    if (G.over){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h); E.T = G.t; E.shots = G.shots; E.booms = G.booms; E.winner = G.winner; E.done = true; E.G = null; }
+    return E;
+  }
+  // what a recorded round shows at the page's clock: the tanks, the shells and the bursts at that moment
+  function shownOf(E){
+    const L = E.L;
+    if (!E.done) return { L, tanks: L.spawn.map(p => ({ x: p.x, y: p.y, h: p.h, alive: true })), shots: [], booms: [], t: 0, seats: ['cpu', 'cpu'], cols: [SEAT.cpu, 0x3f7fd6] };
+    const loop = E.T + 1.5, t = Math.min(E.T, ((now() / 1000 + E.phase * loop) % loop)), n = E.F.length / 6;
+    const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
+    const tanks = [0, 1].map(k => { const a = 6 * i + 3 * k, b = 6 * j + 3 * k;
+      return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
+               alive: !E.booms.some(B => B.k === k && B.t <= t) }; });
+    return { L, tanks, shots: E.shots, booms: E.booms, t, seats: ['cpu', 'cpu'], cols: [SEAT.cpu, 0x3f7fd6] };
+  }
+
+  /* ─── PLAYING ─── a match: rounds one after another, each its own maze (the board's number and the round), the score kept. */
+  const GAMES = new Map();
+  let LIVE = null, DRAG = null, ateAt = 0;
+  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tankmaze.best') || '{}'))); } catch { return new Map(); } })();
+  const saveBest = () => { try { localStorage.setItem('tankmaze.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const seatsNow = () => SET.players === 2 ? ['you', 'p2'] : ['you', 'cpu'];
+  const isPerson = s => s !== 'cpu';
+  function fresh(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), seats = seatsNow();
+    const g = { c, r, idx, lv, seats, score: [0, 0], round: 0, state: 'ready', wait: 0, last: performance.now(), fireReq: [false, false] };
+    g.G = roundNew(makeMaze(idx, lv, 0), seats, idx * 31 + lv);
+    return g;
+  }
+  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  function nextRound(g){
+    g.round++;
+    g.G = roundNew(makeMaze(g.idx, g.lv, g.round), g.seats, g.idx * 31 + g.lv + g.round * 7919);
+    g.state = 'count'; g.wait = COUNT_T; g.fireReq = [false, false];
+    try { fieldItemsChanged(); } catch {}
+  }
+  function begin(g){ if (g.state !== 'ready') return; g.state = 'count'; g.wait = COUNT_T * 0.6; g.last = performance.now(); }
+  // the keys: one player, either set drives you; two, Player 1 on WASD (Q or Space fires), Player 2 on the arrows (M or Enter)
+  const HELD = new Set();
+  const KEYS = { w: ['F', 0], s: ['B', 0], a: ['L', 0], d: ['R', 0], W: ['F', 0], S: ['B', 0], A: ['L', 0], D: ['R', 0],
+                 ArrowUp: ['F', 1], ArrowDown: ['B', 1], ArrowLeft: ['L', 1], ArrowRight: ['R', 1] };
+  const FIRE_KEYS = { ' ': 0, q: 0, Q: 0, Enter: 1, m: 1, M: 1 };
+  const seatOfKeys = (g, set) => g.seats.length === 2 && isPerson(g.seats[1]) ? set : 0;
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || g.state === 'over') return;
+    const K = KEYS[e.key], F = FIRE_KEYS[e.key];
+    if (K){ e.preventDefault(); e.stopPropagation(); HELD.add(K[0] + seatOfKeys(g, K[1])); begin(g); return; }
+    if (F != null){ e.preventDefault(); e.stopPropagation(); if (g.state === 'ready') begin(g); else if (!e.repeat) g.fireReq[seatOfKeys(g, F)] = g.G.t; }
+  }, true);
+  addEventListener('keyup', e => { const K = KEYS[e.key]; if (K){ let hit = false; for (const k of [0, 1]) hit = HELD.delete(K[0] + k) || hit; if (hit){ e.preventDefault(); e.stopPropagation(); } } }, true);
+  addEventListener('blur', () => HELD.clear());
+  // a person's command this step: the keys, and the finger steering toward itself
+  function personCmd(g, k){
+    const t = g.G.tanks[k], s = g.G.L.s;
+    let drive = (HELD.has('F' + k) ? 1 : 0) - (HELD.has('B' + k) ? 0.7 : 0), turn = (HELD.has('R' + k) ? 1 : 0) - (HELD.has('L' + k) ? 1 : 0);
+    if (DRAG && DRAG.k === k && DRAG.at){
+      const dx = DRAG.at.u - t.x, dy = DRAG.at.v - t.y, da = angDiff(Math.atan2(dy, dx), t.h), d = Math.hypot(dx, dy);
+      turn = clamp(turn + da * 5, -1, 1);
+      if (d > 0.5 * s && Math.abs(da) < 0.8) drive = Math.max(drive, Math.abs(da) < 0.35 ? 1 : 0.4);
+    }
+    // (a press of fire is kept until the tank can fire, up to REQ_T: a tap in its first moments, or just after a shot, was lost)
+    return { drive, turn, fire: g.fireReq[k] !== false };
+  }
+  function stepGame(g){
+    const tn = performance.now(), dt = Math.min(0.25, (tn - g.last) / 1000); g.last = tn;
+    if (ARCADE.paused || g.state === 'ready' || g.state === 'over') return;
+    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + '.', 900); }
+    const G = g.G, booms = G.booms.length, pops = (G.pops || []).length;
+    for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--){
+      stepRound(G, g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k)), STEP);
+      g.fireReq = g.fireReq.map((q, k) => q === false || (G.lastFire && G.lastFire[k] >= q) || G.t - q > REQ_T ? false : q);
+    }
+    if ((G.pops || []).length > pops) SND.play('tap');
+    if (G.booms.length > booms) SND.play('boom');
+    if (G.over) roundOver(g);
+  }
+  function roundOver(g){
+    const G = g.G, w = G.winner, names = g.seats.map(s => NAME[s]);
+    if (w >= 0) g.score[w]++;
+    const tally = names[0] + ' ' + g.score[0] + ', ' + names[1] + ' ' + g.score[1];
+    if (g.score[0] >= WIN || g.score[1] >= WIN){
+      g.state = 'over'; g.overAt = performance.now();
+      const won = g.score[0] >= WIN;
+      if (SET.players === 1){
+        g.stars = won ? (g.score[1] <= 1 ? 3 : g.score[1] <= 3 ? 2 : 1) : 0;
+        const k = g.idx + '@' + g.lv, was = +(BEST.get(k) || 0);
+        if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
+        SND.play(won ? 'win' : 'lose');
+        say((won ? 'You won the match, ' + tally + ' ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars) : 'Red won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
+      } else { SND.play('win'); say((won ? 'Player 1' : 'Player 2') + ' won the match, ' + tally + '. Tap for the next board.', 4200); }
+      return;
+    }
+    SND.play(w === 0 || (w === 1 && SET.players === 2) ? 'good' : w < 0 ? 'turn' : 'bad');
+    say((w < 0 ? 'No one left standing' : names[w] + (names[w] === 'You' ? ' take' : ' takes') + ' the round') + ': ' + tally + '.', 1600);
+    nextRound(g);
+  }
+  // the human tank a finger means: yours, or with two players the one nearest it
+  function seatNear(g, u, v){
+    const P = g.seats.map((s, k) => isPerson(s) && g.G.tanks[k].alive ? k : -1).filter(k => k >= 0);
+    if (!P.length) return -1;
+    return P.sort((a, b) => Math.hypot(g.G.tanks[a].x - u, g.G.tanks[a].y - v) - Math.hypot(g.G.tanks[b].x - u, g.G.tanks[b].y - v))[0];
+  }
+
+  /* ─── WHAT A BOARD DRAWS ─── walls (the outer one in the level's colour), the tanks (tracks, hull, turret and gun, each
+     turned to its heading; a wreck dark), the shells along their ways, and each burst. */
+  const lighten = c => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.min(255, Math.round(((c >> sh) & 255) * 1.25 + 18)) << sh; return o; };
+  const yawOf = h => h || 1e-6;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
+  function itemsOf(V){
+    const L = V.L, s = L.s, out = [], lc = LV_COL[L.lv - 1];
+    for (const w of L.walls){ const [x0, y0, x1, y1] = w.b, lx = x1 - x0, ly = y1 - y0;
+      out.push({ kind: 'mzWall', u: (x0 + x1) / 2, v: (y0 + y1) / 2, scale: s, sx: lx / s, sy: WALL_H, sz: ly / s, color: w.edge ? lc : WALLC }); }
+    V.tanks.forEach((t, k) => {
+      const col = V.cols[k], y = yawOf(t.h);
+      out.push({ kind: 'mzTracks', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? TRACKC : 0x1a1a1a });
+      out.push({ kind: 'mzHull', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? col : WRECK });
+      out.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? lighten(col) : WRECK });
+      out.push({ kind: 'mzGun', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? GUNC : 0x1a1a1a });
+    });
+    const bv = BV * s;
+    for (const b of V.shots){
+      if (b.t0 > V.t || b.end <= V.t) continue;
+      const [x, y] = along(b.P, (V.t - b.t0) * bv);
+      out.push({ kind: 'mzShot', u: x, v: y, scale: 2 * BRAD * s, lift: 0.18 * s, color: SHOTC });
+    }
+    for (const B of V.booms){
+      const a = V.t - B.t; if (a < 0 || a > 1.8) continue;
+      const R = rngOf(B.k * 977 + Math.round(B.t * 1000));
+      if (a < 0.7){ const f = a / 0.7, col = f < 0.25 ? 0xfff4d0 : f < 0.5 ? 0xffc040 : 0xf06a1a;
+        for (let i = 0; i < 6; i++){ const q = R() * TAU, d = (0.1 + 0.25 * R()) * f * s;
+          out.push({ kind: 'mzFire', u: B.x + Math.cos(q) * d, v: B.y + Math.sin(q) * d, scale: s * (0.35 + 0.5 * f) * (0.7 + 0.5 * R()), lift: 0.05 * s, color: col }); } }
+      for (let i = 0; i < 5; i++){ const q = R() * TAU, d = (0.15 + 0.3 * R()) * Math.min(1, a / 1.2) * s, f = Math.min(1, a / 1.8);
+        out.push({ kind: 'mzPuff', u: B.x + Math.cos(q) * d, v: B.y + Math.sin(q) * d, scale: s * (0.25 + 0.5 * f), lift: (0.2 + 0.6 * f) * s, color: 0x3a3a3a }); }
+    }
+    return out;
+  }
+  function liveView(g){ const G = g.G; return { L: G.L, tanks: G.tanks, shots: G.shots, booms: G.booms, t: G.t, seats: g.seats, cols: g.seats.map(x => SEAT[x]) }; }
+  function viewOf(c, r){
+    const k = gkey(c, r), here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(k);
+    if (g){ if (here) stepGame(g); return liveView(g); }
+    return shownOf(recSoon(c, r));
+  }
+
+  // the tanks' shapes, a cell long, +x forward (the field turns an item's +x to its yaw)
+  const boxAt = (T, l, h, w, x, y, z) => { const g = new T.BoxGeometry(l, h, w); g.translate(x, y + h / 2, z); return g; };
+  const merge = (T, parts) => {
+    // (a few boxes and cylinders as one geometry: their positions, normals and indices laid end to end)
+    const pos = [], nrm = [], idx = []; let base = 0;
+    for (const p of parts){ const g = p.index ? p : p; const P = g.attributes.position.array, N = g.attributes.normal.array, I = g.index ? g.index.array : null;
+      for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); }
+      if (I) for (let i = 0; i < I.length; i++) idx.push(I[i] + base); else for (let i = 0; i < P.length / 3; i++) idx.push(i + base);
+      base += P.length / 3; g.dispose(); }
+    const out = new T.BufferGeometry(); out.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3)); out.setIndex(idx);
+    return out;
+  };
+  const cyl = (T, r, h, x, y, z, seg) => { const g = new T.CylinderGeometry(r, r, h, seg || 16); g.translate(x, y + h / 2, z); return g; };
+  const geos = {
+    mzWall: T => boxAt(T, 1, 1, 1, 0, 0, 0),
+    mzTracks: T => merge(T, [boxAt(T, 0.6, 0.13, 0.13, 0, 0, 0.19), boxAt(T, 0.6, 0.13, 0.13, 0, 0, -0.19)]),
+    mzHull: T => merge(T, [boxAt(T, 0.5, 0.12, 0.3, 0, 0.04, 0), boxAt(T, 0.1, 0.07, 0.24, 0.27, 0.04, 0)]),
+    mzTurret: T => merge(T, [cyl(T, 0.12, 0.08, -0.02, 0.16, 0, 18)]),
+    mzGun: T => merge(T, [boxAt(T, 0.3, 0.045, 0.05, 0.22, 0.185, 0)]),
+    mzShot: T => { const g = new T.SphereGeometry(0.5, 10, 8); g.translate(0, 0.5, 0); return g; },
+    mzFire: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.7, 1); g.translate(0, 0.35, 0); g.userData.unlit = true; g.userData.opacity = 0.9; return g; },
+    mzPuff: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.6, 1); g.translate(0, 0.3, 0); g.userData.opacity = 0.45; return g; },
+  };
+
+  const restart = (c, r) => { GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} };
+  let TOLD = false;
+  const app = {
+    name: 'tank maze',
+    menu: [{ head: 'Tank maze', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s red tank. Two: you and a friend on one keyboard (Player 1 green: WASD, Q or Space fires; Player 2 blue: the arrows, M or Enter fires), or a finger each on a phone.',
+        on(){ SET.players = SET.players === 2 ? 1 : 2; ARCADE.save('tankmaze.players', String(SET.players)); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: 'Start this board again', title: 'A new match on this board, nothing to nothing.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+    ]}],
+    cellFar: { light: FLOOR, dark: FLOOR2 },
+    itemMinPx: 16,
+    itemGeometries: geos,
+    cellGrid(c, r){
+      const g = GAMES.get(gkey(c, r)), E = g ? null : RECS.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r))), m = g ? g.G.L.m : E ? E.L.m : 6;
+      return { n: m, colors: Array.from({ length: m * m }, (_, k) => ((k % m) + ((k / m) | 0)) % 2 ? FLOOR2 : FLOOR) };
+    },
+    cellItems(c, r){ return itemsOf(viewOf(c, r)); },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), best = BEST.get(idx + '@' + lv);
+      const head = 'Tank maze — level ' + lv + ', ' + LV[lv - 1].m + '×' + LV[lv - 1].m + (best ? ' · best ' + '★'.repeat(best) : '');
+      if (!g) return head;
+      const names = g.seats.map(s => NAME[s]);
+      return head + ' · ' + names[0] + ' ' + g.score[0] + ', ' + names[1] + ' ' + g.score[1] + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')';
+    },
+    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
+    onReset(c, r){ restart(c, r); return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){
+      LIVE = c == null ? null : { c, r };
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires. Shells bounce off the walls, and can come back for you.', 6000); }
+    },
+    noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
+    onCellTap(c, r, u, v){
+      if (performance.now() - ateAt < 400) return true;       // (the tap the field still calls after a short drag)
+      const g = gameAt(c, r);
+      if (g.state === 'over'){
+        if (performance.now() - (g.overAt || 0) < 800) return true;
+        const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+      LIVE = { c, r };
+      if (g.state === 'ready'){ begin(g); return true; }
+      const k = u == null ? 0 : seatNear(g, u, v); if (k >= 0) g.fireReq[k] = g.G.t;
+      return true;
+    },
+    onCellHold(c, r){ restart(c, r); say('A new match on this board.', 1400); return true; },
+    // a press anywhere on the board and a drag steers the tank toward the finger, for as long as it is down
+    keepsPress: true,
+    claimsPan(u, v){
+      const g = liveGame(); if (!g || g.state === 'over' || u == null) return false;
+      const k = seatNear(g, u, v); if (k < 0) return false;
+      begin(g); DRAG = { k, at: { u, v }, moved: false }; return true;
+    },
+    onPan(dx, dy, at){ if (!DRAG) return false; if (at){ DRAG.at = { u: at.u, v: at.v }; DRAG.moved = true; } return true; },
+    onPanEnd(){ if (DRAG && DRAG.moved) ateAt = performance.now(); DRAG = null; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#dcd8c9'; ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = '#434a58'; const w = Math.max(2, sz / 16);
+      [[0, 0, 1, 0], [0, 1, 1, 1], [0, 0, 0, 1], [1, 0, 1, 1], [0.33, 0, 0.33, 0.55], [0.66, 0.4, 0.66, 1], [0.33, 0.55, 0.55, 0.55]].forEach(([a, b, c, d]) => ctx.fillRect(a * (sz - w), b * (sz - w), (c - a) * (sz - w) + w, (d - b) * (sz - w) + w));
+      const tank = (x, y, col, q) => { ctx.save(); ctx.translate(x * sz, y * sz); ctx.rotate(q); ctx.fillStyle = '#2b2b2b'; ctx.fillRect(-sz * 0.09, -sz * 0.08, sz * 0.18, sz * 0.16);
+        ctx.fillStyle = col; ctx.fillRect(-sz * 0.07, -sz * 0.055, sz * 0.14, sz * 0.11); ctx.fillStyle = '#30352c'; ctx.fillRect(0, -sz * 0.012, sz * 0.12, sz * 0.024); ctx.restore(); };
+      tank(0.17, 0.78, '#5a9e3e', -0.6); tank(0.83, 0.2, '#c8463c', 2.4);
+      ctx.fillStyle = '#1c1c1c'; [[0.3, 0.68], [0.45, 0.62], [0.52, 0.72]].forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x * sz, y * sz, sz / 40, 0, TAU); ctx.fill(); });
+    },
+    _debug: { LV, makeMaze, trace, along, nearest, roundNew, stepRound, moveTank, fireShell, cpuCmd, think, findShot, escape, recSoon, shownOf, itemsOf, viewOf,
+              fresh, gameAt, stepGame, begin, nextRound, personCmd, bfs, pathOf, cellOf, centre, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              GAMES, RECS, BEST, HELD, SET, WIN, STEP, BV, TR, LIFE, GRACE, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -49066,7 +49643,7 @@ const LEVELS_APP = (() => {
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, TANKS_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, TANKS_APP, TANKMAZE_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -49075,7 +49652,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [TANKS_APP, 'tanks'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

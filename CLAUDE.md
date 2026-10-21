@@ -1,6 +1,6 @@
 # games: notes for Claude
 
-A 3D field of boards you fly over, with ~38 games in one page (and Levels, a demonstration of level of detail) (chess against
+A 3D field of boards you fly over, with ~39 games in one page (and Levels, a demonstration of level of detail) (chess against
 Stockfish with a Claude coach, checkers, Go, Tetris, Pac-Man, Sokoban, …), served
 by GitHub Pages at https://reportbase.github.io/games/. The owner works through
 Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
@@ -563,6 +563,44 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     in a live exchange; since Oct 21 also what each weapon does, duels of two, three and four tanks ending, a real key (D)
     driving on fuel, the row's big shell chosen and spent, and three tanks with two players: after Player 1 and the computer,
     Player 2's turn with the controls theirs.
+- **Tank maze** (Oct 21: "maze tank battle", the second of the tank games offered): `TANKMAZE_APP`, id `tankmaze`, after Tanks.
+  Two tanks seen from above in a maze, as Tank Trouble plays it: drive, turn and fire; a shell runs on for `LIFE` (9 s) bouncing
+  off every wall, and hits whichever tank it finds, the one that fired it too once it is `GRACE` (0.17 s) out. The last tank
+  standing takes the round, the first to `WIN` (5) the match; every round is a new maze.
+  - **Every board its own mazes** (`makeMaze(idx, lv, round)`: the tilt maze's backtracking walk with many more loops, the two
+    tanks in cells far apart along it, each facing an open side), at a level 1–5, the ring level plus the Difficulty (Easy 0,
+    Normal 1, Hard 2). `LV`: 5 to 9 cells a side, loops 0.32 down to 0.2, and the computer's hand: `aim` (bounces it looks for,
+    none at level 1), `rays` (48–120 headings tried), `think` (0.32 s down to 0.11 between plans), `err` (6° down to 1.2°),
+    `lead` (aims where you will be, from level 3), `dodge` (the chance it sees a shell coming, 0 to 1), `cool` and `most` (its
+    shells in the air, 1 to 3; yours `MAXB`, 5).
+  - **One physics for shells and the computer's eye** (`trace`): a shell's whole way is laid down when it is fired, a ray
+    against the walls widened by its radius (slab test), mirrored at each face it meets; where it is is how far along it has
+    gone (`along`), and a hit is the way coming within `HIT_R` + its radius of a tank between two steps (`nearest`, which also
+    takes a moving point, for leading). The computer looks for shots along the same rays (`findShot`: the straight line and
+    `rays` headings, each off up to `aim` walls, that reach you before coming back through itself, and that do not come back
+    through it in the 2.5 s after); a shell coming its way, it tries seven moves for 0.7 s and takes the one keeping farthest
+    from every shell (`escape`); else it drives toward you along the maze (`pathOf`).
+  - **Controls**: the arrow keys or WASD drive (up forward, down back at 0.7, left and right turn), Space, Enter, Q or M fire;
+    a drag steers the tank toward the finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`); a tap
+    fires. A press of fire is kept until the tank can fire, up to `REQ_T` (0.6 s): a tap in a tank's first 0.4 s, while its
+    first cooldown ran, was lost. Two players (the menu's Players, localStorage `tankmaze.players`): Player 1 green on WASD with
+    Q or Space, Player 2 blue on the arrows with M or Enter, and a finger steers or fires the tank nearest it (`seatNear`).
+  - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a round ends `BOOM_T` (1.5 s) after
+    the first tank goes, or at `ROUND_CAP` (60 s), so both can go (no one scores). Through: stars by the match (5–0 or 5–1
+    three, to 5–3 two, else one), the most a board kept (localStorage `tankmaze.best`); a tap on a finished board goes on to the
+    next (golf's `nextBoard`), a hold starts it again.
+  - **A board no one plays** shows a round of two computer tanks on its first maze (`recSoon`, worked out STEP by STEP in about
+    6 ms in 30 and kept for `REC_CAP` 500 boards: the tanks sampled `REC_HZ` 15 a second, the shells as their ways, the bursts),
+    played back on the page's clock with a 1.5 s rest (`shownOf`). Measured over 20 rounds a level: 4.6, 5, 6, 8.4 and 12.2 s a
+    round, 2 to 37 ms to work one out (112 at most), half the hits or more off a wall from level 2; a round with no one left is
+    usually two tanks firing straight at each other at once.
+  - Drawn: walls as boxes (the outer one the level's colour, golf's flags), each tank tracks, hull, turret and gun turned to its
+    heading (`mzTracks`, `mzHull`, `mzTurret`, `mzGun`; never a yaw of 0, `yawOf`), shells, and a burst of fire and smoke.
+  - The smoke test checks the levels and sizes by ring, the same maze each time and another each round, a shell's way staying in
+    the board and coming back off a wall, your own shell killing you at 0.18 s, computer rounds at levels 2, 4 and 5 ending with
+    hits off walls, a computer tank getting out of a shell's way, a real key driving, a real click firing, a real drag steering,
+    a round won counted with a new maze, a match won with three stars and a best, two players each on their own keys, a board no
+    one plays moving, and the drawing (every wall, two tanks turned, a shell, a burst).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
