@@ -3398,7 +3398,7 @@ try {
   }
   // TANKS (Oct 20: "what tank games could we build", then "1", the artillery duel; Oct 21: weapons, more tanks, two players on
   // one device, driving): every board its own ground at a level by its ring; the computer's steady aim hits; a burst digs and
-  // hurts; every weapon does its own thing; duels of two, three and four tanks end; real taps and drags fire, the computer
+  // hurts; every weapon does its own thing; duels of two, three and four tanks end; real taps and drags aim and a tap on the tank fires, the computer
   // answers, a real key drives; a weapon chosen from the row is spent; two players pass turns past a computer's tank; a steady
   // shot wins with stars; a board no one plays shows its duel; the picture, the effects, the tanks upright, the sounds.
   {
@@ -3429,6 +3429,10 @@ try {
       const by = Object.fromEntries(shot.map(s => [s.id, s]));
       out.weapons = { big: by.big.dug > 2 * by.shell.dug, cluster: by.cluster.blasts >= 4 && by.cluster.tracks >= 5, dirt: by.dirt.raised > 0.5 && by.dirt.dug === 0,
                       roller: by.roller.end > by.shell.end + 0.1 && by.roller.blasts === 1, digger: by.digger.digs >= 3 && by.digger.dug > by.shell.dug };
+      // the shot shown before it is fired: the whole flight at level 1, landing where the shot lands; a quarter of it at level 5
+      out.preview = [1, 5].map(lv => { const T = D.terrainOf(4242, lv, 2), g = { T, S: { H: T.H0.slice(), xs: T.xs.slice(), hp: [100, 100], wind: 0.05 }, a: [50, 130], p: [0.7, 0.7], turn: 0, turns: [] };
+        const P = D.previewOf(g), e = D.simLand(g.S.H, g.S.xs, 0, 50, 0.7, 0.05, [true, true]), n = P.length / 2;
+        return { n, land: Math.hypot(P[P.length - 2] - e.x, P[P.length - 1] - e.y), whole: g._pv.whole }; });
       return out; });
     // real input on the framed board: a tap aims there and fires; the computer answers; a drag from your tank fires on letting go
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
@@ -3443,27 +3447,40 @@ try {
     const live = {};
     if (fc){
       const tank = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); return [g.S.xs[0], D.surfAt(g.S.H, g.S.xs[0])]; }, fc);
+      // a tap aims (and fires nothing); a tap on your own tank fires
       const tx = tank[0] + 0.45, ty = 0.3, pt = await at(tx, ty); await page.mouse.click(pt.x, pt.y);
       // (the software renderer can take a second a frame, so the tap lands when it lands: wait for it before reading)
+      for (let w = 0; w < 40 && (await gs()).a === 45; w++) await page.waitForTimeout(250);
+      live.aimed = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
+      live.arc = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.viewOf(...k.split('_').map(Number)); return V.preview ? V.preview.length / 2 : 0; }, fc[0] + '_' + fc[1]);
+      const pk = await at(tank[0], tank[1] - 0.022); await page.mouse.click(pk.x, pk.y);
       for (let w = 0; w < 40 && !((await gs()).turns >= 1); w++) await page.waitForTimeout(250);
-      live.tap = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
+      live.tap = await gs();
       live.answered = await waitAim();
       // a real key drives (D, held), on fuel
       const x0 = (await gs()).x; await page.keyboard.down('d');
       for (let w = 0; w < 24 && !((await gs()).x > x0 + 0.01); w++) await page.waitForTimeout(250);
       await page.keyboard.up('d'); await page.waitForTimeout(100);
       live.drove = await gs(); live.x0 = x0;
-      const p0 = await at(live.drove.x, tank[1] - 0.012), p1 = await at(live.drove.x + 0.15, tank[1] - 0.2), p2 = await at(live.drove.x + 0.25, tank[1] - 0.3);
+      // a real drag anywhere on the board aims and fires nothing; then the real Enter key fires
+      const a0 = (await gs()).a, p0 = await at(live.drove.x + 0.5, 0.45), p1 = await at(live.drove.x + 0.4, 0.3), p2 = await at(live.drove.x + 0.3, 0.2);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 6 }); await page.mouse.move(p2.x, p2.y, { steps: 6 });
       await page.mouse.up();
+      for (let w = 0; w < 40 && Math.abs((await gs()).a - a0) < 0.5; w++) await page.waitForTimeout(250);
+      await page.waitForTimeout(600);
+      live.dragged = await gs(); live.a0 = a0;
+      await page.keyboard.press('Enter');
       for (let w = 0; w < 40 && !((await gs()).turns >= 3); w++) await page.waitForTimeout(250);
-      live.dragged = await gs();
+      live.entered = await gs();
       // the row's Big shell, then a shot: one fewer left
       live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
         for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
         if (g.state === 'over') return { over: true };
-        const ready = g.state + g.turn, tiles = A.statTiles(c, r); A.onStatTap(c, r, 1); const wid = g.wid[0]; D.fire(g);
-        return { ready, tiles: tiles && tiles.length, wid, big: g.S.ammo[0][1] }; }, fc);
+        // (the row's ◀ a degree up, − two in a hundred of the power down, then Big shell and the row's Fire)
+        const ready = g.state + g.turn, tiles = A.statTiles(c, r), a = g.a[0], p = g.p[0];
+        A.onStatTap(c, r, 1); A.onStatTap(c, r, 3); const nudged = [+(g.a[0] - Math.round(a)).toFixed(3), +(g.p[0] - p).toFixed(3)];
+        A.onStatTap(c, r, D.AIM_TILES + 1); const wid = g.wid[0]; A.onStatTap(c, r, 0);
+        return { ready, tiles: tiles && tiles.length, fire: tiles && tiles[0].value, wid, big: g.S.ammo[0][1], nudged, fired: g.state === 'play' }; }, fc);
       // a win: the others all but out, your steady shots, through with stars and a best kept
       live.win = await page.evaluate(async ([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r);
         g.S.hp.forEach((h, k) => { if (k) g.S.hp[k] = Math.min(h, 1) || 0; });
@@ -3525,11 +3542,14 @@ try {
       return out; });
     const r = rules, wpn = Object.values(r.weapons).every(x => x), ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.hills[0] === 0 && r.hills[1] > 10 && r.hits >= 18
       && r.dug > 0.03 && r.dmg[1] >= 50 && r.dmg[0] === 0 && r.farDmg.join() === '0,0' && r.ended && wpn
-      && live.tap && live.tap.state === 'play' && live.tap.turns === 1 && Math.abs(live.tap.a - live.want) < 2
+      && r.preview[0].whole && r.preview[0].land < 0.03 && !r.preview[1].whole && r.preview[1].n < r.preview[0].n * 0.45
+      && live.aimed && live.aimed.state === 'aim' && live.aimed.turns === 0 && Math.abs(live.aimed.a - live.want) < 2 && live.arc > 5
+      && live.tap && live.tap.state === 'play' && live.tap.turns === 1
       && live.answered && live.answered.turns >= 2 && live.answered.state === 'aim'
       && live.drove && live.drove.x > live.x0 + 0.01 && live.drove.fuel < 100
-      && live.dragged && live.dragged.turns === 3 && live.dragged.state !== 'aim'
-      && live.chose && (live.chose.over || (live.chose.tiles === 8 && live.chose.wid === 1 && live.chose.big === 1))
+      && live.dragged && live.dragged.turns === 2 && live.dragged.state === 'aim' && Math.abs(live.dragged.a - live.a0) > 2
+      && live.entered && live.entered.turns === 3
+      && live.chose && (live.chose.over || (live.chose.tiles === 13 && live.chose.fire === 'Fire' && live.chose.wid === 1 && live.chose.big === 1 && live.chose.fired && live.chose.nudged[0] === 1 && live.chose.nudged[1] < -0.009 && live.chose.nudged[1] > -0.031))
       && live.win && live.win.state === 'over' && live.win.won && live.win.stars >= 1 && live.win.best
       && two.seats === 'you,cpu,p2' && /Player 1/.test(two.names) && /Player 2/.test(two.names) && two.mine && two.turn === 2 && two.whoFired === '0,1' && two.p2 === 2
       && shown.looks >= 3 && shown.shells > 10 && shown.blasts > 2
@@ -3537,7 +3557,7 @@ try {
       && looks.tilt.join() === looks.slope.join() && looks.upright && looks.facing === 'tkHull,tkHullL'
       && ['cannon', 'whistle', 'blast', 'whirr'].every(k => looks.heard[k] >= 1);
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, two, shown, looks })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; duels of 2, 3 and 4 tanks ended (${r.duels.join(', ')}); every weapon its own (${Object.entries(r.weapons).map(([k, v]) => k + (v ? '' : ' NOT')).join(', ')}); a real tap fired, the computer answered, a real key drove ${live.drove ? (live.drove.x - live.x0).toFixed(3) : '?'}, a real drag fired, the row's big shell spent, a steady shot won ${live.win && live.win.stars} stars; two players passed turns past a computer's tank; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; duels of 2, 3 and 4 tanks ended (${r.duels.join(', ')}); every weapon its own (${Object.entries(r.weapons).map(([k, v]) => k + (v ? '' : ' NOT')).join(', ')}); a real tap aimed with the shot's way dotted, a tap on the tank fired, the computer answered, a real key drove ${live.drove ? (live.drove.x - live.x0).toFixed(3) : '?'}, a real drag aimed and Enter fired, the row nudged the aim and fired a big shell, a steady shot won ${live.win && live.win.stars} stars; two players passed turns past a computer's tank; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and

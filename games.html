@@ -47991,6 +47991,30 @@ const TANKS_APP = (() => {
     g.p[k] = clamp(Math.hypot(dx, dy) / AIM_FULL, 0.08, 1);
     aimTick(g);
   }
+  /* THE SHOT SHOWN BEFORE IT IS FIRED (Oct 21: "the aiming mechanism is hard, can it be improved?"): until then a tap aimed and
+     fired at once, with only a short line off the barrel for the power, so every shot was a guess and the next one a correction
+     made blind. Now the shell's own path is flown ahead in the game's physics, wind and all, and its start dotted from the
+     muzzle: the whole flight to where it lands at level 1, less of it the harder the board (`PREVIEW`, a share of the flight), so
+     the far boards still want a gunner's eye. Kept on the game until the aim, the tank, the wind or the ground changes. */
+  const PREVIEW = [1, 1, 0.6, 0.45, 0.35, 0.25];
+  function previewOf(g){
+    const k = g.turn, key = [g.a[k].toFixed(2), g.p[k].toFixed(3), g.S.xs[k].toFixed(4), g.S.wind, g.turns.length].join(':');
+    if (g._pv && g._pv.key === key) return g._pv.pts;
+    const H = g.S.H, xs = g.S.xs, alive = g.S.hp.map(h => h > 0), s = launch(H, xs[k], g.a[k], g.p[k]), all = [s.x, s.y];
+    for (let n = 0; n < 480; n++){ const e = flyStep(H, xs, s, g.S.wind, 1 / 60, k, alive); if (n % 3 === 2 || e) all.push(e ? e.x : s.x, e ? e.y : s.y); if (e) break; }
+    const keep = Math.max(4, Math.ceil(all.length / 2 * PREVIEW[clamp(g.T.lv | 0, 1, 5)])), pts = all.slice(0, keep * 2);
+    g._pv = { key, pts, whole: keep * 2 >= all.length };
+    return pts;
+  }
+  // the aim nudged from the row (◀ ▶ a degree, − + two in a hundred of the power), for a finger that wants a shot just so
+  function nudge(g, da, dp){
+    if (!myTurn(g)) return false;
+    const k = g.turn; g.a[k] = clamp(Math.round(g.a[k] + da), 0, 180); g.p[k] = clamp(Math.round((g.p[k] + dp) * 50) / 50, 0.08, 1);
+    SFX.tick(g.S.xs[k] / ASP); try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  // a tap this near your own tank fires it (TR is the tank's reach for a shell; a little more for a finger)
+  const onTank = (g, x, y) => { const tx = g.S.xs[g.turn]; return Math.hypot(x - tx, y - (surfAt(g.S.H, tx) - TURRET)) < 0.055; };
   // a tick every 3° or 4% of power the aim moves (THE SOUNDS)
   function aimTick(g){
     const k = g.turn, q = Math.round(g.a[k] / 3) * 1000 + Math.round(g.p[k] * 25);
@@ -48116,7 +48140,7 @@ const TANKS_APP = (() => {
   function liveView(g){
     const V = viewAt(g, g.t);
     if (g.state === 'aim'){ V.xs = g.S.xs.slice(); V.a = g.a.slice(); V.H = g.S.H; V.hp = g.S.hp.slice(); if (g.turns.length) V.craters = g.turns[g.turns.length - 1].craters; }
-    if (myTurn(g)){ V.aim = g.p[g.turn]; V.aimer = g.turn; V.last = g.last[g.turn]; V.active = g.turn; V.wind = g.S.wind; }
+    if (myTurn(g)){ V.aim = g.p[g.turn]; V.aimer = g.turn; V.last = g.last[g.turn]; V.active = g.turn; V.wind = g.S.wind; V.preview = previewOf(g); }
     return V;
   }
   function viewOf(c, r){
@@ -48244,9 +48268,10 @@ const TANKS_APP = (() => {
       if (k === V.active && alive) out.push({ kind: 'tkDot', u: x, v: by - 0.022 - 0.005 * Math.abs(Math.sin(V.t * 5)), scale: 0.013, lift: 0.012, color: V.cols[k] });
     }
     if (V.last) for (let i = 0; i < V.last.length / 2; i += 2) out.push({ kind: 'tkDot', u: V.last[2 * i], v: V.last[2 * i + 1], scale: 0.005, lift: 0.004, color: LASTC });
-    if (V.aim){
-      const x = V.xs[V.aimer], y = surfAt(H, x) - TURRET, q = V.a[V.aimer] * Math.PI / 180, m = 2 + Math.round(V.aim * 9);
-      for (let j = 1; j <= m; j++){ const d = BARREL + j * 0.02; out.push({ kind: 'tkDot', u: x + Math.cos(q) * d, v: y - Math.sin(q) * d, scale: 0.0065, lift: 0.008, color: AIMC }); }
+    if (V.aim && V.preview){
+      // (the shot's way ahead, THE SHOT SHOWN BEFORE IT IS FIRED: dots a twentieth of a second apart, smaller as they go)
+      const P = V.preview, n = P.length / 2;
+      for (let j = 1; j < n; j++) out.push({ kind: 'tkDot', u: P[2 * j], v: P[2 * j + 1], scale: 0.0068 - 0.0028 * j / n, lift: 0.008, color: AIMC });
     }
     for (const [x, y, kind] of V.shells){
       const small = kind === 'bomblet', ground = kind === 'roller' || kind === 'digger';
@@ -48451,10 +48476,15 @@ const TANKS_APP = (() => {
     try { fieldItemsChanged(); bbRefreshNow(); } catch {}
   }
   // the bottom row (Oct 21): the weapons of the tank whose turn it is, with what each has left, then Drive ◀ and Drive ▶
+  const AIM_TILES = 5;
   function tilesOf(g){
     const k = myTurn(g) ? g.turn : g.seats.indexOf('you'), A = g.S.ammo[k], mine = myTurn(g);
     // (a tile with a glyph draws its top line, the label, and not its sub: the count and the fuel go there)
-    const out = WEAPONS.map((w, i) => ({ label: A[i] === Infinity ? 'always' : A[i] + ' left', glyph: w.glyph, value: w.name, bg: mine && g.wid[k] === i ? '#2f5e3a' : null, dim: !mine || !(A[i] > 0) }));
+    // (Oct 21: Fire first, then the aim a degree and the power a step at a time: AIM_TILES of them before the weapons)
+    const out = [{ glyph: '🔥', value: 'Fire', label: WEAPONS[g.wid[k]].name.toLowerCase(), bg: mine ? '#7a2e1e' : null, dim: !mine },
+      { glyph: '◀', value: 'Aim', label: Math.round(g.a[k]) + '°', dim: !mine }, { glyph: '▶', value: 'Aim', label: Math.round(g.a[k]) + '°', dim: !mine },
+      { glyph: '−', value: 'Power', label: Math.round(g.p[k] * 100) + '%', dim: !mine }, { glyph: '+', value: 'Power', label: Math.round(g.p[k] * 100) + '%', dim: !mine }];
+    out.push(...WEAPONS.map((w, i) => ({ label: A[i] === Infinity ? 'always' : A[i] + ' left', glyph: w.glyph, value: w.name, bg: mine && g.wid[k] === i ? '#2f5e3a' : null, dim: !mine || !(A[i] > 0) })));
     out.push({ label: 'fuel ' + Math.round(g.S.fuel[k]), glyph: '◀', value: 'Drive', dim: !mine || g.S.fuel[k] < 1 },
              { label: 'fuel ' + Math.round(g.S.fuel[k]), glyph: '▶', value: 'Drive', dim: !mine || g.S.fuel[k] < 1 });
     return out;
@@ -48504,6 +48534,9 @@ const TANKS_APP = (() => {
     statsStay(){ const g = liveGame(); return !!g && g.state !== 'over'; },
     onStatTap(c, r, i){
       const g = GAMES.get(gkey(c, r)); if (!g || !myTurn(g)) return false;
+      if (i === 0) return fire(g);
+      if (i < AIM_TILES) return nudge(g, i === 1 ? 1 : i === 2 ? -1 : 0, i === 3 ? -0.02 : i === 4 ? 0.02 : 0);
+      i -= AIM_TILES;
       if (i < WEAPONS.length) return chooseWeapon(g, i);
       if (i === WEAPONS.length || i === WEAPONS.length + 1){ g.drive = { dir: i === WEAPONS.length ? -1 : 1, left: DRIVE_STEP }; g.toldStuck = false; return true; }
       return false;
@@ -48512,7 +48545,7 @@ const TANKS_APP = (() => {
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is on the left. Tap where to aim and it fires (the line from the barrel is the power), or drag from your tank and let go; arrows aim, A and D drive, 1–6 or the row below choose a shell, Enter fires.', 5200); }
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is on the left. Tap or drag on the board to aim: the dots show where the shell goes. Tap your tank, Fire in the row below, or Enter to fire. Arrows aim, A and D drive, 1–6 choose a shell.', 6000); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'over'; },
     onCellTap(c, r, u, v){
@@ -48521,21 +48554,23 @@ const TANKS_APP = (() => {
       const g = gameAt(c, r);
       if (g.state === 'over'){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
       if (u == null || !myTurn(g)) return true;
-      aimAt(g, u * ASP, v); fire(g);
+      // (Oct 21: a tap aims and the dots show where it goes; a tap on your own tank fires, as do the row's Fire and Enter)
+      if (onTank(g, u * ASP, v)) fire(g); else { aimAt(g, u * ASP, v); try { bbRefreshNow(); } catch {} }
       return true;
     },
     onCellHold(c, r){ restart(c, r); say('The ground as it was, every tank whole.', 1400); return true; },
-    // a press on the tank whose turn it is (or near it) and a drag aims, the aim following the finger; letting go fires
+    // a press anywhere on the board on your turn and a drag aims, the aim following the finger and the dots with it; letting go
+    // leaves it there to be fired (Oct 21: a drag had to start on the tank and fired as it let go, so a shot could not be looked
+    // at before it went; two fingers still move the view)
     // (and the press stays the drag's however long the finger rests first: on a slow frame the field's hold timer went off
-    //  before the finger's first moves were read, took the press back for the view, and the drag never aimed or fired, Oct 21)
+    //  before the finger's first moves were read, took the press back for the view, and the drag never aimed, Oct 21)
     keepsPress: true,
     claimsPan(u, v){
       const g = liveGame(); if (!myTurn(g) || u == null) return false;
-      const x = g.S.xs[g.turn], y = surfAt(g.S.H, x); if (Math.hypot(u * ASP - x, v - y) > 0.12) return false;
       DRAG = { g, moved: false }; return true;
     },
     onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ aimAt(DRAG.g, at.u * ASP, at.v); DRAG.moved = true; } return true; },
-    onPanEnd(){ if (DRAG){ if (DRAG.moved && myTurn(DRAG.g)){ fire(DRAG.g); ateAt = performance.now(); } DRAG = null; } },
+    onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
     drawIcon(ctx, sz){
       ctx.fillStyle = hex(SKY_T); ctx.fillRect(0, 0, sz, sz);
       ctx.fillStyle = hex(EARTH); ctx.beginPath(); ctx.moveTo(0, sz);
@@ -48548,7 +48583,7 @@ const TANKS_APP = (() => {
       ctx.stroke(); ctx.setLineDash([]);
     },
     _debug: { SFX, terrainOf, terrainAt, duelOf, duelNew, duelStep, duelSoon, shownOf, viewAt, paint, photoState, photoKey, fxItems, SPECS, PALETTES, slopeAt, aimFor, foeShot, cpuPlan, simLand, launch, flyStep, blastAt, cut, dirtAt, simShot,
-              surfAt, driveBy, fresh, gameAt, fire, aimAt, chooseWeapon, stepGame, starsOf, itemsOf, viewOf, tilesOf, setMode, SET, WEAPONS, WID, ASP, FUEL,
+              surfAt, driveBy, fresh, gameAt, fire, aimAt, previewOf, nudge, PREVIEW, AIM_TILES, chooseWeapon, stepGame, starsOf, itemsOf, viewOf, tilesOf, setMode, SET, WEAPONS, WID, ASP, FUEL,
               boardIdx, levelAt, LV, GAMES, BEST, DUELS, TERRAINS, myTurn, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };

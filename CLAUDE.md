@@ -466,10 +466,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The computer** (`aimFor`, `foeShot`): 14 angles × 14 powers flown in the game's own physics (at 1/60 s), then the 7 × 7
     about the best, the one landing nearest your tank and not on itself; then its hands' spread. With no spread its first
     shot hit on 20 of 20 boards. About 1 ms a shot.
-  - **Controls**: a tap aims toward it (power by the distance, full at `AIM_FULL` 0.42) and fires; a press on your tank and a
-    drag aims as the finger goes and fires on letting go (`claimsPan`, the tap after it eaten; `keepsPress`, since on a slow
-    frame the field's hold timer took the press back before the finger's moves were read); arrows turn and push (W and S
-    push too), A and D drive, 1–6 choose a shell, Enter or Space fires. The aim line from the barrel shows the power; your last shot's path stays faint.
+  - **Controls** (Oct 21: "the aiming mechanism is hard, can it be improved?"): a tap on the board aims toward it (power by the
+    distance, full at `AIM_FULL` 0.42) and fires nothing; a press anywhere and a drag aims as the finger goes, and letting go
+    leaves it there (`claimsPan` on your turn, `keepsPress`, since on a slow frame the field's hold timer took the press back
+    before the finger's moves were read; the tap after a drag eaten). A tap on your own tank (`onTank`), the row's Fire or Enter
+    or Space fires. Until then a tap aimed and fired at once, and a drag had to start on the tank and fired as it let go.
+    Arrows turn and push (W and S push too), A and D drive, 1–6 choose a shell.
+  - **The shot shown before it is fired** (`previewOf`, `PREVIEW`): the shell's own path flown ahead in the game's physics, wind
+    and all, and dotted from the muzzle: the whole flight to where it lands at level 1, 60%, 45%, 35% and 25% of it at levels
+    2–5. Kept on the game (`g._pv`) until the aim, the tank, the wind or the ground changes. Your last shot's path stays faint.
+  - **The row** (`tilesOf`): Fire (the shell in hand under it), Aim ◀ ▶ (a degree, `nudge`), Power − + (two in a hundred,
+    snapped to them), the weapons, then Drive ◀ ▶; `AIM_TILES` (5) come before the weapons.
   - **Through**: stars by the health left on a win (`starsOf`: 70 three, 35 two), the most left kept a board (localStorage
     `tanks.best`); a tap on a finished board goes on to the next (golf's `nextBoard`), a hold or Start this board again
     deals it afresh.
@@ -547,8 +554,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (`pop`), a digger grinding (`scrape`), a tank's tracks (`rumble`), and a burst as big as its weapon's. Each plays as its
     moment on the game's clock comes (`stepGame` reads `g.fx`). Only the board being played sounds; the menu's Sound turns it off.
   - The smoke test checks the levels by ring, the same ground on a board each time, hills only past level 1, the steady
-    computer's hits, a burst's dig and harm, ten duels ending, a real tap firing toward it and the computer answering, a
-    real drag from the tank firing, a steady shot winning with stars and a best, a board no one plays moving, the picture the
+    computer's hits, a burst's dig and harm, ten duels ending, a real tap aiming toward it (since Oct 21 with the shot's way
+    dotted, the whole flight at level 1 landing where the shot does and a quarter of it at level 5) and a tap on the tank
+    firing, the computer answering, a real drag anywhere aiming and the real Enter firing, the row's aim and power nudged, a steady shot winning with stars and a best, a board no one plays moving, the picture the
     right way round (earth at the near edge, sky at the far), a new picture after a burst, 512 and 256 px by size, a burst's
     fireball, ring, clods and smoke, the clouds going with the wind, each tank turned to the slope under it, no part of a tank
     asking for a yaw of 0, the computer's tank its mirrored kinds, and the gun, the whistle, the burst and the whirr asked for
