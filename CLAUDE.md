@@ -1,6 +1,6 @@
 # games: notes for Claude
 
-A 3D field of boards you fly over, with ~39 games in one page (and Levels, a demonstration of level of detail) (chess against
+A 3D field of boards you fly over, with ~40 games in one page (and Levels, a demonstration of level of detail) (chess against
 Stockfish with a Claude coach, checkers, Go, Tetris, Pac-Man, Sokoban, …), served
 by GitHub Pages at https://reportbase.github.io/games/. The owner works through
 Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
@@ -641,6 +641,48 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the wall beside you, a frag's 14 shards, a spread's 3 shells, a mine armed and set off, a missile finding its tank, a crate
     dropped and taken, the aim line from the gun along its heading (3 pieces at level 1, 1 at level 5), and the crates, mines,
     beams, missiles and aim dots drawn.
+- **Golf tanks** (Oct 22: "the mini-golf game could be reused as a tank battle game. it has interesting terrain options.", then
+  "Real-time"): `GOLFTANK_APP`, id `golftanks`, after the tank maze. The tank maze's battle (drive, turn, fire, shells bouncing,
+  first to `WIN` 5 rounds) on each board's own golf hole, as mini golf makes it at its size: you start on the tee, the computer a
+  cell from the cup toward the tee (`spawnsOf`); every round is on the same hole.
+  - **Mini golf's kit** (`GOLF_APP._kit`, asked for each time, `kit()`; a new kit, after Board size, clears the games and
+    recordings): the holes, `holeSoon`/`holeAt`, `hOf`, `gradOf`, `groundAt`, `waterAt`, `toyAt`, `chargePull`, `minesOf`,
+    `cellBlocked`, `gridOf`, and two made for this: `solidsAt(H, x, y, R, t)`, every solid thing a circle of radius R touches at
+    the clock t as [nx, ny, depth] (the ball's own tests with any radius: the rail, wall cells, slides, windmills, turnstiles'
+    and doors' bars, fences, curved fences, planters, charges' posts, boulders, bumpers, path riders, a gate standing up), and
+    `drawHole(c, r, bp, opt)`, mini golf's `cellItems` with `opt` = { hk, t, now, blown, kicked }: the hole at the clock t with
+    no golf game's ball, ghost or aim.
+  - **The ground** (`moveTank`, in cells of the hole, CW): speed × (1 − `SLOPE_K` 0.8 × the slope ahead), 0.35 to 1.5; nothing
+    steeper than `SLOPE_MAX` 2.4 climbed; a slide down a slope over `SLIDE` 1.2 unless driving up it; sand × `SAND` 0.6. (At
+    first the tanks could climb nothing over 0.9: a raised green's edge is 1.7, and two computer tanks sat at the foot of one
+    for a whole round.) Measured: 0.87 cells in half a second up a slope of 0.24, 0.98 down it.
+  - **Water** stops a tank (it slides along the shore; a bridge is ground); a tank pushed or thrown into a lake goes under and
+    is out (`splash`). **A mine** (once a round, `G.blown`) throws a tank `THROW` 5 cells a second, spinning, stunned `STUN`
+    0.9 s (2.9 cells, measured). Pipes and zap zones are not used.
+  - **Shells** (`shellStep`, stepped every frame since the movers move): fired at `GUN_Z` above the ground, they fly `CLEAR`
+    over it (over a lake, its water), following it down at most `DROP` 0.6 a unit along and up at most `CLIMB` 0.35, and burst
+    against anything steeper (`-2`, 'hill'): ridges, hills, raised greens, a crater's rim, the tee box are cover. They turn
+    back off whatever `solidsAt` gives at the round's clock, so the movers are moving cover; a charge bends them
+    (`chargePull` × `CHG` 0.35: 0.37 rad over about three cells, measured). `LIFE` 4.5 s, `MAXB` 4 each.
+  - **The computer** (`cpuCmd`, `think`, `LV` by level, the ring level plus the Difficulty as the tank maze's): sees a shell
+    coming (`dodge`) and drives clear (`escape`); else flies shells in the round's own physics (`simShot`, 1/30 s, the movers
+    where they will be), the straight line first and then `rays` headings nearest its own, off up to `bounce` walls, and turns
+    to the first that hits (off by up to `err` degrees); as it fires it flies the shot it meant again in the shells' own steps
+    and thinks again if the movers have shut it (`STEP / 2`: without that, against a still target, 75 shots made 19 kills; with
+    it, 23 made 17). Else it drives toward the foe through the cells mini golf's players can cross (`navTo`, `cellBlocked`), and
+    backs off when stuck. Rounds of two computer tanks: 3–15 s, 30 ms to work out at level 1, 215 ms at level 5.
+  - Controls, keys, two players (Player 1 on the tee, Player 2 by the cup), the match, stars and best (localStorage
+    `golftanks.best`, by board, level and size) and the aim line (`aimOf`: the shell's own way, `AIM_SEG` bounces by level, at
+    most `AIM_LEN` 2.2 s) are the tank maze's. Two tanks only, no power-ups.
+  - **Drawn**: the hole by mini golf (`drawHole`), then the tank maze's pieces in golf's units, standing on the ground and
+    divided by WD at the end; the board's shape, tilt floor, zoom ceiling, far colours and kinds' room are mini golf's (getters
+    on `GOLF_APP`); `itemGeometries` is a Proxy giving the tank kinds from `TANKMAZE_APP` and every other kind from mini golf.
+  - **A board no one plays** shows a round of two computer tanks on its hole (`recSoon`: worked out about 6 ms in 30, `REC_CAP`
+    300, 40 s at most; tanks sampled `REC_HZ` 15 a second, each shell's points as it went, `shellAt`), its movers and mines at
+    the recording's own clock.
+  - The smoke test checks the levels by ring, the spawns, uphill slower than down, the shore and a sinking, a mine's throw, a
+    rider solid where the clock has it, a charge's bend, a shell off the rail and against a rise, computer rounds ending at levels
+    1, 3 and 5, a real key, click and drag, a round and a match won, and a board no one plays moving and drawn.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
