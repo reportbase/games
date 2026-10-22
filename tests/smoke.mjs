@@ -986,6 +986,7 @@ try {
     const D = window.getFieldApp()._debug, res = [], KINDS = { path: ['propBumper', 'propRock', 'kicker', 'rockPlain'], gate: ['gateSeg'] }, ALL = [].concat(...Object.values(KINDS));
     for (const [k, H] of D.HOLES.entries()){
       if (H.gen != null) continue;                           // (the course's own holes; the generated ones are checked below)
+      if (H.bare) continue;                                  // (golf tanks' bare copies, on no board of their own: Oct 22)
       const kinds = Object.keys(KINDS).filter(n => (H.toys || []).some(T => T[n]));
       if (!kinds.length) continue;
       let c = 0, r = 0;
