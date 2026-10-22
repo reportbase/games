@@ -36898,7 +36898,7 @@ const GOLF_MAKE = SIZE => {
        box of level grass, TEE_BOX across, TEE_RISE above the highest ground under it (the ground there without it: teeTop),
        its sides falling to the ground round it over TEE_EDGE. So the first putt is played from up on it and runs down off
        its front, the way a tee shot is played from a raised tee, and on a slope the box is still level to stand on. */
-    if (H.tee && !TEE_BUSY){
+    if (H.tee && !TEE_BUSY && !H.bare){                       // (a bare copy has none: the tank battle's, Oct 22)
       const C = teeAt(H), q = Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) - TEE_BOX / 2;
       if (q < TEE_EDGE){ const top = teeTop(H); h += (top - h) * (q <= 0 ? 1 : 1 - sm01(q / TEE_EDGE)); }
     }
@@ -36933,7 +36933,7 @@ const GOLF_MAKE = SIZE => {
     finally { TEE_BUSY = false; }
     return (H._teeTop = m + TEE_RISE);
   }
-  const onTeeBox = (H, x, y) => { if (!H.tee) return false; const C = teeAt(H); return Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) <= TEE_BOX / 2; };
+  const onTeeBox = (H, x, y) => { if (!H.tee || H.bare) return false; const C = teeAt(H); return Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) <= TEE_BOX / 2; };
   let LAKE_BUSY = false;
   /* a lake's water level: a little under the lowest ground round its rim on the board (a stream's ends run on under the
      rail), worked out once for all a hole's lakes with the lakes left out, and kept on each lake's entry. Lakes that
@@ -37005,6 +37005,7 @@ const GOLF_MAKE = SIZE => {
     const h = hOf(H, x, y); M.set(k, h); return h;
   }
   function hOf(H, x, y){
+    if (H.bare) return Math.max(0.004, rawH(H, x, y));        // (no cup to flatten the ground round: a bare copy, Oct 22)
     const h = rawH(H, x, y), d = Math.hypot(x - H.cup.x, y - H.cup.y), R1 = 0.05, R2 = 0.11;
     if (d >= R2) return Math.max(0.004, h);
     const hc = cupLevel(H);
@@ -38502,7 +38503,7 @@ const GOLF_MAKE = SIZE => {
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
     if (!PIECES){ for (const it of out){ it.u /= WD; it.scale = (it.scale || 0.25) / WD; it.lift = (it.lift || 0) / WD; } return out; }   // (the ground alone, Oct 12)
-    if (NUMS.on && !H.custom && mid) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
+    if (NUMS.on && !H.custom && !H.bare && mid) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
     // (Oct 9: a board further off draws its rail in pieces a cell long, or two, stretched along the rail, not thickened)
@@ -38520,15 +38521,15 @@ const GOLF_MAKE = SIZE => {
       if (H.map[j][i] === '#') out.push({ kind: 'wall_' + matOf(H), u, v, scale: CW, lift: hOf(H, u, v), color: 0xffffff });
       if (H.map[j][i] === '=') out.push({ kind: 'plank', u, v, scale: CW, lift: hOf(H, u, v) + 0.004, color: (i + j) & 1 ? 0x9a7048 : 0x8a6240 });
     }
-    // (the tee box's two markers, either side of the tee: Oct 20)
-    for (const sx of [-1, 1]){ const C = teeAt(H), mx = C.x + sx * TEE_BOX * 0.38, my = C.y - TEE_BOX * 0.36;
+    // (the tee box's two markers, either side of the tee: Oct 20; none of it on a bare copy, the tank battle's: Oct 22)
+    if (!H.bare) for (const sx of [-1, 1]){ const C = teeAt(H), mx = C.x + sx * TEE_BOX * 0.38, my = C.y - TEE_BOX * 0.36;
       out.push({ kind: 'teeMark', u: mx, v: my, scale: CW * 0.15, lift: hOf(H, mx, my), color: 0x2f6fd8 }); }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
-    out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
+    if (!H.bare) out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
              { kind: 'pennant', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level ? LEVEL_FLAG[H.level - 1] : 0xe0443a });
     // the level as dots on the flag, white (dark on the yellow of level 3), on a board near enough to see them
-    if (H.level && mid) out.push({ kind: 'flagDots' + H.level, u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level === 3 ? 0x2a2a2a : 0xffffff });
+    if (H.level && mid && !H.bare) out.push({ kind: 'flagDots' + H.level, u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level === 3 ? 0x2a2a2a : 0xffffff });
     // The toys, where the clock has them: the game's own clock on the board in play, the wall clock elsewhere.
     const t = opt ? opt.t : G ? (G.t || 0) : performance.now() / 1000;
     /* (Oct 10, later: "if wireframe is off, don't show the orbit path." The movers' dotted tracks, a path's loop and the
@@ -41354,8 +41355,28 @@ const GOLF_MAKE = SIZE => {
     });
     return out;
   }
+  /* A BARE COPY (Oct 22: "remove the golf hole and tee box. this is one on one tank combat."): the battle's ground is the
+     hole's with no tee box raised on it and no cup sunk in it, and no cup, flag or tee markers drawn. It is a copy of the
+     compiled hole (the same map, toys and shapes; the kept heights left behind) marked `bare`, which rawH, hOf, onTeeBox and
+     cellItems read, in a slot of its own in HOLES so its ground meshes are its own. BARE_CAP copies at most, the one wanted
+     least lately giving up its slot. */
+  const BARES = new Map(), BARE_CAP = 400;
+  function bareOf(k){
+    const H = HOLES[k]; if (!H || H.bare) return k;
+    let e = BARES.get(k);
+    if (e && e.H === H && HOLES[e.kb] && HOLES[e.kb].origin === H){ BARES.delete(k); BARES.set(k, e); return e.kb; }
+    const B = {}; for (const key of Object.keys(H)) if (!['_hd', 'hc', 'wl', '_teeTop', '_grid'].includes(key)) B[key] = H[key];
+    B.bare = true; B.origin = H;
+    let kb = -1;
+    if (e && HOLES[e.kb] && HOLES[e.kb].bare) kb = e.kb;
+    else if (BARES.size >= BARE_CAP){ const [ok, oe] = BARES.entries().next().value; BARES.delete(ok); kb = oe.kb; }
+    if (kb >= 0){ const old = HOLES[kb]; HOLES[kb] = B; ensureKinds(kb); dropKinds(kb, old); }
+    else { kb = HOLES.length; HOLES.push(B); ensureKinds(kb); }
+    BARES.set(k, { H, kb });
+    return kb;
+  }
   const kit = {
-    get HOLES(){ return HOLES; }, holeSoon, holeAt, boardIdx, hOf, gradOf, groundAt, waterAt, toyAt, chargePull, chargesOf, solidsAt, cellBlocked, teeAt,
+    get HOLES(){ return HOLES; }, bareOf, holeSoon, holeAt, boardIdx, hOf, gradOf, groundAt, waterAt, toyAt, chargePull, chargesOf, solidsAt, cellBlocked, teeAt,
     minesOf: H => (H.toys || []).map((T, j) => T.mine ? { j, x: T.mine[0], y: T.mine[1] } : null).filter(Boolean),
     pipesOf: H => (H.toys || []).map((T, j) => T.pipe ? { j, x0: T.pipe[0], y0: T.pipe[1], x1: T.pipe[2], y1: T.pipe[3], a: T.pipe[4], r: T.pipe[5] } : null).filter(Boolean),
     drawHole: (c, r, bp, opt) => cellItems(c, r, bp, opt), gridOf: hk => gridOf(hk), PLAIN_GRID, itemGeometries,
@@ -49473,7 +49494,10 @@ const TANKMAZE_APP = (() => {
    - a charge bends a shell going by (mini golf's `chargePull`, times CHG): a pull draws it in, a push turns it away.
    - a mine throws a tank that drives onto it (THROW) and leaves it stunned a moment (STUN), once a round.
    The board is mini golf's, drawn by mini golf (its kit's `drawHole`, the movers at the round's clock); the tanks are the
-   tank maze's pieces. Sizes are in cells of the hole (CW), speeds in cells a second. */
+   tank maze's pieces. Sizes are in cells of the hole (CW), speeds in cells a second.
+   (Oct 22, later: "remove the golf hole and tee box. this is one on one tank combat." The battle is fought on a bare copy of
+   the hole, mini golf's `bareOf`: no tee box raised on the ground, no cup sunk in it, no flag; the tanks start where the tee
+   and the cup were, the two ends the hole was made round.) */
 const GOLFTANK_APP = (() => {
   const SEAT = { you: 0x5a9e3e, cpu: 0xc8463c, p2: 0x3f7fd6 }, NAME = { you: 'You', cpu: 'Red', p2: 'Player 2' };
   const TRACKC = 0x2b2b2b, WRECK = 0x3a3530, GUNC = 0x30352c, SHOTC = 0x1c1c1c;
@@ -49519,9 +49543,8 @@ const GOLFTANK_APP = (() => {
      given to another), the tanks (on the tee and by the cup, facing each other), and its own clock, which the movers keep. */
   function spawnsOf(K, H){
     const CW = K.CW, a = { x: H.tee.x, y: H.tee.y }, b = { x: H.cup.x, y: H.cup.y };
-    // (by the cup, not in it: a cell toward the tee if the ground there is dry and clear)
-    const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy) || 1, bx = b.x + dx / d * CW, by = b.y + dy / d * CW;
-    if (K.groundAt(H, bx, by) !== '~' && !K.solidsAt(H, bx, by, TR * CW, 0).length){ b.x = bx; b.y = by; }
+    /* (the hole's tee and cup are only places now, Oct 22: "remove the golf hole and tee box. this is one on one tank combat."
+        They are the two ends the hole was made round, kept clear of its things; the far tank stands where the cup was) */
     return [a, b];
   }
   function roundNew(K, hk, seats, seed, lv){
@@ -49830,7 +49853,7 @@ const GOLFTANK_APP = (() => {
   const colsOf = seats => seats.map(s => SEAT[s]);
   const namesOf = seats => seats.map(s => NAME[s]);
   function fresh(c, r){
-    const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), seats = seatsNow(), hk = K.holeAt(K.boardIdx(c, r));
+    const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), seats = seatsNow(), hk = K.bareOf(K.holeAt(K.boardIdx(c, r)));
     const g = { c, r, idx, lv, seats, n: 2, score: [0, 0], round: 0, state: 'ready', wait: 0, last: performance.now(), fireReq: [false, false], hk, H: K.HOLES[hk] };
     g.G = roundNew(K, hk, seats, idx * 31 + lv, lv);
     return g;
@@ -49982,7 +50005,7 @@ const GOLFTANK_APP = (() => {
   function viewOf(c, r){
     const K = kit(), k = gkey(c, r), here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(k);
     if (g && g.H === K.HOLES[g.hk]){ if (here) stepGame(g); return liveView(g); }
-    const hk = K.holeSoon(c, r), E = recSoon(c, r, hk);
+    const h0 = K.holeSoon(c, r), E = recSoon(c, r, h0 == null ? null : K.bareOf(h0));
     return E ? shownOf(E) : null;
   }
   // the tanks' pieces are the tank maze's; everything else is mini golf's (its ground kinds are made as its holes are)
@@ -49997,7 +50020,7 @@ const GOLFTANK_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Aim line: ' + (SET.aim ? 'on' : 'off'), title: 'Dots along where your shell would go, over the ground and off the walls: the most at level 1, the straight run alone farther out.',
         on(){ SET.aim = !SET.aim; ARCADE.save('golftanks.aim', SET.aim ? 'on' : 'off'); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s red tank. Two: you and a friend on one keyboard (Player 1 green on the tee: WASD, Q or Space fires; Player 2 blue by the cup: the arrows, M or Enter fires), or a finger each on a phone.',
+      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s red tank. Two: you and a friend on one keyboard (Player 1 green at the near end: WASD, Q or Space fires; Player 2 blue at the far end: the arrows, M or Enter fires), or a finger each on a phone.',
         on(){ SET.players = SET.players === 2 ? 1 : 2; ARCADE.save('golftanks.players', String(SET.players)); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: 'Start this board again', title: 'A new match on this board, nothing to nothing.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
@@ -50018,8 +50041,7 @@ const GOLFTANK_APP = (() => {
     cellItems(c, r, bp){ const V = viewOf(c, r); return V ? itemsOf(V, c, r, bp) : []; },
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), best = BEST.get(idx + '@' + lv + '@' + kit().SIZE);
-      const K = kit(), hk = g ? g.hk : K.holeSoon(c, r), nm = hk != null && K.HOLES[hk] ? K.HOLES[hk].name : null;
-      const head = 'Golf tanks — level ' + lv + (nm ? ', ' + nm : '') + (best ? ' · best ' + '★'.repeat(best) : '');
+      const head = 'Golf tanks — level ' + lv + (best ? ' · best ' + '★'.repeat(best) : '');
       if (!g) return head;
       return head + ' · ' + namesOf(g.seats).map((n, k) => n + ' ' + g.score[k]).join(', ') + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')';
     },
@@ -50028,7 +50050,7 @@ const GOLFTANK_APP = (() => {
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green, on the tee. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires. Hills are cover, shells bounce off the rails, fences and movers, and water stops tanks.', 6500); }
+      if (LIVE && !TOLD){ TOLD = true; say('One on one: your tank is green. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires. Hills are cover, shells bounce off the rails, fences and movers, and water stops tanks.', 6500); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
     onCellTap(c, r, u, v){
