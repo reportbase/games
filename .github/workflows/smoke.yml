@@ -12,7 +12,9 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 30                  # (smoke takes ~12 min since every board in view is drawn in full, Oct 12, then the course test)
+    # (smoke takes ~12 min since every board in view is drawn in full, Oct 12, then the course test; by Oct 22, with the tank
+    #  games, the whole run took 21 min on one runner and was cut off at 30 on a slower one with every check passed so far)
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
