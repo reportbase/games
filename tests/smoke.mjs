@@ -3662,6 +3662,11 @@ try {
     // (Oct 21: "1,2,3"): three or four tanks, the power-ups one by one, a crate dropped and taken, the aim line, their drawing
     const more = await page.evaluate(() => { const D = window.getFieldApp()._debug, out = {};
       out.sizes = [2, 3, 4].map(n => D.makeMaze(5, 1, 0, n).m);
+      // (Oct 22: an inner wall stops at the outer wall's inner face, so the two never lie on one another and flash)
+      out.walls = ['tankmaze', 'tiltmaze'].map(id => { const M = window.FIELD_APPS.find(a => a.id === id)._debug; let into = 0;
+        for (let i = 0; i < 20; i++){ const L = M.makeMaze(100 + i, 1 + i % 5, 0), t = Math.min(...L.walls.filter(w => w.edge).map(w => Math.min(w.b[2] - w.b[0], w.b[3] - w.b[1]))) / 2;
+          for (const w of L.walls) if (!w.edge && (w.b[0] < t - 1e-9 || w.b[1] < t - 1e-9 || w.b[2] > 1 - t + 1e-9 || w.b[3] > 1 - t + 1e-9)) into++; }
+        return into; });
       const L4 = D.makeMaze(91, 3, 0, 4), cells = L4.spawn.map(p => D.cellOf(L4, p.x, p.y)); out.spawn4 = new Set(cells).size;
       out.apart4 = Math.min(...cells.flatMap((a, i) => cells.slice(i + 1).map(b => D.bfs(L4, a)[b])));
       out.rounds = [3, 4].map(n => { let ended = 0, used = 0, taken = 0;
@@ -3698,7 +3703,7 @@ try {
       const V = { L, tanks: G.tanks, shots: G.shots, booms: G.booms, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles, t: G.t, seats: ['you', 'you'], cols: [1, 2], aim: [{ k: 0, P: D.trace(L, cx, cy, 0.3, 0.5, 2), col: 3 }] };
       const it = D.itemsOf(V); out.drawn = ['mzCrate', 'mzMine', 'mzBeam', 'mzMissile', 'mzDot'].filter(k => it.some(i => i.kind === k));
       return out; });
-    const mo = more, moreOk = mo.sizes.join() === '5,6,7' && mo.spawn4 === 4 && mo.apart4 >= 2 && mo.rounds.every(x => x.ended === 5) && mo.rounds.reduce((n, x) => n + x.taken, 0) >= 1
+    const mo = more, moreOk = mo.sizes.join() === '5,6,7' && mo.walls.join() === '0,0' && mo.spawn4 === 4 && mo.apart4 >= 2 && mo.rounds.every(x => x.ended === 5) && mo.rounds.reduce((n, x) => n + x.taken, 0) >= 1
       && mo.rounds.reduce((n, x) => n + x.used, 0) >= 1 && mo.laser.lasers === 1 && mo.laser.self && mo.frag.shards === 14 && mo.frag.burst && mo.spread === 3
       && mo.mine.armed && mo.mine.blew && mo.mine.owner && mo.homing.hit && mo.crate.dropped && mo.crate.at < 5 && mo.crate.held && mo.crate.taken
       && mo.aim[0] && mo.aim[1] && mo.aim[0].segs > mo.aim[1].segs && mo.aim[1].segs === 1 && mo.aim[0].from < 1e-9 && mo.aim[0].dir < 1e-6 && mo.drawn.length === 5;

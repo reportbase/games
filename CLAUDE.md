@@ -596,6 +596,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     usually two tanks firing straight at each other at once.
   - Drawn: walls as boxes (the outer one the level's colour, golf's flags), each tank tracks, hull, turret and gun turned to its
     heading (`mzTracks`, `mzHull`, `mzTurret`, `mzGun`; never a yaw of 0, `yawOf`), shells, and a burst of fire and smoke.
+    An inner wall stops at the outer wall's inner face (Oct 22: "the inner walls of the maze should not extend into the outer
+    walls. they flash with a different color."): laid a little long so its corners close, its end lay inside the outer wall,
+    the two drawn by turns over each other in two colours. The tilt maze's walls (the same `wallsOf`) too; the smoke test
+    checks 20 mazes of each.
   - **More to it** (Oct 21: "1,2,3" of the ideas offered: power-ups, three or four tanks, an aim line):
     - **Power-ups** (`POWERS`, the menu's Power-ups, localStorage `tankmaze.powers`): a crate drops every `CRATE_GAP` (4–7 s,
       the first at `CRATE_FIRST` 2.5 s) while fewer than `crateMax` (1 + tanks/2) lie about, in a cell 1.6 cells from every
