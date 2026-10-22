@@ -45628,7 +45628,10 @@ const TILT_APP = (() => {
     return out;
   }
   /* The walls as boxes [x0, y0, x1, y1] in board units, runs along a line laid as one, each a little longer than its cells so
-     the corners close; and by cell for the marble (WB: the boxes touching each cell). */
+     the corners close; and by cell for the marble (WB: the boxes touching each cell). An inner wall stops at the outer wall's
+     inner face (Oct 22: "the inner walls of the maze should not extend into the outer walls. they flash with a different
+     color."): run on into it, its end and the outer wall's faces lay on one another, each drawn now and then over the other,
+     and the outer wall is the level's colour. */
   function wallsOf(L){
     const m = L.m, s = 1 / m, t = WALL_T * s / 2, out = [];
     for (let j = 0; j <= m; j++){          // horizontal lines: under row j - 1
@@ -45636,7 +45639,7 @@ const TILT_APP = (() => {
       for (let i = 0; i <= m; i++){
         const on = i < m && (j === 0 || j === m || L.S[i + (j - 1) * m]);
         if (on && a < 0) a = i;
-        if (!on && a >= 0){ out.push({ b: [a * s - t, j * s - t, i * s + t, j * s + t], edge: j === 0 || j === m }); a = -1; }
+        if (!on && a >= 0){ const edge = j === 0 || j === m; out.push({ b: [edge ? a * s - t : Math.max(t, a * s - t), j * s - t, edge ? i * s + t : Math.min(1 - t, i * s + t), j * s + t], edge }); a = -1; }
       }
     }
     for (let i = 0; i <= m; i++){          // vertical lines: east of column i - 1
@@ -45644,7 +45647,7 @@ const TILT_APP = (() => {
       for (let j = 0; j <= m; j++){
         const on = j < m && (i === 0 || i === m || L.E[(i - 1) + j * m]);
         if (on && a < 0) a = j;
-        if (!on && a >= 0){ out.push({ b: [i * s - t, a * s - t, i * s + t, j * s + t], edge: i === 0 || i === m }); a = -1; }
+        if (!on && a >= 0){ const edge = i === 0 || i === m; out.push({ b: [i * s - t, edge ? a * s - t : Math.max(t, a * s - t), i * s + t, edge ? j * s + t : Math.min(1 - t, j * s + t)], edge }); a = -1; }
       }
     }
     const WB = Array.from({ length: m * m }, () => []);
@@ -48739,7 +48742,8 @@ const TANKMAZE_APP = (() => {
     let k = a; while (k !== b && d[k] > 0){ k = nbrs(L, k).find(q => d[q] === d[k] - 1); out.push(k); }
     return out;
   }
-  // (the tilt maze's walls: runs along a line laid as one box, a little longer than its cells so the corners close; WB by cell)
+  // (the tilt maze's walls: runs along a line laid as one box, a little longer than its cells so the corners close; WB by cell;
+  //  an inner wall stopped at the outer wall's inner face, Oct 22: its end in the outer wall flashed, each drawn over the other)
   function wallsOf(L){
     const m = L.m, s = 1 / m, t = WALL_T * s / 2, out = [];
     for (let j = 0; j <= m; j++){
@@ -48747,7 +48751,7 @@ const TANKMAZE_APP = (() => {
       for (let i = 0; i <= m; i++){
         const on = i < m && (j === 0 || j === m || L.S[i + (j - 1) * m]);
         if (on && a < 0) a = i;
-        if (!on && a >= 0){ out.push({ b: [a * s - t, j * s - t, i * s + t, j * s + t], edge: j === 0 || j === m }); a = -1; }
+        if (!on && a >= 0){ const edge = j === 0 || j === m; out.push({ b: [edge ? a * s - t : Math.max(t, a * s - t), j * s - t, edge ? i * s + t : Math.min(1 - t, i * s + t), j * s + t], edge }); a = -1; }
       }
     }
     for (let i = 0; i <= m; i++){
@@ -48755,7 +48759,7 @@ const TANKMAZE_APP = (() => {
       for (let j = 0; j <= m; j++){
         const on = j < m && (i === 0 || i === m || L.E[(i - 1) + j * m]);
         if (on && a < 0) a = j;
-        if (!on && a >= 0){ out.push({ b: [i * s - t, a * s - t, i * s + t, j * s + t], edge: i === 0 || i === m }); a = -1; }
+        if (!on && a >= 0){ const edge = i === 0 || i === m; out.push({ b: [i * s - t, edge ? a * s - t : Math.max(t, a * s - t), i * s + t, edge ? j * s + t : Math.min(1 - t, j * s + t)], edge }); a = -1; }
       }
     }
     const WB = Array.from({ length: m * m }, () => []);
