@@ -3825,6 +3825,37 @@ try {
         out.end = { state: g.state, stars: g.stars, best: [...D.BEST.values()].pop() };
         return out; }, fc);
     }
+    // (Oct 22: "more long range weapons."): the mortar over everything onto its point, the rail the length of the board and
+    // stopped by the rail, the missile turning back for its tank, ammo running out, and the computer using them; then the real
+    // key 2 and a real click putting a mortar where it was clicked
+    const weap = await page.evaluate(() => { const D = window.getFieldApp()._debug, K = D.kit(), CW = K.CW, out = {}, idle = [{ drive: 0, turn: 0 }, { drive: 0, turn: 0 }];
+      const hk = K.bareOf(K.holeAt(30)), setup = () => D.roundNew(K, hk, ['you', 'you'], 1, 3);
+      let G = setup(), [a, b] = G.tanks, n = 0; D.fire(G, 0, { w: 1, at: { x: b.x, y: b.y } });
+      while (b.alive && n++ < 600) D.stepRound(G, idle, D.STEP); out.mortar = { killed: !b.alive, t: +G.t.toFixed(2), dist: +(Math.hypot(b.x - a.x, b.y - a.y) / CW).toFixed(1) };
+      G = setup(); G.tanks[0].h += Math.PI / 2; const R = D.railTrace(G, 0, G.tanks[0].h); out.railWall = +(R.len / CW).toFixed(2);
+      G = setup(); [a, b] = G.tanks; b.x = a.x; b.y = a.y - 6 * CW; a.h = -Math.PI / 2;
+      out.railOpen = D.railTrace(G, 0, a.h).hit;
+      G = setup(); [a, b] = G.tanks; a.h = Math.atan2(b.y - a.y, b.x - a.x) + Math.PI * 0.7; D.fire(G, 0, { w: 3 }); n = 0;
+      while (b.alive && n++ < 600) D.stepRound(G, idle, D.STEP); out.missile = { killed: !b.alive, t: +G.t.toFixed(2) };
+      G = setup(); let fired = 0; for (let i = 0; i < 5; i++){ G.tanks[0].cool = 0; if (D.fire(G, 0, { w: 2 })) fired++; } out.railAmmo = fired;
+      let used = 0, ended = 0; for (let i = 0; i < 6; i++){ const G2 = D.roundNew(K, K.bareOf(K.holeAt(8 + i * 31)), ['cpu', 'cpu'], i, 5); G2.keep = true;
+        while (!G2.over) D.stepRound(G2, G2.tanks.map((_, k) => D.cpuCmd(G2, k)), D.STEP);
+        if (G2.t < 59.9) ended++; used += G2.shots.filter(s => s.kind).length + G2.beams.length; }
+      out.cpu = { used, ended };
+      return out; });
+    if (fc){
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); g.G.tanks[1].alive = false; g.G.tanks[1].x = -9; g.state = 'play'; g.last = performance.now(); }, fc);
+      await page.keyboard.press('2');
+      weap.chose = await page.evaluate(([c, r]) => window.getFieldApp()._debug.GAMES.get(c + '_' + r).wid[0], fc);
+      const want = await page.evaluate(([c, r]) => { const g = window.getFieldApp()._debug.GAMES.get(c + '_' + r), t = g.G.tanks[0], K = window.getFieldApp()._debug.kit();
+        return { x: Math.min(K.WD - 0.1, Math.max(0.1, t.x + 0.12)), y: Math.max(0.1, t.y - 0.3) }; }, fc);
+      const pt = await at(want.x, want.y);
+      await page.mouse.click(pt.x, pt.y);
+      for (let w = 0; w < 24; w++){ const m = await page.evaluate(([c, r]) => window.getFieldApp()._debug.GAMES.get(c + '_' + r).G.shots.some(b => b.kind === 'mortar'), fc); if (m) break; await page.waitForTimeout(250); }
+      weap.click = await page.evaluate(([c, r, x, y]) => { const g = window.getFieldApp()._debug.GAMES.get(c + '_' + r), M = g.G.shots.find(b => b.kind === 'mortar'), K = window.getFieldApp()._debug.kit();
+        return M ? { off: +(Math.hypot(M.tx - x, M.ty - y) / K.CW).toFixed(2), left: g.G.tanks[0].ammo[1] } : null; }, [...fc, want.x, want.y]);
+      await page.evaluate(([c, r]) => window.getFieldApp()._debug.GAMES.delete(c + '_' + r), fc);
+    }
     const shown = await page.evaluate(async fc => { const D = window.getFieldApp()._debug, K = D.kit(), c = fc[0] + 3, r = fc[1] + 1; D.GAMES.delete(c + '_' + r);
       const hk = K.bareOf(K.holeAt(K.boardIdx(c, r))), E = D.recSoon(c, r, hk, true), a = D.shownOf(E); await new Promise(ok => setTimeout(ok, 1500)); const b = D.shownOf(E);
       const moved = Math.hypot(a.tanks[0].x - b.tanks[0].x, a.tanks[0].y - b.tanks[0].y) + Math.hypot(a.tanks[1].x - b.tanks[1].x, a.tanks[1].y - b.tanks[1].y) + Math.abs(a.t - b.t);
@@ -3842,9 +3873,11 @@ try {
       && live.fired && live.fired.mine >= 1 && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
       && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.fresh
       && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
-      && shown.done && shown.moved > 0.01 && shown.land && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.burst >= 1 && shown.inside;
-    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks (levels ${r.levels.join('/')} by ring; at the two ends, the hole bare (the tee box's ${r.bare.teeRise} cells gone, no cup, flag or markers); ${r.slope.up} cells up a slope of ${r.slope.grad} against ${r.slope.down} down; the shore stopped a tank and a shove sank it; a mine threw one ${r.mine && r.mine.thrown} cells; a rider solid where the clock has it; a charge turned a shell ${r.charge && r.charge.turned} rad; a shell came back off the rail and burst on a rise; computer rounds ended: ${r.rounds.map(x => x.ended + '/6 at level ' + x.lv + ', ' + x.hits + ' hits, ' + x.ms + ' ms').join('; ')}; a real key drove, a real click fired, a real drag steered; a round and a match won, ${live.match && live.match.end.stars} stars; a board no one plays moved)`);
+      && shown.done && shown.moved > 0.01 && shown.land && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.burst >= 1 && shown.inside
+      && weap.mortar.killed && weap.railWall < 4 && weap.railOpen === 1 && weap.missile.killed && weap.railAmmo === 2 && weap.cpu.used >= 1 && weap.cpu.ended >= 5
+      && weap.chose === 1 && weap.click && weap.click.off < 0.6 && weap.click.left === 2;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown, weap })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks (levels ${r.levels.join('/')} by ring; at the two ends, the hole bare (the tee box's ${r.bare.teeRise} cells gone, no cup, flag or markers); ${r.slope.up} cells up a slope of ${r.slope.grad} against ${r.slope.down} down; the shore stopped a tank and a shove sank it; a mine threw one ${r.mine && r.mine.thrown} cells; a rider solid where the clock has it; a charge turned a shell ${r.charge && r.charge.turned} rad; a shell came back off the rail and burst on a rise; computer rounds ended: ${r.rounds.map(x => x.ended + '/6 at level ' + x.lv + ', ' + x.hits + ' hits, ' + x.ms + ' ms').join('; ')}; a real key drove, a real click fired, a real drag steered; a round and a match won, ${live.match && live.match.end.stars} stars; a board no one plays moved; a mortar ${weap.mortar.dist} cells off landed on its tank in ${weap.mortar.t} s, the rail stopped at the rail after ${weap.railWall} cells and reached a tank in the open, a missile fired away turned and found its tank in ${weap.missile.t} s, 2 rail shots and no more, the computer used ${weap.cpu.used} long-range shots in 6 rounds at level 5; the real key 2 took up the mortar and a real click put it ${weap.click && weap.click.off} cells from the click)`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
