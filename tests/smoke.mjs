@@ -3720,6 +3720,126 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side; a shell's way bounced ${r.way.bounces} times inside the board and came back off a wall; your own shell killed you at ${r.self && r.self.t} s; computer rounds ended with ${r.rounds.map(x => x.hits + ' hits, ' + x.bank + ' off walls').join('; ')}; a computer tank dodged; a real key drove, a real click fired, a real drag steered; a round won counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; two players on their own keys; a board no one plays moved; mazes ${mo.sizes.join('/')} for 2/3/4 tanks, 3- and 4-tank rounds ended with ${mo.rounds.map(x => x.taken).join('/')} crates taken and ${mo.rounds.map(x => x.used).join('/')} powers used; a laser came back off the wall, a frag burst into ${mo.frag.shards}, a spread of ${mo.spread}, a mine blew, a missile found its tank in ${mo.homing.t} s, a crate dropped at ${mo.crate.at} s and was taken; the aim line ${mo.aim.map(a => a && a.segs).join(' pieces at level 1, ')} at level 5)`);
   }
+  // GOLF TANKS (Oct 22: "the mini-golf game could be reused as a tank battle game. it has interesting terrain options.", then
+  // "Real-time"): the tank maze's battle on each board's golf hole. The levels by ring; the tanks start on the tee and by the
+  // cup; a tank is slower uphill than down; water stops it and a shove into a lake sinks it; a mine throws it; a shell bursts
+  // against a steep rise, comes back off the rail, and a charge bends it; the movers are solid where the clock has them;
+  // computer rounds end; a real key drives, a real click fires, a real drag steers; a round won counts and a match won gives
+  // stars; a board no one plays moves, its movers at the recording's clock; the drawing is the hole and the tanks.
+  {
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'golftanks'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, aim: true }); });
+    await page.waitForTimeout(1500);
+    current = 'golftanks';
+    const before = failures.length;
+    const rules = await page.evaluate(() => { const D = window.getFieldApp()._debug, K = D.kit(), CW = K.CW, out = {};
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      const G0 = D.roundNew(K, K.holeAt(30), ['you', 'cpu'], 1, 3), H0 = G0.H;
+      out.spawn = { tee: Math.hypot(G0.tanks[0].x - H0.tee.x, G0.tanks[0].y - H0.tee.y) / CW, cup: Math.hypot(G0.tanks[1].x - H0.cup.x, G0.tanks[1].y - H0.cup.y) / CW };
+      // holes with a lake, a mine, a path and a charge, from the generated ones
+      const find = {}; for (let idx = 60; idx < 900 && Object.keys(find).length < 4; idx += 7){ const hk = K.holeAt(idx), H = K.HOLES[hk];
+        if (!find.lake && H.map.some((row, j) => [...row].some((_, i) => K.groundAt(H, (i + 0.5) * CW, (j + 0.5) * CW) === '~'))) find.lake = hk;
+        if (!find.mine && K.minesOf(H).length) find.mine = hk;
+        if (!find.path && (H.toys || []).some(T => T.path)) find.path = hk;
+        if (!find.charge && K.chargesOf(H).length) find.charge = hk; }
+      out.found = Object.keys(find).sort().join();
+      // uphill against downhill: the same half second of driving on the steepest of a few hundred places
+      { const H = H0; let best = null; for (let q = 0; q < 400; q++){ const x = (0.15 + 0.7 * ((q * 0.618) % 1)) * K.WD, y = 0.1 + 0.8 * ((q * 0.382) % 1), g = K.gradOf(H, x, y), m = Math.hypot(g[0], g[1]);
+          if (m < 1 && K.groundAt(H, x, y) === '.' && !K.solidsAt(H, x, y, D.TR * CW * 2, 0).length && (!best || m > best.m)) best = { x, y, m, a: Math.atan2(g[1], g[0]) }; }
+        const go = a => { const G = D.roundNew(K, G0.hk, ['you', 'you'], 1, 3); Object.assign(G.tanks[0], { x: best.x, y: best.y, h: a }); G.tanks[1].alive = false; G.tanks[1].x = -9;
+          for (let n = 0; n < 30; n++) D.stepRound(G, [{ drive: 1, turn: 0 }, { drive: 0, turn: 0 }], D.STEP); return Math.hypot(G.tanks[0].x - best.x, G.tanks[0].y - best.y) / CW; };
+        out.slope = { grad: +best.m.toFixed(2), up: +go(best.a).toFixed(3), down: +go(best.a + Math.PI).toFixed(3) }; }
+      // water: driven at the shore it stops; shoved in, it sinks
+      if (find.lake != null){ const H = K.HOLES[find.lake]; let s = null;
+        for (let j = 0; j < K.NY && !s; j++) for (let i = 0; i < K.NX && !s; i++){ const x = (i + 0.5) * CW, y = (j + 0.5) * CW; if (K.groundAt(H, x, y) !== '~') continue;
+          for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]){ const px = x + dx * 1.6 * CW, py = y + dy * 1.6 * CW;
+            if (px > CW && px < K.WD - CW && py > CW && py < 1 - CW && K.groundAt(H, px, py) === '.' && !K.solidsAt(H, px, py, D.TR * CW * 1.5, 0).length){ s = { x: px, y: py, h: Math.atan2(-dy, -dx) }; break; } } }
+        if (s){ const G = D.roundNew(K, find.lake, ['you', 'you'], 1, 3); Object.assign(G.tanks[0], s); G.tanks[1].alive = false; G.tanks[1].x = -9;
+          for (let n = 0; n < 120; n++) D.stepRound(G, [{ drive: 1, turn: 0 }, { drive: 0, turn: 0 }], D.STEP);
+          const dry = G.tanks[0].alive && K.groundAt(H, G.tanks[0].x, G.tanks[0].y) !== '~';
+          G.tanks[0].kx = Math.cos(s.h) * 6 * CW; G.tanks[0].ky = Math.sin(s.h) * 6 * CW;
+          for (let n = 0; n < 90 && G.tanks[0].alive; n++) D.stepRound(G, [{ drive: 1, turn: 0 }, { drive: 0, turn: 0 }], D.STEP);
+          out.water = { dry, sank: !G.tanks[0].alive && G.booms.some(B => B.kind === 'splash') }; } }
+      // a mine: driven onto, it goes off once and throws the tank, stunned
+      if (find.mine != null){ const H = K.HOLES[find.mine], M = K.minesOf(H)[0], G = D.roundNew(K, find.mine, ['you', 'you'], 1, 3);
+        Object.assign(G.tanks[0], { x: M.x, y: M.y + 0.9 * CW, h: -Math.PI / 2 }); G.tanks[1].alive = false; G.tanks[1].x = -9;
+        let at = null; for (let n = 0; n < 90; n++){ D.stepRound(G, [{ drive: 1, turn: 0 }, { drive: 0, turn: 0 }], D.STEP); if (G.blown[M.j] != null && !at) at = { x: G.tanks[0].x, y: G.tanks[0].y, stun: G.tanks[0].stun }; }
+        out.mine = { blew: G.blown[M.j] != null, once: G.blownAt.length, stun: at && at.stun > 0, thrown: at ? +(Math.hypot(G.tanks[0].x - M.x, G.tanks[0].y - M.y) / CW).toFixed(2) : 0 }; }
+      // a path's rider is solid where the clock has it, and not where it has gone
+      if (find.path != null){ const H = K.HOLES[find.path], T = H.toys.find(T => T.path), S = K.toyAt(T, 0), period = T.path[2 * ((T.path.length - 4) >> 1) + 1];
+        const S2 = K.toyAt(T, period / 2); out.rider = { here: K.solidsAt(H, S.x + 0.002, S.y, 0.01, 0).length > 0, gone: Math.hypot(S2.x - S.x, S2.y - S.y) > 3 * CW ? K.solidsAt(H, S.x + 0.002, S.y, 0.01, period / 2).length === 0 : true }; }
+      // a charge bends a shell going by; with no charge it flies straight
+      if (find.charge != null){ const G = D.roundNew(K, find.charge, ['you', 'you'], 1, 3), [qx, qy, str, reach] = K.chargesOf(G.H)[0];
+        const b = { k: 0, x: qx - reach * 0.9, y: qy + reach * 0.3, z: 1, vx: D.BV * CW, vy: 0, t0: -9, bounces: 0, P: [] }, sim = { tanks: [] };
+        for (let n = 0; n < 80; n++) D.shellStep(G, b, D.STEP / 2, 0, sim);
+        out.charge = { str: +str.toFixed(2), turned: +Math.atan2(b.vy, b.vx).toFixed(3) }; }
+      // a shell: at a steep rise it bursts; at the rail it comes back
+      { const G = D.roundNew(K, G0.hk, ['you', 'you'], 1, 3), sim = { tanks: [] };
+        const b = { k: 0, x: K.WD / 2, y: 0.5, z: K.hOf(G.H, K.WD / 2, 0.5) + D.CLEAR * CW, vx: D.BV * CW, vy: 0, t0: -9, bounces: 0, P: [] };
+        let r = -1; for (let n = 0; n < 200 && r === -1; n++) r = D.shellStep(G, b, D.STEP / 2, 0, sim);
+        out.rail = { bounced: b.bounces >= 1 && b.vx < 0 };
+        const c = { k: 0, x: K.WD / 2, y: 0.5, z: -1, vx: D.BV * CW, vy: 0, t0: -9, bounces: 0, P: [] };   // (flown far under the ground: the first rise is too steep)
+        c.z = K.hOf(G.H, c.x, c.y) - 1; out.hill = D.shellStep(G, c, D.STEP / 2, 0, sim) === -2; }
+      // computer rounds end, on the course and on generated holes, at levels 1, 3 and 5
+      out.rounds = [1, 3, 5].map(lv => { let ended = 0, hits = 0, ms = 0;
+        for (let i = 0; i < 6; i++){ const t0 = performance.now(), G = D.roundNew(K, K.holeAt(5 + i * 23 + lv), ['cpu', 'cpu'], i, lv);
+          while (!G.over) D.stepRound(G, G.tanks.map((_, k) => D.cpuCmd(G, k)), D.STEP);
+          if (G.t < 59.9) ended++; hits += G.booms.filter(B => B.k >= 0 && B.kind === 'hit').length; ms += performance.now() - t0; }
+        return { lv, ended, hits, ms: Math.round(ms / 6) }; });
+      return out; });
+    await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const at = (x, y) => page.evaluate(([x, y]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, K = window.getFieldApp()._debug.kit();
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - x / K.WD) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - y) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [x, y]);
+    const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); if (!g) return null; const t = g.G.tanks[0];
+      return { state: g.state, x: t.x, y: t.y, h: t.h, mine: g.G.shots.filter(b => b.k === 0).length, score: g.score.slice(), round: g.round, t: g.G.t }; }, fc[0] + '_' + fc[1]);
+    const live = {};
+    if (fc){
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); g.G.tanks[1].alive = false; g.G.tanks[1].x = -9; }, fc);
+      live.ready = await gs();
+      await page.keyboard.down('w');
+      for (let w = 0; w < 30; w++){ const s = await gs(); if (Math.hypot(s.x - live.ready.x, s.y - live.ready.y) > 0.02) break; await page.waitForTimeout(250); }
+      await page.keyboard.up('w');
+      live.drove = await gs();
+      const pt = await at(0.3, 0.5);
+      await page.mouse.click(pt.x, pt.y);
+      for (let w = 0; w < 24 && (await gs()).mine < 1; w++) await page.waitForTimeout(250);
+      live.fired = await gs();
+      // a real drag toward a point to one side of the tank: it turns that way
+      const t2 = await gs(), tx = t2.x < 0.3 ? 0.55 : 0.05, want = Math.atan2(t2.y - 0.15 - t2.y, tx - t2.x), p0 = await at(0.3, 0.3), p1 = await at(tx, t2.y - 0.15);
+      await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
+      for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.abs(Math.atan2(Math.sin(s.h - want), Math.cos(s.h - want))) < 0.3) break; await page.waitForTimeout(250); }
+      await page.mouse.up();
+      live.steered = await gs(); live.want = want;
+      live.match = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), out = {};
+        g.G.tanks[1].alive = true; D.stepRound(g.G, [{ drive: 0, turn: 0 }, { drive: 0, turn: 0 }], D.STEP); g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        out.after = { score: g.score.join(), round: g.round, state: g.state, fresh: g.G.tanks.every(t => t.alive) };
+        g.score = [4, 1]; g.state = 'play'; g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        out.end = { state: g.state, stars: g.stars, best: [...D.BEST.values()].pop() };
+        return out; }, fc);
+    }
+    const shown = await page.evaluate(async fc => { const D = window.getFieldApp()._debug, K = D.kit(), c = fc[0] + 3, r = fc[1] + 1; D.GAMES.delete(c + '_' + r);
+      const hk = K.holeAt(K.boardIdx(c, r)), E = D.recSoon(c, r, hk, true), a = D.shownOf(E); await new Promise(ok => setTimeout(ok, 1500)); const b = D.shownOf(E);
+      const moved = Math.hypot(a.tanks[0].x - b.tanks[0].x, a.tanks[0].y - b.tanks[0].y) + Math.hypot(a.tanks[1].x - b.tanks[1].x, a.tanks[1].y - b.tanks[1].y) + Math.abs(a.t - b.t);
+      const sh = E.shots[0], V = sh ? { ...D.shownOf(E), t: sh.t0 + 0.15 } : D.shownOf(E);
+      const V1 = { ...V, shots: sh ? [{ x: sh.P[1], y: sh.P[2], z: sh.P[3] }] : [] }, it = D.itemsOf(V1, c, r, 600), B = E.booms[0], it2 = B ? D.itemsOf({ ...V1, t: B.t + 0.2 }, c, r, 600) : [];
+      const kinds = k => it.filter(i => i.kind === k);
+      return { done: E.done, T: E.T, moved, land: it.some(i => /^land/.test(i.kind)), hulls: kinds('mzHull').length, guns: kinds('mzGun').length,
+               yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shot: kinds('mzShot').length,
+               burst: it2.filter(i => i.kind === 'mzFire' || i.kind === 'mzPuff').length, inside: it.filter(i => /^mz/.test(i.kind)).every(i => i.u > -0.05 && i.u < 1.05 && i.v > -0.05 && i.v < 1.05) }; }, fc);
+    const r = rules, ok = r.levels[0] < r.levels[2] && r.spawn.tee < 0.05 && r.spawn.cup < 1.1 && r.found === 'charge,lake,mine,path'
+      && r.slope.up < r.slope.down && r.water && r.water.dry && r.water.sank && r.mine && r.mine.blew && r.mine.once === 1 && r.mine.stun && r.mine.thrown > 0.9
+      && r.rider && r.rider.here && r.rider.gone && r.charge && Math.abs(r.charge.turned) > 0.02 && r.rail.bounced && r.hill
+      && r.rounds.every(x => x.ended >= 5) && r.rounds.reduce((n, x) => n + x.hits, 0) >= 12
+      && live.drove && Math.hypot(live.drove.x - live.ready.x, live.drove.y - live.ready.y) > 0.02 && live.ready.state === 'ready'
+      && live.fired && live.fired.mine >= 1 && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
+      && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.fresh
+      && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
+      && shown.done && shown.moved > 0.01 && shown.land && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.burst >= 1 && shown.inside;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks (levels ${r.levels.join('/')} by ring; on the tee and ${r.spawn.cup.toFixed(2)} cells from the cup; ${r.slope.up} cells up a slope of ${r.slope.grad} against ${r.slope.down} down; the shore stopped a tank and a shove sank it; a mine threw one ${r.mine && r.mine.thrown} cells; a rider solid where the clock has it; a charge turned a shell ${r.charge && r.charge.turned} rad; a shell came back off the rail and burst on a rise; computer rounds ended: ${r.rounds.map(x => x.ended + '/6 at level ' + x.lv + ', ' + x.hits + ' hits, ' + x.ms + ' ms').join('; ')}; a real key drove, a real click fired, a real drag steered; a round and a match won, ${live.match && live.match.end.stars} stars; a board no one plays moved)`);
+  }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
   // the view comes to the default framing, the one the 0 key gives, even when the game in play keeps quick taps for itself
