@@ -643,11 +643,34 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     beams, missiles and aim dots drawn.
 - **Golf tanks** (Oct 22: "the mini-golf game could be reused as a tank battle game. it has interesting terrain options.", then
   "Real-time"): `GOLFTANK_APP`, id `golftanks`, after the tank maze. The tank maze's battle (drive, turn, fire, shells bouncing,
-  first to `WIN` 5 rounds) on each board's own golf hole, as mini golf makes it at its size: you start on the tee, the computer a
-  cell from the cup toward the tee (`spawnsOf`); every round is on the same hole.
+  first to `WIN` 5 rounds) on each board's own golf hole, as mini golf makes it at its size; every round is on the same hole.
+  - **One on one, no golf** (Oct 22, later: "remove the golf hole and tee box. this is one on one tank combat."): the battle is
+    fought on a bare copy of the hole (mini golf's `bareOf(k)`: the compiled hole copied without its kept heights, marked
+    `bare`, in a slot of its own in HOLES so its ground meshes are its own; `BARE_CAP` 400, the one wanted least lately giving
+    up its slot). `rawH` raises no tee box on it, `hOf` sinks no cup, `onTeeBox` mows no stripes, and `cellItems` draws no cup,
+    flag, flag dots, tee markers or number. The tanks start where the tee and the cup were (`spawnsOf`), the two ends the
+    hole was made round, kept clear of its things; the title gives no hole name.
+  - **Long-range weapons** (Oct 22: "the game can be changed to accomodate tank combat. more long range weapons."): the cannon's
+    shell skims the ground, so every hill was cover. `WEAPONS`: Cannon (always), Mortar (3 a round), Rail gun (2), Missile (2),
+    `ammo` back to full each round; chosen with 1–4 (Player 2: 7–0, `WEAPON_KEYS`, `choose`) or the bottom row (`statTiles`, the
+    ammo left, the one in hand lit; `statsStay`), fired by `fire(G, k, cmd)` (`cmd.w`, a mortar's `cmd.at`).
+    - **Mortar** (`fireMortar`, `mortarAt`): lobbed over everything onto a point, `MORTAR_MIN`–`MORTAR_MAX` (1.5–16) cells, landing
+      `MORTAR_T0` + `MORTAR_TK` a cell later, a burst `MORTAR_R` (0.8 cell) that takes any tank, its own too (`blast`). A tap puts it
+      where you tap (`g.fireAt`); the fire key on the other tank within `AUTO_CONE` of the heading, else `AUTO_RANGE` cells ahead
+      (`autoRange`). Its landing place is ringed in red while it flies, and with it in hand the aim line is that ring.
+    - **Rail gun** (`railTrace`, `fireRail`): a shell's way at once, no bounce, `RAIL_LEN` (30) cells: the ground and every solid
+      thing stop it as they stop a shell; drawn as a fading beam (`G.beams`, `RAIL_SHOW`); its aim line is its whole way.
+    - **Missile** (`fireMissile`, `stepMissile`): rises to `MIS_Z` over the ground and flies after the nearest other tank at `MIS_V`,
+      turning `MIS_TURN` a second, over everything, bursting within `MIS_HIT` (`MIS_R`); out after `MIS_LIFE` or off the board.
+    - The computer: the rail at a tank in plain sight more than 4 cells off (from level 2), else the cannon's search as before;
+      with no straight shot, now and then (`LV`'s `mortar` and `missile`, a chance each time it thinks) a mortar onto where the
+      tank will be, off by `merr` of the range, or a missile; never in a round's first `LONG_HOLD` (2.5 s: mortars onto tanks still
+      where they began ended rounds in four seconds). It sees a mortar coming down near it or a missile after it and drives clear
+      (`threatened`, `escape`). Measured over 12 rounds a level: 10.1, 9.7 and 8.6 s a round at levels 1, 3 and 5, long-range
+      shots 1, 2 and 11 of them. Recordings keep each shot's kind and the beams.
   - **Mini golf's kit** (`GOLF_APP._kit`, asked for each time, `kit()`; a new kit, after Board size, clears the games and
     recordings): the holes, `holeSoon`/`holeAt`, `hOf`, `gradOf`, `groundAt`, `waterAt`, `toyAt`, `chargePull`, `minesOf`,
-    `cellBlocked`, `gridOf`, and two made for this: `solidsAt(H, x, y, R, t)`, every solid thing a circle of radius R touches at
+    `cellBlocked`, `gridOf`, `bareOf`, and two made for this: `solidsAt(H, x, y, R, t)`, every solid thing a circle of radius R touches at
     the clock t as [nx, ny, depth] (the ball's own tests with any radius: the rail, wall cells, slides, windmills, turnstiles'
     and doors' bars, fences, curved fences, planters, charges' posts, boulders, bumpers, path riders, a gate standing up), and
     `drawHole(c, r, bp, opt)`, mini golf's `cellItems` with `opt` = { hk, t, now, blown, kicked }: the hole at the clock t with
@@ -671,7 +694,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     and thinks again if the movers have shut it (`STEP / 2`: without that, against a still target, 75 shots made 19 kills; with
     it, 23 made 17). Else it drives toward the foe through the cells mini golf's players can cross (`navTo`, `cellBlocked`), and
     backs off when stuck. Rounds of two computer tanks: 3–15 s, 30 ms to work out at level 1, 215 ms at level 5.
-  - Controls, keys, two players (Player 1 on the tee, Player 2 by the cup), the match, stars and best (localStorage
+  - Controls, keys, two players (Player 1 at the near end, Player 2 at the far end), the match, stars and best (localStorage
     `golftanks.best`, by board, level and size) and the aim line (`aimOf`: the shell's own way, `AIM_SEG` bounces by level, at
     most `AIM_LEN` 2.2 s) are the tank maze's. Two tanks only, no power-ups.
   - **Drawn**: the hole by mini golf (`drawHole`), then the tank maze's pieces in golf's units, standing on the ground and
@@ -680,9 +703,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **A board no one plays** shows a round of two computer tanks on its hole (`recSoon`: worked out about 6 ms in 30, `REC_CAP`
     300, 40 s at most; tanks sampled `REC_HZ` 15 a second, each shell's points as it went, `shellAt`), its movers and mines at
     the recording's own clock.
-  - The smoke test checks the levels by ring, the spawns, uphill slower than down, the shore and a sinking, a mine's throw, a
+  - The smoke test checks the levels by ring, the spawns, the bare copy (the tee box's rise gone, no cup, flag or markers
+    drawn, the golf hole itself unchanged), uphill slower than down, the shore and a sinking, a mine's throw, a
     rider solid where the clock has it, a charge's bend, a shell off the rail and against a rise, computer rounds ending at levels
-    1, 3 and 5, a real key, click and drag, a round and a match won, and a board no one plays moving and drawn.
+    1, 3 and 5, a real key, click and drag, a round and a match won, and a board no one plays moving and drawn; since Oct 22 also a mortar
+    landing on its tank, the rail stopped by the rail and reaching a tank in the open, a missile fired away turning back for its
+    tank, the rail's ammo running out, the computer using long-range shots at level 5, and the real key 2 and a real click putting
+    a mortar where it was clicked.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
