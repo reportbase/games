@@ -3893,6 +3893,89 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown, weap })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks (levels ${r.levels.join('/')} by ring; at the two ends, the hole bare (the tee box's ${r.bare.teeRise} cells gone, no cup, flag or markers); ${r.slope.up} cells up a slope of ${r.slope.grad} against ${r.slope.down} down; the shore stopped a tank and a shove sank it; a mine threw one ${r.mine && r.mine.thrown} cells; a rider solid where the clock has it; a charge turned a shell ${r.charge && r.charge.turned} rad; a shell came back off the rail and burst on a rise; computer rounds ended: ${r.rounds.map(x => x.ended + '/6 at level ' + x.lv + ', ' + x.hits + ' hits, ' + x.ms + ' ms').join('; ')}; a real key drove, a real click fired, a real drag steered; a round and a match won, ${live.match && live.match.end.stars} stars; a board no one plays moved; a mortar ${weap.mortar.dist} cells off landed on its tank in ${weap.mortar.t} s, the rail stopped at the rail after ${weap.railWall} cells and reached a tank in the open, a missile fired away turned and found its tank in ${weap.missile.t} s, 2 rail shots and no more, the computer used ${weap.cpu.used} long-range shots in 6 rounds at level 5; the real key 2 took up the mortar and a real click put it ${weap.click && weap.click.off} cells from the click; driven at a slope of ${weap.steep && weap.steep.slope} a tank rose ${weap.steep && weap.steep.climbed} of its ${weap.steep && weap.steep.hill} cells and stood tilted ${weap.steep && weap.steep.tilt})`);
   }
+  // TRICK SHOTS (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): wander's engine
+  // gives the textbook results (the thresholds wander's own smoke test holds it to), every challenge's reference shot solves it
+  // on its board, a missed try puts the balls back and says why, a real drag aims, a real click on the white shoots and the
+  // shot plays to its end, a real Space shoots a free board and a pot counts, the row's Spin and power tiles change the cue, a
+  // board no one plays goes through its shot, and the drawing is balls, cushions, the cue and the shot seen ahead.
+  {
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); A._debug.GAMES.clear(); });
+    await page.waitForTimeout(1500);
+    current = 'trickshots';
+    const before = failures.length;
+    const rules = await page.evaluate(() => { const D = window.getFieldApp()._debug, sc = D.spinChecks(), out = {};
+      out.spin = { roll: sc.rollSlip < 1e-9, follow: Math.abs(sc.follow - sc.followPred) < 0.005, stun: Math.abs(sc.stun) < 0.05, draw: sc.draw < 0.5, english: sc.englishVx * sc.rightX > 0.3,
+        miscue: !sc.miscue.grip && sc.miscue.turn < 0 && sc.miscue.turn > -44.5, cutThrow: sc.cutThrow > 0.5 && sc.cutThrow < 4.5, sideThrow: sc.sideThrow < -0.3 && sc.sideThrow > -4.5,
+        passed: sc.passed < 0, masse: Math.abs(sc.masseBend) > 10, jump: sc.jumpCleared && sc.jumpPeak > 2 * 0.45, followGrip: sc.followGrip < sc.followPred - 0.01 && sc.followGrip > 0.15,
+        backspinPassed: sc.backspinPassed > 0, offTable: sc.offTable };
+      out.sols = D.CHALLENGES.map((c, i) => { const S = D.setupOf(i), o = c.sol, st = D.strikeOf(o.a * D.D, ...(o.tip || [0, 0]), o.p, undefined, (o.el || 0) * D.D);
+        return S.ch === c && !c.goal(D.simulate(S.B, st.dir, st.speed, st.w, st.vy), c); });
+      out.cells = D.CHALLENGES.map((_, i) => D.boardIdx(...D.cellOfIdx(i)) === i).every(Boolean);
+      // a missed try on the ½-ball board (the cue straight at the 1): the balls go back, the board says why
+      const [c0, r0] = D.cellOfIdx(0); D.GAMES.delete(c0 + '_' + r0); const g = D.gameAt(c0, r0), at0 = g.balls.map(b => [b.x, b.z]);
+      D.shoot(g); D.finish(g);
+      out.miss = { tries: g.tries, why: g.lastWhy, back: g.balls.every((b, i) => b.x === at0[i][0] && b.z === at0[i][1]) };
+      D.GAMES.delete(c0 + '_' + r0);
+      return out; });
+    // the ½-ball challenge framed for real: a real drag aims, and a real click on the white plays the reference shot through
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = D.cellOfIdx(0); D.GAMES.delete(c + '_' + r); D.fly(c, r); });
+    await page.waitForTimeout(2500);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const at = (x, z) => page.evaluate(([x, z]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, D = window.getFieldApp()._debug;
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [x, z]);
+    const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); if (!g) return null;
+      return { ang: g.ang * 180 / Math.PI, tries: g.tries, solvedIn: g.solvedIn, anim: !!g.anim, potted: g.potted, shots: g.shots, power: g.power, tip: g.tip, why: g.lastWhy,
+               balls: g.balls.map(b => ({ n: b.n, x: b.x, z: b.z, sunk: b.sunk })) }; }, fc[0] + '_' + fc[1]);
+    const live = {};
+    if (fc){
+      live.cell = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.LIVE = { c, r }; D.gameAt(c, r); return D.boardIdx(c, r); }, fc);
+      const g0 = await gs(), w = g0.balls[0];
+      // a drag from beside the white toward a point straight up the board from it: the cue turns to it (−90°)
+      const p0 = await at(w.x + 3, w.z - 2), p1 = await at(w.x, w.z - 3);
+      await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
+      for (let k = 0; k < 20 && Math.abs((await gs()).ang + 90) > 8; k++) await page.waitForTimeout(250);
+      await page.mouse.up();
+      live.dragged = (await gs()).ang;
+      await page.waitForTimeout(500);   // (past the tap the field still calls after a drag)
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), o = g.ch.sol; g.ang = o.a * D.D; D.setPower(g, o.p); D.setTip(g, 0, 0); }, fc);
+      const pw = await at(w.x, w.z);
+      await page.mouse.click(pw.x, pw.y);
+      live.playing = (await gs()).anim;
+      for (let k = 0; k < 40 && (await gs()).anim; k++) await page.waitForTimeout(250);
+      live.after = await gs();
+      // the row: Spin steps the tip to follow, power + steps it up by one
+      live.row = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), p = g.power; D.onTile(g, 5); D.onTile(g, 4);
+        return { tip: g.tip.y, power: g.power - p, tiles: D.tilesOf(g).length }; }, fc);
+      // free play on the next board along: a real Space shoots a straight pot (the 1 set before a corner pocket, the white behind it)
+      const fr = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; let k = D.boardIdx(c, r) + 20; const [fc2, fr2] = D.cellOfIdx(k);
+        D.GAMES.delete(fc2 + '_' + fr2); D.fly(fc2, fr2); D.LIVE = { c: fc2, r: fr2 }; const g = D.gameAt(fc2, fr2);
+        const a = Math.atan2(4, 6); g.balls = [{ ...g.balls[0], x: 4, z: 1, sunk: false }, { ...g.balls.find(b => !b.cue), x: 4 + 3.6 * Math.cos(a), z: 1 + 3.6 * Math.sin(a), sunk: false }]; g.total = 1; g.dirty = true;
+        g.ang = a; D.setPower(g, 12); D.setTip(g, 0, -0.3); return [fc2, fr2, g.ch ? 1 : 0]; }, fc);
+      await page.keyboard.press(' ');
+      const fk = fr[0] + '_' + fr[1];
+      const fgs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return { anim: !!g.anim, potted: g.potted, shots: g.shots, back: g.history.length }; }, fk);
+      live.space = await fgs();
+      for (let k = 0; k < 40 && (await fgs()).anim; k++) await page.waitForTimeout(250);
+      live.free = { ...(await fgs()), challenge: fr[2] };
+      await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.LIVE = null; }, fk);
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), fc[0] + '_' + fc[1]);
+    }
+    const shown = await page.evaluate(async () => { const D = window.getFieldApp()._debug, idx = 3, R = D.recSoon(idx, true), [c, r] = D.cellOfIdx(idx); D.GAMES.delete(c + '_' + r);
+      const a = D.shownOf(R); let moved = 0, sawCue = !!a.cue, sawPlay = !a.cue;
+      for (let k = 0; k < 16; k++){ await new Promise(ok => setTimeout(ok, 300)); const b = D.shownOf(R); sawCue = sawCue || !!b.cue; sawPlay = sawPlay || !b.cue;
+        moved += a.pos.reduce((s, p, i) => s + (p && b.pos[i] ? Math.hypot(p[0] - b.pos[i][0], p[1] - b.pos[i][1]) : 0), 0); }
+      const it = D.itemsOf({ B: R.S.B, pos: R.S.B.map(b => [b.x, b.z, 0]), ch: R.S.ch, sim: R.s, hz: R.s.hz, see: 3, paths: 'all', cue: { ang: 0.3, power: 14, elev: 0, tip: { x: 0, y: 0 }, chalk: true } });
+      const kinds = k => it.filter(i => i.kind === k).length;
+      return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: kinds('tsBall'), cushions: kinds('tsBox'), cue: kinds('tsCue'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
+               yaws: it.filter(i => i.kind === 'tsCue').every(i => i.yaw), inside: it.every(i => i.u > -0.02 && i.u < 1.02 && i.v > -0.02 && i.v < 1.02), photo: !!D.paint(256) }; });
+    const r = rules, ok = Object.values(r.spin).every(Boolean) && r.sols.every(Boolean) && r.cells && r.miss.tries === 1 && r.miss.why && r.miss.back
+      && live.cell === 0 && Math.abs(live.dragged + 90) < 10 && live.playing && live.after && !live.after.anim && live.after.tries === 1 && live.after.solvedIn === 1
+      && live.row.tip > 0.3 && live.row.power === 1 && live.row.tiles === 12 && live.space.anim && live.free.challenge === 0 && live.free.potted === 1 && live.free.shots === 1 && live.free.back === 1
+      && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 1 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trick shots (wander's textbook results; ${r.sols.filter(Boolean).length} of ${r.sols.length} reference shots solve their challenges; a missed try put the balls back: ${r.miss.why}; a real drag aimed the cue to ${live.dragged && live.dragged.toFixed(1)}°; a real click on the white played the ½-ball cut, solved in ${live.after && live.after.solvedIn}; a real Space potted on free play; a board no one plays went through its ${shown.cycle} s shot, drawn with ${shown.dots} dots ahead)`);
+  }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
   // the view comes to the default framing, the one the 0 key gives, even when the game in play keeps quick taps for itself
