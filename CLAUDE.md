@@ -675,10 +675,21 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     and doors' bars, fences, curved fences, planters, charges' posts, boulders, bumpers, path riders, a gate standing up), and
     `drawHole(c, r, bp, opt)`, mini golf's `cellItems` with `opt` = { hk, t, now, blown, kicked }: the hole at the clock t with
     no golf game's ball, ghost or aim.
-  - **The ground** (`moveTank`, in cells of the hole, CW): speed × (1 − `SLOPE_K` 0.8 × the slope ahead), 0.35 to 1.5; nothing
-    steeper than `SLOPE_MAX` 2.4 climbed; a slide down a slope over `SLIDE` 1.2 unless driving up it; sand × `SAND` 0.6. (At
-    first the tanks could climb nothing over 0.9: a raised green's edge is 1.7, and two computer tanks sat at the foot of one
-    for a whole round.) Measured: 0.87 cells in half a second up a slope of 0.24, 0.98 down it.
+  - **The ground** (`moveTank`, in cells of the hole, CW; Oct 22, later: "the tanks just drive through hills. they should respect
+    the terrain."): speed × (1 − `SLOPE_K` 1.4 × the slope ahead), 0.2 to 1.5; ground rising more steeply than `SLOPE_MAX` 1.05
+    along the tank's way, where it stands or where the step would take it, keeps only the part of the way running along the
+    slope, so a tank stops at a hill's foot or slides along it; anything steeper than `SLIDE` 0.95 slides it down, whatever it
+    is doing; sand × `SAND` 0.6. (Before, it climbed anything to 2.4, since a raised green's edge, 1.7, had held two computer
+    tanks at its foot for a round; now the computer goes round: `navTo` treats a step up to a cell more than 0.85 × `SLOPE_MAX`
+    a cell higher, or steeper than `SLOPE_MAX` between the two, as a wall, kept a hole on `H._gtSteep`.) Measured: 0.53 cells
+    in half a second up a slope of 0.3, 1.09 down it; driven at a slope of 1.63, a tank rose 0.05 of the hill's 1.25 cells.
+    - **Tilted to the slope**: the field's items take `tilt` [du, dv] (`_emitInto`: the ground's slope as lift a unit of u and
+      of v; the item's upright turned to the normal (du, 1, dv·bWX/bWZ), after its yaw). A tank's is the slope across
+      `TILT_E` (0.3) of a cell either way under it, so it lies along a hillside, not into it.
+    - The computer up close with no shot (a ridge between) goes round the other tank on a side of its own (`A.side`, 2.2
+      cells out) instead of sitting face to face, and after a shot that would not stand when looked at again it looks for none
+      for 0.6 s (`A.noShot`). With hills holding tanks, 3 of 36 rounds had run to `ROUND_CAP` that way; after, none: 9.1, 5.9
+      and 6.9 s a round at levels 1, 3 and 5.
   - **Water** stops a tank (it slides along the shore; a bridge is ground); a tank pushed or thrown into a lake goes under and
     is out (`splash`). **A mine** (once a round, `G.blown`) throws a tank `THROW` 5 cells a second, spinning, stunned `STUN`
     0.9 s (2.9 cells, measured). Pipes and zap zones are not used.
@@ -709,7 +720,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     1, 3 and 5, a real key, click and drag, a round and a match won, and a board no one plays moving and drawn; since Oct 22 also a mortar
     landing on its tank, the rail stopped by the rail and reaching a tank in the open, a missile fired away turning back for its
     tank, the rail's ammo running out, the computer using long-range shots at level 5, and the real key 2 and a real click putting
-    a mortar where it was clicked.
+    a mortar where it was clicked; and a tank driven at steep ground staying at its foot, drawn tilted to it.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

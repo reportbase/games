@@ -3842,6 +3842,19 @@ try {
         while (!G2.over) D.stepRound(G2, G2.tanks.map((_, k) => D.cpuCmd(G2, k)), D.STEP);
         if (G2.t < 59.9) ended++; used += G2.shots.filter(s => s.kind).length + G2.beams.length; }
       out.cpu = { used, ended };
+      // (Oct 22: "the tanks just drive through hills. they should respect the terrain."): driven straight at ground steeper than
+      // a tank can climb, it stays at the foot; and a tank on a slope is drawn tilted to it
+      let found = null;
+      for (let idx = 30; idx < 300 && !found; idx += 7){ const hk2 = K.bareOf(K.holeAt(idx)), H = K.HOLES[hk2];
+        for (let q = 0; q < 300 && !found; q++){ const x = (0.15 + 0.7 * ((q * 0.618) % 1)) * K.WD, y = 0.15 + 0.7 * ((q * 0.382) % 1), g = K.gradOf(H, x, y), m = Math.hypot(g[0], g[1]);
+          if (m > 1.6 && K.groundAt(H, x, y) === '.'){ const ux = g[0] / m, uy = g[1] / m, sx = x - ux * 1.2 * CW, sy = y - uy * 1.2 * CW;
+            if (K.groundAt(H, sx, sy) === '.' && !K.solidsAt(H, sx, sy, 0.5 * CW, 0).length) found = { hk: hk2, x, y, sx, sy, h: Math.atan2(uy, ux), m }; } } }
+      if (found){ const G3 = D.roundNew(K, found.hk, ['you', 'you'], 1, 3); Object.assign(G3.tanks[0], { x: found.sx, y: found.sy, h: found.h }); G3.tanks[1].alive = false; G3.tanks[1].x = -9;
+        const h0 = K.hOf(G3.H, found.sx, found.sy); let top = h0;
+        for (let n = 0; n < 180; n++){ D.stepRound(G3, [{ drive: 1, turn: 0 }, { drive: 0, turn: 0 }], D.STEP); top = Math.max(top, K.hOf(G3.H, G3.tanks[0].x, G3.tanks[0].y)); }
+        const it = D.itemsOf({ hk: found.hk, H: G3.H, t: G3.t, tanks: G3.tanks.slice(0, 1), shots: [], beams: [], booms: [], blown: {}, cols: [0x5a9e3e] }, 0, 0, 600).find(i => i.kind === 'mzHull');
+        out.steep = { slope: +found.m.toFixed(2), climbed: +((top - h0) / CW).toFixed(2), hill: +((K.hOf(G3.H, found.x + Math.cos(found.h) * CW, found.y + Math.sin(found.h) * CW) - h0) / CW).toFixed(2),
+                      tilt: it && it.tilt ? +Math.hypot(it.tilt[0], it.tilt[1]).toFixed(2) : 0 }; }
       return out; });
     if (fc){
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); g.G.tanks[1].alive = false; g.G.tanks[1].x = -9; g.state = 'play'; g.last = performance.now(); }, fc);
@@ -3875,9 +3888,10 @@ try {
       && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
       && shown.done && shown.moved > 0.01 && shown.land && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.burst >= 1 && shown.inside
       && weap.mortar.killed && weap.railWall < 4 && weap.railOpen === 1 && weap.missile.killed && weap.railAmmo === 2 && weap.cpu.used >= 1 && weap.cpu.ended >= 5
-      && weap.chose === 1 && weap.click && weap.click.off < 0.6 && weap.click.left === 2;
+      && weap.chose === 1 && weap.click && weap.click.off < 0.6 && weap.click.left === 2
+      && weap.steep && weap.steep.climbed < 0.3 * weap.steep.hill && weap.steep.tilt > 0.1;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown, weap })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks (levels ${r.levels.join('/')} by ring; at the two ends, the hole bare (the tee box's ${r.bare.teeRise} cells gone, no cup, flag or markers); ${r.slope.up} cells up a slope of ${r.slope.grad} against ${r.slope.down} down; the shore stopped a tank and a shove sank it; a mine threw one ${r.mine && r.mine.thrown} cells; a rider solid where the clock has it; a charge turned a shell ${r.charge && r.charge.turned} rad; a shell came back off the rail and burst on a rise; computer rounds ended: ${r.rounds.map(x => x.ended + '/6 at level ' + x.lv + ', ' + x.hits + ' hits, ' + x.ms + ' ms').join('; ')}; a real key drove, a real click fired, a real drag steered; a round and a match won, ${live.match && live.match.end.stars} stars; a board no one plays moved; a mortar ${weap.mortar.dist} cells off landed on its tank in ${weap.mortar.t} s, the rail stopped at the rail after ${weap.railWall} cells and reached a tank in the open, a missile fired away turned and found its tank in ${weap.missile.t} s, 2 rail shots and no more, the computer used ${weap.cpu.used} long-range shots in 6 rounds at level 5; the real key 2 took up the mortar and a real click put it ${weap.click && weap.click.off} cells from the click)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks (levels ${r.levels.join('/')} by ring; at the two ends, the hole bare (the tee box's ${r.bare.teeRise} cells gone, no cup, flag or markers); ${r.slope.up} cells up a slope of ${r.slope.grad} against ${r.slope.down} down; the shore stopped a tank and a shove sank it; a mine threw one ${r.mine && r.mine.thrown} cells; a rider solid where the clock has it; a charge turned a shell ${r.charge && r.charge.turned} rad; a shell came back off the rail and burst on a rise; computer rounds ended: ${r.rounds.map(x => x.ended + '/6 at level ' + x.lv + ', ' + x.hits + ' hits, ' + x.ms + ' ms').join('; ')}; a real key drove, a real click fired, a real drag steered; a round and a match won, ${live.match && live.match.end.stars} stars; a board no one plays moved; a mortar ${weap.mortar.dist} cells off landed on its tank in ${weap.mortar.t} s, the rail stopped at the rail after ${weap.railWall} cells and reached a tank in the open, a missile fired away turned and found its tank in ${weap.missile.t} s, 2 rail shots and no more, the computer used ${weap.cpu.used} long-range shots in 6 rounds at level 5; the real key 2 took up the mortar and a real click put it ${weap.click && weap.click.off} cells from the click; driven at a slope of ${weap.steep && weap.steep.slope} a tank rose ${weap.steep && weap.steep.climbed} of its ${weap.steep && weap.steep.hill} cells and stood tilted ${weap.steep && weap.steep.tilt})`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and

@@ -49532,7 +49532,12 @@ const GOLFTANK_APP = (() => {
   const LONG_HOLD = 2.5, RAIL_LEN = 30, RAIL_STEP = 0.08, RAIL_SHOW = 0.45, MIS_V = 3.2, MIS_TURN = 2.4, MIS_LIFE = 8, MIS_Z = 0.9, MIS_HIT = 0.42, MIS_R = 0.55;
   const TR = 0.34, HIT_R = 0.3, BRAD = 0.09, TS = 1.15, TV = 1.9, TURN = 3.0, BV = 4.6, LIFE = 4.5, MAXB = 4, GRACE = 0.2;
   const GUN_Z = 0.24, CLEAR = 0.1, DROP = 0.6, CLIMB = 0.35, CHG = 0.35;
-  const SLOPE_K = 0.8, SLOPE_MAX = 2.4, SLIDE = 1.2, SLIDE_V = 1.2, SAND = 0.6, MINE_R = 0.3, THROW = 5, STUN = 0.9, KNOCK_DECAY = 3.2;
+  /* THE TERRAIN RESPECTED (Oct 22: "the tanks just drive through hills. they should respect the terrain."): a tank is slowed
+     hard going up (SLOPE_K), cannot drive onto ground rising more steeply than SLOPE_MAX along its way (it keeps what part of
+     its way runs along the slope), slides down anything steeper than SLIDE whatever it is doing, and stands tilted on the
+     slope under it. It had climbed anything to 2.4 since a raised green's edge (1.7) held two computer tanks at its foot a
+     whole round; now the computer goes round such ground (navTo) instead of up it. */
+  const SLOPE_K = 1.4, SLOPE_MAX = 1.05, SLIDE = 0.95, SLIDE_V = 2.2, TILT_E = 0.3, SAND = 0.6, MINE_R = 0.3, THROW = 5, STUN = 0.9, KNOCK_DECAY = 3.2;
   const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, AIM_SEG = [3, 3, 2, 2, 1, 1], AIM_LEN = 2.2;
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('golftanks.level', 'Every board is its own golf hole, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
@@ -49605,13 +49610,17 @@ const GOLFTANK_APP = (() => {
     t.h += turn * TURN * dt + t.spin * dt; t.spin *= Math.exp(-KNOCK_DECAY * dt);
     const dx = Math.cos(t.h), dy = Math.sin(t.h), [gx, gy] = K.gradOf(H, t.x, t.y), dir = drive >= 0 ? 1 : -1;
     const up = (gx * dx + gy * dy) * dir;
-    let f = clamp(1 - SLOPE_K * up, 0.35, 1.5);
-    if (up > SLOPE_MAX) f = 0;
+    let f = clamp(1 - SLOPE_K * up, 0.2, 1.5);
     if (K.groundAt(H, t.x, t.y) === 's') f *= SAND;
     let vx = dx * drive * TV * CW * f, vy = dy * drive * TV * CW * f;
+    // (too steep ahead, here or where the step would land: only the part of the way that runs along the slope is kept)
+    const ahead = (ax, ay) => { const [hx, hy] = K.gradOf(H, ax, ay), m = Math.hypot(vx, vy) || 1; return (hx * vx + hy * vy) / m; };
+    if (vx || vy){ const sx = t.x + vx * dt * 4, sy = t.y + vy * dt * 4;
+      if (ahead(t.x, t.y) > SLOPE_MAX || ahead(sx, sy) > SLOPE_MAX){ const [hx, hy] = K.gradOf(H, sx, sy), g2 = hx * hx + hy * hy || 1, along = (vx * hx + vy * hy) / g2;
+        if (along > 0){ vx -= hx * along; vy -= hy * along; } } }
     const gm = Math.hypot(gx, gy);
-    // (sliding down a slope steeper than SLIDE, unless the tank is driving up it: a raised green's edge is climbed slowly)
-    if (gm > SLIDE && up <= 0.5){ const s = (gm - SLIDE) * SLIDE_V * CW; vx -= gx / gm * s; vy -= gy / gm * s; }
+    // (sliding down a slope steeper than SLIDE, whatever the tank is doing)
+    if (gm > SLIDE){ const s = (gm - SLIDE) * SLIDE_V * CW; vx -= gx / gm * s; vy -= gy / gm * s; }
     vx += t.kx; vy += t.ky; const dec = Math.exp(-KNOCK_DECAY * dt); t.kx *= dec; t.ky *= dec;
     const thrown = Math.hypot(t.kx, t.ky) > 0.8 * CW;
     const nx = t.x + vx * dt, ny = t.y + vy * dt, ox = t.x, oy = t.y;
@@ -49821,12 +49830,22 @@ const GOLFTANK_APP = (() => {
     const K = G.K, H = G.H, CW = K.CW, NX = K.NX, NY = K.NY, t = G.tanks[k], F = G.tanks[foe];
     const ci = x => clamp(Math.floor(x / CW), 0, NX - 1), cj = y => clamp(Math.floor(y / CW), 0, NY - 1);
     const key = H._gtBlk || (H._gtBlk = Uint8Array.from({ length: NX * NY }, (_, q) => K.cellBlocked(H, q % NX, (q / NX) | 0) ? 1 : 0));
+    /* (a step to a cell whose middle stands more than SLOPE_MAX a cell above this one's, or with a slope steeper than that
+        between them, cannot be driven up: Oct 22. The search runs from the foe outward, so the step taken is r to p.) */
+    const hc = H._gtH || (H._gtH = Float32Array.from({ length: NX * NY }, (_, q) => K.hOf(H, ((q % NX) + 0.5) * CW, (((q / NX) | 0) + 0.5) * CW)));
+    const steep = (r, p) => { if (hc[p] - hc[r] > SLOPE_MAX * CW * 0.85) return true;
+      const ax = ((r % NX) + 0.5) * CW, ay = (((r / NX) | 0) + 0.5) * CW, bx = ((p % NX) + 0.5) * CW, by = (((p / NX) | 0) + 0.5) * CW;
+      for (const f of [0.33, 0.66]){ const mx = ax + (bx - ax) * f, my = ay + (by - ay) * f, [hx, hy] = K.gradOf(H, mx, my), L = Math.hypot(bx - ax, by - ay);
+        if ((hx * (bx - ax) + hy * (by - ay)) / L > SLOPE_MAX) return true; }
+      return false; };
+    const SK = H._gtSteep || (H._gtSteep = new Map());
+    const isSteep = (r, p) => { const k2 = r * 4096 + p; let v = SK.get(k2); if (v === undefined){ v = steep(r, p); SK.set(k2, v); } return v; };
     const dist = new Float32Array(NX * NY).fill(Infinity), q = [ci(F.x) + cj(F.y) * NX]; dist[q[0]] = 0;
     for (let h = 0; h < q.length; h++){
       const p = q[h], i = p % NX, j = (p / NX) | 0;
       for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]){
         if (a < 0 || b < 0 || a >= NX || b >= NY) continue; const r = a + b * NX;
-        if (key[r] || dist[r] !== Infinity) continue; dist[r] = dist[p] + 1; q.push(r);
+        if (key[r] || dist[r] !== Infinity || isSteep(r, p)) continue; dist[r] = dist[p] + 1; q.push(r);
       }
     }
     const i = ci(t.x), j = cj(t.y), here = dist[i + j * NX];
@@ -49835,6 +49854,7 @@ const GOLFTANK_APP = (() => {
     for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1], [i + 1, j + 1], [i - 1, j - 1], [i + 1, j - 1], [i - 1, j + 1]]){
       if (a < 0 || b < 0 || a >= NX || b >= NY) continue;
       if (a !== i && b !== j && (key[a + j * NX] || key[i + b * NX])) continue;   // (no corner cut past a blocked cell)
+      if (isSteep(i + j * NX, a + b * NX)) continue;
       const d = dist[a + b * NX] + (a !== i && b !== j ? 0.4 : 0); if (d < bd){ bd = d; best = [a, b]; }
     }
     return best ? { x: (best[0] + 0.5) * CW, y: (best[1] + 0.5) * CW } : { x: F.x, y: F.y };
@@ -49882,7 +49902,8 @@ const GOLFTANK_APP = (() => {
       const direct = Math.atan2(F0.y - t.y, F0.x - t.x);
       if (railTrace(G, k, direct, foe).hit === foe){ const e = (G.R() - 0.5) * 2 * D.err * Math.PI / 180; A.aim = direct + e; A.e = e; A.w = 2; }
     }
-    if (A.aim == null && mine < D.most && G.t >= A.coolTo){
+    // (a shot that would not stand when looked at again as it fired is not looked for again for a moment: it drives instead)
+    if (A.aim == null && mine < D.most && G.t >= A.coolTo && G.t >= (A.noShot || 0)){
       const F = G.tanks[foe], direct = Math.atan2(F.y - t.y, F.x - t.x), cand = [direct];
       for (let i = 0; i < D.rays; i++) cand.push(t.h + TAU * (i + 0.5 * (G.R() - 0.5)) / D.rays);
       cand.sort((a, b) => (a === direct ? -1 : b === direct ? 1 : Math.abs(angDiff(a, t.h)) - Math.abs(angDiff(b, t.h))));
@@ -49913,7 +49934,7 @@ const GOLFTANK_APP = (() => {
         /* (looked at again as it fires, in the shells' own steps: the movers have moved on while it turned, and a door that was
            open may be shut; then it thinks again. The shot it meant, that is: its hands' error, `e`, is fired as it is) */
         const still = A.w === 2 ? railTrace(G, k, t.h + da - A.e, A.foe).hit === A.foe : simShot(G, k, t.h + da - A.e, A.foe, D, STEP / 2);
-        if (!still){ A.aim = null; A.next = G.t; return { drive: 0, turn: 0, fire: false }; }
+        if (!still){ A.aim = null; A.next = G.t; A.noShot = G.t + 0.6; return { drive: 0, turn: 0, fire: false }; }
         A.aim = null; A.coolTo = G.t + D.cool; A.next = Math.min(A.next, G.t + 0.1);
         return { drive: 0, turn: 0, fire: true, da, w: A.w };
       }
@@ -49924,7 +49945,14 @@ const GOLFTANK_APP = (() => {
     if (G.t - A.mark.t > 1){ if (Math.hypot(t.x - A.mark.x, t.y - A.mark.y) < 0.15 * CW && A.way){ A.back = G.t + 0.5; A.backTurn = G.R() < 0.5 ? -1 : 1; } A.mark = { x: t.x, y: t.y, t: G.t }; }
     if (!A.way) return { drive: 0, turn: 0, fire: false };
     const F = A.foe != null ? G.tanks[A.foe] : null;
-    if (F && Math.hypot(F.x - t.x, F.y - t.y) < 1.6 * CW){ const da = angDiff(Math.atan2(F.y - t.y, F.x - t.x), t.h); return { drive: 0, turn: clamp(da * 6, -1, 1), fire: false }; }
+    /* (close by with no shot, a ridge or a hump between them: it goes round the other tank, a side it keeps, rather than
+        sitting face to face with it; two did, a whole round, once the hills held tanks: Oct 22) */
+    if (F && Math.hypot(F.x - t.x, F.y - t.y) < 1.6 * CW){
+      if (A.side == null) A.side = G.R() < 0.5 ? -1 : 1;
+      const q = Math.atan2(t.y - F.y, t.x - F.x) + A.side * 0.9, wx = F.x + Math.cos(q) * 2.2 * CW, wy = F.y + Math.sin(q) * 2.2 * CW;
+      const da = angDiff(Math.atan2(wy - t.y, wx - t.x), t.h);
+      return { drive: Math.abs(da) < 0.9 ? 1 : 0, turn: clamp(da * 4, -1, 1), fire: false };
+    }
     const da = angDiff(Math.atan2(A.way.y - t.y, A.way.x - t.x), t.h);
     return { drive: Math.abs(da) < 0.9 ? 1 : 0, turn: clamp(da * 4, -1, 1), fire: false };
   }
@@ -50136,11 +50164,14 @@ const GOLFTANK_APP = (() => {
     const mine = [], s = CW;
     const hOf = (x, y) => K.hOf(H, x, y);
     V.tanks.forEach((t, k) => {
-      const col = V.cols[k], y = yawOf(t.h), h = hOf(t.x, t.y), sc = TS * s;
-      mine.push({ kind: 'mzTracks', u: t.x, v: t.y, scale: sc, yaw: y, lift: h, color: t.alive ? TRACKC : 0x1a1a1a });
-      mine.push({ kind: 'mzHull', u: t.x, v: t.y, scale: sc, yaw: y, lift: h, color: t.alive ? col : WRECK });
-      mine.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: sc, yaw: y, lift: h, color: t.alive ? lighten(col) : WRECK });
-      mine.push({ kind: 'mzGun', u: t.x, v: t.y, scale: sc, yaw: y, lift: h, color: t.alive ? GUNC : 0x1a1a1a });
+      // (stood on the slope under it, the slope taken across its own length, TILT_E a cell either way, so it lies along the
+      //  ground and not into it: Oct 22)
+      const col = V.cols[k], y = yawOf(t.h), h = hOf(t.x, t.y), sc = TS * s, e = TILT_E * s;
+      const tilt = [(hOf(t.x + e, t.y) - hOf(t.x - e, t.y)) / (2 * e), (hOf(t.x, t.y + e) - hOf(t.x, t.y - e)) / (2 * e)];
+      mine.push({ kind: 'mzTracks', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? TRACKC : 0x1a1a1a });
+      mine.push({ kind: 'mzHull', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? col : WRECK });
+      mine.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? lighten(col) : WRECK });
+      mine.push({ kind: 'mzGun', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? GUNC : 0x1a1a1a });
     });
     const ring = (x, y, r, col, n) => { for (let q = 0; q < n; q++){ const a = q * TAU / n, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
       mine.push({ kind: 'mzDot', u: px, v: py, scale: 0.12 * s, lift: hOf(px, py) + 0.02 * s, color: col }); } };
@@ -50178,7 +50209,7 @@ const GOLFTANK_APP = (() => {
       for (let i = 0; i < (big ? 5 : 3); i++){ const q = R() * TAU, d = (0.15 + 0.3 * R()) * Math.min(1, a / 1.2) * s * k0, f = Math.min(1, a / 1.8);
         mine.push({ kind: 'mzPuff', u: B.x + Math.cos(q) * d, v: B.y + Math.sin(q) * d, scale: s * k0 * (0.25 + 0.5 * f), lift: z + (0.2 + 0.6 * f) * s * k0, color: B.kind === 'hill' ? 0x7a6a50 : 0x3a3a3a }); }
     }
-    for (const it of mine){ it.u /= WD; it.scale /= WD; it.lift /= WD; out.push(it); }
+    for (const it of mine){ it.u /= WD; it.scale /= WD; it.lift /= WD; if (it.tilt) it.tilt = [it.tilt[0], it.tilt[1] / WD]; out.push(it); }   // (tilt: the field's lift a unit of u and of v)
     return out;
   }
   function liveView(g){ const G = g.G; return { hk: G.hk, H: G.H, t: G.t, live: true, tanks: G.tanks, shots: G.shots.filter(b => b.end > G.t), beams: G.beams, booms: G.booms, blown: G.blown, seats: g.seats, cols: colsOf(g.seats), aim: aimOf(g) }; }
@@ -51413,7 +51444,7 @@ const _itemMeshes = new Map();
    boards do, and they are one instance each, so depth is cheap.
    48,000 × ~76 bytes ≈ 3.6 MB a kind; draughts has two (man, king), Go one. */
 const _ITEM_CAP = 48000;
-const _ip = new THREE.Vector3(), _iq = new THREE.Quaternion(), _is = new THREE.Vector3(), _iUp = new THREE.Vector3(0, 1, 0);
+const _ip = new THREE.Vector3(), _iq = new THREE.Quaternion(), _is = new THREE.Vector3(), _iUp = new THREE.Vector3(0, 1, 0), _iN = new THREE.Vector3(), _iq2 = new THREE.Quaternion();
 const _im = new THREE.Matrix4();
 let _itemLightsOn = false;
 /* NOTHING TO ADD ANY MORE. The app items used to bring their own hemisphere
@@ -51698,6 +51729,11 @@ function _emitInto(rec, it, cx, cz, bWX, bWZ, flatW){
      board runs +u to −x and +v to −z, so that is a turn of π − yaw about +y. Until now every
      item stood square, and a turning thing was drawn as a row of small unturned boxes. */
   if (it.yaw) _iq.setFromAxisAngle(_iUp, Math.PI - it.yaw); else _iq.identity();
+  /* `tilt` (Oct 22, golf tanks: "the tanks just drive through hills. they should respect the terrain."): [du, dv], the slope of
+     the ground under an item as lift a unit of u and of v. The item is then stood on that slope (its upright turned to the
+     ground's normal, after its yaw), not level with its front buried in the hillside. The board runs +u to −x and +v to −z,
+     and v is bWZ long where u and lift are bWX, so the normal is (du, 1, dv·bWX/bWZ). */
+  if (it.tilt){ _iN.set(it.tilt[0], 1, it.tilt[1] * bWX / bWZ).normalize(); _iq2.setFromUnitVectors(_iUp, _iN); _iq.premultiply(_iq2); }
   _im.compose(_ip, _iq, _is);
   rec.mesh.setMatrixAt(rec.n, _im);
   rec.mesh.setColorAt(rec.n, _appColor(it.color == null ? 0xf0e6d2 : it.color));
