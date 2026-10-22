@@ -675,10 +675,21 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     and doors' bars, fences, curved fences, planters, charges' posts, boulders, bumpers, path riders, a gate standing up), and
     `drawHole(c, r, bp, opt)`, mini golf's `cellItems` with `opt` = { hk, t, now, blown, kicked }: the hole at the clock t with
     no golf game's ball, ghost or aim.
-  - **The ground** (`moveTank`, in cells of the hole, CW): speed × (1 − `SLOPE_K` 0.8 × the slope ahead), 0.35 to 1.5; nothing
-    steeper than `SLOPE_MAX` 2.4 climbed; a slide down a slope over `SLIDE` 1.2 unless driving up it; sand × `SAND` 0.6. (At
-    first the tanks could climb nothing over 0.9: a raised green's edge is 1.7, and two computer tanks sat at the foot of one
-    for a whole round.) Measured: 0.87 cells in half a second up a slope of 0.24, 0.98 down it.
+  - **The ground** (`moveTank`, in cells of the hole, CW; Oct 22, later: "the tanks just drive through hills. they should respect
+    the terrain."): speed × (1 − `SLOPE_K` 1.4 × the slope ahead), 0.2 to 1.5; ground rising more steeply than `SLOPE_MAX` 1.05
+    along the tank's way, where it stands or where the step would take it, keeps only the part of the way running along the
+    slope, so a tank stops at a hill's foot or slides along it; anything steeper than `SLIDE` 0.95 slides it down, whatever it
+    is doing; sand × `SAND` 0.6. (Before, it climbed anything to 2.4, since a raised green's edge, 1.7, had held two computer
+    tanks at its foot for a round; now the computer goes round: `navTo` treats a step up to a cell more than 0.85 × `SLOPE_MAX`
+    a cell higher, or steeper than `SLOPE_MAX` between the two, as a wall, kept a hole on `H._gtSteep`.) Measured: 0.53 cells
+    in half a second up a slope of 0.3, 1.09 down it; driven at a slope of 1.63, a tank rose 0.05 of the hill's 1.25 cells.
+    - **Tilted to the slope**: the field's items take `tilt` [du, dv] (`_emitInto`: the ground's slope as lift a unit of u and
+      of v; the item's upright turned to the normal (du, 1, dv·bWX/bWZ), after its yaw). A tank's is the slope across
+      `TILT_E` (0.3) of a cell either way under it, so it lies along a hillside, not into it.
+    - The computer up close with no shot (a ridge between) goes round the other tank on a side of its own (`A.side`, 2.2
+      cells out) instead of sitting face to face, and after a shot that would not stand when looked at again it looks for none
+      for 0.6 s (`A.noShot`). With hills holding tanks, 3 of 36 rounds had run to `ROUND_CAP` that way; after, none: 9.1, 5.9
+      and 6.9 s a round at levels 1, 3 and 5.
   - **Water** stops a tank (it slides along the shore; a bridge is ground); a tank pushed or thrown into a lake goes under and
     is out (`splash`). **A mine** (once a round, `G.blown`) throws a tank `THROW` 5 cells a second, spinning, stunned `STUN`
     0.9 s (2.9 cells, measured). Pipes and zap zones are not used.
@@ -709,7 +720,44 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     1, 3 and 5, a real key, click and drag, a round and a match won, and a board no one plays moving and drawn; since Oct 22 also a mortar
     landing on its tank, the rail stopped by the rail and reaching a tank in the open, a missile fired away turning back for its
     tank, the rail's ammo running out, the computer using long-range shots at level 5, and the real key 2 and a real click putting
-    a mortar where it was clicked.
+    a mortar where it was clicked; and a tank driven at steep ground staying at its foot, drawn tilted to it.
+- **Trick shots** (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): `TRICK_APP`, id
+  `trickshots`, after golf tanks. wander's `play-trick.html` (its main at 335fa6c), a pool table where you set an angle and a power
+  and see the whole shot ahead of time, every ball it reaches, to rest.
+  - **The engine is wander's, moved whole** (two spaces left): the table played from inside (`image`, `respond`, `pairs`: each ball
+    reads the other's direction and v = r/d and they touch at h + v = 1, found exactly), cushions as the ball's mirror image,
+    pockets that take a ball filling its view, spin and the cloth (`cloth`, `own`), the balls' grip (`gripOf`: throw, spin passed
+    on), jump and massé (`inAir`, `strikeOf`), `simulate`, `sightOf` (the preview seen only `see` contacts deep), `LAYOUTS`, the
+    fifteen `CHALLENGES` with their reference shots (`sol`) and `spinChecks`. Only `firstStop` (the balls passed in), `respot` (the
+    table passed in) and `strikeOf`'s defaults (chalk and the cue's rise passed in) changed, since games keeps a table a board.
+    Change it in wander first.
+  - **The board** is the table and a unit of frame round it, 22 × 12 (`boardShape` 1 by 1/`ASP`); `Ub`, `Vb`, `Sb` put table
+    units on the board (sizes in widths), `toTable` back. The cloth, frame, sights and pockets are one picture for every board
+    (`paint`, the photo tier, 1024 or 256 px by size; tiles under `PHOTO_PX`); the six cushions are boxes, the balls spheres (a
+    striped one a white ball with a band, `tsBand`), the cue a tapered cylinder on the shot's line, its tip a small blue ball.
+    The preview is dots along each ball's way (`DOT_GAP`, at most `DOT_MAX`), a white dot at each contact, a ring where each
+    stops, a gold ring on each pocket a ball drops in, a dashed ghost ball (`tsGhost`), a grey ring where the way passes out of
+    sight; Paths (all, cue, off: then only the aim to the first ball and its ghost) in the menu and the row (`trickshots.paths`).
+  - **The boards:** the corner block is the challenges in wander's order (`boardIdx` 0 the ½-ball cut … 14 the break; `cellOfIdx`
+    turns a number back into its board). Every other board is free play (`setupOf`, `FREE`): the rack, the row of four, the jump,
+    the massé, or fifteen balls scattered by the board's number. A board no one plays (`recSoon`, `shownOf`) shows its own shot:
+    the cue laid on its line with the shot seen ahead (`AIM_T`), played, held (`HOLD_T`), round again, each board at its own
+    phase; a challenge its reference shot, a free table its layout's (`DEMO`) or the best of five seeded shots at a ball. One is
+    worked out at most every 30 ms (about 11 ms for a scattered table), `REC_CAP` 300 kept, at `REC_HZ` 30.
+  - **Playing** (`fresh`, `shoot`, `finish`, `undo`: the page's): drag on the table to aim (`claimsPan`, `keepsPress`), tap a point
+    to aim at it, tap the white, Shoot or Space/Enter to shoot; a tap while it plays jumps to its end; in free play a drag that
+    starts on a ball moves it. The row (`tilesOf`, `onTile`): Shoot, Aim ◀ ▶ (0.1°), Power − +, Spin (`SPINS`: centre, follow,
+    draw, stun, left, right and the four corners in turn), Cue ↓ ↑ (5°), See (free play), Paths, Tip (chalked or bare), then Undo,
+    or Next ▸ on a challenge. The keys are the page's (◀ ▶ aim, shift a degree; ▲ ▼ power; [ ] and − = the tip; , . the cue's
+    rise; z undo). A challenge's try is a shot: missed, the balls go back and the board says why; solved, the fewest tries kept
+    (localStorage `trickshots.best`). The menu: Sound, Paths, Show me the trick (the reference shot on the cue), Next challenge,
+    Start this board again, About. A shot finishes as its board is drawn, so one left mid-shot ends when it is seen again.
+  - **Sounds** are the page's knocks (`SOUND`, `knock`, `soundsTo`: the cue, ball on ball, the cushion, the pocket, each as loud
+    as its impact), on the arcade kit's audio and its Sound switch (`trickshots.sound`).
+  - The smoke test checks wander's textbook results (the thresholds wander's own test holds), every reference shot solving its
+    challenge on its board, a missed try putting the balls back, a real drag aiming, a real click on the white playing the ½-ball
+    cut to a solve, a real Space potting on free play, the row's Spin and power, and a board no one plays going through its shot,
+    drawn as balls, six cushions, the cue, dots and a ghost.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
