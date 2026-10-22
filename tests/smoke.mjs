@@ -3898,6 +3898,9 @@ try {
   // on its board, a missed try puts the balls back and says why, a real drag aims, a real click on the white shoots and the
   // shot plays to its end, a real Space shoots a free board and a pot counts, the row's Spin and power tiles change the cue, a
   // board no one plays goes through its shot, and the drawing is balls, cushions, the cue and the shot seen ahead.
+  // (Oct 22, "1,2,5": every board past the corner's fifteen its own trick shot by level, made in slices and solved by its own
+  // reference shot, the same each time, par rising and the window of aim narrowing farther out; stars; a tap on a solved board
+  // going on to the next; the real spin inset and pull strip; the balls rolling, numbered, with trails.)
   {
     await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); A._debug.GAMES.clear(); });
     await page.waitForTimeout(1500);
@@ -3911,6 +3914,14 @@ try {
       out.sols = D.CHALLENGES.map((c, i) => { const S = D.setupOf(i), o = c.sol, st = D.strikeOf(o.a * D.D, ...(o.tip || [0, 0]), o.p, undefined, (o.el || 0) * D.D);
         return S.ch === c && !c.goal(D.simulate(S.B, st.dir, st.speed, st.w, st.vy), c); });
       out.cells = D.CHALLENGES.map((_, i) => D.boardIdx(...D.cellOfIdx(i)) === i).every(Boolean);
+      // generated trick shots: three boards at level 1 and at level 5, each solved by its own reference shot, made the same twice
+      const gen = lv => [20, 21, 22, 23].map(idx => { const P = D.runGen(D.makePuzzle(idx, lv)), o = P.sol;
+        return { ok: !D.trial(P.B(), P, { a: o.a, p: o.p, tip: o.tip || [0, 0], el: o.el || 0 }).why, par: P.par, w: P.window, kind: P.kind, see: P.see }; });
+      const g1 = gen(1), g5 = gen(5), again = D.runGen(D.makePuzzle(21, 5)), avg = (a, k) => a.reduce((x, y) => x + y[k], 0) / a.length;
+      out.gen = { solved: [...g1, ...g5].every(x => x.ok), par1: avg(g1, 'par'), par5: avg(g5, 'par'), w1: +avg(g1, 'w').toFixed(2), w5: +avg(g5, 'w').toFixed(2),
+        see: [g1[0].see, g5[0].see], same: JSON.stringify(again.sol) === JSON.stringify(D.runGen(D.makePuzzle(21, 5)).sol),
+        kinds: [...new Set([...g1, ...g5].map(x => x.kind))].join(','), levels: [[0, 0], [10, 0], [40, 40]].map(([c, r]) => D.levelOf(c, r)),
+        stars: [D.starsOf(1, 1), D.starsOf(3, 1), D.starsOf(5, 1)].join() };
       // a missed try on the ½-ball board (the cue straight at the 1): the balls go back, the board says why
       const [c0, r0] = D.cellOfIdx(0); D.GAMES.delete(c0 + '_' + r0); const g = D.gameAt(c0, r0), at0 = g.balls.map(b => [b.x, b.z]);
       D.shoot(g); D.finish(g);
@@ -3941,15 +3952,29 @@ try {
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), o = g.ch.sol; g.ang = o.a * D.D; D.setPower(g, o.p); D.setTip(g, 0, 0); }, fc);
       const pw = await at(w.x, w.z);
       await page.mouse.click(pw.x, pw.y);
+      const rot0 = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).rot[0].join(), fc[0] + '_' + fc[1]);
       live.playing = (await gs()).anim;
       for (let k = 0; k < 40 && (await gs()).anim; k++) await page.waitForTimeout(250);
       live.after = await gs();
+      // the white rolled (its turn is not where it began; after a try it goes back with the balls), and the frame wears the stars
+      live.rolled = await page.evaluate(([k, r0]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.liveView(g), it = D.itemsOf(V);
+        return { stars: it.filter(i => i.kind === 'tsStar' && i.color === 0xd4a052).length, balls: it.filter(i => /^tsB\d+$/.test(i.kind) && i.rot).length, best: D.BEST.half }; }, [fc[0] + '_' + fc[1], rot0]);
       // the row: Spin steps the tip to follow, power + steps it up by one
       live.row = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), p = g.power; D.onTile(g, 5); D.onTile(g, 4);
         return { tip: g.tip.y, power: g.power - p, tiles: D.tilesOf(g).length }; }, fc);
+      // the real spin inset: a click above its middle strikes the white high; the real pull strip: pulled and let go, it shoots
+      const tipBox = await page.evaluate(() => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(); return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width } : null; });
+      if (tipBox){ await page.mouse.click(tipBox.x - 0.2 * 0.36 * tipBox.w, tipBox.y - 0.5 * 0.36 * tipBox.w); live.inset = (await gs()).tip; }
+      const pullBox = await page.evaluate(() => { const e = document.getElementById('tsPull'), r = e && e.getBoundingClientRect(); return r && r.height ? { x: r.left + r.width / 2, y: r.top + 8, h: r.height } : null; });
+      if (pullBox){ const s0 = (await gs()).shots; await page.mouse.move(pullBox.x, pullBox.y); await page.mouse.down(); await page.mouse.move(pullBox.x, pullBox.y + pullBox.h * 0.3, { steps: 6 });
+        live.pulled = (await gs()).power; await page.mouse.up(); await page.waitForTimeout(300); live.pull = { shots: (await gs()).shots - s0, anim: (await gs()).anim };
+        for (let k = 0; k < 40 && (await gs()).anim; k++) await page.waitForTimeout(250); }
+      // solved, a real click on the table (away from the white) goes on to the next board
+      { const g = await gs(), w = g.balls[0], p = await at(w.x > 0 ? w.x - 4 : w.x + 4, 0); await page.mouse.click(p.x, p.y); await page.waitForTimeout(400);
+        live.next = await page.evaluate(() => { const D = window.getFieldApp()._debug; return D.LIVE ? D.boardIdx(D.LIVE.c, D.LIVE.r) : null; }); }
       // free play on the next board along: a real Space shoots a straight pot (the 1 set before a corner pocket, the white behind it)
       const fr = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; let k = D.boardIdx(c, r) + 20; const [fc2, fr2] = D.cellOfIdx(k);
-        D.GAMES.delete(fc2 + '_' + fr2); D.fly(fc2, fr2); D.LIVE = { c: fc2, r: fr2 }; const g = D.gameAt(fc2, fr2);
+        D.GAMES.delete(fc2 + '_' + fr2); D.FREEPLAY.add(fc2 + '_' + fr2); D.fly(fc2, fr2); D.LIVE = { c: fc2, r: fr2 }; const g = D.gameAt(fc2, fr2);
         const a = Math.atan2(4, 6); g.balls = [{ ...g.balls[0], x: 4, z: 1, sunk: false }, { ...g.balls.find(b => !b.cue), x: 4 + 3.6 * Math.cos(a), z: 1 + 3.6 * Math.sin(a), sunk: false }]; g.total = 1; g.dirty = true;
         g.ang = a; D.setPower(g, 12); D.setTip(g, 0, -0.3); return [fc2, fr2, g.ch ? 1 : 0]; }, fc);
       await page.keyboard.press(' ');
@@ -3958,7 +3983,7 @@ try {
       live.space = await fgs();
       for (let k = 0; k < 40 && (await fgs()).anim; k++) await page.waitForTimeout(250);
       live.free = { ...(await fgs()), challenge: fr[2] };
-      await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.LIVE = null; }, fk);
+      await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.FREEPLAY.delete(k); D.LIVE = null; }, fk);
       await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), fc[0] + '_' + fc[1]);
     }
     const shown = await page.evaluate(async () => { const D = window.getFieldApp()._debug, idx = 3, R = D.recSoon(idx, true), [c, r] = D.cellOfIdx(idx); D.GAMES.delete(c + '_' + r);
@@ -3967,14 +3992,17 @@ try {
         moved += a.pos.reduce((s, p, i) => s + (p && b.pos[i] ? Math.hypot(p[0] - b.pos[i][0], p[1] - b.pos[i][1]) : 0), 0); }
       const it = D.itemsOf({ B: R.S.B, pos: R.S.B.map(b => [b.x, b.z, 0]), ch: R.S.ch, sim: R.s, hz: R.s.hz, see: 3, paths: 'all', cue: { ang: 0.3, power: 14, elev: 0, tip: { x: 0, y: 0 }, chalk: true } });
       const kinds = k => it.filter(i => i.kind === k).length;
-      return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: kinds('tsBall'), cushions: kinds('tsBox'), cue: kinds('tsCue'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
+      return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: it.filter(i => /^tsB\d+$/.test(i.kind)).length, cushions: kinds('tsBox'), cue: kinds('tsCue'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
                yaws: it.filter(i => i.kind === 'tsCue').every(i => i.yaw), inside: it.every(i => i.u > -0.02 && i.u < 1.02 && i.v > -0.02 && i.v < 1.02), photo: !!D.paint(256) }; });
     const r = rules, ok = Object.values(r.spin).every(Boolean) && r.sols.every(Boolean) && r.cells && r.miss.tries === 1 && r.miss.why && r.miss.back
       && live.cell === 0 && Math.abs(live.dragged + 90) < 10 && live.playing && live.after && !live.after.anim && live.after.tries === 1 && live.after.solvedIn === 1
       && live.row.tip > 0.3 && live.row.power === 1 && live.row.tiles === 12 && live.space.anim && live.free.challenge === 0 && live.free.potted === 1 && live.free.shots === 1 && live.free.back === 1
+      && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
+      && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
+      && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next === 1
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 1 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trick shots (wander's textbook results; ${r.sols.filter(Boolean).length} of ${r.sols.length} reference shots solve their challenges; a missed try put the balls back: ${r.miss.why}; a real drag aimed the cue to ${live.dragged && live.dragged.toFixed(1)}°; a real click on the white played the ½-ball cut, solved in ${live.after && live.after.solvedIn}; a real Space potted on free play; a board no one plays went through its ${shown.cycle} s shot, drawn with ${shown.dots} dots ahead)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trick shots (wander's textbook results; ${r.sols.filter(Boolean).length} of ${r.sols.length} reference shots solve their challenges; a missed try put the balls back: ${r.miss.why}; a real drag aimed the cue to ${live.dragged && live.dragged.toFixed(1)}°; a real click on the white played the ½-ball cut, solved in ${live.after && live.after.solvedIn}; a real Space potted on free play; a board no one plays went through its ${shown.cycle} s shot, drawn with ${shown.dots} dots ahead; generated trick shots solved by their own shots (${r.gen.kinds}), par ${r.gen.par1} at level 1 and ${r.gen.par5} at level 5, windows ${r.gen.w1}° and ${r.gen.w5}°; the real inset struck the white high, the real strip pulled to ${live.pulled} shot, and a click on the solved table went on to board ${live.next})`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and

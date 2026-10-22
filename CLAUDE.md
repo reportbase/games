@@ -739,8 +739,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     stops, a gold ring on each pocket a ball drops in, a dashed ghost ball (`tsGhost`), a grey ring where the way passes out of
     sight; Paths (all, cue, off: then only the aim to the first ball and its ghost) in the menu and the row (`trickshots.paths`).
   - **The boards:** the corner block is the challenges in wander's order (`boardIdx` 0 the ½-ball cut … 14 the break; `cellOfIdx`
-    turns a number back into its board). Every other board is free play (`setupOf`, `FREE`): the rack, the row of four, the jump,
-    the massé, or fifteen balls scattered by the board's number. A board no one plays (`recSoon`, `shownOf`) shows its own shot:
+    turns a number back into its board). Every other board has its own trick shot (below). Free play (the menu's Free play on this
+    board, `FREEPLAY`; `setupOf(idx, free)`, `FREE`) is the rack, the row of four, the jump, the massé, or fifteen balls scattered
+    by the board's number. A board no one plays (`recSoon`, `shownOf`) shows its own shot:
     the cue laid on its line with the shot seen ahead (`AIM_T`), played, held (`HOLD_T`), round again, each board at its own
     phase; a challenge its reference shot, a free table its layout's (`DEMO`) or the best of five seeded shots at a ball. One is
     worked out at most every 30 ms (about 11 ms for a scattered table), `REC_CAP` 300 kept, at `REC_HZ` 30.
@@ -754,10 +755,49 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     Start this board again, About. A shot finishes as its board is drawn, so one left mid-shot ends when it is seen again.
   - **Sounds** are the page's knocks (`SOUND`, `knock`, `soundsTo`: the cue, ball on ball, the cushion, the pocket, each as loud
     as its impact), on the arcade kit's audio and its Sound switch (`trickshots.sound`).
+  - **Every board its own trick shot** (Oct 22: "1,2,5" of what came next, the first "every board its own trick shot, harder
+    farther out"): past the corner's fifteen, `makePuzzle(idx, lv)` makes a board's puzzle from its number at a level 1–5 (the ring
+    level plus the Difficulty, Easy 0, Normal 1, Hard 2, as the tilt maze's; `levelAt`, `DL`), seeded, so always the same.
+    - Kinds (each level's `kinds` in `GEN_LV`, weighted): a cut, a bank, a kick off a cushion past a ball in the way, a combination, stun,
+      draw and follow into a ring, a jump over a ball, a cannon (levels 2–3: laid on the white's way it was hard to miss) and,
+      from level 4, a pot with the white off two cushions into a ring. Each is laid out so a shot should exist (`potSetup`, the
+      ghost ball, `mirror` of a pocket or ball across a cushion), then searched for near that aim (`searchShot`: powers, tips, the
+      cue's rise); a ring is put where the reference shot's white stops, the cannon's 2 where its white passes, so both are
+      reachable. Every goal is built from the puzzle's plain numbers (`goalFor`).
+    - Farther out (`GEN_LV`): the preview sees 3, 2, 1, 1 and 0 contacts (level 5 the ghost ball alone), 0–1 up to 3–5 more balls
+      about, cuts to 66°, shots longer (`reach`), rings 1.2 down to 0.6. Par is from the window of aim that still solves it
+      (`windowOf`, `parOfWindow`: 1.2° or more one try, under 0.2° four); of `GEN_TRIES` (6) seeds the first whose window is in
+      its level's `band` is kept, else the nearest. Measured on 40 boards a level: every one solved by its own shot; median window
+      4.35°, 2.68°, 1.42°, 0.72° and 0.64°; par 1.0, 1.05, 1.55, 2.2 and 3.3; 12 to 220 ms to make (1.1 s at most).
+    - **Made in a worker** (`workers`, `WK_N` 2): the engine and generator's own text from this script (`workerSrc`: from
+      TRICK_APP's start to the field's part) with a message handler, so the same puzzle comes back as plain numbers (`plainOf`,
+      `puzzleOf`). The framed or played board first, then those asked for most lately; a job not asked for in 2 s is dropped
+      (`JOBS`, `jobOrder`), `PUZ` keeps 800. Without a worker the generator (a `function*`, a `yield` after each shot) runs here a
+      slice at a time: the urgent job up to `URGENT_MS` a frame (`pump`), the rest in idle time (`idlePump`). A board waiting shows
+      its bare table. In the sandbox the in-page idle time made 3 puzzles in 9 s; the workers kept up with 59 boards in view.
+    - On the frame: a generated board's level as dots in mini golf's flag colours (each on a pale rim), and three star slots, gold
+      for what the best earned (`starsOf`: par or under three, two more two, else one; `BEST` by the puzzle's id, `g<idx>@<lv>`).
+      Solved, the board says its stars, and a tap on it goes on to the next board (`nextBoardOf`: idx + 1, the corner's fifteen,
+      then out ring by ring); a hold plays it again. The menu's Next trick shot does the same.
+  - **The spin inset and the pull strip** (the same request's second, wander's own controls; `CTL`, `ctlSync`): beside the played
+    table while it waits (the board `CTL_PX` 300 px across or more, hidden `CTL_GONE` after it was last drawn and off the app,
+    `onLeave`), page elements of their own, so a press on them never pans the view. The white seen from behind the cue (`#tsTip`):
+    a press or drag puts the tip there, the dashed ring the chalk's grip, the gold tick where it rolls at once, the spin and the
+    cue's rise written under it. The strip (`#tsPull`): pulled down as far as the shot is hard (all of it 60) and let go, it shoots;
+    let go near the top, the power goes back. The row's Spin tile still steps the presets.
+  - **The balls roll, numbered, with trails** (the same request's fifth): each ball is a kind of its own (`tsB0`…`tsB15`) wearing a
+    picture (`ballTex`: its colour, a striped one's band, its number on a white circle front and back, the white's six red dots),
+    turned as it has rolled (`roll`: d/R about ŷ × its way, the engine's own rolling; a game's `g.rot`, a board no one plays has
+    every frame's, `rotsOf`). The field's items take a whole turn, `rot` [x, y, z, w] in the board's own frame (`_emitInto`: the
+    board runs +u to −x and +v to −z, so it is (−x, y, −z, w) in the world; it stands in for yaw and tilt). A moving ball leaves a
+    short trail (`trailItems`: where it was 40 … 200 ms ago, smaller each).
   - The smoke test checks wander's textbook results (the thresholds wander's own test holds), every reference shot solving its
     challenge on its board, a missed try putting the balls back, a real drag aiming, a real click on the white playing the ½-ball
     cut to a solve, a real Space potting on free play, the row's Spin and power, and a board no one plays going through its shot,
-    drawn as balls, six cushions, the cue, dots and a ghost.
+    drawn as balls, six cushions, the cue, dots and a ghost; since Oct 22 ("1,2,5") also generated puzzles at levels 1 and 5 solved
+    by their own shots and made the same twice, par rising and the window narrowing, less seen ahead, the stars by tries, the
+    balls drawn turned, three gold stars on the solved board's frame, a real click on the inset striking high and left, a real
+    pull on the strip shooting, and a real click on the solved table going on to the next board.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
