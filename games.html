@@ -50318,8 +50318,9 @@ const GOLFTANK_APP = (() => {
    shot, run ahead, so the shot plays as drawn, seen only as many contacts deep as `see`; the fifteen challenges, each with its
    reference shot. Change it there first, then here.
    - THE BOARDS: the corner block holds the challenges in wander's order (boardIdx 0, the ½-ball cut, to 14, the break); every
-     other board is free play on its own table: the rack, the row of four, the jump, the massé, or fifteen balls scattered by
-     the board's number. A board no one plays shows its own shot (a challenge its trick), lined up, played and held, round again.
+     other board has a trick shot of its own, harder farther out (EVERY BOARD ITS OWN TRICK SHOT, below; Oct 22, "1,2,5"); free
+     play (the menu) is a table of wander's: the rack, the row of four, the jump, the massé, or fifteen balls scattered by the
+     board's number. A board no one plays shows its own shot (a challenge its trick), lined up, played and held, round again.
    - PLAYING: drag on the table to aim (the preview follows), tap a point to aim at it, tap the white, Shoot in the row, Space or
      Enter to shoot; in free play a drag that starts on a ball moves it. The row: Shoot, aim ◀ ▶, power − +, the spin (the round
      inset's places in turn), the cue lowered and raised, how deep the preview sees, the paths, the tip's chalk, Undo or Next ▸.
@@ -50765,6 +50766,200 @@ const TRICK_APP = (() => {
       return out;
   }
 
+
+  /* ══ EVERY BOARD ITS OWN TRICK SHOT (Oct 22: "1,2,5", the first being "every board its own trick shot, harder farther out").
+     Past the corner's fifteen, a board's puzzle is made from its own number and a level (`makePuzzle(idx, lv)`, seeded, so a
+     board always has the same one), and kept only if a shot is found on this engine that solves it: the board's reference
+     shot, its demo, and "show me the trick". The kinds (each level's `kinds`, GEN_LV): a cut, a bank, a kick off a cushion, a combination, a
+     position shot (stun, draw or follow into a ring), a jump over a ball in the way, a cannon (the white on to a second
+     ball, levels 2 and 3: laid on the white's way it was hard to miss) and, from level 4, a pot with the white off two cushions into a ring. Each is laid out so a shot should exist (the
+     ghost ball worked out, the mirror of a pocket or ball across a cushion), then searched for near that aim (`searchShot`),
+     its powers, tips and the cue's rise; a ring or a second ball is put where the reference shot's white really goes, so it
+     is reachable. Farther out (`GEN_LV`): the preview sees fewer contacts (all of a level-1 shot, none past the ghost ball at
+     level 5), more balls stand about, cuts are thinner and rings smaller, and the kinds go from cuts to kicks, cannons and
+     two-rail position, the shots longer (`reach`). Par is from the window of aim that still solves it (`windowOf`: wide, one
+     try; a sliver, four); of GEN_TRIES seeds the first whose window falls in its level's `band` is kept, else the nearest.
+     Making one is a few hundred shots (up to half a second), so it is done a slice at a time (`function*`, `yield` after each
+     shot; `runGen` to the end at once, `genSoon` a few milliseconds a frame). ══ */
+  const GEN_LV = [
+    { see: 3, extra: [0, 1], cut: [0, 25],  reach: 0.85, kinds: { cut: 5, follow: 2, draw: 2, bank: 1 }, ring: 1.2, band: [1.2, 99] },
+    { see: 2, extra: [1, 2], cut: [5, 40],  reach: 1,    kinds: { cut: 4, bank: 2, follow: 2, draw: 2, stun: 1, combo: 1, cannon: 1 }, ring: 1.0, band: [0.7, 3.5] },
+    { see: 1, extra: [1, 3], cut: [15, 52], reach: 1.15, kinds: { cut: 2, bank: 2, kick: 2, combo: 2, draw: 1, stun: 1, follow: 1, jump: 1, cannon: 2 }, ring: 0.85, band: [0.4, 2.2] },
+    { see: 1, extra: [2, 4], cut: [25, 60], reach: 1.3,  kinds: { cut: 1, bank: 2, kick: 2, combo: 2, jump: 1, draw: 1, stun: 1, tworail: 1 }, ring: 0.7, band: [0.22, 1.4] },
+    { see: 0, extra: [3, 5], cut: [30, 66], reach: 1.45, kinds: { kick: 2, combo: 2, jump: 1, tworail: 2, bank: 1, draw: 1, cut: 1 }, ring: 0.6, band: [0.1, 0.9] },
+  ];
+  const GEN_TRIES = 6, GEN_NAMES = { cut: 'cut', bank: 'bank', kick: 'kick', combo: 'combination', stun: 'stun', draw: 'draw', follow: 'follow', jump: 'jump', cannon: 'cannon', tworail: 'two rails' };
+  const XL = LX / 2 - R - 0.15, ZL = LZ / 2 - R - 0.15;
+  const inTable = p => Math.abs(p[0]) <= XL && Math.abs(p[1]) <= ZL;
+  const unit = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
+  const ghostOf = (T, to) => { const n = unit(T, to); return [T[0] - 2 * R * n[0], T[1] - 2 * R * n[1]]; };
+  const degTo = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]) / D;
+  // a pocket's mouth, a little inside the table: where a ball aimed at the pocket should be sent
+  const mouthOf = k => { const [x, z] = POCKETS[k]; return [Math.sign(x) * Math.min(Math.abs(x), LX / 2 - 0.25), Math.sign(z) * (LZ / 2 - 0.25)]; };
+  // the mirror of a point across a cushion's line (the ball's centre runs a radius off the rail)
+  const RAILS = [[0, -LX / 2 + R], [0, LX / 2 - R], [1, -LZ / 2 + R], [1, LZ / 2 - R]];
+  const mirror = (p, rl) => rl[0] === 0 ? [2 * rl[1] - p[0], p[1]] : [p[0], 2 * rl[1] - p[1]];
+  // does the straight way from a to b (a ball's width) pass clear of every ball but those named?
+  const clear = (B, a, b, skip) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), u = unit(a, b);
+    return B.every(o => skip.includes(o.n) || (() => { const wx = o.x - a[0], wz = o.z - a[1], t = wx * u[0] + wz * u[1]; if (t < 0 || t > L) return true; return Math.abs(wx * u[1] - wz * u[0]) > 2 * R + 0.05; })()); };
+  // the shot's own physics, solved or not: what the goal says of a shot set as {a, p, tip, el}
+  // (the one place a shot is flown: the slices `yield` after each)
+  function trial(B, ch, o){ const st = strikeOf(o.a * D, o.tip[0], o.tip[1], o.p, MU_TIP, o.el * D); const s = simulate(B, st.dir, st.speed, st.w, st.vy); return { why: ch.goal(s, ch), s }; }
+  // near each aim, out from it a little at a time, at each power, tip and rise asked: the first that solves it
+  function* searchShot(B, ch, aims, opts){
+    const steps = opts.steps || 10, step = opts.step || 0.18;
+    for (const a0 of aims) for (let k = 0; k <= 2 * steps; k++){
+      const a = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * step;
+      for (const p of opts.powers) for (const tip of opts.tips || [[0, 0]]) for (const el of opts.els || [0]){
+        const o = { a, p, tip, el }, t = trial(B, ch, o); yield; if (!t.why) return { ...o, s: t.s };
+      }
+    }
+    return null;
+  }
+  // the aim that still solves it either side of a found one: the window (degrees), and the middle of it as the reference
+  function* windowOf(B, ch, o, cap = 2.5){
+    const ok = a => !trial(B, ch, { ...o, a }).why, edge = function* (dir){ let lo = 0, hi = null, d = 0.04;
+      while (d <= cap){ const y = ok(o.a + dir * d); yield; if (y){ lo = d; d *= 1.8; } else { hi = d; break; } }
+      if (hi == null) return cap;
+      for (let i = 0; i < 4; i++){ const m = (lo + hi) / 2, y = ok(o.a + dir * m); yield; if (y) lo = m; else hi = m; }
+      return lo; };
+    const l = yield* edge(-1), r = yield* edge(1);
+    return { w: l + r, mid: o.a + (r - l) / 2 };
+  }
+  const parOfWindow = w => w >= 1.2 ? 1 : w >= 0.5 ? 2 : w >= 0.2 ? 3 : 4;
+  // the balls in the way of nothing: dropped where they touch no ball, keep out of the pockets, and stay off the lines given
+  function scatterExtra(B, rnd, n, lines){
+    const used = new Set(B.map(b => b.n)), nums = []; for (let k = 3; k <= 15; k++) if (!used.has(k)) nums.push(k);
+    for (let i = 0; i < n && nums.length; i++){
+      for (let tries = 0; tries < 60; tries++){
+        const x = -XL + rnd() * 2 * XL, z = -ZL + rnd() * 2 * ZL;
+        if (!free(B, x, z) || lines.some(([a, b]) => { const u = unit(a, b), L = Math.hypot(b[0] - a[0], b[1] - a[1]), wx = x - a[0], wz = z - a[1], t = wx * u[0] + wz * u[1]; return t > -R && t < L + R && Math.abs(wx * u[1] - wz * u[0]) < 2.6 * R; })) continue;
+        B.push(ballOf(nums.splice(Math.floor(rnd() * nums.length), 1)[0], x, z)); break;
+      }
+    }
+  }
+  const pick = (rnd, w) => { let t = 0; for (const k in w) t += w[k]; let x = rnd() * t; for (const k in w){ x -= w[k]; if (x < 0) return k; } return Object.keys(w)[0]; };
+  // a pot set up: an object ball `dist` from pocket k, on a line into the table, the white L back from the ghost ball at `cut` degrees
+  function potSetup(rnd, k, dist, cut, L){
+    const P = mouthOf(k), side = POCKETS[k][0] === 0, inward = side ? [0, -Math.sign(POCKETS[k][1])] : unit(P, [0, 0]);
+    const spread = (side ? 0.55 : 0.5) * (rnd() * 2 - 1), c = Math.cos(spread), s = Math.sin(spread), d = [inward[0] * c - inward[1] * s, inward[0] * s + inward[1] * c];
+    const T = [P[0] + d[0] * dist, P[1] + d[1] * dist], S = cutSetup(T, P, cut, L);
+    return { P, T, W: S.W, Gh: S.Gh, nn: S.nn };
+  }
+  /* WHAT EACH KIND ASKS (`goalFor`), from the puzzle's plain numbers alone (its kind and ring), so a puzzle made in the worker
+     (below) is given its rules again here: the ½-ball page's goals, by kind. A position shot's ring, once it is laid, is asked
+     for too. */
+  function goalFor(ch){
+    const k = ch.kind;
+    if (k === 'bank') return s => { const w = whiteOut(s); if (w) return w; const p = potOf(s, 1); if (!p) return 'the 1 stayed up'; return s.cushions.some(c => c.n === 1 && c.t < p.t) ? null : 'the 1 went straight in, off no cushion'; };
+    if (k === 'kick') return s => whiteOut(s) || (!s.first || s.first.n !== 1 ? `the white met the ${s.first ? s.first.n : 'no ball'} first` : !s.first.rails ? 'the white met the 1 before a cushion' : !potOf(s, 1) && 'the 1 stayed up');
+    if (k === 'combo') return s => whiteOut(s) || (!s.first || s.first.n !== 1 ? 'the white did not meet the 1 first' : !potOf(s, 2) && 'the 2 stayed up');
+    if (k === 'jump') return s => whiteOut(s) || (touched(s, 2) ? 'the 2 was touched' : !potOf(s, 1) && 'the 1 stayed up');
+    if (k === 'cannon') return s => { const w = whiteOut(s); if (w) return w; if (!s.first || s.first.n !== 1) return 'the white did not meet the 1 first'; return met(s, 0, 2).some(c => c.t > met(s, 0, 1)[0].t) ? null : 'the white missed the 2'; };
+    const rails = k === 'tworail';
+    return (s, c) => whiteOut(s) || (!potOf(s, 1) && 'the 1 stayed up') || (rails && railsAfter(s) < 2 ? 'the white met fewer than two cushions after the 1' : null) || (c && c.zone ? inZone(s, c.zone) : null);
+  }
+  function* genOnce(idx, lv, seed){
+    const L = GEN_LV[lv - 1], rnd = rng((idx * 2654435761 + lv * 97 + seed * 7919) >>> 0), kind = pick(rnd, L.kinds);
+    const cutR = () => (L.cut[0] + rnd() * (L.cut[1] - L.cut[0])) * (rnd() < 0.5 ? -1 : 1), k = Math.floor(rnd() * 6);
+    const extraN = L.extra[0] + Math.floor(rnd() * (L.extra[1] - L.extra[0] + 1));
+    const ch = { id: 'g' + idx + '@' + lv, name: GEN_NAMES[kind], kind, see: L.see, lv, gen: true, power: 14, at: 1 };
+    let B, aims, opts = { powers: [12, 18, 26] }, lines = [];
+    if (kind === 'cut' || kind === 'stun' || kind === 'draw' || kind === 'follow' || kind === 'tworail'){
+      const pos = kind !== 'cut', cut = pos ? (kind === 'tworail' ? cutR() * 0.6 : (rnd() * 2 - 1) * Math.min(12, L.cut[1] / 3)) : cutR();
+      const S = potSetup(rnd, k, Math.min(6, (1.6 + rnd() * 3.5) * L.reach), cut, Math.min(10, (2.5 + rnd() * 4.5) * L.reach)); if (!inTable(S.T) || !inTable(S.W)) return null;
+      B = [ballOf(0, ...S.W), ballOf(1, ...S.T)]; aims = [degTo(S.W, S.Gh)]; lines = [[S.W, S.Gh], [S.T, S.P]];
+      if (kind === 'stun') opts = { powers: [16, 22, 30], tips: [[0, -0.25], [0, -0.4], [0, -0.55]] };
+      if (kind === 'draw') opts = { powers: [14, 20, 28], tips: [[0, -0.45], [0, -0.6]] };
+      if (kind === 'follow') opts = { powers: [8, 11, 15], tips: [[0, 0.3], [0, 0.45]] };
+      if (kind === 'tworail'){ opts = { powers: [22, 30, 38], tips: [[0, 0.3], [0.3, 0.2], [-0.3, 0.2]], steps: 6, step: 0.3 }; }
+      ch.text = kind === 'cut' ? `pot the 1: a ${Math.abs(Math.round(cut))}° cut.` : kind === 'stun' ? 'pot the 1 and stop the white in the ring (strike below the middle, with pace).'
+        : kind === 'draw' ? 'pot the 1 and draw the white back into the ring.' : kind === 'follow' ? 'pot the 1 and let the white follow on into the ring.'
+        : 'pot the 1 and bring the white off two cushions into the ring.';
+    } else if (kind === 'bank'){
+      const T = [-XL * 0.7 + rnd() * XL * 1.4, -ZL * 0.6 + rnd() * ZL * 1.2], W = [-XL + rnd() * 2 * XL, -ZL + rnd() * 2 * ZL];
+      if (!free([ballOf(1, ...T)], ...W) || Math.hypot(W[0] - T[0], W[1] - T[1]) < 2.5) return null;
+      B = [ballOf(0, ...W), ballOf(1, ...T)]; aims = [];
+      for (const rl of RAILS) for (let q = 0; q < 6; q++){ const P2 = mirror(mouthOf(q), rl), Gh = ghostOf(T, P2), dir = unit(T, P2);
+        if (Math.abs(((Math.atan2(dir[1], dir[0]) - Math.atan2(T[1] - W[1], T[0] - W[0])) / D + 540) % 360 - 180) < 70) aims.push(degTo(W, Gh)); }
+      if (!aims.length) return null; aims = aims.slice(0, 4); lines = [[W, T]];
+      ch.text = 'bank the 1: it must meet a cushion before it drops.'; opts = { powers: [14, 20, 28], steps: 8 };
+    } else if (kind === 'kick'){
+      const S = potSetup(rnd, k, 1.4 + rnd() * 3, (rnd() * 2 - 1) * 20, Math.min(10, (4 + rnd() * 4) * L.reach)); if (!inTable(S.T) || !inTable(S.W)) return null;
+      const mid = [(S.W[0] + S.Gh[0]) / 2, (S.W[1] + S.Gh[1]) / 2];
+      B = [ballOf(0, ...S.W), ballOf(1, ...S.T), ballOf(2, ...mid)]; if (!free(B.slice(0, 2), ...mid)) return null;
+      aims = RAILS.map(rl => degTo(S.W, mirror(S.Gh, rl))); lines = [[S.T, S.P]];
+      ch.mark = { avoid: [2] }; ch.text = 'the way to the 1 is shut: send the white off a cushion first, and pot the 1.'; opts = { powers: [16, 24, 32], tips: [[0, 0], [0, -0.3]], steps: 12, step: 0.22 };
+    } else if (kind === 'combo'){
+      const Bp = potSetup(rnd, k, 1.2 + rnd() * 2.5, 0, 1), P = Bp.P, B2 = Bp.T, off = (rnd() * 2 - 1) * (10 + lv * 4) * D;
+      const dBP = unit(P, B2), dA = [dBP[0] * Math.cos(off) - dBP[1] * Math.sin(off), dBP[0] * Math.sin(off) + dBP[1] * Math.cos(off)];
+      const A = [B2[0] + dA[0] * (1.5 + rnd() * 2), B2[1] + dA[1] * (1.5 + rnd() * 2)], GB = ghostOf(B2, P), GA = ghostOf(A, GB);
+      const back = unit(GB, A), turn = (rnd() * 2 - 1) * Math.min(35, 10 + lv * 6) * D, Lw = 3 + rnd() * 4;
+      const W = [GA[0] + (back[0] * Math.cos(turn) - back[1] * Math.sin(turn)) * Lw, GA[1] + (back[0] * Math.sin(turn) + back[1] * Math.cos(turn)) * Lw];
+      if (![A, B2, W].every(inTable)) return null;
+      B = [ballOf(0, ...W), ballOf(1, ...A), ballOf(2, ...B2)]; if (!free([B[1], B[2]], ...W) || !free([B[2]], ...A)) return null;
+      aims = [degTo(W, GA)]; lines = [[W, GA], [A, GB], [B2, P]];
+      ch.mark = { target: [2] }; ch.text = 'pot the 2 off the 1: the white meets the 1, the 1 meets the 2.'; opts = { powers: [12, 18, 26], steps: 12, step: 0.12 };
+    } else if (kind === 'jump'){
+      const S = potSetup(rnd, k, 1.5 + rnd() * 2.5 * L.reach, (rnd() * 2 - 1) * 15, 5 + rnd() * 2.5); if (!inTable(S.T) || !inTable(S.W)) return null;
+      const u = unit(S.W, S.Gh), J = [S.W[0] + u[0] * (2.6 + rnd() * 0.8), S.W[1] + u[1] * (2.6 + rnd() * 0.8)];
+      B = [ballOf(0, ...S.W), ballOf(2, ...J), ballOf(1, ...S.T)]; if (!free([B[0], B[2]], ...J)) return null;
+      aims = [degTo(S.W, S.Gh)]; lines = [[S.W, S.Gh], [S.T, S.P]];
+      ch.mark = { avoid: [2] }; ch.text = 'pot the 1 without touching the 2: raise the cue and jump it.'; opts = { powers: [60, 52, 45], els: [50, 45, 55], steps: 6, step: 0.25 };
+    } else if (kind === 'cannon'){
+      const W = [-XL + rnd() * 2 * XL, -ZL + rnd() * 2 * ZL], A = [-XL * 0.8 + rnd() * XL * 1.6, -ZL * 0.8 + rnd() * ZL * 1.6];
+      if (Math.hypot(W[0] - A[0], W[1] - A[1]) < 3) return null;
+      B = [ballOf(0, ...W), ballOf(1, ...A)];
+      const cut = (rnd() < 0.5 ? -1 : 1) * (20 + rnd() * 25), n = unit(W, A), GA = [A[0] - 2 * R * Math.cos(Math.atan2(n[1], n[0]) + cut * D) , A[1] - 2 * R * Math.sin(Math.atan2(n[1], n[0]) + cut * D)];
+      aims = [degTo(W, GA)]; lines = [[W, A]];
+      ch.mark = { target: [2] }; ch.text = 'a cannon: the white meets the 1, then the 2.'; opts = { powers: [10, 15, 22] };
+    }
+    if (!B) return null;
+    ch.goal = goalFor(ch);
+    scatterExtra(B, rnd, extraN, lines);
+    // what the reference shot must do first: a pot (or a first contact, for the cannon), found near the aims
+    let o;
+    if (kind === 'cannon'){
+      // the white's way after the 1: the 2 laid where it passes, a little after the 1, on the cloth
+      const tmp = { ...ch, goal: s => (whiteOut(s) || !s.first || s.first.n !== 1) ? 'no' : null };
+      o = yield* searchShot(B, tmp, aims, { powers: opts.powers, steps: 6 }); if (!o) return null;
+      const s = o.s, ci = B.findIndex(b => b.cue), c1 = met(s, 0, 1)[0]; if (!c1) return null;
+      const f0 = Math.ceil(c1.t * 60) + 1, fr = s.frames; if (f0 >= fr.length - 1) return null; let at = null, along = 0, prev = [fr[f0][2 * ci], fr[f0][2 * ci + 1]], want = (2.5 + rnd() * 3.5) * L.reach;
+      for (let f = f0 + 1; f < fr.length; f++){ const p = [fr[f][2 * ci], fr[f][2 * ci + 1]]; along += Math.hypot(p[0] - prev[0], p[1] - prev[1]); prev = p; if (along >= want){ at = p; break; } }
+      if (!at || !inTable(at)) return null;
+      const B2 = B.filter(b => Math.hypot(b.x - at[0], b.z - at[1]) > 2 * R + 0.3 || b.cue || b.n === 1); if (!free(B2.filter(b => !b.cue), ...at)) return null;
+      B = [...B2, ballOf(2, ...at)];
+    } else {
+      o = yield* searchShot(B, ch, aims, opts); if (!o) return null;
+    }
+    // a ring where the reference shot's white comes to rest (the position shots): reachable by construction
+    if (kind === 'stun' || kind === 'draw' || kind === 'follow' || kind === 'tworail'){
+      const w = o.s.final.find(b => b.cue); if (!w || w.sunk || !inTable([w.x, w.z])) return null;
+      if (kind === 'tworail'){ const c1 = o.s.contacts.find(c => c.a === 0 || c.b === 0); if (!c1 || o.s.cushions.filter(c => c.n === 0 && c.t > c1.t).length < 2) return null; }
+      ch.zone = [w.x, w.z, L.ring];
+    }
+    const W = yield* windowOf(B, ch, o);
+    if (!W.w) return null;
+    const sol = { a: +W.mid.toFixed(2), p: o.p, ...(o.el ? { el: o.el } : {}), ...(o.tip[0] || o.tip[1] ? { tip: o.tip } : {}) };
+    if (trial(B, ch, { a: sol.a, p: sol.p, tip: sol.tip || [0, 0], el: sol.el || 0 }).why) return null;
+    const frozen = B.map(b => ({ ...b }));
+    return Object.assign(ch, { B: () => frozen.map(b => ({ ...b })), sol, window: +W.w.toFixed(2), par: parOfWindow(W.w) + (lv >= 4 && L.see === 0 ? 1 : 0), power: Math.min(30, o.p) });
+  }
+  // the first of GEN_TRIES seeds whose window falls in the level's band, else the nearest; a level-1 cut if none comes out at all
+  function* makePuzzle(idx, lv){
+    const [lo, hi] = GEN_LV[lv - 1].band, miss = P => P.window < lo ? Math.log(lo / P.window) : P.window > hi ? Math.log(P.window / hi) : 0;
+    let best = null;
+    for (let s = 0; s < GEN_TRIES; s++){ const P = yield* genOnce(idx, lv, s); if (!P) continue; if (!miss(P)) return P; if (!best || miss(P) < miss(best)) best = P; }
+    if (best) return best;
+    for (let s = 100; s < 140; s++){ const P = yield* genOnce(idx, 1, s); if (P) return Object.assign(P, { id: 'g' + idx + '@' + lv, lv }); }
+    return null;
+  }
+  const runGen = g => { let r; do r = g.next(); while (!r.done); return r.value; };
+  // a puzzle as plain numbers (what the worker sends back), and a puzzle again from them
+  const PLAIN = ['id', 'name', 'kind', 'see', 'lv', 'gen', 'power', 'at', 'text', 'mark', 'zone', 'sol', 'window', 'par'];
+  const plainOf = P => { const o = {}; for (const k of PLAIN) if (P[k] !== undefined) o[k] = P[k]; o.balls = P.B().map(b => [b.n, b.x, b.z]); return o; };
+  const puzzleOf = o => { const P = {}; for (const k of PLAIN) if (o[k] !== undefined) P[k] = o[k]; P.goal = goalFor(P); P.B = () => o.balls.map(([n, x, z]) => ballOf(n, x, z)); return P; };
+
   // ══ IN THE FIELD (Oct 22). Everything above is wander's play-trick.html as it stands on its main (335fa6c), moved two spaces
   //    left; firstStop takes the balls it looks among, respot the table it puts them back on, and strikeOf its chalk and its
   //    cue's rise from the game, since games keeps a table a board where the page kept one. What follows is the field's: a
@@ -50786,17 +50981,107 @@ const TRICK_APP = (() => {
   const pageT = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
   const SND = ARCADE.sounds('trickshots.sound', 'The cue\'s tap, ball on ball, the cushion and the pocket, each as loud as its impact (wander\'s sounds).');
   const SET = { paths: ['all', 'cue', 'off'].includes(ARCADE.load('trickshots.paths', 'all')) ? ARCADE.load('trickshots.paths', 'all') : 'all' };
+  // (Oct 22, "1,2,5": a board's level is the ring level out from the corner plus the Difficulty, Easy 0, Normal 1, Hard 2, as the
+  //  tilt maze's and the tanks'; the corner's fifteen are the challenges as written and have none)
+  const DL = ARCADE.difficulty('trickshots.level', 'Past the corner\'s fifteen challenges every board has a trick shot of its own, harder the farther it is from the corner: longer shots, thinner cuts, more balls about, less of the shot seen ahead. Easy, Normal and Hard move every board a level up.', true);
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  /* A BOARD'S PUZZLE IS MADE IN A WORKER: a level-5 one is a few hundred shots, up to a second on a slow phone, so it is made off
+     the page's thread, by up to WK_N workers running this app's own engine and generator (`workerSrc`: the text of this script
+     from TRICK_APP's start to the field's part, below, with a message handler; the same code, so the same puzzle). A puzzle
+     comes back as plain numbers (`plainOf`) and is given its rules again here (`puzzleOf`, `goalFor`). `puzzleSoon` starts the
+     job or gives the puzzle made; the board framed or played (`urgent`) goes first, then those asked for most lately; a job not
+     asked for in two seconds is dropped. Where a worker cannot be made, the generator runs here a slice at a time instead (it
+     `yield`s after each shot): the urgent job every frame up to URGENT_MS (`pump`, from viewOf), the rest in the browser's idle
+     time (`idlePump`, at most IDLE_MS a turn). A board waiting shows its bare table. */
+  const PUZ = new Map(), JOBS = new Map(), PUZ_CAP = 800, URGENT_MS = 18, IDLE_MS = 40, WK_N = 2;
+  const WK = { list: [], failed: false };
+  let pumpFrame = -1, pumpUsed = 0, idleOn = false;
+  const pkey = (idx, lv) => idx * 8 + lv;
+  function workerSrc(){
+    const A = 'const TRICK_APP = (() => {', B = '  // ══ IN THE FIELD (Oct 22)';
+    const sc = [...document.scripts].find(x => x.textContent.includes(A) && x.textContent.includes(B)); if (!sc) return null;
+    const t = sc.textContent, a = t.indexOf(A) + A.length, b = t.indexOf(B, a);
+    return t.slice(a, b) + '\nonmessage = e => { const { idx, lv } = e.data; let P = null; try { P = runGen(makePuzzle(idx, lv)); } catch (err) {} postMessage({ idx, lv, P: P ? plainOf(P) : null }); };\n';
+  }
+  function workers(){
+    if (WK.list.length || WK.failed) return WK.list.length;
+    try {
+      const src = workerSrc(); if (!src || typeof Worker === 'undefined') throw 0;
+      const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+      for (let i = 0; i < WK_N; i++){
+        const W = { w: new Worker(url), busy: null };
+        W.w.onmessage = e => { const { idx, lv, P } = e.data, k = pkey(idx, lv); W.busy = null; JOBS.delete(k);
+          if (P){ PUZ.set(k, puzzleOf(P)); if (PUZ.size > PUZ_CAP) PUZ.delete(PUZ.keys().next().value); }
+          try { fieldItemsChanged(); } catch {} wkNext(); };
+        W.w.onerror = () => { WK.failed = true; for (const X of WK.list) try { X.w.terminate(); } catch {} WK.list = []; for (const J of JOBS.values()) J.sent = false; };
+        WK.list.push(W);
+      }
+    } catch { WK.failed = true; WK.list = []; }
+    return WK.list.length;
+  }
+  // the jobs in the order they are wanted: the urgent first, then those asked for most lately (stale ones dropped)
+  function jobOrder(urgentOnly){
+    const now = performance.now();
+    for (const [k, J] of JOBS) if (now - J.asked > 2000 && !J.sent) JOBS.delete(k);
+    return [...JOBS.entries()].filter(([, J]) => !J.sent && (!urgentOnly || (J.urgent && now - J.urgent < 2000)))
+      .sort((a, b) => (b[1].urgent || 0) - (a[1].urgent || 0) || b[1].asked - a[1].asked);
+  }
+  function wkNext(){
+    for (const W of WK.list){ if (W.busy != null) continue; const nx = jobOrder(false)[0]; if (!nx) return;
+      const [k, J] = nx; J.sent = true; W.busy = k; W.w.postMessage({ idx: J.idx, lv: J.lv }); }
+  }
+  function puzzleSoon(idx, lv, urgent){
+    const k = pkey(idx, lv), P = PUZ.get(k);
+    if (P){ PUZ.delete(k); PUZ.set(k, P); return P; }
+    let J = JOBS.get(k); if (!J){ J = { idx, lv }; JOBS.set(k, J); }
+    J.asked = performance.now(); if (urgent) J.urgent = J.asked;
+    if (workers()) wkNext(); else idlePump();
+    return null;
+  }
+  // (no worker: the generator here, until `end`, the urgent ones alone if asked)
+  function runJobs(end, urgentOnly){
+    for (const [k, J] of jobOrder(urgentOnly)){
+      if (!J.gen) J.gen = makePuzzle(J.idx, J.lv);
+      while (performance.now() < end){
+        const r = J.gen.next();
+        if (r.done){ JOBS.delete(k); if (r.value){ PUZ.set(k, r.value); if (PUZ.size > PUZ_CAP) PUZ.delete(PUZ.keys().next().value); } try { fieldItemsChanged(); } catch {} break; }
+      }
+      if (performance.now() >= end) return;
+    }
+  }
+  function pump(){
+    if (!JOBS.size || WK.list.length) return;
+    const now = performance.now(), fr = Math.floor(now / 16);
+    if (fr !== pumpFrame){ pumpFrame = fr; pumpUsed = 0; }
+    if (pumpUsed >= URGENT_MS) return;
+    runJobs(now + URGENT_MS - pumpUsed, true); pumpUsed += performance.now() - now;
+  }
+  function idlePump(){
+    if (idleOn || !JOBS.size || WK.list.length) return; idleOn = true;
+    const ric = window.requestIdleCallback || (f => setTimeout(() => f({ timeRemaining: () => 8 }), 30));
+    ric(dl => { idleOn = false; runJobs(performance.now() + Math.min(IDLE_MS, Math.max(3, dl.timeRemaining())), false); if (JOBS.size) idlePump(); }, { timeout: 250 });
+  }
+  // a board played free (the menu's Free play on this board): its game is one of wander's layouts, not its puzzle
+  const FREEPLAY = new Set();
 
   /* THE BOARDS. The corner block is the challenges, in wander's order: board 0 the ½-ball cut, board 14 the break (boardIdx,
-     so each stays on its board whatever the field's size). Every other board is free play on a table of its own: the rack,
-     the row of four, the jump and the massé from wander's layouts, and, on half of them, fifteen balls scattered by the
-     board's own number (LAYOUTS.scatter seeded by it). */
+     so each stays on its board whatever the field's size). Every other board has its own trick shot at its level (makePuzzle,
+     above; null while it is being made). Free play (the menu, FREEPLAY) is a table of its own: the rack, the row of four, the
+     jump and the massé from wander's layouts, or fifteen balls scattered by the board's own number (LAYOUTS.scatter). */
   const FREE = ['rack', 'line', 'jump', 'masse', 'scatter', 'scatter', 'scatter', 'scatter'];
-  function setupOf(idx){
-    const ch = idx < CHALLENGES.length ? CHALLENGES[idx] : null;
-    if (ch) return { ch, name: ch.name, B: ch.B() };
-    const name = FREE[idx % FREE.length], L = LAYOUTS[name](name === 'scatter' ? 1000 + idx : undefined);
-    return { ch: null, name, B: L.B, L };
+  function setupOf(idx, free, urgent){
+    if (free){ const name = FREE[idx % FREE.length], L = LAYOUTS[name](name === 'scatter' ? 1000 + idx : undefined); return { ch: null, name, B: L.B, L, free: true }; }
+    if (idx < CHALLENGES.length){ const ch = CHALLENGES[idx]; return { ch, name: ch.name, B: ch.B() }; }
+    const lv = levelAt(idx), P = puzzleSoon(idx, lv, urgent);
+    return P ? { ch: P, name: P.name, B: P.B(), lv } : null;
   }
   // the cue as a board starts: in a challenge on the line to its ball (setChallenge's), else the layout's own
   function cueOf(S){
@@ -50829,54 +51114,92 @@ const TRICK_APP = (() => {
     return best;
   }
   function recSoon(idx, force){
-    let R = RECS.get(idx); if (R){ RECS.delete(idx); RECS.set(idx, R); return R; }
+    const rk = idx < CHALLENGES.length ? idx * 8 : pkey(idx, levelAt(idx));
+    let R = RECS.get(rk); if (R){ RECS.delete(rk); RECS.set(rk, R); return R; }
     const t = performance.now(); if (!force && t - recAt < 30) return null;
-    const S = setupOf(idx), d = demoShot(idx, S), o = d.shot, st = strikeOf(o.a * D, o.tip[0], o.tip[1], o.p, MU_TIP, o.el * D);
+    const S = setupOf(idx, false, force); if (!S) return null;
+    const d = demoShot(idx, S), o = d.shot, st = strikeOf(o.a * D, o.tip[0], o.tip[1], o.p, MU_TIP, o.el * D);
     const s = thin(d.s || simulate(S.B, st.dir, st.speed, st.w, st.vy), 60 / REC_HZ);
-    R = { idx, S, shot: o, s, see: S.ch ? S.ch.see : 3, play: (s.frames.length - 1) / s.hz };
+    R = { idx, S, shot: o, s, see: S.ch ? S.ch.see : 3, play: (s.frames.length - 1) / s.hz, rots: rotsOf(s, S.B, idx) };
     R.cycle = AIM_T + R.play + HOLD_T;
-    RECS.set(idx, R); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
+    RECS.set(rk, R); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     recAt = performance.now();
     return R;
   }
   const phaseOf = idx => { let v = Math.imul(idx + 1, 0x9e3779b1); v ^= v >>> 15; return (v >>> 0) / 4294967296; };
+  /* THE BALLS ROLL (Oct 22, "1,2,5", the fifth: "balls that visibly roll and spin"): each ball carries how it is turned, a
+     quaternion in the table's own frame (x along, y up, z across), and a ball on the cloth that moves d turns by d/R about
+     ŷ × its way (`roll`: the engine's own rolling, ω = ŷ × v / R; a sliding or spinning ball is drawn as rolling). A ball in
+     the air keeps its turn. The game keeps them between shots (g.rot); a board no one plays has them worked out for every
+     frame of its shot (R.rots). They start turned each its own way (`rotStart`), so the numbers face about. */
+  function roll(q, dx, dz){
+    const d = Math.hypot(dx, dz); if (d < 1e-6) return q;
+    const h = d / R / 2, s = Math.sin(h) / d, ax = dz * s, az = -dx * s, aw = Math.cos(h);   // the turn: about (dz, 0, −dx)/d by d/R
+    const [x, y, z, w] = q;
+    const o = [aw * x + ax * w + 0 * z - az * y, aw * y + 0 * w + az * x - ax * z, aw * z + az * w + ax * y - 0 * x, aw * w - ax * x - 0 * y - az * z];
+    const l = Math.hypot(...o); return o.map(v => v / l);
+  }
+  const rotStart = (seed, n) => { const rnd = rng(seed * 31 + n * 977 + 5), u1 = rnd(), u2 = rnd() * 2 * Math.PI, u3 = rnd() * 2 * Math.PI, a = Math.sqrt(1 - u1), b = Math.sqrt(u1);
+    return [a * Math.sin(u2), a * Math.cos(u2), b * Math.sin(u3), b * Math.cos(u3)]; };
+  // every frame's turn of every ball, rolled along a shot's frames from where they start
+  function rotsOf(s, B, seed){
+    const n = B.length, out = [], q = B.map(b => rotStart(seed, b.n));
+    for (let k = 0; k < s.frames.length; k++){
+      const f = s.frames[k], f0 = k ? s.frames[k - 1] : f, h = s.heights[k], o = new Float32Array(4 * n);
+      for (let i = 0; i < n; i++){
+        if (k && !isNaN(f[2 * i]) && !isNaN(f0[2 * i]) && h[i] < 0.02) q[i] = roll(q[i], f[2 * i] - f0[2 * i], f[2 * i + 1] - f0[2 * i + 1]);
+        o.set(q[i], 4 * i);
+      }
+      out.push(o);
+    }
+    return out;
+  }
 
   /* A GAME: one board's table, played as the page plays it (setChallenge, setLayout, shoot, finish, undo), its own cue. */
   const GAMES = new Map(); let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
   const BEST = (() => { try { return JSON.parse(ARCADE.load('trickshots.best', '{}')) || {}; } catch { return {}; } })();
   const saveBest = (id, n) => { if (!BEST[id] || n < BEST[id]){ BEST[id] = n; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } };
+  // (a board whose puzzle is still being made has no game yet: fresh gives null, and asks for it first)
   function fresh(c, r){
-    const idx = boardIdx(c, r), S = setupOf(idx), cue = cueOf(S);
-    const g = { c, r, idx, ch: S.ch, name: S.name, balls: S.B, start: S.B.map(b => ({ ...b })), total: S.B.length - 1, ...cue, chalk: true,
-                see: S.ch ? S.ch.see : 3, tries: 0, solvedIn: 0, lastWhy: null, potted: 0, shots: 0, history: [], anim: null, sim: null, dirty: true };
+    const idx = boardIdx(c, r), free = FREEPLAY.has(gkey(c, r)), S = setupOf(idx, free, true); if (!S) return null;
+    const cue = cueOf(S);
+    const g = { c, r, idx, lv: S.lv || 0, free, ch: S.ch, name: S.name, balls: S.B, start: S.B.map(b => ({ ...b })), total: S.B.length - 1, ...cue, chalk: true,
+                see: S.ch ? S.ch.see : 3, tries: 0, solvedIn: 0, lastWhy: null, potted: 0, shots: 0, history: [], anim: null, sim: null, dirty: true,
+                rot: S.B.map(b => rotStart(idx, b.n)) };
     GAMES.set(gkey(c, r), g); return g;
   }
   const gameAt = (c, r) => GAMES.get(gkey(c, r)) || fresh(c, r);
   const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  // the stars a challenge solved earns: on par or under three, within two more two, else one (Oct 22, "1,2,5")
+  const starsOf = (tries, par) => !tries ? 0 : tries <= par ? 3 : tries <= par + 2 ? 2 : 1;
+  const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  // the board after this one in the boards' own order (idx + 1: the corner's fifteen, then out ring by ring)
+  function nextBoardOf(g){ const [c, r] = cellOfIdx(g.idx + 1); LIVE = { c, r }; try { gotoCell(c, r); } catch {} gameAt(c, r); touch(); return true; }
   const touch = () => { try { fieldItemsChanged(); } catch {} try { bbRefreshNow(); } catch {} };
   const shotOf = g => { const s = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D); return [s.dir, s.speed, s.w, s.vy]; };
   function previewOf(g){ if (g.dirty && !g.anim){ g.sim = simulate(g.balls, ...shotOf(g)); g.dirty = false; } return g.sim; }
   function shoot(g){
     if (!g || g.anim) return false;
     const shot = shotOf(g), s = simulate(g.balls, ...shot); if (!s) return false;
-    g.history.push({ balls: g.balls.map(b => ({ ...b })), potted: g.potted, shots: g.shots });
-    g.shots++; g.anim = { s, t0: performance.now(), speed: shot[1], heard: -1 }; try { ARCADE.audio(); } catch {}
+    g.history.push({ balls: g.balls.map(b => ({ ...b })), potted: g.potted, shots: g.shots, rot: g.rot.slice() });
+    g.shots++; g.anim = { s, t0: performance.now(), speed: shot[1], heard: -1, rk: 0, rot0: g.rot.slice() }; try { ARCADE.audio(); } catch {}
     return true;
   }
   function finish(g){
     const s = g.anim.s;
     if (g.ch){   // a try: judged on the shot just played, then the balls go back where they were set (wander's finish)
       g.lastWhy = g.ch.goal(s, g.ch) || null; g.tries++;
-      if (!g.lastWhy && !g.solvedIn){ g.solvedIn = g.tries; saveBest(g.ch.id, g.tries); say('✓ ' + g.ch.name + ' solved in ' + g.tries + (g.tries === 1 ? ' try' : ' tries') + (g.tries <= g.ch.par ? (g.tries < g.ch.par ? ', under par' : ', on par') : '') + '. Next ▸ in the row goes on.', 4000); }
+      if (!g.lastWhy && !g.solvedIn){ g.solvedIn = g.tries; saveBest(g.ch.id, g.tries); const st = starsOf(g.tries, g.ch.par);
+        say(starStr(st) + '  ' + g.ch.name + ' solved in ' + g.tries + (g.tries === 1 ? ' try' : ' tries') + ' (par ' + g.ch.par + '). Tap the table for the next one; hold it to play this one again.', 5000); }
       else if (g.lastWhy) say('Missed: ' + g.lastWhy + '.', 2600);
-      g.balls = g.start.map(b => ({ ...b })); g.anim = null; g.dirty = true; touch(); return;
+      g.balls = g.start.map(b => ({ ...b })); g.rot = g.anim.rot0; g.anim = null; g.dirty = true; touch(); return;
     }
     g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 }));
     const n = s.sunk.filter(p => p.n !== 0 && p.pocket >= 0).length; g.potted += n; respot(g.balls); g.anim = null; g.dirty = true;
     if (n && g.balls.every(b => b.cue || b.sunk)) say('The table cleared in ' + g.shots + (g.shots === 1 ? ' shot' : ' shots') + '. Hold the board, or Start this board again, to rack it again.', 4000);
     touch();
   }
-  function undo(g){ if (!g || g.anim || g.ch || !g.history.length) return false; const h = g.history.pop(); g.balls = h.balls; g.potted = h.potted; g.shots = h.shots; g.dirty = true; touch(); return true; }
+  function undo(g){ if (!g || g.anim || g.ch || !g.history.length) return false; const h = g.history.pop(); g.balls = h.balls; g.potted = h.potted; g.shots = h.shots; g.rot = h.rot; g.dirty = true; touch(); return true; }
   function restart(c, r){ GAMES.delete(gkey(c, r)); const g = fresh(c, r); touch(); return g; }
   const setTip = (g, fx, fy) => { const l = Math.hypot(fx, fy), TM = 0.9; if (l > TM){ fx *= TM / l; fy *= TM / l; }
     g.tip = l < 0.03 ? { x: 0, y: 0 } : { x: Math.round(fx * 100) / 100, y: Math.round(fy * 100) / 100 }; g.dirty = true; };
@@ -50929,25 +51252,31 @@ const TRICK_APP = (() => {
     if (g.anim){
       const an = g.anim, fr = an.s.frames, el = (performance.now() - an.t0) / 1000, k = Math.min(fr.length - 1, Math.floor(el * 60));
       soundsTo(an, el);
+      for (; an.rk < k; an.rk++){ const a = fr[an.rk], b = fr[an.rk + 1], h = an.s.heights[an.rk + 1];   // each frame since the last drawn, rolled
+        for (let i = 0; i < g.balls.length; i++) if (!isNaN(a[2 * i]) && !isNaN(b[2 * i]) && h[i] < 0.02) g.rot[i] = roll(g.rot[i], b[2 * i] - a[2 * i], b[2 * i + 1] - a[2 * i + 1]); }
       pos = g.balls.map((b, i) => isNaN(fr[k][2 * i]) ? null : [fr[k][2 * i], fr[k][2 * i + 1], an.s.heights[k][i]]);
       if (k >= fr.length - 1 && (!g.ch || el > (fr.length - 1) / 60 + 0.9)){ finish(g); return liveView(g); }   // a try's end held a moment
-      return { B: g.balls, pos, ch: g.ch };
+      return { B: g.balls, pos, ch: g.ch, rot: g.rot, trail: { fr, k, hz: 60 }, lv: g.lv };
     }
-    return { B: g.balls, pos, ch: g.ch, sim: SET.paths === 'off' ? null : previewOf(g), hz: 60, see: g.see, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: g.tip, chalk: g.chalk }, paths: SET.paths };
+    return { B: g.balls, pos, ch: g.ch, rot: g.rot, lv: g.lv, sim: SET.paths === 'off' ? null : previewOf(g), hz: 60, see: g.see, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: g.tip, chalk: g.chalk }, paths: SET.paths };
   }
   function shownOf(R){
     const t = (pageT() + phaseOf(R.idx) * R.cycle) % R.cycle, s = R.s, B = R.S.B;
     if (t < AIM_T){ const o = R.shot, tip = { x: o.tip[0], y: o.tip[1] };
-      return { B, pos: B.map(b => [b.x, b.z, 0]), ch: R.S.ch, sim: s, hz: s.hz, see: R.see, cue: { ang: o.a * D, power: o.p, elev: o.el, tip, chalk: true }, paths: 'all' }; }
+      return { B, pos: B.map(b => [b.x, b.z, 0]), ch: R.S.ch, lv: R.S.lv, rot: B.map((_, i) => R.rots[0].subarray(4 * i, 4 * i + 4)), sim: s, hz: s.hz, see: R.see, cue: { ang: o.a * D, power: o.p, elev: o.el, tip, chalk: true }, paths: 'all' }; }
     const k = Math.min(s.frames.length - 1, Math.floor((t - AIM_T) * s.hz)), f = s.frames[k], h = s.heights[k];
-    return { B, pos: B.map((b, i) => isNaN(f[2 * i]) ? null : [f[2 * i], f[2 * i + 1], h[i]]), ch: R.S.ch };
+    return { B, pos: B.map((b, i) => isNaN(f[2 * i]) ? null : [f[2 * i], f[2 * i + 1], h[i]]), ch: R.S.ch, lv: R.S.lv, rot: B.map((_, i) => R.rots[k].subarray(4 * i, 4 * i + 4)), trail: { fr: s.frames, k, hz: s.hz } };
   }
-  function viewOf(c, r){
+  function viewOf(c, r, bp){
+    pump();
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
+    if (here && (bp == null || bp >= CTL_PX)) ctlSync(g);
     if (g) return liveView(g);
-    const idx = boardIdx(c, r), R = recSoon(idx);
-    if (R) return shownOf(R);
-    const S = setupOf(idx); return { B: S.B, pos: S.B.map(b => [b.x, b.z, 0]), ch: S.ch };
+    const idx = boardIdx(c, r), making = { B: [], pos: [], ch: null, making: true };
+    // (asked for every frame it is in view, so its job stays in the queue; the demo after it is made, one board in 30 ms)
+    if (idx >= CHALLENGES.length && !puzzleSoon(idx, levelAt(idx))) return making;
+    const R = recSoon(idx);
+    return R ? shownOf(R) : making;   // (its trick shot still being made: the bare table)
   }
 
   /* THE PIECES. The cloth, the frame and the pockets are the board's picture (paint); the cushions stand on it as boxes; the
@@ -51005,12 +51334,14 @@ const TRICK_APP = (() => {
     const ch = V.ch;
     if (ch && ch.zone){ const [x, z, r] = ch.zone; out.push({ kind: 'tsZone', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }, { kind: 'tsZoneFill', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }); }
     if (V.sim) pathItems(out, V);
+    if (V.trail) trailItems(out, V);
+    // (each ball its own kind, wearing its number and colour (ballTex), turned as it has rolled: `rot`, the table's frame)
     V.B.forEach((b, i) => {
       const p = V.pos[i]; if (!p) return; const hgt = p[2] || 0;
       if (hgt > 0.01) out.push({ kind: 'tsShadow', u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * R), color: 0x000000 });
-      out.push({ kind: 'tsBall', u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * R), lift: Sb(hgt), color: b.stripe ? 0xf2f0ea : hexOf(b.col) });
-      if (b.stripe) out.push({ kind: 'tsBand', u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * R), lift: Sb(hgt), color: hexOf(b.col) });
+      out.push({ kind: 'tsB' + b.n, u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * R), lift: Sb(R + hgt), rot: V.rot ? V.rot[i] : null, color: 0xffffff });
     });
+    frameItems(out, V);
     if (ch && ch.mark) for (const [list, col, kind] of [[ch.mark.target, GOLD, 'tsRing'], [ch.mark.avoid, RED, 'tsGhost']]) for (const n of list || []){
       const i = V.B.findIndex(b => b.n === n); if (i < 0 || !V.pos[i]) continue;
       out.push({ kind, u: Ub(V.pos[i][0]), v: Vb(V.pos[i][1]), scale: Sb(2 * R + 0.36), color: col });
@@ -51018,8 +51349,46 @@ const TRICK_APP = (() => {
     if (V.cue) cueItems(out, V);
     return out;
   }
+  /* A SHORT TRAIL behind each moving ball (Oct 22, "1,2,5"): where it was 40, 80 … 200 ms ago, each a little smaller, in its
+     colour, left out where it has hardly moved. */
+  function trailItems(out, V){
+    const { fr, k, hz } = V.trail, step = Math.max(1, Math.round(hz * 0.04));
+    V.B.forEach((b, i) => {
+      const p = V.pos[i]; if (!p || p[2] > 0.05) return; const col = b.cue ? 0xf2f0ea : hexOf(b.col);
+      let lx = p[0], lz = p[1];
+      for (let j = 1; j <= 5; j++){ const kk = k - j * step; if (kk < 0) break; const x = fr[kk][2 * i], z = fr[kk][2 * i + 1]; if (isNaN(x)) break;
+        if (Math.hypot(x - lx, z - lz) < 0.18) continue; lx = x; lz = z;
+        out.push({ kind: 'tsTrail', u: Ub(x), v: Vb(z), scale: Sb(2 * R * (0.78 - 0.11 * j)), color: col }); }
+    });
+  }
+  /* ON THE FRAME (Oct 22, "1,2,5"): a generated board's level as dots in its colour (mini golf's flags) at the far left, and the
+     stars a solved puzzle earned (BEST, starsOf) at the far right; a board whose shot is still being made shows neither. */
+  function frameItems(out, V){
+    const ch = V.ch; if (!ch) return; const zf = -LZ / 2 - CUSH_W - (MARGIN - CUSH_W) / 2;
+    // (each on a pale rim, or level 5's black would be lost on the wood)
+    if (V.lv) for (let k = 0; k < V.lv; k++){ const u = Ub(-LX / 2 - 0.15 + k * 0.42);
+      out.push({ kind: 'tsDot', u, v: Vb(zf), scale: Sb(0.36), color: 0xe8dcc0 }, { kind: 'tsDot', u, v: Vb(zf), scale: Sb(0.27), lift: Sb(0.004), color: LV_COL[V.lv - 1] }); }
+    const n = BEST[ch.id] ? starsOf(BEST[ch.id], ch.par) : 0;
+    for (let k = 0; k < 3; k++) out.push({ kind: 'tsStar', u: Ub(LX / 2 + 0.15 - k * 0.5), v: Vb(zf), scale: Sb(0.46), yaw: yawOf(Math.PI / 2), color: k < n ? GOLD : 0x3a2414 });
+  }
+  /* A BALL'S PICTURE: its colour (a striped one white with a band of it), and its number on a white circle twice, front and back,
+     on its equator; the white has six small red dots (as practice balls do), so its rolling shows. Painted once a ball, laid on a
+     sphere by its own longitude and latitude. */
+  function ballTex(T, n){
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128; const c = cv.getContext('2d'), col = n ? COLS[n] : '#f2f0ea';
+    c.fillStyle = n === 0 || n >= 9 ? '#f2f0ea' : col; c.fillRect(0, 0, 256, 128);
+    if (n >= 9){ c.fillStyle = col; c.fillRect(0, 128 * 0.31, 256, 128 * 0.38); }
+    if (n === 0){ c.fillStyle = '#c0392b'; for (const [x, y] of [[0, 64], [64, 64], [128, 64], [192, 64], [256, 64], [32, 26], [160, 102]]){ const sx = 1 / Math.max(0.3, Math.sin(y / 128 * Math.PI)); c.beginPath(); c.ellipse(x, y, 4.5 * sx, 4.5, 0, 0, 7); c.fill(); } }
+    else for (const x of [64, 192]){ c.fillStyle = '#f7f5ee'; c.beginPath(); c.arc(x, 64, 17, 0, 7); c.fill();
+      c.fillStyle = '#111'; c.font = 'bold ' + (n > 9 ? 17 : 21) + 'px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(n), x, 65); }
+    const t = new T.CanvasTexture(cv); return t;
+  }
   // the pieces' shapes, a unit across (a ball sits on the cloth; the cue lies along +x back from its tip, the field turning +x to the yaw)
   const geos = {
+    ...Object.fromEntries(Array.from({ length: 16 }, (_, n) => ['tsB' + n, T => { const g = new T.SphereGeometry(0.5, 24, 16); g.userData.map = ballTex(T, n); return g; }])),
+    tsTrail: T => { const g = FieldKit.disc(T, 0.5, 0.015, 12); g.userData.unlit = true; g.userData.opacity = 0.35; return g; },
+    tsStar: T => { const sh = new T.Shape(); for (let k = 0; k < 10; k++){ const a = Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 0.2 : 0.5; k ? sh.lineTo(r * Math.cos(a), r * Math.sin(a)) : sh.moveTo(r * Math.cos(a), r * Math.sin(a)); }
+      const g = new T.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); g.translate(0, 0.03, 0); g.userData.unlit = true; return g; },
     tsBall: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
     tsBand: T => { const g = new T.SphereGeometry(0.514, 20, 6, 0, Math.PI * 2, Math.PI / 2 - 0.47, 0.94); g.rotateX(Math.PI / 2); g.translate(0, 0.5, 0); return g; },
     tsBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
@@ -51089,7 +51458,8 @@ const TRICK_APP = (() => {
     const set = 'cue ' + degOf(g.ang) + '°' + (g.elev ? ', raised ' + g.elev + '°' : '') + ' · ' + (g.chalk ? 'chalked' : 'bare') + ' tip ' + spinName(g.tip)
       + (!g.chalk ? (stH.turn ? ', the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '') : !stH.grip ? ', miscue: the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '')
       + (stH.vy ? ' · it jumps' : '') + ' · power ' + g.power;
-    let s = g.ch ? 'Trick shots — ' + g.ch.name + ' (' + (ci + 1) + ' of ' + CHALLENGES.length + ') · see ' + g.see + ' deep · ' + (g.solvedIn ? 'tries ' + g.tries : 'try ' + (g.tries + 1)) + ' · par ' + g.ch.par + (best ? ' · best ' + best : '') + ' · ' + g.ch.text + ' · ' + set
+    const head = g.ch && g.ch.gen ? 'Trick shots — ' + g.ch.name + ', level ' + g.lv + ' · see ' + g.see + ' deep · ' : g.ch ? 'Trick shots — ' + g.ch.name + ' (' + (ci + 1) + ' of ' + CHALLENGES.length + ') · see ' + g.see + ' deep · ' : '';
+    let s = g.ch ? head + (g.solvedIn ? 'tries ' + g.tries : 'try ' + (g.tries + 1)) + ' · par ' + g.ch.par + (best ? ' · best ' + best + ' ' + starStr(starsOf(best, g.ch.par)) : '') + ' · ' + g.ch.text + ' · ' + set
                  : 'Trick shots — free play (' + g.name + ') · potted ' + g.potted + ' of ' + g.total + ' · shot ' + g.shots + ' · ' + set;
     const sim = !g.anim && SET.paths !== 'off' ? g.sim : null;
     if (sim){
@@ -51098,7 +51468,7 @@ const TRICK_APP = (() => {
       s += ' · ' + (f ? 'first: the ' + f.n + (f.rails ? ' after ' + f.rails + ' cushion' + (f.rails > 1 ? 's' : '') : '') + ', ' + frac(f.overlap) + ' hit (cut ' + f.cut.toFixed(0) + '°)' : 'no ball reached')
         + ' · ' + (pots.length ? 'pots ' + pots.join(', ') : hidden ? 'no pot in sight' : 'pots none') + (scratch ? ' · the white goes in' : '') + (hidden ? ' · ' + hidden + ' contact' + (hidden > 1 ? 's' : '') + ' past sight' : '');
     }
-    if (g.ch && (g.solvedIn || g.lastWhy)) s += ' · ' + (g.solvedIn ? '✓ solved in ' + g.solvedIn + (g.solvedIn === 1 ? ' try' : ' tries') : '') + (g.lastWhy ? (g.solvedIn ? ', last try ' : '') + 'missed: ' + g.lastWhy : '');
+    if (g.ch && (g.solvedIn || g.lastWhy)) s += ' · ' + (g.solvedIn ? starStr(starsOf(g.solvedIn, g.ch.par)) + ' solved in ' + g.solvedIn + (g.solvedIn === 1 ? ' try' : ' tries') + ', tap for the next' : '') + (g.lastWhy ? (g.solvedIn ? ', last try ' : '') + 'missed: ' + g.lastWhy : '');
     return s;
   }
 
@@ -51119,8 +51489,7 @@ const TRICK_APP = (() => {
     else out.push({ glyph: '↶', value: 'Undo', label: g.history.length + ' back', dim: busy || !g.history.length });
     return out;
   }
-  function nextChallenge(g){ const idx = ((g.ch ? CHALLENGES.indexOf(g.ch) : -1) + 1) % CHALLENGES.length, [c, r] = cellOfIdx(idx);
-    LIVE = { c, r }; gameAt(c, r); try { gotoCell(c, r); } catch {} return true; }
+  const nextChallenge = g => nextBoardOf(g);
   function onTile(g, i){
     if (i !== 0 && i !== 9 && i !== 11 && g.anim) return false;
     switch (i){
@@ -51138,6 +51507,64 @@ const TRICK_APP = (() => {
     touch(); return true;
   }
 
+  /* THE SPIN AND THE PULL (Oct 22, "1,2,5", the second: "the round inset … and a strip you pull back and let go to shoot", as
+     wander's page has them). Beside the framed table while it waits for a shot, two controls of the page's own over the field:
+     - the white seen from behind the cue (`CTL.tip`, a canvas): a press or a drag puts the tip where the finger is, corners
+       too; the dashed ring is the chalk's grip (inside it spin, outside a miscue), the gold tick 2/5 up where the white rolls at
+       once, below the middle draw, above follow; the cue's rise is written under it;
+     - the strip (`CTL.pull`): drag down it as far as the shot is hard (the whole strip the hardest, 60) and let go to shoot; the
+       preview follows the power as it is pulled; let go near the top and nothing is shot, the power put back.
+     They live outside the field's canvas, so a press on them never pans the view; hidden off this app (onLeave), with no
+     board framed, and while a shot plays (`ctlSync`, each frame from the framed board's viewOf). */
+  // (shown only while the board played is CTL_PX across or more, and gone once it has not been drawn for CTL_GONE ms)
+  const CTL = { el: null, tip: null, pull: null, fill: null, label: null, drawn: '', g: null, pulling: null, seen: 0 }, CTL_PX = 300, CTL_GONE = 450;
+  function ctlEnsure(){
+    if (CTL.el || typeof document === 'undefined') return CTL.el;
+    const el = document.createElement('div'); el.id = 'tsCtl';
+    el.style.cssText = 'position:fixed;right:calc(min(32px,5.25vw) + 12px);top:76px;width:92px;z-index:30;display:none;flex-direction:column;align-items:center;gap:8px;touch-action:none;user-select:none;-webkit-user-select:none';
+    const tip = document.createElement('canvas'); tip.id = 'tsTip'; tip.width = tip.height = 184; tip.title = 'Where the tip meets the white: drag on it (dashed ring: the chalk\'s grip; gold tick: rolls at once)';
+    tip.style.cssText = 'width:92px;height:92px;border-radius:50%;background:rgba(12,12,17,0.72);cursor:crosshair;touch-action:none';
+    const label = document.createElement('div'); label.style.cssText = 'font:11px/1.2 system-ui,sans-serif;color:#d8d4c8;text-shadow:0 1px 2px #000;text-align:center;pointer-events:none';
+    const pull = document.createElement('div'); pull.id = 'tsPull'; pull.title = 'Pull down and let go to shoot: the farther, the harder';
+    pull.style.cssText = 'position:relative;width:46px;height:min(30vh,230px);border:1px solid rgba(255,255,255,0.18);border-radius:23px;background:rgba(12,12,17,0.6);overflow:hidden;cursor:ns-resize;touch-action:none';
+    const fill = document.createElement('div'); fill.style.cssText = 'position:absolute;left:0;right:0;top:0;height:0;background:linear-gradient(#d4a05233,#d4a052cc)';
+    const word = document.createElement('span'); word.textContent = 'pull'; word.style.cssText = 'position:absolute;left:0;right:0;bottom:8px;text-align:center;font:12px system-ui,sans-serif;color:#b8b4a8;pointer-events:none';
+    pull.append(fill, word); el.append(tip, label, pull); document.body.appendChild(el);
+    Object.assign(CTL, { el, tip, pull, fill, label });
+    setInterval(() => { if (CTL.el.style.display !== 'none' && !CTL.pulling && performance.now() - CTL.seen > CTL_GONE) ctlHide(); }, 200);
+    const stop = e => { e.stopPropagation(); };
+    for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'touchstart', 'touchmove', 'touchend', 'wheel', 'click', 'dblclick', 'contextmenu']) el.addEventListener(t, stop);
+    const tipAt = e => { const g = CTL.g; if (!g || g.anim) return; const r = tip.getBoundingClientRect(), k = r.width * 0.36;
+      setTip(g, (e.clientX - r.left - r.width / 2) / k, -(e.clientY - r.top - r.height / 2) / k); touch(); ctlDraw(g); };
+    let tipDrag = false;
+    tip.addEventListener('pointerdown', e => { tipDrag = true; try { tip.setPointerCapture(e.pointerId); } catch {} tipAt(e); e.preventDefault(); });
+    tip.addEventListener('pointermove', e => { if (tipDrag) tipAt(e); });
+    tip.addEventListener('pointerup', () => { tipDrag = false; }); tip.addEventListener('pointercancel', () => { tipDrag = false; });
+    const pullTo = e => { const P = CTL.pulling, g = CTL.g; if (!P || !g) return; const r = pull.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientY - P.y0) / (r.height * 0.9)));
+      P.f = f; fill.style.height = (f * 100) + '%'; setPower(g, 2 + 58 * f); try { window.fieldWake && window.fieldWake(); } catch {} };
+    pull.addEventListener('pointerdown', e => { const g = CTL.g; if (!g || g.anim) return; CTL.pulling = { y0: e.clientY, was: g.power, f: 0 }; try { pull.setPointerCapture(e.pointerId); } catch {} try { ARCADE.audio(); } catch {} pullTo(e); e.preventDefault(); });
+    pull.addEventListener('pointermove', e => { if (CTL.pulling) pullTo(e); });
+    const pullEnd = go => { const P = CTL.pulling, g = CTL.g; if (!P) return; CTL.pulling = null; fill.style.height = '0';
+      if (g && go && P.f > 0.03) shoot(g); else if (g) setPower(g, P.was); touch(); };
+    pull.addEventListener('pointerup', () => pullEnd(true)); pull.addEventListener('pointercancel', () => pullEnd(false));
+    return el;
+  }
+  function ctlDraw(g){
+    const key = g.tip.x + ',' + g.tip.y + ',' + g.chalk + ',' + g.elev; if (key === CTL.drawn) return; CTL.drawn = key;
+    const c = CTL.tip.getContext('2d'), W = 184, m = W / 2, rad = W * 0.36; c.clearRect(0, 0, W, W);
+    c.fillStyle = '#f2f0ea'; c.beginPath(); c.arc(m, m, rad, 0, 7); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 2; c.beginPath(); c.moveTo(m, m - rad); c.lineTo(m, m + rad); c.moveTo(m - rad, m); c.lineTo(m + rad, m); c.stroke();
+    if (g.chalk){ const gr = rad * MU_TIP / Math.hypot(1, MU_TIP); c.setLineDash([6, 6]); c.strokeStyle = 'rgba(91,127,168,0.85)'; c.beginPath(); c.arc(m, m, gr, 0, 7); c.stroke(); c.setLineDash([]);
+      c.strokeStyle = 'rgba(212,160,82,0.95)'; c.lineWidth = 3; c.beginPath(); c.moveTo(m - rad * 0.18, m - 0.4 * rad); c.lineTo(m + rad * 0.18, m - 0.4 * rad); c.stroke(); }
+    c.fillStyle = '#5b7fa8'; c.beginPath(); c.arc(m + g.tip.x * rad, m - g.tip.y * rad, rad * R_TIP / R, 0, 7); c.fill();
+    CTL.label.textContent = spinName(g.tip) + (g.elev ? ' · cue ↑ ' + g.elev + '°' : '');
+  }
+  function ctlSync(g){
+    if (!ctlEnsure()) return; const show = !!g && (!g.anim || !!CTL.pulling);
+    CTL.g = g || null; CTL.seen = performance.now(); CTL.el.style.display = show ? 'flex' : 'none';
+    if (show) ctlDraw(g);
+  }
+  const ctlHide = () => { if (CTL.el) CTL.el.style.display = 'none'; CTL.g = null; CTL.pulling = null; };
   // the keys (wander's): ◀ ▶ aim (shift a whole degree), ▲ ▼ power, space or Enter shoots, [ ] the tip across, − = up and down,
   // , . the cue lowered and raised, z undo
   addEventListener('keydown', e => {
@@ -51160,11 +51587,15 @@ const TRICK_APP = (() => {
     // (a table twice as long as it is wide, and a unit of frame round it: 22 by 12)
     boardShape: { cellW: 1, cellH: 1 / ASP },
     menu: [{ head: 'Trick shots', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); JOBS.clear(); touch(); } },
       SND.item,
       { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball (the ghost ball).', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
-      { label: 'Show me the trick', title: 'A challenge\'s reference shot, set on the cue: the one this board plays when no one is on it.', on(){ const g = liveGame(); if (!g || !g.ch) return say('Only on a challenge (the corner\'s fifteen boards).');
+      { label: 'Show me the trick', title: 'The board\'s reference shot, set on the cue: the one it plays when no one is on it.', on(){ const g = liveGame(); if (!g || !g.ch) return say('Not in free play.');
           const o = g.ch.sol; g.ang = o.a * D; g.power = o.p; g.elev = o.el || 0; setTip(g, ...(o.tip || [0, 0])); g.chalk = true; touch(); } },
-      { label: 'Next challenge', title: 'The next of the fifteen, on its board.', on(){ const g = liveGame(); nextChallenge(g || { ch: CHALLENGES[CHALLENGES.length - 1] }); } },
+      { label: 'Next trick shot', title: 'The next board along: the corner\'s fifteen, then out ring by ring.', on(){ const g = liveGame(); if (g) nextBoardOf(g); } },
+      { label: () => { const f = framedCell(); return f && FREEPLAY.has(gkey(f.c, f.r)) ? 'Back to this board\'s trick shot' : 'Free play on this board'; },
+        title: 'Free play: one of wander\'s tables (the rack, the row of four, the jump, the massé, or fifteen balls scattered), the balls yours to move and the shots to undo.',
+        on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); if (FREEPLAY.has(k)) FREEPLAY.delete(k); else FREEPLAY.add(k); LIVE = { c: f.c, r: f.r }; restart(f.c, f.r); } },
       { label: 'Start this board again', title: 'The table as it was set, the cue as it began.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
       { label: 'About the trick shots (wander)', title: 'The page this came from, with the reading behind it (pool.html\'s table, played from inside).', on(){ try { window.open('https://reportbase.github.io/wander/play-trick.html', '_blank', 'noopener'); } catch {} } },
     ]}],
@@ -51176,11 +51607,13 @@ const TRICK_APP = (() => {
     photoCanvas(key){ return paint(key === 'trick:h' ? 1024 : 256); },
     itemGeometries: geos,
     cellGrid(){ return GRID; },
-    cellItems(c, r){ return itemsOf(viewOf(c, r)); },
+    cellItems(c, r, bp){ return itemsOf(viewOf(c, r, bp)); },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r)); if (g) return titleOf(g);
       const idx = boardIdx(c, r), S = setupOf(idx);
-      return S.ch ? 'Trick shots — ' + S.ch.name + ' (' + (idx + 1) + ' of ' + CHALLENGES.length + ', par ' + S.ch.par + (BEST[S.ch.id] ? ', best ' + BEST[S.ch.id] : '') + ') · ' + S.ch.text : 'Trick shots — free play (' + S.name + ')';
+      if (!S) return 'Trick shots — level ' + levelAt(idx) + ': this board\'s trick shot is being made…';
+      const b = BEST[S.ch.id];
+      return 'Trick shots — ' + S.ch.name + (S.lv ? ', level ' + S.lv : ' (' + (idx + 1) + ' of ' + CHALLENGES.length + ')') + ', par ' + S.ch.par + (b ? ', best ' + b + ' ' + starStr(starsOf(b, S.ch.par)) : '') + ' · ' + S.ch.text;
     },
     statTiles(c, r){ const g = GAMES.get(gkey(c, r)); return g && LIVE && LIVE.c === c && LIVE.r === r ? tilesOf(g) : null; },
     statsStay(){ return !!liveGame(); },
@@ -51188,14 +51621,17 @@ const TRICK_APP = (() => {
     onReset(c, r){ restart(c, r); return true; },
     onSelect(){ return true; },
     onFramed(c, r){
-      LIVE = c == null ? null : { c, r }; if (LIVE) gameAt(c, r);
-      if (LIVE && !TOLD){ TOLD = true; say('Drag on the table to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot in the row, or Space to shoot. The corner\'s fifteen boards are challenges; the rest are free play.', 6500); }
+      LIVE = c == null ? null : { c, r }; if (LIVE) gameAt(c, r); else ctlHide();
+      if (LIVE && !TOLD){ TOLD = true; say('Drag on the table to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
     },
+    onLeave(){ ctlHide(); },
     noDoubleTap(){ return !!liveGame(); },
     onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
       LIVE = { c, r }; const g = gameAt(c, r);
+      if (!g){ say('This board\'s trick shot is still being made; a moment.', 1500); return true; }
       if (g.anim){ finish(g); return true; }                    // a tap during the shot jumps to its end (wander's)
+      if (g.ch && g.solvedIn) return nextBoardOf(g);            // solved: a tap goes on to the next board (a hold plays it again)
       if (u == null) return true;
       const [x, z] = toTable(u, v), w = g.balls.find(b => b.cue && !b.sunk);
       if (w && Math.hypot(w.x - x, w.z - z) < R * 1.6) shoot(g); else aimAt(g, x, z);
@@ -51227,6 +51663,8 @@ const TRICK_APP = (() => {
     _debug: { simulate, strikeOf, sightOf, firstStop, spinChecks, CHALLENGES, LAYOUTS, setupOf, cueOf, recSoon, shownOf, viewOf, liveView, itemsOf, tilesOf, titleOf, paint,
               fresh, gameAt, shoot, finish, undo, aimAt, nudge, setPower, setElev, setTip, onTile, boardIdx, cellOfIdx, toTable, Ub, Vb, Sb, GAMES, RECS, BEST, SET, heard,
               grip: mu => { muB = mu ?? null; }, R, LX, LZ, POCKETS, ASP, D,
+              makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
+              starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
@@ -52651,6 +53089,10 @@ function _emitInto(rec, it, cx, cz, bWX, bWZ, flatW){
      board runs +u to −x and +v to −z, so that is a turn of π − yaw about +y. Until now every
      item stood square, and a turning thing was drawn as a row of small unturned boxes. */
   if (it.yaw) _iq.setFromAxisAngle(_iUp, Math.PI - it.yaw); else _iq.identity();
+  /* `rot` (Oct 22, trick shots: "balls that visibly roll and spin"): a whole turn [x, y, z, w], a quaternion in the board's own
+     frame (u, up, v), for a thing turned every way, as a rolling ball is; it stands in for yaw and tilt. The board runs +u to −x
+     and +v to −z, a half turn about +y, so the same turn in the world is (−x, y, −z, w). */
+  if (it.rot) _iq.set(-it.rot[0], it.rot[1], -it.rot[2], it.rot[3]);
   /* `tilt` (Oct 22, golf tanks: "the tanks just drive through hills. they should respect the terrain."): [du, dv], the slope of
      the ground under an item as lift a unit of u and of v. The item is then stood on that slope (its upright turned to the
      ground's normal, after its yaw), not level with its front buried in the hillside. The board runs +u to −x and +v to −z,
