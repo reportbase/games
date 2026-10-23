@@ -4009,6 +4009,49 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trick shots (wander's textbook results; ${r.sols.filter(Boolean).length} of ${r.sols.length} reference shots solve their challenges; a missed try put the balls back: ${r.miss.why}; a real drag aimed the cue to ${live.dragged && live.dragged.toFixed(1)}°; a real click on the white played the ½-ball cut, solved in ${live.after && live.after.solvedIn}; a real Space potted on free play; a board no one plays went through its ${shown.cycle} s shot, drawn with ${shown.dots} dots ahead; generated trick shots solved by their own shots (${r.gen.kinds}), par ${r.gen.par1} at level 1 and ${r.gen.par5} at level 5, windows ${r.gen.w1}° and ${r.gen.w5}°; the real inset struck the white high, the real strip pulled to ${live.pulled} shot, and a click on the solved table went on to board ${live.next})`);
   }
+  // YOUR OWN TRICK SHOT (Oct 23: "2", of what came next for trick shots: "make your own trick shot and share it"): the real ✎ quick
+  // button opens the editor on the framed table, real clicks place the white and a ball and mark it to pot, Check finds a shot
+  // (in the solver's worker) with its par, Done keeps it on the board (and in localStorage) and plays it, its own shot solves
+  // it, a shared copy taken on another board is the same, and a ball ringed by balls not to be touched is refused.
+  {
+    const before = failures.length, out = {};
+    const [c, r] = await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = D.cellOfIdx(60); D.GAMES.delete(c + '_' + r); D.MINE.delete(60); D.fly(c, r); return [c, r]; });
+    await page.waitForTimeout(3000);
+    const at = (x, z) => page.evaluate(([x, z]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, D = window.getFieldApp()._debug;
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [x, z]);
+    const est = () => page.evaluate(() => { const E = window.getFieldApp()._debug.ed(); return { on: E.on, balls: E.balls.map(b => b.slice()), target: E.target, found: E.found && { par: E.found.par, w: E.found.window }, checking: E.checking }; });
+    try {
+      await page.waitForSelector('#bbQuick button[title^="Make"]', { state: 'visible', timeout: 15000 });
+      await page.click('#bbQuick button[title^="Make"]'); await page.waitForTimeout(800);
+      out.opened = (await est()).on;
+      const tile = i => page.evaluate(i => window.getFieldApp()._debug.edTile(i), i);
+      await tile(11);                                            // Clear: the white alone
+      await tile(0); let p = await at(-8, 0); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+      await tile(1); p = await at(2, 1); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+      await tile(2); p = await at(2, 1); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+      out.placed = await est();
+      await tile(12);                                            // Check
+      for (let k = 0; k < 60 && !(await est()).found; k++) await page.waitForTimeout(500);
+      out.found = (await est()).found;
+      await tile(13); await page.waitForTimeout(2500);           // Play: kept and played
+      out.kept = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), m = D.MINE.get(60);
+        let stored = false; try { stored = JSON.parse(localStorage.getItem('trickshots.mine')).some(([k]) => k === 60); } catch {}
+        const res = { on: D.ed().on, mine: !!m, stored, game: !!(g && g.ch && g.ch.mine), text: g && g.ch && g.ch.text, par: g && g.ch && g.ch.par };
+        if (g){ const o = g.ch.sol; g.ang = o.a * D.D; D.setPower(g, o.p); D.setTip(g, ...(o.tip || [0, 0])); D.setElev(g, o.el || 0); D.shoot(g); D.finish(g); res.solvedIn = g.solvedIn; }
+        const [c2, r2] = D.cellOfIdx(61); D.MINE.delete(61); D.takeShot(c2, r2, JSON.parse(JSON.stringify(m)));
+        res.shared = !!D.MINE.get(61) && JSON.stringify(D.MINE.get(61).balls) === JSON.stringify(m.balls);
+        D.edOpen(); const E = D.ed(); E.balls = [[0, -8, 0], [1, 5, 0], ...[0, 1, 2, 3, 4, 5].map(k => [k + 2, 5 + 0.92 * Math.cos(k * Math.PI / 3), 0.92 * Math.sin(k * Math.PI / 3)])];
+        E.target = 1; E.avoid = [2, 3, 4, 5, 6, 7]; E.first = null; E.zone = null; E.found = null; D.edCheck(); return res; }, [c, r]);
+      for (let k = 0; k < 120 && (await est()).checking; k++) await page.waitForTimeout(500);
+      out.ringed = await est();
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; D.edCancel(); D.MINE.delete(60); D.MINE.delete(61); D.GAMES.clear(); });
+    } catch (e) { out.err = String(e); }
+    const k = out.kept || {}, ok = !out.err && out.opened && out.placed && out.placed.balls.length === 2 && out.placed.target === 1 && Math.abs(out.placed.balls[1][1] - 2) < 0.3
+      && out.found && out.found.par >= 1 && !k.on && k.mine && k.stored && k.game && k.solvedIn === 1 && k.shared && out.ringed && !out.ringed.checking && !out.ringed.found;
+    if (!ok) failures.push(`[trickshots editor] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} your own trick shot (the real ✎ opened the editor, real clicks laid a ball and marked it, Check found a shot with par ${out.found && out.found.par} (${out.found && out.found.w}°), Done kept it and its shot solved it, a shared copy went onto another board, a ringed ball was refused)`);
+  }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
   // the view comes to the default framing, the one the 0 key gives, even when the game in play keeps quick taps for itself

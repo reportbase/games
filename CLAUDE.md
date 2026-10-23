@@ -799,6 +799,29 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     and its tip (`tsTip`) are drawn on top of everything: the field's kinds take `geometry.userData.onTop` (no depth test, the
     transparent pass, `renderOrder` 1000 + onTop, so the tip lies over the cue). A board no one plays shows a `CUE_IDLE` (6) cue
     drawn as any piece is (`tsCueIdle`, `tsTipIdle`), or the neighbours' cues lay across the table being played.
+  - **Your own trick shot** (Oct 23: "2", of what came next: "make your own trick shot and share it"): the row becomes an editor
+    (`ED`, `ed…`, as the tilt maze's and Sokoban's). Since the row is also the played table's and the field opens it by itself, its
+    opening is not the editor's switch: the quick button ✎ (while a table is played) or the menu's Make a trick shot for this
+    board… opens it on the framed table, its balls where they are (and its goal, if it was one of yours).
+    - Tools: White (a tap moves it), Ball (a tap lays the next number), To pot, Hit first, Don't touch (a tap on a ball marks it,
+      again unmarks it), Ring (a tap lays the white's ring, a tap in it takes it away), Erase; a drag moves any ball, kept off the
+      others and the pockets. Acts: Bank (the ball to pot off a cushion), Kick (the white off a cushion first), Ring size, See (how
+      deep the preview sees), Clear, Check, Play. Quick buttons Erase, Check, Cancel, Done.
+    - A setup is plain numbers (`draftOf`, `cleanMine`): `{kind: 'mine', balls: [[n, x, z]], target, first, avoid, bank, kick,
+      zone, see}`. `mineGoal` asks, in order, the white kept up, the first ball met, the cushion before it, the balls not
+      touched, the pot (off a cushion for a bank), the ring, so a miss says the first thing that went wrong; `mineText` says it
+      as one sentence.
+    - Check and Done look for a shot (`solveMine`, in a worker of its own, `solveSoon`, else here in slices): the plain shots near
+      every aim the table offers (each pocket's ghost ball, through the first ball for a combination, mirrored across each cushion
+      for a bank or a kick, a fan of cuts when nothing is to be potted), the widest window of those kept, since par is about the
+      easiest way; then with spin, a sweep of the whole round, and a jump if a ball is to be kept off. Every shot tried counts:
+      past `MINE_BUDGET` (6,000, about 6 s) none is found, and the setup is refused. Par is from the window (`parOfWindow`).
+    - Done keeps it on the board (`MINE`, localStorage `trickshots.mine`, the latest 300; `mineAt`, which `setupOf` asks first;
+      its id hashes the setup, so a changed one starts a new best), framed with a violet dot (`MINE_COL`), and plays it. Escape
+      or ✕ leaves the board as it was. Menu: Share this board's trick shot (`shareShot`, `SHARE`; the draft while making it) and
+      Forget this board's trick shot. A shared one (`takeShot`) is checked by its own shot, or looked for again.
+    - Measured: the white at one end and the 1 mid-table, Check took 0.5 s (par 3, a window of 0.34°); a ball ringed by six not to
+      be touched was refused after the whole budget.
   - The smoke test checks wander's textbook results (the thresholds wander's own test holds), every reference shot solving its
     challenge on its board, a missed try putting the balls back, a real drag aiming, a real click on the white playing the ½-ball
     cut to a solve, a real Space potting on free play, the row's Spin and power, and a board no one plays going through its shot,
@@ -806,7 +829,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     by their own shots and made the same twice, par rising and the window narrowing, less seen ahead, the stars by tries, the
     balls drawn turned, three gold stars on the solved board's frame, a real click on the inset striking high and left, a real
     pull on the strip shooting, and a real click on the solved table going on to the next board; since Oct 23 the played cue full
-    length, drawn on top, its butt behind the white.
+    length, drawn on top, its butt behind the white; and the editor (the real ✎ opening it, real clicks laying a ball and
+    marking it, Check finding a shot, Done keeping it in storage and its shot solving it, a shared copy on another board, a ringed
+    ball refused).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
