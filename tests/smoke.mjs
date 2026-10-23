@@ -3958,7 +3958,12 @@ try {
       live.after = await gs();
       // the white rolled (its turn is not where it began; after a try it goes back with the balls), and the frame wears the stars
       live.rolled = await page.evaluate(([k, r0]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.liveView(g), it = D.itemsOf(V);
-        return { stars: it.filter(i => i.kind === 'tsStar' && i.color === 0xd4a052).length, balls: it.filter(i => /^tsB\d+$/.test(i.kind) && i.rot).length, best: D.BEST.half }; }, [fc[0] + '_' + fc[1], rot0]);
+        // (Oct 23: "the cue stick should always be on top and should extend on to the the adjacent boards if needed": the played
+        //  board's cue full length, drawn on top, its butt behind the white, away from the shot)
+        const cue = it.find(i => i.kind === 'tsCue'), q = cue && cue.rot, A = window.getFieldApp(), W = window.FIELD_WORLD;
+        const back = q ? (() => { const [x, y, z, w] = q, a = -1, ix = w * a, iy = z * a, iz = -y * a, iw = -x * a; return [ix * w + iw * -x + iy * -z - iz * -y, iz * w + iw * -z + ix * -y - iy * -x]; })() : null;
+        return { stars: it.filter(i => i.kind === 'tsStar' && i.color === 0xd4a052).length, balls: it.filter(i => /^tsB\d+$/.test(i.kind) && i.rot).length, best: D.BEST.half,
+                 cue: cue ? { len: cue.sx, onTop: A.itemGeometries.tsCue(W.THREE).userData.onTop, behind: back[0] * Math.cos(g.ang) + back[1] * Math.sin(g.ang) < -0.9 } : null }; }, [fc[0] + '_' + fc[1], rot0]);
       // the row: Spin steps the tip to follow, power + steps it up by one
       live.row = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), p = g.power; D.onTile(g, 5); D.onTile(g, 4);
         return { tip: g.tip.y, power: g.power - p, tiles: D.tilesOf(g).length }; }, fc);
@@ -3992,13 +3997,13 @@ try {
         moved += a.pos.reduce((s, p, i) => s + (p && b.pos[i] ? Math.hypot(p[0] - b.pos[i][0], p[1] - b.pos[i][1]) : 0), 0); }
       const it = D.itemsOf({ B: R.S.B, pos: R.S.B.map(b => [b.x, b.z, 0]), ch: R.S.ch, sim: R.s, hz: R.s.hz, see: 3, paths: 'all', cue: { ang: 0.3, power: 14, elev: 0, tip: { x: 0, y: 0 }, chalk: true } });
       const kinds = k => it.filter(i => i.kind === k).length;
-      return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: it.filter(i => /^tsB\d+$/.test(i.kind)).length, cushions: kinds('tsBox'), cue: kinds('tsCue'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
-               yaws: it.filter(i => i.kind === 'tsCue').every(i => i.yaw), inside: it.every(i => i.u > -0.02 && i.u < 1.02 && i.v > -0.02 && i.v < 1.02), photo: !!D.paint(256) }; });
+      return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: it.filter(i => /^tsB\d+$/.test(i.kind)).length, cushions: kinds('tsBox'), cue: kinds('tsCueIdle'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
+               yaws: it.filter(i => i.kind === 'tsCueIdle').every(i => i.rot), inside: it.every(i => i.u > -0.02 && i.u < 1.02 && i.v > -0.02 && i.v < 1.02), photo: !!D.paint(256) }; });
     const r = rules, ok = Object.values(r.spin).every(Boolean) && r.sols.every(Boolean) && r.cells && r.miss.tries === 1 && r.miss.why && r.miss.back
       && live.cell === 0 && Math.abs(live.dragged + 90) < 10 && live.playing && live.after && !live.after.anim && live.after.tries === 1 && live.after.solvedIn === 1
       && live.row.tip > 0.3 && live.row.power === 1 && live.row.tiles === 12 && live.space.anim && live.free.challenge === 0 && live.free.potted === 1 && live.free.shots === 1 && live.free.back === 1
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
-      && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
+      && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.cue && live.rolled.cue.len >= 20 && live.rolled.cue.onTop && live.rolled.cue.behind && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
       && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next === 1
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 1 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);

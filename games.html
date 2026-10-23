@@ -50969,6 +50969,7 @@ const TRICK_APP = (() => {
   const Ub = x => (x + BW / 2) / BW, Vb = z => (z + BH / 2) / BH, Sb = d => d / BW;
   const toTable = (u, v) => [u * BW - BW / 2, v * BH - BH / 2];
   const CLOTH = 0x16513f, CUSH = 0x124636, WOOD = 0x4a2c18, WOOD2 = 0x2a1a12, GOLD = 0xd4a052, RED = 0xd0574a, CUE_WOOD = 0xc9a36b, TIPC = 0x5b7fa8;
+  const CUE_LEN = 21, CUE_IDLE = 6, CUE_W = 0.42;   // (a cue's length and its butt's width, in table units: the ball is 0.9 across)
   const AIM_T = 2.4, HOLD_T = 1.4, REC_CAP = 300, REC_HZ = 30, DOT_GAP = 0.32, DOT_MAX = 700, PHOTO_PX = 24, HI_PX = 360;
   const yawOf = h => h || 1e-6;               // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   const hexOf = s => parseInt(s.slice(1), 16);
@@ -51258,7 +51259,7 @@ const TRICK_APP = (() => {
       if (k >= fr.length - 1 && (!g.ch || el > (fr.length - 1) / 60 + 0.9)){ finish(g); return liveView(g); }   // a try's end held a moment
       return { B: g.balls, pos, ch: g.ch, rot: g.rot, trail: { fr, k, hz: 60 }, lv: g.lv };
     }
-    return { B: g.balls, pos, ch: g.ch, rot: g.rot, lv: g.lv, sim: SET.paths === 'off' ? null : previewOf(g), hz: 60, see: g.see, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: g.tip, chalk: g.chalk }, paths: SET.paths };
+    return { B: g.balls, pos, ch: g.ch, rot: g.rot, lv: g.lv, live: true, sim: SET.paths === 'off' ? null : previewOf(g), hz: 60, see: g.see, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: g.tip, chalk: g.chalk }, paths: SET.paths };
   }
   function shownOf(R){
     const t = (pageT() + phaseOf(R.idx) * R.cycle) % R.cycle, s = R.s, B = R.S.B;
@@ -51318,9 +51319,18 @@ const TRICK_APP = (() => {
     const c = V.B.find(b => b.cue && !b.sunk), i = V.B.indexOf(c); if (!c || !V.pos[i]) return;
     const { ang, power, elev, tip } = V.cue, u = [Math.cos(ang), Math.sin(ang)], rt = [-u[1], u[0]], b = tip.x * (R + R_TIP), bv = tip.y * (R + R_TIP);
     const back = Math.sqrt(Math.max(0, (R + R_TIP) ** 2 - b * b - bv * bv)) + 0.15 + power * 0.03;
-    const T = [c.x + rt[0] * b - u[0] * back, c.z + rt[1] * b - u[1] * back], L = 3.2 * Math.cos(elev * D), hy = R + bv * 0.6;
-    out.push({ kind: 'tsCue', u: Ub(T[0] - u[0] * R_TIP), v: Vb(T[1] - u[1] * R_TIP), scale: Sb(1), sx: L, sy: 0.13, sz: 0.13, lift: Sb(hy + Math.sin(elev * D) * 1.2), yaw: yawOf(ang), color: CUE_WOOD });
-    out.push({ kind: 'tsBall', u: Ub(T[0]), v: Vb(T[1]), scale: Sb(2 * R_TIP), lift: Sb(hy - R_TIP), color: TIPC });
+    /* THE CUE AT ITS FULL LENGTH, ON TOP (Oct 23: "the cue stick should always be on top and should extend on to the the adjacent
+       boards if needed"): CUE_LEN long, a real cue's 25 ball widths (wander's 3.2 was a stub, short so it stayed on the table),
+       drawn over everything (its kinds `onTop`), so it lies across the frame and on over the next board as a cue held over a
+       table does. It is turned whole (`rot`): along the shot's line, its butt raised by the cue's rise, so a massé's cue stands
+       up from the white rather than lying flat and foreshortened. That is the played board's cue; a board no one plays shows a
+       shorter one, CUE_IDLE, drawn as any piece is, or its cue lay over the table being played beside it. */
+    const live = !!V.live, len = live ? CUE_LEN : CUE_IDLE;
+    const T = [c.x + rt[0] * b - u[0] * back, c.z + rt[1] * b - u[1] * back], hy = R + bv * 0.6, e = elev * D;
+    const sa = Math.sin(-ang / 2), ca = Math.cos(-ang / 2), se = Math.sin(-e / 2), ce = Math.cos(-e / 2);   // about up by −ang, then about its own z by −e
+    out.push({ kind: live ? 'tsCue' : 'tsCueIdle', u: Ub(T[0] - u[0] * R_TIP * Math.cos(e)), v: Vb(T[1] - u[1] * R_TIP * Math.cos(e)), scale: Sb(1), sx: len, sy: CUE_W, sz: CUE_W,
+               lift: Sb(hy + R_TIP * Math.sin(e)), rot: [sa * se, sa * ce, ca * se, ca * ce], color: 0xffffff });
+    out.push({ kind: live ? 'tsTip' : 'tsTipIdle', u: Ub(T[0]), v: Vb(T[1]), scale: Sb(2 * R_TIP), lift: Sb(hy), color: TIPC });
     if (V.paths === 'off' || !V.sim){   // the aim alone: straight to the first ball or cushion the white would meet, and the ghost ball there
       const dirW = strikeOf(ang, tip.x, tip.y, power, V.cue.chalk ? MU_TIP : 0, elev * D).dir, stp = firstStop(V.B, c, dirW);
       const ex = c.x + Math.cos(dirW) * stp.t, ez = c.z + Math.sin(dirW) * stp.t, n = Math.floor(stp.t / DOT_GAP);
@@ -51392,7 +51402,11 @@ const TRICK_APP = (() => {
     tsBall: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
     tsBand: T => { const g = new T.SphereGeometry(0.514, 20, 6, 0, Math.PI * 2, Math.PI / 2 - 0.47, 0.94); g.rotateX(Math.PI / 2); g.translate(0, 0.5, 0); return g; },
     tsBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
-    tsCue: T => { const g = new T.CylinderGeometry(0.42, 0.6, 1, 10, 1); g.rotateZ(Math.PI / 2); g.translate(-0.5, 0, 0); return g; },
+    // (the cue: a unit long from its tip at the origin back along −x, thick at the butt; a white ferrule, maple, a dark wrapped butt;
+    //  drawn on top, as its tip is, the tip over it)
+    tsCue: T => cueGeo(T, 1), tsCueIdle: T => cueGeo(T, 0),
+    tsTip: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.userData.onTop = 2; return g; },
+    tsTipIdle: T => new T.SphereGeometry(0.5, 16, 12),
     tsDot: T => { const g = FieldKit.disc(T, 0.5, 0.02, 12); g.userData.unlit = true; return g; },
     tsRing: T => { const g = FieldKit.ring(T, 0.44, 0.5, 0.02, 40); g.userData.unlit = true; return g; },
     tsGhost: T => { // a ring in dashes, wander's dashed ghost ball
@@ -51403,6 +51417,12 @@ const TRICK_APP = (() => {
     tsZoneFill: T => { const g = FieldKit.disc(T, 0.5, 0.01, 48); g.userData.unlit = true; g.userData.opacity = 0.14; return g; },
     tsShadow: T => { const g = FieldKit.disc(T, 0.5, 0.008, 24); g.userData.unlit = true; g.userData.opacity = 0.35; return g; },
   };
+  function cueGeo(T, onTop){
+    const g = new T.CylinderGeometry(0.5, 0.21, 1, 12, 8); g.rotateZ(Math.PI / 2); g.translate(-0.5, 0, 0);
+    const P = g.attributes.position, col = new Float32Array(P.count * 3);
+    for (let k = 0; k < P.count; k++){ const x = P.getX(k), c = x > -0.012 ? [0.95, 0.94, 0.9] : x > -0.62 ? [0.86, 0.71, 0.48] : x > -0.9 ? [0.18, 0.12, 0.1] : [0.3, 0.2, 0.14]; col.set(c, 3 * k); }
+    g.setAttribute('color', new T.BufferAttribute(col, 3)); g.userData.vertexColors = true; if (onTop) g.userData.onTop = 1; return g;
+  }
   function mergeGeos(T, list){
     let n = 0; for (const g of list) n += g.attributes.position.count;
     const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), idx = []; let o = 0;
@@ -53059,8 +53079,15 @@ function _itemRec(app, kind){
       };
       mat.customProgramCacheKey = () => 'morph';
     }
+    /* …and a kind may be drawn ON TOP of everything (geometry.userData.onTop, a number; Oct 23, trick shots: "the cue stick should
+       always be on top and should extend on to the the adjacent boards if needed"): no depth test, in the transparent pass, drawn
+       last (renderOrder 1000 + onTop, so a higher one lies over a lower), over its own board's pieces and the boards beside it.
+       Its own faces still cull at the back, so a convex piece (a cue, a ball) draws itself right. */
+    const onTop = geo.userData && geo.userData.onTop;
+    if (onTop){ mat.depthTest = false; mat.depthWrite = false; mat.transparent = true; }
     const mesh = new THREE.InstancedMesh(geo, mat, cap);
     mesh.frustumCulled = false;
+    if (onTop) mesh.renderOrder = 1000 + onTop;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.setColorAt(0, new THREE.Color(1, 1, 1));   // allocate the color buffer
     mesh.count = 0;
@@ -53090,9 +53117,11 @@ function _emitInto(rec, it, cx, cz, bWX, bWZ, flatW){
      item stood square, and a turning thing was drawn as a row of small unturned boxes. */
   if (it.yaw) _iq.setFromAxisAngle(_iUp, Math.PI - it.yaw); else _iq.identity();
   /* `rot` (Oct 22, trick shots: "balls that visibly roll and spin"): a whole turn [x, y, z, w], a quaternion in the board's own
-     frame (u, up, v), for a thing turned every way, as a rolling ball is; it stands in for yaw and tilt. The board runs +u to −x
-     and +v to −z, a half turn about +y, so the same turn in the world is (−x, y, −z, w). */
-  if (it.rot) _iq.set(-it.rot[0], it.rot[1], -it.rot[2], it.rot[3]);
+     frame (u, up, v), for a thing turned every way, as a rolling ball is; it stands in for yaw and tilt. The item's own axes are
+     read in the board's terms too, as yaw's are (its +x along +u unturned). The board runs +u to −x and +v to −z, a half turn H
+     about +y, so the world's turn is H·q: (z, w, −x, −y). (Until Oct 23 it was H·q·H⁻¹, which turned the item's own axes half
+     round as well: the cue lay forward along the shot, its butt over the ball it was aimed at. A ball rolls the same either way.) */
+  if (it.rot) _iq.set(it.rot[2], it.rot[3], -it.rot[0], -it.rot[1]);
   /* `tilt` (Oct 22, golf tanks: "the tanks just drive through hills. they should respect the terrain."): [du, dv], the slope of
      the ground under an item as lift a unit of u and of v. The item is then stood on that slope (its upright turned to the
      ground's normal, after its yaw), not level with its front buried in the hillside. The board runs +u to −x and +v to −z,

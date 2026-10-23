@@ -788,16 +788,25 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The balls roll, numbered, with trails** (the same request's fifth): each ball is a kind of its own (`tsB0`…`tsB15`) wearing a
     picture (`ballTex`: its colour, a striped one's band, its number on a white circle front and back, the white's six red dots),
     turned as it has rolled (`roll`: d/R about ŷ × its way, the engine's own rolling; a game's `g.rot`, a board no one plays has
-    every frame's, `rotsOf`). The field's items take a whole turn, `rot` [x, y, z, w] in the board's own frame (`_emitInto`: the
-    board runs +u to −x and +v to −z, so it is (−x, y, −z, w) in the world; it stands in for yaw and tilt). A moving ball leaves a
-    short trail (`trailItems`: where it was 40 … 200 ms ago, smaller each).
+    every frame's, `rotsOf`). The field's items take a whole turn, `rot` [x, y, z, w] in the board's own frame, the item's own axes
+    read in the board's terms as yaw's are (`_emitInto`: the board runs +u to −x and +v to −z, a half turn H about up, so the world's
+    turn is H·q = (z, w, −x, −y); it stands in for yaw and tilt; until Oct 23 it was H·q·H⁻¹, which turned the cue round to lie
+    along the shot). A moving ball leaves a short trail (`trailItems`: where it was 40 … 200 ms ago, smaller each).
+  - **The cue on top, full length** (Oct 23: "the cue stick should always be on top and should extend on to the the adjacent
+    boards if needed"): the played board's cue is `CUE_LEN` (21) table units, a real cue's 25 ball widths (wander's 3.2 was a
+    stub), tapered (`cueGeo`: ferrule, maple, wrapped butt, vertex-coloured), turned whole along the shot with its butt raised by
+    the cue's rise (`rot`), so it lies over the frame and on across the next board, and a massé's stands up from the white. It
+    and its tip (`tsTip`) are drawn on top of everything: the field's kinds take `geometry.userData.onTop` (no depth test, the
+    transparent pass, `renderOrder` 1000 + onTop, so the tip lies over the cue). A board no one plays shows a `CUE_IDLE` (6) cue
+    drawn as any piece is (`tsCueIdle`, `tsTipIdle`), or the neighbours' cues lay across the table being played.
   - The smoke test checks wander's textbook results (the thresholds wander's own test holds), every reference shot solving its
     challenge on its board, a missed try putting the balls back, a real drag aiming, a real click on the white playing the ½-ball
     cut to a solve, a real Space potting on free play, the row's Spin and power, and a board no one plays going through its shot,
     drawn as balls, six cushions, the cue, dots and a ghost; since Oct 22 ("1,2,5") also generated puzzles at levels 1 and 5 solved
     by their own shots and made the same twice, par rising and the window narrowing, less seen ahead, the stars by tries, the
     balls drawn turned, three gold stars on the solved board's frame, a real click on the inset striking high and left, a real
-    pull on the strip shooting, and a real click on the solved table going on to the next board.
+    pull on the strip shooting, and a real click on the solved table going on to the next board; since Oct 23 the played cue full
+    length, drawn on top, its butt behind the white.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
