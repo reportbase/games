@@ -970,13 +970,35 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     a filling's form is not among yours (`countGen(F, stopAt)`, a little at a time), then builds it piece by piece once (`DEMO`,
     `builtAt`, which `shownOf` now uses too); a tap, Enter or Escape gives the board back with every piece in the tray. A way
     shown is not kept: it counts when you build it.
+  - **Piece sets** (Oct 23: "whats next for soma", then "1,3", the first "other piece sets"; offered as the Bedlam cube, the
+    Diabolical cube or pentacube boxes, but those two puzzles' exact pieces could not be looked up from the sandbox, so the sets
+    are ones exactly defined): the menu's Pieces steps through Soma (7), Tetracubes (8: I, O, T, L, S and Soma's tripod and
+    screws), Pentominoes (the 12 as flat pieces) and Pentacubes (all 29: the 12 flat, then the 17 that are not, grown a cube at
+    a time and kept one of each under turning, `polycubes`, named a–q), localStorage `soma.set`. `useSet` puts one in play:
+    `PIECES`, `NAMES`, `COLS` (`palette` past Soma), `LV`, `COURSE`, `ORI` (`oriOf`), `FLAT` (what level 1 draws from) and
+    `MIRROR` (each piece's mirror image: `symsOf` allows a mirroring only when every piece's mirror is in the figure, `canon`
+    swaps them; a way is written a character a cell, '0' + type + 1). Every key of the other sets starts with the set's name
+    (`pk`): their figures, bests, ways and editor figures (`soma.mine.<set>`) are their own, Soma's as before. Courses: the
+    tetracubes' slab, bar, pyramid and staircase; the pentominoes' 3 × 4 × 5, 2 × 5 × 6 and 2 × 3 × 10 boxes and the 6 × 10, 5 × 12,
+    4 × 15 and 3 × 20 rectangles; the pentacubes' six boxes, each with pieces the solver found fill it (`PENTACUBE_COURSE`; the 29
+    together make no box). A figure wider than six is drawn with smaller cubes (`sqOf`: 0.84 of the board over its width, so the
+    3 × 20 is 0.042 a cube). The solver and the counter fill cells across the box's shortest side first (`orderOf`): along its
+    longest, the 3 × 4 × 5, 5 × 12 and 3 × 20 ran out of steps; now 11, 21 and 74 ms.
+  - **Better hands** (the same request's third): a drag takes the piece to the nearest place within `SNAP` (2) cells of the
+    finger where it fits at some height (`snapNear`), else follows the finger; two fingers twisted spin it a quarter turn for
+    every `TWIST_STEP` (45°) past the field's dead stretch, clockwise with the fingers, and the view stays put (a field hook: an
+    app's `twistTurns()` takes the twist, `onTwist(±1)`, + clockwise; `pinchSpin`); and every empty cell any place of the piece,
+    turned as it is, would cover glows in its colour (`fitGlow`, `smFit`; the menu's Show where it fits, localStorage `soma.fits`).
   - The smoke test checks the orientations (12, 24, 12, 12, 8, 12, 12), the cube on the corner, 60 figures filled by the solver,
     the levels by ring, a board no one plays building, and real input: the real arrow and E, the real H and Enter placing, a real
     click taking a piece back, the figure finished with a best kept, and a real click going on; and the course: all sixteen filled,
     the cube's 240 ways of 11,520 fillings, a figure with no symmetry counted filling by filling, and a course board filled by the
     real H and Enter as a new way, then again as one found before; and the editor (the real ✎, real clicks taking a cube out
     and putting it back, the real ✓ keeping it in storage, its share link taken onto another board) and the ways (two in the
-    gallery stepped by the real ▶ tile, a way not found built and given back by a real click).
+    gallery stepped by the real ▶ tile, a way not found built and given back by a real click); and the sets (7, 8, 12 and 29
+    pieces, 8 tetracubes and 29 pentacubes grown again, the mirrors paired, every course and generated figure filled, the keys
+    apart) and the hands (a real drag to a column the piece does not fit ending where it does, a real two-finger twist turning the
+    piece and not the view, the glow on and off).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

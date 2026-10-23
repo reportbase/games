@@ -3425,6 +3425,77 @@ try {
     if (!ok) failures.push('[soma figures and ways] ' + JSON.stringify({ fc, real }));
     console.log(`${ok ? 'ok  ' : 'FAIL'} soma: the real ✎ opens the editor, real clicks take a cube out and put it back, the real ✓ keeps it, shared onto another board; two ways in the gallery stepped by the real ▶; a way not found built and given back by a real click`);
   }
+  // SOMA'S PIECE SETS AND BETTER HANDS (Oct 23: "whats next for soma", then "1,3"): the sets (Soma's 7, the 8 tetracubes, the 12
+  // pentominoes, the 29 pentacubes, counted again by growing every polycube), each piece's mirror, every course figure of every
+  // set filled and generated figures filled, each set's keys its own; then real input: a real two-finger twist turning the
+  // piece in hand (the view kept), a real drag to a column where it does not fit ending where it does, and the glow on and off.
+  {
+    current = 'soma sets and hands';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { sets: {}, bad: [] };
+      out.p4 = D.polycubes(4).length; out.p5 = D.polycubes(5).length;
+      for (const id of Object.keys(D.SETS)){
+        D.useSet(id, true);
+        const o = { n: D.PIECES.length, mirror: D.MIRROR.join(','), course: 0 };
+        for (let i = 0; i < D.COURSE.length; i++){ const F = D.courseFigure(i); if (F && F.types.reduce((a, t) => a + D.PIECES[t].length, 0) === F.fig.reduce((a, b) => a + b, 0)) o.course++; else out.bad.push(id + ' course ' + i); }
+        o.courses = D.COURSE.length;
+        for (let k = 0; k < 8; k++){ const F = D.makeFigure(400 + k * 53, 1 + k % 5); if (!F || !D.solve(F, new Map())) out.bad.push(id + ' gen ' + k); }
+        o.key = D.figKey(D.makeFigure(400, 2));
+        out.sets[id] = o;
+      }
+      D.useSet('soma', true);
+      return out;
+    });
+    const S = r.sets, ok1 = !r.bad.length && r.p4 === 8 && r.p5 === 29 && S.soma.n === 7 && S.tetracubes.n === 8 && S.pentominoes.n === 12 && S.pentacubes.n === 29
+      && S.soma.mirror === '0,1,2,3,4,6,5' && S.tetracubes.mirror === '0,1,2,3,4,5,7,6' && S.pentominoes.mirror === '0,1,2,3,4,5,6,7,8,9,10,11'
+      && Object.values(S).every(o => o.course === o.courses && o.courses > 0) && S.soma.key === '400@2' && /^tetracubes:/.test(S.tetracubes.key);
+    if (!ok1) failures.push('[soma sets] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} soma sets: 7, 8, 12 and 29 pieces (8 tetracubes and 29 pentacubes grown cube by cube), mirrors paired, every course figure and generated figure filled, each set's keys its own`);
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 2));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+      await page.waitForTimeout(400);
+      const st = () => page.evaluate(([c, r]) => { const W = window.FIELD_WORLD, D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); return { turns: g.turns, o: g.cur && g.cur.o, yaw: W.st.yaw, x: g.cur && g.cur.x, y: g.cur && g.cur.y, fits: D.fitsAt(g).length }; }, fc);
+      // (the drag first: after the touches the field takes no mouse for a while, as a phone's own mouse events follow its touches)
+      // a column where the piece does not fit, with one it does fit within reach: a real drag there ends where it fits
+      const plan = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r), p = g.cur, B = g.F.B, x0 = p.x, y0 = p.y;
+        let want = null;
+        for (let y = -1; y <= B[1] && !want; y++) for (let x = -1; x <= B[0] && !want; x++){ p.x = x; p.y = y; if (!D.fitsAt(g).length){ const s = D.snapNear(g, x, y); if (s) want = { x, y, s }; } }
+        p.x = x0; p.y = y0; return want && { ...want, x0, y0, SQ: D.sqOf(B) }; }, fc);
+      if (plan){
+        const proj = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0.02, T.boardZ + (0.5 - v) * bW).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; }, [u, v]);
+        const a0 = await proj(0.5, 0.5), a1 = await proj(0.5 + (plan.x - plan.x0) * plan.SQ, 0.5 + (plan.y - plan.y0) * plan.SQ);
+        await page.mouse.move(a0[0], a0[1]); await page.mouse.down();
+        for (let k = 1; k <= 10; k++){ await page.mouse.move(a0[0] + (a1[0] - a0[0]) * k / 10, a0[1] + (a1[1] - a0[1]) * k / 10); await page.waitForTimeout(40); }
+        await page.mouse.up(); await page.waitForTimeout(400);
+        const t2 = await st();
+        real.snap = t2.fits > 0 && t2.x === plan.s[0] && t2.y === plan.s[1];
+        real.snapDetail = { plan, t2 };
+      }
+      const t0 = await st();
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+      const pts = a => [0, 180].map((o, id) => ({ x: 640 + 120 * Math.cos((a + o) * Math.PI / 180), y: 400 + 120 * Math.sin((a + o) * Math.PI / 180), id }));
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
+      for (let k = 1; k <= 14; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(70 * k / 14) }); await page.waitForTimeout(16); }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(500);
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      const t1 = await st();
+      real.twist = t1.turns === t0.turns + 1 && Math.abs(t1.yaw - t0.yaw) < 1e-6;
+      real.twistDetail = { t0, t1 };
+      real.glow = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, n = () => A.cellItems(c, r).filter(i => i.kind === 'smFit').length;
+        const on = n(); D.SET.fits = false; const off = n(); D.SET.fits = true; return on > 0 && off === 0; }, fc);
+    }
+    const ok2 = !!fc && real.twist && real.snap && real.glow;
+    if (!ok2) failures.push('[soma hands] ' + JSON.stringify({ fc, real }));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma hands: a real two-finger twist turns the piece and not the view, a real drag to a column it does not fit ends where it does, the glow on and off`);
+  }
   // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
   // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt
   {
