@@ -934,9 +934,24 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     stars, then quickest) kept (localStorage `soma.best`); a tap goes on to the next board.
   - **A board no one plays** (`shownOf`, from the clock alone) builds its figure: the solution's pieces coming down into place one
     after another, held whole, and round again. `frameFit` 1.5, `pitchMin` 60, `tapMargin` 0.4, as 3D Tetris's.
+  - **The course** (Oct 23: "whats next for soma", then "1,2", the first the famous figures on the boards nearest the corner):
+    the first sixteen boards (`boardIdx` 0–15, the 4 × 4 corner block) hold named figures of all seven pieces (`COURSE`, written
+    as layers from the ground up, `courseFigure`): the cube, the pyramid, the steps, the bathtub, the sofa, the bed, the throne,
+    the tower, the wall, the ziggurat, the castle, the well, the bench, the block, the arch and the stairs. Each was put to the
+    solver first (a tunnel on pillars one cube wide and a dais could not be filled and were left out). The title names it.
+  - **Count the ways** (the second: "the solver can count every way a figure can be filled (the cube has 240)"): `countGen`,
+    the solver going on past the first filling, by hand so it can stop between slices (`countSoon`: 12 ms in 42, for the framed
+    board, `WAYS` by figure; `COUNT_CAP` 3e8 steps, past which it says "more than n"). A filling is written as the piece type in
+    every cell and brought to one form under the figure's own symmetries (`symsOf`: the 48 signed permutations of the axes that
+    map it onto itself, a mirroring swapping the two screws, so it counts only with both or neither; `canon`). The cube: 11,520
+    fillings, 240 ways, about a second. The course: from 9 ways (the bed) to 1,998 (the tower). The ways you have found are kept
+    by board (localStorage `soma.found`); filled, the board says whether it was a new way and how many of how many, the title
+    keeps the count, and the menu's Find another way empties the figure again.
   - The smoke test checks the orientations (12, 24, 12, 12, 8, 12, 12), the cube on the corner, 60 figures filled by the solver,
     the levels by ring, a board no one plays building, and real input: the real arrow and E, the real H and Enter placing, a real
-    click taking a piece back, the figure finished with a best kept, and a real click going on.
+    click taking a piece back, the figure finished with a best kept, and a real click going on; and the course: all sixteen filled,
+    the cube's 240 ways of 11,520 fillings, a figure with no symmetry counted filling by filling, and a course board filled by the
+    real H and Enter as a new way, then again as one found before.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

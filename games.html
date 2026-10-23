@@ -29429,7 +29429,7 @@ const SOMA_APP = (() => {
     return Math.max(w(a), w(b));
   }
   const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => idx === 0 ? 5 : Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const levelAt = idx => idx < 16 ? 5 : Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));   // (the course: all seven)
   const lvOf = (c, r) => levelAt(boardIdx(c, r));
   const seeded = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
   const now = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
@@ -29479,13 +29479,39 @@ const SOMA_APP = (() => {
   const cellsAt = (t, o, x, y, z) => ORI[t].list[o].map(([a, b, c]) => [x + a, y + b, z + c]);
   const inBox = (B, [x, y, z]) => x >= 0 && y >= 0 && z >= 0 && x < B[0] && y < B[1] && z < B[2];
   const ix = (B, [x, y, z]) => (z * B[1] + y) * B[0] + x;
-  // the cube itself on the corner's board: the seven in one of their 240 ways (found once by the solver)
+  /* THE COURSE (Oct 23: "whats next for soma", then "1,2": the first "the famous figures … on the boards nearest the corner
+     as a named course, the way mini golf keeps its course there"): the first sixteen boards (`boardIdx` 0–15, the 4 × 4
+     corner block) hold figures of all seven pieces, 27 cubes each, written as layers from the ground up, rows down the board,
+     # a cell. Each was put to the solver before it went in (a tunnel on pillars one cube wide was not: no piece can stand up
+     a column alone and be held at its foot); the smoke test fills every one again. The cube is the first. */
+  const COURSE = [
+    ['the cube', [['###', '###', '###'], ['###', '###', '###'], ['###', '###', '###']]],
+    ['the pyramid', [['####', '####', '####', '####'], ['###', '###', '###'], ['##']]],
+    ['the steps', [['###', '###', '###', '###', '###'], ['###', '###', '###'], ['###']]],
+    ['the bathtub', [['#####', '#####', '#####'], ['#####', '#...#', '#####']]],
+    ['the sofa', [['#####', '#####', '#####'], ['#####', '#...#', '#...#'], ['.###.']]],
+    ['the bed', [['###', '###', '###', '###', '###', '###'], ['###', '...', '...', '...', '...', '###'], ['###']]],
+    ['the throne', [['###', '###', '###'], ['###', '###', '###'], ['###', '#.#', '#.#'], ['#.#']]],
+    ['the tower', [['###', '###', '###'], ['###', '###', '###'], ['##.', '##.'], ['##.', '##.', '#..']]],
+    ['the wall', [['#######', '#######'], ['######', '######'], ['#']]],
+    ['the ziggurat', [['#####', '#####', '#####'], ['.###.', '.###.', '.###.'], ['..#..', '..#..', '..#..']]],
+    ['the castle', [['####', '####', '####', '####'], ['####', '#..#', '#..#', '#.##']]],
+    ['the well', [['###', '###', '###'], ['###', '#.#', '###'], ['###', '#.#', '###'], ['#.#']]],
+    ['the bench', [['#####', '#####'], ['#####', '#####'], ['#####', '#...#']]],
+    ['the block', [['#####', '#####', '#####'], ['####', '####', '####']]],
+    ['the arch', [['##.##', '##.##'], ['##.##', '##.##'], ['#####', '#####'], ['..#..']]],
+    ['the stairs', [['####', '####', '####'], ['###', '###', '###'], ['##', '##', '##']]],
+  ];
+  function courseFigure(idx){
+    const [name, L] = COURSE[idx], W = Math.max(...L.flat().map(r => r.length)), D = Math.max(...L.map(l => l.length)), B = [W, D, L.length];
+    const fig = new Uint8Array(W * D * L.length);
+    L.forEach((lay, z) => lay.forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '#') fig[(z * D + y) * W + x] = 1; })));
+    const types = [0, 1, 2, 3, 4, 5, 6], sol = solve({ B, fig, types }, new Map());
+    return sol ? { idx, lv: 5, B, fig, types, sol, name, cube: idx === 0 } : null;
+  }
   function makeFigure(idx, lv){
+    if (idx < COURSE.length){ const C = courseFigure(idx); if (C) return C; }
     const L = LV[lv - 1], B = L.box.slice(), R = seeded((Math.imul(idx, 2654435761) ^ Math.imul(lv, 40503) ^ 0x50a7) >>> 0);
-    if (idx === 0){
-      const fig = new Uint8Array(27).fill(1), types = [0, 1, 2, 3, 4, 5, 6], sol = solve({ B: [3, 3, 3], fig, types }, new Map());
-      return { idx, lv, B: [3, 3, 3], fig, types, sol, cube: true };
-    }
     for (let tr = 0; tr < 40; tr++){
       let pool = L.flat ? [0, 1, 2, 3] : [0, 1, 2, 3, 4, 5, 6];
       for (let i = pool.length - 1; i > 0; i--){ const j = (R() * (i + 1)) | 0; [pool[i], pool[j]] = [pool[j], pool[i]]; }
@@ -29561,6 +29587,108 @@ const SOMA_APP = (() => {
     return go() ? out : null;
   }
 
+  /* COUNT THE WAYS (the same request's second: "the solver can count every way a figure can be filled (the cube has 240)").
+     Every way, as the solver finds them, but going on past the first (`countGen`, a generator yielding every `COUNT_SLICE`
+     steps, so it runs a little at a time in the page's idle time: `countSoon`), each written as the piece type in every cell
+     and brought to one form under the figure's own symmetries (`symsOf`: the 48 turns and mirrorings of the axes that map the
+     figure onto itself; a mirroring swaps the two screws, so it counts only when the figure has both or neither): `canon`.
+     The cube's 11,520 fillings are its 240 ways. `WAYS` keeps a figure's count; one past `COUNT_CAP` steps is "more than n".
+     The ways you have found are kept by board (localStorage `soma.found`, their forms), and the board says how many of how many. */
+  const COUNT_SLICE = 20000, COUNT_CAP = 3e8;
+  const SIGNED = []; for (const P of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) for (let m = 0; m < 8; m++){
+    const sg = [m & 1 ? -1 : 1, m & 2 ? -1 : 1, m & 4 ? -1 : 1];
+    const odd = ([[0, 1, 2], [1, 2, 0], [2, 0, 1]].some(q => q.join() === P.join()) ? 0 : 1) ^ (sg.filter(v => v < 0).length & 1);
+    SIGNED.push({ P, sg, mirror: !!odd }); }
+  function symsOf(F){
+    if (F._syms) return F._syms;
+    const B = F.B, cells = []; for (let z = 0; z < B[2]; z++) for (let y = 0; y < B[1]; y++) for (let x = 0; x < B[0]; x++) if (F.fig[ix(B, [x, y, z])]) cells.push([x, y, z]);
+    const both = F.types.includes(5) === F.types.includes(6), out = [];
+    for (const S of SIGNED){
+      if (S.mirror && !both) continue;
+      const B2 = S.P.map(k => B[k]);
+      if (B2.some((v, k) => v !== B[k])) continue;
+      const map = cells.map(p => S.P.map((k, j) => S.sg[j] > 0 ? p[k] : B[k] - 1 - p[k]));
+      if (map.every(q => F.fig[ix(B, q)])) out.push({ ...S, map: cells.map((p, i) => [ix(B, p), ix(B, map[i])]) });
+    }
+    return (F._syms = out);
+  }
+  // a filling as the type in each cell, in the one form of it its symmetries give (the least)
+  function canon(F, placed){
+    const B = F.B, N = B[0] * B[1] * B[2], lab = new Uint8Array(N);
+    for (const q of placed) for (const c of cellsAt(F.types[q.i], q.o, q.x, q.y, q.z)) lab[ix(B, c)] = F.types[q.i] + 1;
+    let best = null;
+    for (const S of symsOf(F)){
+      const out = new Uint8Array(N);
+      for (const [a, b] of S.map){ let v = lab[a]; if (S.mirror && (v === 6 || v === 7)) v = v === 6 ? 7 : 6; out[b] = v; }
+      const k = out.join('');
+      if (best == null || k < best) best = k;
+    }
+    return best;
+  }
+  function* countGen(F){
+    const B = F.B, N = B[0] * B[1] * B[2], occ = new Uint8Array(N), used = new Uint8Array(F.types.length), cur = [], seen = new Set();
+    const places = F.types.map(t => { const by = Array.from({ length: N }, () => []);
+      for (let o = 0; o < ORI[t].list.length; o++){ const [w, d, h] = sizeOf(ORI[t].list[o]);
+        for (let z = 0; z + h <= B[2]; z++) for (let y = 0; y + d <= B[1]; y++) for (let x = 0; x + w <= B[0]; x++){
+          const cs = cellsAt(t, o, x, y, z).map(q => ix(B, q)); if (cs.every(c => F.fig[c])){ const p = { o, x, y, z, cs }; for (const c of cs) by[c].push(p); } } }
+      return by; });
+    let steps = 0, raw = 0;
+    const stack = [{ c: -1 }];
+    // (the search by hand, a frame a level, so it can stop and go on between slices)
+    const first = () => { for (let i = 0; i < N; i++) if (F.fig[i] && !occ[i]) return i; return -1; };
+    stack[0].c = first(); stack[0].i = 0; stack[0].j = 0;
+    while (stack.length){
+      const f = stack[stack.length - 1];
+      if (f.c < 0){ raw++; seen.add(canon(F, cur)); stack.pop(); if (stack.length){ const g = stack[stack.length - 1]; const q = g.on; for (const c of q.cs) occ[c] = 0; used[g.i] = 0; cur.pop(); g.on = null; g.j++; } continue; }
+      let moved = false;
+      while (f.i < F.types.length){
+        if (used[f.i]){ f.i++; f.j = 0; continue; }
+        const L = places[f.i][f.c];
+        while (f.j < L.length){
+          const p = L[f.j];
+          if (++steps % COUNT_SLICE === 0) yield { n: seen.size, raw, steps };
+          if (steps > COUNT_CAP) return { n: seen.size, raw, steps, capped: true };
+          if (p.cs.some(q => occ[q])){ f.j++; continue; }
+          for (const c of p.cs) occ[c] = 1; used[f.i] = 1; cur.push({ i: f.i, o: p.o, x: p.x, y: p.y, z: p.z }); f.on = p;
+          stack.push({ c: first(), i: 0, j: 0 }); moved = true; break;
+        }
+        if (moved) break;
+        f.i++; f.j = 0;
+      }
+      if (moved) continue;
+      stack.pop();
+      if (stack.length){ const g = stack[stack.length - 1]; for (const c of g.on.cs) occ[c] = 0; used[g.i] = 0; cur.pop(); g.on = null; g.j++; }
+    }
+    return { n: seen.size, raw, steps, done: true };
+  }
+  const WAYS = new Map();               // a figure's key → { n, raw, done, capped, gen }
+  const figKey = F => F.idx + '@' + F.lv;
+  function countAll(F){ const g = countGen(F); let r; do { r = g.next(); } while (!r.done); return r.value; }
+  function countSoon(F){
+    const k = figKey(F);
+    let W = WAYS.get(k);
+    if (W) return W;
+    W = { n: 0, raw: 0, done: false, gen: countGen(F) }; WAYS.set(k, W);
+    const run = () => {
+      try { if (window.getFieldApp() !== app){ setTimeout(run, 500); return; } } catch {}
+      const t0 = performance.now();
+      while (performance.now() - t0 < 12){
+        const r = W.gen.next();
+        if (r.value){ W.n = r.value.n; W.raw = r.value.raw; }
+        if (r.done){ W.done = true; W.capped = !!(r.value && r.value.capped); W.gen = null; return; }
+      }
+      setTimeout(run, 30);
+    };
+    setTimeout(run, 30);
+    return W;
+  }
+  const FOUND = new Map();
+  try { const o = JSON.parse(localStorage.getItem('soma.found') || '{}'); for (const k in o) if (Array.isArray(o[k])) FOUND.set(k, new Set(o[k].filter(v => typeof v === 'string'))); } catch {}
+  function saveFound(){ try { const o = {}; [...FOUND].slice(-300).forEach(([k, v]) => { o[k] = [...v].slice(-400); }); localStorage.setItem('soma.found', JSON.stringify(o)); } catch {} }
+  const waysText = (F, k) => { const W = WAYS.get(figKey(F)), f = (FOUND.get(k) || new Set()).size;
+    if (!W) return f ? f + ' found' : '';
+    return f + ' of ' + (W.done ? W.n : W.capped ? 'more than ' + W.n : W.n + '…') + (W.n === 1 && W.done ? ' way' : ' ways'); };
+
   /* ─── THE GAME ─── */
   const GAMES = new Map();
   const BEST = new Map();
@@ -29630,8 +29758,13 @@ const SOMA_APP = (() => {
     g.state = 'done'; g.cur = null; g.flash = { t: now() };
     const ms = Math.round((now() - (g.t0 || now())) * 1000), s = starsOf(g.hints), k = bestKey(g.at[0], g.at[1], g.F.lv), b = BEST.get(k);
     if (!b || s > b.s || (s === b.s && ms < b.ms)){ BEST.set(k, { s, ms }); saveBest(); }
+    // which of the figure's ways it was, and whether it is new
+    const way = canon(g.F, [...g.placed].map(([i, p]) => ({ i, ...p })));
+    let set = FOUND.get(k); if (!set){ set = new Set(); FOUND.set(k, set); }
+    const fresh = !set.has(way); set.add(way); saveFound(); g.newWay = fresh;
     beep('win');
-    say('Filled' + (g.hints ? ' with ' + g.hints + (g.hints === 1 ? ' hint' : ' hints') : '') + ' in ' + (ms / 1000).toFixed(1) + ' s ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s) + '. Tap for the next board.', 5000);
+    say('Filled' + (g.hints ? ' with ' + g.hints + (g.hints === 1 ? ' hint' : ' hints') : '') + ' in ' + (ms / 1000).toFixed(1) + ' s ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s)
+      + (fresh ? ' — a new way: ' : ' — a way you had found: ') + waysText(g.F, k) + '. Tap for the next board, or the menu\'s Find another way.', 6000);
     return true;
   }
   function hint(g){
@@ -29811,12 +29944,14 @@ const SOMA_APP = (() => {
       SND && { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns and the pieces going in.', on(){ SND.on = !SND.on; ARCADE.save('soma.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
       { label: 'Hint', title: 'The next piece of a way to finish, from the pieces placed as they are, put in your hand where it goes. H on the keys.', on(){ const g = liveGame(); if (g){ hint(g); touched(); } } },
       { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill the glass figure with its pieces. Arrows slide the piece in hand, Q/E spin, R/F tip, Z/X roll, [ and ] step through the heights it fits, Enter places it, 1–7 take a piece, H hints. On a phone: drag to slide, tap to place (a tap on a placed piece takes it back), and the bottom row turns it.', 8000); } },
+      { label: 'Find another way', title: 'Every piece back in the tray, to fill the figure a way you have not found yet. The title says how many of its ways you have.', on(){ const f = framedCell(); if (f){ app.onReset(f.c, f.r); const g = GAMES.get(gkey(f.c, f.r)); say((g && waysText(g.F, bestKey(f.c, f.r, g.F.lv))) || 'Fill it another way.', 2400); } } },
       { label: 'Start this board again', title: 'Every piece back in the tray.', on(){ const f = framedCell(); if (f) app.onReset(f.c, f.r); } },
     ]}],
     cellTitle(c, r){
       const lv = lvOf(c, r), F = figureOf(c, r), g = GAMES.get(gkey(c, r)), b = BEST.get(bestKey(c, r, lv));
       if (!F) return 'Soma';
-      const head = 'Soma — ' + (F.cube ? 'the cube, all seven' : 'level ' + lv + ', ' + F.types.length + ' pieces, ' + F.types.map(t => NAMES[t]).join(' ')) + (b ? ' · best ' + '★★★'.slice(0, b.s) + ' ' + (b.ms / 1000).toFixed(1) + ' s' : '');
+      const wt = waysText(F, bestKey(c, r, lv));
+      const head = 'Soma — ' + (F.name ? F.name + ', all seven' : 'level ' + lv + ', ' + F.types.length + ' pieces, ' + F.types.map(t => NAMES[t]).join(' ')) + (b ? ' · best ' + '★★★'.slice(0, b.s) + ' ' + (b.ms / 1000).toFixed(1) + ' s' : '') + (wt ? ' · ' + wt : '');
       if (!g) return head;
       return head + (g.state === 'done' ? ' · filled' : ' · ' + g.placed.size + ' of ' + F.types.length + ' placed' + (g.cur ? ', ' + NAMES[F.types[g.cur.i]] + ' in hand' : ''));
     },
@@ -29841,7 +29976,7 @@ const SOMA_APP = (() => {
     },
     onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; touched(); return true; },
     onSelect(c, r){ return true; },
-    onFramed(c, r){ LIVE = c == null ? null : { c, r }; if (c != null) gameAt(c, r); },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; if (c != null){ const g = gameAt(c, r); countSoon(g.F); } },
     noDoubleTap(){ return !!liveGame(); },
     onCellTap(c, r, u, v){
       const off = u != null && (u < 0 || u > 1 || v < 0 || v > 1);
@@ -29877,7 +30012,7 @@ const SOMA_APP = (() => {
       const t = sz / 5, cells = [[1, 1, 0], [2, 1, 0], [3, 1, 1], [1, 2, 4], [2, 2, 3], [3, 2, 3], [1, 3, 5], [2, 3, 6], [3, 3, 2]];
       for (const [x, y, k] of cells){ ctx.fillStyle = '#' + COLS[k].toString(16).padStart(6, '0'); ctx.fillRect(x * t + 1, y * t + 1, t - 2, t - 2); }
     },
-    _debug: { PIECES, ORI, LV, NAMES, makeFigure, figureOf, solve, fresh, gameAt, takeUp, slide, turn, ask, opFor, stepZ, place, hint, fitsAt, curZ, shownOf, starsOf, itemsFor, viewOf,
+    _debug: { COURSE, courseFigure, countGen, countAll, countSoon, canon, symsOf, WAYS, FOUND, waysText, bestKey, PIECES, ORI, LV, NAMES, makeFigure, figureOf, solve, fresh, gameAt, takeUp, slide, turn, ask, opFor, stepZ, place, hint, fitsAt, curZ, shownOf, starsOf, itemsFor, viewOf,
               games: GAMES, BEST, boardIdx, levelOf: (c, r) => lvOf(c, r), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;

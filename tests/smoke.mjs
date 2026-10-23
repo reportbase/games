@@ -3307,6 +3307,46 @@ try {
     if (!ok2) failures.push('[soma] real input: ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma: the real arrow and E move and turn it, H and Enter place, a real click takes a piece back, filled with stars and a best, a real click goes on`);
   }
+  // SOMA'S COURSE AND ITS WAYS (Oct 23: "1,2" of what came next: the famous figures on the boards nearest the corner, and the
+  // ways each can be filled counted): every one of the sixteen filled by the solver, all seven pieces, on boards 0–15; the
+  // cube's ways counted to 240 (of 11,520 fillings) and a figure with no symmetry counting each filling once; then a course
+  // board filled by the real H and Enter says a new way and its count, and filled again the same way says it was found.
+  {
+    current = 'soma course';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      out.course = D.COURSE.map((c, i) => { const F = D.courseFigure(i); return !!(F && F.types.length === 7 && F.fig.reduce((a, b) => a + b, 0) === 27 && D.solve(F, new Map())); });
+      out.names = D.COURSE.map((c, i) => D.makeFigure(i, 5).name === c[0]).every(Boolean);
+      const cube = D.countAll(D.courseFigure(0)); out.cube = [cube.n, cube.raw, cube.done];
+      const tower = D.courseFigure(7), t = D.countAll(tower); out.tower = [D.symsOf(tower).length, t.n, t.raw];
+      return out;
+    });
+    const ok1 = r.course.length === 16 && r.course.every(Boolean) && r.names && r.cube.join() === '240,11520,true' && r.tower[0] === 1 && r.tower[1] === r.tower[2] && r.tower[1] > 0;
+    if (!ok1) failures.push('[soma course] rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} soma course: 16 figures of all seven filled, the cube's ${r.cube[0]} ways of ${r.cube[1]} fillings, a figure with no symmetry counted filling by filling`);
+    // a course board (the steps: board 2 is (1, 0)): filled by the real H and Enter, a new way; again the same way, found before
+    await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      const fill = async () => {
+        await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+        for (let k = 0; k < 12; k++){ const st = await page.evaluate(([c, r]) => { const g = window.getFieldApp()._debug.games.get(c + '_' + r); return g && g.state; }, fc); if (st !== 'play') break;
+          await page.keyboard.press('h'); await page.waitForTimeout(100); await page.keyboard.press('Enter'); await page.waitForTimeout(150); }
+        return page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.games.get(c + '_' + r); return { st: g.state, newWay: g.newWay, name: g.F.name, title: A.cellTitle(c, r) }; }, fc);
+      };
+      await page.waitForFunction(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); const W = g && D.WAYS.get(g.F.idx + '@' + g.F.lv); return W && W.done; }, fc, { timeout: 30000 }).catch(() => {});
+      real.first = await fill();
+      real.again = await fill();
+    }
+    const ok2 = !!fc && real.first && real.first.st === 'done' && real.first.newWay === true && real.first.name === 'the steps' || false;
+    const ok3 = ok2 && real.again.st === 'done' && real.again.newWay === false && /1 of \d+ ways/.test(real.again.title);
+    if (!ok3) failures.push('[soma course] real input: ' + JSON.stringify({ fc, real }));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} soma course: a course board filled by the real H and Enter is a new way, and the same way again is found before (${real.again && real.again.title})`);
+  }
   // LIGHTS OUT (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
   // its own pattern at a level by its ring, its par the fewest presses (checked here by light chasing, a different way to
   // the page's elimination); the way out puts it out; real clicks flip the right cross; five quick real touches on one
