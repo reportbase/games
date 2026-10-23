@@ -914,6 +914,29 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     cleared by its own pieces and the same twice, par by level, out of pieces over, a board no one plays solving its own, glass and
     holes on and off, and real input: a click starting one, its own pieces by the real Enter clearing it in par with a best, the
     real V and See tile, a real click on a cleared board going on.
+- **Soma** (Oct 23: "any games that require 3d spatial rotation", then of the five offered "Soma or burr puzzles"): `SOMA_APP`, id
+  `soma`, after 3D Tetris. Piet Hein's seven pieces (`PIECES`, `NAMES`: V, L, T, Z, the tripod P and the two screws A and B, 27
+  cubes), turned about all three axes as 3D Tetris's are (its frame, `turnVec`, `opFor`; no gravity, no kicks), filling a figure
+  of glass cells.
+  - **Every board its own figure** (`makeFigure(idx, lv)`, seeded by the board's number; `figureOf` keeps 1,500): k of the seven
+    laid one at a time in a box where each touches the ones before most and stands on something when it can, so it is solvable
+    by construction. `LV`: 3 (flat ones only), 4, 5, 6 and 7 pieces in boxes 3 × 3 × 2 to 4 × 4 × 3, by ring plus the
+    Difficulty (Lights Out's rule). The corner's first board is the 3 × 3 × 3 cube.
+  - **The solver** (`solve(F, fixed, budget)`): an exact cover, the lowest empty cell first, each piece's placements indexed by
+    the cells they cover; 5 million steps at most. The cube in about 30 ms, the others 0.2–2 ms; 100 figures, all filled.
+  - **Playing**: the piece in hand hovers over the figure; where it fits in its column shows as glass in its colour (lowest
+    first, `fitsAt`; Up and Down, [ ] or PageDown / PageUp step through the others); fitting nowhere it is red. Enter or a tap
+    places it, the next piece in the tray coming to hand; a tap on a placed piece takes it back (`placedAt`, the ray from the eye
+    through its cubes); 1–7 or the row's tiles take any piece. Keys: arrows / WASD slide, Q / E spin, R / F tip, Z / X roll, H
+    hints. The row: the pieces, Spin, Tip, Roll, Down, Up, Place (`statsStay` while playing).
+  - **Hint** (`hint`): the solver from the pieces placed as they are; its next piece goes into your hand where it belongs. With
+    no way on from them, every piece goes back to the tray. Filled: stars by the hints (none 3, one 2, more 1), the best (most
+    stars, then quickest) kept (localStorage `soma.best`); a tap goes on to the next board.
+  - **A board no one plays** (`shownOf`, from the clock alone) builds its figure: the solution's pieces coming down into place one
+    after another, held whole, and round again. `frameFit` 1.5, `pitchMin` 60, `tapMargin` 0.4, as 3D Tetris's.
+  - The smoke test checks the orientations (12, 24, 12, 12, 8, 12, 12), the cube on the corner, 60 figures filled by the solver,
+    the levels by ring, a board no one plays building, and real input: the real arrow and E, the real H and Enter placing, a real
+    click taking a piece back, the figure finished with a best kept, and a real click going on.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
