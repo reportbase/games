@@ -29523,10 +29523,40 @@ const SOMA_APP = (() => {
     const types = only ? only.slice() : PIECES.map((_, i) => i), sol = solve({ B, fig, types }, new Map(), 2e7);
     return sol ? { idx, lv: 5, B, fig, types, sol, name, cube: SET_ID === 'soma' && idx === 0, key: pk(idx + '@5') } : null;
   }
+  /* DIFFICULTY FROM THE COUNT (Oct 23: "whats next for soma", then "2,1": the first "a figure with few ways is hard and one
+     with many is easy: sort the generated figures by that, so the far rings really get harder, give each figure a par time,
+     and stars for time as well as hints"). Measured on 16 boards a level, the ways grow with the pieces (Soma: about 2, 9, 30,
+     200 and 300+ at levels 1–5), so the count cannot stand for the level; within a level it spreads widely (level 4: 98 to
+     over 600). So a level keeps its pieces, and its figure is the one with the fewest ways of `PICK_K` made (1 at level 1, 5
+     at level 5), each counted for at most `PICK_CAP` steps (`quickWays`: a count cut short is taken as more than any count
+     finished, and among those the fewer found the harder). The figure keeps its count (`waysN`, `waysExact`) and its par
+     (`parFor`: 6 s a piece, times 1 + 3 / log2(2 + ways), so a 7-piece figure with 200 ways is about a minute and one with a
+     single way about two). Making a far figure takes up to some tens of milliseconds, so a board only looked at gets its figure
+     a few at a time (`figSoon`, `soonPump`) and shows its bare floor till then; the board framed or played is made at once. */
+  const PICK_K = [1, 2, 3, 4, 5], PICK_CAP = 10;           // (counter slices of COUNT_SLICE steps: 200,000)
+  const parFor = (k, ways) => Math.round(k * 6 * (1 + 3 / Math.log2(2 + Math.max(0, ways))));
+  function quickWays(F, slices){
+    const g = countGen(F); let s, n = 0;
+    for (let i = 0; i <= slices; i++){ s = g.next(); if (s.value) n = s.value.n; if (s.done) return { n: s.value.n, exact: !s.value.capped }; }
+    return { n, exact: false };
+  }
   function makeFigure(idx, lv){
     if (idx < COURSE.length){ const C = courseFigure(idx); if (C) return C; }
-    const L = LV[lv - 1], B = L.box.slice(), R = seeded((Math.imul(idx, 2654435761) ^ Math.imul(lv, 40503) ^ 0x50a7) >>> 0);
-    for (let tr = 0; tr < 40; tr++){
+    const L = LV[lv - 1], R = seeded((Math.imul(idx, 2654435761) ^ Math.imul(lv, 40503) ^ 0x50a7) >>> 0);
+    const cands = [];
+    for (let tr = 0; tr < 40 && cands.length < PICK_K[lv - 1]; tr++){ const F = oneFigure(idx, lv, L, R); if (F) cands.push(F); }
+    if (!cands.length) return null;
+    let best = null, bs = Infinity;
+    for (const F of cands){ const q = quickWays(F, PICK_CAP);
+      const sc = q.exact ? q.n : 1e6 + q.n; if (sc < bs){ bs = sc; best = F; best.waysN = q.n; best.waysExact = q.exact; } }
+    best.par = parFor(best.types.length, best.waysExact ? best.waysN : Math.max(best.waysN, 200));
+    // (and, farther out, now and then one that cannot be built: CAN IT BE BUILT?)
+    if (R() < IMPOSSIBLE[lv - 1]){ const X = makeImpossible(best, R); if (X) return X; }
+    return best;
+  }
+  function oneFigure(idx, lv, L, R){
+    const B = L.box.slice();
+    {
       let pool = L.flat ? FLAT.slice() : PIECES.map((_, i) => i);
       for (let i = pool.length - 1; i > 0; i--){ const j = (R() * (i + 1)) | 0; [pool[i], pool[j]] = [pool[j], pool[i]]; }
       const types = pool.slice(0, L.k), occ = new Uint8Array(B[0] * B[1] * B[2]), sol = [];
@@ -29555,12 +29585,61 @@ const SOMA_APP = (() => {
         for (const p of best.cs) occ[ix(B, p)] = 1;
         sol.push({ i: n, o: best.o, x: best.x, y: best.y, z: best.z });
       }
-      if (!ok) continue;
+      if (!ok) return null;
       return { idx, lv, B, fig: occ, types, sol, key: pk(idx + '@' + lv) };
+    }
+  }
+  /* CAN IT BE BUILT? (the same request's second: "some figures in the far rings would look buildable but have no filling; you'd
+     judge buildable or not, and the solver's proof is the answer"). From level 3 a generated figure is, by its board's draw
+     (`IMPOSSIBLE`: 15%, 20%, 25% at levels 3–5), one that cannot be filled: a buildable figure with one cube moved to an empty
+     cell beside the figure (`makeImpossible`, up to `IMP_TRIES` moves tried), kept only when the solver has tried every way
+     and found none (not when its steps ran out). It looks as the others do; its `sol` is the buildable one's less the piece
+     that held the moved cube, so a board no one plays builds it as far as the others go: from level 3 every generated board's
+     show stops a piece short (`shownSol`), the last piece being the player's to find, so the show tells nothing. Its count of
+     ways (none) is not shown until the board is through. ✗ in the row, the menu's It can't be built or N says so (`declare`):
+     right, it is through (stars by hints and time); wrong, it costs a hint and the figure stays to be filled. */
+  const IMPOSSIBLE = [0, 0, 0.15, 0.2, 0.25], IMP_TRIES = 10, IMP_BUDGET = 6e5;
+  function makeImpossible(F, R){
+    const B = F.B, N = B[0] * B[1] * B[2], full = [], near = [];
+    for (let i = 0; i < N; i++) if (F.fig[i]) full.push(i);
+    const xyz = i => [i % B[0], Math.floor(i / B[0]) % B[1], Math.floor(i / (B[0] * B[1]))];
+    for (let i = 0; i < N; i++){ if (F.fig[i]) continue; const [x, y, z] = xyz(i);
+      if ([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([a, b, c]) => { const q = [x + a, y + b, z + c]; return inBox(B, q) && F.fig[ix(B, q)]; })) near.push(i); }
+    if (!near.length) return null;
+    for (let t = 0; t < IMP_TRIES; t++){
+      const a = full[(R() * full.length) | 0], b = near[(R() * near.length) | 0];
+      const fig = F.fig.slice(); fig[a] = 0; fig[b] = 1;
+      const info = {}, G = { ...F, fig };
+      if (solve(G, new Map(), IMP_BUDGET, info) || info.capped) continue;
+      const held = F.sol.find(q => cellsAt(F.types[q.i], q.o, q.x, q.y, q.z).some(c => ix(B, c) === a));
+      return { ...G, sol: F.sol.filter(q => q !== held).concat([held]), impossible: true, moved: [xyz(a), xyz(b)], waysN: 0, waysExact: true, par: parFor(F.types.length, 1) };
     }
     return null;
   }
+  // what a board no one plays builds: the whole figure near the corner, all but the last piece from level 3
+  const shownSol = F => (F.lv >= 3 && !F.mine && !F.name) ? F.sol.slice(0, -1) : F.sol;
   const FIGS = new Map();
+  const SOONF = new Map();                        // a board's figure wanted but not made: key → { c, r, t }
+  function figSoon(c, r){
+    const idx = boardIdx(c, r), m = mineFigure(idx); if (m) return m;
+    const lv = lvOf(c, r), k = idx * 8 + lv, F = FIGS.get(k); if (F) return F;
+    if (lv <= 2 || idx < COURSE.length) return figureOf(c, r);      // (quick enough to make as asked)
+    SOONF.set(k, { c, r, t: performance.now() });
+    if (!soonPump.on){ soonPump.on = true; setTimeout(soonPump, 30); }
+    return null;
+  }
+  function soonPump(){
+    soonPump.on = false;
+    try { if (window.getFieldApp() !== app){ if (SOONF.size){ soonPump.on = true; setTimeout(soonPump, 500); } return; } } catch {}
+    const now = performance.now(), t0 = now;
+    for (const [k, e] of SOONF) if (now - e.t > 2000) SOONF.delete(k);
+    while (SOONF.size && performance.now() - t0 < 10){
+      let pick = null; for (const [k, e] of SOONF) if (!pick || e.t > pick[1].t) pick = [k, e];
+      SOONF.delete(pick[0]); figureOf(pick[1].c, pick[1].r);
+    }
+    try { fieldItemsChanged(); } catch {}
+    if (SOONF.size){ soonPump.on = true; setTimeout(soonPump, 30); }
+  }
   function figureOf(c, r){
     const idx = boardIdx(c, r), m = mineFigure(idx);
     if (m) return m;
@@ -29727,6 +29806,31 @@ const SOMA_APP = (() => {
   const bestKey = (c, r, lv) => boardIdx(c, r) + '@' + lv;
   function saveBest(){ try { const o = {}; [...BEST].slice(-500).forEach(([k, v]) => { o[k] = v; }); localStorage.setItem('soma.best', JSON.stringify(o)); } catch {} }
   const starsOf = hints => hints === 0 ? 3 : hints === 1 ? 2 : 1;
+  // stars for time: within par three, within twice par two (par from the count; a course or your own figure's once counted)
+  const timeStars = (ms, par) => !par ? 3 : ms <= par * 1000 ? 3 : ms <= par * 2000 ? 2 : 1;
+  function parOf(F){
+    if (F.par) return F.par;
+    const W = WAYS.get(figKey(F));
+    return W && (W.done || W.capped) ? parFor(F.types.length, W.n) : null;
+  }
+  const fmtT = s => Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0');
+  const canSay = F => F && F.lv >= 3 && !F.mine && !F.name;          // a board where "it can't be built" may be the answer
+  function declare(g){
+    if (!g || g.state !== 'play' || !canSay(g.F)) return false;
+    if (g.t0 == null) g.t0 = now();
+    if (!g.F.impossible){
+      g.hints++; g.wrongSays = (g.wrongSays || 0) + 1; beep('bad'); g.flash = { t: now(), bad: true };
+      say('It can be built: there is a way to fill it. That cost a hint; keep going (H shows the next piece).', 3600);
+      return false;
+    }
+    g.state = 'done'; g.cur = null; g.flash = { t: now() }; g.said = true;
+    const ms = Math.round((now() - g.t0) * 1000), par = parOf(g.F), s = Math.min(starsOf(g.hints), timeStars(ms, par)), k = figKey(g.F), b = BEST.get(k);
+    if (!b || s > b.s || (s === b.s && ms < b.ms)){ BEST.set(k, { s, ms }); saveBest(); }
+    beep('win');
+    const [a, c] = g.F.moved || [];
+    say('Right: it cannot be built. The solver tried every way and none fills it' + (a ? ' (one cube was moved from where a way had it, at ' + c.join(', ') + ')' : '') + '. ' + (ms / 1000).toFixed(1) + ' s ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s) + '. Tap for the next board.', 6000);
+    return true;
+  }
   function fresh(c, r){
     const F = figureOf(c, r), g = { at: [c, r], F, placed: new Map(), cur: null, hints: 0, t0: null, state: 'play', anim: null, flash: null, turns: 0 };
     takeUp(g, 0);
@@ -29787,14 +29891,14 @@ const SOMA_APP = (() => {
   }
   function solved(g){
     g.state = 'done'; g.cur = null; g.flash = { t: now() };
-    const ms = Math.round((now() - (g.t0 || now())) * 1000), s = starsOf(g.hints), k = figKey(g.F), b = BEST.get(k);
+    const ms = Math.round((now() - (g.t0 || now())) * 1000), par = parOf(g.F), s = Math.min(starsOf(g.hints), timeStars(ms, par)), k = figKey(g.F), b = BEST.get(k);
     if (!b || s > b.s || (s === b.s && ms < b.ms)){ BEST.set(k, { s, ms }); saveBest(); }
     // which of the figure's ways it was, and whether it is new
     const way = canon(g.F, [...g.placed].map(([i, p]) => ({ i, ...p })));
     let set = FOUND.get(k); if (!set){ set = new Set(); FOUND.set(k, set); }
     const fresh = !set.has(way); set.add(way); saveFound(); g.newWay = fresh;
     beep('win');
-    say('Filled' + (g.hints ? ' with ' + g.hints + (g.hints === 1 ? ' hint' : ' hints') : '') + ' in ' + (ms / 1000).toFixed(1) + ' s ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s)
+    say('Filled' + (g.hints ? ' with ' + g.hints + (g.hints === 1 ? ' hint' : ' hints') : '') + ' in ' + (ms / 1000).toFixed(1) + ' s' + (par ? ' (par ' + fmtT(par) + ')' : '') + ' ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s)
       + (fresh ? ' — a new way: ' : ' — a way you had found: ') + waysText(g.F, k) + '. Tap for the next board, or the menu\'s Find another way.', 6000);
     return true;
   }
@@ -29802,6 +29906,7 @@ const SOMA_APP = (() => {
     if (g.state !== 'play') return false;
     const fixed = new Map(g.placed);
     const sol = solve(g.F, fixed);
+    if (!sol && g.F.impossible && !g.placed.size){ g.hints++; say('There is no way to fill this figure at all: say so with ✗ (or N).', 3200); return false; }
     if (!sol){
       say('There is no way to finish from the pieces placed: they all come back to the tray. Try again.', 3000);
       g.placed.clear(); takeUp(g, 0); g.hints++;
@@ -29882,8 +29987,8 @@ const SOMA_APP = (() => {
   // a board no one plays: its solution's pieces coming down into place one after another, held whole, round again
   const DROP = 0.9, HOLD = 2.4, REST = 1.0;
   function shownOf(F, c, r, at){
-    const n = F.sol.length, T = REST + n * DROP + HOLD, ph = ((boardIdx(c, r) * 0.6180339887) % 1) * T;
-    return builtAt(F, F.sol, (((at != null ? at : now()) + ph) % T + T) % T);
+    const sol = shownSol(F), n = sol.length, T = REST + n * DROP + HOLD, ph = ((boardIdx(c, r) * 0.6180339887) % 1) * T;
+    return builtAt(F, sol, (((at != null ? at : now()) + ph) % T + T) % T);
   }
   // a solution's pieces coming down into place, t seconds after the rest before the first
   function builtAt(F, sol, t){
@@ -29903,7 +30008,7 @@ const SOMA_APP = (() => {
     if (DEMO && DEMO.c === c && DEMO.r === r) return builtAt(DEMO.F, DEMO.sol, Math.min(now() - DEMO.t0, REST + DEMO.sol.length * DROP));
     const g = GAMES.get(gkey(c, r)), framed = LIVE && LIVE.c === c && LIVE.r === r;
     if (g && (framed || g.placed.size || g.state === 'done')) return { F: g.F, placed: g.placed, cur: framed ? g.cur : null, z: g.cur ? curZ(g) : null, anim: g.anim, flash: g.flash, glow: framed && g.state === 'play' && SET.fits };
-    const F = figureOf(c, r);
+    const F = figSoon(c, r);
     return F ? shownOf(F, c, r) : null;
   }
   function itemsFor(V){
@@ -30153,6 +30258,7 @@ const SOMA_APP = (() => {
   // a way of filling the framed figure that is not among yours, found a little at a time, then built on the board
   function showUnfound(c, r){
     const F = figureOf(c, r); if (!F || ED.on) return false;
+    if (F.impossible){ const g = GAMES.get(gkey(c, r)); if (g && g.state === 'play') g.hints++; say('This figure has no way to fill it: say so with ✗ (or N).', 3200); return false; }
     const mine = FOUND.get(figKey(F)) || new Set(), W = WAYS.get(figKey(F));
     if (W && W.done && mine.size >= W.n){ say('You have found every one of its ' + W.n + (W.n === 1 ? ' way.' : ' ways.'), 2600); return false; }
     GAL.on = false;
@@ -30327,6 +30433,7 @@ const SOMA_APP = (() => {
     else if (k === ']' || k === 'PageUp') stepZ(g, 1);
     else if (k === 'Enter'){ if (!e.repeat) place(g); }
     else if (k === 'h' || k === 'H'){ if (!e.repeat) hint(g); }
+    else if ((k === 'n' || k === 'N') && canSay(g.F)){ if (!e.repeat) declare(g); }
     else if (/^[1-9]$/.test(k)){ takeUp(g, +k - 1); }
     else did = false;
     if (did){ e.preventDefault(); e.stopPropagation(); touched(); }
@@ -30377,6 +30484,7 @@ const SOMA_APP = (() => {
       { label: () => 'Pieces: ' + SETS[SET_ID].name, title: 'Which pieces: Soma\'s seven, the eight tetracubes, the twelve pentominoes as flat pieces, or all twenty-nine pentacubes. Each has its own course on the corner, its own figures, ways and bests.', on(){ const ids = Object.keys(SETS); useSet(ids[(ids.indexOf(SET_ID) + 1) % ids.length]); } },
       { label: () => 'Show where it fits: ' + (SET.fits ? 'on' : 'off'), title: 'Every cell of the figure the piece in hand could go into, turned as it is, lit in its colour.', on(){ SET.fits = !SET.fits; ARCADE.save('soma.fits', SET.fits ? 'on' : 'off'); touched(); } },
       SND && { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns and the pieces going in.', on(){ SND.on = !SND.on; ARCADE.save('soma.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      { label: "It can't be built", title: 'From level 3 some figures have no way to fill them. Say so here (or ✗ in the row, or N): right, the board is through; wrong, it costs a hint.', disabled: () => { const g = liveGame(); return !(g && canSay(g.F)); }, on(){ const g = liveGame(); if (g){ declare(g); touched(); } } },
       { label: 'Hint', title: 'The next piece of a way to finish, from the pieces placed as they are, put in your hand where it goes. H on the keys.', on(){ const g = liveGame(); if (g){ hint(g); touched(); } } },
       { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill the glass figure with its pieces. Arrows slide the piece in hand, Q/E spin, R/F tip, Z/X roll, [ and ] step through the heights it fits, Enter places it, 1–7 take a piece, H hints. On a phone: drag to slide, tap to place (a tap on a placed piece takes it back), and the bottom row turns it.', 8000); } },
       { label: 'Find another way', title: 'Every piece back in the tray, to fill the figure a way you have not found yet. The title says how many of its ways you have.', on(){ const f = framedCell(); if (f){ app.onReset(f.c, f.r); const g = GAMES.get(gkey(f.c, f.r)); say((g && waysText(g.F, figKey(g.F))) || 'Fill it another way.', 2400); } } },
@@ -30392,12 +30500,12 @@ const SOMA_APP = (() => {
       if (ED.on && ED.c === c && ED.r === r) return 'Soma — making a figure: ' + edCount() + ' cubes in it, ' + edNeed() + ' in its pieces (' + ED.types.map((on, t) => on ? NAMES[t] : '').join('') + '), layer ' + (ED.z + 1) + ' of ' + ED.B[2];
       const lv = lvOf(c, r), F = figureOf(c, r), g = GAMES.get(gkey(c, r)), b = F && BEST.get(figKey(F));
       if (!F) return 'Soma';
-      const wt = waysText(F, figKey(F));
+      const done = g && g.state === 'done', wt = canSay(F) && !done ? '' : F.impossible ? '' : waysText(F, figKey(F)), par = parOf(F);
       if (GAL.on && GAL.c === c && GAL.r === r) return 'Soma — your ways: ' + (GAL.list.length ? (GAL.k + 1) + ' of ' + GAL.list.length + ' found' : 'none found yet') + (wt ? ' · ' + wt : '');
       if (DEMO && DEMO.c === c && DEMO.r === r) return 'Soma — a way you have not found, being built: tap when it is done, then build it yourself';
-      const head = 'Soma' + (SET_ID !== 'soma' ? ' (' + SETS[SET_ID].name + ')' : '') + ' — ' + (F.mine ? 'your figure, ' + F.types.length + ' pieces, ' + F.types.map(t => NAMES[t]).join(' ') : F.name ? F.name + ', all seven' : 'level ' + lv + ', ' + F.types.length + ' pieces, ' + F.types.map(t => NAMES[t]).join(' ')) + (b ? ' · best ' + '★★★'.slice(0, b.s) + ' ' + (b.ms / 1000).toFixed(1) + ' s' : '') + (wt ? ' · ' + wt : '');
+      const head = 'Soma' + (SET_ID !== 'soma' ? ' (' + SETS[SET_ID].name + ')' : '') + ' — ' + (F.mine ? 'your figure, ' + F.types.length + ' pieces, ' + F.types.map(t => NAMES[t]).join(' ') : F.name ? F.name + ', all seven' : 'level ' + lv + ', ' + F.types.length + ' pieces, ' + F.types.map(t => NAMES[t]).join(' ')) + (par ? ' · par ' + fmtT(par) : '') + (b ? ' · best ' + '★★★'.slice(0, b.s) + ' ' + (b.ms / 1000).toFixed(1) + ' s' : '') + (wt ? ' · ' + wt : '');
       if (!g) return head;
-      return head + (g.state === 'done' ? ' · filled' : ' · ' + g.placed.size + ' of ' + F.types.length + ' placed' + (g.cur ? ', ' + NAMES[F.types[g.cur.i]] + ' in hand' : ''));
+      return head + (g.state === 'done' ? (g.said ? ' · cannot be built: said so' : ' · filled') : ' · ' + g.placed.size + ' of ' + F.types.length + ' placed' + (g.cur ? ', ' + NAMES[F.types[g.cur.i]] + ' in hand' : ''));
     },
     statTiles(c, r){
       if (ED.on) return edTiles();
@@ -30406,6 +30514,7 @@ const SOMA_APP = (() => {
       if (!g || g.state !== 'play' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
       const out = g.F.types.map((t, i) => ({ glyph: NAMES[t], value: g.placed.has(i) ? 'placed' : g.cur && g.cur.i === i ? 'in hand' : 'tray', bg: g.cur && g.cur.i === i ? '#' + COLS[t].toString(16).padStart(6, '0') : null, dim: g.placed.has(i) }));
       out.push(...TILES.map(([glyph, value]) => ({ glyph, value })), { glyph: '▼', value: 'Down' }, { glyph: '▲', value: 'Up' }, { glyph: '✓', value: 'Place', bg: '#2f5e3a' });
+      if (canSay(g.F)) out.push({ glyph: '✗', value: "Can't build", bg: '#5e2f36' });
       return out;
     },
     statsStay(){ return ED.on || GAL.on || !!liveGame(); },
@@ -30440,6 +30549,7 @@ const SOMA_APP = (() => {
       else if (i === n + TILES.length) stepZ(g, -1);
       else if (i === n + TILES.length + 1) stepZ(g, 1);
       else if (i === n + TILES.length + 2) place(g);
+      else if (i === n + TILES.length + 3 && canSay(g.F)) declare(g);
       else return false;
       touched(); return true;
     },
@@ -30492,7 +30602,8 @@ const SOMA_APP = (() => {
       const t = sz / 5, cells = [[1, 1, 0], [2, 1, 0], [3, 1, 1], [1, 2, 4], [2, 2, 3], [3, 2, 3], [1, 3, 5], [2, 3, 6], [3, 3, 2]];
       for (const [x, y, k] of cells){ ctx.fillStyle = '#' + COLS[k].toString(16).padStart(6, '0'); ctx.fillRect(x * t + 1, y * t + 1, t - 2, t - 2); }
     },
-    _debug: { SETS, useSet, get SET_ID(){ return SET_ID; }, get MIRROR(){ return MIRROR; }, get FLAT(){ return FLAT; }, get PIECES_NOW(){ return PIECES; }, get NAMES_NOW(){ return NAMES; }, polycubes, snapNear, fitGlow, sqOf, SET, ED, GAL, get DEMO(){ return DEMO; }, MINE, SHARE, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edCount, edNeed, cellAtTap, cleanFig, takeFig, shareFig, forgetFig, figOfData, galOpen, galStep, galClose, galItems, showUnfound, demoEnd, figKey, builtAt,
+    _debug: { PICK_K, PICK_CAP, IMPOSSIBLE, quickWays, parFor, parOf, timeStars, makeImpossible, shownSol, declare, canSay, figSoon, SOONF, FIGS,
+              SETS, useSet, get SET_ID(){ return SET_ID; }, get MIRROR(){ return MIRROR; }, get FLAT(){ return FLAT; }, get PIECES_NOW(){ return PIECES; }, get NAMES_NOW(){ return NAMES; }, polycubes, snapNear, fitGlow, sqOf, SET, ED, GAL, get DEMO(){ return DEMO; }, MINE, SHARE, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edCount, edNeed, cellAtTap, cleanFig, takeFig, shareFig, forgetFig, figOfData, galOpen, galStep, galClose, galItems, showUnfound, demoEnd, figKey, builtAt,
               get COURSE(){ return COURSE; }, courseFigure, countGen, countAll, countSoon, canon, symsOf, WAYS, FOUND, waysText, bestKey, get PIECES(){ return PIECES; }, get ORI(){ return ORI; }, get LV(){ return LV; }, get NAMES(){ return NAMES; }, makeFigure, figureOf, solve, fresh, gameAt, takeUp, slide, turn, ask, opFor, stepZ, place, hint, fitsAt, curZ, shownOf, starsOf, itemsFor, viewOf,
               games: GAMES, BEST, boardIdx, levelOf: (c, r) => lvOf(c, r), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };

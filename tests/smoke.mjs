@@ -3259,7 +3259,8 @@ try {
       out.k = {};
       for (let lv = 1; lv <= 5; lv++){
         for (let k = 0; k < 12; k++){ const F = D.makeFigure(200 + k * 41, lv); const s = F && D.solve(F, new Map());
-          if (!F || !s || s.length !== F.types.length) out.bad.push([lv, k]); else if (F.fig.reduce((a, b) => a + b, 0) !== F.types.reduce((a, t) => a + D.PIECES[t].length, 0)) out.bad.push([lv, k, 'cells']); }
+          // (from level 3 a figure may be one that cannot be built: then the solver must find no way)
+          if (!F || (F.impossible ? s : (!s || s.length !== F.types.length))) out.bad.push([lv, k]); else if (F.fig.reduce((a, b) => a + b, 0) !== F.types.reduce((a, t) => a + D.PIECES[t].length, 0)) out.bad.push([lv, k, 'cells']); }
         out.k[lv] = D.LV[lv - 1].k;
       }
       out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r)).join();
@@ -3441,7 +3442,7 @@ try {
         const o = { n: D.PIECES.length, mirror: D.MIRROR.join(','), course: 0 };
         for (let i = 0; i < D.COURSE.length; i++){ const F = D.courseFigure(i); if (F && F.types.reduce((a, t) => a + D.PIECES[t].length, 0) === F.fig.reduce((a, b) => a + b, 0)) o.course++; else out.bad.push(id + ' course ' + i); }
         o.courses = D.COURSE.length;
-        for (let k = 0; k < 8; k++){ const F = D.makeFigure(400 + k * 53, 1 + k % 5); if (!F || !D.solve(F, new Map())) out.bad.push(id + ' gen ' + k); }
+        for (let k = 0; k < 8; k++){ const F = D.makeFigure(400 + k * 53, 1 + k % 5); if (!F || !D.solve(F, new Map()) !== !!F.impossible) out.bad.push(id + ' gen ' + k); }
         o.key = D.figKey(D.makeFigure(400, 2));
         out.sets[id] = o;
       }
@@ -3495,6 +3496,57 @@ try {
     const ok2 = !!fc && real.twist && real.snap && real.glow;
     if (!ok2) failures.push('[soma hands] ' + JSON.stringify({ fc, real }));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma hands: a real two-finger twist turns the piece and not the view, a real drag to a column it does not fit ends where it does, the glow on and off`);
+  }
+  // SOMA: DIFFICULTY FROM THE COUNT, AND CAN IT BE BUILT? (Oct 23: "whats next for soma", then "2,1"): the figure kept is the one
+  // with the fewest ways of several (level 4's ways fewer on average than one made alone), its par from its pieces and ways, stars
+  // for time; from level 3 some figures cannot be built, proved by the solver trying every way, a piece short of buildable; boards
+  // no one plays stop a piece short from level 3; the title keeps the count back; then real input: the real N on a figure that
+  // cannot be built takes it, and a real click on the row's ✗ on one that can costs a hint.
+  {
+    current = 'soma difficulty and can it be built';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      const avg = K => { const keep = D.PICK_K.slice(); D.PICK_K[3] = K; let s = 0, n = 0; for (let k = 0; k < 12; k++){ const F = D.makeFigure(5000 + k * 71, 4); if (!F.impossible){ s += F.waysExact ? F.waysN : 1000; n++; } } D.PICK_K.splice(0, 5, ...keep); return s / n; };
+      out.one = avg(1); out.four = avg(4);
+      out.par = [D.parFor(7, 1), D.parFor(7, 200), D.parFor(3, 2)];
+      out.stars = [D.timeStars(30000, 60), D.timeStars(90000, 60), D.timeStars(200000, 60)].join();
+      // a board that cannot be built, and one at its level that can
+      let imp = null, ok = null;
+      for (let c = 40; c < 140 && !(imp && ok); c++){ const lv = D.levelOf(c, 3); if (lv < 3) continue; const F = D.figureOf(c, 3); if (F.impossible && !imp) imp = [c, 3]; else if (!F.impossible && !ok && D.canSay(F)) ok = [c, 3]; }
+      out.imp = imp; out.ok = ok;
+      if (imp){ const F = D.figureOf(...imp), info = {}, s = D.solve(F, new Map(), 5e6, info), part = D.shownSol(F);
+        const used = new Set(); let clash = false;
+        for (const q of part) for (const c of D.ORI[F.types[q.i]].list[q.o].map(([a, b, z]) => [q.x + a, q.y + b, q.z + z])){ const i = (c[2] * F.B[1] + c[1]) * F.B[0] + c[0]; if (!F.fig[i] || used.has(i)) clash = true; used.add(i); }
+        out.proof = !s && !info.capped; out.part = part.length === F.types.length - 1 && !clash;
+        let most = 0; for (let t = 0; t < 40; t += 0.2) most = Math.max(most, D.shownOf(F, imp[0], imp[1], t).placed.size);
+        out.shown = most === F.types.length - 1;
+        out.title = window.getFieldApp().cellTitle(...imp); }
+      return out;
+    });
+    const ok1 = r.four < r.one && r.par[0] > r.par[1] && r.par[1] > r.par[2] && r.stars === '3,2,1' && r.imp && r.ok && r.proof && r.part && r.shown && !/ways/.test(r.title);
+    if (!ok1) failures.push('[soma difficulty] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} soma difficulty: level 4's ways ${r.one && r.one.toFixed(0)} made alone, ${r.four && r.four.toFixed(0)} the fewest of four; pars ${r.par && r.par.join('/')} s; a figure that cannot be built proved so, shown a piece short, its count kept back`);
+    const real = {};
+    if (r.imp && r.ok){
+      for (const [key, at] of [['imp', r.imp], ['ok', r.ok]]){
+        await page.evaluate(([c, rr]) => window.getFieldApp()._debug.fly(c, rr), at);
+        await page.waitForTimeout(3000);
+        await page.evaluate(([c, rr]) => window.getFieldApp().onReset(c, rr), at);
+        await page.waitForTimeout(400);
+        if (key === 'imp'){ await page.keyboard.press('n'); await page.waitForTimeout(400); }
+        else {
+          const tiles = await page.evaluate(([c, rr]) => window.getFieldApp().statTiles(c, rr).length, at);
+          const t = await page.evaluate(n => { const el = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + (n - 1) && t.style.display !== 'none'); if (!el) return null; const b = el.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, tiles);
+          if (t){ await page.mouse.click(t[0], t[1]); await page.waitForTimeout(400); }
+        }
+        real[key] = await page.evaluate(([c, rr]) => { const A = window.getFieldApp(), g = A._debug.games.get(c + '_' + rr); return g && { st: g.state, said: !!g.said, hints: g.hints, title: A.cellTitle(c, rr) }; }, at);
+      }
+    }
+    const ok2 = real.imp && real.imp.st === 'done' && real.imp.said && real.ok && real.ok.st === 'play' && real.ok.hints === 1;
+    if (!ok2) failures.push('[soma can it be built] ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma can it be built: the real N on one that cannot be built takes it, a real click on ✗ on one that can costs a hint`);
   }
   // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
   // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt

@@ -989,6 +989,24 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     every `TWIST_STEP` (45°) past the field's dead stretch, clockwise with the fingers, and the view stays put (a field hook: an
     app's `twistTurns()` takes the twist, `onTwist(±1)`, + clockwise; `pinchSpin`); and every empty cell any place of the piece,
     turned as it is, would cover glows in its colour (`fitGlow`, `smFit`; the menu's Show where it fits, localStorage `soma.fits`).
+  - **Difficulty from the count** (Oct 23: "whats next for soma", then "2,1", the first "a figure with few ways is hard"):
+    measured, the ways grow with the pieces (Soma about 2, 9, 30, 200 and 300+ at levels 1–5) and spread widely within a level, so
+    a level keeps its pieces and its figure is the one with the fewest ways of `PICK_K` made (1 at level 1 to 5 at level 5;
+    `oneFigure` makes one), each counted for at most `PICK_CAP` slices (200,000 steps; `quickWays`: a count cut short counts as
+    more than any finished, and of those the fewer found the harder). Soma's level 4 went from about 765 ways made alone to 369.
+    The figure keeps `waysN`, `waysExact` and its par (`parFor`: 6 s a piece × (1 + 3 / log2(2 + ways)); the course and your own
+    figures get theirs once counted, `parOf`), shown in the title; stars are the fewer of the hints' and the time's (`timeStars`:
+    within par 3, twice par 2). Making a level-5 figure takes about 100 ms (up to half a second), so a board only looked at from
+    level 3 gets its figure a few at a time (`figSoon`, `SOONF`, `soonPump`: the one asked for latest first, 10 ms a turn,
+    dropped if not asked for in 2 s) and shows its bare floor till then; the framed or played board is made at once.
+  - **Can it be built?** (the second): from level 3 a generated figure is, by its board's draw (`IMPOSSIBLE`: 15%, 20%, 25% at
+    levels 3–5), one with no filling: a buildable one with one cube moved to an empty cell beside it (`makeImpossible`,
+    `IMP_TRIES` 10), kept only when the solver tried every way and found none within `IMP_BUDGET` steps (not when it ran out;
+    `moved` keeps the cube's two places). Its `sol` is the buildable one's less the piece that held the cube, last, so a board no
+    one plays builds it as far as any: from level 3 every generated board's show stops a piece short (`shownSol`), and the
+    title keeps the count of ways back until the board is through (`canSay`). ✗ Can't build in the row, the menu's It can't be
+    built or N says so (`declare`): right, the board is through (stars by hints and time, `g.said`); wrong, it costs a hint. A
+    hint or Show me a way on one says there is no way, and counts as a hint.
   - The smoke test checks the orientations (12, 24, 12, 12, 8, 12, 12), the cube on the corner, 60 figures filled by the solver,
     the levels by ring, a board no one plays building, and real input: the real arrow and E, the real H and Enter placing, a real
     click taking a piece back, the figure finished with a best kept, and a real click going on; and the course: all sixteen filled,
@@ -998,7 +1016,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     gallery stepped by the real ▶ tile, a way not found built and given back by a real click); and the sets (7, 8, 12 and 29
     pieces, 8 tetracubes and 29 pentacubes grown again, the mirrors paired, every course and generated figure filled, the keys
     apart) and the hands (a real drag to a column the piece does not fit ending where it does, a real two-finger twist turning the
-    piece and not the view, the glow on and off).
+    piece and not the view, the glow on and off); and the difficulty (level 4's ways fewer as the fewest of four than made alone,
+    the pars, stars for time, a figure that cannot be built proved so, shown a piece short, its count kept back) with real input
+    (the real N on one that cannot be built taking it, a real click on ✗ on one that can costing a hint).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
