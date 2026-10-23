@@ -4054,6 +4054,34 @@ try {
     if (!ok) failures.push(`[trickshots editor] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} your own trick shot (the real ✎ opened the editor, real clicks laid a ball and marked it, Check found a shot with par ${out.found && out.found.par} (${out.found && out.found.w}°), Done kept it and its shot solved it, a shared copy went onto another board, a ringed ball was refused)`);
   }
+  // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
+  // display should toggle the visiblibility of the bottom panel."): in trick shots, whose play row stays up while a table is played,
+  // a real click on the dots shuts it and it stays shut; a real long press on the table opens it and another shuts it; and in
+  // Simon a long press toggles the row instead of starting the board again.
+  {
+    const before = failures.length, out = {};
+    const shown = () => page.evaluate(() => { const b = document.body; return !b.classList.contains('bb-collapsed'); });
+    const hold = async () => { const p = await page.evaluate(() => ({ x: innerWidth * 0.45, y: innerHeight * 0.4 })); await page.mouse.move(p.x, p.y); await page.mouse.down();
+      await page.waitForTimeout(1400); await page.mouse.up(); await page.waitForTimeout(900); };
+    try {
+      await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); const D = A._debug, [c, r] = D.cellOfIdx(1); D.GAMES.clear(); D.fly(c, r); D.LIVE = { c, r }; D.gameAt(c, r); });
+      await page.waitForTimeout(3000);
+      if (!(await shown())){ await page.click('#bbHandle'); await page.waitForTimeout(800); }
+      out.up = await shown();
+      await page.click('#bbHandle'); await page.waitForTimeout(1500);
+      out.shut = !(await shown());
+      await hold(); out.heldOpen = await shown();
+      await hold(); out.heldShut = !(await shown());
+      await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'simon'); window.setFieldApp(A); });
+      await page.waitForTimeout(2500);
+      // (Simon's row is empty, so it is drawn shut either way: the field's own switch is read)
+      const vis = () => page.evaluate(() => window.tvf.bottomRow.visible);
+      const s0 = await vis(); await hold(); out.simon = { before: s0, after: await vis() };
+    } catch (e) { out.err = String(e); }
+    const ok = !out.err && out.up && out.shut && out.heldOpen && out.heldShut && out.simon && out.simon.before !== out.simon.after;
+    if (!ok) failures.push(`[bottom row] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} the dots shut trick shots' row and it stayed shut; a real long press opened it and another shut it; in Simon a hold toggled the row`);
+  }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
   // the view comes to the default framing, the one the 0 key gives, even when the game in play keeps quick taps for itself

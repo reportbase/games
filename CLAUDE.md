@@ -1473,6 +1473,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     sums run backwards from where the eye stands), not from the board selected before a pan; while the view is where its framing
     put it, or still flying there, from the selected board as before. Games that use Enter themselves (the arcade games, golf's
     putt, Simon's start) keep it; Tab always steps. The smoke test slides the view two boards along in the gallery and checkers.
+- **The dots shut the row, and a hold toggles it** (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
+  display should toggle the visiblibility of the bottom panel."):
+  - A row an app holds up while you play (`statsStay`: trick shots, the tanks, golf tanks) was put straight back after the dots
+    shut it (`bbStatTick`). A row shut by hand (`bbOverride` false) now stays shut; every opening, an editor's too, sets it true.
+  - A long press and let go toggles the row in every game. An app's own hold (`onCellHold`) is asked only where it is a move in
+    play (`holdIsMove`: Minesweeper's flag, Pipes' and Loops' turn back, Nonograms' cross, Sokoban's undo, Air raid's bomb), and
+    so is a right click. Elsewhere a hold used to start the board again, and the notes above that say "a hold starts it again"
+    are out of date: the menu's Reset does that.
+  - The smoke test clicks the real dots in trick shots and wants the row to stay shut, long-presses the table twice and wants it
+    open, then shut, and wants a hold in Simon to flip the field's switch (`window.tvf.bottomRow.visible`).
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under

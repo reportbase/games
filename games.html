@@ -3921,7 +3921,7 @@ function turnStart(x, y){
     turn.appPan = false;
     try {
       const _a = window.getFieldApp && window.getFieldApp();
-      if (_a && _a.onCellHold) turn.holdAt = _framedUV(turn.anchorX, turn.anchorY);
+      if (_a && _a.onCellHold && _a.holdIsMove) turn.holdAt = _framedUV(turn.anchorX, turn.anchorY);
     } catch {}
     turn.longPressed = true;
     if (_hooks.onLongPress) _hooks.onLongPress();
@@ -4086,10 +4086,14 @@ function turnEnd(e){
       /* (Oct 8, an hour later: "remove the long press to select board" — a hold and let go on another board went to it for
          a while; it is back to the one job below, the first tap selecting instead, see firstTapPlays.) */
       // Hold and let go: the app's hold if it wants it, the drawer if not.
+      /* THE HOLD IS THE DRAWER'S (Oct 23: "long press the display should toggle the visiblibility of the bottom panel."): an
+         app's own hold is asked only where it is a move in play (`holdIsMove`: Minesweeper's flag, the pipe games' turn back,
+         Nonograms' cross, Sokoban's undo, Air raid's bomb); elsewhere a hold started the board again, which the menu's Reset
+         does, and the drawer stayed where it was. */
       let _took = false;
       try {
         const _a = window.getFieldApp && window.getFieldApp(), _b = turn.holdAt;
-        if (_b && _a && _a.onCellHold) _took = !!_a.onCellHold(_b.c, _b.r, _b.u, _b.v);
+        if (_b && _a && _a.onCellHold && _a.holdIsMove) _took = !!_a.onCellHold(_b.c, _b.r, _b.u, _b.v);
       } catch {}
       if (!_took){ try { toggleBoardBrowser(); } catch {} }
     }
@@ -4777,7 +4781,7 @@ function mountControls(opts){
   _canvas.addEventListener('contextmenu', e => {
     try {
       const a = window.getFieldApp && window.getFieldApp();
-      const b = a && a.onCellHold ? _framedUV(e.clientX, e.clientY) : null;
+      const b = a && a.onCellHold && a.holdIsMove ? _framedUV(e.clientX, e.clientY) : null;   // (a move's hold only, as the long press: Oct 23)
       if (b && a.onCellHold(b.c, b.r, b.u, b.v)) e.preventDefault();
     } catch {}
   });
@@ -13737,8 +13741,10 @@ function bbStatTick(){
      there are statistics to show). Only on that arrival: shut by hand, it stays shut while you play. */
   const had = _bbStatHad; _bbStatHad = !!L;
   if (L && !had){ toggleBoardBrowser(true); return; }
-  // a row the app needs up (the hole editor's tools) is put back up whatever shut it
-  try { if (L && !bbVisible && a.statsStay && a.statsStay()){ toggleBoardBrowser(true); return; } } catch {}
+  // a row the app needs up (the hole editor's tools) is put back up whatever shut it, but not one shut by hand (Oct 23: "I can't
+  // close the bottom panel by tapping the dots."): trick shots, the tanks and golf tanks hold their play row up with statsStay, so
+  // the dots shut it and this put it straight back. A hand's choice is bbOverride false; every opening, an editor's too, sets it.
+  try { if (L && !bbVisible && bbOverride !== false && a.statsStay && a.statsStay()){ toggleBoardBrowser(true); return; } } catch {}
   if (sig !== _bbStatSig){ rebuildBoardBrowser(); return; }
   if (!L) return;
   const S = bbIcoSize();
@@ -29518,6 +29524,7 @@ const BOMBER_APP = (() => {
       else walkTo(g, rr, cc);
       return true;
     },
+    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
     onCellHold(c, r){
       const g = liveGame();
       if (!g || LIVE.key !== gkey(c, r)) return false;
@@ -41936,6 +41943,7 @@ const MINES_APP = (() => {
     /* HOLD TO FLAG — the field offers the long press to the app first. Only
        a covered square in a game under way; anywhere else the hold keeps its
        usual job (tilt and turn). */
+    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
     onCellHold(c, r, u, v){
       const g = GAMES.get(gkey(c, r));
       if (!g || g.state !== 'play') return false;
@@ -42449,6 +42457,7 @@ const PIPES_APP = (() => {
       return true;
     },
     // Hold (or right-click) turns a tile back.
+    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
     onCellHold(c, r, u, v){
       const p = GAMES.get(gkey(c, r));
       if (!p || p.solved) return false;
@@ -42673,6 +42682,7 @@ const LOOPS_APP = (() => {
       return true;
     },
     // Hold (or right-click) turns a tile back.
+    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
     onCellHold(c, r, u, v){
       const p = GAMES.get(gkey(c, r));
       if (!p || p.solved) return false;
@@ -45538,6 +45548,7 @@ const SOKOBAN_APP = (() => {
       return true;
     },
     // Hold (or right-click): take back a step.
+    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
     onCellHold(c, r){
       if (ED.on) return true;
       const g = GAMES.get(gkey(c, r));
@@ -47462,6 +47473,7 @@ const NONOGRAM_APP = (() => {
       act(g, i);
       return true;
     },
+    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
     onCellHold(c, r, u, v){
       const g = GAMES.get(gkey(c, r));
       if (g && g.state === 'solved'){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; say('This board blank again.', 1200); return true; }
@@ -58047,7 +58059,7 @@ window.tvf = {
      see is dzMax — compare it against the depth the camera asked for. */
   /* Horizon tunable, live: the floor below which a row is not drawn at all. */
   // the bottom row's place and coast, for the smoke test (Oct 17: the coast is physics)
-  get bottomRow(){ return { angle: bbAngle, n: bbKeys.length, vel: bbMomentum.vel, coasting: !!bbMomentum.raf, itemW: BB_ITEM_W,
+  get bottomRow(){ return { visible: bbVisible, angle: bbAngle, n: bbKeys.length, vel: bbMomentum.vel, coasting: !!bbMomentum.raf, itemW: BB_ITEM_W,
                             px: angle => angle * bbKeys.length * BB_ITEM_W / Math.PI }; },
   get horizon(){ return { rowMinBp: ROW_MIN_BP, wholeBoards: _wholeN, maxWhole: MAXW }; },
   setRowMinBp(v){ ROW_MIN_BP = v; },
