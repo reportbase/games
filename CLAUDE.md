@@ -889,9 +889,31 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     by the bot (`plan`: every orientation at every place, dropped, the stack scored by layers, height, holes and bumps; then turned
     along the shortest way through the orientations, `pathTo`, and slid there). Over a reel it clears 64, 32, 19, 20 and 7 layers by
     level. Taking a board carries on from what it showed (`adopt`).
+  - **Every board its own puzzle** (Oct 23: "whats next for 3d tetris", then "1,2"; the menu's Mode, puzzles by default,
+    localStorage `blockout.mode`; Endless is the game above): a pit part-filled, and the pieces to clear it with.
+    - Dealt backwards (`makePuzzle(idx, lv)`, seeded by the board's number, `puzzleOf` keeps 1,500): L full layers, then k pieces
+      carved out one at a time, each open from above (nothing over its cubes but its own) and resting where it was (dropped from
+      the top it stops there), every layer keeping a gap. The carved pieces in the other order each drop into their hole, the last
+      filling the last layer; checked as the game plays (`playSeq`, layers clearing as they fill, `clearFull`).
+    - `PZ` by level: 1 layer and 2 pieces, then 2 and 3, 2 and 4, 3 and 5, 3 and 7, with 2, 2, 1, 1 and 1 spare pieces drawn from
+      the level's set after them. The pieces come in that order (the next one shown); they fall slowly (`PZ_FALL` 2.5 s a layer,
+      `PZ_LOCK` 1.2 s).
+    - Cleared (the L layers gone): stars by the pieces used against par k (`starsOf`: par 3, one more 2, else 1), the fewest kept
+      (`blockout.best`, keys starting `p`); a tap goes on to the next board (golf's `nextBoard`). Out of pieces or overflowed, it is
+      over; a tap tries again.
+    - A board no one plays (`shownPuzzle`, from the clock alone) shows the dealt stack, each piece of the solution coming down into
+      its hole already turned, the layers flashing, the empty pit, and round again.
+    - Measured on 40 boards a level: every one dealt and cleared by its own pieces, 0.1–0.3 ms to deal (0.8 at most).
+  - **See-through** (the same request's second: "in a 5×5 pit the higher layers hide the holes underneath"; the menu's
+    See-through, V, the row's See tile, on by default, `blockout.glass`): on the board being played a cube at or above the bottom
+    of where the piece will land, or over a hole in its column, is glass (`bkGlass`, a third opaque), and each hole (an empty cell
+    with a cube above it) is marked by a small red cube (`bkHole`).
   - The smoke test checks the orientations, tip and roll moving a tripod's arms where the screen says, a layer cleared, the pit by
     ring, the bot clearing at every level, a turn drawn turned, and real input: a click starting, the real arrow, Q and Enter, a
-    click on the floor spinning and on the piece dropping, a drag sliding, the row's Tip tile, a board no one plays moving.
+    click on the floor spinning and on the piece dropping, a drag sliding, the row's Tip tile, a board no one plays moving (in Endless); and the puzzles: 100 dealt, each
+    cleared by its own pieces and the same twice, par by level, out of pieces over, a board no one plays solving its own, glass and
+    holes on and off, and real input: a click starting one, its own pieces by the real Enter clearing it in par with a best, the
+    real V and See tile, a real click on a cleared board going on.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
