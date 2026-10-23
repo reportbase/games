@@ -3067,7 +3067,8 @@ try {
   // the row's Tip tile, a turn drawn on its way (cubes with `rot`), and a board no one plays moving.
   {
     current = 'blockout';
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'blockout')));
+    // (the endless game, as it was: the puzzles are checked after)
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'blockout'); window.setFieldApp(A); A._debug.setMode('endless'); });
     await page.waitForTimeout(1500);
     const r = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {};
@@ -3152,6 +3153,209 @@ try {
     const ok2 = !!fc && real.start && real.start.st === 'play' && real.slid && real.turned && real.dropped && real.spun && real.clickDrop && real.dragged && real.tile && real.idle;
     if (!ok2) failures.push('[blockout] real input: ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} blockout: a real click starts, the real arrow, Q and Enter slide, turn and drop, real clicks spin and drop, a real drag slides, the real Tip tile tips, a board no one plays moves`);
+  }
+  // 3D TETRIS PUZZLES AND THE SEE-THROUGH STACK (Oct 23: "1,2" of what came next): every board its own pit, part-filled, and
+  // the pieces to clear it with, dealt backwards so its own pieces always clear it; the same puzzle each time; par by level;
+  // played with its own pieces through the real Enter it is cleared in par with three stars and a best, and a real click then
+  // goes on to the next board; a puzzle run out of pieces is over; a board no one plays shows its pieces coming down and the
+  // pit emptied; see-through: glass over the landing and over a hole, the hole marked, nothing of it with it off, and the
+  // row's real See tile and the real V switching it.
+  {
+    current = 'blockout puzzles';
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'blockout'); window.setFieldApp(A); A._debug.setMode('puzzle'); });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = { bad: [], par: {} };
+      for (let lv = 1; lv <= 5; lv++){
+        const pars = [];
+        for (let k = 0; k < 20; k++){
+          const Z = D.makePuzzle(700 + k * 53, lv), Z2 = D.makePuzzle(700 + k * 53, lv);
+          if (!Z){ out.bad.push([lv, k, 'none']); continue; }
+          if (JSON.stringify([...Z.grid, Z.seq]) !== JSON.stringify([...Z2.grid, Z2.seq])) out.bad.push([lv, k, 'differs']);
+          // every layer has a gap, and the solution clears every layer, nothing left
+          const P2 = Z.P * Z.P; for (let z = 0; z < Z.L; z++){ let n = 0; for (let i = 0; i < P2; i++) n += Z.grid[z * P2 + i]; if (n === P2) out.bad.push([lv, k, 'full layer']); }
+          const run = D.playSeq({ P: Z.P, H: Z.H, grid: Z.grid.slice() }, Z.seq);
+          if (!run || run.layers !== Z.L || run.grid.some(v => v)) out.bad.push([lv, k, 'unsolved']);
+          pars.push(Z.par);
+        }
+        out.par[lv] = pars.reduce((a, b) => a + b, 0) / pars.length;
+      }
+      out.stars = [D.starsOf(4, 4), D.starsOf(5, 4), D.starsOf(6, 4)].join();
+      // out of pieces: every piece dropped in the corner
+      const g = D.puzzleGame(5, 2, D.levelOf(5, 2)); g.state = 'play';
+      for (let k = 0; k < 20 && g.state === 'play'; k++) D.hardDrop(g);
+      out.outOf = g.state;
+      // a board no one plays: pieces coming down, the pit emptied at the end
+      const Z = D.puzzleOf(3, 9), T = 1.2 + Z.seq.length * 1.5 + 1.6, seen = new Set(), ph = (D.boardIdx(3, 9) * 0.6180339887 % 1) * T;
+      let empty = false, falling = false;
+      for (let t = 0; t < T; t += 0.1){ const s = D.shownPuzzle(Z, 3, 9, t - ph + 100 * T); seen.add(s.grid.reduce((a, b) => a + b, 0)); if (!s.grid.some(v => v)) empty = true; if (s.cur && s.cur.fz < Z.H) falling = true; }
+      out.demo = { states: seen.size, empty, falling, n: Z.seq.length };
+      // see-through: a floor with a hole in its middle, covered from above
+      const h = D.newGame(3); h.state = 'play';
+      for (let i = 0; i < 25; i++) h.grid[i] = 1; h.grid[12] = 0; h.grid[25 + 12] = 1;
+      h.cur = { t: 'O4', o: 0, x: 0, y: 0, z: 5, fx: 0, fy: 0, fz: 5 };
+      const kinds = () => D.itemsOf(D.snap(h), h).reduce((m, i) => (m[i.kind] = (m[i.kind] || 0) + 1, m), {});
+      const was = D.SET.glass; D.SET.glass = true; out.on = kinds(); D.SET.glass = false; out.off = kinds(); D.SET.glass = was;
+      return out;
+    });
+    const ok1 = !r.bad.length && r.par[1] < r.par[3] && r.par[3] < r.par[5] && r.stars === '3,2,1' && r.outOf === 'over'
+      && r.demo.states >= r.demo.n && r.demo.empty && r.demo.falling && r.on.bkHole === 1 && r.on.bkGlass >= 1 && !r.off.bkHole && !r.off.bkGlass;
+    if (!ok1) failures.push('[blockout puzzles] rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} blockout puzzles: 100 dealt, each cleared by its own pieces and the same twice, par ${[1, 2, 3, 4, 5].map(l => r.par[l]).join('/')} by level, out of pieces over, a board no one plays solving its own, see-through glass and holes`);
+    // real input: a puzzle board solved with its own pieces by the real Enter, then a real click on it goes on
+    await page.evaluate(() => window.getFieldApp()._debug.fly(4, 2));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+      const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; });
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(500);
+      const st = () => page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); return g ? { st: g.state, used: g.used, par: g.puz && g.puz.par, layers: g.layers, live: D.LIVE } : null; }, fc);
+      real.start = await st();
+      // each piece turned and placed as its solution has it (the turning is checked above), then dropped by the real Enter
+      for (let k = 0; k < 12; k++){
+        const more = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); if (!g || g.state !== 'play' || !g.cur) return false;
+          const q = g.puz.seq[g.used]; Object.assign(g.cur, { o: q.o, x: q.x, y: q.y, z: g.H }); return true; }, fc);
+        if (!more) break;
+        await page.keyboard.press('Enter'); await page.waitForTimeout(250);
+      }
+      real.end = await st();
+      const best = await page.evaluate(() => JSON.parse(localStorage.getItem('blockout.best') || '{}'));
+      real.best = Object.keys(best).some(k => k.startsWith('p'));
+      // see-through by the real V and the row's real See tile (while a game is played: start the board again)
+      await page.evaluate(([c, r]) => { const A = window.getFieldApp(); A.onReset(c, r); A._debug.start(A._debug.games.get(c + '_' + r)); }, fc);
+      await page.waitForTimeout(400);
+      const g0 = await page.evaluate(() => window.getFieldApp()._debug.SET.glass);
+      await page.keyboard.press('v'); await page.waitForTimeout(200);
+      const g1 = await page.evaluate(() => window.getFieldApp()._debug.SET.glass);
+      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_7' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(300); }
+      const g2 = await page.evaluate(() => window.getFieldApp()._debug.SET.glass);
+      real.glass = [g0, g1, g2];
+      // and a solved board, tapped, goes on to the next board
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); g.state = 'done'; g.cur = null; }, fc);
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(800);
+      real.next = await page.evaluate(() => window.getFieldApp()._debug.LIVE);
+    }
+    const ok2 = !!fc && real.start && real.start.st === 'play' && real.end && real.end.st === 'done' && real.end.used === real.end.par && real.best
+      && real.glass[1] === !real.glass[0] && real.glass[2] === real.glass[0] && real.next && real.next.c !== fc[0];
+    if (!ok2) failures.push('[blockout puzzles] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} blockout puzzles: a real click starts one, its own pieces by the real Enter clear it in par with a best kept, the real V and See tile switch see-through, a real click on it cleared goes on`);
+  }
+  // SOMA (Oct 23: "Soma or burr puzzles"): the seven pieces' orientations, the corner's board the cube and the solver filling it,
+  // every board's own figure filled by the solver at every level, more pieces farther out, and a board no one plays building
+  // its figure; then real input: the real arrow and E moving and turning the piece in hand, the real H putting the next piece
+  // of a way where it goes and the real Enter placing it, a real click on a placed piece taking it back, the figure finished by
+  // real H and Enter with stars and a best kept, and a real click on it then going on to the next board.
+  {
+    current = 'soma';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { bad: [] };
+      out.ori = D.ORI.map(o => o.list.length).join();
+      const C = D.makeFigure(0, 5); out.cube = !!(C.cube && C.sol && C.sol.length === 7 && C.fig.length === 27);
+      out.k = {};
+      for (let lv = 1; lv <= 5; lv++){
+        for (let k = 0; k < 12; k++){ const F = D.makeFigure(200 + k * 41, lv); const s = F && D.solve(F, new Map());
+          if (!F || !s || s.length !== F.types.length) out.bad.push([lv, k]); else if (F.fig.reduce((a, b) => a + b, 0) !== F.types.reduce((a, t) => a + D.PIECES[t].length, 0)) out.bad.push([lv, k, 'cells']); }
+        out.k[lv] = D.LV[lv - 1].k;
+      }
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r)).join();
+      const F = D.figureOf(3, 9), A = D.shownOf(F, 3, 9, 0), seen = new Set();
+      for (let t = 0; t < 30; t += 0.25){ const V = D.shownOf(F, 3, 9, t); seen.add(V.placed.size + (V.falling ? 0.5 : 0)); }
+      out.demo = seen.size;
+      out.stars = [D.starsOf(0), D.starsOf(1), D.starsOf(3)].join();
+      return out;
+    });
+    const ok1 = r.ori === '12,24,12,12,8,12,12' && r.cube && !r.bad.length && r.levels === '5,3,5,5' && r.demo >= 4 && r.stars === '3,2,1' && r.k[1] < r.k[5];
+    if (!ok1) failures.push('[soma] rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} soma: orientations ${r.ori}, the cube on the corner filled, 60 figures filled by the solver, a board no one plays building its own`);
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 2));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+      const rd = () => page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); return g ? { st: g.state, placed: g.placed.size, cur: g.cur && [g.cur.i, g.cur.o, g.cur.x, g.cur.y], turns: g.turns, hints: g.hints, live: D.LIVE } : null; }, fc);
+      const s0 = await rd();
+      await page.keyboard.press('ArrowRight'); await page.waitForTimeout(150);
+      let s1 = await rd(); if (s1.cur[2] === s0.cur[2]){ await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(150); s1 = await rd(); }
+      real.slid = s1.cur[2] !== s0.cur[2];
+      await page.keyboard.press('e'); await page.waitForTimeout(150);
+      const s2 = await rd(); real.turned = s2.turns > s1.turns;
+      await page.keyboard.press('h'); await page.waitForTimeout(150);
+      await page.keyboard.press('Enter'); await page.waitForTimeout(200);
+      const s3 = await rd(); real.placed = s3.placed === 1 && s3.hints === 1;
+      // a real click on the top of the placed piece takes it back
+      const pt = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r), W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
+        const [i, p] = [...g.placed][0], q = D.ORI[g.F.types[i]].list[p.o].map(([a, b, z]) => [p.x + a, p.y + b, p.z + z]).sort((a, b) => b[2] - a[2])[0];
+        const SQ = 0.14, u0 = 0.5 - g.F.B[0] * SQ / 2, v0 = 0.5 - g.F.B[1] * SQ / 2;
+        const v = new W.THREE.Vector3(T.boardX + (0.5 - (u0 + (q[0] + 0.5) * SQ)) * bW, 0.02 + (q[2] + 1) * SQ * bW, T.boardZ + (0.5 - (v0 + (q[1] + 0.5) * SQ)) * bW).project(W.camera);
+        return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; }, fc);
+      await page.mouse.click(pt[0], pt[1]); await page.waitForTimeout(400);
+      const s4 = await rd(); real.takenBack = s4.placed === 0 && !!s4.cur;
+      for (let k = 0; k < 12; k++){ const s = await rd(); if (!s || s.st !== 'play') break; await page.keyboard.press('h'); await page.waitForTimeout(120); await page.keyboard.press('Enter'); await page.waitForTimeout(180); }
+      const s5 = await rd(); real.done = s5.st === 'done';
+      real.best = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('soma.best') || '{}')).length > 0);
+      const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; });
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(800);
+      real.next = await page.evaluate(() => window.getFieldApp()._debug.LIVE);
+    }
+    const ok2 = !!fc && real.slid && real.turned && real.placed && real.takenBack && real.done && real.best && real.next && real.next.c !== fc[0];
+    if (!ok2) failures.push('[soma] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma: the real arrow and E move and turn it, H and Enter place, a real click takes a piece back, filled with stars and a best, a real click goes on`);
+  }
+  // SOMA'S COURSE AND ITS WAYS (Oct 23: "1,2" of what came next: the famous figures on the boards nearest the corner, and the
+  // ways each can be filled counted): every one of the sixteen filled by the solver, all seven pieces, on boards 0–15; the
+  // cube's ways counted to 240 (of 11,520 fillings) and a figure with no symmetry counting each filling once; then a course
+  // board filled by the real H and Enter says a new way and its count, and filled again the same way says it was found.
+  {
+    current = 'soma course';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      out.course = D.COURSE.map((c, i) => { const F = D.courseFigure(i); return !!(F && F.types.length === 7 && F.fig.reduce((a, b) => a + b, 0) === 27 && D.solve(F, new Map())); });
+      out.names = D.COURSE.map((c, i) => D.makeFigure(i, 5).name === c[0]).every(Boolean);
+      const cube = D.countAll(D.courseFigure(0)); out.cube = [cube.n, cube.raw, cube.done];
+      const tower = D.courseFigure(7), t = D.countAll(tower); out.tower = [D.symsOf(tower).length, t.n, t.raw];
+      return out;
+    });
+    const ok1 = r.course.length === 16 && r.course.every(Boolean) && r.names && r.cube.join() === '240,11520,true' && r.tower[0] === 1 && r.tower[1] === r.tower[2] && r.tower[1] > 0;
+    if (!ok1) failures.push('[soma course] rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} soma course: 16 figures of all seven filled, the cube's ${r.cube[0]} ways of ${r.cube[1]} fillings, a figure with no symmetry counted filling by filling`);
+    // a course board (the steps: board 2 is (1, 0)): filled by the real H and Enter, a new way; again the same way, found before
+    await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      const fill = async () => {
+        await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+        for (let k = 0; k < 12; k++){ const st = await page.evaluate(([c, r]) => { const g = window.getFieldApp()._debug.games.get(c + '_' + r); return g && g.state; }, fc); if (st !== 'play') break;
+          await page.keyboard.press('h'); await page.waitForTimeout(100); await page.keyboard.press('Enter'); await page.waitForTimeout(150); }
+        return page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.games.get(c + '_' + r); return { st: g.state, newWay: g.newWay, name: g.F.name, title: A.cellTitle(c, r) }; }, fc);
+      };
+      await page.waitForFunction(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); const W = g && D.WAYS.get(g.F.idx + '@' + g.F.lv); return W && W.done; }, fc, { timeout: 30000 }).catch(() => {});
+      real.first = await fill();
+      real.again = await fill();
+    }
+    const ok2 = !!fc && real.first && real.first.st === 'done' && real.first.newWay === true && real.first.name === 'the steps' || false;
+    const ok3 = ok2 && real.again.st === 'done' && real.again.newWay === false && /1 of \d+ ways/.test(real.again.title);
+    if (!ok3) failures.push('[soma course] real input: ' + JSON.stringify({ fc, real }));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} soma course: a course board filled by the real H and Enter is a new way, and the same way again is found before (${real.again && real.again.title})`);
+  }
+  // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
+  // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt
+  {
+    current = 'tilt put back';
+    const tilt = async id => { await page.evaluate(id => window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)), id); await page.waitForTimeout(1500); return page.evaluate(() => window.FIELD_WORLD.st.pitch); };
+    const p0 = await tilt('minigolf'), p1 = await tilt('blockout'), p2 = await tilt('minigolf');
+    const ok = p0 < 68 && p1 >= 68 && Math.abs(p2 - p0) < 1e-6;
+    if (!ok) failures.push(`[${current}] mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} the tilt an app's floor lifted is put back (mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°)`);
   }
   // LIGHTS OUT (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
   // its own pattern at a level by its ring, its par the fewest presses (checked here by light chasing, a different way to

@@ -883,15 +883,79 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     was off the top of the screen) and `tapMargin` (a fraction past the board's edge whose taps the app is still asked about, u or
     v outside 0..1; it returns false for one it does not want). A cube high by the far rim is seen over the next board's ground, so
     a tap is followed from the eye through each cube of the piece and its shadow (`tapsPiece`).
+  - **The tilt given back** (Oct 23, found by CI): an app's `pitchMin` lifts the tilt to meet it, and the tilt stayed there on
+    every game opened after 3D Tetris (mini golf at 68° at its zoom ceiling, and its first-tap, drag and track checks failed).
+    The field keeps the lift (`_pitchLift`: the tilt before and the floor it was lifted to), and `setFieldApp` puts the tilt back
+    before framing an app with a lower floor, unless it was moved since. The smoke test opens mini golf, 3D Tetris, mini golf.
   - Scoring 100, 300, 600, 1000, 1500 for one to five layers at once, times the speed step (one every three layers); the best a
     board kept (localStorage `blockout.best`, by board and level).
   - **A board no one plays** shows a reel (Tetris's way: `bakeReel`, `REEL_N` 2 a level, 40 s, each board at its own frame), played
     by the bot (`plan`: every orientation at every place, dropped, the stack scored by layers, height, holes and bumps; then turned
     along the shortest way through the orientations, `pathTo`, and slid there). Over a reel it clears 64, 32, 19, 20 and 7 layers by
     level. Taking a board carries on from what it showed (`adopt`).
+  - **Every board its own puzzle** (Oct 23: "whats next for 3d tetris", then "1,2"; the menu's Mode, puzzles by default,
+    localStorage `blockout.mode`; Endless is the game above): a pit part-filled, and the pieces to clear it with.
+    - Dealt backwards (`makePuzzle(idx, lv)`, seeded by the board's number, `puzzleOf` keeps 1,500): L full layers, then k pieces
+      carved out one at a time, each open from above (nothing over its cubes but its own) and resting where it was (dropped from
+      the top it stops there), every layer keeping a gap. The carved pieces in the other order each drop into their hole, the last
+      filling the last layer; checked as the game plays (`playSeq`, layers clearing as they fill, `clearFull`).
+    - `PZ` by level: 1 layer and 2 pieces, then 2 and 3, 2 and 4, 3 and 5, 3 and 7, with 2, 2, 1, 1 and 1 spare pieces drawn from
+      the level's set after them. The pieces come in that order (the next one shown); they fall slowly (`PZ_FALL` 2.5 s a layer,
+      `PZ_LOCK` 1.2 s).
+    - Cleared (the L layers gone): stars by the pieces used against par k (`starsOf`: par 3, one more 2, else 1), the fewest kept
+      (`blockout.best`, keys starting `p`); a tap goes on to the next board (golf's `nextBoard`). Out of pieces or overflowed, it is
+      over; a tap tries again.
+    - A board no one plays (`shownPuzzle`, from the clock alone) shows the dealt stack, each piece of the solution coming down into
+      its hole already turned, the layers flashing, the empty pit, and round again.
+    - Measured on 40 boards a level: every one dealt and cleared by its own pieces, 0.1–0.3 ms to deal (0.8 at most).
+  - **See-through** (the same request's second: "in a 5×5 pit the higher layers hide the holes underneath"; the menu's
+    See-through, V, the row's See tile, on by default, `blockout.glass`): on the board being played a cube at or above the bottom
+    of where the piece will land, or over a hole in its column, is glass (`bkGlass`, a third opaque), and each hole (an empty cell
+    with a cube above it) is marked by a small red cube (`bkHole`).
   - The smoke test checks the orientations, tip and roll moving a tripod's arms where the screen says, a layer cleared, the pit by
     ring, the bot clearing at every level, a turn drawn turned, and real input: a click starting, the real arrow, Q and Enter, a
-    click on the floor spinning and on the piece dropping, a drag sliding, the row's Tip tile, a board no one plays moving.
+    click on the floor spinning and on the piece dropping, a drag sliding, the row's Tip tile, a board no one plays moving (in Endless); and the puzzles: 100 dealt, each
+    cleared by its own pieces and the same twice, par by level, out of pieces over, a board no one plays solving its own, glass and
+    holes on and off, and real input: a click starting one, its own pieces by the real Enter clearing it in par with a best, the
+    real V and See tile, a real click on a cleared board going on.
+- **Soma** (Oct 23: "any games that require 3d spatial rotation", then of the five offered "Soma or burr puzzles"): `SOMA_APP`, id
+  `soma`, after 3D Tetris. Piet Hein's seven pieces (`PIECES`, `NAMES`: V, L, T, Z, the tripod P and the two screws A and B, 27
+  cubes), turned about all three axes as 3D Tetris's are (its frame, `turnVec`, `opFor`; no gravity, no kicks), filling a figure
+  of glass cells.
+  - **Every board its own figure** (`makeFigure(idx, lv)`, seeded by the board's number; `figureOf` keeps 1,500): k of the seven
+    laid one at a time in a box where each touches the ones before most and stands on something when it can, so it is solvable
+    by construction. `LV`: 3 (flat ones only), 4, 5, 6 and 7 pieces in boxes 3 × 3 × 2 to 4 × 4 × 3, by ring plus the
+    Difficulty (Lights Out's rule). The corner's first board is the 3 × 3 × 3 cube.
+  - **The solver** (`solve(F, fixed, budget)`): an exact cover, the lowest empty cell first, each piece's placements indexed by
+    the cells they cover; 5 million steps at most. The cube in about 30 ms, the others 0.2–2 ms; 100 figures, all filled.
+  - **Playing**: the piece in hand hovers over the figure; where it fits in its column shows as glass in its colour (lowest
+    first, `fitsAt`; Up and Down, [ ] or PageDown / PageUp step through the others); fitting nowhere it is red. Enter or a tap
+    places it, the next piece in the tray coming to hand; a tap on a placed piece takes it back (`placedAt`, the ray from the eye
+    through its cubes); 1–7 or the row's tiles take any piece. Keys: arrows / WASD slide, Q / E spin, R / F tip, Z / X roll, H
+    hints. The row: the pieces, Spin, Tip, Roll, Down, Up, Place (`statsStay` while playing).
+  - **Hint** (`hint`): the solver from the pieces placed as they are; its next piece goes into your hand where it belongs. With
+    no way on from them, every piece goes back to the tray. Filled: stars by the hints (none 3, one 2, more 1), the best (most
+    stars, then quickest) kept (localStorage `soma.best`); a tap goes on to the next board.
+  - **A board no one plays** (`shownOf`, from the clock alone) builds its figure: the solution's pieces coming down into place one
+    after another, held whole, and round again. `frameFit` 1.5, `pitchMin` 60, `tapMargin` 0.4, as 3D Tetris's.
+  - **The course** (Oct 23: "whats next for soma", then "1,2", the first the famous figures on the boards nearest the corner):
+    the first sixteen boards (`boardIdx` 0–15, the 4 × 4 corner block) hold named figures of all seven pieces (`COURSE`, written
+    as layers from the ground up, `courseFigure`): the cube, the pyramid, the steps, the bathtub, the sofa, the bed, the throne,
+    the tower, the wall, the ziggurat, the castle, the well, the bench, the block, the arch and the stairs. Each was put to the
+    solver first (a tunnel on pillars one cube wide and a dais could not be filled and were left out). The title names it.
+  - **Count the ways** (the second: "the solver can count every way a figure can be filled (the cube has 240)"): `countGen`,
+    the solver going on past the first filling, by hand so it can stop between slices (`countSoon`: 12 ms in 42, for the framed
+    board, `WAYS` by figure; `COUNT_CAP` 3e8 steps, past which it says "more than n"). A filling is written as the piece type in
+    every cell and brought to one form under the figure's own symmetries (`symsOf`: the 48 signed permutations of the axes that
+    map it onto itself, a mirroring swapping the two screws, so it counts only with both or neither; `canon`). The cube: 11,520
+    fillings, 240 ways, about a second. The course: from 9 ways (the bed) to 1,998 (the tower). The ways you have found are kept
+    by board (localStorage `soma.found`); filled, the board says whether it was a new way and how many of how many, the title
+    keeps the count, and the menu's Find another way empties the figure again.
+  - The smoke test checks the orientations (12, 24, 12, 12, 8, 12, 12), the cube on the corner, 60 figures filled by the solver,
+    the levels by ring, a board no one plays building, and real input: the real arrow and E, the real H and Enter placing, a real
+    click taking a piece back, the figure finished with a best kept, and a real click going on; and the course: all sixteen filled,
+    the cube's 240 ways of 11,520 fillings, a figure with no symmetry counted filling by filling, and a course board filled by the
+    real H and Enter as a new way, then again as one found before.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
