@@ -769,6 +769,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       (`windowOf`, `parOfWindow`: 1.2° or more one try, under 0.2° four); of `GEN_TRIES` (6) seeds the first whose window is in
       its level's `band` is kept, else the nearest. Measured on 40 boards a level: every one solved by its own shot; median window
       4.35°, 2.68°, 1.42°, 0.72° and 0.64°; par 1.0, 1.05, 1.55, 2.2 and 3.3; 12 to 220 ms to make (1.1 s at most).
+    - **Harder far boards** (Oct 23: "3", of what came next: "the outer rings could hide the preview entirely, so you rely on the
+      ghost ball alone, or add a 'call your pocket' rule"): level 4 now sees 0 contacts too (the ghost ball and the white's way to it
+      alone, as level 5), and from level 3 the pocket is called (`GEN_LV`'s `call`; a cannon has no pot and calls none): the pocket
+      the reference shot's ball drops in (`pocket`, kept in `PLAIN`), ringed red twice on the table, the text ending "in the pocket
+      ringed red"; `goalFor` asks the kind's goal, then the pocket ("the 1 went in another pocket, not the one called"). A called
+      puzzle's id ends in `c`, so bests from before do not carry over. Measured in Node on 20 boards a level: every one solved by
+      its own shot; median window 1.39°, 0.99° and 0.69° at levels 3, 4 and 5, par 1.4, 2.7 and 3.15; 0.3–0.55 s to make.
     - **Made in a worker** (`workers`, `WK_N` 2): the engine and generator's own text from this script (`workerSrc`: from
       TRICK_APP's start to the field's part) with a message handler, so the same puzzle comes back as plain numbers (`plainOf`,
       `puzzleOf`). The framed or played board first, then those asked for most lately; a job not asked for in 2 s is dropped
@@ -831,7 +838,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     pull on the strip shooting, and a real click on the solved table going on to the next board; since Oct 23 the played cue full
     length, drawn on top, its butt behind the white; and the editor (the real ✎ opening it, real clicks laying a ball and
     marking it, Check finding a shot, Done keeping it in storage and its shot solving it, a shared copy on another board, a ringed
-    ball refused).
+    ball refused); and the called pocket (a level-3 puzzle's own shot sinking it there, the same shot with another pocket called a
+    miss that says so, none called at level 1, level 4 seeing 0, the two red rings drawn).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

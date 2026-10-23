@@ -3916,12 +3916,18 @@ try {
       out.cells = D.CHALLENGES.map((_, i) => D.boardIdx(...D.cellOfIdx(i)) === i).every(Boolean);
       // generated trick shots: three boards at level 1 and at level 5, each solved by its own reference shot, made the same twice
       const gen = lv => [20, 21, 22, 23].map(idx => { const P = D.runGen(D.makePuzzle(idx, lv)), o = P.sol;
-        return { ok: !D.trial(P.B(), P, { a: o.a, p: o.p, tip: o.tip || [0, 0], el: o.el || 0 }).why, par: P.par, w: P.window, kind: P.kind, see: P.see }; });
+        return { ok: !D.trial(P.B(), P, { a: o.a, p: o.p, tip: o.tip || [0, 0], el: o.el || 0 }).why, par: P.par, w: P.window, kind: P.kind, see: P.see, pocket: P.pocket }; });
       const g1 = gen(1), g5 = gen(5), again = D.runGen(D.makePuzzle(21, 5)), avg = (a, k) => a.reduce((x, y) => x + y[k], 0) / a.length;
       out.gen = { solved: [...g1, ...g5].every(x => x.ok), par1: avg(g1, 'par'), par5: avg(g5, 'par'), w1: +avg(g1, 'w').toFixed(2), w5: +avg(g5, 'w').toFixed(2),
         see: [g1[0].see, g5[0].see], same: JSON.stringify(again.sol) === JSON.stringify(D.runGen(D.makePuzzle(21, 5)).sol),
         kinds: [...new Set([...g1, ...g5].map(x => x.kind))].join(','), levels: [[0, 0], [10, 0], [40, 40]].map(([c, r]) => D.levelOf(c, r)),
         stars: [D.starsOf(1, 1), D.starsOf(3, 1), D.starsOf(5, 1)].join() };
+      // (Oct 23, "3": from level 3 the pocket is called; its own shot sinks it there, and the same shot with another pocket
+      //  called is a miss that says so; level 1 calls none)
+      { const P = D.runGen(D.makePuzzle(24, 3)), o = P.sol, at = { a: o.a, p: o.p, tip: o.tip || [0, 0], el: o.el || 0 };
+        const Q = D.puzzleOf({ ...D.plainOf(P), pocket: (P.pocket + 1) % 6 });
+        out.call = { pocket: P.pocket, l1: g1.every(x => x.pocket == null), ok: !D.trial(P.B(), P, at).why, wrong: D.trial(Q.B(), Q, at).why, see4: D.runGen(D.makePuzzle(25, 4)).see,
+          ringed: D.itemsOf({ B: P.B(), pos: P.B().map(b => [b.x, b.z, 0]), ch: P }).filter(i => i.kind === 'tsRing' && i.color === 0xd0574a).length }; }
       // a missed try on the ½-ball board (the cue straight at the 1): the balls go back, the board says why
       const [c0, r0] = D.cellOfIdx(0); D.GAMES.delete(c0 + '_' + r0); const g = D.gameAt(c0, r0), at0 = g.balls.map(b => [b.x, b.z]);
       D.shoot(g); D.finish(g);
@@ -4005,6 +4011,7 @@ try {
       && live.cell === 0 && Math.abs(live.dragged + 90) < 10 && live.playing && live.after && !live.after.anim && live.after.tries === 1 && live.after.solvedIn === 1
       && live.row.tip > 0.3 && live.row.power === 1 && live.row.tiles === 12 && live.space.anim && live.free.challenge === 0 && live.free.potted === 1 && live.free.shots === 1 && live.free.back === 1
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
+      && r.call && r.call.pocket >= 0 && r.call.l1 && r.call.ok && /another pocket/.test(r.call.wrong || '') && r.call.see4 === 0 && r.call.ringed === 2
       && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.cue && live.rolled.cue.len >= 20 && live.rolled.cue.onTop && live.rolled.cue.behind && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
       && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next === 1
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 1 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
