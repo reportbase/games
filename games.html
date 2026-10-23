@@ -2525,6 +2525,11 @@ let BOARD_FILL = 0.9;
 let _gridScaleWas = null, _gridScaleApplied = null;
 // The tilt floor an app raised (fewer boards toward the horizon), and what it was — see syncAppSelect.
 let _pitchMinWas = null;
+/* …and the tilt itself, where the floor had to lift it to meet it: { from, to }, the tilt before and the floor it was
+   lifted to (Oct 23, found when 3D Tetris's floor of 68° stayed on every game opened after it: mini golf opened at 68°
+   at its zoom ceiling, and its checks of the first tap, the drag and the tracks failed). setFieldApp puts the tilt back
+   when the app being opened has a lower floor, unless the tilt was moved since. */
+let _pitchLift = null;
 // The app that last had the world hook, so it can be told when it no longer does (see frame()).
 let _worldApp = null;
 /* ─── TWO QUESTIONS THE HOST ASKS AN APP ───────────────────────────────────
@@ -54590,6 +54595,17 @@ window.setFieldApp = app => {
   try { if (typeof PLAY !== 'undefined' && PLAY.on) exitPlay(); } catch {}
   _framedWatchKey = '·';                                      // re-announce to the newcomer
   FIELD_APP = app || CHESS_APP;
+  // (the tilt an app's floor lifted is put back for one whose floor is lower, before it is framed, Oct 23: see _pitchLift)
+  try {
+    if (_pitchLift){
+      const L = window.LAB, base = _pitchMinWas !== null ? _pitchMinWas : L.pitchMin;
+      const floor = FIELD_APP.pitchFloor != null ? FIELD_APP.pitchFloor : Math.max(base, FIELD_APP.pitchMin || 0);
+      if (floor < _pitchLift.to){
+        if (Math.abs(st.pitch - _pitchLift.to) < 1e-6) st.pitch = Math.max(floor, _pitchLift.from);
+        _pitchLift = null;
+      }
+    }
+  } catch {}
   try { if (FIELD_APP === GALLERY_APP) GALLERY_APP._wantFit(6000); } catch {}   // the gallery opens at its default size
   // …and so does every game (Sep 27: "the basics should be the same for all games. it loads in its default size");
   // not the air raid, whose camera rides the bomber.
@@ -55839,7 +55855,7 @@ function syncAppSelect(){
     } else if (L && _pm){
       if (_pitchMinWas === null) _pitchMinWas = L.pitchMin;
       L.pitchMin = Math.max(_pitchMinWas, _pm);
-      if (st.pitch < L.pitchMin) st.pitch = L.pitchMin;
+      if (st.pitch < L.pitchMin){ _pitchLift = { from: _pitchLift ? _pitchLift.from : st.pitch, to: L.pitchMin }; st.pitch = L.pitchMin; }
     } else if (L && _pitchMinWas !== null){ L.pitchMin = _pitchMinWas; _pitchMinWas = null; }
   } catch {}
 }

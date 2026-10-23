@@ -883,6 +883,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     was off the top of the screen) and `tapMargin` (a fraction past the board's edge whose taps the app is still asked about, u or
     v outside 0..1; it returns false for one it does not want). A cube high by the far rim is seen over the next board's ground, so
     a tap is followed from the eye through each cube of the piece and its shadow (`tapsPiece`).
+  - **The tilt given back** (Oct 23, found by CI): an app's `pitchMin` lifts the tilt to meet it, and the tilt stayed there on
+    every game opened after 3D Tetris (mini golf at 68° at its zoom ceiling, and its first-tap, drag and track checks failed).
+    The field keeps the lift (`_pitchLift`: the tilt before and the floor it was lifted to), and `setFieldApp` puts the tilt back
+    before framing an app with a lower floor, unless it was moved since. The smoke test opens mini golf, 3D Tetris, mini golf.
   - Scoring 100, 300, 600, 1000, 1500 for one to five layers at once, times the speed step (one every three layers); the best a
     board kept (localStorage `blockout.best`, by board and level).
   - **A board no one plays** shows a reel (Tetris's way: `bakeReel`, `REEL_N` 2 a level, 40 s, each board at its own frame), played

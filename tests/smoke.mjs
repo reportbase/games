@@ -3347,6 +3347,16 @@ try {
     if (!ok3) failures.push('[soma course] real input: ' + JSON.stringify({ fc, real }));
     console.log(`${ok3 ? 'ok  ' : 'FAIL'} soma course: a course board filled by the real H and Enter is a new way, and the same way again is found before (${real.again && real.again.title})`);
   }
+  // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
+  // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt
+  {
+    current = 'tilt put back';
+    const tilt = async id => { await page.evaluate(id => window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)), id); await page.waitForTimeout(1500); return page.evaluate(() => window.FIELD_WORLD.st.pitch); };
+    const p0 = await tilt('minigolf'), p1 = await tilt('blockout'), p2 = await tilt('minigolf');
+    const ok = p0 < 68 && p1 >= 68 && Math.abs(p2 - p0) < 1e-6;
+    if (!ok) failures.push(`[${current}] mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} the tilt an app's floor lifted is put back (mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°)`);
+  }
   // LIGHTS OUT (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
   // its own pattern at a level by its ring, its par the fewest presses (checked here by light chasing, a different way to
   // the page's elimination); the way out puts it out; real clicks flip the right cross; five quick real touches on one
