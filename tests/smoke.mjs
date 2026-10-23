@@ -3347,6 +3347,84 @@ try {
     if (!ok3) failures.push('[soma course] real input: ' + JSON.stringify({ fc, real }));
     console.log(`${ok3 ? 'ok  ' : 'FAIL'} soma course: a course board filled by the real H and Enter is a new way, and the same way again is found before (${real.again && real.again.title})`);
   }
+  // SOMA: YOUR OWN FIGURE, YOUR WAYS, AND ONE YOU HAVE NOT FOUND (Oct 23: "whats next for soma", then "1,2"): the real ✎ opens
+  // the editor on the framed board's figure; a real click takes a cube out of the layer (Check then refuses the count) and
+  // another puts it back; the real ✓ keeps it in storage, read back as the page reads it, its title "your figure"; its share
+  // link taken onto another board; then filled twice, two ways, the gallery shows each (its cubes all drawn, pulled apart) and
+  // the real ▶ tile steps; "show me a way I have not found" builds one whose form is neither of the two, and a real click
+  // gives the board back to be built.
+  {
+    current = 'soma figures and ways';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => { localStorage.removeItem('soma.mine'); window.getFieldApp()._debug.fly(5, 3); });
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    const btn = re => page.evaluate(src => { const b = [...document.querySelectorAll('#bbQuick *')].find(e => new RegExp(src).test(e.title || '')); if (!b) return null; const R = b.getBoundingClientRect(); return [R.x + R.width / 2, R.y + R.height / 2]; }, re);
+    const cellPt = (x, y, z) => page.evaluate(([x, y, z]) => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), B = D.ED.B, SQ = 0.14;
+      const u = 0.5 - B[0] * SQ / 2 + (x + 0.5) * SQ, v = 0.5 - B[1] * SQ / 2 + (y + 0.5) * SQ;
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0.02 + (z + 0.5) * SQ * bW, T.boardZ + (0.5 - v) * bW).project(W.camera);
+      return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; }, [x, y, z]);
+    if (fc){
+      await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+      await page.waitForTimeout(500);
+      const mk = await btn('^Make a figure'); if (mk){ await page.mouse.click(mk[0], mk[1]); await page.waitForTimeout(600); }
+      const e0 = await page.evaluate(() => { const D = window.getFieldApp()._debug; return { on: D.ED.on, n: D.edCount(), need: D.edNeed(), first: [...D.ED.cells].find(k => k.endsWith(',0')) }; });
+      real.opened = e0.on && e0.n === e0.need && e0.n > 0;
+      if (e0.first){
+        const [x, y] = e0.first.split(',').map(Number);
+        let pt = await cellPt(x, y, 0); await page.mouse.click(pt[0], pt[1]); await page.waitForTimeout(500);
+        real.out = await page.evaluate(k => { const D = window.getFieldApp()._debug; return { n: D.edCount(), gone: !D.ED.cells.has(k), check: D.edCheck() }; }, e0.first);
+        await page.waitForTimeout(700);
+        pt = await cellPt(x, y, 0); await page.mouse.click(pt[0], pt[1]); await page.waitForTimeout(500);
+        real.back = await page.evaluate(() => window.getFieldApp()._debug.edCount());
+      }
+      const dn = await btn('^Done'); if (dn){ await page.mouse.click(dn[0], dn[1]); await page.waitForTimeout(800); }
+      real.kept = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, o = JSON.parse(localStorage.getItem('soma.mine') || '{}'), k = Object.keys(o)[0];
+        return { on: D.ED.on, keys: Object.keys(o).length, clean: !!(k && D.cleanFig(o[k])), solvable: !!(k && D.figOfData(+k, D.cleanFig(o[k]))), title: A.cellTitle(c, r) }; }, fc);
+      // its share link, taken onto another board
+      real.shared = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, F = D.figureOf(c, r);
+        const d = { B: F.B, cells: Array.from(F.fig, v => v ? '1' : '0').join(''), types: F.types };
+        const P = D.SHARE.dec(new URL(D.SHARE.link(window.getFieldApp(), d)).searchParams.get('setup'));
+        const ok = D.takeFig(c + 4, r, P), G = D.figureOf(c + 4, r);
+        return ok && G.mine && G.key === F.key; }, fc);
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.LIVE = { c, r }; D.fly(c, r); }, fc);
+      await page.waitForTimeout(2500);
+      // two ways found (the solver's first, then one not among the found), then the gallery
+      real.ways = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, F = D.figureOf(c, r), out = [];
+        for (let n = 0; n < 2; n++){
+          A.onReset(c, r); const g = D.gameAt(c, r), have = D.FOUND.get(D.figKey(F)) || new Set();
+          const gen = D.countGen(F, w => !have.has(w)); let s; do { s = gen.next(); } while (!s.done);
+          if (!s.value || !s.value.sol) break;
+          for (const q of s.value.sol){ D.takeUp(g, q.i); Object.assign(g.cur, { o: q.o, x: q.x, y: q.y, k: 0 }); g.cur.k = Math.max(0, D.fitsAt(g).indexOf(q.z)); D.place(g); }
+          out.push(g.state === 'done' && g.newWay);
+        }
+        return { fresh: out, found: (D.FOUND.get(D.figKey(F)) || new Set()).size }; }, fc);
+      await page.evaluate(([c, r]) => window.getFieldApp()._debug.galOpen(c, r), fc);
+      await page.waitForTimeout(800);
+      const g0 = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, F = D.figureOf(c, r); return { k: D.GAL.k, n: D.GAL.list.length, cubes: D.galItems().filter(i => i.kind === 'smCube').length, want: F.fig.reduce((a, b) => a + b, 0) }; }, fc);
+      const nx = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      if (nx){ await page.mouse.click(nx[0], nx[1]); await page.waitForTimeout(400); }
+      const g1 = await page.evaluate(() => window.getFieldApp()._debug.GAL.k);
+      real.gallery = g0.n === 2 && g0.cubes === g0.want && g1 !== g0.k;
+      real.galDetail = { g0, g1 };
+      // a way not found: built on the board, its form not among the two; a real click then gives the board back
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.galClose(); D.showUnfound(c, r); }, fc);
+      await page.waitForFunction(() => !!window.getFieldApp()._debug.DEMO, null, { timeout: 30000 }).catch(() => {});
+      real.demo = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, M = D.DEMO; if (!M) return null; const F = D.figureOf(c, r);
+        return { len: M.sol.length === F.types.length, notFound: !(D.FOUND.get(D.figKey(F)) || new Set()).has(M.way) }; }, fc);
+      await page.waitForTimeout(800);
+      const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; });
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(500);
+      real.ended = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); return !D.DEMO && !!g && g.state === 'play' && g.placed.size === 0; }, fc);
+    }
+    const ok = !!fc && real.opened && real.out && real.out.gone && real.out.check === false && real.back === real.out.n + 1
+      && real.kept && !real.kept.on && real.kept.keys === 1 && real.kept.clean && real.kept.solvable && /your figure/.test(real.kept.title)
+      && real.shared && real.ways && real.ways.fresh.join() === 'true,true' && real.ways.found === 2 && real.gallery && real.demo && real.demo.len && real.demo.notFound && real.ended;
+    if (!ok) failures.push('[soma figures and ways] ' + JSON.stringify({ fc, real }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} soma: the real ✎ opens the editor, real clicks take a cube out and put it back, the real ✓ keeps it, shared onto another board; two ways in the gallery stepped by the real ▶; a way not found built and given back by a real click`);
+  }
   // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
   // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt
   {

@@ -951,11 +951,32 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     fillings, 240 ways, about a second. The course: from 9 ways (the bed) to 1,998 (the tower). The ways you have found are kept
     by board (localStorage `soma.found`); filled, the board says whether it was a new way and how many of how many, the title
     keeps the count, and the menu's Find another way empties the figure again.
+  - **Your own figure** (Oct 23: "whats next for soma", then "1,2", the first "make your own figure"): the row becomes a figure
+    editor (`ED`, `ed…`, as trick shots': the row is also the played figure's, so ✎ in the row or the menu's Make a figure for this
+    board… opens it, on the framed board's figure). A tap puts a cube in the layer being made or takes it out, the cell found
+    where the eye's line through the tap crosses that layer's middle (`cellAtTap`); the layer is framed in gold, the others glass.
+    The row: the seven pieces (in or out), Layer ▼ ▲, Width, Depth, Height (stepping round, 2–6, 2–6, 1–5), Fill layer, Clear
+    layer, Clear, Check (or "n of m" cubes), Play; quick buttons Check, Cancel, Done. Check and Done want as many cubes as the
+    pieces and a filling the solver finds (`solve(…, info)`: `info.capped` when its 5 million steps ran out); Check counts the ways.
+    Kept cropped to its cubes on the board (`MINE`, localStorage `soma.mine`, the latest 300, through `cleanFig`; `mineFigure`,
+    which `figureOf` asks first), its key `m` + a hash (`figKey`: every figure has a `key`, the course and generated ones
+    `idx@lv` as before), so a changed one starts its best and ways afresh. Escape or Cancel leaves the board as it was. The menu:
+    Share this board's figure (`shareFig`, `SHARE`; any figure, yours or the board's own), Forget this board's figure; a shared
+    one (`takeFig`) is checked by the solver.
+  - **Your ways, and one you have not found** (the second): the menu's Your ways… (`GAL`) shows the ways you have found one at a
+    time on the framed board, each piece pulled `EXPLODE` (0.28 cell) away from the figure's middle, since a kept way is its form
+    under the symmetries (`canon`), the piece type in each of the figure's own cells; the row has Back, which of how many, Next,
+    Not found yet, Close, and a tap or the arrow keys step. Show me a way I have not found (`showUnfound`) runs the counter until
+    a filling's form is not among yours (`countGen(F, stopAt)`, a little at a time), then builds it piece by piece once (`DEMO`,
+    `builtAt`, which `shownOf` now uses too); a tap, Enter or Escape gives the board back with every piece in the tray. A way
+    shown is not kept: it counts when you build it.
   - The smoke test checks the orientations (12, 24, 12, 12, 8, 12, 12), the cube on the corner, 60 figures filled by the solver,
     the levels by ring, a board no one plays building, and real input: the real arrow and E, the real H and Enter placing, a real
     click taking a piece back, the figure finished with a best kept, and a real click going on; and the course: all sixteen filled,
     the cube's 240 ways of 11,520 fillings, a figure with no symmetry counted filling by filling, and a course board filled by the
-    real H and Enter as a new way, then again as one found before.
+    real H and Enter as a new way, then again as one found before; and the editor (the real ✎, real clicks taking a cube out
+    and putting it back, the real ✓ keeping it in storage, its share link taken onto another board) and the ways (two in the
+    gallery stepped by the real ▶ tile, a way not found built and given back by a real click).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
