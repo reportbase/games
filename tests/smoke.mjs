@@ -4061,6 +4061,46 @@ try {
     if (!ok) failures.push(`[trickshots editor] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} your own trick shot (the real ✎ opened the editor, real clicks laid a ball and marked it, Check found a shot with par ${out.found && out.found.par} (${out.found && out.found.w}°), Done kept it and its shot solved it, a shared copy went onto another board, a ringed ball was refused)`);
   }
+  // A RUN-OUT (Oct 23, "1", of what came next: "multi-shot puzzles: clear a small table in two or three shots, with each leave
+  // planned for the next"): a run-out board framed for real; its own shots, set on the cue by the menu's Show me the trick and
+  // played by real clicks on the white, carry the table on a shot at a time and clear it in one try; a shot that pots nothing
+  // puts every ball back and the run starts again; a board no one plays shows the whole run, every ball down at its end.
+  {
+    const before = failures.length, out = {};
+    try {
+      await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); });
+      out.idx = await page.evaluate(() => { const D = window.getFieldApp()._debug;
+        for (let i = 40; i < 2000; i++){ const lv = D.levelAt(i); if (lv < 2) continue; const P = D.runGen(D.makePuzzle(i, lv)); if (P && P.kind === 'run' && P.sols.length === 2) return i; } return -1; });
+      await page.evaluate(i => { const D = window.getFieldApp()._debug, [c, r] = D.cellOfIdx(i); D.GAMES.delete(c + '_' + r); D.fly(c, r); window.__run = [c, r]; }, out.idx);
+      await page.waitForTimeout(3500);
+      await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run; D.LIVE = { c, r }; D.gameAt(c, r); });
+      for (let k = 0; k < 40; k++){ if (await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.gameAt(c, r); return !!(g && g.ch); })) break; await page.waitForTimeout(500); }
+      const rs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.GAMES.get(c + '_' + r);
+        return { kind: g.ch.kind, stage: g.stage, tries: g.tries, solvedIn: g.solvedIn, anim: !!g.anim, left: g.balls.filter(b => !b.cue && !b.sunk).length, why: g.lastWhy, white: (b => [b.x, b.z])(g.balls.find(b => b.cue)) }; });
+      const whiteAt = async () => { const w = (await rs()).white; return page.evaluate(([x, z]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, D = window.getFieldApp()._debug;
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, w); };
+      const showMe = () => page.evaluate(() => window.getFieldApp().menu[0].items.find(i => i.label === 'Show me the trick').on());
+      const play = async () => { const p = await whiteAt(); await page.mouse.click(p.x, p.y); for (let k = 0; k < 40 && (await rs()).anim; k++) await page.waitForTimeout(250); await page.waitForTimeout(300); };
+      out.start = await rs();
+      // a miss first: the cue turned away from every ball, softly
+      await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.GAMES.get(c + '_' + r), w = g.balls.find(b => b.cue);
+        let best = 0, bd = -1; for (let a = 0; a < 360; a += 10){ const t = a * D.D; const d = Math.min(...g.balls.filter(b => !b.cue).map(b => Math.abs(Math.sin(Math.atan2(b.z - w.z, b.x - w.x) - t)) + (Math.cos(Math.atan2(b.z - w.z, b.x - w.x) - t) < 0 ? 2 : 0))); if (d > bd){ bd = d; best = t; } }
+        g.ang = best; D.setPower(g, 4); D.setTip(g, 0, 0); D.setElev(g, 0); g.dirty = true; });
+      await play(); out.missed = await rs();
+      await showMe(); await play(); out.one = await rs();
+      await showMe(); await play(); out.two = await rs();
+      out.shown = await page.evaluate(i => { const D = window.getFieldApp()._debug, R = D.recSoon(i, true), fr = R.s.frames, last = fr[fr.length - 1], n = R.S.B.length;
+        return { cycle: +R.cycle.toFixed(1), allDown: R.S.B.every((b, k) => b.cue || isNaN(last[2 * k])), sunk: R.s.sunk.filter(p => p.n !== 0).length }; }, out.idx);
+      await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run; D.GAMES.delete(c + '_' + r); D.LIVE = null; });
+    } catch (e) { out.err = String(e); }
+    const ok = !out.err && out.idx > 0 && out.start.kind === 'run' && out.start.stage === 0 && out.start.left === 2
+      && out.missed.tries === 1 && out.missed.stage === 0 && out.missed.left === 2 && !!out.missed.why
+      && out.one.stage === 1 && out.one.left === 1 && out.one.tries === 1 && out.two.left === 0 && out.two.solvedIn === 2
+      && out.shown.allDown && out.shown.sunk === 2;
+    if (!ok) failures.push(`[trickshots run-out] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trick shots run-out (board ${out.idx}: a miss started the run again (${out.missed && out.missed.why}); its own two shots, played by real clicks, cleared it on the next try; a board no one plays showed the whole ${out.shown && out.shown.cycle} s run)`);
+  }
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
   // display should toggle the visiblibility of the bottom panel."): in trick shots, whose play row stays up while a table is played,
   // a real click on the dots shuts it and it stays shut; a real long press on the table opens it and another shuts it; and in

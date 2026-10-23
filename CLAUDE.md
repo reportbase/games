@@ -776,6 +776,23 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       ringed red"; `goalFor` asks the kind's goal, then the pocket ("the 1 went in another pocket, not the one called"). A called
       puzzle's id ends in `c`, so bests from before do not carry over. Measured in Node on 20 boards a level: every one solved by
       its own shot; median window 1.39°, 0.99° and 0.69° at levels 3, 4 and 5, par 1.4, 2.7 and 3.15; 0.3–0.55 s to make.
+    - **Run-outs** (Oct 23: "1", of what came next: "multi-shot puzzles: clear a small table in two or three shots, with each
+      leave planned for the next, like a real run-out"): a kind of its own (`run`, from level 2, weighted 2–3 in `GEN_LV`; `genRun`):
+      two object balls (three from level 4) and the white, to be cleared in as many shots, each potting a ball with the white kept
+      up (`goalFor`'s `run`: "nothing went in"). `runFrom` looks for the run as a player reading the table would: each ball into
+      each pocket through its ghost ball (clear lines, cuts to 70°, nearest first), stun then follow then draw, softest first,
+      and for each pot whether the table it leaves runs out; a pot that leaves no next shot is a trap (`traps`, one more on par;
+      rare, 0–0.1 a run measured), `RUN_BUDGET` 5,000 shots at most. The puzzle keeps the run's shots (`sols`, `sol` the first,
+      `shotsN`, in `PLAIN`); par is each shot's window's par summed less one a shot after the first (at most 5), `window` the
+      narrowest.
+      - Played (`finish`): a shot that pots carries the table on (`g.stage`); a miss puts every ball back and the run starts again
+        (`g.rot0`), a try being a whole run; cleared, it is solved in that many tries. The title says which shot of the run it is.
+        Show me the trick sets the run's next shot on the cue while the table is still the reference run's, else says so.
+      - A board no one plays shows the whole run (`runSim`: the shots flown one after another and joined, `RUN_GAP` 0.9 s between).
+      - Measured in Node on 40 boards a level: runs 9, 13, 16 and 20 of them at levels 2–5, every one cleared by its own shots
+        after the worker's round trip; pars 1–2 at level 2, 1–4 at 3, 2–5 at 4 and 5; 60–120 ms to make.
+      - The messages that said "hold it to play this one again" say the menu's Start this board again, since a hold now toggles
+        the row.
     - **Made in a worker** (`workers`, `WK_N` 2): the engine and generator's own text from this script (`workerSrc`: from
       TRICK_APP's start to the field's part) with a message handler, so the same puzzle comes back as plain numbers (`plainOf`,
       `puzzleOf`). The framed or played board first, then those asked for most lately; a job not asked for in 2 s is dropped
@@ -839,7 +856,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     length, drawn on top, its butt behind the white; and the editor (the real ✎ opening it, real clicks laying a ball and
     marking it, Check finding a shot, Done keeping it in storage and its shot solving it, a shared copy on another board, a ringed
     ball refused); and the called pocket (a level-3 puzzle's own shot sinking it there, the same shot with another pocket called a
-    miss that says so, none called at level 1, level 4 seeing 0, the two red rings drawn).
+    miss that says so, none called at level 1, level 4 seeing 0, the two red rings drawn); and a run-out (a board's run found, a real miss starting it again, its own two shots played by real
+    clicks clearing it on the next try, a board no one plays showing the whole run with every ball down).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

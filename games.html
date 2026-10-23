@@ -50795,12 +50795,12 @@ const TRICK_APP = (() => {
      shot; `runGen` to the end at once, `genSoon` a few milliseconds a frame). ══ */
   const GEN_LV = [
     { see: 3, extra: [0, 1], cut: [0, 25],  reach: 0.85, kinds: { cut: 5, follow: 2, draw: 2, bank: 1 }, ring: 1.2, band: [1.2, 99] },
-    { see: 2, extra: [1, 2], cut: [5, 40],  reach: 1,    kinds: { cut: 4, bank: 2, follow: 2, draw: 2, stun: 1, combo: 1, cannon: 1 }, ring: 1.0, band: [0.7, 3.5] },
-    { see: 1, call: true, extra: [1, 3], cut: [15, 52], reach: 1.15, kinds: { cut: 2, bank: 2, kick: 2, combo: 2, draw: 1, stun: 1, follow: 1, jump: 1, cannon: 2 }, ring: 0.85, band: [0.4, 2.2] },
-    { see: 0, call: true, extra: [2, 4], cut: [25, 60], reach: 1.3,  kinds: { cut: 1, bank: 2, kick: 2, combo: 2, jump: 1, draw: 1, stun: 1, tworail: 1 }, ring: 0.7, band: [0.22, 1.4] },
-    { see: 0, call: true, extra: [3, 5], cut: [30, 66], reach: 1.45, kinds: { kick: 2, combo: 2, jump: 1, tworail: 2, bank: 1, draw: 1, cut: 1 }, ring: 0.6, band: [0.1, 0.9] },
+    { see: 2, extra: [1, 2], cut: [5, 40],  reach: 1,    kinds: { cut: 4, bank: 2, follow: 2, draw: 2, stun: 1, combo: 1, cannon: 1, run: 2 }, ring: 1.0, band: [0.7, 3.5] },
+    { see: 1, call: true, extra: [1, 3], cut: [15, 52], reach: 1.15, kinds: { cut: 2, bank: 2, kick: 2, combo: 2, draw: 1, stun: 1, follow: 1, jump: 1, cannon: 2, run: 3 }, ring: 0.85, band: [0.4, 2.2] },
+    { see: 0, call: true, extra: [2, 4], cut: [25, 60], reach: 1.3,  kinds: { cut: 1, bank: 2, kick: 2, combo: 2, jump: 1, draw: 1, stun: 1, tworail: 1, run: 3 }, ring: 0.7, band: [0.22, 1.4] },
+    { see: 0, call: true, extra: [3, 5], cut: [30, 66], reach: 1.45, kinds: { kick: 2, combo: 2, jump: 1, tworail: 2, bank: 1, draw: 1, cut: 1, run: 3 }, ring: 0.6, band: [0.1, 0.9] },
   ];
-  const GEN_TRIES = 6, GEN_NAMES = { cut: 'cut', bank: 'bank', kick: 'kick', combo: 'combination', stun: 'stun', draw: 'draw', follow: 'follow', jump: 'jump', cannon: 'cannon', tworail: 'two rails' };
+  const GEN_TRIES = 6, GEN_NAMES = { cut: 'cut', bank: 'bank', kick: 'kick', combo: 'combination', stun: 'stun', draw: 'draw', follow: 'follow', jump: 'jump', cannon: 'cannon', tworail: 'two rails', run: 'run-out' };
   const XL = LX / 2 - R - 0.15, ZL = LZ / 2 - R - 0.15;
   const inTable = p => Math.abs(p[0]) <= XL && Math.abs(p[1]) <= ZL;
   const unit = (a, b) => { const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1; return [dx / l, dz / l]; };
@@ -50869,6 +50869,7 @@ const TRICK_APP = (() => {
     if (ch.pocket != null){ const base = goalFor({ ...ch, pocket: null }), tn = k === 'combo' ? 2 : (ch.target ?? 1);
       return (s, c) => base(s, c) || (() => { const p = potOf(s, tn); return p && p.pocket !== ch.pocket ? `the ${tn} went in another pocket, not the one called` : null; })(); }
     if (k === 'mine') return mineGoal(ch);
+    if (k === 'run') return s => whiteOut(s) || (s.sunk.some(p => p.n !== 0 && p.pocket >= 0) ? null : 'nothing went in');
     if (k === 'bank') return s => { const w = whiteOut(s); if (w) return w; const p = potOf(s, 1); if (!p) return 'the 1 stayed up'; return s.cushions.some(c => c.n === 1 && c.t < p.t) ? null : 'the 1 went straight in, off no cushion'; };
     if (k === 'kick') return s => whiteOut(s) || (!s.first || s.first.n !== 1 ? `the white met the ${s.first ? s.first.n : 'no ball'} first` : !s.first.rails ? 'the white met the 1 before a cushion' : !potOf(s, 1) && 'the 1 stayed up');
     if (k === 'combo') return s => whiteOut(s) || (!s.first || s.first.n !== 1 ? 'the white did not meet the 1 first' : !potOf(s, 2) && 'the 2 stayed up');
@@ -50882,6 +50883,7 @@ const TRICK_APP = (() => {
     const cutR = () => (L.cut[0] + rnd() * (L.cut[1] - L.cut[0])) * (rnd() < 0.5 ? -1 : 1), k = Math.floor(rnd() * 6);
     const extraN = L.extra[0] + Math.floor(rnd() * (L.extra[1] - L.extra[0] + 1));
     const ch = { id: 'g' + idx + '@' + lv, name: GEN_NAMES[kind], kind, see: L.see, lv, gen: true, power: 14, at: 1 };
+    if (kind === 'run') return yield* genRun(idx, lv, rnd, ch, L);
     let B, aims, opts = { powers: [12, 18, 26] }, lines = [];
     if (kind === 'cut' || kind === 'stun' || kind === 'draw' || kind === 'follow' || kind === 'tworail'){
       const pos = kind !== 'cut', cut = pos ? (kind === 'tworail' ? cutR() * 0.6 : (rnd() * 2 - 1) * Math.min(12, L.cut[1] / 3)) : cutR();
@@ -50966,6 +50968,62 @@ const TRICK_APP = (() => {
     const frozen = B.map(b => ({ ...b }));
     return Object.assign(ch, { B: () => frozen.map(b => ({ ...b })), sol, window: +W.w.toFixed(2), par: parOfWindow(W.w) + (lv >= 4 && L.see === 0 ? 1 : 0), power: Math.min(30, o.p) });
   }
+  /* A RUN-OUT (Oct 23, "1", of what came next: "multi-shot puzzles: clear a small table in two or three shots, with each leave
+     planned for the next, like a real run-out"): two object balls (three from level 4) and the white, and the table to be
+     cleared in as many shots, each potting a ball with the white kept up; a shot that pots nothing, or loses the white, puts
+     every ball back and the run starts again (a try is a whole run). `runFrom` looks for the run as a player reading the table
+     would, the plainest shots first (each ball into each pocket through its ghost ball, nearest the pocket first; stun, then
+     follow and draw; the softest first) and, for each one that pots, whether the table it leaves can be run out; a plain pot
+     that leaves no next shot is a trap (`traps`), and from level 3 a run with none is made again, since the puzzle is then
+     only its pots. Every shot tried counts, `RUN_BUDGET` at most. The run's shots are `sols` (`sol` the first); each one's
+     window of aim is measured on its own table, and par is their pars summed less one a shot after the first, with one more
+     for a trap (at most 5). */
+  const RUN_BUDGET = 5000, RUN_K = 6;
+  function* runFrom(B, ch, spent, depth){
+    const W = B.find(b => b.cue && !b.sunk), left = B.filter(b => !b.cue && !b.sunk); if (!W) return null;
+    const cands = [];
+    for (const T of left) for (let q = 0; q < 6; q++){
+      const M = mouthOf(q), Tp = [T.x, T.z], Gh = ghostOf(Tp, M), Wp = [W.x, W.z];
+      if (!clear(B.filter(b => !b.sunk), Wp, Gh, [0, T.n]) || !clear(B.filter(b => !b.sunk), Tp, M, [T.n])) continue;
+      const cut = Math.abs(((degTo(Wp, Gh) - degTo(Tp, M)) % 360 + 540) % 360 - 180); if (cut > 70) continue;
+      cands.push({ a: degTo(Wp, Gh), d: Math.hypot(M[0] - T.x, M[1] - T.z) + Math.hypot(Gh[0] - W.x, Gh[1] - W.z) * 0.5 + cut * 0.05 });
+    }
+    cands.sort((x, y) => x.d - y.d);
+    let wins = 0, traps = 0;
+    next: for (const c of cands) for (const tip of [[0, 0], [0, 0.35], [0, -0.4]]) for (const p of [11, 17, 25]) for (const da of [0, -0.25, 0.25]){
+      if (spent.n++ > RUN_BUDGET) return null;
+      const o = { a: c.a + da, p, tip, el: 0 }, t = trial(B, ch, o); yield; if (t.why) continue;
+      const B2 = t.s.final.map(b => ({ ...b, vx: 0, vz: 0 }));
+      if (B2.every(b => b.cue || b.sunk)) return { shots: [o], traps };
+      const rest = yield* runFrom(B2, ch, spent, depth + 1);
+      if (rest) return { shots: [o, ...rest.shots], traps };
+      if (spent.n > RUN_BUDGET) return null;
+      traps++; if (++wins >= RUN_K) return null;
+      continue next;                         // (this pot left no run: try the next ball or pocket, not the same pot harder)
+    }
+    return null;
+  }
+  function* genRun(idx, lv, rnd, ch, L){
+    const n = lv >= 4 ? 3 : 2, B = [];
+    const W = [-XL + rnd() * 2 * XL, -ZL + rnd() * 2 * ZL]; B.push(ballOf(0, ...W));
+    for (let k = 1; k <= n; k++){ let ok = false;
+      for (let tries = 0; tries < 80 && !ok; tries++){ const q = Math.floor(rnd() * 6), P = mouthOf(q), d = 1.6 + rnd() * 4.5 * L.reach, a = rnd() * 2 * Math.PI;
+        const x = P[0] - Math.sign(P[0] || 1) * Math.abs(Math.cos(a)) * d, z = P[1] - Math.sign(P[1]) * Math.abs(Math.sin(a)) * d * 0.6;
+        if (inTable([x, z]) && free(B, x, z) && Math.hypot(x - W[0], z - W[1]) > 2.2){ B.push(ballOf(k, x, z)); ok = true; } }
+      if (!ok) return null; }
+    ch.goal = goalFor(ch); ch.mark = { target: B.filter(b => !b.cue).map(b => b.n) };
+    ch.text = `run out: pot all ${n} in ${n} shots, a ball a shot, the white kept up. Play the white for the next one.`;
+    const spent = { n: 0 }, R = yield* runFrom(B.map(b => ({ ...b })), ch, spent, 0); if (!R) return null;
+    let T = B.map(b => ({ ...b })), wsum = 0, wmin = Infinity;
+    for (const o of R.shots){ const Wn = yield* windowOf(T, ch, { ...o }); wmin = Math.min(wmin, Wn.w); wsum += parOfWindow(Wn.w);
+      T = trial(T, ch, o).s.final.map(b => ({ ...b, vx: 0, vz: 0 })); }
+    const frozen = B.map(b => ({ ...b })), sols = R.shots.map(o => ({ a: +o.a.toFixed(4), p: o.p, ...(o.tip[0] || o.tip[1] ? { tip: o.tip } : {}) }));
+    // (the shots kept as written must still run it out: a rounded aim that loses the run is the search's own aim)
+    let chk = frozen.map(b => ({ ...b })); for (let i = 0; i < sols.length; i++){ const o = sols[i], t = trial(chk, ch, { a: o.a, p: o.p, tip: o.tip || [0, 0], el: 0 });
+      if (t.why){ sols[i] = { ...sols[i], a: R.shots[i].a }; chk = trial(chk, ch, R.shots[i]).s.final.map(b => ({ ...b, vx: 0, vz: 0 })); } else chk = t.s.final.map(b => ({ ...b, vx: 0, vz: 0 })); }
+    return Object.assign(ch, { B: () => frozen.map(b => ({ ...b })), sol: sols[0], sols, traps: R.traps, shotsN: n, window: +wmin.toFixed(2),
+      par: Math.min(5, Math.max(1, wsum - (n - 1) + (R.traps ? 1 : 0))), power: Math.min(30, sols[0].p) });
+  }
   // the first of GEN_TRIES seeds whose window falls in the level's band, else the nearest; a level-1 cut if none comes out at all
   function* makePuzzle(idx, lv){
     const [lo, hi] = GEN_LV[lv - 1].band, miss = P => P.window < lo ? Math.log(lo / P.window) : P.window > hi ? Math.log(P.window / hi) : 0;
@@ -51041,7 +51099,7 @@ const TRICK_APP = (() => {
     return { sol, window: +Wn.w.toFixed(2), par: parOfWindow(Wn.w) };
   }
   // a puzzle as plain numbers (what the worker sends back), and a puzzle again from them
-  const PLAIN = ['id', 'name', 'kind', 'see', 'lv', 'gen', 'power', 'at', 'text', 'mark', 'zone', 'sol', 'window', 'par', 'target', 'avoid', 'first', 'bank', 'kick', 'mine', 'pocket'];
+  const PLAIN = ['id', 'name', 'kind', 'see', 'lv', 'gen', 'power', 'at', 'text', 'mark', 'zone', 'sol', 'window', 'par', 'target', 'avoid', 'first', 'bank', 'kick', 'mine', 'pocket', 'sols', 'traps', 'shotsN'];
   const plainOf = P => { const o = {}; for (const k of PLAIN) if (P[k] !== undefined) o[k] = P[k]; o.balls = P.B().map(b => [b.n, b.x, b.z]); return o; };
   const puzzleOf = o => { const P = {}; for (const k of PLAIN) if (o[k] !== undefined) P[k] = o[k]; P.goal = goalFor(P); P.B = () => o.balls.map(([n, x, z]) => ballOf(n, x, z)); return P; };
 
@@ -51237,13 +51295,32 @@ const TRICK_APP = (() => {
     }
     return best;
   }
+  // a run-out's shots flown one after another and laid end to end as one shot, a pause between (RUN_GAP s, the table still), so
+  // a board no one plays shows the whole run
+  const RUN_GAP = 0.9;
+  function runSim(B, sols){
+    let T = B.map(b => ({ ...b })), out = null;
+    for (const q of sols){
+      const st = strikeOf(q.a * D, ...(q.tip || [0, 0]), q.p, MU_TIP, (q.el || 0) * D), s = simulate(T, st.dir, st.speed, st.w, st.vy);
+      if (!out) out = { ...s, frames: s.frames.slice(), heights: s.heights.slice(), contacts: s.contacts.slice(), sunk: s.sunk.slice(), cushions: s.cushions.slice() };
+      else {
+        const last = out.frames.length - 1, lf = out.frames[last], lh = out.heights[last];
+        for (let k = 0; k < RUN_GAP * 60; k++){ out.frames.push(lf); out.heights.push(lh); }
+        const t0 = (out.frames.length - 1) / 60, sh = x => ({ ...x, t: x.t + t0 });
+        out.frames.push(...s.frames.slice(1)); out.heights.push(...s.heights.slice(1));
+        out.contacts.push(...s.contacts.map(sh)); out.sunk.push(...s.sunk.map(sh)); out.cushions.push(...s.cushions.map(sh)); out.final = s.final;
+      }
+      T = s.final.map(b => ({ ...b, vx: 0, vz: 0 }));
+    }
+    return out;
+  }
   function recSoon(idx, force){
     const own = MINE.get(idx), rk = own ? 'm' + idx + ':' + hashOf(own) : idx < CHALLENGES.length ? idx * 8 : pkey(idx, levelAt(idx));
     let R = RECS.get(rk); if (R){ RECS.delete(rk); RECS.set(rk, R); return R; }
     const t = performance.now(); if (!force && t - recAt < 30) return null;
     const S = setupOf(idx, false, force); if (!S) return null;
     const d = demoShot(idx, S), o = d.shot, st = strikeOf(o.a * D, o.tip[0], o.tip[1], o.p, MU_TIP, o.el * D);
-    const s = thin(d.s || simulate(S.B, st.dir, st.speed, st.w, st.vy), 60 / REC_HZ);
+    const s = thin(S.ch && S.ch.sols ? runSim(S.B, S.ch.sols) : d.s || simulate(S.B, st.dir, st.speed, st.w, st.vy), 60 / REC_HZ);
     R = { idx, S, shot: o, s, see: S.ch ? S.ch.see : 3, play: (s.frames.length - 1) / s.hz, rots: rotsOf(s, S.B, idx) };
     R.cycle = AIM_T + R.play + HOLD_T;
     RECS.set(rk, R); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
@@ -51289,7 +51366,8 @@ const TRICK_APP = (() => {
     const cue = cueOf(S);
     const g = { c, r, idx, lv: S.lv || 0, free, ch: S.ch, name: S.name, balls: S.B, start: S.B.map(b => ({ ...b })), total: S.B.length - 1, ...cue, chalk: true,
                 see: S.ch ? S.ch.see : 3, tries: 0, solvedIn: 0, lastWhy: null, potted: 0, shots: 0, history: [], anim: null, sim: null, dirty: true,
-                rot: S.B.map(b => rotStart(idx, b.n)) };
+                rot: S.B.map(b => rotStart(idx, b.n)), stage: 0 };
+    g.rot0 = g.rot.slice();
     GAMES.set(gkey(c, r), g); return g;
   }
   const gameAt = (c, r) => GAMES.get(gkey(c, r)) || fresh(c, r);
@@ -51311,16 +51389,30 @@ const TRICK_APP = (() => {
   }
   function finish(g){
     const s = g.anim.s;
+    if (g.ch && g.ch.kind === 'run'){   // a run-out (A RUN-OUT, above): a shot that pots carries the table on; a miss starts the run again
+      const why = g.ch.goal(s, g.ch) || null, n = g.ch.shotsN || g.start.length - 1;
+      if (why){ g.tries++; g.lastWhy = why; g.stage = 0; g.balls = g.start.map(b => ({ ...b })); g.rot = g.rot0.slice();
+        say('Missed: ' + why + '. The run starts again from the first shot.', 2800); }
+      else {
+        g.lastWhy = null; g.stage++; g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 }));
+        const left = g.balls.filter(b => !b.cue && !b.sunk).length;
+        if (!left){ g.tries++; if (!g.solvedIn){ g.solvedIn = g.tries; saveBest(g.ch.id, g.tries); }
+          const st = starsOf(g.solvedIn, g.ch.par);
+          say(starStr(st) + '  Run out in ' + g.tries + (g.tries === 1 ? ' try' : ' tries') + ' (par ' + g.ch.par + '). Tap the table for the next one; the menu\'s Start this board again plays it again.', 5000); }
+        else say('Shot ' + g.stage + ' of ' + n + ' in: ' + left + ' to go. Where the white is now is your next shot.', 2600);
+      }
+      g.anim = null; g.dirty = true; touch(); return;
+    }
     if (g.ch){   // a try: judged on the shot just played, then the balls go back where they were set (wander's finish)
       g.lastWhy = g.ch.goal(s, g.ch) || null; g.tries++;
       if (!g.lastWhy && !g.solvedIn){ g.solvedIn = g.tries; saveBest(g.ch.id, g.tries); const st = starsOf(g.tries, g.ch.par);
-        say(starStr(st) + '  ' + g.ch.name + ' solved in ' + g.tries + (g.tries === 1 ? ' try' : ' tries') + ' (par ' + g.ch.par + '). Tap the table for the next one; hold it to play this one again.', 5000); }
+        say(starStr(st) + '  ' + g.ch.name + ' solved in ' + g.tries + (g.tries === 1 ? ' try' : ' tries') + ' (par ' + g.ch.par + '). Tap the table for the next one; the menu\'s Start this board again plays it again.', 5000); }
       else if (g.lastWhy) say('Missed: ' + g.lastWhy + '.', 2600);
       g.balls = g.start.map(b => ({ ...b })); g.rot = g.anim.rot0; g.anim = null; g.dirty = true; touch(); return;
     }
     g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 }));
     const n = s.sunk.filter(p => p.n !== 0 && p.pocket >= 0).length; g.potted += n; respot(g.balls); g.anim = null; g.dirty = true;
-    if (n && g.balls.every(b => b.cue || b.sunk)) say('The table cleared in ' + g.shots + (g.shots === 1 ? ' shot' : ' shots') + '. Hold the board, or Start this board again, to rack it again.', 4000);
+    if (n && g.balls.every(b => b.cue || b.sunk)) say('The table cleared in ' + g.shots + (g.shots === 1 ? ' shot' : ' shots') + '. The menu\'s Start this board again racks it again.', 4000);
     touch();
   }
   function undo(g){ if (!g || g.anim || g.ch || !g.history.length) return false; const h = g.history.pop(); g.balls = h.balls; g.potted = h.potted; g.shots = h.shots; g.rot = h.rot; g.dirty = true; touch(); return true; }
@@ -51607,7 +51699,7 @@ const TRICK_APP = (() => {
       + (!g.chalk ? (stH.turn ? ', the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '') : !stH.grip ? ', miscue: the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '')
       + (stH.vy ? ' · it jumps' : '') + ' · power ' + g.power;
     const head = g.ch && g.ch.gen ? 'Trick shots — ' + g.ch.name + ', level ' + g.lv + ' · see ' + g.see + ' deep · ' : g.ch ? 'Trick shots — ' + g.ch.name + ' (' + (ci + 1) + ' of ' + CHALLENGES.length + ') · see ' + g.see + ' deep · ' : '';
-    let s = g.ch ? head + (g.solvedIn ? 'tries ' + g.tries : 'try ' + (g.tries + 1)) + ' · par ' + g.ch.par + (best ? ' · best ' + best + ' ' + starStr(starsOf(best, g.ch.par)) : '') + ' · ' + g.ch.text + ' · ' + set
+    let s = g.ch ? head + (g.solvedIn ? 'tries ' + g.tries : 'try ' + (g.tries + 1)) + (g.ch.sols && !g.solvedIn ? ', shot ' + (g.stage + 1) + ' of ' + g.ch.sols.length : '') + ' · par ' + g.ch.par + (best ? ' · best ' + best + ' ' + starStr(starsOf(best, g.ch.par)) : '') + ' · ' + g.ch.text + ' · ' + set
                  : 'Trick shots — free play (' + g.name + ') · potted ' + g.potted + ' of ' + g.total + ' · shot ' + g.shots + ' · ' + set;
     const sim = !g.anim && SET.paths !== 'off' ? g.sim : null;
     if (sim){
@@ -51902,7 +51994,14 @@ const TRICK_APP = (() => {
       SND.item,
       { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball (the ghost ball).', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
       { label: 'Show me the trick', title: 'The board\'s reference shot, set on the cue: the one it plays when no one is on it.', on(){ const g = liveGame(); if (!g || !g.ch) return say('Not in free play.');
-          const o = g.ch.sol; g.ang = o.a * D; g.power = o.p; g.elev = o.el || 0; setTip(g, ...(o.tip || [0, 0])); g.chalk = true; touch(); } },
+          let o = g.ch.sol;
+          // (a run-out: the run's shot for the table as it stands, if it is still the reference run's table)
+          if (g.ch.sols && g.stage){ let T = g.start.map(b => ({ ...b }));
+            for (let i = 0; i < g.stage && T; i++){ const q = g.ch.sols[i], t = trial(T, g.ch, { a: q.a, p: q.p, tip: q.tip || [0, 0], el: q.el || 0 }); T = t.why ? null : t.s.final; }
+            const same = T && T.every((b, i) => { const m = g.balls[i]; return m && !!m.sunk === !!b.sunk && (b.sunk || Math.hypot(m.x - b.x, m.z - b.z) < 0.01); });
+            if (!same) return say('The white has left the reference run: Start this board again to see the run from its first shot.', 3200);
+            o = g.ch.sols[g.stage]; }
+          g.ang = o.a * D; g.power = o.p; g.elev = o.el || 0; setTip(g, ...(o.tip || [0, 0])); g.chalk = true; touch(); } },
       { label: 'Next trick shot', title: 'The next board along: the corner\'s fifteen, then out ring by ring.', on(){ const g = liveGame(); if (g) nextBoardOf(g); } },
       { label: () => { const f = framedCell(); return f && FREEPLAY.has(gkey(f.c, f.r)) ? 'Back to this board\'s trick shot' : 'Free play on this board'; },
         title: 'Free play: one of wander\'s tables (the rack, the row of four, the jump, the massé, or fifteen balls scattered), the balls yours to move and the shots to undo.',
@@ -51970,7 +52069,7 @@ const TRICK_APP = (() => {
       LIVE = { c, r }; const g = gameAt(c, r);
       if (!g){ say('This board\'s trick shot is still being made; a moment.', 1500); return true; }
       if (g.anim){ finish(g); return true; }                    // a tap during the shot jumps to its end (wander's)
-      if (g.ch && g.solvedIn) return nextBoardOf(g);            // solved: a tap goes on to the next board (a hold plays it again)
+      if (g.ch && g.solvedIn) return nextBoardOf(g);            // solved: a tap goes on to the next board (Start this board again plays it again)
       if (u == null) return true;
       const [x, z] = toTable(u, v), w = g.balls.find(b => b.cue && !b.sunk);
       if (w && Math.hypot(w.x - x, w.z - z) < R * 1.6) shoot(g); else aimAt(g, x, z);
@@ -52005,7 +52104,7 @@ const TRICK_APP = (() => {
               fresh, gameAt, shoot, finish, undo, aimAt, nudge, setPower, setElev, setTip, onTile, boardIdx, cellOfIdx, toTable, Ub, Vb, Sb, GAMES, RECS, BEST, SET, heard,
               grip: mu => { muB = mu ?? null; }, R, LX, LZ, POCKETS, ASP, D,
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
-              starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL,
+              starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
