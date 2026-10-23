@@ -50851,6 +50851,7 @@ const TRICK_APP = (() => {
      for too. */
   function goalFor(ch){
     const k = ch.kind;
+    if (k === 'mine') return mineGoal(ch);
     if (k === 'bank') return s => { const w = whiteOut(s); if (w) return w; const p = potOf(s, 1); if (!p) return 'the 1 stayed up'; return s.cushions.some(c => c.n === 1 && c.t < p.t) ? null : 'the 1 went straight in, off no cushion'; };
     if (k === 'kick') return s => whiteOut(s) || (!s.first || s.first.n !== 1 ? `the white met the ${s.first ? s.first.n : 'no ball'} first` : !s.first.rails ? 'the white met the 1 before a cushion' : !potOf(s, 1) && 'the 1 stayed up');
     if (k === 'combo') return s => whiteOut(s) || (!s.first || s.first.n !== 1 ? 'the white did not meet the 1 first' : !potOf(s, 2) && 'the 2 stayed up');
@@ -50955,8 +50956,72 @@ const TRICK_APP = (() => {
     return null;
   }
   const runGen = g => { let r; do r = g.next(); while (!r.done); return r.value; };
+  /* YOUR OWN TRICK SHOT (Oct 23: "2", of what came next: "make your own trick shot and share it"). A puzzle set by hand is the
+     balls where they were put and what the shot must do, any of: the ball to pot (`target`), off a cushion first (`bank`); the
+     ball the white must meet first (`first`), off a cushion first (`kick`); the balls it must not touch (`avoid`); a ring for the
+     white to stop in (`zone`). `mineGoal` asks them in that order, so a miss says the first thing that went wrong; `mineText`
+     says them as one sentence. `solveMine` looks for a shot that does it all (a generator, so it runs in a worker or a slice
+     at a time): first near the aims the table offers (each pocket's ghost ball for the ball to pot, through the first ball
+     for a combination, mirrored across each cushion for a bank or a kick, a fan of cuts on the first ball when nothing is to be
+     potted), plain at three powers; then with draw, follow and side; then a sweep of the whole round; then, with a ball to keep
+     off, a jump. The shot found, its window of aim gives the par (`windowOf`, `parOfWindow`), as a made puzzle's does. */
+  function mineGoal(ch){
+    const t = ch.target, av = ch.avoid || [], first = ch.first, bank = !!ch.bank, kick = !!ch.kick;
+    return (s, c) => {
+      const w = whiteOut(s); if (w) return w;
+      if (first != null && (!s.first || s.first.n !== first)) return `the white met ${s.first ? 'the ' + s.first.n : 'no ball'} first, not the ${first}`;
+      if (kick && (!s.first || !s.first.rails)) return 'the white met a ball before a cushion';
+      for (const n of av) if (touched(s, n)) return `the ${n} was touched`;
+      if (t != null){ const pt = potOf(s, t); if (!pt) return `the ${t} stayed up`;
+        if (bank && !s.cushions.some(q => q.n === t && q.t < pt.t)) return `the ${t} went straight in, off no cushion`; }
+      return c && c.zone ? inZone(s, c.zone) : null;
+    };
+  }
+  function mineText(ch){
+    const said = [];
+    if (ch.target != null) said.push('pot the ' + ch.target + (ch.bank ? ' off a cushion' : ''));
+    if (ch.first != null && ch.first !== ch.target) said.push((ch.kick ? 'the white off a cushion onto the ' : 'the white meeting the ') + ch.first + ' first');
+    else if (ch.kick) said.push('the white off a cushion first');
+    if ((ch.avoid || []).length) said.push('without touching the ' + ch.avoid.join(' or the '));
+    if (ch.zone) said.push(said.length ? 'and leave the white in the ring' : 'leave the white in the ring');
+    const t = said.join(', ').replace(/, and /, ' and ');
+    return t ? t[0].toUpperCase() + t.slice(1) + '.' : 'No goal set.';
+  }
+  const MINE_BUDGET = 6000;
+  function* solveMine(ch){
+    const B = ch.B(), w = B.find(b => b.cue), W = [w.x, w.z], at = n => { const b = B.find(b => b.n === n); return b && [b.x, b.z]; };
+    const T = ch.target != null ? at(ch.target) : null, F = ch.first != null && ch.first !== ch.target ? at(ch.first) : null, aims = [];
+    const push = a => { if (isFinite(a) && !aims.some(x => Math.abs(((x - a) % 360 + 540) % 360 - 180) < 0.4)) aims.push(a); };
+    const toward = G => { if (F && T){ push(degTo(W, ghostOf(F, G))); } else { push(degTo(W, G)); if (ch.kick) for (const rl of RAILS) push(degTo(W, mirror(G, rl))); } };
+    if (T) for (let q = 0; q < 6; q++){ const M = mouthOf(q);
+      if (!ch.bank) toward(ghostOf(T, M));
+      for (const rl of RAILS){ const M2 = mirror(M, rl); if (ch.bank) toward(ghostOf(T, M2)); } }
+    else { const others = B.filter(b => !b.cue), C = F || (others[0] ? [others[0].x, others[0].z] : null);
+      if (C) for (let d = -36; d <= 36; d += 6){ const a = degTo(W, C) + d; push(a); if (ch.kick) for (const rl of RAILS) push(degTo(W, mirror([W[0] + Math.cos(a * D) * 9, W[1] + Math.sin(a * D) * 9], rl))); } }
+    const zone = !!ch.zone, list = aims.slice(0, 28), spent = { n: 0 };
+    // (every shot tried is counted: past MINE_BUDGET the search gives up and says none was found, the same on any machine)
+    const lim = function* (g){ let r; while (!(r = g.next()).done){ if (++spent.n > MINE_BUDGET) return null; yield; } return r.value; };
+    const solOf = (o, a) => ({ a: +a.toFixed(2), p: o.p, ...(o.el ? { el: o.el } : {}), ...(o.tip[0] || o.tip[1] ? { tip: o.tip } : {}) });
+    // the easiest way is what par is about, not the first found: the plain shots near each aim, each one's window, the widest kept
+    let best = null;
+    for (const a of list){
+      if (spent.n > MINE_BUDGET * 0.4 || (best && best.w >= 2.5)) break;
+      const o = yield* lim(searchShot(B, ch, [a], { powers: [12, 20, 32], steps: 6, step: 0.2 })); if (!o) continue;
+      const Wn = yield* lim(windowOf(B, ch, o)); if (!Wn) break;
+      if (!best || Wn.w > best.w) best = { o, w: Wn.w, mid: Wn.mid };
+    }
+    let o = best && best.o;
+    if (!o) o = yield* lim(searchShot(B, ch, list, { powers: [12, 24, 36], tips: zone ? [[0, -0.45], [0, 0.35], [0.3, 0], [-0.3, 0]] : [[0, -0.4], [0, 0.35]], steps: 4, step: 0.25 }));
+    if (!o){ const all = []; for (let a = 0; a < 360; a += 1.5) all.push(a); o = yield* lim(searchShot(B, ch, all, { powers: [14, 28, 44], steps: 0 })); }
+    if (!o && (ch.avoid || []).length) o = yield* lim(searchShot(B, ch, list.slice(0, 12), { powers: [60, 52], els: [50, 45, 55], steps: 4, step: 0.25 }));
+    if (!o) return null;
+    const Wn = best && best.o === o ? best : yield* windowOf(B, ch, o);
+    const sol = solOf(o, Wn.mid);
+    if (trial(B, ch, { a: sol.a, p: sol.p, tip: sol.tip || [0, 0], el: sol.el || 0 }).why) return { sol: solOf(o, o.a), window: 0.05, par: 4 };
+    return { sol, window: +Wn.w.toFixed(2), par: parOfWindow(Wn.w) };
+  }
   // a puzzle as plain numbers (what the worker sends back), and a puzzle again from them
-  const PLAIN = ['id', 'name', 'kind', 'see', 'lv', 'gen', 'power', 'at', 'text', 'mark', 'zone', 'sol', 'window', 'par'];
+  const PLAIN = ['id', 'name', 'kind', 'see', 'lv', 'gen', 'power', 'at', 'text', 'mark', 'zone', 'sol', 'window', 'par', 'target', 'avoid', 'first', 'bank', 'kick', 'mine'];
   const plainOf = P => { const o = {}; for (const k of PLAIN) if (P[k] !== undefined) o[k] = P[k]; o.balls = P.B().map(b => [b.n, b.x, b.z]); return o; };
   const puzzleOf = o => { const P = {}; for (const k of PLAIN) if (o[k] !== undefined) P[k] = o[k]; P.goal = goalFor(P); P.B = () => o.balls.map(([n, x, z]) => ballOf(n, x, z)); return P; };
 
@@ -50969,6 +51034,7 @@ const TRICK_APP = (() => {
   const Ub = x => (x + BW / 2) / BW, Vb = z => (z + BH / 2) / BH, Sb = d => d / BW;
   const toTable = (u, v) => [u * BW - BW / 2, v * BH - BH / 2];
   const CLOTH = 0x16513f, CUSH = 0x124636, WOOD = 0x4a2c18, WOOD2 = 0x2a1a12, GOLD = 0xd4a052, RED = 0xd0574a, CUE_WOOD = 0xc9a36b, TIPC = 0x5b7fa8;
+  const CUE_LEN = 21, CUE_IDLE = 6, CUE_W = 0.42, MINE_COL = 0x9b6bd6;   // (a board's own trick shot is marked violet, as the tilt maze's own mazes are)   // (a cue's length and its butt's width, in table units: the ball is 0.9 across)
   const AIM_T = 2.4, HOLD_T = 1.4, REC_CAP = 300, REC_HZ = 30, DOT_GAP = 0.32, DOT_MAX = 700, PHOTO_PX = 24, HI_PX = 360;
   const yawOf = h => h || 1e-6;               // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   const hexOf = s => parseInt(s.slice(1), 16);
@@ -51009,7 +51075,8 @@ const TRICK_APP = (() => {
     const A = 'const TRICK_APP = (() => {', B = '  // ══ IN THE FIELD (Oct 22)';
     const sc = [...document.scripts].find(x => x.textContent.includes(A) && x.textContent.includes(B)); if (!sc) return null;
     const t = sc.textContent, a = t.indexOf(A) + A.length, b = t.indexOf(B, a);
-    return t.slice(a, b) + '\nonmessage = e => { const { idx, lv } = e.data; let P = null; try { P = runGen(makePuzzle(idx, lv)); } catch (err) {} postMessage({ idx, lv, P: P ? plainOf(P) : null }); };\n';
+    return t.slice(a, b) + '\nonmessage = e => { const d = e.data; if (d.solveId){ let R = null; try { R = runGen(solveMine(puzzleOf(d.solve))); } catch (err) {} postMessage({ solveId: d.solveId, R }); return; }'
+      + ' const { idx, lv } = d; let P = null; try { P = runGen(makePuzzle(idx, lv)); } catch (err) {} postMessage({ idx, lv, P: P ? plainOf(P) : null }); };\n';
   }
   function workers(){
     if (WK.list.length || WK.failed) return WK.list.length;
@@ -51071,6 +51138,42 @@ const TRICK_APP = (() => {
   }
   // a board played free (the menu's Free play on this board): its game is one of wander's layouts, not its puzzle
   const FREEPLAY = new Set();
+  /* A BOARD'S OWN TRICK SHOT (YOUR OWN TRICK SHOT, above): kept by the board's number as its plain numbers with the shot found
+     and its par (localStorage trickshots.mine, the latest MINE_CAP), read back through `cleanMine`; `setupOf` asks it first. Its
+     id carries a hash of what it is, so a changed one starts a new best. */
+  const MINE_CAP = 300, MINE = new Map(), MINE_P = new Map();
+  const hashOf = o => { let h = 2166136261; const t = JSON.stringify(o); for (let k = 0; k < t.length; k++){ h ^= t.charCodeAt(k); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const num = (v, a, b) => typeof v === 'number' && isFinite(v) ? Math.max(a, Math.min(b, v)) : null;
+  function cleanMine(o){
+    if (!o || !Array.isArray(o.balls) || o.balls.length < 2 || o.balls.length > 16) return null;
+    const balls = [], seen = new Set();
+    for (const b of o.balls){ if (!Array.isArray(b)) return null; const n = b[0] | 0, x = num(b[1], -XL, XL), z = num(b[2], -ZL, ZL);
+      if (n < 0 || n > 15 || seen.has(n) || x == null || z == null) return null; seen.add(n); balls.push([n, +x.toFixed(3), +z.toFixed(3)]); }
+    if (!seen.has(0)) return null;
+    for (let a = 0; a < balls.length; a++) for (let b = a + 1; b < balls.length; b++) if (Math.hypot(balls[a][1] - balls[b][1], balls[a][2] - balls[b][2]) < 2 * R - 0.01) return null;
+    const ball = n => n != null && n !== 0 && seen.has(n | 0) ? n | 0 : null;
+    const out = { kind: 'mine', mine: true, balls, target: ball(o.target), first: ball(o.first), bank: !!o.bank, kick: !!o.kick,
+                  avoid: [...new Set((o.avoid || []).map(ball).filter(n => n != null))].slice(0, 14), see: o.see === 99 ? 99 : Math.max(0, Math.min(5, o.see | 0)) };
+    out.avoid = out.avoid.filter(n => n !== out.target && n !== out.first);
+    if (Array.isArray(o.zone)){ const zx = num(o.zone[0], -LX / 2, LX / 2), zz = num(o.zone[1], -LZ / 2, LZ / 2), zr = num(o.zone[2], 0.4, 2); if (zx != null && zz != null && zr != null) out.zone = [zx, zz, zr]; }
+    if (out.target == null && out.first == null && !out.zone) return null;
+    if (o.sol && typeof o.sol === 'object'){ const a = num(o.sol.a, -720, 720), pw = num(o.sol.p, 2, 60);
+      if (a != null && pw != null){ out.sol = { a, p: pw };
+        if (Array.isArray(o.sol.tip)) out.sol.tip = [num(o.sol.tip[0], -0.9, 0.9) || 0, num(o.sol.tip[1], -0.9, 0.9) || 0];
+        if (o.sol.el) out.sol.el = num(o.sol.el, 0, 80) || 0;
+        out.window = num(o.window, 0, 10) || 0; out.par = Math.max(1, Math.min(5, o.par | 0 || 1)); } }
+    return out;
+  }
+  // a hand-set puzzle as the game plays it: the plain numbers with their rules, the sentence and the marks
+  function minePuzzle(idx, m){
+    const id = 'm' + idx + '.' + hashOf([m.balls, m.target, m.first, m.bank, m.kick, m.avoid, m.zone]);
+    const P = puzzleOf({ ...m, id, name: 'your trick shot', see: m.see === 99 ? Infinity : m.see, power: m.sol ? Math.min(30, m.sol.p) : 14, at: m.first ?? m.target ?? null,
+                         text: mineText(m), mark: { target: m.target != null ? [m.target] : [], avoid: m.avoid, first: m.first != null ? [m.first] : [] } });
+    return P;
+  }
+  function mineAt(idx){ const m = MINE.get(idx); if (!m) return null; let P = MINE_P.get(idx); if (!P || P._m !== m){ P = minePuzzle(idx, m); P._m = m; MINE_P.set(idx, P); } return P; }
+  function saveMine(){ try { ARCADE.save('trickshots.mine', JSON.stringify([...MINE.entries()].slice(-MINE_CAP))); } catch {} }
+  try { for (const [k, o] of JSON.parse(ARCADE.load('trickshots.mine', '[]')) || []){ const m = cleanMine(o); if (m && m.sol) MINE.set(k | 0, m); } } catch {}
 
   /* THE BOARDS. The corner block is the challenges, in wander's order: board 0 the ½-ball cut, board 14 the break (boardIdx,
      so each stays on its board whatever the field's size). Every other board has its own trick shot at its level (makePuzzle,
@@ -51079,6 +51182,7 @@ const TRICK_APP = (() => {
   const FREE = ['rack', 'line', 'jump', 'masse', 'scatter', 'scatter', 'scatter', 'scatter'];
   function setupOf(idx, free, urgent){
     if (free){ const name = FREE[idx % FREE.length], L = LAYOUTS[name](name === 'scatter' ? 1000 + idx : undefined); return { ch: null, name, B: L.B, L, free: true }; }
+    const own = mineAt(idx); if (own) return { ch: own, name: own.name, B: own.B(), mine: true };
     if (idx < CHALLENGES.length){ const ch = CHALLENGES[idx]; return { ch, name: ch.name, B: ch.B() }; }
     const lv = levelAt(idx), P = puzzleSoon(idx, lv, urgent);
     return P ? { ch: P, name: P.name, B: P.B(), lv } : null;
@@ -51114,7 +51218,7 @@ const TRICK_APP = (() => {
     return best;
   }
   function recSoon(idx, force){
-    const rk = idx < CHALLENGES.length ? idx * 8 : pkey(idx, levelAt(idx));
+    const own = MINE.get(idx), rk = own ? 'm' + idx + ':' + hashOf(own) : idx < CHALLENGES.length ? idx * 8 : pkey(idx, levelAt(idx));
     let R = RECS.get(rk); if (R){ RECS.delete(rk); RECS.set(rk, R); return R; }
     const t = performance.now(); if (!force && t - recAt < 30) return null;
     const S = setupOf(idx, false, force); if (!S) return null;
@@ -51258,7 +51362,7 @@ const TRICK_APP = (() => {
       if (k >= fr.length - 1 && (!g.ch || el > (fr.length - 1) / 60 + 0.9)){ finish(g); return liveView(g); }   // a try's end held a moment
       return { B: g.balls, pos, ch: g.ch, rot: g.rot, trail: { fr, k, hz: 60 }, lv: g.lv };
     }
-    return { B: g.balls, pos, ch: g.ch, rot: g.rot, lv: g.lv, sim: SET.paths === 'off' ? null : previewOf(g), hz: 60, see: g.see, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: g.tip, chalk: g.chalk }, paths: SET.paths };
+    return { B: g.balls, pos, ch: g.ch, rot: g.rot, lv: g.lv, live: true, sim: SET.paths === 'off' ? null : previewOf(g), hz: 60, see: g.see, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: g.tip, chalk: g.chalk }, paths: SET.paths };
   }
   function shownOf(R){
     const t = (pageT() + phaseOf(R.idx) * R.cycle) % R.cycle, s = R.s, B = R.S.B;
@@ -51269,12 +51373,13 @@ const TRICK_APP = (() => {
   }
   function viewOf(c, r, bp){
     pump();
+    if (ED.on && ED.c === c && ED.r === r){ ctlHide(); return edView(); }
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
     if (here && (bp == null || bp >= CTL_PX)) ctlSync(g);
     if (g) return liveView(g);
     const idx = boardIdx(c, r), making = { B: [], pos: [], ch: null, making: true };
     // (asked for every frame it is in view, so its job stays in the queue; the demo after it is made, one board in 30 ms)
-    if (idx >= CHALLENGES.length && !puzzleSoon(idx, levelAt(idx))) return making;
+    if (idx >= CHALLENGES.length && !MINE.has(idx) && !puzzleSoon(idx, levelAt(idx))) return making;
     const R = recSoon(idx);
     return R ? shownOf(R) : making;   // (its trick shot still being made: the bare table)
   }
@@ -51318,9 +51423,18 @@ const TRICK_APP = (() => {
     const c = V.B.find(b => b.cue && !b.sunk), i = V.B.indexOf(c); if (!c || !V.pos[i]) return;
     const { ang, power, elev, tip } = V.cue, u = [Math.cos(ang), Math.sin(ang)], rt = [-u[1], u[0]], b = tip.x * (R + R_TIP), bv = tip.y * (R + R_TIP);
     const back = Math.sqrt(Math.max(0, (R + R_TIP) ** 2 - b * b - bv * bv)) + 0.15 + power * 0.03;
-    const T = [c.x + rt[0] * b - u[0] * back, c.z + rt[1] * b - u[1] * back], L = 3.2 * Math.cos(elev * D), hy = R + bv * 0.6;
-    out.push({ kind: 'tsCue', u: Ub(T[0] - u[0] * R_TIP), v: Vb(T[1] - u[1] * R_TIP), scale: Sb(1), sx: L, sy: 0.13, sz: 0.13, lift: Sb(hy + Math.sin(elev * D) * 1.2), yaw: yawOf(ang), color: CUE_WOOD });
-    out.push({ kind: 'tsBall', u: Ub(T[0]), v: Vb(T[1]), scale: Sb(2 * R_TIP), lift: Sb(hy - R_TIP), color: TIPC });
+    /* THE CUE AT ITS FULL LENGTH, ON TOP (Oct 23: "the cue stick should always be on top and should extend on to the the adjacent
+       boards if needed"): CUE_LEN long, a real cue's 25 ball widths (wander's 3.2 was a stub, short so it stayed on the table),
+       drawn over everything (its kinds `onTop`), so it lies across the frame and on over the next board as a cue held over a
+       table does. It is turned whole (`rot`): along the shot's line, its butt raised by the cue's rise, so a massé's cue stands
+       up from the white rather than lying flat and foreshortened. That is the played board's cue; a board no one plays shows a
+       shorter one, CUE_IDLE, drawn as any piece is, or its cue lay over the table being played beside it. */
+    const live = !!V.live, len = live ? CUE_LEN : CUE_IDLE;
+    const T = [c.x + rt[0] * b - u[0] * back, c.z + rt[1] * b - u[1] * back], hy = R + bv * 0.6, e = elev * D;
+    const sa = Math.sin(-ang / 2), ca = Math.cos(-ang / 2), se = Math.sin(-e / 2), ce = Math.cos(-e / 2);   // about up by −ang, then about its own z by −e
+    out.push({ kind: live ? 'tsCue' : 'tsCueIdle', u: Ub(T[0] - u[0] * R_TIP * Math.cos(e)), v: Vb(T[1] - u[1] * R_TIP * Math.cos(e)), scale: Sb(1), sx: len, sy: CUE_W, sz: CUE_W,
+               lift: Sb(hy + R_TIP * Math.sin(e)), rot: [sa * se, sa * ce, ca * se, ca * ce], color: 0xffffff });
+    out.push({ kind: live ? 'tsTip' : 'tsTipIdle', u: Ub(T[0]), v: Vb(T[1]), scale: Sb(2 * R_TIP), lift: Sb(hy), color: TIPC });
     if (V.paths === 'off' || !V.sim){   // the aim alone: straight to the first ball or cushion the white would meet, and the ghost ball there
       const dirW = strikeOf(ang, tip.x, tip.y, power, V.cue.chalk ? MU_TIP : 0, elev * D).dir, stp = firstStop(V.B, c, dirW);
       const ex = c.x + Math.cos(dirW) * stp.t, ez = c.z + Math.sin(dirW) * stp.t, n = Math.floor(stp.t / DOT_GAP);
@@ -51342,7 +51456,7 @@ const TRICK_APP = (() => {
       out.push({ kind: 'tsB' + b.n, u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * R), lift: Sb(R + hgt), rot: V.rot ? V.rot[i] : null, color: 0xffffff });
     });
     frameItems(out, V);
-    if (ch && ch.mark) for (const [list, col, kind] of [[ch.mark.target, GOLD, 'tsRing'], [ch.mark.avoid, RED, 'tsGhost']]) for (const n of list || []){
+    if (ch && ch.mark) for (const [list, col, kind] of [[ch.mark.target, GOLD, 'tsRing'], [ch.mark.avoid, RED, 'tsGhost'], [ch.mark.first, 0xf2f0ea, 'tsGhost']]) for (const n of list || []){
       const i = V.B.findIndex(b => b.n === n); if (i < 0 || !V.pos[i]) continue;
       out.push({ kind, u: Ub(V.pos[i][0]), v: Vb(V.pos[i][1]), scale: Sb(2 * R + 0.36), color: col });
     }
@@ -51365,6 +51479,7 @@ const TRICK_APP = (() => {
      stars a solved puzzle earned (BEST, starsOf) at the far right; a board whose shot is still being made shows neither. */
   function frameItems(out, V){
     const ch = V.ch; if (!ch) return; const zf = -LZ / 2 - CUSH_W - (MARGIN - CUSH_W) / 2;
+    if (ch.mine || V.editing) out.push({ kind: 'tsDot', u: Ub(-LX / 2 - 0.15), v: Vb(zf), scale: Sb(0.36), color: 0xe8dcc0 }, { kind: 'tsDot', u: Ub(-LX / 2 - 0.15), v: Vb(zf), scale: Sb(0.27), lift: Sb(0.004), color: MINE_COL });
     // (each on a pale rim, or level 5's black would be lost on the wood)
     if (V.lv) for (let k = 0; k < V.lv; k++){ const u = Ub(-LX / 2 - 0.15 + k * 0.42);
       out.push({ kind: 'tsDot', u, v: Vb(zf), scale: Sb(0.36), color: 0xe8dcc0 }, { kind: 'tsDot', u, v: Vb(zf), scale: Sb(0.27), lift: Sb(0.004), color: LV_COL[V.lv - 1] }); }
@@ -51392,7 +51507,11 @@ const TRICK_APP = (() => {
     tsBall: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
     tsBand: T => { const g = new T.SphereGeometry(0.514, 20, 6, 0, Math.PI * 2, Math.PI / 2 - 0.47, 0.94); g.rotateX(Math.PI / 2); g.translate(0, 0.5, 0); return g; },
     tsBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
-    tsCue: T => { const g = new T.CylinderGeometry(0.42, 0.6, 1, 10, 1); g.rotateZ(Math.PI / 2); g.translate(-0.5, 0, 0); return g; },
+    // (the cue: a unit long from its tip at the origin back along −x, thick at the butt; a white ferrule, maple, a dark wrapped butt;
+    //  drawn on top, as its tip is, the tip over it)
+    tsCue: T => cueGeo(T, 1), tsCueIdle: T => cueGeo(T, 0),
+    tsTip: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.userData.onTop = 2; return g; },
+    tsTipIdle: T => new T.SphereGeometry(0.5, 16, 12),
     tsDot: T => { const g = FieldKit.disc(T, 0.5, 0.02, 12); g.userData.unlit = true; return g; },
     tsRing: T => { const g = FieldKit.ring(T, 0.44, 0.5, 0.02, 40); g.userData.unlit = true; return g; },
     tsGhost: T => { // a ring in dashes, wander's dashed ghost ball
@@ -51403,6 +51522,12 @@ const TRICK_APP = (() => {
     tsZoneFill: T => { const g = FieldKit.disc(T, 0.5, 0.01, 48); g.userData.unlit = true; g.userData.opacity = 0.14; return g; },
     tsShadow: T => { const g = FieldKit.disc(T, 0.5, 0.008, 24); g.userData.unlit = true; g.userData.opacity = 0.35; return g; },
   };
+  function cueGeo(T, onTop){
+    const g = new T.CylinderGeometry(0.5, 0.21, 1, 12, 8); g.rotateZ(Math.PI / 2); g.translate(-0.5, 0, 0);
+    const P = g.attributes.position, col = new Float32Array(P.count * 3);
+    for (let k = 0; k < P.count; k++){ const x = P.getX(k), c = x > -0.012 ? [0.95, 0.94, 0.9] : x > -0.62 ? [0.86, 0.71, 0.48] : x > -0.9 ? [0.18, 0.12, 0.1] : [0.3, 0.2, 0.14]; col.set(c, 3 * k); }
+    g.setAttribute('color', new T.BufferAttribute(col, 3)); g.userData.vertexColors = true; if (onTop) g.userData.onTop = 1; return g;
+  }
   function mergeGeos(T, list){
     let n = 0; for (const g of list) n += g.attributes.position.count;
     const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), idx = []; let o = 0;
@@ -51516,8 +51641,9 @@ const TRICK_APP = (() => {
        preview follows the power as it is pulled; let go near the top and nothing is shot, the power put back.
      They live outside the field's canvas, so a press on them never pans the view; hidden off this app (onLeave), with no
      board framed, and while a shot plays (`ctlSync`, each frame from the framed board's viewOf). */
-  // (shown only while the board played is CTL_PX across or more, and gone once it has not been drawn for CTL_GONE ms)
-  const CTL = { el: null, tip: null, pull: null, fill: null, label: null, drawn: '', g: null, pulling: null, seen: 0 }, CTL_PX = 300, CTL_GONE = 450;
+  // (shown only while the board played is CTL_PX across or more, and gone once it has not been drawn for CTL_GONE ms: 1.2 s, since
+  //  on a slow machine a frame can take most of a second, and at 0.45 s the controls blinked out between frames, Oct 23)
+  const CTL = { el: null, tip: null, pull: null, fill: null, label: null, drawn: '', g: null, pulling: null, seen: 0 }, CTL_PX = 300, CTL_GONE = 1200;
   function ctlEnsure(){
     if (CTL.el || typeof document === 'undefined') return CTL.el;
     const el = document.createElement('div'); el.id = 'tsCtl';
@@ -51565,11 +51691,173 @@ const TRICK_APP = (() => {
     if (show) ctlDraw(g);
   }
   const ctlHide = () => { if (CTL.el) CTL.el.style.display = 'none'; CTL.g = null; CTL.pulling = null; };
+  /* THE ROW IS THE TRICK-SHOT EDITOR (YOUR OWN TRICK SHOT, above; as the tilt maze's and Sokoban's editors are): opening the row
+     (the quick button ✎, or the menu's Make a trick shot for this board…) takes the framed board's table into the editor, its balls where
+     they are and, if it was one of yours, its goal. Tools: White (a tap moves it), Ball (a tap lays the next number), To pot,
+     Hit first, Don't touch (a tap on a ball marks it, again unmarks it), Ring (a tap lays the white's ring, a tap in it takes it
+     away), Erase; a drag moves any ball. Acts: Bank (the ball to pot off a cushion), Kick (the white off a cushion first), the
+     ring's size, how far the preview sees, Clear (the white alone), Check, Play. ✔ looks for a shot that solves it (in the worker,
+     `solveSoon`) and says its par; ✓ (or Play, or shutting the row) keeps it on the board once a shot is found, and plays it.
+     Escape or ✕ leaves the board as it was. */
+  const ED = { on: false, c: 0, r: 0, idx: 0, balls: [], target: null, first: null, avoid: [], bank: false, kick: false, zone: null, ring: 0.9,
+               see: 3, tool: 'ball', busy: false, checking: false, found: null, foundKey: '', drag: null, ateAt: 0 };
+  const ED_TOOLS = [['white', '⚪', 'White'], ['ball', '🎱', 'Ball'], ['target', '🎯', 'To pot'], ['first', '①', 'Hit first'], ['avoid', '⛔', "Don't touch"], ['ring', '◎', 'Ring'], ['erase', '🧽', 'Erase']];
+  const ED_ACTS = ['bank', 'kick', 'ringsize', 'see', 'clear', 'check', 'play'];
+  const RINGS = [0.6, 0.9, 1.2, 1.6];
+  const edSay = (m, ms) => say(m, ms || 3200);
+  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const draftOf = () => ({ kind: 'mine', balls: ED.balls.map(b => [b[0], b[1], b[2]]), target: ED.target, first: ED.first, avoid: ED.avoid.slice(), bank: ED.bank, kick: ED.kick,
+                           zone: ED.zone ? [ED.zone[0], ED.zone[1], ED.zone[2]] : null, see: ED.see === Infinity ? 99 : ED.see });
+  const draftKey = () => JSON.stringify(draftOf());
+  function edStart(c, r){
+    const idx = boardIdx(c, r), m = MINE.get(idx), g = GAMES.get(gkey(c, r)), S = m ? null : setupOf(idx, FREEPLAY.has(gkey(c, r)));
+    const balls = m ? m.balls : (g && !g.anim ? g.balls : S ? S.B : [ballOf(0, ...HEAD), ballOf(1, LX / 4, 0)]).filter(b => !b.sunk).map(b => [b.n, b.x, b.z]);
+    if (!balls.some(b => b[0] === 0)) balls.unshift([0, HEAD[0], HEAD[1]]);
+    const ch = m || (S && S.ch);
+    Object.assign(ED, { on: true, c, r, idx, balls, target: ch && ch.target != null ? ch.target : (ch && ch.kind !== 'mine' && balls.some(b => b[0] === 1) ? 1 : null),
+                        first: m ? m.first : null, avoid: m ? m.avoid.slice() : [], bank: !!(m && m.bank), kick: !!(m && m.kick), zone: m && m.zone ? m.zone.slice() : null,
+                        see: m ? (m.see === 99 ? Infinity : m.see) : 3, tool: 'ball', found: null, foundKey: '', checking: false });
+    LIVE = { c, r }; try { fieldItemsChanged(); } catch {}
+  }
+  function edOpen(){
+    const f = framedCell();
+    if (!f){ say('Pick a table first, then open the row to make its trick shot', 2000); return false; }
+    edStart(f.c, f.r);
+    edSay('Making a trick shot: place the balls (drag to move), mark the ball to pot, a ball to hit first or keep off, a ring for the white. ✔ looks for a shot, ✓ keeps it and plays it.', 5000);
+    return true;
+  }
+  function edStop(){ ED.on = false; ED.drag = null; try { fieldItemsChanged(); } catch {} }
+  function edCancel(){ if (!ED.on) return; edStop(); edPane(false); edSay('Left the table as it was.', 1800); }
+  // what the editor shows on its board: the draft's balls, its marks and ring, the white's cue laid on no line
+  function edView(){
+    const B = ED.balls.map(([n, x, z]) => ballOf(n, x, z));
+    return { B, pos: B.map(b => [b.x, b.z, 0]), editing: true, ch: { zone: ED.zone, mine: true, mark: { target: ED.target != null ? [ED.target] : [], avoid: ED.avoid, first: ED.first != null ? [ED.first] : [] } } };
+  }
+  const ballNear = (x, z, k = 1.2) => { let best = -1, bd = R * k; ED.balls.forEach((b, i) => { const d = Math.hypot(b[1] - x, b[2] - z); if (d < bd){ bd = d; best = i; } }); return best; };
+  const freeFor = (x, z, skip) => Math.abs(x) <= XL && Math.abs(z) <= ZL && ED.balls.every((b, i) => i === skip || Math.hypot(b[1] - x, b[2] - z) >= 2 * R + 0.01)
+    && POCKETS.every(p => Math.hypot(p[0] - x, p[1] - z) > POCK + R * 0.2);
+  function edChanged(){ ED.found = null; try { fieldItemsChanged(); bbRefreshNow(); } catch {} }
+  function edTap(u, v){
+    const [x, z] = toTable(u, v), i = ballNear(x, z), n = i >= 0 ? ED.balls[i][0] : null, t = ED.tool;
+    if (t === 'white'){ const w = ED.balls.findIndex(b => b[0] === 0); if (!freeFor(x, z, w)) return edSay('No room for the white there.', 1500); ED.balls[w] = [0, x, z]; return edChanged(); }
+    if (t === 'ball'){
+      if (i >= 0) return edSay('A ball is there already: drag it to move it, or Erase it.', 1800);
+      const used = new Set(ED.balls.map(b => b[0])); let k = 1; while (used.has(k) && k <= 15) k++;
+      if (k > 15) return edSay('All fifteen are on the table.', 1500);
+      if (!freeFor(x, z, -1)) return edSay('No room for a ball there.', 1500);
+      ED.balls.push([k, x, z]); return edChanged();
+    }
+    if (t === 'ring'){ if (ED.zone && Math.hypot(ED.zone[0] - x, ED.zone[1] - z) < ED.zone[2]) ED.zone = null; else ED.zone = [Math.max(-LX / 2, Math.min(LX / 2, x)), Math.max(-LZ / 2, Math.min(LZ / 2, z)), ED.ring]; return edChanged(); }
+    if (t === 'erase'){
+      if (i >= 0 && n !== 0){ ED.balls.splice(i, 1); if (ED.target === n) ED.target = null; if (ED.first === n) ED.first = null; ED.avoid = ED.avoid.filter(a => a !== n); return edChanged(); }
+      if (ED.zone && Math.hypot(ED.zone[0] - x, ED.zone[1] - z) < ED.zone[2]){ ED.zone = null; return edChanged(); }
+      return edSay(n === 0 ? 'The white stays: move it with White.' : 'Nothing there to erase.', 1500);
+    }
+    if (i < 0 || n === 0) return edSay('Tap a numbered ball.', 1400);
+    if (t === 'target'){ ED.target = ED.target === n ? null : n; ED.avoid = ED.avoid.filter(a => a !== n); }
+    else if (t === 'first'){ ED.first = ED.first === n ? null : n; ED.avoid = ED.avoid.filter(a => a !== n); }
+    else if (t === 'avoid'){ if (ED.avoid.includes(n)) ED.avoid = ED.avoid.filter(a => a !== n); else { ED.avoid.push(n); if (ED.target === n) ED.target = null; if (ED.first === n) ED.first = null; } }
+    edChanged();
+  }
+  // a drag that starts on a ball moves it, kept clear of the others, the cushions and the pockets
+  function edDragStart(u, v){ const [x, z] = toTable(u, v), i = ballNear(x, z); if (i < 0) return false; ED.drag = { i, dx: ED.balls[i][1] - x, dz: ED.balls[i][2] - z, moved: false }; return true; }
+  function edDragAt(u, v){ const D_ = ED.drag; if (!D_) return; const [x, z] = toTable(u, v), nx = x + D_.dx, nz = z + D_.dz;
+    if (freeFor(nx, nz, D_.i)){ ED.balls[D_.i] = [ED.balls[D_.i][0], nx, nz]; D_.moved = true; ED.found = null; try { fieldItemsChanged(); } catch {} } }
+  /* LOOKING FOR A SHOT: in a worker of its own (the puzzles' workers are kept for the boards), the draft's plain numbers sent and
+     the shot found (or null) coming back; without a worker, the same generator here a slice at a time. */
+  let SOLVER = null, solveN = 0;
+  function solveSoon(plain, cb){
+    const id = ++solveN;
+    try {
+      if (!SOLVER && !WK.failed && typeof Worker !== 'undefined'){ const src = workerSrc(); if (src){ SOLVER = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' }))); SOLVER.cbs = new Map();
+        SOLVER.onmessage = e => { const f = SOLVER.cbs.get(e.data.solveId); SOLVER.cbs.delete(e.data.solveId); if (f) f(e.data.R); }; } }
+      if (SOLVER){ SOLVER.cbs.set(id, cb); SOLVER.postMessage({ solve: plain, solveId: id }); return; }
+    } catch { SOLVER = null; }
+    const gen = solveMine(puzzleOf(plain)), step = () => { const end = performance.now() + 12; let r; do r = gen.next(); while (!r.done && performance.now() < end); if (r.done) cb(r.value); else setTimeout(step, 0); };
+    setTimeout(step, 0);
+  }
+  function edWhy(){
+    const d = draftOf();
+    if (d.balls.length < 2) return 'Lay a ball for the white to play.';
+    if (d.target == null && d.first == null && !d.zone) return 'Mark what the shot must do: a ball to pot, a ball to hit first, or a ring for the white.';
+    if (d.bank && d.target == null) return 'A bank needs a ball to pot.';
+    return null;
+  }
+  // ✔ and ✓: look for a shot (once for a draft unchanged since), then say it, or keep it and play it
+  function edCheck(then){
+    const why = edWhy(); if (why){ edSay(why); return false; }
+    const key = draftKey();
+    if (ED.found && ED.foundKey === key){ then && then(ED.found); return true; }
+    if (ED.checking) return edSay('Still looking for a shot…', 1500), false;
+    const plain = cleanMine(draftOf()); if (!plain){ edSay('Two balls overlap, or one is off the cloth: move it.'); return false; }
+    ED.checking = true; edSay('Looking for a shot that does it…', 8000); try { bbRefreshNow(); } catch {}
+    solveSoon(plain, R => {
+      ED.checking = false; if (!ED.on || draftKey() !== key){ try { bbRefreshNow(); } catch {} return; }
+      if (!R){ ED.found = null; edSay('No shot found that does it all (it may still be possible, but it must be found to be kept). Move a ball, or ask for less.', 5000); try { bbRefreshNow(); } catch {} return; }
+      ED.found = R; ED.foundKey = key; try { bbRefreshNow(); } catch {}
+      if (then) then(R); else edSay('A shot does it: par ' + R.par + ' (a window of aim of ' + R.window.toFixed(2) + '°). ✓ keeps it and plays it.', 4000);
+    });
+    return true;
+  }
+  function edKeep(R){
+    const m = cleanMine({ ...draftOf(), sol: R.sol, window: R.window, par: R.par }); if (!m || !m.sol){ edSay('This table cannot be kept.'); return; }
+    const idx = ED.idx, c = ED.c, r = ED.r; MINE.delete(idx); MINE.set(idx, m); MINE_P.delete(idx); saveMine();
+    for (const k of [...RECS.keys()]) if (typeof k === 'string' && k.startsWith('m' + idx + ':')) RECS.delete(k);
+    FREEPLAY.delete(gkey(c, r)); edStop(); edPane(false); restart(c, r); LIVE = { c, r };
+    edSay('Your trick shot, par ' + m.par + '. ' + mineText(m), 4000);
+  }
+  function edDone(){
+    if (!ED.on) return true;
+    const why = edWhy(); if (why){ edSay(why + ' (✕ leaves the table as it was.)'); return false; }
+    edCheck(edKeep); return false;      // (the row stays open until a shot is found; edKeep shuts it)
+  }
+  function edTiles(){
+    const busy = ED.checking;
+    const out = ED_TOOLS.map(([k, g, name]) => ({ glyph: g, value: name, bg: ED.tool === k ? '#3d5a80' : null, dim: busy }));
+    out.push({ glyph: '↩', value: 'Bank', label: ED.bank ? 'on' : 'off', bg: ED.bank ? '#2f5e3a' : null, dim: busy },
+             { glyph: '↪', value: 'Kick', label: ED.kick ? 'on' : 'off', bg: ED.kick ? '#2f5e3a' : null, dim: busy },
+             { glyph: '◎', value: 'Ring size', label: ED.ring.toFixed(1), dim: busy },
+             { glyph: '👁', value: 'See', label: ED.see === Infinity ? 'all' : ED.see + ' deep', dim: busy },
+             { glyph: '⌫', value: 'Clear', label: 'the white alone', dim: busy },
+             { glyph: '✔', value: 'Check', label: busy ? 'looking…' : ED.found ? 'par ' + ED.found.par : '', dim: busy },
+             { glyph: '▶', value: 'Play', bg: '#2f5e3a', dim: busy });
+    return out;
+  }
+  function edTile(i){
+    if (ED.checking) return true;
+    if (i < ED_TOOLS.length){ ED.tool = ED_TOOLS[i][0]; edSay({ white: 'Tap where the white goes.', ball: 'Tap to lay the next ball.', target: 'Tap the ball to pot.', first: 'Tap the ball the white must meet first.',
+      avoid: 'Tap a ball the shot must not touch (again to free it).', ring: 'Tap where the white must stop (in it again to take it away).', erase: 'Tap a ball or the ring to take it away.' }[ED.tool], 2200); try { bbRefreshNow(); } catch {} return true; }
+    const a = ED_ACTS[i - ED_TOOLS.length];
+    if (a === 'bank') ED.bank = !ED.bank;
+    else if (a === 'kick') ED.kick = !ED.kick;
+    else if (a === 'ringsize'){ ED.ring = RINGS[(RINGS.indexOf(ED.ring) + 1) % RINGS.length]; if (ED.zone) ED.zone[2] = ED.ring; }
+    else if (a === 'see') ED.see = ED.see === Infinity ? 0 : ED.see >= 5 ? Infinity : ED.see + 1;
+    else if (a === 'clear'){ ED.balls = ED.balls.filter(b => b[0] === 0); ED.target = ED.first = null; ED.avoid = []; ED.zone = null; }
+    else if (a === 'check'){ edCheck(null); return true; }
+    else if (a === 'play'){ edDone(); return true; }
+    else return false;
+    edChanged(); return true;
+  }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
+  // SHARE: a board's own trick shot (the draft while editing) as a link, taken onto the first board framed, through cleanMine; a
+  // shot that no longer does it (or none sent) is looked for again before it is kept
+  function shareShot(){
+    const f = framedCell(), m = ED.on ? { ...draftOf(), ...(ED.found && ED.foundKey === draftKey() ? { sol: ED.found.sol, window: ED.found.window, par: ED.found.par } : {}) } : f && MINE.get(boardIdx(f.c, f.r));
+    if (!m || (ED.on && edWhy())){ say('This table has no trick shot of its own to share: make one first', 2200); return null; }
+    return SHARE.copy(SHARE.link(app, m), 'Link copied: it opens on this trick shot.');
+  }
+  function takeShot(c, r, P){
+    const m = cleanMine(P); if (!m){ say('The shared trick shot cannot be read.', 3000); return; }
+    const keep = R => { const k = cleanMine({ ...m, ...R }); const idx = boardIdx(c, r); MINE.delete(idx); MINE.set(idx, k); MINE_P.delete(idx); saveMine(); restart(c, r); LIVE = { c, r }; say('A shared trick shot, par ' + k.par + '. ' + mineText(k), 4000); };
+    const ok = m.sol && !trial(puzzleOf(m).B(), puzzleOf(m), { a: m.sol.a, p: m.sol.p, tip: m.sol.tip || [0, 0], el: m.sol.el || 0 }).why;
+    if (ok) keep({ sol: m.sol, window: m.window, par: m.par });
+    else solveSoon(m, R => R ? keep(R) : say('The shared trick shot cannot be done on this table: no shot was found for it.', 3500));
+  }
   // the keys (wander's): ◀ ▶ aim (shift a whole degree), ▲ ▼ power, space or Enter shoots, [ ] the tip across, − = up and down,
   // , . the cue lowered and raised, z undo
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
-    const g = liveGame(); if (!g) return;
+    const g = liveGame(); if (!g || ED.on) return;
     const k = e.key; let did = true;
     if (k === 'ArrowLeft' || k === 'ArrowRight') nudge(g, (k === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 1 : 0.05));
     else if (k === 'ArrowUp' || k === 'ArrowDown') setPower(g, g.power + (k === 'ArrowUp' ? 0.5 : -0.5));
@@ -51597,6 +51885,10 @@ const TRICK_APP = (() => {
         title: 'Free play: one of wander\'s tables (the rack, the row of four, the jump, the massé, or fifteen balls scattered), the balls yours to move and the shots to undo.',
         on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); if (FREEPLAY.has(k)) FREEPLAY.delete(k); else FREEPLAY.add(k); LIVE = { c: f.c, r: f.r }; restart(f.c, f.r); } },
       { label: 'Start this board again', title: 'The table as it was set, the cue as it began.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+      { label: 'Make a trick shot for this board…', title: 'The row becomes an editor: place the balls, mark what the shot must do; a shot is looked for and its par set.', on(){ if (!ED.on && edOpen()) edPane(true); } },
+      { label: 'Share this board\'s trick shot', title: 'A link that opens on this table\'s own trick shot (the one being made, while making it).', on(){ shareShot(); } },
+      { label: 'Forget this board\'s trick shot', title: 'Its own trick shot goes, and the board\'s made one comes back.', on(){ const f = framedCell(); if (!f) return; const idx = boardIdx(f.c, f.r); if (!MINE.has(idx)) return say('This board has no trick shot of its own.', 1800);
+          MINE.delete(idx); MINE_P.delete(idx); saveMine(); restart(f.c, f.r); say('Forgotten: the board\'s own made trick shot is back.', 2000); } },
       { label: 'About the trick shots (wander)', title: 'The page this came from, with the reading behind it (pool.html\'s table, played from inside).', on(){ try { window.open('https://reportbase.github.io/wander/play-trick.html', '_blank', 'noopener'); } catch {} } },
     ]}],
     cellFar: { light: CLOTH, dark: WOOD },
@@ -51615,9 +51907,30 @@ const TRICK_APP = (() => {
       const b = BEST[S.ch.id];
       return 'Trick shots — ' + S.ch.name + (S.lv ? ', level ' + S.lv : ' (' + (idx + 1) + ' of ' + CHALLENGES.length + ')') + ', par ' + S.ch.par + (b ? ', best ' + b + ' ' + starStr(starsOf(b, S.ch.par)) : '') + ' · ' + S.ch.text;
     },
-    statTiles(c, r){ const g = GAMES.get(gkey(c, r)); return g && LIVE && LIVE.c === c && LIVE.r === r ? tilesOf(g) : null; },
-    statsStay(){ return !!liveGame(); },
-    onStatTap(c, r, i){ const g = GAMES.get(gkey(c, r)); return g ? onTile(g, i) : false; },
+    statTiles(c, r){ if (ED.on) return edTiles(); const g = GAMES.get(gkey(c, r)); return g && LIVE && LIVE.c === c && LIVE.r === r ? tilesOf(g) : null; },
+    statsStay(){ return ED.on || !!liveGame(); },
+    onStatTap(c, r, i){ if (ED.on) return edTile(i); const g = GAMES.get(gkey(c, r)); return g ? onTile(g, i) : false; },
+    /* THE ROW IS THE TRICK-SHOT EDITOR while making one; shutting it then keeps the shot once one is found. The row is also the
+       played table's (its Shoot, aim and spin), and the field opens it by itself when a game's tiles appear, so its opening is
+       not the editor's switch, as it is mini golf's and the tilt maze's: the editor opens from the quick button ✎ or the menu. */
+    onBrowserToggle(open){
+      if (ED.busy) return true;
+      if (!open && ED.on){ edDone(); return false; }
+      return true;
+    },
+    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase: a ball or the ring away', dim: ED.tool === 'erase' }, { key: 'check', glyph: '✔', title: 'Check: is there a shot that does it, and what par?' },
+                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the table as it was' }, { key: 'done', glyph: '✓', title: 'Done: keep it and play it' }]
+                               : liveGame() ? [{ key: 'make', glyph: '✎', title: 'Make a trick shot for this board: place the balls, mark what the shot must do' }] : null; },
+    onQuickAct(c, r, key){
+      if (key === 'make' && !ED.on){ if (edOpen()) edPane(true); return true; }
+      if (!ED.on) return false;
+      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a ball or the ring to take it away.'); }
+      else if (key === 'check') edCheck(null);
+      else if (key === 'cancel') edCancel();
+      else if (key === 'done') edDone();
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(){ return true; },
     onFramed(c, r){
@@ -51625,9 +51938,12 @@ const TRICK_APP = (() => {
       if (LIVE && !TOLD){ TOLD = true; say('Drag on the table to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
     },
     onLeave(){ ctlHide(); },
-    noDoubleTap(){ return !!liveGame(); },
+    noDoubleTap(){ return ED.on || !!liveGame(); },
     onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
+      if (ED.on){ if (performance.now() - ED.ateAt < 400) return true;
+        if (c !== ED.c || r !== ED.r){ edSay('Finish this table first: ✓ keeps it, ✕ leaves it as it was.', 2000); return true; }
+        if (u != null) edTap(u, v); return true; }
       LIVE = { c, r }; const g = gameAt(c, r);
       if (!g){ say('This board\'s trick shot is still being made; a moment.', 1500); return true; }
       if (g.anim){ finish(g); return true; }                    // a tap during the shot jumps to its end (wander's)
@@ -51637,22 +51953,24 @@ const TRICK_APP = (() => {
       if (w && Math.hypot(w.x - x, w.z - z) < R * 1.6) shoot(g); else aimAt(g, x, z);
       touch(); return true;
     },
-    onCellHold(c, r){ restart(c, r); say('The table as it was set.', 1400); return true; },
+    onCellHold(c, r){ if (ED.on) return true; restart(c, r); say('The table as it was set.', 1400); return true; },
     // a press and a drag aims, the preview following; in free play a press on a ball moves it (wander's: set up any trick shot)
     keepsPress: true,
     claimsPan(u, v){
+      if (ED.on) return u != null && edDragStart(u, v);
       const g = liveGame(); if (!g || g.anim || u == null) return false;
       const [x, z] = toTable(u, v), hit = g.ch ? null : g.balls.filter(b => !b.sunk).find(b => Math.hypot(b.x - x, b.z - z) < R * 1.15);
       DRAG = { g, moved: false, ball: hit || null, dx: hit ? hit.x - x : 0, dz: hit ? hit.z - z : 0 }; return true;
     },
     onPan(dx, dy, at){
+      if (ED.on){ if (ED.drag && at) edDragAt(at.u, at.v); return !!ED.drag; }
       if (!DRAG) return false; if (!at) return true;
       const g = DRAG.g, [x, z] = toTable(at.u, at.v); DRAG.moved = true;
       if (DRAG.ball){ const nx = x + DRAG.dx, nz = z + DRAG.dz; if (free(g.balls, nx, nz, DRAG.ball)){ DRAG.ball.x = nx; DRAG.ball.z = nz; g.dirty = true; } }
       else aimAt(g, x, z);
       return true;
     },
-    onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); touch(); } DRAG = null; } },
+    onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); touch(); } DRAG = null; } },
     drawIcon(ctx, sz){
       ctx.fillStyle = '#4a2c18'; ctx.fillRect(0, sz * 0.2, sz, sz * 0.6);
       ctx.fillStyle = '#16513f'; ctx.fillRect(sz * 0.06, sz * 0.26, sz * 0.88, sz * 0.48);
@@ -51665,8 +51983,10 @@ const TRICK_APP = (() => {
               grip: mu => { muB = mu ?? null; }, R, LX, LZ, POCKETS, ASP, D,
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL,
+              ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
+  SHARE.install(app, takeShot);
   return app;
 })();
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
@@ -53059,8 +53379,15 @@ function _itemRec(app, kind){
       };
       mat.customProgramCacheKey = () => 'morph';
     }
+    /* …and a kind may be drawn ON TOP of everything (geometry.userData.onTop, a number; Oct 23, trick shots: "the cue stick should
+       always be on top and should extend on to the the adjacent boards if needed"): no depth test, in the transparent pass, drawn
+       last (renderOrder 1000 + onTop, so a higher one lies over a lower), over its own board's pieces and the boards beside it.
+       Its own faces still cull at the back, so a convex piece (a cue, a ball) draws itself right. */
+    const onTop = geo.userData && geo.userData.onTop;
+    if (onTop){ mat.depthTest = false; mat.depthWrite = false; mat.transparent = true; }
     const mesh = new THREE.InstancedMesh(geo, mat, cap);
     mesh.frustumCulled = false;
+    if (onTop) mesh.renderOrder = 1000 + onTop;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.setColorAt(0, new THREE.Color(1, 1, 1));   // allocate the color buffer
     mesh.count = 0;
@@ -53090,9 +53417,11 @@ function _emitInto(rec, it, cx, cz, bWX, bWZ, flatW){
      item stood square, and a turning thing was drawn as a row of small unturned boxes. */
   if (it.yaw) _iq.setFromAxisAngle(_iUp, Math.PI - it.yaw); else _iq.identity();
   /* `rot` (Oct 22, trick shots: "balls that visibly roll and spin"): a whole turn [x, y, z, w], a quaternion in the board's own
-     frame (u, up, v), for a thing turned every way, as a rolling ball is; it stands in for yaw and tilt. The board runs +u to −x
-     and +v to −z, a half turn about +y, so the same turn in the world is (−x, y, −z, w). */
-  if (it.rot) _iq.set(-it.rot[0], it.rot[1], -it.rot[2], it.rot[3]);
+     frame (u, up, v), for a thing turned every way, as a rolling ball is; it stands in for yaw and tilt. The item's own axes are
+     read in the board's terms too, as yaw's are (its +x along +u unturned). The board runs +u to −x and +v to −z, a half turn H
+     about +y, so the world's turn is H·q: (z, w, −x, −y). (Until Oct 23 it was H·q·H⁻¹, which turned the item's own axes half
+     round as well: the cue lay forward along the shot, its butt over the ball it was aimed at. A ball rolls the same either way.) */
+  if (it.rot) _iq.set(it.rot[2], it.rot[3], -it.rot[0], -it.rot[1]);
   /* `tilt` (Oct 22, golf tanks: "the tanks just drive through hills. they should respect the terrain."): [du, dv], the slope of
      the ground under an item as lift a unit of u and of v. The item is then stood on that slope (its upright turned to the
      ground's normal, after its yaw), not level with its front buried in the hillside. The board runs +u to −x and +v to −z,

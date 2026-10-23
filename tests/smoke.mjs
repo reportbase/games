@@ -3958,13 +3958,20 @@ try {
       live.after = await gs();
       // the white rolled (its turn is not where it began; after a try it goes back with the balls), and the frame wears the stars
       live.rolled = await page.evaluate(([k, r0]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.liveView(g), it = D.itemsOf(V);
-        return { stars: it.filter(i => i.kind === 'tsStar' && i.color === 0xd4a052).length, balls: it.filter(i => /^tsB\d+$/.test(i.kind) && i.rot).length, best: D.BEST.half }; }, [fc[0] + '_' + fc[1], rot0]);
+        // (Oct 23: "the cue stick should always be on top and should extend on to the the adjacent boards if needed": the played
+        //  board's cue full length, drawn on top, its butt behind the white, away from the shot)
+        const cue = it.find(i => i.kind === 'tsCue'), q = cue && cue.rot, A = window.getFieldApp(), W = window.FIELD_WORLD;
+        const back = q ? (() => { const [x, y, z, w] = q, a = -1, ix = w * a, iy = z * a, iz = -y * a, iw = -x * a; return [ix * w + iw * -x + iy * -z - iz * -y, iz * w + iw * -z + ix * -y - iy * -x]; })() : null;
+        return { stars: it.filter(i => i.kind === 'tsStar' && i.color === 0xd4a052).length, balls: it.filter(i => /^tsB\d+$/.test(i.kind) && i.rot).length, best: D.BEST.half,
+                 cue: cue ? { len: cue.sx, onTop: A.itemGeometries.tsCue(W.THREE).userData.onTop, behind: back[0] * Math.cos(g.ang) + back[1] * Math.sin(g.ang) < -0.9 } : null }; }, [fc[0] + '_' + fc[1], rot0]);
       // the row: Spin steps the tip to follow, power + steps it up by one
       live.row = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), p = g.power; D.onTile(g, 5); D.onTile(g, 4);
         return { tip: g.tip.y, power: g.power - p, tiles: D.tilesOf(g).length }; }, fc);
       // the real spin inset: a click above its middle strikes the white high; the real pull strip: pulled and let go, it shoots
+      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 8000 }).catch(() => {});
       const tipBox = await page.evaluate(() => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(); return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width } : null; });
       if (tipBox){ await page.mouse.click(tipBox.x - 0.2 * 0.36 * tipBox.w, tipBox.y - 0.5 * 0.36 * tipBox.w); live.inset = (await gs()).tip; }
+      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 8000 }).catch(() => {});
       const pullBox = await page.evaluate(() => { const e = document.getElementById('tsPull'), r = e && e.getBoundingClientRect(); return r && r.height ? { x: r.left + r.width / 2, y: r.top + 8, h: r.height } : null; });
       if (pullBox){ const s0 = (await gs()).shots; await page.mouse.move(pullBox.x, pullBox.y); await page.mouse.down(); await page.mouse.move(pullBox.x, pullBox.y + pullBox.h * 0.3, { steps: 6 });
         live.pulled = (await gs()).power; await page.mouse.up(); await page.waitForTimeout(300); live.pull = { shots: (await gs()).shots - s0, anim: (await gs()).anim };
@@ -3992,17 +3999,60 @@ try {
         moved += a.pos.reduce((s, p, i) => s + (p && b.pos[i] ? Math.hypot(p[0] - b.pos[i][0], p[1] - b.pos[i][1]) : 0), 0); }
       const it = D.itemsOf({ B: R.S.B, pos: R.S.B.map(b => [b.x, b.z, 0]), ch: R.S.ch, sim: R.s, hz: R.s.hz, see: 3, paths: 'all', cue: { ang: 0.3, power: 14, elev: 0, tip: { x: 0, y: 0 }, chalk: true } });
       const kinds = k => it.filter(i => i.kind === k).length;
-      return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: it.filter(i => /^tsB\d+$/.test(i.kind)).length, cushions: kinds('tsBox'), cue: kinds('tsCue'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
-               yaws: it.filter(i => i.kind === 'tsCue').every(i => i.yaw), inside: it.every(i => i.u > -0.02 && i.u < 1.02 && i.v > -0.02 && i.v < 1.02), photo: !!D.paint(256) }; });
+      return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: it.filter(i => /^tsB\d+$/.test(i.kind)).length, cushions: kinds('tsBox'), cue: kinds('tsCueIdle'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
+               yaws: it.filter(i => i.kind === 'tsCueIdle').every(i => i.rot), inside: it.every(i => i.u > -0.02 && i.u < 1.02 && i.v > -0.02 && i.v < 1.02), photo: !!D.paint(256) }; });
     const r = rules, ok = Object.values(r.spin).every(Boolean) && r.sols.every(Boolean) && r.cells && r.miss.tries === 1 && r.miss.why && r.miss.back
       && live.cell === 0 && Math.abs(live.dragged + 90) < 10 && live.playing && live.after && !live.after.anim && live.after.tries === 1 && live.after.solvedIn === 1
       && live.row.tip > 0.3 && live.row.power === 1 && live.row.tiles === 12 && live.space.anim && live.free.challenge === 0 && live.free.potted === 1 && live.free.shots === 1 && live.free.back === 1
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
-      && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
+      && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.cue && live.rolled.cue.len >= 20 && live.rolled.cue.onTop && live.rolled.cue.behind && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
       && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next === 1
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 1 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trick shots (wander's textbook results; ${r.sols.filter(Boolean).length} of ${r.sols.length} reference shots solve their challenges; a missed try put the balls back: ${r.miss.why}; a real drag aimed the cue to ${live.dragged && live.dragged.toFixed(1)}°; a real click on the white played the ½-ball cut, solved in ${live.after && live.after.solvedIn}; a real Space potted on free play; a board no one plays went through its ${shown.cycle} s shot, drawn with ${shown.dots} dots ahead; generated trick shots solved by their own shots (${r.gen.kinds}), par ${r.gen.par1} at level 1 and ${r.gen.par5} at level 5, windows ${r.gen.w1}° and ${r.gen.w5}°; the real inset struck the white high, the real strip pulled to ${live.pulled} shot, and a click on the solved table went on to board ${live.next})`);
+  }
+  // YOUR OWN TRICK SHOT (Oct 23: "2", of what came next for trick shots: "make your own trick shot and share it"): the real ✎ quick
+  // button opens the editor on the framed table, real clicks place the white and a ball and mark it to pot, Check finds a shot
+  // (in the solver's worker) with its par, Done keeps it on the board (and in localStorage) and plays it, its own shot solves
+  // it, a shared copy taken on another board is the same, and a ball ringed by balls not to be touched is refused.
+  {
+    const before = failures.length, out = {};
+    const [c, r] = await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = D.cellOfIdx(60); D.GAMES.delete(c + '_' + r); D.MINE.delete(60); D.fly(c, r); return [c, r]; });
+    await page.waitForTimeout(3000);
+    const at = (x, z) => page.evaluate(([x, z]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, D = window.getFieldApp()._debug;
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [x, z]);
+    const est = () => page.evaluate(() => { const E = window.getFieldApp()._debug.ed(); return { on: E.on, balls: E.balls.map(b => b.slice()), target: E.target, found: E.found && { par: E.found.par, w: E.found.window }, checking: E.checking }; });
+    try {
+      await page.waitForSelector('#bbQuick button[title^="Make"]', { state: 'visible', timeout: 15000 });
+      await page.click('#bbQuick button[title^="Make"]'); await page.waitForTimeout(800);
+      out.opened = (await est()).on;
+      const tile = i => page.evaluate(i => window.getFieldApp()._debug.edTile(i), i);
+      await tile(11);                                            // Clear: the white alone
+      await tile(0); let p = await at(-8, 0); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+      await tile(1); p = await at(2, 1); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+      await tile(2); p = await at(2, 1); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+      out.placed = await est();
+      await tile(12);                                            // Check
+      for (let k = 0; k < 60 && !(await est()).found; k++) await page.waitForTimeout(500);
+      out.found = (await est()).found;
+      await tile(13); await page.waitForTimeout(2500);           // Play: kept and played
+      out.kept = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), m = D.MINE.get(60);
+        let stored = false; try { stored = JSON.parse(localStorage.getItem('trickshots.mine')).some(([k]) => k === 60); } catch {}
+        const res = { on: D.ed().on, mine: !!m, stored, game: !!(g && g.ch && g.ch.mine), text: g && g.ch && g.ch.text, par: g && g.ch && g.ch.par };
+        if (g){ const o = g.ch.sol; g.ang = o.a * D.D; D.setPower(g, o.p); D.setTip(g, ...(o.tip || [0, 0])); D.setElev(g, o.el || 0); D.shoot(g); D.finish(g); res.solvedIn = g.solvedIn; }
+        const [c2, r2] = D.cellOfIdx(61); D.MINE.delete(61); D.takeShot(c2, r2, JSON.parse(JSON.stringify(m)));
+        res.shared = !!D.MINE.get(61) && JSON.stringify(D.MINE.get(61).balls) === JSON.stringify(m.balls);
+        D.edOpen(); const E = D.ed(); E.balls = [[0, -8, 0], [1, 5, 0], ...[0, 1, 2, 3, 4, 5].map(k => [k + 2, 5 + 0.92 * Math.cos(k * Math.PI / 3), 0.92 * Math.sin(k * Math.PI / 3)])];
+        E.target = 1; E.avoid = [2, 3, 4, 5, 6, 7]; E.first = null; E.zone = null; E.found = null; D.edCheck(); return res; }, [c, r]);
+      for (let k = 0; k < 120 && (await est()).checking; k++) await page.waitForTimeout(500);
+      out.ringed = await est();
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; D.edCancel(); D.MINE.delete(60); D.MINE.delete(61); D.GAMES.clear(); });
+    } catch (e) { out.err = String(e); }
+    const k = out.kept || {}, ok = !out.err && out.opened && out.placed && out.placed.balls.length === 2 && out.placed.target === 1 && Math.abs(out.placed.balls[1][1] - 2) < 0.3
+      && out.found && out.found.par >= 1 && !k.on && k.mine && k.stored && k.game && k.solvedIn === 1 && k.shared && out.ringed && !out.ringed.checking && !out.ringed.found;
+    if (!ok) failures.push(`[trickshots editor] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} your own trick shot (the real ✎ opened the editor, real clicks laid a ball and marked it, Check found a shot with par ${out.found && out.found.par} (${out.found && out.found.w}°), Done kept it and its shot solved it, a shared copy went onto another board, a ringed ball was refused)`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
