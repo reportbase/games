@@ -769,6 +769,30 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       (`windowOf`, `parOfWindow`: 1.2° or more one try, under 0.2° four); of `GEN_TRIES` (6) seeds the first whose window is in
       its level's `band` is kept, else the nearest. Measured on 40 boards a level: every one solved by its own shot; median window
       4.35°, 2.68°, 1.42°, 0.72° and 0.64°; par 1.0, 1.05, 1.55, 2.2 and 3.3; 12 to 220 ms to make (1.1 s at most).
+    - **Harder far boards** (Oct 23: "3", of what came next: "the outer rings could hide the preview entirely, so you rely on the
+      ghost ball alone, or add a 'call your pocket' rule"): level 4 now sees 0 contacts too (the ghost ball and the white's way to it
+      alone, as level 5), and from level 3 the pocket is called (`GEN_LV`'s `call`; a cannon has no pot and calls none): the pocket
+      the reference shot's ball drops in (`pocket`, kept in `PLAIN`), ringed red twice on the table, the text ending "in the pocket
+      ringed red"; `goalFor` asks the kind's goal, then the pocket ("the 1 went in another pocket, not the one called"). A called
+      puzzle's id ends in `c`, so bests from before do not carry over. Measured in Node on 20 boards a level: every one solved by
+      its own shot; median window 1.39°, 0.99° and 0.69° at levels 3, 4 and 5, par 1.4, 2.7 and 3.15; 0.3–0.55 s to make.
+    - **Run-outs** (Oct 23: "1", of what came next: "multi-shot puzzles: clear a small table in two or three shots, with each
+      leave planned for the next, like a real run-out"): a kind of its own (`run`, from level 2, weighted 2–3 in `GEN_LV`; `genRun`):
+      two object balls (three from level 4) and the white, to be cleared in as many shots, each potting a ball with the white kept
+      up (`goalFor`'s `run`: "nothing went in"). `runFrom` looks for the run as a player reading the table would: each ball into
+      each pocket through its ghost ball (clear lines, cuts to 70°, nearest first), stun then follow then draw, softest first,
+      and for each pot whether the table it leaves runs out; a pot that leaves no next shot is a trap (`traps`, one more on par;
+      rare, 0–0.1 a run measured), `RUN_BUDGET` 5,000 shots at most. The puzzle keeps the run's shots (`sols`, `sol` the first,
+      `shotsN`, in `PLAIN`); par is each shot's window's par summed less one a shot after the first (at most 5), `window` the
+      narrowest.
+      - Played (`finish`): a shot that pots carries the table on (`g.stage`); a miss puts every ball back and the run starts again
+        (`g.rot0`), a try being a whole run; cleared, it is solved in that many tries. The title says which shot of the run it is.
+        Show me the trick sets the run's next shot on the cue while the table is still the reference run's, else says so.
+      - A board no one plays shows the whole run (`runSim`: the shots flown one after another and joined, `RUN_GAP` 0.9 s between).
+      - Measured in Node on 40 boards a level: runs 9, 13, 16 and 20 of them at levels 2–5, every one cleared by its own shots
+        after the worker's round trip; pars 1–2 at level 2, 1–4 at 3, 2–5 at 4 and 5; 60–120 ms to make.
+      - The messages that said "hold it to play this one again" say the menu's Start this board again, since a hold now toggles
+        the row.
     - **Made in a worker** (`workers`, `WK_N` 2): the engine and generator's own text from this script (`workerSrc`: from
       TRICK_APP's start to the field's part) with a message handler, so the same puzzle comes back as plain numbers (`plainOf`,
       `puzzleOf`). The framed or played board first, then those asked for most lately; a job not asked for in 2 s is dropped
@@ -831,7 +855,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     pull on the strip shooting, and a real click on the solved table going on to the next board; since Oct 23 the played cue full
     length, drawn on top, its butt behind the white; and the editor (the real ✎ opening it, real clicks laying a ball and
     marking it, Check finding a shot, Done keeping it in storage and its shot solving it, a shared copy on another board, a ringed
-    ball refused).
+    ball refused); and the called pocket (a level-3 puzzle's own shot sinking it there, the same shot with another pocket called a
+    miss that says so, none called at level 1, level 4 seeing 0, the two red rings drawn); and a run-out (a board's run found, a real miss starting it again, its own two shots played by real
+    clicks clearing it on the next try, a board no one plays showing the whole run with every ball down).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
@@ -1473,6 +1499,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     sums run backwards from where the eye stands), not from the board selected before a pan; while the view is where its framing
     put it, or still flying there, from the selected board as before. Games that use Enter themselves (the arcade games, golf's
     putt, Simon's start) keep it; Tab always steps. The smoke test slides the view two boards along in the gallery and checkers.
+- **The dots shut the row, and a hold toggles it** (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
+  display should toggle the visiblibility of the bottom panel."):
+  - A row an app holds up while you play (`statsStay`: trick shots, the tanks, golf tanks) was put straight back after the dots
+    shut it (`bbStatTick`). A row shut by hand (`bbOverride` false) now stays shut; every opening, an editor's too, sets it true.
+  - A long press and let go toggles the row in every game. An app's own hold (`onCellHold`) is asked only where it is a move in
+    play (`holdIsMove`: Minesweeper's flag, Pipes' and Loops' turn back, Nonograms' cross, Sokoban's undo, Air raid's bomb), and
+    so is a right click. Elsewhere a hold used to start the board again, and the notes above that say "a hold starts it again"
+    are out of date: the menu's Reset does that.
+  - The smoke test clicks the real dots in trick shots and wants the row to stay shut, long-presses the table twice and wants it
+    open, then shut, and wants a hold in Simon to flip the field's switch (`window.tvf.bottomRow.visible`).
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
