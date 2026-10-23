@@ -858,6 +858,40 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     ball refused); and the called pocket (a level-3 puzzle's own shot sinking it there, the same shot with another pocket called a
     miss that says so, none called at level 1, level 4 seeing 0, the two red rings drawn); and a run-out (a board's run found, a real miss starting it again, its own two shots played by real
     clicks clearing it on the next try, a board no one plays showing the whole run with every ball down).
+- **3D Tetris** (Oct 23: "any games that require 3d spatial rotation", then "2" of five offered: Blockout): `BLOCKOUT_APP`, id
+  `blockout`, after Tetris. Blockout stood on its head: a pit of P × P cells on the board, the stack growing up out of it toward
+  you, H layers high; pieces of cubes come down from the top, you slide them across the floor and turn them about any of the three
+  axes, and a whole layer filled goes, everything above coming down one.
+  - **Levels** 1–5 by ring plus the Difficulty (Easy 0, Normal 1, Hard 2; Lights Out's rule), `LV`: 3 × 3 and 4 × 4 of flat
+    pieces (two to four cubes in a plane), then 5 × 5 with the I4 and the three tetracubes that are not flat (the tripod and the
+    two mirror-image screws), then five pentacubes, faster; six layers (`SQ` 0.12 of the board a cube).
+  - **Turns** are worked in the board's own frame (u, up, v), the one an item's `rot` is read in, so a turn's cells and the
+    quaternion it is drawn with agree: a quarter turn about a takes w to a × w + a (a·w) (`turnVec`). Every orientation of every
+    piece is found once (`ORI`: 24 for L4 and P5, 12 for T, S and the screws, 8 for the tripod), with where each of the six turns
+    takes it. A turn keeps the middle of the piece's box and tries a cell aside or up (`KICKS`); drawn, it swings into place over
+    `ANIM` (0.14 s), each cube turned with it. Which way is the screen's (`screenToBoardDirs`): Tip sends the top away up the screen
+    (about Up × d), Roll to the screen's left or right, Spin about the upright (`opFor`). `g.turns` counts them (a long piece
+    turned about its own length keeps its cells).
+  - **Seen**: the stack coloured by layer (`LAYER`), the landing shown as pale cubes (`bkGhost`), corner posts ticked at every
+    layer and a rim, the next piece small in the far left corner, a cleared layer flashing (`FLASH` 0.25 s).
+  - **Controls**: arrows or WASD slide it (the screen's directions), Q / E spin, R / F tip, Z / X roll, Enter drops (Space pauses,
+    as in every game on its own clock; these keys are heard before the field's camera keys and stopped). A drag slides it a cell
+    for each cell the finger goes; a tap on the piece or its shadow drops it, elsewhere spins it; the bottom row: Spin ⟲ ⟳, Tip,
+    Roll, Drop (`statsStay` while playing).
+  - **Two field hooks** came with it: an app's `frameFit` (frameBoard frames from that much farther back: the page-load fit, the 0
+    key, a double tap, the zoom steps; 1.9 here, with `pitchMin` 68, since six layers stand 0.72 of a board tall and the far rim
+    was off the top of the screen) and `tapMargin` (a fraction past the board's edge whose taps the app is still asked about, u or
+    v outside 0..1; it returns false for one it does not want). A cube high by the far rim is seen over the next board's ground, so
+    a tap is followed from the eye through each cube of the piece and its shadow (`tapsPiece`).
+  - Scoring 100, 300, 600, 1000, 1500 for one to five layers at once, times the speed step (one every three layers); the best a
+    board kept (localStorage `blockout.best`, by board and level).
+  - **A board no one plays** shows a reel (Tetris's way: `bakeReel`, `REEL_N` 2 a level, 40 s, each board at its own frame), played
+    by the bot (`plan`: every orientation at every place, dropped, the stack scored by layers, height, holes and bumps; then turned
+    along the shortest way through the orientations, `pathTo`, and slid there). Over a reel it clears 64, 32, 19, 20 and 7 layers by
+    level. Taking a board carries on from what it showed (`adopt`).
+  - The smoke test checks the orientations, tip and roll moving a tripod's arms where the screen says, a layer cleared, the pit by
+    ring, the bot clearing at every level, a turn drawn turned, and real input: a click starting, the real arrow, Q and Enter, a
+    click on the floor spinning and on the piece dropping, a drag sliding, the row's Tip tile, a board no one plays moving.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

@@ -6051,7 +6051,11 @@ function frameBoard(fit){
   const oz  = Math.cos(yaw) * t1 * BOARD_LIFT_ROWS;
   const bx = target.boardX, bz = target.boardZ;
   target.boardX = bx - ox; target.boardZ = bz - oz;   // aim a row nearer → board rides higher
-  frameSelectedBoardAt(tabletopZoom() * (fit != null ? fit : birdFit));
+  /* `frameFit` (Oct 23, 3D Tetris: "any games that require 3d spatial rotation", then "2"): an app whose pieces stand tall
+     off the board (the 3D Tetris pit, six layers of cubes) is framed from that much farther back, or its top is off the
+     screen; the page-load fit, the 0 key, a double tap and the zoom steps all come through here. */
+  let af = 1; try { const a = window.getFieldApp && window.getFieldApp(); if (a && a.frameFit > 0) af = a.frameFit; } catch {}
+  frameSelectedBoardAt(tabletopZoom() * (fit != null ? fit : birdFit) * af);
   target.boardX = bx; target.boardZ = bz;             // restore true grid position
 }
 /* Change the bird's-eye height. factor < 1 zooms IN (board fills more), factor
@@ -16673,7 +16677,11 @@ function handleGroundTap(hit, ev){
           const _ch3 = (window.LAB && window.LAB.cellH) || 1;
           const bWX3 = boardW * _cw3, bWZ3 = boardW * _ch3;
           const dxT = hit.x - target.boardX, dzT = hit.z - target.boardZ;
-          if (Math.abs(dxT) <= bWX3 / 2 && Math.abs(dzT) <= bWZ3 / 2){
+          /* `tapMargin` (Oct 23, 3D Tetris): a fraction of the board past its edge that is still the app's to look at. A cube
+             standing high near the pit's far rim is seen over the next board's ground, and a tap on it landed there; the app
+             is asked with u or v outside 0..1 and returns false for a tap it does not want, which then selects as before. */
+          const _tm = Math.max(0, +_app.tapMargin || 0);
+          if (Math.abs(dxT) <= bWX3 * (0.5 + _tm) && Math.abs(dzT) <= bWZ3 * (0.5 + _tm)){
             const GS3 = Math.max(1, Math.round(Math.sqrt(st.N)));
             const w3 = v => ((v % GS3) + GS3) % GS3;
             let _ate = false;
@@ -28537,6 +28545,647 @@ const TETRIS_APP = (() => {
     for (let i = 0; i < N * N; i++) cols[i] = (i % N) >= X0 && (i % N) < X0 + W ? FLOOR : SIDE;
     return { n: N, colors: cols };
   })();
+  return app;
+})();
+/* ═══ 3D TETRIS (Oct 23: "any games that require 3d spatial rotation", then "2", of the five offered: "3D Tetris (Blockout):
+   pieces fall into a pit seen from above. You turn them about all three axes and fill whole layers.") ═══════════════════
+   Blockout, as it was played in 1989, stood on its head: the pit is a square of P × P cells on the board, and the stack grows
+   up out of it toward you, H layers high. A piece of cubes comes down from the top; you slide it across the floor and turn it
+   about any of the three axes, and when a whole layer is filled it goes and everything above comes down one.
+   - The pieces (`SETS`): flat ones at levels 1–2 (two, three and four cubes lying in a plane), the I4 and the three tetracubes
+     that are not flat (the tripod and the two screws, mirror images of each other) from level 3, and five pentacubes at 4–5.
+   - Every board plays at its own level, 1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2; Lights Out's rule):
+     `LV` sets the pit (3 × 3, 4 × 4, then 5 × 5), its height, the pieces, how fast they fall and how soon a landed one locks.
+   - TURNS are worked in the board's own frame (u, up, v), the one an item's `rot` is read in, so the cubes' places after a turn
+     and the quaternion the turn is drawn with can never disagree: a quarter turn about axis a takes w to a × w + a (a·w)
+     (`turnVec`), and the piece keeps the middle of its box (rounded), trying a cell aside or up when it would hit a wall or the
+     stack (`KICKS`). Drawn, it swings into place over `ANIM` (0.14 s) about its middle, each cube turned with it (`rot`).
+   - Which way a turn goes is the screen's, as the arrow keys are (`screenToBoardDirs`): Tip sends the top of the piece away up
+     the screen (about the axis Up × d, which takes Up to d), Roll sends it to the screen's left or right, Spin turns it about
+     the upright.
+   - Where it will land is shown as pale cubes (`bkGhost`); the stack's layers are coloured by height (`LAYER`), so how deep a
+     gap is can be read at a glance, and the pit's corner posts and rim show how far the top is.
+   - Controls: arrows or WASD slide it (the screen's directions), Q / E spin, R / F tip away / toward, Z / X roll left / right,
+     Enter drops it (Space pauses, as in every game on its own clock). A drag slides it a cell for each cell the finger goes; a tap on the piece's own shadow drops it,
+     a tap elsewhere spins it. The bottom row: Spin ⟲ ⟳, Tip ↑ ↓, Roll ◀ ▶, Drop.
+   - THE VIEW: six layers of cubes stand 0.72 of a board tall, and framed as a flat board is (from 1.4 board widths up) the
+     pit's far rim was off the top of the screen. So the app is framed from farther back (`frameFit` 1.9, a field hook read by
+     `frameBoard`: the page-load fit, the 0 key, a double tap and the zoom steps) and from steeper (`pitchMin` 68°), and a tap
+     just past the board's edge is still asked about (`tapMargin`, a field hook): a cube high by the far rim is seen over the
+     next board's ground, and a tap on it is ours only if its ray from the eye meets the piece or its shadow (`tapsPiece`).
+   - Scoring: 100, 300, 600, 1000 for one to four layers at once, times the speed step (one every three layers); the best a
+     board kept (localStorage `blockout.best`, by board and level).
+   - A board no one plays shows a reel (Tetris's way: `bakeReel` with a seeded generator and the bot, `REEL_N` reels a level,
+     each board at its own frame of one), and taking a board carries on from what it showed (`adopt`).
+   - THE BOT (`plan`): every orientation (`ORI`, up to 24 a piece, found by turning it every way until nothing new comes) at
+     every place across the floor, dropped, the stack scored (layers cleared, height, holes, bumps); it then turns the piece
+     along the shortest way to that orientation (`pathTo`, the orientations as a graph) and slides it there. */
+const BLOCKOUT_APP = (() => {
+  const SQ = 0.12, ANIM = 0.14, FLASH = 0.25, BOT_T = 0.08, BASE = 0x12151c, FLOOR = 0x1d2330, RULE = 0x56627a, POST = 0x8b97ad, PIECE = 0xeef2f7, GHOST = 0xcdd8ea;
+  // the classic layer colours, by height
+  const LAYER = [0x2a5bd8, 0x3cbf4a, 0x19c3de, 0xe0342b, 0x9a3fc6, 0xf2d024, 0xf28a1e, 0xe8e8e8];
+  // the pieces, as cubes [x, y, z] (z up)
+  const PIECES = {
+    I2: [[0, 0, 0], [1, 0, 0]],
+    I3: [[0, 0, 0], [1, 0, 0], [2, 0, 0]],
+    V3: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+    O4: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0]],
+    T4: [[0, 0, 0], [1, 0, 0], [2, 0, 0], [1, 1, 0]],
+    S4: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [2, 1, 0]],
+    L4: [[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0]],
+    I4: [[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]],
+    TRI: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]],     // the tripod: three arms from one corner
+    SCR: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1]],     // a screw …
+    SCL: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 1, 1]],     // … and its mirror image
+    P5: [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1]],
+    X5: [[1, 0, 0], [0, 1, 0], [1, 1, 0], [2, 1, 0], [1, 2, 0]],
+    U5: [[0, 0, 0], [2, 0, 0], [0, 1, 0], [1, 1, 0], [2, 1, 0]],
+    V5: [[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0], [0, 2, 0]],
+    Q5: [[0, 0, 0], [1, 0, 0], [1, 1, 0], [1, 1, 1], [2, 1, 1]],
+  };
+  const FLAT = ['I2', 'I3', 'V3', 'O4', 'T4', 'S4', 'L4'], BASIC = [...FLAT, 'I4', 'TRI', 'SCR', 'SCL'], EXT = [...BASIC, 'P5', 'X5', 'U5', 'V5', 'Q5'];
+  // P: the pit's side; H: its height in layers; fall: seconds a layer at the start; lock: how long a landed piece can still move
+  const LV = [
+    { P: 3, H: 6, set: FLAT,  fall: 1.15, lock: 0.8 },
+    { P: 4, H: 6, set: FLAT,  fall: 1.0,  lock: 0.7 },
+    { P: 5, H: 6, set: BASIC, fall: 0.9,  lock: 0.6 },
+    { P: 5, H: 6, set: EXT,   fall: 0.75, lock: 0.5 },
+    { P: 5, H: 6, set: EXT,   fall: 0.6,  lock: 0.4 },
+  ];
+  const DL = ARCADE.difficulty('blockout.level', 'Every board plays at its own level, harder the farther it is from the corner: a 3 × 3 pit of flat pieces near it, then 4 × 4, then 5 × 5 with pieces that are not flat and, farther out, pieces of five cubes falling faster. Easy, Normal and Hard move every board a level up.', true);
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const say = (m, ms) => { if (QUIET) return; try { engineNotice(m, ms || 2000); } catch {} };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  // (Lights Out's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const lvOf = (c, r) => levelAt(boardIdx(c, r));
+  let rnd = Math.random, QUIET = false, LIVE = null;
+
+  /* ─── TURNS, in the board's frame F = (u, up, v): our cell [x, y, z] is F (x, z, y). ─── */
+  const toF = ([x, y, z]) => [x, z, y], fromF = ([a, b, c]) => [a, c, b];
+  const cross = (a, w) => [a[1] * w[2] - a[2] * w[1], a[2] * w[0] - a[0] * w[2], a[0] * w[1] - a[1] * w[0]];
+  // a quarter turn (+90°) about the unit axis a: w → a × w + a (a·w)
+  const turnVec = (a, w) => { const c = cross(a, w), d = a[0] * w[0] + a[1] * w[1] + a[2] * w[2]; return [c[0] + a[0] * d, c[1] + a[1] * d, c[2] + a[2] * d]; };
+  // any angle about a (Rodrigues), for drawing a turn on its way
+  function spinVec(a, ang, w){
+    const c = Math.cos(ang), s = Math.sin(ang), x = cross(a, w), d = (a[0] * w[0] + a[1] * w[1] + a[2] * w[2]) * (1 - c);
+    return [w[0] * c + x[0] * s + a[0] * d, w[1] * c + x[1] * s + a[1] * d, w[2] * c + x[2] * s + a[2] * d];
+  }
+  const norm = cells => {
+    const m = [0, 1, 2].map(k => Math.min(...cells.map(p => p[k])));
+    return cells.map(p => [p[0] - m[0], p[1] - m[1], p[2] - m[2]]).sort((p, q) => p[0] - q[0] || p[1] - q[1] || p[2] - q[2]);
+  };
+  const keyOf = cells => cells.map(p => p.join(',')).join(';');
+  const sizeOf = cells => [0, 1, 2].map(k => 1 + Math.max(...cells.map(p => p[k])));
+  // the six turns the player has: an axis in F and a sign (−1 the quarter turn the other way, three of +1)
+  const AXES = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const OPS = [];
+  for (const a of AXES) for (const sg of [1, -1]) OPS.push({ a, sg });
+  function turnCells(cells, a, sg){
+    let out = cells.map(toF);
+    for (let k = 0; k < (sg > 0 ? 1 : 3); k++) out = out.map(w => turnVec(a, w));
+    return out.map(w => fromF(w).map(Math.round));
+  }
+  // every orientation of every piece, and where each turn takes it
+  const ORI = {};
+  for (const [t, base] of Object.entries(PIECES)){
+    const list = [norm(base)], idx = new Map([[keyOf(list[0]), 0]]), next = [];
+    for (let i = 0; i < list.length; i++){
+      next[i] = OPS.map(({ a, sg }) => {
+        const q = norm(turnCells(list[i], a, sg)), k = keyOf(q);
+        if (!idx.has(k)){ idx.set(k, list.length); list.push(q); }
+        return idx.get(k);
+      });
+    }
+    ORI[t] = { list, idx, next };
+  }
+  // the shortest way through the orientations from i to j, as turns
+  function pathTo(t, i, j){
+    if (i === j) return [];
+    const O = ORI[t], from = new Map([[i, null]]), Q = [i];
+    while (Q.length){
+      const k = Q.shift();
+      for (let o = 0; o < OPS.length; o++){
+        const n = O.next[k][o];
+        if (from.has(n)) continue;
+        from.set(n, [k, o]);
+        if (n === j){ const out = []; let m = n; while (from.get(m)){ const [p, op] = from.get(m); out.unshift(op); m = p; } return out; }
+        Q.push(n);
+      }
+    }
+    return [];
+  }
+
+  /* ─── THE GAME ─── */
+  const cellsOf = p => ORI[p.t].list[p.o].map(([x, y, z]) => [p.x + x, p.y + y, p.z + z]);
+  const at = (g, x, y, z) => (z * g.P + y) * g.P + x;
+  const fits = (g, p) => cellsOf(p).every(([x, y, z]) => x >= 0 && y >= 0 && x < g.P && y < g.P && z >= 0 && (z >= g.H || !g.grid[at(g, x, y, z)]));
+  function newGame(lv){
+    const L = LV[(lv || 3) - 1];
+    return { state: 'ready', lv: lv || 3, P: L.P, H: L.H, grid: new Uint8Array(L.P * L.P * L.H), bag: [], cur: null, next: null,
+             layers: 0, score: 0, cubes: 0, t: 0, fall: 0, drop: false, bot: null, last: 0, lockT: 0, resets: 0, flashes: [], anim: null };
+  }
+  function draw(g){
+    if (!g.bag.length){
+      g.bag = LV[g.lv - 1].set.slice();
+      for (let i = g.bag.length - 1; i > 0; i--){ const j = (rnd() * (i + 1)) | 0; [g.bag[i], g.bag[j]] = [g.bag[j], g.bag[i]]; }
+    }
+    return g.bag.pop();
+  }
+  function spawn(g){
+    const t = g.next || draw(g); g.next = draw(g);
+    const [w, d, h] = sizeOf(ORI[t].list[0]);
+    const p = { t, o: 0, x: Math.floor((g.P - w) / 2), y: Math.floor((g.P - d) / 2), z: g.H - h };
+    p.fx = p.x; p.fy = p.y; p.fz = p.z + 1.5;              // it comes down in from above the rim
+    g.cur = p; g.fall = 0; g.drop = false; g.bot = null; g.lockT = 0; g.resets = 0; g.anim = null;
+    if (!fits(g, p)) lose(g);
+  }
+  function start(g){
+    if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }
+    const at0 = g.at, lv = g.at ? lvOf(g.at[0], g.at[1]) : g.lv;
+    Object.assign(g, newGame(lv)); g.at = at0;
+    g.state = 'play';
+    spawn(g);
+    say('Arrows slide it · Q E spin · R F tip · Z X roll · Enter drops — or drag to slide, tap its shadow to drop, and turn it from the bottom row', 3200);
+  }
+  const step3 = g => Math.floor(g.layers / 3);
+  const fallEvery = g => Math.max(0.08, LV[g.lv - 1].fall * Math.pow(0.88, step3(g)));
+  const grounded = g => g.cur && !fits(g, { ...g.cur, z: g.cur.z - 1 });
+  const moved = g => { if (grounded(g) && g.resets < 12){ g.lockT = 0; g.resets++; } };
+  function shift(g, dx, dy){
+    const p = g.cur;
+    if (!p || !fits(g, { ...p, x: p.x + dx, y: p.y + dy })) return false;
+    p.x += dx; p.y += dy; moved(g); beep('move'); return true;
+  }
+  const KICKS = [[0, 0, 0], [-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, 1], [-1, -1, 0], [1, 1, 0], [-1, 1, 0], [1, -1, 0], [0, 0, 2], [-2, 0, 0], [2, 0, 0], [0, -2, 0], [0, 2, 0]];
+  // a turn by op (an index into OPS), keeping the middle of the piece's box where it was
+  function turn(g, op){
+    const p = g.cur;
+    if (!p) return false;
+    const O = ORI[p.t], o2 = O.next[p.o][op], s1 = sizeOf(O.list[p.o]), s2 = sizeOf(O.list[o2]);
+    const bx = p.x + Math.round((s1[0] - s2[0]) / 2), by = p.y + Math.round((s1[1] - s2[1]) / 2), bz = p.z + Math.round((s1[2] - s2[2]) / 2);
+    for (const [kx, ky, kz] of KICKS){
+      const q = { ...p, o: o2, x: bx + kx, y: by + ky, z: Math.max(0, bz + kz) };
+      if (fits(g, q)){
+        p.o = q.o; p.x = q.x; p.y = q.y; p.z = q.z;
+        g.anim = { a: OPS[op].a, sg: OPS[op].sg, t: 0 }; g.turns = (g.turns || 0) + 1;   // (a long piece turned about its own length keeps its cells: the count says it turned)
+        moved(g); beep('rot'); return true;
+      }
+    }
+    return false;
+  }
+  // the turns the player asks for, in the screen's terms: the axis in F that takes Up to the board direction d (Up × d)
+  const BD = [[0, -1], [1, 0], [0, 1], [-1, 0]];      // board dirs 0..3 as [dx, dy]: toward v = 0, +u, +v, −u
+  const dirsNow = () => { try { return screenToBoardDirs() || [0, 1, 2, 3]; } catch { return [0, 1, 2, 3]; } };
+  function opFor(kind, sg){
+    let a;
+    if (kind === 'spin') a = [0, sg, 0];
+    else {
+      const sd = kind === 'tip' ? (sg > 0 ? 0 : 2) : (sg > 0 ? 1 : 3), [dx, dy] = BD[dirsNow()[sd]];
+      a = cross([0, 1, 0], [dx, 0, dy]);                // Up × d: a quarter turn about it takes the top toward d
+    }
+    const k = a.findIndex(v => v !== 0);
+    return OPS.findIndex(o => o.a[k] === 1 && o.sg === Math.sign(a[k]));
+  }
+  const ask = (g, kind, sg) => turn(g, opFor(kind, sg));
+  const dropZ = (g, p) => { let z = p.z; while (fits(g, { ...p, z: z - 1 })) z--; return z; };
+  function hardDrop(g){
+    const p = g.cur;
+    if (!p) return;
+    p.z = dropZ(g, p);
+    lock(g);
+  }
+  function lock(g){
+    const p = g.cur;
+    g.cur = null; g.anim = null;
+    let top = false;
+    for (const [x, y, z] of cellsOf(p)){ if (z >= g.H){ top = true; continue; } g.grid[at(g, x, y, z)] = 1; }
+    g.cubes += ORI[p.t].list[0].length;
+    beep('lock');
+    const P2 = g.P * g.P, full = [];
+    for (let z = 0; z < g.H; z++){ let k = 0; for (let i = 0; i < P2; i++) if (g.grid[z * P2 + i]) k++; if (k === P2) full.push(z); }
+    for (let k = full.length - 1; k >= 0; k--){
+      const z = full[k];
+      g.grid.copyWithin(z * P2, (z + 1) * P2);           // everything above comes down a layer
+      g.grid.fill(0, (g.H - 1) * P2);
+      g.flashes.push({ z, t: g.t });
+    }
+    if (full.length){
+      const sp = step3(g) + 1;
+      g.layers += full.length;
+      g.score += [0, 100, 300, 600, 1000, 1500][Math.min(5, full.length)] * sp;
+      beep(full.length >= 2 ? 'big' : 'clear', full.length);
+      if (full.length >= 2) say(full.length + ' layers at once!', 1000);
+      if (step3(g) + 1 > sp) beep('level');
+    }
+    if (top) return lose(g);
+    spawn(g);
+  }
+  function lose(g){
+    if (QUIET){ g.grid.fill(0); g.layers = 0; g.score = 0; spawn(g); return; }
+    g.state = 'over'; g.cur = null; g.anim = null;
+    beep('over');
+    let note = '';
+    if (g.at){
+      const k = bestKey(g.at[0], g.at[1], g.lv), b = BEST.get(k);
+      if (b == null || g.score > b){ BEST.set(k, g.score); saveBest(); if (g.score > 0) note = ' — a new best here'; }
+      else note = ' — best ' + b;
+    }
+    say('Over — ' + g.layers + (g.layers === 1 ? ' layer, ' : ' layers, ') + g.score + ' points' + note + '. Tap the board to play again.', 5000);
+  }
+  const ease = (a, b, dt) => a + (b - a) * (1 - Math.exp(-dt * 26));
+  function step(g, dt, bot){
+    if (g.state !== 'play') return;
+    g.t += dt;
+    if (g.anim && (g.anim.t += dt) >= ANIM) g.anim = null;
+    if (bot) botStep(g, dt);
+    g.fall += dt;
+    const every = g.drop ? 0.035 : fallEvery(g);
+    while (g.state === 'play' && g.cur && g.fall >= every){
+      g.fall -= every;
+      if (fits(g, { ...g.cur, z: g.cur.z - 1 })){ g.cur.z--; g.lockT = 0; }
+      else { g.fall = 0; break; }
+    }
+    if (g.state === 'play' && g.cur && grounded(g)){
+      g.lockT += dt;
+      if (g.lockT >= LV[g.lv - 1].lock || (g.drop && bot)) lock(g);
+    }
+    const p = g.cur;
+    if (p){ p.fx = ease(p.fx, p.x, dt); p.fy = ease(p.fy, p.y, dt); p.fz = ease(p.fz, p.z, dt); }
+    g.flashes = g.flashes.filter(f => g.t - f.t < FLASH);
+  }
+
+  /* ─── THE BOT ─── */
+  function score(g, b){
+    const P = g.P, H = g.H, P2 = P * P;
+    let lines = 0;
+    const keep = [];
+    for (let z = 0; z < H; z++){ let k = 0; for (let i = 0; i < P2; i++) if (b[z * P2 + i]) k++; if (k === P2) lines++; else keep.push(z); }
+    let agg = 0, holes = 0, bump = 0, top = 0;
+    const hs = new Array(P2).fill(0);
+    for (let i = 0; i < P2; i++){
+      let h = 0;
+      for (let j = keep.length - 1; j >= 0; j--) if (b[keep[j] * P2 + i]){ h = j + 1; break; }
+      for (let j = 0; j < h; j++) if (!b[keep[j] * P2 + i]) holes++;
+      hs[i] = h; agg += h; if (h > top) top = h;
+    }
+    for (let y = 0; y < P; y++) for (let x = 0; x < P; x++){
+      if (x + 1 < P) bump += Math.abs(hs[y * P + x] - hs[y * P + x + 1]);
+      if (y + 1 < P) bump += Math.abs(hs[y * P + x] - hs[(y + 1) * P + x]);
+    }
+    return 4 * lines - 0.3 * agg - 1.2 * holes - 0.12 * bump - 0.6 * top;
+  }
+  function plan(g){
+    const p = g.cur, O = ORI[p.t], tmp = new Uint8Array(g.grid.length);
+    let best = { o: p.o, x: p.x, y: p.y }, bs = -Infinity;
+    for (let o = 0; o < O.list.length; o++){
+      const [w, d, h] = sizeOf(O.list[o]);
+      for (let x = 0; x + w <= g.P; x++) for (let y = 0; y + d <= g.P; y++){
+        const q = { t: p.t, o, x, y, z: g.H - h };
+        if (!fits(g, q)) continue;
+        q.z = dropZ(g, q);
+        tmp.set(g.grid);
+        let over = false;
+        for (const [cx, cy, cz] of cellsOf(q)){ if (cz >= g.H) over = true; else tmp[at(g, cx, cy, cz)] = 1; }
+        if (over) continue;
+        const s = score(g, tmp) + rnd() * 0.01 - 0.02 * pathTo(p.t, p.o, o).length;
+        if (s > bs){ bs = s; best = { o, x, y }; }
+      }
+    }
+    return best;
+  }
+  function botStep(g, dt){
+    const p = g.cur;
+    if (!p) return;
+    const b = g.bot || (g.bot = { ...plan(g), clock: 0, tries: 0 });
+    b.clock += dt;
+    while (b.clock >= BOT_T && g.cur === p){
+      b.clock -= BOT_T; b.tries++;
+      if (p.o !== b.o && b.tries < 10){ const way = pathTo(p.t, p.o, b.o); if (way.length) turn(g, way[0]); }
+      else if ((p.x !== b.x || p.y !== b.y) && b.tries < 30){
+        const dx = Math.sign(b.x - p.x), dy = Math.sign(b.y - p.y);
+        if (!(dx && shift(g, dx, 0)) && !(dy && shift(g, 0, dy))) b.tries = 99;
+      }
+      else g.drop = true;
+    }
+  }
+
+  /* ─── WHAT A BOARD SHOWS, and the reels a board no one plays shows ─── */
+  const snap = g => ({ lv: g.lv, P: g.P, H: g.H, grid: g.grid.slice(), next: g.next, layers: g.layers, score: g.score, t: g.t,
+                       cur: g.cur ? { t: g.cur.t, o: g.cur.o, x: g.cur.x, y: g.cur.y, z: g.cur.z, fx: g.cur.fx, fy: g.cur.fy, fz: g.cur.fz } : null,
+                       anim: g.anim ? { ...g.anim } : null, flashes: g.flashes.slice() });
+  const REEL_N = 2, REEL_FPS = 30, REEL_SECS = 40, WARM = 10;
+  const REELS = new Map();
+  const seeded = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  function bakeReel(seed, lv, upTo){
+    const was = rnd, wasQ = QUIET;
+    rnd = seeded(seed); QUIET = true;
+    const frames = [];
+    try {
+      const g = newGame(lv); g.state = 'play'; spawn(g);
+      const dt = 1 / REEL_FPS;
+      for (let i = 0; i < WARM * REEL_FPS; i++) step(g, dt, true);      // start with a stack, not an empty pit
+      for (let i = 0; i < REEL_SECS * REEL_FPS; i++){
+        step(g, dt, true);
+        if (i === upTo){ g.bot = null; g.drop = false; g.last = 0; return g; }
+        frames.push(snap(g));
+      }
+    } finally { rnd = was; QUIET = wasQ; }
+    return frames;
+  }
+  const reelSeed = (lv, n) => 0xb10c + lv * 977 + n * 7331;
+  function reelAt(c, r){
+    const lv = lvOf(c, r);
+    let R = REELS.get(lv);
+    if (!R){ R = []; for (let n = 0; n < REEL_N; n++) R.push(bakeReel(reelSeed(lv, n), lv)); REELS.set(lv, R); }
+    let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0xb10c7;
+    v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
+    const h = (v ^ (v >>> 16)) >>> 0, n = h % REEL_N, reel = R[n];
+    let t = 0;
+    try { t = animTime(); } catch { t = performance.now(); }
+    return { lv, seed: reelSeed(lv, n), k: (Math.floor(t / 1000 * REEL_FPS) + ((h >>> 8) % reel.length)) % reel.length, reel };
+  }
+  function adopt(c, r){
+    const { seed, lv, k } = reelAt(c, r), g = bakeReel(seed, lv, k);
+    return g && g.grid ? g : newGame(lv);
+  }
+  const GAMES = new Map();
+  const gameAt = (c, r) => {
+    const k = gkey(c, r);
+    let g = GAMES.get(k);
+    if (g && g.lv !== lvOf(c, r) && g.state !== 'play'){ GAMES.delete(k); g = null; }   // the Difficulty moved this board
+    if (!g){ g = adopt(c, r); if (g.state === 'play') g.state = 'wait'; g.at = [c, r]; GAMES.set(k, g); }
+    return g;
+  };
+  const shown = (c, r) => {
+    const g = GAMES.get(gkey(c, r));
+    if (g && g.state !== 'ready' && g.lv === lvOf(c, r)) return snap(g);
+    const { k, reel } = reelAt(c, r);
+    return reel[k];
+  };
+
+  // the best a board kept, by board and level
+  const BEST = new Map();
+  try { const o = JSON.parse(localStorage.getItem('blockout.best') || '{}'); for (const k in o) if (Number.isFinite(o[k])) BEST.set(k, o[k]); } catch {}
+  const bestKey = (c, r, lv) => boardIdx(c, r) + '@' + lv;
+  function saveBest(){ try { const o = {}; [...BEST].slice(-500).forEach(([k, v]) => { o[k] = v; }); localStorage.setItem('blockout.best', JSON.stringify(o)); } catch {} }
+
+  // sound, as Tetris's
+  const SND = { on: ARCADE.load('blockout.sound', 'on') !== 'off', last: {} };
+  function beep(kind, n){
+    if (!SND.on || QUIET) return;
+    const A = ARCADE.audio(); if (!A) return;
+    const now = A.currentTime, gap = { move: 0.03, rot: 0.03, lock: 0.05 }[kind] || 0;
+    if (gap && now - (SND.last[kind] || 0) < gap) return;
+    SND.last[kind] = now;
+    const { tone, hiss } = ARCADE;
+    try {
+      switch (kind){
+        case 'move':  tone(300, 300, 0.03, 'square', 0.02); break;
+        case 'rot':   tone(480, 760, 0.06, 'triangle', 0.045); break;
+        case 'lock':  tone(130, 80, 0.09, 'sine', 0.13); break;
+        case 'clear': hiss(0.3, 0.25, 1500); [523, 659, 784].forEach((f, i) => tone(f, f, 0.12, 'triangle', 0.07, i * 0.07)); break;
+        case 'big':   hiss(0.6, 0.4, 900); [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.18, 'triangle', 0.08, i * 0.08)); break;
+        case 'level': [392, 523, 659, 784].forEach((f, i) => tone(f, f, 0.14, 'square', 0.04, i * 0.08)); break;
+        case 'over':  hiss(1.0, 0.5, 500); tone(260, 40, 1.1, 'sawtooth', 0.12); break;
+      }
+    } catch {}
+  }
+  addEventListener('pointerdown', () => { try { if (SND.on && window.getFieldApp() === app) ARCADE.audio(); } catch {} }, true);
+
+  /* ─── DRAWING ─── */
+  const U0 = P => 0.5 - P * SQ / 2;                         // the pit's near corner on the board
+  const bar = (u, v, lift, sx, sy, sz, color) => ({ kind: 'bkBar', u, v, lift, scale: 1, sx, sy, sz, color });
+  const PITS = new Map();
+  function pitOf(P, H){                                     // the floor, its rules, the corner posts and the rim: the same on every board of a size
+    const k = P + 'x' + H;
+    if (PITS.has(k)) return PITS.get(k);
+    const o = U0(P), W = P * SQ, top = H * SQ, out = [bar(0.5, 0.5, 0.001, W, 0.002, W, FLOOR)];
+    for (let i = 0; i <= P; i++){ out.push(bar(o + i * SQ, 0.5, 0.003, 0.004, 0.002, W, RULE)); out.push(bar(0.5, o + i * SQ, 0.003, W, 0.002, 0.004, RULE)); }
+    for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) out.push(bar(o + a * W, o + b * W, top / 2, 0.006, top, 0.006, POST));
+    for (const a of [0, 1]){ out.push(bar(o + a * W, 0.5, top, 0.005, 0.005, W, POST)); out.push(bar(0.5, o + a * W, top, W, 0.005, 0.005, POST)); }
+    // and a tick on each post at every layer, so a height can be read off it
+    for (let z = 1; z < H; z++) for (const [a, b] of [[0, 0], [1, 0], [0, 1], [1, 1]]) out.push(bar(o + a * W, o + b * W, z * SQ, 0.014, 0.003, 0.014, RULE));
+    PITS.set(k, out);
+    return out;
+  }
+  const cube = (P, x, y, z, color, kind) => ({ kind: kind || 'bkCube', u: U0(P) + (x + 0.5) * SQ, v: U0(P) + (y + 0.5) * SQ, lift: (z + 0.5) * SQ, scale: SQ, color });
+  function itemsOf(s, g){
+    const P = s.P, H = s.H, P2 = P * P, out = pitOf(P, H).slice();
+    for (let z = 0; z < H; z++) for (let i = 0; i < P2; i++) if (s.grid[z * P2 + i]){
+      const x = i % P, y = (i / P) | 0;
+      // (a cube with cubes on every side and above can't be seen: left out)
+      if (z + 1 < H && s.grid[(z + 1) * P2 + i] && x > 0 && x < P - 1 && y > 0 && y < P - 1
+          && s.grid[z * P2 + i - 1] && s.grid[z * P2 + i + 1] && s.grid[z * P2 + i - P] && s.grid[z * P2 + i + P]) continue;
+      out.push(cube(P, x, y, z, LAYER[z % LAYER.length]));
+    }
+    // a layer just cleared: a flash of light where it was, thinning to nothing over FLASH s
+    for (const f of s.flashes || []){
+      const k = 1 - Math.min(1, Math.max(0, (s.t - f.t) / FLASH));
+      if (k > 0.02) out.push({ kind: 'bkFlash', u: 0.5, v: 0.5, lift: (f.z + 0.5) * SQ, scale: 1, sx: P * SQ * (1.02 + 0.1 * (1 - k)), sy: SQ * 0.9 * k, sz: P * SQ * (1.02 + 0.1 * (1 - k)), color: 0xfff6d8 });
+    }
+    const p = s.cur;
+    if (p){
+      const cells = ORI[p.t].list[p.o];
+      if (g && g.cur){                                     // where it will land, when you are playing
+        const gz = dropZ(g, g.cur);
+        for (const [x, y, z] of cells) out.push(cube(P, g.cur.x + x, g.cur.y + y, gz + z, GHOST, 'bkGhost'));
+      }
+      const sz = sizeOf(cells), C = [p.fx + sz[0] / 2, p.fy + sz[1] / 2, p.fz + sz[2] / 2];
+      let q = null, ang = 0, aF = null;
+      if (s.anim){
+        const e = Math.min(1, s.anim.t / ANIM), k = 1 - (1 - e) * (1 - e);
+        aF = s.anim.a.map(v => v * s.anim.sg); ang = -(1 - k) * Math.PI / 2;
+        q = [aF[0] * Math.sin(ang / 2), aF[1] * Math.sin(ang / 2), aF[2] * Math.sin(ang / 2), Math.cos(ang / 2)];
+      }
+      for (const [x, y, z] of cells){
+        let w = [x + 0.5 - sz[0] / 2, z + 0.5 - sz[2] / 2, y + 0.5 - sz[1] / 2];      // from the middle, in F
+        if (q) w = spinVec(aF, ang, w);
+        const zc = C[2] + w[1];
+        if (zc > H + 2.2) continue;
+        const it = { kind: 'bkCube', u: U0(P) + (C[0] + w[0]) * SQ, v: U0(P) + (C[1] + w[2]) * SQ, lift: zc * SQ, scale: SQ, color: PIECE };
+        if (q) it.rot = q;
+        out.push(it);
+      }
+    }
+    // the next piece, small, in the far left corner
+    if (s.next){
+      const o = U0(P), m = Math.max(0.05, o / 2), k = Math.min(0.3, (o - 0.02) / 3 / SQ);
+      for (const [x, y, z] of ORI[s.next].list[0]) out.push({ kind: 'bkCube', u: m + (x - 1) * SQ * k, v: m + (y - 0.5) * SQ * k, lift: (z + 0.5) * SQ * k, scale: SQ * k, color: 0xaab4c6 });
+    }
+    return out;
+  }
+
+  /* ─── INPUT ─── */
+  const liveGame = () => {
+    try { if (window.getFieldApp() !== app) return null; } catch { return null; }
+    const g = LIVE ? GAMES.get(gkey(LIVE.c, LIVE.r)) : null;
+    return g && g.state === 'play' ? g : null;
+  };
+  const MOVE = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3, w: 0, d: 1, s: 2, a: 3, W: 0, D: 1, S: 2, A: 3 };
+  const TURNKEY = { q: ['spin', -1], e: ['spin', 1], r: ['tip', 1], f: ['tip', -1], z: ['roll', -1], x: ['roll', 1] };
+  function slideScreen(g, sd){ const [dx, dy] = BD[dirsNow()[sd]]; return shift(g, dx, dy); }
+  addEventListener('keydown', e => {
+    const k = e.key, mv = MOVE[k], tk = TURNKEY[k.length === 1 ? k.toLowerCase() : ''], drop = k === 'Enter';
+    if (mv == null && !tk && !drop) return;
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    let g = null;
+    try { if (window.getFieldApp() === app && LIVE) g = gameAt(LIVE.c, LIVE.r); } catch {}
+    if (!g) return;
+    e.preventDefault(); e.stopPropagation();
+    if (g.state !== 'play'){ if (drop && !e.repeat) start(g); return; }
+    if (drop){ if (!e.repeat) hardDrop(g); return; }
+    if (tk) ask(g, tk[0], tk[1]);
+    else slideScreen(g, mv);
+  }, true);
+  let DRAG = null;
+  /* Does a tap at the ground point (u, v) of the framed board meet the falling piece or its shadow? The tap is read where its
+     ray meets the ground, and a cube five layers up is seen well away from the ground under it, so the ray from the eye is
+     followed through each cube's box (in the board's own units: u, lift, v, all in board widths). Off the framed board, or
+     with no camera to ask, the ground's cell under the tap decides. */
+  function tapsPiece(g, u, v){
+    const o = U0(g.P), boxes = [];
+    const gz = dropZ(g, g.cur);
+    for (const [x, y, z] of cellsOf(g.cur)) boxes.push([x, y, z], [x, y, gz + z - g.cur.z]);
+    try {
+      const W = window.FIELD_WORLD, T = W.target, cam = W.camera.position, bW = W.boardW(), f = W.cellAt(T.boardX, T.boardZ);
+      if (!f || !LIVE || f.c !== LIVE.c || f.r !== LIVE.r) throw 0;
+      const A = [0.5 - (cam.x - T.boardX) / bW, (cam.y - 0.02) / bW, 0.5 - (cam.z - T.boardZ) / bW], B = [u, 0, v];
+      const d = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
+      return boxes.some(([x, y, z]) => {
+        const lo = [o + x * SQ, z * SQ, o + y * SQ], hi = [lo[0] + SQ, lo[1] + SQ, lo[2] + SQ];
+        let t0 = 0, t1 = 1;
+        for (let k = 0; k < 3; k++){
+          if (Math.abs(d[k]) < 1e-12){ if (A[k] < lo[k] || A[k] > hi[k]) return false; continue; }
+          let a = (lo[k] - A[k]) / d[k], b = (hi[k] - A[k]) / d[k]; if (a > b) [a, b] = [b, a];
+          t0 = Math.max(t0, a); t1 = Math.min(t1, b); if (t0 > t1) return false;
+        }
+        return true;
+      });
+    } catch {
+      const x = Math.floor((u - o) / SQ), y = Math.floor((v - o) / SQ);
+      return boxes.some(([cx, cy]) => cx === x && cy === y);
+    }
+  }
+  const TILES = [['⟲', 'Spin', 'spin', -1], ['⟳', 'Spin', 'spin', 1], ['⤒', 'Tip', 'tip', 1], ['⤓', 'Tip', 'tip', -1], ['◀', 'Roll', 'roll', -1], ['▶', 'Roll', 'roll', 1]];
+
+  const app = {
+    name: '3d tetris',
+    realtime: true,
+    // (framed from farther back, so the pit's rim and a piece coming in over it are on the screen: frameBoard's `frameFit`)
+    frameFit: 1.9,
+    pitchMin: 68,
+    cellFar: { light: FLOOR, dark: BASE },
+    itemMinPx: 6,
+    itemGeometries: {
+      bkCube: T => new T.BoxGeometry(0.93, 0.93, 0.93),
+      bkGhost: T => { const g = new T.BoxGeometry(0.9, 0.9, 0.9); g.userData.opacity = 0.32; g.userData.unlit = true; return g; },
+      bkBar: T => new T.BoxGeometry(1, 1, 1),
+      bkFlash: T => { const g = new T.BoxGeometry(1, 1, 1); g.userData.opacity = 0.6; g.userData.unlit = true; return g; },
+    },
+    cellGrid(){ return { n: 1, colors: [BASE] }; },
+    cellItems(c, r){
+      const g = GAMES.get(gkey(c, r));
+      const framed = !!(LIVE && LIVE.c === c && LIVE.r === r);
+      if (g && g.state !== 'ready' && g.lv === lvOf(c, r)){
+        if (framed){
+          const now = performance.now();
+          const dt = (g.last && !ARCADE.paused) ? Math.min(0.05, (now - g.last) / 1000) : 0;
+          g.last = now;
+          if (g.state === 'play') step(g, dt); else g.t += dt;
+        } else g.last = 0;
+        return itemsOf(snap(g), g.state === 'play' && framed ? g : null);
+      }
+      return itemsOf(shown(c, r));
+    },
+    menu: [{ head: '3D Tetris', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns, locks and layers cleared — made in the browser.',
+        on(){ SND.on = !SND.on; ARCADE.save('blockout.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill whole layers. Arrows or WASD slide the piece; Q and E spin it, R and F tip it away and toward you, Z and X roll it left and right; Enter drops it (Space pauses). On a phone: drag to slide, tap its shadow to drop, tap elsewhere to spin, and the bottom row tips and rolls.', 7000); } },
+      { label: 'Start this board again', title: 'An empty pit, the score at nothing.', on(){ const f = framedCell(); if (f) app.onReset(f.c, f.r); } },
+    ]}],
+    cellTitle(c, r){
+      const lv = lvOf(c, r), L = LV[lv - 1], g = GAMES.get(gkey(c, r)), b = BEST.get(bestKey(c, r, lv));
+      const head = '3D Tetris — level ' + lv + ', ' + L.P + '×' + L.P + '×' + L.H + (b != null ? ' · best ' + b : '');
+      if (!g || g.state === 'ready' || g.lv !== lv) return head;
+      return head + ' · ' + g.layers + (g.layers === 1 ? ' layer · ' : ' layers · ') + g.score + (g.state === 'over' ? ' · over' : '');
+    },
+    statTiles(c, r){
+      const g = GAMES.get(gkey(c, r));
+      if (!g || g.state !== 'play' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      return [...TILES.map(([glyph, value]) => ({ glyph, value })), { glyph: '⤋', value: 'Drop', bg: '#2f5e3a' }];
+    },
+    statsStay(){ return !!liveGame(); },
+    onStatTap(c, r, i){
+      const g = liveGame(); if (!g) return false;
+      if (i < TILES.length){ ask(g, TILES[i][2], TILES[i][3]); return true; }
+      if (i === TILES.length){ hardDrop(g); return true; }
+      return false;
+    },
+    onReset(c, r){ GAMES.delete(gkey(c, r)); const g = gameAt(c, r); g.state = 'over'; start(g); g.state = 'wait'; g.last = 0; LIVE = { c, r }; return true; },
+    onSelect(c, r){ gameAt(c, r); return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    // (Simon's lesson, Oct 15: two quick taps are two spins while a piece is falling)
+    noDoubleTap(){ return !!liveGame(); },
+    // a tap on the piece's own shadow drops it; anywhere else it spins
+    // (a tap just past the board's edge is asked too, `tapMargin`: it is ours only if it meets the piece or its shadow)
+    tapMargin: 0.45,
+    onCellTap(c, r, u, v){
+      const off = u != null && (u < 0 || u > 1 || v < 0 || v > 1);
+      if (off){ const g0 = liveGame(); if (!(g0 && g0.cur && LIVE.c === c && LIVE.r === r && tapsPiece(g0, u, v))) return false; }
+      LIVE = { c, r };
+      const g = gameAt(c, r);
+      if (g.state !== 'play'){ start(g); return true; }
+      if (u != null && g.cur && tapsPiece(g, u, v)){ hardDrop(g); return true; }
+      ask(g, 'spin', 1);
+      return true;
+    },
+    // a drag anywhere on the board slides the piece a cell for each cell the finger goes, across the floor
+    claimsPan(u, v){
+      const g = liveGame();
+      DRAG = null;
+      if (!g || !g.cur || u == null) return false;
+      DRAG = { u, v, x: g.cur.x, y: g.cur.y, p: g.cur };
+      return true;
+    },
+    onPan(dx, dy, at){
+      const g = liveGame();
+      if (!g || !DRAG) return false;
+      if (!at || !g.cur) return true;
+      if (g.cur !== DRAG.p) DRAG = { u: at.u, v: at.v, x: g.cur.x, y: g.cur.y, p: g.cur };
+      const wx = DRAG.x + Math.round((at.u - DRAG.u) / SQ), wy = DRAG.y + Math.round((at.v - DRAG.v) / SQ);
+      for (let k = 0; k < 12 && (g.cur.x !== wx || g.cur.y !== wy); k++){
+        const sx = Math.sign(wx - g.cur.x), sy = Math.sign(wy - g.cur.y);
+        if (!(sx && shift(g, sx, 0)) && !(sy && shift(g, 0, sy))) break;
+      }
+      return true;
+    },
+    drawIcon(ctx, sz, c, r){
+      const s = c == null ? null : shown(c, r);
+      ctx.fillStyle = '#12151c'; ctx.fillRect(0, 0, sz, sz);
+      const P = s ? s.P : 5, t = sz * 0.8 / P, o = sz * 0.1;
+      for (let i = 0; i < P * P; i++){
+        let top = -1;
+        if (s) for (let z = s.H - 1; z >= 0; z--) if (s.grid[z * P * P + i]){ top = z; break; }
+        if (!s) top = [0, 1, 0, 2, 1, 0, 0, 1, 3, 0, 1, 2, 0, 1, 0, 0, 1, 2, 1, 0, 2, 0, 1, 0, 0][i];
+        ctx.fillStyle = top < 0 ? '#1d2330' : '#' + LAYER[top % LAYER.length].toString(16).padStart(6, '0');
+        ctx.fillRect(o + (i % P) * t + 1, o + ((i / P) | 0) * t + 1, t - 2, t - 2);
+      }
+    },
+    _debug: { PIECES, ORI, OPS, LV, newGame, start, step, turn, ask, opFor, shift, hardDrop, lock, plan, pathTo, bakeReel, adopt, gameAt, fits, cellsOf, dropZ,
+              games: GAMES, BEST, itemsOf, snap, levelAt, boardIdx, fallEvery,
+              levelOf: (c, r) => lvOf(c, r), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+  };
   return app;
 })();
 /* ═══ BEJEWELED (Sep 24: "Bewjewled") ════════════════════════════════════
@@ -52588,14 +53237,14 @@ const LEVELS_APP = (() => {
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
    from the url"): short, lower case, one word — ?app=tron, #app=pacman, --app 2048. The names stay
    as they were (they are what the last-app memory stores); the id is only for asking. */
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
- [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [GEMS_APP, 'bejeweled'],
+ [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
  [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],

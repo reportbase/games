@@ -3059,6 +3059,100 @@ try {
     if (!ok1 || !ok2 || demo < 2) failures.push('[simon] ' + JSON.stringify({ r, real, demo }));
     console.log(`${ok1 && ok2 && demo >= 2 ? 'ok  ' : 'FAIL'} simon (pads ${r.pads.join('/')} by ring, three rounds played back then a wrong pad ends it at ${r.wrong.score}; a real click on the right pad took)`);
   }
+  // 3D TETRIS (Oct 23: "any games that require 3d spatial rotation", then "2": Blockout): every orientation of every piece
+  // found (24 for a chiral tetracube's mirror-free cousin L4, 8 for the tripod), a turn about each axis taking the top where
+  // the screen says, a full layer clearing with everything above coming down, the pit by level, the bot clearing layers at
+  // every level; then real input: a click starting a board, the real arrow keys sliding it, the real Q turning it, the real
+  // Enter dropping it, a real click on the piece dropping it and elsewhere spinning it, a real drag sliding it, a real click on
+  // the row's Tip tile, a turn drawn on its way (cubes with `rot`), and a board no one plays moving.
+  {
+    current = 'blockout';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'blockout')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.ori = ['I2', 'O4', 'T4', 'L4', 'I4', 'TRI', 'SCR', 'SCL', 'P5'].map(t => D.ORI[t].list.length).join();
+      out.pits = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.LV[D.levelOf(c, r) - 1].P).join();
+      // a tripod at the default heading: tip sends its up arm to the far side (−y), roll to the right (+x)
+      const g = D.newGame(3); g.state = 'play';
+      const put = () => { g.cur = { t: 'TRI', o: 0, x: 2, y: 2, z: 2, fx: 2, fy: 2, fz: 2 }; };
+      const arms = () => { const C = D.cellsOf(g.cur), has = (x, y, z) => C.some(p => p[0] === x && p[1] === y && p[2] === z);
+        const c = C.find(p => C.filter(q => Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) + Math.abs(q[2] - p[2]) === 1).length === 3);
+        return [[1, 0, 0, '+x'], [-1, 0, 0, '-x'], [0, 1, 0, '+y'], [0, -1, 0, '-y'], [0, 0, 1, 'up'], [0, 0, -1, 'down']].filter(([a, b, z]) => has(c[0] + a, c[1] + b, c[2] + z)).map(a => a[3]).sort().join(); };
+      put(); out.arms0 = arms(); D.ask(g, 'tip', 1); out.tip = arms(); put(); D.ask(g, 'roll', 1); out.roll = arms(); put(); D.ask(g, 'spin', 1); out.spin = arms();
+      out.anim = !!g.anim;
+      // a layer: fill the floor but one cell, drop an I2 standing... (a single cube's place: an I2 laid flat fills two)
+      const h = D.newGame(1); h.state = 'play';
+      for (let i = 0; i < 9; i++) if (i !== 7 && i !== 8) h.grid[i] = 1;
+      h.grid[9 + 4] = 1;                              // a cube on the second layer, over the middle
+      h.cur = { t: 'I2', o: 0, x: 1, y: 2, z: 4, fx: 1, fy: 2, fz: 4 };
+      D.hardDrop(h);
+      out.clear = { layers: h.layers, score: h.score, floorMid: h.grid[4], second: h.grid.slice(9, 18).reduce((a, b) => a + b, 0) };
+      // the bot clears layers at every level
+      out.bot = [1, 2, 3, 4, 5].map(lv => { const fr = D.bakeReel(321 + lv, lv); return fr[fr.length - 1].layers; });
+      // a turn on its way is drawn turned
+      const items = D.itemsOf(D.snap(g), g);
+      out.drawn = { cubes: items.filter(i => i.kind === 'bkCube').length, turned: items.filter(i => i.kind === 'bkCube' && i.rot).length, ghost: items.filter(i => i.kind === 'bkGhost').length };
+      return out;
+    });
+    const ok1 = r.ori === '3,3,12,24,3,8,12,12,24' && r.pits === '4,5,5,5' && r.arms0 === '+x,+y,up' && r.tip === '+x,-y,up' && r.roll === '+x,+y,down'
+      && r.spin.split(',').length === 3 && r.anim && r.clear.layers === 1 && r.clear.score === 100 && r.clear.floorMid === 1 && r.clear.second === 0
+      && r.bot.every(n => n >= 3) && r.drawn.turned === 4 && r.drawn.ghost === 4;
+    if (!ok1) failures.push('[blockout] rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} blockout: orientations ${r.ori}, tip and roll as the screen says, a layer cleared, the bot clearing ${r.bot.join('/')} layers by level`);
+    // real input on a framed board
+    await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'blockout')._debug.fly(2, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const rd = () => page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); return g ? { st: g.state, cur: g.cur && [g.cur.t, g.cur.o, g.cur.x, g.cur.y, g.cur.z], cubes: g.cubes, lv: g.lv, turns: g.turns || 0 } : null; }, fc);
+    // the screen point of a piece's top cube, and of a floor corner (from the board's own units)
+    const pts = () => page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r), W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
+      const SQ = 0.12, o = 0.5 - g.P * SQ / 2, pr = (u, lift, v) => { const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0.02 + lift * bW, T.boardZ + (0.5 - v) * bW).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const [x, y, z] = D.cellsOf(g.cur).sort((a, b) => b[2] - a[2])[0];
+      return { piece: pr(o + (x + 0.5) * SQ, (z + 1) * SQ, o + (y + 0.5) * SQ), corner: pr(o + 0.02, 0, o + g.P * SQ - 0.02), mid: pr(0.5, 0, 0.5) }; }, fc);
+    const real = {};
+    if (fc){
+      // (an empty pit, as the menu's Start this board again leaves it: on the stack a board shows, a piece can land and lock
+      //  in the middle of a check on a slow frame)
+      await page.evaluate(([c, r]) => { const A = window.getFieldApp(); A.onReset(c, r); }, fc);
+      let P = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; });
+      await page.mouse.click(P[0], P[1]); await page.waitForTimeout(500);
+      real.start = await rd();
+      // keys: a slide that can go (left or right), a turn, the drop
+      const s0 = await rd();
+      await page.keyboard.press('ArrowLeft'); await page.waitForTimeout(150);
+      let s1 = await rd();
+      if (s1.cur[2] === s0.cur[2]){ await page.keyboard.press('ArrowRight'); await page.waitForTimeout(150); s1 = await rd(); }
+      real.slid = s1.cur[2] !== s0.cur[2] && s1.cur[3] === s0.cur[3];
+      await page.keyboard.press('q'); await page.waitForTimeout(150);
+      const s2 = await rd(); real.turned = s2.turns > s1.turns;
+      await page.keyboard.press('Enter'); await page.waitForTimeout(300);
+      const s3 = await rd(); real.dropped = s3.cubes > s2.cubes;
+      // a click on the floor's corner, away from the piece, spins; a click on the piece drops it
+      P = await pts(); await page.mouse.click(P.corner[0], P.corner[1]); await page.waitForTimeout(300);
+      const s4 = await rd(); real.spun = s4.turns > s3.turns && s4.cubes === s3.cubes;
+      P = await pts(); await page.mouse.click(P.piece[0], P.piece[1]); await page.waitForTimeout(300);
+      const s5 = await rd(); real.clickDrop = s5.cubes > s4.cubes;
+      // a drag across the board slides it (one way or the other, as far as the pit lets it)
+      P = await pts();
+      const s6 = await rd();
+      const drag = async dx => { await page.mouse.move(P.mid[0], P.mid[1]); await page.mouse.down(); for (let k = 1; k <= 10; k++){ await page.mouse.move(P.mid[0] + k * dx, P.mid[1]); await page.waitForTimeout(30); } await page.mouse.up(); await page.waitForTimeout(300); };
+      let s6b = s6;
+      await drag(12); let s7 = await rd();
+      if (s7.cur[2] === s6b.cur[2] || s7.cubes !== s6b.cubes){ s6b = s7; await drag(-12); s7 = await rd(); }
+      real.dragged = s7.cur[2] !== s6b.cur[2] && s7.cubes === s6b.cubes;
+      // the row's Tip tile (the third), clicked
+      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(300); }
+      const s8 = await rd(); real.tile = !!tile && s8.turns > s7.turns;
+      // a board no one plays moves
+      real.idle = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), k = JSON.stringify(A.cellItems(c + 3, r).filter(i => i.kind === 'bkCube').map(i => [i.u.toFixed(3), i.v.toFixed(3), i.lift.toFixed(3)]));
+        await new Promise(ok => setTimeout(ok, 1500)); return JSON.stringify(A.cellItems(c + 3, r).filter(i => i.kind === 'bkCube').map(i => [i.u.toFixed(3), i.v.toFixed(3), i.lift.toFixed(3)])) !== k; }, fc);
+    }
+    const ok2 = !!fc && real.start && real.start.st === 'play' && real.slid && real.turned && real.dropped && real.spun && real.clickDrop && real.dragged && real.tile && real.idle;
+    if (!ok2) failures.push('[blockout] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} blockout: a real click starts, the real arrow, Q and Enter slide, turn and drop, real clicks spin and drop, a real drag slides, the real Tip tile tips, a board no one plays moves`);
+  }
   // LIGHTS OUT (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
   // its own pattern at a level by its ring, its par the fewest presses (checked here by light chasing, a different way to
   // the page's elimination); the way out puts it out; real clicks flip the right cross; five quick real touches on one
