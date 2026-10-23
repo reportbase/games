@@ -3968,8 +3968,10 @@ try {
       live.row = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), p = g.power; D.onTile(g, 5); D.onTile(g, 4);
         return { tip: g.tip.y, power: g.power - p, tiles: D.tilesOf(g).length }; }, fc);
       // the real spin inset: a click above its middle strikes the white high; the real pull strip: pulled and let go, it shoots
+      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 8000 }).catch(() => {});
       const tipBox = await page.evaluate(() => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(); return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width } : null; });
       if (tipBox){ await page.mouse.click(tipBox.x - 0.2 * 0.36 * tipBox.w, tipBox.y - 0.5 * 0.36 * tipBox.w); live.inset = (await gs()).tip; }
+      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 8000 }).catch(() => {});
       const pullBox = await page.evaluate(() => { const e = document.getElementById('tsPull'), r = e && e.getBoundingClientRect(); return r && r.height ? { x: r.left + r.width / 2, y: r.top + 8, h: r.height } : null; });
       if (pullBox){ const s0 = (await gs()).shots; await page.mouse.move(pullBox.x, pullBox.y); await page.mouse.down(); await page.mouse.move(pullBox.x, pullBox.y + pullBox.h * 0.3, { steps: 6 });
         live.pulled = (await gs()).power; await page.mouse.up(); await page.waitForTimeout(300); live.pull = { shots: (await gs()).shots - s0, anim: (await gs()).anim };

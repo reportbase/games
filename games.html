@@ -51641,8 +51641,9 @@ const TRICK_APP = (() => {
        preview follows the power as it is pulled; let go near the top and nothing is shot, the power put back.
      They live outside the field's canvas, so a press on them never pans the view; hidden off this app (onLeave), with no
      board framed, and while a shot plays (`ctlSync`, each frame from the framed board's viewOf). */
-  // (shown only while the board played is CTL_PX across or more, and gone once it has not been drawn for CTL_GONE ms)
-  const CTL = { el: null, tip: null, pull: null, fill: null, label: null, drawn: '', g: null, pulling: null, seen: 0 }, CTL_PX = 300, CTL_GONE = 450;
+  // (shown only while the board played is CTL_PX across or more, and gone once it has not been drawn for CTL_GONE ms: 1.2 s, since
+  //  on a slow machine a frame can take most of a second, and at 0.45 s the controls blinked out between frames, Oct 23)
+  const CTL = { el: null, tip: null, pull: null, fill: null, label: null, drawn: '', g: null, pulling: null, seen: 0 }, CTL_PX = 300, CTL_GONE = 1200;
   function ctlEnsure(){
     if (CTL.el || typeof document === 'undefined') return CTL.el;
     const el = document.createElement('div'); el.id = 'tsCtl';

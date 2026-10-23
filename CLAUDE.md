@@ -780,7 +780,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       Solved, the board says its stars, and a tap on it goes on to the next board (`nextBoardOf`: idx + 1, the corner's fifteen,
       then out ring by ring); a hold plays it again. The menu's Next trick shot does the same.
   - **The spin inset and the pull strip** (the same request's second, wander's own controls; `CTL`, `ctlSync`): beside the played
-    table while it waits (the board `CTL_PX` 300 px across or more, hidden `CTL_GONE` after it was last drawn and off the app,
+    table while it waits (the board `CTL_PX` 300 px across or more, hidden `CTL_GONE` (1.2 s) after it was last drawn and off the app,
     `onLeave`), page elements of their own, so a press on them never pans the view. The white seen from behind the cue (`#tsTip`):
     a press or drag puts the tip there, the dashed ring the chalk's grip, the gold tick where it rolls at once, the spin and the
     cue's rise written under it. The strip (`#tsPull`): pulled down as far as the shot is hard (all of it 60) and let go, it shoots;
