@@ -951,11 +951,74 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     fillings, 240 ways, about a second. The course: from 9 ways (the bed) to 1,998 (the tower). The ways you have found are kept
     by board (localStorage `soma.found`); filled, the board says whether it was a new way and how many of how many, the title
     keeps the count, and the menu's Find another way empties the figure again.
+  - **Your own figure** (Oct 23: "whats next for soma", then "1,2", the first "make your own figure"): the row becomes a figure
+    editor (`ED`, `ed…`, as trick shots': the row is also the played figure's, so ✎ in the row or the menu's Make a figure for this
+    board… opens it, on the framed board's figure). A tap puts a cube in the layer being made or takes it out, the cell found
+    where the eye's line through the tap crosses that layer's middle (`cellAtTap`); the layer is framed in gold, the others glass.
+    The row: the seven pieces (in or out), Layer ▼ ▲, Width, Depth, Height (stepping round, 2–6, 2–6, 1–5), Fill layer, Clear
+    layer, Clear, Check (or "n of m" cubes), Play; quick buttons Check, Cancel, Done. Check and Done want as many cubes as the
+    pieces and a filling the solver finds (`solve(…, info)`: `info.capped` when its 5 million steps ran out); Check counts the ways.
+    Kept cropped to its cubes on the board (`MINE`, localStorage `soma.mine`, the latest 300, through `cleanFig`; `mineFigure`,
+    which `figureOf` asks first), its key `m` + a hash (`figKey`: every figure has a `key`, the course and generated ones
+    `idx@lv` as before), so a changed one starts its best and ways afresh. Escape or Cancel leaves the board as it was. The menu:
+    Share this board's figure (`shareFig`, `SHARE`; any figure, yours or the board's own), Forget this board's figure; a shared
+    one (`takeFig`) is checked by the solver.
+  - **Your ways, and one you have not found** (the second): the menu's Your ways… (`GAL`) shows the ways you have found one at a
+    time on the framed board, each piece pulled `EXPLODE` (0.28 cell) away from the figure's middle, since a kept way is its form
+    under the symmetries (`canon`), the piece type in each of the figure's own cells; the row has Back, which of how many, Next,
+    Not found yet, Close, and a tap or the arrow keys step. Show me a way I have not found (`showUnfound`) runs the counter until
+    a filling's form is not among yours (`countGen(F, stopAt)`, a little at a time), then builds it piece by piece once (`DEMO`,
+    `builtAt`, which `shownOf` now uses too); a tap, Enter or Escape gives the board back with every piece in the tray. A way
+    shown is not kept: it counts when you build it.
+  - **Piece sets** (Oct 23: "whats next for soma", then "1,3", the first "other piece sets"; offered as the Bedlam cube, the
+    Diabolical cube or pentacube boxes, but those two puzzles' exact pieces could not be looked up from the sandbox, so the sets
+    are ones exactly defined): the menu's Pieces steps through Soma (7), Tetracubes (8: I, O, T, L, S and Soma's tripod and
+    screws), Pentominoes (the 12 as flat pieces) and Pentacubes (all 29: the 12 flat, then the 17 that are not, grown a cube at
+    a time and kept one of each under turning, `polycubes`, named a–q), localStorage `soma.set`. `useSet` puts one in play:
+    `PIECES`, `NAMES`, `COLS` (`palette` past Soma), `LV`, `COURSE`, `ORI` (`oriOf`), `FLAT` (what level 1 draws from) and
+    `MIRROR` (each piece's mirror image: `symsOf` allows a mirroring only when every piece's mirror is in the figure, `canon`
+    swaps them; a way is written a character a cell, '0' + type + 1). Every key of the other sets starts with the set's name
+    (`pk`): their figures, bests, ways and editor figures (`soma.mine.<set>`) are their own, Soma's as before. Courses: the
+    tetracubes' slab, bar, pyramid and staircase; the pentominoes' 3 × 4 × 5, 2 × 5 × 6 and 2 × 3 × 10 boxes and the 6 × 10, 5 × 12,
+    4 × 15 and 3 × 20 rectangles; the pentacubes' six boxes, each with pieces the solver found fill it (`PENTACUBE_COURSE`; the 29
+    together make no box). A figure wider than six is drawn with smaller cubes (`sqOf`: 0.84 of the board over its width, so the
+    3 × 20 is 0.042 a cube). The solver and the counter fill cells across the box's shortest side first (`orderOf`): along its
+    longest, the 3 × 4 × 5, 5 × 12 and 3 × 20 ran out of steps; now 11, 21 and 74 ms.
+  - **Better hands** (the same request's third): a drag takes the piece to the nearest place within `SNAP` (2) cells of the
+    finger where it fits at some height (`snapNear`), else follows the finger; two fingers twisted spin it a quarter turn for
+    every `TWIST_STEP` (45°) past the field's dead stretch, clockwise with the fingers, and the view stays put (a field hook: an
+    app's `twistTurns()` takes the twist, `onTwist(±1)`, + clockwise; `pinchSpin`); and every empty cell any place of the piece,
+    turned as it is, would cover glows in its colour (`fitGlow`, `smFit`; the menu's Show where it fits, localStorage `soma.fits`).
+  - **Difficulty from the count** (Oct 23: "whats next for soma", then "2,1", the first "a figure with few ways is hard"):
+    measured, the ways grow with the pieces (Soma about 2, 9, 30, 200 and 300+ at levels 1–5) and spread widely within a level, so
+    a level keeps its pieces and its figure is the one with the fewest ways of `PICK_K` made (1 at level 1 to 5 at level 5;
+    `oneFigure` makes one), each counted for at most `PICK_CAP` slices (200,000 steps; `quickWays`: a count cut short counts as
+    more than any finished, and of those the fewer found the harder). Soma's level 4 went from about 765 ways made alone to 369.
+    The figure keeps `waysN`, `waysExact` and its par (`parFor`: 6 s a piece × (1 + 3 / log2(2 + ways)); the course and your own
+    figures get theirs once counted, `parOf`), shown in the title; stars are the fewer of the hints' and the time's (`timeStars`:
+    within par 3, twice par 2). Making a level-5 figure takes about 100 ms (up to half a second), so a board only looked at from
+    level 3 gets its figure a few at a time (`figSoon`, `SOONF`, `soonPump`: the one asked for latest first, 10 ms a turn,
+    dropped if not asked for in 2 s) and shows its bare floor till then; the framed or played board is made at once.
+  - **Can it be built?** (the second): from level 3 a generated figure is, by its board's draw (`IMPOSSIBLE`: 15%, 20%, 25% at
+    levels 3–5), one with no filling: a buildable one with one cube moved to an empty cell beside it (`makeImpossible`,
+    `IMP_TRIES` 10), kept only when the solver tried every way and found none within `IMP_BUDGET` steps (not when it ran out;
+    `moved` keeps the cube's two places). Its `sol` is the buildable one's less the piece that held the cube, last, so a board no
+    one plays builds it as far as any: from level 3 every generated board's show stops a piece short (`shownSol`), and the
+    title keeps the count of ways back until the board is through (`canSay`). ✗ Can't build in the row, the menu's It can't be
+    built or N says so (`declare`): right, the board is through (stars by hints and time, `g.said`); wrong, it costs a hint. A
+    hint or Show me a way on one says there is no way, and counts as a hint.
   - The smoke test checks the orientations (12, 24, 12, 12, 8, 12, 12), the cube on the corner, 60 figures filled by the solver,
     the levels by ring, a board no one plays building, and real input: the real arrow and E, the real H and Enter placing, a real
     click taking a piece back, the figure finished with a best kept, and a real click going on; and the course: all sixteen filled,
     the cube's 240 ways of 11,520 fillings, a figure with no symmetry counted filling by filling, and a course board filled by the
-    real H and Enter as a new way, then again as one found before.
+    real H and Enter as a new way, then again as one found before; and the editor (the real ✎, real clicks taking a cube out
+    and putting it back, the real ✓ keeping it in storage, its share link taken onto another board) and the ways (two in the
+    gallery stepped by the real ▶ tile, a way not found built and given back by a real click); and the sets (7, 8, 12 and 29
+    pieces, 8 tetracubes and 29 pentacubes grown again, the mirrors paired, every course and generated figure filled, the keys
+    apart) and the hands (a real drag to a column the piece does not fit ending where it does, a real two-finger twist turning the
+    piece and not the view, the glow on and off); and the difficulty (level 4's ways fewer as the fewest of four than made alone,
+    the pars, stars for time, a figure that cannot be built proved so, shown a piece short, its count kept back) with real input
+    (the real N on one that cannot be built taking it, a real click on ✗ on one that can costing a hint).
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

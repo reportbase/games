@@ -3259,7 +3259,8 @@ try {
       out.k = {};
       for (let lv = 1; lv <= 5; lv++){
         for (let k = 0; k < 12; k++){ const F = D.makeFigure(200 + k * 41, lv); const s = F && D.solve(F, new Map());
-          if (!F || !s || s.length !== F.types.length) out.bad.push([lv, k]); else if (F.fig.reduce((a, b) => a + b, 0) !== F.types.reduce((a, t) => a + D.PIECES[t].length, 0)) out.bad.push([lv, k, 'cells']); }
+          // (from level 3 a figure may be one that cannot be built: then the solver must find no way)
+          if (!F || (F.impossible ? s : (!s || s.length !== F.types.length))) out.bad.push([lv, k]); else if (F.fig.reduce((a, b) => a + b, 0) !== F.types.reduce((a, t) => a + D.PIECES[t].length, 0)) out.bad.push([lv, k, 'cells']); }
         out.k[lv] = D.LV[lv - 1].k;
       }
       out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r)).join();
@@ -3346,6 +3347,206 @@ try {
     const ok3 = ok2 && real.again.st === 'done' && real.again.newWay === false && /1 of \d+ ways/.test(real.again.title);
     if (!ok3) failures.push('[soma course] real input: ' + JSON.stringify({ fc, real }));
     console.log(`${ok3 ? 'ok  ' : 'FAIL'} soma course: a course board filled by the real H and Enter is a new way, and the same way again is found before (${real.again && real.again.title})`);
+  }
+  // SOMA: YOUR OWN FIGURE, YOUR WAYS, AND ONE YOU HAVE NOT FOUND (Oct 23: "whats next for soma", then "1,2"): the real ✎ opens
+  // the editor on the framed board's figure; a real click takes a cube out of the layer (Check then refuses the count) and
+  // another puts it back; the real ✓ keeps it in storage, read back as the page reads it, its title "your figure"; its share
+  // link taken onto another board; then filled twice, two ways, the gallery shows each (its cubes all drawn, pulled apart) and
+  // the real ▶ tile steps; "show me a way I have not found" builds one whose form is neither of the two, and a real click
+  // gives the board back to be built.
+  {
+    current = 'soma figures and ways';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => { localStorage.removeItem('soma.mine'); window.getFieldApp()._debug.fly(5, 3); });
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    const btn = re => page.evaluate(src => { const b = [...document.querySelectorAll('#bbQuick *')].find(e => new RegExp(src).test(e.title || '')); if (!b) return null; const R = b.getBoundingClientRect(); return [R.x + R.width / 2, R.y + R.height / 2]; }, re);
+    const cellPt = (x, y, z) => page.evaluate(([x, y, z]) => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), B = D.ED.B, SQ = 0.14;
+      const u = 0.5 - B[0] * SQ / 2 + (x + 0.5) * SQ, v = 0.5 - B[1] * SQ / 2 + (y + 0.5) * SQ;
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0.02 + (z + 0.5) * SQ * bW, T.boardZ + (0.5 - v) * bW).project(W.camera);
+      return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; }, [x, y, z]);
+    if (fc){
+      await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+      await page.waitForTimeout(500);
+      const mk = await btn('^Make a figure'); if (mk){ await page.mouse.click(mk[0], mk[1]); await page.waitForTimeout(600); }
+      const e0 = await page.evaluate(() => { const D = window.getFieldApp()._debug; return { on: D.ED.on, n: D.edCount(), need: D.edNeed(), first: [...D.ED.cells].find(k => k.endsWith(',0')) }; });
+      real.opened = e0.on && e0.n === e0.need && e0.n > 0;
+      if (e0.first){
+        const [x, y] = e0.first.split(',').map(Number);
+        let pt = await cellPt(x, y, 0); await page.mouse.click(pt[0], pt[1]); await page.waitForTimeout(500);
+        real.out = await page.evaluate(k => { const D = window.getFieldApp()._debug; return { n: D.edCount(), gone: !D.ED.cells.has(k), check: D.edCheck() }; }, e0.first);
+        await page.waitForTimeout(700);
+        pt = await cellPt(x, y, 0); await page.mouse.click(pt[0], pt[1]); await page.waitForTimeout(500);
+        real.back = await page.evaluate(() => window.getFieldApp()._debug.edCount());
+      }
+      const dn = await btn('^Done'); if (dn){ await page.mouse.click(dn[0], dn[1]); await page.waitForTimeout(800); }
+      real.kept = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, o = JSON.parse(localStorage.getItem('soma.mine') || '{}'), k = Object.keys(o)[0];
+        return { on: D.ED.on, keys: Object.keys(o).length, clean: !!(k && D.cleanFig(o[k])), solvable: !!(k && D.figOfData(+k, D.cleanFig(o[k]))), title: A.cellTitle(c, r) }; }, fc);
+      // its share link, taken onto another board
+      real.shared = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, F = D.figureOf(c, r);
+        const d = { B: F.B, cells: Array.from(F.fig, v => v ? '1' : '0').join(''), types: F.types };
+        const P = D.SHARE.dec(new URL(D.SHARE.link(window.getFieldApp(), d)).searchParams.get('setup'));
+        const ok = D.takeFig(c + 4, r, P), G = D.figureOf(c + 4, r);
+        return ok && G.mine && G.key === F.key; }, fc);
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.LIVE = { c, r }; D.fly(c, r); }, fc);
+      await page.waitForTimeout(2500);
+      // two ways found (the solver's first, then one not among the found), then the gallery
+      real.ways = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, F = D.figureOf(c, r), out = [];
+        for (let n = 0; n < 2; n++){
+          A.onReset(c, r); const g = D.gameAt(c, r), have = D.FOUND.get(D.figKey(F)) || new Set();
+          const gen = D.countGen(F, w => !have.has(w)); let s; do { s = gen.next(); } while (!s.done);
+          if (!s.value || !s.value.sol) break;
+          for (const q of s.value.sol){ D.takeUp(g, q.i); Object.assign(g.cur, { o: q.o, x: q.x, y: q.y, k: 0 }); g.cur.k = Math.max(0, D.fitsAt(g).indexOf(q.z)); D.place(g); }
+          out.push(g.state === 'done' && g.newWay);
+        }
+        return { fresh: out, found: (D.FOUND.get(D.figKey(F)) || new Set()).size }; }, fc);
+      await page.evaluate(([c, r]) => window.getFieldApp()._debug.galOpen(c, r), fc);
+      await page.waitForTimeout(800);
+      const g0 = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, F = D.figureOf(c, r); return { k: D.GAL.k, n: D.GAL.list.length, cubes: D.galItems().filter(i => i.kind === 'smCube').length, want: F.fig.reduce((a, b) => a + b, 0) }; }, fc);
+      const nx = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      if (nx){ await page.mouse.click(nx[0], nx[1]); await page.waitForTimeout(400); }
+      const g1 = await page.evaluate(() => window.getFieldApp()._debug.GAL.k);
+      real.gallery = g0.n === 2 && g0.cubes === g0.want && g1 !== g0.k;
+      real.galDetail = { g0, g1 };
+      // a way not found: built on the board, its form not among the two; a real click then gives the board back
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.galClose(); D.showUnfound(c, r); }, fc);
+      await page.waitForFunction(() => !!window.getFieldApp()._debug.DEMO, null, { timeout: 30000 }).catch(() => {});
+      real.demo = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, M = D.DEMO; if (!M) return null; const F = D.figureOf(c, r);
+        return { len: M.sol.length === F.types.length, notFound: !(D.FOUND.get(D.figKey(F)) || new Set()).has(M.way) }; }, fc);
+      await page.waitForTimeout(800);
+      const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; });
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(500);
+      real.ended = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); return !D.DEMO && !!g && g.state === 'play' && g.placed.size === 0; }, fc);
+    }
+    const ok = !!fc && real.opened && real.out && real.out.gone && real.out.check === false && real.back === real.out.n + 1
+      && real.kept && !real.kept.on && real.kept.keys === 1 && real.kept.clean && real.kept.solvable && /your figure/.test(real.kept.title)
+      && real.shared && real.ways && real.ways.fresh.join() === 'true,true' && real.ways.found === 2 && real.gallery && real.demo && real.demo.len && real.demo.notFound && real.ended;
+    if (!ok) failures.push('[soma figures and ways] ' + JSON.stringify({ fc, real }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} soma: the real ✎ opens the editor, real clicks take a cube out and put it back, the real ✓ keeps it, shared onto another board; two ways in the gallery stepped by the real ▶; a way not found built and given back by a real click`);
+  }
+  // SOMA'S PIECE SETS AND BETTER HANDS (Oct 23: "whats next for soma", then "1,3"): the sets (Soma's 7, the 8 tetracubes, the 12
+  // pentominoes, the 29 pentacubes, counted again by growing every polycube), each piece's mirror, every course figure of every
+  // set filled and generated figures filled, each set's keys its own; then real input: a real two-finger twist turning the
+  // piece in hand (the view kept), a real drag to a column where it does not fit ending where it does, and the glow on and off.
+  {
+    current = 'soma sets and hands';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { sets: {}, bad: [] };
+      out.p4 = D.polycubes(4).length; out.p5 = D.polycubes(5).length;
+      for (const id of Object.keys(D.SETS)){
+        D.useSet(id, true);
+        const o = { n: D.PIECES.length, mirror: D.MIRROR.join(','), course: 0 };
+        for (let i = 0; i < D.COURSE.length; i++){ const F = D.courseFigure(i); if (F && F.types.reduce((a, t) => a + D.PIECES[t].length, 0) === F.fig.reduce((a, b) => a + b, 0)) o.course++; else out.bad.push(id + ' course ' + i); }
+        o.courses = D.COURSE.length;
+        for (let k = 0; k < 8; k++){ const F = D.makeFigure(400 + k * 53, 1 + k % 5); if (!F || !D.solve(F, new Map()) !== !!F.impossible) out.bad.push(id + ' gen ' + k); }
+        o.key = D.figKey(D.makeFigure(400, 2));
+        out.sets[id] = o;
+      }
+      D.useSet('soma', true);
+      return out;
+    });
+    const S = r.sets, ok1 = !r.bad.length && r.p4 === 8 && r.p5 === 29 && S.soma.n === 7 && S.tetracubes.n === 8 && S.pentominoes.n === 12 && S.pentacubes.n === 29
+      && S.soma.mirror === '0,1,2,3,4,6,5' && S.tetracubes.mirror === '0,1,2,3,4,5,7,6' && S.pentominoes.mirror === '0,1,2,3,4,5,6,7,8,9,10,11'
+      && Object.values(S).every(o => o.course === o.courses && o.courses > 0) && S.soma.key === '400@2' && /^tetracubes:/.test(S.tetracubes.key);
+    if (!ok1) failures.push('[soma sets] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} soma sets: 7, 8, 12 and 29 pieces (8 tetracubes and 29 pentacubes grown cube by cube), mirrors paired, every course figure and generated figure filled, each set's keys its own`);
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 2));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      await page.evaluate(([c, r]) => window.getFieldApp().onReset(c, r), fc);
+      await page.waitForTimeout(400);
+      const st = () => page.evaluate(([c, r]) => { const W = window.FIELD_WORLD, D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r); return { turns: g.turns, o: g.cur && g.cur.o, yaw: W.st.yaw, x: g.cur && g.cur.x, y: g.cur && g.cur.y, fits: D.fitsAt(g).length }; }, fc);
+      // (the drag first: after the touches the field takes no mouse for a while, as a phone's own mouse events follow its touches)
+      // a column where the piece does not fit, with one it does fit within reach: a real drag there ends where it fits
+      const plan = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.games.get(c + '_' + r), p = g.cur, B = g.F.B, x0 = p.x, y0 = p.y;
+        let want = null;
+        for (let y = -1; y <= B[1] && !want; y++) for (let x = -1; x <= B[0] && !want; x++){ p.x = x; p.y = y; if (!D.fitsAt(g).length){ const s = D.snapNear(g, x, y); if (s) want = { x, y, s }; } }
+        p.x = x0; p.y = y0; return want && { ...want, x0, y0, SQ: D.sqOf(B) }; }, fc);
+      if (plan){
+        const proj = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0.02, T.boardZ + (0.5 - v) * bW).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; }, [u, v]);
+        const a0 = await proj(0.5, 0.5), a1 = await proj(0.5 + (plan.x - plan.x0) * plan.SQ, 0.5 + (plan.y - plan.y0) * plan.SQ);
+        await page.mouse.move(a0[0], a0[1]); await page.mouse.down();
+        for (let k = 1; k <= 10; k++){ await page.mouse.move(a0[0] + (a1[0] - a0[0]) * k / 10, a0[1] + (a1[1] - a0[1]) * k / 10); await page.waitForTimeout(40); }
+        await page.mouse.up(); await page.waitForTimeout(400);
+        const t2 = await st();
+        real.snap = t2.fits > 0 && t2.x === plan.s[0] && t2.y === plan.s[1];
+        real.snapDetail = { plan, t2 };
+      }
+      const t0 = await st();
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+      const pts = a => [0, 180].map((o, id) => ({ x: 640 + 120 * Math.cos((a + o) * Math.PI / 180), y: 400 + 120 * Math.sin((a + o) * Math.PI / 180), id }));
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
+      for (let k = 1; k <= 14; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(70 * k / 14) }); await page.waitForTimeout(16); }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(500);
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      const t1 = await st();
+      real.twist = t1.turns === t0.turns + 1 && Math.abs(t1.yaw - t0.yaw) < 1e-6;
+      real.twistDetail = { t0, t1 };
+      real.glow = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, n = () => A.cellItems(c, r).filter(i => i.kind === 'smFit').length;
+        const on = n(); D.SET.fits = false; const off = n(); D.SET.fits = true; return on > 0 && off === 0; }, fc);
+    }
+    const ok2 = !!fc && real.twist && real.snap && real.glow;
+    if (!ok2) failures.push('[soma hands] ' + JSON.stringify({ fc, real }));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma hands: a real two-finger twist turns the piece and not the view, a real drag to a column it does not fit ends where it does, the glow on and off`);
+  }
+  // SOMA: DIFFICULTY FROM THE COUNT, AND CAN IT BE BUILT? (Oct 23: "whats next for soma", then "2,1"): the figure kept is the one
+  // with the fewest ways of several (level 4's ways fewer on average than one made alone), its par from its pieces and ways, stars
+  // for time; from level 3 some figures cannot be built, proved by the solver trying every way, a piece short of buildable; boards
+  // no one plays stop a piece short from level 3; the title keeps the count back; then real input: the real N on a figure that
+  // cannot be built takes it, and a real click on the row's ✗ on one that can costs a hint.
+  {
+    current = 'soma difficulty and can it be built';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      const avg = K => { const keep = D.PICK_K.slice(); D.PICK_K[3] = K; let s = 0, n = 0; for (let k = 0; k < 12; k++){ const F = D.makeFigure(5000 + k * 71, 4); if (!F.impossible){ s += F.waysExact ? F.waysN : 1000; n++; } } D.PICK_K.splice(0, 5, ...keep); return s / n; };
+      out.one = avg(1); out.four = avg(4);
+      out.par = [D.parFor(7, 1), D.parFor(7, 200), D.parFor(3, 2)];
+      out.stars = [D.timeStars(30000, 60), D.timeStars(90000, 60), D.timeStars(200000, 60)].join();
+      // a board that cannot be built, and one at its level that can
+      let imp = null, ok = null;
+      for (let c = 40; c < 140 && !(imp && ok); c++){ const lv = D.levelOf(c, 3); if (lv < 3) continue; const F = D.figureOf(c, 3); if (F.impossible && !imp) imp = [c, 3]; else if (!F.impossible && !ok && D.canSay(F)) ok = [c, 3]; }
+      out.imp = imp; out.ok = ok;
+      if (imp){ const F = D.figureOf(...imp), info = {}, s = D.solve(F, new Map(), 5e6, info), part = D.shownSol(F);
+        const used = new Set(); let clash = false;
+        for (const q of part) for (const c of D.ORI[F.types[q.i]].list[q.o].map(([a, b, z]) => [q.x + a, q.y + b, q.z + z])){ const i = (c[2] * F.B[1] + c[1]) * F.B[0] + c[0]; if (!F.fig[i] || used.has(i)) clash = true; used.add(i); }
+        out.proof = !s && !info.capped; out.part = part.length === F.types.length - 1 && !clash;
+        let most = 0; for (let t = 0; t < 40; t += 0.2) most = Math.max(most, D.shownOf(F, imp[0], imp[1], t).placed.size);
+        out.shown = most === F.types.length - 1;
+        out.title = window.getFieldApp().cellTitle(...imp); }
+      return out;
+    });
+    const ok1 = r.four < r.one && r.par[0] > r.par[1] && r.par[1] > r.par[2] && r.stars === '3,2,1' && r.imp && r.ok && r.proof && r.part && r.shown && !/ways/.test(r.title);
+    if (!ok1) failures.push('[soma difficulty] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} soma difficulty: level 4's ways ${r.one && r.one.toFixed(0)} made alone, ${r.four && r.four.toFixed(0)} the fewest of four; pars ${r.par && r.par.join('/')} s; a figure that cannot be built proved so, shown a piece short, its count kept back`);
+    const real = {};
+    if (r.imp && r.ok){
+      for (const [key, at] of [['imp', r.imp], ['ok', r.ok]]){
+        await page.evaluate(([c, rr]) => window.getFieldApp()._debug.fly(c, rr), at);
+        await page.waitForTimeout(3000);
+        await page.evaluate(([c, rr]) => window.getFieldApp().onReset(c, rr), at);
+        await page.waitForTimeout(400);
+        if (key === 'imp'){ await page.keyboard.press('n'); await page.waitForTimeout(400); }
+        else {
+          const tiles = await page.evaluate(([c, rr]) => window.getFieldApp().statTiles(c, rr).length, at);
+          const t = await page.evaluate(n => { const el = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + (n - 1) && t.style.display !== 'none'); if (!el) return null; const b = el.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, tiles);
+          if (t){ await page.mouse.click(t[0], t[1]); await page.waitForTimeout(400); }
+        }
+        real[key] = await page.evaluate(([c, rr]) => { const A = window.getFieldApp(), g = A._debug.games.get(c + '_' + rr); return g && { st: g.state, said: !!g.said, hints: g.hints, title: A.cellTitle(c, rr) }; }, at);
+      }
+    }
+    const ok2 = real.imp && real.imp.st === 'done' && real.imp.said && real.ok && real.ok.st === 'play' && real.ok.hints === 1;
+    if (!ok2) failures.push('[soma can it be built] ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma can it be built: the real N on one that cannot be built takes it, a real click on ✗ on one that can costs a hint`);
   }
   // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
   // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt
