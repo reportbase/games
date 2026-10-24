@@ -3626,21 +3626,31 @@ try {
       const t0 = await st();
       const cdp = await page.context().newCDPSession(page);
       await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-      const pts = a => [0, 180].map((o, id) => ({ x: 640 + 120 * Math.cos((a + o) * Math.PI / 180), y: 400 + 120 * Math.sin((a + o) * Math.PI / 180), id }));
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
-      for (let k = 1; k <= 14; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(70 * k / 14) }); await page.waitForTimeout(16); }
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await page.waitForTimeout(500);
-      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      // (Oct 24: "two finger rotate does not work for some applications, such as soma."): a twist turns the piece only when a
+      // finger came down on it or its shadow; one begun elsewhere turns the view, as in every other game
+      const twist = async (cx, cy) => { const pts = a => [0, 180].map((o, id) => ({ x: cx + 120 * Math.cos((a + o) * Math.PI / 180), y: cy + 120 * Math.sin((a + o) * Math.PI / 180), id }));
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
+        for (let k = 1; k <= 14; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(70 * k / 14) }); await page.waitForTimeout(16); }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await page.waitForTimeout(500); };
+      const onPiece = await page.evaluate(() => { const A = window.getFieldApp(), hits = [];
+        for (let y = 100; y < 760; y += 10) for (let x = 100; x < 1180; x += 10) if (A.twistTurns([{ x, y }])) hits.push([x, y]);
+        return hits.length ? hits.reduce((a, h) => [a[0] + h[0] / hits.length, a[1] + h[1] / hits.length], [0, 0]) : null; });
+      const offPiece = [640, 400], offFree = await page.evaluate(p => !window.getFieldApp().twistTurns([{ x: p[0], y: p[1] }]) && !window.getFieldApp().twistTurns([{ x: p[0] + 120, y: p[1] }]) && !window.getFieldApp().twistTurns([{ x: p[0] - 120, y: p[1] }]), offPiece);
+      if (onPiece) await twist(onPiece[0] - 120, onPiece[1]);   // the first finger lands on the piece
       const t1 = await st();
-      real.twist = t1.turns === t0.turns + 1 && Math.abs(t1.yaw - t0.yaw) < 1e-6;
-      real.twistDetail = { t0, t1 };
+      if (offFree){ await twist(offPiece[0], offPiece[1]); await page.waitForTimeout(800); }
+      const t3 = await st();
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      real.twist = !!onPiece && t1.turns === t0.turns + 1 && Math.abs(t1.yaw - t0.yaw) < 1e-6;
+      real.twistView = offFree && t3.turns === t1.turns && Math.abs(t3.yaw - t1.yaw) > 20;
+      real.twistDetail = { onPiece, offFree, t0, t1, t3 };
       real.glow = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, n = () => A.cellItems(c, r).filter(i => i.kind === 'smFit').length;
         const on = n(); D.SET.fits = false; const off = n(); D.SET.fits = true; return on > 0 && off === 0; }, fc);
     }
-    const ok2 = !!fc && real.twist && real.snap && real.glow;
+    const ok2 = !!fc && real.twist && real.twistView && real.snap && real.glow;
     if (!ok2) failures.push('[soma hands] ' + JSON.stringify({ fc, real }));
-    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma hands: a real two-finger twist turns the piece and not the view, a real drag to a column it does not fit ends where it does, the glow on and off`);
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma hands: a real two-finger twist begun on the piece turns it and not the view, one begun off it turns the view, a real drag to a column it does not fit ends where it does, the glow on and off`);
   }
   // SOMA: DIFFICULTY FROM THE COUNT, AND CAN IT BE BUILT? (Oct 23: "whats next for soma", then "2,1"): the figure kept is the one
   // with the fewest ways of several (level 4's ways fewer on average than one made alone), its par from its pieces and ways, stars
