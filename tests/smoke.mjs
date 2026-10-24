@@ -179,6 +179,21 @@ try {
     else console.log(`ok   system text size: at 150% the menu's words ${fs.a.menu} → ${fs.b.menu} px, the button's ${fs.a.btn} → ${fs.b.btn} px; no text in px`);
   }
 
+  // THE PAGE'S OWN TEXT SIZE (Oct 24: a Pixel 10 Pro's browser passed none of the phone's font size on): the real A+ in the menu
+  // makes the root 1.15 times the system's and keeps it on the device, the menu staying open; the middle button puts it back.
+  {
+    await page.click('#menuBtn'); await page.waitForTimeout(200);
+    const r0 = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+    await page.click('#bTextUp'); await page.waitForTimeout(150);
+    const t = await page.evaluate(() => ({ root: parseFloat(getComputedStyle(document.documentElement).fontSize), open: !document.getElementById('menu').hidden, saved: localStorage.getItem('ui.textScale'), label: document.getElementById('bTextSize').textContent }));
+    await page.click('#bTextSize'); await page.waitForTimeout(150);
+    const back = await page.evaluate(() => ({ root: parseFloat(getComputedStyle(document.documentElement).fontSize), saved: localStorage.getItem('ui.textScale') }));
+    await page.evaluate(() => { document.getElementById('menu').hidden = true; });
+    if (!(Math.abs(t.root / r0 - 1.15) < 0.01 && t.open && t.saved === '1.15' && t.label === 'Text 115%' && back.root === r0 && back.saved === '1'))
+      failures.push(`[text size control] ${JSON.stringify({ r0, t, back })}`);
+    else console.log(`ok   text size control: A+ ${r0} → ${t.root} px, kept, the menu open; Text 100% puts it back`);
+  }
+
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing
   // on any board moving, draws only now and then (a look twice a second); a finger on the screen wakes it to draw every
   // frame; and chess, which plays moves out on its boards itself, never rests. (Sokoban's boards play themselves, and since
@@ -3019,6 +3034,8 @@ try {
     await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(500);
     const s0 = await state();
     await page.keyboard.down('ArrowDown'); await page.waitForTimeout(700); await page.keyboard.up('ArrowDown'); await page.waitForTimeout(400);
+    // (the game steps as its board is drawn, and a slow frame on CI left the ball launched but not yet moved at 400 ms: wait for it)
+    for (let k = 0; k < 15; k++){ const q = await state(); if (q.onPl || q.by == null || q.by < 0.9) break; await page.waitForTimeout(200); }
     const s1 = await state();
     await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(200); const s2 = await state(); await page.keyboard.up('ArrowLeft'); await page.waitForTimeout(150);
     const s3 = await state();
@@ -3611,21 +3628,37 @@ try {
       const t0 = await st();
       const cdp = await page.context().newCDPSession(page);
       await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-      const pts = a => [0, 180].map((o, id) => ({ x: 640 + 120 * Math.cos((a + o) * Math.PI / 180), y: 400 + 120 * Math.sin((a + o) * Math.PI / 180), id }));
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
-      for (let k = 1; k <= 14; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(70 * k / 14) }); await page.waitForTimeout(16); }
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await page.waitForTimeout(500);
-      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      // (Oct 24: "two finger rotate does not work for some applications, such as soma."): a twist turns the piece only when a
+      // finger came down on it or its shadow; one begun elsewhere turns the view, as in every other game
+      const twist = async (cx, cy) => { const pts = a => [0, 180].map((o, id) => ({ x: cx + 120 * Math.cos((a + o) * Math.PI / 180), y: cy + 120 * Math.sin((a + o) * Math.PI / 180), id }));
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
+        for (let k = 1; k <= 14; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(70 * k / 14) }); await page.waitForTimeout(16); }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await page.waitForTimeout(500); };
+      const onPiece = await page.evaluate(() => { const A = window.getFieldApp(), hits = [];
+        for (let y = 100; y < 760; y += 10) for (let x = 100; x < 1180; x += 10) if (A.twistTurns([{ x, y }])) hits.push([x, y]);
+        return hits.length ? hits.reduce((a, h) => [a[0] + h[0] / hits.length, a[1] + h[1] / hits.length], [0, 0]) : null; });
+      // a middle for the off twist whose two fingers (120 px either side) are both off the piece, nearest the screen's middle
+      // (on CI's screen the piece lay under the screen's middle itself)
+      const offPiece = await page.evaluate(() => { const A = window.getFieldApp(), off = (x, y) => !A.twistTurns([{ x, y }]);
+        let best = null;
+        for (let y = 250; y <= 650; y += 25) for (let x = 340; x <= 940; x += 25){ if (!(off(x, y) && off(x + 120, y) && off(x - 120, y))) continue;
+          const d = Math.hypot(x - 640, y - 450); if (!best || d < best.d) best = { x, y, d }; }
+        return best && [best.x, best.y]; }), offFree = !!offPiece;
+      if (onPiece) await twist(onPiece[0] - 120, onPiece[1]);   // the first finger lands on the piece
       const t1 = await st();
-      real.twist = t1.turns === t0.turns + 1 && Math.abs(t1.yaw - t0.yaw) < 1e-6;
-      real.twistDetail = { t0, t1 };
+      if (offFree){ await twist(offPiece[0], offPiece[1]); await page.waitForTimeout(800); }
+      const t3 = await st();
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+      real.twist = !!onPiece && t1.turns === t0.turns + 1 && Math.abs(t1.yaw - t0.yaw) < 1e-6;
+      real.twistView = offFree && t3.turns === t1.turns && Math.abs(t3.yaw - t1.yaw) > 20;
+      real.twistDetail = { onPiece, offFree, t0, t1, t3 };
       real.glow = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, n = () => A.cellItems(c, r).filter(i => i.kind === 'smFit').length;
         const on = n(); D.SET.fits = false; const off = n(); D.SET.fits = true; return on > 0 && off === 0; }, fc);
     }
-    const ok2 = !!fc && real.twist && real.snap && real.glow;
+    const ok2 = !!fc && real.twist && real.twistView && real.snap && real.glow;
     if (!ok2) failures.push('[soma hands] ' + JSON.stringify({ fc, real }));
-    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma hands: a real two-finger twist turns the piece and not the view, a real drag to a column it does not fit ends where it does, the glow on and off`);
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma hands: a real two-finger twist begun on the piece turns it and not the view, one begun off it turns the view, a real drag to a column it does not fit ends where it does, the glow on and off`);
   }
   // SOMA: DIFFICULTY FROM THE COUNT, AND CAN IT BE BUILT? (Oct 23: "whats next for soma", then "2,1"): the figure kept is the one
   // with the fewest ways of several (level 4's ways fewer on average than one made alone), its par from its pieces and ways, stars
