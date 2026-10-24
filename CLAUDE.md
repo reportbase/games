@@ -1043,6 +1043,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     every `TWIST_STEP` (45°) past the field's dead stretch, clockwise with the fingers, and the view stays put (a field hook: an
     app's `twistTurns()` takes the twist, `onTwist(±1)`, + clockwise; `pinchSpin`); and every empty cell any place of the piece,
     turned as it is, would cover glows in its colour (`fitGlow`, `smFit`; the menu's Show where it fits, localStorage `soma.fits`).
+  - **A twist on the piece, or the view** (Oct 24: "two finger rotate does not work for some applications, such as soma."):
+    every twist went to the piece while one was in hand, so the view never turned in Soma. Now the field asks `twistTurns(pts)`
+    once a gesture, with where the two fingers came down (`pinchAt0`, the answer kept in `pinchApp`), and Soma takes it only when
+    one of them is on the piece in hand or its shadow (`handAt`: the eye's line through the touch against each cube's box, grown
+    by `HAND_SLACK`, 0.6 of a cube); a twist begun anywhere else turns the view as in every other game. An app's `twistTurns()`
+    called with no points answers as before. Measured across the apps, the view turned in every one but Soma and pinball, whose
+    table takes each finger as a flipper (two fingers are both flippers, as meant).
   - **Difficulty from the count** (Oct 23: "whats next for soma", then "2,1", the first "a figure with few ways is hard"):
     measured, the ways grow with the pieces (Soma about 2, 9, 30, 200 and 300+ at levels 1–5) and spread widely within a level, so
     a level keeps its pieces and its figure is the one with the fewest ways of `PICK_K` made (1 at level 1 to 5 at level 5;
@@ -1796,6 +1803,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   and Android Chrome's font size (`<meta name="text-scale" content="scale">`). Write new text sizes in rem. Pictures drawn on
   canvases (the bottom row's tiles, the boards' lettering) are sized to their tiles and boards and stay as they were. The
   smoke test sets the root to 150% and wants the menu's words and the button's glyph half again as big, and no text left in px.
+  **The page's own text size** (Oct 24: "its just broken on one of my android phones chromium browser", a Pixel 10 Pro, where
+  draw's plain gallery pages were small too): not every browser passes the phone's size on, so the menu's first section has
+  A−, Text N% and A+ (`#textSizeRow`, `data-keep-open`, so the menu stays open): the root steps through 85%–200% of what the
+  system gives (read with the page's own size taken off), the middle button puts it back, kept in localStorage `ui.textScale`
+  (`window.uiTextScale`). The smoke test clicks the real A+ and the middle button.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
