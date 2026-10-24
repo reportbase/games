@@ -3034,6 +3034,8 @@ try {
     await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(500);
     const s0 = await state();
     await page.keyboard.down('ArrowDown'); await page.waitForTimeout(700); await page.keyboard.up('ArrowDown'); await page.waitForTimeout(400);
+    // (the game steps as its board is drawn, and a slow frame on CI left the ball launched but not yet moved at 400 ms: wait for it)
+    for (let k = 0; k < 15; k++){ const q = await state(); if (q.onPl || q.by == null || q.by < 0.9) break; await page.waitForTimeout(200); }
     const s1 = await state();
     await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(200); const s2 = await state(); await page.keyboard.up('ArrowLeft'); await page.waitForTimeout(150);
     const s3 = await state();
@@ -3636,7 +3638,13 @@ try {
       const onPiece = await page.evaluate(() => { const A = window.getFieldApp(), hits = [];
         for (let y = 100; y < 760; y += 10) for (let x = 100; x < 1180; x += 10) if (A.twistTurns([{ x, y }])) hits.push([x, y]);
         return hits.length ? hits.reduce((a, h) => [a[0] + h[0] / hits.length, a[1] + h[1] / hits.length], [0, 0]) : null; });
-      const offPiece = [640, 400], offFree = await page.evaluate(p => !window.getFieldApp().twistTurns([{ x: p[0], y: p[1] }]) && !window.getFieldApp().twistTurns([{ x: p[0] + 120, y: p[1] }]) && !window.getFieldApp().twistTurns([{ x: p[0] - 120, y: p[1] }]), offPiece);
+      // a middle for the off twist whose two fingers (120 px either side) are both off the piece, nearest the screen's middle
+      // (on CI's screen the piece lay under the screen's middle itself)
+      const offPiece = await page.evaluate(() => { const A = window.getFieldApp(), off = (x, y) => !A.twistTurns([{ x, y }]);
+        let best = null;
+        for (let y = 250; y <= 650; y += 25) for (let x = 340; x <= 940; x += 25){ if (!(off(x, y) && off(x + 120, y) && off(x - 120, y))) continue;
+          const d = Math.hypot(x - 640, y - 450); if (!best || d < best.d) best = { x, y, d }; }
+        return best && [best.x, best.y]; }), offFree = !!offPiece;
       if (onPiece) await twist(onPiece[0] - 120, onPiece[1]);   // the first finger lands on the piece
       const t1 = await st();
       if (offFree){ await twist(offPiece[0], offPiece[1]); await page.waitForTimeout(800); }
