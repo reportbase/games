@@ -322,6 +322,60 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     passing a wall, the real arrow keys rolling the marble, a hole and the ring, a board no one plays moving, and the editor:
     opened by the real dots, a walled-up maze refused, walls, a hole, the start and the ring laid by taps, Done keeping it with
     a par in storage (read back as the page reads it on load), and a shared copy on another board.
+- **Pinball** (Oct 24: "soma is cool. what other games like soma are there?", then "how about pinball"): `PINBALL_APP`, id
+  `pinball`, after the tilt maze. A table a board, `W` (0.56) wide by 1 long (the app's `boardShape`), the plunger lane on the
+  right, the flippers at the near end; items are laid out in the table's units and divided by W at the end, as golf's.
+  - **Every board its own table** (`makeTable(idx, lv)`, `tableFor`, `TABLES` 1,500): the cabinet is the same on every board (an
+    arch of 20 rails, the plunger lane with its one-way `gate` and `stop`, outlanes, inlanes, the dividers, the slingshots); the
+    playfield is the board's own from its number (`boardIdx`) at a level 1–5, the ring level plus the Difficulty (Easy 0,
+    Normal 1, Hard 2; `ARCADE.difficulty(…, own)`): pop bumpers in a cluster, top lanes (3, 4 from level 4), a drop bank along a
+    side or across the middle, standups, a saucer on most, rubber posts, kept apart so the ball passes (`free`, `occ`). `LV`:
+    the slope `g` 1.15 to 1.75, flippers 0.086 to 0.078 long and set wider (`gap`), outlanes wider (`out`), bumpers harder
+    (`kick`), the ball save 10 s down to none (`save`), kickbacks in both outlanes at levels 1–3 and the left at 4 (`kb`). The
+    side walls bulge in above the outlanes (`bulge`), so a ball riding a wall is turned toward the divider's post.
+  - **The ball** (`sub`, 1/600 s): gravity down the table; segments (`hitSeg`) and circles (`hitCirc`) found through a grid of
+    cells (`T.grid`); each kind its own bounce (`E`); a flipper is a tapered capsule turning about its pivot (26 rad/s up, 16
+    down) and the ball meets its surface moving at ω × r (`hitFlipper`); bumpers and the slings' faces kick (`T.D.kick`,
+    `SLING_V`); the gate is solid only to a ball going down; the saucer holds a slow ball 0.9 s and kicks it out; a kickback
+    lit sends a ball in its outlane straight up along the wall, past the divider's post (sent up the middle of the lane, or
+    inward, it met the post from below and fell straight back). The plunger's pull is drawn, never moved (a ball drawn down past the stop was
+    pushed through it). `endBall` pays the bonus (× 500 × the multiplier, none after a tilt).
+  - **Score**: bumper 100, sling 10, drop target 500 (the bank 5000, the multiplier up to ×5, both kickbacks lit, up again a
+    second later), lane 300 (all lit 2000 and the multiplier up; a flipper press moves the lit lanes along, `setFlipper`),
+    standup 300, saucer 1500; targets, lanes and the saucer add to the bonus.
+  - **The steady player** (`botStep`): flips as the ball comes down a flipper, at a point along it drawn for each approach,
+    one in ten too late (`MISS`); pulls the plunger to a power of its own. A board no one plays shows the first `REEL_T` (40)
+    seconds of its game (`simGen`, sampled `REC_HZ` 30 a second: the ball, both flippers, drops, lanes, bumpers and slings
+    lit, the multiplier, the kickbacks, the pull; `frameOf`, `viewOf`), worked out a little at a time (`tableSoon`, 8 ms in
+    30). Par, only for a board framed or played (`wantPar`, `parGen`), is the mean of `PAR_GAMES` (3) whole games up to
+    `GAME_CAP` (240 s). Measured on 20 tables a level: median par 232k, 201k, 88k, 56k and 21k; a game 177, 150, 102, 65 and
+    40 s; 70–310 ms to work one out. Where the steady player's balls go (30 tables a level): an outlane 74% at level 1, 56% at
+    3, 57% at 5, the rest between the flippers; a ball lasts 54, 29 and 11 s. (First the inlanes were laid narrower than the
+    ball, and every ball coming down a side went down its outlane; a ball lasted 11 s at level 1.) It never nudges, which is
+    how a person saves an outlane ball. 2.5 million steps of its play found no ball through a flipper.
+  - **Controls**: ← → (Z and /, A and D, the Shift keys) flip; ↓, S or Enter held pulls the plunger, let go launches; ↑, W or
+    N nudges, three in three seconds TILT (the flippers dead and no bonus that ball). A press on the table (touch or mouse,
+    heard before the field in the capture phase: `pressAt`, `press`, `OWN`) is the left flipper on the left half and the right
+    on the right, as long as it is held, both at once with two fingers, or the plunger while the ball waits on it; a finger off
+    the table still flies the view. A touch's echo as a mouse press is ignored (`mouseIsTouchEcho`): the tap that started a
+    game launched its ball.
+  - **Through**: three balls; stars by the score against par (`starsOf`: par 3, 60% of it 2), the best a board kept
+    (localStorage `pinball.best`, by board and level); a tap on a finished board, after `GRACE`, goes on to the next. The flight
+    there is to the board beside, unwrapped (`gotoCell(c - 1, r)`; `onFramed` wraps what it is told): to the wrapped number,
+    from the corner board it went the long way round the whole field, three seconds of empty boards.
+  - **Drawn**: the playfield a picture a table (the photo tier, `paint`, 512 px tall from `HI_PX` 300 px boards, else 256: a
+    gradient in the table's own hue, rays from the bumpers, the lane and the apron, rings under the lamps, arrows, the level's
+    colour round it); rails and rubbers as boxes along their segments (`pbBar`), posts, bumpers with lit caps, drop targets up
+    or down, the flippers (`pbFlipper`, an extruded outline, yaw never 0), the ball, and lamps (`pbLamp`, unlit) for the lanes,
+    the multiplier, Shoot Again, the kickbacks and the saucer. Measured in the sandbox's software renderer: 7.75 frames a second
+    framed (10 with nothing on the boards, the tall board's own cost; mini golf 6.5 with nothing).
+  - The smoke test checks the levels by ring, the same table twice and another on the next board, the dials, the launch through
+    the gate never coming back down the lane, 72,000 steps of the steady player with the ball never out of the cabinet, a
+    flipper's throw, a bumper's kick, a drop bank down with the multiplier up and back up after, a lane lit and moved along, the
+    ball save, the kickback, a tilt, the pieces and the picture, par near the corner above par far out, and real input: a
+    click starting, the real Down launching, the real arrow flipping, real touches on each half and both with the view still,
+    a new game's tap not launching, game over with stars and a best, a click going on to the board beside (not round the
+    field); and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
