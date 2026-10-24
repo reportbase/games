@@ -1155,7 +1155,14 @@
   <div class="m-sec"><button id="bApp" title="Choose what the field is - chess, Go, draughts, the photo gallery, the games and the rest.">Application&#8230;</button>
   <!-- FULL SCREEN (Oct 17: "add full screen option to the menu"): the field fills the screen, the browser's bars gone;
        the same item, or Escape, brings them back. Hidden where the browser cannot (an iPhone's Safari takes only video). -->
-  <button id="bFullScreen" title="Fill the whole screen with the field, the browser's own bars hidden. Choose it again, or press Escape, to leave.">Full screen</button></div>
+  <button id="bFullScreen" title="Fill the whole screen with the field, the browser's own bars hidden. Choose it again, or press Escape, to leave.">Full screen</button>
+  <!-- TEXT SIZE (Oct 24: "its just broken on one of my android phones chromium browser", a Pixel 10 Pro, where draw's plain
+       gallery pages are small too): the page's own control, since not every browser passes the system's size on. Stays open. -->
+  <div id="textSizeRow" style="display:flex;gap:6px;align-items:stretch">
+    <button id="bTextDown" data-keep-open="1" title="Smaller text, everywhere on the page" style="flex:0 0 auto;width:auto;min-width:0">A&#8722;</button>
+    <button id="bTextSize" data-keep-open="1" title="Text size on this device: back to the system's own" style="flex:1 1 0;width:auto;min-width:0">Text 100%</button>
+    <button id="bTextUp" data-keep-open="1" title="Larger text, everywhere on the page" style="flex:0 0 auto;width:auto;min-width:0">A+</button>
+  </div></div>
   <div id="appMenu"></div>
   <div class="m-sec" data-debug>
     <div class="m-hd">Boards</div>
@@ -17211,6 +17218,34 @@ document.getElementById('bDebugTier')?.addEventListener('click', () => setMenuDe
   document.addEventListener('fullscreenchange', sync);
   document.addEventListener('webkitfullscreenchange', sync);
   sync();
+})();
+
+/* TEXT SIZE (Oct 24: "the font is correct on destktop, its just broken on one of my android phones chromium browser.", then
+   "pixel 10 pro. the gallary pages in draw repos also have the small font and those are just html pages, not canvas."): every
+   text size is in rem (THE SYSTEM'S TEXT SIZE, in the styles at the top), so the root's size carries all of it; but a browser
+   that passes nothing of the phone's font setting on leaves the root at 16 px, and draw's plain pages were small on that phone
+   too. So the page has its own: A− and A+ in the menu step the root through STEPS of what the system gives (85% to 200%),
+   the middle button puts it back, kept on the device (localStorage `ui.textScale`). The base is read with the page's own
+   size taken off first, so iOS's Dynamic Type and the browser's own setting still count under it. */
+(() => {
+  const STEPS = [0.85, 1, 1.15, 1.3, 1.5, 1.75, 2], KEY = 'ui.textScale', root = document.documentElement;
+  const dn = document.getElementById('bTextDown'), up = document.getElementById('bTextUp'), mid = document.getElementById('bTextSize');
+  let s = 1; try { const v = +localStorage.getItem(KEY); if (STEPS.includes(v)) s = v; } catch {}
+  const apply = () => {
+    root.style.fontSize = '';
+    if (s !== 1){ const base = parseFloat(getComputedStyle(root).fontSize) || 16; root.style.fontSize = (base * s).toFixed(2) + 'px'; }
+    if (mid) mid.textContent = 'Text ' + Math.round(s * 100) + '%';
+    if (dn) dn.disabled = s === STEPS[0];
+    if (up) up.disabled = s === STEPS[STEPS.length - 1];
+    try { localStorage.setItem(KEY, String(s)); } catch {}
+    try { window.fieldWake && window.fieldWake(); } catch {}
+  };
+  const step = d => { const i = STEPS.indexOf(s); s = STEPS[Math.max(0, Math.min(STEPS.length - 1, i + d))]; apply(); };
+  dn && dn.addEventListener('click', () => step(-1));
+  up && up.addEventListener('click', () => step(1));
+  mid && mid.addEventListener('click', () => { s = 1; apply(); });
+  window.uiTextScale = { get: () => s, set: v => { if (STEPS.includes(v)){ s = v; apply(); } }, STEPS };
+  apply();
 })();
 
 // Menu show/hide.

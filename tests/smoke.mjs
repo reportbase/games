@@ -179,6 +179,21 @@ try {
     else console.log(`ok   system text size: at 150% the menu's words ${fs.a.menu} → ${fs.b.menu} px, the button's ${fs.a.btn} → ${fs.b.btn} px; no text in px`);
   }
 
+  // THE PAGE'S OWN TEXT SIZE (Oct 24: a Pixel 10 Pro's browser passed none of the phone's font size on): the real A+ in the menu
+  // makes the root 1.15 times the system's and keeps it on the device, the menu staying open; the middle button puts it back.
+  {
+    await page.click('#menuBtn'); await page.waitForTimeout(200);
+    const r0 = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+    await page.click('#bTextUp'); await page.waitForTimeout(150);
+    const t = await page.evaluate(() => ({ root: parseFloat(getComputedStyle(document.documentElement).fontSize), open: !document.getElementById('menu').hidden, saved: localStorage.getItem('ui.textScale'), label: document.getElementById('bTextSize').textContent }));
+    await page.click('#bTextSize'); await page.waitForTimeout(150);
+    const back = await page.evaluate(() => ({ root: parseFloat(getComputedStyle(document.documentElement).fontSize), saved: localStorage.getItem('ui.textScale') }));
+    await page.evaluate(() => { document.getElementById('menu').hidden = true; });
+    if (!(Math.abs(t.root / r0 - 1.15) < 0.01 && t.open && t.saved === '1.15' && t.label === 'Text 115%' && back.root === r0 && back.saved === '1'))
+      failures.push(`[text size control] ${JSON.stringify({ r0, t, back })}`);
+    else console.log(`ok   text size control: A+ ${r0} → ${t.root} px, kept, the menu open; Text 100% puts it back`);
+  }
+
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing
   // on any board moving, draws only now and then (a look twice a second); a finger on the screen wakes it to draw every
   // frame; and chess, which plays moves out on its boards itself, never rests. (Sokoban's boards play themselves, and since
