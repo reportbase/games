@@ -165,6 +165,20 @@ try {
     else console.log(`ok   touch sizes: a mouse keeps the 40 px button and 11 px menu; a phone gets ${mob.btn} px and ${mob.row} px rows of ${mob.font}`);
   }
 
+  // THE SYSTEM'S TEXT SIZE (Oct 24: "font size is way to small. its not respecting system font size."): every size of text is in
+  // rem, so the root's size, which the browser's and the phone's text size set, carries it: at 150% the menu's words, the menu
+  // button's glyph and a notice are half again as big; and no text is left in pixels in the page's own styles.
+  {
+    const fs = await page.evaluate(async () => { const px = sel => { const e = document.querySelector(sel); return e ? parseFloat(getComputedStyle(e).fontSize) : null; };
+      const take = () => ({ menu: px('#menu button'), btn: px('#menuBtn') });
+      const a = take(); document.documentElement.style.fontSize = '150%'; await new Promise(ok => setTimeout(ok, 100)); const b = take(); document.documentElement.style.fontSize = '';
+      let left = 0; for (const sh of document.styleSheets){ let rules; try { rules = sh.cssRules; } catch { continue; } for (const r of rules) if (r.style && /px/.test(r.style.fontSize || '')) left++; }
+      return { a, b, left };
+    });
+    if (!(Math.abs(fs.b.menu / fs.a.menu - 1.5) < 0.01 && Math.abs(fs.b.btn / fs.a.btn - 1.5) < 0.01 && fs.left === 0)) failures.push(`[system text size] ${JSON.stringify(fs)}`);
+    else console.log(`ok   system text size: at 150% the menu's words ${fs.a.menu} → ${fs.b.menu} px, the button's ${fs.a.btn} → ${fs.b.btn} px; no text in px`);
+  }
+
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing
   // on any board moving, draws only now and then (a look twice a second); a finger on the screen wakes it to draw every
   // frame; and chess, which plays moves out on its boards itself, never rests. (Sokoban's boards play themselves, and since

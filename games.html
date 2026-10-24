@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<!-- (Oct 24: "font size is way to small. its not respecting system font size."): Chrome on Android scales rem by the
+     phone's own text size only when the page says it is ready for it -->
+<meta name="text-scale" content="scale">
 <title>TVF field — game-free template (GPU bird's-eye)</title>
 
 <!-- Generic styling (panel, dial, heat legend) is carried inside field-lib and
@@ -21,6 +24,17 @@
     overscroll-behavior: none; overscroll-behavior-x: none;
     touch-action: none;
   }
+  /* ── THE SYSTEM'S TEXT SIZE (Oct 24: "font size is way to small. its not respecting system font size.") ──
+     Every size given to text on the page was in pixels, which no setting reaches: the browser's own font size on a
+     desktop, the phone's text size (iOS Larger Text, Android Font size). They are in rem now, a sixteenth of the root's
+     size for each pixel they were, so at the usual 16 px nothing moves, and the root follows the system:
+     - a desktop browser: its default font size (100%);
+     - iOS: -apple-system-body is the reader's Dynamic Type size (17 px at the usual setting, up to 53 at the largest);
+     - Android Chrome: the text-scale meta above lets the phone's font size scale the root.
+     The bottom row's tiles and the boards' own lettering are drawn into pictures sized to their tiles and boards, and
+     stay as they were. */
+  html { font-size: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  @supports (font: -apple-system-body) { html { font: -apple-system-body; } }
   /* Keep the menu within the viewport and scrollable as options grow. */
   #menu { max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
 
@@ -32,12 +46,12 @@
      to be edited. */
 
   /* 1. Smaller type across the panel chrome. */
-  body .panel        { font-size: 11px; line-height: 1.35; }
-  #menuBtn           { font-size: 15px; }   /* the ☰ is a glyph, not text — keep it tappable */
-  #menu              { font-size: 11px; }
-  #menu button       { font-size: 11px; padding: 5px 8px; }
-  #heatLegend .lt    { font-size: 9.5px; letter-spacing: .04em; }
-  #heatLegend .lab   { font-size: 9.5px; }
+  body .panel        { font-size: 0.6875rem; line-height: 1.35; }
+  #menuBtn           { font-size: 0.9375rem; }   /* the ☰ is a glyph, not text — keep it tappable */
+  #menu              { font-size: 0.6875rem; }
+  #menu button       { font-size: 0.6875rem; padding: 5px 8px; }
+  #heatLegend .lt    { font-size: 0.5938rem; letter-spacing: .04em; }
+  #heatLegend .lab   { font-size: 0.5938rem; }
 
   /* 2. More transparent chrome. The blur keeps text legible over the board
      even at low opacity; the fallback (no backdrop-filter) is a touch more
@@ -227,11 +241,11 @@
              z-index: 4; pointer-events: auto; }
   #bbQuick button { width: 36px; height: 36px; padding: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center;
                     border: 1px solid rgba(201, 199, 190, .30); background: rgba(18, 21, 28, .58); color: #fff;
-                    font-size: 18px; line-height: 1; cursor: pointer; }
+                    font-size: 1.125rem; line-height: 1; cursor: pointer; }
   #bbQuick button:disabled { opacity: .35; cursor: default; }
   /* …and only while the pane is open (Oct 9: "dont show any buttons when the bottom panel is not visible"). */
   body.bb-collapsed #bbQuick { display: none; }
-  @media (max-width: 420px){ #bbQuick { right: 6px; gap: 4px; } #bbQuick button { width: 31px; height: 31px; font-size: 16px; } }
+  @media (max-width: 420px){ #bbQuick { right: 6px; gap: 4px; } #bbQuick button { width: 31px; height: 31px; font-size: 1rem; } }
   /* (Oct 9: with six of them, Select and Box added, the row reached the dots in the middle and the first button sat under
      them: the row now stops short of the middle, and its buttons narrow to fit rather than run on) */
   #bbQuick { max-width: calc(50% - 40px); }
@@ -400,7 +414,7 @@
   #menu .m-sec{ display: flex; flex-direction: column; gap: 5px; }
   #menu .m-hd{
     display: flex; align-items: center; gap: 8px;
-    font-size: 9px; letter-spacing: .16em; text-transform: uppercase;
+    font-size: 0.5625rem; letter-spacing: .16em; text-transform: uppercase;
     color: var(--ui-dim); padding: 0 2px;
   }
   #menu .m-hd::after{
@@ -415,7 +429,7 @@
     background: rgba(255, 255, 255, .045);
     border: 1px solid var(--ui-line);
     border-radius: 9px; padding: 7px 10px;
-    color: var(--ui-ink); font-size: 11px; line-height: 1.35;
+    color: var(--ui-ink); font-size: 0.6875rem; line-height: 1.35;
     transition: background .12s ease, border-color .12s ease;
   }
   body #menu button:hover{ background: var(--ui-hover); border-color: var(--ui-hover-line); }
@@ -450,7 +464,7 @@
     background: rgba(255, 255, 255, .045);
     border: 1px solid var(--ui-line);
     border-radius: 9px; padding: 7px 10px;
-    color: var(--ui-ink); font: inherit; font-size: 11px; line-height: 1.35;
+    color: var(--ui-ink); font: inherit; font-size: 0.6875rem; line-height: 1.35;
     outline: none;
     transition: background .12s ease, border-color .12s ease;
   }
@@ -488,7 +502,7 @@
     flex: 0 0 auto; width: 100%; box-sizing: border-box;
     background: rgba(255, 255, 255, .05); border: 1px solid var(--ui-line);
     border-radius: 8px; color: var(--ui-ink); padding: 6px 9px;
-    font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; outline: none;
+    font: 0.6875rem -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; outline: none;
     transition: border-color .12s ease, background .12s ease;
   }
   #gameIndexFilter:focus{ border-color: var(--ui-hover-line); background: rgba(255, 255, 255, .07); }
@@ -502,7 +516,7 @@
     padding-right: 2px;
   }
   #gameIndexList .gi-hd{
-    font: 10px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .06em;
+    font: 0.625rem -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; letter-spacing: .06em;
     color: var(--ui-amber); padding: 6px 2px 1px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
@@ -512,7 +526,7 @@
     width: 100%; text-align: left; cursor: pointer;
     background: rgba(255, 255, 255, .04); border: 1px solid var(--ui-line);
     border-radius: 8px; padding: 6px 9px;
-    color: var(--ui-ink); font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.4;
+    color: var(--ui-ink); font: 0.6875rem -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.4;
     transition: background .12s ease, border-color .12s ease;
   }
   #gameIndexList .gi-row:hover{ background: var(--ui-hover); border-color: var(--ui-hover-line); }
@@ -520,9 +534,9 @@
     background: rgba(232, 200, 106, .12); border-color: rgba(232, 200, 106, .55);
   }
   #gameIndexList .gi-row .gi-t{ color: var(--ui-ink); }
-  #gameIndexList .gi-row .gi-s{ color: var(--ui-dim); font-size: 10px; }
+  #gameIndexList .gi-row .gi-s{ color: var(--ui-dim); font-size: 0.625rem; }
   #gameIndexList .gi-empty{
-    color: var(--ui-dim); font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: var(--ui-dim); font: 0.6875rem -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     padding: 10px 2px; text-align: center;
   }
 
@@ -581,27 +595,27 @@
      band and its tiles are sums on it; the menu's top is the same sum on the bigger button. */
   @media (pointer: coarse){
     :root { --menu-chip: 48px; }
-    body #menuBtn { width: var(--menu-chip); height: var(--menu-chip); font-size: 21px; border-radius: 11px; }
+    body #menuBtn { width: var(--menu-chip); height: var(--menu-chip); font-size: 1.3125rem; border-radius: 11px; }
     body #menu {
       top: calc(var(--chip-top) + var(--menu-chip) + var(--panel-gap));
       width: min(300px, calc(100vw - 2 * var(--chip-top)));
-      padding: 14px; gap: 14px; font-size: 15px;
+      padding: 14px; gap: 14px; font-size: 0.9375rem;
     }
     #menu .m-sec { gap: 7px; }
-    #menu .m-hd { font-size: 11px; }
-    body #menu button { font-size: 15px; padding: 11px 14px; min-height: 44px; border-radius: 11px; }
+    #menu .m-hd { font-size: 0.6875rem; }
+    body #menu button { font-size: 0.9375rem; padding: 11px 14px; min-height: 44px; border-radius: 11px; }
     #menu .m-row { gap: 8px; }
-    #menu input[type="password"], #menu select { font-size: 16px; min-height: 44px; }
+    #menu input[type="password"], #menu select { font-size: 1rem; min-height: 44px; }
     #appPicker, body.has-browser #appPicker { top: calc(var(--chip-top) + var(--menu-chip) + var(--panel-gap)); }
-    #appPicker .ap-row { font-size: 15px !important; padding: 9px 11px !important; min-height: 48px; }
-    #gameIndexFilter { font-size: 16px; padding: 10px 12px; }
-    #gameIndexList .gi-hd { font-size: 12px; }
-    #gameIndexList .gi-row { font-size: 15px; padding: 10px 12px; min-height: 44px; }
-    #gameIndexList .gi-row .gi-s { font-size: 12px; }
-    #gameIndexList .gi-empty { font-size: 15px; }
-    #bucketPicker { font-size: 15px; }
-    #bucketPicker .bpk-head input { font-size: 16px; padding: 8px 10px; }
-    #bucketPicker .bpk-chip { font-size: 13px; padding: 6px 12px; }
+    #appPicker .ap-row { font-size: 0.9375rem !important; padding: 9px 11px !important; min-height: 48px; }
+    #gameIndexFilter { font-size: 1rem; padding: 10px 12px; }
+    #gameIndexList .gi-hd { font-size: 0.75rem; }
+    #gameIndexList .gi-row { font-size: 0.9375rem; padding: 10px 12px; min-height: 44px; }
+    #gameIndexList .gi-row .gi-s { font-size: 0.75rem; }
+    #gameIndexList .gi-empty { font-size: 0.9375rem; }
+    #bucketPicker { font-size: 0.9375rem; }
+    #bucketPicker .bpk-head input { font-size: 1rem; padding: 8px 10px; }
+    #bucketPicker .bpk-chip { font-size: 0.8125rem; padding: 6px 12px; }
     #bucketPicker .bpk-row { min-height: 40px; align-items: center; }
   }
   #menu button[disabled]:hover{ background: rgba(127,119,221,.08); }
@@ -654,7 +668,7 @@
   .bpk-head input[type=search] { flex: 1; }
   .bpk-chips { display: flex; gap: 5px; flex-wrap: wrap; }
   .bpk-chip { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
-    border-radius: 999px; color: inherit; font: inherit; font-size: 10px;
+    border-radius: 999px; color: inherit; font: inherit; font-size: 0.625rem;
     padding: 2px 9px; cursor: pointer; }
   .bpk-chip:hover { background: rgba(255,255,255,.12); }
   .bpk-chip.on { background: rgba(232, 200, 106,.22); border-color: rgba(232, 200, 106,.55); }
@@ -681,7 +695,7 @@
      ellipsis at the front, which is how every file browser does it. */
   .bpk-row { display: flex; gap: 9px; align-items: baseline; width: 100%;
     padding: 7px 9px; border-radius: 6px; cursor: pointer; background: transparent;
-    border: 0; color: inherit; font-size: 13px; line-height: 1.45; text-align: left; }
+    border: 0; color: inherit; font-size: 0.8125rem; line-height: 1.45; text-align: left; }
   .bpk-row:hover { background: rgba(232, 200, 106,.16); }
   .bpk-row:focus-visible { outline: 2px solid rgba(232, 200, 106,.75); outline-offset: -2px; }
   .bpk-row.dir .tk { opacity: .95; }
@@ -692,7 +706,7 @@
   .bpk-row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; direction: rtl; text-align: left; }
   .bpk-row .nm::before { content: '\202A'; }   /* isolate, so the name still reads left-to-right */
-  .bpk-row .mt { flex: 0 0 auto; opacity: .7; font-size: 11px; }
+  .bpk-row .mt { flex: 0 0 auto; opacity: .7; font-size: 0.6875rem; }
   /* svg.html's accent, named here as it is named there — the two files use
      the same gold for the same meaning (a toggle that is ON). */
   :root { --gold: #d4a052; }
@@ -1118,7 +1132,7 @@
      horizon. Pure background scenery: no pointer events, under everything. */
   #compass { position: fixed; inset: 0; z-index: 4; pointer-events: none; }
   #compass .cm { position: absolute; transform: translate(-50%, -100%);
-                 font-size: 10px; font-weight: 700; letter-spacing: .5px; color: rgba(190,208,222,.85);
+                 font-size: 0.625rem; font-weight: 700; letter-spacing: .5px; color: rgba(190,208,222,.85);
                  text-shadow: 0 1px 3px rgba(4,6,10,.8);
                  font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
   #compass .cm::after { content: ''; display: block; width: 1px; height: 9px;
@@ -5938,7 +5952,7 @@ async function loadFields(urlMap, baseUrl = ''){
 /* ═══════════════════════════════════════════════════════════════════════
    field-styles — the panel/dial/legend CSS, carried inline
    ═══════════════════════════════════════════════════════════════════════ */
-const FIELD_STYLES = "/* field-styles.css\n   ---------------------------------------------------------------------------\n   Generic styles for the viewer demos: panel chrome, semicircle dial,\n   heatmap legend. No chess-specific styling lives here.\n   Expects the host page to include a <canvas> filling the viewport and DOM\n   nodes with the IDs documented in field-dial.js / field-controls.js.\n   --------------------------------------------------------------------------- */\n:root{\n  --bg:#0b0d12;\n  --ink:#c9c7be;\n  --dim:#7f8590;\n  --acc:#7F77DD;\n  --good:#1D9E75;\n  --hot:#e8c86a;\n  --line:rgba(232,200,106,0.28);\n}\n*{margin:0;padding:0;box-sizing:border-box}\nhtml,body{\n  height:100%;background:var(--bg);color:var(--ink);\n  font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Helvetica,Arial,sans-serif;overflow:hidden\n}\nbody > canvas{position:fixed;inset:0;display:block;touch-action:none}\n\n/* Floating glass panels — used for menu, heat legend, SR readouts. */\n.panel{\n  position:fixed;background:#12151c;border:0.5px solid rgba(232,200,106,0.28);\n  border-radius:12px;backdrop-filter:blur(8px);z-index:10\n}\n\n/* Menu (top-left hamburger + drop-down). */\n#menuBtn{\n  top:16px;left:16px;width:40px;height:40px;padding:0;\n  font-size:18px;line-height:40px;text-align:center;color:var(--ink);\n  cursor:pointer;z-index:12\n}\n#menuBtn:hover{background:rgba(232,200,106,0.08)}\n#menu{\n  top:64px;left:16px;padding:14px 16px;display:flex;flex-direction:column;\n  gap:12px;min-width:230px;max-width:300px\n}\n#menu[hidden]{display:none}\n#menu .grp{display:flex;flex-direction:column;gap:5px}\n#menu label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}\n#menu .val{font-size:11px;color:var(--ink);font-variant-numeric:tabular-nums}\n#menu .menusep{height:1px;background:var(--line);margin:2px 0}\n#menu .row{display:flex;justify-content:space-between;gap:18px;font-size:11px;padding:1px 0}\n#menu .k{color:var(--dim)}\n#menu .v{color:var(--ink);font-variant-numeric:tabular-nums}\n#menu .v.acc{color:var(--acc)}\n#menu .v.good{color:var(--good)}\n#menu .v.hot{color:var(--hot)}\n\ninput[type=range]{width:100%;accent-color:var(--acc);height:3px;cursor:pointer}\nbutton{\n  font-family:inherit;font-size:11px;letter-spacing:.4px;color:var(--ink);\n  background:transparent;border:0.5px solid rgba(232,200,106,0.5);border-radius:8px;\n  padding:7px 12px;cursor:pointer\n}\nbutton:hover{background:rgba(232,200,106,0.08)}\n\n/* SEMICIRCLE DIAL (the the tangent-rate apparatus).\n   Bottom dial: apex at top, chord across the bottom, arc curves up.\n   Top dial (the twin/reciprocal view): apex at bottom, chord across the top,\n   arc curves down — mirrored vertically. Both share state via field-dial.js. */\n#dials{\n  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);\n  z-index:11;display:flex;gap:22px;align-items:flex-end\n}\n#dialsTop{\n  position:fixed;top:18px;left:50%;transform:translateX(-50%);\n  z-index:11;display:flex;gap:22px;align-items:flex-start\n}\n#dialsTop[hidden]{display:none}\n.dialgrp{display:flex;flex-direction:row;align-items:center;gap:14px}\n\n/* SR Tier-1 readout panels — flank each dial when the twin dial is showing.\n   Top and bottom dials show the same magnitudes (per v71 §11 reciprocity). */\n.sr-readout{\n  font-size:10px;color:#fff;font-variant-numeric:tabular-nums;\n  letter-spacing:.35px;line-height:1.7;min-width:84px;padding:8px 11px;\n  background:rgba(0,0,0,.5);border:1px solid var(--line);border-radius:8px;\n  backdrop-filter:blur(6px)\n}\n.sr-readout[hidden]{display:none}\n.sr-readout .row{display:flex;justify-content:space-between;gap:10px}\n.sr-readout .lbl{color:#fff}\n.sr-readout .val{color:#fff}\n\n#semiWrap,#semiWrapTop{\n  width:340px;height:190px;cursor:default;touch-action:none;\n  position:relative;padding:10px 14px 8px\n}\n#semiSvg,#semiSvgTop{\n  display:block;width:100%;height:100%;touch-action:none;overflow:visible\n}\n\n/* High-contrast palette so the dial stays legible against busy 3D scenes. */\n.semi-arc-fill{\n  fill:var(--acc);opacity:.14;pointer-events:fill;cursor:grab;touch-action:none\n}\n.semi-arc-fill:hover{opacity:.20}\n.semi-arc-fill:active{cursor:grabbing;opacity:.24}\n.semi-arc{\n  fill:none;stroke:var(--acc);stroke-width:2.4;opacity:1;pointer-events:stroke;\n  filter:drop-shadow(0 0 4px rgba(127,119,221,.55))\n}\n.semi-chord{\n  stroke:var(--hot);stroke-width:1.4;opacity:.55;\n  stroke-dasharray:4 5;pointer-events:none\n}\n.semi-tick{stroke:var(--acc);stroke-width:1.8;opacity:.85;pointer-events:none}\n.semi-tick-major{stroke:var(--hot);stroke-width:2.4;opacity:1}\n.semi-pointer{\n  stroke:var(--ink);stroke-width:2;opacity:.9;pointer-events:none;\n  stroke-linecap:round\n}\n.semi-handle{\n  fill:var(--hot);stroke:var(--ink);stroke-width:1.8;r:6;\n  pointer-events:visiblePainted;cursor:grab;\n  filter:drop-shadow(0 0 5px rgba(232, 200, 106,.7))\n}\n.semi-handle.dragging{\n  fill:var(--ink);stroke:var(--hot);cursor:grabbing;\n  filter:drop-shadow(0 0 8px rgba(232, 200, 106,.9))\n}\n\n/* Heatmap legend (Cauchy clarity bar). */\n#heatLegend{bottom:14px;right:14px;padding:10px 12px;min-width:220px}\n#heatLegend[hidden]{display:none}\n#heatLegend .lt{\n  font-size:10px;color:#1D9E75;letter-spacing:.4px;margin-bottom:6px\n}\n#heatLegend .bar{display:block;width:220px;height:14px;border-radius:3px}\n#heatLegend .lab{\n  display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:3px\n}\n";
+const FIELD_STYLES = "/* field-styles.css\n   ---------------------------------------------------------------------------\n   Generic styles for the viewer demos: panel chrome, semicircle dial,\n   heatmap legend. No chess-specific styling lives here.\n   Expects the host page to include a <canvas> filling the viewport and DOM\n   nodes with the IDs documented in field-dial.js / field-controls.js.\n   --------------------------------------------------------------------------- */\n:root{\n  --bg:#0b0d12;\n  --ink:#c9c7be;\n  --dim:#7f8590;\n  --acc:#7F77DD;\n  --good:#1D9E75;\n  --hot:#e8c86a;\n  --line:rgba(232,200,106,0.28);\n}\n*{margin:0;padding:0;box-sizing:border-box}\nhtml,body{\n  height:100%;background:var(--bg);color:var(--ink);\n  font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Helvetica,Arial,sans-serif;overflow:hidden\n}\nbody > canvas{position:fixed;inset:0;display:block;touch-action:none}\n\n/* Floating glass panels — used for menu, heat legend, SR readouts. */\n.panel{\n  position:fixed;background:#12151c;border:0.5px solid rgba(232,200,106,0.28);\n  border-radius:12px;backdrop-filter:blur(8px);z-index:10\n}\n\n/* Menu (top-left hamburger + drop-down). */\n#menuBtn{\n  top:16px;left:16px;width:40px;height:40px;padding:0;\n  font-size:1.125rem;line-height:40px;text-align:center;color:var(--ink);\n  cursor:pointer;z-index:12\n}\n#menuBtn:hover{background:rgba(232,200,106,0.08)}\n#menu{\n  top:64px;left:16px;padding:14px 16px;display:flex;flex-direction:column;\n  gap:12px;min-width:230px;max-width:300px\n}\n#menu[hidden]{display:none}\n#menu .grp{display:flex;flex-direction:column;gap:5px}\n#menu label{font-size:0.625rem;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}\n#menu .val{font-size:0.6875rem;color:var(--ink);font-variant-numeric:tabular-nums}\n#menu .menusep{height:1px;background:var(--line);margin:2px 0}\n#menu .row{display:flex;justify-content:space-between;gap:18px;font-size:0.6875rem;padding:1px 0}\n#menu .k{color:var(--dim)}\n#menu .v{color:var(--ink);font-variant-numeric:tabular-nums}\n#menu .v.acc{color:var(--acc)}\n#menu .v.good{color:var(--good)}\n#menu .v.hot{color:var(--hot)}\n\ninput[type=range]{width:100%;accent-color:var(--acc);height:3px;cursor:pointer}\nbutton{\n  font-family:inherit;font-size:0.6875rem;letter-spacing:.4px;color:var(--ink);\n  background:transparent;border:0.5px solid rgba(232,200,106,0.5);border-radius:8px;\n  padding:7px 12px;cursor:pointer\n}\nbutton:hover{background:rgba(232,200,106,0.08)}\n\n/* SEMICIRCLE DIAL (the the tangent-rate apparatus).\n   Bottom dial: apex at top, chord across the bottom, arc curves up.\n   Top dial (the twin/reciprocal view): apex at bottom, chord across the top,\n   arc curves down — mirrored vertically. Both share state via field-dial.js. */\n#dials{\n  position:fixed;bottom:18px;left:50%;transform:translateX(-50%);\n  z-index:11;display:flex;gap:22px;align-items:flex-end\n}\n#dialsTop{\n  position:fixed;top:18px;left:50%;transform:translateX(-50%);\n  z-index:11;display:flex;gap:22px;align-items:flex-start\n}\n#dialsTop[hidden]{display:none}\n.dialgrp{display:flex;flex-direction:row;align-items:center;gap:14px}\n\n/* SR Tier-1 readout panels — flank each dial when the twin dial is showing.\n   Top and bottom dials show the same magnitudes (per v71 §11 reciprocity). */\n.sr-readout{\n  font-size:0.625rem;color:#fff;font-variant-numeric:tabular-nums;\n  letter-spacing:.35px;line-height:1.7;min-width:84px;padding:8px 11px;\n  background:rgba(0,0,0,.5);border:1px solid var(--line);border-radius:8px;\n  backdrop-filter:blur(6px)\n}\n.sr-readout[hidden]{display:none}\n.sr-readout .row{display:flex;justify-content:space-between;gap:10px}\n.sr-readout .lbl{color:#fff}\n.sr-readout .val{color:#fff}\n\n#semiWrap,#semiWrapTop{\n  width:340px;height:190px;cursor:default;touch-action:none;\n  position:relative;padding:10px 14px 8px\n}\n#semiSvg,#semiSvgTop{\n  display:block;width:100%;height:100%;touch-action:none;overflow:visible\n}\n\n/* High-contrast palette so the dial stays legible against busy 3D scenes. */\n.semi-arc-fill{\n  fill:var(--acc);opacity:.14;pointer-events:fill;cursor:grab;touch-action:none\n}\n.semi-arc-fill:hover{opacity:.20}\n.semi-arc-fill:active{cursor:grabbing;opacity:.24}\n.semi-arc{\n  fill:none;stroke:var(--acc);stroke-width:2.4;opacity:1;pointer-events:stroke;\n  filter:drop-shadow(0 0 4px rgba(127,119,221,.55))\n}\n.semi-chord{\n  stroke:var(--hot);stroke-width:1.4;opacity:.55;\n  stroke-dasharray:4 5;pointer-events:none\n}\n.semi-tick{stroke:var(--acc);stroke-width:1.8;opacity:.85;pointer-events:none}\n.semi-tick-major{stroke:var(--hot);stroke-width:2.4;opacity:1}\n.semi-pointer{\n  stroke:var(--ink);stroke-width:2;opacity:.9;pointer-events:none;\n  stroke-linecap:round\n}\n.semi-handle{\n  fill:var(--hot);stroke:var(--ink);stroke-width:1.8;r:6;\n  pointer-events:visiblePainted;cursor:grab;\n  filter:drop-shadow(0 0 5px rgba(232, 200, 106,.7))\n}\n.semi-handle.dragging{\n  fill:var(--ink);stroke:var(--hot);cursor:grabbing;\n  filter:drop-shadow(0 0 8px rgba(232, 200, 106,.9))\n}\n\n/* Heatmap legend (Cauchy clarity bar). */\n#heatLegend{bottom:14px;right:14px;padding:10px 12px;min-width:220px}\n#heatLegend[hidden]{display:none}\n#heatLegend .lt{\n  font-size:0.625rem;color:#1D9E75;letter-spacing:.4px;margin-bottom:6px\n}\n#heatLegend .bar{display:block;width:220px;height:14px;border-radius:3px}\n#heatLegend .lab{\n  display:flex;justify-content:space-between;font-size:0.625rem;color:var(--dim);margin-top:3px\n}\n";
 /* Installed on import, once per document. A host that wants its own styling
    can delete the tag: document.getElementById('field-styles')?.remove() */
 function installFieldStyles(doc = (typeof document !== 'undefined' ? document : null)){
@@ -6464,7 +6478,7 @@ function updateBoardCoords(){
   while (el.childElementCount < need){
     const d = document.createElement('div');
     d.style.cssText = 'position:absolute;transform:translate(-50%,-50%);'
-      + 'font:600 11px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;'
+      + 'font:600 0.6875rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;'
       + 'text-shadow:0 1px 4px rgba(0,0,0,.95);opacity:.85';
     el.appendChild(d);
   }
@@ -9099,7 +9113,7 @@ function playStatusEl(){
     el.id = 'playStatus';
     el.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:40;'
       + 'padding:7px 14px;background:rgba(18, 21, 28,.9);border:1px solid #2a3340;border-radius:6px;'
-      + 'font:12px "Courier New",monospace;color:#d6e6df;pointer-events:none;text-align:center;white-space:nowrap';
+      + 'font:0.75rem "Courier New",monospace;color:#d6e6df;pointer-events:none;text-align:center;white-space:nowrap';
     document.body.appendChild(el);
   }
   return el;
@@ -9885,14 +9899,14 @@ function confirmAction(text, okLabel, onOk){
     + 'background:#1c1d21;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;'
     + 'border:1px solid #55585f;border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.6)';
   const msg = document.createElement('div');
-  msg.style.cssText = 'font:15px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#ffffff;line-height:1.5';
+  msg.style.cssText = 'font:0.9375rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#ffffff;line-height:1.5';
   msg.textContent = text;
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:10px;justify-content:center';
   const close = () => { box.remove(); document.removeEventListener('keydown', onKey, true); };
   const cancel = document.createElement('button');
   cancel.type = 'button'; cancel.textContent = 'Cancel';
-  const BTN = 'font:600 14px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:9px 18px;border-radius:7px;opacity:1;cursor:pointer;';
+  const BTN = 'font:600 0.875rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:9px 18px;border-radius:7px;opacity:1;cursor:pointer;';
   cancel.style.cssText = BTN + 'color:#ffffff;background:#3a3d44;border:1px solid #6a6e76';
   cancel.addEventListener('click', close);
   const ok = document.createElement('button');
@@ -10048,7 +10062,7 @@ function coachNoteEl(){
          than a new one — it looks the same over a dark field and stops
          disappearing over a white print. */
       + 'background:#0c0a13;border:1px solid rgba(178,142,255,.28);'
-      + 'font:12px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;line-height:1.45;'
+      + 'font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;line-height:1.45;'
       + 'pointer-events:auto;cursor:default;display:none;text-align:center;'
       // …and the blur goes with the transparency: behind an opaque fill it is
       // computed every frame and painted over.
@@ -11106,7 +11120,7 @@ function openTutPicker(){
   box.className = 'panel';
   box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;'
     + 'width:min(92vw,420px);padding:14px;background:rgba(18, 21, 28,.94);border:1px solid #2a3340;'
-    + 'border-radius:12px;font:12px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;display:flex;flex-direction:column;gap:6px';
+    + 'border-radius:12px;font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;display:flex;flex-direction:column;gap:6px';
   const hd = document.createElement('div');
   hd.innerHTML = '&#10035; Interactive tutorial';
   hd.style.cssText = 'color:#c9a6ff;font-weight:bold;letter-spacing:.08em;margin-bottom:4px';
@@ -11318,7 +11332,7 @@ function evalBarEls(){
     const label = document.createElement('div');
     label.id = 'evalLabel';
     label.style.cssText = 'position:fixed;left:0;right:0;bottom:33px;z-index:41;text-align:center;'
-      + 'font:bold 11px "Courier New",monospace;color:#cdd6e0;pointer-events:none;display:none;'
+      + 'font:bold 0.6875rem "Courier New",monospace;color:#cdd6e0;pointer-events:none;display:none;'
       + 'text-shadow:0 1px 2px #000';
     document.body.appendChild(wrap);
     wrap.appendChild(fill); wrap.appendChild(mid);
@@ -11367,7 +11381,7 @@ function analysisEls(){
     el.id = 'analysisPanel';
     el.style.cssText = 'position:fixed;right:14px;top:50%;transform:translateY(-50%);z-index:41;'
       + 'min-width:120px;max-width:300px;padding:8px 10px;background:rgba(18, 21, 28,.9);'
-      + 'border:1px solid #2a3340;border-radius:6px;font:12px "Courier New",monospace;'
+      + 'border:1px solid #2a3340;border-radius:6px;font:0.75rem "Courier New",monospace;'
       + 'color:#cdd6e0;pointer-events:none;display:none;line-height:1.55;box-shadow:0 2px 10px rgba(0,0,0,.4)';
     document.body.appendChild(el);
   }
@@ -11406,7 +11420,7 @@ function renderAnalysis(){
       + '<span style="color:#7f8590">' + (i + 1) + '.</span> '
       + '<span style="color:#9fd8c8">' + fmtSc(ln) + '</span>  ' + sanLine(ln) + '</div>'
   ).join('');
-  el.innerHTML = '<div style="color:#9fb6c8;font-size:10px;letter-spacing:.05em;margin-bottom:3px">ANALYSIS'
+  el.innerHTML = '<div style="color:#9fb6c8;font-size:0.625rem;letter-spacing:.05em;margin-bottom:3px">ANALYSIS'
     + (PLAY.depth ? ' · d' + PLAY.depth : '') + (PLAY.analyzing ? ' · ∞' : '') + ' · white-relative</div>' + rows;
   el.style.display = 'block';
 }
@@ -12296,13 +12310,13 @@ function openFenPasteBox(){
     + 'display:flex;flex-direction:column;gap:8px;padding:12px;width:min(520px,92vw);box-sizing:border-box';
   const lab = document.createElement('div');
   lab.textContent = 'Paste FENs below, one a line (the board alone is White to move), then Put on boards';
-  lab.style.cssText = 'font-size:11px;color:#9fb0c4;white-space:pre-wrap;max-height:30vh;overflow:auto';
+  lab.style.cssText = 'font-size:0.6875rem;color:#9fb0c4;white-space:pre-wrap;max-height:30vh;overflow:auto';
   const ta = document.createElement('textarea');
   ta.placeholder = 'rn1k3r/1b1q1ppp/p2P4/2B2p2/8/1QNBR3/PP3PPP/2R3K1 w - - 1 0\n4R3/8/8/2Pkp3/N7/4rnKB/1nb5/b1r5\n…';
   ta.spellcheck = false;
   ta.style.cssText = 'width:100%;height:200px;resize:vertical;background:rgba(255,255,255,.06);'
     + 'color:inherit;border:1px solid rgba(201, 199, 190,.25);border-radius:6px;padding:8px;'
-    + 'font-family:ui-monospace,Menlo,monospace;font-size:11px;box-sizing:border-box;white-space:pre';
+    + 'font-family:ui-monospace,Menlo,monospace;font-size:0.6875rem;box-sizing:border-box;white-space:pre';
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
   const bCancel = document.createElement('button'); bCancel.textContent = 'Close';
@@ -12334,13 +12348,13 @@ function openPgnPasteBox(){
     + 'display:flex;flex-direction:column;gap:8px;padding:12px;width:min(480px,92vw);box-sizing:border-box';
   const lab = document.createElement('div');
   lab.textContent = 'Paste a PGN game below (Ctrl/Cmd+V), then Import';
-  lab.style.cssText = 'font-size:11px;color:#9fb0c4';
+  lab.style.cssText = 'font-size:0.6875rem;color:#9fb0c4';
   const ta = document.createElement('textarea');
   ta.placeholder = '[Event "..."]\n\n1. e4 e5 2. Nf3 ...';
   ta.spellcheck = false;
   ta.style.cssText = 'width:100%;height:180px;resize:vertical;background:rgba(255,255,255,.06);'
     + 'color:inherit;border:1px solid rgba(201, 199, 190,.25);border-radius:6px;padding:8px;'
-    + 'font-family:inherit;font-size:11px;box-sizing:border-box';
+    + 'font-family:inherit;font-size:0.6875rem;box-sizing:border-box';
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
   const bCancel = document.createElement('button');
@@ -14936,7 +14950,7 @@ function engineNotice(msg, holdMs, html){
       + 'left:76px;right:76px;margin:0 auto;'
       + 'width:fit-content;max-width:min(640px, calc(100vw - 152px));'
       + 'background:rgba(42,26,16,.92);color:#ffb070;border:1px solid #e8a25c;padding:7px 13px;'
-      + 'font:12px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;border-radius:8px;text-align:center;'
+      + 'font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;border-radius:8px;text-align:center;'
       + 'box-sizing:border-box;'
       + 'max-height:calc(5 * 1.45em + 14px);overflow-y:auto;overscroll-behavior:contain;'
       + 'pointer-events:auto;cursor:pointer;white-space:pre-line;line-height:1.45';
@@ -16965,7 +16979,7 @@ addEventListener('keydown', e => {
          sat on the first two words of the readout. */
       b.style.cssText = 'position:fixed;bottom:12px;left:68px;z-index:30;padding:5px 10px;'
         + 'background:rgba(18, 21, 28,.85);border:1px solid #2a2d38;border-radius:4px;'
-        + 'font:11px "Courier New",monospace;color:#d6d8e0;pointer-events:none';
+        + 'font:0.6875rem "Courier New",monospace;color:#d6d8e0;pointer-events:none';
       document.body.appendChild(b);
     }
     b.textContent = st.cullP === 3
@@ -41698,7 +41712,7 @@ const GOLF_MAKE = SIZE => {
   function closeTvfBox(){ const b = document.getElementById('golfTvfBox'); if (b) b.remove(); TVF_Q.length = 0; }
   function openTvfBox(text, name){
     if (document.getElementById('golfTvfBox')){ TVF_Q.push([text, name]); return; }   // (several files: one after another)
-    const BTN = 'font:600 13px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:8px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
+    const BTN = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:8px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
     const veil = document.createElement('div');
     veil.id = 'golfTvfBox';
     veil.style.cssText = 'position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,.35)';
@@ -41706,7 +41720,7 @@ const GOLF_MAKE = SIZE => {
     box.className = 'panel';
     box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(400px,90vw);display:flex;flex-direction:column;gap:10px;padding:14px 16px;'
       + 'background:#1c1d21;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid #55585f;border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.6)';
-    const head = document.createElement('div'); head.style.cssText = 'font:600 15px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#ffd23a';
+    const head = document.createElement('div'); head.style.cssText = 'font:600 0.9375rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#ffd23a';
     head.textContent = 'What should ' + (name ? '“' + String(name).slice(0, 40) + '”' : 'this curve') + ' be?';
     const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
     const next = () => { veil.remove(); const q = TVF_Q.shift(); if (q) openTvfBox(q[0], q[1]); };
@@ -42067,7 +42081,7 @@ const GOLF_MAKE = SIZE => {
   function closeCardBox(){ const b = document.getElementById('golfCardBox'); if (b) b.remove(); }
   function openCardBox(R){
     closeCardBox();
-    const F = 'font:14px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;', card = R.card || [];
+    const F = 'font:0.875rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;', card = R.card || [];
     const tot = card.reduce((a, h) => a + h.strokes, 0), par = card.reduce((a, h) => a + h.par, 0), d = par - tot;
     const starsAt = h => h.stars || (HOLES[h.hole] && HOLES[h.hole].name === h.name && HOLES[h.hole].rated ? HOLES[h.hole].rated.stars : 0);
     const veil = document.createElement('div');
@@ -42078,13 +42092,13 @@ const GOLF_MAKE = SIZE => {
     box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(460px,92vw);max-height:82vh;'
       + 'display:flex;flex-direction:column;gap:10px;padding:14px 16px;background:#1c1d21;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;'
       + 'border:1px solid #55585f;border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.6)';
-    const head = document.createElement('div'); head.style.cssText = F + 'font-size:15px;font-weight:600;color:#ffd23a';
+    const head = document.createElement('div'); head.style.cssText = F + 'font-size:0.9375rem;font-weight:600;color:#ffd23a';
     head.textContent = 'Round over — ' + tot + ' strokes, par ' + par + ' (' + fmtDiff(d) + ')';
     const list = document.createElement('div'); list.style.cssText = 'overflow-y:auto;display:flex;flex-direction:column;gap:3px;min-height:0';
     const cell = (txt, css) => { const c = document.createElement('div'); c.style.cssText = F + 'color:#ffffff;white-space:nowrap;' + (css || ''); c.textContent = txt; return c; };
     const row = (a, b, c2, d2, e, css) => { const r = document.createElement('div'); r.className = 'golfCardRow'; r.style.cssText = 'display:grid;grid-template-columns:3.2em 1fr 3em 3.4em 5.4em;gap:6px;align-items:center';
       r.append(cell(a, css), cell(b, 'overflow:hidden;text-overflow:ellipsis;' + (css || '')), cell(c2, 'text-align:right;' + (css || '')), cell(d2, 'text-align:right;' + (css || '')), cell(e, 'color:#ffd23a;' + (css || ''))); return r; };
-    list.appendChild(row('Hole', '', 'Par', 'Score', 'Stars', 'color:#9aa0a8;font-size:12px'));
+    list.appendChild(row('Hole', '', 'Par', 'Score', 'Stars', 'color:#9aa0a8;font-size:0.75rem'));
     let sum = 0, n = 0;
     for (const h of card){
       const st = starsAt(h); if (st){ sum += st; n++; }
@@ -42093,9 +42107,9 @@ const GOLF_MAKE = SIZE => {
       list.appendChild(r);
     }
     const foot = document.createElement('div'); foot.style.cssText = 'display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap';
-    foot.appendChild(cell(n ? 'the holes averaged ' + starText(Math.round(sum / n)) + ' (' + (sum / n).toFixed(1) + ')' : 'no hole was rated in time', 'color:#c9ccd2;font-size:13px'));
+    foot.appendChild(cell(n ? 'the holes averaged ' + starText(Math.round(sum / n)) + ' (' + (sum / n).toFixed(1) + ')' : 'no hole was rated in time', 'color:#c9ccd2;font-size:0.8125rem'));
     const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close'; close.title = 'Close the scorecard.';
-    close.style.cssText = 'font:600 13px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#1a1206;background:#f0a95e;border:1px solid #f0a95e;';
+    close.style.cssText = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#1a1206;background:#f0a95e;border:1px solid #f0a95e;';
     close.addEventListener('click', e => { e.stopPropagation(); closeCardBox(); });
     foot.appendChild(close);
     box.append(head, list, foot);
@@ -43347,8 +43361,8 @@ const GOLF_MAKE = SIZE => {
   function closeMineBox(){ const b = document.getElementById('golfMineBox'); if (b) b.remove(); }
   function openMineBox(){
     closeMineBox();
-    const F = 'font:15px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;';
-    const BTN = 'font:600 13px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
+    const F = 'font:0.9375rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;';
+    const BTN = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
     const HOT = 'color:#1a1206;background:#f0a95e;border:1px solid #f0a95e;';
     const veil = document.createElement('div');
     veil.id = 'golfMineBox';
@@ -54552,11 +54566,11 @@ const TRICK_APP = (() => {
     el.style.cssText = 'position:fixed;right:calc(min(32px,5.25vw) + 12px);top:76px;width:92px;z-index:30;display:none;flex-direction:column;align-items:center;gap:8px;touch-action:none;user-select:none;-webkit-user-select:none';
     const tip = document.createElement('canvas'); tip.id = 'tsTip'; tip.width = tip.height = 184; tip.title = 'Where the tip meets the white: drag on it (dashed ring: the chalk\'s grip; gold tick: rolls at once)';
     tip.style.cssText = 'width:92px;height:92px;border-radius:50%;background:rgba(12,12,17,0.72);cursor:crosshair;touch-action:none';
-    const label = document.createElement('div'); label.style.cssText = 'font:11px/1.2 system-ui,sans-serif;color:#d8d4c8;text-shadow:0 1px 2px #000;text-align:center;pointer-events:none';
+    const label = document.createElement('div'); label.style.cssText = 'font:0.6875rem/1.2 system-ui,sans-serif;color:#d8d4c8;text-shadow:0 1px 2px #000;text-align:center;pointer-events:none';
     const pull = document.createElement('div'); pull.id = 'tsPull'; pull.title = 'Pull down and let go to shoot: the farther, the harder';
     pull.style.cssText = 'position:relative;width:46px;height:min(30vh,230px);border:1px solid rgba(255,255,255,0.18);border-radius:23px;background:rgba(12,12,17,0.6);overflow:hidden;cursor:ns-resize;touch-action:none';
     const fill = document.createElement('div'); fill.style.cssText = 'position:absolute;left:0;right:0;top:0;height:0;background:linear-gradient(#d4a05233,#d4a052cc)';
-    const word = document.createElement('span'); word.textContent = 'pull'; word.style.cssText = 'position:absolute;left:0;right:0;bottom:8px;text-align:center;font:12px system-ui,sans-serif;color:#b8b4a8;pointer-events:none';
+    const word = document.createElement('span'); word.textContent = 'pull'; word.style.cssText = 'position:absolute;left:0;right:0;bottom:8px;text-align:center;font:0.75rem system-ui,sans-serif;color:#b8b4a8;pointer-events:none';
     pull.append(fill, word); el.append(tip, label, pull); document.body.appendChild(el);
     Object.assign(CTL, { el, tip, pull, fill, label });
     setInterval(() => { if (CTL.el.style.display !== 'none' && !CTL.pulling && performance.now() - CTL.seen > CTL_GONE) ctlHide(); }, 200);
@@ -57297,7 +57311,7 @@ function openAppPicker(){
     row.className = 'ap-row';                             // so a touch screen can make it bigger (Oct 17)
     row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;'
       + 'padding:7px 9px;border:1px solid transparent;border-radius:5px;background:none;'
-      + 'font:12px -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;'
+      + 'font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;'
       + 'color:' + (on ? '#e8c86a' : '#c9c7be') + ';text-align:left;cursor:pointer';
     row.appendChild(_appThumb(a, on));
     const name = document.createElement('span');
@@ -60904,7 +60918,7 @@ function _selfCheckPanel(out){
     el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:60;'
       + 'max-width:min(680px,94vw);background:rgba(18, 21, 28,.94);color:#cfe0ee;'
       + 'border:1px solid rgba(140,170,200,.35);border-radius:8px;padding:10px 12px;'
-      + 'font:12px/1.45 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;'
+      + 'font:0.75rem/1.45 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;'
       + 'box-shadow:0 6px 24px rgba(0,0,0,.55);cursor:pointer;white-space:pre-wrap';
     el.title = 'Click to dismiss';
     el.addEventListener('click', () => el.remove());

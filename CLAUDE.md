@@ -1789,6 +1789,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   rows at least 44 px with 15 px words and 300 px wide, and the application picker (`.ap-row`), game index and bucket picker
   follow; fields are 16 px, below which iOS zooms the page when one is touched. `--chip-size` stays 40, since the strip's band
   and tiles are sums on it. A desktop is unchanged. The smoke test measures both, the phone in an iPhone 14 context.
+- **The system's text size** (Oct 24: "font size is way to small. its not respecting system font size."): every size given to
+  text (CSS `font-size` and `font:`, in the style sheets, `FIELD_STYLES` and the styles set from script) is in rem, a sixteenth
+  of the root for each pixel it was, so at the usual 16 px nothing moved. The root follows the system: a desktop browser's
+  default font size (`html { font-size: 100% }`), iOS's Dynamic Type (`font: -apple-system-body`, 17 px at the usual setting),
+  and Android Chrome's font size (`<meta name="text-scale" content="scale">`). Write new text sizes in rem. Pictures drawn on
+  canvases (the bottom row's tiles, the boards' lettering) are sized to their tiles and boards and stay as they were. The
+  smoke test sets the root to 150% and wants the menu's words and the button's glyph half again as big, and no text left in px.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 
