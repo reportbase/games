@@ -2922,6 +2922,122 @@ try {
     await page.evaluate(() => localStorage.removeItem('tiltmaze.mine'));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (a 7×7 maze made by taps, par ${te.par}, kept and shared)`);
   }
+  // PINBALL (Oct 24: "how about pinball"): every board its own table at a level by its ring; the ball launched up the lane and
+  // through the gate, never back down it; the ball never out of the cabinet in the steady player's games; a flipper's swing
+  // throwing the ball, a bumper's kick, a drop bank down with the multiplier up, a lane lit and moved along by a flipper, the
+  // ball save, the kickback, a tilt; par from the steady player, higher near the corner than far out; real input (a click
+  // starting, the real Down launching, the real arrow flipping, real touches on each half and both, the tap that starts not
+  // launching); game over with stars and a best, a click going on; a board no one plays moving; the pieces drawn.
+  current = 'pinball';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'pinball')); await new Promise(ok => setTimeout(ok, 2500)); });
+    const pb = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, K = D.consts, out = {};
+      out.levels = [[0, 0], [10, 0], [40, 40]].map(([c, r]) => D.levelAt(D.boardIdx(c, r)));
+      const key = T => JSON.stringify(T.segs.map(s => [s.a, s.b, s.kind]).concat(T.circs.map(c => [c.x, c.y, c.kind])));
+      out.same = key(D.makeTable(77, 3)) === key(D.makeTable(77, 3)); out.differ = key(D.makeTable(77, 3)) !== key(D.makeTable(78, 3));
+      out.dials = [1, 5].map(lv => { const T = D.makeTable(9, lv); return { g: T.g, fl: T.fl[0].len, save: T.D.save, kb: T.D.kb.join('') }; });
+      const run = (T, S, sec, fn) => { for (let k = 0; k < sec / K.SUB; k++){ if (fn) fn(S); const e = D.sub(T, S, K.SUB); if (e) return e; } return null; };
+      // the launch: up the lane, through the gate, into the playfield; it does not come back down the lane
+      { const T = D.makeTable(5, 1), S = D.newState(T, true); D.toPlunger(S); S.pull = 1; D.launch(S, T);
+        let inField = false, back = false;
+        run(T, S, 4, S => { if (S.b.x < K.PW - 0.02 && S.b.y < 0.5) inField = true; if (inField && S.b.x > K.PW + 0.005 && S.b.y > 0.35) back = true; });
+        out.launch = { inField, back }; }
+      // the steady player's games: the ball never out of the cabinet
+      { let esc = 0, steps = 0;
+        for (const [idx, lv] of [[11, 1], [12, 3], [13, 5]]){ const T = D.makeTable(idx, lv), S = D.newState(T, true), B = D.botNew(idx); D.toPlunger(S);
+          for (let k = 0; k < 40 / K.SUB; k++){ D.botStep(T, S, B, K.SUB); const e = D.sub(T, S, K.SUB); steps++;
+            if (S.b && (S.b.x < -0.005 || S.b.x > K.W + 0.005 || S.b.y < -0.005)) esc++;
+            if (e === 'drain') D.toPlunger(S); } }
+        out.escapes = esc; out.steps = steps; }
+      // a flipper's swing throws a ball resting on it
+      { const T = D.makeTable(5, 1), S = D.newState(T, true), f = T.fl[0], c = Math.cos(f.rest), s = Math.sin(f.rest);
+        S.b = { x: f.px + c * f.len * 0.6 + s * (K.R + 0.011), y: f.py + s * f.len * 0.6 - c * (K.R + 0.011), vx: 0, vy: 0 };
+        D.setFlipper(S, 0, true); let vy = 0; run(T, S, 0.06, S => { vy = Math.min(vy, S.b.vy); }); out.flip = vy; }
+      // a bumper kicks the ball out faster than it came
+      { const T = D.makeTable(5, 1), S = D.newState(T, true), B = T.bumpers[0];
+        S.b = { x: B.x - 0.06, y: B.y, vx: 0.5, vy: 0 }; T.g = 0; let after = 0; run(T, S, 0.25, S => { after = Math.hypot(S.b.vx, S.b.vy); }); T.g = T.D.g;
+        out.bumper = { after, score: S.score }; }
+      // the drop targets: each down by a hit, the bank down: 5000 and the multiplier up; up again after a moment
+      { const T = D.makeTable(6, 2), S = D.newState(T, true);
+        for (const t of T.drops){ const mx = (t.a[0] + t.b[0]) / 2, my = (t.a[1] + t.b[1]) / 2, nx = t.ex ? 0 : (t.nx || 1), ny = t.ex ? 1 : 0;
+          S.b = { x: mx + nx * 0.03, y: my + ny * 0.03, vx: -nx * 1.2, vy: -ny * 1.2 }; T.g = 0; run(T, S, 0.05); }
+        T.g = T.D.g; out.drops = { down: S.drops.reduce((a, x) => a + x, 0), n: T.drops.length, mult: S.mult, score: S.score };
+        run(T, S, 1.2); out.drops.reset = S.drops.reduce((a, x) => a + x, 0); }
+      // a lane rolled through lights; a flipper press moves the lit lanes along
+      { const T = D.makeTable(5, 1), S = D.newState(T, true), L = T.lanes[0];
+        S.b = { x: L.x, y: L.y - 0.03, vx: 0, vy: 0.6 }; T.g = 0; run(T, S, 0.1); T.g = T.D.g;
+        const lit = Array.from(S.lanes).join(''); D.setFlipper(S, 1, true); out.lanes = { lit, moved: Array.from(S.lanes).join('') }; }
+      // the ball save at level 1, none at level 5; the kickback at level 1; three nudges tilt
+      { const g = D.fresh(0, 0); D.GAMES.set('0_0', g); D.LIVE = { c: 0, r: 0 }; D.begin(g); const S = g.S, T = g.M.T;
+        S.onPl = false; S.launchT = S.t; S.b = { x: K.XC, y: 1.03, vx: 0, vy: 1 }; g.last = performance.now() - 30; D.stepGame(g);
+        out.save = { onPl: S.onPl, balls: g.balls, lv: T.lv };
+        const O = T.outs[0]; S.onPl = false; S.b = { x: (O.x0 + O.x1) / 2, y: O.y + 0.02, vx: 0, vy: 1 }; S.kb = [1, 1]; D.sub(T, S, K.SUB); D.sub(T, S, K.SUB);
+        out.kick = { vy: S.b.vy, lit: S.kb.join('') };
+        S.b = { x: K.XC, y: 0.5, vx: 0, vy: 0 }; S.onPl = false; D.nudge(g); D.nudge(g); D.nudge(g); D.setFlipper(S, 0, true); D.sub(T, S, K.SUB);
+        out.tilt = { tilt: S.tilt, flipperDown: Math.abs(S.fl[0].phi - T.fl[0].rest) < 0.05 };
+        const T5 = D.makeTable(13, 5); out.save5 = T5.D.save; D.GAMES.delete('0_0'); }
+      // the board's pieces: two flippers (never a yaw of 0), the bumpers, the ball, the lamps; and its picture
+      { const M = D.tableFor(3, 0), V = D.viewOf(M, null), its = D.itemsOf(V), n = k => its.filter(i => i.kind === k).length;
+        out.drawn = { flippers: n('pbFlipper'), bumpers: n('pbBumper'), wantB: M.T.bumpers.length, lamps: n('pbLamp'), zeroYaw: its.filter(i => i.kind === 'pbFlipper' && !i.yaw).length };
+        const cv = D.paint(M.T, 512); out.picture = cv ? [cv.width, cv.height] : null; }
+      return out;
+    });
+    const pbOk = pb.levels.join() === '2,3,5' && pb.same && pb.differ && pb.dials[0].g < pb.dials[1].g && pb.dials[0].fl > pb.dials[1].fl && pb.dials[0].save > 0 && pb.dials[1].save === 0
+      && pb.dials[0].kb === '11' && pb.dials[1].kb === '00' && pb.launch.inField && !pb.launch.back && pb.escapes === 0 && pb.flip < -1.5 && pb.bumper.after > 0.9 && pb.bumper.score >= 100
+      && pb.drops.down === pb.drops.n && pb.drops.mult === 2 && pb.drops.score >= 5000 + 500 * pb.drops.n && pb.drops.reset === 0 && pb.lanes.lit[0] === '1' && pb.lanes.moved !== pb.lanes.lit
+      && pb.save.onPl && pb.save.balls === 3 && pb.kick.vy < -1 && pb.kick.lit === '01' && pb.tilt.tilt && pb.tilt.flipperDown && pb.save5 === 0
+      && pb.drawn.flippers === 2 && pb.drawn.bumpers === pb.drawn.wantB && pb.drawn.lamps > 6 && !pb.drawn.zeroYaw && pb.picture && Math.abs(pb.picture[0] / pb.picture[1] - 0.56) < 0.01;
+    if (!pbOk) failures.push(`[${current}] the tables and the ball: ${JSON.stringify(pb)}`);
+    // par from the steady player: near the corner higher than far out
+    const par = await page.evaluate(() => { const D = window.getFieldApp()._debug, mean = lv => { let s = 0; for (let i = 0; i < 4; i++){ const M = { T: D.makeTable(300 + i, lv), idx: 300 + i, lv }; D.finishJob(M); s += M.par; } return s / 4; };
+      return { near: mean(1), far: mean(5) }; });
+    if (!(par.near > par.far && par.far >= 1000)) failures.push(`[${current}] par by level: ${JSON.stringify(par)}`);
+    // real input on the framed board
+    const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+    const state = () => page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
+      return { st: g.state, onPl: g.S.onPl, by: g.S.b ? g.S.b.y : null, fl: g.S.fl.map(F => F.on), score: g.S.score, balls: g.balls, c: f.c, r: f.r }; });
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); D.GAMES.delete(f.c + '_' + f.r); });
+    const mid = await aimAt(0.5, 0.5), left = await aimAt(0.25, 0.8), right = await aimAt(0.75, 0.8);
+    await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(500);
+    const s0 = await state();
+    await page.keyboard.down('ArrowDown'); await page.waitForTimeout(700); await page.keyboard.up('ArrowDown'); await page.waitForTimeout(400);
+    const s1 = await state();
+    await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(200); const s2 = await state(); await page.keyboard.up('ArrowLeft'); await page.waitForTimeout(150);
+    const s3 = await state();
+    // (touches: each half its flipper, both at once; and the view stays where it was)
+    const z0 = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: left.x, y: left.y, id: 1 }] }); await page.waitForTimeout(200); const t1 = await state();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: left.x, y: left.y, id: 1 }, { x: right.x, y: right.y, id: 2 }] }); await page.waitForTimeout(200); const t2 = await state();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await page.waitForTimeout(200); const t3 = await state();
+    const z1 = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
+    // (a new game by a real tap: the ball waits on the plunger, the tap's echo as a mouse press not launching it)
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); D.gameAt(f.c, f.r).state = 'over'; D.gameAt(f.c, f.r).overAt = 0; D.GAMES.delete(f.c + '_' + f.r); });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 3 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(600); const t4 = await state();
+    // game over: stars and a best; a click after it goes on to the next board
+    const ov = await page.evaluate(async () => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
+      g.balls = 1; g.S.score = 123450; g.S.onPl = false; g.S.launchT = -99; g.S.b = { x: 0.26, y: 1.05, vx: 0, vy: 1 }; g.last = performance.now() - 30; D.stepGame(g);
+      return { st: g.state, stars: g.stars, best: D.BEST.get(g.M.idx + '@' + g.M.lv), par: g.M.par }; });
+    await page.waitForTimeout(1000);
+    const bx0 = await page.evaluate(() => window.FIELD_WORLD.target.boardX);
+    await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(600);
+    // (to the board beside, not the long way round the wrapped field: from the corner it flew across all of it)
+    const nx = await page.evaluate(bx0 => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD; return { ...D.LIVE, flew: Math.abs(W.target.boardX - bx0) / W.spacing()[0] }; }, bx0);
+    // a board no one plays: its recording moves on the page's clock
+    const idle = await page.evaluate(async () => { const D = window.getFieldApp()._debug, M = D.tableFor(4, 4); D.finishJob(M);
+      const a = D.viewOf(M, null); await new Promise(ok => setTimeout(ok, 700)); const b = D.viewOf(M, null);
+      return { reel: !!(M.reel && M.reel.length), moved: !!(a.b && b.b && Math.hypot(a.b.x - b.b.x, a.b.y - b.b.y) > 0.005) || a.phi.join() !== b.phi.join() }; });
+    const realOk = s0.st === 'play' && s0.onPl && !s1.onPl && s1.by < 0.9 && s2.fl[0] && !s2.fl[1] && !s3.fl[0] && t1.fl[0] && !t1.fl[1] && t2.fl.join() === 'true,true' && t3.fl.join() === 'false,false'
+      && Math.abs(z1 - z0) < 1e-6 && t4.st === 'play' && t4.onPl && ov.st === 'over' && ov.stars === (123450 >= ov.par ? 3 : 123450 >= ov.par * 0.6 ? 2 : 1) && ov.best === 123450
+      && nx && nx.c !== s0.c && nx.flew < 1.5 && idle.reel && idle.moved;
+    if (!realOk) failures.push(`[${current}] real input: ${JSON.stringify({ s0, s1, s2, s3, t1, t2, t3, z0, z1, t4, ov, nx, idle })}`);
+    await page.evaluate(() => localStorage.removeItem('pinball.best'));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (pars ${Math.round(par.near)} near, ${Math.round(par.far)} far; ${pb.steps} steps of the steady player, the ball never out)`);
+  }
   // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the
   // corner block, a step harder from ring 7 and another from ring 31. On Easy: board (0, 0) easy, (10, 0) normal, (40, 40)
