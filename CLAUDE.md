@@ -376,6 +376,39 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     click starting, the real Down launching, the real arrow flipping, real touches on each half and both with the view still,
     a new game's tap not launching, game over with stars and a best, a click going on to the board beside (not round the
     field); and a board no one plays moving.
+  - **Eras, ramps and orbits, every table fitted to its level** (Oct 25: "what are ways we could improve pinball, like more variety
+    and the further from the center, the more difficult, and more variety of styles", then "proceed" on ramps and orbits, eras, and
+    tables remade until they fit):
+    - **Eras** (`ERAS`, `eraOf`: by the board's number alone, so a board keeps its era at every Difficulty): wood rail (five balls,
+      no drop targets or ramps, passive bumpers at half the kick, more rubber posts, a gobble hole that takes a ball rolling over it
+      slower than 1.5 for 5000 and ends it; cream in a wooden frame, brass rails; bells), electro-mechanical (five balls, drop
+      targets, an orbit on half; bright with chevrons, stripes and stars; chimes for the 10s, 100s and 1000s), dot-matrix (three
+      balls, one or two ramps and an orbit; dark with rays, plastic ramps, a word in orange dots on the apron, `dotPanel`) and
+      modern (three balls, two ramps and an orbit; navy with a grid and lines of light, wire ramps). `palette(T)` gives each era's
+      colours; `beep` plays bells or chimes for the first two (`ERA_NOW`, set by `flush`).
+    - **Ramps and orbits** (`T.ramps`): a mouth (two posts, a short guide back from each, `mouth`) entered across its line moving in;
+      the ball then rides a set path (`spline`, a Catmull-Rom curve, read by length with `pathAt`; `rideStep`, `S.ride`). A ramp
+      faces the far flipper, climbs to `zmax` (0.056 to 0.08 by level, `rampZ`) and comes down onto its own side's inlane (`T.inl`);
+      the ball rides at √(v0² − 2·`GV`·z), so a weak shot stops short and rolls back out of its mouth. An orbit's two mouths are low
+      on each side and its way runs round the arch between them, entered moving up at `ORBIT_V` or more. Ramp 1500, orbit 1000,
+      times the combo (one more for each made within `COMBO_T`, 4 s, of the last, up to ×4; the arrows in front of the mouths blink
+      while one is on). A side drop bank gives way to an orbit (the bank goes across the middle, clear of the ramps' mouths, or
+      none). Drawn: ramp pieces every `RAMP_STEP` at their height (`Rp.draw`), the ball raised on a ramp (`b.z`, recorded as the
+      reel's ninth number, `REC_F` 9); orbits as lanes painted on the picture, ramps' shadows too.
+    - **Remade until it fits** (`fitGen`): a board's table is played by the steady player as it is made, `FIT_BALLS` (5) balls each
+      cut off at `BALL_CAP` (50 s); its life (the mean ball, `lifeOf`) must fall in its level's band (`LIFE_BAND`: 28+, 20–34,
+      14–26, 9–18, 4.5–12 s), else the next attempt (`makeTable(idx, lv, a)`, the playfield's seed taking the attempt) up to
+      `FIT_TRIES` (6), the nearest kept (`offBand`). The run is also the board's recording. The level dials were spread further
+      too (the slope 1.15 to 1.85). A board waits as its bare cabinet (`makeTable(…, true)`) until made; the framed board's table
+      is worked on `URGENT_MS` (30 ms) a frame, a played one at once (`readyNow`, in `fresh`); its game is made only when played.
+      Measured on 16 tables a level: lives 36, 29.5, 22, 12.5 and 7.7 s by level (one in the first three tries mostly), 10 to 430
+      ms to make one. Single runs are noisy (a table's life varies about a quarter run to run), so the bands are wide.
+    - The smoke test checks every era among the first 60 boards with its balls and parts, a hard shot riding a ramp up and out
+      on its inlane for 1500, a second within the combo's time for 3000, a weak shot rolling back out unscored, an orbit round to
+      the other mouth, a gobble hole taking a slow ball, tables fitted at levels 1, 3 and 5 (in band or every try used, a ball
+      lasting over twice as long at level 1), the ramps and a ball on one drawn raised, and each era's picture.
+    - A touch's echo as a mouse press is also known by the events' own times (`touchTS`, `echoOf`): with the page busy, the echo of
+      the tap that began a game was handled past the field's 700 ms window and launched the ball.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
