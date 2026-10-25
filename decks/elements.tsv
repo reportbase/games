@@ -1,0 +1,48 @@
+#separator:tab
+#deck:Chemical elements
+#ask:Element
+front	back	note
+H	Hydrogen	atomic number 1
+He	Helium	atomic number 2
+Li	Lithium	atomic number 3
+Be	Beryllium	atomic number 4
+B	Boron	atomic number 5
+C	Carbon	atomic number 6
+N	Nitrogen	atomic number 7
+O	Oxygen	atomic number 8
+F	Fluorine	atomic number 9
+Ne	Neon	atomic number 10
+Na	Sodium	atomic number 11
+Mg	Magnesium	atomic number 12
+Al	Aluminium	atomic number 13
+Si	Silicon	atomic number 14
+P	Phosphorus	atomic number 15
+S	Sulfur	atomic number 16
+Cl	Chlorine	atomic number 17
+Ar	Argon	atomic number 18
+K	Potassium	atomic number 19
+Ca	Calcium	atomic number 20
+Sc	Scandium	atomic number 21
+Ti	Titanium	atomic number 22
+V	Vanadium	atomic number 23
+Cr	Chromium	atomic number 24
+Mn	Manganese	atomic number 25
+Fe	Iron	atomic number 26
+Co	Cobalt	atomic number 27
+Ni	Nickel	atomic number 28
+Cu	Copper	atomic number 29
+Zn	Zinc	atomic number 30
+Ga	Gallium	atomic number 31
+Ge	Germanium	atomic number 32
+As	Arsenic	atomic number 33
+Se	Selenium	atomic number 34
+Br	Bromine	atomic number 35
+Kr	Krypton	atomic number 36
+Ag	Silver	atomic number 47
+Sn	Tin	atomic number 50
+I	Iodine	atomic number 53
+Pt	Platinum	atomic number 78
+Au	Gold	atomic number 79
+Hg	Mercury	atomic number 80
+Pb	Lead	atomic number 82
+U	Uranium	atomic number 92

@@ -989,7 +989,7 @@
 <button id="fitBtn" class="panel chip" aria-label="fit window or fit image" hidden
         title="How a picture meets its board. Fit window fills the board and loses whatever does not fit. Fit image shows the whole picture, with bars where the shapes disagree."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="fitFill"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></g><g class="fitWhole" style="display:none"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></g></svg></button>
 <button id="openBtn" class="panel chip" aria-label="open pictures"
-        title="Open anything into the field - images, a PDF, a book (.epub), a JSON file or a comic archive (.cbz, .cbr, .cb7), each hanging on its own board; or a game record (.pgn, .pdn, .sgf), which lays its boards out and switches app. Dropping files anywhere on the window does the same."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5m0 0L8.2 8.3M12 4.5l3.8 3.8"/><path d="M4.8 14.5v3.2a1.8 1.8 0 0 0 1.8 1.8h10.8a1.8 1.8 0 0 0 1.8-1.8v-3.2"/></svg></button>
+        title="Open anything into the field - images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7), each hanging on its own board; or a game record (.pgn, .pdn, .sgf), which lays its boards out and switches app. Dropping files anywhere on the window does the same."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5m0 0L8.2 8.3M12 4.5l3.8 3.8"/><path d="M4.8 14.5v3.2a1.8 1.8 0 0 0 1.8 1.8h10.8a1.8 1.8 0 0 0 1.8-1.8v-3.2"/></svg></button>
 <!-- THE GAME INDEX: every game in the field, by name. A list, drawn as one. -->
 <button id="indexBtn" class="panel chip" aria-label="game index" hidden
         title="Every game in the field, by name - jump to any of them."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6.5h10M9 12h10M9 17.5h10"/><path d="M5 6.5h.01M5 12h.01M5 17.5h.01"/></svg></button>
@@ -1270,8 +1270,8 @@
          switches the app to them — but the bar's open chip is the field's own
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
-    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
-    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json" multiple hidden>
+    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
+    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json,.csv,.tsv,.txt,text/csv" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution: up to 4096px on the long side (PDF and book pages 3072) instead of 2048 (1536). Costs about four times the graphics memory per print, ~90MB at 4096, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to pictures opened after it is ticked."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
     <button id="bSelfCheck" title="Run the field's invariant checks: do the geometry and fabric tiers agree about which picture hangs where, does every print hang somewhere, can the ordered walk reach them all, is any board drawing the backdrop instead of its image. Also on the V key.">Self&#8209;check &#10003;</button>
@@ -51516,9 +51516,9 @@ const NONOGRAM_APP = (() => {
 /* ═══ FLASH CARDS ══════════════════════════════════════════════════════════════════════════════════════════════════════
    (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition".) A deck of cards laid over the
    field, a card a board, studied on a schedule that brings back what you miss sooner and what you know later.
-   - THE DECKS (DECKS) ship in the page: world capitals, US state capitals, the chemical elements, the times tables and Spanish
-     words. The menu's Deck steps through them (localStorage flashcards.deck). A card is [front, back, note?], and a deck says
-     what its front asks (`ask`: "Capital of", shown small over the front).
+   - THE DECKS are loaded from files (CSV, TSV, Anki's text export, a flashcards JSON), opened, dropped or from a bucket, and kept
+     (see THE DECKS ARE LOADED below); the menu's Deck steps through them (localStorage flashcards.deck). A card is [front, back,
+     note?], and a deck may say what its front asks (`ask`: "Capital of", shown small over the front).
    - A CARD A BOARD: a board's card is its own number (boardIdx, golf's Szudzik pairing) taken round the deck, so the corner
      board is the deck's first card and every card hangs on many boards. A card is a picture (the photo tier: `paint`, 640 or
      320 px tall by the board's size, the card ASP 1.6 times as wide as it is tall, the app's boardShape), framed along its far
@@ -51544,217 +51544,133 @@ const FLASH_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
 
-  /* THE DECKS. Written out by hand: each card is checked (a capital is the seat of government as of 2026; South Africa's is
-     given as Pretoria, its executive capital, and countries whose capital is disputed or moving are left out). */
-  const pairs = s => s.trim().split('\n').map(l => l.split('|').map(x => x.trim()));
-  const DECKS = [
-    { key: 'capitals', name: 'World capitals', ask: 'Capital of', cards: pairs(`
-France|Paris
-Germany|Berlin
-Italy|Rome
-Spain|Madrid
-Portugal|Lisbon
-United Kingdom|London
-Ireland|Dublin
-Netherlands|Amsterdam
-Belgium|Brussels
-Switzerland|Bern
-Austria|Vienna
-Poland|Warsaw
-Czechia|Prague
-Hungary|Budapest
-Greece|Athens
-Sweden|Stockholm
-Norway|Oslo
-Denmark|Copenhagen
-Finland|Helsinki
-Iceland|Reykjavík
-Russia|Moscow
-Ukraine|Kyiv
-Turkey|Ankara
-Egypt|Cairo
-Kenya|Nairobi
-Nigeria|Abuja
-South Africa|Pretoria|executive capital
-Morocco|Rabat
-Ethiopia|Addis Ababa
-Ghana|Accra
-China|Beijing
-Japan|Tokyo
-South Korea|Seoul
-India|New Delhi
-Pakistan|Islamabad
-Thailand|Bangkok
-Vietnam|Hanoi
-Philippines|Manila
-Saudi Arabia|Riyadh
-Iran|Tehran
-Iraq|Baghdad
-Australia|Canberra
-New Zealand|Wellington
-Canada|Ottawa
-United States|Washington, D.C.
-Mexico|Mexico City
-Cuba|Havana
-Brazil|Brasília
-Argentina|Buenos Aires
-Chile|Santiago
-Peru|Lima
-Colombia|Bogotá
-Venezuela|Caracas`) },
-    { key: 'states', name: 'US state capitals', ask: 'Capital of', cards: pairs(`
-Alabama|Montgomery
-Alaska|Juneau
-Arizona|Phoenix
-Arkansas|Little Rock
-California|Sacramento
-Colorado|Denver
-Connecticut|Hartford
-Delaware|Dover
-Florida|Tallahassee
-Georgia|Atlanta
-Hawaii|Honolulu
-Idaho|Boise
-Illinois|Springfield
-Indiana|Indianapolis
-Iowa|Des Moines
-Kansas|Topeka
-Kentucky|Frankfort
-Louisiana|Baton Rouge
-Maine|Augusta
-Maryland|Annapolis
-Massachusetts|Boston
-Michigan|Lansing
-Minnesota|Saint Paul
-Mississippi|Jackson
-Missouri|Jefferson City
-Montana|Helena
-Nebraska|Lincoln
-Nevada|Carson City
-New Hampshire|Concord
-New Jersey|Trenton
-New Mexico|Santa Fe
-New York|Albany
-North Carolina|Raleigh
-North Dakota|Bismarck
-Ohio|Columbus
-Oklahoma|Oklahoma City
-Oregon|Salem
-Pennsylvania|Harrisburg
-Rhode Island|Providence
-South Carolina|Columbia
-South Dakota|Pierre
-Tennessee|Nashville
-Texas|Austin
-Utah|Salt Lake City
-Vermont|Montpelier
-Virginia|Richmond
-Washington|Olympia
-West Virginia|Charleston
-Wisconsin|Madison
-Wyoming|Cheyenne`) },
-    { key: 'elements', name: 'Chemical elements', ask: 'Element', cards: pairs(`
-H|Hydrogen|atomic number 1
-He|Helium|atomic number 2
-Li|Lithium|atomic number 3
-Be|Beryllium|atomic number 4
-B|Boron|atomic number 5
-C|Carbon|atomic number 6
-N|Nitrogen|atomic number 7
-O|Oxygen|atomic number 8
-F|Fluorine|atomic number 9
-Ne|Neon|atomic number 10
-Na|Sodium|atomic number 11
-Mg|Magnesium|atomic number 12
-Al|Aluminium|atomic number 13
-Si|Silicon|atomic number 14
-P|Phosphorus|atomic number 15
-S|Sulfur|atomic number 16
-Cl|Chlorine|atomic number 17
-Ar|Argon|atomic number 18
-K|Potassium|atomic number 19
-Ca|Calcium|atomic number 20
-Sc|Scandium|atomic number 21
-Ti|Titanium|atomic number 22
-V|Vanadium|atomic number 23
-Cr|Chromium|atomic number 24
-Mn|Manganese|atomic number 25
-Fe|Iron|atomic number 26
-Co|Cobalt|atomic number 27
-Ni|Nickel|atomic number 28
-Cu|Copper|atomic number 29
-Zn|Zinc|atomic number 30
-Ga|Gallium|atomic number 31
-Ge|Germanium|atomic number 32
-As|Arsenic|atomic number 33
-Se|Selenium|atomic number 34
-Br|Bromine|atomic number 35
-Kr|Krypton|atomic number 36
-Ag|Silver|atomic number 47
-Sn|Tin|atomic number 50
-I|Iodine|atomic number 53
-Pt|Platinum|atomic number 78
-Au|Gold|atomic number 79
-Hg|Mercury|atomic number 80
-Pb|Lead|atomic number 82
-U|Uranium|atomic number 92`) },
-    { key: 'times', name: 'Times tables', ask: '', cards: (() => { const C = []; for (let a = 2; a <= 12; a++) for (let b = a; b <= 12; b++) C.push([a + ' × ' + b, String(a * b)]); return C; })() },
-    { key: 'spanish', name: 'Spanish words', ask: 'In Spanish', cards: pairs(`
-hello|hola
-goodbye|adiós
-please|por favor
-thank you|gracias
-yes|sí
-good morning|buenos días
-good night|buenas noches
-water|el agua
-bread|el pan
-house|la casa
-dog|el perro
-cat|el gato
-book|el libro
-friend|el amigo / la amiga
-school|la escuela
-city|la ciudad
-street|la calle
-car|el coche|el carro in much of Latin America
-sun|el sol
-moon|la luna
-today|hoy
-tomorrow|mañana
-yesterday|ayer
-red|rojo
-blue|azul
-green|verde
-black|negro
-white|blanco
-big|grande
-small|pequeño
-hot|caliente
-cold|frío
-one|uno
-two|dos
-three|tres
-four|cuatro
-five|cinco
-ten|diez
-to eat|comer
-to drink|beber
-to speak|hablar
-to live|vivir`) },
-  ];
+  /* THE DECKS ARE LOADED, NOT WRITTEN HERE (Oct 25: "dont type out the cards by hand. it must be loaded like json or epub."):
+     a deck comes from a file opened or dropped (the field's Open, as a book or a JSON file does) or from a flare bucket. Read:
+     - CSV, TSV or text (`readDeckText`): a card a line, front, back and a note, split by tabs, else commas, semicolons or pipes
+       (whichever the first lines hold most of; quoted fields as CSV quotes them). A first line naming its columns (front, back,
+       question, answer, term, definition, note…) says which is which. Anki's text export reads as it is: its #separator,
+       #html, #columns and #deck lines are heeded, other # lines skipped, HTML taken down to its words. Two of our own: #deck:
+       the deck's name (else the file's), #ask: what the front asks ("Capital of", shown small over it).
+     - JSON (`deckOfJson`): {format: "flashcards", name, ask, cards: [[front, back, note?] or {front, back, note}]}, or a bare
+       list of {front, back} (also question/answer, term/definition). A .json that is a deck opens here, any other in the JSON
+       viewer.
+     A deck is kept (localStorage flashcards.decks, by its key: its name and a hash of its cards, so a changed file is a deck of
+     its own) and comes back next time; the menu's Deck steps through those kept, Remove this deck takes one away with its
+     progress. `decks/` in the repo holds five to start from (world and US state capitals, the elements, the times tables,
+     Spanish words), files like any other: open them, or put them in a bucket. Till a deck is loaded, every board says how. */
+  const EMPTY = { key: '', name: 'No deck yet', ask: '', cards: [] };
+  const MAX_CARDS = 5000;
+  const hashOf = s => { let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const plain = s => String(s == null ? '' : s).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  const nameOfFile = n => String(n || 'deck').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'deck';
+  function makeDeck(name, ask, cards){
+    const C = [];
+    for (const c of cards){ const f = plain(c[0]), b = plain(c[1]); if (f && b) C.push(c[2] ? [f, b, plain(c[2])] : [f, b]); if (C.length >= MAX_CARDS) break; }
+    if (!C.length) return null;
+    name = plain(name) || 'deck';
+    return { key: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '-' + hashOf(JSON.stringify(C)), name, ask: plain(ask), cards: C };
+  }
+  // one line of delimited text into fields, CSV's quotes honoured ("a, b" is one field, "" a quote)
+  function splitLine(line, sep){
+    const out = []; let cur = '', q = false;
+    for (let i = 0; i < line.length; i++){
+      const ch = line[i];
+      if (q){ if (ch === '"'){ if (line[i + 1] === '"'){ cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"' && cur.trim() === ''){ q = true; cur = ''; }
+      else if (ch === sep){ out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out.map(x => x.trim());
+  }
+  const SEPS = { tab: '\t', comma: ',', semicolon: ';', pipe: '|', space: ' ' };
+  const COLS = { front: ['front', 'question', 'term', 'word', 'prompt', 'q'], back: ['back', 'answer', 'definition', 'meaning', 'a'], note: ['note', 'notes', 'extra', 'hint'] };
+  function readDeckText(text, fileName){
+    const lines = String(text).replace(/^﻿/, '').split(/\r?\n/);
+    let sep = null, name = nameOfFile(fileName), ask = '', cols = null;
+    const body = [];
+    for (const l of lines){
+      const m = /^#(\w+):(.*)$/.exec(l);
+      if (m){ const k = m[1].toLowerCase(), v = m[2].trim();
+        if (k === 'separator') sep = SEPS[v.toLowerCase()] || (v.length === 1 ? v : sep);
+        else if (k === 'deck') name = v; else if (k === 'ask') ask = v;
+        else if (k === 'columns') cols = v; continue; }
+      if (/^#/.test(l) || !l.trim()) continue;
+      body.push(l);
+    }
+    if (!body.length) return null;
+    if (!sep){
+      const sample = body.slice(0, 20), score = ch => sample.filter(l => l.includes(ch)).length;
+      sep = ['\t', ',', ';', '|'].reduce((a, ch) => score(ch) > score(a) ? ch : a, '\t');
+      if (!score(sep)) return null;
+    }
+    let rows = body.map(l => splitLine(l, sep));
+    let fi = 0, bi = 1, ni = 2;
+    const head = cols ? splitLine(cols, sep) : rows[0];
+    const idx = list => head.findIndex(h => list.includes(String(h).toLowerCase().trim()));
+    if (idx(COLS.front) >= 0 || idx(COLS.back) >= 0){
+      fi = idx(COLS.front) >= 0 ? idx(COLS.front) : 0; bi = idx(COLS.back) >= 0 ? idx(COLS.back) : (fi === 0 ? 1 : 0); ni = idx(COLS.note);
+      if (!cols) rows = rows.slice(1);
+    }
+    return makeDeck(name, ask, rows.filter(r => r.length > Math.max(fi, bi)).map(r => [r[fi], r[bi], ni >= 0 ? r[ni] : '']));
+  }
+  // a JSON deck, or null when the JSON is something else (and so for the JSON viewer)
+  function deckOfJson(doc, fileName){
+    if (!doc || typeof doc !== 'object') return null;
+    const pick = o => o && typeof o === 'object' && !Array.isArray(o)
+      ? [o.front ?? o.question ?? o.term ?? o.q, o.back ?? o.answer ?? o.definition ?? o.a, o.note ?? o.notes ?? o.hint] : Array.isArray(o) ? o : null;
+    const list = Array.isArray(doc) ? doc : (doc.format === 'flashcards' || doc.cards) && Array.isArray(doc.cards) ? doc.cards : null;
+    if (!list || !list.length) return null;
+    if (!Array.isArray(doc) && doc.format !== 'flashcards' && !(doc.name || doc.deck)) return null;
+    const cards = list.map(pick).filter(c => c && c[0] != null && c[1] != null);
+    if (Array.isArray(doc) && cards.length < list.length * 0.9) return null;
+    return makeDeck(Array.isArray(doc) ? nameOfFile(fileName) : (doc.name || doc.deck || nameOfFile(fileName)), Array.isArray(doc) ? '' : doc.ask, cards);
+  }
+  const DECKS = (() => { try { const a = JSON.parse(localStorage.getItem('flashcards.decks') || '[]'); return Array.isArray(a) ? a.map(d => d && makeDeck(d.name, d.ask, d.cards || [])).filter(Boolean) : []; } catch { return []; } })();
+  const saveDecks = () => { try { localStorage.setItem('flashcards.decks', JSON.stringify(DECKS.map(d => ({ name: d.name, ask: d.ask, cards: d.cards })))); return true; } catch { return false; } };
   let DECK = (() => { try { const k = localStorage.getItem('flashcards.deck'); const i = DECKS.findIndex(d => d.key === k); return i >= 0 ? i : 0; } catch { return 0; } })();
-  const deck = () => DECKS[DECK];
-  const cardOf = (c, r) => boardIdx(c, r) % deck().cards.length;
+  const deck = () => DECKS[DECK] || EMPTY;
+  const hasDeck = () => deck().cards.length > 0;
+  const cardOf = (c, r) => hasDeck() ? boardIdx(c, r) % deck().cards.length : -1;
+  // a card's own id, so its progress follows it when a deck's file is edited and cards move
+  const cid = k => { const c = deck().cards[k]; return c ? hashOf(c[0] + '\u0001' + c[1]) : ''; };
+  /* Decks in: kept, the last one shown, the app switched to. Returns how many were taken. */
+  function addDecks(list){
+    const got = list.filter(Boolean);
+    if (!got.length) return 0;
+    for (const d of got){ const i = DECKS.findIndex(x => x.key === d.key); if (i >= 0) DECKS.splice(i, 1); DECKS.push(d); }
+    DECK = DECKS.length - 1;
+    const kept = saveDecks();
+    try { localStorage.setItem('flashcards.deck', deck().key); } catch {}
+    TURNED.clear();
+    if (window.getFieldApp && window.getFieldApp() !== app){ try { window.setFieldApp(app); syncAppSelect(); } catch {} }
+    say((got.length > 1 ? got.length + ' decks opened; this is ' : '') + deck().name + ': ' + deck().cards.length + ' cards.' + (kept ? '' : ' (Too large to keep for next time.)'), 3000);
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return got.length;
+  }
+  // texts in ({name, text}), from files or a bucket; a JSON text that is not a deck is passed over (false)
+  function deckOfText(name, text){
+    if (/\.json$/i.test(name || '')){ try { return deckOfJson(JSON.parse(text), name); } catch { return null; } }
+    return readDeckText(text, name);
+  }
+  const isDeckFile = f => f && /\.(csv|tsv|txt)$/i.test(f.name || '');
+  async function importDeckFiles(files){
+    const fs = Array.prototype.slice.call(files || []).filter(isDeckFile);
+    if (!fs.length) return 0;
+    const decks = [];
+    for (const f of fs){ try { const d = readDeckText(await f.text(), f.name); if (d) decks.push(d); else say(f.name + ' has no cards: a front and a back a line, split by tabs or commas.', 4000); } catch {} }
+    return addDecks(decks);
+  }
 
   /* THE SCHEDULE: by deck, by card, [state (0 new, 1 learning, 2 review), learning step, interval in days, ease, due (ms),
      reps, lapses]; and the day's new cards by deck. */
   const SRS = (() => { try { const o = JSON.parse(localStorage.getItem('flashcards.srs') || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
   const saveSrs = () => { try { localStorage.setItem('flashcards.srs', JSON.stringify(SRS)); } catch {} };
-  const deckSrs = () => { const k = deck().key; if (!SRS[k] || typeof SRS[k] !== 'object') SRS[k] = { cards: {}, day: '', newN: 0 }; if (!SRS[k].cards) SRS[k].cards = {}; return SRS[k]; };
+  const deckSrs = () => { const k = deck().key || '_'; if (!SRS[k] || typeof SRS[k] !== 'object') SRS[k] = { cards: {}, day: '', newN: 0 }; if (!SRS[k].cards) SRS[k].cards = {}; return SRS[k]; };
   const dayOf = t => new Date(t).toDateString();
   const newToday = () => { const D = deckSrs(), d = dayOf(NOWFN()); if (D.day !== d){ D.day = d; D.newN = 0; } return D.newN; };
-  const rec = k => { const v = deckSrs().cards[k]; return Array.isArray(v) && v.length >= 7 ? v : null; };
+  const rec = k => { const v = deckSrs().cards[cid(k)]; return Array.isArray(v) && v.length >= 7 ? v : null; };
   const STEPS = [1 * MIN, 10 * MIN];                 // (learning: Again starts over at the first step, Good goes on to the next)
   /* What a grade would do to card k now: the new record (not stored). g: 0 Again, 1 Hard, 2 Good, 3 Easy. */
   function after(k, g, now){
@@ -51781,13 +51697,14 @@ to live|vivir`) },
   function grade(k, g){
     const now = NOWFN(), was = rec(k);
     if (!was || was[0] === 0) deckSrs().newN = newToday() + 1;
-    deckSrs().cards[k] = after(k, g, now);
+    deckSrs().cards[cid(k)] = after(k, g, now);
     saveSrs();
   }
   // where card k stands: 'new', 'learn', 'due' (a known card come round) or 'known'
   const stateOf = k => { const R = rec(k); if (!R || R[0] === 0) return 'new'; if (R[0] === 1) return 'learn'; return R[4] <= NOWFN() ? 'due' : 'known'; };
   const STATE_COL = { new: '#3b82f6', learn: '#f59e0b', due: '#ef4444', known: '#22c55e' };
   const STATE_HEX = { new: 0x3b82f6, learn: 0xf59e0b, due: 0xef4444, known: 0x22c55e };
+  const GRID_EMPTY = { n: 1, colors: [0x5d6069] };
   const GRID1 = Object.fromEntries(Object.entries(STATE_HEX).map(([k, v]) => [k, { n: 1, colors: [v] }]));   // (one object a state: the field keeps a grid by its identity)
   function counts(){
     const now = NOWFN(), N = deck().cards.length; let fresh = 0, learn = 0, due = 0;
@@ -51808,7 +51725,7 @@ to live|vivir`) },
     if (best >= 0) return best;
     return skip != null && skip >= 0 && rec(skip) && rec(skip)[0] === 1 && rec(skip)[4] <= now + LEARN_AHEAD ? skip : null;
   }
-  const nextAt = () => { let t = Infinity; for (const k in deckSrs().cards){ const R = rec(k); if (R && R[0] > 0) t = Math.min(t, R[4]); } return t; };
+  const nextAt = () => { let t = Infinity; for (let k = 0; k < deck().cards.length; k++){ const R = rec(k); if (R && R[0] > 0) t = Math.min(t, R[4]); } return t; };
   // the nearest board to (c, r) holding card k: a spiral out, unwrapped, so the flight is short and gotoCell wraps it
   function boardFor(k, c, r){
     for (let rad = 0; rad <= 60; rad++)
@@ -51856,6 +51773,14 @@ to live|vivir`) },
     if (P.back){ cx.strokeStyle = 'rgba(80,120,190,0.18)'; cx.lineWidth = Math.max(1, H * 0.004); for (let y = H * 0.3; y < H * (P.grades ? BTN_V : 0.95); y += H * 0.085){ cx.beginPath(); cx.moveTo(m, y); cx.lineTo(W - m, y); cx.stroke(); } }
     cx.restore();
     cx.textBaseline = 'middle';
+    if (P.empty){
+      // (no deck yet: every board says how to bring one)
+      cx.textAlign = 'center'; cx.fillStyle = '#1d1b18';
+      drawLines(cx, fitText(cx, 'Open a deck', W * 0.8, H * 0.2, Math.round(H * 0.15), 10, '600'), W / 2, H * 0.36);
+      cx.fillStyle = '#6b6457';
+      drawLines(cx, fitText(cx, 'Drop or open a .csv, .tsv or Anki .txt (front, back a line) or a flashcards .json, or load one from a bucket', W * 0.8, H * 0.34, Math.round(H * 0.065), 8), W / 2, H * 0.66);
+      return cv;
+    }
     cx.fillStyle = '#7a7466'; cx.font = Math.round(H * 0.05) + 'px ' + SANS;
     cx.textAlign = 'left'; cx.fillText(P.deck, m + H * 0.05, H * 0.14);
     cx.textAlign = 'right'; cx.fillText((P.k + 1) + ' / ' + P.n + (P.back ? '' : '  ·  ' + P.state), W - m - H * 0.05, H * 0.14);
@@ -51900,6 +51825,7 @@ to live|vivir`) },
     return { k, back, live };
   }
   function photoKey(c, r, bp){
+    if (!hasDeck()){ const key = 'fc:empty' + ((bp || 0) >= HI_PX ? ':H' : ':L'); if (!SPECS.has(key)) SPECS.set(key, { empty: true, hi: key.endsWith('H') }); return key; }
     const V = viewOf(c, r), D = deck(), card = D.cards[V.k], state = stateOf(V.k), hi = (bp || 0) >= HI_PX;
     const grades = V.live && V.back ? intervals(V.k) : null;
     const key = 'fc:' + D.key + ':' + V.k + ':' + (V.back ? 'b' : 'f') + ':' + state + (grades ? ':' + grades.join(',') : '') + (V.live && !V.back ? ':h' : '') + (hi ? ':H' : ':L');
@@ -51945,7 +51871,7 @@ to live|vivir`) },
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     try { if (window.getFieldApp() !== app) return; } catch { return; }
-    if (!LIVE) return;
+    if (!LIVE || !hasDeck()) return;
     if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); turn(LIVE.c, LIVE.r); return; }
     if (/^[1-4]$/.test(e.key) && TURNED.has(gkey(LIVE.c, LIVE.r))){ e.preventDefault(); e.stopPropagation(); gradeHere(LIVE.c, LIVE.r, +e.key - 1); return; }
     if (e.key === 'n' || e.key === 'N'){ e.preventDefault(); e.stopPropagation(); goNext(); }
@@ -51961,13 +51887,19 @@ to live|vivir`) },
     ];
   }
 
+  const openPicker = () => { try { document.getElementById('importImageFile').click(); } catch {} };
   const app = {
     name: 'flash cards',
     menu: [{ head: 'Flash cards', items: [
-      { label: () => 'Deck: ' + deck().name, title: 'Step through the decks: world capitals, US state capitals, the chemical elements, the times tables and Spanish words. Each keeps its own schedule.',
-        on(){ DECK = (DECK + 1) % DECKS.length; try { localStorage.setItem('flashcards.deck', deck().key); } catch {} TURNED.clear(); say(deck().name + ': ' + deck().cards.length + ' cards.', 2000); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } },
+      { label: 'Open a deck…', title: 'A .csv, .tsv or Anki text export (front and back a line) or a flashcards .json. Dropping one on the window does the same, and a bucket\'s decks open from Load bucket.', on(){ openPicker(); } },
+      { label: () => 'Deck: ' + deck().name + (DECKS.length > 1 ? ' (' + (DECK + 1) + ' of ' + DECKS.length + ')' : ''), title: 'Step through the decks you have opened. Each keeps its own schedule.',
+        disabled: () => DECKS.length < 2,
+        on(){ if (!DECKS.length) return openPicker(); DECK = (DECK + 1) % DECKS.length; try { localStorage.setItem('flashcards.deck', deck().key); } catch {} TURNED.clear(); say(deck().name + ': ' + deck().cards.length + ' cards.', 2000); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } },
       { label: 'Next card due', title: 'Fly to the nearest board holding the next card to study (N).', on(){ goNext(); } },
-      { label: 'Forget this deck\'s progress', title: 'Every card in this deck new again.', on(){ if (confirm('Forget your progress on ' + deck().name + '?')){ delete SRS[deck().key]; saveSrs(); TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } } },
+      { label: 'Remove this deck', title: 'Take this deck off the page, and its progress with it. Open its file again to bring it back.',
+        on(){ if (!hasDeck() || !confirm('Remove ' + deck().name + ' and your progress on it?')) return; delete SRS[deck().key]; saveSrs(); DECKS.splice(DECK, 1); DECK = 0; saveDecks();
+              try { localStorage.setItem('flashcards.deck', deck().key); } catch {} TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } },
+      { label: 'Forget this deck\'s progress', title: 'Every card in this deck new again.', on(){ if (hasDeck() && confirm('Forget your progress on ' + deck().name + '?')){ delete SRS[deck().key]; saveSrs(); TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } } },
     ]}],
     boardShape: { cellW: 1, cellH: 1 / ASP },
     cellFar: { light: 0x2b2f38, dark: 0x20242c },
@@ -51975,15 +51907,17 @@ to live|vivir`) },
     faceMinPx: 2,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
     photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P, P.hi ? 640 : 320) : null; },
-    cellGrid(c, r){ return GRID1[stateOf(cardOf(c, r))]; },
+    cellGrid(c, r){ return hasDeck() ? GRID1[stateOf(cardOf(c, r))] : GRID_EMPTY; },
     cellItems(){ return []; },
     cellTitle(c, r){
+      if (!hasDeck()) return 'Flash cards — no deck yet: open or drop a .csv, .tsv, Anki .txt or flashcards .json, or load one from a bucket';
       const k = cardOf(c, r), D = deck(), C = counts();
       return 'Flash cards — ' + D.name + ', card ' + (k + 1) + ' of ' + D.cards.length + ' (' + stateOf(k) + ') · ' + C.learn + ' learning, ' + C.due + ' due, ' + C.fresh + ' new today';
     },
-    statTiles(c, r){ return isLive(c, r) ? tilesOf(c, r) : null; },
+    statTiles(c, r){ return !isLive(c, r) ? null : hasDeck() ? tilesOf(c, r) : [{ glyph: '📂', value: 'Open a deck' }]; },
     onStatTap(c, r, i){
       if (!isLive(c, r)) return false;
+      if (!hasDeck()){ if (i === 0) openPicker(); return true; }
       if (i === 0){ turn(c, r); return true; }
       if (i >= 1 && i <= 4) return gradeHere(c, r, i - 1);
       return false;
@@ -51998,6 +51932,7 @@ to live|vivir`) },
     onCellTap(c, r, u, v){
       const was = LIVE && LIVE.c === c && LIVE.r === r;
       LIVE = { c, r };
+      if (!hasDeck()){ say('No deck yet: open or drop a .csv, .tsv, Anki .txt or flashcards .json (the menu\'s Open a deck…), or load one from a bucket.', 3500); return true; }
       if (!was && !TURNED.has(gkey(c, r))){ try { bbRefreshNow(); } catch {} return true; }
       if (TURNED.has(gkey(c, r)) && v != null && v >= BTN_V){ gradeHere(c, r, Math.max(0, Math.min(3, Math.floor(u * 4)))); return true; }
       turn(c, r);
@@ -52009,7 +51944,8 @@ to live|vivir`) },
       card(sz * 0.45, sz * 0.4, '#3b82f6', -0.18); card(sz * 0.55, sz * 0.6, '#22c55e', 0.12);
       ctx.fillStyle = '#1d1b18'; ctx.font = 'bold ' + Math.round(sz * 0.16) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A?', sz * 0.55, sz * 0.62);
     },
-    _debug: { DECKS, get DECK(){ return DECK; }, set DECK(v){ DECK = v; }, deck, cardOf, boardIdx, after, grade, stateOf, counts, nextDue, nextAt, boardFor,
+    importDeckFiles, deckOfText, addDecks, isDeckFile,
+    _debug: { readDeckText, deckOfJson, deckOfText, addDecks, importDeckFiles, cid, hasDeck, splitLine, saveDecks, DECKS, get DECK(){ return DECK; }, set DECK(v){ DECK = v; }, deck, cardOf, boardIdx, after, grade, stateOf, counts, nextDue, nextAt, boardFor,
               intervals, span, SRS, TURNED, viewOf, photoKey, SPECS, paint, turn, gradeHere, BTN_V, NEW_PER_DAY,
               setNow(f){ NOWFN = f || (() => Date.now()); }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; } },
   };
@@ -61088,7 +61024,13 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
          as pages when the bucket holds nothing else to show; so are .jsonl, .ndjson and .geojson, never manifests.) */
       const jsons = objects.filter(o => /\.(json|jsonl|ndjson|geojson)$/i.test(o.name))
         .sort((a, b) => a.name.localeCompare(b.name));
-      const datas = [];
+      const datas = [], decks = [];
+      /* Decks of flash cards (Oct 25: "it must be loaded like json or epub"): every .csv, .tsv and .txt in the bucket read as a
+         deck, and any .json that is one; with no pictures, archive, PDF or book they open in the flash cards. */
+      for (const o of objects.filter(o => /\.(csv|tsv|txt)$/i.test(o.name)).sort((a, b) => a.name.localeCompare(b.name))){
+        try { _setBucketBtn('Reading ' + o.name + ' \u2026'); const r = await fetch(urlOf(o)); if (r.ok){ const d = FLASH_APP.deckOfText(o.name, await r.text()); if (d) decks.push(d); } }
+        catch (e){ console.warn('[bucket] deck failed', o.name, e); }
+      }
       for (const j of jsons){
         try {
           _setBucketBtn('Reading ' + j.name + ' \u2026');
@@ -61104,7 +61046,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             const u = s && typeof s === 'object' ? _sliceURL(s) : null;
             if (u){ imgs.push({ name: _sliceName(s, i), __url: u }); added++; }
           });
-          if (!added){ datas.push({ name: j.name, text }); console.log('[bucket] ' + j.name + ' is data, not a manifest'); continue; }
+          if (!added){
+            const dk = FLASH_APP.deckOfText(j.name, text);       // (a deck of flash cards, Oct 25)
+            if (dk){ decks.push(dk); continue; }
+            datas.push({ name: j.name, text }); console.log('[bucket] ' + j.name + ' is data, not a manifest'); continue; }
           console.log('[bucket] ' + j.name + ': ' + added + ' of ' + slices.length + ' slices resolved to image URLs');
         } catch (e){ console.warn('[bucket] manifest failed', j.name, e); }
       }
@@ -61154,6 +61099,11 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         await _loadEpub(new File([await dr.blob()], d.name, { type: 'application/epub+zip' }),
                         false, POUR.open(1, false), 0);
         _zipShowsGallery();
+        _setBucketBtn(_bucketBtnIdle());
+        return;
+      }
+      if (!imgs.length && decks.length){        // decks of flash cards (Oct 25)
+        FLASH_APP.addDecks(decks);
         _setBucketBtn(_bucketBtnIdle());
         return;
       }
@@ -61394,7 +61344,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      libarchive opens, PDFs, and the game records. A row that opens fine but
      looks greyed out is the same lie as a row that is missing, in a quieter
      voice. */
-  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|pgn|pdn|sgf|json|jsonl|ndjson|geojson)$/i;
+  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|pgn|pdn|sgf|json|jsonl|ndjson|geojson|csv|tsv|txt)$/i;
   /* A CONTAINER, conservatively: an explicit prefix (trailing slash), or a
      name with no extension AND no bytes. Anything with a size or an
      extension is an object, whatever the extension happens to be — being
@@ -61899,6 +61849,9 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     try { GOLF_APP.importHoleFiles(all); } catch {}
     // A curve from draw (a .tvf, Oct 10): a path on the mini golf hole being edited.
     try { GOLF_APP.importTvfFiles(all); } catch {}
+    /* A deck of flash cards (Oct 25: "it must be loaded like json or epub"): a .csv, .tsv or .txt opens in the flash cards; a
+       .json that is a deck too, found below once it has been read. */
+    try { FLASH_APP.importDeckFiles(all); } catch {}
     // .cbz/.cbr ride the zip path — a comic archive IS a folder of pages, and
     // _loadZip's numeric name sort is already the page order. The bytes decide
     // whether it can actually be read; see _sniffArchive.
@@ -61972,6 +61925,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
        for it and the rest of the drop closes up over the gap instead of
        waiting on it forever. */
     (async () => {
+      // (a .json that is a deck of flash cards goes there, not to the JSON viewer: read first, so it never takes a slot of the pour)
+      for (const f of jsons.slice()){
+        try { const d = f.size < 8e6 && FLASH_APP.deckOfText(f.name, await f.text()); if (d){ FLASH_APP.addDecks([d]); jsons.splice(jsons.indexOf(f), 1); } } catch {}
+      }
       const jobs = [];
       for (const f of zips) jobs.push(j => _loadZip(f, j.join, j.pour, j.slot));
       for (const f of pdfs) jobs.push(j => _loadPdf(f, j.join, j.pour, j.slot));

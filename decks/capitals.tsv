@@ -1,0 +1,57 @@
+#separator:tab
+#deck:World capitals
+#ask:Capital of
+front	back	note
+France	Paris
+Germany	Berlin
+Italy	Rome
+Spain	Madrid
+Portugal	Lisbon
+United Kingdom	London
+Ireland	Dublin
+Netherlands	Amsterdam
+Belgium	Brussels
+Switzerland	Bern
+Austria	Vienna
+Poland	Warsaw
+Czechia	Prague
+Hungary	Budapest
+Greece	Athens
+Sweden	Stockholm
+Norway	Oslo
+Denmark	Copenhagen
+Finland	Helsinki
+Iceland	Reykjavík
+Russia	Moscow
+Ukraine	Kyiv
+Turkey	Ankara
+Egypt	Cairo
+Kenya	Nairobi
+Nigeria	Abuja
+South Africa	Pretoria	executive capital
+Morocco	Rabat
+Ethiopia	Addis Ababa
+Ghana	Accra
+China	Beijing
+Japan	Tokyo
+South Korea	Seoul
+India	New Delhi
+Pakistan	Islamabad
+Thailand	Bangkok
+Vietnam	Hanoi
+Philippines	Manila
+Saudi Arabia	Riyadh
+Iran	Tehran
+Iraq	Baghdad
+Australia	Canberra
+New Zealand	Wellington
+Canada	Ottawa
+United States	Washington, D.C.
+Mexico	Mexico City
+Cuba	Havana
+Brazil	Brasília
+Argentina	Buenos Aires
+Chile	Santiago
+Peru	Lima
+Colombia	Bogotá
+Venezuela	Caracas
