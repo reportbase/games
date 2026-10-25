@@ -1911,6 +1911,28 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test opens a file through the real picker (pages, lines, numbers, a path head, a wrap), a real click on Larger
     keeping the place, a real click on Shallower and taps to depth 2 folding the 120 records, Colours painting sepia, a broken
     file marked on its line, and JSON Lines read as one array. `GALLERY_APP._json` and `_jsonRow` are for it.
+- **Markdown files as a book** (Oct 25: "would it be hard to add an application that read md files", then "yes, add the markdown
+  reader"): a `.md` (`.markdown`, `.mdown`, `.mkd`, or typed text/markdown) opened, dropped or in a bucket is written out as HTML by
+  the page's own converter (`MD.toHtml`) and read as a book's chapters (`EPUB.fromHtml`, the book reader's `blocksOf` and
+  `layout`), so it hangs one 2:3 page a board with the book's settings row, its place kept when they change (`BOOK`, `bookSet`,
+  `_bookDrop`), all as an EPUB does (`_loadMarkdown`, after `_loadEpub`).
+  - It reads ATX and underlined headings, paragraphs (lazy lines, hard breaks), bold, italics, strikethrough, inline and fenced or
+    indented code, block quotes, nested lists, numbered lists from any start, task boxes (☐ ☑ in place of the bullet), rules,
+    links (inline, by reference, autolinks: the words shown), GitHub tables (set out as columns in the monospaced face, the head
+    in bold), images, a front matter's `title`, and HTML written in (parsed into a document of its own, as a book's is).
+  - Laid out `flat`, as a document (`blocksOf(…, opts)`, a block's `flat`): headings to the left, paragraphs spaced apart rather
+    than indented, code on a faint box and quotes with a bar down their left (a page's `shades`, painted under the words). Books
+    are laid out as before.
+  - A chapter at each heading of the top level used, when there are two or more of them. The title is the front matter's, else
+    the first `#` heading's, else the file's name.
+  - Pictures (`_mdPictures`): found among the files it came with, by path and then by name alone, or a data: URI; each given a
+    key of its own. Those found are on their pages and not hung again as pictures (`_loadFiles` reads the file first and takes
+    them out of the loose list). One not found, or on the web, is a line in italics with its alt text.
+  - Buckets: the first `.md` by name is opened when the bucket has no archive, PDF or book, and either no pictures or pictures
+    the file names (fetched as its pages ask).
+  - The smoke test opens a `.md` and a picture through the real picker (the title, two chapters, the words in order, the picture
+    placed once, a missing one in words, code and quote blocks, the code's shade painted) and a real click on Larger laying it
+    out again. `GALLERY_APP._md` is the converter, `_epub.md` says the book is one.
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
   unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
   board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.

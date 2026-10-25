@@ -5465,6 +5465,69 @@ try {
       console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted; the row its settings (Larger re-laid it, the place kept; Page painted it white; a picture opened with it kept)`);
     }
   }
+  // A MARKDOWN FILE IS READ AS A BOOK (Oct 25: "would it be hard to add an application that read md files", then "yes, add the
+  // markdown reader"): a .md written here, with a picture beside it, opened through the real file picker. It must come up as the
+  // gallery with the front matter's title, a chapter at each top heading, its words in order (bold, code, a link's words, a
+  // lazy line, nested and task lists, a quote, a fenced block and a table as columns), the picture it names placed on its page
+  // and not hung again on its own, a missing one said in words; the row the book's settings (a real click on Larger laying it
+  // out again), and a code block painted on its shade.
+  {
+    current = 'markdown';
+    const bad = [];
+    const G = 'window.FIELD_APPS.find(a => a.id === \'gallery\')';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1500);
+    const md = ['---', 'title: "The Garden Notes"', '---', '# Planting', '',
+      'Some **bold** words, some *italic* ones, `inline code` and a [link](https://example.com).', 'A line that carries on.', '',
+      '![a red square](pics/red.png)', '', '- one', '- two', '  - two and a half', '- [x] done', '- [ ] not yet', '', '1. first', '2. second', '',
+      '> a quoted line', '> and another', '', '```js', 'const x = 1;   // kept as written', '```', '',
+      '| Plant | Days |', '|-------|-----:|', '| Bean  | 60   |', '| Pea   | 70   |', '', '---', '', '# Harvest', '', 'Underlined', '----------', '',
+      '![missing](nowhere.png) and text after.', ''].join('\n');
+    const red = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAAJElEQVR4nGO4Iyc3IIhh1OJRi0ctHrV41OJRi0ctHrV45FgMAAu5ay6grAKsAAAAAElFTkSuQmCC', 'base64');
+    await page.setInputFiles('#importImageFile', [{ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from(md) },
+                                                    { name: 'red.png', mimeType: 'image/png', buffer: red }]);
+    await page.waitForFunction(g => { const E = eval(g)._epub; return E && E.md && E.label === 'The Garden Notes'; }, G, { timeout: 30000 }).catch(() => {});
+    const r = await page.evaluate(g => {
+      const A = window.getFieldApp(), E = eval(g)._epub; if (!E || !E.md) return null;
+      return { app: A.name, chapters: E.book.chapters.length, pages: E.pages.length, n: eval(g)._expect,
+        text: E.pages.map(p => E.EPUB.textOf(p)).join(' | '), imgs: E.pages.reduce((k, p) => k + p.imgs.length, 0),
+        pre: E.book.chapters[0].filter(b => b.pre).length, quote: E.book.chapters[0].some(b => b.quote),
+        size: E.EPUB.style.size, row: (eval(g).statTiles(0, 0) || []).map(t => t.value).join(',') };
+    }, G);
+    const want = ['Planting', 'Some bold words, some italic ones, inline code and a link', 'A line that carries on.', '• one', '• two', '• two and a half',
+      '☑ done', '☐ not yet', '1. first', '2. second', 'a quoted line and another', 'const x = 1;', '// kept as written', 'Plant Days', 'Bean 60', 'Pea 70',
+      '| Harvest Underlined [picture: missing] and text after.'];
+    const flat = r ? r.text.replace(/ (?=[.,])/g, '') : '';
+    let at = 0;
+    for (const w of want){ const k = flat.indexOf(w, at); if (k < 0){ bad.push('words missing or out of order: ' + JSON.stringify(w)); break; } at = k + w.length; }
+    if (!r) bad.push('the file did not open as a book');
+    else {
+      if (r.app !== 'photo gallery' || r.chapters !== 2 || r.pages !== 2) bad.push('opened as ' + JSON.stringify({ app: r.app, chapters: r.chapters, pages: r.pages }));
+      if (r.imgs !== 1 || r.n !== r.pages) bad.push(`the picture: ${r.imgs} placed, ${r.n} prints for ${r.pages} pages (it should be on its page and not hung on its own)`);
+      if (r.pre !== 2 || !r.quote) bad.push('code and quote blocks: ' + JSON.stringify({ pre: r.pre, quote: r.quote }));
+      if (!/^Smaller,\d+,Larger,Serif/.test(r.row)) bad.push('the row is not the book\'s settings: ' + r.row);
+      // a real click on Larger lays it out again (the row opened first: a book's settings do not hold it open)
+      await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); });
+      await page.waitForTimeout(1200);
+      const tile = await page.evaluate(() => {
+        const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(e => e._key === 'stat_2' && e.style.display !== 'none'); if (!t) return null;
+        const b = t.getBoundingClientRect(); return b.width > 4 && b.left >= 0 && b.right <= innerWidth ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null; });
+      if (tile) await page.mouse.click(tile.x, tile.y); else await page.evaluate(g => eval(g)._book.tap(2), G);
+      await page.waitForFunction(([g, s0]) => { const E = eval(g)._epub; return E && E.md && E.EPUB.style.size > s0; }, [G, r.size], { timeout: 30000 }).catch(() => {});
+      const big = await page.evaluate(g => { const E = eval(g)._epub; return E && { size: E.EPUB.style.size, md: E.md, label: E.label }; }, G);
+      if (!big || !(big.size > r.size) || !big.md || big.label !== 'The Garden Notes') bad.push(`Larger (${tile ? 'a real click' : 'the row'}): ` + JSON.stringify(big));
+      // the code block painted on its shade
+      const px = await page.evaluate(g => { const E = eval(g)._epub, pg = E.pages[0], sh = pg.shades.find(s => s.k === 'code'); if (!sh) return null;
+        const cv = document.createElement('canvas'); E.EPUB.paint(cv, pg, 960, new Map());
+        const d = cv.getContext('2d').getImageData(Math.round(sh.x + sh.w - 4), Math.round(sh.y + sh.h / 2), 1, 1).data, e = cv.getContext('2d').getImageData(4, 4, 1, 1).data;
+        return { shade: [d[0], d[1], d[2]].join(), paper: [e[0], e[1], e[2]].join() }; }, G);
+      if (!px || px.shade === px.paper) bad.push('the code block has no shade: ' + JSON.stringify(px));
+      await page.evaluate(g => { eval(g)._book.tap(0); }, G);
+      await page.waitForFunction(([g, s0]) => { const E = eval(g)._epub; return E && E.EPUB.style.size === s0; }, [G, r.size], { timeout: 30000 }).catch(() => {});
+    }
+    if (bad.length) failures.push('[markdown] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} markdown: a .md opened through the picker as a book of ${r ? r.pages : '?'} pages, a chapter a top heading, its words in order, the picture beside it placed and not hung again, a missing one in words, code shaded, a real click on Larger laying it out again`);
+  }
   // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
   // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space
   // printing, numbered, every page headed by the path it begins at; the row its settings (a real click on Shallower and

@@ -1271,7 +1271,7 @@
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
     <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
-    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json,.csv,.tsv,.txt,text/csv" multiple hidden>
+    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json,.csv,.tsv,.txt,text/csv,.md,.markdown,.mdown,.mkd,text/markdown" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution: up to 4096px on the long side (PDF and book pages 3072) instead of 2048 (1536). Costs about four times the graphics memory per print, ~90MB at 4096, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to pictures opened after it is ticked."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
     <button id="bSelfCheck" title="Run the field's invariant checks: do the geometry and fabric tiers agree about which picture hangs where, does every print hang somewhere, can the ordered walk reach them all, is any board drawing the backdrop instead of its image. Also on the V key.">Self&#8209;check &#10003;</button>
@@ -59976,7 +59976,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const colours = () => {
       const ink = of(INKS, style.ink).css, paper = of(PAPERS, style.paper).css;
       const mix = (a, b, t) => '#' + [16, 8, 0].map(sh => Math.round(((parseInt(a.slice(1), 16) >> sh) & 255) * (1 - t) + ((parseInt(b.slice(1), 16) >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
-      return { ink, paper, faint: mix(ink, paper, 0.45) };
+      return { ink, paper, faint: mix(ink, paper, 0.45), shade: mix(ink, paper, 0.93) };
     };
     const fontOf = (r, size) => (r.i ? 'italic ' : '') + (r.b ? 'bold ' : '') + size + 'px ' + (r.mono ? MONO : SERIF);
 
@@ -60073,8 +60073,11 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       cover = keyOf(entries, find, cover);
       if (cover && !chapters.slice(0, 2).some(ch => ch.some(b => b.t === 'img' && b.key === cover)))
         chapters.unshift([{ t: 'img', key: cover }]);
-      /* Every picture's size, from its header (no pixels decoded), since a
-         page cannot be laid out without knowing how tall its pictures are. */
+      return { title, chapters, sizes: await sizesOf(chapters, entries) };
+    }
+    /* Every picture's size, from its header (no pixels decoded), since a
+       page cannot be laid out without knowing how tall its pictures are. */
+    async function sizesOf(chapters, entries){
       const sizes = new Map();
       const keys = [...new Set(chapters.flat().filter(b => b.t === 'img').map(b => b.key))];
       const got = await many(keys, async key => {
@@ -60090,7 +60093,15 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         return sz && sz.w > 0 && sz.h > 0 ? sz : null;
       });
       keys.forEach((k, i) => sizes.set(k, got[i]));
-      return { title, chapters, sizes };
+      return sizes;
+    }
+    /* A BOOK FROM HTML OF OUR OWN (Oct 25, the Markdown reader): chapters already written as HTML, their pictures named by
+       the keys of `entries` (each {blob(), arrayBuffer()}), read as a book's chapters are; `opts.flat` lays it out as a
+       document rather than a novel (headings to the left, paragraphs spaced, not indented). */
+    async function fromHtml(htmls, entries, title, opts){
+      const find = finder(entries);
+      const chapters = htmls.map(h => blocksOf(h, '', true, find, entries, opts)).filter(ch => ch.length);
+      return { title: title || '', chapters, sizes: await sizesOf(chapters, entries) };
     }
     // Asked 32 at a time, so a book of large pictures is not all in memory at once.
     const many = async (list, fn) => {
@@ -60113,13 +60124,14 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
                            'footer', 'aside', 'nav', 'tr', 'dt', 'dd', 'table', 'tbody', 'thead', 'tfoot', 'ul', 'ol', 'dl',
                            'body', 'main', 'center', 'address', 'caption', 'hgroup', 'details', 'summary', 'h1', 'h2',
                            'h3', 'h4', 'h5', 'h6']);
-    function blocksOf(src, path, html, find, entries){
+    function blocksOf(src, path, html, find, entries, opts){
+      const flat = !!(opts && opts.flat);
       const doc = parse(src, html);
       const body = byTag(doc, 'body')[0] || doc.documentElement;
       const dir = dirOf(path);
       const out = [];
       let runs = [];
-      let blk = { inset: 0 };
+      let blk = { inset: 0, flat };
       const flush = () => {
         if (runs.some(r => /\S/.test(r.s))) out.push(Object.assign({ t: 'p', runs }, blk));
         runs = [];
@@ -60156,8 +60168,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         const was = blk;
         blk = Object.assign({}, was);
         const h = /^h([1-6])$/.exec(tag);
-        if (h){ blk.h = +h[1]; blk.align = 'center'; s2 = Object.assign({}, s2, { b: true }); }
-        if (tag === 'blockquote') blk.inset = (was.inset || 0) + 32;
+        if (h){ blk.h = +h[1]; blk.align = flat ? undefined : 'center'; s2 = Object.assign({}, s2, { b: true }); }
+        if (tag === 'blockquote'){ blk.inset = (was.inset || 0) + 32; blk.quote = true; }
         if (tag === 'ul' || tag === 'ol' || tag === 'dd') blk.inset = (was.inset || 0) + 24;
         if (tag === 'pre'){ blk.pre = true; s2 = Object.assign({}, s2, { mono: true, pre: true }); }
         if (tag === 'figcaption' || tag === 'caption'){ blk.align = 'center'; blk.small = true; }
@@ -60167,7 +60179,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           let k = 1;
           if (ol){ for (let e = n.previousElementSibling; e; e = e.previousElementSibling) k++;
                    k += (parseInt(p.getAttribute('start'), 10) || 1) - 1; }
-          runs.push({ s: ol ? k + '. ' : '• ' });
+          // (a task box, ☐ or ☑ from the Markdown reader, stands in for the bullet)
+          if (ol || !/^\s*[\u2610\u2611]/.test(n.textContent || '')) runs.push({ s: ol ? k + '. ' : '• ' });
           blk.list = true;
         }
         for (const c of n.childNodes) walk(c, s2);
@@ -60294,7 +60307,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       let pg = null, y = 0, words = 0;
       /* `at` is how many pieces of words came before the page: the same text falls on other pages in another size, and
          this is how the reader finds the page that now holds the words it was on. */
-      const newPage = () => { pg = { lines: [], imgs: [], rules: [], full: false, at: words }; pages.push(pg); y = M.t; };
+      const newPage = () => { pg = { lines: [], imgs: [], rules: [], shades: [], full: false, at: words }; pages.push(pg); y = M.t; };
       const blank = () => !pg.lines.length && !pg.imgs.length && !pg.rules.length;
       for (const ch of book.chapters){
         if (!ch.length) continue;
@@ -60336,10 +60349,11 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           const size = b.h ? HEAD[b.h] : (b.small ? SMALL : BODY);
           const lh = Math.round(size * (b.h ? 1.25 : LEAD));
           const inset = b.inset || 0;
-          const indent = (!b.h && !afterHead && !b.list && !b.pre && b.align !== 'center') ? Math.round(BODY * 1.4) : 0;
+          const indent = (!b.h && !b.flat && !afterHead && !b.list && !b.pre && b.align !== 'center') ? Math.round(BODY * 1.4) : 0;
           const lines = linesOf(b, size, CW - 2 * inset, indent);
           if (!lines.length) continue;
-          let gap = b.h ? (y > M.t ? size * 1.1 : size * 0.4) : (y > M.t ? BODY * 0.3 : 0);
+          // (a document's paragraphs are spaced apart instead of indented, the Markdown reader's `flat`)
+          let gap = b.h ? (y > M.t ? size * 1.1 : size * 0.4) : (y > M.t ? BODY * (b.flat && !(b.list && ch[k - 1] && ch[k - 1].list) ? 0.6 : 0.3) : 0);
           /* A heading keeps two lines of what follows it on its page. */
           if (b.h && y + gap + lines.length * lh + 2 * BODY * LEAD > BOTTOM && y > M.t){ newPage(); gap = size * 0.4; }
           y += gap;
@@ -60348,6 +60362,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             const left = M.l + inset + (b.align === 'center' ? (CW - 2 * inset - ln.w) / 2 : 0);
             const base = y + (lh - size) / 2 + size * 0.8;
             for (const it of ln.items) it.x += left;
+            /* A document's code sits on a faint box and its quotes have a bar down their left (the Markdown reader's `flat`):
+               a strip a line, so a block carried over to the next page is shaded on both. */
+            if (b.flat && b.pre) pg.shades.push({ k: 'code', x: M.l + inset - 8, y: y - 1, w: CW - 2 * inset + 16, h: lh + 2 });
+            if (b.flat && b.quote) pg.shades.push({ k: 'bar', x: M.l + inset - 16, y, w: 3, h: lh });
             pg.lines.push({ y: base, items: ln.items });
             words += ln.items.length;
             y += lh;
@@ -60373,6 +60391,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       cx.fillStyle = C.paper;
       cx.fillRect(0, 0, PAGE_W, PAGE_H);
       cx.imageSmoothingQuality = 'high';
+      for (const sh of pg.shades || []){ cx.fillStyle = sh.k === 'code' ? C.shade : C.faint; cx.fillRect(sh.x, sh.y, sh.w, sh.h); }
       for (const im of pg.imgs){
         const pic = pics.get(im.key);
         if (pic) cx.drawImage(pic, im.x, im.y, im.w, im.h);
@@ -60416,7 +60435,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       saveStyle();
       return style.font + '/' + style.size !== was;
     }
-    return { open, layout, paint, mimeOf, textOf, ASPECT, PAGE_W, PAGE_H, style, set, FONTS, INKS, PAPERS, SIZES,
+    return { open, fromHtml, layout, paint, mimeOf, textOf, ASPECT, PAGE_W, PAGE_H, style, set, FONTS, INKS, PAPERS, SIZES,
              names: () => ({ font: of(FONTS, style.font).name, ink: of(INKS, style.ink), paper: of(PAPERS, style.paper) }) };
   })();
   /* Pictures in a book are decoded when a page that shows them is painted,
@@ -60448,7 +60467,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     try { GALLERY_APP._finish(); } catch {}
     Object.assign(B, { pages, base, gen: GALLERY_APP._gen });
     if (BOOK_GO && BOOK_GO.label === B.label){ const at = BOOK_GO.at; BOOK_GO = null; setTimeout(() => goToWords(B, at), 0); }
-    try { GALLERY_APP._epub = { label: B.label, base, pages, book: B.book, EPUB }; } catch {}
+    try { GALLERY_APP._epub = { label: B.label, base, pages, book: B.book, EPUB, entries: B.entries, md: !!B.md }; } catch {}
     const pic = async key => {
       const pics = B.pics;
       if (pics.has(key)){ const p = pics.get(key); pics.delete(key); pics.set(key, p); return p; }
@@ -60548,6 +60567,278 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     } catch (e){
       console.warn('[epub] load failed:', f && f.name, e);
       _setLoadBtn('EPUB failed: ' + (e.message || e));
+      setTimeout(() => _setLoadBtn('Load images ⇧'), 4000);
+    }
+  };
+  /* ═══ MARKDOWN → a book (Oct 25: "would it be hard to add an application that read md files", then "yes, add the markdown
+     reader") ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
+     A .md file is read as a book is: written out as HTML here (MD.toHtml, a converter of the page's own), handed to the book
+     reader as its chapters (EPUB.fromHtml), laid out on the book's 2:3 pages, one page a board, with the book's settings in
+     the bottom row (size, face, ink, paper) and the place kept when they change. Laid out `flat`, as a document: headings to
+     the left, paragraphs spaced apart rather than indented.
+     WHAT IT READS: ATX and underlined headings, paragraphs, **bold**, *italics*, `code` and fenced or indented code blocks, block
+     quotes, lists (nested, numbered, task boxes), rules, links (inline, by reference, <autolinks>: their words shown), GitHub
+     tables (set out as columns in the monospaced face), images, a front matter's title, and HTML written into it (read as the
+     book's own HTML is; scripts and the like never run, the page parses it into a document of its own).
+     CHAPTERS: each heading of the top level used starts a fresh page, when there are two or more of them (one title heading
+     alone does not).
+     PICTURES: an image's path is looked for among the files it came with (the drop, or the bucket), by its path and then by
+     its name alone; a data: URI is read as it is. One not found, or on the web, is a line in italics with its alt text. */
+  const MD = (() => {
+    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const plainOf = s => s.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+                          .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1').replace(/(\*\*|__|~~|`)/g, '').replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, '$1$2')
+                          .replace(/\\([\\`*_{}\[\]()#+\-.!|>~])/g, '$1').trim();
+    // The inline spans of one block's text, given the link references and a way to name a picture.
+    function inline(src, refs, pic){
+      const keep = [];
+      const hold = h => '\u0000' + (keep.push(h) - 1) + '\u0000';
+      let s = src;
+      s = s.replace(/\\([\\`*_{}\[\]()#+\-.!|>~<])/g, (m, c) => hold(esc(c)));               // escapes
+      s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (m, f, c) => hold('<code>' + esc(c.trim() === '' ? c : c.replace(/^ (.*) $/, '$1')) + '</code>'));
+      s = s.replace(/<((?:https?|ftp|mailto):[^\s>]+)>/gi, (m, u) => hold(esc(u)));            // autolinks: the words are the link
+      s = s.replace(/<([^\s@>]+@[^\s@>]+\.[^\s>]+)>/g, (m, u) => hold(esc(u)));
+      const target = (t, ref) => {
+        if (ref != null){ const r = refs.get((ref || t).toLowerCase().replace(/\s+/g, ' ')); return r ? r.url : null; }
+        return t;
+      };
+      // images, then links (an image may sit inside a link's words)
+      s = s.replace(/!\[([^\]]*)\]\(\s*<?([^\s)>]*)>?(?:\s+["'(][^)]*["')])?\s*\)/g, (m, alt, u) => hold(pic(u, alt)));
+      s = s.replace(/!\[([^\]]*)\]\[([^\]]*)\]/g, (m, alt, r) => { const u = target(alt, r); return u == null ? m : hold(pic(u, alt)); });
+      s = s.replace(/\[([^\]]+)\]\(\s*<?[^\s)>]*>?(?:\s+["'(][^)]*["')])?\s*\)/g, (m, t) => hold('<a>' + inline(t, refs, pic) + '</a>'));
+      s = s.replace(/\[([^\]]+)\]\[([^\]]*)\]/g, (m, t, r) => (target(t, r) == null ? m : hold('<a>' + inline(t, refs, pic) + '</a>')));
+      s = s.replace(/\[([^\]]+)\](?![(\[:])/g, (m, t) => (refs.has(t.toLowerCase().replace(/\s+/g, ' ')) ? hold('<a>' + inline(t, refs, pic) + '</a>') : m));
+      // HTML written in: a tag passes, any other < or & is text
+      s = s.replace(/<\/?[A-Za-z][A-Za-z0-9-]*(?:\s+[^<>]*?)?\/?>|<!--[\s\S]*?-->/g, m => hold(m));
+      s = s.replace(/&(?![A-Za-z][A-Za-z0-9]{1,31};|#[0-9]{1,7};|#x[0-9A-Fa-f]{1,6};)/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // emphasis, strongest first; an underscore inside a word is a letter
+      s = s.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, (m, d, t, at, all) => (d === '__' && /\w/.test(all[at - 1] || '') ? m : '<b>' + t + '</b>'));
+      s = s.replace(/(^|[^*\w])\*(?=[^\s*])([\s\S]*?[^\s*])\*(?!\*)/g, '$1<i>$2</i>');
+      s = s.replace(/(^|[^_\w])_(?=[^\s_])([\s\S]*?[^\s_])_(?![_\w])/g, '$1<i>$2</i>');
+      s = s.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>');
+      // a line ended with two spaces or a backslash breaks there
+      s = s.replace(/( {2,}|\\)\n/g, '<br>');
+      for (let k = 0; k < 4 && /\u0000\d+\u0000/.test(s); k++) s = s.replace(/\u0000(\d+)\u0000/g, (m, i) => keep[+i]);
+      return s;
+    }
+    const FENCE = /^ {0,3}(`{3,}|~{3,})\s*([^`]*)$/;
+    const HR = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
+    const ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
+    const ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])( +|\t|$)(.*)$/;
+    const QUOTE = /^ {0,3}> ?(.*)$/;
+    const TROW = /^\s*\|?(.+?)\|?\s*$/;
+    const TSEP = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+    const HTMLB = /^ {0,3}<(\/?)([A-Za-z][A-Za-z0-9-]*)(\s|>|\/>|$)|^ {0,3}<!--/;
+    const cellsOf = line => { const m = TROW.exec(line); return (m ? m[1] : line).split(/(?<!\\)\|/).map(c => c.trim()); };
+    // Block structure of some lines into HTML, with the headings seen (level, text) pushed onto `heads`.
+    function blocks(lines, refs, pic, heads){
+      const out = [];
+      let i = 0;
+      const blank = l => !/\S/.test(l);
+      const startsBlock = l => FENCE.test(l) || HR.test(l) || ATX.test(l) || ITEM.test(l) || QUOTE.test(l) || HTMLB.test(l);
+      while (i < lines.length){
+        const l = lines[i];
+        if (blank(l)){ i++; continue; }
+        let m;
+        if ((m = FENCE.exec(l))){                      // a fenced code block, to its closing fence
+          const f = m[1], body = [];
+          const ind = /^ */.exec(l)[0].length;
+          i++;
+          while (i < lines.length && !(new RegExp('^ {0,3}' + f[0] + '{' + f.length + ',}\\s*$').test(lines[i]))){ body.push(lines[i].replace(new RegExp('^ {0,' + ind + '}'), '')); i++; }
+          i++;
+          out.push('<pre>' + esc(body.join('\n')) + '</pre>');
+          continue;
+        }
+        if (/^( {4}|\t)/.test(l)){                       // an indented code block
+          const body = [];
+          while (i < lines.length && (/^( {4}|\t)/.test(lines[i]) || blank(lines[i]))){ body.push(lines[i].replace(/^( {4}|\t)/, '')); i++; }
+          while (body.length && blank(body[body.length - 1])) body.pop();
+          out.push('<pre>' + esc(body.join('\n')) + '</pre>');
+          continue;
+        }
+        if ((m = ATX.exec(l))){
+          const n = m[1].length, t = (m[2] || '').trim();
+          heads.push({ n, t: plainOf(t) });
+          out.push({ head: n, html: '<h' + n + '>' + inline(t, refs, pic) + '</h' + n + '>' });
+          i++; continue;
+        }
+        if (HR.test(l)){ out.push('<hr>'); i++; continue; }
+        if (QUOTE.test(l)){
+          const body = [];
+          while (i < lines.length && !blank(lines[i])){
+            const q = QUOTE.exec(lines[i]);
+            if (q) body.push(q[1]); else if (startsBlock(lines[i])) break; else body.push(lines[i]);
+            i++;
+          }
+          out.push('<blockquote>' + blocks(body, refs, pic, []).map(b => (typeof b === 'string' ? b : b.html)).join('') + '</blockquote>');
+          continue;
+        }
+        if ((m = ITEM.exec(l))){                       // a list: its items, each read again as blocks of their own
+          const ordered = /\d/.test(m[2]);
+          const start = ordered ? parseInt(m[2], 10) : 1;
+          const items = [];
+          let loose = false;
+          while (i < lines.length){
+            const im = ITEM.exec(lines[i]);
+            if (!im || /\d/.test(im[2]) !== ordered) break;
+            const pad = im[1].length + im[2].length + (im[3] ? (im[3] === '\t' ? 4 : Math.min(im[3].length, 4)) : 1);
+            const body = [im[4]];
+            i++;
+            let gap = false;
+            while (i < lines.length){
+              const n = lines[i];
+              if (blank(n)){ gap = true; body.push(''); i++; continue; }
+              const ind = /^ */.exec(n)[0].length;
+              if (ind >= pad || (ind >= 2 && ITEM.test(n.trimStart()) && ind > im[1].length)){ body.push(n.slice(Math.min(ind, pad))); gap = false; i++; continue; }
+              if (gap || ITEM.test(n) || startsBlock(n)) break;
+              body.push(n); i++;                         // a lazy line carries on the paragraph
+            }
+            while (body.length && blank(body[body.length - 1])) body.pop();
+            if (body.some(blank)) loose = true;
+            let task = '';
+            const tk = /^\[([ xX])\]\s+/.exec(body[0] || '');
+            if (tk){ task = tk[1] === ' ' ? '☐ ' : '☑ '; body[0] = body[0].slice(tk[0].length); }
+            const inner = blocks(body, refs, pic, []).map(b => (typeof b === 'string' ? b : b.html)).join('');
+            items.push('<li>' + (task ? esc(task) : '') + (loose ? inner : inner.replace(/^<p>([\s\S]*?)<\/p>/, '$1')) + '</li>');
+          }
+          out.push((ordered ? '<ol' + (start !== 1 ? ' start="' + start + '"' : '') + '>' : '<ul>') + items.join('') + (ordered ? '</ol>' : '</ul>'));
+          continue;
+        }
+        if (l.includes('|') && i + 1 < lines.length && TSEP.test(lines[i + 1]) && lines[i + 1].includes('-')){
+          // a table, set out as columns of the monospaced face (the book has no tables), its head in bold
+          const head = cellsOf(l).map(plainOf), rows = [];
+          i += 2;
+          while (i < lines.length && !blank(lines[i]) && lines[i].includes('|')){ rows.push(cellsOf(lines[i]).map(plainOf)); i++; }
+          const n = Math.max(head.length, ...rows.map(r => r.length));
+          const wd = Array.from({ length: n }, (_, c) => Math.max(1, ...[head, ...rows].map(r => [...(r[c] || '')].length)));
+          const line = r => Array.from({ length: n }, (_, c) => (r[c] || '') + ' '.repeat(wd[c] - [...(r[c] || '')].length)).join('  ').replace(/\s+$/, '');
+          out.push('<pre><b>' + esc(line(head)) + '</b>\n' + esc(wd.map(w => '─'.repeat(w)).join('  ')) + (rows.length ? '\n' + rows.map(r => esc(line(r))).join('\n') : '') + '</pre>');
+          continue;
+        }
+        if (HTMLB.test(l)){                              // HTML written in, to a blank line
+          const body = [];
+          while (i < lines.length && !blank(lines[i])){ body.push(lines[i]); i++; }
+          out.push(body.join('\n'));
+          continue;
+        }
+        // a paragraph, or an underlined heading
+        const para = [l];
+        i++;
+        while (i < lines.length && !blank(lines[i])){
+          const n = lines[i];
+          if (/^ {0,3}=+\s*$/.test(n) || (/^ {0,3}-+\s*$/.test(n))){
+            const lv = n.trim()[0] === '=' ? 1 : 2, t = para.join(' ').trim();
+            heads.push({ n: lv, t: plainOf(t) });
+            out.push({ head: lv, html: '<h' + lv + '>' + inline(t, refs, pic) + '</h' + lv + '>' });
+            para.length = 0; i++;
+            break;
+          }
+          if (startsBlock(n) && !/^ {4}/.test(n)) break;
+          para.push(n); i++;
+        }
+        if (para.length) out.push('<p>' + inline(para.map(s => s.replace(/^ {1,3}/, '')).join('\n'), refs, pic) + '</p>');
+      }
+      return out;
+    }
+    /* The whole file: {title, chapters (HTML each), pics (the paths of the pictures named, in order)}. `find(path)` says
+       what key a picture's file goes by (or '' for none); it is asked of every image. */
+    function toHtml(text, find){
+      let src = String(text).replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+      let title = '';
+      const fm = /^---\n([\s\S]*?)\n(---|\.\.\.)\n/.exec(src);    // front matter: its title, then left out
+      if (fm){ const t = /^title:\s*["']?(.*?)["']?\s*$/m.exec(fm[1]); if (t) title = t[1]; src = src.slice(fm[0].length); }
+      // link references, taken out of the text (outside code)
+      const refs = new Map();
+      let inFence = false;
+      const lines = src.split('\n').filter(l => {
+        if (FENCE.test(l)) inFence = !inFence;
+        if (inFence) return true;
+        const m = /^ {0,3}\[([^\]]+)\]:\s*<?(\S+?)>?(?:\s+["'(].*["')])?\s*$/.exec(l);
+        if (m && !/^\^/.test(m[1])){ refs.set(m[1].toLowerCase().replace(/\s+/g, ' '), { url: m[2] }); return false; }
+        return true;
+      }).map(l => l.replace(/^(\t+)/, t => '    '.repeat(t.length)));
+      const pics = [];
+      const pic = (u, alt) => {
+        const key = find(u);
+        if (key){ pics.push(u); return '<img src="' + esc(key) + '" alt="' + esc(alt) + '">'; }
+        return '<i>[' + esc(alt ? 'picture: ' + alt : 'picture') + ']</i>';
+      };
+      const heads = [];
+      const bl = blocks(lines, refs, pic, heads);
+      if (!title){ const h1 = heads.find(h => h.n === 1); if (h1) title = h1.t; }
+      // chapters: at each heading of the top level used, when there are two or more of them
+      const top = heads.length ? Math.min(...heads.map(h => h.n)) : 0;
+      const split = top && heads.filter(h => h.n === top).length >= 2;
+      const chapters = [];
+      let cur = [];
+      for (const b of bl){
+        if (typeof b !== 'string' && split && b.head === top && cur.length){ chapters.push(cur.join('\n')); cur = []; }
+        cur.push(typeof b === 'string' ? b : b.html);
+      }
+      if (cur.length) chapters.push(cur.join('\n'));
+      return { title, chapters: chapters.map(c => '<html><body>' + c + '</body></html>'), pics };
+    }
+    const isMd = f => !!f && (/\.(md|markdown|mdown|mkd|mkdn|mdx)$/i.test(f.name || '') || /markdown/i.test(f.type || ''));
+    return { toHtml, inline, isMd };
+  })();
+  try { GALLERY_APP._md = MD; } catch {}
+  /* The pictures a Markdown file can show: the files it came with, by path (a folder dropped keeps its paths) and by name
+     alone, and data: URIs. Each is given a key of its own (its extension kept, for the reader's type of picture). */
+  function _mdPictures(files){
+    const byPath = new Map(), byName = new Map(), entries = {};
+    for (const f of files || []){
+      if (!f || !(/^image\//.test(f.type || '') || /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(f.name || ''))) continue;
+      const p = (f.webkitRelativePath || f.__path || f.name || '').toLowerCase();
+      byPath.set(p, f);
+      const nm = (f.name || '').toLowerCase();
+      if (!byName.has(nm)) byName.set(nm, f);
+    }
+    let n = 0;
+    const keyed = new Map();
+    const entryOf = (getBlob, ext) => {
+      const key = 'mdpic' + (n++) + ext;
+      entries[key] = { blob: () => getBlob(), arrayBuffer: async () => (await getBlob()).arrayBuffer() };
+      return key;
+    };
+    const find = u => {
+      u = String(u || '').trim();
+      if (!u) return '';
+      if (keyed.has(u)) return keyed.get(u);
+      let key = '';
+      const d = /^data:image\/([a-z+]+)[;,]/i.exec(u);
+      if (d) key = entryOf(() => fetch(u).then(r => r.blob()), '.' + (d[1] === 'svg+xml' ? 'svg' : d[1] === 'jpeg' ? 'jpg' : d[1]));
+      else if (!/^[a-z][a-z0-9+.-]*:/i.test(u) && !u.startsWith('//')){
+        let p = u.split(/[?#]/)[0];
+        try { p = decodeURIComponent(p); } catch {}
+        p = p.replace(/^\.\//, '').replace(/^\/+/, '').toLowerCase();
+        const nm = p.split('/').pop();
+        let f = byPath.get(p) || [...byPath.entries()].find(([k]) => k.endsWith('/' + p))?.[1] || byName.get(nm);
+        if (f) key = entryOf(async () => (f.__fetch ? f.__fetch() : f), '.' + ((/\.([a-z0-9]+)$/i.exec(f.name || nm) || [, 'png'])[1].toLowerCase()));
+      }
+      keyed.set(u, key);
+      return key;
+    };
+    return { find, entries };
+  }
+  /* A Markdown file onto the boards: written out as HTML, read as a book's chapters, hung as a book is (BOOK, so the row
+     holds the book's settings). `files` are the files it came with, for its pictures. */
+  const _loadMarkdown = async (f, join, pour, slot, files) => {
+    const gen = join ? _epubGen : ++_epubGen;
+    const superseded = () => gen !== _epubGen;
+    let label = (f.name || 'document').replace(/\.[a-z]+$/i, '');
+    if (_bookDrop && !_bookDrop.includes(f)) _bookDrop = null;
+    try {
+      _setLoadBtn('Opening ' + f.name + ' …');
+      const P = _mdPictures(files);
+      const md = MD.toHtml(await f.text(), P.find);
+      const book = await EPUB.fromHtml(md.chapters, P.entries, md.title, { flat: true });
+      if (superseded()) return;
+      if (md.title) label = md.title;
+      BOOK = { book, entries: P.entries, label, pics: new Map(), gen: -1, pages: null, base: 0, md: true };
+      if (!await _hangBook(BOOK, pour, slot, superseded)) throw new Error('nothing to show in ' + f.name);
+    } catch (e){
+      console.warn('[markdown] load failed:', f && f.name, e);
+      _setLoadBtn('Markdown failed: ' + (e.message || e));
       setTimeout(() => _setLoadBtn('Load images ⇧'), 4000);
     }
   };
@@ -61129,6 +61420,29 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         _setBucketBtn(_bucketBtnIdle());
         return;
       }
+      /* A Markdown file (Oct 25, the Markdown reader), the first by name, its pictures fetched from the bucket as its pages ask:
+         taken when the bucket holds nothing else to show, or when the pictures it holds are the ones the file names. */
+      const mdObjs = objects.filter(o => /\.(md|markdown|mdown|mkd)$/i.test(o.name)).sort((a, b) => a.name.localeCompare(b.name));
+      if (mdObjs.length){
+        const d = mdObjs[0];
+        _setBucketBtn('Fetching ' + d.name + ' \u2026');
+        const dr = await fetch(urlOf(d));
+        if (!dr.ok) throw new Error('markdown HTTP ' + dr.status);
+        const text = await dr.text();
+        const pics = imgs.map(o => ({ name: o.name.split('/').pop(), __path: o.name, type: 'image/' + (/\.([a-z]+)$/i.exec(o.name) || [, 'png'])[1].toLowerCase(),
+                                     __fetch: () => fetch(urlOf(o)).then(r => r.blob()) }));
+        let named = 0;
+        const P = _mdPictures(pics);
+        MD.toHtml(text, u => { const k = P.find(u); if (k) named++; return k; });
+        if (!imgs.length || named){
+          const f = new File([text], d.name.split('/').pop(), { type: 'text/markdown' });
+          _bookDrop = null;
+          await _loadMarkdown(f, false, POUR.open(1, false), 0, pics);
+          _zipShowsGallery();
+          _setBucketBtn(_bucketBtnIdle());
+          return;
+        }
+      }
       if (!imgs.length && decks.length){        // decks of flash cards (Oct 25)
         FLASH_APP.addDecks(decks);
         _setBucketBtn(_bucketBtnIdle());
@@ -61371,7 +61685,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      libarchive opens, PDFs, and the game records. A row that opens fine but
      looks greyed out is the same lie as a row that is missing, in a quieter
      voice. */
-  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|pgn|pdn|sgf|json|jsonl|ndjson|geojson|csv|tsv|txt)$/i;
+  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|pgn|pdn|sgf|json|jsonl|ndjson|geojson|csv|tsv|txt|md|markdown|mdown|mkd)$/i;
   /* A CONTAINER, conservatively: an explicit prefix (trailing slash), or a
      name with no extension AND no bytes. Anything with a size or an
      extension is an object, whatever the extension happens to be — being
@@ -61887,8 +62201,11 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
        pictures inside it. It is taken out first and goes to its own reader. */
     const _isBook = f => /\.epub$/i.test(f.name || '') || /epub/i.test(f.type || '');
     const books = all.filter(f => f && _isBook(f));
+    /* A Markdown file (Oct 25: "yes, add the markdown reader") is laid out as a book is, the pictures it names taken from the
+       files it came with (and not hung as pictures of their own: see the pour, below). */
+    const mds = all.filter(f => MD.isMd(f));
     // (a book that comes with other files keeps the whole drop, to open again when its settings change; see BOOK_GO)
-    if (books.length) _bookDrop = all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '')).length > 1 ? all.slice() : null;
+    if (books.length || mds.length) _bookDrop = all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '')).length > 1 ? all.slice() : null;
     /* A JSON file (Oct 25: "what about a json file viewer") is laid out as pages, as a book is (JSONV); one that comes with
        other files keeps the drop, to open again when its settings change. A file is taken by its type only when its name
        says nothing else: a mini golf .golf is JSON, and opened as application/json it went to the viewer too, the page
@@ -61902,7 +62219,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const list = all.filter(f => f && /^image\//.test(f.type))
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined,
                                                    { numeric: true, sensitivity: 'base' }));
-    if (!zips.length && !list.length && !pdfs.length && !books.length && !jsons.length) return;
+    if (!zips.length && !list.length && !pdfs.length && !books.length && !jsons.length && !mds.length) return;
     /* CONCATENATED, AND THEREFORE SEQUENTIAL (Sep 9: "concatonated").
        Three archives dropped together used to be fired off at once, and each
        one's _begin cleared what the last had built — so the field ended up
@@ -61963,10 +62280,20 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       for (const f of zips) jobs.push(j => _loadZip(f, j.join, j.pour, j.slot));
       for (const f of pdfs) jobs.push(j => _loadPdf(f, j.join, j.pour, j.slot));
       for (const f of books) jobs.push(j => _loadEpub(f, j.join, j.pour, j.slot));
+      // (a picture a Markdown file shows is on its page, so it is not hung again as a picture of its own)
+      for (const f of mds){
+        try {
+          const used = new Set(), P = _mdPictures(list);
+          MD.toHtml(await f.text(), u => { const k = P.find(u); if (k) used.add(u); return k; });
+          const names = new Set([...used].map(u => String(u).split(/[?#]/)[0].split('/').pop().toLowerCase()));
+          for (let q = list.length - 1; q >= 0; q--) if (names.has((list[q].name || '').toLowerCase())) list.splice(q, 1);
+        } catch {}
+        jobs.push(j => _loadMarkdown(f, j.join, j.pour, j.slot, all));
+      }
       for (const f of jsons) jobs.push(j => _loadJson(f, j.join, j.pour, j.slot));
       if (list.length)      jobs.push(j => _loadLoose(list, j.join, j.pour, j.slot));
       if (!jobs.length) return;
-      const onlyLoose = !zips.length && !pdfs.length && !books.length && !jsons.length;
+      const onlyLoose = !zips.length && !pdfs.length && !books.length && !jsons.length && !mds.length;
       let addsToWhatIsThere = false;
       /* (Loose pictures join pictures, never a book's or a JSON file's pages: joined, the collection stayed the document's, so
          its settings row stayed up over forty pictures and they hung as pages after it. Found by CI on the flash cards' PR.) */
