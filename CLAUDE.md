@@ -409,6 +409,42 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       lasting over twice as long at level 1), the ramps and a ball on one drawn raised, and each era's picture.
     - A touch's echo as a mouse press is also known by the events' own times (`touchTS`, `echoOf`): with the page busy, the echo of
       the tap that began a game was handled past the field's 700 ms window and launched the ball.
+  - **Multiball, toys, the upper flipper, themes, a live display** (Oct 25: "whats next for pinball", then "1,5,6,7,9"):
+    - **Several balls**: the ball in play is `S.b`, the others in multiball `S.xb`; what a ball is doing is kept on it (`b.ride` on
+      a ramp, `b.hold` in the saucer or waiting to be let out with `b.kick`, `b.mag` held by the magnet), and `S.ride`, `S.hold` and
+      `S.sIn` are getters onto the ball in play's. `sub` steps each ball (`stepBall`, `rideStep`); a drained ball in multiball gives
+      way to another (only the last one's drain is a drain), and balls meet as equal balls (`ballsMeet`). The steady player watches
+      every ball, each side going for the one nearest the drain on its flippers.
+    - **Multiball** (the dot-matrix and modern eras, `ERA.multi`): balls lock in the saucer, or in a ramp on a table without one
+      (`T.lockBy`), while the lock is lit (`lockLit`: from the start at levels 1–2, after `LOCK_NEED` 1 or 2 ramps or orbits since the
+      last lock farther out; two blue lamps by the lock, `lockSpot`). A lock keeps the ball where it was (drawn there) and brings a
+      new one to the plunger; the third lock lets the two out after it (`startMulti`), and while more than one is in play every ramp
+      made (every orbit on a table with no ramp) is a jackpot, `JACK0` (25,000) + 5,000 a level, 10,000 more each time. Locks stay
+      from ball to ball.
+    - **Toys** (by era in `ERAS`): spinners (`T.spinner`, a plate the ball spins going under it, 100 a half turn, `spinA`, `spinW`),
+      rollover buttons (`T.rolls`, three, 500 each, all three 3,000), a captive ball (`T.captive`: a channel shut at its top, two posts
+      at its foot closer than a ball; it moves only along the channel, met with that constraint, `capY`, `capV`; up to its top,
+      2,500), a magnet (`T.magnet`, on `MAG_ON` of every `MAG_CYCLE` s, `magOn`: pulls a ball in, holds it 0.8 s and throws it up the
+      table, 500) and a moving bank of three targets (`T.mbank`, sliding to and fro on the clock, `mbX`, 750 each). The upper flipper
+      (`T.fl[2]`, `upper`, `side`) sits on a side wall partway up and works with that side's button (`setFlipper` works a side).
+    - **Themes** (`THEMES`, `eraOf` by the board's number, beside the era): space, deep sea, a haunted house, a circus, a jungle;
+      each its own hue (the era's palette follows it), art painted over the era's ground (`themeArt`), and its own jingles for a
+      lock, multiball, a jackpot and a lock lit (`themeJingle`, `THEME_NOW`).
+    - **The display**: dot-matrix and modern tables show the score, now and then the ball's number, and for 1.8 s what just
+      happened (`MSGS`, `msg`, `dispText`) as dots lit on the apron's panel (`DISP`, 66 × 9; `pbDot` pieces from `DOT_PX` 160 px
+      boards; the panel and its unlit dots are painted). Its letters are a 5 × 7 dot font of the page's own (`FONT`, `dotsOf`): drawn
+      from a canvas's pixels the frame time doubled in the sandbox, every board's changing score asking the graphics card for pixels.
+      Wood rail and electro-mechanical tables turn seven number reels (`pbReel`: a ten-sided drum wearing the ten figures, `reelGeo`,
+      `reelTex`; `reelsOf` turns each on toward its figure, forward only, 16 figures a second), behind a bezel with a window so only
+      the figure on top shows, from `REEL_PX` 120 px.
+    - **Recordings** carry it all (`frameOf`, `REC_F` 20): the upper flipper, two more balls, the locks, multiball, the rollovers, the
+      display's message and ball, the spinner, the captive ball and the score.
+    - Refitted (`LIFE_BAND` 28+, 20–37, 14–27, 9–18, 4.5–12 s): measured on 16 tables a level, lives 39, 32, 24, 14 and 9 s; 18 to
+      905 ms to make one. Over 40 tables and 90 s each the steady player locked 17 balls, set off 2 multiballs and took a jackpot.
+    - The smoke test checks every theme among the first 80 boards, a saucer's and a ramp's two locks and third setting three balls
+      going, a jackpot in multiball and the next one 10,000 more, a drained ball giving way to another, the lock lit only after a
+      shot at level 3, the upper flipper raised with its side and throwing a ball, the spinner, rollovers, captive ball, magnet and
+      moving bank each scoring, the display's words and dots, the reels rolling to the score, and a recording's frame.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

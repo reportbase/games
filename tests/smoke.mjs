@@ -2987,7 +2987,7 @@ try {
       // (an era of its own: the first table near a number with the parts a check wants)
       const tableWith = (from, lv, ok) => { for (let i = from; i < from + 400; i++){ const T = D.makeTable(i, lv); if (ok(T)) return T; } return null; };
       // a bumper kicks the ball out faster than it came (not wood rail's passive ones)
-      { const T = tableWith(5, 1, T => T.era.id !== 'wood'), S = D.newState(T, true), B = T.bumpers[0];
+      { const T = tableWith(5, 1, T => T.era.id !== 'wood' && !T.magnet && !T.mbank && !T.captive), S = D.newState(T, true), B = T.bumpers[0];
         S.b = { x: B.x - 0.06, y: B.y, vx: 0.5, vy: 0 }; T.g = 0; let after = 0; run(T, S, 0.25, S => { after = Math.hypot(S.b.vx, S.b.vy); }); T.g = T.D.g;
         out.bumper = { after, score: S.score }; }
       // the drop targets: each down by a hit, the bank down: 5000 and the multiplier up; up again after a moment
@@ -2995,7 +2995,7 @@ try {
         for (const t of T.drops){ const mx = (t.a[0] + t.b[0]) / 2, my = (t.a[1] + t.b[1]) / 2, nx = t.ex ? 0 : (t.nx || 1), ny = t.ex ? 1 : 0;
           S.b = { x: mx + nx * 0.03, y: my + ny * 0.03, vx: -nx * 1.2, vy: -ny * 1.2 }; T.g = 0; run(T, S, 0.05); }
         T.g = T.D.g; out.drops = { down: S.drops.reduce((a, x) => a + x, 0), n: T.drops.length, mult: S.mult, score: S.score };
-        run(T, S, 1.2); out.drops.reset = S.drops.reduce((a, x) => a + x, 0); }
+        S.b = null; run(T, S, 1.2); out.drops.reset = S.drops.reduce((a, x) => a + x, 0); }
       // a lane rolled through lights; a flipper press moves the lit lanes along
       { const T = D.makeTable(5, 1), S = D.newState(T, true), L = T.lanes[0];
         S.b = { x: L.x, y: L.y - 0.03, vx: 0, vy: 0.6 }; T.g = 0; run(T, S, 0.1); T.g = T.D.g;
@@ -3011,7 +3011,7 @@ try {
         const T5 = D.makeTable(13, 5); out.save5 = T5.D.save; D.GAMES.delete('0_0'); }
       // the board's pieces: two flippers (never a yaw of 0), the bumpers, the ball, the lamps; and its picture
       { const M = D.readyNow(D.tableFor(3, 0)), V = D.viewOf(M, null), its = D.itemsOf(V), n = k => its.filter(i => i.kind === k).length;
-        out.drawn = { flippers: n('pbFlipper'), bumpers: n('pbBumper'), wantB: M.T.bumpers.length, lamps: n('pbLamp'), zeroYaw: its.filter(i => i.kind === 'pbFlipper' && !i.yaw).length };
+        out.drawn = { flippers: n('pbFlipper') - M.T.fl.length + 2, bumpers: n('pbBumper'), wantB: M.T.bumpers.length, lamps: n('pbLamp'), zeroYaw: its.filter(i => i.kind === 'pbFlipper' && !i.yaw).length };
         const cv = D.paint(M.T, 512); out.picture = cv ? [cv.width, cv.height] : null; }
       return out;
     });
@@ -3121,6 +3121,80 @@ try {
       && fitOk && r.drawn.raised > 10 && r.drawn.ball > 0.04 && r.pictures.every(Boolean);
     if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (${Object.entries(E).map(([k, v]) => k + ' ' + v.n).join(', ')} of 60; a ramp made for ${r.ramp.score}, a combo ${r.ramp.combo}, a weak shot back out; an orbit ${r.orbit.score}; gobbled ${r.gobble.score}; lives ${r.fit.map(L => L.map(x => x.life).join('/')).join(', ')} at levels 1, 3, 5)`);
+  }
+  // PINBALL: MULTIBALL, TOYS, THE UPPER FLIPPER, THEMES AND THE DISPLAY (Oct 25: "whats next for pinball", then "1,5,6,7,9"):
+  // every theme among the first boards; a saucer's two locks and the third setting three balls going; locks in a ramp the same;
+  // a jackpot on a ramp in multiball; a ball drained in multiball giving way to another; the lock lit only after a shot at level 3;
+  // the upper flipper worked by its side's button and throwing a ball; the spinner, the rollovers, the captive ball, the magnet and
+  // the moving bank each doing what it does; the display's words and dots, the reels rolling to the score, and a recording's frame.
+  {
+    current = 'pinball more';
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, K = D.consts, out = {};
+      const tableWith = (from, lv, ok) => { for (let i = from; i < from + 2000; i++){ const T = D.makeTable(i, lv); if (ok(T)) return T; } return null; };
+      const run = (T, S, sec, stop) => { for (let k = 0; k < sec / K.SUB; k++){ const e = D.sub(T, S, K.SUB); if (e) return e; if (stop && stop(S)) return 'stop'; } return null; };
+      const themes = {}; for (let i = 0; i < 80; i++){ themes[D.eraOf(i).theme.id] = 1; } out.themes = Object.keys(themes).length;
+      // the saucer's locks: two balls locked, a new one to the plunger each time; the third sets three going
+      // (the balls let out are counted by their kicks: with no one at the flippers they soon drain)
+      const kicks = (T, S, sec) => { let n = 0; for (let k = 0; k < sec / K.SUB; k++){ D.sub(T, S, K.SUB); n += S.ev.filter(e => e[0] === 'kick').length; S.ev.length = 0; } return n; };
+      { const T = tableWith(50, 1, T => T.lockBy === 'saucer'), Q = T.saucer, S = D.newState(T, false), steps = [];
+        for (let k = 0; k < 3; k++){ S.onPl = false; S.b = { x: Q.x, y: Q.y - 0.003, vx: 0, vy: 0.2, z: 0 }; run(T, S, 0.02); S.ev.length = 0; steps.push([S.locked, S.onPl, S.multi]); }
+        out.saucerLock = { steps, multi: S.multi, balls: 1 + S.xb.length, out: kicks(T, S, 3) }; }
+      // the ramp's locks
+      { const T = tableWith(50, 1, T => T.lockBy === 'ramp'), Rp = T.ramps.find(x => x.kind === 'ramp'), M = Rp.M, S = D.newState(T, false), steps = [];
+        for (let k = 0; k < 3; k++){ S.onPl = false; S.b = { x: M.x - M.dx * 0.03, y: M.y - M.dy * 0.03, vx: M.dx * 3, vy: M.dy * 3, z: 0 }; run(T, S, 0.05); run(T, S, 4, S => !S.ride); S.ev.length = 0; steps.push([S.locked, S.onPl, S.multi]); }
+        out.rampLock = { steps, multi: S.multi, balls: 1 + S.xb.length, out: kicks(T, S, 2) }; }
+      // a jackpot on a ramp in multiball, worth more the next time; a drained ball giving way to another
+      { const T = tableWith(50, 2, T => T.ramps.some(x => x.kind === 'ramp') && T.lockBy), Rp = T.ramps.find(x => x.kind === 'ramp'), M = Rp.M, S = D.newState(T, true);
+        D.startMulti(T, S, { x: 0.2, y: 0.5, vx: 0, vy: 0 }); S.xb.forEach(b => { b.hold = 1e9; b.kick = { x: 0.2, y: 0.5, vx: 0, vy: 0 }; });
+        S.b = { x: M.x - M.dx * 0.03, y: M.y - M.dy * 0.03, vx: M.dx * 3, vy: M.dy * 3, z: 0 }; const s0 = S.score, j0 = S.jack; run(T, S, 0.05); run(T, S, 4, S => !S.ride);
+        out.jackpot = { got: S.score - s0, j0, j1: S.jack };
+        S.xb[0].hold = -1; S.xb[0].kick = null; S.xb[0].x = 0.2; S.xb[0].y = 0.3; const was = S.xb[0]; S.b = { x: K.XC, y: 1.05, vx: 0, vy: 1, z: 0 };
+        const e = D.sub(T, S, K.SUB); out.drainMb = { e, took: S.b === was }; }
+      // at level 3 the lock lights after a shot
+      { const T = tableWith(50, 3, T => T.lockBy), S = D.newState(T, true); out.lit3 = [D.lockLit(T, S), (S.lockQ = 1, D.lockLit(T, S))]; }
+      // the upper flipper: both of its side's flippers up; it throws a ball resting on it
+      { const T = tableWith(50, 3, T => T.fl.length > 2), f = T.fl[2], S = D.newState(T, true), c = Math.cos(f.rest), sn = Math.sin(f.rest), sg = f.side ? -1 : 1;
+        S.b = { x: f.px + c * f.len * 0.6 + sn * (K.R + 0.009) * sg, y: f.py + sn * f.len * 0.6 - c * (K.R + 0.009) * sg, vx: 0, vy: 0, z: 0 };
+        D.setFlipper(S, f.side, true); const both = S.fl.filter(F => F.side === f.side).every(F => F.on); let vy = 0; run(T, S, 0.06, S => { vy = Math.min(vy, S.b.vy); });
+        out.upper = { both, vy }; }
+      // the spinner
+      { const T = tableWith(50, 2, T => T.spinner), Sp = T.spinner, S = D.newState(T, true); S.b = { x: Sp.x, y: Sp.y + 0.03, vx: 0, vy: -2.5, z: 0 }; run(T, S, 0.03); const w = S.spinW; S.b = null; run(T, S, 2);
+        out.spinner = { w, score: S.score }; }
+      // the rollovers
+      { const T = tableWith(50, 2, T => T.rolls), S = D.newState(T, true); T.g = 0;
+        for (const q of T.rolls){ S.b = { x: q[0], y: q[1] - 0.03, vx: 0, vy: 0.8, z: 0 }; run(T, S, 0.08); } T.g = T.D.g; out.rolls = { score: S.score, left: S.rolls }; }
+      // the captive ball, knocked up its channel to the target
+      { const T = tableWith(50, 2, T => T.captive), C = T.captive, S = D.newState(T, true); S.b = { x: C.x, y: C.y1 + 0.04, vx: 0, vy: -3, z: 0 }; run(T, S, 0.6);
+        out.captive = { score: S.score, hit: S.capT > 0 }; }
+      // the magnet: on, it takes a slow ball near it, holds it and throws it
+      { const T = tableWith(50, 2, T => T.magnet), Mg = T.magnet, S = D.newState(T, true); let t = 0; while (!D.magOn(Mg, t + 0.05)) t += 0.05; S.t = t; T.g = 0;
+        S.b = { x: Mg.x + 0.02, y: Mg.y, vx: 0, vy: 0, z: 0 }; run(T, S, 0.6, S => S.b.mag >= 0); const held = S.b.mag >= 0; let top = 0; run(T, S, 1.0, S => { top = Math.max(top, Math.hypot(S.b.vx, S.b.vy)); }); T.g = T.D.g;
+        out.magnet = { held, thrown: top, score: S.score }; }
+      // the moving bank: somewhere else a quarter of its time later; a target hit
+      { const T = tableWith(50, 2, T => T.mbank), B = T.mbank, S = D.newState(T, true); T.g = 0; const x0 = D.mbX(B, 1, 0), x1 = D.mbX(B, 1, B.P / 4);
+        S.b = { x: x0, y: B.y + 0.03, vx: 0, vy: -1.5, z: 0 }; run(T, S, 0.05); T.g = T.D.g; out.mbank = { moved: Math.abs(x1 - x0), score: S.score }; }
+      // the display: words and dots on the later eras, the reels on the older ones rolling to the score; a frame's numbers
+      { const V = { msg: 3, t: 0, score: 0 }; out.words = [D.dispText(V), D.dispText({ msg: 0, t: 3, score: 1234567 }), D.dispText({ msg: 0, t: 0.5, score: 9, ballNo: 2 })];
+        out.dots = D.dotsOf('12,345').length / 2;
+        const Tn = tableWith(50, 2, T => T.era.id === 'neon' || T.era.id === 'dmd'), Mn = { T: Tn, reel: null, phase: 0 }, Vn = D.viewOf(Mn, null); Vn.bp = 400; Vn.score = 4321;
+        out.dotItems = D.itemsOf(Vn).filter(i => i.kind === 'pbDot').length;
+        const To = tableWith(50, 2, T => T.era.id === 'wood' || T.era.id === 'em'), Mo = { T: To, reel: null, phase: 0 }, Vo = D.viewOf(Mo, null); Vo.bp = 400; Vo.score = 3070;
+        out.reelItems = D.itemsOf(Vo).filter(i => i.kind === 'pbReel').length;
+        const H = { reel: null, reelAt: 0 }, Vr = { holder: H, score: 3070 }; D.reelsOf(Vr); for (let k = 0; k < 12; k++){ H.reelAt -= 0.2; D.reelsOf(Vr); } const R7 = Array.from(D.reelsOf(Vr)).map(x => Math.round(x)).join('');
+        out.reels = R7;
+        const fr = []; const S = D.newState(Tn, true); D.toPlunger(S); D.frameOf(Tn, S, fr); out.frame = fr.length; }
+      return out;
+    });
+    const ok = r.themes === 5 && r.saucerLock.steps.map(x => x.join()).join('|') === '1,true,false|2,true,false|0,false,true' && r.saucerLock.multi && r.saucerLock.balls === 3 && r.saucerLock.out === 3
+      && r.rampLock.steps.map(x => x.join()).join('|') === '1,true,false|2,true,false|0,false,true' && r.rampLock.multi && r.rampLock.balls === 3 && r.rampLock.out === 2
+      && r.jackpot.got >= r.jackpot.j0 && r.jackpot.j1 === r.jackpot.j0 + 10000 && r.drainMb.e == null && r.drainMb.took
+      && r.lit3.join() === 'false,true' && r.upper.both && r.upper.vy < -1 && r.spinner.w > 5 && r.spinner.score >= 100
+      && r.rolls.score >= 1500 + 3000 && r.rolls.left === 0 && r.captive.hit && r.captive.score >= 2500 && r.magnet.held && r.magnet.thrown > 1 && r.magnet.score >= 500
+      && r.mbank.moved > 0.03 && r.mbank.score >= 750 && r.words[0] === 'JACKPOT' && r.words[1] === '1,234,567' && r.words[2] === 'BALL 2' && r.dots > 20 && r.dotItems > 20
+      && r.reelItems === 7 && r.reels === '0003070' && r.frame === 20;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (5 themes; locks ${r.saucerLock.steps.map(x => x[0]).join(',')} then three balls, from a saucer and a ramp; a jackpot of ${r.jackpot.got}; the upper flipper threw at ${(-r.upper.vy).toFixed(2)}; spinner ${r.spinner.score}, rollovers ${r.rolls.score}, captive ${r.captive.score}, magnet threw at ${r.magnet.thrown.toFixed(2)}, moving bank ${r.mbank.score}; the display '${r.words.join("', '")}', ${r.dotItems} dots lit, reels ${r.reels})`);
   }
   // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the
