@@ -3192,9 +3192,62 @@ try {
       && r.lit3.join() === 'false,true' && r.upper.both && r.upper.vy < -1 && r.spinner.w > 5 && r.spinner.score >= 100
       && r.rolls.score >= 1500 + 3000 && r.rolls.left === 0 && r.captive.hit && r.captive.score >= 2500 && r.magnet.held && r.magnet.thrown > 1 && r.magnet.score >= 500
       && r.mbank.moved > 0.03 && r.mbank.score >= 750 && r.words[0] === 'JACKPOT' && r.words[1] === '1,234,567' && r.words[2] === 'BALL 2' && r.dots > 20 && r.dotItems > 20
-      && r.reelItems === 7 && r.reels === '0003070' && r.frame === 20;
+      && r.reelItems === 7 && r.reels === '0003070' && r.frame === 21;
     if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (5 themes; locks ${r.saucerLock.steps.map(x => x[0]).join(',')} then three balls, from a saucer and a ramp; a jackpot of ${r.jackpot.got}; the upper flipper threw at ${(-r.upper.vy).toFixed(2)}; spinner ${r.spinner.score}, rollovers ${r.rolls.score}, captive ${r.captive.score}, magnet threw at ${r.magnet.thrown.toFixed(2)}, moving bank ${r.mbank.score}; the display '${r.words.join("', '")}', ${r.dotItems} dots lit, reels ${r.reels})`);
+  }
+  // PINBALL'S MISSIONS AND THE AIMING PLAYER (Oct 25: "whats next for pinball", then "5,1"): the saucer starts the board's next
+  // mission (on a table with none, the top lanes all lit), its events count to its award, the second won pays twice, time runs out,
+  // the ball's end ends it; recorded and read back, on the display and the clock's lamps; the steady player aiming makes more ramps
+  // than flipping where it happens to, and a recording starts before the game's first mission or multiball.
+  {
+    current = 'pinball missions';
+    const r = await page.evaluate(() => {
+      const D = window.FIELD_APPS.find(a => a.id === 'pinball')._debug, K = D.consts, out = {};
+      const tableWith = (from, lv, ok) => { for (let i = from; i < from + 2000; i++){ const T = D.makeTable(i, lv); if (ok(T)) return T; } return null; };
+      const run = (T, S, sec) => { for (let k = 0; k < sec / K.SUB; k++) D.sub(T, S, K.SUB); };
+      const kindOf = id => D.MIS.findIndex(m => m.id === id);
+      // started by the saucer
+      { const T = tableWith(50, 1, T => T.saucer && !T.lockBy), Q = T.saucer, S = D.newState(T, true); S.b = { x: Q.x, y: Q.y - 0.003, vx: 0, vy: 0.2, z: 0 }; run(T, S, 0.02);
+        const M = S.mis; out.start = M ? { has: D.MIS[M.k].has(T), need: M.need === D.MIS[M.k].need[0], clock: Math.round(M.until - S.t) } : null;
+        // won: the second pays twice
+        const s0 = S.score; S.mis = { k: kindOf('ramps'), need: 2, got: 0, until: S.t + 30 }; D.ev(S, 'ramp'); const half = !!S.mis; D.ev(S, 'ramp');
+        const p1 = S.score - s0; S.mis = { k: kindOf('pops'), need: 1, got: 0, until: S.t + 30 }; D.ev(S, 'bumper'); const p2 = S.score - s0 - p1;
+        out.won = { half, p1, p2, msg: S.msg, award: D.MIS_AWARD };
+        // time up, and the ball's end
+        S.mis = { k: 0, need: 2, got: 0, until: S.t + 1 }; S.b = null; run(T, S, 1.2); out.lost = { gone: !S.mis, msg: S.msg };
+        S.mis = { k: 0, need: 2, got: 0, until: S.t + 10 }; D.endBall(S); out.ended = !S.mis; }
+      // started by the lanes on a table with no saucer
+      { const T = tableWith(50, 1, T => !T.saucer), S = D.newState(T, true); T.g = 0; S.lanes.fill(1); S.lanes[0] = 0; const L = T.lanes[0];
+        S.b = { x: L.x, y: L.y + 0.03, vx: 0, vy: -0.8, z: 0 }; run(T, S, 0.06); T.g = T.D.g; out.lanes = !!S.mis; }
+      // recorded and read back; on the display and the clock's lamps (20 s of 28 left at level 2: four lit, the fifth blinking)
+      { const T = tableWith(50, 2, T => T.era.id === 'dmd' || T.era.id === 'neon'), S = D.newState(T, true); D.toPlunger(S);
+        S.mis = { k: kindOf('pops'), need: 15, got: 3, until: S.t + 20 }; const fr = []; D.frameOf(T, S, fr);
+        const V = D.viewOf({ T, reel: Float32Array.from(fr), phase: 0 }, null); V.t = 0.5; V.bp = 400;
+        out.rec = { mis: V.mis, text: D.dispText(V), lamps: D.itemsOf(V).filter(i => i.kind === 'pbLamp' && i.color === 0xffa030 && Math.abs(i.v - 0.733) < 0.002).length }; }
+      // aiming: a ball on a flipper flown ahead goes up the table; the aiming player makes more ramps than one flipping where it happens to
+      { const T = tableWith(50, 2, T => T.ramps.some(x => x.kind === 'ramp')), f = T.fl[0], S = D.newState(T, true), c = Math.cos(f.rest), sn = Math.sin(f.rest);
+        const sh = D.shotNow(T, S, 0, { x: f.px + c * f.len * 0.5 + sn * (K.R + 0.01), y: f.py + sn * f.len * 0.5 - c * (K.R + 0.01), vx: 0.3, vy: 0.2 }); out.shot = sh && sh.a < 0;
+        const ramps = { aim: 0, free: 0 };
+        for (const mode of ['aim', 'free']) for (let i = 0; i < 16; i++){ const Ti = tableWith(300 + i * 23, 1 + i % 3, T => T.ramps.length > 0), Si = D.newState(Ti, false), B = D.botNew(i + 7);
+          if (mode === 'free') B.noAim = true; D.toPlunger(Si);
+          for (let k = 0; k < 60 / K.SUB; k++){ D.botStep(Ti, Si, B, K.SUB); if (D.sub(Ti, Si, K.SUB) === 'drain'){ D.endBall(Si); D.toPlunger(Si); }
+            for (const [e] of Si.ev) if (e === 'ramp' || e === 'orbit') ramps[mode]++; Si.ev.length = 0; } }
+        out.ramps = ramps; }
+      // a recording from before the game's first mission or multiball
+      { let F = null; for (let i = 0; i < 12 && !(F && F.recKind); i++){ const G = D.fitGen(40 + i * 7, 1); let x; do { x = G.next(); } while (!x.done); F = x.value; }
+        const Rc = F.reel, n = Rc.length / 21; let first = -1;
+        for (let k = 0; k < n && first < 0; k++) if (F.recKind === 2 ? Rc[k * 21 + 16] & 4 : Rc[k * 21 + 20]) first = k;
+        out.window = { kind: F.recKind, first, len: +(n / 30).toFixed(1) }; }
+      return out;
+    });
+    const ok = r.start && r.start.has && r.start.need && r.start.clock === 30 && r.won.half && r.won.p1 === r.won.award && r.won.p2 === 2 * r.won.award && r.won.msg === 11
+      && r.lost.gone && r.lost.msg === 12 && r.ended && r.lanes
+      && r.rec.mis && r.rec.mis.got === 3 && r.rec.mis.need === 15 && r.rec.mis.left === 20 && r.rec.text === '12 POPS 20' && (r.rec.lamps === 4 || r.rec.lamps === 5)
+      && r.shot && r.ramps.aim > r.ramps.free * 1.2
+      && r.window.kind > 0 && r.window.first > 0 && r.window.first <= 181 && r.window.len >= 15;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (started by the saucer with ${r.start && r.start.clock} s, won for ${r.won.p1} then ${r.won.p2}, time up, by the lanes; '${r.rec.text}' and ${r.rec.lamps} clock lamps; ramps and orbits aimed ${r.ramps.aim} against ${r.ramps.free}; a recording whose ${r.window.kind === 2 ? 'multiball' : 'mission'} starts ${(r.window.first / 30).toFixed(1)} s in)`);
   }
   // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the

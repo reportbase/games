@@ -437,7 +437,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       Wood rail and electro-mechanical tables turn seven number reels (`pbReel`: a ten-sided drum wearing the ten figures, `reelGeo`,
       `reelTex`; `reelsOf` turns each on toward its figure, forward only, 16 figures a second), behind a bezel with a window so only
       the figure on top shows, from `REEL_PX` 120 px.
-    - **Recordings** carry it all (`frameOf`, `REC_F` 20): the upper flipper, two more balls, the locks, multiball, the rollovers, the
+    - **Recordings** carry it all (`frameOf`, `REC_F` 20, 21 since the missions): the upper flipper, two more balls, the locks, multiball, the rollovers, the
       display's message and ball, the spinner, the captive ball and the score.
     - Refitted (`LIFE_BAND` 28+, 20–37, 14–27, 9–18, 4.5–12 s): measured on 16 tables a level, lives 39, 32, 24, 14 and 9 s; 18 to
       905 ms to make one. Over 40 tables and 90 s each the steady player locked 17 balls, set off 2 multiballs and took a jackpot.
@@ -445,6 +445,38 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       going, a jackpot in multiball and the next one 10,000 more, a drained ball giving way to another, the lock lit only after a
       shot at level 3, the upper flipper raised with its side and throwing a ball, the spinner, rollovers, captive ball, magnet and
       moving bank each scoring, the display's words and dots, the reels rolling to the score, and a recording's frame.
+  - **Missions, and a steady player who aims** (Oct 25: "whats next for pinball", then "5,1"):
+    - **Missions** (`MIS`, `misStart`, `misCount`): a ball caught in the saucer (on a table with none, the top lanes all lit) starts the
+      board's next mission, drawn from those its table can hold (`has`) by the board's number and how many it has started, never the
+      same twice running: ramps, orbits, the drop bank, spinner shots, the rollovers, the captive ball, pop bumper hits, the top lanes,
+      standups, the moving bank, the magnet. Each counts one event (`ev()` counts it before the sounds, so quiet games count too);
+      `need` (by level) before `MIS_T` (30, 28, 25, 22, 20 s) pays `MIS_AWARD` (25,000) + 10,000 a level, times one more for each won
+      this game (up to ×4), and 5 to the bonus; time up, nothing ('TIME UP'). It ends with the ball. Shown: the dot panel says what
+      is left and the seconds three seconds in four (`dispText`; the count dropped when the line is too long), six orange clock lamps
+      go out as the time runs down (all eras, painted rings at y 0.733), its targets blink, the title and a notice say it. Recorded as
+      the 21st number (`misCode`, `misRead`). The moving bank's hits are their own event now (`mbank`).
+    - **Aiming** (`shotNow`, `offOf`, `wantOf`, `clearTo`): as a ball comes down a lower flipper the player flies the flipper alone
+      ahead from the ball as it is, each step, and flips the first moment the shot heads within `AIM_TOL` (0.05 rad, plus an angle its
+      hands are off by this time, `AIM_SD`) of what it wants most that it can see straight (`clearTo`: nothing standing in the way,
+      kept by place): in multiball a jackpot ramp, a lit lock, the mission's targets or the saucer to start one, any ramp or orbit; a
+      want lower down only while those above head more than `AIM_OK` off; else late (`AIM_LATE`). One approach in five (`AIM_FREE`)
+      it takes as it comes, still one in ten too late. A table's shots worked out in advance (the flipper alone, a ball rolling down
+      it) were tried first and barely helped: the balls come at the flipper every way. Over 40 tables × 90 s: ramps 110 against 58
+      flipping anywhere; an aimed flip's ball comes within 0.025 of what it aimed at 36% of the time.
+    - The saucer catches a ball under `SAUCER_IN` (3.4; 2.4 before): a shot from a flipper reaches it faster than 2.4. A ball come to
+      rest where no flipper reaches (on top of the right flipper's pivot) is shoved after `STILL_T` (1.5 s, `shove`, which a person's
+      nudge uses too): a game sat there until its time ran out.
+    - **Which 40 s are recorded** (`simGen`'s `REC_PRE`, `REC_MIN`, `recKind`): from 6 s before the game's first multiball, else its
+      first mission, else the start. Of 40 boards near the corner, 2 show a multiball, 19 a mission (7 won); multiball needs three
+      locks and comes mostly at the easy levels, where a game lasts (9 multiballs in 16 whole games on tables that have one).
+    - Refit unchanged: lives 39, 30, 18.5, 12.4 and 7.1 s by level, all in band; 20 to 1,570 ms to make a table. Par near the corner
+      is far higher (1.48 million on the smoke test's board, which plays five long balls; a level-1 board is 50k–400k).
+    - Found here: the number reels kept their figures in `holder.reel`, which on a board no one plays is that board's recording, and
+      wrote over its first frame; now `holder.reels`.
+    - The smoke test checks a mission started by the saucer at its level's clock, won for 25,000 then 50,000, time up, ended with the
+      ball, started by the lanes on a table with no saucer, recorded and read back ('12 POPS 20', the clock's lamps), a ball on a flipper
+      flown ahead going up the table, the aiming player making more ramps and orbits than one that does not (16 tables), and a
+      recording starting before its mission or multiball.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
