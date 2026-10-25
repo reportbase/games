@@ -51655,6 +51655,31 @@ const FLASH_APP = (() => {
     return readDeckText(text, name);
   }
   const isDeckFile = f => f && /\.(csv|tsv|txt)$/i.test(f.name || '');
+  /* ANY FILE, FROM THE DECK'S OWN PICKER (Oct 25: "json is disabled in flashcard application"): the field's Open has a list of the
+     types it takes (`accept`), and a phone's picker greys out every file whose type it cannot match to it, as the 3d studio found;
+     a .json saved on a phone is often typed as plain text or nothing, so it could not be chosen. Open a deck… has a picker of its
+     own that takes any file (`pickDecks`, no accept), and a file is read by what it holds, not by its name: text that starts as
+     JSON does ({ or [) is tried as a JSON deck, anything else as lines of cards. */
+  function deckOfAny(name, text){
+    const t = String(text).replace(/^\uFEFF/, '').trim();
+    if (/^[\[{]/.test(t)){ try { return deckOfJson(JSON.parse(t), name); } catch {} }
+    return readDeckText(t, name);
+  }
+  async function importAnyFiles(files){
+    const decks = [];
+    for (const f of Array.prototype.slice.call(files || [])){
+      try { const d = f.size < 8e6 ? deckOfAny(f.name, await f.text()) : null;
+            if (d) decks.push(d); else say(f.name + ' is not a deck: a flashcards .json, or a front and a back a line split by tabs or commas.', 4500); } catch {}
+    }
+    return addDecks(decks);
+  }
+  function pickDecks(){
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.multiple = true; inp.style.display = 'none';
+    inp.addEventListener('change', () => { importAnyFiles(inp.files); inp.remove(); });
+    document.body.appendChild(inp);
+    inp.click();
+  }
   async function importDeckFiles(files){
     const fs = Array.prototype.slice.call(files || []).filter(isDeckFile);
     if (!fs.length) return 0;
@@ -51887,7 +51912,7 @@ const FLASH_APP = (() => {
     ];
   }
 
-  const openPicker = () => { try { document.getElementById('importImageFile').click(); } catch {} };
+  const openPicker = () => { try { pickDecks(); } catch {} };
   const app = {
     name: 'flash cards',
     menu: [{ head: 'Flash cards', items: [
@@ -51944,8 +51969,8 @@ const FLASH_APP = (() => {
       card(sz * 0.45, sz * 0.4, '#3b82f6', -0.18); card(sz * 0.55, sz * 0.6, '#22c55e', 0.12);
       ctx.fillStyle = '#1d1b18'; ctx.font = 'bold ' + Math.round(sz * 0.16) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A?', sz * 0.55, sz * 0.62);
     },
-    importDeckFiles, deckOfText, addDecks, isDeckFile,
-    _debug: { readDeckText, deckOfJson, deckOfText, addDecks, importDeckFiles, cid, hasDeck, splitLine, saveDecks, DECKS, get DECK(){ return DECK; }, set DECK(v){ DECK = v; }, deck, cardOf, boardIdx, after, grade, stateOf, counts, nextDue, nextAt, boardFor,
+    importDeckFiles, deckOfText, addDecks, isDeckFile, importAnyFiles,
+    _debug: { readDeckText, deckOfJson, deckOfText, deckOfAny, importAnyFiles, pickDecks, addDecks, importDeckFiles, cid, hasDeck, splitLine, saveDecks, DECKS, get DECK(){ return DECK; }, set DECK(v){ DECK = v; }, deck, cardOf, boardIdx, after, grade, stateOf, counts, nextDue, nextAt, boardFor,
               intervals, span, SRS, TURNED, viewOf, photoKey, SPECS, paint, turn, gradeHere, BTN_V, NEW_PER_DAY,
               setNow(f){ NOWFN = f || (() => Date.now()); }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; } },
   };

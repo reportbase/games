@@ -650,7 +650,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     `flashcards.decks` (its key its name and a hash of its cards, `makeDeck`; at most `MAX_CARDS` 5,000 a deck) and comes back
     next time; the menu's Deck steps through them (`flashcards.deck`), Remove this deck takes one off with its progress. A
     card's progress is kept by its own id (`cid`, a hash of its front and back), so it follows the card when a file is edited.
-    With no deck every board is a card saying how to bring one (`fc:empty`), and the row's one tile opens the picker. `decks/` in
+    With no deck every board is a card saying how to bring one (`fc:empty`), and the row's one tile opens the picker.
+    **The deck's own picker takes any file** (Oct 25: "json is disabled in flashcard application"): a phone greys out every file
+    the field's Open (`#importImageFile`, its `accept` list) cannot match by type, and a .json saved on a phone is often typed as
+    text or nothing. Open a deck… and the row's tile open a picker of their own with no `accept` (`pickDecks`), and a file from
+    it is read by what it holds (`deckOfAny`: text starting `{` or `[` tried as a JSON deck, else lines of cards). `decks/` in
     the repo holds five deck files to start from (world and US state capitals, the elements, the times tables, Spanish words):
     open them, drop them or put them in a bucket; the page does not load them by itself.
   - **A card a board**: a board's card is `boardIdx` round the deck (`cardOf`), so the corner is card 1 and every card hangs on many
@@ -672,7 +676,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - A board no one studies turns its card over now and then (`FLIP_T` 9 s, `BACK_T` 3.2 s of it on its back), each board at its
     own phase; the framed board holds still.
   - The smoke test checks no deck till one is loaded, four decks opened through the real picker (decks/capitals.tsv, a CSV
-    with quotes, an Anki export with HTML, a JSON deck) and kept, a plain JSON still going to the JSON viewer, the cards by board, the steps (1m, 6m, 10m, 4d; then 1m, 15m, 1d, 4d), graduating, a known
+    with quotes, an Anki export with HTML, a JSON deck) and kept, a plain JSON still going to the JSON viewer, the deck picker taking any file (a JSON deck with no extension), the cards by board, the steps (1m, 6m, 10m, 4d; then 1m, 15m, 1d, 4d), graduating, a known
     card coming due first, its interval growing and Again putting it back with less ease, the nearest board holding a card, and
     real input: a real click turning the framed card, a real click on Good grading it and flying to the next card's board, the
     real Space and 3, the row's tiles, and a board no one studies turning over.

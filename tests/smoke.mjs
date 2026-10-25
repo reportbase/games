@@ -4366,6 +4366,18 @@ try {
     await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._json && G._json.label === 'data.json'; }, null, { timeout: 15000 }).catch(() => {});
     const toViewer = await page.evaluate(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return !!(G._json && G._json.label === 'data.json'); });
     if (!toViewer) bad.push('a JSON that is not a deck did not open in the JSON viewer');
+    // (Oct 25: "json is disabled in flashcard application": a phone greys out what the field's Open will not take.) The deck's own
+    // picker takes any file (no accept), and a file with no name to go by is read by what it holds: a JSON deck saved as a download.
+    const anyF = join(ddir, 'moons download');
+    await writeFile(anyF, JSON.stringify({ format: 'flashcards', name: 'Moons', cards: [['Earth', 'the Moon'], ['Mars', 'Phobos and Deimos']] }));
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'flashcards')));
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 10000 }).catch(() => null),
+      page.evaluate(() => { const A = window.getFieldApp(); A.menu[0].items.find(it => it.label === 'Open a deck…').on(); })]);
+    const pickerAccept = chooser ? await chooser.element().evaluate(el => el.accept) : null;
+    if (chooser) await chooser.setFiles(anyF);
+    await page.waitForFunction(() => window.FIELD_APPS.find(a => a.id === 'flashcards')._debug.DECKS.some(d => d.name === 'Moons'), null, { timeout: 10000 }).catch(() => {});
+    const moons = await page.evaluate(() => { const d = window.FIELD_APPS.find(a => a.id === 'flashcards')._debug.DECKS.find(d => d.name === 'Moons'); return d ? d.cards.length : 0; });
+    if (!chooser || pickerAccept !== '' || moons !== 2) bad.push('the deck picker: ' + JSON.stringify({ chooser: !!chooser, accept: pickerAccept, moons }));
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'flashcards')));
     await page.waitForTimeout(1200);
     const r = await page.evaluate(() => {
