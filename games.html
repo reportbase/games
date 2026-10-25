@@ -48522,10 +48522,30 @@ const PINBALL_APP = (() => {
   /* ─── A TABLE ─── segments {a, b, kind, e} and circles {x, y, r, kind, e}, the flippers, the sensors (lanes, the saucer),
      what can be lit; then a grid of cells, each with the segments and circles a ball in it could touch. `a` is the attempt
      (REMADE UNTIL IT FITS); `bare`, the cabinet alone, what a board shows until its table is made. */
-  function makeTable(idx, lv, a, bare){
+  // (a spec's era, theme and hue; its parts laid by makeTable's builders, in the order a board's own table lays them)
+  const r3 = v => Math.round(v * 1000) / 1000;
+  const ehOf = P => { const era = ERAS.find(e => e.id === P.era) || ERAS[0], theme = THEMES.find(t => t.id === P.theme) || THEMES[0]; return { era, theme, hue: theme.hue }; };
+  function layOut(B, P){
+    if (P.orbit) B.orbit(P.orbit);
+    for (const [s, x, y] of P.ramps) B.ramp(s, x, y);
+    if (P.upper) B.upper(P.upper[0], P.upper[1]);
+    if (P.magnet) B.magnet(P.magnet[0], P.magnet[1], P.magnet[2] || 0);
+    if (P.mbank) B.mbank(P.mbank[0], P.mbank[1], P.mbank[2] || 6);
+    if (P.captive) B.captive(P.captive[0], P.captive[1]);
+    if (P.spinner) B.spinner(P.spinner[0], P.spinner[1]);
+    if (P.rolls) B.rolls(P.rolls[0], P.rolls[1]);
+    if (P.gobble) B.gobble(P.gobble[0], P.gobble[1]);
+    for (const q of P.bumpers) B.bumper(q[0], q[1]);
+    if (!P.bank) B.bankNone(); else if (P.bank.side) B.bankSide(P.bank.side, P.bank.y0, P.bank.n); else B.bankMid(P.bank.x0, P.bank.y, P.bank.n);
+    for (const [y, s] of P.stands) B.stand(y, s);
+    if (P.saucer) B.saucer(P.saucer[0], P.saucer[1], P.saucer[2]);
+    for (const q of P.posts) B.post(q[0], q[1]);
+  }
+  function makeTable(idx, lv, a, bare, spec){
     a = a || 0;
-    const D = LV[lv - 1], Rn = rngOf((idx * 2654435761) ^ (lv * 977) ^ 0x51ab ^ Math.imul(a, 0x9e3779b9)), EH = eraOf(idx), ERA = EH.era;
-    const T = { idx, lv, a, D, g: D.g, era: ERA, theme: EH.theme, balls: ERA.balls, kick: D.kick * ERA.kick, bare: !!bare, segs: [], circs: [], lanes: [], drops: [], bumpers: [], stands: [], posts: [],
+    if (spec) lv = spec.lv;
+    const D = LV[lv - 1], Rn = rngOf((idx * 2654435761) ^ (lv * 977) ^ 0x51ab ^ Math.imul(a, 0x9e3779b9)), EH = spec ? ehOf(spec) : eraOf(idx), ERA = EH.era;
+    const T = { idx, lv, a, D, mine: !!spec, g: D.g, era: ERA, theme: EH.theme, balls: ERA.balls, kick: D.kick * ERA.kick, bare: !!bare, segs: [], circs: [], lanes: [], drops: [], bumpers: [], stands: [], posts: [],
                 saucer: null, gobble: null, ramps: [], hue: EH.hue, spinner: null, rolls: null, captive: null, magnet: null, mbank: null, lockBy: null, lockNeed: LOCK_NEED[lv - 1] };
     const seg = (ax, ay, bx, by, kind, x) => { const s = { a: [ax, ay], b: [bx, by], kind, e: E[kind], ...(x || {}) };
       s.ex = bx - ax; s.ey = by - ay; s.l2 = s.ex * s.ex + s.ey * s.ey || 1e-12; T.segs.push(s); return s; };
@@ -48564,9 +48584,11 @@ const PINBALL_APP = (() => {
     for (let k = 0; k <= nl; k++){ const x = lc + (k - nl / 2) * 0.062; seg(x, 0.075, x, 0.13, 'rubber'); circ(x, 0.13, 0.005, 'post'); }
     for (let k = 0; k < nl; k++) T.lanes.push({ x: lc + (k + 0.5 - nl / 2) * 0.062, y: 0.104, r: 0.016 });
     if (bare) return gridUp(T);
-    // what stands in the playfield, kept apart so the ball can pass between (occ: circles already taken)
-    const occ = [];
-    const free = (x, y, r, gap) => x - r > 0.035 && x + r < PW - 0.03 && occ.every(o => Math.hypot(o[0] - x, o[1] - y) >= o[2] + r + (gap == null ? 2.4 * R : gap));
+    /* THE PLAYFIELD'S PARTS (Oct 25, A TABLE OF YOUR OWN below): each is laid by a builder of its own (`B`), which also writes it into
+       the table's plain spec (`T.spec`), the form the table editor holds and a board of yours is kept as. A board's own table still
+       chooses its parts by its seed, the same draws in the same order, so every board keeps the table it had; a spec lays its own. */
+    const P = T.spec = { v: 1, era: ERA.id, theme: EH.theme.id, lv, orbit: 0, ramps: [], upper: null, magnet: null, mbank: null, captive: null, spinner: null,
+                         rolls: null, gobble: null, bumpers: [], bank: null, stands: [], saucer: null, posts: [] };
     // a mouth: posts at its two ends and a short guide back from each along its way in (d); what a ramp or orbit is entered by
     const mouth = (mx0, my0, dx, dy, hw) => {
       const px = -dy, py = dx, M = { x: mx0, y: my0, dx, dy, hw };
@@ -48574,124 +48596,158 @@ const PINBALL_APP = (() => {
         circ(ex, ey, 0.006, 'post'); seg(ex, ey, ex + dx * 0.03, ey + dy * 0.03, 'wall', { guide: 1, mouth: 1 }); }
       return M;
     };
-    // the orbit (eras that have one): a mouth low on each side, the way between them round the arch, inside the cabinet's wall
-    if (Rn() < ERA.orbit){
-      const my0 = 0.4 + Rn() * 0.06, ox = 0.042, rr = AR - 0.04, pts = [[ox, my0], [ox, AR]];
-      for (let i = 1; i < 16; i++){ const t = Math.PI + Math.PI * i / 16, x = W / 2 + rr * Math.cos(t), y = AR + rr * Math.sin(t); if (x < PW - ox) pts.push([x, y]); }
-      const rx = PW - ox, ry = AR - Math.sqrt(Math.max(0, rr * rr - (rx - W / 2) ** 2)); pts.push([rx, ry], [rx, my0]);
-      const P = pathOf(spline(pts, 3)), Pr = pathOf(P.pts.slice().reverse());
-      T.ramps.push({ kind: 'orbit', M: mouth(ox, my0, 0, -1, 0.026), P, zmax: 0, exit: { x: rx, y: my0 + 0.02, vx: 0, vy: 1 } });
-      T.ramps.push({ kind: 'orbit', M: mouth(rx, my0, 0, -1, 0.026), P: Pr, zmax: 0, exit: { x: ox, y: my0 + 0.02, vx: 0, vy: 1 } });
-      for (const x of [ox, rx]) for (let y = AR - 0.02; y <= my0 + 0.03; y += 0.03) occ.push([x, y, 0.035]);
-      T.orbit = 1;
-    }
-    // ramps (eras that have them): a mouth in the middle of the table facing the far flipper, up the table and round to the
-    // inlane on its own side, `zmax` high (higher farther out: a harder shot to make)
-    const nr = Math.floor(ERA.ramps) + (Rn() < ERA.ramps % 1 ? 1 : 0), sides = nr >= 2 ? [-1, 1] : nr ? [Rn() < 0.5 ? -1 : 1] : [];
-    for (const s of sides){
-      for (let tries = 0; tries < 40; tries++){
-        const x = s < 0 ? 0.1 + Rn() * (XC - 0.14) : XC + 0.04 + Rn() * (XC - 0.14), y = 0.4 + Rn() * 0.16;
+    const TW = 0.026;
+    const B = {
+      // the orbit: a mouth low on each side, the way between them round the arch, inside the cabinet's wall
+      orbit(my0){
+        const ox = 0.042, rr = AR - 0.04, pts = [[ox, my0], [ox, AR]];
+        for (let i = 1; i < 16; i++){ const t = Math.PI + Math.PI * i / 16, x = W / 2 + rr * Math.cos(t), y = AR + rr * Math.sin(t); if (x < PW - ox) pts.push([x, y]); }
+        const rx = PW - ox, ry = AR - Math.sqrt(Math.max(0, rr * rr - (rx - W / 2) ** 2)); pts.push([rx, ry], [rx, my0]);
+        const Pa = pathOf(spline(pts, 3)), Pr = pathOf(Pa.pts.slice().reverse());
+        T.ramps.push({ kind: 'orbit', M: mouth(ox, my0, 0, -1, 0.026), P: Pa, zmax: 0, exit: { x: rx, y: my0 + 0.02, vx: 0, vy: 1 } });
+        T.ramps.push({ kind: 'orbit', M: mouth(rx, my0, 0, -1, 0.026), P: Pr, zmax: 0, exit: { x: ox, y: my0 + 0.02, vx: 0, vy: 1 } });
+        T.orbit = 1; P.orbit = r3(my0);
+      },
+      // a ramp: its mouth facing the far flipper, up the table and round to the inlane on its own side, `zmax` high
+      ramp(s, x, y){
         const F = T.fl[s < 0 ? 1 : 0], dl = Math.hypot(x - F.px, y - F.py), dx = (x - F.px) / dl, dy = (y - F.py) / dl;
-        if (!free(x, y, 0.045) || !free(x + dx * 0.04, y + dy * 0.04, 0.035)) continue;
         const IN = T.inl[s < 0 ? 0 : 1], sx = IN.x;
         const pts = [[x, y], [x + dx * 0.07, y + dy * 0.07], [x * 0.55 + sx * 0.45, 0.17], [sx, 0.29], [sx, IN.y - 0.25], [sx, IN.y - 0.16]];
-        const P = pathOf(spline(pts, 8));
-        T.ramps.push({ kind: 'ramp', side: s, M: mouth(x, y, dx, dy, 0.027), P, zmax: 0.05 + 0.006 * lv, exit: { x: sx, y: IN.y - 0.16, vx: 0, vy: 0.8 } });
-        occ.push([x, y, 0.045], [x + dx * 0.04, y + dy * 0.04, 0.035]);
-        break;
+        T.ramps.push({ kind: 'ramp', side: s, M: mouth(x, y, dx, dy, 0.027), P: pathOf(spline(pts, 8)), zmax: 0.05 + 0.006 * lv, exit: { x: sx, y: IN.y - 0.16, vx: 0, vy: 0.8 } });
+        P.ramps.push([s, r3(x), r3(y)]);
+      },
+      // the upper flipper: on a side wall partway up, worked by that side's button
+      upper(s, y){
+        const px = s < 0 ? 0.026 : PW - 0.026;
+        T.fl.push({ px, py: y, len: UF_LEN, r0: FR0 * 0.85, r1: FR1 * 0.85, rest: s < 0 ? REST + 0.15 : Math.PI - REST - 0.15, up: s < 0 ? UP : Math.PI - UP, side: s < 0 ? 0 : 1, upper: 1 });
+        P.upper = [s, r3(y)];
+      },
+      magnet(x, y, ph){ T.magnet = { x, y, r: 0.045, ph }; P.magnet = [r3(x), r3(y), r3(ph)]; },
+      mbank(xc, y, per){ T.mbank = { xc, y, A: 0.05, P: per, n: 3, w: 0.024, gap: 0.006 }; P.mbank = [r3(xc), r3(y), r3(per)]; },
+      // a captive ball: a ball in a short channel, closed at its top, two posts at its foot closer than a ball
+      captive(x, y1){
+        const y0 = y1 - 0.085, hw = R + 0.003, po = 0.8 * R + 0.004;
+        seg(x - hw, y0, x - hw, y1, 'wall', { guide: 1, cap: 1 }); seg(x + hw, y0, x + hw, y1, 'wall', { guide: 1, cap: 1 }); seg(x - hw, y0, x + hw, y0, 'wall', { cap: 1 });
+        circ(x - po, y1, 0.004, 'post'); circ(x + po, y1, 0.004, 'post');
+        T.captive = { x, y0, y1, rest: y1 - Math.sqrt((R + 0.004) ** 2 - po * po) }; P.captive = [r3(x), r3(y1)];
+      },
+      spinner(x, y){ T.spinner = { x, y, hw: 0.022 }; P.spinner = [r3(x), r3(y)]; },
+      rolls(x, y){ T.rolls = [-1, 0, 1].map(k => [x + k * 0.034, y]); P.rolls = [r3(x), r3(y)]; },
+      gobble(x, y){ T.gobble = { x, y, r: 0.017 }; P.gobble = [r3(x), r3(y)]; },
+      bumper(x, y){ T.bumpers.push(circ(x, y, 0.026, 'bumper', { i: T.bumpers.length })); P.bumpers.push([r3(x), r3(y)]); },
+      // a bank of drop targets along a side wall, or across the middle
+      bankSide(side, y0, nd){
+        const x = side < 0 ? 0.013 : PW - 0.013;
+        for (let k = 0; k < nd; k++){ const ya = y0 + k * (TW + 0.004); T.drops.push(seg(x, ya, x, ya + TW, 'drop', { i: k, nx: -side })); }
+        T.bank = { side, x, y0, y1: y0 + nd * (TW + 0.004) }; P.bank = { side, y0: r3(y0), n: nd };
+      },
+      bankMid(x0, y, nd){
+        const span = nd * (TW + 0.004);
+        for (let k = 0; k < nd; k++){ const xa = x0 + k * (TW + 0.004); T.drops.push(seg(xa, y, xa + TW, y, 'drop', { i: k })); }
+        T.bank = { mid: 1, x0, x1: x0 + span, y }; P.bank = { x0: r3(x0), y: r3(y), n: nd };
+      },
+      bankNone(){ T.bank = { mid: 1, none: 1 }; P.bank = null; },
+      stand(y, s){ const x = s < 0 ? 0.012 : PW - 0.012; T.stands.push(seg(x, y, x, y + 0.024, 'stand', { i: T.stands.length })); P.stands.push([r3(y), s]); },
+      saucer(x, y, tx){ const ty = 0.66, a = Math.atan2(ty - y, tx - x); T.saucer = { x, y, r: 0.016, kick: [Math.cos(a), Math.sin(a)] }; P.saucer = [r3(x), r3(y), r3(tx)]; },
+      post(x, y){ T.posts.push(circ(x, y, 0.009, 'post', { loose: 1 })); P.posts.push([r3(x), r3(y)]); },
+    };
+    if (spec) layOut(B, spec);
+    else {
+      // what stands in the playfield, kept apart so the ball can pass between (occ: circles already taken)
+      const occ = [];
+      const free = (x, y, r, gap) => x - r > 0.035 && x + r < PW - 0.03 && occ.every(o => Math.hypot(o[0] - x, o[1] - y) >= o[2] + r + (gap == null ? 2.4 * R : gap));
+      if (Rn() < ERA.orbit){
+        const my0 = 0.4 + Rn() * 0.06; B.orbit(my0);
+        for (const x of [0.042, PW - 0.042]) for (let y = AR - 0.02; y <= my0 + 0.03; y += 0.03) occ.push([x, y, 0.035]);
+      }
+      const nr = Math.floor(ERA.ramps) + (Rn() < ERA.ramps % 1 ? 1 : 0), sides = nr >= 2 ? [-1, 1] : nr ? [Rn() < 0.5 ? -1 : 1] : [];
+      for (const s of sides){
+        for (let tries = 0; tries < 40; tries++){
+          const x = s < 0 ? 0.1 + Rn() * (XC - 0.14) : XC + 0.04 + Rn() * (XC - 0.14), y = 0.4 + Rn() * 0.16;
+          const F = T.fl[s < 0 ? 1 : 0], dl = Math.hypot(x - F.px, y - F.py), dx = (x - F.px) / dl, dy = (y - F.py) / dl;
+          if (!free(x, y, 0.045) || !free(x + dx * 0.04, y + dy * 0.04, 0.035)) continue;
+          B.ramp(s, x, y); occ.push([x, y, 0.045], [x + dx * 0.04, y + dy * 0.04, 0.035]);
+          break;
+        }
+      }
+      if (Rn() < (ERA.upper || 0)){
+        const s = Rn() < 0.5 ? -1 : 1;
+        for (let tries = 0; tries < 20; tries++){
+          const y = 0.5 + Rn() * 0.1, cx0 = s < 0 ? 0.062 : PW - 0.062;
+          if (!occ.every(o => Math.hypot(o[0] - cx0, o[1] - y) >= o[2] + 0.05)) continue;
+          B.upper(s, y); occ.push([cx0, y, 0.05]); break;
+        }
+      }
+      if (Rn() < (ERA.magnet || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.09 + Rn() * (PW - 0.18), y = 0.3 + Rn() * 0.28;
+        if (!free(x, y, 0.045)) continue; B.magnet(x, y, Rn() * MAG_CYCLE); occ.push([x, y, 0.045]); break; }
+      if (Rn() < (ERA.mbank || 0)) for (let tries = 0; tries < 60; tries++){ const A = 0.05, xc = XC + (Rn() - 0.5) * 0.1, y = 0.27 + Rn() * 0.33;
+        const pts = []; for (let x = xc - A - 0.045; x <= xc + A + 0.045; x += 0.015) pts.push([x, y, 0.016]);
+        if (!pts.every(q => q[0] > 0.04 && q[0] < PW - 0.04 && occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + 2.4 * R))) continue;
+        B.mbank(xc, y, 5 + Rn() * 2); occ.push(...pts); break; }
+      if (Rn() < (ERA.captive || 0)) for (let tries = 0; tries < 40; tries++){
+        const x = 0.08 + Rn() * (PW - 0.16), y1 = 0.3 + Rn() * 0.22;
+        if (!free(x, y1 - 0.04, 0.055)) continue;
+        B.captive(x, y1); occ.push([x, y1 - 0.04, 0.055]); break;
+      }
+      if (Rn() < (ERA.spinner || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.07 + Rn() * (PW - 0.14), y = 0.34 + Rn() * 0.24;
+        if (!free(x, y, 0.03)) continue; B.spinner(x, y); occ.push([x, y, 0.03]); break; }
+      if (Rn() < (ERA.rolls || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.1 + Rn() * (PW - 0.2), y = 0.55 + Rn() * 0.1, pts = [-1, 0, 1].map(k => [x + k * 0.034, y]);
+        if (!pts.every(q => free(q[0], q[1], 0.014, 0.004))) continue; B.rolls(x, y); pts.forEach(q => occ.push([q[0], q[1], 0.014])); break; }
+      if (ERA.gobble) for (let tries = 0; tries < 60; tries++){ const x = 0.1 + Rn() * (PW - 0.2), y = 0.44 + Rn() * 0.16;
+        if (!free(x, y, 0.03)) continue; B.gobble(x, y); occ.push([x, y, 0.03]); break; }
+      // pop bumpers, in a cluster under the lanes (wood rail's passive, with a fifth of their kick the table's own)
+      const cx = XC + (Rn() - 0.5) * 0.12, cy = 0.27 + Rn() * 0.05, BR = 0.026, nb = Math.max(2, D.bump + ERA.bump);
+      for (let n = 0, tries = 0; n < nb && tries < 400; tries++){
+        const a = Rn() * Math.PI * 2, d = Rn() * 0.095, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d * 0.9;
+        if (y < 0.19 || !free(x, y, BR)) continue;
+        B.bumper(x, y); occ.push([x, y, BR]); n++;
+      }
+      // a bank of drop targets (eras that have them): along a side wall, or across the middle (the middle with an orbit, whose
+      // lanes run along the walls)
+      const nd = ERA.drops ? D.drops : 0, side = Rn() < 0.5 ? -1 : 1;
+      if (!nd) B.bankNone();
+      else if (Rn() < 0.55 && !T.orbit && (() => {
+        // (along the side wall, clear of what is there: the upper flipper)
+        const x = side < 0 ? 0.013 : PW - 0.013;
+        for (let tries = 0; tries < 12; tries++){ const y0 = 0.36 + Rn() * 0.08, pts = [];
+          for (let k = 0; k <= nd; k++) pts.push([x, y0 + k * (TW + 0.004), 0.02]);
+          if (!pts.every(q => occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + R))) continue;
+          B.bankSide(side, y0, nd); occ.push(...pts); return true;
+        }
+        return false; })()){
+      } else {
+        // (across the middle, where it keeps clear of the ramps' mouths; else none)
+        const span = nd * (TW + 0.004); B.bankNone();
+        for (let tries = 0; tries < 30; tries++){
+          const y = 0.47 + Rn() * 0.08, x0 = XC - span / 2 + (Rn() - 0.5) * 0.1, pts = [];
+          for (let k = 0; k <= nd * 2; k++) pts.push([x0 + k * span / (nd * 2), y, 0.016]);
+          if (!pts.every(q => occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + 2 * R))) continue;
+          B.bankMid(x0, y, nd); occ.push(...pts); break;
+        }
+      }
+      // standup targets: on the other wall (or both, with the bank in the middle)
+      for (const s of T.bank.mid ? [-1, 1] : [-side]){
+        const x = s < 0 ? 0.012 : PW - 0.012, y = 0.3 + Rn() * 0.2;
+        if (!occ.every(o => Math.hypot(o[0] - x, o[1] - y) > o[2] + 0.04)) continue;
+        B.stand(y, s); occ.push([x, y + 0.012, 0.02]);
+      }
+      // a saucer, most tables
+      if (Rn() < ERA.saucer) for (let tries = 0; tries < 60; tries++){
+        const x = 0.08 + Rn() * (PW - 0.16), y = 0.2 + Rn() * 0.36;
+        if (!free(x, y, 0.03)) continue;
+        B.saucer(x, y, XC + (Rn() - 0.5) * 0.18); occ.push([x, y, 0.03]); break;
+      }
+      // rubber posts
+      for (let n = 0, tries = 0; n < D.posts + ERA.posts && tries < 200; tries++){
+        const x = 0.06 + Rn() * (PW - 0.12), y = 0.2 + Rn() * 0.4, r = 0.009;
+        if (!free(x, y, r, 3 * R)) continue;
+        B.post(x, y); occ.push([x, y, r]); n++;
       }
     }
     // the ramps drawn: a piece every RAMP_STEP along each, with its height (kept on the table, so a frame only lays them)
     for (const Rp of T.ramps) if (Rp.kind === 'ramp'){ Rp.draw = [];
-      for (let s = 0; s < Rp.P.L - 1e-6; s += RAMP_STEP){ const e = Math.min(Rp.P.L, s + RAMP_STEP), A = pathAt(Rp.P, s), B = pathAt(Rp.P, e);
-        Rp.draw.push({ ax: A.x, ay: A.y, bx: B.x, by: B.y, z: (rampZ(Rp, s) + rampZ(Rp, e)) / 2 }); } }
-    // the upper flipper: on a side wall partway up, worked by that side's button (a ball coming down the wall goes back up)
-    if (Rn() < (ERA.upper || 0)){
-      const s = Rn() < 0.5 ? -1 : 1;
-      for (let tries = 0; tries < 20; tries++){
-        const y = 0.5 + Rn() * 0.1, px = s < 0 ? 0.026 : PW - 0.026, cx0 = s < 0 ? 0.062 : PW - 0.062;
-        if (!occ.every(o => Math.hypot(o[0] - cx0, o[1] - y) >= o[2] + 0.05)) continue;
-        T.fl.push({ px, py: y, len: UF_LEN, r0: FR0 * 0.85, r1: FR1 * 0.85, rest: s < 0 ? REST + 0.15 : Math.PI - REST - 0.15, up: s < 0 ? UP : Math.PI - UP, side: s < 0 ? 0 : 1, upper: 1 });
-        occ.push([cx0, y, 0.05]); break;
-      }
-    }
-    // a magnet (modern): a disc that, while on, pulls a ball in, holds it and throws it
-    if (Rn() < (ERA.magnet || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.09 + Rn() * (PW - 0.18), y = 0.3 + Rn() * 0.28;
-      if (!free(x, y, 0.045)) continue; T.magnet = { x, y, r: 0.045, ph: Rn() * MAG_CYCLE }; occ.push([x, y, 0.045]); break; }
-    // a moving bank of three targets (modern), sliding to and fro across the table; kept clear along all its travel
-    if (Rn() < (ERA.mbank || 0)) for (let tries = 0; tries < 60; tries++){ const A = 0.05, xc = XC + (Rn() - 0.5) * 0.1, y = 0.27 + Rn() * 0.33;
-      const pts = []; for (let x = xc - A - 0.045; x <= xc + A + 0.045; x += 0.015) pts.push([x, y, 0.016]);
-      if (!pts.every(q => q[0] > 0.04 && q[0] < PW - 0.04 && occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + 2.4 * R))) continue;
-      T.mbank = { xc, y, A, P: 5 + Rn() * 2, n: 3, w: 0.024, gap: 0.006 }; occ.push(...pts); break; }
-    // a captive ball (electro-mechanical, some dot-matrix): a ball in a short channel, closed at its top, two posts at its foot
-    // closer than a ball, so the ball in play knocks it up the channel without getting in
-    if (Rn() < (ERA.captive || 0)) for (let tries = 0; tries < 40; tries++){
-      const x = 0.08 + Rn() * (PW - 0.16), y1 = 0.3 + Rn() * 0.22, y0 = y1 - 0.085, hw = R + 0.003, po = 0.8 * R + 0.004;
-      if (!free(x, y1 - 0.04, 0.055)) continue;
-      seg(x - hw, y0, x - hw, y1, 'wall', { guide: 1, cap: 1 }); seg(x + hw, y0, x + hw, y1, 'wall', { guide: 1, cap: 1 }); seg(x - hw, y0, x + hw, y0, 'wall', { cap: 1 });
-      circ(x - po, y1, 0.004, 'post'); circ(x + po, y1, 0.004, 'post');
-      T.captive = { x, y0, y1, rest: y1 - Math.sqrt((R + 0.004) ** 2 - po * po) }; occ.push([x, y1 - 0.04, 0.055]); break;
-    }
-    // a spinner: a plate across the way that the ball spins going under it
-    if (Rn() < (ERA.spinner || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.07 + Rn() * (PW - 0.14), y = 0.34 + Rn() * 0.24;
-      if (!free(x, y, 0.03)) continue; T.spinner = { x, y, hw: 0.022 }; occ.push([x, y, 0.03]); break; }
-    // rollover buttons, three in a row
-    if (Rn() < (ERA.rolls || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.1 + Rn() * (PW - 0.2), y = 0.55 + Rn() * 0.1, pts = [-1, 0, 1].map(k => [x + k * 0.034, y]);
-      if (!pts.every(q => free(q[0], q[1], 0.014, 0.004))) continue; T.rolls = pts; pts.forEach(q => occ.push([q[0], q[1], 0.014])); break; }
-    // a gobble hole (wood rail)
-    if (ERA.gobble) for (let tries = 0; tries < 60; tries++){ const x = 0.1 + Rn() * (PW - 0.2), y = 0.44 + Rn() * 0.16;
-      if (!free(x, y, 0.03)) continue; T.gobble = { x, y, r: 0.017 }; occ.push([x, y, 0.03]); break; }
-    // pop bumpers, in a cluster under the lanes (wood rail's passive, with a fifth of their kick the table's own)
-    const cx = XC + (Rn() - 0.5) * 0.12, cy = 0.27 + Rn() * 0.05, BR = 0.026, nb = Math.max(2, D.bump + ERA.bump);
-    for (let n = 0, tries = 0; n < nb && tries < 400; tries++){
-      const a = Rn() * Math.PI * 2, d = Rn() * 0.095, x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d * 0.9;
-      if (y < 0.19 || !free(x, y, BR)) continue;
-      T.bumpers.push(circ(x, y, BR, 'bumper', { i: T.bumpers.length })); occ.push([x, y, BR]); n++;
-    }
-    // a bank of drop targets (eras that have them): along a side wall, or across the middle (the middle with an orbit, whose
-    // lanes run along the walls)
-    const nd = ERA.drops ? D.drops : 0, TW = 0.026, side = Rn() < 0.5 ? -1 : 1;
-    if (!nd){ T.bank = { mid: 1, none: 1 }; }
-    else if (Rn() < 0.55 && !T.orbit && (() => {
-      // (along the side wall, clear of what is there: the upper flipper)
-      const x = side < 0 ? 0.013 : PW - 0.013;
-      for (let tries = 0; tries < 12; tries++){ const y0 = 0.36 + Rn() * 0.08, pts = [];
-        for (let k = 0; k <= nd; k++) pts.push([x, y0 + k * (TW + 0.004), 0.02]);
-        if (!pts.every(q => occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + R))) continue;
-        for (let k = 0; k < nd; k++){ const ya = y0 + k * (TW + 0.004); T.drops.push(seg(x, ya, x, ya + TW, 'drop', { i: k, nx: -side })); }
-        T.bank = { side, x, y0, y1: y0 + nd * (TW + 0.004) }; occ.push(...pts); return true;
-      }
-      return false; })()){
-    } else {
-      // (across the middle, where it keeps clear of the ramps' mouths; else none)
-      const span = nd * (TW + 0.004); T.bank = { mid: 1, none: 1 };
-      for (let tries = 0; tries < 30; tries++){
-        const y = 0.47 + Rn() * 0.08, x0 = XC - span / 2 + (Rn() - 0.5) * 0.1, pts = [];
-        for (let k = 0; k <= nd * 2; k++) pts.push([x0 + k * span / (nd * 2), y, 0.016]);
-        if (!pts.every(q => occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + 2 * R))) continue;
-        for (let k = 0; k < nd; k++){ const xa = x0 + k * (TW + 0.004); T.drops.push(seg(xa, y, xa + TW, y, 'drop', { i: k })); }
-        T.bank = { mid: 1, x0, x1: x0 + span, y }; occ.push(...pts); break;
-      }
-    }
-    // standup targets: on the other wall (or both, with the bank in the middle)
-    for (const s of T.bank.mid ? [-1, 1] : [-side]){
-      const x = s < 0 ? 0.012 : PW - 0.012, y = 0.3 + Rn() * 0.2;
-      if (!occ.every(o => Math.hypot(o[0] - x, o[1] - y) > o[2] + 0.04)) continue;
-      T.stands.push(seg(x, y, x, y + 0.024, 'stand', { i: T.stands.length })); occ.push([x, y + 0.012, 0.02]);
-    }
-    // a saucer, most tables
-    if (Rn() < ERA.saucer) for (let tries = 0; tries < 60; tries++){
-      const x = 0.08 + Rn() * (PW - 0.16), y = 0.2 + Rn() * 0.36;
-      if (!free(x, y, 0.03)) continue;
-      const tx = XC + (Rn() - 0.5) * 0.18, ty = 0.66, a = Math.atan2(ty - y, tx - x);
-      T.saucer = { x, y, r: 0.016, kick: [Math.cos(a), Math.sin(a)] }; occ.push([x, y, 0.03]); break;
-    }
-    // rubber posts
-    for (let n = 0, tries = 0; n < D.posts + ERA.posts && tries < 200; tries++){
-      const x = 0.06 + Rn() * (PW - 0.12), y = 0.2 + Rn() * 0.4, r = 0.009;
-      if (!free(x, y, r, 3 * R)) continue;
-      T.posts.push(circ(x, y, r, 'post', { loose: 1 })); occ.push([x, y, r]); n++;
-    }
+      for (let s = 0; s < Rp.P.L - 1e-6; s += RAMP_STEP){ const e = Math.min(Rp.P.L, s + RAMP_STEP), A = pathAt(Rp.P, s), Bq = pathAt(Rp.P, e);
+        Rp.draw.push({ ax: A.x, ay: A.y, bx: Bq.x, by: Bq.y, z: (rampZ(Rp, s) + rampZ(Rp, e)) / 2 }); } }
     // multiball: locked in the saucer, else in a ramp
     if (ERA.multi) T.lockBy = T.saucer ? 'saucer' : T.ramps.some(x => x.kind === 'ramp') ? 'ramp' : null;
     return gridUp(T);
@@ -49169,6 +49225,7 @@ const PINBALL_APP = (() => {
   /* A board's table: its bare cabinet at once, the table itself made and fitted a little at a time (its job), kept for CAP boards. */
   const TABLES = new Map(), CAP = 1500;
   function tableFor(c, r){
+    if (MINE.has(gkey(c, r))) return mineTable(c, r);      // (a table of your own: A TABLE OF YOUR OWN)
     const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
     let M = TABLES.get(key);
     if (M){ TABLES.delete(key); TABLES.set(key, M); return M; }
@@ -49204,7 +49261,7 @@ const PINBALL_APP = (() => {
   let LIVE = null;
   const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('pinball.best') || '{}'))); } catch { return new Map(); } })();
   const saveBest = () => { try { localStorage.setItem('pinball.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
-  const bestKey = M => M.idx + '@' + M.lv;
+  const bestKey = M => M.mine ? 'm' + M.hash : M.idx + '@' + M.lv;
   function fresh(c, r){ const M = readyNow(tableFor(c, r)); return { M, c, r, S: newState(M.T), balls: M.T.balls, ball: 1, state: 'ready', wait: 0, last: 0, overAt: 0 }; }
   function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
   const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
@@ -49343,6 +49400,7 @@ const PINBALL_APP = (() => {
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.code === 'ShiftLeft' ? 'L' : e.code === 'ShiftRight' ? 'R' : KEY(e.key); if (!k) return;
+    if (ED.on) return;                                    // (while a table is made the keys start nothing)
     const g = liveGame(); if (!g) return;
     if (g.state !== 'play'){
       if (k === 'P' || k === 'L' || k === 'R'){ e.preventDefault(); e.stopPropagation(); if (!e.repeat && performance.now() - g.overAt > GRACE * 1000) begin(g); }
@@ -49401,9 +49459,9 @@ const PINBALL_APP = (() => {
   function palette(T){
     const h = T.hue, e = T.era.id;
     if (e === 'wood') return { base: hsl(0.11, 0.42, 0.8), mid: hsl(0.1, 0.45, 0.72), hi: hsl(h, 0.75, 0.48), art: hsl((h + 0.5) % 1, 0.6, 0.42), lamp: hsl((h + 0.1) % 1, 0.9, 0.6),
-                               rail: 0xb08d3e, guide: 0x9c7c3a, bBody: 0xeee2c4, bCap: hsl(h, 0.75, 0.48), post: 0xe9e6dc, loose: 0xb02a2a, ramp: 0, frame: 0x6b3f1d };
+                               rail: 0xb08d3e, guide: 0x9c7c3a, bBody: 0xeee2c4, bCap: hsl(h, 0.75, 0.48), post: 0xe9e6dc, loose: 0xb02a2a, ramp: 0xe6d6a8, frame: 0x6b3f1d };
     if (e === 'em') return { base: hsl(h, 0.7, 0.42), mid: hsl(h, 0.75, 0.52), hi: hsl((h + 0.5) % 1, 0.85, 0.55), art: hsl((h + 0.25) % 1, 0.9, 0.55), lamp: hsl((h + 0.12) % 1, 0.95, 0.62),
-                             rail: RAIL, guide: 0xb8bcc4, bBody: 0xf4f4f0, bCap: hsl((h + 0.5) % 1, 0.85, 0.55), post: 0xe9e6dc, loose: 0xff5a5a, ramp: 0, frame: 0x101010 };
+                             rail: RAIL, guide: 0xb8bcc4, bBody: 0xf4f4f0, bCap: hsl((h + 0.5) % 1, 0.85, 0.55), post: 0xe9e6dc, loose: 0xff5a5a, ramp: hsl((h + 0.5) % 1, 0.7, 0.55), frame: 0x101010 };
     if (e === 'neon') return { base: hsl(0.66, 0.6, 0.07), mid: hsl(0.66, 0.55, 0.12), hi: hsl(h, 1, 0.6), art: hsl((h + 0.33) % 1, 1, 0.6), lamp: hsl((h + 0.15) % 1, 1, 0.65),
                                rail: 0x8aa0ff, guide: 0x6070b0, bBody: 0x1c1c2c, bCap: hsl(h, 1, 0.6), post: 0x30304a, loose: hsl((h + 0.33) % 1, 1, 0.55), ramp: 0xd8e0ff, frame: 0x05050a };
     return { base: hsl(h, 0.55, 0.22), mid: hsl(h, 0.6, 0.34), hi: hsl((h + 0.08) % 1, 0.75, 0.55), art: hsl((h + 0.5) % 1, 0.7, 0.5), lamp: hsl((h + 0.12) % 1, 0.95, 0.6),
@@ -49578,18 +49636,18 @@ const PINBALL_APP = (() => {
     c.strokeStyle = 'rgba(255,255,255,0.18)'; c.lineWidth = 0.003;
     for (const s of T.segs) if (s.guide){ c.beginPath(); c.moveTo(s.a[0], s.a[1]); c.lineTo(s.b[0], s.b[1]); c.stroke(); }
     if (e === 'wood'){ c.strokeStyle = css(P.frame); c.lineWidth = 0.02; c.strokeRect(0.01, 0.01, W - 0.02, 0.98); }
-    c.strokeStyle = css(LV_COL[T.lv - 1]); c.lineWidth = 0.008; c.strokeRect(0.004, 0.004, W - 0.008, 0.992);
+    c.strokeStyle = css(T.mine ? MINE_COL : LV_COL[T.lv - 1]); c.lineWidth = 0.008; c.strokeRect(0.004, 0.004, W - 0.008, 0.992);
     return cv;
   }
   function photoKey(c, r, bp){
-    const M = (LIVE && LIVE.c === c && LIVE.r === r) ? tableFor(c, r) : TABLES.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r)));
+    const M = ED.on && ED.key === gkey(c, r) ? ED.M : (LIVE && LIVE.c === c && LIVE.r === r) ? tableFor(c, r) : knownTable(c, r);
     if (!M) return null;
     const k = 'pb:' + M.key + ':' + (M.ready ? 'a' + M.T.a : 'b') + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
     if (!SPECS.has(k)){ SPECS.set(k, M.T); if (SPECS.size > 600) SPECS.delete(SPECS.keys().next().value); }
     return k;
   }
   function gridOf(c, r){
-    const M = TABLES.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r))), T = M ? M.T : null, n = 8, colors = [];
+    const M = ED.on && ED.key === gkey(c, r) ? ED.M : knownTable(c, r), T = M ? M.T : null, n = 8, colors = [];
     const P = T ? palette(T) : null;
     for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) colors.push(P ? (j < n * 0.4 ? P.mid : P.base) : hsl(0.62, 0.55, 0.34 - 0.18 * j / n));
     return { n, colors };
@@ -49761,6 +49819,256 @@ const PINBALL_APP = (() => {
     return g;
   }
 
+  /* ─── A TABLE OF YOUR OWN ─── (Oct 25: "whats next for pinball", then "1": "a table editor: the bottom row becomes an editor, as
+     Sokoban's, the tilt maze's and trick shots' are; place bumpers, ramps, the saucer, drop banks and toys on a board; the steady
+     player checks it and sets its par; share it as a link"). Opening the row (the dots, or the menu's Make a table for this board…)
+     takes the framed board's table into the editor as its plain spec (makeTable's builders write it), drawn as it is made. A tap
+     lays the tool in hand there (the same tool on a part of its kind takes it away; a part there can be only one of moves); a press
+     on a part drags it; parts keep a ball's width apart, inside the playfield (`partsOf`, `clashOf`). Acts: Era, Theme, Level (the
+     slope, flippers, outlanes, bumpers' kick and ball save of that level's boards), Clear, Check (the steady player's balls: how long
+     one lasts against that level's band), Play. Kept on the board (MINE, localStorage pinball.mine, the latest 300, read back
+     through `cleanSpec`), framed in violet, its recording and par the steady player's as for any board (`mineTable`). Escape or
+     Cancel leaves the board as it was; the menu has Share this board's table and Forget it. */
+  const MINE = new Map(), MINE_M = new Map(), MINE_KEEP = 300, MINE_COL = 0x8a4fd0;
+  const hashOf = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const Y0 = 0.15, Y1 = 0.71, XL = 0.03, XR = PW - 0.025;
+  const cl = (v, a, b) => Math.max(a, Math.min(b, +v || 0));
+  const num = v => isFinite(+v);
+  // a spec as written, made safe: known era and theme, a level, every number in the playfield, no more parts than a table can hold
+  function cleanSpec(d){
+    if (!d || typeof d !== 'object') return null;
+    const xy = q => Array.isArray(q) && num(q[0]) && num(q[1]) ? [r3(cl(q[0], XL, XR)), r3(cl(q[1], Y0, Y1))] : null;
+    const P = { v: 1, era: ERAS.some(e => e.id === d.era) ? d.era : 'em', theme: THEMES.some(t => t.id === d.theme) ? d.theme : 'space', lv: Math.round(cl(d.lv, 1, 5)) || 1,
+                orbit: d.orbit ? r3(cl(d.orbit, 0.38, 0.5)) : 0, ramps: [], upper: null, magnet: null, mbank: null, captive: null, spinner: null, rolls: null, gobble: null,
+                bumpers: [], bank: null, stands: [], saucer: null, posts: [] };
+    for (const q of Array.isArray(d.ramps) ? d.ramps.slice(0, 2) : []){ if (!Array.isArray(q)) continue; const s = q[0] < 0 ? -1 : 1, p = xy([q[1], q[2]]);
+      if (p && !P.ramps.some(x => x[0] === s)) P.ramps.push([s, p[0], r3(cl(p[1], 0.3, 0.6))]); }
+    if (Array.isArray(d.upper) && num(d.upper[1])) P.upper = [d.upper[0] < 0 ? -1 : 1, r3(cl(d.upper[1], 0.42, 0.66))];
+    if (Array.isArray(d.magnet) && xy(d.magnet)) P.magnet = [...xy(d.magnet), r3(cl(d.magnet[2], 0, MAG_CYCLE))];
+    if (Array.isArray(d.mbank) && xy(d.mbank)) P.mbank = [...xy(d.mbank), r3(cl(d.mbank[2] || 6, 4, 8))];
+    for (const k of ['captive', 'spinner', 'rolls', 'gobble']) if (xy(d[k])) P[k] = xy(d[k]);
+    P.bumpers = (Array.isArray(d.bumpers) ? d.bumpers : []).slice(0, 8).map(xy).filter(Boolean);
+    P.posts = (Array.isArray(d.posts) ? d.posts : []).slice(0, 10).map(xy).filter(Boolean);
+    P.stands = (Array.isArray(d.stands) ? d.stands : []).slice(0, 4).filter(q => Array.isArray(q) && num(q[0])).map(q => [r3(cl(q[0], Y0, Y1)), q[1] < 0 ? -1 : 1]);
+    const b = d.bank; if (b && typeof b === 'object'){ const n = Math.round(cl(b.n, 2, 5)) || 3;
+      if (b.side && num(b.y0)) P.bank = { side: b.side < 0 ? -1 : 1, y0: r3(cl(b.y0, Y0, Y1 - n * 0.03)), n };
+      else if (num(b.x0) && num(b.y)) P.bank = { x0: r3(cl(b.x0, XL, XR - n * 0.03)), y: r3(cl(b.y, Y0, Y1)), n }; }
+    if (Array.isArray(d.saucer) && xy(d.saucer)) P.saucer = [...xy(d.saucer), r3(cl(d.saucer[2] == null ? XC : d.saucer[2], 0.08, PW - 0.08))];
+    return P;
+  }
+  // the pieces each part takes up, as circles { k, i, x, y, r } (what makeTable keeps apart, by the same measures)
+  function partsOf(P){
+    const L = [], D = LV[P.lv - 1], gx = 0.098 + D.gap, wall = { stand: 1, upper: 1, orbit: 1, bankSide: 1 };
+    if (P.orbit) for (const x of [0.042, PW - 0.042]) for (let y = AR - 0.02; y <= P.orbit + 0.03; y += 0.03) L.push({ k: 'orbit', i: 0, x, y, r: 0.035 });
+    P.ramps.forEach(([s, x, y], i) => { const fx = s < 0 ? XC + gx : XC - gx, dl = Math.hypot(x - fx, y - FY), dx = (x - fx) / dl, dy = (y - FY) / dl;
+      L.push({ k: 'ramp', i, x, y, r: 0.045 }, { k: 'ramp', i, x: x + dx * 0.04, y: y + dy * 0.04, r: 0.035 }); });
+    if (P.upper) L.push({ k: 'upper', i: 0, x: P.upper[0] < 0 ? 0.062 : PW - 0.062, y: P.upper[1], r: 0.05 });
+    if (P.magnet) L.push({ k: 'magnet', i: 0, x: P.magnet[0], y: P.magnet[1], r: 0.045 });
+    if (P.mbank) for (let x = P.mbank[0] - 0.095; x <= P.mbank[0] + 0.095; x += 0.015) L.push({ k: 'mbank', i: 0, x, y: P.mbank[1], r: 0.016 });
+    if (P.captive) L.push({ k: 'captive', i: 0, x: P.captive[0], y: P.captive[1] - 0.04, r: 0.055 });
+    if (P.spinner) L.push({ k: 'spinner', i: 0, x: P.spinner[0], y: P.spinner[1], r: 0.03 });
+    if (P.rolls) for (const k of [-1, 0, 1]) L.push({ k: 'rolls', i: 0, x: P.rolls[0] + k * 0.034, y: P.rolls[1], r: 0.014 });
+    if (P.gobble) L.push({ k: 'gobble', i: 0, x: P.gobble[0], y: P.gobble[1], r: 0.03 });
+    P.bumpers.forEach((q, i) => L.push({ k: 'bumper', i, x: q[0], y: q[1], r: 0.026 }));
+    const b = P.bank;
+    if (b && b.side) for (let k = 0; k <= b.n; k++) L.push({ k: 'bank', i: 0, x: b.side < 0 ? 0.013 : PW - 0.013, y: b.y0 + k * 0.03, r: 0.02, wall: 1 });
+    else if (b) for (let k = 0; k <= b.n * 2; k++) L.push({ k: 'bank', i: 0, x: b.x0 + k * b.n * 0.03 / (b.n * 2), y: b.y, r: 0.016 });
+    P.stands.forEach(([y, s], i) => L.push({ k: 'stand', i, x: s < 0 ? 0.012 : PW - 0.012, y: y + 0.012, r: 0.02 }));
+    if (P.saucer) L.push({ k: 'saucer', i: 0, x: P.saucer[0], y: P.saucer[1], r: 0.03 });
+    P.posts.forEach((q, i) => L.push({ k: 'post', i, x: q[0], y: q[1], r: 0.009 }));
+    for (const q of L) if (wall[q.k]) q.wall = 1;
+    return L;
+  }
+  const PART_NAME = { orbit: 'the orbit', ramp: 'a ramp', upper: 'the upper flipper', magnet: 'the magnet', mbank: 'the moving bank', captive: 'the captive ball', spinner: 'the spinner',
+                      rolls: 'the rollovers', gobble: 'the gobble hole', bumper: 'a bumper', bank: 'the drop bank', stand: 'a standup', saucer: 'the saucer', post: 'a post' };
+  // what part k (index i) would run into where it is now, or off the playfield: a reason, or null
+  function clashOf(P, k, i){
+    const L = partsOf(P), mine = L.filter(q => q.k === k && q.i === i), rest = L.filter(q => !(q.k === k && q.i === i));
+    for (const q of mine){
+      if (!q.wall && (q.x - q.r < XL || q.x + q.r > XR)) return 'too near the side';
+      if (q.y - q.r < Y0 - 0.02 || q.y + q.r > Y1 + 0.03) return q.y < 0.4 ? 'too near the top lanes' : 'too near the flippers and slingshots';
+      for (const o of rest) if (Math.hypot(o.x - q.x, o.y - q.y) < o.r + q.r + 2 * R) return 'too near ' + PART_NAME[o.k] + ' for a ball to pass';
+    }
+    return null;
+  }
+  // the part at (x, y), if any: { k, i }
+  function partAt(P, x, y){
+    let best = null;
+    for (const q of partsOf(P)){ const d = Math.hypot(q.x - x, q.y - y) - q.r; if (d < 0.012 && (!best || d < best.d)) best = { k: q.k, i: q.i, d }; }
+    return best;
+  }
+  const MULTI = { bumper: 'bumpers', post: 'posts', stand: 'stands', ramp: 'ramps' }, CAPS = { bumpers: 8, posts: 10, stands: 4, ramps: 2 };
+  // part k (index i; past the end for a new one) put at (x, y): the spec it makes, or a reason it cannot be
+  function putPart(P0, k, i, x, y){
+    const P = JSON.parse(JSON.stringify(P0)), s = x < XC ? -1 : 1, D = LV[P.lv - 1];
+    if (MULTI[k]){ const A = P[MULTI[k]]; if (i >= A.length && A.length >= CAPS[MULTI[k]]) return { why: 'No more than ' + CAPS[MULTI[k]] + ' ' + MULTI[k] + ' on a table.' }; }
+    if (k === 'bumper' || k === 'post') P[MULTI[k]][i] = [r3(x), r3(y)];
+    else if (k === 'stand') P.stands[i] = [r3(cl(y - 0.012, Y0, Y1)), s];
+    else if (k === 'ramp'){
+      const other = P.ramps.findIndex((q, j) => j !== i && q[0] === s); if (other >= 0) return { why: 'That side has its ramp: one a side.' };
+      P.ramps[i] = [s, r3(x), r3(cl(y, 0.3, 0.6))];
+    }
+    else if (k === 'orbit') P.orbit = r3(cl(y, 0.38, 0.5));
+    else if (k === 'upper') P.upper = [s, r3(cl(y, 0.42, 0.66))];
+    else if (k === 'bank'){
+      const n = P.bank ? P.bank.n : Math.max(3, D.drops), span = n * 0.03;
+      P.bank = x < 0.07 || x > PW - 0.07 ? { side: s, y0: r3(y - span / 2), n } : { x0: r3(x - span / 2), y: r3(y), n };
+      if (P.bank.side && P.orbit) return { why: 'The orbit runs along the walls: the bank goes across the middle.' };
+    }
+    else if (k === 'magnet') P.magnet = [r3(x), r3(y), P.magnet ? P.magnet[2] : 0];
+    else if (k === 'mbank') P.mbank = [r3(x), r3(y), P.mbank ? P.mbank[2] : 6];
+    else if (k === 'saucer') P.saucer = [r3(x), r3(y), P.saucer ? P.saucer[2] : r3(XC)];
+    else if (k === 'captive') P.captive = [r3(x), r3(y + 0.04)];
+    else P[k] = [r3(x), r3(y)];
+    const why = clashOf(P, k, MULTI[k] ? i : 0);
+    return why ? { why: 'Not there: ' + PART_NAME[k].replace(/^(a|the) /, 'the ') + ' would be ' + why + '.' } : { P };
+  }
+  function takePart(P0, k, i){
+    const P = JSON.parse(JSON.stringify(P0));
+    if (MULTI[k]) P[MULTI[k]].splice(i, 1); else if (k === 'orbit') P.orbit = 0; else P[k] = null;
+    return P;
+  }
+  // a kept table, made playable: its recording and life from the steady player as it is first wanted, par once asked for
+  function mineTable(c, r){
+    const k = gkey(c, r), P = MINE.get(k); if (!P) return null;
+    let M = MINE_M.get(k); if (M) return M;
+    const idx = boardIdx(c, r), h = hashOf(JSON.stringify(P));
+    M = { T: makeTable(idx, P.lv, 0, false, P), key: 'm' + h, hash: h, idx, lv: P.lv, par: null, reel: null, ready: false, phase: (idx * 0.618) % 1, mine: true };
+    const T = M.T;
+    M.job = (function* (){ const r = yield* simGen(T, (idx * 7919) ^ 0x6d1, { balls: FIT_BALLS, cap: BALL_CAP, rec: true }); return { T, reel: r.reel, recKind: r.recKind, life: lifeOf(r), tries: 1 }; })();
+    MINE_M.set(k, M); return M;
+  }
+  const knownTable = (c, r) => MINE.has(gkey(c, r)) ? mineTable(c, r) : TABLES.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r)));
+  function saveMine(){ try { const o = {}; [...MINE.entries()].slice(-MINE_KEEP).forEach(([k, d]) => { o[k] = d; }); localStorage.setItem('pinball.mine', JSON.stringify(o)); } catch {} }
+  try { const o = JSON.parse(localStorage.getItem('pinball.mine') || '{}'); for (const k in o){ const d = cleanSpec(o[k]); if (d) MINE.set(k, d); } } catch {}
+
+  const ED = { on: false, key: null, c: 0, r: 0, P: null, M: null, ver: 0, tool: 'bumper', busy: false, drag: null, ateAt: 0 };
+  const ED_TOOLS = [['bumper', '🔴', 'Bumper'], ['post', '⚪', 'Post'], ['saucer', '🕳️', 'Saucer'], ['ramp', '↗️', 'Ramp'], ['orbit', '🌈', 'Orbit'], ['bank', '🎯', 'Drop bank'],
+                    ['stand', '▮', 'Standup'], ['spinner', '🌀', 'Spinner'], ['rolls', '⋯', 'Rollovers'], ['captive', '⚙️', 'Captive ball'], ['magnet', '🧲', 'Magnet'],
+                    ['mbank', '↔️', 'Moving bank'], ['gobble', '⚫', 'Gobble hole'], ['upper', '🦾', 'Upper flipper'], ['erase', '🧽', 'Erase']];
+  const ED_ACTS = ['era', 'theme', 'level', 'clear', 'check', 'play'];
+  const edSay = (m, ms) => say(m, ms || 2800);
+  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  // the draft, built again after every change (a table from its spec takes about a millisecond)
+  function edRebuild(){
+    const T = makeTable(boardIdx(ED.c, ED.r), ED.P.lv, 0, false, ED.P);
+    ED.ver++; ED.M = { T, key: 'ed' + ED.ver, idx: T.idx, lv: T.lv, reel: null, phase: 0, ready: true, mine: true };
+    try { fieldItemsChanged(); } catch {}
+  }
+  function edStart(c, r){
+    Object.assign(ED, { on: true, key: gkey(c, r), c, r });
+    LIVE = { c, r }; GAMES.delete(gkey(c, r));
+    ED.P = cleanSpec(readyNow(tableFor(c, r)).T.spec);
+    edRebuild();
+  }
+  function edOpen(){
+    const f = framedCell();
+    if (!f){ say('Pick a board first, then open the row to make its table', 2000); return false; }
+    edStart(f.c, f.r);
+    edSay('Making a table: pick a part below and tap the table to lay it (the same part again takes it away); drag a part to move it. ✔ checks it, ✓ plays it.', 4200);
+    return true;
+  }
+  function edStop(){ ED.on = false; ED.P = null; ED.M = null; ED.drag = null; try { fieldItemsChanged(); } catch {} }
+  // the steady player's balls on the draft: { life, band, why? }
+  function edCheck(tell){
+    const T = ED.M.T, r = simRun(T, 0x5eed ^ ED.ver, { balls: FIT_BALLS, cap: BALL_CAP }), life = lifeOf(r), band = LIFE_BAND[T.lv - 1];
+    const lvNear = 1 + LIFE_BAND.reduce((b, B2, k) => offBand(k + 1, life) < offBand(b + 1, life) ? k : b, 0);
+    if (tell) edSay('The steady player\'s ball lasts ' + life.toFixed(1) + ' s on average: ' + (offBand(T.lv, life) ? 'level ' + T.lv + '\'s boards last ' + band[0] + '–' + (band[1] > 90 ? '' : band[1]) + ' s, so it plays like level ' + lvNear : 'right for level ' + T.lv) + '.', 4000);
+    return { life, lvNear };
+  }
+  function edDone(){
+    if (!ED.on) return true;
+    const k = ED.key, d = cleanSpec(ED.P);
+    if (!d){ edSay('This table cannot be kept.'); return false; }
+    MINE.delete(k); MINE.set(k, d); MINE_M.delete(k); saveMine();
+    const c = ED.c, r = ED.r;
+    edStop(); edPane(false);
+    GAMES.set(k, fresh(c, r)); LIVE = { c, r };
+    const M = MINE_M.get(k);
+    edSay('Your table, the steady player\'s ball lasting ' + (M && M.life ? M.life.toFixed(1) + ' s' : 'a while') + '. Tap it to play; par comes as it is worked out.', 3600);
+    return true;
+  }
+  function edCancel(){ if (!ED.on) return; edStop(); edPane(false); edSay('Left the board as it was.', 1800); }
+  const toolName = k => (ED_TOOLS.find(t => t[0] === k) || [0, 0, k])[2];
+  function edPlace(x, y){
+    const P = ED.P, t = ED.tool, at = partAt(P, x, y);
+    if (t === 'erase'){ if (!at){ edSay('Nothing there to take away.', 1500); return false; } ED.P = takePart(P, at.k, at.i); return true; }
+    if (at && at.k === t){ ED.P = takePart(P, at.k, at.i); edSay(toolName(t) + ' taken away.', 1300); return true; }
+    if (t === 'orbit' && P.orbit){ ED.P = takePart(P, 'orbit', 0); edSay('The orbit taken away.', 1300); return true; }
+    // (a new one of a part there can be many of; a ramp replaces its side's; one of a kind moves)
+    const side = P.ramps.findIndex(q => q[0] === (x < XC ? -1 : 1));
+    const i = !MULTI[t] ? 0 : t === 'ramp' ? (side < 0 ? P.ramps.length : side) : P[MULTI[t]].length;
+    const R2 = putPart(P, t, i, x, y);
+    if (R2.why){ edSay(R2.why, 2400); return false; }
+    ED.P = R2.P; return true;
+  }
+  function edTiles(){
+    const sel = '#5a3e8a', P = ED.P, era = ERAS.find(e => e.id === P.era), th = THEMES.find(t => t.id === P.theme);
+    const out = ED_TOOLS.map(([k, gl, name]) => ({ glyph: gl, value: name, bg: ED.tool === k ? sel : null }));
+    out.push({ glyph: '🕰️', value: 'Era: ' + era.name }, { glyph: '🎨', value: 'Theme: ' + th.name }, { glyph: '📈', value: 'Level ' + P.lv },
+             { glyph: '⌫', value: 'Clear' }, { glyph: '✔', value: 'Check' }, { glyph: '▶', value: 'Play' });
+    return out;
+  }
+  function edTile(i){
+    if (!ED.on) return false;
+    const P = ED.P;
+    if (i < ED_TOOLS.length){
+      const [k] = ED_TOOLS[i]; ED.tool = k;
+      edSay({ ramp: 'Tap where a ramp\'s mouth goes, left or right of the middle: it faces the other flipper and comes down onto its own inlane.', orbit: 'A tap lays the orbit round the arch (where its mouths sit), or takes it away.',
+              bank: 'Tap the middle for a bank across, or near a side wall for a bank along it.', stand: 'Tap near a side wall for a standup there.', upper: 'Tap near a side wall for the upper flipper there.',
+              erase: 'Tap a part to take it away.' }[k] || 'Tap the table to lay ' + PART_NAME[k] + (MULTI[k] ? '' : ' (or move it there)') + '; on one to take it away.', 2600);
+    } else {
+      const a = ED_ACTS[i - ED_TOOLS.length];
+      if (a === 'era'){ P.era = ERAS[(ERAS.findIndex(e => e.id === P.era) + 1) % ERAS.length].id; edSay('A ' + ERAS.find(e => e.id === P.era).name + ' table: ' + ERAS.find(e => e.id === P.era).balls + ' balls, its look and sounds' + (ERAS.find(e => e.id === P.era).multi ? ', and multiball' : '') + '.'); }
+      else if (a === 'theme'){ P.theme = THEMES[(THEMES.findIndex(t => t.id === P.theme) + 1) % THEMES.length].id; edSay('Theme: ' + THEMES.find(t => t.id === P.theme).name + '.', 1500); }
+      else if (a === 'level'){
+        const lv = P.lv % 5 + 1, Q = JSON.parse(JSON.stringify(P)); Q.lv = lv;
+        const bad = partsOf(Q).find(q => clashOf(Q, q.k, q.i));
+        if (bad){ edSay('Level ' + lv + '\'s flippers stand wider and ' + PART_NAME[bad.k] + ' would be in the way.'); return true; }
+        P.lv = lv; const D = LV[lv - 1]; edSay('Level ' + lv + ': slope ' + D.g + ', ball save ' + (D.save ? D.save + ' s' : 'none') + ', kickbacks ' + (D.kb[0] + D.kb[1]) + '.');
+      }
+      else if (a === 'clear'){ ED.P = cleanSpec({ era: P.era, theme: P.theme, lv: P.lv }); edSay('A bare table: lay your own parts.'); }
+      else if (a === 'check'){ edCheck(true); try { bbRefreshNow(); } catch {} return true; }
+      else if (a === 'play') return edDone();
+    }
+    if (ED.on) edRebuild();
+    try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  // a tap on the table being made lays the tool there; on another board, the editor moves there
+  function edTap(c, r, u, v){
+    if (gkey(c, r) !== ED.key){ edStart(c, r); edSay('Making a table for this board.', 1500); return true; }
+    if (u == null || performance.now() - ED.ateAt < 350) return true;   // (the tap the field still sends after a short drag)
+    if (edPlace(u * W, v)) edRebuild();
+    return true;
+  }
+  // a press on a part drags it, kept where it last fitted
+  function edDragStart(u, v){
+    if (u == null) return false;
+    const at = partAt(ED.P, u * W, v); if (!at) return false;
+    ED.drag = { k: at.k, i: at.i, moved: false }; return true;
+  }
+  function edDragAt(u, v){
+    const D = ED.drag; if (!D || !ED.on) return;
+    const R2 = putPart(ED.P, D.k, D.i, u * W, v); if (R2.why) return;
+    ED.P = R2.P; D.moved = true; edRebuild();
+  }
+  // SHARE: a board's table (the draft while editing) as a link, taken onto the first board framed, through cleanSpec
+  function shareTable(){
+    const f = framedCell(), d = ED.on ? ED.P : f && MINE.get(gkey(f.c, f.r));
+    if (!d){ say('This board has no table of its own to share: make one first', 2000); return null; }
+    return SHARE.copy(SHARE.link(app, d), 'Link copied: it opens on this table.');
+  }
+  function takeTable(c, r, d0){
+    const d = cleanSpec(d0);
+    if (!d){ say('The shared table cannot be read.', 3000); return; }
+    const k = gkey(c, r); MINE.delete(k); MINE.set(k, d); MINE_M.delete(k); saveMine();
+    GAMES.set(k, fresh(c, r)); LIVE = { c, r };
+    say('A shared table: ' + THEMES.find(t => t.id === d.theme).name + ', ' + ERAS.find(e => e.id === d.era).name + ', level ' + d.lv + '. Tap it to play.', 3200);
+    try { fieldItemsChanged(); } catch {}
+  }
+  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
+
   const app = {
     name: 'pinball',
     realtime: true,
@@ -49769,6 +50077,15 @@ const PINBALL_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: 'Start this board again', title: 'Three balls, the score at nothing.', on(){ const f = framedCell(); if (!f) return; LIVE = { c: f.c, r: f.r }; const g = gameAt(f.c, f.r); begin(g); } },
+      // (a table of your own: Oct 25, "1", of what came next for pinball)
+      { label: () => ED.on ? 'Done: play this table' : 'Make a table for this board…', title: 'The bottom row becomes a table editor: bumpers, ramps, the orbit, the saucer, drop banks, toys, the era, theme and level. The steady player checks it; Done plays it.',
+        on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
+      { label: 'Cancel the table', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
+      { label: "Share this board's table", title: 'Copy a link that opens the page on this table.',
+        get disabled(){ const f = framedCell(); return !(ED.on || (f && MINE.has(gkey(f.c, f.r)))); }, on(){ shareTable(); } },
+      { label: "Forget this board's table", title: 'Back to the table the board makes itself.',
+        get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
+        on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_M.delete(k); saveMine(); GAMES.delete(k); say('The board makes its own table again', 1800); try { fieldItemsChanged(); } catch {} } },
       { label: 'How to play', title: 'The controls.', on(){ say('Flippers: ← and → (or Z and /, A and D, the Shift keys), or a press on the left or right half of the table. Plunger: hold Down (or Enter, or the table with the ball on the plunger), let go to launch. Nudge: Up. Three nudges in three seconds tilt. Ramps and orbits want a good hard shot into their mouths; one made soon after another is a combo, worth more.', 9000); } },
     ]}],
     cellFar: { light: 0x3a2a6a, dark: 0x1a1430 },
@@ -49793,21 +50110,24 @@ const PINBALL_APP = (() => {
     cellItems(c, r, bp){
       // (the framed board's table made first, URGENT_MS a frame, its game made only when it is played: a game wants its table)
       const k = gkey(c, r), live = LIVE && LIVE.c === c && LIVE.r === r, g = GAMES.get(k), withBp = V => { V.bp = bp || 0; return V; };
+      if (ED.on && ED.key === k) return itemsOf(withBp(viewOf(ED.M, null)));   // (the table being made: A TABLE OF YOUR OWN)
       if (live) wantPar(g ? g.M : tableFor(c, r));
       if (g){ tableSoon(c, r, g.M, live); if (live) stepGame(g); else g.last = 0; return itemsOf(withBp(viewOf(g.M, g.state === 'ready' ? null : g))); }
       return itemsOf(withBp(viewOf(tableSoon(c, r, null, live), null)));
     },
     cellTitle(c, r){
-      const idx = boardIdx(c, r), lv = levelAt(idx), M = TABLES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
+      if (ED.on && ED.key === gkey(c, r)){ const T = ED.M.T; return 'Pinball — making a table: ' + T.theme.name + ', ' + T.era.name + ', level ' + T.lv; }
+      const idx = boardIdx(c, r), M = knownTable(c, r), lv = M && M.mine ? M.lv : levelAt(idx), g = GAMES.get(gkey(c, r));
       const best = M ? BEST.get(bestKey(M)) : null;
-      const head = 'Pinball — ' + (M ? M.T.theme.name + ', ' + M.T.era.name + ', ' : '') + 'level ' + lv + (M && M.par ? ' · par ' + M.par.toLocaleString() : '') + (best != null ? ' · best ' + (+best).toLocaleString() : '');
+      const head = 'Pinball — ' + (M && M.mine ? 'your table, ' : '') + (M ? M.T.theme.name + ', ' + M.T.era.name + ', ' : '') + 'level ' + lv + (M && M.par ? ' · par ' + M.par.toLocaleString() : '') + (best != null ? ' · best ' + (+best).toLocaleString() : '');
       if (!g || g.state === 'ready') return head + ' (tap to play)';
       return head + ' · ' + g.S.score.toLocaleString() + (g.state === 'over' ? ' · game over' : ' · ball ' + g.ball + ' of ' + g.M.T.balls + (g.S.mult > 1 ? ' · ×' + g.S.mult : '') + (g.S.t - g.S.shotT < COMBO_T && g.S.combo ? ' · combo ×' + (g.S.combo + 1) : '') + (g.S.mis ? ' · mission: ' + (g.S.mis.need - g.S.mis.got) + ' ' + MIS[g.S.mis.k].id + ', ' + Math.ceil(g.S.mis.until - g.S.t) + ' s' : '') + (g.S.tilt ? ' · TILT' : ''));
     },
     onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
     onSelect(){ return true; },
     onFramed(c, r){ const GS = fieldGS(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
-    onCellTap(c, r){
+    onCellTap(c, r, u, v){
+      if (ED.on) return edTap(c, r, u, v);
       const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
       LIVE = { c, r };
       // (the flight goes to the board beside, unwrapped: to the wrapped number, from the corner, it went the long way round the
@@ -49817,13 +50137,41 @@ const PINBALL_APP = (() => {
       if (g.state !== 'play') begin(g);
       return true;
     },
-    noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    noDoubleTap(){ if (ED.on) return true; const g = liveGame(); return !!(g && g.state === 'play'); },
+    // (while making a table a press on a part drags it, elsewhere the view pans)
+    claimsPan(u, v){ return ED.on ? edDragStart(u, v) : false; },
+    onPan(dx, dy, at){ if (!ED.on || !ED.drag) return false; if (at) edDragAt(at.u, at.v); return true; },
+    onPanEnd(){ if (ED.drag){ if (ED.drag.moved) ED.ateAt = performance.now(); ED.drag = null; } },
+    /* THE ROW IS THE TABLE EDITOR (A TABLE OF YOUR OWN): opening it makes a table for the framed board, shutting it plays it. */
+    onBrowserToggle(open){
+      if (ED.busy) return true;
+      if (open && !ED.on) return edOpen();
+      if (!open && ED.on) return edDone();
+      return true;
+    },
+    statTiles(){ return ED.on ? edTiles() : null; },
+    statsStay(){ return ED.on; },
+    onStatTap(c, r, i){ return edTile(i); },
+    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase: tap a part to take it away', dim: ED.tool === 'erase' }, { key: 'check', glyph: '✔', title: 'Check: how long does the steady player\'s ball last?' },
+                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this table' }] : null; },
+    onQuickAct(c, r, key){
+      if (!ED.on) return false;
+      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a part to take it away.'); }
+      else if (key === 'check') edCheck(true);
+      else if (key === 'cancel') edCancel();
+      else if (key === 'done') edDone();
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
     _debug: { makeTable, tableFor, newState, sub, launch, setFlipper, toPlunger, endBall, botStep, botNew, simGen, simRun, work, finishJob, starsOf, levelAt, boardIdx, ringOf,
               fitGen, lifeOf, offBand, readyNow, eraOf, pathAt, rampZ, palette, ERAS, LIFE_BAND, FIT_TRIES, COMBO_T,
               THEMES, lockLit, startMulti, MIS, MIS_T, MIS_AWARD, misStart, misCode, misRead, shotNow, offOf, wantOf, ev, REC_PRE, magOn, mbX, dispText, dotsOf, reelsOf, lockSpot, frameOf, MSGS, JACK0, REEL_PX, DOT_PX, fly: (c, r) => gotoCell(c, r),
               gameAt, fresh, begin, stepGame, over, nudge, press, pressAt, viewOf, itemsOf, paint, LV, GAMES, TABLES, BEST, HELD, OWN, SND,
+              ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edPlace, cleanSpec, partsOf, clashOf, partAt, putPart, takePart, layOut,
+              mineTable, MINE, MINE_M, shareTable, takeTable, ED_TOOLS, ED_ACTS, MINE_COL,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, consts: { W, LANE, PW, XC, R, SUB, FY, PLX, PLY, BALL_T, REEL_T }, uvAt: (x, y) => _framedUV(x, y) },
   };
+  SHARE.install(app, takeTable);
   return app;
 })();
 /* ═══ SIMON ══════════════════════════════════════════════════════════════════════════════════════════════════════════════
