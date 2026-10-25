@@ -59978,6 +59978,16 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const mix = (a, b, t) => '#' + [16, 8, 0].map(sh => Math.round(((parseInt(a.slice(1), 16) >> sh) & 255) * (1 - t) + ((parseInt(b.slice(1), 16) >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
       return { ink, paper, faint: mix(ink, paper, 0.45), shade: mix(ink, paper, 0.93) };
     };
+    /* A CHAPTER'S OWN COLOUR (Oct 25: "this reader is different, more for dramatic flare, iteresting to see thousands of pages
+       sweeping into the horizon", then "yes" to chapters seen from far off and headings as landmarks): in a document of two or
+       more chapters each one's paper is the chosen paper with a little of a hue of its own (the golden angle round the wheel,
+       so neighbours never match), and each chapter opens on a band of that hue deeper with its title set large, so the field
+       far off shows the chapters as bands of colour and their opening pages as markers to steer by. Books keep their paper. */
+    const hexMix = (a, b, t) => '#' + [16, 8, 0].map(sh => Math.round(((parseInt(a.slice(1), 16) >> sh) & 255) * (1 - t) + ((parseInt(b.slice(1), 16) >> sh) & 255) * t).toString(16).padStart(2, '0')).join('');
+    const hueOf = k => { const h = (k * 137.508 + 200) % 360 / 60, c = 0.62, x = c * (1 - Math.abs(h % 2 - 1)), m = 0.3;
+      const [r, g, b] = h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x];
+      return '#' + [r, g, b].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join(''); };
+    const TINT = 0.13, BAND = 0.4, TITLE_K = 1.9;
     const fontOf = (r, size) => (r.i ? 'italic ' : '') + (r.b ? 'bold ' : '') + size + 'px ' + (r.mono ? MONO : SERIF);
 
     /* ── the zip: paths, lookups, the package ── */
@@ -60101,7 +60111,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     async function fromHtml(htmls, entries, title, opts){
       const find = finder(entries);
       const chapters = htmls.map(h => blocksOf(h, '', true, find, entries, opts)).filter(ch => ch.length);
-      return { title: title || '', chapters, sizes: await sizesOf(chapters, entries) };
+      const heads = chapters.flat().filter(b => b.h).map(b => b.h);
+      return { title: title || '', chapters, sizes: await sizesOf(chapters, entries), flat: !!(opts && opts.flat), top: heads.length ? Math.min(...heads) : 0 };
     }
     // Asked 32 at a time, so a book of large pictures is not all in memory at once.
     const many = async (list, fn) => {
@@ -60307,11 +60318,15 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       let pg = null, y = 0, words = 0;
       /* `at` is how many pieces of words came before the page: the same text falls on other pages in another size, and
          this is how the reader finds the page that now holds the words it was on. */
-      const newPage = () => { pg = { lines: [], imgs: [], rules: [], shades: [], full: false, at: words }; pages.push(pg); y = M.t; };
+      let ci = -1;                                   // the chapter being laid out, for a document's colours
+      const tinted = !!book.flat && book.chapters.filter(ch => ch.length).length > 1;
+      const newPage = () => { pg = { lines: [], imgs: [], rules: [], shades: [], full: false, at: words, tint: tinted ? ci : -1 }; pages.push(pg); y = M.t; };
       const blank = () => !pg.lines.length && !pg.imgs.length && !pg.rules.length;
       for (const ch of book.chapters){
         if (!ch.length) continue;
+        ci++;
         if (!pg || !blank()) newPage();
+        else pg.tint = tinted ? ci : -1;
         /* A chapter that is one picture and nothing else (a cover, a plate, a
            map) has the page to itself, edge to edge in the paper. */
         if (ch.length === 1 && ch[0].t === 'img'){
@@ -60346,8 +60361,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             afterHead = false;
             continue;
           }
-          const size = b.h ? HEAD[b.h] : (b.small ? SMALL : BODY);
-          const lh = Math.round(size * (b.h ? 1.25 : LEAD));
+          // (a document's chapter title, its first heading of the top level, is set large on its band: see A CHAPTER'S OWN COLOUR)
+          const title = !!(book.flat && b.h && b.h === book.top && k === 0 && blank());
+          const size = title ? Math.round(HEAD[1] * TITLE_K) : b.h ? HEAD[b.h] : (b.small ? SMALL : BODY);
+          const lh = Math.round(size * (b.h ? 1.2 : LEAD));
           const inset = b.inset || 0;
           const indent = (!b.h && !b.flat && !afterHead && !b.list && !b.pre && b.align !== 'center') ? Math.round(BODY * 1.4) : 0;
           const lines = linesOf(b, size, CW - 2 * inset, indent);
@@ -60370,7 +60387,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             words += ln.items.length;
             y += lh;
           }
-          if (b.h) y += size * 0.5;
+          if (title){ y += size * 0.35; pg.shades.unshift({ k: 'band', hue: Math.max(0, ci), x: 0, y: 0, w: PAGE_W, h: y }); y += BODY * 1.2; }
+          else if (b.h) y += size * 0.5;
           afterHead = !!b.h;
         }
       }
@@ -60388,10 +60406,14 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const cx = cv.getContext('2d', { alpha: false });
       cx.setTransform(s, 0, 0, s, 0, 0);
       const C = colours();
-      cx.fillStyle = C.paper;
+      const P = pg.tint >= 0 ? hexMix(C.paper, hueOf(pg.tint), TINT) : C.paper;
+      cx.fillStyle = P;
       cx.fillRect(0, 0, PAGE_W, PAGE_H);
       cx.imageSmoothingQuality = 'high';
-      for (const sh of pg.shades || []){ cx.fillStyle = sh.k === 'code' ? C.shade : C.faint; cx.fillRect(sh.x, sh.y, sh.w, sh.h); }
+      for (const sh of pg.shades || []){
+        cx.fillStyle = sh.k === 'band' ? hexMix(C.paper, hueOf(sh.hue), BAND) : sh.k === 'code' ? hexMix(P, C.ink, 0.07) : C.faint;
+        cx.fillRect(sh.x, sh.y, sh.w, sh.h);
+      }
       for (const im of pg.imgs){
         const pic = pics.get(im.key);
         if (pic) cx.drawImage(pic, im.x, im.y, im.w, im.h);

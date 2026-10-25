@@ -1925,6 +1925,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     are laid out as before.
   - A chapter at each heading of the top level used, when there are two or more of them. The title is the front matter's, else
     the first `#` heading's, else the file's name.
+  - **Chapters seen from far off** (Oct 25: "this reader is different, more for dramatic flare, iteresting to see thousands of
+    pages sweeping into the horizon", then "yes" to chapters coloured and headings as landmarks): in a document of two or more
+    chapters each chapter's paper takes `TINT` (0.13) of a hue of its own (`hueOf`: the golden angle round the wheel, so
+    neighbours never match; a page's `tint` is its chapter), and each chapter's first heading of the top level (`book.top`) is set
+    `TITLE_K` (1.9) times the largest heading's size on a band of that hue (`BAND` 0.4) across the page's top (a `shades` entry of
+    kind `band`). Zoomed out, the pages lie across the field as diagonal bands of colour with each chapter's opening as a marker.
+    The code's shade follows a tinted page. Books (`flat` off) keep their paper.
   - Pictures (`_mdPictures`): found among the files it came with, by path and then by name alone, or a data: URI; each given a
     key of its own. Those found are on their pages and not hung again as pictures (`_loadFiles` reads the file first and takes
     them out of the loose list). One not found, or on the web, is a line in italics with its alt text.
