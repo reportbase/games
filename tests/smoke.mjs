@@ -3050,7 +3050,9 @@ try {
     // (a new game by a real tap: the ball waits on the plunger, the tap's echo as a mouse press not launching it)
     await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); D.gameAt(f.c, f.r).state = 'over'; D.gameAt(f.c, f.r).overAt = 0; D.GAMES.delete(f.c + '_' + f.r); });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 3 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(600); const t4 = await state();
+    // (the field reads the tap and the game begins as a frame is drawn; on CI a frame took more than the 600 ms this waited: wait for it)
+    await page.waitForTimeout(600); for (let k = 0; k < 20; k++){ const q = await state(); if (q.st === 'play') break; await page.waitForTimeout(250); }
+    const t4 = await state();
     // game over: stars and a best; a click after it goes on to the next board
     const ov = await page.evaluate(async () => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
       g.balls = 1; g.S.score = 123450; g.S.onPl = false; g.S.launchT = -99; g.S.b = { x: 0.26, y: 1.05, vx: 0, vy: 1 }; g.last = performance.now() - 30; D.stepGame(g);
