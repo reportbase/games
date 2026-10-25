@@ -128,13 +128,17 @@ try {
     // THE RIGHT RAIL IS A SCROLL BAR FOR WHERE YOU ARE (Oct 25: "the right scroll bar for speed lever should be more like a normal
     // scroll bar to move the current position. it should follow the auto motion for the direction of movement."): a real drag of
     // its thumb a quarter of the rail up moves the view a quarter of the 50-board window ahead along the way of motion, and the
-    // thumb comes back to the middle on letting go; a real press on the track near the bottom moves it back; Space's auto motion
+    // thumb is in the middle once let go; a real press on the track near the bottom moves it back; Space's auto motion
     // carries the thumb up the rail as it steps.
     {
-      await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'checkers')); await new Promise(ok => setTimeout(ok, 2000)); });
+      // (on checkers, then back to the app before it: left on checkers, whose computer players keep every board busy, the main page
+      //  starved the phone's page of the checks after this and its load timed out on CI)
+      const prevApp = await page.evaluate(async () => { const was = window.FIELD_APPS.indexOf(window.getFieldApp()); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'checkers')); await new Promise(ok => setTimeout(ok, 2000)); return was; });
       const box = await page.evaluate(() => { const r = document.getElementById('thrustZone').getBoundingClientRect(), t = document.getElementById('railThumb');
         return { x: r.x + r.width / 2, y: r.y, h: r.height, ty: r.y + parseFloat(t.style.top) + parseFloat(t.style.height) / 2 }; });
-      const at = () => page.evaluate(() => { const R = window.__posRail, S = window.FIELD_WORLD.st; return { s: S.camX * R.dx + S.camZ * R.dz, top: parseFloat(document.getElementById('railThumb').style.top), board: Math.hypot(R.dx * window.FIELD_WORLD.spacing()[0], R.dz * window.FIELD_WORLD.spacing()[1]) }; });
+      const at = () => page.evaluate(() => { const R = window.__posRail, S = window.FIELD_WORLD.st, el = document.getElementById('railThumb');
+        return { s: S.camX * R.dx + S.camZ * R.dz, top: parseFloat(el.style.top), mid: (document.getElementById('thrustZone').clientHeight - parseFloat(el.style.height)) / 2,
+                 board: Math.hypot(R.dx * window.FIELD_WORLD.spacing()[0], R.dz * window.FIELD_WORLD.spacing()[1]) }; });
       const a0 = await at();
       await page.mouse.move(box.x, box.ty); await page.mouse.down();
       for (let k = 1; k <= 10; k++){ await page.mouse.move(box.x, box.ty - box.h * 0.25 * k / 10); await page.waitForTimeout(30); }
@@ -146,8 +150,9 @@ try {
       await page.waitForTimeout(3500);
       const a3 = await at();
       await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+      await page.evaluate(async i => { if (i >= 0) window.setFieldApp(window.FIELD_APPS[i]); await new Promise(ok => setTimeout(ok, 1500)); }, prevApp);
       const ahead = (a1.s - a0.s) / a1.board, back = (a2.s - a1.s) / a1.board;
-      if (!(ahead > 11 && ahead < 14) || Math.abs(a1.top - a0.top) > 3 || !(back < -15) || !(a3.top < a2.top - 3))
+      if (!(ahead > 11 && ahead < 14) || Math.abs(a1.top - a1.mid) > 3 || !(back < -15) || !(a3.top < a2.top - 3))
         failures.push(`[position rail] ${JSON.stringify({ a0, a1, a2, a3, ahead, back })}`);
       else console.log(`ok   position rail: a real drag of the thumb a quarter up moved ${ahead.toFixed(1)} boards ahead, a press low on the track ${(-back).toFixed(1)} back, and auto motion carried the thumb up ${(a2.top - a3.top).toFixed(0)} px`);
     }
