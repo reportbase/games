@@ -989,7 +989,7 @@
 <button id="fitBtn" class="panel chip" aria-label="fit window or fit image" hidden
         title="How a picture meets its board. Fit window fills the board and loses whatever does not fit. Fit image shows the whole picture, with bars where the shapes disagree."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="fitFill"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></g><g class="fitWhole" style="display:none"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/></g></svg></button>
 <button id="openBtn" class="panel chip" aria-label="open pictures"
-        title="Open anything into the field - images, a PDF, a book (.epub) or a comic archive (.cbz, .cbr, .cb7), each hanging on its own board; or a game record (.pgn, .pdn, .sgf), which lays its boards out and switches app. Dropping files anywhere on the window does the same."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5m0 0L8.2 8.3M12 4.5l3.8 3.8"/><path d="M4.8 14.5v3.2a1.8 1.8 0 0 0 1.8 1.8h10.8a1.8 1.8 0 0 0 1.8-1.8v-3.2"/></svg></button>
+        title="Open anything into the field - images, a PDF, a book (.epub), a JSON file or a comic archive (.cbz, .cbr, .cb7), each hanging on its own board; or a game record (.pgn, .pdn, .sgf), which lays its boards out and switches app. Dropping files anywhere on the window does the same."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15.5V4.5m0 0L8.2 8.3M12 4.5l3.8 3.8"/><path d="M4.8 14.5v3.2a1.8 1.8 0 0 0 1.8 1.8h10.8a1.8 1.8 0 0 0 1.8-1.8v-3.2"/></svg></button>
 <!-- THE GAME INDEX: every game in the field, by name. A list, drawn as one. -->
 <button id="indexBtn" class="panel chip" aria-label="game index" hidden
         title="Every game in the field, by name - jump to any of them."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6.5h10M9 12h10M9 17.5h10"/><path d="M5 6.5h.01M5 12h.01M5 17.5h.01"/></svg></button>
@@ -1270,8 +1270,8 @@
          switches the app to them — but the bar's open chip is the field's own
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
-    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
-    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf" multiple hidden>
+    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
+    <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution: up to 4096px on the long side (PDF and book pages 3072) instead of 2048 (1536). Costs about four times the graphics memory per print, ~90MB at 4096, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to pictures opened after it is ticked."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
     <button id="bSelfCheck" title="Run the field's invariant checks: do the geometry and fabric tiers agree about which picture hangs where, does every print hang somewhere, can the ordered walk reach them all, is any board drawing the backdrop instead of its image. Also on the V key.">Self&#8209;check &#10003;</button>
@@ -60086,6 +60086,415 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       setTimeout(() => _setLoadBtn('Load images ⇧'), 4000);
     }
   };
+  /* ═══ JSON → gallery (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader" and, for where it comes
+     from, "Open or drop a file" and "Flare buckets") ═══════════════════════════════════════════════════════════════════
+     A JSON FILE IS LAID OUT AS A BOOK IS: onto pages of one fixed shape (the book's 2:3, so a book and a file sit on the same
+     boards), one page a board, page i print i, painted only when a board wants it. What goes on the pages is the document
+     pretty-printed, two spaces a level, in a monospaced face, every token its colour (keys, strings, numbers, true / false /
+     null, the brackets and commas), the line numbers in a gutter, a long line wrapped under itself and a long string broken
+     where the line ends. Each page's head says the file and where in it the page begins (its first line's path, $.users[3]),
+     since a board taken alone otherwise says nothing of which part of the tree it is.
+     DEPTH. Opened to a depth, a container deeper than that is one line, {… 12 keys} or […] 40 items], so a big file can be
+     read from the top down; the row moves it. A document longer than LINE_CAP lines at the depth asked is opened shallower
+     until it fits (said at the top of the first page), and one too long even one level deep is cut there, said too: a
+     million-record array would be twenty thousand pages, which nobody reads and every board would have to place.
+     NOT JSON. A file that does not parse as JSON is tried as JSON Lines (a record a line, every non-empty line parsing),
+     which is how logs and datasets come; failing that, its first page says why, and the text follows it with the line the
+     parser stopped on marked, so the fault can be found. */
+  const JSONV = (() => {
+    const PAGE_W = 640, PAGE_H = 960, ASPECT = PAGE_W / PAGE_H;
+    const M = { l: 30, r: 28, t: 66, b: 54 };
+    const MONO = 'Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace';
+    const SANS = '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif';
+    const LINE_CAP = 50000, MAX_BYTES = 128 * 1024 * 1024;
+    const SIZES = [10, 11, 12, 13, 14, 16, 18, 20, 22];
+    const DEPTHS = [1, 2, 3, 4, 5, 6, 8, 99];          // 99 is every level ("All")
+    const THEMES = [
+      { key: 'light', name: 'Light', paper: '#fbfaf6', txt: '#2b2b2b', key_: '#7a2e8a', str: '#1d7a3a', num: '#1f5fbf',
+        lit: '#b3541e', pun: '#7a7a7a', fold: '#9a8f7a', gut: '#b0aca2', head: '#6b675e', err: '#c62828', note: '#8a5a00' },
+      { key: 'sepia', name: 'Sepia', paper: '#f3e7cc', txt: '#3b3024', key_: '#7b3f61', str: '#4f6b1f', num: '#2a5d8a',
+        lit: '#a24a17', pun: '#85765f', fold: '#9c8763', gut: '#b3a283', head: '#6f604a', err: '#b3261e', note: '#7d5200' },
+      { key: 'dark', name: 'Dark', paper: '#1d1f23', txt: '#d8d8d8', key_: '#c792ea', str: '#a5d6a7', num: '#82aaff',
+        lit: '#f78c6c', pun: '#8a8f98', fold: '#7f848e', gut: '#4f5560', head: '#9aa0a8', err: '#ff6b6b', note: '#e5c07b' },
+    ];
+    const STYLE_KEY = 'json.style';
+    const style = { size: 13, depth: 99, theme: 'light' };
+    try {
+      const k = JSON.parse(localStorage.getItem(STYLE_KEY) || 'null');
+      if (k && SIZES.includes(k.size)) style.size = k.size;
+      if (k && DEPTHS.includes(k.depth)) style.depth = k.depth;
+      if (k && THEMES.some(t => t.key === k.theme)) style.theme = k.theme;
+    } catch {}
+    const saveStyle = () => { try { localStorage.setItem(STYLE_KEY, JSON.stringify(style)); } catch {} };
+    const theme = () => THEMES.find(t => t.key === style.theme) || THEMES[0];
+    const depthName = d => (d >= 99 ? 'All' : String(d));
+
+    /* Read the text: JSON, else JSON Lines, else not JSON (with where the parser stopped, as a character offset, when its
+       message says: V8 says "at position N", newer ones "(line L column C)", Firefox "at line L column C"). */
+    function parse(text){
+      if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+      try { return { ok: true, value: JSON.parse(text), kind: 'json' }; }
+      catch (e){
+        const rows = text.split(/\r?\n/).filter(s => s.trim());
+        if (rows.length >= 2){
+          try { return { ok: true, value: rows.map(s => JSON.parse(s)), kind: 'jsonl' }; } catch {}
+        }
+        const msg = String(e && e.message || e);
+        let at = -1, m;
+        if ((m = /position (\d+)/.exec(msg))) at = +m[1];
+        else if ((m = /line (\d+) column (\d+)/.exec(msg))){
+          const L = +m[1], C = +m[2];
+          let i = 0; for (let l = 1; l < L && i >= 0; l++){ i = text.indexOf('\n', i); if (i >= 0) i++; }
+          if (i >= 0) at = i + C - 1;
+        }
+        if (at < 0) at = faultAt(text);
+        return { ok: false, text, msg, at };
+      }
+    }
+    /* WHERE IT BREAKS, when the browser will not say: Chromium's message now quotes the text near the fault but gives no
+       offset. A plain scan of JSON's grammar (a stack of what each open container expects next) finds the first character
+       that cannot be where it is. Only asked for a file that failed to parse, so it need not be fast. */
+    function faultAt(t){
+      let i = 0;
+      const n = t.length, ws = () => { while (i < n && ' \t\r\n'.includes(t[i])) i++; };
+      const str = () => {
+        i++;
+        while (i < n && t[i] !== '"'){
+          if (t[i] === '\\'){ i++; if (i < n && t[i] === 'u'){ if (!/^[0-9a-fA-F]{4}$/.test(t.substr(i + 1, 4))) return false; i += 4; } else if (!'"\\/bfnrt'.includes(t[i])) return false; }
+          else if (t.charCodeAt(i) < 32) return false;
+          i++;
+        }
+        if (i >= n) return false;
+        i++; return true;
+      };
+      const stack = [];                         // 'o' after a key/value in an object, 'a' in an array
+      let want = 'value';                       // value | key | after
+      for (;;){
+        ws();
+        if (want === 'value'){
+          if (i >= n) return i;
+          const ch = t[i];
+          if (ch === '{'){ i++; ws(); if (t[i] === '}'){ i++; want = 'after'; } else { stack.push('o'); want = 'key'; } continue; }
+          if (ch === '['){ i++; ws(); if (t[i] === ']'){ i++; want = 'after'; } else { stack.push('a'); want = 'value'; } continue; }
+          if (ch === '"'){ const at = i; if (!str()) return at; want = 'after'; continue; }
+          const m = /^(-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?|true|false|null)/.exec(t.slice(i, i + 400));
+          if (!m) return i;
+          i += m[0].length; want = 'after'; continue;
+        }
+        if (want === 'key'){
+          if (t[i] !== '"') return i;
+          const at = i; if (!str()) return at;
+          ws(); if (t[i] !== ':') return i;
+          i++; want = 'value'; continue;
+        }
+        // after a value: a comma, the container's close, or the end
+        if (!stack.length) return i < n ? i : -1;
+        const top = stack[stack.length - 1];
+        if (t[i] === ','){ i++; want = top === 'o' ? 'key' : 'value'; continue; }
+        if ((top === 'o' && t[i] === '}') || (top === 'a' && t[i] === ']')){ i++; stack.pop(); want = 'after'; continue; }
+        return i;
+      }
+    }
+
+    /* THE LOGICAL LINES: a line a scalar, an opening and a closing bracket a line each, a container past the depth one line.
+       Each keeps its indent, its tokens and its path. Stops at `cap` (over = true). */
+    const T = (s, k) => ({ s, k });
+    const pathKey = k => (/^[A-Za-z_$][\w$]*$/.test(k) ? '.' + k : '[' + JSON.stringify(k) + ']');
+    function linesOf(v, depth, cap){
+      const out = [];
+      let over = false;
+      const push = (ind, toks, p) => { if (out.length >= cap){ over = true; return; } out.push({ ind, toks, p }); };
+      const scalar = x => x === null ? T('null', 'lit') : typeof x === 'string' ? T(JSON.stringify(x), 'str')
+        : typeof x === 'number' ? T(String(x), 'num') : typeof x === 'boolean' ? T(String(x), 'lit') : T(String(x), 'txt');
+      function node(pre, x, ind, L, p, comma){
+        if (over) return;
+        const tail = comma ? [T(',', 'pun')] : [];
+        if (!x || typeof x !== 'object'){ push(ind, [...pre, scalar(x), ...tail], p); return; }
+        const arr = Array.isArray(x), ks = arr ? null : Object.keys(x), n = arr ? x.length : ks.length;
+        const o = arr ? '[' : '{', c = arr ? ']' : '}';
+        if (!n){ push(ind, [...pre, T(o + c, 'pun'), ...tail], p); return; }
+        /* (past the depth, or so deep that the walk itself would run out of stack: a container is one line) */
+        if (L >= depth || L > 900){
+          const what = arr ? (n === 1 ? ' item ' : ' items ') : (n === 1 ? ' key ' : ' keys ');
+          push(ind, [...pre, T(o, 'pun'), T(' … ' + n.toLocaleString() + what, 'fold'), T(c, 'pun'), ...tail], p);
+          return;
+        }
+        push(ind, [...pre, T(o, 'pun')], p);
+        for (let i = 0; i < n && !over; i++){
+          if (arr) node([], x[i], ind + 1, L + 1, p + '[' + i + ']', i < n - 1);
+          else { const k = ks[i]; node([T(JSON.stringify(k), 'key'), T(': ', 'pun')], x[k], ind + 1, L + 1, p + pathKey(k), i < n - 1); }
+        }
+        push(ind, [T(c, 'pun'), ...tail], p);
+      }
+      node([], v, 0, 0, '$', false);
+      return { out, over };
+    }
+
+    /* Open to the depth asked if it fits; else the deepest that fits; else one level, cut at the cap. */
+    function fit(v, want){
+      let r = linesOf(v, want, LINE_CAP);
+      if (!r.over) return { lines: r.out, depth: want, cut: false, lowered: false };
+      for (const d of DEPTHS.filter(d => d < want).reverse()){
+        r = linesOf(v, d, LINE_CAP);
+        if (!r.over) return { lines: r.out, depth: d, cut: false, lowered: true };
+      }
+      return { lines: r.out, depth: 1, cut: true, lowered: want > 1 };
+    }
+
+    // One canvas for measuring: the face is monospaced, so one advance measures every line.
+    let _mcv = null;
+    const advance = size => {
+      _mcv = _mcv || document.createElement('canvas');
+      const cx = _mcv.getContext('2d');
+      cx.font = size + 'px ' + MONO;
+      return cx.measureText('0000000000').width / 10 || size * 0.6;
+    };
+
+    /* LAID OUT: the logical lines (notes first, unnumbered) broken into rows of the page's columns, rows into pages. A token
+       that would not fit what is left of a row but fits a fresh one starts the next row; a longer one (a long string) is
+       broken where the row ends. A wrapped row goes in two spaces past its line's indent, and an indent never takes more
+       than half the row, so a deeply nested file still has room to say something. */
+    function layout(doc){
+      const size = style.size, cw = advance(size), LH = Math.round(size * 1.38);
+      const lines = [];
+      let numbered = 0;
+      for (const s of doc.notes) lines.push({ ind: 0, toks: [T(s, 'note')], p: '$', no: 0 });
+      if (doc.notes.length) lines.push({ ind: 0, toks: [], p: '$', no: 0 });
+      for (const ln of doc.lines){ ln.no = ++numbered; lines.push(ln); }
+      const gutC = Math.max(2, String(numbered).length) + 1;
+      const cols = Math.max(16, Math.floor((PAGE_W - M.l - M.r) / cw) - gutC);
+      const top = M.t, per = Math.max(4, Math.floor((PAGE_H - M.t - M.b) / LH));
+      const pages = [];
+      let page = null;
+      const addRow = row => {
+        if (!page || page.rows.length >= per){ page = { rows: [], first: row.li, p: lines[row.li].p, num: pages.length + 1 }; pages.push(page); }
+        row.y = top + (page.rows.length + 1) * LH - Math.round(LH * 0.28);
+        page.rows.push(row);
+      };
+      for (let li = 0; li < lines.length; li++){
+        const ln = lines[li];
+        const indC = Math.min(ln.ind * 2, Math.floor(cols / 2)), contC = Math.min(indC + 2, cols - 8);
+        let row = { li, no: ln.no, segs: [] }, col = indC;
+        for (const t of ln.toks){
+          let s = t.s;
+          if (s.length > cols - col && s.length <= cols - contC && col > contC){ addRow(row); row = { li, no: 0, segs: [] }; col = contC; }
+          while (s.length){
+            if (col >= cols){ addRow(row); row = { li, no: 0, segs: [] }; col = contC; }
+            const take = s.slice(0, cols - col);
+            row.segs.push({ c: col, s: take, k: t.k });
+            col += take.length;
+            s = s.slice(take.length);
+          }
+        }
+        addRow(row);
+      }
+      for (const pg of pages) pg.of = pages.length;
+      return { pages, lines, cw, LH, size, gutC, cols };
+    }
+
+    /* A file read into what layout() takes: its lines at the depth the row asks (fitted), with what the reader should know
+       first, or for text that is not JSON, the reason and the text itself, numbered, the line it broke on marked. */
+    function docOf(name, text){
+      const P = parse(text);
+      if (P.ok){
+        const F = fit(P.value, style.depth);
+        const notes = [];
+        if (P.kind === 'jsonl') notes.push('JSON Lines: ' + P.value.length.toLocaleString() + ' records, shown as one array.');
+        if (F.cut) notes.push('Cut at ' + LINE_CAP.toLocaleString() + ' lines: the file is longer than that even one level deep.');
+        else if (F.lowered) notes.push('Opened ' + F.depth + (F.depth === 1 ? ' level' : ' levels') + ' deep (' + depthName(style.depth)
+          + ' asked): deeper, it is over ' + LINE_CAP.toLocaleString() + ' lines.');
+        if (F.cut) F.lines.push({ ind: 0, toks: [T('… (the rest is not shown)', 'note')], p: '$' });
+        return { name, ok: true, kind: P.kind, lines: F.lines, notes, depth: F.depth, value: P.value };
+      }
+      const raw = P.text.split(/\r?\n/);
+      let errLine = -1;
+      if (P.at >= 0){ let i = 0; errLine = 0; while (true){ const j = P.text.indexOf('\n', i); if (j < 0 || j >= P.at) break; i = j + 1; errLine++; } }
+      const lines = raw.slice(0, LINE_CAP).map((s, i) => ({ ind: 0, toks: [T(s.replace(/\t/g, '  '), i === errLine ? 'err' : 'txt')], p: 'line ' + (i + 1) }));
+      const notes = ['Not JSON: ' + P.msg + (errLine >= 0 ? ' (line ' + (errLine + 1) + ', marked)' : '')];
+      if (raw.length > LINE_CAP) notes.push('Only the first ' + LINE_CAP.toLocaleString() + ' lines are shown.');
+      return { name, ok: false, lines, notes, depth: 0, error: P.msg, errLine };
+    }
+
+    function paint(cv, L, pg, px){
+      const s = px / PAGE_H;
+      cv.width = Math.max(1, Math.round(PAGE_W * s));
+      cv.height = Math.max(1, Math.round(px));
+      const cx = cv.getContext('2d', { alpha: false });
+      cx.setTransform(s, 0, 0, s, 0, 0);
+      const C = theme();
+      cx.fillStyle = C.paper;
+      cx.fillRect(0, 0, PAGE_W, PAGE_H);
+      cx.textBaseline = 'alphabetic';
+      // The head: the file on the left, where the page begins on the right (cut from the front if long, the end being the part that says most).
+      cx.font = '600 15px ' + SANS;
+      cx.fillStyle = C.head;
+      const name = L.name.length > 34 ? L.name.slice(0, 33) + '…' : L.name;
+      cx.fillText(name, M.l, 38);
+      const nw = cx.measureText(name).width;
+      cx.font = '13px ' + MONO;
+      let path = pg.p;
+      const room = PAGE_W - M.r - M.l - nw - 24;
+      while (path.length > 4 && cx.measureText(path).width > room) path = '…' + path.slice(Math.ceil(path.length * 0.12) + 1);
+      cx.textAlign = 'right';
+      cx.fillText(path, PAGE_W - M.r, 38);
+      cx.textAlign = 'left';
+      cx.strokeStyle = C.gut; cx.lineWidth = 1;
+      cx.beginPath(); cx.moveTo(M.l, 50); cx.lineTo(PAGE_W - M.r, 50); cx.stroke();
+      // The rows.
+      cx.font = L.size + 'px ' + MONO;
+      const x0 = M.l + L.gutC * L.cw;
+      for (const r of pg.rows){
+        if (r.no){
+          cx.fillStyle = C.gut; cx.textAlign = 'right';
+          cx.fillText(String(r.no), x0 - L.cw, r.y);
+          cx.textAlign = 'left';
+        }
+        for (const g of r.segs){
+          if (g.k === 'err'){ cx.fillStyle = C.err; cx.globalAlpha = 0.14; cx.fillRect(x0 - 4, r.y - L.size, PAGE_W - M.r - x0 + 8, L.LH); cx.globalAlpha = 1; }
+          cx.fillStyle = g.k === 'key' ? C.key_ : (C[g.k] || C.txt);
+          cx.fillText(g.s, x0 + g.c * L.cw, r.y);
+        }
+      }
+      cx.fillStyle = C.gut;
+      cx.font = '13px ' + SANS;
+      cx.textAlign = 'center';
+      cx.fillText(pg.num + ' / ' + pg.of, PAGE_W / 2, PAGE_H - M.b / 2 + 6);
+      cx.textAlign = 'left';
+      return cv;
+    }
+    // The text of a page, rows joined, for the smoke test.
+    const textOf = pg => pg.rows.map(r => r.segs.map(g => g.s).join('')).join('\n');
+    /* A setting from the row. Every one but the theme lays the file out again (the size changes the rows, the depth the lines);
+       true says so. */
+    function set(k, v){
+      if (k === 'size'){ const i = Math.max(0, Math.min(SIZES.length - 1, SIZES.indexOf(style.size) + v)); style.size = SIZES[i]; }
+      if (k === 'depth'){ const i = Math.max(0, Math.min(DEPTHS.length - 1, DEPTHS.indexOf(style.depth) + v)); style.depth = DEPTHS[i]; }
+      if (k === 'theme'){ const i = THEMES.findIndex(t => t.key === style.theme); style.theme = THEMES[(i + 1) % THEMES.length].key; }
+      saveStyle();
+      return k !== 'theme';
+    }
+    return { ASPECT, PAGE_W, PAGE_H, LINE_CAP, MAX_BYTES, SIZES, DEPTHS, THEMES, style, theme, depthName,
+             parse, faultAt, linesOf, docOf, layout, paint, textOf, set };
+  })();
+  let _jsonGen = 0;
+  /* THE FILE HANGING NOW, for the settings row (its collection GALLERY_APP._gen, as the book's), and the drop it came in with
+     (a change opens that drop again, as a book's does, so pictures dropped beside it stay; JSON_GO then finds its place). */
+  let JDOC = null, _jsonDrop = null, JSON_GO = null;
+  const jsonLive = () => !!(JDOC && JDOC.L && JDOC.gen === GALLERY_APP._gen);
+  /* THE PLACE KEPT across a change: the path the framed page began at. After a size the same line begins some page; after a
+     depth change that line may be gone into a folded container, so the deepest line still standing on its way (whose path
+     its own begins with) is taken instead. */
+  const lineOfPath = (L, p) => {
+    let best = 0, bestLen = -1;
+    for (let i = 0; i < L.lines.length; i++){
+      const q = L.lines[i].p;
+      if (q === p) return i;
+      if (q.length > bestLen && p.startsWith(q) && (p.length === q.length || p[q.length] === '.' || p[q.length] === '[')){ best = i; bestLen = q.length; }
+    }
+    return best;
+  };
+  const goToPath = (J, p) => {
+    const li = lineOfPath(J.L, p), P = J.L.pages;
+    let j = 0;
+    for (let q = 0; q < P.length; q++){ if (P[q].first <= li) j = q; else break; }
+    const cell = GALLERY_APP._cellFor(J.base + j, target.cellX | 0, target.cellZ | 0);
+    if (cell && target.shown) gotoCell(cell.c, cell.r);
+  };
+  async function _hangJson(J, pour, slot, dead, relayout = true){
+    if (relayout || !J.L){
+      if (!J.doc || J.doc.depthAsked !== JSONV.style.depth){ J.doc = JSONV.docOf(J.label, J.text); J.doc.depthAsked = JSONV.style.depth; }
+      J.L = JSONV.layout(J.doc);
+      J.L.name = J.label;
+    }
+    const pages = J.L.pages;
+    if (!pages.length) return false;
+    const base = await POUR.claim(pour, slot, pages.length, [JSONV.ASPECT]);
+    _zipShowsGallery();
+    try { GALLERY_APP._finish(); } catch {}
+    Object.assign(J, { base, gen: GALLERY_APP._gen });
+    if (JSON_GO && JSON_GO.label === J.label){ const p = JSON_GO.p; JSON_GO = null; setTimeout(() => goToPath(J, p), 0); }
+    try { GALLERY_APP._json = { label: J.label, base, pages, doc: J.doc, L: J.L, JSONV }; } catch {}
+    POUR.serve(pour, {
+      base, n: pages.length, label: J.label, tag: 'json', width: PDF_WIDTH,
+      dead, render: async i => JSONV.paint(_pdfCanvas(), J.L, pages[i - base], _pdfPx()),
+      name: i => J.label + ' · ' + (i - base + 1),
+      placed: cv => _pdfRelease(cv),
+    });
+    try { rebuildBoardBrowser(); bbRefreshNow(); } catch {}
+    return true;
+  }
+  let _jsonBusy = false;
+  async function jsonSet(k, v){
+    if (!jsonLive() || _jsonBusy) return;
+    const J = JDOC;
+    let p = null;
+    try {
+      const i = GALLERY_APP._pick(target.cellX | 0, target.cellZ | 0) - J.base;
+      if (target.shown && J.L.pages[i]) p = J.L.pages[i].p;
+    } catch {}
+    const relayout = JSONV.set(k, v);
+    if (_jsonDrop){ JSON_GO = p ? { label: J.label, p } : null; _loadFiles(_jsonDrop); return; }
+    _jsonBusy = true;
+    try {
+      const gen = ++_jsonGen;
+      await _hangJson(J, POUR.open(1, false), 0, () => gen !== _jsonGen, relayout);
+      if (p) goToPath(J, p);
+      _setLoadBtn(J.label + ' · ' + J.L.pages.length + ' pages');
+      setTimeout(() => _setLoadBtn('Load images ⇧'), 2500);
+    } finally { _jsonBusy = false; }
+  }
+  /* THE ROW IS THE FILE'S SETTINGS while one hangs, as it is a book's: smaller and larger with the size between them, the
+     depth (shallower, how deep, deeper: All opens everything), and the colours, a tile stepping through them. The book's row
+     is kept for a book; whichever hangs now has it. */
+  {
+    const tiles = () => {
+      const S = JSONV.style, C = JSONV.theme(), D = JSONV.DEPTHS;
+      const shown = JDOC && JDOC.doc ? JDOC.doc.depth : S.depth;
+      return [
+        { glyph: 'A−', value: 'Smaller', dim: S.size <= JSONV.SIZES[0] },
+        { label: 'Size', value: String(S.size) },
+        { glyph: 'A+', value: 'Larger', dim: S.size >= JSONV.SIZES[JSONV.SIZES.length - 1] },
+        { glyph: '⊟', value: 'Shallower', dim: S.depth <= D[0] },
+        { label: 'Depth', value: JSONV.depthName(S.depth) + (JDOC && JDOC.doc && JDOC.doc.ok && shown !== S.depth ? ' (' + shown + ')' : '') },
+        { glyph: '⊞', value: 'Deeper', dim: S.depth >= D[D.length - 1] },
+        { glyph: '{ }', value: 'Colours: ' + C.name, color: C.str, bg: '#5d6069' },   // (the book's grey under the swatch: a tile's words are white)
+      ];
+    };
+    const tap = i => {
+      if (i === 0) return jsonSet('size', -1);
+      if (i === 2) return jsonSet('size', 1);
+      if (i === 3) return jsonSet('depth', -1);
+      if (i === 5) return jsonSet('depth', 1);
+      if (i === 6) return jsonSet('theme');
+    };
+    const T0 = GALLERY_APP.statTiles, F0 = GALLERY_APP.statsFirst, S0 = GALLERY_APP.onStatTap;
+    GALLERY_APP.statTiles = (c, r) => (jsonLive() ? tiles() : (T0 ? T0(c, r) : null));
+    GALLERY_APP.statsFirst = () => jsonLive() || !!(F0 && F0());
+    GALLERY_APP.onStatTap = (c, r, i) => { if (jsonLive()) tap(i); else if (S0) S0(c, r, i); };
+    GALLERY_APP._jsonRow = { live: jsonLive, set: jsonSet, tiles: () => (jsonLive() ? tiles() : null), tap, get busy(){ return _jsonBusy; } };
+  }
+  const _loadJson = async (f, join, pour, slot) => {
+    const gen = join ? _jsonGen : ++_jsonGen;
+    const superseded = () => gen !== _jsonGen;
+    const label = f.name || 'data.json';
+    if (_jsonDrop && !_jsonDrop.includes(f)) _jsonDrop = null;
+    try {
+      if (f.size > JSONV.MAX_BYTES) throw new Error(f.name + ' is ' + Math.round(f.size / 1048576) + ' MB; ' + Math.round(JSONV.MAX_BYTES / 1048576) + ' MB is the most');
+      _setLoadBtn('Opening ' + label + ' …');
+      const text = await f.text();
+      if (superseded()) return;
+      _setLoadBtn('Laying out ' + label + ' …');
+      await new Promise(r => setTimeout(r, 0));
+      JDOC = { label, text, doc: null, L: null, gen: -1, base: 0 };
+      if (!await _hangJson(JDOC, pour, slot, superseded)) throw new Error('nothing to show in ' + label);
+      _setLoadBtn(label + ' · ' + JDOC.L.pages.length + (JDOC.L.pages.length === 1 ? ' page' : ' pages'));
+      setTimeout(() => _setLoadBtn('Load images ⇧'), 2500);
+    } catch (e){
+      console.warn('[json] load failed:', f && f.name, e);
+      _setLoadBtn('JSON failed: ' + (e.message || e));
+      setTimeout(() => _setLoadBtn('Load images ⇧'), 4000);
+    }
+  };
   /* BUCKET -> gallery. tangent.fit already holds the Cloudflare hookup: its
      Worker lists an R2 bucket (`/bucket?bucket=NAME` -> {success, objects})
      and streams any object back (`...&key=NAME`) — the same API bucket.js
@@ -60173,27 +60582,27 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
          a bare array of slices, or {result:[...]} — the two forms
          index.js feeds galleryobj.reset(). Tensor-mode JSONs are data,
          not pictures; they are noted and skipped. */
-      const jsons = objects.filter(o => /\.json$/i.test(o.name));
+      /* (Oct 25, the JSON viewer: a JSON file that is not a manifest, a tensor gallery among them, is data, kept to be read
+         as pages when the bucket holds nothing else to show; so are .jsonl, .ndjson and .geojson, never manifests.) */
+      const jsons = objects.filter(o => /\.(json|jsonl|ndjson|geojson)$/i.test(o.name))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const datas = [];
       for (const j of jsons){
         try {
           _setBucketBtn('Reading ' + j.name + ' \u2026');
-          const jr = await fetch(_bucketURL(bucket, j));
+          const jr = await fetch(urlOf(j));
           if (!jr.ok) throw new Error('HTTP ' + jr.status);
-          const doc = await jr.json();
-          if (doc && (doc.tensorMode || doc.dimensions)){
-            console.log('[bucket] ' + j.name + ' is a tensor gallery \u2014 skipped (no field renderer for it)');
-            continue;
-          }
-          const slices = Array.isArray(doc) ? doc : (Array.isArray(doc.result) ? doc.result : null);
-          if (!slices || !slices.length){
-            console.warn('[bucket] ' + j.name + ': no slices found (expected an array or {result:[...]})', doc);
-            continue;
-          }
+          const text = await jr.text();
+          let doc = null;
+          if (/\.json$/i.test(j.name)) try { doc = JSON.parse(text); } catch {}
+          const slices = !doc || doc.tensorMode || doc.dimensions ? null
+            : Array.isArray(doc) ? doc : (Array.isArray(doc.result) ? doc.result : null);
           let added = 0;
-          slices.forEach((s, i) => {
-            const u = _sliceURL(s);
+          if (slices) slices.forEach((s, i) => {
+            const u = s && typeof s === 'object' ? _sliceURL(s) : null;
             if (u){ imgs.push({ name: _sliceName(s, i), __url: u }); added++; }
           });
+          if (!added){ datas.push({ name: j.name, text }); console.log('[bucket] ' + j.name + ' is data, not a manifest'); continue; }
           console.log('[bucket] ' + j.name + ': ' + added + ' of ' + slices.length + ' slices resolved to image URLs');
         } catch (e){ console.warn('[bucket] manifest failed', j.name, e); }
       }
@@ -60242,6 +60651,13 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         if (!dr.ok) throw new Error('epub HTTP ' + dr.status);
         await _loadEpub(new File([await dr.blob()], d.name, { type: 'application/epub+zip' }),
                         false, POUR.open(1, false), 0);
+        _zipShowsGallery();
+        _setBucketBtn(_bucketBtnIdle());
+        return;
+      }
+      if (!imgs.length && datas.length){        // a data file, read as pages (Oct 25)
+        const d = datas[0];
+        await _loadJson(new File([d.text], d.name, { type: 'application/json' }), false, POUR.open(1, false), 0);
         _zipShowsGallery();
         _setBucketBtn(_bucketBtnIdle());
         return;
@@ -60476,7 +60892,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      libarchive opens, PDFs, and the game records. A row that opens fine but
      looks greyed out is the same lie as a row that is missing, in a quieter
      voice. */
-  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|pgn|pdn|sgf|json)$/i;
+  const BP_LOADABLE = /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|pgn|pdn|sgf|json|jsonl|ndjson|geojson)$/i;
   /* A CONTAINER, conservatively: an explicit prefix (trailing slash), or a
      name with no extension AND no bytes. Anything with a size or an
      extension is an object, whatever the extension happens to be — being
@@ -60991,13 +61407,17 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const books = all.filter(f => f && _isBook(f));
     // (a book that comes with other files keeps the whole drop, to open again when its settings change; see BOOK_GO)
     if (books.length) _bookDrop = all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '')).length > 1 ? all.slice() : null;
+    /* A JSON file (Oct 25: "what about a json file viewer") is laid out as pages, as a book is (JSONV); one that comes with
+       other files keeps the drop, to open again when its settings change. */
+    const jsons = all.filter(f => f && (/\.(json|jsonl|ndjson|geojson)$/i.test(f.name || '') || /json/i.test(f.type || '')));
+    if (jsons.length) _jsonDrop = all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '')).length > 1 ? all.slice() : null;
     const zips = all.filter(f => f && !_isBook(f) && (/\.(zip|cbz|cbr|cb7|cbt|7z|tar|tgz|tar\.gz)$/i.test(f.name || '') || /zip/.test(f.type || '')));
     // A PDF is a gallery of pages: same entry point, same app, its own reader.
     const pdfs = all.filter(f => f && (/\.pdf$/i.test(f.name || '') || /pdf/.test(f.type || '')));
     const list = all.filter(f => f && /^image\//.test(f.type))
       .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined,
                                                    { numeric: true, sensitivity: 'base' }));
-    if (!zips.length && !list.length && !pdfs.length && !books.length) return;
+    if (!zips.length && !list.length && !pdfs.length && !books.length && !jsons.length) return;
     /* CONCATENATED, AND THEREFORE SEQUENTIAL (Sep 9: "concatonated").
        Three archives dropped together used to be fired off at once, and each
        one's _begin cleared what the last had built — so the field ended up
@@ -61054,9 +61474,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       for (const f of zips) jobs.push(j => _loadZip(f, j.join, j.pour, j.slot));
       for (const f of pdfs) jobs.push(j => _loadPdf(f, j.join, j.pour, j.slot));
       for (const f of books) jobs.push(j => _loadEpub(f, j.join, j.pour, j.slot));
+      for (const f of jsons) jobs.push(j => _loadJson(f, j.join, j.pour, j.slot));
       if (list.length)      jobs.push(j => _loadLoose(list, j.join, j.pour, j.slot));
       if (!jobs.length) return;
-      const onlyLoose = !zips.length && !pdfs.length && !books.length;
+      const onlyLoose = !zips.length && !pdfs.length && !books.length && !jsons.length;
       let addsToWhatIsThere = false;
       try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded; } catch {}
       const pour = POUR.open(jobs.length, addsToWhatIsThere);
