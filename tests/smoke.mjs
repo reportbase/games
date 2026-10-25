@@ -5519,14 +5519,22 @@ try {
       // the code block painted on its shade
       const px = await page.evaluate(g => { const E = eval(g)._epub, pg = E.pages[0], sh = pg.shades.find(s => s.k === 'code'); if (!sh) return null;
         const cv = document.createElement('canvas'); E.EPUB.paint(cv, pg, 960, new Map());
-        const d = cv.getContext('2d').getImageData(Math.round(sh.x + sh.w - 4), Math.round(sh.y + sh.h / 2), 1, 1).data, e = cv.getContext('2d').getImageData(4, 4, 1, 1).data;
+        const d = cv.getContext('2d').getImageData(Math.round(sh.x + sh.w - 4), Math.round(sh.y + sh.h / 2), 1, 1).data, e = cv.getContext('2d').getImageData(4, 900, 1, 1).data;
         return { shade: [d[0], d[1], d[2]].join(), paper: [e[0], e[1], e[2]].join() }; }, G);
       if (!px || px.shade === px.paper) bad.push('the code block has no shade: ' + JSON.stringify(px));
+      // each chapter its own paper, each opening on its title large on a band of its colour (Oct 25: "yes", to chapters seen
+      // from far off and headings as landmarks)
+      const tint = await page.evaluate(g => { const E = eval(g)._epub, at = (pg, x, y) => { const cv = document.createElement('canvas'); E.EPUB.paint(cv, pg, 960, new Map());
+          return [...cv.getContext('2d').getImageData(x, y, 1, 1).data].slice(0, 3).join(); };
+        const band = p => p.shades.find(s => s.k === 'band'), big = p => Math.max(...p.lines[0].items.map(it => +/(\d+)px/.exec(it.font)[1]));
+        return { tints: E.pages.map(p => p.tint), bands: E.pages.map(p => !!band(p)), big: E.pages.map(big), paper: E.pages.map(p => at(p, 4, 900)), band: E.pages.map(p => at(p, 600, 20)) }; }, G);
+      if (tint.tints.join() !== '0,1' || tint.bands.join() !== 'true,true' || tint.paper[0] === tint.paper[1] || tint.band[0] === tint.paper[0] || !(tint.big[0] >= 50))
+        bad.push('chapter colours and title bands: ' + JSON.stringify(tint));
       await page.evaluate(g => { eval(g)._book.tap(0); }, G);
       await page.waitForFunction(([g, s0]) => { const E = eval(g)._epub; return E && E.EPUB.style.size === s0; }, [G, r.size], { timeout: 30000 }).catch(() => {});
     }
     if (bad.length) failures.push('[markdown] ' + bad.join('; '));
-    console.log(`${bad.length ? 'FAIL' : 'ok  '} markdown: a .md opened through the picker as a book of ${r ? r.pages : '?'} pages, a chapter a top heading, its words in order, the picture beside it placed and not hung again, a missing one in words, code shaded, a real click on Larger laying it out again`);
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} markdown: a .md opened through the picker as a book of ${r ? r.pages : '?'} pages, a chapter a top heading, its words in order, the picture beside it placed and not hung again, a missing one in words, code shaded, each chapter its own paper and its title large on a band, a real click on Larger laying it out again`);
   }
   // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
   // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space
