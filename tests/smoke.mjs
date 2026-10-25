@@ -3255,6 +3255,69 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (started by the saucer with ${r.start && r.start.clock} s, won for ${r.won.p1} then ${r.won.p2}, time up, by the lanes; '${r.rec.text}' and ${r.rec.lamps} clock lamps; ramps and orbits aimed ${r.ramps.aim} against ${r.ramps.free}; a recording whose ${r.window.kind === 2 ? 'multiball' : 'mission'} starts ${(r.window.first / 30).toFixed(1)} s in)`);
   }
+  // PINBALL: A TABLE OF YOUR OWN (Oct 25: "whats next for pinball", then "1"): a board's table made again from its plain spec is the
+  // same table; the real dots open the editor on the framed board; Clear, then a real click laying a bumper where it fell and a real
+  // drag moving it; a part too near another refused; a ramp a side; Check's steady player; the real ✓ keeping it in storage as the
+  // board's own table, played; a shared copy onto another board; nonsense refused by cleanSpec.
+  {
+    current = 'pinball editor';
+    const before = failures.length;
+    const pe0 = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const A = window.FIELD_APPS.find(a => a.id === 'pinball'); if (window.getFieldApp() !== A){ window.setFieldApp(A); await wait(2500); }
+      const D = A._debug; let worst = 0, same = true;
+      for (let i = 0; i < 40; i++){ const T = D.makeTable(i * 13 + 5, 1 + i % 5, 0), T2 = D.makeTable(T.idx, T.lv, 0, false, D.cleanSpec(T.spec));
+        if (T.segs.length !== T2.segs.length || T.circs.length !== T2.circs.length || T.ramps.length !== T2.ramps.length || T.fl.length !== T2.fl.length || T.drops.length !== T2.drops.length) same = false;
+        else T.circs.forEach((c, k) => { worst = Math.max(worst, Math.hypot(c.x - T2.circs[k].x, c.y - T2.circs[k].y)); }); }
+      if (!document.body.classList.contains('bb-collapsed')){ document.getElementById('bbHandle').click(); await wait(800); }
+      return { same, worst };
+    });
+    await page.click('#bbHandle'); await page.waitForTimeout(900);
+    const pe1 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.ed(); if (!E.on) return { open: false };
+      const tile = name => A.onStatTap(E.c, E.r, A.statTiles(E.c, E.r).findIndex(t => String(t.value).startsWith(name)));
+      tile('Clear'); tile('Bumper'); return { open: true, bare: E.P.bumpers.length === 0 && E.P.ramps.length === 0 && !E.P.saucer, c: E.c, r: E.r }; });
+    const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+    let pe2 = {};
+    if (pe1.open){
+      const W = 0.56, a = await aimAt(0.2 / W, 0.3), b = await aimAt(0.3 / W, 0.4);
+      await page.mouse.click(a.x, a.y); await page.waitForTimeout(500);
+      const laid = await page.evaluate(() => window.getFieldApp()._debug.ed().P.bumpers.map(q => q.slice()));
+      await page.mouse.move(a.x, a.y); await page.mouse.down();
+      for (let k = 1; k <= 10; k++){ await page.mouse.move(a.x + (b.x - a.x) * k / 10, a.y + (b.y - a.y) * k / 10); await page.waitForTimeout(40); }
+      await page.mouse.up(); await page.waitForTimeout(500);
+      pe2 = await page.evaluate(laid => { const A = window.getFieldApp(), D = A._debug, E = D.ed(), K = D.consts, out = { laid };
+        out.moved = E.P.bumpers.map(q => q.slice());
+        const tile = name => A.onStatTap(E.c, E.r, A.statTiles(E.c, E.r).findIndex(t => String(t.value).startsWith(name)));
+        out.refused = !!D.putPart(E.P, 'bumper', E.P.bumpers.length, E.P.bumpers[0][0] + 0.02, E.P.bumpers[0][1]).why;
+        E.ateAt = 0;                                            // (the tap the field sends after a drag is eaten for 350 ms; these are not it)
+        tile('Ramp'); D.edTap(E.c, E.r, 0.12 / K.W, 0.45); D.edTap(E.c, E.r, 0.17 / K.W, 0.5); D.edTap(E.c, E.r, 0.4 / K.W, 0.45);
+        out.ramps = E.P.ramps.map(q => q.slice());
+        tile('Saucer'); D.edTap(E.c, E.r, 0.27 / K.W, 0.56);
+        out.built = { ramps: E.M.T.ramps.filter(x => x.kind === 'ramp').length, saucer: !!E.M.T.saucer, bumpers: E.M.T.bumpers.length };
+        out.check = +D.edCheck(false).life.toFixed(1);
+        return out; }, laid);
+      await page.waitForFunction(() => !!document.querySelector('#bbQuick button[title^="Done"]'), null, { timeout: 5000 }).catch(() => {});
+      await page.click('#bbQuick button[title^="Done"]').catch(() => {}); await page.waitForTimeout(700);
+    }
+    const pe3 = await page.evaluate(pe1 => { const D = window.getFieldApp()._debug, E = D.ed(), k = pe1.c + '_' + pe1.r, out = {};
+      out.closed = !E.on; out.kept = D.MINE.has(k);
+      const M = D.tableFor(pe1.c, pe1.r); out.mine = !!M && M.mine && M.T.mine && M.T.ramps.filter(x => x.kind === 'ramp').length === 2 && !!M.T.saucer;
+      const d = D.cleanSpec(JSON.parse(localStorage.getItem('pinball.mine') || '{}')[k]); out.stored = !!d && JSON.stringify(d) === JSON.stringify(D.MINE.get(k));
+      out.game = D.gameAt(pe1.c, pe1.r).M === M;
+      D.takeTable(pe1.c + 3, pe1.r, JSON.parse(JSON.stringify(d))); out.shared = JSON.stringify(D.MINE.get((pe1.c + 3) + '_' + pe1.r)) === JSON.stringify(d);
+      out.clean = D.cleanSpec(null) === null && D.cleanSpec({ era: 'x', lv: 9, bumpers: [[9, 9], 'a'], ramps: [[1, 0.4, 0.4], [1, 0.3, 0.3]] }).ramps.length === 1;
+      D.MINE.delete(k); D.MINE.delete((pe1.c + 3) + '_' + pe1.r); D.MINE_M.clear(); D.GAMES.clear(); localStorage.removeItem('pinball.mine');
+      return out; }, pe1);
+    const ok = pe0.same && pe0.worst < 0.002 && pe1.open && pe1.bare && pe2.laid && pe2.laid.length === 1 && Math.hypot(pe2.laid[0][0] - 0.2, pe2.laid[0][1] - 0.3) < 0.02
+      && pe2.moved.length === 1 && Math.hypot(pe2.moved[0][0] - 0.3, pe2.moved[0][1] - 0.4) < 0.03 && pe2.refused
+      && pe2.ramps.length === 2 && pe2.ramps.some(q => q[0] < 0 && Math.abs(q[1] - 0.17) < 0.002) && pe2.ramps.some(q => q[0] > 0)
+      && pe2.built.ramps === 2 && pe2.built.saucer && pe2.built.bumpers === 1 && pe2.check > 0
+      && pe3.closed && pe3.kept && pe3.mine && pe3.stored && pe3.game && pe3.shared && pe3.clean;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ pe0, pe1, pe2, pe3 })}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (40 tables made again from their specs, ${pe0.worst.toFixed(4)} apart at most; the real dots opened it, a real click laid a bumper and a real drag moved it; a ramp a side; the steady player's ball ${pe2.check} s; the real ✓ kept it as the board's table; shared onto another)`);
+  }
   // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the
   // corner block, a step harder from ring 7 and another from ring 31. On Easy: board (0, 0) easy, (10, 0) normal, (40, 40)

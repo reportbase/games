@@ -477,6 +477,38 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       ball, started by the lanes on a table with no saucer, recorded and read back ('12 POPS 20', the clock's lamps), a ball on a flipper
       flown ahead going up the table, the aiming player making more ramps and orbits than one that does not (16 tables), and a
       recording starting before its mission or multiball.
+  - **A table of your own** (Oct 25: "whats next for pinball", then "1": a table editor in the bottom row, the steady player
+    checking it, shared as a link):
+    - **Builders and a spec**: `makeTable`'s parts are each laid by a builder (`B.orbit`, `ramp`, `upper`, `magnet`, `mbank`,
+      `captive`, `spinner`, `rolls`, `gobble`, `bumper`, `bankSide`/`bankMid`/`bankNone`, `stand`, `saucer`, `post`) that also writes
+      it into the table's plain spec (`T.spec`: `{v, era, theme, lv, orbit (its mouths' y or 0), ramps [[side, x, y]], upper
+      [side, y], magnet [x, y, phase], mbank [xc, y, period], captive [x, y1], spinner, rolls, gobble [x, y], bumpers [[x, y]], bank
+      {side, y0, n} | {x0, y, n} | null, stands [[y, side]], saucer [x, y, kick x], posts [[x, y]]}`, to a thousandth). A board's own
+      table makes the same draws in the same order as before, so every board keeps its table (900 checked identical against the
+      page before). `makeTable(idx, lv, a, bare, spec)` lays a spec (`layOut`; its era, theme and hue from `ehOf`); a board's spec
+      made again is its table to 0.0007.
+    - **The editor** (`ED`, `ed…`, the tilt maze's hooks): the dots, or the menu's Make a table for this board…, take the framed
+      board's table into the editor (`edStart`: its spec through `cleanSpec`), drawn as it is made (`ED.M`, a new photo key each
+      change). Tools: Bumper, Post, Saucer, Ramp (its side by the tap; one a side), Orbit (a tap lays or takes it), Drop bank
+      (across, or along a side wall when tapped near one), Standup and Upper flipper (on the nearer wall), Spinner, Rollovers,
+      Captive ball, Magnet, Moving bank, Gobble hole, Erase; the same tool on a part of its kind takes it away, one of a kind
+      moves. A press on a part drags it, kept where it last fitted (`claimsPan`, `edDragStart`, `edDragAt`). Parts keep a ball's
+      width apart and inside the playfield (`partsOf`: the circles each part takes up, makeTable's own measures; `clashOf`,
+      `putPart`, `takePart`; up to 8 bumpers, 10 posts, 4 standups). Acts: Era, Theme, Level (a level whose wider flippers would
+      meet a part is refused), Clear, Check (`edCheck`: the steady player's `FIT_BALLS` balls, how long one lasts against the
+      level's `LIFE_BAND`, and the level it plays like), Play. Quick buttons Erase, Check, Cancel, Done. While editing the keys
+      start nothing.
+    - **Kept** (`MINE`, localStorage `pinball.mine`, the latest 300, read back through `cleanSpec`): `tableFor` asks it first
+      (`mineTable`: the table from its spec, its recording and life from one steady-player run, par when wanted, `key` 'm' + a hash
+      of the spec, so a changed table starts its best afresh: `bestKey`); `knownTable` for the boards only looked at. Framed in
+      violet (`MINE_COL`); the title says "your table". Escape or Cancel leaves the board as it was. Menu: Share this board's table
+      (`shareTable`, `SHARE`; the draft while making it), Forget this board's table; a shared one (`takeTable`) goes through
+      `cleanSpec`.
+    - The older eras' ramps were never drawn before (none had any), and drew black: wood rail's are cream, electro-mechanical's
+      the table's opposite hue.
+    - The smoke test checks 40 tables made again from their specs, the real dots opening the editor, a real click laying a bumper
+      where it fell and a real drag moving it, a part too near another refused, a ramp a side, Check, the real ✓ keeping it in
+      storage as the board's table and playing it, a shared copy on another board, and nonsense through `cleanSpec`.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
