@@ -2984,12 +2984,14 @@ try {
       { const T = D.makeTable(5, 1), S = D.newState(T, true), f = T.fl[0], c = Math.cos(f.rest), s = Math.sin(f.rest);
         S.b = { x: f.px + c * f.len * 0.6 + s * (K.R + 0.011), y: f.py + s * f.len * 0.6 - c * (K.R + 0.011), vx: 0, vy: 0 };
         D.setFlipper(S, 0, true); let vy = 0; run(T, S, 0.06, S => { vy = Math.min(vy, S.b.vy); }); out.flip = vy; }
-      // a bumper kicks the ball out faster than it came
-      { const T = D.makeTable(5, 1), S = D.newState(T, true), B = T.bumpers[0];
+      // (an era of its own: the first table near a number with the parts a check wants)
+      const tableWith = (from, lv, ok) => { for (let i = from; i < from + 400; i++){ const T = D.makeTable(i, lv); if (ok(T)) return T; } return null; };
+      // a bumper kicks the ball out faster than it came (not wood rail's passive ones)
+      { const T = tableWith(5, 1, T => T.era.id !== 'wood'), S = D.newState(T, true), B = T.bumpers[0];
         S.b = { x: B.x - 0.06, y: B.y, vx: 0.5, vy: 0 }; T.g = 0; let after = 0; run(T, S, 0.25, S => { after = Math.hypot(S.b.vx, S.b.vy); }); T.g = T.D.g;
         out.bumper = { after, score: S.score }; }
       // the drop targets: each down by a hit, the bank down: 5000 and the multiplier up; up again after a moment
-      { const T = D.makeTable(6, 2), S = D.newState(T, true);
+      { const T = tableWith(6, 2, T => T.drops.length >= 3), S = D.newState(T, true);
         for (const t of T.drops){ const mx = (t.a[0] + t.b[0]) / 2, my = (t.a[1] + t.b[1]) / 2, nx = t.ex ? 0 : (t.nx || 1), ny = t.ex ? 1 : 0;
           S.b = { x: mx + nx * 0.03, y: my + ny * 0.03, vx: -nx * 1.2, vy: -ny * 1.2 }; T.g = 0; run(T, S, 0.05); }
         T.g = T.D.g; out.drops = { down: S.drops.reduce((a, x) => a + x, 0), n: T.drops.length, mult: S.mult, score: S.score };
@@ -3001,14 +3003,14 @@ try {
       // the ball save at level 1, none at level 5; the kickback at level 1; three nudges tilt
       { const g = D.fresh(0, 0); D.GAMES.set('0_0', g); D.LIVE = { c: 0, r: 0 }; D.begin(g); const S = g.S, T = g.M.T;
         S.onPl = false; S.launchT = S.t; S.b = { x: K.XC, y: 1.03, vx: 0, vy: 1 }; g.last = performance.now() - 30; D.stepGame(g);
-        out.save = { onPl: S.onPl, balls: g.balls, lv: T.lv };
+        out.save = { onPl: S.onPl, balls: g.balls, want: T.balls, lv: T.lv };
         const O = T.outs[0]; S.onPl = false; S.b = { x: (O.x0 + O.x1) / 2, y: O.y + 0.02, vx: 0, vy: 1 }; S.kb = [1, 1]; D.sub(T, S, K.SUB); D.sub(T, S, K.SUB);
         out.kick = { vy: S.b.vy, lit: S.kb.join('') };
         S.b = { x: K.XC, y: 0.5, vx: 0, vy: 0 }; S.onPl = false; D.nudge(g); D.nudge(g); D.nudge(g); D.setFlipper(S, 0, true); D.sub(T, S, K.SUB);
         out.tilt = { tilt: S.tilt, flipperDown: Math.abs(S.fl[0].phi - T.fl[0].rest) < 0.05 };
         const T5 = D.makeTable(13, 5); out.save5 = T5.D.save; D.GAMES.delete('0_0'); }
       // the board's pieces: two flippers (never a yaw of 0), the bumpers, the ball, the lamps; and its picture
-      { const M = D.tableFor(3, 0), V = D.viewOf(M, null), its = D.itemsOf(V), n = k => its.filter(i => i.kind === k).length;
+      { const M = D.readyNow(D.tableFor(3, 0)), V = D.viewOf(M, null), its = D.itemsOf(V), n = k => its.filter(i => i.kind === k).length;
         out.drawn = { flippers: n('pbFlipper'), bumpers: n('pbBumper'), wantB: M.T.bumpers.length, lamps: n('pbLamp'), zeroYaw: its.filter(i => i.kind === 'pbFlipper' && !i.yaw).length };
         const cv = D.paint(M.T, 512); out.picture = cv ? [cv.width, cv.height] : null; }
       return out;
@@ -3016,7 +3018,7 @@ try {
     const pbOk = pb.levels.join() === '2,3,5' && pb.same && pb.differ && pb.dials[0].g < pb.dials[1].g && pb.dials[0].fl > pb.dials[1].fl && pb.dials[0].save > 0 && pb.dials[1].save === 0
       && pb.dials[0].kb === '11' && pb.dials[1].kb === '00' && pb.launch.inField && !pb.launch.back && pb.escapes === 0 && pb.flip < -1.5 && pb.bumper.after > 0.9 && pb.bumper.score >= 100
       && pb.drops.down === pb.drops.n && pb.drops.mult === 2 && pb.drops.score >= 5000 + 500 * pb.drops.n && pb.drops.reset === 0 && pb.lanes.lit[0] === '1' && pb.lanes.moved !== pb.lanes.lit
-      && pb.save.onPl && pb.save.balls === 3 && pb.kick.vy < -1 && pb.kick.lit === '01' && pb.tilt.tilt && pb.tilt.flipperDown && pb.save5 === 0
+      && pb.save.onPl && pb.save.balls === pb.save.want && pb.kick.vy < -1 && pb.kick.lit === '01' && pb.tilt.tilt && pb.tilt.flipperDown && pb.save5 === 0
       && pb.drawn.flippers === 2 && pb.drawn.bumpers === pb.drawn.wantB && pb.drawn.lamps > 6 && !pb.drawn.zeroYaw && pb.picture && Math.abs(pb.picture[0] / pb.picture[1] - 0.56) < 0.01;
     if (!pbOk) failures.push(`[${current}] the tables and the ball: ${JSON.stringify(pb)}`);
     // par from the steady player: near the corner higher than far out
@@ -3068,6 +3070,57 @@ try {
     if (!realOk) failures.push(`[${current}] real input: ${JSON.stringify({ s0, s1, s2, s3, t1, t2, t3, z0, z1, t4, ov, nx, idle })}`);
     await page.evaluate(() => localStorage.removeItem('pinball.best'));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (pars ${Math.round(par.near)} near, ${Math.round(par.far)} far; ${pb.steps} steps of the steady player, the ball never out)`);
+  }
+  // PINBALL: ERAS, RAMPS AND ORBITS, REMADE UNTIL IT FITS (Oct 25: "what are ways we could improve pinball, like more variety and
+  // the further from the center, the more difficult, and more variety of styles", then "proceed"): every era among the first
+  // boards, each with its own parts and balls; a ramp made by a hard shot (scored, out on its inlane), a weak one rolling back
+  // out of its mouth, a second within the combo's time worth twice; an orbit round to the other side; a gobble hole taking a slow
+  // ball; tables fitted to their level's band by the steady player, a ball lasting longer near the corner than far out; the
+  // ramps and a ball on one drawn raised; and each era's picture.
+  {
+    current = 'pinball eras';
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, K = D.consts, out = {};
+      const tableWith = (from, lv, ok) => { for (let i = from; i < from + 600; i++){ const T = D.makeTable(i, lv); if (ok(T)) return T; } return null; };
+      const run = (T, S, sec, stop) => { for (let k = 0; k < sec / K.SUB; k++){ const e = D.sub(T, S, K.SUB); if (e) return e; if (stop && stop(S)) return 'stop'; } return null; };
+      const eras = {}; for (let i = 0; i < 60; i++){ const T = D.makeTable(i, 2); const e = eras[T.era.id] = eras[T.era.id] || { n: 0, balls: T.balls, drops: 0, ramps: 0, orbits: 0, gobble: 0 };
+        e.n++; e.drops += T.drops.length ? 1 : 0; e.ramps += T.ramps.filter(x => x.kind === 'ramp').length; e.orbits += T.orbit ? 1 : 0; e.gobble += T.gobble ? 1 : 0; }
+      out.eras = eras;
+      // a ramp: a hard shot rides it to its inlane, scored; a weak one rolls back out; a second soon after is a combo
+      { const T = tableWith(40, 3, T => T.ramps.some(x => x.kind === 'ramp')), k = T.ramps.findIndex(x => x.kind === 'ramp'), Rp = T.ramps[k], M = Rp.M, S = D.newState(T, true);
+        const shoot = v => { S.b = { x: M.x - M.dx * 0.03, y: M.y - M.dy * 0.03, vx: M.dx * v, vy: M.dy * v, z: 0 }; };
+        shoot(3); let top = 0; run(T, S, 0.05); const rode = !!S.ride; run(T, S, 4, S => { top = Math.max(top, S.b.z || 0); return !S.ride; });
+        out.ramp = { rode, top: +top.toFixed(3), score: S.score, at: [+(S.b.x - Rp.exit.x).toFixed(3), +(S.b.y - Rp.exit.y).toFixed(3)] };
+        const s1 = S.score; shoot(3); run(T, S, 0.05); run(T, S, 4, S => !S.ride); out.ramp.combo = S.score - s1;
+        const S2 = D.newState(T, true); S2.b = { x: M.x - M.dx * 0.03, y: M.y - M.dy * 0.03, vx: M.dx * 0.9, vy: M.dy * 0.9, z: 0 }; S2.t = 100;
+        run(T, S2, 0.06); const rode2 = !!S2.ride; run(T, S2, 3, S => !S.ride);
+        out.weak = { rode: rode2, score: S2.score, back: (S2.b.vx * M.dx + S2.b.vy * M.dy) < 0, near: Math.hypot(S2.b.x - M.x, S2.b.y - M.y) < 0.05 }; }
+      // an orbit, from the left mouth round to the right
+      { const T = tableWith(40, 2, T => T.orbit), Rp = T.ramps.find(x => x.kind === 'orbit'), M = Rp.M, S = D.newState(T, true);
+        S.b = { x: M.x, y: M.y + 0.03, vx: 0, vy: -2, z: 0 }; run(T, S, 0.05); const rode = !!S.ride; run(T, S, 4, S => !S.ride);
+        out.orbit = { rode, score: S.score, dx: +(S.b.x - Rp.exit.x).toFixed(3), down: S.b.vy > 0 }; }
+      // a gobble hole takes a slow ball
+      { const T = tableWith(40, 2, T => T.gobble), G = T.gobble, S = D.newState(T, true); S.b = { x: G.x - 0.03, y: G.y, vx: 0.6, vy: 0, z: 0 }; T.g = 0;
+        out.gobble = { e: run(T, S, 0.3), score: S.score }; T.g = T.D.g; }
+      // fitted: each table's life in its level's band (or the nearest of its tries), longer at level 1 than at level 5
+      out.fit = [1, 3, 5].map(lv => { const L = []; for (let i = 0; i < 4; i++){ const G = D.fitGen(800 + i * 31, lv); let x; do { x = G.next(); } while (!x.done);
+        const [lo, hi] = D.LIFE_BAND[lv - 1]; L.push({ life: +x.value.life.toFixed(1), used: x.value.used, inBand: x.value.life >= lo && x.value.life <= hi, reel: x.value.reel.length > 0 }); } return L; });
+      // drawn: a ramp's pieces raised, a ball on a ramp raised; each era's picture
+      { const T = tableWith(40, 3, T => T.ramps.some(x => x.kind === 'ramp')), Rp = T.ramps.find(x => x.kind === 'ramp');
+        const M = { T, reel: null }, V = D.viewOf(M, null); const A = D.pathAt(Rp.P, Rp.P.L / 2); V.b = { x: A.x, y: A.y, z: D.rampZ(Rp, Rp.P.L / 2) };
+        const its = D.itemsOf(V); out.drawn = { raised: its.filter(i => i.kind === 'pbBar' && i.lift > 0.03).length, ball: (its.find(i => i.kind === 'pbBall') || {}).lift || 0 }; }
+      out.pictures = D.ERAS.map(E => { const T = tableWith(0, 2, T => T.era === E); const cv = T && D.paint(T, 256); return cv ? cv.width + 'x' + cv.height : null; });
+      return out;
+    });
+    const E = r.eras, fitOk = r.fit.every(L => L.every(x => (x.inBand || x.used === 6) && x.reel)) && r.fit[0].reduce((a, x) => a + x.life, 0) > r.fit[2].reduce((a, x) => a + x.life, 0) * 2;
+    const ok = E.wood && E.em && E.dmd && E.neon && E.wood.balls === 5 && E.em.balls === 5 && E.dmd.balls === 3 && E.neon.balls === 3 && E.wood.drops === 0 && E.wood.gobble === E.wood.n
+      && E.wood.ramps === 0 && E.em.ramps === 0 && E.neon.ramps > E.neon.n && E.dmd.ramps >= E.dmd.n && E.neon.orbits === E.neon.n
+      && r.ramp.rode && r.ramp.top > 0.04 && r.ramp.score >= 1500 && Math.abs(r.ramp.at[0]) < 0.03 && r.ramp.combo >= 3000
+      && r.weak.rode && r.weak.score === 0 && r.weak.back && r.weak.near
+      && r.orbit.rode && r.orbit.score >= 1000 && Math.abs(r.orbit.dx) < 0.03 && r.orbit.down && r.gobble.e === 'drain' && r.gobble.score >= 5000
+      && fitOk && r.drawn.raised > 10 && r.drawn.ball > 0.04 && r.pictures.every(Boolean);
+    if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (${Object.entries(E).map(([k, v]) => k + ' ' + v.n).join(', ')} of 60; a ramp made for ${r.ramp.score}, a combo ${r.ramp.combo}, a weak shot back out; an orbit ${r.orbit.score}; gobbled ${r.gobble.score}; lives ${r.fit.map(L => L.map(x => x.life).join('/')).join(', ')} at levels 1, 3, 5)`);
   }
   // HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   // move away from the center."): every game with a Difficulty plays each board at its own level, the setting at the
