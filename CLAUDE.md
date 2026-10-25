@@ -650,7 +650,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     `flashcards.decks` (its key its name and a hash of its cards, `makeDeck`; at most `MAX_CARDS` 5,000 a deck) and comes back
     next time; the menu's Deck steps through them (`flashcards.deck`), Remove this deck takes one off with its progress. A
     card's progress is kept by its own id (`cid`, a hash of its front and back), so it follows the card when a file is edited.
-    With no deck every board is a card saying how to bring one (`fc:empty`), and the row's one tile opens the picker. `decks/` in
+    With no deck every board is a card saying how to bring one (`fc:empty`), and the row's one tile opens the picker.
+    **The deck's own picker takes any file** (Oct 25: "json is disabled in flashcard application"): a phone greys out every file
+    the field's Open (`#importImageFile`, its `accept` list) cannot match by type, and a .json saved on a phone is often typed as
+    text or nothing. Open a deck… and the row's tile open a picker of their own with no `accept` (`pickDecks`), and a file from
+    it is read by what it holds (`deckOfAny`: text starting `{` or `[` tried as a JSON deck, else lines of cards). `decks/` in
     the repo holds five deck files to start from (world and US state capitals, the elements, the times tables, Spanish words):
     open them, drop them or put them in a bucket; the page does not load them by itself.
   - **A card a board**: a board's card is `boardIdx` round the deck (`cardOf`), so the corner is card 1 and every card hangs on many
@@ -672,7 +676,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - A board no one studies turns its card over now and then (`FLIP_T` 9 s, `BACK_T` 3.2 s of it on its back), each board at its
     own phase; the framed board holds still.
   - The smoke test checks no deck till one is loaded, four decks opened through the real picker (decks/capitals.tsv, a CSV
-    with quotes, an Anki export with HTML, a JSON deck) and kept, a plain JSON still going to the JSON viewer, the cards by board, the steps (1m, 6m, 10m, 4d; then 1m, 15m, 1d, 4d), graduating, a known
+    with quotes, an Anki export with HTML, a JSON deck) and kept, a plain JSON still going to the JSON viewer, the deck picker taking any file (a JSON deck with no extension), the cards by board, the steps (1m, 6m, 10m, 4d; then 1m, 15m, 1d, 4d), graduating, a known
     card coming due first, its interval growing and Again putting it back with less ease, the nearest board holding a card, and
     real input: a real click turning the framed card, a real click on Good grading it and flying to the next card's board, the
     real Space and 3, the row's tiles, and a board no one studies turning over.
@@ -1895,9 +1899,40 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **Buckets**: a `.json` that resolves to no image slices (a tensor gallery among them) and every `.jsonl`, `.ndjson` and
     `.geojson` is data (`datas`); a bucket with no pictures, archive, PDF or book opens the first in the viewer instead of
     saying it has no images.
+  - **Taken by its type only when its name says nothing else** (found by CI on the flash cards' PR): a mini golf `.golf` is
+    JSON, and opened as application/json it went to the viewer as well, the page left mini golf, and the smoke test's hole
+    editor failed on every run since the viewer came. A name ending `.golf`, `.tvf`, `.tvf3d`, `.csv`, `.tsv`, `.txt`, `.pgn`
+    or `.fen` (`_ownExt`) is never taken by its type.
+  - **A JSON file is never a deck's lines, and loose pictures never join it** (found by CI on the same PR): `_loadFiles` asks the
+    flash cards of every JSON file first, and `deckOfText` read any name but `.json` as lines of cards, so a `.jsonl` became a deck
+    of its comma-split lines; now only `.csv`, `.tsv` and `.txt` are read as lines, anything else as a JSON deck or nothing. And
+    loose pictures dropped while a book or JSON file hangs start a collection of their own (`docHangs`): joined, the document's
+    settings row stayed up over them.
   - The smoke test opens a file through the real picker (pages, lines, numbers, a path head, a wrap), a real click on Larger
     keeping the place, a real click on Shallower and taps to depth 2 folding the 120 records, Colours painting sepia, a broken
     file marked on its line, and JSON Lines read as one array. `GALLERY_APP._json` and `_jsonRow` are for it.
+- **Markdown files as a book** (Oct 25: "would it be hard to add an application that read md files", then "yes, add the markdown
+  reader"): a `.md` (`.markdown`, `.mdown`, `.mkd`, or typed text/markdown) opened, dropped or in a bucket is written out as HTML by
+  the page's own converter (`MD.toHtml`) and read as a book's chapters (`EPUB.fromHtml`, the book reader's `blocksOf` and
+  `layout`), so it hangs one 2:3 page a board with the book's settings row, its place kept when they change (`BOOK`, `bookSet`,
+  `_bookDrop`), all as an EPUB does (`_loadMarkdown`, after `_loadEpub`).
+  - It reads ATX and underlined headings, paragraphs (lazy lines, hard breaks), bold, italics, strikethrough, inline and fenced or
+    indented code, block quotes, nested lists, numbered lists from any start, task boxes (☐ ☑ in place of the bullet), rules,
+    links (inline, by reference, autolinks: the words shown), GitHub tables (set out as columns in the monospaced face, the head
+    in bold), images, a front matter's `title`, and HTML written in (parsed into a document of its own, as a book's is).
+  - Laid out `flat`, as a document (`blocksOf(…, opts)`, a block's `flat`): headings to the left, paragraphs spaced apart rather
+    than indented, code on a faint box and quotes with a bar down their left (a page's `shades`, painted under the words). Books
+    are laid out as before.
+  - A chapter at each heading of the top level used, when there are two or more of them. The title is the front matter's, else
+    the first `#` heading's, else the file's name.
+  - Pictures (`_mdPictures`): found among the files it came with, by path and then by name alone, or a data: URI; each given a
+    key of its own. Those found are on their pages and not hung again as pictures (`_loadFiles` reads the file first and takes
+    them out of the loose list). One not found, or on the web, is a line in italics with its alt text.
+  - Buckets: the first `.md` by name is opened when the bucket has no archive, PDF or book, and either no pictures or pictures
+    the file names (fetched as its pages ask).
+  - The smoke test opens a `.md` and a picture through the real picker (the title, two chapters, the words in order, the picture
+    placed once, a missing one in words, code and quote blocks, the code's shade painted) and a real click on Larger laying it
+    out again. `GALLERY_APP._md` is the converter, `_epub.md` says the book is one.
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
   unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
   board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.
