@@ -51513,6 +51513,508 @@ const NONOGRAM_APP = (() => {
   };
   return app;
 })();
+/* ═══ FLASH CARDS ══════════════════════════════════════════════════════════════════════════════════════════════════════
+   (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition".) A deck of cards laid over the
+   field, a card a board, studied on a schedule that brings back what you miss sooner and what you know later.
+   - THE DECKS (DECKS) ship in the page: world capitals, US state capitals, the chemical elements, the times tables and Spanish
+     words. The menu's Deck steps through them (localStorage flashcards.deck). A card is [front, back, note?], and a deck says
+     what its front asks (`ask`: "Capital of", shown small over the front).
+   - A CARD A BOARD: a board's card is its own number (boardIdx, golf's Szudzik pairing) taken round the deck, so the corner
+     board is the deck's first card and every card hangs on many boards. A card is a picture (the photo tier: `paint`, 640 or
+     320 px tall by the board's size, the card ASP 1.6 times as wide as it is tall, the app's boardShape), framed along its far
+     edge in the colour of where it stands in your study: blue new, orange learning, red due, green known (`stateOf`).
+   - STUDYING: a tap on the framed card turns it over (Space or Enter too); its back shows the answer and four buttons along its
+     near edge, each with when the card would come back: Again, Hard, Good, Easy (a tap on one, the row's tiles, or 1–4). Graded,
+     the view flies to the nearest board holding the next card due (`nextDue`, `boardFor`: a spiral out from where you are, so
+     the flight is a board or two), turned to its front. With nothing due, the board says when the next one is.
+   - THE SCHEDULE (`grade`, SM-2 as Anki plays it): a new card is learnt in steps (1 min after Again, 6 after Hard, 10 after
+     Good, then a day; Easy, four days); a known card's interval grows by its ease (Good × ease, Hard × 1.2, Easy × ease × 1.3,
+     the ease 2.5 to start, down 0.15 for Hard and 0.2 for Again, up 0.15 for Easy, never under 1.3); Again puts a known card
+     back to learning and halves its interval. `NEW_PER_DAY` (20) new cards a day a deck. Kept in localStorage flashcards.srs,
+     by deck and card, on the real clock (days are days), with the day's new count.
+   - A board no one studies turns its card over now and then (`FLIP_T`), each board at its own phase, so the field reads as a
+     spread of cards with their answers coming and going; the framed board holds still for you. */
+const FLASH_APP = (() => {
+  const ASP = 1.6, HI_PX = 260, FLIP_T = 9, BACK_T = 3.2, NEW_PER_DAY = 20, LEARN_AHEAD = 20 * 60e3;
+  const MIN = 60e3, DAY = 86400e3;
+  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const clock = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
+  let NOWFN = () => Date.now();                      // (the schedule's clock; the tests move it)
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+
+  /* THE DECKS. Written out by hand: each card is checked (a capital is the seat of government as of 2026; South Africa's is
+     given as Pretoria, its executive capital, and countries whose capital is disputed or moving are left out). */
+  const pairs = s => s.trim().split('\n').map(l => l.split('|').map(x => x.trim()));
+  const DECKS = [
+    { key: 'capitals', name: 'World capitals', ask: 'Capital of', cards: pairs(`
+France|Paris
+Germany|Berlin
+Italy|Rome
+Spain|Madrid
+Portugal|Lisbon
+United Kingdom|London
+Ireland|Dublin
+Netherlands|Amsterdam
+Belgium|Brussels
+Switzerland|Bern
+Austria|Vienna
+Poland|Warsaw
+Czechia|Prague
+Hungary|Budapest
+Greece|Athens
+Sweden|Stockholm
+Norway|Oslo
+Denmark|Copenhagen
+Finland|Helsinki
+Iceland|Reykjavík
+Russia|Moscow
+Ukraine|Kyiv
+Turkey|Ankara
+Egypt|Cairo
+Kenya|Nairobi
+Nigeria|Abuja
+South Africa|Pretoria|executive capital
+Morocco|Rabat
+Ethiopia|Addis Ababa
+Ghana|Accra
+China|Beijing
+Japan|Tokyo
+South Korea|Seoul
+India|New Delhi
+Pakistan|Islamabad
+Thailand|Bangkok
+Vietnam|Hanoi
+Philippines|Manila
+Saudi Arabia|Riyadh
+Iran|Tehran
+Iraq|Baghdad
+Australia|Canberra
+New Zealand|Wellington
+Canada|Ottawa
+United States|Washington, D.C.
+Mexico|Mexico City
+Cuba|Havana
+Brazil|Brasília
+Argentina|Buenos Aires
+Chile|Santiago
+Peru|Lima
+Colombia|Bogotá
+Venezuela|Caracas`) },
+    { key: 'states', name: 'US state capitals', ask: 'Capital of', cards: pairs(`
+Alabama|Montgomery
+Alaska|Juneau
+Arizona|Phoenix
+Arkansas|Little Rock
+California|Sacramento
+Colorado|Denver
+Connecticut|Hartford
+Delaware|Dover
+Florida|Tallahassee
+Georgia|Atlanta
+Hawaii|Honolulu
+Idaho|Boise
+Illinois|Springfield
+Indiana|Indianapolis
+Iowa|Des Moines
+Kansas|Topeka
+Kentucky|Frankfort
+Louisiana|Baton Rouge
+Maine|Augusta
+Maryland|Annapolis
+Massachusetts|Boston
+Michigan|Lansing
+Minnesota|Saint Paul
+Mississippi|Jackson
+Missouri|Jefferson City
+Montana|Helena
+Nebraska|Lincoln
+Nevada|Carson City
+New Hampshire|Concord
+New Jersey|Trenton
+New Mexico|Santa Fe
+New York|Albany
+North Carolina|Raleigh
+North Dakota|Bismarck
+Ohio|Columbus
+Oklahoma|Oklahoma City
+Oregon|Salem
+Pennsylvania|Harrisburg
+Rhode Island|Providence
+South Carolina|Columbia
+South Dakota|Pierre
+Tennessee|Nashville
+Texas|Austin
+Utah|Salt Lake City
+Vermont|Montpelier
+Virginia|Richmond
+Washington|Olympia
+West Virginia|Charleston
+Wisconsin|Madison
+Wyoming|Cheyenne`) },
+    { key: 'elements', name: 'Chemical elements', ask: 'Element', cards: pairs(`
+H|Hydrogen|atomic number 1
+He|Helium|atomic number 2
+Li|Lithium|atomic number 3
+Be|Beryllium|atomic number 4
+B|Boron|atomic number 5
+C|Carbon|atomic number 6
+N|Nitrogen|atomic number 7
+O|Oxygen|atomic number 8
+F|Fluorine|atomic number 9
+Ne|Neon|atomic number 10
+Na|Sodium|atomic number 11
+Mg|Magnesium|atomic number 12
+Al|Aluminium|atomic number 13
+Si|Silicon|atomic number 14
+P|Phosphorus|atomic number 15
+S|Sulfur|atomic number 16
+Cl|Chlorine|atomic number 17
+Ar|Argon|atomic number 18
+K|Potassium|atomic number 19
+Ca|Calcium|atomic number 20
+Sc|Scandium|atomic number 21
+Ti|Titanium|atomic number 22
+V|Vanadium|atomic number 23
+Cr|Chromium|atomic number 24
+Mn|Manganese|atomic number 25
+Fe|Iron|atomic number 26
+Co|Cobalt|atomic number 27
+Ni|Nickel|atomic number 28
+Cu|Copper|atomic number 29
+Zn|Zinc|atomic number 30
+Ga|Gallium|atomic number 31
+Ge|Germanium|atomic number 32
+As|Arsenic|atomic number 33
+Se|Selenium|atomic number 34
+Br|Bromine|atomic number 35
+Kr|Krypton|atomic number 36
+Ag|Silver|atomic number 47
+Sn|Tin|atomic number 50
+I|Iodine|atomic number 53
+Pt|Platinum|atomic number 78
+Au|Gold|atomic number 79
+Hg|Mercury|atomic number 80
+Pb|Lead|atomic number 82
+U|Uranium|atomic number 92`) },
+    { key: 'times', name: 'Times tables', ask: '', cards: (() => { const C = []; for (let a = 2; a <= 12; a++) for (let b = a; b <= 12; b++) C.push([a + ' × ' + b, String(a * b)]); return C; })() },
+    { key: 'spanish', name: 'Spanish words', ask: 'In Spanish', cards: pairs(`
+hello|hola
+goodbye|adiós
+please|por favor
+thank you|gracias
+yes|sí
+good morning|buenos días
+good night|buenas noches
+water|el agua
+bread|el pan
+house|la casa
+dog|el perro
+cat|el gato
+book|el libro
+friend|el amigo / la amiga
+school|la escuela
+city|la ciudad
+street|la calle
+car|el coche|el carro in much of Latin America
+sun|el sol
+moon|la luna
+today|hoy
+tomorrow|mañana
+yesterday|ayer
+red|rojo
+blue|azul
+green|verde
+black|negro
+white|blanco
+big|grande
+small|pequeño
+hot|caliente
+cold|frío
+one|uno
+two|dos
+three|tres
+four|cuatro
+five|cinco
+ten|diez
+to eat|comer
+to drink|beber
+to speak|hablar
+to live|vivir`) },
+  ];
+  let DECK = (() => { try { const k = localStorage.getItem('flashcards.deck'); const i = DECKS.findIndex(d => d.key === k); return i >= 0 ? i : 0; } catch { return 0; } })();
+  const deck = () => DECKS[DECK];
+  const cardOf = (c, r) => boardIdx(c, r) % deck().cards.length;
+
+  /* THE SCHEDULE: by deck, by card, [state (0 new, 1 learning, 2 review), learning step, interval in days, ease, due (ms),
+     reps, lapses]; and the day's new cards by deck. */
+  const SRS = (() => { try { const o = JSON.parse(localStorage.getItem('flashcards.srs') || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+  const saveSrs = () => { try { localStorage.setItem('flashcards.srs', JSON.stringify(SRS)); } catch {} };
+  const deckSrs = () => { const k = deck().key; if (!SRS[k] || typeof SRS[k] !== 'object') SRS[k] = { cards: {}, day: '', newN: 0 }; if (!SRS[k].cards) SRS[k].cards = {}; return SRS[k]; };
+  const dayOf = t => new Date(t).toDateString();
+  const newToday = () => { const D = deckSrs(), d = dayOf(NOWFN()); if (D.day !== d){ D.day = d; D.newN = 0; } return D.newN; };
+  const rec = k => { const v = deckSrs().cards[k]; return Array.isArray(v) && v.length >= 7 ? v : null; };
+  const STEPS = [1 * MIN, 10 * MIN];                 // (learning: Again starts over at the first step, Good goes on to the next)
+  /* What a grade would do to card k now: the new record (not stored). g: 0 Again, 1 Hard, 2 Good, 3 Easy. */
+  function after(k, g, now){
+    const R = rec(k) || [0, 0, 0, 2.5, 0, 0, 0];
+    let [s, step, ivl, ef, , reps, lapses] = R;
+    let due;
+    if (s !== 2){
+      if (g === 0){ s = 1; step = 0; due = now + STEPS[0]; }
+      else if (g === 1){ s = 1; due = now + (step === 0 ? 6 * MIN : STEPS[step] * 1.5); }
+      else if (g === 2){ if (step + 1 < STEPS.length){ s = 1; step++; due = now + STEPS[step]; } else { s = 2; step = 0; ivl = Math.max(1, ivl ? ivl : 1); due = now + ivl * DAY; } }
+      else { s = 2; step = 0; ivl = Math.max(4, ivl); due = now + ivl * DAY; }
+    } else {
+      if (g === 0){ lapses++; ef = Math.max(1.3, ef - 0.2); ivl = Math.max(1, Math.round(ivl * 0.5)); s = 1; step = 1; due = now + STEPS[1]; }
+      else if (g === 1){ ef = Math.max(1.3, ef - 0.15); ivl = Math.max(ivl + 1, Math.round(ivl * 1.2)); due = now + ivl * DAY; }
+      else if (g === 2){ ivl = Math.max(ivl + 1, Math.round(ivl * ef)); due = now + ivl * DAY; }
+      else { ef = ef + 0.15; ivl = Math.max(ivl + 2, Math.round(ivl * ef * 1.3)); due = now + ivl * DAY; }
+    }
+    return [s, step, ivl, +ef.toFixed(2), Math.round(due), reps + 1, lapses];
+  }
+  const span = ms => ms < 50 * MIN ? Math.max(1, Math.round(ms / MIN)) + 'm' : ms < 20 * 3600e3 ? Math.round(ms / 3600e3) + 'h'
+    : ms < 330 * DAY ? Math.round(ms / DAY) + 'd' : (ms / (365 * DAY)).toFixed(1) + 'y';
+  const GRADES = [['Again', '#c0392b'], ['Hard', '#d68910'], ['Good', '#1e8449'], ['Easy', '#2471a3']];
+  const intervals = k => { const now = NOWFN(); return GRADES.map((_, g) => span(after(k, g, now)[4] - now)); };
+  function grade(k, g){
+    const now = NOWFN(), was = rec(k);
+    if (!was || was[0] === 0) deckSrs().newN = newToday() + 1;
+    deckSrs().cards[k] = after(k, g, now);
+    saveSrs();
+  }
+  // where card k stands: 'new', 'learn', 'due' (a known card come round) or 'known'
+  const stateOf = k => { const R = rec(k); if (!R || R[0] === 0) return 'new'; if (R[0] === 1) return 'learn'; return R[4] <= NOWFN() ? 'due' : 'known'; };
+  const STATE_COL = { new: '#3b82f6', learn: '#f59e0b', due: '#ef4444', known: '#22c55e' };
+  const STATE_HEX = { new: 0x3b82f6, learn: 0xf59e0b, due: 0xef4444, known: 0x22c55e };
+  const GRID1 = Object.fromEntries(Object.entries(STATE_HEX).map(([k, v]) => [k, { n: 1, colors: [v] }]));   // (one object a state: the field keeps a grid by its identity)
+  function counts(){
+    const now = NOWFN(), N = deck().cards.length; let fresh = 0, learn = 0, due = 0;
+    for (let k = 0; k < N; k++){ const R = rec(k); if (!R || R[0] === 0) fresh++; else if (R[4] <= now) (R[0] === 1 ? learn++ : due++); }
+    return { fresh: Math.min(fresh, Math.max(0, NEW_PER_DAY - newToday())), learn, due };
+  }
+  /* The next card to study (not `skip`, the one just graded, when there is another): learning cards come round first, then
+     known cards due, by when they fell due; then a new card, while the day's new allowance lasts; then a learning card due
+     within LEARN_AHEAD, rather than waiting. Null: nothing for now. */
+  function nextDue(skip){
+    const now = NOWFN(), N = deck().cards.length;
+    let best = -1, bt = Infinity, bk = 9;
+    for (let k = 0; k < N; k++){ if (k === skip) continue; const R = rec(k); if (!R || R[0] === 0 || R[4] > now) continue;
+      const kind = R[0] === 1 ? 0 : 1; if (kind < bk || (kind === bk && R[4] < bt)){ best = k; bt = R[4]; bk = kind; } }
+    if (best >= 0) return best;
+    if (newToday() < NEW_PER_DAY) for (let k = 0; k < N; k++){ if (k === skip) continue; const R = rec(k); if (!R || R[0] === 0) return k; }
+    for (let k = 0; k < N; k++){ const R = rec(k); if (R && R[0] === 1 && R[4] <= now + LEARN_AHEAD && R[4] < bt){ best = k; bt = R[4]; } }
+    if (best >= 0) return best;
+    return skip != null && skip >= 0 && rec(skip) && rec(skip)[0] === 1 && rec(skip)[4] <= now + LEARN_AHEAD ? skip : null;
+  }
+  const nextAt = () => { let t = Infinity; for (const k in deckSrs().cards){ const R = rec(k); if (R && R[0] > 0) t = Math.min(t, R[4]); } return t; };
+  // the nearest board to (c, r) holding card k: a spiral out, unwrapped, so the flight is short and gotoCell wraps it
+  function boardFor(k, c, r){
+    for (let rad = 0; rad <= 60; rad++)
+      for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++){
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+        if (cardOf(c + dx, r + dy) === k) return [c + dx, r + dy];
+      }
+    return null;
+  }
+
+  /* ─── THE PICTURE ─── a card: cream, rounded, its state's colour along the far edge, the deck and the card's number small at
+     the top, what it asks over the front; the back the question small and the answer large, a note under it, and on the
+     framed card the four grade buttons along the near edge with their intervals. Text set as large as fits (`fitText`). */
+  const SANS = '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif';
+  const SPECS = new Map();
+  const BTN_V = 0.78;                                 // (the grade buttons: v from here to the near edge)
+  function fitText(cx, text, maxW, maxH, big, small, weight){
+    for (let px = big; px >= small; px = Math.floor(px * 0.9)){
+      cx.font = (weight || '') + ' ' + px + 'px ' + SANS;
+      const words = String(text).split(/\s+/), lines = []; let line = '', ok = true;
+      for (const w of words){
+        const t = line ? line + ' ' + w : w;
+        if (cx.measureText(t).width <= maxW) line = t;
+        else { if (line) lines.push(line); line = w; if (cx.measureText(w).width > maxW) ok = false; }
+      }
+      if (line) lines.push(line);
+      if (ok && lines.length * px * 1.18 <= maxH) return { px, lines };
+      if (px === small) return { px, lines };
+    }
+    return { px: small, lines: [String(text)] };
+  }
+  function drawLines(cx, F, x, y){ const lh = F.px * 1.18, y0 = y - (F.lines.length - 1) * lh / 2; F.lines.forEach((l, i) => cx.fillText(l, x, y0 + i * lh)); }
+  function paint(P, H){
+    const W = Math.round(H * ASP), cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const cx = cv.getContext('2d'); if (!cx) return null;
+    // (the photo tier lays a picture's top-left at the board's far right corner, so it is drawn turned a half turn: tanks')
+    cx.setTransform(-1, 0, 0, -1, W, H);
+    cx.fillStyle = '#20242c'; cx.fillRect(0, 0, W, H);
+    const m = H * 0.035, rr = H * 0.06;
+    cx.fillStyle = P.back ? '#fffdf6' : '#fbf8f1';
+    cx.beginPath(); cx.roundRect ? cx.roundRect(m, m, W - 2 * m, H - 2 * m, rr) : cx.rect(m, m, W - 2 * m, H - 2 * m); cx.fill();
+    cx.save(); cx.clip();
+    cx.fillStyle = STATE_COL[P.state]; cx.fillRect(m, m, W - 2 * m, H * 0.045);
+    // (ruled like an index card on its back)
+    if (P.back){ cx.strokeStyle = 'rgba(80,120,190,0.18)'; cx.lineWidth = Math.max(1, H * 0.004); for (let y = H * 0.3; y < H * (P.grades ? BTN_V : 0.95); y += H * 0.085){ cx.beginPath(); cx.moveTo(m, y); cx.lineTo(W - m, y); cx.stroke(); } }
+    cx.restore();
+    cx.textBaseline = 'middle';
+    cx.fillStyle = '#7a7466'; cx.font = Math.round(H * 0.05) + 'px ' + SANS;
+    cx.textAlign = 'left'; cx.fillText(P.deck, m + H * 0.05, H * 0.14);
+    cx.textAlign = 'right'; cx.fillText((P.k + 1) + ' / ' + P.n + (P.back ? '' : '  ·  ' + P.state), W - m - H * 0.05, H * 0.14);
+    cx.textAlign = 'center';
+    const cxm = W / 2, maxW = W - 2 * m - H * 0.16;
+    if (!P.back){
+      if (P.ask){ cx.fillStyle = '#8a8272'; cx.font = 'italic ' + Math.round(H * 0.065) + 'px ' + SANS; cx.fillText(P.ask, cxm, H * 0.3); }
+      cx.fillStyle = '#1d1b18';
+      drawLines(cx, fitText(cx, P.front, maxW, H * 0.48, Math.round(H * 0.26), Math.round(H * 0.06), '600'), cxm, P.ask ? H * 0.58 : H * 0.55);
+      if (P.hint){ cx.fillStyle = '#a39c8c'; cx.font = Math.round(H * 0.045) + 'px ' + SANS; cx.fillText('tap to turn over', cxm, H * 0.88); }
+    } else {
+      cx.fillStyle = '#8a8272';
+      drawLines(cx, fitText(cx, (P.ask ? P.ask + ' ' : '') + P.front, maxW, H * 0.12, Math.round(H * 0.07), Math.round(H * 0.04), 'italic'), cxm, H * 0.25);
+      cx.fillStyle = '#123d6a';
+      const top = H * 0.33, bot = P.grades ? H * (BTN_V - 0.02) : H * 0.9, room = (bot - top) * (P.note ? 0.78 : 1);
+      const F = fitText(cx, P.backText, maxW, room, Math.round(H * 0.22), Math.round(H * 0.05), '600');
+      drawLines(cx, F, cxm, top + room / 2);
+      if (P.note){ cx.fillStyle = '#6b6457'; cx.font = 'italic ' + Math.round(H * 0.055) + 'px ' + SANS; cx.fillText(P.note, cxm, top + room + (bot - top - room) / 2); }
+      if (P.grades){
+        const y0 = H * BTN_V, h = H - m - y0, w = (W - 2 * m) / 4;
+        P.grades.forEach((iv, g) => {
+          const x = m + g * w;
+          cx.fillStyle = GRADES[g][1]; cx.fillRect(x + 2, y0, w - 4, h - 2);
+          cx.fillStyle = '#ffffff'; cx.font = '600 ' + Math.round(h * 0.34) + 'px ' + SANS; cx.fillText(GRADES[g][0], x + w / 2, y0 + h * 0.36);
+          cx.font = Math.round(h * 0.26) + 'px ' + SANS; cx.fillText((g + 1) + ' · ' + iv, x + w / 2, y0 + h * 0.72);
+        });
+      }
+    }
+    return cv;
+  }
+
+  /* ─── STUDY ─── which board is framed (LIVE), whether its card is turned over (TURNED, by board), and what a board shows. */
+  let LIVE = null;
+  const TURNED = new Set();
+  const isLive = (c, r) => { try { if (window.getFieldApp() !== app) return false; } catch { return false; } return !!LIVE && LIVE.c === c && LIVE.r === r; };
+  const phaseOf = idx => ((idx * 0.6180339887) % 1) * FLIP_T;
+  function viewOf(c, r){
+    const k = cardOf(c, r), live = isLive(c, r);
+    let back;
+    if (live) back = TURNED.has(gkey(c, r));
+    else { const t = (clock() + phaseOf(boardIdx(c, r))) % FLIP_T; back = t > FLIP_T - BACK_T; }
+    return { k, back, live };
+  }
+  function photoKey(c, r, bp){
+    const V = viewOf(c, r), D = deck(), card = D.cards[V.k], state = stateOf(V.k), hi = (bp || 0) >= HI_PX;
+    const grades = V.live && V.back ? intervals(V.k) : null;
+    const key = 'fc:' + D.key + ':' + V.k + ':' + (V.back ? 'b' : 'f') + ':' + state + (grades ? ':' + grades.join(',') : '') + (V.live && !V.back ? ':h' : '') + (hi ? ':H' : ':L');
+    if (!SPECS.has(key)){
+      SPECS.set(key, { deck: D.name, ask: D.ask, k: V.k, n: D.cards.length, front: card[0], backText: card[1], note: card[2] || '', back: V.back, state, grades, hint: V.live && !V.back, hi });
+      if (SPECS.size > 6000) SPECS.delete(SPECS.keys().next().value);
+    }
+    return key;
+  }
+  function turn(c, r){
+    const k = gkey(c, r);
+    if (TURNED.has(k)) TURNED.delete(k); else TURNED.add(k);
+    try { fieldItemsChanged(); } catch {}
+    try { bbRefreshNow(); } catch {}
+  }
+  function gradeHere(c, r, g){
+    if (!TURNED.has(gkey(c, r))) return false;
+    const k = cardOf(c, r);
+    grade(k, g);
+    TURNED.delete(gkey(c, r));
+    const nk = nextDue(k);
+    if (nk == null){
+      const t = nextAt();
+      say('That is all for now in ' + deck().name + (t < Infinity ? '. The next card comes round in ' + span(t - NOWFN()) + '.' : '.'), 4000);
+    } else {
+      const at = boardFor(nk, c, r);
+      if (at && (at[0] !== c || at[1] !== r)){ try { gotoCell(at[0], at[1]); } catch {} LIVE = { c: at[0], r: at[1] }; }
+      const C = counts();
+      say(GRADES[g][0] + '. Next: ' + C.learn + ' learning, ' + C.due + ' due, ' + C.fresh + ' new today.', 1600);
+    }
+    try { fieldItemsChanged(); } catch {}
+    try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  function goNext(){
+    const f = framedCell(); const c = f ? f.c : 0, r = f ? f.r : 0;
+    const nk = nextDue(-1);
+    if (nk == null){ const t = nextAt(); say('Nothing due in ' + deck().name + (t < Infinity ? '; the next card comes round in ' + span(t - NOWFN()) + '.' : '.'), 3000); return false; }
+    const at = boardFor(nk, c, r);
+    if (at){ try { gotoCell(at[0], at[1]); } catch {} LIVE = { c: at[0], r: at[1] }; }
+    return true;
+  }
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    try { if (window.getFieldApp() !== app) return; } catch { return; }
+    if (!LIVE) return;
+    if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); e.stopPropagation(); turn(LIVE.c, LIVE.r); return; }
+    if (/^[1-4]$/.test(e.key) && TURNED.has(gkey(LIVE.c, LIVE.r))){ e.preventDefault(); e.stopPropagation(); gradeHere(LIVE.c, LIVE.r, +e.key - 1); return; }
+    if (e.key === 'n' || e.key === 'N'){ e.preventDefault(); e.stopPropagation(); goNext(); }
+  }, true);
+  function tilesOf(c, r){
+    const back = TURNED.has(gkey(c, r)), k = cardOf(c, r), iv = intervals(k), C = counts();
+    return [
+      { glyph: back ? '↺' : '⟲', value: back ? 'Front' : 'Show answer' },
+      ...GRADES.map(([nm, col], g) => ({ glyph: String(g + 1), value: nm + ' · ' + iv[g], dim: !back, bg: back ? col : undefined })),
+      { label: 'New', value: String(C.fresh), color: STATE_COL.new },
+      { label: 'Learning', value: String(C.learn), color: STATE_COL.learn },
+      { label: 'Due', value: String(C.due), color: STATE_COL.due },
+    ];
+  }
+
+  const app = {
+    name: 'flash cards',
+    menu: [{ head: 'Flash cards', items: [
+      { label: () => 'Deck: ' + deck().name, title: 'Step through the decks: world capitals, US state capitals, the chemical elements, the times tables and Spanish words. Each keeps its own schedule.',
+        on(){ DECK = (DECK + 1) % DECKS.length; try { localStorage.setItem('flashcards.deck', deck().key); } catch {} TURNED.clear(); say(deck().name + ': ' + deck().cards.length + ' cards.', 2000); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } },
+      { label: 'Next card due', title: 'Fly to the nearest board holding the next card to study (N).', on(){ goNext(); } },
+      { label: 'Forget this deck\'s progress', title: 'Every card in this deck new again.', on(){ if (confirm('Forget your progress on ' + deck().name + '?')){ delete SRS[deck().key]; saveSrs(); TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } } },
+    ]}],
+    boardShape: { cellW: 1, cellH: 1 / ASP },
+    cellFar: { light: 0x2b2f38, dark: 0x20242c },
+    photoMinPx: 6,
+    faceMinPx: 2,
+    cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
+    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P, P.hi ? 640 : 320) : null; },
+    cellGrid(c, r){ return GRID1[stateOf(cardOf(c, r))]; },
+    cellItems(){ return []; },
+    cellTitle(c, r){
+      const k = cardOf(c, r), D = deck(), C = counts();
+      return 'Flash cards — ' + D.name + ', card ' + (k + 1) + ' of ' + D.cards.length + ' (' + stateOf(k) + ') · ' + C.learn + ' learning, ' + C.due + ' due, ' + C.fresh + ' new today';
+    },
+    statTiles(c, r){ return isLive(c, r) ? tilesOf(c, r) : null; },
+    onStatTap(c, r, i){
+      if (!isLive(c, r)) return false;
+      if (i === 0){ turn(c, r); return true; }
+      if (i >= 1 && i <= 4) return gradeHere(c, r, i - 1);
+      return false;
+    },
+    onSelect(){ return true; },
+    onFramed(c, r){
+      if (LIVE && (c == null || LIVE.c !== c || LIVE.r !== r)) TURNED.delete(gkey(LIVE.c, LIVE.r));
+      LIVE = c == null ? null : { c, r };
+    },
+    // (two quick taps on the framed card are a turn and a grade, never the field's double tap)
+    noDoubleTap(){ return !!LIVE; },
+    onCellTap(c, r, u, v){
+      const was = LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      if (!was && !TURNED.has(gkey(c, r))){ try { bbRefreshNow(); } catch {} return true; }
+      if (TURNED.has(gkey(c, r)) && v != null && v >= BTN_V){ gradeHere(c, r, Math.max(0, Math.min(3, Math.floor(u * 4)))); return true; }
+      turn(c, r);
+      return true;
+    },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#20242c'; ctx.fillRect(0, 0, sz, sz);
+      const card = (x, y, col, rot) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = '#fbf8f1'; ctx.fillRect(-sz * 0.32, -sz * 0.2, sz * 0.64, sz * 0.4); ctx.fillStyle = col; ctx.fillRect(-sz * 0.32, -sz * 0.2, sz * 0.64, sz * 0.05); ctx.restore(); };
+      card(sz * 0.45, sz * 0.4, '#3b82f6', -0.18); card(sz * 0.55, sz * 0.6, '#22c55e', 0.12);
+      ctx.fillStyle = '#1d1b18'; ctx.font = 'bold ' + Math.round(sz * 0.16) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A?', sz * 0.55, sz * 0.62);
+    },
+    _debug: { DECKS, get DECK(){ return DECK; }, set DECK(v){ DECK = v; }, deck, cardOf, boardIdx, after, grade, stateOf, counts, nextDue, nextAt, boardFor,
+              intervals, span, SRS, TURNED, viewOf, photoKey, SPECS, paint, turn, gradeHere, BTN_V, NEW_PER_DAY,
+              setNow(f){ NOWFN = f || (() => Date.now()); }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; } },
+  };
+  return app;
+})();
 /* ═══ TANKS: AN ARTILLERY DUEL ═════════════════════════════════════════════════════════════════════════════════════════
    (Oct 20: "what tank games could we build", then "1", of five: the artillery duel, as Scorched Earth and Worms play it.)
    Two tanks on rolling ground, yours on the left, the computer's on the right, firing in turns. A shot is an angle and a
@@ -56571,7 +57073,7 @@ const LEVELS_APP = (() => {
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -56580,7 +57082,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
