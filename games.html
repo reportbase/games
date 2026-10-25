@@ -48381,7 +48381,10 @@ const PINBALL_APP = (() => {
   const REST = 0.5, UP = -0.48, FL_UP = 26, FL_DOWN = 16, FR0 = 0.0115, FR1 = 0.0065;
   const E = { wall: 0.42, rubber: 0.72, sling: 0.72, post: 0.65, bumper: 0.6, drop: 0.35, stand: 0.4, gate: 0.3 };
   const E_FL = 0.3, SLING_V = 1.15, SAUCER_V = 1.45, SAUCER_T = 0.9;
-  const BALL_T = 80, REEL_T = 40, PAR_GAMES = 3, REC_HZ = 30, REC_F = 9, MISS = 0.1, GRACE = 0.8;
+  /* (a ball is caught in the saucer under SAUCER_IN: 2.4 until Oct 25, when the steady player began aiming at it ("5,1"); a shot
+     from a flipper reaches it at 2.5 to 3.5, and it took one in a hundred aimed at it, so a lock or a mission came by luck alone) */
+  const SAUCER_IN = 3.4;
+  const BALL_T = 80, REEL_T = 40, PAR_GAMES = 3, REC_HZ = 30, REC_F = 21, MISS = 0.1, GRACE = 0.8;
   /* ERAS (Oct 25: "what are ways we could improve pinball, like more variety and the further from the center, the more
      difficult, and more variety of styles", then "proceed" on ramps and orbits, eras, and every table remade until it fits its
      level): each board draws one of four eras of pinball, by its number alone (so a board keeps its era at every Difficulty),
@@ -48393,11 +48396,63 @@ const PINBALL_APP = (() => {
        dot-matrix panel on the apron.
      - modern: three balls, two ramps and an orbit, a deep navy field in neon lines, wire ramps. */
   const ERAS = [
-    { id: 'wood', name: 'wood rail',          balls: 5, ramps: 0, orbit: 0,   drops: 0, gobble: 1, kick: 0.5, bump: 1,  posts: 3, saucer: 0.45 },
-    { id: 'em',   name: 'electro-mechanical', balls: 5, ramps: 0, orbit: 0.5, drops: 1, gobble: 0, kick: 1,   bump: 0,  posts: 1, saucer: 0.65 },
-    { id: 'dmd',  name: 'dot-matrix',         balls: 3, ramps: 1.5, orbit: 1, drops: 1, gobble: 0, kick: 1,   bump: 0,  posts: 0, saucer: 0.65 },
-    { id: 'neon', name: 'modern',             balls: 3, ramps: 2, orbit: 1,   drops: 1, gobble: 0, kick: 1.05, bump: -1, posts: 0, saucer: 0.5 },
+    { id: 'wood', name: 'wood rail',          balls: 5, ramps: 0, orbit: 0,   drops: 0, gobble: 1, kick: 0.5, bump: 1,  posts: 3, saucer: 0.45, rolls: 0.5 },
+    { id: 'em',   name: 'electro-mechanical', balls: 5, ramps: 0, orbit: 0.5, drops: 1, gobble: 0, kick: 1,   bump: 0,  posts: 1, saucer: 0.65, rolls: 0.6, spinner: 0.7, captive: 0.5 },
+    { id: 'dmd',  name: 'dot-matrix',         balls: 3, ramps: 1.5, orbit: 1, drops: 1, gobble: 0, kick: 1,   bump: 0,  posts: 0, saucer: 0.65, spinner: 0.4, captive: 0.3, upper: 0.5, multi: 1 },
+    { id: 'neon', name: 'modern',             balls: 3, ramps: 2, orbit: 1,   drops: 1, gobble: 0, kick: 1.05, bump: -1, posts: 0, saucer: 0.5, magnet: 0.6, mbank: 0.6, upper: 0.5, multi: 1 },
   ];
+  /* MORE TO IT (Oct 25: "whats next for pinball", then "1,5,6,7,9": multiball, new toys, an upper flipper, themes, a score
+     display that changes as you play).
+     - MULTIBALL (the dot-matrix and modern eras): the saucer, or a ramp where there is none, locks a ball while its lock is lit
+       (lit from the start at levels 1 and 2, after `LOCK_NEED` ramps or orbits made since the last lock farther out). A locked
+       ball stays where it was locked and a new one comes to the plunger; with two locked, the third lock sets all three going
+       (`startMulti`). While more than one ball is in play every ramp made (every orbit, on a table with none) is a JACKPOT,
+       `JACK0` and 10,000 more each time. The balls bounce off each other (`ballsMeet`); the last one left plays on.
+     - TOYS: spinners (a plate across the way, spun by the ball under it, 100 a half turn), rollover buttons (three in a row,
+       500 each, all three 3,000), a captive ball (a ball in a short channel the ball knocks up to a target at its top, 2,500),
+       a magnet (on for a while every few seconds, it pulls a ball in, holds it 0.8 s and throws it, 500) and a moving bank of
+       three targets sliding to and fro across the table (750 each). Which era may have which is in `ERAS`.
+     - THE UPPER FLIPPER (dot-matrix and modern, half the tables): a short flipper on a side wall partway up, worked by that
+       side's button.
+     - THEMES (`THEMES`, by the board's number, beside its era): space, deep sea, a haunted house, a circus, a jungle; each its
+       own colour, art painted on the playfield, caps, word and a few sounds of its own.
+     - THE DISPLAY: the dot-matrix and modern eras show the score, the ball and what just happened in dots on the apron
+       (`dispText`, `dotsOf`); the older ones turn number reels, which roll from one figure to the next (`pbReel`). */
+  const THEMES = [
+    { id: 'space',  name: 'space',         hue: 0.7,  word: 'SPACE' },
+    { id: 'sea',    name: 'deep sea',      hue: 0.52, word: 'DEEP SEA' },
+    { id: 'haunt',  name: 'haunted house', hue: 0.8,  word: 'HAUNTED' },
+    { id: 'circus', name: 'circus',        hue: 0.01, word: 'CIRCUS' },
+    { id: 'jungle', name: 'jungle',        hue: 0.31, word: 'JUNGLE' },
+  ];
+  const LOCK_NEED = [0, 0, 1, 2, 2], JACK0 = 25000, MAG_ON = 2.2, MAG_CYCLE = 7, UF_LEN = 0.064;
+  const MSGS = ['', 'BALL LOCKED', 'MULTIBALL', 'JACKPOT', 'MAGNET', 'COMBO', 'CAPTIVE', 'ROLLOVERS', 'TILT', 'LOCK LIT', 'SAVED', 'MISSION WON', 'TIME UP'];
+  const M_LOCK = 1, M_MULTI = 2, M_JACK = 3, M_MAG = 4, M_COMBO = 5, M_CAP = 6, M_ROLL = 7, M_TILT = 8, M_LIT = 9, M_SAVE = 10, M_WON = 11, M_LOST = 12;
+  /* MISSIONS (Oct 25: "whats next for pinball", then "5,1", the first "missions: the saucer starts a 30-second goal drawn for the
+     board, worth a big award, the display showing the countdown, harder goals and shorter clocks farther out"). A ball caught in
+     the saucer (on a table with none, the top lanes all lit) starts the board's next mission, drawn from those its table can
+     hold (`has`) by the board's number and how many it has started, never the same twice running. Each counts one kind of
+     event (`ev`, heard in `ev()` before the sounds, so the steady player's quiet games count too); `need` of them before
+     `MIS_T` runs out (by level) pays `MIS_AWARD` + 10,000 a level, times one more for each mission already won this game, and
+     5 to the bonus. Time up, nothing. A mission runs on from ball to ball within multiball, and ends with the ball. `at` is
+     where the steady player aims for it. */
+  const MIS_T = [30, 28, 25, 22, 20], MIS_AWARD = 25000;
+  const mouthPt = Rp => [Rp.M.x + Rp.M.dx * 0.01, Rp.M.y + Rp.M.dy * 0.01];
+  const MIS = [
+    { id: 'ramps',   word: 'RAMPS',   ev: 'ramp',    need: [2, 2, 3, 3, 4],      has: T => T.ramps.some(x => x.kind === 'ramp'), at: T => T.ramps.filter(x => x.kind === 'ramp').map(mouthPt) },
+    { id: 'orbits',  word: 'ORBITS',  ev: 'orbit',   need: [2, 2, 3, 3, 4],      has: T => !!T.orbit, at: T => T.ramps.filter(x => x.kind === 'orbit').map(mouthPt) },
+    { id: 'bank',    word: 'BANK',    ev: 'bank',    need: [1, 1, 1, 1, 2],      has: T => T.drops.length > 0, at: T => T.bank.mid ? [[(T.bank.x0 + T.bank.x1) / 2, T.bank.y]] : [[T.bank.x - T.bank.side * 0.02, (T.bank.y0 + T.bank.y1) / 2]] },
+    { id: 'spins',   word: 'SPINS',   ev: 'spinIn',  need: [3, 3, 4, 5, 6],      has: T => !!T.spinner, at: T => [[T.spinner.x, T.spinner.y]] },
+    { id: 'rolls',   word: 'ROLLOVER', ev: 'rolls',  need: [1, 1, 1, 2, 2],      has: T => !!T.rolls, at: T => T.rolls.map(q => [q[0], q[1] - 0.05]) },
+    { id: 'captive', word: 'CAPTIVE', ev: 'captive', need: [1, 1, 2, 2, 3],      has: T => !!T.captive, at: T => [[T.captive.x, T.captive.y1 + 0.01]] },
+    { id: 'pops',    word: 'POPS',    ev: 'bumper',  need: [12, 15, 18, 22, 26], has: T => T.bumpers.length > 0, at: T => [[T.bumpers.reduce((a, b) => a + b.x, 0) / T.bumpers.length, T.bumpers.reduce((a, b) => a + b.y, 0) / T.bumpers.length]] },
+    { id: 'lanes',   word: 'LANES',   ev: 'lanes',   need: [1, 1, 1, 2, 2],      has: () => true, at: T => T.lanes.map(L => [L.x, L.y]) },
+    { id: 'targets', word: 'TARGETS', ev: 'stand',   need: [2, 2, 3, 3, 4],      has: T => T.stands.length > 0, at: T => T.stands.map(q => [q.a[0], q.a[1] + 0.012]) },
+    { id: 'mbank',   word: 'BANK',    ev: 'mbank',   need: [2, 2, 3, 3, 4],      has: T => !!T.mbank, at: T => [[T.mbank.xc, T.mbank.y]] },
+    { id: 'magnet',  word: 'MAGNET',  ev: 'magnet',  need: [1, 1, 1, 2, 2],      has: T => !!T.magnet, at: T => [[T.magnet.x, T.magnet.y]] },
+  ];
+  const MIS_SAY = { ramps: 'ramps', orbits: 'orbits', bank: 'the drop bank', spins: 'spinner shots', rolls: 'the rollovers', captive: 'the captive ball to the top',
+                    pops: 'pop bumper hits', lanes: 'the top lanes', targets: 'standup targets', mbank: 'moving targets', magnet: 'the magnet' };
   /* RAMPS AND ORBITS: a mouth (two posts and a short guide either side) the ball enters moving into it; inside, it rides a set
      path (a Catmull-Rom curve through a few points, `spline`, by its length, `pathAt`) at a speed of its own and comes out at
      the far end. A ramp climbs to `zmax` and comes down onto an inlane: the ball rides at √(v0² − 2·GV·z), so a weak shot
@@ -48411,7 +48466,7 @@ const PINBALL_APP = (() => {
      from the next seed, up to FIT_TRIES times, the nearest kept. The run is also the board's recording. A board waits as its
      bare cabinet until its table is made (the framed board first, `URGENT_MS` a frame). */
   const FIT_BALLS = 5, BALL_CAP = 50, FIT_TRIES = 6, URGENT_MS = 30;
-  const LIFE_BAND = [[28, 99], [20, 34], [14, 26], [9, 18], [4.5, 12]];
+  const LIFE_BAND = [[28, 99], [20, 37], [14, 27], [9, 18], [4.5, 12]];
   const LV = [
     { g: 1.15, fl: 0.086, gap: 0,     out: 0.035, bump: 4, kick: 1.0,  save: 10, drops: 3, posts: 1, kb: [1, 1] },
     { g: 1.36, fl: 0.084, gap: 0.002, out: 0.036, bump: 4, kick: 1.05, save: 7,  drops: 4, posts: 2, kb: [1, 1] },
@@ -48442,7 +48497,9 @@ const PINBALL_APP = (() => {
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
   const css = c => '#' + c.toString(16).padStart(6, '0');
   // a board's era and hue: by its number alone
-  const eraOf = idx => { const r = rngOf((idx * 40503) ^ 0x2e7a); const e = Math.floor(r() * ERAS.length); return { era: ERAS[e], hue: r() }; };
+  const eraOf = idx => { const r = rngOf((idx * 40503) ^ 0x2e7a), e = Math.floor(r() * ERAS.length); r();
+    const q = rngOf((idx * 92821) ^ 0x7c1d), th = THEMES[Math.floor(q() * THEMES.length)];
+    return { era: ERAS[e], theme: th, hue: (th.hue + (q() - 0.5) * 0.08 + 1) % 1 }; };
   // a Catmull-Rom curve through P, `per` points a span; and a path by length: points, the length so far at each, the whole
   function spline(P, per){
     const out = [P[0].slice()], n = P.length;
@@ -48468,8 +48525,8 @@ const PINBALL_APP = (() => {
   function makeTable(idx, lv, a, bare){
     a = a || 0;
     const D = LV[lv - 1], Rn = rngOf((idx * 2654435761) ^ (lv * 977) ^ 0x51ab ^ Math.imul(a, 0x9e3779b9)), EH = eraOf(idx), ERA = EH.era;
-    const T = { idx, lv, a, D, g: D.g, era: ERA, balls: ERA.balls, kick: D.kick * ERA.kick, bare: !!bare, segs: [], circs: [], lanes: [], drops: [], bumpers: [], stands: [], posts: [],
-                saucer: null, gobble: null, ramps: [], hue: EH.hue };
+    const T = { idx, lv, a, D, g: D.g, era: ERA, theme: EH.theme, balls: ERA.balls, kick: D.kick * ERA.kick, bare: !!bare, segs: [], circs: [], lanes: [], drops: [], bumpers: [], stands: [], posts: [],
+                saucer: null, gobble: null, ramps: [], hue: EH.hue, spinner: null, rolls: null, captive: null, magnet: null, mbank: null, lockBy: null, lockNeed: LOCK_NEED[lv - 1] };
     const seg = (ax, ay, bx, by, kind, x) => { const s = { a: [ax, ay], b: [bx, by], kind, e: E[kind], ...(x || {}) };
       s.ex = bx - ax; s.ey = by - ay; s.l2 = s.ex * s.ex + s.ey * s.ey || 1e-12; T.segs.push(s); return s; };
     const circ = (x, y, r, kind, o) => { const c = { x, y, r, kind, e: E[kind], ...(o || {}) }; T.circs.push(c); return c; };
@@ -48482,8 +48539,8 @@ const PINBALL_APP = (() => {
     seg(PW, PLY, W, PLY, 'wall', { stop: 1 });
     // the flippers, and below each side its outlane, inlane, the lane's divider and the slingshot over the flipper
     const gx = 0.098 + D.gap, out = D.out;
-    T.fl = [{ px: XC - gx, py: FY, len: D.fl, r0: FR0, r1: FR1, rest: REST, up: UP },
-            { px: XC + gx, py: FY, len: D.fl, r0: FR0, r1: FR1, rest: Math.PI - REST, up: Math.PI - UP }];
+    T.fl = [{ px: XC - gx, py: FY, len: D.fl, r0: FR0, r1: FR1, rest: REST, up: UP, side: 0 },
+            { px: XC + gx, py: FY, len: D.fl, r0: FR0, r1: FR1, rest: Math.PI - REST, up: Math.PI - UP, side: 1 }];
     T.slings = [];
     for (const s of [-1, 1]){
       const mx = x => s < 0 ? x : PW - x, pvx = XC - gx, yTop = FY - 0.7 * (pvx - out);
@@ -48548,6 +48605,39 @@ const PINBALL_APP = (() => {
     for (const Rp of T.ramps) if (Rp.kind === 'ramp'){ Rp.draw = [];
       for (let s = 0; s < Rp.P.L - 1e-6; s += RAMP_STEP){ const e = Math.min(Rp.P.L, s + RAMP_STEP), A = pathAt(Rp.P, s), B = pathAt(Rp.P, e);
         Rp.draw.push({ ax: A.x, ay: A.y, bx: B.x, by: B.y, z: (rampZ(Rp, s) + rampZ(Rp, e)) / 2 }); } }
+    // the upper flipper: on a side wall partway up, worked by that side's button (a ball coming down the wall goes back up)
+    if (Rn() < (ERA.upper || 0)){
+      const s = Rn() < 0.5 ? -1 : 1;
+      for (let tries = 0; tries < 20; tries++){
+        const y = 0.5 + Rn() * 0.1, px = s < 0 ? 0.026 : PW - 0.026, cx0 = s < 0 ? 0.062 : PW - 0.062;
+        if (!occ.every(o => Math.hypot(o[0] - cx0, o[1] - y) >= o[2] + 0.05)) continue;
+        T.fl.push({ px, py: y, len: UF_LEN, r0: FR0 * 0.85, r1: FR1 * 0.85, rest: s < 0 ? REST + 0.15 : Math.PI - REST - 0.15, up: s < 0 ? UP : Math.PI - UP, side: s < 0 ? 0 : 1, upper: 1 });
+        occ.push([cx0, y, 0.05]); break;
+      }
+    }
+    // a magnet (modern): a disc that, while on, pulls a ball in, holds it and throws it
+    if (Rn() < (ERA.magnet || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.09 + Rn() * (PW - 0.18), y = 0.3 + Rn() * 0.28;
+      if (!free(x, y, 0.045)) continue; T.magnet = { x, y, r: 0.045, ph: Rn() * MAG_CYCLE }; occ.push([x, y, 0.045]); break; }
+    // a moving bank of three targets (modern), sliding to and fro across the table; kept clear along all its travel
+    if (Rn() < (ERA.mbank || 0)) for (let tries = 0; tries < 60; tries++){ const A = 0.05, xc = XC + (Rn() - 0.5) * 0.1, y = 0.27 + Rn() * 0.33;
+      const pts = []; for (let x = xc - A - 0.045; x <= xc + A + 0.045; x += 0.015) pts.push([x, y, 0.016]);
+      if (!pts.every(q => q[0] > 0.04 && q[0] < PW - 0.04 && occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + 2.4 * R))) continue;
+      T.mbank = { xc, y, A, P: 5 + Rn() * 2, n: 3, w: 0.024, gap: 0.006 }; occ.push(...pts); break; }
+    // a captive ball (electro-mechanical, some dot-matrix): a ball in a short channel, closed at its top, two posts at its foot
+    // closer than a ball, so the ball in play knocks it up the channel without getting in
+    if (Rn() < (ERA.captive || 0)) for (let tries = 0; tries < 40; tries++){
+      const x = 0.08 + Rn() * (PW - 0.16), y1 = 0.3 + Rn() * 0.22, y0 = y1 - 0.085, hw = R + 0.003, po = 0.8 * R + 0.004;
+      if (!free(x, y1 - 0.04, 0.055)) continue;
+      seg(x - hw, y0, x - hw, y1, 'wall', { guide: 1, cap: 1 }); seg(x + hw, y0, x + hw, y1, 'wall', { guide: 1, cap: 1 }); seg(x - hw, y0, x + hw, y0, 'wall', { cap: 1 });
+      circ(x - po, y1, 0.004, 'post'); circ(x + po, y1, 0.004, 'post');
+      T.captive = { x, y0, y1, rest: y1 - Math.sqrt((R + 0.004) ** 2 - po * po) }; occ.push([x, y1 - 0.04, 0.055]); break;
+    }
+    // a spinner: a plate across the way that the ball spins going under it
+    if (Rn() < (ERA.spinner || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.07 + Rn() * (PW - 0.14), y = 0.34 + Rn() * 0.24;
+      if (!free(x, y, 0.03)) continue; T.spinner = { x, y, hw: 0.022 }; occ.push([x, y, 0.03]); break; }
+    // rollover buttons, three in a row
+    if (Rn() < (ERA.rolls || 0)) for (let tries = 0; tries < 40; tries++){ const x = 0.1 + Rn() * (PW - 0.2), y = 0.55 + Rn() * 0.1, pts = [-1, 0, 1].map(k => [x + k * 0.034, y]);
+      if (!pts.every(q => free(q[0], q[1], 0.014, 0.004))) continue; T.rolls = pts; pts.forEach(q => occ.push([q[0], q[1], 0.014])); break; }
     // a gobble hole (wood rail)
     if (ERA.gobble) for (let tries = 0; tries < 60; tries++){ const x = 0.1 + Rn() * (PW - 0.2), y = 0.44 + Rn() * 0.16;
       if (!free(x, y, 0.03)) continue; T.gobble = { x, y, r: 0.017 }; occ.push([x, y, 0.03]); break; }
@@ -48562,11 +48652,16 @@ const PINBALL_APP = (() => {
     // lanes run along the walls)
     const nd = ERA.drops ? D.drops : 0, TW = 0.026, side = Rn() < 0.5 ? -1 : 1;
     if (!nd){ T.bank = { mid: 1, none: 1 }; }
-    else if (Rn() < 0.55 && !T.orbit){
-      const y0 = 0.36 + Rn() * 0.08, x = side < 0 ? 0.013 : PW - 0.013;
-      for (let k = 0; k < nd; k++){ const ya = y0 + k * (TW + 0.004); T.drops.push(seg(x, ya, x, ya + TW, 'drop', { i: k, nx: -side })); }
-      T.bank = { side, x, y0, y1: y0 + nd * (TW + 0.004) };
-      for (let k = 0; k <= nd; k++) occ.push([x, y0 + k * (TW + 0.004), 0.02]);
+    else if (Rn() < 0.55 && !T.orbit && (() => {
+      // (along the side wall, clear of what is there: the upper flipper)
+      const x = side < 0 ? 0.013 : PW - 0.013;
+      for (let tries = 0; tries < 12; tries++){ const y0 = 0.36 + Rn() * 0.08, pts = [];
+        for (let k = 0; k <= nd; k++) pts.push([x, y0 + k * (TW + 0.004), 0.02]);
+        if (!pts.every(q => occ.every(o => Math.hypot(o[0] - q[0], o[1] - q[1]) >= o[2] + q[2] + R))) continue;
+        for (let k = 0; k < nd; k++){ const ya = y0 + k * (TW + 0.004); T.drops.push(seg(x, ya, x, ya + TW, 'drop', { i: k, nx: -side })); }
+        T.bank = { side, x, y0, y1: y0 + nd * (TW + 0.004) }; occ.push(...pts); return true;
+      }
+      return false; })()){
     } else {
       // (across the middle, where it keeps clear of the ramps' mouths; else none)
       const span = nd * (TW + 0.004); T.bank = { mid: 1, none: 1 };
@@ -48597,6 +48692,8 @@ const PINBALL_APP = (() => {
       if (!free(x, y, r, 3 * R)) continue;
       T.posts.push(circ(x, y, r, 'post', { loose: 1 })); occ.push([x, y, r]); n++;
     }
+    // multiball: locked in the saucer, else in a ramp
+    if (ERA.multi) T.lockBy = T.saucer ? 'saucer' : T.ramps.some(x => x.kind === 'ramp') ? 'ramp' : null;
     return gridUp(T);
   }
   // the grid: cells of GC, each holding what a ball within it could touch
@@ -48612,16 +48709,36 @@ const PINBALL_APP = (() => {
     return T;
   }
 
-  /* ─── THE BALL ─── */
+  /* ─── THE BALL ─── (the ball in play is S.b; in multiball the others are S.xb. What each ball is doing of its own is kept on
+     it: riding a ramp, `b.ride`; held in the saucer or waiting to be let out, `b.hold` (with `b.kick`, where and how, if not
+     the saucer's); held by the magnet, `b.mag`. S.ride, S.hold and S.sIn read and write the ball in play's.) */
   function newState(T, quiet){
-    return { b: null, onPl: false, pull: 0, pulling: false, quiet,
-             fl: T.fl.map(f => ({ phi: f.rest, w: 0, on: false })),
+    return { b: null, xb: [], onPl: false, pull: 0, pulling: false, quiet,
+             fl: T.fl.map(f => ({ phi: f.rest, w: 0, on: false, side: f.side })),
              drops: new Uint8Array(T.drops.length), bankT: -1, kb: T.D.kb.slice(), T0kb: T.D.kb, lanes: new Uint8Array(T.lanes.length), laneIn: new Uint8Array(T.lanes.length), laneT: -9,
              stands: new Float32Array(T.stands.length).fill(-9), flash: new Float32Array(T.bumpers.length).fill(-9), sling: [-9, -9],
-             hold: -1, sIn: 0, score: 0, bonus: 0, mult: 1, t: 0, launchT: -99, tilt: false, nudges: [], ev: [], ride: null, shotT: -99, combo: 0 };
+             score: 0, bonus: 0, mult: 1, t: 0, launchT: -99, tilt: false, nudges: [], ev: [], shotT: -99, combo: 0,
+             locked: 0, lockQ: 0, multi: false, jack: 0, msg: 0, msgT: -9, ballNo: 1, lv: T.lv, mis: null, misN: 0, misDone: 0, misLast: -1,
+             spinA: 0, spinW: 0, spinHalf: 0, rolls: 0, rollIn: 0, rollT: -9, capY: T.captive ? T.captive.rest : 0, capV: 0, capT: -9, mbFlash: [-9, -9, -9],
+             get ride(){ return this.b ? this.b.ride || null : null; }, set ride(v){ if (this.b) this.b.ride = v; },
+             get hold(){ return this.b && this.b.hold != null ? this.b.hold : -1; }, set hold(v){ if (this.b) this.b.hold = v; },
+             get sIn(){ return this.b ? this.b.sIn || 0 : 0; }, set sIn(v){ if (this.b) this.b.sIn = v; } };
   }
-  const toPlunger = S => { S.b = { x: PLX, y: PLY - R, vx: 0, vy: 0, z: 0 }; S.onPl = true; S.pull = 0; S.pulling = false; S.ride = null; };
-  const ev = (S, k, x) => { if (!S.quiet) S.ev.push([k, x]); };
+  const toPlunger = S => { S.b = { x: PLX, y: PLY - R, vx: 0, vy: 0, z: 0 }; S.onPl = true; S.pull = 0; S.pulling = false; };
+  const ev = (S, k, x) => { if (S.mis && MIS[S.mis.k].ev === k) misCount(S); if (!S.quiet) S.ev.push([k, x]); };
+  const msg = (S, code) => { S.msg = code; S.msgT = S.t; };
+  // a mission: the board's next, by its number and how many it has started (MISSIONS)
+  function misStart(T, S){
+    const kinds = MIS.map((m, k) => k).filter(k => MIS[k].has(T) && (k !== S.misLast || MIS.filter(m => m.has(T)).length < 2));
+    const r = rngOf((T.idx * 7349) ^ (S.misN * 911) ^ (T.lv * 31) ^ 0x3c6e), k = kinds[Math.floor(r() * kinds.length)];
+    S.misN++; S.misLast = k; S.mis = { k, need: MIS[k].need[T.lv - 1], got: 0, until: S.t + MIS_T[T.lv - 1] };
+    ev(S, 'mission', k);
+  }
+  function misCount(S){
+    const M = S.mis; if (++M.got < M.need) return;
+    const pay = (MIS_AWARD + 10000 * (S.lv - 1)) * (1 + Math.min(3, S.misDone));
+    S.mis = null; S.misDone++; add(S, pay, 5); msg(S, M_WON); S.misPay = pay; ev(S, 'misWon', pay);
+  }
   function add(S, pts, bonus){ S.score += pts; if (bonus) S.bonus += bonus; }
   function launch(S, T){
     if (!S.onPl) return;
@@ -48630,10 +48747,11 @@ const PINBALL_APP = (() => {
     S.onPl = false; S.pulling = false; S.pull = 0; S.launchT = S.t;
     ev(S, 'launch');
   }
+  // a side's button: every flipper on that side (an upper flipper with the lower)
   function setFlipper(S, i, on){
-    const F = S.fl[i]; if (F.on === on) return;
-    F.on = on;
-    if (on && !S.tilt){                      // (a press moves the lit lanes along: left to the left, right to the right)
+    let changed = false;
+    for (const F of S.fl) if (F.side === i && F.on !== on){ F.on = on; changed = true; }
+    if (changed && on && !S.tilt){                      // (a press moves the lit lanes along: left to the left, right to the right)
       const L = S.lanes, n = L.length, c = Array.from(L);
       for (let k = 0; k < n; k++) L[k] = i === 0 ? c[(k + 1) % n] : c[(k + n - 1) % n];
       ev(S, 'flip');
@@ -48677,23 +48795,74 @@ const PINBALL_APP = (() => {
     if (vn < 0){ b.vx -= (1 + E_FL) * vn * nx; b.vy -= (1 + E_FL) * vn * ny; }
     return true;
   }
-  // one step: the flippers turn, the ball falls and meets what it meets. 'drain' when it is gone past the flippers.
+  // the toys that run on the clock alone: the magnet on or off, where the moving bank is
+  const magOn = (Mg, t) => ((t + Mg.ph) % MAG_CYCLE) < MAG_ON;
+  const mbOff = (MB, t) => MB.A * Math.sin(2 * Math.PI * t / MB.P);
+  const mbX = (MB, k, t) => MB.xc + mbOff(MB, t) + (k - (MB.n - 1) / 2) * (MB.w + MB.gap);
+  const TSEG = { a: [0, 0], b: [0, 0], ex: 0, ey: 0, l2: 1, e: E.stand };
+  const lockLit = (T, S) => !!T.lockBy && !S.multi && S.lockQ >= T.lockNeed;
+  // the third lock: the two locked balls let out after the one locking (from the saucer one after another, or from the ramp's foot)
+  function startMulti(T, S, at){
+    S.multi = true; S.locked = 0; S.lockQ = 0; S.jack = JACK0 + 5000 * (T.lv - 1); msg(S, M_MULTI); ev(S, 'multiball');
+    for (let k = 0; k < 2; k++) S.xb.push({ x: at.x, y: at.y, vx: 0, vy: 0, z: 0, hold: S.t + (at.saucer ? SAUCER_T + 0.5 + 0.6 * k : 0.5 + 0.7 * k),
+                                            kick: at.saucer ? null : { x: at.x, y: at.y, vx: at.vx, vy: at.vy } });
+  }
+  // one step: the flippers turn, the clock's toys move, each ball falls and meets what it meets. 'drain' when the last ball in play
+  // has gone past the flippers (in multiball another takes its place).
   function sub(T, S, h){
     S.t += h;
-    for (let i = 0; i < 2; i++){
+    for (let i = 0; i < T.fl.length; i++){
       const f = T.fl[i], F = S.fl[i], up = F.on && !S.tilt, want = up ? f.up : f.rest, sp = (up ? FL_UP : FL_DOWN) * h, d = want - F.phi;
       const stp = Math.abs(d) <= sp ? d : Math.sign(d) * sp; F.phi += stp; F.w = stp / h;
     }
     if (S.bankT >= 0 && S.t - S.bankT > 1.0){ S.drops.fill(0); S.bankT = -1; ev(S, 'reset'); }
-    const b = S.b; if (!b) return null;
-    if (S.ride) return rideStep(T, S, b, h);
-    if (S.onPl){ if (S.pulling) S.pull = Math.min(1, S.pull + h * 1.3); b.x = PLX; b.y = PLY - R; b.vx = b.vy = 0; return null; }   // (the pull is drawn, not moved: a ball drawn down past the stop was pushed through it)
-    if (S.hold >= 0){
-      if (S.t < S.hold) return null;
-      const K = T.saucer.kick; b.vx = K[0] * SAUCER_V; b.vy = K[1] * SAUCER_V; S.hold = -1; S.sIn = 1; ev(S, 'kick');
+    if (S.mis && S.t > S.mis.until){ S.mis = null; msg(S, M_LOST); ev(S, 'misLost'); }
+    if (T.spinner){ S.spinA += S.spinW * h; S.spinW *= 1 - 1.4 * h; const half = Math.floor(S.spinA / Math.PI); if (half > S.spinHalf){ add(S, 100 * (half - S.spinHalf)); S.spinHalf = half; ev(S, 'spin'); } }
+    const C = T.captive;
+    if (C){ S.capV += T.g * h; S.capY += S.capV * h;
+      if (S.capY > C.rest){ S.capY = C.rest; S.capV = 0; }
+      if (S.capY < C.y0 + R){ S.capY = C.y0 + R; if (S.capV < -0.3){ add(S, 2500, 2); S.capT = S.t; msg(S, M_CAP); ev(S, 'captive'); } S.capV = -S.capV * 0.4; } }
+    if (!S.b) return null;
+    let r = stepBall(T, S, S.b, h, true);
+    for (let k = S.xb.length - 1; k >= 0; k--) if (stepBall(T, S, S.xb[k], h, false) === 'drain') S.xb.splice(k, 1);
+    if (r === 'drain' && S.xb.length){ S.b = S.xb.shift(); S.onPl = false; r = null; }
+    if (S.multi && !S.xb.length && r !== 'drain'){ S.multi = false; S.jack = 0; ev(S, 'mbEnd'); }
+    if (S.xb.length) ballsMeet(S);
+    return r;
+  }
+  // balls in play meet as equal balls, a little less than elastic
+  function ballsMeet(S){
+    const L = [S.b, ...S.xb].filter(b => b && !(b.hold >= 0) && !b.ride && !(b.mag >= 0));
+    for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++){
+      const a = L[i], b = L[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      if (d >= 2 * R || d < 1e-9) continue;
+      const nx = dx / d, ny = dy / d, o = (2 * R - d) / 2; a.x -= nx * o; a.y -= ny * o; b.x += nx * o; b.y += ny * o;
+      const vr = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny; if (vr >= 0) continue;
+      const j2 = -0.95 * vr; a.vx -= j2 * nx; a.vy -= j2 * ny; b.vx += j2 * nx; b.vy += j2 * ny; ev(S, 'clack');
+    }
+  }
+  function stepBall(T, S, b, h, primary){
+    if (b.ride) return rideStep(T, S, b, h);
+    if (primary && S.onPl){ if (S.pulling) S.pull = Math.min(1, S.pull + h * 1.3); b.x = PLX; b.y = PLY - R; b.vx = b.vy = 0; return null; }   // (the pull is drawn, not moved: a ball drawn down past the stop was pushed through it)
+    if (b.hold != null && b.hold >= 0){
+      if (S.t < b.hold) return null;
+      if (b.kick){ Object.assign(b, { x: b.kick.x, y: b.kick.y, vx: b.kick.vx, vy: b.kick.vy }); b.kick = null; }
+      else { const K = T.saucer.kick; b.vx = K[0] * SAUCER_V; b.vy = K[1] * SAUCER_V; b.sIn = 1; }
+      b.hold = -1; ev(S, 'kick');
+    }
+    const Mg = T.magnet;
+    if (b.mag != null && b.mag >= 0){
+      if (S.t < b.mag){ b.x = Mg.x; b.y = Mg.y; b.vx = b.vy = 0; return null; }
+      // (thrown up the table, a different way each time, by the clock)
+      const a = -Math.PI / 2 + ((S.t * 3.71) % 1 - 0.5) * 2.2; b.vx = Math.cos(a) * 1.9; b.vy = Math.sin(a) * 1.9; b.mag = -1; b.magDone = S.t;
     }
     b.vy += T.g * h;
     const fr = 1 - 0.03 * h; b.vx *= fr; b.vy *= fr;
+    if (Mg && magOn(Mg, S.t) && !(S.t - (b.magDone || -9) < 1.5)){
+      const dx = Mg.x - b.x, dy = Mg.y - b.y, d = Math.hypot(dx, dy);
+      if (d < Mg.r){ const a = 12 * (1 - d / Mg.r) * h; b.vx += dx / (d || 1) * a; b.vy += dy / (d || 1) * a; b.vx *= 1 - 3 * h; b.vy *= 1 - 3 * h;
+        if (d < 0.014 && Math.hypot(b.vx, b.vy) < 1.4){ b.mag = S.t + 0.8; add(S, 500, 1); msg(S, M_MAG); ev(S, 'magnet'); return null; } }
+    }
     const ox = b.x, oy = b.y;
     b.x += b.vx * h; b.y += b.vy * h;
     // into a ramp's or an orbit's mouth: across its line, between its posts, moving in
@@ -48702,9 +48871,12 @@ const PINBALL_APP = (() => {
       if (s0 < 0 && s1 >= 0 && Math.abs((b.x - M.x) * -M.dy + (b.y - M.y) * M.dx) < M.hw - 0.004){
         const v0 = b.vx * M.dx + b.vy * M.dy;
         if (Rp.kind === 'orbit' && v0 < ORBIT_V) continue;
-        S.ride = { k, s: 0, dir: 1, v0: Math.min(v0, 3.2) }; b.z = 0; ev(S, Rp.kind === 'orbit' ? 'orbitIn' : 'rampIn');
+        b.ride = { k, s: 0, dir: 1, v0: Math.min(v0, 3.2) }; b.z = 0; ev(S, Rp.kind === 'orbit' ? 'orbitIn' : 'rampIn');
         return null;
       } }
+    // the spinner: spun by a ball going under it, either way
+    const Sp = T.spinner;
+    if (Sp && (oy - Sp.y) * (b.y - Sp.y) <= 0 && oy !== b.y && Math.abs(b.x - Sp.x) < Sp.hw){ S.spinW = Math.min(70, S.spinW + Math.abs(b.vy) * 30); ev(S, 'spinIn'); }
     const gi = Math.floor(b.x / T.GC), gj = Math.floor(b.y / T.GC);
     if (gi >= 0 && gi < T.GX && gj >= 0 && gj < T.GY){
       for (const it of T.grid[gi + gj * T.GX]){
@@ -48729,26 +48901,51 @@ const PINBALL_APP = (() => {
         }
       }
     }
-    for (let i = 0; i < 2; i++) if (hitFlipper(T.fl[i], S.fl[i], b) && Math.abs(S.fl[i].w) > 3) ev(S, 'smack');
+    // the moving bank, where the clock has it
+    const MB = T.mbank;
+    if (MB && Math.abs(b.y - MB.y) < 0.03) for (let k = 0; k < MB.n; k++){
+      const x = mbX(MB, k, S.t); TSEG.a[0] = x - MB.w / 2; TSEG.a[1] = MB.y; TSEG.b[0] = x + MB.w / 2; TSEG.b[1] = MB.y; TSEG.ex = MB.w; TSEG.ey = 0; TSEG.l2 = MB.w * MB.w;
+      const v = hitSeg(TSEG, b); if (v > 0.1){ S.mbFlash[k] = S.t; add(S, 750, 1); ev(S, 'mbank'); }
+    }
+    // the captive ball: met as a ball of its own that can only move along its channel
+    const C = T.captive;
+    if (C){ const dx = b.x - C.x, dy = b.y - S.capY, d = Math.hypot(dx, dy);
+      if (d < 2 * R && d > 1e-9){ const nx = dx / d, ny = dy / d; b.x = C.x + nx * 2 * R; b.y = S.capY + ny * 2 * R;
+        const vr = b.vx * nx + (b.vy - S.capV) * ny;
+        if (vr < 0){ const j = -1.8 * vr / (1 + ny * ny); b.vx += j * nx; b.vy += j * ny; S.capV -= j * ny; ev(S, 'clack'); } } }
+    for (let i = 0; i < T.fl.length; i++) if (hitFlipper(T.fl[i], S.fl[i], b) && Math.abs(S.fl[i].w) > 3) ev(S, 'smack');
     const sp = Math.hypot(b.vx, b.vy); if (sp > VMAX){ b.vx *= VMAX / sp; b.vy *= VMAX / sp; }
-    // the lanes (rolled through: lit), the saucer (a slow enough ball is held)
+    // the lanes (rolled through: lit), the rollover buttons, the saucer (a slow enough ball is held)
     for (let k = 0; k < T.lanes.length; k++){
       const L = T.lanes[k], inside = Math.hypot(b.x - L.x, b.y - L.y) < L.r;
       if (inside && !S.laneIn[k]){
         S.laneIn[k] = 1;
         if (!S.lanes[k]){ S.lanes[k] = 1; add(S, 300, 1); ev(S, 'lane');
-          if (S.lanes.every(x => x)){ add(S, 2000); S.mult = Math.min(5, S.mult + 1); S.lanes.fill(0); S.laneT = S.t; ev(S, 'lanes'); } }
+          if (S.lanes.every(x => x)){ add(S, 2000); S.mult = Math.min(5, S.mult + 1); S.lanes.fill(0); S.laneT = S.t; ev(S, 'lanes'); if (!T.saucer && !S.mis) misStart(T, S); } }
         else add(S, 50);
       } else if (!inside) S.laneIn[k] = 0;
     }
+    if (T.rolls) T.rolls.forEach((q, k) => { const inside = Math.hypot(b.x - q[0], b.y - q[1]) < 0.013, bit = 1 << k;
+      if (inside && !(S.rollIn & bit)){ S.rollIn |= bit;
+        if (!(S.rolls & bit)){ S.rolls |= bit; add(S, 500, 1); ev(S, 'roll');
+          if (S.rolls === (1 << T.rolls.length) - 1){ add(S, 3000, 2); S.rolls = 0; S.rollT = S.t; msg(S, M_ROLL); ev(S, 'rolls'); } } }
+      else if (!inside) S.rollIn &= ~bit; });
     // the gobble hole (wood rail): a ball rolling slowly over it is taken, worth 5000, and the ball is over
     const Gh = T.gobble;
     if (Gh && Math.hypot(b.x - Gh.x, b.y - Gh.y) < Gh.r * 0.8 && Math.hypot(b.vx, b.vy) < 1.5){ add(S, 5000, 3); S.gobbled = S.t; ev(S, 'gobble'); return 'drain'; }
     const Q = T.saucer;
     if (Q){
       const d = Math.hypot(b.x - Q.x, b.y - Q.y);
-      if (S.sIn){ if (d > Q.r * 3) S.sIn = 0; }
-      else if (d < Q.r * 0.8 && Math.hypot(b.vx, b.vy) < 2.4){ b.x = Q.x; b.y = Q.y; b.vx = b.vy = 0; S.hold = S.t + SAUCER_T; add(S, 1500, 2); ev(S, 'saucer'); }
+      if (b.sIn){ if (d > Q.r * 3) b.sIn = 0; }
+      else if (d < Q.r * 0.8 && Math.hypot(b.vx, b.vy) < SAUCER_IN){
+        b.x = Q.x; b.y = Q.y; b.vx = b.vy = 0; add(S, 1500, 2); ev(S, 'saucer');
+        if (primary && T.lockBy === 'saucer' && lockLit(T, S)){
+          if (S.locked < 2){ S.locked++; S.lockQ = 0; msg(S, M_LOCK); ev(S, 'lock'); toPlunger(S); return null; }
+          startMulti(T, S, { x: Q.x, y: Q.y, saucer: true });
+        }
+        if (!S.mis) misStart(T, S);
+        b.hold = S.t + SAUCER_T;
+      }
     }
     // a kickback, lit, sends a ball in its outlane back up along the wall, past the divider's post and on to the wall's bulge, which
     // turns it inward (levels 1 to 3 start each ball with them; a whole bank lights both; sent up the middle of the lane, or
@@ -48756,43 +48953,105 @@ const PINBALL_APP = (() => {
     for (let s = 0; s < 2; s++){ const O = T.outs[s];
       if (S.kb[s] && b.x > O.x0 && b.x < O.x1 && b.y > O.y && b.y < 0.97 && b.vy > 0){ b.x = s ? PW - R - 0.001 : R + 0.001; b.vy = -2.5 * Math.sqrt(T.g / 1.3); b.vx = 0; S.kb[s] = 0; S.kbT = S.t; ev(S, 'kickback'); } }
     if (b.y > 1.04) return 'drain';
-    if (b.x > PW && b.y > PLY - R - 0.004 && Math.abs(b.vy) < 0.06){ toPlunger(S); ev(S, 'back'); }
+    if (primary && b.x > PW && b.y > PLY - R - 0.004 && Math.abs(b.vy) < 0.06){ toPlunger(S); ev(S, 'back'); }
     return null;
   }
   // riding a ramp or an orbit: along its path, a ramp at √(v0² − 2·GV·z) (back down and out of its mouth when that runs out
-  // short of the top), an orbit at its own speed; out at the far end, scored, the combo counted
+  // short of the top), an orbit at its own speed; out at the far end, scored, the combo counted, a jackpot in multiball, and a
+  // lock where the ramps lock
   function rideStep(T, S, b, h){
-    const Rd = S.ride, Rp = T.ramps[Rd.k], P = Rp.P;
+    const Rd = b.ride, Rp = T.ramps[Rd.k], P = Rp.P;
     let v = Rp.kind === 'orbit' ? Math.max(0.8, Rd.v0 * 0.92) : Math.sqrt(Math.max(0, Rd.v0 * Rd.v0 - 2 * GV * rampZ(Rp, Rd.s)));
     if (Rd.dir > 0 && v < 0.25){ Rd.dir = -1; ev(S, 'rampFail'); }
     v = Math.max(0.25, v);
     Rd.s += Rd.dir * v * h;
     if (Rd.dir < 0 && Rd.s <= 0){                         // (rolled back out of the mouth)
-      const M = Rp.M; b.x = M.x - M.dx * 0.004; b.y = M.y - M.dy * 0.004; b.vx = -M.dx * Rd.v0 * 0.6; b.vy = -M.dy * Rd.v0 * 0.6; b.z = 0; S.ride = null; return null;
+      const M = Rp.M; b.x = M.x - M.dx * 0.004; b.y = M.y - M.dy * 0.004; b.vx = -M.dx * Rd.v0 * 0.6; b.vy = -M.dy * Rd.v0 * 0.6; b.z = 0; b.ride = null; return null;
     }
     if (Rd.s >= P.L){
       const X = Rp.exit, vo = Rp.kind === 'orbit' ? Math.min(1.5, v) : 1;
-      b.x = X.x; b.y = X.y; b.vx = X.vx * vo * (Rp.kind === 'orbit' ? 1 : 0.8); b.vy = X.vy * vo * (Rp.kind === 'orbit' ? 1 : 0.8); b.z = 0; S.ride = null;
+      b.x = X.x; b.y = X.y; b.vx = X.vx * vo * (Rp.kind === 'orbit' ? 1 : 0.8); b.vy = X.vy * vo * (Rp.kind === 'orbit' ? 1 : 0.8); b.z = 0; b.ride = null;
       S.combo = S.t - S.shotT < COMBO_T ? Math.min(3, S.combo + 1) : 0; S.shotT = S.t;
       add(S, (Rp.kind === 'orbit' ? 1000 : 1500) * (1 + S.combo), Rp.kind === 'orbit' ? 1 : 2);
+      if (S.combo) msg(S, M_COMBO);
       ev(S, Rp.kind === 'orbit' ? 'orbit' : 'ramp', S.combo);
+      const hasRamp = T.ramps.some(x => x.kind === 'ramp');
+      if (S.multi && (Rp.kind === 'ramp' || !hasRamp)){ add(S, S.jack); msg(S, M_JACK); ev(S, 'jackpot'); S.jack += 10000; }
+      else if (Rp.kind === 'ramp' && T.lockBy === 'ramp' && b === S.b && lockLit(T, S)){
+        if (S.locked < 2){ S.locked++; S.lockQ = 0; msg(S, M_LOCK); ev(S, 'lock'); toPlunger(S); return null; }
+        startMulti(T, S, { x: X.x, y: X.y, vx: b.vx, vy: b.vy });
+      } else if (!S.multi && T.lockBy){ S.lockQ++; if (S.lockQ === T.lockNeed && T.lockNeed){ msg(S, M_LIT); ev(S, 'lockLit'); } }
       return null;
     }
     const A = pathAt(P, Rd.s); b.x = A.x; b.y = A.y; b.vx = A.tx * v * Rd.dir; b.vy = A.ty * v * Rd.dir; b.z = rampZ(Rp, Rd.s);
     return null;
   }
-  // the end of a ball: the bonus (none after a tilt), the multiplier back to one
+  // the end of a ball: the bonus (none after a tilt), the multiplier back to one (balls locked stay locked)
   function endBall(S){
     const pay = S.tilt ? 0 : S.bonus * 500 * S.mult;
-    S.score += pay; S.lastBonus = pay; S.bonus = 0; S.mult = 1; S.tilt = false; S.nudges = []; S.b = null; S.onPl = false; S.hold = -1; S.ride = null; S.combo = 0; S.shotT = -99;
-    S.lanes.fill(0); S.kb = S.T0kb.slice();
+    S.score += pay; S.lastBonus = pay; S.bonus = 0; S.mult = 1; S.tilt = false; S.nudges = []; S.b = null; S.xb = []; S.multi = false; S.jack = 0; S.onPl = false; S.combo = 0; S.shotT = -99;
+    S.lanes.fill(0); S.kb = S.T0kb.slice(); S.lockQ = 0; S.ballNo++; S.mis = null;
     return pay;
   }
 
-  /* ─── THE STEADY PLAYER ─── flips a flipper as the ball comes down it, at a point along it drawn for each approach (now and
-     then too late), holds it a fifth of a second; pulls the plunger to a power of its own. */
+  /* ─── THE STEADY PLAYER ─── flips a flipper as the ball comes down it, at a point along it chosen for each approach (now and
+     then too late), holds it a fifth of a second; pulls the plunger to a power of its own.
+     IT AIMS (Oct 25: "5,1", the second being "the steady player aims for lit locks and ramps, so the recordings show multiball and
+     jackpots, and par reflects what the table offers"). Until then the point was drawn at random, and over 40 tables of 90 s each
+     it locked 17 balls and took one jackpot. Now, every step a ball comes down a lower flipper, the player flies the flipper alone
+     ahead from the ball as it is (`shotNow`) and flips the first moment the shot heads within AIM_TOL of what it wants most and can
+     see straight (`wantOf`: in multiball a jackpot; a lit lock; the mission's targets, or the saucer to start one; any ramp or orbit;
+     `clearTo`), a want lower down only while those above head more than AIM_OK off; else late, at AIM_LATE. Its hands are a
+     person's: off by an angle of its own each time (AIM_SD), one approach in AIM_FREE taken as it comes, still one in ten too late
+     (MISS). (A table of each flipper's shots worked out in advance, a ball rolling down it flipped at each point, was tried first
+     and barely helped: the balls come at a flipper every way.) Over the same 40 tables: 110 ramps against 58. */
+  const STILL_T = 1.5, AIM_OK = 0.25, AIM_TOL = 0.05, AIM_SD = 0.04, AIM_FREE = 0.2, AIM_LATE = 0.95;
+  // where the ball would go if flipper fi were flipped now: flown ahead with the flipper alone until it leaves it ({x, y, a}, or null)
+  const PF = { phi: 0, w: 0 }, PB = { x: 0, y: 0, vx: 0, vy: 0 };
+  function shotNow(T, S, fi, b){
+    const f = T.fl[fi]; PF.phi = S.fl[fi].phi; PF.w = 0; PB.x = b.x; PB.y = b.y; PB.vx = b.vx; PB.vy = b.vy;
+    for (let k = 0; k < 150; k++){
+      const sp = FL_UP * SUB, d = f.up - PF.phi, stp = Math.abs(d) <= sp ? d : Math.sign(d) * sp; PF.phi += stp; PF.w = stp / SUB;
+      PB.vy += T.g * SUB; PB.x += PB.vx * SUB; PB.y += PB.vy * SUB;
+      hitFlipper(f, PF, PB);
+      if (PB.vy < -0.5 && Math.hypot(PB.x - f.px, PB.y - f.py) > f.len + 0.03) return { x: PB.x, y: PB.y, a: Math.atan2(PB.vy, PB.vx) };
+      if (PB.y > FY + 0.08) return null;
+    }
+    return null;
+  }
+  /* whether a ball could roll straight from (x, y) to q with nothing standing in the way (the last 0.03 left out: the target is
+     often a thing itself), on the table's grid, every 0.008; kept by the place to the nearest 0.01 (most shots leave a flipper
+     from a few places) */
+  function clearTo(T, x, y, q){
+    const key = Math.round(x * 100) * 1e4 + Math.round(y * 100) + ':' + q[0] + ':' + q[1], V = T._vis || (T._vis = new Map());
+    let ok = V.get(key); if (ok != null) return ok;
+    const L = Math.hypot(q[0] - x, q[1] - y), n = Math.max(0, Math.floor((L - 0.03) / 0.008)); ok = true;
+    for (let k = 1; k <= n && ok; k++){ const px = x + (q[0] - x) * k * 0.008 / L, py = y + (q[1] - y) * k * 0.008 / L, gi = Math.floor(px / T.GC), gj = Math.floor(py / T.GC);
+      if (gi < 0 || gi >= T.GX || gj < 0 || gj >= T.GY) continue;
+      for (const it of T.grid[gi + gj * T.GX]){
+        if (it.a){ if (it.kind === 'gate') continue; let t = ((px - it.a[0]) * it.ex + (py - it.a[1]) * it.ey) / it.l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+          if (Math.hypot(px - it.a[0] - it.ex * t, py - it.a[1] - it.ey * t) < R * 0.9){ ok = false; break; } }
+        else if (Math.hypot(px - it.x, py - it.y) < it.r + R * 0.9){ ok = false; break; } } }
+    V.set(key, ok); if (V.size > 20000) V.clear();
+    return ok;
+  }
+  // how far a shot heads off the nearest of pts it can see (radians)
+  function offOf(T, sh, pts, bias){
+    let best = 9;
+    for (const q of pts){ if (!clearTo(T, sh.x, sh.y, q)) continue; let d = Math.atan2(q[1] - sh.y, q[0] - sh.x) - sh.a - bias; d = Math.abs(Math.atan2(Math.sin(d), Math.cos(d))); if (d < best) best = d; }
+    return best;
+  }
+  // what the player wants, most first: lists of points
+  function wantOf(T, S){
+    const L = [], ramps = T.ramps.filter(x => x.kind === 'ramp');
+    if (S.multi) L.push((ramps.length ? ramps : T.ramps).map(mouthPt));
+    if (lockLit(T, S)) L.push(T.lockBy === 'saucer' ? [[T.saucer.x, T.saucer.y]] : ramps.map(mouthPt));
+    if (S.mis) L.push(MIS[S.mis.k].at(T)); else if (T.saucer) L.push([[T.saucer.x, T.saucer.y]]);
+    if (T.ramps.length) L.push(T.ramps.map(mouthPt));
+    return L;
+  }
+  const gauss = rng => Math.sqrt(-2 * Math.log(1 - rng())) * Math.cos(2 * Math.PI * rng());
   function botStep(T, S, B, h){
-    const b = S.b;
     if (S.onPl){
       for (let i = 0; i < 2; i++) setFlipper(S, i, false);
       if ((B.wait -= h) > 0) return;
@@ -48800,36 +49059,69 @@ const PINBALL_APP = (() => {
       if (S.pull >= B.pow){ launch(S, T); B.wait = 0.6 + 0.8 * B.rng(); }
       return;
     }
+    // (in multiball each side watches every ball, and goes for the one nearest the drain coming down one of its flippers)
+    const free = b => b && !(b.hold >= 0) && !b.ride && !(b.mag >= 0);
+    // (a ball come to rest where no flipper reaches, as on top of a flipper's pivot, is shoved free after STILL_T, as a person
+    //  would: until Oct 25 the steady player never nudged, and a game sat there until its time ran out)
+    if (free(S.b) && Math.abs(S.b.vx) + Math.abs(S.b.vy) < 0.03){ if ((B.still += h) > STILL_T && !S.tilt){ shove(S, B.rng()); B.still = 0; } } else B.still = 0;
+    const balls = S.xb.length ? [S.b, ...S.xb].filter(free) : free(S.b) ? (B.one[0] = S.b, B.one) : NONE;   // (no array made a step with one ball)
     for (let i = 0; i < 2; i++){
       if (B.hold[i] > 0){ B.hold[i] -= h; setFlipper(S, i, true); continue; }
       setFlipper(S, i, false);
       if (B.cool[i] > 0){ B.cool[i] -= h; continue; }
-      if (!b || S.hold >= 0 || S.tilt || S.ride){ B.armed[i] = 1; continue; }
-      const f = T.fl[i], c = Math.cos(f.rest), s = Math.sin(f.rest), rx = b.x - f.px, ry = b.y - f.py;
-      const t = (rx * c + ry * s) / f.len, perp = (-s * rx + c * ry) * (i === 0 ? 1 : -1);
-      if (t > -0.15 && t < 1.15 && perp > -(R + 0.06) && perp < R + 0.012 && b.vy > -0.6){
-        if (B.armed[i]){ B.aim[i] = B.rng() < MISS ? 1.12 : 0.2 + 0.65 * B.rng(); B.armed[i] = 0; }
+      if (!balls.length || S.tilt){ B.armed[i] = 1; continue; }
+      let best = null;
+      for (let fi = 0; fi < T.fl.length; fi++){ const f = T.fl[fi]; if (f.side !== i) continue; for (const b of balls){
+        const c = Math.cos(f.rest), s = Math.sin(f.rest), rx = b.x - f.px, ry = b.y - f.py;
+        const t = (rx * c + ry * s) / f.len, perp = (-s * rx + c * ry) * (i === 0 ? 1 : -1);
+        if (t > -0.15 && t < 1.15 && perp > -(R + 0.06) && perp < R + 0.012 && b.vy > -0.6 && (!best || b.y > best.b.y)) best = { b, t, perp, fi };
+      } }
+      if (best){ const { b, t, perp } = best;
+        if (B.armed[i]){ const miss = B.rng() < MISS;
+          // (aiming: the wants, most first, and an angle the hands are off by this time; flipped the first moment the shot heads
+          //  within AIM_TOL of one, a want lower down only while those above head more than AIM_OK off, else late, at AIM_LATE)
+          B.want[i] = !miss && !B.noAim && !T.fl[best.fi].upper && B.rng() >= AIM_FREE ? wantOf(T, S) : null; B.bias[i] = gauss(B.rng) * AIM_SD;
+          B.aim[i] = miss ? 1.12 : B.want[i] ? AIM_LATE : 0.2 + 0.65 * B.rng(); B.armed[i] = 0; B.aimed = (B.aimed || 0) + !!B.want[i]; }
+        if (B.want[i] && t < B.aim[i] && t > -0.05){ const sh = shotNow(T, S, best.fi, b);
+          if (sh){ const W2 = B.want[i]; for (let w = 0; w < W2.length; w++){ const off = offOf(T, sh, W2[w], B.bias[i]);
+            if (off < AIM_TOL){ B.aim[i] = -9; break; }
+            if (off < AIM_OK) break; } } }   // (a want nearer the top heading close: wait for it, not one below)
         // (a ball come to rest by the pivot is flipped too: left there it sat for good)
         if (t >= B.aim[i] || (perp > -R - 0.015 && Math.hypot(b.vx, b.vy) < 0.15 && t > -0.1)){ B.hold[i] = 0.2; B.cool[i] = 0.12; B.armed[i] = 1; }
       } else B.armed[i] = 1;
     }
   }
-  const botNew = seed => ({ rng: rngOf(seed), hold: [0, 0], cool: [0, 0], aim: [0.5, 0.5], armed: [1, 1], wait: 0.6, pow: 0.8 });
-  // a frame of a recording: the ball, the flippers, the drop targets, the lit lanes, the bumpers lit, the slings, the pull
+  const botNew = seed => ({ rng: rngOf(seed), hold: [0, 0], cool: [0, 0], aim: [0.5, 0.5], armed: [1, 1], wait: 0.6, pow: 0.8, one: [null], want: [null, null], bias: [0, 0], still: 0 });
+  const NONE = [];
+  /* a frame of a recording (REC_F numbers): the ball, the two flippers, the drop targets, the lit lanes, the bumpers and slings
+     lit, the multiplier, the kickbacks, the combo, the pull, the ball's height; the upper flipper; two more balls; the locks,
+     multiball, the rollovers, what the display says and the ball's number; the spinner, the captive ball and the score; the
+     mission (its kind + 1, seconds left, how many got and needed). */
   function frameOf(T, S, out){
     const b = S.b; let dm = 0, lm = 0, fm = 0;
     S.drops.forEach((x, k) => { if (x) dm |= 1 << k; }); S.lanes.forEach((x, k) => { if (x) lm |= 1 << k; });
     S.flash.forEach((x, k) => { if (S.t - x < 0.12) fm |= 1 << k; });
     const sl = (S.t - S.sling[0] < 0.1 ? 1 : 0) | (S.t - S.sling[1] < 0.1 ? 2 : 0);
-    const co = S.t - S.shotT < COMBO_T ? 1 : 0;
-    out.push(b ? b.x : -1, b ? b.y : -1, S.fl[0].phi, S.fl[1].phi, dm, lm, fm | (sl << 8) | (Math.min(5, S.mult) << 10) | (S.kb[0] << 13) | (S.kb[1] << 14) | (co << 15), S.pull, b ? b.z || 0 : 0);
+    const co = S.t - S.shotT < COMBO_T ? 1 : 0, x1 = S.xb[0], x2 = S.xb[1];
+    const vis = q => q && !(q.hold >= 0 && q.kick) ? q : null, y1 = vis(x1), y2 = vis(x2);
+    const m2 = Math.min(3, S.locked) | (S.multi ? 4 : 0) | ((S.rolls & 15) << 4) | ((S.t - S.msgT < 1.8 ? S.msg & 31 : 0) << 8) | ((Math.min(7, S.ballNo)) << 13) | ((S.t - S.rollT < 0.6 ? 1 : 0) << 16);
+    out.push(b ? b.x : -1, b ? b.y : -1, S.fl[0].phi, S.fl[1].phi, dm, lm, fm | (sl << 8) | (Math.min(5, S.mult) << 10) | (S.kb[0] << 13) | (S.kb[1] << 14) | (co << 15), S.pull, b ? b.z || 0 : 0,
+             S.fl[2] ? S.fl[2].phi : 0, y1 ? y1.x : -1, y1 ? y1.y : -1, y1 ? y1.z || 0 : 0, y2 ? y2.x : -1, y2 ? y2.y : -1, y2 ? y2.z || 0 : 0, m2, S.spinA % (Math.PI * 2), S.capY, S.score, misCode(S));
   }
+  const misCode = S => { const M = S.mis; return M ? (M.k + 1) | (Math.min(31, Math.ceil(M.until - S.t)) << 4) | (Math.min(63, M.got) << 9) | (Math.min(63, M.need) << 15) : 0; };
+  const misRead = q => q & 15 ? { k: (q & 15) - 1, left: (q >> 4) & 31, got: (q >> 9) & 63, need: (q >> 15) & 63 } : null;
   /* The steady player's game: the table's balls (or `o.balls`), the whole game up to BALL_T seconds a ball (each ball cut off at
-     `o.cap` if given), its first REEL_T seconds sampled as the board's recording (`o.rec`). Yields every few thousand steps so
-     it can be worked a little at a time. Returns the score, the recording and each ball's life. */
+     `o.cap` if given), REEL_T seconds of it sampled as the board's recording (`o.rec`). Yields every few thousand steps so it can
+     be worked a little at a time. Returns the score, the recording and each ball's life.
+     WHICH REEL_T SECONDS (Oct 25, "5,1": "so the recordings show multiball and jackpots"): the first, until then; and with the
+     player aiming, a recording of the first 40 s showed a multiball on none of 40 boards. Now the recording starts REC_PRE
+     before the game's first multiball, or failing that its first mission, or failing both at the start (`o.recKind` says which:
+     2, 1, 0). A window cut short by the game's end is kept only if it has REC_MIN of play. */
+  const REC_PRE = 6, REC_MIN = 15;
   function* simGen(T, seed, o){
     o = o || {};
-    const S = newState(T, true), B = botNew(seed), rec = [], N = o.balls || T.balls, lives = [];
+    const S = newState(T, true), B = botNew(seed), N = o.balls || T.balls, lives = [], NF = REEL_T * REC_HZ * REC_F;
+    let rec = [], ring = [], cap = null, capKind = 0, was = 0;
     let balls = N, next = 0, k = 0, t0 = 0;
     toPlunger(S);
     const end = () => { lives.push(S.t - t0); endBall(S); if (--balls > 0){ toPlunger(S); B.wait = 1.2; t0 = S.t; } };
@@ -48839,11 +49131,18 @@ const PINBALL_APP = (() => {
         if (S.t - S.launchT < T.D.save && !S.tilt) toPlunger(S);
         else end();
       } else if (o.cap && S.t - t0 > o.cap) end();
-      if (o.rec && S.t < REEL_T && S.t >= next){ frameOf(T, S, rec); next += 1 / REC_HZ; }
+      if (o.rec && S.t >= next){ next += 1 / REC_HZ;
+        const fr = []; frameOf(T, S, fr); if (rec.length < NF) rec.push(...fr);
+        ring.push(fr); if (ring.length > REC_PRE * REC_HZ) ring.shift();
+        const now2 = (S.multi ? 2 : 0) | (S.mis ? 1 : 0), trig = (now2 & 2) && !(was & 2) ? 2 : (now2 & 1) && !(was & 1) ? 1 : 0; was = now2;
+        if (trig > capKind){ cap = [].concat(...ring); capKind = trig; }
+        else if (cap && cap.length < NF) cap.push(...fr);
+      }
       if (++k % 3000 === 0) yield;
     }
     if (balls > 0) lives.push(S.t - t0);
-    return { score: S.score, reel: Float32Array.from(rec), balls, t: S.t, lives };
+    const useCap = cap && cap.length >= REC_MIN * REC_HZ * REC_F;
+    return { score: S.score, reel: o.rec ? Float32Array.from(useCap ? cap : rec) : null, recKind: useCap ? capKind : 0, balls, t: S.t, lives };
   }
   function simRun(T, seed, o){ const G = simGen(T, seed, o === true ? {} : o); let r; do { r = G.next(); } while (!r.done); return r.value; }
   // par: the steady player's mean over PAR_GAMES whole games, each from its own seed (one game's luck swung it two times over)
@@ -48861,7 +49160,7 @@ const PINBALL_APP = (() => {
     for (let a = 0; a < FIT_TRIES; a++){
       const T = makeTable(idx, lv, a), r = yield* simGen(T, (idx * 7919) ^ (lv * 131) ^ (a * 613), { balls: FIT_BALLS, cap: BALL_CAP, rec: true });
       const life = lifeOf(r), off = offBand(lv, life); used = a + 1;
-      if (!best || off < best.off) best = { T, reel: r.reel, life, off, tries: a + 1 };
+      if (!best || off < best.off) best = { T, reel: r.reel, recKind: r.recKind, life, off, tries: a + 1 };
       if (!off) break;
     }
     best.used = used; return best;
@@ -48882,7 +49181,7 @@ const PINBALL_APP = (() => {
   function work(M, ms){
     const t0 = performance.now();
     while (performance.now() - t0 < ms){
-      if (M.job){ const r = M.job.next(); if (r.done){ const F = r.value; Object.assign(M, { T: F.T, reel: F.reel, life: F.life, tries: F.tries, ready: true }); M.job = null; try { fieldItemsChanged(); } catch {} } }
+      if (M.job){ const r = M.job.next(); if (r.done){ const F = r.value; Object.assign(M, { T: F.T, reel: F.reel, recKind: F.recKind, life: F.life, tries: F.tries, ready: true }); M.job = null; try { fieldItemsChanged(); } catch {} } }
       else if (M.parWanted && M.par == null){ if (!M.parJob) M.parJob = parGen(M.T, (M.idx * 6151) ^ (M.lv * 389)); const r = M.parJob.next(); if (r.done){ M.par = r.value; M.parJob = null; } }
       else return true;
     }
@@ -48912,8 +49211,9 @@ const PINBALL_APP = (() => {
   function begin(g){
     Object.assign(g, fresh(g.c, g.r)); g.state = 'play'; toPlunger(g.S);
     for (const w of ['L', 'R', 'P']) HELD[w].clear();
-    const T = g.M.T, has = [T.ramps.some(x => x.kind === 'ramp') && 'ramps', T.orbit && 'an orbit', T.gobble && 'a gobble hole (it takes the ball)'].filter(Boolean);
-    say('A ' + T.era.name + ' table' + (has.length ? ', with ' + has.join(' and ') : '') + '. Ball 1 of ' + T.balls + '. Pull the plunger (Down, or hold the board) and let go. Flippers: ← and →, or a press on the left or right half of the table.', 4800);
+    const T = g.M.T, has = [T.ramps.some(x => x.kind === 'ramp') && 'ramps', T.orbit && 'an orbit', T.lockBy && 'multiball (lock balls in the ' + (T.lockBy === 'saucer' ? 'saucer' : 'ramp') + ')',
+      T.gobble && 'a gobble hole (it takes the ball)', T.spinner && 'a spinner', T.captive && 'a captive ball', T.magnet && 'a magnet', T.mbank && 'a moving bank', T.fl.length > 2 && 'an upper flipper'].filter(Boolean);
+    say('A ' + T.theme.name + ' table, ' + T.era.name + (has.length ? ', with ' + has.join(', ') : '') + '. Ball 1 of ' + T.balls + '. Pull the plunger (Down, or hold the board) and let go. Flippers: ← and →, or a press on the left or right half of the table.', 4800);
   }
   const starsOf = (score, par) => !par ? 1 : score >= par ? 3 : score >= par * 0.6 ? 2 : 1;
   function over(g){
@@ -48932,7 +49232,7 @@ const PINBALL_APP = (() => {
     if (g.wait > 0){ g.wait -= dt; for (let n = Math.round(dt / SUB); n > 0; n--) sub(T, S, SUB); if (g.wait <= 0) toPlunger(S); flush(g); return; }
     for (let n = Math.max(1, Math.round(dt / SUB)); n > 0; n--){
       if (sub(T, S, SUB) !== 'drain') continue;
-      if (S.t - S.launchT < T.D.save && !S.tilt){ toPlunger(S); say('Ball saved.', 1400); beep('save'); continue; }
+      if (S.t - S.launchT < T.D.save && !S.tilt){ toPlunger(S); msg(S, M_SAVE); say('Ball saved.', 1400); beep('save'); continue; }
       const pay = endBall(S); beep('drain');
       if (--g.balls <= 0){ flush(g); over(g); return; }
       g.ball++; g.wait = 1.3;
@@ -48941,19 +49241,39 @@ const PINBALL_APP = (() => {
     }
     flush(g);
   }
-  function flush(g){ const S = g.S; ERA_NOW = g.M.T.era.id; for (const [k, x] of S.ev) beep(k, x); S.ev.length = 0; }
+  const NOTE = { mission: (S, k) => 'Mission: ' + (S.mis ? (S.mis.need > 1 || /s$/.test(MIS_SAY[MIS[k].id]) ? S.mis.need + ' ' : '') + MIS_SAY[MIS[k].id] + ' in ' + Math.round(S.mis.until - S.t) + ' s.' : ''),
+                 misWon: (S, x) => 'Mission won: ' + (+x).toLocaleString() + '.', misLost: () => 'Mission: time up.', lock: () => 'Ball locked.', multiball: () => 'Multiball!', jackpot: () => 'Jackpot!', lockLit: () => 'Lock is lit.', rolls: () => 'Rollovers: 3,000.', captive: () => 'Captive ball: 2,500.' };
+  function flush(g){ const S = g.S; ERA_NOW = g.M.T.era.id; THEME_NOW = g.M.T.theme.id;
+    for (const [k, x] of S.ev){ beep(k, x); if (NOTE[k]) say(NOTE[k](S, x), k === 'mission' ? 2600 : 1500); } S.ev.length = 0; }
+  // a shove of the table (the steady player's too): the ball up and a little aside, three in three seconds a tilt
+  function shove(S, rnd){
+    S.nudges = S.nudges.filter(t => S.t - t < 3); S.nudges.push(S.t);
+    S.b.vy -= 0.35; S.b.vx += (rnd - 0.5) * 0.35;
+    if (S.nudges.length >= 3 && !S.tilt){ S.tilt = true; msg(S, M_TILT); S.fl.forEach(F => { F.on = false; }); }
+    return S.nudges.length;
+  }
   function nudge(g){
     const S = g.S; if (!S.b || S.onPl || S.tilt) return;
-    S.nudges = S.nudges.filter(t => S.t - t < 3); S.nudges.push(S.t);
-    S.b.vy -= 0.35; S.b.vx += (Math.random() - 0.5) * 0.35; beep('nudge');
-    if (S.nudges.length >= 3){ S.tilt = true; S.fl.forEach(F => { F.on = false; }); say('TILT. The flippers are dead for this ball, and no bonus.', 2600); beep('tilt'); }
-    else if (S.nudges.length === 2) say('Danger: one more shove and it tilts.', 1500);
+    const n = shove(S, Math.random()); beep('nudge');
+    if (n >= 3){ say('TILT. The flippers are dead for this ball, and no bonus.', 2600); beep('tilt'); }
+    else if (n === 2) say('Danger: one more shove and it tilts.', 1500);
   }
 
   /* SOUNDS, made in the browser (only the board being played sounds). Each era its own scoring: wood rail rings bells, the
      electro-mechanical tables chimes (the 10s, the 100s and the 1000s), the later ones the synthesised sounds below. */
   const LASTS = {};
-  let ERA_NOW = 'dmd';
+  let ERA_NOW = 'dmd', THEME_NOW = 'space';
+  // each theme's own jingles for a lock, multiball, a jackpot and a lock lit
+  function themeJingle(kind){
+    const { tone, hiss } = ARCADE, big = kind === 'multiball' || kind === 'jackpot', n = big ? 6 : 3;   // (the kit's hiss takes no delay)
+    switch (THEME_NOW){
+      case 'space':  tone(200, 1600, big ? 0.7 : 0.35, 'sine', 0.06); for (let i = 0; i < n; i++) tone(1200 + i * 220, 1400 + i * 220, 0.07, 'square', 0.03, 0.2 + i * 0.08); break;
+      case 'sea':    for (let i = 0; i < n + 2; i++){ const f = 500 + ((i * 37) % 7) * 120; tone(f, f * 1.6, 0.06, 'sine', 0.05, i * 0.07); } break;
+      case 'haunt':  [220, 262, 311, 370, 311, 262].slice(0, n).forEach((f, i) => tone(f, f, 0.28, 'triangle', 0.06, i * 0.16)); if (big) tone(90, 60, 1.2, 'sawtooth', 0.03); break;
+      case 'circus': [523, 659, 784, 1047, 784, 1047].slice(0, n).forEach((f, i) => tone(f, f, 0.12, 'square', 0.04, i * 0.09)); break;
+      default:       hiss(0.06, 0.1, 400); for (let i = 0; i < n + 1; i++){ tone(110 + (i % 2) * 50, 60, 0.14, 'sine', 0.09, i * 0.13); tone(700, 300, 0.03, 'triangle', 0.03, i * 0.13); } break;
+    }
+  }
   const BELL = { bumper: 1568, sling: 2093, lane: 1319, stand: 1760, saucer: 1047, kick: 0, gobble: 784 };
   const CHIME = { sling: 523, rubber: 0, bumper: 659, lane: 659, stand: 659, drop: 784, bank: 784, saucer: 784, orbit: 659 };
   function beep(kind, x){
@@ -48966,8 +49286,17 @@ const PINBALL_APP = (() => {
       if (ERA_NOW === 'wood' && BELL[kind]){ const f = BELL[kind]; tone(f, f, 0.45, 'sine', 0.06); tone(f * 2.76, f * 2.76, 0.18, 'sine', 0.015); if (kind === 'gobble') [784, 659, 523].forEach((q, i) => tone(q, q, 0.4, 'sine', 0.06, 0.15 + i * 0.18)); return; }
       if (ERA_NOW === 'em' && CHIME[kind]){ const f = CHIME[kind]; tone(f, f, 0.6, 'triangle', 0.07); tone(f * 2, f * 2, 0.3, 'sine', 0.02); if (kind === 'bank') [784, 784, 784].forEach((q, i) => tone(q, q, 0.5, 'triangle', 0.06, 0.18 * (i + 1))); return; }
     } catch {}
+    try { if (kind === 'lock' || kind === 'multiball' || kind === 'jackpot' || kind === 'lockLit' || kind === 'mission' || kind === 'misWon'){ themeJingle(kind === 'misWon' ? 'jackpot' : kind === 'mission' ? 'lockLit' : kind); return; } } catch {}
     try { switch (kind){
       case 'rampIn': hiss(0.25, 0.06, 2500); break;
+      case 'mbEnd':  tone(600, 300, 0.3, 'triangle', 0.04); break;
+      case 'clack':  tone(1800, 1500, 0.025, 'triangle', 0.05); break;
+      case 'spin':   tone(2400, 2300, 0.012, 'square', 0.02); break;
+      case 'spinIn': tone(1600, 2200, 0.05, 'triangle', 0.03); break;
+      case 'roll':   tone(1200, 1500, 0.06, 'triangle', 0.05); break;
+      case 'rolls':  [988, 1319, 1976].forEach((f, i) => tone(f, f, 0.1, 'triangle', 0.06, i * 0.07)); break;
+      case 'captive': tone(1500, 1500, 0.3, 'sine', 0.06); tone(3000, 3000, 0.15, 'sine', 0.02); break;
+      case 'magnet': tone(70, 90, 0.7, 'sawtooth', 0.04); break;
       case 'orbitIn': hiss(0.3, 0.05, 1200); break;
       case 'rampFail': tone(500, 200, 0.25, 'triangle', 0.04); break;
       case 'ramp':   tone(300, 900, 0.25, 'square', 0.05); [784, 1047, 1319, 1568].slice(0, 1 + (x || 0)).forEach((f, i) => tone(f, f, 0.12, 'triangle', 0.06, 0.25 + i * 0.08)); break;
@@ -48981,7 +49310,8 @@ const PINBALL_APP = (() => {
       case 'wall':   tone(1200, 1100, 0.02, 'sine', Math.min(0.03, 0.008 + (x || 0) * 0.008)); break;
       case 'drop':   tone(300, 120, 0.08, 'square', 0.05); break;
       case 'bank':   [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.1, 'square', 0.04, i * 0.06)); break;
-      case 'stand':  tone(700, 700, 0.05, 'triangle', 0.05); break;
+      case 'stand': case 'mbank': tone(700, 700, 0.05, 'triangle', 0.05); break;
+      case 'misLost': [440, 330, 220].forEach((f, i) => tone(f, f * 0.95, 0.18, 'triangle', 0.05, i * 0.14)); break;
       case 'lane':   tone(988, 1319, 0.08, 'triangle', 0.06); break;
       case 'lanes':  [784, 988, 1175, 1568].forEach((f, i) => tone(f, f, 0.1, 'triangle', 0.06, i * 0.07)); break;
       case 'saucer': tone(200, 80, 0.2, 'sine', 0.08); break;
@@ -49065,7 +49395,7 @@ const PINBALL_APP = (() => {
 
   /* ─── DRAWN ─── the playfield's picture (the photo tier, one a table), the rails and rubbers, posts, bumpers, targets, the
      flippers, the ball, the lamps. Laid out in the table's own units (x 0 to W across) and divided by W at the end. */
-  const RAIL = 0xc9ccd2, RUBBER = 0xf2f2ee, PHOTO_PX = 20, HI_PX = 300, SPECS = new Map();
+  const RAIL = 0xc9ccd2, RUBBER = 0xf2f2ee, PHOTO_PX = 20, HI_PX = 300, SPECS = new Map(), DOT_PX = 160, REEL_PX = 120, REEL_R = 0.8;
   const yawOf = a => (Math.abs(a) < 1e-6 ? 1e-6 : a);
   // each era's colours: the field, the rails, the bumpers' bodies and caps, the posts, the ramps
   function palette(T){
@@ -49080,16 +49410,87 @@ const PINBALL_APP = (() => {
              rail: RAIL, guide: 0xb8bcc4, bBody: hsl(h, 0.6, 0.34), bCap: hsl((h + 0.08) % 1, 0.75, 0.55), post: 0xe9e6dc, loose: 0xff5a5a, ramp: hsl((h + 0.5) % 1, 0.7, 0.55), frame: 0x0a0a0c };
   }
   // the dot-matrix era's panel on the apron: a word in orange dots
-  function dotPanel(c, x, y, w, h, word){
-    const tc = document.createElement('canvas'), cols = 48, rows = 9; tc.width = cols; tc.height = rows;
-    const t = tc.getContext('2d'); let px = null;
-    if (t){ t.fillStyle = '#fff'; t.font = 'bold 9px monospace'; t.textAlign = 'center'; t.textBaseline = 'middle'; t.fillText(word, cols / 2, rows / 2 + 0.5); try { px = t.getImageData(0, 0, cols, rows).data; } catch {} }
-    c.fillStyle = '#120700'; c.fillRect(x, y, w, h);
-    const dx = w / cols, dy = h / rows;
-    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++){ const on = px && px[(j * cols + i) * 4 + 3] > 110;
-      c.fillStyle = on ? '#ff8a1a' : 'rgba(255,120,20,0.14)'; c.beginPath(); c.arc(x + (i + 0.5) * dx, y + (j + 0.5) * dy, Math.min(dx, dy) * 0.36, 0, 7); c.fill(); }
+  /* THE DISPLAY on the apron: the dot-matrix and modern eras' panel of dots (`DISP`, its dots lit as pieces, `dotsOf`), the older
+     eras' number reels (`REELS`). The panel's dark ground and unlit dots are painted; the reels' window too. */
+  const DISP = { x: XC - 0.11, y: 0.937, w: 0.22, h: 0.03, cols: 66, rows: 9 }, REELS = { n: 7, w: 0.021, y: 0.957 };
+  /* the panel's letters: a 5 × 7 dot font of its own, each row of a glyph five bits (drawn from a canvas's pixels until the
+     frame time doubled in the sandbox: every board's score changing asked the canvas for its pixels, and that waits on the
+     graphics card) */
+  const FONT = (() => { const F = {}, src = {
+    0: '0E11131519110E', 1: '040C040404040E', 2: '0E1101020408 1F', 3: '1F020402011 10E', 4: '02060A121F0202', 5: '1F101E0101110E', 6: '0608101E11110E',
+    7: '1F010204080808', 8: '0E11110E11110E', 9: '0E11110F01020C', A: '0E11111F111111', B: '1E11111E11111E', C: '0E11101010110E', D: '1C121111111 21C',
+    E: '1F10101E10101F', F: '1F10101E101010', G: '0E111017111 10F', H: '1111111F111111', I: '0E04040404040E', J: '07020202021 20C', K: '11121418141211',
+    L: '1010101010101F', M: '111B1515111111', N: '11111915131111', O: '0E11111111110E', P: '1E11111E101010', Q: '0E11111115120D', R: '1E11111E141211',
+    S: '0F10100E01011E', T: '1F040404040404', U: '1111111111110E', V: '1111111111 0A04', W: '1111111515150A', X: '11110A040A1111', Y: '1111110A040404',
+    Z: '1F01020408101F', '!': '04040404040004' };
+    for (const [k, v] of Object.entries(src)){ const h = v.replace(/ /g, ''); F[k] = [0, 1, 2, 3, 4, 5, 6].map(i => parseInt(h.substr(i * 2, 2), 16)); }
+    return F; })();
+  const GW = ch => ch === ' ' ? 3 : ch === ',' ? 2 : 5;
+  const textW = t => [...String(t)].reduce((a, ch) => a + GW(ch) + 1, -1);
+  const dispCol = T => T.era.id === 'neon' ? palette(T).lamp : 0xff8a1a;
+  function dotPanel(c, T){
+    const D = DISP, col = dispCol(T), rr = (col >> 16) & 255, gg = (col >> 8) & 255, bb = col & 255;
+    c.fillStyle = '#0c0603'; c.fillRect(D.x - 0.004, D.y - 0.003, D.w + 0.008, D.h + 0.006);
+    const dx = D.w / D.cols, dy = D.h / D.rows; c.fillStyle = `rgba(${rr},${gg},${bb},0.13)`;
+    for (let j = 0; j < D.rows; j++) for (let i = 0; i < D.cols; i++){ c.beginPath(); c.arc(D.x + (i + 0.5) * dx, D.y + (j + 0.5) * dy, Math.min(dx, dy) * 0.36, 0, 7); c.fill(); }
   }
-  const WORDS = ['PINBALL', 'MULTIBALL', 'JACKPOT', 'COMBO', 'EXTRA BALL', 'SUPER', 'TILT'];
+  // a line of text as the dots it lights, centred on the panel (kept by text, the latest 400)
+  const DOTS = new Map();
+  function dotsOf(text){
+    let L = DOTS.get(text); if (L){ DOTS.delete(text); DOTS.set(text, L); return L; }
+    L = []; const D = DISP, chars = [...String(text).toUpperCase()].filter(ch => FONT[ch] || ch === ' ' || ch === ',');
+    const width = chars.reduce((a, ch) => a + GW(ch) + 1, -1);
+    let x = Math.floor((D.cols - width) / 2); const y0 = Math.floor((D.rows - 7) / 2);
+    for (const ch of chars){
+      if (ch === ',') { L.push(x + 1, y0 + 5, x + 1, y0 + 6, x, y0 + 7); }
+      else if (FONT[ch]) FONT[ch].forEach((row, j) => { for (let i = 0; i < 5; i++) if (row & (16 >> i)) L.push(x + i, y0 + j); });
+      x += GW(ch) + 1;
+    }
+    for (let q = L.length - 2; q >= 0; q -= 2) if (L[q] < 0 || L[q] >= D.cols || L[q + 1] < 0 || L[q + 1] >= D.rows){ L.splice(q, 2); }
+    DOTS.set(text, L); if (DOTS.size > 400) DOTS.delete(DOTS.keys().next().value);
+    return L;
+  }
+  // what the display says: what just happened, else the ball's number now and then, else the score
+  function dispText(V){
+    if (V.msg) return V.msg === M_COMBO && V.comboN ? 'COMBO X' + (V.comboN + 1) : MSGS[V.msg];
+    // (a mission: what is left of it and the seconds, three seconds in four; the count left off when the line is too long)
+    if (V.mis && ((V.t || 0) % 4) < 3){ const M = V.mis, w = MIS[M.k].word, n = M.need - M.got, a = (n > 1 ? n + ' ' : '') + w + ' ' + M.left;
+      return textW(a) <= DISP.cols ? a : w + ' ' + M.left; }
+    if (V.ballNo && ((V.t || 0) % 7) < 1.2) return 'BALL ' + V.ballNo;
+    return Math.round(V.score || 0).toLocaleString('en-US');
+  }
+  // each theme's art, painted over the era's ground in the era's own way
+  function themeArt(c, T, P, R0){
+    const e = T.era.id, id = T.theme.id, a = e === 'wood' ? 0.32 : e === 'neon' ? 0.55 : 0.4, col = css(P.art), hi = css(P.hi);
+    c.save(); c.globalAlpha = a; c.lineWidth = 0.003;
+    if (e === 'neon'){ c.shadowColor = hi; c.shadowBlur = 6; }
+    const fillOr = (f, k) => { if (e === 'neon'){ c.strokeStyle = k; c.stroke(); } else { c.fillStyle = k; c.fill(); } };
+    if (id === 'space'){
+      for (let k = 0; k < 3; k++){ const x = 0.06 + R0() * (PW - 0.12), y = 0.35 + R0() * 0.4, r = 0.018 + R0() * 0.025;
+        c.beginPath(); c.arc(x, y, r, 0, 7); fillOr(0, k % 2 ? col : hi);
+        c.strokeStyle = k % 2 ? hi : col; c.beginPath(); c.ellipse(x, y, r * 1.8, r * 0.45, -0.3, 0, 7); c.stroke(); }
+      c.beginPath(); const rx = XC + 0.09, ry = 0.62; c.moveTo(rx, ry - 0.05); c.lineTo(rx + 0.014, ry); c.lineTo(rx - 0.014, ry); c.closePath(); fillOr(0, hi);
+    } else if (id === 'sea'){
+      c.strokeStyle = col; for (let k = 0; k < 4; k++){ const y = 0.62 + k * 0.05; c.beginPath(); for (let x = 0; x <= PW; x += 0.01) c.lineTo(x, y + Math.sin(x * 40 + k) * 0.008); c.stroke(); }
+      c.strokeStyle = hi; for (let k = 0; k < 14; k++){ c.beginPath(); c.arc(R0() * PW, 0.2 + R0() * 0.5, 0.004 + R0() * 0.008, 0, 7); c.stroke(); }
+      for (let k = 0; k < 3; k++){ const x = 0.08 + R0() * (PW - 0.16), y = 0.35 + R0() * 0.3, d = R0() < 0.5 ? 1 : -1;
+        c.beginPath(); c.ellipse(x, y, 0.022, 0.01, 0, 0, 7); c.moveTo(x - d * 0.02, y); c.lineTo(x - d * 0.034, y - 0.01); c.lineTo(x - d * 0.034, y + 0.01); c.closePath(); fillOr(0, k % 2 ? hi : col); }
+    } else if (id === 'haunt'){
+      c.beginPath(); c.arc(PW * 0.78, 0.36, 0.035, 0, 7); fillOr(0, '#f4ecc0');
+      for (let k = 0; k < 5; k++){ const x = 0.06 + R0() * (PW - 0.12), y = 0.3 + R0() * 0.3, w = 0.016;
+        c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x - w, y - w * 0.8, x - w * 2, y); c.quadraticCurveTo(x - w, y - w * 0.2, x, y + w * 0.3); c.quadraticCurveTo(x + w, y - w * 0.2, x + w * 2, y); c.quadraticCurveTo(x + w, y - w * 0.8, x, y); fillOr(0, col); }
+      for (let k = 0; k < 4; k++){ const x = 0.06 + k * (PW - 0.12) / 3, y = 0.8; c.beginPath(); c.moveTo(x - 0.014, y + 0.03); c.lineTo(x - 0.014, y); c.arc(x, y, 0.014, Math.PI, 0); c.lineTo(x + 0.014, y + 0.03); c.closePath(); fillOr(0, hi); }
+      c.strokeStyle = col; for (let k = 1; k <= 4; k++){ c.beginPath(); c.arc(0, AR, k * 0.02, -Math.PI / 2, 0); c.stroke(); }
+    } else if (id === 'circus'){
+      for (let k = 0; k < 9; k++){ if (k % 2) continue; c.beginPath(); c.moveTo(XC, 0.16); c.lineTo(k * PW / 9, 0.75); c.lineTo((k + 1) * PW / 9, 0.75); c.closePath(); fillOr(0, k % 4 ? hi : col); }
+      for (let k = 0; k < 8; k++){ const x = R0() * PW, y = 0.2 + R0() * 0.5, r = 0.008; c.beginPath(); for (let i = 0; i < 10; i++){ const t = i / 10 * Math.PI * 2 - Math.PI / 2, q = i % 2 ? r * 0.45 : r; c.lineTo(x + Math.cos(t) * q, y + Math.sin(t) * q); } fillOr(0, '#ffe680'); }
+    } else {
+      c.beginPath(); c.arc(PW * 0.22, 0.34, 0.03, 0, 7); fillOr(0, '#ffd040');
+      c.strokeStyle = col; for (let k = 0; k < 3; k++){ const x0 = R0() * PW; c.beginPath(); c.moveTo(x0, 0); for (let y = 0; y < 0.8; y += 0.02) c.lineTo(x0 + Math.sin(y * 12 + k) * 0.02, y); c.stroke(); }
+      for (let k = 0; k < 10; k++){ const x = R0() * PW, y = 0.25 + R0() * 0.55, t = R0() * Math.PI; c.beginPath(); c.ellipse(x, y, 0.02, 0.008, t, 0, 7); fillOr(0, k % 2 ? hi : col); }
+    }
+    c.restore();
+  }
   function paint(T, S){
     const cv = document.createElement('canvas'); cv.width = Math.round(S * W); cv.height = S;
     const c = cv.getContext('2d'); if (!c) return null;
@@ -49135,6 +49536,7 @@ const PINBALL_APP = (() => {
       for (let k = 0; k < 16; k++){ const a = k / 16 * Math.PI * 2; c.beginPath(); c.moveTo(bxy[0], bxy[1]); c.arc(bxy[0], bxy[1], 0.5, a, a + Math.PI / 32); c.closePath(); c.fill(); } c.globalAlpha = 1;
       c.fillStyle = 'rgba(255,255,255,0.5)'; for (let k = 0; k < 40; k++){ c.beginPath(); c.arc(R0() * PW, R0() * 0.7, 0.0015 + R0() * 0.002, 0, 7); c.fill(); }
     }
+    themeArt(c, T, P, R0);
     // the orbit's lanes, painted along their way; a ramp's shadow under it
     for (const Rp of T.ramps){
       c.lineCap = 'round';
@@ -49145,13 +49547,16 @@ const PINBALL_APP = (() => {
     // the plunger lane and the apron
     c.fillStyle = e === 'wood' ? 'rgba(90,55,20,0.45)' : 'rgba(0,0,0,0.35)'; c.fillRect(PW, AR, LANE, 1 - AR);
     c.fillStyle = e === 'wood' ? css(P.frame) : css(hsl(T.hue, 0.3, 0.08)); c.beginPath(); c.moveTo(0, 0.93); c.lineTo(T.fl[0].px, 0.9); c.lineTo(T.fl[1].px, 0.9); c.lineTo(PW, 0.93); c.lineTo(PW, 1); c.lineTo(0, 1); c.fill();
-    if (e === 'dmd') dotPanel(c, XC - 0.11, 0.935, 0.22, 0.045, WORDS[T.idx % WORDS.length]);
+    if (e === 'dmd' || e === 'neon') dotPanel(c, T);
+    else { const w = REELS.n * REELS.w, x0 = XC - w / 2; c.fillStyle = e === 'wood' ? '#2a1808' : '#0a0a0a'; c.fillRect(x0 - 0.006, REELS.y - 0.012, w + 0.012, 0.024);
+      c.strokeStyle = e === 'wood' ? '#c9a24a' : '#bfc3cc'; c.lineWidth = 0.002; c.strokeRect(x0 - 0.006, REELS.y - 0.012, w + 0.012, 0.024); }
     // the inserts: rings where the lamps are, arrows up to the lanes and the bank, the multiplier's row, Shoot Again
     c.lineWidth = 0.0025;
     const ring = (x, y, r, col) => { c.strokeStyle = col; c.fillStyle = 'rgba(0,0,0,0.45)'; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); c.stroke(); };
     for (const L of T.lanes) ring(L.x, L.y + 0.035, 0.011, css(P.art));
     for (const O of T.outs) ring((O.x0 + O.x1) / 2, O.y + 0.06, 0.011, '#40ff80');
     for (let k = 0; k < 4; k++) ring(XC + (k - 1.5) * 0.034, 0.7, 0.012, css(P.hi));
+    for (let k = 0; k < 6; k++) ring(XC + (k - 2.5) * 0.022, 0.733, 0.0075, '#ffa030');
     ring(XC, 0.765, 0.014, '#ff5a5a');
     c.fillStyle = css(P.art); c.globalAlpha = 0.55;
     const arrow = (x, y, a, s) => { c.save(); c.translate(x, y); c.rotate(a); c.beginPath(); c.moveTo(s, 0); c.lineTo(-s, -s * 0.7); c.lineTo(-s * 0.5, 0); c.lineTo(-s, s * 0.7); c.closePath(); c.fill(); c.restore(); };
@@ -49161,6 +49566,13 @@ const PINBALL_APP = (() => {
     for (const Rp of T.ramps){ const M = Rp.M; c.fillStyle = css(P.lamp); arrow(M.x - M.dx * 0.045, M.y - M.dy * 0.045, Math.atan2(M.dy, M.dx), 0.014); }
     if (T.saucer){ c.globalAlpha = 1; ring(T.saucer.x, T.saucer.y, 0.024, css(P.hi)); }
     if (T.gobble){ c.globalAlpha = 1; ring(T.gobble.x, T.gobble.y, 0.03, '#ffd060'); }
+    c.globalAlpha = 1;
+    if (T.magnet) ring(T.magnet.x, T.magnet.y, T.magnet.r, css(P.hi));
+    if (T.rolls) for (const q of T.rolls) ring(q[0], q[1], 0.011, css(P.art));
+    if (T.mbank){ const B = T.mbank; c.strokeStyle = 'rgba(0,0,0,0.45)'; c.lineWidth = 0.008; c.beginPath(); c.moveTo(B.xc - B.A - 0.045, B.y + 0.008); c.lineTo(B.xc + B.A + 0.045, B.y + 0.008); c.stroke(); }
+    if (T.spinner){ c.fillStyle = css(P.art); arrow(T.spinner.x, T.spinner.y + 0.03, -Math.PI / 2, 0.012); }
+    if (T.captive){ c.fillStyle = 'rgba(0,0,0,0.4)'; c.fillRect(T.captive.x - R - 0.003, T.captive.y0, 2 * R + 0.006, T.captive.y1 - T.captive.y0); }
+    if (T.lockBy){ for (const q of lockSpot(T).lamps) ring(q[0], q[1], 0.009, '#50a0ff'); }
     c.globalAlpha = 1;
     // the lanes' lines, under the guides, and a frame of the level's colour round the table (in wood, a wooden frame first)
     c.strokeStyle = 'rgba(255,255,255,0.18)'; c.lineWidth = 0.003;
@@ -49184,27 +49596,56 @@ const PINBALL_APP = (() => {
   }
   // the view of a board: the live game's, or the recording's frame now
   function viewOf(M, g){
-    if (g) return { M, b: g.S.b, phi: [g.S.fl[0].phi, g.S.fl[1].phi], drop: k => g.S.drops[k], lane: k => g.S.lanes[k], flash: k => g.S.t - g.S.flash[k] < 0.12,
-                    sling: s => g.S.t - g.S.sling[s] < 0.1, stand: k => g.S.t - g.S.stands[k] < 0.15, mult: g.S.mult, pull: g.S.onPl ? g.S.pull : 0,
-                    save: g.state === 'play' && g.S.t - g.S.launchT < M.T.D.save, held: g.S.hold >= 0, tilt: g.S.tilt, laneBlink: g.S.t - g.S.laneT < 1, t: g.S.t,
-                    kb: s => g.S.kb[s], kbFire: g.S.t - (g.S.kbT || -9) < 0.15, combo: g.S.t - g.S.shotT < COMBO_T };
+    const T = M.T;
+    if (g){ const S = g.S;
+      return { M, b: S.b, xb: S.xb.filter(q => !(q.hold >= 0 && q.kick)), phi: S.fl.map(F => F.phi), drop: k => S.drops[k], lane: k => S.lanes[k], flash: k => S.t - S.flash[k] < 0.12,
+               sling: s => S.t - S.sling[s] < 0.1, stand: k => S.t - S.stands[k] < 0.15, mult: S.mult, pull: S.onPl ? S.pull : 0,
+               save: g.state === 'play' && S.t - S.launchT < T.D.save, held: S.hold >= 0, tilt: S.tilt, laneBlink: S.t - S.laneT < 1, t: S.t,
+               kb: s => S.kb[s], kbFire: S.t - (S.kbT || -9) < 0.15, combo: S.t - S.shotT < COMBO_T, comboN: S.combo,
+               locked: S.locked, multi: S.multi, lit: lockLit(T, S), rolls: S.rolls, rollFlash: S.t - S.rollT < 0.6, spinA: S.spinA, capY: S.capY,
+               capFlash: S.t - S.capT < 0.3, mbFlash: k => S.t - S.mbFlash[k] < 0.15, msg: S.t - S.msgT < 1.8 ? S.msg : 0, score: S.score, ballNo: g.ball, holder: g,
+               mis: misRead(misCode(S)) }; }
     const Rc = M.reel, n = Rc ? Rc.length / REC_F : 0;
-    if (!n) return { M, b: null, phi: [M.T.fl[0].rest, M.T.fl[1].rest], drop: () => 0, lane: () => 0, flash: () => 0, sling: () => 0, stand: () => 0, mult: 1, pull: 0, kb: s => M.T.D.kb[s] };
-    const T = n / REC_HZ + 2, at = ((now() / 1000 + M.phase * T) % T) * REC_HZ, i = Math.min(n - 1, Math.floor(at)), j = Math.min(n - 1, i + 1), f = Math.min(1, at - i), o = i * REC_F, p = j * REC_F;
-    const mix = q => Rc[o + q] + (Rc[p + q] - Rc[o + q]) * f, m = Rc[o + 6];
+    if (!n) return { M, b: null, xb: [], phi: T.fl.map(f => f.rest), drop: () => 0, lane: () => 0, flash: () => 0, sling: () => 0, stand: () => 0, mult: 1, pull: 0, kb: s => T.D.kb[s],
+                     locked: 0, rolls: 0, spinA: 0, capY: T.captive ? T.captive.rest : 0, mbFlash: () => 0, msg: 0, score: 0, t: now() / 1000, holder: M };
+    const TT = n / REC_HZ + 2, at = ((now() / 1000 + M.phase * TT) % TT) * REC_HZ, i = Math.min(n - 1, Math.floor(at)), j = Math.min(n - 1, i + 1), f = Math.min(1, at - i), o = i * REC_F, p = j * REC_F;
+    const mix = q => Rc[o + q] + (Rc[p + q] - Rc[o + q]) * f, m = Rc[o + 6], m2 = Rc[o + 16];
     // (no ball in either frame: the one that has it, or none; a ball and none apart is a drain or a new ball)
-    const b = Rc[o] < 0 ? null : Rc[p] < 0 || Math.hypot(Rc[p] - Rc[o], Rc[p + 1] - Rc[o + 1]) > 0.2 ? { x: Rc[o], y: Rc[o + 1], z: Rc[o + 8] } : { x: mix(0), y: mix(1), z: mix(8) };
-    return { M, b, phi: [mix(2), mix(3)],
+    const ballAt = q => Rc[o + q] < 0 ? null : Rc[p + q] < 0 || Math.hypot(Rc[p + q] - Rc[o + q], Rc[p + q + 1] - Rc[o + q + 1]) > 0.2 ? { x: Rc[o + q], y: Rc[o + q + 1], z: Rc[o + q + (q ? 2 : 8)] }
+      : { x: mix(q), y: mix(q + 1), z: mix(q ? q + 2 : 8) };
+    const phi = [mix(2), mix(3)]; if (T.fl.length > 2) phi.push(mix(9));
+    return { M, b: ballAt(0), xb: [ballAt(10), ballAt(13)].filter(Boolean), phi,
              drop: k => (Rc[o + 4] >> k) & 1, lane: k => (Rc[o + 5] >> k) & 1, flash: k => (m >> k) & 1, sling: s => (m >> (8 + s)) & 1, stand: () => 0,
-             mult: ((m >> 10) & 7) || 1, pull: Rc[o + 7], kb: s => (m >> (13 + s)) & 1, combo: (m >> 15) & 1, t: now() / 1000 };
+             mult: ((m >> 10) & 7) || 1, pull: Rc[o + 7], kb: s => (m >> (13 + s)) & 1, combo: (m >> 15) & 1, t: i / REC_HZ,
+             locked: m2 & 3, multi: !!(m2 & 4), rolls: (m2 >> 4) & 15, msg: (m2 >> 8) & 31, ballNo: (m2 >> 13) & 7, rollFlash: (m2 >> 16) & 1,
+             spinA: Rc[o + 17], capY: mix(18), mbFlash: () => 0, score: Rc[o + 19], holder: M, mis: misRead(Rc[o + 20]) };
+  }
+  // where a table's balls are locked, and its two lock lamps
+  function lockSpot(T){
+    if (T.lockBy === 'saucer') return { x: T.saucer.x, y: T.saucer.y, lamps: [[T.saucer.x - 0.014, T.saucer.y + 0.034], [T.saucer.x + 0.014, T.saucer.y + 0.034]] };
+    const Rp = T.ramps.find(x => x.kind === 'ramp'), M = Rp.M, px = -M.dy, py = M.dx;
+    return { ramp: Rp, lamps: [-1, 1].map(s => [M.x - M.dx * 0.1 + px * 0.016 * s, M.y - M.dy * 0.1 + py * 0.016 * s]) };
+  }
+  // the reels turn on toward the score's figures, forward only, as number reels do
+  function reelsOf(V){
+    const H = V.holder || V.M, t = now() / 1000, dt = Math.min(0.2, Math.max(0, t - (H.reelAt || t))); H.reelAt = t;
+    // (kept as `reels`: as `reel` on a board no one plays it was that board's recording, and the figures were written over its first frame)
+    if (!H.reels) H.reels = new Float64Array(REELS.n);
+    const s = Math.max(0, Math.round(V.score || 0)) % 10 ** REELS.n;
+    for (let k = 0; k < REELS.n; k++){
+      const want = Math.floor(s / 10 ** (REELS.n - 1 - k)) % 10, cur = H.reels[k], dd = (want - cur + 10) % 10;
+      H.reels[k] = dd < 1e-3 ? want : (cur + Math.min(dd, dt * 16)) % 10;
+    }
+    return H.reels;
   }
   function itemsOf(V){
-    const T = V.M.T, P = palette(T), out = [];
+    const T = V.M.T, P = palette(T), out = [], E2 = T.era.id;
     const bar = (ax, ay, bx, by, th, ht, col, lift) => { const l = Math.hypot(bx - ax, by - ay); if (l < 1e-6) return;
       out.push({ kind: 'pbBar', u: (ax + bx) / 2, v: (ay + by) / 2, scale: th, sx: l / th, sy: ht / th, yaw: yawOf(Math.atan2(by - ay, bx - ax)), color: col, lift: lift || 0 }); };
+    const ball = (q, col) => out.push({ kind: 'pbBall', u: q.x, v: q.y + (q === V.b ? (V.pull || 0) * 0.03 : 0), scale: 2 * R, lift: q.z || 0, color: col || 0xdfe4ea });
     for (const s of T.segs){
       if (s.kind === 'drop' || s.kind === 'stand') continue;
-      const col = s.kind === 'wall' ? (s.arch || s.lane || s.mouth ? P.rail : P.guide) : s.kind === 'gate' ? 0x8890a0 : s.kind === 'sling' && V.sling(s.side) ? 0xfff07a : RUBBER;
+      const col = s.kind === 'wall' ? (s.arch || s.lane || s.mouth || s.cap ? P.rail : P.guide) : s.kind === 'gate' ? 0x8890a0 : s.kind === 'sling' && V.sling(s.side) ? 0xfff07a : RUBBER;
       bar(s.a[0], s.a[1], s.b[0], s.b[1], s.kind === 'wall' ? 0.006 : 0.005, s.kind === 'gate' ? 0.01 : 0.02, col);
     }
     for (const c of T.circs){
@@ -49217,7 +49658,7 @@ const PINBALL_APP = (() => {
     // the ramps: a plastic floor and two rails (dot-matrix), or two wires (modern), each piece at its height
     for (const Rp of T.ramps) if (Rp.draw) for (const d of Rp.draw){
       const l = Math.hypot(d.bx - d.ax, d.by - d.ay) || 1, nx = -(d.by - d.ay) / l * 0.02, ny = (d.bx - d.ax) / l * 0.02;
-      if (T.era.id === 'neon'){ for (const s of [-1, 1]) bar(d.ax + nx * s, d.ay + ny * s, d.bx + nx * s, d.by + ny * s, 0.003, 0.003, P.ramp, d.z + 0.008); }
+      if (E2 === 'neon'){ for (const s of [-1, 1]) bar(d.ax + nx * s, d.ay + ny * s, d.bx + nx * s, d.by + ny * s, 0.003, 0.003, P.ramp, d.z + 0.008); }
       else { bar(d.ax, d.ay, d.bx, d.by, 0.042, 0.003, P.ramp, d.z); for (const s of [-1, 1]) bar(d.ax + nx * s, d.ay + ny * s, d.bx + nx * s, d.by + ny * s, 0.003, 0.012, P.rail, d.z); }
     }
     // drop targets: up, a block facing the field; down, flat
@@ -49231,22 +49672,84 @@ const PINBALL_APP = (() => {
     T.lanes.forEach((L, k) => lamp(L.x, L.y + 0.035, 0.009, V.lane(k) || (V.laneBlink && Math.floor((V.t || 0) * 8) % 2), P.lamp));
     for (let k = 0; k < 4; k++) lamp(XC + (k - 1.5) * 0.034, 0.7, 0.01, V.mult >= k + 2, P.hi);
     lamp(XC, 0.765, 0.012, V.save && blink, 0xff4040);
+    // (the mission clock: six lamps, going out one by one as its time runs down, the last blinking; and its targets blinking)
+    const Ms = V.mis, MT = MIS_T[T.lv - 1];
+    for (let k = 0; k < 6; k++){ const lit = Ms && Ms.left > k * MT / 6; lamp(XC + (k - 2.5) * 0.022, 0.733, 0.006, lit && (Ms.left > (k + 1) * MT / 6 || blink), 0xffa030); }
+    if (Ms && !(V.bp < DOT_PX)) for (const q of MIS[Ms.k].at(T)) lamp(q[0], q[1] + 0.02, 0.005, blink, 0xffa030);
     T.outs.forEach((O, s) => lamp((O.x0 + O.x1) / 2, O.y + 0.06, 0.009, V.kb(s), 0x40ff80));   // (a kickback lit)
-    for (const Rp of T.ramps){ const M = Rp.M; lamp(M.x - M.dx * 0.07, M.y - M.dy * 0.07, 0.007, V.combo && blink, P.lamp); }   // (a combo on: shoot again)
+    // (in front of each mouth: blinking while a combo is on; in multiball the jackpot's colour)
+    for (const Rp of T.ramps){ const M = Rp.M; lamp(M.x - M.dx * 0.07, M.y - M.dy * 0.07, 0.007, (V.combo || V.multi) && blink, V.multi ? 0xff3060 : P.lamp); }
     if (T.saucer){ out.push({ kind: 'pbSaucer', u: T.saucer.x, v: T.saucer.y, scale: 0.034, color: 0x0a0a0c }); lamp(T.saucer.x, T.saucer.y - 0.024, 0.006, V.held, 0xfff07a); }
     if (T.gobble){ out.push({ kind: 'pbSaucer', u: T.gobble.x, v: T.gobble.y, scale: 0.038, color: 0x050505 }); lamp(T.gobble.x, T.gobble.y + 0.03, 0.007, 1, 0xffd060); }
-    // the plunger, the flippers, the ball
+    // multiball: the balls locked, where they wait, and the two lock lamps (blinking while a lock is lit)
+    if (T.lockBy){ const L = lockSpot(T);
+      L.lamps.forEach((q, k) => lamp(q[0], q[1], 0.006, V.locked > k || (V.lit && V.locked === k && blink), 0x50a0ff));
+      for (let k = 0; k < V.locked; k++){
+        if (L.ramp){ const s = L.ramp.P.L * 0.45 - k * 0.03, A = pathAt(L.ramp.P, s); ball({ x: A.x, y: A.y, z: rampZ(L.ramp, s) }); }
+        else ball({ x: L.x + (k ? 0.006 : -0.006), y: L.y + 0.002, z: -0.006 });
+      } }
+    // the toys
+    const Sp = T.spinner;
+    if (Sp){ const a = V.spinA || 0;
+      out.push({ kind: 'pbPlate', u: Sp.x, v: Sp.y, scale: Sp.hw * 2, sy: 0.4, sz: 0.06, lift: 0.014, rot: [Math.sin(a / 2), 0, 0, Math.cos(a / 2)], color: E2 === 'neon' ? P.hi : 0xe8e8e8 });
+      for (const s of [-1, 1]) out.push({ kind: 'pbPost', u: Sp.x + s * (Sp.hw + 0.003), v: Sp.y, scale: 0.005, sy: 3.6, color: P.rail }); }
+    if (T.rolls) T.rolls.forEach((q, k) => { out.push({ kind: 'pbPost', u: q[0], v: q[1], scale: 0.008, sy: 0.25, color: 0xd8dce4 }); lamp(q[0], q[1] - 0.016, 0.005, ((V.rolls || 0) >> k & 1) || (V.rollFlash && blink), P.lamp); });
+    const C = T.captive;
+    if (C){ ball({ x: C.x, y: V.capY != null ? V.capY : C.rest, z: 0 }, 0xc6cad2); lamp(C.x, C.y0 - 0.012, 0.006, V.capFlash, 0xffe060); }
+    const Mg = T.magnet;
+    if (Mg){ out.push({ kind: 'pbSaucer', u: Mg.x, v: Mg.y, scale: 0.03, color: 0x3a3f48 }); lamp(Mg.x, Mg.y + Mg.r * 0.8, 0.006, magOn(Mg, V.t || 0), 0x60c0ff); }
+    const MB = T.mbank;
+    if (MB) for (let k = 0; k < MB.n; k++){ const x = mbX(MB, k, V.t || 0); bar(x - MB.w / 2, MB.y, x + MB.w / 2, MB.y, 0.008, 0.02, V.mbFlash(k) ? 0xffffff : P.art); }
+    // the display: lit dots, or the reels
+    if (E2 === 'dmd' || E2 === 'neon'){
+      if ((V.bp || 0) >= DOT_PX){ const D = DISP, dx = D.w / D.cols, dy = D.h / D.rows, L = dotsOf(dispText(V)), col = dispCol(T);
+        for (let q = 0; q < L.length; q += 2) out.push({ kind: 'pbDot', u: D.x + (L[q] + 0.5) * dx, v: D.y + (L[q + 1] + 0.5) * dy, scale: Math.min(dx, dy) * 0.8, color: col }); }
+    } else if ((V.bp || 0) >= REEL_PX){ const R7 = reelsOf(V), x0 = XC - REELS.n * REELS.w / 2;
+      for (let k = 0; k < REELS.n; k++){ const a = -R7[k] * Math.PI * 2 / 10;
+        out.push({ kind: 'pbReel', u: x0 + (k + 0.5) * REELS.w, v: REELS.y, scale: REELS.w * 0.92, lift: REELS.w * 0.92 * REEL_R + 0.001, rot: [Math.sin(a / 2), 0, 0, Math.cos(a / 2)], color: 0xffffff }); }
+      // (a bezel before and behind them, so the figure on top is the one seen, as through a reel's window)
+      const rr = REELS.w * 0.92 * REEL_R, w = REELS.n * REELS.w + 0.008, bz = E2 === 'wood' ? 0x3a2410 : 0x111111;
+      // (walls before and behind the drums as high as their tops, and a plate over each side with a window between, so only the
+      //  figure on top is seen from any angle)
+      for (const s of [-1, 1]){ bar(XC - w / 2, REELS.y + s * rr * 1.08, XC + w / 2, REELS.y + s * rr * 1.08, 0.003, rr * 2.08, bz);
+        bar(XC - w / 2, REELS.y + s * rr * 0.72, XC + w / 2, REELS.y + s * rr * 0.72, rr * 0.74, 0.0015, bz, rr * 2.06); } }
+    // the plunger, the flippers, the balls
     out.push({ kind: 'pbBar', u: PLX, v: PLY + 0.012 + (V.pull || 0) * 0.03, scale: 0.012, sx: (LANE - 0.01) / 0.012, sy: 1.2, sz: 2, color: 0xb02020, yaw: yawOf(0) });
-    for (let i = 0; i < 2; i++){
-      const f = T.fl[i];
-      out.push({ kind: 'pbFlipper', u: f.px, v: f.py, scale: f.len, yaw: yawOf(V.phi[i]), color: V.tilt ? 0x666666 : 0xf4f4f0 });
-      out.push({ kind: 'pbPost', u: f.px, v: f.py, scale: 0.012, sy: 2.2, color: 0xd03030 });
-    }
-    if (V.b) out.push({ kind: 'pbBall', u: V.b.x, v: V.b.y + (V.pull || 0) * 0.03, scale: 2 * R, lift: V.b.z || 0, color: 0xdfe4ea });   // (drawn down with the plunger's pull, up on a ramp)
+    T.fl.forEach((f, i) => {
+      out.push({ kind: 'pbFlipper', u: f.px, v: f.py, scale: f.len, yaw: yawOf(V.phi[i] != null ? V.phi[i] : f.rest), color: V.tilt ? 0x666666 : 0xf4f4f0 });
+      out.push({ kind: 'pbPost', u: f.px, v: f.py, scale: f.upper ? 0.01 : 0.012, sy: 2.2, color: 0xd03030 });
+    });
+    if (V.b) ball(V.b);    // (drawn down with the plunger's pull, up on a ramp)
+    for (const q of V.xb || []) ball(q);
     for (const it of out){ it.u /= W; it.scale /= W; it.lift = (it.lift || 0) / W; }
     return out;
   }
   const box = T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; };
+  /* a number reel: a ten-sided drum along x, a unit long, each face wearing a figure from one picture of the ten stacked up
+     (`reelTex`); turned about x by a tenth of a turn a figure (the item's `rot`) */
+  function reelTex(T){
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 640; const c = cv.getContext('2d');
+    c.fillStyle = '#f2ead6'; c.fillRect(0, 0, 64, 640); c.fillStyle = '#141414'; c.font = 'bold 52px Georgia, serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    // (a face is wider than it is tall, a tenth of the way round against the drum's length, so each figure is drawn narrow to come out
+    //  its own shape once laid on)
+    const ax = 2 * REEL_R * Math.sin(Math.PI / 10);
+    for (let k = 0; k < 10; k++){ c.save(); c.translate(32, k * 64 + 34); c.scale(ax, 1); c.fillText(String(k), 0, 0); c.restore();
+      c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(0, k * 64, 64, 2); c.fillStyle = '#141414'; }
+    return new T.CanvasTexture(cv);
+  }
+  function reelGeo(T){
+    const pos = [], uv = [], idx = [], n = 10, rr = REEL_R;
+    for (let k = 0; k < n; k++){
+      // (face k faces up when the drum is turned back by k tenths; its figure reads up the face toward −z, the table's far end)
+      const a0 = (k - 0.5) * Math.PI * 2 / n, a1 = (k + 0.5) * Math.PI * 2 / n, base = pos.length / 3;
+      const P0 = [Math.cos(a0) * rr, Math.sin(a0) * rr], P1 = [Math.cos(a1) * rr, Math.sin(a1) * rr];
+      for (const [x, Pq, vv] of [[-0.5, P0, 0], [0.5, P0, 0], [0.5, P1, 1], [-0.5, P1, 1]]){ pos.push(x, Pq[0], Pq[1]); uv.push(x + 0.5, 1 - (k + vv) / n); }
+      idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+    }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    g.userData.map = reelTex(T); g.userData.unlit = true;
+    return g;
+  }
   function flipperGeo(T){
     // the flipper's outline: a circle at the pivot, a smaller one at the tip, joined by their tangents; along +x, length 1
     // (the tangents touch both circles at π/2 − a and its mirror, sin a = r0 − r1, the length being 1)
@@ -49283,20 +49786,23 @@ const PINBALL_APP = (() => {
       pbSaucer: T => FieldKit.disc(T, 0.5, 0.002),
       pbFlipper: flipperGeo,
       pbBall: T => { const g = new T.SphereGeometry(0.5, 18, 12); g.translate(0, 0.5, 0); return g; },
+      pbPlate: T => new T.BoxGeometry(1, 1, 1),
+      pbDot: T => { const g = FieldKit.disc(T, 0.5, 0.004, 8); g.userData.unlit = true; return g; },
+      pbReel: reelGeo,
     },
-    cellItems(c, r){
+    cellItems(c, r, bp){
       // (the framed board's table made first, URGENT_MS a frame, its game made only when it is played: a game wants its table)
-      const k = gkey(c, r), live = LIVE && LIVE.c === c && LIVE.r === r, g = GAMES.get(k);
+      const k = gkey(c, r), live = LIVE && LIVE.c === c && LIVE.r === r, g = GAMES.get(k), withBp = V => { V.bp = bp || 0; return V; };
       if (live) wantPar(g ? g.M : tableFor(c, r));
-      if (g){ tableSoon(c, r, g.M, live); if (live) stepGame(g); else g.last = 0; return itemsOf(viewOf(g.M, g.state === 'ready' ? null : g)); }
-      return itemsOf(viewOf(tableSoon(c, r, null, live), null));
+      if (g){ tableSoon(c, r, g.M, live); if (live) stepGame(g); else g.last = 0; return itemsOf(withBp(viewOf(g.M, g.state === 'ready' ? null : g))); }
+      return itemsOf(withBp(viewOf(tableSoon(c, r, null, live), null)));
     },
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), M = TABLES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
       const best = M ? BEST.get(bestKey(M)) : null;
-      const head = 'Pinball — ' + (M ? M.T.era.name + ', ' : '') + 'level ' + lv + (M && M.par ? ' · par ' + M.par.toLocaleString() : '') + (best != null ? ' · best ' + (+best).toLocaleString() : '');
+      const head = 'Pinball — ' + (M ? M.T.theme.name + ', ' + M.T.era.name + ', ' : '') + 'level ' + lv + (M && M.par ? ' · par ' + M.par.toLocaleString() : '') + (best != null ? ' · best ' + (+best).toLocaleString() : '');
       if (!g || g.state === 'ready') return head + ' (tap to play)';
-      return head + ' · ' + g.S.score.toLocaleString() + (g.state === 'over' ? ' · game over' : ' · ball ' + g.ball + ' of ' + g.M.T.balls + (g.S.mult > 1 ? ' · ×' + g.S.mult : '') + (g.S.t - g.S.shotT < COMBO_T && g.S.combo ? ' · combo ×' + (g.S.combo + 1) : '') + (g.S.tilt ? ' · TILT' : ''));
+      return head + ' · ' + g.S.score.toLocaleString() + (g.state === 'over' ? ' · game over' : ' · ball ' + g.ball + ' of ' + g.M.T.balls + (g.S.mult > 1 ? ' · ×' + g.S.mult : '') + (g.S.t - g.S.shotT < COMBO_T && g.S.combo ? ' · combo ×' + (g.S.combo + 1) : '') + (g.S.mis ? ' · mission: ' + (g.S.mis.need - g.S.mis.got) + ' ' + MIS[g.S.mis.k].id + ', ' + Math.ceil(g.S.mis.until - g.S.t) + ' s' : '') + (g.S.tilt ? ' · TILT' : ''));
     },
     onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
     onSelect(){ return true; },
@@ -49313,7 +49819,8 @@ const PINBALL_APP = (() => {
     },
     noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
     _debug: { makeTable, tableFor, newState, sub, launch, setFlipper, toPlunger, endBall, botStep, botNew, simGen, simRun, work, finishJob, starsOf, levelAt, boardIdx, ringOf,
-              fitGen, lifeOf, offBand, readyNow, eraOf, pathAt, rampZ, palette, ERAS, LIFE_BAND, FIT_TRIES, COMBO_T, fly: (c, r) => gotoCell(c, r),
+              fitGen, lifeOf, offBand, readyNow, eraOf, pathAt, rampZ, palette, ERAS, LIFE_BAND, FIT_TRIES, COMBO_T,
+              THEMES, lockLit, startMulti, MIS, MIS_T, MIS_AWARD, misStart, misCode, misRead, shotNow, offOf, wantOf, ev, REC_PRE, magOn, mbX, dispText, dotsOf, reelsOf, lockSpot, frameOf, MSGS, JACK0, REEL_PX, DOT_PX, fly: (c, r) => gotoCell(c, r),
               gameAt, fresh, begin, stepGame, over, nudge, press, pressAt, viewOf, itemsOf, paint, LV, GAMES, TABLES, BEST, HELD, OWN, SND,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, consts: { W, LANE, PW, XC, R, SUB, FY, PLX, PLY, BALL_T, REEL_T }, uvAt: (x, y) => _framedUV(x, y) },
   };
