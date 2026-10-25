@@ -1828,6 +1828,33 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     pictures and comics dropped beside it went. The drop a book came in with is kept (`_bookDrop`, set in `_loadFiles`); a
     change opens that drop again in the new settings, and `BOOK_GO` takes the view to the book's page holding the words it
     was on (`goToWords`) once the book hangs. A book alone, or from a bucket, is hung again on its own as before.
+- **JSON files as pages** (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader" and, for sources, "Open or
+  drop a file" and "Flare buckets"): a `.json`, `.jsonl`, `.ndjson` or `.geojson` opened, dropped or in a bucket hangs one page a
+  board in the photo gallery, laid out as a book is (`JSONV`, `_loadJson`, `_hangJson`, after `_loadEpub`), on the book's 2:3
+  pages (640 × 960).
+  - The pages are the document printed as `JSON.stringify(v, null, 2)` prints it (the smoke test checks they are the same lines),
+    in a monospaced face measured once (`advance`), every token its colour (keys, strings, numbers, true/false/null, punctuation),
+    numbered in a gutter. A long line wraps two spaces past its indent (a token that fits a fresh row starts one; a long string
+    is broken where the row ends), and an indent never takes more than half the row. Each page's head says the file and the
+    path its first line is at (`$.users[3].name`); its foot `n / N`.
+  - **Depth** (`linesOf`): a container nested deeper than the depth is one line, `{ … 4 keys }`. The depth asked (1–6, 8, All)
+    is used if the file fits `LINE_CAP` (50,000 lines); else the deepest that fits, said at the top of the first page; one too
+    long even one level deep is cut there, said too (`fit`). Files over `MAX_BYTES` (128 MB) are refused.
+  - **Not JSON** (`parse`): tried as JSON Lines (two or more non-empty lines, each parsing: one array, said at the top); else
+    the first page says why and the text follows, numbered, the line it broke on marked in red. Chromium's message gives no
+    offset any more, so `faultAt` scans JSON's grammar for the first character that cannot be where it is.
+  - **The row is its settings** while it hangs (as a book's): Smaller, the size (10–22, `SIZES`), Larger, Shallower, the depth
+    (with the depth shown in brackets when `fit` lowered it), Deeper, and Colours (Light, Sepia, Dark, `THEMES`); kept in
+    localStorage `json.style`. The gallery's `statTiles`, `statsFirst` and `onStatTap` are wrapped: the JSON's row while one
+    hangs (`jsonLive`), else the book's. A size or a depth lays it out again and keeps the place by path (`goToPath`: the
+    framed page's first path, or after a depth change the deepest line on its way still standing); a colour paints again. A
+    file opened with others keeps the drop (`_jsonDrop`, `JSON_GO`), as a book does.
+  - **Buckets**: a `.json` that resolves to no image slices (a tensor gallery among them) and every `.jsonl`, `.ndjson` and
+    `.geojson` is data (`datas`); a bucket with no pictures, archive, PDF or book opens the first in the viewer instead of
+    saying it has no images.
+  - The smoke test opens a file through the real picker (pages, lines, numbers, a path head, a wrap), a real click on Larger
+    keeping the place, a real click on Shallower and taps to depth 2 folding the 120 records, Colours painting sepia, a broken
+    file marked on its line, and JSON Lines read as one array. `GALLERY_APP._json` and `_jsonRow` are for it.
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
   unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
   board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.

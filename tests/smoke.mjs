@@ -5336,6 +5336,109 @@ try {
       console.log(`${bad.length ? 'FAIL' : 'ok  '} epub: a book opened through the picker laid out as ${r.n} pages, cover first, chapters on fresh pages, every word in order, ${r.loaded} painted; the row its settings (Larger re-laid it, the place kept; Page painted it white; a picture opened with it kept)`);
     }
   }
+  // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
+  // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space
+  // printing, numbered, every page headed by the path it begins at; the row its settings (a real click on Shallower and
+  // taps to depth 2 folding each record to one line, a real click on Larger keeping the reader at the path they were on,
+  // Colours painting the page sepia); a file that is not JSON showing why with the line it broke on marked, and JSON Lines
+  // read as one array.
+  {
+    current = 'json';
+    const bad = [];
+    const G = 'window.FIELD_APPS.find(a => a.id === \'gallery\')';
+    const dir = await mkdtemp(join(tmpdir(), 'json-'));
+    const v = { name: 'smoke', flag: true, nothing: null, ratio: 0.25,
+      users: Array.from({ length: 120 }, (_, i) => ({ id: i, name: 'user ' + i, tags: ['a', 'b' + i], address: { city: 'Town ' + (i % 7), zip: 10000 + i } })),
+      long: 'word '.repeat(60).trim() };
+    const file = join(dir, 'smoke-data.json');
+    await writeFile(file, JSON.stringify(v));
+    await page.setInputFiles('#importImageFile', file);
+    await page.waitForFunction(g => { const G = eval(g); return G._json && G._json.label === 'smoke-data.json'; }, G, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(([g, want]) => {
+      const G = eval(g), J = G._json;
+      if (!J) return { why: 'no JSON laid out' };
+      const D = J.doc, P = J.pages;
+      const printed = D.lines.map(l => '  '.repeat(l.ind) + l.toks.map(t => t.s).join(''));
+      const exact = printed.join('\n') === want;
+      const nums = P.flatMap(p => p.rows.filter(r => r.no).map(r => r.no));
+      return { n: P.length, app: window.getFieldApp() === G, expect: G._expect, exact, lines: D.lines.length,
+               numbered: nums.length === D.lines.length && nums.every((x, i) => x === i + 1),
+               head: P[3] && P[3].p, first: J.JSONV.textOf(P[0]).split('\n').slice(0, 2).join(' | '),
+               wraps: P.some(p => p.rows.some(r => !r.no)), live: G._jsonRow.live() };
+    }, [G, JSON.stringify(v, null, 2)]);
+    if (r.why) bad.push(r.why);
+    else {
+      if (!r.app) bad.push('the gallery is not the app');
+      if (!(r.n > 3) || r.expect !== r.n) bad.push(`${r.n} pages, ${r.expect} expected by the gallery`);
+      if (!r.exact) bad.push('the lines are not JSON.stringify(v, null, 2)\'s');
+      if (!r.numbered) bad.push('the line numbers are not 1 to ' + r.lines);
+      if (!/^\$\.users\[\d+\]/.test(r.head || '')) bad.push('page 4 is headed ' + r.head);
+      if (!r.wraps) bad.push('the long string did not wrap');
+      if (!r.live) bad.push('the row is not the file\'s');
+      const row = await page.evaluate(g => (eval(g).statTiles() || []).map(t => t.value).join(), G);
+      if (row !== 'Smaller,13,Larger,Shallower,All,Deeper,Colours: Light') bad.push('the settings row is ' + row);
+      const tile = k => page.evaluate(k => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === k && t.style.display !== 'none');
+                                              const b = t && t.getBoundingClientRect(); return b && b.width ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : null; }, k);
+      // Larger, the place kept: page 4 framed, its path, then the page framed after must hold that path's line.
+      await page.evaluate(g => { const G = eval(g), J = G._json, c = G._cellFor(J.base + 3, tvf.target.cellX | 0, tvf.target.cellZ | 0); tvf.fn.gotoCell(c.c, c.r); }, G);
+      await page.waitForTimeout(1200);
+      const p0 = await page.evaluate(g => { const G = eval(g), J = G._json, i = G._pick(tvf.target.cellX, tvf.target.cellZ) - J.base; return J.pages[i] && J.pages[i].p; }, G);
+      let box = await tile('stat_2');
+      if (!box) bad.push('no Larger tile on the screen');
+      else {
+        await page.mouse.click(box.x, box.y);
+        await page.waitForFunction(g => { const G = eval(g); return G._json.JSONV.style.size === 14 && !G._jsonRow.busy; }, G, { timeout: 20000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+        const k = await page.evaluate(([g, p0]) => {
+          const G = eval(g), J = G._json, i = G._pick(tvf.target.cellX, tvf.target.cellZ) - J.base, L = J.L;
+          const li = L.lines.findIndex(l => l.p === p0);
+          return { size: J.JSONV.style.size, holds: !!J.pages[i] && J.pages[i].first <= li && (!J.pages[i + 1] || li < J.pages[i + 1].first), n: J.pages.length };
+        }, [G, p0]);
+        if (k.size !== 14) bad.push('Larger left the size at ' + k.size);
+        if (!(k.n > r.n)) bad.push(`larger type made ${k.n} pages from ${r.n}`);
+        if (!k.holds) bad.push('the framed page does not hold ' + p0);
+      }
+      // Shallower (a real click to 8), then taps to 2: every record one folded line.
+      box = await tile('stat_3');
+      if (!box) bad.push('no Shallower tile on the screen');
+      else {
+        await page.mouse.click(box.x, box.y);
+        await page.waitForFunction(g => { const G = eval(g); return G._json.JSONV.style.depth === 8 && !G._jsonRow.busy; }, G, { timeout: 20000 }).catch(() => {});
+        for (let d = 8; d > 2; d = [1, 2, 3, 4, 5, 6, 8][[1, 2, 3, 4, 5, 6, 8].indexOf(d) - 1]){
+          await page.evaluate(g => eval(g)._jsonRow.tap(3), G);
+          await page.waitForFunction(g => !eval(g)._jsonRow.busy, G, { timeout: 20000 }).catch(() => {});
+        }
+        const f = await page.evaluate(g => { const J = eval(g)._json; return { depth: J.JSONV.style.depth, n: J.doc.lines.length,
+          folded: J.doc.lines.filter(l => l.toks.some(t => t.k === 'fold' && /4 keys/.test(t.s))).length }; }, G);
+        if (f.depth !== 2 || f.folded !== 120 || f.n !== 120 + 9) bad.push('at depth 2: ' + JSON.stringify(f));
+      }
+      const sep = await page.evaluate(async g => {
+        const G = eval(g); await G._jsonRow.tap(6);
+        const J = G._json, cv = document.createElement('canvas'); J.JSONV.paint(cv, J.L, J.pages[0], 96);
+        const d = cv.getContext('2d').getImageData(2, 2, 1, 1).data; return { theme: J.JSONV.style.theme, px: [d[0], d[1], d[2]].join() };
+      }, G);
+      if (sep.theme !== 'sepia' || sep.px !== '243,231,204') bad.push('Colours did not paint the page sepia: ' + JSON.stringify(sep));
+      await page.evaluate(g => { const S = eval(g)._json.JSONV.style; Object.assign(S, { size: 13, depth: 99, theme: 'light' }); try { localStorage.removeItem('json.style'); } catch {} }, G);
+    }
+    // Not JSON: the reason, the line marked.
+    const broken = join(dir, 'broken.json');
+    await writeFile(broken, '{"a": 1,\n "b": [1, 2,,3]\n}\n');
+    await page.setInputFiles('#importImageFile', broken);
+    await page.waitForFunction(g => { const G = eval(g); return G._json && G._json.label === 'broken.json'; }, G, { timeout: 30000 }).catch(() => {});
+    const e = await page.evaluate(g => { const J = eval(g)._json; return J && { ok: J.doc.ok, line: J.doc.errLine, text: J.JSONV.textOf(J.pages[0]),
+      marked: J.pages[0].rows.some(r => r.segs.some(s => s.k === 'err' && /2,,3/.test(s.s))) }; }, G);
+    if (!e || e.ok || e.line !== 1 || !/Not JSON/.test(e.text) || !e.marked) bad.push('a broken file: ' + JSON.stringify(e));
+    // JSON Lines: one array.
+    const jl = join(dir, 'log.jsonl');
+    await writeFile(jl, '{"t": 1, "msg": "up"}\n{"t": 2, "msg": "down"}\n\n{"t": 3, "msg": "up"}\n');
+    await page.setInputFiles('#importImageFile', jl);
+    await page.waitForFunction(g => { const G = eval(g); return G._json && G._json.label === 'log.jsonl'; }, G, { timeout: 30000 }).catch(() => {});
+    const l = await page.evaluate(g => { const J = eval(g)._json; return J && { kind: J.doc.kind, notes: J.doc.notes.join(' '), n: J.doc.lines.length }; }, G);
+    if (!l || l.kind !== 'jsonl' || !/3 records/.test(l.notes) || l.n !== 2 + 3 * 4) bad.push('JSON Lines: ' + JSON.stringify(l));
+    if (bad.length) failures.push('[json] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} json: a file opened through the picker laid out as ${r.n} pages of JSON.stringify's lines, numbered, headed by their paths; the row its settings (Larger kept the place, depth 2 folded the records, Colours sepia); a broken file marked where it broke; JSON Lines one array`);
+  }
   // THE DOTS, FULL SCREEN, AND TAB FROM THE BOARD IN VIEW (Oct 17: "1) the three dots on the bottom for the bottom panel should
   // be 2px larger and have a shadow. 2) add full screen option to the menu. 3) tab and enter should move to next board, from the
   // current visible board that is in the default position."): the dots 6px across with a drop shadow; a Full screen item on the
