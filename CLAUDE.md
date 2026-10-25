@@ -633,6 +633,33 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     touches on one square read as four taps; and a board no one plays going through every stage of its cycle (`shownView(P,
     at)`, `cycleOf`: a few seconds sampled on the page's clock can fall wholly in the picture's rest, which failed once) and
     moving on the page's clock over a whole cycle.
+- **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
+  `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
+  - **Decks** (`DECKS`, written in the page): world capitals (53), US state capitals (50), chemical elements (44: 1–36 and eight
+    famous heavier ones), times tables (2 × 2 to 12 × 12, 66) and Spanish words (42). A card is `[front, back, note?]`; a deck's
+    `ask` ("Capital of") stands small over the front. The menu's Deck steps through them (localStorage `flashcards.deck`).
+  - **A card a board**: a board's card is `boardIdx` round the deck (`cardOf`), so the corner is card 1 and every card hangs on many
+    boards. Each is a picture (the photo tier: `paint`, 640 or 320 px tall from `HI_PX` 260 px boards; the board `ASP` 1.6 wide,
+    the app's `boardShape`; drawn turned a half turn, as tanks'), its far edge in its state's colour (`stateOf`: blue new,
+    orange learning, red due, green known; `cellGrid` that colour alone for a tiny board). `SPECS` keeps what to paint by key.
+  - **Studying**: a tap on the framed card turns it over (Space or Enter; `TURNED` by board); the back has the answer, a note, and
+    four buttons along the near edge (v ≥ `BTN_V` 0.78) with when the card would come back: Again, Hard, Good, Easy (a tap, the
+    row's tiles or 1–4; `gradeHere`). Graded, the view flies to the nearest board holding the next card (`nextDue`: learning
+    cards due, then known cards due, by when; then new ones while the day's `NEW_PER_DAY` 20 last; then a learning card within
+    `LEARN_AHEAD` 20 min), found by a spiral out from where you are (`boardFor`). Nothing due: the board says when the next is.
+    N or the menu's Next card due flies there. The row: Show answer / Front, the four grades with their intervals, and the
+    New, Learning and Due counts. `noDoubleTap` while a board is framed.
+  - **The schedule** (`after`, `grade`; SM-2 as Anki plays it): learning steps 1 and 10 min (Hard 6 min, or 1.5 × the step), a
+    day on graduating, Easy four days; a known card Good × ease, Hard × 1.2 (ease − 0.15), Easy × ease × 1.3 (ease + 0.15),
+    Again back to learning with half the interval (ease − 0.2, never under 1.3, a lapse counted). Kept on the real clock in
+    localStorage `flashcards.srs` (by deck: card → [state, step, days, ease, due, reps, lapses], and the day's new count). The
+    menu's Forget this deck's progress clears a deck.
+  - A board no one studies turns its card over now and then (`FLIP_T` 9 s, `BACK_T` 3.2 s of it on its back), each board at its
+    own phase; the framed board holds still.
+  - The smoke test checks the decks, the cards by board, the steps (1m, 6m, 10m, 4d; then 1m, 15m, 1d, 4d), graduating, a known
+    card coming due first, its interval growing and Again putting it back with less ease, the nearest board holding a card, and
+    real input: a real click turning the framed card, a real click on Good grading it and flying to the next card's board, the
+    real Space and 3, the row's tiles, and a board no one studies turning over.
 - **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.

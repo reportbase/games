@@ -4326,6 +4326,90 @@ try {
     if (!ok4) failures.push('[nonograms] a board no one plays: ' + JSON.stringify(demo));
     console.log(`${ok4 ? 'ok  ' : 'FAIL'} nonograms: a board no one plays fills itself in (${demo.stages} stages a cycle, ${demo.live} seen live)`);
   }
+  // FLASH CARDS (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): the decks, a card a
+  // board round the deck, the schedule (a new card learnt in steps and graduating, a known card's interval growing by its ease,
+  // Again putting it back), the next card due and the nearest board holding it; and real input: a real click on the framed card
+  // turning it over, a real click on Good along its near edge grading it and flying to the board of the next card, the real
+  // Space and 3 doing the same, and a board no one studies turning its card over on its own.
+  {
+    current = 'flashcards';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'flashcards')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      delete D.SRS.capitals; D.DECK = 0;
+      out.decks = D.DECKS.map(d => d.cards.length);
+      out.corner = D.cardOf(0, 0);
+      out.round = [[0, 0], [1, 0], [5, 9]].map(([c, r]) => D.cardOf(c, r) === D.boardIdx(c, r) % D.deck().cards.length).every(Boolean);
+      let t = 1e12; D.setNow(() => t);
+      out.first = D.nextDue(-1);
+      out.iv0 = D.intervals(5).join();
+      D.grade(5, 2); out.s1 = D.stateOf(5); out.iv1 = D.intervals(5).join();
+      t += 11 * 60e3; D.grade(5, 2); out.s2 = D.stateOf(5); const R1 = D.SRS.capitals.cards[5].slice();
+      t += R1[2] * 86400e3 + 1; out.s3 = D.stateOf(5); out.dueFirst = D.nextDue(-1);
+      D.grade(5, 2); const R2 = D.SRS.capitals.cards[5].slice();
+      t += R2[2] * 86400e3 + 1; D.grade(5, 0); const R3 = D.SRS.capitals.cards[5].slice();
+      out.recs = [R1, R2, R3];
+      out.board = D.boardFor(7, 3, 3); out.boardHolds = out.board && D.cardOf(out.board[0], out.board[1]) === 7;
+      out.counts = D.counts();
+      delete D.SRS.capitals; D.setNow(null);
+      return out;
+    });
+    if (r.decks.join() !== '53,50,44,66,42') bad.push('decks ' + r.decks.join());
+    if (r.corner !== 0 || !r.round) bad.push('cards by board: ' + JSON.stringify([r.corner, r.round]));
+    if (r.first !== 0) bad.push('the first card due is ' + r.first);
+    if (r.iv0 !== '1m,6m,10m,4d' || r.s1 !== 'learn' || r.iv1 !== '1m,15m,1d,4d' || r.s2 !== 'known' || r.s3 !== 'due' || r.dueFirst !== 5)
+      bad.push('the steps: ' + JSON.stringify(r));
+    const [R1, R2, R3] = r.recs;
+    if (R1[0] !== 2 || R1[2] !== 1 || R2[2] !== 3 || R3[0] !== 1 || R3[6] !== 1 || !(R3[3] < R2[3])) bad.push('the schedule ' + JSON.stringify(r.recs));
+    if (!r.boardHolds) bad.push('no board near holding card 7: ' + JSON.stringify(r.board));
+    // real input on a framed card
+    await page.evaluate(() => { tvf.fn.gotoCell(4, 2); });
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+    const state = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; return { live: L, turned: L ? D.TURNED.has(L.c + '_' + L.r) : false, card: L ? D.cardOf(L.c, L.r) : -1, rec: L ? (D.SRS.capitals && D.SRS.capitals.cards) || {} : {} }; });
+    if (!fc) bad.push('no framed board');
+    else {
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.LIVE = { c, r }; D.TURNED.clear(); }, fc);
+      let pt = await aimAt(0.5, 0.45);
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(700);
+      const s1 = await state();
+      if (!s1.turned) bad.push('a real click did not turn the card over: ' + JSON.stringify(s1));
+      const k1 = s1.card;
+      pt = await aimAt(0.625, 0.9);              // (Good, the third of the four buttons along the near edge)
+      await page.mouse.click(pt.x, pt.y);
+      await page.waitForTimeout(3000);
+      const s2 = await state();
+      const g1 = s2.rec[k1];
+      if (!g1 || g1[0] !== 1 || g1[1] !== 1) bad.push('a real click on Good did not grade card ' + k1 + ': ' + JSON.stringify(g1));
+      const want = await page.evaluate(k => window.getFieldApp()._debug.nextDue(k), k1);
+      if (s2.card !== want || s2.turned) bad.push(`after grading the framed card is ${s2.card} (turned ${s2.turned}), the next due ${want}`);
+      const at = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+      const dk = await page.evaluate(([c, r]) => window.getFieldApp()._debug.cardOf(c, r), at || [0, 0]);
+      if (!at || dk !== want) bad.push('the view did not fly to the next card: framed ' + JSON.stringify(at) + ' holds ' + dk);
+      // the real Space turns it, the real 3 grades it Good
+      await page.keyboard.press('Space'); await page.waitForTimeout(400);
+      const s3 = await state();
+      await page.keyboard.press('3'); await page.waitForTimeout(1500);
+      const s4 = await state();
+      if (!s3.turned || !s4.rec[s3.card]) bad.push('Space then 3: ' + JSON.stringify({ turned: s3.turned, rec: s4.rec[s3.card] }));
+      // the row: Show answer, the four grades, the counts
+      const row = await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.LIVE; return (A.statTiles(L.c, L.r) || []).map(t => t.value.split(' ·')[0]).join(); });
+      if (row !== 'Show answer,Again,Hard,Good,Easy,18,0,0') bad.push('the row ' + row);
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; delete D.SRS.capitals; try { localStorage.removeItem('flashcards.srs'); } catch {} D.TURNED.clear(); });
+    }
+    // a board no one studies turns its card over now and then
+    const idle = await page.evaluate(async () => { const D = window.getFieldApp()._debug, seen = new Set();
+      for (let i = 0; i < 40; i++){ seen.add(D.viewOf(9, 9).back); await new Promise(r => setTimeout(r, 300)); } return [...seen].length; });
+    if (idle < 2) bad.push('a board no one studies never turned over');
+    if (bad.length) failures.push('[flashcards] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} flashcards: five decks, a card a board, the steps and the schedule (intervals ${r.recs.map(x => x[2]).join(', ')} days, ease ${r.recs.map(x => x[3]).join(', ')}), a real click turning a card and a real click on Good flying to the next, Space and 3, a board no one studies turning over`);
+  }
   // TANKS (Oct 20: "what tank games could we build", then "1", the artillery duel; Oct 21: weapons, more tanks, two players on
   // one device, driving): every board its own ground at a level by its ring; the computer's steady aim hits; a burst digs and
   // hurts; every weapon does its own thing; duels of two, three and four tanks end; real taps and drags aim and a tap on the tank fires, the computer
