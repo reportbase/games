@@ -51651,8 +51651,10 @@ const FLASH_APP = (() => {
   }
   // texts in ({name, text}), from files or a bucket; a JSON text that is not a deck is passed over (false)
   function deckOfText(name, text){
-    if (/\.json$/i.test(name || '')){ try { return deckOfJson(JSON.parse(text), name); } catch { return null; } }
-    return readDeckText(text, name);
+    /* Lines of cards only from a name that says so: `_loadFiles` asks this of every JSON file before the viewer has it, and a
+       .jsonl's lines, split at their commas, read as a deck of cards, so JSON Lines never reached the viewer (found by CI). */
+    if (/\.(csv|tsv|txt)$/i.test(name || '')) return readDeckText(text, name);
+    try { return deckOfJson(JSON.parse(text), name); } catch { return null; }
   }
   const isDeckFile = f => f && /\.(csv|tsv|txt)$/i.test(f.name || '');
   /* ANY FILE, FROM THE DECK'S OWN PICKER (Oct 25: "json is disabled in flashcard application"): the field's Open has a list of the
@@ -61966,7 +61968,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       if (!jobs.length) return;
       const onlyLoose = !zips.length && !pdfs.length && !books.length && !jsons.length;
       let addsToWhatIsThere = false;
-      try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded; } catch {}
+      /* (Loose pictures join pictures, never a book's or a JSON file's pages: joined, the collection stayed the document's, so
+         its settings row stayed up over forty pictures and they hung as pages after it. Found by CI on the flash cards' PR.) */
+      const docHangs = () => { const G = GALLERY_APP; return !!((G._book && G._book.live()) || (G._jsonRow && G._jsonRow.live())); };
+      try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded && !docHangs(); } catch {}
       const pour = POUR.open(jobs.length, addsToWhatIsThere);
       await Promise.all(jobs.map(async (run, slot) => {
         try { await run({ join: slot > 0, pour, slot }); }

@@ -1903,6 +1903,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     JSON, and opened as application/json it went to the viewer as well, the page left mini golf, and the smoke test's hole
     editor failed on every run since the viewer came. A name ending `.golf`, `.tvf`, `.tvf3d`, `.csv`, `.tsv`, `.txt`, `.pgn`
     or `.fen` (`_ownExt`) is never taken by its type.
+  - **A JSON file is never a deck's lines, and loose pictures never join it** (found by CI on the same PR): `_loadFiles` asks the
+    flash cards of every JSON file first, and `deckOfText` read any name but `.json` as lines of cards, so a `.jsonl` became a deck
+    of its comma-split lines; now only `.csv`, `.tsv` and `.txt` are read as lines, anything else as a JSON deck or nothing. And
+    loose pictures dropped while a book or JSON file hangs start a collection of their own (`docHangs`): joined, the document's
+    settings row stayed up over them.
   - The smoke test opens a file through the real picker (pages, lines, numbers, a path head, a wrap), a real click on Larger
     keeping the place, a real click on Shallower and taps to depth 2 folding the 120 records, Colours painting sepia, a broken
     file marked on its line, and JSON Lines read as one array. `GALLERY_APP._json` and `_jsonRow` are for it.
