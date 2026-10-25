@@ -1899,6 +1899,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **Buckets**: a `.json` that resolves to no image slices (a tensor gallery among them) and every `.jsonl`, `.ndjson` and
     `.geojson` is data (`datas`); a bucket with no pictures, archive, PDF or book opens the first in the viewer instead of
     saying it has no images.
+  - **Taken by its type only when its name says nothing else** (found by CI on the flash cards' PR): a mini golf `.golf` is
+    JSON, and opened as application/json it went to the viewer as well, the page left mini golf, and the smoke test's hole
+    editor failed on every run since the viewer came. A name ending `.golf`, `.tvf`, `.tvf3d`, `.csv`, `.tsv`, `.txt`, `.pgn`
+    or `.fen` (`_ownExt`) is never taken by its type.
   - The smoke test opens a file through the real picker (pages, lines, numbers, a path head, a wrap), a real click on Larger
     keeping the place, a real click on Shallower and taps to depth 2 folding the 120 records, Colours painting sepia, a broken
     file marked on its line, and JSON Lines read as one array. `GALLERY_APP._json` and `_jsonRow` are for it.

@@ -61888,8 +61888,11 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     // (a book that comes with other files keeps the whole drop, to open again when its settings change; see BOOK_GO)
     if (books.length) _bookDrop = all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '')).length > 1 ? all.slice() : null;
     /* A JSON file (Oct 25: "what about a json file viewer") is laid out as pages, as a book is (JSONV); one that comes with
-       other files keeps the drop, to open again when its settings change. */
-    const jsons = all.filter(f => f && (/\.(json|jsonl|ndjson|geojson)$/i.test(f.name || '') || /json/i.test(f.type || '')));
+       other files keeps the drop, to open again when its settings change. A file is taken by its type only when its name
+       says nothing else: a mini golf .golf is JSON, and opened as application/json it went to the viewer too, the page
+       left mini golf, and the smoke test's hole editor failed on every run since (found by CI on the flash cards' PR). */
+    const _ownExt = /\.(golf|tvf3d?|csv|tsv|txt|pgn|fen)$/i;
+    const jsons = all.filter(f => f && (/\.(json|jsonl|ndjson|geojson)$/i.test(f.name || '') || (/json/i.test(f.type || '') && !_ownExt.test(f.name || ''))));
     if (jsons.length) _jsonDrop = all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '')).length > 1 ? all.slice() : null;
     const zips = all.filter(f => f && !_isBook(f) && (/\.(zip|cbz|cbr|cb7|cbt|7z|tar|tgz|tar\.gz)$/i.test(f.name || '') || /zip/.test(f.type || '')));
     // A PDF is a gallery of pages: same entry point, same app, its own reader.
