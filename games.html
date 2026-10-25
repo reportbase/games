@@ -3944,10 +3944,6 @@ function turnStart(x, y){
     const _moved = Math.hypot(turn.currentX - turn.anchorX, turn.currentY - turn.anchorY);
     if (_moved >= (turn.isTouch ? 16 : TAP_PX)) return;       // already dragging: not a hold
     turn.appPan = false;
-    try {
-      const _a = window.getFieldApp && window.getFieldApp();
-      if (_a && _a.onCellHold && _a.holdIsMove) turn.holdAt = _framedUV(turn.anchorX, turn.anchorY);
-    } catch {}
     turn.longPressed = true;
     if (_hooks.onLongPress) _hooks.onLongPress();
   }, LONG_PRESS_MS);
@@ -4115,14 +4111,12 @@ function turnEnd(e){
          app's own hold is asked only where it is a move in play (`holdIsMove`: Minesweeper's flag, the pipe games' turn back,
          Nonograms' cross, Sokoban's undo, Air raid's bomb); elsewhere a hold started the board again, which the menu's Reset
          does, and the drawer stayed where it was. */
-      let _took = false;
-      try {
-        const _a = window.getFieldApp && window.getFieldApp(), _b = turn.holdAt;
-        if (_b && _a && _a.onCellHold && _a.holdIsMove) _took = !!_a.onCellHold(_b.c, _b.r, _b.u, _b.v);
-      } catch {}
-      if (!_took){ try { toggleBoardBrowser(); } catch {} }
+      /* ALWAYS THE DRAWER'S (Oct 25: "Long press is always toggle of bottom browser"): no app's hold is asked any more, not even
+         where it was a move (Minesweeper's flag, now its Taps: flag mode or F; Sokoban's undo, now the menu's Undo a step or Z;
+         the pipe games' turn back, Nonograms' cross, Air raid's bomb, each with a way of its own). A right click still offers
+         the mouse's hold to an app whose hold is a move (`holdIsMove`, below). */
+      try { toggleBoardBrowser(); } catch {}
     }
-    turn.holdAt = null;
     return;
   }
   // Short tap → click handler (host snaps to its cell). Fingers jitter more
@@ -31676,7 +31670,7 @@ const BOMBER_APP = (() => {
       else walkTo(g, rr, cc);
       return true;
     },
-    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
+    holdIsMove: true,                // (a right click here is a move: Oct 23; the long press always the drawer's, Oct 25)
     onCellHold(c, r){
       const g = liveGame();
       if (!g || LIVE.key !== gkey(c, r)) return false;
@@ -44037,10 +44031,20 @@ const MINES_APP = (() => {
   const cellOf = (u, v) => Math.max(0, Math.min(N - 1, Math.floor(v * N))) * N
                          + Math.max(0, Math.min(N - 1, Math.floor(u * N)));
 
+  let TAPS = (() => { try { return localStorage.getItem('minesweeper.taps') === 'flag' ? 'flag' : 'dig'; } catch { return 'dig'; } })();
+  const setTaps = m => { TAPS = m; try { localStorage.setItem('minesweeper.taps', m); } catch {} try { say(m === 'flag' ? 'Taps plant flags' : 'Taps dig', 1400); } catch {} };
+  addEventListener('keydown', e => {
+    if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && window.getFieldApp && window.getFieldApp() === app
+        && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')){ e.preventDefault(); e.stopImmediatePropagation(); setTaps(TAPS === 'flag' ? 'dig' : 'flag'); }
+  }, true);
   const app = {
     name: 'minesweeper',
     menu: [{ head: 'Minesweeper', items: [{ label: DL.item.label, title: DL.item.title,
-      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, newGame(DL.at(LIVE.c, LIVE.r))); } }, SND.item] }],
+      on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, newGame(DL.at(LIVE.c, LIVE.r))); } }, SND.item,
+      // (Oct 25: "Long press is always toggle of bottom browser": the hold that flagged on a phone is the drawer's now, so a tap
+      // can flag instead; F on the keys switches too, and a right click always flags.)
+      { label: () => 'Taps: ' + (TAPS === 'flag' ? 'flag' : 'dig'), title: 'What a tap on a covered square does: dig it, or plant a flag on it (again takes it off). F on the keys switches it; a right click always flags.',
+        on(){ setTaps(TAPS === 'flag' ? 'dig' : 'flag'); } }] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
     faceMinPx: 8,
@@ -44089,13 +44093,13 @@ const MINES_APP = (() => {
       if (g.state === 'won' || g.state === 'lost'){ GAMES.set(gkey(c, r), newGame(DL.at(c, r))); return true; }
       use(g.n);
       const i = cellOf(u, v);
+      if (TAPS === 'flag' && !g.open[i] && g.state === 'play') return app.onCellHold(c, r, u, v) || true;
       if (g.open[i]) chord(g, i); else open(g, i);
       return true;
     },
-    /* HOLD TO FLAG — the field offers the long press to the app first. Only
-       a covered square in a game under way; anywhere else the hold keeps its
-       usual job (tilt and turn). */
-    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
+    /* HOLD TO FLAG — the right click's, and the Taps: flag mode's (the long press is the drawer's since Oct 25). Only
+       a covered square in a game under way. */
+    holdIsMove: true,                // (a right click here is a move: Oct 23; the long press always the drawer's, Oct 25)
     onCellHold(c, r, u, v){
       const g = GAMES.get(gkey(c, r));
       if (!g || g.state !== 'play') return false;
@@ -44119,7 +44123,7 @@ const MINES_APP = (() => {
         ctx.beginPath(); ctx.arc(it.u * sz, it.v * sz, it.scale * sz * 0.5, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { setLevel: DL.set, newGame, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.lv : DL.at(c, r); }, open, chord, botMove, bakeReel, codesOf, games: GAMES },
+    _debug: { setLevel: DL.set, newGame, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return g ? g.lv : DL.at(c, r); }, open, chord, botMove, bakeReel, codesOf, games: GAMES, uvAt: (x, y) => _framedUV(x, y) },
   };
   return app;
 })();
@@ -44609,7 +44613,7 @@ const PIPES_APP = (() => {
       return true;
     },
     // Hold (or right-click) turns a tile back.
-    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
+    holdIsMove: true,                // (a right click here is a move: Oct 23; the long press always the drawer's, Oct 25)
     onCellHold(c, r, u, v){
       const p = GAMES.get(gkey(c, r));
       if (!p || p.solved) return false;
@@ -44834,7 +44838,7 @@ const LOOPS_APP = (() => {
       return true;
     },
     // Hold (or right-click) turns a tile back.
-    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
+    holdIsMove: true,                // (a right click here is a move: Oct 23; the long press always the drawer's, Oct 25)
     onCellHold(c, r, u, v){
       const p = GAMES.get(gkey(c, r));
       if (!p || p.solved) return false;
@@ -47244,6 +47248,11 @@ const SOKOBAN_APP = (() => {
     g.moves--; g.solved = false; g.queue = [];
     return true;
   }
+  const undoHere = () => { const g = !ED.on && LIVE && GAMES.get(LIVE.key); if (g && undo(g)){ try { fieldItemsChanged(); } catch {} return true; } return false; };
+  addEventListener('keydown', e => {
+    if ((e.key === 'z' || e.key === 'Z') && !e.ctrlKey && !e.metaKey && !e.altKey && window.getFieldApp && window.getFieldApp() === app
+        && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') && undoHere()){ e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
   // A walk to square `to` around walls and crates, as directions; null if he cannot get there.
   function path(g, to){
     const L = lvl(g); use(L.n);
@@ -47600,6 +47609,9 @@ const SOKOBAN_APP = (() => {
       { label: DL.item.label, title: DL.item.title,
         on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, deal(boardLevel(LIVE.c, LIVE.r, true))); try { fieldItemsChanged(); } catch {} } },
       SND.item,
+      // (Oct 25: "Long press is always toggle of bottom browser": the hold that took back a step is the drawer's now.)
+      { label: 'Undo a step', title: 'Take back his last step (Z on the keys; a right click too).',
+        get disabled(){ const g = LIVE && GAMES.get(LIVE.key); return !!ED.on || !(g && g.hist && g.hist.length); }, on(){ undoHere(); } },
       { label: () => ED.on ? 'Done: play this level' : 'Make a level for this board…', title: 'The bottom row becomes a level editor: walls, crates, spots and the keeper. The solver checks it can be done and sets par; Done plays it.',
         on(){ if (ED.on) edDone(); else edOpen(); } },
       { label: 'Cancel the level', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
@@ -47699,8 +47711,8 @@ const SOKOBAN_APP = (() => {
       if (p) g.queue = p;
       return true;
     },
-    // Hold (or right-click): take back a step.
-    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
+    // A right click takes back a step (the long press was the drawer's from Oct 25; the menu's Undo a step and Z do it too).
+    holdIsMove: true,                // (a right click here is a move: Oct 23; the long press always the drawer's, Oct 25)
     onCellHold(c, r){
       if (ED.on) return true;
       const g = GAMES.get(gkey(c, r));
@@ -51456,7 +51468,7 @@ const NONOGRAM_APP = (() => {
       act(g, i);
       return true;
     },
-    holdIsMove: true,                // (a hold here is a move, not the drawer's: Oct 23)
+    holdIsMove: true,                // (a right click here is a move: Oct 23; the long press always the drawer's, Oct 25)
     onCellHold(c, r, u, v){
       const g = GAMES.get(gkey(c, r));
       if (g && g.state === 'solved'){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; say('This board blank again.', 1200); return true; }

@@ -1976,6 +1976,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     are out of date: the menu's Reset does that.
   - The smoke test clicks the real dots in trick shots and wants the row to stay shut, long-presses the table twice and wants it
     open, then shut, and wants a hold in Simon to flip the field's switch (`window.tvf.bottomRow.visible`).
+  - **Always** (Oct 25: "Long press is always toggle of bottom browser"): no app's hold is asked any more, not even a move's. A right
+    click still reaches `onCellHold` where `holdIsMove` says it is a move. What a phone lost has a way of its own: Minesweeper's
+    menu has Taps: dig / flag (F on the keys, localStorage `minesweeper.taps`), Sokoban's menu Undo a step (Z on the keys); the
+    pipe games turn by taps, Nonograms has its cross mode and Air raid drops a bomb on a tap on yourself.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
