@@ -4334,29 +4334,62 @@ try {
   {
     current = 'flashcards';
     const bad = [];
+    // (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or epub.") No deck in the page: every board
+    // says how to bring one; then decks come in through the real file picker: the repo's decks/capitals.tsv (Anki-style #deck
+    // and #ask lines, a header), a CSV with quotes, an Anki export with HTML, and a flashcards JSON; a JSON that is not a deck
+    // still goes to the JSON viewer.
+    await page.evaluate(() => { const D = window.FIELD_APPS.find(a => a.id === 'flashcards')._debug; D.DECKS.splice(0); try { localStorage.removeItem('flashcards.decks'); localStorage.removeItem('flashcards.srs'); } catch {} for (const k in D.SRS) delete D.SRS[k]; });
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'flashcards')));
     await page.waitForTimeout(1500);
+    const empty = await page.evaluate(() => { const A = window.getFieldApp(); return { title: A.cellTitle(0, 0), key: A.cellPhoto(0, 0, 400) }; });
+    if (!/no deck yet/.test(empty.title) || empty.key !== 'fc:empty:H') bad.push('with no deck: ' + JSON.stringify(empty));
+    const ddir = await mkdtemp(join(tmpdir(), 'decks-'));
+    const csvF = join(ddir, 'my_words.csv'), ankiF = join(ddir, 'anki.txt'), jsonF = join(ddir, 'planets.json'), dataF = join(ddir, 'data.json');
+    await writeFile(csvF, 'Question,Answer,Notes\n"Hello, world",Hola mundo,greeting\ncat,gato\n"say ""hi""",di hola\n');
+    await writeFile(ankiF, '#separator:tab\n#html:true\n#deck:Anki words\ndog\t<b>perro</b><br>el perro\nhouse\tla&nbsp;casa\n');
+    await writeFile(jsonF, JSON.stringify({ format: 'flashcards', name: 'Planets', ask: 'Planet number', cards: [['3', 'Earth'], { front: '4', back: 'Mars', note: 'the red one' }] }));
+    await writeFile(dataF, JSON.stringify({ users: [{ id: 1 }, { id: 2 }] }));
+    await page.setInputFiles('#importImageFile', [join(ROOT, 'decks', 'capitals.tsv'), csvF, ankiF, jsonF]);
+    await page.waitForFunction(() => window.FIELD_APPS.find(a => a.id === 'flashcards')._debug.DECKS.length >= 4, null, { timeout: 15000 }).catch(() => {});
+    const loaded = await page.evaluate(() => { const D = window.FIELD_APPS.find(a => a.id === 'flashcards')._debug;
+      return { onApp: window.getFieldApp() === window.FIELD_APPS.find(a => a.id === 'flashcards'), decks: D.DECKS.map(d => [d.name, d.ask, d.cards.length, d.cards[0].join('/')]),
+               kept: (JSON.parse(localStorage.getItem('flashcards.decks') || '[]')).length }; });
+    const names = loaded.decks.map(d => d[0]).sort().join();
+    if (names !== 'Anki words,Planets,World capitals,my words' || !loaded.onApp) bad.push('decks loaded: ' + JSON.stringify(loaded));
+    const byName = Object.fromEntries(loaded.decks.map(d => [d[0], d]));
+    if (byName['World capitals'] && (byName['World capitals'][1] !== 'Capital of' || byName['World capitals'][2] !== 53 || byName['World capitals'][3] !== 'France/Paris')) bad.push('capitals.tsv ' + JSON.stringify(byName['World capitals']));
+    if (byName['my words'] && (byName['my words'][2] !== 3 || byName['my words'][3] !== 'Hello, world/Hola mundo/greeting')) bad.push('the CSV ' + JSON.stringify(byName['my words']));
+    if (byName['Anki words'] && byName['Anki words'][3] !== 'dog/perro el perro') bad.push('the Anki export ' + JSON.stringify(byName['Anki words']));
+    if (byName['Planets'] && (byName['Planets'][1] !== 'Planet number' || byName['Planets'][2] !== 2)) bad.push('the JSON deck ' + JSON.stringify(byName['Planets']));
+    if (loaded.kept !== 4) bad.push(loaded.kept + ' decks kept in storage');
+    await page.setInputFiles('#importImageFile', dataF);
+    await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._json && G._json.label === 'data.json'; }, null, { timeout: 15000 }).catch(() => {});
+    const toViewer = await page.evaluate(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return !!(G._json && G._json.label === 'data.json'); });
+    if (!toViewer) bad.push('a JSON that is not a deck did not open in the JSON viewer');
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'flashcards')));
+    await page.waitForTimeout(1200);
     const r = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {};
-      delete D.SRS.capitals; D.DECK = 0;
-      out.decks = D.DECKS.map(d => d.cards.length);
+      D.DECK = D.DECKS.findIndex(d => d.name === 'World capitals');
+      const SK = D.deck().key, RC = k => D.SRS[SK].cards[D.cid(k)].slice();
+      out.decks = [D.deck().cards.length];
       out.corner = D.cardOf(0, 0);
       out.round = [[0, 0], [1, 0], [5, 9]].map(([c, r]) => D.cardOf(c, r) === D.boardIdx(c, r) % D.deck().cards.length).every(Boolean);
       let t = 1e12; D.setNow(() => t);
       out.first = D.nextDue(-1);
       out.iv0 = D.intervals(5).join();
       D.grade(5, 2); out.s1 = D.stateOf(5); out.iv1 = D.intervals(5).join();
-      t += 11 * 60e3; D.grade(5, 2); out.s2 = D.stateOf(5); const R1 = D.SRS.capitals.cards[5].slice();
+      t += 11 * 60e3; D.grade(5, 2); out.s2 = D.stateOf(5); const R1 = RC(5);
       t += R1[2] * 86400e3 + 1; out.s3 = D.stateOf(5); out.dueFirst = D.nextDue(-1);
-      D.grade(5, 2); const R2 = D.SRS.capitals.cards[5].slice();
-      t += R2[2] * 86400e3 + 1; D.grade(5, 0); const R3 = D.SRS.capitals.cards[5].slice();
+      D.grade(5, 2); const R2 = RC(5);
+      t += R2[2] * 86400e3 + 1; D.grade(5, 0); const R3 = RC(5);
       out.recs = [R1, R2, R3];
       out.board = D.boardFor(7, 3, 3); out.boardHolds = out.board && D.cardOf(out.board[0], out.board[1]) === 7;
       out.counts = D.counts();
-      delete D.SRS.capitals; D.setNow(null);
+      delete D.SRS[SK]; D.setNow(null);
       return out;
     });
-    if (r.decks.join() !== '53,50,44,66,42') bad.push('decks ' + r.decks.join());
+    if (r.decks.join() !== '53') bad.push('decks ' + r.decks.join());
     if (r.corner !== 0 || !r.round) bad.push('cards by board: ' + JSON.stringify([r.corner, r.round]));
     if (r.first !== 0) bad.push('the first card due is ' + r.first);
     if (r.iv0 !== '1m,6m,10m,4d' || r.s1 !== 'learn' || r.iv1 !== '1m,15m,1d,4d' || r.s2 !== 'known' || r.s3 !== 'due' || r.dueFirst !== 5)
@@ -4371,7 +4404,7 @@ try {
     const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
-    const state = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; return { live: L, turned: L ? D.TURNED.has(L.c + '_' + L.r) : false, card: L ? D.cardOf(L.c, L.r) : -1, rec: L ? (D.SRS.capitals && D.SRS.capitals.cards) || {} : {} }; });
+    const state = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; return { live: L, turned: L ? D.TURNED.has(L.c + '_' + L.r) : false, card: L ? D.cardOf(L.c, L.r) : -1, rec: (() => { const S = D.SRS[D.deck().key], o = {}; if (S) for (let k = 0; k < D.deck().cards.length; k++) if (S.cards[D.cid(k)]) o[k] = S.cards[D.cid(k)]; return o; })() }; });
     if (!fc) bad.push('no framed board');
     else {
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.LIVE = { c, r }; D.TURNED.clear(); }, fc);
@@ -4401,14 +4434,14 @@ try {
       // the row: Show answer, the four grades, the counts
       const row = await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.LIVE; return (A.statTiles(L.c, L.r) || []).map(t => t.value.split(' ·')[0]).join(); });
       if (row !== 'Show answer,Again,Hard,Good,Easy,18,0,0') bad.push('the row ' + row);
-      await page.evaluate(() => { const D = window.getFieldApp()._debug; delete D.SRS.capitals; try { localStorage.removeItem('flashcards.srs'); } catch {} D.TURNED.clear(); });
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; delete D.SRS[D.deck().key]; try { localStorage.removeItem('flashcards.srs'); localStorage.removeItem('flashcards.decks'); } catch {} D.TURNED.clear(); });
     }
     // a board no one studies turns its card over now and then
     const idle = await page.evaluate(async () => { const D = window.getFieldApp()._debug, seen = new Set();
       for (let i = 0; i < 40; i++){ seen.add(D.viewOf(9, 9).back); await new Promise(r => setTimeout(r, 300)); } return [...seen].length; });
     if (idle < 2) bad.push('a board no one studies never turned over');
     if (bad.length) failures.push('[flashcards] ' + bad.join('; '));
-    console.log(`${bad.length ? 'FAIL' : 'ok  '} flashcards: five decks, a card a board, the steps and the schedule (intervals ${r.recs.map(x => x[2]).join(', ')} days, ease ${r.recs.map(x => x[3]).join(', ')}), a real click turning a card and a real click on Good flying to the next, Space and 3, a board no one studies turning over`);
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} flashcards: no deck till one is loaded, four decks through the real picker (the repo's TSV, a CSV, an Anki export, a JSON deck) and a plain JSON to the viewer, a card a board, the steps and the schedule (intervals ${r.recs.map(x => x[2]).join(', ')} days, ease ${r.recs.map(x => x[3]).join(', ')}), a real click turning a card and a real click on Good flying to the next, Space and 3, a board no one studies turning over`);
   }
   // TANKS (Oct 20: "what tank games could we build", then "1", the artillery duel; Oct 21: weapons, more tanks, two players on
   // one device, driving): every board its own ground at a level by its ring; the computer's steady aim hits; a burst digs and

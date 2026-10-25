@@ -635,9 +635,22 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     moving on the page's clock over a whole cycle.
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
-  - **Decks** (`DECKS`, written in the page): world capitals (53), US state capitals (50), chemical elements (44: 1–36 and eight
-    famous heavier ones), times tables (2 × 2 to 12 × 12, 66) and Spanish words (42). A card is `[front, back, note?]`; a deck's
-    `ask` ("Capital of") stands small over the front. The menu's Deck steps through them (localStorage `flashcards.deck`).
+  - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or
+    epub."): a deck comes from a file opened or dropped (the field's Open; the menu's Open a deck…; `importDeckFiles`, from
+    `_loadFiles`) or a flare bucket (`_bucketIngest`: every `.csv`, `.tsv` and `.txt`, and any `.json` that is a deck, opened
+    when the bucket has no pictures, archive, PDF or book). Read by `readDeckText`: a card a line, front, back and a note, split
+    by tabs, else commas, semicolons or pipes (the most common in the first lines; CSV quotes honoured, `splitLine`); a header
+    naming its columns (front/question/term, back/answer/definition, note) says which is which; Anki's text export as it is
+    (`#separator`, `#columns`, `#deck`, HTML taken down to words, `plain`); `#deck:` and `#ask:` lines of our own. A `.json` is a
+    deck (`deckOfJson`) when it is `{format: "flashcards", name, ask, cards: [[front, back, note?] or {front, back, note}]}` (or
+    names itself and has `cards`), or a bare list of {front, back} (question/answer, term/definition); `_loadFiles` reads each
+    `.json` first and gives a deck to the flash cards, any other to the JSON viewer. A deck is kept in localStorage
+    `flashcards.decks` (its key its name and a hash of its cards, `makeDeck`; at most `MAX_CARDS` 5,000 a deck) and comes back
+    next time; the menu's Deck steps through them (`flashcards.deck`), Remove this deck takes one off with its progress. A
+    card's progress is kept by its own id (`cid`, a hash of its front and back), so it follows the card when a file is edited.
+    With no deck every board is a card saying how to bring one (`fc:empty`), and the row's one tile opens the picker. `decks/` in
+    the repo holds five deck files to start from (world and US state capitals, the elements, the times tables, Spanish words):
+    open them, drop them or put them in a bucket; the page does not load them by itself.
   - **A card a board**: a board's card is `boardIdx` round the deck (`cardOf`), so the corner is card 1 and every card hangs on many
     boards. Each is a picture (the photo tier: `paint`, 640 or 320 px tall from `HI_PX` 260 px boards; the board `ASP` 1.6 wide,
     the app's `boardShape`; drawn turned a half turn, as tanks'), its far edge in its state's colour (`stateOf`: blue new,
@@ -656,7 +669,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     menu's Forget this deck's progress clears a deck.
   - A board no one studies turns its card over now and then (`FLIP_T` 9 s, `BACK_T` 3.2 s of it on its back), each board at its
     own phase; the framed board holds still.
-  - The smoke test checks the decks, the cards by board, the steps (1m, 6m, 10m, 4d; then 1m, 15m, 1d, 4d), graduating, a known
+  - The smoke test checks no deck till one is loaded, four decks opened through the real picker (decks/capitals.tsv, a CSV
+    with quotes, an Anki export with HTML, a JSON deck) and kept, a plain JSON still going to the JSON viewer, the cards by board, the steps (1m, 6m, 10m, 4d; then 1m, 15m, 1d, 4d), graduating, a known
     card coming due first, its interval growing and Again putting it back with less ease, the nearest board holding a card, and
     real input: a real click turning the framed card, a real click on Good grading it and flying to the next card's board, the
     real Space and 3, the row's tiles, and a board no one studies turning over.
