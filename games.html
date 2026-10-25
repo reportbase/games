@@ -1065,7 +1065,7 @@
      Hold to thrust, slide to change θ, release to coast — identical to
      the dial because it drives the dial's own state. */
   #thrustZone { right: 0; top: 0; bottom: 0; width: min(32px, 5.25vw); z-index: 5;
-              cursor: ns-resize; touch-action: none;
+              cursor: default; touch-action: none;
               background: transparent !important; border: none !important;
               border-radius: 0; backdrop-filter: none !important;
               -webkit-backdrop-filter: none !important; }
@@ -1124,9 +1124,8 @@
   #yawMark    { background: var(--hot); box-shadow: 0 0 10px rgba(232, 200, 106,.95), 0 1px 3px rgba(0,0,0,.9); }
   #yawMarkTgt { background: var(--acc); box-shadow: 0 0 7px rgba(127,119,221,.9); }
   #yawZero    { background: rgba(159,182,200,.45); height: 12px !important; width: 2px !important; border-radius: 1px; }
-  #thrustMarkCur { background: var(--hot); box-shadow: 0 0 10px rgba(232, 200, 106,.95), 0 1px 3px rgba(0,0,0,.9); }
-  #thrustMarkTgt { background: var(--acc); box-shadow: 0 0 7px rgba(127,119,221,.9); }
-  #thrustZero    { background: rgba(159,182,200,.45); width: 12px !important; height: 2px; border-radius: 1px; }
+  /* (the position rail's thumb, Oct 25: as tall as the share of the window the screen shows, as a scroll bar's is) */
+  #railThumb { background: var(--hot); box-shadow: 0 0 10px rgba(232, 200, 106,.95), 0 1px 3px rgba(0,0,0,.9); width: 14px; }
 
   /* Sky compass — heading marks every 20° painted into the black above the
      horizon. Pure background scenery: no pointer events, under everything. */
@@ -1296,7 +1295,7 @@
 
 <!-- Thrust (the dial, unrolled onto the right edge). -->
 <div id="yawZone" class="panel" title="Drag left or right to turn the view round the point you are looking at — as far as you like; the rail's width is one full turn. A press on the rail turns to that heading (the middle faces forward)."></div>
-<div id="thrustZone" class="panel" title="Pan to set the speed lever — up is forward, down is reverse, centre is zero. Speed builds toward the lever on the tangent curve: slow at first, then accelerating. Release and the speed holds; tap the field or press Escape to brake. A tap on the strip selects the board under it."></div>
+<div id="thrustZone" class="panel" title="Where you are along the way you are going: the top is ahead, the bottom behind. Drag the thumb to move; a press on the track goes there."></div>
 
 <!-- Bottom dial (observer A). -->
 <div id="dials">
@@ -3627,7 +3626,7 @@ function stepThrust(dt){
     // lever's business, and a swipe always goes forward.
     if (Math.abs(newBeta) > 1e-3) LAST_SPEED = Math.abs(newBeta);
   }
-  if (st.heldPanRate !== 0){
+  if (st.heldPanRate !== 0 && !(window.__posRail && window.__posRail.drag)){   // (the position rail's thumb held: the glide waits)
     /* ALONG THE WAY YOU WERE GOING. This integrated on (sin yaw, cos yaw) —
        view-FORWARD — so the lever only ever drove you into or out of the
        scene, whatever direction you had just swept. The last drag or swipe
@@ -8057,6 +8056,7 @@ function stepSelectedBoard(dir){
 let autoMode = false, _autoTimer = null, _autoStep = 0;
 let autoScope = 'none';                 // 'none' | 'all' — what the tour visits
 function autoTick(){
+  if (window.__posRail && window.__posRail.drag) return;     // (the position rail's thumb held: auto motion waits)
   _autoStep++;
   /* A DIRECTION BEATS AN ORDER. Cycling selectedBoardsOrdered() walks a LIST,
      and a list runs to its end and comes back — which is why auto motion
@@ -61729,107 +61729,72 @@ function _turnViewTo(yawDeg){
   target.yaw = null; st.yawV = 0;
 }
 
-/* Chess-free template: the right-edge THRUST strip. It writes the dial's
-   own state (semiState.springFromTheta while held, the release spring on
-   let-go), so stepThrust, the held-β marker, the coast and the braking
-   rules all behave identically to a thumb on the dial — and the dial,
-   when shown, mirrors the gesture live. */
+/* THE RIGHT RAIL IS A SCROLL BAR FOR WHERE YOU ARE (Oct 25: "the right scroll bar for speed lever should be more like a normal
+   scroll bar to move the current position. it should follow the auto motion for the direction of movement.", then "A window
+   round you" and "Remove it" of the ways offered). Until then it was the speed lever (the dial's θ unrolled: up forward, down
+   reverse, the speed creeping toward the thumb on the tangent ramp). Now it is a scroll bar along the direction of motion
+   (`railDir`: the way the field drifts or auto motion steps, `LAST_DRIFT`, snapped to cells as `stepBoard` snaps it while auto
+   motion runs; with nothing swept, ahead), over a window `RAIL_WIN` (50) boards long centred where you were (`RAIL`): the top
+   is ahead, the bottom behind. The thumb is where you are in it, as tall as the screen shows of it, and moves as you move: as
+   auto motion steps, as the field drifts, as you pan. A drag of the thumb moves you along with it (the glide and auto motion
+   wait while it is held); a press on the track jumps there and drags on from it. Let go, the window centres on you again, as
+   it does when you travel off either end of it or the direction of motion turns. Speed stays with the keys, a swipe's drift,
+   the dial and auto motion. */
+const RAIL_WIN = 50;
+const RAIL = window.__posRail = { has: false, ax: 0, az: 0, dx: 0, dz: 1, drag: false };
+function railDir(){
+  let x = LAST_DRIFT.x, z = LAST_DRIFT.z;
+  if (x || z){ if (autoMode){ x = Math.round(x); z = Math.round(z); if (!x && !z) x = 1; } }
+  else if (autoMode){ const y = (st.yaw || 0) * Math.PI / 180; x = Math.round(Math.cos(y)); z = Math.round(-Math.sin(y)); if (!x && !z) x = 1; }   // (stepBoard's own fallback)
+  else { const y = (st.yaw || 0) * Math.PI / 180; x = Math.sin(y); z = Math.cos(y); }
+  const m = Math.hypot(x, z) || 1; return { x: x / m, z: z / m };
+}
+const railBoard = () => Math.hypot(RAIL.dx * gridSpacingX(), RAIL.dz * gridSpacingZ()) || gridSpacing();
+const railSpan = () => RAIL_WIN * railBoard();
+function railCentre(){ const d = railDir(); Object.assign(RAIL, { has: true, ax: st.camX, az: st.camZ, dx: d.x, dz: d.z }); }
+// where you are in the window: 0 the top (ahead), 1 the bottom (behind), ½ its middle
+const railFrac = () => 0.5 - ((st.camX - RAIL.ax) * RAIL.dx + (st.camZ - RAIL.az) * RAIL.dz) / railSpan();
+// how much of the window the screen shows, as the thumb's share of the track
+const railThumb = () => Math.max(0.05, Math.min(0.4, worldPerScreenHeight() / railSpan()));
+// put yourself at f in the window (along its line, keeping how far off it you stand)
+function railMoveTo(f){
+  const want = (0.5 - Math.max(0, Math.min(1, f))) * railSpan(), now = (st.camX - RAIL.ax) * RAIL.dx + (st.camZ - RAIL.az) * RAIL.dz, ds = want - now;
+  st.camX += ds * RAIL.dx; st.camZ += ds * RAIL.dz;
+  target.active = false; target.zoom = null; target.yaw = null;
+}
 {
   const z = document.getElementById('thrustZone');
-  // (no readout here either)
-  const CAP = 0.49 * Math.PI;
-  let pid = null, y0 = 0;
-  /* The strip is the same gauge grammar as the tilt bar: a FIXED axis,
-     centre = zero, up = forward, down = reverse, a third of the screen to
-     full throttle each way. The finger is an absolute lever (blue); the
-     speed (amber) advances toward it on the dial's tangent curve — slow to
-     leave, then accelerating — and releasing stops the flight dead. */
-  /* `on` is a finger on the lever; `active` is the speed still travelling to
-     where it was sent — the tilt lever's own pair, and now for the same
-     reason: a press on the gauge has to arrive after the finger is gone. */
-  const _thrustLever = window.__thrustLever = { on: false, active: false, held: 0, theta: 0 };
-  /* paint() used to write the β readout. The nub reports the state from the
-     frame loop now, so there is nothing for a gesture to draw — kept as a
-     no-op because the drag calls it from four places and each of those is a
-     branch worth leaving alone. */
-  const paint = () => {};
   if (z){
-    let engaged = false;                          // dial state is touched only by a PAN
+    z.title = 'Where you are along the way you are going: the top is ahead, the bottom behind, 50 boards from end to end. Drag the thumb to move; a press on the track goes there.';
+    let pid = null, grab = 0;
+    const fracAt = e => { const r = z.getBoundingClientRect(); return (e.clientY - r.top) / Math.max(1, r.height); };
     z.addEventListener('pointerdown', e => {
-      if (semiState.dragging) return;             // a real thumb owns the dial
-      // A second finger is never thrust: leave it to the two-finger orbit.
-      if (e.pointerType === 'touch' && !e.isPrimary) return;
-      pid = e.pointerId; engaged = false;
-      try { z.setPointerCapture(pid); } catch {}
-      z.classList.add('dragging');
-      y0 = e.clientY;                                 // the press point is the apex
+      if (e.pointerType === 'touch' && !e.isPrimary) return;       // a second finger is the two-finger orbit's
+      if (!RAIL.has) railCentre();
+      pid = e.pointerId; try { z.setPointerCapture(pid); } catch {}
+      z.classList.add('dragging'); RAIL.drag = true;
+      const f = fracAt(e), cur = railFrac(), half = railThumb() / 2;
+      // (on the thumb: dragged from where it was taken; on the track: there at once, then dragged on)
+      if (Math.abs(f - cur) <= half) grab = f - cur; else { grab = 0; railMoveTo(f); }
       e.preventDefault(); e.stopPropagation();
     });
-    /* Second finger anywhere → two-finger gesture: release the first finger.
-       An engaged throttle stops dead; a mere press is dropped with no tap. */
-    const abort = () => {
-      if (pid === null) return;
-      try { z.releasePointerCapture(pid); } catch {}
-      const wasEngaged = engaged;
-      pid = null; engaged = false;
-      z.classList.remove('dragging');
-      if (wasEngaged) _thrustLever.on = false;   // freeze here too — no reset
-      _thrustLever.active = false;               // and a travelling press stops
-    };
-    addEventListener('touchstart', e => {
-      if (pid !== null && e.touches.length >= 2) abort();
-    }, { capture: true, passive: true });
-    const end = e => {
-      if (pid === null || (e && e.pointerId !== undefined && e.pointerId !== pid)) return;
-      pid = null;
-      z.classList.remove('dragging');
-      if (engaged){
-        _thrustLever.on = false;                  // release = the speed FREEZES
-        // where amber reached — like the tilt bar. No snap back to zero; a
-        // field tap (eaten) or Escape is still the brake.
-      }
-      else if (e && e.type === 'pointerup'){
-        /* A PRESS ON THE GAUGE IS A CHOICE OF SPEED — the same reading a drag
-           to that point would give, arrived at on the same tangent ramp and
-           frozen there. It no longer selects the board behind the rail: the
-           rail is a control, and a control's easiest gesture must be its own.
-           A press on the centre is therefore the brake. */
-        const r = z.getBoundingClientRect();
-        _thrustLever.theta  = EdgeGauge.thrustFromFrac((e.clientY - r.top) / Math.max(1, r.height));
-        _thrustLever.held   = 0;
-        _thrustLever.active = true;               // travels with no finger on it
-        _thrustLever.on     = false;
-        // Same hand-off a drag makes when it engages: flying is not framing.
-        target.active = false; target.zoom = null; target.yaw = null;
-      }
-    };
     z.addEventListener('pointermove', e => {
       if (pid === null || e.pointerId !== pid) return;
-      /* Same stuck-drag guard as the tilt strip: a buttonless move is the
-         release this element never saw. Hover must never open the throttle. */
-      if (!e.buttons){ end(e); return; }
-      if (!engaged){
-        if (Math.abs(e.clientY - y0) < 5) return;     // jitter is not a pan
-        engaged = true;                               // NOW the lever is grabbed
-        _thrustLever.on = true;
-        _thrustLever.held = 0;                        // tangent ramp from rest
-        target.active = false; target.zoom = null; target.yaw = null;
-
-      }
-      /* The rail's own box is the gauge — top is full forward, bottom full
-         reverse, centre stopped — and EdgeGauge owns that mapping so the
-         marker cannot drift from it. */
-      const r = z.getBoundingClientRect();
-      _thrustLever.theta = EdgeGauge.thrustFromFrac((e.clientY - r.top) / Math.max(1, r.height));
-      paint(e.clientY);
-      e.preventDefault();
+      if (!e.buttons){ end(e); return; }                          // a release this element never saw
+      railMoveTo(fracAt(e) - grab); e.preventDefault();
     });
+    const end = e => {
+      if (pid === null || (e && e.pointerId !== undefined && e.pointerId !== pid)) return;
+      try { z.releasePointerCapture(pid); } catch {}
+      pid = null; z.classList.remove('dragging'); RAIL.drag = false;
+      railCentre();
+    };
     z.addEventListener('pointerup', end);
     z.addEventListener('pointercancel', end);
     addEventListener('pointerup', end);
     addEventListener('pointercancel', end);
     addEventListener('blur', () => end());
-    setInterval(() => { if (pid !== null && engaged) paint(null); }, 150);   // β keeps counting while held still
+    addEventListener('touchstart', e => { if (pid !== null && e.touches.length >= 2) end(); }, { capture: true, passive: true });
   }
 }
 
@@ -61855,9 +61820,7 @@ function updateStripMarkers(dt){
     updateStripMarkers.tiltTgt = mk('tiltMarkTgt', tz);
     updateStripMarkers.tiltT   = mk('tiltEndTop', tz);
     updateStripMarkers.tiltB   = mk('tiltEndBot', tz);
-    updateStripMarkers.zero = mk('thrustZero', hz);
-    updateStripMarkers.cur  = mk('thrustMarkCur', hz);
-    updateStripMarkers.tgt  = mk('thrustMarkTgt', hz);
+    updateStripMarkers.cur  = mk('railThumb', hz);
   }
   const M = updateStripMarkers;
   // turn: the heading rides the top rail; the lever pulls it on the tangent ramp.
@@ -61913,32 +61876,15 @@ function updateStripMarkers(dt){
   M.tiltB.style.top = (tz.clientHeight - 1) + 'px';
   M.tiltTgt.style.display = (lv && lv.active) ? '' : 'none';
   if (lv && lv.active) M.tiltTgt.style.top = yTilt(Math.max(lv.target, _pitchFloor()));
-  // thrust: fixed axis, centre = zero
-  const yFor = th => (EdgeGauge.thrustToFrac(th) * (hz.clientHeight - 2)).toFixed(1) + 'px';
-  M.zero.style.top = yFor(0);            // the zero tick, wherever centre is
-  // Speed advances toward the lever on the same tangent ramp the tilt uses:
-  // tan(t) from rest, so it creeps away from zero and then accelerates.
-  const tl = window.__thrustLever;
-  if (tl && (tl.on || tl.active)){
-    const _s2 = (dt || 16) / 1000;
-    tl.held = Math.min(1.45, (tl.held || 0) + _s2);
-    const rate = 0.55 * Math.tan(Math.min(tl.held * 0.85, 1.23));   // θ rad/s
-    const gapT = tl.theta - (st.heldTheta || 0);
-    const stepT = Math.min(Math.abs(gapT), rate * _s2);
-    st.heldTheta   = (st.heldTheta || 0) + Math.sign(gapT) * stepT;
-    st.heldBeta    = Math.max(-_betaMax, Math.min(_betaMax, Math.sin(st.heldTheta)));
-    st.heldPanRate = _driftScreens * st.heldBeta;      // screens/s, altitude-free
-    // Arrived with nothing holding it: the speed is the one that was asked
-    // for, and the travel is over. A held lever keeps chasing the finger.
-    if (!tl.on && Math.abs(tl.theta - st.heldTheta) < 1e-4){
-      st.heldTheta = tl.theta; tl.active = false;
-    }
+  // the position rail: the thumb where you are in the window, centred again off either end or when the way you go turns
+  if (!RAIL.drag){
+    const d = railDir();
+    if (!RAIL.has || d.x * RAIL.dx + d.z * RAIL.dz < 0.98) railCentre();
+    const f0 = railFrac(); if (f0 < 0 || f0 > 1) railCentre();
   }
-  M.cur.style.top  = yFor(st.heldTheta || 0);
-  const dialHeld = (typeof semiState !== 'undefined') && semiState.dragging;
-  M.tgt.style.display = ((tl && (tl.on || tl.active)) || dialHeld) ? '' : 'none';
-  if (tl && (tl.on || tl.active)) M.tgt.style.top = yFor(tl.theta);
-  else if (dialHeld) M.tgt.style.top = yFor(semiState.springFromTheta || 0);
+  const H = hz.clientHeight, th = railThumb() * H, f = Math.max(0, Math.min(1, railFrac()));
+  M.cur.style.height = th.toFixed(1) + 'px';
+  M.cur.style.top = (f * (H - th)).toFixed(1) + 'px';
 }
 
 /* Chess-free template: the auto-motion scope cycle. */
