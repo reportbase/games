@@ -21,6 +21,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   without it the windmills are drawn with the old plain shapes. `bumper`, `rock` and
   `pipe` (Oct 7) are the course's other props, each with a plain fallback shape.
   New props go here too.
+- `decks/`: deck files for the flash cards (`.tsv`, Anki-style `#deck`/`#ask` lines and a header), to open, drop or put in a
+  bucket. The page never loads them by itself: decks are loaded as files are (Oct 25).
 
 ## How the page is put together
 - **Apps:** each game is an app object (`CHESS_APP`, `TETRIS_APP`, …), with the
