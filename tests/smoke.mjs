@@ -3064,8 +3064,12 @@ try {
     const nx = await page.evaluate(bx0 => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD; return { ...D.LIVE, flew: Math.abs(W.target.boardX - bx0) / W.spacing()[0] }; }, bx0);
     // a board no one plays: its recording moves on the page's clock
     const idle = await page.evaluate(async () => { const D = window.getFieldApp()._debug, M = D.tableFor(4, 4); D.finishJob(M);
-      const a = D.viewOf(M, null); await new Promise(ok => setTimeout(ok, 700)); const b = D.viewOf(M, null);
-      return { reel: !!(M.reel && M.reel.length), moved: !!(a.b && b.b && Math.hypot(a.b.x - b.b.x, a.b.y - b.b.y) > 0.005) || a.phi.join() !== b.phi.join() }; });
+      // (looked at for up to 3.5 s: a recording rests 2 s at the end of its loop, and holds still while a ball sits in the saucer
+      //  or waits on the plunger, so 700 ms alone could fall wholly in one, as it did on CI once recordings began before a mission)
+      let moved = false;
+      for (let k = 0; k < 5 && !moved; k++){ const a = D.viewOf(M, null); await new Promise(ok => setTimeout(ok, 700)); const b = D.viewOf(M, null);
+        moved = !!(a.b && b.b && Math.hypot(a.b.x - b.b.x, a.b.y - b.b.y) > 0.005) || a.phi.join() !== b.phi.join() || a.score !== b.score; }
+      return { reel: !!(M.reel && M.reel.length), moved }; });
     const realOk = s0.st === 'play' && s0.onPl && !s1.onPl && s1.by < 0.9 && s2.fl[0] && !s2.fl[1] && !s3.fl[0] && t1.fl[0] && !t1.fl[1] && t2.fl.join() === 'true,true' && t3.fl.join() === 'false,false'
       && Math.abs(z1 - z0) < 1e-6 && t4.st === 'play' && t4.onPl && ov.st === 'over' && ov.stars === (123450 >= ov.par ? 3 : 123450 >= ov.par * 0.6 ? 2 : 1) && ov.best === 123450
       && nx && nx.c !== s0.c && nx.flew < 1.5 && idle.reel && idle.moved;
