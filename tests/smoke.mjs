@@ -5361,7 +5361,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         out.still = (await D.checkOf("const game = { size: 3, setup(){ return {}; }, tap(){}, bot(){ return [0, 0]; }, view(){ return { squares: [] }; } };")).why;
         out.nowin = (await D.checkOf("const game = { size: 3, wins: true, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, bot(){ return [0, 0]; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], over: s.n > 5 }; } };")).why;
         return out; });
-      for (const id of ['lights', 'mole', 'snake']) if (K[id] !== 'ok') bad.push('the starter ' + id + ' failed its check: ' + K[id]);
+      // (Oct 26: "Add more starter games": every starter but the blank board, 2048, Gems, Pong, Maze and Connect Four among them)
+      for (const id of ['lights', 'mole', 'snake', 'g2048', 'match', 'pong', 'maze', 'four']) if (K[id] !== 'ok') bad.push('the starter ' + id + ' failed its check: ' + K[id]);
       if (!/no game\.bot/.test(K.blank || '')) bad.push('the blank board passed with no player: ' + K.blank);
       if (!/over at once/.test(K.atOnce || '')) bad.push('a game over at once: ' + K.atOnce);
       if (!/nothing on the board ever changed/.test(K.still || '')) bad.push('a game where nothing changes: ' + K.still);
@@ -5439,16 +5440,17 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       else if (!/no harder than level 1/.test(asked[1].messages[2].content)) bad.push('the levels did not go back to Claude: ' + asked[1].messages[2].content.slice(0, 160));
       if (!/plays the same farther out/.test(box)) bad.push('the last try was not kept with a note: ' + box.slice(-200));
       await page.evaluate(() => { const b = document.querySelector('#labAskBox'); if (b) b.hidden = true; });
-      // My games: two more boards changed, listed newest first; a real click on Play goes there
+      // My games: two more boards changed (clear of the board the flat game went on, the one the checks above left framed),
+      // listed newest first; a real click on Play goes there
       await page.evaluate(async () => { const D = window.getFieldApp()._debug;
-        await D.takeShared(2, 0, { s: "const game = { title: 'Alpha', size: 3, setup(){ return {}; }, view(){ return {}; } };" });
+        await D.takeShared(6, 3, { s: "const game = { title: 'Alpha', size: 3, setup(){ return {}; }, view(){ return {}; } };" });
         await new Promise(r => setTimeout(r, 20));
         await D.takeShared(4, 1, { s: "const game = { title: 'Beta', size: 3, setup(){ return {}; }, view(){ return {}; } };" }); });
       await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.live; A.onStatTap(L.c, L.r, 6); });
       await page.waitForTimeout(400);
       const rows = await page.evaluate(() => [...document.querySelectorAll('#labMineBox .labMineRow')].map(e => [e.dataset.k, e.innerText.split('\n')[0]]));
       // (boards changed by the checks above are listed too: the newest two first, the flat game among the rest)
-      if (rows.length < 3 || rows[0][0] !== '4_1' || !/Beta/.test(rows[0][1]) || rows[1][0] !== '2_0' || !/Alpha/.test(rows[1][1]) || !rows.some(x => /Flat/.test(x[1]))) bad.push('My games listed ' + JSON.stringify(rows));
+      if (rows.length < 3 || rows[0][0] !== '4_1' || !/Beta/.test(rows[0][1]) || rows[1][0] !== '6_3' || !/Alpha/.test(rows[1][1]) || !rows.some(x => /Flat/.test(x[1]))) bad.push('My games listed ' + JSON.stringify(rows));
       await page.click('#labMineBox .labMineRow[data-k="4_1"] button:has-text("Play")');
       await page.waitForTimeout(2500);
       const W = await page.evaluate(() => { const D = window.getFieldApp()._debug; let f = null; try { f = window.framedCell ? window.framedCell() : null; } catch {} return { live: D.live, hidden: document.querySelector('#labMineBox').hidden }; });

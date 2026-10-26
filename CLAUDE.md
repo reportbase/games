@@ -693,7 +693,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     glow }` in squares; a glowing one is its kind's unlit twin (`gl_<shape>`, `gl_<shape>_L`). `rand` is seeded by the board (its
     number and how many times it was started again), so a board deals the same game; the level is the ring level, 1–5.
   - **Starters** (`STARTERS`): Lights Out, Whack-a-mole and Snake, round the boards by `boardIdx` (the corner Lights Out), and a
-    blank board; the menu's Start from … puts any of them on the framed board as a version.
+    blank board; the menu's Start from … puts any of them on the framed board as a version. Since Oct 26 ("Add more starter
+    games") also 2048 (a swipe or arrow slides the tiles, which glide, numbers on them; the goal tile 128 to 2048 by level), Gems
+    (a match-three: swap by a swipe or two taps, cascades, a target score within the moves; 4 to 6 colours, fewer moves farther
+    out), Pong (first to 5 against a computer quicker by level; drag, tap or the arrows), Maze (a backtracking maze 9 to 17 squares
+    a side, keys, a tap or a swipe that runs to a turning; from level 3 only the way near you is seen) and Connect Four (against a
+    computer that looks 0 to 3 moves ahead with alpha-beta, slipping less farther out; 2 before the first move for two players):
+    `starterOf` goes round every starter but the blank. Each has its own player and passes the check; out of 20 games their players
+    win level 1 / 3 / 5: Gems 20 / 13 / 10, 2048 19 / 3 / 0, Connect Four 20 / 19 / 0, Pong 20 / 20 / 0, the maze always (bigger
+    farther out). The smoke test checks every starter passing the check.
   - **The sandbox** (`BOX`): a module never runs in the page. It runs in a Worker made inside a hidden iframe with `sandbox=
     "allow-scripts"` (an origin of its own: no storage, no cookies, no page) whose policy is `default-src 'none'` (a blob Worker
     inherits it: fetch, XMLHttpRequest and importScripts refused, measured), and the Worker's ways out are deleted too. The frame
