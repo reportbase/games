@@ -720,6 +720,52 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     line, a real click flipping exactly a cross, a shared game finding no fetch, XMLHttpRequest, localStorage or document, Change
     it… through the real box (the gateway mocked: a broken reply sent back with its error, the fixed one kept as version 2 and in
     storage), Undo, and Snake waiting until the real ArrowUp turns it.
+  - **The editing loop and more to build with** (Oct 26: "it works. i asked it to change to 7x7 in whack mole. whats next.", then
+    "1,2"):
+    - **History**: each request carries the board's last `HISTORY` (4) asks before the current version and what Claude said it did
+      (`historyOf`), so "faster again" means something.
+    - **Fix it**: a version that breaks while played (`rec.err`, a square the trial never reached) turns the row's first tile into
+      🔧 Fix it, and the box and the menu have it too (`fixIt`): `change(c, r, words, { fix, line })` sends "This version breaks while
+      it is played: …" with the line, no words needed; kept with the ask "Fix it: …".
+    - **Chips** under the box's words (`CHIPS`: Make it faster, Add sounds, Swipe to move, …): a tap adds one to what is written.
+    - **Sounds**: the Worker has `sound(kind, pitch, seconds)` (beep, click, chime, buzz, boom, up, down, win, lose, tone; at most 8
+      a call, `OUT`), sent back with the view and played for the framed board (`playSounds`, on `ARCADE.tone`; the menu's Sound,
+      localStorage `gamelab.sound`).
+    - **Words**: a piece `{ shape: 'text', text, x, y, size, color }` is drawn a letter at a time, each letter its own kind (`gch_`
+      + its code point, made when first asked for through the `itemGeometries` Proxy, `glyphGeo`) from a 5 × 7 dot font of its own
+      (`FONT`: capitals, digits, a few signs and ♥ ★), flat and unlit, turned with `yaw` 1e-6 so it reads as the board is framed.
+    - **Drags and swipes**: a game with `drag(state, x0, y0, x1, y1, done, rand)` (squares, fractional) keeps every press on its board
+      (`keepsPress`, `claimsPan`): moves are sent as they come (one call out at a time), and the lift once more with done true, where a
+      swipe is read; the tap after a drag is eaten (`dragAte`). The trial drags too.
+    - **Gliding**: a piece with an `id` slides from where it was drawn to where it is over its `glide` seconds (0.12 by default,
+      eased; `glideFrom`, `glideAt`, `rec.anim`); more than `GLIDE_FAR` (3) squares jumps. The starters use them: Snake's segments
+      glide a step at a time with a chime for an apple and a sound to lose, Whack-a-mole clicks and buzzes, Lights Out clicks.
+    - `LAB_SYS` tells Claude all of it. The smoke test puts a game with all four on a board: its words drawn letter by letter, a real
+      click gliding a piece with a click asked for, a real drag read as a swipe left (and not as a tap), the game broken in play by
+      the real Z and a click, Fix it sending its error and line (the gateway mocked) and keeping the fix, and the history naming it.
+  - **Its own player, the boards no one plays, and the check** (Oct 26: "what next for game lab", then "1,2"):
+    - Every module Claude writes has `game.bot(state, rand)`: a move (`{ tap }`, `{ key }`, `{ drag }`, `[x, y]` or `'up'`) or
+      nothing; asked every step of a realtime game, once a move of a turn by turn one (`act`, `playOne` in the Worker). It may read
+      the whole state and must not change it; at a person's pace. `game.wins` marks a game won or lost rather than scored.
+    - **Boards no one plays** show a recording of it playing the board's own deal (`rec`, `recSlice`: the Worker plays 25 ms of its
+      time a call, `PLAY_MS`, one call out at a time; `PLAYS` by board, `PLAYS_CAP` 80; frames every 0.1 s of a realtime game or
+      every move, up to `REC_T` 40 s or `REC_MOVES` 120), held `HOLD` s at the end and played again, each board at its own phase
+      (`shownAt`); pieces with ids slide between frames (`shownView`). The squares follow it too (`cellGrid`).
+    - **Par and stars**: the recording's end is the board's par (`parOf`: moves or seconds to a win, or the score); a game played
+      to its end on the framed board gets stars against it (`starsAt`: a win at par or under ★★★, within half again ★★, else ★; a
+      score at par ★★★, 60% ★★), the most kept by board and version (localStorage `gamelab.best`), par and best in the title.
+    - **The check** (`check` in the Worker, `checkOf`): after the trial, its player plays it three times at level 1 and once at 3
+      (two minutes or 400 moves each, 450 ms of the Worker a run). It goes back to Claude, as a broken version does, with no player,
+      over at once every time, nothing on the board ever changing, or a game to win never won at level 1; the box says what its
+      player did. The Rules box and links are tried only.
+    - The starters have players: Lights Out keeps the squares it still needs (`need`) and is a game to win, Whack-a-mole taps a mole
+      up 0.35 s, a tap every 0.25 s at most, Snake heads for the apple by the safe square with the most room (`roomAt`).
+    - **The sandbox times the call it is on**: the host frame now times only the call the Worker is working on, from when it
+      reaches it (`arm`, `head`), so a recording slice queued behind a two-second check is not stopped, and the call blamed for a
+      hang is the one the Worker was stuck on.
+    - The smoke test checks the starters passing, the four refusals, Change it… sending a version with no player back and keeping
+      the next, a board no one plays moving through its recording, and a one-tap game's par of 1 move with a real click's win
+      kept as three stars.
 - **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.

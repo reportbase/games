@@ -57104,9 +57104,11 @@ const GAMELAB_APP = (() => {
 const game = {
   title: 'Lights Out',
   size: level => 3 + Math.min(level, 4),          // 4×4 near the corner, up to 7×7 far out
+  wins: true,
   setup(level, rand) {
     const n = game.size(level);
-    const s = { n, lit: new Array(n * n).fill(false), taps: 0, done: false };
+    // (need: the squares pressed an odd number of times, the deal's and the player's: pressing each once more puts every light out)
+    const s = { n, lit: new Array(n * n).fill(false), need: new Array(n * n).fill(false), taps: 0, done: false };
     // dealt by pressing squares on a dark board, so it can always be put out
     for (let k = 0; k < 2 + level * 2; k++) flip(s, Math.floor(rand() * n), Math.floor(rand() * n));
     if (!s.lit.some(Boolean)) flip(s, 1, 1);
@@ -57117,6 +57119,11 @@ const game = {
     flip(s, x, y);
     s.taps++;
     s.done = !s.lit.some(Boolean);
+    sound(s.done ? 'win' : 'click');
+  },
+  bot(s) {                                         // its own player: presses each square the lights still need
+    const i = s.need.indexOf(true);
+    return i < 0 ? null : { tap: [i % s.n, Math.floor(i / s.n)] };
   },
   view(s) {
     const squares = [], pieces = [];
@@ -57132,6 +57139,7 @@ const game = {
   },
 };
 function flip(s, x, y) {
+  s.need[y * s.n + x] = !s.need[y * s.n + x];
   for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const i = x + dx, j = y + dy;
     if (i >= 0 && j >= 0 && i < s.n && j < s.n) s.lit[j * s.n + i] = !s.lit[j * s.n + i];
@@ -57145,7 +57153,7 @@ const game = {
   setup(level, rand) {
     const n = game.size(level);
     return { n, level, t: 0, end: 30, next: 1, up: new Array(n * n).fill(0), bonk: new Array(n * n).fill(0),
-             score: 0, misses: 0, over: false };
+             stay: 1.3 - level * 0.1, lastTap: -1, score: 0, misses: 0, over: false };
   },
   step(s, dt, rand) {
     if (s.over) return;
@@ -57153,16 +57161,22 @@ const game = {
     for (let i = 0; i < s.up.length; i++) { s.up[i] = Math.max(0, s.up[i] - dt); s.bonk[i] = Math.max(0, s.bonk[i] - dt); }
     if (s.t >= s.next) {                          // a mole comes up in an empty hole
       const empty = s.up.map((u, i) => u > 0 ? -1 : i).filter(i => i >= 0);
-      if (empty.length) s.up[empty[Math.floor(rand() * empty.length)]] = 1.3 - s.level * 0.1;
+      if (empty.length) s.up[empty[Math.floor(rand() * empty.length)]] = s.stay;
       s.next = s.t + 0.5 + rand() * (1.1 - s.level * 0.12);
     }
-    if (s.t >= s.end) s.over = true;
+    if (s.t >= s.end) { s.over = true; sound('win'); }
   },
   tap(s, x, y) {
     if (s.over) return;
+    s.lastTap = s.t;
     const i = y * s.n + x;
-    if (s.up[i] > 0) { s.up[i] = 0; s.bonk[i] = 0.3; s.score++; }
-    else s.misses++;
+    if (s.up[i] > 0) { s.up[i] = 0; s.bonk[i] = 0.3; s.score++; sound('click'); }
+    else { s.misses++; sound('buzz'); }
+  },
+  bot(s) {                                         // its own player: a mole up 0.35 s or more, a tap every 0.25 s at most
+    if (s.over || s.t - s.lastTap < 0.25) return null;
+    const i = s.up.findIndex(u => u > 0 && s.stay - u >= 0.35);
+    return i < 0 ? null : { tap: [i % s.n, Math.floor(i / s.n)] };
   },
   view(s) {
     const squares = [], pieces = [];
@@ -57200,6 +57214,21 @@ const game = {
     if (s.dir[0] !== 0) game.key(s, dy < 0 ? 'up' : 'down');
     else game.key(s, dx < 0 ? 'left' : 'right');
   },
+  bot(s) {                                         // its own player: toward the apple by a safe square with the most room
+    if (s.over || s.turn) return null;
+    const [hx, hy] = s.body[0], body = new Set(s.body.slice(0, -1).map(([x, y]) => x + ',' + y));
+    const free = (x, y) => x >= 0 && y >= 0 && x < s.n && y < s.n && !body.has(x + ',' + y);
+    let best = null;
+    for (const [k, d] of Object.entries({ up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] })) {
+      if (d[0] === -s.dir[0] && d[1] === -s.dir[1]) continue;
+      const x = hx + d[0], y = hy + d[1];
+      if (!free(x, y)) continue;
+      const room = roomAt(s, x, y, body), far = Math.abs(x - s.apple[0]) + Math.abs(y - s.apple[1]);
+      const score = (room >= s.body.length ? 1000 : room * 10) - far;
+      if (!best || score > best.score) best = { k, d, score };
+    }
+    return best && (best.d[0] !== s.dir[0] || best.d[1] !== s.dir[1]) ? best.k : null;
+  },
   step(s, dt, rand) {
     if (s.over) return;
     s.t += dt;
@@ -57208,23 +57237,36 @@ const game = {
       if (s.turn) { s.dir = s.turn; s.turn = null; }
       const head = [s.body[0][0] + s.dir[0], s.body[0][1] + s.dir[1]];
       const out = head[0] < 0 || head[1] < 0 || head[0] >= s.n || head[1] >= s.n;
-      if (out || s.body.some(([x, y]) => x === head[0] && y === head[1])) { s.over = true; break; }
+      if (out || s.body.some(([x, y]) => x === head[0] && y === head[1])) { s.over = true; sound('lose'); break; }
       s.body.unshift(head);
-      if (head[0] === s.apple[0] && head[1] === s.apple[1]) { s.score++; s.every = Math.max(0.07, s.every * 0.96); place(s, rand); }
+      if (head[0] === s.apple[0] && head[1] === s.apple[1]) { s.score++; s.every = Math.max(0.07, s.every * 0.96); place(s, rand); sound('chime'); }
       else s.body.pop();
     }
   },
   view(s) {
     const squares = [];
     for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) squares.push((x + y) % 2 ? '#1d2b22' : '#22332a');
+    // (each segment keeps its id, so it slides a square a step instead of jumping)
     const pieces = s.body.map(([x, y], i) => ({ shape: i ? 'block' : 'ball', x: x + 0.5, y: y + 0.5, size: i ? 0.8 : 0.9,
-                                                height: 0.35, color: i ? '#4ade80' : '#bbf7d0' }));
-    pieces.push({ shape: 'ball', x: s.apple[0] + 0.5, y: s.apple[1] + 0.5, size: 0.7, color: '#ef4444' });
+                                                height: 0.35, color: i ? '#4ade80' : '#bbf7d0', id: i, glide: s.every }));
+    pieces.push({ shape: 'ball', x: s.apple[0] + 0.5, y: s.apple[1] + 0.5, size: 0.7, color: '#ef4444', id: 'apple' });
     return { squares, pieces, score: s.score, over: s.over,
              status: s.over ? 'out, ' + s.score + ' apples' : s.score + ' apples',
              message: s.over ? 'Crashed after ' + s.score + ' apples.' : '' };
   },
 };
+function roomAt(s, x0, y0, body) {               // the squares reachable from (x0, y0), up to 150
+  const seen = new Set([x0 + ',' + y0]), todo = [[x0, y0]];
+  while (todo.length && seen.size < 150) {
+    const [x, y] = todo.pop();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const a = x + dx, b = y + dy, k = a + ',' + b;
+      if (a < 0 || b < 0 || a >= s.n || b >= s.n || body.has(k) || seen.has(k)) continue;
+      seen.add(k); todo.push([a, b]);
+    }
+  }
+  return seen.size;
+}
 function place(s, rand) {
   do s.apple = [Math.floor(rand() * s.n), Math.floor(rand() * s.n)];
   while (s.body.some(([x, y]) => x === s.apple[0] && y === s.apple[1]));
@@ -57255,6 +57297,9 @@ for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importS
 const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 const MODS = new Map(), BOARDS = new Map();
+// (sound(kind, pitch, seconds): a game asks for a sound; it is played by the page with the view it comes back with, at most 8 a reply)
+const OUT = [];
+function sound(kind, pitch, seconds) { if (OUT.length < 8) OUT.push([String(kind || 'beep').slice(0, 10), +pitch || 0, +seconds || 0]); }
 const HEAD = 1;   // lines the wrapper puts before the module's own first line
 function compile(src) {
   const f = new Function('"use strict";\n' + src + '\n;return (typeof game !== "undefined") ? game : undefined;');
@@ -57266,12 +57311,13 @@ function compile(src) {
 }
 const sizeOf = (g, level) => { const v = typeof g.size === 'function' ? g.size(level) : g.size; return Math.max(2, Math.min(24, Math.round(+v || 6))); };
 const meta = g => ({ title: String(g.title || 'A game').slice(0, 60), realtime: !!g.realtime, keys: typeof g.key === 'function',
-                     taps: typeof g.tap === 'function', steps: typeof g.step === 'function' });
+                     taps: typeof g.tap === 'function', steps: typeof g.step === 'function', drags: typeof g.drag === 'function',
+                     bots: typeof g.bot === 'function', wins: !!g.wins });
 function viewOf(b) {
   const v = b.g.view(b.state);
   if (!v || typeof v !== 'object') throw new Error('game.view must return an object');
   return { squares: v.squares, pieces: v.pieces, status: v.status, message: v.message, score: v.score, over: v.over, won: v.won,
-           size: v.size != null ? v.size : b.n };
+           size: v.size != null ? v.size : b.n, sounds: OUT.splice(0) };
 }
 const keep = (b, r) => { if (r !== undefined && r !== null) b.state = r; };
 function trial(g) {
@@ -57284,10 +57330,90 @@ function trial(g) {
       if (g.tap) keep(b, g.tap(b.state, Math.floor(rand() * n), Math.floor(rand() * n), rand));
       if (g.key) keep(b, g.key(b.state, ['up', 'right', 'down', 'left', 'enter', 'space'][k % 6], rand));
       if (g.step) for (let j = 0; j < 4; j++) keep(b, g.step(b.state, 1 / 30, rand));
+      if (g.bot) act(b, g.bot(b.state, rand));
+      if (g.drag) { const x0 = rand() * n, y0 = rand() * n, x1 = rand() * n, y1 = rand() * n;
+                    keep(b, g.drag(b.state, x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, false, rand)); keep(b, g.drag(b.state, x0, y0, x1, y1, true, rand)); }
       v = viewOf(b);
     }
     structuredClone(v);
   }
+}
+// THE GAME'S OWN PLAYER (Oct 26: "1,2" of what came next: boards no one plays show the game being played, and Claude's version
+// is played before it is kept). game.bot(state, rand) gives a move, { tap: [x, y] }, { key: 'up' }, { drag: [x0, y0, x1, y1] }
+// (or [x, y] for a tap, 'up' for a key), or nothing to wait. A realtime game asks it every step; a turn by turn game once a move.
+function act(b, m) {
+  if (m === undefined || m === null || m === false) return false;
+  const n = b.n, cl = v => Math.max(0, Math.min(n - 1, Math.floor(+v || 0)));
+  if (Array.isArray(m) && m.length === 2) m = { tap: m };
+  else if (typeof m === 'string') m = { key: m };
+  if (m.tap && b.g.tap) keep(b, b.g.tap(b.state, cl(m.tap[0]), cl(m.tap[1]), b.rand));
+  else if (m.key && b.g.key) keep(b, b.g.key(b.state, String(m.key), b.rand));
+  else if (m.drag && b.g.drag) { const [x0, y0, x1, y1] = m.drag.map(v => +v || 0);
+    keep(b, b.g.drag(b.state, x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, false, b.rand)); keep(b, b.g.drag(b.state, x0, y0, x1, y1, true, b.rand)); }
+  else return false;
+  return true;
+}
+const STEP = 1 / 30;
+function playNew(g, seed, level) {
+  const rand = rngOf(seed), b = { g, rand, n: sizeOf(g, level), state: undefined, t: 0, moves: 0, idle: 0, over: false, won: false, score: null };
+  b.state = g.setup(level, rand); if (b.state === undefined) b.state = {};
+  return b;
+}
+// one go: a move (turn by turn) or a step (realtime); the view after it
+function playOne(b) {
+  if (b.g.realtime) {
+    if (b.g.bot && act(b, b.g.bot(b.state, b.rand))) b.moves++;
+    if (b.g.step) keep(b, b.g.step(b.state, STEP, b.rand));
+    b.t += STEP;
+  } else {
+    if (!b.g.bot || !act(b, b.g.bot(b.state, b.rand))) b.idle++;
+    else { b.moves++; b.idle = 0; }
+    b.t += 0.5;
+  }
+  const v = viewOf(b); OUT.length = 0;
+  b.over = !!v.over; b.won = !!v.won; b.score = v.score;
+  return v;
+}
+const sig = v => JSON.stringify([v.squares, v.pieces]).length + ':' + JSON.stringify(v.squares || []).slice(0, 2000) + JSON.stringify((v.pieces || []).slice(0, 40));
+// a recording for a board no one plays: worked out a slice at a time (RECS by board), frames every 0.1 s of a realtime game, every
+// move of a turn by turn one, up to REC_T seconds or REC_MOVES moves
+const RECS = new Map(), REC_T = 40, REC_MOVES = 120, REC_DT = 0.1;
+function recSlice(d) {
+  let R = RECS.get(d.rk), fresh = false;
+  if (!R || R.key !== d.key) {
+    const g = MODS.get(d.key); if (!g) throw new Error('not loaded');
+    R = { key: d.key, b: playNew(g, d.seed, d.level), next: 0, done: false }; RECS.set(d.rk, R); fresh = true;
+    const v = viewOf(R.b); OUT.length = 0;
+    R.first = [{ t: 0, v }];
+  }
+  const frames = R.first || []; R.first = null;
+  const b = R.b, end = Date.now() + Math.max(5, Math.min(60, +d.ms || 30));
+  while (!R.done && Date.now() < end) {
+    const v = playOne(b);
+    if (b.g.realtime) { if (b.t >= R.next || b.over) { frames.push({ t: b.t, v }); R.next = b.t + REC_DT; } }
+    else if (b.idle === 0) frames.push({ t: b.t, v });
+    if (b.over || b.t >= REC_T || b.moves >= REC_MOVES || (!b.g.realtime && b.idle > 0)) R.done = true;
+  }
+  if (R.done) RECS.delete(d.rk);
+  return { fresh, frames, done: R.done, over: b.over, won: b.won, score: b.score, t: b.t, moves: b.moves };
+}
+// THE CHECK: its own player plays it three times at level 1 and once at level 3, each up to CHECK_T seconds (or CHECK_MOVES moves)
+function check(g) {
+  const runs = [];
+  for (const [level, seed] of [[1, 11], [1, 23], [1, 37], [3, 41]]) {
+    const b = playNew(g, seed * 7919, level), v0 = viewOf(b); OUT.length = 0;
+    const s0 = sig(v0), end = Date.now() + 450;
+    let changed = false, k = 0, atOnce = !!v0.over;
+    b.over = !!v0.over; b.won = !!v0.won; b.score = v0.score;
+    while (!b.over && !atOnce && b.t < 120 && b.moves < 400 && Date.now() < end) {
+      const v = playOne(b);
+      if (!changed && (k++ % 10 === 0 || b.over)) changed = sig(v) !== s0;
+      if (!b.g.realtime && b.idle > 0) break;
+    }
+    if (b.over && (b.moves <= 1 && b.t < 1.01)) atOnce = true;
+    runs.push({ level, over: b.over, won: b.won, score: b.score, t: +b.t.toFixed(2), moves: b.moves, changed, atOnce, stuck: !b.g.realtime && b.idle > 0 && !b.over });
+  }
+  return runs;
 }
 function lineOf(e) {
   const m = /<anonymous>:(\d+):(\d+)/.exec(String(e && e.stack || ''));
@@ -57298,9 +57424,12 @@ onmessage = ev => {
   try {
     let v;
     if (d.op === 'load') { const g = compile(String(d.src)); MODS.set(d.key, g); v = meta(g); }
-    else if (d.op === 'trial') { const g = compile(String(d.src)); trial(g); v = meta(g); }
+    else if (d.op === 'trial') { const g = compile(String(d.src)); trial(g); OUT.length = 0; v = meta(g); }
     else if (d.op === 'drop') { BOARDS.delete(d.bk); v = true; }
     else if (d.op === 'unload') { MODS.delete(d.key); v = true; }
+    else if (d.op === 'rec') v = recSlice(d);
+    else if (d.op === 'unrec') { RECS.delete(d.rk); v = true; }
+    else if (d.op === 'check') { const g = compile(String(d.src)); v = { meta: meta(g), runs: g.bot ? check(g) : null }; }
     else if (d.op === 'start') {
       const g = MODS.get(d.key); if (!g) throw new Error('not loaded');
       const rand = rngOf(d.seed), level = d.level, b = { g, rand, n: sizeOf(g, level), state: undefined };
@@ -57311,10 +57440,12 @@ onmessage = ev => {
       if (d.op === 'tap' && b.g.tap) keep(b, b.g.tap(b.state, d.x, d.y, b.rand));
       else if (d.op === 'key' && b.g.key) keep(b, b.g.key(b.state, d.k, b.rand));
       else if (d.op === 'step' && b.g.step) keep(b, b.g.step(b.state, Math.min(0.25, Math.max(0, +d.dt || 0)), b.rand));
+      else if (d.op === 'drag' && b.g.drag) keep(b, b.g.drag(b.state, +d.x0, +d.y0, +d.x1, +d.y1, !!d.done, b.rand));
       v = viewOf(b);
     }
     postMessage({ id: d.id, ok: true, v });
   } catch (e) {
+    OUT.length = 0;
     postMessage({ id: d.id, ok: false, error: String(e && e.message || e).slice(0, 400), line: lineOf(e) });
   }
 };`;
@@ -57323,21 +57454,27 @@ onmessage = ev => {
     + `(() => {
   const WSRC = ${JSON.stringify(WORKER_SRC)};
   const T = ${JSON.stringify(LAB_TIMEOUT)};
-  let w = null; const pending = new Map();
+  // (the Worker answers in order, so only the call it is working on is timed, from when it reached it: one queued behind a long
+  // check is not stopped for the check's time, and the call stopped is the one it was stuck on)
+  let w = null, timer = null, head = null; const pending = new Map();
+  const stop = () => {
+    // (an endless loop: the Worker is stopped and a fresh one started; every module and board in it went with it)
+    try { w.terminate(); } catch (x) {}
+    for (const id of pending.keys()) parent.postMessage({ id, ok: false, killed: true, culprit: id === head,
+      error: id === head ? 'it took too long to answer (an endless loop?) and was stopped' : 'stopped with another game that hung' }, '*');
+    pending.clear(); head = null; timer = null; boot(); parent.postMessage({ op: 'reset' }, '*');
+  };
+  const arm = () => { clearTimeout(timer); timer = null; head = pending.keys().next().value; if (head === undefined) { head = null; return; }
+    const op = pending.get(head); timer = setTimeout(stop, op === 'trial' || op === 'check' ? T.trial : T.call); };
   const boot = () => { w = new Worker(URL.createObjectURL(new Blob([WSRC], { type: 'text/javascript' })));
-    w.onmessage = e => { const d = e.data; const p = pending.get(d.id); if (p) { clearTimeout(p); pending.delete(d.id); } parent.postMessage(d, '*'); };
+    w.onmessage = e => { const d = e.data; if (pending.has(d.id)) { pending.delete(d.id); if (d.id === head) arm(); } parent.postMessage(d, '*'); };
     w.onerror = e => { try { e.preventDefault(); } catch (x) {} }; };
   onmessage = e => {
     if (e.source !== parent) return;
     const d = e.data || {};
-    pending.set(d.id, setTimeout(() => {
-      // (an endless loop: the Worker is stopped and a fresh one started; every module and board in it went with it)
-      try { w.terminate(); } catch (x) {}
-      for (const [id, t] of pending) { clearTimeout(t); parent.postMessage({ id, ok: false, killed: true, culprit: id === d.id,
-        error: id === d.id ? 'it took too long to answer (an endless loop?) and was stopped' : 'stopped with another game that hung' }, '*'); }
-      pending.clear(); boot(); parent.postMessage({ op: 'reset' }, '*');
-    }, d.op === 'trial' ? T.trial : T.call));
+    pending.set(d.id, d.op);
     w.postMessage(d);
+    if (head === null) arm();
   };
   boot(); parent.postMessage({ op: 'ready' }, '*');
 })();` + '</scr' + 'ipt>';
@@ -57440,10 +57577,34 @@ onmessage = ev => {
   // (the framed board is asked for its pieces every frame anyway, so its clock's steps wake nothing else)
   function took(rec, v, quiet){
     rec.view = cleanView(v);
+    glideFrom(rec, rec.view);
+    if (isLive(rec.c, rec.r)) playSounds(rec.view.sounds);
     const m = rec.view.message;
-    if (m && m !== rec.msg && isLive(rec.c, rec.r)) say(m, 2600);
+    const end = rec.view.over && !rec.ended && rec.go && isLive(rec.c, rec.r) ? (rec.ended = true, starsAt(rec)) : null;
+    if ((m && m !== rec.msg || end) && isLive(rec.c, rec.r)) say([m && m !== rec.msg ? m : '', end || ''].filter(Boolean).join(' '), 3200);
     rec.msg = m;
     if (!quiet) changed();
+  }
+  /* PAR AND STARS (the same request): a game played to its end on the framed board is held against its own player's run on the
+     board's deal: a game to win by the moves (turn by turn) or seconds (realtime) taken, at par or under ★★★, within half again
+     ★★, else ★ (lost, none); a game of points by the score, par or more ★★★, 60% of it ★★, else ★. The most kept by board and
+     version (localStorage `gamelab.best`). */
+  const BEST_KEY = 'gamelab.best';
+  const BEST = (() => { try { return JSON.parse(localStorage.getItem(BEST_KEY) || '{}') || {}; } catch { return {}; } })();
+  const bestKey = rec => rec.bk + '@' + rec.key;
+  function starsAt(rec){
+    const P = PLAYS.get(rec.bk), par = P && P.key === rec.key ? P.par : null, V = rec.view;
+    if (!par) return '';
+    let n;
+    if (par.kind === 'score'){ const sc = +V.score || 0; n = sc >= par.val ? 3 : sc >= 0.6 * par.val ? 2 : 1; }
+    else {
+      if (!V.won) return 'Its own player wins it in ' + parText(par) + '.';
+      const mine = par.kind === 'time' ? +(rec.gt || 0).toFixed(1) : (rec.acts || 0);
+      n = mine <= par.val ? 3 : mine <= 1.5 * par.val ? 2 : 1;
+    }
+    const k = bestKey(rec), was = BEST[k] || 0;
+    if (n > was){ BEST[k] = n; const ks = Object.keys(BEST); if (ks.length > 600) delete BEST[ks[0]]; try { localStorage.setItem(BEST_KEY, JSON.stringify(BEST)); } catch {} }
+    return '★★★'.slice(0, n) + '☆☆☆'.slice(0, 3 - n) + ' against its player\'s ' + parText(par) + (n > was && was ? ' (a new best)' : '') + '.';
   }
   function broke(rec, e){
     rec.err = (e && e.message) || String(e);
@@ -57464,13 +57625,14 @@ onmessage = ev => {
   async function send(rec, op, args){
     if (!rec.started || rec.err) return;
     if (op !== 'step' && !rec.go){ rec.go = true; rec.last = nowS(); }
+    if (op === 'tap' || op === 'key' || (op === 'drag' && args.done)) rec.acts = (rec.acts || 0) + 1;
     rec.busy = true;
     try { took(rec, await BOX.call(op, Object.assign({ bk: rec.bk }, args)), op === 'step'); rec.busy = false; }
     catch (e){ if (e && e.killed && !e.culprit){ rec.busy = false; return; } broke(rec, e); }
   }
   function restart(c, r){
     const rec = RUN.get(gkey(c, r));
-    if (rec){ rec.attempt++; rec.started = false; rec.err = null; rec.view = null; rec.msg = ''; rec.go = false; }
+    if (rec){ rec.attempt++; rec.started = false; rec.err = null; rec.view = null; rec.msg = ''; rec.go = false; rec.acts = 0; rec.gt = 0; rec.ended = false; }
     recOf(c, r); changed();
   }
   /* the clock: the framed board's realtime game steps once a frame, as long as the last step has come back, and only once the
@@ -57479,7 +57641,83 @@ onmessage = ev => {
     if (!rec.meta || !rec.meta.realtime || !rec.meta.steps || !rec.started || rec.busy || rec.err || !rec.go) return;
     if (rec.view && rec.view.over) return;
     const t = nowS(), dt = Math.min(0.25, t - rec.last); rec.last = t;
+    rec.gt = (rec.gt || 0) + dt;
     send(rec, 'step', { dt });
+  }
+
+  /* ── BOARDS NO ONE PLAYS, PLAYED (Oct 26: "1,2" of what came next, the first: "boards no one plays show the game being
+     played"): a board whose game has its own player (game.bot) shows a recording of it playing the board's own deal (its seed
+     and level, as the board starts) from the opening, `REC_T` (40) seconds of a realtime game or `REC_MOVES` (120) moves, then
+     holds the end `HOLD` seconds and plays again, each board at its own phase. Worked out in the sandbox a slice at a time
+     (`rec`, 25 ms of its time a call, one call out at a time; PLAYS by board, the latest `PLAYS_CAP` asked for), frames every 0.1
+     s or every move; between two frames a piece with an id slides (`shownView`). Its end is the board's par (`parOf`): the moves
+     (turn by turn) or seconds (realtime) its player took to win a game to win, else its score. */
+  const PLAYS = new Map(), PLAYS_CAP = 80, HOLD = 2.5, PLAY_MS = 25;
+  let PLAY_BUSY = false;
+  BOX.onReset(() => { for (const P of PLAYS.values()) if (!P.done){ P.frames = []; } PLAY_BUSY = false; });
+  function playOf(rec){
+    if (!rec.meta || !rec.meta.bots || rec.err) return null;
+    let P = PLAYS.get(rec.bk);
+    if (!P || P.key !== rec.key){
+      P = { key: rec.key, src: rec.src, c: rec.c, r: rec.r, realtime: rec.meta.realtime, wins: rec.meta.wins, frames: [], done: false, broken: false, asked: 0, par: null };
+      PLAYS.set(rec.bk, P);
+      if (PLAYS.size > PLAYS_CAP){ let old = null; for (const [k, Q] of PLAYS) if (!old || Q.asked < PLAYS.get(old).asked) old = k; PLAYS.delete(old); BOX.call('unrec', { rk: old }).catch(() => {}); }
+    }
+    P.asked = nowS();
+    if (!PLAY_BUSY) setTimeout(playPump, 0);
+    return P;
+  }
+  function parOf(P){
+    if (!P.done || !P.over) return null;
+    if (P.wins) return P.won ? (P.realtime ? { kind: 'time', val: +P.t.toFixed(1) } : { kind: 'moves', val: P.moves }) : null;
+    return P.score != null ? { kind: 'score', val: P.score } : null;
+  }
+  const parText = p => p.kind === 'time' ? p.val + ' s' : p.kind === 'moves' ? p.val + (p.val === 1 ? ' move' : ' moves') : String(p.val);
+  async function playPump(){
+    if (PLAY_BUSY) return;
+    const t = nowS();
+    let P = null, bk = null;
+    for (const [k, Q] of PLAYS) if (!Q.done && !Q.broken && t - Q.asked < 1.5 && (!P || Q.asked > P.asked)){ P = Q; bk = k; }
+    if (!P) return;
+    PLAY_BUSY = true;
+    try {
+      await BOX.load(P.key, P.src);
+      const idx = boardIdx(P.c, P.r);
+      const res = await BOX.call('rec', { rk: bk, key: P.key, seed: (idx * 7919) >>> 0, level: levelAt(idx), ms: PLAY_MS });
+      if (PLAYS.get(bk) === P){
+        if (res.fresh) P.frames = [];
+        for (const f of res.frames) P.frames.push({ t: f.t, v: cleanView(f.v) });
+        if (res.done){ Object.assign(P, { done: true, over: res.over, won: res.won, score: res.score, t: res.t, moves: res.moves }); P.par = parOf(P); }
+      }
+    } catch (e){ if (!(e && e.killed && !e.culprit)) P.broken = true; }
+    finally { PLAY_BUSY = false; setTimeout(playPump, 30); }
+  }
+  // the recording's moment on the page's clock for this board: the frame shown and the one after it, and how far between
+  function shownAt(P, c, r){
+    const F = P.frames; if (F.length < 2 && !P.done) return null;
+    if (!F.length) return null;
+    const last = F[F.length - 1].t, total = last + (P.done ? HOLD : 0) + (P.realtime ? 0 : 1);
+    if (!P.done && last < 3) return null;
+    const ph = ((boardIdx(c, r) * 1.37) % total + total) % total;
+    const tt = (nowS() + ph) % total - (P.realtime ? 0 : 1);
+    let lo = 0, hi = F.length - 1;
+    while (lo < hi){ const m = (lo + hi + 1) >> 1; if (F[m].t <= tt) lo = m; else hi = m - 1; }
+    return { A: F[lo], B: F[lo + 1] || null, Z: F[lo - 1] || null, tt };
+  }
+  // (realtime: a piece slides from this frame toward the next across the gap; turn by turn: the frame is the move, and its
+  // pieces slide from where the frame before had them over their glide, as a live game's do)
+  function shownView(S, realtime){
+    const { A, B, Z, tt } = S, from = realtime ? B : Z;
+    if (!from) return A.v;
+    const by = new Map(); for (const p of from.v.pieces) if (p.id != null) by.set(p.id, p);
+    const pieces = A.v.pieces.map(p => {
+      const q = p.id != null ? by.get(p.id) : null;
+      if (!q || Math.hypot(q.x - p.x, q.y - p.y) > GLIDE_FAR) return p;
+      if (realtime){ const g = Math.min(1, Math.max(0, (tt - A.t) / Math.max(1e-3, B.t - A.t))); return Object.assign({}, p, { x: p.x + (q.x - p.x) * g, y: p.y + (q.y - p.y) * g }); }
+      const g = ease(Math.min(1, Math.max(0, (tt - A.t) / Math.max(0.05, p.glide || 0.12))));
+      return Object.assign({}, p, { x: q.x + (p.x - q.x) * g, y: q.y + (p.y - q.y) * g });
+    });
+    return { n: A.v.n, colors: A.v.colors, pieces };
   }
 
   /* ── WHAT COMES BACK, CHECKED ── colours read from '#rgb', '#rrggbb' or numbers; sizes and counts held to what a board can
@@ -57505,26 +57743,116 @@ onmessage = ev => {
     const pieces = [];
     for (const p of Array.isArray(v.pieces) ? v.pieces.slice(0, 600) : []){
       if (!p || typeof p !== 'object') continue;
+      const id = (typeof p.id === 'number' && isFinite(p.id)) || (typeof p.id === 'string' && p.id.length <= 40) ? p.id : null;
+      const glide = num(p.glide, 0, 2, 0.12);
+      if (p.shape === 'text'){
+        const text = words(p.text, 24).toUpperCase();
+        if (text.trim()) pieces.push({ shape: 'text', text, x: num(p.x, -1, n + 1, n / 2), y: num(p.y, -1, n + 1, 0.5), size: num(p.size, 0.1, 4, 0.6),
+                                       z: num(p.z, 0, 8, 0), color: colorOf(p.color, 0xf5f2e8), id, glide });
+        continue;
+      }
       const shape = SHAPES.includes(p.shape) ? p.shape : 'block';
       const size = num(p.size, 0.05, 4, 0.8);
       const dh = shape === 'block' ? 0.6 : shape === 'peg' ? 0.8 : shape === 'cone' ? 1 : shape === 'gem' ? 1 : 1;
       pieces.push({ shape, x: num(p.x, -1, n + 1, 0.5), y: num(p.y, -1, n + 1, 0.5), size, height: num(p.height, 0.01, 8, size * dh),
-                    z: num(p.z, 0, 8, 0), color: colorOf(p.color, 0xd8d4c8), glow: !!p.glow });
+                    z: num(p.z, 0, 8, 0), color: colorOf(p.color, 0xd8d4c8), glow: !!p.glow, id, glide });
     }
-    return { n, colors, pieces, status: words(v.status, 120), message: words(v.message, 200), score: isFinite(+v.score) ? +v.score : null,
+    const sounds = (Array.isArray(v.sounds) ? v.sounds : []).slice(0, 8).filter(x => Array.isArray(x))
+      .map(([k, p, d]) => [String(k), num(p, 0, 4000, 0), num(d, 0, 2, 0)]);
+    return { n, colors, pieces, sounds, status: words(v.status, 120), message: words(v.message, 200), score: isFinite(+v.score) ? +v.score : null,
              over: !!v.over, won: !!v.won };
   }
 
   /* ── DRAWING ── the squares are the board's colours; a piece is one of eight kinds, each a unit across, scaled to its size
      in squares and stretched to its height; a glowing one is its kind's unlit twin. */
-  function itemsOf(V){
-    const n = V.n, out = [];
+  /* GLIDING (Oct 26: "1,2", the second giving games more to build with: "smooth movement"): a piece with an `id` that stays the
+     same from view to view slides from where it was drawn to where it is now, over its `glide` seconds (0.12 unless it says),
+     eased; one that has gone more than three squares jumps (a snake's apple put somewhere new, a piece sent home). */
+  const GLIDE_FAR = 3;
+  const ease = s => s * s * (3 - 2 * s);
+  const glideAt = (a, t) => { if (!(a.d > 0)) return [a.x1, a.y1]; const s = Math.min(1, Math.max(0, (t - a.t0) / a.d)), e = ease(s); return [a.x0 + (a.x1 - a.x0) * e, a.y0 + (a.y1 - a.y0) * e]; };
+  function glideFrom(rec, V){
+    const t = nowS(), old = rec.anim || new Map(), next = new Map();
     for (const p of V.pieces){
+      if (p.id == null) continue;
+      const a = old.get(p.id);
+      if (a){ const [x, y] = glideAt(a, t), far = Math.hypot(p.x - x, p.y - y) > GLIDE_FAR;
+              next.set(p.id, { x0: far ? p.x : x, y0: far ? p.y : y, x1: p.x, y1: p.y, t0: t, d: far ? 0 : p.glide }); }
+      else next.set(p.id, { x0: p.x, y0: p.y, x1: p.x, y1: p.y, t0: t, d: 0 });
+    }
+    rec.anim = next;
+  }
+  /* WORDS ON THE BOARD (the same request's "words and numbers on squares"): a `text` piece is drawn a letter at a time, each
+     letter a kind of its own made from a 5 × 7 dot font (`FONT`, the page's own: capitals, digits and a few signs), flat on
+     the board and unlit, so it reads at any tilt. `size` is a letter's height in squares, the line centred on (x, y). Letters
+     are given a yaw so they are turned as the field turns every turned item, reading left to right as the board is framed. */
+  const FONT = {
+    '0': [14,17,19,21,25,17,14], '1': [4,12,4,4,4,4,14], '2': [14,17,1,2,4,8,31], '3': [31,2,4,2,1,17,14], '4': [2,6,10,18,31,2,2],
+    '5': [31,16,30,1,1,17,14], '6': [6,8,16,30,17,17,14], '7': [31,1,2,4,8,8,8], '8': [14,17,17,14,17,17,14], '9': [14,17,17,15,1,2,12],
+    A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28], E: [31,16,16,30,16,16,31],
+    F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17], I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12],
+    K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31], M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14],
+    P: [30,17,17,30,16,16,16], Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
+    U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17], Y: [17,17,17,10,4,4,4],
+    Z: [31,1,2,4,8,16,31], '.': [0,0,0,0,0,12,12], ',': [0,0,0,0,12,4,8], ':': [0,12,12,0,12,12,0], '-': [0,0,0,31,0,0,0],
+    '+': [0,4,4,31,4,4,0], '!': [4,4,4,4,4,0,4], '?': [14,17,1,2,4,0,4], '/': [1,1,2,4,8,16,16], '%': [24,25,2,4,8,19,3],
+    '#': [10,10,31,10,31,10,10], '=': [0,0,31,0,31,0,0], '(': [2,4,8,8,8,4,2], ')': [8,4,2,2,2,4,8], '<': [2,4,8,16,8,4,2],
+    '>': [8,4,2,1,2,4,8], '*': [0,4,21,14,21,4,0], "'": [4,4,8,0,0,0,0], '♥': [0,10,31,31,14,4,0], '★': [4,4,31,14,14,27,17],
+  };
+  function glyphGeo(T, code){
+    const rows = FONT[String.fromCodePoint(code)] || FONT['?'], pos = [], nrm = [], d = 0.45 / 7, y = 0.006;
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++){
+      if (!((rows[r] >> (4 - c)) & 1)) continue;
+      const x = (c - 2) / 7, z = (r - 3) / 7;
+      pos.push(x - d, y, z - d, x - d, y, z + d, x + d, y, z + d, x - d, y, z - d, x + d, y, z + d, x + d, y, z - d);
+      for (let k = 0; k < 6; k++) nrm.push(0, 1, 0);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+    g.userData.unlit = true;
+    return g;
+  }
+  function itemsOf(V, rec){
+    const n = V.n, out = [], t = nowS(), anim = rec && rec.anim;
+    for (const p of V.pieces){
+      const a = p.id != null && anim ? anim.get(p.id) : null, [x, y] = a ? glideAt(a, t) : [p.x, p.y];
+      if (p.shape === 'text'){
+        const chars = [...p.text], adv = p.size * 6 / 7;
+        chars.forEach((ch, i) => {
+          if (ch === ' ') return;
+          const cp = ch.codePointAt(0);
+          out.push({ kind: 'gch_' + (FONT[ch] ? cp : 63), u: (x + (i - (chars.length - 1) / 2) * adv) / n, v: y / n, scale: p.size / n,
+                     lift: p.z / n, color: p.color, yaw: 1e-6 });
+        });
+        continue;
+      }
       const k = 'gl_' + p.shape + (p.glow ? '_L' : '');
       const flat = p.shape === 'tile' || p.shape === 'disc' || p.shape === 'ring';
-      out.push({ kind: k, u: p.x / n, v: p.y / n, scale: p.size / n, lift: p.z / n, sy: flat ? 1 : p.height / p.size, color: p.color });
+      out.push({ kind: k, u: x / n, v: y / n, scale: p.size / n, lift: p.z / n, sy: flat ? 1 : p.height / p.size, color: p.color });
     }
     return out;
+  }
+  /* SOUNDS (the same request's first, "sound"): a game calls sound(kind, pitch, seconds) and the page plays it with the view it
+     comes back with, the framed board's alone, on the arcade kit's audio and the menu's Sound. */
+  const SND = ARCADE.sounds('gamelab.sound', 'The sounds a game asks for with sound(): beeps, clicks, chimes, buzzes, booms.');
+  function playSounds(list){
+    if (!SND.on || !list || !list.length) return;
+    let A = null; try { A = ARCADE.audio(); } catch {} if (!A) return;
+    const T = (f0, f1, d, type, vol, at) => { try { ARCADE.tone(Math.max(30, f0), Math.max(30, f1), Math.max(0.02, d), type, vol, at || 0); } catch {} };
+    for (const [k, p, d] of list){
+      const f = p || 0;
+      if (k === 'click') T(f || 1600, (f || 1600) * 0.6, d || 0.03, 'triangle', 0.08);
+      else if (k === 'chime'){ T(f || 880, f || 880, d || 0.5, 'sine', 0.09); T((f || 880) * 1.5, (f || 880) * 1.5, (d || 0.5) * 0.8, 'sine', 0.05, 0.03); }
+      else if (k === 'buzz') T(f || 110, (f || 110) * 0.8, d || 0.25, 'sawtooth', 0.05);
+      else if (k === 'boom') T(f || 160, 40, d || 0.45, 'sawtooth', 0.1);
+      else if (k === 'up') T(f || 440, (f || 440) * 2, d || 0.2, 'sine', 0.08);
+      else if (k === 'down') T(f || 660, (f || 660) / 2, d || 0.25, 'sine', 0.08);
+      else if (k === 'win') [1, 1.25, 1.5, 2].forEach((m, i) => T((f || 523) * m, (f || 523) * m, 0.16, 'square', 0.05, i * 0.11));
+      else if (k === 'lose') [1, 0.84, 0.7].forEach((m, i) => T((f || 392) * m, (f || 392) * m * 0.97, 0.22, 'triangle', 0.08, i * 0.18));
+      else if (k === 'tone') T(f || 440, f || 440, d || 0.3, 'sine', 0.08);
+      else T(f || 660, f || 660, d || 0.09, 'square', 0.05);          // beep, and anything else
+    }
   }
   const geos = {
     tile: T => FieldKit.plate(T, 1, 0.006),
@@ -57536,11 +57864,16 @@ onmessage = ev => {
     cone: T => { const g = new T.ConeGeometry(0.5, 1, 20); g.translate(0, 0.5, 0); return g; },
     gem: T => { const g = new T.OctahedronGeometry(0.5); g.translate(0, 0.5, 0); return g; },
   };
-  const itemGeometries = {};
+  const GEO = {};
   for (const [k, f] of Object.entries(geos)){
-    itemGeometries['gl_' + k] = f;
-    itemGeometries['gl_' + k + '_L'] = T => { const g = f(T); g.userData.unlit = true; return g; };
+    GEO['gl_' + k] = f;
+    GEO['gl_' + k + '_L'] = T => { const g = f(T); g.userData.unlit = true; return g; };
   }
+  // (a letter's kind is made when first asked for, as golf tanks' Proxy gives its kinds)
+  const itemGeometries = new Proxy(GEO, {
+    get: (o, k) => typeof k === 'string' && /^gch_\d+$/.test(k) ? (T => glyphGeo(T, +k.slice(4))) : o[k],
+    has: (o, k) => (typeof k === 'string' && /^gch_\d+$/.test(k)) || k in o,
+  });
   const GRID_WAIT = new Map();
   const waitGrid = n => { if (!GRID_WAIT.has(n)) GRID_WAIT.set(n, { n, colors: Array.from({ length: n * n }, (_, i) => ((i % n) + ((i / n) | 0)) % 2 ? 0x24272f : 0x2a2e37) }); return GRID_WAIT.get(n); };
   const ERR_GRID = { n: 4, colors: Array.from({ length: 16 }, (_, i) => ((i % 4) + ((i / 4) | 0)) % 2 ? 0x4a1d1d : 0x5a2424) };
@@ -57564,13 +57897,22 @@ onmessage = ev => {
     '  game.tap(state, x, y, rand): a tap on square (x, y); x 0..size-1 across, y 0..size-1 with y = 0 the far (top) row.',
     '  game.key(state, k, rand): k is "up", "down", "left", "right" (up is toward row 0; the arrow keys and W A S D both arrive as these), "enter", "space", or another lower-case letter or digit.',
     '  game.step(state, dt, rand): dt seconds since the last step (at most 0.25).',
-    '  tap, key and step may change the state in place or return a new one. All three are optional.',
+    '  game.drag(state, x0, y0, x1, y1, done, rand): a finger pressed at (x0, y0) and now at (x1, y1), in squares, fractional (Math.floor gives the square). Called as it moves (done false) and once more when it lifts (done true): read a swipe on done from the two ends (its direction is the larger of x1 - x0 and y1 - y0). A board whose game has drag keeps every press for the game; a short press is still a tap.',
+    '  tap, key, step and drag may change the state in place or return a new one. All are optional.',
+    '  sound(kind, pitch, seconds): a function you may call from tap, key, step or drag to play a sound when the board shows the result. kind is "beep", "click", "chime", "buzz", "boom", "up" (a rising sweep), "down", "win", "lose" or "tone"; pitch in Hz (0 for the kind\'s own), seconds (0 for its own). At most 8 a call. Use it for what matters: a hit, a miss, a point, the end.',
     '  game.view(state) -> { squares, pieces, status, message, score, over, won, size }:',
     '    squares: size*size colours, row by row from y = 0, each "#rrggbb" (the board\'s floor).',
     '    pieces: at most 400 things standing on the board: { shape, x, y, size, height, z, color, glow }. shape is one of "tile" (a flat square), "block" (a box), "ball", "disc" (flat round), "ring", "peg" (a cylinder), "cone", "gem". x, y are in squares and may be fractional: the middle of square (i, j) is (i + 0.5, j + 0.5). size is its width in squares (0.8 fills most of a square), height how tall (blocks, pegs, cones, gems), z how far it floats above the floor, color "#rrggbb", glow true to light it from within.',
+    '    A piece may also be words: { shape: "text", text, x, y, size, z, color }: capitals, digits and . , : - + ! ? / % # = ( ) < > * \' ♥ ★ (lower case is shown as capitals), drawn flat on the board in dots, centred on (x, y); size is a letter\'s height in squares (0.6 by default), each letter 6/7 of it wide. Use it for numbers on squares, labels, a score on the board.',
+    '    Any piece may have an id (a number or a short string) that stays the same while it is the same thing: from one view to the next it then slides from where it was to where it is instead of jumping, over glide seconds (0.12 by default, 0 to jump; more than 3 squares always jumps). Give moving things ids (a snake\'s segments, a sliding tile, a falling block).',
     '    status: a few words for the board\'s title (the score, time left, whose turn). message: a sentence shown once when it changes (a win, a loss), else "".',
     '    score: a number. over: true when the game has ended (a tap then starts it again). won: true when it ended well.',
     '    size: only if the board\'s size changes during play.',
+    'ITS OWN PLAYER (every module needs one):',
+    '  game.bot(state, rand) -> a move, or null to wait: { tap: [x, y] }, { key: "up" }, { drag: [x0, y0, x1, y1] } (or just [x, y] for a tap, "up" for a key). It plays the game as a steady person would: the page uses it to show the game being played on boards no one is playing, its result on a board is that board\'s par for the player to beat, and it checks your version before it is kept. It may read the whole state, hidden parts too (a puzzle can keep its own way out in the state for it). It must not change the state: keep anything it needs (a timer, the last tap) in the state from setup, tap, key or step. A realtime game asks it every step (1/30 s): give it a person\'s pace (react after about 0.3 s, a tap every 0.2 s or more), not a machine\'s. A turn by turn game asks it once a move.',
+    '  game.wins: true for a game that is won or lost (a puzzle, a race, a game against the board); leave it out for a game played for points. Its player must be able to win it at level 1.',
+    '  Every game must be able to end (over: true), by winning, losing, time running out or a mistake.',
+    '  THE CHECK: before your version is kept its player plays it three times at level 1 and once at level 3, each up to two minutes or 400 moves. It comes back to you if there is no bot, if it is over at once every time, if nothing on the board ever changes, or if it is a game to win that its player never won at level 1.',
     'RULES FOR YOUR REPLY:',
     '  Change only what the player asks for, and keep everything else working as it was. If they ask for a new game, write a new one.',
     '  Keep it small and clear: under 300 lines, readable names, a comment line at the top saying how to play.',
@@ -57636,19 +57978,55 @@ onmessage = ev => {
     const note = text.slice(0, at).replace(/\s+/g, ' ').trim().slice(0, 300);
     return { src, note };
   }
+  /* THE CHECK (Oct 26: "1,2" of what came next, the second: Claude checks a version can be finished): after the trial, the
+     version's own player (game.bot) plays it three times at level 1 and once at level 3 in the sandbox (`check`, each run up to
+     two minutes of its clock or 400 moves). It goes back to Claude, as a broken one does, if it has no player, if it ends at
+     once every time, if nothing on the board ever changes, or if it is a game to win (game.wins) that its player never won at
+     level 1. A version from the Rules box or a link is tried only, as before. */
+  const runText = (x, realtime) => (x.over ? (x.won ? 'won' : 'over') + ' after ' : x.stuck ? 'its player gave no move after ' : 'still going after ')
+    + (realtime ? x.t + ' s' : x.moves + ' moves') + (x.score != null ? ', score ' + x.score : '');
+  async function checkOf(src){
+    let r;
+    try { r = await BOX.call('check', { src }); } catch (e){ return { why: (e && e.message) || String(e), line: e && e.line }; }
+    const M = r.meta, R = r.runs;
+    if (!R) return { why: 'the module has no game.bot, its own player (every version needs one: it plays the boards no one plays, and is how the page checks a version)' };
+    const one = R.filter(x => x.level === 1), say1 = one.map(x => runText(x, M.realtime)).join('; ');
+    if (R.every(x => x.atOnce)) return { why: 'when its own player played it, it was over at once every time (' + say1 + ')' };
+    if (R.every(x => !x.changed)) return { why: 'when its own player played it, nothing on the board ever changed (' + say1 + ')' };
+    if (M.wins && !one.some(x => x.won)) return { why: 'it is a game to win (game.wins), but its own player never won it at level 1 in ' + one.length + ' tries (' + say1 + ')' };
+    const won = R.filter(x => x.won).length, ended = R.filter(x => x.over).length;
+    const note = M.wins ? 'its player won ' + won + ' of ' + R.length : 'its player: ' + R.map(x => x.score != null ? x.score : '?').join(', ') + (ended < R.length ? ', ' + (R.length - ended) + ' still going' : '');
+    return { ok: true, note, runs: R };
+  }
   async function trialOf(src){
     try { return { meta: await BOX.call('trial', { src }) }; }
     catch (e){ return { error: (e && e.message) || String(e), line: e && e.line }; }
   }
   let BUSY = false;
-  async function change(c, r, ask){
+  /* THE EDITING LOOP (Oct 26: "1,2", the first: Claude sees what came before, a broken version is one tap from being fixed):
+     each request carries the board's last `HISTORY` changes before this one (what was asked, what Claude said it did), so "a
+     bit faster again" or "undo the golden mole but keep the bombs" mean something; and a version that breaks while played
+     (not in the trial: a square the trial never reached) is sent back with its error and line by Fix it, with no words needed. */
+  const HISTORY = 4;
+  function historyOf(c, r){
+    const m = mineOf(c, r); if (!m) return '';
+    const past = m.v.slice(0, m.cur + 1).filter(x => x.ask).slice(-HISTORY);
+    if (!past.length) return '';
+    return 'What the player has asked for on this board so far, oldest first, and what was done:\n'
+      + past.map((x, i) => (i + 1) + '. "' + x.ask + '"' + (x.note ? ': ' + x.note : '')).join('\n') + '\n\n';
+  }
+  async function change(c, r, ask, opt){
     if (BUSY) return;
     ask = String(ask || '').trim();
-    if (!ask){ ASK.status('Say what to change first.'); return; }
+    const fix = opt && opt.fix;
+    if (!ask && !fix){ ASK.status('Say what to change first.'); return; }
     if (!coachSignedIn()){ ASK.status('Sign in first (the button below): Claude is reached through the coach\'s gateway, with a daily allowance each.'); ASK.signIn(true); return; }
     BUSY = true; ASK.busy(true);
     const before = srcOf(c, r);
-    const messages = [{ role: 'user', content: 'Here is the game on this board now:\n```js\n' + before + '\n```\nThe player asks: ' + ask }];
+    const asked = fix ? 'This version breaks while it is played: ' + fix + (opt.line ? ' (at line ' + opt.line + ' of the module)' : '')
+      + '. Fix it, keeping the game as it is meant to play.' + (ask ? ' The player adds: ' + ask : '') : 'The player asks: ' + ask;
+    if (fix && !ask) ask = 'Fix it: ' + String(fix).slice(0, 120);
+    const messages = [{ role: 'user', content: historyOf(c, r) + 'Here is the game on this board now:\n```js\n' + before + '\n```\n' + asked }];
     try {
       for (let tries = 0; ; tries++){
         ASK.status(tries ? 'Claude is fixing it…' : 'Asking Claude…');
@@ -57658,10 +58036,12 @@ onmessage = ev => {
         if (!R) why = 'there was no ```js block in the reply';
         else if (R.src.length > SRC_MAX) why = 'the module is too long (' + R.src.length + ' characters, at most ' + SRC_MAX + ')';
         else { ASK.status('Trying it out…'); const T = await trialOf(R.src); if (T.error){ why = T.error; line = T.line; } }
+        let K = null;
+        if (!why){ ASK.status('Its own player is playing it…'); K = await checkOf(R.src); if (!K.ok){ why = K.why; line = K.line; } }
         if (!why){
           pushVersion(c, r, R.src, R.note || 'changed', ask);
           restart(c, r);
-          ASK.done(R.note || 'Changed.');
+          ASK.done((R.note || 'Changed.') + (K && K.note ? ' (' + K.note + ')' : ''));
           say(R.note || 'Changed.', 3200);
           try { bbRefreshNow(); } catch {}
           return;
@@ -57675,10 +58055,21 @@ onmessage = ev => {
     } finally { BUSY = false; ASK.busy(false); }
   }
 
+  // Fix it: the error this version broke with, back to Claude (the box opened to show it working)
+  function fixIt(c, r, extra){
+    const rec = RUN.get(gkey(c, r));
+    if (!rec || !rec.err){ say('This version is not broken.', 1600); return; }
+    if (!ASK.box || ASK.box.hidden) ASK.open(c, r);
+    change(c, r, extra || '', { fix: rec.err, line: rec.errLine });
+  }
+
   /* ── THE BOX ── "Change it…": a few words to Claude about the framed board's game, the versions so far (what each asked
      for and what Claude said it did), Send, Close. A centred panel like Paste FENs'. */
   const ASK = (() => {
-    let box = null, ta, st, log, bSend, bIn, at = null;
+    let box = null, ta, st, log, bSend, bIn, bFix, at = null;
+    // (a few words to start from: a tap adds one to what is being written)
+    const CHIPS = ['Make it faster', 'Make it harder farther out', 'Add a bonus worth more', 'Add sounds', 'Two players taking turns',
+                   'Show the score on the board', 'Pieces glide instead of jumping', 'Swipe to move'];
     function build(){
       box = document.createElement('div');
       box.id = 'labAskBox';
@@ -57704,13 +58095,24 @@ onmessage = ev => {
       bSend = document.createElement('button'); bSend.textContent = 'Send to Claude';
       bClose.addEventListener('click', () => { box.hidden = true; });
       bSend.addEventListener('click', () => { if (at) change(at.c, at.r, ta.value); });
+      bFix = document.createElement('button'); bFix.textContent = '🔧 Fix it'; bFix.hidden = true;
+      bFix.title = 'Send this version\'s error back to Claude to fix (anything written above goes with it).';
+      bFix.addEventListener('click', () => { if (at) fixIt(at.c, at.r, ta.value); });
+      const chips = document.createElement('div');
+      chips.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap';
+      for (const t of CHIPS){
+        const b = document.createElement('button'); b.textContent = t; b.className = 'labChip';
+        b.style.cssText = 'font-size:0.6875rem;padding:2px 8px;border-radius:12px;opacity:.85';
+        b.addEventListener('click', () => { const v = ta.value.trim(); ta.value = v ? v.replace(/[.\s]*$/, '') + '. ' + t : t; ta.focus(); });
+        chips.appendChild(b);
+      }
       ta.addEventListener('keydown', e => {
         e.stopPropagation();
         if (e.key === 'Escape'){ box.hidden = true; }
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && at){ e.preventDefault(); change(at.c, at.r, ta.value); }
       });
-      row.append(bIn, bClose, bSend);
-      box.append(head, log, ta, st, row);
+      row.append(bIn, bClose, bFix, bSend);
+      box.append(head, log, ta, chips, st, row);
       box._head = head;
       document.body.appendChild(box);
     }
@@ -57722,6 +58124,7 @@ onmessage = ev => {
         ? m.v.map((x, i) => (i === m.cur ? '▸ ' : '  ') + (i + 1) + '. ' + (x.ask ? '"' + x.ask + '": ' : '') + (x.note || '')).join('\n')
         : 'Claude rewrites the game\'s rules from what you say, and the board plays the new version at once. Every version is kept: Undo goes back.';
       log.scrollTop = log.scrollHeight;
+      bFix.hidden = !(rec && rec.err);
     }
     function open(c, r){
       if (!box) build();
@@ -57735,7 +58138,7 @@ onmessage = ev => {
     return {
       open, signIn,
       status(t){ if (st) st.textContent = t; },
-      busy(b){ if (bSend){ bSend.disabled = b; bSend.textContent = b ? 'Working…' : 'Send to Claude'; } },
+      busy(b){ if (bSend){ bSend.disabled = b; bFix.disabled = b; bSend.textContent = b ? 'Working…' : 'Send to Claude'; } },
       done(note){ if (!box) return; ta.value = ''; fill(); st.textContent = '✓ ' + note; },
       get box(){ return box; },
     };
@@ -57820,6 +58223,7 @@ onmessage = ev => {
     say('A shared game: ' + (T.meta.title || 'untitled') + '. It runs in a sandbox, with no way to the page, your storage or the network.', 4200);
   }
 
+  let DRAG = null, dragAte = 0;
   const framedHere = () => { try { const f = framedCell(); return f ? { c: f.c, r: f.r } : LIVE; } catch { return LIVE; } };
   const withFramed = f => () => { const at = framedHere(); if (!at){ say('Frame a board first.', 1600); return; } LIVE = at; f(at.c, at.r); };
 
@@ -57844,7 +58248,7 @@ onmessage = ev => {
   function tilesOf(c, r){
     const m = mineOf(c, r), rec = RUN.get(gkey(c, r));
     return [
-      { glyph: '✨', value: 'Change it…' },
+      rec && rec.err ? { glyph: '🔧', value: 'Fix it', bg: '#5a2424' } : { glyph: '✨', value: 'Change it…' },
       { glyph: '↶', value: 'Undo', dim: !m || m.cur === 0 },
       { glyph: '↷', value: 'Redo', dim: !m || m.cur >= m.v.length - 1 },
       { glyph: '↺', value: 'Restart' },
@@ -57859,6 +58263,7 @@ onmessage = ev => {
     name: 'game lab',
     menu: [{ head: 'Game lab', items: [
       { label: 'Change this board\'s game…', title: 'Say what to change; Claude rewrites the game\'s rules and the board plays the new version. Undo goes back.', on: withFramed((c, r) => ASK.open(c, r)) },
+      { label: 'Fix this version', title: 'This board\'s game broke while played: send its error back to Claude to fix.', on: withFramed((c, r) => fixIt(c, r)) },
       { label: 'Undo the last change', title: 'Back a version on this board.', on: withFramed((c, r) => undo(c, r, -1)) },
       { label: 'Redo', title: 'Forward a version again.', on: withFramed((c, r) => undo(c, r, +1)) },
       { label: 'Start this board again', title: 'The game from its opening.', on: withFramed((c, r) => restart(c, r)) },
@@ -57868,6 +58273,7 @@ onmessage = ev => {
       { label: 'Forget this board\'s versions', title: 'Back to the board\'s own starter, every version gone.', on: withFramed((c, r) => { if (confirm('Forget every version of this board\'s game?')) forget(c, r); }) },
       { label: () => 'Claude: ' + (MODELS.find(x => x[0] === MODEL) || MODELS[0])[1], title: 'Which Claude writes the changes. Each request counts against the gateway\'s daily allowance.',
         on(){ const i = MODELS.findIndex(x => x[0] === MODEL); MODEL = MODELS[(i + 1) % MODELS.length][0]; try { localStorage.setItem('gamelab.model', MODEL); } catch {} } },
+      SND.item,
     ]}],
     cellFar: { light: 0x323743, dark: 0x2b2f38 },
     itemMinPx: 6,
@@ -57876,24 +58282,29 @@ onmessage = ev => {
     cellGrid(c, r){
       const rec = recOf(c, r);
       if (rec.err) return ERR_GRID;
+      if (!isLive(c, r)){ const P = playOf(rec), S = P && shownAt(P, c, r); if (S) return S.A.g || (S.A.g = { n: S.A.v.n, colors: S.A.v.colors }); }
       return rec.view ? (rec._g && rec._gv === rec.view ? rec._g : (rec._gv = rec.view, rec._g = { n: rec.view.n, colors: rec.view.colors })) : waitGrid(6);
     },
     cellItems(c, r){
       const rec = recOf(c, r);
+      const P = playOf(rec);
       if (isLive(c, r)) tick(rec);
-      return rec.view && !rec.err ? itemsOf(rec.view) : [];
+      else if (P){ const S = shownAt(P, c, r); if (S) return itemsOf(shownView(S, P.realtime), null); }
+      return rec.view && !rec.err ? itemsOf(rec.view, rec) : [];
     },
     cellTitle(c, r){
       const rec = recOf(c, r), m = mineOf(c, r);
       const name = (rec.meta && rec.meta.title) || starterOf(boardIdx(c, r)).name;
       return 'Game lab — ' + name + (m ? ' (your version ' + (m.cur + 1) + ' of ' + m.v.length + ')' : '')
         + (rec.err ? ' · this version broke: ' + rec.err : rec.view && rec.view.status ? ' · ' + rec.view.status : '')
-        + (rec.meta && rec.meta.realtime && !rec.go && !rec.err ? ' · tap or press a key to start' : '');
+        + (rec.meta && rec.meta.realtime && !rec.go && !rec.err ? ' · tap or press a key to start' : '')
+        + ((P => P && P.key === rec.key && P.par ? ' · par ' + parText(P.par) : '')(PLAYS.get(rec.bk)))
+        + (BEST[bestKey(rec)] ? ' · best ' + '★★★'.slice(0, BEST[bestKey(rec)]) : '');
     },
     statTiles(c, r){ return isLive(c, r) ? tilesOf(c, r) : null; },
     onStatTap(c, r, i){
       if (!isLive(c, r)) return false;
-      if (i === 0){ ASK.open(c, r); return true; }
+      if (i === 0){ const rec = RUN.get(gkey(c, r)); if (rec && rec.err) fixIt(c, r); else ASK.open(c, r); return true; }
       if (i === 1){ undo(c, r, -1); return true; }
       if (i === 2){ undo(c, r, +1); return true; }
       if (i === 3){ restart(c, r); return true; }
@@ -57905,7 +58316,39 @@ onmessage = ev => {
     onSelect(){ return true; },
     onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
     noDoubleTap(){ return !!LIVE; },
+    /* DRAGS AND SWIPES (Oct 26: "1,2", the second's "drags and swipes"): a game with drag(state, x0, y0, x1, y1, done, rand)
+       takes a press on its board: told where the finger went down and where it is now, in squares (fractional), as it moves,
+       and once more with done true when it lifts (a swipe is read then, from the two ends). The tap the field still calls
+       after a short drag is eaten. A press stays the game's (`keepsPress`), so a still finger does not tilt the view. */
+    get keepsPress(){ const rec = LIVE && RUN.get(gkey(LIVE.c, LIVE.r)); return !!(rec && rec.meta && rec.meta.drags && rec.started && !rec.err); },
+    claimsPan(u, v){
+      if (!LIVE || u == null) return false;
+      const rec = RUN.get(gkey(LIVE.c, LIVE.r));
+      if (!rec || !rec.meta || !rec.meta.drags || !rec.started || rec.err || !rec.view || rec.view.over) return false;
+      const n = rec.view.n;
+      DRAG = { rec, x0: u * n, y0: v * n, x1: u * n, y1: v * n, moved: false, sent: 0 };
+      return true;
+    },
+    onPan(dx, dy, at){
+      if (!DRAG) return false;
+      if (at){
+        const n = DRAG.rec.view ? DRAG.rec.view.n : 1;
+        DRAG.x1 = at.u * n; DRAG.y1 = at.v * n;
+        if (Math.hypot(DRAG.x1 - DRAG.x0, DRAG.y1 - DRAG.y0) > 0.15) DRAG.moved = true;
+        // (one call out at a time: a move while one is out is taken by the next, or by the end)
+        if (DRAG.moved && !DRAG.rec.busy) send(DRAG.rec, 'drag', { x0: DRAG.x0, y0: DRAG.y0, x1: DRAG.x1, y1: DRAG.y1, done: false });
+      }
+      return true;
+    },
+    onPanEnd(){
+      const D = DRAG; DRAG = null;
+      if (!D || !D.moved) return;
+      dragAte = performance.now();
+      const fin = () => send(D.rec, 'drag', { x0: D.x0, y0: D.y0, x1: D.x1, y1: D.y1, done: true });
+      if (!D.rec.busy) fin(); else { let k = 0; const w = () => { if (!D.rec.busy || ++k > 60) fin(); else setTimeout(w, 16); }; w(); }
+    },
     onCellTap(c, r, u, v){
+      if (performance.now() - dragAte < 400) return true;           // (the tap that ends a drag)
       const was = isLive(c, r);
       LIVE = { c, r };
       const rec = recOf(c, r);
@@ -57924,7 +58367,7 @@ onmessage = ev => {
       for (let i = 0; i < n * n; i++){ ctx.fillStyle = ((i % n) + ((i / n) | 0)) % 2 ? '#2b2f38' : '#3a4050'; ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t, t); }
       ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
     },
-    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, undo, startFrom, forget, trialOf, parseReply, cleanView,
+    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, PLAYS, checkOf, playOf, shownAt, shownView, starsAt, BEST, undo, startFrom, forget, trialOf, parseReply, cleanView,
               takeShared, openRules, levelAt, boardIdx, get model(){ return MODEL; }, isLive, get live(){ return LIVE; }, uvAt: (x, y) => _framedUV(x, y),
               session: tok => coachSetSession(tok), fly: (c, r) => gotoCell(c, r) },
   };

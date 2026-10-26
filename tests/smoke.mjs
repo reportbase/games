@@ -5170,6 +5170,7 @@ try {
 const game = { title: 'Gold Lights', size: 4,
   setup(level, rand){ return { lit: [1,0,1,0, 0,1,0,1, 1,0,1,0, 0,1,0,1], taps: 0 }; },
   tap(s, x, y){ s.lit[y * 4 + x] ^= 1; s.taps++; },
+  bot(s){ const i = s.lit.indexOf(1); return i < 0 ? null : [i % 4, i / 4 | 0]; },
   view(s){ return { squares: s.lit.map(l => l ? '#806010' : '#222222'),
     pieces: s.lit.map((l, i) => l ? { shape: 'gem', x: i % 4 + 0.5, y: (i / 4 | 0) + 0.5, size: 0.7, color: '#ffd700', glow: true } : null).filter(Boolean),
     status: s.taps + ' taps', score: s.taps }; } };`;
@@ -5251,6 +5252,159 @@ const game = { title: 'Gold Lights', size: 4,
     await page.unroute(/login\.tangent\.workers\.dev\/v1\/messages/).catch(() => {});
     if (bad.length) failures.push('[game lab] ' + bad.join('; '));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: the starters run sandboxed (no network or storage, an endless loop stopped, an error's line named); a real click flips Lights Out's cross; Change it… sends the rules, fixes a broken reply once and keeps Claude's version; Undo; a shared game; Snake waits, then the real arrow turns it`);
+  }
+  // THE GAME LAB'S LOOP AND ITS NEW PARTS (Oct 26: "1,2": Claude sees what came before and a broken version is one tap from being
+  // fixed; games get sounds, words on the board, drags and swipes, and pieces that glide): a game with all four put on board (2, 0);
+  // its words drawn a letter a kind; a real click moving a piece that glides there and asking for a click; a real drag left read as
+  // a swipe LEFT; the game broken in play (the real Z, then a real click on square (0, 0)), the row's first tile turned to Fix it,
+  // and a tap on it sending the error and line back (the gateway mocked) and keeping the fixed version, which the next request's
+  // history then names.
+  {
+    const before = failures.length, bad = [];
+    const WORDS = `// words, swipes and sounds
+const game = { title: 'Words', size: 6,
+  setup(){ return { at: [1, 1], drags: 0, swipe: '' }; },
+  tap(s, x, y){ s.at = [x, y]; sound('click'); },
+  key(s, k){ if (k === 'z') s.armed = true; },
+  bot(s){ return [(s.at[0] + 1) % 6, 1]; },
+  drag(s, x0, y0, x1, y1, done){ s.drags++; if (done){ const dx = x1 - x0, dy = y1 - y0; s.swipe = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP'); sound('up'); } },
+  view(s){ if (s.armed && s.at[0] === 0 && s.at[1] === 0) null.boom;
+    const squares = []; for (let i = 0; i < 36; i++) squares.push(i % 2 ? '#334455' : '#223344');
+    return { squares, pieces: [{ shape: 'text', text: 'Hello 42', x: 3, y: 1, size: 0.9, color: '#ffdd55' },
+      { shape: 'block', x: s.at[0] + 0.5, y: s.at[1] + 0.5, size: 0.8, color: '#ff5533', id: 'me', glide: 0.5 }],
+      status: s.drags + ' drags ' + s.swipe }; } };`;
+    const FIXED = WORDS.replace('if (s.armed && s.at[0] === 0 && s.at[1] === 0) null.boom;', '').replace("title: 'Words'", "title: 'Words fixed'");
+    const asked = [];
+    await page.route(/login\.tangent\.workers\.dev\/v1\/messages/, async route => {
+      asked.push(JSON.parse(route.request().postData()));
+      const text = 'It no longer breaks on the corner.\n```js\n' + FIXED + '\n```';
+      await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' },
+        body: 'event: a\ndata: ' + JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } }) + '\n\nevent: b\ndata: {"type":"message_stop"}\n\n' });
+    });
+    try {
+      const live = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = L && D.RUN.get(L.c + '_' + L.r);
+        return r ? { L, title: r.meta && r.meta.title, drags: r.meta && r.meta.drags, status: r.view && r.view.status, err: r.err, sounds: r.view && r.view.sounds.map(x => x[0]),
+                     me: r.view && (r.view.pieces.find(p => p.id === 'me') || {}), anim: r.anim && r.anim.get('me') } : null; });
+      await page.evaluate(async src => { const D = window.getFieldApp()._debug; await D.takeShared(2, 0, { s: src }); D.fly(2, 0); }, WORDS);
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = L && D.RUN.get(L.c + '_' + L.r); return L && L.c === 2 && L.r === 0 && r && r.view && r.meta && r.meta.title === 'Words'; }, null, { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(1200);
+      const sys = await page.evaluate(() => window.getFieldApp()._debug.LAB_SYS);
+      if (!/sound\(kind, pitch, seconds\)/.test(sys) || !/shape: "text"/.test(sys) || !/game\.drag\(/.test(sys) || !/glide/.test(sys)) bad.push('the system prompt does not tell Claude about sound, text, drag and glide');
+      const letters = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r);
+        return D.itemsOf(r.view, r).filter(i => /^gch_\d+$/.test(i.kind)).map(i => String.fromCodePoint(+i.kind.slice(4))).join(''); });
+      if (letters !== 'HELLO42') bad.push('the words were drawn as ' + JSON.stringify(letters));
+      const at = (x, y) => page.evaluate(([x, y]) => { const D = window.getFieldApp()._debug, L = D.live; let best = null, bd = 1e9;
+        for (let py = 80; py < innerHeight - 80; py += 5) for (let px = 80; px < innerWidth - 80; px += 5){ const b = D.uvAt(px, py);
+          if (b && b.c === L.c && b.r === L.r){ const d = Math.hypot(b.u * 6 - x, b.v * 6 - y); if (d < bd){ bd = d; best = { x: px, y: py }; } } } return best; }, [x, y]);
+      // a real click on square (3, 2), within the three squares a piece glides: the block glides there, and a click is asked for
+      const t = await at(3.5, 2.5);
+      let A = null;
+      for (let k = 0; k < 3; k++){ await page.mouse.click(t.x, t.y); await page.waitForTimeout(700); A = await live(); if (A && A.me.x === 3.5) break; }
+      if (!A || A.me.x !== 3.5 || A.me.y !== 2.5) bad.push('a real click did not move the block: ' + JSON.stringify(A && A.me));
+      else {
+        if (!A.anim || A.anim.d !== 0.5 || A.anim.x0 === A.anim.x1) bad.push('the block did not glide: ' + JSON.stringify(A.anim));
+        if (!A.sounds.includes('click')) bad.push('the tap asked for no click: ' + JSON.stringify(A.sounds));
+      }
+      // a real drag from the right of the board to the left: moves sent, then a swipe LEFT on letting go
+      const a = await at(4.6, 4.6), b = await at(1.4, 4.6);
+      await page.mouse.move(a.x, a.y); await page.mouse.down();
+      for (let k = 1; k <= 10; k++){ await page.mouse.move(a.x + (b.x - a.x) * k / 10, a.y + (b.y - a.y) * k / 10); await page.waitForTimeout(60); }
+      await page.mouse.up();
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.view && /LEFT|RIGHT|UP|DOWN/.test(r.view.status); }, null, { timeout: 5000 }).catch(() => {});
+      const B = await live();
+      if (!/^([2-9]|\d\d+) drags LEFT$/.test(B.status || '')) bad.push('a real drag left read as ' + JSON.stringify(B.status));
+      if (B.me.x !== 3.5) bad.push('the drag was taken as a tap too: the block went to ' + B.me.x);
+      // broken in play: the real Z, then a real click on (0, 0)
+      await page.keyboard.press('z'); await page.waitForTimeout(400);
+      const z = await at(0.5, 0.5);
+      for (let k = 0; k < 3; k++){ await page.mouse.click(z.x, z.y); await page.waitForTimeout(700); if ((await live()).err) break; }
+      const C = await live();
+      const tile = await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.live; return A.statTiles(L.c, L.r)[0].value; });
+      if (!C.err) bad.push('the game did not break in play');
+      if (tile !== 'Fix it') bad.push('the first tile of a broken game is ' + tile);
+      await page.evaluate(() => { const A = window.getFieldApp(); A._debug.session('smoke-session'); const L = A._debug.live; A.onStatTap(L.c, L.r, 0); });
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title === 'Words fixed' && r.view; }, null, { timeout: 10000 }).catch(() => {});
+      const F = await live();
+      if (asked.length !== 1) bad.push(asked.length + ' requests for Fix it, not 1');
+      else if (!/breaks while it is played: Cannot read/.test(asked[0].messages[0].content) || !/line 8/.test(asked[0].messages[0].content)) bad.push('Fix it did not send the error and its line: ' + asked[0].messages[0].content.slice(-200));
+      if (F.title !== 'Words fixed' || F.err) bad.push('after Fix it: ' + JSON.stringify(F));
+      const H = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live; return D.historyOf(L.c, L.r); });
+      if (!/Fix it: Cannot read/.test(H) || !/no longer breaks/.test(H)) bad.push('the next request\'s history: ' + JSON.stringify(H));
+      await page.evaluate(() => { const b = document.querySelector('#labAskBox'); if (b) b.hidden = true; });
+    } catch (e){ bad.push(String(e)); }
+    await page.unroute(/login\.tangent\.workers\.dev\/v1\/messages/).catch(() => {});
+    if (bad.length) failures.push('[game lab loop] ' + bad.join('; '));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: words drawn a letter at a time, a real click gliding a piece and asking for a sound, a real drag read as a swipe, a game broken in play fixed by the Fix it tile with its error and line, and the history sent with the next request`);
+  }
+  // THE GAME LAB'S OWN PLAYER (Oct 26: "1,2" of what came next: boards no one plays show the game being played, and a version is
+  // played before it is kept): the starters pass the check and the blank board (no player), a game over at once, one where nothing
+  // changes and a game to win its player never wins are refused; Change it… sends a reply with no player back to Claude and keeps
+  // the next; a board no one plays moves through its recording; and a game won in one tap, by a real click, gets three stars
+  // against its player's par of 1 move, kept as the board's best.
+  {
+    const before = failures.length, bad = [];
+    const NOBOT = "const game = { title: 'No player', size: 3, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], over: s.n > 3 }; } };";
+    const WITH = "const game = { title: 'With player', size: 3, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, bot(s){ return [1, 1]; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], score: s.n, over: s.n > 3 }; } };";
+    const asked = [];
+    await page.route(/login\.tangent\.workers\.dev\/v1\/messages/, async route => {
+      asked.push(JSON.parse(route.request().postData()));
+      const text = (asked.length === 1 ? 'Here.\n```js\n' + NOBOT : 'With a player now.\n```js\n' + WITH) + '\n```';
+      await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' },
+        body: 'event: a\ndata: ' + JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } }) + '\n\nevent: b\ndata: {"type":"message_stop"}\n\n' });
+    });
+    try {
+      await page.evaluate(() => { localStorage.removeItem('gamelab.mine'); localStorage.removeItem('gamelab.best'); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gamelab')); });
+      await page.waitForTimeout(2500);
+      const K = await page.evaluate(async () => { const D = window.getFieldApp()._debug, out = {};
+        for (const s of D.STARTERS){ const k = await D.checkOf(s.src); out[s.id] = k.ok ? 'ok' : k.why; }
+        out.atOnce = (await D.checkOf("const game = { size: 3, setup(){ return {}; }, bot(){ return [0, 0]; }, view(){ return { over: true }; } };")).why;
+        out.still = (await D.checkOf("const game = { size: 3, setup(){ return {}; }, tap(){}, bot(){ return [0, 0]; }, view(){ return { squares: [] }; } };")).why;
+        out.nowin = (await D.checkOf("const game = { size: 3, wins: true, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, bot(){ return [0, 0]; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], over: s.n > 5 }; } };")).why;
+        return out; });
+      for (const id of ['lights', 'mole', 'snake']) if (K[id] !== 'ok') bad.push('the starter ' + id + ' failed its check: ' + K[id]);
+      if (!/no game\.bot/.test(K.blank || '')) bad.push('the blank board passed with no player: ' + K.blank);
+      if (!/over at once/.test(K.atOnce || '')) bad.push('a game over at once: ' + K.atOnce);
+      if (!/nothing on the board ever changed/.test(K.still || '')) bad.push('a game where nothing changes: ' + K.still);
+      if (!/never won it at level 1/.test(K.nowin || '')) bad.push('a game to win never won: ' + K.nowin);
+      // Change it…: the reply with no player goes back, the next is kept
+      await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug; D.session('smoke-session'); const L = D.live; A.onStatTap(L.c, L.r, 0); });
+      await page.waitForTimeout(300);
+      await page.fill('#labAskBox textarea', 'count my taps');
+      await page.click('#labAskBox button:has-text("Send to Claude")');
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title === 'With player'; }, null, { timeout: 15000 }).catch(() => {});
+      const title = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title; });
+      if (asked.length !== 2 || !/no game\.bot/.test((asked[1] && asked[1].messages[2] && asked[1].messages[2].content) || '')) bad.push('the version with no player did not go back to Claude: ' + asked.length + ' requests');
+      if (title !== 'With player') bad.push('the version with a player was not kept: ' + title);
+      await page.evaluate(() => { const b = document.querySelector('#labAskBox'); if (b) b.hidden = true; });
+      // a board no one plays moves through its own player's recording
+      const idle = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, L = D.live;
+        for (let k = 0; k < 40; k++){
+          const ks = [...D.PLAYS.entries()].filter(([key, P]) => P.done && P.frames.length > 30 && key !== L.c + '_' + L.r);
+          for (const [key] of ks){ const [c, r] = key.split('_').map(Number);
+            const sig = () => JSON.stringify(A.cellItems(c, r).map(i => [i.kind, +i.u.toFixed(3), +i.v.toFixed(3)]));
+            const a = sig(); await new Promise(res => setTimeout(res, 400)); if (sig() !== a) return { key, moved: true }; }
+          await new Promise(res => setTimeout(res, 300));
+        }
+        return { boards: D.PLAYS.size, done: [...D.PLAYS.values()].filter(P => P.done).length }; });
+      if (!idle.moved) bad.push('no board no one plays moved through its recording: ' + JSON.stringify(idle));
+      // par and stars: a game won in one tap, its par 1 move, won by a real click
+      const SRC = "const game = { title: 'One tap', size: 3, wins: true, setup(){ return { done: false }; }, tap(s){ s.done = true; }, bot(s){ return s.done ? null : [1, 1]; }, view(s){ return { squares: [], pieces: [], over: s.done, won: s.done, message: s.done ? 'Done.' : '' }; } };";
+      await page.evaluate(async src => { const D = window.getFieldApp()._debug, L = D.live; await D.takeShared(L.c, L.r, { s: src }); }, SRC);
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r), P = D.PLAYS.get(L.c + '_' + L.r);
+        return r && r.meta && r.meta.title === 'One tap' && r.view && P && P.key === r.key && P.par; }, null, { timeout: 10000 }).catch(() => {});
+      const par = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, P = D.PLAYS.get(L.c + '_' + L.r); return P && P.par; });
+      if (!par || par.kind !== 'moves' || par.val !== 1) bad.push('the one-tap game\'s par: ' + JSON.stringify(par));
+      const pt = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live;
+        for (let y = 120; y < innerHeight - 120; y += 6) for (let x = 120; x < innerWidth - 120; x += 6){ const b = D.uvAt(x, y); if (b && b.c === L.c && b.r === L.r && Math.abs(b.u - 0.5) < 0.06 && Math.abs(b.v - 0.5) < 0.06) return { x, y }; } return null; });
+      if (!pt) bad.push('the framed board is not on the screen');
+      else for (let k = 0; k < 3; k++){ await page.mouse.click(pt.x, pt.y); await page.waitForTimeout(900);
+        if (await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.view && r.view.over; })) break; }
+      const S = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, L = D.live; return { best: JSON.parse(localStorage.getItem('gamelab.best') || '{}'), title: A.cellTitle(L.c, L.r) }; });
+      if (!Object.values(S.best).includes(3) || !/best ★★★/.test(S.title)) bad.push('a win in par did not keep three stars: ' + JSON.stringify(S));
+    } catch (e){ bad.push(String(e)); }
+    await page.unroute(/login\.tangent\.workers\.dev\/v1\/messages/).catch(() => {});
+    if (bad.length) failures.push('[game lab player] ' + bad.join('; '));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: every game's own player checks it before it is kept (no player, over at once, nothing changing, never won all refused), plays the boards no one plays, and sets a par a real click's win is starred against`);
   }
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
   // display should toggle the visiblibility of the bottom panel."): in trick shots, whose play row stays up while a table is played,
