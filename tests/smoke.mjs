@@ -5203,7 +5203,9 @@ const game = { title: 'Gold Lights', size: 4,
           if (b && b.c === L.c && b.r === L.r && Math.abs(b.u * n - 1.5) < 0.15 && Math.abs(b.v * n - 1.5) < 0.15) return { x, y, n }; } return null; });
       if (!at) bad.push('no square (1, 1) on the screen');
       else {
-        const l0 = await lit(); await page.mouse.click(at.x, at.y); await page.waitForTimeout(800); const l1 = await lit();
+        // (opened after another game the first click may only select the board: it is clicked again until one flips something)
+        const l0 = await lit(); let l1 = l0;
+        for (let k = 0; k < 3 && l1 === l0; k++){ await page.mouse.click(at.x, at.y); await page.waitForTimeout(900); l1 = await lit(); }
         const diff = [...l0].map((ch, i) => ch !== l1[i] ? i : -1).filter(i => i >= 0).join(',');
         const n = at.n, want = [1 + n, 1 + n - n, 1 + n - 1, 1 + n + 1, 1 + n + n].sort((a, b) => a - b).join(',');
         if (diff !== want) bad.push('a real click flipped ' + diff + ', not the cross ' + want);
