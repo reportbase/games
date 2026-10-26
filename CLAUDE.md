@@ -680,6 +680,46 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     card coming due first, its interval growing and Again putting it back with less ease, the nearest board holding a card, and
     real input: a real click turning the framed card, a real click on Good grading it and flying to the next card's board, the
     real Space and 3, the row's tiles, and a board no one studies turning over.
+- **Game lab: games changed by asking Claude** (Oct 25: "seems to me these simpler games are good foundation to let the user add
+  features, through a prompt. so the player could develop there own game with AI interaction.", then "2" of the three ways offered:
+  the rules rewritten, not only the dials turned): `GAMELAB_APP`, id `gamelab`, after the flash cards. A board's game is a small
+  RULES MODULE of plain JavaScript; the player says what to change, Claude writes the whole module again, and the board plays the
+  new version at once, every version kept.
+  - **The interface** (`LAB_SYS`, what Claude is told; the starters are written against it, so they are its examples):
+    `const game = { title, size (2–24 squares a side, or level => size), realtime, setup(level, rand) -> state, tap(state, x, y,
+    rand), key(state, k, rand), step(state, dt, rand), view(state) -> { squares, pieces, status, message, score, over, won, size } }`.
+    Row 0 is the far row; keys are 'up', 'down', 'left', 'right' (the arrows and WASD, as the board lies: `screenToBoardDirs`),
+    'enter', 'space', letters. Pieces are `{ shape: tile | block | ball | disc | ring | peg | cone | gem, x, y, size, height, z, color,
+    glow }` in squares; a glowing one is its kind's unlit twin (`gl_<shape>`, `gl_<shape>_L`). `rand` is seeded by the board (its
+    number and how many times it was started again), so a board deals the same game; the level is the ring level, 1–5.
+  - **Starters** (`STARTERS`): Lights Out, Whack-a-mole and Snake, round the boards by `boardIdx` (the corner Lights Out), and a
+    blank board; the menu's Start from … puts any of them on the framed board as a version.
+  - **The sandbox** (`BOX`): a module never runs in the page. It runs in a Worker made inside a hidden iframe with `sandbox=
+    "allow-scripts"` (an origin of its own: no storage, no cookies, no page) whose policy is `default-src 'none'` (a blob Worker
+    inherits it: fetch, XMLHttpRequest and importScripts refused, measured), and the Worker's ways out are deleted too. The frame
+    stops a Worker that has not answered in `LAB_TIMEOUT` (1.5 s a call, 5 s a trial) and starts another; the game whose call hung
+    is marked broken, the others start again. What comes back is checked before it is drawn (`cleanView`: colours, sizes, at most
+    600 pieces, words cut short). `trial` runs a module at levels 1, 3 and 5 with taps, keys and two seconds of its clock; an
+    error names its line in the module.
+  - **Playing** (`RUN` by board, `RUN_CAP` 300): every board shows its game's opening; the framed board plays: a tap is its square,
+    keys go to a game with `key`, and a realtime game steps once a frame (a step out at a time, `tick`), only after the player's
+    first tap or key on it (`rec.go`: a snake framed by a flight hit the wall before it was seen). A game over: a tap, Enter or
+    Space starts it again. The board's title has the game's status.
+  - **Asking** (`change`, the bottom row's Change it… or the menu's Change this board's game…, `ASK`, `#labAskBox`): through the
+    coach's gateway (`coachEndpoint`, `coachHeaders`: the sign-in's session, a daily allowance each; signed out, the box offers Sign
+    in), streamed as the 3d studio's requests are (`streamCall`, no answer for 60 s drops it). Claude gets the module and the words,
+    and answers with one sentence and the whole module in one ```js block (`parseReply`); the module is tried (`trial`) before it is
+    kept, and a broken one goes back with its error and line, up to `FIX_TRIES` (2) times, after which the board keeps the game it
+    had. Models (the menu's Claude: …, localStorage `gamelab.model`): Sonnet 5.5 by default, Opus, Haiku; a gateway that does not
+    know one falls back to `claude-sonnet-5`. The box lists the versions, what each asked and what Claude said it did.
+  - **Versions** (`MINE`, localStorage `gamelab.mine` by board: `{ v: [{ src, note, ask, at }], cur }`, at most 16 a board and 1.5 MB
+    in all, the boards changed least lately going first): Undo and Redo (the row and the menu), Restart, Rules (`#labRulesBox`: the
+    module to read or change by hand, Apply trying it first), Share (a link `?app=gamelab&setup=` carrying the module, `SHARE`; opened,
+    it is tried and put on the framed board as a version, said to run in the sandbox), Forget this board's versions.
+  - The smoke test checks the starters in the sandbox, the corner board playing Lights Out, an endless loop stopped and an error's
+    line, a real click flipping exactly a cross, a shared game finding no fetch, XMLHttpRequest, localStorage or document, Change
+    it… through the real box (the gateway mocked: a broken reply sent back with its error, the fixed one kept as version 2 and in
+    storage), Undo, and Snake waiting until the real ArrowUp turns it.
 - **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.
@@ -1975,7 +2015,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     so is a right click. Elsewhere a hold used to start the board again, and the notes above that say "a hold starts it again"
     are out of date: the menu's Reset does that.
   - The smoke test clicks the real dots in trick shots and wants the row to stay shut, long-presses the table twice and wants it
-    open, then shut, and wants a hold in Simon to flip the field's switch (`window.tvf.bottomRow.visible`).
+    open, then shut, wants a hold in Simon to flip the field's switch (`window.tvf.bottomRow.visible`), and in Minesweeper a hold
+    on a covered square to flag it with the switch left alone, and one off the board to flip it.
+  - **Always** (Oct 25: "Long press is always toggle of bottom browser"): no app's hold is asked any more, not even a move's. A right
+    click still reaches `onCellHold` where `holdIsMove` says it is a move. What a phone lost has a way of its own: Sokoban's menu
+    Undo a step (Z on the keys); the pipe games turn by taps, Nonograms has its cross mode and Air raid drops a bomb on a tap on
+    yourself. Minesweeper keeps its hold (Oct 25, later: "minesweeper should restore the long press, its fundemental to its game
+    play."): an app with `holdKeeps` is asked first, and a hold it takes (a covered square in a game under way) flags it; a hold
+    anywhere else is the row's. Its menu's Taps: dig / flag (F on the keys, localStorage `minesweeper.taps`) stays too.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
