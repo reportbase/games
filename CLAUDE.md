@@ -766,6 +766,18 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     - The smoke test checks the starters passing, the four refusals, Change it… sending a version with no player back and keeping
       the next, a board no one plays moving through its recording, and a one-tap game's par of 1 move with a real click's win
       kept as three stars.
+  - **Harder farther out, measured, and My games** (Oct 26: "whats next", then "4,6"):
+    - The check plays level 5 too (three runs at level 1, one at 3, two at 5, 380 ms of the Worker each; a run keeps its board's
+      size `n`). `hardness` sets level 1 beside level 5 (`statsAt`): level 5 is harder if the board is bigger, or, for a game to win,
+      fewer are won or the wins take a fifth more moves (seconds, realtime), or, for a game of points, more are over, sooner by a
+      fifth, or a fifth fewer points. None so, the version goes back to Claude with the numbers ("level 5 is no harder than level
+      1 …"); after `FIX_TRIES` it is kept anyway, its note saying it plays the same farther out. `LAB_SYS` asks for it (HARDER
+      FARTHER OUT). The box's note gives both levels (Lights Out: 4×4 won in 2.7 moves, 7×7 in 8; Snake over after 19 s and 5.6 s).
+    - **My games** (`openMineList`, `#labMineBox`, `mineList`): every board changed, newest first: its game's name (`titleOf`: the
+      running meta, else the module's `title:`), the board, which version of how many, when, the last ask, the best stars; Play
+      (closes, makes it the live board and flies there), Share, Forget. From the row's 📋 My games tile or the menu's My games (N)….
+    - The smoke test checks the starters climbing, a flat game refused and then kept with the note after three requests (the
+      gateway mocked), and My games listing the two newest boards first, a real click on Play making the board the live one.
 - **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.

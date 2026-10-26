@@ -5167,12 +5167,12 @@ try {
   {
     const before = failures.length, bad = [];
     const GOOD = `// Gold lights
-const game = { title: 'Gold Lights', size: 4,
-  setup(level, rand){ return { lit: [1,0,1,0, 0,1,0,1, 1,0,1,0, 0,1,0,1], taps: 0 }; },
-  tap(s, x, y){ s.lit[y * 4 + x] ^= 1; s.taps++; },
-  bot(s){ const i = s.lit.indexOf(1); return i < 0 ? null : [i % 4, i / 4 | 0]; },
+const game = { title: 'Gold Lights', size: l => l < 3 ? 4 : 5,
+  setup(level, rand){ const n = game.size(level); return { n, lit: Array.from({ length: n * n }, (_, i) => ((i % n) + (i / n | 0)) % 2 ? 0 : 1), taps: 0 }; },
+  tap(s, x, y){ s.lit[y * s.n + x] ^= 1; s.taps++; },
+  bot(s){ const i = s.lit.indexOf(1); return i < 0 ? null : [i % s.n, i / s.n | 0]; },
   view(s){ return { squares: s.lit.map(l => l ? '#806010' : '#222222'),
-    pieces: s.lit.map((l, i) => l ? { shape: 'gem', x: i % 4 + 0.5, y: (i / 4 | 0) + 0.5, size: 0.7, color: '#ffd700', glow: true } : null).filter(Boolean),
+    pieces: s.lit.map((l, i) => l ? { shape: 'gem', x: i % s.n + 0.5, y: (i / s.n | 0) + 0.5, size: 0.7, color: '#ffd700', glow: true } : null).filter(Boolean),
     status: s.taps + ' taps', score: s.taps }; } };`;
     const BROKEN = 'const game = { size: 4, setup(){ return {}; }, view(s){ return s.nope.x; } };';
     const asked = [];
@@ -5262,14 +5262,14 @@ const game = { title: 'Gold Lights', size: 4,
   {
     const before = failures.length, bad = [];
     const WORDS = `// words, swipes and sounds
-const game = { title: 'Words', size: 6,
-  setup(){ return { at: [1, 1], drags: 0, swipe: '' }; },
+const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
+  setup(level){ return { n: game.size(level), at: [1, 1], drags: 0, swipe: '' }; },
   tap(s, x, y){ s.at = [x, y]; sound('click'); },
   key(s, k){ if (k === 'z') s.armed = true; },
-  bot(s){ return [(s.at[0] + 1) % 6, 1]; },
+  bot(s){ return [(s.at[0] + 1) % s.n, 1]; },
   drag(s, x0, y0, x1, y1, done){ s.drags++; if (done){ const dx = x1 - x0, dy = y1 - y0; s.swipe = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP'); sound('up'); } },
   view(s){ if (s.armed && s.at[0] === 0 && s.at[1] === 0) null.boom;
-    const squares = []; for (let i = 0; i < 36; i++) squares.push(i % 2 ? '#334455' : '#223344');
+    const squares = []; for (let i = 0; i < s.n * s.n; i++) squares.push(i % 2 ? '#334455' : '#223344');
     return { squares, pieces: [{ shape: 'text', text: 'Hello 42', x: 3, y: 1, size: 0.9, color: '#ffdd55' },
       { shape: 'block', x: s.at[0] + 0.5, y: s.at[1] + 0.5, size: 0.8, color: '#ff5533', id: 'me', glide: 0.5 }],
       status: s.drags + ' drags ' + s.swipe }; } };`;
@@ -5344,7 +5344,7 @@ const game = { title: 'Words', size: 6,
   {
     const before = failures.length, bad = [];
     const NOBOT = "const game = { title: 'No player', size: 3, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], over: s.n > 3 }; } };";
-    const WITH = "const game = { title: 'With player', size: 3, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, bot(s){ return [1, 1]; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], score: s.n, over: s.n > 3 }; } };";
+    const WITH = "const game = { title: 'With player', size: l => l < 3 ? 3 : 4, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, bot(s){ return [1, 1]; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], score: s.n, over: s.n > 3 }; } };";
     const asked = [];
     await page.route(/login\.tangent\.workers\.dev\/v1\/messages/, async route => {
       asked.push(JSON.parse(route.request().postData()));
@@ -5405,6 +5405,58 @@ const game = { title: 'Words', size: 6,
     await page.unroute(/login\.tangent\.workers\.dev\/v1\/messages/).catch(() => {});
     if (bad.length) failures.push('[game lab player] ' + bad.join('; '));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: every game's own player checks it before it is kept (no player, over at once, nothing changing, never won all refused), plays the boards no one plays, and sets a par a real click's win is starred against`);
+  }
+  // THE GAME LAB, HARDER FARTHER OUT AND MY GAMES (Oct 26: "4,6"): its player plays level 5 too, and a game where level 5 is no
+  // harder than level 1 goes back to Claude with the numbers, kept anyway after the last try; the starters climb; My games lists
+  // every board changed, newest first, and a real click on Play flies to that board and makes it the one played.
+  {
+    const before = failures.length, bad = [];
+    const FLAT = "const game = { title: 'Flat', size: 3, setup(){ return { n: 0 }; }, tap(s){ s.n++; }, bot(){ return [0, 0]; }, view(s){ return { squares: [s.n % 2 ? '#ff0000' : '#000000'], score: s.n, over: s.n > 5 }; } };";
+    const asked = [];
+    await page.route(/login\.tangent\.workers\.dev\/v1\/messages/, async route => {
+      asked.push(JSON.parse(route.request().postData()));
+      const text = 'The same at every level.\n```js\n' + FLAT + '\n```';
+      await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' },
+        body: 'event: a\ndata: ' + JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } }) + '\n\nevent: b\ndata: {"type":"message_stop"}\n\n' });
+    });
+    try {
+      await page.evaluate(() => { localStorage.removeItem('gamelab.mine'); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gamelab')); });
+      await page.waitForTimeout(2500);
+      const K = await page.evaluate(async src => { const D = window.getFieldApp()._debug, out = {};
+        for (const s of D.STARTERS.slice(0, 3)){ const k = await D.checkOf(s.src); out[s.id] = k.ok ? k.note : 'NO ' + k.why; }
+        out.flat = (await D.checkOf(src)).why; return out; }, FLAT);
+      if (!/level 1: 4×4.*level 5: 7×7/.test(K.lights || '')) bad.push('Lights Out by level: ' + K.lights);
+      for (const id of ['mole', 'snake']) if (/^NO /.test(K[id] || 'NO')) bad.push('the starter ' + id + ' did not climb: ' + K[id]);
+      if (!/level 5 is no harder than level 1/.test(K.flat || '')) bad.push('a game the same at every level passed: ' + K.flat);
+      // through the real box: sent back each time, then kept with a note
+      await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug; D.session('smoke-session'); const L = D.live; A.onStatTap(L.c, L.r, 0); });
+      await page.waitForTimeout(300);
+      await page.fill('#labAskBox textarea', 'a tapping game');
+      await page.click('#labAskBox button:has-text("Send to Claude")');
+      await page.waitForFunction(() => /✓|fails/.test(document.querySelector('#labAskBox').innerText), null, { timeout: 30000 }).catch(() => {});
+      const box = await page.evaluate(() => document.querySelector('#labAskBox').innerText);
+      if (asked.length !== 3) bad.push(asked.length + ' requests for a game the same at every level, not 3');
+      else if (!/no harder than level 1/.test(asked[1].messages[2].content)) bad.push('the levels did not go back to Claude: ' + asked[1].messages[2].content.slice(0, 160));
+      if (!/plays the same farther out/.test(box)) bad.push('the last try was not kept with a note: ' + box.slice(-200));
+      await page.evaluate(() => { const b = document.querySelector('#labAskBox'); if (b) b.hidden = true; });
+      // My games: two more boards changed, listed newest first; a real click on Play goes there
+      await page.evaluate(async () => { const D = window.getFieldApp()._debug;
+        await D.takeShared(2, 0, { s: "const game = { title: 'Alpha', size: 3, setup(){ return {}; }, view(){ return {}; } };" });
+        await new Promise(r => setTimeout(r, 20));
+        await D.takeShared(4, 1, { s: "const game = { title: 'Beta', size: 3, setup(){ return {}; }, view(){ return {}; } };" }); });
+      await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.live; A.onStatTap(L.c, L.r, 6); });
+      await page.waitForTimeout(400);
+      const rows = await page.evaluate(() => [...document.querySelectorAll('#labMineBox .labMineRow')].map(e => [e.dataset.k, e.innerText.split('\n')[0]]));
+      // (boards changed by the checks above are listed too: the newest two first, the flat game among the rest)
+      if (rows.length < 3 || rows[0][0] !== '4_1' || !/Beta/.test(rows[0][1]) || rows[1][0] !== '2_0' || !/Alpha/.test(rows[1][1]) || !rows.some(x => /Flat/.test(x[1]))) bad.push('My games listed ' + JSON.stringify(rows));
+      await page.click('#labMineBox .labMineRow[data-k="4_1"] button:has-text("Play")');
+      await page.waitForTimeout(2500);
+      const W = await page.evaluate(() => { const D = window.getFieldApp()._debug; let f = null; try { f = window.framedCell ? window.framedCell() : null; } catch {} return { live: D.live, hidden: document.querySelector('#labMineBox').hidden }; });
+      if (!W.live || W.live.c !== 4 || W.live.r !== 1 || !W.hidden) bad.push('Play did not go to the board: ' + JSON.stringify(W));
+    } catch (e){ bad.push(String(e)); }
+    await page.unroute(/login\.tangent\.workers\.dev\/v1\/messages/).catch(() => {});
+    if (bad.length) failures.push('[game lab levels] ' + bad.join('; '));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: level 5 measured against level 1 (the starters climb, a flat game goes back to Claude and is kept with a note after the last try), and My games lists the boards changed with a real Play going there`);
   }
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
   // display should toggle the visiblibility of the bottom panel."): in trick shots, whose play row stays up while a table is played,

@@ -543,7 +543,7 @@
   /* ── the paste box ── */
   /* An inline display:flex outranks the UA's [hidden]{display:none} — the
      same trap the game index documents above — so hiding needs !important. */
-  #pgnPasteBox[hidden], #fenPasteBox[hidden], #labAskBox[hidden], #labRulesBox[hidden]{ display: none !important; }
+  #pgnPasteBox[hidden], #fenPasteBox[hidden], #labAskBox[hidden], #labRulesBox[hidden], #labMineBox[hidden]{ display: none !important; }
   #pgnPasteBox, #fenPasteBox{
     border-radius: 12px;
     box-shadow: 0 18px 44px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
@@ -57397,12 +57397,13 @@ function recSlice(d) {
   if (R.done) RECS.delete(d.rk);
   return { fresh, frames, done: R.done, over: b.over, won: b.won, score: b.score, t: b.t, moves: b.moves };
 }
-// THE CHECK: its own player plays it three times at level 1 and once at level 3, each up to CHECK_T seconds (or CHECK_MOVES moves)
+// THE CHECK: its own player plays it three times at level 1, once at level 3 and twice at level 5 (Oct 26: "4,6", the first:
+// harder farther out, measured), each up to two minutes of its clock or 400 moves, 380 ms of the Worker's own time a run
 function check(g) {
   const runs = [];
-  for (const [level, seed] of [[1, 11], [1, 23], [1, 37], [3, 41]]) {
+  for (const [level, seed] of [[1, 11], [1, 23], [1, 37], [3, 41], [5, 53], [5, 67]]) {
     const b = playNew(g, seed * 7919, level), v0 = viewOf(b); OUT.length = 0;
-    const s0 = sig(v0), end = Date.now() + 450;
+    const s0 = sig(v0), end = Date.now() + 380;
     let changed = false, k = 0, atOnce = !!v0.over;
     b.over = !!v0.over; b.won = !!v0.won; b.score = v0.score;
     while (!b.over && !atOnce && b.t < 120 && b.moves < 400 && Date.now() < end) {
@@ -57411,7 +57412,7 @@ function check(g) {
       if (!b.g.realtime && b.idle > 0) break;
     }
     if (b.over && (b.moves <= 1 && b.t < 1.01)) atOnce = true;
-    runs.push({ level, over: b.over, won: b.won, score: b.score, t: +b.t.toFixed(2), moves: b.moves, changed, atOnce, stuck: !b.g.realtime && b.idle > 0 && !b.over });
+    runs.push({ level, n: b.n, over: b.over, won: b.won, score: b.score, t: +b.t.toFixed(2), moves: b.moves, changed, atOnce, stuck: !b.g.realtime && b.idle > 0 && !b.over });
   }
   return runs;
 }
@@ -57912,7 +57913,8 @@ onmessage = ev => {
     '  game.bot(state, rand) -> a move, or null to wait: { tap: [x, y] }, { key: "up" }, { drag: [x0, y0, x1, y1] } (or just [x, y] for a tap, "up" for a key). It plays the game as a steady person would: the page uses it to show the game being played on boards no one is playing, its result on a board is that board\'s par for the player to beat, and it checks your version before it is kept. It may read the whole state, hidden parts too (a puzzle can keep its own way out in the state for it). It must not change the state: keep anything it needs (a timer, the last tap) in the state from setup, tap, key or step. A realtime game asks it every step (1/30 s): give it a person\'s pace (react after about 0.3 s, a tap every 0.2 s or more), not a machine\'s. A turn by turn game asks it once a move.',
     '  game.wins: true for a game that is won or lost (a puzzle, a race, a game against the board); leave it out for a game played for points. Its player must be able to win it at level 1.',
     '  Every game must be able to end (over: true), by winning, losing, time running out or a mistake.',
-    '  THE CHECK: before your version is kept its player plays it three times at level 1 and once at level 3, each up to two minutes or 400 moves. It comes back to you if there is no bot, if it is over at once every time, if nothing on the board ever changes, or if it is a game to win that its player never won at level 1.',
+    '  THE CHECK: before your version is kept its player plays it three times at level 1, once at level 3 and twice at level 5, each up to two minutes or 400 moves. It comes back to you if there is no bot, if it is over at once every time, if nothing on the board ever changes, if it is a game to win that its player never won at level 1, or if level 5 is no harder than level 1 for its player (no bigger board, no fewer wins or slower wins for a game to win; for a game of points, no more games over, none over sooner, no fewer points).',
+    '  HARDER FARTHER OUT: the level grows from 1 at the corner to 5 far out, and every game here gets harder with it. Use the level in setup for something the player feels: the size, the time allowed, the speed, how many things to dodge or find, how much help. Keep level 1 easy to win.',
     'RULES FOR YOUR REPLY:',
     '  Change only what the player asks for, and keep everything else working as it was. If they ask for a new game, write a new one.',
     '  Keep it small and clear: under 300 lines, readable names, a comment line at the top saying how to play.',
@@ -57994,9 +57996,40 @@ onmessage = ev => {
     if (R.every(x => x.atOnce)) return { why: 'when its own player played it, it was over at once every time (' + say1 + ')' };
     if (R.every(x => !x.changed)) return { why: 'when its own player played it, nothing on the board ever changed (' + say1 + ')' };
     if (M.wins && !one.some(x => x.won)) return { why: 'it is a game to win (game.wins), but its own player never won it at level 1 in ' + one.length + ' tries (' + say1 + ')' };
-    const won = R.filter(x => x.won).length, ended = R.filter(x => x.over).length;
-    const note = M.wins ? 'its player won ' + won + ' of ' + R.length : 'its player: ' + R.map(x => x.score != null ? x.score : '?').join(', ') + (ended < R.length ? ', ' + (R.length - ended) + ' still going' : '');
-    return { ok: true, note, runs: R };
+    const H = hardness(R, M);
+    if (!H.harder) return { why: 'level 5 is no harder than level 1 for its own player (' + H.text + '). Make it harder farther out: the level is 1 near the corner to 5 far out, and every step should be felt (a bigger board, less time, faster, more to dodge, fewer moves to spare)', level: true, text: H.text };
+    return { ok: true, note: 'its player: ' + H.text, runs: R };
+  }
+  /* HARDER FARTHER OUT, MEASURED (Oct 26: "4,6", the first): every other game here climbs from the corner out, so a game in the
+     lab should too. Its player's runs at level 1 and level 5 are set side by side, and level 5 counts as harder if any of these
+     is so: a bigger board; for a game to win, fewer won, or the wins taking a fifth more moves (seconds, if realtime); for a game
+     of points, more of its games over, over a fifth sooner, or a fifth fewer points. None so, it goes back to Claude with the
+     numbers; after `FIX_TRIES` it is kept anyway, said to play the same farther out, so a request is never lost to this alone. */
+  const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+  const fmt = x => x == null ? '?' : Math.abs(x) >= 10 ? String(Math.round(x)) : String(+x.toFixed(1));
+  function statsAt(R, L, M){
+    const r = R.filter(x => x.level === L);
+    const won = r.filter(x => x.won), over = r.filter(x => x.over);
+    return { L, k: r.length, n: Math.max(0, ...r.map(x => x.n || 0)), won: won.length, over: over.length,
+             effort: mean(won.map(x => M.realtime ? x.t : x.moves)), lasted: mean(over.map(x => x.t)),
+             score: mean(r.filter(x => x.score != null).map(x => +x.score)) };
+  }
+  function hardness(R, M){
+    const a = statsAt(R, 1, M), b = statsAt(R, 5, M);
+    const say = S => 'level ' + S.L + ': ' + S.n + '×' + S.n + (M.wins ? ', won ' + S.won + ' of ' + S.k + (S.effort != null ? ' in ' + fmt(S.effort) + (M.realtime ? ' s' : ' moves') : '')
+      : ', ' + S.over + ' of ' + S.k + ' over' + (S.lasted != null ? ' after ' + fmt(S.lasted) + ' s' : '') + (S.score != null ? ', score ' + fmt(S.score) : ''));
+    const text = say(a) + '; ' + say(b);
+    const rate = S => S.k ? S.won / S.k : 0, ends = S => S.k ? S.over / S.k : 0;
+    let harder = b.n > a.n;
+    if (M.wins){
+      if (rate(b) < rate(a) - 0.01) harder = true;
+      if (a.effort != null && b.effort != null && b.effort > 1.2 * a.effort) harder = true;
+    } else {
+      if (ends(b) > ends(a) + 0.01) harder = true;
+      if (a.lasted != null && b.lasted != null && b.lasted < 0.8 * a.lasted) harder = true;
+      if (a.score != null && b.score != null && a.score > 0 && b.score < 0.8 * a.score) harder = true;
+    }
+    return { harder, text, a, b };
   }
   async function trialOf(src){
     try { return { meta: await BOX.call('trial', { src }) }; }
@@ -58038,6 +58071,8 @@ onmessage = ev => {
         else { ASK.status('Trying it out…'); const T = await trialOf(R.src); if (T.error){ why = T.error; line = T.line; } }
         let K = null;
         if (!why){ ASK.status('Its own player is playing it…'); K = await checkOf(R.src); if (!K.ok){ why = K.why; line = K.line; } }
+        // (the levels alone: after the last try it is kept, said to play the same farther out)
+        if (why && K && K.level && tries >= FIX_TRIES){ why = null; K = { note: 'it plays the same farther out: ' + K.text }; }
         if (!why){
           pushVersion(c, r, R.src, R.note || 'changed', ask);
           restart(c, r);
@@ -58186,6 +58221,66 @@ onmessage = ev => {
     return box;
   }
 
+  /* MY GAMES (Oct 26: "4,6", the second): every board whose game you have changed, newest first, in a box (`#labMineBox`): its
+     place, its game's name (the version it plays, `titleOf`), how many versions and which it is on, what was asked last, your
+     best on it, and Play (the view flies there and it is the board you play), Share and Forget. From the row's My games tile or
+     the menu's My games…; Escape closes it. Your games are spread over the field, and nothing else finds them again. */
+  const titleOf = (k, src) => { const rec = RUN.get(k); if (rec && rec.key === hashOf(src) && rec.meta && rec.meta.title) return rec.meta.title;
+    const m = /\btitle\s*:\s*(['"`])((?:(?!\1).){1,60})\1/.exec(src); return m ? m[2] : 'A game'; };
+  function mineList(){
+    return [...MINE.entries()].map(([k, m]) => {
+      const [c, r] = k.split('_').map(Number), x = m.v[m.cur], b = BEST[k + '@' + hashOf(x.src)] || 0;
+      const lastAsk = [...m.v.slice(0, m.cur + 1)].reverse().find(v => v.ask);
+      return { k, c, r, title: titleOf(k, x.src), versions: m.v.length, cur: m.cur + 1, at: m.at || x.at || 0, best: b, ask: lastAsk ? lastAsk.ask : '' };
+    }).sort((a, b) => b.at - a.at);
+  }
+  function openMineList(){
+    let box = document.getElementById('labMineBox');
+    if (!box){
+      box = document.createElement('div');
+      box.id = 'labMineBox'; box.className = 'panel';
+      box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;display:flex;flex-direction:column;gap:8px;'
+        + 'padding:12px;width:min(560px,94vw);max-height:84vh;box-sizing:border-box';
+      const head = document.createElement('div'); head.style.cssText = 'font-size:0.8125rem;font-weight:600';
+      const list = document.createElement('div'); list.style.cssText = 'overflow:auto;display:flex;flex-direction:column;gap:6px';
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;justify-content:flex-end';
+      const bClose = document.createElement('button'); bClose.textContent = 'Close';
+      bClose.addEventListener('click', () => { box.hidden = true; });
+      row.append(bClose); box.append(head, list, row);
+      box._head = head; box._list = list;
+      box.tabIndex = -1;
+      box.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') box.hidden = true; });
+      document.body.appendChild(box);
+    }
+    const L = mineList();
+    box._head.textContent = 'My games (' + L.length + ')';
+    box._list.textContent = '';
+    if (!L.length){
+      const p = document.createElement('div'); p.style.cssText = 'font-size:0.75rem;color:#9fb0c4';
+      p.textContent = 'No board\'s game has been changed yet. Frame a board and use Change it… to make one your own.';
+      box._list.appendChild(p);
+    }
+    const ago = t => { if (!t) return ''; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+    for (const g of L){
+      const it = document.createElement('div'); it.className = 'labMineRow'; it.dataset.k = g.k;
+      it.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid rgba(201,199,190,.18);border-radius:6px';
+      const txt = document.createElement('div'); txt.style.cssText = 'flex:1;min-width:0';
+      const t1 = document.createElement('div'); t1.style.cssText = 'font-size:0.8125rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      t1.textContent = g.title + (g.best ? '  ' + '★★★'.slice(0, g.best) + '☆☆☆'.slice(0, 3 - g.best) : '');
+      const t2 = document.createElement('div'); t2.style.cssText = 'font-size:0.6875rem;color:#9fb0c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      t2.textContent = 'board ' + g.c + ', ' + g.r + ' · version ' + g.cur + ' of ' + g.versions + ' · ' + ago(g.at) + (g.ask ? ' · "' + g.ask + '"' : '');
+      txt.append(t1, t2);
+      const btn = (label, f) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); return b; };
+      it.append(txt,
+        btn('Play', () => { box.hidden = true; LIVE = { c: g.c, r: g.r }; try { gotoCell(g.c, g.r); } catch {} say('Playing ' + g.title + '.', 1600); }),
+        btn('Share', () => share(g.c, g.r)),
+        btn('Forget', () => { if (confirm('Forget every version of ' + g.title + ' on this board?')){ forget(g.c, g.r); openMineList(); } }));
+      box._list.appendChild(it);
+    }
+    box.hidden = false;
+    try { box.focus(); } catch {}
+    return box;
+  }
   function undo(c, r, by){
     const m = mineOf(c, r);
     if (!m){ say('Nothing to undo: this board plays its game as it came.', 2000); return false; }
@@ -58254,6 +58349,7 @@ onmessage = ev => {
       { glyph: '↺', value: 'Restart' },
       { glyph: '{ }', value: 'Rules' },
       { glyph: '🔗', value: 'Share' },
+      { glyph: '📋', value: 'My games' },
       { label: 'Version', value: m ? (m.cur + 1) + ' of ' + m.v.length : 'as it came' },
       ...(rec && rec.view && rec.view.score != null ? [{ label: 'Score', value: String(rec.view.score) }] : []),
     ];
@@ -58262,6 +58358,7 @@ onmessage = ev => {
   const app = {
     name: 'game lab',
     menu: [{ head: 'Game lab', items: [
+      { label: () => 'My games (' + MINE.size + ')…', title: 'Every board whose game you have changed: play one, share it or forget it.', on: () => openMineList() },
       { label: 'Change this board\'s game…', title: 'Say what to change; Claude rewrites the game\'s rules and the board plays the new version. Undo goes back.', on: withFramed((c, r) => ASK.open(c, r)) },
       { label: 'Fix this version', title: 'This board\'s game broke while played: send its error back to Claude to fix.', on: withFramed((c, r) => fixIt(c, r)) },
       { label: 'Undo the last change', title: 'Back a version on this board.', on: withFramed((c, r) => undo(c, r, -1)) },
@@ -58310,6 +58407,7 @@ onmessage = ev => {
       if (i === 3){ restart(c, r); return true; }
       if (i === 4){ openRules(c, r); return true; }
       if (i === 5){ share(c, r); return true; }
+      if (i === 6){ openMineList(); return true; }
       return true;
     },
     onReset(c, r){ restart(c, r); return true; },
@@ -58367,7 +58465,7 @@ onmessage = ev => {
       for (let i = 0; i < n * n; i++){ ctx.fillStyle = ((i % n) + ((i / n) | 0)) % 2 ? '#2b2f38' : '#3a4050'; ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t, t); }
       ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
     },
-    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, PLAYS, checkOf, playOf, shownAt, shownView, starsAt, BEST, undo, startFrom, forget, trialOf, parseReply, cleanView,
+    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, PLAYS, checkOf, hardness, openMineList, mineList, playOf, shownAt, shownView, starsAt, BEST, undo, startFrom, forget, trialOf, parseReply, cleanView,
               takeShared, openRules, levelAt, boardIdx, get model(){ return MODEL; }, isLive, get live(){ return LIVE; }, uvAt: (x, y) => _framedUV(x, y),
               session: tok => coachSetSession(tok), fly: (c, r) => gotoCell(c, r) },
   };
