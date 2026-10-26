@@ -1975,11 +1975,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     so is a right click. Elsewhere a hold used to start the board again, and the notes above that say "a hold starts it again"
     are out of date: the menu's Reset does that.
   - The smoke test clicks the real dots in trick shots and wants the row to stay shut, long-presses the table twice and wants it
-    open, then shut, and wants a hold in Simon to flip the field's switch (`window.tvf.bottomRow.visible`).
+    open, then shut, wants a hold in Simon to flip the field's switch (`window.tvf.bottomRow.visible`), and in Minesweeper a hold
+    on a covered square to flag it with the switch left alone, and one off the board to flip it.
   - **Always** (Oct 25: "Long press is always toggle of bottom browser"): no app's hold is asked any more, not even a move's. A right
-    click still reaches `onCellHold` where `holdIsMove` says it is a move. What a phone lost has a way of its own: Minesweeper's
-    menu has Taps: dig / flag (F on the keys, localStorage `minesweeper.taps`), Sokoban's menu Undo a step (Z on the keys); the
-    pipe games turn by taps, Nonograms has its cross mode and Air raid drops a bomb on a tap on yourself.
+    click still reaches `onCellHold` where `holdIsMove` says it is a move. What a phone lost has a way of its own: Sokoban's menu
+    Undo a step (Z on the keys); the pipe games turn by taps, Nonograms has its cross mode and Air raid drops a bomb on a tap on
+    yourself. Minesweeper keeps its hold (Oct 25, later: "minesweeper should restore the long press, its fundemental to its game
+    play."): an app with `holdKeeps` is asked first, and a hold it takes (a covered square in a game under way) flags it; a hold
+    anywhere else is the row's. Its menu's Taps: dig / flag (F on the keys, localStorage `minesweeper.taps`) stays too.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under

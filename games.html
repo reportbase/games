@@ -3944,6 +3944,10 @@ function turnStart(x, y){
     const _moved = Math.hypot(turn.currentX - turn.anchorX, turn.currentY - turn.anchorY);
     if (_moved >= (turn.isTouch ? 16 : TAP_PX)) return;       // already dragging: not a hold
     turn.appPan = false;
+    try {
+      const _a = window.getFieldApp && window.getFieldApp();
+      if (_a && _a.onCellHold && _a.holdKeeps) turn.holdAt = _framedUV(turn.anchorX, turn.anchorY);
+    } catch {}
     turn.longPressed = true;
     if (_hooks.onLongPress) _hooks.onLongPress();
   }, LONG_PRESS_MS);
@@ -4115,8 +4119,16 @@ function turnEnd(e){
          where it was a move (Minesweeper's flag, now its Taps: flag mode or F; Sokoban's undo, now the menu's Undo a step or Z;
          the pipe games' turn back, Nonograms' cross, Air raid's bomb, each with a way of its own). A right click still offers
          the mouse's hold to an app whose hold is a move (`holdIsMove`, below). */
-      try { toggleBoardBrowser(); } catch {}
+      /* …BUT MINESWEEPER'S (Oct 25, later: "minesweeper should restore the long press, its fundemental to its game play."): an
+         app with `holdKeeps` is asked first, and only a hold it takes (a covered square in a game under way) is not the drawer's. */
+      let _took = false;
+      try {
+        const _a = window.getFieldApp && window.getFieldApp(), _b = turn.holdAt;
+        if (_b && _a && _a.onCellHold && _a.holdKeeps) _took = !!_a.onCellHold(_b.c, _b.r, _b.u, _b.v);
+      } catch {}
+      if (!_took){ try { toggleBoardBrowser(); } catch {} }
     }
+    turn.holdAt = null;
     return;
   }
   // Short tap → click handler (host snaps to its cell). Fingers jitter more
@@ -44041,9 +44053,9 @@ const MINES_APP = (() => {
     name: 'minesweeper',
     menu: [{ head: 'Minesweeper', items: [{ label: DL.item.label, title: DL.item.title,
       on(){ DL.item.on(); GAMES.clear(); if (LIVE) GAMES.set(LIVE.key, newGame(DL.at(LIVE.c, LIVE.r))); } }, SND.item,
-      // (Oct 25: "Long press is always toggle of bottom browser": the hold that flagged on a phone is the drawer's now, so a tap
-      // can flag instead; F on the keys switches too, and a right click always flags.)
-      { label: () => 'Taps: ' + (TAPS === 'flag' ? 'flag' : 'dig'), title: 'What a tap on a covered square does: dig it, or plant a flag on it (again takes it off). F on the keys switches it; a right click always flags.',
+      // (Oct 25: "Long press is always toggle of bottom browser": a tap can flag too; F on the keys switches it, and a hold or a
+      // right click always flags, the hold given back the same day.)
+      { label: () => 'Taps: ' + (TAPS === 'flag' ? 'flag' : 'dig'), title: 'What a tap on a covered square does: dig it, or plant a flag on it (again takes it off). F on the keys switches it; a hold or a right click always flags.',
         on(){ setTaps(TAPS === 'flag' ? 'dig' : 'flag'); } }] }],
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
@@ -44097,8 +44109,9 @@ const MINES_APP = (() => {
       if (g.open[i]) chord(g, i); else open(g, i);
       return true;
     },
-    /* HOLD TO FLAG — the right click's, and the Taps: flag mode's (the long press is the drawer's since Oct 25). Only
-       a covered square in a game under way. */
+    /* HOLD TO FLAG — the long press, the right click and the Taps: flag mode's. Only a covered square in a game under way;
+       anywhere else the long press toggles the row, as in every game. */
+    holdKeeps: true,                 // (Oct 25, later: "minesweeper should restore the long press, its fundemental to its game play.")
     holdIsMove: true,                // (a right click here is a move: Oct 23; the long press always the drawer's, Oct 25)
     onCellHold(c, r, u, v){
       const g = GAMES.get(gkey(c, r));

@@ -5183,7 +5183,9 @@ try {
       const vis = () => page.evaluate(() => window.tvf.bottomRow.visible);
       const s0 = await vis(); await hold(); out.simon = { before: s0, after: await vis() };
       // (Oct 25: "Long press is always toggle of bottom browser"): in Minesweeper, a game under way, a hold flips the switch and
-      // plants no flag; with Taps: flag (the real F) a real click on a covered square plants one.
+      // plants no flag; with Taps: flag (the real F) a real click on a covered square plants one. (Oct 25, later: "minesweeper should
+      // restore the long press, its fundemental to its game play."): a real hold on a covered square flags it and leaves the switch
+      // alone; one on an open square flips the switch.
       await page.evaluate(() => { localStorage.removeItem('minesweeper.taps'); const A = window.FIELD_APPS.find(a => a.name === 'minesweeper'); window.setFieldApp(A); });
       await page.waitForTimeout(2500);
       const P = await page.evaluate(() => ({ x: innerWidth * 0.45, y: innerHeight * 0.4 }));
@@ -5192,23 +5194,31 @@ try {
       // (the row is empty, so it is drawn shut and a hold always opens it: the switch is put off first)
       await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(false); window.tvf.fn.syncBrowserVisibility(); });
       const flags = () => page.evaluate(() => { let n = 0; window.getFieldApp()._debug.games.forEach(g => { if (g.state === 'play') n += g.flag.reduce((s, f) => s + f, 0); }); return n; });
-      const m0 = await vis(), f0 = await flags(); await hold(); out.mines = { flipped: m0 !== await vis(), flagged: (await flags()) !== f0 };
-      await page.keyboard.press('f'); await page.waitForTimeout(200);
-      out.mines.flagMode = await page.evaluate(() => window.getFieldApp().menu[0].items.at(-1).label());
-      // the first covered square, from the game's own squares put on the screen (the framed board's u, v by _framedUV round about)
-      const at = await page.evaluate(() => { const A = window.getFieldApp(); let g; A._debug.games.forEach(v => { if (v.state === 'play') g = v; }); if (!g) return null;
+      // a square's middle on the screen, covered (and not flagged) or open, from the game's own squares (the framed board's u, v)
+      const squareAt = covered => page.evaluate(covered => { const A = window.getFieldApp(); let g; A._debug.games.forEach(v => { if (v.state === 'play') g = v; }); if (!g) return null;
         const n = g.n, uv = (x, y) => { try { return A._debug.uvAt(x, y); } catch { return null; } };
         for (let y = 40; y < innerHeight - 40; y += 6) for (let x = 40; x < innerWidth - 40; x += 6){ const b = uv(x, y); if (!b) continue;
           const i = Math.floor(b.v * n) * n + Math.floor(b.u * n), cu = (b.u * n) % 1, cv = (b.v * n) % 1;
-          if (b.u > 0 && b.u < 1 && b.v > 0 && b.v < 1 && !g.open[i] && !g.flag[i] && cu > 0.3 && cu < 0.7 && cv > 0.3 && cv < 0.7) return { x, y }; } return null; });
+          if (b.u > 0 && b.u < 1 && b.v > 0 && b.v < 1 && cu > 0.3 && cu < 0.7 && cv > 0.3 && cv < 0.7 && (covered ? !g.open[i] && !g.flag[i] : g.open[i])) return { x, y }; } return null; }, covered);
+      const holdAt = async p => { await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.waitForTimeout(1400); await page.mouse.up(); await page.waitForTimeout(900); };
+      out.mines = {};
+      const cov = await squareAt(true);
+      if (cov){ const m0 = await vis(), f0 = await flags(); await holdAt(cov); out.mines.holdFlag = (await flags()) === f0 + 1 && m0 === await vis(); }
+      else out.mines.holdFlag = 'no covered square found';
+      const opn = await squareAt(false);
+      if (opn){ const m0 = await vis(), f0 = await flags(); await holdAt(opn); out.mines.holdRow = m0 !== await vis() && (await flags()) === f0; }
+      else out.mines.holdRow = 'no open square found';
+      await page.keyboard.press('f'); await page.waitForTimeout(200);
+      out.mines.flagMode = await page.evaluate(() => window.getFieldApp().menu[0].items.at(-1).label());
+      const at = await squareAt(true);
       if (at){ const f1 = await flags(); await page.mouse.click(at.x, at.y); await page.waitForTimeout(600); out.mines.tapFlag = (await flags()) === f1 + 1; }
       else out.mines.tapFlag = 'no square found';
       await page.keyboard.press('f');
     } catch (e) { out.err = String(e); }
     const ok = !out.err && out.up && out.shut && out.heldOpen && out.heldShut && out.simon && out.simon.before !== out.simon.after
-      && out.mines && out.mines.flipped && !out.mines.flagged && out.mines.flagMode === 'Taps: flag' && out.mines.tapFlag === true;
+      && out.mines && out.mines.holdFlag === true && out.mines.holdRow === true && out.mines.flagMode === 'Taps: flag' && out.mines.tapFlag === true;
     if (!ok) failures.push(`[bottom row] ${JSON.stringify(out)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} the dots shut trick shots' row and it stayed shut; a real long press opened it and another shut it; in Simon a hold toggled the row; in Minesweeper a hold flipped it and flagged nothing, and Taps: flag (the real F) flagged by a real click`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} the dots shut trick shots' row and it stayed shut; a real long press opened it and another shut it; in Simon a hold toggled the row; in Minesweeper a hold on a covered square flagged it and one on an open square flipped the row, and Taps: flag (the real F) flagged by a real click`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and
