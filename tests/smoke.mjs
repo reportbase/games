@@ -5223,6 +5223,8 @@ const game = { title: 'Gold Lights', size: 4,
       await page.fill('#labAskBox textarea', 'make the lit squares gold gems');
       await page.click('#labAskBox button:has-text("Send to Claude")');
       await page.waitForFunction(() => /✓/.test(document.querySelector('#labAskBox').innerText) || /fails/.test(document.querySelector('#labAskBox').innerText), null, { timeout: 20000 }).catch(() => {});
+      // (the new version starts in the sandbox a moment after it is kept; a slow runner reads it a little later)
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.view && r.meta && r.meta.title === 'Gold Lights'; }, null, { timeout: 8000 }).catch(() => {});
       const C = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r), m = JSON.parse(localStorage.getItem('gamelab.mine') || '{}')[L.c + '_' + L.r];
         return { title: r && r.meta && r.meta.title, pieces: r && r.view && r.view.pieces.length, kept: m && m.v.length, cur: m && m.cur, box: document.querySelector('#labAskBox').innerText.slice(-120) }; });
       if (asked.length !== 2) bad.push(asked.length + ' requests, not 2 (one broken, one fixed)');
@@ -5232,14 +5234,17 @@ const game = { title: 'Gold Lights', size: 4,
       }
       if (C.title !== 'Gold Lights' || C.pieces !== 8 || C.kept !== 2 || C.cur !== 1) bad.push('after the change: ' + JSON.stringify(C));
       const U = await page.evaluate(async () => { const D = window.getFieldApp()._debug, L = D.live; document.querySelector('#labAskBox button').closest('#labAskBox').hidden = true;
-        window.getFieldApp().onStatTap(L.c, L.r, 1); await new Promise(r => setTimeout(r, 900)); const r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title; });
+        window.getFieldApp().onStatTap(L.c, L.r, 1);
+        for (let k = 0; k < 40; k++){ await new Promise(r => setTimeout(r, 200)); const r = D.RUN.get(L.c + '_' + L.r); if (r && r.meta && r.meta.title === 'Lights Out' && r.view) break; }
+        const r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title; });
       if (U !== 'Lights Out') bad.push('Undo went to ' + U);
       // Snake (board (1, 0)) waits for the player, then the real ArrowUp turns it up
       await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0)); await page.waitForTimeout(2500);
       const head = () => page.evaluate(() => { const r = window.getFieldApp()._debug.RUN.get('1_0'); return r && r.view && r.view.pieces[0] ? [r.view.pieces[0].x, r.view.pieces[0].y, r.view.over] : null; });
       const h0 = await head();
-      await page.keyboard.press('ArrowUp'); await page.waitForTimeout(700);
-      const h1 = await head();
+      await page.keyboard.press('ArrowUp');
+      let h1 = null;                                   // (a slow runner's frames are far apart: wait for the first step up)
+      for (let k = 0; k < 60; k++){ await page.waitForTimeout(100); h1 = await head(); if (h1 && (h1[1] < 6.5 || h1[0] !== 5.5 || h1[2])) break; }
       if (!h0 || h0[0] !== 5.5 || h0[1] !== 6.5) bad.push('Snake did not wait: ' + JSON.stringify(h0));
       if (!h1 || !(h1[1] < 6.5) || h1[0] !== 5.5 || h1[2]) bad.push('the real ArrowUp did not turn the snake up: ' + JSON.stringify(h1));
     } catch (e){ bad.push(String(e)); }
