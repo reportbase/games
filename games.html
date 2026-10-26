@@ -57104,9 +57104,11 @@ const GAMELAB_APP = (() => {
 const game = {
   title: 'Lights Out',
   size: level => 3 + Math.min(level, 4),          // 4×4 near the corner, up to 7×7 far out
+  wins: true,
   setup(level, rand) {
     const n = game.size(level);
-    const s = { n, lit: new Array(n * n).fill(false), taps: 0, done: false };
+    // (need: the squares pressed an odd number of times, the deal's and the player's: pressing each once more puts every light out)
+    const s = { n, lit: new Array(n * n).fill(false), need: new Array(n * n).fill(false), taps: 0, done: false };
     // dealt by pressing squares on a dark board, so it can always be put out
     for (let k = 0; k < 2 + level * 2; k++) flip(s, Math.floor(rand() * n), Math.floor(rand() * n));
     if (!s.lit.some(Boolean)) flip(s, 1, 1);
@@ -57118,6 +57120,10 @@ const game = {
     s.taps++;
     s.done = !s.lit.some(Boolean);
     sound(s.done ? 'win' : 'click');
+  },
+  bot(s) {                                         // its own player: presses each square the lights still need
+    const i = s.need.indexOf(true);
+    return i < 0 ? null : { tap: [i % s.n, Math.floor(i / s.n)] };
   },
   view(s) {
     const squares = [], pieces = [];
@@ -57133,6 +57139,7 @@ const game = {
   },
 };
 function flip(s, x, y) {
+  s.need[y * s.n + x] = !s.need[y * s.n + x];
   for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const i = x + dx, j = y + dy;
     if (i >= 0 && j >= 0 && i < s.n && j < s.n) s.lit[j * s.n + i] = !s.lit[j * s.n + i];
@@ -57146,7 +57153,7 @@ const game = {
   setup(level, rand) {
     const n = game.size(level);
     return { n, level, t: 0, end: 30, next: 1, up: new Array(n * n).fill(0), bonk: new Array(n * n).fill(0),
-             score: 0, misses: 0, over: false };
+             stay: 1.3 - level * 0.1, lastTap: -1, score: 0, misses: 0, over: false };
   },
   step(s, dt, rand) {
     if (s.over) return;
@@ -57154,16 +57161,22 @@ const game = {
     for (let i = 0; i < s.up.length; i++) { s.up[i] = Math.max(0, s.up[i] - dt); s.bonk[i] = Math.max(0, s.bonk[i] - dt); }
     if (s.t >= s.next) {                          // a mole comes up in an empty hole
       const empty = s.up.map((u, i) => u > 0 ? -1 : i).filter(i => i >= 0);
-      if (empty.length) s.up[empty[Math.floor(rand() * empty.length)]] = 1.3 - s.level * 0.1;
+      if (empty.length) s.up[empty[Math.floor(rand() * empty.length)]] = s.stay;
       s.next = s.t + 0.5 + rand() * (1.1 - s.level * 0.12);
     }
     if (s.t >= s.end) { s.over = true; sound('win'); }
   },
   tap(s, x, y) {
     if (s.over) return;
+    s.lastTap = s.t;
     const i = y * s.n + x;
     if (s.up[i] > 0) { s.up[i] = 0; s.bonk[i] = 0.3; s.score++; sound('click'); }
     else { s.misses++; sound('buzz'); }
+  },
+  bot(s) {                                         // its own player: a mole up 0.35 s or more, a tap every 0.25 s at most
+    if (s.over || s.t - s.lastTap < 0.25) return null;
+    const i = s.up.findIndex(u => u > 0 && s.stay - u >= 0.35);
+    return i < 0 ? null : { tap: [i % s.n, Math.floor(i / s.n)] };
   },
   view(s) {
     const squares = [], pieces = [];
@@ -57201,6 +57214,21 @@ const game = {
     if (s.dir[0] !== 0) game.key(s, dy < 0 ? 'up' : 'down');
     else game.key(s, dx < 0 ? 'left' : 'right');
   },
+  bot(s) {                                         // its own player: toward the apple by a safe square with the most room
+    if (s.over || s.turn) return null;
+    const [hx, hy] = s.body[0], body = new Set(s.body.slice(0, -1).map(([x, y]) => x + ',' + y));
+    const free = (x, y) => x >= 0 && y >= 0 && x < s.n && y < s.n && !body.has(x + ',' + y);
+    let best = null;
+    for (const [k, d] of Object.entries({ up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] })) {
+      if (d[0] === -s.dir[0] && d[1] === -s.dir[1]) continue;
+      const x = hx + d[0], y = hy + d[1];
+      if (!free(x, y)) continue;
+      const room = roomAt(s, x, y, body), far = Math.abs(x - s.apple[0]) + Math.abs(y - s.apple[1]);
+      const score = (room >= s.body.length ? 1000 : room * 10) - far;
+      if (!best || score > best.score) best = { k, d, score };
+    }
+    return best && (best.d[0] !== s.dir[0] || best.d[1] !== s.dir[1]) ? best.k : null;
+  },
   step(s, dt, rand) {
     if (s.over) return;
     s.t += dt;
@@ -57227,6 +57255,18 @@ const game = {
              message: s.over ? 'Crashed after ' + s.score + ' apples.' : '' };
   },
 };
+function roomAt(s, x0, y0, body) {               // the squares reachable from (x0, y0), up to 150
+  const seen = new Set([x0 + ',' + y0]), todo = [[x0, y0]];
+  while (todo.length && seen.size < 150) {
+    const [x, y] = todo.pop();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const a = x + dx, b = y + dy, k = a + ',' + b;
+      if (a < 0 || b < 0 || a >= s.n || b >= s.n || body.has(k) || seen.has(k)) continue;
+      seen.add(k); todo.push([a, b]);
+    }
+  }
+  return seen.size;
+}
 function place(s, rand) {
   do s.apple = [Math.floor(rand() * s.n), Math.floor(rand() * s.n)];
   while (s.body.some(([x, y]) => x === s.apple[0] && y === s.apple[1]));
@@ -57271,7 +57311,8 @@ function compile(src) {
 }
 const sizeOf = (g, level) => { const v = typeof g.size === 'function' ? g.size(level) : g.size; return Math.max(2, Math.min(24, Math.round(+v || 6))); };
 const meta = g => ({ title: String(g.title || 'A game').slice(0, 60), realtime: !!g.realtime, keys: typeof g.key === 'function',
-                     taps: typeof g.tap === 'function', steps: typeof g.step === 'function', drags: typeof g.drag === 'function' });
+                     taps: typeof g.tap === 'function', steps: typeof g.step === 'function', drags: typeof g.drag === 'function',
+                     bots: typeof g.bot === 'function', wins: !!g.wins });
 function viewOf(b) {
   const v = b.g.view(b.state);
   if (!v || typeof v !== 'object') throw new Error('game.view must return an object');
@@ -57289,12 +57330,90 @@ function trial(g) {
       if (g.tap) keep(b, g.tap(b.state, Math.floor(rand() * n), Math.floor(rand() * n), rand));
       if (g.key) keep(b, g.key(b.state, ['up', 'right', 'down', 'left', 'enter', 'space'][k % 6], rand));
       if (g.step) for (let j = 0; j < 4; j++) keep(b, g.step(b.state, 1 / 30, rand));
+      if (g.bot) act(b, g.bot(b.state, rand));
       if (g.drag) { const x0 = rand() * n, y0 = rand() * n, x1 = rand() * n, y1 = rand() * n;
                     keep(b, g.drag(b.state, x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, false, rand)); keep(b, g.drag(b.state, x0, y0, x1, y1, true, rand)); }
       v = viewOf(b);
     }
     structuredClone(v);
   }
+}
+// THE GAME'S OWN PLAYER (Oct 26: "1,2" of what came next: boards no one plays show the game being played, and Claude's version
+// is played before it is kept). game.bot(state, rand) gives a move, { tap: [x, y] }, { key: 'up' }, { drag: [x0, y0, x1, y1] }
+// (or [x, y] for a tap, 'up' for a key), or nothing to wait. A realtime game asks it every step; a turn by turn game once a move.
+function act(b, m) {
+  if (m === undefined || m === null || m === false) return false;
+  const n = b.n, cl = v => Math.max(0, Math.min(n - 1, Math.floor(+v || 0)));
+  if (Array.isArray(m) && m.length === 2) m = { tap: m };
+  else if (typeof m === 'string') m = { key: m };
+  if (m.tap && b.g.tap) keep(b, b.g.tap(b.state, cl(m.tap[0]), cl(m.tap[1]), b.rand));
+  else if (m.key && b.g.key) keep(b, b.g.key(b.state, String(m.key), b.rand));
+  else if (m.drag && b.g.drag) { const [x0, y0, x1, y1] = m.drag.map(v => +v || 0);
+    keep(b, b.g.drag(b.state, x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, false, b.rand)); keep(b, b.g.drag(b.state, x0, y0, x1, y1, true, b.rand)); }
+  else return false;
+  return true;
+}
+const STEP = 1 / 30;
+function playNew(g, seed, level) {
+  const rand = rngOf(seed), b = { g, rand, n: sizeOf(g, level), state: undefined, t: 0, moves: 0, idle: 0, over: false, won: false, score: null };
+  b.state = g.setup(level, rand); if (b.state === undefined) b.state = {};
+  return b;
+}
+// one go: a move (turn by turn) or a step (realtime); the view after it
+function playOne(b) {
+  if (b.g.realtime) {
+    if (b.g.bot && act(b, b.g.bot(b.state, b.rand))) b.moves++;
+    if (b.g.step) keep(b, b.g.step(b.state, STEP, b.rand));
+    b.t += STEP;
+  } else {
+    if (!b.g.bot || !act(b, b.g.bot(b.state, b.rand))) b.idle++;
+    else { b.moves++; b.idle = 0; }
+    b.t += 0.5;
+  }
+  const v = viewOf(b); OUT.length = 0;
+  b.over = !!v.over; b.won = !!v.won; b.score = v.score;
+  return v;
+}
+const sig = v => JSON.stringify([v.squares, v.pieces]).length + ':' + JSON.stringify(v.squares || []).slice(0, 2000) + JSON.stringify((v.pieces || []).slice(0, 40));
+// a recording for a board no one plays: worked out a slice at a time (RECS by board), frames every 0.1 s of a realtime game, every
+// move of a turn by turn one, up to REC_T seconds or REC_MOVES moves
+const RECS = new Map(), REC_T = 40, REC_MOVES = 120, REC_DT = 0.1;
+function recSlice(d) {
+  let R = RECS.get(d.rk), fresh = false;
+  if (!R || R.key !== d.key) {
+    const g = MODS.get(d.key); if (!g) throw new Error('not loaded');
+    R = { key: d.key, b: playNew(g, d.seed, d.level), next: 0, done: false }; RECS.set(d.rk, R); fresh = true;
+    const v = viewOf(R.b); OUT.length = 0;
+    R.first = [{ t: 0, v }];
+  }
+  const frames = R.first || []; R.first = null;
+  const b = R.b, end = Date.now() + Math.max(5, Math.min(60, +d.ms || 30));
+  while (!R.done && Date.now() < end) {
+    const v = playOne(b);
+    if (b.g.realtime) { if (b.t >= R.next || b.over) { frames.push({ t: b.t, v }); R.next = b.t + REC_DT; } }
+    else if (b.idle === 0) frames.push({ t: b.t, v });
+    if (b.over || b.t >= REC_T || b.moves >= REC_MOVES || (!b.g.realtime && b.idle > 0)) R.done = true;
+  }
+  if (R.done) RECS.delete(d.rk);
+  return { fresh, frames, done: R.done, over: b.over, won: b.won, score: b.score, t: b.t, moves: b.moves };
+}
+// THE CHECK: its own player plays it three times at level 1 and once at level 3, each up to CHECK_T seconds (or CHECK_MOVES moves)
+function check(g) {
+  const runs = [];
+  for (const [level, seed] of [[1, 11], [1, 23], [1, 37], [3, 41]]) {
+    const b = playNew(g, seed * 7919, level), v0 = viewOf(b); OUT.length = 0;
+    const s0 = sig(v0), end = Date.now() + 450;
+    let changed = false, k = 0, atOnce = !!v0.over;
+    b.over = !!v0.over; b.won = !!v0.won; b.score = v0.score;
+    while (!b.over && !atOnce && b.t < 120 && b.moves < 400 && Date.now() < end) {
+      const v = playOne(b);
+      if (!changed && (k++ % 10 === 0 || b.over)) changed = sig(v) !== s0;
+      if (!b.g.realtime && b.idle > 0) break;
+    }
+    if (b.over && (b.moves <= 1 && b.t < 1.01)) atOnce = true;
+    runs.push({ level, over: b.over, won: b.won, score: b.score, t: +b.t.toFixed(2), moves: b.moves, changed, atOnce, stuck: !b.g.realtime && b.idle > 0 && !b.over });
+  }
+  return runs;
 }
 function lineOf(e) {
   const m = /<anonymous>:(\d+):(\d+)/.exec(String(e && e.stack || ''));
@@ -57308,6 +57427,9 @@ onmessage = ev => {
     else if (d.op === 'trial') { const g = compile(String(d.src)); trial(g); OUT.length = 0; v = meta(g); }
     else if (d.op === 'drop') { BOARDS.delete(d.bk); v = true; }
     else if (d.op === 'unload') { MODS.delete(d.key); v = true; }
+    else if (d.op === 'rec') v = recSlice(d);
+    else if (d.op === 'unrec') { RECS.delete(d.rk); v = true; }
+    else if (d.op === 'check') { const g = compile(String(d.src)); v = { meta: meta(g), runs: g.bot ? check(g) : null }; }
     else if (d.op === 'start') {
       const g = MODS.get(d.key); if (!g) throw new Error('not loaded');
       const rand = rngOf(d.seed), level = d.level, b = { g, rand, n: sizeOf(g, level), state: undefined };
@@ -57332,21 +57454,27 @@ onmessage = ev => {
     + `(() => {
   const WSRC = ${JSON.stringify(WORKER_SRC)};
   const T = ${JSON.stringify(LAB_TIMEOUT)};
-  let w = null; const pending = new Map();
+  // (the Worker answers in order, so only the call it is working on is timed, from when it reached it: one queued behind a long
+  // check is not stopped for the check's time, and the call stopped is the one it was stuck on)
+  let w = null, timer = null, head = null; const pending = new Map();
+  const stop = () => {
+    // (an endless loop: the Worker is stopped and a fresh one started; every module and board in it went with it)
+    try { w.terminate(); } catch (x) {}
+    for (const id of pending.keys()) parent.postMessage({ id, ok: false, killed: true, culprit: id === head,
+      error: id === head ? 'it took too long to answer (an endless loop?) and was stopped' : 'stopped with another game that hung' }, '*');
+    pending.clear(); head = null; timer = null; boot(); parent.postMessage({ op: 'reset' }, '*');
+  };
+  const arm = () => { clearTimeout(timer); timer = null; head = pending.keys().next().value; if (head === undefined) { head = null; return; }
+    const op = pending.get(head); timer = setTimeout(stop, op === 'trial' || op === 'check' ? T.trial : T.call); };
   const boot = () => { w = new Worker(URL.createObjectURL(new Blob([WSRC], { type: 'text/javascript' })));
-    w.onmessage = e => { const d = e.data; const p = pending.get(d.id); if (p) { clearTimeout(p); pending.delete(d.id); } parent.postMessage(d, '*'); };
+    w.onmessage = e => { const d = e.data; if (pending.has(d.id)) { pending.delete(d.id); if (d.id === head) arm(); } parent.postMessage(d, '*'); };
     w.onerror = e => { try { e.preventDefault(); } catch (x) {} }; };
   onmessage = e => {
     if (e.source !== parent) return;
     const d = e.data || {};
-    pending.set(d.id, setTimeout(() => {
-      // (an endless loop: the Worker is stopped and a fresh one started; every module and board in it went with it)
-      try { w.terminate(); } catch (x) {}
-      for (const [id, t] of pending) { clearTimeout(t); parent.postMessage({ id, ok: false, killed: true, culprit: id === d.id,
-        error: id === d.id ? 'it took too long to answer (an endless loop?) and was stopped' : 'stopped with another game that hung' }, '*'); }
-      pending.clear(); boot(); parent.postMessage({ op: 'reset' }, '*');
-    }, d.op === 'trial' ? T.trial : T.call));
+    pending.set(d.id, d.op);
     w.postMessage(d);
+    if (head === null) arm();
   };
   boot(); parent.postMessage({ op: 'ready' }, '*');
 })();` + '</scr' + 'ipt>';
@@ -57452,9 +57580,31 @@ onmessage = ev => {
     glideFrom(rec, rec.view);
     if (isLive(rec.c, rec.r)) playSounds(rec.view.sounds);
     const m = rec.view.message;
-    if (m && m !== rec.msg && isLive(rec.c, rec.r)) say(m, 2600);
+    const end = rec.view.over && !rec.ended && rec.go && isLive(rec.c, rec.r) ? (rec.ended = true, starsAt(rec)) : null;
+    if ((m && m !== rec.msg || end) && isLive(rec.c, rec.r)) say([m && m !== rec.msg ? m : '', end || ''].filter(Boolean).join(' '), 3200);
     rec.msg = m;
     if (!quiet) changed();
+  }
+  /* PAR AND STARS (the same request): a game played to its end on the framed board is held against its own player's run on the
+     board's deal: a game to win by the moves (turn by turn) or seconds (realtime) taken, at par or under ★★★, within half again
+     ★★, else ★ (lost, none); a game of points by the score, par or more ★★★, 60% of it ★★, else ★. The most kept by board and
+     version (localStorage `gamelab.best`). */
+  const BEST_KEY = 'gamelab.best';
+  const BEST = (() => { try { return JSON.parse(localStorage.getItem(BEST_KEY) || '{}') || {}; } catch { return {}; } })();
+  const bestKey = rec => rec.bk + '@' + rec.key;
+  function starsAt(rec){
+    const P = PLAYS.get(rec.bk), par = P && P.key === rec.key ? P.par : null, V = rec.view;
+    if (!par) return '';
+    let n;
+    if (par.kind === 'score'){ const sc = +V.score || 0; n = sc >= par.val ? 3 : sc >= 0.6 * par.val ? 2 : 1; }
+    else {
+      if (!V.won) return 'Its own player wins it in ' + parText(par) + '.';
+      const mine = par.kind === 'time' ? +(rec.gt || 0).toFixed(1) : (rec.acts || 0);
+      n = mine <= par.val ? 3 : mine <= 1.5 * par.val ? 2 : 1;
+    }
+    const k = bestKey(rec), was = BEST[k] || 0;
+    if (n > was){ BEST[k] = n; const ks = Object.keys(BEST); if (ks.length > 600) delete BEST[ks[0]]; try { localStorage.setItem(BEST_KEY, JSON.stringify(BEST)); } catch {} }
+    return '★★★'.slice(0, n) + '☆☆☆'.slice(0, 3 - n) + ' against its player\'s ' + parText(par) + (n > was && was ? ' (a new best)' : '') + '.';
   }
   function broke(rec, e){
     rec.err = (e && e.message) || String(e);
@@ -57475,13 +57625,14 @@ onmessage = ev => {
   async function send(rec, op, args){
     if (!rec.started || rec.err) return;
     if (op !== 'step' && !rec.go){ rec.go = true; rec.last = nowS(); }
+    if (op === 'tap' || op === 'key' || (op === 'drag' && args.done)) rec.acts = (rec.acts || 0) + 1;
     rec.busy = true;
     try { took(rec, await BOX.call(op, Object.assign({ bk: rec.bk }, args)), op === 'step'); rec.busy = false; }
     catch (e){ if (e && e.killed && !e.culprit){ rec.busy = false; return; } broke(rec, e); }
   }
   function restart(c, r){
     const rec = RUN.get(gkey(c, r));
-    if (rec){ rec.attempt++; rec.started = false; rec.err = null; rec.view = null; rec.msg = ''; rec.go = false; }
+    if (rec){ rec.attempt++; rec.started = false; rec.err = null; rec.view = null; rec.msg = ''; rec.go = false; rec.acts = 0; rec.gt = 0; rec.ended = false; }
     recOf(c, r); changed();
   }
   /* the clock: the framed board's realtime game steps once a frame, as long as the last step has come back, and only once the
@@ -57490,7 +57641,83 @@ onmessage = ev => {
     if (!rec.meta || !rec.meta.realtime || !rec.meta.steps || !rec.started || rec.busy || rec.err || !rec.go) return;
     if (rec.view && rec.view.over) return;
     const t = nowS(), dt = Math.min(0.25, t - rec.last); rec.last = t;
+    rec.gt = (rec.gt || 0) + dt;
     send(rec, 'step', { dt });
+  }
+
+  /* ── BOARDS NO ONE PLAYS, PLAYED (Oct 26: "1,2" of what came next, the first: "boards no one plays show the game being
+     played"): a board whose game has its own player (game.bot) shows a recording of it playing the board's own deal (its seed
+     and level, as the board starts) from the opening, `REC_T` (40) seconds of a realtime game or `REC_MOVES` (120) moves, then
+     holds the end `HOLD` seconds and plays again, each board at its own phase. Worked out in the sandbox a slice at a time
+     (`rec`, 25 ms of its time a call, one call out at a time; PLAYS by board, the latest `PLAYS_CAP` asked for), frames every 0.1
+     s or every move; between two frames a piece with an id slides (`shownView`). Its end is the board's par (`parOf`): the moves
+     (turn by turn) or seconds (realtime) its player took to win a game to win, else its score. */
+  const PLAYS = new Map(), PLAYS_CAP = 80, HOLD = 2.5, PLAY_MS = 25;
+  let PLAY_BUSY = false;
+  BOX.onReset(() => { for (const P of PLAYS.values()) if (!P.done){ P.frames = []; } PLAY_BUSY = false; });
+  function playOf(rec){
+    if (!rec.meta || !rec.meta.bots || rec.err) return null;
+    let P = PLAYS.get(rec.bk);
+    if (!P || P.key !== rec.key){
+      P = { key: rec.key, src: rec.src, c: rec.c, r: rec.r, realtime: rec.meta.realtime, wins: rec.meta.wins, frames: [], done: false, broken: false, asked: 0, par: null };
+      PLAYS.set(rec.bk, P);
+      if (PLAYS.size > PLAYS_CAP){ let old = null; for (const [k, Q] of PLAYS) if (!old || Q.asked < PLAYS.get(old).asked) old = k; PLAYS.delete(old); BOX.call('unrec', { rk: old }).catch(() => {}); }
+    }
+    P.asked = nowS();
+    if (!PLAY_BUSY) setTimeout(playPump, 0);
+    return P;
+  }
+  function parOf(P){
+    if (!P.done || !P.over) return null;
+    if (P.wins) return P.won ? (P.realtime ? { kind: 'time', val: +P.t.toFixed(1) } : { kind: 'moves', val: P.moves }) : null;
+    return P.score != null ? { kind: 'score', val: P.score } : null;
+  }
+  const parText = p => p.kind === 'time' ? p.val + ' s' : p.kind === 'moves' ? p.val + (p.val === 1 ? ' move' : ' moves') : String(p.val);
+  async function playPump(){
+    if (PLAY_BUSY) return;
+    const t = nowS();
+    let P = null, bk = null;
+    for (const [k, Q] of PLAYS) if (!Q.done && !Q.broken && t - Q.asked < 1.5 && (!P || Q.asked > P.asked)){ P = Q; bk = k; }
+    if (!P) return;
+    PLAY_BUSY = true;
+    try {
+      await BOX.load(P.key, P.src);
+      const idx = boardIdx(P.c, P.r);
+      const res = await BOX.call('rec', { rk: bk, key: P.key, seed: (idx * 7919) >>> 0, level: levelAt(idx), ms: PLAY_MS });
+      if (PLAYS.get(bk) === P){
+        if (res.fresh) P.frames = [];
+        for (const f of res.frames) P.frames.push({ t: f.t, v: cleanView(f.v) });
+        if (res.done){ Object.assign(P, { done: true, over: res.over, won: res.won, score: res.score, t: res.t, moves: res.moves }); P.par = parOf(P); }
+      }
+    } catch (e){ if (!(e && e.killed && !e.culprit)) P.broken = true; }
+    finally { PLAY_BUSY = false; setTimeout(playPump, 30); }
+  }
+  // the recording's moment on the page's clock for this board: the frame shown and the one after it, and how far between
+  function shownAt(P, c, r){
+    const F = P.frames; if (F.length < 2 && !P.done) return null;
+    if (!F.length) return null;
+    const last = F[F.length - 1].t, total = last + (P.done ? HOLD : 0) + (P.realtime ? 0 : 1);
+    if (!P.done && last < 3) return null;
+    const ph = ((boardIdx(c, r) * 1.37) % total + total) % total;
+    const tt = (nowS() + ph) % total - (P.realtime ? 0 : 1);
+    let lo = 0, hi = F.length - 1;
+    while (lo < hi){ const m = (lo + hi + 1) >> 1; if (F[m].t <= tt) lo = m; else hi = m - 1; }
+    return { A: F[lo], B: F[lo + 1] || null, Z: F[lo - 1] || null, tt };
+  }
+  // (realtime: a piece slides from this frame toward the next across the gap; turn by turn: the frame is the move, and its
+  // pieces slide from where the frame before had them over their glide, as a live game's do)
+  function shownView(S, realtime){
+    const { A, B, Z, tt } = S, from = realtime ? B : Z;
+    if (!from) return A.v;
+    const by = new Map(); for (const p of from.v.pieces) if (p.id != null) by.set(p.id, p);
+    const pieces = A.v.pieces.map(p => {
+      const q = p.id != null ? by.get(p.id) : null;
+      if (!q || Math.hypot(q.x - p.x, q.y - p.y) > GLIDE_FAR) return p;
+      if (realtime){ const g = Math.min(1, Math.max(0, (tt - A.t) / Math.max(1e-3, B.t - A.t))); return Object.assign({}, p, { x: p.x + (q.x - p.x) * g, y: p.y + (q.y - p.y) * g }); }
+      const g = ease(Math.min(1, Math.max(0, (tt - A.t) / Math.max(0.05, p.glide || 0.12))));
+      return Object.assign({}, p, { x: q.x + (p.x - q.x) * g, y: q.y + (p.y - q.y) * g });
+    });
+    return { n: A.v.n, colors: A.v.colors, pieces };
   }
 
   /* ── WHAT COMES BACK, CHECKED ── colours read from '#rgb', '#rrggbb' or numbers; sizes and counts held to what a board can
@@ -57681,6 +57908,11 @@ onmessage = ev => {
     '    status: a few words for the board\'s title (the score, time left, whose turn). message: a sentence shown once when it changes (a win, a loss), else "".',
     '    score: a number. over: true when the game has ended (a tap then starts it again). won: true when it ended well.',
     '    size: only if the board\'s size changes during play.',
+    'ITS OWN PLAYER (every module needs one):',
+    '  game.bot(state, rand) -> a move, or null to wait: { tap: [x, y] }, { key: "up" }, { drag: [x0, y0, x1, y1] } (or just [x, y] for a tap, "up" for a key). It plays the game as a steady person would: the page uses it to show the game being played on boards no one is playing, its result on a board is that board\'s par for the player to beat, and it checks your version before it is kept. It may read the whole state, hidden parts too (a puzzle can keep its own way out in the state for it). It must not change the state: keep anything it needs (a timer, the last tap) in the state from setup, tap, key or step. A realtime game asks it every step (1/30 s): give it a person\'s pace (react after about 0.3 s, a tap every 0.2 s or more), not a machine\'s. A turn by turn game asks it once a move.',
+    '  game.wins: true for a game that is won or lost (a puzzle, a race, a game against the board); leave it out for a game played for points. Its player must be able to win it at level 1.',
+    '  Every game must be able to end (over: true), by winning, losing, time running out or a mistake.',
+    '  THE CHECK: before your version is kept its player plays it three times at level 1 and once at level 3, each up to two minutes or 400 moves. It comes back to you if there is no bot, if it is over at once every time, if nothing on the board ever changes, or if it is a game to win that its player never won at level 1.',
     'RULES FOR YOUR REPLY:',
     '  Change only what the player asks for, and keep everything else working as it was. If they ask for a new game, write a new one.',
     '  Keep it small and clear: under 300 lines, readable names, a comment line at the top saying how to play.',
@@ -57746,6 +57978,26 @@ onmessage = ev => {
     const note = text.slice(0, at).replace(/\s+/g, ' ').trim().slice(0, 300);
     return { src, note };
   }
+  /* THE CHECK (Oct 26: "1,2" of what came next, the second: Claude checks a version can be finished): after the trial, the
+     version's own player (game.bot) plays it three times at level 1 and once at level 3 in the sandbox (`check`, each run up to
+     two minutes of its clock or 400 moves). It goes back to Claude, as a broken one does, if it has no player, if it ends at
+     once every time, if nothing on the board ever changes, or if it is a game to win (game.wins) that its player never won at
+     level 1. A version from the Rules box or a link is tried only, as before. */
+  const runText = (x, realtime) => (x.over ? (x.won ? 'won' : 'over') + ' after ' : x.stuck ? 'its player gave no move after ' : 'still going after ')
+    + (realtime ? x.t + ' s' : x.moves + ' moves') + (x.score != null ? ', score ' + x.score : '');
+  async function checkOf(src){
+    let r;
+    try { r = await BOX.call('check', { src }); } catch (e){ return { why: (e && e.message) || String(e), line: e && e.line }; }
+    const M = r.meta, R = r.runs;
+    if (!R) return { why: 'the module has no game.bot, its own player (every version needs one: it plays the boards no one plays, and is how the page checks a version)' };
+    const one = R.filter(x => x.level === 1), say1 = one.map(x => runText(x, M.realtime)).join('; ');
+    if (R.every(x => x.atOnce)) return { why: 'when its own player played it, it was over at once every time (' + say1 + ')' };
+    if (R.every(x => !x.changed)) return { why: 'when its own player played it, nothing on the board ever changed (' + say1 + ')' };
+    if (M.wins && !one.some(x => x.won)) return { why: 'it is a game to win (game.wins), but its own player never won it at level 1 in ' + one.length + ' tries (' + say1 + ')' };
+    const won = R.filter(x => x.won).length, ended = R.filter(x => x.over).length;
+    const note = M.wins ? 'its player won ' + won + ' of ' + R.length : 'its player: ' + R.map(x => x.score != null ? x.score : '?').join(', ') + (ended < R.length ? ', ' + (R.length - ended) + ' still going' : '');
+    return { ok: true, note, runs: R };
+  }
   async function trialOf(src){
     try { return { meta: await BOX.call('trial', { src }) }; }
     catch (e){ return { error: (e && e.message) || String(e), line: e && e.line }; }
@@ -57784,10 +58036,12 @@ onmessage = ev => {
         if (!R) why = 'there was no ```js block in the reply';
         else if (R.src.length > SRC_MAX) why = 'the module is too long (' + R.src.length + ' characters, at most ' + SRC_MAX + ')';
         else { ASK.status('Trying it out…'); const T = await trialOf(R.src); if (T.error){ why = T.error; line = T.line; } }
+        let K = null;
+        if (!why){ ASK.status('Its own player is playing it…'); K = await checkOf(R.src); if (!K.ok){ why = K.why; line = K.line; } }
         if (!why){
           pushVersion(c, r, R.src, R.note || 'changed', ask);
           restart(c, r);
-          ASK.done(R.note || 'Changed.');
+          ASK.done((R.note || 'Changed.') + (K && K.note ? ' (' + K.note + ')' : ''));
           say(R.note || 'Changed.', 3200);
           try { bbRefreshNow(); } catch {}
           return;
@@ -58028,11 +58282,14 @@ onmessage = ev => {
     cellGrid(c, r){
       const rec = recOf(c, r);
       if (rec.err) return ERR_GRID;
+      if (!isLive(c, r)){ const P = playOf(rec), S = P && shownAt(P, c, r); if (S) return S.A.g || (S.A.g = { n: S.A.v.n, colors: S.A.v.colors }); }
       return rec.view ? (rec._g && rec._gv === rec.view ? rec._g : (rec._gv = rec.view, rec._g = { n: rec.view.n, colors: rec.view.colors })) : waitGrid(6);
     },
     cellItems(c, r){
       const rec = recOf(c, r);
+      const P = playOf(rec);
       if (isLive(c, r)) tick(rec);
+      else if (P){ const S = shownAt(P, c, r); if (S) return itemsOf(shownView(S, P.realtime), null); }
       return rec.view && !rec.err ? itemsOf(rec.view, rec) : [];
     },
     cellTitle(c, r){
@@ -58040,7 +58297,9 @@ onmessage = ev => {
       const name = (rec.meta && rec.meta.title) || starterOf(boardIdx(c, r)).name;
       return 'Game lab — ' + name + (m ? ' (your version ' + (m.cur + 1) + ' of ' + m.v.length + ')' : '')
         + (rec.err ? ' · this version broke: ' + rec.err : rec.view && rec.view.status ? ' · ' + rec.view.status : '')
-        + (rec.meta && rec.meta.realtime && !rec.go && !rec.err ? ' · tap or press a key to start' : '');
+        + (rec.meta && rec.meta.realtime && !rec.go && !rec.err ? ' · tap or press a key to start' : '')
+        + ((P => P && P.key === rec.key && P.par ? ' · par ' + parText(P.par) : '')(PLAYS.get(rec.bk)))
+        + (BEST[bestKey(rec)] ? ' · best ' + '★★★'.slice(0, BEST[bestKey(rec)]) : '');
     },
     statTiles(c, r){ return isLive(c, r) ? tilesOf(c, r) : null; },
     onStatTap(c, r, i){
@@ -58108,7 +58367,7 @@ onmessage = ev => {
       for (let i = 0; i < n * n; i++){ ctx.fillStyle = ((i % n) + ((i / n) | 0)) % 2 ? '#2b2f38' : '#3a4050'; ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t, t); }
       ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
     },
-    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, undo, startFrom, forget, trialOf, parseReply, cleanView,
+    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, PLAYS, checkOf, playOf, shownAt, shownView, starsAt, BEST, undo, startFrom, forget, trialOf, parseReply, cleanView,
               takeShared, openRules, levelAt, boardIdx, get model(){ return MODEL; }, isLive, get live(){ return LIVE; }, uvAt: (x, y) => _framedUV(x, y),
               session: tok => coachSetSession(tok), fly: (c, r) => gotoCell(c, r) },
   };
