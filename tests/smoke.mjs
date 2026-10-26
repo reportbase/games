@@ -3430,9 +3430,14 @@ try {
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
         return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
       const mid = await aimAt(0.5, 0.5);
-      await page.mouse.click(mid.x, mid.y);
-      await page.waitForTimeout(400);
-      const started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
+      // (a slow runner may take the first click as only selecting the board, or start the game a frame or two later: the game is
+      // waited for, and the click given once more if none came)
+      let started = null;
+      for (let k = 0; k < 2 && !started; k++){
+        await page.mouse.click(mid.x, mid.y);
+        await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return !!g; }, key, { timeout: 3000 }).catch(() => {});
+        started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
+      }
       // wait for the playback to end (a step is well under a second at any level)
       await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && g.state === 'input'; }, key, { timeout: 15000 }).catch(() => {});
       const want = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { p: g.S.at(0), P: g.S.D.pads, state: g.state } : null; }, key);
@@ -5185,6 +5190,10 @@ const game = { title: 'Gold Lights', size: l => l < 3 ? 4 : 5,
     try {
       await page.evaluate(() => { localStorage.removeItem('gamelab.mine'); const A = window.FIELD_APPS.find(a => a.id === 'gamelab'); window.setFieldApp(A); });
       await page.waitForTimeout(3000);
+      // (the board left framed by the checks before is not the corner, and boards go round eight starters since Oct 26: fly there)
+      await page.evaluate(() => window.getFieldApp()._debug.fly(0, 0));
+      await page.waitForFunction(() => { const L = window.getFieldApp()._debug.live; return L && L.c === 0 && L.r === 0; }, null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1500);
       const S = await page.evaluate(async () => { const D = window.getFieldApp()._debug, out = {};
         for (const s of D.STARTERS){ const T = await D.trialOf(s.src); out[s.id] = T.error || T.meta.title; }
         const L = D.live, r = D.RUN.get(L.c + '_' + L.r);
