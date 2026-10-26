@@ -57117,6 +57117,7 @@ const game = {
     flip(s, x, y);
     s.taps++;
     s.done = !s.lit.some(Boolean);
+    sound(s.done ? 'win' : 'click');
   },
   view(s) {
     const squares = [], pieces = [];
@@ -57156,13 +57157,13 @@ const game = {
       if (empty.length) s.up[empty[Math.floor(rand() * empty.length)]] = 1.3 - s.level * 0.1;
       s.next = s.t + 0.5 + rand() * (1.1 - s.level * 0.12);
     }
-    if (s.t >= s.end) s.over = true;
+    if (s.t >= s.end) { s.over = true; sound('win'); }
   },
   tap(s, x, y) {
     if (s.over) return;
     const i = y * s.n + x;
-    if (s.up[i] > 0) { s.up[i] = 0; s.bonk[i] = 0.3; s.score++; }
-    else s.misses++;
+    if (s.up[i] > 0) { s.up[i] = 0; s.bonk[i] = 0.3; s.score++; sound('click'); }
+    else { s.misses++; sound('buzz'); }
   },
   view(s) {
     const squares = [], pieces = [];
@@ -57208,18 +57209,19 @@ const game = {
       if (s.turn) { s.dir = s.turn; s.turn = null; }
       const head = [s.body[0][0] + s.dir[0], s.body[0][1] + s.dir[1]];
       const out = head[0] < 0 || head[1] < 0 || head[0] >= s.n || head[1] >= s.n;
-      if (out || s.body.some(([x, y]) => x === head[0] && y === head[1])) { s.over = true; break; }
+      if (out || s.body.some(([x, y]) => x === head[0] && y === head[1])) { s.over = true; sound('lose'); break; }
       s.body.unshift(head);
-      if (head[0] === s.apple[0] && head[1] === s.apple[1]) { s.score++; s.every = Math.max(0.07, s.every * 0.96); place(s, rand); }
+      if (head[0] === s.apple[0] && head[1] === s.apple[1]) { s.score++; s.every = Math.max(0.07, s.every * 0.96); place(s, rand); sound('chime'); }
       else s.body.pop();
     }
   },
   view(s) {
     const squares = [];
     for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) squares.push((x + y) % 2 ? '#1d2b22' : '#22332a');
+    // (each segment keeps its id, so it slides a square a step instead of jumping)
     const pieces = s.body.map(([x, y], i) => ({ shape: i ? 'block' : 'ball', x: x + 0.5, y: y + 0.5, size: i ? 0.8 : 0.9,
-                                                height: 0.35, color: i ? '#4ade80' : '#bbf7d0' }));
-    pieces.push({ shape: 'ball', x: s.apple[0] + 0.5, y: s.apple[1] + 0.5, size: 0.7, color: '#ef4444' });
+                                                height: 0.35, color: i ? '#4ade80' : '#bbf7d0', id: i, glide: s.every }));
+    pieces.push({ shape: 'ball', x: s.apple[0] + 0.5, y: s.apple[1] + 0.5, size: 0.7, color: '#ef4444', id: 'apple' });
     return { squares, pieces, score: s.score, over: s.over,
              status: s.over ? 'out, ' + s.score + ' apples' : s.score + ' apples',
              message: s.over ? 'Crashed after ' + s.score + ' apples.' : '' };
@@ -57255,6 +57257,9 @@ for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importS
 const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 const MODS = new Map(), BOARDS = new Map();
+// (sound(kind, pitch, seconds): a game asks for a sound; it is played by the page with the view it comes back with, at most 8 a reply)
+const OUT = [];
+function sound(kind, pitch, seconds) { if (OUT.length < 8) OUT.push([String(kind || 'beep').slice(0, 10), +pitch || 0, +seconds || 0]); }
 const HEAD = 1;   // lines the wrapper puts before the module's own first line
 function compile(src) {
   const f = new Function('"use strict";\n' + src + '\n;return (typeof game !== "undefined") ? game : undefined;');
@@ -57266,12 +57271,12 @@ function compile(src) {
 }
 const sizeOf = (g, level) => { const v = typeof g.size === 'function' ? g.size(level) : g.size; return Math.max(2, Math.min(24, Math.round(+v || 6))); };
 const meta = g => ({ title: String(g.title || 'A game').slice(0, 60), realtime: !!g.realtime, keys: typeof g.key === 'function',
-                     taps: typeof g.tap === 'function', steps: typeof g.step === 'function' });
+                     taps: typeof g.tap === 'function', steps: typeof g.step === 'function', drags: typeof g.drag === 'function' });
 function viewOf(b) {
   const v = b.g.view(b.state);
   if (!v || typeof v !== 'object') throw new Error('game.view must return an object');
   return { squares: v.squares, pieces: v.pieces, status: v.status, message: v.message, score: v.score, over: v.over, won: v.won,
-           size: v.size != null ? v.size : b.n };
+           size: v.size != null ? v.size : b.n, sounds: OUT.splice(0) };
 }
 const keep = (b, r) => { if (r !== undefined && r !== null) b.state = r; };
 function trial(g) {
@@ -57284,6 +57289,8 @@ function trial(g) {
       if (g.tap) keep(b, g.tap(b.state, Math.floor(rand() * n), Math.floor(rand() * n), rand));
       if (g.key) keep(b, g.key(b.state, ['up', 'right', 'down', 'left', 'enter', 'space'][k % 6], rand));
       if (g.step) for (let j = 0; j < 4; j++) keep(b, g.step(b.state, 1 / 30, rand));
+      if (g.drag) { const x0 = rand() * n, y0 = rand() * n, x1 = rand() * n, y1 = rand() * n;
+                    keep(b, g.drag(b.state, x0, y0, (x0 + x1) / 2, (y0 + y1) / 2, false, rand)); keep(b, g.drag(b.state, x0, y0, x1, y1, true, rand)); }
       v = viewOf(b);
     }
     structuredClone(v);
@@ -57298,7 +57305,7 @@ onmessage = ev => {
   try {
     let v;
     if (d.op === 'load') { const g = compile(String(d.src)); MODS.set(d.key, g); v = meta(g); }
-    else if (d.op === 'trial') { const g = compile(String(d.src)); trial(g); v = meta(g); }
+    else if (d.op === 'trial') { const g = compile(String(d.src)); trial(g); OUT.length = 0; v = meta(g); }
     else if (d.op === 'drop') { BOARDS.delete(d.bk); v = true; }
     else if (d.op === 'unload') { MODS.delete(d.key); v = true; }
     else if (d.op === 'start') {
@@ -57311,10 +57318,12 @@ onmessage = ev => {
       if (d.op === 'tap' && b.g.tap) keep(b, b.g.tap(b.state, d.x, d.y, b.rand));
       else if (d.op === 'key' && b.g.key) keep(b, b.g.key(b.state, d.k, b.rand));
       else if (d.op === 'step' && b.g.step) keep(b, b.g.step(b.state, Math.min(0.25, Math.max(0, +d.dt || 0)), b.rand));
+      else if (d.op === 'drag' && b.g.drag) keep(b, b.g.drag(b.state, +d.x0, +d.y0, +d.x1, +d.y1, !!d.done, b.rand));
       v = viewOf(b);
     }
     postMessage({ id: d.id, ok: true, v });
   } catch (e) {
+    OUT.length = 0;
     postMessage({ id: d.id, ok: false, error: String(e && e.message || e).slice(0, 400), line: lineOf(e) });
   }
 };`;
@@ -57440,6 +57449,8 @@ onmessage = ev => {
   // (the framed board is asked for its pieces every frame anyway, so its clock's steps wake nothing else)
   function took(rec, v, quiet){
     rec.view = cleanView(v);
+    glideFrom(rec, rec.view);
+    if (isLive(rec.c, rec.r)) playSounds(rec.view.sounds);
     const m = rec.view.message;
     if (m && m !== rec.msg && isLive(rec.c, rec.r)) say(m, 2600);
     rec.msg = m;
@@ -57505,26 +57516,116 @@ onmessage = ev => {
     const pieces = [];
     for (const p of Array.isArray(v.pieces) ? v.pieces.slice(0, 600) : []){
       if (!p || typeof p !== 'object') continue;
+      const id = (typeof p.id === 'number' && isFinite(p.id)) || (typeof p.id === 'string' && p.id.length <= 40) ? p.id : null;
+      const glide = num(p.glide, 0, 2, 0.12);
+      if (p.shape === 'text'){
+        const text = words(p.text, 24).toUpperCase();
+        if (text.trim()) pieces.push({ shape: 'text', text, x: num(p.x, -1, n + 1, n / 2), y: num(p.y, -1, n + 1, 0.5), size: num(p.size, 0.1, 4, 0.6),
+                                       z: num(p.z, 0, 8, 0), color: colorOf(p.color, 0xf5f2e8), id, glide });
+        continue;
+      }
       const shape = SHAPES.includes(p.shape) ? p.shape : 'block';
       const size = num(p.size, 0.05, 4, 0.8);
       const dh = shape === 'block' ? 0.6 : shape === 'peg' ? 0.8 : shape === 'cone' ? 1 : shape === 'gem' ? 1 : 1;
       pieces.push({ shape, x: num(p.x, -1, n + 1, 0.5), y: num(p.y, -1, n + 1, 0.5), size, height: num(p.height, 0.01, 8, size * dh),
-                    z: num(p.z, 0, 8, 0), color: colorOf(p.color, 0xd8d4c8), glow: !!p.glow });
+                    z: num(p.z, 0, 8, 0), color: colorOf(p.color, 0xd8d4c8), glow: !!p.glow, id, glide });
     }
-    return { n, colors, pieces, status: words(v.status, 120), message: words(v.message, 200), score: isFinite(+v.score) ? +v.score : null,
+    const sounds = (Array.isArray(v.sounds) ? v.sounds : []).slice(0, 8).filter(x => Array.isArray(x))
+      .map(([k, p, d]) => [String(k), num(p, 0, 4000, 0), num(d, 0, 2, 0)]);
+    return { n, colors, pieces, sounds, status: words(v.status, 120), message: words(v.message, 200), score: isFinite(+v.score) ? +v.score : null,
              over: !!v.over, won: !!v.won };
   }
 
   /* ── DRAWING ── the squares are the board's colours; a piece is one of eight kinds, each a unit across, scaled to its size
      in squares and stretched to its height; a glowing one is its kind's unlit twin. */
-  function itemsOf(V){
-    const n = V.n, out = [];
+  /* GLIDING (Oct 26: "1,2", the second giving games more to build with: "smooth movement"): a piece with an `id` that stays the
+     same from view to view slides from where it was drawn to where it is now, over its `glide` seconds (0.12 unless it says),
+     eased; one that has gone more than three squares jumps (a snake's apple put somewhere new, a piece sent home). */
+  const GLIDE_FAR = 3;
+  const ease = s => s * s * (3 - 2 * s);
+  const glideAt = (a, t) => { if (!(a.d > 0)) return [a.x1, a.y1]; const s = Math.min(1, Math.max(0, (t - a.t0) / a.d)), e = ease(s); return [a.x0 + (a.x1 - a.x0) * e, a.y0 + (a.y1 - a.y0) * e]; };
+  function glideFrom(rec, V){
+    const t = nowS(), old = rec.anim || new Map(), next = new Map();
     for (const p of V.pieces){
+      if (p.id == null) continue;
+      const a = old.get(p.id);
+      if (a){ const [x, y] = glideAt(a, t), far = Math.hypot(p.x - x, p.y - y) > GLIDE_FAR;
+              next.set(p.id, { x0: far ? p.x : x, y0: far ? p.y : y, x1: p.x, y1: p.y, t0: t, d: far ? 0 : p.glide }); }
+      else next.set(p.id, { x0: p.x, y0: p.y, x1: p.x, y1: p.y, t0: t, d: 0 });
+    }
+    rec.anim = next;
+  }
+  /* WORDS ON THE BOARD (the same request's "words and numbers on squares"): a `text` piece is drawn a letter at a time, each
+     letter a kind of its own made from a 5 × 7 dot font (`FONT`, the page's own: capitals, digits and a few signs), flat on
+     the board and unlit, so it reads at any tilt. `size` is a letter's height in squares, the line centred on (x, y). Letters
+     are given a yaw so they are turned as the field turns every turned item, reading left to right as the board is framed. */
+  const FONT = {
+    '0': [14,17,19,21,25,17,14], '1': [4,12,4,4,4,4,14], '2': [14,17,1,2,4,8,31], '3': [31,2,4,2,1,17,14], '4': [2,6,10,18,31,2,2],
+    '5': [31,16,30,1,1,17,14], '6': [6,8,16,30,17,17,14], '7': [31,1,2,4,8,8,8], '8': [14,17,17,14,17,17,14], '9': [14,17,17,15,1,2,12],
+    A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28], E: [31,16,16,30,16,16,31],
+    F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17], I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12],
+    K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31], M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14],
+    P: [30,17,17,30,16,16,16], Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
+    U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17], Y: [17,17,17,10,4,4,4],
+    Z: [31,1,2,4,8,16,31], '.': [0,0,0,0,0,12,12], ',': [0,0,0,0,12,4,8], ':': [0,12,12,0,12,12,0], '-': [0,0,0,31,0,0,0],
+    '+': [0,4,4,31,4,4,0], '!': [4,4,4,4,4,0,4], '?': [14,17,1,2,4,0,4], '/': [1,1,2,4,8,16,16], '%': [24,25,2,4,8,19,3],
+    '#': [10,10,31,10,31,10,10], '=': [0,0,31,0,31,0,0], '(': [2,4,8,8,8,4,2], ')': [8,4,2,2,2,4,8], '<': [2,4,8,16,8,4,2],
+    '>': [8,4,2,1,2,4,8], '*': [0,4,21,14,21,4,0], "'": [4,4,8,0,0,0,0], '♥': [0,10,31,31,14,4,0], '★': [4,4,31,14,14,27,17],
+  };
+  function glyphGeo(T, code){
+    const rows = FONT[String.fromCodePoint(code)] || FONT['?'], pos = [], nrm = [], d = 0.45 / 7, y = 0.006;
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++){
+      if (!((rows[r] >> (4 - c)) & 1)) continue;
+      const x = (c - 2) / 7, z = (r - 3) / 7;
+      pos.push(x - d, y, z - d, x - d, y, z + d, x + d, y, z + d, x - d, y, z - d, x + d, y, z + d, x + d, y, z - d);
+      for (let k = 0; k < 6; k++) nrm.push(0, 1, 0);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+    g.userData.unlit = true;
+    return g;
+  }
+  function itemsOf(V, rec){
+    const n = V.n, out = [], t = nowS(), anim = rec && rec.anim;
+    for (const p of V.pieces){
+      const a = p.id != null && anim ? anim.get(p.id) : null, [x, y] = a ? glideAt(a, t) : [p.x, p.y];
+      if (p.shape === 'text'){
+        const chars = [...p.text], adv = p.size * 6 / 7;
+        chars.forEach((ch, i) => {
+          if (ch === ' ') return;
+          const cp = ch.codePointAt(0);
+          out.push({ kind: 'gch_' + (FONT[ch] ? cp : 63), u: (x + (i - (chars.length - 1) / 2) * adv) / n, v: y / n, scale: p.size / n,
+                     lift: p.z / n, color: p.color, yaw: 1e-6 });
+        });
+        continue;
+      }
       const k = 'gl_' + p.shape + (p.glow ? '_L' : '');
       const flat = p.shape === 'tile' || p.shape === 'disc' || p.shape === 'ring';
-      out.push({ kind: k, u: p.x / n, v: p.y / n, scale: p.size / n, lift: p.z / n, sy: flat ? 1 : p.height / p.size, color: p.color });
+      out.push({ kind: k, u: x / n, v: y / n, scale: p.size / n, lift: p.z / n, sy: flat ? 1 : p.height / p.size, color: p.color });
     }
     return out;
+  }
+  /* SOUNDS (the same request's first, "sound"): a game calls sound(kind, pitch, seconds) and the page plays it with the view it
+     comes back with, the framed board's alone, on the arcade kit's audio and the menu's Sound. */
+  const SND = ARCADE.sounds('gamelab.sound', 'The sounds a game asks for with sound(): beeps, clicks, chimes, buzzes, booms.');
+  function playSounds(list){
+    if (!SND.on || !list || !list.length) return;
+    let A = null; try { A = ARCADE.audio(); } catch {} if (!A) return;
+    const T = (f0, f1, d, type, vol, at) => { try { ARCADE.tone(Math.max(30, f0), Math.max(30, f1), Math.max(0.02, d), type, vol, at || 0); } catch {} };
+    for (const [k, p, d] of list){
+      const f = p || 0;
+      if (k === 'click') T(f || 1600, (f || 1600) * 0.6, d || 0.03, 'triangle', 0.08);
+      else if (k === 'chime'){ T(f || 880, f || 880, d || 0.5, 'sine', 0.09); T((f || 880) * 1.5, (f || 880) * 1.5, (d || 0.5) * 0.8, 'sine', 0.05, 0.03); }
+      else if (k === 'buzz') T(f || 110, (f || 110) * 0.8, d || 0.25, 'sawtooth', 0.05);
+      else if (k === 'boom') T(f || 160, 40, d || 0.45, 'sawtooth', 0.1);
+      else if (k === 'up') T(f || 440, (f || 440) * 2, d || 0.2, 'sine', 0.08);
+      else if (k === 'down') T(f || 660, (f || 660) / 2, d || 0.25, 'sine', 0.08);
+      else if (k === 'win') [1, 1.25, 1.5, 2].forEach((m, i) => T((f || 523) * m, (f || 523) * m, 0.16, 'square', 0.05, i * 0.11));
+      else if (k === 'lose') [1, 0.84, 0.7].forEach((m, i) => T((f || 392) * m, (f || 392) * m * 0.97, 0.22, 'triangle', 0.08, i * 0.18));
+      else if (k === 'tone') T(f || 440, f || 440, d || 0.3, 'sine', 0.08);
+      else T(f || 660, f || 660, d || 0.09, 'square', 0.05);          // beep, and anything else
+    }
   }
   const geos = {
     tile: T => FieldKit.plate(T, 1, 0.006),
@@ -57536,11 +57637,16 @@ onmessage = ev => {
     cone: T => { const g = new T.ConeGeometry(0.5, 1, 20); g.translate(0, 0.5, 0); return g; },
     gem: T => { const g = new T.OctahedronGeometry(0.5); g.translate(0, 0.5, 0); return g; },
   };
-  const itemGeometries = {};
+  const GEO = {};
   for (const [k, f] of Object.entries(geos)){
-    itemGeometries['gl_' + k] = f;
-    itemGeometries['gl_' + k + '_L'] = T => { const g = f(T); g.userData.unlit = true; return g; };
+    GEO['gl_' + k] = f;
+    GEO['gl_' + k + '_L'] = T => { const g = f(T); g.userData.unlit = true; return g; };
   }
+  // (a letter's kind is made when first asked for, as golf tanks' Proxy gives its kinds)
+  const itemGeometries = new Proxy(GEO, {
+    get: (o, k) => typeof k === 'string' && /^gch_\d+$/.test(k) ? (T => glyphGeo(T, +k.slice(4))) : o[k],
+    has: (o, k) => (typeof k === 'string' && /^gch_\d+$/.test(k)) || k in o,
+  });
   const GRID_WAIT = new Map();
   const waitGrid = n => { if (!GRID_WAIT.has(n)) GRID_WAIT.set(n, { n, colors: Array.from({ length: n * n }, (_, i) => ((i % n) + ((i / n) | 0)) % 2 ? 0x24272f : 0x2a2e37) }); return GRID_WAIT.get(n); };
   const ERR_GRID = { n: 4, colors: Array.from({ length: 16 }, (_, i) => ((i % 4) + ((i / 4) | 0)) % 2 ? 0x4a1d1d : 0x5a2424) };
@@ -57564,10 +57670,14 @@ onmessage = ev => {
     '  game.tap(state, x, y, rand): a tap on square (x, y); x 0..size-1 across, y 0..size-1 with y = 0 the far (top) row.',
     '  game.key(state, k, rand): k is "up", "down", "left", "right" (up is toward row 0; the arrow keys and W A S D both arrive as these), "enter", "space", or another lower-case letter or digit.',
     '  game.step(state, dt, rand): dt seconds since the last step (at most 0.25).',
-    '  tap, key and step may change the state in place or return a new one. All three are optional.',
+    '  game.drag(state, x0, y0, x1, y1, done, rand): a finger pressed at (x0, y0) and now at (x1, y1), in squares, fractional (Math.floor gives the square). Called as it moves (done false) and once more when it lifts (done true): read a swipe on done from the two ends (its direction is the larger of x1 - x0 and y1 - y0). A board whose game has drag keeps every press for the game; a short press is still a tap.',
+    '  tap, key, step and drag may change the state in place or return a new one. All are optional.',
+    '  sound(kind, pitch, seconds): a function you may call from tap, key, step or drag to play a sound when the board shows the result. kind is "beep", "click", "chime", "buzz", "boom", "up" (a rising sweep), "down", "win", "lose" or "tone"; pitch in Hz (0 for the kind\'s own), seconds (0 for its own). At most 8 a call. Use it for what matters: a hit, a miss, a point, the end.',
     '  game.view(state) -> { squares, pieces, status, message, score, over, won, size }:',
     '    squares: size*size colours, row by row from y = 0, each "#rrggbb" (the board\'s floor).',
     '    pieces: at most 400 things standing on the board: { shape, x, y, size, height, z, color, glow }. shape is one of "tile" (a flat square), "block" (a box), "ball", "disc" (flat round), "ring", "peg" (a cylinder), "cone", "gem". x, y are in squares and may be fractional: the middle of square (i, j) is (i + 0.5, j + 0.5). size is its width in squares (0.8 fills most of a square), height how tall (blocks, pegs, cones, gems), z how far it floats above the floor, color "#rrggbb", glow true to light it from within.',
+    '    A piece may also be words: { shape: "text", text, x, y, size, z, color }: capitals, digits and . , : - + ! ? / % # = ( ) < > * \' ♥ ★ (lower case is shown as capitals), drawn flat on the board in dots, centred on (x, y); size is a letter\'s height in squares (0.6 by default), each letter 6/7 of it wide. Use it for numbers on squares, labels, a score on the board.',
+    '    Any piece may have an id (a number or a short string) that stays the same while it is the same thing: from one view to the next it then slides from where it was to where it is instead of jumping, over glide seconds (0.12 by default, 0 to jump; more than 3 squares always jumps). Give moving things ids (a snake\'s segments, a sliding tile, a falling block).',
     '    status: a few words for the board\'s title (the score, time left, whose turn). message: a sentence shown once when it changes (a win, a loss), else "".',
     '    score: a number. over: true when the game has ended (a tap then starts it again). won: true when it ended well.',
     '    size: only if the board\'s size changes during play.',
@@ -57641,14 +57751,30 @@ onmessage = ev => {
     catch (e){ return { error: (e && e.message) || String(e), line: e && e.line }; }
   }
   let BUSY = false;
-  async function change(c, r, ask){
+  /* THE EDITING LOOP (Oct 26: "1,2", the first: Claude sees what came before, a broken version is one tap from being fixed):
+     each request carries the board's last `HISTORY` changes before this one (what was asked, what Claude said it did), so "a
+     bit faster again" or "undo the golden mole but keep the bombs" mean something; and a version that breaks while played
+     (not in the trial: a square the trial never reached) is sent back with its error and line by Fix it, with no words needed. */
+  const HISTORY = 4;
+  function historyOf(c, r){
+    const m = mineOf(c, r); if (!m) return '';
+    const past = m.v.slice(0, m.cur + 1).filter(x => x.ask).slice(-HISTORY);
+    if (!past.length) return '';
+    return 'What the player has asked for on this board so far, oldest first, and what was done:\n'
+      + past.map((x, i) => (i + 1) + '. "' + x.ask + '"' + (x.note ? ': ' + x.note : '')).join('\n') + '\n\n';
+  }
+  async function change(c, r, ask, opt){
     if (BUSY) return;
     ask = String(ask || '').trim();
-    if (!ask){ ASK.status('Say what to change first.'); return; }
+    const fix = opt && opt.fix;
+    if (!ask && !fix){ ASK.status('Say what to change first.'); return; }
     if (!coachSignedIn()){ ASK.status('Sign in first (the button below): Claude is reached through the coach\'s gateway, with a daily allowance each.'); ASK.signIn(true); return; }
     BUSY = true; ASK.busy(true);
     const before = srcOf(c, r);
-    const messages = [{ role: 'user', content: 'Here is the game on this board now:\n```js\n' + before + '\n```\nThe player asks: ' + ask }];
+    const asked = fix ? 'This version breaks while it is played: ' + fix + (opt.line ? ' (at line ' + opt.line + ' of the module)' : '')
+      + '. Fix it, keeping the game as it is meant to play.' + (ask ? ' The player adds: ' + ask : '') : 'The player asks: ' + ask;
+    if (fix && !ask) ask = 'Fix it: ' + String(fix).slice(0, 120);
+    const messages = [{ role: 'user', content: historyOf(c, r) + 'Here is the game on this board now:\n```js\n' + before + '\n```\n' + asked }];
     try {
       for (let tries = 0; ; tries++){
         ASK.status(tries ? 'Claude is fixing it…' : 'Asking Claude…');
@@ -57675,10 +57801,21 @@ onmessage = ev => {
     } finally { BUSY = false; ASK.busy(false); }
   }
 
+  // Fix it: the error this version broke with, back to Claude (the box opened to show it working)
+  function fixIt(c, r, extra){
+    const rec = RUN.get(gkey(c, r));
+    if (!rec || !rec.err){ say('This version is not broken.', 1600); return; }
+    if (!ASK.box || ASK.box.hidden) ASK.open(c, r);
+    change(c, r, extra || '', { fix: rec.err, line: rec.errLine });
+  }
+
   /* ── THE BOX ── "Change it…": a few words to Claude about the framed board's game, the versions so far (what each asked
      for and what Claude said it did), Send, Close. A centred panel like Paste FENs'. */
   const ASK = (() => {
-    let box = null, ta, st, log, bSend, bIn, at = null;
+    let box = null, ta, st, log, bSend, bIn, bFix, at = null;
+    // (a few words to start from: a tap adds one to what is being written)
+    const CHIPS = ['Make it faster', 'Make it harder farther out', 'Add a bonus worth more', 'Add sounds', 'Two players taking turns',
+                   'Show the score on the board', 'Pieces glide instead of jumping', 'Swipe to move'];
     function build(){
       box = document.createElement('div');
       box.id = 'labAskBox';
@@ -57704,13 +57841,24 @@ onmessage = ev => {
       bSend = document.createElement('button'); bSend.textContent = 'Send to Claude';
       bClose.addEventListener('click', () => { box.hidden = true; });
       bSend.addEventListener('click', () => { if (at) change(at.c, at.r, ta.value); });
+      bFix = document.createElement('button'); bFix.textContent = '🔧 Fix it'; bFix.hidden = true;
+      bFix.title = 'Send this version\'s error back to Claude to fix (anything written above goes with it).';
+      bFix.addEventListener('click', () => { if (at) fixIt(at.c, at.r, ta.value); });
+      const chips = document.createElement('div');
+      chips.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap';
+      for (const t of CHIPS){
+        const b = document.createElement('button'); b.textContent = t; b.className = 'labChip';
+        b.style.cssText = 'font-size:0.6875rem;padding:2px 8px;border-radius:12px;opacity:.85';
+        b.addEventListener('click', () => { const v = ta.value.trim(); ta.value = v ? v.replace(/[.\s]*$/, '') + '. ' + t : t; ta.focus(); });
+        chips.appendChild(b);
+      }
       ta.addEventListener('keydown', e => {
         e.stopPropagation();
         if (e.key === 'Escape'){ box.hidden = true; }
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && at){ e.preventDefault(); change(at.c, at.r, ta.value); }
       });
-      row.append(bIn, bClose, bSend);
-      box.append(head, log, ta, st, row);
+      row.append(bIn, bClose, bFix, bSend);
+      box.append(head, log, ta, chips, st, row);
       box._head = head;
       document.body.appendChild(box);
     }
@@ -57722,6 +57870,7 @@ onmessage = ev => {
         ? m.v.map((x, i) => (i === m.cur ? '▸ ' : '  ') + (i + 1) + '. ' + (x.ask ? '"' + x.ask + '": ' : '') + (x.note || '')).join('\n')
         : 'Claude rewrites the game\'s rules from what you say, and the board plays the new version at once. Every version is kept: Undo goes back.';
       log.scrollTop = log.scrollHeight;
+      bFix.hidden = !(rec && rec.err);
     }
     function open(c, r){
       if (!box) build();
@@ -57735,7 +57884,7 @@ onmessage = ev => {
     return {
       open, signIn,
       status(t){ if (st) st.textContent = t; },
-      busy(b){ if (bSend){ bSend.disabled = b; bSend.textContent = b ? 'Working…' : 'Send to Claude'; } },
+      busy(b){ if (bSend){ bSend.disabled = b; bFix.disabled = b; bSend.textContent = b ? 'Working…' : 'Send to Claude'; } },
       done(note){ if (!box) return; ta.value = ''; fill(); st.textContent = '✓ ' + note; },
       get box(){ return box; },
     };
@@ -57820,6 +57969,7 @@ onmessage = ev => {
     say('A shared game: ' + (T.meta.title || 'untitled') + '. It runs in a sandbox, with no way to the page, your storage or the network.', 4200);
   }
 
+  let DRAG = null, dragAte = 0;
   const framedHere = () => { try { const f = framedCell(); return f ? { c: f.c, r: f.r } : LIVE; } catch { return LIVE; } };
   const withFramed = f => () => { const at = framedHere(); if (!at){ say('Frame a board first.', 1600); return; } LIVE = at; f(at.c, at.r); };
 
@@ -57844,7 +57994,7 @@ onmessage = ev => {
   function tilesOf(c, r){
     const m = mineOf(c, r), rec = RUN.get(gkey(c, r));
     return [
-      { glyph: '✨', value: 'Change it…' },
+      rec && rec.err ? { glyph: '🔧', value: 'Fix it', bg: '#5a2424' } : { glyph: '✨', value: 'Change it…' },
       { glyph: '↶', value: 'Undo', dim: !m || m.cur === 0 },
       { glyph: '↷', value: 'Redo', dim: !m || m.cur >= m.v.length - 1 },
       { glyph: '↺', value: 'Restart' },
@@ -57859,6 +58009,7 @@ onmessage = ev => {
     name: 'game lab',
     menu: [{ head: 'Game lab', items: [
       { label: 'Change this board\'s game…', title: 'Say what to change; Claude rewrites the game\'s rules and the board plays the new version. Undo goes back.', on: withFramed((c, r) => ASK.open(c, r)) },
+      { label: 'Fix this version', title: 'This board\'s game broke while played: send its error back to Claude to fix.', on: withFramed((c, r) => fixIt(c, r)) },
       { label: 'Undo the last change', title: 'Back a version on this board.', on: withFramed((c, r) => undo(c, r, -1)) },
       { label: 'Redo', title: 'Forward a version again.', on: withFramed((c, r) => undo(c, r, +1)) },
       { label: 'Start this board again', title: 'The game from its opening.', on: withFramed((c, r) => restart(c, r)) },
@@ -57868,6 +58019,7 @@ onmessage = ev => {
       { label: 'Forget this board\'s versions', title: 'Back to the board\'s own starter, every version gone.', on: withFramed((c, r) => { if (confirm('Forget every version of this board\'s game?')) forget(c, r); }) },
       { label: () => 'Claude: ' + (MODELS.find(x => x[0] === MODEL) || MODELS[0])[1], title: 'Which Claude writes the changes. Each request counts against the gateway\'s daily allowance.',
         on(){ const i = MODELS.findIndex(x => x[0] === MODEL); MODEL = MODELS[(i + 1) % MODELS.length][0]; try { localStorage.setItem('gamelab.model', MODEL); } catch {} } },
+      SND.item,
     ]}],
     cellFar: { light: 0x323743, dark: 0x2b2f38 },
     itemMinPx: 6,
@@ -57881,7 +58033,7 @@ onmessage = ev => {
     cellItems(c, r){
       const rec = recOf(c, r);
       if (isLive(c, r)) tick(rec);
-      return rec.view && !rec.err ? itemsOf(rec.view) : [];
+      return rec.view && !rec.err ? itemsOf(rec.view, rec) : [];
     },
     cellTitle(c, r){
       const rec = recOf(c, r), m = mineOf(c, r);
@@ -57893,7 +58045,7 @@ onmessage = ev => {
     statTiles(c, r){ return isLive(c, r) ? tilesOf(c, r) : null; },
     onStatTap(c, r, i){
       if (!isLive(c, r)) return false;
-      if (i === 0){ ASK.open(c, r); return true; }
+      if (i === 0){ const rec = RUN.get(gkey(c, r)); if (rec && rec.err) fixIt(c, r); else ASK.open(c, r); return true; }
       if (i === 1){ undo(c, r, -1); return true; }
       if (i === 2){ undo(c, r, +1); return true; }
       if (i === 3){ restart(c, r); return true; }
@@ -57905,7 +58057,39 @@ onmessage = ev => {
     onSelect(){ return true; },
     onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
     noDoubleTap(){ return !!LIVE; },
+    /* DRAGS AND SWIPES (Oct 26: "1,2", the second's "drags and swipes"): a game with drag(state, x0, y0, x1, y1, done, rand)
+       takes a press on its board: told where the finger went down and where it is now, in squares (fractional), as it moves,
+       and once more with done true when it lifts (a swipe is read then, from the two ends). The tap the field still calls
+       after a short drag is eaten. A press stays the game's (`keepsPress`), so a still finger does not tilt the view. */
+    get keepsPress(){ const rec = LIVE && RUN.get(gkey(LIVE.c, LIVE.r)); return !!(rec && rec.meta && rec.meta.drags && rec.started && !rec.err); },
+    claimsPan(u, v){
+      if (!LIVE || u == null) return false;
+      const rec = RUN.get(gkey(LIVE.c, LIVE.r));
+      if (!rec || !rec.meta || !rec.meta.drags || !rec.started || rec.err || !rec.view || rec.view.over) return false;
+      const n = rec.view.n;
+      DRAG = { rec, x0: u * n, y0: v * n, x1: u * n, y1: v * n, moved: false, sent: 0 };
+      return true;
+    },
+    onPan(dx, dy, at){
+      if (!DRAG) return false;
+      if (at){
+        const n = DRAG.rec.view ? DRAG.rec.view.n : 1;
+        DRAG.x1 = at.u * n; DRAG.y1 = at.v * n;
+        if (Math.hypot(DRAG.x1 - DRAG.x0, DRAG.y1 - DRAG.y0) > 0.15) DRAG.moved = true;
+        // (one call out at a time: a move while one is out is taken by the next, or by the end)
+        if (DRAG.moved && !DRAG.rec.busy) send(DRAG.rec, 'drag', { x0: DRAG.x0, y0: DRAG.y0, x1: DRAG.x1, y1: DRAG.y1, done: false });
+      }
+      return true;
+    },
+    onPanEnd(){
+      const D = DRAG; DRAG = null;
+      if (!D || !D.moved) return;
+      dragAte = performance.now();
+      const fin = () => send(D.rec, 'drag', { x0: D.x0, y0: D.y0, x1: D.x1, y1: D.y1, done: true });
+      if (!D.rec.busy) fin(); else { let k = 0; const w = () => { if (!D.rec.busy || ++k > 60) fin(); else setTimeout(w, 16); }; w(); }
+    },
     onCellTap(c, r, u, v){
+      if (performance.now() - dragAte < 400) return true;           // (the tap that ends a drag)
       const was = isLive(c, r);
       LIVE = { c, r };
       const rec = recOf(c, r);
@@ -57924,7 +58108,7 @@ onmessage = ev => {
       for (let i = 0; i < n * n; i++){ ctx.fillStyle = ((i % n) + ((i / n) | 0)) % 2 ? '#2b2f38' : '#3a4050'; ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t, t); }
       ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
     },
-    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, undo, startFrom, forget, trialOf, parseReply, cleanView,
+    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, undo, startFrom, forget, trialOf, parseReply, cleanView,
               takeShared, openRules, levelAt, boardIdx, get model(){ return MODEL; }, isLive, get live(){ return LIVE; }, uvAt: (x, y) => _framedUV(x, y),
               session: tok => coachSetSession(tok), fly: (c, r) => gotoCell(c, r) },
   };

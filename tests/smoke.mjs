@@ -5252,6 +5252,88 @@ const game = { title: 'Gold Lights', size: 4,
     if (bad.length) failures.push('[game lab] ' + bad.join('; '));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: the starters run sandboxed (no network or storage, an endless loop stopped, an error's line named); a real click flips Lights Out's cross; Change it… sends the rules, fixes a broken reply once and keeps Claude's version; Undo; a shared game; Snake waits, then the real arrow turns it`);
   }
+  // THE GAME LAB'S LOOP AND ITS NEW PARTS (Oct 26: "1,2": Claude sees what came before and a broken version is one tap from being
+  // fixed; games get sounds, words on the board, drags and swipes, and pieces that glide): a game with all four put on board (2, 0);
+  // its words drawn a letter a kind; a real click moving a piece that glides there and asking for a click; a real drag left read as
+  // a swipe LEFT; the game broken in play (the real Z, then a real click on square (0, 0)), the row's first tile turned to Fix it,
+  // and a tap on it sending the error and line back (the gateway mocked) and keeping the fixed version, which the next request's
+  // history then names.
+  {
+    const before = failures.length, bad = [];
+    const WORDS = `// words, swipes and sounds
+const game = { title: 'Words', size: 6,
+  setup(){ return { at: [1, 1], drags: 0, swipe: '' }; },
+  tap(s, x, y){ s.at = [x, y]; sound('click'); },
+  key(s, k){ if (k === 'z') s.armed = true; },
+  drag(s, x0, y0, x1, y1, done){ s.drags++; if (done){ const dx = x1 - x0, dy = y1 - y0; s.swipe = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'RIGHT' : 'LEFT') : (dy > 0 ? 'DOWN' : 'UP'); sound('up'); } },
+  view(s){ if (s.armed && s.at[0] === 0 && s.at[1] === 0) null.boom;
+    const squares = []; for (let i = 0; i < 36; i++) squares.push(i % 2 ? '#334455' : '#223344');
+    return { squares, pieces: [{ shape: 'text', text: 'Hello 42', x: 3, y: 1, size: 0.9, color: '#ffdd55' },
+      { shape: 'block', x: s.at[0] + 0.5, y: s.at[1] + 0.5, size: 0.8, color: '#ff5533', id: 'me', glide: 0.5 }],
+      status: s.drags + ' drags ' + s.swipe }; } };`;
+    const FIXED = WORDS.replace('if (s.armed && s.at[0] === 0 && s.at[1] === 0) null.boom;', '').replace("title: 'Words'", "title: 'Words fixed'");
+    const asked = [];
+    await page.route(/login\.tangent\.workers\.dev\/v1\/messages/, async route => {
+      asked.push(JSON.parse(route.request().postData()));
+      const text = 'It no longer breaks on the corner.\n```js\n' + FIXED + '\n```';
+      await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' },
+        body: 'event: a\ndata: ' + JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } }) + '\n\nevent: b\ndata: {"type":"message_stop"}\n\n' });
+    });
+    try {
+      const live = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = L && D.RUN.get(L.c + '_' + L.r);
+        return r ? { L, title: r.meta && r.meta.title, drags: r.meta && r.meta.drags, status: r.view && r.view.status, err: r.err, sounds: r.view && r.view.sounds.map(x => x[0]),
+                     me: r.view && (r.view.pieces.find(p => p.id === 'me') || {}), anim: r.anim && r.anim.get('me') } : null; });
+      await page.evaluate(async src => { const D = window.getFieldApp()._debug; await D.takeShared(2, 0, { s: src }); D.fly(2, 0); }, WORDS);
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = L && D.RUN.get(L.c + '_' + L.r); return L && L.c === 2 && L.r === 0 && r && r.view && r.meta && r.meta.title === 'Words'; }, null, { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(1200);
+      const sys = await page.evaluate(() => window.getFieldApp()._debug.LAB_SYS);
+      if (!/sound\(kind, pitch, seconds\)/.test(sys) || !/shape: "text"/.test(sys) || !/game\.drag\(/.test(sys) || !/glide/.test(sys)) bad.push('the system prompt does not tell Claude about sound, text, drag and glide');
+      const letters = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r);
+        return D.itemsOf(r.view, r).filter(i => /^gch_\d+$/.test(i.kind)).map(i => String.fromCodePoint(+i.kind.slice(4))).join(''); });
+      if (letters !== 'HELLO42') bad.push('the words were drawn as ' + JSON.stringify(letters));
+      const at = (x, y) => page.evaluate(([x, y]) => { const D = window.getFieldApp()._debug, L = D.live; let best = null, bd = 1e9;
+        for (let py = 80; py < innerHeight - 80; py += 5) for (let px = 80; px < innerWidth - 80; px += 5){ const b = D.uvAt(px, py);
+          if (b && b.c === L.c && b.r === L.r){ const d = Math.hypot(b.u * 6 - x, b.v * 6 - y); if (d < bd){ bd = d; best = { x: px, y: py }; } } } return best; }, [x, y]);
+      // a real click on square (3, 2), within the three squares a piece glides: the block glides there, and a click is asked for
+      const t = await at(3.5, 2.5);
+      let A = null;
+      for (let k = 0; k < 3; k++){ await page.mouse.click(t.x, t.y); await page.waitForTimeout(700); A = await live(); if (A && A.me.x === 3.5) break; }
+      if (!A || A.me.x !== 3.5 || A.me.y !== 2.5) bad.push('a real click did not move the block: ' + JSON.stringify(A && A.me));
+      else {
+        if (!A.anim || A.anim.d !== 0.5 || A.anim.x0 === A.anim.x1) bad.push('the block did not glide: ' + JSON.stringify(A.anim));
+        if (!A.sounds.includes('click')) bad.push('the tap asked for no click: ' + JSON.stringify(A.sounds));
+      }
+      // a real drag from the right of the board to the left: moves sent, then a swipe LEFT on letting go
+      const a = await at(4.6, 4.6), b = await at(1.4, 4.6);
+      await page.mouse.move(a.x, a.y); await page.mouse.down();
+      for (let k = 1; k <= 10; k++){ await page.mouse.move(a.x + (b.x - a.x) * k / 10, a.y + (b.y - a.y) * k / 10); await page.waitForTimeout(60); }
+      await page.mouse.up();
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.view && /LEFT|RIGHT|UP|DOWN/.test(r.view.status); }, null, { timeout: 5000 }).catch(() => {});
+      const B = await live();
+      if (!/^([2-9]|\d\d+) drags LEFT$/.test(B.status || '')) bad.push('a real drag left read as ' + JSON.stringify(B.status));
+      if (B.me.x !== 3.5) bad.push('the drag was taken as a tap too: the block went to ' + B.me.x);
+      // broken in play: the real Z, then a real click on (0, 0)
+      await page.keyboard.press('z'); await page.waitForTimeout(400);
+      const z = await at(0.5, 0.5);
+      for (let k = 0; k < 3; k++){ await page.mouse.click(z.x, z.y); await page.waitForTimeout(700); if ((await live()).err) break; }
+      const C = await live();
+      const tile = await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.live; return A.statTiles(L.c, L.r)[0].value; });
+      if (!C.err) bad.push('the game did not break in play');
+      if (tile !== 'Fix it') bad.push('the first tile of a broken game is ' + tile);
+      await page.evaluate(() => { const A = window.getFieldApp(); A._debug.session('smoke-session'); const L = A._debug.live; A.onStatTap(L.c, L.r, 0); });
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title === 'Words fixed' && r.view; }, null, { timeout: 10000 }).catch(() => {});
+      const F = await live();
+      if (asked.length !== 1) bad.push(asked.length + ' requests for Fix it, not 1');
+      else if (!/breaks while it is played: Cannot read/.test(asked[0].messages[0].content) || !/line 7/.test(asked[0].messages[0].content)) bad.push('Fix it did not send the error and its line: ' + asked[0].messages[0].content.slice(-200));
+      if (F.title !== 'Words fixed' || F.err) bad.push('after Fix it: ' + JSON.stringify(F));
+      const H = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live; return D.historyOf(L.c, L.r); });
+      if (!/Fix it: Cannot read/.test(H) || !/no longer breaks/.test(H)) bad.push('the next request\'s history: ' + JSON.stringify(H));
+      await page.evaluate(() => { const b = document.querySelector('#labAskBox'); if (b) b.hidden = true; });
+    } catch (e){ bad.push(String(e)); }
+    await page.unroute(/login\.tangent\.workers\.dev\/v1\/messages/).catch(() => {});
+    if (bad.length) failures.push('[game lab loop] ' + bad.join('; '));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: words drawn a letter at a time, a real click gliding a piece and asking for a sound, a real drag read as a swipe, a game broken in play fixed by the Fix it tile with its error and line, and the history sent with the next request`);
+  }
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
   // display should toggle the visiblibility of the bottom panel."): in trick shots, whose play row stays up while a table is played,
   // a real click on the dots shuts it and it stays shut; a real long press on the table opens it and another shuts it; and in

@@ -720,6 +720,29 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     line, a real click flipping exactly a cross, a shared game finding no fetch, XMLHttpRequest, localStorage or document, Change
     it… through the real box (the gateway mocked: a broken reply sent back with its error, the fixed one kept as version 2 and in
     storage), Undo, and Snake waiting until the real ArrowUp turns it.
+  - **The editing loop and more to build with** (Oct 26: "it works. i asked it to change to 7x7 in whack mole. whats next.", then
+    "1,2"):
+    - **History**: each request carries the board's last `HISTORY` (4) asks before the current version and what Claude said it did
+      (`historyOf`), so "faster again" means something.
+    - **Fix it**: a version that breaks while played (`rec.err`, a square the trial never reached) turns the row's first tile into
+      🔧 Fix it, and the box and the menu have it too (`fixIt`): `change(c, r, words, { fix, line })` sends "This version breaks while
+      it is played: …" with the line, no words needed; kept with the ask "Fix it: …".
+    - **Chips** under the box's words (`CHIPS`: Make it faster, Add sounds, Swipe to move, …): a tap adds one to what is written.
+    - **Sounds**: the Worker has `sound(kind, pitch, seconds)` (beep, click, chime, buzz, boom, up, down, win, lose, tone; at most 8
+      a call, `OUT`), sent back with the view and played for the framed board (`playSounds`, on `ARCADE.tone`; the menu's Sound,
+      localStorage `gamelab.sound`).
+    - **Words**: a piece `{ shape: 'text', text, x, y, size, color }` is drawn a letter at a time, each letter its own kind (`gch_`
+      + its code point, made when first asked for through the `itemGeometries` Proxy, `glyphGeo`) from a 5 × 7 dot font of its own
+      (`FONT`: capitals, digits, a few signs and ♥ ★), flat and unlit, turned with `yaw` 1e-6 so it reads as the board is framed.
+    - **Drags and swipes**: a game with `drag(state, x0, y0, x1, y1, done, rand)` (squares, fractional) keeps every press on its board
+      (`keepsPress`, `claimsPan`): moves are sent as they come (one call out at a time), and the lift once more with done true, where a
+      swipe is read; the tap after a drag is eaten (`dragAte`). The trial drags too.
+    - **Gliding**: a piece with an `id` slides from where it was drawn to where it is over its `glide` seconds (0.12 by default,
+      eased; `glideFrom`, `glideAt`, `rec.anim`); more than `GLIDE_FAR` (3) squares jumps. The starters use them: Snake's segments
+      glide a step at a time with a chime for an apple and a sound to lose, Whack-a-mole clicks and buzzes, Lights Out clicks.
+    - `LAB_SYS` tells Claude all of it. The smoke test puts a game with all four on a board: its words drawn letter by letter, a real
+      click gliding a piece with a click asked for, a real drag read as a swipe left (and not as a tap), the game broken in play by
+      the real Z and a click, Fix it sending its error and line (the gateway mocked) and keeping the fix, and the history naming it.
 - **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.
