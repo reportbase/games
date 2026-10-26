@@ -543,7 +543,7 @@
   /* ── the paste box ── */
   /* An inline display:flex outranks the UA's [hidden]{display:none} — the
      same trap the game index documents above — so hiding needs !important. */
-  #pgnPasteBox[hidden], #fenPasteBox[hidden]{ display: none !important; }
+  #pgnPasteBox[hidden], #fenPasteBox[hidden], #labAskBox[hidden], #labRulesBox[hidden]{ display: none !important; }
   #pgnPasteBox, #fenPasteBox{
     border-radius: 12px;
     box-shadow: 0 18px 44px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
@@ -57061,7 +57061,878 @@ const LEVELS_APP = (() => {
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+/* ═══ GAME LAB: games the player changes by asking (Oct 25: "seems to me these simpler games are good foundation to let the user
+   add features, through a prompt. so the player could develop there own game with AI interaction.", then "2" of the three ways
+   offered: the rules rewritten, not only the dials turned) ═════════════════════════════════════════════════════════════════════
+   A board's game here is a small RULES MODULE: plain JavaScript that sets up a state, answers a tap, a key or a tick of the
+   clock, and says what the board shows (squares a colour each, and pieces standing on them). Claude is given the module and
+   the player's words and writes the whole module again; the board plays the new one at once, and every version is kept, so
+   Undo goes back. Three starters to grow from (Lights Out, Whack-a-mole, Snake) and a blank board, written against the same
+   interface as anything Claude writes, so they are its examples too. The other apps are untouched: these are the lab's own.
+
+   THE SANDBOX. A module is someone's code, from a prompt or a share link, so it never runs in the page. It runs in a Worker
+   made inside an iframe with `sandbox="allow-scripts"` (an origin of its own: no storage, no cookies, no page) whose policy is
+   `default-src 'none'` (no fetch, no XMLHttpRequest, no sockets, no scripts from anywhere; a blob Worker inherits it, measured:
+   fetch and importScripts both refused). The page talks to it in messages, and the frame stops a Worker that does not answer
+   in time (an endless loop) and starts a fresh one: `LAB_TIMEOUT`. What comes back is data (colours, numbers, words), checked
+   and clamped before anything is drawn (`cleanView`).
+
+   THE INTERFACE (what Claude is told, `LAB_SYS`; the starters follow it):
+     game = { title, size (squares a side, or level => size), realtime (step called about 30 times a second while played),
+              setup(level, rand) -> state, tap(state, x, y, rand), key(state, k, rand), step(state, dt, rand),
+              view(state) -> { squares: [a colour a square, row by row], pieces: [{shape, x, y, size, height, z, color, glow}],
+                               status, message, score, over, won, size } }
+   Row 0 is the far row (the top of the screen as a board is framed), x across. Keys are 'up', 'down', 'left', 'right' (as
+   the board lies: up is toward row 0, whichever way the view is turned: `screenToBoardDirs`), 'enter', 'space' and letters. */
+const GAMELAB_APP = (() => {
+  const say = (m, ms) => { try { engineNotice(m, ms || 2600); } catch {} };
+  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const gkey = (c, r) => c + '_' + r;
+  // (Lights Out's: a board's own number and its ring out from the corner; levels 1–5 as every game here has them)
+  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const levelAt = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const hashOf = s => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36) + ':' + s.length; };
+
+  /* ── THE STARTERS ── written as Claude is asked to write, so they are what it learns the interface from. */
+  const STARTERS = [
+    { id: 'lights', name: 'Lights Out', src: `// Lights Out: a tap flips its square and the four beside it. Put every light out in as few taps as you can.
+const game = {
+  title: 'Lights Out',
+  size: level => 3 + Math.min(level, 4),          // 4×4 near the corner, up to 7×7 far out
+  setup(level, rand) {
+    const n = game.size(level);
+    const s = { n, lit: new Array(n * n).fill(false), taps: 0, done: false };
+    // dealt by pressing squares on a dark board, so it can always be put out
+    for (let k = 0; k < 2 + level * 2; k++) flip(s, Math.floor(rand() * n), Math.floor(rand() * n));
+    if (!s.lit.some(Boolean)) flip(s, 1, 1);
+    return s;
+  },
+  tap(s, x, y) {
+    if (s.done) return;
+    flip(s, x, y);
+    s.taps++;
+    s.done = !s.lit.some(Boolean);
+  },
+  view(s) {
+    const squares = [], pieces = [];
+    for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) {
+      const on = s.lit[y * s.n + x];
+      squares.push(on ? '#6b4416' : (x + y) % 2 ? '#2d313b' : '#262a33');
+      if (on) pieces.push({ shape: 'block', x: x + 0.5, y: y + 0.5, size: 0.84, height: 0.12, color: '#ffb340', glow: true });
+    }
+    const left = s.lit.filter(Boolean).length;
+    return { squares, pieces, score: s.taps, over: s.done, won: s.done,
+             status: s.done ? 'out in ' + s.taps + ' taps' : left + ' lit, ' + s.taps + ' taps',
+             message: s.done ? 'All out in ' + s.taps + ' taps!' : '' };
+  },
+};
+function flip(s, x, y) {
+  for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const i = x + dx, j = y + dy;
+    if (i >= 0 && j >= 0 && i < s.n && j < s.n) s.lit[j * s.n + i] = !s.lit[j * s.n + i];
+  }
+}` },
+    { id: 'mole', name: 'Whack-a-mole', src: `// Whack-a-mole: moles pop up out of their holes for a moment; tap one before it ducks back. 30 seconds a round.
+const game = {
+  title: 'Whack-a-mole',
+  size: level => level < 3 ? 3 : 4,
+  realtime: true,
+  setup(level, rand) {
+    const n = game.size(level);
+    return { n, level, t: 0, end: 30, next: 1, up: new Array(n * n).fill(0), bonk: new Array(n * n).fill(0),
+             score: 0, misses: 0, over: false };
+  },
+  step(s, dt, rand) {
+    if (s.over) return;
+    s.t += dt;
+    for (let i = 0; i < s.up.length; i++) { s.up[i] = Math.max(0, s.up[i] - dt); s.bonk[i] = Math.max(0, s.bonk[i] - dt); }
+    if (s.t >= s.next) {                          // a mole comes up in an empty hole
+      const empty = s.up.map((u, i) => u > 0 ? -1 : i).filter(i => i >= 0);
+      if (empty.length) s.up[empty[Math.floor(rand() * empty.length)]] = 1.3 - s.level * 0.1;
+      s.next = s.t + 0.5 + rand() * (1.1 - s.level * 0.12);
+    }
+    if (s.t >= s.end) s.over = true;
+  },
+  tap(s, x, y) {
+    if (s.over) return;
+    const i = y * s.n + x;
+    if (s.up[i] > 0) { s.up[i] = 0; s.bonk[i] = 0.3; s.score++; }
+    else s.misses++;
+  },
+  view(s) {
+    const squares = [], pieces = [];
+    for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) {
+      const i = y * s.n + x;
+      squares.push((x + y) % 2 ? '#3f7a2e' : '#478a34');
+      pieces.push({ shape: 'disc', x: x + 0.5, y: y + 0.5, size: 0.7, color: '#2a1a0e' });
+      if (s.up[i] > 0) pieces.push({ shape: 'ball', x: x + 0.5, y: y + 0.5, size: 0.55, color: '#8b5a2b' });
+      if (s.bonk[i] > 0) pieces.push({ shape: 'ring', x: x + 0.5, y: y + 0.5, size: 0.9, color: '#fff1a8', glow: true });
+    }
+    const left = Math.max(0, Math.ceil(s.end - s.t));
+    return { squares, pieces, score: s.score, over: s.over,
+             status: s.over ? 'time! ' + s.score + ' moles' : s.score + ' moles, ' + left + 's left',
+             message: s.over ? 'Time! You whacked ' + s.score + ' moles.' : '' };
+  },
+};` },
+    { id: 'snake', name: 'Snake', src: `// Snake: steer with the arrow keys (or tap the side of the board to turn toward), eat the apples, don't run into
+// yourself or the wall. Every apple makes you longer and a little faster.
+const game = {
+  title: 'Snake',
+  size: 12,
+  realtime: true,
+  setup(level, rand) {
+    const s = { n: 12, body: [[5, 6], [4, 6], [3, 6]], dir: [1, 0], turn: null, apple: null, t: 0,
+                every: 0.22 - level * 0.02, score: 0, over: false };
+    place(s, rand);
+    return s;
+  },
+  key(s, k) {
+    const want = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[k];
+    if (want && !(want[0] === -s.dir[0] && want[1] === -s.dir[1])) s.turn = want;
+  },
+  tap(s, x, y) {                                   // a tap turns toward it, across the way the snake is going
+    const [hx, hy] = s.body[0], dx = x - hx, dy = y - hy;
+    if (s.dir[0] !== 0) game.key(s, dy < 0 ? 'up' : 'down');
+    else game.key(s, dx < 0 ? 'left' : 'right');
+  },
+  step(s, dt, rand) {
+    if (s.over) return;
+    s.t += dt;
+    while (s.t >= s.every && !s.over) {
+      s.t -= s.every;
+      if (s.turn) { s.dir = s.turn; s.turn = null; }
+      const head = [s.body[0][0] + s.dir[0], s.body[0][1] + s.dir[1]];
+      const out = head[0] < 0 || head[1] < 0 || head[0] >= s.n || head[1] >= s.n;
+      if (out || s.body.some(([x, y]) => x === head[0] && y === head[1])) { s.over = true; break; }
+      s.body.unshift(head);
+      if (head[0] === s.apple[0] && head[1] === s.apple[1]) { s.score++; s.every = Math.max(0.07, s.every * 0.96); place(s, rand); }
+      else s.body.pop();
+    }
+  },
+  view(s) {
+    const squares = [];
+    for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) squares.push((x + y) % 2 ? '#1d2b22' : '#22332a');
+    const pieces = s.body.map(([x, y], i) => ({ shape: i ? 'block' : 'ball', x: x + 0.5, y: y + 0.5, size: i ? 0.8 : 0.9,
+                                                height: 0.35, color: i ? '#4ade80' : '#bbf7d0' }));
+    pieces.push({ shape: 'ball', x: s.apple[0] + 0.5, y: s.apple[1] + 0.5, size: 0.7, color: '#ef4444' });
+    return { squares, pieces, score: s.score, over: s.over,
+             status: s.over ? 'out, ' + s.score + ' apples' : s.score + ' apples',
+             message: s.over ? 'Crashed after ' + s.score + ' apples.' : '' };
+  },
+};
+function place(s, rand) {
+  do s.apple = [Math.floor(rand() * s.n), Math.floor(rand() * s.n)];
+  while (s.body.some(([x, y]) => x === s.apple[0] && y === s.apple[1]));
+}` },
+    { id: 'blank', name: 'A blank board', src: `// A blank board: nothing to play yet. Use "Change it…" and describe the game you want.
+const game = {
+  title: 'A blank board',
+  size: 6,
+  setup() { return {}; },
+  view() {
+    const squares = [];
+    for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) squares.push((x + y) % 2 ? '#2b2f38' : '#323743');
+    return { squares, pieces: [], status: 'empty: describe a game with Change it…' };
+  },
+};` },
+  ];
+  const starterOf = idx => STARTERS[idx % 3];
+
+  /* ── THE SANDBOX'S TWO SCRIPTS ── the frame's (passing messages, stopping a Worker that hangs) and the Worker's (running
+     modules). Kept as source text: they go into the frame's srcdoc and a Blob, never into this page's scripts. */
+  const WORKER_SRC = String.raw`
+"use strict";
+// (the policy already refuses every request; taking the doors away as well costs nothing)
+for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts', 'indexedDB', 'caches', 'BroadcastChannel',
+                 'Worker', 'SharedWorker', 'WebTransport', 'RTCPeerConnection'])
+  { try { let p = self; while (p) { if (Object.prototype.hasOwnProperty.call(p, k)) try { delete p[k]; } catch (e) {} p = Object.getPrototypeOf(p); } } catch (e) {}
+    try { Object.defineProperty(self, k, { value: undefined, configurable: false, writable: false }); } catch (e) {} }
+const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+const MODS = new Map(), BOARDS = new Map();
+const HEAD = 1;   // lines the wrapper puts before the module's own first line
+function compile(src) {
+  const f = new Function('"use strict";\n' + src + '\n;return (typeof game !== "undefined") ? game : undefined;');
+  const g = f();
+  if (!g || typeof g !== 'object') throw new Error('the module must define const game = { … }');
+  if (typeof g.setup !== 'function') throw new Error('game.setup(level, rand) is missing');
+  if (typeof g.view !== 'function') throw new Error('game.view(state) is missing');
+  return g;
+}
+const sizeOf = (g, level) => { const v = typeof g.size === 'function' ? g.size(level) : g.size; return Math.max(2, Math.min(24, Math.round(+v || 6))); };
+const meta = g => ({ title: String(g.title || 'A game').slice(0, 60), realtime: !!g.realtime, keys: typeof g.key === 'function',
+                     taps: typeof g.tap === 'function', steps: typeof g.step === 'function' });
+function viewOf(b) {
+  const v = b.g.view(b.state);
+  if (!v || typeof v !== 'object') throw new Error('game.view must return an object');
+  return { squares: v.squares, pieces: v.pieces, status: v.status, message: v.message, score: v.score, over: v.over, won: v.won,
+           size: v.size != null ? v.size : b.n };
+}
+const keep = (b, r) => { if (r !== undefined && r !== null) b.state = r; };
+function trial(g) {
+  // every way in, a little: both ends of the levels, taps all over, the keys, two seconds of the clock
+  for (const level of [1, 3, 5]) {
+    const rand = rngOf(level * 7919), n = sizeOf(g, level), b = { g, n, rand, state: g.setup(level, rand) };
+    if (b.state === undefined) b.state = {};
+    let v = viewOf(b);
+    for (let k = 0; k < 30; k++) {
+      if (g.tap) keep(b, g.tap(b.state, Math.floor(rand() * n), Math.floor(rand() * n), rand));
+      if (g.key) keep(b, g.key(b.state, ['up', 'right', 'down', 'left', 'enter', 'space'][k % 6], rand));
+      if (g.step) for (let j = 0; j < 4; j++) keep(b, g.step(b.state, 1 / 30, rand));
+      v = viewOf(b);
+    }
+    structuredClone(v);
+  }
+}
+function lineOf(e) {
+  const m = /<anonymous>:(\d+):(\d+)/.exec(String(e && e.stack || ''));
+  return m ? Math.max(1, +m[1] - 2 - HEAD) : null;
+}
+onmessage = ev => {
+  const d = ev.data || {};
+  try {
+    let v;
+    if (d.op === 'load') { const g = compile(String(d.src)); MODS.set(d.key, g); v = meta(g); }
+    else if (d.op === 'trial') { const g = compile(String(d.src)); trial(g); v = meta(g); }
+    else if (d.op === 'drop') { BOARDS.delete(d.bk); v = true; }
+    else if (d.op === 'unload') { MODS.delete(d.key); v = true; }
+    else if (d.op === 'start') {
+      const g = MODS.get(d.key); if (!g) throw new Error('not loaded');
+      const rand = rngOf(d.seed), level = d.level, b = { g, rand, n: sizeOf(g, level), state: undefined };
+      b.state = g.setup(level, rand); if (b.state === undefined) b.state = {};
+      BOARDS.set(d.bk, b); v = viewOf(b);
+    } else {
+      const b = BOARDS.get(d.bk); if (!b) throw new Error('not started');
+      if (d.op === 'tap' && b.g.tap) keep(b, b.g.tap(b.state, d.x, d.y, b.rand));
+      else if (d.op === 'key' && b.g.key) keep(b, b.g.key(b.state, d.k, b.rand));
+      else if (d.op === 'step' && b.g.step) keep(b, b.g.step(b.state, Math.min(0.25, Math.max(0, +d.dt || 0)), b.rand));
+      v = viewOf(b);
+    }
+    postMessage({ id: d.id, ok: true, v });
+  } catch (e) {
+    postMessage({ id: d.id, ok: false, error: String(e && e.message || e).slice(0, 400), line: lineOf(e) });
+  }
+};`;
+  const LAB_TIMEOUT = { call: 1500, trial: 5000 };
+  const HOST_SRC = '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' \'unsafe-eval\' blob:; worker-src blob:"><script>'
+    + `(() => {
+  const WSRC = ${JSON.stringify(WORKER_SRC)};
+  const T = ${JSON.stringify(LAB_TIMEOUT)};
+  let w = null; const pending = new Map();
+  const boot = () => { w = new Worker(URL.createObjectURL(new Blob([WSRC], { type: 'text/javascript' })));
+    w.onmessage = e => { const d = e.data; const p = pending.get(d.id); if (p) { clearTimeout(p); pending.delete(d.id); } parent.postMessage(d, '*'); };
+    w.onerror = e => { try { e.preventDefault(); } catch (x) {} }; };
+  onmessage = e => {
+    if (e.source !== parent) return;
+    const d = e.data || {};
+    pending.set(d.id, setTimeout(() => {
+      // (an endless loop: the Worker is stopped and a fresh one started; every module and board in it went with it)
+      try { w.terminate(); } catch (x) {}
+      for (const [id, t] of pending) { clearTimeout(t); parent.postMessage({ id, ok: false, killed: true, culprit: id === d.id,
+        error: id === d.id ? 'it took too long to answer (an endless loop?) and was stopped' : 'stopped with another game that hung' }, '*'); }
+      pending.clear(); boot(); parent.postMessage({ op: 'reset' }, '*');
+    }, d.op === 'trial' ? T.trial : T.call));
+    w.postMessage(d);
+  };
+  boot(); parent.postMessage({ op: 'ready' }, '*');
+})();` + '</scr' + 'ipt>';
+
+  const BOX = (() => {
+    let frame = null, ready = null, onReady = null, seq = 0;
+    const CALLS = new Map(), LOADED = new Map();
+    const resets = [];
+    function ensure(){
+      if (frame) return ready;
+      ready = new Promise(res => { onReady = res; });
+      frame = document.createElement('iframe');
+      frame.setAttribute('sandbox', 'allow-scripts');
+      frame.setAttribute('aria-hidden', 'true');
+      frame.style.cssText = 'position:fixed;width:1px;height:1px;left:-10px;top:-10px;border:0;opacity:0;pointer-events:none';
+      frame.srcdoc = HOST_SRC;
+      document.body.appendChild(frame);
+      return ready;
+    }
+    addEventListener('message', e => {
+      if (!frame || e.source !== frame.contentWindow) return;
+      const d = e.data || {};
+      if (d.op === 'ready'){ onReady && onReady(); return; }
+      if (d.op === 'reset'){ LOADED.clear(); for (const f of resets) try { f(); } catch {} return; }
+      const c = CALLS.get(d.id); if (!c) return;
+      CALLS.delete(d.id);
+      if (d.ok) c.res(d.v); else c.rej(Object.assign(new Error(d.error || 'failed'), { line: d.line, killed: !!d.killed, culprit: !!d.culprit }));
+    });
+    async function call(op, args){
+      await ensure();
+      const id = ++seq;
+      return new Promise((res, rej) => { CALLS.set(id, { res, rej }); frame.contentWindow.postMessage(Object.assign({}, args, { op, id }), '*'); });
+    }
+    async function load(key, src){
+      if (LOADED.has(key)) return LOADED.get(key);
+      const p = call('load', { key, src });
+      LOADED.set(key, p);
+      try { return await p; } catch (e){ LOADED.delete(key); throw e; }
+    }
+    return { call, load, onReset: f => resets.push(f), get frame(){ return frame; } };
+  })();
+
+  /* ── WHAT A BOARD PLAYS ── a board's own versions (MINE) if it has any, else its starter. Kept by board in localStorage
+     `gamelab.mine`: { v: [{ src, note, ask, at }], cur }. At most `MINE_VERSIONS` versions a board (the oldest go), and the
+     boards changed least lately go first past `MINE_BYTES`, since modules are a few kilobytes each. */
+  const MINE_KEY = 'gamelab.mine', MINE_VERSIONS = 16, MINE_BYTES = 1500000, SRC_MAX = 60000;
+  const MINE = new Map();
+  try {
+    const o = JSON.parse(localStorage.getItem(MINE_KEY) || '{}');
+    for (const [k, m] of Object.entries(o || {})){
+      if (!m || !Array.isArray(m.v)) continue;
+      const v = m.v.filter(x => x && typeof x.src === 'string' && x.src.length <= SRC_MAX)
+                   .map(x => ({ src: x.src, note: String(x.note || '').slice(0, 300), ask: String(x.ask || '').slice(0, 600), at: +x.at || 0 }));
+      if (v.length) MINE.set(k, { v, cur: Math.max(0, Math.min(v.length - 1, m.cur | 0)), at: +m.at || 0 });
+    }
+  } catch {}
+  function saveMine(){
+    const all = [...MINE.entries()].sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
+    let bytes = 0; const keep = {};
+    for (const [k, m] of all){
+      const n = m.v.reduce((s, x) => s + x.src.length + x.note.length + x.ask.length, 0);
+      if (bytes + n > MINE_BYTES && Object.keys(keep).length) break;
+      bytes += n; keep[k] = m;
+    }
+    try { localStorage.setItem(MINE_KEY, JSON.stringify(keep)); } catch { try { say('Your games could not all be kept: the browser\'s storage is full.', 3000); } catch {} }
+  }
+  const mineOf = (c, r) => MINE.get(gkey(c, r)) || null;
+  const srcOf = (c, r) => { const m = mineOf(c, r); return m ? m.v[m.cur].src : starterOf(boardIdx(c, r)).src; };
+  function pushVersion(c, r, src, note, ask){
+    const k = gkey(c, r);
+    let m = MINE.get(k);
+    if (!m){ m = { v: [{ src: srcOf(c, r), note: 'as it came', ask: '', at: Date.now() }], cur: 0, at: Date.now() }; MINE.set(k, m); }
+    m.v = m.v.slice(0, m.cur + 1);                      // a change after an undo drops the redo
+    m.v.push({ src, note: String(note || '').slice(0, 300), ask: String(ask || '').slice(0, 600), at: Date.now() });
+    while (m.v.length > MINE_VERSIONS) m.v.shift();
+    m.cur = m.v.length - 1; m.at = Date.now();
+    saveMine();
+  }
+
+  /* ── EACH BOARD RUNNING ── RUN by board: the module's key, the view last given back, whether a call is out, and an error
+     if this version broke. A board only looked at shows its game's opening; the framed board plays (taps, keys, and the
+     clock while it is a realtime game). The sandbox keeps the newest `RUN_CAP` boards. */
+  const RUN = new Map(), RUN_CAP = 300;
+  let LIVE = null;
+  const isLive = (c, r) => !!LIVE && LIVE.c === c && LIVE.r === r;
+  const nowS = () => performance.now() / 1000;
+  BOX.onReset(() => { for (const rec of RUN.values()){ rec.started = false; rec.busy = false; } });
+  function recOf(c, r){
+    const bk = gkey(c, r), src = srcOf(c, r), key = hashOf(src);
+    let rec = RUN.get(bk);
+    if (!rec || rec.key !== key){
+      rec = { bk, c, r, key, src, view: null, meta: null, busy: false, started: false, err: null, attempt: rec ? rec.attempt : 0, last: nowS(), msg: '' };
+      RUN.set(bk, rec);
+      if (RUN.size > RUN_CAP){ const old = RUN.keys().next().value; RUN.delete(old); BOX.call('drop', { bk: old }).catch(() => {}); }
+    } else { RUN.delete(bk); RUN.set(bk, rec); }
+    if (!rec.started && !rec.busy && !rec.err) start(rec);
+    return rec;
+  }
+  function changed(){ try { fieldItemsChanged(); } catch {} }
+  // (the framed board is asked for its pieces every frame anyway, so its clock's steps wake nothing else)
+  function took(rec, v, quiet){
+    rec.view = cleanView(v);
+    const m = rec.view.message;
+    if (m && m !== rec.msg && isLive(rec.c, rec.r)) say(m, 2600);
+    rec.msg = m;
+    if (!quiet) changed();
+  }
+  function broke(rec, e){
+    rec.err = (e && e.message) || String(e);
+    rec.errLine = e && e.line;
+    rec.busy = false;
+    if (isLive(rec.c, rec.r)) say('This version of the game broke: ' + rec.err + (rec.errLine ? ' (line ' + rec.errLine + ')' : '') + '. Undo goes back, or ask Claude to fix it.', 5000);
+    changed();
+  }
+  async function start(rec){
+    rec.busy = true;
+    try {
+      rec.meta = await BOX.load(rec.key, rec.src);
+      const idx = boardIdx(rec.c, rec.r);
+      took(rec, await BOX.call('start', { bk: rec.bk, key: rec.key, seed: (idx * 7919 + rec.attempt * 104729) >>> 0, level: levelAt(idx) }));
+      rec.started = true; rec.busy = false; rec.last = nowS();
+    } catch (e){ if (e && e.killed && !e.culprit) { rec.busy = false; rec.err = null; } else broke(rec, e); }
+  }
+  async function send(rec, op, args){
+    if (!rec.started || rec.err) return;
+    if (op !== 'step' && !rec.go){ rec.go = true; rec.last = nowS(); }
+    rec.busy = true;
+    try { took(rec, await BOX.call(op, Object.assign({ bk: rec.bk }, args)), op === 'step'); rec.busy = false; }
+    catch (e){ if (e && e.killed && !e.culprit){ rec.busy = false; return; } broke(rec, e); }
+  }
+  function restart(c, r){
+    const rec = RUN.get(gkey(c, r));
+    if (rec){ rec.attempt++; rec.started = false; rec.err = null; rec.view = null; rec.msg = ''; rec.go = false; }
+    recOf(c, r); changed();
+  }
+  /* the clock: the framed board's realtime game steps once a frame, as long as the last step has come back, and only once the
+     player has tapped or pressed a key on it (`rec.go`): the snake framed by a flight ran into the wall before it was seen. */
+  function tick(rec){
+    if (!rec.meta || !rec.meta.realtime || !rec.meta.steps || !rec.started || rec.busy || rec.err || !rec.go) return;
+    if (rec.view && rec.view.over) return;
+    const t = nowS(), dt = Math.min(0.25, t - rec.last); rec.last = t;
+    send(rec, 'step', { dt });
+  }
+
+  /* ── WHAT COMES BACK, CHECKED ── colours read from '#rgb', '#rrggbb' or numbers; sizes and counts held to what a board can
+     show; words cut short. Anything else is left out, never drawn. */
+  const colorOf = (x, dflt) => {
+    if (typeof x === 'number' && isFinite(x)) return Math.max(0, Math.min(0xffffff, x | 0));
+    if (typeof x === 'string'){
+      let s = x.trim();
+      if (/^#[0-9a-f]{3}$/i.test(s)) s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+      if (/^#[0-9a-f]{6}$/i.test(s)) return parseInt(s.slice(1), 16);
+    }
+    return dflt;
+  };
+  const SHAPES = ['tile', 'block', 'ball', 'disc', 'ring', 'peg', 'cone', 'gem'];
+  const num = (x, lo, hi, d) => { const v = +x; return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; };
+  const words = (x, n) => x == null ? '' : String(x).slice(0, n);
+  function cleanView(v){
+    v = v || {};
+    const n = Math.max(2, Math.min(24, Math.round(+v.size || 6)));
+    const sq = Array.isArray(v.squares) ? v.squares : [];
+    const colors = new Array(n * n);
+    for (let i = 0; i < n * n; i++) colors[i] = colorOf(sq[i], ((i % n) + ((i / n) | 0)) % 2 ? 0x2b2f38 : 0x323743);
+    const pieces = [];
+    for (const p of Array.isArray(v.pieces) ? v.pieces.slice(0, 600) : []){
+      if (!p || typeof p !== 'object') continue;
+      const shape = SHAPES.includes(p.shape) ? p.shape : 'block';
+      const size = num(p.size, 0.05, 4, 0.8);
+      const dh = shape === 'block' ? 0.6 : shape === 'peg' ? 0.8 : shape === 'cone' ? 1 : shape === 'gem' ? 1 : 1;
+      pieces.push({ shape, x: num(p.x, -1, n + 1, 0.5), y: num(p.y, -1, n + 1, 0.5), size, height: num(p.height, 0.01, 8, size * dh),
+                    z: num(p.z, 0, 8, 0), color: colorOf(p.color, 0xd8d4c8), glow: !!p.glow });
+    }
+    return { n, colors, pieces, status: words(v.status, 120), message: words(v.message, 200), score: isFinite(+v.score) ? +v.score : null,
+             over: !!v.over, won: !!v.won };
+  }
+
+  /* ── DRAWING ── the squares are the board's colours; a piece is one of eight kinds, each a unit across, scaled to its size
+     in squares and stretched to its height; a glowing one is its kind's unlit twin. */
+  function itemsOf(V){
+    const n = V.n, out = [];
+    for (const p of V.pieces){
+      const k = 'gl_' + p.shape + (p.glow ? '_L' : '');
+      const flat = p.shape === 'tile' || p.shape === 'disc' || p.shape === 'ring';
+      out.push({ kind: k, u: p.x / n, v: p.y / n, scale: p.size / n, lift: p.z / n, sy: flat ? 1 : p.height / p.size, color: p.color });
+    }
+    return out;
+  }
+  const geos = {
+    tile: T => FieldKit.plate(T, 1, 0.006),
+    block: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
+    ball: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
+    disc: T => FieldKit.disc(T, 0.5, 0.005),
+    ring: T => FieldKit.ring(T, 0.34, 0.5, 0.007),
+    peg: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 20); g.translate(0, 0.5, 0); return g; },
+    cone: T => { const g = new T.ConeGeometry(0.5, 1, 20); g.translate(0, 0.5, 0); return g; },
+    gem: T => { const g = new T.OctahedronGeometry(0.5); g.translate(0, 0.5, 0); return g; },
+  };
+  const itemGeometries = {};
+  for (const [k, f] of Object.entries(geos)){
+    itemGeometries['gl_' + k] = f;
+    itemGeometries['gl_' + k + '_L'] = T => { const g = f(T); g.userData.unlit = true; return g; };
+  }
+  const GRID_WAIT = new Map();
+  const waitGrid = n => { if (!GRID_WAIT.has(n)) GRID_WAIT.set(n, { n, colors: Array.from({ length: n * n }, (_, i) => ((i % n) + ((i / n) | 0)) % 2 ? 0x24272f : 0x2a2e37) }); return GRID_WAIT.get(n); };
+  const ERR_GRID = { n: 4, colors: Array.from({ length: 16 }, (_, i) => ((i % 4) + ((i / 4) | 0)) % 2 ? 0x4a1d1d : 0x5a2424) };
+
+  /* ── ASKING CLAUDE ── through the coach's gateway (the page holds no key: the sign-in's session says who is asking, and the
+     gateway gives each person a daily allowance). Streamed, as the 3d studio's requests are, so a long module keeps bytes
+     moving past Cloudflare's 100 s. The reply is one sentence of what changed and the whole module in one ```js block; the
+     module is tried in the sandbox before it is kept (`trial`: every level, taps, keys and the clock), and a broken one goes
+     back with its error, up to `FIX_TRIES` times. */
+  const MODELS = [['claude-sonnet-5-5', 'Sonnet (quick)'], ['claude-opus-5-5', 'Opus (careful)'], ['claude-haiku-4-5', 'Haiku (fastest)']];
+  let MODEL = (() => { try { const m = localStorage.getItem('gamelab.model'); return MODELS.some(x => x[0] === m) ? m : MODELS[0][0]; } catch { return MODELS[0][0]; } })();
+  const FIX_TRIES = 2, MAX_OUT = 24000, STALL_MS = 60000;
+  const LAB_SYS = [
+    'You write and change small games for a page of game boards. Each board plays one game: a RULES MODULE in plain JavaScript.',
+    'The module defines one object, `const game = { … }`, and may define helper functions beside it. It runs in a sandboxed Worker: no DOM, no window, no document, no network, no storage, no timers, no async, no imports. Use only plain JavaScript (Math, arrays, objects, strings). Use the `rand` function you are given for every random choice, never Math.random, so a board always deals the same game.',
+    'THE INTERFACE:',
+    '  game.title: a short name.',
+    '  game.size: squares a side of the square board, 2 to 24, or a function level => size.',
+    '  game.realtime: true if the game moves on its own; then step is called about 30 times a second while the board is played.',
+    '  game.setup(level, rand) -> state. level is 1 (near the corner) to 5 (far out): harder farther out. The state is any plain object.',
+    '  game.tap(state, x, y, rand): a tap on square (x, y); x 0..size-1 across, y 0..size-1 with y = 0 the far (top) row.',
+    '  game.key(state, k, rand): k is "up", "down", "left", "right" (up is toward row 0; the arrow keys and W A S D both arrive as these), "enter", "space", or another lower-case letter or digit.',
+    '  game.step(state, dt, rand): dt seconds since the last step (at most 0.25).',
+    '  tap, key and step may change the state in place or return a new one. All three are optional.',
+    '  game.view(state) -> { squares, pieces, status, message, score, over, won, size }:',
+    '    squares: size*size colours, row by row from y = 0, each "#rrggbb" (the board\'s floor).',
+    '    pieces: at most 400 things standing on the board: { shape, x, y, size, height, z, color, glow }. shape is one of "tile" (a flat square), "block" (a box), "ball", "disc" (flat round), "ring", "peg" (a cylinder), "cone", "gem". x, y are in squares and may be fractional: the middle of square (i, j) is (i + 0.5, j + 0.5). size is its width in squares (0.8 fills most of a square), height how tall (blocks, pegs, cones, gems), z how far it floats above the floor, color "#rrggbb", glow true to light it from within.',
+    '    status: a few words for the board\'s title (the score, time left, whose turn). message: a sentence shown once when it changes (a win, a loss), else "".',
+    '    score: a number. over: true when the game has ended (a tap then starts it again). won: true when it ended well.',
+    '    size: only if the board\'s size changes during play.',
+    'RULES FOR YOUR REPLY:',
+    '  Change only what the player asks for, and keep everything else working as it was. If they ask for a new game, write a new one.',
+    '  Keep it small and clear: under 300 lines, readable names, a comment line at the top saying how to play.',
+    '  Every function must finish quickly: no loops that could run for ever.',
+    '  Reply with ONE short sentence saying what you changed, then the WHOLE module in ONE ```js code block. Nothing after the block.',
+  ].join('\n');
+  async function streamCall(body){
+    const ac = new AbortController();
+    let timer = null;
+    const arm = () => { clearTimeout(timer); timer = setTimeout(() => { try { ac.abort(); } catch {} }, STALL_MS); };
+    arm();
+    try {
+      const res = await fetch(coachEndpoint(), { method: 'POST', headers: coachHeaders(), body: JSON.stringify(Object.assign({}, body, { stream: true })), signal: ac.signal });
+      if (!res.ok){
+        let msg = 'HTTP ' + res.status;
+        try { const j = await res.json(); msg = (j && j.error && j.error.message) || msg; } catch {}
+        const e = new Error(coachHttpError(res.status, msg)); e.status = res.status; throw e;
+      }
+      if (res.ok) _coach401 = 0;
+      if (!/event-stream/.test(res.headers.get('content-type') || '')){ const j = await res.json(); return ((j.content || []).find(b => b.type === 'text') || {}).text || ''; }
+      const rd = res.body.getReader(), dec = new TextDecoder();
+      let buf = '', text = '', errMsg = null, last = 0;
+      for (;;){
+        const { done, value } = await rd.read();
+        if (done) break;
+        arm();
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0){
+          const ev = buf.slice(0, i); buf = buf.slice(i + 2);
+          const line = ev.split('\n').find(l => l.startsWith('data:'));
+          if (!line) continue;
+          let d; try { d = JSON.parse(line.slice(5)); } catch { continue; }
+          if (d.type === 'content_block_delta' && d.delta && d.delta.type === 'text_delta') text += d.delta.text;
+          else if (d.type === 'error') errMsg = (d.error && d.error.message) || 'the reply broke off';
+        }
+        const t = performance.now();
+        if (text && t - last > 300){ last = t; ASK.status('Claude is writing… ' + (text.length / 1024).toFixed(1) + ' KB'); }
+      }
+      if (errMsg) throw new Error(/overload/i.test(errMsg) ? 'Claude is busy right now; try again in a minute.' : errMsg);
+      return text;
+    } catch (e){
+      if (e && e.name === 'AbortError') throw new Error('No answer for ' + Math.round(STALL_MS / 1000) + ' s, so the request was dropped. Try again.');
+      throw e;
+    } finally { clearTimeout(timer); }
+  }
+  async function callModel(messages){
+    const body = m => ({ model: m, max_tokens: MAX_OUT, system: [{ type: 'text', text: LAB_SYS, cache_control: { type: 'ephemeral' } }], messages });
+    try { return await streamCall(body(MODEL)); }
+    catch (e){
+      // (a gateway not told about a model yet answers 400/403/404 naming it: fall back once, as the 3d studio does)
+      if ((e.status === 400 || e.status === 403 || e.status === 404) && /model/i.test(e.message) && MODEL !== 'claude-sonnet-5'){
+        ASK.status('Trying another model…'); return await streamCall(body('claude-sonnet-5'));
+      }
+      throw e;
+    }
+  }
+  function parseReply(text){
+    const blocks = [...String(text).matchAll(/```(?:js|javascript)?[^\n]*\n([\s\S]*?)```/g)].map(m => m[1]);
+    if (!blocks.length) return null;
+    const src = blocks.sort((a, b) => b.length - a.length)[0].trim();
+    const at = text.indexOf('```');
+    const note = text.slice(0, at).replace(/\s+/g, ' ').trim().slice(0, 300);
+    return { src, note };
+  }
+  async function trialOf(src){
+    try { return { meta: await BOX.call('trial', { src }) }; }
+    catch (e){ return { error: (e && e.message) || String(e), line: e && e.line }; }
+  }
+  let BUSY = false;
+  async function change(c, r, ask){
+    if (BUSY) return;
+    ask = String(ask || '').trim();
+    if (!ask){ ASK.status('Say what to change first.'); return; }
+    if (!coachSignedIn()){ ASK.status('Sign in first (the button below): Claude is reached through the coach\'s gateway, with a daily allowance each.'); ASK.signIn(true); return; }
+    BUSY = true; ASK.busy(true);
+    const before = srcOf(c, r);
+    const messages = [{ role: 'user', content: 'Here is the game on this board now:\n```js\n' + before + '\n```\nThe player asks: ' + ask }];
+    try {
+      for (let tries = 0; ; tries++){
+        ASK.status(tries ? 'Claude is fixing it…' : 'Asking Claude…');
+        const text = await callModel(messages);
+        const R = parseReply(text);
+        let why = null, line = null;
+        if (!R) why = 'there was no ```js block in the reply';
+        else if (R.src.length > SRC_MAX) why = 'the module is too long (' + R.src.length + ' characters, at most ' + SRC_MAX + ')';
+        else { ASK.status('Trying it out…'); const T = await trialOf(R.src); if (T.error){ why = T.error; line = T.line; } }
+        if (!why){
+          pushVersion(c, r, R.src, R.note || 'changed', ask);
+          restart(c, r);
+          ASK.done(R.note || 'Changed.');
+          say(R.note || 'Changed.', 3200);
+          try { bbRefreshNow(); } catch {}
+          return;
+        }
+        if (tries >= FIX_TRIES){ ASK.status('Claude\'s version still fails (' + why + (line ? ', line ' + line : '') + '), so the board keeps the game it had. Try saying it another way.'); return; }
+        messages.push({ role: 'assistant', content: text || '(no reply)' },
+                      { role: 'user', content: 'That version fails when tried: ' + why + (line ? ' (at line ' + line + ' of the module)' : '') + '. Fix it, keeping what the player asked for. Reply the same way: one sentence, then the whole module in one ```js block.' });
+      }
+    } catch (e){
+      ASK.status(String((e && e.message) || e));
+    } finally { BUSY = false; ASK.busy(false); }
+  }
+
+  /* ── THE BOX ── "Change it…": a few words to Claude about the framed board's game, the versions so far (what each asked
+     for and what Claude said it did), Send, Close. A centred panel like Paste FENs'. */
+  const ASK = (() => {
+    let box = null, ta, st, log, bSend, bIn, at = null;
+    function build(){
+      box = document.createElement('div');
+      box.id = 'labAskBox';
+      box.className = 'panel';
+      box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;display:flex;flex-direction:column;gap:8px;'
+        + 'padding:12px;width:min(520px,92vw);max-height:86vh;box-sizing:border-box';
+      const head = document.createElement('div');
+      head.style.cssText = 'font-size:0.8125rem;font-weight:600';
+      log = document.createElement('div');
+      log.style.cssText = 'font-size:0.6875rem;color:#9fb0c4;white-space:pre-wrap;max-height:28vh;overflow:auto';
+      ta = document.createElement('textarea');
+      ta.placeholder = 'Say what to change, e.g. "make the moles come up faster and add a golden mole worth three", '
+        + '"the snake wraps round the edges", or a new game: "a 7×7 game where I tap to drop coloured stones and four in a row wins".';
+      ta.style.cssText = 'width:100%;height:110px;resize:vertical;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(201,199,190,.25);'
+        + 'border-radius:6px;padding:8px;font:inherit;font-size:0.8125rem;box-sizing:border-box';
+      st = document.createElement('div');
+      st.style.cssText = 'font-size:0.6875rem;color:#cbd5e1;min-height:1.2em;white-space:pre-wrap';
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap';
+      bIn = document.createElement('button'); bIn.textContent = 'Sign in'; bIn.hidden = true;
+      bIn.addEventListener('click', () => { try { coachSignIn(); } catch {} setTimeout(() => signIn(!coachSignedIn()), 1500); });
+      const bClose = document.createElement('button'); bClose.textContent = 'Close';
+      bSend = document.createElement('button'); bSend.textContent = 'Send to Claude';
+      bClose.addEventListener('click', () => { box.hidden = true; });
+      bSend.addEventListener('click', () => { if (at) change(at.c, at.r, ta.value); });
+      ta.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if (e.key === 'Escape'){ box.hidden = true; }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && at){ e.preventDefault(); change(at.c, at.r, ta.value); }
+      });
+      row.append(bIn, bClose, bSend);
+      box.append(head, log, ta, st, row);
+      box._head = head;
+      document.body.appendChild(box);
+    }
+    function fill(){
+      const m = mineOf(at.c, at.r), rec = RUN.get(gkey(at.c, at.r));
+      const title = (rec && rec.meta && rec.meta.title) || starterOf(boardIdx(at.c, at.r)).name;
+      box._head.textContent = 'Change this board\'s game: ' + title;
+      log.textContent = m && m.v.length > 1
+        ? m.v.map((x, i) => (i === m.cur ? '▸ ' : '  ') + (i + 1) + '. ' + (x.ask ? '"' + x.ask + '": ' : '') + (x.note || '')).join('\n')
+        : 'Claude rewrites the game\'s rules from what you say, and the board plays the new version at once. Every version is kept: Undo goes back.';
+      log.scrollTop = log.scrollHeight;
+    }
+    function open(c, r){
+      if (!box) build();
+      at = { c, r };
+      box.hidden = false; fill();
+      st.textContent = coachSignedIn() ? '' : 'Sign in to ask Claude (the gateway gives each person a daily allowance).';
+      signIn(!coachSignedIn());
+      ta.focus();
+    }
+    function signIn(show){ if (bIn) bIn.hidden = !show; }
+    return {
+      open, signIn,
+      status(t){ if (st) st.textContent = t; },
+      busy(b){ if (bSend){ bSend.disabled = b; bSend.textContent = b ? 'Working…' : 'Send to Claude'; } },
+      done(note){ if (!box) return; ta.value = ''; fill(); st.textContent = '✓ ' + note; },
+      get box(){ return box; },
+    };
+  })();
+
+  /* ── THE RULES BOX ── the module itself, to read or change by hand: Apply tries it in the sandbox and keeps it as a new
+     version if it runs. */
+  function openRules(c, r){
+    let box = document.getElementById('labRulesBox');
+    if (!box){
+      box = document.createElement('div');
+      box.id = 'labRulesBox'; box.className = 'panel';
+      box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;display:flex;flex-direction:column;gap:8px;'
+        + 'padding:12px;width:min(720px,94vw);max-height:90vh;box-sizing:border-box';
+      const head = document.createElement('div'); head.style.cssText = 'font-size:0.8125rem;font-weight:600';
+      const ta = document.createElement('textarea'); ta.spellcheck = false;
+      ta.style.cssText = 'width:100%;height:58vh;resize:vertical;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(201,199,190,.25);'
+        + 'border-radius:6px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:0.6875rem;box-sizing:border-box;white-space:pre;tab-size:2';
+      const st = document.createElement('div'); st.style.cssText = 'font-size:0.6875rem;color:#cbd5e1;min-height:1.2em';
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
+      const bClose = document.createElement('button'); bClose.textContent = 'Close';
+      const bApply = document.createElement('button'); bApply.textContent = 'Apply';
+      bClose.addEventListener('click', () => { box.hidden = true; });
+      bApply.addEventListener('click', async () => {
+        const at = box._at; if (!at) return;
+        const src = ta.value;
+        if (src === srcOf(at.c, at.r)){ st.textContent = 'Nothing changed.'; return; }
+        if (src.length > SRC_MAX){ st.textContent = 'Too long: at most ' + SRC_MAX + ' characters.'; return; }
+        st.textContent = 'Trying it out…';
+        const T = await trialOf(src);
+        if (T.error){ st.textContent = 'It fails: ' + T.error + (T.line ? ' (line ' + T.line + ')' : '') + '. Nothing was kept.'; return; }
+        pushVersion(at.c, at.r, src, 'changed by hand', '');
+        restart(at.c, at.r); st.textContent = '✓ Kept as a new version.'; try { bbRefreshNow(); } catch {}
+      });
+      ta.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') box.hidden = true; });
+      row.append(bClose, bApply); box.append(head, ta, st, row);
+      box._head = head; box._ta = ta; box._st = st;
+      document.body.appendChild(box);
+    }
+    box._at = { c, r };
+    const rec = RUN.get(gkey(c, r));
+    box._head.textContent = 'The rules of this board\'s game' + (rec && rec.meta ? ': ' + rec.meta.title : '');
+    box._ta.value = srcOf(c, r); box._st.textContent = '';
+    box.hidden = false;
+    return box;
+  }
+
+  function undo(c, r, by){
+    const m = mineOf(c, r);
+    if (!m){ say('Nothing to undo: this board plays its game as it came.', 2000); return false; }
+    const to = m.cur + by;
+    if (to < 0 || to >= m.v.length){ say(by < 0 ? 'This is the first version.' : 'Nothing to redo.', 1600); return false; }
+    m.cur = to; m.at = Date.now(); saveMine(); restart(c, r);
+    const x = m.v[to];
+    say((by < 0 ? 'Back to version ' : 'Forward to version ') + (to + 1) + ' of ' + m.v.length + (x.note ? ': ' + x.note : ''), 2600);
+    try { bbRefreshNow(); } catch {}
+    return true;
+  }
+  function startFrom(c, r, s){
+    pushVersion(c, r, STARTERS[s].src, STARTERS[s].name + ', as it came', '');
+    restart(c, r); say('This board now plays ' + STARTERS[s].name + '. Change it… to make it your own.', 2600);
+    try { bbRefreshNow(); } catch {}
+  }
+  function forget(c, r){
+    if (!MINE.has(gkey(c, r))) return;
+    MINE.delete(gkey(c, r)); saveMine(); restart(c, r);
+    say('Back to the board\'s own ' + starterOf(boardIdx(c, r)).name + '.', 2000);
+    try { bbRefreshNow(); } catch {}
+  }
+  function share(c, r){
+    const src = srcOf(c, r), rec = RUN.get(gkey(c, r));
+    const url = SHARE.link(app, { t: (rec && rec.meta && rec.meta.title) || '', s: src });
+    SHARE.copy(url, 'Link copied: it opens the page on this game. It runs sandboxed wherever it is opened.');
+  }
+  async function takeShared(c, r, P){
+    const src = P && typeof P.s === 'string' ? P.s : '';
+    if (!src || src.length > SRC_MAX){ say('That link\'s game could not be read.', 2600); return; }
+    const T = await trialOf(src);
+    if (T.error){ say('That link\'s game does not run: ' + T.error, 3200); return; }
+    pushVersion(c, r, src, 'shared with you', '');
+    restart(c, r);
+    say('A shared game: ' + (T.meta.title || 'untitled') + '. It runs in a sandbox, with no way to the page, your storage or the network.', 4200);
+  }
+
+  const framedHere = () => { try { const f = framedCell(); return f ? { c: f.c, r: f.r } : LIVE; } catch { return LIVE; } };
+  const withFramed = f => () => { const at = framedHere(); if (!at){ say('Frame a board first.', 1600); return; } LIVE = at; f(at.c, at.r); };
+
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    try { if (window.getFieldApp() !== app) return; } catch { return; }
+    if (!LIVE) return;
+    const rec = RUN.get(gkey(LIVE.c, LIVE.r));
+    if (!rec || !rec.meta || !rec.meta.keys || !rec.started || rec.err) return;
+    const ARROWS = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3, w: 0, d: 1, s: 2, a: 3, W: 0, D: 1, S: 2, A: 3 };
+    let k = null;
+    if (e.key in ARROWS){ let dirs = null; try { dirs = screenToBoardDirs(); } catch {} const bd = dirs ? dirs[ARROWS[e.key]] : ARROWS[e.key]; k = ['up', 'right', 'down', 'left'][bd]; }
+    else if (e.key === 'Enter') k = 'enter';
+    else if (e.key === ' ') k = 'space';
+    else if (/^[a-z0-9]$/i.test(e.key)) k = e.key.toLowerCase();
+    if (!k) return;
+    e.preventDefault(); e.stopPropagation();
+    if (rec.view && rec.view.over && (k === 'enter' || k === 'space')){ restart(LIVE.c, LIVE.r); return; }
+    send(rec, 'key', { k });
+  }, true);
+
+  function tilesOf(c, r){
+    const m = mineOf(c, r), rec = RUN.get(gkey(c, r));
+    return [
+      { glyph: '✨', value: 'Change it…' },
+      { glyph: '↶', value: 'Undo', dim: !m || m.cur === 0 },
+      { glyph: '↷', value: 'Redo', dim: !m || m.cur >= m.v.length - 1 },
+      { glyph: '↺', value: 'Restart' },
+      { glyph: '{ }', value: 'Rules' },
+      { glyph: '🔗', value: 'Share' },
+      { label: 'Version', value: m ? (m.cur + 1) + ' of ' + m.v.length : 'as it came' },
+      ...(rec && rec.view && rec.view.score != null ? [{ label: 'Score', value: String(rec.view.score) }] : []),
+    ];
+  }
+
+  const app = {
+    name: 'game lab',
+    menu: [{ head: 'Game lab', items: [
+      { label: 'Change this board\'s game…', title: 'Say what to change; Claude rewrites the game\'s rules and the board plays the new version. Undo goes back.', on: withFramed((c, r) => ASK.open(c, r)) },
+      { label: 'Undo the last change', title: 'Back a version on this board.', on: withFramed((c, r) => undo(c, r, -1)) },
+      { label: 'Redo', title: 'Forward a version again.', on: withFramed((c, r) => undo(c, r, +1)) },
+      { label: 'Start this board again', title: 'The game from its opening.', on: withFramed((c, r) => restart(c, r)) },
+      ...STARTERS.map((S, s) => ({ label: 'Start from ' + S.name, title: 'This board plays ' + S.name + ' as it came, to change from there (your versions so far stay in Undo).', on: withFramed((c, r) => startFrom(c, r, s)) })),
+      { label: 'Show the rules (code)…', title: 'The game\'s module, to read or change by hand.', on: withFramed((c, r) => openRules(c, r)) },
+      { label: 'Share this board\'s game', title: 'Copy a link that opens the page on this game. Whoever opens it runs it in the same sandbox.', on: withFramed((c, r) => share(c, r)) },
+      { label: 'Forget this board\'s versions', title: 'Back to the board\'s own starter, every version gone.', on: withFramed((c, r) => { if (confirm('Forget every version of this board\'s game?')) forget(c, r); }) },
+      { label: () => 'Claude: ' + (MODELS.find(x => x[0] === MODEL) || MODELS[0])[1], title: 'Which Claude writes the changes. Each request counts against the gateway\'s daily allowance.',
+        on(){ const i = MODELS.findIndex(x => x[0] === MODEL); MODEL = MODELS[(i + 1) % MODELS.length][0]; try { localStorage.setItem('gamelab.model', MODEL); } catch {} } },
+    ]}],
+    cellFar: { light: 0x323743, dark: 0x2b2f38 },
+    itemMinPx: 6,
+    faceMinPx: 4,
+    itemGeometries,
+    cellGrid(c, r){
+      const rec = recOf(c, r);
+      if (rec.err) return ERR_GRID;
+      return rec.view ? (rec._g && rec._gv === rec.view ? rec._g : (rec._gv = rec.view, rec._g = { n: rec.view.n, colors: rec.view.colors })) : waitGrid(6);
+    },
+    cellItems(c, r){
+      const rec = recOf(c, r);
+      if (isLive(c, r)) tick(rec);
+      return rec.view && !rec.err ? itemsOf(rec.view) : [];
+    },
+    cellTitle(c, r){
+      const rec = recOf(c, r), m = mineOf(c, r);
+      const name = (rec.meta && rec.meta.title) || starterOf(boardIdx(c, r)).name;
+      return 'Game lab — ' + name + (m ? ' (your version ' + (m.cur + 1) + ' of ' + m.v.length + ')' : '')
+        + (rec.err ? ' · this version broke: ' + rec.err : rec.view && rec.view.status ? ' · ' + rec.view.status : '')
+        + (rec.meta && rec.meta.realtime && !rec.go && !rec.err ? ' · tap or press a key to start' : '');
+    },
+    statTiles(c, r){ return isLive(c, r) ? tilesOf(c, r) : null; },
+    onStatTap(c, r, i){
+      if (!isLive(c, r)) return false;
+      if (i === 0){ ASK.open(c, r); return true; }
+      if (i === 1){ undo(c, r, -1); return true; }
+      if (i === 2){ undo(c, r, +1); return true; }
+      if (i === 3){ restart(c, r); return true; }
+      if (i === 4){ openRules(c, r); return true; }
+      if (i === 5){ share(c, r); return true; }
+      return true;
+    },
+    onReset(c, r){ restart(c, r); return true; },
+    onSelect(){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    noDoubleTap(){ return !!LIVE; },
+    onCellTap(c, r, u, v){
+      const was = isLive(c, r);
+      LIVE = { c, r };
+      const rec = recOf(c, r);
+      if (!was && !rec.view) return true;
+      if (rec.err){ say('This version broke: ' + rec.err + '. Undo goes back, or Change it… to ask Claude to fix it.', 3600); return true; }
+      if (!rec.view || u == null) return true;
+      if (rec.view.over){ restart(c, r); return true; }
+      if (!rec.meta || !rec.meta.taps) return true;
+      const n = rec.view.n;
+      send(rec, 'tap', { x: Math.max(0, Math.min(n - 1, Math.floor(u * n))), y: Math.max(0, Math.min(n - 1, Math.floor(v * n))) });
+      return true;
+    },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#20242c'; ctx.fillRect(0, 0, sz, sz);
+      const n = 4, t = sz / n;
+      for (let i = 0; i < n * n; i++){ ctx.fillStyle = ((i % n) + ((i / n) | 0)) % 2 ? '#2b2f38' : '#3a4050'; ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t, t); }
+      ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
+    },
+    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, undo, startFrom, forget, trialOf, parseReply, cleanView,
+              takeShared, openRules, levelAt, boardIdx, get model(){ return MODEL; }, isLive, get live(){ return LIVE; }, uvAt: (x, y) => _framedUV(x, y),
+              session: tok => coachSetSession(tok), fly: (c, r) => gotoCell(c, r) },
+  };
+  SHARE.install(app, (c, r, P) => takeShared(c, r, P));
+  return app;
+})();
+
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -57070,7 +57941,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

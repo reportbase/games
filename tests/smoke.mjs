@@ -5159,6 +5159,92 @@ try {
     if (!ok) failures.push(`[trickshots run-out] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trick shots run-out (board ${out.idx}: a miss started the run again (${out.missed && out.missed.why}); its own two shots, played by real clicks, cleared it on the next try; a board no one plays showed the whole ${out.shown && out.shown.cycle} s run)`);
   }
+  // THE GAME LAB (Oct 25: "seems to me these simpler games are good foundation to let the user add features, through a prompt.",
+  // then "2"): the starters run in the sandbox and the boards play them; a real click on Lights Out flips exactly its cross; the
+  // sandbox has no network or storage, stops an endless loop and names an error's line; Change it… through the real box sends the
+  // rules to the gateway (mocked here) and keeps Claude's version, a broken one going back once to be fixed; Undo goes back; a
+  // shared game lands on another board; Snake waits for the player, then the real arrow key turns it.
+  {
+    const before = failures.length, bad = [];
+    const GOOD = `// Gold lights
+const game = { title: 'Gold Lights', size: 4,
+  setup(level, rand){ return { lit: [1,0,1,0, 0,1,0,1, 1,0,1,0, 0,1,0,1], taps: 0 }; },
+  tap(s, x, y){ s.lit[y * 4 + x] ^= 1; s.taps++; },
+  view(s){ return { squares: s.lit.map(l => l ? '#806010' : '#222222'),
+    pieces: s.lit.map((l, i) => l ? { shape: 'gem', x: i % 4 + 0.5, y: (i / 4 | 0) + 0.5, size: 0.7, color: '#ffd700', glow: true } : null).filter(Boolean),
+    status: s.taps + ' taps', score: s.taps }; } };`;
+    const BROKEN = 'const game = { size: 4, setup(){ return {}; }, view(s){ return s.nope.x; } };';
+    const asked = [];
+    const sse = text => ['message_start', null].map(() => '').join('') + 'event: a\ndata: ' + JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text } }) + '\n\nevent: b\ndata: {"type":"message_stop"}\n\n';
+    await page.route(/login\.tangent\.workers\.dev\/v1\/messages/, async route => {
+      const body = JSON.parse(route.request().postData()); asked.push(body);
+      const text = asked.length === 1 ? 'I broke it.\n```js\n' + BROKEN + '\n```' : 'I made the lit squares gold gems.\n```js\n' + GOOD + '\n```';
+      await route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: sse(text) });
+    });
+    try {
+      await page.evaluate(() => { localStorage.removeItem('gamelab.mine'); const A = window.FIELD_APPS.find(a => a.id === 'gamelab'); window.setFieldApp(A); });
+      await page.waitForTimeout(3000);
+      const S = await page.evaluate(async () => { const D = window.getFieldApp()._debug, out = {};
+        for (const s of D.STARTERS){ const T = await D.trialOf(s.src); out[s.id] = T.error || T.meta.title; }
+        const L = D.live, r = D.RUN.get(L.c + '_' + L.r);
+        out.live = L; out.title = r && r.meta && r.meta.title; out.started = r && r.started;
+        out.loop = (await D.trialOf('const game = { size: 4, setup(){ return {}; }, view(){ for (;;){} } };')).error;
+        out.err = await D.trialOf('const game = { size: 4, setup(){ return {}; },\n view(s){ return s.a.b; } };');
+        return out; });
+      for (const id of ['lights', 'mole', 'snake', 'blank']) if (!/^[A-Z]/.test(S[id] || '')) bad.push('starter ' + id + ': ' + S[id]);
+      if (S.title !== 'Lights Out' || !S.started) bad.push('the corner board plays ' + S.title + ', started ' + S.started);
+      if (!/too long/.test(S.loop || '')) bad.push('an endless loop: ' + S.loop);
+      if (!S.err || !S.err.error || S.err.line !== 2) bad.push('an error and its line: ' + JSON.stringify(S.err));
+      // a real click on square (1, 1) of the framed Lights Out: exactly its cross flips
+      const lit = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r), n = r.view.n;
+        return r.view.colors.map(c => c === 0x6b4416 ? 1 : 0).join(''); });
+      const at = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, n = D.RUN.get(L.c + '_' + L.r).view.n;
+        for (let y = 100; y < innerHeight - 100; y += 5) for (let x = 100; x < innerWidth - 100; x += 5){ const b = D.uvAt(x, y);
+          if (b && b.c === L.c && b.r === L.r && Math.abs(b.u * n - 1.5) < 0.15 && Math.abs(b.v * n - 1.5) < 0.15) return { x, y, n }; } return null; });
+      if (!at) bad.push('no square (1, 1) on the screen');
+      else {
+        const l0 = await lit(); await page.mouse.click(at.x, at.y); await page.waitForTimeout(800); const l1 = await lit();
+        const diff = [...l0].map((ch, i) => ch !== l1[i] ? i : -1).filter(i => i >= 0).join(',');
+        const n = at.n, want = [1 + n, 1 + n - n, 1 + n - 1, 1 + n + 1, 1 + n + n].sort((a, b) => a - b).join(',');
+        if (diff !== want) bad.push('a real click flipped ' + diff + ', not the cross ' + want);
+      }
+      // the sandbox has no network and no storage: a shared game reporting what it can reach, taken onto board (3, 0)
+      const shared = await page.evaluate(async () => { const D = window.getFieldApp()._debug;
+        await D.takeShared(3, 0, { s: "const game = { size: 3, setup(){ return { f: typeof fetch, x: typeof XMLHttpRequest, l: typeof localStorage, d: typeof document }; }, view(s){ return { status: [s.f, s.x, s.l, s.d].join(' ') }; } };" });
+        await new Promise(r => setTimeout(r, 800)); D.recOf(3, 0); await new Promise(r => setTimeout(r, 800));
+        const r = D.RUN.get('3_0'); return { status: r && r.view && r.view.status, kept: !!D.MINE.get('3_0') }; });
+      if (shared.status !== 'undefined undefined undefined undefined' || !shared.kept) bad.push('the sandbox reaches: ' + JSON.stringify(shared));
+      await page.evaluate(() => window.getFieldApp()._debug.fly(0, 0)); await page.waitForTimeout(1500);
+      // Change it… through the real box: the first reply breaks, goes back with its error, the second is kept
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; D.session('smoke-session'); const L = D.live; window.getFieldApp().onStatTap(L.c, L.r, 0); });
+      await page.waitForTimeout(300);
+      await page.fill('#labAskBox textarea', 'make the lit squares gold gems');
+      await page.click('#labAskBox button:has-text("Send to Claude")');
+      await page.waitForFunction(() => /✓/.test(document.querySelector('#labAskBox').innerText) || /fails/.test(document.querySelector('#labAskBox').innerText), null, { timeout: 20000 }).catch(() => {});
+      const C = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r), m = JSON.parse(localStorage.getItem('gamelab.mine') || '{}')[L.c + '_' + L.r];
+        return { title: r && r.meta && r.meta.title, pieces: r && r.view && r.view.pieces.length, kept: m && m.v.length, cur: m && m.cur, box: document.querySelector('#labAskBox').innerText.slice(-120) }; });
+      if (asked.length !== 2) bad.push(asked.length + ' requests, not 2 (one broken, one fixed)');
+      else {
+        if (!asked[0].stream || !/Lights Out/.test(asked[0].messages[0].content) || !/gold gems/.test(asked[0].messages[0].content)) bad.push('the first request did not carry the rules and the words');
+        if (!/fails when tried/.test(asked[1].messages[2].content)) bad.push('the broken version did not go back with its error');
+      }
+      if (C.title !== 'Gold Lights' || C.pieces !== 8 || C.kept !== 2 || C.cur !== 1) bad.push('after the change: ' + JSON.stringify(C));
+      const U = await page.evaluate(async () => { const D = window.getFieldApp()._debug, L = D.live; document.querySelector('#labAskBox button').closest('#labAskBox').hidden = true;
+        window.getFieldApp().onStatTap(L.c, L.r, 1); await new Promise(r => setTimeout(r, 900)); const r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title; });
+      if (U !== 'Lights Out') bad.push('Undo went to ' + U);
+      // Snake (board (1, 0)) waits for the player, then the real ArrowUp turns it up
+      await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0)); await page.waitForTimeout(2500);
+      const head = () => page.evaluate(() => { const r = window.getFieldApp()._debug.RUN.get('1_0'); return r && r.view && r.view.pieces[0] ? [r.view.pieces[0].x, r.view.pieces[0].y, r.view.over] : null; });
+      const h0 = await head();
+      await page.keyboard.press('ArrowUp'); await page.waitForTimeout(700);
+      const h1 = await head();
+      if (!h0 || h0[0] !== 5.5 || h0[1] !== 6.5) bad.push('Snake did not wait: ' + JSON.stringify(h0));
+      if (!h1 || !(h1[1] < 6.5) || h1[0] !== 5.5 || h1[2]) bad.push('the real ArrowUp did not turn the snake up: ' + JSON.stringify(h1));
+    } catch (e){ bad.push(String(e)); }
+    await page.unroute(/login\.tangent\.workers\.dev\/v1\/messages/).catch(() => {});
+    if (bad.length) failures.push('[game lab] ' + bad.join('; '));
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: the starters run sandboxed (no network or storage, an endless loop stopped, an error's line named); a real click flips Lights Out's cross; Change it… sends the rules, fixes a broken reply once and keeps Claude's version; Undo; a shared game; Snake waits, then the real arrow turns it`);
+  }
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
   // display should toggle the visiblibility of the bottom panel."): in trick shots, whose play row stays up while a table is played,
   // a real click on the dots shuts it and it stays shut; a real long press on the table opens it and another shuts it; and in
