@@ -693,7 +693,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     glow }` in squares; a glowing one is its kind's unlit twin (`gl_<shape>`, `gl_<shape>_L`). `rand` is seeded by the board (its
     number and how many times it was started again), so a board deals the same game; the level is the ring level, 1–5.
   - **Starters** (`STARTERS`): Lights Out, Whack-a-mole and Snake, round the boards by `boardIdx` (the corner Lights Out), and a
-    blank board; the menu's Start from … puts any of them on the framed board as a version.
+    blank board; the menu's Start from … puts any of them on the framed board as a version. Since Oct 26 ("Add more starter
+    games") also 2048 (a swipe or arrow slides the tiles, which glide, numbers on them; the goal tile 128 to 2048 by level), Gems
+    (a match-three: swap by a swipe or two taps, cascades, a target score within the moves; 4 to 6 colours, fewer moves farther
+    out), Pong (first to 5 against a computer quicker by level; drag, tap or the arrows), Maze (a backtracking maze 9 to 17 squares
+    a side, keys, a tap or a swipe that runs to a turning; from level 3 only the way near you is seen) and Connect Four (against a
+    computer that looks 0 to 3 moves ahead with alpha-beta, slipping less farther out; 2 before the first move for two players):
+    `starterOf` goes round every starter but the blank. Each has its own player and passes the check; out of 20 games their players
+    win level 1 / 3 / 5: Gems 20 / 13 / 10, 2048 19 / 3 / 0, Connect Four 20 / 19 / 0, Pong 20 / 20 / 0, the maze always (bigger
+    farther out). The smoke test checks every starter passing the check.
   - **The sandbox** (`BOX`): a module never runs in the page. It runs in a Worker made inside a hidden iframe with `sandbox=
     "allow-scripts"` (an origin of its own: no storage, no cookies, no page) whose policy is `default-src 'none'` (a blob Worker
     inherits it: fetch, XMLHttpRequest and importScripts refused, measured), and the Worker's ways out are deleted too. The frame
@@ -766,6 +774,18 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     - The smoke test checks the starters passing, the four refusals, Change it… sending a version with no player back and keeping
       the next, a board no one plays moving through its recording, and a one-tap game's par of 1 move with a real click's win
       kept as three stars.
+  - **Harder farther out, measured, and My games** (Oct 26: "whats next", then "4,6"):
+    - The check plays level 5 too (three runs at level 1, one at 3, two at 5, 380 ms of the Worker each; a run keeps its board's
+      size `n`). `hardness` sets level 1 beside level 5 (`statsAt`): level 5 is harder if the board is bigger, or, for a game to win,
+      fewer are won or the wins take a fifth more moves (seconds, realtime), or, for a game of points, more are over, sooner by a
+      fifth, or a fifth fewer points. None so, the version goes back to Claude with the numbers ("level 5 is no harder than level
+      1 …"); after `FIX_TRIES` it is kept anyway, its note saying it plays the same farther out. `LAB_SYS` asks for it (HARDER
+      FARTHER OUT). The box's note gives both levels (Lights Out: 4×4 won in 2.7 moves, 7×7 in 8; Snake over after 19 s and 5.6 s).
+    - **My games** (`openMineList`, `#labMineBox`, `mineList`): every board changed, newest first: its game's name (`titleOf`: the
+      running meta, else the module's `title:`), the board, which version of how many, when, the last ask, the best stars; Play
+      (closes, makes it the live board and flies there), Share, Forget. From the row's 📋 My games tile or the menu's My games (N)….
+    - The smoke test checks the starters climbing, a flat game refused and then kept with the note after three requests (the
+      gateway mocked), and My games listing the two newest boards first, a real click on Play making the board the live one.
 - **Tanks** (Oct 20: "what tank games could we build", then "1" of five: the artillery duel, as Scorched Earth plays it):
   `TANKS_APP`, id `tanks`, after Nonograms. Two tanks on rolling ground, yours on the left, the computer's on the right,
   firing in turns.

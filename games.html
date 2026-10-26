@@ -543,7 +543,7 @@
   /* ── the paste box ── */
   /* An inline display:flex outranks the UA's [hidden]{display:none} — the
      same trap the game index documents above — so hiding needs !important. */
-  #pgnPasteBox[hidden], #fenPasteBox[hidden], #labAskBox[hidden], #labRulesBox[hidden]{ display: none !important; }
+  #pgnPasteBox[hidden], #fenPasteBox[hidden], #labAskBox[hidden], #labRulesBox[hidden], #labMineBox[hidden]{ display: none !important; }
   #pgnPasteBox, #fenPasteBox{
     border-radius: 12px;
     box-shadow: 0 18px 44px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .05);
@@ -57271,6 +57271,478 @@ function place(s, rand) {
   do s.apple = [Math.floor(rand() * s.n), Math.floor(rand() * s.n)];
   while (s.body.some(([x, y]) => x === s.apple[0] && y === s.apple[1]));
 }` },
+    { id: 'g2048', name: '2048', src: `// 2048: swipe (or press an arrow key) to slide every tile that way; two tiles of the same number that meet become one of
+// twice the number. Reach the goal tile before the board fills up. The goal is higher farther out.
+const game = {
+  title: '2048',
+  size: 4,
+  wins: true,
+  setup(level, rand) {
+    const s = { n: 4, cells: new Array(16).fill(null), next: 1, goal: [128, 256, 512, 1024, 2048][level - 1] || 128,
+                score: 0, moves: 0, over: false, won: false };
+    add(s, rand); add(s, rand);
+    return s;
+  },
+  key(s, k, rand) {
+    const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[k];
+    if (d) slide(s, d, rand);
+  },
+  drag(s, x0, y0, x1, y1, done, rand) {           // a swipe: the longer way it went
+    if (!done) return;
+    const dx = x1 - x0, dy = y1 - y0;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 0.4) return;
+    slide(s, Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)], rand);
+  },
+  bot(s) {                                         // its own player: the slide leaving the most room, down and left first
+    if (s.over) return null;
+    let best = null;
+    for (const [k, d, bias] of [['down', [0, 1], 6], ['left', [-1, 0], 4], ['right', [1, 0], 0], ['up', [0, -1], -30]]) {
+      const r = shift(s, d);
+      if (!r.moved) continue;
+      const v = r.gained + 12 * r.cells.filter(c => !c).length + bias;
+      if (!best || v > best.v) best = { k, v };
+    }
+    return best ? best.k : null;
+  },
+  view(s) {
+    const squares = [], pieces = [];
+    for (let i = 0; i < 16; i++) squares.push((i % 4 + (i / 4 | 0)) % 2 ? '#5b5248' : '#635a4f');
+    s.cells.forEach((t, i) => {
+      if (!t) return;
+      const x = i % 4 + 0.5, y = (i / 4 | 0) + 0.5, digits = String(t.v).length;
+      pieces.push({ shape: 'block', x, y, size: 0.86, height: 0.14, color: COLORS[t.v] || '#3c3a32', id: t.id, glide: 0.1 });
+      pieces.push({ shape: 'text', text: String(t.v), x, y, z: 0.15, size: digits <= 2 ? 0.42 : digits === 3 ? 0.3 : 0.23,
+                    color: t.v <= 4 ? '#776e65' : '#f9f6f2', id: 't' + t.id, glide: 0.1 });
+    });
+    const top = Math.max(...s.cells.map(t => t ? t.v : 0));
+    return { squares, pieces, score: s.score, over: s.over, won: s.won,
+             status: s.won ? 'reached ' + s.goal + ' in ' + s.moves + ' moves' : s.over ? 'stuck at ' + top : 'best tile ' + top + ' of ' + s.goal + ', ' + s.moves + ' moves',
+             message: s.won ? 'You made ' + s.goal + '!' : s.over ? 'No moves left: the best tile was ' + top + '.' : '' };
+  },
+};
+const COLORS = { 2: '#eee4da', 4: '#ede0c8', 8: '#f2b179', 16: '#f59563', 32: '#f67c5f', 64: '#f65e3b', 128: '#edcf72',
+                 256: '#edcc61', 512: '#edc850', 1024: '#edc53f', 2048: '#edc22e' };
+function add(s, rand) {
+  const empty = s.cells.map((c, i) => c ? -1 : i).filter(i => i >= 0);
+  if (!empty.length) return;
+  s.cells[empty[Math.floor(rand() * empty.length)]] = { v: rand() < 0.9 ? 2 : 4, id: s.next++ };
+}
+// the cells of line i, starting from the edge the tiles slide toward
+function lineOf(d, i) {
+  const out = [];
+  for (let j = 0; j < 4; j++) {
+    const far = 3 - j;
+    if (d[0] === 1) out.push(i * 4 + far); else if (d[0] === -1) out.push(i * 4 + j);
+    else if (d[1] === 1) out.push(far * 4 + i); else out.push(j * 4 + i);
+  }
+  return out;
+}
+function shift(s, d) {
+  const cells = s.cells.slice();
+  let gained = 0, moved = false;
+  for (let i = 0; i < 4; i++) {
+    const idx = lineOf(d, i), tiles = idx.map(k => cells[k]).filter(Boolean), out = [];
+    for (let k = 0; k < tiles.length; k++) {
+      const a = tiles[k], b = tiles[k + 1];
+      if (b && a.v === b.v) { out.push({ v: a.v * 2, id: a.id }); gained += a.v * 2; k++; }
+      else out.push(a);
+    }
+    idx.forEach((k, j) => {
+      const t = out[j] || null, was = s.cells[k];
+      if ((was ? was.id : 0) !== (t ? t.id : 0) || (was && t && was.v !== t.v)) moved = true;
+      cells[k] = t;
+    });
+  }
+  return { cells, gained, moved };
+}
+function slide(s, d, rand) {
+  if (s.over) return;
+  const r = shift(s, d);
+  if (!r.moved) return;
+  s.cells = r.cells; s.score += r.gained; s.moves++;
+  add(s, rand);
+  if (s.cells.some(t => t && t.v >= s.goal)) { s.won = s.over = true; sound('win'); return; }
+  if (![[0, 1], [0, -1], [1, 0], [-1, 0]].some(dd => shift(s, dd).moved)) { s.over = true; sound('lose'); return; }
+  sound(r.gained ? 'click' : 'tone', r.gained ? 900 + 40 * Math.log2(r.gained) : 330, 0.04);
+}` },
+    { id: 'match', name: 'Gems', src: `// Gems: swap two gems side by side (swipe from one to the other, or tap one and then the other) to line up three or more of a
+// colour; they go, the ones above fall, and new ones drop in. Reach the target score within the moves. More colours, fewer
+// moves and a higher target farther out.
+const game = {
+  title: 'Gems',
+  size: 8,
+  wins: true,
+  setup(level, rand) {
+    const L = level - 1;
+    const s = { n: 8, kinds: [4, 5, 5, 6, 6][L], left: [20, 18, 16, 15, 14][L], target: [2500, 1200, 1300, 1100, 1100][L],
+                cells: new Array(64), next: 1, sel: -1, score: 0, moves: 0, over: false, won: false, combo: 0 };
+    for (let i = 0; i < 64; i++) {
+      let k;
+      do k = Math.floor(rand() * s.kinds);
+      while ((i % 8 >= 2 && s.cells[i - 1].k === k && s.cells[i - 2].k === k) || (i >= 16 && s.cells[i - 8].k === k && s.cells[i - 16].k === k));
+      s.cells[i] = { k, id: s.next++ };
+    }
+    return s;
+  },
+  tap(s, x, y, rand) {
+    if (s.over) return;
+    const i = y * 8 + x;
+    if (s.sel < 0) { s.sel = i; return; }
+    const a = s.sel; s.sel = -1;
+    if (a !== i && Math.abs(a % 8 - x) + Math.abs(((a / 8) | 0) - y) === 1) swap(s, a, i, rand);
+    else if (a !== i) s.sel = i;
+  },
+  drag(s, x0, y0, x1, y1, done, rand) {
+    if (!done || s.over) return;
+    const dx = x1 - x0, dy = y1 - y0;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 0.4) return;
+    const a = Math.floor(y0) * 8 + Math.floor(x0);
+    const d = Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
+    const bx = Math.floor(x0) + d[0], by = Math.floor(y0) + d[1];
+    if (bx < 0 || by < 0 || bx > 7 || by > 7) return;
+    s.sel = -1;
+    swap(s, a, by * 8 + bx, rand);
+  },
+  bot(s) {                                         // its own player: the swap that clears the most at once
+    if (s.over) return null;
+    let best = null;
+    for (let i = 0; i < 64; i++) for (const j of [i + 1, i + 8]) {
+      if (j >= 64 || (j === i + 1 && i % 8 === 7)) continue;
+      const g = s.cells.map(c => c.k);
+      [g[i], g[j]] = [g[j], g[i]];
+      const m = matches(g).length;
+      if (m && (!best || m > best.m)) best = { m, i, j };
+    }
+    if (!best) return null;
+    const x0 = best.i % 8 + 0.5, y0 = ((best.i / 8) | 0) + 0.5, x1 = best.j % 8 + 0.5, y1 = ((best.j / 8) | 0) + 0.5;
+    return { drag: [x0, y0, x1, y1] };
+  },
+  view(s) {
+    const squares = [], pieces = [];
+    for (let i = 0; i < 64; i++) squares.push(i === s.sel ? '#5b4a8a' : (i % 8 + ((i / 8) | 0)) % 2 ? '#2a2540' : '#312b4a');
+    s.cells.forEach((c, i) => pieces.push({ shape: SHAPES[c.k], x: i % 8 + 0.5, y: ((i / 8) | 0) + 0.5, size: 0.68, height: 0.45,
+                                            color: COLORS[c.k], id: c.id, glide: 0.18 }));
+    return { squares, pieces, score: s.score, over: s.over, won: s.won,
+             status: s.score + ' of ' + s.target + ', ' + s.left + ' moves left',
+             message: s.won ? 'Target reached with ' + s.left + ' moves to spare!' : s.over ? 'Out of moves at ' + s.score + '.' : '' };
+  },
+};
+const COLORS = ['#ef4444', '#3b82f6', '#22c55e', '#facc15', '#a855f7', '#f97316'];
+const SHAPES = ['gem', 'ball', 'block', 'cone', 'peg', 'gem'];
+// every square in a run of three or more of one colour, across or down
+function matches(g) {
+  const hit = new Set();
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+    const k = g[y * 8 + x];
+    if (k < 0) continue;
+    if (x <= 5 && g[y * 8 + x + 1] === k && g[y * 8 + x + 2] === k) { let e = x; while (e < 8 && g[y * 8 + e] === k) hit.add(y * 8 + e++); }
+    if (y <= 5 && g[(y + 1) * 8 + x] === k && g[(y + 2) * 8 + x] === k) { let e = y; while (e < 8 && g[e * 8 + x] === k) hit.add(e++ * 8 + x); }
+  }
+  return [...hit];
+}
+function swap(s, a, b, rand) {
+  const c = s.cells;
+  [c[a], c[b]] = [c[b], c[a]];
+  if (!matches(c.map(t => t.k)).length) { [c[a], c[b]] = [c[b], c[a]]; sound('buzz', 140, 0.08); return; }
+  s.moves++; s.left--;
+  let chain = 0;
+  for (let m = matches(c.map(t => t.k)); m.length; m = matches(c.map(t => t.k))) {
+    chain++;
+    s.score += m.length * 10 * chain;
+    for (const i of m) c[i] = null;
+    for (let x = 0; x < 8; x++) {                  // the ones above fall, new ones from the top
+      const col = [];
+      for (let y = 7; y >= 0; y--) if (c[y * 8 + x]) col.push(c[y * 8 + x]);
+      for (let y = 7, k = 0; y >= 0; y--, k++) c[y * 8 + x] = col[k] || { k: Math.floor(rand() * s.kinds), id: s.next++ };
+    }
+    if (chain > 8) break;
+  }
+  sound(chain > 1 ? 'chime' : 'click', 600 + chain * 120);
+  if (s.score >= s.target) { s.won = s.over = true; sound('win'); }
+  else if (s.left <= 0) { s.over = true; sound('lose'); }
+  else if (!game.bot(s)) shuffle(s, rand);
+}
+function shuffle(s, rand) {                         // no swap left that clears anything: deal the colours again
+  for (let i = 63; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [s.cells[i], s.cells[j]] = [s.cells[j], s.cells[i]]; }
+}` },
+    { id: 'pong', name: 'Pong', src: `// Pong: your paddle is at the near edge, the computer's at the far one. Drag along the board, tap where it should go, or
+// press left and right to move it. First to 5 points wins; the computer is quicker and the ball faster farther out.
+const game = {
+  title: 'Pong',
+  size: 12,
+  realtime: true,
+  wins: true,
+  setup(level, rand) {
+    const s = { n: 12, level, t: 0, me: 6, cpu: 6, target: 6, w: 3, cw: 3 - (level >= 4 ? 0.5 : 0),
+                cpuV: [2, 3.2, 4.4, 5.6, 6.8][level - 1], cpuErr: [1.2, 0.9, 0.6, 0.4, 0.25][level - 1],
+                speed0: 6 + level * 0.6, you: 0, them: 0, wait: 1, ball: null, lastCmd: -1, over: false, won: false };
+    serve(s, rand, 1);
+    return s;
+  },
+  key(s, k) {
+    if (k === 'left') s.target = Math.max(s.w / 2, s.target - 1.5);
+    if (k === 'right') s.target = Math.min(s.n - s.w / 2, s.target + 1.5);
+  },
+  tap(s, x) { s.target = x + 0.5; s.lastCmd = s.t; },
+  drag(s, x0, y0, x1) { s.target = x1; },
+  step(s, dt, rand) {
+    if (s.over) return;
+    s.t += dt;
+    const lim = (p, w) => Math.max(w / 2, Math.min(s.n - w / 2, p));
+    // your paddle goes after its target; the computer's after where it thinks the ball will come, off by its error
+    s.me = lim(s.me + Math.sign(s.target - s.me) * Math.min(Math.abs(s.target - s.me), 11 * dt), s.w);
+    const b = s.ball;
+    const aim = b.vy < 0 ? b.guess : s.n / 2;
+    s.cpu = lim(s.cpu + Math.sign(aim - s.cpu) * Math.min(Math.abs(aim - s.cpu), s.cpuV * dt), s.cw);
+    if (s.wait > 0) { s.wait -= dt; return; }
+    b.x += b.vx * dt; b.y += b.vy * dt;
+    if (b.x < 0.25) { b.x = 0.5 - b.x; b.vx = Math.abs(b.vx); sound('tone', 500, 0.03); }
+    if (b.x > s.n - 0.25) { b.x = 2 * (s.n - 0.25) - b.x; b.vx = -Math.abs(b.vx); sound('tone', 500, 0.03); }
+    if (b.vy > 0 && b.y >= s.n - 0.8 && b.y < s.n - 0.2 && Math.abs(b.x - s.me) <= s.w / 2 + 0.25) hit(s, rand, s.me, s.w, -1);
+    if (b.vy < 0 && b.y <= 0.8 && b.y > 0.2 && Math.abs(b.x - s.cpu) <= s.cw / 2 + 0.25) hit(s, rand, s.cpu, s.cw, 1);
+    if (b.y < -0.5) point(s, rand, true);
+    else if (b.y > s.n + 0.5) point(s, rand, false);
+  },
+  bot(s) {                                         // its own player: where the ball will cross its line, a step at a time
+    const b = s.ball;
+    if (s.over || s.t - s.lastCmd < 0.15) return null;
+    const want = b.vy > 0 && s.wait <= 0 ? landing(s, s.n - 0.8) : s.n / 2;
+    return Math.abs(want - s.target) > 0.6 ? { tap: [Math.floor(want), s.n - 1] } : null;
+  },
+  view(s) {
+    const squares = [], pieces = [];
+    for (let y = 0; y < s.n; y++) for (let x = 0; x < s.n; x++) squares.push(y === s.n / 2 && x % 2 ? '#2e3a4a' : '#15202c');
+    for (const [p, w, y, color] of [[s.me, s.w, s.n - 0.5, '#4ade80'], [s.cpu, s.cw, 0.5, '#f87171']]) {
+      const k = Math.round(w * 2);
+      for (let i = 0; i < k; i++) pieces.push({ shape: 'block', x: p - w / 2 + (i + 0.5) / 2, y, size: 0.5, height: 0.25, color });
+    }
+    pieces.push({ shape: 'ball', x: s.ball.x, y: s.ball.y, size: 0.55, color: '#fde68a', glow: true });
+    pieces.push({ shape: 'text', text: s.them + ':' + s.you, x: 1.4, y: s.n / 2, size: 0.8, color: '#94a3b8' });
+    return { squares, pieces, score: s.you, over: s.over, won: s.won,
+             status: s.you + ' to ' + s.them + (s.over ? (s.won ? ', you win' : ', you lose') : ''),
+             message: s.over ? (s.won ? 'You win ' + s.you + ' to ' + s.them + '!' : 'The computer wins ' + s.them + ' to ' + s.you + '.') : '' };
+  },
+};
+function serve(s, rand, dir) {
+  const a = (rand() - 0.5) * 1.1, v = s.speed0;
+  s.ball = { x: s.n / 2, y: s.n / 2, vx: Math.sin(a) * v, vy: Math.cos(a) * v * dir, guess: s.n / 2 };
+  s.wait = 0.8;
+  if (dir < 0) s.ball.guess = landing(s, 0.8) + (rand() - 0.5) * 2 * s.cpuErr;
+}
+function hit(s, rand, p, w, dir) {
+  const b = s.ball, sp = Math.min(18, Math.hypot(b.vx, b.vy) * 1.05), off = (b.x - p) / (w / 2);
+  const a = Math.max(-1, Math.min(1, off)) * 0.9;
+  b.vx = Math.sin(a) * sp; b.vy = Math.cos(a) * sp * dir;
+  if (dir < 0) b.guess = landing(s, 0.8) + (rand() - 0.5) * 2 * s.cpuErr;
+  sound('click', dir < 0 ? 1200 : 900, 0.04);
+}
+// where the ball will be across the board when it reaches row y, bouncing off the sides
+function landing(s, y) {
+  const b = s.ball;
+  if (!b.vy) return b.x;
+  const t = (y - b.y) / b.vy;
+  if (t < 0) return b.x;
+  const lo = 0.25, span = s.n - 0.5;
+  let x = (b.x + b.vx * t - lo) % (2 * span);
+  if (x < 0) x += 2 * span;
+  return lo + (x > span ? 2 * span - x : x);
+}
+function point(s, rand, mine) {
+  if (mine) s.you++; else s.them++;
+  sound(mine ? 'up' : 'down');
+  if (s.you >= 5 || s.them >= 5) { s.over = true; s.won = s.you >= 5; sound(s.won ? 'win' : 'lose'); return; }
+  serve(s, rand, mine ? -1 : 1);
+}` },
+    { id: 'maze', name: 'Maze', src: `// Maze: walk the gold ball to the gem. Arrow keys take a step, a swipe runs until a wall or a turning, and a tap steps
+// toward it. The maze is bigger farther out, and from level 3 you only see the way near you.
+const game = {
+  title: 'Maze',
+  size: level => [9, 11, 13, 15, 17][level - 1] || 9,
+  wins: true,
+  setup(level, rand) {
+    const n = game.size(level), wall = new Array(n * n).fill(true), seen = new Array(n * n).fill(level < 3);
+    // a backtracking walk on the odd squares, a few walls taken out after for loops
+    const stack = [[1, 1]]; wall[n + 1] = false;
+    while (stack.length) {
+      const [x, y] = stack[stack.length - 1];
+      const next = [[2, 0], [-2, 0], [0, 2], [0, -2]].map(([dx, dy]) => [x + dx, y + dy, dx, dy])
+        .filter(([a, b]) => a > 0 && b > 0 && a < n - 1 && b < n - 1 && wall[b * n + a]);
+      if (!next.length) { stack.pop(); continue; }
+      const [a, b, dx, dy] = next[Math.floor(rand() * next.length)];
+      wall[(y + dy / 2) * n + x + dx / 2] = false; wall[b * n + a] = false; stack.push([a, b]);
+    }
+    for (let k = 0; k < n / 3; k++) {
+      const x = 1 + Math.floor(rand() * (n - 2)), y = 1 + Math.floor(rand() * (n - 2));
+      if ((x + y) % 2 && wall[y * n + x]) wall[y * n + x] = false;
+    }
+    const s = { n, level, wall, seen, at: [1, 1], goal: [n - 2, n - 2], steps: 0, over: false, won: false };
+    look(s);
+    return s;
+  },
+  key(s, k) {
+    const d = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[k];
+    if (d) step(s, d);
+  },
+  tap(s, x, y) {
+    const dx = x - s.at[0], dy = y - s.at[1];
+    if (!dx && !dy) return;
+    const d = Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
+    if (!step(s, d)) { const e = Math.abs(dx) >= Math.abs(dy) ? [0, Math.sign(dy)] : [Math.sign(dx), 0]; if (e[0] || e[1]) step(s, e); }
+  },
+  drag(s, x0, y0, x1, y1, done) {                 // a swipe runs on until a wall or a turning
+    if (!done) return;
+    const dx = x1 - x0, dy = y1 - y0;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 0.4) return;
+    const d = Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
+    for (let k = 0; k < s.n && step(s, d); k++) {
+      const [x, y] = s.at, side = [[d[1], d[0]], [-d[1], -d[0]]].some(([a, b]) => open(s, x + a, y + b));
+      if (side || s.over) break;
+    }
+  },
+  bot(s) {                                         // its own player: the next step of the shortest way
+    if (s.over) return null;
+    const n = s.n, from = new Array(n * n).fill(-1), q = [s.goal[1] * n + s.goal[0]];
+    from[q[0]] = q[0];
+    for (let i = 0; i < q.length; i++) {
+      const c = q[i], x = c % n, y = (c / n) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const k = (y + dy) * n + x + dx;
+        if (open(s, x + dx, y + dy) && from[k] < 0) { from[k] = c; q.push(k); }
+      }
+    }
+    const nx = from[s.at[1] * n + s.at[0]];
+    if (nx < 0) return null;
+    const dx = nx % n - s.at[0], dy = ((nx / n) | 0) - s.at[1];
+    return dx > 0 ? 'right' : dx < 0 ? 'left' : dy > 0 ? 'down' : 'up';
+  },
+  view(s) {
+    const squares = [], pieces = [];
+    for (let i = 0; i < s.n * s.n; i++) squares.push(!s.seen[i] ? '#0b0d12' : s.wall[i] ? '#3b4252' : '#c9c1ad');
+    pieces.push({ shape: 'gem', x: s.goal[0] + 0.5, y: s.goal[1] + 0.5, size: 0.7, color: '#38bdf8', glow: true });
+    pieces.push({ shape: 'ball', x: s.at[0] + 0.5, y: s.at[1] + 0.5, size: 0.75, color: '#f59e0b', id: 'me', glide: 0.08 });
+    return { squares, pieces, score: s.steps, over: s.over, won: s.won,
+             status: s.won ? 'out in ' + s.steps + ' steps' : s.steps + ' steps',
+             message: s.won ? 'Out in ' + s.steps + ' steps!' : '' };
+  },
+};
+const open = (s, x, y) => x >= 0 && y >= 0 && x < s.n && y < s.n && !s.wall[y * s.n + x];
+function look(s) {                                 // from level 3 the squares within 2 of the ball come to light
+  if (s.level < 3) return;
+  const [x, y] = s.at;
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const a = x + dx, b = y + dy;
+    if (a >= 0 && b >= 0 && a < s.n && b < s.n) s.seen[b * s.n + a] = true;
+  }
+}
+function step(s, d) {
+  if (s.over) return false;
+  const x = s.at[0] + d[0], y = s.at[1] + d[1];
+  if (!open(s, x, y)) { sound('buzz', 120, 0.06); return false; }
+  s.at = [x, y]; s.steps++; look(s);
+  if (x === s.goal[0] && y === s.goal[1]) { s.won = s.over = true; sound('win'); }
+  else sound('click', 700, 0.02);
+  return true;
+}` },
+    { id: 'four', name: 'Connect Four', src: `// Connect Four: tap a column to drop a red disc; the computer drops yellow. Four in a row across, down or slanting wins.
+// The computer looks further ahead farther out. Press 2 before the first move to play a friend on the same screen instead.
+const game = {
+  title: 'Connect Four',
+  size: 7,
+  wins: true,
+  setup(level, rand) {
+    return { n: 7, level, grid: new Array(42).fill(0), turn: 1, two: false, moves: 0, last: -1, line: null, over: false, won: false,
+             depth: [0, 1, 1, 2, 3][level - 1], slip: [0.5, 0.3, 0.15, 0.05, 0][level - 1] };
+  },
+  key(s, k, rand) {
+    if (k === '2' && s.moves === 0) s.two = !s.two;
+    const c = '1234567'.indexOf(k);
+    if (c >= 0 && !(k === '2' && s.moves === 0)) play(s, c, rand);
+  },
+  tap(s, x, y, rand) { play(s, x, rand); },
+  bot(s) {                                         // its own player: win, else block, else a short look ahead
+    if (s.over || s.turn !== 1) return null;
+    return { tap: [choose(s.grid, 1, 2, null), 0] };
+  },
+  view(s) {
+    const squares = [], pieces = [];
+    for (let y = 0; y < 7; y++) for (let x = 0; x < 7; x++) squares.push(y === 0 ? '#1e293b' : '#1d4ed8');
+    for (let i = 0; i < 42; i++) {
+      const x = i % 7, y = 1 + ((i / 7) | 0), v = s.grid[i];
+      pieces.push({ shape: 'disc', x: x + 0.5, y: y + 0.5, size: 0.8, color: v === 1 ? '#ef4444' : v === 2 ? '#facc15' : '#0f172a',
+                    glow: !!(s.line && s.line.includes(i)) });
+    }
+    if (!s.over) pieces.push({ shape: 'ball', x: (s.last >= 0 ? s.last : 3) + 0.5, y: 0.5, size: 0.6, color: s.turn === 1 ? '#ef4444' : '#facc15', id: 'hand', glide: 0.12 });
+    const who = s.two ? (s.turn === 1 ? 'red to play' : 'yellow to play') : 'your move';
+    return { squares, pieces, score: s.moves, over: s.over, won: s.won,
+             status: s.over ? (s.won ? (s.two ? 'red wins' : 'you win') : s.line ? (s.two ? 'yellow wins' : 'the computer wins') : 'a draw') : who + (s.two ? ' (two players)' : ''),
+             message: s.over ? (s.won ? 'Four in a row!' : s.line ? (s.two ? 'Yellow wins.' : 'The computer got four.') : 'A draw.') : '' };
+  },
+};
+const LINES = (() => {
+  const out = [];
+  for (let y = 0; y < 6; y++) for (let x = 0; x < 7; x++)
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+      const L = [];
+      for (let k = 0; k < 4; k++) { const a = x + dx * k, b = y + dy * k; if (a < 0 || b < 0 || a > 6 || b > 5) break; L.push(b * 7 + a); }
+      if (L.length === 4) out.push(L);
+    }
+  return out;
+})();
+const rowOf = (g, c) => { for (let y = 5; y >= 0; y--) if (!g[y * 7 + c]) return y; return -1; };
+const winOf = (g, p) => LINES.find(L => L.every(i => g[i] === p)) || null;
+function score(g, p) {                             // lines still open to p counted by how full they are
+  let v = 0;
+  for (const L of LINES) {
+    let a = 0, b = 0;
+    for (const i of L) { if (g[i] === p) a++; else if (g[i]) b++; }
+    if (!b && a) v += a * a * a; else if (!a && b) v -= b * b * b;
+  }
+  return v;
+}
+function search(g, p, q, d, alpha, beta) {       // the best p can do from here, d moves more, cut off by alpha and beta
+  let best = -1e9, any = false;
+  for (const c of [3, 2, 4, 1, 5, 0, 6]) {
+    const y = rowOf(g, c); if (y < 0) continue;
+    any = true;
+    g[y * 7 + c] = p;
+    const v = winOf(g, p) ? 1e6 + d : d <= 0 ? score(g, p) : -search(g, q, p, d - 1, -beta, -Math.max(alpha, best));
+    g[y * 7 + c] = 0;
+    if (v > best) best = v;
+    if (best >= beta) break;
+  }
+  return any ? best : 0;
+}
+function choose(g, p, q, depth, rand, slip) {
+  const cols = [3, 2, 4, 1, 5, 0, 6].filter(c => rowOf(g, c) >= 0);
+  for (const c of cols) { const y = rowOf(g, c); g[y * 7 + c] = p; const w = winOf(g, p); g[y * 7 + c] = 0; if (w) return c; }
+  if (rand && rand() < slip) return cols[Math.floor(rand() * cols.length)];
+  for (const c of cols) { const y = rowOf(g, c); g[y * 7 + c] = q; const w = winOf(g, q); g[y * 7 + c] = 0; if (w) return c; }
+  const d = depth == null ? 2 : depth;
+  let best = cols[0], bv = -1e9;
+  for (const c of cols) {
+    const y = rowOf(g, c); g[y * 7 + c] = p;
+    const v = d <= 0 ? score(g, p) : -search(g, q, p, d - 1, -1e9, -bv);
+    g[y * 7 + c] = 0;
+    if (v > bv) { bv = v; best = c; }
+  }
+  return best;
+}
+function drop(s, c, p) {
+  const y = rowOf(s.grid, c);
+  if (y < 0) return false;
+  s.grid[y * 7 + c] = p; s.moves++; s.last = c;
+  const L = winOf(s.grid, p);
+  if (L) { s.line = L; s.over = true; s.won = p === 1; sound(s.won || s.two ? 'win' : 'lose'); }
+  else if (s.grid.every(Boolean)) { s.over = true; sound('down'); }
+  else sound('click', p === 1 ? 700 : 520, 0.05);
+  return true;
+}
+function play(s, c, rand) {
+  if (s.over || c < 0 || c > 6) return;
+  if (!drop(s, c, s.turn)) return;
+  if (s.two) { if (!s.over) s.turn = 3 - s.turn; return; }
+  if (!s.over) drop(s, choose(s.grid, 2, 1, s.depth, rand, s.slip), 2);
+}` },
     { id: 'blank', name: 'A blank board', src: `// A blank board: nothing to play yet. Use "Change it…" and describe the game you want.
 const game = {
   title: 'A blank board',
@@ -57283,7 +57755,9 @@ const game = {
   },
 };` },
   ];
-  const starterOf = idx => STARTERS[idx % 3];
+  // (every starter but the blank board, round the boards; Oct 26: "Add more starter games": 2048, Gems, Pong, Maze and Connect Four
+  // after the first three, each with its own player and harder farther out)
+  const starterOf = idx => STARTERS[idx % (STARTERS.length - 1)];
 
   /* ── THE SANDBOX'S TWO SCRIPTS ── the frame's (passing messages, stopping a Worker that hangs) and the Worker's (running
      modules). Kept as source text: they go into the frame's srcdoc and a Blob, never into this page's scripts. */
@@ -57397,12 +57871,13 @@ function recSlice(d) {
   if (R.done) RECS.delete(d.rk);
   return { fresh, frames, done: R.done, over: b.over, won: b.won, score: b.score, t: b.t, moves: b.moves };
 }
-// THE CHECK: its own player plays it three times at level 1 and once at level 3, each up to CHECK_T seconds (or CHECK_MOVES moves)
+// THE CHECK: its own player plays it three times at level 1, once at level 3 and twice at level 5 (Oct 26: "4,6", the first:
+// harder farther out, measured), each up to two minutes of its clock or 400 moves, 380 ms of the Worker's own time a run
 function check(g) {
   const runs = [];
-  for (const [level, seed] of [[1, 11], [1, 23], [1, 37], [3, 41]]) {
+  for (const [level, seed] of [[1, 11], [1, 23], [1, 37], [3, 41], [5, 53], [5, 67]]) {
     const b = playNew(g, seed * 7919, level), v0 = viewOf(b); OUT.length = 0;
-    const s0 = sig(v0), end = Date.now() + 450;
+    const s0 = sig(v0), end = Date.now() + 380;
     let changed = false, k = 0, atOnce = !!v0.over;
     b.over = !!v0.over; b.won = !!v0.won; b.score = v0.score;
     while (!b.over && !atOnce && b.t < 120 && b.moves < 400 && Date.now() < end) {
@@ -57411,7 +57886,7 @@ function check(g) {
       if (!b.g.realtime && b.idle > 0) break;
     }
     if (b.over && (b.moves <= 1 && b.t < 1.01)) atOnce = true;
-    runs.push({ level, over: b.over, won: b.won, score: b.score, t: +b.t.toFixed(2), moves: b.moves, changed, atOnce, stuck: !b.g.realtime && b.idle > 0 && !b.over });
+    runs.push({ level, n: b.n, over: b.over, won: b.won, score: b.score, t: +b.t.toFixed(2), moves: b.moves, changed, atOnce, stuck: !b.g.realtime && b.idle > 0 && !b.over });
   }
   return runs;
 }
@@ -57912,7 +58387,8 @@ onmessage = ev => {
     '  game.bot(state, rand) -> a move, or null to wait: { tap: [x, y] }, { key: "up" }, { drag: [x0, y0, x1, y1] } (or just [x, y] for a tap, "up" for a key). It plays the game as a steady person would: the page uses it to show the game being played on boards no one is playing, its result on a board is that board\'s par for the player to beat, and it checks your version before it is kept. It may read the whole state, hidden parts too (a puzzle can keep its own way out in the state for it). It must not change the state: keep anything it needs (a timer, the last tap) in the state from setup, tap, key or step. A realtime game asks it every step (1/30 s): give it a person\'s pace (react after about 0.3 s, a tap every 0.2 s or more), not a machine\'s. A turn by turn game asks it once a move.',
     '  game.wins: true for a game that is won or lost (a puzzle, a race, a game against the board); leave it out for a game played for points. Its player must be able to win it at level 1.',
     '  Every game must be able to end (over: true), by winning, losing, time running out or a mistake.',
-    '  THE CHECK: before your version is kept its player plays it three times at level 1 and once at level 3, each up to two minutes or 400 moves. It comes back to you if there is no bot, if it is over at once every time, if nothing on the board ever changes, or if it is a game to win that its player never won at level 1.',
+    '  THE CHECK: before your version is kept its player plays it three times at level 1, once at level 3 and twice at level 5, each up to two minutes or 400 moves. It comes back to you if there is no bot, if it is over at once every time, if nothing on the board ever changes, if it is a game to win that its player never won at level 1, or if level 5 is no harder than level 1 for its player (no bigger board, no fewer wins or slower wins for a game to win; for a game of points, no more games over, none over sooner, no fewer points).',
+    '  HARDER FARTHER OUT: the level grows from 1 at the corner to 5 far out, and every game here gets harder with it. Use the level in setup for something the player feels: the size, the time allowed, the speed, how many things to dodge or find, how much help. Keep level 1 easy to win.',
     'RULES FOR YOUR REPLY:',
     '  Change only what the player asks for, and keep everything else working as it was. If they ask for a new game, write a new one.',
     '  Keep it small and clear: under 300 lines, readable names, a comment line at the top saying how to play.',
@@ -57994,9 +58470,40 @@ onmessage = ev => {
     if (R.every(x => x.atOnce)) return { why: 'when its own player played it, it was over at once every time (' + say1 + ')' };
     if (R.every(x => !x.changed)) return { why: 'when its own player played it, nothing on the board ever changed (' + say1 + ')' };
     if (M.wins && !one.some(x => x.won)) return { why: 'it is a game to win (game.wins), but its own player never won it at level 1 in ' + one.length + ' tries (' + say1 + ')' };
-    const won = R.filter(x => x.won).length, ended = R.filter(x => x.over).length;
-    const note = M.wins ? 'its player won ' + won + ' of ' + R.length : 'its player: ' + R.map(x => x.score != null ? x.score : '?').join(', ') + (ended < R.length ? ', ' + (R.length - ended) + ' still going' : '');
-    return { ok: true, note, runs: R };
+    const H = hardness(R, M);
+    if (!H.harder) return { why: 'level 5 is no harder than level 1 for its own player (' + H.text + '). Make it harder farther out: the level is 1 near the corner to 5 far out, and every step should be felt (a bigger board, less time, faster, more to dodge, fewer moves to spare)', level: true, text: H.text };
+    return { ok: true, note: 'its player: ' + H.text, runs: R };
+  }
+  /* HARDER FARTHER OUT, MEASURED (Oct 26: "4,6", the first): every other game here climbs from the corner out, so a game in the
+     lab should too. Its player's runs at level 1 and level 5 are set side by side, and level 5 counts as harder if any of these
+     is so: a bigger board; for a game to win, fewer won, or the wins taking a fifth more moves (seconds, if realtime); for a game
+     of points, more of its games over, over a fifth sooner, or a fifth fewer points. None so, it goes back to Claude with the
+     numbers; after `FIX_TRIES` it is kept anyway, said to play the same farther out, so a request is never lost to this alone. */
+  const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+  const fmt = x => x == null ? '?' : Math.abs(x) >= 10 ? String(Math.round(x)) : String(+x.toFixed(1));
+  function statsAt(R, L, M){
+    const r = R.filter(x => x.level === L);
+    const won = r.filter(x => x.won), over = r.filter(x => x.over);
+    return { L, k: r.length, n: Math.max(0, ...r.map(x => x.n || 0)), won: won.length, over: over.length,
+             effort: mean(won.map(x => M.realtime ? x.t : x.moves)), lasted: mean(over.map(x => x.t)),
+             score: mean(r.filter(x => x.score != null).map(x => +x.score)) };
+  }
+  function hardness(R, M){
+    const a = statsAt(R, 1, M), b = statsAt(R, 5, M);
+    const say = S => 'level ' + S.L + ': ' + S.n + '×' + S.n + (M.wins ? ', won ' + S.won + ' of ' + S.k + (S.effort != null ? ' in ' + fmt(S.effort) + (M.realtime ? ' s' : ' moves') : '')
+      : ', ' + S.over + ' of ' + S.k + ' over' + (S.lasted != null ? ' after ' + fmt(S.lasted) + ' s' : '') + (S.score != null ? ', score ' + fmt(S.score) : ''));
+    const text = say(a) + '; ' + say(b);
+    const rate = S => S.k ? S.won / S.k : 0, ends = S => S.k ? S.over / S.k : 0;
+    let harder = b.n > a.n;
+    if (M.wins){
+      if (rate(b) < rate(a) - 0.01) harder = true;
+      if (a.effort != null && b.effort != null && b.effort > 1.2 * a.effort) harder = true;
+    } else {
+      if (ends(b) > ends(a) + 0.01) harder = true;
+      if (a.lasted != null && b.lasted != null && b.lasted < 0.8 * a.lasted) harder = true;
+      if (a.score != null && b.score != null && a.score > 0 && b.score < 0.8 * a.score) harder = true;
+    }
+    return { harder, text, a, b };
   }
   async function trialOf(src){
     try { return { meta: await BOX.call('trial', { src }) }; }
@@ -58038,6 +58545,8 @@ onmessage = ev => {
         else { ASK.status('Trying it out…'); const T = await trialOf(R.src); if (T.error){ why = T.error; line = T.line; } }
         let K = null;
         if (!why){ ASK.status('Its own player is playing it…'); K = await checkOf(R.src); if (!K.ok){ why = K.why; line = K.line; } }
+        // (the levels alone: after the last try it is kept, said to play the same farther out)
+        if (why && K && K.level && tries >= FIX_TRIES){ why = null; K = { note: 'it plays the same farther out: ' + K.text }; }
         if (!why){
           pushVersion(c, r, R.src, R.note || 'changed', ask);
           restart(c, r);
@@ -58186,6 +58695,66 @@ onmessage = ev => {
     return box;
   }
 
+  /* MY GAMES (Oct 26: "4,6", the second): every board whose game you have changed, newest first, in a box (`#labMineBox`): its
+     place, its game's name (the version it plays, `titleOf`), how many versions and which it is on, what was asked last, your
+     best on it, and Play (the view flies there and it is the board you play), Share and Forget. From the row's My games tile or
+     the menu's My games…; Escape closes it. Your games are spread over the field, and nothing else finds them again. */
+  const titleOf = (k, src) => { const rec = RUN.get(k); if (rec && rec.key === hashOf(src) && rec.meta && rec.meta.title) return rec.meta.title;
+    const m = /\btitle\s*:\s*(['"`])((?:(?!\1).){1,60})\1/.exec(src); return m ? m[2] : 'A game'; };
+  function mineList(){
+    return [...MINE.entries()].map(([k, m]) => {
+      const [c, r] = k.split('_').map(Number), x = m.v[m.cur], b = BEST[k + '@' + hashOf(x.src)] || 0;
+      const lastAsk = [...m.v.slice(0, m.cur + 1)].reverse().find(v => v.ask);
+      return { k, c, r, title: titleOf(k, x.src), versions: m.v.length, cur: m.cur + 1, at: m.at || x.at || 0, best: b, ask: lastAsk ? lastAsk.ask : '' };
+    }).sort((a, b) => b.at - a.at);
+  }
+  function openMineList(){
+    let box = document.getElementById('labMineBox');
+    if (!box){
+      box = document.createElement('div');
+      box.id = 'labMineBox'; box.className = 'panel';
+      box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;display:flex;flex-direction:column;gap:8px;'
+        + 'padding:12px;width:min(560px,94vw);max-height:84vh;box-sizing:border-box';
+      const head = document.createElement('div'); head.style.cssText = 'font-size:0.8125rem;font-weight:600';
+      const list = document.createElement('div'); list.style.cssText = 'overflow:auto;display:flex;flex-direction:column;gap:6px';
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;justify-content:flex-end';
+      const bClose = document.createElement('button'); bClose.textContent = 'Close';
+      bClose.addEventListener('click', () => { box.hidden = true; });
+      row.append(bClose); box.append(head, list, row);
+      box._head = head; box._list = list;
+      box.tabIndex = -1;
+      box.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') box.hidden = true; });
+      document.body.appendChild(box);
+    }
+    const L = mineList();
+    box._head.textContent = 'My games (' + L.length + ')';
+    box._list.textContent = '';
+    if (!L.length){
+      const p = document.createElement('div'); p.style.cssText = 'font-size:0.75rem;color:#9fb0c4';
+      p.textContent = 'No board\'s game has been changed yet. Frame a board and use Change it… to make one your own.';
+      box._list.appendChild(p);
+    }
+    const ago = t => { if (!t) return ''; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+    for (const g of L){
+      const it = document.createElement('div'); it.className = 'labMineRow'; it.dataset.k = g.k;
+      it.style.cssText = 'display:flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid rgba(201,199,190,.18);border-radius:6px';
+      const txt = document.createElement('div'); txt.style.cssText = 'flex:1;min-width:0';
+      const t1 = document.createElement('div'); t1.style.cssText = 'font-size:0.8125rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      t1.textContent = g.title + (g.best ? '  ' + '★★★'.slice(0, g.best) + '☆☆☆'.slice(0, 3 - g.best) : '');
+      const t2 = document.createElement('div'); t2.style.cssText = 'font-size:0.6875rem;color:#9fb0c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      t2.textContent = 'board ' + g.c + ', ' + g.r + ' · version ' + g.cur + ' of ' + g.versions + ' · ' + ago(g.at) + (g.ask ? ' · "' + g.ask + '"' : '');
+      txt.append(t1, t2);
+      const btn = (label, f) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', f); return b; };
+      it.append(txt,
+        btn('Play', () => { box.hidden = true; LIVE = { c: g.c, r: g.r }; try { gotoCell(g.c, g.r); } catch {} say('Playing ' + g.title + '.', 1600); }),
+        btn('Share', () => share(g.c, g.r)),
+        btn('Forget', () => { if (confirm('Forget every version of ' + g.title + ' on this board?')){ forget(g.c, g.r); openMineList(); } }));
+      box._list.appendChild(it);
+    }
+    box.hidden = false;
+    try { box.focus(); } catch {}
+    return box;
+  }
   function undo(c, r, by){
     const m = mineOf(c, r);
     if (!m){ say('Nothing to undo: this board plays its game as it came.', 2000); return false; }
@@ -58254,6 +58823,7 @@ onmessage = ev => {
       { glyph: '↺', value: 'Restart' },
       { glyph: '{ }', value: 'Rules' },
       { glyph: '🔗', value: 'Share' },
+      { glyph: '📋', value: 'My games' },
       { label: 'Version', value: m ? (m.cur + 1) + ' of ' + m.v.length : 'as it came' },
       ...(rec && rec.view && rec.view.score != null ? [{ label: 'Score', value: String(rec.view.score) }] : []),
     ];
@@ -58262,6 +58832,7 @@ onmessage = ev => {
   const app = {
     name: 'game lab',
     menu: [{ head: 'Game lab', items: [
+      { label: () => 'My games (' + MINE.size + ')…', title: 'Every board whose game you have changed: play one, share it or forget it.', on: () => openMineList() },
       { label: 'Change this board\'s game…', title: 'Say what to change; Claude rewrites the game\'s rules and the board plays the new version. Undo goes back.', on: withFramed((c, r) => ASK.open(c, r)) },
       { label: 'Fix this version', title: 'This board\'s game broke while played: send its error back to Claude to fix.', on: withFramed((c, r) => fixIt(c, r)) },
       { label: 'Undo the last change', title: 'Back a version on this board.', on: withFramed((c, r) => undo(c, r, -1)) },
@@ -58310,6 +58881,7 @@ onmessage = ev => {
       if (i === 3){ restart(c, r); return true; }
       if (i === 4){ openRules(c, r); return true; }
       if (i === 5){ share(c, r); return true; }
+      if (i === 6){ openMineList(); return true; }
       return true;
     },
     onReset(c, r){ restart(c, r); return true; },
@@ -58367,7 +58939,7 @@ onmessage = ev => {
       for (let i = 0; i < n * n; i++){ ctx.fillStyle = ((i % n) + ((i / n) | 0)) % 2 ? '#2b2f38' : '#3a4050'; ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t, t); }
       ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
     },
-    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, PLAYS, checkOf, playOf, shownAt, shownView, starsAt, BEST, undo, startFrom, forget, trialOf, parseReply, cleanView,
+    _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, PLAYS, checkOf, hardness, openMineList, mineList, playOf, shownAt, shownView, starsAt, BEST, undo, startFrom, forget, trialOf, parseReply, cleanView,
               takeShared, openRules, levelAt, boardIdx, get model(){ return MODEL; }, isLive, get live(){ return LIVE; }, uvAt: (x, y) => _framedUV(x, y),
               session: tok => coachSetSession(tok), fly: (c, r) => gotoCell(c, r) },
   };
