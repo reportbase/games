@@ -4308,6 +4308,106 @@ try {
     if (!ok2) failures.push('[pong] real input: ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real click starts, the real arrow and a real drag move the paddle, a match won with ${real.over && real.over.best} stars, two real fingers take a paddle each with the view still, a real click on the Points tile, a board no one plays moves`);
   }
+  // PONG: physics, themes and arenas (Oct 27: "whats next for pong", then "3,4,5"): the curved face reflecting, a hit stepping forward
+  // faster, each theme's physics (the bounce, the puck slowing, air hockey's goals, the well), the eight themes painted and drawn,
+  // the arenas by level (bumpers, walls, sliding walls, portals) doing what they say, matches with them ending, and a real drag up the
+  // table stepping the paddle forward.
+  {
+    current = 'pong';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'pong')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, C = D.consts, out = {};
+      // the curved face: straight on at an end, back at twice the lean; at the middle, an angled ball reflected, not sent straight
+      const G = D.newMatch(1, 1, { ai0: null, ai1: null, face: 'curved', phys: null, serveT: 0 });
+      G.pads[0].x = 0.31;
+      const off = 0.05, o = off / (G.pads[0].hw0 + C.BR), b1 = { x: 0.31 + off, y: 0.9, vx: 0, vy: 0.8, s: 0, trail: [] };
+      D.hit(G, b1, 0, b1.x, 0.9); out.curvedEnd = +(Math.atan2(b1.vx, -b1.vy) / (2 * o * C.CURVE_N)).toFixed(3);
+      const b2 = { x: 0.31, y: 0.9, vx: 0.4, vy: 0.7, s: 0, trail: [] }; D.hit(G, b2, 0, 0.31, 0.9);
+      const F = D.newMatch(1, 1, { ai0: null, ai1: null, face: 'flat', phys: null }), b3 = { x: 0.31, y: 0.9, vx: 0.4, vy: 0.7, s: 0, trail: [] }; F.pads[0].x = 0.31; D.hit(F, b3, 0, 0.31, 0.9);
+      out.curvedMid = [+b2.vx.toFixed(3), +b3.vx.toFixed(3)];
+      // stepping forward into it: faster than standing still
+      const S = D.newMatch(1, 1, { ai0: null, ai1: null, phys: null }); S.pads[0].x = 0.31;
+      const b4 = { x: 0.31, y: 0.9, vx: 0, vy: 0.8, s: 0, trail: [] }, b5 = { ...b4, trail: [] };
+      D.hit(S, b4, 0, 0.31, 0.9); S.pads[0].vy = 1.2; D.hit(S, b5, 0, 0.31, 0.9);
+      out.step = [+Math.hypot(b4.vx, b4.vy).toFixed(3), +Math.hypot(b5.vx, b5.vy).toFixed(3)];
+      // a face stepping forward fast never lets a ball through: the near paddle steps in and out under every ball for a minute
+      const T = D.newMatch(3, 5, { ai0: null, ai1: null, phys: null, serveT: 0 }); T.sp = 2; let through = 0;
+      T.ev = (k, a) => { if (k === 'point') through++; };
+      for (let i = 0; i < 60 * 120; i++){
+        for (let k = 0; k < 2; k++){ let tx = C.W / 2; for (const b of T.balls) if ((k === 0) === (b.vy > 0)) tx = D.landing(b.x, b.y, b.vx, b.vy, D.faceY(k, T)).x; T.pads[k].tx = tx; }
+        T.pads[0].dyT = (i % 40) < 20 ? C.REACH : 0; D.tick(T);
+      }
+      out.stepThrough = { points: through, hits: T.hits };
+      // the bounce (table tennis): once on the receiver's half (the near half from the far serve, then the far), the ball up in between
+      const B = D.newMatch(1, 1, { ai0: null, ai1: null, phys: 'table', serveT: 0 }), bo = []; let zmax = 0;
+      B.ev = (k) => { if (k === 'bounce') bo.push(+B.balls[0].y.toFixed(2)); };
+      for (let i = 0; i < 60 * 3 && B.balls.length < 2; i++){ B.pads[0].tx = B.balls[0] ? B.balls[0].x : 0.31; B.pads[1].tx = B.balls[0] ? B.balls[0].x : 0.31; D.tick(B); if (B.balls[0]) zmax = Math.max(zmax, B.balls[0].z); }
+      out.bounce = { at: bo.slice(0, 3), zmax: +zmax.toFixed(3) };
+      // the ice: a puck left alone slows to its floor
+      const I = D.newMatch(1, 1, { ai0: null, ai1: null, phys: 'ice', serveT: 0 }); D.tick(I);
+      const ib = I.balls[0]; ib.x = 0.31; ib.y = 0.5; ib.vx = 0.5; ib.vy = 0.05 * 0 + 0.3; const v0 = Math.hypot(ib.vx, ib.vy);
+      for (let i = 0; i < 30; i++) D.tick(I);
+      out.ice = [+v0.toFixed(3), +Math.hypot(ib.vx, ib.vy).toFixed(3), +(0.8 * I.sp).toFixed(3)];
+      // air hockey: off the end beside the goal it comes back; in the mouth it scores
+      const A = D.newMatch(1, 1, { ai0: null, ai1: null, phys: 'air', serveT: 0 }); D.tick(A); let pts = 0; A.ev = (k) => { if (k === 'point') pts++; };
+      const ab = A.balls[0]; A.pads[0].x = 0.08; Object.assign(ab, { x: 0.52, y: 0.96, vx: 0, vy: 0.8 }); for (let i = 0; i < 6; i++) D.tick(A);
+      out.airWall = { vy: +ab.vy.toFixed(2), pts };
+      Object.assign(ab, { x: C.W / 2, y: 0.96, vx: 0, vy: 0.8 }); A.balls = [ab]; for (let i = 0; i < 12; i++) D.tick(A); out.airGoal = pts;
+      // the well: a ball passing beside the middle is bent toward it
+      const Wl = D.newMatch(1, 1, { ai0: null, ai1: null, phys: 'well', serveT: 0 }), P = D.newMatch(1, 1, { ai0: null, ai1: null, phys: null, serveT: 0 });
+      for (const M of [Wl, P]){ D.tick(M); Object.assign(M.balls[0], { x: C.W / 2 + 0.08, y: 0.3, vx: 0, vy: 0.8, s: 0 }); for (let i = 0; i < 24; i++) D.tick(M); }
+      out.well = [+Wl.balls[0].vx.toFixed(3), +P.balls[0].vx.toFixed(3)];
+      // the arenas: what each level has, twins half a turn about the middle, and each piece doing its part
+      out.kinds = [1, 2, 3, 4, 5].map(lv => { const c = {}; for (let i = 0; i < 30; i++) for (const q of D.arenaOf(2000 + i, lv)) c[q.kind] = (c[q.kind] || 0) + 1; return c; });
+      const L2 = D.arenaOf(2001, 2); out.twins = L2.every(q => L2.some(p => p.kind === q.kind && Math.abs(p.x - (C.W - q.x)) < 1e-9 && Math.abs(p.y - (1 - q.y)) < 1e-9));
+      const Ar = D.newMatch(1, 1, { ai0: null, ai1: null, phys: null, arena: false, serveT: 0 }); D.tick(Ar);
+      const ball = Ar.balls[0], hitOf = (piece, x, y, vx, vy) => { Ar.arena = [piece]; Object.assign(ball, { x, y, vx, vy, portT: -9 }); D.arenaStep(Ar, ball); return ball; };
+      const bb = hitOf({ kind: 'bump', x: 0.3, y: 0.4, r: 0.04 }, 0.3, 0.4 - 0.05, 0, 0.6); out.bump = +ball.vy.toFixed(2);
+      hitOf({ kind: 'wall', x: 0.3, y: 0.4, w: 0.1, h: 0.014, r: 0.05 }, 0.3, 0.4 - 0.016, 0.1, 0.6); out.wall = +ball.vy.toFixed(2);
+      hitOf({ kind: 'portal', x: 0.2, y: 0.35, x2: 0.42, y2: 0.65, r: 0.032 }, 0.205, 0.35, 0.1, 0.6); out.portal = [+ball.x.toFixed(3), +ball.y.toFixed(3), +ball.vy.toFixed(2)];
+      const mv = { kind: 'mover', x0: 0.3, x: 0.3, y: 0.4, w: 0.1, h: 0.016, A: 0.1, per: 3, ph: 0, r: 0.15 }; out.mover = [+D.moverX(mv, 0).toFixed(3), +D.moverX(mv, 0.75).toFixed(3)];
+      // matches with arenas end, at every level
+      out.matches = [1, 3, 5].map(lv => { const M = D.newMatch(400 + lv, lv, { ai0: D.STEADY, power: false, arena: true, phys: null, serveT: 1, target: 5 }); while (M.state !== 'over' && M.t < 600) D.tick(M); return M.state + ' ' + M.score.join('-'); });
+      // every theme paints and draws (its table, the paddles, the ball)
+      out.themes = D.THEMES.map(t => { const cv = D.paint(t.id, 3, 128); const it = D.itemsOf({ balls: [{ x: 0.3, y: 0.5, z: 0.02, trail: [] }], pads: [{ x: 0.3, hw: 0.08, age: 0.05 }, { x: 0.3, hw: 0.075, age: 9 }], score: [3, 7], fx: [], count: 0, pw: null, shake: 0, t: 1, arena: D.arenaOf(9, 5), flash: {}, well: t.id === 'space' }, t.id, 400);
+        return t.id + ':' + (cv && cv.width > 0 ? 'p' : '-') + it.length; });
+      return out;
+    });
+    const k5 = r.kinds[4], k3 = r.kinds[2];
+    const ok1 = Math.abs(r.curvedEnd - 1) < 0.02 && r.curvedMid[0] > 0.3 && Math.abs(r.curvedMid[1]) < 0.1 && r.step[1] > r.step[0] * 1.3
+      && r.stepThrough.points === 0 && r.stepThrough.hits > 200 && r.bounce.at.length >= 2 && r.bounce.at[0] > 0.6 && r.bounce.at[1] < 0.4 && r.bounce.zmax > 0.03
+      && r.ice[1] < r.ice[0] && r.ice[1] >= r.ice[2] - 1e-3 && r.airWall.vy < 0 && r.airWall.pts === 0 && r.airGoal === 1 && r.well[0] < -0.02 && Math.abs(r.well[1]) < 1e-6
+      && r.kinds[0].bump && !r.kinds[0].wall && r.kinds[1].wall && (k3.mover || k3.bar) && r.kinds[3].portal && k5.portal && r.twins
+      && r.bump < 0 && r.wall < 0 && Math.abs(r.portal[0] - 0.425) < 1e-3 && Math.abs(r.portal[1] - 0.65) < 1e-3 && r.portal[2] > 0 && Math.abs(r.mover[1] - 0.4) < 1e-3
+      && r.matches.every(m => m.startsWith('over')) && r.themes.length === 8 && r.themes.every(t => /:p\d+$/.test(t));
+    if (!ok1) failures.push('[pong] physics, themes and arenas: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} pong: the curved face (${r.curvedEnd} of twice its lean), a step forward ${r.step.join(' → ')}, none through a stepping face in ${r.stepThrough.hits} returns, the bounce at ${r.bounce.at.join('/')}, the puck slowing, air hockey's goals, the well, arenas by level (${JSON.stringify(r.kinds[4])} at level 5), matches with them ${r.matches.join(', ')}, eight themes drawn`);
+    // a real drag up the table steps the near paddle forward
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 2));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let step = null;
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
+      const p0 = await aimAt(0.5, 0.95), p1 = await aimAt(0.5, 0.85);
+      await page.mouse.move(p0[0], p0[1]); await page.mouse.down();
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(p0[0], p0[1] + (p1[1] - p0[1]) * k / 8); await page.waitForTimeout(30); }
+      await page.waitForTimeout(300);
+      const dyIn = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
+      await page.mouse.up(); await page.waitForTimeout(500);
+      const dyOut = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
+      step = { dyIn: +dyIn.toFixed(3), dyOut: +dyOut.toFixed(3) };
+    }
+    const ok2 = !!step && step.dyIn > 0.05 && step.dyOut < 0.01;
+    if (!ok2) failures.push('[pong] a real drag stepping forward: ' + JSON.stringify(step));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real drag up the table steps the paddle forward (${step && step.dyIn}), and let go it steps back`);
+  }
   // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
   // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
   // find; real clicks fill exactly the squares clicked and the corner's marks switch to crosses; a real drag fills a row; the
