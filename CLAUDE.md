@@ -2381,6 +2381,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`window.uiTextScale`). The smoke test clicks the real A+ and the middle button.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
+- **The walk over the boards in view** (Oct 27: "mini-golf and golf tanks are to slow to be usable. they are pretty, the best
+  looking applications, but no one will play them because of the performance problems."): `buildInstances` walked every
+  board in the rows' reach, out to the horizon, and kept the few `inFOV` passes: 1.5 million boards a frame to keep 43 in
+  mini golf (its long boards fit more rows), 0.94 million in checkers, the most time any game spent in a frame. `inFOV`'s
+  tests are lines in a board's place (`_fovLines`), so each row of the walk is cut to the interval they allow, a board wider
+  each way, and `inFOV` still decides: 53 boards walked, the same boards kept (checked frame by frame over pans, zooms and
+  turns). Golf tanks' boards no one plays (`recSoon`) ask the clock after every step of the round, not every twentieth.
 - **Dead code taken out** (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and
   the shared kits"): functions and constants nothing reached, found by counting every name in the page (a name written once
   is its own declaration): `LOD_APP` and `HELLO_APP` (apps off the list since Sep 25), mini golf's `softAmount`, `cladGeo`,

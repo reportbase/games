@@ -15510,6 +15510,16 @@ function buildInstances(){
 
   const rowByDz = new Map();
   for (const row of rowData) rowByDz.set(row.dz, row);
+  // inFOV's tests as lines a·fwdF + b·lat + c <= 0 (the near clip, the two sides, the top and the bottom; used just below)
+  const _fwdK = SPZ * cosP, _fwd0 = camHt * sinP;
+  const _Kh = tanFovH2 + yawSpeed * YAW_LEAD + EDGE_SLACK, _Mh = marginBase + marginMotion, _Kv = tanFovV2 + EDGE_SLACK;
+  const _fovLines = [
+    [-_fwdK, 0, nearClip - _fwd0],
+    [-_fwdK * _Kh,  SPX, -_fwd0 * _Kh - _Mh],
+    [-_fwdK * _Kh, -SPX, -_fwd0 * _Kh - _Mh],
+    [ SPZ * sinP - _fwdK * _Kv, 0, -camHt * cosP - _fwd0 * _Kv - marginV],
+    [-SPZ * sinP - _fwdK * _Kv, 0,  camHt * cosP - _fwd0 * _Kv - marginV],
+  ];
   let dzMin = 0, dzMax = 0;
   if (rowData.length){
     dzMin = dzMax = rowData[0].dz;
@@ -15540,8 +15550,19 @@ function buildInstances(){
     if (!A) continue;
     const B = _span(_rx, _rz, oz, -maxHalf - 1, maxHalf + 1);  // within the widest row
     if (!B) continue;
-    const lo = Math.max(-R, Math.ceil (Math.max(A[0], B[0])));
-    const hi = Math.min( R, Math.floor(Math.min(A[1], B[1])));
+    let lo = Math.max(-R, Math.ceil (Math.max(A[0], B[0])));
+    let hi = Math.min( R, Math.floor(Math.min(A[1], B[1])));
+    /* (and inFOV's own limits, as an interval too, Oct 27: "mini-golf and golf tanks are to slow to be usable": the band
+        above is the rows' reach, out to the horizon, and the walk still went through every board in it to keep the few the
+        view holds. 1.5 million boards a frame to keep 43 in mini golf (its boards are long, so more rows fit), 0.94 million in
+        checkers: the field's slowest loop, in every game. Each of inFOV's tests is linear in fwdF and lat, so in ox; the
+        interval they allow, a board's width wider each way, is walked, and inFOV still decides, so the same boards come out.) */
+    for (const [ca, cb, cc] of _fovLines){
+      const k = ca * _fx + cb * _rx, d = (ca * _fz + cb * _rz) * oz + cc;
+      if (Math.abs(k) < 1e-12){ if (d > 1e-9) { lo = 1; hi = 0; } continue; }
+      const t = -d / k;
+      if (k > 0) hi = Math.min(hi, Math.floor(t) + 1); else lo = Math.max(lo, Math.ceil(t) - 1);
+    }
     for (let ox = lo; ox <= hi; ox++){
       const fwdF = ox * _fx + oz * _fz;
       const dz = Math.round(fwdF);
@@ -53751,7 +53772,9 @@ const GOLFTANK_APP = (() => {
       if (Math.round(G.t / STEP) % every === 0){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
         for (const b of G.shots) if (b.end > G.t) b.P.push(G.t, b.x, b.y, b.z); }
       stepRound(G, G.tanks.map((_, k) => cpuCmd(G, k)), STEP);
-      if (++n % 20 === 0 && !force && performance.now() - t0 > budget) break;
+      // (the clock asked after every step: a step is a whole tick of two computer tanks thinking, and twenty of them ran to
+      //  60 ms on a slow phone, past the 6 ms this was meant to take, Oct 27: "mini-golf and golf tanks are to slow to be usable")
+      if (!force && performance.now() - t0 > budget) break;
     }
     budget -= performance.now() - t0;
     if (G.over || G.t >= 40){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
