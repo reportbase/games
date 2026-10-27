@@ -624,6 +624,38 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     painted, and real input: a click starting, a real drag putting the mallet under the finger across and along, the real arrow, a
     match won with stars and a best, two real fingers each taking a mallet with the view still, a real click on the Goals tile,
     and a board no one plays moving.
+- **Squash** (Oct 27: "this is a cool game. what other games could we create like pong.", then "2 -squash"): `SQUASH_APP`, id `squash`,
+  after air hockey, on Pong's ways (ticks of 1/60 s in `SUB` 8 steps, recordings, par, stars, the row as settings, hands heard
+  before the field). A court `W` (0.66) by 1 (`boardShape`, `frameFit` 1.25), seen from behind: the front wall at the far end, both
+  players anywhere on the floor (`bounds`), and a ball with a height.
+  - **The ball** (`ballStep`): `z` under `GRAV`; off the front wall (`E_FRONT`), the side and back walls, the floor (`E_FLOOR`,
+    `F_FLOOR`), rolling once a bounce is too low. The tin (`TIN`), the service line and the out line (`OUT`) are on the front wall.
+  - **The rally** (`onBall`): turns go by (`G.to`); a shot must reach the front wall above the tin and under the out line before
+    the floor ('tin', 'out', 'down': the hitter loses it), and the other must return it before its second bounce ('not up'). Volleys
+    off the front wall, side and back walls all play. PAR scoring to 11 (5 or 15 from the row), won by two; the rally's winner
+    serves from the box of its score's side (`setServe`; `serve` lobs it up and across, a tap or Space serves yours sooner); a
+    rally past `RALLY_CAP` is a let.
+  - **The stroke** (`hit`): the racket meets the ball as it comes within `REACH` (Small, Normal, Large from the row) on your turn,
+    below `ZREACH`. Where it meets across you sets the angle (`MAXA`), your run carries (`CARRY`), and how you move says the shot
+    (`shotOf`): stepping in a drive, still a drop, going back a lob (`SHOTS`: pace, height on the wall, spread). A shot is sent to
+    strike the wall at its height (`shoot`).
+  - **The computer** (`think`, `LV` by level): on its turn it flies the ball ahead (`flight`) and runs to the first place it can
+    reach in time, after the bounce if it can, off by `err`, standing so the ball meets it where it aims (away from you at `aim`'s
+    rate), with drops and lobs (`drop`, `lob`); off its turn it goes to the T. Bodies push apart. Against the steady player
+    (`STEADY`) over 8 matches to 11, its share of points 0.66, 0.68, 0.59, 0.30, 0.16 at levels 1–5; a match 4–14 minutes.
+  - **Hands**: a press on the court is a player's, who runs where the finger is (at most `HAND_V` 1.6 a second); with two players
+    each finger takes the player nearest it. One player: the arrows or W A S D; two: W A S D red, the arrows blue.
+  - **Drawn**: the floor a picture (Classic maple, Show court, Hardcourt, Neon; `LOOK`, `paint`) with the short line, half-court
+    line and service boxes; the front wall a box with its tin and lines, the side and back walls low; heights at half (`VZ`), since a
+    wall its full height hid the back of the court on the board behind; players (body, head, racket, a ring under the one to hit);
+    the ball raised, its shadow and trail; flashes on the wall, rings where it bounces; dot-digit scores on the floor.
+  - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`): the steady player against the board's computer, 12 numbers
+    a frame; par the points given away winning (`parOf`); stars as Pong's (localStorage `squash.best`); settings `squash.settings`.
+  - The smoke test checks the levels by ring, a drive striking the wall at its height, the tin, down and not up, the angle off each
+    side, drive/drop/lob by motion, matches ending at levels 1, 3 and 5 with the share falling, a recording's par, the four courts,
+    and real input: a click starting, a real drag running the player under the finger, the real arrow, a real click serving, a
+    match won with stars and a best, two real fingers each taking a player with the view still, a real click on the Points tile,
+    and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
