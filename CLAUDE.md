@@ -2409,6 +2409,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   own quick buttons, then ✕ Cancel and ✓ Done, or ✎ when the row is the game's), each game giving its `open`, `done`, `cancel`,
   `tiles` and `tile`; `store(key, keep, clean)` keeps the boards' own in localStorage. Chess's, the board games' (`BOARD_ED`),
   the puzzle makers' (`PUZZLE_ED`) and mini golf's editors have their own, older ways.
+- **One board kit** (Oct 27: "I want to reuse resources and code between games as much as possible. how are we doing on that
+  regard?", then "Yes"): seventeen games wrote out the same lines for a board's number, its ring and level, a seeded generator,
+  the board beside and a best a board. `BOARD_KIT` (before ARCADE) has them once: `gs()` (the field's side), `boardIdx(c, r)`,
+  `cellOfIdx`, `ringOf`, `ringLevel`, `levelAt(idx, DL)` (the ring level plus Easy 0, Normal 1, Hard 2), `rng(seed)` (mulberry32),
+  `nextBoard(c, r)` and `best(key)` ({ BEST, saveBest }, the latest 500; `MATCH_KIT.best` is it). A game says
+  `const boardIdx = BOARD_KIT.boardIdx;` and the rest reads as before; every app's levels and board numbers were checked the same
+  before and after. Mini golf (its levels follow its own setting), Levels (a level is a distance), trick shots' bests and the game
+  lab's sandbox Worker keep their own. A new game with levels by ring uses it.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:

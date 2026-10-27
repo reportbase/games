@@ -18316,6 +18316,37 @@ const BOOM = (() => {
   const burning = g => (g.booms || []).filter(b => g.t - b.t0 < T).map(b => [b.u, b.v, g.t - b.t0, b.seed, b.mix]);
   return { T, geometries, caps, items, add, burning };
 })();
+/* ═══ BOARD_KIT — a board's number, its ring and level, a seeded generator, a best a board (Oct 27: "I want to reuse resources and
+   code between games as much as possible. how are we doing on that regard?", then "Yes" to a kit for what every game wrote out
+   for itself). Seventeen games carried the same dozen lines, word for word: the field's side (`gs`), a board's number (`boardIdx`,
+   Szudzik's pairing of its wrapped column and row, mini golf's), its ring (`ringOf`: the distance from the corner the short way
+   round the wrapped field), the ring's level (`ringLevel`: rings 0–6 level 1, doubling out to 5), the level with the Difficulty
+   (`levelAt(idx, DL)`: Easy 0, Normal 1, Hard 2 more), mulberry32 seeded (`rng`), the board beside (`nextBoard`, mini golf's next)
+   and the most stars kept by board in localStorage (`best(key)`: { BEST, saveBest }, the latest 500). They are here once; a game
+   says `const boardIdx = BOARD_KIT.boardIdx;` and the rest of it reads as before. Mini golf keeps its own (a hole is made for a
+   level of its own setting), as do Levels (its level is a distance) and the game lab's sandbox (a Worker with no page). */
+const BOARD_KIT = (() => {
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const gs = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const boardIdx = (c, r) => { const GS = gs(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  const cellOfIdx = idx => { const q = Math.floor(Math.sqrt(idx)), e = idx - q * q; return e < q ? [e, q] : [q, e - q]; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = gs();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = (idx, DL) => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const rng = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const nextBoard = (c, r) => { const GS = gs(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  function best(key){
+    const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(key) || '{}'))); } catch { return new Map(); } })();
+    const saveBest = () => { try { localStorage.setItem(key, JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+    return { BEST, saveBest };
+  }
+  return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best };
+})();
 /* ═══ ARCADE — the parts every arcade board shares (Sep 27: "the basics should be the same
    for all games"): sound made in the browser, tilt steering on a phone, and a difficulty
    level. Each app keeps its own settings (remembered per app); these are the machinery. */
@@ -28142,19 +28173,14 @@ const BLOCKOUT_APP = (() => {
   const SET = { mode: ARCADE.load('blockout.mode', 'puzzle') === 'endless' ? 'endless' : 'puzzle', glass: ARCADE.load('blockout.glass', 'on') !== 'off' };
   const puzzling = () => SET.mode === 'puzzle';
   const DL = ARCADE.difficulty('blockout.level', 'Every board plays at its own level, harder the farther it is from the corner: a 3 × 3 pit of flat pieces near it, then 4 × 4, then 5 × 5 with pieces that are not flat and, farther out, pieces of five cubes falling faster. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const say = (m, ms) => { if (QUIET) return; try { engineNotice(m, ms || 2000); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (Lights Out's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
   const lvOf = (c, r) => levelAt(boardIdx(c, r));
   let rnd = Math.random, QUIET = false, LIVE = null;
 
@@ -28991,19 +29017,14 @@ const SOMA_APP = (() => {
      not fit across it otherwise, so a long one is drawn smaller rather than over its neighbours. Soma's are never past 6. */
   const sqOf = B => Math.min(0.14, 0.84 / Math.max(B[0], B[1]));
   const DL = ARCADE.difficulty('soma.level', 'Every board has its own figure to fill, harder the farther it is from the corner: three pieces near it, then four, five and six, and far out all seven. The corner\'s first board is the Soma cube itself. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const say = (m, ms) => { try { engineNotice(m, ms || 2400); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (Lights Out's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => idx < COURSE.length ? 5 : Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));   // (the course: all seven)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => idx < COURSE.length ? 5 : BOARD_KIT.levelAt(idx, DL);   // (the course: all seven)
   const lvOf = (c, r) => levelAt(boardIdx(c, r));
   const seeded = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
   const now = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
@@ -40607,7 +40628,7 @@ const GOLF_MAKE = SIZE => {
     const w = v => GS > 1 ? Math.min(v, GS - v) : v;
     return Math.max(w(a), w(b));
   }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const ringLevel = BOARD_KIT.ringLevel;
   const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + LEVEL_SET));
   const LEVEL_DIALS = [
     // weave: the chance of crossing paths; extra: of a second; riders: the most a weave may bring; speed: the movers'
@@ -46403,19 +46424,13 @@ const SOKOBAN_APP = (() => {
     { n: 10, boxes: 3, walls: 0.24, band: [22, 34], cap: 25000 },
     { n: 12, boxes: 3, walls: 0.26, band: [30, 48], cap: 30000 },
   ];
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   // (mini golf's: a board's own number from its column and row, Szudzik's pairing, small ones near the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){                         // (its distance from the corner, the short way round the wrapped field)
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   /* THE SOLVER (Oct 12, the mini golf rater's part here): the fewest pushes, breadth first. A state is where the crates
      stand and the squares he can walk to (named by the least of them); each step is one push of a crate he can reach.
      A crate is never pushed onto a square from which no pull could bring it back to a spot (live), or into a 2×2 block of
@@ -46584,7 +46599,7 @@ const SOKOBAN_APP = (() => {
     return L;
   }
   const lvl = g => g.L;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const nextBoard = BOARD_KIT.nextBoard;
   const starsFor = (L, pushes) => !L.par ? 0 : pushes <= L.par ? 3 : pushes <= Math.ceil(L.par * 1.5) ? 2 : 1;
 
   const solvedAll = (L, boxes) => boxes.every(b => L.goal[b]);
@@ -47145,24 +47160,19 @@ const TILT_APP = (() => {
   const G = 2.2, ROLL = 0.9, BOUNCE = 0.35, VMAX = 1.6, SUB = 1 / 240, TIME_CAP = 120, REC_HZ = 30;
   const WALL_T = 0.12, WALL_H = 0.42, BALL_R = 0.26, HOLE_R = 0.3, CORNER_R = 0.2, CORNER_OFF = 0.23, RING_R = 0.3, SIDE_R = 0.2, SIDE_OFF = 0.33;
   const DL = ARCADE.difficulty('tiltmaze.level', 'Every board has its own maze, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tiltmaze.sound', 'A tick off the walls, a drop down a hole, a chime at the ring.');
   const TILT = ARCADE.tilt;
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (mini golf's and Sokoban's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   /* ─── A MAZE ─── cells i (across), j (down); E[i + j·m]: a wall on the cell's east side, S[…]: on its south side; the
      board's edge is walled all round. Made by a walk that backs up when it is boxed in (every cell reached once, one way
@@ -47344,8 +47354,7 @@ const TILT_APP = (() => {
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null, DRAG = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tiltmaze.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { const e = [...BEST].slice(-500); localStorage.setItem('tiltmaze.best', JSON.stringify(Object.fromEntries(e))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('tiltmaze.best');
   const bestKey = M => M.L.idx + '@' + M.L.lv;
   function fresh(c, r){
     const M = mazeFor(c, r), [x, y] = centre(M.L, M.L.start);
@@ -47824,23 +47833,18 @@ const PINBALL_APP = (() => {
   ];
   const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags)
   const DL = ARCADE.difficulty('pinball.level', 'Every board has its own table, harder the farther it is from the corner: steeper, shorter flippers set wider, wider outlanes, a shorter ball save. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('pinball.sound', 'Flippers, bumpers, slingshots, targets and the drain — made in the browser.');
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (mini golf's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
   const hsl = (h, s, l) => { const k = n => (n + h * 12) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
   const css = c => '#' + c.toString(16).padStart(6, '0');
@@ -48607,8 +48611,7 @@ const PINBALL_APP = (() => {
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('pinball.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('pinball.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('pinball.best');
   const bestKey = M => M.mine ? 'm' + M.hash : M.idx + '@' + M.lv;
   function fresh(c, r){ const M = readyNow(tableFor(c, r)); return { M, c, r, S: newState(M.T), balls: M.T.balls, ball: 1, state: 'ready', wait: 0, last: 0, overAt: 0 }; }
   function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
@@ -49532,22 +49535,17 @@ const SIMON_APP = (() => {
   ];
   const QUICKEN = 0.035, QUICK_MIN = 0.55, R_IN = 0.17, R_OUT = 0.46, GAP_A = 0.06, PAD_H = 0.012, LIT_UP = 0.012;
   const DL = ARCADE.difficulty('simon.level', 'Every board plays its own sequence, harder the farther it is from the corner: four pads near it, six farther, eight far out, quicker and with less time to answer. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('simon.sound', 'Each pad its own tone, a buzz when it is wrong.');
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
 
   /* A board's sequence: as long as anyone gets, drawn as it is wanted from the board's own generator. No pad three times
      running (the toy allowed it, but on a phone the third tap of one pad reads as a stuck finger). */
@@ -49569,8 +49567,7 @@ const SIMON_APP = (() => {
      before the next round), 'over'. Times on the page's own clock (performance.now), in seconds. */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('simon.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('simon.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('simon.best');
   const bestKey = S => S.idx + '@' + S.lv;
   const clock = () => performance.now() / 1000;
   const fresh = (c, r) => ({ S: seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1 });
@@ -49782,24 +49779,19 @@ const LIGHTS_APP = (() => {
   ];
   const TRIES = 24, STEP = 0.55, HOLD0 = 1.0, HOLD1 = 1.4, FLASH_S = 0.28, HINT_S = 1.6;
   const DL = ARCADE.difficulty('lightsout.level', 'Every board deals its own lights, harder the farther it is from the corner: a 4×4 near it that goes out in three to five presses, 5×5s, then 6×6 and 7×7 boards that need fourteen or more. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('lightsout.sound', 'A click for each press, a fanfare when the last light goes out.');
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const clock = () => performance.now() / 1000;
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (Simon's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   // the squares a press at i flips: itself and its four neighbours on the board
   const crossOf = (n, i) => { const x = i % n, y = (i / n) | 0, out = [i];
@@ -49881,8 +49873,7 @@ const LIGHTS_APP = (() => {
   /* ─── PLAYING ─── a game: its lights, the presses so far, the last press (flashed briefly), a hint, and whether it is out. */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('lightsout.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('lightsout.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('lightsout.best');
   const bestKey = S => S.idx + '@' + S.lv;
   const fresh = (c, r) => { const S = dealOf(c, r); return { S, c, r, n: S.n, L: S.start.slice(), moves: 0, done: false, last: -1, lastTo: 0, hint: -1, hintTo: 0 }; };
   function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
@@ -50045,23 +50036,18 @@ const MOLE_APP = (() => {
     { n: 5, up: 0.82, every: 0.42, most: 3, bomb: 0.18, gold: 0.08 },
   ];
   const DL = ARCADE.difficulty('whackamole.level', 'Every board plays its own round, harder the farther it is from the corner: nine holes near it, sixteen farther, twenty-five far out, the moles quicker and more at once, and bombs from the middle rings. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('whackamole.sound', 'A bonk for a mole, a buzz for a miss, a bang for a bomb.');
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const nextBoard = BOARD_KIT.nextBoard;
   // (Simon's, the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   // a hole's middle on the board, and the hole a point of the board is in: the whole square counts, the edges' too
   const holeUV = (n, i) => [((i % n) + 0.5) / n, (((i / n) | 0) + 0.5) / n];
   const holeAt = (n, u, v) => { const a = Math.max(0, Math.min(n - 1, Math.floor(u * n))), b = Math.max(0, Math.min(n - 1, Math.floor(v * n))); return b * n + a; };
@@ -50126,8 +50112,7 @@ const MOLE_APP = (() => {
      clock (t0), on the page's own clock (performance.now), so a frame missed never loses a mole. */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('whackamole.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('whackamole.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('whackamole.best');
   const bestKey = G => G.idx + '@' + G.lv;
   const clock = () => performance.now() / 1000;
   const fresh = (c, r) => ({ G: roundOf(c, r), c, r, state: 'ready', t0: 0, score: 0, got: 0, missed: 0, bombs: 0, hits: new Map(), miss: null, boom: null, said: 0, endAt: 0 });
@@ -50353,23 +50338,18 @@ const NONOGRAM_APP = (() => {
   const BAND = 0x1b2130, BAND2 = 0x232b3d, CORNER = 0x12161f, PAPER = 0xece6d6, PAPER2 = 0xe2dac7, INK = 0x23447c, INK2 = 0x29508f;   // (ink a deep blue, not the bands' slate: filled squares by the left band ran into it)
   const DIG = 0xf3ead6, DIG_DONE = 0x5d6578, CROSS = 0xa5452f, GOLD = 0xd9a73a;
   const DL = ARCADE.difficulty('nonograms.level', 'Every board hides its own picture, harder the farther it is from the corner: 5×5 near it, then 6×6, 8×8, 10×10 and 12×12 far out, with fewer squares filled and more to work out. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('nonograms.sound', 'A tick for each square, a chime when a line is right, a fanfare for the picture.');
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (Simon's, the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const nextBoard = BOARD_KIT.nextBoard;
+  const rngOf = BOARD_KIT.rng;
   const LV = [
     { n: 5,  dens: 0.62, blur: 1, minPasses: 0 },
     { n: 6,  dens: 0.58, blur: 1, minPasses: 0 },
@@ -50583,8 +50563,7 @@ const NONOGRAM_APP = (() => {
   let LIVE = null, DRAG = null;
   let MODE = (() => { try { return localStorage.getItem('nonograms.mode') === 'cross' ? 'cross' : 'fill'; } catch { return 'fill'; } })();
   const setMode = m => { MODE = m; try { localStorage.setItem('nonograms.mode', m); } catch {} try { fieldItemsChanged(); } catch {} };
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('nonograms.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('nonograms.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('nonograms.best');
   const bestKey = P => P.idx + '@' + P.lv;
   const clock = () => performance.now() / 1000;
   let GID = 0;
@@ -50870,9 +50849,9 @@ const FLASH_APP = (() => {
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const clock = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
   let NOWFN = () => Date.now();                      // (the schedule's clock; the tests move it)
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  const boardIdx = BOARD_KIT.boardIdx;
 
   /* THE DECKS ARE LOADED, NOT WRITTEN HERE (Oct 25: "dont type out the cards by hand. it must be loaded like json or epub."):
      a deck comes from a file opened or dropped (the field's Open, as a book or a JSON file does) or from a flare bucket. Read:
@@ -51398,7 +51377,6 @@ const TANKS_APP = (() => {
   const num = s => parseInt(s.slice(1), 16);
   const PHOTO_PX = 20, HI_PX = 320, HI_DUEL = 480, TILT_MAX = 0.5;
   const DL = ARCADE.difficulty('tanks.level', 'Every board has its own ground, harder the farther it is from the corner: gentle ground, no wind and a wild shot from the computer near it; hills between the tanks, a stronger wind and a sharper eye farther out. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tanks.sound', 'The gun, the shell\'s whistle, the burst, a hit on armour, the turret turning: from where each happens, left or right.');
   /* THE SOUNDS (Oct 20: "add sound effects to tanks."). The kit's blips (a tap, a chime) were all the game had: a slide for a
      shot, the kit's boom for a burst. Now each is made here with the browser's audio, from noise and tones, and set left or
@@ -51477,21 +51455,17 @@ const TANKS_APP = (() => {
   })();
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (Lights Out's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => Math.sqrt(-2 * Math.log(1 - R())) * Math.cos(2 * Math.PI * R());
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const nextBoard = BOARD_KIT.nextBoard;
   const SET = { n: clamp(+ARCADE.load('tanks.count', '2') || 2, 2, 4), players: clamp(+ARCADE.load('tanks.players', '1') || 1, 1, 2) };
 
   /* ─── THE GROUND ─── H[i] is where the ground's top is in column i, as y (0 the far edge, the sky's top; 1 the near edge),
@@ -51839,8 +51813,7 @@ const TANKS_APP = (() => {
      itself on the game's clock (`g.t`), its sounds as their moments come. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tanks.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('tanks.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('tanks.best');
   const bestKey = T => T.idx + '@' + T.lv + (T.n > 2 ? '#' + T.n : '');
   const starsOf = hp => hp >= 70 ? 3 : hp >= 35 ? 2 : 1;
   function fresh(c, r){
@@ -52534,7 +52507,6 @@ const TANKMAZE_APP = (() => {
   const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, MAX_SEG = 64;
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('tankmaze.level', 'Every board has its own mazes, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tankmaze.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
   const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('tankmaze.players', '1') || 1)), n: Math.max(2, Math.min(4, +ARCADE.load('tankmaze.count', '2') || 2)),
                powers: ARCADE.load('tankmaze.powers', 'on') !== 'off', aim: ARCADE.load('tankmaze.aim', 'on') !== 'off' };
@@ -52542,19 +52514,15 @@ const TANKMAZE_APP = (() => {
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (mini golf's and the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   /* ─── A MAZE ─── (the tilt maze's: E[k] a wall on cell k's east side, S[k] on its south; a walk that backs up when boxed in,
      then walls taken out for loops, many more than the tilt maze's, since a tank battle wants ways round and lines of fire).
@@ -52991,8 +52959,7 @@ const TANKMAZE_APP = (() => {
   /* ─── PLAYING ─── a match: rounds one after another, each its own maze (the board's number and the round), the score kept. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tankmaze.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('tankmaze.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('tankmaze.best');
   const seatsNow = () => (SET.players === 2 ? ['you', 'p2'] : ['you']).concat(Array(SET.n - SET.players).fill('cpu'));
   const isPerson = s => s !== 'cpu';
   function fresh(c, r){
@@ -53331,25 +53298,20 @@ const GOLFTANK_APP = (() => {
   const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, AIM_SEG = [3, 3, 2, 2, 1, 1], AIM_LEN = 2.2;
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('golftanks.level', 'Every board is its own golf hole, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('golftanks.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
   const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('golftanks.players', '1') || 1)), aim: ARCADE.load('golftanks.aim', 'on') !== 'off' };
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   /* mini golf's kit, asked for each time: mini golf is made again at another board size (setGolfSize), and then its holes are
      other holes, so the games and recordings made on the old ones go */
@@ -53808,8 +53770,7 @@ const GOLFTANK_APP = (() => {
   /* ─── PLAYING ─── a match on the board's hole: rounds one after another on the same hole, the score kept. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('golftanks.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('golftanks.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('golftanks.best');
   const seatsNow = () => SET.players === 2 ? ['you', 'p2'] : ['you', 'cpu'];
   const isPerson = s => s !== 'cpu';
   const colsOf = seats => seats.map(s => SEAT[s]);
@@ -54899,26 +54860,21 @@ const TRICK_APP = (() => {
   const yawOf = h => h || 1e-6;               // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   const hexOf = s => parseInt(s.slice(1), 16);
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (mini golf's: a board's own number from its column and row, Szudzik's pairing, and back)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  const cellOfIdx = idx => { const q = Math.floor(Math.sqrt(idx)), e = idx - q * q; return e < q ? [e, q] : [q, e - q]; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const cellOfIdx = BOARD_KIT.cellOfIdx;
   const pageT = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
   const SND = ARCADE.sounds('trickshots.sound', 'The cue\'s tap, ball on ball, the cushion and the pocket, each as loud as its impact (wander\'s sounds).');
   const SET = { paths: ['all', 'cue', 'off'].includes(ARCADE.load('trickshots.paths', 'all')) ? ARCADE.load('trickshots.paths', 'all') : 'all' };
   // (Oct 22, "1,2,5": a board's level is the ring level out from the corner plus the Difficulty, Easy 0, Normal 1, Hard 2, as the
   //  tilt maze's and the tanks'; the corner's fifteen are the challenges as written and have none)
   const DL = ARCADE.difficulty('trickshots.level', 'Past the corner\'s fifteen challenges every board has a trick shot of its own, harder the farther it is from the corner: longer shots, thinner cuts, more balls about, less of the shot seen ahead. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
   /* A BOARD'S PUZZLE IS MADE IN A WORKER: a level-5 one is a few hundred shots, up to a second on a slow phone, so it is made off
      the page's thread, by up to WK_N workers running this app's own engine and generator (`workerSrc`: the text of this script
      from TRICK_APP's start to the field's part, below, with a message handler; the same code, so the same puzzle). A puzzle
@@ -56460,11 +56416,7 @@ const MATCH_KIT = {
     addEventListener('mousemove', e => { const p = OWN.get('m'); if (!p) return; o.handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation(); }, true);
     addEventListener('mouseup', e => { if (o.handUp('m')){ e.preventDefault(); e.stopPropagation(); } }, true);
   },
-  best(key){
-    const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(key) || '{}'))); } catch { return new Map(); } })();
-    const saveBest = () => { try { localStorage.setItem(key, JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
-    return { BEST, saveBest };
-  },
+  best: key => BOARD_KIT.best(key),     // (the board kit's)
 };
 /* ═══ PONG (Oct 27: "lets create a polished pong application. what do you suggest?", then "all. provide cusomtization options in
    the bottom browser.") ════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -56524,21 +56476,16 @@ const PONG_APP = (() => {
   // the steady player: a person's hands, the same on every board (so par says how hard the board's computer is)
   const STEADY = { react: 0.18, err: 0.032, v: 1.05, acc: 6.5, aim: 0.35 };
   const DL = ARCADE.difficulty('pong.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster serve, your paddle shorter, and a computer that looks again sooner, guesses better, moves faster and aims away from you. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const nextBoard = BOARD_KIT.nextBoard;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };   // (about normal, cut off at ±3.5)
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
@@ -57534,21 +57481,16 @@ const AIRHOCKEY_APP = (() => {
   // the steady player (the recordings' near end, and par): a person's hands, the same on every board
   const STEADY = { react: 0.17, err: 0.03, v: 1.4, acc: 9, attack: 0.7, aimErr: 0.18, bank: 0.15 };
   const DL = ARCADE.difficulty('airhockey.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster, freer puck, and a computer that looks again sooner, guesses better, moves faster and shoots straighter, banking shots off the rail farther out. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const nextBoard = BOARD_KIT.nextBoard;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 
@@ -58182,21 +58124,15 @@ const SQUASH_APP = (() => {
     { tw: 0.08, th: 0.045, feedV: 1.55, spread: 0.9,  drop: 0.44, boast: 0.34, gap: 1.8, alt: true,  deep: 0.64, tight: 0.16 },
   ];
   const DL = ARCADE.difficulty('squash.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster ball, and a computer that looks again sooner, runs faster, gets to the ball better and plays it away from you, with more drops and lobs farther out; drills with smaller targets and quicker, wider feeds. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const nextBoard = BOARD_KIT.nextBoard;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const team = k => k % 2;
@@ -59180,16 +59116,11 @@ const SQUASH_APP = (() => {
    the board lies: up is toward row 0, whichever way the view is turned: `screenToBoardDirs`), 'enter', 'space' and letters. */
 const GAMELAB_APP = (() => {
   const say = (m, ms) => { try { engineNotice(m, ms || 2600); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
   const gkey = (c, r) => c + '_' + r;
   // (Lights Out's: a board's own number and its ring out from the corner; levels 1–5 as every game here has them)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const levelAt = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const levelAt = BOARD_KIT.ringLevel;
   const hashOf = s => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36) + ':' + s.length; };
 
   /* ── THE STARTERS ── written as Claude is asked to write, so they are what it learns the interface from. */
