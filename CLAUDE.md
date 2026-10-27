@@ -2417,6 +2417,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `const boardIdx = BOARD_KIT.boardIdx;` and the rest reads as before; every app's levels and board numbers were checked the same
   before and after. Mini golf (its levels follow its own setting), Levels (a level is a distance), trick shots' bests and the game
   lab's sandbox Worker keep their own. A new game with levels by ring uses it.
+  **The boards' share of time** (Oct 27: "do the recording schedule next"): seven games made or recorded the boards no one plays
+  a little at a time with the same window, a few ms of work in every 30 (the tilt maze's mazes 8, pinball's tables 10, the
+  nonograms 8, the tanks' duels 8, the tank maze's rounds 6, golf tanks' rounds 4 in 40, and MATCH_KIT's recordings 8, which
+  serve Pong, air hockey and squash). `BOARD_KIT.budget(ms, every)` keeps it once: `left()`, `spend(t0)`, `take(fn)`. Each
+  game's own queue and order stay its own (mini golf's idle-time `SOON`, Soma's `soonPump`, trick shots' workers, the game
+  lab's sandbox), being different in kind. Checked: the same boards' caches fill as fast before and after.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:

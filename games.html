@@ -18345,7 +18345,21 @@ const BOARD_KIT = (() => {
     const saveBest = () => { try { localStorage.setItem(key, JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
     return { BEST, saveBest };
   }
-  return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best };
+  /* A share of the page's time for the work boards no one plays need (Oct 27: "do the recording schedule next"): a maze, a
+     table, a puzzle, a duel or a round made or recorded a little at a time as boards come into view, `ms` of work in every
+     `every` ms, so a field of new boards never stalls a frame. Six games kept the same two numbers and the same arithmetic.
+     `left()` is what is left of this window (a new one starts once `every` has passed), `spend(t0)` takes off the time since
+     t0, and `take(fn)` runs fn(left) if any is left and takes off what it took (undefined if none was). */
+  function budget(ms, every = 30){
+    let at = 0, left = 0;
+    const B = {
+      left(){ const t = performance.now(); if (t - at > every){ at = t; left = ms; } return left; },
+      spend(t0){ left -= performance.now() - t0; },
+      take(fn){ const l = B.left(); if (l <= 0) return undefined; const t0 = performance.now(); try { return fn(l); } finally { B.spend(t0); } },
+    };
+    return B;
+  }
+  return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget };
 })();
 /* ═══ ARCADE — the parts every arcade board shares (Sep 27: "the basics should be the same
    for all games"): sound made in the browser, tilt steering on a phone, and a difficulty
@@ -47340,15 +47354,11 @@ const TILT_APP = (() => {
     return M;
   }
   // (boards only looked at get their maze a few at a time, as Sokoban deals: until then a bare floor)
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(8);
   function mazeSoon(c, r){
     if (MINE.has(gkey(c, r))) return mineMaze(c, r);
     const idx = boardIdx(c, r), lv = levelAt(idx), M = MAZES.get(idx * 8 + lv);
-    if (M) return M;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
-    if (budget <= 0) return null;
-    const t0 = performance.now(), out = mazeFor(c, r); budget -= performance.now() - t0;
-    return out;
+    return M || SOON.take(() => mazeFor(c, r)) || null;
   }
 
   /* ─── PLAYING ─── */
@@ -48598,13 +48608,12 @@ const PINBALL_APP = (() => {
   }
   const readyNow = M => { while (M.job) work(M, 50); return M; };
   const finishJob = M => { wantPar(M); while (M.job || M.par == null) work(M, 50); return M; };
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(10);
   function tableSoon(c, r, M, urgent){
     M = M || tableFor(c, r);
     if (!M.job && !(M.parWanted && M.par == null)) return M;
     if (urgent){ work(M, URGENT_MS); return M; }
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 10; }
-    if (budget > 0){ const t0 = performance.now(); work(M, Math.min(budget, 4)); budget -= performance.now() - t0; }
+    SOON.take(left => work(M, Math.min(left, 4)));
     return M;
   }
 
@@ -50529,14 +50538,10 @@ const NONOGRAM_APP = (() => {
     return P;
   }
   // (boards only looked at get their puzzle a few at a time, as the tilt maze's mazes: until then a plain board)
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(8);
   function puzzleSoon(c, r){
     const idx = boardIdx(c, r), P = PUZZLES.get(idx * 8 + levelAt(idx));
-    if (P) return P;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
-    if (budget <= 0) return null;
-    const t0 = performance.now(), out = puzzleFor(c, r); budget -= performance.now() - t0;
-    return out;
+    return P || SOON.take(() => puzzleFor(c, r)) || null;
   }
   // the grid square at (u, v) of the board, or -1 in the bands (clamped: the nearest square, for a drag that wanders off)
   function cellAt(P, u, v, clamp){
@@ -51769,15 +51774,12 @@ const TANKS_APP = (() => {
   }
   function duelOf(T){ const G = duelNew(T); while (!G.done) duelStep(G); return G; }
   const DUELS = new Map();
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(8);
   function duelSoon(T){
     const key = (T.idx * 8 + T.lv) * 8 + T.n; let G = DUELS.get(key);
     if (!G){ G = duelNew(T); DUELS.set(key, G); if (DUELS.size > CAP) DUELS.delete(DUELS.keys().next().value); }
     // (a turn more while the board's clock is within 8 s of the last one made, a few turns' worth of time in 30 ms)
-    if (!G.done && G.len - loopT(G) < 8){
-      const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
-      if (budget > 0){ duelStep(G); budget -= performance.now() - t; }
-    }
+    if (!G.done && G.len - loopT(G) < 8) SOON.take(() => duelStep(G));
     return G;
   }
   const loopT = (G, at) => { const t = at != null ? at : now() / 1000 - G.start; return G.done ? ((t % G.len) + G.len) % G.len : clamp(t, 0, G.len); };
@@ -52916,8 +52918,7 @@ const TANKMAZE_APP = (() => {
   /* ─── A BOARD NO ONE PLAYS ─── a round of two computer tanks on the board's first maze, worked out a little at a time
      (RECS, `recSoon`: STEP by STEP while the page has time, about 6 ms in 30) and played back: the tanks sampled REC_HZ times a
      second, the shells as their ways, the bursts as they came. Kept for the latest REC_CAP boards. */
-  const RECS = new Map(), REC_CAP = 500;
-  let budgetAt = 0, budget = 0;
+  const RECS = new Map(), REC_CAP = 500, SOON = BOARD_KIT.budget(6);
   const recKey = (idx, lv) => ((idx * 8 + lv) * 8 + SET.n) * 2 + (SET.powers ? 1 : 0);
   function recSoon(c, r, force){
     const idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
@@ -52928,7 +52929,7 @@ const TANKMAZE_APP = (() => {
       RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     } else { RECS.delete(key); RECS.set(key, E); }
     if (E.done) return E;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 6; }
+    const budget = SOON.left();
     if (budget <= 0 && !force) return E;
     const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
     let n = 0;
@@ -52937,7 +52938,7 @@ const TANKMAZE_APP = (() => {
       stepRound(G, G.tanks.map((_, k) => cpuCmd(G, k)), STEP);
       if (++n % 30 === 0 && !force && performance.now() - t0 > budget) break;
     }
-    budget -= performance.now() - t0;
+    SOON.spend(t0);
     if (G.over){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
       Object.assign(E, { T: G.t, shots: G.shots, booms: G.booms, winner: G.winner, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles, done: true, G: null }); }
     return E;
@@ -53712,8 +53713,7 @@ const GOLFTANK_APP = (() => {
   /* ─── BOARDS NO ONE PLAYS ─── a round of two computer tanks on the board's hole, worked out a few steps at a time (as the
      tank maze's), sampled REC_HZ times a second, and played back on the page's clock with a rest; the hole's movers are drawn
      at the recording's own clock, so the shells bounce off them where they were. */
-  const RECS = new Map(), REC_CAP = 300;
-  let budgetAt = 0, budget = 0;
+  const RECS = new Map(), REC_CAP = 300, SOON = BOARD_KIT.budget(4, 40);
   const recKey = (idx, lv) => idx * 8 + lv;
   function recSoon(c, r, hk, force){
     const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
@@ -53728,7 +53728,7 @@ const GOLFTANK_APP = (() => {
     if (E.done) return E;
     /* (4 ms in every 40, a tenth of the page's time, not 6 in 30: a step is both tanks thinking, so a slice runs past its end
         by up to a step, and zoomed out on a slow phone these battles took a fifth of every second, Oct 27) */
-    const t = performance.now(); if (t - budgetAt > 40){ budgetAt = t; budget = 4; }
+    const budget = SOON.left();
     if (budget <= 0 && !force) return E;
     const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
     let n = 0;
@@ -53740,7 +53740,7 @@ const GOLFTANK_APP = (() => {
       //  60 ms on a slow phone, past the 6 ms this was meant to take, Oct 27: "mini-golf and golf tanks are to slow to be usable")
       if (!force && performance.now() - t0 > budget) break;
     }
-    budget -= performance.now() - t0;
+    SOON.spend(t0);
     if (G.over || G.t >= 40){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
       Object.assign(E, { T: G.t, shots: G.shots.map(b => ({ k: b.k, t0: b.t0, end: b.end, P: b.P, kind: b.kind, tx: b.tx, ty: b.ty })), beams: G.beams,
                          booms: G.booms, blownAt: G.blownAt, winner: G.winner, done: true, G: null }); }
@@ -56325,8 +56325,7 @@ const LEVELS_APP = (() => {
    - best(key): the most stars a board, in localStorage `key`, the latest 500. */
 const MATCH_KIT = {
   recordings(o){
-    const RECS = new Map(), SOON = new Map(), every = Math.round(1 / (o.hz * o.tick));
-    let soonT = 0;
+    const RECS = new Map(), SOON = new Map(), every = Math.round(1 / (o.hz * o.tick)), TIME = BOARD_KIT.budget(8);
     function recOf(idx, lv){
       const k = o.key(idx, lv);
       let M = RECS.get(k);
@@ -56355,15 +56354,16 @@ const MATCH_KIT = {
       if (M && (M.done || (!urgent && M.G.t >= o.reel))) return M;
       if (urgent){ const R = M || recOf(idx, lv); recWork(R, 12, true); return R; }
       SOON.set(o.key(idx, lv), [idx, lv, performance.now()]);
-      const t = performance.now();
-      if (t - soonT > 30){
-        soonT = t; const end = t + 8;
+      const left = TIME.left();
+      if (left > 0){
+        const t = performance.now(), end = t + left;
         for (const [k, [i, l, at]] of SOON){
           if (performance.now() > end) break;
           if (t - at > 2000){ SOON.delete(k); continue; }
           const R = recOf(i, l); recWork(R, end - performance.now(), false);
           if (R.G.t >= o.reel || R.done) SOON.delete(k);
         }
+        TIME.spend(t);
       }
       return M && M.frames.length ? M : null;
     }
