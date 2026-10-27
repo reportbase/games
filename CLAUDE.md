@@ -589,6 +589,41 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       slowing to its floor, air hockey's wall and goal, the well bending a ball, the arenas' pieces by level and their twins, a
       bumper, a wall and a portal each doing their part and a sliding wall where its clock says, arena matches ending at levels 1,
       3 and 5, all eight themes painted and drawn, and a real drag up the table stepping the paddle in and back on letting go.
+- **Air hockey** (Oct 27: "this is a cool game. what other games could we create like pong.", then "1": "air hockey, played
+  properly"): `AIRHOCKEY_APP`, id `airhockey`, after Pong, built on Pong's ways (ticks of 1/60 s in `SUB` 8 steps, recordings, par,
+  stars, the row as settings, hands heard before the field). A table `W` (0.62) by 1 (`boardShape`, `frameFit` 1.1), your goal at
+  the near end; each end rail but for a goal's mouth `GOAL` (0.26) in its middle.
+  - **The puck and the mallets** (`stepPuck`, `hitMallet`): the puck slides with a little air drag (`drag`, by level), loses
+    `E_RAIL` off each rail, at most `VMAX` × the level's speed. A mallet is a circle anywhere in its own half (`bounds`); the puck
+    meets it as a circle meets a circle, the mallet as heavy as the table: off at the mallet's speed into it plus its bounce
+    (`E_MAL`; a swing of 1 sends a still puck off at 1.9). Pinned against a rail the puck stays on the table, its speed into the
+    rail gone, and the mallet gives way, so it is never inside a mallet (the smoke test watches nine matches).
+  - **The match**: first to 7 (5 or 11 from the row). A goal puts the puck back at rest in the half of the one scored on after
+    `GOAL_T`; a puck at rest on the middle line for `STILL_T` (3 s) is nudged to a side, and one that has hardly moved for twice
+    that anywhere (dug into a corner) is sent toward the middle with the mallets stepping back.
+  - **The computer** (`think`, `LV` by level, the ring level plus the Difficulty): looks again every `react` s; a puck coming at its
+    goal, it gets in front at its guess of the crossing (`crossing`, off by `err`, more on a steep one); a puck slow in its half, it
+    lines up behind it toward your goal (off by `aimErr`, a bank off a rail at `bank`'s rate) and strikes through it; a puck with no
+    "behind" on the table (a corner, the end rail) it shoves out and steps back (`shove`, `back`: pressing on, it pinned the puck in
+    the corner for whole matches); else it drifts home. It speeds up and slows down under `acc`. Against the steady player
+    (`STEADY`) over 6 matches to 7: level 1 and 2 it won every one, level 3 half, level 4 one, level 5 none; a match 2–3.5 minutes.
+  - **Hands** (`pressAt`, `handAt`, `HAND`, `OWN`): while a match is under way a press on the table is your mallet's, which goes
+    where the finger is (held to your half, at most `HAND_V` 5 a second); with two players each touch takes the mallet of its
+    half. Arrows move the near mallet (W A S D too with one player, the far one with two), the screen's way.
+  - **Themes** (`THEMES`, `LOOK`, `paint`, by board unless the row picks one): Classic (white with air holes, red and blue), Neon,
+    Stars and stripes, Wood rail (green top, a wooden rail). Mallets are a disc, a darker ring and a knob, squashed a moment as they
+    strike; the puck leaves a trail; a strike rings (a hard one gold, the table shaking), a rail flashes, a goal rings its mouth;
+    dot-digit scores by the middle line. Sounds: a clack, a rail's thud by how hard, a buzzer and the puck dropping.
+  - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`): the steady player against the board's computer, 9 numbers a
+    frame at 30 a second for 40 s; the framed board's match to its end for par (goals let in winning, `parOf`); stars as Pong's
+    (localStorage `airhockey.best`).
+  - **The row** (`tilesOf`, `setting`, `ORDER`, localStorage `airhockey.settings`): New match, Theme, Goals (5, 7, 11), Players,
+    Puck speed, Your mallet (Small, Normal, Large: `MALLETS` 0.034, 0.042, 0.052), Trail, Shake & flash, Sound.
+  - The smoke test checks the levels by ring, a swing passed into the puck, the rail and a goal only in the mouth, the puck never
+    inside a mallet, matches ending at levels 1, 3 and 5 with the steady player's share falling, a recording's par, the four themes
+    painted, and real input: a click starting, a real drag putting the mallet under the finger across and along, the real arrow, a
+    match won with stars and a best, two real fingers each taking a mallet with the view still, a real click on the Goals tile,
+    and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
