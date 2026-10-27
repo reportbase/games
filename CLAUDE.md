@@ -103,7 +103,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates `LEVEL_SAMPLE` (10) holes at each of levels 1, 3 and 5
   and fails unless they climb (see Difficulty). Sunken ground goes at most BASE deep. All water and sand are shapes
   (`lake`, `sand`, see below): water and sand written in cells (`~`, `s`) are read as shapes (`shapify`, see "No painted
-  water or sand"); the old reading of cells blurred (`groundAt`, `softAmount`) is still there but nothing reaches it. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
+  water or sand"); the old reading of cells blurred (`softAmount`) went on Oct 27 (dead code). Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
   or one left, runs them on the page's clock, and a new game starts its clock there, so a tap never resets them, Oct 10): the `path`
   (a rider round a loop, see the editor's notes; the shuttle and the orbit became paths on Oct 10) and the `gate` (a bar rising out
   of the ground and sinking). A path's loop and a turnstile's or door's sweep are dotted only with Wireframe on, or on the hole
@@ -124,7 +124,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   draw non-visible boards and no animation when panning or resizing."): until then `cellItems(c, r, bp)` swapped pieces by
   the board's size on screen (longer rail pieces under 1500 px, plain rails, bumpers and boulders under 600, no number
   under 300), and for a while a board under 300 px showed its ground alone. Now every board has all its full pieces,
-  whatever its size (the field still asks for none under `itemMinPx`, 20). `railPV`/`railPH` are no longer drawn.
+  whatever its size (the field still asks for none under `itemMinPx`, 20). (`railPV`/`railPH`, and the `PIECES`/`near`/`mid`/`fine` switches always on, went on Oct 27.)
   **The ground's grains** (Oct 14: "could mini-golf and chess beneifit from better LOD handeling of this application." …
   "yes", on the ground first): after Levels, detail that comes and goes with nothing seen to change. The ground has three
   grains, `GROUND_ROWS` 78, 39 and 13 rows (`land`, `landM`, `landL` kinds: 7,488, 1,872 and 208 triangles). Each grain carries
@@ -161,7 +161,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   each unit lit along its top and shaded along its foot, repeating without a seam; laid on in the piece's units over u, so a
   brick is the same size everywhere). The field gives an item kind a picture from `geometry.userData.map`, read at the most
   anisotropy the card has. Far off the picture's mipmaps blend toward its average, so these kinds left `TWINNED` (bumpers and
-  boulders still fade). `cladGeo` stays for the tests. Same views: framed 595k → 253k triangles, zoomed in 263k → 102k, at the
+  boulders still fade). `cladGeo` went on Oct 27 (dead code). Same views: framed 595k → 253k triangles, zoomed in 263k → 102k, at the
   zoom ceiling 1.76M → 841k; screenshots before and after show the same holes. The smoke test fails over 350,000 framed.
   **New boards a few at a time** (the same request): sliding over boards not seen yet quadrupled the page's work, each new
   board making its hole (`genSrc`, `keepApart`) and its ground mesh (`groundGeo`) the frame it appeared, about 20 ms a board
@@ -2351,8 +2351,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
   **The right rail is a scroll bar for where you are** (Oct 25: "the right scroll bar for speed lever should be more like a normal
   scroll bar to move the current position. it should follow the auto motion for the direction of movement.", then "A window
-  round you" and "Remove it"): it was the speed lever (the dial's θ unrolled, half as fast since Oct 17, `EdgeGauge.THRUST_SCALE`,
-  still there for nothing now). Now `#thrustZone` is a scroll bar along the direction of motion (`railDir`: `LAST_DRIFT`, snapped
+  round you" and "Remove it"): it was the speed lever (the dial's θ unrolled, half as fast since Oct 17; `EdgeGauge.THRUST_SCALE` and the
+  rail's speed functions went on Oct 27). Now `#thrustZone` is a scroll bar along the direction of motion (`railDir`: `LAST_DRIFT`, snapped
   to cells as `stepBoard` snaps it while auto motion runs, its fallback viewer-right then; else ahead) over a window `RAIL_WIN`
   (50) boards long centred where you were (`RAIL`, `window.__posRail`): top ahead, bottom behind. The thumb (`#railThumb`) is
   where you are in it (`railFrac`), as tall as the screen's share of it (`railThumb`, 5%–40%), and moves as you move: auto
@@ -2389,6 +2389,13 @@ the tvf-core library (`// >>> copied from draw.html, unchanged: tvf-core`) and `
 across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails when they drift from draw's `main`
 (`DRAW_HTML=../draw/draw.html` compares with a local draw). `TVF_CURVE` is the curve library; the older `TVF` is the
 3D shape helper the field-lib uses, a different thing.
+
+- **Dead code taken out** (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and
+  the shared kits"): functions and constants nothing reached, found by counting every name in the page (a name written once
+  is its own declaration): `LOD_APP` and `HELLO_APP` (apps off the list since Sep 25), mini golf's `softAmount`, `cladGeo`,
+  `railPV`/`railPH` and its always-on `PIECES` switches, the right rail's old speed functions, chess's `switchSides`,
+  `askCoachHere`, `renderEvalBar_LEGACY_HTML`, the field-lib's `buildExtrudedSlab`, `rungToN`, `bondiK`, and a few more.
+  To look again: a name that appears once in `games.html` is never used (an IIFE's own name aside).
 
 ## Conventions
 - Comments explain *why*, at length, and often quote the owner's request with a

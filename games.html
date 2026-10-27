@@ -1844,7 +1844,6 @@ function dctII(s){
    Override `SHADE_LEAVES` and rebuild SHADE_COEFFS for a different look. */
 const SHADE_LEAVES = [0.60, 0.72, 0.85, 0.95, 1.0];
 let SHADE_COEFFS = dctII(SHADE_LEAVES);
-function setShadeLeaves(arr){ SHADE_COEFFS = dctII(arr); }
 
 /* heightShade(h ∈ [0,1]) → clamped band-limited shade value. */
 function heightShade(h){
@@ -1856,8 +1855,6 @@ function heightShade(h){
 
 /* ─── Special Relativity helpers ──────────────────────────────────────── */
 /* Bondi k-factor: k = sqrt((1-β)/(1+β)). At β=0, k=1 (identity). */
-function bondiK(b){ return Math.sqrt((1 - b) / (1 + b)); }
-function phiToBeta(phi){ return Math.tanh(phi); }
 
 /* Closed-form Thomas–Wigner rotation for two perpendicular boosts:
    tan(Ω) = tanh(φ_∥/2) · tanh(φ_⊥/2). */
@@ -2230,58 +2227,6 @@ function extractProfile(opts){
     for (let i = 0; i < SEG; i++) if (prof[i] < floor) prof[i] = floor;
   }
   return prof;
-}
-
-/* ─── Helper: rung → band-limit N ─────────────────────────────────────── */
-/* The closeup demo's convention: N = 2^(rung + 2). rung 0 → N=4 (very
-   smooth), rung 1 → N=8, rung 4 → N=64, rung 6 → N=256. Each rung is a
-   doubling, so detail rises geometrically with rung. */
-function rungToN(rung){ return Math.pow(2, rung + 2); }
-
-/* ─── Helper: extruded thin-slab geometry from a closed profile ───────── */
-/* Takes a profile array (SEG samples of r(θ)) and builds a THREE-style
-   indexed BufferGeometry: front + back disks at ±thickness/2, joined by
-   a rim quad strip. Optional aspect parameter elongates X relative to Z
-   (the closeup's leaves use {ax: 1.4, az: 0.7} to get an oval, not a disk).
-
-   Returns { positions: Float32Array, indices: Uint16Array | Uint32Array }
-   so the caller can construct whichever geometry type they need (this
-   module doesn't import THREE itself — keeps the dep graph clean). */
-function buildExtrudedSlab(profile, opts = {}){
-  const SEG       = profile.length;
-  const thickness = opts.thickness ?? 0.06;
-  const ax        = opts.ax        ?? 1.0;
-  const az        = opts.az        ?? 1.0;
-  const TH = thickness;
-
-  const pos = [];
-  for (let i = 0; i < SEG; i++){
-    const t = i / SEG * 2 * PI;
-    const r = profile[i];
-    const x = Math.cos(t) * r * ax;
-    const z = Math.sin(t) * r * az;
-    pos.push(x,  TH, z);
-    pos.push(x, -TH, z);
-  }
-  const idx = [];
-  for (let i = 0; i < SEG; i++){
-    const a = 2 * i, b = 2 * ((i + 1) % SEG);
-    idx.push(a, b, a + 1, b, b + 1, a + 1);
-  }
-  // front + back center vertices + fan triangulation.
-  const cF = pos.length / 3; pos.push(0,  TH, 0);
-  const cB = pos.length / 3; pos.push(0, -TH, 0);
-  for (let i = 0; i < SEG; i++){
-    const a = 2 * i, b = 2 * ((i + 1) % SEG);
-    idx.push(cF, a, b);
-    idx.push(cB, b + 1, a + 1);
-  }
-  const ArrayType = (pos.length / 3) > 65535 ? Uint32Array : Uint16Array;
-  return {
-    positions: new Float32Array(pos),
-    indices:   new ArrayType(idx),
-    vertexCount: pos.length / 3,
-  };
 }
 
 export { FFT_WORST };   // PI comes from field-math
@@ -2693,21 +2638,9 @@ const EdgeGauge = {
     const mn = EdgeGauge.tiltMin();
     return Math.max(0, Math.min(1, (p - mn) / Math.max(1, PITCH_MAX - mn)));
   },
-  // top of the rail = full forward, centre = stopped, bottom = full reverse
-  THETA_CAP: 0.49 * Math.PI,
   // The turn rail: left end −180°, middle 0 (facing forward), right end +180°.
   yawFromFrac: f => (Math.max(0, Math.min(1, f)) - 0.5) * 360,
   yawToFrac:   y => Math.max(0, Math.min(1, ((((y % 360) + 540) % 360) - 180) / 360 + 0.5)),
-  /* HALF AS FAST (Oct 17: "velocity scroll bar maximum value is to fast, reduce by 1/2."): the speed is sin θ, and every
-     place on the rail now asks for half the speed it did (THRUST_SCALE), so the top is half the old top and the rail keeps its
-     feel along the way. The nub reads back through the same scale, so it stays under the thumb; a speed past the rail's
-     (a swipe's or a key's) sits at the end. */
-  THRUST_SCALE: 0.5,
-  thrustFromFrac: f => Math.asin(EdgeGauge.THRUST_SCALE * Math.sin(EdgeGauge.THETA_CAP * Math.max(-1, Math.min(1, 1 - 2 * Math.max(0, Math.min(1, f)))))),
-  thrustToFrac:   th => {
-    const s = Math.max(-1, Math.min(1, Math.sin(th) / EdgeGauge.THRUST_SCALE));
-    return Math.max(0, Math.min(1, 0.5 - (Math.asin(s) / EdgeGauge.THETA_CAP) * 0.5));
-  },
 };
 /* CEILING ON THE CAMERA. The zoom leg is a straight lerp from 0.75 world
    units (standing on a board) to this, and every reader of "how high am I"
@@ -3235,7 +3168,6 @@ let _onGrab    = () => {};   // called on pointer-down (host clears spring/momen
    dial visibility). Calling with `true` makes both semiUpdatePointer's
    automatic refresh AND any external updateSRReadouts() calls paint
    into the DOM panels. Calling with `false` silences them. */
-function setReadoutsEnabled(on){ _readouts = !!on; }
 
 function semiLayout(flip){
   const W = 220, H = 120;
@@ -4228,7 +4160,6 @@ const PAN = { on: false, id: null, lastX: 0, lastY: 0,
                      dtMs: 16,     // gap between move samples — the swipe test scales with it
                      movedMs: 0 }; // when the hand last moved — a swipe lifts while moving
 const PAN_FRICTION = 0.92;        // per-frame glide decay after release
-const PAN_TAP_THRESH = 6;         // px of travel below which a press counts as a tap
 /* ─── A FRAMED BOARD IS STICKY ─────────────────────────────────────────────
    How far the hand has to travel before the view starts moving with it. Free
    flight breaks almost at once — there is nothing to hold on to, and a
@@ -6043,7 +5974,6 @@ Object.assign(st, {
 /* Constants used by buildInstances and the rung ladder. */
 const HARM_MAX = 48;
 const PAWN_MAXK = 64;
-let seed0 = 20;
 
 /* ─── three.js scene + standard lighting (from createScene) ───────────── */
 const { renderer, scene, camera } = createScene({ bg: 0x06080c });
@@ -6214,15 +6144,6 @@ wholeMesh.frustumCulled = false;
 wholeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(wholeMesh);
 let _wholeN = 0;
-function setWholeBoard(x, z, size){
-  if (_wholeN >= MAXW) return false;
-  if (_wholeN >= wholeMesh.instanceMatrix.count) wholeMesh = growInstanced(wholeMesh, Math.min(MAXW, wholeMesh.instanceMatrix.count * 2));
-  _p.set(x, 0.01, z); _s.set(size, size, size);
-  _m.compose(_p, _q, _s);
-  wholeMesh.setMatrixAt(_wholeN, _m);
-  _wholeN++;
-  return true;
-}
 boardMesh.count = 0;
 scene.add(boardMesh);
 
@@ -6335,18 +6256,6 @@ const _evalLabelTex = new THREE.CanvasTexture(_evalLabelCv);
 _evalLabelTex.minFilter = THREE.LinearFilter; _evalLabelTex.magFilter = THREE.LinearFilter;
 const evalBar3DLabel = new THREE.Mesh(_evalBarGeo, new THREE.MeshBasicMaterial({
   map: _evalLabelTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }));
-let _evalLabelLast = '';
-function _drawEvalLabel(text){
-  if (text === _evalLabelLast) return;
-  _evalLabelLast = text;
-  const cx = _evalLabelCv.getContext('2d');
-  cx.clearRect(0, 0, 256, 64);
-  cx.font = 'bold 36px ' + UI_MONO;   // one style for every margin readout
-  cx.fillStyle = '#eaf0f6'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
-  cx.shadowColor = 'rgba(0,0,0,.8)'; cx.shadowBlur = 4;
-  cx.fillText(text, 128, 34);
-  _evalLabelTex.needsUpdate = true;
-}
 for (const m of [evalBar3DTrack, evalBar3DFill, evalBar3DMid]){
   m.renderOrder = 11;     // above margin tiles; the bar is to the side, clear of the labels
   m.visible = false;
@@ -6903,8 +6812,6 @@ const _panelGeo = new THREE.PlaneGeometry(1, 1);   // XY plane → stands vertic
    Defaults, used for a board taken over from autoplay. A board imported from a
    PGN swaps both panels for its own tag pairs — see panelLabelsForBoard(). */
 const ENGINE_NAME = 'Stockfish';
-const PANEL_LABELS_E = [{ text: ENGINE_NAME, edge: 'computer' },
-                        { text: 'Player',    edge: 'player'   }];
 const PANEL_LABELS_W = [{ text: 'tangent.fit', edge: 'center'   }];
 
 /* ─── PGN panel text ───────────────────────────────────────────────────────
@@ -7305,7 +7212,6 @@ function _drawPanel(p){
    left because the review badge is cut from the same cloth and still uses
    the panel geometry helpers (_sidePanelOutX, panelStripH) to place itself
    beyond the board's margins. */
-const sidePanelE = null, sidePanelW = null;
 /* Milliseconds of the frame just rendered, published by frame(). */
 let _uiDt = 16;
 /* Is the view actually being DRAGGED? Both gestures raise a flag on pointer-
@@ -7345,7 +7251,6 @@ window.SIDE_PANELS = SIDE_PANELS;
 /* Deferred by one double-tap window. A double on the margin is one gesture,
    not "toggle, then rotate" — so the toggle waits to see whether a second
    tap is coming, and the double cancels it. */
-function toggleSidePanels(){}            // nothing to toggle
 function toggleSidePanelsDeferred(){}
 function cancelSidePanelToggle(){}
 function updateSidePanels(){}            // the panels are not built — see above
@@ -9049,7 +8954,6 @@ let animPaused = false, animPauseAt = 0, animOffset = 0;
    back on for all games except mini-golf.", whose movers already ran on, so every board plays on while you pan.) */
 let animDilationOffset = 0, animDilationLast = null;
 function animTime(){ return (animPaused ? animPauseAt : performance.now()) - animOffset - animDilationOffset; }
-function pauseAnim(){  if (!animPaused){ animPauseAt = performance.now(); animPaused = true; } }
 window.fieldAnimTime = () => animTime();      // (for the tests: it runs on while the view moves)
 function resumeAnim(){ if (animPaused){ animOffset += performance.now() - animPauseAt; animPaused = false; } }
 
@@ -9516,14 +9420,6 @@ function coachHttpError(status, msg){
   }
   if (status === 429) return 'Rate limited — commentary will resume on a later move';
   return msg;
-}
-function coachNetError(e){
-  const m = String((e && e.message) || e);
-  if (/fetch|network|load failed/i.test(m)){
-    return 'Could not reach the gateway at ' + String(COACH.key || '(unset)')
-      + ' — check the URL in the menu, and that the Worker is deployed';
-  }
-  return m;
 }
 /* Drop everything in flight and shown — board switched, play exited. */
 function coachReset(){
@@ -10271,16 +10167,6 @@ function coachStartFromBoard(){
   COACH.stripOn = true;                          // the strip it just came from stays up
   _coachBadgeLast = '';                          // …and repaints as a verdict strip
   coachOnSettle();                               // say something about where the game stands
-}
-/* ASK CLAUDE, from wherever the gesture lives. coachPanelTap needs a game in
-   play, and a board you have only framed is not one yet — without the
-   enterPlay the gesture is a silent no-op on the most likely board to try it
-   on, the one you just flew to. */
-function askCoachHere(){
-  try {
-    if (!PLAY.on) enterPlay();
-    coachPanelTap('board');
-  } catch (e){ _reportError('ask coach', e); }
 }
 function coachPanelTap(side){
   if (!PLAY.on || !PLAY.game) return;
@@ -11368,28 +11254,6 @@ function renderEvalBar(){
   label.style.display = 'none';
   return;
 }
-function renderEvalBar_LEGACY_HTML(){
-  const { wrap, fill, label } = evalBarEls();
-  const menu = document.getElementById('menu');
-  const menuOpen = menu && !menu.hidden;
-  if (!PLAY.on || !PLAY.engine || menuOpen){ wrap.style.display = 'none'; label.style.display = 'none'; return; }
-  wrap.style.display = 'block'; label.style.display = 'block';
-  const g = PLAY.game;
-  let frac, text;
-  if (g.isCheckmate())                       { const w = g.turn() === 'b'; frac = w ? 1 : 0; text = w ? '1-0' : '0-1'; }
-  else if (g.isStalemate() || g.isDraw())    { frac = 0.5; text = '½'; }
-  else if (PLAY.eval && PLAY.eval.mate !== null){
-    frac = PLAY.eval.mate > 0 ? 0.97 : 0.03;
-    text = (PLAY.eval.mate > 0 ? '+M' : '-M') + Math.abs(PLAY.eval.mate);
-  } else if (PLAY.eval){
-    const cp = PLAY.eval.cp;
-    frac = Math.max(0.03, Math.min(0.97, 1 / (1 + Math.pow(10, -cp / 400))));   // win-prob curve
-    const pawns = cp / 100;
-    text = (pawns >= 0 ? '+' : '') + pawns.toFixed(1);
-  } else { frac = 0.5; text = '0.0'; }
-  fill.style.width = (frac * 100) + '%';
-  label.textContent = text;
-}
 
 /* ─── MultiPV analysis panel — top-N candidate lines for the side to move ── */
 function analysisEls(){
@@ -12069,24 +11933,6 @@ function resetGame(){
   renderEvalBar();
   afterSettle();
   if (!PLAY.provisional) saveSession();
-}
-/* Switch which colour you play (the engine takes the side you leave). The
-   board flips 180° so you view from your new colour, and if it's now the
-   engine's move it replies. The game position is untouched. */
-function switchSides(){
-  if (!PLAY.on) return;
-  PLAY.youAreWhite = !PLAY.youAreWhite;
-  engineAbort();
-  PLAY.thinking = false; PLAY.hint = null; PLAY.lines = []; PLAY.viewPly = null;
-  clearSelection();
-  const norm = a => { a = ((a % 360) + 360) % 360; return a >= 180 ? a - 360 : a; };
-  const snapped = Math.round((st.yaw || 0) / 90) * 90;
-  target.yaw = norm(snapped + 180);            // view from the other side
-  resetThrust();
-  frameBoard();
-  afterSettle();                                // engine replies if it's now its turn
-  renderAnalysis();
-  saveSession();
 }
 
 /* resignGame lives with the coach block now: it RECORDS the result on the
@@ -13175,7 +13021,6 @@ function bbGameIsLive(){
    you must reach the peek edge; open, the whole open row keeps it open; and
    it cannot oscillate, because leaving means leaving the OPEN top, which is
    higher than the collapsed one. */
-const BB_HOVER_MARGIN_PX = 10;           // a little grace, so the peek edge is reachable
 let bbMouseNear = null;                  // null = no mouse has spoken yet
 /* ─── THE MOUSE MOVING DOES NOTHING TO THE STRIP ──────────────────────────
    The strip used to rise when the pointer came near the bottom and drop when
@@ -13356,23 +13201,6 @@ function bbAngleForItemAt(u, x, n, itemExtent){
   const norm = Math.max(VCP.GRAIN,
                Math.min(1 - VCP.GRAIN, (x + extent * 0.5) / extent));
   return Math.atan(norm * 2 - 1) - u * (Math.PI / n);
-}
-/* Which continuous item is under screen offset `x` right now. This is
-   fisheye.invert, minus its wrap into [0, N): the drag needs the UNWRAPPED
-   value, because wrapping it is exactly what makes a drag jump when the item
-   you are holding crosses the seam. */
-function bbItemAt(x, angle, n, itemExtent){
-  const extent = n * itemExtent * VCP.NORMALISER;
-  const norm = Math.max(VCP.GRAIN,
-               Math.min(1 - VCP.GRAIN, (x + extent * 0.5) / extent));
-  return (Math.atan(norm * 2 - 1) - angle) / (Math.PI / n);
-}
-/* Screen x relative to the strip's centre — the coordinate both of the above
-   speak, and the one layoutBoardBrowser places tiles in. */
-function bbCentreX(clientX){
-  const strip = document.getElementById('boardBrowser');
-  const r = strip ? strip.getBoundingClientRect() : { left: 0, width: innerWidth };
-  return clientX - r.left - r.width / 2;
 }
 
 
@@ -15386,8 +15214,6 @@ function rungLevelFor(bp, prevLevel){
    Keyed by world grid address; capped, because a long flight visits a lot of
    cells and losing the band for one frame costs nothing. */
 const _rungMem = new Map();
-const RUNG_MEM_MAX = 50000;
-function rungMemKey(gx, gz){ return gx * 8388608 + gz; }
 /* SMOOTH, NOT SNAPPED (Oct 14: "ok", on chess's pieces fading as Levels' bodies and mini golf's do). A board's level is a
    number, x = log2(bp / RUNG_BP0) + 1, and it is drawn at the rung it always was, L = floor(x), in full over the upper half
    of the rung's range and fading toward the rung below over the lower half (_rungW = 1 − 2·(x − L)): at the bottom of the
@@ -15520,7 +15346,6 @@ function buildInstances(){
   const _nearD = camHt / Math.tan(_nearA);
   const FARDEPTH = Math.max(6, Math.min(1500, Math.ceil(Math.max(_farD, _farDSize) / SPZ) + 20));
   const NEAR_ROWS = Math.max(3, Math.ceil(_nearD / SPZ) + 2);
-  const _fogAnchor = Math.sqrt(camHt*camHt + (FARDEPTH*SPZ)*(FARDEPTH*SPZ));
   const pawnK = Math.max(1, Math.min(PAWN_MAXK, st.rung));
   ladder.ensureGeometry(pawnK);
   resetPawns();
@@ -15528,8 +15353,6 @@ function buildInstances(){
 
   // FOVEATED PERCEPTUAL BUDGET (Cauchy clarity, flat base in ANGLE).
   const PXPERLEAF = 5;
-  const BUDGET_GEO = Math.round((innerWidth * innerHeight) / (PXPERLEAF * PXPERLEAF));
-  const LEAF_BUDGET = st.budget || BUDGET_GEO;
 
   const alongNear = (window.LAB && window.LAB.clarityAnchor === 'gaze') ? cg.back : 1;
   const clarityAt = clarityAt_ctx(camHt, alongNear);
@@ -16471,7 +16294,6 @@ function handleGroundTap(hit, ev){
         }
         clearSelection();                   // the first click of the pair may have lifted a piece
         PLAY.hint = null;
-        const SP0 = gridSpacing();
         const gx = Math.round(hit.x / gridSpacingX()), gz = Math.round(hit.z / gridSpacingZ());
         const onFramed = target.shown
           && Math.round(target.boardX / gridSpacingX()) === gx && Math.round(target.boardZ / gridSpacingZ()) === gz;
@@ -17920,47 +17742,9 @@ const _compassEl = (() => {
        cellItems(col, row, cellPx){ return null; },
      });
 
-   setFieldApp(null) restores the built-in hello-world app below — every
-   cell announcing its own coordinate. The rest of the machine (flight,
+   The rest of the machine (flight,
    selection, browser, compass, field shape) is app-agnostic. */
 
-const HELLO_APP = {
-  name: 'hello-world',
-  cellLines(col, row){ return [['r', String(row)], ['c', String(col)]]; },
-  /* The first piece placed through the app seam: one sculpted pawn
-     standing on the origin cell, marking (0,0) as home. */
-  itemGeometries: {
-    pawn: T => {
-      // The sculpted pawn from the bucket's pawn.tvf3d, once it has loaded.
-      // No hand-authored profile stands in for it any more: if the file
-      // is not there, the cell gets the same filled circle the boards get,
-      // so a missing asset looks identical everywhere in the field.
-      if (typeof FIELDS !== 'undefined' && FIELDS.p){
-        try { return buildFieldGeometry(24, FIELDS.p); } catch {}
-      }
-      // Same rule as the ladder: nothing while the fetch is in flight, the
-      // disc only once the load has settled without a pawn. Null makes the
-      // emitter skip WITHOUT caching, so the item is retried every frame
-      // and becomes the real pawn the moment its field lands.
-      return (typeof FIELDS_SETTLED !== 'undefined' && !FIELDS_SETTLED)
-        ? null : discGeometry(T);
-    },
-  },
-  cellItems(col, row){
-    return (col === 0 && row === 0)
-      ? [{ kind: 'pawn', u: 0.5, v: 0.5, scale: 0.42, color: 0xf0e6d2 }]
-      : null;
-  },
-  drawIcon(ctx, s, col, row){
-    ctx.fillStyle = window.CELL_FILL_CSS || '#4a6d8c';
-    ctx.fillRect(0, 0, s, s);
-    ctx.fillStyle = 'rgba(230,238,243,.85)';
-    ctx.textAlign = 'center';
-    ctx.font = '600 ' + Math.round(s * 0.22) + 'px ui-monospace, monospace';
-    ctx.fillText('r ' + row, s / 2, s * 0.44);
-    ctx.fillText('c ' + col, s / 2, s * 0.72);
-  },
-};
 /* ═══ CHESS: THE BOTTOM ROW IS A POSITION EDITOR (Oct 13: "I really like that bottom browser. lets use it in chess to create
    custom chess games instead of selecting a board. similar to mini-golf, but for chess to create custom chess games.") ══
    As mini golf's row is its hole editor, chess's is a board editor: opening the row (the three dots, or Set up a position
@@ -23388,368 +23172,6 @@ const GALLERY_APP = (() => {
   };
 })();
 
-/* ═══ FIELD LOD — one weird shape per board, cycling through its own levels ══
-   A demonstration app, and an honest one: nothing here fakes detail. Each
-   board carries a SHAPE — a .tvf3d field synthesised from a handful of
-   coefficients — and shows it rebuilt at a different rung count every few
-   beats. What you watch appear and disappear is not a morph between two
-   models; it is the same continuous surface asked a coarser and then a finer
-   question. That is the whole property: a field has no resolution of its
-   own, so a level of detail is an argument rather than an asset. */
-const LOD_APP = (() => {
-  /* Coefficients, not samples. A row is a cosine harmonic in HEIGHT
-     (aRow[m] = Σ_n cos(nπh)·Aa[n][m]) and a column an angular lobe count, so
-     a handful of terms is a whole shape and the file stays sparse.
-     Terms are [n, m, a, b]: n = height harmonic, m = lobes, a/b = cos/sin.
-     A nonzero b at some m rotates that lobe — varying it with n is what puts
-     a twist up the shape. */
-  /* ─── CLOSED BY ARITHMETIC ────────────────────────────────────────────
-     Every shape here is a SOLID. The builder makes a tube — rings from y=0
-     to y=1 with no cap — so a shape whose radius does not reach zero at its
-     ends is open, and you look straight down inside it and see whatever is
-     behind. That is what "the objects blend into each other" was: not depth
-     sorting, not transparency, just missing lids.
-     The fix is arithmetic rather than cap geometry. The height axis is
-     cos(nπh), so every row counts +1 at the base and (−1)^n at the top: use
-     only EVEN n and both ends see the same sum, and making that sum zero
-     closes top and bottom at once. The balancing correction rides on n=2,
-     the gentlest even row, so closing a shape barely moves its body.
-
-     THREE TIERS, by how much screen a plant needs to be worth drawing.
-     Terms are [n, m, a, b] — n the height harmonic, m the lobe count. */
-  const CANOPY = [
-    ['spindle', 0xc9a227, [[0,0,0.34,0],[4,0,-0.1,0],[2,0,-0.24,0]]],
-    ['urn', 0xb8926a, [[0,0,0.34,0],[2,0,-0.28,0],[6,0,-0.06,0]]],
-    ['gourd', 0xd9a05b, [[0,0,0.32,0],[4,0,-0.14,0],[0,2,0.05,0],[2,0,-0.18,0],[2,2,-0.05,0]]],
-    ['column', 0x9aa7b5, [[0,0,0.26,0],[6,0,-0.05,0],[0,8,0.035,0],[2,0,-0.21,0],[2,8,-0.035,0]]],
-    ['bell', 0xd9c06a, [[0,0,0.3,0],[2,0,-0.24,0],[6,0,-0.06,0]]],
-    ['twist', 0xd36f5f, [[0,0,0.32,0],[4,0,-0.08,0],[0,5,0.06,0],[2,0,-0.24,0],[2,5,-0.06,0]]],
-    ['trefoil', 0x5fa8d3, [[0,0,0.3,0],[4,0,-0.08,0],[0,3,0.08,0],[2,0,-0.22,0],[2,3,-0.08,0]]],
-    ['scroll', 0xc98fd0, [[0,0,0.26,0],[2,0,-0.26,0],[0,1,0.07,0],[2,1,-0.07,0]]],
-    ['lantern', 0xe8b45f, [[0,0,0.26,0],[2,0,-0.29,0],[4,0,0.03,0],[0,6,0.035,0],[2,6,-0.035,0]]],
-    ['obelisk', 0xa8b0bd, [[0,0,0.24,0],[2,0,-0.18,0],[4,0,-0.06,0],[0,4,0.05,0],[2,4,-0.05,0]]],
-  ];
-  const SHRUB = [
-    ['star', 0xb07fd0, [[0,0,0.26,0],[4,0,-0.08,0],[0,7,0.06,0],[2,0,-0.18,0],[2,7,-0.06,0]]],
-    ['ripple', 0x62c3b0, [[0,0,0.26,0],[6,0,-0.06,0],[0,6,0.045,0],[2,0,-0.2,0],[2,6,-0.045,0]]],
-    ['knot', 0xe0885f, [[0,0,0.26,0],[4,0,-0.06,0],[0,2,0.07,0],[2,0,-0.2,0],[2,2,-0.07,0]]],
-    ['fan', 0x7fb2e8, [[0,0,0.24,0],[2,0,-0.24,0],[0,9,0.05,0],[2,9,-0.05,0]]],
-    ['bud', 0xe07f9a, [[0,0,0.24,0],[4,0,-0.09,0],[0,5,0.04,0],[2,0,-0.15,0],[2,5,-0.04,0]]],
-    ['pinch', 0x8fbf6a, [[0,0,0.26,0],[2,0,-0.29,0],[4,0,0.03,0],[0,4,0.04,0],[2,4,-0.04,0]]],
-    ['tusk', 0xcf6d8e, [[0,0,0.24,0],[2,0,-0.24,0],[0,1,0.08,0],[2,1,-0.08,0]]],
-    ['coral', 0xef8f6a, [[0,0,0.24,0],[4,0,-0.07,0],[0,11,0.04,0],[2,0,-0.17,0],[2,11,-0.04,0]]],
-    ['cup', 0x86c6d8, [[0,0,0.24,0],[2,0,-0.19,0],[6,0,-0.05,0]]],
-    ['drum', 0xbfa06a, [[0,0,0.22,0],[6,0,-0.04,0],[0,3,0.05,0],[2,0,-0.18,0],[2,3,-0.05,0]]],
-  ];
-  const UNDER = [
-    ['moss', 0x7fa86a, [[0,0,0.2,0],[2,0,-0.2,0],[0,6,0.03,0],[2,6,-0.03,0]]],
-    ['thorn', 0x8fd0a8, [[0,0,0.18,0],[4,0,-0.05,0],[0,11,0.035,0],[2,0,-0.13,0],[2,11,-0.035,0]]],
-    ['grain', 0xd8c98a, [[0,0,0.16,0],[2,0,-0.16,0],[0,2,0.04,0],[2,2,-0.04,0]]],
-    ['shell', 0xc9b0d8, [[0,0,0.18,0],[2,0,-0.13,0],[4,0,-0.05,0],[0,4,0.03,0],[2,4,-0.03,0]]],
-    ['pebble', 0x9fa8a0, [[0,0,0.16,0],[2,0,-0.16,0]]],
-    ['sprig', 0x6fbf8f, [[0,0,0.16,0],[6,0,-0.04,0],[0,8,0.025,0],[2,0,-0.12,0],[2,8,-0.025,0]]],
-    ['bead', 0xe0a8bf, [[0,0,0.14,0],[4,0,-0.04,0],[0,5,0.025,0],[2,0,-0.1,0],[2,5,-0.025,0]]],
-    ['frond', 0x9ed07f, [[0,0,0.16,0],[2,0,-0.16,0],[0,12,0.03,0],[2,12,-0.03,0]]],
-  ];
-  /* THE LADDER. rings = 4+K and seg = 8+2K, so K is the only dial: at 1 the
-     shape is a faceted hint, at 30 it is smooth. Chosen to step visibly —
-     doubling-ish, because equal steps at the top are invisible and equal
-     steps at the bottom are all there is to see. */
-  const RUNGS = [1, 2, 4, 7, 11, 16, 22, 30];
-  const HOLD_MS = 900;                    // a beat per rung
-  /* ─── TWO WAYS TO CHOOSE A PLANT'S RUNG ─────────────────────────────
-     'law'     — BY THE BOARD'S APPARENT SIZE. The same octave law the chess
-                 pieces obey (rungLevelFor): one rung per doubling of cellPx.
-                 Far boards hold their plants at rung 0 — the first harmonic,
-                 a near-cylinder — and every halving of distance buys a rung.
-                 Detail is spent where the eye is, by geometry, not by a chosen
-                 distance. This is the paper's rule made a garden.
-     'breathe' — BY THE BEAT. Each plant climbs the ladder and back down on
-                 its own phase (the triangle wave below), so one board shows
-                 several levels at once: the levels on DISPLAY, the original
-                 demonstration.
-     The key `l` toggles them; the board's title says which is on. The two
-     are the paper's §9 in one scene: the law is what the levels ARE, the
-     breathing is what they LOOK like one after another. */
-  let LOD_MODE = 'law';
-  /* ONE HOME FOR THE FLIP. Three ways in now — the `l` key, the menu item and
-     the console method — and a rule written out three times is a rule that
-     ends up meaning three things. */
-  const flipLodMode = () => (LOD_MODE = LOD_MODE === 'law' ? 'breathe' : 'law');
-  const rungIndexForPx = px => Math.min(RUNGS.length - 1, rungLevelFor(px || 0, null));
-
-  /* Mt must exceed the highest lobe count above, or that term is silently
-     DROPPED and the shape quietly loses what makes it itself — `fan` (m=9)
-     and `thorn` (m=11) came out as plain cones at Mt=9, with no error. */
-  const Nh = 8, Mt = 13;
-  function fieldText(terms){
-    const Aa = Array.from({ length: Nh }, () => new Array(Mt).fill(0));
-    const Ab = Array.from({ length: Nh }, () => new Array(Mt).fill(0));
-    for (const [n, m, a, b] of terms){
-      if (n >= Nh || m >= Mt) continue;
-      Aa[n][m] += a; Ab[n][m] += b || 0;
-    }
-    const fmt = r => r.map(v => v.toFixed(5)).join(' ');
-    return 'TVF3D ' + Nh + ' ' + Mt + '\n'
-         + Aa.map(r => 'Aa ' + fmt(r)).join('\n') + '\n'
-         + Ab.map(r => 'Ab ' + fmt(r)).join('\n') + '\n';
-  }
-  /* Parsed once. The FIELD is the asset; the meshes below are all derived
-     from it, which is the point being demonstrated. */
-  /* One flat list, each carrying the pixel size at which it starts to be
-     worth drawing. Canopy pieces are visible from the air; undergrowth only
-     exists once a board is a good fraction of the screen — which is what
-     "smaller ones only visible when you zoom in" means, and it is also what
-     keeps the plant count sane at altitude. */
-  const TIERS = [[CANOPY, 0, 0.55], [SHRUB, 90, 0.34], [UNDER, 260, 0.20]];
-  const ALL = [];
-  for (const [list, minPx, size] of TIERS)
-    for (const e of list) ALL.push({ e, minPx, size });
-  const FIELDS_L = ALL.map(({ e: [name, color, terms], minPx, size }) => {
-    let C = null;
-    try { C = parseTVF3D(fieldText(terms)); }
-    catch (err){ console.warn('[lod] ' + name + ' did not parse', err); }
-    /* THE SHAPE'S HIGHEST LOBE COUNT, kept because the sampling law below
-       needs it and `terms` does not survive this map. m is the second slot
-       of [n, m, a, b]. */
-    const lobes = terms.length ? Math.max(...terms.map(t => t[1])) : 0;
-    return { name, color, C, minPx, size, lobes };
-  });
-  const TIER_OF = n => FIELDS_L[n].minPx;
-
-  const S = FIELDS_L.length;
-  const hash2 = (a, b, salt) => {
-    let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663) ^ ((salt | 0) * 83492791);
-    h = Math.imul(h ^ (h >>> 15), 2246822519);
-    h = Math.imul(h ^ (h >>> 13), 3266489917);
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;      // 0..1
-  };
-  /* ─── THE GARDEN ──────────────────────────────────────────────────────
-     A bed is BIGGER THAN A BOARD. Species is chosen from the block of
-     BED×BED boards a cell falls in, not from the cell — so a stand of the
-     same shape runs across four or five boards and the field reads as one
-     planting seen in pieces, rather than as tiles that each happen to hold
-     something. Two species per bed, mixed per plant, so an edge between beds
-     interleaves instead of falling on a straight line.
-     Everything is a pure function of world position: no state, nothing to
-     store, and the same garden every time you fly back to a place. */
-  const BED = 5;
-  /* A bed names one species PER TIER, so a stand of tall shapes has its own
-     shrubs and its own undergrowth beneath it — the planting reads as one
-     garden at every distance instead of three unrelated scatterings. */
-  const bedSpecies = (c, r) => {
-    const bc = Math.floor(c / BED), br = Math.floor(r / BED);
-    const out = [];
-    let base = 0;
-    for (const [list] of TIERS){
-      out.push(base + Math.floor(hash2(bc, br, 11 + out.length) * list.length));
-      base += list.length;
-    }
-    return out;                                   // [canopy, shrub, under]
-  };
-  const shapeAt = (c, r) => bedSpecies(c, r)[0];
-  /* How many plants a board holds at this distance. Needed BEFORE the tiers
-     are walked, because the grid of plots has to be sized for the whole
-     planting — work it out twice and the two would disagree. */
-  const tierCount = (c, r, t) =>
-    t === 0 ? 1 + Math.floor(hash2(c, r, 3) * 2)
-  : t === 1 ? 2 + Math.floor(hash2(c, r, 4) * 3)
-  :           4 + Math.floor(hash2(c, r, 5) * 5);
-  const plantCount = (c, r, px) => {
-    let n = 0;
-    for (let t = 0; t < TIERS.length; t++){
-      if (px < TIERS[t][1]) break;
-      n += tierCount(c, r, t);
-    }
-    return n;
-  };
-  // A per-PLANT offset: not per board, or every plant on a board would rise
-  // and fall together and the board would read as one object breathing.
-  const phaseAt = (c, r, i) =>
-    Math.floor(hash2(c, r, 200 + (i | 0)) * (RUNGS.length * 2 - 2));
-  const rungAt = (c, r, i) => {
-    const step = Math.floor(Date.now() / HOLD_MS) + phaseAt(c, r, i);
-    /* Up the ladder and back down, without repeating the ends — a triangle
-       wave, so a shape grows into detail and falls out of it rather than
-       snapping back to coarse. */
-    const span = RUNGS.length * 2 - 2;
-    const at = ((step % span) + span) % span;      // not `i` — that is the plant
-    return at < RUNGS.length ? at : span - at;
-  };
-
-  /* One geometry per (shape, rung), built on first use and kept. 64 in all,
-     which is why they are lazy: a board you never visit costs nothing. */
-  const geoms = {};
-  for (let s = 0; s < S; s++)
-    for (let k = 0; k < RUNGS.length; k++)
-      geoms['s' + s + 'k' + k] = T => {
-        const f = FIELDS_L[s];
-        if (!f.C) return null;
-        try { return buildFieldGeometry(RUNGS[k], f.C); }
-        catch (e){ console.warn('[lod] build failed', f.name, RUNGS[k], e); return null; }
-      };
-
-  return {
-    name: 'field lod',
-    /* THE GARDEN'S MENU — the flat form, one unheaded block, which is all nine
-       of the simple apps should ever need. This is also the first control the
-       rung rule has ever had: it was the `l` key and nothing else, which is no
-       control at all on a phone. The label names the state, so the item is the
-       readout as well as the switch. */
-    menu: [
-      { label: () => 'Rung rule: ' + (LOD_MODE === 'law' ? 'by size' : 'breathing'),
-        title: 'Which rule picks a plant\u2019s rung. By size is the octave law — '
-             + 'one rung per doubling of the board on screen, the same law the '
-             + 'chess pieces obey. Breathing walks every plant up the ladder and '
-             + 'back down on a beat, so you can watch the levels themselves. '
-             + 'The l key does the same.',
-        on: () => flipLodMode(), keepOpen: true },
-    ],
-    cellFar: { light: 0x1e232c, dark: 0x161a21 },
-    itemMinPx: 18,                     // the canopy is worth drawing early
-    itemGeometries: geoms,
-    /* ONE square per board, tinted to its shape. The board is a plinth here,
-       not a game — a chequer would say there were squares to move between. */
-    cellGrid(c, r){
-      const f = FIELDS_L[shapeAt(c, r)];
-      return { n: 1, colors: [FieldKit.mixInt(0x20262f, f.color, 0.18)] };
-    },
-    fabricCell(ctx, rect, i, j){
-      const f = FIELDS_L[shapeAt(i, j)];
-      const hex = '#' + FieldKit.mixInt(0x20262f, f.color, 0.18).toString(16).padStart(6, '0');
-      ctx.fillStyle = hex;
-      ctx.fillRect(rect.x, rect.y, rect.w + 0.5, rect.h + 0.5);
-    },
-    /* PLANTS, NOT A CENTREPIECE. One object per board made every cell look
-       like a display case; a garden is uneven, so the count varies and the
-       positions are scattered — but scattered by HASH, so they are the same
-       every visit and a board is not a different place each time you look.
-       Each plant carries its OWN rung phase: neighbours on one board sit at
-       different levels of detail at the same instant, which is the whole
-       demonstration standing still in front of you rather than needing you
-       to wait for a beat. */
-    /* cellPx is the board's size on screen, and it is what decides how much
-       of the garden exists. Far off you get a few canopy pieces; closer, the
-       shrubs; closer still, undergrowth between them. Nothing fades — a
-       plant is either drawn or it is not — because a half-transparent solid
-       is the very thing that made these look like they were bleeding into
-       one another. */
-    cellItems(c, r, cellPx){
-      const px = cellPx || 0;
-      const species = bedSpecies(c, r);
-      /* ─── A PLOT EACH ────────────────────────────────────────────────
-         Scattering plants at random points overlapped 56% of the time —
-         unavoidably, because ten plants a third of a cell wide do not fit
-         in a cell by luck. So the board is divided into a grid of plots,
-         each plant takes one, and it jitters only WITHIN its own plot.
-         THE PLOT IS ALSO THE BUDGET: a plant is capped to the square it was
-         given, so it cannot reach its neighbour whatever size its tier
-         would like. A crowded board therefore grows smaller plants rather
-         than tangled ones, which is what a crowded bed actually looks like.
-         The plots are dealt in a shuffled order, or the tiers would fill the
-         board in reading order and every board would have its big plant in
-         the same corner. */
-      const total = plantCount(c, r, px);
-      const G = Math.max(1, Math.ceil(Math.sqrt(total)));
-      const plot = 1 / G;
-      const deal = [];
-      for (let i = 0; i < G * G; i++) deal.push(i);
-      deal.sort((x, y) => hash2(c, r, 900 + x) - hash2(c, r, 900 + y));
-
-      const out = [];
-      let slot = 0;
-      for (let t = 0; t < TIERS.length; t++){
-        const [list, minPx] = TIERS[t];
-        if (px < minPx) break;                    // not close enough for this tier
-        /* More of the small stuff, fewer of the big: a garden is mostly
-           ground cover with a few standing things in it. */
-        const n = tierCount(c, r, t);
-        for (let i = 0; i < n; i++, slot++){
-          // Mostly the bed's species, sometimes a neighbour's — a planting
-          // with exactly one of everything looks stencilled.
-          let sIdx = species[t];
-          if (hash2(c, r, 300 + slot) > 0.82){
-            const alt = bedSpecies(c + 1, r + 1)[t];
-            sIdx = alt;
-          }
-          const f = FIELDS_L[sIdx];
-          const k = LOD_MODE === 'law' ? rungIndexForPx(px) : rungAt(c, r, slot);
-          const cell = deal[slot % (G * G)];
-          const gx = cell % G, gy = (cell / G) | 0;
-          // What the tier would like, then what the plot allows. 0.46 rather
-          // than 0.5 leaves a hairline between neighbours, so two plants at
-          // full size in adjacent plots still read as two.
-          const want = f.size * (0.78 + hash2(c, r, 100 + slot) * 0.5);
-          const sc   = Math.min(want, plot * 0.92);
-          const room = Math.max(0, plot / 2 - sc / 2);
-          const u = (gx + 0.5) * plot + (hash2(c, r, 60 + slot) * 2 - 1) * room;
-          const v = (gy + 0.5) * plot + (hash2(c, r, 80 + slot) * 2 - 1) * room;
-          out.push({ kind: 's' + sIdx + 'k' + k, u, v, scale: sc, color: f.color });
-        }
-      }
-      return out;
-    },
-    /* WHAT A RUNG CAN CARRY, AND WHERE THE REST OF IT GOES.
-       A rung draws seg = 8 + 2K directions, and that many samples of a closed
-       turn carry lobes up to (seg − 1)/2 and no finer. A lobe above that is NOT missing and NOT smoothed — it FOLDS onto
-       a hanger already there, at full amplitude. That is the one thing about
-       this garden the screen cannot tell you: a 12-lobed frond at the far rung
-       is not a blurred frond, it is a 2-lobed one, drawn as confidently as a
-       shape that really has two. Measured across the shelf: frond, coral and
-       thorn are folded for four of the eight rungs, fan, column and sprig for
-       three. The message rule's own case — a capability that quietly went away.
-       BOTH LINES ARE ORDINARY SAMPLING and stay here. seg samples of a closed
-       turn carry lobes up to (seg − 1)/2; above that a lobe reflects onto a
-       lower one. This drove a library call for a day — it does not need to. */
-    _segFor(K){ return Math.max(8, 8 + K * 2); },
-    _carries(seg){ return Math.max(0, Math.floor((seg - 1) / 2)); },
-    _fold(lobes, seg){ const q = ((lobes % seg) + seg) % seg; return Math.min(q, seg - q); },
-    cellTitle(c, r){
-      const sp = bedSpecies(c, r).map(i => FIELDS_L[i].name);
-      const items = this.cellItems(c, r, 1e4);          // the whole planting
-      const ks = [...new Set(items.map(it => RUNGS[+it.kind.split('k')[1]]))];
-      /* Keyed by name: a bed plants the same species many times and the fold
-         is a property of the shape at a rung, not of the plant. */
-      const folded = new Map();
-      for (const it of items){
-        const cut = it.kind.slice(1).split('k');
-        const f = FIELDS_L[+cut[0]], seg = this._segFor(RUNGS[+cut[1]]);
-        if (f && f.lobes > this._carries(seg))
-          folded.set(f.name, f.name + ' ' + f.lobes + '→' + this._fold(f.lobes, seg));
-      }
-      return sp.join(' / ') + ' bed — ' + items.length + ' plants, rungs '
-           + ks.sort((x, y) => x - y).join(' ')
-           + (LOD_MODE === 'law' ? ' · by size (the octave law)' : ' · by beat (breathing)')
-           + (folded.size ? ' · folded: ' + [...folded.values()].join(', ') : '');
-    },
-    /* The mode is the app's own state; the key handler asks the app, so no
-       other app has to know the garden has modes. */
-    toggleLodMode(){ return flipLodMode(); },
-    lodMode(){ return LOD_MODE; },
-    drawIcon(ctx, size, c, r){
-      const f = FIELDS_L[shapeAt(c, r)];
-      ctx.fillStyle = '#20262f'; ctx.fillRect(0, 0, size, size);
-      // The shape's own silhouette at its current rung, drawn from the field.
-      const K = RUNGS[rungAt(c, r, 0)], seg = Math.max(8, 8 + K * 2);
-      ctx.fillStyle = '#' + f.color.toString(16).padStart(6, '0');
-      ctx.beginPath();
-      for (let i = 0; i <= seg; i++){
-        const th = i / seg * Math.PI * 2;
-        let rad = 0;
-        if (f.C) for (let n = 0; n < f.C.Nh; n++){
-          const cn = Math.cos(n * Math.PI * 0.5);
-          for (let m = 0; m < f.C.Mt; m++)
-            rad += cn * (f.C.Aa[n][m] * Math.cos(m * th) + f.C.Ab[n][m] * Math.sin(m * th));
-        }
-        const x = size / 2 + Math.cos(th) * rad * size * 1.1;
-        const y = size / 2 + Math.sin(th) * rad * size * 1.1;
-        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
-      }
-      ctx.closePath(); ctx.fill();
-    },
-  };
-})();
-
 /* (THE MAP-TILE APP IS REMOVED. It fetched OpenStreetMap tiles by identity
    addressing, and it answered its question: the near field works — every cell
    a different, particular place — and the far field cannot, because one
@@ -25399,7 +24821,6 @@ const CROSSING_APP = (() => {
      of the eight ways: tap or swipe toward where you want to go — straight or diagonal — or use the
      keys. The pieces' strikes on your square are CHECK: step out of it before it lands. (The
      promotion ladder that was here is gone — a king does not promote.) */
-  const RANK_NAME = { K: 'king' };
   const moveFor = (g, dr, dc) => [dr, dc];
   // A direction on the board → one of the eight king moves.
   function eightWay(dx, dy){
@@ -34135,7 +33556,7 @@ const AIR_APP = (() => {
      meshes, bodies and cabs. A blast on the road wrecks what it catches —
      a burnt-out shell, left where it stopped. */
   const TR = { body: null, cab: null, dead: new Map(), cur: [], kills: 0, lanes: new Map(), nextId: 1 };
-  const TR_PERIOD = 7, TR_MAX = 260;
+  const TR_MAX = 260;
   const VEH = [ { k: 'car', len: 0.8, h: 0.3, w: 0.38, cab: [0.5, 0.55, 0.9, 0.0] },
                 { k: 'van', len: 0.95, h: 0.42, w: 0.4, cab: [0.35, 0.3, 0.95, 0.18] },
                 { k: 'truck', len: 1.5, h: 0.48, w: 0.42, cab: [0.25, 0.35, 0.95, 0.4] },
@@ -36421,7 +35842,6 @@ const TILES_APP = (() => {
     return out;
   }
   const PAD = 0xcfdff2, PAD2 = 0xbfd3ec;
-  const onPad = v => v != null && v >= (N - 3) / N && v < (N - 1) / N;
   const floorAt = (i, g) => { const r = (i / N) | 0, c = i % N, odd = (r + c) % 2;
     if (r === N - 3 || r === N - 2) return odd ? PAD2 : PAD;
     if (r === N - 1) return (g && g.t - g.flash < 0.35) ? 0xe0443a : odd ? DANGER2 : DANGER;
@@ -38914,27 +38334,8 @@ const GOLF_MAKE = SIZE => {
   const COURSE = HOLES.length;
   const at = (H, i, j) => (i < 0 || j < 0 || i >= NX || j >= NY) ? '#' : H.map[j][i];
   const cellAt = (H, x, y) => at(H, Math.floor(x / CW), Math.floor(y / CW));
-  /* ROUND PONDS AND BUNKERS (Oct 8: "sand traps and lake should be rounded, not squared"). The map is still written in
-     cells, but what a point IS is read from the cells blurred: how much of the water (or sand) lies near it, weighed by a
-     soft round brush of SOFT cells, and it is water where that is more than half. A straight shore stays where the cells
-     meet; an outside corner is rounded off and an inside one filled in, so a pond made of squares lies as a pond. The
-     physics and the drawing both ask here, so the ball goes in the water exactly where the water is drawn. Walls stay
-     square (they are walls), a bridge's planks stay where they are, and past the board's edge the edge cell carries on,
-     so a lake that runs to the rail meets it square. */
-  const SOFT = 0.42 * CW;
-  const _erf = x => { const t = 1 / (1 + 0.3275911 * Math.abs(x)), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x < 0 ? -y : y; };
-  const _cdf = x => 0.5 * (1 + _erf(x / (SOFT * Math.SQRT2)));
-  function softAmount(H, x, y, kinds){
-    const i0 = Math.floor(x / CW), j0 = Math.floor(y / CW);
-    let v = 0;
-    for (let j = j0 - 2; j <= j0 + 2; j++) for (let i = i0 - 2; i <= i0 + 2; i++){
-      const ch = H.map[Math.max(0, Math.min(NY - 1, j))][Math.max(0, Math.min(NX - 1, i))];
-      if (!kinds.includes(ch)) continue;
-      const ax = i <= 0 ? -1 : i * CW, bx = i >= NX - 1 ? 2 : (i + 1) * CW, ay = j <= 0 ? -1 : j * CW, by = j >= NY - 1 ? 2 : (j + 1) * CW;
-      v += (_cdf(bx - x) - _cdf(ax - x)) * (_cdf(by - y) - _cdf(ay - y));
-    }
-    return v;
-  }
+  /* (Water and sand written in cells were read from the cells blurred, softAmount, from Oct 8; since Oct 11 every hole's
+      water and sand are shapes, shapify, and the cells are grass, so that reading went: Oct 27, "remove dead code".) */
   /* (a lake's line, a curve, lies within a few hundredths of a cell of the cells it was read from, so a sliver of water
       could lie across a bridge's end, where the old cells met it square: water within BRIDGE_M of a plank is planks, Oct 11) */
   const BRIDGE_M = 0.08;
@@ -38945,10 +38346,8 @@ const GOLF_MAKE = SIZE => {
   function groundAt(H, x, y){
     const ch = cellAt(H, x, y);
     if (ch === '#' || ch === '=' || ch === 'T' || ch === 'O') return ch;
-    if ((H._wet != null ? H._wet : (H._wet = H.map.some(r => r.includes('~')))) && softAmount(H, x, y, '~=') > 0.5) return '~';   // (painted water, from before Oct 11: a bridge alone is no water)
     const sh = H.land && H.land.length ? shapesOf(H) : null;   // (the shapes: Oct 10)
     if (sh && sh.lake.length && sh.lake.some(s => blobIn(s.B, x, y))) return nearBridge(H, x, y) ? '=' : '~';
-    if (softAmount(H, x, y, 's') > 0.5) return 's';
     if (sh && sh.sand.length && sh.sand.some(s => blobIn(s.B, x, y))) return 's';
     return '.';
   }
@@ -39138,8 +38537,8 @@ const GOLF_MAKE = SIZE => {
     return f;
   }
   function sandMix(H, x, y){
-    let f = sm01((softAmount(H, x, y, 's') - 0.4) / 0.2);
-    if (f >= 1 || !(H.land && H.land.length)) return f;
+    let f = 0;
+    if (!(H.land && H.land.length)) return f;
     for (const s of shapesOf(H).sand){
       const [x0, y0, x1, y1] = s.B.box, m = CW * 0.3; if (x < x0 - m || x > x1 + m || y < y0 - m || y > y1 + m) continue;
       f = Math.max(f, sm01(blobEdge(s.B, x, y, CW * 0.3) * (blobIn(s.B, x, y) ? 1 : -1) / (CW * 0.35) + 0.5));
@@ -40326,75 +39725,8 @@ const GOLF_MAKE = SIZE => {
   const MAT_COL = { wood: { core: 0x3a2716, units: [0x8a6440, 0x7a5636, 0x94704a, 0x6e4c2e], far: 0x7a5a3c },
                     stone: { core: 0x5e5a54, units: [0x9a958c, 0x8a857c, 0xa8a196, 0x7f7a70, 0xb0a998], far: 0x8a8680 },
                     brick: { core: 0xbab3a6, units: [0xa04a32, 0x8f4029, 0xb0573a, 0x96452f, 0x7e3b28], far: 0xa04a32 } };
-  /* A box W × Hh × D (x, y, z; its bottom at y0) clad in a material. u: a unit's size in the box's own units, so a half-cell
-     rail piece (drawn at half the scale) asks for units twice as big and they come out the same size on the hole. */
-  function cladGeo(T3, mat, W, Hh, D, y0, u, seedBase){
-    let seed = seedBase || 4242;
-    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-    const M = MAT_COL[mat] || MAT_COL.wood, pos = [], nrm = [], col = [], c = new T3.Color();
-    /* FACES NO ONE CAN SEE (Oct 12, "its heavy" … "yes, proceed"): a unit's back, against the core, faces into the wall, and
-       every underside faces down, and the camera is always above (mini golf's tilt floor is 62°); both were only ever culled.
-       They are left out (skip: the box's faces as three.js orders them, 0 +x, 1 −x, 2 +y, 3 −y, 4 +z, 5 −z), a third of the
-       triangles of every rail, wall, fence and planter piece, and nothing on the screen changes. */
-    const box = (cx, cy, cz, sx, sy, sz, hex, jit, skip) => {
-      const g = new T3.BoxGeometry(sx, sy, sz).toNonIndexed(); g.translate(cx, cy, cz);
-      const P = g.attributes.position.array, N = g.attributes.normal.array;
-      c.setHex(hex).multiplyScalar(1 - (jit == null ? 0.12 : jit) * rnd());
-      for (let f = 0; f < 6; f++){
-        if (f === 3 || (skip && skip.includes(f))) continue;
-        for (let i = f * 18; i < f * 18 + 18; i++){ pos.push(P[i]); nrm.push(N[i]); }
-        for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
-      }
-    };
-    const unit = () => M.units[Math.floor(rnd() * M.units.length)];
-    box(0, y0 + Hh / 2, 0, W, Hh, D, M.core, 0);
-    const top = y0 + Hh, from = Math.max(y0, -0.12 * u / 0.25);            // nothing laid far below the ground
-    const t = 0.018 * u / 0.25, gap = 0.014 * u / 0.25;                       // how proud a unit stands, and the joint
-    // lay one face: along its length `len` (centred) and up its height, out from the core along n (the face at distance off)
-    function face(len, axis, n, off){
-      const place = (a0, a1, b0, b1, hex) => {
-        const am = (a0 + a1) / 2, bm = (b0 + b1) / 2, la = a1 - a0 - gap, lb = b1 - b0 - gap, o = off + t / 2 * (0.6 + 0.8 * rnd());
-        if (axis === 'x') box(am, bm, n * o, la, lb, t, hex, null, [n > 0 ? 5 : 4]); else box(n * o, bm, am, t, lb, la, hex, null, [n > 0 ? 1 : 0]);   // (its back, against the core: left out)
-      };
-      if (mat === 'brick'){
-        const bh = 0.09 * u / 0.25, bl = 0.25 * u / 0.25;
-        for (let r = 0, y = from; y < top - 1e-6; r++, y += bh){
-          const y1 = Math.min(top, y + bh);
-          for (let x = -len / 2 - (r & 1 ? bl / 2 : 0); x < len / 2 - 1e-6; x += bl) place(Math.max(-len / 2, x), Math.min(len / 2, x + bl), y, y1, unit());
-        }
-      } else if (mat === 'stone'){
-        for (let y = from; y < top - 1e-6;){
-          const h = (0.11 + rnd() * 0.08) * u / 0.25, y1 = Math.min(top, y + h);
-          for (let x = -len / 2; x < len / 2 - 1e-6;){ const l = (0.14 + rnd() * 0.22) * u / 0.25, x1 = Math.min(len / 2, x + l); place(x, x1, y, y1, unit()); x = x1; }
-          y = y1;
-        }
-      } else {
-        const pw = 0.13 * u / 0.25;
-        for (let x = -len / 2; x < len / 2 - 1e-6; x += pw) place(x, Math.min(len / 2, x + pw), from, top - 0.01 * u / 0.25 * rnd(), unit());
-      }
-    }
-    face(W, 'x', 1, D / 2); face(W, 'x', -1, D / 2); face(D, 'z', 1, W / 2); face(D, 'z', -1, W / 2);
-    // and the top: a coping of the same units, laid across
-    const cap = mat === 'wood' ? 0.13 : mat === 'brick' ? 0.25 : 0.22;
-    for (let x = -W / 2; x < W / 2 - 1e-6;){ const l = (mat === 'stone' ? 0.14 + rnd() * 0.2 : cap) * u / 0.25, x1 = Math.min(W / 2, x + l);
-      box((x + x1) / 2, top + t / 2, 0, x1 - x - gap, t, D + 2 * t, unit()); x = x1; }
-    const g = new T3.BufferGeometry();
-    g.setAttribute('position', new T3.Float32BufferAttribute(pos, 3));
-    g.setAttribute('normal', new T3.Float32BufferAttribute(nrm, 3));
-    g.setAttribute('color', new T3.Float32BufferAttribute(col, 3));
-    g.userData.vertexColors = true;
-    /* WHAT IT FADES TO (Oct 14, the pieces after the ground): every point pulled into the core's box and every colour to the
-       material's far colour, so at a weight of 1 the units lie flat on the core in one colour, a plain box exactly as
-       cladPlain draws it, and a board can step down to that with nothing changing on the screen. */
-    const far = new T3.Color(M.far), n = pos.length / 3, P2 = new Float32Array(n * 3), C2 = new Float32Array(n * 3);
-    const lo = [-W / 2, y0, -D / 2], hi = [W / 2, top, D / 2];
-    for (let i = 0; i < n * 3; i++) P2[i] = Math.max(lo[i % 3], Math.min(hi[i % 3], pos[i]));
-    for (let i = 0; i < n; i++){ C2[i * 3] = far.r; C2[i * 3 + 1] = far.g; C2[i * 3 + 2] = far.b; }
-    g.setAttribute('pos2', new T3.BufferAttribute(P2, 3)); g.setAttribute('col2', new T3.BufferAttribute(C2, 3));
-    g.setAttribute('nrm2', new T3.BufferAttribute(Float32Array.from(nrm), 3));
-    g.userData.morph = true;
-    return g;
-  }
+  /* (cladGeo, a piece built brick by brick, Oct 8 to Oct 20, went on Oct 27, "remove dead code": since Oct 20 every piece
+      is a painted box, cladBox, and only a test still made one.) */
   /* PAINTED, NOT BUILT (Oct 20: "the mini-golf application is to slow, what is expensive?" … "yes"). Measured: a framed field
      of holes drew 595,000 triangles a frame, ten times a board game's, and half of them were the rails: each half-cell rail
      piece was 126 to 392 triangles of bricks, stones or planks each standing proud of the core (cladGeo), about 12,000 a
@@ -40598,8 +39930,6 @@ const GOLF_MAKE = SIZE => {
     // Each hole's ground, one board wide (placed at the middle, scale 1): +u is −x, +v is −z, the height is y.
     ...Object.fromEntries(HOLES.flatMap((H, k) => [['land' + k, takeGround('land' + k, T => groundGeo(T, H))], ['landM' + k, takeGround('landM' + k, T => groundGeo(T, H, GROUND_ROWS[1]))], ['landL' + k, T => groundGeo(T, H, GROUND_ROWS[2])]])),
     // the rail as a plain box, for boards too small on screen to show its planks or bricks (Oct 9)
-    railPV: T => { const g = new T.BoxGeometry(2 * RT / CW, 1.76, 1.02); g.translate(0, -1.2 + 0.88, 0); return g; },
-    railPH: T => { const g = new T.BoxGeometry(1.02, 1.76, 2 * RT / CW); g.translate(0, -1.2 + 0.88, 0); return g; },
     ...Object.fromEntries(HOLES.map((H, k) => ['wire' + k, T => wireGeo(T, H)])),
   };
   /* THE HOLE NUMBER, in the board's far left corner: seven-segment digits on a dark plate, up above
@@ -40645,9 +39975,6 @@ const GOLF_MAKE = SIZE => {
        later: "still not very good. restore full drawing functionaility. no special handeling. only thing is dont draw
        non-visible boards and no animation when panning or resizing."): every board in view has all its pieces, whatever
        its size (the field still asks for none under itemMinPx, as for every app). */
-    const PIECES = true;
-    const T3 = PIECES, T2 = PIECES, T1 = PIECES;
-    const near = T2, mid = T1, fine = T2;
     const g = opt ? null : GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
     if (live){
       const now = performance.now(), dt = g.last ? Math.min(0.05, (now - g.last) / 1000) : 0;
@@ -40667,19 +39994,17 @@ const GOLF_MAKE = SIZE => {
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
-    if (!PIECES){ for (const it of out){ it.u /= WD; it.scale = (it.scale || 0.25) / WD; it.lift = (it.lift || 0) / WD; } return out; }   // (the ground alone, Oct 12)
-    if (NUMS.on && !H.custom && !H.bare && mid) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
+    if (NUMS.on && !H.custom && !H.bare) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
-    // (Oct 9: a board further off draws its rail in pieces a cell long, or two, stretched along the rail, not thickened)
-    const rs = T3 ? 1 : T1 ? 2 : 4, nv = Math.ceil(2 * NY / rs), nh = Math.ceil(2 * NX / rs), plainRail = !T2, railCol = (MAT_COL[matOf(H)] || MAT_COL.wood).far;
+    const nv = 2 * NY, nh = 2 * NX;
     for (let j = 0; j < nv; j++) for (const i of [0, 1]){
-      const v0 = j * rs * CW / 2, v1 = Math.min(1, (j + 1) * rs * CW / 2), u = i ? WD - RT / 2 : RT / 2, v = (v0 + v1) / 2;
-      out.push({ kind: plainRail ? 'railPV' : 'railV_' + matOf(H), u, v, scale: CW / 2, sz: (v1 - v0) / (CW / 2), lift: hOf(H, u, v), color: plainRail ? railCol : 0xffffff });
+      const v0 = j * CW / 2, v1 = Math.min(1, (j + 1) * CW / 2), u = i ? WD - RT / 2 : RT / 2, v = (v0 + v1) / 2;
+      out.push({ kind: 'railV_' + matOf(H), u, v, scale: CW / 2, sz: (v1 - v0) / (CW / 2), lift: hOf(H, u, v), color: 0xffffff });
     }
     for (let q = 0; q < nh; q++) for (const j of [0, 1]){
-      const u0 = q * rs * CW / 2, u1 = Math.min(WD, (q + 1) * rs * CW / 2), u = (u0 + u1) / 2, v = j ? 1 - RT / 2 : RT / 2;
-      out.push({ kind: plainRail ? 'railPH' : 'railH_' + matOf(H), u, v, scale: CW / 2, sx: (u1 - u0) / (CW / 2), lift: hOf(H, u, v), color: plainRail ? railCol : 0xffffff });
+      const u0 = q * CW / 2, u1 = Math.min(WD, (q + 1) * CW / 2), u = (u0 + u1) / 2, v = j ? 1 - RT / 2 : RT / 2;
+      out.push({ kind: 'railH_' + matOf(H), u, v, scale: CW / 2, sx: (u1 - u0) / (CW / 2), lift: hOf(H, u, v), color: 0xffffff });
     }
     for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){
       const u = (i + 0.5) * CW, v = (j + 0.5) * CW;
@@ -40694,13 +40019,13 @@ const GOLF_MAKE = SIZE => {
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
              { kind: 'pennant', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level ? LEVEL_FLAG[H.level - 1] : 0xe0443a });
     // the level as dots on the flag, white (dark on the yellow of level 3), on a board near enough to see them
-    if (H.level && mid && !H.bare) out.push({ kind: 'flagDots' + H.level, u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level === 3 ? 0x2a2a2a : 0xffffff });
+    if (H.level && !H.bare) out.push({ kind: 'flagDots' + H.level, u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level === 3 ? 0x2a2a2a : 0xffffff });
     // The toys, where the clock has them: the game's own clock on the board in play, the wall clock elsewhere.
     const t = opt ? opt.t : G ? (G.t || 0) : performance.now() / 1000;
     /* (Oct 10, later: "if wireframe is off, don't show the orbit path." The movers' dotted tracks, a path's loop and the
        circle a turnstile or a door sweeps, show only with Wireframe on, or on the hole being edited, where a path is
        drawn and its leaves moved.) */
-    const tracks = near && (WIRE.on || (ED.on && ED.k === k));
+    const tracks = (WIRE.on || (ED.on && ED.k === k));
     (H.toys || []).forEach((T, j) => {
       if (T.slide){ const S = toyAt(T, t); out.push({ kind: 'slide' + k + '_' + j, u: S.x, v: S.y, scale: 1, lift: hOf(H, S.x, S.y), color: 0x7a4fd0 }); }
       else if (T.mill){
@@ -40721,9 +40046,9 @@ const GOLF_MAKE = SIZE => {
           if (tracks) for (let q = 0; q < m; q++){ const A = loopAt(v, q / m); out.push({ kind: 'ghost', u: A.x, v: A.y, scale: 0.012, lift: hOf(H, A.x, A.y) + 0.001, color: 0xd8efd0 }); }
           if (v[2 * n + 3] >= 1){
             const lit = ((G && G.kicked) || (opt && opt.kicked)) && t - (((G && G.kicked) || opt.kicked)[j] ?? -9) < 0.15, kd = v[2 * n + 3] - 1;
-            if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0 });
+            if (propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0 });
             else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : kd ? RIDER_PLAIN[kd] : 0xe05a9a });
-          } else if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff });
+          } else if (propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff });
           else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
         } else {
           const [x0, y0, x1, y1] = T.gate, L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / CW)), yaw = Math.atan2(y1 - y0, x1 - x0);
@@ -40750,11 +40075,11 @@ const GOLF_MAKE = SIZE => {
       } else if (T.kick){
         const [kx, ky, kr] = T.kick, kind = T.kick[3] | 0, KK = (G && G.kicked) || (opt && opt.kicked), lit = KK && t - (KK[j] ?? -9) < 0.15;
         const tint = [0xffffff, 0xff8a4a, 0x7fd67a, 0x6fb2ff][kind] || 0xffffff, plain = [0xe0443a, 0xff8a1a, 0x4cae4c, 0x3a7fd9][kind] || 0xe0443a;   // classic, power, sponge, spinner
-        if (fine && propGeo('bumper')) out.push({ kind: 'propBumper', u: kx, v: ky, scale: kr * PROP_K.bumper, lift: hOf(H, kx, ky), color: lit ? 0xffe680 : tint });
+        if (propGeo('bumper')) out.push({ kind: 'propBumper', u: kx, v: ky, scale: kr * PROP_K.bumper, lift: hOf(H, kx, ky), color: lit ? 0xffe680 : tint });
         else out.push({ kind: 'kicker', u: kx, v: ky, scale: kr * 2, lift: hOf(H, kx, ky), color: lit ? 0xffffff : plain });
       } else if (T.rock){
         const [x, y, r] = T.rock;
-        if (fine && propGeo('rock')) out.push({ kind: 'propRock', u: x, v: y, scale: r * PROP_K.rock, lift: hOf(H, x, y) - 0.002, yaw: (x * 37 + y * 11) % 6.28, color: 0xffffff });
+        if (propGeo('rock')) out.push({ kind: 'propRock', u: x, v: y, scale: r * PROP_K.rock, lift: hOf(H, x, y) - 0.002, yaw: (x * 37 + y * 11) % 6.28, color: 0xffffff });
         else out.push({ kind: 'rockPlain', u: x, v: y, scale: r * 2, lift: hOf(H, x, y), color: 0x8a857c });
       } else if (T.fence){
         // a fence, in pieces about a cell long, each on the ground under it and turned along the line
@@ -42407,17 +41732,6 @@ const GOLF_MAKE = SIZE => {
     const f = ED.src.land[p.i], k = Object.keys(f)[0];
     return k === 'bump' && f.bump[3] < 0 ? 'hollow' : k === 'ring' && f.ring[4] < 0 ? 'moat' : k === 'ridge' && f.ridge[5] < 0 ? 'gully' : k === 'crest' && f.crest[f.crest.length - 1] < 0 ? 'curved gully' : k === 'green' && f.green[f.green.length - 1] < 0 ? 'sunken green' : LAND_NAME[k] || k;
   }
-  // a tap with Select: the thing under the finger, or the next one under it if the tap is again where the last one was
-  function pickAt(x, y){
-    const here = pickAll(x, y), last = ED.lastTap;
-    ED.lastTap = { x, y };
-    if (!here.length) return null;
-    if (last && Math.hypot(x - last.x, y - last.y) < 0.3 && ED.pick){
-      const n = here.findIndex(c => samePick(c, ED.pick));
-      if (n >= 0) return { type: here[(n + 1) % here.length].type, i: here[(n + 1) % here.length].i };
-    }
-    return { type: here[0].type, i: here[0].i };
-  }
   // where a thing is held from, for snapping: a point of it, in cells (null for a terrace, which is a line across the hole)
   function anchorOf(p){
     if (p.type === 'toy'){ const v = Object.values(ED.src.toys[p.i])[0]; return [v[0], v[1]]; }
@@ -43739,7 +43053,7 @@ const GOLF_MAKE = SIZE => {
       const g = GAMES.get(gkey(c, r)), b = g ? g.ball : H.tee;
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + b.x / CW * t, b.y / CW * t, t * 0.25, 0, 7); ctx.fill();
     },
-    _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladGeo, cladPlain, cladBox, cladTex, SOON, holeSoon, holeMade, GREADY, soonPump, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
+    _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladPlain, cladBox, cladTex, SOON, holeSoon, holeMade, GREADY, soonPump, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       setParHere, PARS,
       line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
       editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
@@ -63518,12 +62832,6 @@ try {
 /* Chess-free template: Settings + Lab wiring. LAB is the live dial rack —
    dynamicFovDeg, the pitch clamps and the whole-board branch all read it. */
 const LAB = window.LAB = { fovWide: 60, fovCapH: 75, pitchMin: 35, groutDissolve: 0, cellW: 1, cellH: 1, clarityAnchor: 'unit', projection: 'rect' };
-function _bindRange(id, valId, fmt, fn){
-  const r = document.getElementById(id), v = document.getElementById(valId);
-  if (!r) return;
-  const apply = () => { const x = +r.value; if (v) v.textContent = fmt(x); fn(x); };
-  r.addEventListener('input', apply);
-}
 /* THE LAB SLIDERS ARE GONE FROM THE MENU. Cell fill, cell pitch, field size,
    cell width and height, the two lens angles, the horizon cutoff, gap
    dissolve and the tilt floor: eleven dials, each a genuine question about
@@ -63643,22 +62951,6 @@ syncAppSelect();
    The panel's manners are confirmAction's, deliberately: Escape closes, a
    press outside closes, and keydown is swallowed in the capture phase so the
    field's own keys cannot fire at a board you are in the middle of leaving. */
-/* THE APP'S OWN FACE, but READ rather than drawn. Every app answers
-   cellGrid(col, row, px) with { n, colors } — the n×n face the renderer
-   paints for a board of that app — so the picker asks each one for its grid
-   and paints the swatch ITSELF.
-   NOT drawIcon, which was the first attempt and put a red square in the top
-   left of the screen: drawIcon is an app's DRAWING routine, and handing a
-   foreign app a canvas is handing it a place to do whatever it does, on a
-   board it does not currently own. Asking for data and painting it here keeps
-   every pixel in this panel accountable to this panel.
-   The fallback is a plain sheet: an app with no face (the gallery answers
-   null until it has pictures) has no lattice to show, which is the honest
-   picture of it anyway. */
-function _appColorHex(v){
-  const n = (typeof v === 'number') ? (v | 0) : 0;
-  return '#' + (n >>> 0 & 0xffffff).toString(16).padStart(6, '0');
-}
 /* SEP 28: THE THUMBNAILS ARE THE APPS' OWN ICONS — the same little board each app draws for the
    strip, pieces and all ("the menu icons in the application menu are strange": the face read from
    cellGrid was a blank frame or a flat grey for half of them, because a board close up leaves its
@@ -66859,7 +66151,6 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     checkers: 'field checkers', draughts: 'field checkers',
     images: 'photo gallery', image: 'photo gallery', gallery: 'photo gallery',
     photos: 'photo gallery', photo: 'photo gallery', prints: 'photo gallery',
-    hello: 'hello-world', none: 'hello-world', blank: 'hello-world',
   };
   const _cliApp = q => {
     const s = String(q || '').trim().toLowerCase();

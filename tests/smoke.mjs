@@ -1533,10 +1533,8 @@ try {
         out.d.push(d);
       }
       out.last = !D.groundGeo(T, H, R[2]).attributes.pos2;
-      // (the pieces: a clad piece's every point fades into its core box, a bumper's onto its coarser build exactly, Oct 14)
-      const cg = D.cladGeo(T, 'stone', 1, 0.88, 1, -0.6, 0.25, 11), cp = cg.attributes.pos2.array; let outside = 0;
-      for (let i = 0; i < cp.length; i += 3) if (Math.abs(cp[i]) > 0.5 + 1e-6 || cp[i + 1] < -0.6 - 1e-6 || cp[i + 1] > 0.28 + 1e-6 || Math.abs(cp[i + 2]) > 0.5 + 1e-6) outside++;
-      out.clad = { outside, plain: D.cladPlain(T, 'stone', 1, 0.88, 1, -0.6).attributes.position.count / 3 };
+      // (the pieces: a clad piece's plain box, a bumper fading onto its coarser build exactly, Oct 14)
+      out.clad = { plain: D.cladPlain(T, 'stone', 1, 0.88, 1, -0.6).attributes.position.count / 3 };
       const PF = D.propGeo('bumper'), PC = D.propGeo('bumper', true);
       if (PF && PF.attributes.pos2){ const fp = PF.attributes.pos2.array, pc = PC.attributes.position.array, fn = 16 * 33 + 2, cn = 8 * 17 + 2; let d = 0;
         for (let q = 0; q < PF.attributes.position.count / fn; q++) for (let k = 0; k <= 32; k += 2) for (let r = 0; r < 3; r++) d = Math.max(d, Math.abs(fp[(q * fn + k) * 3 + r] - pc[(q * cn + k / 2) * 3 + r]));
@@ -1547,7 +1545,7 @@ try {
       out.morphMeshes = morphMeshes; return out; });
     const gOk = gg.d.every(d => d < 1e-6) && gg.last && JSON.stringify(gg.grains.map(x => x[0])) === '[0,0,0,1,1,2]'
       && gg.grains[0][1] === 0 && gg.grains[2][1] > 0 && gg.grains[2][1] < 1 && gg.morphMeshes > 0
-      && gg.clad.outside === 0 && gg.clad.plain === 10 && (gg.prop == null || gg.prop < 1e-6) && gg.pieces[0] === 0 && gg.pieces[1] > 0 && gg.pieces[1] < 1 && gg.pieces[2] === 'plain';
+      && gg.clad.plain === 10 && (gg.prop == null || gg.prop < 1e-6) && gg.pieces[0] === 0 && gg.pieces[1] > 0 && gg.pieces[1] < 1 && gg.pieces[2] === 'plain';
     if (!gOk) failures.push(`[${current}] the ground's grains: ${JSON.stringify(gg)}`);
     console.log(`${gOk ? 'ok  ' : 'FAIL'} the ground's and the pieces' grains (a grain at weight 1 is the next within ${Math.max(...gg.d)}; a bumper within ${gg.prop}; ${gg.morphMeshes} kinds morphing)`);
     // CHESS'S PIECES FADE (Oct 14: "ok", on chess after mini golf): a rung carries the next coarser one at its points, exactly
