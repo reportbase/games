@@ -649,13 +649,46 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     line and service boxes; the front wall a box with its tin and lines, the side and back walls low; heights at half (`VZ`), since a
     wall its full height hid the back of the court on the board behind; players (body, head, racket, a ring under the one to hit);
     the ball raised, its shadow and trail; flashes on the wall, rings where it bounces; dot-digit scores on the floor.
-  - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`): the steady player against the board's computer, 12 numbers
-    a frame; par the points given away winning (`parOf`); stars as Pong's (localStorage `squash.best`); settings `squash.settings`.
+  - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`): the steady player against the board's computer, 17 numbers
+    a frame; par the points given away winning (`parOf`); stars as Pong's (localStorage `squash.best`); settings `squash.settings`
+    (the row: New, Game, Mode, Points, Players, Court, Ball speed, Your reach, Guide, Trail, Flashes, Sound; `ORDER`).
+  - **Lets, strokes, the ball's height, racquetball, fives, doubles, drills** (Oct 27: "whats next for squash", then "3,4,6,7"):
+    - **Four seats** (`G.pl`, `team(k)` = k % 2: 0 and 2 red, 1 and 3 blue; a seat `off` is not on the court; `seatsFor`). `G.to` is
+      the side to play; either of a side may take its ball. Recordings are 17 numbers a frame (all four players, the call).
+    - **Lets and strokes** (`blockStep`, `G.blkT`, `rallyEnd`): an opponent's body touching the striker's (`BLOCK_W`) on the ball's
+      side of it while the striker runs at the ball; for `BLOCK_T` or more, a rally that side then loses 'not up' is a let (played
+      again) when its striker was far from the ball, a stroke (its point) within `STROKE_R` reaches. The computer off its turn steps
+      off the striker's way (`clearOf`: its line to where it is heading). The referee's call (`callOut`, `CALLS`) is said and written
+      on the floor in a 3 × 5 dot font (`FONT`, `text`).
+    - **Rallies end** (found while adding lets: rallies of two good players ran to the 60 s cap): a stroke at full stretch or on the
+      run is less sure (`unsure`), late in a rally more so by the player's own `err` (`TIRE_A`), and the computer's legs tire
+      (`TIRE_T`). Measured over 5 matches to 11 against the steady player, its share of points: squash 0.72, 0.58, 0.19 at levels
+      1, 3, 5; racquetball 0.93, 0.59, 0.03; fives 0.75, 0.68, 0.04; a match 3–7 minutes (racquetball longer).
+    - **The ball's height** (the row's Guide, on by default): a ring where the ball will first come down (`landing`, kept while the
+      rally is the same, `G.landKey`), for your side's turn, all the way at levels 1–3, until it reaches the front wall at level 4,
+      none at 5 (`GUIDE_LV`); a thin post from the ball to its shadow; your ring and a halo on the ball lit while it is in reach.
+    - **Racquetball and fives** (`COURTS`, the row's Game, `C` on the match): racquetball no tin or out line, a ceiling (`ceil`
+      0.5), a livelier ball, the short line at the middle with service lines and a dashed receiving line painted, side-out scoring
+      (`scoring: 'side'`, only the server scores, 'hand out' passes the serve) to 11 won by one; fives a gloved hand (`reach` 0.75, no
+      racket drawn), a slower ball, a board at 0.076 (its shots aim above it), side-out to 11. Points from the row: the game's own,
+      5, 11 or 15 (`SET.target` 0 is the game's).
+    - **Doubles** (the row's Players: One, Two, Doubles with a computer partner, Doubles × 2): the computer leaves a ball to a
+      partner who gets there first (`earliest`), covers its own half off its turn.
+    - **Drills** (the row's Mode; `newMatch(…, { drill })`, `G.drill`; every board its own by its number, `drillOf`, `DRILL_LV` by
+      level; `DRILL_T` 40 s; par the steady player's score, its recording the board's show): Targets (a box on the front wall, `tw` ×
+      `th`; every legal shot in it scores and a new one comes, `newTarget`), Rally (the longest run of returns alone; from level 3
+      each must strike the other half of the wall, `alt`, 'OTHER SIDE'), Feeds (the machine at the wall's foot, `feed`, every `gap`
+      s, away from you at `spread`'s rate, drops at `drop`'s, off a side wall at `boast`'s; a return scores when its first bounce
+      comes down in the lit zone, `deep` and from level 4 `tight` to a side wall, `drillLand`, else 'SHORT'). Measured (4 boards a
+      level, squash): Targets par about 9, 7, 4; Rally 25, 5, 3; Feeds 4, 7, 2 at levels 1, 3, 5. Stars: par 3, 60% 2.
   - The smoke test checks the levels by ring, a drive striking the wall at its height, the tin, down and not up, the angle off each
-    side, drive/drop/lob by motion, matches ending at levels 1, 3 and 5 with the share falling, a recording's par, the four courts,
-    and real input: a click starting, a real drag running the player under the finger, the real arrow, a real click serving, a
-    match won with stars and a best, two real fingers each taking a player with the view still, a real click on the Points tile,
-    and a board no one plays moving.
+    side, drive/drop/lob by motion, a let and a stroke, the computer stepping off the striker's way, the landing foretold, the guide
+    by level, the ball lit in reach, racquetball's ceiling and side-out scoring, fives' tin and reach, doubles with all four seats
+    hitting, a target hit, a length scored and a short called, the rally's other side, a drill over at 40 s, matches ending at
+    levels 1, 3 and 5 with the share falling, a match's and a drill's par, every court painted, and real input: a click starting, a
+    real drag running the player under the finger, the real arrow, a real click serving, a match won with stars and a best, two
+    real fingers each taking a player with the view still, real clicks on the Points, Game and Mode tiles, a drill started by a
+    real click with the machine feeding, and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
