@@ -58862,7 +58862,7 @@ const AIRHOCKEY_APP = (() => {
 const SQUASH_APP = (() => {
   const W = 0.66, BR = 0.011, PB = 0.03, ZREACH = 0.2, GRAV = 0.6, BOX = 0.165;
   const MAXA = 0.62, CARRY = 0.3, FWD_K = 0.35, BLOCK_W = 2 * PB + 0.014, BLOCK_T = 0.15, STROKE_R = 2.5, HUMAN_V = 1.1, TIRE_T = 45, TIRE_A = 15;
-  const SWING_T = 0.2, SWING_REACH = 1.25, HOLD_MS = 600, HOLD_PX = 18, FLICK_V = 1.2, LATE_K = 0.35, MISHIT = 0.8;
+  const SWING_T = 0.2, SWING_REACH = 1.25, FLICK_V = 1.2, LATE_K = 0.35, MISHIT = 0.8;
   const TICK = 1 / 60, SUB = 8, DT = TICK / SUB, POINT_T = 1.3, SERVE_T = 1.1, GRACE = 0.8, HAND_V = 1.6, KEY_V = 1.15, KEY_ACC = 9, AI_GAIN = 8;
   const REC_HZ = 30, REEL_T = 40, DRILL_T = 40, MATCH_CAP = 1500, RALLY_CAP = 60, REC_CAP = 400, PHOTO_PX = 20, HI_PX = 300, WALL_H = 0.5, VZ = 0.5, CALL_T = 1.4;
   const REACHES = { small: 0.06, normal: 0.075, large: 0.09 }, SPEEDS = { slow: 0.8, normal: 1, fast: 1.2 };
@@ -59731,10 +59731,9 @@ const SQUASH_APP = (() => {
       const d = k => Math.hypot(g.G.pl[k].x - px, g.G.pl[k].y - py);
       seat = used.has(0) && !used.has(1) ? 1 : used.has(1) && !used.has(0) ? 0 : d(0) <= d(1) ? 0 : 1; }
     if ((humanServes(g) && g.G.server === seat) || (g.G.drill && g.G.state === 'serve')) serveNow(g);
-    return { g, seat, x0: x, y0: y, t0: performance.now(), moved: false, hist: [] };
+    return { g, seat, hist: [] };
   }
   function handAt(p, x, y){
-    if (Math.hypot(x - p.x0, y - p.y0) > HOLD_PX) p.moved = true;
     const at = _framedUV(x, y, 0.3); if (!at) return;
     HAND[p.seat].tx = clamp(at.u, 0, 1) * W; HAND[p.seat].ty = clamp(at.v, 0, 1);
     p.hist.push([performance.now(), HAND[p.seat].tx, HAND[p.seat].ty]); if (p.hist.length > 12) p.hist.shift();
@@ -59749,14 +59748,8 @@ const SQUASH_APP = (() => {
   }
   function handUp(id){
     const p = OWN.get(id); if (!p) return false; OWN.delete(id);
-    const G = p.g.G, held = !p.moved && performance.now() - p.t0 >= HOLD_MS;
-    /* A HOLD BETWEEN RALLIES IS THE ROW'S (Oct 27: "long press does not work to show bottom browser. why do some applications
-       not support long press?"): while a match is under way every press on the court is a player's, taken before the field
-       sees it, so the field's hold never came. A press held still and let go when no rally is in play (before the serve,
-       between points, the drill's pauses) toggles the row as it does everywhere else; in a rally a still finger is a player
-       standing still, and a lift a swing. */
-    if (held && G.state !== 'play'){ try { toggleBoardBrowser(); } catch {} }
-    else if (G.swing && G.state === 'play' && p.g.state === 'play') SWING[p.seat] = { shot: flickOf(p) };
+    const G = p.g.G;
+    if (G.swing && G.state === 'play' && p.g.state === 'play') SWING[p.seat] = { shot: flickOf(p) };
     if (![...OWN.values()].some(q => q.seat === p.seat)){ HAND[p.seat].tx = null; HAND[p.seat].ty = null; }
     return true;
   }
@@ -59952,7 +59945,7 @@ const SQUASH_APP = (() => {
               recOf, recWork, recView, recSoon, parOf, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, themeOf,
               gameAt, fresh, begin, stepGame, over, serveNow, pressAt, setting, tilesOf, LV, STEADY, SET, GAMES, RECS, BEST, HAND, KEYS, OWN, THEMES, LOOK, ORDER, REACHES, SHOTS,
               COURTS, DRILLS, DRILL_LV, GUIDE_LV, FONT, STYLES, styleOf, styled, SWING, flickOf, handUp, SHOT_KEYS,
-              consts: { W, BR, PB, ZREACH, GRAV, BOX, TICK, SUB, REEL_T, REC_HZ, MAXA, BLOCK_W, BLOCK_T, STROKE_R, DRILL_T, VZ, SWING_T, SWING_REACH, HOLD_MS }, levelOf: (c, r) => levelAt(boardIdx(c, r)), bounds,
+              consts: { W, BR, PB, ZREACH, GRAV, BOX, TICK, SUB, REEL_T, REC_HZ, MAXA, BLOCK_W, BLOCK_T, STROKE_R, DRILL_T, VZ, SWING_T, SWING_REACH }, levelOf: (c, r) => levelAt(boardIdx(c, r)), bounds,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   return app;

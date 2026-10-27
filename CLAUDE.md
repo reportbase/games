@@ -682,7 +682,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       s, away from you at `spread`'s rate, drops at `drop`'s, off a side wall at `boast`'s; a return scores when its first bounce
       comes down in the lit zone, `deep` and from level 4 `tight` to a side wall, `drillLand`, else 'SHORT'). Measured (4 boards a
       level, squash): Targets par about 9, 7, 4; Rally 25, 5, 3; Feeds 4, 7, 2 at levels 1, 3, 5. Stars: par 3, 60% 2.
-  - **The swing, the shots, the styles, the hold** (Oct 27: "whats next for squash", then "1,2,6. also long press does not work to
+  - **The swing, the shots, the styles** (Oct 27: "whats next for squash", then "1,2,6. also long press does not work to
     show bottom browser. why do some applications not support long press?"):
     - **Swing hands** (the row's Hands: Auto as before, or Swing; `G.swing`): a person hits only with a swing, asked for by a finger
       lifted off the court or Enter (with two people blue's Enter, red's Q: Space never reaches a game on its own clock, the
@@ -702,16 +702,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       computer's kills clear the tin; without it the new risky shots made level 5 play like level 3. Over 5 matches to 11 against
       the steady player, its share of points: squash 0.87, 0.54, 0.15 at levels 1, 3, 5; racquetball 0.89, 0.67, 0.04; fives 0.83,
       0.65, 0.15.
-    - **The hold between rallies** (`handUp`): squash, Pong, air hockey and pinball take every press on the board before the field
-      while a game is under way (a finger is a player, a paddle, a mallet, a flipper), so the field's hold never came; the games
-      that keep their presses (`keepsPress`: mini golf, falling tiles, the tanks, trick shots) do toggle the row on a still hold let
-      go (`turn.keptHold`). Squash now does it itself: a press held still `HOLD_MS` (600 ms, within `HOLD_PX`) and let go when no
-      rally is in play (before the serve, between points, a drill's pauses) toggles the row; in a rally a still finger is a player
-      standing still and a lift a swing.
+    - **No hold of its own** (Oct 27: "its not that important. remove it."): squash, Pong, air hockey and pinball take every press
+      on the board before the field while a game is under way, so the field's hold never comes there; the three dots open the row.
     - The smoke test checks no hit without a swing and a hit within one, early and late either way, a mishit slower, a boast off the
       side wall first, a kill low and fast, the flicks, the six styles and the lobber and boaster playing their own shots, and real
       input: the real Hands and Shot tiles (brought round by a real drag of the row), a real finger lifted swinging, the real Enter
-      swinging, and a real hold between rallies showing and hiding the row.
+      swinging.
   - The smoke test checks the levels by ring, a drive striking the wall at its height, the tin, down and not up, the angle off each
     side, drive/drop/lob by motion, a let and a stroke, the computer stepping off the striker's way, the landing foretold, the guide
     by level, the ball lit in reach, racquetball's ceiling and side-out scoring, fives' tin and reach, doubles with all four seats

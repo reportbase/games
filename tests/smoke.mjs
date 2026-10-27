@@ -4686,11 +4686,11 @@ try {
     if (!ok2) failures.push('[squash] real input: ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: a real click starts, a real drag runs the player under the finger (${real.drag}), the real arrow, a real click serves, a match won ${real.match} with ${real.over && real.over.best} stars, two real fingers a player each with the view still, real clicks on the Points, Game and Mode tiles, a ${real.drill && real.drill.kind} drill fed, a board no one plays moves`);
   }
-  // SQUASH: THE SWING, THE SHOTS, THE STYLES, THE HOLD (Oct 27: "whats next for squash", then "1,2,6", and "long press does not work
+  // SQUASH: THE SWING, THE SHOTS, THE STYLES (Oct 27: "whats next for squash", then "1,2,6", and "long press does not work
   // to show bottom browser"): a ball passing a person with Swing hands not hit until a swing, then hit, early and late sending it
   // either way and a mishit slower; a boast meeting the side wall before the front, a kill lower and faster than a drive; flicks
   // read as kill, lob and boast; every style on the boards near the corner and each playing its own shots; and real input: the real
-  // Hands and Shot tiles, a real lift swinging, the real Enter swinging, a real hold between rallies toggling the row.
+  // Hands and Shot tiles, a real lift swinging, the real Enter swinging.
   {
     current = 'squash';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'squash')));
@@ -4772,19 +4772,11 @@ try {
       await rally();
       await page.keyboard.press('Enter'); await page.waitForTimeout(250);
       real.space = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
-      // between rallies: a real hold, still, and let go toggles the row
-      await page.evaluate(k => { const G = window.getFieldApp()._debug.GAMES.get(k).G; G.state = 'point'; G.nextAt = 1e9; G.next = 0; }, key);
-      const v0 = await page.evaluate(() => window.tvf.bottomRow.visible);
-      await page.mouse.move(p0[0], p0[1]); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up(); await page.waitForTimeout(500);
-      const v1 = await page.evaluate(() => window.tvf.bottomRow.visible);
-      await page.mouse.move(p0[0], p0[1]); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up(); await page.waitForTimeout(500);
-      const v2 = await page.evaluate(() => window.tvf.bottomRow.visible);
-      real.hold = [v0, v1, v2];
       await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.SET.hands = 'auto'; D.SET.shot = 'auto'; }, key);
     }
-    const ok2 = !!fc && real.tiles[0] === 'swing' && real.tiles[1] === 'drive' && real.lift && real.space && real.hold[1] === !real.hold[0] && real.hold[2] === real.hold[0];
+    const ok2 = !!fc && real.tiles[0] === 'swing' && real.tiles[1] === 'drive' && real.lift && real.space;
     if (!ok2) failures.push('[squash swing] real input: ' + JSON.stringify(real));
-    console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: the real Hands and Shot tiles (${real.tiles}), a real finger lifted swings, the real Enter swings, a real hold between rallies shows and hides the row (${real.hold})`);
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: the real Hands and Shot tiles (${real.tiles}), a real finger lifted swings, the real Enter swings`);
   }
   // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
   // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
