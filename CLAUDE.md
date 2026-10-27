@@ -2396,8 +2396,12 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   `railPV`/`railPH` and its always-on `PIECES` switches, the right rail's old speed functions, chess's `switchSides`,
   `askCoachHere`, `renderEvalBar_LEGACY_HTML`, the field-lib's `buildExtrudedSlab`, `rungToN`, `bondiK`, and a few more.
   To look again: a name that appears once in `games.html` is never used (an IIFE's own name aside).
+- **One match kit** (Oct 27, the same request): Pong, air hockey and squash had their recordings, their hands and their bests
+  written out three times, line for line. `MATCH_KIT` (before Pong) has them once: `recordings(o)` (`recOf`, `recWork`,
+  `recSoon`, `at` for where a board's loop is, `trail`; each game gives its key, how to make and step a match, a frame, when it
+  is over and its par), `hands(o)` (every press on the canvas offered to the game's `pressAt`, `handAt`, `handUp` before the
+  field, a touch's mouse echo known by its time) and `best(key)`. A new game of their kind uses it.
 
-## Conventions
 - Comments explain *why*, at length, and often quote the owner's request with a
   date, e.g. `(Sep 22: "…")`. There are hundreds of these. Keep the voice: when a
   change follows a request, record it the same way.

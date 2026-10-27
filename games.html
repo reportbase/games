@@ -56375,6 +56375,116 @@ const LEVELS_APP = (() => {
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
+/* ═══ MATCH KIT (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and the shared
+   kits"): Pong, air hockey and squash each had the same three pieces written out again, line for line. Here once:
+   - recordings(o): a board no one plays shows the steady player against its computer, frames of `o.F` numbers at `o.hz` a second
+     for the first `o.reel` seconds (`o.frame(M, G)` pushes one; `M.flag` is what happened since, cleared after each), worked on a
+     little at a time (`recSoon`: 8 ms in 30, the framed board's `urgent` 12 ms a frame to the match's end for par); `o.make(idx,
+     lv, M)` makes the match, `o.step` ticks it, `o.over(G)` ends it, `o.parOf(G)` is its par and `o.done(M, G)` anything more.
+     `at(M, now)` says where the board's loop is (frames i and j, how far between, `mix(c)` the number c between them; each board
+     at its own phase, a 2 s rest) and `trail(F, i, back, gap, z)` the ball's way back while it ran on smoothly.
+   - hands(o): every press on the canvas offered to the game before the field (`o.pressAt` takes it or not, `o.handAt` follows
+     it, `o.handUp` lets it go), a finger each, a touch's mouse echo known by its time (`mouseIsTouchEcho`, or within 900 ms).
+   - best(key): the most stars a board, in localStorage `key`, the latest 500. */
+const MATCH_KIT = {
+  recordings(o){
+    const RECS = new Map(), SOON = new Map(), every = Math.round(1 / (o.hz * o.tick));
+    let soonT = 0;
+    function recOf(idx, lv){
+      const k = o.key(idx, lv);
+      let M = RECS.get(k);
+      if (M){ RECS.delete(k); RECS.set(k, M); return M; }
+      M = { idx, lv, G: null, frames: [], done: false, par: null, phase: (idx * 0.618) % 1, flag: 0, step: 0 };
+      M.G = o.make(idx, lv, M);
+      RECS.set(k, M); if (RECS.size > o.cap) RECS.delete(RECS.keys().next().value);
+      return M;
+    }
+    // work on a recording until `ms` is spent: its frames first, then (if `whole`) on to the match's end for par
+    function recWork(M, ms, whole){
+      const t0 = performance.now(), G = M.G;
+      while (!M.done && performance.now() - t0 < ms){
+        for (let i = 0; i < 30 && !M.done; i++){
+          const rec = G.t < o.reel;
+          if (!rec && !whole) return M;
+          o.step(G); M.step++;
+          if (rec && M.step % every === 0){ o.frame(M, G); M.flag = 0; }
+          if (o.over(G)){ M.done = true; M.par = o.parOf(G); M.final = G.score.slice(); if (o.done) o.done(M, G); }
+        }
+      }
+      return M;
+    }
+    function recSoon(idx, lv, urgent){
+      const M = RECS.get(o.key(idx, lv));
+      if (M && (M.done || (!urgent && M.G.t >= o.reel))) return M;
+      if (urgent){ const R = M || recOf(idx, lv); recWork(R, 12, true); return R; }
+      SOON.set(o.key(idx, lv), [idx, lv, performance.now()]);
+      const t = performance.now();
+      if (t - soonT > 30){
+        soonT = t; const end = t + 8;
+        for (const [k, [i, l, at]] of SOON){
+          if (performance.now() > end) break;
+          if (t - at > 2000){ SOON.delete(k); continue; }
+          const R = recOf(i, l); recWork(R, end - performance.now(), false);
+          if (R.G.t >= o.reel || R.done) SOON.delete(k);
+        }
+      }
+      return M && M.frames.length ? M : null;
+    }
+    function at(M, now){
+      const F = M.frames, n = F.length / o.F;
+      if (!n) return null;
+      const TT = n / o.hz + 2, a = ((now / 1000 + M.phase * TT) % TT) * o.hz, i = Math.min(n - 1, Math.floor(a)), j = Math.min(n - 1, i + 1), f = Math.min(1, a - i);
+      const p = i * o.F, q = j * o.F;
+      return { F, i, j, f, p, q, mix: c => F[p + c] + (F[q + c] - F[p + c]) * f };
+    }
+    function trail(F, i, back, gap, z){
+      const T = [];
+      for (let b = 1, px = F[i * o.F], py = F[i * o.F + 1]; b <= back && i - b >= 0; b++){
+        const r = (i - b) * o.F; if (F[r + 1] < 0 || Math.hypot(F[r] - px, F[r + 1] - py) > gap) break;
+        T.push(F[r], F[r + 1]); if (z != null) T.push(F[r + z]); px = F[r]; py = F[r + 1];
+      }
+      return T;
+    }
+    return { RECS, SOON, recOf, recWork, recSoon, at, trail };
+  },
+  hands(o){
+    const OWN = o.OWN, onCanvas = e => { try { return e.target === _canvas; } catch { return false; } };
+    let touchTS = -1e9;
+    const echoOf = e => mouseIsTouchEcho() || (e.timeStamp - touchTS >= 0 && e.timeStamp - touchTS < 900);
+    addEventListener('touchstart', e => {
+      touchTS = e.timeStamp;
+      if (!onCanvas(e)) return;
+      let took = false;
+      for (const t of e.changedTouches){ const p = o.pressAt(t.clientX, t.clientY); if (!p) continue; OWN.set('t' + t.identifier, p); o.handAt(p, t.clientX, t.clientY); took = true; }
+      if (took){ e.preventDefault(); e.stopPropagation(); }
+    }, { capture: true, passive: false });
+    addEventListener('touchmove', e => {
+      let took = false;
+      for (const t of e.changedTouches){ const p = OWN.get('t' + t.identifier); if (!p) continue; o.handAt(p, t.clientX, t.clientY); took = true; }
+      if (took){ e.preventDefault(); e.stopPropagation(); }
+    }, { capture: true, passive: false });
+    const touchUp = e => {
+      touchTS = e.timeStamp;
+      let took = false;
+      for (const t of e.changedTouches) if (o.handUp('t' + t.identifier)) took = true;
+      if (took){ e.preventDefault(); e.stopPropagation(); }
+    };
+    addEventListener('touchend', touchUp, { capture: true, passive: false });
+    addEventListener('touchcancel', touchUp, { capture: true, passive: false });
+    addEventListener('mousedown', e => {
+      if (!onCanvas(e) || e.button !== 0 || echoOf(e)) return;
+      const p = o.pressAt(e.clientX, e.clientY); if (!p) return;
+      OWN.set('m', p); o.handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation();
+    }, true);
+    addEventListener('mousemove', e => { const p = OWN.get('m'); if (!p) return; o.handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation(); }, true);
+    addEventListener('mouseup', e => { if (o.handUp('m')){ e.preventDefault(); e.stopPropagation(); } }, true);
+  },
+  best(key){
+    const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(key) || '{}'))); } catch { return new Map(); } })();
+    const saveBest = () => { try { localStorage.setItem(key, JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+    return { BEST, saveBest };
+  },
+};
 /* ═══ PONG (Oct 27: "lets create a polished pong application. what do you suggest?", then "all. provide cusomtization options in
    the bottom browser.") ════════════════════════════════════════════════════════════════════════════════════════════════════
    The game lab's Pong was a starter, a few dozen lines on a grid of squares. This is a game of its own: a table a board, taller
@@ -56801,70 +56911,32 @@ const PONG_APP = (() => {
      frames, (ball x, ball y or −1, near paddle, far paddle, near's score, far's score, what happened, the ball's height); the rest
      is played to the end, without frames, for par. Worked out a slice at a time. Frame i is at (i + 1) / REC_HZ s of the match's
      clock (no slow motion in a recording), which is where an arena's sliding walls are drawn. */
-  const REC_F = 8, RECS = new Map();
+  const REC_F = 8;
   const recKey = (idx, lv) => idx + '@' + lv + '@' + SET.target + SET.speed + SET.pad + SET.face + SET.reach + SET.phys + SET.arena + (SET.phys === 'theme' ? themeOf(idx).id : '');
-  function recOf(idx, lv){
-    const k = recKey(idx, lv);
-    let M = RECS.get(k);
-    if (M){ RECS.delete(k); RECS.set(k, M); return M; }
-    const ev = (kind, a, G) => { if (kind === 'hit') M.flag = a.seat + 1; else if (kind === 'wall') M.flag = M.flag || 3; else if (kind === 'point') M.flag = 4 + a.seat; };
-    M = { idx, lv, G: null, frames: [], n: 0, done: false, par: null, phase: (idx * 0.618) % 1, flag: 0, step: 0, ev };
-    M.G = newMatch(idx, lv, { ai0: STEADY, power: false, serveT: 1.2, ev, seed: 7 });
-    RECS.set(k, M); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
-    return M;
-  }
-  // work on a recording until `ms` is spent: its frames first, then (if `whole`) on to the match's end for par
-  function recWork(M, ms, whole){
-    const t0 = performance.now(), G = M.G, every = Math.round(1 / (REC_HZ * TICK));
-    while (!M.done && performance.now() - t0 < ms){
-      for (let i = 0; i < 30 && !M.done; i++){
-        const rec = G.t < REEL_T;
-        if (!rec && !whole) return M;
-        tick(G); M.step++;
-        if (rec && M.step % every === 0){
-          const b = G.balls[0];
-          const at = M.frames.length;
-          M.frames.push(b ? b.x : -1, b ? b.y : -1, G.pads[0].x, G.pads[1].x, G.score[0], G.score[1], M.flag, b ? b.z || 0 : 0); M.flag = 0;
-          if (G.state === 'serve'){ const P = G.pads[G.server]; M.frames[at] = P.x; M.frames[at + 1] = faceY(G.server, G) + (G.server === 0 ? -BR - 0.002 : BR + 0.002); }
-        }
-        if (G.state === 'over' || G.t > MATCH_CAP){ M.done = true; M.par = parOf(G); M.final = G.score.slice(); M.won = G.winner === 0; }
-      }
-    }
-    return M;
-  }
+  // (recordings: MATCH_KIT's, Oct 27)
   // par: the points the steady player gave away; if it lost, as many as it takes to lose (a win is then three stars)
   const parOf = G => G.winner === 0 ? G.score[1] : Math.max(G.target, G.score[1]);
-  // boards only looked at get their reels a few at a time; the framed board's whole match is worked on first
-  const SOON = new Map();
-  let soonT = 0;
-  function recSoon(idx, lv, urgent){
-    const M = RECS.get(recKey(idx, lv));
-    if (M && (M.done || (!urgent && M.G.t >= REEL_T))) return M;
-    if (urgent){ const R = M || recOf(idx, lv); recWork(R, 12, true); return R; }
-    SOON.set(recKey(idx, lv), [idx, lv, performance.now()]);
-    const t = performance.now();
-    if (t - soonT > 30){
-      soonT = t; const end = t + 8;
-      for (const [k, [i, l, at]] of SOON){
-        if (performance.now() > end) break;
-        if (t - at > 2000){ SOON.delete(k); continue; }
-        const R = recOf(i, l); recWork(R, end - performance.now(), false);
-        if (R.G.t >= REEL_T || R.done) SOON.delete(k);
-      }
-    }
-    return M && M.frames.length ? M : null;
-  }
+  const REC = MATCH_KIT.recordings({ key: recKey, cap: REC_CAP, hz: REC_HZ, tick: TICK, reel: REEL_T, F: REC_F, step: tick, parOf,
+    make(idx, lv, M){
+      const ev = (kind, a) => { if (kind === 'hit') M.flag = a.seat + 1; else if (kind === 'wall') M.flag = M.flag || 3; else if (kind === 'point') M.flag = 4 + a.seat; };
+      return newMatch(idx, lv, { ai0: STEADY, power: false, serveT: 1.2, ev, seed: 7 });
+    },
+    frame(M, G){
+      const b = G.balls[0], at = M.frames.length;
+      M.frames.push(b ? b.x : -1, b ? b.y : -1, G.pads[0].x, G.pads[1].x, G.score[0], G.score[1], M.flag, b ? b.z || 0 : 0);
+      if (G.state === 'serve'){ const P = G.pads[G.server]; M.frames[at] = P.x; M.frames[at + 1] = faceY(G.server, G) + (G.server === 0 ? -BR - 0.002 : BR + 0.002); }
+    },
+    over: G => G.state === 'over' || G.t > MATCH_CAP,
+    done(M, G){ M.won = G.winner === 0; },
+  });
+  const { RECS, SOON, recOf, recWork, recSoon } = REC;
   function recView(M){
-    const F = M.frames, n = F.length / REC_F;
-    if (!n) return null;
-    const TT = n / REC_HZ + 2, at = ((now() / 1000 + M.phase * TT) % TT) * REC_HZ, i = Math.min(n - 1, Math.floor(at)), j = Math.min(n - 1, i + 1), f = Math.min(1, at - i);
-    const o = i * REC_F, p = j * REC_F, mix = q => F[o + q] + (F[p + q] - F[o + q]) * f;
+    const A = REC.at(M, now()); if (!A) return null;
+    const { F, i, f, mix } = A, o = A.p, p = A.q;
     const jump = F[o] < 0 || F[p] < 0 || Math.hypot(F[p] - F[o], F[p + 1] - F[o + 1]) > 0.15;
     const balls = [];
     if (F[o + 1] >= 0){
-      const trail = [];
-      // (back along the frames while the ball ran on smoothly: not across a serve or a point)
-      for (let q = 1, px = F[o], py = F[o + 1]; q <= 6 && i - q >= 0; q++){ const r = (i - q) * REC_F; if (F[r + 1] < 0 || Math.hypot(F[r] - px, F[r + 1] - py) > 0.15) break; trail.push(F[r], F[r + 1]); px = F[r]; py = F[r + 1]; }
+      const trail = REC.trail(F, i, 6, 0.15);   // (back along the frames while the ball ran on smoothly: not across a serve or a point)
       balls.push({ x: jump ? F[o] : mix(0), y: jump ? F[o + 1] : mix(1), z: jump ? F[o + 7] : mix(7), trail, step: 2 });
     }
     // (what happened lately: a hit's ring or a wall's flash, from the frames just gone)
@@ -56880,8 +56952,7 @@ const PONG_APP = (() => {
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('pong.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('pong.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = MATCH_KIT.best('pong.best');
   const bestKey = (idx, lv) => idx + '@' + lv + '@' + SET.target;
   const starsOf = (g, par) => {
     const [a, b] = g.score;
@@ -57267,35 +57338,7 @@ const PONG_APP = (() => {
     if (!p.moved && performance.now() - p.t0 < 350) serveNow(p.g, p.seat);
     return true;
   }
-  const onCanvas = e => { try { return e.target === _canvas; } catch { return false; } };
-  let touchTS = -1e9;
-  const echoOf = e => mouseIsTouchEcho() || (e.timeStamp - touchTS >= 0 && e.timeStamp - touchTS < 900);
-  addEventListener('touchstart', e => {
-    touchTS = e.timeStamp;
-    if (!onCanvas(e)) return;
-    let took = false;
-    for (const t of e.changedTouches){ const p = pressAt(t.clientX, t.clientY); if (!p) continue; OWN.set('t' + t.identifier, p); handAt(p, t.clientX, t.clientY); took = true; }
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  }, { capture: true, passive: false });
-  addEventListener('touchmove', e => {
-    let took = false;
-    for (const t of e.changedTouches){ const p = OWN.get('t' + t.identifier); if (!p) continue; handAt(p, t.clientX, t.clientY); took = true; }
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  }, { capture: true, passive: false });
-  const touchUp = e => {
-    touchTS = e.timeStamp;
-    let took = false;
-    for (const t of e.changedTouches) if (handUp('t' + t.identifier)) took = true;
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  };
-  addEventListener('touchend', touchUp, { capture: true, passive: false });
-  addEventListener('touchcancel', touchUp, { capture: true, passive: false });
-  addEventListener('mousedown', e => {
-    if (!onCanvas(e) || e.button !== 0 || echoOf(e)) return;
-    const p = pressAt(e.clientX, e.clientY); if (!p) return;
-    OWN.set('m', p); handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation();
-  }, true);
-  addEventListener('mousemove', e => { const p = OWN.get('m'); if (!p) return; handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation(); }, true);
+  MATCH_KIT.hands({ pressAt, handAt, handUp, OWN });
   addEventListener('mouseup', e => { if (handUp('m')){ e.preventDefault(); e.stopPropagation(); } }, true);
   // the keys: ← → move the near paddle (and A D with one player); with two, A D move the far one. Space or Enter starts or serves.
   function keySeat(e, g){
@@ -57704,67 +57747,28 @@ const AIRHOCKEY_APP = (() => {
 
   /* ─── RECORDINGS ─── the steady player against the board's computer: frames of 9 (puck x, y or −1, the mallets, the scores, what
      happened) for the first REEL_T s; the match to its end for par. */
-  const REC_F = 9, RECS = new Map();
+  const REC_F = 9;
   const recKey = (idx, lv) => idx + '@' + lv + '@' + SET.target + SET.speed + SET.mallet;
-  function recOf(idx, lv){
-    const k = recKey(idx, lv);
-    let M = RECS.get(k);
-    if (M){ RECS.delete(k); RECS.set(k, M); return M; }
-    const ev = (kind, a) => { if (kind === 'hit') M.flag = a.seat + 1; else if (kind === 'rail') M.flag = M.flag || 3; else if (kind === 'goal') M.flag = 4 + a.seat; };
-    M = { idx, lv, G: null, frames: [], done: false, par: null, phase: (idx * 0.618) % 1, flag: 0, step: 0 };
-    M.G = newMatch(idx, lv, { ai0: STEADY, ev, seed: 11 });
-    RECS.set(k, M); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
-    return M;
-  }
-  function recWork(M, ms, whole){
-    const t0 = performance.now(), G = M.G, every = Math.round(1 / (REC_HZ * TICK));
-    while (!M.done && performance.now() - t0 < ms){
-      for (let i = 0; i < 30 && !M.done; i++){
-        const rec = G.t < REEL_T;
-        if (!rec && !whole) return M;
-        tick(G); M.step++;
-        if (rec && M.step % every === 0){
-          const p = G.puck, on = G.state === 'play';
-          M.frames.push(on ? p.x : -1, on ? p.y : -1, G.mal[0].x, G.mal[0].y, G.mal[1].x, G.mal[1].y, G.score[0], G.score[1], M.flag); M.flag = 0;
-        }
-        if (G.state === 'over' || G.t > MATCH_CAP){ M.done = true; M.par = parOf(G); M.final = G.score.slice(); }
-      }
-    }
-    return M;
-  }
   const parOf = G => G.winner === 0 ? G.score[1] : Math.max(G.target, G.score[1]);
-  const SOON = new Map();
-  let soonT = 0;
-  function recSoon(idx, lv, urgent){
-    const M = RECS.get(recKey(idx, lv));
-    if (M && (M.done || (!urgent && M.G.t >= REEL_T))) return M;
-    if (urgent){ const R = M || recOf(idx, lv); recWork(R, 12, true); return R; }
-    SOON.set(recKey(idx, lv), [idx, lv, performance.now()]);
-    const t = performance.now();
-    if (t - soonT > 30){
-      soonT = t; const end = t + 8;
-      for (const [k, [i, l, at]] of SOON){
-        if (performance.now() > end) break;
-        if (t - at > 2000){ SOON.delete(k); continue; }
-        const R = recOf(i, l); recWork(R, end - performance.now(), false);
-        if (R.G.t >= REEL_T || R.done) SOON.delete(k);
-      }
-    }
-    return M && M.frames.length ? M : null;
-  }
+  const REC = MATCH_KIT.recordings({ key: recKey, cap: REC_CAP, hz: REC_HZ, tick: TICK, reel: REEL_T, F: REC_F, step: tick, parOf,
+    make(idx, lv, M){
+      const ev = (kind, a) => { if (kind === 'hit') M.flag = a.seat + 1; else if (kind === 'rail') M.flag = M.flag || 3; else if (kind === 'goal') M.flag = 4 + a.seat; };
+      return newMatch(idx, lv, { ai0: STEADY, ev, seed: 11 });
+    },
+    frame(M, G){ const p = G.puck, on = G.state === 'play'; M.frames.push(on ? p.x : -1, on ? p.y : -1, G.mal[0].x, G.mal[0].y, G.mal[1].x, G.mal[1].y, G.score[0], G.score[1], M.flag); },
+    over: G => G.state === 'over' || G.t > MATCH_CAP,
+  });
+  const { RECS, SOON, recOf, recWork, recSoon } = REC;
   function recView(M){
-    const F = M.frames, n = F.length / REC_F;
-    if (!n) return null;
-    const TT = n / REC_HZ + 2, at = ((now() / 1000 + M.phase * TT) % TT) * REC_HZ, i = Math.min(n - 1, Math.floor(at)), j = Math.min(n - 1, i + 1), f = Math.min(1, at - i);
-    const o = i * REC_F, q = j * REC_F, mix = c => F[o + c] + (F[q + c] - F[o + c]) * f;
+    const A = REC.at(M, now()); if (!A) return null;
+    const { F, i, f, mix } = A, o = A.p, q = A.q;
     const jump = F[o + 1] < 0 || F[q + 1] < 0 || Math.hypot(F[q] - F[o], F[q + 1] - F[o + 1]) > 0.2;
     const fx = [];
     for (let b = 0; b < 8 && i - b >= 0; b++){ const r = (i - b) * REC_F, fl = F[r + 8]; if (!fl) continue;
       const age = (b + f) / REC_HZ; if (fl <= 2) fx.push({ age, kind: 'hit', x: F[r], y: F[r + 1], seat: fl - 1 }); else if (fl === 3) fx.push({ age, kind: 'rail', x: F[r], y: F[r + 1] });
       else fx.push({ age, kind: 'goal', seat: fl - 4, x: W / 2, y: fl === 4 ? 0 : 1 }); }
     let puck = null;
-    if (F[o + 1] >= 0){ const trail = [];
-      for (let b = 1, px = F[o], py = F[o + 1]; b <= 6 && i - b >= 0; b++){ const r = (i - b) * REC_F; if (F[r + 1] < 0 || Math.hypot(F[r] - px, F[r + 1] - py) > 0.2) break; trail.push(F[r], F[r + 1]); px = F[r]; py = F[r + 1]; }
+    if (F[o + 1] >= 0){ const trail = REC.trail(F, i, 6, 0.2);
       puck = { x: jump ? F[o] : mix(0), y: jump ? F[o + 1] : mix(1), trail, step: 2 }; }
     const hitAge = s => { const h = fx.find(e => e.kind === 'hit' && e.seat === s); return h ? h.age : 9; };
     return { puck, mal: [{ x: mix(2), y: mix(3), r: M.G.mal[0].r, age: hitAge(0) }, { x: mix(4), y: mix(5), r: M.G.mal[1].r, age: hitAge(1) }], score: [F[o + 6], F[o + 7]], fx, shake: 0, t: (i + f) / REC_HZ };
@@ -57773,8 +57777,7 @@ const AIRHOCKEY_APP = (() => {
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('airhockey.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('airhockey.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = MATCH_KIT.best('airhockey.best');
   const bestKey = (idx, lv) => idx + '@' + lv + '@' + SET.target;
   const starsOf = (G, par) => G.winner === 0 ? (par != null && G.score[1] <= par ? 3 : 2) : G.score[0] * 2 >= G.target ? 1 : 0;
   function fresh(c, r){
@@ -57965,35 +57968,7 @@ const AIRHOCKEY_APP = (() => {
     if (![...OWN.values()].some(q => q.seat === p.seat)){ HAND[p.seat].tx = null; HAND[p.seat].ty = null; }
     return true;
   }
-  const onCanvas = e => { try { return e.target === _canvas; } catch { return false; } };
-  let touchTS = -1e9;
-  const echoOf = e => mouseIsTouchEcho() || (e.timeStamp - touchTS >= 0 && e.timeStamp - touchTS < 900);
-  addEventListener('touchstart', e => {
-    touchTS = e.timeStamp;
-    if (!onCanvas(e)) return;
-    let took = false;
-    for (const t of e.changedTouches){ const p = pressAt(t.clientX, t.clientY); if (!p) continue; OWN.set('t' + t.identifier, p); handAt(p, t.clientX, t.clientY); took = true; }
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  }, { capture: true, passive: false });
-  addEventListener('touchmove', e => {
-    let took = false;
-    for (const t of e.changedTouches){ const p = OWN.get('t' + t.identifier); if (!p) continue; handAt(p, t.clientX, t.clientY); took = true; }
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  }, { capture: true, passive: false });
-  const touchUp = e => {
-    touchTS = e.timeStamp;
-    let took = false;
-    for (const t of e.changedTouches) if (handUp('t' + t.identifier)) took = true;
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  };
-  addEventListener('touchend', touchUp, { capture: true, passive: false });
-  addEventListener('touchcancel', touchUp, { capture: true, passive: false });
-  addEventListener('mousedown', e => {
-    if (!onCanvas(e) || e.button !== 0 || echoOf(e)) return;
-    const p = pressAt(e.clientX, e.clientY); if (!p) return;
-    OWN.set('m', p); handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation();
-  }, true);
-  addEventListener('mousemove', e => { const p = OWN.get('m'); if (!p) return; handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation(); }, true);
+  MATCH_KIT.hands({ pressAt, handAt, handUp, OWN });
   addEventListener('mouseup', e => { if (handUp('m')){ e.preventDefault(); e.stopPropagation(); } }, true);
   // the keys: the arrows the near mallet (and W A S D with one player); with two, W A S D the far one. The screen's way.
   function keyOf(e, g){
@@ -58664,64 +58639,29 @@ const SQUASH_APP = (() => {
   /* ─── RECORDINGS ─── the steady player against the board's computer (or alone at its drill): frames of 17 (the ball x, y, z or −1,
      the four players or −1, the scores, the side to play, what happened, in play, the call) for the first REEL_T s; the match to
      its end for par. */
-  const REC_F = 17, RECS = new Map();
+  const REC_F = 17;
   const CODE = ['', 'TIN', 'OUT', 'DOWN', 'NOT UP', 'LET', 'STROKE', 'HAND OUT'];
   const recKey = (idx, lv) => idx + '@' + lv + '@' + SET.game + SET.mode + (SET.mode === 'drill' ? '' : SET.target + ':' + fmtRec()) + SET.speed + SET.reach;
   const fmtRec = () => SET.players === 'd1' || SET.players === 'd2' ? 'd1' : 1;
-  function recOf(idx, lv){
-    const k = recKey(idx, lv);
-    let M = RECS.get(k);
-    if (M){ RECS.delete(k); RECS.set(k, M); return M; }
-    const ev = (kind, a) => { if (kind === 'hit' || kind === 'serve') M.flag = a.seat + 1; else if (kind === 'front') M.flag = M.flag || 5; else if (kind === 'floor') M.flag = M.flag || 6; else if (kind === 'point') M.flag = 7 + a.seat; else if (kind === 'target') M.flag = 9; else if (kind === 'feed') M.flag = M.flag || 10; };
-    M = { idx, lv, G: null, frames: [], done: false, par: null, phase: (idx * 0.618) % 1, flag: 0, step: 0, drill: SET.mode === 'drill' };
-    M.G = newMatch(idx, lv, { ai0: STEADY, ev, seed: 13, drill: M.drill, fmt: fmtRec() });
-    RECS.set(k, M); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
-    return M;
-  }
-  function recWork(M, ms, whole){
-    const t0 = performance.now(), G = M.G, every = Math.round(1 / (REC_HZ * TICK));
-    while (!M.done && performance.now() - t0 < ms){
-      for (let i = 0; i < 30 && !M.done; i++){
-        const rec = G.t < REEL_T;
-        if (!rec && !whole) return M;
-        tick(G); M.step++;
-        if (rec && M.step % every === 0){
-          const b = G.ball, on = G.state !== 'over' && b.y >= 0, P = G.pl, cc = G.call && G.t - G.call.t < 0.05 ? Math.max(0, CODE.indexOf(G.call.text)) : 0;
-          M.frames.push(on ? b.x : -1, on ? b.y : -1, b.z, P[0].x, P[0].y, P[1].x, P[1].y, P[2].x, P[2].y, P[3].x, P[3].y,
-                        G.drill ? G.drill.score : G.score[0], G.drill ? Math.ceil(G.drill.left) : G.score[1], G.state === 'play' ? G.to : G.server, M.flag, G.state === 'play' ? 1 : 0,
-                        G.drill && G.drill.tgt ? Math.round(G.drill.tgt.x * 1000) * 1000 + Math.round(G.drill.tgt.z * 1000) : cc);
-          M.flag = 0;
-        }
-        if (G.state === 'over'){ M.done = true; M.par = parOf(G); M.final = G.score.slice(); }
-      }
-    }
-    return M;
-  }
   const parOf = G => G.drill ? Math.max(1, G.drill.score) : G.winner === 0 ? G.score[1] : Math.max(G.target, G.score[1]);
-  const SOON = new Map();
-  let soonT = 0;
-  function recSoon(idx, lv, urgent){
-    const M = RECS.get(recKey(idx, lv));
-    if (M && (M.done || (!urgent && M.G.t >= REEL_T))) return M;
-    if (urgent){ const R = M || recOf(idx, lv); recWork(R, 12, true); return R; }
-    SOON.set(recKey(idx, lv), [idx, lv, performance.now()]);
-    const t = performance.now();
-    if (t - soonT > 30){
-      soonT = t; const end = t + 8;
-      for (const [k, [i, l, at]] of SOON){
-        if (performance.now() > end) break;
-        if (t - at > 2000){ SOON.delete(k); continue; }
-        const R = recOf(i, l); recWork(R, end - performance.now(), false);
-        if (R.G.t >= REEL_T || R.done) SOON.delete(k);
-      }
-    }
-    return M && M.frames.length ? M : null;
-  }
+  const REC = MATCH_KIT.recordings({ key: recKey, cap: REC_CAP, hz: REC_HZ, tick: TICK, reel: REEL_T, F: REC_F, step: tick, parOf,
+    make(idx, lv, M){
+      const ev = (kind, a) => { if (kind === 'hit' || kind === 'serve') M.flag = a.seat + 1; else if (kind === 'front') M.flag = M.flag || 5; else if (kind === 'floor') M.flag = M.flag || 6; else if (kind === 'point') M.flag = 7 + a.seat; else if (kind === 'target') M.flag = 9; else if (kind === 'feed') M.flag = M.flag || 10; };
+      M.drill = SET.mode === 'drill';
+      return newMatch(idx, lv, { ai0: STEADY, ev, seed: 13, drill: M.drill, fmt: fmtRec() });
+    },
+    frame(M, G){
+      const b = G.ball, on = G.state !== 'over' && b.y >= 0, P = G.pl, cc = G.call && G.t - G.call.t < 0.05 ? Math.max(0, CODE.indexOf(G.call.text)) : 0;
+      M.frames.push(on ? b.x : -1, on ? b.y : -1, b.z, P[0].x, P[0].y, P[1].x, P[1].y, P[2].x, P[2].y, P[3].x, P[3].y,
+                    G.drill ? G.drill.score : G.score[0], G.drill ? Math.ceil(G.drill.left) : G.score[1], G.state === 'play' ? G.to : G.server, M.flag, G.state === 'play' ? 1 : 0,
+                    G.drill && G.drill.tgt ? Math.round(G.drill.tgt.x * 1000) * 1000 + Math.round(G.drill.tgt.z * 1000) : cc);
+    },
+    over: G => G.state === 'over',
+  });
+  const { RECS, SOON, recOf, recWork, recSoon } = REC;
   function recView(M){
-    const F = M.frames, n = F.length / REC_F;
-    if (!n) return null;
-    const TT = n / REC_HZ + 2, at = ((now() / 1000 + M.phase * TT) % TT) * REC_HZ, i = Math.min(n - 1, Math.floor(at)), j = Math.min(n - 1, i + 1), f = Math.min(1, at - i);
-    const o = i * REC_F, q = j * REC_F, mix = c => F[o + c] + (F[q + c] - F[o + c]) * f;
+    const A = REC.at(M, now()); if (!A) return null;
+    const { F, i, f, mix } = A, o = A.p, q = A.q;
     const jump = F[o + 1] < 0 || F[q + 1] < 0 || Math.hypot(F[q] - F[o], F[q + 1] - F[o + 1]) > 0.2;
     const fx = [];
     let call = null;
@@ -58734,8 +58674,7 @@ const SQUASH_APP = (() => {
       else if (fl <= 8) fx.push({ age, kind: 'point', seat: fl - 7 });
       else if (fl === 9) fx.push({ age, kind: 'target', x: F[r], z: F[r + 2], w: 0.1, h: 0.05 }); }
     let ball = null;
-    if (F[o + 1] >= 0){ const trail = [];
-      for (let b = 1, px = F[o], py = F[o + 1]; b <= 8 && i - b >= 0; b++){ const r = (i - b) * REC_F; if (F[r + 1] < 0 || Math.hypot(F[r] - px, F[r + 1] - py) > 0.2) break; trail.push(F[r], F[r + 1], F[r + 2]); px = F[r]; py = F[r + 1]; }
+    if (F[o + 1] >= 0){ const trail = REC.trail(F, i, 8, 0.2, 2);
       ball = { x: jump ? F[o] : mix(0), y: jump ? F[o + 1] : mix(1), z: jump ? F[o + 2] : Math.max(0, mix(2)), trail, step: 3 }; }
     const hitAge = s => { const h = fx.find(e => e.kind === 'hit' && e.seat === s); return h ? h.age : 9; };
     const pl = [];
@@ -58748,8 +58687,7 @@ const SQUASH_APP = (() => {
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('squash.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('squash.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = MATCH_KIT.best('squash.best');
   const bestKey = (idx, lv) => idx + '@' + lv + '@' + SET.game + (SET.mode === 'drill' ? '@drill' : '@' + SET.target + (fmtRec() === 'd1' ? '@d' : ''));
   const starsOf = (G, par) => {
     if (G.drill){ const s = G.drill.score; return par == null ? (s > 0 ? 1 : 0) : s >= par ? 3 : s >= 0.6 * par ? 2 : s >= 1 ? 1 : 0; }
@@ -59067,35 +59005,7 @@ const SQUASH_APP = (() => {
     if (![...OWN.values()].some(q => q.seat === p.seat)){ HAND[p.seat].tx = null; HAND[p.seat].ty = null; }
     return true;
   }
-  const onCanvas = e => { try { return e.target === _canvas; } catch { return false; } };
-  let touchTS = -1e9;
-  const echoOf = e => mouseIsTouchEcho() || (e.timeStamp - touchTS >= 0 && e.timeStamp - touchTS < 900);
-  addEventListener('touchstart', e => {
-    touchTS = e.timeStamp;
-    if (!onCanvas(e)) return;
-    let took = false;
-    for (const t of e.changedTouches){ const p = pressAt(t.clientX, t.clientY); if (!p) continue; OWN.set('t' + t.identifier, p); handAt(p, t.clientX, t.clientY); took = true; }
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  }, { capture: true, passive: false });
-  addEventListener('touchmove', e => {
-    let took = false;
-    for (const t of e.changedTouches){ const p = OWN.get('t' + t.identifier); if (!p) continue; handAt(p, t.clientX, t.clientY); took = true; }
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  }, { capture: true, passive: false });
-  const touchUp = e => {
-    touchTS = e.timeStamp;
-    let took = false;
-    for (const t of e.changedTouches) if (handUp('t' + t.identifier)) took = true;
-    if (took){ e.preventDefault(); e.stopPropagation(); }
-  };
-  addEventListener('touchend', touchUp, { capture: true, passive: false });
-  addEventListener('touchcancel', touchUp, { capture: true, passive: false });
-  addEventListener('mousedown', e => {
-    if (!onCanvas(e) || e.button !== 0 || echoOf(e)) return;
-    const p = pressAt(e.clientX, e.clientY); if (!p) return;
-    OWN.set('m', p); handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation();
-  }, true);
-  addEventListener('mousemove', e => { const p = OWN.get('m'); if (!p) return; handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation(); }, true);
+  MATCH_KIT.hands({ pressAt, handAt, handUp, OWN });
   addEventListener('mouseup', e => { if (handUp('m')){ e.preventDefault(); e.stopPropagation(); } }, true);
   // the keys: the arrows and W A S D both yours with one person; with two, W A S D red and the arrows blue. The screen's way.
   function keyOf(e, g){

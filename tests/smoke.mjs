@@ -4254,8 +4254,10 @@ try {
       await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
       real.start = (await rd()).st;
       // the real arrow
+      // (from the middle, with no finger on it: a paddle already at its left end could not go further, Oct 27)
+      await page.evaluate(k => { const P = window.getFieldApp()._debug.GAMES.get(k).G.pads[0]; P.x = 0.31; P.tx = null; P.v = 0; }, key);
       const a0 = (await rd()).x;
-      await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(400); await page.keyboard.up('ArrowLeft');
+      await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(600); await page.keyboard.up('ArrowLeft');
       real.arrow = (await rd()).x < a0 - 0.05;
       // a real drag: the paddle under the finger
       const p0 = await aimAt(0.3, 0.9), p1 = await aimAt(0.75, 0.9);
@@ -4266,6 +4268,8 @@ try {
       await page.mouse.up();
       // a point and a match: the computer stands still in a corner; your paddle under the ball
       real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G, pts = [];
+        // (a fresh serve of your own first: a ball already past your paddle from the drag above gave the computer a point, Oct 27)
+        G.state = 'serve'; G.server = 0; G.serveAt = G.t + G.serveT; G.rally = 0; G.balls = [];
         G.target = 3; G.score = [0, 0]; G.pads[1].ai = { react: 99, err: 0, v: 0, acc: 0, aim: 0 }; G.pads[1].think.next = 1e9; G.pads[1].think.T = 0.05; G.pads[1].x = 0.08;
         const ev = G.ev; G.ev = (kind, a, M) => { if (kind === 'point') pts.push(a.seat); ev && ev(kind, a, M); };
         for (let i = 0; i < 60 * 200 && G.state !== 'over'; i++){ G.pads[0].tx = G.balls[0] ? G.balls[0].x : 0.31; if (G.balls[0] && G.balls[0].vy > 0 && G.balls[0].y > 0.7) G.pads[0].x = G.balls[0].x; D.tick(G); }
