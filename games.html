@@ -15420,7 +15420,6 @@ function buildInstances(){
   }
 
   const rowData = [];
-  let demand = 0;
   for (let dz = -NEAR_ROWS; dz < FARDEPTH; dz++){
     const along   = dz * SPZ;
     const dist    = Math.max(1, along);
@@ -15460,8 +15459,9 @@ function buildInstances(){
        not get. It draws the same block, so a board keeps its picture across
        the handoff; it only stops boiling. */
     if (boardPy < _rowMinPy) continue;
-    const per = baseLeaves + basePieces;
-    for (let dx = -half; dx <= half; dx++) demand += per * clarityAt(dz, dx);
+    /* (a sum of every row's boards' clarity, `demand`, was made here every frame and read nowhere: a board across every row out
+       to the horizon, the most time left in a frame once the walk was cut to the boards in view; Oct 27, "mini-golf and golf
+       tanks are to slow to be usable") */
     rowData.push({ dz, half, boardPx, boardPy, baseLeaves, basePieces });
   }
   rowData.sort((a, b) => Math.abs(a.dz) - Math.abs(b.dz));
@@ -53764,7 +53764,9 @@ const GOLFTANK_APP = (() => {
       RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     } else { RECS.delete(key); RECS.set(key, E); }
     if (E.done) return E;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 6; }
+    /* (4 ms in every 40, a tenth of the page's time, not 6 in 30: a step is both tanks thinking, so a slice runs past its end
+        by up to a step, and zoomed out on a slow phone these battles took a fifth of every second, Oct 27) */
+    const t = performance.now(); if (t - budgetAt > 40){ budgetAt = t; budget = 4; }
     if (budget <= 0 && !force) return E;
     const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
     let n = 0;

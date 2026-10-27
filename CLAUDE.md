@@ -2387,7 +2387,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   mini golf (its long boards fit more rows), 0.94 million in checkers, the most time any game spent in a frame. `inFOV`'s
   tests are lines in a board's place (`_fovLines`), so each row of the walk is cut to the interval they allow, a board wider
   each way, and `inFOV` still decides: 53 boards walked, the same boards kept (checked frame by frame over pans, zooms and
-  turns). Golf tanks' boards no one plays (`recSoon`) ask the clock after every step of the round, not every twentieth.
+  turns). Then the most left was a sum over every board of every row out to the horizon (`demand`, `clarityAt`), made every
+  frame and read nowhere: gone. Golf tanks' boards no one plays (`recSoon`) ask the clock after every step of the round, not
+  every twentieth, and take 4 ms in 40 (6 in 30 before). Measured with the CPU slowed four times (a phone), JS a frame: mini
+  golf framed 245 → 68 ms, checkers 121 → 33 ms (before the `demand` sum went).
 - **Dead code taken out** (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and
   the shared kits"): functions and constants nothing reached, found by counting every name in the page (a name written once
   is its own declaration): `LOD_APP` and `HELLO_APP` (apps off the list since Sep 25), mini golf's `softAmount`, `cladGeo`,
