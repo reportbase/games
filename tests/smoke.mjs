@@ -6127,6 +6127,14 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         await wait(700);
       });
       await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await page.waitForTimeout(1500);
+      // (until a neighbour shows: on CI chess, the first game here, once had none on the screen 1.5 s after the wheel, Oct 27)
+      for (let k = 0; k < 4; k++){
+        const shows = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, [spx, spz] = W.spacing(), cv = document.querySelector('canvas');
+          return [[spx, 0], [-spx, 0], [0, spz], [0, -spz]].some(([dx, dz]) => { const v = new W.THREE.Vector3(T.boardX + dx, 0, T.boardZ + dz).project(W.camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+            return x > 60 && y > 60 && x < innerWidth - 60 && y < innerHeight - 140 && document.elementFromPoint(x, y) === cv; }); });
+        if (shows) break;
+        await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await page.waitForTimeout(1500);
+      }
       const r = await page.evaluate(async () => {
         const W = window.FIELD_WORLD, T = W.target, [spx, spz] = W.spacing(), cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
         let at = null, want = null;

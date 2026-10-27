@@ -28859,6 +28859,61 @@ const BLOCKOUT_APP = (() => {
   };
   return app;
 })();
+/* ═══ EDIT KIT (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and the shared
+   kits"): six games make their own boards in the bottom row (the tilt maze, Sokoban, tower defense, pinball, trick shots and
+   Soma), and each wrote out the same plumbing. Here once, `EDIT_KIT.make(o)`, given the game's editor state `o.ED` (`on`,
+   `busy`, `tool`) and its own `open`, `done`, `cancel`, `tiles` and `tile`:
+   - `pane(open)`: the row opened or shut as the editor's own (`ED.busy`, so the field's asking `onBrowserToggle` is not taken
+     for the person's), then rebuilt at once;
+   - Escape cancels while the game is the field's (unless `o.escape` is false: Soma's Escape has more to close);
+   - the row's hooks (`hooks`, spread into the app): the dots open the editor (`o.rowOpens`) and shutting the row is Done
+     (`o.rowStays`: and the row stays up as the game's own), `o.toggled` for anything else; the editor's tiles; and the quick
+     buttons, the game's own (`o.quick`: a key, glyph, title, the `tool` it takes up if any, and what it does) then ✕ Cancel and
+     ✓ Done, or ✎ while a game is played if the row is the game's (`o.make`). After a quick button, `o.after` (else the row
+     redrawn).
+   `EDIT_KIT.store(key, keep, clean)` is the boards' own kept in localStorage `key` (the latest `keep`, each read back through
+   `clean`). */
+const EDIT_KIT = {
+  make(o){
+    const ED = o.ED;
+    const pane = open => { ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} };
+    if (o.escape !== false) addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === o.app()){ e.preventDefault(); e.stopImmediatePropagation(); o.cancel(); } }, true);
+    const quick = o.quick || [];
+    const hooks = {
+      onBrowserToggle(open){
+        if (ED.busy) return true;
+        if (open && !ED.on && o.rowOpens) return o.open();
+        if (!open && ED.on){ const kept = o.done(); return o.rowStays ? false : kept; }
+        return o.toggled ? o.toggled(open) : true;
+      },
+      statTiles(){ return ED.on ? o.tiles() : null; },
+      statsStay(){ return ED.on; },
+      onStatTap(c, r, i){ return o.tile(i); },
+      quickActs(){
+        if (ED.on) return [...quick.map(q => ({ key: q.key, glyph: q.glyph, title: q.title, dim: q.tool ? ED.tool === q.tool : undefined })),
+                           { key: 'cancel', glyph: '✕', title: o.cancelTitle || 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: o.doneTitle }];
+        return o.make && o.make.when() ? [{ key: 'make', glyph: '✎', title: o.make.title }] : null;
+      },
+      onQuickAct(c, r, key){
+        if (key === 'make' && !ED.on && o.make){ if (o.open()) pane(true); return true; }
+        if (!ED.on) return false;
+        const q = quick.find(q => q.key === key);
+        if (q){ if (q.tool) ED.tool = q.tool; q.run(); }
+        else if (key === 'cancel') o.cancel();
+        else if (key === 'done') o.done();
+        if (o.after) o.after(); else try { bbRefreshNow(); } catch {}
+        return true;
+      },
+    };
+    return { pane, hooks };
+  },
+  store(key, keep, clean){
+    const MINE = new Map();
+    try { const o = JSON.parse(localStorage.getItem(key) || '{}'); for (const k in o){ const d = clean(o[k]); if (d) MINE.set(k, d); } } catch {}
+    const save = () => { try { const o = {}; [...MINE.entries()].slice(-keep).forEach(([k, d]) => { o[k] = d; }); localStorage.setItem(key, JSON.stringify(o)); } catch {} };
+    return { MINE, save };
+  },
+};
 /* ═══ SOMA (Oct 23: "any games that require 3d spatial rotation", then of the five offered "Soma or burr puzzles") ═══════════
    Piet Hein's Soma cube: the seven pieces of three and four cubes that are not straight (the V of three, then the L, T and Z,
    and the three that are not flat: the tripod and two screws, one the other's mirror image), 27 cubes in all, which fill a
@@ -29548,7 +29603,11 @@ const SOMA_APP = (() => {
     return m.F;
   }
   const edSay = (m, ms) => say(m, ms || 3200);
-  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
+    quick: [{ key: 'check', glyph: '✔', title: 'Check: can it be filled with its pieces, and how many ways?', run: () => edCheck() }],
+    escape: false, doneTitle: 'Done: keep it and play it', after: () => touched(),
+    toggled: open => { if (!open && GAL.on) galClose(); return true; },
+    make: { when: () => !!liveGame(), title: 'Make a figure for this board: cells on and off layer by layer, the pieces to fill it with' } }), edPane = EDK.pane;
   const edCount = () => ED.cells.size;
   const edNeed = () => ED.types.reduce((a, on, t) => a + (on ? PIECES[t].length : 0), 0);
   const ck = (x, y, z) => x + ',' + y + ',' + z;
@@ -30025,24 +30084,7 @@ const SOMA_APP = (() => {
     /* THE ROW IS THE FIGURE EDITOR while making one (trick shots' way: the row is also the played figure's, and the field opens
        it by itself when a game's tiles appear, so its opening is not the editor's switch; ✎ or the menu opens it). Shutting it
        keeps the figure if it can be filled. */
-    onBrowserToggle(open){
-      if (ED.busy) return true;
-      if (!open && ED.on) return edDone();
-      if (!open && GAL.on){ galClose(); return true; }
-      return true;
-    },
-    quickActs(){
-      if (ED.on) return [{ key: 'check', glyph: '✔', title: 'Check: can it be filled with its pieces, and how many ways?' }, { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: keep it and play it' }];
-      return liveGame() ? [{ key: 'make', glyph: '✎', title: 'Make a figure for this board: cells on and off layer by layer, the pieces to fill it with' }] : null;
-    },
-    onQuickAct(c, r, key){
-      if (key === 'make' && !ED.on){ if (edOpen()) edPane(true); return true; }
-      if (!ED.on) return false;
-      if (key === 'check') edCheck();
-      else if (key === 'cancel') edCancel();
-      else if (key === 'done') edDone();
-      touched(); return true;
-    },
+    ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
     onStatTap(c, r, i){
       if (ED.on){ edTile(i); touched(); return true; }
       if (GAL.on && GAL.c === c && GAL.r === r){ galTile(i); touched(); return true; }
@@ -32379,7 +32421,7 @@ const TD_APP = (() => {
      board as it was. A tap on another board moves the editor there. A board with a map shows it waiting
      instead of the bot's recording, and Reset and Difficulty start it again; the waves and the pieces'
      strength are the Difficulty's, as on any board. The menu's Forget this board's map puts it back. */
-  const MAPS = new Map(), MAP_CAP = 300, GOLDS = [30, 50, 70, 100, 150, 250, 500];
+  const MAP_CAP = 300, GOLDS = [30, 50, 70, 100, 150, 250, 500];
   const isEdge = (i, n) => { const r = (i / n) | 0, c = i % n; return r === 0 || c === 0 || r === n - 1 || c === n - 1; };
   // Anything read back from storage is checked: sizes, doors on the edge, known squares, an open way.
   function cleanMap(m){
@@ -32394,10 +32436,7 @@ const TD_APP = (() => {
     use(was);
     return ok ? { n, entry, exit, cells, gold } : null;
   }
-  function saveMaps(){
-    try { const o = {}; [...MAPS.entries()].slice(-MAP_CAP).forEach(([k, m]) => { o[k] = m; }); localStorage.setItem('td.maps', JSON.stringify(o)); } catch {}
-  }
-  try { const o = JSON.parse(localStorage.getItem('td.maps') || '{}'); for (const k in o){ const m = cleanMap(o[k]); if (m) MAPS.set(k, m); } } catch {}
+  const { MINE: MAPS, save: saveMaps } = EDIT_KIT.store('td.maps', MAP_CAP, cleanMap);
   const mapOf = g => ({ n: g.n, entry: g.doors.entry, exit: g.doors.exit, cells: Array.from(g.towers, v => CELL[v] || '.').join(''), gold: g.gold });
 
   const ED = { on: false, key: null, c: 0, r: 0, g: null, tool: 'rock', busy: false };
@@ -32405,7 +32444,10 @@ const TD_APP = (() => {
                     [1, '♙', 'Pawn'], [2, '♘', 'Knight'], [3, '♗', 'Bishop'], [4, '♖', 'Rook'], [5, '♕', 'Queen'], ['erase', '🧽', 'Erase']];
   const ED_ACTS = ['clear', 'size', 'gold', 'play'];
   const edSay = (m, ms) => { ED.msg = m; try { engineNotice(m, ms || 2600); } catch {} };
-  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
+    quick: [{ key: 'erase', glyph: '🧽', title: 'Erase', tool: 'erase', run: () => edSay('Tap a rock or a tower to take it off.') },
+            { key: 'clear', glyph: '⌫', title: 'Clear the floor', run: () => edTile(ED_TOOLS.length + ED_ACTS.indexOf('clear')) }],
+    rowOpens: true, doneTitle: 'Done: play this map' }), edPane = EDK.pane;
   // A draft: a game on the map, never stepped (state 'edit'), so the board draws it, the way lit.
   function edDraft(map){ const g = newGame(roadOf(ED.c, ED.r), 0, map, lvAt(ED.c, ED.r)); g.state = 'edit'; return g; }
   function bareMap(c, r, n){
@@ -32506,7 +32548,6 @@ const TD_APP = (() => {
     return true;
   }
   // (only while this game is the one on show: an editor left open in another game caught Escape here, Oct 13)
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE (Oct 13): a board's map (the draft while editing) as a link; taken onto the first board framed, through cleanMap
   function shareMap(){
     const f = framedCell(), m = ED.on ? mapOf(ED.g) : f && MAPS.get(gkey(f.c, f.r));
@@ -32557,25 +32598,7 @@ const TD_APP = (() => {
        Since Oct 13 the row is the map editor's; see statTiles.) */
     /* THE ROW IS THE MAP EDITOR (Oct 13, ED above): opening it makes a map of the framed board,
        shutting it plays the map. */
-    onBrowserToggle(open){
-      if (ED.busy) return true;
-      if (open && !ED.on) return edOpen();
-      if (!open && ED.on) return edDone();
-      return true;
-    },
-    statsStay(){ return ED.on; },
-    onStatTap(c, r, i){ return edTile(i); },
-    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase', dim: ED.tool === 'erase' }, { key: 'clear', glyph: '⌫', title: 'Clear the floor' },
-                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this map' }] : null; },
-    onQuickAct(c, r, key){
-      if (!ED.on) return false;
-      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a rock or a tower to take it off.'); }
-      else if (key === 'clear') edTile(ED_TOOLS.length + ED_ACTS.indexOf('clear'));
-      else if (key === 'cancel') edCancel();
-      else if (key === 'done') edDone();
-      try { bbRefreshNow(); } catch {}
-      return true;
-    },
+    ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
     /* (Oct 13: the row is the map editor's alone, as mini golf's is the hole editor's. Its numbers showed in the row, and the
        field opens the row by itself when an app's numbers first appear: in a game that opening started the editor and
        stopped the game. Gold, wave and pieces out are in the board's title.) */
@@ -46760,7 +46783,7 @@ const SOKOBAN_APP = (() => {
      positions is kept without a par (no stars). It is kept on the board (MINE, localStorage sokoban.levels, the latest
      300, each read back through cleanMine) and played at once; Escape or Cancel leaves the board as it was. The menu's
      Forget this board's level puts the dealt one back. */
-  const MINE = new Map(), MINE_L = new Map(), MINE_KEEP = 300, MINE_CAP = 150000;
+  const MINE_L = new Map(), MINE_KEEP = 300, MINE_CAP = 150000;
   const CH = { wall: '#', floor: ' ', spot: '.', crate: '$', both: '*', keeper: '@', keeperSpot: '+' };
   function cleanMine(m){
     if (!m || typeof m !== 'object') return null;
@@ -46798,16 +46821,16 @@ const SOKOBAN_APP = (() => {
     MINE_L.set(k, L);
     return L;
   }
-  function saveMine(){
-    try { const o = {}; [...MINE.entries()].slice(-MINE_KEEP).forEach(([k, m]) => { o[k] = m; }); localStorage.setItem('sokoban.levels', JSON.stringify(o)); } catch {}
-  }
-  try { const o = JSON.parse(localStorage.getItem('sokoban.levels') || '{}'); for (const k in o){ const m = cleanMine(o[k]); if (m) MINE.set(k, m); } } catch {}
+  const { MINE, save: saveMine } = EDIT_KIT.store('sokoban.levels', MINE_KEEP, cleanMine);
 
   const ED = { on: false, key: null, c: 0, r: 0, L: null, tool: 'wall', busy: false, msg: '' };
   const ED_TOOLS = [['wall', '🧱', 'Wall'], ['crate', '📦', 'Crate'], ['spot', '⭐', 'Spot'], ['keeper', '⚪', 'Keeper'], ['floor', '🧽', 'Floor']];
   const ED_ACTS = ['clear', 'size', 'check', 'play'];
   const edSay = (m, ms) => { ED.msg = m; try { engineNotice(m, ms || 2800); } catch {} };
-  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
+    quick: [{ key: 'floor', glyph: '🧽', title: 'Erase: back to floor', tool: 'floor', run: () => edSay('Tap squares to make them bare floor.') },
+            { key: 'check', glyph: '✔', title: 'Check: can it be solved, and in how many pushes?', run: () => edCheck(true) }],
+    rowOpens: true, doneTitle: 'Done: play this level' }), edPane = EDK.pane;
   // The board on the screen, as the field frames it (LIVE can be a board left earlier: tower defense's lesson, Oct 13).
   function framedCell(){
     try { const W = window.FIELD_WORLD, T = W && W.target; if (T && T.shown){ const f = W.cellAt(T.boardX, T.boardZ); if (f) return f; } } catch {}
@@ -46908,7 +46931,6 @@ const SOKOBAN_APP = (() => {
     return true;
   }
   // (only while this game is the one on show: an editor left open in another game caught Escape here, Oct 13)
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE (Oct 13): a board's level (the draft while editing) as a link; taken onto the first board framed, through cleanMine
   function shareLevel(){
     const f = framedCell(), m = ED.on ? { n: ED.L.n, cells: cellsOf(ED.L) } : f && MINE.get(gkey(f.c, f.r));
@@ -46951,26 +46973,7 @@ const SOKOBAN_APP = (() => {
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
     /* THE ROW IS THE LEVEL EDITOR (Oct 13, ED above): opening it makes a level for the framed board, shutting it plays it. */
-    onBrowserToggle(open){
-      if (ED.busy) return true;
-      if (open && !ED.on) return edOpen();
-      if (!open && ED.on) return edDone();
-      return true;
-    },
-    statTiles(){ return ED.on ? edTiles() : null; },
-    statsStay(){ return ED.on; },
-    onStatTap(c, r, i){ return edTile(i); },
-    quickActs(){ return ED.on ? [{ key: 'floor', glyph: '🧽', title: 'Erase: back to floor', dim: ED.tool === 'floor' }, { key: 'check', glyph: '✔', title: 'Check: can it be solved, and in how many pushes?' },
-                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this level' }] : null; },
-    onQuickAct(c, r, key){
-      if (!ED.on) return false;
-      if (key === 'floor'){ ED.tool = 'floor'; edSay('Tap squares to make them bare floor.'); }
-      else if (key === 'check') edCheck(true);
-      else if (key === 'cancel') edCancel();
-      else if (key === 'done') edDone();
-      try { bbRefreshNow(); } catch {}
-      return true;
-    },
+    ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
     cellFar: { light: FLOOR, dark: FLOOR },
     faceMinPx: 1,
     itemMinPx: FAR_PX,
@@ -47401,7 +47404,7 @@ const TILT_APP = (() => {
      kept without a par). Kept on the board (MINE, localStorage tiltmaze.mine, the latest 300, each read back through
      cleanMaze) and played at once; Escape or Cancel leaves the board as it was; the menu's Forget puts the board's own back,
      and Share copies a link to it. */
-  const MINE = new Map(), MINE_M = new Map(), MINE_KEEP = 300, SIZES = [7, 9, 11, 13, 15], MINE_COL = 0x8a4fd0, MINE_G = 1.12;
+  const MINE_M = new Map(), MINE_KEEP = 300, SIZES = [7, 9, 11, 13, 15], MINE_COL = 0x8a4fd0, MINE_G = 1.12;
   const hashOf = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
   // a maze as written: { m, E, S (strings of 0 and 1, a cell's east and south walls), holes: [[x, y]] in cells, start, goal }
   function cleanMaze(d){
@@ -47437,14 +47440,16 @@ const TILT_APP = (() => {
     M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: (L.idx * 0.618) % 1, mine: true };
     MINE_M.set(k, M); return M;
   }
-  function saveMine(){ try { const o = {}; [...MINE.entries()].slice(-MINE_KEEP).forEach(([k, d]) => { o[k] = d; }); localStorage.setItem('tiltmaze.mine', JSON.stringify(o)); } catch {} }
-  try { const o = JSON.parse(localStorage.getItem('tiltmaze.mine') || '{}'); for (const k in o){ const d = cleanMaze(o[k]); if (d) MINE.set(k, d); } } catch {}
+  const { MINE, save: saveMine } = EDIT_KIT.store('tiltmaze.mine', MINE_KEEP, cleanMaze);
 
   const ED = { on: false, key: null, c: 0, r: 0, L: null, tool: 'wall', busy: false, drag: null, ateAt: 0 };
   const ED_TOOLS = [['wall', '🧱', 'Wall'], ['hole', '⚫', 'Hole'], ['start', '⚪', 'Start'], ['ring', '⭕', 'Ring'], ['erase', '🧽', 'Erase']];
   const ED_ACTS = ['clear', 'fill', 'size', 'gen', 'check', 'play'];
   const edSay = (m, ms) => say(m, ms || 2800);
-  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
+    quick: [{ key: 'erase', glyph: '🧽', title: 'Erase: a hole or a wall away', tool: 'erase', run: () => edSay('Tap a hole or a wall to take it away.') },
+            { key: 'check', glyph: '✔', title: 'Check: can it be done, and how fast?', run: () => edCheck(true) }],
+    rowOpens: true, doneTitle: 'Done: play this maze' }), edPane = EDK.pane;
   const copyMaze = L => mazeOfData(dataOf(L), L.idx);
   function bareMaze(m, idx, full){
     const n = m * m, E = new Uint8Array(n), S = new Uint8Array(n);
@@ -47564,7 +47569,6 @@ const TILT_APP = (() => {
     const id = e[0] + e[1]; if (D.done.has(id)) return;
     D.done.add(id); if (L[e[0]][e[1]] !== D.set){ L[e[0]][e[1]] = D.set; D.moved = true; edRebuild(); }
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE: a board's maze (the draft while editing) as a link, taken onto the first board framed, through cleanMaze
   function shareMaze(){
     const f = framedCell(), d = ED.on ? dataOf(ED.L) : f && MINE.get(gkey(f.c, f.r));
@@ -47655,26 +47659,7 @@ const TILT_APP = (() => {
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved) ED.ateAt = performance.now(); ED.drag = null; } DRAG = null; },
     noDoubleTap(){ return ED.on; },                            // (two quick taps on an edge are two walls: Simon's lesson)
     /* THE ROW IS THE MAZE EDITOR (Oct 20, YOUR OWN MAZES above): opening it makes a maze for the framed board, shutting it plays it. */
-    onBrowserToggle(open){
-      if (ED.busy) return true;
-      if (open && !ED.on) return edOpen();
-      if (!open && ED.on) return edDone();
-      return true;
-    },
-    statTiles(){ return ED.on ? edTiles() : null; },
-    statsStay(){ return ED.on; },
-    onStatTap(c, r, i){ return edTile(i); },
-    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase: a hole or a wall away', dim: ED.tool === 'erase' }, { key: 'check', glyph: '✔', title: 'Check: can it be done, and how fast?' },
-                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this maze' }] : null; },
-    onQuickAct(c, r, key){
-      if (!ED.on) return false;
-      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a hole or a wall to take it away.'); }
-      else if (key === 'check') edCheck(true);
-      else if (key === 'cancel') edCancel();
-      else if (key === 'done') edDone();
-      try { bbRefreshNow(); } catch {}
-      return true;
-    },
+    ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
     _debug: { makeMaze, mazeFor, playRun, stepBall, botTilt, bfs, pathOf, nbrs, cellOf, centre, gameAt, fresh, stepGame, finish, starsOf, levelAt, boardIdx,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, GAMES, MAZES, BEST, HELD, LV, fly: (c, r) => gotoCell(c, r),
               ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edgeAt, cleanMaze, dataOf, mineMaze, MINE, shareMaze, takeMaze, ED_TOOLS, ED_ACTS },
@@ -49168,7 +49153,7 @@ const PINBALL_APP = (() => {
      one lasts against that level's band), Play. Kept on the board (MINE, localStorage pinball.mine, the latest 300, read back
      through `cleanSpec`), framed in violet, its recording and par the steady player's as for any board (`mineTable`). Escape or
      Cancel leaves the board as it was; the menu has Share this board's table and Forget it. */
-  const MINE = new Map(), MINE_M = new Map(), MINE_KEEP = 300, MINE_COL = 0x8a4fd0;
+  const MINE_M = new Map(), MINE_KEEP = 300, MINE_COL = 0x8a4fd0;
   const hashOf = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
   const Y0 = 0.15, Y1 = 0.71, XL = 0.03, XR = PW - 0.025;
   const cl = (v, a, b) => Math.max(a, Math.min(b, +v || 0));
@@ -49278,8 +49263,7 @@ const PINBALL_APP = (() => {
     MINE_M.set(k, M); return M;
   }
   const knownTable = (c, r) => MINE.has(gkey(c, r)) ? mineTable(c, r) : TABLES.get(boardIdx(c, r) * 8 + levelAt(boardIdx(c, r)));
-  function saveMine(){ try { const o = {}; [...MINE.entries()].slice(-MINE_KEEP).forEach(([k, d]) => { o[k] = d; }); localStorage.setItem('pinball.mine', JSON.stringify(o)); } catch {} }
-  try { const o = JSON.parse(localStorage.getItem('pinball.mine') || '{}'); for (const k in o){ const d = cleanSpec(o[k]); if (d) MINE.set(k, d); } } catch {}
+  const { MINE, save: saveMine } = EDIT_KIT.store('pinball.mine', MINE_KEEP, cleanSpec);
 
   const ED = { on: false, key: null, c: 0, r: 0, P: null, M: null, ver: 0, tool: 'bumper', busy: false, drag: null, ateAt: 0 };
   const ED_TOOLS = [['bumper', '🔴', 'Bumper'], ['post', '⚪', 'Post'], ['saucer', '🕳️', 'Saucer'], ['ramp', '↗️', 'Ramp'], ['orbit', '🌈', 'Orbit'], ['bank', '🎯', 'Drop bank'],
@@ -49287,7 +49271,10 @@ const PINBALL_APP = (() => {
                     ['mbank', '↔️', 'Moving bank'], ['gobble', '⚫', 'Gobble hole'], ['upper', '🦾', 'Upper flipper'], ['erase', '🧽', 'Erase']];
   const ED_ACTS = ['era', 'theme', 'level', 'clear', 'check', 'play'];
   const edSay = (m, ms) => say(m, ms || 2800);
-  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
+    quick: [{ key: 'erase', glyph: '🧽', title: 'Erase: tap a part to take it away', tool: 'erase', run: () => edSay('Tap a part to take it away.') },
+            { key: 'check', glyph: '✔', title: 'Check: how long does the steady player\'s ball last?', run: () => edCheck(true) }],
+    rowOpens: true, doneTitle: 'Done: play this table' }), edPane = EDK.pane;
   // the draft, built again after every change (a table from its spec takes about a millisecond)
   function edRebuild(){
     const T = makeTable(boardIdx(ED.c, ED.r), ED.P.lv, 0, false, ED.P);
@@ -49406,7 +49393,6 @@ const PINBALL_APP = (() => {
     say('A shared table: ' + THEMES.find(t => t.id === d.theme).name + ', ' + ERAS.find(e => e.id === d.era).name + ', level ' + d.lv + '. Tap it to play.', 3200);
     try { fieldItemsChanged(); } catch {}
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
 
   const app = {
     name: 'pinball',
@@ -49482,26 +49468,7 @@ const PINBALL_APP = (() => {
     onPan(dx, dy, at){ if (!ED.on || !ED.drag) return false; if (at) edDragAt(at.u, at.v); return true; },
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved) ED.ateAt = performance.now(); ED.drag = null; } },
     /* THE ROW IS THE TABLE EDITOR (A TABLE OF YOUR OWN): opening it makes a table for the framed board, shutting it plays it. */
-    onBrowserToggle(open){
-      if (ED.busy) return true;
-      if (open && !ED.on) return edOpen();
-      if (!open && ED.on) return edDone();
-      return true;
-    },
-    statTiles(){ return ED.on ? edTiles() : null; },
-    statsStay(){ return ED.on; },
-    onStatTap(c, r, i){ return edTile(i); },
-    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase: tap a part to take it away', dim: ED.tool === 'erase' }, { key: 'check', glyph: '✔', title: 'Check: how long does the steady player\'s ball last?' },
-                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the board as it was' }, { key: 'done', glyph: '✓', title: 'Done: play this table' }] : null; },
-    onQuickAct(c, r, key){
-      if (!ED.on) return false;
-      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a part to take it away.'); }
-      else if (key === 'check') edCheck(true);
-      else if (key === 'cancel') edCancel();
-      else if (key === 'done') edDone();
-      try { bbRefreshNow(); } catch {}
-      return true;
-    },
+    ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
     _debug: { makeTable, tableFor, newState, sub, launch, setFlipper, toPlunger, endBall, botStep, botNew, simGen, simRun, work, finishJob, starsOf, levelAt, boardIdx, ringOf,
               fitGen, lifeOf, offBand, readyNow, eraOf, pathAt, rampZ, palette, ERAS, LIFE_BAND, FIT_TRIES, COMBO_T,
               THEMES, lockLit, startMulti, MIS, MIS_T, MIS_AWARD, misStart, misCode, misRead, shotNow, offOf, wantOf, ev, REC_PRE, magOn, mbX, dispText, dotsOf, reelsOf, lockSpot, frameOf, MSGS, JACK0, REEL_PX, DOT_PX, fly: (c, r) => gotoCell(c, r),
@@ -55607,7 +55574,11 @@ const TRICK_APP = (() => {
   const ED_ACTS = ['bank', 'kick', 'ringsize', 'see', 'clear', 'check', 'play'];
   const RINGS = [0.6, 0.9, 1.2, 1.6];
   const edSay = (m, ms) => say(m, ms || 3200);
-  function edPane(open){ ED.busy = true; try { toggleBoardBrowser(open); } catch {} ED.busy = false; try { rebuildBoardBrowser(); bbRefreshNow(); } catch {} }
+  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
+    quick: [{ key: 'erase', glyph: '🧽', title: 'Erase: a ball or the ring away', tool: 'erase', run: () => edSay('Tap a ball or the ring to take it away.') },
+            { key: 'check', glyph: '✔', title: 'Check: is there a shot that does it, and what par?', run: () => edCheck(null) }],
+    rowStays: true, cancelTitle: 'Cancel: leave the table as it was', doneTitle: 'Done: keep it and play it',
+    make: { when: () => !!liveGame(), title: 'Make a trick shot for this board: place the balls, mark what the shot must do' } }), edPane = EDK.pane;
   const draftOf = () => ({ kind: 'mine', balls: ED.balls.map(b => [b[0], b[1], b[2]]), target: ED.target, first: ED.first, avoid: ED.avoid.slice(), bank: ED.bank, kick: ED.kick,
                            zone: ED.zone ? [ED.zone[0], ED.zone[1], ED.zone[2]] : null, see: ED.see === Infinity ? 99 : ED.see });
   const draftKey = () => JSON.stringify(draftOf());
@@ -55740,7 +55711,6 @@ const TRICK_APP = (() => {
     else return false;
     edChanged(); return true;
   }
-  addEventListener('keydown', e => { if (e.key === 'Escape' && ED.on && window.getFieldApp && window.getFieldApp() === app){ e.preventDefault(); e.stopImmediatePropagation(); edCancel(); } }, true);
   // SHARE: a board's own trick shot (the draft while editing) as a link, taken onto the first board framed, through cleanMine; a
   // shot that no longer does it (or none sent) is looked for again before it is kept
   function shareShot(){
@@ -55822,24 +55792,7 @@ const TRICK_APP = (() => {
     /* THE ROW IS THE TRICK-SHOT EDITOR while making one; shutting it then keeps the shot once one is found. The row is also the
        played table's (its Shoot, aim and spin), and the field opens it by itself when a game's tiles appear, so its opening is
        not the editor's switch, as it is mini golf's and the tilt maze's: the editor opens from the quick button ✎ or the menu. */
-    onBrowserToggle(open){
-      if (ED.busy) return true;
-      if (!open && ED.on){ edDone(); return false; }
-      return true;
-    },
-    quickActs(){ return ED.on ? [{ key: 'erase', glyph: '🧽', title: 'Erase: a ball or the ring away', dim: ED.tool === 'erase' }, { key: 'check', glyph: '✔', title: 'Check: is there a shot that does it, and what par?' },
-                                 { key: 'cancel', glyph: '✕', title: 'Cancel: leave the table as it was' }, { key: 'done', glyph: '✓', title: 'Done: keep it and play it' }]
-                               : liveGame() ? [{ key: 'make', glyph: '✎', title: 'Make a trick shot for this board: place the balls, mark what the shot must do' }] : null; },
-    onQuickAct(c, r, key){
-      if (key === 'make' && !ED.on){ if (edOpen()) edPane(true); return true; }
-      if (!ED.on) return false;
-      if (key === 'erase'){ ED.tool = 'erase'; edSay('Tap a ball or the ring to take it away.'); }
-      else if (key === 'check') edCheck(null);
-      else if (key === 'cancel') edCancel();
-      else if (key === 'done') edDone();
-      try { bbRefreshNow(); } catch {}
-      return true;
-    },
+    ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
     onReset(c, r){ restart(c, r); return true; },
     onSelect(){ return true; },
     onFramed(c, r){

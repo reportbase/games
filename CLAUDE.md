@@ -2381,15 +2381,6 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`window.uiTextScale`). The smoke test clicks the real A+ and the middle button.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
-
-## Shared with draw: change with care
-`games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:
-the tvf-core library (`// >>> copied from draw.html, unchanged: tvf-core`) and `parseTvfText`
-(`… unchanged: tvf-reader`), each ending at its `// <<< end of NAME`. Don't edit inside them: fix draw first, then copy
-across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails when they drift from draw's `main`
-(`DRAW_HTML=../draw/draw.html` compares with a local draw). `TVF_CURVE` is the curve library; the older `TVF` is the
-3D shape helper the field-lib uses, a different thing.
-
 - **Dead code taken out** (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and
   the shared kits"): functions and constants nothing reached, found by counting every name in the page (a name written once
   is its own declaration): `LOD_APP` and `HELLO_APP` (apps off the list since Sep 25), mini golf's `softAmount`, `cladGeo`,
@@ -2401,7 +2392,23 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   `recSoon`, `at` for where a board's loop is, `trail`; each game gives its key, how to make and step a match, a frame, when it
   is over and its par), `hands(o)` (every press on the canvas offered to the game's `pressAt`, `handAt`, `handUp` before the
   field, a touch's mouse echo known by its time) and `best(key)`. A new game of their kind uses it.
+- **One edit kit** (Oct 27, the same request): the six games that make their own boards in the bottom row (the tilt maze,
+  Sokoban, tower defense, pinball, trick shots, Soma) wrote out the same plumbing each. `EDIT_KIT` (before Soma) has it once:
+  `make(o)` gives `pane(open)` (the row opened or shut as the editor's own, `ED.busy`), Escape cancelling, and the row's hooks
+  (`hooks`, spread into the app: `onBrowserToggle`, `statTiles`, `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`; the game's
+  own quick buttons, then ✕ Cancel and ✓ Done, or ✎ when the row is the game's), each game giving its `open`, `done`, `cancel`,
+  `tiles` and `tile`; `store(key, keep, clean)` keeps the boards' own in localStorage. Chess's, the board games' (`BOARD_ED`),
+  the puzzle makers' (`PUZZLE_ED`) and mini golf's editors have their own, older ways.
 
+## Shared with draw: change with care
+`games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:
+the tvf-core library (`// >>> copied from draw.html, unchanged: tvf-core`) and `parseTvfText`
+(`… unchanged: tvf-reader`), each ending at its `// <<< end of NAME`. Don't edit inside them: fix draw first, then copy
+across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails when they drift from draw's `main`
+(`DRAW_HTML=../draw/draw.html` compares with a local draw). `TVF_CURVE` is the curve library; the older `TVF` is the
+3D shape helper the field-lib uses, a different thing.
+
+## Conventions
 - Comments explain *why*, at length, and often quote the owner's request with a
   date, e.g. `(Sep 22: "…")`. There are hundreds of these. Keep the voice: when a
   change follows a request, record it the same way.
