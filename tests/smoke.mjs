@@ -4408,6 +4408,100 @@ try {
     if (!ok2) failures.push('[pong] a real drag stepping forward: ' + JSON.stringify(step));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real drag up the table steps the paddle forward (${step && step.dyIn}), and let go it steps back`);
   }
+  // AIR HOCKEY (Oct 27: "this is a cool game. what other games could we create like pong.", then "1"): levels by ring; a mallet's
+  // swing passed into the puck; the rails, and goals only through a mouth; the puck never inside a mallet; matches ending at
+  // every level with the steady player winning near the corner and losing far out; a recording's par; real input (a click
+  // starting, a real drag putting the mallet under the finger, the real arrow), a goal and a match won with stars and a best, two
+  // real fingers each taking a mallet with the view still, a real click on the Goals tile; a board no one plays moving.
+  {
+    current = 'airhockey';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'airhockey')));
+    await page.waitForTimeout(1200);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, C = D.consts, out = {};
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      // a still puck struck by a mallet moving at 1: off at about (1 + its bounce) of that, along the line of centres
+      const G = D.newMatch(1, 1, { ai0: null, ai1: null }); const M = G.mal[0], p = G.puck;
+      Object.assign(p, { x: 0.31, y: 0.7, vx: 0, vy: 0 }); Object.assign(M, { x: 0.31, y: 0.7 + M.r + C.PR - 0.001, vx: 0, vy: -1 });
+      D.hitMallet(G, 0); out.strike = [+p.vx.toFixed(3), +p.vy.toFixed(3)];
+      // the rail and the goals: beside the mouth it comes back, in the mouth it scores
+      const A = D.newMatch(1, 1, { ai0: null, ai1: null }); let goals = 0; A.ev = k => { if (k === 'goal') goals++; };
+      Object.assign(A.puck, { x: 0.08, y: 0.93, vx: 0, vy: 1 }); A.mal[0].x = 0.5; A.mal[0].y = 0.6; for (let i = 0; i < 10; i++) D.tick(A);
+      out.rail = { vy: +A.puck.vy.toFixed(2), goals };
+      Object.assign(A.puck, { x: C.W / 2, y: 0.93, vx: 0, vy: 1 }); for (let i = 0; i < 10; i++) D.tick(A); out.goal = goals;
+      // matches: the steady player against the board's computer, the puck never inside a mallet
+      let inside = 0;
+      out.share = [1, 3, 5].map(lv => { let a = 0, b = 0, ended = 0;
+        for (let s = 0; s < 3; s++){ const Mt = D.newMatch(300 + s, lv, { ai0: D.STEADY, seed: s, target: 5 });
+          while (Mt.state !== 'over' && Mt.t < 600){ D.tick(Mt); for (const m of Mt.mal) if (Math.hypot(Mt.puck.x - m.x, Mt.puck.y - m.y) < m.r + C.PR - 0.004) inside++; }
+          a += Mt.score[0]; b += Mt.score[1]; if (Mt.state === 'over') ended++; }
+        return { share: +(a / Math.max(1, a + b)).toFixed(2), ended }; });
+      out.inside = inside;
+      const R = D.recOf(321, 2); D.recWork(R, 4000, true); out.rec = { done: R.done, par: R.par, frames: R.frames.length / 9 };
+      out.themes = D.THEMES.map(t => { const cv = D.paint(t.id, 3, 128); return t.id + ':' + (cv && cv.width > 0 ? 'p' : '-'); }).join();
+      return out;
+    });
+    const ok1 = r.levels.join() === '2,3,5,5' && r.strike[1] < -1.6 && r.strike[1] > -2 && Math.abs(r.strike[0]) < 0.05 && r.rail.vy < 0 && r.rail.goals === 0 && r.goal === 1
+      && r.inside === 0 && r.share.every(s => s.ended === 3) && r.share[0].share > 0.7 && r.share[2].share < 0.4 && r.rec.done && r.rec.frames > 1000 && !/-/.test(r.themes);
+    if (!ok1) failures.push('[airhockey] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} airhockey: levels ${r.levels.join('/')}, a swing of 1 sends the puck off at ${-r.strike[1]}, the rail and a goal only in the mouth, the puck never inside a mallet, the steady player's share ${r.share.map(s => s.share).join(' / ')} at levels 1, 3, 5, par ${r.rec.par}, four themes painted`);
+    await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
+      const rd = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { st: g.state, x: g.G.mal[0].x, y: g.G.mal[0].y, x1: g.G.mal[1].x, y1: g.G.mal[1].y } : null; }, key);
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
+      real.start = (await rd()).st;
+      // a real drag: the mallet goes where the finger is, across and along
+      const p0 = await aimAt(0.5, 0.9), p1 = await aimAt(0.25, 0.7);
+      await page.mouse.move(p0[0], p0[1]); await page.mouse.down();
+      for (let k = 1; k <= 10; k++){ await page.mouse.move(p0[0] + (p1[0] - p0[0]) * k / 10, p0[1] + (p1[1] - p0[1]) * k / 10); await page.waitForTimeout(30); }
+      await page.waitForTimeout(250);
+      const d = await rd(); real.drag = [+(d.x / 0.62).toFixed(2), +d.y.toFixed(2)];
+      await page.mouse.up();
+      const a0 = (await rd()).x; await page.keyboard.down('ArrowRight'); await page.waitForTimeout(400); await page.keyboard.up('ArrowRight');
+      real.arrow = (await rd()).x > a0 + 0.05;
+      // a goal and the match: the computer's mallet held in a corner, the puck sent straight at its goal
+      real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G;
+        G.target = 3; G.mal[1].ai = { react: 99, err: 0, v: 0, acc: 0, attack: 0, aimErr: 0, bank: 0 }; G.mal[1].think.next = 1e9; G.mal[1].T = [0.05, 0.05]; G.mal[1].x = 0.05; G.mal[1].y = 0.05;
+        for (let i = 0; i < 60 * 60 && G.state !== 'over'; i++){ if (G.state === 'play' && G.puck.y > 0.5 && Math.hypot(G.puck.vx, G.puck.vy) < 0.2) Object.assign(G.puck, { x: 0.31, vx: 0, vy: -1.5 }); D.tick(G); }
+        return G.score.join('-'); }, key);
+      await page.waitForTimeout(600);
+      real.over = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); return { st: g.state, best: D.BEST.get(g.idx + '@' + g.lv + '@' + D.SET.target) }; }, key);
+      // two players: a finger on each half takes its mallet, the view stays
+      await page.evaluate(() => window.getFieldApp()._debug.setting('players'));
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
+      const cam = () => page.evaluate(() => { const W = window.FIELD_WORLD; return [W.target.boardX, W.target.boardZ, W.camera.position.x, W.camera.position.z].map(v => +v.toFixed(4)).join(); });
+      const cam0 = await cam(), n0 = await aimAt(0.6, 0.85), f0 = await aimAt(0.4, 0.15);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: n0[0], y: n0[1], id: 1 }, { x: f0[0], y: f0[1], id: 2 }] });
+      for (let k = 1; k <= 8; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: n0[0] - k * 10, y: n0[1], id: 1 }, { x: f0[0] + k * 10, y: f0[1], id: 2 }] }); await page.waitForTimeout(40); }
+      await page.waitForTimeout(300);
+      const two = await rd();
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      real.two = { near: +(two.x / 0.62).toFixed(2), far: +(two.x1 / 0.62).toFixed(2), farY: +two.y1.toFixed(2), still: cam0 === await cam() };
+      await page.evaluate(() => window.getFieldApp()._debug.setting('players'));
+      if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
+      const t0 = await page.evaluate(() => window.getFieldApp()._debug.SET.target);
+      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
+      real.tile = [t0, await page.evaluate(() => window.getFieldApp()._debug.SET.target)];
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 7) D.setting('target'); });
+      real.idle = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), s = () => JSON.stringify(A.cellItems(c + 3, r).filter(i => /^ahDisc/.test(i.kind)).map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
+        for (let k = 0; k < 20; k++){ A.cellItems(c + 3, r); await new Promise(ok => setTimeout(ok, 50)); }
+        const a = s(); await new Promise(ok => setTimeout(ok, 1500)); return s() !== a; }, fc);
+    }
+    const ok2 = !!fc && real.start === 'play' && Math.abs(real.drag[0] - 0.25) < 0.05 && Math.abs(real.drag[1] - 0.7) < 0.04 && real.arrow && real.match === '3-0' && real.over.st === 'over' && real.over.best >= 2
+      && real.two.near < 0.55 && real.two.far > 0.45 && real.two.farY < 0.5 && real.two.still && real.tile[0] === 7 && real.tile[1] === 11 && real.idle;
+    if (!ok2) failures.push('[airhockey] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} airhockey: a real click starts, a real drag puts the mallet under the finger (${real.drag}), the real arrow, a match won ${real.match} with ${real.over && real.over.best} stars, two real fingers a mallet each with the view still, a real click on the Goals tile, a board no one plays moves`);
+  }
   // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
   // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
   // find; real clicks fill exactly the squares clicked and the corner's marks switch to crosses; a real drag fills a row; the
