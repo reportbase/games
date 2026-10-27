@@ -103,7 +103,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates `LEVEL_SAMPLE` (10) holes at each of levels 1, 3 and 5
   and fails unless they climb (see Difficulty). Sunken ground goes at most BASE deep. All water and sand are shapes
   (`lake`, `sand`, see below): water and sand written in cells (`~`, `s`) are read as shapes (`shapify`, see "No painted
-  water or sand"); the old reading of cells blurred (`groundAt`, `softAmount`) is still there but nothing reaches it. Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
+  water or sand"); the old reading of cells blurred (`softAmount`) went on Oct 27 (dead code). Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
   or one left, runs them on the page's clock, and a new game starts its clock there, so a tap never resets them, Oct 10): the `path`
   (a rider round a loop, see the editor's notes; the shuttle and the orbit became paths on Oct 10) and the `gate` (a bar rising out
   of the ground and sinking). A path's loop and a turnstile's or door's sweep are dotted only with Wireframe on, or on the hole
@@ -124,7 +124,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   draw non-visible boards and no animation when panning or resizing."): until then `cellItems(c, r, bp)` swapped pieces by
   the board's size on screen (longer rail pieces under 1500 px, plain rails, bumpers and boulders under 600, no number
   under 300), and for a while a board under 300 px showed its ground alone. Now every board has all its full pieces,
-  whatever its size (the field still asks for none under `itemMinPx`, 20). `railPV`/`railPH` are no longer drawn.
+  whatever its size (the field still asks for none under `itemMinPx`, 20). (`railPV`/`railPH`, and the `PIECES`/`near`/`mid`/`fine` switches always on, went on Oct 27.)
   **The ground's grains** (Oct 14: "could mini-golf and chess beneifit from better LOD handeling of this application." …
   "yes", on the ground first): after Levels, detail that comes and goes with nothing seen to change. The ground has three
   grains, `GROUND_ROWS` 78, 39 and 13 rows (`land`, `landM`, `landL` kinds: 7,488, 1,872 and 208 triangles). Each grain carries
@@ -161,7 +161,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   each unit lit along its top and shaded along its foot, repeating without a seam; laid on in the piece's units over u, so a
   brick is the same size everywhere). The field gives an item kind a picture from `geometry.userData.map`, read at the most
   anisotropy the card has. Far off the picture's mipmaps blend toward its average, so these kinds left `TWINNED` (bumpers and
-  boulders still fade). `cladGeo` stays for the tests. Same views: framed 595k → 253k triangles, zoomed in 263k → 102k, at the
+  boulders still fade). `cladGeo` went on Oct 27 (dead code). Same views: framed 595k → 253k triangles, zoomed in 263k → 102k, at the
   zoom ceiling 1.76M → 841k; screenshots before and after show the same holes. The smoke test fails over 350,000 framed.
   **New boards a few at a time** (the same request): sliding over boards not seen yet quadrupled the page's work, each new
   board making its hole (`genSrc`, `keepApart`) and its ground mesh (`groundGeo`) the frame it appeared, about 20 ms a board
@@ -633,7 +633,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The rally** (`onBall`): turns go by (`G.to`); a shot must reach the front wall above the tin and under the out line before
     the floor ('tin', 'out', 'down': the hitter loses it), and the other must return it before its second bounce ('not up'). Volleys
     off the front wall, side and back walls all play. PAR scoring to 11 (5 or 15 from the row), won by two; the rally's winner
-    serves from the box of its score's side (`setServe`; `serve` lobs it up and across, a tap or Space serves yours sooner); a
+    serves from the box of its score's side (`setServe`; `serve` lobs it up and across, a tap or Enter serves yours sooner); a
     rally past `RALLY_CAP` is a let.
   - **The stroke** (`hit`): the racket meets the ball as it comes within `REACH` (Small, Normal, Large from the row) on your turn,
     below `ZREACH`. Where it meets across you sets the angle (`MAXA`), your run carries (`CARRY`), and how you move says the shot
@@ -649,13 +649,73 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     line and service boxes; the front wall a box with its tin and lines, the side and back walls low; heights at half (`VZ`), since a
     wall its full height hid the back of the court on the board behind; players (body, head, racket, a ring under the one to hit);
     the ball raised, its shadow and trail; flashes on the wall, rings where it bounces; dot-digit scores on the floor.
-  - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`): the steady player against the board's computer, 12 numbers
-    a frame; par the points given away winning (`parOf`); stars as Pong's (localStorage `squash.best`); settings `squash.settings`.
+  - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`): the steady player against the board's computer, 17 numbers
+    a frame; par the points given away winning (`parOf`); stars as Pong's (localStorage `squash.best`); settings `squash.settings`
+    (the row: New, Game, Mode, Points, Players, Hands, Shot, Court, Ball speed, Your reach, Guide, Trail, Flashes, Sound; `ORDER`;
+    a ring with the first tile in the middle, so tiles 4–10 are brought round by a drag).
+  - **Lets, strokes, the ball's height, racquetball, fives, doubles, drills** (Oct 27: "whats next for squash", then "3,4,6,7"):
+    - **Four seats** (`G.pl`, `team(k)` = k % 2: 0 and 2 red, 1 and 3 blue; a seat `off` is not on the court; `seatsFor`). `G.to` is
+      the side to play; either of a side may take its ball. Recordings are 17 numbers a frame (all four players, the call).
+    - **Lets and strokes** (`blockStep`, `G.blkT`, `rallyEnd`): an opponent's body touching the striker's (`BLOCK_W`) on the ball's
+      side of it while the striker runs at the ball; for `BLOCK_T` or more, a rally that side then loses 'not up' is a let (played
+      again) when its striker was far from the ball, a stroke (its point) within `STROKE_R` reaches. The computer off its turn steps
+      off the striker's way (`clearOf`: its line to where it is heading). The referee's call (`callOut`, `CALLS`) is said and written
+      on the floor in a 3 × 5 dot font (`FONT`, `text`).
+    - **Rallies end** (found while adding lets: rallies of two good players ran to the 60 s cap): a stroke at full stretch or on the
+      run is less sure (`unsure`), late in a rally more so by the player's own `err` (`TIRE_A`), and the computer's legs tire
+      (`TIRE_T`). Measured over 5 matches to 11 against the steady player, its share of points: squash 0.72, 0.58, 0.19 at levels
+      1, 3, 5; racquetball 0.93, 0.59, 0.03; fives 0.75, 0.68, 0.04; a match 3–7 minutes (racquetball longer).
+    - **The ball's height** (the row's Guide, on by default): a ring where the ball will first come down (`landing`, kept while the
+      rally is the same, `G.landKey`), for your side's turn, all the way at levels 1–3, until it reaches the front wall at level 4,
+      none at 5 (`GUIDE_LV`); a thin post from the ball to its shadow; your ring and a halo on the ball lit while it is in reach.
+    - **Racquetball and fives** (`COURTS`, the row's Game, `C` on the match): racquetball no tin or out line, a ceiling (`ceil`
+      0.5), a livelier ball, the short line at the middle with service lines and a dashed receiving line painted, side-out scoring
+      (`scoring: 'side'`, only the server scores, 'hand out' passes the serve) to 11 won by one; fives a gloved hand (`reach` 0.75, no
+      racket drawn), a slower ball, a board at 0.076 (its shots aim above it), side-out to 11. Points from the row: the game's own,
+      5, 11 or 15 (`SET.target` 0 is the game's).
+    - **Doubles** (the row's Players: One, Two, Doubles with a computer partner, Doubles × 2): the computer leaves a ball to a
+      partner who gets there first (`earliest`), covers its own half off its turn.
+    - **Drills** (the row's Mode; `newMatch(…, { drill })`, `G.drill`; every board its own by its number, `drillOf`, `DRILL_LV` by
+      level; `DRILL_T` 40 s; par the steady player's score, its recording the board's show): Targets (a box on the front wall, `tw` ×
+      `th`; every legal shot in it scores and a new one comes, `newTarget`), Rally (the longest run of returns alone; from level 3
+      each must strike the other half of the wall, `alt`, 'OTHER SIDE'), Feeds (the machine at the wall's foot, `feed`, every `gap`
+      s, away from you at `spread`'s rate, drops at `drop`'s, off a side wall at `boast`'s; a return scores when its first bounce
+      comes down in the lit zone, `deep` and from level 4 `tight` to a side wall, `drillLand`, else 'SHORT'). Measured (4 boards a
+      level, squash): Targets par about 9, 7, 4; Rally 25, 5, 3; Feeds 4, 7, 2 at levels 1, 3, 5. Stars: par 3, 60% 2.
+  - **The swing, the shots, the styles** (Oct 27: "whats next for squash", then "1,2,6. also long press does not work to
+    show bottom browser. why do some applications not support long press?"):
+    - **Swing hands** (the row's Hands: Auto as before, or Swing; `G.swing`): a person hits only with a swing, asked for by a finger
+      lifted off the court or Enter (with two people blue's Enter, red's Q: Space never reaches a game on its own clock, the
+      field's pause takes it; `SWING`, consumed in `inputs`). The racket comes through from the middle of the swing to its end
+      (`SWING_T` 0.2 s) and reaches `SWING_REACH` (1.25) times as far; the timing `tm` is where the ball is along its way when it is
+      met, −1 still in front (early: across) to 1 level or past (late: toward the racket's side, `LATE_K`), past `MISHIT` (0.8) a
+      mishit (slower, lower). The ring and the ball's halo light while it is in a swing's reach.
+    - **Shots** (`SHOTS`): drive, drop, lob, and now the boast (hard across off the nearer side wall first) and the kill (hard and
+      low, `zw` near the tin). A person's comes from a flick as the finger lifts (`flickOf`: its last tenth of a second faster than
+      `FLICK_V`: up a kill, down a lob, across a boast), else the row's Shot (`SET.shot`, keys 1–5, 0 back to by movement), else
+      the movement. The computer plays them at its level's `boast` and `kill` rates.
+    - **Styles** (`STYLES`, `styleOf` by the board's number, the corner an all-rounder, `styled`): every board's computer a retriever,
+      an attacker, a lobber, a power player (`pace` 1.15), a boaster or an all-rounder, multiplying its level's dials; named in the
+      title and the start. Measured at level 3 over three matches each: the lobber's shots 32% lobs against a power player's 7%, the
+      boaster's 22% boasts.
+    - **Hands by skill**: every stroke's spread goes with the player's own `err` (`hands`, 0.7 to 1.5 of the base), so a level-5
+      computer's kills clear the tin; without it the new risky shots made level 5 play like level 3. Over 5 matches to 11 against
+      the steady player, its share of points: squash 0.87, 0.54, 0.15 at levels 1, 3, 5; racquetball 0.89, 0.67, 0.04; fives 0.83,
+      0.65, 0.15.
+    - **No hold of its own** (Oct 27: "its not that important. remove it."): squash, Pong, air hockey and pinball take every press
+      on the board before the field while a game is under way, so the field's hold never comes there; the three dots open the row.
+    - The smoke test checks no hit without a swing and a hit within one, early and late either way, a mishit slower, a boast off the
+      side wall first, a kill low and fast, the flicks, the six styles and the lobber and boaster playing their own shots, and real
+      input: the real Hands and Shot tiles (brought round by a real drag of the row), a real finger lifted swinging, the real Enter
+      swinging.
   - The smoke test checks the levels by ring, a drive striking the wall at its height, the tin, down and not up, the angle off each
-    side, drive/drop/lob by motion, matches ending at levels 1, 3 and 5 with the share falling, a recording's par, the four courts,
-    and real input: a click starting, a real drag running the player under the finger, the real arrow, a real click serving, a
-    match won with stars and a best, two real fingers each taking a player with the view still, a real click on the Points tile,
-    and a board no one plays moving.
+    side, drive/drop/lob by motion, a let and a stroke, the computer stepping off the striker's way, the landing foretold, the guide
+    by level, the ball lit in reach, racquetball's ceiling and side-out scoring, fives' tin and reach, doubles with all four seats
+    hitting, a target hit, a length scored and a short called, the rally's other side, a drill over at 40 s, matches ending at
+    levels 1, 3 and 5 with the share falling, a match's and a drill's par, every court painted, and real input: a click starting, a
+    real drag running the player under the finger, the real arrow, a real click serving, a match won with stars and a best, two
+    real fingers each taking a player with the view still, real clicks on the Points, Game and Mode tiles, a drill started by a
+    real click with the machine feeding, and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
@@ -2291,8 +2351,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `#thrustZone`) are wide, `min(32px, 5.25vw)`; the smoke test checks it.
   **The right rail is a scroll bar for where you are** (Oct 25: "the right scroll bar for speed lever should be more like a normal
   scroll bar to move the current position. it should follow the auto motion for the direction of movement.", then "A window
-  round you" and "Remove it"): it was the speed lever (the dial's θ unrolled, half as fast since Oct 17, `EdgeGauge.THRUST_SCALE`,
-  still there for nothing now). Now `#thrustZone` is a scroll bar along the direction of motion (`railDir`: `LAST_DRIFT`, snapped
+  round you" and "Remove it"): it was the speed lever (the dial's θ unrolled, half as fast since Oct 17; `EdgeGauge.THRUST_SCALE` and the
+  rail's speed functions went on Oct 27). Now `#thrustZone` is a scroll bar along the direction of motion (`railDir`: `LAST_DRIFT`, snapped
   to cells as `stepBoard` snaps it while auto motion runs, its fallback viewer-right then; else ahead) over a window `RAIL_WIN`
   (50) boards long centred where you were (`RAIL`, `window.__posRail`): top ahead, bottom behind. The thumb (`#railThumb`) is
   where you are in it (`railFrac`), as tall as the screen's share of it (`railThumb`, 5%–40%), and moves as you move: auto
@@ -2321,6 +2381,34 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`window.uiTextScale`). The smoke test clicks the real A+ and the middle button.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
+- **The walk over the boards in view** (Oct 27: "mini-golf and golf tanks are to slow to be usable. they are pretty, the best
+  looking applications, but no one will play them because of the performance problems."): `buildInstances` walked every
+  board in the rows' reach, out to the horizon, and kept the few `inFOV` passes: 1.5 million boards a frame to keep 43 in
+  mini golf (its long boards fit more rows), 0.94 million in checkers, the most time any game spent in a frame. `inFOV`'s
+  tests are lines in a board's place (`_fovLines`), so each row of the walk is cut to the interval they allow, a board wider
+  each way, and `inFOV` still decides: 53 boards walked, the same boards kept (checked frame by frame over pans, zooms and
+  turns). Then the most left was a sum over every board of every row out to the horizon (`demand`, `clarityAt`), made every
+  frame and read nowhere: gone. Golf tanks' boards no one plays (`recSoon`) ask the clock after every step of the round, not
+  every twentieth, and take 4 ms in 40 (6 in 30 before). Measured with the CPU slowed four times (a phone), JS a frame: mini
+  golf framed 245 → 68 ms, checkers 121 → 33 ms (before the `demand` sum went).
+- **Dead code taken out** (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and
+  the shared kits"): functions and constants nothing reached, found by counting every name in the page (a name written once
+  is its own declaration): `LOD_APP` and `HELLO_APP` (apps off the list since Sep 25), mini golf's `softAmount`, `cladGeo`,
+  `railPV`/`railPH` and its always-on `PIECES` switches, the right rail's old speed functions, chess's `switchSides`,
+  `askCoachHere`, `renderEvalBar_LEGACY_HTML`, the field-lib's `buildExtrudedSlab`, `rungToN`, `bondiK`, and a few more.
+  To look again: a name that appears once in `games.html` is never used (an IIFE's own name aside).
+- **One match kit** (Oct 27, the same request): Pong, air hockey and squash had their recordings, their hands and their bests
+  written out three times, line for line. `MATCH_KIT` (before Pong) has them once: `recordings(o)` (`recOf`, `recWork`,
+  `recSoon`, `at` for where a board's loop is, `trail`; each game gives its key, how to make and step a match, a frame, when it
+  is over and its par), `hands(o)` (every press on the canvas offered to the game's `pressAt`, `handAt`, `handUp` before the
+  field, a touch's mouse echo known by its time) and `best(key)`. A new game of their kind uses it.
+- **One edit kit** (Oct 27, the same request): the six games that make their own boards in the bottom row (the tilt maze,
+  Sokoban, tower defense, pinball, trick shots, Soma) wrote out the same plumbing each. `EDIT_KIT` (before Soma) has it once:
+  `make(o)` gives `pane(open)` (the row opened or shut as the editor's own, `ED.busy`), Escape cancelling, and the row's hooks
+  (`hooks`, spread into the app: `onBrowserToggle`, `statTiles`, `statsStay`, `onStatTap`, `quickActs`, `onQuickAct`; the game's
+  own quick buttons, then ✕ Cancel and ✓ Done, or ✎ when the row is the game's), each game giving its `open`, `done`, `cancel`,
+  `tiles` and `tile`; `store(key, keep, clean)` keeps the boards' own in localStorage. Chess's, the board games' (`BOARD_ED`),
+  the puzzle makers' (`PUZZLE_ED`) and mini golf's editors have their own, older ways.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:

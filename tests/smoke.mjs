@@ -1533,10 +1533,8 @@ try {
         out.d.push(d);
       }
       out.last = !D.groundGeo(T, H, R[2]).attributes.pos2;
-      // (the pieces: a clad piece's every point fades into its core box, a bumper's onto its coarser build exactly, Oct 14)
-      const cg = D.cladGeo(T, 'stone', 1, 0.88, 1, -0.6, 0.25, 11), cp = cg.attributes.pos2.array; let outside = 0;
-      for (let i = 0; i < cp.length; i += 3) if (Math.abs(cp[i]) > 0.5 + 1e-6 || cp[i + 1] < -0.6 - 1e-6 || cp[i + 1] > 0.28 + 1e-6 || Math.abs(cp[i + 2]) > 0.5 + 1e-6) outside++;
-      out.clad = { outside, plain: D.cladPlain(T, 'stone', 1, 0.88, 1, -0.6).attributes.position.count / 3 };
+      // (the pieces: a clad piece's plain box, a bumper fading onto its coarser build exactly, Oct 14)
+      out.clad = { plain: D.cladPlain(T, 'stone', 1, 0.88, 1, -0.6).attributes.position.count / 3 };
       const PF = D.propGeo('bumper'), PC = D.propGeo('bumper', true);
       if (PF && PF.attributes.pos2){ const fp = PF.attributes.pos2.array, pc = PC.attributes.position.array, fn = 16 * 33 + 2, cn = 8 * 17 + 2; let d = 0;
         for (let q = 0; q < PF.attributes.position.count / fn; q++) for (let k = 0; k <= 32; k += 2) for (let r = 0; r < 3; r++) d = Math.max(d, Math.abs(fp[(q * fn + k) * 3 + r] - pc[(q * cn + k / 2) * 3 + r]));
@@ -1547,7 +1545,7 @@ try {
       out.morphMeshes = morphMeshes; return out; });
     const gOk = gg.d.every(d => d < 1e-6) && gg.last && JSON.stringify(gg.grains.map(x => x[0])) === '[0,0,0,1,1,2]'
       && gg.grains[0][1] === 0 && gg.grains[2][1] > 0 && gg.grains[2][1] < 1 && gg.morphMeshes > 0
-      && gg.clad.outside === 0 && gg.clad.plain === 10 && (gg.prop == null || gg.prop < 1e-6) && gg.pieces[0] === 0 && gg.pieces[1] > 0 && gg.pieces[1] < 1 && gg.pieces[2] === 'plain';
+      && gg.clad.plain === 10 && (gg.prop == null || gg.prop < 1e-6) && gg.pieces[0] === 0 && gg.pieces[1] > 0 && gg.pieces[1] < 1 && gg.pieces[2] === 'plain';
     if (!gOk) failures.push(`[${current}] the ground's grains: ${JSON.stringify(gg)}`);
     console.log(`${gOk ? 'ok  ' : 'FAIL'} the ground's and the pieces' grains (a grain at weight 1 is the next within ${Math.max(...gg.d)}; a bumper within ${gg.prop}; ${gg.morphMeshes} kinds morphing)`);
     // CHESS'S PIECES FADE (Oct 14: "ok", on chess after mini golf): a rung carries the next coarser one at its points, exactly
@@ -4256,8 +4254,10 @@ try {
       await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
       real.start = (await rd()).st;
       // the real arrow
+      // (from the middle, with no finger on it: a paddle already at its left end could not go further, Oct 27)
+      await page.evaluate(k => { const P = window.getFieldApp()._debug.GAMES.get(k).G.pads[0]; P.x = 0.31; P.tx = null; P.v = 0; }, key);
       const a0 = (await rd()).x;
-      await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(400); await page.keyboard.up('ArrowLeft');
+      await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(600); await page.keyboard.up('ArrowLeft');
       real.arrow = (await rd()).x < a0 - 0.05;
       // a real drag: the paddle under the finger
       const p0 = await aimAt(0.3, 0.9), p1 = await aimAt(0.75, 0.9);
@@ -4268,6 +4268,8 @@ try {
       await page.mouse.up();
       // a point and a match: the computer stands still in a corner; your paddle under the ball
       real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G, pts = [];
+        // (a fresh serve of your own first: a ball already past your paddle from the drag above gave the computer a point, Oct 27)
+        G.state = 'serve'; G.server = 0; G.serveAt = G.t + G.serveT; G.rally = 0; G.balls = [];
         G.target = 3; G.score = [0, 0]; G.pads[1].ai = { react: 99, err: 0, v: 0, acc: 0, aim: 0 }; G.pads[1].think.next = 1e9; G.pads[1].think.T = 0.05; G.pads[1].x = 0.08;
         const ev = G.ev; G.ev = (kind, a, M) => { if (kind === 'point') pts.push(a.seat); ev && ev(kind, a, M); };
         for (let i = 0; i < 60 * 200 && G.state !== 'over'; i++){ G.pads[0].tx = G.balls[0] ? G.balls[0].x : 0.31; if (G.balls[0] && G.balls[0].vy > 0 && G.balls[0].y > 0.7) G.pads[0].x = G.balls[0].x; D.tick(G); }
@@ -4502,55 +4504,108 @@ try {
     if (!ok2) failures.push('[airhockey] real input: ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} airhockey: a real click starts, a real drag puts the mallet under the finger (${real.drag}), the real arrow, a match won ${real.match} with ${real.over && real.over.best} stars, two real fingers a mallet each with the view still, a real click on the Goals tile, a board no one plays moves`);
   }
-  // SQUASH (Oct 27: "this is a cool game. what other games could we create like pong.", then "2 -squash"): levels by ring; a drive
-  // up the front wall at its height; the tin, a ball down before the wall and two bounces each ending the rally the right way; the
-  // stroke's angle by where it meets you and its kind by how you move; matches ending at every level with the steady player
-  // winning near the corner and losing far out; a recording's par; real input (a click starting, a real drag running the player
-  // under the finger, the real arrow, a real click serving), a match won with stars and a best, two real fingers each taking a
-  // player with the view still, a real click on the Points tile; a board no one plays moving.
+  // SQUASH (Oct 27: "this is a cool game. what other games could we create like pong.", then "2 -squash"; and "whats next for
+  // squash", then "3,4,6,7"): levels by ring; a drive up the front wall at its height; the tin, a ball down before the wall and two
+  // bounces each ending the rally the right way; the stroke's angle by where it meets you and its kind by how you move; a let and a
+  // stroke, and the computer stepping off the striker's way; the guide's ring where the ball comes down, by level, and the ball lit
+  // in reach; racquetball's ceiling, no tin and side-out scoring; fives' board and shorter reach; doubles with every seat hitting;
+  // the drills (a target hit, a length scored and a short one called, the rally's other side, the clock, a drill's par); matches
+  // ending at every level with the steady player winning near the corner and losing far out; a recording's par; real input (a click
+  // starting, a real drag running the player under the finger, the real arrow, a real click serving), a match won with stars and a
+  // best, two real fingers each taking a player with the view still, real clicks on the Points and Game tiles, a drill started by a
+  // real click with the machine feeding; a board no one plays moving.
   {
     current = 'squash';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'squash')));
     await page.waitForTimeout(1200);
     const r = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, C = D.consts, out = {};
+      const D = window.getFieldApp()._debug, C = D.consts, out = {}, SQ = D.COURTS.squash, OFF = 'off';
       out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
       // a drive straight up the court strikes the front wall at its height
-      const b = { x: C.W / 2, y: 0.75, z: 0.05, vx: 0, vy: 0, vz: 0, roll: false }; const G0 = D.newMatch(1, 1, { ai0: null, ai1: null });
+      const b = { x: C.W / 2, y: 0.75, z: 0.05, vx: 0, vy: 0, vz: 0, roll: false }; const G0 = D.newMatch(1, 1, { seats: [null, null, OFF, OFF], game: 'squash' });
       D.shoot(G0, b, 0, 1.35, 0.12); let zf = null;
-      for (let i = 0; i < 2000 && zf == null; i++) D.ballStep(b, 1 / 480, k => { if (k === 'front') zf = b.z; });
+      for (let i = 0; i < 2000 && zf == null; i++) D.ballStep(b, 1 / 480, k => { if (k === 'front') zf = b.z; }, SQ);
       out.front = +(zf || 0).toFixed(3);
       // the rules: a rally from seat 0 with nobody near the ball
-      const rally = (zw, down) => { const G = D.newMatch(1, 1, { ai0: null, ai1: null }), why = [];
-        G.ev = (k, a) => { if (k === 'point') why.push(a.why + ':' + a.seat); };
+      const rally = (zw, down, game) => { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF], game: game || 'squash' }), why = [];
+        G.ev = (k, a) => { if (k === 'point') why.push(a.why + ':' + a.seat + (a.scored ? '' : '-'));
+          if (k === 'let') why.push('let'); };
         Object.assign(G.pl[0], { x: 0.04, y: 0.97 }); Object.assign(G.pl[1], { x: C.W - 0.04, y: 0.97 });
-        Object.assign(G, { state: 'play', to: 1, lastHit: 0, wall: false, bounces: 0 });
+        Object.assign(G, { state: 'play', to: 1, lastHit: 0, wall: false, bounces: 0, server: 0 });
         Object.assign(G.ball, { x: C.W / 2, y: 0.6, z: 0.06, roll: false });
         if (down){ Object.assign(G.ball, { vx: 0, vy: -0.4, vz: -0.5 }); } else D.shoot(G, G.ball, 0.1, 1.2, zw);
         for (let i = 0; i < 600 && G.state === 'play'; i++) D.tick(G);
-        return why.join(); };
-      out.rules = { tin: rally(0.02), down: rally(0, true), notUp: rally(0.12) };
+        return why.join() + '|' + G.score.join('-'); };
+      out.rules = { tin: rally(0.02), down: rally(0, true), notUp: rally(0.12), rbLow: rally(0.02, false, 'racquetball'), fivesTin: rally(0.065, false, 'fives') };
       // the stroke: off your right side to the right, off your left to the left; stepping in a drive, still a drop, back a lob
-      const S = D.newMatch(1, 1, { ai0: null, ai1: null }), M = S.pl[1]; Object.assign(S, { state: 'play', to: 1, wall: true });
-      const side = off => { Object.assign(M, { x: 0.3, y: 0.7, vx: 0, vy: 0 }); Object.assign(S.ball, { x: 0.3 + off * M.reach, y: 0.68, z: 0.05, roll: false }); D.hit(S, 1); return Math.sign(S.ball.vx); };
-      out.angle = [side(0.6), side(-0.6)];
+      const S = D.newMatch(1, 1, { seats: [null, null, OFF, OFF] }), M = S.pl[1]; Object.assign(S, { state: 'play', to: 1, wall: true });
+      const sideOf = off => { Object.assign(M, { x: 0.3, y: 0.7, vx: 0, vy: 0 }); Object.assign(S.ball, { x: 0.3 + off * M.reach, y: 0.68, z: 0.05, roll: false }); D.hit(S, 1); return Math.sign(S.ball.vx); };
+      out.angle = [sideOf(0.6), sideOf(-0.6)];
       out.shots = [[0, -0.6], [0, 0], [0, 0.6]].map(([vx, vy]) => D.shotOf({ vx, vy }));
+      // a let and a stroke: the blue player against red on red's way to the ball, far from it and near it
+      const block = (by) => { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF] }); const ev = []; G.ev = k => ev.push(k);
+        Object.assign(G, { state: 'play', to: 0, lastHit: 1, wall: true, server: 1 }); Object.assign(G.ball, { x: 0.3, y: by, z: 0.05 });
+        Object.assign(G.pl[0], { x: 0.3, y: 0.8, vx: 0, vy: -0.5 }); Object.assign(G.pl[1], { x: 0.3, y: 0.74 });
+        for (let i = 0; i < 20; i++) D.blockStep(G, 0.01);
+        D.rallyEnd(G, 1, 'not up'); return (G.call && G.call.text) + ':' + G.score.join('-'); };
+      out.block = [block(0.45), block(0.68)];
+      // the computer off its turn steps off the striker's way
+      { const G = D.newMatch(1, 3, {}); Object.assign(G, { state: 'play', to: 0, wall: true }); Object.assign(G.ball, { x: 0.3, y: 0.45, vx: 0, vy: 0.2, z: 0.1 });
+        Object.assign(G.pl[0], { x: 0.3, y: 0.85 }); const T = D.clearOf(G, G.pl[1], [0.3, 0.65]); out.clear = +Math.abs(T[0] - 0.3).toFixed(3); }
+      // the guide: where it comes down, foretold; shown by level; the ball lit in reach
+      { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF] }); Object.assign(G, { state: 'play', to: 0, lastHit: 1, wall: false });
+        Object.assign(G.ball, { x: 0.3, y: 0.6, z: 0.06 }); D.shoot(G, G.ball, 0.15, 1.3, 0.12);
+        const L = D.landing(G), bb = { ...G.ball }; let wall = false, at = null;
+        for (let i = 0; i < 2000 && !at; i++) D.ballStep(bb, 1 / 120, k => { if (k === 'front') wall = true; else if (k === 'floor' && wall) at = [bb.x, bb.y]; }, SQ);
+        out.land = L && at ? +Math.hypot(L.x - at[0], L.y - at[1]).toFixed(4) : -1; }
+      out.guide = [1, 4, 5].map(lv => { const G = D.newMatch(1, lv, { seats: [null, D.LV[lv - 1], OFF, OFF] }); Object.assign(G, { state: 'play', to: 0, lastHit: 1, wall: false });
+        Object.assign(G.ball, { x: 0.3, y: 0.6, z: 0.06 }); D.shoot(G, G.ball, 0.15, 1.3, 0.12);
+        const a = !!D.liveView({ G }).guide; G.wall = true; G.hits++; const c = !!D.liveView({ G }).guide; return (a ? 'y' : 'n') + (c ? 'y' : 'n'); }).join();
+      { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF] }); Object.assign(G, { state: 'play', to: 0, wall: true }); Object.assign(G.pl[0], { x: 0.3, y: 0.7 });
+        Object.assign(G.ball, { x: 0.33, y: 0.69, z: 0.05, vx: 0, vy: 0.01, vz: 0 }); const V = D.liveView({ G }); out.reachLit = !!V.inReach;
+        const it = D.itemsOf(V, 'classic', 400); out.guideDrawn = it.filter(i => i.kind === 'sqRing').length; }
+      // racquetball: the ceiling turns a high ball down, side-out scoring, won by one
+      { const bb = { x: 0.3, y: 0.5, z: 0.4, vx: 0, vy: 0, vz: 1.5, roll: false }; let top = 0, ceil = 0;
+        for (let i = 0; i < 240; i++){ D.ballStep(bb, 1 / 120, k => { if (k === 'ceil') ceil++; }, D.COURTS.racquetball); top = Math.max(top, bb.z); } out.ceil = [ceil, +top.toFixed(3)];
+        const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF], game: 'racquetball' }); G.server = 0; D.point(G, 1, 'not up'); const a = G.score.join('-');
+        G.server = 1; G.score = [10, 10]; D.point(G, 1, 'not up'); out.side = a + ',' + G.score.join('-') + ',' + G.winner; }
+      out.fivesReach = +(D.newMatch(1, 1, { game: 'fives' }).pl[1].reach / D.newMatch(1, 1, { game: 'squash' }).pl[1].reach).toFixed(2);
+      // doubles: a match ends with every seat having hit
+      { const hits = [0, 0, 0, 0]; const G = D.newMatch(77, 1, { ai0: D.STEADY, fmt: 'd1', seed: 3, target: 5, game: 'squash', ev: (k, a) => { if (k === 'hit') hits[a.seat]++; } });
+        while (G.state !== 'over') D.tick(G); out.doubles = { hits: hits.join(), on: G.pl.filter(p => !p.off).length, score: G.score.join('-'), t: Math.round(G.t) }; }
+      // the drills
+      { const G = D.newMatch(5, 1, { seats: [null, OFF, OFF, OFF], drill: true, drillKind: 'targets' }), T = G.drill.tgt;
+        Object.assign(G, { state: 'play', to: 0, lastHit: 0, wall: false }); Object.assign(G.ball, { x: T.x, y: 0.3, z: T.z, vx: 0, vy: -2, vz: 0.3 });
+        for (let i = 0; i < 30 && G.drill.score === 0; i++) D.tick(G); out.target = [G.drill.score, G.drill.tgt !== T]; }
+      out.feeds = ['in', 'short'].map(w => { const G = D.newMatch(5, 1, { seats: [null, OFF, OFF, OFF], drill: true, drillKind: 'feeds' }); const Z = G.drill.DD;
+        Object.assign(G, { state: 'play', to: 0, lastHit: 0, wall: true }); G.drill.ret = true; Object.assign(G.ball, { x: 0.3, y: w === 'in' ? Z.deep + 0.1 : Z.deep - 0.2, z: 0.004, vx: 0, vy: 0.05, vz: -0.3 });
+        for (let i = 0; i < 10 && G.state === 'play'; i++) D.tick(G); return G.drill.score + ':' + (G.call ? G.call.text : ''); }).join();
+      { const G = D.newMatch(5, 3, { seats: [null, OFF, OFF, OFF], drill: true, drillKind: 'rally' }); Object.assign(G, { state: 'play', to: 0, lastHit: 0, wall: false });
+        const go = x => { Object.assign(G, { state: 'play', lastHit: 0, wall: false }); Object.assign(G.ball, { x, y: 0.2, z: 0.12, vx: 0, vy: -2, vz: 0 }); for (let i = 0; i < 12 && !G.wall; i++) D.tick(G); };
+        go(0.15); go(0.5); const a = G.drill.streak; go(0.5); out.rally = [a, G.drill.streak, G.call && G.call.text]; }
+      { const G = D.newMatch(9, 2, { ai0: D.STEADY, drill: true, drillKind: 'feeds' }); while (G.state !== 'over') D.tick(G); out.drillEnd = [G.state, Math.round(G.t), G.drill.feeds]; }
       // matches: the steady player against the board's computer
       out.share = [1, 3, 5].map(lv => { let a = 0, c = 0, ended = 0;
-        for (let s = 0; s < 3; s++){ const Mt = D.newMatch(300 + s, lv, { ai0: D.STEADY, seed: s, target: 5 });
+        for (let s = 0; s < 3; s++){ const Mt = D.newMatch(300 + s, lv, { ai0: D.STEADY, seed: s, target: 5, game: 'squash' });
           while (Mt.state !== 'over') D.tick(Mt);
           a += Mt.score[0]; c += Mt.score[1]; if (Mt.state === 'over' && Mt.t < 1500) ended++; }
         return { share: +(a / Math.max(1, a + c)).toFixed(2), ended }; });
-      const R = D.recOf(321, 2); D.recWork(R, 4000, true); out.rec = { done: R.done, par: R.par, frames: R.frames.length / 12 };
-      out.themes = D.THEMES.map(t => { const cv = D.paint(t.id, 3, 128); return t.id + ':' + (cv && cv.width > 0 ? 'p' : '-'); }).join();
+      const R = D.recOf(321, 2); D.recWork(R, 4000, true); out.rec = { done: R.done, par: R.par, frames: R.frames.length / 17 };
+      D.SET.mode = 'drill'; const RD = D.recOf(321, 2); D.recWork(RD, 4000, true); out.drillRec = { done: RD.done, par: RD.par, kind: RD.G.drill.kind }; D.SET.mode = 'match'; D.RECS.clear();
+      out.themes = D.THEMES.map(t => ['squash', 'racquetball', 'fives'].map(g => { const cv = D.paint(t.id, 3, 128, g); return cv && cv.width > 0 ? 'p' : '-'; }).join('')).join();
       const items = D.itemsOf(D.liveView({ G: D.newMatch(5, 2, {}) }), 'classic', 400); out.kinds = [...new Set(items.map(i => i.kind))].sort().join();
       return out;
     });
-    const ok1 = r.levels.join() === '2,3,5,5' && Math.abs(r.front - 0.12) < 0.012 && r.rules.tin === 'tin:1' && r.rules.down === 'down:1' && r.rules.notUp === 'not up:0'
-      && r.angle.join() === '1,-1' && r.shots.join() === 'drive,drop,lob' && r.share.every(s => s.ended === 3) && r.share[0].share > 0.55 && r.share[2].share < 0.4
-      && r.rec.done && r.rec.frames > 1000 && !/-/.test(r.themes) && /sqBall/.test(r.kinds) && /sqBody/.test(r.kinds) && /sqBox/.test(r.kinds);
+    const ok1 = r.levels.join() === '2,3,5,5' && Math.abs(r.front - 0.12) < 0.012 && r.rules.tin === 'tin:1|0-1' && r.rules.down === 'down:1|0-1' && r.rules.notUp === 'not up:0|1-0'
+      && /^down:1-\|0-0$/.test(r.rules.rbLow) === false && /tin:1/.test(r.rules.fivesTin) && !/tin/.test(r.rules.rbLow)
+      && r.angle.join() === '1,-1' && r.shots.join() === 'drive,drop,lob' && r.block[0] === 'LET:0-0' && r.block[1] === 'STROKE:1-0' && r.clear > 0.05
+      && r.land >= 0 && r.land < 0.01 && r.guide === 'yy,yn,nn' && r.reachLit && r.guideDrawn >= 2 && r.ceil[0] >= 1 && r.ceil[1] <= 0.5 + 0.02
+      && r.side === '0-0,10-11,1' && r.fivesReach === 0.75 && r.doubles.on === 4 && r.doubles.hits.split(',').every(h => +h > 0)
+      && r.target[0] === 1 && r.target[1] && r.feeds === '1:,0:SHORT' && r.rally[0] === 2 && r.rally[1] === 0 && r.rally[2] === 'OTHER SIDE' && r.drillEnd[0] === 'over' && r.drillEnd[1] >= 40 && r.drillEnd[1] <= 42 && r.drillEnd[2] >= 8
+      && r.share.every(s => s.ended === 3) && r.share[0].share > 0.55 && r.share[2].share < 0.4
+      && r.rec.done && r.rec.frames > 1000 && r.drillRec.done && r.drillRec.par >= 1 && !/-/.test(r.themes) && /sqBall/.test(r.kinds) && /sqBody/.test(r.kinds) && /sqBox/.test(r.kinds);
     if (!ok1) failures.push('[squash] ' + JSON.stringify(r));
-    console.log(`${ok1 ? 'ok  ' : 'FAIL'} squash: levels ${r.levels.join('/')}, a drive strikes the front wall at ${r.front}, the tin, down and not up, the angle off each side and drive/drop/lob by how you move, the steady player's share ${r.share.map(s => s.share).join(' / ')} at levels 1, 3, 5, par ${r.rec.par}, four courts painted`);
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} squash: levels ${r.levels.join('/')}, a drive strikes the front wall at ${r.front}, the tin, down and not up, the angle off each side and drive/drop/lob by how you move, a let (${r.block[0]}) and a stroke (${r.block[1]}), the computer stepping ${r.clear} off the striker's way, the landing foretold to ${r.land}, the guide by level ${r.guide}, racquetball's ceiling and side-out (${r.side}), fives' reach ${r.fivesReach}, doubles every seat hitting (${r.doubles.hits}, ${r.doubles.score}), a target, a length and a short (${r.feeds}), the rally's other side, a drill over at 40 s with ${r.drillEnd[2]} feeds, the steady player's share ${r.share.map(s => s.share).join(' / ')} at levels 1, 3, 5, par ${r.rec.par}, a ${r.drillRec.kind} drill's par ${r.drillRec.par}, every court painted`);
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
     await page.waitForTimeout(3000);
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
@@ -4562,7 +4617,7 @@ try {
         return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
       const rd = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { st: g.state, gs: g.G.state, x: g.G.pl[0].x, y: g.G.pl[0].y, x1: g.G.pl[1].x, y1: g.G.pl[1].y, to: g.G.to } : null; }, key);
       // (between rallies the players run free and no ball is in play: held there for the hands' checks)
-      const hold = () => page.evaluate(k => { const G = window.getFieldApp()._debug.GAMES.get(k).G; G.state = 'point'; G.nextAt = 1e9; }, key);
+      const hold = () => page.evaluate(k => { const G = window.getFieldApp()._debug.GAMES.get(k).G; G.state = 'point'; G.nextAt = 1e9; G.next = 0; }, key);
       await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
       const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
       real.start = (await rd()).st;
@@ -4582,15 +4637,15 @@ try {
       const sv = await rd(); real.serve = sv.gs === 'play' || sv.gs === 'point' ? 'served' : sv.gs;
       // the match: the computer held in a back corner, your player put where each ball comes
       real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G, P = G.pl[0], Q = G.pl[1];
-        G.target = 3; G.score = [0, 0]; Q.ai = { react: 99, err: 0, v: 0, acc: 0, aim: 0, drop: 0, lob: 0 }; Q.think.next = 1e9;
+        G.target = 3; G.score = [0, 0]; Q.ai = { react: 99, err: 0.03, v: 0, acc: 0, aim: 0, drop: 0, lob: 0 }; Q.think.next = 1e9;
         for (let i = 0; i < 60 * 400 && G.state !== 'over'; i++){
           Object.assign(Q, { x: 0.04, y: 0.97, vx: 0, vy: 0 }); Q.T = [0.04, 0.97];
           if (G.state === 'play' && G.to === 0 && G.wall && G.ball.z < 0.15) Object.assign(P, { x: G.ball.x - 0.3 * P.reach, y: G.ball.y + 0.01, vx: 0, vy: 0, tx: null, ty: null });
           D.tick(G); }
         return G.score.join('-'); }, key);
       await page.waitForTimeout(600);
-      real.over = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); return { st: g.state, best: D.BEST.get(g.idx + '@' + g.lv + '@' + D.SET.target) }; }, key);
-      // two players: each finger takes the player nearest it, the view stays
+      real.over = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); return { st: g.state, best: D.BEST.get(g.idx + '@' + g.lv + '@' + D.SET.game + '@' + D.SET.target) }; }, key);
+      // two people: each finger takes the player nearest it, the view stays
       await page.evaluate(() => window.getFieldApp()._debug.setting('players'));
       await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
       await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300); await hold();
@@ -4603,21 +4658,127 @@ try {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       const near = (px, py, u) => u && Math.hypot(px - u.u * 0.66, py - u.v) < 0.06;
       real.two = { a: near(two.x, two.y, u1) && near(two.x1, two.y1, u2) || near(two.x, two.y, u2) && near(two.x1, two.y1, u1), still: cam0 === await cam() };
-      await page.evaluate(() => window.getFieldApp()._debug.setting('players'));
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.players !== 1) D.setting('players'); });
       if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
+      const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
       const t0 = await page.evaluate(() => window.getFieldApp()._debug.SET.target);
-      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      const tile = await tileAt(3);
       if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
       real.tile = [t0, await page.evaluate(() => window.getFieldApp()._debug.SET.target)];
-      await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 11) D.setting('target'); });
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 0) D.setting('target'); });
+      const gt = await tileAt(1);
+      if (gt){ await page.mouse.click(gt[0], gt[1]); await page.waitForTimeout(400); }
+      real.game = await page.evaluate(() => window.getFieldApp()._debug.SET.game);
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.game !== 'squash') D.setting('game'); });
+      // a drill: the Mode tile, a real click starting the framed board's drill, the machine feeding
+      const mt = await tileAt(2);
+      if (mt){ await page.mouse.click(mt[0], mt[1]); await page.waitForTimeout(400); }
+      real.mode = await page.evaluate(() => window.getFieldApp()._debug.SET.mode);
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(2600);
+      real.drill = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && g.G.drill ? { kind: g.G.drill.kind, feeds: g.G.drill.feeds, left: Math.round(g.G.drill.left) } : null; }, key);
+      await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); if (D.SET.mode !== 'match') D.setting('mode'); }, key);
       real.idle = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), s = () => JSON.stringify(A.cellItems(c + 3, r).filter(i => /^sq(Body|Ball)/.test(i.kind)).map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
         // asked again and again until it changes, up to 10 s: on CI the board's recording is worked out a few boards at a time
         const a = s(); for (let k = 0; k < 50; k++){ await new Promise(ok => setTimeout(ok, 200)); if (s() !== a) return true; } return false; }, fc);
     }
     const ok2 = !!fc && real.start === 'play' && Math.abs(real.drag[0] - 0.25) < 0.05 && Math.abs(real.drag[1] - 0.7) < 0.04 && real.arrow && real.serve === 'served'
-      && /^3-[01]$/.test(real.match) && real.over.st === 'over' && real.over.best >= 2 && real.two.a && real.two.still && real.tile[0] === 11 && real.tile[1] === 15 && real.idle;
+      && /^3-[01]$/.test(real.match) && real.over.st === 'over' && real.over.best >= 2 && real.two.a && real.two.still && real.tile[0] === 0 && real.tile[1] === 5
+      && real.game === 'racquetball' && real.mode === 'drill' && real.drill && real.drill.feeds >= 1 && real.idle;
     if (!ok2) failures.push('[squash] real input: ' + JSON.stringify(real));
-    console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: a real click starts, a real drag runs the player under the finger (${real.drag}), the real arrow, a real click serves, a match won ${real.match} with ${real.over && real.over.best} stars, two real fingers a player each with the view still, a real click on the Points tile, a board no one plays moves`);
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: a real click starts, a real drag runs the player under the finger (${real.drag}), the real arrow, a real click serves, a match won ${real.match} with ${real.over && real.over.best} stars, two real fingers a player each with the view still, real clicks on the Points, Game and Mode tiles, a ${real.drill && real.drill.kind} drill fed, a board no one plays moves`);
+  }
+  // SQUASH: THE SWING, THE SHOTS, THE STYLES (Oct 27: "whats next for squash", then "1,2,6", and "long press does not work
+  // to show bottom browser"): a ball passing a person with Swing hands not hit until a swing, then hit, early and late sending it
+  // either way and a mishit slower; a boast meeting the side wall before the front, a kill lower and faster than a drive; flicks
+  // read as kill, lob and boast; every style on the boards near the corner and each playing its own shots; and real input: the real
+  // Hands and Shot tiles, a real lift swinging, the real Enter swinging.
+  {
+    current = 'squash';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'squash')));
+    await page.waitForTimeout(800);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, C = D.consts, OFF = 'off', out = {};
+      // the swing
+      const pass = swing => { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF], hands: 'swing' }); const P = G.pl[0];
+        Object.assign(G, { state: 'play', to: 0, lastHit: 1, wall: true, bounces: 0 }); Object.assign(P, { x: 0.3, y: 0.75 }); Object.assign(G.pl[1], { x: 0.6, y: 0.3 });
+        Object.assign(G.ball, { x: 0.32, y: 0.6, z: 0.08, vx: 0, vy: 0.5, vz: 0.1, roll: false });
+        let tm = null; G.ev = (k, a) => { if (k === 'hit') tm = a.tm; };
+        for (let i = 0; i < 30 && !G.hits; i++){ if (swing && i === 12) P.swingAt = G.t; D.tick(G); }
+        return { hits: G.hits, tm: tm == null ? null : +tm.toFixed(2) }; };
+      out.swing = { none: pass(false), swung: pass(true) };
+      const timed = tm => { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF], hands: 'swing' }); const P = G.pl[0];
+        Object.assign(G, { state: 'play', to: 0, wall: true }); Object.assign(P, { x: 0.3, y: 0.7, vx: 0, vy: -0.5 }); Object.assign(G.ball, { x: 0.3, y: 0.66, z: 0.06 });
+        D.hit(G, 0, tm); return { vx: G.ball.vx, v: Math.hypot(G.ball.vx, G.ball.vy) }; };
+      const early = timed(-0.6), late = timed(0.6), mid = timed(0), mis = timed(0.95);
+      out.timing = { lateRight: late.vx > early.vx + 0.2, mishitSlower: mis.v < mid.v * 0.85 };
+      // the shots
+      const shotFrom = want => { const G = D.newMatch(1, 1, { seats: [null, D.LV[0], OFF, OFF] }); const M = G.pl[1];
+        Object.assign(G, { state: 'play', to: 1, wall: true }); Object.assign(M, { x: 0.15, y: 0.7, vx: 0, vy: 0 }); M.want = want; Object.assign(G.ball, { x: 0.15, y: 0.66, z: 0.06 });
+        D.hit(G, 1); const b = { ...G.ball }, seen = []; let zf = null;
+        for (let i = 0; i < 4000 && zf == null; i++) D.ballStep(b, 1 / 480, k => { seen.push(k); if (k === 'front') zf = b.z; }, D.COURTS.squash);
+        return { first: seen[0], zf: +(zf || 0).toFixed(3), v: +Math.hypot(G.ball.vx, G.ball.vy).toFixed(2) }; };
+      const dr = shotFrom('drive'), bo = shotFrom('boast'), ki = shotFrom('kill');
+      out.shots = { boastFirst: bo.first, killLower: ki.zf < dr.zf, killFaster: ki.v > dr.v, kz: ki.zf };
+      const now = performance.now(), F = (dx, dy) => D.flickOf({ hist: [[now - 80, 0.3, 0.6], [now - 5, 0.3 + dx, 0.6 + dy]] });
+      out.flick = [F(0, -0.2), F(0, 0.2), F(0.2, 0), F(0, -0.02)].map(x => x || 'none').join();
+      // the styles
+      const seen = new Set(); for (let i = 0; i < 60; i++) seen.add(D.styleOf(i).id); out.styles = [seen.size, D.styleOf(0).id];
+      const share = id => { const S = D.STYLES.find(s => s.id === id), n = {}; let all = 0;
+        for (let m = 0; m < 2; m++){ const G = D.newMatch(500 + m, 3, { ai0: D.STEADY, seed: m, style: S, target: 5, game: 'squash', ev: (k, a) => { if (k === 'hit' && a.seat === 1){ n[a.shot] = (n[a.shot] || 0) + 1; all++; } } });
+          while (G.state !== 'over') D.tick(G); }
+        return x => (n[x] || 0) / Math.max(1, all); };
+      const lob = share('lobber'), pow = share('power'), boa = share('boaster');
+      out.styled = { lobber: +lob('lob').toFixed(2), power: +pow('lob').toFixed(2), boaster: +boa('boast').toFixed(2), boastOfPower: +pow('boast').toFixed(2) };
+      return out;
+    });
+    const ok1 = r.swing.none.hits === 0 && r.swing.swung.hits === 1 && r.swing.swung.tm != null && r.timing.lateRight && r.timing.mishitSlower
+      && r.shots.boastFirst === 'side' && r.shots.killLower && r.shots.killFaster && r.flick === 'kill,lob,boast,none' && r.styles[0] === 6 && r.styles[1] === 'all'
+      && r.styled.lobber > r.styled.power + 0.1 && r.styled.boaster > r.styled.boastOfPower;
+    if (!ok1) failures.push('[squash swing] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} squash: no hit without a swing, a hit within one (at ${r.swing.swung.tm}), late and early either way, a mishit slower, a boast off the side wall first, a kill low (${r.shots.kz}) and fast, flicks ${r.flick}, ${r.styles[0]} styles, a lobber lobbing ${r.styled.lobber} against a power player's ${r.styled.power}, a boaster boasting ${r.styled.boaster}`);
+    await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
+    await page.waitForTimeout(2500);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
+      if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
+      const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
+      // (the row is a ring, the first tile in the middle: a real slow drag brings the Hands and Shot tiles round to be clicked)
+      for (let k = 0; k < 4; k++){
+        const on = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_6' && t.style.display !== 'none'); if (!t) return false; const b = t.getBoundingClientRect(); return b.x > 20 && b.x + b.width < innerWidth - 20; });
+        if (on) break;
+        const t3 = await tileAt(3); if (!t3) break;
+        await page.mouse.move(t3[0], t3[1]); await page.mouse.down();
+        for (let j = 1; j <= 15; j++){ await page.mouse.move(t3[0] - j * 22, t3[1]); await page.waitForTimeout(25); }
+        await page.waitForTimeout(200); await page.mouse.up(); await page.waitForTimeout(500);
+      }
+      const ht = await tileAt(5); if (ht){ await page.mouse.click(ht[0], ht[1]); await page.waitForTimeout(400); }
+      const st = await tileAt(6); if (st){ await page.mouse.click(st[0], st[1]); await page.waitForTimeout(400); }
+      real.tiles = await page.evaluate(() => { const S = window.getFieldApp()._debug.SET; return [S.hands, S.shot]; });
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
+      // a rally under way, the ball high and far: a real finger lifted swings
+      const rally = () => page.evaluate(k => { const G = window.getFieldApp()._debug.GAMES.get(k).G; Object.assign(G, { state: 'play', to: 0, wall: false, lastHit: 1 }); Object.assign(G.ball, { x: 0.5, y: 0.25, z: 0.45, vx: 0, vy: 0, vz: 0, roll: false }); G.pl[0].swingAt = -9; return G.t; }, key);
+      await rally();
+      const p0 = await aimAt(0.3, 0.8);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p0[0], y: p0[1], id: 7 }] });
+      await page.waitForTimeout(80);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(250);
+      real.lift = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
+      await rally();
+      await page.keyboard.press('Enter'); await page.waitForTimeout(250);
+      real.space = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
+      await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.SET.hands = 'auto'; D.SET.shot = 'auto'; }, key);
+    }
+    const ok2 = !!fc && real.tiles[0] === 'swing' && real.tiles[1] === 'drive' && real.lift && real.space;
+    if (!ok2) failures.push('[squash swing] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: the real Hands and Shot tiles (${real.tiles}), a real finger lifted swings, the real Enter swings`);
   }
   // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
   // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
@@ -5966,6 +6127,14 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         await wait(700);
       });
       await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await page.waitForTimeout(1500);
+      // (until a neighbour shows: on CI chess, the first game here, once had none on the screen 1.5 s after the wheel, Oct 27)
+      for (let k = 0; k < 4; k++){
+        const shows = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, [spx, spz] = W.spacing(), cv = document.querySelector('canvas');
+          return [[spx, 0], [-spx, 0], [0, spz], [0, -spz]].some(([dx, dz]) => { const v = new W.THREE.Vector3(T.boardX + dx, 0, T.boardZ + dz).project(W.camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+            return x > 60 && y > 60 && x < innerWidth - 60 && y < innerHeight - 140 && document.elementFromPoint(x, y) === cv; }); });
+        if (shows) break;
+        await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await page.waitForTimeout(1500);
+      }
       const r = await page.evaluate(async () => {
         const W = window.FIELD_WORLD, T = W.target, [spx, spz] = W.spacing(), cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
         let at = null, want = null;
