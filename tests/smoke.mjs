@@ -4268,9 +4268,9 @@ try {
       await page.mouse.up();
       // a point and a match: the computer stands still in a corner; your paddle under the ball
       real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G, pts = [];
-        G.target = 3; G.pads[1].ai = { react: 99, err: 0, v: 0, acc: 0, aim: 0 }; G.pads[1].think.next = 1e9; G.pads[1].think.T = 0.05; G.pads[1].x = 0.08;
+        G.target = 3; G.score = [0, 0]; G.pads[1].ai = { react: 99, err: 0, v: 0, acc: 0, aim: 0 }; G.pads[1].think.next = 1e9; G.pads[1].think.T = 0.05; G.pads[1].x = 0.08;
         const ev = G.ev; G.ev = (kind, a, M) => { if (kind === 'point') pts.push(a.seat); ev && ev(kind, a, M); };
-        for (let i = 0; i < 60 * 200 && G.state !== 'over'; i++){ G.pads[0].tx = G.balls[0] ? G.balls[0].x : 0.31; D.tick(G); }
+        for (let i = 0; i < 60 * 200 && G.state !== 'over'; i++){ G.pads[0].tx = G.balls[0] ? G.balls[0].x : 0.31; if (G.balls[0] && G.balls[0].vy > 0 && G.balls[0].y > 0.7) G.pads[0].x = G.balls[0].x; D.tick(G); }
         return { pts: pts.join(), score: G.score.join('-') }; }, key);
       await page.waitForTimeout(600);
       real.over = await page.evaluate(([k, c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); return { st: g.state, best: D.BEST.get(g.idx + '@' + g.lv + '@' + D.SET.target) }; }, [key, ...fc]);
@@ -4469,8 +4469,8 @@ try {
       real.arrow = (await rd()).x > a0 + 0.05;
       // a goal and the match: the computer's mallet held in a corner, the puck sent straight at its goal
       real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G;
-        G.target = 3; G.mal[1].ai = { react: 99, err: 0, v: 0, acc: 0, attack: 0, aimErr: 0, bank: 0 }; G.mal[1].think.next = 1e9; G.mal[1].T = [0.05, 0.05]; G.mal[1].x = 0.05; G.mal[1].y = 0.05;
-        for (let i = 0; i < 60 * 60 && G.state !== 'over'; i++){ if (G.state === 'play' && G.puck.y > 0.5 && Math.hypot(G.puck.vx, G.puck.vy) < 0.2) Object.assign(G.puck, { x: 0.31, vx: 0, vy: -1.5 }); D.tick(G); }
+        G.target = 3; G.score = [0, 0]; G.mal[1].ai = { react: 99, err: 0, v: 0, acc: 0, attack: 0, aimErr: 0, bank: 0 }; G.mal[1].think.next = 1e9; G.mal[1].T = [0.05, 0.05]; G.mal[1].x = 0.05; G.mal[1].y = 0.05;
+        for (let i = 0; i < 60 * 60 && G.state !== 'over'; i++){ if (G.state === 'play' && (G.puck.vy > -0.5 || Math.hypot(G.puck.vx, G.puck.vy) < 0.2)) Object.assign(G.puck, { x: 0.31, y: 0.6, vx: 0, vy: -1.5 }); D.tick(G); }
         return G.score.join('-'); }, key);
       await page.waitForTimeout(600);
       real.over = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); return { st: g.state, best: D.BEST.get(g.idx + '@' + g.lv + '@' + D.SET.target) }; }, key);
@@ -4494,8 +4494,8 @@ try {
       real.tile = [t0, await page.evaluate(() => window.getFieldApp()._debug.SET.target)];
       await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 7) D.setting('target'); });
       real.idle = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), s = () => JSON.stringify(A.cellItems(c + 3, r).filter(i => /^ahDisc/.test(i.kind)).map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
-        for (let k = 0; k < 20; k++){ A.cellItems(c + 3, r); await new Promise(ok => setTimeout(ok, 50)); }
-        const a = s(); await new Promise(ok => setTimeout(ok, 1500)); return s() !== a; }, fc);
+        // asked again and again until it changes, up to 10 s: on CI the board's recording is worked out a few boards at a time
+        const a = s(); for (let k = 0; k < 50; k++){ await new Promise(ok => setTimeout(ok, 200)); if (s() !== a) return true; } return false; }, fc);
     }
     const ok2 = !!fc && real.start === 'play' && Math.abs(real.drag[0] - 0.25) < 0.05 && Math.abs(real.drag[1] - 0.7) < 0.04 && real.arrow && real.match === '3-0' && real.over.st === 'over' && real.over.best >= 2
       && real.two.near < 0.55 && real.two.far > 0.45 && real.two.farY < 0.5 && real.two.still && real.tile[0] === 7 && real.tile[1] === 11 && real.idle;
