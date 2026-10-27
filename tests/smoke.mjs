@@ -4205,6 +4205,109 @@ try {
     if (!ok1 || !ok2 || demo < 3) failures.push('[whackamole] ' + JSON.stringify({ r, real, demo }));
     console.log(`${ok1 && ok2 && demo >= 3 ? 'ok  ' : 'FAIL'} whackamole (holes ${r.holes.join('/')} by ring, pops ${gr.map(x => x.pops).join('/')} and par ${gr.map(x => x.par).join('/')} by level, the same round each time; real clicks on a mole scored and on an empty hole cost: ${real && real.scores.join(',')})`);
   }
+  // PONG (Oct 27: "lets create a polished pong application. what do you suggest?", then "all. provide cusomtization options in
+  // the bottom browser."): levels by ring; no ball through a paddle at any speed; the steady player winning near the corner and
+  // losing far out; a board's recording played to its end for par; real input (a click starting, the real arrow and a real drag
+  // moving the paddle, two real fingers each taking a paddle with the view still); a point and a match won with stars and a
+  // best; power-ups taken; the row's settings changed by a real click on a tile; a board no one plays moving.
+  {
+    current = 'pong';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'pong')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      // (a paddle always under the ball's crossing, the ball far faster than any serve: never a point)
+      const G = D.newMatch(5, 5, { ai0: null, ai1: null, power: false, serveT: 0 }); G.sp = 2.5;
+      for (let i = 0; i < 60 * 240; i++){
+        for (let k = 0; k < 2; k++){ let tx = D.consts.W / 2; for (const b of G.balls) if ((k === 0) === (b.vy > 0)) tx = D.landing(b.x, b.y, b.vx, b.vy, D.faceY(k)).x; G.pads[k].tx = tx; }
+        D.tick(G);
+      }
+      out.tunnel = { score: G.score.join('-'), hits: G.hits };
+      // the steady player's share of the points, by level
+      out.share = [1, 5].map(lv => { let a = 0, b = 0; for (let s = 0; s < 4; s++){ const M = D.newMatch(300 + s, lv, { ai0: D.STEADY, power: false, serveT: 1, target: 5 });
+        while (M.state !== 'over' && M.t < 600) D.tick(M); a += M.score[0]; b += M.score[1]; } return +(a / (a + b)).toFixed(2); });
+      // a recording to its end: par
+      const R = D.recOf(321, 2); D.recWork(R, 4000, true);
+      out.rec = { done: R.done, par: R.par, frames: R.frames.length / 7, same: (() => { const S = D.recOf(321, 2); return S === R; })() };
+      // power-ups taken in a match with them on
+      const P = D.newMatch(9, 3, { power: true, ai0: D.STEADY }), got = new Set(); P.ev = (k, a) => { if (k === 'power') got.add(a.id); };
+      while (P.state !== 'over' && P.t < 600) D.tick(P);
+      out.powers = [...got].sort().join();
+      return out;
+    });
+    const ok1 = r.levels.join() === '2,3,5,5' && r.tunnel.score === '0-0' && r.tunnel.hits > 1000 && r.share[0] > 0.7 && r.share[1] < 0.4
+      && r.rec.done && r.rec.par >= 0 && r.rec.frames > 1000 && r.rec.same && r.powers.split(',').length >= 3;
+    if (!ok1) failures.push('[pong] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} pong: levels ${r.levels.join('/')} by ring, ${r.tunnel.hits} returns at speed and none through a paddle, the steady player's share ${r.share.join(' at level 1, ')} at level 5, a recording's par ${r.rec.par}, powers taken ${r.powers}`);
+    // real input on a framed board
+    await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
+    await page.waitForTimeout(3000);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
+      const rd = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { st: g.state, x: g.G.pads[0].x, x1: g.G.pads[1].x, sc: g.G.score.join('-') } : null; }, key);
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      const mid = await aimAt(0.5, 0.45);
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
+      real.start = (await rd()).st;
+      // the real arrow
+      const a0 = (await rd()).x;
+      await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(400); await page.keyboard.up('ArrowLeft');
+      real.arrow = (await rd()).x < a0 - 0.05;
+      // a real drag: the paddle under the finger
+      const p0 = await aimAt(0.3, 0.9), p1 = await aimAt(0.75, 0.9);
+      await page.mouse.move(p0[0], p0[1]); await page.mouse.down();
+      for (let k = 1; k <= 10; k++){ await page.mouse.move(p0[0] + (p1[0] - p0[0]) * k / 10, p0[1]); await page.waitForTimeout(30); }
+      await page.waitForTimeout(250);
+      real.drag = +(await rd()).x.toFixed(3);
+      await page.mouse.up();
+      // a point and a match: the computer stands still in a corner; your paddle under the ball
+      real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G, pts = [];
+        G.target = 3; G.pads[1].ai = { react: 99, err: 0, v: 0, acc: 0, aim: 0 }; G.pads[1].think.next = 1e9; G.pads[1].think.T = 0.05; G.pads[1].x = 0.08;
+        const ev = G.ev; G.ev = (kind, a, M) => { if (kind === 'point') pts.push(a.seat); ev && ev(kind, a, M); };
+        for (let i = 0; i < 60 * 200 && G.state !== 'over'; i++){ G.pads[0].tx = G.balls[0] ? G.balls[0].x : 0.31; D.tick(G); }
+        return { pts: pts.join(), score: G.score.join('-') }; }, key);
+      await page.waitForTimeout(600);
+      real.over = await page.evaluate(([k, c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); return { st: g.state, best: D.BEST.get(g.idx + '@' + g.lv + '@' + D.SET.target) }; }, [key, ...fc]);
+      // two players: a real finger on each half takes its paddle, and the view stays where it is
+      await page.evaluate(() => window.getFieldApp()._debug.setting(3));
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
+      const cam0 = await page.evaluate(() => { const T = window.FIELD_WORLD.target; return [T.boardX, T.boardZ, window.FIELD_WORLD.camera.position.x, window.FIELD_WORLD.camera.position.z].map(v => +v.toFixed(4)).join(); });
+      const n0 = await aimAt(0.6, 0.9), f0 = await aimAt(0.4, 0.1);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: n0[0], y: n0[1], id: 1 }, { x: f0[0], y: f0[1], id: 2 }] });
+      for (let k = 1; k <= 8; k++){
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: n0[0] - k * 10, y: n0[1], id: 1 }, { x: f0[0] + k * 10, y: f0[1], id: 2 }] });
+        await page.waitForTimeout(40);
+      }
+      await page.waitForTimeout(300);
+      const two = await rd();
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      const cam1 = await page.evaluate(() => { const T = window.FIELD_WORLD.target; return [T.boardX, T.boardZ, window.FIELD_WORLD.camera.position.x, window.FIELD_WORLD.camera.position.z].map(v => +v.toFixed(4)).join(); });
+      real.two = { near: +two.x.toFixed(3), far: +two.x1.toFixed(3), still: cam0 === cam1 };
+      await page.evaluate(() => window.getFieldApp()._debug.setting(3));
+      // the row's settings: a real click on the Points tile
+      if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
+      const t0 = await page.evaluate(() => window.getFieldApp()._debug.SET.target);
+      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
+      real.tile = { from: t0, to: await page.evaluate(() => window.getFieldApp()._debug.SET.target), stored: await page.evaluate(() => JSON.parse(localStorage.getItem('pong.settings') || '{}').target) };
+      await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 11) D.setting(2); });
+      // a board no one plays moves
+      real.idle = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), s = () => JSON.stringify(A.cellItems(c + 3, r).filter(i => /^pg(Pad|PadGlow|Cap|Ball|Orb|Cube|Puck)$/.test(i.kind)).map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
+        for (let k = 0; k < 20; k++){ A.cellItems(c + 3, r); await new Promise(ok => setTimeout(ok, 50)); }
+        const a = s(); await new Promise(ok => setTimeout(ok, 1500)); return s() !== a; }, fc);
+    }
+    const ok2 = !!fc && real.start === 'play' && real.arrow && Math.abs(real.drag - 0.75 * 0.62) < 0.03 && real.match.pts === '0,0,0' && real.over.st === 'over' && real.over.best >= 2
+      && real.two.near < 0.6 * 0.62 - 0.02 && real.two.far > 0.4 * 0.62 + 0.02 && real.two.still && real.tile.from === 11 && real.tile.to === 21 && real.tile.stored === 21 && real.idle;
+    if (!ok2) failures.push('[pong] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real click starts, the real arrow and a real drag move the paddle, a match won with ${real.over && real.over.best} stars, two real fingers take a paddle each with the view still, a real click on the Points tile, a board no one plays moves`);
+  }
   // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
   // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
   // find; real clicks fill exactly the squares clicked and the corner's marks switch to crosses; a real drag fills a row; the
