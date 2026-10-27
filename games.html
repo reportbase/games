@@ -28866,7 +28866,8 @@ const BLOCKOUT_APP = (() => {
    - `pane(open)`: the row opened or shut as the editor's own (`ED.busy`, so the field's asking `onBrowserToggle` is not taken
      for the person's), then rebuilt at once;
    - Escape cancels while the game is the field's (unless `o.escape` is false: Soma's Escape has more to close);
-   - the row's hooks (`hooks`, spread into the app): the dots open the editor (`o.rowOpens`) and shutting the row is Done
+   - the row's hooks (`hooks`, spread into the app; with `o.gameRow` the row's tiles and taps are left to the game, whose row
+     it also is): the dots open the editor (`o.rowOpens`) and shutting the row is Done
      (`o.rowStays`: and the row stays up as the game's own), `o.toggled` for anything else; the editor's tiles; and the quick
      buttons, the game's own (`o.quick`: a key, glyph, title, the `tool` it takes up if any, and what it does) then ✕ Cancel and
      ✓ Done, or ✎ while a game is played if the row is the game's (`o.make`). After a quick button, `o.after` (else the row
@@ -28905,6 +28906,8 @@ const EDIT_KIT = {
         return true;
       },
     };
+    // (a row that is the game's own as well, `o.gameRow`: its tiles and taps stay the game's, which asks ED.on itself)
+    if (o.gameRow){ delete hooks.statTiles; delete hooks.statsStay; delete hooks.onStatTap; }
     return { pane, hooks };
   },
   store(key, keep, clean){
@@ -29605,7 +29608,7 @@ const SOMA_APP = (() => {
   const edSay = (m, ms) => say(m, ms || 3200);
   const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
     quick: [{ key: 'check', glyph: '✔', title: 'Check: can it be filled with its pieces, and how many ways?', run: () => edCheck() }],
-    escape: false, doneTitle: 'Done: keep it and play it', after: () => touched(),
+    escape: false, gameRow: true, doneTitle: 'Done: keep it and play it', after: () => touched(),
     toggled: open => { if (!open && GAL.on) galClose(); return true; },
     make: { when: () => !!liveGame(), title: 'Make a figure for this board: cells on and off layer by layer, the pieces to fill it with' } }), edPane = EDK.pane;
   const edCount = () => ED.cells.size;
@@ -55577,7 +55580,7 @@ const TRICK_APP = (() => {
   const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
     quick: [{ key: 'erase', glyph: '🧽', title: 'Erase: a ball or the ring away', tool: 'erase', run: () => edSay('Tap a ball or the ring to take it away.') },
             { key: 'check', glyph: '✔', title: 'Check: is there a shot that does it, and what par?', run: () => edCheck(null) }],
-    rowStays: true, cancelTitle: 'Cancel: leave the table as it was', doneTitle: 'Done: keep it and play it',
+    rowStays: true, gameRow: true, cancelTitle: 'Cancel: leave the table as it was', doneTitle: 'Done: keep it and play it',
     make: { when: () => !!liveGame(), title: 'Make a trick shot for this board: place the balls, mark what the shot must do' } }), edPane = EDK.pane;
   const draftOf = () => ({ kind: 'mine', balls: ED.balls.map(b => [b[0], b[1], b[2]]), target: ED.target, first: ED.first, avoid: ED.avoid.slice(), bank: ED.bank, kick: ED.kick,
                            zone: ED.zone ? [ED.zone[0], ED.zone[1], ED.zone[2]] : null, see: ED.see === Infinity ? 99 : ED.see });
