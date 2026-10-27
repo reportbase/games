@@ -1,6 +1,6 @@
 # games: notes for Claude
 
-A 3D field of boards you fly over, with ~40 games in one page (and Levels, a demonstration of level of detail) (chess against
+A 3D field of boards you fly over, with ~50 games in one page (and Levels, a demonstration of level of detail) (chess against
 Stockfish with a Claude coach, checkers, Go, Tetris, Pac-Man, Sokoban, …), served
 by GitHub Pages at https://reportbase.github.io/games/. The owner works through
 Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
@@ -511,6 +511,53 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     - The smoke test checks 40 tables made again from their specs, the real dots opening the editor, a real click laying a bumper
       where it fell and a real drag moving it, a part too near another refused, a ramp a side, Check, the real ✓ keeping it in
       storage as the board's table and playing it, a shared copy on another board, and nonsense through `cleanSpec`.
+- **Pong** (Oct 27: "lets create a polished pong application. what do you suggest?", then "all. provide cusomtization options in
+  the bottom browser."): `PONG_APP`, id `pong`, after pinball. A table a board, `W` (0.62) wide by 1 long (the app's `boardShape`,
+  `frameFit` 1.1), your paddle at the near end (seat 0, y `PY[0]` 0.94), the computer's at the far end; laid out in table units and
+  divided by W at the end, as pinball's.
+  - **The feel** (`tick`, `stepBall`, `hit`): ticks of 1/60 s (`TICK`), each `SUB` (8) steps; a paddle's face is met where the ball's
+    way crosses it between two steps, so nothing tunnels (the smoke test: 1,600 returns at 2.5 times a level-5 serve's speed, none
+    through). Where it meets the paddle sets the angle (up to `MAXA` 1 rad); each return `UP` (4%) faster, to `VMAX` (2.3) times the
+    serve; the paddle's speed carries into the ball (`CARRY`) and puts spin on it (`SPIN`, curving it, dying over `SPIN_T`); a fast
+    swipe into the angle is a smash (`SMASH`: 15% more, the table shakes). Paddles speed up and slow down under a limit (`acc`).
+  - **The match**: first to 11 (5 or 21 from the row), won by two; the loser of a point serves after a countdown (`serveT`: 1.5 s, or
+    0.6 quick; a tap or Space serves at once, `serveNow`); the board's far player serves first. Over, a tap after `GRACE` goes on to
+    the board beside (`gotoCell(c - 1, r)`, as pinball).
+  - **Harder farther out**: a level 1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2). `LV`: the serve's speed, your
+    paddle's half length (0.09 down to 0.061; the computer's `CPU_HW` 0.075), and the computer (`think`): it looks again every `react`
+    s (longer on a steep ball), guesses the crossing (`landing`, walls folded in, spin not) off by `err` (more on a steep, fast ball),
+    moves at `v` with `acc`, so it runs past where it meant to stop, and aims away from you at `aim`'s rate. Against the steady player
+    (`STEADY`, a person's hands, the same everywhere) over 8 matches to 11: level 1 and 2 it won every one by 8–11 points, level 3
+    by 2–9 (one lost), level 4 and 5 it lost; a match lasts 2–4 minutes and takes 4–7 ms to work out.
+  - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`, `RECS` 400): a board no one plays shows the steady player against
+    its computer, frames of 7 numbers at `REC_HZ` 30 for the first `REEL_T` (40) s, looped at the board's own phase, a few boards
+    at a time (8 ms in 30); the framed board's match is played to the end for par (`parOf`: the points the steady player gave away
+    winning; if it lost, the target). Stars (`starsOf`): a win giving away par or fewer ★★★, a win ★★, a loss with half the target ★;
+    the most kept by board, level and target (localStorage `pong.best`).
+  - **Hands** (`pressAt`, `handAt`, `handUp`, `OWN`, heard before the field in the capture phase, as pinball's): while a match is under
+    way every press on the table is a paddle's, held under the finger (`HAND[seat].tx`, at most `HAND_V` 4 a second), so the view
+    never pans under it; a touch's mouse echo is known by its time (`echoOf`). ← → (and A D with one player) move the near paddle
+    (`KEY_V`), the screen's way (`screenToBoardDirs`). **Two players** (the row's Players): every touch takes the paddle of its half,
+    so a finger each; the arrows against A and D; stars and a best only with one.
+  - **Themes** (`THEMES`, `themeOf`: by the board's number, the corner Classic, unless the row picks one; `LOOK`, `paint` on the photo
+    tier): Classic (black, white blocks, a square ball, scan lines, square-wave blips), Neon (a glowing grid, cyan and pink paddles,
+    gliding sawtooth), Table tennis (a blue table, the net, red and black bats with handles, a tock) and Ice hockey (ice with skate
+    marks, red and blue lines, circles and creases, mallets with knobs, a puck, a thud off the boards, a horn and the crowd for a goal).
+    The centre line and the score's 3 × 5 dot digits (`DIG`, `digits`) glow; the countdown is dot digits by the server; the ball leaves
+    a trail; a hit rings (a smash a gold ring), a wall flashes, a paddle squashes a moment.
+  - **Sounds** (`sfx`): each theme's set, a return's pitch climbing 3% a hit of the rally; a crowd (`crowd`, filtered noise) swells in
+    at rallies of 8, 14 and every 6 after.
+  - **Power-ups** (off at first; `POWERS`, `powerStep`, `take`): a token in the middle of the table every `PW_GAP` (6–10) s, gone after
+    `PW_LIFE`; the ball over it gives it to whoever hit last: three balls (each scores as it goes out; the serve waits for the last),
+    a paddle half again as long for 8 s, curve (three times the spin) for 8 s, the game at 0.55 speed for 5 s.
+  - **The row is the settings** (`tilesOf`, `setting`, `SET`, localStorage `pong.settings`): New match (Restart while playing, the
+    score over it), Theme (By board, Classic, Neon, Table tennis, Ice hockey), Points (5, 11, 21), Players (One, Two), Ball speed (Slow,
+    Normal, Fast: ×0.8, 1, 1.25), Paddle (Small, Normal, Large: ×0.8, 1, 1.25), Trail, Power-ups, Serve (Countdown, Quick), Shake &
+    flash, Sound. What changes the play (points, players, speed, paddle, power-ups) starts every match and recording afresh.
+  - The smoke test checks the levels by ring, no tunnelling, the steady player's share of points at levels 1 and 5, a recording's par,
+    power-ups taken, and real input: a click starting, the real ← and a real drag moving the paddle (under the finger), a point and a
+    match won with stars and a best, two real fingers each taking a paddle with the view still, a real click on the Points tile
+    (stored), and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
