@@ -4686,6 +4686,106 @@ try {
     if (!ok2) failures.push('[squash] real input: ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: a real click starts, a real drag runs the player under the finger (${real.drag}), the real arrow, a real click serves, a match won ${real.match} with ${real.over && real.over.best} stars, two real fingers a player each with the view still, real clicks on the Points, Game and Mode tiles, a ${real.drill && real.drill.kind} drill fed, a board no one plays moves`);
   }
+  // SQUASH: THE SWING, THE SHOTS, THE STYLES, THE HOLD (Oct 27: "whats next for squash", then "1,2,6", and "long press does not work
+  // to show bottom browser"): a ball passing a person with Swing hands not hit until a swing, then hit, early and late sending it
+  // either way and a mishit slower; a boast meeting the side wall before the front, a kill lower and faster than a drive; flicks
+  // read as kill, lob and boast; every style on the boards near the corner and each playing its own shots; and real input: the real
+  // Hands and Shot tiles, a real lift swinging, the real Enter swinging, a real hold between rallies toggling the row.
+  {
+    current = 'squash';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'squash')));
+    await page.waitForTimeout(800);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, C = D.consts, OFF = 'off', out = {};
+      // the swing
+      const pass = swing => { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF], hands: 'swing' }); const P = G.pl[0];
+        Object.assign(G, { state: 'play', to: 0, lastHit: 1, wall: true, bounces: 0 }); Object.assign(P, { x: 0.3, y: 0.75 }); Object.assign(G.pl[1], { x: 0.6, y: 0.3 });
+        Object.assign(G.ball, { x: 0.32, y: 0.6, z: 0.08, vx: 0, vy: 0.5, vz: 0.1, roll: false });
+        let tm = null; G.ev = (k, a) => { if (k === 'hit') tm = a.tm; };
+        for (let i = 0; i < 30 && !G.hits; i++){ if (swing && i === 12) P.swingAt = G.t; D.tick(G); }
+        return { hits: G.hits, tm: tm == null ? null : +tm.toFixed(2) }; };
+      out.swing = { none: pass(false), swung: pass(true) };
+      const timed = tm => { const G = D.newMatch(1, 1, { seats: [null, null, OFF, OFF], hands: 'swing' }); const P = G.pl[0];
+        Object.assign(G, { state: 'play', to: 0, wall: true }); Object.assign(P, { x: 0.3, y: 0.7, vx: 0, vy: -0.5 }); Object.assign(G.ball, { x: 0.3, y: 0.66, z: 0.06 });
+        D.hit(G, 0, tm); return { vx: G.ball.vx, v: Math.hypot(G.ball.vx, G.ball.vy) }; };
+      const early = timed(-0.6), late = timed(0.6), mid = timed(0), mis = timed(0.95);
+      out.timing = { lateRight: late.vx > early.vx + 0.2, mishitSlower: mis.v < mid.v * 0.85 };
+      // the shots
+      const shotFrom = want => { const G = D.newMatch(1, 1, { seats: [null, D.LV[0], OFF, OFF] }); const M = G.pl[1];
+        Object.assign(G, { state: 'play', to: 1, wall: true }); Object.assign(M, { x: 0.15, y: 0.7, vx: 0, vy: 0 }); M.want = want; Object.assign(G.ball, { x: 0.15, y: 0.66, z: 0.06 });
+        D.hit(G, 1); const b = { ...G.ball }, seen = []; let zf = null;
+        for (let i = 0; i < 4000 && zf == null; i++) D.ballStep(b, 1 / 480, k => { seen.push(k); if (k === 'front') zf = b.z; }, D.COURTS.squash);
+        return { first: seen[0], zf: +(zf || 0).toFixed(3), v: +Math.hypot(G.ball.vx, G.ball.vy).toFixed(2) }; };
+      const dr = shotFrom('drive'), bo = shotFrom('boast'), ki = shotFrom('kill');
+      out.shots = { boastFirst: bo.first, killLower: ki.zf < dr.zf, killFaster: ki.v > dr.v, kz: ki.zf };
+      const now = performance.now(), F = (dx, dy) => D.flickOf({ hist: [[now - 80, 0.3, 0.6], [now - 5, 0.3 + dx, 0.6 + dy]] });
+      out.flick = [F(0, -0.2), F(0, 0.2), F(0.2, 0), F(0, -0.02)].map(x => x || 'none').join();
+      // the styles
+      const seen = new Set(); for (let i = 0; i < 60; i++) seen.add(D.styleOf(i).id); out.styles = [seen.size, D.styleOf(0).id];
+      const share = id => { const S = D.STYLES.find(s => s.id === id), n = {}; let all = 0;
+        for (let m = 0; m < 2; m++){ const G = D.newMatch(500 + m, 3, { ai0: D.STEADY, seed: m, style: S, target: 5, game: 'squash', ev: (k, a) => { if (k === 'hit' && a.seat === 1){ n[a.shot] = (n[a.shot] || 0) + 1; all++; } } });
+          while (G.state !== 'over') D.tick(G); }
+        return x => (n[x] || 0) / Math.max(1, all); };
+      const lob = share('lobber'), pow = share('power'), boa = share('boaster');
+      out.styled = { lobber: +lob('lob').toFixed(2), power: +pow('lob').toFixed(2), boaster: +boa('boast').toFixed(2), boastOfPower: +pow('boast').toFixed(2) };
+      return out;
+    });
+    const ok1 = r.swing.none.hits === 0 && r.swing.swung.hits === 1 && r.swing.swung.tm != null && r.timing.lateRight && r.timing.mishitSlower
+      && r.shots.boastFirst === 'side' && r.shots.killLower && r.shots.killFaster && r.flick === 'kill,lob,boast,none' && r.styles[0] === 6 && r.styles[1] === 'all'
+      && r.styled.lobber > r.styled.power + 0.1 && r.styled.boaster > r.styled.boastOfPower;
+    if (!ok1) failures.push('[squash swing] ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} squash: no hit without a swing, a hit within one (at ${r.swing.swung.tm}), late and early either way, a mishit slower, a boast off the side wall first, a kill low (${r.shots.kz}) and fast, flicks ${r.flick}, ${r.styles[0]} styles, a lobber lobbing ${r.styled.lobber} against a power player's ${r.styled.power}, a boaster boasting ${r.styled.boaster}`);
+    await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
+    await page.waitForTimeout(2500);
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    const real = {};
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
+      if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
+      const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
+      // (the row is a ring, the first tile in the middle: a real slow drag brings the Hands and Shot tiles round to be clicked)
+      for (let k = 0; k < 4; k++){
+        const on = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_6' && t.style.display !== 'none'); if (!t) return false; const b = t.getBoundingClientRect(); return b.x > 20 && b.x + b.width < innerWidth - 20; });
+        if (on) break;
+        const t3 = await tileAt(3); if (!t3) break;
+        await page.mouse.move(t3[0], t3[1]); await page.mouse.down();
+        for (let j = 1; j <= 15; j++){ await page.mouse.move(t3[0] - j * 22, t3[1]); await page.waitForTimeout(25); }
+        await page.waitForTimeout(200); await page.mouse.up(); await page.waitForTimeout(500);
+      }
+      const ht = await tileAt(5); if (ht){ await page.mouse.click(ht[0], ht[1]); await page.waitForTimeout(400); }
+      const st = await tileAt(6); if (st){ await page.mouse.click(st[0], st[1]); await page.waitForTimeout(400); }
+      real.tiles = await page.evaluate(() => { const S = window.getFieldApp()._debug.SET; return [S.hands, S.shot]; });
+      await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
+      const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
+      // a rally under way, the ball high and far: a real finger lifted swings
+      const rally = () => page.evaluate(k => { const G = window.getFieldApp()._debug.GAMES.get(k).G; Object.assign(G, { state: 'play', to: 0, wall: false, lastHit: 1 }); Object.assign(G.ball, { x: 0.5, y: 0.25, z: 0.45, vx: 0, vy: 0, vz: 0, roll: false }); G.pl[0].swingAt = -9; return G.t; }, key);
+      await rally();
+      const p0 = await aimAt(0.3, 0.8);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p0[0], y: p0[1], id: 7 }] });
+      await page.waitForTimeout(80);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(250);
+      real.lift = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
+      await rally();
+      await page.keyboard.press('Enter'); await page.waitForTimeout(250);
+      real.space = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
+      // between rallies: a real hold, still, and let go toggles the row
+      await page.evaluate(k => { const G = window.getFieldApp()._debug.GAMES.get(k).G; G.state = 'point'; G.nextAt = 1e9; G.next = 0; }, key);
+      const v0 = await page.evaluate(() => window.tvf.bottomRow.visible);
+      await page.mouse.move(p0[0], p0[1]); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up(); await page.waitForTimeout(500);
+      const v1 = await page.evaluate(() => window.tvf.bottomRow.visible);
+      await page.mouse.move(p0[0], p0[1]); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up(); await page.waitForTimeout(500);
+      const v2 = await page.evaluate(() => window.tvf.bottomRow.visible);
+      real.hold = [v0, v1, v2];
+      await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.SET.hands = 'auto'; D.SET.shot = 'auto'; }, key);
+    }
+    const ok2 = !!fc && real.tiles[0] === 'swing' && real.tiles[1] === 'drive' && real.lift && real.space && real.hold[1] === !real.hold[0] && real.hold[2] === real.hold[0];
+    if (!ok2) failures.push('[squash swing] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} squash: the real Hands and Shot tiles (${real.tiles}), a real finger lifted swings, the real Enter swings, a real hold between rallies shows and hides the row (${real.hold})`);
+  }
   // NONOGRAMS (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board its
   // own picture at a level by its ring (5×5 near the corner up to 12×12 far out), kept only with one answer the lines alone
   // find; real clicks fill exactly the squares clicked and the corner's marks switch to crosses; a real drag fills a row; the

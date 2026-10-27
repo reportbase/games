@@ -633,7 +633,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The rally** (`onBall`): turns go by (`G.to`); a shot must reach the front wall above the tin and under the out line before
     the floor ('tin', 'out', 'down': the hitter loses it), and the other must return it before its second bounce ('not up'). Volleys
     off the front wall, side and back walls all play. PAR scoring to 11 (5 or 15 from the row), won by two; the rally's winner
-    serves from the box of its score's side (`setServe`; `serve` lobs it up and across, a tap or Space serves yours sooner); a
+    serves from the box of its score's side (`setServe`; `serve` lobs it up and across, a tap or Enter serves yours sooner); a
     rally past `RALLY_CAP` is a let.
   - **The stroke** (`hit`): the racket meets the ball as it comes within `REACH` (Small, Normal, Large from the row) on your turn,
     below `ZREACH`. Where it meets across you sets the angle (`MAXA`), your run carries (`CARRY`), and how you move says the shot
@@ -651,7 +651,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the ball raised, its shadow and trail; flashes on the wall, rings where it bounces; dot-digit scores on the floor.
   - **Recordings and par** (`recOf`, `recWork`, `recSoon`, `recView`): the steady player against the board's computer, 17 numbers
     a frame; par the points given away winning (`parOf`); stars as Pong's (localStorage `squash.best`); settings `squash.settings`
-    (the row: New, Game, Mode, Points, Players, Court, Ball speed, Your reach, Guide, Trail, Flashes, Sound; `ORDER`).
+    (the row: New, Game, Mode, Points, Players, Hands, Shot, Court, Ball speed, Your reach, Guide, Trail, Flashes, Sound; `ORDER`;
+    a ring with the first tile in the middle, so tiles 4–10 are brought round by a drag).
   - **Lets, strokes, the ball's height, racquetball, fives, doubles, drills** (Oct 27: "whats next for squash", then "3,4,6,7"):
     - **Four seats** (`G.pl`, `team(k)` = k % 2: 0 and 2 red, 1 and 3 blue; a seat `off` is not on the court; `seatsFor`). `G.to` is
       the side to play; either of a side may take its ball. Recordings are 17 numbers a frame (all four players, the call).
@@ -681,6 +682,36 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       s, away from you at `spread`'s rate, drops at `drop`'s, off a side wall at `boast`'s; a return scores when its first bounce
       comes down in the lit zone, `deep` and from level 4 `tight` to a side wall, `drillLand`, else 'SHORT'). Measured (4 boards a
       level, squash): Targets par about 9, 7, 4; Rally 25, 5, 3; Feeds 4, 7, 2 at levels 1, 3, 5. Stars: par 3, 60% 2.
+  - **The swing, the shots, the styles, the hold** (Oct 27: "whats next for squash", then "1,2,6. also long press does not work to
+    show bottom browser. why do some applications not support long press?"):
+    - **Swing hands** (the row's Hands: Auto as before, or Swing; `G.swing`): a person hits only with a swing, asked for by a finger
+      lifted off the court or Enter (with two people blue's Enter, red's Q: Space never reaches a game on its own clock, the
+      field's pause takes it; `SWING`, consumed in `inputs`). The racket comes through from the middle of the swing to its end
+      (`SWING_T` 0.2 s) and reaches `SWING_REACH` (1.25) times as far; the timing `tm` is where the ball is along its way when it is
+      met, −1 still in front (early: across) to 1 level or past (late: toward the racket's side, `LATE_K`), past `MISHIT` (0.8) a
+      mishit (slower, lower). The ring and the ball's halo light while it is in a swing's reach.
+    - **Shots** (`SHOTS`): drive, drop, lob, and now the boast (hard across off the nearer side wall first) and the kill (hard and
+      low, `zw` near the tin). A person's comes from a flick as the finger lifts (`flickOf`: its last tenth of a second faster than
+      `FLICK_V`: up a kill, down a lob, across a boast), else the row's Shot (`SET.shot`, keys 1–5, 0 back to by movement), else
+      the movement. The computer plays them at its level's `boast` and `kill` rates.
+    - **Styles** (`STYLES`, `styleOf` by the board's number, the corner an all-rounder, `styled`): every board's computer a retriever,
+      an attacker, a lobber, a power player (`pace` 1.15), a boaster or an all-rounder, multiplying its level's dials; named in the
+      title and the start. Measured at level 3 over three matches each: the lobber's shots 32% lobs against a power player's 7%, the
+      boaster's 22% boasts.
+    - **Hands by skill**: every stroke's spread goes with the player's own `err` (`hands`, 0.7 to 1.5 of the base), so a level-5
+      computer's kills clear the tin; without it the new risky shots made level 5 play like level 3. Over 5 matches to 11 against
+      the steady player, its share of points: squash 0.87, 0.54, 0.15 at levels 1, 3, 5; racquetball 0.89, 0.67, 0.04; fives 0.83,
+      0.65, 0.15.
+    - **The hold between rallies** (`handUp`): squash, Pong, air hockey and pinball take every press on the board before the field
+      while a game is under way (a finger is a player, a paddle, a mallet, a flipper), so the field's hold never came; the games
+      that keep their presses (`keepsPress`: mini golf, falling tiles, the tanks, trick shots) do toggle the row on a still hold let
+      go (`turn.keptHold`). Squash now does it itself: a press held still `HOLD_MS` (600 ms, within `HOLD_PX`) and let go when no
+      rally is in play (before the serve, between points, a drill's pauses) toggles the row; in a rally a still finger is a player
+      standing still and a lift a swing.
+    - The smoke test checks no hit without a swing and a hit within one, early and late either way, a mishit slower, a boast off the
+      side wall first, a kill low and fast, the flicks, the six styles and the lobber and boaster playing their own shots, and real
+      input: the real Hands and Shot tiles (brought round by a real drag of the row), a real finger lifted swinging, the real Enter
+      swinging, and a real hold between rallies showing and hiding the row.
   - The smoke test checks the levels by ring, a drive striking the wall at its height, the tin, down and not up, the angle off each
     side, drive/drop/lob by motion, a let and a stroke, the computer stepping off the striker's way, the landing foretold, the guide
     by level, the ball lit in reach, racquetball's ceiling and side-out scoring, fives' tin and reach, doubles with all four seats

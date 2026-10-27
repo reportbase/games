@@ -58862,24 +58862,45 @@ const AIRHOCKEY_APP = (() => {
 const SQUASH_APP = (() => {
   const W = 0.66, BR = 0.011, PB = 0.03, ZREACH = 0.2, GRAV = 0.6, BOX = 0.165;
   const MAXA = 0.62, CARRY = 0.3, FWD_K = 0.35, BLOCK_W = 2 * PB + 0.014, BLOCK_T = 0.15, STROKE_R = 2.5, HUMAN_V = 1.1, TIRE_T = 45, TIRE_A = 15;
+  const SWING_T = 0.2, SWING_REACH = 1.25, HOLD_MS = 600, HOLD_PX = 18, FLICK_V = 1.2, LATE_K = 0.35, MISHIT = 0.8;
   const TICK = 1 / 60, SUB = 8, DT = TICK / SUB, POINT_T = 1.3, SERVE_T = 1.1, GRACE = 0.8, HAND_V = 1.6, KEY_V = 1.15, KEY_ACC = 9, AI_GAIN = 8;
   const REC_HZ = 30, REEL_T = 40, DRILL_T = 40, MATCH_CAP = 1500, RALLY_CAP = 60, REC_CAP = 400, PHOTO_PX = 20, HI_PX = 300, WALL_H = 0.5, VZ = 0.5, CALL_T = 1.4;
   const REACHES = { small: 0.06, normal: 0.075, large: 0.09 }, SPEEDS = { slow: 0.8, normal: 1, fast: 1.2 };
-  const SHOTS = { drive: { s: 1.35, zw: 0.12, sd: 0.012 }, drop: { s: 0.72, zw: 0.072, sd: 0.008 }, lob: { s: 0.95, zw: 0.34, sd: 0.03 } };
+  const SHOTS = { drive: { s: 1.35, zw: 0.12, sd: 0.012 }, drop: { s: 0.72, zw: 0.072, sd: 0.008 }, lob: { s: 0.95, zw: 0.34, sd: 0.03 },
+                  boast: { s: 1.15, zw: 0.13, sd: 0.012 }, kill: { s: 1.75, zw: 0.076, sd: 0.01 } };
+  const SHOT_NAMES = { auto: 'By movement', drive: 'Drive', drop: 'Drop', lob: 'Lob', boast: 'Boast', kill: 'Kill' }, SHOT_KEYS = ['auto', 'drive', 'drop', 'lob', 'boast', 'kill'];
   const COURTS = {
     squash:      { id: 'squash', name: 'Squash', glyph: '🎾', tin: 0.05, service: 0.18, out: 0.47, ceil: 0, eFront: 0.72, eSide: 0.82, eBack: 0.6, eFloor: 0.55, fFloor: 0.85, pace: 1, reach: 1, racket: true, scoring: 'par', target: 11, by: 2, short: 0.56 },
     racquetball: { id: 'racquetball', name: 'Racquetball', glyph: '🔵', tin: 0, service: 0, out: 0, ceil: 0.5, eFront: 0.8, eSide: 0.84, eBack: 0.62, eFloor: 0.58, fFloor: 0.85, pace: 1.15, reach: 1.05, racket: true, scoring: 'side', target: 11, by: 1, short: 0.5 },
     fives:       { id: 'fives', name: 'Fives', glyph: '✋', tin: 0.076, service: 0, out: 0.45, ceil: 0, eFront: 0.7, eSide: 0.8, eBack: 0.6, eFloor: 0.55, fFloor: 0.85, pace: 0.86, reach: 0.75, racket: false, scoring: 'side', target: 11, by: 2, short: 0.56 },
   };
   const LV = [
-    { speed: 0.82, react: 0.42, err: 0.065, v: 0.72, acc: 4.5, aim: 0.2,  drop: 0.03, lob: 0.03 },
-    { speed: 0.92, react: 0.32, err: 0.048, v: 0.86, acc: 5.5, aim: 0.35, drop: 0.07, lob: 0.05 },
-    { speed: 1.0,  react: 0.24, err: 0.034, v: 1.02, acc: 7,   aim: 0.5,  drop: 0.11, lob: 0.07 },
-    { speed: 1.1,  react: 0.16, err: 0.022, v: 1.25, acc: 9.5, aim: 0.68, drop: 0.16, lob: 0.1 },
-    { speed: 1.2,  react: 0.1,  err: 0.014, v: 1.45, acc: 12,  aim: 0.82, drop: 0.2,  lob: 0.12 },
+    { speed: 0.82, react: 0.42, err: 0.065, v: 0.72, acc: 4.5, aim: 0.2,  drop: 0.03, lob: 0.03, boast: 0.02, kill: 0.01 },
+    { speed: 0.92, react: 0.32, err: 0.048, v: 0.86, acc: 5.5, aim: 0.35, drop: 0.07, lob: 0.05, boast: 0.04, kill: 0.03 },
+    { speed: 1.0,  react: 0.24, err: 0.034, v: 1.02, acc: 7,   aim: 0.5,  drop: 0.11, lob: 0.07, boast: 0.06, kill: 0.05 },
+    { speed: 1.1,  react: 0.16, err: 0.022, v: 1.25, acc: 9.5, aim: 0.68, drop: 0.16, lob: 0.1,  boast: 0.08, kill: 0.08 },
+    { speed: 1.2,  react: 0.1,  err: 0.014, v: 1.45, acc: 12,  aim: 0.82, drop: 0.2,  lob: 0.12, boast: 0.1,  kill: 0.11 },
   ];
   // the steady player (the recordings' near seat, and par): a person's hands, the same on every board
-  const STEADY = { react: 0.2, err: 0.03, v: 1.1, acc: 8, aim: 0.5, drop: 0.1, lob: 0.07 };
+  const STEADY = { react: 0.2, err: 0.03, v: 1.1, acc: 8, aim: 0.5, drop: 0.1, lob: 0.07, boast: 0.05, kill: 0.05 };
+  /* EVERY BOARD'S COMPUTER A STYLE (Oct 27: "whats next for squash", then "1,2,6"): by the board's number, the corner an all-rounder;
+     each multiplies the level's dials (`mul`) and may hit harder (`pace`), so you learn to play each: a retriever gets everything back
+     and lobs, an attacker drops and kills, a lobber lobs, a power player drives hard and kills, a boaster boasts. */
+  const STYLES = [
+    { id: 'all',       name: 'an all-rounder',   mul: {} },
+    { id: 'retriever', name: 'a retriever',      mul: { v: 1.1, err: 0.85, drop: 0.5, kill: 0.4, lob: 1.6 } },
+    { id: 'attacker',  name: 'an attacker',      mul: { drop: 2, kill: 2.5, err: 1.1, aim: 1.15, lob: 0.6 } },
+    { id: 'lobber',    name: 'a lobber',         mul: { lob: 3.5, drop: 0.6, kill: 0.5 } },
+    { id: 'power',     name: 'a power player',   mul: { kill: 1.8, lob: 0.4, drop: 0.6 }, pace: 1.15 },
+    { id: 'boaster',   name: 'a boaster',        mul: { boast: 4, drop: 1.2 } },
+  ];
+  const styleOf = idx => idx === 0 ? STYLES[0] : STYLES[(Math.imul(idx ^ 0x1f3d5b79, 2654435761) >>> 13) % STYLES.length];
+  function styled(D, S){
+    const A = { ...D, style: S.id, pace: S.pace || 1 };
+    for (const k in S.mul) A[k] = D[k] * S.mul[k];
+    let sum = A.drop + A.lob + A.boast + A.kill; if (sum > 0.85){ const f = 0.85 / sum; for (const k of ['drop', 'lob', 'boast', 'kill']) A[k] *= f; }
+    return A;
+  }
   // the guide's ring where the ball will come down, by level: all the way, until the front wall (0.5), or not at all
   const GUIDE_LV = [1, 1, 1, 0.5, 0];
   const DRILLS = [{ id: 'targets', name: 'Targets' }, { id: 'rally', name: 'Rally' }, { id: 'feeds', name: 'Feeds' }];
@@ -58920,13 +58941,15 @@ const SQUASH_APP = (() => {
   ];
   const FORMATS = [1, 2, 'd1', 'd2'];
   const SET = (() => {
-    const d = { game: 'squash', mode: 'match', theme: 'board', target: 0, players: 1, speed: 'normal', reach: 'normal', guide: true, trail: true, fx: true, sound: true };
+    const d = { game: 'squash', mode: 'match', theme: 'board', target: 0, players: 1, hands: 'auto', shot: 'auto', speed: 'normal', reach: 'normal', guide: true, trail: true, fx: true, sound: true };
     try { const s = JSON.parse(localStorage.getItem('squash.settings') || '{}');
       if (s.game in COURTS) d.game = s.game;
       if (s.mode === 'match' || s.mode === 'drill') d.mode = s.mode;
       if (s.theme === 'board' || THEMES.some(t => t.id === s.theme)) d.theme = s.theme;
       if ([0, 5, 11, 15].includes(s.target)) d.target = s.target;
       if (FORMATS.includes(s.players)) d.players = s.players;
+      if (s.hands === 'auto' || s.hands === 'swing') d.hands = s.hands;
+      if (SHOT_KEYS.includes(s.shot)) d.shot = s.shot;
       if (s.speed in SPEEDS) d.speed = s.speed;
       if (s.reach in REACHES) d.reach = s.reach;
       for (const k of ['guide', 'trail', 'fx', 'sound']) if (typeof s[k] === 'boolean') d[k] = s[k];
@@ -58953,15 +58976,16 @@ const SQUASH_APP = (() => {
     const D = LV[lv - 1], o = opt || {}, C = COURTS[o.game || SET.game] || COURTS.squash;
     const sp = D.speed * (SPEEDS[o.speed || SET.speed] || 1) * C.pace;
     const R = rngOf((idx * 2654435761) ^ (lv * 1013) ^ (o.seed || 0) ^ 0x5a17);
-    const seats = o.seats || seatsFor(o.drill ? 'drill' : (o.fmt || 1), D, o.ai0 === undefined ? null : o.ai0);
+    const ST = o.style || styleOf(idx), DS = styled(D, ST);
+    const seats = (o.seats || seatsFor(o.drill ? 'drill' : (o.fmt || 1), D, o.ai0 === undefined ? null : o.ai0)).map(x => x === D ? DS : x);
     const tgt = (o.target || SET.target) || C.target;
     const G = { idx, lv, D, C, R, sp, target: tgt, t: 0, state: 'serve', score: [0, 0], hits: 0, rally: 0, longest: 0, rallyT: 0,
                 fx: [], ev: o.ev || null, winner: -1, nextAt: 0, serveAt: 0, server: 0, to: 0, lastHit: 1, wall: false, bounces: 0, why: '',
-                blkT: 0, blkNear: false, call: null, doubles: seats[2] !== 'off', land: null, landKey: '',
+                blkT: 0, blkNear: false, call: null, doubles: seats[2] !== 'off', land: null, landKey: '', style: ST, swing: (o.hands || SET.hands) === 'swing',
                 ball: { x: W / 2, y: 0.6, z: 0.06, vx: 0, vy: 0, vz: 0, roll: false, trail: [] },
                 pl: [0, 1, 2, 3].map(k => ({ k, x: W / 2, y: 0.7, vx: 0, vy: 0, off: seats[k] === 'off', ai: seats[k] && seats[k] !== 'off' ? seats[k] : null, think: null,
                                             reach: (k === 0 ? (REACHES[o.reach || SET.reach] || REACHES.normal) : REACHES.normal) * C.reach,
-                                            tx: null, ty: null, dx: 0, dy: 0, hitT: -9, T: [W / 2, 0.7], want: 'drive', dxWant: 0, planFor: -1, slip: [0, 0] })) };
+                                            tx: null, ty: null, dx: 0, dy: 0, hitT: -9, swingAt: -9, flickShot: null, T: [W / 2, 0.7], want: 'drive', dxWant: 0, planFor: -1, slip: [0, 0] })) };
     for (const M of G.pl){ if (M.ai) M.think = { next: 0 }; if (M.off){ M.x = -1; M.y = -1; } }
     if (o.drill){
       const DD = DRILL_LV[lv - 1], kind = (o.drillKind || drillOf(idx)).id || o.drillKind;
@@ -59004,22 +59028,39 @@ const SQUASH_APP = (() => {
     b.vz = (zw - b.z + 0.5 * GRAV * t * t) / t;
   }
   // how you are moving says the shot: in toward the front wall a drive, back a lob, still a drop
-  function shotOf(M){ if (M.ai) return M.want; const f = -M.vy; return f > 0.22 ? 'drive' : f < -0.22 ? 'lob' : Math.hypot(M.vx, M.vy) < 0.25 ? 'drop' : 'drive'; }
-  function hit(G, k){
+  // (or, for a person, the shot a flick of the finger chose at the swing, or the one picked in the row or by the keys)
+  function shotOf(M){
+    if (M.ai) return M.want;
+    if (M.flickShot) return M.flickShot;
+    if (SET.shot !== 'auto') return SET.shot;
+    const f = -M.vy; return f > 0.22 ? 'drive' : f < -0.22 ? 'lob' : Math.hypot(M.vx, M.vy) < 0.25 ? 'drop' : 'drive';
+  }
+  // `tm` (a person's swing): where in its swing the racket met the ball, −1 early to 1 late (0 at the swing's middle)
+  function hit(G, k, tm){
     const M = G.pl[k], b = G.ball, kind = shotOf(M), S = SHOTS[kind];
-    const a = clamp((b.x - M.x) / M.reach, -1, 1) * MAXA + Math.atan2(M.vx * CARRY, 1.3);
-    const s = S.s * G.sp * (kind === 'drive' ? 1 + FWD_K * Math.max(0, -M.vy) : 1);
+    let a = clamp((b.x - M.x) / M.reach, -1, 1) * MAXA + Math.atan2(M.vx * CARRY, 1.3);
+    // (a boast goes off the nearer side wall first, hard across: the front wall after it)
+    if (kind === 'boast') a = (M.x < W / 2 ? -1 : 1) * 1.2;
+    let s = S.s * G.sp * (kind === 'drive' ? 1 + FWD_K * Math.max(0, -M.vy) : 1) * ((M.ai && M.ai.pace) || 1);
+    // (a swing timed by a person: early pulls it across, late pushes it toward the racket's own side; badly timed, a mishit)
+    const sdR = k % 2 === 0 ? 1 : -1, mis = tm != null && Math.abs(tm) > MISHIT;
+    if (tm != null && kind !== 'boast') a += tm * LATE_K * sdR;
+    if (mis) s *= 0.75;
     // (a ball taken higher goes up the wall higher; a little spread on every stroke; under racquetball's ceiling a lob stays under it)
     // (a ball taken at full stretch or on the run is less sure: the spread grows, and so do tins and outs; and late in a long rally,
     //  tired, every stroke is less sure, so rallies end in errors as they do on a court)
     const off = Math.abs(b.x - M.x) / M.reach, run = Math.hypot(M.vx, M.vy), unsure = (1 + 1.6 * off * off + 0.8 * run) * (1 + G.rallyT / TIRE_A * (M.ai ? M.ai.err / STEADY.err : 1));
-    let zw = S.zw + Math.max(0, G.C.tin - 0.05) + Math.max(0, b.z - 0.05) * 0.5 + gauss(G.R) * S.sd * unsure;
+    // (and a surer pair of hands spreads less: the computer's spread goes with its own `err`, so a level-5 player's kill clears the tin)
+    const hands = M.ai ? clamp(M.ai.err / STEADY.err, 0.7, 1.5) : 1;
+    let zw = S.zw + Math.max(0, G.C.tin - 0.05) + Math.max(0, b.z - 0.05) * 0.5 + gauss(G.R) * S.sd * unsure * hands;
     if (G.C.ceil) zw = Math.min(zw, G.C.ceil * 0.62);
-    shoot(G, b, clamp(a + gauss(G.R) * 0.03 * (unsure - 1), -1.1, 1.1), s, zw);
+    if (mis) zw -= 0.03;
+    const lim = kind === 'boast' ? 1.3 : 1.1;
+    shoot(G, b, clamp(a + gauss(G.R) * 0.03 * (unsure - 1) * hands, -lim, lim), s, zw);
     G.hits++; G.rally++; G.longest = Math.max(G.longest, G.rally);
-    G.to = G.drill ? 0 : 1 - team(k); G.lastHit = k; G.wall = false; G.bounces = 0; M.hitT = G.t; M.lastShot = kind; G.blkT = 0; G.blkNear = false;
+    G.to = G.drill ? 0 : 1 - team(k); G.lastHit = k; G.wall = false; G.bounces = 0; M.hitT = G.t; M.lastShot = kind; G.blkT = 0; G.blkNear = false; M.flickShot = null; M.swingAt = -9;
     G.fx.push({ t: G.t, kind: 'hit', x: b.x, y: b.y, z: b.z, seat: k, shot: kind });
-    emit(G, 'hit', { seat: k, rally: G.rally, shot: kind });
+    emit(G, 'hit', { seat: k, rally: G.rally, shot: kind, tm, mis });
   }
   // the ball one step: gravity, the walls, the floor (and a ceiling); `on(kind)` hears each wall and bounce
   function ballStep(b, dt, on, C){
@@ -59133,7 +59174,7 @@ const SQUASH_APP = (() => {
       // (once a shot: what to play back, and where across itself to meet it)
       if (M.planFor !== G.hits){
         M.planFor = G.hits;
-        const q = R(); M.want = q < A.drop ? 'drop' : q < A.drop + A.lob ? 'lob' : 'drive';
+        const q = R(); M.want = q < A.drop ? 'drop' : q < A.drop + A.lob ? 'lob' : q < A.drop + A.lob + (A.boast || 0) ? 'boast' : q < A.drop + A.lob + (A.boast || 0) + (A.kill || 0) ? 'kill' : 'drive';
         const near = foes.length ? foes.reduce((a, b) => Math.abs(b.x - W / 2) < Math.abs(a.x - W / 2) ? b : a) : null;
         const away = near ? (near.x < W / 2 ? 1 : -1) : (R() < 0.5 ? -1 : 1), sd = R() < A.aim ? away : (R() < 0.5 ? -1 : 1);
         M.dxWant = sd * (M.want === 'drop' ? 0.1 + 0.3 * R() : 0.35 + 0.5 * R()) * M.reach;
@@ -59230,8 +59271,20 @@ const SQUASH_APP = (() => {
       const b = G.ball;
       if (G.wall && b.z <= ZREACH && !(G.drill && G.drill.ret)){
         let H = null, hd = 9;
-        for (const M of L) if (team(M.k) === G.to){ const d = Math.hypot(b.x - M.x, b.y - M.y); if (d <= M.reach && d < hd){ H = M; hd = d; } }
-        if (H) hit(G, H.k);
+        /* (with Swing hands a person hits only with a swing: the racket comes through from the middle of the swing to its end, a
+           little farther than it reaches standing; the timing is where the ball is along its way when the racket meets it, −1 still
+           in front of you, early, to 1 level with or past you, late) */
+        let tmH = null;
+        for (const M of L) if (team(M.k) === G.to){
+          const sw = G.swing && !M.ai, inSw = sw && G.t - M.swingAt >= SWING_T / 2 && G.t - M.swingAt <= SWING_T;
+          if (sw && !inSw) continue;
+          const d = Math.hypot(b.x - M.x, b.y - M.y), R0 = M.reach * (sw ? SWING_REACH : 1);
+          if (d <= R0 && d < hd){
+            H = M; hd = d;
+            if (sw){ const sp = Math.hypot(b.vx, b.vy) || 1; tmH = clamp(((b.x - M.x) * b.vx + (b.y - M.y) * b.vy) / sp / R0 * 1.4, -1, 1); }
+          }
+        }
+        if (H) hit(G, H.k, tmH);
       }
       // (a rally that runs on and on is played again, as a let)
       if (G.rallyT > RALLY_CAP && !G.drill){ emit(G, 'let', {}); callOut(G, 'let'); setServe(G, G.server); }
@@ -59404,7 +59457,7 @@ const SQUASH_APP = (() => {
     const C = g.G.C, D = g.G.drill;
     say(D ? C.name + ' drill, ' + DRILLS.find(d => d.id === D.kind).name + ': ' + ({ targets: 'put the ball in the box on the front wall; every one in scores and a new box comes.', rally: 'keep the ball going alone; your longest run of returns counts.', feeds: 'the machine feeds drives, drops and boasts away from you; return each to a length, its first bounce in the lit zone at the back.' })[D.kind] + ' ' + DRILL_T + ' seconds.'
         : g.two ? C.name + (g.G.doubles ? ' doubles' : '') + ', two people: a finger each (the one nearest your finger is yours), or W A S D against the arrows. The ring shows whose side is to play. To ' + g.G.target + '.'
-        : C.name + (g.G.doubles ? ' doubles, you and a computer partner' : '') + ': to ' + g.G.target + (C.by > 1 ? ', won by two' : '') + '. Run to the ball: your ' + (C.racket ? 'racket' : 'hand') + ' takes it as it comes to you on your side\'s turn (the ring under you). Step in for a drive, stand still for a drop, go back for a lob.', 5600);
+        : C.name + (g.G.doubles ? ' doubles, you and a computer partner' : '') + ' against ' + g.G.style.name + ': to ' + g.G.target + (C.by > 1 ? ', won by two' : '') + '. Run to the ball: your ' + (C.racket ? 'racket' : 'hand') + ' takes it as it comes to you on your side\'s turn (the ring under you). ' + (g.G.swing ? 'Let go (or Enter) to swing as the ball comes.' : 'Step in for a drive, stand still for a drop, go back for a lob.'), 5600);
     try { bbRefreshNow(); } catch {}
   }
   const humanServes = g => g.G.state === 'serve' && !g.G.drill && !g.G.pl[g.G.server].ai;
@@ -59434,10 +59487,12 @@ const SQUASH_APP = (() => {
     }
     try { bbRefreshNow(); } catch {}
   }
-  const HAND = [{ tx: null, ty: null }, { tx: null, ty: null }], KEYS = {};
+  const HAND = [{ tx: null, ty: null }, { tx: null, ty: null }], KEYS = {}, SWING = [null, null];
   function inputs(g){
     for (let k = 0; k < 2; k++){
       const M = g.G.pl[k]; if (M.ai || M.off) continue;
+      // (a swing asked for by a finger lifted or a key: it starts now, with the shot a flick chose)
+      if (SWING[k]){ const q = SWING[k]; SWING[k] = null; if (g.G.swing && g.G.state === 'play'){ M.swingAt = g.G.t; M.flickShot = q.shot || null; emit(g.G, 'swing', { seat: k, shot: q.shot }); } }
       M.tx = HAND[k].tx; M.ty = HAND[k].ty;
       M.dx = (KEYS['R' + k] ? 1 : 0) - (KEYS['L' + k] ? 1 : 0);
       M.dy = (KEYS['D' + k] ? 1 : 0) - (KEYS['U' + k] ? 1 : 0);
@@ -59454,12 +59509,14 @@ const SQUASH_APP = (() => {
     const g = liveGame(), th = g ? themeOf(g.idx).id : 'classic', T = ARCADE.tone, Hs = ARCADE.hiss, rally = (a && a.rally) || 0, f = 300 * Math.pow(1.02, Math.min(24, rally));
     const glove = g && !g.G.C.racket;
     try {
-      if (kind === 'hit' || kind === 'serve'){ const soft = a && a.shot === 'drop'; Hs(glove ? 0.05 : 0.035, soft ? 0.14 : 0.3, glove ? 1400 : th === 'neon' ? 5200 : 3200); if (!glove) T(f * 1.3, f, 0.05, th === 'neon' ? 'sawtooth' : 'triangle', soft ? 0.03 : 0.06); }
+      if (kind === 'hit' && a && a.mis){ T(160, 120, 0.06, 'square', 0.05); Hs(0.04, 0.2, 900); }
+      else if (kind === 'hit' || kind === 'serve'){ const soft = a && a.shot === 'drop'; Hs(glove ? 0.05 : 0.035, soft ? 0.14 : 0.3, glove ? 1400 : th === 'neon' ? 5200 : 3200); if (!glove) T(f * 1.3, f, 0.05, th === 'neon' ? 'sawtooth' : 'triangle', soft ? 0.03 : 0.06); }
       else if (kind === 'front'){ Hs(0.06, 0.32, 1400); T(140, 90, 0.08, 'sine', 0.09); }
       else if (kind === 'floor') Hs(0.03, 0.12, 2400);
       else if (kind === 'wall'){ const v = Math.min(1, ((a && a.v) || 1) / 1.5); Hs(0.05, 0.1 + 0.14 * v, 1100); }
       else if (kind === 'point'){ if (a && a.why === 'tin'){ T(880, 860, 0.25, 'square', 0.045); T(1320, 1300, 0.2, 'square', 0.03); } T(a && a.seat === 0 ? 660 : 330, a && a.seat === 0 ? 880 : 247, 0.22, 'triangle', 0.06, 0.12); }
       else if (kind === 'let') T(520, 520, 0.18, 'sine', 0.05);
+      else if (kind === 'swing') Hs(0.09, 0.1, 2600);
       else if (kind === 'feed') { T(110, 70, 0.08, 'square', 0.05); Hs(0.05, 0.12, 900); }
       else if (kind === 'target') [784, 1047].forEach((q, i) => T(q, q, 0.1, 'triangle', 0.06, i * 0.07));
       else if (kind === 'dead') T(220, 180, 0.12, 'triangle', 0.04);
@@ -59635,7 +59692,7 @@ const SQUASH_APP = (() => {
   function liveView(g){
     const G = g.G, b = G.ball, show = G.state !== 'over' && b.y >= 0;
     const V = { ball: show ? { x: b.x, y: b.y, z: b.z, trail: b.trail, step: 3 } : null, court: G.C,
-                pl: G.pl.filter(M => !M.off).map(M => ({ k: M.k, x: M.x, y: M.y, reach: M.reach, age: G.t - M.hitT })),
+                pl: G.pl.filter(M => !M.off).map(M => ({ k: M.k, x: M.x, y: M.y, reach: M.reach * (G.swing && !M.ai ? SWING_REACH : 1), age: G.t - Math.max(M.hitT, M.swingAt) })),
                 score: G.score, to: G.state === 'play' ? G.to : G.server, play: G.state === 'play' || G.state === 'serve', t: G.t,
                 fx: G.fx.map(e => ({ ...e, age: G.t - e.t })), call: G.call ? { text: G.call.text, age: G.t - G.call.t } : null };
     if (G.drill) V.drill = { kind: G.drill.kind, score: G.drill.score, left: G.drill.left, tgt: G.drill.tgt, need: G.drill.need, zone: G.drill.DD };
@@ -59643,7 +59700,7 @@ const SQUASH_APP = (() => {
     if (G.state === 'play' && show){
       const mine = G.pl.filter(M => !M.off && !M.ai && team(M.k) === G.to);
       if (mine.length){
-        for (const M of mine){ const P = V.pl.find(q => q.k === M.k); if (G.wall && b.z <= ZREACH && Math.hypot(b.x - M.x, b.y - M.y) <= M.reach){ P.inReach = true; V.inReach = true; } }
+        for (const M of mine){ const P = V.pl.find(q => q.k === M.k); if (G.wall && b.z <= ZREACH && Math.hypot(b.x - M.x, b.y - M.y) <= M.reach * (G.swing ? SWING_REACH : 1)){ P.inReach = true; V.inReach = true; } }
         const gl = GUIDE_LV[G.lv - 1];
         if (SET.guide && gl > 0 && (gl >= 1 || !G.wall)){
           const key = G.hits + ':' + (G.wall ? 1 : 0) + ':' + (G.drill ? G.drill.feeds : 0);
@@ -59674,11 +59731,32 @@ const SQUASH_APP = (() => {
       const d = k => Math.hypot(g.G.pl[k].x - px, g.G.pl[k].y - py);
       seat = used.has(0) && !used.has(1) ? 1 : used.has(1) && !used.has(0) ? 0 : d(0) <= d(1) ? 0 : 1; }
     if ((humanServes(g) && g.G.server === seat) || (g.G.drill && g.G.state === 'serve')) serveNow(g);
-    return { g, seat };
+    return { g, seat, x0: x, y0: y, t0: performance.now(), moved: false, hist: [] };
   }
-  function handAt(p, x, y){ const at = _framedUV(x, y, 0.3); if (!at) return; HAND[p.seat].tx = clamp(at.u, 0, 1) * W; HAND[p.seat].ty = clamp(at.v, 0, 1); }
+  function handAt(p, x, y){
+    if (Math.hypot(x - p.x0, y - p.y0) > HOLD_PX) p.moved = true;
+    const at = _framedUV(x, y, 0.3); if (!at) return;
+    HAND[p.seat].tx = clamp(at.u, 0, 1) * W; HAND[p.seat].ty = clamp(at.v, 0, 1);
+    p.hist.push([performance.now(), HAND[p.seat].tx, HAND[p.seat].ty]); if (p.hist.length > 12) p.hist.shift();
+  }
+  // a flick as the finger lifts (its last tenth of a second, in court lengths a second): up a kill, down a lob, across a boast
+  function flickOf(p){
+    const H = p.hist, now = performance.now(), recent = H.filter(h => now - h[0] < 110);
+    if (recent.length < 2) return null;
+    const a = recent[0], z = recent[recent.length - 1], dt = Math.max(0.016, (z[0] - a[0]) / 1000), vx = (z[1] - a[1]) / dt, vy = (z[2] - a[2]) / dt;
+    if (Math.hypot(vx, vy) < FLICK_V) return null;
+    return Math.abs(vx) > Math.abs(vy) ? 'boast' : vy < 0 ? 'kill' : 'lob';
+  }
   function handUp(id){
     const p = OWN.get(id); if (!p) return false; OWN.delete(id);
+    const G = p.g.G, held = !p.moved && performance.now() - p.t0 >= HOLD_MS;
+    /* A HOLD BETWEEN RALLIES IS THE ROW'S (Oct 27: "long press does not work to show bottom browser. why do some applications
+       not support long press?"): while a match is under way every press on the court is a player's, taken before the field
+       sees it, so the field's hold never came. A press held still and let go when no rally is in play (before the serve,
+       between points, the drill's pauses) toggles the row as it does everywhere else; in a rally a still finger is a player
+       standing still, and a lift a swing. */
+    if (held && G.state !== 'play'){ try { toggleBoardBrowser(); } catch {} }
+    else if (G.swing && G.state === 'play' && p.g.state === 'play') SWING[p.seat] = { shot: flickOf(p) };
     if (![...OWN.values()].some(q => q.seat === p.seat)){ HAND[p.seat].tx = null; HAND[p.seat].ty = null; }
     return true;
   }
@@ -59728,18 +59806,24 @@ const SQUASH_APP = (() => {
     if (e.key === ' ' || e.key === 'Enter'){
       if (g.state === 'ready' || (g.state === 'over' && performance.now() - g.overAt > GRACE * 1000)){ e.preventDefault(); e.stopPropagation(); begin(g); }
       else if (g.state === 'play' && (humanServes(g) || (g.G.drill && g.G.state === 'serve'))){ e.preventDefault(); e.stopPropagation(); serveNow(g); }
+      /* (Swing hands: Enter swings, blue's with two people. Space never reaches a game on its own clock: the field takes it to pause,
+         so red's is Q.) */
+      else if (g.state === 'play' && g.G.swing && g.G.state === 'play'){ e.preventDefault(); e.stopPropagation(); SWING[g.two ? 1 : 0] = { shot: null }; }
       return;
     }
+    if ((e.key === 'q' || e.key === 'Q') && g.two && g.state === 'play' && g.G.swing && g.G.state === 'play'){ e.preventDefault(); e.stopPropagation(); SWING[0] = { shot: null }; return; }
+    // (1–5 pick the shot, 0 back to the shot by how you move)
+    if (/^[0-5]$/.test(e.key) && g.state === 'play'){ e.preventDefault(); e.stopPropagation(); const v = SHOT_KEYS[+e.key]; if (SET.shot !== v){ SET.shot = v; saveSet(); say('Shot: ' + SHOT_NAMES[v].toLowerCase(), 1200); try { bbRefreshNow(); } catch {} } return; }
     const s = keyOf(e, g); if (!s || g.state !== 'play') return;
     e.preventDefault(); e.stopPropagation(); KEYS[s.dir + s.seat] = true;
   }, true);
   addEventListener('keyup', e => { const s = keyOf(e, liveGame()); if (s) KEYS[s.dir + s.seat] = false; }, true);
-  addEventListener('blur', () => { for (const k in KEYS) KEYS[k] = false; HAND[0].tx = HAND[1].tx = HAND[0].ty = HAND[1].ty = null; OWN.clear(); });
+  addEventListener('blur', () => { for (const k in KEYS) KEYS[k] = false; HAND[0].tx = HAND[1].tx = HAND[0].ty = HAND[1].ty = null; SWING[0] = SWING[1] = null; OWN.clear(); });
 
   /* ─── THE ROW: SETTINGS ─── */
   const NAMES = { slow: 'Slow', normal: 'Normal', fast: 'Fast', small: 'Small', large: 'Large' }, ON = '#2f4a3a';
   const FMT_NAMES = { 1: 'One', 2: 'Two', d1: 'Doubles', d2: 'Doubles × 2' };
-  const ORDER = ['new', 'game', 'mode', 'target', 'players', 'theme', 'speed', 'reach', 'guide', 'trail', 'fx', 'sound'];
+  const ORDER = ['new', 'game', 'mode', 'target', 'players', 'hands', 'shot', 'theme', 'speed', 'reach', 'guide', 'trail', 'fx', 'sound'];
   function tilesOf(c, r){
     const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), th = themeOf(idx), playing = g && g.state === 'play', C = courtNow(), drill = SET.mode === 'drill';
     return [
@@ -59748,6 +59832,8 @@ const SQUASH_APP = (() => {
       { glyph: drill ? '🎯' : '🏆', value: drill ? 'Drills' : 'Match', label: drill ? DRILLS.find(d => d.id === drillOf(idx).id).name.toLowerCase() + ' here' : 'mode' },
       { glyph: '🏁', value: SET.target ? 'To ' + SET.target : 'To ' + C.target, label: SET.target ? 'points' : 'points (the game\'s)' },
       { glyph: SET.players === 1 ? '👤' : '👥', value: FMT_NAMES[SET.players], label: 'players' },
+      { glyph: SET.hands === 'swing' ? '🏸' : '🤖', value: SET.hands === 'swing' ? 'Swing' : 'Auto', label: 'hands', bg: SET.hands === 'swing' ? ON : undefined },
+      { glyph: ({ auto: '🏃', drive: '➡', drop: '⤵', lob: '⤴', boast: '↪', kill: '⚡' })[SET.shot], value: SHOT_NAMES[SET.shot], label: 'shot' },
       { glyph: th.glyph, value: SET.theme === 'board' ? 'By board' : th.name, label: 'court' },
       { glyph: '⚡', value: NAMES[SET.speed], label: 'ball speed' },
       { glyph: C.racket ? '🏸' : '✋', value: NAMES[SET.reach], label: 'your reach' },
@@ -59766,6 +59852,8 @@ const SQUASH_APP = (() => {
     else if (key === 'theme'){ SET.theme = step(['board', ...THEMES.map(t => t.id)], SET.theme); msg = 'Court: ' + (SET.theme === 'board' ? 'each board its own' : THEMES.find(t => t.id === SET.theme).name); }
     else if (key === 'target'){ SET.target = step([0, 5, 11, 15], SET.target); fresh = true; msg = SET.target ? 'Matches to ' + SET.target + ' points' : 'Matches to the game\'s own points'; }
     else if (key === 'players'){ SET.players = step(FORMATS, SET.players); fresh = true; msg = ({ 1: 'One player, against the computer', 2: 'Two people: a finger each, or W A S D against the arrows', d1: 'Doubles: you and a computer partner against two', d2: 'Doubles, two people: each with a computer partner' })[SET.players]; }
+    else if (key === 'hands'){ SET.hands = SET.hands === 'auto' ? 'swing' : 'auto'; fresh = true; msg = SET.hands === 'swing' ? 'Swing hands: let go of the court (or press Enter; Q for red with two people) to swing as the ball comes, the ring lit; early sends it across, late down your side, badly timed a mishit. A flick as you let go picks the shot: up a kill, down a lob, across a boast' : 'Auto hands: your racket takes the ball as it comes to you'; }
+    else if (key === 'shot'){ SET.shot = step(SHOT_KEYS, SET.shot); msg = 'Shot: ' + SHOT_NAMES[SET.shot].toLowerCase() + ({ auto: ' (step in to drive, stand still to drop, go back to lob)', drive: '', drop: ' (soft, just over the tin)', lob: ' (high and deep)', boast: ' (off the side wall first)', kill: ' (hard and low: the tin is near)' })[SET.shot] + '. Keys 1–5 pick, 0 back.'; }
     else if (key === 'speed'){ SET.speed = step(['slow', 'normal', 'fast'], SET.speed); fresh = true; msg = 'Ball speed: ' + NAMES[SET.speed].toLowerCase(); }
     else if (key === 'reach'){ SET.reach = step(['small', 'normal', 'large'], SET.reach); fresh = true; msg = 'Your reach: ' + NAMES[SET.reach].toLowerCase(); }
     else if (key === 'guide'){ SET.guide = !SET.guide; msg = SET.guide ? 'Guide on: where the ball comes down (less of it farther out), a post down to its shadow, your ring lit while it is in reach' : 'Guide off'; }
@@ -59791,9 +59879,11 @@ const SQUASH_APP = (() => {
       { label: () => 'Game: ' + courtNow().name, title: 'Squash, racquetball or fives.', on(){ setting('game'); } },
       { label: () => 'Mode: ' + (SET.mode === 'drill' ? 'drills' : 'matches'), title: 'Matches against the computer, or every board its own drill.', on(){ setting('mode'); } },
       { label: () => 'Players: ' + FMT_NAMES[SET.players].toLowerCase(), title: 'One, two people, doubles with a computer partner, or doubles with two people.', on(){ setting('players'); } },
+      { label: () => 'Hands: ' + (SET.hands === 'swing' ? 'swing' : 'auto'), title: 'Auto: your racket takes the ball as it comes. Swing: you time each swing (let go of the court, or Enter).', on(){ setting('hands'); } },
+      { label: () => 'Shot: ' + SHOT_NAMES[SET.shot].toLowerCase(), title: 'By how you move, or always a drive, drop, lob, boast or kill (keys 1–5, 0 back).', on(){ setting('shot'); } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The racket, the front wall, the tin.', on(){ setting('sound'); } },
       { label: 'Start this board again', title: 'A new match or drill, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
-      { label: 'How to play', title: 'The rules and the controls.', on(){ say('You (red) and the computer (blue) share the court and take turns: the ring under a player says whose shot it is. Run to the ball (your finger, or the arrow keys) and your racket takes it as it comes to you. Where it meets you sets the angle: off your right side it goes right. Step in toward the front wall for a drive, stand still for a drop, go back for a lob. A shot must hit the front wall above the tin and under the top line before it touches the floor; the other side must return it before it bounces twice. Stand in the way of the other side\'s shot and it is a let, or a stroke to them if they were near the ball. The guide shows where the ball will come down. A tap or Space serves when it is your serve. The row has the game (squash, racquetball, fives), drills and doubles.', 14000); } },
+      { label: 'How to play', title: 'The rules and the controls.', on(){ say('You (red) and the computer (blue) share the court and take turns: the ring under a player says whose shot it is. Run to the ball (your finger, or the arrow keys) and your racket takes it as it comes to you. Where it meets you sets the angle: off your right side it goes right. Step in toward the front wall for a drive, stand still for a drop, go back for a lob. A shot must hit the front wall above the tin and under the top line before it touches the floor; the other side must return it before it bounces twice. Stand in the way of the other side\'s shot and it is a let, or a stroke to them if they were near the ball. The guide shows where the ball will come down. A tap or Enter serves when it is your serve. With Swing hands you time each stroke: let go of the court (or Enter) as the ball comes, the ring lit; a flick as you let go picks the shot (up a kill, down a lob, across a boast), or pick one in the row or with 1–5. Every board\'s computer has a style of its own, named in the title. Hold the court still between rallies and let go to show or hide the row. The row has the game (squash, racquetball, fives), drills and doubles.', 16000); } },
     ]}],
     cellFar: { light: 0x1d1813, dark: 0x0f0c0a },
     itemMinPx: 10,
@@ -59823,7 +59913,7 @@ const SQUASH_APP = (() => {
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), th = themeOf(idx), g = GAMES.get(gkey(c, r)), M = RECS.get(recKey(idx, lv)), best = BEST.get(bestKey(idx, lv)), C = courtNow();
       const drill = SET.mode === 'drill', dn = DRILLS.find(d => d.id === drillOf(idx).id).name;
-      const head = C.name + (drill ? ' drill: ' + dn : '') + ' — level ' + lv + ', ' + th.name + (!drill ? (SET.players === 1 ? '' : ', ' + FMT_NAMES[SET.players].toLowerCase()) : '')
+      const head = C.name + (drill ? ' drill: ' + dn : ' against ' + styleOf(idx).name) + ' — level ' + lv + ', ' + th.name + (!drill ? (SET.players === 1 ? '' : ', ' + FMT_NAMES[SET.players].toLowerCase()) : '')
         + (M && M.done && solo() ? (drill ? ' · par ' + M.par : ' · par: win giving away ' + M.par + ' or fewer') : '') + (best ? ' · best ' + '★'.repeat(best) : '');
       if (!g || g.state === 'ready') return head + ' (tap to play)';
       const G = g.G, who = k => g.two ? (k === 0 ? 'red' : 'blue') : k === 0 ? 'you' : 'computer';
@@ -59861,8 +59951,8 @@ const SQUASH_APP = (() => {
     _debug: { newMatch, tick, think, flight, landing, hit, shoot, serve, setServe, point, rallyEnd, ballStep, shotOf, blockStep, clearOf, feed, newTarget, drillOf, seatsFor,
               recOf, recWork, recView, recSoon, parOf, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, themeOf,
               gameAt, fresh, begin, stepGame, over, serveNow, pressAt, setting, tilesOf, LV, STEADY, SET, GAMES, RECS, BEST, HAND, KEYS, OWN, THEMES, LOOK, ORDER, REACHES, SHOTS,
-              COURTS, DRILLS, DRILL_LV, GUIDE_LV, FONT,
-              consts: { W, BR, PB, ZREACH, GRAV, BOX, TICK, SUB, REEL_T, REC_HZ, MAXA, BLOCK_W, BLOCK_T, STROKE_R, DRILL_T, VZ }, levelOf: (c, r) => levelAt(boardIdx(c, r)), bounds,
+              COURTS, DRILLS, DRILL_LV, GUIDE_LV, FONT, STYLES, styleOf, styled, SWING, flickOf, handUp, SHOT_KEYS,
+              consts: { W, BR, PB, ZREACH, GRAV, BOX, TICK, SUB, REEL_T, REC_HZ, MAXA, BLOCK_W, BLOCK_T, STROKE_R, DRILL_T, VZ, SWING_T, SWING_REACH, HOLD_MS }, levelOf: (c, r) => levelAt(boardIdx(c, r)), bounds,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   return app;
