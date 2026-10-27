@@ -57092,12 +57092,23 @@ const LEVELS_APP = (() => {
    - POWER-UPS (the row's Power-ups, off at first): a token comes onto the middle of the table now and then (`PW_GAP`); the ball
      over it gives it to whoever hit it last: three balls, a longer paddle, a curving ball, or the game slowed.
    - THE ROW IS THE SETTINGS (`SET`, localStorage `pong.settings`, `tilesOf`, `onStatTap`): New match, Theme, Points, Players, Ball
-     speed, Paddle, Trail, Power-ups, Serve (countdown or quick), Effects (shake and flash), Sound. */
+     speed, Paddle, Trail, Power-ups, Serve (countdown or quick), Effects (shake and flash), Sound.
+   - MORE (Oct 27: "whats next for pong", then "3,4,5"): the paddle's face Flat or Curved (a curve reflects the ball, so the angle
+     in counts), the paddle stepping forward as well as across (`REACH`: a finger moved up the table, or ↑, steps in; a hit while
+     stepping is faster, and a fast step a smash), each theme's own physics (`PHYS`: the ball bouncing on the receiver's half in
+     table tennis and tennis, the puck slowing on the ice, goals in air hockey with the ends walls, a gravity well in space), four
+     more themes (Tennis, Air hockey, Space, 8-bit), and arenas (`arenaOf`: bumpers, walls, sliding walls, a barrier with a gap,
+     portals, every piece with its twin half a turn about the middle, more farther out). The row: Paddle face, Paddle moves,
+     Physics, Arena. */
 const PONG_APP = (() => {
   const W = 0.62, PY = [0.94, 0.06], PT = 0.016, BR = 0.013, CPU_HW = 0.075, PAD_H = 0.022;
   const TICK = 1 / 60, SUB = 8, DT = TICK / SUB, MAXA = 1.0, UP = 0.04, VMAX = 2.3, SPIN = 0.35, SPIN_MAX = 0.6, SPIN_T = 0.5, CARRY = 0.15;
   const SMASH = 0.55, SMASH_UP = 0.15, POINT_T = 0.9, GRACE = 0.8, REC_HZ = 30, REEL_T = 40, MATCH_CAP = 600, REC_CAP = 400, PHOTO_PX = 20, HI_PX = 300;
   const HAND_V = 4, KEY_V = 1.35, KEY_ACC = 12, AI_GAIN = 9, PW_GAP = [6, 10], PW_R = 0.032, PW_LIFE = 9;
+  // (Oct 27, "3,4,5": the paddle's step forward and the curved face; each theme's own physics; the arenas)
+  const REACH = 0.07, FWD_V = 1.6, FWD_K = 0.5, FWD_SMASH = 0.7, CURVE_N = 0.42;
+  const BOUNCE = { table: { at: 0.72, h1: 0.045, h2: 0.028 }, tennis: { at: 0.78, h1: 0.075, h2: 0.045 } };
+  const ICE_F = 0.22, ICE_FLOOR = 0.8, GOAL = 0.26, GRAV = 0.004, GRAV_S = 0.07;
   const LV = [
     { speed: 0.62, pad: 0.09,  react: 0.34, err: 0.085, v: 0.62, acc: 3.2, aim: 0 },
     { speed: 0.7,  pad: 0.081, react: 0.26, err: 0.06,  v: 0.78, acc: 4.4, aim: 0.2 },
@@ -57132,17 +57143,26 @@ const PONG_APP = (() => {
     { id: 'neon',    name: 'Neon',    glyph: '✦' },
     { id: 'table',   name: 'Table tennis', glyph: '🏓' },
     { id: 'hockey',  name: 'Ice hockey', glyph: '🏒' },
+    { id: 'tennis',  name: 'Tennis', glyph: '🎾' },
+    { id: 'air',     name: 'Air hockey', glyph: '🥅' },
+    { id: 'space',   name: 'Space', glyph: '🪐' },
+    { id: 'retro',   name: '8-bit', glyph: '👾' },
   ];
+  // what each theme's table does to the ball (the row's Physics: By theme), and its name for the row
+  const PHYS = { table: 'table', tennis: 'tennis', hockey: 'ice', air: 'air', space: 'well' };
+  const PHYS_NAME = { table: 'a bounce on the far half', tennis: 'a high bounce', ice: 'the puck slides and slows', air: 'goals, the ends are walls', well: 'a gravity well' };
   const SPEEDS = { slow: 0.8, normal: 1, fast: 1.25 }, PADS = { small: 0.8, normal: 1, large: 1.25 };
   const SET = (() => {
-    const d = { theme: 'board', target: 11, players: 1, speed: 'normal', pad: 'normal', trail: true, power: false, serve: 'count', fx: true, sound: true };
+    const d = { theme: 'board', target: 11, players: 1, speed: 'normal', pad: 'normal', face: 'flat', reach: true, phys: 'theme', arena: false, trail: true, power: false, serve: 'count', fx: true, sound: true };
     try { const s = JSON.parse(localStorage.getItem('pong.settings') || '{}');
       if (s.theme === 'board' || THEMES.some(t => t.id === s.theme)) d.theme = s.theme;
       if ([5, 11, 21].includes(s.target)) d.target = s.target;
       if (s.players === 1 || s.players === 2) d.players = s.players;
       if (s.speed in SPEEDS) d.speed = s.speed;
       if (s.pad in PADS) d.pad = s.pad;
-      for (const k of ['trail', 'power', 'fx', 'sound']) if (typeof s[k] === 'boolean') d[k] = s[k];
+      for (const k of ['trail', 'power', 'fx', 'sound', 'reach', 'arena']) if (typeof s[k] === 'boolean') d[k] = s[k];
+      if (s.face === 'flat' || s.face === 'curved') d.face = s.face;
+      if (s.phys === 'theme' || s.phys === 'plain') d.phys = s.phys;
       if (s.serve === 'count' || s.serve === 'quick') d.serve = s.serve;
     } catch {}
     return d;
@@ -57159,10 +57179,14 @@ const PONG_APP = (() => {
     const D = LV[lv - 1], o = opt || {};
     const sp = D.speed * (SPEEDS[o.speed || SET.speed] || 1), padK = PADS[o.pad || SET.pad] || 1;
     const R = rngOf((idx * 2654435761) ^ (lv * 977) ^ (o.seed || 0) ^ 0x50a6);
+    const phys = o.phys !== undefined ? o.phys : SET.phys === 'theme' ? (PHYS[themeOf(idx).id] || null) : null;
     const G = { idx, lv, D, R, sp, target: o.target || SET.target, power: o.power != null ? o.power : SET.power, serveT: o.serveT != null ? o.serveT : serveT(),
+                face: o.face || SET.face, reach: o.reach != null ? o.reach : SET.reach, phys,
+                arena: (o.arena != null ? o.arena : SET.arena) ? arenaOf(idx, lv) : null, flash: {},
                 t: 0, state: 'serve', server: 1, serveAt: 0, balls: [], score: [0, 0], rally: 0, longest: 0, hits: 0, fx: [], ev: o.ev || null,
                 pw: null, pwAt: 0, big: [0, 0], curve: [0, 0], slow: 0, shakeT: -9, pointAt: 0, winner: -1,
-                pads: [0, 1].map(k => ({ x: W / 2, v: 0, vd: 0, hw0: k === 0 ? D.pad * padK : CPU_HW, ai: null, hitT: -9, tx: null, dir: 0 })) };
+                pads: [0, 1].map(k => ({ x: W / 2, v: 0, vd: 0, hw0: k === 0 ? D.pad * padK : CPU_HW, ai: null, hitT: -9, tx: null, dir: 0,
+                                         dy: 0, vy: 0, dyT: null, ddir: 0, fyPrev: 0 })) };
     G.pads[0].ai = o.ai0 || null; G.pads[1].ai = o.ai1 === undefined ? D : o.ai1;
     for (const P of G.pads) if (P.ai) P.think = { next: 0, T: W / 2 };
     G.pwAt = PW_GAP[0] + R() * (PW_GAP[1] - PW_GAP[0]);
@@ -57170,7 +57194,9 @@ const PONG_APP = (() => {
     return G;
   }
   const hwOf = (G, k) => G.pads[k].hw0 * (G.t < G.big[k] ? 1.5 : 1);
-  const faceY = k => k === 0 ? PY[0] - PT / 2 : PY[1] + PT / 2;
+  // the paddle's face, stepped forward by dy toward the middle (THE STEP FORWARD), and where the paddle itself stands
+  const faceY = (k, G) => { const dy = G ? G.pads[k].dy : 0; return k === 0 ? PY[0] - PT / 2 - dy : PY[1] + PT / 2 + dy; };
+  const padY = (k, G) => { const dy = G ? G.pads[k].dy : 0; return k === 0 ? PY[0] - dy : PY[1] + dy; };
   const emit = (G, kind, a) => { if (G.ev) try { G.ev(kind, a, G); } catch {} };
   function serve(G, k){
     G.state = 'serve'; G.server = k; G.serveAt = G.t + G.serveT; G.rally = 0; G.balls = [];
@@ -57180,7 +57206,8 @@ const PONG_APP = (() => {
   function launch(G){
     const k = G.server, P = G.pads[k], R = G.R;
     const a = clamp(P.v * 0.45 + (R() - 0.5) * 0.7, -0.62, 0.62), dir = k === 0 ? -1 : 1;
-    G.balls = [{ x: clamp(P.x, BR, W - BR), y: faceY(k) + dir * (BR + 0.002), vx: G.sp * Math.sin(a), vy: dir * G.sp * Math.cos(a), s: 0, last: k, trail: [] }];
+    const y = faceY(k, G) + dir * (BR + 0.002);
+    G.balls = [{ x: clamp(P.x, BR, W - BR), y, vx: G.sp * Math.sin(a), vy: dir * G.sp * Math.cos(a), s: 0, last: k, trail: [], hy: y, bounced: false, z: 0, portT: -9 }];
     G.state = 'play';
     emit(G, 'serve', { seat: k });
   }
@@ -57193,7 +57220,7 @@ const PONG_APP = (() => {
   // the computer (or the steady player): where to be. It looks again every `react` s (later on a steep ball), guesses where the
   // ball will come off by an error that grows with the angle and the speed, and from some levels aims to send it away from you.
   function think(G, k){
-    const P = G.pads[k], A = P.ai, R = G.R, th = P.think, yl = faceY(k) + (k === 0 ? -BR : BR);
+    const P = G.pads[k], A = P.ai, R = G.R, th = P.think, yl = faceY(k, G) + (k === 0 ? -BR : BR);
     let best = null;
     for (const b of G.balls){
       if ((k === 0) !== (b.vy > 0)) continue;
@@ -57225,6 +57252,11 @@ const PONG_APP = (() => {
       if (P.ai){ if (G.t >= P.think.next) think(G, k); P.vd = clamp((P.think.T - P.x) * AI_GAIN, -P.ai.v, P.ai.v); P.acc = P.ai.acc; }
       else if (P.tx != null){ P.vd = clamp((clamp(P.tx, hw, W - hw) - P.x) / TICK, -HAND_V, HAND_V); P.acc = 400; }
       else { P.vd = P.dir * KEY_V; P.acc = KEY_ACC; }
+      // (the step forward: a finger moved up from where it pressed, or ↑ / W held; let go, the paddle steps back)
+      if (!G.reach || P.ai){ P.vyd = -P.dy * 8; P.accY = 20; }
+      else if (P.dyT != null){ P.vyd = clamp((clamp(P.dyT, 0, REACH) - P.dy) / TICK, -FWD_V, FWD_V); P.accY = 400; }
+      else if (P.ddir){ P.vyd = P.ddir * 0.9; P.accY = 14; }
+      else { P.vyd = clamp(-P.dy * 8, -FWD_V, FWD_V); P.accY = 14; }
     }
     for (let s = 0; s < SUB; s++){
       for (let k = 0; k < 2; k++){
@@ -57232,6 +57264,9 @@ const PONG_APP = (() => {
         P.v += clamp(dv, -m, m);
         P.x += P.v * dt;
         if (P.x < hw){ P.x = hw; P.v = Math.max(0, P.v); } else if (P.x > W - hw){ P.x = W - hw; P.v = Math.min(0, P.v); }
+        P.fyPrev = faceY(k, G);
+        const my = P.accY * dt; P.vy += clamp(P.vyd - P.vy, -my, my); P.dy += P.vy * dt;
+        if (P.dy < 0){ P.dy = 0; P.vy = Math.max(0, P.vy); } else if (P.dy > REACH){ P.dy = REACH; P.vy = Math.min(0, P.vy); }
       }
       G.t += dt;
       if (G.state === 'serve'){ if (G.t >= G.serveAt) launch(G); continue; }
@@ -57250,30 +57285,49 @@ const PONG_APP = (() => {
   function stepBall(G, b, dt){
     const x0 = b.x, y0 = b.y;
     if (b.s){ b.vx += b.s * dt; b.s *= Math.exp(-dt / SPIN_T); if (Math.abs(b.s) < 1e-3) b.s = 0; }
+    if (G.phys) physStep(G, b, dt);
     b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.x < BR){ b.x = 2 * BR - b.x; b.vx = Math.abs(b.vx); b.s *= -0.5; wall(G, b); }
     else if (b.x > W - BR){ b.x = 2 * (W - BR) - b.x; b.vx = -Math.abs(b.vx); b.s *= -0.5; wall(G, b); }
-    for (let k = 0; k < 2; k++){
-      const toward = k === 0 ? b.vy > 0 : b.vy < 0; if (!toward) continue;
-      const fy = faceY(k) + (k === 0 ? -BR : BR), was = k === 0 ? y0 <= fy : y0 >= fy, is = k === 0 ? b.y >= fy : b.y <= fy;
-      if (!was || !is) continue;
-      const f = (fy - y0) / (b.y - y0 || 1e-9), xc = x0 + (b.x - x0) * f, P = G.pads[k], hw = hwOf(G, k);
-      if (Math.abs(xc - P.x) > hw + BR) continue;
-      hit(G, b, k, xc, fy);
+    // (air hockey: the ends are walls but for the goal's mouth)
+    if (G.phys === 'air' && Math.abs(b.x - W / 2) > GOAL / 2){
+      if (b.y > 1 - BR){ b.y = 2 * (1 - BR) - b.y; b.vy = -Math.abs(b.vy); wall(G, b); }
+      else if (b.y < BR){ b.y = 2 * BR - b.y; b.vy = Math.abs(b.vy); wall(G, b); }
     }
+    if (G.arena) arenaStep(G, b);
+    // (a face met where the ball's way crosses it, the face moving too as the paddle steps: each measured from where the face
+    //  was at the step's start to where it is at its end, so neither a fast ball nor a fast step goes through)
+    for (let k = 0; k < 2; k++){
+      const P = G.pads[k], sg = k === 0 ? 1 : -1, off = k === 0 ? -BR : BR;
+      const r0 = (y0 - (P.fyPrev + off)) * sg, r1 = (b.y - (faceY(k, G) + off)) * sg;
+      if (!(r0 <= 0 && r1 >= 0) || r1 - r0 <= 0) continue;
+      const f = r0 / (r0 - r1 || -1e-9), xc = x0 + (b.x - x0) * f, hw = hwOf(G, k);
+      if (Math.abs(xc - P.x) > hw + BR) continue;
+      hit(G, b, k, xc, faceY(k, G) + off);
+    }
+    if (BOUNCE[G.phys]) bounceStep(G, b);
     if (b.y > 1 + 0.03 || b.y < -0.03){ point(G, b.y > 1 ? 1 : 0); return true; }
     return false;
   }
   function hit(G, b, k, xc, fy){
-    const P = G.pads[k], hw = hwOf(G, k), o = clamp((xc - P.x) / (hw + BR), -1, 1), a = o * MAXA;
-    const pv = clamp(P.v, -2.5, 2.5), smash = pv * Math.sign(o || 1) > SMASH && Math.abs(o) > 0.35;
-    let v = Math.min(VMAX * G.sp, Math.hypot(b.vx, b.vy) * (1 + UP)) * (smash ? 1 + SMASH_UP : 1);
-    v = Math.min(v, VMAX * G.sp * 1.12);
-    const dir = k === 0 ? -1 : 1;
-    let vx = v * Math.sin(a) + pv * CARRY, vy = dir * v * Math.cos(a);
+    const P = G.pads[k], hw = hwOf(G, k), o = clamp((xc - P.x) / (hw + BR), -1, 1), dir = k === 0 ? -1 : 1;
+    let a = o * MAXA;
+    // (CURVED: the face's normal leans out toward its ends, and the ball is reflected off it, so the angle in counts as well as
+    //  where it lands; straight on at an end goes back at twice the lean)
+    if (G.face === 'curved'){
+      const n = o * CURVE_N, nx = Math.sin(n), ny = dir * Math.cos(n), sp0 = Math.hypot(b.vx, b.vy) || 1, dx = b.vx / sp0, dyy = b.vy / sp0, d = dx * nx + dyy * ny;
+      a = clamp(Math.atan2(dx - 2 * d * nx, Math.abs(dyy - 2 * d * ny)), -MAXA, MAXA);
+    }
+    const pv = clamp(P.v, -2.5, 2.5), fwd = Math.max(0, P.vy), smash = (pv * Math.sign(o || 1) > SMASH && Math.abs(o) > 0.35) || fwd > FWD_SMASH;
+    // (on the ice a return builds on how fast the puck left the last stick, not on how slow it has slid to: else neither end ever
+    //  missed a puck slowed to its floor, and matches ran to the cap)
+    const came = G.phys === 'ice' ? Math.max(Math.hypot(b.vx, b.vy), b.vh || 0) : Math.hypot(b.vx, b.vy);
+    let v = Math.min(VMAX * G.sp, came * (1 + UP)) * (smash ? 1 + SMASH_UP : 1) + fwd * FWD_K;
+    v = Math.min(v, VMAX * G.sp * 1.12 + fwd * FWD_K);
+    let vx = v * Math.sin(a) + pv * CARRY, vy;
     if (Math.abs(vx) > 0.9 * v){ vx = Math.sign(vx) * 0.9 * v; }
-    vy = dir * Math.sqrt(Math.max(0, v * v - vx * vx));
-    b.vx = vx; b.vy = vy; b.x = xc; b.y = fy; b.last = k;
+    vy = dir * Math.max(Math.sqrt(Math.max(0, v * v - vx * vx)), fwd + 0.1);   // (never slower away than the face stepping after it)
+    b.vx = vx; b.vy = vy; b.x = xc; b.y = fy; b.last = k; b.hy = fy; b.bounced = false; b.vh = Math.hypot(vx, vy);
     b.s = clamp(pv * SPIN * (G.t < G.curve[k] ? 3 : 1), -SPIN_MAX * (G.t < G.curve[k] ? 3 : 1), SPIN_MAX * (G.t < G.curve[k] ? 3 : 1));
     P.hitT = G.t; G.rally++; G.hits++; G.longest = Math.max(G.longest, G.rally);
     if (smash) G.shakeT = G.t;
@@ -57281,6 +57335,118 @@ const PONG_APP = (() => {
     emit(G, 'hit', { seat: k, rally: G.rally, smash, x: xc });
   }
   function wall(G, b){ G.fx.push({ t: G.t, kind: 'wall', x: b.x, y: b.y }); emit(G, 'wall', { rally: G.rally, x: b.x }); }
+  /* ─── EACH THEME'S PHYSICS (Oct 27: "3,4,5", the third "a ball that bounces with a little height in table tennis, and a puck that
+     slides with friction on the ice"; the Space theme's gravity well and air hockey's goals came with the fourth). The row's
+     Physics picks By theme (the default) or Plain, every table as Classic. */
+  function physStep(G, b, dt){
+    if (G.phys === 'ice'){
+      // (the puck slows as it slides, to ICE_FLOOR of the serve's speed, and a hit sends it off fast again)
+      const v = Math.hypot(b.vx, b.vy), floor = ICE_FLOOR * G.sp;
+      if (v > floor){ const k = Math.max(floor, v * Math.exp(-ICE_F * dt)) / v; b.vx *= k; b.vy *= k; }
+    } else if (G.phys === 'well'){
+      // (pulled toward the middle, softened within GRAV_S so it never flings; never so slow toward an end that it orbits)
+      const dx = W / 2 - b.x, dy = 0.5 - b.y, r2 = dx * dx + dy * dy + GRAV_S * GRAV_S, a = GRAV / (r2 * Math.sqrt(r2));
+      b.vx += a * dx * dt; b.vy += a * dy * dt;
+      keepGoing(G, b, 0.25);
+    }
+  }
+  // a ball that bounces (table tennis, tennis): how high it is along its arc from the last hit, and the bounce on the far half
+  function bounceStep(G, b){
+    const B = BOUNCE[G.phys], s = Math.abs(b.y - b.hy) / (PY[0] - PY[1]);
+    if (!b.bounced && s >= B.at){ b.bounced = true; G.fx.push({ t: G.t, kind: 'bounce', x: b.x, y: b.y }); emit(G, 'bounce', { rally: G.rally }); }
+    if (s < B.at){ const u = s / B.at; b.z = B.h1 * 4 * u * (1 - u); }
+    else { const u = (s - B.at) / (1.25 - B.at); b.z = u < 1 ? B.h2 * 4 * u * (1 - u) : 0; }
+  }
+  // (after anything but a paddle turns the ball: never crawling across the table, never past the fastest a paddle sends it)
+  function keepGoing(G, b, minY){
+    let v = Math.hypot(b.vx, b.vy); const cap = VMAX * G.sp * 1.2;
+    if (v > cap){ b.vx *= cap / v; b.vy *= cap / v; v = cap; }
+    if (Math.abs(b.vy) < minY * v){ b.vy = Math.sign(b.vy || 1) * minY * v; b.vx = Math.sign(b.vx || 1) * Math.sqrt(Math.max(0, v * v - b.vy * b.vy)); }
+  }
+
+  /* ─── ARENAS (Oct 27: "3,4,5", the fifth "obstacles and arenas": "each board has its own layout: bumpers in the middle, moving
+     walls, a gap in the centre line, portals. Layouts farther out would be harder"). The row's Arena turns them on. Every piece
+     comes with its twin turned a half turn about the table's middle (W − x, 1 − y), so the layout is the same from both ends. By
+     level: a pair of bumpers; then a pair of short walls too; then walls sliding to and fro (or, one board in three, a barrier
+     across the middle with a gap); then a pair of portals (the ball in one comes out of the other, going on as it went); at
+     level 5 more of each. Kept to the middle of the table (y 0.27–0.45 and its twin), clear of each other, so the paddles' ends
+     stay open. Seeded by the board's number, so a board always has its own. */
+  const moverX = (q, t) => q.x0 + q.A * Math.sin(2 * Math.PI * t / q.per + q.ph);
+  const moverV = (q, t) => q.A * 2 * Math.PI / q.per * Math.cos(2 * Math.PI * t / q.per + q.ph);
+  const ARENAS = new Map();
+  function arenaOf(idx, lv){
+    const key = idx * 8 + lv;
+    if (ARENAS.has(key)) return ARENAS.get(key);
+    const R = rngOf((idx * 7919) ^ (lv * 131) ^ 0xa7e1), P = [], L = lv - 1;
+    const twin = q => q.kind === 'mover' ? { ...q, x0: W - q.x0, x: W - q.x, y: 1 - q.y, ph: q.ph + Math.PI } : { ...q, x: W - q.x, y: 1 - q.y };
+    const fits = (x, y, r) => P.every(q => q.kind === 'bar' || Math.hypot(q.x - x, q.y - y) > q.r + r + 0.07) && Math.hypot(W - 2 * x, 1 - 2 * y) > 2 * r + 0.07;
+    let y1 = 0.45;
+    const spot = r => { for (let t = 0; t < 60; t++){ const x = r + 0.03 + R() * (W - 2 * r - 0.06), y = 0.27 + R() * (y1 - 0.27); if (fits(x, y, r)) return [x, y]; } return null; };
+    const add = q => { P.push(q, twin(q)); };
+    const movers = [0, 0, 1, 1, 1][L], bar = lv >= 3 && R() < 0.35;
+    if (bar){
+      // (a barrier across the middle, a gap in its middle; the other pieces keep off it)
+      const g = [0.24, 0.22, 0.2, 0.18, 0.16][L], h = 0.014;
+      P.push({ kind: 'bar', x: (W / 2 - g / 2) / 2, y: 0.5, w: W / 2 - g / 2, h, r: 0 }, { kind: 'bar', x: W - (W / 2 - g / 2) / 2, y: 0.5, w: W / 2 - g / 2, h, r: 0 });
+      y1 = 0.42;
+    }
+    // (the sliding walls first, since each sweeps the widest; then walls and bumpers where they fit)
+    for (let k = 0; k < (bar ? 0 : movers); k++){
+      const w = 0.1, A = 0.07 + R() * 0.06, r = w / 2 + A, at = spot(Math.min(r, W / 2 - 0.02));
+      if (at) add({ kind: 'mover', x0: clamp(at[0], r, W - r), x: clamp(at[0], r, W - r), y: at[1], w, h: 0.016, A, per: [4, 4, 3.4, 3, 2.5][L] * (0.85 + 0.3 * R()), ph: R() * 6.283, r });
+    }
+    for (let k = 0; k < [1, 1, 1, 1, 2][L]; k++){ const r = 0.03 + R() * 0.015, at = spot(r); if (at) add({ kind: 'bump', x: at[0], y: at[1], r }); }
+    for (let k = 0; k < [0, 1, 0, 1, 1][L]; k++){
+      const up = R() < 0.3, w = up ? 0.014 : 0.08 + R() * 0.06, h = up ? 0.07 + R() * 0.03 : 0.014, at = spot(Math.max(w, h) / 2);
+      if (at) add({ kind: 'wall', x: at[0], y: at[1], w, h, r: Math.max(w, h) / 2 });
+    }
+    if (lv >= 4){ const r = 0.032, at = spot(r);
+      if (at){ const q = { kind: 'portal', x: at[0], y: at[1], x2: W - at[0], y2: 1 - at[1], r }; P.push(q); } }
+    if (lv >= 5){ const r = 0.03 + R() * 0.015, at = spot(r); if (at) add({ kind: 'bump', x: at[0], y: at[1], r }); }
+    ARENAS.set(key, P); if (ARENAS.size > 2000) ARENAS.delete(ARENAS.keys().next().value);
+    return P;
+  }
+  function arenaStep(G, b){
+    const A = G.arena;
+    for (let i = 0; i < A.length; i++){
+      const q = A[i];
+      if (q.kind === 'bump'){
+        const dx = b.x - q.x, dy = b.y - q.y, d = Math.hypot(dx, dy), m = q.r + BR;
+        if (d >= m || d < 1e-9) continue;
+        const nx = dx / d, ny = dy / d, vn = b.vx * nx + b.vy * ny;
+        b.x = q.x + nx * m; b.y = q.y + ny * m;
+        if (vn < 0){
+          b.vx -= 2 * vn * nx; b.vy -= 2 * vn * ny;
+          // (a bumper kicks: the ball leaves it no slower than the serve)
+          const v = Math.hypot(b.vx, b.vy), want = Math.max(v, 0.95 * G.sp); b.vx *= want / v; b.vy *= want / v;
+          keepGoing(G, b, 0.3); hitPiece(G, i, b.x - nx * BR, b.y - ny * BR);
+        }
+      } else if (q.kind === 'portal'){
+        if (G.t < b.portT) continue;
+        for (const [ax, ay, bx, by] of [[q.x, q.y, q.x2, q.y2], [q.x2, q.y2, q.x, q.y]]){
+          if (Math.hypot(b.x - ax, b.y - ay) >= q.r) continue;
+          b.x = bx + (b.x - ax); b.y = by + (b.y - ay); b.portT = G.t + 0.45; b.trail.length = 0;
+          G.flash[i] = G.t; G.fx.push({ t: G.t, kind: 'portal', x: ax, y: ay }, { t: G.t, kind: 'portal', x: bx, y: by }); emit(G, 'portal', { rally: G.rally });
+          break;
+        }
+      } else {
+        const bx = q.kind === 'mover' ? moverX(q, G.t) : q.x, bvx = q.kind === 'mover' ? moverV(q, G.t) : 0;
+        let cx = clamp(b.x, bx - q.w / 2, bx + q.w / 2), cy = clamp(b.y, q.y - q.h / 2, q.y + q.h / 2);
+        const dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy);
+        if (d >= BR) continue;
+        let nx, ny;
+        if (d > 1e-9){ nx = dx / d; ny = dy / d; }
+        else {                                            // (its middle inside: out by the nearer side)
+          const px = q.w / 2 - Math.abs(b.x - bx), py = q.h / 2 - Math.abs(b.y - q.y);
+          if (px < py){ nx = Math.sign(b.x - bx) || 1; ny = 0; cx = bx + nx * q.w / 2; } else { nx = 0; ny = Math.sign(b.y - q.y) || 1; cy = q.y + ny * q.h / 2; }
+        }
+        b.x = cx + nx * BR; b.y = cy + ny * BR;
+        const rvx = b.vx - bvx, vn = rvx * nx + b.vy * ny;
+        if (vn < 0){ b.vx = rvx - 2 * vn * nx + bvx; b.vy -= 2 * vn * ny; keepGoing(G, b, 0.3); hitPiece(G, i, cx, cy); }
+      }
+    }
+  }
+  function hitPiece(G, i, x, y){ G.flash[i] = G.t; G.fx.push({ t: G.t, kind: 'bump', x, y }); emit(G, 'bump', { rally: G.rally }); }
   // a point to `k`: the other serves next. Won at the target, by two.
   function point(G, k){
     G.score[k]++; G.fx.push({ t: G.t, kind: 'point', seat: k, x: W / 2, y: k === 0 ? 0 : 1 });
@@ -57308,7 +57474,7 @@ const PONG_APP = (() => {
     const id = POWERS[k].id, who = b.last;
     G.pw = null; G.pwAt = G.t + PW_GAP[0] + G.R() * (PW_GAP[1] - PW_GAP[0]);
     if (id === 'multi'){ const v = Math.hypot(b.vx, b.vy), a0 = Math.atan2(b.vx, b.vy);
-      for (const d of [-0.45, 0.45]){ const a = a0 + d; G.balls.push({ x: b.x, y: b.y, vx: v * Math.sin(a), vy: v * Math.cos(a), s: 0, last: who, trail: [] }); }
+      for (const d of [-0.45, 0.45]){ const a = a0 + d; G.balls.push({ x: b.x, y: b.y, vx: v * Math.sin(a), vy: v * Math.cos(a), s: 0, last: who, trail: [], hy: b.y, bounced: true, z: 0, portT: -9 }); }
       for (const q of G.balls) if (Math.abs(q.vy) < 0.4 * v) q.vy = Math.sign(q.vy || 1) * 0.4 * v; }
     else if (id === 'big') G.big[who] = G.t + 8;
     else if (id === 'curve') G.curve[who] = G.t + 8;
@@ -57318,10 +57484,11 @@ const PONG_APP = (() => {
   }
 
   /* ─── RECORDINGS ─── a board no one plays: the steady player against the board's computer. The first REEL_T s are kept as
-     frames, (ball x, ball y or −1, near paddle, far paddle, near's score, far's score, what happened); the rest is played to the
-     end, without frames, for par. Worked out a slice at a time. */
-  const REC_F = 7, RECS = new Map();
-  const recKey = (idx, lv) => idx + '@' + lv + '@' + SET.target + SET.speed + SET.pad;
+     frames, (ball x, ball y or −1, near paddle, far paddle, near's score, far's score, what happened, the ball's height); the rest
+     is played to the end, without frames, for par. Worked out a slice at a time. Frame i is at (i + 1) / REC_HZ s of the match's
+     clock (no slow motion in a recording), which is where an arena's sliding walls are drawn. */
+  const REC_F = 8, RECS = new Map();
+  const recKey = (idx, lv) => idx + '@' + lv + '@' + SET.target + SET.speed + SET.pad + SET.face + SET.reach + SET.phys + SET.arena + (SET.phys === 'theme' ? themeOf(idx).id : '');
   function recOf(idx, lv){
     const k = recKey(idx, lv);
     let M = RECS.get(k);
@@ -57342,8 +57509,9 @@ const PONG_APP = (() => {
         tick(G); M.step++;
         if (rec && M.step % every === 0){
           const b = G.balls[0];
-          M.frames.push(b ? b.x : -1, b ? b.y : -1, G.pads[0].x, G.pads[1].x, G.score[0], G.score[1], M.flag); M.flag = 0;
-          if (G.state === 'serve'){ const P = G.pads[G.server], fy = faceY(G.server) + (G.server === 0 ? -BR - 0.002 : BR + 0.002); M.frames[M.frames.length - 7] = P.x; M.frames[M.frames.length - 6] = fy; }
+          const at = M.frames.length;
+          M.frames.push(b ? b.x : -1, b ? b.y : -1, G.pads[0].x, G.pads[1].x, G.score[0], G.score[1], M.flag, b ? b.z || 0 : 0); M.flag = 0;
+          if (G.state === 'serve'){ const P = G.pads[G.server]; M.frames[at] = P.x; M.frames[at + 1] = faceY(G.server, G) + (G.server === 0 ? -BR - 0.002 : BR + 0.002); }
         }
         if (G.state === 'over' || G.t > MATCH_CAP){ M.done = true; M.par = parOf(G); M.final = G.score.slice(); M.won = G.winner === 0; }
       }
@@ -57383,7 +57551,7 @@ const PONG_APP = (() => {
       const trail = [];
       // (back along the frames while the ball ran on smoothly: not across a serve or a point)
       for (let q = 1, px = F[o], py = F[o + 1]; q <= 6 && i - q >= 0; q++){ const r = (i - q) * REC_F; if (F[r + 1] < 0 || Math.hypot(F[r] - px, F[r + 1] - py) > 0.15) break; trail.push(F[r], F[r + 1]); px = F[r]; py = F[r + 1]; }
-      balls.push({ x: jump ? F[o] : mix(0), y: jump ? F[o + 1] : mix(1), trail, step: 2 });
+      balls.push({ x: jump ? F[o] : mix(0), y: jump ? F[o + 1] : mix(1), z: jump ? F[o + 7] : mix(7), trail, step: 2 });
     }
     // (what happened lately: a hit's ring or a wall's flash, from the frames just gone)
     const fx = [];
@@ -57391,7 +57559,8 @@ const PONG_APP = (() => {
       const age = (q + f) / REC_HZ, x = F[r], y = F[r + 1];
       if (fl <= 2) fx.push({ age, kind: 'hit', x, y, seat: fl - 1 }); else if (fl === 3) fx.push({ age, kind: 'wall', x, y }); }
     const hitAge = s => { const h = fx.find(e => e.kind === 'hit' && e.seat === s); return h ? h.age : 9; };
-    return { balls, pads: [{ x: mix(2), hw: M.G.pads[0].hw0, age: hitAge(0) }, { x: mix(3), hw: CPU_HW, age: hitAge(1) }], score: [F[o + 4], F[o + 5]], fx, count: 0, pw: null, shake: 0 };
+    return { balls, pads: [{ x: mix(2), hw: M.G.pads[0].hw0, age: hitAge(0) }, { x: mix(3), hw: CPU_HW, age: hitAge(1) }], score: [F[o + 4], F[o + 5]], fx, count: 0, pw: null, shake: 0,
+             t: (i + f + 1) / REC_HZ, arena: M.G.arena, flash: {}, well: M.G.phys === 'well' };
   }
 
   /* ─── PLAYING ─── */
@@ -57442,13 +57611,14 @@ const PONG_APP = (() => {
     try { bbRefreshNow(); } catch {}
   }
   // a person's hands, read each tick: a finger's place (wins) or the keys' direction
-  const HAND = [{ tx: null, dir: 0 }, { tx: null, dir: 0 }], KEYS = { L0: false, R0: false, L1: false, R1: false };
+  const HAND = [{ tx: null, dyT: null }, { tx: null, dyT: null }], KEYS = { L0: false, R0: false, L1: false, R1: false, F0: false, B0: false, F1: false, B1: false };
   function inputs(g){
     for (let k = 0; k < 2; k++){
       const P = g.G.pads[k]; if (P.ai) continue;
       const H = HAND[k], L = KEYS['L' + k], Rr = KEYS['R' + k];
       P.tx = H.tx; P.dir = (Rr ? 1 : 0) - (L ? 1 : 0);
       if (H.tx == null && !P.dir) P.tx = null;
+      P.dyT = H.dyT; P.ddir = (KEYS['F' + k] ? 1 : 0) - (KEYS['B' + k] ? 1 : 0);
     }
   }
   // the human server serves at once with a tap or a key
@@ -57460,8 +57630,13 @@ const PONG_APP = (() => {
     try { if (!ARCADE.audio()) return; } catch { return; }
     const g = liveGame(), th = g ? themeOf(g.idx).id : 'classic', rally = (a && a.rally) || 0, f = 440 * Math.pow(1.03, Math.min(24, rally)), T = ARCADE.tone, Hs = ARCADE.hiss;
     try {
-      if (kind === 'win'){ [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, th === 'classic' ? 'square' : 'triangle', 0.07, i * 0.1)); if (th === 'hockey' || th === 'table') crowd(0.25, 2.5); return; }
-      if (kind === 'lose'){ [392, 330, 262].forEach((q, i) => T(q, q, 0.2, th === 'classic' ? 'square' : 'triangle', 0.06, i * 0.14)); return; }
+      const sq = th === 'classic' || th === 'retro';
+      if (kind === 'win'){ [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, sq ? 'square' : 'triangle', 0.07, i * 0.1)); if (th === 'retro') [1047, 1319, 1568].forEach((q, i) => T(q, q, 0.08, 'square', 0.04, 0.45 + i * 0.07)); if (th === 'hockey' || th === 'table' || th === 'tennis') crowd(0.25, 2.5); return; }
+      if (kind === 'lose'){ [392, 330, 262].forEach((q, i) => T(q, q, 0.2, sq ? 'square' : 'triangle', 0.06, i * 0.14)); return; }
+      // (the arena's pieces and the bounce, the same in every theme but for its voice)
+      if (kind === 'bump'){ T(sq ? 880 : 700, sq ? 880 : 980, 0.05, sq ? 'square' : 'triangle', 0.05); return; }
+      if (kind === 'portal'){ T(380, 1500, 0.18, 'sine', 0.05); T(1500, 380, 0.18, 'sine', 0.03, 0.05); return; }
+      if (kind === 'bounce'){ if (th === 'table') T(1700, 1350, 0.022, 'sine', 0.08); else T(520, 360, 0.04, 'sine', 0.08); return; }
       if (th === 'classic'){
         if (kind === 'hit') T(f, f, 0.05, 'square', a && a.smash ? 0.08 : 0.055);
         else if (kind === 'wall') T(226, 226, 0.035, 'square', 0.045);
@@ -57480,6 +57655,31 @@ const PONG_APP = (() => {
         else if (kind === 'point') T(620, 310, 0.22, 'triangle', 0.05);
         else if (kind === 'serve') T(1400, 1200, 0.025, 'sine', 0.06);
         else if (kind === 'power') T(880, 1760, 0.12, 'sine', 0.06);
+      } else if (th === 'tennis'){
+        if (kind === 'hit'){ T(f * 1.3, f * 0.85, 0.05, 'triangle', a && a.smash ? 0.16 : 0.11); Hs(0.03, 0.14, 3200); }
+        else if (kind === 'wall') T(300, 200, 0.05, 'triangle', 0.05);
+        else if (kind === 'point'){ T(660, 440, 0.2, 'sine', 0.04); crowd(0.18, 1.6); }
+        else if (kind === 'serve') Hs(0.03, 0.1, 2500);
+        else if (kind === 'power') T(880, 1320, 0.12, 'sine', 0.06);
+      } else if (th === 'air'){
+        if (kind === 'hit'){ Hs(0.04, a && a.smash ? 0.4 : 0.26, 4200); T(f * 1.2, f, 0.04, 'square', 0.035); }
+        else if (kind === 'wall'){ T(220, 160, 0.06, 'triangle', 0.08); Hs(0.05, 0.2, 1800); }
+        else if (kind === 'point'){ T(330, 330, 0.5, 'square', 0.035); T(415, 415, 0.5, 'square', 0.03); }
+        else if (kind === 'serve') Hs(0.12, 0.06, 900);
+        else if (kind === 'power') T(600, 1200, 0.12, 'square', 0.035);
+      } else if (th === 'space'){
+        if (kind === 'hit') T(f * 0.8, f * 2, 0.12, 'sine', a && a.smash ? 0.09 : 0.06);
+        else if (kind === 'wall') T(180, 90, 0.1, 'sine', 0.07);
+        else if (kind === 'point') T(1200, 60, 0.7, 'sawtooth', 0.04);
+        else if (kind === 'serve') T(200, 600, 0.15, 'sine', 0.04);
+        else if (kind === 'power') [523, 784, 1047].forEach((q, i) => T(q, q * 1.5, 0.1, 'sine', 0.04, i * 0.05));
+      } else if (th === 'retro'){
+        // (a chip's square waves: an arpeggio a hit, rising with the rally; a triangle's bass under the wall)
+        if (kind === 'hit') [1, 1.26, 1.5].forEach((m, i) => T(f * m, f * m, 0.03, 'square', a && a.smash ? 0.05 : 0.035, i * 0.025));
+        else if (kind === 'wall'){ T(220, 220, 0.03, 'square', 0.035); T(110, 110, 0.06, 'triangle', 0.08); }
+        else if (kind === 'point') [784, 659, 523, 392].forEach((q, i) => T(q, q, 0.07, 'square', 0.04, i * 0.07));
+        else if (kind === 'serve') [523, 784].forEach((q, i) => T(q, q, 0.05, 'triangle', 0.05, i * 0.05));
+        else if (kind === 'power') [523, 659, 784, 1047, 1319].forEach((q, i) => T(q, q, 0.04, 'square', 0.035, i * 0.035));
       } else {
         if (kind === 'hit'){ Hs(0.05, a && a.smash ? 0.35 : 0.2, 2600); T(f * 0.55, f * 0.4, 0.06, 'triangle', 0.09); }
         else if (kind === 'wall'){ Hs(0.09, 0.28, 900); T(130, 80, 0.12, 'sine', 0.13); }
@@ -57520,10 +57720,14 @@ const PONG_APP = (() => {
   const SPECS = new Map();
   const css = c => '#' + (c >>> 0).toString(16).padStart(6, '0');
   const LOOK = {
-    classic: { table: 0x000000, line: 0xf2f2f2, pad: [0xf2f2f2, 0xf2f2f2], ball: 0xffffff, digit: 0xf2f2f2, trail: 0x8a8a8a, ring: 0xffffff, glow: false },
-    neon:    { table: 0x0a0618, line: 0xa855f7, pad: [0x22d3ee, 0xf472b6], ball: 0xfff7b0, digit: [0x22d3ee, 0xf472b6], trail: 0xfde68a, ring: 0x67e8f9, glow: true },
-    table:   { table: 0x1d4f8a, line: 0xffffff, pad: [0xd52b2b, 0x1d1d1d], ball: 0xff8a1a, digit: 0xffffff, trail: 0xffc48a, ring: 0xffffff, glow: false },
-    hockey:  { table: 0xe9f1f7, line: 0xc81e2a, pad: [0xc81e2a, 0x1e4fc8], ball: 0x101012, digit: [0xc81e2a, 0x1e4fc8], trail: 0x8aa0b4, ring: 0x1e4fc8, glow: false },
+    classic: { table: 0x000000, line: 0xf2f2f2, pad: [0xf2f2f2, 0xf2f2f2], ball: 0xffffff, digit: 0xf2f2f2, trail: 0x8a8a8a, ring: 0xffffff, glow: false, obst: 0xf2f2f2, mover: 0xbdbdbd, bump: 0xf2f2f2, rim: 0x777777 },
+    neon:    { table: 0x0a0618, line: 0xa855f7, pad: [0x22d3ee, 0xf472b6], ball: 0xfff7b0, digit: [0x22d3ee, 0xf472b6], trail: 0xfde68a, ring: 0x67e8f9, glow: true, obst: 0xa855f7, mover: 0xf472b6, bump: 0x22d3ee, rim: 0xc084fc },
+    table:   { table: 0x1d4f8a, line: 0xffffff, pad: [0xd52b2b, 0x1d1d1d], ball: 0xff8a1a, digit: 0xffffff, trail: 0xffc48a, ring: 0xffffff, glow: false, obst: 0x8a6b45, mover: 0xd5b07a, bump: 0xf5f7fa, rim: 0xd52b2b },
+    hockey:  { table: 0xe9f1f7, line: 0xc81e2a, pad: [0xc81e2a, 0x1e4fc8], ball: 0x101012, digit: [0xc81e2a, 0x1e4fc8], trail: 0x8aa0b4, ring: 0x1e4fc8, glow: false, obst: 0x2b2f3a, mover: 0x1e4fc8, bump: 0xc81e2a, rim: 0x1e4fc8 },
+    tennis:  { table: 0x429440, line: 0xf5f7f2, pad: [0xd03b3b, 0x2b5fd0], ball: 0xd8f03a, digit: 0xf5f7f2, trail: 0xe8f7a0, ring: 0xffffff, glow: false, obst: 0x6b4a2b, mover: 0xe8e8e8, bump: 0xd8f03a, rim: 0xffffff },
+    air:     { table: 0xe6f1fc, line: 0xd03030, pad: [0xd03030, 0x2050d0], ball: 0xf5a524, digit: [0xd03030, 0x2050d0], trail: 0x9ec7ef, ring: 0x2050d0, glow: false, obst: 0x2a3140, mover: 0xd03030, bump: 0xffffff, rim: 0x2050d0 },
+    space:   { table: 0x04050d, line: 0x4f46e5, pad: [0x5eead4, 0xfb923c], ball: 0xffffff, digit: [0x5eead4, 0xfb923c], trail: 0x93c5fd, ring: 0xa5f3fc, glow: true, obst: 0x6366f1, mover: 0xfb923c, bump: 0x93c5fd, rim: 0xa5f3fc },
+    retro:   { table: 0x1b1b3a, line: 0xfcfcfc, pad: [0x3cbcfc, 0xf83800], ball: 0xfcfcfc, digit: 0xfcfcfc, trail: 0x7c7cfc, ring: 0xfcfcfc, glow: false, obst: 0x3cbcfc, mover: 0xf83800, bump: 0xfcfcfc, rim: 0x7c7cfc },
   };
   function paint(th, idx, S){
     const cv = document.createElement('canvas'); cv.width = Math.round(S * W); cv.height = S;
@@ -57550,7 +57754,7 @@ const PONG_APP = (() => {
       c.globalAlpha = 0.06; for (let k = 0; k < 900; k++){ c.fillStyle = R() < 0.5 ? '#fff' : '#000'; c.fillRect(R() * W, R(), 0.004, 0.004); } c.globalAlpha = 1;
       c.strokeStyle = '#f5f7fa'; c.lineWidth = 0.012; c.strokeRect(0.012, 0.012, W - 0.024, 0.976);
       c.lineWidth = 0.004; c.beginPath(); c.moveTo(W / 2, 0.02); c.lineTo(W / 2, 0.98); c.stroke();
-    } else {
+    } else if (th === 'hockey'){
       const g = c.createRadialGradient(W / 2, 0.5, 0.05, W / 2, 0.5, 0.75); g.addColorStop(0, '#f7fbff'); g.addColorStop(1, '#d4e2ee'); c.fillStyle = g; c.fillRect(0, 0, W, 1);
       // (skate marks on the ice)
       c.strokeStyle = 'rgba(120,150,180,0.18)'; c.lineWidth = 0.0015;
@@ -57563,11 +57767,51 @@ const PONG_APP = (() => {
         for (const x of [W * 0.25, W * 0.75]){ c.beginPath(); c.arc(x, y + s * 0.2, 0.07, 0, Math.PI * 2); c.stroke(); c.fillStyle = '#c81e2a'; c.beginPath(); c.arc(x, y + s * 0.2, 0.01, 0, Math.PI * 2); c.fill(); }
       }
       c.strokeStyle = '#f2c230'; c.lineWidth = 0.01; c.strokeRect(0.005, 0.005, W - 0.01, 0.99);
+    } else if (th === 'tennis'){
+      // (a grass court mown in bands, its lines: the doubles' outline, the singles' sides, the service lines and boxes)
+      for (let k = 0; k < 12; k++){ c.fillStyle = k % 2 ? '#3d8a3a' : '#469a42'; c.fillRect(0, k / 12, W, 1 / 12 + 0.001); }
+      c.globalAlpha = 0.05; for (let k = 0; k < 1500; k++){ c.fillStyle = R() < 0.5 ? '#fff' : '#000'; c.fillRect(R() * W, R(), 0.003, 0.006); } c.globalAlpha = 1;
+      c.strokeStyle = '#f5f7f2'; c.lineWidth = 0.008;
+      const m = 0.03, sm = m + (W - 2 * m) * 0.125;
+      c.strokeRect(m, m, W - 2 * m, 1 - 2 * m);
+      c.beginPath(); c.moveTo(sm, m); c.lineTo(sm, 1 - m); c.moveTo(W - sm, m); c.lineTo(W - sm, 1 - m);
+      for (const y of [0.23, 0.77]){ c.moveTo(sm, y); c.lineTo(W - sm, y); }
+      c.moveTo(W / 2, 0.23); c.lineTo(W / 2, 0.77); c.moveTo(W / 2, m); c.lineTo(W / 2, m + 0.02); c.moveTo(W / 2, 1 - m); c.lineTo(W / 2, 1 - m - 0.02); c.stroke();
+    } else if (th === 'air'){
+      // (a table of air holes, the red line and circle, the goals' mouths dark slots in the rails at each end)
+      const g = c.createLinearGradient(0, 0, 0, 1); g.addColorStop(0, '#eef7ff'); g.addColorStop(1, '#dcecfb'); c.fillStyle = g; c.fillRect(0, 0, W, 1);
+      c.fillStyle = 'rgba(40,70,110,0.22)';
+      for (let y = 0.02, row = 0; y < 1; y += 0.02, row++) for (let x = 0.02 + (row % 2) * 0.01; x < W; x += 0.02){ c.beginPath(); c.arc(x, y, 0.0024, 0, 6.283); c.fill(); }
+      c.strokeStyle = '#d03030'; c.lineWidth = 0.008; c.beginPath(); c.moveTo(0, 0.5); c.lineTo(W, 0.5); c.stroke();
+      c.lineWidth = 0.004; c.beginPath(); c.arc(W / 2, 0.5, 0.09, 0, 6.283); c.stroke();
+      c.strokeStyle = '#2050d0';
+      for (const [y, sgn] of [[0, 1], [1, -1]]){ c.beginPath(); c.arc(W / 2, y, GOAL * 0.75, sgn > 0 ? 0 : Math.PI, sgn > 0 ? Math.PI : 2 * Math.PI); c.stroke();
+        c.fillStyle = '#141821'; c.fillRect(W / 2 - GOAL / 2, sgn > 0 ? 0 : 1 - 0.014, GOAL, 0.014); }
+      c.strokeStyle = '#2a3140'; c.lineWidth = 0.014; c.beginPath();
+      c.moveTo(0, 0); c.lineTo(0, 1); c.moveTo(W, 0); c.lineTo(W, 1);
+      for (const y of [0, 1]){ c.moveTo(0, y); c.lineTo(W / 2 - GOAL / 2, y); c.moveTo(W / 2 + GOAL / 2, y); c.lineTo(W, y); }
+      c.stroke();
+    } else if (th === 'space'){
+      // (deep space: two nebulae, stars, and a swirl about the middle where the well is)
+      c.fillStyle = '#04050d'; c.fillRect(0, 0, W, 1);
+      for (const [x, y, r, col] of [[R() * W, 0.15 + R() * 0.25, 0.38, 'rgba(120,60,200,0.28)'], [R() * W, 0.6 + R() * 0.25, 0.32, 'rgba(40,120,220,0.24)']]){
+        const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(0, 0, W, 1); }
+      for (let k = 0; k < 280; k++){ const a = R(), sz = 0.0015 + R() * 0.0035; c.fillStyle = 'rgba(255,255,255,' + (0.25 + 0.75 * a * a).toFixed(2) + ')'; c.fillRect(R() * W, R(), sz, sz); }
+      c.strokeStyle = 'rgba(165,180,252,0.32)'; c.lineWidth = 0.003;
+      for (let k = 0; k < 3; k++){ c.beginPath(); for (let t = 0; t <= 1.0001; t += 0.01){ const ang = k * 2.094 + t * 7, rr = 0.015 + t * 0.17, x = W / 2 + Math.cos(ang) * rr, y = 0.5 + Math.sin(ang) * rr; if (t) c.lineTo(x, y); else c.moveTo(x, y); } c.stroke(); }
+      c.strokeStyle = 'rgba(99,102,241,0.6)'; c.lineWidth = 0.004; c.strokeRect(0.004, 0.004, W - 0.008, 0.992);
+    } else {
+      // (8-bit: a chequer of big pixels in two blues, a border of white blocks)
+      const B = 1 / 32;
+      for (let y = 0, j = 0; y < 1; y += B, j++) for (let x = 0, i = 0; x < W; x += B, i++){ c.fillStyle = (i + j) % 2 ? '#1b1b3a' : '#20204a'; c.fillRect(x, y, B + 0.0005, B + 0.0005); }
+      c.fillStyle = '#fcfcfc';
+      for (let x = 0; x < W; x += B * 2){ c.fillRect(x, 0, B, B * 0.5); c.fillRect(x, 1 - B * 0.5, B, B * 0.5); }
+      for (let y = 0; y < 1; y += B * 2){ c.fillRect(0, y, B * 0.5, B); c.fillRect(W - B * 0.5, y, B * 0.5, B); }
     }
     return cv;
   }
   function photoKey(c, r, bp){
-    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'pg:' + th + ':' + (th === 'table' || th === 'hockey' ? idx % 64 : 0) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
+    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'pg:' + th + ':' + (/^(table|hockey|tennis|space)$/.test(th) ? idx % 64 : 0) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
     if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 64 }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
     return key;
   }
@@ -57580,11 +57824,31 @@ const PONG_APP = (() => {
   }
   // the view of a board, live or from its recording, as pieces
   function itemsOf(V, th, bp){
-    const L = LOOK[th], out = [], glow = L.glow, ballK = th === 'classic' ? 'pgCube' : th === 'hockey' ? 'pgPuck' : glow ? 'pgOrb' : 'pgBall';
-    // (the centre line: a dashed glow in Classic and Neon, the net in table tennis, the red line on the ice)
-    if (th === 'classic' || th === 'neon'){ for (let k = 0; k < 15; k++) out.push({ kind: 'pgDash', u: (k + 0.5) / 15 * W, v: 0.5, scale: 0.012, sx: W / 15 * 0.55 / 0.012, color: L.line }); }
-    else if (th === 'table'){ out.push({ kind: 'pgNet', u: W / 2, v: 0.5, scale: 0.012, sx: (W + 0.03) / 0.012, sy: 1, color: 0x1a1d24 }, { kind: 'pgNetTop', u: W / 2, v: 0.5, scale: 0.012, sx: (W + 0.03) / 0.012, color: 0xf5f7fa }); }
-    else out.push({ kind: 'pgDash', u: W / 2, v: 0.5, scale: 0.01, sx: W / 0.01, color: L.line });
+    const L = LOOK[th], out = [], glow = L.glow, puck = th === 'hockey' || th === 'air';
+    const ballK = th === 'classic' || th === 'retro' ? 'pgCube' : puck ? 'pgPuck' : glow ? 'pgOrb' : 'pgBall';
+    // (the centre line: a dashed glow in Classic, Neon and 8-bit, the net in table tennis and tennis, the red line on the ice,
+    //  painted on air hockey's table; in Space the well, rings drawn in toward the middle)
+    if (th === 'classic' || th === 'neon' || th === 'retro'){ for (let k = 0; k < 15; k++) out.push({ kind: 'pgDash', u: (k + 0.5) / 15 * W, v: 0.5, scale: 0.012, sx: W / 15 * (th === 'retro' ? 0.4 : 0.55) / 0.012, color: L.line }); }
+    else if (th === 'table' || th === 'tennis'){ const tall = th === 'tennis' ? 1.5 : 1; out.push({ kind: 'pgNet', u: W / 2, v: 0.5, scale: 0.012, sx: (W + 0.03) / 0.012, sy: tall, color: th === 'tennis' ? 0x22262c : 0x1a1d24 }, { kind: 'pgNetTop', u: W / 2, v: 0.5, scale: 0.012, sx: (W + 0.03) / 0.012, sy: tall, color: 0xf5f7fa }); }
+    else if (th === 'hockey') out.push({ kind: 'pgDash', u: W / 2, v: 0.5, scale: 0.01, sx: W / 0.01, color: L.line });
+    const T0 = V.t || 0;
+    if (V.well) for (let k = 0; k < 3; k++){ const ph = (T0 * 0.5 + k / 3) % 1; out.push({ kind: 'pgRing', u: W / 2, v: 0.5, scale: 0.03 + 0.2 * (1 - ph), color: mixC(0x818cf8, L.table, ph) }); }
+    if (V.well) out.push({ kind: 'pgGlow', u: W / 2, v: 0.5, scale: 0.035, color: 0x1e1b4b });
+    // (an arena's pieces: bumpers lit when struck, walls and the sliding walls, portals turning)
+    if (V.arena) V.arena.forEach((q, i) => {
+      const lit = V.flash && V.flash[i] != null && V.flash[i] < 0.18;
+      if (q.kind === 'bump'){
+        out.push({ kind: glow ? 'pgCapGlow' : 'pgCap', u: q.x, v: q.y, scale: 2 * q.r, sy: 0.03 / (2 * q.r), color: lit ? 0xffffff : L.bump },
+                 { kind: 'pgRing', u: q.x, v: q.y, scale: 2 * q.r * 1.12, lift: 0.031, color: lit ? L.ring : L.rim });
+      } else if (q.kind === 'portal'){
+        const sp = 0.85 + 0.15 * Math.sin(T0 * 6);
+        for (const [x, y, col] of [[q.x, q.y, 0xff8a1a], [q.x2, q.y2, 0x3b9dff]])
+          out.push({ kind: 'pgRing', u: x, v: y, scale: 2 * q.r * sp, color: col }, { kind: 'pgRing', u: x, v: y, scale: 2 * q.r * 0.6 * (2 - sp), color: col }, { kind: 'pgGlow', u: x, v: y, scale: q.r, color: mixC(col, L.table, lit ? 0.1 : 0.55) });
+      } else {
+        const x = q.kind === 'mover' ? moverX(q, T0) : q.x, m = Math.min(q.w, q.h);
+        out.push({ kind: glow ? 'pgPadGlow' : 'pgPad', u: x, v: q.y, scale: m, sx: q.w / m, sz: q.h / m, sy: 0.028 / m, color: lit ? 0xffffff : q.kind === 'mover' ? L.mover : L.obst });
+      }
+    });
     // (the score, dot digits either side of the line, the far player's above it)
     if (bp == null || bp > 60){
       const cell = 0.016, dc = n => Array.isArray(L.digit) ? L.digit[n] : L.digit;
@@ -57594,8 +57858,25 @@ const PONG_APP = (() => {
     }
     // (the paddles: squashed a moment when they hit; in table tennis a bat with its handle, on the ice a mallet with its knob)
     V.pads.forEach((P, k) => {
-      const y = PY[k], sq = P.age < 0.12 ? 1 - 0.35 * (1 - P.age / 0.12) : 1, len = 2 * P.hw, col = L.pad[k];
-      if (th === 'hockey'){
+      const y = P.y != null ? P.y : PY[k], sq = P.age < 0.12 ? 1 - 0.35 * (1 - P.age / 0.12) : 1, len = 2 * P.hw, col = L.pad[k], back = k === 0 ? 1 : -1;
+      if (th === 'tennis'){
+        // (a racket: its head an oval whose front edge is the face, strings across it, the handle behind)
+        const cy = y - back * PT / 2 + back * len * 0.275;
+        out.push({ kind: 'pgFlat', u: P.x, v: cy, scale: len * 0.92, sz: 0.55, lift: 0.004, color: 0xe9ecef },
+                 { kind: 'pgRing', u: P.x, v: cy, scale: len, sz: 0.55, lift: 0.006 * sq, color: col },
+                 { kind: 'pgPad', u: P.x, v: cy + back * len * 0.38, scale: PT * 0.8, sz: len * 0.3 / (PT * 0.8), sy: 0.8, color: 0x3a2a1e });
+      } else if (th === 'air'){
+        // (a mallet: a squat disc, its front the face, a knob on top)
+        out.push({ kind: 'pgCap', u: P.x, v: y + back * P.hw * 0.35, scale: len, sz: 0.5, sy: 0.022 / len * sq, color: col },
+                 { kind: 'pgCap', u: P.x, v: y + back * P.hw * 0.35, scale: len * 0.3, sy: 0.05 / (len * 0.3), color: mixC(col, 0x000000, 0.35) });
+      } else if (th === 'space'){
+        out.push({ kind: 'pgPadGlow', u: P.x, v: y, scale: PT, sx: len / PT, sy: (PAD_H / PT) * sq, sz: sq * 0.8, color: col });
+        for (const s of [-1, 1]) out.push({ kind: 'pgOrb', u: P.x + s * P.hw, v: y, scale: PT * 1.6, color: 0xffffff });
+      } else if (th === 'retro'){
+        // (a paddle of big pixels)
+        const n = Math.max(3, Math.round(len / (PT * 1.3))), cw = len / n;
+        for (let j = 0; j < n; j++) out.push({ kind: 'pgCube', u: P.x - P.hw + (j + 0.5) * cw, v: y, scale: cw * 0.86, sy: sq, color: col });
+      } else if (th === 'hockey'){
         out.push({ kind: 'pgPad', u: P.x, v: y, scale: PT * 1.4, sx: (len - PT * 1.4) / (PT * 1.4), sy: 1.2 * sq, sz: sq, color: col });
         for (const s of [-1, 1]) out.push({ kind: 'pgCap', u: P.x + s * (P.hw - PT * 0.7), v: y, scale: PT * 1.4, sy: 1.2 * sq, color: col });
         out.push({ kind: 'pgCap', u: P.x, v: y + (k === 0 ? 1 : -1) * PT * 0.2, scale: PT * 1.1, sy: 2.6, color: 0x2a2a30 });
@@ -57609,15 +57890,21 @@ const PONG_APP = (() => {
       if (SET.trail && b.trail){ const T = b.trail, st = b.step || 2;
         for (let q = st, k = 1; q + 1 < T.length; q += st, k++){ const f = 1 - k / (T.length / st + 1);
           out.push({ kind: 'pgGlow', u: T[q], v: T[q + 1], scale: 2 * BR * (0.35 + 0.55 * f), color: mixC(L.trail, L.table, 1 - f * 0.85) }); } }
-      out.push({ kind: ballK, u: b.x, v: b.y, scale: 2 * BR * (th === 'hockey' ? 1.5 : 1), color: L.ball });
+      const z = b.z || 0;
+      // (a ball in the air: raised by its height, its shadow on the table)
+      if (z > 0.002) out.push({ kind: 'pgGlow', u: b.x, v: b.y, scale: 2 * BR * Math.max(0.5, 1 - z * 6), color: mixC(L.table, 0x000000, 0.45) });
+      out.push({ kind: ballK, u: b.x, v: b.y, scale: 2 * BR * (puck ? 1.5 : th === 'retro' ? 1.15 : 1), lift: z, color: L.ball });
     }
     // (rings where the ball met a paddle, a flash where it met the side, bigger for a smash)
     if (SET.fx) for (const e of V.fx){
       if (e.age > 0.35) continue;
       const f = e.age / 0.35;
       if (e.kind === 'hit' || e.kind === 'smash') out.push({ kind: 'pgRing', u: e.x, v: e.y, scale: (e.kind === 'smash' ? 0.12 : 0.07) * (0.4 + f), color: mixC(e.kind === 'smash' ? 0xffd23a : L.ring, L.table, f) });
-      else if (e.kind === 'wall') out.push({ kind: 'pgGlow', u: e.x < W / 2 ? 0.004 : W - 0.004, v: e.y, scale: 0.05 * (1 - f * 0.5), color: mixC(L.ring, L.table, f) });
+      else if (e.kind === 'wall') out.push({ kind: 'pgGlow', u: e.x < 0.05 ? 0.004 : e.x > W - 0.05 ? W - 0.004 : e.x, v: e.y < 0.05 ? 0.004 : e.y > 0.95 ? 0.996 : e.y, scale: 0.05 * (1 - f * 0.5), color: mixC(L.ring, L.table, f) });
       else if (e.kind === 'power') out.push({ kind: 'pgRing', u: e.x, v: e.y, scale: 0.18 * (0.3 + f), color: mixC(POWERS[e.k].color, L.table, f) });
+      else if (e.kind === 'bounce') out.push({ kind: 'pgRing', u: e.x, v: e.y, scale: 0.04 * (0.4 + f), color: mixC(L.ring, L.table, f) });
+      else if (e.kind === 'bump') out.push({ kind: 'pgRing', u: e.x, v: e.y, scale: 0.06 * (0.4 + f), color: mixC(L.ring, L.table, f) });
+      else if (e.kind === 'portal') out.push({ kind: 'pgRing', u: e.x, v: e.y, scale: 0.12 * (0.3 + f), color: mixC(0xffd23a, L.table, f) });
     }
     if (V.pw){ const p = POWERS[V.pw.k].color, pulse = 0.85 + 0.15 * Math.sin(V.t * 8);
       out.push({ kind: 'pgRing', u: V.pw.x, v: V.pw.y, scale: 2 * PW_R * pulse, color: p }, { kind: 'pgGlow', u: V.pw.x, v: V.pw.y, scale: PW_R * 1.1, color: p }); }
@@ -57629,17 +57916,20 @@ const PONG_APP = (() => {
   const mixC = (a, b, f) => { const m = (s) => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
   // the live game's view
   function liveView(g){
-    const G = g.G, out = { balls: [], pads: G.pads.map((P, k) => ({ x: P.x, hw: hwOf(G, k), age: G.t - P.hitT })), score: G.score, t: G.t, pw: G.pw,
-                           fx: G.fx.map(e => ({ ...e, age: G.t - e.t })), count: 0, shake: Math.max(0, 1 - (G.t - G.shakeT) / 0.18) };
+    const G = g.G, flash = {}; for (const i in G.flash) flash[i] = G.t - G.flash[i];
+    const out = { balls: [], pads: G.pads.map((P, k) => ({ x: P.x, y: padY(k, G), hw: hwOf(G, k), age: G.t - P.hitT })), score: G.score, t: G.t, pw: G.pw,
+                           fx: G.fx.map(e => ({ ...e, age: G.t - e.t })), count: 0, shake: Math.max(0, 1 - (G.t - G.shakeT) / 0.18),
+                           arena: G.arena, flash, well: G.phys === 'well' };
     if (g.state === 'play' && G.state === 'serve'){
       const k = G.server, P = G.pads[k], rem = G.serveAt - G.t;
-      out.balls.push({ x: P.x, y: faceY(k) + (k === 0 ? -1 : 1) * (BR + 0.002), trail: null });
+      out.balls.push({ x: P.x, y: faceY(k, G) + (k === 0 ? -1 : 1) * (BR + 0.002), trail: null, z: 0 });
       if (G.serveT > 0.7 && rem > 0) { out.count = Math.max(1, Math.ceil(rem / (G.serveT / 3))); out.countY = k === 0 ? 0.72 : 0.28; }
-    } else for (const b of G.balls) out.balls.push({ x: b.x, y: b.y, trail: b.trail, step: 2 });
+    } else for (const b of G.balls) out.balls.push({ x: b.x, y: b.y, z: b.z || 0, trail: b.trail, step: 2 });
     return out;
   }
   // a board with nothing to show yet: the paddles in the middle
-  const bareView = idx => ({ balls: [], pads: [{ x: W / 2, hw: LV[levelAt(idx) - 1].pad, age: 9 }, { x: W / 2, hw: CPU_HW, age: 9 }], score: [0, 0], fx: [], count: 0, pw: null, shake: 0 });
+  const bareView = idx => ({ balls: [], pads: [{ x: W / 2, hw: LV[levelAt(idx) - 1].pad, age: 9 }, { x: W / 2, hw: CPU_HW, age: 9 }], score: [0, 0], fx: [], count: 0, pw: null, shake: 0,
+                             t: now() / 1000, arena: SET.arena ? arenaOf(idx, levelAt(idx)) : null, flash: {}, well: SET.phys === 'theme' && themeOf(idx).id === 'space' });
 
   /* ─── HANDS ─── a press on the table while a match is under way is a paddle's (every touch its own, so two players each take
      one), heard before the field so the view never pans under it; a press elsewhere flies the view as ever. */
@@ -57647,16 +57937,19 @@ const PONG_APP = (() => {
   function pressAt(x, y){
     const g = liveGame(); if (!g || g.state !== 'play') return null;
     const at = _framedUV(x, y, 0.3); if (!at || at.c !== g.c || at.r !== g.r) return null;
-    return { g, seat: g.two ? (at.v < 0.5 ? 1 : 0) : 0, x0: x, y0: y, t0: performance.now(), moved: false };
+    const seat = g.two ? (at.v < 0.5 ? 1 : 0) : 0;
+    return { g, seat, x0: x, y0: y, v0: at.v, dy0: g.G.pads[seat].dy, t0: performance.now(), moved: false };
   }
+  // (across: the paddle under the finger; forward: as far as the finger has gone up the table, toward the middle, since it pressed)
   function handAt(p, x, y){
     const at = _framedUV(x, y, 0.3); if (!at) return;
     HAND[p.seat].tx = clamp(at.u, 0, 1) * W;
+    HAND[p.seat].dyT = clamp(p.dy0 + (p.seat === 0 ? p.v0 - at.v : at.v - p.v0), 0, REACH);
     if (Math.hypot(x - p.x0, y - p.y0) > 10) p.moved = true;
   }
   function handUp(id){
     const p = OWN.get(id); if (!p) return false; OWN.delete(id);
-    if (![...OWN.values()].some(q => q.seat === p.seat)) HAND[p.seat].tx = null;
+    if (![...OWN.values()].some(q => q.seat === p.seat)){ HAND[p.seat].tx = null; HAND[p.seat].dyT = null; }
     if (!p.moved && performance.now() - p.t0 < 350) serveNow(p.g, p.seat);
     return true;
   }
@@ -57701,6 +57994,11 @@ const PONG_APP = (() => {
     // (the far player looks from the other end, but plays with the same screen: A is left on the screen)
     if (k === 'a' || k === 'A') return { seat: two ? 1 : 0, d: -flip };
     if (k === 'd' || k === 'D') return { seat: two ? 1 : 0, d: flip };
+    // (the step forward: ↑ steps the near paddle in, ↓ back; W and S the far one with two players, else the near)
+    if (k === 'ArrowUp') return { seat: 0, f: 1 };
+    if (k === 'ArrowDown') return { seat: 0, f: -1 };
+    if (k === 'w' || k === 'W') return { seat: two ? 1 : 0, f: 1 };
+    if (k === 's' || k === 'S') return { seat: two ? 1 : 0, f: -1 };
     return null;
   }
   addEventListener('keydown', e => {
@@ -57713,20 +58011,22 @@ const PONG_APP = (() => {
     }
     const s = keySeat(e, g); if (!s || g.state !== 'play') return;
     e.preventDefault(); e.stopPropagation();
-    KEYS[(s.d < 0 ? 'L' : 'R') + s.seat] = true;
+    if (s.f) KEYS[(s.f > 0 ? 'F' : 'B') + s.seat] = true; else KEYS[(s.d < 0 ? 'L' : 'R') + s.seat] = true;
   }, true);
   addEventListener('keyup', e => {
     const s = keySeat(e, liveGame()); if (!s) return;
-    KEYS['L' + s.seat] = KEYS['R' + s.seat] = false;
+    if (s.f) KEYS['F' + s.seat] = KEYS['B' + s.seat] = false; else KEYS['L' + s.seat] = KEYS['R' + s.seat] = false;
   }, true);
-  addEventListener('blur', () => { for (const k in KEYS) KEYS[k] = false; HAND[0].tx = HAND[1].tx = null; OWN.clear(); });
+  addEventListener('blur', () => { for (const k in KEYS) KEYS[k] = false; HAND[0].tx = HAND[1].tx = HAND[0].dyT = HAND[1].dyT = null; OWN.clear(); });
 
   /* ─── THE ROW: SETTINGS ─── a tile a setting, each tap stepping it on; the first starts a new match on the framed board */
   const NAMES = { slow: 'Slow', normal: 'Normal', fast: 'Fast', small: 'Small', large: 'Large' };
   const ON = '#2f4a3a';
+  // (the tiles in their order, each a setting's key, so the menu and the tests can name them)
+  const ORDER = ['new', 'theme', 'target', 'players', 'speed', 'pad', 'face', 'reach', 'phys', 'arena', 'trail', 'power', 'serve', 'fx', 'sound'];
   function tilesOf(c, r){
     const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), th = themeOf(idx);
-    const playing = g && g.state === 'play';
+    const playing = g && g.state === 'play', ph = PHYS[th.id];
     return [
       { glyph: playing ? '↻' : '▶', value: playing ? 'Restart' : 'New match', label: playing ? g.G.score[0] + ' – ' + g.G.score[1] : 'level ' + levelAt(idx) },
       { glyph: th.glyph, value: SET.theme === 'board' ? 'By board' : th.name, label: 'theme' },
@@ -57734,6 +58034,10 @@ const PONG_APP = (() => {
       { glyph: SET.players === 2 ? '👥' : '👤', value: SET.players === 2 ? 'Two' : 'One', label: 'players' },
       { glyph: '⚡', value: NAMES[SET.speed], label: 'ball speed' },
       { glyph: '▬', value: NAMES[SET.pad], label: 'paddle' },
+      { glyph: SET.face === 'curved' ? '◠' : '━', value: SET.face === 'curved' ? 'Curved' : 'Flat', label: 'paddle face' },
+      { glyph: '⇡', value: SET.reach ? 'Forward too' : 'Across only', label: 'paddle moves', bg: SET.reach ? ON : undefined },
+      { glyph: '⚙', value: SET.phys === 'theme' ? 'By theme' : 'Plain', label: 'physics', sub: SET.phys === 'theme' && ph ? PHYS_NAME[ph] : '' },
+      { glyph: '🧱', value: SET.arena ? 'On' : 'Off', label: 'arena', bg: SET.arena ? ON : undefined },
       { glyph: '☄', value: SET.trail ? 'On' : 'Off', label: 'trail', bg: SET.trail ? ON : undefined },
       { glyph: '🎁', value: SET.power ? 'On' : 'Off', label: 'power-ups', bg: SET.power ? ON : undefined },
       { glyph: '⏱', value: SET.serve === 'quick' ? 'Quick' : 'Countdown', label: 'serve' },
@@ -57744,17 +58048,24 @@ const PONG_APP = (() => {
   const step = (list, v) => list[(list.indexOf(v) + 1) % list.length];
   // (what changes the play itself starts every match afresh; the look and sound change at once)
   function setting(i){
+    const key = typeof i === 'string' ? i : ORDER[i];
+    i = ORDER.indexOf(key);
     let fresh = false, msg = '';
-    if (i === 1){ SET.theme = step(['board', ...THEMES.map(t => t.id)], SET.theme); msg = 'Theme: ' + (SET.theme === 'board' ? 'each board its own' : THEMES.find(t => t.id === SET.theme).name); }
+    if (key === 'theme'){ SET.theme = step(['board', ...THEMES.map(t => t.id)], SET.theme); msg = 'Theme: ' + (SET.theme === 'board' ? 'each board its own' : THEMES.find(t => t.id === SET.theme).name);
+      fresh = SET.phys === 'theme'; }                     // (a theme's physics change with it)
+    else if (key === 'face'){ SET.face = SET.face === 'curved' ? 'flat' : 'curved'; fresh = true; msg = SET.face === 'curved' ? 'Curved paddles: the ball comes off them as off a curve, its angle in counting' : 'Flat paddles: where the ball meets the paddle sets its angle'; }
+    else if (key === 'reach'){ SET.reach = !SET.reach; fresh = true; msg = SET.reach ? 'Your paddle steps forward too: drag up (or ↑) to step in, into a smash' : 'Your paddle moves across only'; }
+    else if (key === 'phys'){ SET.phys = SET.phys === 'theme' ? 'plain' : 'theme'; fresh = true; msg = SET.phys === 'theme' ? 'Each theme its own physics: a bounce in table tennis and tennis, the puck sliding on the ice, goals in air hockey, a gravity well in space' : 'Plain physics on every table'; }
+    else if (key === 'arena'){ SET.arena = !SET.arena; fresh = true; msg = SET.arena ? 'Arenas: every board its own bumpers, walls, sliding walls and portals, more farther out' : 'Arenas off'; }
     else if (i === 2){ SET.target = step([5, 11, 21], SET.target); fresh = true; msg = 'Matches to ' + SET.target + ', won by two'; }
     else if (i === 3){ SET.players = SET.players === 1 ? 2 : 1; fresh = true; msg = SET.players === 2 ? 'Two players: the near half and ← → for one, the far half and A D for the other' : 'One player, against the computer'; }
     else if (i === 4){ SET.speed = step(['slow', 'normal', 'fast'], SET.speed); fresh = true; msg = 'Ball speed: ' + NAMES[SET.speed].toLowerCase(); }
     else if (i === 5){ SET.pad = step(['small', 'normal', 'large'], SET.pad); fresh = true; msg = 'Your paddle: ' + NAMES[SET.pad].toLowerCase(); }
-    else if (i === 6){ SET.trail = !SET.trail; msg = 'Trail ' + (SET.trail ? 'on' : 'off'); }
-    else if (i === 7){ SET.power = !SET.power; fresh = true; msg = SET.power ? 'Power-ups on: three balls, a longer paddle, a curve ball, slow motion' : 'Power-ups off'; }
-    else if (i === 8){ SET.serve = SET.serve === 'quick' ? 'count' : 'quick'; msg = SET.serve === 'quick' ? 'Quick serves' : 'A countdown before each serve'; }
-    else if (i === 9){ SET.fx = !SET.fx; msg = 'Shake and flash ' + (SET.fx ? 'on' : 'off'); }
-    else if (i === 10){ SET.sound = !SET.sound; if (SET.sound) try { ARCADE.audio(); } catch {} msg = 'Sound ' + (SET.sound ? 'on' : 'off'); }
+    else if (key === 'trail'){ SET.trail = !SET.trail; msg = 'Trail ' + (SET.trail ? 'on' : 'off'); }
+    else if (key === 'power'){ SET.power = !SET.power; fresh = true; msg = SET.power ? 'Power-ups on: three balls, a longer paddle, a curve ball, slow motion' : 'Power-ups off'; }
+    else if (key === 'serve'){ SET.serve = SET.serve === 'quick' ? 'count' : 'quick'; msg = SET.serve === 'quick' ? 'Quick serves' : 'A countdown before each serve'; }
+    else if (key === 'fx'){ SET.fx = !SET.fx; msg = 'Shake and flash ' + (SET.fx ? 'on' : 'off'); }
+    else if (key === 'sound'){ SET.sound = !SET.sound; if (SET.sound) try { ARCADE.audio(); } catch {} msg = 'Sound ' + (SET.sound ? 'on' : 'off'); }
     else return false;
     saveSet();
     if (fresh){ GAMES.clear(); RECS.clear(); SOON.clear(); msg += ' (every match starts afresh)'; }
@@ -57772,11 +58083,13 @@ const PONG_APP = (() => {
     frameFit: 1.1,                                   // (a little farther back, so the near paddle clears the bottom row)
     menu: [{ head: 'Pong', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One against the computer, or two on one device: a finger each, or ← → against A D.', on(){ setting(3); } },
-      { label: () => 'Power-ups: ' + (SET.power ? 'on' : 'off'), title: 'Tokens on the table: three balls, a longer paddle, a curve ball, slow motion.', on(){ setting(7); } },
-      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'Blips, tocks and the crowd, each theme its own.', on(){ setting(10); } },
+      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One against the computer, or two on one device: a finger each, or ← → against A D.', on(){ setting('players'); } },
+      { label: () => 'Power-ups: ' + (SET.power ? 'on' : 'off'), title: 'Tokens on the table: three balls, a longer paddle, a curve ball, slow motion.', on(){ setting('power'); } },
+      { label: () => 'Arena: ' + (SET.arena ? 'on' : 'off'), title: 'Every board its own bumpers, walls, sliding walls and portals, more of them farther out.', on(){ setting('arena'); } },
+      { label: () => 'Physics: ' + (SET.phys === 'theme' ? 'by theme' : 'plain'), title: 'By theme: a bounce in table tennis and tennis, the puck sliding on the ice, goals in air hockey, a gravity well in space.', on(){ setting('phys'); } },
+      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'Blips, tocks and the crowd, each theme its own.', on(){ setting('sound'); } },
       { label: 'Start this board again', title: 'A new match, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
-      { label: 'How to play', title: 'The controls.', on(){ say('Drag anywhere on the table, or hold ← →, to move your paddle (the near one). Where the ball meets the paddle sets its angle; a paddle moving as it hits puts spin on it, and a fast swipe into the angle is a smash. First to ' + SET.target + ', won by two; the one who lost the point serves (a tap or Space serves at once). The bottom row has the settings.', 9000); } },
+      { label: 'How to play', title: 'The controls.', on(){ say('Drag anywhere on the table, or hold ← →, to move your paddle (the near one); drag up, or ↑, to step it forward into a shot. Where the ball meets the paddle sets its angle; a paddle moving as it hits puts spin on it, and a fast swipe into the angle is a smash. First to ' + SET.target + ', won by two; the one who lost the point serves (a tap or Space serves at once). The bottom row has the settings.', 9000); } },
     ]}],
     cellFar: { light: 0x16181f, dark: 0x0c0d12 },
     itemMinPx: 10,
@@ -57788,6 +58101,8 @@ const PONG_APP = (() => {
       pgPad: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
       pgPadGlow: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
       pgCap: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 16); g.translate(0, 0.5, 0); return g; },
+      pgCapGlow: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 16); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
+      pgFlat: T => FieldKit.disc(T, 0.5, 0.002),
       pgBall: T => { const g = new T.SphereGeometry(0.5, 16, 10); g.translate(0, 0.5, 0); return g; },
       pgOrb: T => { const g = new T.SphereGeometry(0.5, 16, 10); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
       pgCube: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
@@ -57842,7 +58157,8 @@ const PONG_APP = (() => {
     },
     _debug: { newMatch, tick, launch, landing, think, hit, point, take, recOf, recWork, recView, recSoon, parOf, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, themeOf,
               gameAt, fresh, begin, stepGame, over, serveNow, pressAt, setting, tilesOf, LV, STEADY, SET, GAMES, RECS, BEST, HAND, KEYS, OWN, POWERS, THEMES,
-              consts: { W, PY, PT, BR, CPU_HW, TICK, SUB, VMAX, REEL_T, REC_HZ }, levelOf: (c, r) => levelAt(boardIdx(c, r)), faceY, hwOf,
+              arenaOf, arenaStep, physStep, bounceStep, moverX, PHYS, ORDER, LOOK,
+              consts: { W, PY, PT, BR, CPU_HW, TICK, SUB, VMAX, REEL_T, REC_HZ, REACH, CURVE_N, GOAL, BOUNCE }, levelOf: (c, r) => levelAt(boardIdx(c, r)), faceY, padY, hwOf,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   return app;

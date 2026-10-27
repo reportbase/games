@@ -558,6 +558,37 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     power-ups taken, and real input: a click starting, the real ← and a real drag moving the paddle (under the finger), a point and a
     match won with stars and a best, two real fingers each taking a paddle with the view still, a real click on the Points tile
     (stored), and a board no one plays moving.
+  - **The paddle's face and its step forward, each theme's physics, four more themes, arenas** (Oct 27: "whats next for pong", then
+    "3,4,5"; the row's Paddle face, Paddle moves, Physics and Arena, `ORDER` naming the tiles, `setting(key)`):
+    - **Curved** (`SET.face`, `CURVE_N` 0.42): the face's normal leans out by the offset × `CURVE_N` and the ball is reflected off it
+      (`hit`), so straight on at an end goes back at twice the lean and the angle in counts; Flat (the default) is as before.
+    - **The step forward** (`SET.reach`, on by default; `REACH` 0.07): a paddle stands `dy` in from its end (`faceY(k, G)`, `padY`).
+      A finger moved up the table from where it pressed steps it in (`HAND[seat].dyT`, `handAt`), ↑ / ↓ too (W / S, the far paddle with
+      two players); let go, it steps back. A hit while stepping adds `FWD_K` × the step's speed and over `FWD_SMASH` is a smash, and the
+      ball always leaves faster than the face. The face is met from where it was at a step's start to where it is at its end
+      (`fyPrev`), so a fast step never lets a ball through either (smoke: 700 returns stepping in and out, none through). The computer
+      and the steady player do not step.
+    - **Each theme's physics** (`SET.phys`: By theme, the default, or Plain; `PHYS`, `physStep`, `bounceStep`): table tennis and tennis,
+      the ball bounces on the receiver's half (`BOUNCE`: at 0.72 or 0.78 of the way, arcs `h1` and `h2`; `b.z`, drawn raised with its
+      shadow, recorded as a frame's 8th number) with a tick; on the ice the puck slows to `ICE_FLOOR` of the serve (`ICE_F`), a return
+      building on the speed it last left a stick at (`b.vh`: on its slid speed matches ran to the cap); air hockey's ends are walls
+      but for a goal's mouth `GOAL` (0.26) wide; Space pulls toward the middle (`GRAV`, softened within `GRAV_S`; `keepGoing` keeps
+      the ball off crawling). A theme's change starts every match afresh when physics follow it.
+    - **Four more themes**: Tennis (a mown grass court and its lines, a net, rackets with strings and a handle, a yellow ball, a pock
+      and applause), Air hockey (air holes, the red line, goal mouths in the rails, mallets with knobs, a puck, a clack and a buzzer),
+      Space (nebulae and stars, a swirl and the well's rings, glowing bars, a zap) and 8-bit (big pixels, a white block border,
+      paddles of pixels, square-wave arpeggios). Eight in all, by board unless the row picks one.
+    - **Arenas** (`SET.arena`, off at first; `arenaOf(idx, lv)`, `ARENAS`, `arenaStep`): every piece with its twin half a turn about
+      the middle (W − x, 1 − y), kept to y 0.27–0.45 and its twin, apart: a pair of bumpers at level 1 (a kick, no slower than the
+      serve), short walls from 2 (some upright), from 3 sliding walls (`moverX`, `moverV`: the ball meets them moving) or, one board
+      in three, a barrier across the middle with a gap, from 4 a pair of portals (in one, out of the other going on as it went,
+      `portT`), at 5 more bumpers. A piece struck lights (`G.flash`). Recordings carry the arena, its sliding walls at the frame's
+      time. Over 4 matches a level the steady player won 11–0s at level 1, about even at 3, lost at 5; every match ended.
+    - The smoke test checks the curved face (twice its lean at an end, an angled ball reflected at the middle where flat sends it
+      straight), a step forward faster and none through a stepping face, the bounce on each half and the ball raised, the puck
+      slowing to its floor, air hockey's wall and goal, the well bending a ball, the arenas' pieces by level and their twins, a
+      bumper, a wall and a portal each doing their part and a sliding wall where its clock says, arena matches ending at levels 1,
+      3 and 5, all eight themes painted and drawn, and a real drag up the table stepping the paddle in and back on letting go.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
