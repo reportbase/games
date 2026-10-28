@@ -749,7 +749,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     stones); a tap goes on to the board beside. Settings in `curling.settings`. Drawn: the sheet a picture (`paint`: ice, pebble,
     rings, lines, the hack), stones (`cuStone`, a lathe of granite) with handles in the team's colour turned as the stone turns
     (`cuHandle`), the broom, the dots, the sweepers' brooms (`cuBroom`), a flash where stones meet, the score in dot digits.
-  - The smoke test (part 5) checks the levels by ring, a draw solved to the button, the curl both ways, sweeping farther and
+  - The smoke test (part 7) checks the levels by ring, a draw solved to the button, the curl both ways, sweeping farther and
     straighter, a takeout, the hog line, an end's score, games ending with the steady player better at level 1 than 5, and real
     input: a click starting, a real click putting the broom, the real Enter throwing, a real press sweeping, the computer answering,
     and a board no one plays moving.
@@ -783,9 +783,39 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Drawn: the lane a picture (`paint`: 39 boards, maple ends and pine between, the oil's sheen, the arrows and dots, the foul line,
     gutters, kickbacks, the pit); pins turned on a lathe with red stripes at the neck (`bwPin`, `bwPinDown` lying along its way),
     the ball, your aim, the dots, the score in dot digits at the foul line.
-  - The smoke test (part 5) checks the levels by ring, the scoring (300, 190, 80, the tenth's bonus balls), a hook across the head
+  - The smoke test (part 7) checks the levels by ring, the scoring (300, 190, 80, the tenth's bonus balls), a hook across the head
     pin's line, a gutter ball taking nothing, the steady player's perfect pocket balls striking and its games better at level 1
     than at 5, and real input (a click starting, a real click aiming, the real Enter bowling) and a board no one plays moving.
+- **Marble run** (Oct 28: "2,   3 curling, bowling, marble run", the third: "build a track in the bottom row, the steady player tests
+  it"): `MARBLE_APP`, id `marblerun`, after bowling. A square board, an n × n grid of squares: a start chute at the far edge, high
+  up (`startPiece`, blue), a cup lower down (red), rocks, some pieces laid for you (darker wood), and a stock in the bottom row.
+  - **The pieces** (`EDGES`, `heightAt`; edges 0 N toward the far end, 1 E, 2 S, 3 W): a straight, a curve, a ramp (a straight that
+    drops a level) and a spiral (a curve that drops a level, its high end either end: rot 0–7), each at a height `z` (its lower end)
+    on a post. Drawn as troughs of wood along the middle line (`trackGeo`: a straight N to S, or a quarter circle from N round to E,
+    a level `LH` (0.22 squares) high; each face twice with corners of its own, sharing them shaded the wood black), turned by yaw
+    r·π/2 (the field turns an item by π − yaw, so local N to board N at yaw 0).
+  - **Building** (`tapCell`): the piece in hand (the row, or 1–4), a tap on an empty square lays it turned and raised to join what
+    lies beside it (`fitsAt`: every way it can lie, scored by the ends it meets at their heights, `endsInto`, the chute and the cup
+    among them); a tap again on one of yours turns it to the next way, those that fit first; the row's Turn (R), Raise and Lower
+    (↑ ↓) move the ringed one; Erase (X) takes back; Clear takes all yours back. The tap that picks a board out lays nothing.
+  - **The run** (`runSim`, the row's Run or Enter; steps of 1/240 s): along each piece's middle line (`pointAt`), `G` × the slope
+    down every drop, rolling (`MU`, `CURVE_MU` on a curve); into the next square's piece if it has an end there at the same height,
+    else it falls (`why`: off the end of the track, into a rock, a piece that does not turn that way, dropped onto one lower, into
+    the side of one higher); off a curve faster than the board's `vc`; back down a slope it cannot climb, stopped on the flat
+    (`V0` 2 to start; a level dropped pays for about four squares). Into the cup at height 0, through.
+  - **Every board its own puzzle** (`makePuzzle(idx, lv)`, `LV` by level, ring plus the Difficulty): a walk from the chute (each
+    step the square with fewest ways out, so it does not shut itself in, a little toward the near end), its pieces found by the
+    walk's turns, `H` drops spread along it, run in `runSim` until the marble reaches the cup (else other drops, else another walk);
+    then rocks off it, some pieces laid for you (`given`), the rest in the stock with `spare`s. Levels 1–5: grids 5 to 8, 2 to 5
+    levels down, rocks 0.12–0.28, laid for you a half to none, spares 2 to none, curves throwing at 3.6 down to 2.8. Par (the pieces
+    beyond those laid for you): about 3, 8 and 15 at levels 1, 3 and 5; under 2 ms to make. Boards only looked at are made in the
+    boards' share of time (`BOARD_KIT.budget(8, 30)`, `PUZ` keeps 1,500).
+  - **Through**: in par ★★★, two more ★★, else ★; the fewest pieces kept a board (`marblerun.best`); a tap goes on to the board
+    beside. The menu's Show the way lays the made way (no stars for it). A board no one plays shows the made way with the marble
+    running down it on the board's own phase (`runOf`, `BOARD_KIT.loopT`).
+  - The smoke test (part 7) checks the levels by ring, puzzles made at levels 1, 3 and 5 each running to the cup with par growing,
+    a piece taken out and the marble falling, a piece beside the chute laid turned and raised to join it, and real input (a real
+    click laying a straight under the chute, another turning it, the made way run to the cup) and a board no one plays running.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
@@ -2572,13 +2602,13 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   takes to long. stop doing them unless I ask."). It then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
-- **Six parts side by side** (Oct 28: "2", the faster smoke test: a CI run took 30 minutes, 26 of the smoke test and 3.5 of
-  the course test): `tests/smoke.mjs`'s checks are cut into `PARTS` (6) contiguous parts of three to five minutes, each in an
-  `if (part(k)) { … }` at the end of its blocks, and `SHARD=k/6` runs one (the page loaded afresh, each part setting its own
+- **Seven parts side by side** (Oct 28: "2", the faster smoke test: a CI run took 30 minutes, 26 of the smoke test and 3.5 of
+  the course test): `tests/smoke.mjs`'s checks are cut into `PARTS` (7) contiguous parts of three to five minutes, each in an
+  `if (part(k)) { … }` at the end of its blocks (part 7 the three games of Oct 28), and `SHARD=k/7` runs one (the page loaded afresh, each part setting its own
   app; no part uses a name another declares, `cdp` being made at the start for all). With no `SHARD` every part runs, as
-  `npm test` does. CI (`smoke.yml`) runs the six parts and the course test as seven jobs at once, then a job named `smoke`
+  `npm test` does. CI (`smoke.yml`) runs the seven parts and the course test as eight jobs at once, then a job named `smoke`
   that passes only if all of them did, so a run takes about as long as its longest part. A new check goes at the end of the
-  part it sits beside or in the shortest one; one part alone runs locally as `SHARD=3/6 node tests/smoke.mjs`.
+  part it sits beside or in the shortest one; one part alone runs locally as `SHARD=3/7 node tests/smoke.mjs`.
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
   `chess.js@1.4.0` somewhere and run `LIBS_DIR=that/node_modules npm test`; the
   test then serves both from there.

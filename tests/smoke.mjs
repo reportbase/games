@@ -59,11 +59,11 @@ if (process.env.LIBS_DIR){
 }
 
 /* PARTS (Oct 28: "2", the faster smoke test: a run took 30 minutes on one runner). The checks below are cut into PARTS
-   contiguous parts of three to five minutes each, at the ends of their blocks, and CI runs each in a job of its own, side by
-   side (SHARD=k/6, .github/workflows/smoke.yml). Each part loads the page afresh and sets its own app; nothing declared in one
+   contiguous parts of three to five minutes each, at the ends of their blocks (a seventh since: the three games of Oct 28), and CI runs each in a job of its own, side by
+   side (SHARD=k/7, .github/workflows/smoke.yml). Each part loads the page afresh and sets its own app; nothing declared in one
    part is used in another (checked with a parser when it was cut). With no SHARD every part runs, one after another, as
    before. A new check goes at the end of the part it sits beside, or in the shortest part. */
-const PARTS = 6;
+const PARTS = 7;
 const [SHARD_K, SHARD_N] = (process.env.SHARD || '').split('/').map(Number);
 if (SHARD_N && SHARD_N !== PARTS) throw new Error(`SHARD ${process.env.SHARD}: the test has ${PARTS} parts`);
 const part = k => !SHARD_K || k === SHARD_K;
@@ -6072,109 +6072,6 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: level 5 measured against level 1 (the starters climb, a flat game goes back to Claude and is kept with a note after the last try), and My games lists the boards changed with a real Play going there`);
   }
 
-  // CURLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the ice (a draw solved to the button, the curl the way
-  // it turns, sweeping farther and straighter, a takeout moving the stone it strikes, the hog line); an end's score; games between
-  // the steady player and the computer ending, the steady player doing better at level 1 than at 5; and real input: a click
-  // starting, a real click putting the broom where it fell, the real Enter throwing, a real press held sweeping, the computer
-  // answering; and a board no one plays moving through its recorded end
-  current = 'curling';
-  {
-    const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); await new Promise(ok => setTimeout(ok, 2500)); });
-    const cu = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
-      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
-      const ice = D.iceOf(9, 3), alone = shot => D.throwSim([], 0, shot, ice).st;
-      const s = D.solveDraw(K.W / 2, K.TEE, 1, ice), d = alone(s); out.draw = +Math.hypot(d.x - K.W / 2, d.y - K.TEE).toFixed(4);
-      const straight = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: 0 }), right = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: 1 }), left = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: -1 });
-      out.curl = [+(right.x - straight.x).toFixed(3), +(left.x - straight.x).toFixed(3)];
-      const swept = D.throwSim([], 0, { bx: K.W / 2, by: K.TEE, w: 0.72, curl: 1 }, ice, { sweep: () => 1 }).st;
-      out.sweep = { farther: +(right.y - swept.y).toFixed(3), straighter: +((right.x - straight.x) - (swept.x - straight.x)).toFixed(3) };
-      const guard = [{ x: K.W / 2, y: K.TEE, vx: 0, vy: 0, s: 0, team: 1, rot: 0, out: false, hit: false, live: false }];
-      const hit = D.throwSim(guard, 0, D.solveHit(K.W / 2, K.TEE, 1, 2.2, ice), ice).S[0]; out.takeout = hit.out || Math.hypot(hit.x - K.W / 2, hit.y - K.TEE) > 0.1;
-      out.hog = alone({ bx: K.W / 2, by: K.TEE, w: 0.3, curl: 0 }).out;
-      const S = [[0, 0.003], [0, 0.03], [1, 0.05], [0, 0.07], [1, 0.4]].map(([team, dy]) => ({ x: K.W / 2, y: K.TEE + dy, team, out: false }));
-      const e = D.endScore(S); out.score = e.team + ':' + e.n;
-      out.games = [1, 5].map(lv => { let a = 0, b = 0; for (let k = 0; k < 2; k++){ const G = D.newMatch(300 + k, lv, { ai0: D.STEADY, ends: 2, seed: k }); let n = 0; while (G.state !== 'over' && n < 200000){ D.tick(G, false); n++; } if (G.state !== 'over') return null; a += G.score[0]; b += G.score[1]; } return [a, b]; });
-      return out;
-    });
-    const L = cu.levels;
-    const shareOk = cu.games[0] && cu.games[1] && cu.games[0][0] - cu.games[0][1] > cu.games[1][0] - cu.games[1][1];
-    if (!(L[0] < L[2] && L[2] <= L[3]) || cu.draw > 0.006 || !(cu.curl[0] > 0.01 && cu.curl[1] < -0.01) || !(cu.sweep.farther > 0.03 && cu.sweep.straighter > 0.003)
-        || !cu.takeout || !cu.hog || cu.score !== '0:2' || !shareOk)
-      failures.push(`[${current}] ${JSON.stringify(cu)}`);
-    // real input: a click starts, a click puts the broom, Enter throws, a press held sweeps, the computer answers
-    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
-      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
-    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, thrown: g.G.thrown, bx: g.G.shot.bx, sweep: g.G.sweepK } }; });
-    await page.evaluate(() => window.__settle());
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
-    const live = { started: await gs() };
-    p = await at(0.4, 0.25); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
-    live.aimed = await gs();
-    await page.keyboard.press('Enter'); await page.waitForTimeout(900);
-    p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down();
-    for (let w = 0; w < 20 && !((await gs()).G.sweep > 0); w++) await page.waitForTimeout(150);
-    live.swept = await gs(); await page.mouse.up();
-    for (let w = 0; w < 120 && (await gs()).G.thrown < 2; w++) await page.waitForTimeout(250);
-    live.answered = await gs();
-    // a board no one plays: its recorded end, moving on the page's clock
-    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
-      const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 30 && !M.done; k++) D.recWork(M);
-      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => i.kind === 'cuStone').map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
-      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return { done: M.done, looks: seen.size }; });
-    if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.bx - 0.4 * 0.42) > 0.02
-        || !(live.swept && live.swept.G.state === 'throw' && live.swept.G.sweep > 0) || !(live.answered && live.answered.G.thrown >= 2) || !live.shown.done || live.shown.looks < 3)
-      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} curling (levels ${L.join('/')}; a draw to ${cu.draw} of the button, curling ${cu.curl.join('/')}, sweeping ${cu.sweep.farther} farther and ${cu.sweep.straighter} straighter, a takeout, the hog line, an end scored ${cu.score}; the steady player ${cu.games.map(g => g && g.join('-')).join(' at level 1, ')} at level 5; a real click started, a real click put the broom, the real Enter threw, a real press swept, the computer answered; a board no one plays showed ${live.shown.looks} looks)`);
-  }
-
-  // BOWLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the scoring (300, all spares 190, all fours 80, the tenth's
-  // bonus balls); a hooking ball crossing the head pin's line left of a straight one; a gutter ball taking nothing; the steady
-  // player's first balls taking pins and its games ending, better at level 1 than at 5; and real input: a click starting, a real
-  // click aiming, the real Enter bowling and the ball counted; a board no one plays moving through its recorded game
-  current = 'bowling';
-  {
-    const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); await new Promise(ok => setTimeout(ok, 2500)); });
-    const bw = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
-      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
-      out.score = [D.scoreOf(Array(12).fill(10)).total, D.scoreOf([...Array(20).fill(0).map((_, i) => i % 2 ? 1 : 9), 9]).total, D.scoreOf(Array(20).fill(4)).total,
-                   D.scoreOf([...Array(18).fill(0), 10, 10, 10]).total, D.scoreOf([...Array(18).fill(0), 7, 3, 5]).total, D.scoreOf([...Array(18).fill(0), 7, 2]).total];
-      const lane = D.laneOf(11, 3), shot = h => D.bowlSim([], { sx: K.CX + 0.05, tx: K.CX + 0.05, ty: K.ARROWS, v: 0.6, h }, lane, { untilY: K.HEAD }).B.x;
-      out.hook = +(shot(0) - shot(0.6)).toFixed(3);
-      const g = D.bowlSim(D.rack(), { sx: K.CX - 0.1, tx: K.CX - 0.2, ty: K.ARROWS, v: 0.6, h: 0 }, lane); out.gutter = { gutter: g.B.gutter, down: g.down };
-      let firsts = 0; for (let k = 0; k < 10; k++){ const L = D.laneOf(200 + k, 1); firsts += D.bowlSim(D.rack(), D.pick(D.rack(), L, true), L).down; } out.firsts = firsts / 10;
-      out.games = [1, 5].map(lv => { let sum = 0; for (let k = 0; k < 3; k++){ const G = D.newGame(400 + k, lv, { ai: D.STEADY, seed: k }); let n = 0; while (G.state !== 'over' && n < 120000){ D.tick(G); n++; } if (G.state !== 'over') return null; sum += D.scoreOf(G.rolls).total; } return Math.round(sum / 3); });
-      return out;
-    });
-    const L = bw.levels;
-    if (!(L[0] < L[2] && L[2] <= L[3]) || bw.score.join() !== '300,190,80,30,15,9' || !(bw.hook > 0.02) || !bw.gutter.gutter || bw.gutter.down !== 0
-        || !(bw.firsts >= 5) || !(bw.games[0] && bw.games[1] && bw.games[0] > bw.games[1]))
-      failures.push(`[${current}] ${JSON.stringify(bw)}`);
-    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
-      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
-    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, rolls: g.G.rolls.length, tx: g.G.shot.tx } }; });
-    await page.evaluate(() => window.__settle());
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
-    const live = { started: await gs() };
-    p = await at(0.42, 0.4); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
-    live.aimed = await gs();
-    await page.keyboard.press('Enter');
-    for (let w = 0; w < 60 && (await gs()).G.rolls < 1; w++) await page.waitForTimeout(250);
-    live.bowled = await gs();
-    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
-      const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 40 && !M.done; k++) D.recWork(M);
-      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
-      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return { done: M.done, par: M.par, looks: seen.size }; });
-    if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.tx - 0.42 * 0.36) > 0.02
-        || !(live.bowled && live.bowled.G.rolls >= 1) || !live.shown.done || !(live.shown.par > 0) || live.shown.looks < 3)
-      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling (levels ${L.join('/')}; scores ${bw.score.join(', ')}; a hook ${bw.hook} across the head pin's line; a gutter ball took ${bw.gutter.down}; the steady player's first balls ${bw.firsts} pins, games ${bw.games.join(' at level 1, ')} at level 5; a real click started, a real click aimed, the real Enter bowled; a board no one plays showed ${live.shown.looks} looks, par ${live.shown.par})`);
-  }
   }   // (end of part 5)
   if (part(6)) {
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
@@ -6741,6 +6638,153 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${bad.length ? 'FAIL' : 'ok  '} the dots 6px with a shadow, Full screen on the menu, Tab and Enter step from the board in view (${steps.join('; ')})`);
   }
   }   // (end of part 6)
+  if (part(7)) {   // (the three games of Oct 28: curling, bowling, the marble run)
+  // CURLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the ice (a draw solved to the button, the curl the way
+  // it turns, sweeping farther and straighter, a takeout moving the stone it strikes, the hog line); an end's score; games between
+  // the steady player and the computer ending, the steady player doing better at level 1 than at 5; and real input: a click
+  // starting, a real click putting the broom where it fell, the real Enter throwing, a real press held sweeping, the computer
+  // answering; and a board no one plays moving through its recorded end
+  current = 'curling';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); await new Promise(ok => setTimeout(ok, 2500)); });
+    const cu = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
+      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
+      const ice = D.iceOf(9, 3), alone = shot => D.throwSim([], 0, shot, ice).st;
+      const s = D.solveDraw(K.W / 2, K.TEE, 1, ice), d = alone(s); out.draw = +Math.hypot(d.x - K.W / 2, d.y - K.TEE).toFixed(4);
+      const straight = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: 0 }), right = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: 1 }), left = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: -1 });
+      out.curl = [+(right.x - straight.x).toFixed(3), +(left.x - straight.x).toFixed(3)];
+      const swept = D.throwSim([], 0, { bx: K.W / 2, by: K.TEE, w: 0.72, curl: 1 }, ice, { sweep: () => 1 }).st;
+      out.sweep = { farther: +(right.y - swept.y).toFixed(3), straighter: +((right.x - straight.x) - (swept.x - straight.x)).toFixed(3) };
+      const guard = [{ x: K.W / 2, y: K.TEE, vx: 0, vy: 0, s: 0, team: 1, rot: 0, out: false, hit: false, live: false }];
+      const hit = D.throwSim(guard, 0, D.solveHit(K.W / 2, K.TEE, 1, 2.2, ice), ice).S[0]; out.takeout = hit.out || Math.hypot(hit.x - K.W / 2, hit.y - K.TEE) > 0.1;
+      out.hog = alone({ bx: K.W / 2, by: K.TEE, w: 0.3, curl: 0 }).out;
+      const S = [[0, 0.003], [0, 0.03], [1, 0.05], [0, 0.07], [1, 0.4]].map(([team, dy]) => ({ x: K.W / 2, y: K.TEE + dy, team, out: false }));
+      const e = D.endScore(S); out.score = e.team + ':' + e.n;
+      out.games = [1, 5].map(lv => { let a = 0, b = 0; for (let k = 0; k < 2; k++){ const G = D.newMatch(300 + k, lv, { ai0: D.STEADY, ends: 2, seed: k }); let n = 0; while (G.state !== 'over' && n < 200000){ D.tick(G, false); n++; } if (G.state !== 'over') return null; a += G.score[0]; b += G.score[1]; } return [a, b]; });
+      return out;
+    });
+    const L = cu.levels;
+    const shareOk = cu.games[0] && cu.games[1] && cu.games[0][0] - cu.games[0][1] > cu.games[1][0] - cu.games[1][1];
+    if (!(L[0] < L[2] && L[2] <= L[3]) || cu.draw > 0.006 || !(cu.curl[0] > 0.01 && cu.curl[1] < -0.01) || !(cu.sweep.farther > 0.03 && cu.sweep.straighter > 0.003)
+        || !cu.takeout || !cu.hog || cu.score !== '0:2' || !shareOk)
+      failures.push(`[${current}] ${JSON.stringify(cu)}`);
+    // real input: a click starts, a click puts the broom, Enter throws, a press held sweeps, the computer answers
+    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
+    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, thrown: g.G.thrown, bx: g.G.shot.bx, sweep: g.G.sweepK } }; });
+    await page.evaluate(() => window.__settle());
+    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    const live = { started: await gs() };
+    p = await at(0.4, 0.25); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    live.aimed = await gs();
+    await page.keyboard.press('Enter'); await page.waitForTimeout(900);
+    p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down();
+    for (let w = 0; w < 20 && !((await gs()).G.sweep > 0); w++) await page.waitForTimeout(150);
+    live.swept = await gs(); await page.mouse.up();
+    for (let w = 0; w < 120 && (await gs()).G.thrown < 2; w++) await page.waitForTimeout(250);
+    live.answered = await gs();
+    // a board no one plays: its recorded end, moving on the page's clock
+    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
+      const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 30 && !M.done; k++) D.recWork(M);
+      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => i.kind === 'cuStone').map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
+      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return { done: M.done, looks: seen.size }; });
+    if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.bx - 0.4 * 0.42) > 0.02
+        || !(live.swept && live.swept.G.state === 'throw' && live.swept.G.sweep > 0) || !(live.answered && live.answered.G.thrown >= 2) || !live.shown.done || live.shown.looks < 3)
+      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} curling (levels ${L.join('/')}; a draw to ${cu.draw} of the button, curling ${cu.curl.join('/')}, sweeping ${cu.sweep.farther} farther and ${cu.sweep.straighter} straighter, a takeout, the hog line, an end scored ${cu.score}; the steady player ${cu.games.map(g => g && g.join('-')).join(' at level 1, ')} at level 5; a real click started, a real click put the broom, the real Enter threw, a real press swept, the computer answered; a board no one plays showed ${live.shown.looks} looks)`);
+  }
+
+  // BOWLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the scoring (300, all spares 190, all fours 80, the tenth's
+  // bonus balls); a hooking ball crossing the head pin's line left of a straight one; a gutter ball taking nothing; the steady
+  // player's first balls taking pins and its games ending, better at level 1 than at 5; and real input: a click starting, a real
+  // click aiming, the real Enter bowling and the ball counted; a board no one plays moving through its recorded game
+  current = 'bowling';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); await new Promise(ok => setTimeout(ok, 2500)); });
+    const bw = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
+      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
+      out.score = [D.scoreOf(Array(12).fill(10)).total, D.scoreOf([...Array(20).fill(0).map((_, i) => i % 2 ? 1 : 9), 9]).total, D.scoreOf(Array(20).fill(4)).total,
+                   D.scoreOf([...Array(18).fill(0), 10, 10, 10]).total, D.scoreOf([...Array(18).fill(0), 7, 3, 5]).total, D.scoreOf([...Array(18).fill(0), 7, 2]).total];
+      const lane = D.laneOf(11, 3), shot = h => D.bowlSim([], { sx: K.CX + 0.05, tx: K.CX + 0.05, ty: K.ARROWS, v: 0.6, h }, lane, { untilY: K.HEAD }).B.x;
+      out.hook = +(shot(0) - shot(0.6)).toFixed(3);
+      const g = D.bowlSim(D.rack(), { sx: K.CX - 0.1, tx: K.CX - 0.2, ty: K.ARROWS, v: 0.6, h: 0 }, lane); out.gutter = { gutter: g.B.gutter, down: g.down };
+      let firsts = 0; for (let k = 0; k < 10; k++){ const L = D.laneOf(200 + k, 1); firsts += D.bowlSim(D.rack(), D.pick(D.rack(), L, true), L).down; } out.firsts = firsts / 10;
+      out.games = [1, 5].map(lv => { let sum = 0; for (let k = 0; k < 3; k++){ const G = D.newGame(400 + k, lv, { ai: D.STEADY, seed: k }); let n = 0; while (G.state !== 'over' && n < 120000){ D.tick(G); n++; } if (G.state !== 'over') return null; sum += D.scoreOf(G.rolls).total; } return Math.round(sum / 3); });
+      return out;
+    });
+    const L = bw.levels;
+    if (!(L[0] < L[2] && L[2] <= L[3]) || bw.score.join() !== '300,190,80,30,15,9' || !(bw.hook > 0.02) || !bw.gutter.gutter || bw.gutter.down !== 0
+        || !(bw.firsts >= 5) || !(bw.games[0] && bw.games[1] && bw.games[0] > bw.games[1]))
+      failures.push(`[${current}] ${JSON.stringify(bw)}`);
+    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
+    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, rolls: g.G.rolls.length, tx: g.G.shot.tx } }; });
+    await page.evaluate(() => window.__settle());
+    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    const live = { started: await gs() };
+    p = await at(0.42, 0.4); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    live.aimed = await gs();
+    await page.keyboard.press('Enter');
+    for (let w = 0; w < 60 && (await gs()).G.rolls < 1; w++) await page.waitForTimeout(250);
+    live.bowled = await gs();
+    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
+      const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 40 && !M.done; k++) D.recWork(M);
+      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
+      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return { done: M.done, par: M.par, looks: seen.size }; });
+    if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.tx - 0.42 * 0.36) > 0.02
+        || !(live.bowled && live.bowled.G.rolls >= 1) || !live.shown.done || !(live.shown.par > 0) || live.shown.looks < 3)
+      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling (levels ${L.join('/')}; scores ${bw.score.join(', ')}; a hook ${bw.hook} across the head pin's line; a gutter ball took ${bw.gutter.down}; the steady player's first balls ${bw.firsts} pins, games ${bw.games.join(' at level 1, ')} at level 5; a real click started, a real click aimed, the real Enter bowled; a board no one plays showed ${live.shown.looks} looks, par ${live.shown.par})`);
+  }
+
+  // MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; puzzles made at levels 1, 3 and 5, every made way
+  // running the marble to the cup in the game's own physics, par growing; a piece taken out and the marble falls; a piece laid
+  // beside the chute turned and raised to join it; and real input: a real click laying a straight under the chute, a real click
+  // again turning it, the made way run to the cup; and a board no one plays running its marble
+  current = 'marble run';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'marblerun')); await new Promise(ok => setTimeout(ok, 2500)); });
+    const mr = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
+      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
+      out.made = [1, 3, 5].map(lv => { let ok = 0, par = 0; for (let k = 0; k < 10; k++){ const P = D.makePuzzle(700 + k * 31, lv); if (!P) continue; const pcs = new Map(P.sol); pcs.set(D.ck(P.start.i, P.start.j), P.startPiece); if (D.runSim(P, pcs).ok){ ok++; par += P.par; } } return { ok, par: +(par / Math.max(1, ok)).toFixed(1) }; });
+      const P = D.makePuzzle(777, 3), pcs = new Map(P.sol); pcs.set(D.ck(P.start.i, P.start.j), P.startPiece);
+      const miss = new Map(pcs); miss.delete([...P.sol.keys()][1]); out.missing = D.runSim(P, miss).ok;
+      const F = D.fitsAt(P, new Map(), P.start.i, P.start.j + 1, 's')[0].pc; out.fit = [F.rot, F.z, P.H];
+      return out;
+    });
+    const L = mr.levels;
+    if (!(L[0] < L[2] && L[2] <= L[3]) || mr.made.some(m => m.ok < 10) || !(mr.made[0].par < mr.made[2].par) || mr.missing || mr.fit[0] !== 0 || mr.fit[1] !== mr.fit[2])
+      failures.push(`[${current}] ${JSON.stringify(mr)}`);
+    // real input on the framed board: the cell under the chute, a straight laid there by a real click, turned by another
+    await page.evaluate(() => window.__settle());
+    const cellXY = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, g = D.gameAt(f.c, f.r), P = g.P, W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
+      g.tool = 's'; const i = P.start.i, j = P.start.j + 1, u = (i + 0.5) / P.n, v = (j + 0.5) / P.n;
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
+      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight, k: D.ck(i, j), H: P.H, blocked: P.rocks.has(D.ck(i, j)) || P.given.has(D.ck(i, j)) }; });
+    const pieceAt = () => page.evaluate(k => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); const pc = g.placed.get(k) || g.P.given.get(k); return pc ? { ...pc, mine: g.placed.has(k) } : null; }, cellXY.k);
+    await page.mouse.click(cellXY.x, cellXY.y); await page.waitForTimeout(500);
+    const live = { laid: await pieceAt() };
+    await page.mouse.click(cellXY.x, cellXY.y); await page.waitForTimeout(500);
+    live.turned = await pieceAt();
+    live.run = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r);
+      A.menu[0].items.find(i => i.label === 'Show the way').on(); D.onTile(f.c, f.r, 0);
+      for (let k = 0; k < 120 && g.state === 'run'; k++) await new Promise(ok => setTimeout(ok, 250)); return { state: g.state, why: g.run && g.run.why }; });
+    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r; D.puzzleOf(D.boardIdx(c, r), D.levelOf(c, r), true);
+      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => i.kind === 'mrMarble').map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
+      const seen = new Set(); for (let k = 0; k < 12; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 300)); } return seen.size; });
+    const laidOk = cellXY.blocked || (live.laid && live.laid.mine && live.laid.t === 's' && live.laid.z === cellXY.H && live.turned && (live.turned.rot !== live.laid.rot || live.turned.z !== live.laid.z));
+    if (!laidOk || live.run.state !== 'won' || live.shown < 4) failures.push(`[${current}] real input: ${JSON.stringify({ cellXY, live })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} marble run (levels ${L.join('/')}; made ways run to the cup ${mr.made.map(m => m.ok + '/10').join(', ')} at levels 1, 3, 5, par ${mr.made.map(m => m.par).join('/')}; a piece out and it fell; beside the chute a straight laid turned ${mr.fit[0]} and raised to ${mr.fit[1]}; a real click laid one, another turned it, the made way ran to the cup; a board no one plays showed ${live.shown} looks)`);
+  }
+  }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

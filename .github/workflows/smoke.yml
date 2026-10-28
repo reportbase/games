@@ -10,18 +10,18 @@ on:
   workflow_dispatch:
 
 # Side by side (Oct 28: "2", the faster smoke test): on one runner a run took 30 minutes, 26 of the smoke test and 3.5 of
-# the course test. The smoke test is cut into six parts (PARTS in tests/smoke.mjs, three to five minutes each) and every part
+# the course test. The smoke test is cut into parts (PARTS in tests/smoke.mjs, seven, three to five minutes each) and every part
 # and the course test run as jobs of their own at once, so a run takes about as long as its longest part. The last job keeps
 # the name "smoke" and passes only when every part and the course have passed, so the PR's check reads as it did.
 jobs:
   part:
-    name: smoke ${{ matrix.shard }}/6
+    name: smoke ${{ matrix.shard }}/7
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,7 +31,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node tests/smoke.mjs
         env:
-          SHARD: ${{ matrix.shard }}/6
+          SHARD: ${{ matrix.shard }}/7
 
   course:
     name: golf course

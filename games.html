@@ -60300,6 +60300,482 @@ const BOWLING_APP = (() => {
   }
   return app;
 })();
+/* ═══ MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run", the third of the new games: "build a track in the bottom row,
+   the steady player tests it") ═════════════════════════════════════════════════════════════════════════════════════════════
+   Every board a grid with a start chute at its far edge, high up, and a cup lower down; rocks in the way; some pieces already
+   laid; and a stock of track pieces in the bottom row to bring the marble from the chute to the cup.
+   - THE PIECES (`EDGES`, `heightAt`): a straight, a curve, a ramp (a straight that drops a level along its length) and a spiral
+     (a curve that drops a level), each turned to any side; a piece stands at a height (`z`, its lower end), on a post.
+   - BUILDING: the piece in hand from the row, a tap on an empty square lays it turned and raised to join the track beside it
+     (`fitsAt`: every way it can lie, scored by the ends it meets at their heights); a tap again on one of yours turns it to the
+     next way that fits; the row's Raise and Lower move it a level; Erase takes it back to the stock. Pieces laid for you (darker)
+     stay.
+   - THE RUN (`runSim`, the row's Run): the marble starts down the chute and rolls along each piece's middle line (a straight,
+     or a quarter circle about the corner of a curve), gathering speed down every drop (`G` × the slope) and losing it to rolling
+     (`MU`, more on a curve, `CURVE_MU`); at a piece's end it goes on into the piece it meets if that piece has an end there at the
+     same height, else it falls; it flies off a curve taken faster than the board's `vc`; it rolls back if it runs out of speed on
+     a slope and stops on the flat; into the cup at the bottom, it is through.
+   - EVERY BOARD ITS OWN PUZZLE (`makePuzzle(idx, lv)`, by the board's number, at a level 1–5 by ring plus the Difficulty): a
+     random walk from the chute, its drops placed, the pieces it needs found by the walk's turns, and run in the same physics
+     until the marble reaches the cup (so every board can be done); then rocks on squares off the walk, some of its pieces laid
+     for you (`given`), the rest in the stock with spares (`spare`). Farther out (`LV`): a bigger grid, more levels to come down,
+     more rocks, fewer laid for you, no spares, and curves that throw the marble at lower speeds.
+   - PAR is the pieces the made way uses beyond those laid for you; done in par ★★★, two more ★★, else ★ (`marblerun.best`, the
+     fewest pieces a board). A board no one plays shows the made way with the marble running down it (`recOf`, `recView`). */
+const MARBLE_APP = (() => {
+  const LH = 0.22, MR = 0.13, G = 12, MU = 0.62, CURVE_MU = 1.6, V0 = 2, DT = 1 / 240, TIME_CAP = 45;
+  const TICK = 1 / 60, REC_HZ = 30, CAP = 1500, PHOTO_PX = 20, GRACE = 0.8, ARC = Math.PI / 4;
+  const LV = [
+    { n: 5, H: 2, len: [5, 8], rocks: 0.12, given: 0.5, spare: 2, vc: 3.6 },
+    { n: 6, H: 3, len: [7, 11], rocks: 0.16, given: 0.3, spare: 1, vc: 3.4 },
+    { n: 6, H: 3, len: [8, 12], rocks: 0.2, given: 0.15, spare: 1, vc: 3.2 },
+    { n: 7, H: 4, len: [10, 15], rocks: 0.24, given: 0.06, spare: 0, vc: 3.0 },
+    { n: 8, H: 5, len: [12, 18], rocks: 0.28, given: 0, spare: 0, vc: 2.8 },
+  ];
+  const DL = ARCADE.difficulty('marblerun.level', 'Every board has its own puzzle, harder the farther it is from the corner: a bigger grid with more levels to come down, more rocks in the way, fewer pieces laid for you and no spares, and curves that throw the marble off at lower speeds. Easy, Normal and Hard move every board a level up.', true);
+  const say = BOARD_KIT.say(2600);
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, ringOf = BOARD_KIT.ringOf, clamp = BOARD_KIT.clamp, rngOf = BOARD_KIT.rng;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const SET = (() => { const d = { sound: true }; try { const s = JSON.parse(localStorage.getItem('marblerun.settings') || '{}'); if (typeof s.sound === 'boolean') d.sound = s.sound; } catch {} return d; })();
+  const saveSet = () => { try { localStorage.setItem('marblerun.settings', JSON.stringify(SET)); } catch {} };
+
+  /* ─── THE PIECES ─── edges 0 N (toward the far end), 1 E, 2 S, 3 W; a square's corners and edge middles in its own units */
+  const DI = [0, 1, 0, -1], DJ = [-1, 0, 1, 0], OPP = e => (e + 2) % 4;
+  const MID = [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]];
+  const TYPES = ['s', 'c', 'r', 'p'], NAMES = { s: 'Straight', c: 'Curve', r: 'Ramp', p: 'Spiral' }, GLYPH = { s: '│', c: '╮', r: '⟋', p: '↺' };
+  const ROTS = { s: 2, c: 4, r: 4, p: 8 };
+  // a piece's two ends: { a, b } and which end is high (a ramp's and a spiral's)
+  function EDGES(pc){
+    const r = pc.rot % 4;
+    if (pc.t === 's') return { a: r % 2, b: r % 2 + 2, hi: -1 };
+    if (pc.t === 'c') return { a: r, b: (r + 1) % 4, hi: -1 };
+    if (pc.t === 'r') return { a: r, b: (r + 2) % 4, hi: r };
+    const a = r, b = (r + 1) % 4; return { a, b, hi: pc.rot >= 4 ? b : a };
+  }
+  const heightAt = (pc, e) => { const E = EDGES(pc); return pc.z + (E.hi === e ? 1 : 0); };
+  const hasEdge = (pc, e) => { const E = EDGES(pc); return E.a === e || E.b === e; };
+  const otherEdge = (pc, e) => { const E = EDGES(pc); return E.a === e ? E.b : E.a; };
+  const curved = pc => pc.t === 'c' || pc.t === 'p';
+  const lenOf = pc => curved(pc) ? ARC : 1;
+  // a point s along a piece entered at edge `from` (square units, 0..1 across and down)
+  function pointAt(pc, from, s){
+    const to = otherEdge(pc, from), L = lenOf(pc), f = clamp(s / L, 0, 1), A = MID[from], B = MID[to];
+    if (!curved(pc)) return [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f];
+    // (a quarter circle about the corner the two ends share)
+    const cx = (A[0] === 0.5 ? B[0] : A[0]), cy = (A[1] === 0.5 ? B[1] : A[1]);
+    let ta = Math.atan2(A[1] - cy, A[0] - cx), tb = Math.atan2(B[1] - cy, B[0] - cx), d = tb - ta;
+    if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+    const t = ta + d * f; return [cx + 0.5 * Math.cos(t), cy + 0.5 * Math.sin(t)];
+  }
+  const ck = (i, j) => i + ',' + j;
+
+  /* ─── THE RUN ─── the marble from the chute: { ok, why, frames: [u, v, h] … in squares (h in levels), t } */
+  function runSim(P, pieces, opt){
+    const o = opt || {}, frames = o.frames ? [] : null, n = P.n, vc = P.vc;
+    let i = P.start.i, j = P.start.j, pc = P.startPiece, from = 0, s = 0, v = V0, t = 0, why = '', ok = false, nextF = 0;
+    const at = () => { const [x, y] = pointAt(pc, from, s), to = otherEdge(pc, from), hF = heightAt(pc, from), hT = heightAt(pc, to); return [i + x, j + y, hF + (hT - hF) * clamp(s / lenOf(pc), 0, 1)]; };
+    const fall = w => { why = w; return false; };
+    // into the square across edge e from (i, j), moving on
+    const cross = e => {
+      const h = heightAt(pc, e), ni = i + DI[e], nj = j + DJ[e], back = OPP(e);
+      if (ni === P.goal.i && nj === P.goal.j && h === 0){ ok = true; i = ni; j = nj; return false; }
+      if (ni < 0 || nj < 0 || ni >= n || nj >= n) return fall('it rolled off the edge of the board');
+      const q = pieces.get(ck(ni, nj));
+      if (!q) return fall(P.rocks.has(ck(ni, nj)) ? 'it ran into a rock' : 'it rolled off the end of the track');
+      if (!hasEdge(q, back)) return fall('it met a piece that does not turn that way');
+      if (heightAt(q, back) !== h) return fall(heightAt(q, back) < h ? 'it dropped off onto a piece lower down' : 'it ran into the side of a piece higher up');
+      i = ni; j = nj; pc = q; from = back; return true;
+    };
+    while (t < TIME_CAP){
+      if (frames && t >= nextF){ frames.push(...at()); nextF += 1 / REC_HZ; }
+      const L = lenOf(pc), to = otherEdge(pc, from), slope = (heightAt(pc, to) - heightAt(pc, from)) * LH / L;
+      const mu = MU * (curved(pc) ? CURVE_MU : 1);
+      if (Math.abs(v) < 0.03 && slope === 0){ why = 'it ran out of speed'; break; }
+      v += (-G * slope - mu * Math.sign(v || 1)) * DT;
+      if (curved(pc) && Math.abs(v) > vc){ why = 'it flew off a curve, going too fast'; break; }
+      s += v * DT; t += DT;
+      if (s >= L){ const carry = s - L; if (!cross(to)) break; s = carry; }
+      else if (s <= 0){ const carry = -s; if (pc === P.startPiece && i === P.start.i && j === P.start.j){ why = 'it rolled back out of the chute'; break; } if (!cross(from)) break; v = -v; s = carry; }
+    }
+    if (!ok && !why) why = 'it rolled to and fro and never got there';
+    if (frames){ const e = at(); frames.push(...e); if (ok){ const gx = P.goal.i + 0.5, gy = P.goal.j + 0.5; for (let k = 1; k <= 8; k++) frames.push(e[0] + (gx - e[0]) * k / 8, e[1] + (gy - e[1]) * k / 8, -0.4 * k / 8); } }
+    return { ok, why, frames, t, at: [i, j] };
+  }
+
+  /* ─── EVERY BOARD ITS OWN PUZZLE ─── */
+  function makePuzzle(idx, lv, why){
+    const D = LV[lv - 1], n = D.n, H = D.H;
+    for (let attempt = 0; attempt < 60; attempt++){
+      const R = rngOf((idx * 2654435761) ^ (lv * 977) ^ (attempt * 7919) ^ 0x3ab1);
+      const si = 1 + Math.floor(R() * (n - 2)), start = { i: si, j: 0 };
+      // (a walk from the chute: a square at a time, never back on itself, toward the near half)
+      const want = D.len[0] + Math.floor(R() * (D.len[1] - D.len[0] + 1));
+      const walk = [[si, 0]], used = new Set([ck(si, 0)]);
+      let ok = true;
+      for (let k = 0; k < want; k++){
+        const [ci, cj] = walk[walk.length - 1], opts = [];
+        for (let e = 0; e < 4; e++){ const ni = ci + DI[e], nj = cj + DJ[e]; if (ni < 0 || nj < 1 || ni >= n || nj >= n || used.has(ck(ni, nj))) continue;
+          // (fewer free ways out, the better a square: so the walk does not shut itself in)
+          let free = 0; for (let f = 0; f < 4; f++){ const a = ni + DI[f], b = nj + DJ[f]; if (a >= 0 && b >= 1 && a < n && b < n && !used.has(ck(a, b))) free++; }
+          opts.push({ e, ni, nj, w: (free ? 1 : 0.05) * (e === 2 ? 1.6 : 1) * (0.5 + R()) }); }
+        if (!opts.length){ ok = false; break; }
+        opts.sort((a, b) => b.w - a.w); const c = opts[0];
+        walk.push([c.ni, c.nj]); used.add(ck(c.ni, c.nj));
+      }
+      if (!ok || walk.length < D.len[0] + 1) continue;
+      const goal = { i: walk[walk.length - 1][0], j: walk[walk.length - 1][1] };
+      // (the walk's squares between the chute and the cup, each entered at one edge and left at another)
+      const cells = [];
+      for (let k = 1; k < walk.length - 1; k++){
+        const [pi, pj] = walk[k - 1], [ci, cj] = walk[k], [ni, nj] = walk[k + 1];
+        const ein = [0, 1, 2, 3].find(e => ci + DI[e] === pi && cj + DJ[e] === pj), eout = [0, 1, 2, 3].find(e => ci + DI[e] === ni && cj + DJ[e] === nj);
+        cells.push({ i: ci, j: cj, ein, eout, straight: ein === OPP(eout) });
+      }
+      if (cells.length < H) continue;
+      for (let tryD = 0; tryD < 25; tryD++){
+        // (the drops: H of the walk's squares, spread along it with a jitter)
+        const drops = new Set();
+        while (drops.size < H){ const base = Math.floor((drops.size + 0.5) / H * cells.length + (R() - 0.5) * cells.length / H); drops.add(clamp(base, 0, cells.length - 1)); if (drops.size < H && R() < 0.3) drops.add(Math.floor(R() * cells.length)); }
+        if (drops.size > H) continue;
+        const pieces = new Map(); let z = H;
+        cells.forEach((c, k) => {
+          const dr = drops.has(k), lo = dr ? z - 1 : z;
+          let pc;
+          if (c.straight){ pc = dr ? { t: 'r', rot: c.ein, z: lo } : { t: 's', rot: c.ein % 2, z: lo }; }
+          else {
+            // (a curve's rot is its first end going round: ends r and r + 1)
+            const r = (c.ein + 1) % 4 === c.eout ? c.ein : c.eout;
+            pc = dr ? { t: 'p', rot: r + (r === c.ein ? 0 : 4), z: lo } : { t: 'c', rot: r, z: lo };
+          }
+          pieces.set(ck(c.i, c.j), pc); if (dr) z--;
+        });
+        const startPiece = { t: 's', rot: 0, z: H };
+        const P = { idx, lv, n, H, vc: D.vc, start, goal, startPiece, rocks: new Set(), given: new Map(), sol: pieces, inv: {}, par: 0, attempt };
+        pieces.set(ck(si, 0), startPiece);
+        const r = runSim(P, pieces);
+        pieces.delete(ck(si, 0));
+        if (!r.ok){ if (why) why.push(r.why + ' at ' + r.at + ' (' + cells.length + ' squares)'); continue; }
+        // (rocks on squares off the way; some pieces laid for you; the rest in the stock, with spares)
+        for (let a = 0; a < n; a++) for (let b = 0; b < n; b++){ const k = ck(a, b); if (used.has(k) || (b === 0 && Math.abs(a - si) <= 1)) continue; if (R() < D.rocks) P.rocks.add(k); }
+        const keys = [...pieces.keys()];
+        for (const k of keys) if (R() < D.given) P.given.set(k, pieces.get(k));
+        for (const t of TYPES) P.inv[t] = 0;
+        for (const k of keys) if (!P.given.has(k)) P.inv[pieces.get(k).t]++;
+        P.par = keys.length - P.given.size;
+        for (let k = 0; k < D.spare; k++) P.inv[TYPES[Math.floor(R() * 4)]]++;
+        return P;
+      }
+    }
+    return null;
+  }
+  const PUZ = new Map(), SOON = BOARD_KIT.budget(8, 30);
+  const puzKey = (idx, lv) => idx * 8 + lv;
+  function puzzleOf(idx, lv, urgent){
+    const k = puzKey(idx, lv); let P = PUZ.get(k);
+    if (P === undefined){
+      if (!urgent && SOON.left() <= 0) return null;
+      const t0 = performance.now(); P = makePuzzle(idx, lv); if (!urgent) SOON.spend(t0);
+      PUZ.set(k, P); if (PUZ.size > CAP) PUZ.delete(PUZ.keys().next().value);
+    } else { PUZ.delete(k); PUZ.set(k, P); }
+    return P;
+  }
+
+  /* ─── LAYING A PIECE ─── every way a piece can lie on a square, scored by the ends it meets at their heights */
+  function endsInto(P, pieces, i, j){
+    // what lies beside (i, j): for each edge, the height an end there must have to join it, or null
+    const out = [null, null, null, null];
+    for (let e = 0; e < 4; e++){
+      const ni = i + DI[e], nj = j + DJ[e], back = OPP(e);
+      if (ni === P.goal.i && nj === P.goal.j){ out[e] = 0; continue; }
+      const q = ni === P.start.i && nj === P.start.j ? P.startPiece : pieces.get(ck(ni, nj));
+      if (q && hasEdge(q, back)) out[e] = heightAt(q, back);
+    }
+    return out;
+  }
+  function fitsAt(P, pieces, i, j, t){
+    const need = endsInto(P, pieces, i, j), out = [];
+    for (let rot = 0; rot < ROTS[t]; rot++) for (let z = 0; z <= P.H; z++){
+      const pc = { t, rot, z }; if (z + (t === 'r' || t === 'p' ? 1 : 0) > P.H) continue;
+      const E = EDGES(pc); let sc = 0;
+      for (const e of [E.a, E.b]){ if (need[e] == null) continue; sc += need[e] === heightAt(pc, e) ? 3 : -1; }
+      out.push({ pc, sc: sc - z * 0.01 });
+    }
+    out.sort((a, b) => b.sc - a.sc);
+    return out;
+  }
+
+  /* ─── PLAYING ─── */
+  const GAMES = new Map();
+  let LIVE = null;
+  const { BEST, saveBest } = BOARD_KIT.best('marblerun.best');
+  const bestKey = (idx, lv) => idx + '@' + lv;
+  const starsOf = (used, par) => used <= par ? 3 : used <= par + 2 ? 2 : 1;
+  function fresh(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), P = puzzleOf(idx, lv, true);
+    const g = { c, r, idx, lv, P, state: 'build', placed: new Map(), inv: P ? { ...P.inv } : {}, tool: 's', sel: null, run: null, runT: 0, last: 0, tries: 0, doneAt: 0 };
+    return g;
+  }
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  const piecesOf = g => { const m = new Map(g.P.given); for (const [k, v] of g.placed) m.set(k, v); m.set(ck(g.P.start.i, g.P.start.j), g.P.startPiece); return m; };
+  function tapCell(g, i, j){
+    const P = g.P, k = ck(i, j);
+    if (g.state === 'won'){ return; }
+    if (g.state === 'run') return;
+    if (g.state === 'fell') g.state = 'build';
+    if (P.rocks.has(k) || P.given.has(k) || (i === P.start.i && j === P.start.j) || (i === P.goal.i && j === P.goal.j)){ g.sel = null; say(P.rocks.has(k) ? 'A rock: nothing goes there.' : P.given.has(k) ? 'Laid for you: it stays.' : i === P.goal.i && j === P.goal.j ? 'The cup.' : 'The chute.', 1200); return; }
+    const mine = g.placed.get(k);
+    if (g.tool === 'x'){ if (mine){ g.placed.delete(k); g.inv[mine.t]++; sfx('take'); } g.sel = null; return; }
+    if (mine && mine.t === g.tool){
+      // (again on one of yours: the next way it can lie, those that fit first)
+      const F = fitsAt(P, piecesOf(g), i, j, mine.t), at = F.findIndex(f => f.pc.rot === mine.rot && f.pc.z === mine.z), nx = F[(at + 1) % F.length].pc;
+      g.placed.set(k, { ...nx }); g.sel = k; sfx('turn'); return;
+    }
+    if (mine){ g.inv[mine.t]++; g.placed.delete(k); }
+    if (!(g.inv[g.tool] > 0)){ say('No ' + NAMES[g.tool].toLowerCase() + 's left: take one back, or use another piece.', 1600); return; }
+    const F = fitsAt(P, piecesOf(g), i, j, g.tool);
+    g.placed.set(k, { ...F[0].pc }); g.inv[g.tool]--; g.sel = k; sfx('lay');
+  }
+  function nudgeSel(g, dz){
+    const pc = g.sel && g.placed.get(g.sel); if (!pc) return;
+    const top = g.P.H - (pc.t === 'r' || pc.t === 'p' ? 1 : 0), z = clamp(pc.z + dz, 0, top);
+    if (z !== pc.z){ g.placed.set(g.sel, { ...pc, z }); sfx('turn'); }
+  }
+  function turnSel(g){
+    const pc = g.sel && g.placed.get(g.sel); if (!pc) return;
+    g.placed.set(g.sel, { ...pc, rot: (pc.rot + 1) % ROTS[pc.t] }); sfx('turn');
+  }
+  function startRun(g){
+    if (g.state === 'run') return;
+    g.tries++;
+    g.run = runSim(g.P, piecesOf(g), { frames: true }); g.state = 'run'; g.runT = 0; g.last = performance.now();
+    sfx('go');
+  }
+  function stepGame(g){
+    if (g.state !== 'run') return;
+    const t = performance.now(); g.runT += Math.min(0.25, (t - g.last) / 1000); g.last = t;
+    const n = g.run.frames.length / 3;
+    if (g.runT * REC_HZ >= n - 1){
+      if (g.run.ok){
+        g.state = 'won'; g.doneAt = performance.now();
+        const used = g.placed.size, par = g.P.par, s = starsOf(used, par), k = bestKey(g.idx, g.lv), was = BEST.get(k);
+        if (was == null || used < was){ BEST.set(k, used); saveBest(); }
+        sfx('win');
+        say('In the cup! ' + used + (used === 1 ? ' piece' : ' pieces') + ' (par ' + par + ') ' + BOARD_KIT.stars(s) + (was != null && used < was ? ', a new best here' : '') + '. Tap for the next board.', 4200);
+      } else { g.state = 'fell'; sfx('fall'); say('The marble fell: ' + g.run.why + '.', 2400); }
+      try { bbRefreshNow(); } catch {}
+    }
+  }
+  function marbleAt(run, tt){
+    const F = run.frames, n = F.length / 3, f = clamp(tt * REC_HZ, 0, n - 1), a = Math.floor(f), b = Math.min(n - 1, a + 1), w = f - a;
+    return [F[3 * a] + (F[3 * b] - F[3 * a]) * w, F[3 * a + 1] + (F[3 * b + 1] - F[3 * a + 1]) * w, F[3 * a + 2] + (F[3 * b + 2] - F[3 * a + 2]) * w];
+  }
+
+  /* ─── RECORDINGS ─── the made way run, on a board no one plays */
+  const RUNS = new Map();
+  function runOf(P){
+    const k = puzKey(P.idx, P.lv); let r = RUNS.get(k);
+    if (!r){ const pcs = new Map(P.sol); pcs.set(ck(P.start.i, P.start.j), P.startPiece); r = runSim(P, pcs, { frames: true }); RUNS.set(k, r); if (RUNS.size > CAP) RUNS.delete(RUNS.keys().next().value); }
+    return r;
+  }
+
+  /* ─── SOUNDS ─── */
+  function sfx(kind){
+    if (!SET.sound) return;
+    try { if (!ARCADE.audio()) return; } catch { return; }
+    const T = ARCADE.tone, Hs = ARCADE.hiss;
+    try {
+      if (kind === 'lay') T(520, 420, 0.06, 'triangle', 0.05);
+      else if (kind === 'turn') T(660, 660, 0.04, 'square', 0.025);
+      else if (kind === 'take') T(300, 220, 0.07, 'triangle', 0.04);
+      else if (kind === 'go'){ Hs(0.6, 0.04, 1200); T(880, 880, 0.08, 'sine', 0.04); }
+      else if (kind === 'fall') [392, 294, 196].forEach((q, i) => T(q, q * 0.9, 0.16, 'triangle', 0.05, i * 0.12));
+      else if (kind === 'win') [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.07, i * 0.1));
+    } catch {}
+  }
+
+  /* ─── DRAWN ─── the table a picture (a light board, its squares faint), the rocks, the chute, the cup, the pieces on their posts
+     (yours bright, those laid for you darker wood), the square in hand ringed, the marble. A square is 1/n of the board. */
+  const PIC = BOARD_KIT.painted(64, (P, hi) => paint(P.n, P.seed, hi ? 512 : 256));
+  function paint(n, seed, Sz){
+    const cv = document.createElement('canvas'); cv.width = Sz; cv.height = Sz;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-Sz, 0, 0, -Sz, Sz, Sz);
+    const R = rngOf(seed * 131 + 9);
+    const g = c.createLinearGradient(0, 0, 1, 1); g.addColorStop(0, '#d9cbb0'); g.addColorStop(1, '#c9b892'); c.fillStyle = g; c.fillRect(0, 0, 1, 1);
+    for (let k = 0; k < 40; k++){ c.strokeStyle = `rgba(110,80,40,${0.03 + 0.05 * R()})`; c.lineWidth = 0.002 + 0.004 * R(); const y = R(); c.beginPath(); c.moveTo(0, y); c.bezierCurveTo(0.3, y + (R() - 0.5) * 0.04, 0.7, y + (R() - 0.5) * 0.04, 1, y + (R() - 0.5) * 0.03); c.stroke(); }
+    c.strokeStyle = 'rgba(70,50,25,0.22)'; c.lineWidth = 0.003;
+    for (let k = 1; k < n; k++){ c.beginPath(); c.moveTo(k / n, 0); c.lineTo(k / n, 1); c.moveTo(0, k / n); c.lineTo(1, k / n); c.stroke(); }
+    c.strokeStyle = '#5a4126'; c.lineWidth = 0.012; c.strokeRect(0.006, 0.006, 0.988, 0.988);
+    return cv;
+  }
+  const TRACK = 0xf0f3f7, GIVEN = 0x9a7650, MINE_SEL = 0xffc233;
+  function itemsOf(g, P, pieces, marble, bp){
+    const out = [], n = P.n, cs = 1 / n, at = (i, j) => [(i + 0.5) * cs, (j + 0.5) * cs];
+    // (yaw: a piece's own first end faces edge 0 at yaw 0; each quarter turn is −π/2: the field turns an item by π − yaw)
+    const yawOfRot = r => BOARD_KIT.yawOf((r % 4) * Math.PI / 2);
+    const piece = (pc, i, j, col) => {
+      const [u, v] = at(i, j), kind = pc.t === 's' ? 'mrStraight' : pc.t === 'c' ? 'mrCurve' : pc.t === 'r' ? 'mrRamp' : (pc.rot >= 4 ? 'mrSpiralB' : 'mrSpiralA');
+      out.push({ kind, u, v, scale: cs, lift: pc.z * LH * cs, yaw: yawOfRot(pc.rot), color: col });
+      if (pc.z > 0) out.push({ kind: 'mrPost', u, v, scale: cs, sy: pc.z * LH, color: 0x8a6c48 });
+    };
+    for (const k of P.rocks){ const [i, j] = k.split(',').map(Number), [u, v] = at(i, j); out.push({ kind: 'mrRock', u, v, scale: cs * 0.8, yaw: BOARD_KIT.yawOf((i * 7 + j * 3) % 6), color: 0x7d7a74 }); }
+    const [gu, gv] = at(P.goal.i, P.goal.j); out.push({ kind: 'mrCup', u: gu, v: gv, scale: cs, color: 0xd8332c });
+    piece(P.startPiece, P.start.i, P.start.j, 0x2b63c8);
+    for (const [k, pc] of pieces){ const [i, j] = k.split(',').map(Number); if (i === P.start.i && j === P.start.j) continue; piece(pc, i, j, P.given.has(k) && (!g || !g.placed.has(k)) ? GIVEN : TRACK); }
+    if (g && g.sel && g.state === 'build'){ const [i, j] = g.sel.split(',').map(Number), [u, v] = at(i, j), pc = g.placed.get(g.sel); if (pc) out.push({ kind: 'mrSel', u, v, scale: cs * 0.98, lift: (pc.z * LH + 0.002) * cs, color: MINE_SEL }); }
+    if (marble) out.push({ kind: 'mrMarble', u: marble[0] * cs, v: marble[1] * cs, scale: 2 * MR * cs, lift: Math.max(0, marble[2] * LH * cs + 0.03 * cs), color: 0x3fa0ff });
+    return out;
+  }
+
+  /* ─── THE ROW ─── Run, the four pieces with how many are left, Erase, Turn, Raise, Lower, Clear, Sound */
+  const ON = '#2f4a3a';
+  function tilesOf(c, r){
+    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r);
+    if (!g || !g.P) return [{ glyph: '▶', value: 'Play', label: 'level ' + levelAt(idx) }];
+    return [
+      { glyph: g.state === 'run' ? '…' : '▶', value: g.state === 'won' ? 'Again' : 'Run', label: g.placed.size + ' laid · par ' + g.P.par },
+      ...TYPES.map(t => ({ glyph: GLYPH[t], value: NAMES[t], label: (g.inv[t] || 0) + ' left', bg: g.tool === t ? ON : undefined })),
+      { glyph: '⌫', value: 'Erase', label: 'take back', bg: g.tool === 'x' ? ON : undefined },
+      { glyph: '⟳', value: 'Turn', label: 'the ringed piece' },
+      { glyph: '▲', value: 'Raise', label: 'a level' },
+      { glyph: '▼', value: 'Lower', label: 'a level' },
+      { glyph: '✕', value: 'Clear', label: 'all yours' },
+      { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
+    ];
+  }
+  function onTile(c, r, i){
+    const g = gameAt(c, r); LIVE = { c, r };
+    if (!g.P) return true;
+    if (i === 0){ if (g.state === 'won'){ Object.assign(g, fresh(c, r)); } else startRun(g); }
+    else if (i >= 1 && i <= 4) g.tool = TYPES[i - 1];
+    else if (i === 5) g.tool = 'x';
+    else if (i === 6) turnSel(g);
+    else if (i === 7) nudgeSel(g, 1);
+    else if (i === 8) nudgeSel(g, -1);
+    else if (i === 9){ for (const pc of g.placed.values()) g.inv[pc.t]++; g.placed.clear(); g.sel = null; g.state = 'build'; }
+    else if (i === 10){ SET.sound = !SET.sound; saveSet(); }
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || !g.P) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key, m = { Enter: 0, '1': 1, '2': 2, '3': 3, '4': 4, x: 5, r: 6, ArrowUp: 7, ArrowDown: 8 }[k];
+    if (m == null) return;
+    e.preventDefault(); e.stopPropagation(); onTile(g.c, g.r, m);
+  }, true);
+
+  const app = {
+    name: 'marble run',
+    boardShape: { cellW: 1, cellH: 1 },
+    pitchMin: 50,
+    frameFit: 1.25,
+    menu: [{ head: 'Marble run', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); PUZ.clear(); RUNS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The pieces going down, the marble.', on(){ SET.sound = !SET.sound; saveSet(); } },
+      { label: 'Start this board again', title: 'Every piece of yours back in the stock.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); try { bbRefreshNow(); } catch {} } } },
+      { label: 'Show the way', title: 'The way the board was made, laid for you (no stars for it).', on(){ const g = liveGame(); if (!g || !g.P) return; g.placed = new Map([...g.P.sol].filter(([k]) => !g.P.given.has(k))); for (const t of TYPES) g.inv[t] = 0; g.shown = true; g.state = 'build'; say('The way it was made. Run it.', 1800); try { bbRefreshNow(); } catch {} } },
+      { label: 'How to play', title: 'The pieces and the run.', on(){ say('Bring the marble from the blue chute to the red cup. Pick a piece in the row and tap a square: it lies turned and raised to join what is beside it; tap it again to turn it another way, Raise and Lower move it a level. Ramps and spirals come down a level, which is what gives the marble its speed: on the flat and round curves it slows, and taken too fast a curve throws it off. Ends must meet at the same height. Run sends it.', 12000); } },
+    ]}],
+    cellFar: { light: 0xd8c9ab, dark: 0xb9a57f },
+    itemMinPx: 14,
+    photoMinPx: PHOTO_PX,
+    cellPhoto(c, r, bp){ const idx = boardIdx(c, r), lv = levelAt(idx), n = LV[lv - 1].n; return PIC.key('mr:' + n + ':' + (idx % 16), (bp || 0) >= 300, () => ({ n, seed: idx % 16 })); },
+    photoCanvas(key){ return PIC.canvas(key); },
+    cellGrid(){ return { n: 2, colors: [0xd4c4a4, 0xccb994, 0xccb994, 0xd4c4a4] }; },
+    itemGeometries: {
+      mrStraight: T => trackGeo(T, 's', 0), mrCurve: T => trackGeo(T, 'c', 0), mrRamp: T => trackGeo(T, 's', 1),
+      mrSpiralA: T => trackGeo(T, 'c', 1), mrSpiralB: T => trackGeo(T, 'c', -1),
+      mrPost: T => { const g = new T.BoxGeometry(0.14, 1, 0.14); g.translate(0, 0.5, 0); return g; },
+      mrRock: T => { const g = new T.DodecahedronGeometry(0.38, 0); g.scale(1, 0.6, 1); g.translate(0, 0.2, 0); return g; },
+      mrCup: T => { const pts = [[0, 0.002], [0.34, 0.002], [0.36, 0.05], [0.3, 0.05], [0.26, 0.01], [0, 0.01]].map(([x, y]) => new T.Vector2(x, y)); return new T.LatheGeometry(pts, 24); },
+      mrMarble: T => { const g = new T.SphereGeometry(0.5, 18, 12); g.translate(0, 0.5, 0); return g; },
+      mrSel: T => { const g = FieldKit.ring(T, 0.44, 0.5, 0.003); g.userData.unlit = true; return g; },
+    },
+    cellItems(c, r, bp){
+      const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
+      if (g && g.P && (g.placed.size || g.state !== 'build' || live)){
+        if (live) stepGame(g);
+        const marble = g.state === 'run' || g.state === 'fell' || g.state === 'won' ? marbleAt(g.run, g.state === 'run' ? g.runT : 99) : null;
+        return itemsOf(g, g.P, piecesOf(g), marble, bp);
+      }
+      const P = puzzleOf(idx, lv, live); if (!P) return [];
+      // (a board no one plays: the made way, the marble running down it on the board's own phase)
+      const R = runOf(P), n = R.frames.length / 3, T = n / REC_HZ + 1.5, tt = BOARD_KIT.loopT(BOARD_KIT.phase(idx), T);
+      const pcs = new Map(P.sol); pcs.set(ck(P.start.i, P.start.j), P.startPiece);
+      return itemsOf(null, P, pcs, marbleAt(R, tt), bp);
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), P = PUZ.get(puzKey(idx, lv)), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(idx, lv));
+      const head = 'Marble run — level ' + lv + (P ? ', ' + P.n + '×' + P.n + ', down ' + P.H + ' levels · par ' + P.par + ' pieces' : '') + (best != null ? ' · best ' + best : '');
+      if (!g || !g.P) return head + ' (tap to build)';
+      return head + ' · ' + g.placed.size + ' laid' + (g.state === 'won' ? ' · through' : g.state === 'run' ? ' · running' : '');
+    },
+    onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
+    onSelect(){ return true; },
+    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
+    onCellTap(c, r, u, v){
+      const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      if (!g.P) return true;
+      if (g.state === 'won'){
+        if (!was || performance.now() - g.doneAt < GRACE * 1000) return true;
+        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+      }
+      // (the tap that picks a board out only picks it: a piece laid by it would be laid without looking)
+      if (u == null || !was) return true;
+      const n = g.P.n, i = clamp(Math.floor(u * n), 0, n - 1), j = clamp(Math.floor(v * n), 0, n - 1);
+      tapCell(g, i, j);
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
+    noDoubleTap(){ const g = liveGame(); return !!(g && g.P); },
+    statTiles(c, r){ return tilesOf(c, r); },
+    statsStay(){ const g = liveGame(); return !!(g && g.P && g.state !== 'won'); },
+    onStatTap(c, r, i){ return onTile(c, r, i); },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#d9cbb0'; ctx.fillRect(0, 0, sz, sz);
+      ctx.strokeStyle = '#f0f3f7'; ctx.lineWidth = sz * 0.1; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.1); ctx.lineTo(sz * 0.2, sz * 0.5); ctx.arc(sz * 0.4, sz * 0.5, sz * 0.2, Math.PI, Math.PI / 2, true); ctx.lineTo(sz * 0.8, sz * 0.7); ctx.stroke();
+      ctx.fillStyle = '#d8332c'; ctx.beginPath(); ctx.arc(sz * 0.82, sz * 0.82, sz * 0.09, 0, 6.283); ctx.fill();
+      ctx.fillStyle = '#3fa0ff'; ctx.beginPath(); ctx.arc(sz * 0.2, sz * 0.25, sz * 0.07, 0, 6.283); ctx.fill();
+    },
+    _debug: { makePuzzle, puzzleOf, runSim, fitsAt, endsInto, EDGES, heightAt, pointAt, tapCell, nudgeSel, turnSel, startRun, stepGame, marbleAt, runOf, starsOf,
+              itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, piecesOf, tilesOf, onTile, LV, SET, GAMES, PUZ, BEST, TYPES, ck,
+              consts: { LH, MR, G, MU, CURVE_MU, V0, REC_HZ }, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
+  };
+  /* A PIECE'S SHAPE: a trough of wood along the piece's middle line (straight N to S, or a quarter circle from N round to E), its
+     floor rising a level (`LH` squares) from its low end to its high end when `rise` is ±1; built two-faced so it reads from any side. Its own
+     edge N is −z, E is +x (the field turns it by the item's yaw). */
+  function trackGeo(T, shape, rise){
+    const prof = [[-0.34, -0.06], [-0.34, 0.16], [-0.3, 0.16], [-0.24, 0.04], [0, 0], [0.24, 0.04], [0.3, 0.16], [0.34, 0.16], [0.34, -0.06]];
+    const N = shape === 'c' ? 10 : 2, pos = [], idx = [];
+    // a point along the middle line (0 at the N end, 1 at the other) and its sideways unit
+    const mid = f => {
+      if (shape !== 'c') return { x: 0, z: -0.5 + f, sx: 1, sz: 0 };
+      // (a quarter circle about the corner the N and E edges share, (0.5, −0.5): from the N edge's middle round to the E edge's)
+      const t = Math.PI - (Math.PI / 2) * f;
+      return { x: 0.5 + 0.5 * Math.cos(t), z: -0.5 + 0.5 * Math.sin(t), sx: Math.cos(t), sz: Math.sin(t) };
+    };
+    for (let k = 0; k <= N; k++){
+      const f = k / N, m = mid(f), L = Math.hypot(m.sx, m.sz) || 1, nx = m.sx / L, nz = m.sz / L;
+      // (the floor's height: a ramp rises toward its N end, a spiral A toward its N end, B toward its E end)
+      const y0 = (rise > 0 ? (1 - f) * rise : rise < 0 ? f * -rise : 0) * LH;
+      for (const [a, h] of prof) pos.push(m.x + nx * a, y0 + h, m.z + nz * a);
+    }
+    // (each face twice, the back with corners of its own: sharing them, the two faces' normals cancelled and the wood shaded black)
+    const P = prof.length, V = pos.length / 3;
+    pos.push(...pos.slice());
+    for (let k = 0; k < N; k++) for (let q = 0; q < P - 1; q++){
+      const a = k * P + q, b = a + 1, c = a + P, d = c + 1;
+      idx.push(a, c, b, b, c, d, V + a, V + b, V + c, V + b, V + d, V + c);
+    }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  return app;
+})();
 /* ═══ GAME LAB: games the player changes by asking (Oct 25: "seems to me these simpler games are good foundation to let the user
    add features, through a prompt. so the player could develop there own game with AI interaction.", then "2" of the three ways
    offered: the rules rewritten, not only the dials turned) ═════════════════════════════════════════════════════════════════════
@@ -62169,7 +62645,7 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -62178,7 +62654,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
