@@ -2391,6 +2391,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   frame and read nowhere: gone. Golf tanks' boards no one plays (`recSoon`) ask the clock after every step of the round, not
   every twentieth, and take 4 ms in 40 (6 in 30 before). Measured with the CPU slowed four times (a phone), JS a frame: mini
   golf framed 245 → 68 ms, checkers 121 → 33 ms (before the `demand` sum went).
+  **Measured again** (Oct 28: "1,3", the second being speed on phones; CPU slowed four times): mini golf framed 22 ms of script
+  a frame (checkers 8.7), and the page's thread idle most of the time zoomed out, so what is drawn costs more than what is
+  worked out. Two things came of it:
+  - `BOARD_KIT.budget` fills as time passes (ms/every for each ms) and carries a slice's overrun as debt, so the boards' share
+    is the share whatever the frames do. A window refilled whole forgave a step that ran 50–70 ms (golf tanks' two computer
+    tanks thinking), and with frames of 140 ms every frame got a fresh one: golf tanks framed went from 38 ms a frame to resting.
+  - The windmill is built at K = 12, not 24 (34,500 triangles a windmill to about 10,000); zoomed out, mini golf 849k → 756k
+    triangles. Screenshots enlarged show the same windmill.
+  Tried and left: bumpers and boulders at their coarse build (the bumper lost its red rim, the boulder its lumps), and the ground a
+  grain coarser (`GROUND_PX` 16: the rails' colour smeared into the grass along the far boards). `window.fieldLOD.itemTris` gives
+  each kind's instances and triangles, for measuring.
 - **Dead code taken out** (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and
   the shared kits"): functions and constants nothing reached, found by counting every name in the page (a name written once
   is its own declaration): `LOD_APP` and `HELLO_APP` (apps off the list since Sep 25), mini golf's `softAmount`, `cladGeo`,
