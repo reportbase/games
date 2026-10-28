@@ -882,6 +882,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     1–4, X), a tap on an empty square lays the stock's piece that fits best (`bestFits`: every way of every piece left, scored as
     `fitsAt` scores them, more in stock first on a tie); a tap again on one of yours steps through the other ways and pieces that
     join, then takes it back (`tapAuto`); a tap on the chute or the cup runs the marble.
+- **Bejeweled's pearls and lit squares** (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the
+  white one, but with different colors. also, when sliding pieces, highlight the selected cells."): `GEMS_APP` draws all seven kinds
+  as the white one's flattened sphere (`PEARL`, `CUTS[6]`), told apart by `COLS` alone (the faceted cuts are kept, not drawn). The
+  squares being swapped are lit pale blue (`litOf`, kind 8 entries in a frame, `gridOf`): the square a drag began on, and the one it
+  heads for once the finger has gone 0.08 of a square (`g.drag`), then both while the gems slide and slide back (`g.lit`,
+  `g.litUntil`); a drag lets go a gem tapped before. The smoke test (part 7) drags with the real mouse.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

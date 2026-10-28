@@ -30484,6 +30484,10 @@ const GEMS_APP = (() => {
     T => faceted(T, 3, stepCut(0.56, 0.3, 0.28, 0.2), Math.PI / 2),                      // trillion
     T => { const g = new T.SphereGeometry(0.31, 28, 20); g.scale(1, 0.3, 1); g.translate(0, 0.095, 0); return g; },   // pearl, flattened (0.62 across, as the cuts)
   ];
+  /* EVERY GEM A PEARL (Oct 28: "in bejeweld application, the pieces should all be small raised circles like
+     the white one, but with different colors."): all seven kinds are drawn as the white one's flattened
+     sphere, told apart by colour alone (COLS). The cuts above are kept, not drawn. */
+  const PEARL = CUTS[6];
 
   /* ─── THE GAME. Each square holds a gem; a gem knows where it is drawn
      from and since when, so it falls (under gravity) or swaps (on a spring)
@@ -30541,11 +30545,16 @@ const GEMS_APP = (() => {
     return g;
   }
   const busy = g => !!g.after || g.t < g.until;
+  const litOf = g => {
+    if (g.lit && g.t < g.litUntil) return g.lit;
+    return g.drag || [];
+  };
   function swap(g, i, j, back){
     const b = g.b;
     [b[i], b[j]] = [b[j], b[i]];
     for (const [x, from] of [[b[i], j], [b[j], i]]){ x.how = 'spring'; x.fr = (from / N) | 0; x.fc = from % N; x.t0 = g.t; }
     g.until = g.t + SWAP_T; g.after = back ? null : 'swapped'; g.swapped = [i, j];
+    g.lit = [i, j]; g.litUntil = g.until; g.drag = null;
     g.sel = -1;
   }
   function trySwap(g, i, j){
@@ -30611,6 +30620,10 @@ const GEMS_APP = (() => {
       const [c, r] = posOf(g, i, x);
       if (r > -0.55) out.push(x.k, (c + 0.5) * SQ, (r + 0.5) * SQ, i === g.sel ? 1 : 0, 0);
     });
+    /* THE SQUARES BEING SWAPPED, LIT (Oct 28: "also, when sliding pieces, highlight the selected cells."): the
+       square a drag began on and the one it heads for while the finger moves, then both squares of a swap
+       while the gems slide (and slide back), as kind 8 entries: the squares themselves, not where a gem is drawn. */
+    for (const i of litOf(g)) out.push(8, (i % N + 0.5) * SQ, (((i / N) | 0) + 0.5) * SQ, 1, 0);
     for (const [u, v, e, seed] of BOOM.burning(g)) out.push(7, u, v, e, seed & 0xffffff);
     return Float32Array.from(out);
   }
@@ -30669,6 +30682,7 @@ const GEMS_APP = (() => {
     for (let j = 0; j < fr.length; j += 5){
       const k = fr[j], u = fr[j + 1], v = fr[j + 2];
       if (k === 7) BOOM.items(out, u, v, fr[j + 3], fr[j + 4], 'p', SQ * 0.9);
+      else if (k === 8) continue;
       else out.push({ kind: 'gem' + k, u, v, scale: SQ, color: COLS[k] });   // Sep 27: nothing is raised — the chosen square shows it
     }
     return GRID.concat(out);
@@ -30680,6 +30694,7 @@ const GEMS_APP = (() => {
       if (fr[j] === 7) continue;
       const c = Math.floor(fr[j + 1] / SQ), r = Math.floor(fr[j + 2] / SQ);
       if (c < 0 || c >= N || r < 0 || r >= N) continue;
+      if (fr[j] === 8){ if (!far) colors[r * N + c] = SEL_SQ; continue; }
       if (far) colors[r * N + c] = COLS[fr[j]];
       else if (fr[j + 3]) colors[r * N + c] = SEL_SQ;
     }
@@ -30705,7 +30720,7 @@ const GEMS_APP = (() => {
     itemCaps: BOOM.caps,
     itemGeometries: {
       ...BOOM.geometries(['p']),
-      ...Object.fromEntries(CUTS.map((f, k) => ['gem' + k, T => f(T)])),
+      ...Object.fromEntries(CUTS.map((f, k) => ['gem' + k, T => PEARL(T)])),
       lineV: T => { const g = new T.BoxGeometry(0.05, 0.004, N); g.translate(0, 0.002, 0); return g; },
       lineH: T => { const g = new T.BoxGeometry(N, 0.004, 0.05); g.translate(0, 0.002, 0); return g; },
     },
@@ -30753,18 +30768,21 @@ const GEMS_APP = (() => {
       const i = cellOf(u, v);
       if (!g || i < 0) return false;
       DRAG = { u, v, i, done: false };
+      if (!busy(g)){ g.drag = [i]; g.sel = -1; }   // a drag starts afresh: a gem tapped before is let go
       return true;
     },
+    onPanEnd(){ const g = liveGame(); if (g) g.drag = null; DRAG = null; },
     onPan(dx, dy, at){
       const g = liveGame();
       if (!g || !DRAG) return false;
       if (DRAG.done || !at) return true;
-      const du = at.u - DRAG.u, dv = at.v - DRAG.v, i = DRAG.i;
-      if (Math.max(Math.abs(du), Math.abs(dv)) >= SQ * 0.35){
+      const du = at.u - DRAG.u, dv = at.v - DRAG.v, i = DRAG.i, far = Math.max(Math.abs(du), Math.abs(dv));
+      const c = i % N, r = (i / N) | 0;
+      const j = Math.abs(du) > Math.abs(dv) ? (du > 0 ? (c < N - 1 ? i + 1 : -1) : (c > 0 ? i - 1 : -1))
+                                            : (dv > 0 ? (r < N - 1 ? i + N : -1) : (r > 0 ? i - N : -1));
+      if (!busy(g)) g.drag = (far >= SQ * 0.08 && j >= 0) ? [i, j] : [i];   // the neighbour it heads for, lit as it goes
+      if (far >= SQ * 0.35){
         DRAG.done = true;
-        const c = i % N, r = (i / N) | 0;
-        const j = Math.abs(du) > Math.abs(dv) ? (du > 0 ? (c < N - 1 ? i + 1 : -1) : (c > 0 ? i - 1 : -1))
-                                              : (dv > 0 ? (r < N - 1 ? i + N : -1) : (r > 0 ? i - N : -1));
         if (j >= 0) trySwap(g, i, j);
       }
       return true;
@@ -30773,12 +30791,12 @@ const GEMS_APP = (() => {
       const t = sz / N, fr = shown(c, r);
       paint(ctx, 0, 0, t, gridOf(fr, false).colors);
       for (let j = 0; j < fr.length; j += 5){
-        if (fr[j] === 7) continue;
+        if (fr[j] >= 7) continue;
         ctx.fillStyle = css(COLS[fr[j]]);
         ctx.beginPath(); ctx.arc(fr[j + 1] * sz, fr[j + 2] * sz, t * 0.36, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { newGame, step, trySwap, matches, moves, bakeReel, adopt, games: GAMES },
+    _debug: { newGame, step, trySwap, matches, moves, bakeReel, adopt, games: GAMES, frameOf, litOf, gridOf },
   };
   return app;
 })();

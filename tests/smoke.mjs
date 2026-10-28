@@ -7022,6 +7022,31 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       failures.push(`[${current}] ${JSON.stringify({ o, pic, live, pb })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling oil and balls (house shots ${o.house[0]}/40 at level 1, ${o.house[1]}/40 at level 5; a miss off the house shot ${o.miss[0]} against ${o.miss[1]} off a flat one; the balls' turn at mid-lane and the pins ${JSON.stringify(T)}; a game wore ${o.wear.max} and moved the frame-1 line ${o.wear.moved}; the picture painted again; the real pad's ball button and B)`);
   }
+  // BEJEWELED'S PEARLS AND ITS LIT SQUARES (Oct 28: "in bejeweld application, the pieces should all be small raised circles like
+  // the white one, but with different colors. also, when sliding pieces, highlight the selected cells."): every kind drawn as the
+  // pearl, and a real drag lighting the square it began on and the one it heads for, then both while they swap
+  current = 'bejeweled pearls and lit squares';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bejeweled')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const shapes = await page.evaluate(() => { const A = window.getFieldApp(), T = window.FIELD_WORLD.THREE;
+      return [0, 1, 2, 3, 4, 5, 6].map(k => { const g = A.itemGeometries['gem' + k](T); return g.attributes.position.count; }); });
+    const bPt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
+      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
+    let q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await page.waitForTimeout(1500);
+    const lit = () => page.evaluate(() => { const D = window.getFieldApp()._debug; for (const [, g] of D.games){ const L = D.litOf(g); if (L.length) return { lit: L, drag: g.drag, lights: Array.from(D.frameOf(g)).filter((x, j) => j % 5 === 0 && x === 8).length }; } return null; });
+    const a = await bPt(3.5 / 8, 4.5 / 8), b = await bPt(4.3 / 8, 4.5 / 8);
+    await page.mouse.move(a.x, a.y); await page.mouse.down();
+    await page.mouse.move(a.x + (b.x - a.x) * 0.3, a.y + (b.y - a.y) * 0.3, { steps: 3 }); await page.waitForTimeout(400);
+    const mid = await lit();
+    await page.mouse.move(b.x, b.y, { steps: 4 });
+    const sw = await lit();
+    await page.mouse.up(); await page.waitForTimeout(100);
+    if (new Set(shapes).size !== 1 || !mid || mid.lit.join() !== '35,36' || mid.lights !== 2 || !sw || sw.lit.join() !== '35,36' || sw.drag)
+      failures.push(`[${current}] ${JSON.stringify({ shapes, mid, sw })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bejeweled pearls and lit squares (every kind the pearl's ${shapes[0]} points; a real drag lit ${mid && mid.lit} as it went and ${sw && sw.lit} while they swapped)`);
+  }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
   // every press before the field), a game under way, the view zoomed by the real wheel, a real touch double tap on the board
