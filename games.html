@@ -248,6 +248,16 @@
      the right side"). An app that offers quickActs gets a few square icon buttons in the band at the top of the bottom
      pane, on the right, clear of the dots in the middle; they take their own presses (the band lets every other press
      through to the field while the pane is shut), and their names are their tooltips. */
+  /* THE PLAY PAD (Oct 28: "you should not need to have the bottom browser open to play games", then "Mostly getstures, but some
+     buttons if needed."): a game whose moves a gesture cannot give (3D Tetris's and Soma's turns, the tanks' driving and weapon)
+     offers round buttons here while it is played (`playActs`), a column on the right above the bottom band, clear of the rail. */
+  #playPad { position: fixed; right: calc(min(32px, 5.25vw) + 10px); bottom: calc(var(--bb-h) + var(--bb-bottom) + 12px); z-index: 30;
+             display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
+  #playPad button { width: 54px; height: 54px; border-radius: 50%; padding: 0; display: flex; flex-direction: column; align-items: center;
+                    justify-content: center; border: 1.5px solid rgba(255, 255, 255, .55); background: rgba(18, 21, 28, .62); color: #fff;
+                    box-shadow: 0 1px 4px rgba(0, 0, 0, .6); cursor: pointer; font-size: 1.375rem; line-height: 1; touch-action: manipulation; }
+  #playPad button span { font-size: 0.5625rem; margin-top: 2px; opacity: .85; }
+  #playPad button.on { border-color: rgba(232, 200, 106, .95); }
   #bbQuick { position: absolute; top: 0; right: 10px; height: var(--bb-peek); display: flex; align-items: center; gap: 6px;
              z-index: 4; pointer-events: auto; }
   #bbQuick button { width: 36px; height: 36px; padding: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center;
@@ -13578,6 +13588,38 @@ function bbStatsAway(){
   try { const _a = window.getFieldApp && window.getFieldApp(); if (_a && _a.statsStay && _a.statsStay()) return; } catch {}   // (an editor's tools stay up)
   toggleBoardBrowser(false);
 }
+let _playPadSig = null;
+// (the play pad: what the app's `playActs(c, r)` gives for the framed board, [{ key, glyph, label, title, on }], or nothing;
+//  a press reaches `onPlayAct(c, r, key)`. Rebuilt only when what it shows changes.)
+function playPadTick(a){
+  let f = null, L = null;
+  try { f = bbFramedCell(); } catch {}
+  try { L = a && a.playActs && f ? a.playActs(f.c, f.r) : null; } catch {}
+  const sig = L && L.length ? L.map(q => q.key + '|' + q.glyph + '|' + (q.label || '') + (q.on ? '+' : '')).join(',') : '';
+  if (sig === _playPadSig) return;
+  _playPadSig = sig;
+  let pad = document.getElementById('playPad');
+  if (!sig){ if (pad) pad.remove(); return; }
+  if (!pad){
+    pad = document.createElement('div'); pad.id = 'playPad';
+    for (const ev of ['pointerdown', 'pointerup', 'pointermove', 'pointercancel', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'wheel', 'click']) pad.addEventListener(ev, e => e.stopPropagation());
+    document.body.appendChild(pad);
+  }
+  pad.textContent = '';
+  for (const q of L){
+    const b = document.createElement('button');
+    b.type = 'button'; b.title = q.title || q.label || ''; b.setAttribute('aria-label', b.title); b.dataset.key = q.key;
+    if (q.on) b.classList.add('on');
+    b.appendChild(document.createTextNode(q.glyph));
+    if (q.label){ const sp = document.createElement('span'); sp.textContent = q.label; b.appendChild(sp); }
+    b.addEventListener('click', () => {
+      try { const a2 = window.getFieldApp && window.getFieldApp(), f2 = bbFramedCell(); if (a2 && a2.onPlayAct && f2) a2.onPlayAct(f2.c, f2.r, q.key); }
+      catch (err){ _reportError('play pad', err); }
+      _playPadSig = null; _bbStatT = 0; bbStatTick(); try { restWake(); } catch {}
+    });
+    pad.appendChild(b);
+  }
+}
 let _bbQuickSig = null;
 function bbQuickTick(a){
   const host = document.getElementById('boardBrowser');
@@ -13617,17 +13659,17 @@ function bbStatTick(){
   _bbStatT = now;
   const a = window.getFieldApp && window.getFieldApp();
   try { bbQuickTick(a); } catch {}
+  try { playPadTick(a); } catch {}
   if (!a || !a.statTiles){ if (_bbStatSig){ _bbStatSig = ''; _bbStatNow = null; rebuildBoardBrowser(); } return; }
   if (bbKeys.length && !String(bbKeys[0]).startsWith('stat_') && !_bbStatSig) return;   // the row is busy with something else
   const L = bbStatList(), sig = L ? L.length + '@' + bbStatOwner() : '';
-  /* THE ROW OPENS BY ITSELF when numbers first appear (Sep 30: "yes" — to opening it whenever
-     there are statistics to show). Only on that arrival: shut by hand, it stays shut while you play. */
-  const had = _bbStatHad; _bbStatHad = !!L;
-  if (L && !had){ toggleBoardBrowser(true); return; }
-  // a row the app needs up (the hole editor's tools) is put back up whatever shut it, but not one shut by hand (Oct 23: "I can't
-  // close the bottom panel by tapping the dots."): trick shots, the tanks and golf tanks hold their play row up with statsStay, so
-  // the dots shut it and this put it straight back. A hand's choice is bbOverride false; every opening, an editor's too, sets it.
-  try { if (L && !bbVisible && bbOverride !== false && a.statsStay && a.statsStay()){ toggleBoardBrowser(true); return; } } catch {}
+  /* THE ROW NEVER OPENS BY ITSELF (Oct 28: "you should not need to have the bottom browser open to play games. that is only
+     for advanced users.", then "Mostly getstures, but some buttons if needed."). It opened when a game's numbers first appeared
+     (Sep 30), and a game that held its play row up (`statsStay`) put it back after anything but a hand shut it. Now only the
+     dots, the menu and an editor's own opening (EDIT_KIT's pane, chess's, golf's) open it; every game plays with it shut, by
+     gestures on the board and, where a gesture would not do, the play pad's buttons (`playActs`, below). `statsStay` still keeps
+     an open row up (a tap on the field does not shut an editor's tools). */
+  _bbStatHad = !!L;
   if (sig !== _bbStatSig){ rebuildBoardBrowser(); return; }
   if (!L) return;
   const S = bbIcoSize();
@@ -28942,6 +28984,13 @@ const BLOCKOUT_APP = (() => {
       return [...TILES.map(([glyph, value]) => ({ glyph, value })), { glyph: '⤋', value: 'Drop', bg: '#2f5e3a' }, { glyph: '◐', value: 'See', bg: SET.glass ? '#2f4d6e' : null }];
     },
     statsStay(){ return !!liveGame(); },
+    // (THE PLAY PAD, Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced users.", then
+    //  "Mostly getstures, but some buttons if needed.": a tap drops the piece or spins it, a drag slides it, but tipping and rolling
+    //  have no gesture that does not fight the view's own, so they are round buttons beside the board while a piece falls)
+    playActs(c, r){ const g = liveGame(); if (!g || g.state !== 'play' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      return [{ key: 'spin', glyph: '⟲', label: 'spin', title: 'Spin the piece the other way (a tap off it spins it)' }, { key: 'tip', glyph: '⤒', label: 'tip', title: 'Tip the piece away from you' },
+              { key: 'roll', glyph: '▶', label: 'roll', title: 'Roll the piece to the right' }]; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (!g) return false; ask(g, key, key === 'spin' ? -1 : 1); return true; },
     onStatTap(c, r, i){
       const g = liveGame(); if (!g) return false;
       if (i < TILES.length){ ask(g, TILES[i][2], TILES[i][3]); return true; }
@@ -30224,6 +30273,17 @@ const SOMA_APP = (() => {
       return out;
     },
     statsStay(){ return ED.on || GAL.on || !!liveGame(); },
+    // (THE PLAY PAD, Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced users.", then
+    //  "Mostly getstures, but some buttons if needed.": a tap places the piece, a drag slides it, two fingers twisted on it spin it, but tipping and rolling
+    //  have no gesture that does not fight the view's own, so they are round buttons beside the board while a piece falls)
+    playActs(c, r){ if (ED.on || GAL.on) return null; const g = liveGame(); if (!g || g.state !== 'play' || !g.cur || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      const out = [{ key: 'spin', glyph: '⟳', label: 'spin', title: 'Spin the piece in hand' }, { key: 'tip', glyph: '⤒', label: 'tip', title: 'Tip it away from you' }, { key: 'roll', glyph: '▶', label: 'roll', title: 'Roll it to the right' }];
+      if (g.F.types.length - g.placed.size > 1) out.push({ key: 'next', glyph: '⇄', label: 'next', title: 'Take the next piece from the tray' });
+      return out; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (!g) return false;
+      if (key === 'next'){ const n = g.F.types.length, at = g.cur ? g.cur.i : -1; for (let d = 1; d <= n; d++){ const i = (at + d) % n; if (!g.placed.has(i)){ takeUp(g, i); break; } } }
+      else ask(g, key, 1);
+      touched(); return true; },
     /* THE ROW IS THE FIGURE EDITOR while making one (trick shots' way: the row is also the played figure's, and the field opens
        it by itself when a game's tiles appear, so its opening is not the editor's switch; ✎ or the menu opens it). Shutting it
        keeps the figure if it can be filled. */
@@ -32759,7 +32819,7 @@ const TD_APP = (() => {
     },
     menu: [{ head: 'Tower defense', items: [
       { label: () => ED.on ? 'Done: play this map' : 'Make a map for this board…', title: 'The bottom row becomes a map editor: rocks, where the entrance and exit are, towers to start with, the size and the gold. Done plays it.',
-        on(){ if (ED.on) edDone(); else edOpen(); } },
+        on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
       { label: 'Cancel the map', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
       { label: "Share this board's map", title: 'Copy a link that opens the page on this map, to be played from there (Oct 13).',
         get disabled(){ const f = framedCell(); return !(ED.on || (f && MAPS.has(gkey(f.c, f.r)))); }, on(){ shareMap(); } },
@@ -47082,7 +47142,7 @@ const SOKOBAN_APP = (() => {
       { label: 'Undo a step', title: 'Take back his last step (Z on the keys; a right click too).',
         get disabled(){ const g = LIVE && GAMES.get(LIVE.key); return !!ED.on || !(g && g.hist && g.hist.length); }, on(){ undoHere(); } },
       { label: () => ED.on ? 'Done: play this level' : 'Make a level for this board…', title: 'The bottom row becomes a level editor: walls, crates, spots and the keeper. The solver checks it can be done and sets par; Done plays it.',
-        on(){ if (ED.on) edDone(); else edOpen(); } },
+        on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
       { label: 'Cancel the level', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
       { label: "Share this board's level", title: 'Copy a link that opens the page on this level, to be played from there (Oct 13).',
         get disabled(){ const f = framedCell(); return !(ED.on || (f && MINE.has(gkey(f.c, f.r)))); }, on(){ shareLevel(); } },
@@ -47705,7 +47765,7 @@ const TILT_APP = (() => {
       { label: 'Start this board again', title: 'The marble back at the start, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; } } },
       // (your own mazes: Oct 20, "let the user create their own mazes.")
       { label: () => ED.on ? 'Done: play this maze' : 'Make a maze for this board…', title: 'The bottom row becomes a maze editor: walls, holes, the start and the ring. The steady player checks it can be done and sets par; Done plays it.',
-        on(){ if (ED.on) edDone(); else edOpen(); } },
+        on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
       { label: 'Cancel the maze', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
       { label: "Share this board's maze", title: 'Copy a link that opens the page on this maze.',
         get disabled(){ const f = framedCell(); return !(ED.on || (f && MINE.has(gkey(f.c, f.r)))); }, on(){ shareMaze(); } },
@@ -52432,6 +52492,16 @@ const TANKS_APP = (() => {
     statTiles(c, r){ const g = GAMES.get(gkey(c, r)); return g && g.state !== 'over' && LIVE && LIVE.c === c && LIVE.r === r ? tilesOf(g) : null; },
     // (a tap on the field shuts a row of numbers, bbStatsAway; this row is what you fire with, so it stays up through a game)
     statsStay(){ const g = liveGame(); return !!g && g.state !== 'over'; },
+    // (THE PLAY PAD, Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced users.",
+    //  then "Mostly getstures, but some buttons if needed.": a tap or a drag aims and a tap on your tank fires, but the shell in hand
+    //  and driving were the row's; the pad has them: the shell, a tap for the next one left, and drive either way)
+    playActs(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || !myTurn(g) || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      const k = g.turn, w = WEAPONS[g.wid[k]], A = g.S.ammo[k][g.wid[k]];
+      return [{ key: 'weapon', glyph: w.glyph, label: w.id === 'shell' ? 'shell' : w.name.split(' ')[0].toLowerCase() + ' ' + A, title: w.name + ': tap for the next shell you have' },
+              { key: 'left', glyph: '◀', label: 'drive', title: 'Drive left' }, { key: 'right', glyph: '▶', label: 'drive', title: 'Drive right' }]; },
+    onPlayAct(c, r, key){ const g = GAMES.get(gkey(c, r)); if (!g || !myTurn(g)) return false;
+      if (key === 'weapon'){ const k = g.turn, n = WEAPONS.length; for (let d = 1; d <= n; d++){ const i = (g.wid[k] + d) % n; if (g.S.ammo[k][i] > 0){ chooseWeapon(g, i); break; } } return true; }
+      g.drive = { dir: key === 'left' ? -1 : 1, left: DRIVE_STEP }; g.toldStuck = false; return true; },
     onStatTap(c, r, i){
       const g = GAMES.get(gkey(c, r)); if (!g || !myTurn(g)) return false;
       if (i === 0) return fire(g);
@@ -52445,7 +52515,7 @@ const TANKS_APP = (() => {
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is on the left. Tap or drag on the board to aim: the dots show where the shell goes. Tap your tank, Fire in the row below, or Enter to fire. Arrows aim, A and D drive, 1–6 choose a shell.', 6000); }
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is on the left. Tap or drag on the board to aim: the dots show where the shell goes. Tap your tank (or Enter) to fire. The buttons on the right choose a shell and drive. Arrows aim, A and D drive, 1–6 choose a shell.', 6000); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'over'; },
     onCellTap(c, r, u, v){
@@ -54072,6 +54142,14 @@ const GOLFTANK_APP = (() => {
       return WEAPONS.map((W, i) => ({ glyph: W.glyph, value: W.name, label: W.ammo === Infinity ? 'always' : t.ammo[i] + ' left', bg: g.wid[0] === i ? '#2f5e3a' : null, dim: !(t.ammo[i] > 0) })); },
     statsStay(){ const g = liveGame(); return !!g && g.state !== 'over'; },
     onStatTap(c, r, i){ const g = GAMES.get(gkey(c, r)); if (!g || !WEAPONS[i]) return false; return choose(g, 0, i); },
+    // (THE PLAY PAD, Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced users.",
+    //  then "Mostly getstures, but some buttons if needed.": the mortar, the rail gun and the missile were the row's or the keys';
+    //  one round button holds the weapon in hand and a tap takes up the next with ammo left)
+    playActs(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || g.state === 'over' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      const t = g.G.tanks[0], W = WEAPONS[g.wid[0]];
+      return [{ key: 'weapon', glyph: W.glyph, label: W.ammo === Infinity ? W.name.toLowerCase() : W.name.split(' ')[0].toLowerCase() + ' ' + t.ammo[g.wid[0]], title: W.name + ': tap for the next weapon with ammo left' }]; },
+    onPlayAct(c, r, key){ const g = GAMES.get(gkey(c, r)); if (!g || key !== 'weapon') return false; const t = g.G.tanks[0], n = WEAPONS.length;
+      for (let d = 1; d <= n; d++){ const i = (g.wid[0] + d) % n; if (t.ammo[i] > 0){ choose(g, 0, i); break; } } return true; },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){
@@ -59473,7 +59551,7 @@ const CURLING_APP = (() => {
     Object.assign(g, fresh(g.c, g.r), { state: 'play', last: performance.now() });
     g.G = newMatch(g.idx, g.lv, { ai0: null, seed: (performance.now() * 1000) | 0, ev: (k, a, G) => onEvent(g, k, a, G) });
     GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
-    say(SET.ends + ' ends of ' + SET.stones + ' stones each. Tap the sheet for the broom, set the weight and curl in the row, Enter or Throw. Hold a finger on the sheet (or S) to sweep.', 4200);
+    say(SET.ends + ' ends of ' + SET.stones + ' stones each. Tap the sheet for the broom (or a stone to hit it), drag your stone up the sheet to where it should stop, twist two fingers (or ⟳) for the curl, tap your stone to throw. Hold a finger on the sheet to sweep.', 6000);
     try { bbRefreshNow(); } catch {}
   }
   const HOLD = { n: 0 }, KEYS = {};
@@ -59505,6 +59583,21 @@ const CURLING_APP = (() => {
     return 'peel';
   }
   function throwMine(g){ if (!myTurn(g)) return false; throwNow(g.G); try { bbRefreshNow(); } catch {} return true; }
+  /* ─── THE HAND ON THE SHEET ─── (Oct 28: "you should not need to have the bottom browser open to play games. that is only for
+     advanced users.", then "Mostly getstures, but some buttons if needed.") The weight and the curl were the row's (and the keys'),
+     so on a phone every stone went at the last weight set. Now: a press on your stone at the delivery and a drag up the sheet
+     sets the weight for it to come to rest about where the finger is (`weightAt`: the distance it slides, as the computer's
+     `solveDraw` starts from; past the back line the drag rises fast to a hit's and a peel's weights), the dotted way showing
+     where it will stop, and letting go leaves it there; a tap on a stone puts the broom on it with a hit's weight (`HIT_W`);
+     a twist of two fingers turns the curl, as the stone turns (clockwise ⟳ the in-turn, `onTwist`), and the play pad's one
+     button does too (`playActs`). A tap on the sheet is still the broom, a tap on your stone still throws, the row and the keys
+     still set it all. */
+  const STONE_GRAB = 0.04, HIT_W = 1.5;
+  function weightAt(y){
+    if (y >= BACK) return clamp(REL - y + 0.01, W_MIN, W_MAX);
+    return clamp(REL - BACK + 0.01 + (BACK - y) / BACK * (W_MAX - (REL - BACK + 0.01)), W_MIN, W_MAX);
+  }
+  function setCurl(g, s){ const G = g.G, c = s == null ? -G.shot.curl : s; G.shot = { ...G.shot, curl: c }; say('Curl: ' + (c > 0 ? 'to the right ⟳' : 'to the left ⟲'), 1200); try { bbRefreshNow(); } catch {} }
 
   /* ─── SOUNDS ─── the stone's rumble as it goes, the clack of granite, brooms, a cheer at an end */
   function sfx(kind, a){
@@ -59691,7 +59784,7 @@ const CURLING_APP = (() => {
       { label: () => 'Stones: ' + SET.stones + ' each', title: 'How many stones each side throws an end.', on(){ const f = framedCell(); onTile(f ? f.c : 0, f ? f.r : 0, 6); } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The rumble, the clack of granite, the brooms.', on(){ SET.sound = !SET.sound; saveSet(); } },
       { label: 'Start this board again', title: 'A new game, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
-      { label: 'How to play', title: 'The rules and the controls.', on(){ say('Get your stones nearer the button (the middle of the house) than any of the computer\'s. Tap or drag on the sheet to put the broom where you aim; the row sets the weight (how far it slides) and which way it curls; Enter or Throw. While your stone runs, hold a finger on the sheet (or S) to sweep it: it goes farther and curls less. A stone must pass the far hog line, and one past the back line or touching a side is out. At the end of an end the side with the nearest stone scores one for each stone nearer than the other side\'s best.', 12000); } },
+      { label: 'How to play', title: 'The rules and the controls.', on(){ say('Get your stones nearer the button (the middle of the house) than any of the computer\'s. Tap or drag on the sheet to put the broom where you aim (a tap on a stone aims at it with a hit\'s weight); drag your stone up the sheet to where it should come to rest for the weight; twist two fingers, or the ⟳ button, for which way it curls; tap your stone (or Enter) to throw. While your stone runs, hold a finger on the sheet (or S) to sweep it: it goes farther and curls less. A stone must pass the far hog line, and one past the back line or touching a side is out. At the end of an end the side with the nearest stone scores one for each stone nearer than the other side\'s best.', 12000); } },
     ]}],
     cellFar: { light: 0xdfe9f3, dark: 0xc6d4e2 },
     itemMinPx: 12,
@@ -59735,17 +59828,29 @@ const CURLING_APP = (() => {
         const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
       }
       if (u == null || !myTurn(g)) return true;
-      const x = u * W;
-      if (Math.hypot(x - CX, v - REL) < 0.035) throwMine(g); else setBroom(g, x, v);
+      const x = u * W, on = g.G.stones.find(st => !st.out && Math.hypot(st.x - x, st.y - v) < SR * 1.8 && Math.abs(st.y - REL) > 0.02);
+      if (Math.hypot(x - CX, v - REL) < 0.035) throwMine(g);
+      else if (on){ setBroom(g, on.x, on.y); if (g.G.shot.w < HIT_W - 0.2) setWeight(g, HIT_W); say('At that stone, with a hit\'s weight: drag your stone to change it.', 1800); }
+      else setBroom(g, x, v);
       try { bbRefreshNow(); } catch {}
       return true;
     },
     noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
     keepsPress: true,
-    claimsPan(u, v){ const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false }; return true; },
-    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setBroom(DRAG.g, at.u * W, at.v); DRAG.moved = true; } return true; },
+    claimsPan(u, v){ const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false, stone: Math.hypot(u * W - CX, v - REL) < STONE_GRAB }; return true; },
+    onPan(dx, dy, at){ if (!DRAG) return false;
+      if (at && myTurn(DRAG.g)){
+        if (DRAG.stone){ if (at.v < REL - 0.03){ const w = weightAt(at.v); if (Math.abs(w - DRAG.g.G.shot.w) > 0.004){ setWeight(DRAG.g, w); DRAG.moved = true; say('Weight: ' + weightName(w), 900); } } }
+        else { setBroom(DRAG.g, at.u * W, at.v); DRAG.moved = true; } }
+      return true; },
     onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
     statTiles(c, r){ return tilesOf(c, r); },
+    // (the play pad's one button, the curl; a twist of two fingers turns it too)
+    playActs(c, r){ const g = liveGame(); if (!myTurn(g) || g.c !== c || g.r !== r) return null; const k = g.G.shot.curl > 0;
+      return [{ key: 'curl', glyph: k ? '⟳' : '⟲', label: 'curl', title: 'The curl: ' + (k ? 'to the right' : 'to the left') + '. A twist of two fingers turns it too.' }]; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (key === 'curl' && myTurn(g)) setCurl(g); return true; },
+    twistTurns(){ return myTurn(liveGame()); },
+    onTwist(s){ const g = liveGame(); if (myTurn(g)) setCurl(g, s > 0 ? 1 : -1); return true; },
     statsStay(){ const g = liveGame(); return !!(g && g.state === 'play'); },
     onStatTap(c, r, i){ return onTile(c, r, i); },
     drawIcon(ctx, sz){
@@ -59755,7 +59860,7 @@ const CURLING_APP = (() => {
       const st = (x, y, col) => { ctx.fillStyle = '#8d939c'; ctx.beginPath(); ctx.arc(sz * x, sz * y, sz * 0.09, 0, 6.283); ctx.fill(); ctx.fillStyle = col; ctx.fillRect(sz * (x - 0.03), sz * (y - 0.06), sz * 0.06, sz * 0.12); };
       st(0.42, 0.43, '#d8332c'); st(0.62, 0.3, '#f2c230'); st(0.5, 0.86, '#d8332c');
     },
-    _debug: { newMatch, tick, slide, deliver, throwSim, endScore, valueOf, solveDraw, solveHit, plan, handsOn, wantSweep, iceOf, previewOf, startTurn, throwNow,
+    _debug: { weightAt, setCurl, newMatch, tick, slide, deliver, throwSim, endScore, valueOf, solveDraw, solveHit, plan, handsOn, wantSweep, iceOf, previewOf, startTurn, throwNow,
               recOf, recWork, recView, recSoon, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setBroom,
               setWeight, weightName, throwMine, tilesOf, onTile, toThrow, LV, STEADY, SET, GAMES, RECS, BEST, HOLD, KEYS, OWN, inHouse, dist,
               consts: { W, SR, TEE, HOG, REL, BACK, HOUSE, RINGS, A0, CURL, SWEEP_A, SWEEP_C, TICK, REC_HZ, PREVIEW }, levelOf: (c, r) => levelAt(boardIdx(c, r)),
@@ -60323,7 +60428,7 @@ const BOWLING_APP = (() => {
       g.G = newGame(g.idx, g.lv, { seed: 1, leave: J.res, ev: (k, a, G) => onEvent(g, k, a, G) });
       if (mine) g.G.shot = { ...mine };
       GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
-      say('Make ' + J.res.name + (J.res.par ? ' (par ' + J.res.par + (J.res.par === 1 ? ' try' : ' tries') + ')' : '') + ': one ball to take every pin. Tap where you aim; the row sets where you stand, the speed and the hook. Enter or Bowl.', 4500);
+      say('Make ' + J.res.name + (J.res.par ? ' (par ' + J.res.par + (J.res.par === 1 ? ' try' : ' tries') + ')' : '') + ': one ball to take every pin. Tap where you aim, then swipe the ball up the lane: faster for speed, curved for hook. Drag it along the line to move where you stand.', 5000);
       try { bbRefreshNow(); } catch {}
       return;
     }
@@ -60331,7 +60436,7 @@ const BOWLING_APP = (() => {
     if (mine) g.G.shot = { ...mine };
     GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
     const par = RECS.get(recKey(g.idx, g.lv));
-    say('Ten frames' + (par && par.done ? ', par ' + par.par : '') + '. Tap the lane where you aim; the row sets where you stand, the speed and the hook. Enter or Bowl.', 4000);
+    say('Ten frames' + (par && par.done ? ', par ' + par.par : '') + '. Tap the lane where you aim, then swipe the ball up the lane: faster for speed, curved for hook. Drag it along the line to move where you stand.', 5000);
     try { bbRefreshNow(); } catch {}
   }
   function stepGame(g){
@@ -60360,6 +60465,22 @@ const BOWLING_APP = (() => {
   function setShot(g, o){ const s = { ...g.G.shot, ...o }; s.sx = clamp(s.sx, CX - EDGE + BR, CX + EDGE - BR); s.tx = clamp(s.tx, CX - WALL, CX + WALL); s.ty = clamp(s.ty, HEAD, FOUL - 0.08); s.v = clamp(s.v, V_MIN, V_MAX); s.h = clamp(s.h, 0, 1); g.G.shot = s; g.mine = s; }
   function bowlMine(g){ if (!myTurn(g)) return false; bowlNow(g.G); try { bbRefreshNow(); } catch {} return true; }
   const hookName = h => h < 0.1 ? 'straight' : h < 0.4 ? 'a little' : h < 0.7 ? 'a hook' : 'a big hook';
+  /* ─── A SWIPE BOWLS ─── (Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced
+     users.", then "Mostly getstures, but some buttons if needed.") Where you stand, the speed and the hook were the row's (and the
+     keys'), so on a phone the ball went where the row last put it. Now the ball at the foul line is the hand: a press on it and a
+     drag along the line moves where you stand; dragged up the lane (past `SWIPE_UP`) and let go, it is bowled, as fast as the
+     swipe's last moments went (`SWIPE_V`, lane lengths a second, to the ball's speeds) and hooking as much as the swipe bowed away
+     from the straight line between its ends (`BOW_K`). A tap on the lane still aims; a tap on the ball still bowls as it stands. */
+  const BALL_GRAB = 0.045, SWIPE_UP = 0.07, SWIPE_V = [0.6, 3.6], BOW_K = 9;
+  function swipeOf(pts){
+    const n = pts.length, last = pts[n - 1];
+    let k = n - 1; while (k > 0 && last[2] - pts[k - 1][2] < 120) k--;      // (the last tenth of a second or so)
+    const a = pts[Math.max(0, k - 1)], dt = Math.max(16, last[2] - a[2]) / 1000, sp = Math.hypot(last[0] - a[0], last[1] - a[1]) / dt;
+    const t = clamp((sp - SWIPE_V[0]) / (SWIPE_V[1] - SWIPE_V[0]), 0, 1), v = V_MIN + (V_MAX - V_MIN) * t;
+    const p0 = pts[0], cx = last[0] - p0[0], cy = last[1] - p0[1], L = Math.hypot(cx, cy) || 1;
+    let bow = 0; for (const p of pts){ const off = ((p[0] - p0[0]) * cy - (p[1] - p0[1]) * cx) / L; if (Math.abs(off) > Math.abs(bow)) bow = off; }
+    return { v, h: clamp(Math.abs(bow) / L * BOW_K, 0, 1), sp, bow: bow / L };
+  }
 
   /* ─── SOUNDS ─── the ball's roll, the pins' crash (more pins, more crash), a gutter, a cheer for a strike */
   function sfx(kind, a){
@@ -60520,7 +60641,7 @@ const BOWLING_APP = (() => {
       { label: "Forget this board's leave", title: 'Back to the leave the board deals itself.',
         get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
         on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_J.delete(k); saveMine(); GAMES.delete(k); say('The lane deals its own leave again', 1800); try { fieldItemsChanged(); } catch {} } },
-      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. The row moves where you stand, the speed and the hook: a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Spares: every lane a leave to make with one ball, par in tries (the narrower the window that makes it, the higher). Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. Par is the steady player\'s game on this lane.', 12000); } },
+      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. Swipe the ball up the lane to bowl it: the faster the swipe the faster the ball, and the more it curves the more it hooks; drag the ball along the foul line to move where you stand (the row and the keys set them too): a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Spares: every lane a leave to make with one ball, par in tries (the narrower the window that makes it, the higher). Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. Par is the steady player\'s game on this lane.', 12000); } },
     ]}],
     cellFar: { light: 0xd6b88a, dark: 0x8a6a46 },
     itemMinPx: 12,
@@ -60587,11 +60708,21 @@ const BOWLING_APP = (() => {
     keepsPress: true,
     claimsPan(u, v){
       if (ED.on){ if (u == null || LIVE == null || gkey(LIVE.c, LIVE.r) !== ED.key) return false; const i = nearPin(u * W, v, 2 * PR); if (i < 0) return false; ED.drag = { i, moved: false }; return true; }
-      const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false }; return true; },
+      const g = liveGame(); if (!myTurn(g) || u == null) return false;
+      // (a press on the ball at the foul line is the ball's: along the line it moves where you stand, up the lane it bowls)
+      const s = g.G.shot, onBall = Math.hypot(u * W - s.sx, v - (FOUL - BR - 0.004)) < BALL_GRAB;
+      DRAG = { g, moved: false, ball: onBall, pts: onBall ? [[u * W, v, performance.now()]] : null, up: false }; return true; },
     onPan(dx, dy, at){
+      if (DRAG && DRAG.ball){
+        if (at && myTurn(DRAG.g)){ const x = at.u * W, y = at.v; DRAG.pts.push([x, y, performance.now()]); if (DRAG.pts.length > 400) DRAG.pts.splice(1, 1);
+          if (y < FOUL - SWIPE_UP) DRAG.up = true;
+          if (!DRAG.up){ setShot(DRAG.g, { sx: x }); DRAG.moved = true; } }
+        return true;
+      }
       if (ED.on){ const D = ED.drag; if (!D) return false; if (at){ const [x, y] = clampDeck(at.u * W, at.v); if (roomAt(x, y, D.i)){ ED.xy[D.i] = [r4(x), r4(y)]; D.moved = true; try { fieldItemsChanged(); } catch {} } } return true; }
       if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setShot(DRAG.g, { tx: at.u * W, ty: at.v }); DRAG.moved = true; } return true; },
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; }
+      if (DRAG && DRAG.ball){ const D = DRAG; DRAG = null; ateAt = performance.now(); if (D.up && myTurn(D.g)){ const sw = swipeOf(D.pts); setShot(D.g, { v: sw.v, h: sw.h }); bowlMine(D.g); } try { bbRefreshNow(); } catch {} return; }
       if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
     ...EDK.hooks,                                             // (the leave editor's ✎, ✕, ✓ and the row's toggle: EDIT_KIT's)
     statTiles(c, r){ return ED.on ? edTiles() : tilesOf(c, r); },
@@ -60607,7 +60738,7 @@ const BOWLING_APP = (() => {
     _debug: { newGame, tick, roll, ballOf, bowlSim, scoreOf, aimFor, pick, handsOn, laneOf, rack, previewOf, bowlNow, afterBall, recOf, recWork, recView, recSoon, parOf,
               starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setShot, bowlMine, tilesOf, onTile,
               LV, STEADY, SET, GAMES, RECS, BEST, SPOTS, consts: { W, CX, LANE, EDGE, S, PR, BR, HEAD, FOUL, ARROWS, PIT, TICK, REC_HZ, PREVIEW, BOARD_W },
-              COURSE, SP_LV, parOfWindow, triesStars, shotSearch, leaveGen, leaveJob, leaveWork, leaveNow, jobFor, mineJob, spareRec, leavePins, spotsOf, clearsAll, setMode, LEAVES, SBEST,
+              swipeOf, BALL_GRAB, COURSE, SP_LV, parOfWindow, triesStars, shotSearch, leaveGen, leaveJob, leaveWork, leaveNow, jobFor, mineJob, spareRec, leavePins, spotsOf, clearsAll, setMode, LEAVES, SBEST,
               ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edPlace, cleanLeave, MINE, shareLeave, takeLeave, ED_TOOLS, ED_ACTS, DECK,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
@@ -60843,11 +60974,42 @@ const MARBLE_APP = (() => {
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   const piecesOf = g => { const m = new Map(g.P.given); for (const [k, v] of g.placed) m.set(k, v); m.set(ck(g.P.start.i, g.P.start.j), g.P.startPiece); return m; };
+  /* ─── TAPS ALONE ─── (Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced
+     users.", then "Mostly getstures, but some buttons if needed.") The piece in hand, Run, Raise, Lower and Erase were the row's, so
+     on a phone every square took a straight. Now, until a piece is picked in the row (`g.chosen`), a tap on an empty square lays
+     whichever piece of the stock fits best there, turned and raised to join what is beside it (`bestFits`: every way of every
+     piece left, scored as `fitsAt` scores them, the one with more in stock first on a tie); a tap again on one of yours steps
+     through the other ways that join (any piece, the one it is or one left in the stock), then takes it back to the stock; a tap
+     on the chute or the cup runs the marble. The row's tools, once one is picked, work as before. */
+  function bestFits(g, i, j, keep){
+    const P = g.P, pcs = piecesOf(g), out = [];
+    for (const t of TYPES){ if (!((g.inv[t] || 0) > 0 || t === keep)) continue;
+      for (const f of fitsAt(P, pcs, i, j, t)) out.push({ ...f, n: (g.inv[t] || 0) + (t === keep ? 1 : 0) }); }
+    out.sort((a, b) => b.sc - a.sc || b.n - a.n);
+    const good = out.filter(f => f.sc > 0);
+    return good.length ? good : out.slice(0, 1);
+  }
+  function tapAuto(g, i, j){
+    const k = ck(i, j), mine = g.placed.get(k);
+    if (!mine){
+      const F = bestFits(g, i, j, null);
+      if (!F.length){ say('Nothing left in the stock: tap one of yours to take it back.', 1600); return; }
+      const pc = F[0].pc; g.placed.set(k, { ...pc }); g.inv[pc.t]--; g.sel = k; sfx('lay'); return;
+    }
+    // (a piece of yours: the next way that joins, of any piece; past the last, back to the stock)
+    g.placed.delete(k); g.inv[mine.t]++;
+    const F = bestFits(g, i, j, null), at = F.findIndex(f => f.pc.t === mine.t && f.pc.rot === mine.rot && f.pc.z === mine.z);
+    const nx = at >= 0 ? F[at + 1] : F.find(f => !(f.pc.t === mine.t && f.pc.rot === mine.rot && f.pc.z === mine.z));
+    if (!nx){ g.sel = null; sfx('take'); say('Back in the stock.', 900); return; }
+    g.placed.set(k, { ...nx.pc }); g.inv[nx.pc.t]--; g.sel = k; sfx('turn');
+  }
   function tapCell(g, i, j){
     const P = g.P, k = ck(i, j);
     if (g.state === 'won'){ return; }
     if (g.state === 'run') return;
     if (g.state === 'fell') g.state = 'build';
+    if ((i === P.start.i && j === P.start.j) || (i === P.goal.i && j === P.goal.j)){ g.sel = null; startRun(g); return; }   // (the chute or the cup: run)
+    if (!g.chosen && !P.rocks.has(k) && !P.given.has(k)){ tapAuto(g, i, j); return; }
     if (P.rocks.has(k) || P.given.has(k) || (i === P.start.i && j === P.start.j) || (i === P.goal.i && j === P.goal.j)){ g.sel = null; say(P.rocks.has(k) ? 'A rock: nothing goes there.' : P.given.has(k) ? 'Laid for you: it stays.' : i === P.goal.i && j === P.goal.j ? 'The cup.' : 'The chute.', 1200); return; }
     const mine = g.placed.get(k);
     if (g.tool === 'x'){ if (mine){ g.placed.delete(k); g.inv[mine.t]++; sfx('take'); } g.sel = null; return; }
@@ -60973,8 +61135,8 @@ const MARBLE_APP = (() => {
     const g = gameAt(c, r); LIVE = { c, r };
     if (!g.P) return true;
     if (i === 0){ if (g.state === 'won'){ Object.assign(g, fresh(c, r)); } else startRun(g); }
-    else if (i >= 1 && i <= 4) g.tool = TYPES[i - 1];
-    else if (i === 5) g.tool = 'x';
+    else if (i >= 1 && i <= 4){ g.tool = TYPES[i - 1]; g.chosen = true; }
+    else if (i === 5){ g.tool = 'x'; g.chosen = true; }
     else if (i === 6) turnSel(g);
     else if (i === 7) nudgeSel(g, 1);
     else if (i === 8) nudgeSel(g, -1);
@@ -61001,7 +61163,7 @@ const MARBLE_APP = (() => {
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The pieces going down, the marble.', on(){ SET.sound = !SET.sound; saveSet(); } },
       { label: 'Start this board again', title: 'Every piece of yours back in the stock.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); try { bbRefreshNow(); } catch {} } } },
       { label: 'Show the way', title: 'The way the board was made, laid for you (no stars for it).', on(){ const g = liveGame(); if (!g || !g.P) return; g.placed = new Map([...g.P.sol].filter(([k]) => !g.P.given.has(k))); for (const t of TYPES) g.inv[t] = 0; g.shown = true; g.state = 'build'; say('The way it was made. Run it.', 1800); try { bbRefreshNow(); } catch {} } },
-      { label: 'How to play', title: 'The pieces and the run.', on(){ say('Bring the marble from the blue chute to the red cup. Pick a piece in the row and tap a square: it lies turned and raised to join what is beside it; tap it again to turn it another way, Raise and Lower move it a level. Ramps and spirals come down a level, which is what gives the marble its speed: on the flat and round curves it slows, and taken too fast a curve throws it off. Ends must meet at the same height. Run sends it.', 12000); } },
+      { label: 'How to play', title: 'The pieces and the run.', on(){ say('Bring the marble from the blue chute to the red cup. Tap a square: the piece from your stock that fits best lies there, turned and raised to join what is beside it; tap it again for the next piece or way that joins, and again past the last to take it back. Tap the chute or the cup to run the marble. (Or pick a piece in the row and tap a square: it lies turned and raised to join what is beside it; tap it again to turn it another way, Raise and Lower move it a level. Ramps and spirals come down a level, which is what gives the marble its speed: on the flat and round curves it slows, and taken too fast a curve throws it off. Ends must meet at the same height. Run sends it.', 12000); } },
     ]}],
     cellFar: { light: 0xd8c9ab, dark: 0xb9a57f },
     itemMinPx: 14,
@@ -61049,7 +61211,7 @@ const MARBLE_APP = (() => {
         const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
       }
       // (the tap that picks a board out only picks it: a piece laid by it would be laid without looking)
-      if (u == null || !was) return true;
+      if (u == null || !was){ if (!was && g.state === 'build' && !g.placed.size) say('Tap a square to lay a piece (again for the next way it can lie), then tap the blue chute to run the marble.', 3600); return true; }
       const n = g.P.n, i = clamp(Math.floor(u * n), 0, n - 1), j = clamp(Math.floor(v * n), 0, n - 1);
       tapCell(g, i, j);
       try { bbRefreshNow(); } catch {}

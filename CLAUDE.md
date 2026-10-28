@@ -753,6 +753,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     straighter, a takeout, the hog line, an end's score, games ending with the steady player better at level 1 than 5, and real
     input: a click starting, a real click putting the broom, the real Enter throwing, a real press sweeping, the computer answering,
     and a board no one plays moving.
+  - **By hand** (Oct 28, "Games play with the row shut" above): a press on your stone (`STONE_GRAB`) dragged up the sheet sets the
+    weight for it to come to rest about where the finger is (`weightAt`: the distance it slides, rising fast past the back line to
+    a hit's and a peel's); a tap on a stone puts the broom on it with a hit's weight (`HIT_W`); a two-finger twist (`twistTurns`,
+    `onTwist`) or the play pad's ⟳ turns the curl (`setCurl`).
 - **Bowling** (Oct 28: "2,   3 curling, bowling, marble run", the second: "spin and pins"): `BOWLING_APP`, id `bowling`, after curling.
   Ten-pin, the far end of a lane a board, `W` (0.36) wide by 1 long: the pins on their deck (`SPOTS`, `S` 0.078 apart, the head
   pin at `HEAD` 0.27), the lane (`LANE` 0.27) between gutters (`GUT`) down to the foul line (`FOUL`), the arrows at `ARROWS`.
@@ -813,6 +817,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       rising, a miss counting a try with the leave up again, `cleanLeave` refusing nonsense, and real input: a real click
       starting the lane's leave, the real Enter, the shown shot making it, the real ✎, real clicks laying pins, the real ✓
       keeping it in storage, a shared copy on another lane, and a board no one plays moving.
+  - **Swiped** (Oct 28, "Games play with the row shut" above): a press on the ball dragged along the foul line moves where you stand
+    (`BALL_GRAB`); dragged up the lane past `SWIPE_UP` and let go it bowls, as fast as the swipe's last tenth of a second
+    (`SWIPE_V` 0.6–3.6 lane lengths a second to `V_MIN`–`V_MAX`), hooking as much as it bowed from the straight line between its
+    ends (`BOW_K`). A tap on the lane still aims; the row and the keys still set it all.
 - **Marble run** (Oct 28: "2,   3 curling, bowling, marble run", the third: "build a track in the bottom row, the steady player tests
   it"): `MARBLE_APP`, id `marblerun`, after bowling. A square board, an n × n grid of squares: a start chute at the far edge, high
   up (`startPiece`, blue), a cup lower down (red), rocks, some pieces laid for you (darker wood), and a stock in the bottom row.
@@ -843,6 +851,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test (part 7) checks the levels by ring, puzzles made at levels 1, 3 and 5 each running to the cup with par growing,
     a piece taken out and the marble falling, a piece beside the chute laid turned and raised to join it, and real input (a real
     click laying a straight under the chute, another turning it, the made way run to the cup) and a board no one plays running.
+  - **Taps alone** (Oct 28, "Games play with the row shut" above): until a piece is picked in the row (`g.chosen`, by the row or
+    1–4, X), a tap on an empty square lays the stock's piece that fits best (`bestFits`: every way of every piece left, scored as
+    `fitsAt` scores them, more in stock first on a tie); a tap again on one of yours steps through the other ways and pieces that
+    join, then takes it back (`tapAuto`); a tap on the chute or the cup runs the marble.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
@@ -2424,6 +2436,25 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     yourself. Minesweeper keeps its hold (Oct 25, later: "minesweeper should restore the long press, its fundemental to its game
     play."): an app with `holdKeeps` is asked first, and a hold it takes (a covered square in a game under way) flags it; a hold
     anywhere else is the row's. Its menu's Taps: dig / flag (F on the keys, localStorage `minesweeper.taps`) stays too.
+- **Games play with the row shut** (Oct 28: "you should not need to have the bottom browser open to play games. that is only
+  for advanced users.", then "Mostly getstures, but some buttons if needed."):
+  - **The row never opens by itself.** `bbStatTick` opened it when a game's numbers first appeared (Sep 30), and put back a row a
+    game held up (`statsStay`) after anything but a hand shut it. Both went. Only the dots, the menu and an editor's own opening
+    (EDIT_KIT's `pane`, chess's, golf's `paneTo`) open it; the tilt maze's, Sokoban's and tower defense's menu items now open
+    their pane themselves. `statsStay` still keeps an open row up.
+  - **Gestures** where a game needed the row: bowling (a press on the ball dragged along the foul line is where you stand; swiped
+    up the lane and let go it bowls, the swipe's speed the ball's, its bow the hook: `swipeOf`), curling (a drag of your stone up
+    the sheet sets the weight to come to rest about there, `weightAt`; a tap on a stone aims at it with a hit's weight; a
+    two-finger twist turns the curl, `onTwist`) and marble run (until a piece is picked in the row, `g.chosen`, a tap lays the
+    stock's piece that fits best, `bestFits`, a tap again steps through the other ways and pieces that join, then takes it back,
+    `tapAuto`; a tap on the chute or the cup runs it).
+  - **The play pad** (`#playPad`, `playPadTick`): an app's `playActs(c, r)` gives round buttons ([{ key, glyph, label, title, on
+    }]) shown on the right above the bottom band while it is played, whether or not the row is open; a press reaches
+    `onPlayAct(c, r, key)`. Used only where no gesture would do: 3D Tetris (spin the other way, tip, roll), Soma (spin, tip, roll,
+    the next piece from the tray), the tanks (the shell in hand, a tap for the next; drive either way), golf tanks (the weapon in
+    hand, a tap for the next) and curling (the curl, beside the twist).
+  - The smoke test (part 7, "played with the row shut") checks the row staying shut through a game and each of these by real
+    input; the checks that click row tiles in 3D Tetris and Soma open the row first, as an advanced user would.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
