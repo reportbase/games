@@ -2404,6 +2404,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     timed by when it was handled; selecting a board in tower defense builds its game, and on CI (or a slow phone) the second
     tap came a second late and the pair was two taps. `turnEnd(e)` now passes it on. The smoke test makes both taps' events
     before sending either, since a synthetic event's time is when it is made.
+  - **Off its default position, a double tap always puts it back** (Oct 28: "If a board is not in the default position than let
+    double click put it in the default position."): `noDoubleTap()` is heard only while the framed board stands where a double
+    tap would put it (`framedAsDefault`: settled at the page-load fit, heading forward, the same sums as `frameBoard`; a flight
+    under way counts as there). The games that take every press before the field (`MATCH_KIT.hands`: Pong, air hockey, squash,
+    curling's sweep; pinball's own) ask `pressReframes(e, x, y)` of each press: the second of a double, by the events' own times
+    within 40 px, with the board off its default position, puts it back (`reframeDefault`) and is not the game's. The smoke test
+    (part 7) zooms Lights Out, Pong and pinball off with the real wheel, a game under way, and a real double tap brings each back.
   - Air raid keeps its taps while its plane flies (`worldTap`: they drop bombs). The smoke test double-taps a neighbour in ten
     games with a game under way and wants the view where the 0 key puts it.
 - **The dots, full screen, Tab from the board in view** (Oct 17: "1) the three dots on the bottom for the bottom panel should be

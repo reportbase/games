@@ -6975,6 +6975,40 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok) failures.push(`[${current}] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} played with the row shut (bowling: the row shut, a drag along the line stood ${out.bwStand} over, a real swipe bowled with hook ${out.bwSwipe.h}; curling: a drag of the stone set the weight ${out.cuWeight.join(' → ')}, the pad's button turned the curl; marble run: real taps laid ${out.mr.laid} then ${out.mr.next}, a tap on the chute ${out.mr.ran}; 3D Tetris's Tip, the tanks' and golf tanks' next weapon by real clicks on the pad)`);
   }
+  // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
+  // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
+  // every press before the field), a game under way, the view zoomed by the real wheel, a real touch double tap on the board
+  // puts it back where the 0 key does; at its default position the field reads it as such (framedAsDefault)
+  current = 'double tap off default';
+  {
+    const before = failures.length, out = {};
+    for (const id of ['lightsout', 'pong', 'pinball']){
+      await page.evaluate(async id => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); }, id);
+      const mid = () => page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; });
+      const fd = () => page.evaluate(() => window.tvf.fn.framedAsDefault());
+      const r = { at: await fd() };
+      let m = await mid(); await page.mouse.click(m.x, m.y); await page.waitForTimeout(1500);       // (starts the board's game)
+      r.kept = await page.evaluate(() => { const a = window.getFieldApp(); return !!(a.noDoubleTap && a.noDoubleTap()); });
+      await page.mouse.move(m.x, m.y); for (let k = 0; k < 6; k++){ await page.mouse.wheel(0, 200); await page.waitForTimeout(150); }
+      await page.waitForTimeout(1500);
+      r.moved = await fd();
+      m = await mid();
+      // (the view at rest first, as the double-tap check above waits: a tap while it coasts is the brake; both taps' events made
+      //  before either is sent)
+      await page.evaluate(async ([x, y]) => { const cv = document.querySelector('canvas'), S = window.tvf.state, T = window.FIELD_WORLD.target, wait = ms => new Promise(ok => setTimeout(ok, ms));
+        for (let k = 0; k < 80 && (T.active || S.heldPanRate); k++) await wait(250);
+        const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+          const te = (type) => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] });
+          const pe = (type) => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y });
+          return [pe('pointerdown'), te('touchstart'), pe('pointerup'), te('touchend')]; };
+        for (const e of [...tap(), ...tap()]) cv.dispatchEvent(e);
+        await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); }, [m.x, m.y]);
+      r.back = await fd();
+      out[id] = r;
+    }
+    if (!Object.values(out).every(r => r.at && r.kept && !r.moved && r.back)) failures.push(`[${current}] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} double tap off default (Lights Out, Pong and pinball, a game under way and the view zoomed by the real wheel: a real double tap put the board back where the 0 key does)`);
+  }
   }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);

@@ -16188,6 +16188,48 @@ function tapIsDouble(hit, at){
   _lastTap = { x: hit.x, z: hit.z, at: isDouble ? -1e9 : now };
   return isDouble;
 }
+/* OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
+   put it in the default position."). A game may keep both taps of a double as two moves (noDoubleTap: Simon's pads, Lights
+   Out's squares), or take every press before the field (Pong, air hockey, squash, pinball, curling's sweep), and then a board
+   panned, zoomed or turned away from where the 0 key puts it could not be brought back by a double tap at all. Now it can: the
+   game keeps its doubles only while its board stands where a double tap would put it.
+   framedAsDefault: the framed board settled where frameBoard puts it at the page-load fit, heading forward (the same sums as
+   frameBoard and frameSelectedBoardAt, at the tilt the view has now, since a double tap does not change the tilt); a flight
+   under way counts as there. reframeDefault is what a double tap does once it is the field's. */
+function framedAsDefault(){
+  try {
+    if (!target.shown || target.active) return true;
+    const off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;
+    if (Math.abs(off) > 1) return false;
+    if (birdFit !== FRAME_FIT) return false;
+    let af = 1; const a = window.getFieldApp && window.getFieldApp(); if (a && a.frameFit > 0) af = a.frameFit;
+    const zoom = tabletopZoom() * FRAME_FIT * af;
+    const t1 = (gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize))) / 8;
+    const pitch = Math.max((window.LAB ? window.LAB.pitchMin : 35), Math.min(PITCH_MAX, st.pitch)) * Math.PI / 180;
+    const back = THREE.MathUtils.lerp(0.75, CAM_H_MAX, zoom / 1000) / Math.tan(pitch);
+    const x = target.boardX, z = target.boardZ - t1 * BOARD_LIFT_ROWS - back;      // (heading forward: sin 0, cos 1)
+    const SP = Math.min(gridSpacingX(), gridSpacingZ());
+    return Math.hypot(st.camX - x, st.camZ - z) < 0.04 * SP && Math.abs(st.zoom - zoom) <= Math.max(2, 0.03 * zoom);
+  } catch { return true; }
+}
+function reframeDefault(){
+  zoomBoardToFit();
+  const off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;
+  if (Math.abs(off) > 1) target.yaw = 0;
+  target.active = true;
+}
+/* For a game that takes presses before the field (MATCH_KIT.hands, pinball): asked on each press it would take, true when the
+   press is the second of a double (by the events' own times, within a fingertip) and the board is off its default position;
+   the board is then put back and the game leaves the press alone. */
+let _pressDbl = { at: -1e9, x: 0, y: 0 };
+function pressReframes(e, x, y){
+  const at = (e && e.timeStamp > 0) ? e.timeStamp : performance.now();
+  const dbl = at - _pressDbl.at < DOUBLE_TAP_MS && Math.hypot(x - _pressDbl.x, y - _pressDbl.y) < 40;
+  _pressDbl = dbl ? { at: -1e9, x: 0, y: 0 } : { at, x, y };
+  if (!dbl || framedAsDefault()) return false;
+  reframeDefault();
+  return true;
+}
 /* Every tap the board actually acts on, counted. There is no other honest
    way to ask "did that gesture reach the board?" from outside: the click hook
    closed over this function at mount, so it cannot be spied on. */
@@ -16299,6 +16341,8 @@ function handleGroundTap(hit, ev){
       const _onFramedNow = !!target.shown && Math.round(target.boardX / gridSpacingX()) === _gx0 && Math.round(target.boardZ / gridSpacingZ()) === _gz0;
       const _tapAt = (ev && ev.timeStamp > 0 && ev.timeStamp <= performance.now() + 1) ? ev.timeStamp : performance.now();
       if (_noDbl && _lastTapSelected.sel && _tapAt - _lastTapSelected.at < DOUBLE_TAP_MS) _noDbl = false;
+      // (…and a board moved off its default position always takes the double back there: framedAsDefault, Oct 28)
+      if (_noDbl && !framedAsDefault()) _noDbl = false;
       _lastTapSelected = { at: _tapAt, sel: !_onFramedNow };
       const _isDbl = tapIsDouble(hit, _tapAt);
       if (!_noDbl && _isDbl){
@@ -48919,6 +48963,8 @@ const PINBALL_APP = (() => {
     touchTS = e.timeStamp;
     if (!onCanvas(e)) return;
     let took = false;
+    // (a double tap on a table moved off its default position puts it back, and flips nothing: pressReframes, Oct 28)
+    if (e.touches.length === 1){ const t = e.changedTouches[0]; if (pressAt(t.clientX, t.clientY) && pressReframes(e, t.clientX, t.clientY)){ e.preventDefault(); e.stopPropagation(); return; } }
     for (const t of e.changedTouches){ const p = pressAt(t.clientX, t.clientY); if (!p) continue; OWN.set('t' + t.identifier, p); press(p.g, p.who, true, 't' + t.identifier); took = true; }
     if (took){ e.preventDefault(); e.stopPropagation(); }
   }, { capture: true, passive: false });
@@ -48934,6 +48980,7 @@ const PINBALL_APP = (() => {
   addEventListener('mousedown', e => {
     if (!onCanvas(e) || e.button !== 0 || echoOf(e)) return;      // (a tap's echo as a mouse press launched the ball it had just put on the plunger)
     const p = pressAt(e.clientX, e.clientY); if (!p) return;
+    if (pressReframes(e, e.clientX, e.clientY)){ e.preventDefault(); e.stopPropagation(); return; }
     OWN.set('m', p); press(p.g, p.who, true, 'm'); e.preventDefault(); e.stopPropagation();
   }, true);
   addEventListener('mouseup', e => { const p = OWN.get('m'); if (!p) return; OWN.delete('m'); press(p.g, p.who, false, 'm'); e.preventDefault(); e.stopPropagation(); }, true);
@@ -56524,6 +56571,8 @@ const MATCH_KIT = {
       touchTS = e.timeStamp;
       if (!onCanvas(e)) return;
       let took = false;
+      // (a double tap on a board moved off its default position puts it back, and is not the game's: pressReframes, Oct 28)
+      if (e.touches.length === 1){ const t = e.changedTouches[0]; if (o.pressAt(t.clientX, t.clientY) && pressReframes(e, t.clientX, t.clientY)){ e.preventDefault(); e.stopPropagation(); return; } }
       for (const t of e.changedTouches){ const p = o.pressAt(t.clientX, t.clientY); if (!p) continue; OWN.set('t' + t.identifier, p); o.handAt(p, t.clientX, t.clientY); took = true; }
       if (took){ e.preventDefault(); e.stopPropagation(); }
     }, { capture: true, passive: false });
@@ -56543,6 +56592,7 @@ const MATCH_KIT = {
     addEventListener('mousedown', e => {
       if (!onCanvas(e) || e.button !== 0 || echoOf(e)) return;
       const p = o.pressAt(e.clientX, e.clientY); if (!p) return;
+      if (pressReframes(e, e.clientX, e.clientY)){ e.preventDefault(); e.stopPropagation(); return; }
       OWN.set('m', p); o.handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation();
     }, true);
     addEventListener('mousemove', e => { const p = OWN.get('m'); if (!p) return; o.handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation(); }, true);
@@ -69450,7 +69500,7 @@ window.tvf = {
   setRowMinBp(v){ ROW_MIN_BP = v; },
   get frame(){ return { ..._frameStats, tileCap: MAXI, wholeCap: MAXW,
                         wholeDrawn: _wholeN, boardsAtCap: MAXW }; },
-  fn: { viewBoardCell, stepRight, gotoCell, _framedUV, historyLen, navTo, navRel, enterPlay, exitPlay, resetGame, commitReview,
+  fn: { viewBoardCell, stepRight, framedAsDefault, reframeDefault, gotoCell, _framedUV, historyLen, navTo, navRel, enterPlay, exitPlay, resetGame, commitReview,
         cancelReview, reviewButtonAt, reviewHitAt, panelScrubAt, panelScrub,
         sidePanelSafeAt, sidePanelSwallows, userButtonAt, eloSliderTap,
         actionButtonAt, boardActionsShown, actArmed, resignGame, gameIsFinished,
