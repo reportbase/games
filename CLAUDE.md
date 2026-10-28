@@ -2433,6 +2433,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `const say = BOARD_KIT.say(ms, () => QUIET);` (the second argument only where the game had one). The four that do more (the
   board editors' and puzzle makers', which keep the message on the draft too, and chess's early one) keep their own. Checked: every
   app loads, and the games' own messages say the same.
+  **A game a board, and the small things** (Oct 27: "what else could be shared between games?", then "do 1 and 2"): `BOARD_KIT`
+  also has `gkey` (50 games), `gameAt(GAMES, fresh)` (a board's game made on first want; 11), `liveGame(() => app, () => LIVE,
+  gameAt)` (the board being played while this game is up; 10), `clamp` (12), `now` (the paused-aware clock in ms; 17), `yawOf`
+  (never a yaw of exactly 0; 5), `hash` (FNV-1a in base 36: the keys of your own tables, figures and trick shots; 4, the same
+  keys as before), `LV_COL` (the levels' flag colours; 5) and `stars(n)` (★★☆; 15 places). Trick shots' worker is made from its
+  own text up to "IN THE FIELD", so nothing of the kit may go above that line; the game lab's starters and sandbox keep their
+  own. Checked: every app loads with the same levels, every hash the same, a tap starts the same game.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:
