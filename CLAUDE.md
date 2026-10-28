@@ -882,12 +882,40 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     1–4, X), a tap on an empty square lays the stock's piece that fits best (`bestFits`: every way of every piece left, scored as
     `fitsAt` scores them, more in stock first on a tie); a tap again on one of yours steps through the other ways and pieces that
     join, then takes it back (`tapAuto`); a tap on the chute or the cup runs the marble.
-- **Bejeweled's pearls and lit squares** (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the
-  white one, but with different colors. also, when sliding pieces, highlight the selected cells."): `GEMS_APP` draws all seven kinds
-  as the white one's flattened sphere (`PEARL`, `CUTS[6]`), told apart by `COLS` alone (the faceted cuts are kept, not drawn). The
-  squares being swapped are lit pale blue (`litOf`, kind 8 entries in a frame, `gridOf`): the square a drag began on, and the one it
-  heads for once the finger has gone 0.08 of a square (`g.drag`), then both while the gems slide and slide back (`g.lit`,
-  `g.litUntil`); a drag lets go a gem tapped before. The smoke test (part 7) drags with the real mouse.
+- **Bejeweled** (`GEMS_APP`, id `bejeweled`):
+  - **Pearls and lit squares** (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the white
+    one, but with different colors. also, when sliding pieces, highlight the selected cells."): all seven kinds are the white one's
+    flattened sphere (`PEARL`, `CUTS[6]`), told apart by `COLS`; the faceted cuts are kept, not drawn. The squares being swapped are
+    lit pale blue (`litOf`, `gridOf`): the square a drag began on, the one it heads for once the finger has gone 0.08 of a square
+    (`g.drag`, which also lets go a gem tapped before), then both while the gems slide and slide back (`g.lit`, `g.litUntil`).
+  - **Special gems, a goal on every board, the feel, size and colours** (Oct 28: "whats next for bejeweld", then "1,2,5,6"):
+    - A gem is `{ k, sp }`: k a colour 0–6, `HYPER_K` 7 or `STONE_K` 8. `groupsOf` finds the runs and joins them where they share a
+      gem. A group of five or more makes a hypercube, a line across meeting a line down a star, four a flame (`clearGroups`), at the
+      swapped gem of the group, else where the lines meet, else the longest run's middle. `spread` fires every special caught (a
+      flame its 3 × 3, a star its row and column, a hypercube blasted the commonest colour); a hypercube swapped takes every gem of
+      the other's colour, two of them the board (`hyperSwap`). A stone goes when a matched gem beside it does or a blast covers it.
+    - **Goals** (`specOf(idx, lv)`, seeded; `LV` by level, the ring level plus the Difficulty): a score, so many of a colour (two
+      colours farther out), all the ice (panes on squares, one or two thick: a gem cleared on a square breaks one; `ICE1`, `ICE2`, a
+      frost pane `bjIce`), or all the stones; stones also stand in the way at levels 4–5; 5 colours at levels 1–2, 6 at 3–4, 7 at 5.
+    - **Par** (`parGen`, `parFor`, `PARS`): the steady player (`plan`: every swap tried in a copy, `copyOf`/`simMove`, its cascades
+      falling with gems of its own drawn, the one doing most for the goal taken, then specials and score) over `PAR_RUNS` (3) games,
+      `PAR_CAP` 60. The moves allowed (`g.limit`) are par × the level's `slack` (2 at level 1 to 1.15 at 5), at least par + 2. Worked
+      out for the framed board `URGENT_MS` a frame, at once for a board played (10–50 ms). Measured on 24 boards a level: median par
+      8, 8, 13, 14 and 34 moves at levels 1–5; ice the slowest goal (25–50 from level 3).
+    - Made: stars by moves against par (`starsOf`: par 3, 1.3 × par 2, else 1), the fewest kept (`bejeweled.best`, by board, level,
+      size and colours); a tap after `GRACE` goes on to the board beside. Out of moves: a tap begins again. No swap left: the gems
+      shuffle where they stand (`shuffle`), stones kept.
+    - **Endless** (the Mode): the game as it was with the specials, no goal, no limit; taking a board carries on from what it showed.
+    - **Boards no one plays** (`SHOWS`, `showAt`): each a game of its own on its own clock, played by `quickPick` (the swap clearing
+      most, the goal's squares first), begun again `HOLD_T` after its goal is made or `SHOW_CAP` moves.
+    - **The feel**: pops (`pops`, `POP_T`), the points floating up in the small dot font (`floats`), cascades called GOOD … INCREDIBLE
+      in the big one (`words`, `text5`), a star's row and column flashing (`beams`), bursts (`BOOM`), a special made swelling once
+      (`born`); sounds (`beep`, `bejeweled.sound`): a chime climbing a whole tone a cascade step, the specials, ice, stones, a fanfare.
+    - **Settings** (`SET`, `bejeweled.settings`, the menu and the row: New/Restart, Mode, Board size 6–10, Colours 5/6/7 or by level,
+      Sound): a change starts every board afresh. `g.n` and `g.K` are the game's own.
+  - The smoke test (part 7) checks every kind the pearl, the levels, pars, each special made and a flame's 3 × 3, and real input: a
+    drag lighting both squares and making a flame, clicks swapping a hypercube, a goal made with stars and a best, a click going on
+    to the next board, a board out of moves, the real Size tile, and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

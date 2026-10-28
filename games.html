@@ -30420,17 +30420,21 @@ const SOMA_APP = (() => {
 
    Controls: TAP a gem, then a neighbour, to swap them; or DRAG a gem toward
    a neighbour. A swap that makes no line swaps back.
-   Selecting a board carries on from what it was showing; the other boards
-   are played by a bot that takes the swap clearing the most. */
+   Since Oct 28 ("whats next for bejeweld", then "1,2,5,6"): special gems (a flame, a star, a hypercube), every board its
+   own goal in so many moves (THE GAME, below), the feel (pops, points, called cascades, a climbing chime), and the board's
+   size and colours as settings. Every board no one plays is a game of its own player's; endless is the game as it was. */
 const GEMS_APP = (() => {
-  const N = 8, SQ = 1 / N, FAR_PX = 16;
+  /* Oct 28 ("whats next for bejeweld", then "1,2,5,6": special gems, every board its own goal harder farther out, the feel,
+     the board's size and colours): the board is n × n (`SET.size`, 6–10) with K colours (`SET.colours`, 5–7, or the level's),
+     so the squares' size is the game's own (`g.n`, `sq(g)`), not a constant. */
+  const FAR_PX = 16;
   // A light grey floor ruled into squares (Sep 27: "background should be light gray grid"); the chosen square pale blue.
-  const LIGHT_SQ = 0xe4e4e4, DARK_SQ = 0xe4e4e4, SEL_SQ = 0xa9c6ec, LINE = 0x9a9a9a;
+  const LIGHT_SQ = 0xe4e4e4, DARK_SQ = 0xe4e4e4, SEL_SQ = 0xa9c6ec, LINE = 0x9a9a9a, ICE1 = 0xcdeee9, ICE2 = 0x8fd6cc, STONE_COL = 0x8d8a86;
   const COLS = [0xe8303a, 0xf28a1e, 0xf5d327, 0x2fbf4f, 0x2f6fe0, 0xa845d6, 0xf4f4f4];
   const G = 70, SWAP_T = 0.22, SWAP_W = 30, THINK = 0.55;       // fall in squares/s², the swap's spring
   const GAMES = new Map();
   const gkey = BOARD_KIT.gkey;
-  let LIVE = null, rnd = Math.random, QUIET = false;
+  let LIVE = null, QUIET = false;
   const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── THE SHAPES: r(h, θ), h up the gem, θ around it. A cut gem is a
@@ -30489,229 +30493,668 @@ const GEMS_APP = (() => {
      sphere, told apart by colour alone (COLS). The cuts above are kept, not drawn. */
   const PEARL = CUTS[6];
 
-  /* ─── THE GAME. Each square holds a gem; a gem knows where it is drawn
-     from and since when, so it falls (under gravity) or swaps (on a spring)
-     worked out from the clock, not stepped. */
-  const gem = (k, r, fr, t0, how) => ({ k, fr, fc: 0, t0, how: how || 'fall' });
+  /* ─── THE GAME (Oct 28: "whats next for bejeweld", then "1,2,5,6"). Each square holds a gem; a gem knows where it is
+     drawn from and since when, so it falls (under gravity) or swaps (on a spring) worked out from the clock, not stepped.
+     A gem is { k, sp }: k its colour (0–6), or HYPER_K (7, the hypercube: no colour) or STONE_K (8, a stone: never matched,
+     never swapped, broken by a match beside it or a blast over it); sp the special it is (NONE, FLAME, STAR, HYPER).
+       SPECIAL GEMS, as Bejeweled makes them: four in a line make a FLAME gem (matched or blasted, it bursts the 3 × 3 round
+       it); a line across and a line down meeting (an L, a T or a +) a STAR gem (its whole row and column); five in a line a
+       HYPERCUBE (swapped with any gem, every gem of that colour goes; with another hypercube, the board; blasted, the
+       commonest colour). A special is made where the swap put a gem of the line, else where the lines meet or in the
+       line's middle, and a special caught in a blast fires too, so specials set each other off.
+       EVERY BOARD ITS OWN GOAL (`specOf`): from the board's number at a level 1–5 (the ring level plus the Difficulty, as
+       every game with levels): a score to make, so many gems of a colour (two colours farther out), every pane of ice
+       broken (ice lies on squares, one or two panes thick: a gem cleared on it breaks one), or every stone broken; in so
+       many moves. The moves come from the steady player (`plan`: every swap tried ahead with the cascades it sets off, the
+       one that does most for the goal taken), whose mean over `PAR_RUNS` games is the board's par; the moves allowed are
+       par × the level's `slack` (twice par at level 1, 1.15 times at level 5). Stars by moves used against par.
+       ENDLESS (the menu's or the row's Mode) is the game as it was, with the specials: no goal, no limit, a new board when
+       no swap is left. */
+  const NONE = 0, FLAME = 1, STAR = 2, HYPER = 3, HYPER_K = 7, STONE_K = 8;
+  const POP_T = 0.22, FLOAT_T = 0.9, WORD_T = 1.1, BEAM_T = 0.3, SHUF_T = 0.45, HOLD_T = 3, GRACE = 0.8;
+  const PAR_RUNS = 3, PAR_CAP = 60, URGENT_MS = 30, SHOW_CAP = 60;
+  const WORDS = ['', '', 'GOOD', 'GREAT', 'EXCELLENT', 'AMAZING', 'INCREDIBLE'];
+  const WORD_COL = [0, 0, 0x3a9a4a, 0x2f6fe0, 0xa845d6, 0xe8703a, 0xd8261c];
+  const DL = ARCADE.difficulty('bejeweled.level', 'Every board has its own goal, harder the farther it is from the corner: a score or a colour near it in plenty of moves, then ice to break, then stones and two colours with fewer moves and more colours. Easy, Normal and Hard move every board a level up.', true);
+  const SND = ARCADE.sounds('bejeweled.sound', 'A chime climbing with each cascade, the specials going off, a fanfare when a goal is made.', { gaps: { '*': 0.03 }, quiet: () => QUIET });
+  const boardIdx = BOARD_KIT.boardIdx, nextBoard = BOARD_KIT.nextBoard;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  // The level's dials: colours, the goals it draws from, ice (panes, and the share two panes thick), stones, the slack on par.
+  const LV = [
+    { K: 5, goals: ['score', 'colour'], ice: [6, 10], ice2: 0, stone: [3, 4], slack: 2.0, score: 2600, colour: 18, two: 0 },
+    { K: 5, goals: ['score', 'colour', 'ice'], ice: [8, 12], ice2: 0, stone: [3, 5], slack: 1.75, score: 3600, colour: 24, two: 0 },
+    { K: 6, goals: ['colour', 'ice', 'stone'], ice: [10, 14], ice2: 0.2, stone: [6, 8], slack: 1.5, score: 4000, colour: 20, two: 0.4 },
+    { K: 6, goals: ['ice', 'stone', 'colour'], ice: [12, 16], ice2: 0.35, stone: [8, 10], slack: 1.3, score: 4500, colour: 22, two: 0.7 },
+    { K: 7, goals: ['ice', 'stone', 'colour'], ice: [12, 16], ice2: 0.5, stone: [10, 12], slack: 1.15, score: 5000, colour: 22, two: 1 },
+  ];
+  /* THE SETTINGS (`bejeweled.settings`): the mode, the board's size and its colours (0: the level's, `LV`'s K). Fewer
+     colours make more lines fall into place by themselves. A change starts every board afresh. */
+  const SET = (() => {
+    const d = { mode: 'goals', size: 8, colours: 0 };
+    try { const s = JSON.parse(localStorage.getItem('bejeweled.settings') || '{}');
+      if (s.mode === 'goals' || s.mode === 'endless') d.mode = s.mode;
+      if ([6, 7, 8, 9, 10].includes(s.size)) d.size = s.size;
+      if ([0, 5, 6, 7].includes(s.colours)) d.colours = s.colours; } catch {}
+    return d;
+  })();
+  const saveSet = () => { try { localStorage.setItem('bejeweled.settings', JSON.stringify(SET)); } catch {} };
+  const sq = g => 1 / g.n;
+  const colOf = x => x && x.k < HYPER_K ? x.k : -1;
+  const gem = (k, fr, t0, sp) => ({ k, sp: sp || NONE, fr, fc: 0, t0, how: 'fall' });
+
+  /* ─── A BOARD'S GOAL. Seeded by the board's number, its level and the settings, so a board always asks the same. */
+  function specOf(idx, lv){
+    const D = LV[lv - 1], n = SET.size, K = SET.colours || D.K, area = n * n / 64;
+    const R = BOARD_KIT.rng((idx * 7919 + lv * 131 + n * 17 + K * 3 + 0x6e3) >>> 0);
+    const kind = D.goals[(R() * D.goals.length) | 0];
+    const S = { idx, lv, n, K, seed: (idx * 2654435761 + lv * 97 + n * 13 + K) >>> 0, ice: new Uint8Array(n * n), stones: [], iceTotal: 0, goal: { kind } };
+    const between = ([a, b]) => Math.round((a + (b - a) * R()) * area);
+    if (kind === 'score') S.goal.n = Math.round(D.score * area / 100) * 100;
+    else if (kind === 'colour'){
+      const two = R() < D.two, a = (R() * K) | 0, b = (a + 1 + ((R() * (K - 1)) | 0)) % K;
+      S.goal.cols = two ? [a, b] : [a];
+      S.goal.need = S.goal.cols.map(() => Math.round(D.colour * area * (two ? 0.7 : 1)));
+    }
+    // Ice in a pattern mirrored left to right, kept off the top two rows (where new gems come in) at first try
+    if (kind === 'ice'){
+      let want = between(D.ice), tries = 0;
+      while (want > 0 && tries++ < 400){
+        const r = 2 + ((R() * (n - 2)) | 0), c = (R() * Math.ceil(n / 2)) | 0, i = r * n + c, j = r * n + (n - 1 - c);
+        if (S.ice[i]) continue;
+        const th = R() < D.ice2 ? 2 : 1;
+        S.ice[i] = th; want--; if (j !== i){ S.ice[j] = th; want--; }
+      }
+      for (const v of S.ice) S.iceTotal += v;
+    }
+    // Stones for a stone goal, and a few farther out as things in the way
+    const stones = kind === 'stone' ? between(D.stone) : lv >= 4 && kind !== 'ice' ? Math.round(between(D.stone) / 3) : 0;
+    const used = new Set();
+    for (let k = 0, tries = 0; k < stones && tries < 400; tries++){
+      const r = 1 + ((R() * (n - 2)) | 0), c = (R() * n) | 0, i = r * n + c;
+      if (used.has(i) || used.has(i - 1) || used.has(i + 1)) continue;
+      used.add(i); S.stones.push(i); k++;
+    }
+    if (kind === 'stone') S.goal.n = S.stones.length;
+    return S;
+  }
+  const SPECS = new Map();
+  function specAt(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), k = idx + '@' + lv;
+    let S = SPECS.get(k);
+    if (!S){ S = specOf(idx, lv); SPECS.set(k, S); if (SPECS.size > 2000) SPECS.delete(SPECS.keys().next().value); }
+    return S;
+  }
+  const goalWords = (S, g) => {
+    const Gl = S.goal, got = g && g.got;
+    switch (Gl.kind){
+      case 'score': return 'score ' + Gl.n + (g ? ' (' + Math.min(g.score, Gl.n) + ')' : '');
+      case 'colour': return 'clear ' + Gl.cols.map((c, k) => (got ? Math.min(got.col[c], Gl.need[k]) + '/' : '') + Gl.need[k] + ' ' + CNAME[c]).join(' and ');
+      case 'ice': return 'break the ice' + (got ? ' ' + got.ice + '/' + S.iceTotal : ' (' + S.iceTotal + ')');
+      case 'stone': return 'break the stones' + (got ? ' ' + got.stone + '/' + Gl.n : ' (' + Gl.n + ')');
+    }
+    return '';
+  };
+  const CNAME = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'white'];
+  function prog(g){
+    const S = g.S, Gl = S.goal;
+    if (g.mode !== 'goals') return 0;
+    switch (Gl.kind){
+      case 'score': return Math.min(1, g.score / Gl.n);
+      case 'colour': { let a = 0, b = 0; Gl.cols.forEach((c, k) => { a += Math.min(g.got.col[c], Gl.need[k]); b += Gl.need[k]; }); return b ? a / b : 1; }
+      case 'ice': return S.iceTotal ? g.got.ice / S.iceTotal : 1;
+      case 'stone': return Gl.n ? g.got.stone / Gl.n : 1;
+    }
+    return 0;
+  }
+  const met = g => g.mode === 'goals' && prog(g) >= 1 - 1e-9;
+
+  /* ─── THE BOARD'S RULES */
   function posOf(g, i, x){
-    const r = (i / N) | 0, c = i % N, dt = g.t - x.t0;
+    const n = g.n, r = (i / n) | 0, c = i % n;
+    if (g.sim) return [c, r];
+    const dt = g.t - x.t0;
     if (x.how === 'fall') return [c, Math.min(r, x.fr + 0.5 * G * Math.max(0, dt) * Math.max(0, dt))];
     const s = springAt(SWAP_W, dt);
     return [x.fc + (c - x.fc) * s, x.fr + (r - x.fr) * s];
   }
-  const kindAt = (b, i) => b[i] ? b[i].k : -1;
-  function matches(b){
-    const hit = new Set();
-    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++){
-      const i = r * N + c, k = kindAt(b, i);
-      if (k < 0) continue;
-      if (c <= N - 3 && kindAt(b, i + 1) === k && kindAt(b, i + 2) === k){ let j = c; while (j < N && kindAt(b, r * N + j) === k) hit.add(r * N + j++); }
-      if (r <= N - 3 && kindAt(b, i + N) === k && kindAt(b, i + 2 * N) === k){ let j = r; while (j < N && kindAt(b, j * N + c) === k) hit.add(j++ * N + c); }
+  // The runs of three or more, joined where they share a gem into groups: { cells, long (the longest run), h, v, at (a meeting) }
+  function groupsOf(g){
+    const n = g.n, b = g.b, runs = [];
+    for (let r = 0; r < n; r++) for (let c = 0; c < n;){
+      const k = colOf(b[r * n + c]); let e = c + 1;
+      while (e < n && k >= 0 && colOf(b[r * n + e]) === k) e++;
+      if (k >= 0 && e - c >= 3){ const cells = []; for (let j = c; j < e; j++) cells.push(r * n + j); runs.push({ cells, h: true }); }
+      c = e;
     }
-    return hit;
-  }
-  // Every swap that makes a line, with how many it clears.
-  function moves(b){
-    const out = [];
-    for (let i = 0; i < N * N; i++) for (const j of [i + 1, i + N]){
-      if (j >= N * N || (j === i + 1 && i % N === N - 1)) continue;
-      [b[i], b[j]] = [b[j], b[i]];
-      const n = matches(b).size;
-      [b[i], b[j]] = [b[j], b[i]];
-      if (n) out.push([i, j, n]);
+    for (let c = 0; c < n; c++) for (let r = 0; r < n;){
+      const k = colOf(b[r * n + c]); let e = r + 1;
+      while (e < n && k >= 0 && colOf(b[e * n + c]) === k) e++;
+      if (k >= 0 && e - r >= 3){ const cells = []; for (let j = r; j < e; j++) cells.push(j * n + c); runs.push({ cells, h: false }); }
+      r = e;
+    }
+    if (!runs.length) return [];
+    const owner = new Map(), parent = runs.map((_, k) => k);
+    const find = k => parent[k] === k ? k : (parent[k] = find(parent[k]));
+    runs.forEach((R, k) => { for (const i of R.cells){ if (owner.has(i)) parent[find(k)] = find(owner.get(i)); else owner.set(i, k); } });
+    const by = new Map();
+    runs.forEach((R, k) => { const p = find(k); if (!by.has(p)) by.set(p, { cells: new Set(), long: 0, h: false, v: false, runs: [] }); const G0 = by.get(p);
+      R.cells.forEach(i => G0.cells.add(i)); G0.long = Math.max(G0.long, R.cells.length); G0.h = G0.h || R.h; G0.v = G0.v || !R.h; G0.runs.push(R); });
+    const out = [...by.values()];
+    for (const G0 of out){
+      // where a line across and a line down meet
+      const seen = new Map(); G0.at = -1;
+      for (const R of G0.runs) for (const i of R.cells){ const m = (seen.get(i) || 0) | (R.h ? 1 : 2); seen.set(i, m); if (m === 3) G0.at = i; }
+      const L = G0.runs.reduce((a, R) => R.cells.length > a.cells.length ? R : a);
+      G0.mid = L.cells[(L.cells.length / 2) | 0];
     }
     return out;
   }
-  // A fresh board with no line already made and a swap to be had, falling in from above.
-  function deal(g){
-    let b;
-    do {
-      b = new Array(N * N);
-      for (let i = 0; i < N * N; i++){
-        let k;
-        do k = (rnd() * 7) | 0;
-        while ((i % N >= 2 && kindAt(b, i - 1) === k && kindAt(b, i - 2) === k) ||
-               (i >= 2 * N && kindAt(b, i - N) === k && kindAt(b, i - 2 * N) === k));
-        b[i] = gem(k, 0, 0, g.t);
-      }
-    } while (!moves(b).length);
-    let far = 0;
-    b.forEach((x, i) => { const r = (i / N) | 0; x.fr = r - N - 1 - (N - 1 - r) * 0.15; far = Math.max(far, Math.sqrt(2 * (r - x.fr) / G)); });
-    g.b = b; g.until = g.t + far; g.after = 'check';
+  // Does a line run through square i (as the board stands)?
+  function lineThrough(g, i){
+    const n = g.n, b = g.b, k = colOf(b[i]); if (k < 0) return false;
+    const r = (i / n) | 0, c = i % n;
+    let a = c, e = c; while (a > 0 && colOf(b[r * n + a - 1]) === k) a--; while (e < n - 1 && colOf(b[r * n + e + 1]) === k) e++;
+    if (e - a >= 2) return true;
+    a = r; e = r; while (a > 0 && colOf(b[(a - 1) * n + c]) === k) a--; while (e < n - 1 && colOf(b[(e + 1) * n + c]) === k) e++;
+    return e - a >= 2;
   }
-  function newGame(){
-    const g = { b: null, t: 0, until: 0, after: null, sel: -1, score: 0, chain: 0, best: 0, think: 0, booms: [], last: 0 };
+  const swappable = x => x && x.k !== STONE_K;
+  // Every swap that does something: [i, j]
+  function moves(g){
+    const n = g.n, b = g.b, out = [];
+    for (let i = 0; i < n * n; i++) for (const j of [i + 1, i + n]){
+      if (j >= n * n || (j === i + 1 && i % n === n - 1)) continue;
+      if (!swappable(b[i]) || !swappable(b[j])) continue;
+      if (b[i].k === HYPER_K || b[j].k === HYPER_K){ out.push([i, j]); continue; }
+      [b[i], b[j]] = [b[j], b[i]];
+      const ok = lineThrough(g, i) || lineThrough(g, j);
+      [b[i], b[j]] = [b[j], b[i]];
+      if (ok) out.push([i, j]);
+    }
+    return out;
+  }
+  // A fresh board: the stones where the goal puts them, no line already made, a swap to be had, falling in from above.
+  function deal(g){
+    const n = g.n, S = g.S, R = g.rng, stone = new Set(S.stones);
+    let b, tries = 0;
+    do {
+      b = new Array(n * n);
+      for (let i = 0; i < n * n; i++){
+        if (stone.has(i)){ b[i] = gem(STONE_K, 0, g.t); continue; }
+        let k, t = 0;
+        do k = (R() * g.K) | 0;
+        while (t++ < 30 && ((i % n >= 2 && colOf(b[i - 1]) === k && colOf(b[i - 2]) === k) ||
+                            (i >= 2 * n && colOf(b[i - n]) === k && colOf(b[i - 2 * n]) === k)));
+        b[i] = gem(k, 0, g.t);
+      }
+      g.b = b;
+    } while ((groupsOf(g).length || !moves(g).length) && tries++ < 50);
+    let far = 0;
+    b.forEach((x, i) => { const r = (i / n) | 0; x.fr = r - n - 1 - (n - 1 - r) * 0.15; far = Math.max(far, Math.sqrt(2 * (r - x.fr) / G)); });
+    if (g.sim) b.forEach((x, i) => { x.fr = (i / n) | 0; });
+    g.until = g.t + (g.sim ? 0 : far); g.after = g.sim ? null : 'check';
+  }
+  /* A game: `S` the board's goal, `seed` its gems to come, `mode`, `sim` (the steady player's games, worked out at once: no
+     clock, no pictures, no sound). `left` is the moves allowed, set once par is known (`limitFor`). */
+  function newGame(S, seed, mode, sim){
+    const g = { S, n: S.n, K: S.K, mode, sim: !!sim, rng: BOARD_KIT.rng(seed), b: null, ice: S.ice.slice(), t: 0, until: 0, after: null,
+                sel: -1, score: 0, chain: 0, best: 0, think: 0, booms: [], pops: [], floats: [], words: [], beams: [], moves: 0, limit: 0,
+                got: { col: new Array(7).fill(0), ice: 0, stone: 0 }, state: 'play', last: 0, made: 0, overT: 0, loud: false, stars: 0 };
     deal(g);
     return g;
   }
   const busy = g => !!g.after || g.t < g.until;
   const litOf = g => {
     if (g.lit && g.t < g.litUntil) return g.lit;
-    return g.drag || [];
+    if (g.drag) return g.drag;
+    return g.sel >= 0 ? [g.sel] : [];
   };
   function swap(g, i, j, back){
-    const b = g.b;
+    const b = g.b, n = g.n;
     [b[i], b[j]] = [b[j], b[i]];
-    for (const [x, from] of [[b[i], j], [b[j], i]]){ x.how = 'spring'; x.fr = (from / N) | 0; x.fc = from % N; x.t0 = g.t; }
-    g.until = g.t + SWAP_T; g.after = back ? null : 'swapped'; g.swapped = [i, j];
+    if (!g.sim) for (const [x, from] of [[b[i], j], [b[j], i]]){ x.how = 'spring'; x.fr = (from / n) | 0; x.fc = from % n; x.t0 = g.t; }
+    g.until = g.t + (g.sim ? 0 : SWAP_T); g.after = back ? null : 'swapped'; g.swapped = back ? null : [i, j];
     g.lit = [i, j]; g.litUntil = g.until; g.drag = null;
     g.sel = -1;
   }
   function trySwap(g, i, j){
-    if (busy(g)) return false;
-    const d = Math.abs(i - j);
-    if (!(d === N || (d === 1 && ((i / N) | 0) === ((j / N) | 0)))) return false;
+    if (busy(g) || g.state !== 'play') return false;
+    const n = g.n, d = Math.abs(i - j);
+    if (!(d === n || (d === 1 && ((i / n) | 0) === ((j / n) | 0)))) return false;
+    if (!swappable(g.b[i]) || !swappable(g.b[j])){ beep(g, 'bad'); return false; }
     swap(g, i, j);
+    beep(g, 'swap');
     return true;
   }
-  // The lines go off; what is left falls; new gems fall in from above.
-  function clear(g, hit){
+  /* WHAT GOES. `clearSet` starts from the squares matched (or a hypercube's colour) and spreads through every special
+     caught: a flame its 3 × 3, a star its row and column, a hypercube the commonest colour; the specials being made stay.
+     A stone goes when a matched gem beside it does, or a blast covers it. */
+  function spread(g, clear, make, from){
+    const n = g.n, b = g.b, q = [...from], fired = new Set();
+    const add = j => { if (j >= 0 && j < n * n && b[j] && !make.has(j) && !clear.has(j)){ clear.add(j); q.push(j); } };
+    while (q.length){
+      const i = q.pop(), x = b[i];
+      if (!x || fired.has(i)) continue;
+      fired.add(i);
+      const r = (i / n) | 0, c = i % n;
+      if (x.sp === FLAME){ for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (r + dr >= 0 && r + dr < n && c + dc >= 0 && c + dc < n) add((r + dr) * n + c + dc);
+        fx(g, 'flame', i); }
+      else if (x.sp === STAR){ for (let k = 0; k < n; k++){ add(r * n + k); add(k * n + c); } fx(g, 'star', i); }
+      else if (x.sp === HYPER){ const k = commonest(g); for (let j = 0; j < n * n; j++) if (colOf(b[j]) === k) add(j); fx(g, 'hyper', i); }
+    }
+  }
+  function commonest(g){
+    const cnt = new Array(7).fill(0); for (const x of g.b) if (colOf(x) >= 0) cnt[x.k]++;
+    let k = 0; for (let j = 1; j < 7; j++) if (cnt[j] > cnt[k]) k = j; return k;
+  }
+  function clearGroups(g, groups){
     g.chain++;
     g.best = Math.max(g.best, g.chain);
-    g.score += hit.size * 10 * g.chain;
-    for (const i of hit){ BOOM.add(g, (i % N + 0.5) * SQ, (((i / N) | 0) + 0.5) * SQ, 'p', rnd); g.b[i] = null; }
+    const n = g.n, b = g.b, clear = new Set(), make = new Map(), sw = g.swapped || [];
+    for (const G0 of groups){
+      const sp = G0.long >= 5 ? HYPER : (G0.h && G0.v) ? STAR : G0.long === 4 ? FLAME : NONE;
+      let at = -1;
+      if (sp){
+        const cand = [...sw.filter(i => G0.cells.has(i)), G0.at, G0.mid, ...G0.cells].filter(i => i >= 0 && G0.cells.has(i) && b[i] && !b[i].sp && !make.has(i));
+        at = cand.length ? cand[0] : -1;
+        if (at >= 0) make.set(at, gem(sp === HYPER ? HYPER_K : b[at].k, (at / n) | 0, g.t, sp));
+      }
+      for (const i of G0.cells) if (i !== at) clear.add(i);
+    }
+    // the stones beside what was matched
+    for (const i of [...clear]){ const r = (i / n) | 0, c = i % n;
+      for (const j of [c > 0 ? i - 1 : -1, c < n - 1 ? i + 1 : -1, r > 0 ? i - n : -1, r < n - 1 ? i + n : -1]) if (j >= 0 && b[j] && b[j].k === STONE_K) clear.add(j); }
+    spread(g, clear, make, [...clear]);
+    take(g, clear, make);
+  }
+  // A hypercube swapped: every gem of the other's colour (another hypercube: every gem), the specials among them firing.
+  function hyperSwap(g, i, j){
+    g.chain++;
+    g.best = Math.max(g.best, g.chain);
+    const n = g.n, b = g.b, a = b[i], o = b[j], clear = new Set([i, j]);
+    const both = a.k === HYPER_K && o.k === HYPER_K, k = a.k === HYPER_K ? colOf(o) : colOf(a);
+    for (let m = 0; m < n * n; m++) if (b[m] && (both || colOf(b[m]) === k)) clear.add(m);
+    fx(g, 'hyper', a.k === HYPER_K ? i : j);
+    const hy = new Set([i, j].filter(m => b[m].k === HYPER_K));
+    spread(g, clear, new Map(), [...clear].filter(m => !hy.has(m)));
+    take(g, clear, new Map());
+  }
+  // The gems cleared are counted, scored, popped; the specials made put down; what is left falls; new gems come in from above.
+  function take(g, clear, make){
+    const n = g.n, b = g.b;
+    let pts = 0, sx = 0, sy = 0;
+    for (const i of clear){
+      const x = b[i]; if (!x) continue;
+      const [c, r] = posOf(g, i, x);
+      if (x.k === STONE_K){ g.got.stone++; pts += 20; beep(g, 'stone'); }
+      else { pts += 10; if (x.k < 7) g.got.col[x.k]++; }
+      if (g.ice[i] > 0){ g.ice[i]--; g.got.ice++; pts += 20; beep(g, 'ice'); }
+      sx += c; sy += r;
+      if (!g.sim) g.pops.push({ k: x.k, sp: x.sp, x: c, y: r, t0: g.t });
+      b[i] = null;
+    }
+    for (const [i, x] of make){ if (g.ice[i] > 0){ g.ice[i]--; g.got.ice++; pts += 20; } b[i] = x; x.born = g.t; g.made++; pts += x.sp === HYPER ? 150 : x.sp === STAR ? 100 : 50; beep(g, 'made'); }
+    pts *= g.chain;
+    g.score += pts;
+    if (!g.sim){
+      const m = Math.max(1, clear.size);
+      g.floats.push({ x: sx / m, y: sy / m, n: pts, t0: g.t });
+      if (g.chain >= 2) g.words.push({ w: Math.min(6, g.chain), t0: g.t });
+      beep(g, 'chain');
+    }
+    collapse(g);
+  }
+  function collapse(g){
+    const n = g.n, b = g.b;
     let far = 0;
-    for (let c = 0; c < N; c++){
+    for (let c = 0; c < n; c++){
       const col = [];
-      for (let r = N - 1; r >= 0; r--){ const x = g.b[r * N + c]; if (x){ const [, y] = posOf(g, r * N + c, x); col.push([x, y]); } }
-      let r = N - 1;
-      for (const [x, y] of col){ x.how = 'fall'; x.fr = y; x.t0 = g.t; g.b[r * N + c] = x; far = Math.max(far, Math.sqrt(2 * (r - y) / G)); r--; }
+      for (let r = n - 1; r >= 0; r--){ const x = b[r * n + c]; if (x){ const [, y] = posOf(g, r * n + c, x); col.push([x, y]); } }
+      let r = n - 1;
+      for (const [x, y] of col){ x.how = 'fall'; x.fr = g.sim ? r : y; x.t0 = g.t; b[r * n + c] = x; far = Math.max(far, Math.sqrt(2 * Math.max(0, r - y) / G)); r--; }
       const fresh = r + 1;
       for (; r >= 0; r--){
-        const x = gem((rnd() * 7) | 0, r, r - fresh - 0.6, g.t);
-        g.b[r * N + c] = x; far = Math.max(far, Math.sqrt(2 * (r - x.fr) / G));
+        const x = gem((g.rng() * g.K) | 0, g.sim ? r : r - fresh - 0.6, g.t);
+        b[r * n + c] = x; far = Math.max(far, Math.sqrt(2 * Math.max(0, r - x.fr) / G));
       }
     }
-    g.until = g.t + far; g.after = 'check';
+    g.swapped = null;
+    g.until = g.t + (g.sim ? 0 : far); g.after = 'check';
   }
-  function step(g, dt, inp){
+  /* No swap left: the gems (not the stones) shuffled where they stand until a swap is had and nothing lines up, sliding to
+     their new squares; a new board if no shuffle will do. */
+  function shuffle(g){
+    const n = g.n, b = g.b, at = [];
+    for (let i = 0; i < n * n; i++) if (b[i] && b[i].k !== STONE_K) at.push(i);
+    const old = b.slice();
+    for (let t = 0; t < 60; t++){
+      const xs = at.map(i => old[i]);
+      for (let k = xs.length - 1; k > 0; k--){ const j = (g.rng() * (k + 1)) | 0; [xs[k], xs[j]] = [xs[j], xs[k]]; }
+      at.forEach((i, k) => { b[i] = xs[k]; });
+      if (!groupsOf(g).length && moves(g).length){
+        if (!g.sim) at.forEach(i => { const from = old.indexOf(b[i]); b[i].how = 'spring'; b[i].fr = (from / n) | 0; b[i].fc = from % n; b[i].t0 = g.t; });
+        g.until = g.t + (g.sim ? 0 : SHUF_T); g.after = 'check';
+        return;
+      }
+    }
+    at.forEach(i => { b[i] = old[i]; });
+    deal(g);
+  }
+  // A step of the rules, once the gems have come to rest.
+  function act(g, was){
+    if (was === 'swapped'){
+      const [i, j] = g.swapped, b = g.b;
+      if (b[i].k === HYPER_K || b[j].k === HYPER_K){ g.moves++; hyperSwap(g, i, j); return; }
+      const groups = groupsOf(g);
+      if (groups.length){ g.moves++; clearGroups(g, groups); return; }
+      g.chain = 0; beep(g, 'bad'); swap(g, i, j, true);
+      return;
+    }
+    if (was === 'check'){
+      const groups = groupsOf(g);
+      if (groups.length){ clearGroups(g, groups); return; }
+      if (g.sim){ g.chain = 0; if (!moves(g).length) shuffle(g); return; }
+      g.chain = 0;
+      if (g.mode === 'goals' && met(g)) return over(g, true);
+      if (g.mode === 'goals' && g.limit && g.moves >= g.limit) return over(g, false);
+      if (!moves(g).length){
+        if (g.mode === 'endless'){ say('No swaps left — a new board', 1600); deal(g); }
+        else { say('No swaps left — shuffled', 1400); shuffle(g); }
+      }
+    }
+  }
+  const starsOf = (moves, par) => moves <= par ? 3 : moves <= Math.ceil(par * 1.3) ? 2 : 1;
+  const { BEST, saveBest } = BOARD_KIT.best('bejeweled.best');
+  const bestKey = S => S.idx + '@' + S.lv + ':' + S.n + ':' + S.K;
+  function over(g, won){
+    g.state = won ? 'won' : 'lost'; g.overT = g.t; g.overAt = performance.now(); g.sel = -1;
+    if (g.sim || !g.loud) return;
+    if (won){
+      const P = PARS.get(bestKey(g.S)), par = P && P.par != null ? P.par : g.moves;
+      g.stars = starsOf(g.moves, par);
+      const k = bestKey(g.S), was = BEST.get(k);
+      if (was == null || g.moves < was){ BEST.delete(k); BEST.set(k, g.moves); saveBest(); }
+      beep(g, 'win');
+      say('Goal made in ' + g.moves + ' moves ' + BOARD_KIT.stars(g.stars) + ' (par ' + par + ') — tap for the next board', 4000);
+    } else { beep(g, 'lose'); say('Out of moves — ' + goalWords(g.S, g) + '. Tap to try again', 3500); }
+  }
+  // The clock: wait for the gems to come to rest, then the rules; a board no one plays is moved by its own player.
+  function step(g, dt, bot){
     g.t += dt;
     if (g.t < g.until) return;
     const was = g.after;
     g.after = null;
-    if (was === 'swapped' || was === 'check'){
-      const hit = matches(g.b);
-      if (hit.size) clear(g, hit);
-      else if (was === 'swapped'){ g.chain = 0; swap(g, g.swapped[0], g.swapped[1], true); }
-      else {
-        if (g.chain > 1) say(g.chain + ' in a row!', 1200);
-        g.chain = 0;
-        if (!moves(g.b).length){ say('No swaps left — a new board', 1600); deal(g); }
-      }
-      return;
-    }
-    if (inp && (g.think += dt) >= THINK){
+    if (was){ act(g, was); return; }
+    if (bot && g.state === 'play' && (g.think += dt) >= THINK){
       g.think = 0;
-      const ms = moves(g.b);
-      if (ms.length){
-        const top = Math.max(...ms.map(m => m[2])), best = ms.filter(m => m[2] === top);
-        const [i, j] = best[(rnd() * best.length) | 0];
-        trySwap(g, i, j);
-      }
+      const m = quickPick(g);
+      if (m) trySwap(g, m[0], m[1]);
     }
   }
 
-  /* What a board shows: each gem where it is drawn, and the explosions.
-     A reel keeps just this, frame by frame: [kind, u, v, e, seed] × n. */
-  function frameOf(g){
-    const out = [];
+  /* ─── THE PLAYERS. `simMove` plays a swap in a copy of the game at once (its cascades with gems of its own drawn, so it
+     sees no further than a person). The steady player (`plan`) tries every swap so and takes the one that does most for
+     the goal, then for the specials and the score; the boards no one plays use the quicker `quickPick` (the swap clearing
+     most, the goal's squares first). */
+  let SCR = 1;
+  function copyOf(g){
+    const h = { ...g, b: g.b.map(x => x && { ...x }), ice: g.ice.slice(), got: { col: g.got.col.slice(), ice: g.got.ice, stone: g.got.stone },
+                pops: [], floats: [], words: [], beams: [], booms: [], sim: true, loud: false, after: null, until: 0, sel: -1 };
+    return h;
+  }
+  function simMove(g, i, j){
+    if (!g.sim) throw new Error('simMove on a played game');
+    swap(g, i, j);
+    let guard = 0;
+    while (g.after && guard++ < 200){ const a = g.after; g.after = null; act(g, a); }
+  }
+  function valueOf(g){ return prog(g) * 100 + g.made * 2 + g.score * 0.001; }
+  function plan(g){
+    const ms = moves(g); if (!ms.length) return null;
+    let best = null, bv = -Infinity;
+    for (const [i, j] of ms){
+      const h = copyOf(g); h.rng = BOARD_KIT.rng((SCR = (SCR * 1103515245 + 12345) >>> 0));
+      simMove(h, i, j);
+      const v = valueOf(h) + (met(h) ? 1000 - h.moves : 0);
+      if (v > bv){ bv = v; best = [i, j]; }
+    }
+    return best;
+  }
+  function quickPick(g){
+    const ms = moves(g); if (!ms.length) return null;
+    const b = g.b, n = g.n, Gl = g.S.goal;
+    let best = [], bv = -1;
+    for (const [i, j] of ms){
+      let v;
+      if (b[i].k === HYPER_K || b[j].k === HYPER_K) v = 12;
+      else {
+        [b[i], b[j]] = [b[j], b[i]];
+        const hit = new Set();
+        for (const G0 of groupsOf(g)) G0.cells.forEach(m => hit.add(m));
+        [b[i], b[j]] = [b[j], b[i]];
+        v = hit.size;
+        if (g.mode === 'goals') for (const m of hit){ if (g.ice[m]) v += 2; if (Gl.kind === 'colour' && Gl.cols.includes(colOf(b[m === i ? j : m === j ? i : m]))) v += 1; }
+      }
+      if (v > bv){ bv = v; best = [[i, j]]; } else if (v === bv) best.push([i, j]);
+    }
+    return best[(g.rng() * best.length) | 0];
+  }
+  /* PAR: the steady player's moves to the goal, the mean of `PAR_RUNS` games (one not made in `PAR_CAP` counts as that),
+     worked out a move at a time (`parGen`): the framed board's `URGENT_MS` a frame, a board played at once. */
+  const PARS = new Map();
+  function* parGen(S){
+    let sum = 0;
+    for (let k = 0; k < PAR_RUNS; k++){
+      const g = newGame(S, (S.seed * 31 + k * 977 + 5) >>> 0, 'goals', true);
+      let m = 0;
+      while (!met(g) && m < PAR_CAP){
+        const mv = plan(g);
+        if (!mv){ shuffle(g); while (g.after){ const a = g.after; g.after = null; act(g, a); } continue; }
+        simMove(g, mv[0], mv[1]); m++;
+        yield;
+      }
+      sum += met(g) ? m : PAR_CAP;
+    }
+    return sum / PAR_RUNS;
+  }
+  function parFor(S, ms){
+    const k = bestKey(S);
+    let P = PARS.get(k);
+    if (!P){ P = { job: parGen(S), par: null, limit: null }; PARS.set(k, P); if (PARS.size > 400) PARS.delete(PARS.keys().next().value); }
+    if (P.par == null){
+      const t0 = performance.now();
+      while (ms === Infinity || performance.now() - t0 < ms){
+        const r = P.job.next();
+        if (r.done){ P.par = Math.max(1, Math.round(r.value)); P.limit = Math.max(P.par + 2, Math.ceil(r.value * LV[S.lv - 1].slack)); P.job = null; break; }
+      }
+    }
+    return P.par == null ? null : P;
+  }
+  // A game played: its moves allowed, once par is known
+  function limitFor(g){
+    if (g.mode !== 'goals' || g.limit) return;
+    const P = parFor(g.S, g.loud ? URGENT_MS : 0);
+    if (P) g.limit = P.limit;
+  }
+
+  /* ─── THE FEEL (the request's 5): a cleared gem swells and shrinks away (`pops`); the points float up from where the line
+     was (`floats`, the small dot font); a cascade is called out as it builds, GOOD, GREAT, EXCELLENT, AMAZING, INCREDIBLE, in
+     the big dot font across the board (`words`); a star's row and column flash (`beams`), a flame and a hypercube burst; and
+     a chime climbs a whole tone with each step of a cascade. Only the board being played sounds. */
+  function fx(g, kind, i){
+    if (g.sim) return;
+    const n = g.n, r = (i / n) | 0, c = i % n, S = sq(g);
+    if (kind === 'star') g.beams.push({ r, c, t0: g.t });
+    BOOM.add(g, (c + 0.5) * S, (r + 0.5) * S, 'p', g.rng);
+    beep(g, kind);
+  }
+  function beep(g, kind){
+    if (g.sim || !g.loud) return;
+    const A = SND.gate(kind); if (!A) return;
+    const T = ARCADE.tone;
+    try {
+      switch (kind){
+        case 'swap': T(520, 640, 0.05, 'triangle', 0.035); break;
+        case 'bad': T(220, 160, 0.13, 'square', 0.03); break;
+        case 'chain': { const f = 587 * Math.pow(2, Math.min(10, g.chain - 1) * 2 / 12); T(f, f, 0.2, 'sine', 0.07); T(f * 2, f * 2, 0.12, 'sine', 0.025); T(f * 1.5, f * 1.5, 0.16, 'triangle', 0.02, 0.04); break; }
+        case 'made': T(880, 1320, 0.14, 'triangle', 0.05); T(1320, 1760, 0.12, 'sine', 0.03, 0.08); break;
+        case 'flame': ARCADE.hiss(0.35, 0.22, 900); T(180, 60, 0.3, 'sawtooth', 0.05); break;
+        case 'star': T(1400, 300, 0.25, 'sawtooth', 0.035); T(700, 150, 0.25, 'square', 0.02); break;
+        case 'hyper': [523, 659, 784, 1047, 1319].forEach((f, k) => T(f, f * 1.01, 0.12, 'triangle', 0.05, k * 0.05)); ARCADE.hiss(0.5, 0.15, 2400); break;
+        case 'stone': T(150, 90, 0.12, 'square', 0.05); ARCADE.hiss(0.1, 0.2, 1200); break;
+        case 'ice': ARCADE.hiss(0.08, 0.16, 4200); T(2600, 1900, 0.05, 'sine', 0.02); break;
+        case 'win': [523, 659, 784, 1047, 784, 1047].forEach((f, k) => T(f, f, 0.16, 'triangle', 0.08, k * 0.1)); break;
+        case 'lose': [392, 330, 262, 196].forEach((f, k) => T(f, f, 0.22, 'triangle', 0.07, k * 0.15)); break;
+      }
+    } catch {}
+  }
+  // The big dot font laid out as pieces, a cell apart, centred on (x, y)
+  function text5(out, s, x, y, cell, color, lift){
+    const wd = s.length * 6 * cell - cell;
+    for (let d = 0; d < s.length; d++){ const D = DOT_FONT.five[s[d]]; if (!D) continue; const x0 = x - wd / 2 + d * 6 * cell;
+      for (let row = 0; row < 7; row++) for (let col = 0; col < 5; col++) if (D[row] & (16 >> col))
+        out.push({ kind: 'bjDot', u: x0 + (col + 0.5) * cell, v: y + (row - 3) * cell, scale: cell * 0.9, color, lift }); }
+  }
+
+  /* ─── WHAT A BOARD SHOWS: each gem where it is drawn (a flame's ring, a star's star, a hypercube's colours, a stone), the
+     pops, the floating points, the words, the beams and the bursts; and the squares: ice, the squares lit. */
+  const GRIDS = new Map();
+  function gridLines(n){
+    if (!GRIDS.has(n)){ const L = [];
+      for (let k = 1; k < n; k++) L.push({ kind: 'lineV', u: k / n, v: 0.5, scale: 1, color: LINE }, { kind: 'lineH', u: 0.5, v: k / n, scale: 1, color: LINE });
+      GRIDS.set(n, L); }
+    return GRIDS.get(n);
+  }
+  function gemItems(out, g, x, c, r, s){
+    const S = sq(g), u = (c + 0.5) * S, v = (r + 0.5) * S;
+    if (x.k === STONE_K){ out.push({ kind: 'bjStone', u, v, scale: S * s, color: STONE_COL, yaw: 0.3 + ((c * 7 + r * 3) % 5) * 0.4 }); return; }
+    if (x.k === HYPER_K){ out.push({ kind: 'bjHyper', u, v, scale: S * s, color: 0xffffff, yaw: 1e-6 + g.t * 1.6 }); return; }
+    out.push({ kind: 'gem' + x.k, u, v, scale: S * s, color: COLS[x.k] });
+    if (x.sp === FLAME){ const f = 0.5 + 0.5 * Math.sin(g.t * 9 + c * 1.7 + r); out.push({ kind: 'bjRing', u, v, scale: S * s * (1 + 0.05 * f), color: f > 0.5 ? 0xffb030 : 0xff6a1a }); }
+    else if (x.sp === STAR) out.push({ kind: 'bjStar', u, v, scale: S * s, color: 0xffffff, yaw: 1e-6 + g.t * 1.2 });
+  }
+  function itemsOf(g){
+    const out = gridLines(g.n).slice(), n = g.n, S = sq(g);
+    // the ice: a pane of frost over the square, two stacked for two
+    for (let i = 0; i < n * n; i++) if (g.ice[i]) out.push({ kind: 'bjIce', u: (i % n + 0.5) * S, v: (((i / n) | 0) + 0.5) * S, scale: S, sy: g.ice[i] > 1 ? 2 : 1, color: g.ice[i] > 1 ? 0xe6fbff : 0xf4feff });
     g.b.forEach((x, i) => {
       if (!x) return;
       const [c, r] = posOf(g, i, x);
-      if (r > -0.55) out.push(x.k, (c + 0.5) * SQ, (r + 0.5) * SQ, i === g.sel ? 1 : 0, 0);
+      if (r <= -0.55) return;
+      const age = g.t - (x.born == null ? -9 : x.born), grow = age < 0.25 ? 1 + 0.35 * Math.sin(age / 0.25 * Math.PI) : 1;   // a special made swells once
+      gemItems(out, g, x, c, r, grow);
     });
-    /* THE SQUARES BEING SWAPPED, LIT (Oct 28: "also, when sliding pieces, highlight the selected cells."): the
-       square a drag began on and the one it heads for while the finger moves, then both squares of a swap
-       while the gems slide (and slide back), as kind 8 entries: the squares themselves, not where a gem is drawn. */
-    for (const i of litOf(g)) out.push(8, (i % N + 0.5) * SQ, (((i / N) | 0) + 0.5) * SQ, 1, 0);
-    for (const [u, v, e, seed] of BOOM.burning(g)) out.push(7, u, v, e, seed & 0xffffff);
-    return Float32Array.from(out);
-  }
-  const REEL_N = 3, REEL_FPS = 30, REEL_SECS = 45;
-  let REELS = null;
-  function bakeReel(seed, upTo){
-    let a = seed >>> 0;
-    const was = rnd, wasQ = QUIET;
-    rnd = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a;
-                  t = Math.imul(t ^ (t >>> 15), t | 1);
-                  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-                  return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-    QUIET = true;
-    const frames = [];
-    try {
-      const g = newGame(), dt = 1 / REEL_FPS;
-      for (let i = 0; i < REEL_SECS * REEL_FPS; i++){
-        step(g, dt, true);
-        if (i === upTo){ g.last = 0; g.think = 0; return g; }
-        frames.push(frameOf(g));
-      }
-    } finally { rnd = was; QUIET = wasQ; }
-    return frames;
-  }
-  function reelAt(c, r){
-    if (!REELS){ REELS = []; for (let i = 0; i < REEL_N; i++) REELS.push(bakeReel(0x6e3 + i * 7331)); }
-    let v = (c * 0x27d4eb2d) ^ (r * 0x165667b1) ^ 0x6e3a1;
-    v = Math.imul(v ^ (v >>> 15), 0x85ebca6b); v = Math.imul(v ^ (v >>> 13), 0xc2b2ae35);
-    const h = (v ^ (v >>> 16)) >>> 0, n = h % REEL_N, reel = REELS[n];
-    let t = 0;
-    try { t = animTime(); } catch { t = performance.now(); }
-    return { seed: 0x6e3 + n * 7331, k: (Math.floor(t / 1000 * REEL_FPS) + ((h >>> 8) % reel.length)) % reel.length, reel };
-  }
-  // Taking a board carries on from what it is showing: the reel's game, replayed up to now.
-  function adopt(c, r){
-    const { seed, k } = reelAt(c, r), g = bakeReel(seed, k);
-    return g && g.b ? g : newGame();
-  }
-  const gameAt = (c, r) => {
-    const k = gkey(c, r);
-    if (!GAMES.has(k)) GAMES.set(k, adopt(c, r));
-    return GAMES.get(k);
-  };
-  const shown = (c, r) => {
-    const g = GAMES.get(gkey(c, r)) || (LIVE && LIVE.key === gkey(c, r) ? gameAt(c, r) : null);
-    if (g) return frameOf(g);
-    const { k, reel } = reelAt(c, r);
-    return reel[k];
-  };
-  // The grid's lines, the same on every board.
-  const GRID = [];
-  for (let k = 1; k < N; k++) GRID.push({ kind: 'lineV', u: k * SQ, v: 0.5, scale: SQ, color: LINE },
-                                        { kind: 'lineH', u: 0.5, v: k * SQ, scale: SQ, color: LINE });
-  function asItems(fr){
-    const out = [];
-    for (let j = 0; j < fr.length; j += 5){
-      const k = fr[j], u = fr[j + 1], v = fr[j + 2];
-      if (k === 7) BOOM.items(out, u, v, fr[j + 3], fr[j + 4], 'p', SQ * 0.9);
-      else if (k === 8) continue;
-      else out.push({ kind: 'gem' + k, u, v, scale: SQ, color: COLS[k] });   // Sep 27: nothing is raised — the chosen square shows it
+    g.pops = g.pops.filter(p => g.t - p.t0 < POP_T);
+    for (const p of g.pops){
+      const a = (g.t - p.t0) / POP_T, s = a < 0.3 ? 1 + a / 0.3 * 0.25 : 1.25 * (1 - (a - 0.3) / 0.7);
+      if (s > 0.03) gemItems(out, g, { k: p.k, sp: NONE }, p.x, p.y, s);
     }
-    return GRID.concat(out);
-  }
-  // The squares: chess colours, the chosen one blue; from far off, each square its gem's colour.
-  function gridOf(fr, far){
-    const colors = Array.from({ length: N * N }, (_, i) => (((i % N) + ((i / N) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ);
-    for (let j = 0; j < fr.length; j += 5){
-      if (fr[j] === 7) continue;
-      const c = Math.floor(fr[j + 1] / SQ), r = Math.floor(fr[j + 2] / SQ);
-      if (c < 0 || c >= N || r < 0 || r >= N) continue;
-      if (fr[j] === 8){ if (!far) colors[r * N + c] = SEL_SQ; continue; }
-      if (far) colors[r * N + c] = COLS[fr[j]];
-      else if (fr[j + 3]) colors[r * N + c] = SEL_SQ;
+    g.beams = g.beams.filter(B => g.t - B.t0 < BEAM_T);
+    for (const B of g.beams){
+      const a = 1 - (g.t - B.t0) / BEAM_T;
+      out.push({ kind: 'bjBeam', u: 0.5, v: (B.r + 0.5) * S, scale: 1, sz: S * 0.35 * a, color: 0xfff6c8, lift: S * 0.15 },
+               { kind: 'bjBeam', u: (B.c + 0.5) * S, v: 0.5, scale: 1, sx: S * 0.35 * a, sz: 1, color: 0xfff6c8, lift: S * 0.15 });   // (a beam's height is the square's, not the board's)
     }
-    return { n: N, colors };
+    for (const [u, v, e, seed] of BOOM.burning(g)) BOOM.items(out, u, v, e, seed, 'p', S * 0.9);
+    g.floats = g.floats.filter(F => g.t - F.t0 < FLOAT_T);
+    for (const F of g.floats){
+      const a = (g.t - F.t0) / FLOAT_T;
+      DOT_FONT.text3(out, String(F.n), (F.x + 0.5) * S, (F.y + 0.5 - a * 0.9) * S, S * 0.085, a < 0.7 ? 0xffd23a : 0xffe9a0, 'bjDot');
+    }
+    for (const it of out) if (it.kind === 'bjDot' && it.lift == null) it.lift = S * 0.3;
+    g.words = g.words.filter(W => g.t - W.t0 < WORD_T);
+    const W = g.words[g.words.length - 1];
+    if (W){
+      const a = (g.t - W.t0) / WORD_T, s = WORDS[W.w], cell = Math.min(S * 0.16, 0.9 / (s.length * 6)) * (a < 0.15 ? 0.6 + a / 0.15 * 0.4 : 1);
+      text5(out, s, 0.5, 0.5 - a * 0.08, cell, WORD_COL[W.w], S * 0.45);
+    }
+    return out;
+  }
+  // The squares: the floor, ice one or two panes thick, the squares lit; from far off, each square its gem's colour.
+  function gridOf(g, far){
+    const n = g.n, colors = new Array(n * n).fill(LIGHT_SQ);
+    for (let i = 0; i < n * n; i++) if (g.ice[i]) colors[i] = g.ice[i] > 1 ? ICE2 : ICE1;
+    if (far){
+      g.b.forEach((x, i) => { if (x) colors[i] = x.k === STONE_K ? STONE_COL : x.k === HYPER_K ? 0xffffff : COLS[x.k]; });
+      return { n, colors };
+    }
+    for (const i of litOf(g)) if (i >= 0 && i < n * n) colors[i] = SEL_SQ;
+    return { n, colors };
   }
 
+  /* ─── THE BOARDS: the one being played (`GAMES`), and every other a game of its own player's (`SHOWS`), on its own clock,
+     begun again `HOLD_T` after its goal is made (or after `SHOW_CAP` moves). In endless, taking a board carries on from what
+     it was showing; with goals, a board is begun afresh when it is taken. */
+  const SHOWS = new Map();
+  function showAt(c, r){
+    const k = gkey(c, r);
+    let g = SHOWS.get(k);
+    if (g && (g.state !== 'play' || g.moves >= SHOW_CAP) && g.t - (g.overT || g.t) > HOLD_T){ SHOWS.delete(k); g = null; }
+    if (!g){
+      const S = specAt(c, r), was = (SHOWS.get(k + '#') || 0) + 1;
+      g = newGame(S, (S.seed + was * 7331) >>> 0, SET.mode);
+      SHOWS.set(k, g); SHOWS.set(k + '#', was);
+      if (SHOWS.size > 800) for (const key of [...SHOWS.keys()].slice(0, 200)) SHOWS.delete(key);
+    } else { SHOWS.delete(k); SHOWS.set(k, g); }
+    return g;
+  }
+  const RESTARTS = new Map();
+  function fresh(c, r){
+    const S = specAt(c, r), k = gkey(c, r), n = (RESTARTS.get(k) || 0);
+    let g;
+    if (SET.mode === 'endless'){
+      const s = SHOWS.get(k);
+      g = s ? { ...copyOf(s), sim: false, pops: [], floats: [], words: [], beams: [], booms: [], after: s.after, until: s.until, swapped: s.swapped } : newGame(S, S.seed, 'endless');
+      if (s) g.b = s.b.map(x => x && { ...x });
+    } else g = newGame(S, (S.seed + n * 101) >>> 0, 'goals');
+    g.loud = true; g.state = 'play'; g.last = 0;
+    return g;
+  }
+  const gameAt = BOARD_KIT.gameAt(GAMES, fresh);
+  const shown = (c, r) => GAMES.get(gkey(c, r)) || showAt(c, r);
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  const restart = (c, r) => { const k = gkey(c, r); RESTARTS.set(k, (RESTARTS.get(k) || 0) + 1); const g = fresh(c, r); GAMES.set(k, g); LIVE = { key: k, c, r }; limitFor(g); return g; };
+  const resetAll = () => { GAMES.clear(); SHOWS.clear(); SPECS.clear(); try { fieldItemsChanged(); } catch {} };
+
   /* ─── INPUT ─────────────────────────────────────────────────────────── */
-  const liveGame = () => {
-    try { if (window.getFieldApp() !== app) return null; } catch { return null; }
-    return LIVE ? gameAt(LIVE.c, LIVE.r) : null;
-  };
-  const cellOf = (u, v) => (u == null || u < 0 || u >= 1 || v < 0 || v >= 1) ? -1 : Math.floor(v * N) * N + Math.floor(u * N);
+  const cellOf = (g, u, v) => (u == null || u < 0 || u >= 1 || v < 0 || v >= 1) ? -1 : Math.floor(v * g.n) * g.n + Math.floor(u * g.n);
   let DRAG = null;
   const css = v => '#' + v.toString(16).padStart(6, '0');
-  const paint = (ctx, x0, y0, t, cols) => {
-    for (let i = 0; i < N * N; i++){ ctx.fillStyle = css(cols[i]); ctx.fillRect(x0 + (i % N) * t, y0 + ((i / N) | 0) * t, t + 0.5, t + 0.5); }
+  const paint = (ctx, x0, y0, t, n, cols) => {
+    for (let i = 0; i < n * n; i++){ ctx.fillStyle = css(cols[i]); ctx.fillRect(x0 + (i % n) * t, y0 + ((i / n) | 0) * t, t + 0.5, t + 0.5); }
   };
+  function titleOf(c, r){
+    const g = GAMES.get(gkey(c, r)), S = specAt(c, r);
+    if (SET.mode === 'endless') return 'Bejeweled — ' + (g ? g.score + ' points' + (g.best > 1 ? ' · best cascade ' + g.best : '') : 'board ' + c + '·' + r);
+    const P = PARS.get(bestKey(S)), best = BEST.get(bestKey(S));
+    const parTxt = P && P.par != null ? ' · par ' + P.par : '';
+    const bestTxt = best != null ? ' · best ' + best : '';
+    if (!g) return 'Bejeweled — level ' + S.lv + ' · ' + goalWords(S) + parTxt + bestTxt;
+    if (g.state === 'won') return 'Bejeweled — made in ' + g.moves + ' moves ' + BOARD_KIT.stars(g.stars) + parTxt + bestTxt;
+    if (g.state === 'lost') return 'Bejeweled — out of moves · ' + goalWords(S, g);
+    const left = g.limit ? ' · ' + Math.max(0, g.limit - g.moves) + ' moves left' : ' · working out the moves…';
+    return 'Bejeweled — level ' + S.lv + ' · ' + goalWords(S, g) + left;
+  }
+  // (the row's tiles and the menu's lines: the mode, the size, the colours, the sound, and a new board)
+  function tilesOf(c, r){
+    const g = GAMES.get(gkey(c, r)), ON = 0x2f6f4f;
+    return [
+      { glyph: g ? '↻' : '▶', value: g ? 'Restart' : 'New', label: SET.mode === 'goals' ? 'level ' + specAt(c, r).lv : 'endless' },
+      { glyph: SET.mode === 'goals' ? '🎯' : '♾', value: SET.mode === 'goals' ? 'Goals' : 'Endless', label: 'mode' },
+      { glyph: '▦', value: SET.size + '×' + SET.size, label: 'board size' },
+      { glyph: '🎨', value: SET.colours ? String(SET.colours) : 'By level', label: 'colours' },
+      { glyph: SND.on ? '🔊' : '🔇', value: SND.on ? 'On' : 'Off', label: 'sound', bg: SND.on ? ON : undefined },
+    ];
+  }
+  function setting(key){
+    const nx = (list, v) => list[(list.indexOf(v) + 1) % list.length];
+    if (key === 'mode'){ SET.mode = SET.mode === 'goals' ? 'endless' : 'goals'; say(SET.mode === 'goals' ? 'Goals: every board its own, in so many moves' : 'Endless: no goal, no limit', 2200); }
+    else if (key === 'size'){ SET.size = nx([6, 7, 8, 9, 10], SET.size); say('Boards ' + SET.size + ' × ' + SET.size, 1600); }
+    else if (key === 'colours'){ SET.colours = nx([0, 5, 6, 7], SET.colours); say(SET.colours ? SET.colours + ' colours on every board' : 'Colours by level: 5 near the corner, 7 far out', 2000); }
+    else if (key === 'sound'){ SND.item.on(); return true; }
+    saveSet(); resetAll();
+    return true;
+  }
   const app = {
     name: 'bejeweled',
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
@@ -30721,54 +31164,86 @@ const GEMS_APP = (() => {
     itemGeometries: {
       ...BOOM.geometries(['p']),
       ...Object.fromEntries(CUTS.map((f, k) => ['gem' + k, T => PEARL(T)])),
-      lineV: T => { const g = new T.BoxGeometry(0.05, 0.004, N); g.translate(0, 0.002, 0); return g; },
-      lineH: T => { const g = new T.BoxGeometry(N, 0.004, 0.05); g.translate(0, 0.002, 0); return g; },
+      lineV: T => { const g = new T.BoxGeometry(0.006, 0.0005, 1); g.translate(0, 0.00025, 0); return g; },
+      lineH: T => { const g = new T.BoxGeometry(1, 0.0005, 0.006); g.translate(0, 0.00025, 0); return g; },
+      // a flame gem's ring, a star gem's star, the hypercube (the seven colours round it), a stone, a beam, a dot of the fonts
+      bjRing: T => { const g = new T.TorusGeometry(0.335, 0.045, 6, 28); g.rotateX(Math.PI / 2); g.translate(0, 0.1, 0); g.userData.unlit = true; return g; },
+      bjStar: T => { const s = new T.Shape(); for (let k = 0; k < 10; k++){ const a = k * Math.PI / 5 - Math.PI / 2, rr = k % 2 ? 0.08 : 0.19; s[k ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); }
+        const g = new T.ExtrudeGeometry(s, { depth: 0.02, bevelEnabled: false }); g.rotateX(-Math.PI / 2); g.translate(0, 0.19, 0); g.userData.unlit = true; return g; },
+      bjHyper: T => { const g = new T.SphereGeometry(0.31, 28, 14).toNonIndexed(); g.scale(1, 0.42, 1); g.translate(0, 0.13, 0);
+        const P = g.attributes.position.array, col = [];
+        for (let k = 0; k < P.length; k += 9){ const x = (P[k] + P[k + 3] + P[k + 6]) / 3, z = (P[k + 2] + P[k + 5] + P[k + 8]) / 3, y = (P[k + 1] + P[k + 4] + P[k + 7]) / 3;
+          const w = ((Math.floor((Math.atan2(z, x) / (2 * Math.PI) + 1) * 7) % 7) + (y > 0.2 ? 0 : 3)) % 7, cc = COLS[w];
+          for (let m = 0; m < 3; m++) col.push((cc >> 16 & 255) / 255, (cc >> 8 & 255) / 255, (cc & 255) / 255); }
+        g.setAttribute('color', new T.Float32BufferAttribute(col, 3)); g.computeVertexNormals(); g.userData.vertexColors = true; return g; },
+      bjStone: T => { const g = new T.DodecahedronGeometry(0.34, 0).toNonIndexed(); g.scale(1, 0.55, 1); g.translate(0, 0.17, 0); g.computeVertexNormals(); return g; },
+      bjBeam: T => { const g = new T.BoxGeometry(1, 0.002, 1); g.translate(0, 0.001, 0); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
+      bjIce: T => { const g = new T.BoxGeometry(0.94, 0.03, 0.94); g.translate(0, 0.015, 0); g.userData.unlit = true; g.userData.opacity = 0.42; return g; },
+      bjDot: T => { const g = new T.BoxGeometry(1, 0.35, 1); g.translate(0, 0.175, 0); g.userData.unlit = true; return g; },
     },
+    menu: [{ head: 'Bejeweled', items: [
+      { label: () => 'Mode: ' + (SET.mode === 'goals' ? 'goals' : 'endless'), title: 'Goals: every board its own goal in so many moves, harder farther out. Endless: no goal, no limit.', on(){ setting('mode'); } },
+      { label: () => 'Board size: ' + SET.size + ' × ' + SET.size, title: '6 × 6 to 10 × 10.', on(){ setting('size'); } },
+      { label: () => 'Colours: ' + (SET.colours || 'by level'), title: 'Five to seven colours, or the level\'s (5 near the corner, 7 far out). Fewer colours make more lines fall into place by themselves.', on(){ setting('colours'); } },
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); resetAll(); } },
+      SND.item,
+      { label: 'Start this board again', title: 'This board\'s goal from the start.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); try { fieldItemsChanged(); } catch {} } },
+      { label: 'How to play', title: '', on(){ say('Swap two gems side by side (a tap on each, or a drag) to line up three or more. Four in a line make a flame gem, an L or T a star, five a hypercube: swap it with a colour to clear them all. Make the board\'s goal in its moves.', 9000); } },
+    ] }],
     cellGrid(c, r, px){
-      if (LIVE && LIVE.key === gkey(c, r)) gameAt(c, r);
       return gridOf(shown(c, r), px < FAR_PX);
     },
     fabricCellAt(ctx, rect, i, j){
-      if (!REELS) reelAt(0, 0);
-      const reel = REELS[(i * 7 + j * 3) % REEL_N];
-      paint(ctx, rect.x, rect.y, rect.w / N, gridOf(reel[(i * 131 + j * 71) % reel.length], true).colors);
+      const R = BOARD_KIT.rng(((i * 73856093) ^ (j * 19349663)) >>> 0), n = SET.size, K = SET.colours || 6;
+      paint(ctx, rect.x, rect.y, rect.w / n, n, Array.from({ length: n * n }, () => COLS[(R() * K) | 0]));
     },
     cellItems(c, r){
-      const g = GAMES.get(gkey(c, r));
-      if (g && LIVE && LIVE.key === gkey(c, r)){
-        const now = performance.now();
-        const dt = (g.last && !ARCADE.paused) ? Math.min(0.05, (now - g.last) / 1000) : 0;
-        g.last = now;
-        step(g, dt);
-      } else if (g) g.last = 0;
-      return asItems(shown(c, r));
+      const k = gkey(c, r), live = LIVE && LIVE.key === k;
+      const g = GAMES.get(k) || null, s = g || showAt(c, r);
+      const now = performance.now();
+      if (!g || live){
+        const dt = (s.last && !ARCADE.paused) ? Math.min(0.05, (now - s.last) / 1000) : 0;
+        s.last = now;
+        step(s, dt, !g);
+        if (g) limitFor(g);
+        else if (live && SET.mode === 'goals') parFor(s.S, URGENT_MS);   // the framed board's par, worked out while it shows
+      } else g.last = 0;
+      return itemsOf(s);
     },
-    cellTitle(c, r){
-      const g = GAMES.get(gkey(c, r));
-      if (!g) return 'Bejeweled — board ' + c + '·' + r;
-      return 'Bejeweled — ' + g.score + ' points' + (g.best > 1 ? ' · best cascade ' + g.best : '');
-    },
+    cellTitle(c, r){ return titleOf(c, r); },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
-    onReset(c, r){ GAMES.set(gkey(c, r), newGame()); LIVE = { key: gkey(c, r), c, r }; return true; },
-    onSelect(c, r){ gameAt(c, r); return true; },
+    onReset(c, r){ restart(c, r); return true; },
+    onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
-    // A tap picks a gem; a tap on its neighbour swaps them.
+    noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    statTiles(c, r){ return tilesOf(c, r); },
+    onStatTap(c, r, i){
+      if (i === 0){ restart(c, r); return true; }
+      return setting(['new', 'mode', 'size', 'colours', 'sound'][i]);
+    },
+    // A tap picks a gem; a tap on its neighbour swaps them. A board whose goal is made goes on to the next; one out of moves begins again.
     onCellTap(c, r, u, v){
-      LIVE = { key: gkey(c, r), c, r };
-      const g = gameAt(c, r), i = cellOf(u, v);
+      const k = gkey(c, r);
+      LIVE = { key: k, c, r };
+      let g = GAMES.get(k);
+      if (!g){ g = gameAt(c, r); if (g.mode === 'goals') parFor(g.S, Infinity); limitFor(g); }
+      if (g.state === 'won'){ if (performance.now() - g.overAt > GRACE * 1000){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { key: gkey(nc, nr), c: nc, r: nr }; } return true; }
+      if (g.state === 'lost'){ if (performance.now() - g.overAt > GRACE * 1000) restart(c, r); return true; }
+      const i = cellOf(g, u, v);
       if (i < 0 || busy(g)) return true;
       if (g.sel >= 0 && g.sel !== i && trySwap(g, g.sel, i)) return true;
-      g.sel = g.sel === i ? -1 : i;
+      g.sel = g.sel === i || !swappable(g.b[i]) ? -1 : i;
       return true;
     },
     // A drag from a gem swaps it with the neighbour it heads for — measured ACROSS THE BOARD.
     claimsPan(u, v){
       const g = liveGame();
       DRAG = null;
-      const i = cellOf(u, v);
-      if (!g || i < 0) return false;
+      if (!g || g.state !== 'play') return false;
+      const i = cellOf(g, u, v);
+      if (i < 0) return false;
       DRAG = { u, v, i, done: false };
-      if (!busy(g)){ g.drag = [i]; g.sel = -1; }   // a drag starts afresh: a gem tapped before is let go
+      if (!busy(g)) g.drag = [i];   // (a press is a tap until it moves: a gem tapped before stays chosen till then)
       return true;
     },
     onPanEnd(){ const g = liveGame(); if (g) g.drag = null; DRAG = null; },
@@ -30776,11 +31251,12 @@ const GEMS_APP = (() => {
       const g = liveGame();
       if (!g || !DRAG) return false;
       if (DRAG.done || !at) return true;
-      const du = at.u - DRAG.u, dv = at.v - DRAG.v, i = DRAG.i, far = Math.max(Math.abs(du), Math.abs(dv));
-      const c = i % N, r = (i / N) | 0;
-      const j = Math.abs(du) > Math.abs(dv) ? (du > 0 ? (c < N - 1 ? i + 1 : -1) : (c > 0 ? i - 1 : -1))
-                                            : (dv > 0 ? (r < N - 1 ? i + N : -1) : (r > 0 ? i - N : -1));
+      const n = g.n, SQ = 1 / n, du = at.u - DRAG.u, dv = at.v - DRAG.v, i = DRAG.i, far = Math.max(Math.abs(du), Math.abs(dv));
+      const c = i % n, r = (i / n) | 0;
+      const j = Math.abs(du) > Math.abs(dv) ? (du > 0 ? (c < n - 1 ? i + 1 : -1) : (c > 0 ? i - 1 : -1))
+                                            : (dv > 0 ? (r < n - 1 ? i + n : -1) : (r > 0 ? i - n : -1));
       if (!busy(g)) g.drag = (far >= SQ * 0.08 && j >= 0) ? [i, j] : [i];   // the neighbour it heads for, lit as it goes
+      if (far >= SQ * 0.08) g.sel = -1;                                       // a drag starts afresh: a gem tapped before is let go
       if (far >= SQ * 0.35){
         DRAG.done = true;
         if (j >= 0) trySwap(g, i, j);
@@ -30788,15 +31264,18 @@ const GEMS_APP = (() => {
       return true;
     },
     drawIcon(ctx, sz, c, r){
-      const t = sz / N, fr = shown(c, r);
-      paint(ctx, 0, 0, t, gridOf(fr, false).colors);
-      for (let j = 0; j < fr.length; j += 5){
-        if (fr[j] >= 7) continue;
-        ctx.fillStyle = css(COLS[fr[j]]);
-        ctx.beginPath(); ctx.arc(fr[j + 1] * sz, fr[j + 2] * sz, t * 0.36, 0, Math.PI * 2); ctx.fill();
-      }
+      const g = shown(c, r), n = g.n, t = sz / n;
+      paint(ctx, 0, 0, t, n, gridOf(g, false).colors);
+      g.b.forEach((x, i) => {
+        if (!x) return;
+        ctx.fillStyle = css(x.k === STONE_K ? STONE_COL : x.k === HYPER_K ? 0x222222 : COLS[x.k]);
+        ctx.beginPath(); ctx.arc((i % n + 0.5) * t, (((i / n) | 0) + 0.5) * t, t * 0.36, 0, Math.PI * 2); ctx.fill();
+      });
     },
-    _debug: { newGame, step, trySwap, matches, moves, bakeReel, adopt, games: GAMES, frameOf, litOf, gridOf },
+    _debug: { newGame, step, act, trySwap, swap, groupsOf, moves, deal, shuffle, specOf, specAt, prog, met, plan, quickPick, simMove, copyOf, parFor, parGen, limitFor,
+              itemsOf, gridOf, litOf, starsOf, bestKey, restart, setting, tilesOf, titleOf, fresh, showAt, LV, SET, PARS, SPECS, BEST, SHOWS, games: GAMES,
+              NONE, FLAME, STAR, HYPER, HYPER_K, STONE_K, levelAt, boardIdx,
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; } },
   };
   return app;
 })();

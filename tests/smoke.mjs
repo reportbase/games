@@ -7022,30 +7022,105 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       failures.push(`[${current}] ${JSON.stringify({ o, pic, live, pb })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling oil and balls (house shots ${o.house[0]}/40 at level 1, ${o.house[1]}/40 at level 5; a miss off the house shot ${o.miss[0]} against ${o.miss[1]} off a flat one; the balls' turn at mid-lane and the pins ${JSON.stringify(T)}; a game wore ${o.wear.max} and moved the frame-1 line ${o.wear.moved}; the picture painted again; the real pad's ball button and B)`);
   }
-  // BEJEWELED'S PEARLS AND ITS LIT SQUARES (Oct 28: "in bejeweld application, the pieces should all be small raised circles like
-  // the white one, but with different colors. also, when sliding pieces, highlight the selected cells."): every kind drawn as the
-  // pearl, and a real drag lighting the square it began on and the one it heads for, then both while they swap
-  current = 'bejeweled pearls and lit squares';
+  // BEJEWELED (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the white one, but with
+  // different colors. also, when sliding pieces, highlight the selected cells."; then "whats next for bejeweld", "1,2,5,6": special
+  // gems, every board its own goal in so many moves, the feel, the board's size and colours): every kind the pearl; the levels by
+  // ring and every board a goal with a par its steady player makes; four in a line a flame, an L a star, five a hypercube, each
+  // going off; and real input: a real drag lighting both squares and making a flame, real clicks swapping a hypercube, a goal made
+  // with stars and a best, a real click going on to the next board, a board out of moves, the real Size tile, and boards no one plays moving
+  current = 'bejeweled';
   {
     const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bejeweled')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
-    const shapes = await page.evaluate(() => { const A = window.getFieldApp(), T = window.FIELD_WORLD.THREE;
-      return [0, 1, 2, 3, 4, 5, 6].map(k => { const g = A.itemGeometries['gem' + k](T); return g.attributes.position.count; }); });
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bejeweled')); const D = window.getFieldApp()._debug;
+      D.SET.mode = 'goals'; D.SET.size = 8; D.SET.colours = 0; D.games.clear(); D.SHOWS.clear(); D.SPECS.clear();
+      await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const o = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, T = window.FIELD_WORLD.THREE, out = {};
+      out.shapes = new Set([0, 1, 2, 3, 4, 5, 6].map(k => A.itemGeometries['gem' + k](T).attributes.position.count)).size;
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      out.pars = [1, 3, 5].map(lv => { const S = D.specOf(4000 + lv, lv), P = D.parFor(S, Infinity); return [S.goal.kind, P.par, P.limit]; });
+      // the specials, in the steady player's copies of a board laid by hand: a checker of four colours, so nothing lines up
+      const S = D.specOf(7, 1), lay = f => { const g = D.newGame(S, 1, 'goals', true), n = g.n;
+        g.ice = new Uint8Array(n * n); for (let i = 0; i < n * n; i++) g.b[i] = { k: (i % 2) + ((i / n | 0) % 2) * 2, sp: 0, fr: (i / n) | 0, fc: 0, t0: -9, how: 'fall' };
+        f(g, n, (c, r, k, sp) => { g.b[r * n + c] = { k, sp: sp || 0, fr: r, fc: 0, t0: -9, how: 'fall' }; }); return g; };
+      const count = (g, sp) => g.b.filter(x => x && x.sp === sp).length;
+      let g = lay((g, n, put) => { put(0, 4, 5); put(1, 4, 5); put(3, 4, 5); put(2, 3, 5); }); D.simMove(g, 3 * g.n + 2, 4 * g.n + 2); out.flame = count(g, D.FLAME);
+      g = lay((g, n, put) => { put(0, 4, 5); put(1, 4, 5); put(3, 4, 5); put(4, 4, 5); put(2, 3, 5); }); D.simMove(g, 3 * g.n + 2, 4 * g.n + 2); out.hyper = count(g, D.HYPER);
+      g = lay((g, n, put) => { put(0, 4, 6); put(1, 4, 6); put(3, 4, 6); put(2, 5, 6); put(2, 6, 6); put(2, 3, 6); }); D.simMove(g, 3 * g.n + 2, 4 * g.n + 2); out.star = count(g, D.STAR);
+      // a flame going off takes its 3 × 3: a flame at (4, 4) in a line of three made by a swap
+      g = lay((g, n, put) => { put(2, 4, 5); put(3, 4, 5); put(4, 4, 5, D.FLAME); }); const was = g.got.col.reduce((a, b) => a + b, 0);
+      g.swapped = null; D.act(g, 'check'); out.flameTook = g.got.col.reduce((a, b) => a + b, 0) - was;
+      return out;
+    });
     const bPt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
       const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
       return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
+    const cellPt = (c, r) => bPt((c + 0.5) / 8, (r + 0.5) / 8);
     let q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await page.waitForTimeout(1500);
-    const lit = () => page.evaluate(() => { const D = window.getFieldApp()._debug; for (const [, g] of D.games){ const L = D.litOf(g); if (L.length) return { lit: L, drag: g.drag, lights: Array.from(D.frameOf(g)).filter((x, j) => j % 5 === 0 && x === 8).length }; } return null; });
-    const a = await bPt(3.5 / 8, 4.5 / 8), b = await bPt(4.3 / 8, 4.5 / 8);
+    // the live board laid by hand: a drag of (2, 3) down to (2, 4) makes four in a line
+    const layLive = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n;
+      g.ice = new Uint8Array(n * n); g.after = null; g.until = 0; g.state = 'play'; g.sel = -1; g.drag = null;
+      for (let i = 0; i < n * n; i++) g.b[i] = { k: (i % 2) + ((i / n | 0) % 2) * 2, sp: 0, fr: (i / n) | 0, fc: 0, t0: -9, how: 'fall' };
+      return !!g; });
+    const live = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.games.get(L.c + '_' + L.r); if (!g) return null;
+      const grid = D.gridOf(g, false); return { moves: g.moves, flames: g.b.filter(x => x && x.sp === D.FLAME).length, lit: D.litOf(g), sel: grid.colors.filter(c => c === 0xa9c6ec).length,
+        state: g.state, stars: g.stars, limit: g.limit, n: g.n, col1: g.got.col[1], at: [L.c, L.r], busy: !!g.after || g.t < g.until }; });
+    await layLive();
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n, put = (c, r, k) => { g.b[r * n + c] = { k, sp: 0, fr: r, fc: 0, t0: -9, how: 'fall' }; };
+      put(0, 4, 5); put(1, 4, 5); put(3, 4, 5); put(2, 3, 5); });
+    const a = await cellPt(2, 3), b = await cellPt(2, 4.3);
     await page.mouse.move(a.x, a.y); await page.mouse.down();
-    await page.mouse.move(a.x + (b.x - a.x) * 0.3, a.y + (b.y - a.y) * 0.3, { steps: 3 }); await page.waitForTimeout(400);
-    const mid = await lit();
-    await page.mouse.move(b.x, b.y, { steps: 4 });
-    const sw = await lit();
-    await page.mouse.up(); await page.waitForTimeout(100);
-    if (new Set(shapes).size !== 1 || !mid || mid.lit.join() !== '35,36' || mid.lights !== 2 || !sw || sw.lit.join() !== '35,36' || sw.drag)
-      failures.push(`[${current}] ${JSON.stringify({ shapes, mid, sw })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bejeweled pearls and lit squares (every kind the pearl's ${shapes[0]} points; a real drag lit ${mid && mid.lit} as it went and ${sw && sw.lit} while they swapped)`);
+    await page.mouse.move(a.x + (b.x - a.x) * 0.3, a.y + (b.y - a.y) * 0.3, { steps: 3 }); await page.waitForTimeout(300);
+    const mid = await live();
+    await page.mouse.move(b.x, b.y, { steps: 4 }); await page.mouse.up();
+    for (let w = 0; w < 80 && (await live()).busy; w++) await page.waitForTimeout(250);
+    const flamed = await live();
+    // two real clicks swap a hypercube with a colour: every gem of it goes
+    await layLive();
+    const ones = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n;
+      g.b[5 * n + 5] = { k: D.HYPER_K, sp: D.HYPER, fr: 5, fc: 0, t0: -9, how: 'fall' }; g.b[5 * n + 6] = { k: 1, sp: 0, fr: 5, fc: 0, t0: -9, how: 'fall' }; g.sel = -1; return g.b.filter(x => x && x.k === 1).length; });
+    for (const [c, r] of [[5, 5], [6, 5]]){ const p = await cellPt(c, r); await page.mouse.click(p.x, p.y); await page.waitForTimeout(450); }
+    for (let w = 0; w < 80 && (await live()).busy; w++) await page.waitForTimeout(250);
+    const hyp = await live();
+    // a goal made: the next match makes it, stars and a best kept; a real click after goes on to the next board
+    await layLive();
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n, put = (c, r, k) => { g.b[r * n + c] = { k, sp: 0, fr: r, fc: 0, t0: -9, how: 'fall' }; };
+      g.S = { ...g.S, goal: { kind: 'score', n: 10 } }; put(0, 6, 5); put(1, 6, 5); put(2, 5, 5); });
+    let p1 = await cellPt(2, 5), p2 = await cellPt(2, 6);
+    await page.mouse.click(p1.x, p1.y); await page.waitForTimeout(350); await page.mouse.click(p2.x, p2.y);
+    for (let w = 0; w < 80 && (await live()).state === 'play'; w++) await page.waitForTimeout(250);
+    const won = await live();
+    const best = await page.evaluate(() => { try { return Object.keys(JSON.parse(localStorage.getItem('bejeweled.best') || '{}')).length; } catch { return -1; } });
+    await page.waitForTimeout(1000);
+    q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await page.waitForTimeout(1800);
+    const next = await live() || { at: await page.evaluate(() => { const L = window.getFieldApp()._debug.LIVE; return L && [L.c, L.r]; }) };
+    // out of moves: a limit of one more, a goal not made
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; D.games.delete(L.c + '_' + L.r); });
+    q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await page.waitForTimeout(800);
+    await layLive();
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n, put = (c, r, k) => { g.b[r * n + c] = { k, sp: 0, fr: r, fc: 0, t0: -9, how: 'fall' }; };
+      g.S = { ...g.S, goal: { kind: 'score', n: 1e9 } }; g.limit = g.moves + 1; g.sel = -1; put(0, 6, 5); put(1, 6, 5); put(2, 5, 5); });
+    p1 = await cellPt(2, 5); p2 = await cellPt(2, 6);
+    await page.mouse.click(p1.x, p1.y); await page.waitForTimeout(350); await page.mouse.click(p2.x, p2.y);
+    for (let w = 0; w < 80 && (await live()).state === 'play'; w++) await page.waitForTimeout(250);
+    const lost = await live();
+    // the real Size tile: a board of 9
+    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
+    const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
+    let st = null; for (let w = 0; w < 30; w++){ st = await tileAt(2); if (st && st[1] < (await page.evaluate(() => innerHeight)) - 20) break; await page.waitForTimeout(200); }   // (the row slides up)
+    if (st){ await page.mouse.click(st[0], st[1]); await page.waitForTimeout(600); }
+    const size = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; return [D.SET.size, D.showAt(L.c + 1, L.r).n]; });
+    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(400); }
+    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.size = 8; try { localStorage.setItem('bejeweled.settings', JSON.stringify(D.SET)); } catch {} D.games.clear(); D.SHOWS.clear(); });
+    // a board no one plays moves
+    const sig = () => page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.LIVE; return JSON.stringify(A.cellItems(L.c + 2, L.r).filter(i => /^gem|^bj/.test(i.kind)).map(i => [i.kind, +i.u.toFixed(3), +i.v.toFixed(3)])); });
+    let moved = false; const s0 = await sig(); for (let w = 0; w < 25 && !moved; w++){ await page.waitForTimeout(300); moved = (await sig()) !== s0; }
+    const ok = o.shapes === 1 && o.levels[0] < o.levels[3] && o.pars.every(([, par, lim]) => par >= 1 && lim > par) && o.flame === 1 && o.hyper === 1 && o.star === 1 && o.flameTook >= 9
+      && mid && mid.lit.join() === '26,34' && mid.sel === 2 && flamed.moves === 1 && flamed.flames >= 1
+      && hyp.col1 >= ones && won.state === 'won' && won.stars >= 1 && best >= 1 && next.at && (next.at[0] !== won.at[0] || next.at[1] !== won.at[1])
+      && lost.state === 'lost' && size[0] === 9 && size[1] === 9 && moved;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ o, mid, flamed, ones, hyp, won, best, next, lost, size, moved })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bejeweled (every kind the pearl; levels ${o.levels.join('/')}; pars ${o.pars.map(p => p.join(' ')).join(', ')}; a flame, a star and a hypercube made, a flame taking ${o.flameTook}; a real drag lit ${mid && mid.lit} and made a flame; real clicks swapped a hypercube, ${hyp.col1} of a colour gone; a goal made ${won.stars}★, a real click on to ${next.at}; out of moves ${lost.state}; the real Size tile ${size.join('/')}; a board no one plays moving)`);
   }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
