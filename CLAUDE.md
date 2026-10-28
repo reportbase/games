@@ -716,6 +716,106 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     real drag running the player under the finger, the real arrow, a real click serving, a match won with stars and a best, two
     real fingers each taking a player with the view still, real clicks on the Points, Game and Mode tiles, a drill started by a
     real click with the machine feeding, and a board no one plays moving.
+- **Curling** (Oct 28: "2,   3 curling, bowling, marble run", the first of the new games: "stones that curl, sweeping, a house on
+  every board"): `CURLING_APP`, id `curling`, after squash. The far end of a sheet a board, `W` (0.42) wide by 1 long (`boardShape`,
+  `frameFit` 1.1): the house's rings (`RINGS`, the button at `TEE` 0.2), the far hog line (`HOG` 0.5), the back line, and your
+  delivery at `REL` (0.93); stones `SR` (0.0128), red yours, yellow the computer's.
+  - **The ice** (`slide`, steps of 1/240 s): friction `A0` slows a stone evenly (by the board's `fric`); it curls by its turn
+    (`s`, ±1) at `CURL` × A0 × CV / (v + CV), so most of its curl comes as it slows; stones meet as equal masses (`E_STONE`) and both
+    lose their turn. Sweeping (`SWEEP_A` 0.85 of the friction, `SWEEP_C` 0.6 of the curl) carries a draw swept all the way about
+    0.13 farther. Out: touching a side line, wholly past the back line, or (a delivered stone that struck nothing) short of the
+    far hog line (`hogCheck`). A draw curls about 0.04–0.05 (the house is 0.16 across its radius) and takes about 5 s.
+  - **An end** (`SET.stones` each, 2–4; a game `SET.ends`, 2–8, a tie playing on an extra end): the side without the hammer first,
+    by turns (`toThrow`); scored to the button (`endScore`: the side nearest scores one a stone nearer than the other's nearest,
+    in the house); the side that scores gives up the hammer, a blank end keeps it.
+  - **Every board its own ice and level** (`iceOf` by the board's number: curl 0.75–1.25 of `CURL`, swingier by a tenth a level;
+    friction 0.92–1.08), a level 1–5 by ring plus the Difficulty, as every game with levels.
+  - **The computer** (`plan`, `LV`): draws (the button, beside it, short), a guard early, freezes to your stones, stones behind its
+    own and takeouts of yours (`solveDraw`, `solveHit`: the broom and weight found by a few throws of the stone alone), each played
+    against the stones as they lie (`throwSim`) and valued (`valueOf`: the end's score if it ended now, the nearest stones' gap, a
+    little for guards); its hands (`errX` on the broom, `errW` on the weight, `handsOn`), the best taken `pick` of the time; from
+    level 3 it sweeps a stone it sees will stop short (`wantSweep`). Against the steady player (`STEADY`) over 8 games of 4 ends:
+    the steady player won 8, 6, 4, 1 and 0 at levels 1–5. About 5 ms to plan a stone.
+  - **Playing**: a tap or a drag on the sheet puts the broom (← → nudge it); the row's Curl (C), Weight − and + (↑ ↓), and the weight
+    tile stepping through guard, draw, back of the house, hit and peel (its name from where the stone would stop, `weightName`);
+    Enter, the row's Throw or a tap on your stone at the delivery throws (`throwMine`). While your stone runs, a press held on the
+    sheet (heard before the field: `MATCH_KIT.hands`) or S sweeps; two brooms work at its nose. Your own last shot comes back for
+    your next stone (`G.mine`). The shot is dotted before it goes (`previewOf`, unswept, through the stones as they lie): all of it
+    with a ring where it stops at level 1, `PREVIEW` of it farther out (a quarter at level 5); the row's Show the shot turns it off.
+  - **A board no one plays** shows an end of the steady player against its computer, worked out a throw at a time in the boards'
+    share of time (`recOf`, `recWork`, `BOARD_KIT.budget(6, 40)`; frames of every stone at `REC_HZ` 15), played back on its own
+    phase (`BOARD_KIT.frameAt`). About 80 ms an end.
+  - **Through**: stars (a win by 3 or more ★★★, a win ★★, a draw ★), the most kept a board (`curling.best`, by board, level, ends and
+    stones); a tap goes on to the board beside. Settings in `curling.settings`. Drawn: the sheet a picture (`paint`: ice, pebble,
+    rings, lines, the hack), stones (`cuStone`, a lathe of granite) with handles in the team's colour turned as the stone turns
+    (`cuHandle`), the broom, the dots, the sweepers' brooms (`cuBroom`), a flash where stones meet, the score in dot digits.
+  - The smoke test (part 7) checks the levels by ring, a draw solved to the button, the curl both ways, sweeping farther and
+    straighter, a takeout, the hog line, an end's score, games ending with the steady player better at level 1 than 5, and real
+    input: a click starting, a real click putting the broom, the real Enter throwing, a real press sweeping, the computer answering,
+    and a board no one plays moving.
+- **Bowling** (Oct 28: "2,   3 curling, bowling, marble run", the second: "spin and pins"): `BOWLING_APP`, id `bowling`, after curling.
+  Ten-pin, the far end of a lane a board, `W` (0.36) wide by 1 long: the pins on their deck (`SPOTS`, `S` 0.078 apart, the head
+  pin at `HEAD` 0.27), the lane (`LANE` 0.27) between gutters (`GUT`) down to the foul line (`FOUL`), the arrows at `ARROWS`.
+  - **The ball** (`roll`, steps of 1/240 s): straight on the oil; from the board's own oil line (`lane.oil`) the dry back end hooks
+    it by its spin, `lane.hk` × hook, coming on over `RAMP`, turned across its way with its speed kept; no hook once on the deck
+    or among the pins (slowed by them it turned on the spot and came back up the lane). Past the lane's edge it is in the gutter
+    and touches nothing.
+  - **The pins**: the ball meets them as `MB` (4.5) pins' weight; pins meet pins; the side kickbacks send them back (`E_WALL`); a
+    pin struck harder than `DOWN_V` × `lane.carry` falls, lies the way it was sent and slides on under `PF`, and as it falls it lays
+    its length (`TOPPLE` 0.085) onto any pin standing within 35° of its way (as real pins knock their neighbours: thin circles alone
+    left the gaps between pins too wide, and a pocket ball took four); one only touched stands. A perfect pocket ball (the ball
+    0.44 of a pin spacing right of the head pin, coming in at 8–11°) strikes.
+  - **Frames** (`afterBall`, `scoreOf`): a strike or a second ball ends frames 1–9, the standing pins kept where they stand for
+    the second; the tenth has a third ball after a strike or a spare, the pins set again whenever all are down. Scored as the game
+    is (300, all 9-and-a-spare 190, all fours 80).
+  - **Your shot**: where you stand (the row's Stand ◀ ▶, A D), where you aim (a tap or a drag on the lane, ← → nudge it), the
+    speed (Speed − +, ↑ ↓, shown in km/h) and the hook (Hook − +, Q E, named straight to a big hook). Enter, the row's Bowl or a
+    tap on the ball at the foul line bowls. Your last shot stays for the next ball. The way is dotted before it goes (`previewOf`,
+    through the pins as they stand): all of it at level 1, `PREVIEW` of it farther out.
+  - **Every board its own lane** (`laneOf` by the board's number at a level 1–5 by ring plus the Difficulty, `LV`): the oil ending
+    sooner and the back end hooking harder farther out (`hk` 1.4–1.7 at level 1 to 2.7–3.2 at 5), so a ball off its line goes
+    farther wrong, and the pins carrying less (`carry` 1.25 down to 0.85). The ball's colour is the board's.
+  - **Par** is the steady player's game on the lane (`STEADY`: aim off 0.012, speed 6%, hook 20%; `pick`: the pocket with a gentle
+    hook, less on a hookier lane, then for the pins left a line at each and at their middle, the most taken), worked out a ball at
+    a time in the boards' share of time (`recOf`, `recWork`, `BOARD_KIT.budget(6, 40)`), its game what a board no one plays shows.
+    Measured over 6 games a level: 203, 192, 190, 173 and 145 at levels 1–5; about 25 ms a game. Stars: par or better ★★★, within a
+    fifth ★★, else ★; the best score kept a board (`bowling.best`); a tap on a finished lane goes on to the board beside.
+  - Drawn: the lane a picture (`paint`: 39 boards, maple ends and pine between, the oil's sheen, the arrows and dots, the foul line,
+    gutters, kickbacks, the pit); pins turned on a lathe with red stripes at the neck (`bwPin`, `bwPinDown` lying along its way),
+    the ball, your aim, the dots, the score in dot digits at the foul line.
+  - The smoke test (part 7) checks the levels by ring, the scoring (300, 190, 80, the tenth's bonus balls), a hook across the head
+    pin's line, a gutter ball taking nothing, the steady player's perfect pocket balls striking and its games better at level 1
+    than at 5, and real input (a click starting, a real click aiming, the real Enter bowling) and a board no one plays moving.
+- **Marble run** (Oct 28: "2,   3 curling, bowling, marble run", the third: "build a track in the bottom row, the steady player tests
+  it"): `MARBLE_APP`, id `marblerun`, after bowling. A square board, an n × n grid of squares: a start chute at the far edge, high
+  up (`startPiece`, blue), a cup lower down (red), rocks, some pieces laid for you (darker wood), and a stock in the bottom row.
+  - **The pieces** (`EDGES`, `heightAt`; edges 0 N toward the far end, 1 E, 2 S, 3 W): a straight, a curve, a ramp (a straight that
+    drops a level) and a spiral (a curve that drops a level, its high end either end: rot 0–7), each at a height `z` (its lower end)
+    on a post. Drawn as troughs of wood along the middle line (`trackGeo`: a straight N to S, or a quarter circle from N round to E,
+    a level `LH` (0.22 squares) high; each face twice with corners of its own, sharing them shaded the wood black), turned by yaw
+    r·π/2 (the field turns an item by π − yaw, so local N to board N at yaw 0).
+  - **Building** (`tapCell`): the piece in hand (the row, or 1–4), a tap on an empty square lays it turned and raised to join what
+    lies beside it (`fitsAt`: every way it can lie, scored by the ends it meets at their heights, `endsInto`, the chute and the cup
+    among them); a tap again on one of yours turns it to the next way, those that fit first; the row's Turn (R), Raise and Lower
+    (↑ ↓) move the ringed one; Erase (X) takes back; Clear takes all yours back. The tap that picks a board out lays nothing.
+  - **The run** (`runSim`, the row's Run or Enter; steps of 1/240 s): along each piece's middle line (`pointAt`), `G` × the slope
+    down every drop, rolling (`MU`, `CURVE_MU` on a curve); into the next square's piece if it has an end there at the same height,
+    else it falls (`why`: off the end of the track, into a rock, a piece that does not turn that way, dropped onto one lower, into
+    the side of one higher); off a curve faster than the board's `vc`; back down a slope it cannot climb, stopped on the flat
+    (`V0` 2 to start; a level dropped pays for about four squares). Into the cup at height 0, through.
+  - **Every board its own puzzle** (`makePuzzle(idx, lv)`, `LV` by level, ring plus the Difficulty): a walk from the chute (each
+    step the square with fewest ways out, so it does not shut itself in, a little toward the near end), its pieces found by the
+    walk's turns, `H` drops spread along it, run in `runSim` until the marble reaches the cup (else other drops, else another walk);
+    then rocks off it, some pieces laid for you (`given`), the rest in the stock with `spare`s. Levels 1–5: grids 5 to 8, 2 to 5
+    levels down, rocks 0.12–0.28, laid for you a half to none, spares 2 to none, curves throwing at 3.6 down to 2.8. Par (the pieces
+    beyond those laid for you): about 3, 8 and 15 at levels 1, 3 and 5; under 2 ms to make. Boards only looked at are made in the
+    boards' share of time (`BOARD_KIT.budget(8, 30)`, `PUZ` keeps 1,500).
+  - **Through**: in par ★★★, two more ★★, else ★; the fewest pieces kept a board (`marblerun.best`); a tap goes on to the board
+    beside. The menu's Show the way lays the made way (no stars for it). A board no one plays shows the made way with the marble
+    running down it on the board's own phase (`runOf`, `BOARD_KIT.loopT`).
+  - The smoke test (part 7) checks the levels by ring, puzzles made at levels 1, 3 and 5 each running to the cup with par growing,
+    a piece taken out and the marble falling, a piece beside the chute laid turned and raised to join it, and real input (a real
+    click laying a straight under the chute, another turning it, the made way run to the cup) and a board no one plays running.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
@@ -2502,6 +2602,13 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   takes to long. stop doing them unless I ask."). It then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
+- **Seven parts side by side** (Oct 28: "2", the faster smoke test: a CI run took 30 minutes, 26 of the smoke test and 3.5 of
+  the course test): `tests/smoke.mjs`'s checks are cut into `PARTS` (7) contiguous parts of three to five minutes, each in an
+  `if (part(k)) { … }` at the end of its blocks (part 7 the three games of Oct 28), and `SHARD=k/7` runs one (the page loaded afresh, each part setting its own
+  app; no part uses a name another declares, `cdp` being made at the start for all). With no `SHARD` every part runs, as
+  `npm test` does. CI (`smoke.yml`) runs the seven parts and the course test as eight jobs at once, then a job named `smoke`
+  that passes only if all of them did, so a run takes about as long as its longest part. A new check goes at the end of the
+  part it sits beside or in the shortest one; one part alone runs locally as `SHARD=3/7 node tests/smoke.mjs`.
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
   `chess.js@1.4.0` somewhere and run `LIBS_DIR=that/node_modules npm test`; the
   test then serves both from there.

@@ -59112,6 +59112,1670 @@ const SQUASH_APP = (() => {
   };
   return app;
 })();
+/* ═══ CURLING (Oct 28: "2,   3 curling, bowling, marble run", the first of the three new games offered: "stones that curl,
+   sweeping, a house on every board") ═══════════════════════════════════════════════════════════════════════════════════════
+   The far end of a sheet on every board: the house near the top (the button at `TEE`), the far hog line, and your delivery at
+   the near end (`REL`). Stones go in turn, yours red and the computer's yellow; an end is `SET.stones` each, a game `SET.ends`.
+   - THE THROW: the broom is where you aim (a tap or a drag on the sheet puts it there; ← → nudge it), the weight how far the
+     stone would slide on its own (the row's Weight − +, ↑ ↓, its name the shot it makes: guard, draw, back, hit, peel), the
+     curl which way it turns (the row's Curl, C). Enter, the row's Throw or a tap on your stone at the delivery throws it.
+   - SWEEPING: while your stone runs, a finger held on the sheet (or S held) sweeps in front of it: it slides farther
+     (`SWEEP_A` of the friction) and curls less (`SWEEP_C`). Two brooms are drawn working at its nose.
+   - THE ICE (`slide`): friction `A0` slows a stone evenly; it curls sideways by its turn, more as it slows (`CURL` × A0 ×
+     CV / (v + CV)), as a real stone does, most of its curl in the last few metres. Stones meet as equal masses (`E_STONE`), the
+     one struck sent on along the line between their middles, both losing their turn (no more curl).
+   - THE RULES: a delivered stone must come to rest wholly past the far hog line unless it struck another; a stone touching a
+     side line or wholly past the back line is out. When every stone is still and thrown, the side whose stone is nearest the
+     button scores one for each of its stones in the house nearer than the other side's nearest (`endScore`). The side that
+     scores throws first next end; a blank end keeps the last stone (the hammer) where it was.
+   - EVERY BOARD ITS OWN ICE AND LEVEL (`iceOf`, by the board's number: how far it curls, how fast it runs, swingier farther
+     out), a level 1–5 by ring plus the Difficulty (Easy 0, Normal 1, Hard 2), as every game with levels has.
+   - THE COMPUTER (`plan`, `LV` by level): it reads the house and tries draws (the button, beside it, behind a stone, frozen to
+     one), guards in front of the house and takeouts of your stones, each worked out in the game's own physics (`solveDraw`,
+     `solveHit`: the broom and weight that bring the stone there, found by a few throws of the stone alone), plays each against
+     the stones as they lie (`throwSim`) and keeps the best by the end's score if it ended then (`valueOf`). Then its hands: the
+     broom off by `errX`, the weight by `errW`; it picks the best `pick` of the time (else one of the next best), and from
+     level 3 it sweeps a stone it sees will come up short (`wantSweep`).
+   - THE SHOT SHOWN BEFORE IT GOES (`previewOf`): the stone's own way, unswept, through the stones as they lie, dotted from the
+     delivery: all of it at level 1 with a ring where it stops, `PREVIEW` of it farther out (a quarter at level 5).
+   - A BOARD NO ONE PLAYS shows an end of the steady player (`STEADY`) against its computer (`recOf`, `recWork`: one throw at a
+     time in the boards' share of time, frames of every stone at `REC_HZ`), played back on its own phase (`BOARD_KIT.frameAt`).
+   - THROUGH: the game's score as stars (a win by 3 or more ★★★, a win ★★, a draw ★), the most kept a board (`curling.best`);
+     a tap on a finished board goes on to the board beside. */
+const CURLING_APP = (() => {
+  const W = 0.42, SR = 0.0128, SH = 0.011, TEE = 0.2, HOG = 0.5, REL = 0.93, CX = W / 2;
+  const RINGS = [0.162, 0.108, 0.054, 0.016], HOUSE = RINGS[0], BACK = TEE - HOUSE;
+  const A0 = 0.062, CURL = 0.55, CV = 0.05, SWEEP_A = 0.85, SWEEP_C = 0.6, E_STONE = 0.92, DT = 1 / 240, STOP_V = 0.0025;
+  const TICK = 1 / 60, SUB = 4, REC_HZ = 15, REC_CAP = 200, PHOTO_PX = 20, HI_PX = 300, GRACE = 0.8, CPU_T = 1.1, REST_T = 0.9, END_T = 2.6;
+  const W_MIN = 0.3, W_MAX = 2.6, PREVIEW = [1, 0.6, 0.45, 0.35, 0.25];
+  const LV = [
+    { errX: 0.032, errW: 0.13, pick: 0.35, sweep: false, takeouts: 0.5 },
+    { errX: 0.022, errW: 0.095, pick: 0.55, sweep: false, takeouts: 0.8 },
+    { errX: 0.015, errW: 0.07, pick: 0.75, sweep: true, takeouts: 1 },
+    { errX: 0.0095, errW: 0.05, pick: 0.9, sweep: true, takeouts: 1 },
+    { errX: 0.006, errW: 0.033, pick: 1, sweep: true, takeouts: 1 },
+  ];
+  const STEADY = { errX: 0.015, errW: 0.065, pick: 0.8, sweep: true, takeouts: 1 };
+  const DL = ARCADE.difficulty('curling.level', 'Every board plays at its own level, harder the farther it is from the corner: swingier ice, a computer whose hands are surer and who chooses its shots better, sweeps its own stones and plays takeouts, and less of your shot shown before it goes. Easy, Normal and Hard move every board a level up.', true);
+  const say = BOARD_KIT.say(2600);
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, ringOf = BOARD_KIT.ringOf, clamp = BOARD_KIT.clamp, rngOf = BOARD_KIT.rng;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
+  const TEAM = [0xd8332c, 0xf2c230], TEAM_NAME = ['red', 'yellow'];
+
+  /* ─── THE SETTINGS (the bottom row's last tiles, and the menu) ─── */
+  const SET = (() => {
+    const d = { ends: 4, stones: 4, sound: true, preview: true };
+    try { const s = JSON.parse(localStorage.getItem('curling.settings') || '{}');
+      if ([2, 4, 6, 8].includes(s.ends)) d.ends = s.ends;
+      if ([2, 3, 4].includes(s.stones)) d.stones = s.stones;
+      for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k];
+    } catch {}
+    return d;
+  })();
+  const saveSet = () => { try { localStorage.setItem('curling.settings', JSON.stringify(SET)); } catch {} };
+
+  /* ─── THE ICE ─── a board's own: how much a stone curls and how fast the sheet runs, swingier farther out */
+  function iceOf(idx, lv){
+    const R = rngOf((idx * 2654435761) ^ 0x51ce);
+    return { curl: CURL * (0.75 + 0.5 * R()) * (1 + 0.1 * (lv - 1)), fric: 0.92 + 0.16 * R() };
+  }
+  const v0Of = (w, ice) => Math.sqrt(2 * A0 * ice.fric * w);
+
+  /* ─── THE STONES ON THE ICE ─── `slide` moves every stone one step: friction, curl (the stone being swept less), the stones
+     meeting, the side lines and the back line. A stone is { x, y, vx, vy, s (its turn: +1 curls toward +x), team, rot, out,
+     hit, live }. Returns true while anything moves. */
+  function slide(S, ice, dt, sweepK){
+    let moving = false;
+    for (const st of S){
+      if (st.out || (!st.vx && !st.vy)) continue;
+      const v = Math.hypot(st.vx, st.vy);
+      if (v < STOP_V){ st.vx = st.vy = 0; continue; }
+      moving = true;
+      const sw = sweepK && st.live ? sweepK : 0;
+      const a = A0 * ice.fric * (sw ? 1 - (1 - SWEEP_A) * sw : 1);
+      const dx = st.vx / v, dy = st.vy / v;
+      const al = st.s ? st.s * ice.curl * A0 * CV / (v + CV) * (sw ? 1 - (1 - SWEEP_C) * sw : 1) : 0;
+      const nv = v - a * dt;
+      if (nv <= 0){ st.vx = st.vy = 0; continue; }
+      // (the curl turns the way along: perpendicular to it, (−dy, dx) is +x for a stone going up the sheet)
+      let vx = dx * nv - dy * al * dt, vy = dy * nv + dx * al * dt;
+      const k = nv / Math.hypot(vx, vy); st.vx = vx * k; st.vy = vy * k;
+      st.x += st.vx * dt; st.y += st.vy * dt;
+      st.rot += (st.s || 0) * nv * dt * 9;
+    }
+    for (let i = 0; i < S.length; i++){
+      const a = S[i]; if (a.out) continue;
+      for (let j = i + 1; j < S.length; j++){
+        const b = S[j]; if (b.out) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+        if (d2 >= 4 * SR * SR || d2 < 1e-12) continue;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, vn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+        const push = (2 * SR - d) / 2; a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
+        if (vn <= 0) continue;
+        const J = (1 + E_STONE) / 2 * vn;
+        a.vx -= J * nx; a.vy -= J * ny; b.vx += J * nx; b.vy += J * ny;
+        a.s = b.s = 0; a.hit = b.hit = true; moving = true;
+        if (S.onHit) S.onHit(a, b, vn);
+      }
+    }
+    for (const st of S){
+      if (st.out) continue;
+      if (st.x < SR || st.x > W - SR || st.y < BACK - SR || st.y > 1.02){ st.out = true; st.vx = st.vy = 0; if (S.onOut) S.onOut(st); }
+    }
+    return moving;
+  }
+  // a stone delivered: from the delivery toward the broom at its weight, turning `curl`
+  function deliver(team, shot, ice){
+    const dx = shot.bx - CX, dy = shot.by - REL, d = Math.hypot(dx, dy) || 1, v = v0Of(shot.w, ice);
+    return { x: CX, y: REL, vx: v * dx / d, vy: v * dy / d, s: shot.curl, team, rot: 0, out: false, hit: false, live: true };
+  }
+  // a delivered stone come to rest short of the far hog line, having struck nothing, is taken off
+  function hogCheck(st){ if (!st.out && !st.hit && st.y > HOG - SR){ st.out = true; return true; } return false; }
+  const copy = S => S.map(st => ({ ...st }));
+  // a throw played out at once (no sweeping unless asked), the stones as they lie: what the computer and the preview ask
+  function throwSim(S0, team, shot, ice, opt){
+    const o = opt || {}, S = copy(S0), st = deliver(team, shot, ice), dt = o.dt || DT, path = o.path ? [] : null;
+    for (const q of S) q.live = false;
+    S.push(st);
+    let t = 0;
+    while (t < 40){
+      if (path && (path.length < 2 || Math.hypot(st.x - path[path.length - 2], st.y - path[path.length - 1]) > 0.012)) path.push(st.x, st.y);
+      const mv = slide(S, ice, dt, o.sweep ? o.sweep(t, st) : 0); t += dt;
+      if (o.until && o.until(st, t)) break;
+      if (!mv) break;
+    }
+    hogCheck(st);
+    return { S, st, path, t };
+  }
+
+  /* ─── SCORING ─── */
+  const dist = st => Math.hypot(st.x - CX, st.y - TEE);
+  const inHouse = st => !st.out && dist(st) <= HOUSE + SR;
+  function endScore(S){
+    const H = S.filter(inHouse).sort((a, b) => dist(a) - dist(b));
+    if (!H.length) return { team: -1, n: 0 };
+    const t = H[0].team, other = H.find(st => st.team !== t), lim = other ? dist(other) : Infinity;
+    return { team: t, n: H.filter(st => st.team === t && dist(st) < lim).length };
+  }
+  // how good stones lying so are for `team`: the end's score if it ended now, the nearest stones' gap, a little for guards
+  function valueOf(S, team, last){
+    const e = endScore(S), pts = e.team < 0 ? 0 : e.team === team ? e.n : -e.n;
+    if (last) return pts;
+    const near = tm => { let m = 1; for (const st of S) if (!st.out && st.team === tm) m = Math.min(m, dist(st)); return m; };
+    let guards = 0;
+    for (const st of S) if (!st.out && st.team === team && st.y > TEE + HOUSE && st.y < HOG && Math.abs(st.x - CX) < 0.07) guards++;
+    return pts + 0.8 * (near(1 - team) - near(team)) + 0.12 * Math.min(2, guards) + 0.05 * S.filter(st => !st.out && st.team === team && inHouse(st)).length;
+  }
+
+  /* ─── THE COMPUTER ─── */
+  // the broom and weight that bring a stone, alone on the ice, to rest at (tx, ty)
+  function solveDraw(tx, ty, curl, ice){
+    let bx = tx - curl * 0.06, w = REL - ty + 0.01;
+    for (let k = 0; k < 7; k++){
+      const r = throwSim([], 0, { bx, by: TEE, w, curl }, ice, { dt: 1 / 120 }).st;
+      if (r.out && r.y > HOG){ w += 0.1; continue; }
+      bx += (tx - r.x) * 1.15; w += (r.y - ty) * 1.0;
+      w = clamp(w, W_MIN, W_MAX); bx = clamp(bx, 0.01, W - 0.01);
+    }
+    return { bx, by: TEE, w, curl };
+  }
+  // the broom that sends a stone at weight w through (tx, ty): a takeout
+  function solveHit(tx, ty, curl, w, ice){
+    let bx = tx;
+    for (let k = 0; k < 6; k++){
+      const r = throwSim([], 0, { bx, by: TEE, w, curl }, ice, { dt: 1 / 120, until: st => st.y <= ty }).st;
+      bx += (tx - r.x) * 1.1; bx = clamp(bx, 0.01, W - 0.01);
+    }
+    return { bx, by: TEE, w, curl };
+  }
+  function plan(G, team, D){
+    const S = G.stones, ice = G.ice, R = G.R, last = G.thrown === 2 * G.nStones - 1;
+    const C = [];
+    const add = (shot, why) => C.push({ shot, why });
+    const opp = S.filter(st => !st.out && st.team !== team), mine = S.filter(st => !st.out && st.team === team);
+    for (const curl of [1, -1]){
+      add(solveDraw(CX, TEE, curl, ice), 'draw');
+      add(solveDraw(CX - 0.035, TEE + 0.02, curl, ice), 'draw');
+      add(solveDraw(CX + 0.035, TEE + 0.02, curl, ice), 'draw');
+      add(solveDraw(CX, TEE + 0.06, curl, ice), 'draw');
+      if (!last && G.thrown < 4) add(solveDraw(CX + (R() - 0.5) * 0.05, TEE + HOUSE + 0.07, curl, ice), 'guard');
+      for (const st of opp.slice(0, 3)){
+        if (R() < D.takeouts) add(solveHit(st.x, st.y, curl, 2.2, ice), 'takeout');
+        if (inHouse(st)) add(solveDraw(st.x, st.y + 2.05 * SR, curl, ice), 'freeze');
+      }
+      for (const st of mine.slice(0, 2)) if (inHouse(st)) add(solveDraw(st.x, st.y - 2.4 * SR, curl, ice), 'behind');
+    }
+    for (const c of C) c.v = valueOf(throwSim(S, team, c.shot, ice, { dt: 1 / 120 }).S, team, last) + R() * 0.02;
+    C.sort((a, b) => b.v - a.v);
+    const pick = R() < D.pick ? C[0] : C[Math.min(C.length - 1, 1 + Math.floor(R() * 3))];
+    return pick;
+  }
+  // the hands: the broom and weight a little off
+  function handsOn(shot, D, R){ return { ...shot, bx: shot.bx + gauss(R) * D.errX, w: clamp(shot.w * (1 + gauss(R) * D.errW), W_MIN, W_MAX) }; }
+  // a stone the computer has thrown: swept while, alone on the ice from here, it would come to rest short of where it was meant to
+  function wantSweep(st, ice, target){
+    if (!target || st.hit || st.out) return false;
+    const q = { ...st }, S = [q]; q.live = false;
+    for (let t = 0; t < 30 && slide(S, ice, 1 / 60, 0); t += 1 / 60) {}
+    return q.y > target.y + 0.006 && Math.abs(q.x - target.x) < 0.05;
+  }
+
+  /* ─── A GAME ─── seats: 0 red (you, or the steady player in a recording), 1 yellow (the computer) */
+  function newMatch(idx, lv, opt){
+    const o = opt || {};
+    const G = { idx, lv, ice: iceOf(idx, lv), D: LV[lv - 1], R: rngOf((idx * 7919) ^ (lv * 131) ^ (o.seed || 0) ^ 0x2c5),
+                ends: o.ends || SET.ends, nStones: o.stones || SET.stones, end: 1, score: [0, 0], endScores: [], hammer: 1, thrown: 0,
+                stones: [], state: 'aim', t: 0, wait: 0, ai: [o.ai0 || null, o.ai1 === undefined ? LV[lv - 1] : o.ai1], target: null, sweepK: 0,
+                shot: { bx: CX, by: TEE, w: REL - TEE, curl: 1 }, mine: [null, null], cur: null, fx: [], ev: o.ev || null, winner: -2 };
+    G.stones.onHit = (a, b, vn) => { G.fx.push({ t: G.t, kind: 'hit', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }); emit(G, 'hit', { v: vn }); };
+    G.stones.onOut = st => emit(G, 'out', st);
+    startTurn(G);
+    return G;
+  }
+  const emit = (G, kind, a) => { if (G.ev) try { G.ev(kind, a, G); } catch {} };
+  // whose stone it is: the side without the hammer first, then by turns
+  const toThrow = G => (G.thrown % 2 === 0 ? 1 - G.hammer : G.hammer);
+  function startTurn(G){
+    const k = toThrow(G);
+    G.state = G.ai[k] ? 'cpu' : 'aim'; G.wait = G.ai[k] ? CPU_T : 0; G.target = null;
+    // (your own last shot comes back for your next stone: the computer's took its place, a takeout's weight on your draw)
+    if (!G.ai[k]) G.shot = { ...(G.mine[k] || { bx: CX, by: TEE, w: REL - TEE, curl: 1 }) };
+    if (G.ai[k]){ const P = plan(G, k, G.ai[k]); G.planned = P; G.target = targetOf(P.shot, G); G.shot = handsOn(P.shot, G.ai[k], G.R); G.why = P.why; }
+    emit(G, 'turn', { team: k });
+  }
+  // where a planned shot was meant to stop (for its sweepers)
+  function targetOf(shot, G){ const r = throwSim([], 0, shot, G.ice, { dt: 1 / 120 }).st; return { x: r.x, y: r.y }; }
+  function throwNow(G){
+    const k = toThrow(G);
+    for (const st of G.stones) st.live = false;
+    if (!G.ai[k]) G.mine[k] = { ...G.shot };
+    G.cur = deliver(k, G.shot, G.ice); G.stones.push(G.cur);
+    G.state = 'throw'; G.thrownAt = G.t; emit(G, 'throw', { team: k });
+  }
+  // one tick of the game (TICK s): the stones slide (`SUB` steps), a computer's stone swept when it would come up short
+  function tick(G, sweepIn){
+    G.t += TICK;
+    if (G.state === 'cpu'){ G.wait -= TICK; if (G.wait <= 0) throwNow(G); return; }
+    if (G.state === 'rest'){ G.wait -= TICK; if (G.wait <= 0) afterThrow(G); return; }
+    if (G.state === 'endover'){ G.wait -= TICK; if (G.wait <= 0) nextEnd(G); return; }
+    if (G.state !== 'throw') return;
+    const k = G.cur.team, A = G.ai[k];
+    let sw = 0;
+    if (A){ if (A.sweep && G.target && Math.round(G.t / TICK) % 15 === 0) G.cpuSweep = wantSweep(G.cur, G.ice, G.target); sw = A.sweep && G.cpuSweep ? 1 : 0; }
+    else sw = sweepIn ? 1 : 0;
+    G.sweepK = sw;
+    let mv = false;
+    for (let s = 0; s < SUB; s++) mv = slide(G.stones, G.ice, TICK / SUB, sw) || mv;
+    if (!mv){ if (hogCheck(G.cur)) emit(G, 'hog', G.cur); G.state = 'rest'; G.wait = REST_T; G.sweepK = 0; G.cpuSweep = false; }
+    if (G.fx.length && G.t - G.fx[0].t > 1) G.fx = G.fx.filter(f => G.t - f.t < 1);
+  }
+  function afterThrow(G){
+    G.thrown++; G.cur = null;
+    if (G.thrown < 2 * G.nStones){ startTurn(G); return; }
+    const e = endScore(G.stones);
+    if (e.team >= 0) G.score[e.team] += e.n;
+    G.endScores.push(e.team < 0 ? [0, 0] : e.team === 0 ? [e.n, 0] : [0, e.n]);
+    G.lastEnd = e; G.state = 'endover'; G.wait = END_T;
+    emit(G, 'end', e);
+  }
+  function nextEnd(G){
+    const e = G.lastEnd;
+    if (e && e.team >= 0) G.hammer = 1 - e.team;            // (the side that scored gives up the hammer; a blank end keeps it)
+    if (G.end >= G.ends && G.score[0] !== G.score[1] || G.end >= G.ends + 1){
+      G.state = 'over'; G.winner = G.score[0] > G.score[1] ? 0 : G.score[1] > G.score[0] ? 1 : -1; emit(G, 'over', { winner: G.winner }); return;
+    }
+    G.end++; G.thrown = 0; G.stones.length = 0; startTurn(G);
+  }
+  // the shot shown before it goes: the stone's way, unswept, through the stones as they lie
+  function previewOf(G){
+    const key = [G.shot.bx, G.shot.w, G.shot.curl, G.thrown, G.end].join();
+    if (G._pv && G._pv.key === key) return G._pv;
+    const r = throwSim(G.stones, toThrow(G), G.shot, G.ice, { path: true, dt: 1 / 120 });
+    return G._pv = { key, path: r.path, st: r.st };
+  }
+
+  /* ─── RECORDINGS ─── an end of the steady player against the board's computer, a throw at a time in the boards' share of time:
+     frames of every stone's x, y and turn (−1 off the ice) and the sweeping */
+  const RECS = new Map(), SOON = BOARD_KIT.budget(6, 40);
+  const recKey = (idx, lv) => idx * 8 + lv + ':' + SET.stones;
+  function recOf(idx, lv){
+    const k = recKey(idx, lv); let M = RECS.get(k);
+    if (!M){
+      M = { G: newMatch(idx, lv, { ai0: STEADY, ends: 1, seed: 17 }), F: [], n: 0, ticks: 0, done: false, phase: BOARD_KIT.phase(idx), N: 2 * SET.stones };
+      RECS.set(k, M); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
+    } else { RECS.delete(k); RECS.set(k, M); }
+    return M;
+  }
+  function recFrame(M){
+    const G = M.G, F = M.F;
+    for (let i = 0; i < M.N; i++){ const st = G.stones[i]; if (st && !st.out) F.push(st.x, st.y, st.rot); else F.push(-1, -1, 0); }
+    F.push(G.sweepK || 0); M.n++;
+  }
+  // one throw (from the computer's thinking to the stones still) at a time; frames every 1/REC_HZ s
+  function recWork(M){
+    const G = M.G; if (M.done) return;
+    const per = Math.round(1 / (REC_HZ * TICK)), was = G.thrown;
+    // (until this throw is over: the next stone's turn begun, or the end over)
+    for (let k = 0; k < 4000 && G.thrown === was && G.state !== 'endover' && G.state !== 'over'; k++){
+      if (M.ticks++ % per === 0) recFrame(M);
+      tick(G, false);
+    }
+    if (G.state === 'endover' || G.state === 'over'){
+      for (let r = 0; r < REC_HZ * 2; r++) recFrame(M);
+      M.done = true; M.F = Float32Array.from(M.F); M.G = { stones: [] };
+    }
+  }
+  function recSoon(idx, lv, urgent){
+    const M = recOf(idx, lv);
+    if (!M.done){ if (urgent) recWork(M); else SOON.take(() => recWork(M)); }
+    return M;
+  }
+  function recView(M){
+    const per = 3 * M.N + 1, n = (M.F.length / per) | 0;
+    if (!n) return null;
+    if (!M.done) return { stones: frameStones(M.F, (n - 1) * per, M.N), sweep: 0 };
+    const { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 1.2, M.phase), F = M.F, a = i * per, b = j * per, out = [];
+    for (let q = 0; q < M.N; q++){
+      const xa = F[a + 3 * q], ya = F[a + 3 * q + 1], xb = F[b + 3 * q], yb = F[b + 3 * q + 1];
+      if (xa < 0) continue;
+      const jump = xb < 0 || Math.hypot(xb - xa, yb - ya) > 0.1;
+      out.push({ x: jump ? xa : xa + (xb - xa) * f, y: jump ? ya : ya + (yb - ya) * f, rot: F[a + 3 * q + 2], team: q % 2 === 0 ? 0 : 1, live: false });
+    }
+    return { stones: out, sweep: F[a + per - 1] };
+  }
+  function frameStones(F, a, N){ const out = []; for (let q = 0; q < N; q++){ if (F[a + 3 * q] < 0) continue; out.push({ x: F[a + 3 * q], y: F[a + 3 * q + 1], rot: F[a + 3 * q + 2], team: q % 2, live: false }); } return out; }
+
+  /* ─── PLAYING ─── */
+  const GAMES = new Map();
+  let LIVE = null;
+  const { BEST, saveBest } = BOARD_KIT.best('curling.best');
+  const bestKey = (idx, lv) => idx + '@' + lv + '@' + SET.ends + 'x' + SET.stones;
+  const starsOf = G => G.winner === 0 ? (G.score[0] - G.score[1] >= 3 ? 3 : 2) : G.winner === -1 ? 1 : 0;
+  function fresh(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx);
+    return { c, r, idx, lv, state: 'ready', last: 0, acc: 0, overAt: 0, G: null };
+  }
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  function begin(g){
+    Object.assign(g, fresh(g.c, g.r), { state: 'play', last: performance.now() });
+    g.G = newMatch(g.idx, g.lv, { ai0: null, seed: (performance.now() * 1000) | 0, ev: (k, a, G) => onEvent(g, k, a, G) });
+    GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
+    say(SET.ends + ' ends of ' + SET.stones + ' stones each. Tap the sheet for the broom, set the weight and curl in the row, Enter or Throw. Hold a finger on the sheet (or S) to sweep.', 4200);
+    try { bbRefreshNow(); } catch {}
+  }
+  const HOLD = { n: 0 }, KEYS = {};
+  const sweeping = () => HOLD.n > 0 || !!KEYS.sweep;
+  function stepGame(g){
+    if (g.state !== 'play') return;
+    const t = performance.now(), dt = g.last ? Math.min(0.25, (t - g.last) / 1000) : 0;
+    g.last = t; g.acc += dt;
+    while (g.acc >= TICK){ g.acc -= TICK; tick(g.G, sweeping()); if (g.G.state === 'over'){ over(g); break; } }
+  }
+  function over(g){
+    g.state = 'over'; g.overAt = performance.now();
+    const G = g.G, s = starsOf(G), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
+    if (s > was){ BEST.set(k, s); saveBest(); }
+    sfx(G.winner === 0 ? 'win' : 'lose');
+    say((G.winner === 0 ? 'You win ' : G.winner === 1 ? 'The computer wins ' : 'A draw, ') + G.score[0] + '–' + G.score[1] + (s ? ' ' + BOARD_KIT.stars(s) : '') + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
+    try { bbRefreshNow(); } catch {}
+  }
+  const myTurn = g => !!(g && g.state === 'play' && g.G.state === 'aim' && !g.G.ai[toThrow(g.G)]);
+  function setBroom(g, x, y){ const G = g.G; G.shot = { ...G.shot, bx: clamp(x, 0.005, W - 0.005), by: clamp(y, 0.02, REL - 0.08) }; }
+  function setWeight(g, w){ g.G.shot = { ...g.G.shot, w: clamp(w, W_MIN, W_MAX) }; }
+  function weightName(w){
+    const stop = REL - w;
+    if (stop > HOG - SR) return 'too light';
+    if (stop > TEE + HOUSE + SR) return 'guard';
+    if (stop > TEE - HOUSE * 0.4) return 'draw';
+    if (stop > BACK - SR) return 'back of the house';
+    if (w < 1.7) return 'hit';
+    return 'peel';
+  }
+  function throwMine(g){ if (!myTurn(g)) return false; throwNow(g.G); try { bbRefreshNow(); } catch {} return true; }
+
+  /* ─── SOUNDS ─── the stone's rumble as it goes, the clack of granite, brooms, a cheer at an end */
+  function sfx(kind, a){
+    if (!SET.sound) return;
+    try { if (!ARCADE.audio()) return; } catch { return; }
+    const T = ARCADE.tone, Hs = ARCADE.hiss;
+    try {
+      if (kind === 'throw'){ Hs(1.6, 0.05, 260); T(70, 55, 1.4, 'sine', 0.05); }
+      else if (kind === 'hit'){ const v = Math.min(1, ((a && a.v) || 0.2) / 0.4); T(900, 600, 0.05, 'square', 0.03 + 0.05 * v); Hs(0.05, 0.2 + 0.3 * v, 3000); }
+      else if (kind === 'sweep') Hs(0.12, 0.06, 2400);
+      else if (kind === 'end'){ [523, 659, 784].forEach((q, i) => T(q, q, 0.14, 'triangle', 0.05, i * 0.09)); }
+      else if (kind === 'win') [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.07, i * 0.1));
+      else if (kind === 'lose') [392, 330, 262].forEach((q, i) => T(q, q, 0.2, 'triangle', 0.06, i * 0.14));
+      else if (kind === 'out') T(200, 140, 0.15, 'triangle', 0.04);
+    } catch {}
+  }
+  function onEvent(g, kind, a, G){
+    if (liveGame() !== g) return;
+    if (kind === 'throw' || kind === 'hit' || kind === 'out') sfx(kind, a);
+    if (kind === 'hog') say('Hogged: it did not reach the far hog line, so it comes off.', 1800);
+    if (kind === 'turn' && G.state === 'cpu') say('The computer: ' + (G.why === 'takeout' ? 'a takeout' : G.why === 'guard' ? 'a guard' : G.why === 'freeze' ? 'a freeze' : 'a draw') + '.', 1200);
+    if (kind === 'end'){
+      sfx('end');
+      say('End ' + G.end + ': ' + (a.team < 0 ? 'blank' : (a.team === 0 ? 'you score ' : 'the computer scores ') + a.n) + '. ' + G.score[0] + '–' + G.score[1] + '.', 2400);
+    }
+    if (kind === 'turn' || kind === 'end' || kind === 'over') try { bbRefreshNow(); } catch {}
+  }
+
+  /* ─── DRAWN ─── the sheet a picture (ice, pebble, the house's rings, the lines); on it the stones (granite, a handle in the
+     team's colour turned as the stone turns), the broom, the shot's way dotted, the sweepers' brooms, flashes where stones meet,
+     the score in dot digits by the near end. In sheet units, divided by W at the end. */
+  const PIC = BOARD_KIT.painted(64, (P, hi) => paint(P.idx, hi ? 512 : 256));
+  function paint(idx, S){
+    const cv = document.createElement('canvas'); cv.width = Math.round(S * W); cv.height = S;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-S, 0, 0, -S, cv.width, cv.height);      // (the photo tier lays a picture turned a half turn)
+    const R = rngOf(idx * 977 + 3);
+    const g = c.createLinearGradient(0, 0, 0, 1); g.addColorStop(0, '#eef4fa'); g.addColorStop(1, '#e3edf6'); c.fillStyle = g; c.fillRect(0, 0, W, 1);
+    // (the pebble: a fine scatter of brighter and duller flecks)
+    for (let k = 0; k < 1800; k++){ c.fillStyle = R() < 0.5 ? 'rgba(255,255,255,0.7)' : 'rgba(150,175,200,0.18)'; c.fillRect(R() * W, R(), 0.0016, 0.0016); }
+    const ring = (r, col) => { c.fillStyle = col; c.beginPath(); c.arc(CX, TEE, r, 0, 6.283); c.fill(); };
+    ring(RINGS[0], '#2b63c8'); ring(RINGS[1], '#f4f7fb'); ring(RINGS[2], '#d33a32'); ring(RINGS[3], '#f4f7fb');
+    const line = (x0, y0, x1, y1, w, col) => { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); };
+    line(CX, 0.01, CX, 0.99, 0.0018, 'rgba(30,40,60,0.55)');            // centre line
+    line(0, TEE, W, TEE, 0.0018, 'rgba(30,40,60,0.55)');                // tee line
+    line(0, BACK, W, BACK, 0.0026, 'rgba(30,40,60,0.6)');               // back line
+    line(0, HOG, W, HOG, 0.009, '#c22a24');                             // the far hog line
+    line(CX - 0.02, REL + 0.03, CX + 0.02, REL + 0.03, 0.006, '#30343c'); // the hack, where you deliver from
+    c.fillStyle = 'rgba(40,60,90,0.12)'; c.fillRect(0, 0, 0.006, 1); c.fillRect(W - 0.006, 0, 0.006, 1);
+    c.strokeStyle = '#222833'; c.lineWidth = 0.008; c.strokeRect(0.004, 0.004, W - 0.008, 0.992);
+    return cv;
+  }
+  const digits = DOT_FONT.digits3;
+  // (several pieces into one kind: trick shots' merge)
+  function mergeGeos(T, list){
+    let n = 0; for (const g of list) n += g.attributes.position.count;
+    const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), idx = []; let o = 0;
+    for (const g of list){
+      const gi = g.index ? g.index.array : null, c = g.attributes.position.count;
+      pos.set(g.attributes.position.array, o * 3); if (g.attributes.normal) nrm.set(g.attributes.normal.array, o * 3);
+      if (gi) for (let k = 0; k < gi.length; k++) idx.push(gi[k] + o); else for (let k = 0; k < c; k++) idx.push(k + o);
+      o += c;
+    }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(pos, 3)); g.setAttribute('normal', new T.BufferAttribute(nrm, 3)); g.setIndex(idx); return g;
+  }
+  const mixC = (a, b, f) => { const m = s => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
+  function itemsOf(V, bp){
+    const out = [];
+    const stone = (st, idle) => {
+      out.push({ kind: 'cuStone', u: st.x, v: st.y, scale: 2 * SR, sy: SH / (2 * SR), color: 0x9aa0a8 });
+      out.push({ kind: 'cuHandle', u: st.x, v: st.y, scale: 2 * SR, lift: SH, yaw: BOARD_KIT.yawOf(st.rot || 0), color: TEAM[st.team] });
+    };
+    for (const st of V.stones) stone(st);
+    if (V.preview){
+      const P = V.preview.path, n = Math.max(2, Math.floor(P.length / 2 * V.previewFrac)) * 2;
+      for (let q = 2; q < Math.min(P.length, n); q += 2) out.push({ kind: 'cuDot', u: P[q], v: P[q + 1], scale: 0.006, color: 0x2a3550 });
+      if (V.previewFrac >= 1 && !V.preview.st.out) out.push({ kind: 'cuRing', u: V.preview.st.x, v: V.preview.st.y, scale: 2 * SR * 1.25, color: TEAM[V.team] });
+    }
+    if (V.broom) out.push({ kind: 'cuRing', u: V.broom.x, v: V.broom.y, scale: 0.03, color: 0x1a1f2a }, { kind: 'cuDot', u: V.broom.x, v: V.broom.y, scale: 0.012, color: TEAM[V.team] });
+    // (the sweepers' brooms, working side to side just ahead of the stone being swept)
+    if (V.sweep && V.cur){
+      const st = V.cur, v = Math.hypot(st.vx || 0, st.vy || -0.1) || 1, dx = (st.vx || 0) / v, dy = (st.vy || -0.1) / v, w = Math.sin((V.t || 0) * 26) * 0.012;
+      for (const side of [-1, 1]) out.push({ kind: 'cuBroom', u: st.x + dx * 0.035 - dy * (side * 0.01 + w), v: st.y + dy * 0.035 + dx * (side * 0.01 + w), scale: 0.022, yaw: BOARD_KIT.yawOf(Math.atan2(dx, dy)), color: TEAM[st.team] });
+    }
+    for (const e of V.fx || []){ if (e.age > 0.5) continue; const f = e.age / 0.5; out.push({ kind: 'cuRing', u: e.x, v: e.y, scale: 0.04 * (0.4 + f), color: mixC(0xffffff, 0xd8e4f0, f) }); }
+    if (V.score && (bp == null || bp > 60)){
+      digits(out, V.score[0], W * 0.12, 0.965, 0.008, TEAM[0], 'cuPix');
+      digits(out, V.score[1], W * 0.88, 0.965, 0.008, TEAM[1], 'cuPix');
+    }
+    for (const it of out){ it.u /= W; it.scale /= W; it.lift = (it.lift || 0) / W; }
+    return out;
+  }
+  function liveView(g){
+    const G = g.G, k = toThrow(G), mine = myTurn(g);
+    const V = { stones: G.stones.filter(st => !st.out), score: G.score, t: G.t, fx: G.fx.map(e => ({ ...e, age: G.t - e.t })), team: k,
+                cur: G.state === 'throw' ? G.cur : null, sweep: G.state === 'throw' && G.sweepK > 0 };
+    if (G.state === 'aim' || G.state === 'cpu'){
+      V.stones = V.stones.concat([{ x: CX, y: REL, team: k, rot: 0 }]);
+      V.broom = { x: G.shot.bx, y: G.shot.by };
+      if (mine && SET.preview){ V.preview = previewOf(G); V.previewFrac = PREVIEW[g.lv - 1]; }
+    }
+    return V;
+  }
+
+  /* ─── HANDS ─── while your stone runs every press on the sheet sweeps, heard before the field so the view stays put */
+  const OWN = new Map();
+  function pressAt(x, y){
+    const g = liveGame(); if (!g || g.state !== 'play' || g.G.state !== 'throw' || g.G.ai[g.G.cur.team]) return null;
+    const at = _framedUV(x, y, 0.3); if (!at || at.c !== g.c || at.r !== g.r) return null;
+    return { g };
+  }
+  function handUp(id){ if (!OWN.has(id)) return false; OWN.delete(id); HOLD.n = OWN.size; return true; }
+  MATCH_KIT.hands({ pressAt, handAt: (p) => { HOLD.n = Math.max(1, OWN.size); }, handUp, OWN });
+  let DRAG = null, ateAt = 0;
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k === 'Enter'){ if (g.state !== 'play'){ if (g.state === 'ready' || performance.now() - g.overAt > GRACE * 1000) begin(g); } else throwMine(g); e.preventDefault(); e.stopPropagation(); return; }
+    if (g.state !== 'play') return;
+    if (k === 's' || k === 'Shift'){ KEYS.sweep = true; e.preventDefault(); e.stopPropagation(); return; }
+    if (!myTurn(g)) return;
+    let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
+    const flip = dirs && dirs[1] === 3 ? -1 : 1, G = g.G;
+    if (k === 'ArrowLeft' || k === 'ArrowRight'){ setBroom(g, G.shot.bx + (k === 'ArrowRight' ? 1 : -1) * flip * 0.004, G.shot.by); }
+    else if (k === 'ArrowUp' || k === 'ArrowDown'){ setWeight(g, G.shot.w + (k === 'ArrowUp' ? 0.02 : -0.02)); }
+    else if (k === 'c'){ G.shot = { ...G.shot, curl: -G.shot.curl }; }
+    else return;
+    e.preventDefault(); e.stopPropagation(); try { bbRefreshNow(); } catch {}
+  }, true);
+  addEventListener('keyup', e => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; if (k === 's' || k === 'Shift') KEYS.sweep = false; }, true);
+  addEventListener('blur', () => { KEYS.sweep = false; OWN.clear(); HOLD.n = 0; });
+
+  /* ─── THE ROW ─── Throw (or New game), Curl, Weight − / its name / +, then the settings */
+  const ON = '#2f4a3a';
+  function tilesOf(c, r){
+    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), playing = g && g.state === 'play', G = playing ? g.G : null;
+    const shot = G ? G.shot : { w: REL - TEE, curl: 1 };
+    return [
+      { glyph: playing ? '🥌' : '▶', value: playing ? (myTurn(g) ? 'Throw' : G.state === 'throw' && !G.ai[G.cur.team] ? 'Sweep!' : 'Wait') : 'New game', label: playing ? 'end ' + G.end + ' · ' + G.score[0] + '–' + G.score[1] : 'level ' + levelAt(idx) },
+      { glyph: shot.curl > 0 ? '⟳' : '⟲', value: shot.curl > 0 ? 'Curl right' : 'Curl left', label: 'curl' },
+      { glyph: '−', value: 'Lighter', label: 'weight' },
+      { glyph: '⚖', value: weightName(shot.w), label: 'weight ' + shot.w.toFixed(2) },
+      { glyph: '+', value: 'Heavier', label: 'weight' },
+      { glyph: '🏁', value: SET.ends + ' ends', label: 'game' },
+      { glyph: '🥌', value: SET.stones + ' stones', label: 'each, an end' },
+      { glyph: '⋯', value: SET.preview ? 'On' : 'Off', label: 'show the shot', bg: SET.preview ? ON : undefined },
+      { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
+    ];
+  }
+  const stepIn = (list, v) => list[(list.indexOf(v) + 1) % list.length];
+  function onTile(c, r, i){
+    const g = gameAt(c, r); LIVE = { c, r };
+    if (i === 0){ if (g.state !== 'play') begin(g); else throwMine(g); return true; }
+    if (i >= 1 && i <= 4 && myTurn(g)){
+      const G = g.G;
+      if (i === 1) G.shot = { ...G.shot, curl: -G.shot.curl };
+      else if (i === 2) setWeight(g, G.shot.w - 0.04);
+      else if (i === 4) setWeight(g, G.shot.w + 0.04);
+      else { const presets = [REL - (TEE + HOUSE + 0.06), REL - TEE, REL - (TEE - HOUSE * 0.7), 1.4, 2.2]; const at = presets.findIndex(p => p > G.shot.w + 0.01); setWeight(g, presets[at < 0 ? 0 : at]); }
+      try { bbRefreshNow(); } catch {} return true;
+    }
+    let msg = '', freshAll = false;
+    if (i === 5){ SET.ends = stepIn([2, 4, 6, 8], SET.ends); msg = 'Games of ' + SET.ends + ' ends'; freshAll = true; }
+    else if (i === 6){ SET.stones = stepIn([2, 3, 4], SET.stones); msg = SET.stones + ' stones each an end'; freshAll = true; }
+    else if (i === 7){ SET.preview = !SET.preview; msg = 'The shot shown before it goes: ' + (SET.preview ? 'on' : 'off'); }
+    else if (i === 8){ SET.sound = !SET.sound; msg = 'Sound ' + (SET.sound ? 'on' : 'off'); if (SET.sound) try { ARCADE.audio(); } catch {} }
+    else return true;
+    saveSet();
+    if (freshAll){ GAMES.clear(); RECS.clear(); msg += ' (every game starts afresh)'; }
+    say(msg, 2000);
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
+
+  const app = {
+    name: 'curling',
+    realtime: true,
+    boardShape: { cellW: W, cellH: 1 },
+    frameFit: 1.1,
+    menu: [{ head: 'Curling', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Ends: ' + SET.ends, title: 'How many ends a game is.', on(){ const f = framedCell(); onTile(f ? f.c : 0, f ? f.r : 0, 5); } },
+      { label: () => 'Stones: ' + SET.stones + ' each', title: 'How many stones each side throws an end.', on(){ const f = framedCell(); onTile(f ? f.c : 0, f ? f.r : 0, 6); } },
+      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The rumble, the clack of granite, the brooms.', on(){ SET.sound = !SET.sound; saveSet(); } },
+      { label: 'Start this board again', title: 'A new game, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
+      { label: 'How to play', title: 'The rules and the controls.', on(){ say('Get your stones nearer the button (the middle of the house) than any of the computer\'s. Tap or drag on the sheet to put the broom where you aim; the row sets the weight (how far it slides) and which way it curls; Enter or Throw. While your stone runs, hold a finger on the sheet (or S) to sweep it: it goes farther and curls less. A stone must pass the far hog line, and one past the back line or touching a side is out. At the end of an end the side with the nearest stone scores one for each stone nearer than the other side\'s best.', 12000); } },
+    ]}],
+    cellFar: { light: 0xdfe9f3, dark: 0xc6d4e2 },
+    itemMinPx: 12,
+    photoMinPx: PHOTO_PX,
+    cellPhoto(c, r, bp){ const idx = boardIdx(c, r); return PIC.key('cu:' + (idx % 32), (bp || 0) >= HI_PX, () => ({ idx: idx % 32 })); },
+    photoCanvas(key){ return PIC.canvas(key); },
+    cellGrid(){ return { n: 2, colors: [0xe6eef6, 0xe6eef6, 0xe6eef6, 0xe6eef6] }; },
+    itemGeometries: {
+      // (a stone: granite, its running band and a rounded top, standing on the ice)
+      cuStone: T => { const pts = [[0, 0], [0.42, 0], [0.5, 0.18], [0.5, 0.62], [0.44, 0.9], [0.22, 1], [0, 1]].map(([x, y]) => new T.Vector2(x, y)); return new T.LatheGeometry(pts, 20); },
+      // (its handle: a bar along the stone with its upright, in the team's colour)
+      cuHandle: T => { const a = new T.BoxGeometry(0.16, 0.22, 0.62); a.translate(0, 0.11, 0.06); const b = new T.BoxGeometry(0.16, 0.36, 0.14); b.translate(0, 0.16, -0.22); return mergeGeos(T, [a, b]); },
+      cuDot: T => { const g = FieldKit.disc(T, 0.5, 0.002); g.userData.unlit = true; return g; },
+      cuRing: T => { const g = FieldKit.ring(T, 0.42, 0.5, 0.003); g.userData.unlit = true; return g; },
+      cuBroom: T => { const g = new T.BoxGeometry(1, 0.25, 0.32); g.translate(0, 0.12, 0); return g; },
+      cuPix: T => { const g = new T.BoxGeometry(1, 0.15, 1); g.translate(0, 0.1, 0); g.userData.unlit = true; return g; },
+    },
+    cellItems(c, r, bp){
+      const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
+      if (g && g.state !== 'ready' && g.G){ if (live) stepGame(g); else g.last = 0; return itemsOf(liveView(g), bp); }
+      const M = recSoon(idx, lv, live), V = recView(M);
+      return itemsOf(V || { stones: [] }, bp);
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(idx, lv)), ice = iceOf(idx, lv);
+      const head = 'Curling — level ' + lv + ', ice ' + (ice.curl > CURL * 1.1 ? 'swingy' : ice.curl < CURL * 0.9 ? 'straight' : 'fair') + (ice.fric < 0.97 ? ' and keen' : ice.fric > 1.03 ? ' and heavy' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
+      if (!g || g.state === 'ready' || !g.G) return head + ' (tap to play)';
+      const G = g.G;
+      return head + ' · end ' + G.end + ' of ' + G.ends + ', you ' + G.score[0] + ', computer ' + G.score[1] + (g.state === 'over' ? ' · game over' : myTurn(g) ? ' · your stone' : '');
+    },
+    onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
+    onSelect(){ return true; },
+    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
+    onCellTap(c, r, u, v){
+      if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
+      const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      if (g.state === 'ready'){ begin(g); return true; }
+      if (g.state === 'over'){
+        if (!was || performance.now() - g.overAt < GRACE * 1000) return true;
+        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+      }
+      if (u == null || !myTurn(g)) return true;
+      const x = u * W;
+      if (Math.hypot(x - CX, v - REL) < 0.035) throwMine(g); else setBroom(g, x, v);
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
+    noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    keepsPress: true,
+    claimsPan(u, v){ const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false }; return true; },
+    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setBroom(DRAG.g, at.u * W, at.v); DRAG.moved = true; } return true; },
+    onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
+    statTiles(c, r){ return tilesOf(c, r); },
+    statsStay(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    onStatTap(c, r, i){ return onTile(c, r, i); },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#eaf1f8'; ctx.fillRect(0, 0, sz, sz);
+      const ring = (r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sz * 0.5, sz * 0.4, sz * r, 0, 6.283); ctx.fill(); };
+      ring(0.36, '#2b63c8'); ring(0.24, '#f4f7fb'); ring(0.12, '#d33a32'); ring(0.04, '#f4f7fb');
+      const st = (x, y, col) => { ctx.fillStyle = '#8d939c'; ctx.beginPath(); ctx.arc(sz * x, sz * y, sz * 0.09, 0, 6.283); ctx.fill(); ctx.fillStyle = col; ctx.fillRect(sz * (x - 0.03), sz * (y - 0.06), sz * 0.06, sz * 0.12); };
+      st(0.42, 0.43, '#d8332c'); st(0.62, 0.3, '#f2c230'); st(0.5, 0.86, '#d8332c');
+    },
+    _debug: { newMatch, tick, slide, deliver, throwSim, endScore, valueOf, solveDraw, solveHit, plan, handsOn, wantSweep, iceOf, previewOf, startTurn, throwNow,
+              recOf, recWork, recView, recSoon, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setBroom,
+              setWeight, weightName, throwMine, tilesOf, onTile, toThrow, LV, STEADY, SET, GAMES, RECS, BEST, HOLD, KEYS, OWN, inHouse, dist,
+              consts: { W, SR, TEE, HOG, REL, BACK, HOUSE, RINGS, A0, CURL, SWEEP_A, SWEEP_C, TICK, REC_HZ, PREVIEW }, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
+  };
+  return app;
+})();
+/* ═══ BOWLING (Oct 28: "2,   3 curling, bowling, marble run", the second of the new games: "spin and pins") ══════════════════
+   Ten-pin on every board: the far end of a lane, the pins on their deck near the top, the lane running down to your foul line at
+   the near end, gutters either side, the arrows to aim by. Ten frames, strikes and spares scored as they are.
+   - THE BALL (`roll`): it runs straight on the oil and hooks on the dry back end, from the board's own oil line (`lane.oil`)
+     on, by its spin (`hook`): `lane.hk` × hook, coming on over `RAMP`; a faster ball has less time to hook. Past the lane's edge
+     it drops into the gutter and runs to the pit, touching nothing.
+   - THE PINS (`roll` too): circles on the deck; the ball meets them as a ball of `MB` (4.5) pins' weight, pins meet pins, and the
+     side kickbacks send them back across the deck (`E_WALL`); a pin struck harder than `DOWN_V` falls (it lies along the way it
+     was sent, sliding on, and can take others down), one only touched rocks and stands; a pin past the back of the deck is in
+     the pit. Pins slide to rest under `PF`.
+   - A FRAME (`FR`): the first ball at a full rack; a strike, or the second ball at the pins left standing where they stand
+     (the fallen swept away); the tenth frame's bonus balls. Scored as the game is (`scoreOf`: a strike ten and the next two
+     balls, a spare ten and the next ball).
+   - YOUR SHOT: where you stand (the row's Stand ◀ ▶, A D), where you aim (a tap or a drag on the lane: the ball is rolled at
+     that point; ← → nudge it), the speed (the row's Speed − +, ↑ ↓) and the hook (the row's Hook − +, Q E). Enter, the row's Bowl
+     or a tap on the ball at the foul line bowls. The ball's way is dotted before it goes (`previewOf`), all of it at level 1, less
+     farther out (`PREVIEW`).
+   - EVERY BOARD ITS OWN LANE (`laneOf`, by the board's number, at a level 1–5 by ring plus the Difficulty): where its oil ends
+     and how hard it hooks after (shorter oil and more hook farther out, so a ball off its line goes farther wrong), how the pins
+     carry (`carry`: how readily a pin knocked falls).
+   - PAR is the steady player's game on the lane (`STEADY`: a person's hands, aiming for the pocket with its hook, then at what is
+     left by trying each line on the pins as they stand, `pick`), worked out a ball at a time in the boards' share of time; its
+     game is what a board no one plays shows (`recOf`, `recView`). Stars: par or better ★★★, within a fifth ★★, else ★; the best
+     score a board kept (`bowling.best`). */
+const BOWLING_APP = (() => {
+  const W = 0.36, CX = W / 2, LANE = 0.27, GUT = 0.035, EDGE = LANE / 2, WALL = EDGE + GUT;
+  const S = 0.078, PR = 0.0163, PH = 0.07, BR = 0.028, HEAD = 0.27, FOUL = 0.955, ARROWS = 0.66, PIT = 0.035;
+  const TOPPLE = 0.085, MB = 4.5, E_BALL = 0.75, E_PIN = 0.7, E_WALL = 0.55, PF = 1.1, BALL_F = 0.03, RAMP = 0.12, DOWN_V = 0.06, DT = 1 / 240;
+  const TICK = 1 / 60, SUB = 4, REC_HZ = 15, REC_CAP = 200, PHOTO_PX = 20, HI_PX = 300, GRACE = 0.8, REST_T = 1.1, SWEEP_T = 0.7;
+  const V_MIN = 0.35, V_MAX = 0.75, PREVIEW = [1, 0.7, 0.5, 0.4, 0.3];
+  // the rack: 1 at the head, 2 and 3 behind it, then 4 5 6, then 7 8 9 10 (left to right as you look down the lane)
+  const SPOTS = [[0, 0], [-0.5, 1], [0.5, 1], [-1, 2], [0, 2], [1, 2], [-1.5, 3], [-0.5, 3], [0.5, 3], [1.5, 3]].map(([i, j]) => [CX + i * S, HEAD - j * S * 0.866]);
+  // a level's lane: where the oil ends (y; the dry back end runs from there to the pins), how hard the back end hooks, how readily a struck pin falls
+  const LV = [
+    { oil: [0.44, 0.48], hk: [1.4, 1.7], carry: 1.25 },
+    { oil: [0.45, 0.5], hk: [1.65, 2.0], carry: 1.15 },
+    { oil: [0.47, 0.53], hk: [1.95, 2.35], carry: 1.05 },
+    { oil: [0.5, 0.57], hk: [2.3, 2.75], carry: 0.95 },
+    { oil: [0.53, 0.61], hk: [2.7, 3.2], carry: 0.85 },
+  ];
+  const STEADY = { errAim: 0.012, errV: 0.06, errH: 0.2 };
+  const DL = ARCADE.difficulty('bowling.level', 'Every board has its own lane, harder the farther it is from the corner: the oil ends sooner and the dry back end hooks harder, so a ball a little off its line goes farther wrong, and the pins carry less; and less of your ball\'s way is shown before it goes. Easy, Normal and Hard move every board a level up.', true);
+  const say = BOARD_KIT.say(2400);
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, ringOf = BOARD_KIT.ringOf, clamp = BOARD_KIT.clamp, rngOf = BOARD_KIT.rng;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
+  const SET = (() => {
+    const d = { sound: true, preview: true };
+    try { const s = JSON.parse(localStorage.getItem('bowling.settings') || '{}'); for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k]; } catch {}
+    return d;
+  })();
+  const saveSet = () => { try { localStorage.setItem('bowling.settings', JSON.stringify(SET)); } catch {} };
+
+  /* ─── THE LANE ─── */
+  function laneOf(idx, lv){
+    const R = rngOf((idx * 2654435761) ^ 0xb0e1), D = LV[lv - 1];
+    return { lv, oil: D.oil[0] + (D.oil[1] - D.oil[0]) * R(), hk: D.hk[0] + (D.hk[1] - D.hk[0]) * R(), carry: D.carry, ball: [0x2a4fb8, 0x9b2d8f, 0x1f7a5a, 0xc0392b, 0x22252b, 0xd2691e][Math.floor(R() * 6)] };
+  }
+  const rack = () => SPOTS.map(([x, y], i) => ({ n: i + 1, x, y, vx: 0, vy: 0, down: false, ang: 0, pit: false, up: true }));
+
+  /* ─── ROLLING ─── `roll` moves the ball and the pins one step. The ball: { x, y, vx, vy, h (its hook: + to the left), gutter,
+     pit }. Returns true while anything moves. */
+  function roll(B, P, lane, dt, on){
+    let moving = false;
+    if (B && !B.pit){
+      moving = true;
+      const v = Math.hypot(B.vx, B.vy) || 1;
+      if (!B.gutter){
+        // (on the oil nothing; past the oil line the back end bites, coming on over RAMP)
+        // (the hook turns the ball across its way, to its left: (dy, −dx) for a way (dx, dy); its speed kept, less a little rolling)
+        // (and none once it is on the deck or among the pins: slowed by them it turned on the spot and came back up the lane)
+        const dry = B.struck || B.y < HEAD + BR + PR ? 0 : clamp((lane.oil - B.y) / RAMP, 0, 1), al = B.h * lane.hk * dry, dx = B.vx / v, dy = B.vy / v;
+        B.vx += al * dy * dt; B.vy -= al * dx * dt;
+        const k = Math.max(0, v - BALL_F * dt) / Math.hypot(B.vx, B.vy); B.vx *= k; B.vy *= k;
+        if (Math.abs(B.x - CX) > EDGE){ B.gutter = true; B.x = CX + Math.sign(B.x - CX) * (EDGE + GUT / 2); B.vx = 0; B.vy = -Math.max(0.3, v); if (on) on('gutter', B); }
+      }
+      B.x += B.vx * dt; B.y += B.vy * dt;
+      if (B.y < PIT - BR){ B.pit = true; }
+    }
+    for (const p of P){
+      if (p.pit || (!p.vx && !p.vy)) continue;
+      const v = Math.hypot(p.vx, p.vy);
+      if (v < 0.004){ p.vx = p.vy = 0; continue; }
+      moving = true;
+      const nv = Math.max(0, v - PF * dt); p.vx *= nv / v; p.vy *= nv / v;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.x < CX - WALL + PR){ p.x = CX - WALL + PR; p.vx = Math.abs(p.vx) * E_WALL; if (on) on('wall', p); }
+      else if (p.x > CX + WALL - PR){ p.x = CX + WALL - PR; p.vx = -Math.abs(p.vx) * E_WALL; if (on) on('wall', p); }
+      if (p.y < PIT){ p.pit = true; p.down = true; p.up = false; }
+      if (p.y > HEAD + 0.1 && p.vy > 0){ p.vy = -p.vy * 0.3; }
+    }
+    // the ball on the pins (none from the gutter), the pins on each other
+    // (a pin struck hard enough falls, and as it falls it lays its length (TOPPLE) onto any pin standing that way: real pin action)
+    const fell = (p, vn) => {
+      if (p.down || vn * lane.carry <= DOWN_V) return;
+      p.down = true; p.up = false; if (on) on('down', p);
+      const sp = Math.hypot(p.vx, p.vy); if (sp < 1e-6) return;
+      const ux = p.vx / sp, uy = p.vy / sp;
+      for (const q of P){ if (q === p || q.down || q.pit) continue;
+        const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
+        if (d < TOPPLE * lane.carry && (dx * ux + dy * uy) / d > 0.82){ q.vx += dx / d * sp * 0.45; q.vy += dy / d * sp * 0.45; q.ang = Math.atan2(q.vx, q.vy); fell(q, DOWN_V * 2 / lane.carry); } }
+    };
+    if (B && !B.gutter && !B.pit) for (const p of P){
+      if (p.pit) continue;
+      const dx = p.x - B.x, dy = p.y - B.y, d = Math.hypot(dx, dy), R = BR + PR;
+      if (d >= R || d < 1e-9) continue;
+      const nx = dx / d, ny = dy / d, vn = (B.vx - p.vx) * nx + (B.vy - p.vy) * ny;
+      p.x = B.x + nx * R; p.y = B.y + ny * R;
+      if (vn <= 0) continue;
+      const J = (1 + E_BALL) * vn / (1 / MB + 1);
+      B.vx -= J / MB * nx; B.vy -= J / MB * ny; p.vx += J * nx; p.vy += J * ny; B.struck = true;
+      p.ang = Math.atan2(p.vx, p.vy); fell(p, vn); moving = true; if (on) on('hit', { v: vn });
+    }
+    for (let i = 0; i < P.length; i++){
+      const a = P[i]; if (a.pit) continue;
+      for (let j = i + 1; j < P.length; j++){
+        const b = P[j]; if (b.pit) continue;
+        // (a pin lying down reaches farther along the way it lies: it is twice as long as it is wide)
+        const ra = a.down ? PR * 1.6 : PR, rb = b.down ? PR * 1.6 : PR, R = ra + rb;
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+        if (d2 >= R * R || d2 < 1e-12) continue;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, vn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+        const push = (R - d) / 2; a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
+        if (vn <= 0) continue;
+        const J = (1 + E_PIN) / 2 * vn;
+        a.vx -= J * nx; a.vy -= J * ny; b.vx += J * nx; b.vy += J * ny;
+        if (a.down && !b.down) { b.ang = Math.atan2(b.vx, b.vy); fell(b, vn); }
+        else if (b.down && !a.down) { a.ang = Math.atan2(a.vx, a.vy); fell(a, vn); }
+        else { fell(a, vn * 0.8); fell(b, vn * 0.8); if (a.down) a.ang = Math.atan2(a.vx, a.vy); if (b.down) b.ang = Math.atan2(b.vx, b.vy); }
+        moving = true;
+      }
+    }
+    return moving;
+  }
+  // a ball let go from where you stand toward where you aim, at its speed and hook
+  function ballOf(shot){
+    const dx = shot.tx - shot.sx, dy = shot.ty - FOUL, d = Math.hypot(dx, dy) || 1;
+    return { x: shot.sx, y: FOUL, vx: shot.v * dx / d, vy: shot.v * dy / d, h: shot.h, gutter: false, pit: false };
+  }
+  const copyPins = P => P.map(p => ({ ...p }));
+  // a ball bowled at once: where it went and what it knocked down
+  function bowlSim(P0, shot, lane, opt){
+    const o = opt || {}, P = copyPins(P0), B = ballOf(shot), dt = o.dt || DT, path = o.path ? [] : null;
+    let t = 0;
+    while (t < 8){
+      if (path && (path.length < 2 || Math.hypot(B.x - path[path.length - 2], B.y - path[path.length - 1]) > 0.012) && !B.pit) path.push(B.x, B.y);
+      if (!roll(B, P, lane, dt) && B.pit) break;
+      if (B.pit && t > 2.5) break;
+      t += dt;
+      if (o.untilY != null && B.y <= o.untilY) break;
+    }
+    return { P, B, path, down: P.filter(p => p.down).length - P0.filter(p => p.down).length };
+  }
+
+  /* ─── SCORING ─── rolls in order; frames from them */
+  function scoreOf(rolls){
+    const fr = []; let i = 0, tot = 0;
+    for (let f = 0; f < 10 && i < rolls.length; f++){
+      const a = rolls[i], b = rolls[i + 1], c = rolls[i + 2];
+      if (a === 10){ if (b == null || c == null){ fr.push({ rolls: [a], total: null }); i++; continue; } tot += 10 + b + c; fr.push({ rolls: [a], total: tot, strike: true }); i++; }
+      else if (b != null && a + b === 10){ if (c == null){ fr.push({ rolls: [a, b], total: null }); i += 2; continue; } tot += 10 + c; fr.push({ rolls: [a, b], total: tot, spare: true }); i += 2; }
+      else if (b != null){ tot += a + b; fr.push({ rolls: [a, b], total: tot }); i += 2; }
+      else { fr.push({ rolls: [a], total: null }); i++; }
+    }
+    return { frames: fr, total: tot };
+  }
+
+  /* ─── THE STEADY PLAYER ─── the pocket first, then what is left */
+  // where to aim from `sx` at speed v and hook h so the ball crosses y = yt at x = xt
+  function aimFor(sx, v, h, xt, yt, lane){
+    let tx = xt;
+    for (let k = 0; k < 9; k++){
+      const r = bowlSim([], { sx, tx, ty: ARROWS, v, h }, lane, { dt: 1 / 120, untilY: yt }).B;
+      // (a ball in the gutter never reaches yt: step back from the side it fell off)
+      if (r.gutter){ tx += (r.x < CX ? 1 : -1) * 0.02; continue; }
+      tx += (xt - r.x) * (FOUL - ARROWS) / (FOUL - yt) * 1.05;
+      tx = clamp(tx, CX - EDGE, CX + EDGE);
+    }
+    return { sx, tx, ty: ARROWS, v, h };
+  }
+  function pick(P, lane, first){
+    const up = P.filter(p => !p.down && !p.pit);
+    // (less hook on a hookier lane, so the ball comes in at the pocket about as it does elsewhere)
+    // (a gentle hook, so the ball comes into the pocket at a few degrees and drives on into the 3 and the 5)
+    if (first || up.length === 10) return aimFor(CX + 0.05, 0.6, clamp(0.6 / lane.hk, 0.15, 0.5), SPOTS[0][0] + 0.42 * S, SPOTS[0][1] + BR + PR * 0.6, lane);
+    // (spares: a line at each standing pin and at the middle of them, straighter and faster; the most taken down)
+    const C = [], mx = up.reduce((s, p) => s + p.x, 0) / up.length, my = up.reduce((s, p) => s + p.y, 0) / up.length;
+    for (const [x, y] of [[mx, my], ...up.map(p => [p.x, p.y]), ...up.map(p => [p.x + 0.4 * S, p.y]), ...up.map(p => [p.x - 0.4 * S, p.y])]){
+      const sx = clamp(CX + (CX - x) * 0.8, CX - EDGE + BR, CX + EDGE - BR);
+      C.push(aimFor(sx, 0.62, 0.25, x, y + BR, lane));
+    }
+    let best = null, bn = -1;
+    for (const s of C){ const n = bowlSim(P, s, lane, { dt: 1 / 120 }).down; if (n > bn){ bn = n; best = s; } }
+    return best;
+  }
+  const handsOn = (s, D, R) => ({ ...s, tx: s.tx + gauss(R) * D.errAim, v: clamp(s.v * (1 + gauss(R) * D.errV), V_MIN, V_MAX), h: clamp(s.h * (1 + gauss(R) * D.errH), 0, 1) });
+
+  /* ─── A GAME ─── ten frames; `G.state`: aim, roll (the ball going), rest (the pins settling, then swept), over */
+  function newGame(idx, lv, opt){
+    const o = opt || {};
+    const G = { idx, lv, lane: laneOf(idx, lv), R: rngOf((idx * 7919) ^ (lv * 977) ^ (o.seed || 0) ^ 0x707), ai: o.ai || null, frame: 1, ball: 1, rolls: [], pins: rack(), B: null,
+                state: 'aim', t: 0, wait: 0, tenth: [], shot: { sx: CX + 0.05, tx: CX + 0.01, ty: ARROWS, v: 0.6, h: 0.5 }, ev: o.ev || null, fx: [], before: 10 };
+    if (G.ai){ G.shot = handsOn(pick(G.pins, G.lane, true), G.ai, G.R); G.state = 'wait'; G.wait = 0.3; }
+    return G;
+  }
+  const emit = (G, kind, a) => { if (G.ev) try { G.ev(kind, a, G); } catch {} };
+  function bowlNow(G){
+    G.before = G.pins.filter(p => !p.down && !p.pit).length;
+    G.B = ballOf(G.shot); G.state = 'roll'; G.rollT = 0; emit(G, 'bowl', {});
+  }
+  function tick(G){
+    G.t += TICK;
+    if (G.state === 'wait'){ G.wait -= TICK; if (G.wait <= 0) bowlNow(G); return; }
+    if (G.state === 'rest'){ G.wait -= TICK; if (G.wait <= 0) afterBall(G); return; }
+    if (G.state !== 'roll') return;
+    G.rollT += TICK;
+    let mv = false;
+    for (let s = 0; s < SUB; s++) mv = roll(G.B, G.pins, G.lane, TICK / SUB, (k, a) => { if (k === 'hit' || k === 'down' || k === 'gutter' || k === 'wall') emit(G, k, a); }) || mv;
+    if ((G.B.pit && !G.pins.some(p => p.vx || p.vy)) || G.rollT > 7){ G.state = 'rest'; G.wait = REST_T; }
+  }
+  function afterBall(G){
+    const left = G.pins.filter(p => !p.down && !p.pit).length, n = G.before - left, ball = G.ball;
+    const strike = G.before === 10 && left === 0, spare = !strike && ball >= 2 && left === 0;
+    G.rolls.push(n); G.B = null;
+    emit(G, 'ball', { n, strike, spare, left, frame: G.frame, ball });
+    // (frames 1–9: a strike or a second ball ends the frame; the tenth: a second ball always, a third after a strike or a spare,
+    //  the pins set again whenever all are down)
+    let reset = false, done = false;
+    if (G.frame < 10){ if (strike || ball === 2){ G.frame++; G.ball = 1; reset = true; } else G.ball = 2; }
+    else {
+      G.tenth.push(n); const t = G.tenth;
+      if (t.length === 1){ G.ball = 2; reset = left === 0; }
+      else if (t.length === 2){ if (t[0] === 10 || t[0] + t[1] === 10){ G.ball = 3; reset = left === 0; } else done = true; }
+      else done = true;
+    }
+    G.pins = reset ? rack() : G.pins.filter(p => !p.down && !p.pit).map(p => ({ ...p, vx: 0, vy: 0 }));
+    if (done){ G.state = 'over'; emit(G, 'over', { total: scoreOf(G.rolls).total }); return; }
+    G.state = G.ai ? 'wait' : 'aim'; G.wait = SWEEP_T;
+    if (G.ai) G.shot = handsOn(pick(G.pins, G.lane, G.pins.length === 10), G.ai, G.R);
+    emit(G, 'next', {});
+  }
+  function previewOf(G){
+    const s = G.shot, key = [s.sx, s.tx, s.ty, s.v, s.h, G.rolls.length].join();
+    if (G._pv && G._pv.key === key) return G._pv;
+    const r = bowlSim(G.pins, s, G.lane, { path: true, dt: 1 / 120 });
+    return G._pv = { key, path: r.path };
+  }
+
+  /* ─── RECORDINGS AND PAR ─── the steady player's game on the lane, a ball at a time: frames of the ball and every pin */
+  const RECS = new Map(), SOON = BOARD_KIT.budget(6, 40), REC_F = 2 + 10 * 4 + 1;
+  const recKey = (idx, lv) => idx * 8 + lv;
+  function recOf(idx, lv){
+    const k = recKey(idx, lv); let M = RECS.get(k);
+    if (!M){ M = { G: newGame(idx, lv, { ai: STEADY, seed: 23 }), F: [], ticks: 0, done: false, phase: BOARD_KIT.phase(idx), par: null };
+      RECS.set(k, M); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value); }
+    else { RECS.delete(k); RECS.set(k, M); }
+    return M;
+  }
+  function recFrame(M){
+    const G = M.G, F = M.F, B = G.B;
+    F.push(B && !B.pit ? B.x : -1, B && !B.pit ? B.y : -1);
+    for (let i = 0; i < 10; i++){ const p = G.pins.find(q => q.n === i + 1); if (p && !p.pit) F.push(p.x, p.y, p.down ? 1 : 0, p.ang); else F.push(-1, -1, 0, 0); }
+    F.push(scoreOf(G.rolls).total);
+  }
+  function recWork(M){
+    const G = M.G; if (M.done) return;
+    const per = Math.round(1 / (REC_HZ * TICK)), was = G.rolls.length;
+    for (let k = 0; k < 2000 && G.rolls.length === was && G.state !== 'over'; k++){ if (M.ticks++ % per === 0) recFrame(M); tick(G); }
+    if (G.state === 'over'){ for (let r = 0; r < REC_HZ * 2; r++) recFrame(M); M.done = true; M.par = scoreOf(G.rolls).total; M.F = Float32Array.from(M.F); M.G = null; }
+  }
+  function recSoon(idx, lv, urgent){
+    const M = recOf(idx, lv);
+    if (!M.done){ if (urgent) recWork(M); else SOON.take(() => recWork(M)); }
+    return M;
+  }
+  function parOf(idx, lv){ const M = recOf(idx, lv); for (let k = 0; k < 40 && !M.done; k++) recWork(M); return M.par; }
+  function recView(M){
+    const n = (M.F.length / REC_F) | 0;
+    if (!n) return null;
+    const pick = (a, b, f) => {
+      const F = M.F, pins = [];
+      for (let i = 0; i < 10; i++){ const o = a + 2 + 4 * i, q = b + 2 + 4 * i; if (F[o] < 0) continue;
+        const jump = F[q] < 0 || Math.hypot(F[q] - F[o], F[q + 1] - F[o + 1]) > 0.08;
+        pins.push({ x: jump ? F[o] : F[o] + (F[q] - F[o]) * f, y: jump ? F[o + 1] : F[o + 1] + (F[q + 1] - F[o + 1]) * f, down: F[o + 2] > 0.5, ang: F[o + 3] }); }
+      const bj = F[b] < 0 || F[a] < 0 || Math.hypot(F[b] - F[a], F[b + 1] - F[a + 1]) > 0.1;
+      return { ball: F[a] < 0 ? null : { x: bj ? F[a] : F[a] + (F[b] - F[a]) * f, y: bj ? F[a + 1] : F[a + 1] + (F[b + 1] - F[a + 1]) * f }, pins, score: F[a + REC_F - 1] };
+    };
+    if (!M.done){ const a = (n - 1) * REC_F; return pick(a, a, 0); }
+    const { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 1.5, M.phase);
+    return pick(i * REC_F, j * REC_F, f);
+  }
+
+  /* ─── PLAYING ─── */
+  const GAMES = new Map();
+  let LIVE = null;
+  const { BEST, saveBest } = BOARD_KIT.best('bowling.best');
+  const bestKey = (idx, lv) => idx + '@' + lv;
+  const starsOf = (score, par) => par == null ? (score >= 150 ? 3 : score >= 100 ? 2 : 1) : score >= par ? 3 : score >= par * 0.8 ? 2 : 1;
+  const fresh = (c, r) => { const idx = boardIdx(c, r); return { c, r, idx, lv: levelAt(idx), state: 'ready', last: 0, acc: 0, overAt: 0, G: null }; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  function begin(g){
+    Object.assign(g, fresh(g.c, g.r), { state: 'play', last: performance.now() });
+    g.G = newGame(g.idx, g.lv, { seed: (performance.now() * 1000) | 0, ev: (k, a, G) => onEvent(g, k, a, G) });
+    if (g.mine) g.G.shot = { ...g.mine };
+    GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
+    const par = RECS.get(recKey(g.idx, g.lv));
+    say('Ten frames' + (par && par.done ? ', par ' + par.par : '') + '. Tap the lane where you aim; the row sets where you stand, the speed and the hook. Enter or Bowl.', 4000);
+    try { bbRefreshNow(); } catch {}
+  }
+  function stepGame(g){
+    if (g.state !== 'play') return;
+    const t = performance.now(), dt = g.last ? Math.min(0.25, (t - g.last) / 1000) : 0;
+    g.last = t; g.acc += dt;
+    while (g.acc >= TICK){ g.acc -= TICK; tick(g.G); if (g.G.state === 'over'){ over(g); break; } }
+  }
+  function over(g){
+    g.state = 'over'; g.overAt = performance.now();
+    const total = scoreOf(g.G.rolls).total, par = parOf(g.idx, g.lv), s = starsOf(total, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
+    if (total > was){ BEST.set(k, total); saveBest(); }
+    sfx(s === 3 ? 'win' : 'end');
+    say('Your game: ' + total + ' ' + BOARD_KIT.stars(s) + (par != null ? ' (par ' + par + ')' : '') + (total > was && was ? ', a new best here' : '') + '. Tap for the next lane.', 4500);
+    try { bbRefreshNow(); } catch {}
+  }
+  const myTurn = g => !!(g && g.state === 'play' && g.G.state === 'aim');
+  function setShot(g, o){ const s = { ...g.G.shot, ...o }; s.sx = clamp(s.sx, CX - EDGE + BR, CX + EDGE - BR); s.tx = clamp(s.tx, CX - WALL, CX + WALL); s.ty = clamp(s.ty, HEAD, FOUL - 0.08); s.v = clamp(s.v, V_MIN, V_MAX); s.h = clamp(s.h, 0, 1); g.G.shot = s; g.mine = s; }
+  function bowlMine(g){ if (!myTurn(g)) return false; bowlNow(g.G); try { bbRefreshNow(); } catch {} return true; }
+  const hookName = h => h < 0.1 ? 'straight' : h < 0.4 ? 'a little' : h < 0.7 ? 'a hook' : 'a big hook';
+
+  /* ─── SOUNDS ─── the ball's roll, the pins' crash (more pins, more crash), a gutter, a cheer for a strike */
+  function sfx(kind, a){
+    if (!SET.sound) return;
+    try { if (!ARCADE.audio()) return; } catch { return; }
+    const T = ARCADE.tone, Hs = ARCADE.hiss;
+    try {
+      if (kind === 'bowl'){ Hs(1.4, 0.06, 220); T(60, 48, 1.2, 'sine', 0.06); }
+      else if (kind === 'hit'){ const v = Math.min(1, ((a && a.v) || 0.3) / 0.6); T(700 + 300 * Math.random(), 500, 0.05, 'square', 0.02 + 0.04 * v); Hs(0.06, 0.15 + 0.3 * v, 3500); }
+      else if (kind === 'gutter') T(140, 90, 0.4, 'triangle', 0.05);
+      else if (kind === 'strike') [523, 659, 784, 1047, 1319].forEach((q, i) => T(q, q, 0.14, 'triangle', 0.07, i * 0.08));
+      else if (kind === 'spare') [659, 880].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.06, i * 0.1));
+      else if (kind === 'win') [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.07, i * 0.1));
+      else if (kind === 'end') [440, 554].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.05, i * 0.1));
+    } catch {}
+  }
+  function onEvent(g, kind, a, G){
+    if (liveGame() !== g) return;
+    if (kind === 'bowl' || kind === 'hit' || kind === 'gutter') sfx(kind, a);
+    if (kind === 'ball'){
+      if (a.strike){ sfx('strike'); say('Strike!', 1400); }
+      else if (a.spare){ sfx('spare'); say('Spare!', 1400); }
+      else say(a.n + (a.n === 1 ? ' pin' : ' pins') + (a.left && a.ball === 1 && G.frame === a.frame ? ', ' + a.left + ' left' : '') + '. ' + scoreOf(G.rolls).total + ' so far.', 1400);
+      try { bbRefreshNow(); } catch {}
+    }
+  }
+
+  /* ─── DRAWN ─── the lane a picture (maple boards and the darker pine between, the arrows and dots, the foul line, the gutters,
+     the deck and the pit); on it the pins (standing, or lying the way they fell), the ball, your aim, the way dotted, the score
+     in dot digits by the foul line. In lane units, divided by W at the end. */
+  const PIC = BOARD_KIT.painted(64, (P, hi) => paint(P.idx, hi ? 512 : 256));
+  function paint(idx, Sz){
+    const cv = document.createElement('canvas'); cv.width = Math.round(Sz * W); cv.height = Sz;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-Sz, 0, 0, -Sz, cv.width, cv.height);      // (the photo tier lays a picture turned a half turn)
+    const R = rngOf(idx * 389 + 11);
+    c.fillStyle = '#1c1d22'; c.fillRect(0, 0, W, 1);
+    // (the lane: 39 boards, maple at the ends and pine between, each its own shade)
+    const b0 = CX - EDGE, bw = LANE / 39;
+    for (let k = 0; k < 39; k++){ const t = 0.5 + 0.5 * R(); for (const [y0, y1, pine] of [[PIT, HEAD + 0.06, false], [HEAD + 0.06, 0.78, true], [0.78, 1, false]]){
+      const base = pine ? [196, 150, 98] : [226, 190, 140]; c.fillStyle = `rgb(${Math.round(base[0] * (0.92 + 0.08 * t))},${Math.round(base[1] * (0.92 + 0.08 * t))},${Math.round(base[2] * (0.92 + 0.08 * t))})`;
+      c.fillRect(b0 + k * bw, y0, bw + 0.0004, y1 - y0); } }
+    c.strokeStyle = 'rgba(90,60,30,0.18)'; c.lineWidth = 0.0006; for (let k = 1; k < 39; k++){ c.beginPath(); c.moveTo(b0 + k * bw, PIT); c.lineTo(b0 + k * bw, 1); c.stroke(); }
+    // (a sheen of oil down the front of the lane, where it ends a little drier)
+    const lv = laneOf(idx, 3), g = c.createLinearGradient(0, 1, 0, lv.oil); g.addColorStop(0, 'rgba(255,255,255,0.10)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(b0, lv.oil, LANE, 1 - lv.oil);
+    // the arrows and the dots
+    c.fillStyle = '#3a2618';
+    for (let k = 1; k <= 7; k++){ const x = b0 + (k * 5 - 0.5) * bw, y = ARROWS + Math.abs(k - 4) * 0.012; c.beginPath(); c.moveTo(x, y - 0.012); c.lineTo(x - 0.004, y + 0.006); c.lineTo(x + 0.004, y + 0.006); c.fill(); }
+    for (const k of [3, 5, 8, 11, 14, 25, 28, 31, 34, 36]){ c.beginPath(); c.arc(b0 + (k - 0.5) * bw, 0.88, 0.0018, 0, 6.283); c.fill(); }
+    c.fillStyle = '#20232a'; c.fillRect(b0, FOUL, LANE, 0.004);           // the foul line
+    // the gutters and the kickbacks; the deck's spots; the pit
+    for (const sg of [-1, 1]){ const gx = sg < 0 ? b0 - GUT : b0 + LANE; const gg = c.createLinearGradient(gx, 0, gx + GUT, 0); gg.addColorStop(0, '#3b3f48'); gg.addColorStop(0.5, '#1d2026'); gg.addColorStop(1, '#3b3f48'); c.fillStyle = gg; c.fillRect(gx, PIT, GUT, 1 - PIT); }
+    c.fillStyle = '#2c2f37'; c.fillRect(CX - WALL - 0.008, 0, 0.008, HEAD + 0.08); c.fillRect(CX + WALL, 0, 0.008, HEAD + 0.08);
+    c.fillStyle = 'rgba(60,40,20,0.35)'; for (const [x, y] of SPOTS){ c.beginPath(); c.arc(x, y, PR * 0.55, 0, 6.283); c.fill(); }
+    c.fillStyle = '#08090c'; c.fillRect(CX - WALL, 0, 2 * WALL, PIT);
+    return cv;
+  }
+  const digits = DOT_FONT.digits3;
+  function itemsOf(V, bp, lane){
+    const out = [];
+    for (const p of V.pins){
+      if (p.down) out.push({ kind: 'bwPinDown', u: p.x, v: p.y, scale: PH, yaw: BOARD_KIT.yawOf(p.ang || 0.3), color: 0xffffff });
+      else out.push({ kind: 'bwPin', u: p.x, v: p.y, scale: PH, color: 0xffffff });
+    }
+    if (V.ball) out.push({ kind: 'bwBall', u: V.ball.x, v: V.ball.y, scale: 2 * BR, color: lane.ball });
+    if (V.aim){
+      out.push({ kind: 'bwBall', u: V.aim.sx, v: FOUL - BR - 0.004, scale: 2 * BR, color: lane.ball });
+      out.push({ kind: 'bwRing', u: V.aim.tx, v: V.aim.ty, scale: 0.026, color: 0x1a1f2a }, { kind: 'bwDot', u: V.aim.tx, v: V.aim.ty, scale: 0.01, color: 0xe03a2f });
+    }
+    if (V.preview){ const P = V.preview.path, n = Math.max(2, Math.floor(P.length / 2 * V.previewFrac)) * 2;
+      for (let q = 2; q < Math.min(P.length, n); q += 2) out.push({ kind: 'bwDot', u: P[q], v: P[q + 1], scale: 0.006, color: 0x22303f }); }
+    if (V.score != null && (bp == null || bp > 60)) digits(out, V.score, CX, 0.985, 0.006, 0x22303f, 'bwPix');
+    for (const it of out){ it.u /= W; it.scale /= W; it.lift = (it.lift || 0) / W; }
+    return out;
+  }
+  function liveView(g){
+    const G = g.G, V = { pins: G.pins.filter(p => !p.pit), ball: G.B && !G.B.pit ? { x: G.B.x, y: G.B.y } : null, score: scoreOf(G.rolls).total };
+    if (G.state === 'aim'){ V.aim = G.shot; if (SET.preview){ V.preview = previewOf(G); V.previewFrac = PREVIEW[g.lv - 1]; } }
+    return V;
+  }
+
+  /* ─── KEYS ─── */
+  let DRAG = null, ateAt = 0;
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k === 'Enter'){ if (g.state !== 'play'){ if (g.state === 'ready' || performance.now() - g.overAt > GRACE * 1000) begin(g); } else bowlMine(g); e.preventDefault(); e.stopPropagation(); return; }
+    if (!myTurn(g)) return;
+    let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
+    const flip = dirs && dirs[1] === 3 ? -1 : 1, s = g.G.shot;
+    if (k === 'ArrowLeft' || k === 'ArrowRight') setShot(g, { tx: s.tx + (k === 'ArrowRight' ? 1 : -1) * flip * 0.003 });
+    else if (k === 'a' || k === 'd') setShot(g, { sx: s.sx + (k === 'd' ? 1 : -1) * flip * 0.006 });
+    else if (k === 'ArrowUp' || k === 'ArrowDown') setShot(g, { v: s.v + (k === 'ArrowUp' ? 0.02 : -0.02) });
+    else if (k === 'q' || k === 'e') setShot(g, { h: s.h + (k === 'e' ? 0.1 : -0.1) });
+    else return;
+    e.preventDefault(); e.stopPropagation(); try { bbRefreshNow(); } catch {}
+  }, true);
+
+  /* ─── THE ROW ─── */
+  const ON = '#2f4a3a';
+  function tilesOf(c, r){
+    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), playing = g && g.state === 'play', G = playing ? g.G : null, s = G ? G.shot : { v: 0.6, h: 0.5 };
+    const kmh = v => Math.round(v * 30) + ' km/h';
+    return [
+      { glyph: playing ? '🎳' : '▶', value: playing ? (myTurn(g) ? 'Bowl' : 'Rolling') : 'New game', label: playing ? 'frame ' + Math.min(10, G.frame) + ' · ' + scoreOf(G.rolls).total : 'level ' + levelAt(idx) },
+      { glyph: '◀', value: 'Stand left', label: 'where you stand' },
+      { glyph: '▶', value: 'Stand right', label: 'where you stand' },
+      { glyph: '−', value: 'Slower', label: 'speed ' + kmh(s.v) },
+      { glyph: '+', value: 'Faster', label: 'speed ' + kmh(s.v) },
+      { glyph: '↶', value: 'Less hook', label: 'hook: ' + hookName(s.h) },
+      { glyph: '↷', value: 'More hook', label: 'hook: ' + hookName(s.h) },
+      { glyph: '⋯', value: SET.preview ? 'On' : 'Off', label: 'show the way', bg: SET.preview ? ON : undefined },
+      { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
+    ];
+  }
+  function onTile(c, r, i){
+    const g = gameAt(c, r); LIVE = { c, r };
+    if (i === 0){ if (g.state !== 'play') begin(g); else bowlMine(g); return true; }
+    if (i >= 1 && i <= 6){
+      if (!myTurn(g)) return true;
+      const s = g.G.shot;
+      setShot(g, [null, { sx: s.sx + 0.008 }, { sx: s.sx - 0.008 }, { v: s.v - 0.025 }, { v: s.v + 0.025 }, { h: s.h - 0.1 }, { h: s.h + 0.1 }][i]);
+      try { bbRefreshNow(); } catch {} return true;
+    }
+    if (i === 7){ SET.preview = !SET.preview; say('Your ball\'s way shown before it goes: ' + (SET.preview ? 'on' : 'off'), 1800); }
+    else if (i === 8){ SET.sound = !SET.sound; say('Sound ' + (SET.sound ? 'on' : 'off'), 1500); if (SET.sound) try { ARCADE.audio(); } catch {} }
+    saveSet(); try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
+
+  const app = {
+    name: 'bowling',
+    realtime: true,
+    boardShape: { cellW: W, cellH: 1 },
+    frameFit: 1.1,
+    menu: [{ head: 'Bowling', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The roll, the pins, a strike.', on(){ SET.sound = !SET.sound; saveSet(); } },
+      { label: 'Start this lane again', title: 'A new game from the first frame.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
+      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. The row moves where you stand, the speed and the hook: a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. Par is the steady player\'s game on this lane.', 12000); } },
+    ]}],
+    cellFar: { light: 0xd6b88a, dark: 0x8a6a46 },
+    itemMinPx: 12,
+    photoMinPx: PHOTO_PX,
+    cellPhoto(c, r, bp){ const idx = boardIdx(c, r); return PIC.key('bw:' + (idx % 48), (bp || 0) >= HI_PX, () => ({ idx: idx % 48 })); },
+    photoCanvas(key){ return PIC.canvas(key); },
+    cellGrid(){ return { n: 2, colors: [0xd8bd90, 0xd8bd90, 0xc39f70, 0xc39f70] }; },
+    itemGeometries: {
+      // (a pin: its curves, white, two red stripes at the neck; standing, and lying along +z)
+      bwPin: T => pinGeo(T, false),
+      bwPinDown: T => pinGeo(T, true),
+      bwBall: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
+      bwDot: T => { const g = FieldKit.disc(T, 0.5, 0.002); g.userData.unlit = true; return g; },
+      bwRing: T => { const g = FieldKit.ring(T, 0.4, 0.5, 0.003); g.userData.unlit = true; return g; },
+      bwPix: T => { const g = new T.BoxGeometry(1, 0.15, 1); g.translate(0, 0.1, 0); g.userData.unlit = true; return g; },
+    },
+    cellItems(c, r, bp){
+      const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), lane = laneOf(idx, lv), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
+      if (g && g.state !== 'ready' && g.G){ if (live) stepGame(g); else g.last = 0; return itemsOf(liveView(g), bp, lane); }
+      const M = recSoon(idx, lv, live), V = recView(M);
+      return itemsOf(V || { pins: rack(), ball: null, score: null }, bp, lane);
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), M = RECS.get(recKey(idx, lv)), best = BEST.get(bestKey(idx, lv)), L = laneOf(idx, lv);
+      const head = 'Bowling — level ' + lv + ', oil to ' + Math.round((FOUL - L.oil) / (FOUL - HEAD) * 100) + '% of the lane' + (M && M.done ? ' · par ' + M.par : '') + (best ? ' · best ' + best : '');
+      if (!g || g.state === 'ready' || !g.G) return head + ' (tap to play)';
+      return head + ' · frame ' + Math.min(10, g.G.frame) + ', ' + scoreOf(g.G.rolls).total + (g.state === 'over' ? ' · game over' : '');
+    },
+    onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
+    onSelect(){ return true; },
+    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
+    onCellTap(c, r, u, v){
+      if (performance.now() - ateAt < 400) return true;
+      const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      if (g.state === 'ready'){ begin(g); return true; }
+      if (g.state === 'over'){
+        if (!was || performance.now() - g.overAt < GRACE * 1000) return true;
+        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+      }
+      if (u == null || !myTurn(g)) return true;
+      const x = u * W, s = g.G.shot;
+      if (Math.hypot(x - s.sx, v - (FOUL - BR)) < 0.04) bowlMine(g); else setShot(g, { tx: x, ty: v });
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
+    noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    keepsPress: true,
+    claimsPan(u, v){ const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false }; return true; },
+    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setShot(DRAG.g, { tx: at.u * W, ty: at.v }); DRAG.moved = true; } return true; },
+    onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
+    statTiles(c, r){ return tilesOf(c, r); },
+    statsStay(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    onStatTap(c, r, i){ return onTile(c, r, i); },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#d8b884'; ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = '#2a2d34'; ctx.fillRect(0, 0, sz * 0.12, sz); ctx.fillRect(sz * 0.88, 0, sz * 0.12, sz);
+      for (const [i, j] of [[0, 0], [-0.5, 1], [0.5, 1], [-1, 2], [0, 2], [1, 2]]){ const x = sz * (0.5 + i * 0.13), y = sz * (0.42 - j * 0.11);
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, sz * 0.045, 0, 6.283); ctx.fill(); ctx.fillStyle = '#d33'; ctx.fillRect(x - sz * 0.03, y - sz * 0.005, sz * 0.06, sz * 0.012); }
+      ctx.fillStyle = '#2a4fb8'; ctx.beginPath(); ctx.arc(sz * 0.58, sz * 0.8, sz * 0.09, 0, 6.283); ctx.fill();
+    },
+    _debug: { newGame, tick, roll, ballOf, bowlSim, scoreOf, aimFor, pick, handsOn, laneOf, rack, previewOf, bowlNow, afterBall, recOf, recWork, recView, recSoon, parOf,
+              starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setShot, bowlMine, tilesOf, onTile,
+              LV, STEADY, SET, GAMES, RECS, BEST, SPOTS, consts: { W, CX, LANE, EDGE, S, PR, BR, HEAD, FOUL, ARROWS, PIT, TICK, REC_HZ, PREVIEW },
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
+  };
+  // (a pin's outline turned on the lathe; lying down, laid along +z with its base at the middle)
+  function pinGeo(T, down){
+    const prof = [[0, 0], [0.11, 0], [0.16, 0.12], [0.19, 0.28], [0.17, 0.42], [0.1, 0.58], [0.075, 0.66], [0.09, 0.78], [0.1, 0.88], [0.07, 0.97], [0, 1]];
+    const g = new T.LatheGeometry(prof.map(([x, y]) => new T.Vector2(x * 0.92, y)), 14);
+    const n = g.attributes.position.count, col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++){ const y = g.attributes.position.getY(i), red = (y > 0.62 && y < 0.66) || (y > 0.69 && y < 0.73);
+      col[i * 3] = red ? 0.85 : 1; col[i * 3 + 1] = red ? 0.12 : 1; col[i * 3 + 2] = red ? 0.12 : 1; }
+    g.setAttribute('color', new T.BufferAttribute(col, 3)); g.userData.vertexColors = true;
+    if (down){ g.rotateX(Math.PI / 2); g.translate(0, 0.14, -0.5); }
+    return g;
+  }
+  return app;
+})();
+/* ═══ MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run", the third of the new games: "build a track in the bottom row,
+   the steady player tests it") ═════════════════════════════════════════════════════════════════════════════════════════════
+   Every board a grid with a start chute at its far edge, high up, and a cup lower down; rocks in the way; some pieces already
+   laid; and a stock of track pieces in the bottom row to bring the marble from the chute to the cup.
+   - THE PIECES (`EDGES`, `heightAt`): a straight, a curve, a ramp (a straight that drops a level along its length) and a spiral
+     (a curve that drops a level), each turned to any side; a piece stands at a height (`z`, its lower end), on a post.
+   - BUILDING: the piece in hand from the row, a tap on an empty square lays it turned and raised to join the track beside it
+     (`fitsAt`: every way it can lie, scored by the ends it meets at their heights); a tap again on one of yours turns it to the
+     next way that fits; the row's Raise and Lower move it a level; Erase takes it back to the stock. Pieces laid for you (darker)
+     stay.
+   - THE RUN (`runSim`, the row's Run): the marble starts down the chute and rolls along each piece's middle line (a straight,
+     or a quarter circle about the corner of a curve), gathering speed down every drop (`G` × the slope) and losing it to rolling
+     (`MU`, more on a curve, `CURVE_MU`); at a piece's end it goes on into the piece it meets if that piece has an end there at the
+     same height, else it falls; it flies off a curve taken faster than the board's `vc`; it rolls back if it runs out of speed on
+     a slope and stops on the flat; into the cup at the bottom, it is through.
+   - EVERY BOARD ITS OWN PUZZLE (`makePuzzle(idx, lv)`, by the board's number, at a level 1–5 by ring plus the Difficulty): a
+     random walk from the chute, its drops placed, the pieces it needs found by the walk's turns, and run in the same physics
+     until the marble reaches the cup (so every board can be done); then rocks on squares off the walk, some of its pieces laid
+     for you (`given`), the rest in the stock with spares (`spare`). Farther out (`LV`): a bigger grid, more levels to come down,
+     more rocks, fewer laid for you, no spares, and curves that throw the marble at lower speeds.
+   - PAR is the pieces the made way uses beyond those laid for you; done in par ★★★, two more ★★, else ★ (`marblerun.best`, the
+     fewest pieces a board). A board no one plays shows the made way with the marble running down it (`recOf`, `recView`). */
+const MARBLE_APP = (() => {
+  const LH = 0.22, MR = 0.13, G = 12, MU = 0.62, CURVE_MU = 1.6, V0 = 2, DT = 1 / 240, TIME_CAP = 45;
+  const TICK = 1 / 60, REC_HZ = 30, CAP = 1500, PHOTO_PX = 20, GRACE = 0.8, ARC = Math.PI / 4;
+  const LV = [
+    { n: 5, H: 2, len: [5, 8], rocks: 0.12, given: 0.5, spare: 2, vc: 3.6 },
+    { n: 6, H: 3, len: [7, 11], rocks: 0.16, given: 0.3, spare: 1, vc: 3.4 },
+    { n: 6, H: 3, len: [8, 12], rocks: 0.2, given: 0.15, spare: 1, vc: 3.2 },
+    { n: 7, H: 4, len: [10, 15], rocks: 0.24, given: 0.06, spare: 0, vc: 3.0 },
+    { n: 8, H: 5, len: [12, 18], rocks: 0.28, given: 0, spare: 0, vc: 2.8 },
+  ];
+  const DL = ARCADE.difficulty('marblerun.level', 'Every board has its own puzzle, harder the farther it is from the corner: a bigger grid with more levels to come down, more rocks in the way, fewer pieces laid for you and no spares, and curves that throw the marble off at lower speeds. Easy, Normal and Hard move every board a level up.', true);
+  const say = BOARD_KIT.say(2600);
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, ringOf = BOARD_KIT.ringOf, clamp = BOARD_KIT.clamp, rngOf = BOARD_KIT.rng;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const SET = (() => { const d = { sound: true }; try { const s = JSON.parse(localStorage.getItem('marblerun.settings') || '{}'); if (typeof s.sound === 'boolean') d.sound = s.sound; } catch {} return d; })();
+  const saveSet = () => { try { localStorage.setItem('marblerun.settings', JSON.stringify(SET)); } catch {} };
+
+  /* ─── THE PIECES ─── edges 0 N (toward the far end), 1 E, 2 S, 3 W; a square's corners and edge middles in its own units */
+  const DI = [0, 1, 0, -1], DJ = [-1, 0, 1, 0], OPP = e => (e + 2) % 4;
+  const MID = [[0.5, 0], [1, 0.5], [0.5, 1], [0, 0.5]];
+  const TYPES = ['s', 'c', 'r', 'p'], NAMES = { s: 'Straight', c: 'Curve', r: 'Ramp', p: 'Spiral' }, GLYPH = { s: '│', c: '╮', r: '⟋', p: '↺' };
+  const ROTS = { s: 2, c: 4, r: 4, p: 8 };
+  // a piece's two ends: { a, b } and which end is high (a ramp's and a spiral's)
+  function EDGES(pc){
+    const r = pc.rot % 4;
+    if (pc.t === 's') return { a: r % 2, b: r % 2 + 2, hi: -1 };
+    if (pc.t === 'c') return { a: r, b: (r + 1) % 4, hi: -1 };
+    if (pc.t === 'r') return { a: r, b: (r + 2) % 4, hi: r };
+    const a = r, b = (r + 1) % 4; return { a, b, hi: pc.rot >= 4 ? b : a };
+  }
+  const heightAt = (pc, e) => { const E = EDGES(pc); return pc.z + (E.hi === e ? 1 : 0); };
+  const hasEdge = (pc, e) => { const E = EDGES(pc); return E.a === e || E.b === e; };
+  const otherEdge = (pc, e) => { const E = EDGES(pc); return E.a === e ? E.b : E.a; };
+  const curved = pc => pc.t === 'c' || pc.t === 'p';
+  const lenOf = pc => curved(pc) ? ARC : 1;
+  // a point s along a piece entered at edge `from` (square units, 0..1 across and down)
+  function pointAt(pc, from, s){
+    const to = otherEdge(pc, from), L = lenOf(pc), f = clamp(s / L, 0, 1), A = MID[from], B = MID[to];
+    if (!curved(pc)) return [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f];
+    // (a quarter circle about the corner the two ends share)
+    const cx = (A[0] === 0.5 ? B[0] : A[0]), cy = (A[1] === 0.5 ? B[1] : A[1]);
+    let ta = Math.atan2(A[1] - cy, A[0] - cx), tb = Math.atan2(B[1] - cy, B[0] - cx), d = tb - ta;
+    if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+    const t = ta + d * f; return [cx + 0.5 * Math.cos(t), cy + 0.5 * Math.sin(t)];
+  }
+  const ck = (i, j) => i + ',' + j;
+
+  /* ─── THE RUN ─── the marble from the chute: { ok, why, frames: [u, v, h] … in squares (h in levels), t } */
+  function runSim(P, pieces, opt){
+    const o = opt || {}, frames = o.frames ? [] : null, n = P.n, vc = P.vc;
+    let i = P.start.i, j = P.start.j, pc = P.startPiece, from = 0, s = 0, v = V0, t = 0, why = '', ok = false, nextF = 0;
+    const at = () => { const [x, y] = pointAt(pc, from, s), to = otherEdge(pc, from), hF = heightAt(pc, from), hT = heightAt(pc, to); return [i + x, j + y, hF + (hT - hF) * clamp(s / lenOf(pc), 0, 1)]; };
+    const fall = w => { why = w; return false; };
+    // into the square across edge e from (i, j), moving on
+    const cross = e => {
+      const h = heightAt(pc, e), ni = i + DI[e], nj = j + DJ[e], back = OPP(e);
+      if (ni === P.goal.i && nj === P.goal.j && h === 0){ ok = true; i = ni; j = nj; return false; }
+      if (ni < 0 || nj < 0 || ni >= n || nj >= n) return fall('it rolled off the edge of the board');
+      const q = pieces.get(ck(ni, nj));
+      if (!q) return fall(P.rocks.has(ck(ni, nj)) ? 'it ran into a rock' : 'it rolled off the end of the track');
+      if (!hasEdge(q, back)) return fall('it met a piece that does not turn that way');
+      if (heightAt(q, back) !== h) return fall(heightAt(q, back) < h ? 'it dropped off onto a piece lower down' : 'it ran into the side of a piece higher up');
+      i = ni; j = nj; pc = q; from = back; return true;
+    };
+    while (t < TIME_CAP){
+      if (frames && t >= nextF){ frames.push(...at()); nextF += 1 / REC_HZ; }
+      const L = lenOf(pc), to = otherEdge(pc, from), slope = (heightAt(pc, to) - heightAt(pc, from)) * LH / L;
+      const mu = MU * (curved(pc) ? CURVE_MU : 1);
+      if (Math.abs(v) < 0.03 && slope === 0){ why = 'it ran out of speed'; break; }
+      v += (-G * slope - mu * Math.sign(v || 1)) * DT;
+      if (curved(pc) && Math.abs(v) > vc){ why = 'it flew off a curve, going too fast'; break; }
+      s += v * DT; t += DT;
+      if (s >= L){ const carry = s - L; if (!cross(to)) break; s = carry; }
+      else if (s <= 0){ const carry = -s; if (pc === P.startPiece && i === P.start.i && j === P.start.j){ why = 'it rolled back out of the chute'; break; } if (!cross(from)) break; v = -v; s = carry; }
+    }
+    if (!ok && !why) why = 'it rolled to and fro and never got there';
+    if (frames){ const e = at(); frames.push(...e); if (ok){ const gx = P.goal.i + 0.5, gy = P.goal.j + 0.5; for (let k = 1; k <= 8; k++) frames.push(e[0] + (gx - e[0]) * k / 8, e[1] + (gy - e[1]) * k / 8, -0.4 * k / 8); } }
+    return { ok, why, frames, t, at: [i, j] };
+  }
+
+  /* ─── EVERY BOARD ITS OWN PUZZLE ─── */
+  function makePuzzle(idx, lv, why){
+    const D = LV[lv - 1], n = D.n, H = D.H;
+    for (let attempt = 0; attempt < 60; attempt++){
+      const R = rngOf((idx * 2654435761) ^ (lv * 977) ^ (attempt * 7919) ^ 0x3ab1);
+      const si = 1 + Math.floor(R() * (n - 2)), start = { i: si, j: 0 };
+      // (a walk from the chute: a square at a time, never back on itself, toward the near half)
+      const want = D.len[0] + Math.floor(R() * (D.len[1] - D.len[0] + 1));
+      const walk = [[si, 0]], used = new Set([ck(si, 0)]);
+      let ok = true;
+      for (let k = 0; k < want; k++){
+        const [ci, cj] = walk[walk.length - 1], opts = [];
+        for (let e = 0; e < 4; e++){ const ni = ci + DI[e], nj = cj + DJ[e]; if (ni < 0 || nj < 1 || ni >= n || nj >= n || used.has(ck(ni, nj))) continue;
+          // (fewer free ways out, the better a square: so the walk does not shut itself in)
+          let free = 0; for (let f = 0; f < 4; f++){ const a = ni + DI[f], b = nj + DJ[f]; if (a >= 0 && b >= 1 && a < n && b < n && !used.has(ck(a, b))) free++; }
+          opts.push({ e, ni, nj, w: (free ? 1 : 0.05) * (e === 2 ? 1.6 : 1) * (0.5 + R()) }); }
+        if (!opts.length){ ok = false; break; }
+        opts.sort((a, b) => b.w - a.w); const c = opts[0];
+        walk.push([c.ni, c.nj]); used.add(ck(c.ni, c.nj));
+      }
+      if (!ok || walk.length < D.len[0] + 1) continue;
+      const goal = { i: walk[walk.length - 1][0], j: walk[walk.length - 1][1] };
+      // (the walk's squares between the chute and the cup, each entered at one edge and left at another)
+      const cells = [];
+      for (let k = 1; k < walk.length - 1; k++){
+        const [pi, pj] = walk[k - 1], [ci, cj] = walk[k], [ni, nj] = walk[k + 1];
+        const ein = [0, 1, 2, 3].find(e => ci + DI[e] === pi && cj + DJ[e] === pj), eout = [0, 1, 2, 3].find(e => ci + DI[e] === ni && cj + DJ[e] === nj);
+        cells.push({ i: ci, j: cj, ein, eout, straight: ein === OPP(eout) });
+      }
+      if (cells.length < H) continue;
+      for (let tryD = 0; tryD < 25; tryD++){
+        // (the drops: H of the walk's squares, spread along it with a jitter)
+        const drops = new Set();
+        while (drops.size < H){ const base = Math.floor((drops.size + 0.5) / H * cells.length + (R() - 0.5) * cells.length / H); drops.add(clamp(base, 0, cells.length - 1)); if (drops.size < H && R() < 0.3) drops.add(Math.floor(R() * cells.length)); }
+        if (drops.size > H) continue;
+        const pieces = new Map(); let z = H;
+        cells.forEach((c, k) => {
+          const dr = drops.has(k), lo = dr ? z - 1 : z;
+          let pc;
+          if (c.straight){ pc = dr ? { t: 'r', rot: c.ein, z: lo } : { t: 's', rot: c.ein % 2, z: lo }; }
+          else {
+            // (a curve's rot is its first end going round: ends r and r + 1)
+            const r = (c.ein + 1) % 4 === c.eout ? c.ein : c.eout;
+            pc = dr ? { t: 'p', rot: r + (r === c.ein ? 0 : 4), z: lo } : { t: 'c', rot: r, z: lo };
+          }
+          pieces.set(ck(c.i, c.j), pc); if (dr) z--;
+        });
+        const startPiece = { t: 's', rot: 0, z: H };
+        const P = { idx, lv, n, H, vc: D.vc, start, goal, startPiece, rocks: new Set(), given: new Map(), sol: pieces, inv: {}, par: 0, attempt };
+        pieces.set(ck(si, 0), startPiece);
+        const r = runSim(P, pieces);
+        pieces.delete(ck(si, 0));
+        if (!r.ok){ if (why) why.push(r.why + ' at ' + r.at + ' (' + cells.length + ' squares)'); continue; }
+        // (rocks on squares off the way; some pieces laid for you; the rest in the stock, with spares)
+        for (let a = 0; a < n; a++) for (let b = 0; b < n; b++){ const k = ck(a, b); if (used.has(k) || (b === 0 && Math.abs(a - si) <= 1)) continue; if (R() < D.rocks) P.rocks.add(k); }
+        const keys = [...pieces.keys()];
+        for (const k of keys) if (R() < D.given) P.given.set(k, pieces.get(k));
+        for (const t of TYPES) P.inv[t] = 0;
+        for (const k of keys) if (!P.given.has(k)) P.inv[pieces.get(k).t]++;
+        P.par = keys.length - P.given.size;
+        for (let k = 0; k < D.spare; k++) P.inv[TYPES[Math.floor(R() * 4)]]++;
+        return P;
+      }
+    }
+    return null;
+  }
+  const PUZ = new Map(), SOON = BOARD_KIT.budget(8, 30);
+  const puzKey = (idx, lv) => idx * 8 + lv;
+  function puzzleOf(idx, lv, urgent){
+    const k = puzKey(idx, lv); let P = PUZ.get(k);
+    if (P === undefined){
+      if (!urgent && SOON.left() <= 0) return null;
+      const t0 = performance.now(); P = makePuzzle(idx, lv); if (!urgent) SOON.spend(t0);
+      PUZ.set(k, P); if (PUZ.size > CAP) PUZ.delete(PUZ.keys().next().value);
+    } else { PUZ.delete(k); PUZ.set(k, P); }
+    return P;
+  }
+
+  /* ─── LAYING A PIECE ─── every way a piece can lie on a square, scored by the ends it meets at their heights */
+  function endsInto(P, pieces, i, j){
+    // what lies beside (i, j): for each edge, the height an end there must have to join it, or null
+    const out = [null, null, null, null];
+    for (let e = 0; e < 4; e++){
+      const ni = i + DI[e], nj = j + DJ[e], back = OPP(e);
+      if (ni === P.goal.i && nj === P.goal.j){ out[e] = 0; continue; }
+      const q = ni === P.start.i && nj === P.start.j ? P.startPiece : pieces.get(ck(ni, nj));
+      if (q && hasEdge(q, back)) out[e] = heightAt(q, back);
+    }
+    return out;
+  }
+  function fitsAt(P, pieces, i, j, t){
+    const need = endsInto(P, pieces, i, j), out = [];
+    for (let rot = 0; rot < ROTS[t]; rot++) for (let z = 0; z <= P.H; z++){
+      const pc = { t, rot, z }; if (z + (t === 'r' || t === 'p' ? 1 : 0) > P.H) continue;
+      const E = EDGES(pc); let sc = 0;
+      for (const e of [E.a, E.b]){ if (need[e] == null) continue; sc += need[e] === heightAt(pc, e) ? 3 : -1; }
+      out.push({ pc, sc: sc - z * 0.01 });
+    }
+    out.sort((a, b) => b.sc - a.sc);
+    return out;
+  }
+
+  /* ─── PLAYING ─── */
+  const GAMES = new Map();
+  let LIVE = null;
+  const { BEST, saveBest } = BOARD_KIT.best('marblerun.best');
+  const bestKey = (idx, lv) => idx + '@' + lv;
+  const starsOf = (used, par) => used <= par ? 3 : used <= par + 2 ? 2 : 1;
+  function fresh(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), P = puzzleOf(idx, lv, true);
+    const g = { c, r, idx, lv, P, state: 'build', placed: new Map(), inv: P ? { ...P.inv } : {}, tool: 's', sel: null, run: null, runT: 0, last: 0, tries: 0, doneAt: 0 };
+    return g;
+  }
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  const piecesOf = g => { const m = new Map(g.P.given); for (const [k, v] of g.placed) m.set(k, v); m.set(ck(g.P.start.i, g.P.start.j), g.P.startPiece); return m; };
+  function tapCell(g, i, j){
+    const P = g.P, k = ck(i, j);
+    if (g.state === 'won'){ return; }
+    if (g.state === 'run') return;
+    if (g.state === 'fell') g.state = 'build';
+    if (P.rocks.has(k) || P.given.has(k) || (i === P.start.i && j === P.start.j) || (i === P.goal.i && j === P.goal.j)){ g.sel = null; say(P.rocks.has(k) ? 'A rock: nothing goes there.' : P.given.has(k) ? 'Laid for you: it stays.' : i === P.goal.i && j === P.goal.j ? 'The cup.' : 'The chute.', 1200); return; }
+    const mine = g.placed.get(k);
+    if (g.tool === 'x'){ if (mine){ g.placed.delete(k); g.inv[mine.t]++; sfx('take'); } g.sel = null; return; }
+    if (mine && mine.t === g.tool){
+      // (again on one of yours: the next way it can lie, those that fit first)
+      const F = fitsAt(P, piecesOf(g), i, j, mine.t), at = F.findIndex(f => f.pc.rot === mine.rot && f.pc.z === mine.z), nx = F[(at + 1) % F.length].pc;
+      g.placed.set(k, { ...nx }); g.sel = k; sfx('turn'); return;
+    }
+    if (mine){ g.inv[mine.t]++; g.placed.delete(k); }
+    if (!(g.inv[g.tool] > 0)){ say('No ' + NAMES[g.tool].toLowerCase() + 's left: take one back, or use another piece.', 1600); return; }
+    const F = fitsAt(P, piecesOf(g), i, j, g.tool);
+    g.placed.set(k, { ...F[0].pc }); g.inv[g.tool]--; g.sel = k; sfx('lay');
+  }
+  function nudgeSel(g, dz){
+    const pc = g.sel && g.placed.get(g.sel); if (!pc) return;
+    const top = g.P.H - (pc.t === 'r' || pc.t === 'p' ? 1 : 0), z = clamp(pc.z + dz, 0, top);
+    if (z !== pc.z){ g.placed.set(g.sel, { ...pc, z }); sfx('turn'); }
+  }
+  function turnSel(g){
+    const pc = g.sel && g.placed.get(g.sel); if (!pc) return;
+    g.placed.set(g.sel, { ...pc, rot: (pc.rot + 1) % ROTS[pc.t] }); sfx('turn');
+  }
+  function startRun(g){
+    if (g.state === 'run') return;
+    g.tries++;
+    g.run = runSim(g.P, piecesOf(g), { frames: true }); g.state = 'run'; g.runT = 0; g.last = performance.now();
+    sfx('go');
+  }
+  function stepGame(g){
+    if (g.state !== 'run') return;
+    const t = performance.now(); g.runT += Math.min(0.25, (t - g.last) / 1000); g.last = t;
+    const n = g.run.frames.length / 3;
+    if (g.runT * REC_HZ >= n - 1){
+      if (g.run.ok){
+        g.state = 'won'; g.doneAt = performance.now();
+        const used = g.placed.size, par = g.P.par, s = starsOf(used, par), k = bestKey(g.idx, g.lv), was = BEST.get(k);
+        if (was == null || used < was){ BEST.set(k, used); saveBest(); }
+        sfx('win');
+        say('In the cup! ' + used + (used === 1 ? ' piece' : ' pieces') + ' (par ' + par + ') ' + BOARD_KIT.stars(s) + (was != null && used < was ? ', a new best here' : '') + '. Tap for the next board.', 4200);
+      } else { g.state = 'fell'; sfx('fall'); say('The marble fell: ' + g.run.why + '.', 2400); }
+      try { bbRefreshNow(); } catch {}
+    }
+  }
+  function marbleAt(run, tt){
+    const F = run.frames, n = F.length / 3, f = clamp(tt * REC_HZ, 0, n - 1), a = Math.floor(f), b = Math.min(n - 1, a + 1), w = f - a;
+    return [F[3 * a] + (F[3 * b] - F[3 * a]) * w, F[3 * a + 1] + (F[3 * b + 1] - F[3 * a + 1]) * w, F[3 * a + 2] + (F[3 * b + 2] - F[3 * a + 2]) * w];
+  }
+
+  /* ─── RECORDINGS ─── the made way run, on a board no one plays */
+  const RUNS = new Map();
+  function runOf(P){
+    const k = puzKey(P.idx, P.lv); let r = RUNS.get(k);
+    if (!r){ const pcs = new Map(P.sol); pcs.set(ck(P.start.i, P.start.j), P.startPiece); r = runSim(P, pcs, { frames: true }); RUNS.set(k, r); if (RUNS.size > CAP) RUNS.delete(RUNS.keys().next().value); }
+    return r;
+  }
+
+  /* ─── SOUNDS ─── */
+  function sfx(kind){
+    if (!SET.sound) return;
+    try { if (!ARCADE.audio()) return; } catch { return; }
+    const T = ARCADE.tone, Hs = ARCADE.hiss;
+    try {
+      if (kind === 'lay') T(520, 420, 0.06, 'triangle', 0.05);
+      else if (kind === 'turn') T(660, 660, 0.04, 'square', 0.025);
+      else if (kind === 'take') T(300, 220, 0.07, 'triangle', 0.04);
+      else if (kind === 'go'){ Hs(0.6, 0.04, 1200); T(880, 880, 0.08, 'sine', 0.04); }
+      else if (kind === 'fall') [392, 294, 196].forEach((q, i) => T(q, q * 0.9, 0.16, 'triangle', 0.05, i * 0.12));
+      else if (kind === 'win') [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.07, i * 0.1));
+    } catch {}
+  }
+
+  /* ─── DRAWN ─── the table a picture (a light board, its squares faint), the rocks, the chute, the cup, the pieces on their posts
+     (yours bright, those laid for you darker wood), the square in hand ringed, the marble. A square is 1/n of the board. */
+  const PIC = BOARD_KIT.painted(64, (P, hi) => paint(P.n, P.seed, hi ? 512 : 256));
+  function paint(n, seed, Sz){
+    const cv = document.createElement('canvas'); cv.width = Sz; cv.height = Sz;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-Sz, 0, 0, -Sz, Sz, Sz);
+    const R = rngOf(seed * 131 + 9);
+    const g = c.createLinearGradient(0, 0, 1, 1); g.addColorStop(0, '#d9cbb0'); g.addColorStop(1, '#c9b892'); c.fillStyle = g; c.fillRect(0, 0, 1, 1);
+    for (let k = 0; k < 40; k++){ c.strokeStyle = `rgba(110,80,40,${0.03 + 0.05 * R()})`; c.lineWidth = 0.002 + 0.004 * R(); const y = R(); c.beginPath(); c.moveTo(0, y); c.bezierCurveTo(0.3, y + (R() - 0.5) * 0.04, 0.7, y + (R() - 0.5) * 0.04, 1, y + (R() - 0.5) * 0.03); c.stroke(); }
+    c.strokeStyle = 'rgba(70,50,25,0.22)'; c.lineWidth = 0.003;
+    for (let k = 1; k < n; k++){ c.beginPath(); c.moveTo(k / n, 0); c.lineTo(k / n, 1); c.moveTo(0, k / n); c.lineTo(1, k / n); c.stroke(); }
+    c.strokeStyle = '#5a4126'; c.lineWidth = 0.012; c.strokeRect(0.006, 0.006, 0.988, 0.988);
+    return cv;
+  }
+  const TRACK = 0xf0f3f7, GIVEN = 0x9a7650, MINE_SEL = 0xffc233;
+  function itemsOf(g, P, pieces, marble, bp){
+    const out = [], n = P.n, cs = 1 / n, at = (i, j) => [(i + 0.5) * cs, (j + 0.5) * cs];
+    // (yaw: a piece's own first end faces edge 0 at yaw 0; each quarter turn is −π/2: the field turns an item by π − yaw)
+    const yawOfRot = r => BOARD_KIT.yawOf((r % 4) * Math.PI / 2);
+    const piece = (pc, i, j, col) => {
+      const [u, v] = at(i, j), kind = pc.t === 's' ? 'mrStraight' : pc.t === 'c' ? 'mrCurve' : pc.t === 'r' ? 'mrRamp' : (pc.rot >= 4 ? 'mrSpiralB' : 'mrSpiralA');
+      out.push({ kind, u, v, scale: cs, lift: pc.z * LH * cs, yaw: yawOfRot(pc.rot), color: col });
+      if (pc.z > 0) out.push({ kind: 'mrPost', u, v, scale: cs, sy: pc.z * LH, color: 0x8a6c48 });
+    };
+    for (const k of P.rocks){ const [i, j] = k.split(',').map(Number), [u, v] = at(i, j); out.push({ kind: 'mrRock', u, v, scale: cs * 0.8, yaw: BOARD_KIT.yawOf((i * 7 + j * 3) % 6), color: 0x7d7a74 }); }
+    const [gu, gv] = at(P.goal.i, P.goal.j); out.push({ kind: 'mrCup', u: gu, v: gv, scale: cs, color: 0xd8332c });
+    piece(P.startPiece, P.start.i, P.start.j, 0x2b63c8);
+    for (const [k, pc] of pieces){ const [i, j] = k.split(',').map(Number); if (i === P.start.i && j === P.start.j) continue; piece(pc, i, j, P.given.has(k) && (!g || !g.placed.has(k)) ? GIVEN : TRACK); }
+    if (g && g.sel && g.state === 'build'){ const [i, j] = g.sel.split(',').map(Number), [u, v] = at(i, j), pc = g.placed.get(g.sel); if (pc) out.push({ kind: 'mrSel', u, v, scale: cs * 0.98, lift: (pc.z * LH + 0.002) * cs, color: MINE_SEL }); }
+    if (marble) out.push({ kind: 'mrMarble', u: marble[0] * cs, v: marble[1] * cs, scale: 2 * MR * cs, lift: Math.max(0, marble[2] * LH * cs + 0.03 * cs), color: 0x3fa0ff });
+    return out;
+  }
+
+  /* ─── THE ROW ─── Run, the four pieces with how many are left, Erase, Turn, Raise, Lower, Clear, Sound */
+  const ON = '#2f4a3a';
+  function tilesOf(c, r){
+    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r);
+    if (!g || !g.P) return [{ glyph: '▶', value: 'Play', label: 'level ' + levelAt(idx) }];
+    return [
+      { glyph: g.state === 'run' ? '…' : '▶', value: g.state === 'won' ? 'Again' : 'Run', label: g.placed.size + ' laid · par ' + g.P.par },
+      ...TYPES.map(t => ({ glyph: GLYPH[t], value: NAMES[t], label: (g.inv[t] || 0) + ' left', bg: g.tool === t ? ON : undefined })),
+      { glyph: '⌫', value: 'Erase', label: 'take back', bg: g.tool === 'x' ? ON : undefined },
+      { glyph: '⟳', value: 'Turn', label: 'the ringed piece' },
+      { glyph: '▲', value: 'Raise', label: 'a level' },
+      { glyph: '▼', value: 'Lower', label: 'a level' },
+      { glyph: '✕', value: 'Clear', label: 'all yours' },
+      { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
+    ];
+  }
+  function onTile(c, r, i){
+    const g = gameAt(c, r); LIVE = { c, r };
+    if (!g.P) return true;
+    if (i === 0){ if (g.state === 'won'){ Object.assign(g, fresh(c, r)); } else startRun(g); }
+    else if (i >= 1 && i <= 4) g.tool = TYPES[i - 1];
+    else if (i === 5) g.tool = 'x';
+    else if (i === 6) turnSel(g);
+    else if (i === 7) nudgeSel(g, 1);
+    else if (i === 8) nudgeSel(g, -1);
+    else if (i === 9){ for (const pc of g.placed.values()) g.inv[pc.t]++; g.placed.clear(); g.sel = null; g.state = 'build'; }
+    else if (i === 10){ SET.sound = !SET.sound; saveSet(); }
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || !g.P) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key, m = { Enter: 0, '1': 1, '2': 2, '3': 3, '4': 4, x: 5, r: 6, ArrowUp: 7, ArrowDown: 8 }[k];
+    if (m == null) return;
+    e.preventDefault(); e.stopPropagation(); onTile(g.c, g.r, m);
+  }, true);
+
+  const app = {
+    name: 'marble run',
+    boardShape: { cellW: 1, cellH: 1 },
+    pitchMin: 50,
+    frameFit: 1.25,
+    menu: [{ head: 'Marble run', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); PUZ.clear(); RUNS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The pieces going down, the marble.', on(){ SET.sound = !SET.sound; saveSet(); } },
+      { label: 'Start this board again', title: 'Every piece of yours back in the stock.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); try { bbRefreshNow(); } catch {} } } },
+      { label: 'Show the way', title: 'The way the board was made, laid for you (no stars for it).', on(){ const g = liveGame(); if (!g || !g.P) return; g.placed = new Map([...g.P.sol].filter(([k]) => !g.P.given.has(k))); for (const t of TYPES) g.inv[t] = 0; g.shown = true; g.state = 'build'; say('The way it was made. Run it.', 1800); try { bbRefreshNow(); } catch {} } },
+      { label: 'How to play', title: 'The pieces and the run.', on(){ say('Bring the marble from the blue chute to the red cup. Pick a piece in the row and tap a square: it lies turned and raised to join what is beside it; tap it again to turn it another way, Raise and Lower move it a level. Ramps and spirals come down a level, which is what gives the marble its speed: on the flat and round curves it slows, and taken too fast a curve throws it off. Ends must meet at the same height. Run sends it.', 12000); } },
+    ]}],
+    cellFar: { light: 0xd8c9ab, dark: 0xb9a57f },
+    itemMinPx: 14,
+    photoMinPx: PHOTO_PX,
+    cellPhoto(c, r, bp){ const idx = boardIdx(c, r), lv = levelAt(idx), n = LV[lv - 1].n; return PIC.key('mr:' + n + ':' + (idx % 16), (bp || 0) >= 300, () => ({ n, seed: idx % 16 })); },
+    photoCanvas(key){ return PIC.canvas(key); },
+    cellGrid(){ return { n: 2, colors: [0xd4c4a4, 0xccb994, 0xccb994, 0xd4c4a4] }; },
+    itemGeometries: {
+      mrStraight: T => trackGeo(T, 's', 0), mrCurve: T => trackGeo(T, 'c', 0), mrRamp: T => trackGeo(T, 's', 1),
+      mrSpiralA: T => trackGeo(T, 'c', 1), mrSpiralB: T => trackGeo(T, 'c', -1),
+      mrPost: T => { const g = new T.BoxGeometry(0.14, 1, 0.14); g.translate(0, 0.5, 0); return g; },
+      mrRock: T => { const g = new T.DodecahedronGeometry(0.38, 0); g.scale(1, 0.6, 1); g.translate(0, 0.2, 0); return g; },
+      mrCup: T => { const pts = [[0, 0.002], [0.34, 0.002], [0.36, 0.05], [0.3, 0.05], [0.26, 0.01], [0, 0.01]].map(([x, y]) => new T.Vector2(x, y)); return new T.LatheGeometry(pts, 24); },
+      mrMarble: T => { const g = new T.SphereGeometry(0.5, 18, 12); g.translate(0, 0.5, 0); return g; },
+      mrSel: T => { const g = FieldKit.ring(T, 0.44, 0.5, 0.003); g.userData.unlit = true; return g; },
+    },
+    cellItems(c, r, bp){
+      const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
+      if (g && g.P && (g.placed.size || g.state !== 'build' || live)){
+        if (live) stepGame(g);
+        const marble = g.state === 'run' || g.state === 'fell' || g.state === 'won' ? marbleAt(g.run, g.state === 'run' ? g.runT : 99) : null;
+        return itemsOf(g, g.P, piecesOf(g), marble, bp);
+      }
+      const P = puzzleOf(idx, lv, live); if (!P) return [];
+      // (a board no one plays: the made way, the marble running down it on the board's own phase)
+      const R = runOf(P), n = R.frames.length / 3, T = n / REC_HZ + 1.5, tt = BOARD_KIT.loopT(BOARD_KIT.phase(idx), T);
+      const pcs = new Map(P.sol); pcs.set(ck(P.start.i, P.start.j), P.startPiece);
+      return itemsOf(null, P, pcs, marbleAt(R, tt), bp);
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), P = PUZ.get(puzKey(idx, lv)), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(idx, lv));
+      const head = 'Marble run — level ' + lv + (P ? ', ' + P.n + '×' + P.n + ', down ' + P.H + ' levels · par ' + P.par + ' pieces' : '') + (best != null ? ' · best ' + best : '');
+      if (!g || !g.P) return head + ' (tap to build)';
+      return head + ' · ' + g.placed.size + ' laid' + (g.state === 'won' ? ' · through' : g.state === 'run' ? ' · running' : '');
+    },
+    onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
+    onSelect(){ return true; },
+    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
+    onCellTap(c, r, u, v){
+      const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      if (!g.P) return true;
+      if (g.state === 'won'){
+        if (!was || performance.now() - g.doneAt < GRACE * 1000) return true;
+        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+      }
+      // (the tap that picks a board out only picks it: a piece laid by it would be laid without looking)
+      if (u == null || !was) return true;
+      const n = g.P.n, i = clamp(Math.floor(u * n), 0, n - 1), j = clamp(Math.floor(v * n), 0, n - 1);
+      tapCell(g, i, j);
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
+    noDoubleTap(){ const g = liveGame(); return !!(g && g.P); },
+    statTiles(c, r){ return tilesOf(c, r); },
+    statsStay(){ const g = liveGame(); return !!(g && g.P && g.state !== 'won'); },
+    onStatTap(c, r, i){ return onTile(c, r, i); },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#d9cbb0'; ctx.fillRect(0, 0, sz, sz);
+      ctx.strokeStyle = '#f0f3f7'; ctx.lineWidth = sz * 0.1; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.1); ctx.lineTo(sz * 0.2, sz * 0.5); ctx.arc(sz * 0.4, sz * 0.5, sz * 0.2, Math.PI, Math.PI / 2, true); ctx.lineTo(sz * 0.8, sz * 0.7); ctx.stroke();
+      ctx.fillStyle = '#d8332c'; ctx.beginPath(); ctx.arc(sz * 0.82, sz * 0.82, sz * 0.09, 0, 6.283); ctx.fill();
+      ctx.fillStyle = '#3fa0ff'; ctx.beginPath(); ctx.arc(sz * 0.2, sz * 0.25, sz * 0.07, 0, 6.283); ctx.fill();
+    },
+    _debug: { makePuzzle, puzzleOf, runSim, fitsAt, endsInto, EDGES, heightAt, pointAt, tapCell, nudgeSel, turnSel, startRun, stepGame, marbleAt, runOf, starsOf,
+              itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, piecesOf, tilesOf, onTile, LV, SET, GAMES, PUZ, BEST, TYPES, ck,
+              consts: { LH, MR, G, MU, CURVE_MU, V0, REC_HZ }, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
+  };
+  /* A PIECE'S SHAPE: a trough of wood along the piece's middle line (straight N to S, or a quarter circle from N round to E), its
+     floor rising a level (`LH` squares) from its low end to its high end when `rise` is ±1; built two-faced so it reads from any side. Its own
+     edge N is −z, E is +x (the field turns it by the item's yaw). */
+  function trackGeo(T, shape, rise){
+    const prof = [[-0.34, -0.06], [-0.34, 0.16], [-0.3, 0.16], [-0.24, 0.04], [0, 0], [0.24, 0.04], [0.3, 0.16], [0.34, 0.16], [0.34, -0.06]];
+    const N = shape === 'c' ? 10 : 2, pos = [], idx = [];
+    // a point along the middle line (0 at the N end, 1 at the other) and its sideways unit
+    const mid = f => {
+      if (shape !== 'c') return { x: 0, z: -0.5 + f, sx: 1, sz: 0 };
+      // (a quarter circle about the corner the N and E edges share, (0.5, −0.5): from the N edge's middle round to the E edge's)
+      const t = Math.PI - (Math.PI / 2) * f;
+      return { x: 0.5 + 0.5 * Math.cos(t), z: -0.5 + 0.5 * Math.sin(t), sx: Math.cos(t), sz: Math.sin(t) };
+    };
+    for (let k = 0; k <= N; k++){
+      const f = k / N, m = mid(f), L = Math.hypot(m.sx, m.sz) || 1, nx = m.sx / L, nz = m.sz / L;
+      // (the floor's height: a ramp rises toward its N end, a spiral A toward its N end, B toward its E end)
+      const y0 = (rise > 0 ? (1 - f) * rise : rise < 0 ? f * -rise : 0) * LH;
+      for (const [a, h] of prof) pos.push(m.x + nx * a, y0 + h, m.z + nz * a);
+    }
+    // (each face twice, the back with corners of its own: sharing them, the two faces' normals cancelled and the wood shaded black)
+    const P = prof.length, V = pos.length / 3;
+    pos.push(...pos.slice());
+    for (let k = 0; k < N; k++) for (let q = 0; q < P - 1; q++){
+      const a = k * P + q, b = a + 1, c = a + P, d = c + 1;
+      idx.push(a, c, b, b, c, d, V + a, V + b, V + c, V + b, V + d, V + c);
+    }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  return app;
+})();
 /* ═══ GAME LAB: games the player changes by asking (Oct 25: "seems to me these simpler games are good foundation to let the user
    add features, through a prompt. so the player could develop there own game with AI interaction.", then "2" of the three ways
    offered: the rules rewritten, not only the dials turned) ═════════════════════════════════════════════════════════════════════
@@ -60981,7 +62645,7 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -60990,7 +62654,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
