@@ -6129,6 +6129,52 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} curling (levels ${L.join('/')}; a draw to ${cu.draw} of the button, curling ${cu.curl.join('/')}, sweeping ${cu.sweep.farther} farther and ${cu.sweep.straighter} straighter, a takeout, the hog line, an end scored ${cu.score}; the steady player ${cu.games.map(g => g && g.join('-')).join(' at level 1, ')} at level 5; a real click started, a real click put the broom, the real Enter threw, a real press swept, the computer answered; a board no one plays showed ${live.shown.looks} looks)`);
   }
+
+  // BOWLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the scoring (300, all spares 190, all fours 80, the tenth's
+  // bonus balls); a hooking ball crossing the head pin's line left of a straight one; a gutter ball taking nothing; the steady
+  // player's first balls taking pins and its games ending, better at level 1 than at 5; and real input: a click starting, a real
+  // click aiming, the real Enter bowling and the ball counted; a board no one plays moving through its recorded game
+  current = 'bowling';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); await new Promise(ok => setTimeout(ok, 2500)); });
+    const bw = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
+      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
+      out.score = [D.scoreOf(Array(12).fill(10)).total, D.scoreOf([...Array(20).fill(0).map((_, i) => i % 2 ? 1 : 9), 9]).total, D.scoreOf(Array(20).fill(4)).total,
+                   D.scoreOf([...Array(18).fill(0), 10, 10, 10]).total, D.scoreOf([...Array(18).fill(0), 7, 3, 5]).total, D.scoreOf([...Array(18).fill(0), 7, 2]).total];
+      const lane = D.laneOf(11, 3), shot = h => D.bowlSim([], { sx: K.CX + 0.05, tx: K.CX + 0.05, ty: K.ARROWS, v: 0.6, h }, lane, { untilY: K.HEAD }).B.x;
+      out.hook = +(shot(0) - shot(0.6)).toFixed(3);
+      const g = D.bowlSim(D.rack(), { sx: K.CX - 0.1, tx: K.CX - 0.2, ty: K.ARROWS, v: 0.6, h: 0 }, lane); out.gutter = { gutter: g.B.gutter, down: g.down };
+      let firsts = 0; for (let k = 0; k < 10; k++){ const L = D.laneOf(200 + k, 1); firsts += D.bowlSim(D.rack(), D.pick(D.rack(), L, true), L).down; } out.firsts = firsts / 10;
+      out.games = [1, 5].map(lv => { let sum = 0; for (let k = 0; k < 3; k++){ const G = D.newGame(400 + k, lv, { ai: D.STEADY, seed: k }); let n = 0; while (G.state !== 'over' && n < 120000){ D.tick(G); n++; } if (G.state !== 'over') return null; sum += D.scoreOf(G.rolls).total; } return Math.round(sum / 3); });
+      return out;
+    });
+    const L = bw.levels;
+    if (!(L[0] < L[2] && L[2] <= L[3]) || bw.score.join() !== '300,190,80,30,15,9' || !(bw.hook > 0.02) || !bw.gutter.gutter || bw.gutter.down !== 0
+        || !(bw.firsts >= 5) || !(bw.games[0] && bw.games[1] && bw.games[0] > bw.games[1]))
+      failures.push(`[${current}] ${JSON.stringify(bw)}`);
+    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
+    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, rolls: g.G.rolls.length, tx: g.G.shot.tx } }; });
+    await page.evaluate(() => window.__settle());
+    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    const live = { started: await gs() };
+    p = await at(0.42, 0.4); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    live.aimed = await gs();
+    await page.keyboard.press('Enter');
+    for (let w = 0; w < 60 && (await gs()).G.rolls < 1; w++) await page.waitForTimeout(250);
+    live.bowled = await gs();
+    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
+      const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 40 && !M.done; k++) D.recWork(M);
+      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
+      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return { done: M.done, par: M.par, looks: seen.size }; });
+    if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.tx - 0.42 * 0.36) > 0.02
+        || !(live.bowled && live.bowled.G.rolls >= 1) || !live.shown.done || !(live.shown.par > 0) || live.shown.looks < 3)
+      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling (levels ${L.join('/')}; scores ${bw.score.join(', ')}; a hook ${bw.hook} across the head pin's line; a gutter ball took ${bw.gutter.down}; the steady player's first balls ${bw.firsts} pins, games ${bw.games.join(' at level 1, ')} at level 5; a real click started, a real click aimed, the real Enter bowled; a board no one plays showed ${live.shown.looks} looks, par ${live.shown.par})`);
+  }
   }   // (end of part 5)
   if (part(6)) {
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the

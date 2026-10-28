@@ -753,6 +753,39 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     straighter, a takeout, the hog line, an end's score, games ending with the steady player better at level 1 than 5, and real
     input: a click starting, a real click putting the broom, the real Enter throwing, a real press sweeping, the computer answering,
     and a board no one plays moving.
+- **Bowling** (Oct 28: "2,   3 curling, bowling, marble run", the second: "spin and pins"): `BOWLING_APP`, id `bowling`, after curling.
+  Ten-pin, the far end of a lane a board, `W` (0.36) wide by 1 long: the pins on their deck (`SPOTS`, `S` 0.078 apart, the head
+  pin at `HEAD` 0.27), the lane (`LANE` 0.27) between gutters (`GUT`) down to the foul line (`FOUL`), the arrows at `ARROWS`.
+  - **The ball** (`roll`, steps of 1/240 s): straight on the oil; from the board's own oil line (`lane.oil`) the dry back end hooks
+    it by its spin, `lane.hk` × hook, coming on over `RAMP`, turned across its way with its speed kept; no hook once on the deck
+    or among the pins (slowed by them it turned on the spot and came back up the lane). Past the lane's edge it is in the gutter
+    and touches nothing.
+  - **The pins**: the ball meets them as `MB` (4.5) pins' weight; pins meet pins; the side kickbacks send them back (`E_WALL`); a
+    pin struck harder than `DOWN_V` × `lane.carry` falls, lies the way it was sent and slides on under `PF`, and as it falls it lays
+    its length (`TOPPLE` 0.085) onto any pin standing within 35° of its way (as real pins knock their neighbours: thin circles alone
+    left the gaps between pins too wide, and a pocket ball took four); one only touched stands. A perfect pocket ball (the ball
+    0.44 of a pin spacing right of the head pin, coming in at 8–11°) strikes.
+  - **Frames** (`afterBall`, `scoreOf`): a strike or a second ball ends frames 1–9, the standing pins kept where they stand for
+    the second; the tenth has a third ball after a strike or a spare, the pins set again whenever all are down. Scored as the game
+    is (300, all 9-and-a-spare 190, all fours 80).
+  - **Your shot**: where you stand (the row's Stand ◀ ▶, A D), where you aim (a tap or a drag on the lane, ← → nudge it), the
+    speed (Speed − +, ↑ ↓, shown in km/h) and the hook (Hook − +, Q E, named straight to a big hook). Enter, the row's Bowl or a
+    tap on the ball at the foul line bowls. Your last shot stays for the next ball. The way is dotted before it goes (`previewOf`,
+    through the pins as they stand): all of it at level 1, `PREVIEW` of it farther out.
+  - **Every board its own lane** (`laneOf` by the board's number at a level 1–5 by ring plus the Difficulty, `LV`): the oil ending
+    sooner and the back end hooking harder farther out (`hk` 1.4–1.7 at level 1 to 2.7–3.2 at 5), so a ball off its line goes
+    farther wrong, and the pins carrying less (`carry` 1.25 down to 0.85). The ball's colour is the board's.
+  - **Par** is the steady player's game on the lane (`STEADY`: aim off 0.012, speed 6%, hook 20%; `pick`: the pocket with a gentle
+    hook, less on a hookier lane, then for the pins left a line at each and at their middle, the most taken), worked out a ball at
+    a time in the boards' share of time (`recOf`, `recWork`, `BOARD_KIT.budget(6, 40)`), its game what a board no one plays shows.
+    Measured over 6 games a level: 203, 192, 190, 173 and 145 at levels 1–5; about 25 ms a game. Stars: par or better ★★★, within a
+    fifth ★★, else ★; the best score kept a board (`bowling.best`); a tap on a finished lane goes on to the board beside.
+  - Drawn: the lane a picture (`paint`: 39 boards, maple ends and pine between, the oil's sheen, the arrows and dots, the foul line,
+    gutters, kickbacks, the pit); pins turned on a lathe with red stripes at the neck (`bwPin`, `bwPinDown` lying along its way),
+    the ball, your aim, the dots, the score in dot digits at the foul line.
+  - The smoke test (part 5) checks the levels by ring, the scoring (300, 190, 80, the tenth's bonus balls), a hook across the head
+    pin's line, a gutter ball taking nothing, the steady player's perfect pocket balls striking and its games better at level 1
+    than at 5, and real input (a click starting, a real click aiming, the real Enter bowling) and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
