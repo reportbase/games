@@ -18391,8 +18391,26 @@ const BOARD_KIT = (() => {
     const a = loopT(ph, n / hz + rest, s) * hz, i = Math.min(n - 1, Math.floor(a));
     return { i, j: Math.min(n - 1, i + 1), f: Math.min(1, a - i) };
   }
+  /* A board painted as a picture (Oct 28: "do the painted board helper next"): the field's photo tier asks a game for a board's
+     key (`cellPhoto`), then for the picture by that key alone (`photoCanvas`), so a game keeps what to paint for each key it has
+     given. Six games (pinball, the flash cards, the tanks, Pong, air hockey, squash) wrote that out each: a key of what the
+     picture shows and its size (':h' fine, ':l' coarse), what to paint kept against it, the oldest let go past a cap. `painted(cap,
+     paint)` has it once: `key(base, hi, make)` gives the key and keeps `make()` for it the first time it is given, `canvas(key)`
+     paints what was kept (`paint(spec, hi)`), `SPECS` is the store, for the tests. */
+  function painted(cap, paint){
+    const SPECS = new Map();
+    return {
+      SPECS,
+      key(base, hi, make){
+        const k = base + (hi ? ':h' : ':l');
+        if (!SPECS.has(k)){ SPECS.set(k, make()); if (SPECS.size > cap) SPECS.delete(SPECS.keys().next().value); }
+        return k;
+      },
+      canvas(k){ const P = SPECS.get(k); return P ? paint(P, k.endsWith(':h')) : null; },
+    };
+  }
   return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say,
-           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt };
+           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted };
 })();
 /* ═══ DOT_FONT — the page's two dot fonts, once (Oct 27: "do the dot font next", after the board kit). A 5 × 7 (each glyph seven
    rows of five bits, the top bit the left dot: the capitals, the digits, a few signs and ♥ ★), which pinball's dot-matrix panel
@@ -48880,7 +48898,8 @@ const PINBALL_APP = (() => {
 
   /* ─── DRAWN ─── the playfield's picture (the photo tier, one a table), the rails and rubbers, posts, bumpers, targets, the
      flippers, the ball, the lamps. Laid out in the table's own units (x 0 to W across) and divided by W at the end. */
-  const RAIL = 0xc9ccd2, RUBBER = 0xf2f2ee, PHOTO_PX = 20, HI_PX = 300, SPECS = new Map(), DOT_PX = 160, REEL_PX = 120, REEL_R = 0.8;
+  const RAIL = 0xc9ccd2, RUBBER = 0xf2f2ee, PHOTO_PX = 20, HI_PX = 300, DOT_PX = 160, REEL_PX = 120, REEL_R = 0.8;
+  const PIC = BOARD_KIT.painted(600, (T, hi) => paint(T, hi ? 512 : 256));   // (a table's picture by its key: BOARD_KIT)
   const yawOf = a => (Math.abs(a) < 1e-6 ? 1e-6 : a);
   // each era's colours: the field, the rails, the bumpers' bodies and caps, the posts, the ramps
   function palette(T){
@@ -49061,9 +49080,7 @@ const PINBALL_APP = (() => {
   function photoKey(c, r, bp){
     const M = ED.on && ED.key === gkey(c, r) ? ED.M : (LIVE && LIVE.c === c && LIVE.r === r) ? tableFor(c, r) : knownTable(c, r);
     if (!M) return null;
-    const k = 'pb:' + M.key + ':' + (M.ready ? 'a' + M.T.a : 'b') + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(k)){ SPECS.set(k, M.T); if (SPECS.size > 600) SPECS.delete(SPECS.keys().next().value); }
-    return k;
+    return PIC.key('pb:' + M.key + ':' + (M.ready ? 'a' + M.T.a : 'b'), (bp || 0) >= HI_PX, () => M.T);
   }
   function gridOf(c, r){
     const M = ED.on && ED.key === gkey(c, r) ? ED.M : knownTable(c, r), T = M ? M.T : null, n = 8, colors = [];
@@ -49512,7 +49529,7 @@ const PINBALL_APP = (() => {
     itemMinPx: 14,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const T = SPECS.get(key); return T ? paint(T, key.endsWith('h') ? 512 : 256) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ return gridOf(c, r); },
     itemGeometries: {
       pbBar: box,
@@ -51140,7 +51157,7 @@ const FLASH_APP = (() => {
      the top, what it asks over the front; the back the question small and the answer large, a note under it, and on the
      framed card the four grade buttons along the near edge with their intervals. Text set as large as fits (`fitText`). */
   const SANS = '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif';
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(6000, (P, hi) => paint(P, hi ? 640 : 320)), SPECS = PIC.SPECS;   // (a card's picture by its key: BOARD_KIT)
   const BTN_V = 0.78;                                 // (the grade buttons: v from here to the near edge)
   function fitText(cx, text, maxW, maxH, big, small, weight){
     for (let px = big; px >= small; px = Math.floor(px * 0.9)){
@@ -51225,15 +51242,12 @@ const FLASH_APP = (() => {
     return { k, back, live };
   }
   function photoKey(c, r, bp){
-    if (!hasDeck()){ const key = 'fc:empty' + ((bp || 0) >= HI_PX ? ':H' : ':L'); if (!SPECS.has(key)) SPECS.set(key, { empty: true, hi: key.endsWith('H') }); return key; }
-    const V = viewOf(c, r), D = deck(), card = D.cards[V.k], state = stateOf(V.k), hi = (bp || 0) >= HI_PX;
+    const hi = (bp || 0) >= HI_PX;
+    if (!hasDeck()) return PIC.key('fc:empty', hi, () => ({ empty: true, hi }));
+    const V = viewOf(c, r), D = deck(), card = D.cards[V.k], state = stateOf(V.k);
     const grades = V.live && V.back ? intervals(V.k) : null;
-    const key = 'fc:' + D.key + ':' + V.k + ':' + (V.back ? 'b' : 'f') + ':' + state + (grades ? ':' + grades.join(',') : '') + (V.live && !V.back ? ':h' : '') + (hi ? ':H' : ':L');
-    if (!SPECS.has(key)){
-      SPECS.set(key, { deck: D.name, ask: D.ask, k: V.k, n: D.cards.length, front: card[0], backText: card[1], note: card[2] || '', back: V.back, state, grades, hint: V.live && !V.back, hi });
-      if (SPECS.size > 6000) SPECS.delete(SPECS.keys().next().value);
-    }
-    return key;
+    return PIC.key('fc:' + D.key + ':' + V.k + ':' + (V.back ? 'b' : 'f') + ':' + state + (grades ? ':' + grades.join(',') : '') + (V.live && !V.back ? ':hint' : ''), hi,
+      () => ({ deck: D.name, ask: D.ask, k: V.k, n: D.cards.length, front: card[0], backText: card[1], note: card[2] || '', back: V.back, state, grades, hint: V.live && !V.back, hi }));
   }
   function turn(c, r){
     const k = gkey(c, r);
@@ -51306,7 +51320,7 @@ const FLASH_APP = (() => {
     photoMinPx: 6,
     faceMinPx: 2,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P, P.hi ? 640 : 320) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ return hasDeck() ? GRID1[stateOf(cardOf(c, r))] : GRID_EMPTY; },
     cellItems(){ return []; },
     cellTitle(c, r){
@@ -52125,7 +52139,7 @@ const TANKS_APP = (() => {
     c.globalAlpha = 1;
     return cv;
   }
-  const SPECS = new Map(), HIRES = new Map();
+  const PIC = BOARD_KIT.painted(1500, (P, hi) => paint(P.T, P.H, P.craters, hi ? 512 : 256)), SPECS = PIC.SPECS, HIRES = new Map();
   let GEN = 0;
   // the state a board's picture shows: the ground as the game in hand shows it, named by the turn whose ground it is
   function photoState(c, r){
@@ -52143,9 +52157,8 @@ const TANKS_APP = (() => {
     const k = gkey(c, r), at = GAMES.has(k) ? HI_PX : HI_DUEL; let hi = HIRES.get(k) || false;
     if (bp > at * 1.1) hi = true; else if (bp < at * 0.9) hi = false;
     if (hi) HIRES.set(k, true); else HIRES.delete(k);
-    const P = photoState(c, r), key = 'tk' + P.id + (hi ? ':h' : ':l');
-    if (!SPECS.has(key)){ SPECS.set(key, { T: P.T, H: P.H.slice(), craters: P.craters.slice(), S: hi ? 512 : 256 }); if (SPECS.size > 1500) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const P = photoState(c, r);
+    return PIC.key('tk' + P.id, hi, () => ({ T: P.T, H: P.H.slice(), craters: P.craters.slice() }));
   }
 
   /* ─── WHAT A BOARD DRAWS ─── over its picture: the clouds; each tank along the slope under it in its seat's colour, its gun
@@ -52411,7 +52424,7 @@ const TANKS_APP = (() => {
     // the sky and the ground are a picture a board (THE LOOK, above); a board under PHOTO_PX is its tiles
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp || 0); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.T, P.H, P.craters, P.S) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     itemGeometries: {
       ...tankGeos,
       tkBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
@@ -57089,7 +57102,7 @@ const PONG_APP = (() => {
   /* ─── DRAWN ─── the table a picture (its theme), and on it the glowing centre line, the score in dot digits, the paddles, the
      ball and its trail, the rings of hits and the power-up's token. Laid out in table units (x 0 to W, y 0 to 1) and divided by
      W at the end, as pinball's. */
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(300, (P, hi) => paint(P.th, P.idx, hi ? 512 : 256));   // (a table's picture by its key: BOARD_KIT)
   const css = c => '#' + (c >>> 0).toString(16).padStart(6, '0');
   const LOOK = {
     classic: { table: 0x000000, line: 0xf2f2f2, pad: [0xf2f2f2, 0xf2f2f2], ball: 0xffffff, digit: 0xf2f2f2, trail: 0x8a8a8a, ring: 0xffffff, glow: false, obst: 0xf2f2f2, mover: 0xbdbdbd, bump: 0xf2f2f2, rim: 0x777777 },
@@ -57183,9 +57196,8 @@ const PONG_APP = (() => {
     return cv;
   }
   function photoKey(c, r, bp){
-    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'pg:' + th + ':' + (/^(table|hockey|tennis|space)$/.test(th) ? idx % 64 : 0) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 64 }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const idx = boardIdx(c, r), th = themeOf(idx).id;
+    return PIC.key('pg:' + th + ':' + (/^(table|hockey|tennis|space)$/.test(th) ? idx % 64 : 0), (bp || 0) >= HI_PX, () => ({ th, idx: idx % 64 }));
   }
   const digits = DOT_FONT.digits3;          // (the 3 × 5 dot font for the score and the countdown: the page's own)
   // the view of a board, live or from its recording, as pieces
@@ -57433,7 +57445,7 @@ const PONG_APP = (() => {
     itemMinPx: 10,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.th, P.idx, key.endsWith('h') ? 512 : 256) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ const t = LOOK[themeOf(boardIdx(c, r)).id].table; return { n: 2, colors: [t, t, t, t] }; },
     itemGeometries: {
       pgPad: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
@@ -57827,7 +57839,7 @@ const AIRHOCKEY_APP = (() => {
 
   /* ─── DRAWN ─── the table a picture by theme; on it the mallets (a disc and its knob), the puck and its trail, rings where it is
      struck, the goal's flash, dot-digit scores; in table units, divided by W at the end */
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(300, (P, hi) => paint(P.th, P.idx, hi ? 512 : 256));   // (a table's picture by its key: BOARD_KIT)
   const LOOK = {
     classic: { table: 0xe6f1fc, pad: [0xd03030, 0x2050d0], puck: 0xf5a524, digit: [0xd03030, 0x2050d0], trail: 0x9ec7ef, ring: 0x2050d0, glow: false },
     neon:    { table: 0x07061a, pad: [0x22d3ee, 0xf472b6], puck: 0xfff7b0, digit: [0x22d3ee, 0xf472b6], trail: 0xfde68a, ring: 0x67e8f9, glow: true },
@@ -57880,9 +57892,8 @@ const AIRHOCKEY_APP = (() => {
     return cv;
   }
   function photoKey(c, r, bp){
-    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'ah:' + th + ':' + (th === 'stars' || th === 'wood' ? idx % 64 : 0) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 64 }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const idx = boardIdx(c, r), th = themeOf(idx).id;
+    return PIC.key('ah:' + th + ':' + (th === 'stars' || th === 'wood' ? idx % 64 : 0), (bp || 0) >= HI_PX, () => ({ th, idx: idx % 64 }));
   }
   const digits = DOT_FONT.digits3;          // (the 3 × 5 dot font for the score and the countdown: the page's own)
   const mixC = (a, b, f) => { const m = s => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
@@ -58018,7 +58029,7 @@ const AIRHOCKEY_APP = (() => {
     itemMinPx: 10,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.th, P.idx, key.endsWith('h') ? 512 : 256) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ const t = LOOK[themeOf(boardIdx(c, r)).id].table; return { n: 2, colors: [t, t, t, t] }; },
     itemGeometries: {
       ahDisc: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 24); g.translate(0, 0.5, 0); return g; },
@@ -58753,7 +58764,7 @@ const SQUASH_APP = (() => {
 
   /* ─── DRAWN ─── the floor a picture by theme and game; on it the front wall standing up with its marks, the side and back walls low,
      the players, the ball raised with its shadow; in court units, divided by W at the end */
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(300, (P, hi) => paint(P.th, P.idx, hi ? 512 : 256, P.game));   // (a court's picture by its key: BOARD_KIT)
   const LOOK = {
     classic: { floor: 0xd9b27c, line: '#c62828', wall: 0xf3f1ea, tin: 0xc62828, mark: 0xc62828, side: 0xe9e6dc, pl: [0xd23b3b, 0x2f62d6], ball: 0x151515, ring: 0xffd23a, digit: [0xd23b3b, 0x2f62d6], call: 0x202020, glow: false },
     show:    { floor: 0xc99a5b, line: '#d32f2f', wall: 0xeef4f8, tin: 0xd32f2f, mark: 0xd32f2f, side: 0x9fd6e8, pl: [0xe0533a, 0x203a8f], ball: 0x101010, ring: 0x6fe3ff, digit: [0xe0533a, 0x203a8f], call: 0x1a1a1a, glow: false },
@@ -58821,9 +58832,8 @@ const SQUASH_APP = (() => {
     return cv;
   }
   function photoKey(c, r, bp){
-    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'sq:' + SET.game + ':' + th + ':' + (idx % 32) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 32, game: SET.game }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const idx = boardIdx(c, r), th = themeOf(idx).id, game = SET.game;
+    return PIC.key('sq:' + game + ':' + th + ':' + (idx % 32), (bp || 0) >= HI_PX, () => ({ th, idx: idx % 32, game }));
   }
   // (the 3 × 5 dot font for the score, the calls and the drills' names: the page's own, DOT_FONT)
   const FONT = DOT_FONT.three, text = DOT_FONT.text3;
@@ -59063,7 +59073,7 @@ const SQUASH_APP = (() => {
     itemMinPx: 10,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.th, P.idx, key.endsWith('h') ? 512 : 256, P.game) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ const t = LOOK[themeOf(boardIdx(c, r)).id].floor; return { n: 2, colors: [t, t, t, t] }; },
     itemGeometries: {
       sqBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },

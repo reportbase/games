@@ -2447,6 +2447,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   the tilt maze, pinball and MATCH_KIT's recordings for Pong, air hockey and squash). Soma and 3D Tetris keep their own phase
   (0.6180339887, a different number: their boards would all move to another place in their loops). Checked: the same frames
   chosen over 200,000 random boards and moments (times within 2e-13 s), and every one of the twelve games' idle boards moving.
+  **A board painted as a picture** (Oct 28: "do the painted board helper next"): six games (pinball, the flash cards, the tanks,
+  Pong, air hockey, squash) kept, each in its own words, what the photo tier's key stands for, since the field asks for the
+  picture by the key alone. `BOARD_KIT.painted(cap, paint)` does it once: `key(base, hi, make)` is `base` + ':h' or ':l' and keeps
+  `make()` for it the first time (the oldest let go past `cap`), `canvas(key)` calls `paint(spec, hi)`, `SPECS` the store. Each game
+  says `const PIC = BOARD_KIT.painted(…)`, and `cellPhoto`/`photoCanvas` are `photoKey(c, r, bp)` and `PIC.canvas(key)`. The flash
+  cards' sizes are now ':h'/':l' too (':H'/':L' before; a front's hint is ':hint'). Checked: the same keys and the same pixels
+  in all six. Trick shots (one picture for every board) and the board games' and gallery's prints keep their own.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:

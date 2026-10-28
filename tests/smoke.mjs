@@ -4926,7 +4926,7 @@ try {
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'flashcards')));
     await page.waitForTimeout(1500);
     const empty = await page.evaluate(() => { const A = window.getFieldApp(); return { title: A.cellTitle(0, 0), key: A.cellPhoto(0, 0, 400) }; });
-    if (!/no deck yet/.test(empty.title) || empty.key !== 'fc:empty:H') bad.push('with no deck: ' + JSON.stringify(empty));
+    if (!/no deck yet/.test(empty.title) || empty.key !== 'fc:empty:h') bad.push('with no deck: ' + JSON.stringify(empty));
     const ddir = await mkdtemp(join(tmpdir(), 'decks-'));
     const csvF = join(ddir, 'my_words.csv'), ankiF = join(ddir, 'anki.txt'), jsonF = join(ddir, 'planets.json'), dataF = join(ddir, 'data.json');
     await writeFile(csvF, 'Question,Answer,Notes\n"Hello, world",Hola mundo,greeting\ncat,gato\n"say ""hi""",di hola\n');
