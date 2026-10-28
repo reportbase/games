@@ -2502,6 +2502,13 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   takes to long. stop doing them unless I ask."). It then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
+- **Six parts side by side** (Oct 28: "2", the faster smoke test: a CI run took 30 minutes, 26 of the smoke test and 3.5 of
+  the course test): `tests/smoke.mjs`'s checks are cut into `PARTS` (6) contiguous parts of three to five minutes, each in an
+  `if (part(k)) { … }` at the end of its blocks, and `SHARD=k/6` runs one (the page loaded afresh, each part setting its own
+  app; no part uses a name another declares, `cdp` being made at the start for all). With no `SHARD` every part runs, as
+  `npm test` does. CI (`smoke.yml`) runs the six parts and the course test as seven jobs at once, then a job named `smoke`
+  that passes only if all of them did, so a run takes about as long as its longest part. A new check goes at the end of the
+  part it sits beside or in the shortest one; one part alone runs locally as `SHARD=3/6 node tests/smoke.mjs`.
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
   `chess.js@1.4.0` somewhere and run `LIBS_DIR=that/node_modules npm test`; the
   test then serves both from there.

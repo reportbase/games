@@ -58,6 +58,17 @@ if (process.env.LIBS_DIR){
       r.fulfill({ contentType: 'text/javascript', body: await lib('unzipit/dist/unzipit.min.js') }));
 }
 
+/* PARTS (Oct 28: "2", the faster smoke test: a run took 30 minutes on one runner). The checks below are cut into PARTS
+   contiguous parts of three to five minutes each, at the ends of their blocks, and CI runs each in a job of its own, side by
+   side (SHARD=k/6, .github/workflows/smoke.yml). Each part loads the page afresh and sets its own app; nothing declared in one
+   part is used in another (checked with a parser when it was cut). With no SHARD every part runs, one after another, as
+   before. A new check goes at the end of the part it sits beside, or in the shortest part. */
+const PARTS = 6;
+const [SHARD_K, SHARD_N] = (process.env.SHARD || '').split('/').map(Number);
+if (SHARD_N && SHARD_N !== PARTS) throw new Error(`SHARD ${process.env.SHARD}: the test has ${PARTS} parts`);
+const part = k => !SHARD_K || k === SHARD_K;
+if (SHARD_K) console.log(`part ${SHARD_K} of ${PARTS}`);
+
 let current = 'page load';
 const failures = [];
 page.on('pageerror', e => failures.push(`[${current}] ${e.message}`));
@@ -105,7 +116,9 @@ try {
   });
   const ids = await page.evaluate(() => window.FIELD_APPS.map(a => a.id || a.name));
   console.log(`page loaded, ${ids.length} apps`);
+  const cdp = await page.context().newCDPSession(page);
 
+  if (part(1)) {
   for (const id of ids){
     current = id;
     const before = failures.length;
@@ -412,7 +425,9 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ a0, during })}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the clock ran ${(a1.at - a0.at).toFixed(0)} ms over the drag)`);
   }
+  }   // (end of part 1)
 
+  if (part(2)) {
   // CHESS: THE ROW IS A POSITION EDITOR (Oct 13: "lets use it in chess to create custom chess games instead of selecting a
   // board. similar to mini-golf"): the dots, clicked, open the editor on the framed board with its tiles; taps put pieces on
   // squares (a pawn on the last rank refused); without a king Done says why and stays; with kings Done puts the position on
@@ -936,7 +951,9 @@ try {
   }
 
   await page.evaluate(async h => { if (!h) return; const A = window.FIELD_APPS.find(a => a._debug && a._debug.fly); window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 1200)); A._debug.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); }, homeBefore);
+  }   // (end of part 2)
 
+  if (part(3)) {
   // A chess piece of several parts, as the 3d studio exports it, dropped in
   // through the same door as a dragged file. Two cylinders: a wide base and a
   // narrow column standing on it. The test checks the file reads as two
@@ -1172,7 +1189,7 @@ try {
   // the ground at the middle of the screen (where the camera looks stays put).
   current = 'two-finger twist';
   const before3 = failures.length;
-  const cdp = await page.context().newCDPSession(page);
+  // (cdp, the page's DevTools session, is made at the start: the double-tap check in part 6 uses it too)
   await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
   const look = () => page.evaluate(() => { const s = window.FIELD_ST;
     return { yaw: s.yaw, x: s.camX, z: s.camZ }; });
@@ -2967,6 +2984,8 @@ try {
     await page.evaluate(() => localStorage.removeItem('tiltmaze.mine'));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (a 7×7 maze made by taps, par ${te.par}, kept and shared)`);
   }
+  }   // (end of part 3)
+  if (part(4)) {
   // PINBALL (Oct 24: "how about pinball"): every board its own table at a level by its ring; the ball launched up the lane and
   // through the gate, never back down it; the ball never out of the cabinet in the steady player's games; a flipper's swing
   // throwing the ball, a bumper's kick, a drop bank down with the multiplier up, a lane lit and moved along by a flipper, the
@@ -5039,6 +5058,8 @@ try {
     if (bad.length) failures.push('[flashcards] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} flashcards: no deck till one is loaded, four decks through the real picker (the repo's TSV, a CSV, an Anki export, a JSON deck) and a plain JSON to the viewer, a card a board, the steps and the schedule (intervals ${r.recs.map(x => x[2]).join(', ')} days, ease ${r.recs.map(x => x[3]).join(', ')}), a real click turning a card and a real click on Good flying to the next, Space and 3, a board no one studies turning over`);
   }
+  }   // (end of part 4)
+  if (part(5)) {
   // TANKS (Oct 20: "what tank games could we build", then "1", the artillery duel; Oct 21: weapons, more tanks, two players on
   // one device, driving): every board its own ground at a level by its ring; the computer's steady aim hits; a burst digs and
   // hurts; every weapon does its own thing; duels of two, three and four tanks end; real taps and drags aim and a tap on the tank fires, the computer
@@ -6050,6 +6071,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[game lab levels] ' + bad.join('; '));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: level 5 measured against level 1 (the starters climb, a flat game goes back to Claude and is kept with a note after the last try), and My games lists the boards changed with a real Play going there`);
   }
+  }   // (end of part 5)
+  if (part(6)) {
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
   // display should toggle the visiblibility of the bottom panel."): in trick shots, whose play row stays up while a table is played,
   // a real click on the dots shuts it and it stays shut; a real long press on the table opens it and another shuts it; and in
@@ -6613,6 +6636,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[dots, full screen, tab] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} the dots 6px with a shadow, Full screen on the menu, Tab and Enter step from the board in view (${steps.join('; ')})`);
   }
+  }   // (end of part 6)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
