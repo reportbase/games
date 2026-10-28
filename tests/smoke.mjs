@@ -6715,7 +6715,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down();
     // (a press that did not take, on a slow runner, is pressed again while the stone still runs)
     for (let w = 0; w < 40 && !((await gs()).G.sweep > 0); w++){ await page.waitForTimeout(150);
-      if (w % 12 === 11 && (await gs()).G.state === 'throw'){ await page.mouse.up(); await page.waitForTimeout(100); await page.mouse.down(); } }
+      if (w % 6 === 5 && (await gs()).G.state === 'throw'){ await page.mouse.up(); await page.waitForTimeout(100); p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down(); } }
     live.swept = await gs(); await page.mouse.up();
     for (let w = 0; w < 120 && (await gs()).G.thrown < 2; w++) await page.waitForTimeout(250);
     live.answered = await gs();
@@ -6770,7 +6770,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
       const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 40 && !M.done; k++) D.recWork(M);
       const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
-      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return { done: M.done, par: M.par, looks: seen.size }; });
+      const seen = new Set(); for (let k = 0; k < 48 && seen.size < 3; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 250)); } return { done: M.done, par: M.par, looks: seen.size }; });   // (a whole game's loop: 6 s could fall in its still parts)
     if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.tx - 0.42 * 0.36) > 0.02
         || !(live.bowled && live.bowled.G.rolls >= 1) || !live.shown.done || !(live.shown.par > 0) || live.shown.looks < 3)
       failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
@@ -6833,9 +6833,13 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       return { off: !D.ed().on, stored: st ? st.xy.length : 0, title: window.getFieldApp().cellTitle(f.c, f.r) }; });
     live.shared = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, d = D.MINE.get(f.c + '_' + f.r); D.takeLeave(f.c + 3, f.r, { xy: d.xy }); const J = D.jobFor(f.c + 3, f.r); D.leaveNow(J);
       return { mine: !!J.mine, n: J.res.xy.length, made: !!(J.res.s && D.clearsAll(D.leavePins(J.res.xy), J.res.s, J.lane)) }; });
-    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 1, r = f.r; D.leaveNow(D.jobFor(c, r));
+    // (a board with no game on it and a shot found: on CI the board beside had stood still, a game or no shot there)
+    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, r = f.r + 2; let c = f.c + 5;
+      for (let k = 0; k < 12; k++, c++){ if (D.GAMES.has(c + '_' + r)) continue; const J = D.leaveNow(D.jobFor(c, r)); if (J.rec) break; }
       const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
-      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return seen.size; });
+      // (a whole loop sampled: up to 7 s of the ball and pins, a second standing, a second and a half held and the rest, so 6 s
+      //  could fall in the still parts alone, as it did on CI)
+      const seen = new Set(); for (let k = 0; k < 48 && seen.size < 3; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 250)); } return seen.size; });
     if (!live.started || live.started.state !== 'play' || !live.started.G.spare || !live.tried || !(live.tried.G.tries >= 1 || live.tried.state === 'over') || !live.made || live.made.state !== 'over'
         || !live.opened || live.laid !== 2 || !(live.check >= 1) || !live.kept.off || live.kept.stored !== 2 || !/your leave/.test(live.kept.title)
         || !live.shared.mine || live.shared.n !== 2 || !live.shared.made || live.shown < 3)

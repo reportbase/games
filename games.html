@@ -59570,7 +59570,7 @@ const CURLING_APP = (() => {
     say((G.winner === 0 ? 'You win ' : G.winner === 1 ? 'The computer wins ' : 'A draw, ') + G.score[0] + '–' + G.score[1] + (s ? ' ' + BOARD_KIT.stars(s) : '') + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
     try { bbRefreshNow(); } catch {}
   }
-  const myTurn = g => !!(g && g.state === 'play' && g.G.state === 'aim' && !g.G.ai[toThrow(g.G)]);
+  const myTurn = g => !!(g && g.state === 'play' && g.G && g.G.state === 'aim' && !g.G.ai[toThrow(g.G)]);
   function setBroom(g, x, y){ const G = g.G; G.shot = { ...G.shot, bx: clamp(x, 0.005, W - 0.005), by: clamp(y, 0.02, REL - 0.08) }; }
   function setWeight(g, w){ g.G.shot = { ...g.G.shot, w: clamp(w, W_MIN, W_MAX) }; }
   function weightName(w){
@@ -59734,7 +59734,7 @@ const CURLING_APP = (() => {
   /* ─── THE ROW ─── Throw (or New game), Curl, Weight − / its name / +, then the settings */
   const ON = '#2f4a3a';
   function tilesOf(c, r){
-    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), playing = g && g.state === 'play', G = playing ? g.G : null;
+    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), playing = !!(g && g.state === 'play' && g.G), G = playing ? g.G : null;
     const shot = G ? G.shot : { w: REL - TEE, curl: 1 };
     return [
       { glyph: playing ? '🥌' : '▶', value: playing ? (myTurn(g) ? 'Throw' : G.state === 'throw' && !G.ai[G.cur.team] ? 'Sweep!' : 'Wait') : 'New game', label: playing ? 'end ' + G.end + ' · ' + G.score[0] + '–' + G.score[1] : 'level ' + levelAt(idx) },
