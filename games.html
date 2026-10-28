@@ -18379,8 +18379,20 @@ const BOARD_KIT = (() => {
   const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
   const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];
   const stars = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  /* A board no one plays, played back (Oct 27: "do the idle-board playback"): every game shows such a board a recording or a
+     made-up turn of its own, round and round, each board at a phase of its own so that neighbours never move together (`phase`:
+     its number times 0.618, the golden ratio's part, so phases spread evenly whatever the numbers). `loopT(ph, T, s)` is where
+     in a loop of T seconds that board is at s seconds of the page's clock (now, if not given); `frameAt(n, hz, rest, ph, s)` the
+     two frames of a recording of n frames at hz a second, played with `rest` seconds held at its end, and how far between them
+     (`{ i, j, f }`). Eleven games worked these out each. */
+  const phase = idx => (idx * 0.618) % 1;
+  const loopT = (ph, T, s) => (((s == null ? now() / 1000 : s) + ph * T) % T + T) % T;
+  function frameAt(n, hz, rest, ph, s){
+    const a = loopT(ph, n / hz + rest, s) * hz, i = Math.min(n - 1, Math.floor(a));
+    return { i, j: Math.min(n - 1, i + 1), f: Math.min(1, a - i) };
+  }
   return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say,
-           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars };
+           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt };
 })();
 /* ═══ DOT_FONT — the page's two dot fonts, once (Oct 27: "do the dot font next", after the board kit). A 5 × 7 (each glyph seven
    rows of five bits, the top bit the left dot: the capitals, the digits, a few signs and ♥ ★), which pinball's dot-matrix panel
@@ -47404,7 +47416,7 @@ const TILT_APP = (() => {
     if (M){ MAZES.delete(key); MAZES.set(key, M); return M; }
     let L = null, run = null;
     for (let a = 0; a <= 8; a++){ L = makeMaze(idx, lv, a); run = playRun(L); if (run.ok) break; }
-    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: (idx * 0.618) % 1 };
+    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: BOARD_KIT.phase(idx) };
     MAZES.set(key, M); if (MAZES.size > CAP) MAZES.delete(MAZES.keys().next().value);
     return M;
   }
@@ -47476,7 +47488,7 @@ const TILT_APP = (() => {
   function shownBall(M){
     const R = M.run && M.run.rec; const L = M.L;
     if (!R) return centre(L, L.start);
-    const n = R.length / 2, T = n / REC_HZ + 1.5, t = ((now() / 1000 + M.phase * T) % T) * REC_HZ, i = Math.min(n - 1, Math.floor(t)), f = Math.min(1, t - i), j = Math.min(n - 1, i + 1);
+    const n = R.length / 2, { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 1.5, M.phase);
     return [R[2 * i] + (R[2 * j] - R[2 * i]) * f, R[2 * i + 1] + (R[2 * j + 1] - R[2 * i + 1]) * f];
   }
   function itemsOf(M, ball, g){
@@ -47535,7 +47547,7 @@ const TILT_APP = (() => {
     const k = gkey(c, r), d = MINE.get(k); if (!d) return null;
     let M = MINE_M.get(k); if (M) return M;
     const L = mazeOfData(d, boardIdx(c, r)), run = playRun(L);
-    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: (L.idx * 0.618) % 1, mine: true };
+    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: BOARD_KIT.phase(L.idx), mine: true };
     MINE_M.set(k, M); return M;
   }
   const { MINE, save: saveMine } = EDIT_KIT.store('tiltmaze.mine', MINE_KEEP, cleanMaze);
@@ -48646,7 +48658,7 @@ const PINBALL_APP = (() => {
     const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
     let M = TABLES.get(key);
     if (M){ TABLES.delete(key); TABLES.set(key, M); return M; }
-    M = { T: makeTable(idx, lv, 0, true), key, idx, lv, par: null, reel: null, ready: false, phase: (idx * 0.618) % 1 };
+    M = { T: makeTable(idx, lv, 0, true), key, idx, lv, par: null, reel: null, ready: false, phase: BOARD_KIT.phase(idx) };
     M.job = fitGen(idx, lv);
     TABLES.set(key, M); if (TABLES.size > CAP) TABLES.delete(TABLES.keys().next().value);
     return M;
@@ -49073,7 +49085,7 @@ const PINBALL_APP = (() => {
     const Rc = M.reel, n = Rc ? Rc.length / REC_F : 0;
     if (!n) return { M, b: null, xb: [], phi: T.fl.map(f => f.rest), drop: () => 0, lane: () => 0, flash: () => 0, sling: () => 0, stand: () => 0, mult: 1, pull: 0, kb: s => T.D.kb[s],
                      locked: 0, rolls: 0, spinA: 0, capY: T.captive ? T.captive.rest : 0, mbFlash: () => 0, msg: 0, score: 0, t: now() / 1000, holder: M };
-    const TT = n / REC_HZ + 2, at = ((now() / 1000 + M.phase * TT) % TT) * REC_HZ, i = Math.min(n - 1, Math.floor(at)), j = Math.min(n - 1, i + 1), f = Math.min(1, at - i), o = i * REC_F, p = j * REC_F;
+    const { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 2, M.phase), o = i * REC_F, p = j * REC_F;
     const mix = q => Rc[o + q] + (Rc[p + q] - Rc[o + q]) * f, m = Rc[o + 6], m2 = Rc[o + 16];
     // (no ball in either frame: the one that has it, or none; a ball and none apart is a drain or a new ball)
     const ballAt = q => Rc[o + q] < 0 ? null : Rc[p + q] < 0 || Math.hypot(Rc[p + q] - Rc[o + q], Rc[p + q + 1] - Rc[o + q + 1]) > 0.2 ? { x: Rc[o + q], y: Rc[o + q + 1], z: Rc[o + q + (q ? 2 : 8)] }
@@ -49340,7 +49352,7 @@ const PINBALL_APP = (() => {
     const k = gkey(c, r), P = MINE.get(k); if (!P) return null;
     let M = MINE_M.get(k); if (M) return M;
     const idx = boardIdx(c, r), h = hashOf(JSON.stringify(P));
-    M = { T: makeTable(idx, P.lv, 0, false, P), key: 'm' + h, hash: h, idx, lv: P.lv, par: null, reel: null, ready: false, phase: (idx * 0.618) % 1, mine: true };
+    M = { T: makeTable(idx, P.lv, 0, false, P), key: 'm' + h, hash: h, idx, lv: P.lv, par: null, reel: null, ready: false, phase: BOARD_KIT.phase(idx), mine: true };
     const T = M.T;
     M.job = (function* (){ const r = yield* simGen(T, (idx * 7919) ^ 0x6d1, { balls: FIT_BALLS, cap: BALL_CAP, rec: true }); return { T, reel: r.reel, recKind: r.recKind, life: lifeOf(r), tries: 1 }; })();
     MINE_M.set(k, M); return M;
@@ -49611,7 +49623,7 @@ const SIMON_APP = (() => {
     let S = SEQS.get(key);
     if (S){ SEQS.delete(key); SEQS.set(key, S); return S; }
     const R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ 0x51a0), D = LV[lv - 1], list = [];
-    S = { idx, lv, D, phase: (idx * 0.618) % 1,
+    S = { idx, lv, D, phase: BOARD_KIT.phase(idx),
           at(k){ while (list.length <= k){ let p; do p = Math.floor(R() * D.pads); while (list.length >= 2 && p === list[list.length - 1] && p === list[list.length - 2]); list.push(p); } return list[k]; } };
     SEQS.set(key, S); if (SEQS.size > CAP) SEQS.delete(SEQS.keys().next().value);
     return S;
@@ -49684,7 +49696,7 @@ const SIMON_APP = (() => {
   function shownLit(S){
     const D = S.D, rounds = 8, step = D.on + D.gap, pause = 1.2;
     let T = 0; for (let n = 1; n <= rounds; n++) T += n * step + pause;
-    let t = (now() / 1000 + S.phase * T) % T;
+    let t = BOARD_KIT.loopT(S.phase, T);
     for (let n = 1; n <= rounds; n++){
       const len = n * step;
       if (t < len){ const k = Math.floor(t / step); return (t - k * step) < D.on ? S.at(k) : -1; }
@@ -49923,7 +49935,7 @@ const LIGHTS_APP = (() => {
     // (the demo presses the way out in an order of its own, so it does not sweep the board top to bottom like a scanner)
     const order = pick.sol.slice();
     for (let j = order.length - 1; j > 0; j--){ const s = Math.floor(R() * (j + 1)); [order[j], order[s]] = [order[s], order[j]]; }
-    return { idx, lv, D, n, start: pick.L, par: pick.sol.length, sol: pick.sol, order, tries, phase: (idx * 0.618) % 1 };
+    return { idx, lv, D, n, start: pick.L, par: pick.sol.length, sol: pick.sol, order, tries, phase: BOARD_KIT.phase(idx) };
   }
 
   /* ─── PLAYING ─── a game: its lights, the presses so far, the last press (flashed briefly), a hint, and whether it is out. */
@@ -49965,7 +49977,7 @@ const LIGHTS_APP = (() => {
   // a board no one is playing: its own way out pressed a square at a time, held dark a moment, then lit again
   function shownOf(S){
     const k = S.order.length, T = HOLD0 + k * STEP + HOLD1;
-    const t = ((now() / 1000 + S.phase * T) % T + T) % T;
+    const t = BOARD_KIT.loopT(S.phase, T);
     const m = t < HOLD0 ? 0 : Math.min(k, Math.floor((t - HOLD0) / STEP) + 1);
     const L = S.start.slice();
     for (let j = 0; j < m; j++) pressOn(L, S.n, S.order[j]);
@@ -50156,7 +50168,7 @@ const MOLE_APP = (() => {
     let G = ROUNDS.get(key);
     if (G){ ROUNDS.delete(key); ROUNDS.set(key, G); return G; }
     const D = LV[lv - 1], pops = makeRound(idx, lv), S = steady(pops, D.n);
-    G = { idx, lv, D, pops, par: Math.max(1, S.score), hits: S.hits, phase: (idx * 0.618) % 1,
+    G = { idx, lv, D, pops, par: Math.max(1, S.score), hits: S.hits, phase: BOARD_KIT.phase(idx),
           moles: pops.filter(p => p.type !== 'bomb').length };
     ROUNDS.set(key, G); if (ROUNDS.size > CAP) ROUNDS.delete(ROUNDS.keys().next().value);
     return G;
@@ -50256,7 +50268,7 @@ const MOLE_APP = (() => {
     return out;
   }
   // a board no one is playing: its own round and the steady player's bonks, round after round, each board at its own phase
-  function shownT(G){ const C = ROUND_T + 2.5; return ((now() / 1000 + G.phase * C) % C + C) % C; }
+  const shownT = G => BOARD_KIT.loopT(G.phase, ROUND_T + 2.5);
 
   /* ─── SHAPES ─── one kind each, coloured per vertex (the item's colour multiplies them: brown, gold or the bonk's white) */
   function merged(T, parts){
@@ -50574,7 +50586,7 @@ const NONOGRAM_APP = (() => {
   const PUZZLES = new Map(), CAP = 1500;
   function dress(P){
     P.K = Math.max(2, ...P.rows.map(x => x.length), ...P.cols.map(x => x.length)); P.M = P.n + P.K;
-    P.phase = (P.idx * 0.618) % 1; paletteOf(P); return P;
+    P.phase = BOARD_KIT.phase(P.idx); paletteOf(P); return P;
   }
   function puzzleFor(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
@@ -50653,7 +50665,7 @@ const NONOGRAM_APP = (() => {
   const cycleOf = P => P.n * ROW_S + HOLD_S + BLANK_S;
   // (`at`, seconds on the page's clock, for the tests: a sample of a few seconds can fall wholly in the picture's rest)
   function shownView(P, at){
-    const n = P.n, fill = n * ROW_S, T = cycleOf(P), t = ((at == null ? now() / 1000 : at) + P.phase * T) % T;
+    const n = P.n, fill = n * ROW_S, T = cycleOf(P), t = BOARD_KIT.loopT(P.phase, T, at);
     const k = t < fill ? Math.floor(t / ROW_S * n) : t < fill + HOLD_S ? -1 : 0, stamp = 'd' + k;
     if (P._dv && P._dv.stamp === stamp) return P._dv;
     const cells = k < 0 ? Uint8Array.from(P.sol) : Uint8Array.from(P.sol, (v, i) => v && i < k ? 1 : 0);
@@ -51547,7 +51559,7 @@ const TANKS_APP = (() => {
     }
     for (const x of xs) flatten(H, x, 0.035);
     const minds = xs.map(() => R() < 0.5 ? 'nearest' : 'weakest');
-    return { idx, lv, n, H0: H, xs, hill: hills.length > 0, minds, seed: (idx * 40503 + lv * 7919 + n * 131 + 17) >>> 0, phase: (idx * 0.618) % 1, pal: Math.floor(R() * PALETTES.length) };
+    return { idx, lv, n, H0: H, xs, hill: hills.length > 0, minds, seed: (idx * 40503 + lv * 7919 + n * 131 + 17) >>> 0, phase: BOARD_KIT.phase(idx), pal: Math.floor(R() * PALETTES.length) };
   }
   function terrainAt(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), n = SET.n, key = (idx * 8 + lv) * 8 + n;
@@ -52972,7 +52984,7 @@ const TANKMAZE_APP = (() => {
     let E = RECS.get(key);
     if (!E){
       const L = makeMaze(idx, lv, 0, SET.n), seats = Array(SET.n).fill('cpu');
-      E = { L, n: SET.n, G: roundNew(L, seats, idx * 31 + lv, SET.powers), F: [], phase: (idx * 0.618) % 1, done: false };
+      E = { L, n: SET.n, G: roundNew(L, seats, idx * 31 + lv, SET.powers), F: [], phase: BOARD_KIT.phase(idx), done: false };
       RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     } else { RECS.delete(key); RECS.set(key, E); }
     if (E.done) return E;
@@ -52996,7 +53008,7 @@ const TANKMAZE_APP = (() => {
   function shownOf(E){
     const L = E.L, N = E.n || 2, none = { shots: [], booms: [], crates: [], mines: [], lasers: [], missiles: [] };
     if (!E.done) return { L, tanks: L.spawn.slice(0, N).map(p => ({ x: p.x, y: p.y, h: p.h, alive: true })), ...none, t: 0, seats: Array(N).fill('cpu'), cols: recCols(N) };
-    const loop = E.T + 1.5, t = Math.min(E.T, ((now() / 1000 + E.phase * loop) % loop)), n = E.F.length / (3 * N);
+    const t = Math.min(E.T, BOARD_KIT.loopT(E.phase, E.T + 1.5)), n = E.F.length / (3 * N);
     const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
     const tanks = Array.from({ length: N }, (_, k) => { const a = 3 * N * i + 3 * k, b = 3 * N * j + 3 * k;
       return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
@@ -53769,7 +53781,7 @@ const GOLFTANK_APP = (() => {
     if (!E){
       if (hk == null) return null;
       const G = roundNew(K, hk, ['cpu', 'cpu'], idx * 31 + lv, lv); G.keep = true;
-      E = { hk, H: K.HOLES[hk], G, F: [], phase: (idx * 0.618) % 1, done: false };
+      E = { hk, H: K.HOLES[hk], G, F: [], phase: BOARD_KIT.phase(idx), done: false };
       RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     } else { RECS.delete(key); RECS.set(key, E); }
     if (E.done) return E;
@@ -53803,7 +53815,7 @@ const GOLFTANK_APP = (() => {
   function shownOf(E){
     const K = kit(), N = 2;
     if (!E.done){ const P = spawnsOf(K, E.H); return { hk: E.hk, H: E.H, t: 0, tanks: P.map((p, k) => ({ x: p.x, y: p.y, h: Math.atan2(P[1 - k].y - p.y, P[1 - k].x - p.x), alive: true })), shots: [], beams: [], booms: [], blown: {}, seats: ['cpu', 'cpu'], cols: [SEAT.cpu, SEAT.p2] }; }
-    const loop = E.T + 1.5, t = Math.min(E.T, ((now() / 1000 + E.phase * loop) % loop)), n = E.F.length / (3 * N);
+    const t = Math.min(E.T, BOARD_KIT.loopT(E.phase, E.T + 1.5)), n = E.F.length / (3 * N);
     const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
     const tanks = Array.from({ length: N }, (_, k) => { const a = 3 * N * i + 3 * k, b = 3 * N * j + 3 * k;
       return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
@@ -56377,7 +56389,7 @@ const MATCH_KIT = {
       const k = o.key(idx, lv);
       let M = RECS.get(k);
       if (M){ RECS.delete(k); RECS.set(k, M); return M; }
-      M = { idx, lv, G: null, frames: [], done: false, par: null, phase: (idx * 0.618) % 1, flag: 0, step: 0 };
+      M = { idx, lv, G: null, frames: [], done: false, par: null, phase: BOARD_KIT.phase(idx), flag: 0, step: 0 };
       M.G = o.make(idx, lv, M);
       RECS.set(k, M); if (RECS.size > o.cap) RECS.delete(RECS.keys().next().value);
       return M;
@@ -56417,7 +56429,7 @@ const MATCH_KIT = {
     function at(M, now){
       const F = M.frames, n = F.length / o.F;
       if (!n) return null;
-      const TT = n / o.hz + 2, a = ((now / 1000 + M.phase * TT) % TT) * o.hz, i = Math.min(n - 1, Math.floor(a)), j = Math.min(n - 1, i + 1), f = Math.min(1, a - i);
+      const { i, j, f } = BOARD_KIT.frameAt(n, o.hz, 2, M.phase, now / 1000);
       const p = i * o.F, q = j * o.F;
       return { F, i, j, f, p, q, mix: c => F[p + c] + (F[q + c] - F[p + c]) * f };
     }

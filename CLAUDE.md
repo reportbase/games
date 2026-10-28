@@ -2440,6 +2440,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   keys as before), `LV_COL` (the levels' flag colours; 5) and `stars(n)` (★★☆; 15 places). Trick shots' worker is made from its
   own text up to "IN THE FIELD", so nothing of the kit may go above that line; the game lab's starters and sandbox keep their
   own. Checked: every app loads with the same levels, every hash the same, a tap starts the same game.
+  **Boards no one plays, played back** (Oct 27: "do the idle-board playback"): `BOARD_KIT.phase(idx)` (a board's own place in its
+  loop, its number × 0.618, so neighbours never move together; 12 games), `loopT(ph, T, s)` (where in a loop of T seconds the
+  board is at s seconds, the page's clock if not given; Simon, Lights Out, Whack-a-mole, Nonograms, the tank maze, golf tanks)
+  and `frameAt(n, hz, rest, ph, s)` (the two frames of a recording to blend and how far between, with `rest` s held at its end;
+  the tilt maze, pinball and MATCH_KIT's recordings for Pong, air hockey and squash). Soma and 3D Tetris keep their own phase
+  (0.6180339887, a different number: their boards would all move to another place in their loops). Checked: the same frames
+  chosen over 200,000 random boards and moments (times within 2e-13 s), and every one of the twelve games' idle boards moving.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:
