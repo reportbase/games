@@ -2423,6 +2423,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   serve Pong, air hockey and squash). `BOARD_KIT.budget(ms, every)` keeps it once: `left()`, `spend(t0)`, `take(fn)`. Each
   game's own queue and order stay its own (mini golf's idle-time `SOON`, Soma's `soonPump`, trick shots' workers, the game
   lab's sandbox), being different in kind. Checked: the same boards' caches fill as fast before and after.
+  **One dot font** (Oct 27: "do the dot font next"): `DOT_FONT` (after `BOARD_KIT`) holds the page's two dot fonts, which five
+  games wrote out each: `five`, a 5 × 7 (55 glyphs as seven rows of five bits: capitals, digits, signs, ♥ ★; the game lab's words
+  and pinball's dot-matrix panel, which keeps only the 37 it always drew, `pick`), and `three`, a 3 × 5 (digits and the letters
+  squash's calls need) with `text3` and `digits3` (Pong's, air hockey's and squash's scores, squash's calls). Checked: every glyph
+  and every dot laid the same as the copies before. A new game's lettering uses it.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:

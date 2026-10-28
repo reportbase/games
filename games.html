@@ -18361,6 +18361,40 @@ const BOARD_KIT = (() => {
   }
   return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget };
 })();
+/* ═══ DOT_FONT — the page's two dot fonts, once (Oct 27: "do the dot font next", after the board kit). A 5 × 7 (each glyph seven
+   rows of five bits, the top bit the left dot: the capitals, the digits, a few signs and ♥ ★), which pinball's dot-matrix panel
+   and the game lab's words were each written out in (pinball's in hex, the same glyphs); and a 3 × 5 (each glyph fifteen 0s and
+   1s, row by row: the digits and the letters squash's calls and drills need), which Pong's and air hockey's scores and squash's
+   score and calls were each written out in. `text3(out, s, x, y, cell, color, kind)` lays a line of the small one as pieces of
+   `kind`, a cell apart, centred on (x, y); `digits3` the same for a whole number. A glyph a font lacks is a gap. */
+const DOT_FONT = (() => {
+  const five = {
+    '0': [14,17,19,21,25,17,14], '1': [4,12,4,4,4,4,14], '2': [14,17,1,2,4,8,31], '3': [31,2,4,2,1,17,14], '4': [2,6,10,18,31,2,2],
+    '5': [31,16,30,1,1,17,14], '6': [6,8,16,30,17,17,14], '7': [31,1,2,4,8,8,8], '8': [14,17,17,14,17,17,14], '9': [14,17,17,15,1,2,12],
+    A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28], E: [31,16,16,30,16,16,31],
+    F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17], I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12],
+    K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31], M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14],
+    P: [30,17,17,30,16,16,16], Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
+    U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17], Y: [17,17,17,10,4,4,4],
+    Z: [31,1,2,4,8,16,31], '.': [0,0,0,0,0,12,12], ',': [0,0,0,0,12,4,8], ':': [0,12,12,0,12,12,0], '-': [0,0,0,31,0,0,0],
+    '+': [0,4,4,31,4,4,0], '!': [4,4,4,4,4,0,4], '?': [14,17,1,2,4,0,4], '/': [1,1,2,4,8,16,16], '%': [24,25,2,4,8,19,3],
+    '#': [10,10,31,10,31,10,10], '=': [0,0,31,0,31,0,0], '(': [2,4,8,8,8,4,2], ')': [8,4,2,2,2,4,8], '<': [2,4,8,16,8,4,2],
+    '>': [8,4,2,1,2,4,8], '*': [0,4,21,14,21,4,0], "'": [4,4,8,0,0,0,0], '♥': [0,10,31,31,14,4,0], '★': [4,4,31,14,14,27,17],
+  };
+  const three = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111',
+                 7: '111001010010010', 8: '111101111101111', 9: '111101111001111', A: '010101111101101', D: '110101101101110', E: '111100110100111', F: '111100110100100',
+                 G: '011100101101011', H: '101101111101101', I: '111010010010111', K: '101110100110101', L: '100100100100111', N: '101111111101101', O: '111101101101111',
+                 P: '110101110100100', R: '110101110101101', S: '011100010001110', T: '111010010010010', U: '101101101101111', W: '101101111111101', Y: '101101010010010' };
+  function text3(out, s, x, y, cell, color, kind){
+    s = String(s); const wd = s.length * 4 * cell - cell;
+    for (let d = 0; d < s.length; d++){ const D = three[s[d]]; if (!D) continue; const x0 = x - wd / 2 + d * 4 * cell;
+      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
+  }
+  const digits3 = (out, n, x, y, cell, color, kind) => text3(out, String(Math.max(0, Math.floor(n))), x, y, cell, color, kind);
+  // (some of the big one: pinball's panel draws only what it always drew)
+  const pick = (F, chars) => Object.fromEntries([...chars].map(ch => [ch, F[ch]]));
+  return { five, three, text3, digits3, pick };
+})();
 /* ═══ ARCADE — the parts every arcade board shares (Sep 27: "the basics should be the same
    for all games"): sound made in the browser, tilt steering on a phone, and a difficulty
    level. Each app keeps its own settings (remembered per app); these are the machinery. */
@@ -48834,15 +48868,7 @@ const PINBALL_APP = (() => {
   /* the panel's letters: a 5 × 7 dot font of its own, each row of a glyph five bits (drawn from a canvas's pixels until the
      frame time doubled in the sandbox: every board's score changing asked the canvas for its pixels, and that waits on the
      graphics card) */
-  const FONT = (() => { const F = {}, src = {
-    0: '0E11131519110E', 1: '040C040404040E', 2: '0E1101020408 1F', 3: '1F020402011 10E', 4: '02060A121F0202', 5: '1F101E0101110E', 6: '0608101E11110E',
-    7: '1F010204080808', 8: '0E11110E11110E', 9: '0E11110F01020C', A: '0E11111F111111', B: '1E11111E11111E', C: '0E11101010110E', D: '1C121111111 21C',
-    E: '1F10101E10101F', F: '1F10101E101010', G: '0E111017111 10F', H: '1111111F111111', I: '0E04040404040E', J: '07020202021 20C', K: '11121418141211',
-    L: '1010101010101F', M: '111B1515111111', N: '11111915131111', O: '0E11111111110E', P: '1E11111E101010', Q: '0E11111115120D', R: '1E11111E141211',
-    S: '0F10100E01011E', T: '1F040404040404', U: '1111111111110E', V: '1111111111 0A04', W: '1111111515150A', X: '11110A040A1111', Y: '1111110A040404',
-    Z: '1F01020408101F', '!': '04040404040004' };
-    for (const [k, v] of Object.entries(src)){ const h = v.replace(/ /g, ''); F[k] = [0, 1, 2, 3, 4, 5, 6].map(i => parseInt(h.substr(i * 2, 2), 16)); }
-    return F; })();
+  const FONT = DOT_FONT.pick(DOT_FONT.five, '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!');
   const GW = ch => ch === ' ' ? 3 : ch === ',' ? 2 : 5;
   const textW = t => [...String(t)].reduce((a, ch) => a + GW(ch) + 1, -1);
   const dispCol = T => T.era.id === 'neon' ? palette(T).lamp : 0xff8a1a;
@@ -57128,13 +57154,7 @@ const PONG_APP = (() => {
     if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 64 }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
     return key;
   }
-  // a 3 × 5 dot font for the score and the countdown
-  const DIG = ['111101101101111', '010110010010111', '111001111100111', '111001111001111', '101101111001001', '111100111001111', '111100111101111', '111001010010010', '111101111101111', '111101111001111'];
-  function digits(out, n, x, y, cell, color, kind){
-    const s = String(Math.max(0, Math.floor(n))), wd = s.length * 4 * cell - cell;
-    for (let d = 0; d < s.length; d++){ const D = DIG[+s[d]], x0 = x - wd / 2 + d * 4 * cell;
-      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
-  }
+  const digits = DOT_FONT.digits3;          // (the 3 × 5 dot font for the score and the countdown: the page's own)
   // the view of a board, live or from its recording, as pieces
   function itemsOf(V, th, bp){
     const L = LOOK[th], out = [], glow = L.glow, puck = th === 'hockey' || th === 'air';
@@ -57831,12 +57851,7 @@ const AIRHOCKEY_APP = (() => {
     if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 64 }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
     return key;
   }
-  const DIG = ['111101101101111', '010110010010111', '111001111100111', '111001111001111', '101101111001001', '111100111001111', '111100111101111', '111001010010010', '111101111101111', '111101111001111'];
-  function digits(out, n, x, y, cell, color, kind){
-    const s = String(Math.max(0, Math.floor(n))), wd = s.length * 4 * cell - cell;
-    for (let d = 0; d < s.length; d++){ const D = DIG[+s[d]], x0 = x - wd / 2 + d * 4 * cell;
-      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
-  }
+  const digits = DOT_FONT.digits3;          // (the 3 × 5 dot font for the score and the countdown: the page's own)
   const mixC = (a, b, f) => { const m = s => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
   function itemsOf(V, th, bp){
     const L = LOOK[th], out = [], glow = L.glow;
@@ -58777,16 +58792,8 @@ const SQUASH_APP = (() => {
     if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 32, game: SET.game }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
     return key;
   }
-  // a 3 × 5 dot font: the digits and the letters the calls and the drills' names need
-  const FONT = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111',
-                 7: '111001010010010', 8: '111101111101111', 9: '111101111001111', A: '010101111101101', D: '110101101101110', E: '111100110100111', F: '111100110100100',
-                 G: '011100101101011', H: '101101111101101', I: '111010010010111', K: '101110100110101', L: '100100100100111', N: '101111111101101', O: '111101101101111',
-                 P: '110101110100100', R: '110101110101101', S: '011100010001110', T: '111010010010010', U: '101101101101111', W: '101101111111101', Y: '101101010010010' };
-  function text(out, s, x, y, cell, color, kind){
-    s = String(s); const wd = s.length * 4 * cell - cell;
-    for (let d = 0; d < s.length; d++){ const D = FONT[s[d]]; if (!D) continue; const x0 = x - wd / 2 + d * 4 * cell;
-      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
-  }
+  // (the 3 × 5 dot font for the score, the calls and the drills' names: the page's own, DOT_FONT)
+  const FONT = DOT_FONT.three, text = DOT_FONT.text3;
   const mixC = (a, b, f) => { const m = s => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
   // a box w across, d deep, h high, its foot at height z (court units)
   const box = (out, kind, x, y, w, d, h, color, z) => out.push({ kind, u: x, v: y, scale: 1, sx: w, sz: d, sy: h, lift: z || 0, color });
@@ -60286,19 +60293,7 @@ onmessage = ev => {
      letter a kind of its own made from a 5 × 7 dot font (`FONT`, the page's own: capitals, digits and a few signs), flat on
      the board and unlit, so it reads at any tilt. `size` is a letter's height in squares, the line centred on (x, y). Letters
      are given a yaw so they are turned as the field turns every turned item, reading left to right as the board is framed. */
-  const FONT = {
-    '0': [14,17,19,21,25,17,14], '1': [4,12,4,4,4,4,14], '2': [14,17,1,2,4,8,31], '3': [31,2,4,2,1,17,14], '4': [2,6,10,18,31,2,2],
-    '5': [31,16,30,1,1,17,14], '6': [6,8,16,30,17,17,14], '7': [31,1,2,4,8,8,8], '8': [14,17,17,14,17,17,14], '9': [14,17,17,15,1,2,12],
-    A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28], E: [31,16,16,30,16,16,31],
-    F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17], I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12],
-    K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31], M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14],
-    P: [30,17,17,30,16,16,16], Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
-    U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17], Y: [17,17,17,10,4,4,4],
-    Z: [31,1,2,4,8,16,31], '.': [0,0,0,0,0,12,12], ',': [0,0,0,0,12,4,8], ':': [0,12,12,0,12,12,0], '-': [0,0,0,31,0,0,0],
-    '+': [0,4,4,31,4,4,0], '!': [4,4,4,4,4,0,4], '?': [14,17,1,2,4,0,4], '/': [1,1,2,4,8,16,16], '%': [24,25,2,4,8,19,3],
-    '#': [10,10,31,10,31,10,10], '=': [0,0,31,0,31,0,0], '(': [2,4,8,8,8,4,2], ')': [8,4,2,2,2,4,8], '<': [2,4,8,16,8,4,2],
-    '>': [8,4,2,1,2,4,8], '*': [0,4,21,14,21,4,0], "'": [4,4,8,0,0,0,0], '♥': [0,10,31,31,14,4,0], '★': [4,4,31,14,14,27,17],
-  };
+  const FONT = DOT_FONT.five;
   function glyphGeo(T, code){
     const rows = FONT[String.fromCodePoint(code)] || FONT['?'], pos = [], nrm = [], d = 0.45 / 7, y = 0.006;
     for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++){
