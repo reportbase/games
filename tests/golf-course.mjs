@@ -20,13 +20,19 @@ const server = await new Promise(ok => { const s = createServer(async (req, res)
   catch { res.writeHead(404); res.end(); } }); s.listen(0, '127.0.0.1', () => ok(s)); });
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+// (Oct 28: a CDN that never answered held the page's load past the limit. A request off the test's own server is given 20 s and
+//  dropped past it, as the smoke test does; registered first, so the LIBS_DIR routes below are asked first.)
+await page.route(u => !/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(u.href) && !/^(data|blob):/.test(u.href), async r => {
+  try { const res = await r.fetch({ timeout: 20000 }); await r.fulfill({ response: res }); }
+  catch { try { await r.abort(); } catch {} }
+});
 if (process.env.LIBS_DIR){
   const lib = f => readFile(join(process.env.LIBS_DIR, f));
   await page.route(/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
   await page.route(/chess\.js@1\.4\.0/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('chess.js/dist/esm/chess.js') }));
 }
 const errors = []; page.on('pageerror', e => errors.push(e.message));
-await page.goto(`http://127.0.0.1:${server.address().port}/games.html?app=minigolf`, { waitUntil: 'load' });
+await page.goto(`http://127.0.0.1:${server.address().port}/games.html?app=minigolf`, { waitUntil: 'domcontentloaded', timeout: 120000 });
 await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
 // (another board size, Oct 20: GOLF_SIZE=medium or tall plays that size's generated holes; it has no hand-made course)
 if (process.env.GOLF_SIZE) await page.evaluate(s => window.setGolfSize(s, true), process.env.GOLF_SIZE);
