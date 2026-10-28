@@ -6975,6 +6975,53 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok) failures.push(`[${current}] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} played with the row shut (bowling: the row shut, a drag along the line stood ${out.bwStand} over, a real swipe bowled with hook ${out.bwSwipe.h}; curling: a drag of the stone set the weight ${out.cuWeight.join(' → ')}, the pad's button turned the curl; marble run: real taps laid ${out.mr.laid} then ${out.mr.next}, a tap on the chute ${out.mr.ran}; 3D Tetris's Tip, the tanks' and golf tanks' next weapon by real clicks on the pad)`);
   }
+  // BOWLING'S OIL AND BALLS (Oct 28: "whats next for bowling", then "1,2"): house shots near the corner and sport patterns far out;
+  // a house shot holding a ball missed wide nearer the pocket than a flat one; the four balls (plastic all but straight, urethane
+  // turning earliest, pearl latest); a game's balls wearing the lane (the frame-1 line hooking sooner after) and a spare's not;
+  // the lane's picture painted again as it wears; and real input: the play pad's ball button and the real B changing the ball
+  current = 'bowling oil and balls';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); window.getFieldApp()._debug.setMode('game'); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const o = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, K = D.consts, out = {};
+      let h1 = 0, h5 = 0; for (let k = 0; k < 40; k++){ if (D.laneOf(1000 + k, 1).pat.house) h1++; if (D.laneOf(1000 + k, 5).pat.house) h5++; } out.house = [h1, h5];
+      const at = (lane, s) => D.bowlSim([], s, lane, { untilY: K.HEAD }).B.x;
+      const mk = id => { const L = D.laneOf(11, 2); L.pat = D.PATTERNS[id]; L.oil = D.ftY(L.pat.ft); L.crown = L.pat.crown; return L; };
+      out.miss = ['house', 'chameleon'].map(id => { const L = mk(id), s = D.pick(D.rack(), L, true); return +Math.abs(at(L, { ...s, tx: s.tx + 0.015 }) - at(L, s)).toFixed(4); });
+      const L = mk('house'), turn = (b, y) => { const xAt = P => { for (let q = 0; q + 3 < P.length; q += 2) if (P[q + 1] >= y && P[q + 3] < y) return P[q]; return NaN; };
+        const s = { sx: K.CX + 0.05, tx: K.CX + 0.05, ty: K.ARROWS, v: 0.6, b }; return xAt(D.bowlSim([], { ...s, h: 0.6 }, L, { path: true }).path) - xAt(D.bowlSim([], { ...s, h: 0 }, L, { path: true }).path); };
+      out.turn = D.BALLS.map((b, i) => [+turn(i, 0.55).toFixed(4), +turn(i, 0.35).toFixed(4)]);
+      const G = D.newGame(500, 3, { ai: D.STEADY, seed: 1 }), s0 = D.pick(D.rack(), G.lane, true), x0 = at(G.lane, s0);
+      let n = 0; while (G.state !== 'over' && n < 200000){ D.tick(G); n++; }
+      out.wear = { max: +Math.max(...G.lane.wear).toFixed(3), moved: +(at(G.lane, s0) - x0).toFixed(4), balls: G.wearV };
+      const S = D.newGame(5, 3, { leave: { xy: D.spotsOf([10]) } }); out.spareWear = !!S.lane.wear;
+      return out;
+    });
+    // (the picture: a game started on the framed lane, its key changing once a ball has worn it)
+    const pic = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
+      D.LIVE = { c: f.c, r: f.r }; D.begin(g); const k0 = A.cellPhoto(f.c, f.r, 400);
+      g.G.shot = D.pick(g.G.pins, g.G.lane, true); D.bowlNow(g.G); let n = 0; while (g.G.state === 'roll' && n < 20000){ D.tick(g.G); n++; }
+      const k1 = A.cellPhoto(f.c, f.r, 400); return { k0, k1, cv: !!A.photoCanvas(k1) }; });
+    // real input: the pad's ball button, then the real B
+    const live = {};
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.gameAt(f.c, f.r); for (let n = 0; g.G.state !== 'aim' && n < 20000; n++) D.tick(g.G); try { bbRefreshNow(); } catch {} });
+    await page.waitForTimeout(900);
+    const pb = await page.evaluate(() => { const b = document.querySelector('#playPad button[data-key="ball"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+    const ball = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); return [D.SET.ball, g && g.G && g.G.shot.b]; });
+    live.b0 = await ball();
+    if (pb){ await page.mouse.click(pb[0], pb[1]); await page.waitForTimeout(500); }
+    live.pad = await ball();
+    await page.keyboard.press('b'); await page.waitForTimeout(400);
+    live.key = await ball();
+    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.ball = 0; });
+    const T = o.turn;
+    if (!(o.house[0] === 40 && o.house[1] === 0) || !(o.miss[0] < o.miss[1]) || !(Math.abs(T[3][1]) < 0.2 * Math.abs(T[0][1])) || !(Math.abs(T[2][0]) > Math.abs(T[0][0])) || !(Math.abs(T[1][0]) < Math.abs(T[0][0]))
+        || !(o.wear.max > 0.05 && o.wear.moved < -0.01) || o.spareWear || !(pic.k0 !== pic.k1 && pic.cv)
+        || !pb || live.pad[0] !== (live.b0[0] + 1) % 4 || live.pad[1] !== live.pad[0] || live.key[0] !== (live.pad[0] + 1) % 4)
+      failures.push(`[${current}] ${JSON.stringify({ o, pic, live, pb })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling oil and balls (house shots ${o.house[0]}/40 at level 1, ${o.house[1]}/40 at level 5; a miss off the house shot ${o.miss[0]} against ${o.miss[1]} off a flat one; the balls' turn at mid-lane and the pins ${JSON.stringify(T)}; a game wore ${o.wear.max} and moved the frame-1 line ${o.wear.moved}; the picture painted again; the real pad's ball button and B)`);
+  }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
   // every press before the field), a game under way, the view zoomed by the real wheel, a real touch double tap on the board

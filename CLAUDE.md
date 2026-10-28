@@ -821,6 +821,33 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (`BALL_GRAB`); dragged up the lane past `SWIPE_UP` and let go it bowls, as fast as the swipe's last tenth of a second
     (`SWIPE_V` 0.6–3.6 lane lengths a second to `V_MIN`–`V_MAX`), hooking as much as it bowed from the straight line between its
     ends (`BOW_K`). A tap on the lane still aims; the row and the keys still set it all.
+  - **Oil you can read, and that wears; the ball chosen** (Oct 28: "whats next for bowling", then "1,2"):
+    - **Patterns** (`PATTERNS`, a level's `pats` in `LV`): a lane is oiled to a named pattern, its length in feet from the foul line
+      (`ft`, `ftY`; 60 to the head pin) and its crown: the house shots (levels 1–2, some at 3) lay more oil down the middle, so the
+      outside boards' oil ends up to `CROWN_L` sooner and is `CROWN_S` dry, and a ball missed wide hooks back (a miss of 0.015 at the
+      arrows lands 0.025 off on the house shot against 0.034 on a flat one); the sport patterns farther out (Bear, Chameleon,
+      Scorpion, Shark, Viper, Cheetah, Wolf, Badger, 32 to 47 ft) are nearly flat. `laneOf` draws as before, the pattern last, so a
+      board's hook and ball colour are the same. `dryAt(lane, x, y)` is what the hook reads (0 oil, 1 the back end).
+    - **Wear** (`wearOn`, `freshLane`): a game of ten frames has its own lane with a grid of wear (`lane.wear`, `WX` × `WY`): each
+      ball takes oil off where it runs (`WEAR`, more toward the pattern's end) and carries some past it (`CARRY`, over `CARRY_RUN`).
+      Measured: a steady player's game moves its frame-1 strike line 0.032 left (about five boards) and wears the track to 0.16
+      dry; that line still strikes at level 1 (the house shot) and leaves 3 or 4 pins at levels 3 and 5. A spare is bowled on the
+      pattern as laid. The steady player re-aims each ball on the lane as it is (`aimFor` sees the wear), so par includes it.
+    - **Drawn**: the oil a cool blue sheen a board at a time to where it ends there (the house shot's arch shows), fading over
+      `RAMP`; a game's wear a duller track and its carry-down a faint sheen, the picture made again after every ball (`cellPhoto`'s
+      key has the game's `wearV`; `PIC` keeps 160).
+    - **The ball** (`BALLS`, `ballDef`, a shot's `b`; `B.def` in `roll`): `react` on the dry, `oilResp` of it on the oil, `shape` how
+      late (dry to that power). Reactive solid (the ball as it was), reactive pearl (skids, turns hard late), urethane (an early
+      gentle arc), plastic (`PLASTIC`, all but straight: the spare ball). Turn by mid-lane / at the pins for a hook of 0.6: solid
+      0.007 / 0.027, pearl 0.0002 / 0.011, urethane 0.020 / 0.046, plastic 0.001 / 0.004. Chosen by the play pad's button, the row's
+      Ball tile (index 10), the menu or B (`chooseBall`), kept in `bowling.settings` (`ball`). The steady player throws the solid at
+      the pocket and the plastic at its spares (`pick`). Each ball has its own colour (`colOf`).
+    - **No weights**: tried as the ball knocked aside less by the pins, and as the pins sent away faster, and left out: over 120
+      pocket shots a little off line an 11 lb ball struck more than a 15 or 16 lb one in this deck's pin action, either way.
+    - Measured over 4 games a level: the steady player 202, 197 and 133 at levels 1, 3 and 5.
+    - The smoke test (part 7, "bowling oil and balls") checks house shots at level 1 and none at 5, the house shot's forgiveness,
+      the four balls' turns, a game's wear moving the line and a spare's lane unworn, the picture's key changing after a ball, and
+      the real pad button and the real B changing the ball.
 - **Marble run** (Oct 28: "2,   3 curling, bowling, marble run", the third: "build a track in the bottom row, the steady player tests
   it"): `MARBLE_APP`, id `marblerun`, after bowling. A square board, an n × n grid of squares: a start chute at the far edge, high
   up (`startPiece`, blue), a cup lower down (red), rocks, some pieces laid for you (darker wood), and a stock in the bottom row.
