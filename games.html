@@ -59947,19 +59947,61 @@ const CURLING_APP = (() => {
 const BOWLING_APP = (() => {
   const W = 0.36, CX = W / 2, LANE = 0.27, GUT = 0.035, EDGE = LANE / 2, WALL = EDGE + GUT;
   const S = 0.078, PR = 0.0163, PH = 0.07, BR = 0.028, HEAD = 0.27, FOUL = 0.955, ARROWS = 0.66, PIT = 0.035;
-  const TOPPLE = 0.085, MB = 4.5, E_BALL = 0.75, E_PIN = 0.7, E_WALL = 0.55, PF = 1.1, BALL_F = 0.03, RAMP = 0.12, DOWN_V = 0.06, DT = 1 / 240;
+  const TOPPLE = 0.085, MB = 4.5, E_BALL = 0.75, E_PIN = 0.7, E_WALL = 0.55, PF = 1.1, BALL_F = 0.03, DOWN_V = 0.06, DT = 1 / 240;
   const TICK = 1 / 60, SUB = 4, REC_HZ = 15, REC_CAP = 200, PHOTO_PX = 20, HI_PX = 300, GRACE = 0.8, REST_T = 1.1, SWEEP_T = 0.7;
   const V_MIN = 0.35, V_MAX = 0.75, PREVIEW = [1, 0.7, 0.5, 0.4, 0.3];
   // the rack: 1 at the head, 2 and 3 behind it, then 4 5 6, then 7 8 9 10 (left to right as you look down the lane)
   const SPOTS = [[0, 0], [-0.5, 1], [0.5, 1], [-1, 2], [0, 2], [1, 2], [-1.5, 3], [-0.5, 3], [0.5, 3], [1.5, 3]].map(([i, j]) => [CX + i * S, HEAD - j * S * 0.866]);
   // a level's lane: where the oil ends (y; the dry back end runs from there to the pins), how hard the back end hooks, how readily a struck pin falls
+  /* THE OIL (Oct 28: "whats next for bowling", then "1,2": oil you can read, and that wears; the ball chosen). A board's lane is
+     oiled to a named pattern (`PATTERNS`): its length (`ft`, feet from the foul line, as patterns are given; the lane is 60 to the
+     head pin) and its crown (`crown`): a house shot lays more oil down the middle than on the outside boards, so a ball missed
+     wide meets drier wood sooner and hooks back toward the pocket (the "wall" that forgives), while a sport pattern is flat, and
+     a miss stays a miss. The house shots are near the corner, the sport patterns (named after the PBA's animals) farther out,
+     shorter and longer. `dryAt` is how dry a spot is: 0 on full oil, 1 on the back end; past the pattern's end it comes on over
+     `RAMP`, the outside boards' end comes `CROWN_L` sooner at the most, and they are `CROWN_S` dry in the oil.
+     It WEARS (`wearOn`): each ball of a game of ten frames takes oil off where it runs, more toward the pattern's end (`WEAR`),
+     and carries a little down past it (`CARRY`), kept as a grid across the lane (`WX` × `WY`, `G.lane.wear`). A track used again
+     and again hooks sooner and then less at the back, so the line that struck in frame 1 comes in high by frame 7 and you move.
+     A spare (one ball a try) is bowled on the pattern as laid. */
+  const PATTERNS = {
+    house:   { name: 'the house shot', ft: 41, crown: 1, house: true },
+    houseL:  { name: 'a long house shot', ft: 44, crown: 0.9, house: true },
+    houseS:  { name: 'a short house shot', ft: 38, crown: 0.9, house: true },
+    bear:    { name: 'Bear', ft: 40, crown: 0.3 },
+    chameleon: { name: 'Chameleon', ft: 39, crown: 0.15 },
+    scorpion:  { name: 'Scorpion', ft: 42, crown: 0.2 },
+    shark:   { name: 'Shark', ft: 44, crown: 0.1 },
+    viper:   { name: 'Viper', ft: 37, crown: 0.15 },
+    cheetah: { name: 'Cheetah', ft: 35, crown: 0.25 },
+    wolf:    { name: 'Wolf', ft: 32, crown: 0.2 },
+    badger:  { name: 'Badger', ft: 47, crown: 0.05 },
+  };
+  for (const k in PATTERNS) PATTERNS[k].id = k;
+  const ftY = ft => FOUL - ft / 60 * (FOUL - HEAD);
+  const RAMP = 0.12, CROWN_L = 0.09, CROWN_S = 0.22, WX = 13, WY = 28, WEAR = 1.1, CARRY = 0.4, CARRY_RUN = 0.14;
   const LV = [
-    { oil: [0.44, 0.48], hk: [1.4, 1.7], carry: 1.25 },
-    { oil: [0.45, 0.5], hk: [1.65, 2.0], carry: 1.15 },
-    { oil: [0.47, 0.53], hk: [1.95, 2.35], carry: 1.05 },
-    { oil: [0.5, 0.57], hk: [2.3, 2.75], carry: 0.95 },
-    { oil: [0.53, 0.61], hk: [2.7, 3.2], carry: 0.85 },
+    { pats: ['houseL', 'house', 'house'], hk: [1.4, 1.7], carry: 1.25 },
+    { pats: ['house', 'houseS', 'bear', 'houseL'], hk: [1.65, 2.0], carry: 1.15 },
+    { pats: ['houseS', 'bear', 'chameleon', 'scorpion', 'shark'], hk: [1.95, 2.35], carry: 1.05 },
+    { pats: ['chameleon', 'viper', 'cheetah', 'scorpion', 'badger'], hk: [2.3, 2.75], carry: 0.95 },
+    { pats: ['viper', 'cheetah', 'wolf', 'badger', 'cheetah'], hk: [2.7, 3.2], carry: 0.85 },
   ];
+  /* THE BALL (the "2"): what it is made of and how heavy. `react` is how much it turns on dry wood, `oilResp` how much it turns
+     on oil too (a urethane ball reads the lane early and gently), `shape` how late it waits (a pearl skids long and turns hard: the
+     dryness to that power). Weights were tried too (a heavier ball knocked aside less, or sending the pins faster) and left out:
+     on 120 pocket shots a little off line, an 11 lb ball struck more often than a 15 or 16 lb one in this deck's pin action,
+     however the weight was made to tell, so a weight to choose would have been noise or the wrong way round. The plastic ball hardly hooks, wear or no wear: the spare ball.
+     The solid reactive at 15 lb is the ball as it always was. The steady player throws it at the pocket and the plastic one at
+     its spares. Chosen with the play pad's two buttons, the row's Ball and Weight, or B and W; kept (`bowling.settings`). */
+  const BALLS = [
+    { id: 'solid', name: 'Reactive solid', glyph: '🔵', react: 1, oilResp: 0, shape: 1, say: 'the strike ball: a strong, smooth hook once it finds the dry' },
+    { id: 'pearl', name: 'Reactive pearl', glyph: '🟣', react: 1.5, oilResp: 0, shape: 2.2, say: 'skids long through the oil and turns hard at the back' },
+    { id: 'urethane', name: 'Urethane', glyph: '🟤', react: 0.5, oilResp: 0.12, shape: 1, say: 'an early, gentle arc that reads the oil, so wear and dry patches move it less' },
+    { id: 'plastic', name: 'Plastic', glyph: '⚪', react: 0.12, oilResp: 0, shape: 1, say: 'goes nearly straight whatever the oil: the spare ball' },
+  ];
+  const PLASTIC = 3;
+  const ballDef = s => BALLS[(s && s.b) | 0] || BALLS[0];
   const STEADY = { errAim: 0.012, errV: 0.06, errH: 0.2 };
   const DL = ARCADE.difficulty('bowling.level', 'Every board has its own lane, harder the farther it is from the corner: the oil ends sooner and the dry back end hooks harder, so a ball a little off its line goes farther wrong, and the pins carry less; and less of your ball\'s way is shown before it goes. Easy, Normal and Hard move every board a level up.', true);
   const say = BOARD_KIT.say(2400);
@@ -59967,8 +60009,9 @@ const BOWLING_APP = (() => {
   const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
   const SET = (() => {
-    const d = { sound: true, preview: true, mode: 'spares' };
-    try { const s = JSON.parse(localStorage.getItem('bowling.settings') || '{}'); for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k]; if (s.mode === 'game' || s.mode === 'spares') d.mode = s.mode; } catch {}
+    const d = { sound: true, preview: true, mode: 'spares', ball: 0 };
+    try { const s = JSON.parse(localStorage.getItem('bowling.settings') || '{}'); for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k]; if (s.mode === 'game' || s.mode === 'spares') d.mode = s.mode;
+      if (Number.isInteger(s.ball) && s.ball >= 0 && s.ball < 4) d.ball = s.ball; } catch {}
     return d;
   })();
   const saveSet = () => { try { localStorage.setItem('bowling.settings', JSON.stringify(SET)); } catch {} };
@@ -59976,8 +60019,31 @@ const BOWLING_APP = (() => {
   /* ─── THE LANE ─── */
   function laneOf(idx, lv){
     const R = rngOf((idx * 2654435761) ^ 0xb0e1), D = LV[lv - 1];
-    return { lv, oil: D.oil[0] + (D.oil[1] - D.oil[0]) * R(), hk: D.hk[0] + (D.hk[1] - D.hk[0]) * R(), carry: D.carry, ball: [0x2a4fb8, 0x9b2d8f, 0x1f7a5a, 0xc0392b, 0x22252b, 0xd2691e][Math.floor(R() * 6)] };
+    // (the same draws in the same order as before, the pattern drawn last, so the hook and the ball's colour stay the board's)
+    const r0 = R(), hk = D.hk[0] + (D.hk[1] - D.hk[0]) * R(), ball = [0x2a4fb8, 0x9b2d8f, 0x1f7a5a, 0xc0392b, 0x22252b, 0xd2691e][Math.floor(R() * 6)];
+    const pat = PATTERNS[D.pats[Math.floor(R() * D.pats.length)]]; void r0;
+    return { lv, pat, oil: ftY(pat.ft), crown: pat.crown, hk, carry: D.carry, ball };
   }
+  // how dry the lane is at (x, y): 0 on full oil, 1 on the back end (the pattern, then what the balls have done to it)
+  function dryAt(lane, x, y){
+    const u = Math.min(1, Math.abs(x - CX) / EDGE), u2 = u * u, c = lane.crown || 0;
+    const along = clamp((lane.oil + c * CROWN_L * u2 - y) / RAMP, 0, 1);
+    let d = along + (1 - along) * c * CROWN_S * u2;
+    if (lane.wear){ const i = Math.min(WX - 1, Math.max(0, Math.floor((x - (CX - EDGE)) / LANE * WX))), j = Math.min(WY - 1, Math.max(0, Math.floor((FOUL - y) / (FOUL - HEAD) * WY))); d += lane.wear[j * WX + i]; }
+    return clamp(d, 0, 1);
+  }
+  // a ball's run takes oil off the front of its track and carries a little past the pattern's end
+  function wearOn(lane, x, y, ds){
+    if (!lane.wear || y > FOUL || y < HEAD + 0.04) return;
+    const j = Math.min(WY - 1, Math.max(0, Math.floor((FOUL - y) / (FOUL - HEAD) * WY))), f = (x - (CX - EDGE)) / LANE * WX - 0.5, i0 = Math.floor(f), t = f - i0;
+    const past = lane.oil - y, end = lane.oil;
+    let k;
+    if (past < 0){ k = WEAR * ds * (0.35 + 0.65 * clamp((FOUL - y) / (FOUL - end), 0, 1)); }       // (in the oil: more toward its end)
+    else if (past < CARRY_RUN) k = -CARRY * ds * (1 - past / CARRY_RUN);                               // (just past it: oil carried down)
+    else return;
+    for (const [i, w] of [[i0, 1 - t], [i0 + 1, t]]) if (i >= 0 && i < WX){ const q = j * WX + i; lane.wear[q] = clamp(lane.wear[q] + k * w, -0.3, 0.6); }
+  }
+  const freshLane = (idx, lv, wear) => { const L = laneOf(idx, lv); if (wear) L.wear = new Float32Array(WX * WY); return L; };
   const rack = () => SPOTS.map(([x, y], i) => ({ n: i + 1, x, y, vx: 0, vy: 0, down: false, ang: 0, pit: false, up: true }));
 
   /* ─── ROLLING ─── `roll` moves the ball and the pins one step. The ball: { x, y, vx, vy, h (its hook: + to the left), gutter,
@@ -59991,7 +60057,9 @@ const BOWLING_APP = (() => {
         // (on the oil nothing; past the oil line the back end bites, coming on over RAMP)
         // (the hook turns the ball across its way, to its left: (dy, −dx) for a way (dx, dy); its speed kept, less a little rolling)
         // (and none once it is on the deck or among the pins: slowed by them it turned on the spot and came back up the lane)
-        const dry = B.struck || B.y < HEAD + BR + PR ? 0 : clamp((lane.oil - B.y) / RAMP, 0, 1), al = B.h * lane.hk * dry, dx = B.vx / v, dy = B.vy / v;
+        // (the ball's own response: `react` on the dry, `oilResp` of it on the oil, and `shape` how late it waits: BALLS)
+        const dry = B.struck || B.y < HEAD + BR + PR ? 0 : dryAt(lane, B.x, B.y), bd = B.def || BALLS[0];
+        const al = B.h * lane.hk * bd.react * (bd.oilResp + (1 - bd.oilResp) * (bd.shape === 1 ? dry : Math.pow(dry, bd.shape))) * (B.struck ? 0 : 1), dx = B.vx / v, dy = B.vy / v;
         B.vx += al * dy * dt; B.vy -= al * dx * dt;
         const k = Math.max(0, v - BALL_F * dt) / Math.hypot(B.vx, B.vy); B.vx *= k; B.vy *= k;
         if (Math.abs(B.x - CX) > EDGE){ B.gutter = true; B.x = CX + Math.sign(B.x - CX) * (EDGE + GUT / 2); B.vx = 0; B.vy = -Math.max(0.3, v); if (on) on('gutter', B); }
@@ -60057,7 +60125,7 @@ const BOWLING_APP = (() => {
   // a ball let go from where you stand toward where you aim, at its speed and hook
   function ballOf(shot){
     const dx = shot.tx - shot.sx, dy = shot.ty - FOUL, d = Math.hypot(dx, dy) || 1;
-    return { x: shot.sx, y: FOUL, vx: shot.v * dx / d, vy: shot.v * dy / d, h: shot.h, gutter: false, pit: false };
+    return { x: shot.sx, y: FOUL, vx: shot.v * dx / d, vy: shot.v * dy / d, h: shot.h, gutter: false, pit: false, def: ballDef(shot) };
   }
   const copyPins = P => P.map(p => ({ ...p }));
   // a ball bowled at once: where it went and what it knocked down
@@ -60089,27 +60157,28 @@ const BOWLING_APP = (() => {
 
   /* ─── THE STEADY PLAYER ─── the pocket first, then what is left */
   // where to aim from `sx` at speed v and hook h so the ball crosses y = yt at x = xt
-  function aimFor(sx, v, h, xt, yt, lane){
-    let tx = xt;
+  function aimFor(sx, v, h, xt, yt, lane, b){
+    let tx = xt; const bb = b || 0;
     for (let k = 0; k < 9; k++){
-      const r = bowlSim([], { sx, tx, ty: ARROWS, v, h }, lane, { dt: 1 / 120, untilY: yt }).B;
+      const r = bowlSim([], { sx, tx, ty: ARROWS, v, h, b: bb }, lane, { dt: 1 / 120, untilY: yt }).B;
       // (a ball in the gutter never reaches yt: step back from the side it fell off)
       if (r.gutter){ tx += (r.x < CX ? 1 : -1) * 0.02; continue; }
       tx += (xt - r.x) * (FOUL - ARROWS) / (FOUL - yt) * 1.05;
       tx = clamp(tx, CX - EDGE, CX + EDGE);
     }
-    return { sx, tx, ty: ARROWS, v, h };
+    return { sx, tx, ty: ARROWS, v, h, b: bb };
   }
   function pick(P, lane, first){
     const up = P.filter(p => !p.down && !p.pit);
     // (less hook on a hookier lane, so the ball comes in at the pocket about as it does elsewhere)
     // (a gentle hook, so the ball comes into the pocket at a few degrees and drives on into the 3 and the 5)
     if (first || up.length === 10) return aimFor(CX + 0.05, 0.6, clamp(0.6 / lane.hk, 0.15, 0.5), SPOTS[0][0] + 0.42 * S, SPOTS[0][1] + BR + PR * 0.6, lane);
-    // (spares: a line at each standing pin and at the middle of them, straighter and faster; the most taken down)
+    // (spares: a line at each standing pin and at the middle of them, straighter and faster; the most taken down; with the plastic
+    //  ball, which goes where it is aimed whatever the oil has become: Oct 28, the steady player's habit as a real player's)
     const C = [], mx = up.reduce((s, p) => s + p.x, 0) / up.length, my = up.reduce((s, p) => s + p.y, 0) / up.length;
     for (const [x, y] of [[mx, my], ...up.map(p => [p.x, p.y]), ...up.map(p => [p.x + 0.4 * S, p.y]), ...up.map(p => [p.x - 0.4 * S, p.y])]){
       const sx = clamp(CX + (CX - x) * 0.8, CX - EDGE + BR, CX + EDGE - BR);
-      C.push(aimFor(sx, 0.62, 0.25, x, y + BR, lane));
+      C.push(aimFor(sx, 0.62, 0.25, x, y + BR, lane, PLASTIC));
     }
     let best = null, bn = -1;
     for (const s of C){ const n = bowlSim(P, s, lane, { dt: 1 / 120 }).down; if (n > bn){ bn = n; best = s; } }
@@ -60120,8 +60189,8 @@ const BOWLING_APP = (() => {
   /* ─── A GAME ─── ten frames; `G.state`: aim, roll (the ball going), rest (the pins settling, then swept), over */
   function newGame(idx, lv, opt){
     const o = opt || {};
-    const G = { idx, lv, lane: laneOf(idx, lv), R: rngOf((idx * 7919) ^ (lv * 977) ^ (o.seed || 0) ^ 0x707), ai: o.ai || null, frame: 1, ball: 1, rolls: [], pins: rack(), B: null,
-                state: 'aim', t: 0, wait: 0, tenth: [], shot: { sx: CX + 0.05, tx: CX + 0.01, ty: ARROWS, v: 0.6, h: 0.5 }, ev: o.ev || null, fx: [], before: 10 };
+    const G = { idx, lv, lane: freshLane(idx, lv, !o.leave), R: rngOf((idx * 7919) ^ (lv * 977) ^ (o.seed || 0) ^ 0x707), ai: o.ai || null, frame: 1, ball: 1, rolls: [], pins: rack(), B: null,
+                state: 'aim', t: 0, wait: 0, tenth: [], shot: { sx: CX + 0.05, tx: CX + 0.01, ty: ARROWS, v: 0.6, h: 0.5, b: o.ai ? 0 : SET.ball }, ev: o.ev || null, fx: [], before: 10, wearV: 0 };
     if (G.ai){ G.shot = handsOn(pick(G.pins, G.lane, true), G.ai, G.R); G.state = 'wait'; G.wait = 0.3; }
     // (a spare to make: the leave's pins alone, a try a ball, the leave set again after every miss)
     if (o.leave){ G.spare = o.leave; G.pins = leavePins(o.leave.xy); G.tries = 0; }
@@ -60139,8 +60208,10 @@ const BOWLING_APP = (() => {
     if (G.state !== 'roll') return;
     G.rollT += TICK;
     let mv = false;
-    for (let s = 0; s < SUB; s++) mv = roll(G.B, G.pins, G.lane, TICK / SUB, (k, a) => { if (k === 'hit' || k === 'down' || k === 'gutter' || k === 'wall') emit(G, k, a); }) || mv;
-    if ((G.B.pit && !G.pins.some(p => p.vx || p.vy)) || G.rollT > 7){ G.state = 'rest'; G.wait = REST_T; }
+    for (let s = 0; s < SUB; s++){ const B = G.B, x0 = B.x, y0 = B.y;
+      mv = roll(B, G.pins, G.lane, TICK / SUB, (k, a) => { if (k === 'hit' || k === 'down' || k === 'gutter' || k === 'wall') emit(G, k, a); }) || mv;
+      if (G.lane.wear && !B.gutter && !B.pit) wearOn(G.lane, B.x, B.y, Math.hypot(B.x - x0, B.y - y0)); }
+    if ((G.B.pit && !G.pins.some(p => p.vx || p.vy)) || G.rollT > 7){ G.state = 'rest'; G.wait = REST_T; G.wearV++; }
   }
   function afterBall(G){
     if (G.spare){
@@ -60171,7 +60242,7 @@ const BOWLING_APP = (() => {
     emit(G, 'next', {});
   }
   function previewOf(G){
-    const s = G.shot, key = [s.sx, s.tx, s.ty, s.v, s.h, G.rolls.length, G.tries || 0].join();
+    const s = G.shot, key = [s.sx, s.tx, s.ty, s.v, s.h, s.b, G.rolls.length, G.tries || 0, G.wearV].join();
     if (G._pv && G._pv.key === key) return G._pv;
     const r = bowlSim(G.pins, s, G.lane, { path: true, dt: 1 / 120 });
     return G._pv = { key, path: r.path };
@@ -60479,6 +60550,7 @@ const BOWLING_APP = (() => {
       const J = leaveNow(jobFor(g.c, g.r)); g.J = J;
       g.G = newGame(g.idx, g.lv, { seed: 1, leave: J.res, ev: (k, a, G) => onEvent(g, k, a, G) });
       if (mine) g.G.shot = { ...mine };
+      g.G.shot.b = SET.ball;
       GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
       say('Make ' + J.res.name + (J.res.par ? ' (par ' + J.res.par + (J.res.par === 1 ? ' try' : ' tries') + ')' : '') + ': one ball to take every pin. Tap where you aim, then swipe the ball up the lane: faster for speed, curved for hook. Drag it along the line to move where you stand.', 5000);
       try { bbRefreshNow(); } catch {}
@@ -60486,9 +60558,10 @@ const BOWLING_APP = (() => {
     }
     g.G = newGame(g.idx, g.lv, { seed: (performance.now() * 1000) | 0, ev: (k, a, G) => onEvent(g, k, a, G) });
     if (mine) g.G.shot = { ...mine };
+    g.G.shot.b = SET.ball;
     GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
     const par = RECS.get(recKey(g.idx, g.lv));
-    say('Ten frames' + (par && par.done ? ', par ' + par.par : '') + '. Tap the lane where you aim, then swipe the ball up the lane: faster for speed, curved for hook. Drag it along the line to move where you stand.', 5000);
+    say('Ten frames on ' + patSay(g.G.lane) + (par && par.done ? ', par ' + par.par : '') + '. ' + BALLS[SET.ball].name + ' in hand (the pad\'s button changes it). Tap the lane where you aim, then swipe the ball up the lane: faster for speed, curved for hook. Drag it along the line to move where you stand.', 5000);
     try { bbRefreshNow(); } catch {}
   }
   function stepGame(g){
@@ -60514,7 +60587,14 @@ const BOWLING_APP = (() => {
     try { bbRefreshNow(); } catch {}
   }
   const myTurn = g => !!(g && g.state === 'play' && g.G.state === 'aim');
+  const patSay = L => L.pat.name + ' (' + L.pat.ft + ' ft' + (L.pat.house ? ', more oil down the middle: a ball missed wide hooks back' : ', flat: a miss stays a miss') + ')';
   function setShot(g, o){ const s = { ...g.G.shot, ...o }; s.sx = clamp(s.sx, CX - EDGE + BR, CX + EDGE - BR); s.tx = clamp(s.tx, CX - WALL, CX + WALL); s.ty = clamp(s.ty, HEAD, FOUL - 0.08); s.v = clamp(s.v, V_MIN, V_MAX); s.h = clamp(s.h, 0, 1); g.G.shot = s; g.mine = s; }
+  // (the ball in hand: the next of the four; kept for the next game too)
+  function chooseBall(g, step){
+    SET.ball = (SET.ball + (step || 1) + BALLS.length) % BALLS.length; saveSet();
+    if (myTurn(g)) setShot(g, { b: SET.ball });
+    const B = BALLS[SET.ball]; say(B.name + ': ' + B.say + '.', 2600); try { bbRefreshNow(); } catch {}
+  }
   function bowlMine(g){ if (!myTurn(g)) return false; bowlNow(g.G); try { bbRefreshNow(); } catch {} return true; }
   const hookName = h => h < 0.1 ? 'straight' : h < 0.4 ? 'a little' : h < 0.7 ? 'a hook' : 'a big hook';
   /* ─── A SWIPE BOWLS ─── (Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced
@@ -60524,11 +60604,11 @@ const BOWLING_APP = (() => {
      swipe's last moments went (`SWIPE_V`, lane lengths a second, to the ball's speeds) and hooking as much as the swipe bowed away
      from the straight line between its ends (`BOW_K`). A tap on the lane still aims; a tap on the ball still bowls as it stands. */
   const BALL_GRAB = 0.045, SWIPE_UP = 0.07, SWIPE_V = [0.6, 3.6], BOW_K = 9;
-  function swipeOf(pts){
+  function swipeOf(pts, vmax){
     const n = pts.length, last = pts[n - 1];
     let k = n - 1; while (k > 0 && last[2] - pts[k - 1][2] < 120) k--;      // (the last tenth of a second or so)
     const a = pts[Math.max(0, k - 1)], dt = Math.max(16, last[2] - a[2]) / 1000, sp = Math.hypot(last[0] - a[0], last[1] - a[1]) / dt;
-    const t = clamp((sp - SWIPE_V[0]) / (SWIPE_V[1] - SWIPE_V[0]), 0, 1), v = V_MIN + (V_MAX - V_MIN) * t;
+    const t = clamp((sp - SWIPE_V[0]) / (SWIPE_V[1] - SWIPE_V[0]), 0, 1), v = V_MIN + ((vmax || V_MAX) - V_MIN) * t;
     const p0 = pts[0], cx = last[0] - p0[0], cy = last[1] - p0[1], L = Math.hypot(cx, cy) || 1;
     let bow = 0; for (const p of pts){ const off = ((p[0] - p0[0]) * cy - (p[1] - p0[1]) * cx) / L; if (Math.abs(off) > Math.abs(bow)) bow = off; }
     return { v, h: clamp(Math.abs(bow) / L * BOW_K, 0, 1), sp, bow: bow / L };
@@ -60564,8 +60644,8 @@ const BOWLING_APP = (() => {
   /* ─── DRAWN ─── the lane a picture (maple boards and the darker pine between, the arrows and dots, the foul line, the gutters,
      the deck and the pit); on it the pins (standing, or lying the way they fell), the ball, your aim, the way dotted, the score
      in dot digits by the foul line. In lane units, divided by W at the end. */
-  const PIC = BOARD_KIT.painted(64, (P, hi) => paint(P.idx, hi ? 512 : 256));
-  function paint(idx, Sz){
+  const PIC = BOARD_KIT.painted(160, (P, hi) => paint(P.idx, hi ? 512 : 256, P.lane));
+  function paint(idx, Sz, lane){
     const cv = document.createElement('canvas'); cv.width = Math.round(Sz * W); cv.height = Sz;
     const c = cv.getContext('2d'); if (!c) return null;
     c.setTransform(-Sz, 0, 0, -Sz, cv.width, cv.height);      // (the photo tier lays a picture turned a half turn)
@@ -60577,8 +60657,19 @@ const BOWLING_APP = (() => {
       const base = pine ? [196, 150, 98] : [226, 190, 140]; c.fillStyle = `rgb(${Math.round(base[0] * (0.92 + 0.08 * t))},${Math.round(base[1] * (0.92 + 0.08 * t))},${Math.round(base[2] * (0.92 + 0.08 * t))})`;
       c.fillRect(b0 + k * bw, y0, bw + 0.0004, y1 - y0); } }
     c.strokeStyle = 'rgba(90,60,30,0.18)'; c.lineWidth = 0.0006; for (let k = 1; k < 39; k++){ c.beginPath(); c.moveTo(b0 + k * bw, PIT); c.lineTo(b0 + k * bw, 1); c.stroke(); }
-    // (a sheen of oil down the front of the lane, where it ends a little drier)
-    const lv = laneOf(idx, 3), g = c.createLinearGradient(0, 1, 0, lv.oil); g.addColorStop(0, 'rgba(255,255,255,0.10)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(b0, lv.oil, LANE, 1 - lv.oil);
+    // (the oil, to be read: a cool blue sheen a board at a time from the foul line to where the pattern ends there, fainter on the outside
+    //  boards of a house shot and ending sooner, fading over the last stretch; where a game's balls have taken it off, a duller
+    //  track; just past the end, the oil they carried down, a faint shine. Oct 28, "1,2")
+    if (lane){
+      for (let k = 0; k < 39; k++){ const x = b0 + (k + 0.5) * bw, u = Math.min(1, Math.abs(x - CX) / EDGE), cr = lane.crown * u * u, end = lane.oil + cr * CROWN_L, a = 0.26 * (1 - cr * CROWN_S * 2);
+        c.fillStyle = `rgba(105,150,235,${a.toFixed(3)})`; c.fillRect(b0 + k * bw, end, bw + 0.0003, FOUL - end);
+        const f = c.createLinearGradient(0, end, 0, end - RAMP * 0.6); f.addColorStop(0, `rgba(105,150,235,${(a * 0.7).toFixed(3)})`); f.addColorStop(1, 'rgba(105,150,235,0)');
+        c.fillStyle = f; c.fillRect(b0 + k * bw, end - RAMP * 0.6, bw + 0.0003, RAMP * 0.6); }
+      if (lane.wear){ const cw = LANE / WX, ch = (FOUL - HEAD) / WY;
+        for (let j = 0; j < WY; j++) for (let i = 0; i < WX; i++){ const w = lane.wear[j * WX + i]; if (Math.abs(w) < 0.015) continue;
+          c.fillStyle = w > 0 ? `rgba(150,85,25,${Math.min(0.6, w * 2.2).toFixed(3)})` : `rgba(105,150,235,${Math.min(0.35, -w * 2.5).toFixed(3)})`;
+          c.fillRect(b0 + i * cw, FOUL - (j + 1) * ch, cw, ch); } }
+    }
     // the arrows and the dots
     c.fillStyle = '#3a2618';
     for (let k = 1; k <= 7; k++){ const x = b0 + (k * 5 - 0.5) * bw, y = ARROWS + Math.abs(k - 4) * 0.012; c.beginPath(); c.moveTo(x, y - 0.012); c.lineTo(x - 0.004, y + 0.006); c.lineTo(x + 0.004, y + 0.006); c.fill(); }
@@ -60598,9 +60689,10 @@ const BOWLING_APP = (() => {
       if (p.down) out.push({ kind: 'bwPinDown', u: p.x, v: p.y, scale: PH, yaw: BOARD_KIT.yawOf(p.ang || 0.3), color: 0xffffff });
       else out.push({ kind: 'bwPin', u: p.x, v: p.y, scale: PH, color: 0xffffff });
     }
-    if (V.ball) out.push({ kind: 'bwBall', u: V.ball.x, v: V.ball.y, scale: 2 * BR, color: lane.ball });
+    const bc = colOf(V.bdef, lane);
+    if (V.ball) out.push({ kind: 'bwBall', u: V.ball.x, v: V.ball.y, scale: 2 * BR, color: bc });
     if (V.aim){
-      out.push({ kind: 'bwBall', u: V.aim.sx, v: FOUL - BR - 0.004, scale: 2 * BR, color: lane.ball });
+      out.push({ kind: 'bwBall', u: V.aim.sx, v: FOUL - BR - 0.004, scale: 2 * BR, color: bc });
       out.push({ kind: 'bwRing', u: V.aim.tx, v: V.aim.ty, scale: 0.026, color: 0x1a1f2a }, { kind: 'bwDot', u: V.aim.tx, v: V.aim.ty, scale: 0.01, color: 0xe03a2f });
     }
     if (V.preview){ const P = V.preview.path, n = Math.max(2, Math.floor(P.length / 2 * V.previewFrac)) * 2;
@@ -60609,8 +60701,11 @@ const BOWLING_APP = (() => {
     for (const it of out){ it.u /= W; it.scale /= W; it.lift = (it.lift || 0) / W; }
     return out;
   }
+  // (a ball's colour: the board's own for a solid, paler for a pearl; urethane brown; plastic a pale clear blue)
+  function colOf(d, lane){ const id = d && d.id; if (id === 'plastic') return 0xbfe4ff; if (id === 'urethane') return 0x7a3b1f;
+    if (id === 'pearl'){ const c = lane.ball; return (((c >> 16 & 255) + 255) >> 1) << 16 | (((c >> 8 & 255) + 255) >> 1) << 8 | (((c & 255) + 255) >> 1); } return lane.ball; }
   function liveView(g){
-    const G = g.G, V = { pins: G.pins.filter(p => !p.pit), ball: G.B && !G.B.pit ? { x: G.B.x, y: G.B.y } : null, score: G.spare ? (G.tries || null) : scoreOf(G.rolls).total };
+    const G = g.G, V = { bdef: G.B && G.B.def ? G.B.def : ballDef(G.shot), pins: G.pins.filter(p => !p.pit), ball: G.B && !G.B.pit ? { x: G.B.x, y: G.B.y } : null, score: G.spare ? (G.tries || null) : scoreOf(G.rolls).total };
     if (G.state === 'aim'){ V.aim = G.shot; if (SET.preview){ V.preview = previewOf(G); V.previewFrac = PREVIEW[g.lv - 1]; } }
     return V;
   }
@@ -60622,6 +60717,8 @@ const BOWLING_APP = (() => {
     const g = liveGame(); if (!g) return;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (k === 'Enter'){ if (g.state !== 'play'){ if (g.state === 'ready' || performance.now() - g.overAt > GRACE * 1000) begin(g); } else bowlMine(g); e.preventDefault(); e.stopPropagation(); return; }
+    if (ED.on) return;
+    if (k === 'b'){ chooseBall(g); e.preventDefault(); e.stopPropagation(); return; }
     if (!myTurn(g)) return;
     let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
     const flip = dirs && dirs[1] === 3 ? -1 : 1, s = g.G.shot;
@@ -60650,6 +60747,7 @@ const BOWLING_APP = (() => {
       { glyph: '⋯', value: SET.preview ? 'On' : 'Off', label: 'show the way', bg: SET.preview ? ON : undefined },
       { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
       { glyph: sp ? '🎯' : '🔟', value: sp ? 'Spares' : 'Ten frames', label: 'mode' },
+      { glyph: BALLS[SET.ball].glyph, value: BALLS[SET.ball].name, label: 'ball (B)' },
     ];
   }
   function onTile(c, r, i){
@@ -60664,6 +60762,7 @@ const BOWLING_APP = (() => {
     if (i === 7){ SET.preview = !SET.preview; say('Your ball\'s way shown before it goes: ' + (SET.preview ? 'on' : 'off'), 1800); }
     else if (i === 8){ SET.sound = !SET.sound; say('Sound ' + (SET.sound ? 'on' : 'off'), 1500); if (SET.sound) try { ARCADE.audio(); } catch {} }
     else if (i === 9){ setMode(SET.mode === 'spares' ? 'game' : 'spares'); say(SET.mode === 'spares' ? 'Spares: every lane a leave to make in as few tries as you can.' : 'Ten frames: a whole game on every lane.', 2400); return true; }
+    else if (i === 10){ chooseBall(g); return true; }
     saveSet(); try { fieldItemsChanged(); bbRefreshNow(); } catch {}
     return true;
   }
@@ -60678,6 +60777,7 @@ const BOWLING_APP = (() => {
       { label: () => 'Mode: ' + (SET.mode === 'spares' ? 'spares' : 'ten frames'), title: 'Spares: every lane a leave to make, par in tries from how wide the window is that makes it. Ten frames: a whole game.',
         on(){ setMode(SET.mode === 'spares' ? 'game' : 'spares'); } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The roll, the pins, a strike.', on(){ SET.sound = !SET.sound; saveSet(); } },
+      { label: () => 'Ball: ' + BALLS[SET.ball].name, title: 'A solid or pearl reactive ball for strikes, urethane for an early gentle arc, plastic straight for spares.', on(){ chooseBall(liveGame()); } },
       { label: 'Start this lane again', title: 'A new game from the first frame, or the leave from its first try.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
       // (spares: the found shot on the ball, as trick shots' Show me the trick; a leave made with it earns one star)
       { label: 'Show me the shot', title: 'Put the shot the search found on your ball: where to stand, aim, speed and hook. Made with it, the leave earns one star.',
@@ -60693,12 +60793,15 @@ const BOWLING_APP = (() => {
       { label: "Forget this board's leave", title: 'Back to the leave the board deals itself.',
         get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
         on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_J.delete(k); saveMine(); GAMES.delete(k); say('The lane deals its own leave again', 1800); try { fieldItemsChanged(); } catch {} } },
-      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. Swipe the ball up the lane to bowl it: the faster the swipe the faster the ball, and the more it curves the more it hooks; drag the ball along the foul line to move where you stand (the row and the keys set them too): a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Spares: every lane a leave to make with one ball, par in tries (the narrower the window that makes it, the higher). Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. Par is the steady player\'s game on this lane.', 12000); } },
+      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. Swipe the ball up the lane to bowl it: the faster the swipe the faster the ball, and the more it curves the more it hooks; drag the ball along the foul line to move where you stand (the row and the keys set them too): a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Spares: every lane a leave to make with one ball, par in tries (the narrower the window that makes it, the higher). Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. The oil is painted on the lane in blue: a house shot (the corner\'s lanes) lays more down the middle, so a ball missed wide meets the dry sooner and hooks back; a sport pattern (farther out) is flat. Over ten frames your balls wear it where they run, painted as a dull track, so the line hooks sooner and you move. The ball (the pad\'s button, the row or B): a solid reactive for a smooth strong hook, a pearl that skids and turns hard late, urethane for an early gentle arc, plastic straight for spares. Par is the steady player\'s game on this lane.', 16000); } },
     ]}],
     cellFar: { light: 0xd6b88a, dark: 0x8a6a46 },
     itemMinPx: 12,
     photoMinPx: PHOTO_PX,
-    cellPhoto(c, r, bp){ const idx = boardIdx(c, r); return PIC.key('bw:' + (idx % 48), (bp || 0) >= HI_PX, () => ({ idx: idx % 48 })); },
+    // (the picture is the board's wood and its pattern; a game being bowled paints its own lane's wear, again after every ball)
+    cellPhoto(c, r, bp){ const idx = boardIdx(c, r), g = GAMES.get(gkey(c, r)), worn = g && g.G && g.G.lane.wear && g.G.wearV > 0;
+      const lane = worn ? g.G.lane : laneOf(idx, levelAt(idx)), base = 'bw:' + (idx % 48) + ':' + lane.pat.id + (worn ? ':' + gkey(c, r) + ':' + g.G.wearV + ':' + g.G.rolls.length : '');
+      return PIC.key(base, (bp || 0) >= HI_PX, () => ({ idx: idx % 48, lane: worn ? { ...lane, wear: Float32Array.from(lane.wear) } : lane })); },
     photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(){ return { n: 2, colors: [0xd8bd90, 0xd8bd90, 0xc39f70, 0xc39f70] }; },
     itemGeometries: {
@@ -60729,11 +60832,11 @@ const BOWLING_APP = (() => {
         const idx = boardIdx(c, r), lv = levelAt(idx), J = jobFor(c, r), g = GAMES.get(gkey(c, r));
         if (!J.done) return 'Bowling — ' + (J.mine ? 'your leave' : 'spares') + ', level ' + lv + ' (its shot being worked out)';
         const R = J.res, best = SBEST.get(J.key);
-        return 'Bowling — ' + R.name + ', level ' + lv + (R.par ? ' · par ' + R.par + ' · a window of ' + (R.w / BOARD_W).toFixed(1) + ' boards' : '') + (best ? ' · best ' + best : '')
+        return 'Bowling — ' + R.name + ', level ' + lv + ' on ' + J.lane.pat.name + (R.par ? ' · par ' + R.par + ' · a window of ' + (R.w / BOARD_W).toFixed(1) + ' boards' : '') + (best ? ' · best ' + best : '')
              + (g && g.G && g.G.spare ? (g.state === 'over' ? ' · made in ' + g.G.tries : ' · try ' + (g.G.tries + 1)) : ' (tap to play)');
       }
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), M = RECS.get(recKey(idx, lv)), best = BEST.get(bestKey(idx, lv)), L = laneOf(idx, lv);
-      const head = 'Bowling — level ' + lv + ', oil to ' + Math.round((FOUL - L.oil) / (FOUL - HEAD) * 100) + '% of the lane' + (M && M.done ? ' · par ' + M.par : '') + (best ? ' · best ' + best : '');
+      const head = 'Bowling — level ' + lv + ', ' + L.pat.name + ' (' + L.pat.ft + ' ft)' + (M && M.done ? ' · par ' + M.par : '') + (best ? ' · best ' + best : '');
       if (!g || g.state === 'ready' || !g.G) return head + ' (tap to play)';
       return head + ' · frame ' + Math.min(10, g.G.frame) + ', ' + scoreOf(g.G.rolls).total + (g.state === 'over' ? ' · game over' : '');
     },
@@ -60757,6 +60860,10 @@ const BOWLING_APP = (() => {
       return true;
     },
     noDoubleTap(){ if (ED.on) return 'always'; const g = liveGame(); return !!(g && g.state === 'play'); },
+    // (the play pad: the ball in hand, a tap for the next; Oct 28, "1,2")
+    playActs(c, r){ if (ED.on) return null; const g = liveGame(); if (!g || g.state !== 'play' || g.c !== c || g.r !== r) return null; const B = BALLS[SET.ball];
+      return [{ key: 'ball', glyph: B.glyph, label: B.id, title: B.name + ': ' + B.say + '. A tap for the next ball (B).' }]; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (key === 'ball') chooseBall(g); return true; },
     keepsPress: true,
     claimsPan(u, v){
       if (ED.on){ if (u == null || LIVE == null || gkey(LIVE.c, LIVE.r) !== ED.key) return false; const i = nearPin(u * W, v, 2 * PR); if (i < 0) return false; ED.drag = { i, moved: false }; return true; }
@@ -60790,6 +60897,7 @@ const BOWLING_APP = (() => {
     _debug: { newGame, tick, roll, ballOf, bowlSim, scoreOf, aimFor, pick, handsOn, laneOf, rack, previewOf, bowlNow, afterBall, recOf, recWork, recView, recSoon, parOf,
               starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setShot, bowlMine, tilesOf, onTile,
               LV, STEADY, SET, GAMES, RECS, BEST, SPOTS, consts: { W, CX, LANE, EDGE, S, PR, BR, HEAD, FOUL, ARROWS, PIT, TICK, REC_HZ, PREVIEW, BOARD_W },
+              PATTERNS, BALLS, dryAt, wearOn, freshLane, chooseBall, colOf, ftY,
               swipeOf, BALL_GRAB, COURSE, SP_LV, parOfWindow, triesStars, shotSearch, leaveGen, leaveJob, leaveWork, leaveNow, jobFor, mineJob, spareRec, leavePins, spotsOf, clearsAll, setMode, LEAVES, SBEST,
               ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edPlace, cleanLeave, MINE, shareLeave, takeLeave, ED_TOOLS, ED_ACTS, DECK,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
