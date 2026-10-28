@@ -3087,7 +3087,9 @@ try {
     await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); D.gameAt(f.c, f.r).state = 'over'; D.gameAt(f.c, f.r).overAt = 0; D.GAMES.delete(f.c + '_' + f.r); });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 3 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     // (the field reads the tap and the game begins as a frame is drawn; on CI a frame took more than the 600 ms this waited: wait for it)
-    await page.waitForTimeout(600); for (let k = 0; k < 20; k++){ const q = await state(); if (q.st === 'play') break; await page.waitForTimeout(250); }
+    // (and in a part of its own, on a fresh page, longer still; a tap that only reframed the board is tapped again)
+    await page.waitForTimeout(600); for (let k = 0; k < 60; k++){ const q = await state(); if (q.st === 'play') break; await page.waitForTimeout(250);
+      if (k === 30){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 4 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } }
     const t4 = await state();
     // game over: stars and a best; a click after it goes on to the next board
     const ov = await page.evaluate(async () => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
@@ -3096,6 +3098,7 @@ try {
     await page.waitForTimeout(1000);
     const bx0 = await page.evaluate(() => window.FIELD_WORLD.target.boardX);
     await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(600);
+    for (let k = 0; k < 40 && (await page.evaluate(c0 => { const L = window.getFieldApp()._debug.LIVE; return !L || L.c === c0; }, s0.c)); k++) await page.waitForTimeout(250);
     // (to the board beside, not the long way round the wrapped field: from the corner it flew across all of it)
     const nx = await page.evaluate(bx0 => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD; return { ...D.LIVE, flew: Math.abs(W.target.boardX - bx0) / W.spacing()[0] }; }, bx0);
     // a board no one plays: its recording moves on the page's clock
@@ -4326,8 +4329,9 @@ try {
       await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 11) D.setting(2); });
       // a board no one plays moves
       real.idle = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), s = () => JSON.stringify(A.cellItems(c + 3, r).filter(i => /^pg(Pad|PadGlow|Cap|Ball|Orb|Cube|Puck)$/.test(i.kind)).map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
+        // (its recording is made a little at a time, so on a fresh page it may not have begun: looked at for up to 12 s)
         for (let k = 0; k < 20; k++){ A.cellItems(c + 3, r); await new Promise(ok => setTimeout(ok, 50)); }
-        const a = s(); await new Promise(ok => setTimeout(ok, 1500)); return s() !== a; }, fc);
+        for (let k = 0; k < 8; k++){ const a = s(); await new Promise(ok => setTimeout(ok, 1500)); if (s() !== a) return true; } return false; }, fc);
     }
     const ok2 = !!fc && real.start === 'play' && real.arrow && Math.abs(real.drag - 0.75 * 0.62) < 0.03 && real.match.pts === '0,0,0' && real.over.st === 'over' && real.over.best >= 2
       && real.two.near < 0.6 * 0.62 - 0.02 && real.two.far > 0.4 * 0.62 + 0.02 && real.two.still && real.tile.from === 11 && real.tile.to === 21 && real.tile.stored === 21 && real.idle;
@@ -5101,7 +5105,11 @@ try {
       return out; });
     // real input on the framed board: a tap aims there and fires; the computer answers; a drag from your tank fires on letting go
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
-    await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
+    // (on a fresh page a frame can take a second or more, so the camera can sit still before its flight has begun and the
+    //  settle passes early: wait until the board's middle is near the middle of the screen, then settle)
+    for (let k = 0; k < 160; k++){ if (await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera);
+      return Math.abs(p.x) < 0.3 && Math.abs(p.y) < 0.4; })) break; await page.waitForTimeout(250); }
+    await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     // (a point of the board in its own x and y, projected here: across the width u is x / ASP)
     const at = (x, y) => page.evaluate(([x, y]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, u = x / window.getFieldApp()._debug.ASP;
