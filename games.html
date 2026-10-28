@@ -18359,7 +18359,11 @@ const BOARD_KIT = (() => {
     };
     return B;
   }
-  return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget };
+  /* A game's word in the notice at the top (Oct 27: "do the message helpers next"): `say(ms, quiet)` gives the function forty-odd
+     games each wrote out, say(message, how long), shown for `ms` unless told otherwise, and not at all while `quiet()` says so
+     (a game playing its own demo, Settings muted). The notice may not be there yet, so a failure is let go. */
+  const say = (ms, quiet) => (m, t) => { if (quiet && quiet()) return; try { engineNotice(m, t || ms); } catch {} };
+  return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say };
 })();
 /* ═══ DOT_FONT — the page's two dot fonts, once (Oct 27: "do the dot font next", after the board kit). A 5 × 7 (each glyph seven
    rows of five bits, the top bit the left dot: the capitals, the digits, a few signs and ♥ ★), which pinball's dot-matrix panel
@@ -23605,7 +23609,7 @@ const DEFENDER_APP = (() => {
   const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   // Swappable so the reels bake with a seeded roll and no notices.
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── Sep 27: "1,2,3,4" — the pieces shoot back along their own lines, waves
      end, a pawn that gets through promotes, and kills drop power-ups.
@@ -24291,7 +24295,7 @@ const BREAKOUT_APP = (() => {
   const GOLD = 0xe8c86a, BALL_COL = 0xfff0b0;
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── LEVELS WITH SHAPES (Sep 27). Each level lays the army out as a
      picture, in turn: the five lines it always had, then a diamond, a castle,
@@ -24837,7 +24841,7 @@ const CROSSING_APP = (() => {
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
   const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* THE LANES, far rank = row 0. Row 7 is where you start, row 4 is the verge,
      row 0 is the goal. speed is board widths a second (knights: squares per
@@ -25655,7 +25659,7 @@ const SNAKE_APP = (() => {
   const FOOD_N = 7, STEP = 0.16, ROUND_T = 75, WINS = 3;
   const GROW = { p: 1, n: 3, b: 3, r: 5 };
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
   /* DIFFICULTY, SOUND, TILT (Sep 27: the basics, as the other games have them). Difficulty sets how
@@ -26291,7 +26295,7 @@ const TRON_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   // Difficulty: seconds a step, and how often the others take their best line rather than any safe one.
   const DIFF = { easy: { step: 0.13, care: 0.55 }, normal: { step: 0.1, care: 0.85 }, hard: { step: 0.08, care: 1 } };
@@ -26702,7 +26706,7 @@ const MISSILE_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   const DIFF = { easy: { sp: 0.7, n: 0.8 }, normal: { sp: 1, n: 1 }, hard: { sp: 1.3, n: 1.25 } };
   const DL = ARCADE.difficulty('missile.level', 'Easy: slower missiles, and fewer. Normal: in between. Hard: faster, and more of them.');
@@ -27045,7 +27049,7 @@ const ASTEROIDS_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   const DIFF = { easy: { sp: 0.75, n: 3 }, normal: { sp: 1, n: 4 }, hard: { sp: 1.3, n: 5 } };
   const DL = ARCADE.difficulty('asteroids.level', 'Easy: slower rocks, three to start. Normal: four. Hard: faster rocks, five to start.');
@@ -27637,7 +27641,7 @@ const TETRIS_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── Sep 27: the basics, modern rules, and chess in the stack.
      DIFFICULTY sets how fast pieces start falling and how long a piece that
@@ -28221,7 +28225,7 @@ const BLOCKOUT_APP = (() => {
   const SET = { mode: ARCADE.load('blockout.mode', 'puzzle') === 'endless' ? 'endless' : 'puzzle', glass: ARCADE.load('blockout.glass', 'on') !== 'off' };
   const puzzling = () => SET.mode === 'puzzle';
   const DL = ARCADE.difficulty('blockout.level', 'Every board plays at its own level, harder the farther it is from the corner: a 3 × 3 pit of flat pieces near it, then 4 × 4, then 5 × 5 with pieces that are not flat and, farther out, pieces of five cubes falling faster. Easy, Normal and Hard move every board a level up.', true);
-  const say = (m, ms) => { if (QUIET) return; try { engineNotice(m, ms || 2000); } catch {} };
+  const say = BOARD_KIT.say(2000, () => QUIET);
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (Lights Out's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
@@ -29065,7 +29069,7 @@ const SOMA_APP = (() => {
      not fit across it otherwise, so a long one is drawn smaller rather than over its neighbours. Soma's are never past 6. */
   const sqOf = B => Math.min(0.14, 0.84 / Math.max(B[0], B[1]));
   const DL = ARCADE.difficulty('soma.level', 'Every board has its own figure to fill, harder the farther it is from the corner: three pieces near it, then four, five and six, and far out all seven. The corner\'s first board is the Soma cube itself. Easy, Normal and Hard move every board a level up.', true);
-  const say = (m, ms) => { try { engineNotice(m, ms || 2400); } catch {} };
+  const say = BOARD_KIT.say(2400);
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (Lights Out's: a board's own number from its column and row, and its ring out from the corner)
@@ -30275,7 +30279,7 @@ const GEMS_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── THE SHAPES: r(h, θ), h up the gem, θ around it. A cut gem is a
      polygon in plan (its circumradius, rounded by the few terms kept), a
@@ -30670,7 +30674,7 @@ const BOMBER_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const inb = (r, c) => r >= 0 && r < N && c >= 0 && c < N;
   const DIFF = { easy:   { think: 0.24, bold: 0.55 },
                  normal: { think: 0.12, bold: 0.9 },
@@ -31382,7 +31386,7 @@ const PACMAN_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* DIFFICULTY, SOUND, TILT (Sep 28: the basics, as the other games have them). Difficulty sets how
      fast the ghosts are against Pac-Man and how long they stay blue. */
@@ -32057,7 +32061,7 @@ const TD_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* THE WAY: entrance on the left edge, exit on the right, their heights set per board. The pieces
      walk the shortest way (four directions) to the exit, round the towers — worked out as a
@@ -32924,7 +32928,7 @@ const AIR_APP = (() => {
   const STATE = new Map();                            // per board: the dead, the explosions, the muzzle flashes
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
-  function say(msg, ms){ try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800);
   const now = () => performance.now() / 1000;
   const mul = a => () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
                           t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -35043,7 +35047,7 @@ const INVADERS_APP = (() => {
   const GOLD = 0xe8c86a, SHOT_GOLD = 0xfff0b0, BOMB_RED = 0xe0443a;
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   const DIFF = { easy:   { march: 0.8,  rate: 1.4, shot: 0.8 },
                  normal: { march: 1,    rate: 1,   shot: 1 },
@@ -35734,7 +35738,7 @@ const TILES_APP = (() => {
   const GAMES = new Map();
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
-  const say = (m, ms) => { try { engineNotice(m, ms || 2200); } catch {} };
+  const say = BOARD_KIT.say(2200);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const note = c => { if (!SND.on) return; const f = noteOf(c, N); try { if (ARCADE.audio()) ARCADE.tone(f, f, 0.22, 'triangle', 0.07); } catch {} };
 
@@ -38726,7 +38730,7 @@ const GOLF_MAKE = SIZE => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
   let SILENT = false;                                     // (the editor's Check plays thousands of putts: quietly)
-  const say = (m, ms) => { if (SILENT) return; try { engineNotice(m, ms || 2000); } catch {} };
+  const say = BOARD_KIT.say(2000, () => SILENT);
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
   // The hole a board holds: the board to the right holds the next one, so the course walks rightward.
   /* A HOLE FOR EVERY BOARD (Oct 9: "the problem is there are thousands of boards. can you use the index to generate a
@@ -43232,7 +43236,7 @@ const MINES_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   // Sep 28, the puzzle pass: difficulty is how many mines (15, 22, 30); sound as the others have it.
   const DL = ARCADE.difficulty('mines.level', 'Easy: 9×9, 10 mines. Normal: 12×12, 22 mines. Hard: 16×16, 40 mines. The board you are on is dealt again at the new size.');
   const SND = ARCADE.sounds('mines.sound', 'A tap for each square, a sweep when a patch opens, a flag, the explosion and the fanfare.');
@@ -43595,7 +43599,7 @@ const MEMORY_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DL = ARCADE.difficulty('memory.level', 'Easy: 4×4, eight pairs. Normal: 5×5, twelve pairs round an empty middle. Hard: 6×6, eighteen pairs. The board you are on is dealt again at the new size.');
   const LV = () => QUIET ? 'hard' : DL.get();          // the recordings are the 6×6
   const SND = ARCADE.sounds('memory.sound', 'A tap for each card, a chime for a pair, a buzz for a miss, a fanfare when the board is clear.');
@@ -43862,7 +43866,7 @@ const PIPES_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DL = ARCADE.difficulty('pipes.level', 'Easy: 8×8. Normal: 10×10. Hard: 12×12. The board you are on is dealt again at the new size.');
   const SND = ARCADE.sounds('pipes.sound', 'A click for each turn, a chime when the water reaches further, a fanfare when it is all connected.');
   const wetN = p => wet(p).on.reduce((s, x) => s + x, 0);
@@ -44111,7 +44115,7 @@ const LOOPS_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DL = ARCADE.difficulty('loops.level', 'Easy: 8×8. Normal: 10×10. Hard: 12×12. The board you are on is dealt again at the new size.');
   const SND = ARCADE.sounds('loops.sound', 'A click for each turn, a chime when a piece meets all round, a fanfare when nothing is loose.');
 
@@ -44339,7 +44343,7 @@ const MANIA_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   // Sep 28, the puzzle pass: difficulty sets how fast the water runs and how long it waits at an open end.
   const DL = ARCADE.difficulty('mania.level', 'Easy: an 8×8 board, slower water that waits 9 seconds at an open end. Normal: 10×10. Hard: 12×12, faster water that waits 4. The board you are on starts again at the new size.');
   const DIFF = { easy: { tile: 1.35, grace: 9 }, normal: { tile: 1, grace: 6 }, hard: { tile: 0.75, grace: 4 } };
@@ -44673,7 +44677,7 @@ const FLOW_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, DRAG = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   // Sep 28, difficulty: easy draws two of the flows in for you; hard has no short pairs (every run six squares or more).
   const DL = ARCADE.difficulty('flow.level', 'Easy: 6×6, five pairs. Normal: 8×8, seven pairs. Hard: 10×10, nine pairs. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
@@ -45093,7 +45097,7 @@ const NETSLIDE_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, DRAG = null;
   let rnd = Math.random;
-  const say = msg => { try { engineNotice(msg, 3500); } catch {} };
+  const say = BOARD_KIT.say(3500);
   const DL = ARCADE.difficulty('netslide.level', 'Easy: 5×5. Normal: 7×7. Hard: 9×9. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the setting is the corner block's, and every board farther out is a size up (ARCADE.levelOn,
@@ -45368,7 +45372,7 @@ const ROLL_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, DRAG = null;
   let rnd = Math.random;
-  const say = msg => { try { engineNotice(msg, 3500); } catch {} };
+  const say = BOARD_KIT.say(3500);
   const DL = ARCADE.difficulty('roll.level', 'Easy: 5×5. Normal: 6×6. Hard: 7×7. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the setting is the corner block's, and every board farther out is a size up (ARCADE.levelOn,
@@ -45643,7 +45647,7 @@ const UNBLOCK_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, DRAG = null;
   let rnd = Math.random;
-  const say = msg => { try { engineNotice(msg, 3500); } catch {} };
+  const say = BOARD_KIT.say(3500);
   // Sep 28, the puzzle pass: difficulty picks from the puzzles by how many moves they need.
   const DL = ARCADE.difficulty('unblock.level', 'Easy: a 6×6 board. Normal: 8×8. Hard: 10×10. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
@@ -46100,7 +46104,7 @@ const T2048_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, SWIPE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 2500); } catch {} };
+  const say = BOARD_KIT.say(2500, () => QUIET);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   let NEXT_ID = 1;
   // Sep 28, the puzzle pass: sound, and tilt — tip the phone and the tiles slide that way; level it to tip again.
@@ -46436,7 +46440,7 @@ const SOKOBAN_APP = (() => {
   const gkey = (c, r) => c + '_' + r;
   let LIVE = null, DRAG = null;
   let QUIET = false;                            // while the recordings are made: no notices, no sound
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000, () => QUIET);
   // Sep 28, the puzzle pass: sound; tilt steers (hold the tip and he keeps walking); a drag anywhere steers.
   const SND = ARCADE.sounds('sokoban.sound', 'A step, a shove for each push, a chime when a crate lands on a spot, a fanfare when the level is done.');
   const TILT = ARCADE.tilt;
@@ -47210,7 +47214,7 @@ const TILT_APP = (() => {
   const DL = ARCADE.difficulty('tiltmaze.level', 'Every board has its own maze, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('tiltmaze.sound', 'A tick off the walls, a drop down a hole, a chime at the ring.');
   const TILT = ARCADE.tilt;
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -47878,7 +47882,7 @@ const PINBALL_APP = (() => {
   const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags)
   const DL = ARCADE.difficulty('pinball.level', 'Every board has its own table, harder the farther it is from the corner: steeper, shorter flippers set wider, wider outlanes, a shorter ball save. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('pinball.sound', 'Flippers, bumpers, slingshots, targets and the drain — made in the browser.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -49571,7 +49575,7 @@ const SIMON_APP = (() => {
   const QUICKEN = 0.035, QUICK_MIN = 0.55, R_IN = 0.17, R_OUT = 0.46, GAP_A = 0.06, PAD_H = 0.012, LIT_UP = 0.012;
   const DL = ARCADE.difficulty('simon.level', 'Every board plays its own sequence, harder the farther it is from the corner: four pads near it, six farther, eight far out, quicker and with less time to answer. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('simon.sound', 'Each pad its own tone, a buzz when it is wrong.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -49815,7 +49819,7 @@ const LIGHTS_APP = (() => {
   const TRIES = 24, STEP = 0.55, HOLD0 = 1.0, HOLD1 = 1.4, FLASH_S = 0.28, HINT_S = 1.6;
   const DL = ARCADE.difficulty('lightsout.level', 'Every board deals its own lights, harder the farther it is from the corner: a 4×4 near it that goes out in three to five presses, 5×5s, then 6×6 and 7×7 boards that need fourteen or more. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('lightsout.sound', 'A click for each press, a fanfare when the last light goes out.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const clock = () => performance.now() / 1000;
   const fieldGS = BOARD_KIT.gs;
@@ -50072,7 +50076,7 @@ const MOLE_APP = (() => {
   ];
   const DL = ARCADE.difficulty('whackamole.level', 'Every board plays its own round, harder the farther it is from the corner: nine holes near it, sixteen farther, twenty-five far out, the moles quicker and more at once, and bombs from the middle rings. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('whackamole.sound', 'A bonk for a mole, a buzz for a miss, a bang for a bomb.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -50374,7 +50378,7 @@ const NONOGRAM_APP = (() => {
   const DIG = 0xf3ead6, DIG_DONE = 0x5d6578, CROSS = 0xa5452f, GOLD = 0xd9a73a;
   const DL = ARCADE.difficulty('nonograms.level', 'Every board hides its own picture, harder the farther it is from the corner: 5×5 near it, then 6×6, 8×8, 10×10 and 12×12 far out, with fewer squares filled and more to work out. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('nonograms.sound', 'A tick for each square, a chime when a line is right, a fanfare for the picture.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -50877,7 +50881,7 @@ const NONOGRAM_APP = (() => {
 const FLASH_APP = (() => {
   const ASP = 1.6, HI_PX = 260, FLIP_T = 9, BACK_T = 3.2, NEW_PER_DAY = 20, LEARN_AHEAD = 20 * 60e3;
   const MIN = 60e3, DAY = 86400e3;
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const clock = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
   let NOWFN = () => Date.now();                      // (the schedule's clock; the tests move it)
   const fieldGS = BOARD_KIT.gs;
@@ -51484,7 +51488,7 @@ const TANKS_APP = (() => {
         osc(A, d, t, 'sawtooth', 55, 48, len, 0.03, 0.02); burst(A, d, t, len, 0.05, 400, 300); }),
     };
   })();
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -52538,7 +52542,7 @@ const TANKMAZE_APP = (() => {
   const SND = ARCADE.sounds('tankmaze.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
   const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('tankmaze.players', '1') || 1)), n: Math.max(2, Math.min(4, +ARCADE.load('tankmaze.count', '2') || 2)),
                powers: ARCADE.load('tankmaze.powers', 'on') !== 'off', aim: ARCADE.load('tankmaze.aim', 'on') !== 'off' };
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
@@ -53327,7 +53331,7 @@ const GOLFTANK_APP = (() => {
   const DL = ARCADE.difficulty('golftanks.level', 'Every board is its own golf hole, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('golftanks.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
   const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('golftanks.players', '1') || 1)), aim: ARCADE.load('golftanks.aim', 'on') !== 'off' };
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
@@ -54885,7 +54889,7 @@ const TRICK_APP = (() => {
   const AIM_T = 2.4, HOLD_T = 1.4, REC_CAP = 300, REC_HZ = 30, DOT_GAP = 0.32, DOT_MAX = 700, PHOTO_PX = 24, HI_PX = 360;
   const yawOf = h => h || 1e-6;               // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   const hexOf = s => parseInt(s.slice(1), 16);
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
   // (mini golf's: a board's own number from its column and row, Szudzik's pairing, and back)
@@ -56152,7 +56156,7 @@ const LEVELS_APP = (() => {
     requestAnimationFrame(tick);
   }
   const startTick = () => { if (!ticking){ ticking = true; requestAnimationFrame(tick); } };
-  const say = (m, ms) => { try { engineNotice(m, ms || 2200); } catch {} };
+  const say = BOARD_KIT.say(2200);
   function setMode(m){
     if (!MODES.includes(m)) return; mode = m; try { localStorage.setItem('levels.mode', m); } catch {}
     say(MODE_NAME[m] + (m === 'vh' ? ': the levels split at H, 2H, 4H … from the point under the eye' : m === 'metres' ? ': the levels split at fixed distances on the ground' : ': every board in full'));
@@ -56502,7 +56506,7 @@ const PONG_APP = (() => {
   // the steady player: a person's hands, the same on every board (so par says how hard the board's computer is)
   const STEADY = { react: 0.18, err: 0.032, v: 1.05, acc: 6.5, aim: 0.35 };
   const DL = ARCADE.difficulty('pong.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster serve, your paddle shorter, and a computer that looks again sooner, guesses better, moves faster and aims away from you. Easy, Normal and Hard move every board a level up.', true);
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -57501,7 +57505,7 @@ const AIRHOCKEY_APP = (() => {
   // the steady player (the recordings' near end, and par): a person's hands, the same on every board
   const STEADY = { react: 0.17, err: 0.03, v: 1.4, acc: 9, attack: 0.7, aimErr: 0.18, bank: 0.15 };
   const DL = ARCADE.difficulty('airhockey.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster, freer puck, and a computer that looks again sooner, guesses better, moves faster and shoots straighter, banking shots off the rail farther out. Easy, Normal and Hard move every board a level up.', true);
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -58139,7 +58143,7 @@ const SQUASH_APP = (() => {
     { tw: 0.08, th: 0.045, feedV: 1.55, spread: 0.9,  drop: 0.44, boast: 0.34, gap: 1.8, alt: true,  deep: 0.64, tight: 0.16 },
   ];
   const DL = ARCADE.difficulty('squash.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster ball, and a computer that looks again sooner, runs faster, gets to the ball better and plays it away from you, with more drops and lobs farther out; drills with smaller targets and quicker, wider feeds. Easy, Normal and Hard move every board a level up.', true);
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const now = () => { try { return animTime(); } catch { return performance.now(); } };
   const fieldGS = BOARD_KIT.gs;
   const gkey = (c, r) => c + '_' + r;
@@ -59122,7 +59126,7 @@ const SQUASH_APP = (() => {
    Row 0 is the far row (the top of the screen as a board is framed), x across. Keys are 'up', 'down', 'left', 'right' (as
    the board lies: up is toward row 0, whichever way the view is turned: `screenToBoardDirs`), 'enter', 'space' and letters. */
 const GAMELAB_APP = (() => {
-  const say = (m, ms) => { try { engineNotice(m, ms || 2600); } catch {} };
+  const say = BOARD_KIT.say(2600);
   const gkey = (c, r) => c + '_' + r;
   // (Lights Out's: a board's own number and its ring out from the corner; levels 1–5 as every game here has them)
   const boardIdx = BOARD_KIT.boardIdx;

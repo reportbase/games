@@ -2428,6 +2428,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   and pinball's dot-matrix panel, which keeps only the 37 it always drew, `pick`), and `three`, a 3 × 5 (digits and the letters
   squash's calls need) with `text3` and `digits3` (Pong's, air hockey's and squash's scores, squash's calls). Checked: every glyph
   and every dot laid the same as the copies before. A new game's lettering uses it.
+  **One way to say a thing** (Oct 27: "do the message helpers next"): 45 games each wrote `say(message, ms)` out, the notice at
+  the top for so long (1.8 to 3.5 s by game), some held back while the game is quiet (`QUIET`, `SILENT`: a demo, muted). Now
+  `const say = BOARD_KIT.say(ms, () => QUIET);` (the second argument only where the game had one). The four that do more (the
+  board editors' and puzzle makers', which keep the message on the draft too, and chess's early one) keep their own. Checked: every
+  app loads, and the games' own messages say the same.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:
