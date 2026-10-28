@@ -46,6 +46,14 @@ const launch = { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-u
 if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
 const browser = await chromium.launch(launch);
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+/* A REQUEST TO ANOTHER SERVER IS GIVEN 20 SECONDS (Oct 28): a library from a CDN that never answered held a part's page past two
+   minutes, even waiting for the page's own content alone (a script in the head holds the parsing). Every request off the test's own
+   server is fetched here with a time limit and dropped past it, as if the network had refused it, which the page already copes
+   with. Registered first, so the LIBS_DIR routes below (registered later, asked first) still serve their files. */
+await page.route(u => !/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(u.href) && !/^(data|blob):/.test(u.href), async r => {
+  try { const res = await r.fetch({ timeout: 20000 }); await r.fulfill({ response: res }); }
+  catch { try { await r.abort(); } catch {} }
+});
 if (process.env.LIBS_DIR){
   const lib = f => readFile(join(process.env.LIBS_DIR, f));
   await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r =>
