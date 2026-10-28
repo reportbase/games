@@ -716,6 +716,43 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     real drag running the player under the finger, the real arrow, a real click serving, a match won with stars and a best, two
     real fingers each taking a player with the view still, real clicks on the Points, Game and Mode tiles, a drill started by a
     real click with the machine feeding, and a board no one plays moving.
+- **Curling** (Oct 28: "2,   3 curling, bowling, marble run", the first of the new games: "stones that curl, sweeping, a house on
+  every board"): `CURLING_APP`, id `curling`, after squash. The far end of a sheet a board, `W` (0.42) wide by 1 long (`boardShape`,
+  `frameFit` 1.1): the house's rings (`RINGS`, the button at `TEE` 0.2), the far hog line (`HOG` 0.5), the back line, and your
+  delivery at `REL` (0.93); stones `SR` (0.0128), red yours, yellow the computer's.
+  - **The ice** (`slide`, steps of 1/240 s): friction `A0` slows a stone evenly (by the board's `fric`); it curls by its turn
+    (`s`, ±1) at `CURL` × A0 × CV / (v + CV), so most of its curl comes as it slows; stones meet as equal masses (`E_STONE`) and both
+    lose their turn. Sweeping (`SWEEP_A` 0.85 of the friction, `SWEEP_C` 0.6 of the curl) carries a draw swept all the way about
+    0.13 farther. Out: touching a side line, wholly past the back line, or (a delivered stone that struck nothing) short of the
+    far hog line (`hogCheck`). A draw curls about 0.04–0.05 (the house is 0.16 across its radius) and takes about 5 s.
+  - **An end** (`SET.stones` each, 2–4; a game `SET.ends`, 2–8, a tie playing on an extra end): the side without the hammer first,
+    by turns (`toThrow`); scored to the button (`endScore`: the side nearest scores one a stone nearer than the other's nearest,
+    in the house); the side that scores gives up the hammer, a blank end keeps it.
+  - **Every board its own ice and level** (`iceOf` by the board's number: curl 0.75–1.25 of `CURL`, swingier by a tenth a level;
+    friction 0.92–1.08), a level 1–5 by ring plus the Difficulty, as every game with levels.
+  - **The computer** (`plan`, `LV`): draws (the button, beside it, short), a guard early, freezes to your stones, stones behind its
+    own and takeouts of yours (`solveDraw`, `solveHit`: the broom and weight found by a few throws of the stone alone), each played
+    against the stones as they lie (`throwSim`) and valued (`valueOf`: the end's score if it ended now, the nearest stones' gap, a
+    little for guards); its hands (`errX` on the broom, `errW` on the weight, `handsOn`), the best taken `pick` of the time; from
+    level 3 it sweeps a stone it sees will stop short (`wantSweep`). Against the steady player (`STEADY`) over 8 games of 4 ends:
+    the steady player won 8, 6, 4, 1 and 0 at levels 1–5. About 5 ms to plan a stone.
+  - **Playing**: a tap or a drag on the sheet puts the broom (← → nudge it); the row's Curl (C), Weight − and + (↑ ↓), and the weight
+    tile stepping through guard, draw, back of the house, hit and peel (its name from where the stone would stop, `weightName`);
+    Enter, the row's Throw or a tap on your stone at the delivery throws (`throwMine`). While your stone runs, a press held on the
+    sheet (heard before the field: `MATCH_KIT.hands`) or S sweeps; two brooms work at its nose. Your own last shot comes back for
+    your next stone (`G.mine`). The shot is dotted before it goes (`previewOf`, unswept, through the stones as they lie): all of it
+    with a ring where it stops at level 1, `PREVIEW` of it farther out (a quarter at level 5); the row's Show the shot turns it off.
+  - **A board no one plays** shows an end of the steady player against its computer, worked out a throw at a time in the boards'
+    share of time (`recOf`, `recWork`, `BOARD_KIT.budget(6, 40)`; frames of every stone at `REC_HZ` 15), played back on its own
+    phase (`BOARD_KIT.frameAt`). About 80 ms an end.
+  - **Through**: stars (a win by 3 or more ★★★, a win ★★, a draw ★), the most kept a board (`curling.best`, by board, level, ends and
+    stones); a tap goes on to the board beside. Settings in `curling.settings`. Drawn: the sheet a picture (`paint`: ice, pebble,
+    rings, lines, the hack), stones (`cuStone`, a lathe of granite) with handles in the team's colour turned as the stone turns
+    (`cuHandle`), the broom, the dots, the sweepers' brooms (`cuBroom`), a flash where stones meet, the score in dot digits.
+  - The smoke test (part 5) checks the levels by ring, a draw solved to the button, the curl both ways, sweeping farther and
+    straighter, a takeout, the hog line, an end's score, games ending with the steady player better at level 1 than 5, and real
+    input: a click starting, a real click putting the broom, the real Enter throwing, a real press sweeping, the computer answering,
+    and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

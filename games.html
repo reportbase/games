@@ -59112,6 +59112,646 @@ const SQUASH_APP = (() => {
   };
   return app;
 })();
+/* ═══ CURLING (Oct 28: "2,   3 curling, bowling, marble run", the first of the three new games offered: "stones that curl,
+   sweeping, a house on every board") ═══════════════════════════════════════════════════════════════════════════════════════
+   The far end of a sheet on every board: the house near the top (the button at `TEE`), the far hog line, and your delivery at
+   the near end (`REL`). Stones go in turn, yours red and the computer's yellow; an end is `SET.stones` each, a game `SET.ends`.
+   - THE THROW: the broom is where you aim (a tap or a drag on the sheet puts it there; ← → nudge it), the weight how far the
+     stone would slide on its own (the row's Weight − +, ↑ ↓, its name the shot it makes: guard, draw, back, hit, peel), the
+     curl which way it turns (the row's Curl, C). Enter, the row's Throw or a tap on your stone at the delivery throws it.
+   - SWEEPING: while your stone runs, a finger held on the sheet (or S held) sweeps in front of it: it slides farther
+     (`SWEEP_A` of the friction) and curls less (`SWEEP_C`). Two brooms are drawn working at its nose.
+   - THE ICE (`slide`): friction `A0` slows a stone evenly; it curls sideways by its turn, more as it slows (`CURL` × A0 ×
+     CV / (v + CV)), as a real stone does, most of its curl in the last few metres. Stones meet as equal masses (`E_STONE`), the
+     one struck sent on along the line between their middles, both losing their turn (no more curl).
+   - THE RULES: a delivered stone must come to rest wholly past the far hog line unless it struck another; a stone touching a
+     side line or wholly past the back line is out. When every stone is still and thrown, the side whose stone is nearest the
+     button scores one for each of its stones in the house nearer than the other side's nearest (`endScore`). The side that
+     scores throws first next end; a blank end keeps the last stone (the hammer) where it was.
+   - EVERY BOARD ITS OWN ICE AND LEVEL (`iceOf`, by the board's number: how far it curls, how fast it runs, swingier farther
+     out), a level 1–5 by ring plus the Difficulty (Easy 0, Normal 1, Hard 2), as every game with levels has.
+   - THE COMPUTER (`plan`, `LV` by level): it reads the house and tries draws (the button, beside it, behind a stone, frozen to
+     one), guards in front of the house and takeouts of your stones, each worked out in the game's own physics (`solveDraw`,
+     `solveHit`: the broom and weight that bring the stone there, found by a few throws of the stone alone), plays each against
+     the stones as they lie (`throwSim`) and keeps the best by the end's score if it ended then (`valueOf`). Then its hands: the
+     broom off by `errX`, the weight by `errW`; it picks the best `pick` of the time (else one of the next best), and from
+     level 3 it sweeps a stone it sees will come up short (`wantSweep`).
+   - THE SHOT SHOWN BEFORE IT GOES (`previewOf`): the stone's own way, unswept, through the stones as they lie, dotted from the
+     delivery: all of it at level 1 with a ring where it stops, `PREVIEW` of it farther out (a quarter at level 5).
+   - A BOARD NO ONE PLAYS shows an end of the steady player (`STEADY`) against its computer (`recOf`, `recWork`: one throw at a
+     time in the boards' share of time, frames of every stone at `REC_HZ`), played back on its own phase (`BOARD_KIT.frameAt`).
+   - THROUGH: the game's score as stars (a win by 3 or more ★★★, a win ★★, a draw ★), the most kept a board (`curling.best`);
+     a tap on a finished board goes on to the board beside. */
+const CURLING_APP = (() => {
+  const W = 0.42, SR = 0.0128, SH = 0.011, TEE = 0.2, HOG = 0.5, REL = 0.93, CX = W / 2;
+  const RINGS = [0.162, 0.108, 0.054, 0.016], HOUSE = RINGS[0], BACK = TEE - HOUSE;
+  const A0 = 0.062, CURL = 0.55, CV = 0.05, SWEEP_A = 0.85, SWEEP_C = 0.6, E_STONE = 0.92, DT = 1 / 240, STOP_V = 0.0025;
+  const TICK = 1 / 60, SUB = 4, REC_HZ = 15, REC_CAP = 200, PHOTO_PX = 20, HI_PX = 300, GRACE = 0.8, CPU_T = 1.1, REST_T = 0.9, END_T = 2.6;
+  const W_MIN = 0.3, W_MAX = 2.6, PREVIEW = [1, 0.6, 0.45, 0.35, 0.25];
+  const LV = [
+    { errX: 0.032, errW: 0.13, pick: 0.35, sweep: false, takeouts: 0.5 },
+    { errX: 0.022, errW: 0.095, pick: 0.55, sweep: false, takeouts: 0.8 },
+    { errX: 0.015, errW: 0.07, pick: 0.75, sweep: true, takeouts: 1 },
+    { errX: 0.0095, errW: 0.05, pick: 0.9, sweep: true, takeouts: 1 },
+    { errX: 0.006, errW: 0.033, pick: 1, sweep: true, takeouts: 1 },
+  ];
+  const STEADY = { errX: 0.015, errW: 0.065, pick: 0.8, sweep: true, takeouts: 1 };
+  const DL = ARCADE.difficulty('curling.level', 'Every board plays at its own level, harder the farther it is from the corner: swingier ice, a computer whose hands are surer and who chooses its shots better, sweeps its own stones and plays takeouts, and less of your shot shown before it goes. Easy, Normal and Hard move every board a level up.', true);
+  const say = BOARD_KIT.say(2600);
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, ringOf = BOARD_KIT.ringOf, clamp = BOARD_KIT.clamp, rngOf = BOARD_KIT.rng;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
+  const TEAM = [0xd8332c, 0xf2c230], TEAM_NAME = ['red', 'yellow'];
+
+  /* ─── THE SETTINGS (the bottom row's last tiles, and the menu) ─── */
+  const SET = (() => {
+    const d = { ends: 4, stones: 4, sound: true, preview: true };
+    try { const s = JSON.parse(localStorage.getItem('curling.settings') || '{}');
+      if ([2, 4, 6, 8].includes(s.ends)) d.ends = s.ends;
+      if ([2, 3, 4].includes(s.stones)) d.stones = s.stones;
+      for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k];
+    } catch {}
+    return d;
+  })();
+  const saveSet = () => { try { localStorage.setItem('curling.settings', JSON.stringify(SET)); } catch {} };
+
+  /* ─── THE ICE ─── a board's own: how much a stone curls and how fast the sheet runs, swingier farther out */
+  function iceOf(idx, lv){
+    const R = rngOf((idx * 2654435761) ^ 0x51ce);
+    return { curl: CURL * (0.75 + 0.5 * R()) * (1 + 0.1 * (lv - 1)), fric: 0.92 + 0.16 * R() };
+  }
+  const v0Of = (w, ice) => Math.sqrt(2 * A0 * ice.fric * w);
+
+  /* ─── THE STONES ON THE ICE ─── `slide` moves every stone one step: friction, curl (the stone being swept less), the stones
+     meeting, the side lines and the back line. A stone is { x, y, vx, vy, s (its turn: +1 curls toward +x), team, rot, out,
+     hit, live }. Returns true while anything moves. */
+  function slide(S, ice, dt, sweepK){
+    let moving = false;
+    for (const st of S){
+      if (st.out || (!st.vx && !st.vy)) continue;
+      const v = Math.hypot(st.vx, st.vy);
+      if (v < STOP_V){ st.vx = st.vy = 0; continue; }
+      moving = true;
+      const sw = sweepK && st.live ? sweepK : 0;
+      const a = A0 * ice.fric * (sw ? 1 - (1 - SWEEP_A) * sw : 1);
+      const dx = st.vx / v, dy = st.vy / v;
+      const al = st.s ? st.s * ice.curl * A0 * CV / (v + CV) * (sw ? 1 - (1 - SWEEP_C) * sw : 1) : 0;
+      const nv = v - a * dt;
+      if (nv <= 0){ st.vx = st.vy = 0; continue; }
+      // (the curl turns the way along: perpendicular to it, (−dy, dx) is +x for a stone going up the sheet)
+      let vx = dx * nv - dy * al * dt, vy = dy * nv + dx * al * dt;
+      const k = nv / Math.hypot(vx, vy); st.vx = vx * k; st.vy = vy * k;
+      st.x += st.vx * dt; st.y += st.vy * dt;
+      st.rot += (st.s || 0) * nv * dt * 9;
+    }
+    for (let i = 0; i < S.length; i++){
+      const a = S[i]; if (a.out) continue;
+      for (let j = i + 1; j < S.length; j++){
+        const b = S[j]; if (b.out) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+        if (d2 >= 4 * SR * SR || d2 < 1e-12) continue;
+        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, vn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+        const push = (2 * SR - d) / 2; a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
+        if (vn <= 0) continue;
+        const J = (1 + E_STONE) / 2 * vn;
+        a.vx -= J * nx; a.vy -= J * ny; b.vx += J * nx; b.vy += J * ny;
+        a.s = b.s = 0; a.hit = b.hit = true; moving = true;
+        if (S.onHit) S.onHit(a, b, vn);
+      }
+    }
+    for (const st of S){
+      if (st.out) continue;
+      if (st.x < SR || st.x > W - SR || st.y < BACK - SR || st.y > 1.02){ st.out = true; st.vx = st.vy = 0; if (S.onOut) S.onOut(st); }
+    }
+    return moving;
+  }
+  // a stone delivered: from the delivery toward the broom at its weight, turning `curl`
+  function deliver(team, shot, ice){
+    const dx = shot.bx - CX, dy = shot.by - REL, d = Math.hypot(dx, dy) || 1, v = v0Of(shot.w, ice);
+    return { x: CX, y: REL, vx: v * dx / d, vy: v * dy / d, s: shot.curl, team, rot: 0, out: false, hit: false, live: true };
+  }
+  // a delivered stone come to rest short of the far hog line, having struck nothing, is taken off
+  function hogCheck(st){ if (!st.out && !st.hit && st.y > HOG - SR){ st.out = true; return true; } return false; }
+  const copy = S => S.map(st => ({ ...st }));
+  // a throw played out at once (no sweeping unless asked), the stones as they lie: what the computer and the preview ask
+  function throwSim(S0, team, shot, ice, opt){
+    const o = opt || {}, S = copy(S0), st = deliver(team, shot, ice), dt = o.dt || DT, path = o.path ? [] : null;
+    for (const q of S) q.live = false;
+    S.push(st);
+    let t = 0;
+    while (t < 40){
+      if (path && (path.length < 2 || Math.hypot(st.x - path[path.length - 2], st.y - path[path.length - 1]) > 0.012)) path.push(st.x, st.y);
+      const mv = slide(S, ice, dt, o.sweep ? o.sweep(t, st) : 0); t += dt;
+      if (o.until && o.until(st, t)) break;
+      if (!mv) break;
+    }
+    hogCheck(st);
+    return { S, st, path, t };
+  }
+
+  /* ─── SCORING ─── */
+  const dist = st => Math.hypot(st.x - CX, st.y - TEE);
+  const inHouse = st => !st.out && dist(st) <= HOUSE + SR;
+  function endScore(S){
+    const H = S.filter(inHouse).sort((a, b) => dist(a) - dist(b));
+    if (!H.length) return { team: -1, n: 0 };
+    const t = H[0].team, other = H.find(st => st.team !== t), lim = other ? dist(other) : Infinity;
+    return { team: t, n: H.filter(st => st.team === t && dist(st) < lim).length };
+  }
+  // how good stones lying so are for `team`: the end's score if it ended now, the nearest stones' gap, a little for guards
+  function valueOf(S, team, last){
+    const e = endScore(S), pts = e.team < 0 ? 0 : e.team === team ? e.n : -e.n;
+    if (last) return pts;
+    const near = tm => { let m = 1; for (const st of S) if (!st.out && st.team === tm) m = Math.min(m, dist(st)); return m; };
+    let guards = 0;
+    for (const st of S) if (!st.out && st.team === team && st.y > TEE + HOUSE && st.y < HOG && Math.abs(st.x - CX) < 0.07) guards++;
+    return pts + 0.8 * (near(1 - team) - near(team)) + 0.12 * Math.min(2, guards) + 0.05 * S.filter(st => !st.out && st.team === team && inHouse(st)).length;
+  }
+
+  /* ─── THE COMPUTER ─── */
+  // the broom and weight that bring a stone, alone on the ice, to rest at (tx, ty)
+  function solveDraw(tx, ty, curl, ice){
+    let bx = tx - curl * 0.06, w = REL - ty + 0.01;
+    for (let k = 0; k < 7; k++){
+      const r = throwSim([], 0, { bx, by: TEE, w, curl }, ice, { dt: 1 / 120 }).st;
+      if (r.out && r.y > HOG){ w += 0.1; continue; }
+      bx += (tx - r.x) * 1.15; w += (r.y - ty) * 1.0;
+      w = clamp(w, W_MIN, W_MAX); bx = clamp(bx, 0.01, W - 0.01);
+    }
+    return { bx, by: TEE, w, curl };
+  }
+  // the broom that sends a stone at weight w through (tx, ty): a takeout
+  function solveHit(tx, ty, curl, w, ice){
+    let bx = tx;
+    for (let k = 0; k < 6; k++){
+      const r = throwSim([], 0, { bx, by: TEE, w, curl }, ice, { dt: 1 / 120, until: st => st.y <= ty }).st;
+      bx += (tx - r.x) * 1.1; bx = clamp(bx, 0.01, W - 0.01);
+    }
+    return { bx, by: TEE, w, curl };
+  }
+  function plan(G, team, D){
+    const S = G.stones, ice = G.ice, R = G.R, last = G.thrown === 2 * G.nStones - 1;
+    const C = [];
+    const add = (shot, why) => C.push({ shot, why });
+    const opp = S.filter(st => !st.out && st.team !== team), mine = S.filter(st => !st.out && st.team === team);
+    for (const curl of [1, -1]){
+      add(solveDraw(CX, TEE, curl, ice), 'draw');
+      add(solveDraw(CX - 0.035, TEE + 0.02, curl, ice), 'draw');
+      add(solveDraw(CX + 0.035, TEE + 0.02, curl, ice), 'draw');
+      add(solveDraw(CX, TEE + 0.06, curl, ice), 'draw');
+      if (!last && G.thrown < 4) add(solveDraw(CX + (R() - 0.5) * 0.05, TEE + HOUSE + 0.07, curl, ice), 'guard');
+      for (const st of opp.slice(0, 3)){
+        if (R() < D.takeouts) add(solveHit(st.x, st.y, curl, 2.2, ice), 'takeout');
+        if (inHouse(st)) add(solveDraw(st.x, st.y + 2.05 * SR, curl, ice), 'freeze');
+      }
+      for (const st of mine.slice(0, 2)) if (inHouse(st)) add(solveDraw(st.x, st.y - 2.4 * SR, curl, ice), 'behind');
+    }
+    for (const c of C) c.v = valueOf(throwSim(S, team, c.shot, ice, { dt: 1 / 120 }).S, team, last) + R() * 0.02;
+    C.sort((a, b) => b.v - a.v);
+    const pick = R() < D.pick ? C[0] : C[Math.min(C.length - 1, 1 + Math.floor(R() * 3))];
+    return pick;
+  }
+  // the hands: the broom and weight a little off
+  function handsOn(shot, D, R){ return { ...shot, bx: shot.bx + gauss(R) * D.errX, w: clamp(shot.w * (1 + gauss(R) * D.errW), W_MIN, W_MAX) }; }
+  // a stone the computer has thrown: swept while, alone on the ice from here, it would come to rest short of where it was meant to
+  function wantSweep(st, ice, target){
+    if (!target || st.hit || st.out) return false;
+    const q = { ...st }, S = [q]; q.live = false;
+    for (let t = 0; t < 30 && slide(S, ice, 1 / 60, 0); t += 1 / 60) {}
+    return q.y > target.y + 0.006 && Math.abs(q.x - target.x) < 0.05;
+  }
+
+  /* ─── A GAME ─── seats: 0 red (you, or the steady player in a recording), 1 yellow (the computer) */
+  function newMatch(idx, lv, opt){
+    const o = opt || {};
+    const G = { idx, lv, ice: iceOf(idx, lv), D: LV[lv - 1], R: rngOf((idx * 7919) ^ (lv * 131) ^ (o.seed || 0) ^ 0x2c5),
+                ends: o.ends || SET.ends, nStones: o.stones || SET.stones, end: 1, score: [0, 0], endScores: [], hammer: 1, thrown: 0,
+                stones: [], state: 'aim', t: 0, wait: 0, ai: [o.ai0 || null, o.ai1 === undefined ? LV[lv - 1] : o.ai1], target: null, sweepK: 0,
+                shot: { bx: CX, by: TEE, w: REL - TEE, curl: 1 }, mine: [null, null], cur: null, fx: [], ev: o.ev || null, winner: -2 };
+    G.stones.onHit = (a, b, vn) => { G.fx.push({ t: G.t, kind: 'hit', x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }); emit(G, 'hit', { v: vn }); };
+    G.stones.onOut = st => emit(G, 'out', st);
+    startTurn(G);
+    return G;
+  }
+  const emit = (G, kind, a) => { if (G.ev) try { G.ev(kind, a, G); } catch {} };
+  // whose stone it is: the side without the hammer first, then by turns
+  const toThrow = G => (G.thrown % 2 === 0 ? 1 - G.hammer : G.hammer);
+  function startTurn(G){
+    const k = toThrow(G);
+    G.state = G.ai[k] ? 'cpu' : 'aim'; G.wait = G.ai[k] ? CPU_T : 0; G.target = null;
+    // (your own last shot comes back for your next stone: the computer's took its place, a takeout's weight on your draw)
+    if (!G.ai[k]) G.shot = { ...(G.mine[k] || { bx: CX, by: TEE, w: REL - TEE, curl: 1 }) };
+    if (G.ai[k]){ const P = plan(G, k, G.ai[k]); G.planned = P; G.target = targetOf(P.shot, G); G.shot = handsOn(P.shot, G.ai[k], G.R); G.why = P.why; }
+    emit(G, 'turn', { team: k });
+  }
+  // where a planned shot was meant to stop (for its sweepers)
+  function targetOf(shot, G){ const r = throwSim([], 0, shot, G.ice, { dt: 1 / 120 }).st; return { x: r.x, y: r.y }; }
+  function throwNow(G){
+    const k = toThrow(G);
+    for (const st of G.stones) st.live = false;
+    if (!G.ai[k]) G.mine[k] = { ...G.shot };
+    G.cur = deliver(k, G.shot, G.ice); G.stones.push(G.cur);
+    G.state = 'throw'; G.thrownAt = G.t; emit(G, 'throw', { team: k });
+  }
+  // one tick of the game (TICK s): the stones slide (`SUB` steps), a computer's stone swept when it would come up short
+  function tick(G, sweepIn){
+    G.t += TICK;
+    if (G.state === 'cpu'){ G.wait -= TICK; if (G.wait <= 0) throwNow(G); return; }
+    if (G.state === 'rest'){ G.wait -= TICK; if (G.wait <= 0) afterThrow(G); return; }
+    if (G.state === 'endover'){ G.wait -= TICK; if (G.wait <= 0) nextEnd(G); return; }
+    if (G.state !== 'throw') return;
+    const k = G.cur.team, A = G.ai[k];
+    let sw = 0;
+    if (A){ if (A.sweep && G.target && Math.round(G.t / TICK) % 15 === 0) G.cpuSweep = wantSweep(G.cur, G.ice, G.target); sw = A.sweep && G.cpuSweep ? 1 : 0; }
+    else sw = sweepIn ? 1 : 0;
+    G.sweepK = sw;
+    let mv = false;
+    for (let s = 0; s < SUB; s++) mv = slide(G.stones, G.ice, TICK / SUB, sw) || mv;
+    if (!mv){ if (hogCheck(G.cur)) emit(G, 'hog', G.cur); G.state = 'rest'; G.wait = REST_T; G.sweepK = 0; G.cpuSweep = false; }
+    if (G.fx.length && G.t - G.fx[0].t > 1) G.fx = G.fx.filter(f => G.t - f.t < 1);
+  }
+  function afterThrow(G){
+    G.thrown++; G.cur = null;
+    if (G.thrown < 2 * G.nStones){ startTurn(G); return; }
+    const e = endScore(G.stones);
+    if (e.team >= 0) G.score[e.team] += e.n;
+    G.endScores.push(e.team < 0 ? [0, 0] : e.team === 0 ? [e.n, 0] : [0, e.n]);
+    G.lastEnd = e; G.state = 'endover'; G.wait = END_T;
+    emit(G, 'end', e);
+  }
+  function nextEnd(G){
+    const e = G.lastEnd;
+    if (e && e.team >= 0) G.hammer = 1 - e.team;            // (the side that scored gives up the hammer; a blank end keeps it)
+    if (G.end >= G.ends && G.score[0] !== G.score[1] || G.end >= G.ends + 1){
+      G.state = 'over'; G.winner = G.score[0] > G.score[1] ? 0 : G.score[1] > G.score[0] ? 1 : -1; emit(G, 'over', { winner: G.winner }); return;
+    }
+    G.end++; G.thrown = 0; G.stones.length = 0; startTurn(G);
+  }
+  // the shot shown before it goes: the stone's way, unswept, through the stones as they lie
+  function previewOf(G){
+    const key = [G.shot.bx, G.shot.w, G.shot.curl, G.thrown, G.end].join();
+    if (G._pv && G._pv.key === key) return G._pv;
+    const r = throwSim(G.stones, toThrow(G), G.shot, G.ice, { path: true, dt: 1 / 120 });
+    return G._pv = { key, path: r.path, st: r.st };
+  }
+
+  /* ─── RECORDINGS ─── an end of the steady player against the board's computer, a throw at a time in the boards' share of time:
+     frames of every stone's x, y and turn (−1 off the ice) and the sweeping */
+  const RECS = new Map(), SOON = BOARD_KIT.budget(6, 40);
+  const recKey = (idx, lv) => idx * 8 + lv + ':' + SET.stones;
+  function recOf(idx, lv){
+    const k = recKey(idx, lv); let M = RECS.get(k);
+    if (!M){
+      M = { G: newMatch(idx, lv, { ai0: STEADY, ends: 1, seed: 17 }), F: [], n: 0, ticks: 0, done: false, phase: BOARD_KIT.phase(idx), N: 2 * SET.stones };
+      RECS.set(k, M); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
+    } else { RECS.delete(k); RECS.set(k, M); }
+    return M;
+  }
+  function recFrame(M){
+    const G = M.G, F = M.F;
+    for (let i = 0; i < M.N; i++){ const st = G.stones[i]; if (st && !st.out) F.push(st.x, st.y, st.rot); else F.push(-1, -1, 0); }
+    F.push(G.sweepK || 0); M.n++;
+  }
+  // one throw (from the computer's thinking to the stones still) at a time; frames every 1/REC_HZ s
+  function recWork(M){
+    const G = M.G; if (M.done) return;
+    const per = Math.round(1 / (REC_HZ * TICK)), was = G.thrown;
+    // (until this throw is over: the next stone's turn begun, or the end over)
+    for (let k = 0; k < 4000 && G.thrown === was && G.state !== 'endover' && G.state !== 'over'; k++){
+      if (M.ticks++ % per === 0) recFrame(M);
+      tick(G, false);
+    }
+    if (G.state === 'endover' || G.state === 'over'){
+      for (let r = 0; r < REC_HZ * 2; r++) recFrame(M);
+      M.done = true; M.F = Float32Array.from(M.F); M.G = { stones: [] };
+    }
+  }
+  function recSoon(idx, lv, urgent){
+    const M = recOf(idx, lv);
+    if (!M.done){ if (urgent) recWork(M); else SOON.take(() => recWork(M)); }
+    return M;
+  }
+  function recView(M){
+    const per = 3 * M.N + 1, n = (M.F.length / per) | 0;
+    if (!n) return null;
+    if (!M.done) return { stones: frameStones(M.F, (n - 1) * per, M.N), sweep: 0 };
+    const { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 1.2, M.phase), F = M.F, a = i * per, b = j * per, out = [];
+    for (let q = 0; q < M.N; q++){
+      const xa = F[a + 3 * q], ya = F[a + 3 * q + 1], xb = F[b + 3 * q], yb = F[b + 3 * q + 1];
+      if (xa < 0) continue;
+      const jump = xb < 0 || Math.hypot(xb - xa, yb - ya) > 0.1;
+      out.push({ x: jump ? xa : xa + (xb - xa) * f, y: jump ? ya : ya + (yb - ya) * f, rot: F[a + 3 * q + 2], team: q % 2 === 0 ? 0 : 1, live: false });
+    }
+    return { stones: out, sweep: F[a + per - 1] };
+  }
+  function frameStones(F, a, N){ const out = []; for (let q = 0; q < N; q++){ if (F[a + 3 * q] < 0) continue; out.push({ x: F[a + 3 * q], y: F[a + 3 * q + 1], rot: F[a + 3 * q + 2], team: q % 2, live: false }); } return out; }
+
+  /* ─── PLAYING ─── */
+  const GAMES = new Map();
+  let LIVE = null;
+  const { BEST, saveBest } = BOARD_KIT.best('curling.best');
+  const bestKey = (idx, lv) => idx + '@' + lv + '@' + SET.ends + 'x' + SET.stones;
+  const starsOf = G => G.winner === 0 ? (G.score[0] - G.score[1] >= 3 ? 3 : 2) : G.winner === -1 ? 1 : 0;
+  function fresh(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx);
+    return { c, r, idx, lv, state: 'ready', last: 0, acc: 0, overAt: 0, G: null };
+  }
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  function begin(g){
+    Object.assign(g, fresh(g.c, g.r), { state: 'play', last: performance.now() });
+    g.G = newMatch(g.idx, g.lv, { ai0: null, seed: (performance.now() * 1000) | 0, ev: (k, a, G) => onEvent(g, k, a, G) });
+    GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
+    say(SET.ends + ' ends of ' + SET.stones + ' stones each. Tap the sheet for the broom, set the weight and curl in the row, Enter or Throw. Hold a finger on the sheet (or S) to sweep.', 4200);
+    try { bbRefreshNow(); } catch {}
+  }
+  const HOLD = { n: 0 }, KEYS = {};
+  const sweeping = () => HOLD.n > 0 || !!KEYS.sweep;
+  function stepGame(g){
+    if (g.state !== 'play') return;
+    const t = performance.now(), dt = g.last ? Math.min(0.25, (t - g.last) / 1000) : 0;
+    g.last = t; g.acc += dt;
+    while (g.acc >= TICK){ g.acc -= TICK; tick(g.G, sweeping()); if (g.G.state === 'over'){ over(g); break; } }
+  }
+  function over(g){
+    g.state = 'over'; g.overAt = performance.now();
+    const G = g.G, s = starsOf(G), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
+    if (s > was){ BEST.set(k, s); saveBest(); }
+    sfx(G.winner === 0 ? 'win' : 'lose');
+    say((G.winner === 0 ? 'You win ' : G.winner === 1 ? 'The computer wins ' : 'A draw, ') + G.score[0] + '–' + G.score[1] + (s ? ' ' + BOARD_KIT.stars(s) : '') + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
+    try { bbRefreshNow(); } catch {}
+  }
+  const myTurn = g => !!(g && g.state === 'play' && g.G.state === 'aim' && !g.G.ai[toThrow(g.G)]);
+  function setBroom(g, x, y){ const G = g.G; G.shot = { ...G.shot, bx: clamp(x, 0.005, W - 0.005), by: clamp(y, 0.02, REL - 0.08) }; }
+  function setWeight(g, w){ g.G.shot = { ...g.G.shot, w: clamp(w, W_MIN, W_MAX) }; }
+  function weightName(w){
+    const stop = REL - w;
+    if (stop > HOG - SR) return 'too light';
+    if (stop > TEE + HOUSE + SR) return 'guard';
+    if (stop > TEE - HOUSE * 0.4) return 'draw';
+    if (stop > BACK - SR) return 'back of the house';
+    if (w < 1.7) return 'hit';
+    return 'peel';
+  }
+  function throwMine(g){ if (!myTurn(g)) return false; throwNow(g.G); try { bbRefreshNow(); } catch {} return true; }
+
+  /* ─── SOUNDS ─── the stone's rumble as it goes, the clack of granite, brooms, a cheer at an end */
+  function sfx(kind, a){
+    if (!SET.sound) return;
+    try { if (!ARCADE.audio()) return; } catch { return; }
+    const T = ARCADE.tone, Hs = ARCADE.hiss;
+    try {
+      if (kind === 'throw'){ Hs(1.6, 0.05, 260); T(70, 55, 1.4, 'sine', 0.05); }
+      else if (kind === 'hit'){ const v = Math.min(1, ((a && a.v) || 0.2) / 0.4); T(900, 600, 0.05, 'square', 0.03 + 0.05 * v); Hs(0.05, 0.2 + 0.3 * v, 3000); }
+      else if (kind === 'sweep') Hs(0.12, 0.06, 2400);
+      else if (kind === 'end'){ [523, 659, 784].forEach((q, i) => T(q, q, 0.14, 'triangle', 0.05, i * 0.09)); }
+      else if (kind === 'win') [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.07, i * 0.1));
+      else if (kind === 'lose') [392, 330, 262].forEach((q, i) => T(q, q, 0.2, 'triangle', 0.06, i * 0.14));
+      else if (kind === 'out') T(200, 140, 0.15, 'triangle', 0.04);
+    } catch {}
+  }
+  function onEvent(g, kind, a, G){
+    if (liveGame() !== g) return;
+    if (kind === 'throw' || kind === 'hit' || kind === 'out') sfx(kind, a);
+    if (kind === 'hog') say('Hogged: it did not reach the far hog line, so it comes off.', 1800);
+    if (kind === 'turn' && G.state === 'cpu') say('The computer: ' + (G.why === 'takeout' ? 'a takeout' : G.why === 'guard' ? 'a guard' : G.why === 'freeze' ? 'a freeze' : 'a draw') + '.', 1200);
+    if (kind === 'end'){
+      sfx('end');
+      say('End ' + G.end + ': ' + (a.team < 0 ? 'blank' : (a.team === 0 ? 'you score ' : 'the computer scores ') + a.n) + '. ' + G.score[0] + '–' + G.score[1] + '.', 2400);
+    }
+    if (kind === 'turn' || kind === 'end' || kind === 'over') try { bbRefreshNow(); } catch {}
+  }
+
+  /* ─── DRAWN ─── the sheet a picture (ice, pebble, the house's rings, the lines); on it the stones (granite, a handle in the
+     team's colour turned as the stone turns), the broom, the shot's way dotted, the sweepers' brooms, flashes where stones meet,
+     the score in dot digits by the near end. In sheet units, divided by W at the end. */
+  const PIC = BOARD_KIT.painted(64, (P, hi) => paint(P.idx, hi ? 512 : 256));
+  function paint(idx, S){
+    const cv = document.createElement('canvas'); cv.width = Math.round(S * W); cv.height = S;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-S, 0, 0, -S, cv.width, cv.height);      // (the photo tier lays a picture turned a half turn)
+    const R = rngOf(idx * 977 + 3);
+    const g = c.createLinearGradient(0, 0, 0, 1); g.addColorStop(0, '#eef4fa'); g.addColorStop(1, '#e3edf6'); c.fillStyle = g; c.fillRect(0, 0, W, 1);
+    // (the pebble: a fine scatter of brighter and duller flecks)
+    for (let k = 0; k < 1800; k++){ c.fillStyle = R() < 0.5 ? 'rgba(255,255,255,0.7)' : 'rgba(150,175,200,0.18)'; c.fillRect(R() * W, R(), 0.0016, 0.0016); }
+    const ring = (r, col) => { c.fillStyle = col; c.beginPath(); c.arc(CX, TEE, r, 0, 6.283); c.fill(); };
+    ring(RINGS[0], '#2b63c8'); ring(RINGS[1], '#f4f7fb'); ring(RINGS[2], '#d33a32'); ring(RINGS[3], '#f4f7fb');
+    const line = (x0, y0, x1, y1, w, col) => { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); };
+    line(CX, 0.01, CX, 0.99, 0.0018, 'rgba(30,40,60,0.55)');            // centre line
+    line(0, TEE, W, TEE, 0.0018, 'rgba(30,40,60,0.55)');                // tee line
+    line(0, BACK, W, BACK, 0.0026, 'rgba(30,40,60,0.6)');               // back line
+    line(0, HOG, W, HOG, 0.009, '#c22a24');                             // the far hog line
+    line(CX - 0.02, REL + 0.03, CX + 0.02, REL + 0.03, 0.006, '#30343c'); // the hack, where you deliver from
+    c.fillStyle = 'rgba(40,60,90,0.12)'; c.fillRect(0, 0, 0.006, 1); c.fillRect(W - 0.006, 0, 0.006, 1);
+    c.strokeStyle = '#222833'; c.lineWidth = 0.008; c.strokeRect(0.004, 0.004, W - 0.008, 0.992);
+    return cv;
+  }
+  const digits = DOT_FONT.digits3;
+  // (several pieces into one kind: trick shots' merge)
+  function mergeGeos(T, list){
+    let n = 0; for (const g of list) n += g.attributes.position.count;
+    const pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3), idx = []; let o = 0;
+    for (const g of list){
+      const gi = g.index ? g.index.array : null, c = g.attributes.position.count;
+      pos.set(g.attributes.position.array, o * 3); if (g.attributes.normal) nrm.set(g.attributes.normal.array, o * 3);
+      if (gi) for (let k = 0; k < gi.length; k++) idx.push(gi[k] + o); else for (let k = 0; k < c; k++) idx.push(k + o);
+      o += c;
+    }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.BufferAttribute(pos, 3)); g.setAttribute('normal', new T.BufferAttribute(nrm, 3)); g.setIndex(idx); return g;
+  }
+  const mixC = (a, b, f) => { const m = s => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
+  function itemsOf(V, bp){
+    const out = [];
+    const stone = (st, idle) => {
+      out.push({ kind: 'cuStone', u: st.x, v: st.y, scale: 2 * SR, sy: SH / (2 * SR), color: 0x9aa0a8 });
+      out.push({ kind: 'cuHandle', u: st.x, v: st.y, scale: 2 * SR, lift: SH, yaw: BOARD_KIT.yawOf(st.rot || 0), color: TEAM[st.team] });
+    };
+    for (const st of V.stones) stone(st);
+    if (V.preview){
+      const P = V.preview.path, n = Math.max(2, Math.floor(P.length / 2 * V.previewFrac)) * 2;
+      for (let q = 2; q < Math.min(P.length, n); q += 2) out.push({ kind: 'cuDot', u: P[q], v: P[q + 1], scale: 0.006, color: 0x2a3550 });
+      if (V.previewFrac >= 1 && !V.preview.st.out) out.push({ kind: 'cuRing', u: V.preview.st.x, v: V.preview.st.y, scale: 2 * SR * 1.25, color: TEAM[V.team] });
+    }
+    if (V.broom) out.push({ kind: 'cuRing', u: V.broom.x, v: V.broom.y, scale: 0.03, color: 0x1a1f2a }, { kind: 'cuDot', u: V.broom.x, v: V.broom.y, scale: 0.012, color: TEAM[V.team] });
+    // (the sweepers' brooms, working side to side just ahead of the stone being swept)
+    if (V.sweep && V.cur){
+      const st = V.cur, v = Math.hypot(st.vx || 0, st.vy || -0.1) || 1, dx = (st.vx || 0) / v, dy = (st.vy || -0.1) / v, w = Math.sin((V.t || 0) * 26) * 0.012;
+      for (const side of [-1, 1]) out.push({ kind: 'cuBroom', u: st.x + dx * 0.035 - dy * (side * 0.01 + w), v: st.y + dy * 0.035 + dx * (side * 0.01 + w), scale: 0.022, yaw: BOARD_KIT.yawOf(Math.atan2(dx, dy)), color: TEAM[st.team] });
+    }
+    for (const e of V.fx || []){ if (e.age > 0.5) continue; const f = e.age / 0.5; out.push({ kind: 'cuRing', u: e.x, v: e.y, scale: 0.04 * (0.4 + f), color: mixC(0xffffff, 0xd8e4f0, f) }); }
+    if (V.score && (bp == null || bp > 60)){
+      digits(out, V.score[0], W * 0.12, 0.965, 0.008, TEAM[0], 'cuPix');
+      digits(out, V.score[1], W * 0.88, 0.965, 0.008, TEAM[1], 'cuPix');
+    }
+    for (const it of out){ it.u /= W; it.scale /= W; it.lift = (it.lift || 0) / W; }
+    return out;
+  }
+  function liveView(g){
+    const G = g.G, k = toThrow(G), mine = myTurn(g);
+    const V = { stones: G.stones.filter(st => !st.out), score: G.score, t: G.t, fx: G.fx.map(e => ({ ...e, age: G.t - e.t })), team: k,
+                cur: G.state === 'throw' ? G.cur : null, sweep: G.state === 'throw' && G.sweepK > 0 };
+    if (G.state === 'aim' || G.state === 'cpu'){
+      V.stones = V.stones.concat([{ x: CX, y: REL, team: k, rot: 0 }]);
+      V.broom = { x: G.shot.bx, y: G.shot.by };
+      if (mine && SET.preview){ V.preview = previewOf(G); V.previewFrac = PREVIEW[g.lv - 1]; }
+    }
+    return V;
+  }
+
+  /* ─── HANDS ─── while your stone runs every press on the sheet sweeps, heard before the field so the view stays put */
+  const OWN = new Map();
+  function pressAt(x, y){
+    const g = liveGame(); if (!g || g.state !== 'play' || g.G.state !== 'throw' || g.G.ai[g.G.cur.team]) return null;
+    const at = _framedUV(x, y, 0.3); if (!at || at.c !== g.c || at.r !== g.r) return null;
+    return { g };
+  }
+  function handUp(id){ if (!OWN.has(id)) return false; OWN.delete(id); HOLD.n = OWN.size; return true; }
+  MATCH_KIT.hands({ pressAt, handAt: (p) => { HOLD.n = Math.max(1, OWN.size); }, handUp, OWN });
+  let DRAG = null, ateAt = 0;
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g) return;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k === 'Enter'){ if (g.state !== 'play'){ if (g.state === 'ready' || performance.now() - g.overAt > GRACE * 1000) begin(g); } else throwMine(g); e.preventDefault(); e.stopPropagation(); return; }
+    if (g.state !== 'play') return;
+    if (k === 's' || k === 'Shift'){ KEYS.sweep = true; e.preventDefault(); e.stopPropagation(); return; }
+    if (!myTurn(g)) return;
+    let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
+    const flip = dirs && dirs[1] === 3 ? -1 : 1, G = g.G;
+    if (k === 'ArrowLeft' || k === 'ArrowRight'){ setBroom(g, G.shot.bx + (k === 'ArrowRight' ? 1 : -1) * flip * 0.004, G.shot.by); }
+    else if (k === 'ArrowUp' || k === 'ArrowDown'){ setWeight(g, G.shot.w + (k === 'ArrowUp' ? 0.02 : -0.02)); }
+    else if (k === 'c'){ G.shot = { ...G.shot, curl: -G.shot.curl }; }
+    else return;
+    e.preventDefault(); e.stopPropagation(); try { bbRefreshNow(); } catch {}
+  }, true);
+  addEventListener('keyup', e => { const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; if (k === 's' || k === 'Shift') KEYS.sweep = false; }, true);
+  addEventListener('blur', () => { KEYS.sweep = false; OWN.clear(); HOLD.n = 0; });
+
+  /* ─── THE ROW ─── Throw (or New game), Curl, Weight − / its name / +, then the settings */
+  const ON = '#2f4a3a';
+  function tilesOf(c, r){
+    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), playing = g && g.state === 'play', G = playing ? g.G : null;
+    const shot = G ? G.shot : { w: REL - TEE, curl: 1 };
+    return [
+      { glyph: playing ? '🥌' : '▶', value: playing ? (myTurn(g) ? 'Throw' : G.state === 'throw' && !G.ai[G.cur.team] ? 'Sweep!' : 'Wait') : 'New game', label: playing ? 'end ' + G.end + ' · ' + G.score[0] + '–' + G.score[1] : 'level ' + levelAt(idx) },
+      { glyph: shot.curl > 0 ? '⟳' : '⟲', value: shot.curl > 0 ? 'Curl right' : 'Curl left', label: 'curl' },
+      { glyph: '−', value: 'Lighter', label: 'weight' },
+      { glyph: '⚖', value: weightName(shot.w), label: 'weight ' + shot.w.toFixed(2) },
+      { glyph: '+', value: 'Heavier', label: 'weight' },
+      { glyph: '🏁', value: SET.ends + ' ends', label: 'game' },
+      { glyph: '🥌', value: SET.stones + ' stones', label: 'each, an end' },
+      { glyph: '⋯', value: SET.preview ? 'On' : 'Off', label: 'show the shot', bg: SET.preview ? ON : undefined },
+      { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
+    ];
+  }
+  const stepIn = (list, v) => list[(list.indexOf(v) + 1) % list.length];
+  function onTile(c, r, i){
+    const g = gameAt(c, r); LIVE = { c, r };
+    if (i === 0){ if (g.state !== 'play') begin(g); else throwMine(g); return true; }
+    if (i >= 1 && i <= 4 && myTurn(g)){
+      const G = g.G;
+      if (i === 1) G.shot = { ...G.shot, curl: -G.shot.curl };
+      else if (i === 2) setWeight(g, G.shot.w - 0.04);
+      else if (i === 4) setWeight(g, G.shot.w + 0.04);
+      else { const presets = [REL - (TEE + HOUSE + 0.06), REL - TEE, REL - (TEE - HOUSE * 0.7), 1.4, 2.2]; const at = presets.findIndex(p => p > G.shot.w + 0.01); setWeight(g, presets[at < 0 ? 0 : at]); }
+      try { bbRefreshNow(); } catch {} return true;
+    }
+    let msg = '', freshAll = false;
+    if (i === 5){ SET.ends = stepIn([2, 4, 6, 8], SET.ends); msg = 'Games of ' + SET.ends + ' ends'; freshAll = true; }
+    else if (i === 6){ SET.stones = stepIn([2, 3, 4], SET.stones); msg = SET.stones + ' stones each an end'; freshAll = true; }
+    else if (i === 7){ SET.preview = !SET.preview; msg = 'The shot shown before it goes: ' + (SET.preview ? 'on' : 'off'); }
+    else if (i === 8){ SET.sound = !SET.sound; msg = 'Sound ' + (SET.sound ? 'on' : 'off'); if (SET.sound) try { ARCADE.audio(); } catch {} }
+    else return true;
+    saveSet();
+    if (freshAll){ GAMES.clear(); RECS.clear(); msg += ' (every game starts afresh)'; }
+    say(msg, 2000);
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
+
+  const app = {
+    name: 'curling',
+    realtime: true,
+    boardShape: { cellW: W, cellH: 1 },
+    frameFit: 1.1,
+    menu: [{ head: 'Curling', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Ends: ' + SET.ends, title: 'How many ends a game is.', on(){ const f = framedCell(); onTile(f ? f.c : 0, f ? f.r : 0, 5); } },
+      { label: () => 'Stones: ' + SET.stones + ' each', title: 'How many stones each side throws an end.', on(){ const f = framedCell(); onTile(f ? f.c : 0, f ? f.r : 0, 6); } },
+      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The rumble, the clack of granite, the brooms.', on(){ SET.sound = !SET.sound; saveSet(); } },
+      { label: 'Start this board again', title: 'A new game, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
+      { label: 'How to play', title: 'The rules and the controls.', on(){ say('Get your stones nearer the button (the middle of the house) than any of the computer\'s. Tap or drag on the sheet to put the broom where you aim; the row sets the weight (how far it slides) and which way it curls; Enter or Throw. While your stone runs, hold a finger on the sheet (or S) to sweep it: it goes farther and curls less. A stone must pass the far hog line, and one past the back line or touching a side is out. At the end of an end the side with the nearest stone scores one for each stone nearer than the other side\'s best.', 12000); } },
+    ]}],
+    cellFar: { light: 0xdfe9f3, dark: 0xc6d4e2 },
+    itemMinPx: 12,
+    photoMinPx: PHOTO_PX,
+    cellPhoto(c, r, bp){ const idx = boardIdx(c, r); return PIC.key('cu:' + (idx % 32), (bp || 0) >= HI_PX, () => ({ idx: idx % 32 })); },
+    photoCanvas(key){ return PIC.canvas(key); },
+    cellGrid(){ return { n: 2, colors: [0xe6eef6, 0xe6eef6, 0xe6eef6, 0xe6eef6] }; },
+    itemGeometries: {
+      // (a stone: granite, its running band and a rounded top, standing on the ice)
+      cuStone: T => { const pts = [[0, 0], [0.42, 0], [0.5, 0.18], [0.5, 0.62], [0.44, 0.9], [0.22, 1], [0, 1]].map(([x, y]) => new T.Vector2(x, y)); return new T.LatheGeometry(pts, 20); },
+      // (its handle: a bar along the stone with its upright, in the team's colour)
+      cuHandle: T => { const a = new T.BoxGeometry(0.16, 0.22, 0.62); a.translate(0, 0.11, 0.06); const b = new T.BoxGeometry(0.16, 0.36, 0.14); b.translate(0, 0.16, -0.22); return mergeGeos(T, [a, b]); },
+      cuDot: T => { const g = FieldKit.disc(T, 0.5, 0.002); g.userData.unlit = true; return g; },
+      cuRing: T => { const g = FieldKit.ring(T, 0.42, 0.5, 0.003); g.userData.unlit = true; return g; },
+      cuBroom: T => { const g = new T.BoxGeometry(1, 0.25, 0.32); g.translate(0, 0.12, 0); return g; },
+      cuPix: T => { const g = new T.BoxGeometry(1, 0.15, 1); g.translate(0, 0.1, 0); g.userData.unlit = true; return g; },
+    },
+    cellItems(c, r, bp){
+      const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
+      if (g && g.state !== 'ready' && g.G){ if (live) stepGame(g); else g.last = 0; return itemsOf(liveView(g), bp); }
+      const M = recSoon(idx, lv, live), V = recView(M);
+      return itemsOf(V || { stones: [] }, bp);
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), best = BEST.get(bestKey(idx, lv)), ice = iceOf(idx, lv);
+      const head = 'Curling — level ' + lv + ', ice ' + (ice.curl > CURL * 1.1 ? 'swingy' : ice.curl < CURL * 0.9 ? 'straight' : 'fair') + (ice.fric < 0.97 ? ' and keen' : ice.fric > 1.03 ? ' and heavy' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
+      if (!g || g.state === 'ready' || !g.G) return head + ' (tap to play)';
+      const G = g.G;
+      return head + ' · end ' + G.end + ' of ' + G.ends + ', you ' + G.score[0] + ', computer ' + G.score[1] + (g.state === 'over' ? ' · game over' : myTurn(g) ? ' · your stone' : '');
+    },
+    onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
+    onSelect(){ return true; },
+    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
+    onCellTap(c, r, u, v){
+      if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
+      const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      if (g.state === 'ready'){ begin(g); return true; }
+      if (g.state === 'over'){
+        if (!was || performance.now() - g.overAt < GRACE * 1000) return true;
+        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+      }
+      if (u == null || !myTurn(g)) return true;
+      const x = u * W;
+      if (Math.hypot(x - CX, v - REL) < 0.035) throwMine(g); else setBroom(g, x, v);
+      try { bbRefreshNow(); } catch {}
+      return true;
+    },
+    noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    keepsPress: true,
+    claimsPan(u, v){ const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false }; return true; },
+    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setBroom(DRAG.g, at.u * W, at.v); DRAG.moved = true; } return true; },
+    onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
+    statTiles(c, r){ return tilesOf(c, r); },
+    statsStay(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    onStatTap(c, r, i){ return onTile(c, r, i); },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#eaf1f8'; ctx.fillRect(0, 0, sz, sz);
+      const ring = (r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(sz * 0.5, sz * 0.4, sz * r, 0, 6.283); ctx.fill(); };
+      ring(0.36, '#2b63c8'); ring(0.24, '#f4f7fb'); ring(0.12, '#d33a32'); ring(0.04, '#f4f7fb');
+      const st = (x, y, col) => { ctx.fillStyle = '#8d939c'; ctx.beginPath(); ctx.arc(sz * x, sz * y, sz * 0.09, 0, 6.283); ctx.fill(); ctx.fillStyle = col; ctx.fillRect(sz * (x - 0.03), sz * (y - 0.06), sz * 0.06, sz * 0.12); };
+      st(0.42, 0.43, '#d8332c'); st(0.62, 0.3, '#f2c230'); st(0.5, 0.86, '#d8332c');
+    },
+    _debug: { newMatch, tick, slide, deliver, throwSim, endScore, valueOf, solveDraw, solveHit, plan, handsOn, wantSweep, iceOf, previewOf, startTurn, throwNow,
+              recOf, recWork, recView, recSoon, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setBroom,
+              setWeight, weightName, throwMine, tilesOf, onTile, toThrow, LV, STEADY, SET, GAMES, RECS, BEST, HOLD, KEYS, OWN, inHouse, dist,
+              consts: { W, SR, TEE, HOG, REL, BACK, HOUSE, RINGS, A0, CURL, SWEEP_A, SWEEP_C, TICK, REC_HZ, PREVIEW }, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
+  };
+  return app;
+})();
 /* ═══ GAME LAB: games the player changes by asking (Oct 25: "seems to me these simpler games are good foundation to let the user
    add features, through a prompt. so the player could develop there own game with AI interaction.", then "2" of the three ways
    offered: the rules rewritten, not only the dials turned) ═════════════════════════════════════════════════════════════════════
@@ -60981,7 +61621,7 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -60990,7 +61630,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
