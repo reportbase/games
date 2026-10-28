@@ -4272,7 +4272,11 @@ try {
         G.state = 'serve'; G.server = 0; G.serveAt = G.t + G.serveT; G.rally = 0; G.balls = [];
         G.target = 3; G.score = [0, 0]; G.pads[1].ai = { react: 99, err: 0, v: 0, acc: 0, aim: 0 }; G.pads[1].think.next = 1e9; G.pads[1].think.T = 0.05; G.pads[1].x = 0.08;
         const ev = G.ev; G.ev = (kind, a, M) => { if (kind === 'point') pts.push(a.seat); ev && ev(kind, a, M); };
-        for (let i = 0; i < 60 * 200 && G.state !== 'over'; i++){ G.pads[0].tx = G.balls[0] ? G.balls[0].x : 0.31; if (G.balls[0] && G.balls[0].vy > 0 && G.balls[0].y > 0.7) G.pads[0].x = G.balls[0].x; D.tick(G); }
+        // (the paddle held still under the ball, inside the walls: set to the ball's x by a wall, the game clamped it there and kept
+        //  its speed, so it slid off and a ball running along the wall went past it, about one match in twenty, Oct 27)
+        const W = D.consts.W;
+        for (let i = 0; i < 60 * 200 && G.state !== 'over'; i++){ const b = G.balls[0], P = G.pads[0], hw = D.hwOf(G, 0); P.tx = b ? b.x : 0.31;
+          if (b && b.vy > 0 && b.y > 0.7){ P.x = Math.max(hw, Math.min(W - hw, b.x)); P.v = 0; } D.tick(G); }
         return { pts: pts.join(), score: G.score.join('-') }; }, key);
       await page.waitForTimeout(600);
       real.over = await page.evaluate(([k, c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); return { st: g.state, best: D.BEST.get(g.idx + '@' + g.lv + '@' + D.SET.target) }; }, [key, ...fc]);
@@ -4922,7 +4926,7 @@ try {
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'flashcards')));
     await page.waitForTimeout(1500);
     const empty = await page.evaluate(() => { const A = window.getFieldApp(); return { title: A.cellTitle(0, 0), key: A.cellPhoto(0, 0, 400) }; });
-    if (!/no deck yet/.test(empty.title) || empty.key !== 'fc:empty:H') bad.push('with no deck: ' + JSON.stringify(empty));
+    if (!/no deck yet/.test(empty.title) || empty.key !== 'fc:empty:h') bad.push('with no deck: ' + JSON.stringify(empty));
     const ddir = await mkdtemp(join(tmpdir(), 'decks-'));
     const csvF = join(ddir, 'my_words.csv'), ankiF = join(ddir, 'anki.txt'), jsonF = join(ddir, 'planets.json'), dataF = join(ddir, 'data.json');
     await writeFile(csvF, 'Question,Answer,Notes\n"Hello, world",Hola mundo,greeting\ncat,gato\n"say ""hi""",di hola\n');
@@ -5113,7 +5117,9 @@ try {
       live.entered = await gs();
       // the row's Big shell, then a shot: one fewer left
       live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
-        for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+        // (your tank kept whole while it waits, as the win's wait below keeps it: the computer's answer to the Enter shot put you
+        //  out from 81 on CI, Oct 28, and with the game over there was no win left to play)
+        for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
         if (g.state === 'over') return { over: true };
         // (the row's ◀ a degree up, − two in a hundred of the power down, then Big shell and the row's Fire)
         const ready = g.state + g.turn, tiles = A.statTiles(c, r), a = g.a[0], p = g.p[0];

@@ -2391,6 +2391,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   frame and read nowhere: gone. Golf tanks' boards no one plays (`recSoon`) ask the clock after every step of the round, not
   every twentieth, and take 4 ms in 40 (6 in 30 before). Measured with the CPU slowed four times (a phone), JS a frame: mini
   golf framed 245 → 68 ms, checkers 121 → 33 ms (before the `demand` sum went).
+  **Measured again** (Oct 28: "1,3", the second being speed on phones; CPU slowed four times): mini golf framed 22 ms of script
+  a frame (checkers 8.7), and the page's thread idle most of the time zoomed out, so what is drawn costs more than what is
+  worked out. Two things came of it:
+  - `BOARD_KIT.budget` fills as time passes (ms/every for each ms) and carries a slice's overrun as debt, so the boards' share
+    is the share whatever the frames do. A window refilled whole forgave a step that ran 50–70 ms (golf tanks' two computer
+    tanks thinking), and with frames of 140 ms every frame got a fresh one: golf tanks framed went from 38 ms a frame to resting.
+  - The windmill is built at K = 12, not 24 (34,500 triangles a windmill to about 10,000); zoomed out, mini golf 849k → 756k
+    triangles. Screenshots enlarged show the same windmill.
+  Tried and left: bumpers and boulders at their coarse build (the bumper lost its red rim, the boulder its lumps), and the ground a
+  grain coarser (`GROUND_PX` 16: the rails' colour smeared into the grass along the far boards). `window.fieldLOD.itemTris` gives
+  each kind's instances and triangles, for measuring.
 - **Dead code taken out** (Oct 27: "what other needlessly complicated things could be removed?", then "remove dead code and
   the shared kits"): functions and constants nothing reached, found by counting every name in the page (a name written once
   is its own declaration): `LOD_APP` and `HELLO_APP` (apps off the list since Sep 25), mini golf's `softAmount`, `cladGeo`,
@@ -2409,6 +2420,58 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   own quick buttons, then ✕ Cancel and ✓ Done, or ✎ when the row is the game's), each game giving its `open`, `done`, `cancel`,
   `tiles` and `tile`; `store(key, keep, clean)` keeps the boards' own in localStorage. Chess's, the board games' (`BOARD_ED`),
   the puzzle makers' (`PUZZLE_ED`) and mini golf's editors have their own, older ways.
+- **One board kit** (Oct 27: "I want to reuse resources and code between games as much as possible. how are we doing on that
+  regard?", then "Yes"): seventeen games wrote out the same lines for a board's number, its ring and level, a seeded generator,
+  the board beside and a best a board. `BOARD_KIT` (before ARCADE) has them once: `gs()` (the field's side), `boardIdx(c, r)`,
+  `cellOfIdx`, `ringOf`, `ringLevel`, `levelAt(idx, DL)` (the ring level plus Easy 0, Normal 1, Hard 2), `rng(seed)` (mulberry32),
+  `nextBoard(c, r)` and `best(key)` ({ BEST, saveBest }, the latest 500; `MATCH_KIT.best` is it). A game says
+  `const boardIdx = BOARD_KIT.boardIdx;` and the rest reads as before; every app's levels and board numbers were checked the same
+  before and after. Mini golf (its levels follow its own setting), Levels (a level is a distance), trick shots' bests and the game
+  lab's sandbox Worker keep their own. A new game with levels by ring uses it.
+  **The boards' share of time** (Oct 27: "do the recording schedule next"): seven games made or recorded the boards no one plays
+  a little at a time with the same window, a few ms of work in every 30 (the tilt maze's mazes 8, pinball's tables 10, the
+  nonograms 8, the tanks' duels 8, the tank maze's rounds 6, golf tanks' rounds 4 in 40, and MATCH_KIT's recordings 8, which
+  serve Pong, air hockey and squash). `BOARD_KIT.budget(ms, every)` keeps it once: `left()`, `spend(t0)`, `take(fn)`. Each
+  game's own queue and order stay its own (mini golf's idle-time `SOON`, Soma's `soonPump`, trick shots' workers, the game
+  lab's sandbox), being different in kind. Checked: the same boards' caches fill as fast before and after.
+  **One dot font** (Oct 27: "do the dot font next"): `DOT_FONT` (after `BOARD_KIT`) holds the page's two dot fonts, which five
+  games wrote out each: `five`, a 5 × 7 (55 glyphs as seven rows of five bits: capitals, digits, signs, ♥ ★; the game lab's words
+  and pinball's dot-matrix panel, which keeps only the 37 it always drew, `pick`), and `three`, a 3 × 5 (digits and the letters
+  squash's calls need) with `text3` and `digits3` (Pong's, air hockey's and squash's scores, squash's calls). Checked: every glyph
+  and every dot laid the same as the copies before. A new game's lettering uses it.
+  **One way to say a thing** (Oct 27: "do the message helpers next"): 45 games each wrote `say(message, ms)` out, the notice at
+  the top for so long (1.8 to 3.5 s by game), some held back while the game is quiet (`QUIET`, `SILENT`: a demo, muted). Now
+  `const say = BOARD_KIT.say(ms, () => QUIET);` (the second argument only where the game had one). The four that do more (the
+  board editors' and puzzle makers', which keep the message on the draft too, and chess's early one) keep their own. Checked: every
+  app loads, and the games' own messages say the same.
+  **A game a board, and the small things** (Oct 27: "what else could be shared between games?", then "do 1 and 2"): `BOARD_KIT`
+  also has `gkey` (50 games), `gameAt(GAMES, fresh)` (a board's game made on first want; 11), `liveGame(() => app, () => LIVE,
+  gameAt)` (the board being played while this game is up; 10), `clamp` (12), `now` (the paused-aware clock in ms; 17), `yawOf`
+  (never a yaw of exactly 0; 5), `hash` (FNV-1a in base 36: the keys of your own tables, figures and trick shots; 4, the same
+  keys as before), `LV_COL` (the levels' flag colours; 5) and `stars(n)` (★★☆; 15 places). Trick shots' worker is made from its
+  own text up to "IN THE FIELD", so nothing of the kit may go above that line; the game lab's starters and sandbox keep their
+  own. Checked: every app loads with the same levels, every hash the same, a tap starts the same game.
+  **Boards no one plays, played back** (Oct 27: "do the idle-board playback"): `BOARD_KIT.phase(idx)` (a board's own place in its
+  loop, its number × 0.618, so neighbours never move together; 12 games), `loopT(ph, T, s)` (where in a loop of T seconds the
+  board is at s seconds, the page's clock if not given; Simon, Lights Out, Whack-a-mole, Nonograms, the tank maze, golf tanks)
+  and `frameAt(n, hz, rest, ph, s)` (the two frames of a recording to blend and how far between, with `rest` s held at its end;
+  the tilt maze, pinball and MATCH_KIT's recordings for Pong, air hockey and squash). Soma and 3D Tetris keep their own phase
+  (0.6180339887, a different number: their boards would all move to another place in their loops). Checked: the same frames
+  chosen over 200,000 random boards and moments (times within 2e-13 s), and every one of the twelve games' idle boards moving.
+  **A board painted as a picture** (Oct 28: "do the painted board helper next"): six games (pinball, the flash cards, the tanks,
+  Pong, air hockey, squash) kept, each in its own words, what the photo tier's key stands for, since the field asks for the
+  picture by the key alone. `BOARD_KIT.painted(cap, paint)` does it once: `key(base, hi, make)` is `base` + ':h' or ':l' and keeps
+  `make()` for it the first time (the oldest let go past `cap`), `canvas(key)` calls `paint(spec, hi)`, `SPECS` the store. Each game
+  says `const PIC = BOARD_KIT.painted(…)`, and `cellPhoto`/`photoCanvas` are `photoKey(c, r, bp)` and `PIC.canvas(key)`. The flash
+  cards' sizes are now ':h'/':l' too (':H'/':L' before; a front's hint is ':hint'). Checked: the same keys and the same pixels
+  in all six. Trick shots (one picture for every board) and the board games' and gallery's prints keep their own.
+  **One way of sounding** (Oct 28: "1,3", the first): eleven arcade games (Defender, Breakout, the crossing, Snake, Tetris, 3D
+  Tetris, Soma, Bomber, Pac-Man, tower defense, Space Invaders) wrote out their own sound switch, its menu item and the head of
+  their `beep` (off or quiet, no audio, a kind again within its gap). `ARCADE.sounds(key, title, own)` (the puzzles' switch since
+  Sep 28) takes `own` = { gaps, quiet } and gives `gate(kind)`: the audio context if that kind may sound now, else null. A game
+  says `const SND = ARCADE.sounds('snake.sound', '…', { gaps: { turn: 0.05, … }, quiet: () => QUIET })`, its menu `SND.item`, and
+  its `beep` begins `const A = SND.gate(kind); if (!A) return;`; its tones stay its own. Pinball, the tanks, trick shots, air raid,
+  Simon and Asteroids keep their own sounds (an engine of their own, or no gate). Checked: every game sounds, the items the same.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:

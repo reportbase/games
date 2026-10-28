@@ -15238,7 +15238,8 @@ function rungFor(gx, gz, bp, capK){
 }
 // (for the tests: the fade between rungs, its builder and the pieces' fields, Oct 14)
 window.fieldLOD = { fieldMorph, fieldGridOf, buildFieldGeometry, parseTVF3D, rungFor, get rungW(){ return _rungW; }, get fields(){ return FIELDS; },
-  flatGrain: (px, seg) => _flatGrain(px, seg), flatMorph: g => _flatMorph(g), get itemKinds(){ return [..._itemMeshes].map(([k, r]) => [k, r.n]); } };   // (and the flat pieces' grains: Oct 14)
+  flatGrain: (px, seg) => _flatGrain(px, seg), flatMorph: g => _flatMorph(g), get itemKinds(){ return [..._itemMeshes].map(([k, r]) => [k, r.n]); },
+  get itemTris(){ return [..._itemMeshes].map(([k, r]) => { const g = r.mesh.geometry; return [k, r.mesh.count, (g.index ? g.index.count : g.attributes.position.count) / 3]; }); } };   // (what each kind costs a frame: Oct 28)   // (and the flat pieces' grains: Oct 14)
 function clarityAt_ctx(camHt, alongNear){
   const Dnear = Math.sqrt(camHt * camHt + alongNear * alongNear);
   const SP    = gridSpacing();
@@ -18316,6 +18317,141 @@ const BOOM = (() => {
   const burning = g => (g.booms || []).filter(b => g.t - b.t0 < T).map(b => [b.u, b.v, g.t - b.t0, b.seed, b.mix]);
   return { T, geometries, caps, items, add, burning };
 })();
+/* ═══ BOARD_KIT — a board's number, its ring and level, a seeded generator, a best a board (Oct 27: "I want to reuse resources and
+   code between games as much as possible. how are we doing on that regard?", then "Yes" to a kit for what every game wrote out
+   for itself). Seventeen games carried the same dozen lines, word for word: the field's side (`gs`), a board's number (`boardIdx`,
+   Szudzik's pairing of its wrapped column and row, mini golf's), its ring (`ringOf`: the distance from the corner the short way
+   round the wrapped field), the ring's level (`ringLevel`: rings 0–6 level 1, doubling out to 5), the level with the Difficulty
+   (`levelAt(idx, DL)`: Easy 0, Normal 1, Hard 2 more), mulberry32 seeded (`rng`), the board beside (`nextBoard`, mini golf's next)
+   and the most stars kept by board in localStorage (`best(key)`: { BEST, saveBest }, the latest 500). They are here once; a game
+   says `const boardIdx = BOARD_KIT.boardIdx;` and the rest of it reads as before. Mini golf keeps its own (a hole is made for a
+   level of its own setting), as do Levels (its level is a distance) and the game lab's sandbox (a Worker with no page). */
+const BOARD_KIT = (() => {
+  const SHIFT = { easy: 0, normal: 1, hard: 2 };
+  const gs = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const boardIdx = (c, r) => { const GS = gs(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  const cellOfIdx = idx => { const q = Math.floor(Math.sqrt(idx)), e = idx - q * q; return e < q ? [e, q] : [q, e - q]; };
+  function ringOf(idx){
+    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = gs();
+    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
+    return Math.max(w(a), w(b));
+  }
+  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const levelAt = (idx, DL) => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const rng = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const nextBoard = (c, r) => { const GS = gs(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  function best(key){
+    const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(key) || '{}'))); } catch { return new Map(); } })();
+    const saveBest = () => { try { localStorage.setItem(key, JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+    return { BEST, saveBest };
+  }
+  /* A share of the page's time for the work boards no one plays need (Oct 27: "do the recording schedule next"): a maze, a
+     table, a puzzle, a duel or a round made or recorded a little at a time as boards come into view, `ms` of work in every
+     `every` ms, so a field of new boards never stalls a frame. Six games kept the same two numbers and the same arithmetic.
+     `left()` is what is left of this window (a new one starts once `every` has passed), `spend(t0)` takes off the time since
+     t0, and `take(fn)` runs fn(left) if any is left and takes off what it took (undefined if none was).
+     It fills as time passes, not window by window (Oct 28: "1,3", the second being speed on phones): a slice finishes the step
+     it is on, and a step of golf tanks' two computer tanks thinking ran 50–70 ms on a CPU slowed four times. A window refilled
+     whole every `every` ms forgave that, and with frames of 140 ms every frame got a fresh window: zoomed out, golf tanks spent
+     half of every frame on its boards. Now what is left grows by ms/every for each ms that passes, up to `ms`, and a slice that
+     ran over leaves it below nothing until time has paid it back, so the share is ms in every `every` whatever the frames do. */
+  function budget(ms, every = 30){
+    let at = 0, left = 0;
+    const B = {
+      left(){ const t = performance.now(); left = Math.min(ms, left + (t - at) * ms / every); at = t; return left; },
+      spend(t0){ left -= performance.now() - t0; },
+      take(fn){ const l = B.left(); if (l <= 0) return undefined; const t0 = performance.now(); try { return fn(l); } finally { B.spend(t0); } },
+    };
+    return B;
+  }
+  /* A game's word in the notice at the top (Oct 27: "do the message helpers next"): `say(ms, quiet)` gives the function forty-odd
+     games each wrote out, say(message, how long), shown for `ms` unless told otherwise, and not at all while `quiet()` says so
+     (a game playing its own demo, Settings muted). The notice may not be there yet, so a failure is let go. */
+  const say = (ms, quiet) => (m, t) => { if (quiet && quiet()) return; try { engineNotice(m, t || ms); } catch {} };
+  /* The rest each game wrote out for itself (Oct 27: "what else could be shared between games?", then "do 1 and 2"): a game a
+     board, kept by the board's key (`gkey`, `gameAt(GAMES, fresh)`: made on first want) and the board being played, if this
+     game is the one up (`liveGame(appOf, liveOf, gameAt)`, each a getter, since a game's own `app` and `LIVE` come later in its
+     code or change); and the small ones: `clamp`, the page's clock in ms (`now`, the field's paused-aware clock when it has one),
+     a yaw never exactly 0 (`yawOf`: the field reads a yaw of 0 as none, the tanks' lesson of Oct 20), a short hash of a string
+     (`hash`, FNV-1a in base 36), the levels' colours (`LV_COL`, mini golf's flags: green, blue, yellow, orange, black) and three
+     stars as words (`stars(n)`: ★★☆). */
+  const gkey = (c, r) => c + '_' + r;
+  const gameAt = (GAMES, fresh) => (c, r) => { const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; };
+  const liveGame = (appOf, liveOf, gameAt) => () => { try { if (window.getFieldApp() !== appOf()) return null; } catch { return null; } const L = liveOf(); return L ? gameAt(L.c, L.r) : null; };
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const yawOf = h => h || 1e-6;
+  const hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];
+  const stars = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  /* A board no one plays, played back (Oct 27: "do the idle-board playback"): every game shows such a board a recording or a
+     made-up turn of its own, round and round, each board at a phase of its own so that neighbours never move together (`phase`:
+     its number times 0.618, the golden ratio's part, so phases spread evenly whatever the numbers). `loopT(ph, T, s)` is where
+     in a loop of T seconds that board is at s seconds of the page's clock (now, if not given); `frameAt(n, hz, rest, ph, s)` the
+     two frames of a recording of n frames at hz a second, played with `rest` seconds held at its end, and how far between them
+     (`{ i, j, f }`). Eleven games worked these out each. */
+  const phase = idx => (idx * 0.618) % 1;
+  const loopT = (ph, T, s) => (((s == null ? now() / 1000 : s) + ph * T) % T + T) % T;
+  function frameAt(n, hz, rest, ph, s){
+    const a = loopT(ph, n / hz + rest, s) * hz, i = Math.min(n - 1, Math.floor(a));
+    return { i, j: Math.min(n - 1, i + 1), f: Math.min(1, a - i) };
+  }
+  /* A board painted as a picture (Oct 28: "do the painted board helper next"): the field's photo tier asks a game for a board's
+     key (`cellPhoto`), then for the picture by that key alone (`photoCanvas`), so a game keeps what to paint for each key it has
+     given. Six games (pinball, the flash cards, the tanks, Pong, air hockey, squash) wrote that out each: a key of what the
+     picture shows and its size (':h' fine, ':l' coarse), what to paint kept against it, the oldest let go past a cap. `painted(cap,
+     paint)` has it once: `key(base, hi, make)` gives the key and keeps `make()` for it the first time it is given, `canvas(key)`
+     paints what was kept (`paint(spec, hi)`), `SPECS` is the store, for the tests. */
+  function painted(cap, paint){
+    const SPECS = new Map();
+    return {
+      SPECS,
+      key(base, hi, make){
+        const k = base + (hi ? ':h' : ':l');
+        if (!SPECS.has(k)){ SPECS.set(k, make()); if (SPECS.size > cap) SPECS.delete(SPECS.keys().next().value); }
+        return k;
+      },
+      canvas(k){ const P = SPECS.get(k); return P ? paint(P, k.endsWith(':h')) : null; },
+    };
+  }
+  return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say,
+           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted };
+})();
+/* ═══ DOT_FONT — the page's two dot fonts, once (Oct 27: "do the dot font next", after the board kit). A 5 × 7 (each glyph seven
+   rows of five bits, the top bit the left dot: the capitals, the digits, a few signs and ♥ ★), which pinball's dot-matrix panel
+   and the game lab's words were each written out in (pinball's in hex, the same glyphs); and a 3 × 5 (each glyph fifteen 0s and
+   1s, row by row: the digits and the letters squash's calls and drills need), which Pong's and air hockey's scores and squash's
+   score and calls were each written out in. `text3(out, s, x, y, cell, color, kind)` lays a line of the small one as pieces of
+   `kind`, a cell apart, centred on (x, y); `digits3` the same for a whole number. A glyph a font lacks is a gap. */
+const DOT_FONT = (() => {
+  const five = {
+    '0': [14,17,19,21,25,17,14], '1': [4,12,4,4,4,4,14], '2': [14,17,1,2,4,8,31], '3': [31,2,4,2,1,17,14], '4': [2,6,10,18,31,2,2],
+    '5': [31,16,30,1,1,17,14], '6': [6,8,16,30,17,17,14], '7': [31,1,2,4,8,8,8], '8': [14,17,17,14,17,17,14], '9': [14,17,17,15,1,2,12],
+    A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28], E: [31,16,16,30,16,16,31],
+    F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17], I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12],
+    K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31], M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14],
+    P: [30,17,17,30,16,16,16], Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
+    U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17], Y: [17,17,17,10,4,4,4],
+    Z: [31,1,2,4,8,16,31], '.': [0,0,0,0,0,12,12], ',': [0,0,0,0,12,4,8], ':': [0,12,12,0,12,12,0], '-': [0,0,0,31,0,0,0],
+    '+': [0,4,4,31,4,4,0], '!': [4,4,4,4,4,0,4], '?': [14,17,1,2,4,0,4], '/': [1,1,2,4,8,16,16], '%': [24,25,2,4,8,19,3],
+    '#': [10,10,31,10,31,10,10], '=': [0,0,31,0,31,0,0], '(': [2,4,8,8,8,4,2], ')': [8,4,2,2,2,4,8], '<': [2,4,8,16,8,4,2],
+    '>': [8,4,2,1,2,4,8], '*': [0,4,21,14,21,4,0], "'": [4,4,8,0,0,0,0], '♥': [0,10,31,31,14,4,0], '★': [4,4,31,14,14,27,17],
+  };
+  const three = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111',
+                 7: '111001010010010', 8: '111101111101111', 9: '111101111001111', A: '010101111101101', D: '110101101101110', E: '111100110100111', F: '111100110100100',
+                 G: '011100101101011', H: '101101111101101', I: '111010010010111', K: '101110100110101', L: '100100100100111', N: '101111111101101', O: '111101101101111',
+                 P: '110101110100100', R: '110101110101101', S: '011100010001110', T: '111010010010010', U: '101101101101111', W: '101101111111101', Y: '101101010010010' };
+  function text3(out, s, x, y, cell, color, kind){
+    s = String(s); const wd = s.length * 4 * cell - cell;
+    for (let d = 0; d < s.length; d++){ const D = three[s[d]]; if (!D) continue; const x0 = x - wd / 2 + d * 4 * cell;
+      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
+  }
+  const digits3 = (out, n, x, y, cell, color, kind) => text3(out, String(Math.max(0, Math.floor(n))), x, y, cell, color, kind);
+  // (some of the big one: pinball's panel draws only what it always drew)
+  const pick = (F, chars) => Object.fromEntries([...chars].map(ch => [ch, F[ch]]));
+  return { five, three, text3, digits3, pick };
+})();
 /* ═══ ARCADE — the parts every arcade board shares (Sep 27: "the basics should be the same
    for all games"): sound made in the browser, tilt steering on a phone, and a difficulty
    level. Each app keeps its own settings (remembered per app); these are the machinery. */
@@ -18382,8 +18518,21 @@ const ARCADE = (() => {
       case 'lose':  [392, 330, 262].forEach((f, i) => tone(f, f, 0.2, 'triangle', 0.07, i * 0.14)); break;
     }
   }
-  function sounds(key, title){
+  /* A game's own sounds (Oct 28: "1,3", the first being one way of sounding, after the board kit): eleven arcade games (Defender,
+     Breakout, the crossing, Snake, Tetris, 3D Tetris, Soma, Bomber, Pac-Man, tower defense, Space Invaders) each wrote out their
+     own switch, its menu item, and the same lines at the head of their `beep`: nothing while the sound is off or the game is
+     quiet, no audio no sound, and a kind played again within its own gap (seconds on the audio clock) left out. `sounds(key,
+     title, own)`, `own` = { gaps (by kind, '*' for every kind), quiet() }, gives such a game the switch and the item as the puzzles
+     have them, and `gate(kind)`: the audio context if that kind may sound now, else null. The game's own tones stay its own. */
+  function sounds(key, title, own){
     const S = { on: load(key, 'on') !== 'off', last: {} };
+    if (own) S.gate = kind => {
+      if (!S.on || (own.quiet && own.quiet())) return null;
+      const A = audio(); if (!A) return null;
+      const t = A.currentTime, g = own.gaps || {}, gap = g[kind] != null ? g[kind] : g['*'] || 0;
+      if (gap && t - (S.last[kind] || 0) < gap) return null;
+      S.last[kind] = t; return A;
+    };
     S.play = (kind, quiet) => {
       if (!S.on || quiet || !audio()) return;
       const now = performance.now();
@@ -20466,7 +20615,7 @@ const REVERSI_APP = (() => {
   const mixInt = FieldKit.mixInt;                  // shared — see the kit
   const DIRS = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   /* THREE BOARD SIZES (Sep 30: "add 3 board sizes to reversi"): 6×6, 8×8 and 10×10, on a menu line
      of their own — Difficulty stays how carefully the computer plays. A board's size is read from
      its stones (bd.length), so every rule below holds for any of them. The recordings are 8×8. */
@@ -20815,7 +20964,7 @@ const GOMOKU_APP = (() => {
   const N = 15;
   const WOOD = '#e8c88a', WOOD_INT = 0xe8c88a, LINE_CSS = '#7a5c2e';
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   const DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]];   // four axes; each searched both ways
 
   /* The longest line of `col` through i, counting i itself. Five wins. */
@@ -21153,7 +21302,7 @@ const CONNECT4_APP = (() => {
   const W = 7, H = 7;                              // the board IS the face
   const BOARD = 0x2f4f7f, BOARD_HI = 0x3a5f96;     // the frame, two blues
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   const idx = (c, r) => r * W + c;                 // r 0 = top of the stack
 
   const dropRow = (bd, c) => {
@@ -21459,7 +21608,7 @@ const LOA_APP = (() => {
   const LIGHT_SQ = 0xd8cbb4, DARK_SQ = 0x8f7d63;   // a cooler, greyer board
   const DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   const idx = (c, r) => r * N + c;
 
   function startBd(){
@@ -21815,7 +21964,7 @@ const ATAXX_APP = (() => {
   const PY_TOP   = 0.34;                            // truncation: a squat pyramid
   const HINT_SQ  = 0x86d68f;                        // where a picked piece may go
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   const idx = (c, r) => r * N + c;
 
   /* `.` open, `#` a hole. Each row is seven characters; the whole pattern is
@@ -23518,15 +23667,15 @@ const DEFENDER_APP = (() => {
   const HIT = 0.65 * SQ, BUMP = 0.56 * SQ, SHIP_S = 1.15 * SQ;
   const WAVE = 7, WAVE_GAP = 5;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   const HELD = new Set();
   let dragAt = 0;
-  const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+  const clamp = BOARD_KIT.clamp;
   const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   // Swappable so the reels bake with a seeded roll and no notices.
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── Sep 27: "1,2,3,4" — the pieces shoot back along their own lines, waves
      end, a pawn that gets through promotes, and kills drop power-ups.
@@ -23814,16 +23963,13 @@ const DEFENDER_APP = (() => {
   /* SOUND (Sep 27): made in the browser — the shot, the bolts, a blip when squares light red,
      explosions, pickups, the wave's sting and the checkmate fanfare. Only the game you are playing
      makes a sound; the recorded games are silent. */
-  const SND = { on: ARCADE.load('defender.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('defender.sound', 'Shots, bolts, explosions and fanfares — all made in the browser.', { gaps: { shot: 0.05, warn: 0.12, tick: 0.05, boom: 0.04, bolt: 0.06 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function audio(){ return SND.on && !QUIET ? ARCADE.audio() : null; }
   addEventListener('pointerdown', () => { try { if (window.getFieldApp() === app) audio(); } catch {} }, true);
   const tone = (A, ...a) => ARCADE.tone(...a);
   const hiss = (A, ...a) => ARCADE.hiss(...a);
   function beep(kind){
-    const A = audio(); if (!A) return;
-    const now = A.currentTime, gap = { shot: 0.05, warn: 0.12, tick: 0.05, boom: 0.04, bolt: 0.06 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     try {
       switch (kind){
         case 'shot':  tone(A, 1100, 520, 0.06, 'square', 0.03); break;
@@ -24121,8 +24267,7 @@ const DEFENDER_APP = (() => {
         // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('defender.level', LEVEL);
               if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Shots, bolts, explosions and fanfares — all made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('defender.sound', SND.on ? 'on' : 'off'); if (SND.on) audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to steer the ship; it fires by itself. The way you hold it when you turn this on counts as level.',
         on(){ setTilt(!TILT.on); } },
     ]}],
@@ -24195,7 +24340,7 @@ const BREAKOUT_APP = (() => {
   const N = 8, SQ = 1 / N;
   const LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   const HELD = new Set();                 // 'L', 'R'
   /* THE BRICKS ARE CHESS PIECES (Sep 22: "breakout should use chess
@@ -24210,9 +24355,9 @@ const BREAKOUT_APP = (() => {
   const PADDLE_Y = 0.9, PADDLE_W = 0.2, PADDLE_SPEED = 1.1;
   const BALL_R = 0.018, SPEED0 = 0.62, SPEED_UP = 1.06;
   const GOLD = 0xe8c86a, BALL_COL = 0xfff0b0;
-  const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+  const clamp = BOARD_KIT.clamp;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── LEVELS WITH SHAPES (Sep 27). Each level lays the army out as a
      picture, in turn: the five lines it always had, then a diamond, a castle,
@@ -24270,13 +24415,9 @@ const BREAKOUT_APP = (() => {
   const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
 
   /* SOUND (Sep 27): made in the browser. Only the game you are playing makes a sound. */
-  const SND = { on: ARCADE.load('breakout.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('breakout.sound', 'Bounces, knocks, explosions and fanfares — all made in the browser.', { gaps: { wall: 0.04, knock: 0.03, paddle: 0.04, boom: 0.04, laser: 0.08, move: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { wall: 0.04, knock: 0.03, paddle: 0.04, boom: 0.04, laser: 0.08, move: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -24669,8 +24810,7 @@ const BREAKOUT_APP = (() => {
         // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('breakout.level', LEVEL);
               if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Bounces, knocks, explosions and fanfares — all made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('breakout.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left and right to move the paddle. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -24753,12 +24893,12 @@ const CROSSING_APP = (() => {
   let N = 8, SQ = 1 / N;                  // the size in use — see use() below
   const LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
-  const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+  const clamp = BOARD_KIT.clamp;
   const ease = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* THE LANES, far rank = row 0. Row 7 is where you start, row 4 is the verge,
      row 0 is the goal. speed is board widths a second (knights: squares per
@@ -24814,14 +24954,10 @@ const CROSSING_APP = (() => {
   const levelAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const LV_OF = { 8: 'easy', 10: 'normal', 12: 'hard' };
   const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('crossing.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('crossing.sound', 'Hops, warnings, strikes and fanfares — all made in the browser.', { gaps: { hop: 0.05, warn: 0.15 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { hop: 0.05, warn: 0.15 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -25215,8 +25351,7 @@ const CROSSING_APP = (() => {
               GAMES.clear();
               // The board in play starts again at its own new level (Oct 15): the setting moved by its ring.
               if (LIVE){ const lv = levelAt(LIVE.c, LIVE.r), g = newGame(SIZE[lv], lv); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Hops, warnings, strikes and fanfares — all made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('crossing.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to move — forward, back, left or right, one move at a time. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -25307,7 +25442,7 @@ const QUEENS_APP = (() => {
   const LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const CLASH = 0xd9534f, GOLD = 0xe8c86a;
   const GAMES = new Map();                   // key → Set of square indices (row * 8 + col)
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   const FOUND = new Set();                   // the solutions you have found, across boards
   const mix = (a, b, k) => {
@@ -25567,7 +25702,7 @@ const SNAKE_APP = (() => {
      the lines are thin flat strips drawn with the pieces. */
   const FLOOR = 0xe4e4e4, LINE = 0x9a9a9a;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   // Yours is the dark grey one (Sep 22: "dark gray snake red dot").
   const COLS = [0x3a3d42, 0x2e9e3e, 0x1e5bd8, 0xf28a1e], HEAD_LIFT = [0x5a5f66, 0x49c25a, 0x4b82f0, 0xffab4a];
@@ -25576,7 +25711,7 @@ const SNAKE_APP = (() => {
   const FOOD_N = 7, STEP = 0.16, ROUND_T = 75, WINS = 3;
   const GROW = { p: 1, n: 3, b: 3, r: 5 };
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
   /* DIFFICULTY, SOUND, TILT (Sep 27: the basics, as the other games have them). Difficulty sets how
@@ -25599,14 +25734,10 @@ const SNAKE_APP = (() => {
   const SPEEDS = { slow: 1.35, medium: 1, fast: 0.7 };
   let SPEED = ARCADE.load('snake.speed', 'medium'); if (!SPEEDS[SPEED]) SPEED = 'medium';
   const tickT = () => STEP * (QUIET ? 1 : SPEEDS[SPEED]) / 2;   // a tick is half a step: a fast snake moves every tick
-  const SND = { on: ARCADE.load('snake.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('snake.sound', 'Turns, food, strikes, explosions and fanfares — made in the browser.', { gaps: { turn: 0.05, eat: 0.04, other: 0.1, warn: 0.15 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { turn: 0.05, eat: 0.04, other: 0.1, warn: 0.15 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -26115,8 +26246,7 @@ const SNAKE_APP = (() => {
               if (LIVE){ const lv = levelAt(LIVE.c, LIVE.r), g = newGame(SIZE[lv], lv); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
       { label: () => 'Speed: ' + SPEED, title: 'How fast the snakes move: slow, medium or fast.', keepOpen: true,
         on(){ SPEED = SPEED === 'slow' ? 'medium' : SPEED === 'medium' ? 'fast' : 'slow'; ARCADE.save('snake.speed', SPEED); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Turns, food, strikes, explosions and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('snake.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want the snake to go. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -26210,9 +26340,9 @@ const TRON_APP = (() => {
   // Where each rider starts: the middle of each edge, heading in. You: the near edge.
   const STARTS = [[N - 2, N >> 1, 0], [1, (N >> 1) - 1, 2], [(N >> 1) - 1, 1, 1], [N >> 1, N - 2, 3]];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   // Difficulty: seconds a step, and how often the others take their best line rather than any safe one.
   const DIFF = { easy: { step: 0.13, care: 0.55 }, normal: { step: 0.1, care: 0.85 }, hard: { step: 0.08, care: 1 } };
@@ -26621,9 +26751,9 @@ const MISSILE_APP = (() => {
   const CITY_U = [0.17, 0.26, 0.35, 0.65, 0.74, 0.83], BASE_U = [0.06, 0.5, 0.94];
   const R_BLAST = 0.075, SHOT_SP = 0.9, AMMO = 10;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   const DIFF = { easy: { sp: 0.7, n: 0.8 }, normal: { sp: 1, n: 1 }, hard: { sp: 1.3, n: 1.25 } };
   const DL = ARCADE.difficulty('missile.level', 'Easy: slower missiles, and fewer. Normal: in between. Hard: faster, and more of them.');
@@ -26964,9 +27094,9 @@ const ASTEROIDS_APP = (() => {
   const SHIP_R = 0.026, SHOT_SP = 0.8, SHOT_LIFE = 0.9, MAX_SHOTS = 5, TURN = 6, THRUST = 0.55, VMAX = 0.45;
   const HEADS = 32;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   const DIFF = { easy: { sp: 0.75, n: 3 }, normal: { sp: 1, n: 4 }, hard: { sp: 1.3, n: 5 } };
   const DL = ARCADE.difficulty('asteroids.level', 'Easy: slower rocks, three to start. Normal: four. Hard: faster rocks, five to start.');
@@ -27556,9 +27686,9 @@ const TETRIS_APP = (() => {
   const cellsOf = p => TURNS[p.t][p.rot & 3].map(([r, c]) => [p.y + r, p.x + c]);
   const fits = (g, p) => cellsOf(p).every(([r, c]) => c >= 0 && c < W && r < H && (r < 0 || !g.grid[r * W + c]));
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── Sep 27: the basics, modern rules, and chess in the stack.
      DIFFICULTY sets how fast pieces start falling and how long a piece that
@@ -27589,14 +27719,10 @@ const TETRIS_APP = (() => {
      shows once it is played. */
   const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const D = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || LEVEL];
-  const SND = { on: ARCADE.load('tetris.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('tetris.sound', 'Moves, turns, locks, line clears and fanfares — made in the browser.', { gaps: { move: 0.03, rot: 0.03, lock: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { move: 0.03, rot: 0.03, lock: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -27997,8 +28123,7 @@ const TETRIS_APP = (() => {
     menu: [{ head: 'Tetris', items: [
       { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: pieces start slower and can slide longer after landing. Hard: faster, and they lock quickly. Press to switch.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('tetris.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns, locks, line clears and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('tetris.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left or right to slide the piece, toward you to drop it faster. Tap still turns it.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -28142,19 +28267,14 @@ const BLOCKOUT_APP = (() => {
   const SET = { mode: ARCADE.load('blockout.mode', 'puzzle') === 'endless' ? 'endless' : 'puzzle', glass: ARCADE.load('blockout.glass', 'on') !== 'off' };
   const puzzling = () => SET.mode === 'puzzle';
   const DL = ARCADE.difficulty('blockout.level', 'Every board plays at its own level, harder the farther it is from the corner: a 3 × 3 pit of flat pieces near it, then 4 × 4, then 5 × 5 with pieces that are not flat and, farther out, pieces of five cubes falling faster. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const say = (m, ms) => { if (QUIET) return; try { engineNotice(m, ms || 2000); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(2000, () => QUIET);
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (Lights Out's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
   const lvOf = (c, r) => levelAt(boardIdx(c, r));
   let rnd = Math.random, QUIET = false, LIVE = null;
 
@@ -28596,13 +28716,9 @@ const BLOCKOUT_APP = (() => {
   function saveBest(){ try { const o = {}; [...BEST].slice(-500).forEach(([k, v]) => { o[k] = v; }); localStorage.setItem('blockout.best', JSON.stringify(o)); } catch {} }
 
   // sound, as Tetris's
-  const SND = { on: ARCADE.load('blockout.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('blockout.sound', 'Moves, turns, locks and layers cleared — made in the browser.', { gaps: { move: 0.03, rot: 0.03, lock: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { move: 0.03, rot: 0.03, lock: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -28792,8 +28908,7 @@ const BLOCKOUT_APP = (() => {
         on(){ setMode(puzzling() ? 'endless' : 'puzzle'); } },
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'See-through: ' + (SET.glass ? 'on' : 'off'), title: 'The cubes over where the piece will land, and over holes, drawn as glass; holes marked red. V on the keys.', on(){ setGlass(!SET.glass); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns, locks and layers cleared — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('blockout.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill whole layers. Arrows or WASD slide the piece; Q and E spin it, R and F tip it away and toward you, Z and X roll it left and right; Enter drops it (Space pauses). On a phone: drag to slide, tap its shadow to drop, tap elsewhere to spin, and the bottom row tips and rolls.', 7000); } },
       { label: 'Start this board again', title: 'An empty pit, the score at nothing.', on(){ const f = framedCell(); if (f) app.onReset(f.c, f.r); } },
     ]}],
@@ -28991,19 +29106,14 @@ const SOMA_APP = (() => {
      not fit across it otherwise, so a long one is drawn smaller rather than over its neighbours. Soma's are never past 6. */
   const sqOf = B => Math.min(0.14, 0.84 / Math.max(B[0], B[1]));
   const DL = ARCADE.difficulty('soma.level', 'Every board has its own figure to fill, harder the farther it is from the corner: three pieces near it, then four, five and six, and far out all seven. The corner\'s first board is the Soma cube itself. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const say = (m, ms) => { try { engineNotice(m, ms || 2400); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(2400);
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (Lights Out's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => idx < COURSE.length ? 5 : Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));   // (the course: all seven)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => idx < COURSE.length ? 5 : BOARD_KIT.levelAt(idx, DL);   // (the course: all seven)
   const lvOf = (c, r) => levelAt(boardIdx(c, r));
   const seeded = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
   const now = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
@@ -29483,11 +29593,9 @@ const SOMA_APP = (() => {
   }
 
   // sound
-  const SND = { on: ARCADE.load('soma.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('soma.sound', 'Moves, turns and the pieces going in.', { gaps: { '*': 0.03 } });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind){
-    if (!SND.on) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const t = A.currentTime; if (t - (SND.last[kind] || 0) < 0.03) return; SND.last[kind] = t;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -30070,7 +30178,7 @@ const SOMA_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Pieces: ' + SETS[SET_ID].name, title: 'Which pieces: Soma\'s seven, the eight tetracubes, the twelve pentominoes as flat pieces, or all twenty-nine pentacubes. Each has its own course on the corner, its own figures, ways and bests.', on(){ const ids = Object.keys(SETS); useSet(ids[(ids.indexOf(SET_ID) + 1) % ids.length]); } },
       { label: () => 'Show where it fits: ' + (SET.fits ? 'on' : 'off'), title: 'Every cell of the figure the piece in hand could go into, turned as it is, lit in its colour.', on(){ SET.fits = !SET.fits; ARCADE.save('soma.fits', SET.fits ? 'on' : 'off'); touched(); } },
-      SND && { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns and the pieces going in.', on(){ SND.on = !SND.on; ARCADE.save('soma.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND && SND.item,
       { label: "It can't be built", title: 'From level 3 some figures have no way to fill them. Say so here (or ✗ in the row, or N): right, the board is through; wrong, it costs a hint.', disabled: () => { const g = liveGame(); return !(g && canSay(g.F)); }, on(){ const g = liveGame(); if (g){ declare(g); touched(); } } },
       { label: 'Hint', title: 'The next piece of a way to finish, from the pieces placed as they are, put in your hand where it goes. H on the keys.', on(){ const g = liveGame(); if (g){ hint(g); touched(); } } },
       { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill the glass figure with its pieces. Arrows slide the piece in hand, Q/E spin, R/F tip, Z/X roll, [ and ] step through the heights it fits, Enter places it, 1–7 take a piece, H hints. On a phone: drag to slide, tap to place (a tap on a placed piece takes it back), and the bottom row turns it.', 8000); } },
@@ -30204,9 +30312,9 @@ const GEMS_APP = (() => {
   const COLS = [0xe8303a, 0xf28a1e, 0xf5d327, 0x2fbf4f, 0x2f6fe0, 0xa845d6, 0xf4f4f4];
   const G = 70, SWAP_T = 0.22, SWAP_W = 30, THINK = 0.55;       // fall in squares/s², the swap's spring
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* ─── THE SHAPES: r(h, θ), h up the gem, θ around it. A cut gem is a
      polygon in plan (its circumradius, rounded by the few terms kept), a
@@ -30599,9 +30707,9 @@ const BOMBER_APP = (() => {
   const DIRS = [[-1, 0], [0, 1], [1, 0], [0, -1]];
   const CORNERS = [[N - 1, 0], [0, N - 1], [0, 0], [N - 1, N - 1]];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const inb = (r, c) => r >= 0 && r < N && c >= 0 && c < N;
   const DIFF = { easy:   { think: 0.24, bold: 0.55 },
                  normal: { think: 0.12, bold: 0.9 },
@@ -30616,14 +30724,10 @@ const BOMBER_APP = (() => {
      shows once it is played. */
   const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const DF = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || LEVEL];
-  const SND = { on: ARCADE.load('bomber.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('bomber.sound', 'Bombs, blasts, crates, pickups and fanfares — made in the browser.', { gaps: { boom: 0.06, crate: 0.04, drop: 0.05, crush: 0.1 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { boom: 0.06, crate: 0.04, drop: 0.05, crush: 0.1 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -31141,8 +31245,7 @@ const BOMBER_APP = (() => {
     menu: [{ head: 'Bomberman', items: [
       { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: the bots think slower and bomb less boldly. Hard: quick and bold. Press to switch.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('bomber.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Bombs, blasts, crates, pickups and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('bomber.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want to walk. Tap yourself to drop a bomb.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -31311,9 +31414,9 @@ const PACMAN_APP = (() => {
   const MODES = [7, 20, 7, 20, 5, 20, 5, 1e9];                // scatter, chase, …
   const wallAt = (m, r, c) => MAZES[m][r][c] === '#';
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* DIFFICULTY, SOUND, TILT (Sep 28: the basics, as the other games have them). Difficulty sets how
      fast the ghosts are against Pac-Man and how long they stay blue. */
@@ -31330,14 +31433,10 @@ const PACMAN_APP = (() => {
   // A board waiting, not in play, takes its level afresh when the setting changes (Oct 15); one in play keeps its own.
   const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number); g.lv = lvAt(c, r); } };
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('pacman.sound', 'on') !== 'off', last: {}, waka: 0 };
+  const SND = Object.assign(ARCADE.sounds('pacman.sound', 'Wa-ka, power pellets, ghosts, fruit and fanfares — made in the browser.', { gaps: { dot: 0.06 }, quiet: () => QUIET }), { waka: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { dot: 0.06 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -31832,8 +31931,7 @@ const PACMAN_APP = (() => {
         // Oct 15: the board in play starts again at its own level under the new setting.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('pacman.level', LEVEL); relevel();
               if (LIVE) app.onReset(LIVE.c, LIVE.r); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Wa-ka, power pellets, ghosts, fruit and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('pacman.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want Pac-Man to go. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -31959,13 +32057,9 @@ const TD_APP = (() => {
      recording of its own size (`reelAt`). A map's own gold stays as the map says, and its size; the waves are the board's. */
   const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('td.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('td.sound', 'Shots, hits, explosions, building and fanfares — made in the browser.', { gaps: { shot: 0.07, hit: 0.04, boom: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { shot: 0.07, hit: 0.04, boom: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -31986,9 +32080,9 @@ const TD_APP = (() => {
   // The marching pieces: strength, speed (squares a second), and what each pays.
   const KINDS = { p: [3, 0.9, 2], n: [2.5, 1.7, 3], b: [5, 1.2, 3], r: [12, 0.75, 5], q: [45, 0.7, 20] };   // Sep 28: slower and better paid — three through loses
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   /* THE WAY: entrance on the left edge, exit on the right, their heights set per board. The pieces
      walk the shortest way (four directions) to the exit, round the towers — worked out as a
@@ -32667,8 +32761,7 @@ const TD_APP = (() => {
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('td.level', LEVEL);
               GAMES.clear();
               if (LIVE){ const m = MAPS.get(LIVE.key), g = newGame(roadOf(LIVE.c, LIVE.r), 0, m, lvAt(LIVE.c, LIVE.r)); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Shots, hits, explosions, building and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('td.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
     ]}],
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r));
@@ -32853,9 +32946,9 @@ const AIR_APP = (() => {
   const HEAVY = k => k === 'r' || k === 'q' || k === 'k';       // these put up flak; the rest fire tracer
   const GRASS = [0x8fbe68, 0x86b562], CLEARED = [0xd9463b, 0xc43a30], PIECE = 0x26262a, WRECK = 0x2b2926, FLASH = 0xffe07a;
   const STATE = new Map();                            // per board: the dead, the explosions, the muzzle flashes
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
-  function say(msg, ms){ try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800);
   const now = () => performance.now() / 1000;
   const mul = a => () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1);
                           t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -34960,7 +35053,7 @@ const INVADERS_APP = (() => {
   // The ordinary chessboard woods (Sep 22: "normal chess board color").
   const DARK_A = 0xb58863, DARK_B = 0xf0d9b5;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   const HELD = new Set();
   let dragAt = 0;
@@ -34972,9 +35065,9 @@ const INVADERS_APP = (() => {
   const SHIP_Y = 1 - 1.4 * SQ, SHIP_S = 1.6 * SQ, SHIP_SPEED = 0.8;
   const SHOT_SPEED = 1.4, BOMB_SPEED = 0.32, FIRE_EVERY = 0.22;
   const GOLD = 0xe8c86a, SHOT_GOLD = 0xfff0b0, BOMB_RED = 0xe0443a;
-  const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+  const clamp = BOARD_KIT.clamp;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
 
   const DIFF = { easy:   { march: 0.8,  rate: 1.4, shot: 0.8 },
                  normal: { march: 1,    rate: 1,   shot: 1 },
@@ -34989,14 +35082,10 @@ const INVADERS_APP = (() => {
   // A board waiting, not in play, takes its level afresh when the setting changes (Oct 15); one in play keeps its own.
   const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number); g.lv = lvAt(c, r); } };
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('invaders.sound', 'on') !== 'off', last: {}, note: 0 };
+  const SND = Object.assign(ARCADE.sounds('invaders.sound', 'The march, shots, hits and explosions — made in the browser.', { gaps: { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05 }, quiet: () => QUIET }), { note: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -35523,8 +35612,7 @@ const INVADERS_APP = (() => {
         // Oct 15: the board in play starts again at its own level under the new setting.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('invaders.level', LEVEL); relevel();
               if (LIVE) app.onReset(LIVE.c, LIVE.r); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'The march, shots, hits and explosions — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('invaders.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left or right to move the ship; it fires by itself.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -35663,10 +35751,10 @@ const TILES_APP = (() => {
   const HP = { p: 1, n: 2, b: 2, r: 3, q: 5 }, HP_ADJ = { easy: -1, normal: 0, hard: 1 };
   const SHOT_V = 1.7, BOMB_V = 0.75, STUN = 0.9;                  // missile speeds (boards a second), stun
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
-  const say = (m, ms) => { try { engineNotice(m, ms || 2200); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const say = BOARD_KIT.say(2200);
+  const now = BOARD_KIT.now;
   const note = c => { if (!SND.on) return; const f = noteOf(c, N); try { if (ARCADE.audio()) ARCADE.tone(f, f, 0.22, 'triangle', 0.07); } catch {} };
 
   /* THE PATTERNS: each a list of [file, beat] — beats are spawn times in units of the gap between
@@ -38654,11 +38742,11 @@ const GOLF_MAKE = SIZE => {
   const SND = ARCADE.sounds('golf.sound', 'A tap for each putt, a knock off the walls, a chime in the cup.');
   const D = () => DIFF[DL.get()] || DIFF.normal;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   let SILENT = false;                                     // (the editor's Check plays thousands of putts: quietly)
-  const say = (m, ms) => { if (SILENT) return; try { engineNotice(m, ms || 2000); } catch {} };
-  const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+  const say = BOARD_KIT.say(2000, () => SILENT);
+  const clamp = BOARD_KIT.clamp;
   // The hole a board holds: the board to the right holds the next one, so the course walks rightward.
   /* A HOLE FOR EVERY BOARD (Oct 9: "the problem is there are thousands of boards. can you use the index to generate a
      unique board for each index?"). The course's 22 holes used to come round again and again across the field. Now a
@@ -39739,7 +39827,10 @@ const GOLF_MAKE = SIZE => {
     const isSail = p => /^sail/i.test(p.name), sl = C.parts.filter(isSail), tw = C.parts.filter(p => !isSail(p));
     if (!sl.length) return null;
     // (unshaded: the chess pieces' darkening toward the foot made the cream tower and white sails grey)
-    const flat = { shadeFn: () => 1 }, sails = buildPartsGeometry(24, { parts: sl }, flat), tower = tw.length ? buildPartsGeometry(24, { parts: tw }, flat) : null;
+    // (built at 12, not 24, Oct 28: "1,3", the second being speed on phones: at 24 a windmill was 34,500 triangles, sails 25,088
+    //  and tower 9,408, on every board whatever its size, four of them 138k of the 849k drawn zoomed out; at 12 a quarter, and
+    //  screenshots of one about 120 px tall, enlarged, show the same windmill. The bumpers and boulders went to 12 on Oct 12.)
+    const flat = { shadeFn: () => 1 }, sails = buildPartsGeometry(12, { parts: sl }, flat), tower = tw.length ? buildPartsGeometry(12, { parts: tw }, flat) : null;
     const P = sails.attributes.position.array;
     let reach = 0;
     for (let i = 0; i < P.length; i += 3) reach = Math.max(reach, Math.hypot(P[i], P[i + 2]));
@@ -40607,7 +40698,7 @@ const GOLF_MAKE = SIZE => {
     const w = v => GS > 1 ? Math.min(v, GS - v) : v;
     return Math.max(w(a), w(b));
   }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const ringLevel = BOARD_KIT.ringLevel;
   const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + LEVEL_SET));
   const LEVEL_DIALS = [
     // weave: the chance of crossing paths; extra: of a second; riders: the most a weave may bring; speed: the movers'
@@ -43160,10 +43251,10 @@ const MINES_APP = (() => {
   const PIP_COL = [0, 0x2b6cd4, 0x2e8b3a, 0xd23a2e, 0x1f2f7a, 0x8a2b1e, 0x1f8a8a, 0x222222, 0x777777];
   const FLAG_RED = 0xd23a2e;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   // Sep 28, the puzzle pass: difficulty is how many mines (15, 22, 30); sound as the others have it.
   const DL = ARCADE.difficulty('mines.level', 'Easy: 9×9, 10 mines. Normal: 12×12, 22 mines. Hard: 16×16, 40 mines. The board you are on is dealt again at the new size.');
   const SND = ARCADE.sounds('mines.sound', 'A tap for each square, a sweep when a patch opens, a flag, the explosion and the fanfare.');
@@ -43523,10 +43614,10 @@ const MEMORY_APP = (() => {
   const BACK = 0xffffff, LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const KINDS = ['p', 'n', 'b', 'r', 'q', 'k'];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  function say(msg, ms){ if (QUIET) return; try { engineNotice(msg, ms || 1800); } catch {} }
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DL = ARCADE.difficulty('memory.level', 'Easy: 4×4, eight pairs. Normal: 5×5, twelve pairs round an empty middle. Hard: 6×6, eighteen pairs. The board you are on is dealt again at the new size.');
   const LV = () => QUIET ? 'hard' : DL.get();          // the recordings are the 6×6
   const SND = ARCADE.sounds('memory.sound', 'A tap for each card, a chime for a pair, a buzz for a miss, a fanfare when the board is clear.');
@@ -43790,10 +43881,10 @@ const PIPES_APP = (() => {
   const DR = [-1, 0, 1, 0], DC = [0, 1, 0, -1];           // N E S W, bits 1 2 4 8
   const rot = (m, k) => { k &= 3; return ((m << k) | (m >> (4 - k))) & 15; };   // clockwise
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DL = ARCADE.difficulty('pipes.level', 'Easy: 8×8. Normal: 10×10. Hard: 12×12. The board you are on is dealt again at the new size.');
   const SND = ARCADE.sounds('pipes.sound', 'A click for each turn, a chime when the water reaches further, a fanfare when it is all connected.');
   const wetN = p => wet(p).on.reduce((s, x) => s + x, 0);
@@ -44039,10 +44130,10 @@ const LOOPS_APP = (() => {
   const DR = [-1, 0, 1, 0], DC = [0, 1, 0, -1];           // N E S W, bits 1 2 4 8
   const rot = (m, k) => { k &= 3; return ((m << k) | (m >> (4 - k))) & 15; };   // clockwise
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   const DL = ARCADE.difficulty('loops.level', 'Easy: 8×8. Normal: 10×10. Hard: 12×12. The board you are on is dealt again at the new size.');
   const SND = ARCADE.sounds('loops.sound', 'A click for each turn, a chime when a piece meets all round, a fanfare when nothing is loose.');
 
@@ -44267,10 +44358,10 @@ const MANIA_APP = (() => {
   // The seven pieces: two straights, four bends, the cross (the cross less often).
   const BAG = [10, 5, 3, 6, 12, 9, 10, 5, 3, 6, 12, 9, 15];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   // Sep 28, the puzzle pass: difficulty sets how fast the water runs and how long it waits at an open end.
   const DL = ARCADE.difficulty('mania.level', 'Easy: an 8×8 board, slower water that waits 9 seconds at an open end. Normal: 10×10. Hard: 12×12, faster water that waits 4. The board you are on starts again at the new size.');
   const DIFF = { easy: { tile: 1.35, grace: 9 }, normal: { tile: 1, grace: 6 }, hard: { tile: 0.75, grace: 4 } };
@@ -44601,10 +44692,10 @@ const FLOW_APP = (() => {
   const LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const COLS = [0xe53935, 0x2e9e3e, 0x1e5bd8, 0xe8c21a, 0xf28a1e, 0x1fc6d3, 0xd12ad1, 0x8a2a2a, 0x7a3fc4];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, DRAG = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 1800); } catch {} };
+  const say = BOARD_KIT.say(1800, () => QUIET);
   // Sep 28, difficulty: easy draws two of the flows in for you; hard has no short pairs (every run six squares or more).
   const DL = ARCADE.difficulty('flow.level', 'Easy: 6×6, five pairs. Normal: 8×8, seven pairs. Hard: 10×10, nine pairs. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
@@ -45021,10 +45112,10 @@ const NETSLIDE_APP = (() => {
   const DRY = 0x7d838c, WET = 0x2f8fd8, SRC = 0x1d5fa8;
   const DR = [-1, 0, 1, 0], DC = [0, 1, 0, -1];           // N E S W, bits 1 2 4 8
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, DRAG = null;
   let rnd = Math.random;
-  const say = msg => { try { engineNotice(msg, 3500); } catch {} };
+  const say = BOARD_KIT.say(3500);
   const DL = ARCADE.difficulty('netslide.level', 'Easy: 5×5. Normal: 7×7. Hard: 9×9. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the setting is the corner block's, and every board farther out is a size up (ARCADE.levelOn,
@@ -45296,10 +45387,10 @@ const ROLL_APP = (() => {
   const DR = [-1, 0, 1, 0], DC = [0, 1, 0, -1];           // N E S W, bits 1 2 4 8
   const PIECES = [5, 10, 3, 6, 12, 9, 0];                  // straights, corners, blank
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, DRAG = null;
   let rnd = Math.random;
-  const say = msg => { try { engineNotice(msg, 3500); } catch {} };
+  const say = BOARD_KIT.say(3500);
   const DL = ARCADE.difficulty('roll.level', 'Easy: 5×5. Normal: 6×6. Hard: 7×7. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the setting is the corner block's, and every board farther out is a size up (ARCADE.levelOn,
@@ -45312,7 +45403,7 @@ const ROLL_APP = (() => {
   // The far field's fabric is the boards past the last one drawn, all well past the 31st ring: as far as Hard.
   const farLv = () => ARCADE.levelOn(DL.get(), ARCADE.RING_STEPS[1], 0);
   const SND = ARCADE.sounds('roll.sound', 'A swish for each slide, a chime when the pipe reaches further, a fanfare when the ball gets home.');
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const now = BOARD_KIT.now;
   const step = (i, d) => { const r = ((i / N) | 0) + DR[d], c = i % N + DC[d];
                            return (r < 0 || r >= N || c < 0 || c >= N) ? -1 : r * N + c; };
 
@@ -45571,10 +45662,10 @@ const UNBLOCK_APP = (() => {
   const LIGHT_SQ = 0xf0d9b5, DARK_SQ = 0xb58863;
   const BLOCK = 0x5a5f66, RED = 0xd9342b, GOLD = 0xd4a017;
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, DRAG = null;
   let rnd = Math.random;
-  const say = msg => { try { engineNotice(msg, 3500); } catch {} };
+  const say = BOARD_KIT.say(3500);
   // Sep 28, the puzzle pass: difficulty picks from the puzzles by how many moves they need.
   const DL = ARCADE.difficulty('unblock.level', 'Easy: a 6×6 board. Normal: 8×8. Hard: 10×10. The board you are on is dealt again at the new size.');
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
@@ -45588,7 +45679,7 @@ const UNBLOCK_APP = (() => {
   const farLv = () => ARCADE.levelOn(DL.get(), ARCADE.RING_STEPS[1], 0);
   const lvOfN = n => Object.keys(SIZE).find(l => SIZE[l] === n) || 'normal';
   const SND = ARCADE.sounds('unblock.sound', 'A swish for each square a block moves, a fanfare when the red block gets out.');
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const now = BOARD_KIT.now;
 
   // A block: h (slides left/right) or not, len 2 or 3, line = its row (h) or column; pos = the other.
   const cellsOf = (b, p) => Array.from({ length: b.len }, (_, k) => b.h ? b.line * N + p + k : (p + k) * N + b.line);
@@ -46028,11 +46119,11 @@ const T2048_APP = (() => {
   const colOf = e => TILE_COL[Math.min(e, TILE_COL.length - 1)];
   const pieceOf = e => PIECES[Math.min(e, 12)];
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, SWIPE = null;
   let rnd = Math.random, QUIET = false;
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 2500); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const say = BOARD_KIT.say(2500, () => QUIET);
+  const now = BOARD_KIT.now;
   let NEXT_ID = 1;
   // Sep 28, the puzzle pass: sound, and tilt — tip the phone and the tiles slide that way; level it to tip again.
   const SND = ARCADE.sounds('2048.sound', 'A swish for each move, a chime when tiles join, a fanfare at 2048.');
@@ -46364,14 +46455,14 @@ const SOKOBAN_APP = (() => {
   const D = [-N, 1, N, -1], DCH = 'URDL';
   const DL = ARCADE.difficulty('sokoban.level', 'Every board deals its own level, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up (the corner block keeps the worked-out levels). The board you are on starts again.', true);
   const GAMES = new Map();
-  const gkey = (c, r) => c + '_' + r;
+  const gkey = BOARD_KIT.gkey;
   let LIVE = null, DRAG = null;
   let QUIET = false;                            // while the recordings are made: no notices, no sound
-  const say = (msg, ms) => { if (!QUIET) try { engineNotice(msg, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000, () => QUIET);
   // Sep 28, the puzzle pass: sound; tilt steers (hold the tip and he keeps walking); a drag anywhere steers.
   const SND = ARCADE.sounds('sokoban.sound', 'A step, a shove for each push, a chime when a crate lands on a spot, a fanfare when the level is done.');
   const TILT = ARCADE.tilt;
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const now = BOARD_KIT.now;
 
   /* The levels: a 10×10 map (# wall, . spot, $ crate, * crate on a spot,
      @ keeper, space floor) and the shortest known solution as moves. */
@@ -46393,7 +46484,7 @@ const SOKOBAN_APP = (() => {
   });
   MAP.forEach((L, k) => { L.num = k; });
   /* ─── EVERY BOARD ITS OWN LEVEL (Oct 12) ─────────────────────────────── */
-  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  const LV_COL = BOARD_KIT.LV_COL;     // (mini golf's flags: green, blue, yellow, orange, black)
   /* Each level's board (n is the map's width with its wall round, so 8 is a 6×6 board), crates, share of the floor
      walled, and the band its fewest pushes must fall in. */
   const LV_DIALS = [
@@ -46403,19 +46494,13 @@ const SOKOBAN_APP = (() => {
     { n: 10, boxes: 3, walls: 0.24, band: [22, 34], cap: 25000 },
     { n: 12, boxes: 3, walls: 0.26, band: [30, 48], cap: 30000 },
   ];
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
+  const fieldGS = BOARD_KIT.gs;
   // (mini golf's: a board's own number from its column and row, Szudzik's pairing, small ones near the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){                         // (its distance from the corner, the short way round the wrapped field)
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   /* THE SOLVER (Oct 12, the mini golf rater's part here): the fewest pushes, breadth first. A state is where the crates
      stand and the squares he can walk to (named by the least of them); each step is one push of a crate he can reach.
      A crate is never pushed onto a square from which no pull could bring it back to a spot (live), or into a 2×2 block of
@@ -46584,7 +46669,7 @@ const SOKOBAN_APP = (() => {
     return L;
   }
   const lvl = g => g.L;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const nextBoard = BOARD_KIT.nextBoard;
   const starsFor = (L, pushes) => !L.par ? 0 : pushes <= L.par ? 3 : pushes <= Math.ceil(L.par * 1.5) ? 2 : 1;
 
   const solvedAll = (L, boxes) => boxes.every(b => L.goal[b]);
@@ -46610,7 +46695,7 @@ const SOKOBAN_APP = (() => {
       SND.play('win', QUIET);
       g.solved = true; g.queue = [];
       const sN = starsFor(L, g.pushes);
-      say('Solved in ' + g.moves + ' moves, ' + g.pushes + ' pushes' + (L.par ? ' (par ' + L.par + ') ' + '★'.repeat(sN) + '☆'.repeat(3 - sN) : '') + '. Tap the board for the next one.', 4000);
+      say('Solved in ' + g.moves + ' moves, ' + g.pushes + ' pushes' + (L.par ? ' (par ' + L.par + ') ' + BOARD_KIT.stars(sN) : '') + '. Tap the board for the next one.', 4000);
     }
     return true;
   }
@@ -47129,7 +47214,7 @@ const SOKOBAN_APP = (() => {
      (localStorage tiltmaze.best). A tap on a finished board goes on to the next, as golf goes on to the next hole. */
 const TILT_APP = (() => {
   const FLOOR = 0xd8c9a6, FLOOR2 = 0xcfbe98, WALLC = 0x6b4a2b, HOLEC = 0x111111, RINGC = 0xe8b93a, MARBLE = 0xd9dde3;
-  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  const LV_COL = BOARD_KIT.LV_COL;     // (mini golf's flags: green, blue, yellow, orange, black)
   /* HARDER (Oct 20: "the title maze should be more difficult. all levels are to easy."): the mazes are bigger (7 to 15 cells a
      side, 5 to 10 before), with fewer loops, so more dead ends to take; more holes off the way; holes in the outside corner of
      a turn from level 1 (from 3 before) and far more often; holes beside the way on a straight from level 2 (`side`: ride the
@@ -47145,24 +47230,19 @@ const TILT_APP = (() => {
   const G = 2.2, ROLL = 0.9, BOUNCE = 0.35, VMAX = 1.6, SUB = 1 / 240, TIME_CAP = 120, REC_HZ = 30;
   const WALL_T = 0.12, WALL_H = 0.42, BALL_R = 0.26, HOLE_R = 0.3, CORNER_R = 0.2, CORNER_OFF = 0.23, RING_R = 0.3, SIDE_R = 0.2, SIDE_OFF = 0.33;
   const DL = ARCADE.difficulty('tiltmaze.level', 'Every board has its own maze, harder the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tiltmaze.sound', 'A tick off the walls, a drop down a hole, a chime at the ring.');
   const TILT = ARCADE.tilt;
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (mini golf's and Sokoban's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   /* ─── A MAZE ─── cells i (across), j (down); E[i + j·m]: a wall on the cell's east side, S[…]: on its south side; the
      board's edge is walled all round. Made by a walk that backs up when it is boxed in (every cell reached once, one way
@@ -47325,34 +47405,29 @@ const TILT_APP = (() => {
     if (M){ MAZES.delete(key); MAZES.set(key, M); return M; }
     let L = null, run = null;
     for (let a = 0; a <= 8; a++){ L = makeMaze(idx, lv, a); run = playRun(L); if (run.ok) break; }
-    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: (idx * 0.618) % 1 };
+    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: BOARD_KIT.phase(idx) };
     MAZES.set(key, M); if (MAZES.size > CAP) MAZES.delete(MAZES.keys().next().value);
     return M;
   }
   // (boards only looked at get their maze a few at a time, as Sokoban deals: until then a bare floor)
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(8);
   function mazeSoon(c, r){
     if (MINE.has(gkey(c, r))) return mineMaze(c, r);
     const idx = boardIdx(c, r), lv = levelAt(idx), M = MAZES.get(idx * 8 + lv);
-    if (M) return M;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
-    if (budget <= 0) return null;
-    const t0 = performance.now(), out = mazeFor(c, r); budget -= performance.now() - t0;
-    return out;
+    return M || SOON.take(() => mazeFor(c, r)) || null;
   }
 
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null, DRAG = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tiltmaze.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { const e = [...BEST].slice(-500); localStorage.setItem('tiltmaze.best', JSON.stringify(Object.fromEntries(e))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('tiltmaze.best');
   const bestKey = M => M.L.idx + '@' + M.L.lv;
   function fresh(c, r){
     const M = mazeFor(c, r), [x, y] = centre(M.L, M.L.start);
     return { M, c, r, b: { x, y, vx: 0, vy: 0 }, t: 0, falls: 0, state: 'ready', last: performance.now(), drop: 0 };
   }
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   const HELD = new Set();
   const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D', a: 'L', d: 'R', w: 'U', s: 'D', A: 'L', D: 'R', W: 'U', S: 'D' };
   addEventListener('keydown', e => {
@@ -47395,14 +47470,14 @@ const TILT_APP = (() => {
     const k = bestKey(g.M), was = BEST.get(k), t = Math.round(g.t * 10) / 10;
     if (was == null || t < was){ BEST.delete(k); BEST.set(k, t); saveBest(); }
     SND.play('win');
-    say('Through in ' + t.toFixed(1) + ' s' + (g.M.par ? ' (par ' + g.M.par.toFixed(1) + ' s)' : '') + ' ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars)
+    say('Through in ' + t.toFixed(1) + ' s' + (g.M.par ? ' (par ' + g.M.par.toFixed(1) + ' s)' : '') + ' ' + BOARD_KIT.stars(g.stars)
         + (g.falls ? ', ' + g.falls + (g.falls === 1 ? ' fall' : ' falls') : '') + (was != null && t < was ? '. A new best, beating ' + was.toFixed(1) + ' s.' : was != null ? '. Best ' + was.toFixed(1) + ' s.' : '.') + ' Tap for the next board.', 4200);
   }
   // a board no one is playing: the steady player's run, round and round (with a rest at the ring)
   function shownBall(M){
     const R = M.run && M.run.rec; const L = M.L;
     if (!R) return centre(L, L.start);
-    const n = R.length / 2, T = n / REC_HZ + 1.5, t = ((now() / 1000 + M.phase * T) % T) * REC_HZ, i = Math.min(n - 1, Math.floor(t)), f = Math.min(1, t - i), j = Math.min(n - 1, i + 1);
+    const n = R.length / 2, { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 1.5, M.phase);
     return [R[2 * i] + (R[2 * j] - R[2 * i]) * f, R[2 * i + 1] + (R[2 * j + 1] - R[2 * i + 1]) * f];
   }
   function itemsOf(M, ball, g){
@@ -47429,7 +47504,7 @@ const TILT_APP = (() => {
      cleanMaze) and played at once; Escape or Cancel leaves the board as it was; the menu's Forget puts the board's own back,
      and Share copies a link to it. */
   const MINE_M = new Map(), MINE_KEEP = 300, SIZES = [7, 9, 11, 13, 15], MINE_COL = 0x8a4fd0, MINE_G = 1.12;
-  const hashOf = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const hashOf = BOARD_KIT.hash;
   // a maze as written: { m, E, S (strings of 0 and 1, a cell's east and south walls), holes: [[x, y]] in cells, start, goal }
   function cleanMaze(d){
     if (!d || typeof d !== 'object') return null;
@@ -47461,7 +47536,7 @@ const TILT_APP = (() => {
     const k = gkey(c, r), d = MINE.get(k); if (!d) return null;
     let M = MINE_M.get(k); if (M) return M;
     const L = mazeOfData(d, boardIdx(c, r)), run = playRun(L);
-    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: (L.idx * 0.618) % 1, mine: true };
+    M = { L, run, par: run.ok ? Math.max(1, Math.round(run.t * 10) / 10) : null, phase: BOARD_KIT.phase(L.idx), mine: true };
     MINE_M.set(k, M); return M;
   }
   const { MINE, save: saveMine } = EDIT_KIT.store('tiltmaze.mine', MINE_KEEP, cleanMaze);
@@ -47822,25 +47897,20 @@ const PINBALL_APP = (() => {
     { g: 1.66, fl: 0.080, gap: 0.006, out: 0.041, bump: 3, kick: 1.15, save: 3,  drops: 5, posts: 3, kb: [1, 0] },
     { g: 1.85, fl: 0.078, gap: 0.008, out: 0.045, bump: 3, kick: 1.2,  save: 0,  drops: 5, posts: 3, kb: [0, 0] },
   ];
-  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags)
+  const LV_COL = BOARD_KIT.LV_COL;     // (mini golf's flags)
   const DL = ARCADE.difficulty('pinball.level', 'Every board has its own table, harder the farther it is from the corner: steeper, shorter flippers set wider, wider outlanes, a shorter ball save. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('pinball.sound', 'Flippers, bumpers, slingshots, targets and the drain — made in the browser.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (mini golf's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
   const hsl = (h, s, l) => { const k = n => (n + h * 12) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
   const css = c => '#' + c.toString(16).padStart(6, '0');
@@ -48577,7 +48647,7 @@ const PINBALL_APP = (() => {
     const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
     let M = TABLES.get(key);
     if (M){ TABLES.delete(key); TABLES.set(key, M); return M; }
-    M = { T: makeTable(idx, lv, 0, true), key, idx, lv, par: null, reel: null, ready: false, phase: (idx * 0.618) % 1 };
+    M = { T: makeTable(idx, lv, 0, true), key, idx, lv, par: null, reel: null, ready: false, phase: BOARD_KIT.phase(idx) };
     M.job = fitGen(idx, lv);
     TABLES.set(key, M); if (TABLES.size > CAP) TABLES.delete(TABLES.keys().next().value);
     return M;
@@ -48594,25 +48664,23 @@ const PINBALL_APP = (() => {
   }
   const readyNow = M => { while (M.job) work(M, 50); return M; };
   const finishJob = M => { wantPar(M); while (M.job || M.par == null) work(M, 50); return M; };
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(10);
   function tableSoon(c, r, M, urgent){
     M = M || tableFor(c, r);
     if (!M.job && !(M.parWanted && M.par == null)) return M;
     if (urgent){ work(M, URGENT_MS); return M; }
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 10; }
-    if (budget > 0){ const t0 = performance.now(); work(M, Math.min(budget, 4)); budget -= performance.now() - t0; }
+    SOON.take(left => work(M, Math.min(left, 4)));
     return M;
   }
 
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('pinball.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('pinball.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('pinball.best');
   const bestKey = M => M.mine ? 'm' + M.hash : M.idx + '@' + M.lv;
   function fresh(c, r){ const M = readyNow(tableFor(c, r)); return { M, c, r, S: newState(M.T), balls: M.T.balls, ball: 1, state: 'ready', wait: 0, last: 0, overAt: 0 }; }
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function begin(g){
     Object.assign(g, fresh(g.c, g.r)); g.state = 'play'; toPlunger(g.S);
     for (const w of ['L', 'R', 'P']) HELD[w].clear();
@@ -48627,7 +48695,7 @@ const PINBALL_APP = (() => {
     g.stars = starsOf(s, M.par);
     if (was == null || s > was){ BEST.delete(k); BEST.set(k, s); saveBest(); }
     beep('over');
-    say('Game over: ' + s.toLocaleString() + ' (par ' + M.par.toLocaleString() + ') ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars)
+    say('Game over: ' + s.toLocaleString() + ' (par ' + M.par.toLocaleString() + ') ' + BOARD_KIT.stars(g.stars)
         + (was != null && s > was ? '. A new best, beating ' + (+was).toLocaleString() + '.' : was != null ? '. Best ' + (+was).toLocaleString() + '.' : '.') + ' Tap for the next table.', 5000);
   }
   function stepGame(g){
@@ -48801,7 +48869,8 @@ const PINBALL_APP = (() => {
 
   /* ─── DRAWN ─── the playfield's picture (the photo tier, one a table), the rails and rubbers, posts, bumpers, targets, the
      flippers, the ball, the lamps. Laid out in the table's own units (x 0 to W across) and divided by W at the end. */
-  const RAIL = 0xc9ccd2, RUBBER = 0xf2f2ee, PHOTO_PX = 20, HI_PX = 300, SPECS = new Map(), DOT_PX = 160, REEL_PX = 120, REEL_R = 0.8;
+  const RAIL = 0xc9ccd2, RUBBER = 0xf2f2ee, PHOTO_PX = 20, HI_PX = 300, DOT_PX = 160, REEL_PX = 120, REEL_R = 0.8;
+  const PIC = BOARD_KIT.painted(600, (T, hi) => paint(T, hi ? 512 : 256));   // (a table's picture by its key: BOARD_KIT)
   const yawOf = a => (Math.abs(a) < 1e-6 ? 1e-6 : a);
   // each era's colours: the field, the rails, the bumpers' bodies and caps, the posts, the ramps
   function palette(T){
@@ -48822,15 +48891,7 @@ const PINBALL_APP = (() => {
   /* the panel's letters: a 5 × 7 dot font of its own, each row of a glyph five bits (drawn from a canvas's pixels until the
      frame time doubled in the sandbox: every board's score changing asked the canvas for its pixels, and that waits on the
      graphics card) */
-  const FONT = (() => { const F = {}, src = {
-    0: '0E11131519110E', 1: '040C040404040E', 2: '0E1101020408 1F', 3: '1F020402011 10E', 4: '02060A121F0202', 5: '1F101E0101110E', 6: '0608101E11110E',
-    7: '1F010204080808', 8: '0E11110E11110E', 9: '0E11110F01020C', A: '0E11111F111111', B: '1E11111E11111E', C: '0E11101010110E', D: '1C121111111 21C',
-    E: '1F10101E10101F', F: '1F10101E101010', G: '0E111017111 10F', H: '1111111F111111', I: '0E04040404040E', J: '07020202021 20C', K: '11121418141211',
-    L: '1010101010101F', M: '111B1515111111', N: '11111915131111', O: '0E11111111110E', P: '1E11111E101010', Q: '0E11111115120D', R: '1E11111E141211',
-    S: '0F10100E01011E', T: '1F040404040404', U: '1111111111110E', V: '1111111111 0A04', W: '1111111515150A', X: '11110A040A1111', Y: '1111110A040404',
-    Z: '1F01020408101F', '!': '04040404040004' };
-    for (const [k, v] of Object.entries(src)){ const h = v.replace(/ /g, ''); F[k] = [0, 1, 2, 3, 4, 5, 6].map(i => parseInt(h.substr(i * 2, 2), 16)); }
-    return F; })();
+  const FONT = DOT_FONT.pick(DOT_FONT.five, '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!');
   const GW = ch => ch === ' ' ? 3 : ch === ',' ? 2 : 5;
   const textW = t => [...String(t)].reduce((a, ch) => a + GW(ch) + 1, -1);
   const dispCol = T => T.era.id === 'neon' ? palette(T).lamp : 0xff8a1a;
@@ -48990,9 +49051,7 @@ const PINBALL_APP = (() => {
   function photoKey(c, r, bp){
     const M = ED.on && ED.key === gkey(c, r) ? ED.M : (LIVE && LIVE.c === c && LIVE.r === r) ? tableFor(c, r) : knownTable(c, r);
     if (!M) return null;
-    const k = 'pb:' + M.key + ':' + (M.ready ? 'a' + M.T.a : 'b') + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(k)){ SPECS.set(k, M.T); if (SPECS.size > 600) SPECS.delete(SPECS.keys().next().value); }
-    return k;
+    return PIC.key('pb:' + M.key + ':' + (M.ready ? 'a' + M.T.a : 'b'), (bp || 0) >= HI_PX, () => M.T);
   }
   function gridOf(c, r){
     const M = ED.on && ED.key === gkey(c, r) ? ED.M : knownTable(c, r), T = M ? M.T : null, n = 8, colors = [];
@@ -49014,7 +49073,7 @@ const PINBALL_APP = (() => {
     const Rc = M.reel, n = Rc ? Rc.length / REC_F : 0;
     if (!n) return { M, b: null, xb: [], phi: T.fl.map(f => f.rest), drop: () => 0, lane: () => 0, flash: () => 0, sling: () => 0, stand: () => 0, mult: 1, pull: 0, kb: s => T.D.kb[s],
                      locked: 0, rolls: 0, spinA: 0, capY: T.captive ? T.captive.rest : 0, mbFlash: () => 0, msg: 0, score: 0, t: now() / 1000, holder: M };
-    const TT = n / REC_HZ + 2, at = ((now() / 1000 + M.phase * TT) % TT) * REC_HZ, i = Math.min(n - 1, Math.floor(at)), j = Math.min(n - 1, i + 1), f = Math.min(1, at - i), o = i * REC_F, p = j * REC_F;
+    const { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 2, M.phase), o = i * REC_F, p = j * REC_F;
     const mix = q => Rc[o + q] + (Rc[p + q] - Rc[o + q]) * f, m = Rc[o + 6], m2 = Rc[o + 16];
     // (no ball in either frame: the one that has it, or none; a ball and none apart is a drain or a new ball)
     const ballAt = q => Rc[o + q] < 0 ? null : Rc[p + q] < 0 || Math.hypot(Rc[p + q] - Rc[o + q], Rc[p + q + 1] - Rc[o + q + 1]) > 0.2 ? { x: Rc[o + q], y: Rc[o + q + 1], z: Rc[o + q + (q ? 2 : 8)] }
@@ -49178,7 +49237,7 @@ const PINBALL_APP = (() => {
      through `cleanSpec`), framed in violet, its recording and par the steady player's as for any board (`mineTable`). Escape or
      Cancel leaves the board as it was; the menu has Share this board's table and Forget it. */
   const MINE_M = new Map(), MINE_KEEP = 300, MINE_COL = 0x8a4fd0;
-  const hashOf = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const hashOf = BOARD_KIT.hash;
   const Y0 = 0.15, Y1 = 0.71, XL = 0.03, XR = PW - 0.025;
   const cl = (v, a, b) => Math.max(a, Math.min(b, +v || 0));
   const num = v => isFinite(+v);
@@ -49281,7 +49340,7 @@ const PINBALL_APP = (() => {
     const k = gkey(c, r), P = MINE.get(k); if (!P) return null;
     let M = MINE_M.get(k); if (M) return M;
     const idx = boardIdx(c, r), h = hashOf(JSON.stringify(P));
-    M = { T: makeTable(idx, P.lv, 0, false, P), key: 'm' + h, hash: h, idx, lv: P.lv, par: null, reel: null, ready: false, phase: (idx * 0.618) % 1, mine: true };
+    M = { T: makeTable(idx, P.lv, 0, false, P), key: 'm' + h, hash: h, idx, lv: P.lv, par: null, reel: null, ready: false, phase: BOARD_KIT.phase(idx), mine: true };
     const T = M.T;
     M.job = (function* (){ const r = yield* simGen(T, (idx * 7919) ^ 0x6d1, { balls: FIT_BALLS, cap: BALL_CAP, rec: true }); return { T, reel: r.reel, recKind: r.recKind, life: lifeOf(r), tries: 1 }; })();
     MINE_M.set(k, M); return M;
@@ -49441,7 +49500,7 @@ const PINBALL_APP = (() => {
     itemMinPx: 14,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const T = SPECS.get(key); return T ? paint(T, key.endsWith('h') ? 512 : 256) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ return gridOf(c, r); },
     itemGeometries: {
       pbBar: box,
@@ -49532,22 +49591,17 @@ const SIMON_APP = (() => {
   ];
   const QUICKEN = 0.035, QUICK_MIN = 0.55, R_IN = 0.17, R_OUT = 0.46, GAP_A = 0.06, PAD_H = 0.012, LIT_UP = 0.012;
   const DL = ARCADE.difficulty('simon.level', 'Every board plays its own sequence, harder the farther it is from the corner: four pads near it, six farther, eight far out, quicker and with less time to answer. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('simon.sound', 'Each pad its own tone, a buzz when it is wrong.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
 
   /* A board's sequence: as long as anyone gets, drawn as it is wanted from the board's own generator. No pad three times
      running (the toy allowed it, but on a phone the third tap of one pad reads as a stuck finger). */
@@ -49557,7 +49611,7 @@ const SIMON_APP = (() => {
     let S = SEQS.get(key);
     if (S){ SEQS.delete(key); SEQS.set(key, S); return S; }
     const R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ 0x51a0), D = LV[lv - 1], list = [];
-    S = { idx, lv, D, phase: (idx * 0.618) % 1,
+    S = { idx, lv, D, phase: BOARD_KIT.phase(idx),
           at(k){ while (list.length <= k){ let p; do p = Math.floor(R() * D.pads); while (list.length >= 2 && p === list[list.length - 1] && p === list[list.length - 2]); list.push(p); } return list[k]; } };
     SEQS.set(key, S); if (SEQS.size > CAP) SEQS.delete(SEQS.keys().next().value);
     return S;
@@ -49569,13 +49623,12 @@ const SIMON_APP = (() => {
      before the next round), 'over'. Times on the page's own clock (performance.now), in seconds. */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('simon.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('simon.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('simon.best');
   const bestKey = S => S.idx + '@' + S.lv;
   const clock = () => performance.now() / 1000;
   const fresh = (c, r) => ({ S: seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1 });
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function beep(p, dur, quiet){ if (quiet) return; try { if (SND.on && ARCADE.audio()) ARCADE.tone(TONE[p], TONE[p], Math.max(0.12, dur), 'triangle', 0.08); } catch {} }
   function begin(g){ g.n = 1; g.score = 0; g.miss = -1; showRound(g, 0.5); }
   function showRound(g, wait){ g.state = 'show'; g.t0 = clock() + (wait || 0); g.i = 0; g.shown = -1; }
@@ -49631,7 +49684,7 @@ const SIMON_APP = (() => {
   function shownLit(S){
     const D = S.D, rounds = 8, step = D.on + D.gap, pause = 1.2;
     let T = 0; for (let n = 1; n <= rounds; n++) T += n * step + pause;
-    let t = (now() / 1000 + S.phase * T) % T;
+    let t = BOARD_KIT.loopT(S.phase, T);
     for (let n = 1; n <= rounds; n++){
       const len = n * step;
       if (t < len){ const k = Math.floor(t / step); return (t - k * step) < D.on ? S.at(k) : -1; }
@@ -49782,24 +49835,19 @@ const LIGHTS_APP = (() => {
   ];
   const TRIES = 24, STEP = 0.55, HOLD0 = 1.0, HOLD1 = 1.4, FLASH_S = 0.28, HINT_S = 1.6;
   const DL = ARCADE.difficulty('lightsout.level', 'Every board deals its own lights, harder the farther it is from the corner: a 4×4 near it that goes out in three to five presses, 5×5s, then 6×6 and 7×7 boards that need fourteen or more. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('lightsout.sound', 'A click for each press, a fanfare when the last light goes out.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
   const clock = () => performance.now() / 1000;
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (Simon's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   // the squares a press at i flips: itself and its four neighbours on the board
   const crossOf = (n, i) => { const x = i % n, y = (i / n) | 0, out = [i];
@@ -49875,18 +49923,17 @@ const LIGHTS_APP = (() => {
     // (the demo presses the way out in an order of its own, so it does not sweep the board top to bottom like a scanner)
     const order = pick.sol.slice();
     for (let j = order.length - 1; j > 0; j--){ const s = Math.floor(R() * (j + 1)); [order[j], order[s]] = [order[s], order[j]]; }
-    return { idx, lv, D, n, start: pick.L, par: pick.sol.length, sol: pick.sol, order, tries, phase: (idx * 0.618) % 1 };
+    return { idx, lv, D, n, start: pick.L, par: pick.sol.length, sol: pick.sol, order, tries, phase: BOARD_KIT.phase(idx) };
   }
 
   /* ─── PLAYING ─── a game: its lights, the presses so far, the last press (flashed briefly), a hint, and whether it is out. */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('lightsout.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('lightsout.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('lightsout.best');
   const bestKey = S => S.idx + '@' + S.lv;
   const fresh = (c, r) => { const S = dealOf(c, r); return { S, c, r, n: S.n, L: S.start.slice(), moves: 0, done: false, last: -1, lastTo: 0, hint: -1, hintTo: 0 }; };
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   const litCount = L => { let k = 0; for (const x of L) k += x; return k; };
   // stars as Sokoban's: at par three, within half again two, else one
   const starsOf = (moves, par) => moves <= par ? 3 : moves <= Math.ceil(par * 1.5) ? 2 : 1;
@@ -49900,7 +49947,7 @@ const LIGHTS_APP = (() => {
       if (was == null || g.moves < was){ BEST.delete(k); BEST.set(k, g.moves); saveBest(); }
       if (!quiet){
         SND.play('win');
-        say('Out, in ' + g.moves + (g.moves === 1 ? ' press' : ' presses') + ' against par ' + g.S.par + ': ' + '★'.repeat(stars) + '☆'.repeat(3 - stars)
+        say('Out, in ' + g.moves + (g.moves === 1 ? ' press' : ' presses') + ' against par ' + g.S.par + ': ' + BOARD_KIT.stars(stars)
           + (was != null && g.moves < was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + '.' : '.') + ' Tap for the next board.', 4200);
       }
     }
@@ -49918,7 +49965,7 @@ const LIGHTS_APP = (() => {
   // a board no one is playing: its own way out pressed a square at a time, held dark a moment, then lit again
   function shownOf(S){
     const k = S.order.length, T = HOLD0 + k * STEP + HOLD1;
-    const t = ((now() / 1000 + S.phase * T) % T + T) % T;
+    const t = BOARD_KIT.loopT(S.phase, T);
     const m = t < HOLD0 ? 0 : Math.min(k, Math.floor((t - HOLD0) / STEP) + 1);
     const L = S.start.slice();
     for (let j = 0; j < m; j++) pressOn(L, S.n, S.order[j]);
@@ -50045,23 +50092,18 @@ const MOLE_APP = (() => {
     { n: 5, up: 0.82, every: 0.42, most: 3, bomb: 0.18, gold: 0.08 },
   ];
   const DL = ARCADE.difficulty('whackamole.level', 'Every board plays its own round, harder the farther it is from the corner: nine holes near it, sixteen farther, twenty-five far out, the moles quicker and more at once, and bombs from the middle rings. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('whackamole.sound', 'A bonk for a mole, a buzz for a miss, a bang for a bomb.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
+  const nextBoard = BOARD_KIT.nextBoard;
   // (Simon's, the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   // a hole's middle on the board, and the hole a point of the board is in: the whole square counts, the edges' too
   const holeUV = (n, i) => [((i % n) + 0.5) / n, (((i / n) | 0) + 0.5) / n];
   const holeAt = (n, u, v) => { const a = Math.max(0, Math.min(n - 1, Math.floor(u * n))), b = Math.max(0, Math.min(n - 1, Math.floor(v * n))); return b * n + a; };
@@ -50114,7 +50156,7 @@ const MOLE_APP = (() => {
     let G = ROUNDS.get(key);
     if (G){ ROUNDS.delete(key); ROUNDS.set(key, G); return G; }
     const D = LV[lv - 1], pops = makeRound(idx, lv), S = steady(pops, D.n);
-    G = { idx, lv, D, pops, par: Math.max(1, S.score), hits: S.hits, phase: (idx * 0.618) % 1,
+    G = { idx, lv, D, pops, par: Math.max(1, S.score), hits: S.hits, phase: BOARD_KIT.phase(idx),
           moles: pops.filter(p => p.type !== 'bomb').length };
     ROUNDS.set(key, G); if (ROUNDS.size > CAP) ROUNDS.delete(ROUNDS.keys().next().value);
     return G;
@@ -50126,13 +50168,12 @@ const MOLE_APP = (() => {
      clock (t0), on the page's own clock (performance.now), so a frame missed never loses a mole. */
   const GAMES = new Map();
   let LIVE = null;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('whackamole.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('whackamole.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('whackamole.best');
   const bestKey = G => G.idx + '@' + G.lv;
   const clock = () => performance.now() / 1000;
   const fresh = (c, r) => ({ G: roundOf(c, r), c, r, state: 'ready', t0: 0, score: 0, got: 0, missed: 0, bombs: 0, hits: new Map(), miss: null, boom: null, said: 0, endAt: 0 });
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function begin(g){ Object.assign(g, { state: 'count', t0: clock() + COUNT, score: 0, got: 0, missed: 0, bombs: 0, hits: new Map(), miss: null, boom: null, said: 0 }); say('3', 600); }
   function stepGame(g, quiet){
     const t = clock() - g.t0;
@@ -50175,7 +50216,7 @@ const MOLE_APP = (() => {
     if (quiet) return;
     const s = starsOf(g.score, g.G.par);
     SND.play(s >= 3 ? 'win' : 'lose');
-    say('Time! ' + g.score + (g.score === 1 ? ' point' : ' points') + ' against par ' + g.G.par + ' ' + '★'.repeat(s) + '☆'.repeat(3 - s)
+    say('Time! ' + g.score + (g.score === 1 ? ' point' : ' points') + ' against par ' + g.G.par + ' ' + BOARD_KIT.stars(s)
         + (was != null && g.score > was ? ', a new best here, beating ' + was : was != null ? ', best here ' + was : '')
         + '. Tap for the next board, hold to play this one again.', 4200);
   }
@@ -50215,7 +50256,7 @@ const MOLE_APP = (() => {
     return out;
   }
   // a board no one is playing: its own round and the steady player's bonks, round after round, each board at its own phase
-  function shownT(G){ const C = ROUND_T + 2.5; return ((now() / 1000 + G.phase * C) % C + C) % C; }
+  const shownT = G => BOARD_KIT.loopT(G.phase, ROUND_T + 2.5);
 
   /* ─── SHAPES ─── one kind each, coloured per vertex (the item's colour multiplies them: brown, gold or the bonk's white) */
   function merged(T, parts){
@@ -50353,23 +50394,18 @@ const NONOGRAM_APP = (() => {
   const BAND = 0x1b2130, BAND2 = 0x232b3d, CORNER = 0x12161f, PAPER = 0xece6d6, PAPER2 = 0xe2dac7, INK = 0x23447c, INK2 = 0x29508f;   // (ink a deep blue, not the bands' slate: filled squares by the left band ran into it)
   const DIG = 0xf3ead6, DIG_DONE = 0x5d6578, CROSS = 0xa5452f, GOLD = 0xd9a73a;
   const DL = ARCADE.difficulty('nonograms.level', 'Every board hides its own picture, harder the farther it is from the corner: 5×5 near it, then 6×6, 8×8, 10×10 and 12×12 far out, with fewer squares filled and more to work out. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('nonograms.sound', 'A tick for each square, a chime when a line is right, a fanfare for the picture.');
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (Simon's, the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const nextBoard = BOARD_KIT.nextBoard;
+  const rngOf = BOARD_KIT.rng;
   const LV = [
     { n: 5,  dens: 0.62, blur: 1, minPasses: 0 },
     { n: 6,  dens: 0.58, blur: 1, minPasses: 0 },
@@ -50538,7 +50574,7 @@ const NONOGRAM_APP = (() => {
   const PUZZLES = new Map(), CAP = 1500;
   function dress(P){
     P.K = Math.max(2, ...P.rows.map(x => x.length), ...P.cols.map(x => x.length)); P.M = P.n + P.K;
-    P.phase = (P.idx * 0.618) % 1; paletteOf(P); return P;
+    P.phase = BOARD_KIT.phase(P.idx); paletteOf(P); return P;
   }
   function puzzleFor(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
@@ -50549,14 +50585,10 @@ const NONOGRAM_APP = (() => {
     return P;
   }
   // (boards only looked at get their puzzle a few at a time, as the tilt maze's mazes: until then a plain board)
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(8);
   function puzzleSoon(c, r){
     const idx = boardIdx(c, r), P = PUZZLES.get(idx * 8 + levelAt(idx));
-    if (P) return P;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
-    if (budget <= 0) return null;
-    const t0 = performance.now(), out = puzzleFor(c, r); budget -= performance.now() - t0;
-    return out;
+    return P || SOON.take(() => puzzleFor(c, r)) || null;
   }
   // the grid square at (u, v) of the board, or -1 in the bands (clamped: the nearest square, for a drag that wanders off)
   function cellAt(P, u, v, clamp){
@@ -50583,14 +50615,13 @@ const NONOGRAM_APP = (() => {
   let LIVE = null, DRAG = null;
   let MODE = (() => { try { return localStorage.getItem('nonograms.mode') === 'cross' ? 'cross' : 'fill'; } catch { return 'fill'; } })();
   const setMode = m => { MODE = m; try { localStorage.setItem('nonograms.mode', m); } catch {} try { fieldItemsChanged(); } catch {} };
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('nonograms.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('nonograms.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('nonograms.best');
   const bestKey = P => P.idx + '@' + P.lv;
   const clock = () => performance.now() / 1000;
   let GID = 0;
   const fresh = (c, r) => { const P = puzzleFor(c, r); return { P, c, r, id: ++GID, cells: new Uint8Array(P.n * P.n), state: 'ready', t0: 0, t: 0, wrong: 0, ver: 0, stars: 0 }; };
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   // what a touch makes of a square: 'fill' and 'cross' are the two modes' taps (each undoes itself), 'hold' always crosses
   const nextOf = (s, how) => how === 'hold' ? (s === 2 ? 0 : 2) : how === 'cross' ? (s ? 0 : 2) : (s ? 0 : 1);
   function setCell(g, i, s, quiet){
@@ -50612,7 +50643,7 @@ const NONOGRAM_APP = (() => {
     if (better){ BEST.delete(k); BEST.set(k, [g.stars, g.t]); saveBest(); }
     if (quiet) return;
     SND.play('win');
-    say('The picture, in ' + g.t.toFixed(1) + ' s ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars)
+    say('The picture, in ' + g.t.toFixed(1) + ' s ' + BOARD_KIT.stars(g.stars)
         + (g.wrong ? ', ' + g.wrong + (g.wrong === 1 ? ' fill' : ' fills') + ' on a square it leaves empty' : ', not a square wrong')
         + (was && better ? '. A new best on this board.' : was ? '. Best here ' + '★'.repeat(was[0]) + ' in ' + (+was[1]).toFixed(1) + ' s.' : '.') + ' Tap for the next board.', 4200);
   }
@@ -50622,7 +50653,7 @@ const NONOGRAM_APP = (() => {
   const cycleOf = P => P.n * ROW_S + HOLD_S + BLANK_S;
   // (`at`, seconds on the page's clock, for the tests: a sample of a few seconds can fall wholly in the picture's rest)
   function shownView(P, at){
-    const n = P.n, fill = n * ROW_S, T = cycleOf(P), t = ((at == null ? now() / 1000 : at) + P.phase * T) % T;
+    const n = P.n, fill = n * ROW_S, T = cycleOf(P), t = BOARD_KIT.loopT(P.phase, T, at);
     const k = t < fill ? Math.floor(t / ROW_S * n) : t < fill + HOLD_S ? -1 : 0, stamp = 'd' + k;
     if (P._dv && P._dv.stamp === stamp) return P._dv;
     const cells = k < 0 ? Uint8Array.from(P.sol) : Uint8Array.from(P.sol, (v, i) => v && i < k ? 1 : 0);
@@ -50867,12 +50898,12 @@ const NONOGRAM_APP = (() => {
 const FLASH_APP = (() => {
   const ASP = 1.6, HI_PX = 260, FLIP_T = 9, BACK_T = 3.2, NEW_PER_DAY = 20, LEARN_AHEAD = 20 * 60e3;
   const MIN = 60e3, DAY = 86400e3;
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
+  const say = BOARD_KIT.say(3000);
   const clock = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
   let NOWFN = () => Date.now();                      // (the schedule's clock; the tests move it)
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
+  const boardIdx = BOARD_KIT.boardIdx;
 
   /* THE DECKS ARE LOADED, NOT WRITTEN HERE (Oct 25: "dont type out the cards by hand. it must be loaded like json or epub."):
      a deck comes from a file opened or dropped (the field's Open, as a book or a JSON file does) or from a flare bucket. Read:
@@ -50890,7 +50921,7 @@ const FLASH_APP = (() => {
      Spanish words), files like any other: open them, or put them in a bucket. Till a deck is loaded, every board says how. */
   const EMPTY = { key: '', name: 'No deck yet', ask: '', cards: [] };
   const MAX_CARDS = 5000;
-  const hashOf = s => { let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const hashOf = BOARD_KIT.hash;
   const plain = s => String(s == null ? '' : s).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
   const nameOfFile = n => String(n || 'deck').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'deck';
@@ -51097,7 +51128,7 @@ const FLASH_APP = (() => {
      the top, what it asks over the front; the back the question small and the answer large, a note under it, and on the
      framed card the four grade buttons along the near edge with their intervals. Text set as large as fits (`fitText`). */
   const SANS = '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif';
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(6000, (P, hi) => paint(P, hi ? 640 : 320)), SPECS = PIC.SPECS;   // (a card's picture by its key: BOARD_KIT)
   const BTN_V = 0.78;                                 // (the grade buttons: v from here to the near edge)
   function fitText(cx, text, maxW, maxH, big, small, weight){
     for (let px = big; px >= small; px = Math.floor(px * 0.9)){
@@ -51182,15 +51213,12 @@ const FLASH_APP = (() => {
     return { k, back, live };
   }
   function photoKey(c, r, bp){
-    if (!hasDeck()){ const key = 'fc:empty' + ((bp || 0) >= HI_PX ? ':H' : ':L'); if (!SPECS.has(key)) SPECS.set(key, { empty: true, hi: key.endsWith('H') }); return key; }
-    const V = viewOf(c, r), D = deck(), card = D.cards[V.k], state = stateOf(V.k), hi = (bp || 0) >= HI_PX;
+    const hi = (bp || 0) >= HI_PX;
+    if (!hasDeck()) return PIC.key('fc:empty', hi, () => ({ empty: true, hi }));
+    const V = viewOf(c, r), D = deck(), card = D.cards[V.k], state = stateOf(V.k);
     const grades = V.live && V.back ? intervals(V.k) : null;
-    const key = 'fc:' + D.key + ':' + V.k + ':' + (V.back ? 'b' : 'f') + ':' + state + (grades ? ':' + grades.join(',') : '') + (V.live && !V.back ? ':h' : '') + (hi ? ':H' : ':L');
-    if (!SPECS.has(key)){
-      SPECS.set(key, { deck: D.name, ask: D.ask, k: V.k, n: D.cards.length, front: card[0], backText: card[1], note: card[2] || '', back: V.back, state, grades, hint: V.live && !V.back, hi });
-      if (SPECS.size > 6000) SPECS.delete(SPECS.keys().next().value);
-    }
-    return key;
+    return PIC.key('fc:' + D.key + ':' + V.k + ':' + (V.back ? 'b' : 'f') + ':' + state + (grades ? ':' + grades.join(',') : '') + (V.live && !V.back ? ':hint' : ''), hi,
+      () => ({ deck: D.name, ask: D.ask, k: V.k, n: D.cards.length, front: card[0], backText: card[1], note: card[2] || '', back: V.back, state, grades, hint: V.live && !V.back, hi }));
   }
   function turn(c, r){
     const k = gkey(c, r);
@@ -51263,7 +51291,7 @@ const FLASH_APP = (() => {
     photoMinPx: 6,
     faceMinPx: 2,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P, P.hi ? 640 : 320) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ return hasDeck() ? GRID1[stateOf(cardOf(c, r))] : GRID_EMPTY; },
     cellItems(){ return []; },
     cellTitle(c, r){
@@ -51398,7 +51426,6 @@ const TANKS_APP = (() => {
   const num = s => parseInt(s.slice(1), 16);
   const PHOTO_PX = 20, HI_PX = 320, HI_DUEL = 480, TILT_MAX = 0.5;
   const DL = ARCADE.difficulty('tanks.level', 'Every board has its own ground, harder the farther it is from the corner: gentle ground, no wind and a wild shot from the computer near it; hills between the tanks, a stronger wind and a sharper eye farther out. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tanks.sound', 'The gun, the shell\'s whistle, the burst, a hit on armour, the turret turning: from where each happens, left or right.');
   /* THE SOUNDS (Oct 20: "add sound effects to tanks."). The kit's blips (a tap, a chime) were all the game had: a slide for a
      shot, the kit's boom for a burst. Now each is made here with the browser's audio, from noise and tones, and set left or
@@ -51475,23 +51502,19 @@ const TANKS_APP = (() => {
         osc(A, d, t, 'sawtooth', 55, 48, len, 0.03, 0.02); burst(A, d, t, len, 0.05, 400, 300); }),
     };
   })();
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (Lights Out's, from the tilt maze: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => Math.sqrt(-2 * Math.log(1 - R())) * Math.cos(2 * Math.PI * R());
-  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const clamp = BOARD_KIT.clamp;
+  const nextBoard = BOARD_KIT.nextBoard;
   const SET = { n: clamp(+ARCADE.load('tanks.count', '2') || 2, 2, 4), players: clamp(+ARCADE.load('tanks.players', '1') || 1, 1, 2) };
 
   /* ─── THE GROUND ─── H[i] is where the ground's top is in column i, as y (0 the far edge, the sky's top; 1 the near edge),
@@ -51521,7 +51544,7 @@ const TANKS_APP = (() => {
     }
     for (const x of xs) flatten(H, x, 0.035);
     const minds = xs.map(() => R() < 0.5 ? 'nearest' : 'weakest');
-    return { idx, lv, n, H0: H, xs, hill: hills.length > 0, minds, seed: (idx * 40503 + lv * 7919 + n * 131 + 17) >>> 0, phase: (idx * 0.618) % 1, pal: Math.floor(R() * PALETTES.length) };
+    return { idx, lv, n, H0: H, xs, hill: hills.length > 0, minds, seed: (idx * 40503 + lv * 7919 + n * 131 + 17) >>> 0, phase: BOARD_KIT.phase(idx), pal: Math.floor(R() * PALETTES.length) };
   }
   function terrainAt(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), n = SET.n, key = (idx * 8 + lv) * 8 + n;
@@ -51795,15 +51818,12 @@ const TANKS_APP = (() => {
   }
   function duelOf(T){ const G = duelNew(T); while (!G.done) duelStep(G); return G; }
   const DUELS = new Map();
-  let budgetAt = 0, budget = 0;
+  const SOON = BOARD_KIT.budget(8);
   function duelSoon(T){
     const key = (T.idx * 8 + T.lv) * 8 + T.n; let G = DUELS.get(key);
     if (!G){ G = duelNew(T); DUELS.set(key, G); if (DUELS.size > CAP) DUELS.delete(DUELS.keys().next().value); }
     // (a turn more while the board's clock is within 8 s of the last one made, a few turns' worth of time in 30 ms)
-    if (!G.done && G.len - loopT(G) < 8){
-      const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 8; }
-      if (budget > 0){ duelStep(G); budget -= performance.now() - t; }
-    }
+    if (!G.done && G.len - loopT(G) < 8) SOON.take(() => duelStep(G));
     return G;
   }
   const loopT = (G, at) => { const t = at != null ? at : now() / 1000 - G.start; return G.done ? ((t % G.len) + G.len) % G.len : clamp(t, 0, G.len); };
@@ -51839,8 +51859,7 @@ const TANKS_APP = (() => {
      itself on the game's clock (`g.t`), its sounds as their moments come. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tanks.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('tanks.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('tanks.best');
   const bestKey = T => T.idx + '@' + T.lv + (T.n > 2 ? '#' + T.n : '');
   const starsOf = hp => hp >= 70 ? 3 : hp >= 35 ? 2 : 1;
   function fresh(c, r){
@@ -51850,8 +51869,8 @@ const TANKS_APP = (() => {
     windFor(g, 0);
     return g;
   }
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   const isPerson = (g, k) => g.seats[k] !== 'cpu';
   const myTurn = g => !!g && g.state === 'aim' && isPerson(g, g.turn);
   // the aim toward a point on the board (in the board's own x and y): the angle from the turret, the power by the distance
@@ -51945,7 +51964,7 @@ const TANKS_APP = (() => {
       g.stars = stars;
       if (was == null || hp > was){ BEST.delete(k); BEST.set(k, hp); saveBest(); }
       SND.play('win');
-      say('The last tank standing, in ' + g.shots[0] + (g.shots[0] === 1 ? ' shot' : ' shots') + ', with ' + hp + ' health left: ' + '★'.repeat(stars) + '☆'.repeat(3 - stars)
+      say('The last tank standing, in ' + g.shots[0] + (g.shots[0] === 1 ? ' shot' : ' shots') + ', with ' + hp + ' health left: ' + BOARD_KIT.stars(stars)
         + (was != null && hp > was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + ' left.' : '.') + ' Tap for the next board.', 4200);
     } else if (people > 1 && g.winner >= 0){
       SND.play('win'); say(g.names[g.winner] + (isPerson(g, g.winner) ? ' wins!' : ' wins: both players are out.') + ' Hold the board to play again, or tap for the next.', 4200);
@@ -52091,7 +52110,7 @@ const TANKS_APP = (() => {
     c.globalAlpha = 1;
     return cv;
   }
-  const SPECS = new Map(), HIRES = new Map();
+  const PIC = BOARD_KIT.painted(1500, (P, hi) => paint(P.T, P.H, P.craters, hi ? 512 : 256)), SPECS = PIC.SPECS, HIRES = new Map();
   let GEN = 0;
   // the state a board's picture shows: the ground as the game in hand shows it, named by the turn whose ground it is
   function photoState(c, r){
@@ -52109,9 +52128,8 @@ const TANKS_APP = (() => {
     const k = gkey(c, r), at = GAMES.has(k) ? HI_PX : HI_DUEL; let hi = HIRES.get(k) || false;
     if (bp > at * 1.1) hi = true; else if (bp < at * 0.9) hi = false;
     if (hi) HIRES.set(k, true); else HIRES.delete(k);
-    const P = photoState(c, r), key = 'tk' + P.id + (hi ? ':h' : ':l');
-    if (!SPECS.has(key)){ SPECS.set(key, { T: P.T, H: P.H.slice(), craters: P.craters.slice(), S: hi ? 512 : 256 }); if (SPECS.size > 1500) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const P = photoState(c, r);
+    return PIC.key('tk' + P.id, hi, () => ({ T: P.T, H: P.H.slice(), craters: P.craters.slice() }));
   }
 
   /* ─── WHAT A BOARD DRAWS ─── over its picture: the clouds; each tank along the slope under it in its seat's colour, its gun
@@ -52120,7 +52138,7 @@ const TANKS_APP = (() => {
      x / ASP, and sizes and lifts are in widths (as mini golf's are). */
   const TANK_L = 0.05, GUNC = 0x2c3326;
   const hpCol = hp => hp > 60 ? 0x6fd36a : hp > 30 ? 0xf2c14e : 0xe0564a;
-  const yawOf = q => q || 1e-6;               // (never exactly 0: the field reads a yaw of 0 as none, THE TANKS' SHAPES)
+  const yawOf = BOARD_KIT.yawOf;               // (never exactly 0: the field reads a yaw of 0 as none, THE TANKS' SHAPES)
   const slopeAt = (H, x) => clamp(Math.atan2(surfAt(H, x + 0.025) - surfAt(H, x - 0.025), 0.05), -TILT_MAX, TILT_MAX);
   function itemsOf(V){
     const out = [], H = V.H, w = V.wind || 0, n = V.xs.length;
@@ -52377,7 +52395,7 @@ const TANKS_APP = (() => {
     // the sky and the ground are a picture a board (THE LOOK, above); a board under PHOTO_PX is its tiles
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp || 0); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.T, P.H, P.craters, P.S) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     itemGeometries: {
       ...tankGeos,
       tkBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
@@ -52505,7 +52523,7 @@ const TANKS_APP = (() => {
        its own. The menu's Aim line turns it off. */
 const TANKMAZE_APP = (() => {
   const FLOOR = 0xdcd8c9, FLOOR2 = 0xd1cdbc, WALLC = 0x434a58, SHOTC = 0x1c1c1c, TRACKC = 0x2b2b2b, WRECK = 0x3a3530, GUNC = 0x30352c;
-  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
+  const LV_COL = BOARD_KIT.LV_COL;     // (mini golf's flags: green, blue, yellow, orange, black)
   const SEAT = { you: 0x5a9e3e, cpu: 0xc8463c, p2: 0x3f7fd6 }, NAME = { you: 'You', cpu: 'Red', p2: 'Player 2' };
   // (the computer's tanks, in order: Red, Orange, Violet; with two computer tanks in a recording the second is blue, as before)
   const CPU_COL = [0xc8463c, 0xe58a2a, 0x8e5bd0], CPU_NAME = ['Red', 'Orange', 'Violet'];
@@ -52534,27 +52552,22 @@ const TANKMAZE_APP = (() => {
   const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, MAX_SEG = 64;
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('tankmaze.level', 'Every board has its own mazes, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('tankmaze.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
   const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('tankmaze.players', '1') || 1)), n: Math.max(2, Math.min(4, +ARCADE.load('tankmaze.count', '2') || 2)),
                powers: ARCADE.load('tankmaze.powers', 'on') !== 'off', aim: ARCADE.load('tankmaze.aim', 'on') !== 'off' };
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const clamp = BOARD_KIT.clamp;
   const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (mini golf's and the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   /* ─── A MAZE ─── (the tilt maze's: E[k] a wall on cell k's east side, S[k] on its south; a walk that backs up when boxed in,
      then walls taken out for loops, many more than the tilt maze's, since a tank battle wants ways round and lines of fire).
@@ -52948,19 +52961,18 @@ const TANKMAZE_APP = (() => {
   /* ─── A BOARD NO ONE PLAYS ─── a round of two computer tanks on the board's first maze, worked out a little at a time
      (RECS, `recSoon`: STEP by STEP while the page has time, about 6 ms in 30) and played back: the tanks sampled REC_HZ times a
      second, the shells as their ways, the bursts as they came. Kept for the latest REC_CAP boards. */
-  const RECS = new Map(), REC_CAP = 500;
-  let budgetAt = 0, budget = 0;
+  const RECS = new Map(), REC_CAP = 500, SOON = BOARD_KIT.budget(6);
   const recKey = (idx, lv) => ((idx * 8 + lv) * 8 + SET.n) * 2 + (SET.powers ? 1 : 0);
   function recSoon(c, r, force){
     const idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
     let E = RECS.get(key);
     if (!E){
       const L = makeMaze(idx, lv, 0, SET.n), seats = Array(SET.n).fill('cpu');
-      E = { L, n: SET.n, G: roundNew(L, seats, idx * 31 + lv, SET.powers), F: [], phase: (idx * 0.618) % 1, done: false };
+      E = { L, n: SET.n, G: roundNew(L, seats, idx * 31 + lv, SET.powers), F: [], phase: BOARD_KIT.phase(idx), done: false };
       RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     } else { RECS.delete(key); RECS.set(key, E); }
     if (E.done) return E;
-    const t = performance.now(); if (t - budgetAt > 30){ budgetAt = t; budget = 6; }
+    const budget = SOON.left();
     if (budget <= 0 && !force) return E;
     const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
     let n = 0;
@@ -52969,7 +52981,7 @@ const TANKMAZE_APP = (() => {
       stepRound(G, G.tanks.map((_, k) => cpuCmd(G, k)), STEP);
       if (++n % 30 === 0 && !force && performance.now() - t0 > budget) break;
     }
-    budget -= performance.now() - t0;
+    SOON.spend(t0);
     if (G.over){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
       Object.assign(E, { T: G.t, shots: G.shots, booms: G.booms, winner: G.winner, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles, done: true, G: null }); }
     return E;
@@ -52980,7 +52992,7 @@ const TANKMAZE_APP = (() => {
   function shownOf(E){
     const L = E.L, N = E.n || 2, none = { shots: [], booms: [], crates: [], mines: [], lasers: [], missiles: [] };
     if (!E.done) return { L, tanks: L.spawn.slice(0, N).map(p => ({ x: p.x, y: p.y, h: p.h, alive: true })), ...none, t: 0, seats: Array(N).fill('cpu'), cols: recCols(N) };
-    const loop = E.T + 1.5, t = Math.min(E.T, ((now() / 1000 + E.phase * loop) % loop)), n = E.F.length / (3 * N);
+    const t = Math.min(E.T, BOARD_KIT.loopT(E.phase, E.T + 1.5)), n = E.F.length / (3 * N);
     const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
     const tanks = Array.from({ length: N }, (_, k) => { const a = 3 * N * i + 3 * k, b = 3 * N * j + 3 * k;
       return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
@@ -52991,8 +53003,7 @@ const TANKMAZE_APP = (() => {
   /* ─── PLAYING ─── a match: rounds one after another, each its own maze (the board's number and the round), the score kept. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('tankmaze.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('tankmaze.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('tankmaze.best');
   const seatsNow = () => (SET.players === 2 ? ['you', 'p2'] : ['you']).concat(Array(SET.n - SET.players).fill('cpu'));
   const isPerson = s => s !== 'cpu';
   function fresh(c, r){
@@ -53001,8 +53012,8 @@ const TANKMAZE_APP = (() => {
     g.G = roundNew(makeMaze(idx, lv, 0, g.n), seats, idx * 31 + lv, SET.powers);
     return g;
   }
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function nextRound(g){
     g.round++;
     g.G = roundNew(makeMaze(g.idx, g.lv, g.round, g.n), g.seats, g.idx * 31 + g.lv + g.round * 7919, SET.powers);
@@ -53070,7 +53081,7 @@ const TANKMAZE_APP = (() => {
         const k = bestKey(g), was = +(BEST.get(k) || 0);
         if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
         SND.play(won ? 'win' : 'lose');
-        say((won ? 'You won the match, ' + tally + ' ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars) : names[top] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
+        say((won ? 'You won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : names[top] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
       } else { SND.play('win'); say((top === 0 ? 'Player 1' : top === 1 ? 'Player 2' : names[top]) + ' won the match, ' + tally + '. Tap for the next board.', 4200); }
       return;
     }
@@ -53088,7 +53099,7 @@ const TANKMAZE_APP = (() => {
   /* ─── WHAT A BOARD DRAWS ─── walls (the outer one in the level's colour), the tanks (tracks, hull, turret and gun, each
      turned to its heading; a wreck dark), the shells along their ways, and each burst. */
   const lighten = c => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.min(255, Math.round(((c >> sh) & 255) * 1.25 + 18)) << sh; return o; };
-  const yawOf = h => h || 1e-6;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
+  const yawOf = BOARD_KIT.yawOf;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   function itemsOf(V){
     const L = V.L, s = L.s, out = [], lc = LV_COL[L.lv - 1];
     for (const w of L.walls){ const [x0, y0, x1, y1] = w.b, lx = x1 - x0, ly = y1 - y0;
@@ -53331,25 +53342,20 @@ const GOLFTANK_APP = (() => {
   const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, AIM_SEG = [3, 3, 2, 2, 1, 1], AIM_LEN = 2.2;
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('golftanks.level', 'Every board is its own golf hole, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
   const SND = ARCADE.sounds('golftanks.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
   const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('golftanks.players', '1') || 1)), aim: ARCADE.load('golftanks.aim', 'on') !== 'off' };
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const clamp = BOARD_KIT.clamp;
   const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };   // (mini golf's next board)
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const nextBoard = BOARD_KIT.nextBoard;
 
   /* mini golf's kit, asked for each time: mini golf is made again at another board size (setGolfSize), and then its holes are
      other holes, so the games and recordings made on the old ones go */
@@ -53750,8 +53756,7 @@ const GOLFTANK_APP = (() => {
   /* ─── BOARDS NO ONE PLAYS ─── a round of two computer tanks on the board's hole, worked out a few steps at a time (as the
      tank maze's), sampled REC_HZ times a second, and played back on the page's clock with a rest; the hole's movers are drawn
      at the recording's own clock, so the shells bounce off them where they were. */
-  const RECS = new Map(), REC_CAP = 300;
-  let budgetAt = 0, budget = 0;
+  const RECS = new Map(), REC_CAP = 300, SOON = BOARD_KIT.budget(4, 40);
   const recKey = (idx, lv) => idx * 8 + lv;
   function recSoon(c, r, hk, force){
     const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
@@ -53760,13 +53765,13 @@ const GOLFTANK_APP = (() => {
     if (!E){
       if (hk == null) return null;
       const G = roundNew(K, hk, ['cpu', 'cpu'], idx * 31 + lv, lv); G.keep = true;
-      E = { hk, H: K.HOLES[hk], G, F: [], phase: (idx * 0.618) % 1, done: false };
+      E = { hk, H: K.HOLES[hk], G, F: [], phase: BOARD_KIT.phase(idx), done: false };
       RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     } else { RECS.delete(key); RECS.set(key, E); }
     if (E.done) return E;
     /* (4 ms in every 40, a tenth of the page's time, not 6 in 30: a step is both tanks thinking, so a slice runs past its end
         by up to a step, and zoomed out on a slow phone these battles took a fifth of every second, Oct 27) */
-    const t = performance.now(); if (t - budgetAt > 40){ budgetAt = t; budget = 4; }
+    const budget = SOON.left();
     if (budget <= 0 && !force) return E;
     const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
     let n = 0;
@@ -53778,7 +53783,7 @@ const GOLFTANK_APP = (() => {
       //  60 ms on a slow phone, past the 6 ms this was meant to take, Oct 27: "mini-golf and golf tanks are to slow to be usable")
       if (!force && performance.now() - t0 > budget) break;
     }
-    budget -= performance.now() - t0;
+    SOON.spend(t0);
     if (G.over || G.t >= 40){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
       Object.assign(E, { T: G.t, shots: G.shots.map(b => ({ k: b.k, t0: b.t0, end: b.end, P: b.P, kind: b.kind, tx: b.tx, ty: b.ty })), beams: G.beams,
                          booms: G.booms, blownAt: G.blownAt, winner: G.winner, done: true, G: null }); }
@@ -53794,7 +53799,7 @@ const GOLFTANK_APP = (() => {
   function shownOf(E){
     const K = kit(), N = 2;
     if (!E.done){ const P = spawnsOf(K, E.H); return { hk: E.hk, H: E.H, t: 0, tanks: P.map((p, k) => ({ x: p.x, y: p.y, h: Math.atan2(P[1 - k].y - p.y, P[1 - k].x - p.x), alive: true })), shots: [], beams: [], booms: [], blown: {}, seats: ['cpu', 'cpu'], cols: [SEAT.cpu, SEAT.p2] }; }
-    const loop = E.T + 1.5, t = Math.min(E.T, ((now() / 1000 + E.phase * loop) % loop)), n = E.F.length / (3 * N);
+    const t = Math.min(E.T, BOARD_KIT.loopT(E.phase, E.T + 1.5)), n = E.F.length / (3 * N);
     const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
     const tanks = Array.from({ length: N }, (_, k) => { const a = 3 * N * i + 3 * k, b = 3 * N * j + 3 * k;
       return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
@@ -53808,8 +53813,7 @@ const GOLFTANK_APP = (() => {
   /* ─── PLAYING ─── a match on the board's hole: rounds one after another on the same hole, the score kept. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0;
-  const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem('golftanks.best') || '{}'))); } catch { return new Map(); } })();
-  const saveBest = () => { try { localStorage.setItem('golftanks.best', JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('golftanks.best');
   const seatsNow = () => SET.players === 2 ? ['you', 'p2'] : ['you', 'cpu'];
   const isPerson = s => s !== 'cpu';
   const colsOf = seats => seats.map(s => SEAT[s]);
@@ -53826,7 +53830,7 @@ const GOLFTANK_APP = (() => {
     if (!g){ g = fresh(c, r); GAMES.set(k, g); }
     return g;
   }
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function nextRound(g){
     g.round++;
     g.G = roundNew(kit(), g.hk, g.seats, g.idx * 31 + g.lv + g.round * 7919, g.lv);
@@ -53900,7 +53904,7 @@ const GOLFTANK_APP = (() => {
         const k = bestKey(g), was = +(BEST.get(k) || 0);
         if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
         SND.play(won ? 'win' : 'lose');
-        say((won ? 'You won the match, ' + tally + ' ' + '★'.repeat(g.stars) + '☆'.repeat(3 - g.stars) : names[top] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
+        say((won ? 'You won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : names[top] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
       } else { SND.play('win'); say((top === 0 ? 'Player 1' : 'Player 2') + ' won the match, ' + tally + '. Tap for the next board.', 4200); }
       return;
     }
@@ -53919,7 +53923,7 @@ const GOLFTANK_APP = (() => {
      the tanks (the tank maze's pieces, standing on the ground), the shells at their height, the aim line and the bursts.
      Everything is laid out in the hole's units and divided by WD at the end, as mini golf does. */
   const lighten = c => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.min(255, Math.round(((c >> sh) & 255) * 1.25 + 18)) << sh; return o; };
-  const yawOf = h => h || 1e-6;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
+  const yawOf = BOARD_KIT.yawOf;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   function aimOf(g){
     if (!SET.aim || (g.state !== 'play' && g.state !== 'count')) return [];
     const G = g.G, K = G.K, CW = K.CW, out = [];
@@ -54896,29 +54900,24 @@ const TRICK_APP = (() => {
   const CLOTH = 0x16513f, CUSH = 0x124636, WOOD = 0x4a2c18, WOOD2 = 0x2a1a12, GOLD = 0xd4a052, RED = 0xd0574a, CUE_WOOD = 0xc9a36b, TIPC = 0x5b7fa8;
   const CUE_LEN = 21, CUE_IDLE = 6, CUE_W = 0.42, MINE_COL = 0x9b6bd6;   // (a board's own trick shot is marked violet, as the tilt maze's own mazes are)   // (a cue's length and its butt's width, in table units: the ball is 0.9 across)
   const AIM_T = 2.4, HOLD_T = 1.4, REC_CAP = 300, REC_HZ = 30, DOT_GAP = 0.32, DOT_MAX = 700, PHOTO_PX = 24, HI_PX = 360;
-  const yawOf = h => h || 1e-6;               // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
+  const yawOf = BOARD_KIT.yawOf;               // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   const hexOf = s => parseInt(s.slice(1), 16);
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(3000);
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
   // (mini golf's: a board's own number from its column and row, Szudzik's pairing, and back)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  const cellOfIdx = idx => { const q = Math.floor(Math.sqrt(idx)), e = idx - q * q; return e < q ? [e, q] : [q, e - q]; };
+  const boardIdx = BOARD_KIT.boardIdx;
+  const cellOfIdx = BOARD_KIT.cellOfIdx;
   const pageT = () => { try { return animTime() / 1000; } catch { return performance.now() / 1000; } };
   const SND = ARCADE.sounds('trickshots.sound', 'The cue\'s tap, ball on ball, the cushion and the pocket, each as loud as its impact (wander\'s sounds).');
   const SET = { paths: ['all', 'cue', 'off'].includes(ARCADE.load('trickshots.paths', 'all')) ? ARCADE.load('trickshots.paths', 'all') : 'all' };
   // (Oct 22, "1,2,5": a board's level is the ring level out from the corner plus the Difficulty, Easy 0, Normal 1, Hard 2, as the
   //  tilt maze's and the tanks'; the corner's fifteen are the challenges as written and have none)
   const DL = ARCADE.difficulty('trickshots.level', 'Past the corner\'s fifteen challenges every board has a trick shot of its own, harder the farther it is from the corner: longer shots, thinner cuts, more balls about, less of the shot seen ahead. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const LV_COL = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];     // (mini golf's flags: green, blue, yellow, orange, black)
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
+  const LV_COL = BOARD_KIT.LV_COL;     // (mini golf's flags: green, blue, yellow, orange, black)
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
   /* A BOARD'S PUZZLE IS MADE IN A WORKER: a level-5 one is a few hundred shots, up to a second on a slow phone, so it is made off
      the page's thread, by up to WK_N workers running this app's own engine and generator (`workerSrc`: the text of this script
      from TRICK_APP's start to the field's part, below, with a message handler; the same code, so the same puzzle). A puzzle
@@ -55002,7 +55001,7 @@ const TRICK_APP = (() => {
      and its par (localStorage trickshots.mine, the latest MINE_CAP), read back through `cleanMine`; `setupOf` asks it first. Its
      id carries a hash of what it is, so a changed one starts a new best. */
   const MINE_CAP = 300, MINE = new Map(), MINE_P = new Map();
-  const hashOf = o => { let h = 2166136261; const t = JSON.stringify(o); for (let k = 0; k < t.length; k++){ h ^= t.charCodeAt(k); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+  const hashOf = o => BOARD_KIT.hash(JSON.stringify(o));
   const num = (v, a, b) => typeof v === 'number' && isFinite(v) ? Math.max(a, Math.min(b, v)) : null;
   function cleanMine(o){
     if (!o || !Array.isArray(o.balls) || o.balls.length < 2 || o.balls.length > 16) return null;
@@ -55153,10 +55152,10 @@ const TRICK_APP = (() => {
     GAMES.set(gkey(c, r), g); return g;
   }
   const gameAt = (c, r) => GAMES.get(gkey(c, r)) || fresh(c, r);
-  const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? gameAt(LIVE.c, LIVE.r) : null; };
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   // the stars a challenge solved earns: on par or under three, within two more two, else one (Oct 22, "1,2,5")
   const starsOf = (tries, par) => !tries ? 0 : tries <= par ? 3 : tries <= par + 2 ? 2 : 1;
-  const starStr = n => '★'.repeat(n) + '☆'.repeat(3 - n);
+  const starStr = n => BOARD_KIT.stars(n);
   // the board after this one in the boards' own order (idx + 1: the corner's fifteen, then out ring by ring)
   function nextBoardOf(g){ const [c, r] = cellOfIdx(g.idx + 1); LIVE = { c, r }; try { gotoCell(c, r); } catch {} gameAt(c, r); touch(); return true; }
   const touch = () => { try { fieldItemsChanged(); } catch {} try { bbRefreshNow(); } catch {} };
@@ -56170,7 +56169,7 @@ const LEVELS_APP = (() => {
     requestAnimationFrame(tick);
   }
   const startTick = () => { if (!ticking){ ticking = true; requestAnimationFrame(tick); } };
-  const say = (m, ms) => { try { engineNotice(m, ms || 2200); } catch {} };
+  const say = BOARD_KIT.say(2200);
   function setMode(m){
     if (!MODES.includes(m)) return; mode = m; try { localStorage.setItem('levels.mode', m); } catch {}
     say(MODE_NAME[m] + (m === 'vh' ? ': the levels split at H, 2H, 4H … from the point under the eye' : m === 'metres' ? ': the levels split at fixed distances on the ground' : ': every board in full'));
@@ -56369,13 +56368,12 @@ const LEVELS_APP = (() => {
    - best(key): the most stars a board, in localStorage `key`, the latest 500. */
 const MATCH_KIT = {
   recordings(o){
-    const RECS = new Map(), SOON = new Map(), every = Math.round(1 / (o.hz * o.tick));
-    let soonT = 0;
+    const RECS = new Map(), SOON = new Map(), every = Math.round(1 / (o.hz * o.tick)), TIME = BOARD_KIT.budget(8);
     function recOf(idx, lv){
       const k = o.key(idx, lv);
       let M = RECS.get(k);
       if (M){ RECS.delete(k); RECS.set(k, M); return M; }
-      M = { idx, lv, G: null, frames: [], done: false, par: null, phase: (idx * 0.618) % 1, flag: 0, step: 0 };
+      M = { idx, lv, G: null, frames: [], done: false, par: null, phase: BOARD_KIT.phase(idx), flag: 0, step: 0 };
       M.G = o.make(idx, lv, M);
       RECS.set(k, M); if (RECS.size > o.cap) RECS.delete(RECS.keys().next().value);
       return M;
@@ -56399,22 +56397,23 @@ const MATCH_KIT = {
       if (M && (M.done || (!urgent && M.G.t >= o.reel))) return M;
       if (urgent){ const R = M || recOf(idx, lv); recWork(R, 12, true); return R; }
       SOON.set(o.key(idx, lv), [idx, lv, performance.now()]);
-      const t = performance.now();
-      if (t - soonT > 30){
-        soonT = t; const end = t + 8;
+      const left = TIME.left();
+      if (left > 0){
+        const t = performance.now(), end = t + left;
         for (const [k, [i, l, at]] of SOON){
           if (performance.now() > end) break;
           if (t - at > 2000){ SOON.delete(k); continue; }
           const R = recOf(i, l); recWork(R, end - performance.now(), false);
           if (R.G.t >= o.reel || R.done) SOON.delete(k);
         }
+        TIME.spend(t);
       }
       return M && M.frames.length ? M : null;
     }
     function at(M, now){
       const F = M.frames, n = F.length / o.F;
       if (!n) return null;
-      const TT = n / o.hz + 2, a = ((now / 1000 + M.phase * TT) % TT) * o.hz, i = Math.min(n - 1, Math.floor(a)), j = Math.min(n - 1, i + 1), f = Math.min(1, a - i);
+      const { i, j, f } = BOARD_KIT.frameAt(n, o.hz, 2, M.phase, now / 1000);
       const p = i * o.F, q = j * o.F;
       return { F, i, j, f, p, q, mix: c => F[p + c] + (F[q + c] - F[p + c]) * f };
     }
@@ -56460,11 +56459,7 @@ const MATCH_KIT = {
     addEventListener('mousemove', e => { const p = OWN.get('m'); if (!p) return; o.handAt(p, e.clientX, e.clientY); e.preventDefault(); e.stopPropagation(); }, true);
     addEventListener('mouseup', e => { if (o.handUp('m')){ e.preventDefault(); e.stopPropagation(); } }, true);
   },
-  best(key){
-    const BEST = (() => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(key) || '{}'))); } catch { return new Map(); } })();
-    const saveBest = () => { try { localStorage.setItem(key, JSON.stringify(Object.fromEntries([...BEST].slice(-500)))); } catch {} };
-    return { BEST, saveBest };
-  },
+  best: key => BOARD_KIT.best(key),     // (the board kit's)
 };
 /* ═══ PONG (Oct 27: "lets create a polished pong application. what do you suggest?", then "all. provide cusomtization options in
    the bottom browser.") ════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -56524,23 +56519,18 @@ const PONG_APP = (() => {
   // the steady player: a person's hands, the same on every board (so par says how hard the board's computer is)
   const STEADY = { react: 0.18, err: 0.032, v: 1.05, acc: 6.5, aim: 0.35 };
   const DL = ARCADE.difficulty('pong.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster serve, your paddle shorter, and a computer that looks again sooner, guesses better, moves faster and aims away from you. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
+  const nextBoard = BOARD_KIT.nextBoard;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };   // (about normal, cut off at ±3.5)
-  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const clamp = BOARD_KIT.clamp;
 
   /* ─── THE SETTINGS (the bottom row) ─── */
   const THEMES = [
@@ -56946,7 +56936,7 @@ const PONG_APP = (() => {
     g.G = newMatch(idx, lv, { ai1: two ? null : undefined, ev: (k, a, G) => onEvent(g, k, a, G), seed: (performance.now() * 1000) | 0 });
     return g;
   }
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? GAMES.get(gkey(LIVE.c, LIVE.r)) || null : null; };
   function begin(g){
     const f = fresh(g.c, g.r); Object.assign(g, f, { state: 'play', last: performance.now() });
@@ -56971,7 +56961,7 @@ const PONG_APP = (() => {
     const par = M.done ? M.par : null, s = starsOf(G, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (s > was){ BEST.set(k, s); saveBest(); }
     sfx(won ? 'win' : 'lose');
-    say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + '★'.repeat(s) + '☆'.repeat(3 - s)
+    say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + BOARD_KIT.stars(s)
         + (par != null && won ? (s === 3 ? ', within par (' + par + ' given away)' : ', par was to give away ' + par + ' or fewer') : '')
         + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
     try { bbRefreshNow(); } catch {}
@@ -57083,7 +57073,7 @@ const PONG_APP = (() => {
   /* ─── DRAWN ─── the table a picture (its theme), and on it the glowing centre line, the score in dot digits, the paddles, the
      ball and its trail, the rings of hits and the power-up's token. Laid out in table units (x 0 to W, y 0 to 1) and divided by
      W at the end, as pinball's. */
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(300, (P, hi) => paint(P.th, P.idx, hi ? 512 : 256));   // (a table's picture by its key: BOARD_KIT)
   const css = c => '#' + (c >>> 0).toString(16).padStart(6, '0');
   const LOOK = {
     classic: { table: 0x000000, line: 0xf2f2f2, pad: [0xf2f2f2, 0xf2f2f2], ball: 0xffffff, digit: 0xf2f2f2, trail: 0x8a8a8a, ring: 0xffffff, glow: false, obst: 0xf2f2f2, mover: 0xbdbdbd, bump: 0xf2f2f2, rim: 0x777777 },
@@ -57177,17 +57167,10 @@ const PONG_APP = (() => {
     return cv;
   }
   function photoKey(c, r, bp){
-    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'pg:' + th + ':' + (/^(table|hockey|tennis|space)$/.test(th) ? idx % 64 : 0) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 64 }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const idx = boardIdx(c, r), th = themeOf(idx).id;
+    return PIC.key('pg:' + th + ':' + (/^(table|hockey|tennis|space)$/.test(th) ? idx % 64 : 0), (bp || 0) >= HI_PX, () => ({ th, idx: idx % 64 }));
   }
-  // a 3 × 5 dot font for the score and the countdown
-  const DIG = ['111101101101111', '010110010010111', '111001111100111', '111001111001111', '101101111001001', '111100111001111', '111100111101111', '111001010010010', '111101111101111', '111101111001111'];
-  function digits(out, n, x, y, cell, color, kind){
-    const s = String(Math.max(0, Math.floor(n))), wd = s.length * 4 * cell - cell;
-    for (let d = 0; d < s.length; d++){ const D = DIG[+s[d]], x0 = x - wd / 2 + d * 4 * cell;
-      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
-  }
+  const digits = DOT_FONT.digits3;          // (the 3 × 5 dot font for the score and the countdown: the page's own)
   // the view of a board, live or from its recording, as pieces
   function itemsOf(V, th, bp){
     const L = LOOK[th], out = [], glow = L.glow, puck = th === 'hockey' || th === 'air';
@@ -57433,7 +57416,7 @@ const PONG_APP = (() => {
     itemMinPx: 10,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.th, P.idx, key.endsWith('h') ? 512 : 256) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ const t = LOOK[themeOf(boardIdx(c, r)).id].table; return { n: 2, colors: [t, t, t, t] }; },
     itemGeometries: {
       pgPad: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
@@ -57534,23 +57517,18 @@ const AIRHOCKEY_APP = (() => {
   // the steady player (the recordings' near end, and par): a person's hands, the same on every board
   const STEADY = { react: 0.17, err: 0.03, v: 1.4, acc: 9, attack: 0.7, aimErr: 0.18, bank: 0.15 };
   const DL = ARCADE.difficulty('airhockey.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster, freer puck, and a computer that looks again sooner, guesses better, moves faster and shoots straighter, banking shots off the rail farther out. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
+  const nextBoard = BOARD_KIT.nextBoard;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const ringLevel = BOARD_KIT.ringLevel;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
-  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const clamp = BOARD_KIT.clamp;
 
   /* ─── THE SETTINGS (the bottom row) ─── */
   const THEMES = [
@@ -57767,7 +57745,7 @@ const AIRHOCKEY_APP = (() => {
     g.G = newMatch(idx, lv, { ai1: two ? null : undefined, seed: (performance.now() * 1000) | 0 });
     return g;
   }
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? GAMES.get(gkey(LIVE.c, LIVE.r)) || null : null; };
   function begin(g){
     const f = fresh(g.c, g.r); Object.assign(g, f, { state: 'play', last: performance.now() });
@@ -57791,7 +57769,7 @@ const AIRHOCKEY_APP = (() => {
     const par = M.done ? M.par : null, s = starsOf(G, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (s > was){ BEST.set(k, s); saveBest(); }
     sfx(won ? 'win' : 'lose');
-    say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + '★'.repeat(s) + '☆'.repeat(3 - s)
+    say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + BOARD_KIT.stars(s)
         + (par != null && won ? (s === 3 ? ', within par (' + par + ' let in)' : ', par was to let in ' + par + ' or fewer') : '')
         + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
     try { bbRefreshNow(); } catch {}
@@ -57832,7 +57810,7 @@ const AIRHOCKEY_APP = (() => {
 
   /* ─── DRAWN ─── the table a picture by theme; on it the mallets (a disc and its knob), the puck and its trail, rings where it is
      struck, the goal's flash, dot-digit scores; in table units, divided by W at the end */
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(300, (P, hi) => paint(P.th, P.idx, hi ? 512 : 256));   // (a table's picture by its key: BOARD_KIT)
   const LOOK = {
     classic: { table: 0xe6f1fc, pad: [0xd03030, 0x2050d0], puck: 0xf5a524, digit: [0xd03030, 0x2050d0], trail: 0x9ec7ef, ring: 0x2050d0, glow: false },
     neon:    { table: 0x07061a, pad: [0x22d3ee, 0xf472b6], puck: 0xfff7b0, digit: [0x22d3ee, 0xf472b6], trail: 0xfde68a, ring: 0x67e8f9, glow: true },
@@ -57885,16 +57863,10 @@ const AIRHOCKEY_APP = (() => {
     return cv;
   }
   function photoKey(c, r, bp){
-    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'ah:' + th + ':' + (th === 'stars' || th === 'wood' ? idx % 64 : 0) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 64 }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const idx = boardIdx(c, r), th = themeOf(idx).id;
+    return PIC.key('ah:' + th + ':' + (th === 'stars' || th === 'wood' ? idx % 64 : 0), (bp || 0) >= HI_PX, () => ({ th, idx: idx % 64 }));
   }
-  const DIG = ['111101101101111', '010110010010111', '111001111100111', '111001111001111', '101101111001001', '111100111001111', '111100111101111', '111001010010010', '111101111101111', '111101111001111'];
-  function digits(out, n, x, y, cell, color, kind){
-    const s = String(Math.max(0, Math.floor(n))), wd = s.length * 4 * cell - cell;
-    for (let d = 0; d < s.length; d++){ const D = DIG[+s[d]], x0 = x - wd / 2 + d * 4 * cell;
-      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
-  }
+  const digits = DOT_FONT.digits3;          // (the 3 × 5 dot font for the score and the countdown: the page's own)
   const mixC = (a, b, f) => { const m = s => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
   function itemsOf(V, th, bp){
     const L = LOOK[th], out = [], glow = L.glow;
@@ -58028,7 +58000,7 @@ const AIRHOCKEY_APP = (() => {
     itemMinPx: 10,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.th, P.idx, key.endsWith('h') ? 512 : 256) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ const t = LOOK[themeOf(boardIdx(c, r)).id].table; return { n: 2, colors: [t, t, t, t] }; },
     itemGeometries: {
       ahDisc: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 24); g.translate(0, 0.5, 0); return g; },
@@ -58182,23 +58154,17 @@ const SQUASH_APP = (() => {
     { tw: 0.08, th: 0.045, feedV: 1.55, spread: 0.9,  drop: 0.44, boast: 0.34, gap: 1.8, alt: true,  deep: 0.64, tight: 0.16 },
   ];
   const DL = ARCADE.difficulty('squash.level', 'Every board plays at its own level, harder the farther it is from the corner: a faster ball, and a computer that looks again sooner, runs faster, gets to the ball better and plays it away from you, with more drops and lobs farther out; drills with smaller targets and quicker, wider feeds. Easy, Normal and Hard move every board a level up.', true);
-  const SHIFT = { easy: 0, normal: 1, hard: 2 };
-  const say = (m, ms) => { try { engineNotice(m, ms || 3000); } catch {} };
-  const now = () => { try { return animTime(); } catch { return performance.now(); } };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
-  const nextBoard = (c, r) => { const GS = fieldGS(); return [((c - 1) % GS + GS) % GS, r]; };
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const ringLevel = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
-  const levelAt = idx => Math.max(1, Math.min(5, ringLevel(idx) + (SHIFT[DL.get()] || 0)));
-  const rngOf = seed => { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const say = BOARD_KIT.say(3000);
+  const now = BOARD_KIT.now;
+  const fieldGS = BOARD_KIT.gs;
+  const gkey = BOARD_KIT.gkey;
+  const nextBoard = BOARD_KIT.nextBoard;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
-  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const clamp = BOARD_KIT.clamp;
   const team = k => k % 2;
   const drillOf = idx => idx === 0 ? DRILLS[0] : DRILLS[(Math.imul(idx ^ 0x3c6ef372, 2654435761) >>> 11) % DRILLS.length];
 
@@ -58681,7 +58647,7 @@ const SQUASH_APP = (() => {
     g.G = newMatch(idx, lv, { drill, fmt, seed: (performance.now() * 1000) | 0 });
     return g;
   }
-  function gameAt(c, r){ const k = gkey(c, r); let g = GAMES.get(k); if (!g){ g = fresh(c, r); GAMES.set(k, g); } return g; }
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = () => { try { if (window.getFieldApp() !== app) return null; } catch { return null; } return LIVE ? GAMES.get(gkey(LIVE.c, LIVE.r)) || null : null; };
   function begin(g){
     const f = fresh(g.c, g.r); Object.assign(g, f, { state: 'play', last: performance.now() });
@@ -58710,11 +58676,11 @@ const SQUASH_APP = (() => {
     if (s > was){ BEST.set(k, s); saveBest(); }
     if (G.drill){
       sfx(s >= 2 ? 'win' : 'lose');
-      say('Time: ' + G.drill.score + (G.drill.kind === 'rally' ? ' in a row' : G.drill.kind === 'feeds' ? ' of ' + G.drill.feeds + ' to a length' : ' on target') + ' ' + '★'.repeat(s) + '☆'.repeat(3 - s)
+      say('Time: ' + G.drill.score + (G.drill.kind === 'rally' ? ' in a row' : G.drill.kind === 'feeds' ? ' of ' + G.drill.feeds + ' to a length' : ' on target') + ' ' + BOARD_KIT.stars(s)
           + (par != null ? ', par ' + par : '') + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
     } else {
       sfx(won ? 'win' : 'lose');
-      say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + '★'.repeat(s) + '☆'.repeat(3 - s)
+      say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + BOARD_KIT.stars(s)
           + (par != null && won ? (s === 3 ? ', within par (' + par + ' points given away)' : ', par was to give away ' + par + ' or fewer') : '')
           + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
     }
@@ -58769,7 +58735,7 @@ const SQUASH_APP = (() => {
 
   /* ─── DRAWN ─── the floor a picture by theme and game; on it the front wall standing up with its marks, the side and back walls low,
      the players, the ball raised with its shadow; in court units, divided by W at the end */
-  const SPECS = new Map();
+  const PIC = BOARD_KIT.painted(300, (P, hi) => paint(P.th, P.idx, hi ? 512 : 256, P.game));   // (a court's picture by its key: BOARD_KIT)
   const LOOK = {
     classic: { floor: 0xd9b27c, line: '#c62828', wall: 0xf3f1ea, tin: 0xc62828, mark: 0xc62828, side: 0xe9e6dc, pl: [0xd23b3b, 0x2f62d6], ball: 0x151515, ring: 0xffd23a, digit: [0xd23b3b, 0x2f62d6], call: 0x202020, glow: false },
     show:    { floor: 0xc99a5b, line: '#d32f2f', wall: 0xeef4f8, tin: 0xd32f2f, mark: 0xd32f2f, side: 0x9fd6e8, pl: [0xe0533a, 0x203a8f], ball: 0x101010, ring: 0x6fe3ff, digit: [0xe0533a, 0x203a8f], call: 0x1a1a1a, glow: false },
@@ -58837,20 +58803,11 @@ const SQUASH_APP = (() => {
     return cv;
   }
   function photoKey(c, r, bp){
-    const idx = boardIdx(c, r), th = themeOf(idx).id, key = 'sq:' + SET.game + ':' + th + ':' + (idx % 32) + ':' + ((bp || 0) >= HI_PX ? 'h' : 'l');
-    if (!SPECS.has(key)){ SPECS.set(key, { th, idx: idx % 32, game: SET.game }); if (SPECS.size > 300) SPECS.delete(SPECS.keys().next().value); }
-    return key;
+    const idx = boardIdx(c, r), th = themeOf(idx).id, game = SET.game;
+    return PIC.key('sq:' + game + ':' + th + ':' + (idx % 32), (bp || 0) >= HI_PX, () => ({ th, idx: idx % 32, game }));
   }
-  // a 3 × 5 dot font: the digits and the letters the calls and the drills' names need
-  const FONT = { 0: '111101101101111', 1: '010110010010111', 2: '111001111100111', 3: '111001111001111', 4: '101101111001001', 5: '111100111001111', 6: '111100111101111',
-                 7: '111001010010010', 8: '111101111101111', 9: '111101111001111', A: '010101111101101', D: '110101101101110', E: '111100110100111', F: '111100110100100',
-                 G: '011100101101011', H: '101101111101101', I: '111010010010111', K: '101110100110101', L: '100100100100111', N: '101111111101101', O: '111101101101111',
-                 P: '110101110100100', R: '110101110101101', S: '011100010001110', T: '111010010010010', U: '101101101101111', W: '101101111111101', Y: '101101010010010' };
-  function text(out, s, x, y, cell, color, kind){
-    s = String(s); const wd = s.length * 4 * cell - cell;
-    for (let d = 0; d < s.length; d++){ const D = FONT[s[d]]; if (!D) continue; const x0 = x - wd / 2 + d * 4 * cell;
-      for (let i = 0; i < 15; i++) if (D[i] === '1') out.push({ kind, u: x0 + (i % 3 + 0.5) * cell, v: y + (((i / 3) | 0) - 2) * cell, scale: cell * 0.86, color }); }
-  }
+  // (the 3 × 5 dot font for the score, the calls and the drills' names: the page's own, DOT_FONT)
+  const FONT = DOT_FONT.three, text = DOT_FONT.text3;
   const mixC = (a, b, f) => { const m = s => Math.round(((a >> s) & 255) * (1 - f) + ((b >> s) & 255) * f); return (m(16) << 16) | (m(8) << 8) | m(0); };
   // a box w across, d deep, h high, its foot at height z (court units)
   const box = (out, kind, x, y, w, d, h, color, z) => out.push({ kind, u: x, v: y, scale: 1, sx: w, sz: d, sy: h, lift: z || 0, color });
@@ -59087,7 +59044,7 @@ const SQUASH_APP = (() => {
     itemMinPx: 10,
     photoMinPx: PHOTO_PX,
     cellPhoto(c, r, bp){ return photoKey(c, r, bp); },
-    photoCanvas(key){ const P = SPECS.get(key); return P ? paint(P.th, P.idx, key.endsWith('h') ? 512 : 256, P.game) : null; },
+    photoCanvas(key){ return PIC.canvas(key); },
     cellGrid(c, r){ const t = LOOK[themeOf(boardIdx(c, r)).id].floor; return { n: 2, colors: [t, t, t, t] }; },
     itemGeometries: {
       sqBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
@@ -59179,17 +59136,12 @@ const SQUASH_APP = (() => {
    Row 0 is the far row (the top of the screen as a board is framed), x across. Keys are 'up', 'down', 'left', 'right' (as
    the board lies: up is toward row 0, whichever way the view is turned: `screenToBoardDirs`), 'enter', 'space' and letters. */
 const GAMELAB_APP = (() => {
-  const say = (m, ms) => { try { engineNotice(m, ms || 2600); } catch {} };
-  const fieldGS = () => { let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return GS; };
-  const gkey = (c, r) => c + '_' + r;
+  const say = BOARD_KIT.say(2600);
+  const gkey = BOARD_KIT.gkey;
   // (Lights Out's: a board's own number and its ring out from the corner; levels 1–5 as every game here has them)
-  const boardIdx = (c, r) => { const GS = fieldGS(), a = ((c % GS) + GS) % GS, b = ((r % GS) + GS) % GS; return a >= b ? a * a + a + b : b * b + a; };
-  function ringOf(idx){
-    const q = Math.floor(Math.sqrt(idx)), e = idx - q * q, a = e < q ? e : q, b = e < q ? q : e - q, GS = fieldGS();
-    const w = v => GS > 1 ? Math.min(v, GS - v) : v;
-    return Math.max(w(a), w(b));
-  }
-  const levelAt = idx => Math.max(1, Math.min(5, Math.floor(Math.log2(ringOf(idx) + 1)) - 1));
+  const boardIdx = BOARD_KIT.boardIdx;
+  const ringOf = BOARD_KIT.ringOf;
+  const levelAt = BOARD_KIT.ringLevel;
   const hashOf = s => { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h.toString(36) + ':' + s.length; };
 
   /* ── THE STARTERS ── written as Claude is asked to write, so they are what it learns the interface from. */
@@ -60355,19 +60307,7 @@ onmessage = ev => {
      letter a kind of its own made from a 5 × 7 dot font (`FONT`, the page's own: capitals, digits and a few signs), flat on
      the board and unlit, so it reads at any tilt. `size` is a letter's height in squares, the line centred on (x, y). Letters
      are given a yaw so they are turned as the field turns every turned item, reading left to right as the board is framed. */
-  const FONT = {
-    '0': [14,17,19,21,25,17,14], '1': [4,12,4,4,4,4,14], '2': [14,17,1,2,4,8,31], '3': [31,2,4,2,1,17,14], '4': [2,6,10,18,31,2,2],
-    '5': [31,16,30,1,1,17,14], '6': [6,8,16,30,17,17,14], '7': [31,1,2,4,8,8,8], '8': [14,17,17,14,17,17,14], '9': [14,17,17,15,1,2,12],
-    A: [14,17,17,31,17,17,17], B: [30,17,17,30,17,17,30], C: [14,17,16,16,16,17,14], D: [28,18,17,17,17,18,28], E: [31,16,16,30,16,16,31],
-    F: [31,16,16,30,16,16,16], G: [14,17,16,23,17,17,15], H: [17,17,17,31,17,17,17], I: [14,4,4,4,4,4,14], J: [7,2,2,2,2,18,12],
-    K: [17,18,20,24,20,18,17], L: [16,16,16,16,16,16,31], M: [17,27,21,21,17,17,17], N: [17,17,25,21,19,17,17], O: [14,17,17,17,17,17,14],
-    P: [30,17,17,30,16,16,16], Q: [14,17,17,17,21,18,13], R: [30,17,17,30,20,18,17], S: [15,16,16,14,1,1,30], T: [31,4,4,4,4,4,4],
-    U: [17,17,17,17,17,17,14], V: [17,17,17,17,17,10,4], W: [17,17,17,21,21,21,10], X: [17,17,10,4,10,17,17], Y: [17,17,17,10,4,4,4],
-    Z: [31,1,2,4,8,16,31], '.': [0,0,0,0,0,12,12], ',': [0,0,0,0,12,4,8], ':': [0,12,12,0,12,12,0], '-': [0,0,0,31,0,0,0],
-    '+': [0,4,4,31,4,4,0], '!': [4,4,4,4,4,0,4], '?': [14,17,1,2,4,0,4], '/': [1,1,2,4,8,16,16], '%': [24,25,2,4,8,19,3],
-    '#': [10,10,31,10,31,10,10], '=': [0,0,31,0,31,0,0], '(': [2,4,8,8,8,4,2], ')': [8,4,2,2,2,4,8], '<': [2,4,8,16,8,4,2],
-    '>': [8,4,2,1,2,4,8], '*': [0,4,21,14,21,4,0], "'": [4,4,8,0,0,0,0], '♥': [0,10,31,31,14,4,0], '★': [4,4,31,14,14,27,17],
-  };
+  const FONT = DOT_FONT.five;
   function glyphGeo(T, code){
     const rows = FONT[String.fromCodePoint(code)] || FONT['?'], pos = [], nrm = [], d = 0.45 / 7, y = 0.006;
     for (let r = 0; r < 7; r++) for (let c = 0; c < 5; c++){
