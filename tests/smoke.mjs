@@ -5117,7 +5117,9 @@ try {
       live.entered = await gs();
       // the row's Big shell, then a shot: one fewer left
       live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
-        for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++) await new Promise(ok => setTimeout(ok, 250));
+        // (your tank kept whole while it waits, as the win's wait below keeps it: the computer's answer to the Enter shot put you
+        //  out from 81 on CI, Oct 28, and with the game over there was no win left to play)
+        for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
         if (g.state === 'over') return { over: true };
         // (the row's ◀ a degree up, − two in a hundred of the power down, then Big shell and the row's Fire)
         const ready = g.state + g.turn, tiles = A.statTiles(c, r), a = g.a[0], p = g.p[0];
