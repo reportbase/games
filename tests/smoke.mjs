@@ -76,7 +76,7 @@ page.on('console', m => { if (m.type() === 'error') console.log(`  console (${cu
 
 let code = 0;
 try {
-  await page.goto(new URL('games.html', base).href, { waitUntil: 'load' });
+  await page.goto(new URL('games.html', base).href, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.FIELD_APPS.length > 0
                                    && typeof window.setFieldApp === 'function', null, { timeout: 60000 });
   await page.waitForTimeout(SETTLE_MS);
@@ -3072,7 +3072,8 @@ try {
     const s0 = await state();
     await page.keyboard.down('ArrowDown'); await page.waitForTimeout(700); await page.keyboard.up('ArrowDown'); await page.waitForTimeout(400);
     // (the game steps as its board is drawn, and a slow frame on CI left the ball launched but not yet moved at 400 ms: wait for it)
-    for (let k = 0; k < 15; k++){ const q = await state(); if (q.onPl || q.by == null || q.by < 0.9) break; await page.waitForTimeout(200); }
+    // (and in a part of its own the page is fresh, every board's table still being made, and a frame can take seconds: up to 15 s)
+    for (let k = 0; k < 75; k++){ const q = await state(); if (q.by == null || (!q.onPl && q.by < 0.9)) break; await page.waitForTimeout(200); }
     const s1 = await state();
     await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(200); const s2 = await state(); await page.keyboard.up('ArrowLeft'); await page.waitForTimeout(150);
     const s3 = await state();
@@ -4259,7 +4260,7 @@ try {
     console.log(`${ok1 ? 'ok  ' : 'FAIL'} pong: levels ${r.levels.join('/')} by ring, ${r.tunnel.hits} returns at speed and none through a paddle, the steady player's share ${r.share.join(' at level 1, ')} at level 5, a recording's par ${r.rec.par}, powers taken ${r.powers}`);
     // real input on a framed board
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     const real = {};
     if (fc){
@@ -4471,7 +4472,7 @@ try {
     if (!ok1) failures.push('[airhockey] ' + JSON.stringify(r));
     console.log(`${ok1 ? 'ok  ' : 'FAIL'} airhockey: levels ${r.levels.join('/')}, a swing of 1 sends the puck off at ${-r.strike[1]}, the rail and a goal only in the mouth, the puck never inside a mallet, the steady player's share ${r.share.map(s => s.share).join(' / ')} at levels 1, 3, 5, par ${r.rec.par}, four themes painted`);
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     const real = {};
     if (fc){
@@ -4630,7 +4631,7 @@ try {
     if (!ok1) failures.push('[squash] ' + JSON.stringify(r));
     console.log(`${ok1 ? 'ok  ' : 'FAIL'} squash: levels ${r.levels.join('/')}, a drive strikes the front wall at ${r.front}, the tin, down and not up, the angle off each side and drive/drop/lob by how you move, a let (${r.block[0]}) and a stroke (${r.block[1]}), the computer stepping ${r.clear} off the striker's way, the landing foretold to ${r.land}, the guide by level ${r.guide}, racquetball's ceiling and side-out (${r.side}), fives' reach ${r.fivesReach}, doubles every seat hitting (${r.doubles.hits}, ${r.doubles.score}), a target, a length and a short (${r.feeds}), the rally's other side, a drill over at 40 s with ${r.drillEnd[2]} feeds, the steady player's share ${r.share.map(s => s.share).join(' / ')} at levels 1, 3, 5, par ${r.rec.par}, a ${r.drillRec.kind} drill's par ${r.drillRec.par}, every court painted`);
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     const real = {};
     if (fc){
@@ -5100,7 +5101,7 @@ try {
       return out; });
     // real input on the framed board: a tap aims there and fires; the computer answers; a drag from your tank fires on letting go
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     // (a point of the board in its own x and y, projected here: across the width u is x / ASP)
     const at = (x, y) => page.evaluate(([x, y]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, u = x / window.getFieldApp()._debug.ASP;
@@ -5114,7 +5115,7 @@ try {
       // a tap aims (and fires nothing); a tap on your own tank fires
       const tx = tank[0] + 0.45, ty = 0.3, pt = await at(tx, ty); await page.mouse.click(pt.x, pt.y);
       // (the software renderer can take a second a frame, so the tap lands when it lands: wait for it before reading)
-      for (let w = 0; w < 40 && (await gs()).a === 45; w++) await page.waitForTimeout(250);
+      for (let w = 0; w < 40 && (await gs()).a === 45; w++){ await page.waitForTimeout(250); if (w === 20) await page.mouse.click(pt.x, pt.y); }
       live.aimed = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
       live.arc = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.viewOf(...k.split('_').map(Number)); return V.preview ? V.preview.length / 2 : 0; }, fc[0] + '_' + fc[1]);
       const pk = await at(tank[0], tank[1] - 0.022); await page.mouse.click(pk.x, pk.y);
@@ -5271,7 +5272,7 @@ try {
       return out; });
     // real input on the framed board
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW();
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
@@ -5458,7 +5459,7 @@ try {
         return { lv, ended, hits, ms: Math.round(ms / 6) }; });
       return out; });
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     const at = (x, y) => page.evaluate(([x, y]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, K = window.getFieldApp()._debug.kit();
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - x / K.WD) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - y) * bW * (L.cellH || 1)).project(W.camera);
@@ -6085,7 +6086,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       await page.waitForTimeout(1400); await page.mouse.up(); await page.waitForTimeout(900); };
     try {
       await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); const D = A._debug, [c, r] = D.cellOfIdx(1); D.GAMES.clear(); D.fly(c, r); D.LIVE = { c, r }; D.gameAt(c, r); });
-      await page.waitForTimeout(3000);
+      // (settled, not a fixed 3 s: in a part of its own the page is fresh and its frames slow, and a hold during the flight was a pan)
+      await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
       if (!(await shown())){ await page.click('#bbHandle'); await page.waitForTimeout(800); }
       out.up = await shown();
       await page.click('#bbHandle'); await page.waitForTimeout(1500);
@@ -6680,9 +6682,11 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const live = { started: await gs() };
     p = await at(0.4, 0.25); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
     live.aimed = await gs();
-    await page.keyboard.press('Enter'); await page.waitForTimeout(900);
+    await page.keyboard.press('Enter');
+    // (a press counts as sweeping only once the stone runs: on a slow first frame the press came before the throw)
+    for (let w = 0; w < 40 && (await gs()).G.state !== 'throw'; w++) await page.waitForTimeout(150);
     p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down();
-    for (let w = 0; w < 20 && !((await gs()).G.sweep > 0); w++) await page.waitForTimeout(150);
+    for (let w = 0; w < 40 && !((await gs()).G.sweep > 0); w++) await page.waitForTimeout(150);
     live.swept = await gs(); await page.mouse.up();
     for (let w = 0; w < 120 && (await gs()).G.thrown < 2; w++) await page.waitForTimeout(250);
     live.answered = await gs();
