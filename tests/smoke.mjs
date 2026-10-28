@@ -6703,7 +6703,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     // (a press counts as sweeping only once the stone runs: on a slow first frame the press came before the throw)
     for (let w = 0; w < 40 && (await gs()).G.state !== 'throw'; w++) await page.waitForTimeout(150);
     p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down();
-    for (let w = 0; w < 40 && !((await gs()).G.sweep > 0); w++) await page.waitForTimeout(150);
+    // (a press that did not take, on a slow runner, is pressed again while the stone still runs)
+    for (let w = 0; w < 40 && !((await gs()).G.sweep > 0); w++){ await page.waitForTimeout(150);
+      if (w % 12 === 11 && (await gs()).G.state === 'throw'){ await page.mouse.up(); await page.waitForTimeout(100); await page.mouse.down(); } }
     live.swept = await gs(); await page.mouse.up();
     for (let w = 0; w < 120 && (await gs()).G.thrown < 2; w++) await page.waitForTimeout(250);
     live.answered = await gs();

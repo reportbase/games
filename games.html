@@ -60675,7 +60675,7 @@ const BOWLING_APP = (() => {
       if (ED.on && ED.key === gkey(c, r)) return 'Bowling — making a leave, ' + ED.xy.length + (ED.xy.length === 1 ? ' pin' : ' pins');
       if (SET.mode === 'spares'){
         const idx = boardIdx(c, r), lv = levelAt(idx), J = jobFor(c, r), g = GAMES.get(gkey(c, r));
-        if (!J.done) return 'Bowling — spares, level ' + lv + ' (its leave being worked out)';
+        if (!J.done) return 'Bowling — ' + (J.mine ? 'your leave' : 'spares') + ', level ' + lv + ' (its shot being worked out)';
         const R = J.res, best = SBEST.get(J.key);
         return 'Bowling — ' + R.name + ', level ' + lv + (R.par ? ' · par ' + R.par + ' · a window of ' + (R.w / BOARD_W).toFixed(1) + ' boards' : '') + (best ? ' · best ' + best : '')
              + (g && g.G && g.G.spare ? (g.state === 'over' ? ' · made in ' + g.G.tries : ' · try ' + (g.G.tries + 1)) : ' (tap to play)');
