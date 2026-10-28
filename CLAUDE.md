@@ -2371,6 +2371,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   2px larger and have a shadow. 2) add full screen option to the menu. 3) tab and enter should move to next board, from the
   current visible board that is in the default position."):
   - The bottom row's dots (`#bbHandle`) are 6px across (viewBox 30 × 8, r 3), with a drop shadow.
+  - **A ring round them** (Oct 28: "the three dots on the bottom should be surrouned by a larger circle that eccompasses them to
+    make them easier to see."): a dark translucent disc 44px across behind the dots (`#bbHandle::before`, under them, so a press
+    anywhere in it is still the button's), its rim white while the row is shut and gold while it is open or hovered, as the dots are.
   - The menu's Full screen (`#bFullScreen`, after Application…) puts the whole page in full screen and back; its label follows
     the state (Escape leaves too); hidden where the browser can't (an iPhone's Safari).
   - Tab and Enter (`stepRight`) step right from the board in view (`viewBoardCell`: `frameSelectedBoardAt` and `frameBoard`'s
