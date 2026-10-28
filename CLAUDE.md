@@ -2670,6 +2670,9 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   `npm test` does. CI (`smoke.yml`) runs the seven parts and the course test as eight jobs at once, then a job named `smoke`
   that passes only if all of them did, so a run takes about as long as its longest part. A new check goes at the end of the
   part it sits beside or in the shortest one; one part alone runs locally as `SHARD=3/7 node tests/smoke.mjs`.
+- **CI serves the CDN libraries itself** (Oct 28): a CDN that would not answer held every part's page from loading, so `smoke.yml`
+  installs three@0.128.0, chess.js@1.4.0 and unzipit@2.0.1 and runs the tests with `LIBS_DIR`; every other request off the
+  test's own server is given 20 s and dropped past it (`timeLimit` in the smoke test, the same in the course test).
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
   `chess.js@1.4.0` somewhere and run `LIBS_DIR=that/node_modules npm test`; the
   test then serves both from there.

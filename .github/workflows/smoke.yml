@@ -29,9 +29,13 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npx playwright install --with-deps chromium
+      # (Oct 28: a CDN that would not answer held every part's page from loading. The libraries the page loads from CDNs are
+      # installed here at the same versions and served by the tests from them, LIBS_DIR, as in a sandbox.)
+      - run: npm install --prefix "$RUNNER_TEMP/libs" --no-save --no-package-lock three@0.128.0 chess.js@1.4.0 unzipit@2.0.1
       - run: node tests/smoke.mjs
         env:
           SHARD: ${{ matrix.shard }}/7
+          LIBS_DIR: ${{ runner.temp }}/libs/node_modules
 
   course:
     name: golf course
@@ -44,7 +48,12 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npx playwright install --with-deps chromium
+      # (Oct 28: a CDN that would not answer held every part's page from loading. The libraries the page loads from CDNs are
+      # installed here at the same versions and served by the tests from them, LIBS_DIR, as in a sandbox.)
+      - run: npm install --prefix "$RUNNER_TEMP/libs" --no-save --no-package-lock three@0.128.0 chess.js@1.4.0 unzipit@2.0.1
       - run: node tests/golf-course.mjs
+        env:
+          LIBS_DIR: ${{ runner.temp }}/libs/node_modules
 
   smoke:
     needs: [part, course]
