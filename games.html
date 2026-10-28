@@ -36356,15 +36356,19 @@ const tvf = (function() {
     const PI = Math.PI;
 
     // ── ONE PRNG, NOT TWENTY-TWO ────────────────────────────────────────────────
-    // The seeded LCG every lab draws from, kept in one place. makeRng(seed)
-    // replays the exact stream the inline copies produced (same multiplier,
-    // increment and mask, seed used raw on the first step), so every pinned lab
-    // number is unchanged. makeRngCentered is the same stream shifted to
-    // [-0.5, 0.5) — the noise labs draw from it.
+    // The seeded LCG every lab draws from, kept in one place: s ← (1103515245·s +
+    // 12345) mod 2³¹, the seed used raw on the first step. makeRngCentered is the
+    // same stream shifted to [-0.5, 0.5) — the noise labs draw from it.
+    // COMPUTED IN 32-BIT INTEGERS (28 Oct 2026). Written as s * 1103515245 in
+    // floating point, the product passes 2⁵³ and loses its low bits before the
+    // mask is taken, so the stream was not this LCG: from seed 8191 it fell into
+    // a cycle after about 10,500 values. Math.imul keeps the low 32 bits exactly,
+    // which is all the mod 2³¹ reads (draw's papers/labs.md, "What the run found
+    // wrong", item 2).
     function makeRng(seed) {
         let s = seed;
         return () => {
-            s = (s * 1103515245 + 12345) & 0x7fffffff;
+            s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff;
             return s / 0x7fffffff;
         };
     }
