@@ -6718,7 +6718,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   current = 'bowling';
   {
     const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); await new Promise(ok => setTimeout(ok, 2500)); });
+    // (ten frames: spares are the default since Oct 28, checked after this)
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); window.getFieldApp()._debug.setMode('game'); await new Promise(ok => setTimeout(ok, 2500)); });
     const bw = await page.evaluate(() => {
       const D = window.getFieldApp()._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
       out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
@@ -6756,6 +6757,73 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling (levels ${L.join('/')}; scores ${bw.score.join(', ')}; a hook ${bw.hook} across the head pin's line; a gutter ball took ${bw.gutter.down}; the steady player's first balls ${bw.firsts} pins, games ${bw.games.join(' at level 1, ')} at level 5; a real click started, a real click aimed, the real Enter bowled; a board no one plays showed ${live.shown.looks} looks, par ${live.shown.par})`);
   }
+  // BOWLING'S SPARES (Oct 28: "could the ideas of trick shot be applied to bowling?", then "1,2,5"): every corner leave and generated
+  // leaves at levels 1, 3 and 5 made by their own found shot, par rising with the level; a miss setting the leave up again and
+  // counting a try; and real input: a real click starting the framed lane's leave, the real Enter bowling and the try counted, the
+  // shot shown and bowled making it; the editor: the real ✎ opening it, real clicks laying pins, Check's par, the real ✓ keeping it
+  // in storage, a shared copy on another lane, nonsense refused; a board no one plays showing its leave made
+  current = 'bowling spares';
+  {
+    const before = failures.length;
+    const sp = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      D.setMode('spares');
+      out.course = D.COURSE.map((_, i) => { const J = D.leaveNow(D.leaveJob(i, 2)); return !!(J.res.s && D.clearsAll(D.leavePins(J.res.xy), J.res.s, J.lane)); }).filter(x => x).length;
+      out.pars = [1, 3, 5].map(lv => { let n = 0, sum = 0; for (let b = 0; b < 4; b++){ const J = D.leaveNow(D.leaveJob(700 + b * 13, lv)); if (J.res.s && D.clearsAll(D.leavePins(J.res.xy), J.res.s, J.lane)){ n++; sum += J.res.par; } } return n === 4 ? sum / 4 : null; });
+      const J = D.leaveNow(D.leaveJob(4, 2)), G = D.newGame(4, 2, { leave: J.res }); G.shot = { ...J.res.s, tx: J.res.s.tx + 0.08 }; D.bowlNow(G);
+      for (let n = 0; n < 6000 && (G.state === 'roll' || G.state === 'rest'); n++) D.tick(G);
+      out.miss = { state: G.state, tries: G.tries, up: G.pins.length === J.res.xy.length && G.pins.every(p => !p.down) };
+      out.clean = [D.cleanLeave({ xy: [[0, 0]] }), D.cleanLeave({ xy: 'x' }), D.cleanLeave({ xy: [[0.18, 0.2], [0.18, 0.2]] }), !!D.cleanLeave({ xy: [[0.18, 0.2]] })];
+      return out;
+    });
+    if (sp.course !== 15 || !(sp.pars[0] && sp.pars[1] && sp.pars[2] && sp.pars[0] < sp.pars[1] && sp.pars[1] < sp.pars[2]) || sp.miss.state !== 'aim' || sp.miss.tries !== 1 || !sp.miss.up
+        || sp.clean.slice(0, 3).some(x => x) || !sp.clean[3])
+      failures.push(`[${current}] ${JSON.stringify(sp)}`);
+    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
+    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, tries: g.G.tries, spare: !!g.G.spare } }; });
+    const live = {};
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
+    await page.evaluate(() => window.__settle());
+    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
+    for (let w = 0; w < 20 && !((await gs()) || {}).G; w++) await page.waitForTimeout(250);
+    live.started = await gs();
+    await page.keyboard.press('Enter');
+    for (let w = 0; w < 60 && ((await gs()).G.tries || 0) < 1 && (await gs()).state !== 'over'; w++) await page.waitForTimeout(250);
+    live.tried = await gs();
+    if (live.tried && live.tried.state !== 'over'){
+      await page.evaluate(() => window.getFieldApp().menu[0].items.find(i => i.label === 'Show me the shot').on());
+      await page.waitForTimeout(300); await page.keyboard.press('Enter');
+      for (let w = 0; w < 60 && (await gs()).state !== 'over'; w++) await page.waitForTimeout(250);
+    }
+    live.made = await gs();
+    // the editor, by the real ✎
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; D.GAMES.delete(f.c + '_' + f.r); });
+    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ await page.click('#bbHandle'); await page.waitForTimeout(800); }
+    const pen = await page.evaluate(() => { try { bbRefreshNow(); } catch {} const b = [...document.querySelectorAll('#bbQuick button')].find(b => b.textContent.includes('✎')); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+    if (pen){ await page.mouse.click(pen[0], pen[1]); await page.waitForTimeout(800); }
+    live.opened = await page.evaluate(() => window.getFieldApp()._debug.ed().on);
+    await page.evaluate(() => window.getFieldApp()._debug.edTile(4));             // (Clear)
+    for (const [u, v] of [[0.5, 0.25], [0.3, 0.2]]){ p = await at(u, v); await page.mouse.click(p.x, p.y); await page.waitForTimeout(700); }
+    live.laid = await page.evaluate(() => window.getFieldApp()._debug.ed().xy.length);
+    live.check = await page.evaluate(() => { const r = window.getFieldApp()._debug.edCheck(false); return r.why || r.par; });
+    const tick = await page.evaluate(() => { try { bbRefreshNow(); } catch {} const b = [...document.querySelectorAll('#bbQuick button')].filter(b => b.textContent.trim() === '✓').pop(); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
+    if (tick){ await page.mouse.click(tick[0], tick[1]); await page.waitForTimeout(800); }
+    live.kept = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, st = JSON.parse(localStorage.getItem('bowling.mine') || '{}')[f.c + '_' + f.r];
+      return { off: !D.ed().on, stored: st ? st.xy.length : 0, title: window.getFieldApp().cellTitle(f.c, f.r) }; });
+    live.shared = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, d = D.MINE.get(f.c + '_' + f.r); D.takeLeave(f.c + 3, f.r, { xy: d.xy }); const J = D.jobFor(f.c + 3, f.r); D.leaveNow(J);
+      return { mine: !!J.mine, n: J.res.xy.length, made: !!(J.res.s && D.clearsAll(D.leavePins(J.res.xy), J.res.s, J.lane)) }; });
+    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 1, r = f.r; D.leaveNow(D.jobFor(c, r));
+      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
+      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return seen.size; });
+    if (!live.started || live.started.state !== 'play' || !live.started.G.spare || !live.tried || !(live.tried.G.tries >= 1 || live.tried.state === 'over') || !live.made || live.made.state !== 'over'
+        || !live.opened || live.laid !== 2 || !(live.check >= 1) || !live.kept.off || live.kept.stored !== 2 || !/your leave/.test(live.kept.title)
+        || !live.shared.mine || live.shared.n !== 2 || !live.shared.made || live.shown < 3)
+      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling spares (all ${sp.course} corner leaves made by their own shot; generated pars ${sp.pars.join(', ')} at levels 1, 3, 5; a miss set the leave up again as try ${sp.miss.tries + 1}; a real click started the lane's leave, the real Enter bowled, the shot shown made it; the real ✎ opened the editor, real clicks laid ${live.laid} pins, par ${live.check}, the real ✓ kept it, a shared copy made on another lane; a board no one plays showed ${live.shown} looks)`);
+  }
+
 
   // MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; puzzles made at levels 1, 3 and 5, every made way
   // running the marble to the cup in the game's own physics, par growing; a piece taken out and the marble falls; a piece laid

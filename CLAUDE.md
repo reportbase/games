@@ -786,6 +786,33 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test (part 7) checks the levels by ring, the scoring (300, 190, 80, the tenth's bonus balls), a hook across the head
     pin's line, a gutter ball taking nothing, the steady player's perfect pocket balls striking and its games better at level 1
     than at 5, and real input (a click starting, a real click aiming, the real Enter bowling) and a board no one plays moving.
+  - **Spares, trick shots' way** (Oct 28: "could the ideas of trick shot be applied to bowling?", then "1,2,5"): the row's last
+    tile and the menu's Mode switch between Spares (the default; localStorage `bowling.settings` `mode`) and Ten frames.
+    - **Every lane a leave to make** with one ball: missed, the pins go back up and it is another try (`G.spare`, `G.tries`;
+      `afterBall`'s first branch). The corner is the famous leaves (`COURSE`, 15: the 10, 7 and 5 pins, a sleeper, two baby
+      splits, the 2-4-7, the 3-6-10, the bucket, the 1-3-6-10, the 1-2-4-7, a washout, the 5-7, 5-10 and 4-9 splits; the 7-10,
+      4-6 and big four are not makeable by any line the search tries and are left out). Every other board deals its own from its
+      number at its level (`leaveGen`, `SP_LV`: two to five pins on the rack's spots, up to `SP_TRIES` 10 deals until the
+      window falls in the level's band, the nearest kept).
+    - **The search** (`shotSearch`, a generator worked a slice at a time, `leaveWork`, `leaveSoon`; the framed board
+      `URGENT_MS` 30 a frame, a played one at once, `leaveNow`): lines at the leave's middle and at each pin, full and thin
+      (`THIN`), slow and fast, straight and hooking, from either side, each aimed by `aimFor`; a line that clears is widened in
+      aim at the arrows `W_STEP` (0.0005) at a time while it still clears; the widest window is the leave's (`w`), its middle
+      the board's shot. 0.1–0.5 s a leave. A board still being worked out shows the leave under trial standing (`J.cur`).
+    - **Par from the window** (`parOfWindow`): 0.02 (three lane boards, `BOARD_W` = LANE / 39) or more 1 try, 0.012 2, 0.007 3,
+      0.004 4, less 5. Measured: windows about 0.03, 0.017, 0.01, 0.007 and 0.004 at levels 1–5; pars 1, 2.5 and 3.75 at levels
+      1, 3 and 5. Stars by tries (`triesStars`: par or fewer 3, two more 2); the fewest kept a leave (`bowling.spares`, by its
+      key: `g<idx>@<lv>` or `m<hash>`). The menu's Show me the shot puts the found shot on the ball (one star if made with it).
+    - A board no one plays shows its leave made by the found shot (`spareRec`, the game's recording frames).
+    - **Your own leave** (`ED`, `ed…`, EDIT_KIT with `gameRow`, as trick shots'): ✎ while a leave is shown, or the menu's Make a
+      spare for this board…; tools Pin (a tap lays one where it falls on the deck, `DECK`), On a spot (lays or lifts the
+      nearest of the ten spots), Erase, a drag moves a pin; acts Rack, Clear, Check (the search at once: its par, or no shot),
+      Play. ✓ keeps it once a shot is found (`bowling.mine`, the latest 300, through `cleanLeave`: 1–10 pins on the deck, none
+      overlapping) and plays it (`mineJob`); Share this board's leave and a shared link (`takeLeave`, searched again first).
+    - The smoke test (part 7) checks all 15 corner leaves and generated ones at levels 1, 3 and 5 made by their own shot with par
+      rising, a miss counting a try with the leave up again, `cleanLeave` refusing nonsense, and real input: a real click
+      starting the lane's leave, the real Enter, the shown shot making it, the real ✎, real clicks laying pins, the real ✓
+      keeping it in storage, a shared copy on another lane, and a board no one plays moving.
 - **Marble run** (Oct 28: "2,   3 curling, bowling, marble run", the third: "build a track in the bottom row, the steady player tests
   it"): `MARBLE_APP`, id `marblerun`, after bowling. A square board, an n × n grid of squares: a start chute at the far edge, high
   up (`startPiece`, blue), a cup lower down (red), rocks, some pieces laid for you (darker wood), and a stock in the bottom row.

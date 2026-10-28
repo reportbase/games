@@ -59810,8 +59810,8 @@ const BOWLING_APP = (() => {
   const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
   const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
   const SET = (() => {
-    const d = { sound: true, preview: true };
-    try { const s = JSON.parse(localStorage.getItem('bowling.settings') || '{}'); for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k]; } catch {}
+    const d = { sound: true, preview: true, mode: 'spares' };
+    try { const s = JSON.parse(localStorage.getItem('bowling.settings') || '{}'); for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k]; if (s.mode === 'game' || s.mode === 'spares') d.mode = s.mode; } catch {}
     return d;
   })();
   const saveSet = () => { try { localStorage.setItem('bowling.settings', JSON.stringify(SET)); } catch {} };
@@ -59966,6 +59966,8 @@ const BOWLING_APP = (() => {
     const G = { idx, lv, lane: laneOf(idx, lv), R: rngOf((idx * 7919) ^ (lv * 977) ^ (o.seed || 0) ^ 0x707), ai: o.ai || null, frame: 1, ball: 1, rolls: [], pins: rack(), B: null,
                 state: 'aim', t: 0, wait: 0, tenth: [], shot: { sx: CX + 0.05, tx: CX + 0.01, ty: ARROWS, v: 0.6, h: 0.5 }, ev: o.ev || null, fx: [], before: 10 };
     if (G.ai){ G.shot = handsOn(pick(G.pins, G.lane, true), G.ai, G.R); G.state = 'wait'; G.wait = 0.3; }
+    // (a spare to make: the leave's pins alone, a try a ball, the leave set again after every miss)
+    if (o.leave){ G.spare = o.leave; G.pins = leavePins(o.leave.xy); G.tries = 0; }
     return G;
   }
   const emit = (G, kind, a) => { if (G.ev) try { G.ev(kind, a, G); } catch {} };
@@ -59984,6 +59986,13 @@ const BOWLING_APP = (() => {
     if ((G.B.pit && !G.pins.some(p => p.vx || p.vy)) || G.rollT > 7){ G.state = 'rest'; G.wait = REST_T; }
   }
   function afterBall(G){
+    if (G.spare){
+      const left = G.pins.filter(p => !p.down && !p.pit).length; G.B = null; G.tries++;
+      emit(G, 'try', { left, tries: G.tries });
+      if (!left){ G.state = 'over'; G.made = true; emit(G, 'over', {}); return; }
+      G.pins = leavePins(G.spare.xy); G.state = 'aim'; emit(G, 'next', {});
+      return;
+    }
     const left = G.pins.filter(p => !p.down && !p.pit).length, n = G.before - left, ball = G.ball;
     const strike = G.before === 10 && left === 0, spare = !strike && ball >= 2 && left === 0;
     G.rolls.push(n); G.B = null;
@@ -60005,7 +60014,7 @@ const BOWLING_APP = (() => {
     emit(G, 'next', {});
   }
   function previewOf(G){
-    const s = G.shot, key = [s.sx, s.tx, s.ty, s.v, s.h, G.rolls.length].join();
+    const s = G.shot, key = [s.sx, s.tx, s.ty, s.v, s.h, G.rolls.length, G.tries || 0].join();
     if (G._pv && G._pv.key === key) return G._pv;
     const r = bowlSim(G.pins, s, G.lane, { path: true, dt: 1 / 120 });
     return G._pv = { key, path: r.path };
@@ -60055,19 +60064,271 @@ const BOWLING_APP = (() => {
     return pick(i * REC_F, j * REC_F, f);
   }
 
+  /* ─── SPARES ─── (Oct 28: "could the ideas of trick shot be applied to bowling?", then "1,2,5": every board a spare to make,
+     par from how wide the window is that makes it, and your own leaves made in the bottom row and shared.) Trick shots' way:
+     the physics is deterministic, so a leave's shot can be searched for, and how far off it may be and still work measured.
+     - A LEAVE is the pins left standing, anywhere on the deck (`xy`, the board's own on the ten spots); it is made when one ball
+       takes every pin down. Missed, the pins go back up and it is another try; par is in tries.
+     - THE SEARCH (`shotSearch`, a generator so the boards no one plays work it out a little at a time): a line at the leave's
+       middle and at each pin, full and thin on either side (`THIN`), slow and fast, straight and hooking, from either side of
+       the lane, each aimed through `aimFor`; a line that clears the leave is widened in aim at the arrows a half thousandth at a
+       time (`W_STEP`) both ways while it still clears, and the widest window is the leave's (`w`, its middle the board's shot).
+     - PAR FROM THE WINDOW (`parOfWindow`): three lane boards (0.02) or more is one try, under half a board (0.004) five. Measured
+       on 16 boards a level, windows about 0.03, 0.017, 0.01, 0.007 and 0.004 at levels 1–5 (1 to 5 tries' par).
+     - THE CORNER is the famous leaves (`COURSE`): the 10 pin, the 7, the 5, a sleeper, two baby splits, the 2-4-7, the 3-6-10, the
+       bucket, the 1-3-6-10, the 1-2-4-7, a washout and three splits (each found makeable here; the 7-10, 4-6 and big four are
+       not, by any line the search tries, so they are left out). Every other board deals its own from its number at its level
+       (`SP_LV`: two to five pins, the window's band), tried up to `SP_TRIES` times until the window falls in the band, the
+       nearest kept. 0.1–0.5 s to work out a leave.
+     - A board no one plays shows its leave being made by the found shot (`spareRec`), round and round. */
+  const COURSE = [['the 10 pin', [10]], ['the 7 pin', [7]], ['the 5 pin', [5]], ['the 2-8, a sleeper', [2, 8]], ['the 3-10 baby split', [3, 10]],
+                  ['the 2-7 baby split', [2, 7]], ['the 2-4-7', [2, 4, 7]], ['the 3-6-10', [3, 6, 10]], ['the bucket', [2, 4, 5, 8]], ['the 1-3-6-10', [1, 3, 6, 10]],
+                  ['the 1-2-4-7', [1, 2, 4, 7]], ['the 1-2-4-10 washout', [1, 2, 4, 10]], ['the 5-7 split', [5, 7]], ['the 5-10 split', [5, 10]], ['the 4-9 split', [4, 9]]];
+  const SP_LV = [{ k: [1, 2], band: [0.02, 1] }, { k: [2, 3], band: [0.013, 0.03] }, { k: [2, 4], band: [0.008, 0.02] }, { k: [2, 4], band: [0.004, 0.012] }, { k: [2, 5], band: [0.0005, 0.007] }];
+  const SP_TRIES = 10, W_STEP = 0.0005, W_MAX = 0.04, THIN = [-0.55, -0.45, -0.3, 0, 0.3, 0.45, 0.55], URGENT_MS = 30, LEAVE_CAP = 600, BOARD_W = LANE / 39;
+  const parOfWindow = w => w >= 0.02 ? 1 : w >= 0.012 ? 2 : w >= 0.007 ? 3 : w >= 0.004 ? 4 : 5;
+  const triesStars = (n, par) => par == null ? (n <= 1 ? 3 : n <= 3 ? 2 : 1) : n <= par ? 3 : n <= par + 2 ? 2 : 1;
+  const pinAt = (x, y, n) => ({ n, x, y, vx: 0, vy: 0, down: false, ang: 0, pit: false, up: true });
+  const leavePins = xy => xy.map(([x, y], i) => pinAt(x, y, i + 1));
+  const spotsOf = ns => ns.map(n => SPOTS[n - 1].slice());
+  const nameOf = ns => { const q = ns.slice().sort((a, b) => a - b); return q.length === 1 ? 'the ' + q[0] + ' pin' : 'the ' + q.join('-'); };
+  const clearsAll = (P, s, lane) => bowlSim(P, s, lane, { dt: 1 / 120 }).P.every(p => p.down || p.pit);
+  function* shotSearch(P, lane, cap){
+    const mx = P.reduce((a, p) => a + p.x, 0) / P.length, my = P.reduce((a, p) => a + p.y, 0) / P.length, pts = [[mx, my]];
+    for (const p of P) for (const o of THIN) pts.push([p.x + o * S, p.y]);
+    let best = null;
+    for (const [x, y] of pts) for (const v of [0.55, 0.74]) for (const h of [0, 0.35]) for (const so of [-0.7, 0.7]){
+      const sx = clamp(CX + so * (CX - x + 0.04), CX - EDGE + BR, CX + EDGE - BR), s = aimFor(sx, v, h, x, y + BR, lane);
+      yield;
+      if (!clearsAll(P, s, lane)) continue;
+      let lo = s.tx, hi = s.tx;
+      while (hi - s.tx < W_MAX && clearsAll(P, { ...s, tx: hi + W_STEP }, lane)) hi += W_STEP;
+      while (s.tx - lo < W_MAX && clearsAll(P, { ...s, tx: lo - W_STEP }, lane)) lo -= W_STEP;
+      yield;
+      const w = hi - lo + W_STEP;
+      if (!best || w > best.w) best = { s: { ...s, tx: (lo + hi) / 2 }, w };
+      if (cap != null && best.w > cap) return best;
+    }
+    return best;
+  }
+  // (`J.cur` is the leave under trial, so a board still being worked out shows its pins standing, not a bare deck)
+  function* leaveGen(J, idx, lv, lane){
+    if (idx < COURSE.length){ const [name, ns] = COURSE[idx], xy = spotsOf(ns); J.cur = xy; const r = yield* shotSearch(leavePins(xy), lane); return r && { name, xy, ...r }; }
+    const L = SP_LV[lv - 1]; let keep = null;
+    for (let a = 0; a < SP_TRIES; a++){
+      const R = rngOf((idx * 9973 + lv * 131 + a * 7) ^ 0x5ba), k = L.k[0] + Math.floor(R() * (L.k[1] - L.k[0] + 1)), ns = [];
+      while (ns.length < k){ const n = 1 + Math.floor(R() * 10); if (!ns.includes(n)) ns.push(n); }
+      if (!keep) J.cur = spotsOf(ns);
+      const r = yield* shotSearch(leavePins(spotsOf(ns)), lane, L.band[1]);
+      if (!r) continue;
+      const off = r.w < L.band[0] ? L.band[0] - r.w : r.w > L.band[1] ? r.w - L.band[1] : 0;
+      if (!keep || off < keep.off) keep = { name: nameOf(ns), xy: spotsOf(ns), s: r.s, w: r.w, off };
+      if (!off) break;
+    }
+    return keep;
+  }
+  function* mineGen(xy, lane){ const r = yield* shotSearch(leavePins(xy), lane); return r && { name: 'your leave', xy, ...r }; }
+  const LEAVES = new Map();
+  function leaveJob(idx, lv){
+    const k = recKey(idx, lv); let J = LEAVES.get(k);
+    if (!J){ J = { key: 'g' + idx + '@' + lv, idx, lv, lane: laneOf(idx, lv), done: false, res: null, rec: null, phase: BOARD_KIT.phase(idx) };
+      J.gen = leaveGen(J, idx, lv, J.lane); LEAVES.set(k, J); if (LEAVES.size > LEAVE_CAP) LEAVES.delete(LEAVES.keys().next().value); }
+    return J;
+  }
+  function leaveWork(J, ms){
+    if (J.done) return;
+    const t0 = performance.now();
+    while (performance.now() - t0 < ms){ const r = J.gen.next(); if (r.done){ finishLeave(J, r.value); return; } }
+  }
+  function finishLeave(J, res){
+    J.res = res ? { ...res, par: parOfWindow(res.w) } : { name: J.mine ? 'your leave' : 'the 10 pin', xy: J.mine ? J.xy : spotsOf([10]), s: null, w: 0, par: null };
+    J.done = true; J.gen = null; J.rec = spareRec(J);
+    try { fieldItemsChanged(); } catch {}
+  }
+  const leaveSoon = (J, urgent) => { if (!J.done){ if (urgent) leaveWork(J, URGENT_MS); else SOON.take(l => leaveWork(J, l)); } return J; };
+  const leaveNow = J => { while (!J.done) leaveWork(J, 1000); return J; };
+  // the board's leave: your own if it has one, else the one it deals
+  const jobFor = (c, r) => mineJob(c, r) || leaveJob(boardIdx(c, r), levelAt(boardIdx(c, r)));
+  // the leave made by its shot, frames as the game's recordings are (a second standing, the ball, the pins at rest held)
+  function spareRec(J){
+    const R = J.res; if (!R.s) return null;
+    const P = leavePins(R.xy), B = ballOf(R.s), F = [], per = Math.round(1 / (REC_HZ * TICK));
+    const push = () => { F.push(B.pit ? -1 : B.x, B.pit ? -1 : B.y);
+      for (let i = 0; i < 10; i++){ const p = P.find(q => q.n === i + 1); if (p && !p.pit) F.push(p.x, p.y, p.down ? 1 : 0, p.ang); else F.push(-1, -1, 0, 0); } F.push(0); };
+    for (let k = 0; k < REC_HZ; k++) push();
+    for (let t = 0, n = 0; t < 7; t += TICK){
+      if (n++ % per === 0) push();
+      for (let q = 0; q < SUB; q++) roll(B, P, J.lane, TICK / SUB);
+      if (B.pit && !P.some(p => p.vx || p.vy)) break;
+    }
+    for (let k = 0; k < REC_HZ * 1.5; k++) push();
+    return { F: Float32Array.from(F), done: true, phase: J.phase };
+  }
+  const { BEST: SBEST, saveBest: saveSBest } = BOARD_KIT.best('bowling.spares');
+
+  /* ─── YOUR OWN LEAVE ─── (the "5" of the same request) The row becomes a leave editor, as trick shots' is a table editor: ✎ while
+     a leave is played, or the menu's Make a spare for this board…, takes the board's leave into it. Tools: Pin (a tap lays one
+     where it falls on the deck), On a spot (a tap lays or lifts the nearest of the ten spots), Erase; a drag moves a pin. Acts:
+     Rack (all ten), Clear, Check (the search: the widest window and its par, or no shot), Play. ✓ (or Play) keeps it on the
+     board once a shot is found (localStorage `bowling.mine`, the latest 300, read back through `cleanLeave`) and plays it; Escape
+     or ✕ leaves the board as it was. The menu shares it as a link (`shareLeave`, `takeLeave`, through the same checks). */
+  const DECK = { x0: CX - EDGE + PR, x1: CX + EDGE - PR, y0: PIT + PR + 0.012, y1: HEAD + 0.05 };
+  const r4 = v => Math.round(v * 1e4) / 1e4;
+  function cleanLeave(d){
+    if (!d || !Array.isArray(d.xy) || d.xy.length < 1 || d.xy.length > 10) return null;
+    const xy = [];
+    for (const q of d.xy){ if (!Array.isArray(q) || q.length < 2) return null; const x = +q[0], y = +q[1];
+      if (!isFinite(x) || !isFinite(y) || x < DECK.x0 - 1e-6 || x > DECK.x1 + 1e-6 || y < DECK.y0 - 1e-6 || y > DECK.y1 + 1e-6) return null;
+      if (xy.some(([a, b]) => Math.hypot(a - x, b - y) < 2 * PR - 1e-6)) return null;
+      xy.push([r4(x), r4(y)]); }
+    return { xy };
+  }
+  const { MINE, save: saveMine } = EDIT_KIT.store('bowling.mine', 300, cleanLeave);
+  const MINE_J = new Map();
+  function mineJob(c, r){
+    const k = gkey(c, r), d = MINE.get(k); if (!d) return null;
+    const h = BOARD_KIT.hash(JSON.stringify(d.xy));
+    let J = MINE_J.get(k); if (J && J.hash === h) return J;
+    const idx = boardIdx(c, r), lv = levelAt(idx), lane = laneOf(idx, lv);
+    J = { key: 'm' + h, hash: h, idx, lv, lane, mine: true, xy: d.xy, cur: d.xy, done: false, res: null, rec: null, phase: BOARD_KIT.phase(idx), gen: mineGen(d.xy, lane) };
+    MINE_J.set(k, J); return J;
+  }
+  const ED = { on: false, busy: false, c: 0, r: 0, key: null, xy: [], tool: 'pin', drag: null, ateAt: 0, found: null, foundKey: '' };
+  const ED_TOOLS = [['pin', '📍', 'Pin'], ['spot', '🎳', 'On a spot'], ['erase', '🧽', 'Erase']];
+  const ED_ACTS = ['rack', 'clear', 'check', 'play'];
+  const edSay = (m, ms) => say(m, ms || 3200);
+  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
+    quick: [{ key: 'erase', glyph: '🧽', title: 'Erase: a pin away', tool: 'erase', run: () => edSay('Tap a pin to take it away.') },
+            { key: 'check', glyph: '✔', title: 'Check: is there a ball that makes it, and what par?', run: () => edCheck(true) }],
+    rowStays: true, gameRow: true, cancelTitle: 'Cancel: leave the board as it was', doneTitle: 'Done: keep this leave and play it',
+    make: { when: () => SET.mode === 'spares' && !ED.on, title: 'Make a spare for this board: place the pins, the search finds the shot and sets par' } }), edPane = EDK.pane;
+  function edStart(c, r){
+    const J = jobFor(c, r); leaveNow(J);
+    Object.assign(ED, { on: true, c, r, key: gkey(c, r), xy: J.res.xy.map(q => q.slice()), tool: 'pin', drag: null, found: null, foundKey: '' });
+    LIVE = { c, r }; try { fieldItemsChanged(); } catch {}
+  }
+  function edOpen(){
+    const f = framedCell();
+    if (!f){ say('Pick a lane first, then open the editor to make its leave', 2000); return false; }
+    if (SET.mode !== 'spares'){ SET.mode = 'spares'; saveSet(); GAMES.clear(); }
+    edStart(f.c, f.r);
+    edSay('Making a leave: tap the deck for a pin (or On a spot for the rack\'s spots), drag to move one. ✔ looks for the shot and sets par, ✓ keeps it and plays it.', 5000);
+    return true;
+  }
+  function edStop(){ ED.on = false; ED.drag = null; try { fieldItemsChanged(); } catch {} }
+  const draftKey = () => JSON.stringify(ED.xy);
+  // the search on the draft, at once: { why } or { w, par, s }
+  function edCheck(tell){
+    if (!ED.xy.length){ const why = 'There are no pins: lay one or more.'; if (tell) edSay(why); return { why }; }
+    if (ED.foundKey !== draftKey()){
+      const idx = boardIdx(ED.c, ED.r), lane = laneOf(idx, levelAt(idx)), gen = shotSearch(leavePins(ED.xy), lane);
+      let r; do { r = gen.next(); } while (!r.done);
+      ED.found = r.value ? { w: r.value.w, s: r.value.s, par: parOfWindow(r.value.w) } : null; ED.foundKey = draftKey();
+    }
+    if (!ED.found){ const why = 'No ball the search tries takes all of these down: move a pin or two.'; if (tell) edSay(why); return { why }; }
+    if (tell) edSay('A ball makes it with a window of ' + (ED.found.w / BOARD_W).toFixed(1) + ' boards: par ' + ED.found.par + '.', 3000);
+    return ED.found;
+  }
+  function edDone(){
+    if (!ED.on) return true;
+    const R = edCheck(false);
+    if (R.why){ edSay(R.why + ' (Cancel leaves the board as it was.)', 3200); return false; }
+    const d = cleanLeave({ xy: ED.xy }); if (!d){ edSay('This leave cannot be kept.'); return false; }
+    const k = ED.key; MINE.delete(k); MINE.set(k, d); MINE_J.delete(k); saveMine();
+    GAMES.set(k, fresh(ED.c, ED.r)); LIVE = { c: ED.c, r: ED.r };
+    edStop(); edPane(false);
+    edSay('Your leave, par ' + R.par + '. Tap the lane to bowl at it.', 3000);
+    return true;
+  }
+  function edCancel(){ if (!ED.on) return; edStop(); edPane(false); edSay('Left the board as it was.', 1800); }
+  const clampDeck = (x, y) => [clamp(x, DECK.x0, DECK.x1), clamp(y, DECK.y0, DECK.y1)];
+  const nearPin = (x, y, r) => { let bi = -1, bd = r; ED.xy.forEach(([a, b], i) => { const d = Math.hypot(a - x, b - y); if (d < bd){ bd = d; bi = i; } }); return bi; };
+  const roomAt = (x, y, skip) => ED.xy.every(([a, b], i) => i === skip || Math.hypot(a - x, b - y) >= 2 * PR);
+  function edPlace(x, y){
+    const t = ED.tool, i = nearPin(x, y, 2 * PR);
+    if (t === 'erase'){ if (i < 0) return false; ED.xy.splice(i, 1); return true; }
+    if (t === 'spot'){
+      let si = 0, sd = 1; SPOTS.forEach(([a, b], k) => { const d = Math.hypot(a - x, b - y); if (d < sd){ sd = d; si = k; } });
+      const [sx, sy] = SPOTS[si], at = nearPin(sx, sy, PR);
+      if (at >= 0){ ED.xy.splice(at, 1); return true; }
+      if (!roomAt(sx, sy, -1)){ edSay('A pin stands too near that spot.'); return false; }
+      if (ED.xy.length >= 10){ edSay('Ten pins at most.'); return false; }
+      ED.xy.push([sx, sy]); return true;
+    }
+    if (i >= 0) return false;                                  // (on a pin, Pin does nothing: a drag moves it)
+    const [px, py] = clampDeck(x, y);
+    if (y > DECK.y1 + 0.08){ edSay('Pins stand on the deck, at the far end.'); return false; }
+    if (!roomAt(px, py, -1)){ edSay('Too near another pin.'); return false; }
+    if (ED.xy.length >= 10){ edSay('Ten pins at most.'); return false; }
+    ED.xy.push([r4(px), r4(py)]); return true;
+  }
+  function edTiles(){
+    const sel = '#5a3e8a', out = ED_TOOLS.map(([k, gl, name]) => ({ glyph: gl, value: name, bg: ED.tool === k ? sel : null }));
+    const f = ED.foundKey === draftKey() ? ED.found : undefined;
+    out.push({ glyph: '🔟', value: 'Rack' }, { glyph: '⌫', value: 'Clear' }, { glyph: '✔', value: 'Check', label: f === undefined ? ED.xy.length + (ED.xy.length === 1 ? ' pin' : ' pins') : f ? 'par ' + f.par : 'no shot' }, { glyph: '▶', value: 'Play' });
+    return out;
+  }
+  function edTile(i){
+    if (!ED.on) return false;
+    if (i < ED_TOOLS.length){ ED.tool = ED_TOOLS[i][0]; edSay({ pin: 'Tap the deck to lay a pin; drag one to move it.', spot: 'Tap near a spot of the rack to lay a pin there, or lift the one that is.', erase: 'Tap a pin to take it away.' }[ED.tool], 2400); }
+    else {
+      const a = ED_ACTS[i - ED_TOOLS.length];
+      if (a === 'rack'){ ED.xy = SPOTS.map(q => q.slice()); edSay('The full rack.', 1500); }
+      else if (a === 'clear'){ ED.xy = []; edSay('No pins: lay your own.', 1500); }
+      else if (a === 'check') edCheck(true);
+      else if (a === 'play') return edDone();
+    }
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
+  function edTap(c, r, u, v){
+    if (gkey(c, r) !== ED.key){ edStart(c, r); edSay('Making a leave for this lane.', 1500); return true; }
+    if (u == null || performance.now() - ED.ateAt < 350) return true;
+    if (edPlace(u * W, v)){ try { fieldItemsChanged(); bbRefreshNow(); } catch {} }
+    return true;
+  }
+  function shareLeave(){
+    const f = framedCell(), d = ED.on ? { xy: ED.xy } : f && MINE.get(gkey(f.c, f.r));
+    if (!d || !d.xy.length){ say('This lane has no leave of its own to share: make one first', 2000); return null; }
+    return SHARE.copy(SHARE.link(app, { xy: d.xy }), 'Link copied: it opens on this leave.');
+  }
+  function takeLeave(c, r, P){
+    const d = cleanLeave(P);
+    if (!d){ say('The shared leave cannot be played: its pins are not on the deck.', 3500); return; }
+    const idx = boardIdx(c, r), gen = shotSearch(leavePins(d.xy), laneOf(idx, levelAt(idx))); let q; do { q = gen.next(); } while (!q.done);
+    if (!q.value){ say('The shared leave cannot be made on this lane: no ball takes all its pins.', 3500); return; }
+    if (SET.mode !== 'spares'){ SET.mode = 'spares'; saveSet(); GAMES.clear(); }
+    const k = gkey(c, r); MINE.delete(k); MINE.set(k, d); MINE_J.delete(k); saveMine();
+    GAMES.set(k, fresh(c, r)); LIVE = { c, r };
+    say('A shared leave, par ' + parOfWindow(q.value.w) + '. Tap the lane to bowl at it.', 3200);
+    try { fieldItemsChanged(); } catch {}
+  }
+  function setMode(m){ if (m === SET.mode) return; SET.mode = m; saveSet(); GAMES.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} }
+
   /* ─── PLAYING ─── */
   const GAMES = new Map();
   let LIVE = null;
   const { BEST, saveBest } = BOARD_KIT.best('bowling.best');
   const bestKey = (idx, lv) => idx + '@' + lv;
   const starsOf = (score, par) => par == null ? (score >= 150 ? 3 : score >= 100 ? 2 : 1) : score >= par ? 3 : score >= par * 0.8 ? 2 : 1;
-  const fresh = (c, r) => { const idx = boardIdx(c, r); return { c, r, idx, lv: levelAt(idx), state: 'ready', last: 0, acc: 0, overAt: 0, G: null }; };
+  const fresh = (c, r) => { const idx = boardIdx(c, r); return { c, r, idx, lv: levelAt(idx), state: 'ready', last: 0, acc: 0, overAt: 0, G: null, J: null, helped: false }; };
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function begin(g){
-    Object.assign(g, fresh(g.c, g.r), { state: 'play', last: performance.now() });
+    const mine = g.mine;
+    Object.assign(g, fresh(g.c, g.r), { state: 'play', last: performance.now(), mine });
+    if (SET.mode === 'spares'){
+      // (a spare: the board's leave, worked out now if it was not yet)
+      const J = leaveNow(jobFor(g.c, g.r)); g.J = J;
+      g.G = newGame(g.idx, g.lv, { seed: 1, leave: J.res, ev: (k, a, G) => onEvent(g, k, a, G) });
+      if (mine) g.G.shot = { ...mine };
+      GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
+      say('Make ' + J.res.name + (J.res.par ? ' (par ' + J.res.par + (J.res.par === 1 ? ' try' : ' tries') + ')' : '') + ': one ball to take every pin. Tap where you aim; the row sets where you stand, the speed and the hook. Enter or Bowl.', 4500);
+      try { bbRefreshNow(); } catch {}
+      return;
+    }
     g.G = newGame(g.idx, g.lv, { seed: (performance.now() * 1000) | 0, ev: (k, a, G) => onEvent(g, k, a, G) });
-    if (g.mine) g.G.shot = { ...g.mine };
+    if (mine) g.G.shot = { ...mine };
     GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
     const par = RECS.get(recKey(g.idx, g.lv));
     say('Ten frames' + (par && par.done ? ', par ' + par.par : '') + '. Tap the lane where you aim; the row sets where you stand, the speed and the hook. Enter or Bowl.', 4000);
@@ -60081,6 +60342,14 @@ const BOWLING_APP = (() => {
   }
   function over(g){
     g.state = 'over'; g.overAt = performance.now();
+    if (g.G.spare){
+      const n = g.G.tries, J = g.J, par = J.res.par, st = g.helped ? 1 : triesStars(n, par), was = SBEST.get(J.key);
+      if (!g.helped && (!was || n < was)){ SBEST.set(J.key, n); saveSBest(); }
+      sfx(st === 3 ? 'win' : 'spare');
+      say('Made in ' + n + (n === 1 ? ' try ' : ' tries ') + BOARD_KIT.stars(st) + (par ? ' (par ' + par + ')' : '') + (g.helped ? ', shown the shot' : was && n < was ? ', a new best here' : '') + '. Tap for the next lane.', 4500);
+      try { bbRefreshNow(); } catch {}
+      return;
+    }
     const total = scoreOf(g.G.rolls).total, par = parOf(g.idx, g.lv), s = starsOf(total, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (total > was){ BEST.set(k, total); saveBest(); }
     sfx(s === 3 ? 'win' : 'end');
@@ -60110,6 +60379,7 @@ const BOWLING_APP = (() => {
   function onEvent(g, kind, a, G){
     if (liveGame() !== g) return;
     if (kind === 'bowl' || kind === 'hit' || kind === 'gutter') sfx(kind, a);
+    if (kind === 'try' && a.left){ sfx('end'); say(a.left + (a.left === 1 ? ' pin stands' : ' pins stand') + ': set up again. Try ' + (a.tries + 1) + '.', 1800); try { bbRefreshNow(); } catch {} }
     if (kind === 'ball'){
       if (a.strike){ sfx('strike'); say('Strike!', 1400); }
       else if (a.spare){ sfx('spare'); say('Spare!', 1400); }
@@ -60167,7 +60437,7 @@ const BOWLING_APP = (() => {
     return out;
   }
   function liveView(g){
-    const G = g.G, V = { pins: G.pins.filter(p => !p.pit), ball: G.B && !G.B.pit ? { x: G.B.x, y: G.B.y } : null, score: scoreOf(G.rolls).total };
+    const G = g.G, V = { pins: G.pins.filter(p => !p.pit), ball: G.B && !G.B.pit ? { x: G.B.x, y: G.B.y } : null, score: G.spare ? (G.tries || null) : scoreOf(G.rolls).total };
     if (G.state === 'aim'){ V.aim = G.shot; if (SET.preview){ V.preview = previewOf(G); V.previewFrac = PREVIEW[g.lv - 1]; } }
     return V;
   }
@@ -60194,9 +60464,10 @@ const BOWLING_APP = (() => {
   const ON = '#2f4a3a';
   function tilesOf(c, r){
     const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), playing = g && g.state === 'play', G = playing ? g.G : null, s = G ? G.shot : { v: 0.6, h: 0.5 };
-    const kmh = v => Math.round(v * 30) + ' km/h';
+    const kmh = v => Math.round(v * 30) + ' km/h', sp = SET.mode === 'spares';
     return [
-      { glyph: playing ? '🎳' : '▶', value: playing ? (myTurn(g) ? 'Bowl' : 'Rolling') : 'New game', label: playing ? 'frame ' + Math.min(10, G.frame) + ' · ' + scoreOf(G.rolls).total : 'level ' + levelAt(idx) },
+      { glyph: playing ? '🎳' : '▶', value: playing ? (myTurn(g) ? 'Bowl' : 'Rolling') : sp ? 'New try' : 'New game',
+        label: playing ? (G.spare ? 'try ' + (G.tries + 1) + (g.J.res.par ? ' · par ' + g.J.res.par : '') : 'frame ' + Math.min(10, G.frame) + ' · ' + scoreOf(G.rolls).total) : 'level ' + levelAt(idx) },
       { glyph: '◀', value: 'Stand left', label: 'where you stand' },
       { glyph: '▶', value: 'Stand right', label: 'where you stand' },
       { glyph: '−', value: 'Slower', label: 'speed ' + kmh(s.v) },
@@ -60205,6 +60476,7 @@ const BOWLING_APP = (() => {
       { glyph: '↷', value: 'More hook', label: 'hook: ' + hookName(s.h) },
       { glyph: '⋯', value: SET.preview ? 'On' : 'Off', label: 'show the way', bg: SET.preview ? ON : undefined },
       { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
+      { glyph: sp ? '🎯' : '🔟', value: sp ? 'Spares' : 'Ten frames', label: 'mode' },
     ];
   }
   function onTile(c, r, i){
@@ -60218,6 +60490,7 @@ const BOWLING_APP = (() => {
     }
     if (i === 7){ SET.preview = !SET.preview; say('Your ball\'s way shown before it goes: ' + (SET.preview ? 'on' : 'off'), 1800); }
     else if (i === 8){ SET.sound = !SET.sound; say('Sound ' + (SET.sound ? 'on' : 'off'), 1500); if (SET.sound) try { ARCADE.audio(); } catch {} }
+    else if (i === 9){ setMode(SET.mode === 'spares' ? 'game' : 'spares'); say(SET.mode === 'spares' ? 'Spares: every lane a leave to make in as few tries as you can.' : 'Ten frames: a whole game on every lane.', 2400); return true; }
     saveSet(); try { fieldItemsChanged(); bbRefreshNow(); } catch {}
     return true;
   }
@@ -60228,10 +60501,26 @@ const BOWLING_APP = (() => {
     boardShape: { cellW: W, cellH: 1 },
     frameFit: 1.1,
     menu: [{ head: 'Bowling', items: [
-      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); LEAVES.clear(); MINE_J.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Mode: ' + (SET.mode === 'spares' ? 'spares' : 'ten frames'), title: 'Spares: every lane a leave to make, par in tries from how wide the window is that makes it. Ten frames: a whole game.',
+        on(){ setMode(SET.mode === 'spares' ? 'game' : 'spares'); } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The roll, the pins, a strike.', on(){ SET.sound = !SET.sound; saveSet(); } },
-      { label: 'Start this lane again', title: 'A new game from the first frame.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
-      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. The row moves where you stand, the speed and the hook: a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. Par is the steady player\'s game on this lane.', 12000); } },
+      { label: 'Start this lane again', title: 'A new game from the first frame, or the leave from its first try.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
+      // (spares: the found shot on the ball, as trick shots' Show me the trick; a leave made with it earns one star)
+      { label: 'Show me the shot', title: 'Put the shot the search found on your ball: where to stand, aim, speed and hook. Made with it, the leave earns one star.',
+        get disabled(){ return SET.mode !== 'spares'; },
+        on(){ const f = framedCell(); if (!f) return; const g = gameAt(f.c, f.r); LIVE = { c: f.c, r: f.r }; if (g.state !== 'play') begin(g);
+          if (!myTurn(g) || !g.J.res.s){ say('Not now: wait for the pins to be set.', 1500); return; }
+          g.G.shot = { ...g.J.res.s }; g.mine = { ...g.J.res.s }; g.helped = true; say('The shot is on your ball: Enter or Bowl.', 2400); try { bbRefreshNow(); } catch {} } },
+      { label: () => ED.on ? 'Done: play this leave' : 'Make a spare for this board…', title: 'The bottom row becomes a leave editor: pins anywhere on the deck. The search finds the shot that makes it and sets par; Done plays it.',
+        on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
+      { label: 'Cancel the leave', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
+      { label: "Share this board's leave", title: 'Copy a link that opens the page on this leave.',
+        get disabled(){ const f = framedCell(); return !(ED.on || (f && MINE.has(gkey(f.c, f.r)))); }, on(){ shareLeave(); } },
+      { label: "Forget this board's leave", title: 'Back to the leave the board deals itself.',
+        get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
+        on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_J.delete(k); saveMine(); GAMES.delete(k); say('The lane deals its own leave again', 1800); try { fieldItemsChanged(); } catch {} } },
+      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. The row moves where you stand, the speed and the hook: a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Spares: every lane a leave to make with one ball, par in tries (the narrower the window that makes it, the higher). Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. Par is the steady player\'s game on this lane.', 12000); } },
     ]}],
     cellFar: { light: 0xd6b88a, dark: 0x8a6a46 },
     itemMinPx: 12,
@@ -60250,11 +60539,26 @@ const BOWLING_APP = (() => {
     },
     cellItems(c, r, bp){
       const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), lane = laneOf(idx, lv), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
+      if (ED.on && ED.key === k) return itemsOf({ pins: leavePins(ED.xy), ball: null, score: null }, bp, lane);      // (the leave being made)
       if (g && g.state !== 'ready' && g.G){ if (live) stepGame(g); else g.last = 0; return itemsOf(liveView(g), bp, lane); }
+      if (SET.mode === 'spares'){
+        const J = leaveSoon(jobFor(c, r), live);
+        if (!J.done) return itemsOf({ pins: J.cur ? leavePins(J.cur) : [], ball: null, score: null }, bp, lane);
+        const V = J.rec && recView(J.rec); if (V) V.score = null;
+        return itemsOf(V || { pins: leavePins(J.res.xy), ball: null, score: null }, bp, lane);
+      }
       const M = recSoon(idx, lv, live), V = recView(M);
       return itemsOf(V || { pins: rack(), ball: null, score: null }, bp, lane);
     },
     cellTitle(c, r){
+      if (ED.on && ED.key === gkey(c, r)) return 'Bowling — making a leave, ' + ED.xy.length + (ED.xy.length === 1 ? ' pin' : ' pins');
+      if (SET.mode === 'spares'){
+        const idx = boardIdx(c, r), lv = levelAt(idx), J = jobFor(c, r), g = GAMES.get(gkey(c, r));
+        if (!J.done) return 'Bowling — spares, level ' + lv + ' (its leave being worked out)';
+        const R = J.res, best = SBEST.get(J.key);
+        return 'Bowling — ' + R.name + ', level ' + lv + (R.par ? ' · par ' + R.par + ' · a window of ' + (R.w / BOARD_W).toFixed(1) + ' boards' : '') + (best ? ' · best ' + best : '')
+             + (g && g.G && g.G.spare ? (g.state === 'over' ? ' · made in ' + g.G.tries : ' · try ' + (g.G.tries + 1)) : ' (tap to play)');
+      }
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), M = RECS.get(recKey(idx, lv)), best = BEST.get(bestKey(idx, lv)), L = laneOf(idx, lv);
       const head = 'Bowling — level ' + lv + ', oil to ' + Math.round((FOUL - L.oil) / (FOUL - HEAD) * 100) + '% of the lane' + (M && M.done ? ' · par ' + M.par : '') + (best ? ' · best ' + best : '');
       if (!g || g.state === 'ready' || !g.G) return head + ' (tap to play)';
@@ -60264,6 +60568,7 @@ const BOWLING_APP = (() => {
     onSelect(){ return true; },
     onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
     onCellTap(c, r, u, v){
+      if (ED.on) return edTap(c, r, u, v);
       if (performance.now() - ateAt < 400) return true;
       const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
       LIVE = { c, r };
@@ -60278,14 +60583,20 @@ const BOWLING_APP = (() => {
       try { bbRefreshNow(); } catch {}
       return true;
     },
-    noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
+    noDoubleTap(){ if (ED.on) return true; const g = liveGame(); return !!(g && g.state === 'play'); },
     keepsPress: true,
-    claimsPan(u, v){ const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false }; return true; },
-    onPan(dx, dy, at){ if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setShot(DRAG.g, { tx: at.u * W, ty: at.v }); DRAG.moved = true; } return true; },
-    onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
-    statTiles(c, r){ return tilesOf(c, r); },
-    statsStay(){ const g = liveGame(); return !!(g && g.state === 'play'); },
-    onStatTap(c, r, i){ return onTile(c, r, i); },
+    claimsPan(u, v){
+      if (ED.on){ if (u == null || LIVE == null || gkey(LIVE.c, LIVE.r) !== ED.key) return false; const i = nearPin(u * W, v, 2 * PR); if (i < 0) return false; ED.drag = { i, moved: false }; return true; }
+      const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false }; return true; },
+    onPan(dx, dy, at){
+      if (ED.on){ const D = ED.drag; if (!D) return false; if (at){ const [x, y] = clampDeck(at.u * W, at.v); if (roomAt(x, y, D.i)){ ED.xy[D.i] = [r4(x), r4(y)]; D.moved = true; try { fieldItemsChanged(); } catch {} } } return true; }
+      if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setShot(DRAG.g, { tx: at.u * W, ty: at.v }); DRAG.moved = true; } return true; },
+    onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; }
+      if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
+    ...EDK.hooks,                                             // (the leave editor's ✎, ✕, ✓ and the row's toggle: EDIT_KIT's)
+    statTiles(c, r){ return ED.on ? edTiles() : tilesOf(c, r); },
+    statsStay(){ if (ED.on) return true; const g = liveGame(); return !!(g && g.state === 'play'); },
+    onStatTap(c, r, i){ return ED.on ? edTile(i) : onTile(c, r, i); },
     drawIcon(ctx, sz){
       ctx.fillStyle = '#d8b884'; ctx.fillRect(0, 0, sz, sz);
       ctx.fillStyle = '#2a2d34'; ctx.fillRect(0, 0, sz * 0.12, sz); ctx.fillRect(sz * 0.88, 0, sz * 0.12, sz);
@@ -60295,7 +60606,9 @@ const BOWLING_APP = (() => {
     },
     _debug: { newGame, tick, roll, ballOf, bowlSim, scoreOf, aimFor, pick, handsOn, laneOf, rack, previewOf, bowlNow, afterBall, recOf, recWork, recView, recSoon, parOf,
               starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setShot, bowlMine, tilesOf, onTile,
-              LV, STEADY, SET, GAMES, RECS, BEST, SPOTS, consts: { W, CX, LANE, EDGE, S, PR, BR, HEAD, FOUL, ARROWS, PIT, TICK, REC_HZ, PREVIEW },
+              LV, STEADY, SET, GAMES, RECS, BEST, SPOTS, consts: { W, CX, LANE, EDGE, S, PR, BR, HEAD, FOUL, ARROWS, PIT, TICK, REC_HZ, PREVIEW, BOARD_W },
+              COURSE, SP_LV, parOfWindow, triesStars, shotSearch, leaveGen, leaveJob, leaveWork, leaveNow, jobFor, mineJob, spareRec, leavePins, spotsOf, clearsAll, setMode, LEAVES, SBEST,
+              ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edPlace, cleanLeave, MINE, shareLeave, takeLeave, ED_TOOLS, ED_ACTS, DECK,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   // (a pin's outline turned on the lathe; lying down, laid along +z with its base at the middle)
@@ -60309,6 +60622,7 @@ const BOWLING_APP = (() => {
     if (down){ g.rotateX(Math.PI / 2); g.translate(0, 0.14, -0.5); }
     return g;
   }
+  SHARE.install(app, takeLeave);
   return app;
 })();
 /* ═══ MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run", the third of the new games: "build a track in the bottom row,
