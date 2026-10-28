@@ -18512,8 +18512,21 @@ const ARCADE = (() => {
       case 'lose':  [392, 330, 262].forEach((f, i) => tone(f, f, 0.2, 'triangle', 0.07, i * 0.14)); break;
     }
   }
-  function sounds(key, title){
+  /* A game's own sounds (Oct 28: "1,3", the first being one way of sounding, after the board kit): eleven arcade games (Defender,
+     Breakout, the crossing, Snake, Tetris, 3D Tetris, Soma, Bomber, Pac-Man, tower defense, Space Invaders) each wrote out their
+     own switch, its menu item, and the same lines at the head of their `beep`: nothing while the sound is off or the game is
+     quiet, no audio no sound, and a kind played again within its own gap (seconds on the audio clock) left out. `sounds(key,
+     title, own)`, `own` = { gaps (by kind, '*' for every kind), quiet() }, gives such a game the switch and the item as the puzzles
+     have them, and `gate(kind)`: the audio context if that kind may sound now, else null. The game's own tones stay its own. */
+  function sounds(key, title, own){
     const S = { on: load(key, 'on') !== 'off', last: {} };
+    if (own) S.gate = kind => {
+      if (!S.on || (own.quiet && own.quiet())) return null;
+      const A = audio(); if (!A) return null;
+      const t = A.currentTime, g = own.gaps || {}, gap = g[kind] != null ? g[kind] : g['*'] || 0;
+      if (gap && t - (S.last[kind] || 0) < gap) return null;
+      S.last[kind] = t; return A;
+    };
     S.play = (kind, quiet) => {
       if (!S.on || quiet || !audio()) return;
       const now = performance.now();
@@ -23944,16 +23957,13 @@ const DEFENDER_APP = (() => {
   /* SOUND (Sep 27): made in the browser — the shot, the bolts, a blip when squares light red,
      explosions, pickups, the wave's sting and the checkmate fanfare. Only the game you are playing
      makes a sound; the recorded games are silent. */
-  const SND = { on: ARCADE.load('defender.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('defender.sound', 'Shots, bolts, explosions and fanfares — all made in the browser.', { gaps: { shot: 0.05, warn: 0.12, tick: 0.05, boom: 0.04, bolt: 0.06 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function audio(){ return SND.on && !QUIET ? ARCADE.audio() : null; }
   addEventListener('pointerdown', () => { try { if (window.getFieldApp() === app) audio(); } catch {} }, true);
   const tone = (A, ...a) => ARCADE.tone(...a);
   const hiss = (A, ...a) => ARCADE.hiss(...a);
   function beep(kind){
-    const A = audio(); if (!A) return;
-    const now = A.currentTime, gap = { shot: 0.05, warn: 0.12, tick: 0.05, boom: 0.04, bolt: 0.06 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     try {
       switch (kind){
         case 'shot':  tone(A, 1100, 520, 0.06, 'square', 0.03); break;
@@ -24251,8 +24261,7 @@ const DEFENDER_APP = (() => {
         // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('defender.level', LEVEL);
               if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Shots, bolts, explosions and fanfares — all made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('defender.sound', SND.on ? 'on' : 'off'); if (SND.on) audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to steer the ship; it fires by itself. The way you hold it when you turn this on counts as level.',
         on(){ setTilt(!TILT.on); } },
     ]}],
@@ -24400,13 +24409,9 @@ const BREAKOUT_APP = (() => {
   const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
 
   /* SOUND (Sep 27): made in the browser. Only the game you are playing makes a sound. */
-  const SND = { on: ARCADE.load('breakout.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('breakout.sound', 'Bounces, knocks, explosions and fanfares — all made in the browser.', { gaps: { wall: 0.04, knock: 0.03, paddle: 0.04, boom: 0.04, laser: 0.08, move: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { wall: 0.04, knock: 0.03, paddle: 0.04, boom: 0.04, laser: 0.08, move: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -24799,8 +24804,7 @@ const BREAKOUT_APP = (() => {
         // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('breakout.level', LEVEL);
               if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Bounces, knocks, explosions and fanfares — all made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('breakout.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left and right to move the paddle. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -24944,14 +24948,10 @@ const CROSSING_APP = (() => {
   const levelAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const LV_OF = { 8: 'easy', 10: 'normal', 12: 'hard' };
   const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('crossing.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('crossing.sound', 'Hops, warnings, strikes and fanfares — all made in the browser.', { gaps: { hop: 0.05, warn: 0.15 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { hop: 0.05, warn: 0.15 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -25345,8 +25345,7 @@ const CROSSING_APP = (() => {
               GAMES.clear();
               // The board in play starts again at its own new level (Oct 15): the setting moved by its ring.
               if (LIVE){ const lv = levelAt(LIVE.c, LIVE.r), g = newGame(SIZE[lv], lv); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Hops, warnings, strikes and fanfares — all made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('crossing.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to move — forward, back, left or right, one move at a time. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -25729,14 +25728,10 @@ const SNAKE_APP = (() => {
   const SPEEDS = { slow: 1.35, medium: 1, fast: 0.7 };
   let SPEED = ARCADE.load('snake.speed', 'medium'); if (!SPEEDS[SPEED]) SPEED = 'medium';
   const tickT = () => STEP * (QUIET ? 1 : SPEEDS[SPEED]) / 2;   // a tick is half a step: a fast snake moves every tick
-  const SND = { on: ARCADE.load('snake.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('snake.sound', 'Turns, food, strikes, explosions and fanfares — made in the browser.', { gaps: { turn: 0.05, eat: 0.04, other: 0.1, warn: 0.15 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { turn: 0.05, eat: 0.04, other: 0.1, warn: 0.15 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -26245,8 +26240,7 @@ const SNAKE_APP = (() => {
               if (LIVE){ const lv = levelAt(LIVE.c, LIVE.r), g = newGame(SIZE[lv], lv); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
       { label: () => 'Speed: ' + SPEED, title: 'How fast the snakes move: slow, medium or fast.', keepOpen: true,
         on(){ SPEED = SPEED === 'slow' ? 'medium' : SPEED === 'medium' ? 'fast' : 'slow'; ARCADE.save('snake.speed', SPEED); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Turns, food, strikes, explosions and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('snake.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want the snake to go. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -27719,14 +27713,10 @@ const TETRIS_APP = (() => {
      shows once it is played. */
   const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const D = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || LEVEL];
-  const SND = { on: ARCADE.load('tetris.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('tetris.sound', 'Moves, turns, locks, line clears and fanfares — made in the browser.', { gaps: { move: 0.03, rot: 0.03, lock: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { move: 0.03, rot: 0.03, lock: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -28127,8 +28117,7 @@ const TETRIS_APP = (() => {
     menu: [{ head: 'Tetris', items: [
       { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: pieces start slower and can slide longer after landing. Hard: faster, and they lock quickly. Press to switch.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('tetris.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns, locks, line clears and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('tetris.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left or right to slide the piece, toward you to drop it faster. Tap still turns it.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -28721,13 +28710,9 @@ const BLOCKOUT_APP = (() => {
   function saveBest(){ try { const o = {}; [...BEST].slice(-500).forEach(([k, v]) => { o[k] = v; }); localStorage.setItem('blockout.best', JSON.stringify(o)); } catch {} }
 
   // sound, as Tetris's
-  const SND = { on: ARCADE.load('blockout.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('blockout.sound', 'Moves, turns, locks and layers cleared — made in the browser.', { gaps: { move: 0.03, rot: 0.03, lock: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { move: 0.03, rot: 0.03, lock: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -28917,8 +28902,7 @@ const BLOCKOUT_APP = (() => {
         on(){ setMode(puzzling() ? 'endless' : 'puzzle'); } },
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'See-through: ' + (SET.glass ? 'on' : 'off'), title: 'The cubes over where the piece will land, and over holes, drawn as glass; holes marked red. V on the keys.', on(){ setGlass(!SET.glass); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns, locks and layers cleared — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('blockout.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill whole layers. Arrows or WASD slide the piece; Q and E spin it, R and F tip it away and toward you, Z and X roll it left and right; Enter drops it (Space pauses). On a phone: drag to slide, tap its shadow to drop, tap elsewhere to spin, and the bottom row tips and rolls.', 7000); } },
       { label: 'Start this board again', title: 'An empty pit, the score at nothing.', on(){ const f = framedCell(); if (f) app.onReset(f.c, f.r); } },
     ]}],
@@ -29603,11 +29587,9 @@ const SOMA_APP = (() => {
   }
 
   // sound
-  const SND = { on: ARCADE.load('soma.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('soma.sound', 'Moves, turns and the pieces going in.', { gaps: { '*': 0.03 } });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind){
-    if (!SND.on) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const t = A.currentTime; if (t - (SND.last[kind] || 0) < 0.03) return; SND.last[kind] = t;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -30190,7 +30172,7 @@ const SOMA_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Pieces: ' + SETS[SET_ID].name, title: 'Which pieces: Soma\'s seven, the eight tetracubes, the twelve pentominoes as flat pieces, or all twenty-nine pentacubes. Each has its own course on the corner, its own figures, ways and bests.', on(){ const ids = Object.keys(SETS); useSet(ids[(ids.indexOf(SET_ID) + 1) % ids.length]); } },
       { label: () => 'Show where it fits: ' + (SET.fits ? 'on' : 'off'), title: 'Every cell of the figure the piece in hand could go into, turned as it is, lit in its colour.', on(){ SET.fits = !SET.fits; ARCADE.save('soma.fits', SET.fits ? 'on' : 'off'); touched(); } },
-      SND && { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Moves, turns and the pieces going in.', on(){ SND.on = !SND.on; ARCADE.save('soma.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND && SND.item,
       { label: "It can't be built", title: 'From level 3 some figures have no way to fill them. Say so here (or ✗ in the row, or N): right, the board is through; wrong, it costs a hint.', disabled: () => { const g = liveGame(); return !(g && canSay(g.F)); }, on(){ const g = liveGame(); if (g){ declare(g); touched(); } } },
       { label: 'Hint', title: 'The next piece of a way to finish, from the pieces placed as they are, put in your hand where it goes. H on the keys.', on(){ const g = liveGame(); if (g){ hint(g); touched(); } } },
       { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill the glass figure with its pieces. Arrows slide the piece in hand, Q/E spin, R/F tip, Z/X roll, [ and ] step through the heights it fits, Enter places it, 1–7 take a piece, H hints. On a phone: drag to slide, tap to place (a tap on a placed piece takes it back), and the bottom row turns it.', 8000); } },
@@ -30736,14 +30718,10 @@ const BOMBER_APP = (() => {
      shows once it is played. */
   const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const DF = g => QUIET ? DIFF.normal : DIFF[(g && g.lv) || LEVEL];
-  const SND = { on: ARCADE.load('bomber.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('bomber.sound', 'Bombs, blasts, crates, pickups and fanfares — made in the browser.', { gaps: { boom: 0.06, crate: 0.04, drop: 0.05, crush: 0.1 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { boom: 0.06, crate: 0.04, drop: 0.05, crush: 0.1 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -31261,8 +31239,7 @@ const BOMBER_APP = (() => {
     menu: [{ head: 'Bomberman', items: [
       { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: the bots think slower and bomb less boldly. Hard: quick and bold. Press to switch.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('bomber.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Bombs, blasts, crates, pickups and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('bomber.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want to walk. Tap yourself to drop a bomb.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -31450,14 +31427,10 @@ const PACMAN_APP = (() => {
   // A board waiting, not in play, takes its level afresh when the setting changes (Oct 15); one in play keeps its own.
   const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number); g.lv = lvAt(c, r); } };
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('pacman.sound', 'on') !== 'off', last: {}, waka: 0 };
+  const SND = Object.assign(ARCADE.sounds('pacman.sound', 'Wa-ka, power pellets, ghosts, fruit and fanfares — made in the browser.', { gaps: { dot: 0.06 }, quiet: () => QUIET }), { waka: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { dot: 0.06 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -31952,8 +31925,7 @@ const PACMAN_APP = (() => {
         // Oct 15: the board in play starts again at its own level under the new setting.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('pacman.level', LEVEL); relevel();
               if (LIVE) app.onReset(LIVE.c, LIVE.r); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Wa-ka, power pellets, ghosts, fruit and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('pacman.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want Pac-Man to go. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],
@@ -32079,13 +32051,9 @@ const TD_APP = (() => {
      recording of its own size (`reelAt`). A map's own gold stays as the map says, and its size; the waves are the board's. */
   const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('td.sound', 'on') !== 'off', last: {} };
+  const SND = ARCADE.sounds('td.sound', 'Shots, hits, explosions, building and fanfares — made in the browser.', { gaps: { shot: 0.07, hit: 0.04, boom: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   function beep(kind, n){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { shot: 0.07, hit: 0.04, boom: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -32787,8 +32755,7 @@ const TD_APP = (() => {
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('td.level', LEVEL);
               GAMES.clear();
               if (LIVE){ const m = MAPS.get(LIVE.key), g = newGame(roadOf(LIVE.c, LIVE.r), 0, m, lvAt(LIVE.c, LIVE.r)); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'Shots, hits, explosions, building and fanfares — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('td.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
     ]}],
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r));
@@ -35109,14 +35076,10 @@ const INVADERS_APP = (() => {
   // A board waiting, not in play, takes its level afresh when the setting changes (Oct 15); one in play keeps its own.
   const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number); g.lv = lvAt(c, r); } };
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = { on: ARCADE.load('invaders.sound', 'on') !== 'off', last: {}, note: 0 };
+  const SND = Object.assign(ARCADE.sounds('invaders.sound', 'The march, shots, hits and explosions — made in the browser.', { gaps: { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05 }, quiet: () => QUIET }), { note: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
-    if (!SND.on || QUIET) return;
-    const A = ARCADE.audio(); if (!A) return;
-    const now = A.currentTime, gap = { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05 }[kind] || 0;
-    if (gap && now - (SND.last[kind] || 0) < gap) return;
-    SND.last[kind] = now;
+    const A = SND.gate(kind); if (!A) return;
     const { tone, hiss } = ARCADE;
     try {
       switch (kind){
@@ -35643,8 +35606,7 @@ const INVADERS_APP = (() => {
         // Oct 15: the board in play starts again at its own level under the new setting.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('invaders.level', LEVEL); relevel();
               if (LIVE) app.onReset(LIVE.c, LIVE.r); } },
-      { label: () => 'Sound: ' + (SND.on ? 'on' : 'off'), title: 'The march, shots, hits and explosions — made in the browser.',
-        on(){ SND.on = !SND.on; ARCADE.save('invaders.sound', SND.on ? 'on' : 'off'); if (SND.on) ARCADE.audio(); } },
+      SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left or right to move the ship; it fires by itself.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
     ]}],

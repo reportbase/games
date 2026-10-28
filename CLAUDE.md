@@ -2454,6 +2454,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   says `const PIC = BOARD_KIT.painted(…)`, and `cellPhoto`/`photoCanvas` are `photoKey(c, r, bp)` and `PIC.canvas(key)`. The flash
   cards' sizes are now ':h'/':l' too (':H'/':L' before; a front's hint is ':hint'). Checked: the same keys and the same pixels
   in all six. Trick shots (one picture for every board) and the board games' and gallery's prints keep their own.
+  **One way of sounding** (Oct 28: "1,3", the first): eleven arcade games (Defender, Breakout, the crossing, Snake, Tetris, 3D
+  Tetris, Soma, Bomber, Pac-Man, tower defense, Space Invaders) wrote out their own sound switch, its menu item and the head of
+  their `beep` (off or quiet, no audio, a kind again within its gap). `ARCADE.sounds(key, title, own)` (the puzzles' switch since
+  Sep 28) takes `own` = { gaps, quiet } and gives `gate(kind)`: the audio context if that kind may sound now, else null. A game
+  says `const SND = ARCADE.sounds('snake.sound', '…', { gaps: { turn: 0.05, … }, quiet: () => QUIET })`, its menu `SND.item`, and
+  its `beep` begins `const A = SND.gate(kind); if (!A) return;`; its tones stay its own. Pinball, the tanks, trick shots, air raid,
+  Simon and Asteroids keep their own sounds (an engine of their own, or no gate). Checked: every game sounds, the items the same.
 
 ## Shared with draw: change with care
 `games.html` carries two blocks of draw's **verbatim**, inside `const TVF_CURVE = (() => { … })()` before `GOLF_APP`:
