@@ -76,9 +76,11 @@ page.on('console', m => { if (m.type() === 'error') console.log(`  console (${cu
 
 let code = 0;
 try {
-  await page.goto(new URL('games.html', base).href, { waitUntil: 'load', timeout: 120000 });
+  // (not 'load': that waits on every request the page makes, and one from a CDN that never answered held a part's page load
+  //  past two minutes on CI, Oct 28; the page is ready when its apps are, which the next line waits for)
+  await page.goto(new URL('games.html', base).href, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.FIELD_APPS.length > 0
-                                   && typeof window.setFieldApp === 'function', null, { timeout: 60000 });
+                                   && typeof window.setFieldApp === 'function', null, { timeout: 120000 });
   await page.waitForTimeout(SETTLE_MS);
   /* WHERE TO CLICK FOR A SQUARE (Oct 13): projected from the square's middle, then, if the field would read that pixel as
      another square (a click once landed a row off), the nearest pixel it reads as this one. Returns { x, y, ok }. */
