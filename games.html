@@ -16328,7 +16328,7 @@ function handleGroundTap(hit, ev){
       /* AN APP MAY TAKE BOTH TAPS OF A DOUBLE (Oct 10, mini golf's editor): a quick second tap on the same spot was a
          double-tap, which reframes the view and never reaches the app, so a bumper laid and then tapped to take it was
          eaten, and the view jumped. While noDoubleTap() says so, every tap is a tap. */
-      let _noDbl = false; try { const _da = window.getFieldApp && window.getFieldApp(); _noDbl = !!(_da && _da.noDoubleTap && _da.noDoubleTap()); } catch {}
+      let _noDbl = false; try { const _da = window.getFieldApp && window.getFieldApp(); _noDbl = (_da && _da.noDoubleTap && _da.noDoubleTap()) || false; } catch {}
       /* …BUT A DOUBLE ON ANOTHER BOARD ALWAYS GOES THERE (Oct 16: "double click should select the board and move it into the
          default position, unless the game has a good reason not to."). noDoubleTap() speaks for the board being played: two
          quick taps on one Simon pad, one Lights Out square or one mole's hole are two moves. But the first tap of a double on
@@ -16341,8 +16341,10 @@ function handleGroundTap(hit, ev){
       const _onFramedNow = !!target.shown && Math.round(target.boardX / gridSpacingX()) === _gx0 && Math.round(target.boardZ / gridSpacingZ()) === _gz0;
       const _tapAt = (ev && ev.timeStamp > 0 && ev.timeStamp <= performance.now() + 1) ? ev.timeStamp : performance.now();
       if (_noDbl && _lastTapSelected.sel && _tapAt - _lastTapSelected.at < DOUBLE_TAP_MS) _noDbl = false;
-      // (…and a board moved off its default position always takes the double back there: framedAsDefault, Oct 28)
-      if (_noDbl && !framedAsDefault()) _noDbl = false;
+      // (…and a board moved off its default position always takes the double back there: framedAsDefault, Oct 28; but an
+      //  editor's answer is 'always', since a hole, a maze or a table is made zoomed in, and its quick second taps (a thing laid,
+      //  then taken; a leaf taken away) are the editor's wherever the view is: CI's hole editor lost them)
+      if (_noDbl && _noDbl !== 'always' && !framedAsDefault()) _noDbl = false;
       _lastTapSelected = { at: _tapAt, sel: !_onFramedNow };
       const _isDbl = tapIsDouble(hit, _tapAt);
       if (!_noDbl && _isDbl){
@@ -30349,7 +30351,7 @@ const SOMA_APP = (() => {
     onReset(c, r){ if (DEMO && DEMO.c === c && DEMO.r === r) DEMO = null; if (GAL.on && GAL.c === c && GAL.r === r) GAL.on = false; GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; touched(); return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = c == null ? null : { c, r }; if (c != null){ const g = gameAt(c, r); countSoon(g.F); } },
-    noDoubleTap(){ return ED.on || GAL.on || !!liveGame(); },
+    noDoubleTap(){ return ED.on || GAL.on ? 'always' : !!liveGame(); },
     // two fingers twisted turn the piece in hand about the upright, a quarter turn each TWIST_STEP degrees (the field's twist)
     // (a twist begun on the piece in hand, or its shadow in the figure, turns the piece; any other turns the view, as in every other
     //  game: Oct 24, "two finger rotate does not work for some applications, such as soma.", when every twist took the piece)
@@ -43223,7 +43225,7 @@ const GOLF_MAKE = SIZE => {
       editAction(key); return true;
     },
     statsStay(){ return ED.on; },
-    noDoubleTap(){ return ED.on; },                           // (while editing, a quick second tap is a tap: Oct 10)                             // …and its row stays up while the hole is painted
+    noDoubleTap(){ return ED.on ? 'always' : false; },        // (while editing, a quick second tap is a tap: Oct 10, wherever the view is)                             // …and its row stays up while the hole is painted
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
     onCellTap(c, r, u, v){
       if (ED.on){
@@ -47871,7 +47873,7 @@ const TILT_APP = (() => {
       if (ED.on){ if (ED.drag && at) edDragAt(at.u, at.v); return !!ED.drag; }
       if (!DRAG) return false; if (at) DRAG.at = { u: at.u, v: at.v }; return true; },
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved) ED.ateAt = performance.now(); ED.drag = null; } DRAG = null; },
-    noDoubleTap(){ return ED.on; },                            // (two quick taps on an edge are two walls: Simon's lesson)
+    noDoubleTap(){ return ED.on ? 'always' : false; },         // (two quick taps on an edge are two walls: Simon's lesson)
     /* THE ROW IS THE MAZE EDITOR (Oct 20, YOUR OWN MAZES above): opening it makes a maze for the framed board, shutting it plays it. */
     ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
     _debug: { makeMaze, mazeFor, playRun, stepBall, botTilt, bfs, pathOf, nbrs, cellOf, centre, gameAt, fresh, stepGame, finish, starsOf, levelAt, boardIdx,
@@ -49663,7 +49665,7 @@ const PINBALL_APP = (() => {
       if (g.state !== 'play') begin(g);
       return true;
     },
-    noDoubleTap(){ if (ED.on) return true; const g = liveGame(); return !!(g && g.state === 'play'); },
+    noDoubleTap(){ if (ED.on) return 'always'; const g = liveGame(); return !!(g && g.state === 'play'); },
     // (while making a table a press on a part drags it, elsewhere the view pans)
     claimsPan(u, v){ return ED.on ? edDragStart(u, v) : false; },
     onPan(dx, dy, at){ if (!ED.on || !ED.drag) return false; if (at) edDragAt(at.u, at.v); return true; },
@@ -55963,7 +55965,7 @@ const TRICK_APP = (() => {
       if (LIVE && !TOLD){ TOLD = true; say('Drag on the table to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
     },
     onLeave(){ ctlHide(); },
-    noDoubleTap(){ return ED.on || !!liveGame(); },
+    noDoubleTap(){ return ED.on ? 'always' : !!liveGame(); },
     onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
       if (ED.on){ if (performance.now() - ED.ateAt < 400) return true;
@@ -60754,7 +60756,7 @@ const BOWLING_APP = (() => {
       try { bbRefreshNow(); } catch {}
       return true;
     },
-    noDoubleTap(){ if (ED.on) return true; const g = liveGame(); return !!(g && g.state === 'play'); },
+    noDoubleTap(){ if (ED.on) return 'always'; const g = liveGame(); return !!(g && g.state === 'play'); },
     keepsPress: true,
     claimsPan(u, v){
       if (ED.on){ if (u == null || LIVE == null || gkey(LIVE.c, LIVE.r) !== ED.key) return false; const i = nearPin(u * W, v, 2 * PR); if (i < 0) return false; ED.drag = { i, moved: false }; return true; }

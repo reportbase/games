@@ -2407,7 +2407,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **Off its default position, a double tap always puts it back** (Oct 28: "If a board is not in the default position than let
     double click put it in the default position."): `noDoubleTap()` is heard only while the framed board stands where a double
     tap would put it (`framedAsDefault`: settled at the page-load fit, heading forward, the same sums as `frameBoard`; a flight
-    under way counts as there). The games that take every press before the field (`MATCH_KIT.hands`: Pong, air hockey, squash,
+    under way counts as there). An editor's answer is `'always'` (mini golf's, the tilt maze's, pinball's, bowling's, Soma's, trick
+    shots'): it is worked zoomed in, and its quick second taps are its own wherever the view is. The games that take every press before the field (`MATCH_KIT.hands`: Pong, air hockey, squash,
     curling's sweep; pinball's own) ask `pressReframes(e, x, y)` of each press: the second of a double, by the events' own times
     within 40 px, with the board off its default position, puts it back (`reframeDefault`) and is not the game's. The smoke test
     (part 7) zooms Lights Out, Pong and pinball off with the real wheel, a game under way, and a real double tap brings each back.
