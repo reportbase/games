@@ -49,11 +49,13 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 /* A REQUEST TO ANOTHER SERVER IS GIVEN 20 SECONDS (Oct 28): a library from a CDN that never answered held a part's page past two
    minutes, even waiting for the page's own content alone (a script in the head holds the parsing). Every request off the test's own
    server is fetched here with a time limit and dropped past it, as if the network had refused it, which the page already copes
-   with. Registered first, so the LIBS_DIR routes below (registered later, asked first) still serve their files. */
-await page.route(u => !/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(u.href) && !/^(data|blob):/.test(u.href), async r => {
+   with. Registered first, so the LIBS_DIR routes below (registered later, asked first) still serve their files.
+   Every page the test opens gets it (`timeLimit`): the share links' and puzzle makers' pages of their own timed out without it. */
+const timeLimit = pg => pg.route(u => !/^https?:\/\/(127\.0\.0\.1|localhost)[:/]/.test(u.href) && !/^(data|blob):/.test(u.href), async r => {
   try { const res = await r.fetch({ timeout: 20000 }); await r.fulfill({ response: res }); }
   catch { try { await r.abort(); } catch {} }
 });
+await timeLimit(page);
 if (process.env.LIBS_DIR){
   const lib = f => readFile(join(process.env.LIBS_DIR, f));
   await page.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r =>
@@ -191,7 +193,7 @@ try {
       m.hidden = was; return out; });
     const desk = await sizes(page);
     if (desk.btn !== 40 || desk.font !== '11px') failures.push(`[touch sizes] with a mouse the menu changed: ${JSON.stringify(desk)}`);
-    const ctx = await browser.newContext(devices['iPhone 14']), phone = await ctx.newPage();
+    const ctx = await browser.newContext(devices['iPhone 14']), phone = await ctx.newPage(); await timeLimit(phone);
     if (process.env.LIBS_DIR){
       const lib = f => readFile(join(process.env.LIBS_DIR, f));
       await phone.route(/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
@@ -794,7 +796,7 @@ try {
     const open = async (url, check) => {
       // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
       //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }), pg = await ctx.newPage();
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }), pg = await ctx.newPage(); await timeLimit(pg);
       if (process.env.LIBS_DIR){
         const lib = f => readFile(join(process.env.LIBS_DIR, f));
         await pg.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
@@ -925,7 +927,7 @@ try {
     const open = async (url, check) => {
       // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
       //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)
-      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }), pg = await ctx.newPage();
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } }), pg = await ctx.newPage(); await timeLimit(pg);
       if (process.env.LIBS_DIR){
         const lib = f => readFile(join(process.env.LIBS_DIR, f));
         await pg.route(/cdnjs\.cloudflare\.com\/ajax\/libs\/three\.js\/r128\/three\.module\.min\.js/, async r => r.fulfill({ contentType: 'text/javascript', body: await lib('three/build/three.module.js') }));
