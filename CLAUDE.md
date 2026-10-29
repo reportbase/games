@@ -2370,6 +2370,23 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the next piece from the tray), the tanks (the shell in hand, a tap for the next; drive either way) and curling (the curl, beside the twist).
   - The smoke test (part 7, "played with the row shut") checks the row staying shut through a game and each of these by real
     input; the checks that click row tiles in 3D Tetris and Soma open the row first, as an advanced user would.
+- **Only you move to another board** (Oct 29: "Often times boards auto move to another board. They should never do that. Only
+  the user can move to a new board."): no game flies the view anywhere by itself any more.
+  - A tap on a finished board plays it again where it is (the app's own `onReset`, as the menu's Reset), in the seventeen games
+    whose tap went on to the board beside: 3D Tetris and Soma (puzzles), Bejeweled, Sokoban, the tilt maze, pinball, Lights Out,
+    Whack-a-mole, Nonograms, the tanks, the tank maze, Pong, air hockey, squash, curling, bowling and marble run; trick shots too
+    (its menu's Next trick shot still goes on, being asked for). Their messages say "Tap to play it again." Every note above that
+    says a tap on a finished board "goes on to the next" is out of date.
+  - **Mini golf's round** goes on board after board, but the view stays: when the ball drops, the next hole is laid on the board
+    beside (`nextHole`) and the board just played is `'holed'`; the message says the round goes on on the next board along (Tab).
+    A tap on the holed board says so once, and a tap again there starts a new round.
+  - **Flash cards**: graded, the view stays on the card's board; N or the menu's Next card due flies to the next card.
+  - What still moves the view is yours: Tab and Enter, a pan or swipe, a tap or double tap on a board, auto motion (Space), the
+    menus' Next items, the game index and My games' Play, Asteroids' ship flown off an edge, the page of a book or JSON file kept
+    when you change its settings.
+  - The smoke test's checks that wanted a click on a finished board to land on another (Sokoban, the tilt maze, pinball, 3D Tetris,
+    Soma, Nonograms, trick shots, Bejeweled) now want the view where it was and the board's game begun again; the flash cards'
+    want the view still after grading and the real N to fly to the next card.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
