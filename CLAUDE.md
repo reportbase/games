@@ -2483,6 +2483,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   of motion turns, and the window centres on you again (`railCentre`). Speed stays with the keys, a swipe's drift, the dial and
   auto motion. The smoke test drags the real thumb a quarter up (12.5 boards ahead), presses low on the track, and runs Space's
   auto motion, wanting the thumb to climb.
+- **Screen diagnostics** (Oct 29: the default framing sits about a fifth left of centre, and the buttons and text are very small, on one
+  of the owner's Google phones only): `?diag=1` shows a box at the top left (the last script in the page) with `innerWidth` and
+  `innerHeight`, the layout viewport (`documentElement.clientWidth`), the visual viewport (size, scale, offset), the screen, the pixel
+  ratio and root font size, the canvas's rectangle and where the framed board's middle falls; a tap copies it. The page sizes its
+  canvas and aims its camera by `innerWidth`/`innerHeight`, a fixed canvas follows the layout viewport and a finger's `clientX` is
+  in it too, so a phone where those differ would put a board off its middle. Not yet fixed: the phone's numbers are wanted first.
 - **Bigger on a touch screen** (Oct 17: "why is the button and menu so small in mobile, but not desktop.", then "yes"): nothing
   shrank on a phone (the menu button 40 px and the menu's words 11 px everywhere), but a phone's pixel is about 0.17 mm against a
   monitor's 0.26. Under `@media (pointer: coarse)` (a finger, never a mouse) the menu button is 48 px (`--menu-chip`), the menu's

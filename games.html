@@ -68630,5 +68630,39 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
   try { document.body.classList.add('ui-ready'); } catch {}
 }));
 </script>
+<script>
+/* SCREEN DIAGNOSTICS (Oct 29: "it works correctly every where except on one of my google phones ... the same phone that shows
+   the buttons and text as very small", the default framing shifted about a fifth to the left): open the page with ?diag=1 and
+   a box in the top left reads out what the browser says about its screen, beside where the framed board's middle lands, so a
+   phone that disagrees with itself can be told apart from one that does not (the page sizes its canvas and aims its camera by
+   innerWidth and innerHeight, a fixed canvas by the layout viewport, and a finger by clientX: where those are not the same
+   number a board is not where the camera thinks it is). Tap the box to copy it. Nothing here runs without the parameter. */
+(() => {
+  if (!/[?&]diag=1\b/.test(location.search)) return;
+  const box = document.createElement('pre');
+  box.style.cssText = 'position:fixed;top:60px;left:6px;z-index:99999;margin:0;padding:6px 8px;background:rgba(0,0,0,.82);color:#9f9;font:12px/1.35 monospace;white-space:pre;border:1px solid #9f9;border-radius:6px;max-width:96vw;overflow:hidden';
+  document.body.appendChild(box);
+  const tick = () => {
+    const vv = window.visualViewport, de = document.documentElement, W = window.FIELD_WORLD, cv = document.querySelector('body > canvas');
+    let at = '-';
+    try { const T = W.target, v = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); at = Math.round((v.x + 1) / 2 * innerWidth) + ',' + Math.round((1 - v.y) / 2 * innerHeight); } catch {}
+    const r = cv ? cv.getBoundingClientRect() : null;
+    const fs = parseFloat(getComputedStyle(de).fontSize);
+    box.textContent = [
+      'inner      ' + innerWidth + ' x ' + innerHeight,
+      'client     ' + de.clientWidth + ' x ' + de.clientHeight,
+      'visual     ' + (vv ? [vv.width, vv.height].map(n => +n.toFixed(1)).join(' x ') + '  scale ' + (+vv.scale.toFixed(3)) + '  off ' + (+vv.offsetLeft.toFixed(1)) + ',' + (+vv.offsetTop.toFixed(1)) + '  page ' + (+vv.pageLeft.toFixed(1)) + ',' + (+vv.pageTop.toFixed(1)) : 'none'),
+      'screen     ' + screen.width + ' x ' + screen.height + '  avail ' + screen.availWidth + ' x ' + screen.availHeight,
+      'dpr        ' + devicePixelRatio + '   root font ' + fs + 'px',
+      'canvas     ' + (r ? [r.left, r.top, r.width, r.height].map(n => Math.round(n)).join(', ') + '  attr ' + cv.width + ' x ' + cv.height : 'none'),
+      'scroll     ' + scrollX + ',' + scrollY + '  doc ' + de.scrollWidth + ' x ' + de.scrollHeight,
+      'board mid  ' + at,
+      'ua         ' + navigator.userAgent.slice(0, 90),
+    ].join('\n');
+  };
+  tick(); setInterval(tick, 700);
+  box.addEventListener('click', () => { try { navigator.clipboard.writeText(box.textContent); box.style.borderColor = '#ff0'; } catch {} });
+})();
+</script>
 </body>
 </html>
