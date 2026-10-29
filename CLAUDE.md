@@ -1787,6 +1787,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   are endless by default (`LIVES`, the menu's Ships: endless or three, localStorage `asteroids.lives`): a ship lost comes back and
   is counted (`g.lost`, the title's "N lost"), the game never over; three is the arcade's. The recordings keep the arcade's. The
   smoke test (part 7) checks both.
+  - **The settings row** (Oct 29: "what are cusomization options", then "1,2,3,4,5,6"; `SET`, localStorage `asteroids.settings`,
+    `tilesOf`, `setting`, `ORDER`, and the menu's Look, Rocks, Drift and Start wave): New game, Look (3D; Vector, white outlines on
+    black, `outlineGeo`, `vrock`, `vship`, `vflame`, `vsaucer`; Neon, the outlines glowing on deep violet; `LOOK_COL`), Rocks (×0.6,
+    1, 1.5 a wave, `ROCKS_N`), Rock speed (×0.7, 1, 1.35, `ROCK_SP`), Turn (×0.7, 1, 1.4, `TURNS`), Drift (classic, or arcade: twice
+    the thrust, the ship stopping when you stop), Rapid fire, Triple shot and Shield always on (`shielded`), Saucers and Gems on or
+    off, Start wave (1, 3, 5, 10), Ships, Fly between boards, Sound. All of it is the game you play (`mine()`: not QUIET); the
+    boards no one plays keep the arcade's rules and take the look. A game's `spawned` says a wave came to it, so a board started at
+    a later wave is not called cleared before its first. The smoke test (part 7, "asteroids settings") checks each and a real
+    click on the Look tile.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

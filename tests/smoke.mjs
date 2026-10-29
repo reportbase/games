@@ -7175,6 +7175,37 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       failures.push(`[${current}] ${JSON.stringify(o)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} asteroids cleared and endless (a real click started; four ships lost, still ${o.losses && o.losses[0]}; cleared and no new wave; empty when left and played again; another board ${o.other} rocks)`);
   }
+  // ASTEROIDS' SETTINGS ROW (Oct 29: "what are cusomization options", then "1,2,3,4,5,6"): rocks a wave by the setting, the start
+  // wave, the shield, triple shot and arcade drift always as set, saucers and gems off, the look's outlines drawn, and the real
+  // Look tile clicked in the row
+  current = 'asteroids settings';
+  {
+    const before = failures.length;
+    const o = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {}, keep = { ...D.SET };
+      const count = rocks => { D.SET.rocks = rocks; const h = D.newGame(); h.lv = 'normal'; D.nextWave(h); return h.rocks.length; };
+      out.counts = ['fewer', 'normal', 'more'].map(count); D.SET.rocks = 'normal';
+      const g = D.newGame(); g.at = [9001, 3]; g.lv = 'normal';
+      D.SET.wave = 5; D.start(g); for (let k = 0; k < 200; k++) D.step(g, 1 / 60); out.wave = g.wave;
+      D.SET.shield = true; g.ship.safe = 0; const l0 = g.lost || 0; g.rocks.push({ x: g.ship.x, y: g.ship.y, vx: 0, vy: 0, size: 3, k: 0 }); D.step(g, 1 / 60); out.shield = (g.lost || 0) === l0; D.SET.shield = false;
+      D.SET.triple = true; g.shots = []; g.cool = 0; D.fire(g); out.triple = g.shots.length; D.SET.triple = false;
+      D.SET.drift = 'arcade'; Object.assign(g.ship, { vx: 0.3, vy: 0, alive: true }); g.rocks = []; for (let k = 0; k < 60; k++) D.step(g, 1 / 60); out.arcade = Math.hypot(g.ship.vx, g.ship.vy); D.SET.drift = 'classic';
+      D.SET.saucers = false; D.SET.gems = false; const h = D.newGame(); h.lv = 'normal'; h.state = 'play'; h.ufoIn = 0; D.nextWave(h); for (let k = 0; k < 600; k++) D.step(h, 1 / 60); out.ufo = !!h.ufo;
+      D.SET.look = 'vector'; const items = D.asItems(D.snap(h)); out.vector = items.some(i => /^vrock/.test(i.kind)) && !items.some(i => /^rock\d/.test(i.kind));
+      Object.assign(D.SET, keep, { look: '3d' });
+      return out;
+    });
+    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); }
+    const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
+    let lt = null; for (let w = 0; w < 30; w++){ lt = await tileAt(1); if (lt && lt[1] < (await page.evaluate(() => innerHeight)) - 20) break; await page.waitForTimeout(200); }
+    if (lt){ await page.mouse.click(lt[0], lt[1]); await page.waitForTimeout(500); }
+    const look = await page.evaluate(() => window.getFieldApp()._debug.SET.look);
+    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.look = '3d'; try { localStorage.removeItem('asteroids.settings'); } catch {} });
+    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(400); }
+    if (!(o.counts.join() === '2,4,6' && o.wave === 5 && o.shield && o.triple === 3 && o.arcade < 0.03 && !o.ufo && o.vector && look === 'vector'))
+      failures.push(`[${current}] ${JSON.stringify({ o, look })}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} asteroids settings (rocks ${o.counts}, start at wave ${o.wave}, the shield, ${o.triple} shots, arcade drift stopping, no saucer, the outlines; the real Look tile to ${look})`);
+  }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
   // every press before the field), a game under way, the view zoomed by the real wheel, a real touch double tap on the board

@@ -27230,6 +27230,32 @@ const ASTEROIDS_APP = (() => {
   const saveCleared = () => { try { localStorage.setItem('asteroids.cleared', JSON.stringify([...CLEARED].slice(-5000))); } catch {} };
   const LIVES = { endless: ARCADE.load('asteroids.lives', 'endless') !== 'three' };
   const isCleared = (c, r) => CLEARED.has(gkey(c, r));
+  /* THE SETTINGS ROW (Oct 29: "what are cusomization options", then "1,2,3,4,5,6"): the bottom row (and the menu) set the game
+     you play, kept in localStorage `asteroids.settings` (`SET`); the boards no one plays keep the arcade's rules (QUIET) and take
+     only the look.
+       1 Rocks (fewer, normal, more: ×0.6, 1, 1.5 a wave) and Rock speed (slow, normal, fast: ×0.7, 1, 1.35), apart from the
+         Difficulty, which still sets the level's own;
+       2 the ship's handling: Turn (slow, normal, fast: ×0.7, 1, 1.4) and Drift (classic, the ship gliding on; arcade, stopping
+         when you stop thrusting, with twice the thrust);
+       3 fire: Rapid fire, Triple shot and Shield each always on, or only from the gems;
+       4 Saucers and Gems on or off;
+       5 the Look: 3D (the ship and rocks as built), Vector (outlines in white lines on black, as the arcade drew them) or Neon
+         (the outlines glowing, cyan rocks, a pink ship, on deep violet);
+       6 the Start wave (1, 3, 5, 10), from the next game started.
+     The row also has New game, Ships, Fly between boards and Sound. */
+  const ROCKS_N = { fewer: 0.6, normal: 1, more: 1.5 }, ROCK_SP = { slow: 0.7, normal: 1, fast: 1.35 }, TURNS = { slow: 0.7, normal: 1, fast: 1.4 };
+  const LOOKS = ['3d', 'vector', 'neon'], LOOK_NAME = { '3d': '3D', vector: 'Vector', neon: 'Neon' }, WAVES = [1, 3, 5, 10];
+  const SET = (() => {
+    const d = { rocks: 'normal', rspeed: 'normal', turn: 'normal', drift: 'classic', rapid: false, triple: false, shield: false, saucers: true, gems: true, look: '3d', wave: 1 };
+    try { const v = JSON.parse(localStorage.getItem('asteroids.settings') || '{}');
+      if (v.rocks in ROCKS_N) d.rocks = v.rocks; if (v.rspeed in ROCK_SP) d.rspeed = v.rspeed; if (v.turn in TURNS) d.turn = v.turn;
+      if (v.drift === 'classic' || v.drift === 'arcade') d.drift = v.drift; if (LOOKS.includes(v.look)) d.look = v.look; if (WAVES.includes(v.wave)) d.wave = v.wave;
+      for (const k of ['rapid', 'triple', 'shield', 'saucers', 'gems']) if (typeof v[k] === 'boolean') d[k] = v[k]; } catch {}
+    return d;
+  })();
+  const saveSet = () => { try { localStorage.setItem('asteroids.settings', JSON.stringify(SET)); } catch {} };
+  const mine = () => !QUIET;                                   // (the game you play, not a recording)
+  const shielded = g => g.pow.S > 0 || (mine() && SET.shield);
   const EMPTY = { t: 0, ship: null, rocks: [], shots: [], booms: [], shield: 0, ufo: null, eshots: [], gems: [] };
   function hop(g, c, r){
     const [du, dv] = g.hop;
@@ -27276,12 +27302,12 @@ const ASTEROIDS_APP = (() => {
   const turnToward = (a, want, max) => { let d = Math.atan2(Math.sin(want - a), Math.cos(want - a)); return a + Math.max(-max, Math.min(max, d)); };
 
   function rockAt(g, x, y, size){
-    const sp = (0.04 + rnd() * 0.07) * D(g).sp * (1 + (3 - size) * 0.35) * (1 + g.wave * 0.04), th = rnd() * Math.PI * 2;
+    const sp = (0.04 + rnd() * 0.07) * D(g).sp * (1 + (3 - size) * 0.35) * (1 + g.wave * 0.04) * (mine() ? ROCK_SP[SET.rspeed] : 1), th = rnd() * Math.PI * 2;
     return { x, y, size, vx: Math.cos(th) * sp, vy: Math.sin(th) * sp, k: (rnd() * 4) | 0 };
   }
   function newShip(){ return { x: 0.5, y: 0.5, vx: 0, vy: 0, a: 0, alive: true, safe: 2, thrust: 0 }; }
   function newGame(){
-    return { state: 'ready', t: 0, last: 0, wave: 0, score: 0, lives: 3, broke: 0, lost: 0, extra: 10000, ship: newShip(),
+    return { state: 'ready', t: 0, last: 0, wave: 0, spawned: false, score: 0, lives: 3, broke: 0, lost: 0, extra: 10000, ship: newShip(),
              rocks: [], shots: [], booms: [], cool: 0, pause: 1, respawn: 0, aim: null, drag: null,
              ufo: null, ufoIn: 18, eshots: [], gems: [], pow: { S: 0, T: 0, R: 0 } };
   }
@@ -27295,7 +27321,7 @@ const ASTEROIDS_APP = (() => {
   }
   function ufoTick(g, dt){
     const u = g.ufo, s = g.ship;
-    if (!u){ if (g.rocks.length && (g.ufoIn -= dt) <= 0){ sendUfo(g); g.ufoIn = Math.max(8, 20 - g.wave) + rnd() * 8; } return; }
+    if (!u){ if (g.rocks.length && (!mine() || SET.saucers) && (g.ufoIn -= dt) <= 0){ sendUfo(g); g.ufoIn = Math.max(8, 20 - g.wave) + rnd() * 8; } return; }
     u.x += u.vx * dt; u.y = wrap(u.y + u.vy * dt);
     if ((u.turn -= dt) <= 0){ u.turn = 1 + rnd() * 2; u.vy = [0, 0.08, -0.08][(rnd() * 3) | 0] * D(g).sp; }
     if (u.x < 0 || u.x >= 1){ g.ufo = null; return; }               // gone off the far side
@@ -27335,13 +27361,13 @@ const ASTEROIDS_APP = (() => {
     if (g.at) g.lv = lvAt(g.at[0], g.at[1]);   // a game takes its board's level as the setting is when it starts, or goes on from waiting (Oct 15)
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }
     Object.assign(g, newGame());
-    g.state = 'play';
+    g.state = 'play'; g.wave = SET.wave - 1;                       // (the row's Start wave: the next wave is it)
     say((TILT.on ? 'Tilt to fly' : 'Drag to fly and fire, tap to shoot') + ' — break up the rocks', 2600);
   }
   function nextWave(g){
-    g.wave++;
+    g.wave++; g.spawned = true;
     g.ufoIn = Math.max(8, 20 - g.wave) + rnd() * 8;
-    const n = D(g).n + g.wave - 1;
+    const n = Math.max(1, Math.round((D(g).n + g.wave - 1) * (mine() ? ROCKS_N[SET.rocks] : 1)));
     for (let i = 0; i < n; i++){
       // From the edges, never on top of the ship.
       const edge = rnd() < 0.5, p = rnd();
@@ -27350,7 +27376,7 @@ const ASTEROIDS_APP = (() => {
     if (g.wave > 1) say('Wave ' + g.wave, 1200);
   }
   function fire(g){
-    const s = g.ship, rapid = g.pow.R > 0, triple = g.pow.T > 0;
+    const s = g.ship, rapid = g.pow.R > 0 || (mine() && SET.rapid), triple = g.pow.T > 0 || (mine() && SET.triple);
     if (!s.alive || g.cool > 0 || g.shots.length >= (rapid ? 14 : MAX_SHOTS) * (triple ? 3 : 1)) return;
     for (const da of triple ? [-0.2, 0, 0.2] : [0]){
       const [fx, fy] = fwd(s.a + da);
@@ -27362,7 +27388,7 @@ const ASTEROIDS_APP = (() => {
     if (g.rocks.indexOf(r) < 0) return;
     g.rocks.splice(g.rocks.indexOf(r), 1);
     if (paid){ g.score += PTS[r.size]; g.broke = (g.broke || 0) + 1; }
-    if (!noGem && r.size > 1 && g.gems.length < 2 && rnd() < 0.09) g.gems.push({ x: r.x, y: r.y, type: 'STRB'[(rnd() * 4) | 0], ttl: 10 });
+    if (!noGem && (!mine() || SET.gems) && r.size > 1 && g.gems.length < 2 && rnd() < 0.09) g.gems.push({ x: r.x, y: r.y, type: 'STRB'[(rnd() * 4) | 0], ttl: 10 });
     BOOM.add(g, r.x, r.y, r.size === 3 ? 'r' : 'p', rnd); beep('rock');
     if (r.size > 1) for (let k = 0; k < 2; k++) g.rocks.push(rockAt(g, r.x, r.y, r.size - 1));
     if (g.score >= g.extra){ g.extra += 10000; if (!(LIVES.endless && !QUIET)){ g.lives++; say('Extra ship!', 1200); beep('good'); } }
@@ -27412,7 +27438,7 @@ const ASTEROIDS_APP = (() => {
       if ((g.respawn -= dt) <= 0 && !g.rocks.some(r => dist({ x: 0.5, y: 0.5 }, r) < RAD[r.size] + 0.12)) Object.assign(g.ship, newShip());
     }
     if (!g.rocks.length){
-      const keep = !QUIET && HOP.on && g.at && (g.wave >= 1 || isCleared(g.at[0], g.at[1]));
+      const keep = !QUIET && HOP.on && g.at && (g.spawned || isCleared(g.at[0], g.at[1]));   // (a wave came to it, or it was cleared before)
       if (keep){
         if (!isCleared(g.at[0], g.at[1])){ CLEARED.add(gkey(g.at[0], g.at[1])); saveCleared(); beep('win');
           say('Board cleared — it stays clear. Fly off an edge to the next board', 2600); }
@@ -27424,18 +27450,19 @@ const ASTEROIDS_APP = (() => {
       if (inp) thrust = pilot(g, dt).thrust;
       else {
         const K = KEYS;
-        if (K.l) s.a -= TURN * 0.7 * dt;
-        if (K.r) s.a += TURN * 0.7 * dt;
+        const TP = TURN * TURNS[SET.turn];
+        if (K.l) s.a -= TP * 0.7 * dt;
+        if (K.r) s.a += TP * 0.7 * dt;
         if (K.u) thrust = 1;
         if (K.f) fire(g);
         if (g.drag && performance.now() - g.drag.at < 180){
           const want = angTo(s, g.drag.u, g.drag.v);
-          s.a = turnToward(s.a, want, TURN * dt);
+          s.a = turnToward(s.a, want, TP * dt);
           if (Math.hypot(dW(g.drag.u - s.x), dW(g.drag.v - s.y)) > 0.06) thrust = 1;
           if (Math.abs(Math.atan2(Math.sin(want - s.a), Math.cos(want - s.a))) < 0.35) fire(g);
         } else if (g.aim){
           const want = angTo(s, g.aim.u, g.aim.v);
-          s.a = turnToward(s.a, want, TURN * 1.5 * dt);
+          s.a = turnToward(s.a, want, TP * 1.5 * dt);
           if (Math.abs(Math.atan2(Math.sin(want - s.a), Math.cos(want - s.a))) < 0.08){ fire(g); g.aim = null; }
           else if ((g.aim.left -= dt) <= 0) g.aim = null;
         }
@@ -27444,15 +27471,16 @@ const ASTEROIDS_APP = (() => {
           let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
           const DV = [[0, -1], [1, 0], [0, 1], [-1, 0]], R = DV[dirs ? dirs[1] : 1], Dn = DV[dirs ? dirs[2] : 2];
           const bx = TILT.x * R[0] + TILT.y * Dn[0], by = TILT.x * R[1] + TILT.y * Dn[1];
-          s.a = turnToward(s.a, Math.atan2(bx, -by), TURN * dt);
+          s.a = turnToward(s.a, Math.atan2(bx, -by), TP * dt);
           thrust = Math.min(1, Math.hypot(TILT.x, TILT.y));
           fire(g);
         }
       }
       const [fx, fy] = fwd(s.a);
-      s.vx += fx * THRUST * thrust * dt; s.vy += fy * THRUST * thrust * dt;
+      const arcade = !inp && mine() && SET.drift === 'arcade';      // (arcade: twice the thrust, and the ship stops when you do)
+      s.vx += fx * THRUST * (arcade ? 2 : 1) * thrust * dt; s.vy += fy * THRUST * (arcade ? 2 : 1) * thrust * dt;
       const v = Math.hypot(s.vx, s.vy); if (v > VMAX){ s.vx *= VMAX / v; s.vy *= VMAX / v; }
-      const drag = Math.exp(-0.6 * dt); s.vx *= drag; s.vy *= drag;
+      const drag = Math.exp(-(arcade ? (thrust > 0.1 ? 1.5 : 4) : 0.6) * dt); s.vx *= drag; s.vy *= drag;
       const nx = s.x + s.vx * dt, ny = s.y + s.vy * dt;
       // Your ship off an edge, with boards to fly between: it goes on to the next board (see hop).
       if (!inp && !QUIET && HOP.on && (nx < 0 || nx >= 1 || ny < 0 || ny >= 1)) g.hop = [nx < 0 ? -1 : nx >= 1 ? 1 : 0, ny < 0 ? -1 : ny >= 1 ? 1 : 0];
@@ -27472,7 +27500,7 @@ const ASTEROIDS_APP = (() => {
       if ((b.life -= dt) <= 0){ g.eshots.splice(g.eshots.indexOf(b), 1); continue; }
       const hit = g.rocks.find(r => dist(b, r) < RAD[r.size]);
       if (hit){ g.eshots.splice(g.eshots.indexOf(b), 1); breakRock(g, hit, false); continue; }
-      if (s.alive && s.safe <= 0 && !(g.pow.S > 0) && dist(b, s) < SHIP_R){ g.eshots.splice(g.eshots.indexOf(b), 1); lose(g); }
+      if (s.alive && s.safe <= 0 && !shielded(g) && dist(b, s) < SHIP_R){ g.eshots.splice(g.eshots.indexOf(b), 1); lose(g); }
     }
     for (const b of g.shots.slice()){
       b.x = wrap(b.x + b.vx * dt); b.y = wrap(b.y + b.vy * dt);
@@ -27483,7 +27511,7 @@ const ASTEROIDS_APP = (() => {
     }
     if (s.alive && s.safe <= 0){
       const rock = g.rocks.find(r => dist(s, r) < RAD[r.size] + SHIP_R * 0.8);
-      if (g.pow.S > 0){ if (rock) breakRock(g, rock); }              // the shield breaks what it touches
+      if (shielded(g)){ if (rock) breakRock(g, rock); }              // the shield breaks what it touches
       else if (rock) lose(g);
       else if (g.ufo && dist(s, g.ufo) < UFO[g.ufo.k].r + SHIP_R * 0.8){ killUfo(g, true); lose(g); }
     }
@@ -27495,7 +27523,7 @@ const ASTEROIDS_APP = (() => {
     const s = g.ship;
     return { t: g.t, ship: s.alive && !(s.safe > 0 && ((g.t * 10) | 0) % 2) ? [s.x, s.y, headOf(s.a), s.thrust > 0.3 ? 1 : 0] : null,
              rocks: g.rocks.map(r => [r.x, r.y, r.size, r.k]), shots: g.shots.map(b => [b.x, b.y]), booms: BOOM.burning(g),
-             shield: s.alive && g.pow.S > 0 && (g.pow.S > 2 || ((g.t * 8) | 0) % 2) ? 1 : 0,
+             shield: s.alive && (mine() && SET.shield || g.pow.S > 0 && (g.pow.S > 2 || ((g.t * 8) | 0) % 2)) ? 1 : 0,
              ufo: g.ufo ? [g.ufo.x, g.ufo.y, g.ufo.k === 'S' ? 1 : 0] : null, eshots: g.eshots.map(b => [b.x, b.y]),
              gems: g.gems.filter(m => m.ttl > 3 || ((g.t * 6) | 0) % 2).map(m => [m.x, m.y, m.type]) };
   }
@@ -27503,10 +27531,15 @@ const ASTEROIDS_APP = (() => {
   const STARS = [];
   { let a = 0x51a7; const r = () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; };
     for (let i = 0; i < 40; i++) STARS.push({ kind: 'star', u: r(), v: r(), scale: 0.003 + r() * 0.004, color: 0x9aa4c0 }); }
+  // (the look: 3D as built, or the outlines, white or glowing; LOOK_COL by look)
+  const LOOK_COL = { '3d': { space: SPACE, rock: ROCK, ship: SHIP, shot: 0xffffff, star: 0x9aa4c0 },
+                     vector: { space: 0x000000, rock: 0xe8ecf2, ship: 0xffffff, shot: 0xffffff, star: 0x5a6070 },
+                     neon: { space: 0x0c0420, rock: 0x22d3ee, ship: 0xf472b6, shot: 0xfde047, star: 0x8b5cf6 } };
   function asItems(s){
-    const out = STARS.slice();
-    for (const [x, y, size, k] of s.rocks) out.push({ kind: 'rock' + k, u: x, v: y, scale: RAD[size] * 2, color: ROCK });
-    for (const [x, y] of s.shots) out.push({ kind: 'dot', u: x, v: y, scale: 0.009, color: 0xffffff });
+    const L = SET.look, C = LOOK_COL[L], lines = L !== '3d';
+    const out = L === '3d' ? STARS.slice() : STARS.map(t => ({ ...t, color: C.star }));
+    for (const [x, y, size, k] of s.rocks) out.push({ kind: (lines ? 'vrock' : 'rock') + k, u: x, v: y, scale: RAD[size] * 2, color: C.rock });
+    for (const [x, y] of s.shots) out.push({ kind: 'dot', u: x, v: y, scale: 0.009, color: C.shot });
     for (const [x, y] of (s.eshots || [])) out.push({ kind: 'dot', u: x, v: y, scale: 0.011, color: 0xff5a4a });
     for (const [x, y, type] of (s.gems || [])){
       out.push({ kind: 'gem', u: x, v: y, scale: 0.03, color: GEM[type] });
@@ -27514,24 +27547,28 @@ const ASTEROIDS_APP = (() => {
     }
     if (s.ufo){
       const [x, y, small] = s.ufo, sc = small ? 0.05 : 0.08;
-      out.push({ kind: 'saucer', u: x, v: y, scale: sc, color: 0xb8c2d0 });
-      out.push({ kind: 'dome', u: x, v: y, scale: sc, color: small ? 0xff6a5a : 0x7fe0ff });
+      if (lines) out.push({ kind: 'vsaucer', u: x, v: y, scale: sc, color: L === 'neon' ? 0xa3e635 : 0xffffff });
+      else { out.push({ kind: 'saucer', u: x, v: y, scale: sc, color: 0xb8c2d0 });
+             out.push({ kind: 'dome', u: x, v: y, scale: sc, color: small ? 0xff6a5a : 0x7fe0ff }); }
       for (let k = 0; k < 6; k++){ const th = k / 6 * Math.PI * 2 + s.t * 3; out.push({ kind: 'lamp', u: x + Math.cos(th) * sc * 0.42, v: y + Math.sin(th) * sc * 0.42, scale: sc * 0.12, color: k % 2 ? 0xffd23a : 0xff4a3a }); }
     }
     if (s.ship){
       const [x, y, h, th] = s.ship;
+      if (lines){ out.push({ kind: 'vship' + h, u: x, v: y, scale: 0.075, color: C.ship });
+                  if (th) out.push({ kind: 'vflame' + h, u: x, v: y, scale: 0.075 * (0.9 + 0.2 * Math.sin(s.t * 40)), color: L === 'neon' ? 0xfb923c : 0xffffff }); }
+      else {
       out.push({ kind: 'ship' + h, u: x, v: y, scale: 0.075, color: SHIP });
       out.push({ kind: 'canopy' + h, u: x, v: y, scale: 0.075, color: 0x3aa8ff });
-      out.push({ kind: 'engine' + h, u: x, v: y, scale: 0.075 * (th ? 1.25 : 0.8), color: th ? 0xffb347 : 0x7a3a18 });
+      out.push({ kind: 'engine' + h, u: x, v: y, scale: 0.075 * (th ? 1.25 : 0.8), color: th ? 0xffb347 : 0x7a3a18 }); }
       if (s.shield) out.push({ kind: 'halo', u: x, v: y, scale: 0.09, color: GEM.S });
-      if (th){ const [fx, fy] = fwd(h / HEADS * Math.PI * 2), fl = 0.045 + 0.012 * Math.sin(s.t * 40); out.push({ kind: 'dot', u: x - fx * fl, v: y - fy * fl, scale: 0.012, color: 0xff7a2a }); }
+      if (th && !lines){ const [fx, fy] = fwd(h / HEADS * Math.PI * 2), fl = 0.045 + 0.012 * Math.sin(s.t * 40); out.push({ kind: 'dot', u: x - fx * fl, v: y - fy * fl, scale: 0.012, color: 0xff7a2a }); }
     }
     for (const [u, v, e, seed, mix] of s.booms) BOOM.items(out, u, v, e, seed, mix, SQ * 1.5);
     return out;
   }
-  const PLAIN = new Array(N * N).fill(SPACE);
+  const PLAINS = Object.fromEntries(LOOKS.map(l => [l, new Array(N * N).fill(LOOK_COL[l].space)]));
   function gridOf(s){
-    const colors = PLAIN.slice(), at = (x, y) => Math.min(N - 1, Math.floor(y * N)) * N + Math.min(N - 1, Math.floor(x * N));
+    const colors = PLAINS[SET.look].slice(), at = (x, y) => Math.min(N - 1, Math.floor(y * N)) * N + Math.min(N - 1, Math.floor(x * N));
     for (const [x, y] of s.rocks) colors[at(x, y)] = ROCK;
     if (s.ship) colors[at(s.ship[0], s.ship[1])] = SHIP;
     if (s.ufo) colors[at(s.ufo[0], s.ufo[1])] = 0x7fe0ff;
@@ -27689,20 +27726,89 @@ const ASTEROIDS_APP = (() => {
     geos['engine' + h] = T => engineGeo(T, h);
   }
   for (let k = 0; k < 4; k++) geos['rock' + k] = T => rockGeo(T, k);
+  /* THE OUTLINES (the Vector and Neon looks): a closed line of points in the board's plane drawn as thin flat bars, unlit, a
+     little above the board; the ship's turned to each heading as the 3D ship is (toGeo's turn). */
+  function outlineGeo(T, pts, h, w){
+    const pos = [];
+    for (let i = 0; i < pts.length; i++){
+      const [x0, z0] = pts[i], [x1, z1] = pts[(i + 1) % pts.length], L = Math.hypot(x1 - x0, z1 - z0);
+      if (L < 1e-6) continue;
+      const b = new T.BoxGeometry(L + w, 0.02, w); b.rotateY(-Math.atan2(z1 - z0, x1 - x0)); b.translate((x0 + x1) / 2, 0.06, (z0 + z1) / 2);
+      pos.push(...flat(b));
+    }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+    if (h != null) g.rotateY(-h / HEADS * Math.PI * 2);
+    g.userData.unlit = true;
+    return g;
+  }
+  const VSHIP = [[0, 0.55], [0.36, -0.45], [0.14, -0.3], [-0.14, -0.3], [-0.36, -0.45]];
+  const VFLAME = [[0.12, -0.32], [0, -0.68], [-0.12, -0.32]];
+  for (let h = 0; h < HEADS; h++){ geos['vship' + h] = T => outlineGeo(T, VSHIP, h, 0.06); geos['vflame' + h] = T => outlineGeo(T, VFLAME, h, 0.05); }
+  for (let k = 0; k < 4; k++) geos['vrock' + k] = T => {
+    let a = 0x51ed + k * 977; const r = () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; };
+    const n = 11, pts = []; for (let i = 0; i < n; i++){ const th = i / n * Math.PI * 2, rr = 0.5 * (0.72 + r() * 0.3); pts.push([Math.cos(th) * rr, Math.sin(th) * rr]); }
+    return outlineGeo(T, pts, null, 0.035);
+  };
+  geos.vsaucer = T => { const g = outlineGeo(T, [[-0.5, 0], [-0.2, 0.18], [0.2, 0.18], [0.5, 0], [0.2, -0.16], [-0.2, -0.16]], null, 0.05);
+    const top = outlineGeo(T, [[-0.2, 0.18], [-0.1, 0.34], [0.1, 0.34], [0.2, 0.18]], null, 0.05), mid = outlineGeo(T, [[-0.5, 0], [0.5, 0]], null, 0.05);
+    const pos = [...g.attributes.position.array, ...top.attributes.position.array, ...mid.attributes.position.array];
+    const out = new T.BufferGeometry(); out.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); out.computeVertexNormals(); out.userData.unlit = true; return out; };
+  // (the row: New game, the look, rocks and their speed, turn, drift, the three powers always on, saucers, gems, start wave, ships,
+  //  flying between boards, sound)
+  const ORDER = ['new', 'look', 'rocks', 'rspeed', 'turn', 'drift', 'rapid', 'triple', 'shield', 'saucers', 'gems', 'wave', 'ships', 'hop', 'sound'];
+  const cap = w => w[0].toUpperCase() + w.slice(1);
+  function tilesOf(c, r){
+    const ON = 0x2f6f4f, on = (v, glyph, label) => ({ glyph, value: v ? 'On' : 'Off', label, bg: v ? ON : undefined });
+    const g = GAMES.get(gkey(c, r)), playing = g && g.state === 'play';
+    return [
+      { glyph: playing ? '↻' : '▶', value: playing ? 'New game' : 'Play', label: playing ? 'wave ' + g.wave : 'asteroids' },
+      { glyph: SET.look === '3d' ? '🪐' : SET.look === 'vector' ? '△' : '✦', value: LOOK_NAME[SET.look], label: 'look' },
+      { glyph: '🪨', value: cap(SET.rocks), label: 'rocks' },
+      { glyph: '💨', value: cap(SET.rspeed), label: 'rock speed' },
+      { glyph: '↻', value: cap(SET.turn), label: 'turn' },
+      { glyph: '🛞', value: cap(SET.drift), label: 'drift' },
+      on(SET.rapid, '⚡', 'rapid fire'), on(SET.triple, '⋔', 'triple shot'), on(SET.shield, '🛡', 'shield'),
+      on(SET.saucers, '🛸', 'saucers'), on(SET.gems, '💎', 'gems'),
+      { glyph: '🌊', value: 'Wave ' + SET.wave, label: 'start' },
+      { glyph: '🚀', value: LIVES.endless ? 'Endless' : 'Three', label: 'ships' },
+      on(HOP.on, '⇄', 'fly between'),
+      on(SND.on, SND.on ? '🔊' : '🔇', 'sound'),
+    ];
+  }
+  function setting(key, c, r){
+    const nx = (list, v) => list[(list.indexOf(v) + 1) % list.length];
+    let msg = '';
+    if (key === 'new'){ if (c == null) return true; const g = gameAt(c, r); LIVE = { key: gkey(c, r), c, r }; g.state = 'over'; start(g); return true; }
+    if (key === 'look'){ SET.look = nx(LOOKS, SET.look); msg = 'Look: ' + LOOK_NAME[SET.look]; }
+    else if (key === 'rocks'){ SET.rocks = nx(['fewer', 'normal', 'more'], SET.rocks); msg = cap(SET.rocks) + ' rocks a wave, from the next wave'; }
+    else if (key === 'rspeed'){ SET.rspeed = nx(['slow', 'normal', 'fast'], SET.rspeed); msg = 'Rocks ' + SET.rspeed + ', from the next wave'; }
+    else if (key === 'turn'){ SET.turn = nx(['slow', 'normal', 'fast'], SET.turn); msg = 'The ship turns ' + (SET.turn === 'normal' ? 'as it did' : SET.turn === 'fast' ? 'faster' : 'slower'); }
+    else if (key === 'drift'){ SET.drift = SET.drift === 'classic' ? 'arcade' : 'classic'; msg = SET.drift === 'arcade' ? 'Arcade: the ship stops when you stop thrusting' : 'Classic: the ship glides on'; }
+    else if (['rapid', 'triple', 'shield', 'saucers', 'gems'].includes(key)){ SET[key] = !SET[key];
+      msg = { rapid: 'Rapid fire', triple: 'Triple shot', shield: 'Shield', saucers: 'Saucers', gems: 'Gems' }[key] + (SET[key] ? (['saucers', 'gems'].includes(key) ? ' on' : ' always on') : (['saucers', 'gems'].includes(key) ? ' off' : ' only from the gems')); }
+    else if (key === 'wave'){ SET.wave = nx(WAVES, SET.wave); msg = 'New games start at wave ' + SET.wave; }
+    else if (key === 'ships'){ LIVES.endless = !LIVES.endless; ARCADE.save('asteroids.lives', LIVES.endless ? 'endless' : 'three'); msg = LIVES.endless ? 'Endless ships' : 'Three ships, as the arcade'; }
+    else if (key === 'hop'){ HOP.on = !HOP.on; ARCADE.save('asteroids.hop', HOP.on ? 'on' : 'off'); msg = HOP.on ? 'Fly off an edge to the next board' : 'The edges wrap round'; }
+    else if (key === 'sound'){ SND.item.on(); msg = 'Sound ' + (SND.on ? 'on' : 'off'); }
+    else return false;
+    saveSet(); say(msg, 1800);
+    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
+    return true;
+  }
   const app = {
     name: 'asteroids',
     realtime: true,
-    cellFar: { light: SPACE, dark: SPACE },
+    get cellFar(){ const c = LOOK_COL[SET.look].space; return { light: c, dark: c }; },
     faceMinPx: 1,
     itemMinPx: FAR_PX,
     itemCaps: BOOM.caps,
     itemGeometries: geos,
     cellGrid(c, r, px){
       if (LIVE && LIVE.key === gkey(c, r)) gameAt(c, r);
-      if (px >= FAR_PX) return { n: N, colors: PLAIN };
+      if (px >= FAR_PX) return { n: N, colors: PLAINS[SET.look] };
       return gridOf(shown(c, r));
     },
-    fabricCell(ctx, rect){ ctx.fillStyle = hex(SPACE); ctx.fillRect(rect.x, rect.y, rect.w, rect.h); },
+    fabricCell(ctx, rect){ ctx.fillStyle = hex(LOOK_COL[SET.look].space); ctx.fillRect(rect.x, rect.y, rect.w, rect.h); },
     cellItems(c, r){
       const g = GAMES.get(gkey(c, r));
       const framed = !!(LIVE && LIVE.key === gkey(c, r));
@@ -27717,7 +27823,13 @@ const ASTEROIDS_APP = (() => {
       }
       return asItems(shown(c, r));
     },
+    statTiles(c, r){ return tilesOf(c, r); },
+    onStatTap(c, r, i){ return setting(ORDER[i], c, r); },
     menu: [{ head: 'Asteroids', items: [LV_ITEM, SND.item,
+      { label: () => 'Look: ' + LOOK_NAME[SET.look], title: '3D, Vector (white outlines, as the arcade drew them) or Neon (glowing outlines).', on(){ setting('look'); } },
+      { label: () => 'Rocks: ' + SET.rocks + ', ' + SET.rspeed, title: 'How many rocks a wave and how fast, for the game you play (the row sets each).', on(){ setting('rocks'); } },
+      { label: () => 'Drift: ' + SET.drift, title: 'Classic: the ship glides on. Arcade: it stops when you stop thrusting.', on(){ setting('drift'); } },
+      { label: () => 'Start wave: ' + SET.wave, title: 'The wave a new game starts at.', on(){ setting('wave'); } },
       { label: () => 'Fly between boards: ' + (HOP.on ? 'on' : 'off'), title: 'On: fly off an edge and you go on to the next board, and its game becomes yours. Off: the edges wrap round, as in the arcade.',
         on(){ HOP.on = !HOP.on; ARCADE.save('asteroids.hop', HOP.on ? 'on' : 'off'); } },
       { label: () => 'Ships: ' + (LIVES.endless ? 'endless' : 'three'), title: 'Endless: a ship lost comes back and the game goes on, the losses counted. Three: the arcade\'s, an extra ship every 10,000, and the game over when the last is lost.',
@@ -27774,7 +27886,7 @@ const ASTEROIDS_APP = (() => {
       for (const [x, y, size] of s.rocks){ ctx.beginPath(); ctx.arc(x * sz, y * sz, RAD[size] * sz, 0, Math.PI * 2); ctx.fill(); }
       if (s.ship){ ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.ship[0] * sz, s.ship[1] * sz, Math.max(1.5, 0.02 * sz), 0, Math.PI * 2); ctx.fill(); }
     },
-    _debug: { newGame, start, step, fire, pilot, bakeReel, adopt, games: GAMES, CLEARED, LIVES, HOP, lose, shown, gameAt, get LIVE(){ return LIVE; }, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
+    _debug: { newGame, start, step, fire, pilot, bakeReel, adopt, games: GAMES, CLEARED, LIVES, HOP, lose, shown, gameAt, SET, setting, tilesOf, ORDER, asItems, snap, nextWave, get LIVE(){ return LIVE; }, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
   };
   return app;
 })();
