@@ -3850,12 +3850,14 @@ try {
     const before = failures.length;
     const t = await page.evaluate(async () => {
       const W = window.FIELD_WORLD, wait = ms => new Promise(ok => setTimeout(ok, ms)), out = {};
+      // (a tilt is held to the stops once a frame is drawn, and mini golf's frames take seconds in the software renderer: ask, then
+      //  wait until the number has moved, up to 15 s, and a moment more)
+      const tilt = async (v, held = true) => { W.st.pitch = v; for (let k = 0; held && k < 60 && Math.abs(W.st.pitch - v) < 1e-6; k++) await wait(250); await wait(300); return W.st.pitch; };
       window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')); await wait(5000);   // (the opening fit looks again for about three seconds, until a touch: a tilt set inside them was put back to 60° on CI)
       out.open = W.st.pitch;
-      for (const [k, v] of [['low', 0], ['high', 95], ['mid', 30]]){ W.st.pitch = v; await wait(800); out[k] = W.st.pitch; }
+      out.low = await tilt(0); out.high = await tilt(95); out.mid = await tilt(30, false);
       window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'minigolf')); await wait(5000);
-      W.st.pitch = 95; await wait(800); out.golfHigh = W.st.pitch;
-      W.st.pitch = 0; await wait(800); out.golfLow = W.st.pitch;
+      out.golfHigh = await tilt(95); out.golfLow = await tilt(0);
       return out; });
     if (!(Math.abs(t.open - 60) < 1 && t.low < 10 && t.high >= 88 && Math.abs(t.mid - 30) < 1 && t.golfHigh <= 75 && t.golfLow >= 44))
       failures.push(`[${current}] ${JSON.stringify(t)}`);
