@@ -100,7 +100,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   from the sides and top. (The cannon was taken out on Oct 9.) Bumpers come in four kinds, `kick [col, row, r, kind]`: 0 classic,
   1 power (kicks much harder), 2 sponge (swallows speed), 3 spinner (flicks sideways).
   `tests/golf-course.mjs` plays the
-  course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates `LEVEL_SAMPLE` (10) holes at each of levels 1, 3 and 5
+  course and a sample of generated holes (`GEN_SAMPLE`, 40), then rates (by the guess) `LEVEL_SAMPLE` (10) holes at each of levels 1, 3 and 5
   and fails unless they climb (see Difficulty). Sunken ground goes at most BASE deep. All water and sand are shapes
   (`lake`, `sand`, see below): water and sand written in cells (`~`, `s`) are read as shapes (`shapify`, see "No painted
   water or sand"); the old reading of cells blurred (`softAmount`) went on Oct 27 (dead code). Mini golf has `firstTapPlays`: the tap that selects a hole also tees off. The movers (Oct 8) run on the game's clock (`toyAt`; a board no one plays,
@@ -179,8 +179,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   so NX, NY, CW, WD, the ground's rows (`MESH` = 6·NY, `GROUND_ROWS` = 6, 3 and 1 rows a cell) and `boardShape` follow the size;
   `setGolfSize(size, keep)` makes the app again at the new size, puts it in `FIELD_APPS` in the old one's place (same id) and
   switches to it, so a board's game is begun afresh. Only Small has the course (its 22 holes are drawn at 8 × 13): at Medium and
-  Tall every board's hole is generated. Each size keeps its own My holes, best lines, clipboard and remade holes (the keys get
-  `.medium` / `.tall` after them, `SIZED`). A `?hole=` or `?line=` link opens at the size its map is (`golfSizeAtLoad`).
+  Tall every board's hole is generated. Each size keeps its own My holes, pars and clipboard (the keys get
+  `.medium` / `.tall` after them, `SIZED`). A `?hole=` link opens at the size its map is (`golfSizeAtLoad`).
   `cleanSrc`'s ranges (`SPEC_LAND`, `SPEC_TOY`) are in NX and NY: written as 8 and 13 they clamped every generated hole's
   things into Small's corner of a bigger board. The generator scales its pieces of ground and loose toys by the board's
   area against Small's (`AREA`, `more`) and its stream's and wall's rows by its height (`TALL`, `down`); on Small both are 1
@@ -222,23 +222,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
-  - **The rating** (`rater`, `rateHole`, `rateSoon`, `RATE`): a player with a person's hands, its aim off by about 4°,
-    its strength by about 12%, and its shot up to about half a second late. It plays a hole `RATE.rounds` (8) times, each
-    from its own moment of the toys' clock, up to `RATE.cap` (10) strokes.
-    - At each stroke it searches as if its hands were perfect: 32 headings × 5 strengths, stepping at 1/40 s.
-    - It tries the best 8 that end half a cell apart 3 times each with its own hands (at 1/60 s), and keeps the best on
-      average. A stroke lost to water counts as `RATE.wet` cells farther from the cup.
-    - It is seeded by the hole as written, so a hole always gets the same rating. It returns {mean, sd, sunk, stars}.
-    - Stars come from the mean (`STAR_AT`: 2.7, 3.0, 3.45, 4.6, halfway between the levels' medians, so a level-n hole is
-      mostly n stars); par from a rating is `parOfRating` = ceil(mean + 1).
-    - A hole takes 1–8 s; `rateSoon` runs it in 10 ms slices and keeps the result on the hole (`H.rated`).
+  - **The rating** (`ratingOf`, Oct 29: the guess; until then a player with a person's hands, `rater`, played every hole
+    eight times in the background, 1–8 s a hole, and the guess was fitted to it): a hole's mean strokes is its `guess`
+    (`guessMean`), kept on the hole (`H.rated`). Stars come from the mean (`STAR_AT`: 2.7, 3.0, 3.45, 4.6, halfway between the
+    levels' medians, so a level-n hole is mostly n stars); par from a rating is `parOfRating` = ceil(mean + 1).
     - The plain player (`solveHole`) aims perfectly and sinks nearly everything in one, so it only says whether the cup
       can be reached.
-  - **The menu:** Rate this hole (stars for the selected hole; while editing it is Check, which also sets par), and
-    Difficulty: Easy / Normal / Hard / Expert (`LEVEL_SET`, kept in `golf.level` as before).
+  - **The menu:** Difficulty: Easy / Normal / Hard / Expert (`LEVEL_SET`, kept in `golf.level` as before); while editing,
+    Check also sets par from the rating.
     - It is the one Difficulty: it was the arcade kit's (the grass's speed and the cup's size, `DIFF`), and now it shifts
       the holes' levels too. Expert plays on Hard's grass and cup.
-    - The rater always plays on Normal's (`EVEN`), so a hole's stars and par don't depend on the setting.
   - **The levels:** a generated hole is made for a level from 1 to 5, given by `levelAt` = the ring level plus the
     setting (Easy 0, Normal 1, Hard 2, Expert 3), so every step of the setting moves every board a level (Oct 10, later:
     "I dont notice any difference").
@@ -266,24 +259,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
       rating at 0.73. Its features are water, the riders'
       size and speed, walls, windmills, the cage, turnstiles/doors/gates, length, ground and a ground guard.
     - The hole keeps `guess`. If the generator changes much, rate a few hundred holes and refit.
-  - **The editor:** Harder and Easier tiles make every mover 18% faster or slower, its rider 6% bigger or smaller, and
-    the ground 18% steeper or gentler.
-  - **Rated as you play** (Oct 10: "6,4,2,3", 4 being stars on the scorecard): `rateAhead` rates the hole in play in the
-    background (`rateSoon` with `gentle`: 5 ms slices, 40 ms apart), then the next board's (`nextBoard`). One runs at a time
-    (`BGR`); a new hole stops it. A rated hole's stars show on the tee and when sunk (`starTag`) and ride on the card
-    (`R.card` entries carry `stars`, `name`, `num`). A round ends on a scorecard (`openCardBox`, `#golfCardBox`: a row a
-    hole with par, strokes and stars, the average stars, Close; Escape closes it).
-  - **Holes no one could finish, made again** (Oct 11: "proceed", on "Catch the near-unplayable holes"): about one level-5
-    hole in 400 the guess called fair could hardly be finished (112107; 11763 "the amber saddle" once movers kept apart, sunk
-    once in 8 by the rater). Rating every hole as it is made would take seconds a board, so the ratings `rateAhead` already
-    makes are used. `vetRated(k, R)` (from `rateSoon`): a generated hole sunk in fewer than half its rounds (`R.sunk < 0.5`)
-    is remembered in `REMADE` (GEN key → times remade, localStorage `golf.remade`, the latest 1000), and the board gets the
-    hole of its next eight attempts (`genSrc(idx, lv, from)`, from = 8 × times), in its own slot (`remakeIn`: number, level,
-    board kept; `H.remadeN`). A hole someone is playing (`holeBusy`: a game on it not done) is not swapped: the tee says so,
-    and `holeAt` remakes it the next time the board is wanted. After three it is left as it is. Of 55 fresh level-5 holes
-    rated, none sank fewer than half (the worst five in eight). The course test rates a generated hole its player cannot
-    finish (`vetHole`); if the page would make it again, it plays the new one, and fails if more than one in 33 of its sample
-    was made again.
+  - **The editor:** Harder and Easier tiles step every mover to the next of the fixed periods (`stepMovers`, `kaStep`: see
+    "Movers keep apart"), its rider 6% bigger or smaller, and the ground 18% steeper or gentler.
+  - **Stars as you play** (Oct 10: "6,4,2,3", 4 being stars on the scorecard): a hole's stars show on the tee and when sunk
+    (`starTag`) and ride on the card (`R.card` entries carry `stars`, `name`, `num`). A round ends on a scorecard
+    (`openCardBox`, `#golfCardBox`: a row a hole with par, strokes and stars, the average stars, Close; Escape closes it).
+    (Holes the rating player could hardly finish were made again, `REMADE`, Oct 11–29; that went with the player.)
 - **Tilt maze** (Oct 14: "what are more games like mini-golf we could create", then "tilt maze"): `TILT_APP`, id `tiltmaze`,
   after Sokoban. A marble on a board you tip, through a maze to the gold ring, past holes.
   - **Every board its own maze** (`mazeFor`, `makeMaze`): from the board's number (`boardIdx`, golf's Szudzik pairing) at a level
@@ -1316,84 +1297,44 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     in a live exchange; since Oct 21 also what each weapon does, duels of two, three and four tanks ending, a real key (D)
     driving on fuel, the row's big shell chosen and spent, and three tanks with two players: after Player 1 and the computer,
     Player 2's turn with the controls theirs.
-- **Tank maze** (Oct 21: "maze tank battle", the second of the tank games offered): `TANKMAZE_APP`, id `tankmaze`, after Tanks.
-  Two tanks seen from above in a maze, as Tank Trouble plays it: drive, turn and fire; a shell runs on for `LIFE` (9 s) bouncing
-  off every wall, and hits whichever tank it finds, the one that fired it too once it is `GRACE` (0.17 s) out. The last tank
-  standing takes the round, the first to `WIN` (5) the match; every round is a new maze.
-  - **Every board its own mazes** (`makeMaze(idx, lv, round)`: the tilt maze's backtracking walk with many more loops, the two
-    tanks in cells far apart along it, each facing an open side), at a level 1–5, the ring level plus the Difficulty (Easy 0,
-    Normal 1, Hard 2). `LV`: 5 to 9 cells a side, loops 0.32 down to 0.2, and the computer's hand: `aim` (bounces it looks for,
-    none at level 1), `rays` (48–120 headings tried), `think` (0.32 s down to 0.11 between plans), `err` (6° down to 1.2°),
-    `lead` (aims where you will be, from level 3), `dodge` (the chance it sees a shell coming, 0 to 1), `cool` and `most` (its
-    shells in the air, 1 to 3; yours `MAXB`, 5).
-  - **One physics for shells and the computer's eye** (`trace`): a shell's whole way is laid down when it is fired, a ray
-    against the walls widened by its radius (slab test), mirrored at each face it meets; where it is is how far along it has
-    gone (`along`), and a hit is the way coming within `HIT_R` + its radius of a tank between two steps (`nearest`, which also
-    takes a moving point, for leading). The computer looks for shots along the same rays (`findShot`: the straight line and
-    `rays` headings, each off up to `aim` walls, that reach you before coming back through itself, and that do not come back
-    through it in the 2.5 s after); a shell coming its way, it tries seven moves for 0.7 s and takes the one keeping farthest
-    from every shell (`escape`); else it drives toward you along the maze (`pathOf`).
-  - **Controls**: the arrow keys or WASD drive (up forward, down back at 0.7, left and right turn), Space, Enter, Q or M fire;
-    a drag steers the tank toward the finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`); a tap
-    fires. A press of fire is kept until the tank can fire, up to `REQ_T` (0.6 s): a tap in a tank's first 0.4 s, while its
-    first cooldown ran, was lost. Two players (the menu's Players, localStorage `tankmaze.players`): Player 1 green on WASD with
-    Q or Space, Player 2 blue on the arrows with M or Enter, and a finger steers or fires the tank nearest it (`seatNear`).
-  - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a round ends `BOOM_T` (1.5 s) after
-    the first tank goes, or at `ROUND_CAP` (60 s), so both can go (no one scores). Through: stars by the match (5–0 or 5–1
-    three, to 5–3 two, else one), the most a board kept (localStorage `tankmaze.best`); a tap on a finished board goes on to the
-    next (golf's `nextBoard`), a hold starts it again.
-  - **A board no one plays** shows a round of two computer tanks on its first maze (`recSoon`, worked out STEP by STEP in about
-    6 ms in 30 and kept for `REC_CAP` 500 boards: the tanks sampled `REC_HZ` 15 a second, the shells as their ways, the bursts),
-    played back on the page's clock with a 1.5 s rest (`shownOf`). Measured over 20 rounds a level: 4.6, 5, 6, 8.4 and 12.2 s a
-    round, 2 to 37 ms to work one out (112 at most), half the hits or more off a wall from level 2; a round with no one left is
-    usually two tanks firing straight at each other at once.
-  - Drawn: walls as boxes (the outer one the level's colour, golf's flags), each tank tracks, hull, turret and gun turned to its
-    heading (`mzTracks`, `mzHull`, `mzTurret`, `mzGun`; never a yaw of 0, `yawOf`), shells, and a burst of fire and smoke.
-    An inner wall stops at the outer wall's inner face (Oct 22: "the inner walls of the maze should not extend into the outer
-    walls. they flash with a different color."): laid a little long so its corners close, its end lay inside the outer wall,
-    the two drawn by turns over each other in two colours. The tilt maze's walls (the same `wallsOf`) too; the smoke test
-    checks 20 mazes of each.
-  - **More to it** (Oct 21: "1,2,3" of the ideas offered: power-ups, three or four tanks, an aim line):
-    - **Power-ups** (`POWERS`, the menu's Power-ups, localStorage `tankmaze.powers`): a crate drops every `CRATE_GAP` (4–7 s,
-      the first at `CRATE_FIRST` 2.5 s) while fewer than `crateMax` (1 + tanks/2) lie about, in a cell 1.6 cells from every
-      tank (`G.crates`, each with t0 and t1, the time taken). A tank driving over one with nothing held takes it (`t.power`, a
-      light over its turret), and its next fire is it (`firePower`):
-      - laser (`firstHit`, `cutAt`): the whole way at once, `LASER_LEN` 40 cells off up to `LASER_SEG` 14 walls, the first tank
-        on it out, its own tank once it is `LASER_SAFE` 0.7 cells along (a laser at a wall beside you comes back for you);
-        drawn as thin bars fading over `LASER_SHOW`;
-      - frag: a shell, bigger and orange, that after `FRAG_T` 0.9 s bursts into `SHARDS` 14 short shards (`SHARD_LIFE`, at
-        `SHARD_V`, `grace` 0: they hit anyone); a shot's own speed is `b.v`, and its grace `b.grace`;
-      - spread: three shells `SPREAD` (0.2 rad) apart;
-      - mine (`G.mines`): laid under the tank, armed after `MINE_ARM` 1.2 s, then any tank within `MINE_R` sets it off and every
-        tank within `MINE_BLAST` goes;
-      - homing (`G.missiles`, `stepMissile`): at `HOME_V` of a shell's speed, toward the nearest other tank along the maze (the
-        next cell's middle, the one after once nearly there), straight at it once a ray reaches it, turning `HOME_TURN` a
-        second, sliding along a wall it meets (spent on every corner it clipped, it found its tank 13 times in 20; sliding, 19),
-        spent on a tank or after `HOME_T` 7 s; its `trail` is where it was, so a recording plays it back.
-      The computer goes for a crate within three cells when it has nothing held, lays a mine where ways meet or near a tank,
-      sends a missile when it has no shot, and fires a laser (`findShot(…, laser)`: not led, off more walls), frag or spread
-      where a shell would hit. Rounds and recordings carry `sounds` (a crate taken, a power fired, a frag's burst, a mine).
-    - **Three or four tanks** (the menu's Tanks, `SET.n`, localStorage `tankmaze.count`): `makeMaze(idx, lv, round, tanks)` is a
-      cell larger a side for each tank past two (5×5 to 11×11) and starts each tank after the first two in the cell farthest
-      along the maze from those placed. Seats: you (or you and Player 2), then the computer's tanks, Red, Orange, Violet
-      (`colsOf`, `namesOf`); every tank pushes off every other; a round ends `BOOM_T` after one or none is left (`downAt`,
-      `kill`); `score` a seat each, the best kept by board, level and count (`#3`, `#4`). The computer goes for the nearest
-      tank along the maze and shoots at any it can hit. A board no one plays records that many computer tanks (`recKey`).
-      Measured over 12 rounds each (powers on): 3 tanks 5.4, 8.6 and 19 s a round at levels 1, 3 and 5, 4 tanks 6.9, 11.4 and
-      27 s; working one out took up to 0.25 s on average at 4 tanks and level 5 (0.4 at most), done a little at a time.
-    - **The aim line** (`aimOf`, the menu's Aim line, localStorage `tankmaze.aim`): for each person's tank in play, dots a fifth
-      of a cell apart along where its shell would go from its gun (`trace`): `AIM_SEG` pieces of the way, 4 at level 1, 3, 2,
-      then the straight run alone at levels 4 and 5, at most `AIM_CELLS` 12 cells; with a laser held, the laser's own way.
-      Kept on the tank (`t._aim`) until it moves or turns.
-  - The smoke test checks the levels and sizes by ring, the same maze each time and another each round, a shell's way staying in
-    the board and coming back off a wall, your own shell killing you at 0.18 s, computer rounds at levels 2, 4 and 5 ending with
-    hits off walls, a computer tank getting out of a shell's way, a real key driving, a real click firing, a real drag steering,
-    a round won counted with a new maze, a match won with three stars and a best, two players each on their own keys, a board no
-    one plays moving, and the drawing (every wall, two tanks turned, a shell, a burst); since Oct 21 also the mazes for 2, 3 and
-    4 tanks, four tanks started apart, 3- and 4-tank rounds ending with crates taken and powers used, a laser coming back off
-    the wall beside you, a frag's 14 shards, a spread's 3 shells, a mine armed and set off, a missile finding its tank, a crate
-    dropped and taken, the aim line from the gun along its heading (3 pieces at level 1, 1 at level 5), and the crates, mines,
-    beams, missiles and aim dots drawn.
+- **Tank maze: the chase** (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal
+  is to evade the oponent tank. when he overtakes you, you lose."): `TANKMAZE_APP`, id `tankmaze`, after Tanks. Tanks seen from
+  above in a maze, and no shells: you (tank 0, the runner) drive and turn, the computer's tanks hunt you. A hunter coming
+  within `CATCH` × `TR` (2.06 × 0.26 of a cell) catches you and takes the round; holding out for the level's `hold` seconds
+  takes it for you. The first to `WIN` (3) rounds takes the match; every round is a new maze.
+  - **Every board its own mazes** (`makeMaze(idx, lv, round, tanks)`: the tilt maze's backtracking walk with loops, the tanks
+    in cells far apart along it), a level 1–5 by ring plus the Difficulty (Easy 0, Normal 1, Hard 2). `LV`, easy to hard: 9 to
+    7 cells a side (a cell more a side for each tank past two), loops 0.5 down to 0.15 (more ways round at level 1), `hold`
+    20 to 30 s, the hunter's speed `v` 0.72 to 1 of yours, `think` 0.5 down to 0.12 s between plans, `lead` (from level 3: it
+    heads for the cell you are going into) and `flank` (from level 4: a second or third hunter heads farther along your way,
+    to cut you off). Later hunters run at `EXTRA` (0.88) of the first's speed. Hunters wait `HEAD` (0.8 s) before they move.
+  - **The hunters** (`think`, `cpuCmd`, `steer`, `aheadOf`): straight at you in your cell or within 0.9 of a cell, else along
+    the maze (`pathOf`) to your cell, or ahead of you with `lead` and `flank`.
+  - **The steady runner** (`flee`, what a board no one plays shows, and what the levels were measured with): of the cells it
+    reaches before every hunter, the one farthest from them with the most ways out, never a dead end if it can help it, kept
+    until it is nearly there (re-planned every 0.6 s), turning back only when nothing else is safe. Measured over 20 mazes a
+    level, it held out 19, 16, 13, 10 and 4 times against one hunter at levels 1–5, 8 to 1 against two, 7 to 0 against
+    three; 4–17 ms a round.
+  - **Controls**: the arrow keys or WASD drive (up forward, down back, left and right turn); a drag steers the tank toward the
+    finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`). Two players (the menu's Players,
+    localStorage `tankmaze.players`): Player 1 runs on WASD, Player 2 hunts on the arrows, a finger steers the tank nearest it.
+  - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a catch is a burst and the round
+    ends `BOOM_T` (1.5 s) later. A gold bar along the near wall is the time left. Through: stars by the match (3–0 three, 3–1
+    two, else one), the most kept a board (localStorage `tankmaze.best`); a tap on a finished board goes on to the next.
+  - **A board no one plays** shows a round of the steady runner against its board's hunters (`recSoon`, a little at a time in
+    the boards' share of time, `REC_HZ` 15 a second, `shownOf`), played back on the page's clock with a rest.
+  - The menu: Difficulty, Tanks (2–4, localStorage `tankmaze.count`), Players, Sound (a burst when caught, a chime for a round
+    held out), Start this board again.
+  - Drawn: walls as boxes (the outer one the level's colour), each tank tracks, hull, turret and gun turned to its heading
+    (never a yaw of 0, `yawOf`), the time bar, a burst on a catch. An inner wall stops at the outer wall's inner face (Oct 22:
+    "the inner walls of the maze should not extend into the outer walls."); the tilt maze's walls too.
+  - **Until Oct 29** it was a battle, as Tank Trouble plays it: shells bouncing off every wall for 9 s, the computer finding
+    shots off up to three walls and dodging, power-ups (laser, frag, spread, mine, homing missile), an aim line, first to 5.
+    Tom found it too hard; the shells, the powers and the aim line went.
+  - The smoke test checks the levels by ring, the same maze each time and another each round, the sizes for 2, 3 and 4 tanks,
+    a catch and a hold-out, the hunters' wait, the steady runner holding out more at level 1 than at level 5, 3- and 4-tank
+    rounds ending, a real key driving, a real drag steering, a round held out counted with a new maze, a match won with three
+    stars and a best, two players with Player 2 hunting on the arrows, and a board no one plays moving with no shells drawn.
 - **Golf tanks, taken out** (Oct 29: "this ame does not work very well. it seems very complicated, but not very easy to play.",
   then "remove  golf tanks."): `GOLFTANK_APP` (Oct 22–29, the tank maze's battle on mini golf's holes, then roaming them as
   Asteroids) is gone, with what mini golf kept only for it: its kit (`_kit`, `solidsAt`, `bareOf` and the bare copies
@@ -1861,7 +1802,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   FEN and your side, `chessShare`, `chessTakeSetup`, which runs the editor's Done), the board games' Share this position
   (the framed board's position, any position, or the draft), tower defense's Share this board's map (`shareMap`,
   `takeMap` through `cleanMap`) and Sokoban's Share this board's level (`shareLevel`, `takeLevel`: `cleanMine`, then the
-  solver; a level with no way is refused). Mini golf keeps its own `?hole=` and `?line=`.
+  solver; a level with no way is refused). Mini golf keeps its own `?hole=`.
 - **Puzzle makers: Unblock Me, Flow and Eight Queens** (Oct 13: "ok, proceed", on puzzle makers where the solver checks the
   puzzle): `PUZZLE_ED`, after `BOARD_ED`. `PUZZLE_ED.make(app, G)` gives an app the bottom row's hooks, the menu's Make a
   puzzle for this board…, Cancel, Share this board's puzzle and Forget this board's puzzle, Escape, the puzzles kept on their
@@ -2048,17 +1989,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     only the pieces of line in the point's row of boxes, and `blobEdge(B, x, y, max)` only those within `max` (nearer is
     exact, farther is `max`; without `max` it tries them all). `rawH` (lakes to `LAKE_EDGE`, greens to `GREEN_EDGE`),
     `sandMix` and `lakeMix` pass their reach. The answers are the same as before; a stream hole rates in 4–5 s, not 7–10.
-- **Lakes, bunkers and greens as .tvf** (Oct 11, "proceed", the first of the TVF ideas left: "Open a .tvf as a lake,
-  bunker or green ... a heart drawn in draw becomes a heart-shaped pond. Saving a shape back out as .tvf would come with
-  it"): the editor's menu has Open a .tvf curve (it was Open a .tvf as a path) and, with one selected, Save this lake /
-  bunker / green / path as .tvf. A shape is written as a path is (`shapeToTvf`, `pathToTvf`), with `#meta kind:lake|sand|
-  green|path` (and a green's `#meta height`). A file this page wrote opens again as what it was, where it was, without
-  asking (`takeTvf`). Any other `.tvf` (picked, opened with the field's Open button or dropped) opens a box asking what it
-  should be (`openTvfBox`, `#golfTvfBox`: Lake, Bunker, Green, Path, Cancel; Escape closes it; several files are asked
-  about one after another, `TVF_Q`); `addTvfAs` lays it on the hole being edited, the editor started if it was not. A curve
-  from draw is fitted into the middle of the board, its proportions kept, in a box for what it becomes (`SHAPE_FIT`: lake
-  4 × 6, bunker 3 × 4, green 4 × 5; a path 5 × 7, `fitMiddle`); a shape takes up to 32 leaves, laid evenly along the curve
-  itself if it has more (`tvfToShapes`). Draw's y runs down the page, as the board's does, so a heart comes in upright.
+- **Lakes, bunkers and greens as .tvf** (Oct 11 to 29): the editor opened a `.tvf` from draw as a lake, bunker, green,
+  planter or path, and saved one back out. Taken out on Oct 29 ("1,2,47", 2 being the file import and export) with the
+  holes' `.golf` files; holes travel as `?hole=` links and are kept in My holes.
 - **Planters** (Oct 11: "#6", from "what else can we do with tvf?": "Closed curved walls. Rock islands or planters of any
   outline that the ball banks off, like a curved fence closed into a loop. Kidney-shaped or star-shaped obstacles"):
   `planter [x0, y0, …]`, 3–32 leaves in cells, a closed TVF curve through its leaves (`planterOf`, a lake's line by another
@@ -2070,8 +2003,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     wall, so the players go round. `plantersOf` keeps a hole's lines on the compiled hole.
   - Editor: the Planter tool (🪴): a drag draws the outline, a tap lays a kidney (`planterLeaves`: round, kidney or a
     five-lobed star). It stays selected; its leaves drag, are added and taken away; the line or the inside moves it whole.
-    `.tvf`: the open box offers Planter (fitted 3 × 3), and Save this planter as .tvf (`#meta kind:planter`).
-  - Generated holes: laid after the weave, asked for at 35–65% by level (a second at 4–5) and kept only where one fits, so
+    - Generated holes: laid after the weave, asked for at 35–65% by level (a second at 4–5) and kept only where one fits, so
     15% of level-1 holes to 36% at level 3 have one (about a quarter in all). Stars are 0.95–1.15 across, kidneys 0.7–1,
     rounds 0.6–0.9 (a star's lobes rounder than a wall piece, a third of a cell, is long). Every point of its line is on dry
     ground, 2.7 cells off the tee and the cup (the guards' room), off water, 1.6 off a bridge, 1.4 off a wall (one in a
@@ -2130,59 +2062,34 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   this fixed three, one of them without curves.
 - **Movers keep apart** (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where
   the golfball bounce away", then "Keep them apart" of the two ways offered; the other was making them bounce). Movers still
-  go where the clock says (any moment of a hole can be shown at once, which the rater, the plain player and the boards no one
-  plays need); the clock is arranged so they never meet. `keepApart(src, mode, tiers, anchor)` on a hole as written:
-  - Units (`kaUnits`): a path's riders (a train on one loop at one speed is one unit, kept in its spacing), a turnstile, a
-    door, a windmill, a gate. Each is tabled as its shape at `KA.Q` (256) fractions of its turn (`kaTable`), with its sweep
-    and its fastest part's speed. A door now has a 7th number and a windmill a 5th: its phase (cleanSrc keeps them; a windmill's
-    turn rate is kept to six places so a beat stays exact).
+  go where the clock says (any moment of a hole can be shown at once, which the plain player and the boards no one plays
+  need); the clock is arranged so they never meet. `keepApart(src, mode, tiers)` on a hole as written:
+  - Units (`kaUnits`): a path's riders (a train on one loop at one speed is one unit), a turnstile, a door, a windmill, a
+    gate. Each is tabled as its shape at `KA.Q` (256) fractions of its turn (`kaTable`), with its sweep and its fastest part's
+    speed. A door has a 7th number and a windmill a 5th: its phase (cleanSrc keeps them).
   - A train whose riders would meet on their own loop (a figure of eight, an even train) is spaced off those offsets
     (`kaTrain`), or loses riders.
-  - A thing standing still on a sweep (`kaStatics`: bumpers, boulders, fences, curved fences, planters, pipe mouths) is nudged
-    off it (1.8 cells for a loose one, 0.8 for a guard's, a screen's or the course's), else the less needed goes: tiers loose
-    1, weave and planters 2, screen 3, guard 4, the course's own 5 (never dropped); a piece on a track with two riders or more
-    gives way to it.
-  - Units whose sweeps reach one another go on one beat (`kaBeat`, at least 1.7 s, a multiple of 2 ms): each period becomes
-    the nearest of 1, 1½, 2, 3, 4 or 6 beats, so a pair comes round together within 12 beats. The most needed and the longest
-    trains first, each takes the first of 48 phases (nearest period first, then the others) at which it never comes within
-    `KA.gap` (0.08 cell) of one placed before it over that cycle (`kaClear`, which skips ahead while they are far apart and
-    allows half a table step each). Failing that, a train tries a rider shorter; then the unit goes ('gen'), or keeps its best
-    and is marked. `KA.budget` (400,000 gap tests) caps the trying, counted, not timed, so a hole is the same on any machine.
-  - Modes: 'gen' (a generated hole: `genSrc` keeps apart each attempt near its band and guesses it again, as dropped riders
-    made holes easier; the hole keeps `apart` {dropped, meets, why}), 'course' (at load, after the guards: rider sizes allowed
-    12% for Expert), 'time' (the editor, on every change: timing only, the selected mover keeps its period and sets the beat
-    so Faster and Slower stand; things that still meet are ringed red, `ED.meets`) and 'fit' (the menu's Keep movers apart:
-    nudges too, never drops).
-  - `tuneMovers` no longer rounds periods and scales windmills too, so a beat survives the Difficulty setting. Screens and the
-    fallback bumper keep off every track (`toyPoints`), and the serpent's way back lies a rider's width beside its way out.
-  - Measured: before, 185 of 274 generated holes with movers had something pass through something in 40 s (815 pairs of
-    riders met). After, none on the course or 300 generated holes, from the start, an hour on and two. The weave keeps 679 of
-    the 811 riders it made on 300 holes; a hole takes about 6.7 ms to make, against 3.6. Levels 1, 3 and 5 rate 2.1, 3.3
-    and 5.8 strokes (2.4, 3.3 and 6.0 before). Unplayable level-5 holes: 0 in 400 (1 in 400 before), though one that was
-    playable, 11763, is not now.
-- **The best line and its ghost** (Oct 11: "proceed", on "Shots saved as curves: your best line on a hole is kept as a
-  curve, so you can replay it, share it, or race it as a ghost ball on your next try"):
-  - **Recorded:** the hole in play (`g.rec`, made at its first putt only for the live game, never the rater's or the
-    players' copies) is recorded where `step` moves the ball, at each sub-step, from the first putt: seconds on the toys'
-    clock, x, y. A putt, a free push and a ball sent back from the water add a point where the ball lay.
-  - **Laid down as a curve** when the ball stops (`recFlush`, `thinLine`): the fewest points that, joined straight and ridden
-    at their times, keep within `GHOST_TOL` (0.03 cell) of the ball: Douglas and Peucker with time as the parameter, so the
-    points gather at bounces and bends (about 20 a stroke). Not a TVF curve: a bounce is a corner, and a smooth curve would
-    take the ghost through the rails.
-  - **Kept:** when sunk, `lineDone` makes it the hole's line if it took fewer strokes, or as many in less time. It is kept in
-    localStorage `golf.ghosts` (the last `GHOST_CAP` = 200) by `lineKey` = `originOf` the hole as written + `@` the
-    Difficulty, since a changed hole is another hole and the setting changes the grass. A line is `{v, s, ms, n, lv, at, p,
-    shared?}`, where `p` is [ms, x, y] in hundredths of a cell, each point stored as its step from the last (`lineCode`,
-    `lineDecode`, which refuses nonsense). The sunk message adds "best N" or "new best line, beating your N".
-  - **Raced:** on the board in play a pale ball (`ghostBall`, 45% opaque) rides the line from your first putt (`lineAt`,
-    `ghostItems`). The menu has Ghost: on/off (`golf.ghost`).
-  - **Watch my best line** (`watchLine`) plays it from now on the selected board, starting a game if there is none, with
-    the line dotted.
-  - **Share my best line** (`shareLine`, `lineLink`) copies `?app=minigolf&line=…`, base64 JSON `{hole, line}`, about
-    1.5 KB. A course hole on another setting goes with its movers as played. Opening one (`takeLineLink`, at load) plays the
-    hole as a shared hole is played (`PENDING`, `pendingNote`) and keeps the line marked shared, unless yours there is better.
-  - Played again with the same putts at the same moment, the ghost stays within 0.03 cell of the ball (the smoke test
-    checks it, after a real touch's putt starts a recording).
+  - A thing standing still on a sweep (`kaStatics`: bumpers, boulders, fences, curved fences, planters, pipe mouths, charges,
+    mines) gives way, or the mover does, the less needed (tiers: loose 1, weave and planters 2, screen 3, guard 4, the course's
+    own 5, never dropped; a piece on a track with two riders or more gives way to it); in the editor it is ringed red.
+  - **Fixed timing** (Oct 29: "1,2,47", 4 being "fixed timing for the movers"): every period is the nearest of `KA.beat`
+    (1.7 s) × 1, 1½, 2, 3, 4, 6 or 8; movers that reach one another take, of those lengths, one at a simple ratio to the first
+    of them (`KA.ratios`: ¼ to 4; in the editor the one in hand leads), nearest their own first, so a pair comes round together
+    within a few turns and every period is saved exact to the millisecond (a third of a length, 4.5333 s saved as 4.533,
+    drifted into a meeting within an hour). The most needed and the longest
+    trains first, each takes the first of 48 phases at which it never comes within `KA.gap` (0.08 cell) of one placed before
+    it over that cycle (`kaClear`). Failing that, a train goes a rider shorter; then the unit goes ('gen'), or is marked.
+    Until Oct 29 the beat was searched for on every hole, a stuck thing nudged off a track,
+    and the editor had Keep movers apart in its menu.
+  - Modes: 'gen' (a generated hole: `genSrc` keeps apart each attempt near its band and guesses it again; the hole keeps
+    `apart` {dropped, meets, why}), 'course' (at load, after the guards: rider sizes allowed 12% for Expert) and 'time' (the
+    editor, on every change: timing only; things that still meet are ringed red, `ED.meets`). The editor's Faster, Slower,
+    Harder and Easier step a period to the next fixed one (`kaStep`, `stepMovers`), since a smaller change lands back on it.
+  - Measured (Oct 29): nothing meets on the course or 300 generated holes, 30 s from the start and an hour on; 633 riders on
+    those 300 holes against 635 with the beat searched for, and the levels' guesses 2.44, 2.86, 3.33, 4.21, 4.88 against 2.44,
+    2.86, 3.32, 4.19, 4.89.
+- **The best line and its ghost** (Oct 11 to 29): the hole in play was recorded, its best line kept and raced as a pale ball,
+  watched and shared as `?line=` links. Taken out on Oct 29 ("1,2,47", 1 being the ghost and the line links).
 - **Leaves added and taken away** (Oct 10: "6,4,2,3", 3): with a path or a curved fence selected (Select), a tap on its
   line puts a leaf there, between the two it falls between. Two taps on a leaf within half a second take it away (three
   is the fewest). "On a leaf" means within a fingertip but no more than a third of the way to the next leaf (`ED.leafTap`).
@@ -2202,17 +2109,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `?app=minigolf&hole=…` carries one (base64 JSON). Anything from a link or storage
   goes through `cleanSrc` (map letters, one tee and cup, known kinds, numbers in range).
   **My holes in the menu** (Oct 10: "ive got 50 items in the menu"): one item, My holes (N)…, opens a list
-  (`openMineBox`, `#golfMineBox`: Play and Delete a row, Save all to a file, Delete all, Close; Escape closes it).
+  (`openMineBox`, `#golfMineBox`: Play and Delete a row, Delete all, Close; Escape closes it).
   Exact copies in storage are merged as the page loads. A copy of a course or generated hole carries `from` (a
   short hash of the hole as written, `originOf`, kept by `cleanSrc`), and editing that hole again reopens the copy.
   A hole keeps the board it was made on (`at: [c, r]`, set by `editStart`); the list's Play flies there (`goMine`,
   the field's `gotoCell`) and plays it. One with no board yet takes the selected board, or the corner's, and keeps it.
-  **Holes as text files** (Oct 10, as chess has Export PGN): the menu's Save this hole to a file, Save My holes to a
-  file and Open holes from a file; a `.golf` file is JSON `{format: 'minigolf', v: 1, holes: [...]}` laid out to be read
-  (`holeText`: the map as its 13 rows, a thing or a piece of ground a line, the dots a row to a line). `readHoles` also
-  takes a bare hole, a list, or text with a `?hole=` link; every hole goes through `cleanSrc` into My holes (not twice),
-  and the first is played. A `.golf` opened with the field's Open button or dropped on the window goes the same way
-  (`_loadFiles` → `GOLF_APP.importHoleFiles`, switching to mini golf). A hole is 0.2–1.5 KB.
+  (Holes as `.golf` text files, Oct 10 to 29, went with the file import and export.)
   Check runs the course test's plain player in the page (`solveHole`) and sets par.
   Its ground tools: Plateau (drag a box), Ramp and Half-pipe (drag a line) (Hill and Hollow were taken out on Oct 9),
   Bowl, and Select (`nearestLand`, `moveLand`) with Higher, Lower, Delete and Level. The
@@ -2229,11 +2131,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   take advantage of tvf"): its xs and ys are a closed `.tvf` curve's two rows, leaves at φ = (k + ½)·2π/N, and the loop
   is draw's own reconstruction through them (`TVF_CURVE.core.reconstruct` in `loopOf`, cached by array, so a changed
   path is a new array), ridden at an even speed (`loopAt`, `toyAt`); a drawn loop is laid down by draw's
-  `arcLengthResample`. While editing, the menu has Open a .tvf curve (a path, or since Oct 11 a lake, bunker or green: see
-  "Lakes, bunkers and greens as .tvf"; as a path, `tvfToPaths`: up to 6 subpaths, 64 leaves; a
-  curve from draw is fitted into a 5×7 box at the board's centre, one saved here, `source: minigolf`, keeps its cells)
-  and, with a path selected, Save this path as .tvf (`pathToTvf`); a `.tvf` dropped or opened with the field's Open
-  button goes the same way (`importTvfFiles`).
+  `arcLengthResample`.
   The Path tile: a drag draws the loop in place (`ED.drag.pts`, laid down as 5–16 leaves evenly along it in
   `editDragEnd`), a tap lays a round loop of eight; the path stays selected (`placedOnce` keeps it), its leaves drawn
   large in gold, and a press on a leaf of the selected path drags that leaf alone (`dragPick`, `ED.grab.leaf`); a press

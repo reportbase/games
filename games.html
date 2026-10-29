@@ -38537,15 +38537,15 @@ try { window.TVF_CURVE = TVF_CURVE; } catch {}
    board, 2.6 times the cells), Tall 8 × 21 (the same width, longer: a phone held upright). Changing it makes the game again at
    the new size and puts it in mini golf's place (setGolfSize; the field's board shape follows the app's boardShape). The 22
    holes of the hand-made course are drawn at 8 × 13, so they are Small's: at Medium and Tall every board has a generated hole
-   of that size. What a player keeps (My holes, best lines, holes made again, the editor's clipboard) is kept for each size
-   apart, Small's under the names it always had. Kept in localStorage `golf.size`; a link to a hole (?hole=, ?line=) opens at
+   of that size. What a player keeps (My holes, holes made again, the editor's clipboard) is kept for each size
+   apart, Small's under the names it always had. Kept in localStorage `golf.size`; a link to a hole (?hole=) opens at
    the size its map was made at. */
 const GOLF_SIZES = { small: [8, 13], medium: [13, 21], tall: [8, 21] };
 const GOLF_SIZE_NAMES = { small: 'Small', medium: 'Medium', tall: 'Tall' };
 function golfSizeAtLoad(){
   // (a shared hole carries its size in its map: read it, so the link plays at that size, without changing the saved one)
   try {
-    const q = new URLSearchParams(location.search), raw = q.get('hole') || q.get('line');
+    const q = new URLSearchParams(location.search), raw = q.get('hole');
     if (raw){ const b = String(raw).replace(/-/g, '+').replace(/_/g, '/'), o = JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))));
       const m = (o && (o.hole ? o.hole.map : o.map)) || null;
       if (Array.isArray(m)) for (const [k, [nx, ny]] of Object.entries(GOLF_SIZES)) if (m.length === ny && m.every(r => String(r).length === nx)) return k; }
@@ -39482,19 +39482,18 @@ const GOLF_MAKE = SIZE => {
   // the hole's number in the corner (Oct 2: "add a menu option to show the hole #"), off unless turned on (Oct 20: "turn hole
   // number off by default.")
   const NUMS = { on: ARCADE.load('golf.nums', 'off') === 'on' };
-  const GHOST = { on: ARCADE.load('golf.ghost', 'on') !== 'off' };   // your best line's ghost races you (Oct 11, see THE BEST LINE)
   const BR = 0.02, E = 0.78, VMAX = 2.0, DRAG = 0.5, FULL = 0.4, SINK_T = 1.4;
   const DIFF = { easy:   { mu: 0.6,  cup: 0.042, cap: 1.25 },
                  normal: { mu: 0.45, cup: 0.033, cap: 0.95 },
                  hard:   { mu: 0.36, cup: 0.027, cap: 0.72 } };
   /* ONE DIFFICULTY (Oct 10: "Now we way to adjust the difficulty" … "ok, proceed"). Mini golf's Difficulty was the arcade
      kit's easy, normal or hard, the grass's speed and the cup's size. It now also sets how hard the holes are made (see HOW
-     HARD, AND WHERE): Easy, Normal, Hard and Expert, kept as before in golf.level; Expert plays on Hard's grass and cup. The
-     rater (THE RATING) always plays on Normal's (EVEN), so a hole's stars and par are its own, whatever the setting. */
+     HARD, AND WHERE): Easy, Normal, Hard and Expert, kept as before in golf.level; Expert plays on Hard's grass and cup. A hole's
+     stars and par (THE RATING) are its own, whatever the setting. */
   const LEVEL_WORDS = ['easy', 'normal', 'hard', 'expert'], LEVEL_NAMES = ['Easy', 'Normal', 'Hard', 'Expert'];
-  let LEVEL_SET = LEVEL_WORDS.indexOf(ARCADE.load('golf.level', 'normal')), EVEN = false;
+  let LEVEL_SET = LEVEL_WORDS.indexOf(ARCADE.load('golf.level', 'normal'));
   if (LEVEL_SET < 0) LEVEL_SET = 1;
-  const DL = { get: () => EVEN ? 'normal' : ['easy', 'normal', 'hard', 'hard'][LEVEL_SET] };
+  const DL = { get: () => ['easy', 'normal', 'hard', 'hard'][LEVEL_SET] };
   const SND = ARCADE.sounds('golf.sound', 'A tap for each putt, a knock off the walls, a chime in the cup.');
   const D = () => DIFF[DL.get()] || DIFF.normal;
   const GAMES = new Map();
@@ -39536,7 +39535,6 @@ const GOLF_MAKE = SIZE => {
     LIVE = { key: gkey(c, r), c, r };
     const H = HOLES[h];
     say('Hole 1 of ' + ROUND + ' — ' + H.name + ', par ' + H.par + lvTag(H) + starTag(h) + '. Drag anywhere to pull back, let go to putt.', 3200);
-    rateAhead(h, c, r);                                      // (rated as you play: Oct 10)
     return g;
   }
   const liveGame = () => {
@@ -39565,124 +39563,17 @@ const GOLF_MAKE = SIZE => {
     g.ball.vx = -qx / L * p * VMAX; g.ball.vy = -qy / L * p * VMAX;
     g.moving = true; g.slowT = 0; g.rollT = 0; g.strokes++;
     g.trail = [[g.ball.x, g.ball.y]];                        // the last putt's ghost gives way to this one's
-    // (the best line: the hole in play is recorded from its first putt, the stroke starting where the ball lay)
-    if (!g.rec && g.strokes === 1 && g.state === 'play' && liveGame() === g) g.rec = { t0: null, raw: [], pts: [] };
-    const R = g.rec;
-    if (R){ if (R.t0 == null) R.t0 = g.t; recFlush(g); R.raw.push(g.t - R.t0, g.ball.x, g.ball.y); }
     SND.play('tap');
     return true;
   }
 
-  /* ─── THE BEST LINE, AND ITS GHOST ─────────────────────────────────── (Oct 11: "proceed", on "Shots saved as curves:
-     your best line on a hole is kept as a curve, so you can replay it, share it, or race it as a ghost ball on your next
-     try"). The hole in play is recorded from its first putt where the physics steps the ball, at each of its own sub-steps,
-     so a bounce off a rail is kept to the step: the time on the toys' clock, x and y. When the ball stops, the stroke is
-     laid down as a curve in time: the fewest points that, joined straight and ridden at their times, never leave the ball
-     more than GHOST_TOL (0.03 of a cell) from where it was (Douglas and Peucker's thinning, with time as the curve's
-     parameter, so the points gather at the bounces and the slopes' bends and thin out on the straights: some 10 to 40 a
-     stroke). It is a line of points and not a TVF curve: a TVF curve is smooth all round and a bounce is a corner, so
-     rounded off, the ghost would cut through the rails. A hole sunk in fewer strokes than its line, or in as many sooner,
-     becomes its line: kept in this browser (golf.ghosts, the last GHOST_CAP), by the hole as written and the Difficulty
-     (`lineKey`: a changed hole is another hole, and the setting is the grass's speed), in whole milliseconds and hundredths
-     of a cell, each point as its step from the last. Playing the hole again, a pale ball rides the line from your first
-     putt (Ghost: on, in the menu), so you race your best; Watch my best line rides it from now with the line dotted; Share
-     my best line copies a link carrying the hole and the line, which opens on the hole with that line to race. */
-  const GHOST_KEY = SIZED('golf.ghosts'), GHOST_CAP = 200, GHOST_TOL = CW * 0.03;
-  const GHOSTS = (() => { try { const o = JSON.parse(localStorage.getItem(GHOST_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; } })();
-  function ghostsSave(){
-    try {
-      const ks = Object.keys(GHOSTS);
-      if (ks.length > GHOST_CAP){ ks.sort((a, b) => (GHOSTS[a].at || 0) - (GHOSTS[b].at || 0)); for (const k of ks.slice(0, ks.length - GHOST_CAP)) delete GHOSTS[k]; }
-      localStorage.setItem(GHOST_KEY, JSON.stringify(GHOSTS));
-    } catch {}
-  }
-  const lineKey = k => { const H = HOLES[k]; if (!H) return null; if (!H._org) H._org = originOf(srcOf(k)); return H._org + '@' + LEVEL_SET; };
-  // the fewest of the points [t, x, y, …] whose straight joins, ridden in time, keep within tol of every one
-  function thinLine(a, tol){
-    const n = a.length / 3; if (n <= 2) return a.slice();
-    const keep = new Uint8Array(n), st = [[0, n - 1]], t2 = tol * tol; keep[0] = keep[n - 1] = 1;
-    while (st.length){
-      const [i, j] = st.pop(); if (j - i < 2) continue;
-      const ti = a[3 * i], span = a[3 * j] - ti; let worst = -1, wk = -1;
-      for (let k = i + 1; k < j; k++){
-        const f = span > 0 ? (a[3 * k] - ti) / span : 0.5;
-        const ex = a[3 * i + 1] + (a[3 * j + 1] - a[3 * i + 1]) * f - a[3 * k + 1], ey = a[3 * i + 2] + (a[3 * j + 2] - a[3 * i + 2]) * f - a[3 * k + 2], e = ex * ex + ey * ey;
-        if (e > worst){ worst = e; wk = k; }
-      }
-      if (worst > t2){ keep[wk] = 1; st.push([i, wk], [wk, j]); }
-    }
-    const out = []; for (let k = 0; k < n; k++) if (keep[k]) out.push(a[3 * k], a[3 * k + 1], a[3 * k + 2]);
-    return out;
-  }
-  // the stroke under way laid down as its curve, after the strokes before it
-  function recFlush(g){ const R = g.rec; if (!R || !R.raw.length) return; for (const v of thinLine(R.raw, GHOST_TOL)) R.pts.push(v); R.raw = []; }
-  // a line kept: [ms, x, y] in hundredths of a cell, each point as its step from the last
-  function lineCode(pts){
-    const out = []; let pt = 0, px = 0, py = 0;
-    for (let i = 0; i < pts.length; i += 3){
-      const t = Math.round(pts[i] * 1000), x = Math.round(pts[i + 1] / CW * 100), y = Math.round(pts[i + 2] / CW * 100);
-      out.push(t - pt, x - px, y - py); pt = t; px = x; py = y;
-    }
-    return out;
-  }
-  function lineDecode(p){
-    if (!Array.isArray(p) || p.length < 3 || p.length % 3 || p.length > 30000) return null;
-    const out = []; let t = 0, x = 0, y = 0;
-    for (let i = 0; i < p.length; i += 3){
-      const a = +p[i], b = +p[i + 1], c = +p[i + 2]; if (![a, b, c].every(Number.isFinite) || a < 0) return null;
-      t += a; x += b; y += c;
-      out.push(t / 1000, clamp(x / 100 * CW, 0, WD), clamp(y / 100 * CW, 0, 1));
-    }
-    return out;
-  }
-  // where the line's ball is at time u (seconds from its first putt), or null before its start and after its end
-  function lineAt(L, u){
-    const n = L.length / 3; if (!n || u < 0 || u > L[3 * (n - 1)]) return null;
-    let lo = 0, hi = n - 1;
-    while (hi - lo > 1){ const m = (lo + hi) >> 1; if (L[3 * m] <= u) lo = m; else hi = m; }
-    const ta = L[3 * lo], tb = L[3 * hi], f = tb > ta ? clamp((u - ta) / (tb - ta), 0, 1) : 1;
-    return { x: L[3 * lo + 1] + (L[3 * hi + 1] - L[3 * lo + 1]) * f, y: L[3 * lo + 2] + (L[3 * hi + 2] - L[3 * lo + 2]) * f };
-  }
-  const lineOfHole = k => { const key = lineKey(k), o = key && GHOSTS[key]; return o || null; };
-  const better = (a, b) => !b || a.s < b.s || (a.s === b.s && a.ms < b.ms);
-  // the hole is sunk: its recording finished, kept if it is the best, and a word for the tee's message
-  function lineDone(g){
-    const R = g.rec;
-    if (!R || R.t0 == null){ g.rec = null; return ''; }
-    R.raw.push(Math.max(0, g.t - R.t0), g.ball.x, g.ball.y); recFlush(g); g.rec = null;   // (the last stroke laid down first)
-    if (R.pts.length < 6) return '';
-    const H = HOLES[g.hole], key = lineKey(g.hole), old = GHOSTS[key];
-    const L = { v: 1, s: g.strokes, ms: Math.round(R.pts[R.pts.length - 3] * 1000), n: H.name, lv: LEVEL_SET, at: Date.now(), p: lineCode(R.pts) };
-    if (!better(L, old)) return ' · best ' + old.s + (old.shared ? ' (shared)' : '');
-    GHOSTS[key] = L; ghostsSave(); g.line = undefined;
-    return old ? ' · new best line, beating ' + (old.shared ? 'the shared ' : 'your ') + old.s : '';
-  }
-  // the line's ball and, while watching, the line itself as dots: on the board in play only
-  function ghostItems(out, G, H){
-    if (G.line === undefined){ const o = lineOfHole(G.hole); G.line = o ? lineDecode(o.p) : null; }
-    const L = G.line; if (!L) return;
-    const watching = G.watch != null, u = watching ? G.t - G.watch : G.rec && G.rec.t0 != null && GHOST.on ? G.t - G.rec.t0 : null;
-    if (watching){
-      let px = null, py = null, n = 0;
-      for (let i = 0; i < L.length && n < 600; i += 3){
-        const x = L[i + 1], y = L[i + 2];
-        if (px != null && Math.hypot(x - px, y - py) < 0.014){ continue; }
-        if (px != null){ const d = Math.hypot(x - px, y - py), m = Math.min(30, Math.floor(d / 0.014)); for (let q = 1; q < m && n < 600; q++, n++){ const f = q / m, qx = px + (x - px) * f, qy = py + (y - py) * f; out.push({ kind: 'ghost', u: qx, v: qy, scale: 0.01, lift: hOf(H, qx, qy) + 0.002, color: 0xbfe3ff }); } }
-        out.push({ kind: 'ghost', u: x, v: y, scale: 0.01, lift: hOf(H, x, y) + 0.002, color: 0xbfe3ff }); n++; px = x; py = y;
-      }
-      if (u > L[L.length - 3] + 1) G.watch = null;
-    }
-    const at = u == null ? null : lineAt(L, u);
-    if (at) out.push({ kind: 'ghostBall', u: at.x, v: at.y, scale: BR * 2, lift: hOf(H, at.x, at.y), color: 0xcfe8ff });
-  }
   function sink(g){
     const H = HOLES[g.hole];
     g.moving = false; g.ball.vx = g.ball.vy = 0; g.ball.x = H.cup.x; g.ball.y = H.cup.y;
-    const best = lineDone(g);                                // (the best line: Oct 11)
-    g.R.card.push({ hole: g.hole, par: H.par, strokes: g.strokes, name: H.name, num: H.num || g.hole + 1, stars: H.rated ? H.rated.stars : 0 });
+    g.R.card.push({ hole: g.hole, par: H.par, strokes: g.strokes, name: H.name, num: H.num || g.hole + 1, stars: (ratingOf(g.hole) || {}).stars || 0 });
     const d = g.strokes - H.par;
     const word = g.strokes === 1 ? 'Hole in one!' : d <= -2 ? 'Eagle!' : d === -1 ? 'Birdie!' : d === 0 ? 'Par' : d === 1 ? 'Bogey' : d === 2 ? 'Double bogey' : '+' + d;
-    say(word + ' — ' + g.strokes + (g.strokes === 1 ? ' stroke' : ' strokes') + ' on par ' + H.par + starTag(g.hole) + ' · ' + fmtDiff(diffOf(g)) + ' for the round' + best, best ? 2600 : 1800);
+    say(word + ' — ' + g.strokes + (g.strokes === 1 ? ' stroke' : ' strokes') + ' on par ' + H.par + starTag(g.hole) + ' · ' + fmtDiff(diffOf(g)) + ' for the round', 1800);
     SND.play(d <= 0 ? 'win' : 'good');
     g.state = 'sunk'; g.sunkT = SINK_T;
   }
@@ -39721,7 +39612,6 @@ const GOLF_MAKE = SIZE => {
     H = HOLES[hole];
     if (!moved) GAMES.set(LIVE.key, ng);
     say('Hole ' + (R.card.length + 1) + ' of ' + ROUND + ' — ' + H.name + ', par ' + H.par + lvTag(H) + starTag(hole), 2200);
-    if (!SILENT && LIVE) rateAhead(hole, LIVE.c, LIVE.r);
   }
 
   /* ─── THE TOYS ─────────────────────────────────────────────────────── */
@@ -39963,27 +39853,36 @@ const GOLF_MAKE = SIZE => {
   }
   /* MOVERS KEEP APART (Oct 11: "the objects respect the golfball, but not each other. Objecs float into each other, where
      the golfball bounce away", and of the two ways offered, "Keep them apart"). A mover goes where the clock says, so
-     nothing it meets can turn it, and on 300 generated holes, run for 40 s, 185 of the 274 with movers had something pass
-     through something: 815 pairs of riders met, riders went through bumpers 107 times and boulders 82, doors 51,
-     windmills 29. A mover still goes where the clock says, so any moment of a hole can be shown at once (the rater, the
-     plain player and the boards no one plays all need that); what changes is that the clock is arranged so they never
-     meet. keepApart, on a hole as written (cells):
-     - Movers are units: a path's riders, a train of them on one loop at one speed (kept in their spacing), a turnstile, a
-       door, a windmill, a gate. Each is a shape at every fraction of its turn (KA.Q of them) and goes round at its own
-       period from its own phase (a door and a windmill take a phase of their own now, their last number).
-     - A thing standing still on a mover's sweep (its track and its rider, a bar's turn, a gate's line) is nudged off it, up
-       to 1.8 cells for a loose one and 0.8 for a guard's, a screen's or the course's; if nowhere will do, the less needed
-       of the two goes (on a generated hole only: KA tiers, loose toys first, then the weave, the screen, the guard, the
-       course's own).
-     - Movers whose sweeps reach one another go on one beat: every period becomes one of 1, 1½, 2, 3, 4 or 6 beats
-       (the beat 1.7 s or more, a multiple of 2 ms, so the numbers a hole is saved with keep it exact and Expert's speeds
-       stay above their floor), whichever is nearest, so the two come round together every few beats. Then each, the most
-       needed first, takes the first of 24 phases at which, over that whole cycle, it never comes within KA.gap of any
-       placed before it; failing that, the next nearest period; failing that it goes (a generated hole) or keeps its best
-       and is marked (yours, in the editor).
-     - Riders of one train that meet each other on their own loop (a figure of eight with an even train) lose one.
+     nothing it meets can turn it (any moment of a hole can be shown at once: the plain player and the boards no one plays
+     need that); what changes is that the clock is arranged so they never meet. keepApart, on a hole as written (cells):
+     - Movers are units: a path's riders (a train of them on one loop at one speed is one unit), a turnstile, a door, a
+       windmill, a gate. Each is a shape at every fraction of its turn (KA.Q of them).
+     - Riders of one train that meet on their own loop are spaced off the offsets where they would (kaTrain), or lose one.
+     - A thing standing still on a mover's sweep gives way, or the mover does, the less needed of the two (on a generated
+       hole only: tiers, loose toys first, then the weave, the screen, the guard, the course's own); elsewhere it is marked.
+     - Fixed timing (Oct 29: "1,2,47", 4 being "fixed timing for the movers"; until then the beat was searched for on every
+       hole, and a stuck thing nudged off a track): every period is one of a few fixed
+       lengths, KA.beat times 1, 1½, 2, 3, 4, 6 or 8, the nearest (the beat 1.7 s, so Expert's speeds stay above their
+       floor), and movers that reach one another keep a simple ratio (KA.ratios) to the first of them (in the editor, the
+       one in hand), so they come round together within a few turns. Then each, the most needed first, takes the first of
+       KA.phases phases at which, over that cycle, it never comes within KA.gap of any placed before it; failing that, a
+       train goes a rider shorter, then the mover goes (a generated hole) or is marked where it meets (the course, yours).
      The tests count the meetings: see the smoke test. */
-  const KA = { gap: 0.08, beatMin: 1.7, beatMax: 6, mults: [1, 1.5, 2, 3, 4, 6], phases: 48, Q: 256, dt: 0.05, budget: 4e5 };
+  const KA = { gap: 0.08, beat: 1.7, mults: [1, 1.5, 2, 3, 4, 6, 8], ratios: [1 / 4, 1 / 3, 1 / 2, 2 / 3, 1, 3 / 2, 2, 3, 4], phases: 48, Q: 256, dt: 0.05 };
+  // one of the fixed lengths a step shorter (dir −1, faster) or longer (dir +1), from a period p, its sign kept: the editor's
+  // Faster, Slower, Harder and Easier step the movers so, since a smaller change would land on the same length again
+  const kaStep = (p, dir) => { const L = KA.mults.map(m => m * KA.beat), a = Math.abs(p) || L[0];
+    const i = L.reduce((b, x, j) => Math.abs(Math.log(a / x)) < Math.abs(Math.log(a / L[b])) ? j : b, 0);
+    return (Math.sign(p) || 1) * L[Math.max(0, Math.min(L.length - 1, i + dir))]; };
+  function stepMovers(src, dir){
+    src.toys = src.toys.map(T => {
+      if (T.path){ const v = T.path.slice(), n = (v.length - 4) >> 1; if (v[2 * n + 1]) v[2 * n + 1] = kaStep(v[2 * n + 1], dir); return { path: v }; }
+      for (const [k, i] of [['gate', 4], ['arm', 3], ['swing', 5]]) if (T[k]){ const v = T[k].slice(); if (v[i]) v[i] = kaStep(v[i], dir); return { [k]: v }; }
+      if (T.mill && T.mill[3]){ const v = T.mill.slice(); v[3] = 2 * Math.PI / kaStep(2 * Math.PI / v[3], dir); return { mill: v }; }
+      return T;
+    });
+    return src;
+  }
   function kaUnits(toys){
     const units = [], loops = new Map();
     toys.forEach((T, i) => {
@@ -40057,7 +39956,6 @@ const GOLF_MAKE = SIZE => {
   const kaBoxes = (A, B, m) => A[0] - m < B[2] && B[0] - m < A[2] && A[1] - m < B[3] && B[1] - m < A[3];
   const kaGcd = (a, b) => b ? kaGcd(b, a % b) : a;
   // the nearest gap between two units over the whole time it takes them to come round together; stops early below `stop`
-  let kaWork = 0;                                             // (gap tests made by one keepApart: see KA.budget)
   function kaClear(A, B, beat, stop){
     const ka = Math.round(Math.abs(A.per) / beat * 2), kb = Math.round(Math.abs(B.per) / beat * 2);
     const P = (ka && kb && Math.abs(ka * beat / 2 - Math.abs(A.per)) < 1e-6 && Math.abs(kb * beat / 2 - Math.abs(B.per)) < 1e-6) ? ka * kb / kaGcd(ka, kb) * beat / 2 : 120;
@@ -40066,7 +39964,6 @@ const GOLF_MAKE = SIZE => {
     for (let t = 0; t < P;){
       const ua = A.u0 + t / A.per, ub = B.u0 + t / B.per;
       const ta = A.tab[((Math.round((ua - Math.floor(ua)) * Q) % Q) + Q) % Q], tb = B.tab[((Math.round((ub - Math.floor(ub)) * Q) % Q) + Q) % Q];
-      kaWork += ta.length * tb.length;
       let lo = Infinity;
       for (const a of ta) for (const b of tb){ const g = kaGap(a, b); if (g < lo) lo = g; }
       lo -= slack;                                             // (each shape is its nearest table entry, up to half a step out)
@@ -40104,118 +40001,77 @@ const GOLF_MAKE = SIZE => {
     for (const out of U.tab) for (let a = 0; a < out.length; a++) for (let b = a + 1; b < out.length; b++) best = Math.min(best, kaGap(out[a], out[b]));
     return best - U.step;                                      // (between two table entries they may come a step nearer)
   }
-  function kaBeat(units){
-    const pers = units.map(U => Math.abs(U.per)).filter(p => p > 0);
-    if (!pers.length) return 0;
-    const err = b => pers.reduce((s, p) => s + Math.min(...KA.mults.map(m => Math.abs(Math.log(p / (m * b))))), 0);
-    let best = 0, be = Infinity;
-    for (const p of pers) for (const m of KA.mults){ let b = p / m; if (b < KA.beatMin || b > KA.beatMax) continue; b = Math.round(b / 0.002) * 0.002; const e = err(b) - b * 1e-4; if (e < be){ be = e; best = b; } }
-    return best || Math.max(KA.beatMin, Math.min(KA.beatMax, Math.round(Math.min(...pers) / 0.002) * 0.002));
-  }
-  function kaLead(L, units){                                  // a beat the lead's own period is a whole number of (1, 1½, 2, … beats)
-    const p = Math.abs(L.per), others = units.filter(U => U !== L).map(U => Math.abs(U.per));
-    let best = 0, be = Infinity;
-    for (const m of KA.mults){ const b = p / m; if (b < KA.beatMin || b > KA.beatMax) continue;
-      const e = others.reduce((s, q) => s + Math.min(...KA.mults.map(k => Math.abs(Math.log(q / (k * b))))), 0) - b * 1e-4; if (e < be){ be = e; best = b; } }
-    return best || kaBeat(units);
-  }
-  // keepApart(src, mode, tiers): mode 'gen' (a generated hole: may drop), 'course' (may drop only guards and screens),
-  // 'fit' (the editor's Keep movers apart: nudges, never drops) or 'time' (the editor as you draw: only the timing).
-  // Returns { src, meets: [[x, y], …] } where something still meets.
+  // keepApart(src, mode, tiers): mode 'gen' (a generated hole: may drop), 'course' (may drop only guards and screens) or
+  // 'time' (the editor as you draw: only the timing, the mover in hand (anchor) leading). Returns { src, meets: [[x, y], …] } where something still meets.
   function keepApart(src, mode, tiers, anchor){
     const toys = clone(src.toys || []), tier = i => (tiers && tiers[i]) || (mode === 'course' ? 5 : 2), meets = [];
-    kaWork = 0;
     const big = mode === 'course' ? 1.12 : 1;                 // (the course's riders grow 12% on Expert)
     let units = kaUnits(toys).map(U => kaTable(U, toys, big));
     const drop = new Set(), canDrop = i => mode === 'gen' || (mode === 'course' && tier(i) < 5), why = [];
     const gone = (i, r) => { if (!drop.has(i)){ drop.add(i); why.push(Object.keys(toys[i])[0] + ':' + tier(i) + ':' + r); } };
-    const uTier = U => Math.max(...U.idx.map(tier));
-    // 1. the riders of one train apart on their own loop
+    const uTier = U => Math.max(...U.idx.map(tier)), at = U => { const e = U.tab[0][0]; return e.c ? [e.c[0], e.c[1]] : [e.s[0], e.s[1]]; };
+    const shorter = U => { gone(U.idx[U.idx.length - 1], 'timing'); kaRespace(U, toys, big); };
+    // 1. the riders of one train apart on their own loop: spaced off the offsets where they would meet (a figure of eight
+    //    brings riders half a turn apart together at its crossing), or a rider fewer
     for (const U of units){
       if (U.kind !== 'path' || U.idx.length < 2 || kaSelf(U) >= KA.gap) continue;
-      if (!canDrop(U.idx[0]) && mode !== 'fit'){ meets.push([U.tab[0][0].c[0], U.tab[0][0].c[1]]); continue; }
+      if (!canDrop(U.idx[0])){ meets.push(at(U)); continue; }
       const T = kaTrain(U, toys, big), keep = U.idx.filter((_, m) => !T.lost.includes(m));
-      for (const m of T.lost) if (canDrop(U.idx[m])) gone(U.idx[m], 'train'); else meets.push([U.tab[0][0].c[0], U.tab[0][0].c[1]]);
+      for (const m of T.lost) if (canDrop(U.idx[m])) gone(U.idx[m], 'train'); else meets.push(at(U));
       U.idx = keep; U.r = U.r.slice(0, keep.length); U.d = T.ds.slice(0, keep.length); kaTable(U, toys, big);
     }
     // 2. what stands still off every sweep
-    const tc = (() => { let T = [4.5, 12.5], O = [4.5, 2.5]; (src.map || []).forEach((row, j) => { const a = row.indexOf('T'), b = row.indexOf('O'); if (a >= 0) T = [a + 0.5, j + 0.5]; if (b >= 0) O = [b + 0.5, j + 0.5]; }); return [T, O]; })();
-    const lakes = (src.land || []).filter(f => Array.isArray(f.lake)).map(f => blobOf(f.lake, f.lake.length >> 1));
     const elBox = e => e.c ? [e.c[0] - e.c[2], e.c[1] - e.c[2], e.c[0] + e.c[2], e.c[1] + e.c[2]] : [Math.min(e.s[0], e.s[2]) - e.h, Math.min(e.s[1], e.s[3]) - e.h, Math.max(e.s[0], e.s[2]) + e.h, Math.max(e.s[1], e.s[3]) + e.h];
     const sweepHit = (els, U) => { for (const e of els){ const eb = elBox(e); if (!kaBoxes(eb, U.box, KA.gap)) continue;
       for (const w of U.sw) if (kaBoxes(eb, w.b, KA.gap + U.step) && kaGap(w.e, e) < KA.gap + U.step) return [e.c ? e.c[0] : (e.s[0] + e.s[2]) / 2, e.c ? e.c[1] : (e.s[1] + e.s[3]) / 2]; } return null; };
-    {
-      let statics = kaStatics(toys);
-      for (const S of statics){
-        if (drop.has(S.i)) continue;
-        const hitU = units.filter(U => U.idx.length && !U.idx.every(i => drop.has(i)) && kaBoxes(U.box, [Math.min(...S.els.map(e => e.c ? e.c[0] - e.c[2] : Math.min(e.s[0], e.s[2]))), Math.min(...S.els.map(e => e.c ? e.c[1] - e.c[2] : Math.min(e.s[1], e.s[3]))), Math.max(...S.els.map(e => e.c ? e.c[0] + e.c[2] : Math.max(e.s[0], e.s[2]))), Math.max(...S.els.map(e => e.c ? e.c[1] + e.c[2] : Math.max(e.s[1], e.s[3])))], KA.gap) && sweepHit(S.els, U));
-        if (!hitU.length) continue;
-        if (mode === 'time'){ meets.push(sweepHit(S.els, hitU[0])); continue; }   // (the editor as you draw: marked, not moved)
-        let fixed = false;
-        if (S.move){                                          // nudged off, the nearest place that clears everything
-          const R = tier(S.i) <= 2 || mode === 'fit' ? 1.8 : 0.8, T = toys[S.i], k = S.k, v = T[k], others = statics.filter(O => O !== S && !drop.has(O.i));
-          for (let rr = 0.2; rr <= R + 1e-9 && !fixed; rr += 0.2) for (let q = 0; q < 16 && !fixed; q++){
-            const a = q / 16 * 2 * Math.PI + rr, dx = rr * Math.cos(a), dy = rr * Math.sin(a);
-            const els = S.els.map(e => e.c ? { c: [e.c[0] + dx, e.c[1] + dy, e.c[2]] } : { s: [e.s[0] + dx, e.s[1] + dy, e.s[2] + dx, e.s[3] + dy], h: e.h });
-            const ok = els.every(e => { const pts = e.c ? [[e.c[0], e.c[1], e.c[2]]] : [[e.s[0], e.s[1], 0.1], [e.s[2], e.s[3], 0.1]];
-              return pts.every(([x, y, r]) => x - r > 0.3 && x + r < NX - 0.3 && y - r > 0.3 && y + r < NY - 0.3 && '.s'.includes((src.map[Math.floor(y)] || '')[Math.floor(x)] || '#')
-                && !lakes.some(B => blobIn(B, x, y) || blobEdge(B, x, y, r + 0.2) < r + 0.2) && Math.hypot(x - tc[0][0], y - tc[0][1]) > r + 0.6 && Math.hypot(x - tc[1][0], y - tc[1][1]) > r + 0.5); })
-              && units.every(U => !U.idx.length || U.idx.every(i => drop.has(i)) || !sweepHit(els, U))
-              && others.every(O => O.els.every(o => els.every(e => kaGap(o, e) > 0.08)));
-            if (ok){ S.els = els; fixed = true;
-              if (k === 'fence') toys[S.i] = { fence: [...els[0].s.map(x => Math.round(x * 100) / 100)] };
-              else toys[S.i] = { [k]: [Math.round(els[0].c[0] * 100) / 100, Math.round(els[0].c[1] * 100) / 100, ...v.slice(2)] }; }
-          }
-        }
-        if (fixed) continue;
-        // nowhere to go: the less needed goes, where it may; a guard's or a loose piece gives way to a track with two riders
-        // or more on it rather than the whole track going (a peg of a fan, a boulder of a scatter, against a weave's train)
-        const top = Math.max(...hitU.map(uTier)), riders = hitU.reduce((n, U) => n + U.idx.length, 0);
-        if ((tier(S.i) <= top || riders >= 2) && canDrop(S.i)) gone(S.i, 'stands');
-        else if (hitU.every(U => U.idx.every(canDrop))) for (const U of hitU) for (const i of U.idx) gone(i, 'sweeps');
-        else meets.push(sweepHit(S.els, hitU[0]));
-      }
+    for (const S of kaStatics(toys)){
+      const live = units.filter(U => U.idx.length && !U.idx.every(i => drop.has(i)));
+      const hitU = live.filter(U => sweepHit(S.els, U));
+      if (!hitU.length) continue;
+      // (a guard's or a loose piece gives way to a track with two riders or more rather than the whole track going)
+      const top = Math.max(...hitU.map(uTier)), riders = hitU.reduce((n, U) => n + U.idx.length, 0);
+      if (mode !== 'time' && (tier(S.i) <= top || riders >= 2) && canDrop(S.i)) gone(S.i, 'stands');
+      else if (mode !== 'time' && hitU.every(U => U.idx.every(canDrop))) for (const U of hitU) for (const i of U.idx) gone(i, 'sweeps');
+      else meets.push(sweepHit(S.els, hitU[0]));
     }
     units = units.filter(U => U.idx.length && !U.idx.every(i => drop.has(i)));
-    // 3. the movers that reach one another, on one beat, each at a phase where it meets none placed before it
-    const near = U => units.some(V => V !== U && kaBoxes(U.box, V.box, KA.gap));
-    // (in the editor the mover in hand sets the beat and keeps its pace: Faster and Slower would be undone by the snapping)
-    const lead = anchor != null && anchor >= 0 ? units.find(U => U.idx.includes(anchor)) : null;
-    const linked = units.filter(near), beat = lead && linked.includes(lead) ? kaLead(lead, linked) : kaBeat(linked);
-    const order = units.slice().sort((A, B) => (B === lead) - (A === lead) || uTier(B) - uTier(A) || B.idx.length - A.idx.length || A.idx[0] - B.idx[0]), placed = [];   // (the most needed, then the longest trains)
+    // 3. every period one of the fixed lengths; the movers that reach one another each at a phase where it meets none placed
+    //    before it
+    const near = (a, b) => Math.abs(Math.log(a)) - Math.abs(Math.log(b));
+    for (const U of units){ const p = Math.abs(U.per), m = KA.mults.reduce((a, b) => near(p / (b * KA.beat), p / (a * KA.beat)) < 0 ? b : a);
+      U.per = (Math.sign(U.per) || 1) * m * KA.beat; }
+    const lead0 = anchor != null && anchor >= 0 ? units.find(U => U.idx.includes(anchor)) : null;
+    const order = units.slice().sort((A, B) => (B === lead0) - (A === lead0) || uTier(B) - uTier(A) || B.idx.length - A.idx.length || A.idx[0] - B.idx[0]), placed = [];   // (the most needed, then the longest trains)
+    // (movers that reach one another keep a simple ratio to the first of them, so they come round together soon: two of the
+    //  fixed lengths 3 and 4 beats apart met at some phase whatever was tried. Each takes another of the fixed lengths, so a
+    //  period is saved exactly to the millisecond: a third of one, 4.5333 s saved as 4.533, drifted into a meeting within an
+    //  hour. kaClear counts in half beats, which every fixed length is a whole number of.)
+    const linked = order.filter(U => units.some(V => V !== U && kaBoxes(U.box, V.box, KA.gap))), lead = linked[0];
+    const beat = KA.beat / 2, FIXED = KA.mults.map(m => m * KA.beat);
     for (const U of order){
-      if (!linked.includes(U)){ placed.push(U); continue; }
-      const p0 = Math.abs(U.per), sg = Math.sign(U.per) || 1, u00 = U.u0;
-      const mults = KA.mults.slice().sort((a, b) => Math.abs(Math.log(p0 / (a * beat))) - Math.abs(Math.log(p0 / (b * beat))));
-      const partners = placed.filter(V => kaBoxes(U.box, V.box, KA.gap));
-      let got = null, best = null;
-      const search = () => { for (const m of mults){
-        if (kaWork > KA.budget) return;                          // (a hole that has taken its share of trying: what is left goes, or is marked)
-        U.per = sg * m * beat;
-        for (let q = 0; q < KA.phases && !got; q++){
-          U.u0 = u00 + q / KA.phases;
-          const c = partners.reduce((lo, V) => lo < KA.gap ? lo : Math.min(lo, kaClear(U, V, beat, KA.gap)), Infinity);
-          if (c >= KA.gap) got = { per: U.per, u0: U.u0 };
-        }
-        if (got) break;
-      } };
-      search();
-      // (a train that fits nowhere tries again a rider shorter, before it goes)
-      while (!got && U.kind === 'path' && U.idx.length > 1 && canDrop(U.idx[U.idx.length - 1])){ gone(U.idx[U.idx.length - 1], 'timing'); kaRespace(U, toys, big); search(); }
-      if (!got){
+      // (a mover after the lead tries the ratios nearest its own first, then the others, before it gives way)
+      const u00 = U.u0, sg = Math.sign(U.per) || 1, own = Math.abs(U.per), L = lead ? Math.abs(lead.per) : own;
+      const pers = U === lead || !linked.includes(U) ? [U.per] : FIXED.filter(f => KA.ratios.some(q => Math.abs(f / L - q) < 1e-9))
+        .sort((a, b) => near(own / a, own / b)).map(f => sg * f);
+      U.per = pers[0];
+      const fits = () => { const partners = placed.filter(V => kaBoxes(U.box, V.box, KA.gap));
+        if (!partners.length) return true;
+        for (const per of pers){ U.per = per;
+          for (let q = 0; q < KA.phases; q++){ U.u0 = u00 + q / KA.phases;
+            if (partners.every(V => kaClear(U, V, beat, KA.gap) >= KA.gap)) return true; } }
+        U.per = pers[0]; U.u0 = u00; return false; };
+      let ok = fits();
+      while (!ok && U.kind === 'path' && U.idx.length > 1 && canDrop(U.idx[U.idx.length - 1])){ shorter(U); ok = fits(); }
+      if (!ok){
         if (U.idx.every(canDrop)){ for (const i of U.idx) gone(i, 'timing'); continue; }
-        for (const m of mults){ U.per = sg * m * beat;           // keep its best, and mark where it meets
-          for (let q = 0; q < KA.phases; q++){ U.u0 = u00 + q / KA.phases; const c = partners.reduce((lo, V) => Math.min(lo, kaClear(U, V, beat, -Infinity)), Infinity); if (!best || c > best.c) best = { per: U.per, u0: U.u0, c }; } }
-        got = best; U.per = best.per; U.u0 = best.u0;
-        const e = U.tab[0][0]; meets.push(e.c ? [e.c[0], e.c[1]] : [e.s[0], e.s[1]]);
+        meets.push(at(U));
       }
-      U.per = got.per; U.u0 = got.u0; placed.push(U);
+      placed.push(U);
     }
-    // written back, every unit (a train spaced again on its own counts too, linked or not): the period and the phase, in each
-    // kind's own numbers
+    // written back, every unit: the period and the phase, in each kind's own numbers
     const fr = x => Math.round((((x % 1) + 1) % 1) * 1000) / 1000, rad = x => Math.round(Math.atan2(Math.sin(2 * Math.PI * x), Math.cos(2 * Math.PI * x)) * 1000) / 1000, p3 = x => Math.round(x * 1000) / 1000;
     for (const U of units){
-      U.idx.forEach((i, m) => { const T = toys[i], k = U.kind, v = T[k].slice();
+      U.idx.forEach((i, m) => { if (drop.has(i)) return; const T = toys[i], k = U.kind, v = T[k].slice();
         if (k === 'path'){ const n = pathN(v); v[2 * n + 1] = p3(U.per); v[2 * n + 2] = fr(U.u0 + U.d[m]); }
         else if (k === 'arm'){ v[3] = p3(U.per); v[4] = rad(U.u0); }
         else if (k === 'swing'){ v[5] = p3(Math.abs(U.per)); v[6] = fr(U.u0); }
@@ -40223,7 +40079,7 @@ const GOLF_MAKE = SIZE => {
         else if (k === 'mill'){ v[3] = Math.round(2 * Math.PI / U.per * 1e6) / 1e6; v[4] = rad(U.u0); }
         toys[i] = { [k]: v }; });
     }
-    return { src: { ...src, toys: toys.filter((T, i) => !drop.has(i)) }, meets, dropped: drop.size, why, beat, work: kaWork };
+    return { src: { ...src, toys: toys.filter((T, i) => !drop.has(i)) }, meets, dropped: drop.size, why, beat };
   }
   // A ball against something moving at (vx, vy) where they touch: out along n, bounced on their relative speed.
   function knockOff(b, nx, ny, px, py, r, vx, vy, e){
@@ -40388,9 +40244,8 @@ const GOLF_MAKE = SIZE => {
     if (g.state === 'sunk'){ if ((g.sunkT -= dt) <= 0) nextHole(g); return; }
     if (g.state !== 'play') return;
     const H = HOLES[g.hole], b = g.ball, P = D();
-    const R = g.rec && g.rec.t0 != null ? g.rec : null, tb = g.t - dt - (R ? R.t0 : 0);   // (the best line's recording)
     if (!g.moving){                                          // a ball at rest can still be knocked by a toy: a free push
-      if (H.toys && toys(g, H) > 0.01){ if (R) R.raw.push(tb, b.x, b.y); collide(g, H); g.moving = true; g.slowT = 0; g.rollT = 0; }
+      if (H.toys && toys(g, H) > 0.01){ collide(g, H); g.moving = true; g.slowT = 0; g.rollT = 0; }
       if (!g.moving) return;
     }
     const n = Math.min(400, Math.max(1, Math.ceil(Math.hypot(b.vx, b.vy) * dt / (BR * 0.4))));
@@ -40399,14 +40254,12 @@ const GOLF_MAKE = SIZE => {
       const ch = groundAt(H, b.x, b.y);
       if (ch === '~'){                                         // in the water: a stroke, and back where you putted from
         g.moving = false; b.vx = b.vy = 0; b.x = g.rest.x; b.y = g.rest.y; g.strokes++;
-        if (R) R.raw.push(tb + k * h, b.x, b.y);               // (the line jumps back with it)
         say('In the water — one stroke penalty', 1500); SND.play('bad');
         break;
       }
       // in a zap zone while it is on (Oct 20): back where you putted from, the stroke lost but no stroke more
       if (H.toys && zapsOf(H).some(Z => zapOn(Z.T, g.t) && blobIn(Z.B, b.x, b.y))){
         g.moving = false; b.vx = b.vy = 0; b.x = g.rest.x; b.y = g.rest.y; g.zapped = g.t;
-        if (R) R.raw.push(tb + k * h, b.x, b.y);
         say('Zapped — back where you putted from', 1500); SND.play('bad');
         break;
       }
@@ -40422,7 +40275,6 @@ const GOLF_MAKE = SIZE => {
       b.x += b.vx * h; b.y += b.vy * h;
       collide(g, H);
       if (H.toys){ const hit = toys(g, H); if (hit) collide(g, H); if (hit > 0.15) SND.play('tap'); }   // (a toy never pushes a ball into a wall)
-      if (R) R.raw.push(tb + (k + 1) * h, b.x, b.y);          // (the best line: every sub-step, so a bounce is kept to the step)
       // The ghost: the path, a dot every so often.
       const tr = g.trail || (g.trail = []), lp = tr[tr.length - 1];
       if (!lp || Math.hypot(b.x - lp[0], b.y - lp[1]) > 0.014){ if (tr.length < 400) tr.push([b.x, b.y]); }
@@ -40439,7 +40291,6 @@ const GOLF_MAKE = SIZE => {
       g.rollT = (g.rollT || 0) + h;
       if ((s < 0.012 && Math.hypot(gx, gy) * GRAV < P.mu * 0.9) || g.slowT > 1.5 || g.rollT > ROLL_MAX){ g.moving = false; b.vx = b.vy = 0; }
     }
-    if (R && !g.moving) recFlush(g);                         // (a stroke ended: laid down as its curve)
     // (no picking up: Oct 9, "remove max tries, player should be able to stay on hole as long as he wants")
   }
 
@@ -40784,7 +40635,6 @@ const GOLF_MAKE = SIZE => {
     plank: T => { const g = new T.BoxGeometry(1, 0.1, 0.98); g.translate(0, 0.02, 0); return g; },
     ball: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); return g; },
     teeMark: T => { const g = new T.SphereGeometry(0.5, 10, 8); g.translate(0, 0.5, 0); return g; },   // (the tee box's markers: a kind of their own, as tests and the ghost find the ball by its kind)
-    ghostBall: T => { const g = new T.SphereGeometry(0.5, 16, 12); g.translate(0, 0.5, 0); g.userData.opacity = 0.45; return g; },   // the best line's ball (Oct 11)
     armBar: T => { const g = new T.BoxGeometry(1, 1.4, 1); g.translate(0, 0.75, 0); return g; },   // a turnstile's or a door's bar (stretched along x)
     gateSeg: T => { const g = new T.BoxGeometry(1, 0.88, GATE_T * 2 / CW); g.translate(0, -0.16, 0); return g; },   // a gate's piece: a wall's height, the gate's thickness
     cup: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.03, 24); g.translate(0, 0.015, 0); g.userData.unlit = true; return g; },
@@ -41056,7 +40906,6 @@ const GOLF_MAKE = SIZE => {
     // The ghost: the last putt's path, as faint dots on the grass.
     if (G && G.trail && G.state === 'play') for (const [x, y] of G.trail) out.push({ kind: 'ghost', u: x, v: y, scale: 0.011, lift: hOf(H, x, y) + 0.002, color: 0xffffff });
     // the best line's ghost, racing you on the board in play (Oct 11)
-    if (G && G.state === 'play' && LIVE && LIVE.key === gkey(c, r)) ghostItems(out, G, H);
     const b = G ? G.ball : H.tee;
     if ((!G || G.state === 'play' || G.state === 'done' || G.state === 'edit')) out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
     if (G && G.state === 'edit') editOverlay(out, H);
@@ -41267,40 +41116,6 @@ const GOLF_MAKE = SIZE => {
      played longest ago gives up its place (its meshes dropped), so flying over thousands of boards holds a few thousand
      holes at most, and a hole in play is never taken back. */
   const GEN = new Map(), GEN_CAP = 1500;
-  /* HOLES NO ONE COULD FINISH, MADE AGAIN (Oct 11: "proceed", on "Catch the near-unplayable holes": about one level-5 hole in
-     400 could hardly be finished, the guess calling it fair: 112107, and 11763 once its movers were kept apart, which the rater,
-     with a person's hands, sank once in eight). Rating every hole as it is made would take seconds a board; but the hole in
-     play and the next board's are rated already, in the background (rateAhead). A generated hole the rater sinks in fewer than
-     half its rounds is remembered here (REMADE, its GEN key to the times it was remade, kept in this browser) and the board
-     gets the hole of its next eight attempts (genSrc's from): the next board before you reach it, the one in play next time.
-     After three it is left as it is. Rated on 55 fresh level-5 holes, none sank fewer than half (the worst five in eight);
-     those two sink one in eight. */
-  const REMADE_KEY = SIZED('golf.remade'), REMADE = (() => { try { const o = JSON.parse(localStorage.getItem(REMADE_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
-  const remadeSave = () => { try { const ks = Object.keys(REMADE); if (ks.length > 1000) for (const k of ks.slice(0, ks.length - 1000)) delete REMADE[k]; localStorage.setItem(REMADE_KEY, JSON.stringify(REMADE)); } catch {} };
-  const timesIn8 = f => { const n = Math.round(f * 8); return n === 0 ? 'no times' : n === 1 ? 'once' : n === 2 ? 'twice' : n + ' times'; };
-  const holeBusy = k => [...GAMES.values()].some(g => g.hole === k && g.state !== 'done');
-  // the board's hole made again from its next attempts, in its own slot (its number, level and board kept)
-  function remakeIn(k, idx, lv, n){
-    const src = cleanSrc(genSrc(idx, lv, 8 * n));
-    if (!src) return false;
-    setHole(k, src);
-    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv; H.remadeN = n;
-    return true;
-  }
-  // a generated hole the rater found next to unplayable: remembered, and made again now if no one is playing it
-  function vetRated(k, R){
-    const H = HOLES[k];
-    if (!H || H.gen == null || H.custom || !R || !(R.sunk < 0.5)) return false;
-    const lv = H.level || levelAt(H.gen), gk = H.gen * 8 + lv, n = (REMADE[gk] || 0) + 1;
-    if (n > 3) return false;
-    REMADE[gk] = n; remadeSave();
-    if (!holeBusy(k)) return remakeIn(k, H.gen, lv, n);
-    if (LIVE && GAMES.get(LIVE.key) && GAMES.get(LIVE.key).hole === k)
-      say('This hole is far harder than its level (sunk ' + timesIn8(R.sunk) + ' in 8 tries): the board will have a new one next time.', 3600);
-    return true;
-  }
-  // (for the course test: rate a generated hole now, and make it again if it is one of those; the hole's index, kept)
-  function vetHole(k){ const n0 = HOLES[k].remadeN || 0, R = rateHole(k); vetRated(k, R); return { remade: (HOLES[k].remadeN || 0) !== n0, sunk: R.sunk, mean: R.mean, name: HOLES[k].name }; }
   function seeded(seed){ let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   // (Oct 9: more words, so a name comes round less often: some sixty adjectives and three or four nouns for each kind of
   //  ground, about ten thousand names where there were under five hundred)
@@ -41437,9 +41252,9 @@ const GOLF_MAKE = SIZE => {
      (and at the top a second), how many riders it may have, how fast they go and how big they are, how high the ground
      rolls and how many pieces it has, how often a stream or a wall crosses, how many loose toys, and which guards keep
      the cup (only gentle ones at level 1, the ones that add a stroke more often high up, and at level 5 a screen across
-     the first shot even where something already crosses it). Level 3 is the generator as it was. What says a level is
-     right is the rating (rateHole): tests/golf-course.mjs rates holes made at every level and fails if a level does not
-     come out harder than the one below. A board's hole at another level is its hole made again from the same seed with
+     the first shot even where something already crosses it). Level 3 is the generator as it was. What said a level was
+     right was the rating player's (gone Oct 29: see THE RATING); tests/golf-course.mjs now asks the guess of holes made at
+     every level and fails if a level does not come out harder than the one below. A board's hole at another level is its hole made again from the same seed with
      other dials, so it is a different hole. */
   /* (Oct 10, later: "what happens when the diffuculty mode changes, I dont notice any difference." Two reasons. The field
      wraps round, and the ring was the larger of the board's column and row as numbered, so the boards just left of and
@@ -41520,7 +41335,7 @@ const GOLF_MAKE = SIZE => {
       + T.reduce((a, t) => a + (NEW_GUESS[Object.keys(t)[0]] || 0), 0);
   }
   function genSrc(idx, lv, from){
-    lv = lv || levelAt(idx); from = from || 0;                // (from: the first attempt, 8 a time a hole is remade: REMADE)
+    lv = lv || levelAt(idx); from = from || 0;                // (from: the first attempt to make)
     const [lo, hi] = LEVEL_BAND[lv - 1], off = m => m < lo ? lo - m : m > hi ? m - hi : 0;
     let best = null, bd = Infinity;
     /* (Oct 11: each attempt near its level's band has its movers kept apart, see MOVERS KEEP APART, and is guessed again as
@@ -41739,18 +41554,15 @@ const GOLF_MAKE = SIZE => {
     if (idx < COURSE) return idx;
     const lv = levelAt(idx), gk = idx * 8 + lv;              // (a board's hole at each level is a hole of its own: the levels, Oct 10)
     let k = GEN.get(gk);
-    const want = REMADE[gk] || 0;                            // (a hole no one could finish, made again: REMADE)
-    if (k != null){
-      if ((HOLES[k].remadeN || 0) !== want && !holeBusy(k)) remakeIn(k, idx, lv, want);
-      GEN.delete(gk); GEN.set(gk, k); return k; }            // (kept in the order last wanted)
-    const src = cleanSrc(genSrc(idx, lv, 8 * want));
+    if (k != null){ GEN.delete(gk); GEN.set(gk, k); return k; }   // (kept in the order last wanted)
+    const src = cleanSrc(genSrc(idx, lv));
     if (!src) return COURSE ? idx % COURSE : addHole(blankSrc());   // (no course at Medium and Tall: Oct 20)
     if (GEN.size >= GEN_CAP){
       const busy = new Set([...GAMES.values()].map(g => g.hole));
       for (const [oi, ok] of GEN) if (!busy.has(ok)){ GEN.delete(oi); setHole(ok, src); k = ok; break; }
     }
     if (k == null) k = addHole(src);
-    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv; H.remadeN = want;
+    const H = HOLES[k]; H.custom = false; H.gen = idx; H.num = idx + 1; H.level = lv;
     GEN.set(gk, k);
     return k;
   }
@@ -41850,248 +41662,14 @@ const GOLF_MAKE = SIZE => {
     try { const b = String(q).replace(/-/g, '+').replace(/_/g, '/'); return cleanSrc(JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))))); }
     catch { return null; }
   }
-  /* HOLES AS TEXT FILES (Oct 10: "I meant to save them to a text file" … "how does chess handle this?" … "yes": as chess
-     has Export PGN and Export session, the holes can be saved to a file and opened again). A `.golf` file is JSON,
-     laid out to be read: the hole's settings one to a line, its map as the 13 rows of 8 it is drawn as, each thing and
-     each piece of ground on a line, the dots' heights a row of the board to a line. One hole or many:
-     {format: 'minigolf', v: 1, holes: [...]}. Opening takes that, a bare hole, a list of holes, or a ?hole= link, every
-     hole through cleanSrc as a link is, into My holes (one already there is not added twice), and plays the first on
-     the selected board. Opened from the menu, from the field's Open button, or dropped on the window. */
-  const GOLF_FORMAT = 'minigolf';
-  function holeText(src, ind){
-    const S = cleanSrc(src); if (!S) return null;
-    const J = JSON.stringify, i1 = ind + ' ', i2 = i1 + ' ', rows = [];
-    for (const k of Object.keys(S)){
-      const v = S[k];
-      if (k === 'map') rows.push(i1 + J(k) + ': [\n' + v.map(r => i2 + J(r)).join(',\n') + '\n' + i1 + ']');
-      else if (k === 'lift'){ const L = []; for (let j = 0; j < v.length; j += LIFT_W) L.push(i2 + v.slice(j, j + LIFT_W).join(', ')); rows.push(i1 + J(k) + ': [\n' + L.join(',\n') + '\n' + i1 + ']'); }
-      else if (Array.isArray(v) && v.length && typeof v[0] === 'object') rows.push(i1 + J(k) + ': [\n' + v.map(o => i2 + J(o)).join(',\n') + '\n' + i1 + ']');
-      else rows.push(i1 + J(k) + ': ' + J(v));
-    }
-    return ind + '{\n' + rows.join(',\n') + '\n' + ind + '}';
-  }
-  function holesText(list){
-    const hs = list.map(s => holeText(s, '  ')).filter(Boolean);
-    return '{\n "format": "' + GOLF_FORMAT + '",\n "v": 1,\n "holes": [\n' + hs.join(',\n') + '\n ]\n}\n';
-  }
-  function saveText(text, name){
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-    a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  }
-  const fileSlug = s => String(s || 'hole').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'hole';
-  function exportHole(src){ const t = src && holesText([src]); if (!t) return null; saveText(t, fileSlug(src.name) + '.golf'); return t; }
-  function exportMine(){ if (!MINE.length) return null; const t = holesText(MINE); saveText(t, 'my-holes.golf'); return t; }
-  // what a file holds, as cleaned holes: a .golf file, a bare hole, a list of them, or a link with ?hole=
-  function readHoles(text){
-    const t = String(text || '').trim();
-    let o = null;
-    try { o = JSON.parse(t); } catch {
-      const m = t.match(/[?&]hole=([A-Za-z0-9_-]+)/); const one = m && readLink(m[1]); return one ? [one] : [];
-    }
-    const list = Array.isArray(o) ? o : o && Array.isArray(o.holes) ? o.holes : [o];
-    return list.slice(0, 500).map(cleanSrc).filter(Boolean);
-  }
-  function importHoles(text){
-    const got = readHoles(text);
-    if (!got.length){ say('No holes in that file.', 2400); return 0; }
-    let first = -1, added = 0;
-    for (const h of got){
-      const j = JSON.stringify(h), at = MINE.findIndex(m => JSON.stringify(m) === j);
-      if (at >= 0){ if (first < 0) first = at; continue; }
-      MINE.push(h); mineK.push(-1); added++;
-      if (first < 0) first = MINE.length - 1;
-    }
-    storeMine();
-    try { renderAppMenu(); } catch {}
-    const note = (added ? added + (added === 1 ? ' hole' : ' holes') + ' added to My holes' : 'Already in My holes') +
-      (got.length > 1 ? ' (' + got.length + ' in the file)' : '') + '. Playing ' + MINE[first].name + '.';
-    if (ED.on) editStop(true);
-    if (!playHoleHere(holeOfMine(first), note)){ PENDING = holeOfMine(first); say(note + ' Select a board to play it.', 3000); }
-    return added;
-  }
-  function importHoleFiles(files){
-    const fs = Array.prototype.slice.call(files || []).filter(f => f && /\.golf$/i.test(f.name || ''));
-    if (!fs.length) return 0;
-    if (window.getFieldApp && window.getFieldApp() !== app){ try { window.setFieldApp(app); syncAppSelect(); } catch {} }
-    fs.forEach(f => { const rd = new FileReader(); rd.onload = () => importHoles(String(rd.result || '')); rd.readAsText(f); });
-    return fs.length;
-  }
-  /* PATHS AS .tvf (Oct 10: "games project should take advantage of tvf"). A path is a TVF curve, so it is written as
-     draw writes one (`TVF N 1 2`, its #meta lines, a row of x leaves and a row of y leaves) and read with draw's own
-     reader (TVF_CURVE.parse). A curve from draw is fitted into the middle of the board, keeping its proportions (resampled to
-     64 leaves if it has more); one this page wrote (#meta source:minigolf) keeps the cells it was in. Each closed curve
-     in the file becomes a path with a boulder on it; they join the hole being edited, the editor started if it was not. */
-  function pathToTvf(v, name){
-    const n = pathN(v), xs = [], ys = [];
-    for (let q = 0; q < n; q++){ xs.push(v[2 * q]); ys.push(v[2 * q + 1]); }
-    return ['TVF ' + n + ' 1 2', '#meta type:curve', '#meta closed:true', '#meta channels:xy', '#meta range:1', '#meta source:minigolf', '#meta kind:path',
-      '#meta name:' + String(name || 'golf path').replace(/[\r\n]+/g, ' '), '0 ' + xs.join(' '), '0 ' + ys.join(' ')].join('\n') + '\n';
-  }
-  /* LAKES, BUNKERS AND GREENS AS .tvf (Oct 11, "proceed", the first of the TVF ideas left: "Open a .tvf as a lake, bunker
-     or green ... a heart drawn in draw becomes a heart-shaped pond. Saving a shape back out as .tvf would come with it").
-     A shape is a closed TVF curve, as a path is, so it is written the same way, with what it is (#meta kind:lake, sand or
-     green, and a green's height); one written here opens as what it was, in the cells it was in. A curve from draw is
-     asked about (openTvfBox: a path, a lake, a bunker or a green) and fitted into the middle of the board at a size for
-     what it becomes, its proportions kept; a shape takes up to 32 leaves, laid evenly along the curve if it has more. */
-  function shapeToTvf(key, v, name){
-    const n = shapeN(key, v), xs = [], ys = [];
-    for (let q = 0; q < n; q++){ xs.push(v[2 * q]); ys.push(v[2 * q + 1]); }
-    return ['TVF ' + n + ' 1 2', '#meta type:curve', '#meta closed:true', '#meta channels:xy', '#meta range:1', '#meta source:minigolf', '#meta kind:' + key,
-      ...(key === 'green' ? ['#meta height:' + v[v.length - 1]] : []), '#meta name:' + String(name || 'golf ' + key).replace(/[\r\n]+/g, ' '),
-      '0 ' + xs.join(' '), '0 ' + ys.join(' ')].join('\n') + '\n';
-  }
-  // a .tvf file's closed curves (up to 6), each as its leaves; ours says so, and what it was
-  function tvfCurves(text){
-    let P = null; try { P = TVF_CURVE.parse(String(text || '')); } catch { return { curves: [] }; }
-    const meta = P.meta || {}, ours = meta.source === 'minigolf';
-    const curves = P.subpaths.slice(0, 6).map(sp => ({ xs: Array.from(sp.leafX), ys: Array.from(sp.leafY) }))
-      .filter(c => c.xs.length >= 3 && c.xs.length === c.ys.length && c.xs.every(isFinite) && c.ys.every(isFinite));
-    return { curves, ours, kind: ours && ['path', 'lake', 'sand', 'green', 'planter'].includes(meta.kind) ? meta.kind : null, height: Number(meta.height) };
-  }
-  // a curve from elsewhere into a w × h box at the middle of the board, its proportions kept (one of ours stays where it was)
-  function fitMiddle(c, w, h){
-    const x0 = Math.min(...c.xs), x1 = Math.max(...c.xs), y0 = Math.min(...c.ys), y1 = Math.max(...c.ys);
-    const k = Math.min(w / ((x1 - x0) || 1), h / ((y1 - y0) || 1)), mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-    return { xs: c.xs.map(x => NX / 2 + (x - mx) * k), ys: c.ys.map(y => NY / 2 + (y - my) * k) };
-  }
-  function tvfToPaths(text){
-    const T = tvfCurves(text), r2 = v => Math.round(v * 100) / 100;
-    return T.curves.map(c0 => {
-      let c = c0;
-      if (c.xs.length > 64){ const rs = TVF_CURVE.core.arcLengthResample(c.xs, c.ys, 64); c = { xs: Array.from(rs.x), ys: Array.from(rs.y) }; }
-      if (!T.ours) c = fitMiddle(c, 5, 7);
-      const { xs, ys } = c;
-      let L = 0; for (let q = 0; q < xs.length; q++){ const b = (q + 1) % xs.length; L += Math.hypot(xs[b] - xs[q], ys[b] - ys[q]); }
-      const lv = []; for (let q = 0; q < xs.length; q++) lv.push(r2(Math.max(0, Math.min(NX, xs[q]))), r2(Math.max(0, Math.min(NY, ys[q]))));
-      return cleanList([{ path: [...lv, 0.36, r2(Math.max(4, Math.min(14, L * 0.7))), 0, 0] }], SPEC_TOY, 1)[0] || null;
-    }).filter(Boolean);
-  }
-  const SHAPE_FIT = { lake: [4, 6], sand: [3, 4], green: [4, 5], planter: [3, 3] };   // (the box a curve from draw is fitted into, in cells; a planter's: Oct 11)
-  function tvfToShapes(text, key){
-    const T = tvfCurves(text), r2 = v => Math.round(v * 100) / 100, hgt = isFinite(T.height) ? T.height : 0.05;
-    return T.curves.map(c0 => {
-      let c = c0;
-      if (c.xs.length > 32){                                   // (laid evenly along the curve itself, not its leaves' polygon)
-        const M = Math.max(256, c.xs.length * 4), X = TVF_CURVE.core.reconstruct(Float64Array.from(c.xs), M), Y = TVF_CURVE.core.reconstruct(Float64Array.from(c.ys), M);
-        const rs = TVF_CURVE.core.arcLengthResample(Array.from(X), Array.from(Y), 32); c = { xs: Array.from(rs.x), ys: Array.from(rs.y) }; }
-      if (!T.ours) c = fitMiddle(c, ...SHAPE_FIT[key]);
-      const lv = []; for (let q = 0; q < c.xs.length; q++) lv.push(r2(c.xs[q]), r2(c.ys[q]));
-      return cleanList([{ [key]: key === 'green' ? [...lv, hgt] : lv }], key === 'planter' ? SPEC_TOY : SPEC_LAND, 1)[0] || null;   // (a planter is a thing, not ground)
-    }).filter(Boolean);
-  }
-  const TVF_WORD = { path: ['path', 'paths', 'drag a leaf to bend it, the loop to move it'], lake: ['lake', 'lakes', 'drag a leaf to reshape it'],
-                     sand: ['bunker', 'bunkers', 'drag a leaf to reshape it'], green: ['green', 'greens', 'drag a leaf to reshape it; Higher and Lower lift it'],
-                     planter: ['planter', 'planters', 'drag a leaf to reshape it'] };
-  // the curves of a .tvf file onto the hole being edited, as kind (the editor started if it was not)
-  function addTvfAs(text, kind){
-    const got = kind === 'path' ? tvfToPaths(text) : tvfToShapes(text, kind);
-    if (!got.length){ say('No closed curve in that .tvf file.', 2400); return 0; }
-    if (!ED.on){ const L = framedHere(), g = L && GAMES.get(L.key); if (!editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null)) return 0; }
-    const thing = kind === 'path' || kind === 'planter', list = thing ? ED.src.toys : ED.src.land, room = Math.max(0, 40 - list.length), add = got.slice(0, room);
-    if (!add.length){ say(thing ? 'That is as many things as a hole can hold — erase some first.' : 'That is as much ground as a hole can hold — delete some first.', 2000); return 0; }
-    snapEdit(); list.push(...add); ED.pick = { type: thing ? 'toy' : 'land', i: list.length - 1 }; ED.tool = 'select';
-    editRefresh(true);
-    const W = TVF_WORD[kind];
-    say(add.length + ' ' + (add.length === 1 ? W[0] : W[1]) + ' from the .tvf file — ' + W[2] + '.', 2800);
-    return add.length;
-  }
-  function addTvfPaths(text){ return addTvfAs(text, 'path'); }
-  // a curve from draw: what should it be? (one of ours already knows)
-  const TVF_Q = [];
-  function closeTvfBox(){ const b = document.getElementById('golfTvfBox'); if (b) b.remove(); TVF_Q.length = 0; }
-  function openTvfBox(text, name){
-    if (document.getElementById('golfTvfBox')){ TVF_Q.push([text, name]); return; }   // (several files: one after another)
-    const BTN = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:8px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
-    const veil = document.createElement('div');
-    veil.id = 'golfTvfBox';
-    veil.style.cssText = 'position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,.35)';
-    const box = document.createElement('div');
-    box.className = 'panel';
-    box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:min(400px,90vw);display:flex;flex-direction:column;gap:10px;padding:14px 16px;'
-      + 'background:#1c1d21;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;border:1px solid #55585f;border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.6)';
-    const head = document.createElement('div'); head.style.cssText = 'font:600 0.9375rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#ffd23a';
-    head.textContent = 'What should ' + (name ? '“' + String(name).slice(0, 40) + '”' : 'this curve') + ' be?';
-    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
-    const next = () => { veil.remove(); const q = TVF_Q.shift(); if (q) openTvfBox(q[0], q[1]); };
-    for (const [kind, label, title] of [['lake', '🌊 Lake', 'Water, the shape of the curve.'], ['sand', '🏖️ Bunker', 'Sand, the shape of the curve.'],
-                                        ['green', '⛳ Green', 'Raised ground, the shape of the curve.'], ['planter', '🪴 Planter', 'A walled bed the ball banks off, the shape of the curve.'],
-                                        ['path', '➰ Path', 'A boulder riding round the curve.']]){
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'golfTvfKind'; b.dataset.kind = kind; b.textContent = label; b.title = title; b.style.cssText = BTN;
-      b.addEventListener('click', e => { e.stopPropagation(); next(); addTvfAs(text, kind); });
-      row.appendChild(b);
-    }
-    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = 'Cancel'; cancel.style.cssText = BTN + 'margin-left:auto';
-    cancel.addEventListener('click', e => { e.stopPropagation(); next(); });
-    row.appendChild(cancel);
-    box.append(head, row);
-    box.addEventListener('click', e => e.stopPropagation());
-    veil.addEventListener('click', () => next());
-    veil.appendChild(box);
-    document.body.appendChild(veil);
-  }
-  // a .tvf file's text: one of ours goes back as what it was, any other is asked about
-  function takeTvf(text, name){
-    const T = tvfCurves(text);
-    if (!T.curves.length){ say('No closed curve in that .tvf file.', 2400); return 0; }
-    if (T.kind) return addTvfAs(text, T.kind);
-    openTvfBox(text, String(name || '').replace(/\.tvf$/i, ''));
-    return 0;
-  }
-  function importTvfFiles(files){
-    const fs = Array.prototype.slice.call(files || []).filter(f => f && /\.tvf$/i.test(f.name || ''));
-    if (!fs.length) return 0;
-    if (window.getFieldApp && window.getFieldApp() !== app){ try { window.setFieldApp(app); syncAppSelect(); } catch {} }
-    fs.forEach(f => { const rd = new FileReader(); rd.onload = () => takeTvf(String(rd.result || ''), f.name); rd.readAsText(f); });
-    return fs.length;
-  }
-  function pickTvfFile(){
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.tvf,text/plain'; inp.multiple = true;
-    inp.onchange = () => importTvfFiles(inp.files); inp.click();
-  }
-  function pickHoleFile(){
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.golf,application/json,text/plain'; inp.multiple = true;
-    inp.onchange = () => { const fs = [...(inp.files || [])]; fs.forEach(f => { const rd = new FileReader(); rd.onload = () => importHoles(String(rd.result || '')); rd.readAsText(f); }); };
-    inp.click();
-  }
-  let PENDING = null, PENDING_NOTE = null;
+  let PENDING = null;
   try { const q = new URLSearchParams(location.search).get('hole'); const src = q && readLink(q); if (src) PENDING = addHole(src); } catch {}
-  const pendingNote = k => { const n = PENDING_NOTE; PENDING_NOTE = null; return n || 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'; };
-  /* A LINK CARRIES A LINE (Oct 11, see THE BEST LINE): ?line=… holds a hole as written and its best line. The hole is
-     played on the first board you select, as a shared hole is, and the line is kept as the line to race on it (marked
-     shared) unless yours there is better. A course hole on Easy, Hard or Expert goes with its movers as they were played. */
-  function lineLink(k){
-    const o = lineOfHole(k); if (!o) return null;
-    const src = clone(srcOf(k));
-    if (k < COURSE && LEVEL_SET !== 1) src.toys = tuneMovers({ toys: clone(src.toys || []) }, COURSE_TUNE[LEVEL_SET]).toys;
-    const pay = { hole: src, line: { s: o.s, ms: o.ms, lv: o.lv, p: o.p } };
-    const b = btoa(unescape(encodeURIComponent(JSON.stringify(pay)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    return location.origin + location.pathname + '?app=minigolf&line=' + b;
-  }
-  function takeLineLink(q){
-    try {
-      const b = String(q).replace(/-/g, '+').replace(/_/g, '/'), o = JSON.parse(decodeURIComponent(escape(atob(b + '='.repeat((4 - b.length % 4) % 4)))));
-      const src = o && cleanSrc(o.hole), ln = o && o.line, pts = ln && lineDecode(ln.p);
-      if (!src || !pts) return null;
-      const st = Math.round(+ln.s), ms = Math.round(+ln.ms);
-      if (!(st >= 1 && st <= 99) || !(ms >= 0 && ms < 36e5)) return null;
-      const k = addHole(src), key = lineKey(k), lv = [0, 1, 2, 3].includes(ln.lv) ? ln.lv : LEVEL_SET;
-      const L = { v: 1, s: st, ms, n: HOLES[k].name, lv, at: Date.now(), p: ln.p, shared: true }, mine = GHOSTS[key];
-      const kept = better(L, mine);
-      if (kept){ GHOSTS[key] = L; ghostsSave(); }
-      PENDING_NOTE = 'A line someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + ', sunk in ' + st + (st === 1 ? ' stroke' : ' strokes')
-        + (lv !== LEVEL_SET ? ' on ' + LEVEL_NAMES[lv] : '') + (kept ? '. Its ghost races you from your first putt.' : '; your own line here is better (' + mine.s + '), so the ghost is yours.');
-      return k;
-    } catch { return null; }
-  }
-  try { const q = new URLSearchParams(location.search).get('line'); const k = q && takeLineLink(q); if (k != null) PENDING = k; } catch {}
-  // the selected board's hole and game, for the menu's line items
+  const pendingNote = k => { return 'A hole someone shared: ' + HOLES[k].name + ', par ' + HOLES[k].par + '. Save it from the menu to keep it.'; };
+  // the selected board's hole and game, for the menu's items
   function hereHole(){ const L = framedHere(); if (!L) return null; const g = GAMES.get(L.key); return { L, g, k: g && g.state !== 'edit' ? g.hole : holeOf(L.c, L.r) }; }
-  const hereLine = () => { if (ED.on) return null; const h = hereHole(); return h && lineOfHole(h.k); };
   /* YOUR PAR (Oct 20: "user should be able to set the par"). The menu's Set par for this hole… asks for a number from 1 to 9
      (nothing puts back the hole's own). A hole of your own takes it into its source, as the editor's Par does; a hole of the
-     course or a generated one keeps it in this browser by the hole as written (`originOf`, as the best lines are kept), so
+     course or a generated one keeps it in this browser by the hole as written (`originOf`), so
      the board plays to it from then on: the tee's message, the sunk message and the scorecard. */
   const PARS_KEY = SIZED('golf.pars');
   const PARS = (() => { try { const o = JSON.parse(localStorage.getItem(PARS_KEY) || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
@@ -42115,26 +41693,6 @@ const GOLF_MAKE = SIZE => {
     say('Par ' + H.par + ' for ' + H.name + (p ? '' : ' (its own)'), 2400);
     return { k: h.k, par: H.par };                            // (the hole it set and its par: the tests read them)
   }
-  // Watch my best line: the selected hole's line played by its ball from now, the line dotted (a game is started if none)
-  function watchLine(){
-    const h = hereHole(), o = h && !ED.on && lineOfHole(h.k);
-    if (!o){ say('No line kept for this hole yet: sink it, and your line is kept.', 2400); return false; }
-    let g = h.g; LIVE = h.L;
-    if (g && g.state === 'sunk'){ say('After this hole.', 1400); return false; }
-    if (!g || g.state === 'done'){ if (g && g.R.single) GAMES.set(h.L.key, g = holeGame({ start: g.hole, card: [], single: true }, g.hole)); else g = startRound(h.L.c, h.L.r); }
-    g.watch = g.t; g.line = undefined;
-    say((o.shared ? 'The shared line' : 'Your best line') + ' on ' + HOLES[g.hole].name + ': ' + o.s + (o.s === 1 ? ' stroke' : ' strokes') + ' in ' + (o.ms / 1000).toFixed(1) + ' s.', 2400);
-    try { window.fieldWake && window.fieldWake(); } catch {}
-    return true;
-  }
-  function shareLine(){
-    const h = hereHole(), url = h && !ED.on && lineLink(h.k);
-    if (!url){ say('No line kept for this hole yet.', 2000); return null; }
-    const o = lineOfHole(h.k), told = () => say('Link copied: it opens on ' + HOLES[h.k].name + ' with this line of ' + o.s + ' to race.', 2600);
-    try { navigator.clipboard.writeText(url).then(told, () => { prompt('Copy this link to share the line', url); }); }
-    catch { prompt('Copy this link to share the line', url); }
-    return url;
-  }
   const framedHere = () => {
     if (LIVE) return LIVE;
     try { const f = framedCell(); if (f) return { key: gkey(f.c, f.r), c: f.c, r: f.r }; } catch {}
@@ -42146,7 +41704,6 @@ const GOLF_MAKE = SIZE => {
     LIVE = L;
     GAMES.set(L.key, holeGame({ start: k, card: [], single: true }, k));
     say(note || ('Your hole: ' + HOLES[k].name + ', par ' + HOLES[k].par + starTag(k) + '. Drag to pull back, let go to putt.'), 2800);
-    rateAhead(k, null);                                      // (rated as you play: Oct 10)
     return true;
   }
   /* The plain player (the course test's): from where the ball lies it tries 72 headings at 5 strengths, keeps a putt that
@@ -42181,137 +41738,24 @@ const GOLF_MAKE = SIZE => {
     } } finally { SND.on = wasOn; SILENT = false; }
     return { sunk, strokes };
   }
-  /* THE RATING (Oct 10: "with tvf, we can create golf holes of great complexity and variety. we can import shapes from
-     tvf and objects from 3d. Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"). How hard a hole
-     is can't be read off its parts any more: one loop is easy at fourteen seconds a turn and cruel at five, and a shape
-     from draw or a prop from 3d is whatever it is. So a hole is rated by playing it. The plain player above aims
-     perfectly and starts the toys at the start, and so sinks nearly every hole in one; the rater is a player with a
-     person's hands: its aim is off by a few degrees (RATE.aim, radians, one standard deviation), its strength by some
-     per cent (RATE.power), and it hits a little after it meant to (RATE.late seconds, half a bell), so the movers are
-     never quite where it planned. At each stroke it looks for the best shots as if its hands were perfect (RATE.heads
-     headings at the strengths in RATE.pows), tries the best few RATE.tries times each with its hands as they are, takes
-     the one that does best on average, and plays it once more for real. It plays RATE.rounds rounds, each from its own
-     moment of the toys' clock, and a round stops at RATE.cap strokes. Its luck is seeded by the hole as written, so a
-     hole always gets the same rating. The rating is the strokes it took on average (`mean`), how much they varied
-     (`sd`), the share of rounds it finished (`sunk`), and stars, 1 to 5, from the mean (STAR_AT). A run is a generator,
-     so the page can play it a slice at a time (rateSoon) and the tests all at once (rateHole); o.trace, an array, gets a
-     line a stroke, for looking into a rating. */
-  const RATE = { rounds: 8, heads: 32, pows: [0.25, 0.45, 0.65, 0.85, 1], top: 8, tries: 3, aim: 0.07, power: 0.12, late: 0.5, cap: 10, wet: 3 };
+  /* THE RATING (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"). A hole's stars and
+     par come from the guess (guessMean: the strokes a hole will take, from what is on it). Until Oct 29 they came from a
+     player with a person's hands that played every hole eight times in the background, a few seconds a hole; the guess was
+     fitted to its ratings and goes with them at 0.73, and the player went (Oct 29: "1,2,47", 7 being "the guess in place of
+     the rating player"). The rating is kept on the hole (H.rated), which a changed hole loses, since setHole makes it anew. */
   // a mean of strokes up to each of these is 1, 2, 3, 4 stars, more is 5: halfway between the medians of holes made at
   // levels 1 to 5 (2.5, 2.9, 3.1, 3.75, 5.6 strokes, forty holes a level), so a hole of level n is mostly n stars
   const STAR_AT = [2.7, 3.0, 3.45, 4.6];
   const starsOf = m => 1 + STAR_AT.filter(v => m > v).length;
-  function scorer(H){                                         // the way round to the cup, cell by cell (as solveHole's)
-    const dist = new Map(), key = (i, j) => i + ',' + j, ci = Math.floor(H.cup.x / CW), cj = Math.floor(H.cup.y / CW), q = [[ci, cj]];
-    dist.set(key(ci, cj), 0);
-    const pipes = (H.toys || []).filter(T => T.pipe).map(T => T.pipe);
-    while (q.length){ const [i, j] = q.shift(), d = dist.get(key(i, j));
-      const nb = [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]];
-      for (const p of pipes) if (Math.floor(p[2] / CW) === i && Math.floor(p[3] / CW) === j) nb.push([Math.floor(p[0] / CW), Math.floor(p[1] / CW)]);
-      for (const [a, b] of nb){ if (a < 0 || b < 0 || a >= NX || b >= NY || cellBlocked(H, a, b) || dist.has(key(a, b))) continue; dist.set(key(a, b), d + 1); q.push([a, b]); } }
-    return b => { const d = dist.get(key(Math.floor(b.x / CW), Math.floor(b.y / CW))); return (d == null ? 99 : d) + Math.hypot(b.x - H.cup.x, b.y - H.cup.y) / CW * 0.3; };
+  function ratingOf(k){
+    const H = HOLES[k]; if (!H) return null;
+    if (!H.rated){ const src = srcOf(k); let m = 3; try { m = src && src.guess != null ? src.guess : guessMean(src); } catch {}
+      H.rated = { mean: m, stars: starsOf(m) }; }
+    return H.rated;
   }
-  const srcHash = src => { let h = 0x811c9dc5; const t = JSON.stringify(src); for (let i = 0; i < t.length; i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
-  function* rater(k, o){
-    o = Object.assign({}, RATE, o || {});
-    const H = HOLES[k], score = scorer(H), R = seeded(srcHash(srcOf(k)) ^ 0x2545f491);
-    const gauss = () => { let u = 0; while (!u) u = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * R()); };
-    const copy = g => ({ ...clone({ ...g, R: null, trail: null, rec: null, line: null }), R: { start: k, card: [], single: true } });
-    // (the search steps at 1/40 s and the shots played at 1/60: the ball's own sub-steps keep it to a fraction of its
-    //  radius a step either way, and a shot ends within a quarter of a cell of where 1/120 puts it, well inside the
-    //  rater's own hands, at a third of the cost)
-    const play = (g0, a, p, late, dt) => {
-      const g1 = copy(g0); g1.t += late || 0; g1.pull = { x: -Math.cos(a) * FULL * p, y: -Math.sin(a) * FULL * p };
-      if (!putt(g1)) return null;
-      dt = dt || 1 / 40;
-      for (let n = 0, N = 20 / dt; n < N && g1.state === 'play' && (g1.moving || n < 2); n++) step(g1, dt);
-      if (g1.moving){ g1.moving = false; g1.ball.vx = g1.ball.vy = 0; }   // (still knocked about after twenty seconds: played from there)
-      return g1;
-    };
-    const done = g1 => g1.state === 'sunk' || g1.state === 'done';
-    // (a stroke lost to the water counts as RATE.wet cells farther from the cup, or a shot over a one-plank bridge from
-    //  far off looks no worse than laying up in front of it: the ball comes back to where it was)
-    const val = (g0, g1) => g1 ? (done(g1) ? -1 : score(g1.ball)) + (g1.strokes - g0.strokes - 1) * o.wet : 99;
-    const hands = (g, a, p) => play(g, a + gauss() * o.aim, Math.max(0.07, Math.min(1, p * (1 + gauss() * o.power))), Math.abs(gauss()) * o.late, 1 / 60);
-    const got = [];
-    let sunkN = 0;
-    for (let rd = 0; rd < o.rounds; rd++){
-      let g = holeGame({ start: k, card: [], single: true }, k);
-      g.t = R() * 60;                                       // (each round from its own moment of the toys' clock)
-      let fin = false;
-      while (g.strokes < o.cap && !fin){
-        const cand = [];
-        for (let ai = 0; ai < o.heads; ai++) for (const p of o.pows){
-          const a = (ai + R() * 0.5) / o.heads * 2 * Math.PI, g1 = play(g, a, p);
-          if (g1) cand.push({ a, p, v: val(g, g1), at: done(g1) ? 'in' : Math.floor(g1.ball.x / CW * 2) + ',' + Math.floor(g1.ball.y / CW * 2) });
-        }
-        yield;
-        if (!cand.length) break;
-        cand.sort((x, y) => x.v - y.v);
-        // (the best few that end in different places, half a cell apart, so a safe shot to the near side of a hazard is
-        //  weighed against the bold ones over it)
-        const seen = new Set(), pool = [];
-        for (const c of cand){ if (seen.has(c.at)) continue; seen.add(c.at); pool.push(c); if (pool.length >= o.top) break; }
-        let best = cand[0], bv = Infinity;
-        for (const c of pool){
-          let s = 0; for (let n = 0; n < o.tries; n++) s += val(g, hands(g, c.a, c.p));
-          if (s / o.tries < bv){ bv = s / o.tries; best = c; }
-        }
-        yield;
-        const g1 = hands(g, best.a, best.p);
-        if (o.trace) o.trace.push([rd, g.strokes, +(g.ball.x / CW).toFixed(2), +(g.ball.y / CW).toFixed(2), +best.v.toFixed(2), +bv.toFixed(2), g1 && +(g1.ball.x / CW).toFixed(2), g1 && +(g1.ball.y / CW).toFixed(2), g1 && g1.strokes]);
-        if (!g1){ g.strokes++; continue; }
-        g = g1; fin = done(g1);
-      }
-      if (fin) sunkN++;
-      got.push(Math.min(g.strokes, o.cap));
-    }
-    const mean = got.reduce((s, v) => s + v, 0) / got.length, sd = Math.sqrt(got.reduce((s, v) => s + (v - mean) * (v - mean), 0) / got.length);
-    return { mean: Math.round(mean * 100) / 100, sd: Math.round(sd * 100) / 100, sunk: sunkN / o.rounds, stars: starsOf(mean), got };
-  }
-  function rateHole(k, o){
-    const wasOn = SND.on; SND.on = false; SILENT = true; EVEN = true;
-    try { const it = rater(k, o); let r; while (!(r = it.next()).done); return r.value; }
-    finally { SND.on = wasOn; SILENT = false; EVEN = false; }
-  }
-  // par from a rating: a stroke over what the rater took on average, rounded up (the course's pars, as written, agree)
+  // par from a rating: a stroke over the strokes on average, rounded up (the course's pars, as written, agree)
   const parOfRating = r => Math.max(2, Math.min(6, Math.ceil(r.mean + 1 - 1e-9)));
   const starText = n => '★★★★★'.slice(0, n) + '☆☆☆☆☆'.slice(0, 5 - n);
-  /* the page's way: a slice of about ten milliseconds at a time between frames, so the game goes on while a hole is rated
-     (a few seconds here, longer on a phone); progress(i, n) after each round. The result is kept on the hole (H.rated),
-     which a changed hole loses, since setHole makes it anew. */
-  // (opt.gentle, for a hole rated while it is played: five milliseconds at a time with forty between, so the frames come first)
-  function rateSoon(k, done, progress, opt){
-    const H = HOLES[k];
-    if (H && H.rated){ setTimeout(() => done(H.rated), 0); return () => {}; }
-    const it = rater(k), o = RATE, ms = opt && opt.gentle ? 5 : 10, gap = opt && opt.gentle ? 40 : 0;
-    let stop = false, laps = 0;
-    const slice = () => {
-      if (stop) return;
-      const wasOn = SND.on; SND.on = false; SILENT = true; EVEN = true;
-      let r = null;
-      try { const t0 = performance.now(); while (performance.now() - t0 < ms){ const x = it.next(); laps++; if (x.done){ r = x.value; break; } } }
-      catch (e){ stop = true; SND.on = wasOn; SILENT = false; EVEN = false; done(null, e); return; }
-      SND.on = wasOn; SILENT = false; EVEN = false;
-      if (r){ if (HOLES[k] === H){ H.rated = r; vetRated(k, r); } done(r); return; }   // (and a hole no one could finish made again: REMADE)
-      if (progress) try { progress(laps); } catch {}
-      setTimeout(slice, gap);
-    };
-    setTimeout(slice, 0);
-    return () => { stop = true; };
-  }
-  /* RATE THIS HOLE (the menu): the hole on the selected board, or the one being edited (whose par it then sets). */
-  function rateHere(){
-    if (ED.on) return editAction('check');
-    const L = framedHere(), g = L && GAMES.get(L.key), k = g ? g.hole : L ? holeOf(L.c, L.r) : null;
-    if (k == null || !HOLES[k]){ say('Select a hole on the field first.', 2400); return null; }
-    const H = HOLES[k];
-    say('Rating ' + H.name + '…', 1500);
-    return new Promise(ok => rateSoon(k, r => {
-      if (r) say(starText(r.stars) + ' ' + H.name + ': ' + r.mean.toFixed(1) + ' strokes on average for a fair player (par ' + H.par + (H.level ? ', level ' + H.level + ' of 5' : '') + ')', 4500);
-      ok(r);
-    }));
-  }
   /* THE DIFFICULTY SETTING (the menu): Easy, Normal, Hard, Expert, kept in this browser. The boards' holes are made again
      at their new levels as they are next drawn (holeAt keeps a board's hole at each level apart); a hole being played
      stays as it is until it is left. It is the one Difficulty: the grass and the cup follow it too (see ONE DIFFICULTY). */
@@ -42349,32 +41793,17 @@ const GOLF_MAKE = SIZE => {
   // a generated hole's flag is the colour of its level, as ski runs are marked, so a change of setting shows across the
   // field at a glance (Oct 10, later); the course's holes keep their red flags
   const LEVEL_FLAG = [0x3fbf5a, 0x3a7fd9, 0xf2c81a, 0xff7a1a, 0x1a1a1a];
-  /* RATED AS YOU PLAY (Oct 10: "6,4,2,3", 4 being "stars on the scorecard: rate each hole quietly while you play it, then
-     show its stars and par at the end of the round"). The hole in play is rated in the background, a few milliseconds at
-     a time with the game's frames between (rateSoon, gentle), and then the next board's hole, so its stars are ready when
-     it is teed. A hole's stars show on the tee and when it is sunk, ride on the round's card, and a round ends on a
-     scorecard (openCardBox) of every hole's par, strokes and stars. One rating runs at a time; a new hole stops it. */
-  let BGR = null;
+  /* STARS AS YOU PLAY (Oct 10: "6,4,2,3", 4 being "stars on the scorecard"): a hole's stars show on the tee and when it is
+     sunk, ride on the round's card, and a round ends on a scorecard (openCardBox) of every hole's par, strokes and stars. */
   function nextBoard(c, r){ let GS = 1; try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {} return [((c - 1) % GS + GS) % GS, r]; }
-  function rateAhead(k, c, r){
-    if (BGR && BGR.k === k) return;
-    if (BGR){ BGR.stop(); BGR = null; }
-    const run = (k, after) => {
-      if (!HOLES[k]) return;
-      if (HOLES[k].rated){ if (after) after(); return; }
-      const job = { k }; BGR = job;
-      job.stop = rateSoon(k, R => { if (BGR === job) BGR = null; if (R && after) after(); }, null, { gentle: true });
-    };
-    run(k, c == null ? null : () => { const [nc, nr] = nextBoard(c, r); run(holeOf(nc, nr), null); });
-  }
-  const starTag = k => HOLES[k] && HOLES[k].rated ? ' · ' + starText(HOLES[k].rated.stars) : '';
+  const starTag = k => { const r = ratingOf(k); return r ? ' · ' + starText(r.stars) : ''; };
   // THE SCORECARD, at the end of a round: a row a hole (its number, name, par, strokes and stars), the totals, and Close
   function closeCardBox(){ const b = document.getElementById('golfCardBox'); if (b) b.remove(); }
   function openCardBox(R){
     closeCardBox();
     const F = 'font:0.875rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;', card = R.card || [];
     const tot = card.reduce((a, h) => a + h.strokes, 0), par = card.reduce((a, h) => a + h.par, 0), d = par - tot;
-    const starsAt = h => h.stars || (HOLES[h.hole] && HOLES[h.hole].name === h.name && HOLES[h.hole].rated ? HOLES[h.hole].rated.stars : 0);
+    const starsAt = h => h.stars || 0;
     const veil = document.createElement('div');
     veil.id = 'golfCardBox';
     veil.style.cssText = 'position:fixed;inset:0;z-index:9997;background:rgba(0,0,0,.35)';
@@ -42482,7 +41911,7 @@ const GOLF_MAKE = SIZE => {
       ED.timer = 0;
       /* (Oct 11, movers kept apart as you draw: once a change is made, the movers that reach one another are put on one
          beat and phased so they never meet, as a generated hole's are; nothing is moved or taken away, and where a thing
-         still meets one, it is ringed in red, for Keep movers apart in the menu or a hand to put right) */
+         still meets one, it is ringed in red, for a hand to put right) */
       if (now){ const r = keepApart(ED.src, 'time', null, ED.pick && ED.pick.type === 'toy' ? ED.pick.i : -1); ED.meets = r.meets; if (JSON.stringify(r.src.toys) !== JSON.stringify(ED.src.toys)) ED.src.toys = r.src.toys; }
       setHole(ED.k, ED.src);
       keepMine();
@@ -42687,7 +42116,6 @@ const GOLF_MAKE = SIZE => {
     if (e.key !== 'Escape' || !GOLF_ON()) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (document.getElementById('golfMineBox')){ closeMineBox(); return; }   // (the My holes list, Oct 10)
-    if (document.getElementById('golfTvfBox')){ closeTvfBox(); return; }     // (what a curve from draw should be, Oct 11)
     if (document.getElementById('golfCardBox')){ closeCardBox(); return; }   // (the scorecard, Oct 10)
     if (!ED.on) return;
     if (ED.tool !== 'select'){ ED.tool = 'select'; ED.pipeAt = ED.fenceAt = null; ED.drag = null; ED.msg = 'tool put down'; return; }   // (Oct 10)
@@ -42884,8 +42312,9 @@ const GOLF_MAKE = SIZE => {
     if (key === 'faster' || key === 'slower'){
       snapEdit();
       const f = key === 'faster' ? 1.25 : 0.8;
-      if (k === 'mill'){ v[3] = R2(Math.sign(v[3] || 1) * Math.max(0.2, Math.min(4, Math.abs(v[3]) * f))); ED.msg = Math.abs(v[3]) + ' turns a second'; }
-      else { const n = PERIOD_AT[k], s = Math.sign(v[n] || 1); v[n] = R2(s * Math.max(k === 'arm' ? 1 : 0.8, Math.min(20, Math.abs(v[n]) / f))); ED.msg = Math.abs(v[n]) + ' s ' + (k === 'orbit' || k === 'arm' ? 'a turn' : 'there and back'); }
+      // (a step of the fixed lengths since Oct 29: see MOVERS KEEP APART)
+      if (k === 'mill'){ v[3] = 2 * Math.PI / kaStep(2 * Math.PI / (v[3] || 1), f > 1 ? -1 : 1); ED.msg = Math.round(Math.abs(v[3]) * 100) / 100 + ' turns a second'; }
+      else { const n = PERIOD_AT[k]; v[n] = kaStep(v[n] || 1, f > 1 ? -1 : 1); ED.msg = Math.abs(v[n]) + ' s ' + (k === 'orbit' || k === 'arm' ? 'a turn' : 'there and back'); }
       editRefresh(true); return true;
     }
     return false;
@@ -43323,15 +42752,6 @@ const GOLF_MAKE = SIZE => {
     // (the Par tile steps 1 to 9 and round again; the menu's Par higher and lower step one way: Oct 20)
     if (a === 'par' || a === 'parUp' || a === 'parDown'){ snapEdit(); S.par = a === 'parDown' ? Math.max(1, S.par - 1) : a === 'parUp' ? Math.min(9, S.par + 1) : S.par >= 9 ? 1 : S.par + 1;
       ED.msg = 'par ' + S.par; editRefresh(true); return; }
-    if (a === 'apart'){                                       // Keep movers apart (Oct 11): timing, and things nudged off the tracks
-      snapEdit();
-      const r = keepApart(ED.src, 'fit');
-      if (JSON.stringify(r.src.toys) === JSON.stringify(ED.src.toys) && !r.meets.length){ ED.undo.pop(); ED.meets = []; say('Nothing meets: the movers keep apart already.', 2200); return; }
-      ED.src.toys = r.src.toys; ED.meets = r.meets;
-      editRefresh(true);
-      say(r.meets.length ? r.meets.length + (r.meets.length > 1 ? ' places still meet' : ' place still meets') + ', ringed in red: move a thing or a track by hand.' : 'Movers kept apart.', 2600);
-      return;
-    }
     if (a === 'smoother' || a === 'rougher'){                // a closed curve's outline (Oct 11: see SMOOTHER AND ROUGHER)
       const LS = leafSel();
       if (!LS || !LS.closed){ ED.msg = 'select a lake, bunker, green, planter or path first'; return; }
@@ -43410,14 +42830,15 @@ const GOLF_MAKE = SIZE => {
       ED.msg = n === S.land.length && !hadLift ? 'no tilt, wave, rough or dots to level' : 'levelled'; editRefresh(true); return;
     }
     if (a === 'mat'){ S.fence = FENCE_MATS[(FENCE_MATS.indexOf(S.fence) + 1) % FENCE_MATS.length]; editRefresh(true); return; }
-    /* HARDER AND EASIER (the levels, Oct 10): every mover on the hole a sixth faster or slower and its rider a little
-       bigger or smaller, and the ground's slopes a sixth steeper or gentler; the rating is then out of date. */
+    /* HARDER AND EASIER (the levels, Oct 10): every mover on the hole a step faster or slower (one of the fixed lengths,
+       since Oct 29: see MOVERS KEEP APART) and its rider a little bigger or smaller, and the ground's slopes a sixth steeper
+       or gentler; the rating is then out of date. */
     if (a === 'harder' || a === 'easier'){
       const up = a === 'harder', f = up ? 1.18 : 1 / 1.18, movers = S.toys.filter(T => T.path || T.gate || T.arm || T.swing).length;
       const shaped = S.land.filter(x => HEIGHTS[Object.keys(x)[0]] || x.green || LINE_KINDS.some(k => x[k])).length;
       if (!movers && !shaped){ ED.msg = 'nothing to make ' + (up ? 'harder' : 'easier') + ': no movers or ground'; return; }
       snapEdit();
-      tuneMovers(S, { speed: 1 / f, size: up ? 1.06 : 1 / 1.06 });
+      tuneMovers(S, { speed: 1, size: up ? 1.06 : 1 / 1.06 }); stepMovers(S, up ? -1 : 1);
       S.land = S.land.map(x => { const k = Object.keys(x)[0], v = x[k].slice(), ln = LINE_KINDS.includes(k);
         for (const i of (k === 'green' || ln ? [v.length - 1] : HEIGHTS[k] || [])) v[i] = Math.round(v[i] * f * 1000) / 1000;
         if (ln) v[v.length - 1] = Math.max(LINE_HEIGHT[k][0], Math.min(LINE_HEIGHT[k][1], v[v.length - 1]));   // (a curved ridge's or ramp's height, in its range: Oct 11)
@@ -43426,23 +42847,17 @@ const GOLF_MAKE = SIZE => {
       ED.msg = (up ? 'harder' : 'easier') + ': ' + (movers ? movers + ' mover' + (movers > 1 ? 's ' : ' ') + (up ? 'faster' : 'slower') : '') + (movers && shaped ? ', ' : '') + (shaped ? 'ground ' + (up ? 'steeper' : 'gentler') : '');
       editRefresh(true); return;
     }
-    /* CHECK, NOW A RATING (Oct 10): the plain player first, to say whether the cup can be reached at all; then the rater
-       (THE RATING) plays it with a person's hands, and its strokes on average give the stars and the par. Resolves with
-       { sunk, strokes, mean, stars, par }. */
+    /* CHECK (Oct 10): the plain player, to say whether the cup can be reached at all; then the guess (THE RATING) gives the
+       stars and the par. Resolves with { sunk, strokes, mean, stars, par }. */
     if (a === 'check'){
       ED.msg = 'checking…'; updateEditBar();
       return new Promise(done => setTimeout(() => {
         setHole(ED.k, S);
         const r = solveHole(ED.k, 8);
         if (!r.sunk){ ED.msg = 'not sunk in 8: open a way to the cup'; updateEditBar(); done(r); return; }
-        ED.msg = 'rating…';
-        const k = ED.k, snap = JSON.stringify(S);
-        rateSoon(k, R => {
-          if (!R || !ED.on || ED.k !== k || JSON.stringify(ED.src) !== snap){ done({ ...r, rating: R }); return; }   // (changed meanwhile: not this hole's)
-          const S = ED.src; S.par = parOfRating(R); setHole(k, S); HOLES[k].rated = R; ED.rating = R;
-          ED.msg = starText(R.stars) + ' ' + R.mean.toFixed(1) + ' strokes on average, par ' + S.par;
-          keepMine(); updateEditBar(); done({ ...r, mean: R.mean, stars: R.stars, par: S.par });
-        }, n => { ED.msg = 'rating… ' + Math.min(99, Math.round(n / (RATE.rounds * 6) * 100)) + '%'; });
+        const R = ratingOf(ED.k); S.par = parOfRating(R); setHole(ED.k, S); HOLES[ED.k].rated = R; ED.rating = R;
+        ED.msg = starText(R.stars) + ' about ' + R.mean.toFixed(1) + ' strokes, par ' + S.par;
+        keepMine(); updateEditBar(); done({ ...r, mean: R.mean, stars: R.stars, par: S.par });
       }, 30));
     }
     if (a === 'save'){
@@ -43593,32 +43008,13 @@ const GOLF_MAKE = SIZE => {
         ...(o && o.type === 'toy' && o.obj.zap ? [{ label: 'On longer', title: 'On for more of each turn.', on(){ editAction('tdial', 'up'); } },
           { label: 'On shorter', title: 'On for less of each turn.', on(){ editAction('tdial', 'down'); } },
           { label: 'Faster', title: 'Each turn shorter.', on(){ editAction('tdial', 'far'); } },
-          { label: 'Slower', title: 'Each turn longer.', on(){ editAction('tdial', 'near'); } }] : []),
-        { label: 'Open a .tvf curve', title: 'A closed curve from draw (a .tvf file) becomes a lake, a bunker, a green, a planter or a path on this hole.', on(){ pickTvfFile(); } },
-        // (Oct 11: the timing is kept as you draw; this also moves what stands on a track, and says where something still meets)
-        { label: 'Keep movers apart', title: 'Time the movers so they never meet, and nudge anything standing on a track off it. What still meets is ringed in red.', on(){ editAction('apart'); } });
+          { label: 'Slower', title: 'Each turn longer.', on(){ editAction('tdial', 'near'); } }] : []));
       items.push({ label: 'Par higher (' + ED.src.par + ')', title: 'One stroke more for this hole\'s par (up to 9).', disabled: ED.src.par >= 9, on(){ editAction('parUp'); } },
       { label: 'Par lower (' + ED.src.par + ')', title: 'One stroke fewer for this hole\'s par (down to 1).', disabled: ED.src.par <= 1, on(){ editAction('parDown'); } });
-      // (and the selected path, lake, bunker or green saved as a .tvf curve, which draw opens: Oct 11, shapes as well as paths)
-      const sk = o && o.type === 'land' && SHAPE_KINDS.find(k => Array.isArray(o.obj[k])), sw = sk && TVF_WORD[sk][0];
-      if (o && o.type === 'toy' && o.obj.path) items.push({ label: 'Save this path as .tvf', title: 'Download the selected path as a .tvf curve, which draw opens.', on(){
-        saveText(pathToTvf(o.obj.path, ED.src.name + ' path'), fileSlug(ED.src.name + '-path') + '.tvf'); } });
-      if (o && o.type === 'toy' && o.obj.planter) items.push({ label: 'Save this planter as .tvf', title: 'Download the selected planter as a .tvf curve, which draw opens and this page opens again as a planter.', on(){
-        saveText(shapeToTvf('planter', o.obj.planter, ED.src.name + ' planter'), fileSlug(ED.src.name + '-planter') + '.tvf'); } });
-      if (sk) items.push({ label: 'Save this ' + sw + ' as .tvf', title: 'Download the selected ' + sw + ' as a .tvf curve, which draw opens and this page opens again as a ' + sw + '.', on(){
-        saveText(shapeToTvf(sk, o.obj[sk], ED.src.name + ' ' + sw), fileSlug(ED.src.name + '-' + sw) + '.tvf'); } });
     }
     items.push({ label: 'Edit this hole', title: 'Take the hole on the selected board into the editor. A hole of the course is copied; it is never changed.',
       on(){ const L = framedHere(), g = L && GAMES.get(L.key); editStart(g ? g.hole : L ? holeOf(L.c, L.r) : null); } });
     items.push({ label: 'New hole', title: 'Start a hole of your own on the selected board.', on(){ editStart(null); } });
-    // (Oct 10: the holes saved to text files and opened again, as chess does with PGN: see holeText)
-    items.push({ label: 'Save this hole to a file', title: 'Download the hole on the selected board (or the one being edited) as a .golf text file.', on(){
-      if (ED.on){ exportHole(ED.src); return; }
-      const L = framedHere(), g = L && GAMES.get(L.key), k = g ? g.hole : L ? holeOf(L.c, L.r) : null;
-      if (k == null || !HOLES[k]){ say('Select a hole on the field first.', 2400); return; }
-      exportHole(srcOf(k)); } });
-    if (MINE.length) items.push({ label: 'Save My holes to a file', title: 'Download every hole in My holes as one .golf text file.', on(){ exportMine(); } });
-    items.push({ label: 'Open holes from a file', title: 'Open a .golf file: its holes join My holes, and the first is played on the selected board. Dropping the file on the window does the same.', on(){ pickHoleFile(); } });
     // (Oct 10: "ive got 50 items in the menu": each of My holes had a Play and a Delete here; now one item opens the list)
     if (MINE.length) items.push({ label: 'My holes (' + MINE.length + ')…', title: 'Your holes, kept in this browser: play one on the selected board, or delete one or all.', on(){ openMineBox(); } });
     return items;
@@ -43667,7 +43063,6 @@ const GOLF_MAKE = SIZE => {
     });
     const foot = document.createElement('div'); foot.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap';
     foot.append(
-      btn('Save all to a file', 'Download every hole here as one .golf text file.', () => exportMine()),
       btn('Delete all', 'Take every hole out of My holes.', () => {
         const go = () => { deleteAllMine(); closeMineBox(); try { renderAppMenu(); } catch {} say('My holes is empty.', 2000); };
         closeMineBox();
@@ -43722,17 +43117,8 @@ const GOLF_MAKE = SIZE => {
         on(){ const ks = Object.keys(GOLF_SIZES); setGolfSize(ks[(ks.indexOf(SIZE) + 1) % ks.length]); } },   // (Oct 20)
       { label: () => 'Difficulty: ' + LEVEL_NAMES[LEVEL_SET], title: 'Easy, Normal, Hard or Expert: the grass\'s speed, the cup\'s size, and how hard the holes are made. Boards near the corner are gentlest and they get harder the farther out you fly; this shifts the whole field easier or harder.',
         on(){ setLevel(LEVEL_SET + 1); } },
-      { label: 'Rate this hole', title: 'A fair player plays the hole on the selected board a few times, with a person\'s small errors of aim, strength and timing; its strokes on average give the stars (and, while editing, the par).',
-        on(){ return rateHere(); } },
       { label: 'Set par for this hole…', title: 'Choose the par the hole on the selected board is played to (1 to 9), or put back its own. Kept in this browser.',
         on(){ return setParHere(); } },
-      // (Oct 11, "proceed" on shots saved as curves: see THE BEST LINE, AND ITS GHOST)
-      { label: () => 'Ghost: ' + (GHOST.on ? 'on' : 'off'), title: 'Your best line on each hole is kept as you play. Play the hole again and it rides beside you as a pale ball from your first putt: race it.',
-        on(){ GHOST.on = !GHOST.on; ARCADE.save('golf.ghost', GHOST.on ? 'on' : 'off'); } },
-      { label: 'Watch my best line', title: 'The best line kept on the selected hole, played by its pale ball from the tee, the line dotted.', disabled: !hereLine(),
-        on(){ return watchLine(); } },
-      { label: 'Share my best line', title: 'Copy a link that opens on this hole with your best line on it to race.', disabled: !hereLine(),
-        on(){ return shareLine(); } },
       { label: () => 'Hole numbers: ' + (NUMS.on ? 'on' : 'off'), title: 'Each board shows its hole number in the far left corner.',
         on(){ NUMS.on = !NUMS.on; ARCADE.save('golf.nums', NUMS.on ? 'on' : 'off'); } },
       { label: () => 'Wireframe: ' + (WIRE.on ? 'on' : 'off'), title: 'A grid draped over the grass, so the hills and hollows show as the lines bend.',
@@ -43874,10 +43260,7 @@ const GOLF_MAKE = SIZE => {
     },
     _debug: { groundGrain, groundGeo, GROUND_ROWS, pieceGrain, TWINNED, cladPlain, cladBox, cladTex, SOON, holeSoon, holeMade, GREADY, soonPump, propGeo, PROP_GRAIN, games: GAMES, HOLES, cellBlocked, holeAt, liftAt, LIFT_W, LIFT_H, genSrc, genOnce, guessMean, boardIdx, toyAt, hitToys: toys, compileHole, ROUND, step, putt, startRound, holeOf, cellItems, millGeos, propGeo, holeGame, NX, NY, CW, WD, cellAt, rawH, hOf, waterLevel, groundAt,
       setParHere, PARS,
-      line: { GHOST, GHOSTS, lineKey, thinLine, lineCode, lineDecode, lineAt, lineOfHole, lineLink, takeLineLink, watchLine, shareLine, hereLine, GHOST_TOL },
-      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, holesText, readHoles, importHoles, exportHole, exportMine, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, rateAhead, bgRating: () => BGR, stopRating: () => { if (BGR){ BGR.stop(); BGR = null; } }, sink, nextHole, rateHole, rateSoon, rateHere, RATE, STAR_AT, parOfRating, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, pathToTvf, tvfToPaths, addTvfPaths, shapeToTvf, tvfToShapes, addTvfAs, takeTvf, openTvfBox, closeTvfBox, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, vetHole, vetRated, REMADE, fly: (c, r) => gotoCell(c, r) } },
-    importHoleFiles,                                   // .golf files opened or dropped on the field (Oct 10)
-    importTvfFiles,                                    // .tvf curves from draw, as paths (Oct 10) or lakes, bunkers and greens (Oct 11)
+      editor: { ED, MINE, BUILT, TOOLS, ACTS, pickAll, setDot, selDots, closeBox, selActs, selAct, editStart, editStop, editApply, editAction, cleanSrc, shapify, HOLE_SRC, shareLink, readLink, solveHole, playHoleHere, openMineBox, closeMineBox, editorMenu, originOf, goMine, curveOf, curveN, curveNear, blobOf, blobIn, blobEdge, shapesOf, addHole, openCardBox, closeCardBox, sink, nextHole, STAR_AT, parOfRating, ratingOf, setLevel, levelAt, ringLevel, ringOf, LEVEL_DIALS, LEVEL_FLAG, pathify, loopOf, wiggleOf, reshaped, crossesItself, leafSel, keepApart, KA, editRefresh, fly: (c, r) => gotoCell(c, r) } },
   };
   app._size = SIZE;
   return app;
@@ -53172,100 +52555,69 @@ const TANKS_APP = (() => {
   };
   return app;
 })();
-/* ═══ TANK MAZE: A MAZE TANK BATTLE ══════════════════════════════════════════════════════════════════════════════════════
-   (Oct 21: "maze tank battle", the second of the tank games offered, after the artillery duel.) Two tanks seen from above in
-   a maze, as Tank Trouble plays it: drive, turn and fire; a shell runs on for LIFE seconds, bouncing off every wall it meets,
-   and hits whichever tank it finds, the one that fired it too once it is clear of its barrel. The last tank standing takes
-   the round; the first to WIN rounds takes the match. Every round is a new maze.
+/* ═══ TANK MAZE: THE CHASE ════════════════════════════════════════════════════════════════════════════════════════════════
+   (Oct 21: "maze tank battle", the second of the tank games offered; Oct 29: "tank maze is to hard. remove the cannon balls.
+   the new goal is to evade the oponent tank. when he overtakes you, you lose.") Your green tank in a maze, the computer's
+   tank hunting you through it: no guns, no shells. A round lasts its level's HOLD seconds; a hunter that reaches you (its
+   tank against yours) takes it, and holding out to the end wins it for you. The first to WIN rounds takes the match. Every
+   round is a new maze.
    - EVERY BOARD ITS OWN MAZES: made from the board's own number (boardIdx, golf's Szudzik pairing) and the round, at a level
      from 1 to 5, the ring level out from the corner plus the Difficulty (Easy 0, Normal 1, Hard 2), as the tilt maze. A level
-     sets the maze's size and loops and the computer's hand (LV): how many bounces it looks for in a shot (`aim`, none at level
-     1: only straight at you), how many of its shells it keeps in the air (`most`), how many ways round it looks (`rays`), how often it thinks, how far off its aim is (`err`, in
-     degrees), whether it leads a moving tank, how often it sees a shell coming and gets out of its way (`dodge`), and how
-     long between its shots (`cool`).
-   - ONE PHYSICS FOR THE SHELLS AND THE COMPUTER'S EYE: a shell's whole way is laid down when it is fired (`trace`: a ray,
-     the walls widened by the shell's radius, mirrored at each one it meets), since the walls never move; where it is at any
-     moment is how far along that way it has gone. The computer looks for its shots along the same rays, so what it sees is
-     where its shell goes.
-   - THE COMPUTER (`think`, `findShot`, `escape`): a shell coming its way, it tries the moves it could make for the next
-     moment and takes the one keeping it farthest from every shell; a way to hit you (straight, or off as many walls as its
-     level looks for, and not through itself), it turns to it and fires; else it drives toward you along the maze (`pathOf`).
-   - CONTROLS: the arrow keys or WASD drive (up forward, down back, left and right turn), Space, Enter, Q or M fire; a drag
-     steers the tank toward the finger, driving while it is more than half a cell off; a tap fires. Two players on one device
-     (the menu's Players): Player 1 green on WASD with Q or Space, Player 2 blue on the arrows with M or Enter, and a finger
-     steers or fires the tank nearest it.
-   - A BOARD NO ONE PLAYS shows a round of two computer tanks, worked out a little at a time (`recSoon`) and played back on
-     the page's clock, each board at its own phase.
-   - Through: stars by how the match went (5–0 or 5–1 three, to 5–3 two, else one), the most a board kept (localStorage
+     sets the maze (`m` cells a side, `loops`: walls taken out, ways round to run), how long a round is (`hold`), and the
+     hunter (LV): how fast it drives against you (`v`, 0.72 of your speed at level 1 to as fast at 5), how often it thinks
+     (`think`), whether it heads for where you are going rather than where you are (`lead`), and whether a second hunter
+     cuts you off ahead (`flank`).
+   - THE HUNTER (`think`, `cpuCmd`): along the maze to your cell (`pathOf`), or with `lead` to the cell you are heading
+     into; within a cell, straight at you. With three or four tanks every hunter after the first goes for a cell ahead of
+     you along your way, the farther the more of them there are, so they close from both sides.
+   - THE STEADY RUNNER (`flee`): for a board no one plays, and the tests: from where it is, the next cell of the maze that is
+     farthest along it from the nearest hunter, a cell with more ways out a little better than a dead end.
+   - CONTROLS: the arrow keys or WASD drive (up forward, down back, left and right turn); a drag steers the tank toward the
+     finger, driving while it is more than half a cell off. Two players on one device (the menu's Players): Player 1 green on
+     WASD runs, Player 2 blue on the arrows hunts, and a finger steers the tank nearest it.
+   - A BOARD NO ONE PLAYS shows a round of the steady runner against the board's hunters, worked out a little at a time
+     (`recSoon`) and played back on the page's clock, each board at its own phase.
+   - Through: stars by how the match went (3–0 three, 3–1 two, else one), the most a board kept (localStorage
      tankmaze.best). A tap on a finished board goes on to the next, as golf goes on to the next hole.
-   - MORE TO IT (Oct 21: "1,2,3" of the ideas offered: power-ups, three or four tanks, an aim line):
-     - POWER-UPS (`POWERS`): a crate drops into the maze every few seconds (`G.crates`, at most `crateMax`, never by a tank);
-       a tank that drives over one holds it, and its next shot is that instead of a shell: a laser (`fireLaser`: the whole
-       way at once, off up to `LASER_SEG` walls, the first tank on it is out, the one that fired it too once it is
-       `LASER_SAFE` out), a frag (`frag`: a shell that bursts after `FRAG_T` into `SHARDS` short shards, every way, that hit
-       anyone, the one who fired it too), a spread (three shells, `SPREAD` apart), a mine (`G.mines`: laid where the tank
-       stands, armed after `MINE_ARM`, then any tank driving within `MINE_R` sets it off, and every tank within `MINE_BLAST`
-       goes), and a homing missile (`G.missiles`, `stepMissile`: slower than a shell, it follows the maze toward the nearest
-       other tank, straight at it once it sees it, sliding along a wall it meets, and is spent after `HOME_T`). The computer goes for a crate
-       when one is near and it has no shot, and uses what it holds (`think`). The menu's Power-ups turns them off.
-     - THREE OR FOUR TANKS (the menu's Tanks, `SET.n`, localStorage tankmaze.count): every one for itself, the maze a cell
-       larger a side for each tank past two, the tanks started as far apart along it as they will go (`makeMaze`: each the
-       cell farthest from those placed). The computer goes for the nearest tank along the maze and shoots at any it can
-       hit. The last one left takes the round; with two players, Player 2 is the second seat and the computer has the rest.
-     - THE AIM LINE (`aimOf`): dots along where your shell would go from your gun as it points, off the walls: four pieces
-       of its way at level 1, three, two, then the straight run alone at levels 4 and 5 (`AIM_SEG`); a laser held shows
-       its own. The menu's Aim line turns it off. */
+   - (Until Oct 29 it was a battle: shells that bounced off the walls, power-ups, an aim line, the last tank standing.) */
 const TANKMAZE_APP = (() => {
-  const FLOOR = 0xdcd8c9, FLOOR2 = 0xd1cdbc, WALLC = 0x434a58, SHOTC = 0x1c1c1c, TRACKC = 0x2b2b2b, WRECK = 0x3a3530, GUNC = 0x30352c;
+  const FLOOR = 0xdcd8c9, FLOOR2 = 0xd1cdbc, WALLC = 0x434a58, TRACKC = 0x2b2b2b, WRECK = 0x3a3530, GUNC = 0x30352c;
   const LV_COL = BOARD_KIT.LV_COL;     // (mini golf's flags: green, blue, yellow, orange, black)
   const SEAT = { you: 0x5a9e3e, cpu: 0xc8463c, p2: 0x3f7fd6 }, NAME = { you: 'You', cpu: 'Red', p2: 'Player 2' };
-  // (the computer's tanks, in order: Red, Orange, Violet; with two computer tanks in a recording the second is blue, as before)
+  // (the computer's hunters, in order: Red, Orange, Violet)
   const CPU_COL = [0xc8463c, 0xe58a2a, 0x8e5bd0], CPU_NAME = ['Red', 'Orange', 'Violet'];
   function colsOf(seats){ let c = 0; return seats.map(x => x === 'cpu' ? CPU_COL[c++ % 3] : SEAT[x]); }
   function namesOf(seats){ let c = 0; return seats.map(x => x === 'cpu' ? CPU_NAME[c++ % 3] : NAME[x]); }
-  const POWERS = [
-    { id: 'laser',  name: 'Laser',  col: 0x3fe0ff, says: 'a laser: straight off the walls at once' },
-    { id: 'frag',   name: 'Frag',   col: 0xff8a2a, says: 'a frag: it bursts into shards' },
-    { id: 'spread', name: 'Spread', col: 0xffd23a, says: 'a spread: three shells at once' },
-    { id: 'mine',   name: 'Mine',   col: 0xc0303a, says: 'a mine: fire to lay it, and keep off it' },
-    { id: 'homing', name: 'Homing', col: 0xe05ad8, says: 'a homing missile: it finds its way to the nearest tank' },
-  ];
-  const PW = Object.fromEntries(POWERS.map((p, i) => [p.id, i]));
-  const CRATE_FIRST = 2.5, CRATE_GAP = [4, 7], CRATE_R = 0.24, LASER_LEN = 40, LASER_SEG = 14, LASER_SAFE = 0.7, LASER_SHOW = 0.45;
-  const FRAG_T = 0.9, SHARDS = 14, SHARD_LIFE = 1.3, SHARD_V = 1.1, SPREAD = 0.2, MINE_ARM = 1.2, MINE_R = 0.32, MINE_BLAST = 0.75;
-  const HOME_V = 0.75, HOME_T = 7, HOME_TURN = 5, HOME_GRACE = 0.8, AIM_SEG = [4, 4, 3, 2, 1, 1], AIM_CELLS = 12;
+  // (easy is a big maze full of loops to run round and a slow hunter; hard a tight one with few, and a hunter as quick as you
+  //  that heads where you are going: a bigger maze made the hard levels easier for the runner, Oct 29)
   const LV = [
-    { m: 5, loops: 0.32, aim: 0, rays: 48,  think: 0.32, err: 6,   lead: false, dodge: 0,    cool: 1.1, most: 1 },
-    { m: 6, loops: 0.3,  aim: 1, rays: 64,  think: 0.25, err: 4.5, lead: false, dodge: 0.3,  cool: 0.9, most: 2 },
-    { m: 7, loops: 0.27, aim: 1, rays: 80,  think: 0.2,  err: 3,   lead: true,  dodge: 0.55, cool: 0.7, most: 2 },
-    { m: 8, loops: 0.24, aim: 2, rays: 96,  think: 0.15, err: 2,   lead: true,  dodge: 0.8,  cool: 0.55, most: 3 },
-    { m: 9, loops: 0.2,  aim: 3, rays: 120, think: 0.11, err: 1.2, lead: true,  dodge: 1,    cool: 0.45, most: 3 },
+    { m: 9, loops: 0.5,  hold: 20, v: 0.72, think: 0.5,  lead: false, flank: false },
+    { m: 9, loops: 0.4,  hold: 22, v: 0.8,  think: 0.38, lead: false, flank: false },
+    { m: 8, loops: 0.3,  hold: 25, v: 0.88, think: 0.26, lead: true,  flank: false },
+    { m: 8, loops: 0.22, hold: 28, v: 0.95, think: 0.18, lead: true,  flank: true },
+    { m: 7, loops: 0.15, hold: 30, v: 1.0,  think: 0.12, lead: true,  flank: true },
   ];
   // sizes in cells (a cell is L.s of the board), speeds in cells a second
-  const TR = 0.26, HIT_R = 0.22, BRAD = 0.065, WALL_T = 0.1, WALL_H = 0.5, TV = 1.7, TURN = 3.3, BV = 3.6, LIFE = 9, MAXB = 5, GRACE = 0.17;
-  const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, MAX_SEG = 64;
+  const TR = 0.26, WALL_T = 0.1, WALL_H = 0.5, TV = 1.7, TURN = 3.3, CATCH = 2.06;
+  const EXTRA = 0.88;                                  // (the second and third hunters this much slower than the first)
+  const STEP = 1 / 60, WIN = 3, BOOM_T = 1.5, COUNT_T = 1.2, HEAD = 0.8, REC_HZ = 15;
   const TAU = Math.PI * 2;
-  const DL = ARCADE.difficulty('tankmaze.level', 'Every board has its own mazes, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SND = ARCADE.sounds('tankmaze.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
-  const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('tankmaze.players', '1') || 1)), n: Math.max(2, Math.min(4, +ARCADE.load('tankmaze.count', '2') || 2)),
-               powers: ARCADE.load('tankmaze.powers', 'on') !== 'off', aim: ARCADE.load('tankmaze.aim', 'on') !== 'off' };
+  const DL = ARCADE.difficulty('tankmaze.level', 'Every board has its own mazes, and its hunter is quicker and sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
+  const SND = ARCADE.sounds('tankmaze.sound', 'A burst when you are caught, a chime for a round held out.');
+  const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('tankmaze.players', '1') || 1)), n: Math.max(2, Math.min(4, +ARCADE.load('tankmaze.count', '2') || 2)) };
   const say = BOARD_KIT.say(3000);
-  const now = BOARD_KIT.now;
   const clamp = BOARD_KIT.clamp;
   const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
-  const fieldGS = BOARD_KIT.gs;
   const gkey = BOARD_KIT.gkey;
   // (mini golf's and the tilt maze's: a board's own number from its column and row, and its ring out from the corner)
   const boardIdx = BOARD_KIT.boardIdx;
-  const ringOf = BOARD_KIT.ringOf;
-  const ringLevel = BOARD_KIT.ringLevel;
   const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
   const rngOf = BOARD_KIT.rng;
   const nextBoard = BOARD_KIT.nextBoard;
 
   /* ─── A MAZE ─── (the tilt maze's: E[k] a wall on cell k's east side, S[k] on its south; a walk that backs up when boxed in,
-     then walls taken out for loops, many more than the tilt maze's, since a tank battle wants ways round and lines of fire).
-     The two tanks start in cells far apart along the maze, each facing an open side. */
+     then walls taken out for loops, many more than the tilt maze's, since a chase wants ways round). You start in one cell
+     and the hunters in cells far along the maze from you and from each other, each facing an open side. */
   function makeMaze(idx, lv, round, tanks){
     const T = tanks || 2, D = LV[lv - 1], m = D.m + (T - 2), n = m * m, R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ (round * 97531) ^ 0x7a2c ^ ((T - 2) * 0x3b9));
     const E = new Uint8Array(n).fill(1), S = new Uint8Array(n).fill(1), seen = new Uint8Array(n), first = Math.floor(R() * n), stack = [first];
@@ -53347,79 +52699,20 @@ const TANKMAZE_APP = (() => {
   const cellOf = (L, x, y) => Math.max(0, Math.min(L.m - 1, Math.floor(x * L.m))) + Math.max(0, Math.min(L.m - 1, Math.floor(y * L.m))) * L.m;
   const centre = (L, k) => [(k % L.m + 0.5) / L.m, (((k / L.m) | 0) + 0.5) / L.m];
 
-  /* ─── A SHELL'S WAY ─── from (x, y) at angle a for len (board units), at most maxSeg straight pieces: [x, y, d, …], d the
-     distance along it so far. Each wall is a box widened by the shell's radius, met by the slab test; the shell is mirrored in
-     the face it meets (the x faces flip its x, the others its y). The board is walled all round, so every way ends. */
-  function trace(L, x, y, a, len, maxSeg){
-    const r = BRAD * L.s, P = [x, y, 0], W = L.walls;
-    let dx = Math.cos(a), dy = Math.sin(a), d = 0, seg = 0;
-    while (d < len - 1e-9 && seg < (maxSeg || MAX_SEG)){
-      let best = len - d, face = 0;
-      for (let q = 0; q < W.length; q++){
-        const b = W[q].b, x0 = b[0] - r, y0 = b[1] - r, x1 = b[2] + r, y1 = b[3] + r;
-        let txa, txb, tya, tyb;
-        if (dx > 1e-12 || dx < -1e-12){ const t1 = (x0 - x) / dx, t2 = (x1 - x) / dx; txa = t1 < t2 ? t1 : t2; txb = t1 < t2 ? t2 : t1; }
-        else { if (x <= x0 || x >= x1) continue; txa = -Infinity; txb = Infinity; }
-        if (dy > 1e-12 || dy < -1e-12){ const t1 = (y0 - y) / dy, t2 = (y1 - y) / dy; tya = t1 < t2 ? t1 : t2; tyb = t1 < t2 ? t2 : t1; }
-        else { if (y <= y0 || y >= y1) continue; tya = -Infinity; tyb = Infinity; }
-        const tin = txa > tya ? txa : tya, tout = txb < tyb ? txb : tyb;
-        if (tout < tin || tin <= 1e-9 || tin >= best) continue;
-        best = tin; face = txa > tya ? 1 : 2;
-      }
-      x += dx * best; y += dy * best; d += best; seg++; P.push(x, y, d);
-      if (!face) break;
-      if (face === 1) dx = -dx; else dy = -dy;
-    }
-    return P;
+  /* ─── A ROUND ─── the maze, the tanks (x, y, heading h, velocity, alive), tank 0 the runner and the rest the hunters, on the
+     round's own clock, stepped at STEP. Each tank's command each step is { drive, turn }: a person's from the keys and the
+     finger, the computer's from `think` or `flee`. The hunters wait HEAD seconds at the start; a hunter's tank within
+     CATCH tank radii of the runner's catches it. */
+  function roundNew(L, seats, seed){
+    const R = rngOf(seed), D = LV[L.lv - 1];
+    return { L, seats, t: 0, R, hold: D.hold, booms: [], caughtAt: null, by: -1, over: false, winner: -1,
+             tanks: L.spawn.slice(0, seats.length).map((p, k) => ({ x: p.x, y: p.y, h: p.h, vx: 0, vy: 0, alive: true, plan: null, nextThink: HEAD + 0.08 * k, sp: !k ? 1 : k === 1 ? D.v : D.v * EXTRA })) };
   }
-  // where a way is at distance d along it
-  function along(P, d){
-    for (let i = 3; i < P.length; i += 3) if (P[i + 2] >= d){
-      const d0 = P[i - 1], f = (d - d0) / Math.max(1e-12, P[i + 2] - d0);
-      return [P[i - 3] + (P[i] - P[i - 3]) * f, P[i - 2] + (P[i + 1] - P[i - 2]) * f];
-    }
-    return [P[P.length - 3], P[P.length - 2]];
-  }
-  /* How near the way between d0 and d1 comes to a point moving (vx, vy) a board unit of the way (its speed over the shell's),
-     and at what distance along: [nearest, d]. A point standing still has vx = vy = 0. */
-  function nearest(P, d0, d1, cx, cy, vx, vy){
-    let best = Infinity, at = Infinity;
-    for (let i = 3; i < P.length; i += 3){
-      const a0 = P[i - 1], a1 = P[i + 2]; if (a1 < d0 || a0 > d1 || a1 <= a0) continue;
-      const L = a1 - a0, ux = (P[i] - P[i - 3]) / L, uy = (P[i + 1] - P[i - 2]) / L;
-      // the shell at d: P0 + u (d − a0); the point at d: c + v d. Their difference is linear in d.
-      const s0 = Math.max(d0, a0), s1 = Math.min(d1, a1);
-      const px = P[i - 3] + ux * (s0 - a0) - (cx + vx * s0), py = P[i - 2] + uy * (s0 - a0) - (cy + vy * s0), wx = ux - vx, wy = uy - vy;
-      const ww = wx * wx + wy * wy, t = ww > 1e-18 ? clamp(-(px * wx + py * wy) / ww, 0, s1 - s0) : 0;
-      const qx = px + wx * t, qy = py + wy * t, dd = Math.hypot(qx, qy);
-      if (dd < best){ best = dd; at = s0 + t; }
-    }
-    return [best, at];
-  }
-
-  /* ─── A ROUND ─── the maze, the tanks (x, y, heading h, velocity for leading, alive), the shells (who fired, when, the way)
-     and the bursts, on the round's own clock, stepped at STEP. Each tank's command each step is { drive, turn, fire }:
-     a person's from the keys and the finger, the computer's from `think`. */
-  /* (`downAt` is when the tanks left came down to one or none: the round ends BOOM_T after. With two tanks that is the first
-      to go, as before; with three or four, the last but one.) */
-  function roundNew(L, seats, seed, powers){
-    const R = rngOf(seed);
-    return { L, seats, t: 0, R, shots: [], booms: [], downAt: null, over: false, winner: -1, sounds: [],
-             powers: !!powers, crates: [], nextCrate: CRATE_FIRST + 2 * R(), crateMax: 1 + Math.floor(seats.length / 2), mines: [], lasers: [], missiles: [],
-             tanks: L.spawn.slice(0, seats.length).map((p, k) => ({ x: p.x, y: p.y, h: p.h, vx: 0, vy: 0, alive: true, cool: 0.4, plan: null, nextThink: 0.25 + 0.1 * k, power: null })) };
-  }
-  const aliveN = G => { let n = 0; for (const t of G.tanks) if (t.alive) n++; return n; };
-  function kill(G, k, by, seg){
-    const t = G.tanks[k]; if (!t.alive) return;
-    t.alive = false; G.booms.push({ t: G.t, x: t.x, y: t.y, k, by, seg: seg || 0 });
-    if (G.downAt == null && aliveN(G) <= 1) G.downAt = G.t;
-  }
-  const shotsOf = (G, k) => { let n = 0; for (const b of G.shots) if (b.k === k && b.end > G.t) n++; return n; };
   // a tank moved for dt: turned, driven, pushed out of the walls round it and off the other tanks
   function moveTank(L, t, drive, turn, dt, others){
     const s = L.s, rb = TR * s, x0 = t.x, y0 = t.y;
     t.h += turn * TURN * dt;
-    const v = drive * TV * s; t.x += Math.cos(t.h) * v * dt; t.y += Math.sin(t.h) * v * dt;
+    const v = drive * TV * (t.sp || 1) * s; t.x += Math.cos(t.h) * v * dt; t.y += Math.sin(t.h) * v * dt;
     for (let pass = 0; pass < 2; pass++) for (const w of L.WB[cellOf(L, t.x, t.y)]){
       const qx = Math.max(w[0], Math.min(w[2], t.x)), qy = Math.max(w[1], Math.min(w[3], t.y)), dx = t.x - qx, dy = t.y - qy, d = Math.hypot(dx, dy);
       if (d >= rb) continue;
@@ -53430,239 +52723,90 @@ const TANKMAZE_APP = (() => {
     if (others) for (const other of others){ if (other === t || !other.alive) continue; const dx = t.x - other.x, dy = t.y - other.y, d = Math.hypot(dx, dy); if (d < 2 * rb && d > 1e-9){ t.x = other.x + dx / d * 2 * rb; t.y = other.y + dy / d * 2 * rb; } }
     if (dt > 0){ t.vx = (t.x - x0) / dt; t.vy = (t.y - y0) / dt; }
   }
-  function fireShell(G, k, da){
-    const t = G.tanks[k];
-    G.shots.push({ k, t0: G.t, end: G.t + LIFE, P: trace(G.L, t.x, t.y, t.h + (da || 0), LIFE * BV * G.L.s, MAX_SEG) });
-    G.fired = (G.fired || 0) + 1; (G.lastFire = G.lastFire || [])[k] = G.t;
-  }
-  /* The first tank a way meets (within its reach), from distance `from` on: [tank, d], or null. `safe` keeps the one who fired
-     out of it until it is that far along. Segment by segment, so the first one met is the one hit. */
-  function firstHit(G, P, k, safe){
-    const s = G.L.s, R = (HIT_R + BRAD) * s;
-    for (let i = 3; i < P.length; i += 3){
-      const a0 = P[i - 1], a1 = P[i + 2], L = a1 - a0; if (L <= 0) continue;
-      const ux = (P[i] - P[i - 3]) / L, uy = (P[i + 1] - P[i - 2]) / L;
-      let best = null;
-      G.tanks.forEach((t, j) => {
-        if (!t.alive) return;
-        const px = t.x - P[i - 3], py = t.y - P[i - 2], along = clamp(px * ux + py * uy, 0, L), d = a0 + along;
-        if (j === k && d < safe) return;
-        if (Math.hypot(px - ux * along, py - uy * along) < R && (!best || d < best[1])) best = [j, d];
-      });
-      if (best) return best;
-    }
-    return null;
-  }
-  const cutAt = (P, d) => { const out = [P[0], P[1], 0]; for (let i = 3; i < P.length; i += 3){ if (P[i + 2] >= d){ const [x, y] = along(P, d); out.push(x, y, d); return out; } out.push(P[i], P[i + 1], P[i + 2]); } return out; };
-  // what a power held does when fired (POWERS): the shell it takes the place of, or the mine, laser or missile
-  function firePower(G, k, id){
-    const t = G.tanks[k], L = G.L, s = L.s;
-    G.sounds.push(id);
-    if (id === 'spread'){ fireShell(G, k, -SPREAD); fireShell(G, k, 0); fireShell(G, k, SPREAD); return; }
-    if (id === 'frag'){ fireShell(G, k); const b = G.shots[G.shots.length - 1]; b.frag = true; b.end = G.t + FRAG_T; return; }
-    (G.lastFire = G.lastFire || [])[k] = G.t;
-    if (id === 'mine'){ G.mines.push({ k, x: t.x, y: t.y, t0: G.t, end: Infinity }); return; }
-    if (id === 'homing'){ G.missiles.push({ k, x: t.x, y: t.y, h: t.h, t0: G.t, end: G.t + HOME_T, trail: [G.t, t.x, t.y, t.h] }); return; }
-    if (id === 'laser'){
-      const P = trace(L, t.x, t.y, t.h, LASER_LEN * s, LASER_SEG), hit = firstHit(G, P, k, LASER_SAFE * s);
-      G.lasers.push({ k, t: G.t, P: hit ? cutAt(P, hit[1]) : P });
-      if (hit) kill(G, hit[0], k, segAt(P, hit[1]));
-    }
-  }
-  /* A homing missile, one step: toward the nearest other tank along the maze (the next cell's middle), straight at it once a
-     ray to it meets no wall first; turning at most HOME_TURN a second; sliding along a wall it meets; spent on a tank or at
-     HOME_T. */
-  function stepMissile(G, M, dt){
-    const L = G.L, s = L.s, others = G.tanks.map((t, j) => j).filter(j => G.tanks[j].alive && j !== M.k);
-    if (!others.length) others.push(M.k);
-    const here = cellOf(L, M.x, M.y), d = bfs(L, here);
-    const tg = others.filter(j => G.tanks[j].alive).sort((a, b) => d[cellOf(L, G.tanks[a].x, G.tanks[a].y)] - d[cellOf(L, G.tanks[b].x, G.tanks[b].y)])[0];
-    if (tg != null){
-      const T = G.tanks[tg], dist = Math.hypot(T.x - M.x, T.y - M.y), toward = Math.atan2(T.y - M.y, T.x - M.x);
-      const P = trace(L, M.x, M.y, toward, dist, 1), clear = P[P.length - 1] >= dist - 1e-6;
-      let want = toward;
-      // (along the maze: the next cell's middle, or the one after once it is nearly there, so it takes a corner without cutting it)
-      if (!clear){ const p = pathOf(L, here, cellOf(L, T.x, T.y)); if (p.length > 1){ let [cx, cy] = centre(L, p[1]);
-        if (p.length > 2 && Math.hypot(cx - M.x, cy - M.y) < 0.3 * s) [cx, cy] = centre(L, p[2]); want = Math.atan2(cy - M.y, cx - M.x); } }
-      M.h += clamp(angDiff(want, M.h), -HOME_TURN * dt, HOME_TURN * dt);
-    }
-    const v = HOME_V * BV * s; M.x += Math.cos(M.h) * v * dt; M.y += Math.sin(M.h) * v * dt;
-    M.trail.push(G.t + dt, M.x, M.y, M.h);
-    // (a wall it meets turns it aside, pushed out along the wall as a tank is: spent on every corner it clipped, it found its
-    //  tank 13 times in 20)
-    const r = BRAD * s * 1.2;
-    for (const w of L.WB[cellOf(L, M.x, M.y)]){
-      const qx = Math.max(w[0], Math.min(w[2], M.x)), qy = Math.max(w[1], Math.min(w[3], M.y)), dx = M.x - qx, dy = M.y - qy, d = Math.hypot(dx, dy);
-      if (d < r && d > 1e-9){ M.x = qx + dx / d * r; M.y = qy + dy / d * r; M.scraped = (M.scraped || 0) + 1; }
-    }
-    M.trail[M.trail.length - 3] = M.x; M.trail[M.trail.length - 2] = M.y;
-    G.tanks.forEach((t, j) => {
-      if (M.end <= G.t || !t.alive || (j === M.k && G.t - M.t0 < HOME_GRACE)) return;
-      if (Math.hypot(t.x - M.x, t.y - M.y) < (HIT_R + BRAD * 1.5) * s){ M.end = G.t + dt; kill(G, j, M.k, 0); }
-    });
-  }
   function stepRound(G, cmds, dt){
-    const L = G.L, s = L.s, bv = BV * s;
-    G.tanks.forEach((t, k) => {
-      if (!t.alive) return;
-      const c = cmds[k] || { drive: 0, turn: 0, fire: false };
+    const L = G.L, s = L.s, run = G.tanks[0];
+    if (G.caughtAt == null) G.tanks.forEach((t, k) => {
+      if (!t.alive || (k && G.t < HEAD)) return;
+      const c = cmds[k] || { drive: 0, turn: 0 };
       moveTank(L, t, clamp(c.drive, -0.7, 1), clamp(c.turn, -1, 1), dt, G.tanks);
-      t.cool -= dt;
-      if (c.fire && t.cool <= 0){
-        if (t.power){ const id = t.power; t.power = null; firePower(G, k, id); t.cool = 0.3; G.pops = (G.pops || []); G.pops.push(G.t); }
-        else if (shotsOf(G, k) < MAXB){ fireShell(G, k); t.cool = c.cool != null ? c.cool : 0.14; G.pops = (G.pops || []); G.pops.push(G.t); }
-      }
-      // a crate driven over is taken, unless the tank holds one already
-      if (!t.power) for (const C of G.crates) if (C.t1 === Infinity && Math.hypot(C.x - t.x, C.y - t.y) < (TR + CRATE_R) * s){ C.t1 = G.t; C.by = k; t.power = POWERS[C.kind].id; G.sounds.push('crate:' + k); break; }
     });
-    for (const b of G.shots){
-      if (b.end <= G.t) continue;
-      const v = bv * (b.v || 1), d0 = (G.t - b.t0) * v, d1 = Math.min(b.P[b.P.length - 1], d0 + dt * v), grace = b.grace != null ? b.grace : GRACE;
-      G.tanks.forEach((t, k) => {
-        if (!t.alive || b.end <= G.t || (k === b.k && G.t - b.t0 < grace)) return;
-        const [n, at] = nearest(b.P, d0, d1, t.x, t.y, 0, 0);
-        if (n < (HIT_R + BRAD) * s){ b.end = G.t + (at - d0) / v; b.hit = true; kill(G, k, b.k, segAt(b.P, at)); }
-      });
-      if (d1 >= b.P[b.P.length - 1] - 1e-9) b.end = Math.min(b.end, G.t + dt);
-    }
-    // a frag that ran its time without a hit bursts into shards, every way, each a short shell that hits anyone
-    for (const b of G.shots) if (b.frag && !b.burst && !b.hit && b.end <= G.t + dt){
-      b.burst = true; const [x, y] = along(b.P, (b.end - b.t0) * bv), a0 = G.R() * TAU;
-      for (let i = 0; i < SHARDS; i++) G.shots.push({ k: b.k, t0: b.end, end: b.end + SHARD_LIFE, v: SHARD_V, grace: 0, shard: true, P: trace(L, x, y, a0 + i * TAU / SHARDS, SHARD_LIFE * bv * SHARD_V, 16) });
-      G.sounds.push('burst');
-    }
-    for (const Mn of G.mines){
-      if (Mn.end <= G.t || G.t - Mn.t0 < MINE_ARM) continue;
-      if (G.tanks.some(t => t.alive && Math.hypot(t.x - Mn.x, t.y - Mn.y) < (TR * 0.6 + MINE_R) * s)){
-        Mn.end = G.t; G.sounds.push('mine');
-        G.tanks.forEach((t, j) => { if (t.alive && Math.hypot(t.x - Mn.x, t.y - Mn.y) < MINE_BLAST * s) kill(G, j, Mn.k, 0); });
-        G.booms.push({ t: G.t, x: Mn.x, y: Mn.y, k: -1, by: Mn.k, seg: 0, mine: true });
-      }
-    }
-    for (const M of G.missiles) if (M.end > G.t) stepMissile(G, M, dt);
-    // crates: one every CRATE_GAP seconds while there are fewer than crateMax, in a cell no tank is near
-    if (G.powers && G.t >= G.nextCrate){
-      G.nextCrate = G.t + CRATE_GAP[0] + (CRATE_GAP[1] - CRATE_GAP[0]) * G.R();
-      if (G.crates.filter(C => C.t1 === Infinity).length < G.crateMax){
-        const n = L.m * L.m, cand = [];
-        for (let q = 0; q < n; q++){ const [x, y] = centre(L, q);
-          if (G.tanks.every(t => !t.alive || Math.hypot(t.x - x, t.y - y) > 1.6 * s) && !G.crates.some(C => C.t1 === Infinity && cellOf(L, C.x, C.y) === q)) cand.push([x, y]); }
-        if (cand.length){ const [x, y] = cand[Math.floor(G.R() * cand.length)]; G.crates.push({ x, y, kind: Math.floor(G.R() * POWERS.length), t0: G.t, t1: Infinity }); }
-      }
-    }
     G.t += dt;
-    if (G.shots.length > 60) G.shots = G.shots.filter(b => b.end > G.t - 0.5);
-    if ((G.downAt != null && G.t - G.downAt >= BOOM_T) || G.t >= ROUND_CAP){
-      G.over = true; G.winner = aliveN(G) === 1 ? G.tanks.findIndex(t => t.alive) : -1;
-    }
+    if (G.caughtAt == null){
+      for (let k = 1; k < G.tanks.length; k++){ const t = G.tanks[k];
+        if (Math.hypot(t.x - run.x, t.y - run.y) <= CATCH * TR * s){ G.caughtAt = G.t; G.by = k; run.alive = false; G.booms.push({ t: G.t, x: run.x, y: run.y, k: 0, by: k }); break; } }
+      if (G.caughtAt == null && G.t >= G.hold){ G.over = true; G.winner = 0; }
+    } else if (G.t - G.caughtAt >= BOOM_T){ G.over = true; G.winner = G.by; }
   }
-  const segAt = (P, d) => { for (let i = 3; i < P.length; i += 3) if (P[i + 2] >= d) return i / 3 - 1; return P.length / 3 - 2; };
 
-  /* ─── THE COMPUTER ─── `think` every D.think seconds makes a plan, which `cpuCmd` follows every step. */
+  /* ─── THE HUNTER ─── `think` every D.think seconds makes a plan, which `cpuCmd` follows every step. */
+  function steer(me, x, y){
+    const da = angDiff(Math.atan2(y - me.y, x - me.x), me.h);
+    return { drive: Math.abs(da) < 0.45 ? 1 : Math.abs(da) < 1.1 ? 0.35 : 0, turn: clamp(da * 4, -1, 1) };
+  }
   function cpuCmd(G, k){
     const me = G.tanks[k], D = LV[G.L.lv - 1];
+    if (k === 0) return flee(G);
     if (G.t >= me.nextThink){ me.nextThink = G.t + D.think; me.plan = think(G, k, D); }
-    const p = me.plan || {};
-    if (p.dodge) return { drive: p.dodge[0], turn: p.dodge[1], fire: false };
-    if (p.fire){ me.plan = null; return { drive: 0, turn: 0, fire: true }; }
-    if (p.aim != null){
-      const da = angDiff(p.aim, me.h), fire = Math.abs(da) < 0.035;
-      if (fire) me.plan = null;
-      return { drive: 0, turn: clamp(da / (TURN * STEP * 1.5), -1, 1), fire, cool: D.cool };
+    const p = me.plan; return p ? steer(me, p[0], p[1]) : { drive: 0, turn: 0 };
+  }
+  // where the runner is heading: its cell, or (leading) the open cell next to it it is moving toward
+  function aheadOf(G, steps){
+    const L = G.L, r = G.tanks[0], here = cellOf(L, r.x, r.y), sp = Math.hypot(r.vx, r.vy);
+    let k = here, from = -1;
+    for (let n = 0; n < steps; n++){
+      const o = nbrs(L, k).filter(q => q !== from); if (!o.length) break;
+      let best = o[0], bd = -Infinity;
+      for (const q of o){ const [qx, qy] = centre(L, q), [cx, cy] = centre(L, k), dot = n === 0 && sp > 1e-6 ? ((qx - cx) * r.vx + (qy - cy) * r.vy) / sp : -n; if (dot > bd){ bd = dot; best = q; } }
+      if (n === 0 && sp < 1e-6) break;
+      from = k; k = best;
     }
-    if (p.go){ const da = angDiff(Math.atan2(p.go[1] - me.y, p.go[0] - me.x), me.h);
-      return { drive: Math.abs(da) < 0.45 ? 1 : Math.abs(da) < 1.1 ? 0.35 : 0, turn: clamp(da * 4, -1, 1), fire: false }; }
-    return { drive: 0, turn: 0, fire: false };
+    return k;
   }
   function think(G, k, D){
-    const me = G.tanks[k], L = G.L, R = G.R, here = cellOf(L, me.x, me.y), dist = bfs(L, here);
-    const foes = G.tanks.filter((t, j) => j !== k && t.alive);
-    if (!foes.length) return {};
-    const foe = foes.slice().sort((a, b) => dist[cellOf(L, a.x, a.y)] - dist[cellOf(L, b.x, b.y)])[0];
-    if (D.dodge && R() < D.dodge){ const e = escape(G, k, 0.7); if (e) return { dodge: e }; }
-    const err = () => (R() - 0.5) * 2 * D.err * Math.PI / 180;
-    if (me.power && me.cool <= 0){
-      // (a mine is laid where ways meet, or with another tank near; a missile is sent off when there is no shot; a laser, a
-      //  frag and a spread go where a shell would hit, the laser off more walls)
-      if (me.power === 'mine'){ if (nbrs(L, here).length >= 3 || dist[cellOf(L, foe.x, foe.y)] <= 3) return { fire: true }; }
-      else if (me.power === 'laser'){ const a = findShot(G, k, foes, D, true); if (a != null) return { aim: a + err() * 0.5 }; }
-      else if (me.power === 'homing'){ if (findShot(G, k, foes, D) == null) return { fire: true }; }
-      else { const a = findShot(G, k, foes, D); if (a != null) return { aim: a + err() }; }
-    } else if (me.cool <= 0 && shotsOf(G, k) < D.most){
-      const a = findShot(G, k, foes, D);
-      if (a != null) return { aim: a + err() };
-    }
-    // a crate within three cells along the maze, with nothing held: go for it
-    if (!me.power){ const C = G.crates.filter(C => C.t1 === Infinity && C.t0 <= G.t).map(C => [C, dist[cellOf(L, C.x, C.y)]]).filter(([, d]) => d >= 0 && d <= 3).sort((a, b) => a[1] - b[1])[0];
-      if (C){ const p = pathOf(L, here, cellOf(L, C[0].x, C[0].y)); return { go: p.length > 1 ? centre(L, p[1]) : [C[0].x, C[0].y] }; } }
-    const p = pathOf(L, here, cellOf(L, foe.x, foe.y));
-    if (p.length > 2) return { go: centre(L, p[1]) };
-    return { go: [foe.x, foe.y] };
+    const me = G.tanks[k], L = G.L, run = G.tanks[0], here = cellOf(L, me.x, me.y), at = cellOf(L, run.x, run.y);
+    if (here === at || Math.hypot(run.x - me.x, run.y - me.y) < 0.9 * L.s) return [run.x, run.y];
+    // (the first hunter goes for the runner, or with `lead` the cell it is heading into; with `flank` the others for cells
+    //  farther ahead along its way, so they close from both sides)
+    const goal = k > 1 && D.flank ? aheadOf(G, 1 + 2 * (k - 1)) : D.lead ? aheadOf(G, 1) : at;
+    const p = pathOf(L, here, goal === here ? at : goal);
+    return p.length > 1 ? centre(L, p[1]) : [run.x, run.y];
   }
-  /* A way to hit the other tank: the straight line to it, and D.rays headings round from its own, each followed off as many
-     walls as its level looks for; one that comes within reach of the other tank (where it will be, if the level leads it)
-     before it comes back through its own. The nearest hit wins, with a little for the turning. */
-  function findShot(G, k, foes, D, laser){
-    if (!Array.isArray(foes)) foes = [foes];
-    const me = G.tanks[k], L = G.L, s = L.s, bv = BV * s, hitR = (HIT_R * 0.85 + BRAD) * s, selfR = (TR + BRAD) * s * 1.15;
-    // (a laser is there at once, so it is never led, reaches across the maze, and looks off more walls than a shell)
-    const segs = laser ? Math.max(4, D.aim + 3) : D.aim + 1, reach = laser ? LASER_LEN * s : Math.min(LIFE * bv, (D.aim + 1) * 4 * s + 2 * s);
-    const cands = foes.map(f => Math.atan2(f.y - me.y, f.x - me.x));
-    for (let i = 0; i < D.rays; i++) cands.push(me.h + i * TAU / D.rays);
-    let best = null, cost = Infinity;
-    for (const a of cands){
-      const P = trace(L, me.x, me.y, a, reach, segs), end = P[P.length - 1];
-      if (laser){
-        const hit = firstHit(G, P, k, LASER_SAFE * s);
-        if (!hit || hit[0] === k) continue;
-        const c = hit[1] + Math.abs(angDiff(a, me.h)) * 0.6 * s; if (c < cost){ cost = c; best = a; }
-        continue;
-      }
-      let nf = Infinity, df = Infinity;
-      for (const f of foes){ const [n1, d1] = nearest(P, 0, end, f.x, f.y, D.lead ? f.vx / bv : 0, D.lead ? f.vy / bv : 0); if (n1 <= hitR && d1 < df){ nf = n1; df = d1; } }
-      if (nf > hitR) continue;
-      const [nm] = nearest(P, GRACE * bv * 1.3, df, me.x, me.y, 0, 0);
-      if (nm < selfR) continue;
-      const c = df + Math.abs(angDiff(a, me.h)) * 0.6 * s;
-      if (c >= cost) continue;
-      // (and not back through itself for a while after, should the other tank get out of its way: the whole way traced)
-      const F = trace(L, me.x, me.y, a, Math.min(LIFE * bv, df + 2.5 * bv), MAX_SEG);
-      if (nearest(F, df, F[F.length - 1], me.x, me.y, 0, 0)[0] < selfR * 1.2) continue;
-      cost = c; best = a;
+  /* The steady runner: of the cells it reaches before any hunter can (its own distance along the maze under the nearest
+     hunter's), the one farthest from the hunters, a cell with more ways out a little better and a dead end much worse (sitting
+     at the end of one, it was cornered there); it heads there along the maze, to the next cell's middle, thinking again
+     every 0.2 s. There already, or with nowhere safe, it moves on to the next cell farthest from the hunters. */
+  function flee(G){
+    const L = G.L, me = G.tanks[0], here = cellOf(L, me.x, me.y);
+    // (it keeps to the cell it chose until it is nearly at its middle, and pays for turning back: choosing afresh every 0.2 s,
+    //  it swung between two cells on the spot and was caught going nowhere)
+    const at = me.next != null ? centre(L, me.next) : null, arrived = !at || Math.hypot(at[0] - me.x, at[1] - me.y) < 0.22 * L.s;
+    if (arrived || G.t >= (me.nextThink || 0)){
+      me.nextThink = G.t + 0.6;
+      const dists = G.tanks.slice(1).filter(t => t.alive).map(t => bfs(L, cellOf(L, t.x, t.y))), mine = bfs(L, here), n = L.m * L.m;
+      const dh = q => Math.min(...dists.map(d => d[q]));
+      let goal = -1, gs = -Infinity;
+      for (let q = 0; q < n; q++){ const h = dh(q), m = mine[q]; if (m < 0 || m >= h) continue;
+        const w = nbrs(L, q).length, v = h + 0.4 * w - (w === 1 ? 4 : 0) - 0.15 * m; if (v > gs){ gs = v; goal = q; } }
+      let next = here;
+      if (goal >= 0 && goal !== here) next = pathOf(L, here, goal)[1];
+      else { let bs = -Infinity; for (const q of nbrs(L, here)){ const v = dh(q) + (nbrs(L, q).length > 1 ? 2 : 0) - (q === me.prev ? 1.5 : 0); if (v > bs){ bs = v; next = q; } } }
+      if (next !== me.next){ me.prev = here; me.next = next; }
     }
-    return best;
-  }
-  /* A shell coming: the moves it could make (forward, back, either way round, still) tried for `horizon` seconds against every
-     shell's way, the one that keeps it farthest from any; null if none comes near. */
-  const MOVES = [[1, 0], [-0.7, 0], [1, 1], [1, -1], [-0.7, 1], [-0.7, -1], [0, 0]];
-  function escape(G, k, horizon){
-    const me = G.tanks[k], L = G.L, s = L.s, bv = BV * s, near = (HIT_R + BRAD) * s * 1.8;
-    const live = G.shots.filter(b => b.end > G.t && b.t0 <= G.t && !(b.k === k && G.t - b.t0 < (b.grace != null ? b.grace : GRACE)));
-    const threat = live.filter(b => { const v = bv * (b.v || 1), d0 = (G.t - b.t0) * v; return nearest(b.P, d0, Math.min(d0 + horizon * v, (b.end - b.t0) * v), me.x, me.y, 0, 0)[0] < near; });
-    if (!threat.length) return null;
-    let best = null, score = -1;
-    for (const [dr, tu] of MOVES){
-      const t = { x: me.x, y: me.y, h: me.h, vx: 0, vy: 0 }; let worst = Infinity;
-      for (let tau = 0.05; tau <= horizon + 1e-9; tau += 0.05){
-        moveTank(L, t, dr, tu, 0.05, null);
-        for (const b of threat){ const d = (G.t + tau - b.t0) * bv * (b.v || 1); if (d > b.P[b.P.length - 1] || G.t + tau > b.end) continue; const [x, y] = along(b.P, d); worst = Math.min(worst, Math.hypot(x - t.x, y - t.y)); }
-      }
-      if (worst > score){ score = worst; best = [dr, tu]; }
-    }
-    return best;
+    const [x, y] = centre(L, me.next != null ? me.next : here);
+    return steer(me, x, y);
   }
 
-  /* ─── A BOARD NO ONE PLAYS ─── a round of two computer tanks on the board's first maze, worked out a little at a time
-     (RECS, `recSoon`: STEP by STEP while the page has time, about 6 ms in 30) and played back: the tanks sampled REC_HZ times a
-     second, the shells as their ways, the bursts as they came. Kept for the latest REC_CAP boards. */
+  /* ─── A BOARD NO ONE PLAYS ─── a round of the steady runner against the board's hunters on its first maze, worked out a
+     little at a time (RECS, `recSoon`: STEP by STEP while the page has time, about 6 ms in 30) and played back: the tanks
+     sampled REC_HZ times a second, the catch as it came. Kept for the latest REC_CAP boards. */
   const RECS = new Map(), REC_CAP = 500, SOON = BOARD_KIT.budget(6);
-  const recKey = (idx, lv) => ((idx * 8 + lv) * 8 + SET.n) * 2 + (SET.powers ? 1 : 0);
+  const recKey = (idx, lv) => (idx * 8 + lv) * 8 + SET.n;
   function recSoon(c, r, force){
     const idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
     let E = RECS.get(key);
     if (!E){
-      const L = makeMaze(idx, lv, 0, SET.n), seats = Array(SET.n).fill('cpu');
-      E = { L, n: SET.n, G: roundNew(L, seats, idx * 31 + lv, SET.powers), F: [], phase: BOARD_KIT.phase(idx), done: false };
+      const L = makeMaze(idx, lv, 0, SET.n), seats = ['you'].concat(Array(SET.n - 1).fill('cpu'));
+      E = { L, n: SET.n, G: roundNew(L, seats, idx * 31 + lv), F: [], phase: BOARD_KIT.phase(idx), done: false };
       RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
     } else { RECS.delete(key); RECS.set(key, E); }
     if (E.done) return E;
@@ -53676,25 +52820,23 @@ const TANKMAZE_APP = (() => {
       if (++n % 30 === 0 && !force && performance.now() - t0 > budget) break;
     }
     SOON.spend(t0);
-    if (G.over){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
-      Object.assign(E, { T: G.t, shots: G.shots, booms: G.booms, winner: G.winner, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles, done: true, G: null }); }
+    if (G.over){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h); Object.assign(E, { T: G.t, hold: G.hold, booms: G.booms, winner: G.winner, done: true, G: null }); }
     return E;
   }
-  // what a recorded round shows at the page's clock: the tanks, the shells and the bursts at that moment
-  // (two computer tanks are red and blue, as before; three or four the computer's own colours)
-  const recCols = n => n === 2 ? [SEAT.cpu, 0x3f7fd6] : CPU_COL.concat([0x3f7fd6]).slice(0, n);
+  // what a recorded round shows at the page's clock
   function shownOf(E){
-    const L = E.L, N = E.n || 2, none = { shots: [], booms: [], crates: [], mines: [], lasers: [], missiles: [] };
-    if (!E.done) return { L, tanks: L.spawn.slice(0, N).map(p => ({ x: p.x, y: p.y, h: p.h, alive: true })), ...none, t: 0, seats: Array(N).fill('cpu'), cols: recCols(N) };
+    const L = E.L, N = E.n || 2, seats = ['you'].concat(Array(N - 1).fill('cpu')), cols = colsOf(seats);
+    if (!E.done) return { L, tanks: L.spawn.slice(0, N).map(p => ({ x: p.x, y: p.y, h: p.h, alive: true })), booms: [], t: 0, hold: LV[L.lv - 1].hold, seats, cols };
     const t = Math.min(E.T, BOARD_KIT.loopT(E.phase, E.T + 1.5)), n = E.F.length / (3 * N);
     const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
     const tanks = Array.from({ length: N }, (_, k) => { const a = 3 * N * i + 3 * k, b = 3 * N * j + 3 * k;
       return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
                alive: !E.booms.some(B => B.k === k && B.t <= t) }; });
-    return { L, tanks, shots: E.shots, booms: E.booms, crates: E.crates || [], mines: E.mines || [], lasers: E.lasers || [], missiles: E.missiles || [], t, seats: Array(N).fill('cpu'), cols: recCols(N) };
+    return { L, tanks, booms: E.booms, t, hold: E.hold, seats, cols };
   }
 
-  /* ─── PLAYING ─── a match: rounds one after another, each its own maze (the board's number and the round), the score kept. */
+  /* ─── PLAYING ─── a match: rounds one after another, each its own maze (the board's number and the round), the score kept:
+     the runner's rounds held out, the hunters' rounds caught. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0;
   const { BEST, saveBest } = BOARD_KIT.best('tankmaze.best');
@@ -53702,31 +52844,29 @@ const TANKMAZE_APP = (() => {
   const isPerson = s => s !== 'cpu';
   function fresh(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), seats = seatsNow();
-    const g = { c, r, idx, lv, seats, n: seats.length, score: seats.map(() => 0), round: 0, state: 'ready', wait: 0, last: performance.now(), fireReq: seats.map(() => false) };
-    g.G = roundNew(makeMaze(idx, lv, 0, g.n), seats, idx * 31 + lv, SET.powers);
+    const g = { c, r, idx, lv, seats, n: seats.length, score: [0, 0], round: 0, state: 'ready', wait: 0, last: performance.now() };
+    g.G = roundNew(makeMaze(idx, lv, 0, g.n), seats, idx * 31 + lv);
     return g;
   }
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function nextRound(g){
     g.round++;
-    g.G = roundNew(makeMaze(g.idx, g.lv, g.round, g.n), g.seats, g.idx * 31 + g.lv + g.round * 7919, SET.powers);
-    g.state = 'count'; g.wait = COUNT_T; g.fireReq = g.seats.map(() => false);
+    g.G = roundNew(makeMaze(g.idx, g.lv, g.round, g.n), g.seats, g.idx * 31 + g.lv + g.round * 7919);
+    g.state = 'count'; g.wait = COUNT_T;
     try { fieldItemsChanged(); } catch {}
   }
   function begin(g){ if (g.state !== 'ready') return; g.state = 'count'; g.wait = COUNT_T * 0.6; g.last = performance.now(); }
-  // the keys: one player, either set drives you; two, Player 1 on WASD (Q or Space fires), Player 2 on the arrows (M or Enter)
+  // the keys: one player, either set drives you; two, Player 1 (the runner) on WASD, Player 2 (a hunter) on the arrows
   const HELD = new Set();
   const KEYS = { w: ['F', 0], s: ['B', 0], a: ['L', 0], d: ['R', 0], W: ['F', 0], S: ['B', 0], A: ['L', 0], D: ['R', 0],
                  ArrowUp: ['F', 1], ArrowDown: ['B', 1], ArrowLeft: ['L', 1], ArrowRight: ['R', 1] };
-  const FIRE_KEYS = { ' ': 0, q: 0, Q: 0, Enter: 1, m: 1, M: 1 };
   const seatOfKeys = (g, set) => g.seats[1] === 'p2' ? set : 0;
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     const g = liveGame(); if (!g || g.state === 'over') return;
-    const K = KEYS[e.key], F = FIRE_KEYS[e.key];
-    if (K){ e.preventDefault(); e.stopPropagation(); HELD.add(K[0] + seatOfKeys(g, K[1])); begin(g); return; }
-    if (F != null){ e.preventDefault(); e.stopPropagation(); if (g.state === 'ready') begin(g); else if (!e.repeat) g.fireReq[seatOfKeys(g, F)] = g.G.t; }
+    const K = KEYS[e.key];
+    if (K){ e.preventDefault(); e.stopPropagation(); HELD.add(K[0] + seatOfKeys(g, K[1])); begin(g); }
   }, true);
   addEventListener('keyup', e => { const K = KEYS[e.key]; if (K){ let hit = false; for (const k of [0, 1]) hit = HELD.delete(K[0] + k) || hit; if (hit){ e.preventDefault(); e.stopPropagation(); } } }, true);
   addEventListener('blur', () => HELD.clear());
@@ -53739,48 +52879,39 @@ const TANKMAZE_APP = (() => {
       turn = clamp(turn + da * 5, -1, 1);
       if (d > 0.5 * s && Math.abs(da) < 0.8) drive = Math.max(drive, Math.abs(da) < 0.35 ? 1 : 0.4);
     }
-    // (a press of fire is kept until the tank can fire, up to REQ_T: a tap in its first moments, or just after a shot, was lost)
-    return { drive, turn, fire: g.fireReq[k] !== false };
+    return { drive, turn };
   }
   function stepGame(g){
     const tn = performance.now(), dt = Math.min(0.25, (tn - g.last) / 1000); g.last = tn;
     if (ARCADE.paused || g.state === 'ready' || g.state === 'over') return;
-    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + '.', 900); }
-    const G = g.G, booms = G.booms.length, pops = (G.pops || []).length, heard = G.sounds.length;
-    for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--){
+    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + ': hold out ' + g.G.hold + ' s.', 1200); }
+    const G = g.G, booms = G.booms.length;
+    for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--)
       stepRound(G, g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k)), STEP);
-      g.fireReq = g.fireReq.map((q, k) => q === false || (G.lastFire && G.lastFire[k] >= q) || G.t - q > REQ_T ? false : q);
-    }
-    if ((G.pops || []).length > pops) SND.play('tap');
     if (G.booms.length > booms) SND.play('boom');
-    // (the powers: a crate taken, a laser, a frag's burst, a mine laid or gone off, a missile away)
-    for (const e of G.sounds.slice(heard)){
-      if (e.startsWith('crate:')){ const k = +e.slice(6); SND.play('turn'); if (isPerson(g.seats[k])){ const P = POWERS[PW[G.tanks[k].power]]; if (P) say((g.seats[1] === 'p2' ? namesOf(g.seats)[k] + ': ' : 'You have ') + P.says + '.', 1800); } }
-      else if (e === 'laser') SND.play('flag'); else if (e === 'mine' || e === 'burst') SND.play('boom'); else SND.play('slide');
-    }
     if (G.over) roundOver(g);
   }
   // (a board's best: by board and level, and the number of tanks when more than two)
   const bestKey = g => g.idx + '@' + g.lv + (g.n > 2 ? '#' + g.n : '');
+  const sideNames = g => g.seats[1] === 'p2' ? ['Player 1', 'Player 2'] : ['You', g.n > 2 ? 'the hunters' : 'Red'];
   function roundOver(g){
-    const G = g.G, w = G.winner, names = namesOf(g.seats);
-    if (w >= 0) g.score[w]++;
-    const tally = names.map((nm, k) => nm + ' ' + g.score[k]).join(', ');
-    const top = g.score.findIndex(x => x >= WIN);
-    if (top >= 0){
+    const G = g.G, side = G.winner === 0 ? 0 : 1, nm = sideNames(g);
+    g.score[side]++;
+    const tally = nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1];
+    if (g.score[side] >= WIN){
       g.state = 'over'; g.overAt = performance.now();
-      const won = top === 0, rest = Math.max(...g.score.slice(1));
       if (SET.players === 1){
-        g.stars = won ? (rest <= 1 ? 3 : rest <= 3 ? 2 : 1) : 0;
+        const won = side === 0;
+        g.stars = won ? (g.score[1] === 0 ? 3 : g.score[1] === 1 ? 2 : 1) : 0;
         const k = bestKey(g), was = +(BEST.get(k) || 0);
         if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
         SND.play(won ? 'win' : 'lose');
-        say((won ? 'You won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : names[top] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
-      } else { SND.play('win'); say((top === 0 ? 'Player 1' : top === 1 ? 'Player 2' : names[top]) + ' won the match, ' + tally + '. Tap for the next board.', 4200); }
+        say((won ? 'You got away: you won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : 'Caught: ' + nm[1] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
+      } else { SND.play('win'); say(nm[side] + ' won the match, ' + tally + '. Tap for the next board.', 4200); }
       return;
     }
-    SND.play(w >= 0 && isPerson(g.seats[w]) ? 'good' : w < 0 ? 'turn' : 'bad');
-    say((w < 0 ? 'No one left standing' : names[w] + (names[w] === 'You' ? ' take' : ' takes') + ' the round') + ': ' + tally + '.', 1600);
+    SND.play(side === 0 ? 'good' : 'bad');
+    say((side === 0 ? (nm[0] === 'You' ? 'You held out' : nm[0] + ' held out') : 'Caught by ' + namesOf(g.seats)[G.winner]) + ': ' + tally + '.', 1600);
     nextRound(g);
   }
   // the human tank a finger means: yours, or with two players the one nearest it
@@ -53791,7 +52922,7 @@ const TANKMAZE_APP = (() => {
   }
 
   /* ─── WHAT A BOARD DRAWS ─── walls (the outer one in the level's colour), the tanks (tracks, hull, turret and gun, each
-     turned to its heading; a wreck dark), the shells along their ways, and each burst. */
+     turned to its heading; caught, dark), the time left as a bar along the near wall, and the burst of a catch. */
   const lighten = c => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.min(255, Math.round(((c >> sh) & 255) * 1.25 + 18)) << sh; return o; };
   const yawOf = BOARD_KIT.yawOf;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   function itemsOf(V){
@@ -53805,35 +52936,9 @@ const TANKMAZE_APP = (() => {
       out.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? lighten(col) : WRECK });
       out.push({ kind: 'mzGun', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? GUNC : 0x1a1a1a });
     });
-    const bv = BV * s;
-    for (const b of V.shots){
-      if (b.t0 > V.t || b.end <= V.t) continue;
-      const [x, y] = along(b.P, (V.t - b.t0) * bv * (b.v || 1));
-      out.push({ kind: 'mzShot', u: x, v: y, scale: 2 * BRAD * s * (b.shard ? 0.7 : b.frag ? 1.35 : 1), lift: 0.18 * s, color: b.frag ? POWERS[PW.frag].col : SHOTC });
-    }
-    // the crates, turning slowly and bobbing, in their power's colour
-    (V.crates || []).forEach((C, i) => { if (C.t0 > V.t || C.t1 <= V.t) return;
-      out.push({ kind: 'mzCrate', u: C.x, v: C.y, scale: 0.36 * s, yaw: yawOf(V.t * 1.2 + i), lift: (0.06 + 0.04 * Math.sin(V.t * 3 + i)) * s, color: POWERS[C.kind].col }); });
-    // the mines: dark discs, their light blinking once armed
-    for (const Mn of V.mines || []){ if (Mn.t0 > V.t || Mn.end <= V.t) continue;
-      const armed = V.t - Mn.t0 >= MINE_ARM, on = armed && Math.floor((V.t - Mn.t0) * 3) % 2 === 0;
-      out.push({ kind: 'mzMine', u: Mn.x, v: Mn.y, scale: 0.34 * s, color: 0x2a2a2a });
-      out.push({ kind: 'mzShot', u: Mn.x, v: Mn.y, scale: 0.08 * s, lift: 0.05 * s, color: on ? 0xff3030 : armed ? 0x701818 : 0x555555 }); }
-    // a laser: its way, bright for LASER_SHOW and fading, a thin bar a piece
-    for (const Z of V.lasers || []){ const a = V.t - Z.t; if (a < 0 || a > LASER_SHOW) continue;
-      const P = Z.P, wd = 0.07 * (1 - a / LASER_SHOW) + 0.02;
-      for (let i = 3; i < P.length; i += 3){ const dx = P[i] - P[i - 3], dy = P[i + 1] - P[i - 2], l = Math.hypot(dx, dy); if (l < 1e-6) continue;
-        out.push({ kind: 'mzBeam', u: (P[i] + P[i - 3]) / 2, v: (P[i + 1] + P[i - 2]) / 2, scale: s, sx: l / s, sy: wd, sz: wd, lift: 0.18 * s, yaw: yawOf(Math.atan2(dy, dx)), color: POWERS[PW.laser].col }); } }
-    // a homing missile: where its trail puts it at this moment, turned its way, a puff of smoke behind
-    for (const M of V.missiles || []){ if (M.t0 > V.t || M.end <= V.t) continue;
-      const T = M.trail; let i = 0; while (i + 4 < T.length && T[i + 4] <= V.t) i += 4;
-      out.push({ kind: 'mzMissile', u: T[i + 1], v: T[i + 2], scale: s, yaw: yawOf(T[i + 3]), lift: 0.14 * s, color: POWERS[PW.homing].col });
-      out.push({ kind: 'mzPuff', u: T[i + 1] - Math.cos(T[i + 3]) * 0.18 * s, v: T[i + 2] - Math.sin(T[i + 3]) * 0.18 * s, scale: 0.18 * s, lift: 0.15 * s, color: 0x8a8a8a }); }
-    // the power a tank holds, a small light over its turret
-    V.tanks.forEach(t => { if (t.alive && t.power) out.push({ kind: 'mzShot', u: t.x, v: t.y, scale: 0.13 * s, lift: 0.34 * s, color: POWERS[PW[t.power]].col }); });
-    // the aim line: dots along where your shell (or laser) would go, a fifth of a cell apart
-    for (const A of V.aim || []){ const P = A.P, end = P[P.length - 1];
-      for (let d = TR * s * 1.2; d < end; d += 0.2 * s){ const [x, y] = along(P, d); out.push({ kind: 'mzDot', u: x, v: y, scale: 0.07 * s, lift: 0.12 * s, color: A.col }); } }
+    // (the time left to hold out: a bar along the top of the near wall, shrinking toward its left end)
+    const left = clamp(1 - V.t / (V.hold || 1), 0, 1);
+    if (left > 0 && !V.booms.some(B => B.t <= V.t)) out.push({ kind: 'mzBar', u: left / 2, v: 1, scale: s, sx: left / s, sy: 0.08, sz: WALL_T * 1.6, lift: WALL_H * s, color: 0xffd23a });
     for (const B of V.booms){
       const a = V.t - B.t; if (a < 0 || a > 1.8) continue;
       const R = rngOf((B.k + 2) * 977 + Math.round(B.t * 1000));
@@ -53845,21 +52950,7 @@ const TANKMAZE_APP = (() => {
     }
     return out;
   }
-  /* THE AIM LINE (Oct 21, "3"): for each person's tank, where a shell from its gun as it points would go, AIM_SEG[level]
-     pieces of its way (a laser held: its own way), at most AIM_CELLS cells; kept on the tank while it has not moved. */
-  function aimOf(g){
-    if (!SET.aim || (g.state !== 'play' && g.state !== 'count')) return [];
-    const G = g.G, L = G.L, s = L.s, cols = colsOf(g.seats), out = [];
-    g.seats.forEach((st, k) => {
-      const t = G.tanks[k]; if (!isPerson(st) || !t.alive) return;
-      const laser = t.power === 'laser', key = [t.x.toFixed(5), t.y.toFixed(5), t.h.toFixed(4), laser].join(':');
-      if (!t._aim || t._aim.key !== key) t._aim = { key, P: trace(L, t.x, t.y, t.h, (laser ? LASER_LEN : AIM_CELLS) * s, laser ? LASER_SEG : AIM_SEG[clamp(L.lv | 0, 1, 5)]) };
-      out.push({ k, P: t._aim.P, col: laser ? POWERS[PW.laser].col : lighten(cols[k]) });
-    });
-    return out;
-  }
-  function liveView(g){ const G = g.G; return { L: G.L, tanks: G.tanks, shots: G.shots, booms: G.booms, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles,
-    t: G.t, seats: g.seats, cols: colsOf(g.seats), aim: aimOf(g) }; }
+  function liveView(g){ const G = g.G; return { L: G.L, tanks: G.tanks, booms: G.booms, t: G.t, hold: G.hold, seats: g.seats, cols: colsOf(g.seats) }; }
   function viewOf(c, r){
     const k = gkey(c, r), here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(k);
     if (g){ if (here) stepGame(g); return liveView(g); }
@@ -53871,7 +52962,7 @@ const TANKMAZE_APP = (() => {
   const merge = (T, parts) => {
     // (a few boxes and cylinders as one geometry: their positions, normals and indices laid end to end)
     const pos = [], nrm = [], idx = []; let base = 0;
-    for (const p of parts){ const g = p.index ? p : p; const P = g.attributes.position.array, N = g.attributes.normal.array, I = g.index ? g.index.array : null;
+    for (const g of parts){ const P = g.attributes.position.array, N = g.attributes.normal.array, I = g.index ? g.index.array : null;
       for (let i = 0; i < P.length; i++){ pos.push(P[i]); nrm.push(N[i]); }
       if (I) for (let i = 0; i < I.length; i++) idx.push(I[i] + base); else for (let i = 0; i < P.length / 3; i++) idx.push(i + base);
       base += P.length / 3; g.dispose(); }
@@ -53881,16 +52972,11 @@ const TANKMAZE_APP = (() => {
   const cyl = (T, r, h, x, y, z, seg) => { const g = new T.CylinderGeometry(r, r, h, seg || 16); g.translate(x, y + h / 2, z); return g; };
   const geos = {
     mzWall: T => boxAt(T, 1, 1, 1, 0, 0, 0),
+    mzBar: T => { const g = boxAt(T, 1, 1, 1, 0, 0, 0); g.userData.unlit = true; return g; },
     mzTracks: T => merge(T, [boxAt(T, 0.6, 0.13, 0.13, 0, 0, 0.19), boxAt(T, 0.6, 0.13, 0.13, 0, 0, -0.19)]),
     mzHull: T => merge(T, [boxAt(T, 0.5, 0.12, 0.3, 0, 0.04, 0), boxAt(T, 0.1, 0.07, 0.24, 0.27, 0.04, 0)]),
     mzTurret: T => merge(T, [cyl(T, 0.12, 0.08, -0.02, 0.16, 0, 18)]),
     mzGun: T => merge(T, [boxAt(T, 0.3, 0.045, 0.05, 0.22, 0.185, 0)]),
-    mzShot: T => { const g = new T.SphereGeometry(0.5, 10, 8); g.translate(0, 0.5, 0); return g; },
-    mzDot: T => { const g = new T.SphereGeometry(0.5, 6, 4); g.translate(0, 0.5, 0); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
-    mzCrate: T => merge(T, [boxAt(T, 1, 0.7, 1, 0, 0, 0), boxAt(T, 1.04, 0.12, 0.3, 0, 0.29, 0), boxAt(T, 0.3, 0.12, 1.04, 0, 0.29, 0)]),
-    mzMine: T => FieldKit.disc(T, 0.5, 0.05),
-    mzBeam: T => { const g = new T.BoxGeometry(1, 1, 1); g.userData.unlit = true; g.userData.opacity = 0.85; return g; },
-    mzMissile: T => merge(T, [boxAt(T, 0.3, 0.08, 0.08, 0, -0.04, 0), boxAt(T, 0.08, 0.04, 0.2, -0.12, -0.02, 0)]),
     mzFire: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.7, 1); g.translate(0, 0.35, 0); g.userData.unlit = true; g.userData.opacity = 0.9; return g; },
     mzPuff: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.6, 1); g.translate(0, 0.3, 0); g.userData.opacity = 0.45; return g; },
   };
@@ -53901,13 +52987,9 @@ const TANKMAZE_APP = (() => {
     name: 'tank maze',
     menu: [{ head: 'Tank maze', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Tanks: ' + SET.n, title: 'Two, three or four tanks in the maze, every one for itself; the maze grows a cell a side for each past two.',
-        on(){ SET.n = SET.n % 4 + (SET.n === 4 ? -1 : 1); ARCADE.save('tankmaze.count', String(SET.n)); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Power-ups: ' + (SET.powers ? 'on' : 'off'), title: 'Crates that drop into the maze: drive over one and your next shot is a laser, a frag, a spread, a mine or a homing missile.',
-        on(){ SET.powers = !SET.powers; ARCADE.save('tankmaze.powers', SET.powers ? 'on' : 'off'); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Aim line: ' + (SET.aim ? 'on' : 'off'), title: 'Dots along where your shell would go off the walls: the most at level 1, the straight run alone farther out.',
-        on(){ SET.aim = !SET.aim; ARCADE.save('tankmaze.aim', SET.aim ? 'on' : 'off'); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s red tank. Two: you and a friend on one keyboard (Player 1 green: WASD, Q or Space fires; Player 2 blue: the arrows, M or Enter fires), or a finger each on a phone.',
+      { label: () => 'Tanks: ' + SET.n, title: 'You and one, two or three hunters; the maze grows a cell a side for each past one, and the later ones cut you off ahead.',
+        on(){ SET.n = SET.n === 4 ? 2 : SET.n + 1; ARCADE.save('tankmaze.count', String(SET.n)); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you run from the computer\'s red tank. Two: Player 1 green runs (WASD), Player 2 blue hunts (the arrows), on one keyboard, or a finger each on a phone.',
         on(){ SET.players = SET.players === 2 ? 1 : 2; ARCADE.save('tankmaze.players', String(SET.players)); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: 'Start this board again', title: 'A new match on this board, nothing to nothing.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
@@ -53921,29 +53003,28 @@ const TANKMAZE_APP = (() => {
     },
     cellItems(c, r){ return itemsOf(viewOf(c, r)); },
     cellTitle(c, r){
-      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), m = LV[lv - 1].m + SET.n - 2, best = BEST.get(idx + '@' + lv + (SET.n > 2 ? '#' + SET.n : ''));
-      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + (SET.n > 2 ? ', ' + SET.n + ' tanks' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
+      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), D = LV[lv - 1], m = D.m + SET.n - 2, best = BEST.get(idx + '@' + lv + (SET.n > 2 ? '#' + SET.n : ''));
+      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + ', hold out ' + D.hold + ' s' + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
       if (!g) return head;
-      const names = namesOf(g.seats), held = g.G.tanks[0].alive && g.G.tanks[0].power;
-      return head + ' · ' + names.map((nm, k) => nm + ' ' + g.score[k]).join(', ') + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')' + (held ? ' · holding ' + POWERS[PW[held]].name.toLowerCase() : '');
+      const nm = sideNames(g), left = Math.max(0, Math.ceil(g.G.hold - g.G.t));
+      return head + ' · ' + nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1] + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')' + (g.state === 'play' ? ' · ' + left + ' s left' : '');
     },
-    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g ? (g.score[0] + 1) / (g.score[0] + Math.max(...g.score.slice(1)) + 2) : null; },
+    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires. Shells bounce off the walls, and can come back for you.', 6000); }
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green and has no gun: keep away from the red one until the time runs out. Drive with the arrows or WASD, or drag toward where it should go.', 6000); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
-    onCellTap(c, r, u, v){
+    onCellTap(c, r){
       if (performance.now() - ateAt < 400) return true;       // (the tap the field still calls after a short drag)
       const g = gameAt(c, r);
       if (g.state === 'over'){
         if (performance.now() - (g.overAt || 0) < 800) return true;
         const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
       LIVE = { c, r };
-      if (g.state === 'ready'){ begin(g); return true; }
-      const k = u == null ? 0 : seatNear(g, u, v); if (k >= 0) g.fireReq[k] = g.G.t;
+      if (g.state === 'ready') begin(g);
       return true;
     },
     onCellHold(c, r){ restart(c, r); say('A new match on this board.', 1400); return true; },
@@ -53962,13 +53043,11 @@ const TANKMAZE_APP = (() => {
       [[0, 0, 1, 0], [0, 1, 1, 1], [0, 0, 0, 1], [1, 0, 1, 1], [0.33, 0, 0.33, 0.55], [0.66, 0.4, 0.66, 1], [0.33, 0.55, 0.55, 0.55]].forEach(([a, b, c, d]) => ctx.fillRect(a * (sz - w), b * (sz - w), (c - a) * (sz - w) + w, (d - b) * (sz - w) + w));
       const tank = (x, y, col, q) => { ctx.save(); ctx.translate(x * sz, y * sz); ctx.rotate(q); ctx.fillStyle = '#2b2b2b'; ctx.fillRect(-sz * 0.09, -sz * 0.08, sz * 0.18, sz * 0.16);
         ctx.fillStyle = col; ctx.fillRect(-sz * 0.07, -sz * 0.055, sz * 0.14, sz * 0.11); ctx.fillStyle = '#30352c'; ctx.fillRect(0, -sz * 0.012, sz * 0.12, sz * 0.024); ctx.restore(); };
-      tank(0.17, 0.78, '#5a9e3e', -0.6); tank(0.83, 0.2, '#c8463c', 2.4);
-      ctx.fillStyle = '#1c1c1c'; [[0.3, 0.68], [0.45, 0.62], [0.52, 0.72]].forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x * sz, y * sz, sz / 40, 0, TAU); ctx.fill(); });
+      tank(0.17, 0.78, '#5a9e3e', -0.6); tank(0.5, 0.82, '#c8463c', 3.1);
     },
-    _debug: { LV, makeMaze, trace, along, nearest, roundNew, stepRound, moveTank, fireShell, cpuCmd, think, findShot, escape, recSoon, shownOf, itemsOf, viewOf,
-              POWERS, PW, firePower, firstHit, stepMissile, aimOf, liveView, AIM_SEG, MINE_ARM, FRAG_T, SHARDS, namesOf, colsOf,
-              fresh, gameAt, stepGame, begin, nextRound, personCmd, bfs, pathOf, cellOf, centre, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
-              GAMES, RECS, BEST, HELD, SET, WIN, STEP, BV, TR, LIFE, GRACE, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+    _debug: { LV, makeMaze, roundNew, stepRound, moveTank, cpuCmd, think, flee, aheadOf, recSoon, shownOf, itemsOf, viewOf, liveView, namesOf, colsOf,
+              fresh, gameAt, stepGame, begin, nextRound, personCmd, roundOver, bfs, pathOf, cellOf, centre, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              GAMES, RECS, BEST, HELD, SET, WIN, STEP, TR, CATCH, HEAD, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
@@ -68195,10 +67274,6 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     // A chess piece from the 3d studio: swapped in for this session.
     const _pieces = all.filter(f => f && /\.tvf3d$/i.test(f.name || ''));
     if (_pieces.length) loadPieceFiles(_pieces);
-    // Mini golf holes saved to a file (Oct 10): they open in mini golf, into My holes.
-    try { GOLF_APP.importHoleFiles(all); } catch {}
-    // A curve from draw (a .tvf, Oct 10): a path on the mini golf hole being edited.
-    try { GOLF_APP.importTvfFiles(all); } catch {}
     /* A deck of flash cards (Oct 25: "it must be loaded like json or epub"): a .csv, .tsv or .txt opens in the flash cards; a
        .json that is a deck too, found below once it has been read. */
     try { FLASH_APP.importDeckFiles(all); } catch {}

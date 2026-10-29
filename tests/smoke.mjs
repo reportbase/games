@@ -1474,26 +1474,25 @@ try {
     if (tr.off !== 0 || !(tr.on > 8) || tr.wire !== 'Wireframe: off') failures.push(`[${current}] the movers' tracks and Wireframe: ${JSON.stringify(tr)}`);
   }
   // RATED AS YOU PLAY, AND THE SCORECARD (Oct 10: "6,4,2,3", 4 being "rate each hole quietly while you play it, then show
-  // its stars and par at the end of the round"): a round started on a generated board rates its hole in the background;
+  // its stars and par at the end of the round"; rated by the guess since Oct 29):
   // a hole sunk once rated carries its stars into the message and onto the card; the scorecard lists every hole of the
   // round with its par, strokes and stars, and closes by a real click on Close and by Escape
   {
     const sc = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor;
       let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.boardIdx(c, r) >= 22) break search;
-      const g = D.startRound(c, r), job = E.bgRating(), k = g.hole;
-      E.stopRating();
+      const g = D.startRound(c, r), k = g.hole;
       D.HOLES[k].rated = { mean: 3.1, sd: 1, sunk: 1, stars: 3 };
       const g2 = D.holeGame({ start: k, card: [] }, k); g2.strokes = 2; E.sink(g2);
       const card = g2.R.card[0];
       E.openCardBox({ card: [card, { hole: 0, par: 3, strokes: 4, name: 'the meadow', num: 1, stars: 0 }] });
       const box = document.getElementById('golfCardBox'), rows = box ? box.querySelectorAll('.golfCardRow').length : 0, text = box ? box.textContent : '';
-      return { job: !!job && job.k === k, stars: card && card.stars, name: card && card.name === D.HOLES[k].name, rows, head: /Round over — 6 strokes, par/.test(text), shown: text.includes('★★★☆☆') }; });
+      return { stars: card && card.stars, name: card && card.name === D.HOLES[k].name, rows, head: /Round over — 6 strokes, par/.test(text), shown: text.includes('★★★☆☆') }; });
     await page.click('#golfCardBox button').catch(() => {});
     const closed = await page.evaluate(() => !document.getElementById('golfCardBox'));
     await page.evaluate(() => window.getFieldApp()._debug.editor.openCardBox({ card: [] }));
     await page.keyboard.press('Escape'); await page.waitForTimeout(200);
     const esc = await page.evaluate(() => !document.getElementById('golfCardBox'));
-    if (!sc.job || sc.stars !== 3 || !sc.name || sc.rows !== 3 || !sc.head || !sc.shown || !closed || !esc) failures.push(`[${current}] rated as you play, and the scorecard: ${JSON.stringify({ ...sc, closed, esc })}`);
+    if (sc.stars !== 3 || !sc.name || sc.rows !== 3 || !sc.head || !sc.shown || !closed || !esc) failures.push(`[${current}] rated as you play, and the scorecard: ${JSON.stringify({ ...sc, closed, esc })}`);
   }
   console.log(`${failures.length === beforeL ? 'ok  ' : 'FAIL'} ${current}`);
 
@@ -1709,106 +1708,6 @@ try {
     if (ka.bad.length || !ka.phase) failures.push(`[${current}] ${JSON.stringify(ka)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${ka.n} holes)`);
   }
-  // HOLES NO ONE COULD FINISH, MADE AGAIN (Oct 11: "proceed", on "Catch the near-unplayable holes"): a generated hole rated as
-  // sunk in fewer than half its rounds is remembered and its board given the hole of its next eight attempts, in its own slot
-  // (number, level and board kept); one sunk in half or more, or a course hole, is left alone; one being played is not swapped
-  // until no one is; after three it is left as it is
-  current = 'mini golf holes no one could finish';
-  {
-    const before = failures.length;
-    const rm = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, E = D.editor, idx = 98765, k = D.holeAt(idx), H0 = D.HOLES[k], lv = H0.level, gk = idx * 8 + lv;
-      const nameAt = n => E.cleanSrc(D.genSrc(idx, lv, 8 * n)).name, out = { first: H0.name === nameAt(0) };
-      out.fair = E.vetRated(k, { sunk: 0.5 }) === false && D.HOLES[k] === H0 && !E.REMADE[gk];
-      out.course = E.vetRated(0, { sunk: 0 }) === false;
-      out.bad = E.vetRated(k, { sunk: 0.125 }) === true && E.REMADE[gk] === 1;
-      const H1 = D.HOLES[k];
-      out.remade = H1 !== H0 && H1.remadeN === 1 && H1.name === nameAt(1) && H1.gen === idx && H1.num === idx + 1 && H1.level === lv && D.holeAt(idx) === k;
-      D.games.set('smoke-busy', D.holeGame({ start: k, card: [] }, k));
-      out.busy = E.vetRated(k, { sunk: 0 }) === true && E.REMADE[gk] === 2 && D.HOLES[k] === H1 && D.holeAt(idx) === k && D.HOLES[k] === H1;
-      D.games.delete('smoke-busy');
-      out.later = D.holeAt(idx) === k && D.HOLES[k].remadeN === 2 && D.HOLES[k].name === nameAt(2);
-      out.third = E.vetRated(k, { sunk: 0 }) === true && D.HOLES[k].remadeN === 3 && E.vetRated(k, { sunk: 0 }) === false && E.REMADE[gk] === 3;
-      out.kept = JSON.parse(localStorage.getItem('golf.remade') || '{}')[gk] === 3;
-      return out;
-    });
-    if (Object.values(rm).some(v => !v)) failures.push(`[${current}] ${JSON.stringify(rm)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
-  }
-  // THE BEST LINE, AND ITS GHOST (Oct 11: "proceed", on "Shots saved as curves: your best line on a hole is kept as a curve,
-  // so you can replay it, share it, or race it as a ghost ball on your next try"): a real touch's putt starts the hole's
-  // recording; a hole played to the cup keeps its line, a few points a stroke; the same putts played again at the same
-  // moment of the toys' clock have the ghost on the ball all the way; Watch dots the line and plays its ball; with the
-  // ghost off a race shows none; a link carries the hole and the line, and one claiming nothing sensible is refused
-  current = 'mini golf best line and its ghost';
-  {
-    const before = failures.length;
-    await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r); });
-    await page.waitForTimeout(300);
-    const S0 = await scr();
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(S0.mid) });
-    await page.waitForTimeout(200);
-    for (let k = 1; k <= 8; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at({ x: S0.mid.x, y: S0.mid.y + 7 * k }) }); await page.waitForTimeout(16); }
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(200);
-    const bl = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, L = D.line, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), out = {};
-      const g0 = [...D.games.values()].find(g => g.state === 'play');
-      out.touched = !!(g0 && g0.strokes === 1 && g0.rec && g0.rec.t0 != null);
-      const fresh = () => { for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r); return D.games.values().next().value; };
-      // (each step the board drawn too, as the race below does: drawing the board in play steps it by nothing, which still runs a
-      //  collision pass, so a race drawn and a play not drawn parted on holes with bumpers, 7 cells on CI, Oct 13)
-      const roll = g => { let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; g.last = 0; D.cellItems(f.c, f.r, 2000); } };
-      // played to the cup with straight putts, the moment kept so it can be played again
-      let g = fresh(); const H = D.HOLES[g.hole], t = g.t, pulls = [];
-      // (each putt the best of 24 headings at 3 strengths, tried on copies of the game, as the plain player chooses: a straight
-      //  putt at the cup from the tee box was shut on some holes, Oct 20. The same every run, so the putts can be played again)
-      const tryOn = (g0, q) => { const g1 = { ...JSON.parse(JSON.stringify({ ...g0, R: null, rec: null, line: null, trail: null })), R: { start: g0.hole, card: [], single: true } };
-        g1.pull = q; if (!D.putt(g1)) return 99; for (let n = 0; n < 1800 && g1.state === 'play' && g1.moving; n++) D.step(g1, 1 / 60);
-        return g1.state !== 'play' ? -1 : Math.hypot(g1.ball.x - H.cup.x, g1.ball.y - H.cup.y); };
-      for (let s = 0; s < 12 && g.state === 'play'; s++){
-        let best = null, bd = Infinity;
-        for (let i = 0; i < 24 && bd > -1; i++) for (const p of [0.3, 0.6, 1]){ const a = i / 24 * 2 * Math.PI, q = { x: -Math.cos(a) * 0.4 * p, y: -Math.sin(a) * 0.4 * p }, d = tryOn(g, q); if (d < bd){ bd = d; best = q; } if (bd <= -1) break; }
-        pulls.push(best); g.pull = { ...best }; D.putt(g); roll(g);
-      }
-      const o = L.lineOfHole(g.hole), ln = o && L.lineDecode(o.p);
-      out.kept = !!(g.state === 'sunk' && o && ln && o.s === g.strokes && ln.length / 3 >= 2 * o.s && ln.length / 3 <= 40 * o.s && JSON.stringify(o).length < 4000
-        && JSON.parse(localStorage.getItem('golf.ghosts') || '{}')[L.lineKey(g.hole)]);
-      out.points = ln && ln.length / 3; out.strokes = o && o.s;
-      // the same putts again: the ghost rides on the ball
-      g = fresh(); g.t = t; let worst = 0, seen = 0;
-      for (const q of pulls){ if (g.state !== 'play') break; g.pull = { ...q }; D.putt(g);
-        let n = 0; while (g.state === 'play' && g.moving && n < 3000){ D.step(g, 1 / 60); n++; g.last = 0;
-          const its = D.cellItems(f.c, f.r, 2000), gb = its.find(i => i.kind === 'ghostBall'), b = its.find(i => i.kind === 'ball');
-          if (gb && b){ seen++; worst = Math.max(worst, Math.hypot(gb.u - b.u, gb.v - b.v) * D.WD / D.CW); } } }
-      out.race = seen > 20 && worst < 0.045;   // (fewer frames since the tee box brought the tee in: Oct 20) out.worst = +worst.toFixed(4); out.seen = seen;
-      // Watch: the line dotted and its ball, from now
-      g = fresh(); out.watch = L.watchLine() === true && g.watch != null;
-      for (let n = 0; n < 20; n++) D.step(g, 1 / 60); g.last = 0;
-      let its = D.cellItems(f.c, f.r, 2000);
-      out.watched = its.filter(i => i.kind === 'ghost').length > 10 && its.filter(i => i.kind === 'ghostBall').length === 1;
-      // the ghost off: none in a race
-      L.GHOST.on = false; g = fresh(); g.pull = { ...pulls[0] }; D.putt(g); for (let n = 0; n < 10; n++) D.step(g, 1 / 60); g.last = 0;
-      its = D.cellItems(f.c, f.r, 2000); out.off = !its.some(i => i.kind === 'ghostBall'); L.GHOST.on = true;
-      its = D.cellItems(f.c, f.r, 2000); out.on = its.some(i => i.kind === 'ghostBall');
-      // the link: the hole and the line, on a hole of its own with the same key; nonsense refused
-      const url = L.lineLink(g.hole); if (!url){ out.noLine = g.hole; return out; }   // (no line kept: reported, not thrown)
-      const q = new URL(url).searchParams.get('line'), k2 = L.takeLineLink(q);
-      out.link = k2 != null && D.HOLES[k2].custom && L.lineKey(k2) === L.lineKey(g.hole) && !L.GHOSTS[L.lineKey(g.hole)].shared;
-      const enc = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      const pay = JSON.parse(decodeURIComponent(escape(atob(q.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - q.length % 4) % 4)))));
-      out.refused = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 0 } })) === null && L.takeLineLink(enc({ ...pay, line: { ...pay.line, p: [5, 'x', 2] } })) === null;
-      // a shared line better than yours becomes the line to race, marked shared
-      // (one stroke and half the time: yours may have sunk in one, and then only a quicker line is better, Oct 13)
-      const k3 = L.takeLineLink(enc({ ...pay, line: { ...pay.line, s: 1, ms: Math.max(1, Math.floor((pay.line.ms || 2) / 2)) } }));
-      out.shared = k3 != null && L.GHOSTS[L.lineKey(k3)].shared === true && L.GHOSTS[L.lineKey(k3)].s === 1;
-      return out;
-    });
-    if (['touched', 'kept', 'race', 'watch', 'watched', 'off', 'on', 'link', 'refused', 'shared'].some(k => !bl[k])) failures.push(`[${current}] ${JSON.stringify(bl)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${bl.strokes} strokes kept as ${bl.points} points; the ghost within ${bl.worst} of a cell over ${bl.seen} frames)`);
-  }
-
   // The hole editor (Oct 8: "yes, build the editor"): a new hole on the selected board, painted with a real drag after
   // choosing a tool on the bar, things placed, undo, Check sets the par, Save keeps it, Share's link opens the page on it.
   current = 'hole editor';
@@ -2253,8 +2152,8 @@ try {
       // the rider goes round on the clock, and the loop is kept by cleanSrc and written to a .golf file
       const H = D.HOLES[ED.k], T = H.toys.find(T => T.path), a0 = T && D.toyAt(T, 0), a1 = T && D.toyAt(T, 1.5);
       const went = a0 && a1 ? Math.hypot(a1.x - a0.x, a1.y - a0.y) : 0;
-      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = E.holesText([ED.src]).includes('"path"');
-      const back = E.readHoles(E.holesText([ED.src]))[0], fileSame = back && JSON.stringify(back.toys) === JSON.stringify(ED.src.toys);
+      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = JSON.stringify(ED.src).includes('"path"');
+      const back = E.cleanSrc(JSON.parse(JSON.stringify(ED.src))), fileSame = back && JSON.stringify(back.toys) === JSON.stringify(ED.src.toys);
       // a tap with Path lays a round loop of eight leaves
       A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'path')); A.onCellTap(f.c, f.r, 4 / D.NX, 3 / D.NY);
       const last = ED.src.toys[ED.src.toys.length - 1], tapN = last && last.path ? (last.path.length - 4) / 2 : 0;
@@ -2282,64 +2181,12 @@ try {
       failures.push(`[${current}] the path drawn in place: ${JSON.stringify(pa)}`);
     // PATHS ARE TVF CURVES (Oct 10: "games project should take advantage of tvf, totally suprising that you go to the trouble
     // of creating tvf and then not use it."): a round path rebuilt by draw's kernel is a true circle (Catmull-Rom was not)
-    // and passes through every leaf; a path written as .tvf reads back the same; a .tvf from draw (a 40-leaf ellipse in
-    // draw's own coordinates), opened through the field's Open input, becomes a path fitted into the board, drawn on it
+    // and passes through every leaf (opening and saving .tvf files went on Oct 29)
     const tv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, P = E.pathify({ orbit: [4, 6.5, 1.5, 0.36, 6, 0, 0] }).path, L = E.loopOf(P), n = (P.length - 4) / 2;
       let rMin = 9, rMax = 0; for (let m = 0; m < L.M; m++){ const r = Math.hypot(L.pts[2 * m] - 4, L.pts[2 * m + 1] - 6.5); rMin = Math.min(rMin, r); rMax = Math.max(rMax, r); }
       let off = 0; for (let q = 0; q < n; q++){ let d = 9; for (let m = 0; m < L.M; m++) d = Math.min(d, Math.hypot(L.pts[2 * m] - P[2 * q], L.pts[2 * m + 1] - P[2 * q + 1])); off = Math.max(off, d); }
-      const text = E.pathToTvf(P, 'test'), back = E.tvfToPaths(text)[0];
-      return { round: +(rMax - rMin).toFixed(4), off: +off.toFixed(3), head: text.split('\n')[0], same: !!back && JSON.stringify(back.path.slice(0, 2 * n)) === JSON.stringify(P.slice(0, 2 * n)), lib: typeof window.TVF_CURVE.core.reconstruct === 'function' }; });
-    const ellipse = ['TVF 40 1 2', '#meta type:curve', '#meta closed:true', '#meta channels:xy', '#meta range:1',
-      '0 ' + Array.from({ length: 40 }, (_, q) => (300 + 100 * Math.cos((q + 0.5) / 40 * 2 * Math.PI)).toFixed(3)).join(' '),
-      '0 ' + Array.from({ length: 40 }, (_, q) => (200 + 60 * Math.sin((q + 0.5) / 40 * 2 * Math.PI)).toFixed(3)).join(' ')].join('\n') + '\n';
-    const n0tv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; return E.ED.on ? E.ED.src.toys.length : -1; });
-    await page.setInputFiles('#importImageFile', { name: 'shape.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
-    // (a curve from draw is asked about since Oct 11: a lake, a bunker, a green or a path; Path, clicked)
-    await page.waitForSelector('#golfTvfBox .golfTvfKind[data-kind="path"]', { timeout: 15000 }).catch(() => {});
-    await page.click('#golfTvfBox .golfTvfKind[data-kind="path"]').catch(() => {});
-    await page.waitForTimeout(1500);
-    const tvIn = await page.evaluate(n0 => { const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED, T = ED.src.toys[ED.src.toys.length - 1], v = T && T.path;
-      if (!v) return { none: true, on: ED.on, n: ED.src.toys.length };
-      const n = (v.length - 4) / 2, xs = v.slice(0, 2 * n).filter((_, q) => q % 2 === 0), ys = v.slice(0, 2 * n).filter((_, q) => q % 2 === 1);
-      const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), drawn = D.cellItems(f.c, f.r).some(i => /^(propRock|rockPlain)$/.test(i.kind));
-      return { on: ED.on, added: ED.src.toys.length - n0, n, w: +(Math.max(...xs) - Math.min(...xs)).toFixed(2), h: +(Math.max(...ys) - Math.min(...ys)).toFixed(2),
-               cx: +((Math.max(...xs) + Math.min(...xs)) / 2).toFixed(2), cy: +((Math.max(...ys) + Math.min(...ys)) / 2).toFixed(2), drawn, sel: ED.pick && ED.pick.i === ED.src.toys.length - 1 }; }, n0tv);
-    await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; E.ED.src.toys = E.ED.src.toys.filter(T => !T.path); });
-    if (!tv.lib || tv.round > 0.01 || tv.off > 0.03 || !/^TVF \d+ 1 2$/.test(tv.head) || !tv.same || tvIn.none || tvIn.added !== 1 || tvIn.n !== 40 || Math.abs(tvIn.w - 5) > 0.2
-        || Math.abs(tvIn.h - 3) > 0.2 || Math.abs(tvIn.cx - 4) > 0.2 || Math.abs(tvIn.cy - 6.5) > 0.2 || !tvIn.drawn || !tvIn.sel)
-      failures.push(`[${current}] paths as TVF curves: ${JSON.stringify({ tv, tvIn })}`);
-    // LAKES, BUNKERS AND GREENS AS .tvf (Oct 11, "proceed": a curve from draw opened as a lake, a bunker or a green, and a
-    // shape saved back out): the ellipse from draw, opened through the field's Open input, asks what it should be; Lake,
-    // clicked, lays a lake of 32 leaves fitted 4 cells across in the middle of the board, selected, and the menu offers to save
-    // it; a lake, bunker or green saved here opens again as what it was, where it was, without asking (a green its height);
-    // Escape closes the box unanswered
-    await page.setInputFiles('#importImageFile', { name: 'pond.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
-    await page.waitForSelector('#golfTvfBox .golfTvfKind[data-kind="lake"]', { timeout: 15000 }).catch(() => {});
-    const asked = await page.evaluate(() => { const b = document.getElementById('golfTvfBox'); return b ? [...b.querySelectorAll('.golfTvfKind')].map(x => x.dataset.kind).join(',') : null; });
-    await page.click('#golfTvfBox .golfTvfKind[data-kind="lake"]').catch(() => {});
-    await page.waitForTimeout(1500);
-    const shTv = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, f = ED.src.land[ED.src.land.length - 1], v = f && f.lake;
-      if (!v) return { none: true, box: !!document.getElementById('golfTvfBox') };
-      const xs = v.filter((_, q) => q % 2 === 0), ys = v.filter((_, q) => q % 2 === 1);
-      const out = { box: !!document.getElementById('golfTvfBox'), n: xs.length, w: +(Math.max(...xs) - Math.min(...xs)).toFixed(2), cx: +((Math.max(...xs) + Math.min(...xs)) / 2).toFixed(2),
-        cy: +((Math.max(...ys) + Math.min(...ys)) / 2).toFixed(2), sel: !!ED.pick && ED.pick.type === 'land' && ED.pick.i === ED.src.land.length - 1,
-        save: E.editorMenu().some(i => i.label === 'Save this lake as .tvf'), open: E.editorMenu().some(i => i.label === 'Open a .tvf curve') };
-      // saved and opened again: each kind as it was, where it was, no box
-      const n0 = ED.src.land.length, J = o => JSON.stringify(o), back = {};
-      for (const [key, val] of [['lake', v], ['sand', [5, 2, 7, 2.2, 6.8, 4, 5.1, 3.8]], ['green', [1, 1, 3, 1, 3, 3.5, 1, 3.5, 0.07]]]){
-        const text = E.shapeToTvf(key, val, 'test ' + key); E.takeTvf(text, 'test.tvf');
-        const g = ED.src.land[ED.src.land.length - 1]; back[key] = !!g && J(g[key]) === J(val) && !document.getElementById('golfTvfBox'); }
-      out.back = back; out.kindLine = E.shapeToTvf('green', [1, 1, 3, 1, 3, 3.5, 0.07], 'g').includes('#meta kind:green');
-      ED.src.land = ED.src.land.slice(0, n0 - 1);
-      return out; });
-    await page.setInputFiles('#importImageFile', { name: 'again.tvf', mimeType: 'text/plain', buffer: Buffer.from(ellipse) });
-    await page.waitForSelector('#golfTvfBox', { timeout: 15000 }).catch(() => {});
-    const tvfEscOpen = await page.evaluate(() => !!document.getElementById('golfTvfBox'));
-    await page.keyboard.press('Escape'); await page.waitForTimeout(300);
-    const tvfEsc = await page.evaluate(() => ({ box: !!document.getElementById('golfTvfBox'), on: window.getFieldApp()._debug.editor.ED.on }));
-    if (asked !== 'lake,sand,green,planter,path' || shTv.none || shTv.box || shTv.n !== 32 || Math.abs(shTv.w - 4) > 0.15 || Math.abs(shTv.cx - 4) > 0.2 || Math.abs(shTv.cy - 6.5) > 0.2
-        || !shTv.sel || !shTv.save || !shTv.open || !shTv.back.lake || !shTv.back.sand || !shTv.back.green || !shTv.kindLine || !tvfEscOpen || tvfEsc.box || !tvfEsc.on)
-      failures.push(`[${current}] lakes, bunkers and greens as .tvf: ${JSON.stringify({ asked, shTv, tvfEscOpen, tvfEsc })}`);
+      return { round: +(rMax - rMin).toFixed(4), off: +off.toFixed(3), lib: typeof window.TVF_CURVE.core.reconstruct === 'function' }; });
+    if (!tv.lib || tv.round > 0.01 || tv.off > 0.03) failures.push(`[${current}] paths as TVF curves: ${JSON.stringify({ tv })}`);
     // CURVED FENCES, AND LEAVES ADDED AND TAKEN AWAY (Oct 10: "6,4,2,3", 2 curved fences as TVF curves, 3 "a tap on the loop
     // between two leaves adds one, a double-tap on a leaf removes it"), by real touches: a curved fence drawn with its tool
     // runs through its leaves from end to end, is drawn in fence pieces and kept in files; a tap on its line adds a leaf
@@ -2363,7 +2210,7 @@ try {
       const through = v0 ? +Math.max(...Array.from({ length: n0 }, (_, q) => E.curveNear(v0, v0[2 * q], v0[2 * q + 1]).d)).toFixed(4) : 9;
       const sel = !!(ED.pick && ED.src.toys[ED.pick.i] && ED.src.toys[ED.pick.i].curve);
       const pieces = D.cellItems(f.c, f.r, 2000).filter(i => /^fence_/.test(i.kind)).length;
-      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = E.holesText([ED.src]).includes('"curve"');
+      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = JSON.stringify(ED.src).includes('"curve"');
       // a tap on the fence's line halfway between its first two leaves, then two quick taps on the leaf it made
       const C = v0 && E.curveOf(v0), mx = C ? C.pts[8] : 0, my = C ? C.pts[9] : 0;
       await gest([S(mx, my)]); const nAdd = ED.src.toys[ci].curve.length / 2, added = ED.src.toys[ci].curve.slice(2, 4);
@@ -2407,7 +2254,7 @@ try {
       // a tap with Bunker, away from the lake
       A.onStatTap(f.c, f.r, E.TOOLS.findIndex(x => x[0] === 'bunker')); A.onCellTap(f.c, f.r, 4 / D.NX, 2.5 / D.NY);
       const bunker = !!ED.src.land.find(x => x.sand);
-      const kept = JSON.stringify(E.cleanSrc(ED.src).land) === JSON.stringify(ED.src.land), inFile = E.holesText([ED.src]).includes('"lake"');
+      const kept = JSON.stringify(E.cleanSrc(ED.src).land) === JSON.stringify(ED.src.land), inFile = JSON.stringify(ED.src).includes('"lake"');
       ED.src.land = []; E.editRefresh && E.editRefresh(true);
       // in play: water, sand, a green's height, and a stroke lost to the lake
       const k = E.addHole(E.cleanSrc({ name: 'shapes', par: 3, toys: [], land: [{ lake: [2.5, 6, 5.5, 6, 5.5, 8, 2.5, 8] }, { sand: [5, 2, 7, 2, 7, 4, 5, 4] }, { green: [1, 1, 3, 1, 3, 4, 1, 4, 0.06] }],
@@ -2448,7 +2295,7 @@ try {
       if (kv){ const [lx, ly] = [kv[0], kv[1]], drag = []; for (let q = 0; q <= 8; q++) drag.push(S(lx + 0.5 * q / 8, ly)); await gest(drag);
         // (the finger's first few pixels go to telling a drag from a tap, so the leaf goes most of the way, not all of it)
         const nv = ED.src.toys[ki].planter; leafMoved = nv[0] - lx > 0.2 && nv[0] - lx < 0.6 && Math.abs(nv[1] - ly) < 0.1 && nv.slice(2).every((x, q) => Math.abs(x - kv[q + 2]) < 1e-9); }
-      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = E.holesText([ED.src]).includes('"planter"');
+      const kept = JSON.stringify(E.cleanSrc(ED.src).toys) === JSON.stringify(ED.src.toys), inFile = JSON.stringify(ED.src).includes('"planter"');
       ED.src.toys = []; E.editRefresh && E.editRefresh(true);
       // in play: a star in the middle, the ball shot hard straight at it from the tee and every way about
       const star = []; for (let q = 0; q < 15; q++){ const a = (q + 0.5) / 15 * 2 * Math.PI, rr = 1 + 0.3 * Math.cos(5 * a); star.push(+(4 + rr * Math.cos(a)).toFixed(2), +(6.5 + rr * Math.sin(a)).toFixed(2)); }
@@ -2505,7 +2352,7 @@ try {
       tile('incline'); A.onCellTap(f.c, f.r, 2 / D.NX, 9 / D.NY);
       const ii = ED.src.land.length - 1, iv = ED.src.land[ii] && ED.src.land[ii].incline, inN = iv ? (iv.length - 2) / 2 : 0;
       const climb = iv ? [0, 2, 4].map(q => { const a = Math.min(q, inN - 1) * 2; return +h(iv[a] + (q === 0 ? 0.3 * (iv[2] - iv[0]) : 0), iv[a + 1] + (q === 0 ? 0.3 * (iv[3] - iv[1]) : 0)).toFixed(3); }) : null;
-      const kept = JSON.stringify(E.cleanSrc(ED.src).land) === JSON.stringify(ED.src.land), txt = E.holesText([ED.src]), inFile = txt.includes('"crest"') && txt.includes('"incline"');
+      const kept = JSON.stringify(E.cleanSrc(ED.src).land) === JSON.stringify(ED.src.land), txt = JSON.stringify(ED.src), inFile = txt.includes('"crest"') && txt.includes('"incline"');
       ED.src.land = []; E.editRefresh && E.editRefresh(true);
       return { tool, n0, sel, rise, gn, gSel, sunk, leafMoved, higher, name, inN, climb, kept, inFile };
     });
@@ -2557,15 +2404,15 @@ try {
       const go = (type, i) => { ED.pick = { type, i }; E.editAction('smoother'); };
       go('toy', 0); go('toy', 1); go('land', 0);
       const p = ED.src.toys[1].path, g = ED.src.land[0].green;
-      return { planter: E.wiggleOf(ED.src.toys[0].planter, 15) < E.wiggleOf(star, 15), path: p.length === 24 && p.slice(20).join() === '0.33,6,0.25,1' && p.slice(0, 20).join() !== loop.join(), green: g.length === 21 && g[20] === 0.05 && g.slice(0, 20).join() !== gr.join() }; });
+      return { planter: E.wiggleOf(ED.src.toys[0].planter, 15) < E.wiggleOf(star, 15), path: p.length === 24 && p[20] === 0.33 && Math.abs(p[21]) === 6.8 && p[23] === 1 && p.slice(0, 20).join() !== loop.join(), green: g.length === 21 && g[20] === 0.05 && g.slice(0, 20).join() !== gr.join() }; });
     await srPrep(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = [{ kick: [4, 4, 0.3, 0] }]; ED.src.land = []; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 4 / A._debug.NY); }, 0);
     sr.bumper = await srBtn('Smoother').count();
     await page.evaluate(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = []; ED.pick = null; });
     if (sr.buttons !== 2 || sr.menu !== 2 || !sr.smooth || !(sr.smooth[1] < sr.smooth[0] * 0.8) || !sr.kept || !sr.undone || !sr.roundSame || !(sr.coves > 0.05) || !sr.same
         || sr.crossed !== false || !(sr.rough > sr.coves) || !sr.tails.planter || !sr.tails.path || !sr.tails.green || sr.bumper !== 0)
       failures.push(`[${current}] smoother and rougher: ${JSON.stringify(sr)}`);
-    // movers kept apart in the editor (Oct 11): two loops drawn crossing are put on one beat and never meet; a bumper laid on
-    // a track is ringed in red and left where it is; Keep movers apart, in the menu, moves it off and nothing is ringed
+    // movers kept apart in the editor (Oct 11): two loops drawn crossing are put on a simple ratio (Oct 29) and never meet; a
+    // bumper laid on a track is ringed in red and left where it is
     const ke = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED;
       const circ = (cx, cy, r, n) => { const v = []; for (let q = 0; q < n; q++){ const a = (q + 0.5) / n * 2 * Math.PI; v.push(+(cx + r * Math.cos(a)).toFixed(2), +(cy + r * Math.sin(a)).toFixed(2)); } return v; };
@@ -2576,13 +2423,12 @@ try {
       const meets0 = (ED.meets || []).length;
       ED.src.toys.push({ kick: [3.2, 5, 0.3, 0] }); E.editRefresh(true);
       const ringed = (ED.meets || []).length, stayed = !!ED.src.toys[2] && ED.src.toys[2].kick[0] === 3.2 && ED.src.toys[2].kick[1] === 5;
-      const item = E.editorMenu().find(m => m.label === 'Keep movers apart'); if (item) item.on();
-      const k2 = ED.src.toys.find(T => T.kick), moved = !!k2 && (k2.kick[0] !== 3.2 || k2.kick[1] !== 5), after = (ED.meets || []).length;
+      const item = E.editorMenu().some(m => m.label === 'Keep movers apart');
       ED.src.toys = []; ED.meets = []; E.editRefresh(true);
-      return { per, minGap: +minGap.toFixed(3), meets0, ringed, stayed, item: !!item, moved, after };
+      return { per, minGap: +minGap.toFixed(3), meets0, ringed, stayed, item };
     });
-    const ratio = Math.abs(ke.per[1] / ke.per[0]), onBeat = [1, 1.5, 2, 3, 4, 6].some(m => Math.abs(ratio - m) < 1e-3 || Math.abs(ratio - 1 / m) < 1e-3);
-    if (!onBeat || !(ke.minGap > 0) || ke.meets0 || !(ke.ringed >= 1) || !ke.stayed || !ke.item || !ke.moved || ke.after)
+    const ratio = Math.abs(ke.per[1] / ke.per[0]), onBeat = [1 / 4, 1 / 3, 1 / 2, 2 / 3, 1, 1.5, 2, 3, 4].some(m => Math.abs(ratio - m) < 1e-3);   // (a simple ratio to the first: Oct 29)
+    if (!onBeat || !(ke.minGap > 0) || ke.meets0 || !(ke.ringed >= 1) || !ke.stayed || ke.item)
       failures.push(`[${current}] movers kept apart in the editor: ${JSON.stringify(ke)}`);
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile
         || cf.nAdd !== cf.n0 + 1 || cf.nDel !== cf.n0 || cf.pN0 !== 8 || !cf.pSel || cf.pN1 !== 9 || cf.pN2 !== 8 || !(cf.minY > 6))
@@ -2628,18 +2474,17 @@ try {
       failures.push(`[${current}] copy, paste, delete in the menu: ${JSON.stringify(cp)}`);
     // HARDER AND EASIER (the levels, Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
     // the two tiles, tapped, make every mover faster and its rider bigger and the ground steeper, and back again; the menu's
-    // Rate this hole, while editing, rates it and sets its par
+    // Check, while editing, rates it (the guess, since Oct 29) and sets its par
     const hd = await page.evaluate(async () => { const A = window.getFieldApp(), E = A._debug.editor, ED = E.ED, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       ED.pick = null; ED.src.toys = [E.pathify({ orbit: [4, 7, 1.4, 0.36, 6, 0, 0] })]; ED.src.land = [{ bump: [4, 4, 1.5, 0.04] }]; E.editRefresh && E.editRefresh(true);
       const names = (A.statTiles(f.c, f.r) || []).map(t => t.value), hi = names.indexOf('Harder'), lo = names.indexOf('Easier');
       const read = () => { const v = ED.src.toys[0].path, n = (v.length - 4) / 2; return { r: v[2 * n], sec: v[2 * n + 1], h: ED.src.land[0].bump[3] }; };
       const a = read(); A.onStatTap(f.c, f.r, hi); const b = read(), msg = ED.msg; A.onStatTap(f.c, f.r, lo); const c = read();
-      const rate = window.getFieldApp().menu[0].items.find(i => i.label === 'Rate this hole');
-      const r = rate ? await rate.on() : null;
+      const r = await E.editAction('check');
       return { hi, lo, a, b, c, msg, rated: r && { stars: r.stars, par: r.par }, par: ED.src.par, rmsg: ED.msg }; });
     if (hd.hi < 0 || hd.lo < 0 || !(hd.b.sec < hd.a.sec && hd.b.r > hd.a.r && hd.b.h > hd.a.h) || Math.abs(hd.c.sec - hd.a.sec) > 0.05 || Math.abs(hd.c.h - hd.a.h) > 0.002
         || !hd.rated || !(hd.rated.stars >= 1) || hd.par !== hd.rated.par || !/★/.test(hd.rmsg))
-      failures.push(`[${current}] Harder, Easier and Rate this hole: ${JSON.stringify(hd)}`);
+      failures.push(`[${current}] Harder, Easier and Check: ${JSON.stringify(hd)}`);
     // Done (its tile): the editor's tiles go and the hole is played
     await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       E.editAction('done'); });   // (its tile went on Oct 10; Done is a quick button)
@@ -2712,29 +2557,6 @@ try {
       return { hole: g && g.hole, built: D.editor.BUILT, name: g && D.HOLES[g.hole].name, mine: D.editor.MINE.length}; });
     if (!(st4.hole >= st4.built) || st4.name !== 'my hole') failures.push(`[${current}] the shared link opened ${JSON.stringify(st4)}`);
     if (st4.mine < 1) failures.push(`[${current}] My holes did not survive the reload`);
-    // holes saved to a text file and opened again (Oct 10: "I meant to save them to a text file" … "how does chess handle
-    // this?" … "yes"): Save My holes downloads a .golf file laid out to be read; the same file, renamed and opened through
-    // the field's own Open input, joins My holes and is played; opened twice it is not added twice
-    const [gdl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.evaluate(() => window.getFieldApp()._debug.editor.exportMine())]);
-    const golfText = await readFile(await gdl.path(), 'utf8');
-    let golf = null; try { golf = JSON.parse(golfText); } catch {}
-    const rowLines = golfText.split('\n').filter(l => /^\s+"[.#s~=TO]{8}",?$/.test(l)).length;
-    if (!golf || golf.format !== 'minigolf' || golf.v !== 1 || !Array.isArray(golf.holes) || golf.holes.length !== st4.mine || rowLines !== 13 * st4.mine || !/\.golf$/.test(gdl.suggestedFilename()))
-      failures.push(`[${current}] Save My holes: ${JSON.stringify({ name: gdl.suggestedFilename(), format: golf && golf.format, holes: golf && golf.holes && golf.holes.length, mine: st4.mine, rowLines })}`);
-    else {
-      const h = golf.holes[0]; h.name = 'from a file'; h.toys = [...(h.toys || []), { rock: [1.5, 6.5, 0.4] }];
-      const buffer = Buffer.from(JSON.stringify({ format: 'minigolf', v: 1, holes: [h] }, null, 1));
-      const openIt = async () => { await page.setInputFiles('#importImageFile', { name: 'mine.golf', mimeType: 'application/json', buffer }); await page.waitForTimeout(1500); };
-      await openIt();
-      const fo = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, E = D.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-        const g = D.games.get(f.c + '_' + f.r); return { app: A.name, mine: E.MINE.length, has: E.MINE.filter(m => m.name === 'from a file').length, playing: g && D.HOLES[g.hole].name }; });
-      await openIt();
-      const fo2 = await page.evaluate(() => window.getFieldApp()._debug.editor.MINE.length);
-      const rd = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, one = E.MINE[0];
-        return { bare: E.readHoles(JSON.stringify(one)).length, list: E.readHoles(JSON.stringify([one, one])).length, link: E.readHoles('look: ' + E.shareLink(one)).length, junk: E.readHoles('nonsense').length }; });
-      if (fo.app !== 'mini golf' || fo.mine !== st4.mine + 1 || fo.has !== 1 || fo.playing !== 'from a file' || fo2 !== fo.mine || rd.bare !== 1 || rd.list !== 2 || rd.link !== 1 || rd.junk !== 0)
-        failures.push(`[${current}] open holes from a file: ${JSON.stringify({ fo, fo2, rd })}`);
-    }
     // My holes, one menu item and a list (Oct 10: "what is all that menu noise, ive got 50 items in the menu to various golf
     // holes?" … "yes"): the menu has no item per hole; the list plays and deletes by real clicks; a course hole edited twice
     // is one copy; exact copies kept in storage are merged when the page loads
@@ -5253,13 +5075,13 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, two, shown, looks })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; duels of 2, 3 and 4 tanks ended (${r.duels.join(', ')}); every weapon its own (${Object.entries(r.weapons).map(([k, v]) => k + (v ? '' : ' NOT')).join(', ')}); a real tap aimed with the shot's way dotted, a tap on the tank fired, the computer answered, a real key drove ${live.drove ? (live.drove.x - live.x0).toFixed(3) : '?'}, a real drag aimed and Enter fired, the row nudged the aim and fired a big shell, a steady shot won ${live.win && live.win.stars} stars; two players passed turns past a computer's tank; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
   }
-  // TANK MAZE (Oct 21: "maze tank battle"): every board its own maze at a level by its ring; a shell's way stays in the board
-  // and bounces back off a wall; your own shell kills you once clear of the barrel; rounds of two computer tanks end, with bank
-  // shots among their hits; a computer tank sees a shell coming and moves; real keys drive, a real click fires, a real drag
-  // steers; a round won counts and starts the next maze; a match won gives stars and a best; two players each have their keys;
-  // a board no one plays moves; the drawing.
+  // TANK MAZE, THE CHASE (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal is to
+  // evade the oponent tank. when he overtakes you, you lose."): every board its own maze at a level by its ring; the hunter
+  // reaching you takes the round and holding out wins it; the steady runner holds out more often at level 1 than at level 5;
+  // real keys drive and a real drag steers; a round counts and starts the next maze; a match won gives stars and a best; two
+  // players, Player 2 hunting on the arrows; a board no one plays moves; the drawing, with no shells.
   {
-    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, n: 2, powers: false, aim: true }); });
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, n: 2 }); });
     await page.waitForTimeout(1500);
     current = 'tankmaze';
     const before = failures.length;
@@ -5268,32 +5090,28 @@ try {
       const a = D.makeMaze(77, 3, 0), b = D.makeMaze(77, 3, 0), c = D.makeMaze(77, 3, 1);
       out.same = a.E.join() === b.E.join() && a.S.join() === b.S.join() && a.spawn[0].x === b.spawn[0].x;
       out.differ = a.E.join() + a.S.join() !== c.E.join() + c.S.join();
-      out.sizes = [1, 3, 5].map(lv => D.makeMaze(5, lv, 0).m);
+      out.sizes = [2, 3, 4].map(n => D.makeMaze(5, 1, 0, n).m);
       const sp = a.spawn.map(p => D.cellOf(a, p.x, p.y)); out.apart = D.bfs(a, sp[0])[sp[1]];
-      // a shell's way: nine seconds long, never out of the board; fired at a wall, it comes back the way it went
-      const P = D.trace(a, a.spawn[0].x, a.spawn[0].y, 0.7, D.LIFE * D.BV * a.s);
-      let inside = true; for (let i = 0; i < P.length; i += 3) if (P[i] < 0 || P[i] > 1 || P[i + 1] < 0 || P[i + 1] > 1) inside = false;
-      out.way = { inside, len: +(P[P.length - 1] / (D.LIFE * D.BV * a.s)).toFixed(3), bounces: P.length / 3 - 2 };
-      const k = [...a.E.keys()].find(k => a.E[k] && k % a.m < a.m - 1), [cx, cy] = D.centre(a, k), Q = D.trace(a, cx, cy, 0, a.s * 0.8);
-      out.back = Q.length >= 9 && Math.abs(Q[Q.length - 3] - cx) < 1e-9 + a.s * 0.3 && Q[3] > cx;
-      // your own shell, back off that wall: it kills you, once it is clear of the barrel
-      const G = D.roundNew(a, ['you', 'you'], 1); G.tanks[0].x = cx; G.tanks[0].y = cy; G.tanks[0].h = 1e-6;
-      const far = D.centre(a, (k + Math.floor(a.m * a.m / 2)) % (a.m * a.m)); G.tanks[1].x = far[0]; G.tanks[1].y = far[1]; G.tanks[1].alive = false;
-      G.tanks[0].cool = 0; D.stepRound(G, [{ drive: 0, turn: 0, fire: true }, null], D.STEP);
-      for (let n = 0; n < 120 && !G.booms.length; n++) D.stepRound(G, [{ drive: 0, turn: 0, fire: false }, null], D.STEP);
-      out.self = G.booms.length ? { k: G.booms[0].k, by: G.booms[0].by, t: +G.booms[0].t.toFixed(2) } : null;
-      // rounds of two computer tanks end, and some hits come off a wall
-      out.rounds = [2, 4, 5].map(lv => { let ended = 0, bank = 0, hits = 0;
-        for (let i = 0; i < 6; i++){ const L = D.makeMaze(300 + i * 11, lv, 0), R = D.roundNew(L, ['cpu', 'cpu'], i + 1);
-          while (!R.over) D.stepRound(R, [D.cpuCmd(R, 0), D.cpuCmd(R, 1)], D.STEP);
-          if (R.t < 59.9) ended++; for (const B of R.booms){ hits++; if (B.seg > 0) bank++; } }
-        return { lv, ended, hits, bank }; });
-      // a computer tank at level 5 with a shell on its way at it gets out of the way
-      const E = D.roundNew(a, ['cpu', 'cpu'], 3), me = E.tanks[1], foe = E.tanks[0];
-      const ang = Math.atan2(me.y - foe.y, me.x - foe.x), W = D.trace(a, foe.x, foe.y, ang, 3);
-      const bv = D.BV * a.s, hyp = Math.hypot(me.x - foe.x, me.y - foe.y);
-      E.shots.push({ k: 0, t0: -(hyp - 0.12) / bv, end: 9, P: [foe.x, foe.y, 0, me.x, me.y, Math.hypot(me.x - foe.x, me.y - foe.y), ...W.slice(-3)] });
-      out.dodge = D.escape(E, 1, 0.7);
+      // a hunter beside you catches you; the round goes to it once the burst has played, and nothing moves meanwhile
+      let G = D.roundNew(a, ['you', 'cpu'], 1); G.t = 2; Object.assign(G.tanks[1], { x: G.tanks[0].x + 0.5 * D.TR * a.s, y: G.tanks[0].y });
+      D.stepRound(G, [null, null], D.STEP); const caught = G.caughtAt != null && !G.tanks[0].alive && G.booms.length === 1;
+      for (let n = 0; n < 120 && !G.over; n++) D.stepRound(G, [null, null], D.STEP);
+      out.caught = caught && G.over && G.winner === 1;
+      // nobody near for the round's time: you hold out
+      G = D.roundNew(a, ['you', 'cpu'], 1); while (!G.over) D.stepRound(G, [null, null], D.STEP);
+      out.held = G.winner === 0 && Math.abs(G.t - D.LV[2].hold) < 0.05;
+      // the hunters wait a moment at the start, then come
+      G = D.roundNew(a, ['you', 'cpu'], 1); const h0 = [G.tanks[1].x, G.tanks[1].y];
+      for (let n = 0; n < Math.round(D.HEAD / D.STEP) - 2; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
+      const waited = Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]);
+      for (let n = 0; n < 120; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
+      out.head = waited < 1e-9 && Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]) > 0.05;
+      // the steady runner against the hunter, 12 mazes a level: held out more at level 1 than at level 5
+      out.held = [out.held, ...[1, 5].map(lv => { let held = 0; for (let i = 0; i < 12; i++){ const L = D.makeMaze(300 + i * 17, lv, 0, 2), R = D.roundNew(L, ['you', 'cpu'], i + 3);
+        while (!R.over) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.winner === 0) held++; } return held; })];
+      // three and four tanks: every round ends
+      out.more = [3, 4].map(n => { let ended = 0; for (let i = 0; i < 4; i++){ const L = D.makeMaze(400 + i * 13, 3, 0, n), R = D.roundNew(L, ['you'].concat(Array(n - 1).fill('cpu')), i + 7);
+        while (!R.over && R.t < 60) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.over) ended++; } return ended; });
       return out; });
     // real input on the framed board
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
@@ -5303,37 +5121,36 @@ try {
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
       return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
     const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); if (!g) return null; const t = g.G.tanks[0];
-      return { state: g.state, x: t.x, y: t.y, h: t.h, mine: g.G.shots.filter(b => b.k === 0).length, score: g.score.slice(), round: g.round, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
+      return { state: g.state, x: t.x, y: t.y, h: t.h, score: g.score.slice(), round: g.round, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
     const live = {};
     if (fc){
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
-        // (the computer's tank out of it here, so it neither moves into the way nor fires while the real input is checked)
-        g.G.tanks[1].alive = false; }, fc);
+        // (the hunter held where it starts, so it does not come into the way while the real input is checked)
+        g.G.tanks[1].sp = 0; }, fc);
       live.ready = await gs();
       await page.keyboard.down('w');
       for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.hypot(s.x - live.ready.x, s.y - live.ready.y) > 0.02) break; await page.waitForTimeout(250); }
       await page.keyboard.up('w');
       live.drove = await gs();
-      const tk = await gs(), pt = await at(tk.x < 0.5 ? 0.85 : 0.15, 0.5);
-      await page.mouse.click(pt.x, pt.y);
-      for (let w = 0; w < 24 && (await gs()).mine < 1; w++) await page.waitForTimeout(250);
-      live.fired = await gs();
       // a real drag toward a point behind the tank: it turns that way
-      const t2 = await gs(), want = Math.atan2(0.5 - t2.y, (t2.x < 0.5 ? 0.9 : 0.1) - t2.x), p0 = await at(0.5, 0.2), p1 = await at(t2.x < 0.5 ? 0.9 : 0.1, 0.5);
+      // (toward the side away from the hunter, held where it started: a drag toward it drove into it, Oct 29)
+      const t2 = await gs(), tx = t2.t1[0] < t2.x ? 0.95 : 0.05, want = Math.atan2(0.5 - t2.y, tx - t2.x), p0 = await at(0.5, 0.2), p1 = await at(tx, 0.5);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
       for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.abs(Math.atan2(Math.sin(s.h - want), Math.cos(s.h - want))) < 0.3) break; await page.waitForTimeout(250); }
       await page.mouse.up();
       live.steered = await gs(); live.want = want;
-      // a round won: counted, and the next round on a maze of its own; then the match, with stars and a best
+      // a round held out: counted, and the next round on a maze of its own; then the match, with stars and a best
       live.match = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r), out = {};
         const m0 = g.G.L.E.join() + g.G.L.S.join();
-        g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        g.score = [0, 0]; g.round = 0;
+        g.G.t = g.G.hold; g.state = 'play'; g.last = performance.now() - 20; D.stepGame(g);
         out.after = { score: g.score.join(), round: g.round, state: g.state, newMaze: g.G.L.E.join() + g.G.L.S.join() !== m0 };
-        g.score = [4, 1]; g.state = 'play'; g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        g.score = [2, 0]; g.state = 'play'; g.G.t = g.G.hold; g.last = performance.now() - 20; D.stepGame(g);
         out.end = { state: g.state, stars: g.stars, best: D.BEST.get(g.idx + '@' + g.lv) };
         return out; }, fc);
-      // two players: Player 2 drives on the arrows, Player 1 on WASD
+      // two players: Player 2 hunts on the arrows, Player 1 runs on WASD
       live.two = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.SET.players = 2; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
+        g.state = 'play'; g.G.t = D.HEAD + 0.1;
         return { seats: g.seats.join(), p1: [g.G.tanks[0].x, g.G.tanks[0].y], p2: [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc);
       await page.keyboard.down('ArrowUp');
       for (let w = 0; w < 24; w++){ const s = await gs(); if (s.t1 && Math.hypot(s.t1[0] - live.two.p2[0], s.t1[1] - live.two.p2[1]) > 0.02) break; await page.waitForTimeout(250); }
@@ -5345,72 +5162,19 @@ try {
     const shown = await page.evaluate(async fc => { const D = window.getFieldApp()._debug, c = fc[0] + 3, r = fc[1] + 1; D.GAMES.delete(c + '_' + r);
       const E = D.recSoon(c, r, true), a = D.shownOf(E); await new Promise(ok => setTimeout(ok, 1500)); const b = D.shownOf(E);
       const moved = Math.hypot(a.tanks[0].x - b.tanks[0].x, a.tanks[0].y - b.tanks[0].y) + Math.hypot(a.tanks[1].x - b.tanks[1].x, a.tanks[1].y - b.tanks[1].y) + Math.abs(a.t - b.t);
-      // the drawing at a moment with a shell in flight and a burst going
-      const sh = E.shots[0], B = E.booms[0], at1 = sh ? sh.t0 + 0.2 : 0, V = { ...D.shownOf(E), t: at1 };
-      const it = D.itemsOf(V), V2 = B ? { ...V, t: B.t + 0.2 } : V, it2 = D.itemsOf(V2);
-      const kinds = k => it.filter(i => i.kind === k);
-      return { done: E.done, T: E.T, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, guns: kinds('mzGun').length,
-               yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shot: kinds('mzShot').length, fire: it2.filter(i => i.kind === 'mzFire').length }; }, fc);
-    // (Oct 21: "1,2,3"): three or four tanks, the power-ups one by one, a crate dropped and taken, the aim line, their drawing
-    const more = await page.evaluate(() => { const D = window.getFieldApp()._debug, out = {};
-      out.sizes = [2, 3, 4].map(n => D.makeMaze(5, 1, 0, n).m);
-      // (Oct 22: an inner wall stops at the outer wall's inner face, so the two never lie on one another and flash)
-      out.walls = ['tankmaze', 'tiltmaze'].map(id => { const M = window.FIELD_APPS.find(a => a.id === id)._debug; let into = 0;
-        for (let i = 0; i < 20; i++){ const L = M.makeMaze(100 + i, 1 + i % 5, 0), t = Math.min(...L.walls.filter(w => w.edge).map(w => Math.min(w.b[2] - w.b[0], w.b[3] - w.b[1]))) / 2;
-          for (const w of L.walls) if (!w.edge && (w.b[0] < t - 1e-9 || w.b[1] < t - 1e-9 || w.b[2] > 1 - t + 1e-9 || w.b[3] > 1 - t + 1e-9)) into++; }
-        return into; });
-      const L4 = D.makeMaze(91, 3, 0, 4), cells = L4.spawn.map(p => D.cellOf(L4, p.x, p.y)); out.spawn4 = new Set(cells).size;
-      out.apart4 = Math.min(...cells.flatMap((a, i) => cells.slice(i + 1).map(b => D.bfs(L4, a)[b])));
-      out.rounds = [3, 4].map(n => { let ended = 0, used = 0, taken = 0;
-        for (let i = 0; i < 5; i++){ const L = D.makeMaze(400 + i * 13, 5, 0, n), G = D.roundNew(L, Array(n).fill('cpu'), i + 7, true);
-          while (!G.over) D.stepRound(G, G.tanks.map((_, k) => D.cpuCmd(G, k)), D.STEP);
-          if (G.t < 59.9) ended++; taken += G.crates.filter(C => C.t1 < Infinity).length; used += G.sounds.filter(e => !e.startsWith('crate') && e !== 'burst').length; }
-        return { n, ended, taken, used }; });
-      // each power on a maze, by hand: your tank in a cell with a wall to its east, the other far off and still
-      const L = D.makeMaze(77, 3, 0), N = L.m * L.m, k0 = [...L.E.keys()].find(k => L.E[k] && k % L.m < L.m - 1), [cx, cy] = D.centre(L, k0), kf = (k0 + Math.floor(N / 2)) % N;
-      const setup = () => { const G = D.roundNew(L, ['you', 'you'], 1, false), [fx, fy] = D.centre(L, kf); Object.assign(G.tanks[0], { x: cx, y: cy, h: 1e-6, cool: 0 }); Object.assign(G.tanks[1], { x: fx, y: fy }); return G; };
-      const idle = [null, null];
-      let G = setup(); D.firePower(G, 0, 'laser');                     // (at the wall beside you: it comes straight back)
-      out.laser = { lasers: G.lasers.length, self: G.booms.length === 1 && G.booms[0].k === 0 && G.booms[0].by === 0 };
-      G = setup(); G.tanks[0].h = Math.PI; D.firePower(G, 0, 'frag'); G.tanks[0].alive = false; for (let n = 0; n < 70; n++) D.stepRound(G, idle, D.STEP);
-      out.frag = { shards: G.shots.filter(b => b.shard).length, burst: G.shots.some(b => b.frag && (b.burst || b.hit)) };
-      G = setup(); D.firePower(G, 0, 'spread'); out.spread = G.shots.length;
-      G = setup(); D.firePower(G, 0, 'mine'); const q = [0, 1, 2].find(q => q !== k0 && q !== kf), [qx, qy] = D.centre(L, q); G.tanks[0].x = qx; G.tanks[0].y = qy;
-      for (let n = 0; n < 90; n++) D.stepRound(G, idle, D.STEP); const armed = G.tanks[1].alive && G.mines[0].end === Infinity;
-      G.tanks[1].x = cx; G.tanks[1].y = cy; D.stepRound(G, idle, D.STEP);
-      out.mine = { armed, blew: !G.tanks[1].alive && G.mines[0].end < Infinity, owner: G.tanks[0].alive };
-      G = setup(); D.firePower(G, 0, 'homing'); const M = G.missiles[0];
-      while (M.end > G.t && G.tanks[1].alive) D.stepRound(G, idle, D.STEP);
-      out.homing = { hit: !G.tanks[1].alive, t: +G.t.toFixed(2) };
-      // a crate: dropped in a few seconds, taken by driving over it, its power held
-      G = D.roundNew(L, ['you', 'you'], 3, true); for (let n = 0; n < 60 * 6 && !G.crates.length; n++) D.stepRound(G, idle, D.STEP);
-      const C = G.crates[0]; if (C){ G.tanks[0].x = C.x; G.tanks[0].y = C.y; D.stepRound(G, idle, D.STEP); }
-      out.crate = { dropped: !!C, at: C ? +C.t0.toFixed(2) : null, held: G.tanks[0].power, taken: !!C && C.t1 < Infinity };
-      // the aim line: from the tank along its gun, more pieces of the way at level 1 than at level 5
-      out.aim = [1, 5].map(lv => { const g = D.fresh(0, 0); g.G = D.roundNew(D.makeMaze(33, lv, 0), ['you', 'cpu'], 1, false); g.state = 'play';
-        const A = D.aimOf(g)[0], t = g.G.tanks[0]; if (!A) return null; const a = Math.atan2(A.P[4] - A.P[1], A.P[3] - A.P[0]);
-        return { segs: A.P.length / 3 - 1, from: Math.hypot(A.P[0] - t.x, A.P[1] - t.y), dir: Math.abs(Math.atan2(Math.sin(a - t.h), Math.cos(a - t.h))) }; });
-      // and all of it drawn
-      G = setup(); G.crates.push({ x: 0.5, y: 0.5, kind: 0, t0: 0, t1: Infinity }); D.firePower(G, 0, 'mine'); D.firePower(G, 1, 'homing'); D.stepRound(G, idle, D.STEP); D.firePower(G, 0, 'laser');
-      const V = { L, tanks: G.tanks, shots: G.shots, booms: G.booms, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles, t: G.t, seats: ['you', 'you'], cols: [1, 2], aim: [{ k: 0, P: D.trace(L, cx, cy, 0.3, 0.5, 2), col: 3 }] };
-      const it = D.itemsOf(V); out.drawn = ['mzCrate', 'mzMine', 'mzBeam', 'mzMissile', 'mzDot'].filter(k => it.some(i => i.kind === k));
-      return out; });
-    const mo = more, moreOk = mo.sizes.join() === '5,6,7' && mo.walls.join() === '0,0' && mo.spawn4 === 4 && mo.apart4 >= 2 && mo.rounds.every(x => x.ended === 5) && mo.rounds.reduce((n, x) => n + x.taken, 0) >= 1
-      && mo.rounds.reduce((n, x) => n + x.used, 0) >= 1 && mo.laser.lasers === 1 && mo.laser.self && mo.frag.shards === 14 && mo.frag.burst && mo.spread === 3
-      && mo.mine.armed && mo.mine.blew && mo.mine.owner && mo.homing.hit && mo.crate.dropped && mo.crate.at < 5 && mo.crate.held && mo.crate.taken
-      && mo.aim[0] && mo.aim[1] && mo.aim[0].segs > mo.aim[1].segs && mo.aim[1].segs === 1 && mo.aim[0].from < 1e-9 && mo.aim[0].dir < 1e-6 && mo.drawn.length === 5;
-    if (!moreOk) failures.push(`[${current}: more] ${JSON.stringify(more)}`);
-    const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '5,7,9' && r.apart >= 2
-      && r.way.inside && r.way.len > 0.99 && r.way.bounces > 3 && r.back && r.self && r.self.k === 0 && r.self.by === 0
-      && r.rounds.every(x => x.ended === 6 && x.hits >= 4) && r.rounds.reduce((n, x) => n + x.bank, 0) >= 3 && r.dodge
+      const V = { ...D.shownOf(E), t: Math.min(2, E.T) }, it = D.itemsOf(V), kinds = k => it.filter(i => i.kind === k);
+      return { done: E.done, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, bar: kinds('mzBar').length,
+               yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shells: it.filter(i => /Shot|Crate|Mine|Beam|Missile/.test(i.kind)).length }; }, fc);
+    const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '9,10,11' && r.apart >= 2 && r.caught && r.head
+      && r.held[0] && r.held[1] > r.held[2] && r.more.join() === '4,4'
       && live.drove && Math.hypot(live.drove.x - live.ready.x, live.drove.y - live.ready.y) > 0.02 && live.ready.state === 'ready'
-      && live.fired && live.fired.mine >= 1 && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
+      && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
       && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.newMaze
       && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
       && live.two && live.two.seats === 'you,p2' && live.two.moved2 > 0.02 && live.two.moved1 < 0.005
-      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.fire >= 1;
+      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.bar === 1 && shown.yaws && shown.shells === 0;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side; a shell's way bounced ${r.way.bounces} times inside the board and came back off a wall; your own shell killed you at ${r.self && r.self.t} s; computer rounds ended with ${r.rounds.map(x => x.hits + ' hits, ' + x.bank + ' off walls').join('; ')}; a computer tank dodged; a real key drove, a real click fired, a real drag steered; a round won counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; two players on their own keys; a board no one plays moved; mazes ${mo.sizes.join('/')} for 2/3/4 tanks, 3- and 4-tank rounds ended with ${mo.rounds.map(x => x.taken).join('/')} crates taken and ${mo.rounds.map(x => x.used).join('/')} powers used; a laser came back off the wall, a frag burst into ${mo.frag.shards}, a spread of ${mo.spread}, a mine blew, a missile found its tank in ${mo.homing.t} s, a crate dropped at ${mo.crate.at} s and was taken; the aim line ${mo.aim.map(a => a && a.segs).join(' pieces at level 1, ')} at level 5)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side for 2/3/4 tanks; a hunter beside you caught you, nobody near you held out; the steady runner held out ${r.held[1]} of 12 at level 1 and ${r.held[2]} at level 5; a real key drove, a real drag steered; a round held out counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; Player 2 hunted on the arrows; a board no one plays moved)`);
   }
   // TRICK SHOTS (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): wander's engine
   // gives the textbook results (the thresholds wander's own smoke test holds it to), every challenge's reference shot solves it
@@ -6988,7 +6752,11 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       D.games.delete(L.c + '_' + L.r); const was = D.LIVE; D.LIVE = null;
       out.shown = D.shown(L.c, L.r).rocks.length;
       const g2 = D.gameAt(L.c, L.r); D.start(g2); for (let k = 0; k < 300; k++) D.step(g2, 1 / 60);
-      out.again = g2.rocks.length; out.other = D.shown(L.c + 3, L.r).rocks.length;
+      out.again = g2.rocks.length;
+      // (another board played the same way has its rocks, or its next wave: its picture alone, a reel frame by the clock, can fall
+      //  between two waves with none, which failed once on CI, Oct 29)
+      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); for (let k = 0; k < 300; k++) D.step(g3, 1 / 60);
+      out.other = g3.rocks.length; D.games.delete((L.c + 3) + '_' + L.r);
       D.LIVE = was; D.CLEARED.delete(L.c + '_' + L.r); try { localStorage.removeItem('asteroids.cleared'); } catch {}
       return out;
     });
