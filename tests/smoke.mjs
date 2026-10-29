@@ -6746,8 +6746,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const A = window.getFieldApp(), D = A._debug, L = D.LIVE, g = L && D.games.get(L.c + '_' + L.r), out = { started: !!g && g.state === 'play' };
       if (!g) return out;
       D.CLEARED.delete(L.c + '_' + L.r);
-      for (let k = 0; k < 4; k++) D.lose(g);
-      out.losses = [g.state, g.lost];
+      // (counted from where it was: a rock can take a ship in the moment after the click, which made five on CI, Oct 29)
+      const lost0 = g.lost || 0; for (let k = 0; k < 4; k++) D.lose(g);
+      out.losses = [g.state, g.lost - lost0];
       g.rocks.length = 0; g.ufo = null;
       for (let k = 0; k < 300; k++) D.step(g, 1 / 60);
       out.cleared = [D.CLEARED.has(L.c + '_' + L.r), g.rocks.length];
