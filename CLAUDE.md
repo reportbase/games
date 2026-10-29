@@ -1297,84 +1297,44 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     in a live exchange; since Oct 21 also what each weapon does, duels of two, three and four tanks ending, a real key (D)
     driving on fuel, the row's big shell chosen and spent, and three tanks with two players: after Player 1 and the computer,
     Player 2's turn with the controls theirs.
-- **Tank maze** (Oct 21: "maze tank battle", the second of the tank games offered): `TANKMAZE_APP`, id `tankmaze`, after Tanks.
-  Two tanks seen from above in a maze, as Tank Trouble plays it: drive, turn and fire; a shell runs on for `LIFE` (9 s) bouncing
-  off every wall, and hits whichever tank it finds, the one that fired it too once it is `GRACE` (0.17 s) out. The last tank
-  standing takes the round, the first to `WIN` (5) the match; every round is a new maze.
-  - **Every board its own mazes** (`makeMaze(idx, lv, round)`: the tilt maze's backtracking walk with many more loops, the two
-    tanks in cells far apart along it, each facing an open side), at a level 1–5, the ring level plus the Difficulty (Easy 0,
-    Normal 1, Hard 2). `LV`: 5 to 9 cells a side, loops 0.32 down to 0.2, and the computer's hand: `aim` (bounces it looks for,
-    none at level 1), `rays` (48–120 headings tried), `think` (0.32 s down to 0.11 between plans), `err` (6° down to 1.2°),
-    `lead` (aims where you will be, from level 3), `dodge` (the chance it sees a shell coming, 0 to 1), `cool` and `most` (its
-    shells in the air, 1 to 3; yours `MAXB`, 5).
-  - **One physics for shells and the computer's eye** (`trace`): a shell's whole way is laid down when it is fired, a ray
-    against the walls widened by its radius (slab test), mirrored at each face it meets; where it is is how far along it has
-    gone (`along`), and a hit is the way coming within `HIT_R` + its radius of a tank between two steps (`nearest`, which also
-    takes a moving point, for leading). The computer looks for shots along the same rays (`findShot`: the straight line and
-    `rays` headings, each off up to `aim` walls, that reach you before coming back through itself, and that do not come back
-    through it in the 2.5 s after); a shell coming its way, it tries seven moves for 0.7 s and takes the one keeping farthest
-    from every shell (`escape`); else it drives toward you along the maze (`pathOf`).
-  - **Controls**: the arrow keys or WASD drive (up forward, down back at 0.7, left and right turn), Space, Enter, Q or M fire;
-    a drag steers the tank toward the finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`); a tap
-    fires. A press of fire is kept until the tank can fire, up to `REQ_T` (0.6 s): a tap in a tank's first 0.4 s, while its
-    first cooldown ran, was lost. Two players (the menu's Players, localStorage `tankmaze.players`): Player 1 green on WASD with
-    Q or Space, Player 2 blue on the arrows with M or Enter, and a finger steers or fires the tank nearest it (`seatNear`).
-  - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a round ends `BOOM_T` (1.5 s) after
-    the first tank goes, or at `ROUND_CAP` (60 s), so both can go (no one scores). Through: stars by the match (5–0 or 5–1
-    three, to 5–3 two, else one), the most a board kept (localStorage `tankmaze.best`); a tap on a finished board goes on to the
-    next (golf's `nextBoard`), a hold starts it again.
-  - **A board no one plays** shows a round of two computer tanks on its first maze (`recSoon`, worked out STEP by STEP in about
-    6 ms in 30 and kept for `REC_CAP` 500 boards: the tanks sampled `REC_HZ` 15 a second, the shells as their ways, the bursts),
-    played back on the page's clock with a 1.5 s rest (`shownOf`). Measured over 20 rounds a level: 4.6, 5, 6, 8.4 and 12.2 s a
-    round, 2 to 37 ms to work one out (112 at most), half the hits or more off a wall from level 2; a round with no one left is
-    usually two tanks firing straight at each other at once.
-  - Drawn: walls as boxes (the outer one the level's colour, golf's flags), each tank tracks, hull, turret and gun turned to its
-    heading (`mzTracks`, `mzHull`, `mzTurret`, `mzGun`; never a yaw of 0, `yawOf`), shells, and a burst of fire and smoke.
-    An inner wall stops at the outer wall's inner face (Oct 22: "the inner walls of the maze should not extend into the outer
-    walls. they flash with a different color."): laid a little long so its corners close, its end lay inside the outer wall,
-    the two drawn by turns over each other in two colours. The tilt maze's walls (the same `wallsOf`) too; the smoke test
-    checks 20 mazes of each.
-  - **More to it** (Oct 21: "1,2,3" of the ideas offered: power-ups, three or four tanks, an aim line):
-    - **Power-ups** (`POWERS`, the menu's Power-ups, localStorage `tankmaze.powers`): a crate drops every `CRATE_GAP` (4–7 s,
-      the first at `CRATE_FIRST` 2.5 s) while fewer than `crateMax` (1 + tanks/2) lie about, in a cell 1.6 cells from every
-      tank (`G.crates`, each with t0 and t1, the time taken). A tank driving over one with nothing held takes it (`t.power`, a
-      light over its turret), and its next fire is it (`firePower`):
-      - laser (`firstHit`, `cutAt`): the whole way at once, `LASER_LEN` 40 cells off up to `LASER_SEG` 14 walls, the first tank
-        on it out, its own tank once it is `LASER_SAFE` 0.7 cells along (a laser at a wall beside you comes back for you);
-        drawn as thin bars fading over `LASER_SHOW`;
-      - frag: a shell, bigger and orange, that after `FRAG_T` 0.9 s bursts into `SHARDS` 14 short shards (`SHARD_LIFE`, at
-        `SHARD_V`, `grace` 0: they hit anyone); a shot's own speed is `b.v`, and its grace `b.grace`;
-      - spread: three shells `SPREAD` (0.2 rad) apart;
-      - mine (`G.mines`): laid under the tank, armed after `MINE_ARM` 1.2 s, then any tank within `MINE_R` sets it off and every
-        tank within `MINE_BLAST` goes;
-      - homing (`G.missiles`, `stepMissile`): at `HOME_V` of a shell's speed, toward the nearest other tank along the maze (the
-        next cell's middle, the one after once nearly there), straight at it once a ray reaches it, turning `HOME_TURN` a
-        second, sliding along a wall it meets (spent on every corner it clipped, it found its tank 13 times in 20; sliding, 19),
-        spent on a tank or after `HOME_T` 7 s; its `trail` is where it was, so a recording plays it back.
-      The computer goes for a crate within three cells when it has nothing held, lays a mine where ways meet or near a tank,
-      sends a missile when it has no shot, and fires a laser (`findShot(…, laser)`: not led, off more walls), frag or spread
-      where a shell would hit. Rounds and recordings carry `sounds` (a crate taken, a power fired, a frag's burst, a mine).
-    - **Three or four tanks** (the menu's Tanks, `SET.n`, localStorage `tankmaze.count`): `makeMaze(idx, lv, round, tanks)` is a
-      cell larger a side for each tank past two (5×5 to 11×11) and starts each tank after the first two in the cell farthest
-      along the maze from those placed. Seats: you (or you and Player 2), then the computer's tanks, Red, Orange, Violet
-      (`colsOf`, `namesOf`); every tank pushes off every other; a round ends `BOOM_T` after one or none is left (`downAt`,
-      `kill`); `score` a seat each, the best kept by board, level and count (`#3`, `#4`). The computer goes for the nearest
-      tank along the maze and shoots at any it can hit. A board no one plays records that many computer tanks (`recKey`).
-      Measured over 12 rounds each (powers on): 3 tanks 5.4, 8.6 and 19 s a round at levels 1, 3 and 5, 4 tanks 6.9, 11.4 and
-      27 s; working one out took up to 0.25 s on average at 4 tanks and level 5 (0.4 at most), done a little at a time.
-    - **The aim line** (`aimOf`, the menu's Aim line, localStorage `tankmaze.aim`): for each person's tank in play, dots a fifth
-      of a cell apart along where its shell would go from its gun (`trace`): `AIM_SEG` pieces of the way, 4 at level 1, 3, 2,
-      then the straight run alone at levels 4 and 5, at most `AIM_CELLS` 12 cells; with a laser held, the laser's own way.
-      Kept on the tank (`t._aim`) until it moves or turns.
-  - The smoke test checks the levels and sizes by ring, the same maze each time and another each round, a shell's way staying in
-    the board and coming back off a wall, your own shell killing you at 0.18 s, computer rounds at levels 2, 4 and 5 ending with
-    hits off walls, a computer tank getting out of a shell's way, a real key driving, a real click firing, a real drag steering,
-    a round won counted with a new maze, a match won with three stars and a best, two players each on their own keys, a board no
-    one plays moving, and the drawing (every wall, two tanks turned, a shell, a burst); since Oct 21 also the mazes for 2, 3 and
-    4 tanks, four tanks started apart, 3- and 4-tank rounds ending with crates taken and powers used, a laser coming back off
-    the wall beside you, a frag's 14 shards, a spread's 3 shells, a mine armed and set off, a missile finding its tank, a crate
-    dropped and taken, the aim line from the gun along its heading (3 pieces at level 1, 1 at level 5), and the crates, mines,
-    beams, missiles and aim dots drawn.
+- **Tank maze: the chase** (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal
+  is to evade the oponent tank. when he overtakes you, you lose."): `TANKMAZE_APP`, id `tankmaze`, after Tanks. Tanks seen from
+  above in a maze, and no shells: you (tank 0, the runner) drive and turn, the computer's tanks hunt you. A hunter coming
+  within `CATCH` × `TR` (2.06 × 0.26 of a cell) catches you and takes the round; holding out for the level's `hold` seconds
+  takes it for you. The first to `WIN` (3) rounds takes the match; every round is a new maze.
+  - **Every board its own mazes** (`makeMaze(idx, lv, round, tanks)`: the tilt maze's backtracking walk with loops, the tanks
+    in cells far apart along it), a level 1–5 by ring plus the Difficulty (Easy 0, Normal 1, Hard 2). `LV`, easy to hard: 9 to
+    7 cells a side (a cell more a side for each tank past two), loops 0.5 down to 0.15 (more ways round at level 1), `hold`
+    20 to 30 s, the hunter's speed `v` 0.72 to 1 of yours, `think` 0.5 down to 0.12 s between plans, `lead` (from level 3: it
+    heads for the cell you are going into) and `flank` (from level 4: a second or third hunter heads farther along your way,
+    to cut you off). Later hunters run at `EXTRA` (0.88) of the first's speed. Hunters wait `HEAD` (0.8 s) before they move.
+  - **The hunters** (`think`, `cpuCmd`, `steer`, `aheadOf`): straight at you in your cell or within 0.9 of a cell, else along
+    the maze (`pathOf`) to your cell, or ahead of you with `lead` and `flank`.
+  - **The steady runner** (`flee`, what a board no one plays shows, and what the levels were measured with): of the cells it
+    reaches before every hunter, the one farthest from them with the most ways out, never a dead end if it can help it, kept
+    until it is nearly there (re-planned every 0.6 s), turning back only when nothing else is safe. Measured over 20 mazes a
+    level, it held out 19, 16, 13, 10 and 4 times against one hunter at levels 1–5, 8 to 1 against two, 7 to 0 against
+    three; 4–17 ms a round.
+  - **Controls**: the arrow keys or WASD drive (up forward, down back, left and right turn); a drag steers the tank toward the
+    finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`). Two players (the menu's Players,
+    localStorage `tankmaze.players`): Player 1 runs on WASD, Player 2 hunts on the arrows, a finger steers the tank nearest it.
+  - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a catch is a burst and the round
+    ends `BOOM_T` (1.5 s) later. A gold bar along the near wall is the time left. Through: stars by the match (3–0 three, 3–1
+    two, else one), the most kept a board (localStorage `tankmaze.best`); a tap on a finished board goes on to the next.
+  - **A board no one plays** shows a round of the steady runner against its board's hunters (`recSoon`, a little at a time in
+    the boards' share of time, `REC_HZ` 15 a second, `shownOf`), played back on the page's clock with a rest.
+  - The menu: Difficulty, Tanks (2–4, localStorage `tankmaze.count`), Players, Sound (a burst when caught, a chime for a round
+    held out), Start this board again.
+  - Drawn: walls as boxes (the outer one the level's colour), each tank tracks, hull, turret and gun turned to its heading
+    (never a yaw of 0, `yawOf`), the time bar, a burst on a catch. An inner wall stops at the outer wall's inner face (Oct 22:
+    "the inner walls of the maze should not extend into the outer walls."); the tilt maze's walls too.
+  - **Until Oct 29** it was a battle, as Tank Trouble plays it: shells bouncing off every wall for 9 s, the computer finding
+    shots off up to three walls and dodging, power-ups (laser, frag, spread, mine, homing missile), an aim line, first to 5.
+    Tom found it too hard; the shells, the powers and the aim line went.
+  - The smoke test checks the levels by ring, the same maze each time and another each round, the sizes for 2, 3 and 4 tanks,
+    a catch and a hold-out, the hunters' wait, the steady runner holding out more at level 1 than at level 5, 3- and 4-tank
+    rounds ending, a real key driving, a real drag steering, a round held out counted with a new maze, a match won with three
+    stars and a best, two players with Player 2 hunting on the arrows, and a board no one plays moving with no shells drawn.
 - **Golf tanks, taken out** (Oct 29: "this ame does not work very well. it seems very complicated, but not very easy to play.",
   then "remove  golf tanks."): `GOLFTANK_APP` (Oct 22–29, the tank maze's battle on mini golf's holes, then roaming them as
   Asteroids) is gone, with what mini golf kept only for it: its kit (`_kit`, `solidsAt`, `bareOf` and the bare copies

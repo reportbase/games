@@ -5075,13 +5075,13 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, two, shown, looks })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tanks (levels ${r.levels.join('/')} by ring; the steady computer's first shot hit on ${r.hits} of 20 boards; a burst dug ${r.dug.toFixed(3)} and took ${r.dmg[1]}; duels of 2, 3 and 4 tanks ended (${r.duels.join(', ')}); every weapon its own (${Object.entries(r.weapons).map(([k, v]) => k + (v ? '' : ' NOT')).join(', ')}); a real tap aimed with the shot's way dotted, a tap on the tank fired, the computer answered, a real key drove ${live.drove ? (live.drove.x - live.x0).toFixed(3) : '?'}, a real drag aimed and Enter fired, the row nudged the aim and fired a big shell, a steady shot won ${live.win && live.win.stars} stars; two players passed turns past a computer's tank; a board no one plays showed ${shown.looks} looks in 4 s; the picture the right way round, painted again on a burst, ${looks.sizes.join('/')} px; ${looks.kinds.join(', ')})`);
   }
-  // TANK MAZE (Oct 21: "maze tank battle"): every board its own maze at a level by its ring; a shell's way stays in the board
-  // and bounces back off a wall; your own shell kills you once clear of the barrel; rounds of two computer tanks end, with bank
-  // shots among their hits; a computer tank sees a shell coming and moves; real keys drive, a real click fires, a real drag
-  // steers; a round won counts and starts the next maze; a match won gives stars and a best; two players each have their keys;
-  // a board no one plays moves; the drawing.
+  // TANK MAZE, THE CHASE (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal is to
+  // evade the oponent tank. when he overtakes you, you lose."): every board its own maze at a level by its ring; the hunter
+  // reaching you takes the round and holding out wins it; the steady runner holds out more often at level 1 than at level 5;
+  // real keys drive and a real drag steers; a round counts and starts the next maze; a match won gives stars and a best; two
+  // players, Player 2 hunting on the arrows; a board no one plays moves; the drawing, with no shells.
   {
-    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, n: 2, powers: false, aim: true }); });
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, n: 2 }); });
     await page.waitForTimeout(1500);
     current = 'tankmaze';
     const before = failures.length;
@@ -5090,32 +5090,28 @@ try {
       const a = D.makeMaze(77, 3, 0), b = D.makeMaze(77, 3, 0), c = D.makeMaze(77, 3, 1);
       out.same = a.E.join() === b.E.join() && a.S.join() === b.S.join() && a.spawn[0].x === b.spawn[0].x;
       out.differ = a.E.join() + a.S.join() !== c.E.join() + c.S.join();
-      out.sizes = [1, 3, 5].map(lv => D.makeMaze(5, lv, 0).m);
+      out.sizes = [2, 3, 4].map(n => D.makeMaze(5, 1, 0, n).m);
       const sp = a.spawn.map(p => D.cellOf(a, p.x, p.y)); out.apart = D.bfs(a, sp[0])[sp[1]];
-      // a shell's way: nine seconds long, never out of the board; fired at a wall, it comes back the way it went
-      const P = D.trace(a, a.spawn[0].x, a.spawn[0].y, 0.7, D.LIFE * D.BV * a.s);
-      let inside = true; for (let i = 0; i < P.length; i += 3) if (P[i] < 0 || P[i] > 1 || P[i + 1] < 0 || P[i + 1] > 1) inside = false;
-      out.way = { inside, len: +(P[P.length - 1] / (D.LIFE * D.BV * a.s)).toFixed(3), bounces: P.length / 3 - 2 };
-      const k = [...a.E.keys()].find(k => a.E[k] && k % a.m < a.m - 1), [cx, cy] = D.centre(a, k), Q = D.trace(a, cx, cy, 0, a.s * 0.8);
-      out.back = Q.length >= 9 && Math.abs(Q[Q.length - 3] - cx) < 1e-9 + a.s * 0.3 && Q[3] > cx;
-      // your own shell, back off that wall: it kills you, once it is clear of the barrel
-      const G = D.roundNew(a, ['you', 'you'], 1); G.tanks[0].x = cx; G.tanks[0].y = cy; G.tanks[0].h = 1e-6;
-      const far = D.centre(a, (k + Math.floor(a.m * a.m / 2)) % (a.m * a.m)); G.tanks[1].x = far[0]; G.tanks[1].y = far[1]; G.tanks[1].alive = false;
-      G.tanks[0].cool = 0; D.stepRound(G, [{ drive: 0, turn: 0, fire: true }, null], D.STEP);
-      for (let n = 0; n < 120 && !G.booms.length; n++) D.stepRound(G, [{ drive: 0, turn: 0, fire: false }, null], D.STEP);
-      out.self = G.booms.length ? { k: G.booms[0].k, by: G.booms[0].by, t: +G.booms[0].t.toFixed(2) } : null;
-      // rounds of two computer tanks end, and some hits come off a wall
-      out.rounds = [2, 4, 5].map(lv => { let ended = 0, bank = 0, hits = 0;
-        for (let i = 0; i < 6; i++){ const L = D.makeMaze(300 + i * 11, lv, 0), R = D.roundNew(L, ['cpu', 'cpu'], i + 1);
-          while (!R.over) D.stepRound(R, [D.cpuCmd(R, 0), D.cpuCmd(R, 1)], D.STEP);
-          if (R.t < 59.9) ended++; for (const B of R.booms){ hits++; if (B.seg > 0) bank++; } }
-        return { lv, ended, hits, bank }; });
-      // a computer tank at level 5 with a shell on its way at it gets out of the way
-      const E = D.roundNew(a, ['cpu', 'cpu'], 3), me = E.tanks[1], foe = E.tanks[0];
-      const ang = Math.atan2(me.y - foe.y, me.x - foe.x), W = D.trace(a, foe.x, foe.y, ang, 3);
-      const bv = D.BV * a.s, hyp = Math.hypot(me.x - foe.x, me.y - foe.y);
-      E.shots.push({ k: 0, t0: -(hyp - 0.12) / bv, end: 9, P: [foe.x, foe.y, 0, me.x, me.y, Math.hypot(me.x - foe.x, me.y - foe.y), ...W.slice(-3)] });
-      out.dodge = D.escape(E, 1, 0.7);
+      // a hunter beside you catches you; the round goes to it once the burst has played, and nothing moves meanwhile
+      let G = D.roundNew(a, ['you', 'cpu'], 1); G.t = 2; Object.assign(G.tanks[1], { x: G.tanks[0].x + 0.5 * D.TR * a.s, y: G.tanks[0].y });
+      D.stepRound(G, [null, null], D.STEP); const caught = G.caughtAt != null && !G.tanks[0].alive && G.booms.length === 1;
+      for (let n = 0; n < 120 && !G.over; n++) D.stepRound(G, [null, null], D.STEP);
+      out.caught = caught && G.over && G.winner === 1;
+      // nobody near for the round's time: you hold out
+      G = D.roundNew(a, ['you', 'cpu'], 1); while (!G.over) D.stepRound(G, [null, null], D.STEP);
+      out.held = G.winner === 0 && Math.abs(G.t - D.LV[2].hold) < 0.05;
+      // the hunters wait a moment at the start, then come
+      G = D.roundNew(a, ['you', 'cpu'], 1); const h0 = [G.tanks[1].x, G.tanks[1].y];
+      for (let n = 0; n < Math.round(D.HEAD / D.STEP) - 2; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
+      const waited = Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]);
+      for (let n = 0; n < 120; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
+      out.head = waited < 1e-9 && Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]) > 0.05;
+      // the steady runner against the hunter, 12 mazes a level: held out more at level 1 than at level 5
+      out.held = [out.held, ...[1, 5].map(lv => { let held = 0; for (let i = 0; i < 12; i++){ const L = D.makeMaze(300 + i * 17, lv, 0, 2), R = D.roundNew(L, ['you', 'cpu'], i + 3);
+        while (!R.over) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.winner === 0) held++; } return held; })];
+      // three and four tanks: every round ends
+      out.more = [3, 4].map(n => { let ended = 0; for (let i = 0; i < 4; i++){ const L = D.makeMaze(400 + i * 13, 3, 0, n), R = D.roundNew(L, ['you'].concat(Array(n - 1).fill('cpu')), i + 7);
+        while (!R.over && R.t < 60) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.over) ended++; } return ended; });
       return out; });
     // real input on the framed board
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
@@ -5125,37 +5121,36 @@ try {
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
       return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
     const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); if (!g) return null; const t = g.G.tanks[0];
-      return { state: g.state, x: t.x, y: t.y, h: t.h, mine: g.G.shots.filter(b => b.k === 0).length, score: g.score.slice(), round: g.round, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
+      return { state: g.state, x: t.x, y: t.y, h: t.h, score: g.score.slice(), round: g.round, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
     const live = {};
     if (fc){
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
-        // (the computer's tank out of it here, so it neither moves into the way nor fires while the real input is checked)
-        g.G.tanks[1].alive = false; }, fc);
+        // (the hunter held where it starts, so it does not come into the way while the real input is checked)
+        g.G.tanks[1].sp = 0; }, fc);
       live.ready = await gs();
       await page.keyboard.down('w');
       for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.hypot(s.x - live.ready.x, s.y - live.ready.y) > 0.02) break; await page.waitForTimeout(250); }
       await page.keyboard.up('w');
       live.drove = await gs();
-      const tk = await gs(), pt = await at(tk.x < 0.5 ? 0.85 : 0.15, 0.5);
-      await page.mouse.click(pt.x, pt.y);
-      for (let w = 0; w < 24 && (await gs()).mine < 1; w++) await page.waitForTimeout(250);
-      live.fired = await gs();
       // a real drag toward a point behind the tank: it turns that way
-      const t2 = await gs(), want = Math.atan2(0.5 - t2.y, (t2.x < 0.5 ? 0.9 : 0.1) - t2.x), p0 = await at(0.5, 0.2), p1 = await at(t2.x < 0.5 ? 0.9 : 0.1, 0.5);
+      // (toward the side away from the hunter, held where it started: a drag toward it drove into it, Oct 29)
+      const t2 = await gs(), tx = t2.t1[0] < t2.x ? 0.95 : 0.05, want = Math.atan2(0.5 - t2.y, tx - t2.x), p0 = await at(0.5, 0.2), p1 = await at(tx, 0.5);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
       for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.abs(Math.atan2(Math.sin(s.h - want), Math.cos(s.h - want))) < 0.3) break; await page.waitForTimeout(250); }
       await page.mouse.up();
       live.steered = await gs(); live.want = want;
-      // a round won: counted, and the next round on a maze of its own; then the match, with stars and a best
+      // a round held out: counted, and the next round on a maze of its own; then the match, with stars and a best
       live.match = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r), out = {};
         const m0 = g.G.L.E.join() + g.G.L.S.join();
-        g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        g.score = [0, 0]; g.round = 0;
+        g.G.t = g.G.hold; g.state = 'play'; g.last = performance.now() - 20; D.stepGame(g);
         out.after = { score: g.score.join(), round: g.round, state: g.state, newMaze: g.G.L.E.join() + g.G.L.S.join() !== m0 };
-        g.score = [4, 1]; g.state = 'play'; g.G.tanks[1].alive = false; g.G.downAt = g.G.t - 2; g.last = performance.now() - 20; D.stepGame(g);
+        g.score = [2, 0]; g.state = 'play'; g.G.t = g.G.hold; g.last = performance.now() - 20; D.stepGame(g);
         out.end = { state: g.state, stars: g.stars, best: D.BEST.get(g.idx + '@' + g.lv) };
         return out; }, fc);
-      // two players: Player 2 drives on the arrows, Player 1 on WASD
+      // two players: Player 2 hunts on the arrows, Player 1 runs on WASD
       live.two = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.SET.players = 2; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
+        g.state = 'play'; g.G.t = D.HEAD + 0.1;
         return { seats: g.seats.join(), p1: [g.G.tanks[0].x, g.G.tanks[0].y], p2: [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc);
       await page.keyboard.down('ArrowUp');
       for (let w = 0; w < 24; w++){ const s = await gs(); if (s.t1 && Math.hypot(s.t1[0] - live.two.p2[0], s.t1[1] - live.two.p2[1]) > 0.02) break; await page.waitForTimeout(250); }
@@ -5167,72 +5162,19 @@ try {
     const shown = await page.evaluate(async fc => { const D = window.getFieldApp()._debug, c = fc[0] + 3, r = fc[1] + 1; D.GAMES.delete(c + '_' + r);
       const E = D.recSoon(c, r, true), a = D.shownOf(E); await new Promise(ok => setTimeout(ok, 1500)); const b = D.shownOf(E);
       const moved = Math.hypot(a.tanks[0].x - b.tanks[0].x, a.tanks[0].y - b.tanks[0].y) + Math.hypot(a.tanks[1].x - b.tanks[1].x, a.tanks[1].y - b.tanks[1].y) + Math.abs(a.t - b.t);
-      // the drawing at a moment with a shell in flight and a burst going
-      const sh = E.shots[0], B = E.booms[0], at1 = sh ? sh.t0 + 0.2 : 0, V = { ...D.shownOf(E), t: at1 };
-      const it = D.itemsOf(V), V2 = B ? { ...V, t: B.t + 0.2 } : V, it2 = D.itemsOf(V2);
-      const kinds = k => it.filter(i => i.kind === k);
-      return { done: E.done, T: E.T, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, guns: kinds('mzGun').length,
-               yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shot: kinds('mzShot').length, fire: it2.filter(i => i.kind === 'mzFire').length }; }, fc);
-    // (Oct 21: "1,2,3"): three or four tanks, the power-ups one by one, a crate dropped and taken, the aim line, their drawing
-    const more = await page.evaluate(() => { const D = window.getFieldApp()._debug, out = {};
-      out.sizes = [2, 3, 4].map(n => D.makeMaze(5, 1, 0, n).m);
-      // (Oct 22: an inner wall stops at the outer wall's inner face, so the two never lie on one another and flash)
-      out.walls = ['tankmaze', 'tiltmaze'].map(id => { const M = window.FIELD_APPS.find(a => a.id === id)._debug; let into = 0;
-        for (let i = 0; i < 20; i++){ const L = M.makeMaze(100 + i, 1 + i % 5, 0), t = Math.min(...L.walls.filter(w => w.edge).map(w => Math.min(w.b[2] - w.b[0], w.b[3] - w.b[1]))) / 2;
-          for (const w of L.walls) if (!w.edge && (w.b[0] < t - 1e-9 || w.b[1] < t - 1e-9 || w.b[2] > 1 - t + 1e-9 || w.b[3] > 1 - t + 1e-9)) into++; }
-        return into; });
-      const L4 = D.makeMaze(91, 3, 0, 4), cells = L4.spawn.map(p => D.cellOf(L4, p.x, p.y)); out.spawn4 = new Set(cells).size;
-      out.apart4 = Math.min(...cells.flatMap((a, i) => cells.slice(i + 1).map(b => D.bfs(L4, a)[b])));
-      out.rounds = [3, 4].map(n => { let ended = 0, used = 0, taken = 0;
-        for (let i = 0; i < 5; i++){ const L = D.makeMaze(400 + i * 13, 5, 0, n), G = D.roundNew(L, Array(n).fill('cpu'), i + 7, true);
-          while (!G.over) D.stepRound(G, G.tanks.map((_, k) => D.cpuCmd(G, k)), D.STEP);
-          if (G.t < 59.9) ended++; taken += G.crates.filter(C => C.t1 < Infinity).length; used += G.sounds.filter(e => !e.startsWith('crate') && e !== 'burst').length; }
-        return { n, ended, taken, used }; });
-      // each power on a maze, by hand: your tank in a cell with a wall to its east, the other far off and still
-      const L = D.makeMaze(77, 3, 0), N = L.m * L.m, k0 = [...L.E.keys()].find(k => L.E[k] && k % L.m < L.m - 1), [cx, cy] = D.centre(L, k0), kf = (k0 + Math.floor(N / 2)) % N;
-      const setup = () => { const G = D.roundNew(L, ['you', 'you'], 1, false), [fx, fy] = D.centre(L, kf); Object.assign(G.tanks[0], { x: cx, y: cy, h: 1e-6, cool: 0 }); Object.assign(G.tanks[1], { x: fx, y: fy }); return G; };
-      const idle = [null, null];
-      let G = setup(); D.firePower(G, 0, 'laser');                     // (at the wall beside you: it comes straight back)
-      out.laser = { lasers: G.lasers.length, self: G.booms.length === 1 && G.booms[0].k === 0 && G.booms[0].by === 0 };
-      G = setup(); G.tanks[0].h = Math.PI; D.firePower(G, 0, 'frag'); G.tanks[0].alive = false; for (let n = 0; n < 70; n++) D.stepRound(G, idle, D.STEP);
-      out.frag = { shards: G.shots.filter(b => b.shard).length, burst: G.shots.some(b => b.frag && (b.burst || b.hit)) };
-      G = setup(); D.firePower(G, 0, 'spread'); out.spread = G.shots.length;
-      G = setup(); D.firePower(G, 0, 'mine'); const q = [0, 1, 2].find(q => q !== k0 && q !== kf), [qx, qy] = D.centre(L, q); G.tanks[0].x = qx; G.tanks[0].y = qy;
-      for (let n = 0; n < 90; n++) D.stepRound(G, idle, D.STEP); const armed = G.tanks[1].alive && G.mines[0].end === Infinity;
-      G.tanks[1].x = cx; G.tanks[1].y = cy; D.stepRound(G, idle, D.STEP);
-      out.mine = { armed, blew: !G.tanks[1].alive && G.mines[0].end < Infinity, owner: G.tanks[0].alive };
-      G = setup(); D.firePower(G, 0, 'homing'); const M = G.missiles[0];
-      while (M.end > G.t && G.tanks[1].alive) D.stepRound(G, idle, D.STEP);
-      out.homing = { hit: !G.tanks[1].alive, t: +G.t.toFixed(2) };
-      // a crate: dropped in a few seconds, taken by driving over it, its power held
-      G = D.roundNew(L, ['you', 'you'], 3, true); for (let n = 0; n < 60 * 6 && !G.crates.length; n++) D.stepRound(G, idle, D.STEP);
-      const C = G.crates[0]; if (C){ G.tanks[0].x = C.x; G.tanks[0].y = C.y; D.stepRound(G, idle, D.STEP); }
-      out.crate = { dropped: !!C, at: C ? +C.t0.toFixed(2) : null, held: G.tanks[0].power, taken: !!C && C.t1 < Infinity };
-      // the aim line: from the tank along its gun, more pieces of the way at level 1 than at level 5
-      out.aim = [1, 5].map(lv => { const g = D.fresh(0, 0); g.G = D.roundNew(D.makeMaze(33, lv, 0), ['you', 'cpu'], 1, false); g.state = 'play';
-        const A = D.aimOf(g)[0], t = g.G.tanks[0]; if (!A) return null; const a = Math.atan2(A.P[4] - A.P[1], A.P[3] - A.P[0]);
-        return { segs: A.P.length / 3 - 1, from: Math.hypot(A.P[0] - t.x, A.P[1] - t.y), dir: Math.abs(Math.atan2(Math.sin(a - t.h), Math.cos(a - t.h))) }; });
-      // and all of it drawn
-      G = setup(); G.crates.push({ x: 0.5, y: 0.5, kind: 0, t0: 0, t1: Infinity }); D.firePower(G, 0, 'mine'); D.firePower(G, 1, 'homing'); D.stepRound(G, idle, D.STEP); D.firePower(G, 0, 'laser');
-      const V = { L, tanks: G.tanks, shots: G.shots, booms: G.booms, crates: G.crates, mines: G.mines, lasers: G.lasers, missiles: G.missiles, t: G.t, seats: ['you', 'you'], cols: [1, 2], aim: [{ k: 0, P: D.trace(L, cx, cy, 0.3, 0.5, 2), col: 3 }] };
-      const it = D.itemsOf(V); out.drawn = ['mzCrate', 'mzMine', 'mzBeam', 'mzMissile', 'mzDot'].filter(k => it.some(i => i.kind === k));
-      return out; });
-    const mo = more, moreOk = mo.sizes.join() === '5,6,7' && mo.walls.join() === '0,0' && mo.spawn4 === 4 && mo.apart4 >= 2 && mo.rounds.every(x => x.ended === 5) && mo.rounds.reduce((n, x) => n + x.taken, 0) >= 1
-      && mo.rounds.reduce((n, x) => n + x.used, 0) >= 1 && mo.laser.lasers === 1 && mo.laser.self && mo.frag.shards === 14 && mo.frag.burst && mo.spread === 3
-      && mo.mine.armed && mo.mine.blew && mo.mine.owner && mo.homing.hit && mo.crate.dropped && mo.crate.at < 5 && mo.crate.held && mo.crate.taken
-      && mo.aim[0] && mo.aim[1] && mo.aim[0].segs > mo.aim[1].segs && mo.aim[1].segs === 1 && mo.aim[0].from < 1e-9 && mo.aim[0].dir < 1e-6 && mo.drawn.length === 5;
-    if (!moreOk) failures.push(`[${current}: more] ${JSON.stringify(more)}`);
-    const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '5,7,9' && r.apart >= 2
-      && r.way.inside && r.way.len > 0.99 && r.way.bounces > 3 && r.back && r.self && r.self.k === 0 && r.self.by === 0
-      && r.rounds.every(x => x.ended === 6 && x.hits >= 4) && r.rounds.reduce((n, x) => n + x.bank, 0) >= 3 && r.dodge
+      const V = { ...D.shownOf(E), t: Math.min(2, E.T) }, it = D.itemsOf(V), kinds = k => it.filter(i => i.kind === k);
+      return { done: E.done, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, bar: kinds('mzBar').length,
+               yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shells: it.filter(i => /Shot|Crate|Mine|Beam|Missile/.test(i.kind)).length }; }, fc);
+    const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '9,10,11' && r.apart >= 2 && r.caught && r.head
+      && r.held[0] && r.held[1] > r.held[2] && r.more.join() === '4,4'
       && live.drove && Math.hypot(live.drove.x - live.ready.x, live.drove.y - live.ready.y) > 0.02 && live.ready.state === 'ready'
-      && live.fired && live.fired.mine >= 1 && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
+      && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
       && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.newMaze
       && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
       && live.two && live.two.seats === 'you,p2' && live.two.moved2 > 0.02 && live.two.moved1 < 0.005
-      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.guns === 2 && shown.yaws && shown.shot >= 1 && shown.fire >= 1;
+      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.bar === 1 && shown.yaws && shown.shells === 0;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side; a shell's way bounced ${r.way.bounces} times inside the board and came back off a wall; your own shell killed you at ${r.self && r.self.t} s; computer rounds ended with ${r.rounds.map(x => x.hits + ' hits, ' + x.bank + ' off walls').join('; ')}; a computer tank dodged; a real key drove, a real click fired, a real drag steered; a round won counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; two players on their own keys; a board no one plays moved; mazes ${mo.sizes.join('/')} for 2/3/4 tanks, 3- and 4-tank rounds ended with ${mo.rounds.map(x => x.taken).join('/')} crates taken and ${mo.rounds.map(x => x.used).join('/')} powers used; a laser came back off the wall, a frag burst into ${mo.frag.shards}, a spread of ${mo.spread}, a mine blew, a missile found its tank in ${mo.homing.t} s, a crate dropped at ${mo.crate.at} s and was taken; the aim line ${mo.aim.map(a => a && a.segs).join(' pieces at level 1, ')} at level 5)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side for 2/3/4 tanks; a hunter beside you caught you, nobody near you held out; the steady runner held out ${r.held[1]} of 12 at level 1 and ${r.held[2]} at level 5; a real key drove, a real drag steered; a round held out counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; Player 2 hunted on the arrows; a board no one plays moved)`);
   }
   // TRICK SHOTS (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): wander's engine
   // gives the textbook results (the thresholds wander's own smoke test holds it to), every challenge's reference shot solves it
