@@ -28743,7 +28743,7 @@ const BLOCKOUT_APP = (() => {
       if (b == null || g.used < b){ BEST.set(k, g.used); saveBest(); note = b == null ? '' : ' — a new best here'; }
       else note = ' — best ' + b;
     }
-    say('Cleared with ' + g.used + (g.used === 1 ? ' piece' : ' pieces') + ', par ' + g.puz.par + ' ' + '★★★'.slice(0, st) + '☆☆☆'.slice(st) + note + '. Tap for the next board.', 5000);
+    say('Cleared with ' + g.used + (g.used === 1 ? ' piece' : ' pieces') + ', par ' + g.puz.par + ' ' + '★★★'.slice(0, st) + '☆☆☆'.slice(st) + note + '. Tap to play it again.', 5000);
   }
   function outOf(g){
     g.state = 'over'; g.cur = null; g.anim = null;
@@ -29196,7 +29196,7 @@ const BLOCKOUT_APP = (() => {
       if (off){ const g0 = liveGame(); if (!(g0 && g0.cur && LIVE.c === c && LIVE.r === r && tapsPiece(g0, u, v))) return false; }
       LIVE = { c, r };
       const g = gameAt(c, r);
-      if (g.state === 'done'){ const GS = fieldGS(), nc = ((c - 1) % GS + GS) % GS; try { gotoCell(nc, r); } catch {} LIVE = { c: nc, r }; gameAt(nc, r); return true; }   // (golf's next board)
+      if (g.state === 'done'){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (g.state !== 'play'){ start(g); return true; }
       if (u != null && g.cur && tapsPiece(g, u, v)){ hardDrop(g); return true; }
       ask(g, 'spin', 1);
@@ -29743,7 +29743,7 @@ const SOMA_APP = (() => {
     if (!b || s > b.s || (s === b.s && ms < b.ms)){ BEST.set(k, { s, ms }); saveBest(); }
     beep('win');
     const [a, c] = g.F.moved || [];
-    say('Right: it cannot be built. The solver tried every way and none fills it' + (a ? ' (one cube was moved from where a way had it, at ' + c.join(', ') + ')' : '') + '. ' + (ms / 1000).toFixed(1) + ' s ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s) + '. Tap for the next board.', 6000);
+    say('Right: it cannot be built. The solver tried every way and none fills it' + (a ? ' (one cube was moved from where a way had it, at ' + c.join(', ') + ')' : '') + '. ' + (ms / 1000).toFixed(1) + ' s ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s) + '. Tap to play it again.', 6000);
     return true;
   }
   function fresh(c, r){
@@ -29814,7 +29814,7 @@ const SOMA_APP = (() => {
     const fresh = !set.has(way); set.add(way); saveFound(); g.newWay = fresh;
     beep('win');
     say('Filled' + (g.hints ? ' with ' + g.hints + (g.hints === 1 ? ' hint' : ' hints') : '') + ' in ' + (ms / 1000).toFixed(1) + ' s' + (par ? ' (par ' + fmtT(par) + ')' : '') + ' ' + '★★★'.slice(0, s) + '☆☆☆'.slice(s)
-      + (fresh ? ' — a new way: ' : ' — a way you had found: ') + waysText(g.F, k) + '. Tap for the next board, or the menu\'s Find another way.', 6000);
+      + (fresh ? ' — a new way: ' : ' — a way you had found: ') + waysText(g.F, k) + '. Tap, or the menu\'s Find another way, to fill it again.', 6000);
     return true;
   }
   function hint(g){
@@ -30509,7 +30509,7 @@ const SOMA_APP = (() => {
       if (off){ if (!(g0 && LIVE.c === c && LIVE.r === r && placedAt(g0, u, v) >= 0)) return false; }
       LIVE = { c, r };
       const g = gameAt(c, r);
-      if (g.state === 'done'){ const GS = fieldGS(), nc = ((c - 1) % GS + GS) % GS; try { gotoCell(nc, r); } catch {} LIVE = { c: nc, r }; gameAt(nc, r); return true; }
+      if (g.state === 'done'){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (u != null){ const i = placedAt(g, u, v); if (i >= 0){ takeUp(g, i); beep('move'); touched(); return true; } }
       if (g.cur) place(g);
       touched(); return true;
@@ -31014,7 +31014,7 @@ const GEMS_APP = (() => {
       const k = bestKey(g.S), was = BEST.get(k);
       if (was == null || g.moves < was){ BEST.delete(k); BEST.set(k, g.moves); saveBest(); }
       beep(g, 'win');
-      say('Goal made in ' + g.moves + ' moves ' + BOARD_KIT.stars(g.stars) + ' (par ' + par + ') — tap for the next board', 4000);
+      say('Goal made in ' + g.moves + ' moves ' + BOARD_KIT.stars(g.stars) + ' (par ' + par + ') — tap to play it again', 4000);
     } else { beep(g, 'lose'); say('Out of moves — ' + goalWords(g.S, g) + '. Tap to try again', 3500); }
   }
   // The clock: wait for the gems to come to rest, then the rules; a board no one plays is moved by its own player.
@@ -31366,7 +31366,7 @@ const GEMS_APP = (() => {
       LIVE = { key: k, c, r };
       let g = GAMES.get(k);
       if (!g){ g = gameAt(c, r); if (g.mode === 'goals') parFor(g.S, Infinity); limitFor(g); }
-      if (g.state === 'won'){ if (performance.now() - g.overAt > GRACE * 1000){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { key: gkey(nc, nr), c: nc, r: nr }; } return true; }
+      if (g.state === 'won'){ if (performance.now() - g.overAt > GRACE * 1000){ app.onReset(c, r); } return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (g.state === 'lost'){ if (performance.now() - g.overAt > GRACE * 1000) restart(c, r); return true; }
       const i = cellOf(g, u, v);
       if (i < 0 || busy(g)) return true;
@@ -39577,7 +39577,10 @@ const GOLF_MAKE = SIZE => {
     SND.play(d <= 0 ? 'win' : 'good');
     g.state = 'sunk'; g.sunkT = SINK_T;
   }
-  // On to the next hole: the board to the right, the view following.
+  /* On to the next hole: it is laid on the board to the right, and the round goes on there once you go to it (Tab, a swipe,
+     a tap on it). Until Oct 29 the view flew there by itself when the ball dropped (Oct 29: "Often times boards auto move to
+     another board. They should never do that. Only the user can move to a new board."). The board just played is 'holed':
+     its ball in the cup, the round's card on the game, until a tap there starts a round afresh. */
   function nextHole(g){
     const R = g.R;
     if (R.single){                                           // a hole of your own is a round of one (Oct 8)
@@ -39602,16 +39605,15 @@ const GOLF_MAKE = SIZE => {
       hole = holeOf(nc, nr);
       if (typeof gotoCell === 'function' && GS > 1){
         ng = holeGame(R, hole);
-        GAMES.delete(LIVE.key);
         GAMES.set(gkey(nc, nr), ng);
-        LIVE = { key: gkey(nc, nr), c: nc, r: nr };
-        gotoCell(gx, gz); moved = true;
+        g.state = 'holed'; moved = true;
       }
     } catch {}
     if (!ng) ng = holeGame(R, hole);
     H = HOLES[hole];
     if (!moved) GAMES.set(LIVE.key, ng);
-    say('Hole ' + (R.card.length + 1) + ' of ' + ROUND + ' — ' + H.name + ', par ' + H.par + lvTag(H) + starTag(hole), 2200);
+    say('Hole ' + (R.card.length + 1) + ' of ' + ROUND + ' — ' + H.name + ', par ' + H.par + lvTag(H) + starTag(hole)
+      + (moved ? ', on the next board along (Tab)' : ''), moved ? 3200 : 2200);
   }
 
   /* ─── THE TOYS ─────────────────────────────────────────────────────── */
@@ -43198,6 +43200,10 @@ const GOLF_MAKE = SIZE => {
       if (PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, pendingNote(k)); return true; }
       const g = GAMES.get(gkey(c, r));
       if (g && g.state === 'done' && g.R.single){ GAMES.set(gkey(c, r), holeGame({ start: g.hole, card: [], single: true }, g.hole)); return true; }
+      if (g && g.state === 'holed'){                         // (the round goes on on the next board: Oct 29)
+        if (g.asked){ startRound(c, r); return true; }
+        g.asked = true; say('The round goes on on the next board along (Tab); a tap again here starts a new round.', 2400); return true;
+      }
       if (!g || g.state === 'done') startRound(c, r);
       return true;
     },
@@ -46486,7 +46492,7 @@ function screenToBoardDirs(){
    TAP a square to walk there; TAP a crate beside him to push it one square
    away from him. Or DRAG from the ball, a square's worth of drag a step, or
    use the arrow keys / WASD. HOLD (or right-click) to take back a step; Reset
-   on the menu starts over. Tap a solved board for the next level.
+   on the menu starts over. Tap a solved board to play it again.
    The levels were worked out ahead of time, each with its shortest known
    solution, so every one can be solved — and the other boards are playing
    those solutions. Taking a board carries on from where it is.
@@ -47204,8 +47210,8 @@ const SOKOBAN_APP = (() => {
       if (ED.on) return edTap(c, r, u, v);
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
-      // solved: on to the next board, as mini golf goes on to the next hole (Oct 12)
-      if (g.solved){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { key: gkey(nc, nr), c: nc, r: nr }; gameAt(nc, nr); return true; }
+      // solved: a tap plays it again (Oct 12 it went on to the next board; Oct 29 only you move to another board)
+      if (g.solved){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (u == null) return true;
       use(lvl(g).n);
       const i = cellOf(u, v), di = D.indexOf(i - g.player);
@@ -47535,7 +47541,7 @@ const TILT_APP = (() => {
     if (was == null || t < was){ BEST.delete(k); BEST.set(k, t); saveBest(); }
     SND.play('win');
     say('Through in ' + t.toFixed(1) + ' s' + (g.M.par ? ' (par ' + g.M.par.toFixed(1) + ' s)' : '') + ' ' + BOARD_KIT.stars(g.stars)
-        + (g.falls ? ', ' + g.falls + (g.falls === 1 ? ' fall' : ' falls') : '') + (was != null && t < was ? '. A new best, beating ' + was.toFixed(1) + ' s.' : was != null ? '. Best ' + was.toFixed(1) + ' s.' : '.') + ' Tap for the next board.', 4200);
+        + (g.falls ? ', ' + g.falls + (g.falls === 1 ? ' fall' : ' falls') : '') + (was != null && t < was ? '. A new best, beating ' + was.toFixed(1) + ' s.' : was != null ? '. Best ' + was.toFixed(1) + ' s.' : '.') + ' Tap to play it again.', 4200);
   }
   // a board no one is playing: the steady player's run, round and round (with a rest at the ring)
   function shownBall(M){
@@ -47805,7 +47811,7 @@ const TILT_APP = (() => {
       if (ED.on) return edTap(c, r, u, v);
       const g = gameAt(c, r);
       if (LIVE && LIVE.c === c && LIVE.r === r && g.state === 'done'){
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+        app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       LIVE = { c, r };
       if (g.state === 'ready') say('Tip the board: the arrow keys, a drag toward where it should roll, or the phone (the menu\'s Tilt steering). Get the marble to the gold ring.', 3600);
       return true;
@@ -48760,7 +48766,7 @@ const PINBALL_APP = (() => {
     if (was == null || s > was){ BEST.delete(k); BEST.set(k, s); saveBest(); }
     beep('over');
     say('Game over: ' + s.toLocaleString() + ' (par ' + M.par.toLocaleString() + ') ' + BOARD_KIT.stars(g.stars)
-        + (was != null && s > was ? '. A new best, beating ' + (+was).toLocaleString() + '.' : was != null ? '. Best ' + (+was).toLocaleString() + '.' : '.') + ' Tap for the next table.', 5000);
+        + (was != null && s > was ? '. A new best, beating ' + (+was).toLocaleString() + '.' : was != null ? '. Best ' + (+was).toLocaleString() + '.' : '.') + ' Tap to play it again.', 5000);
   }
   function stepGame(g){
     const t = performance.now(), dt = g.last && !ARCADE.paused ? Math.min(0.1, (t - g.last) / 1000) : 0; g.last = t;
@@ -49605,10 +49611,8 @@ const PINBALL_APP = (() => {
       if (ED.on) return edTap(c, r, u, v);
       const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
       LIVE = { c, r };
-      // (the flight goes to the board beside, unwrapped: to the wrapped number, from the corner, it went the long way round the
-      //  whole field, three seconds of empty boards; the game keeps the wrapped number, as the field asks by it)
       if (was && g.state === 'over'){ if (performance.now() - g.overAt < GRACE * 1000) return true;
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+        app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (g.state !== 'play') begin(g);
       return true;
     },
@@ -50015,7 +50019,7 @@ const LIGHTS_APP = (() => {
       if (!quiet){
         SND.play('win');
         say('Out, in ' + g.moves + (g.moves === 1 ? ' press' : ' presses') + ' against par ' + g.S.par + ': ' + BOARD_KIT.stars(stars)
-          + (was != null && g.moves < was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + '.' : '.') + ' Tap for the next board.', 4200);
+          + (was != null && g.moves < was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + '.' : '.') + ' Tap to play it again.', 4200);
       }
     }
     return true;
@@ -50105,7 +50109,7 @@ const LIGHTS_APP = (() => {
     onCellTap(c, r, u, v){
       LIVE = { c, r };
       const g = gameAt(c, r);
-      if (g.done){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+      if (g.done){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (u == null) return true;
       if (!g.moves && g.hint < 0 && !g._told){ g._told = true; say('Put every light out: a press flips its square and the four beside it. Par ' + g.S.par + '.', 2400); }
       press(g, cellOf(g.n, u, v));
@@ -50285,7 +50289,7 @@ const MOLE_APP = (() => {
     SND.play(s >= 3 ? 'win' : 'lose');
     say('Time! ' + g.score + (g.score === 1 ? ' point' : ' points') + ' against par ' + g.G.par + ' ' + BOARD_KIT.stars(s)
         + (was != null && g.score > was ? ', a new best here, beating ' + was : was != null ? ', best here ' + was : '')
-        + '. Tap for the next board, hold to play this one again.', 4200);
+        + '. Tap to play it again.', 4200);
   }
 
   /* ─── DRAWING ─── a mole's pose at round time t: how far out (rise, 0 to 1) and whether it is squashed by a bonk */
@@ -50415,9 +50419,9 @@ const MOLE_APP = (() => {
       if (g.state === 'ready'){ begin(g); return true; }
       if (g.state === 'count') return true;
       if (g.state === 'over'){
-        // (a moment's grace: the last whacks of a round, landing just after the bell, should not fly you off the board)
+        // (a moment's grace: the last whacks of a round, landing just after the bell, should not start it again at once)
         if (clock() - g.endAt < GRACE) return true;
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       }
       if (u != null) tap(g, holeAt(g.G.D.n, u, v));
       return true;
@@ -50712,7 +50716,7 @@ const NONOGRAM_APP = (() => {
     SND.play('win');
     say('The picture, in ' + g.t.toFixed(1) + ' s ' + BOARD_KIT.stars(g.stars)
         + (g.wrong ? ', ' + g.wrong + (g.wrong === 1 ? ' fill' : ' fills') + ' on a square it leaves empty' : ', not a square wrong')
-        + (was && better ? '. A new best on this board.' : was ? '. Best here ' + '★'.repeat(was[0]) + ' in ' + (+was[1]).toFixed(1) + ' s.' : '.') + ' Tap for the next board.', 4200);
+        + (was && better ? '. A new best on this board.' : was ? '. Best here ' + '★'.repeat(was[0]) + ' in ' + (+was[1]).toFixed(1) + ' s.' : '.') + ' Tap to play it again.', 4200);
   }
   /* A board no one is playing: its picture filled in a square at a time, row by row, then shown in its colours, then blank
      a moment and again, on the page's clock, each board at its own phase. */
@@ -50873,7 +50877,7 @@ const NONOGRAM_APP = (() => {
       const live = LIVE && LIVE.c === c && LIVE.r === r;
       LIVE = { c, r };
       const g = gameAt(c, r);
-      if (live && g.state === 'solved'){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+      if (live && g.state === 'solved'){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (u == null || g.state === 'solved') return true;
       const P = g.P, i = cellAt(P, u, v);
       if (i < 0){
@@ -51303,10 +51307,11 @@ const FLASH_APP = (() => {
       const t = nextAt();
       say('That is all for now in ' + deck().name + (t < Infinity ? '. The next card comes round in ' + span(t - NOWFN()) + '.' : '.'), 4000);
     } else {
-      const at = boardFor(nk, c, r);
-      if (at && (at[0] !== c || at[1] !== r)){ try { gotoCell(at[0], at[1]); } catch {} LIVE = { c: at[0], r: at[1] }; }
+      /* (Oct 29: "Often times boards auto move to another board. They should never do that. Only the user can move to a new
+         board." Until then, once a card was graded, the view flew to the nearest board holding the next card.
+         Now it stays, and N, or the menu's Next card due, takes you there.) */
       const C = counts();
-      say(GRADES[g][0] + '. Next: ' + C.learn + ' learning, ' + C.due + ' due, ' + C.fresh + ' new today.', 1600);
+      say(GRADES[g][0] + '. Next: ' + C.learn + ' learning, ' + C.due + ' due, ' + C.fresh + ' new today. N for the next card.', 2400);
     }
     try { fieldItemsChanged(); } catch {}
     try { bbRefreshNow(); } catch {}
@@ -52032,12 +52037,12 @@ const TANKS_APP = (() => {
       if (was == null || hp > was){ BEST.delete(k); BEST.set(k, hp); saveBest(); }
       SND.play('win');
       say('The last tank standing, in ' + g.shots[0] + (g.shots[0] === 1 ? ' shot' : ' shots') + ', with ' + hp + ' health left: ' + BOARD_KIT.stars(stars)
-        + (was != null && hp > was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + ' left.' : '.') + ' Tap for the next board.', 4200);
+        + (was != null && hp > was ? '. A new best here, beating ' + was + '.' : was != null ? '. Best here ' + was + ' left.' : '.') + ' Tap to play it again.', 4200);
     } else if (people > 1 && g.winner >= 0){
-      SND.play('win'); say(g.names[g.winner] + (isPerson(g, g.winner) ? ' wins!' : ' wins: both players are out.') + ' Hold the board to play again, or tap for the next.', 4200);
+      SND.play('win'); say(g.names[g.winner] + (isPerson(g, g.winner) ? ' wins!' : ' wins: both players are out.') + ' Tap the board to play again.', 4200);
     } else {
       SND.play('lose');
-      say((g.winner < 0 ? 'Every tank is out.' : 'Your tank is out.') + ' Hold the board to try it again, or tap for the next.', 4200);
+      say((g.winner < 0 ? 'Every tank is out.' : 'Your tank is out.') + ' Tap the board to try it again.', 4200);
     }
     try { bbRefreshNow(); } catch {}
   }
@@ -52518,7 +52523,7 @@ const TANKS_APP = (() => {
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
       LIVE = { c, r };
       const g = gameAt(c, r);
-      if (g.state === 'over'){ const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+      if (g.state === 'over'){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       if (u == null || !myTurn(g)) return true;
       // (Oct 21: a tap aims and the dots show where it goes; a tap on your own tank fires, as do the row's Fire and Enter)
       if (onTank(g, u * ASP, v)) fire(g); else { aimAt(g, u * ASP, v); try { bbRefreshNow(); } catch {} }
@@ -52906,8 +52911,8 @@ const TANKMAZE_APP = (() => {
         const k = bestKey(g), was = +(BEST.get(k) || 0);
         if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
         SND.play(won ? 'win' : 'lose');
-        say((won ? 'You got away: you won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : 'Caught: ' + nm[1] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
-      } else { SND.play('win'); say(nm[side] + ' won the match, ' + tally + '. Tap for the next board.', 4200); }
+        say((won ? 'You got away: you won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : 'Caught: ' + nm[1] + ' won the match, ' + tally) + '. Tap to play it again.', 4200);
+      } else { SND.play('win'); say(nm[side] + ' won the match, ' + tally + '. Tap to play it again.', 4200); }
       return;
     }
     SND.play(side === 0 ? 'good' : 'bad');
@@ -53022,7 +53027,7 @@ const TANKMAZE_APP = (() => {
       const g = gameAt(c, r);
       if (g.state === 'over'){
         if (performance.now() - (g.overAt || 0) < 800) return true;
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
+        app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       LIVE = { c, r };
       if (g.state === 'ready') begin(g);
       return true;
@@ -54433,7 +54438,7 @@ const TRICK_APP = (() => {
       s += ' · ' + (f ? 'first: the ' + f.n + (f.rails ? ' after ' + f.rails + ' cushion' + (f.rails > 1 ? 's' : '') : '') + ', ' + frac(f.overlap) + ' hit (cut ' + f.cut.toFixed(0) + '°)' : 'no ball reached')
         + ' · ' + (pots.length ? 'pots ' + pots.join(', ') : hidden ? 'no pot in sight' : 'pots none') + (scratch ? ' · the white goes in' : '') + (hidden ? ' · ' + hidden + ' contact' + (hidden > 1 ? 's' : '') + ' past sight' : '');
     }
-    if (g.ch && (g.solvedIn || g.lastWhy)) s += ' · ' + (g.solvedIn ? starStr(starsOf(g.solvedIn, g.ch.par)) + ' solved in ' + g.solvedIn + (g.solvedIn === 1 ? ' try' : ' tries') + ', tap for the next' : '') + (g.lastWhy ? (g.solvedIn ? ', last try ' : '') + 'missed: ' + g.lastWhy : '');
+    if (g.ch && (g.solvedIn || g.lastWhy)) s += ' · ' + (g.solvedIn ? starStr(starsOf(g.solvedIn, g.ch.par)) + ' solved in ' + g.solvedIn + (g.solvedIn === 1 ? ' try' : ' tries') + ', tap to play it again' : '') + (g.lastWhy ? (g.solvedIn ? ', last try ' : '') + 'missed: ' + g.lastWhy : '');
     return s;
   }
 
@@ -54780,7 +54785,7 @@ const TRICK_APP = (() => {
       LIVE = { c, r }; const g = gameAt(c, r);
       if (!g){ say('This board\'s trick shot is still being made; a moment.', 1500); return true; }
       if (g.anim){ finish(g); return true; }                    // a tap during the shot jumps to its end (wander's)
-      if (g.ch && g.solvedIn) return nextBoardOf(g);            // solved: a tap goes on to the next board (Start this board again plays it again)
+      if (g.ch && g.solvedIn) return app.onReset(c, r), true;  // solved: a tap plays it again (Oct 29: only you move to another board)
       if (u == null) return true;
       const [x, z] = toTable(u, v), w = g.balls.find(b => b.cue && !b.sunk);
       if (w && Math.hypot(w.x - x, w.z - z) < R * 1.6) shoot(g); else aimAt(g, x, z);
@@ -55903,14 +55908,14 @@ const PONG_APP = (() => {
   function over(g){
     g.state = 'over'; g.overAt = performance.now();
     const G = g.G, won = G.winner === 0;
-    if (g.two){ sfx('win'); say((won ? 'Near' : 'Far') + ' player wins ' + Math.max(...G.score) + '–' + Math.min(...G.score) + '. Tap for the next board.', 4000); return; }
+    if (g.two){ sfx('win'); say((won ? 'Near' : 'Far') + ' player wins ' + Math.max(...G.score) + '–' + Math.min(...G.score) + '. Tap to play it again.', 4000); return; }
     const M = recOf(g.idx, g.lv); recWork(M, 60, true);
     const par = M.done ? M.par : null, s = starsOf(G, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (s > was){ BEST.set(k, s); saveBest(); }
     sfx(won ? 'win' : 'lose');
     say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + BOARD_KIT.stars(s)
         + (par != null && won ? (s === 3 ? ', within par (' + par + ' given away)' : ', par was to give away ' + par + ' or fewer') : '')
-        + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
+        + (s > was && was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
     try { bbRefreshNow(); } catch {}
   }
   // a person's hands, read each tick: a finger's place (wins) or the keys' direction
@@ -56405,7 +56410,7 @@ const PONG_APP = (() => {
       if (g.state === 'play') return true;
       if (was && g.state === 'over'){
         if (performance.now() - g.overAt < GRACE * 1000) return true;
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       }
       begin(g);
       return true;
@@ -56738,14 +56743,14 @@ const AIRHOCKEY_APP = (() => {
   function over(g){
     g.state = 'over'; g.overAt = performance.now();
     const G = g.G, won = G.winner === 0;
-    if (g.two){ sfx('win'); say((won ? 'Near' : 'Far') + ' player wins ' + Math.max(...G.score) + '–' + Math.min(...G.score) + '. Tap for the next board.', 4000); return; }
+    if (g.two){ sfx('win'); say((won ? 'Near' : 'Far') + ' player wins ' + Math.max(...G.score) + '–' + Math.min(...G.score) + '. Tap to play it again.', 4000); return; }
     const M = recOf(g.idx, g.lv); recWork(M, 60, true);
     const par = M.done ? M.par : null, s = starsOf(G, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (s > was){ BEST.set(k, s); saveBest(); }
     sfx(won ? 'win' : 'lose');
     say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + BOARD_KIT.stars(s)
         + (par != null && won ? (s === 3 ? ', within par (' + par + ' let in)' : ', par was to let in ' + par + ' or fewer') : '')
-        + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
+        + (s > was && was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
     try { bbRefreshNow(); } catch {}
   }
   const HAND = [{ tx: null, ty: null }, { tx: null, ty: null }], KEYS = {};
@@ -57010,7 +57015,7 @@ const AIRHOCKEY_APP = (() => {
       if (g.state === 'play') return true;
       if (was && g.state === 'over'){
         if (performance.now() - g.overAt < GRACE * 1000) return true;
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       }
       begin(g);
       return true;
@@ -57649,19 +57654,19 @@ const SQUASH_APP = (() => {
   function over(g){
     g.state = 'over'; g.overAt = performance.now();
     const G = g.G, won = G.winner === 0;
-    if (g.two){ sfx('win'); say((won ? 'Red' : 'Blue') + ' wins ' + Math.max(...G.score) + '–' + Math.min(...G.score) + '. Tap for the next board.', 4000); return; }
+    if (g.two){ sfx('win'); say((won ? 'Red' : 'Blue') + ' wins ' + Math.max(...G.score) + '–' + Math.min(...G.score) + '. Tap to play it again.', 4000); return; }
     const M = recOf(g.idx, g.lv); recWork(M, 80, true);
     const par = M.done ? M.par : null, s = starsOf(G, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (s > was){ BEST.set(k, s); saveBest(); }
     if (G.drill){
       sfx(s >= 2 ? 'win' : 'lose');
       say('Time: ' + G.drill.score + (G.drill.kind === 'rally' ? ' in a row' : G.drill.kind === 'feeds' ? ' of ' + G.drill.feeds + ' to a length' : ' on target') + ' ' + BOARD_KIT.stars(s)
-          + (par != null ? ', par ' + par : '') + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
+          + (par != null ? ', par ' + par : '') + (s > was && was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
     } else {
       sfx(won ? 'win' : 'lose');
       say((won ? 'You win ' : 'The computer wins ') + G.score[0] + '–' + G.score[1] + ' ' + BOARD_KIT.stars(s)
           + (par != null && won ? (s === 3 ? ', within par (' + par + ' points given away)' : ', par was to give away ' + par + ' or fewer') : '')
-          + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
+          + (s > was && was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
     }
     try { bbRefreshNow(); } catch {}
   }
@@ -58063,7 +58068,7 @@ const SQUASH_APP = (() => {
       if (g.state === 'play'){ serveNow(g); return true; }
       if (was && g.state === 'over'){
         if (performance.now() - g.overAt < GRACE * 1000) return true;
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       }
       begin(g);
       return true;
@@ -58457,7 +58462,7 @@ const CURLING_APP = (() => {
     const G = g.G, s = starsOf(G), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (s > was){ BEST.set(k, s); saveBest(); }
     sfx(G.winner === 0 ? 'win' : 'lose');
-    say((G.winner === 0 ? 'You win ' : G.winner === 1 ? 'The computer wins ' : 'A draw, ') + G.score[0] + '–' + G.score[1] + (s ? ' ' + BOARD_KIT.stars(s) : '') + (s > was && was ? ', a new best here' : '') + '. Tap for the next board.', 4500);
+    say((G.winner === 0 ? 'You win ' : G.winner === 1 ? 'The computer wins ' : 'A draw, ') + G.score[0] + '–' + G.score[1] + (s ? ' ' + BOARD_KIT.stars(s) : '') + (s > was && was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
     try { bbRefreshNow(); } catch {}
   }
   const myTurn = g => !!(g && g.state === 'play' && g.G && g.G.state === 'aim' && !g.G.ai[toThrow(g.G)]);
@@ -58715,7 +58720,7 @@ const CURLING_APP = (() => {
       if (g.state === 'ready'){ begin(g); return true; }
       if (g.state === 'over'){
         if (!was || performance.now() - g.overAt < GRACE * 1000) return true;
-        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       }
       if (u == null || !myTurn(g)) return true;
       const x = u * W, on = g.G.stones.find(st => !st.out && Math.hypot(st.x - x, st.y - v) < SR * 1.8 && Math.abs(st.y - REL) > 0.02);
@@ -59414,14 +59419,14 @@ const BOWLING_APP = (() => {
       const n = g.G.tries, J = g.J, par = J.res.par, st = g.helped ? 1 : triesStars(n, par), was = SBEST.get(J.key);
       if (!g.helped && (!was || n < was)){ SBEST.set(J.key, n); saveSBest(); }
       sfx(st === 3 ? 'win' : 'spare');
-      say('Made in ' + n + (n === 1 ? ' try ' : ' tries ') + BOARD_KIT.stars(st) + (par ? ' (par ' + par + ')' : '') + (g.helped ? ', shown the shot' : was && n < was ? ', a new best here' : '') + '. Tap for the next lane.', 4500);
+      say('Made in ' + n + (n === 1 ? ' try ' : ' tries ') + BOARD_KIT.stars(st) + (par ? ' (par ' + par + ')' : '') + (g.helped ? ', shown the shot' : was && n < was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
       try { bbRefreshNow(); } catch {}
       return;
     }
     const total = scoreOf(g.G.rolls).total, par = parOf(g.idx, g.lv), s = starsOf(total, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
     if (total > was){ BEST.set(k, total); saveBest(); }
     sfx(s === 3 ? 'win' : 'end');
-    say('Your game: ' + total + ' ' + BOARD_KIT.stars(s) + (par != null ? ' (par ' + par + ')' : '') + (total > was && was ? ', a new best here' : '') + '. Tap for the next lane.', 4500);
+    say('Your game: ' + total + ' ' + BOARD_KIT.stars(s) + (par != null ? ' (par ' + par + ')' : '') + (total > was && was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
     try { bbRefreshNow(); } catch {}
   }
   const myTurn = g => !!(g && g.state === 'play' && g.G.state === 'aim');
@@ -59689,7 +59694,7 @@ const BOWLING_APP = (() => {
       if (g.state === 'ready'){ begin(g); return true; }
       if (g.state === 'over'){
         if (!was || performance.now() - g.overAt < GRACE * 1000) return true;
-        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       }
       if (u == null || !myTurn(g)) return true;
       const x = u * W, s = g.G.shot;
@@ -60046,7 +60051,7 @@ const MARBLE_APP = (() => {
         const used = g.placed.size, par = g.P.par, s = starsOf(used, par), k = bestKey(g.idx, g.lv), was = BEST.get(k);
         if (was == null || used < was){ BEST.set(k, used); saveBest(); }
         sfx('win');
-        say('In the cup! ' + used + (used === 1 ? ' piece' : ' pieces') + ' (par ' + par + ') ' + BOARD_KIT.stars(s) + (was != null && used < was ? ', a new best here' : '') + '. Tap for the next board.', 4200);
+        say('In the cup! ' + used + (used === 1 ? ' piece' : ' pieces') + ' (par ' + par + ') ' + BOARD_KIT.stars(s) + (was != null && used < was ? ', a new best here' : '') + '. Tap to play it again.', 4200);
       } else { g.state = 'fell'; sfx('fall'); say('The marble fell: ' + g.run.why + '.', 2400); }
       try { bbRefreshNow(); } catch {}
     }
@@ -60206,7 +60211,7 @@ const MARBLE_APP = (() => {
       if (!g.P) return true;
       if (g.state === 'won'){
         if (!was || performance.now() - g.doneAt < GRACE * 1000) return true;
-        const [nc, nr] = BOARD_KIT.nextBoard(c, r); try { gotoCell(c - 1, r); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true;
+        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
       }
       // (the tap that picks a board out only picks it: a piece laid by it would be laid without looking)
       if (u == null || !was){ if (!was && g.state === 'build' && !g.placed.size) say('Tap a square to lay a piece (again for the next way it can lie), then tap the blue chute to run the marble.', 3600); return true; }
