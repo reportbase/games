@@ -2404,14 +2404,14 @@ try {
       const go = (type, i) => { ED.pick = { type, i }; E.editAction('smoother'); };
       go('toy', 0); go('toy', 1); go('land', 0);
       const p = ED.src.toys[1].path, g = ED.src.land[0].green;
-      return { planter: E.wiggleOf(ED.src.toys[0].planter, 15) < E.wiggleOf(star, 15), path: p.length === 24 && p.slice(20).join() === '0.33,6,0.25,1' && p.slice(0, 20).join() !== loop.join(), green: g.length === 21 && g[20] === 0.05 && g.slice(0, 20).join() !== gr.join() }; });
+      return { planter: E.wiggleOf(ED.src.toys[0].planter, 15) < E.wiggleOf(star, 15), path: p.length === 24 && p[20] === 0.33 && Math.abs(p[21]) === 6.8 && p[23] === 1 && p.slice(0, 20).join() !== loop.join(), green: g.length === 21 && g[20] === 0.05 && g.slice(0, 20).join() !== gr.join() }; });
     await srPrep(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = [{ kick: [4, 4, 0.3, 0] }]; ED.src.land = []; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 4 / A._debug.NY); }, 0);
     sr.bumper = await srBtn('Smoother').count();
     await page.evaluate(() => { const ED = window.getFieldApp()._debug.editor.ED; ED.src.toys = []; ED.pick = null; });
     if (sr.buttons !== 2 || sr.menu !== 2 || !sr.smooth || !(sr.smooth[1] < sr.smooth[0] * 0.8) || !sr.kept || !sr.undone || !sr.roundSame || !(sr.coves > 0.05) || !sr.same
         || sr.crossed !== false || !(sr.rough > sr.coves) || !sr.tails.planter || !sr.tails.path || !sr.tails.green || sr.bumper !== 0)
       failures.push(`[${current}] smoother and rougher: ${JSON.stringify(sr)}`);
-    // movers kept apart in the editor (Oct 11): two loops drawn crossing are put on the fixed beat (Oct 29) and never meet; a
+    // movers kept apart in the editor (Oct 11): two loops drawn crossing are put on a simple ratio (Oct 29) and never meet; a
     // bumper laid on a track is ringed in red and left where it is
     const ke = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, E = D.editor, ED = E.ED;
@@ -2427,7 +2427,7 @@ try {
       ED.src.toys = []; ED.meets = []; E.editRefresh(true);
       return { per, minGap: +minGap.toFixed(3), meets0, ringed, stayed, item };
     });
-    const onBeat = ke.per.every(p => [1, 1.5, 2, 3, 4, 6, 8].some(m => Math.abs(Math.abs(p) - m * 1.7) < 1e-3));
+    const ratio = Math.abs(ke.per[1] / ke.per[0]), onBeat = [1 / 4, 1 / 3, 1 / 2, 2 / 3, 1, 1.5, 2, 3, 4].some(m => Math.abs(ratio - m) < 1e-3);   // (a simple ratio to the first: Oct 29)
     if (!onBeat || !(ke.minGap > 0) || ke.meets0 || !(ke.ringed >= 1) || !ke.stayed || ke.item)
       failures.push(`[${current}] movers kept apart in the editor: ${JSON.stringify(ke)}`);
     if (cf.tool !== 'curve' || !(cf.n0 >= 4 && cf.n0 <= 8) || !cf.ends || cf.ends.some(e => e > 0.6) || cf.through > 0.001 || !cf.sel || !(cf.pieces >= 8) || !cf.kept || !cf.inFile

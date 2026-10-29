@@ -39857,17 +39857,18 @@ const GOLF_MAKE = SIZE => {
      need that); what changes is that the clock is arranged so they never meet. keepApart, on a hole as written (cells):
      - Movers are units: a path's riders (a train of them on one loop at one speed is one unit), a turnstile, a door, a
        windmill, a gate. Each is a shape at every fraction of its turn (KA.Q of them).
-     - Riders of one train that meet on their own loop lose one, the rest spaced evenly, until they don't.
+     - Riders of one train that meet on their own loop are spaced off the offsets where they would (kaTrain), or lose one.
      - A thing standing still on a mover's sweep gives way, or the mover does, the less needed of the two (on a generated
        hole only: tiers, loose toys first, then the weave, the screen, the guard, the course's own); elsewhere it is marked.
      - Fixed timing (Oct 29: "1,2,47", 4 being "fixed timing for the movers"; until then the beat was searched for on every
-       hole, a stuck thing nudged off a track and a train respaced round its crossings): every period is one of a few fixed
+       hole, and a stuck thing nudged off a track): every period is one of a few fixed
        lengths, KA.beat times 1, 1½, 2, 3, 4, 6 or 8, the nearest (the beat 1.7 s, so Expert's speeds stay above their
-       floor), so any two come round together within a few beats. Then each, the most needed first, takes the first of
+       floor), and movers that reach one another keep a simple ratio (KA.ratios) to the first of them (in the editor, the
+       one in hand), so they come round together within a few turns. Then each, the most needed first, takes the first of
        KA.phases phases at which, over that cycle, it never comes within KA.gap of any placed before it; failing that, a
        train goes a rider shorter, then the mover goes (a generated hole) or is marked where it meets (the course, yours).
      The tests count the meetings: see the smoke test. */
-  const KA = { gap: 0.08, beat: 1.7, mults: [1, 1.5, 2, 3, 4, 6, 8], phases: 48, Q: 256, dt: 0.05 };
+  const KA = { gap: 0.08, beat: 1.7, mults: [1, 1.5, 2, 3, 4, 6, 8], ratios: [1 / 4, 1 / 3, 1 / 2, 2 / 3, 1, 3 / 2, 2, 3, 4], phases: 48, Q: 256, dt: 0.05 };
   // one of the fixed lengths a step shorter (dir −1, faster) or longer (dir +1), from a period p, its sign kept: the editor's
   // Faster, Slower, Harder and Easier step the movers so, since a smaller change would land on the same length again
   const kaStep = (p, dir) => { const L = KA.mults.map(m => m * KA.beat), a = Math.abs(p) || L[0];
@@ -39972,6 +39973,28 @@ const GOLF_MAKE = SIZE => {
     }
     return best;
   }
+  function kaRespace(U, toys, big){                           // a train one rider shorter, the rest spaced again (kaTrain)
+    U.idx.pop(); U.r.pop(); U.d = U.idx.map((_, m) => m / U.idx.length); kaTable(U, toys, big);
+    if (U.idx.length > 1 && kaSelf(U) < KA.gap){ const T = kaTrain(U, toys, big); if (!T.lost.length){ U.d = T.ds; kaTable(U, toys, big); } }
+  }
+  /* (a train's riders spaced as evenly as they can be while no two are ever at offsets on the loop where they would meet: a
+      figure of eight brings the riders half a turn apart together at its crossing, so two riders, or four, evenly round one
+      always met there. The offsets where two riders would come within KA.gap are found by trying the loop against itself.) */
+  function kaTrain(U, toys, big){
+    if (U.kind !== 'path' || U.idx.length < 2) return [];
+    const Q = KA.Q, v = toys[U.idx[0]].path, r = Math.max(...U.r) * big, need = 2 * r + KA.gap + (U.step || 0), P = [];
+    for (let q = 0; q < Q; q++){ const A = loopAt(v, q / Q); P.push(A.x, A.y); }
+    const safe = new Uint8Array(Q);
+    for (let j = 1; j < Q; j++){ let ok = 1; for (let q = 0; q < Q && ok; q++){ const b = (q + j) % Q; if (Math.hypot(P[2 * q] - P[2 * b], P[2 * q + 1] - P[2 * b + 1]) < need) ok = 0; } safe[j] = ok; }
+    const N = U.idx.length, ds = [0], lost = [];
+    for (let k = 1; k < N; k++){
+      const ideal = Math.round(k / N * Q); let got = -1;
+      for (let t = 0; t <= Q / (2 * N) && got < 0; t++) for (const c of t ? [ideal + t, ideal - t] : [ideal]){
+        const cq = ((c % Q) + Q) % Q; if (ds.every(d => safe[((cq - d) % Q + Q) % Q] && safe[((d - cq) % Q + Q) % Q])){ got = cq; break; } }
+      if (got >= 0) ds.push(got); else lost.push(k);
+    }
+    return { ds: ds.map(d => d / Q), lost };
+  }
   function kaSelf(U){                                          // riders of one train against each other on their loop
     let best = Infinity;
     if (U.kind !== 'path' || U.idx.length < 2) return best;
@@ -39979,19 +40002,23 @@ const GOLF_MAKE = SIZE => {
     return best - U.step;                                      // (between two table entries they may come a step nearer)
   }
   // keepApart(src, mode, tiers): mode 'gen' (a generated hole: may drop), 'course' (may drop only guards and screens) or
-  // 'time' (the editor as you draw: only the timing). Returns { src, meets: [[x, y], …] } where something still meets.
-  function keepApart(src, mode, tiers){
+  // 'time' (the editor as you draw: only the timing, the mover in hand (anchor) leading). Returns { src, meets: [[x, y], …] } where something still meets.
+  function keepApart(src, mode, tiers, anchor){
     const toys = clone(src.toys || []), tier = i => (tiers && tiers[i]) || (mode === 'course' ? 5 : 2), meets = [];
     const big = mode === 'course' ? 1.12 : 1;                 // (the course's riders grow 12% on Expert)
     let units = kaUnits(toys).map(U => kaTable(U, toys, big));
     const drop = new Set(), canDrop = i => mode === 'gen' || (mode === 'course' && tier(i) < 5), why = [];
     const gone = (i, r) => { if (!drop.has(i)){ drop.add(i); why.push(Object.keys(toys[i])[0] + ':' + tier(i) + ':' + r); } };
     const uTier = U => Math.max(...U.idx.map(tier)), at = U => { const e = U.tab[0][0]; return e.c ? [e.c[0], e.c[1]] : [e.s[0], e.s[1]]; };
-    const shorter = U => { gone(U.idx.pop(), 'timing'); U.r.pop(); U.d = U.idx.map((_, m) => m / U.idx.length); kaTable(U, toys, big); };
-    // 1. the riders of one train apart on their own loop
-    for (const U of units) while (U.kind === 'path' && U.idx.length > 1 && kaSelf(U) < KA.gap){
-      if (!canDrop(U.idx[U.idx.length - 1])){ meets.push(at(U)); break; }
-      shorter(U);
+    const shorter = U => { gone(U.idx[U.idx.length - 1], 'timing'); kaRespace(U, toys, big); };
+    // 1. the riders of one train apart on their own loop: spaced off the offsets where they would meet (a figure of eight
+    //    brings riders half a turn apart together at its crossing), or a rider fewer
+    for (const U of units){
+      if (U.kind !== 'path' || U.idx.length < 2 || kaSelf(U) >= KA.gap) continue;
+      if (!canDrop(U.idx[0])){ meets.push(at(U)); continue; }
+      const T = kaTrain(U, toys, big), keep = U.idx.filter((_, m) => !T.lost.includes(m));
+      for (const m of T.lost) if (canDrop(U.idx[m])) gone(U.idx[m], 'train'); else meets.push(at(U));
+      U.idx = keep; U.r = U.r.slice(0, keep.length); U.d = T.ds.slice(0, keep.length); kaTable(U, toys, big);
     }
     // 2. what stands still off every sweep
     const elBox = e => e.c ? [e.c[0] - e.c[2], e.c[1] - e.c[2], e.c[0] + e.c[2], e.c[1] + e.c[2]] : [Math.min(e.s[0], e.s[2]) - e.h, Math.min(e.s[1], e.s[3]) - e.h, Math.max(e.s[0], e.s[2]) + e.h, Math.max(e.s[1], e.s[3]) + e.h];
@@ -40010,16 +40037,29 @@ const GOLF_MAKE = SIZE => {
     units = units.filter(U => U.idx.length && !U.idx.every(i => drop.has(i)));
     // 3. every period one of the fixed lengths; the movers that reach one another each at a phase where it meets none placed
     //    before it
-    const beat = KA.beat;
-    for (const U of units){ const p = Math.abs(U.per), m = KA.mults.reduce((a, b) => Math.abs(Math.log(p / (b * beat))) < Math.abs(Math.log(p / (a * beat))) ? b : a);
-      U.per = (Math.sign(U.per) || 1) * m * beat; }
-    const order = units.slice().sort((A, B) => uTier(B) - uTier(A) || B.idx.length - A.idx.length || A.idx[0] - B.idx[0]), placed = [];   // (the most needed, then the longest trains)
+    const near = (a, b) => Math.abs(Math.log(a)) - Math.abs(Math.log(b));
+    for (const U of units){ const p = Math.abs(U.per), m = KA.mults.reduce((a, b) => near(p / (b * KA.beat), p / (a * KA.beat)) < 0 ? b : a);
+      U.per = (Math.sign(U.per) || 1) * m * KA.beat; }
+    const lead0 = anchor != null && anchor >= 0 ? units.find(U => U.idx.includes(anchor)) : null;
+    const order = units.slice().sort((A, B) => (B === lead0) - (A === lead0) || uTier(B) - uTier(A) || B.idx.length - A.idx.length || A.idx[0] - B.idx[0]), placed = [];   // (the most needed, then the longest trains)
+    // (movers that reach one another keep a simple ratio to the first of them, so they come round together soon: two of the
+    //  fixed lengths 3 and 4 beats apart met at some phase whatever was tried. Each takes another of the fixed lengths, so a
+    //  period is saved exactly to the millisecond: a third of one, 4.5333 s saved as 4.533, drifted into a meeting within an
+    //  hour. kaClear counts in half beats, which every fixed length is a whole number of.)
+    const linked = order.filter(U => units.some(V => V !== U && kaBoxes(U.box, V.box, KA.gap))), lead = linked[0];
+    const beat = KA.beat / 2, FIXED = KA.mults.map(m => m * KA.beat);
     for (const U of order){
-      const u00 = U.u0, fits = () => { const partners = placed.filter(V => kaBoxes(U.box, V.box, KA.gap));
+      // (a mover after the lead tries the ratios nearest its own first, then the others, before it gives way)
+      const u00 = U.u0, sg = Math.sign(U.per) || 1, own = Math.abs(U.per), L = lead ? Math.abs(lead.per) : own;
+      const pers = U === lead || !linked.includes(U) ? [U.per] : FIXED.filter(f => KA.ratios.some(q => Math.abs(f / L - q) < 1e-9))
+        .sort((a, b) => near(own / a, own / b)).map(f => sg * f);
+      U.per = pers[0];
+      const fits = () => { const partners = placed.filter(V => kaBoxes(U.box, V.box, KA.gap));
         if (!partners.length) return true;
-        for (let q = 0; q < KA.phases; q++){ U.u0 = u00 + q / KA.phases;
-          if (partners.every(V => kaClear(U, V, beat, KA.gap) >= KA.gap)) return true; }
-        U.u0 = u00; return false; };
+        for (const per of pers){ U.per = per;
+          for (let q = 0; q < KA.phases; q++){ U.u0 = u00 + q / KA.phases;
+            if (partners.every(V => kaClear(U, V, beat, KA.gap) >= KA.gap)) return true; } }
+        U.per = pers[0]; U.u0 = u00; return false; };
       let ok = fits();
       while (!ok && U.kind === 'path' && U.idx.length > 1 && canDrop(U.idx[U.idx.length - 1])){ shorter(U); ok = fits(); }
       if (!ok){
@@ -41872,7 +41912,7 @@ const GOLF_MAKE = SIZE => {
       /* (Oct 11, movers kept apart as you draw: once a change is made, the movers that reach one another are put on one
          beat and phased so they never meet, as a generated hole's are; nothing is moved or taken away, and where a thing
          still meets one, it is ringed in red, for a hand to put right) */
-      if (now){ const r = keepApart(ED.src, 'time'); ED.meets = r.meets; if (JSON.stringify(r.src.toys) !== JSON.stringify(ED.src.toys)) ED.src.toys = r.src.toys; }
+      if (now){ const r = keepApart(ED.src, 'time', null, ED.pick && ED.pick.type === 'toy' ? ED.pick.i : -1); ED.meets = r.meets; if (JSON.stringify(r.src.toys) !== JSON.stringify(ED.src.toys)) ED.src.toys = r.src.toys; }
       setHole(ED.k, ED.src);
       keepMine();
       const g = GAMES.get(ED.key), H = HOLES[ED.k];

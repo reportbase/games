@@ -2107,22 +2107,26 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - Units (`kaUnits`): a path's riders (a train on one loop at one speed is one unit), a turnstile, a door, a windmill, a
     gate. Each is tabled as its shape at `KA.Q` (256) fractions of its turn (`kaTable`), with its sweep and its fastest part's
     speed. A door has a 7th number and a windmill a 5th: its phase (cleanSrc keeps them).
-  - A train whose riders meet on their own loop loses one, the rest spaced evenly, until they don't.
+  - A train whose riders would meet on their own loop (a figure of eight, an even train) is spaced off those offsets
+    (`kaTrain`), or loses riders.
   - A thing standing still on a sweep (`kaStatics`: bumpers, boulders, fences, curved fences, planters, pipe mouths, charges,
     mines) gives way, or the mover does, the less needed (tiers: loose 1, weave and planters 2, screen 3, guard 4, the course's
     own 5, never dropped; a piece on a track with two riders or more gives way to it); in the editor it is ringed red.
   - **Fixed timing** (Oct 29: "1,2,47", 4 being "fixed timing for the movers"): every period is the nearest of `KA.beat`
-    (1.7 s) × 1, 1½, 2, 3, 4, 6 or 8, so any two come round together within a few beats. The most needed and the longest
+    (1.7 s) × 1, 1½, 2, 3, 4, 6 or 8; movers that reach one another take, of those lengths, one at a simple ratio to the first
+    of them (`KA.ratios`: ¼ to 4; in the editor the one in hand leads), nearest their own first, so a pair comes round together
+    within a few turns and every period is saved exact to the millisecond (a third of a length, 4.5333 s saved as 4.533,
+    drifted into a meeting within an hour). The most needed and the longest
     trains first, each takes the first of 48 phases at which it never comes within `KA.gap` (0.08 cell) of one placed before
     it over that cycle (`kaClear`). Failing that, a train goes a rider shorter; then the unit goes ('gen'), or is marked.
-    Until Oct 29 the beat was searched for on every hole, a stuck thing nudged off a track, a train respaced round its
-    crossings, and the editor had Keep movers apart in its menu.
+    Until Oct 29 the beat was searched for on every hole, a stuck thing nudged off a track,
+    and the editor had Keep movers apart in its menu.
   - Modes: 'gen' (a generated hole: `genSrc` keeps apart each attempt near its band and guesses it again; the hole keeps
     `apart` {dropped, meets, why}), 'course' (at load, after the guards: rider sizes allowed 12% for Expert) and 'time' (the
     editor, on every change: timing only; things that still meet are ringed red, `ED.meets`). The editor's Faster, Slower,
     Harder and Easier step a period to the next fixed one (`kaStep`, `stepMovers`), since a smaller change lands back on it.
-  - Measured (Oct 29): nothing meets on the course or 300 generated holes, 30 s from the start and an hour on; 534 riders on
-    those 300 holes against 635 with the beat searched for, and the levels' guesses 2.43, 2.85, 3.26, 4.24, 4.87 against 2.44,
+  - Measured (Oct 29): nothing meets on the course or 300 generated holes, 30 s from the start and an hour on; 633 riders on
+    those 300 holes against 635 with the beat searched for, and the levels' guesses 2.44, 2.86, 3.33, 4.21, 4.88 against 2.44,
     2.86, 3.32, 4.19, 4.89.
 - **The best line and its ghost** (Oct 11 to 29): the hole in play was recorded, its best line kept and raced as a pale ball,
   watched and shared as `?line=` links. Taken out on Oct 29 ("1,2,47", 1 being the ghost and the line links).
