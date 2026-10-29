@@ -3285,11 +3285,12 @@ try {
         return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
       const mid = await aimAt(0.5, 0.5);
       // (a slow runner may take the first click as only selecting the board, or start the game a frame or two later: the game is
-      // waited for, and the click given once more if none came)
+      // waited for, and the click given again if none came; on CI, in a part of its own, two clicks 3 s apart were not
+      // enough on Oct 29, so four, 5 s apart, as patient as pinball's new game)
       let started = null;
-      for (let k = 0; k < 2 && !started; k++){
+      for (let k = 0; k < 4 && !started; k++){
         await page.mouse.click(mid.x, mid.y);
-        await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return !!g; }, key, { timeout: 3000 }).catch(() => {});
+        await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return !!g; }, key, { timeout: 5000 }).catch(() => {});
         started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
       }
       // wait for the playback to end (a step is well under a second at any level)
