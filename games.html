@@ -52611,7 +52611,7 @@ const TANKMAZE_APP = (() => {
   // sizes in cells (a cell is L.s of the board), speeds in cells a second
   const TR = 0.26, WALL_T = 0.1, WALL_H = 0.5, TV = 1.7, TURN = 3.3, CATCH = 2.06;
   const EXTRA = 0.88;                                  // (the second and third hunters this much slower than the first)
-  const STEP = 1 / 60, WIN = 3, BOOM_T = 1.5, COUNT_T = 1.2, HEAD = 0.8, REC_HZ = 15;
+  const STEP = 1 / 60, BOOM_T = 1.5, COUNT_T = 1.2, HEAD = 0.8, REC_HZ = 15;
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('tankmaze.level', 'Every board has its own mazes, and its hunter is quicker and sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('tankmaze.sound', 'A burst when you are caught, a chime for a round held out.');
@@ -52745,7 +52745,6 @@ const TANKMAZE_APP = (() => {
     if (G.caughtAt == null){
       for (let k = 1; k < G.tanks.length; k++){ const t = G.tanks[k];
         if (Math.hypot(t.x - run.x, t.y - run.y) <= CATCH * TR * s){ G.caughtAt = G.t; G.by = k; run.alive = false; G.booms.push({ t: G.t, x: run.x, y: run.y, k: 0, by: k }); break; } }
-      if (G.caughtAt == null && G.t >= G.hold){ G.over = true; G.winner = 0; }
     } else if (G.t - G.caughtAt >= BOOM_T){ G.over = true; G.winner = G.by; }
   }
 
@@ -52825,13 +52824,15 @@ const TANKMAZE_APP = (() => {
     if (budget <= 0 && !force) return E;
     const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
     let n = 0;
-    while (!G.over){
+    // (a recording is `hold` seconds at most of a runner no one has caught: a board no one plays shows that much and loops; it
+    //  is never the game's end. Oct 29: "DONT exit the maze from a timer.")
+    while (!G.over && G.t < G.hold){
       if (Math.round(G.t / STEP) % every === 0) for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
       stepRound(G, G.tanks.map((_, k) => cpuCmd(G, k)), STEP);
       if (++n % 30 === 0 && !force && performance.now() - t0 > budget) break;
     }
     SOON.spend(t0);
-    if (G.over){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h); Object.assign(E, { T: G.t, hold: G.hold, booms: G.booms, winner: G.winner, done: true, G: null }); }
+    if (G.over || G.t >= G.hold){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h); Object.assign(E, { T: G.t, hold: G.hold, booms: G.booms, winner: G.winner, done: true, G: null }); }
     return E;
   }
   // what a recorded round shows at the page's clock
@@ -52846,8 +52847,7 @@ const TANKMAZE_APP = (() => {
     return { L, tanks, booms: E.booms, t, hold: E.hold, seats, cols };
   }
 
-  /* ─── PLAYING ─── a match: rounds one after another, each its own maze (the board's number and the round), the score kept:
-     the runner's rounds held out, the hunters' rounds caught. */
+  /* ─── PLAYING ─── one game on the board's maze: you run until a hunter catches you; the longest you last is kept. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0;
   const { BEST, saveBest } = BOARD_KIT.best('tankmaze.best');
@@ -52855,18 +52855,12 @@ const TANKMAZE_APP = (() => {
   const isPerson = s => s !== 'cpu';
   function fresh(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), seats = seatsNow();
-    const g = { c, r, idx, lv, seats, n: seats.length, score: [0, 0], round: 0, state: 'ready', wait: 0, last: performance.now() };
+    const g = { c, r, idx, lv, seats, n: seats.length, state: 'ready', wait: 0, last: performance.now() };
     g.G = roundNew(makeMaze(idx, lv, 0, g.n), seats, idx * 31 + lv);
     return g;
   }
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
-  function nextRound(g){
-    g.round++;
-    g.G = roundNew(makeMaze(g.idx, g.lv, g.round, g.n), g.seats, g.idx * 31 + g.lv + g.round * 7919);
-    g.state = 'count'; g.wait = COUNT_T;
-    try { fieldItemsChanged(); } catch {}
-  }
   function begin(g){ if (g.state !== 'ready') return; g.state = 'count'; g.wait = COUNT_T * 0.6; g.last = performance.now(); }
   // the keys: one player, either set drives you; two, Player 1 (the runner) on WASD, Player 2 (a hunter) on the arrows
   const HELD = new Set();
@@ -52895,7 +52889,7 @@ const TANKMAZE_APP = (() => {
   function stepGame(g){
     const tn = performance.now(), dt = Math.min(0.25, (tn - g.last) / 1000); g.last = tn;
     if (ARCADE.paused || g.state === 'ready' || g.state === 'over') return;
-    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + ': stay away from the hunters.', 1200); }
+    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; }
     const G = g.G, booms = G.booms.length;
     for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--)
       stepRound(G, g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k)), STEP);
@@ -52905,25 +52899,19 @@ const TANKMAZE_APP = (() => {
   // (a board's best: by board and level, and the number of tanks when more than two)
   const bestKey = g => g.idx + '@' + g.lv + (g.n > 2 ? '#' + g.n : '');
   const sideNames = g => g.seats[1] === 'p2' ? ['Player 1', 'Player 2'] : ['You', g.n > 2 ? 'the hunters' : 'Red'];
+  /* THE GAME ENDS WHEN YOU ARE CAUGHT, AND ONLY THEN (Oct 29: "tank maze still has a timer to exit maze. DONT exit the maze from a
+     timer. remove it. only the user can exit the game, not you."): until then the runner won a round by holding out the level's
+     time, and the match was the first to three rounds. There are no rounds now, no time that wins and no stars: you stay in the
+     maze as long as you can, and the best a board keeps is the longest you lasted, in seconds. */
   function roundOver(g){
-    const G = g.G, side = G.winner === 0 ? 0 : 1, nm = sideNames(g);
-    g.score[side]++;
-    const tally = nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1];
-    if (g.score[side] >= WIN){
-      g.state = 'over'; g.overAt = performance.now();
-      if (SET.players === 1){
-        const won = side === 0;
-        g.stars = won ? (g.score[1] === 0 ? 3 : g.score[1] === 1 ? 2 : 1) : 0;
-        const k = bestKey(g), was = +(BEST.get(k) || 0);
-        if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
-        SND.play(won ? 'win' : 'lose');
-        say((won ? 'You got away: you won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : 'Caught: ' + nm[1] + ' won the match, ' + tally) + '. Tap to play it again.', 4200);
-      } else { SND.play('win'); say(nm[side] + ' won the match, ' + tally + '. Tap to play it again.', 4200); }
-      return;
-    }
-    SND.play(side === 0 ? 'good' : 'bad');
-    say((side === 0 ? (nm[0] === 'You' ? 'You held out' : nm[0] + ' held out') : 'Caught by ' + namesOf(g.seats)[G.winner]) + ': ' + tally + '.', 1600);
-    nextRound(g);
+    const G = g.G, nm = sideNames(g), secs = Math.round(G.caughtAt * 10) / 10;
+    g.state = 'over'; g.overAt = performance.now(); g.survived = secs;
+    if (SET.players === 1){
+      const k = bestKey(g), was = +(BEST.get(k) || 0), better = secs > was;
+      if (better){ BEST.delete(k); BEST.set(k, secs); saveBest(); }
+      SND.play('lose');
+      say('Caught by ' + namesOf(g.seats)[G.winner] + ' after ' + secs + ' s' + (better && was ? ', your longest yet (was ' + was + ' s)' : was ? ' (your longest is ' + was + ' s)' : '') + '. Tap to play it again.', 4200);
+    } else { SND.play('win'); say(nm[1] + ' caught ' + nm[0] + ' after ' + secs + ' s. Tap to play it again.', 4200); }
   }
   // the human tank a finger means: yours, or with two players the one nearest it
   function seatNear(g, u, v){
@@ -53000,7 +52988,7 @@ const TANKMAZE_APP = (() => {
       { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you run from the computer\'s red tank. Two: Player 1 green runs (WASD), Player 2 blue hunts (the arrows), on one keyboard, or a finger each on a phone.',
         on(){ SET.players = SET.players === 2 ? 1 : 2; ARCADE.save('tankmaze.players', String(SET.players)); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
-      { label: 'Start this board again', title: 'A new match on this board, nothing to nothing.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+      { label: 'Start this board again', title: 'A new game on this board.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
     ]}],
     cellFar: { light: FLOOR, dark: FLOOR2 },
     itemMinPx: 16,
@@ -53012,17 +53000,15 @@ const TANKMAZE_APP = (() => {
     cellItems(c, r){ return itemsOf(viewOf(c, r)); },
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), D = LV[lv - 1], m = D.m + SET.n - 2, best = BEST.get(idx + '@' + lv + (SET.n > 2 ? '#' + SET.n : ''));
-      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + ', ' + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
+      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · longest ' + best + ' s' : '');
       if (!g) return head;
-      const nm = sideNames(g);
-      return head + ' · ' + nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1] + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')';
+      return head + (g.state === 'over' ? ' · caught after ' + g.survived + ' s' : g.state === 'play' ? ' · ' + (SET.players === 2 ? 'Player 2 hunting' : 'keep away') : '');
     },
-    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green and has no gun: keep away from the red one until the time runs out. Drive with the arrows or WASD, or drag toward where it should go.', 6000); }
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green and has no gun: keep away from the red one for as long as you can. Drive with the arrows or WASD, or drag toward where it should go.', 6000); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
     onCellTap(c, r){
@@ -53035,7 +53021,7 @@ const TANKMAZE_APP = (() => {
       if (g.state === 'ready') begin(g);
       return true;
     },
-    onCellHold(c, r){ restart(c, r); say('A new match on this board.', 1400); return true; },
+    onCellHold(c, r){ restart(c, r); say('A new game on this board.', 1400); return true; },
     // a press anywhere on the board and a drag steers the tank toward the finger, for as long as it is down
     keepsPress: true,
     claimsPan(u, v){
@@ -53054,8 +53040,8 @@ const TANKMAZE_APP = (() => {
       tank(0.17, 0.78, '#5a9e3e', -0.6); tank(0.5, 0.82, '#c8463c', 3.1);
     },
     _debug: { LV, makeMaze, roundNew, stepRound, moveTank, cpuCmd, think, flee, aheadOf, recSoon, shownOf, itemsOf, viewOf, liveView, namesOf, colsOf,
-              fresh, gameAt, stepGame, begin, nextRound, personCmd, roundOver, bfs, pathOf, cellOf, centre, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
-              GAMES, RECS, BEST, HELD, SET, WIN, STEP, TR, CATCH, HEAD, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+              fresh, gameAt, stepGame, begin, personCmd, roundOver, bfs, pathOf, cellOf, centre, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              GAMES, RECS, BEST, HELD, SET, STEP, TR, CATCH, HEAD, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();

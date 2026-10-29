@@ -5098,8 +5098,8 @@ try {
   }
   // TANK MAZE, THE CHASE (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal is to
   // evade the oponent tank. when he overtakes you, you lose."): every board its own maze at a level by its ring; the hunter
-  // reaching you takes the round and holding out wins it; the steady runner holds out more often at level 1 than at level 5;
-  // real keys drive and a real drag steers; a round counts and starts the next maze; a match won gives stars and a best; two
+  // reaching you ends the game and nothing else does (no clock); the steady runner lasts longer at level 1 than at level 5;
+  // real keys drive and a real drag steers; a catch ends the game and keeps how long you lasted as the best; two
   // players, Player 2 hunting on the arrows; a board no one plays moves; the drawing, with no shells.
   {
     await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, n: 2 }); });
@@ -5118,21 +5118,21 @@ try {
       D.stepRound(G, [null, null], D.STEP); const caught = G.caughtAt != null && !G.tanks[0].alive && G.booms.length === 1;
       for (let n = 0; n < 120 && !G.over; n++) D.stepRound(G, [null, null], D.STEP);
       out.caught = caught && G.over && G.winner === 1;
-      // nobody near for the round's time: you hold out
-      G = D.roundNew(a, ['you', 'cpu'], 1); while (!G.over) D.stepRound(G, [null, null], D.STEP);
-      out.held = G.winner === 0 && Math.abs(G.t - D.LV[2].hold) < 0.05;
+      // nobody near for three times the level's old time: nothing ends the game but a catch (Oct 29: "DONT exit the maze from a timer.")
+      G = D.roundNew(a, ['you', 'cpu'], 1); G.tanks[1].sp = 0; for (let n = 0; n < Math.round(3 * D.LV[2].hold / D.STEP); n++) D.stepRound(G, [null, null], D.STEP);
+      out.held = !G.over && G.caughtAt == null && G.t > 2 * D.LV[2].hold;
       // the hunters wait a moment at the start, then come
       G = D.roundNew(a, ['you', 'cpu'], 1); const h0 = [G.tanks[1].x, G.tanks[1].y];
       for (let n = 0; n < Math.round(D.HEAD / D.STEP) - 2; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
       const waited = Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]);
       for (let n = 0; n < 120; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
       out.head = waited < 1e-9 && Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]) > 0.05;
-      // the steady runner against the hunter, 12 mazes a level: held out more at level 1 than at level 5
-      out.held = [out.held, ...[1, 5].map(lv => { let held = 0; for (let i = 0; i < 12; i++){ const L = D.makeMaze(300 + i * 17, lv, 0, 2), R = D.roundNew(L, ['you', 'cpu'], i + 3);
-        while (!R.over) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.winner === 0) held++; } return held; })];
-      // three and four tanks: every round ends
-      out.more = [3, 4].map(n => { let ended = 0; for (let i = 0; i < 4; i++){ const L = D.makeMaze(400 + i * 13, 3, 0, n), R = D.roundNew(L, ['you'].concat(Array(n - 1).fill('cpu')), i + 7);
-        while (!R.over && R.t < 60) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.over) ended++; } return ended; });
+      // the steady runner against the hunter, 12 mazes a level, 40 s at most: it lasts longer at level 1 than at level 5
+      out.held = [out.held, ...[1, 5].map(lv => { let lasted = 0; for (let i = 0; i < 12; i++){ const L = D.makeMaze(300 + i * 17, lv, 0, 2), R = D.roundNew(L, ['you', 'cpu'], i + 3);
+        while (!R.over && R.t < 40) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); lasted += R.caughtAt != null ? R.caughtAt : 40; } return lasted / 12; })];
+      // three and four tanks: a round ends only with a catch, never with the runner winning by time
+      out.more = [3, 4].map(n => { let ok = 0; for (let i = 0; i < 4; i++){ const L = D.makeMaze(400 + i * 13, 3, 0, n), R = D.roundNew(L, ['you'].concat(Array(n - 1).fill('cpu')), i + 7);
+        while (!R.over && R.t < 60) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (!R.over || R.winner >= 1) ok++; } return ok; });
       return out; });
     // real input on the framed board
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
@@ -5142,7 +5142,7 @@ try {
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
       return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
     const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); if (!g) return null; const t = g.G.tanks[0];
-      return { state: g.state, x: t.x, y: t.y, h: t.h, score: g.score.slice(), round: g.round, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
+      return { state: g.state, x: t.x, y: t.y, h: t.h, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
     const live = {};
     if (fc){
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
@@ -5160,14 +5160,14 @@ try {
       for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.abs(Math.atan2(Math.sin(s.h - want), Math.cos(s.h - want))) < 0.3) break; await page.waitForTimeout(250); }
       await page.mouse.up();
       live.steered = await gs(); live.want = want;
-      // a round held out: counted, and the next round on a maze of its own; then the match, with stars and a best
+      // long past the level's old time, uncaught: still playing (the game is never ended by a clock); then caught: over, with how long
+      // it lasted kept as the board's best
       live.match = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r), out = {};
-        const m0 = g.G.L.E.join() + g.G.L.S.join();
-        g.score = [0, 0]; g.round = 0;
-        g.G.t = g.G.hold; g.state = 'play'; g.last = performance.now() - 20; D.stepGame(g);
-        out.after = { score: g.score.join(), round: g.round, state: g.state, newMaze: g.G.L.E.join() + g.G.L.S.join() !== m0 };
-        g.score = [2, 0]; g.state = 'play'; g.G.t = g.G.hold; g.last = performance.now() - 20; D.stepGame(g);
-        out.end = { state: g.state, stars: g.stars, best: D.BEST.get(g.idx + '@' + g.lv) };
+        g.state = 'play'; g.G.t = 5 * g.G.hold; g.last = performance.now() - 20; D.stepGame(g);
+        out.after = { state: g.state, over: g.G.over };
+        Object.assign(g.G.tanks[1], { x: g.G.tanks[0].x + 0.5 * D.TR * g.G.L.s, y: g.G.tanks[0].y });
+        for (let i = 0; i < 200 && g.state !== 'over'; i++){ g.last = performance.now() - 50; D.stepGame(g); }
+        out.end = { state: g.state, survived: g.survived, caughtAt: g.G.caughtAt, best: D.BEST.get(g.idx + '@' + g.lv) };
         return out; }, fc);
       // two players: Player 2 hunts on the arrows, Player 1 runs on WASD
       live.two = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.SET.players = 2; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
@@ -5190,12 +5190,12 @@ try {
       && r.held[0] && r.held[1] > r.held[2] && r.more.join() === '4,4'
       && live.drove && Math.hypot(live.drove.x - live.ready.x, live.drove.y - live.ready.y) > 0.02 && live.ready.state === 'ready'
       && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
-      && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.newMaze
-      && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
+      && live.match && live.match.after.state === 'play' && !live.match.after.over
+      && live.match.end.state === 'over' && live.match.end.survived > 50 && live.match.end.best === live.match.end.survived
       && live.two && live.two.seats === 'you,p2' && live.two.moved2 > 0.02 && live.two.moved1 < 0.005
       && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.yaws && shown.shells === 0;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side for 2/3/4 tanks; a hunter beside you caught you, nobody near you held out; the steady runner held out ${r.held[1]} of 12 at level 1 and ${r.held[2]} at level 5; a real key drove, a real drag steered; a round held out counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; Player 2 hunted on the arrows; a board no one plays moved)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side for 2/3/4 tanks; a hunter beside you caught you, nobody near you and nothing ended it; the steady runner lasted ${r.held[1].toFixed(1)} s at level 1 and ${r.held[2].toFixed(1)} s at level 5 (40 s at most); a real key drove, a real drag steered; caught after ${live.match && live.match.end.survived} s, kept as the best; Player 2 hunted on the arrows; a board no one plays moved)`);
   }
   // TRICK SHOTS (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): wander's engine
   // gives the textbook results (the thresholds wander's own smoke test holds it to), every challenge's reference shot solves it
