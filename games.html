@@ -58181,14 +58181,17 @@ const AIRHOCKEY_APP = (() => {
   ];
   const SPEEDS = { slow: 0.8, normal: 1, fast: 1.25 }, MALLETS = { small: 0.034, normal: 0.042, large: 0.052 };
   const SET = (() => {
-    const d = { theme: 'board', target: 7, players: 1, speed: 'normal', mallet: 'normal', trail: true, fx: true, sound: true };
-    try { const s = JSON.parse(localStorage.getItem('airhockey.settings') || '{}');
+    /* THE DEFAULTS (Oct 29: "defaults: puck speed slow.   trail - on.   shake & flash - on"): the puck slow, its trail and the
+       shake and flash on. Settings saved before (no `v`, or one under 2) keep everything but those three, which start at the new
+       defaults once; chosen again after, they are kept. */
+    const d = { v: 2, theme: 'board', target: 7, players: 1, speed: 'slow', mallet: 'normal', trail: true, fx: true, sound: true };
+    try { const s = JSON.parse(localStorage.getItem('airhockey.settings') || '{}'), now = s.v >= 2;
       if (s.theme === 'board' || THEMES.some(t => t.id === s.theme)) d.theme = s.theme;
       if ([5, 7, 11].includes(s.target)) d.target = s.target;
       if (s.players === 1 || s.players === 2) d.players = s.players;
-      if (s.speed in SPEEDS) d.speed = s.speed;
+      if (now && s.speed in SPEEDS) d.speed = s.speed;
       if (s.mallet in MALLETS) d.mallet = s.mallet;
-      for (const k of ['trail', 'fx', 'sound']) if (typeof s[k] === 'boolean') d[k] = s[k];
+      for (const k of now ? ['trail', 'fx', 'sound'] : ['sound']) if (typeof s[k] === 'boolean') d[k] = s[k];
     } catch {}
     return d;
   })();
@@ -58215,6 +58218,23 @@ const AIRHOCKEY_APP = (() => {
   const emit = (G, kind, a) => { if (G.ev) try { G.ev(kind, a, G); } catch {} };
   // a mallet's own half, its centre kept off the rails, the ends and the middle line
   function bounds(k, M){ const r = M.r; return k === 0 ? [r, W - r, 0.5 + r, 1 - r] : [r, W - r, r, 0.5 - r]; }
+  /* ROUNDED CORNERS (Oct 29: "balls get stuck in the corners in air hockey"): the table's four corners were square, so a puck
+     pushed into one met both rails at once, its speed into each taken away, and sat there dead (the computer's matches had it in
+     a corner 6% of the time, up to 7 s at a go; pressed there by a mallet and let go, it never moved again until the 6 s nudge).
+     Real tables round them. Each corner is an arc of radius CR (`cornerAt`: its centre, for a point in the corner's square), the
+     puck kept within CR − PR of it and bounced off it as off a rail, so a puck driven in comes out along the other rail; a mallet
+     is kept off it too (`inCorner`), and a puck pinned there loses only its speed into the arc, sliding out along it. A puck still
+     in a corner for `CORNER_T` is sent out toward the middle (not after twice `STILL_T` as anywhere else). */
+  const CR = 0.085, CORNER_T = 1;
+  const cornerAt = (x, y) => { const cx = x < CR ? CR : x > W - CR ? W - CR : null, cy = y < CR ? CR : y > 1 - CR ? 1 - CR : null; return cx != null && cy != null ? [cx, cy] : null; };
+  // keep a circle of radius r at (o.x, o.y) inside the corner's arc; returns the outward normal if it was moved
+  function inCorner(o, r){
+    const C = cornerAt(o.x, o.y); if (!C) return null;
+    const dx = o.x - C[0], dy = o.y - C[1], d = Math.hypot(dx, dy), lim = CR - r;
+    if (d <= lim || d < 1e-9) return null;
+    const nx = dx / d, ny = dy / d; o.x = C[0] + nx * lim; o.y = C[1] + ny * lim;
+    return [nx, ny];
+  }
   // where a puck now at (x, y) moving (vx, vy) crosses y = yl, the rails folded in (no drag): what a player guesses
   function crossing(x, y, vx, vy, yl){
     const t = (yl - y) / vy; if (!(t > 0)) return { x, t: 0 };
@@ -58279,6 +58299,7 @@ const AIRHOCKEY_APP = (() => {
         M.x += M.vx * DT; M.y += M.vy * DT;
         if (M.x < B[0]){ M.x = B[0]; M.vx = Math.max(0, M.vx); } else if (M.x > B[1]){ M.x = B[1]; M.vx = Math.min(0, M.vx); }
         if (M.y < B[2]){ M.y = B[2]; M.vy = Math.max(0, M.vy); } else if (M.y > B[3]){ M.y = B[3]; M.vy = Math.min(0, M.vy); }
+        const cn = inCorner(M, M.r); if (cn){ const vn = M.vx * cn[0] + M.vy * cn[1]; if (vn > 0){ M.vx -= vn * cn[0]; M.vy -= vn * cn[1]; } }
       }
       G.t += DT;
       if (G.state === 'goal'){ if (G.t >= G.goalAt) faceoff(G); continue; }
@@ -58299,6 +58320,8 @@ const AIRHOCKEY_APP = (() => {
       if (p.y > 1 - PR){ p.y = 2 * (1 - PR) - p.y; p.vy = -Math.abs(p.vy) * E_RAIL; rail(G); }
       else if (p.y < PR){ p.y = 2 * PR - p.y; p.vy = Math.abs(p.vy) * E_RAIL; rail(G); }
     }
+    const cn = inCorner(p, PR);
+    if (cn){ const vn = p.vx * cn[0] + p.vy * cn[1]; if (vn > 0){ p.vx -= (1 + E_RAIL) * vn * cn[0]; p.vy -= (1 + E_RAIL) * vn * cn[1]; rail(G); } }
     for (let k = 0; k < 2; k++) hitMallet(G, k);
     if (p.y > 1 + PR){ goal(G, 1); return G.state === 'over'; }
     if (p.y < -PR){ goal(G, 0); return G.state === 'over'; }
@@ -58307,7 +58330,7 @@ const AIRHOCKEY_APP = (() => {
     if (G.stillX == null || Math.hypot(p.x - G.stillX, p.y - G.stillY) > 0.012){ G.stillX = p.x; G.stillY = p.y; G.stillT = 0; }
     else { G.stillT += dt;
       if (Math.abs(p.y - 0.5) < 0.012 && G.stillT > STILL_T){ G.stillT = 0; p.vy = (G.R() < 0.5 ? -1 : 1) * 0.25; p.vx = (G.R() - 0.5) * 0.2; }
-      else if (G.stillT > 2 * STILL_T){ G.stillT = 0; const ex = W / 2 - p.x, ey = 0.5 - p.y, e = Math.hypot(ex, ey) || 1; p.vx = ex / e * 0.35; p.vy = ey / e * 0.35;
+      else if (G.stillT > 2 * STILL_T || (G.stillT > CORNER_T && cornerAt(p.x, p.y))){ G.stillT = 0; const ex = W / 2 - p.x, ey = 0.5 - p.y, e = Math.hypot(ex, ey) || 1; p.vx = ex / e * 0.35; p.vy = ey / e * 0.35;
         for (const M of G.mal){ if (Math.hypot(M.x - p.x, M.y - p.y) < M.r + PR + 0.02){ M.mode = 'back'; M.backTo = G.t + 0.8; M.T = [W / 2, M === G.mal[0] ? 0.9 : 0.1]; } } } }
     return false;
   }
@@ -58327,7 +58350,11 @@ const AIRHOCKEY_APP = (() => {
     }
     // (pinned against a rail: the puck stays on the table and the mallet gives way, so nothing passes through)
     const px = clamp(p.x, PR, W - PR), py = Math.abs(p.x - W / 2) < GOAL / 2 ? p.y : clamp(p.y, PR, 1 - PR);
-    if (px !== p.x || py !== p.y){ if (px !== p.x) p.vx = 0; if (py !== p.y) p.vy = 0; p.x = px; p.y = py; const ex = p.x - M.x, ey = p.y - M.y, e = Math.hypot(ex, ey) || 1;
+    let moved = false;
+    if (px !== p.x || py !== p.y){ if (px !== p.x) p.vx = 0; if (py !== p.y) p.vy = 0; p.x = px; p.y = py; moved = true; }
+    const cn = inCorner(p, PR);
+    if (cn){ const vn = p.vx * cn[0] + p.vy * cn[1]; if (vn > 0){ p.vx -= vn * cn[0]; p.vy -= vn * cn[1]; } moved = true; }   // (only its speed into the arc: it slides along it)
+    if (moved){ const ex = p.x - M.x, ey = p.y - M.y, e = Math.hypot(ex, ey) || 1;
       if (e < R){ M.x = p.x - ex / e * R; M.y = p.y - ey / e * R; M.vx = 0; M.vy = 0; } }
   }
   function rail(G){ const p = G.puck; G.fx.push({ t: G.t, kind: 'rail', x: p.x, y: p.y }); emit(G, 'rail', { v: Math.hypot(p.vx, p.vy) }); }
@@ -58477,6 +58504,11 @@ const AIRHOCKEY_APP = (() => {
       for (const y of [0, 1]){ c.moveTo(0, y); c.lineTo(W / 2 - GOAL / 2, y); c.moveTo(W / 2 + GOAL / 2, y); c.lineTo(W, y); }
       c.stroke();
       c.fillStyle = '#0d1016'; for (const y of [0, 1]) c.fillRect(W / 2 - GOAL / 2, y === 0 ? 0 : 1 - 0.014, GOAL, 0.014);
+      // (the rounded corners: the rail filled out to its arc, and the arc stroked as the rail)
+      c.fillStyle = col;
+      for (const [x0, y0, cx, cy, a0] of [[0, 0, CR, CR, Math.PI], [W, 0, W - CR, CR, 1.5 * Math.PI], [W, 1, W - CR, 1 - CR, 0], [0, 1, CR, 1 - CR, 0.5 * Math.PI]]){
+        c.beginPath(); c.moveTo(x0, y0); c.lineTo(cx + CR * Math.cos(a0), cy + CR * Math.sin(a0)); c.arc(cx, cy, CR, a0, a0 + Math.PI / 2); c.closePath(); c.fill();
+        c.lineWidth = w; c.strokeStyle = col; c.beginPath(); c.arc(cx, cy, CR - w * 0.0, a0, a0 + Math.PI / 2); c.stroke(); }
     };
     if (th === 'classic'){
       const g = c.createLinearGradient(0, 0, 0, 1); g.addColorStop(0, '#eef7ff'); g.addColorStop(1, '#dcecfb'); c.fillStyle = g; c.fillRect(0, 0, W, 1);
@@ -58691,7 +58723,7 @@ const AIRHOCKEY_APP = (() => {
     },
     _debug: { newMatch, tick, think, crossing, hitMallet, goal, faceoff, recOf, recWork, recView, recSoon, parOf, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, themeOf,
               gameAt, fresh, begin, stepGame, over, pressAt, setting, tilesOf, LV, STEADY, SET, GAMES, RECS, BEST, HAND, KEYS, OWN, THEMES, LOOK, ORDER, MALLETS,
-              consts: { W, PR, GOAL, VMAX, TICK, SUB, REEL_T, REC_HZ }, levelOf: (c, r) => levelAt(boardIdx(c, r)), bounds,
+              consts: { W, PR, GOAL, VMAX, TICK, SUB, REEL_T, REC_HZ, CR }, cornerAt, inCorner, levelOf: (c, r) => levelAt(boardIdx(c, r)), bounds,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   return app;

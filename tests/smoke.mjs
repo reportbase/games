@@ -7122,6 +7122,31 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ o, mid, flamed, ones, hyp, won, best, next, lost, size, moved })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bejeweled (every kind the pearl; levels ${o.levels.join('/')}; pars ${o.pars.map(p => p.join(' ')).join(', ')}; a flame, a star and a hypercube made, a flame taking ${o.flameTook}; a real drag lit ${mid && mid.lit} and made a flame; real clicks swapped a hypercube, ${hyp.col1} of a colour gone; a goal made ${won.stars}★, a real click on to ${next.at}; out of moves ${lost.state}; the real Size tile ${size.join('/')}; a board no one plays moving)`);
   }
+  // AIR HOCKEY'S ROUNDED CORNERS (Oct 29: "balls get stuck in the corners in air hockey"): a puck pressed into a corner by a mallet
+  // slides out along the arc, one sent along a rail comes round the corner, and over two computer matches the puck is hardly in one
+  current = 'air hockey corners';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'airhockey')); await new Promise(ok => setTimeout(ok, 1500)); });
+    const o = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      let G = D.newMatch(5, 1, { seed: 1 }); const p = G.puck, M = G.mal[0];
+      Object.assign(p, { x: 0.03, y: 0.97, vx: 0, vy: 0 }); M.x = 0.1; M.y = 0.9; M.ai = null;
+      let t = 0; for (; t < 60 * 8; t++){ M.tx = 0; M.ty = 1; D.tick(G); if (p.x > 0.12 || p.y < 0.88) break; }
+      out.pressed = +(t / 60).toFixed(2);
+      G = D.newMatch(5, 1, { seed: 2 }); const q = G.puck; G.mal.forEach((m, k) => { m.ai = null; m.tx = null; m.dx = 0; m.dy = 0; m.x = 0.31; m.y = k ? 0.2 : 0.8; });
+      Object.assign(q, { x: 0.024, y: 0.75, vx: 0, vy: 0.6 }); for (let k = 0; k < 120; k++) D.tick(G);
+      out.round = q.x > 0.15;
+      let corner = 0, total = 0, longest = 0, run = 0;
+      for (let s = 0; s < 2; s++){ G = D.newMatch(40 + s, 3, { ai0: D.STEADY, seed: s });
+        for (let k = 0; k < 60 * 150 && G.state !== 'over'; k++){ D.tick(G); const b = G.puck; total++;
+          if (G.state === 'play' && D.cornerAt(b.x, b.y)){ corner++; run++; longest = Math.max(longest, run); } else run = 0; } }
+      out.share = +(corner / total).toFixed(4); out.longest = +(longest / 60).toFixed(2);
+      return out;
+    });
+    if (!(o.pressed < 2 && o.round && o.share < 0.03 && o.longest < 1.5)) failures.push(`[${current}] ${JSON.stringify(o)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} air hockey corners (a pressed puck out in ${o.pressed} s, one along the rail round the corner, the puck in a corner ${o.share} of two matches, ${o.longest} s at most)`);
+  }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
   // every press before the field), a game under way, the view zoomed by the real wheel, a real touch double tap on the board

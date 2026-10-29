@@ -619,6 +619,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (localStorage `airhockey.best`).
   - **The row** (`tilesOf`, `setting`, `ORDER`, localStorage `airhockey.settings`): New match, Theme, Goals (5, 7, 11), Players,
     Puck speed, Your mallet (Small, Normal, Large: `MALLETS` 0.034, 0.042, 0.052), Trail, Shake & flash, Sound.
+    Defaults (Oct 29: "defaults: puck speed slow.   trail - on.   shake & flash - on"): the puck Slow, Trail and Shake & flash on;
+    settings saved before (`v` under 2) take those three afresh once.
+  - **Rounded corners** (Oct 29: "balls get stuck in the corners in air hockey"): the corners were square, so a puck pushed into
+    one met both rails, lost its speed into each and sat dead (in a corner 6% of the computer's matches, up to 7 s; pressed by a
+    mallet and let go, it stayed till the 6 s nudge). Each is now an arc of radius `CR` (0.085; `cornerAt`, `inCorner`), painted
+    as rail: the puck bounces off it as off a rail, a mallet is kept off it, a pinned puck loses only its speed into the arc and
+    slides out along it, and a puck still in a corner for `CORNER_T` (1 s) is sent toward the middle. Measured: in a corner under
+    1% of the time, 0.2 s at most; a pressed puck out in 0.45 s. The smoke test (part 7, "air hockey corners") checks all three.
   - The smoke test checks the levels by ring, a swing passed into the puck, the rail and a goal only in the mouth, the puck never
     inside a mallet, matches ending at levels 1, 3 and 5 with the steady player's share falling, a recording's par, the four themes
     painted, and real input: a click starting, a real drag putting the mallet under the finger across and along, the real arrow, a
