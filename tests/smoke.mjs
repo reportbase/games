@@ -5420,7 +5420,7 @@ try {
   // computer rounds end; a real key drives, a real click fires, a real drag steers; a round won counts and a match won gives
   // stars; a board no one plays moves, its movers at the recording's clock; the drawing is the hole and the tanks.
   {
-    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'golftanks'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, aim: true }); });
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'golftanks'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, aim: true, mode: 'match' }); });
     await page.waitForTimeout(1500);
     current = 'golftanks';
     const before = failures.length;
@@ -7205,6 +7205,44 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!(o.counts.join() === '2,4,6' && o.wave === 5 && o.shield && o.triple === 3 && o.arcade < 0.03 && !o.ufo && o.vector && look === 'vector'))
       failures.push(`[${current}] ${JSON.stringify({ o, look })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} asteroids settings (rocks ${o.counts}, start at wave ${o.wave}, the shield, ${o.triple} shots, arcade drift stopping, no saucer, the outlines; the real Look tile to ${look})`);
+  }
+  // GOLF TANKS LIKE ASTEROIDS, WITH TANKS (Oct 29: "golf tanks  should be like asteroids.      instead of asteroids, use takes."): Roam
+  // is the default, every board's hole holding its enemy tanks (one side, and none of them yours); a real click starts the board; the
+  // real W drives your tank off the right edge on to the board beside, which becomes the live one with what you destroyed carried;
+  // every enemy there put out clears it for good (and its view, played or not, is its hole empty); your tank put out comes back
+  // (endless), and the next board's tanks wait where they stand when no one plays it
+  current = 'golf tanks roam';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { const A = window.FIELD_APPS.find(a => a.id === 'golftanks'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, mode: 'roam', endless: true }); A._debug.GAMES.clear();
+      await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; });
+    await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(1500);
+    const live = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g ? { at: [f.c, f.r], roam: g.roam, n: g.G.tanks.length, team: g.G.team, kills: g.kills, lost: g.lost, state: g.state } : null; });
+    const o = { start: await live() };
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r), K = D.kit(), t = g.G.tanks[0];
+      Object.assign(t, { x: K.WD - K.RT - D.TR * K.CW - 0.05 * K.CW, y: 0.5, h: 1e-6, safe: g.G.t + 30 }); g.kills = 3; });
+    await page.keyboard.down('w');
+    for (let w = 0; w < 40; w++){ await page.waitForTimeout(150); const L = await live(); if (L && o.start && L.at[0] !== o.start.at[0]) break; }
+    await page.keyboard.up('w'); await page.waitForTimeout(800);
+    o.hop = await live();
+    const r = await page.evaluate(() => { const D = window.getFieldApp()._debug, A = window.getFieldApp(), f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r), G = g.G, out = {};
+      out.waitView = (() => { const K = D.kit(); K.holeAt(K.boardIdx(f.c + 5, f.r + 2)); const V = D.viewOf(f.c + 5, f.r + 2); return V ? [V.tanks.length, V.cols.every(c => c === V.cols[0])] : null; })();
+      G.tanks.forEach((t, k) => { if (k){ t.alive = false; t.deadAt = G.t - 2; } });
+      D.roamStep(g, G.booms.length); out.cleared = [g.cleared, D.isCleared(f.c, f.r)];
+      G.tanks[0].safe = null; G.tanks[0].alive = false; G.tanks[0].deadAt = G.t - 2; D.roamStep(g, G.booms.length); out.back = [G.tanks[0].alive, g.lost, g.state];
+      out.title = A.cellTitle(f.c, f.r);
+      D.GAMES.delete(f.c + '_' + f.r); const was = D.LIVE; D.LIVE = null; const V = D.viewOf(f.c, f.r); out.empty = V ? V.tanks.length : null;
+      const g2 = D.gameAt(f.c, f.r); out.again = g2.G.tanks.length; D.LIVE = was;
+      D.CLEARED.delete(D.clearKey(f.c, f.r)); try { localStorage.removeItem('golftanks.cleared'); } catch {}
+      return out; });
+    Object.assign(o, r);
+    const ok = o.start && o.start.roam && o.start.n >= 2 && o.start.team[0] === 0 && o.start.team.slice(1).every(x => x === 1)
+      && o.hop && o.hop.at[0] !== o.start.at[0] && o.hop.kills === 3 && o.hop.state === 'play'
+      && o.cleared[0] && o.cleared[1] && o.back[0] && o.back[1] >= 1 && o.back[2] === 'play' && /cleared/.test(o.title) && o.empty === 0 && o.again === 1
+      && o.waitView && o.waitView[0] >= 1 && o.waitView[1];
+    if (!ok) failures.push(`[${current}] ${JSON.stringify(o)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks roam (a real click started ${o.start && o.start.n - 1} enemy tanks; the real W drove off the edge to board ${o.hop && o.hop.at.join('·')} with ${o.hop && o.hop.kills} destroyed; its enemies out cleared it, empty when left and played again; a tank lost came back; a board beside shows ${o.waitView && o.waitView[0]} waiting)`);
   }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
