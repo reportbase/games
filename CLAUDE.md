@@ -2326,7 +2326,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     with only one tap."): a tap on a board you are not on did nothing but select it in place (Sep 23: the view stays) and join it
     to the strip, and in an app with `firstTapPlays` (mini golf) tee off on it. Now it does nothing at all (`handleGroundTap`
     returns after the framed-board guard; `selectCellInPlace` went). Only a double tap goes to another board, selecting it and
-    framing it as the 0 key does, with Tab, Enter, the game index and a strip tile; a tap on the board you are on is the game's
+    framing it as the 0 key does (Oct 29: "double clicking a board does not center the board properly": the heading is set before the framing, which is worked out for the heading it arrives at; after, a board double-tapped at an angle ended 215 px off the middle), with Tab, Enter, the game index and a strip tile; a tap on the board you are on is the game's
     as ever. So every note above that says a tap on another board selects it, or tees off on it, or moves the editor there, now
     means a double tap, and then a tap. The smoke test's "first tap tees off" checks a single click leaving the view and the hole
     alone, a double click bringing it in, and the first click then teeing off.
@@ -2388,14 +2388,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Boards coloured by difficulty** (Oct 29: "boards should be colored by difficulty. so when I'm panning board of an application, I can
   know how difficult the board is by color. the background of the board should show the difficulty of the board, so when I'm panning
   the horizen, I can pan towards colors that match my desired difficulty."): the field paints a board's level, green, blue, yellow,
-  orange, red for 1 to 5 (`DIFF_COL`), in every game that has levels (48 of 56 apps: not chess, Go, 2048, Queens, Air raid, flash
+  orange, red for 1 to 5 (`DIFF_COL`, light pastels since "the difficulty colors are to strong, make them lighter shades"), in every game that has levels (48 of 56 apps: not chess, Go, 2048, Queens, Air raid, flash
   cards, Levels, the gallery). A level is a function of the ring (the larger of the board's two wrapped distances from the corner),
   so the field asks the app (`difficultyAt(c, r)`, mini golf's; else `_debug.levelOf(c, r)`; else `_debug.levelAt(boardIdx)`: the tilt
   maze, pinball, Sokoban, the game lab; a 'easy' / 'normal' / 'hard' game counts as 1, 3, 5) along row 0 and finds where it steps
   (`diffRefresh`: 27 rings probed, the steps found by halving, redone when the setting changes, every 20 frames at most), so
   `window.__diff` has `thr` (the rings at which the level steps) and `val` (the levels). Near, each board has a mat the colour of its
-  level (85% toward it from the ground's) under the whole cell, showing in the gutters, and where the app paints squares (`cellGrid`)
-  they are mixed `DIFF_K` (0.3) toward it; a game that hangs a picture (the photo tier) has the mat alone. Far, the fabric's shader
+  level (`DIFF_GAP` 50% toward it from the ground's) under the whole cell, showing in the gutters, and where the app paints squares (`cellGrid`)
+  they are mixed `DIFF_K` (0.18) toward it; a game that hangs a picture (the photo tier) has the mat alone. Far, the fabric's shader
   does the same from the ring of the cell it is over (`uSnapCell`, `uDiffThr`, `uDiffCol`, `vCell`), the gutter fully and the board
   `DIFF_K`, so a board does not change colour at the handoff. The smoke test (part 7) checks the steps for Lights Out and mini golf,
   none for chess, and the fabric given them.
