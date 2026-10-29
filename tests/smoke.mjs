@@ -5328,7 +5328,9 @@ try {
     }
     const shown = await page.evaluate(async () => { const D = window.getFieldApp()._debug, idx = 3, R = D.recSoon(idx, true), [c, r] = D.cellOfIdx(idx); D.GAMES.delete(c + '_' + r);
       const a = D.shownOf(R); let moved = 0, sawCue = !!a.cue, sawPlay = !a.cue;
-      for (let k = 0; k < 16; k++){ await new Promise(ok => setTimeout(ok, 300)); const b = D.shownOf(R); sawCue = sawCue || !!b.cue; sawPlay = sawPlay || !b.cue;
+      // (looked at for a whole loop and a little more, from wherever the board's own phase begins it: 4.8 s could fall wholly in the
+      //  shot's flight and miss the cue, which failed on CI, Oct 29)
+      for (let k = 0; k < Math.ceil((R.cycle + 1) / 0.3); k++){ await new Promise(ok => setTimeout(ok, 300)); const b = D.shownOf(R); sawCue = sawCue || !!b.cue; sawPlay = sawPlay || !b.cue;
         moved += a.pos.reduce((s, p, i) => s + (p && b.pos[i] ? Math.hypot(p[0] - b.pos[i][0], p[1] - b.pos[i][1]) : 0), 0); }
       const it = D.itemsOf({ B: R.S.B, pos: R.S.B.map(b => [b.x, b.z, 0]), ch: R.S.ch, sim: R.s, hz: R.s.hz, see: 3, paths: 'all', cue: { ang: 0.3, power: 14, elev: 0, tip: { x: 0, y: 0 }, chalk: true } });
       const kinds = k => it.filter(i => i.kind === k).length;
