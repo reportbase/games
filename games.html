@@ -15606,7 +15606,7 @@ function buildInstances(){
     if (!B) continue;
     let lo = Math.max(-R, Math.ceil (Math.max(A[0], B[0])));
     let hi = Math.min( R, Math.floor(Math.min(A[1], B[1])));
-    /* (and inFOV's own limits, as an interval too, Oct 27: "mini-golf and golf tanks are to slow to be usable": the band
+    /* (and inFOV's own limits, as an interval too, Oct 27: "mini-golf and golf tanks are to slow to be usable" (golf tanks since taken out, Oct 29): the band
         above is the rows' reach, out to the horizon, and the walk still went through every board in it to keep the few the
         view holds. 1.5 million boards a frame to keep 43 in mini golf (its boards are long, so more rows fit), 0.94 million in
         checkers: the field's slowest loop, in every game. Each of inFOV's tests is linear in fwdF and lat, so in ox; the
@@ -18451,7 +18451,7 @@ const BOARD_KIT = (() => {
      `left()` is what is left of this window (a new one starts once `every` has passed), `spend(t0)` takes off the time since
      t0, and `take(fn)` runs fn(left) if any is left and takes off what it took (undefined if none was).
      It fills as time passes, not window by window (Oct 28: "1,3", the second being speed on phones): a slice finishes the step
-     it is on, and a step of golf tanks' two computer tanks thinking ran 50–70 ms on a CPU slowed four times. A window refilled
+     it is on, and a step of golf tanks' two computer tanks thinking (that game since taken out) ran 50–70 ms on a CPU slowed four times. A window refilled
      whole every `every` ms forgave that, and with frames of 140 ms every frame got a fresh window: zoomed out, golf tanks spent
      half of every frame on its boards. Now what is left grows by ms/every for each ms that passes, up to `ms`, and a slice that
      ran over leaves it below nothing until time has paid it back, so the share is ms in every `every` whatever the frames do. */
@@ -39354,7 +39354,7 @@ const GOLF_MAKE = SIZE => {
        box of level grass, TEE_BOX across, TEE_RISE above the highest ground under it (the ground there without it: teeTop),
        its sides falling to the ground round it over TEE_EDGE. So the first putt is played from up on it and runs down off
        its front, the way a tee shot is played from a raised tee, and on a slope the box is still level to stand on. */
-    if (H.tee && !TEE_BUSY && !H.bare){                       // (a bare copy has none: the tank battle's, Oct 22)
+    if (H.tee && !TEE_BUSY){
       const C = teeAt(H), q = Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) - TEE_BOX / 2;
       if (q < TEE_EDGE){ const top = teeTop(H); h += (top - h) * (q <= 0 ? 1 : 1 - sm01(q / TEE_EDGE)); }
     }
@@ -39389,7 +39389,7 @@ const GOLF_MAKE = SIZE => {
     finally { TEE_BUSY = false; }
     return (H._teeTop = m + TEE_RISE);
   }
-  const onTeeBox = (H, x, y) => { if (!H.tee || H.bare) return false; const C = teeAt(H); return Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) <= TEE_BOX / 2; };
+  const onTeeBox = (H, x, y) => { if (!H.tee) return false; const C = teeAt(H); return Math.max(Math.abs(x - C.x), Math.abs(y - C.y)) <= TEE_BOX / 2; };
   let LAKE_BUSY = false;
   /* a lake's water level: a little under the lowest ground round its rim on the board (a stream's ends run on under the
      rail), worked out once for all a hole's lakes with the lakes left out, and kept on each lake's entry. Lakes that
@@ -39461,7 +39461,6 @@ const GOLF_MAKE = SIZE => {
     const h = hOf(H, x, y); M.set(k, h); return h;
   }
   function hOf(H, x, y){
-    if (H.bare) return Math.max(0.004, rawH(H, x, y));        // (no cup to flatten the ground round: a bare copy, Oct 22)
     const h = rawH(H, x, y), d = Math.hypot(x - H.cup.x, y - H.cup.y), R1 = 0.05, R2 = 0.11;
     if (d >= R2) return Math.max(0.004, h);
     const hc = cupLevel(H);
@@ -40855,7 +40854,7 @@ const GOLF_MAKE = SIZE => {
   }
   /* (opt, Oct 22: the hole of board (c, r) drawn for another game, the tank battle on the golf holes: { hk, t, now, blown,
       kicked }. Its hole, its movers at the clock t, the mines gone off in `blown`, with no golf game's ball, ghost or aim.) */
-  function cellItems(c, r, bp, opt){
+  function cellItems(c, r, bp){
     const hOf = hOfDrawn;                              // (the pieces' heights, kept on the hole: Oct 14)
     /* HOW MUCH TO DRAW, by the board's size on screen in pixels (Oct 9, "is getting heavy"). Measured on a field of the
        new holes: some 2.7 million triangles a frame, from rails of bricks and stones (576 triangles a half-cell piece,
@@ -40870,26 +40869,26 @@ const GOLF_MAKE = SIZE => {
        later: "still not very good. restore full drawing functionaility. no special handeling. only thing is dont draw
        non-visible boards and no animation when panning or resizing."): every board in view has all its pieces, whatever
        its size (the field still asks for none under itemMinPx, as for every app). */
-    const g = opt ? null : GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
+    const g = GAMES.get(gkey(c, r)), live = g && LIVE && LIVE.key === gkey(c, r);
     if (live){
       const now = performance.now(), dt = g.last ? Math.min(0.05, (now - g.last) / 1000) : 0;
       g.last = now; step(g, dt);
     } else if (g){ g.last = 0; g.t = performance.now() / 1000; }   // (a board left keeps its toys on the page's clock: Oct 10)
-    const G = opt ? null : GAMES.get(gkey(c, r));     // (a sunk ball may have moved the round on)
+    const G = GAMES.get(gkey(c, r));     // (a sunk ball may have moved the round on)
     // (a board not made yet is queued and shows its plain grass meanwhile: NEW BOARDS A FEW AT A TIME, Oct 20)
-    const hk = opt ? opt.hk : G ? G.hole : holeSoon(c, r);
+    const hk = G ? G.hole : holeSoon(c, r);
     if (hk == null) return [];
     const H = HOLES[hk], out = [];
     const k = HOLES.indexOf(H);
     // (the ground at the grain the board's size on the screen asks, part way to the next: see THE GROUND'S GRAINS, Oct 14;
     //  a grain not made yet waits for its turn, the board drawn meanwhile at the next coarser one made, Oct 20)
-    const GG = groundGrain(bp), fr = framedHere(), gNow = !!(G || (opt && opt.now) || (fr && fr.c === c && fr.r === r));
+    const GG = groundGrain(bp), fr = framedHere(), gNow = !!(G || (fr && fr.c === c && fr.r === r));
     const gi = groundSoon(k, GG.g, c, r, gNow);
     out.push({ kind: ['land', 'landM', 'landL'][gi] + k, u: WD / 2, v: 0.5, scale: 1, color: 0xffffff, morph: gi === GG.g ? GG.w : 0 });
     // (Oct 7: "make the gridlines … a lighter shade of green": they were near black, 0x123a18 at 0.55; now a green a little
     //  darker than the grass, enough to show the slopes without ruling the green in black)
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
-    if (NUMS.on && !H.custom && !H.bare) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
+    if (NUMS.on && !H.custom) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
     const nv = 2 * NY, nh = 2 * NX;
@@ -40907,16 +40906,16 @@ const GOLF_MAKE = SIZE => {
       if (H.map[j][i] === '=') out.push({ kind: 'plank', u, v, scale: CW, lift: hOf(H, u, v) + 0.004, color: (i + j) & 1 ? 0x9a7048 : 0x8a6240 });
     }
     // (the tee box's two markers, either side of the tee: Oct 20; none of it on a bare copy, the tank battle's: Oct 22)
-    if (!H.bare) for (const sx of [-1, 1]){ const C = teeAt(H), mx = C.x + sx * TEE_BOX * 0.38, my = C.y - TEE_BOX * 0.36;
+    for (const sx of [-1, 1]){ const C = teeAt(H), mx = C.x + sx * TEE_BOX * 0.38, my = C.y - TEE_BOX * 0.36;
       out.push({ kind: 'teeMark', u: mx, v: my, scale: CW * 0.15, lift: hOf(H, mx, my), color: 0x2f6fd8 }); }
     const P = D(), hc = hOf(H, H.cup.x, H.cup.y);
-    if (!H.bare) out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
+    out.push({ kind: 'cup', u: H.cup.x, v: H.cup.y, scale: P.cup * 2, lift: hc, color: 0x111111 },
              { kind: 'pole', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: 0xf2f2f2 },
              { kind: 'pennant', u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level ? LEVEL_FLAG[H.level - 1] : 0xe0443a });
     // the level as dots on the flag, white (dark on the yellow of level 3), on a board near enough to see them
-    if (H.level && !H.bare) out.push({ kind: 'flagDots' + H.level, u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level === 3 ? 0x2a2a2a : 0xffffff });
+    if (H.level) out.push({ kind: 'flagDots' + H.level, u: H.cup.x, v: H.cup.y, scale: POLE_H, lift: hc, color: H.level === 3 ? 0x2a2a2a : 0xffffff });
     // The toys, where the clock has them: the game's own clock on the board in play, the wall clock elsewhere.
-    const t = opt ? opt.t : G ? (G.t || 0) : performance.now() / 1000;
+    const t = G ? (G.t || 0) : performance.now() / 1000;
     /* (Oct 10, later: "if wireframe is off, don't show the orbit path." The movers' dotted tracks, a path's loop and the
        circle a turnstile or a door sweeps, show only with Wireframe on, or on the hole being edited, where a path is
        drawn and its leaves moved.) */
@@ -40940,7 +40939,7 @@ const GOLF_MAKE = SIZE => {
           const v = T.path, n = pathN(v), r = v[2 * n], P = loopOf(v), m = Math.max(8, Math.round(P.L / (CW * 0.5)));
           if (tracks) for (let q = 0; q < m; q++){ const A = loopAt(v, q / m); out.push({ kind: 'ghost', u: A.x, v: A.y, scale: 0.012, lift: hOf(H, A.x, A.y) + 0.001, color: 0xd8efd0 }); }
           if (v[2 * n + 3] >= 1){
-            const lit = ((G && G.kicked) || (opt && opt.kicked)) && t - (((G && G.kicked) || opt.kicked)[j] ?? -9) < 0.15, kd = v[2 * n + 3] - 1;
+            const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, kd = v[2 * n + 3] - 1;
             if (propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0 });
             else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : kd ? RIDER_PLAIN[kd] : 0xe05a9a });
           } else if (propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff });
@@ -40968,7 +40967,7 @@ const GOLF_MAKE = SIZE => {
           if (T.swing) out.push({ kind: 'armBar', u: B.x + Math.cos(B.a) * B.L * 0.85, v: B.y + Math.sin(B.a) * B.L * 0.85, scale: ARM_T * 2.05, sx: B.L * 0.3 / (ARM_T * 2.05), lift: hOf(H, x, y), yaw: B.a, color: 0xd9473c });
         });
       } else if (T.kick){
-        const [kx, ky, kr] = T.kick, kind = T.kick[3] | 0, KK = (G && G.kicked) || (opt && opt.kicked), lit = KK && t - (KK[j] ?? -9) < 0.15;
+        const [kx, ky, kr] = T.kick, kind = T.kick[3] | 0, KK = G && G.kicked, lit = KK && t - (KK[j] ?? -9) < 0.15;
         const tint = [0xffffff, 0xff8a4a, 0x7fd67a, 0x6fb2ff][kind] || 0xffffff, plain = [0xe0443a, 0xff8a1a, 0x4cae4c, 0x3a7fd9][kind] || 0xe0443a;   // classic, power, sponge, spinner
         if (propGeo('bumper')) out.push({ kind: 'propBumper', u: kx, v: ky, scale: kr * PROP_K.bumper, lift: hOf(H, kx, ky), color: lit ? 0xffe680 : tint });
         else out.push({ kind: 'kicker', u: kx, v: ky, scale: kr * 2, lift: hOf(H, kx, ky), color: lit ? 0xffffff : plain });
@@ -41041,7 +41040,7 @@ const GOLF_MAKE = SIZE => {
       } else if (T.mine){
         // a mine (Oct 20): a low dark disc in the grass with a light that blinks while it is ready, and a flash going out
         // when it goes off; until the next putt its light is out
-        const [mx, my] = T.mine, hm = hOf(H, mx, my), bt = G && G.blown ? G.blown[j] : opt && opt.blown ? opt.blown[j] : null, gone = bt != null;
+        const [mx, my] = T.mine, hm = hOf(H, mx, my), bt = G && G.blown ? G.blown[j] : null, gone = bt != null;
         out.push({ kind: 'mineDisc', u: mx, v: my, scale: CW * 0.46, lift: hm - 0.002, color: 0x55574a },
                  { kind: 'mineLight', u: mx, v: my, scale: CW * 0.12, lift: hm + CW * 0.02, color: gone ? 0x3a2020 : (((t * 1.6 + mx * 3) % 1) < 0.45 ? 0xff3a22 : 0x7a2018) });
         if (gone && bt >= 0 && t - bt < 0.45){ const rr = CW * (0.25 + 1.6 * (t - bt) / 0.45), m = 14;
@@ -41059,7 +41058,7 @@ const GOLF_MAKE = SIZE => {
     // the best line's ghost, racing you on the board in play (Oct 11)
     if (G && G.state === 'play' && LIVE && LIVE.key === gkey(c, r)) ghostItems(out, G, H);
     const b = G ? G.ball : H.tee;
-    if (!opt && (!G || G.state === 'play' || G.state === 'done' || G.state === 'edit')) out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
+    if ((!G || G.state === 'play' || G.state === 'done' || G.state === 'edit')) out.push({ kind: 'ball', u: b.x, v: b.y, scale: BR * 2, lift: hOf(H, b.x, b.y), color: 0xffffff });
     if (G && G.state === 'edit') editOverlay(out, H);
     // The aim: dots from the ball, the way it will go, longer and redder the harder.
     if (G && G.state === 'play' && !G.moving && (G.pull.x || G.pull.y)){
@@ -43682,83 +43681,8 @@ const GOLF_MAKE = SIZE => {
     return veil;
   }
 
-  /* ─── THE KIT FOR THE TANK BATTLE (Oct 22: "the mini-golf game could be reused as a tank battle game. it has interesting
-     terrain options.", then "Real-time" of the ways offered) ───────────────────────────────────────────────────────────────
-     GOLFTANK_APP plays on each board's hole as this game makes it, so it is handed what it needs from in here: the holes, the
-     ground's heights and slopes, what is water and sand, the movers at any moment, the drawing of a hole at a moment with no
-     golf game on it (cellItems' opt), and `solidsAt`: every solid thing a circle of radius R at (x, y) touches at the clock t,
-     as [nx, ny, depth] (the way out and how far in). It is the ball's own tests (collide and toys, above) with the ball's
-     radius made any radius, so a tank or a shell meets exactly what the ball meets: the rail, the wall cells, a slide, a
-     windmill's arms and hub, a turnstile's or a door's bars, a fence, a curved fence, a planter (from inside, out over its
-     line), a charge's post, a boulder, a path's rider, a gate standing up, and a bumper (solid, for a tank). Mines and pipes
-     are not solid; the battle reads them itself (`minesOf`, `pipesOf`). */
-  function solidsAt(H, x, y, R, t){
-    const out = [], near = (px, py, rr) => { const dx = x - px, dy = y - py, d = Math.hypot(dx, dy); if (d < rr && d > 1e-9) out.push([dx / d, dy / d, rr - d]); };
-    const lo = RT + R;
-    if (x < lo) out.push([1, 0, lo - x]); if (x > WD - lo) out.push([-1, 0, x - (WD - lo)]);
-    if (y < lo) out.push([0, 1, lo - y]); if (y > 1 - lo) out.push([0, -1, y - (1 - lo)]);
-    const i0 = Math.floor((x - R) / CW), i1 = Math.floor((x + R) / CW), j0 = Math.floor((y - R) / CW), j1 = Math.floor((y + R) / CW);
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++){
-      if (i < 0 || j < 0 || i >= NX || j >= NY || at(H, i, j) !== '#') continue;
-      const x0 = i * CW, x1 = x0 + CW, y0 = j * CW, y1 = y0 + CW, px = clamp(x, x0, x1), py = clamp(y, y0, y1);
-      if (px === x && py === y){ const l = x - x0, r2 = x1 - x, u = y - y0, d = y1 - y, m = Math.min(l, r2, u, d);
-        out.push(m === l ? [-1, 0, l + R] : m === r2 ? [1, 0, r2 + R] : m === u ? [0, -1, u + R] : [0, 1, d + R]); }
-      else near(px, py, R);
-    }
-    (H.toys || []).forEach(T => {
-      if (T.slide){ const S = toyAt(T, t), hw = T.slide[4] / 2, hh = T.slide[5] / 2; near(clamp(x, S.x - hw, S.x + hw), clamp(y, S.y - hh, S.y + hh), R); }
-      else if (T.mill){ const [mx, my, arm] = T.mill, M = toyAt(T, t);
-        for (const a of [M.a, M.a + Math.PI / 2]){ const ux = Math.cos(a), uy = Math.sin(a), q = clamp((x - mx) * ux + (y - my) * uy, -arm, arm); near(mx + ux * q, my + uy * q, R + MILL_T); }
-        near(mx, my, R + 0.02); }
-      else if (T.arm || T.swing){ for (const B of barsOf(T, t)){ const ux = Math.cos(B.a), uy = Math.sin(B.a), q = clamp((x - B.x) * ux + (y - B.y) * uy, 0, B.L); near(B.x + ux * q, B.y + uy * q, R + ARM_T); } }
-      else if (T.fence || T.gate){
-        if (T.gate && toyAt(T, t).up < 0.5) return;
-        const [x0, y0, x1, y1] = T.fence || T.gate, ux = x1 - x0, uy = y1 - y0, L2 = ux * ux + uy * uy || 1, q = clamp(((x - x0) * ux + (y - y0) * uy) / L2, 0, 1);
-        near(x0 + ux * q, y0 + uy * q, R + (T.gate ? GATE_T : FENCE_T)); }
-      else if (T.curve){ const C = curveOf(T.curve), [bx0, by0, bx1, by1] = C.box, R0 = R + FENCE_T;
-        if (x < bx0 - R0 || x > bx1 + R0 || y < by0 - R0 || y > by1 + R0) return; const N = curveNear(T.curve, x, y); near(N.x, N.y, R0); }
-      else if (T.planter){ const B = planterOf(T.planter), [bx0, by0, bx1, by1] = B.box, R0 = R + FENCE_T;
-        if (x < bx0 - R0 || x > bx1 + R0 || y < by0 - R0 || y > by1 + R0) return;
-        const inside = blobIn(B, x, y), N = blobNear(B, x, y, inside ? Infinity : R0);
-        if (!N || N.d < 1e-9) return;
-        if (inside) out.push([(N.x - x) / N.d, (N.y - y) / N.d, N.d + R0]); else near(N.x, N.y, R0); }
-      else if (T.charge) near(T.charge[0], T.charge[1], R + CHARGE_POST);
-      else if (T.rock) near(T.rock[0], T.rock[1], R + T.rock[2]);
-      else if (T.kick) near(T.kick[0], T.kick[1], R + T.kick[2]);
-      else if (T.path){ const v = T.path, S = toyAt(T, t); near(S.x, S.y, R + v[2 * pathN(v)]); }
-    });
-    return out;
-  }
-  /* A BARE COPY (Oct 22: "remove the golf hole and tee box. this is one on one tank combat."): the battle's ground is the
-     hole's with no tee box raised on it and no cup sunk in it, and no cup, flag or tee markers drawn. It is a copy of the
-     compiled hole (the same map, toys and shapes; the kept heights left behind) marked `bare`, which rawH, hOf, onTeeBox and
-     cellItems read, in a slot of its own in HOLES so its ground meshes are its own. BARE_CAP copies at most, the one wanted
-     least lately giving up its slot. */
-  const BARES = new Map(), BARE_CAP = 400;
-  function bareOf(k){
-    const H = HOLES[k]; if (!H || H.bare) return k;
-    let e = BARES.get(k);
-    if (e && e.H === H && HOLES[e.kb] && HOLES[e.kb].origin === H){ BARES.delete(k); BARES.set(k, e); return e.kb; }
-    const B = {}; for (const key of Object.keys(H)) if (!['_hd', 'hc', 'wl', '_teeTop', '_grid'].includes(key)) B[key] = H[key];
-    B.bare = true; B.origin = H;
-    let kb = -1;
-    if (e && HOLES[e.kb] && HOLES[e.kb].bare) kb = e.kb;
-    else if (BARES.size >= BARE_CAP){ const [ok, oe] = BARES.entries().next().value; BARES.delete(ok); kb = oe.kb; }
-    if (kb >= 0){ const old = HOLES[kb]; HOLES[kb] = B; ensureKinds(kb); dropKinds(kb, old); }
-    else { kb = HOLES.length; HOLES.push(B); ensureKinds(kb); }
-    BARES.set(k, { H, kb });
-    return kb;
-  }
-  const kit = {
-    get HOLES(){ return HOLES; }, bareOf, holeSoon, holeAt, boardIdx, hOf, gradOf, groundAt, waterAt, toyAt, chargePull, chargesOf, solidsAt, cellBlocked, teeAt,
-    minesOf: H => (H.toys || []).map((T, j) => T.mine ? { j, x: T.mine[0], y: T.mine[1] } : null).filter(Boolean),
-    pipesOf: H => (H.toys || []).map((T, j) => T.pipe ? { j, x0: T.pipe[0], y0: T.pipe[1], x1: T.pipe[2], y1: T.pipe[3], a: T.pipe[4], r: T.pipe[5] } : null).filter(Boolean),
-    drawHole: (c, r, bp, opt) => cellItems(c, r, bp, opt), gridOf: hk => gridOf(hk), PLAIN_GRID, itemGeometries,
-    NX, NY, CW, WD, RT, BASE, SIZE, GRASS,
-  };
   const app = {
     name: 'mini golf',
-    _kit: kit,
     boardShape: { cellW: WD, cellH: 1 },               // the golden board, upright (Oct 7)
     keepsPress: true,                                  // a still finger is aiming, not asking the view to tilt
     claimMargin: 0.12,                                 // …and so is one pressed just past the rail, on a ball against it (Oct 7)
@@ -54048,985 +53972,6 @@ const TANKMAZE_APP = (() => {
   };
   return app;
 })();
-/* ═══ GOLF TANKS: THE TANK MAZE ON THE GOLF HOLES ═══════════════════════════════════════════════════════════════════════
-   (Oct 22: "the mini-golf game could be reused as a tank battle game. it has interesting terrain options.", then "Real-time"
-   of the ways offered.) Two tanks on a board's own golf hole, as mini golf makes it, played as the tank maze is: drive, turn
-   and fire, the shells bouncing; the first to WIN rounds takes the match. You start on the tee, the computer by the cup.
-   What the hole is, is what the battle is fought over:
-   - the ground (mini golf's own heights, `hOf`): a tank is slower uphill and faster down (SLOPE_K), cannot climb a slope
-     steeper than SLOPE_MAX, and slides down one steeper than SLIDE; sand slows it (SAND).
-   - water stops a tank (a bridge does not); a tank pushed or thrown into a lake goes under and is out.
-   - every solid thing the ball meets (mini golf's `solidsAt`: the rail, walls, fences, curved fences, planters, boulders,
-     bumpers, charges' posts, a gate standing up, and the movers: a path's rider, a turnstile's and a door's bars, a slide, a
-     windmill) stops a tank and turns a shell back off it, at the moment the hole's clock is at, so the movers are moving cover.
-   - a shell flies just over the ground (CLEAR) at its gun's height (GUN_Z): it follows the ground down (at most DROP a unit
-     along), climbs a gentle rise (CLIMB), and bursts against anything steeper, so a ridge, a hill, a crater's rim or the tee
-     box is cover. It flies level over water.
-   - a charge bends a shell going by (mini golf's `chargePull`, times CHG): a pull draws it in, a push turns it away.
-   - a mine throws a tank that drives onto it (THROW) and leaves it stunned a moment (STUN), once a round.
-   The board is mini golf's, drawn by mini golf (its kit's `drawHole`, the movers at the round's clock); the tanks are the
-   tank maze's pieces. Sizes are in cells of the hole (CW), speeds in cells a second.
-   (Oct 22, later: "remove the golf hole and tee box. this is one on one tank combat." The battle is fought on a bare copy of
-   the hole, mini golf's `bareOf`: no tee box raised on the ground, no cup sunk in it, no flag; the tanks start where the tee
-   and the cup were, the two ends the hole was made round.) */
-const GOLFTANK_APP = (() => {
-  const SEAT = { you: 0x5a9e3e, cpu: 0xc8463c, p2: 0x3f7fd6 }, NAME = { you: 'You', cpu: 'Red', p2: 'Player 2' };
-  const TRACKC = 0x2b2b2b, WRECK = 0x3a3530, GUNC = 0x30352c, SHOTC = 0x1c1c1c;
-  // (the computer's hand by level; since Oct 22, its long-range weapons too: how often it lobs a mortar or sends a missile
-  //  when it has no straight shot, a thought at a time, how far off its mortar lands (of the range), and whether it uses the rail)
-  const LV = [
-    { rays: 24, think: 0.4,  err: 7,   lead: false, dodge: 0,    cool: 1.2,  most: 1, bounce: 0, mortar: 0.08, merr: 0.22, missile: 0.04, rail: false },
-    { rays: 36, think: 0.3,  err: 5,   lead: false, dodge: 0.3,  cool: 1.0,  most: 2, bounce: 1, mortar: 0.1,  merr: 0.17, missile: 0.05, rail: true },
-    { rays: 48, think: 0.24, err: 3.5, lead: true,  dodge: 0.55, cool: 0.8,  most: 2, bounce: 1, mortar: 0.13, merr: 0.13, missile: 0.07, rail: true },
-    { rays: 60, think: 0.18, err: 2.2, lead: true,  dodge: 0.8,  cool: 0.65, most: 3, bounce: 2, mortar: 0.16, merr: 0.1,  missile: 0.08, rail: true },
-    { rays: 72, think: 0.13, err: 1.4, lead: true,  dodge: 1,    cool: 0.5,  most: 3, bounce: 3, mortar: 0.2,  merr: 0.08, missile: 0.1, rail: true },
-  ];
-  /* LONG-RANGE WEAPONS (Oct 22: "the game can be changed to accomodate tank combat. more long range weapons."). The cannon's
-     shell skims the ground, so every hill is cover and a fight in a hilly hole was two tanks driving round looking for a line.
-     Three more, each a few a round (`ammo`, back to full each round), chosen with 1–4 (Player 2: 7–0) or the bottom row:
-     - the mortar: lobbed high over everything (hills, walls, movers) onto a point, landing MORTAR_T0 + MORTAR_TK a cell later;
-       a burst MORTAR_R across takes any tank in it, its own too. Tap a spot to put it there; the fire key puts it on the other
-       tank if you face it (within AUTO_CONE), else AUTO_RANGE cells ahead. Its landing place is ringed in red while it flies.
-     - the rail gun: a shell's way laid down at once, the whole board long (RAIL_LEN), no bounce: the ground and every solid
-       thing stop it as they stop a shell, so it is the long straight line, not a way round cover.
-     - the missile: rises to MIS_Z over the ground and flies after the nearest other tank, turning MIS_TURN a second at MIS_V,
-       over everything; within MIS_HIT of a tank it bursts (MIS_R). A tank turning hard inside its turn can slip it.
-     The computer uses them only when it has no straight shot (the rail at a tank in plain sight more than 4 cells off), now and
-     then (`mortar`, `missile` in LV, a chance each time it thinks), and not in a round's first LONG_HOLD seconds. */
-  const WEAPONS = [
-    { id: 'cannon',  name: 'Cannon',   glyph: '●', ammo: Infinity, cool: 0.25, says: 'the cannon: shells skim the ground and bounce' },
-    { id: 'mortar',  name: 'Mortar',   glyph: '☄', ammo: 3,        cool: 1.4,  says: 'the mortar: lobbed over hills and walls; tap a spot to put it there' },
-    { id: 'rail',    name: 'Rail gun', glyph: '⚡', ammo: 2,        cool: 1.5,  says: 'the rail gun: a beam the length of the board at once; hills and walls stop it' },
-    { id: 'missile', name: 'Missile',  glyph: '➶', ammo: 2,        cool: 1.5,  says: 'the missile: it flies high and finds the other tank' },
-  ];
-  const MORTAR_MIN = 1.5, MORTAR_MAX = 16, MORTAR_R = 0.8, MORTAR_T0 = 1.1, MORTAR_TK = 0.07, AUTO_CONE = 0.35, AUTO_RANGE = 6;
-  const LONG_HOLD = 2.5, RAIL_LEN = 30, RAIL_STEP = 0.08, RAIL_SHOW = 0.45, MIS_V = 3.2, MIS_TURN = 2.4, MIS_LIFE = 8, MIS_Z = 0.9, MIS_HIT = 0.42, MIS_R = 0.55;
-  const TR = 0.34, HIT_R = 0.3, BRAD = 0.09, TS = 1.15, TV = 1.9, TURN = 3.0, BV = 4.6, LIFE = 4.5, MAXB = 4, GRACE = 0.2;
-  const GUN_Z = 0.24, CLEAR = 0.1, DROP = 0.6, CLIMB = 0.35, CHG = 0.35;
-  /* THE TERRAIN RESPECTED (Oct 22: "the tanks just drive through hills. they should respect the terrain."): a tank is slowed
-     hard going up (SLOPE_K), cannot drive onto ground rising more steeply than SLOPE_MAX along its way (it keeps what part of
-     its way runs along the slope), slides down anything steeper than SLIDE whatever it is doing, and stands tilted on the
-     slope under it. It had climbed anything to 2.4 since a raised green's edge (1.7) held two computer tanks at its foot a
-     whole round; now the computer goes round such ground (navTo) instead of up it. */
-  const SLOPE_K = 1.4, SLOPE_MAX = 1.05, SLIDE = 0.95, SLIDE_V = 2.2, TILT_E = 0.3, SAND = 0.6, MINE_R = 0.3, THROW = 5, STUN = 0.9, KNOCK_DECAY = 3.2;
-  const REQ_T = 0.6, STEP = 1 / 60, WIN = 5, ROUND_CAP = 60, BOOM_T = 1.5, COUNT_T = 1.2, REC_HZ = 15, AIM_SEG = [3, 3, 2, 2, 1, 1], AIM_LEN = 2.2;
-  const TAU = Math.PI * 2;
-  const DL = ARCADE.difficulty('golftanks.level', 'Every board is its own golf hole, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
-  const SND = ARCADE.sounds('golftanks.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
-  const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('golftanks.players', '1') || 1)), aim: ARCADE.load('golftanks.aim', 'on') !== 'off',
-                mode: ARCADE.load('golftanks.mode', 'roam') === 'match' ? 'match' : 'roam', endless: ARCADE.load('golftanks.lives', 'endless') !== 'three' };
-  /* LIKE ASTEROIDS, WITH TANKS (Oct 29: "golf tanks  should be like asteroids.      instead of asteroids, use takes."): the game
-     you play is Asteroids' way of playing (Roam, the menu's Mode; the one-on-one match of Oct 22 is Match, and two players
-     always play matches). Each board's hole holds a few enemy tanks (`ROAM_N` by level: 1, 2, 3, 3, 4), all on one side, red,
-     come for you where Asteroids' rocks drift; your tank drives off any edge of the board (pressed against the rail, heading
-     out) on to the next board that way, the view following, and that board's game becomes yours, your tank coming in at the
-     edge it crossed (`hop`, `entryAt`), with what you have destroyed and lost. The board left goes back to its recording.
-     Destroy every enemy on a board and it is cleared for good (`CLEARED`, localStorage `golftanks.cleared`, the latest 5,000):
-     flying back finds its hole empty and quiet, and a board no one plays that is cleared shows it so; the menu's Forget cleared
-     boards fills them again. Tanks are endless by default (the menu's Tanks: endless or three, localStorage `golftanks.lives`):
-     yours, put out, comes back where it came on to the board, blinking and safe for `SAFE_T`, the losses counted; with three,
-     the third ends the run. The weapons are full again on every board. The enemies hold their fire `HOLD_T` after you arrive. */
-  const ROAM_N = [1, 2, 3, 3, 4], SAFE_T = 2.5, HOLD_T = 2.5;
-  const CLEARED = new Set((() => { try { return JSON.parse(localStorage.getItem('golftanks.cleared') || '[]'); } catch { return []; } })());
-  const saveCleared = () => { try { localStorage.setItem('golftanks.cleared', JSON.stringify([...CLEARED].slice(-5000))); } catch {} };
-  const clearKey = (c, r) => BOARD_KIT.gkey(c, r) + '@' + (GOLF_APP._kit ? GOLF_APP._kit.SIZE : '');
-  const isCleared = (c, r) => CLEARED.has(clearKey(c, r));
-  const roamOn = () => SET.mode === 'roam' && SET.players === 1;
-  const say = BOARD_KIT.say(3000);
-  const now = BOARD_KIT.now;
-  const clamp = BOARD_KIT.clamp;
-  const angDiff = (a, b) => { let d = (a - b) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; };
-  const fieldGS = BOARD_KIT.gs;
-  const gkey = BOARD_KIT.gkey;
-  const boardIdx = BOARD_KIT.boardIdx;
-  const ringOf = BOARD_KIT.ringOf;
-  const ringLevel = BOARD_KIT.ringLevel;
-  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
-  const rngOf = BOARD_KIT.rng;
-  const nextBoard = BOARD_KIT.nextBoard;
-
-  /* mini golf's kit, asked for each time: mini golf is made again at another board size (setGolfSize), and then its holes are
-     other holes, so the games and recordings made on the old ones go */
-  let KIT = null;
-  function kit(){ const k = GOLF_APP._kit; if (k !== KIT){ KIT = k; GAMES.clear(); RECS.clear(); WAITING.clear(); } return k; }
-
-  /* ─── A ROUND ─── the hole (its index in mini golf's HOLES, kept with the hole itself, since a generated hole's slot can be
-     given to another), the tanks (on the tee and by the cup, facing each other), and its own clock, which the movers keep. */
-  function spawnsOf(K, H){
-    const CW = K.CW, a = { x: H.tee.x, y: H.tee.y }, b = { x: H.cup.x, y: H.cup.y };
-    /* (the hole's tee and cup are only places now, Oct 22: "remove the golf hole and tee box. this is one on one tank combat."
-        They are the two ends the hole was made round, kept clear of its things; the far tank stands where the cup was) */
-    return [a, b];
-  }
-  function roundNew(K, hk, seats, seed, lv){
-    const H = K.HOLES[hk], P = spawnsOf(K, H), R = rngOf(seed);
-    const tanks = seats.map((s, k) => { const p = P[k % 2], q = P[(k + 1) % 2];
-      return { x: p.x, y: p.y, h: Math.atan2(q.y - p.y, q.x - p.x) || 1e-6, alive: true, vx: 0, vy: 0, kx: 0, ky: 0, spin: 0, stun: 0, cool: 0,
-               ammo: WEAPONS.map(w => w.ammo), wid: 0 }; });
-    const G = { K, hk, H, lv, seats, tanks, shots: [], beams: [], booms: [], blown: {}, blownAt: [], t: 0, R, over: false, winner: -1, downAt: null, lastFire: seats.map(() => -9), sounds: [] };
-    for (const t of tanks) settle(G, t);
-    return G;
-  }
-  const wet = (G, x, y) => G.K.groundAt(G.H, x, y) === '~';
-  // a tank pushed out of every solid thing it is in (the movers at the round's clock), then out of the other tanks
-  function settle(G, t, k){
-    const K = G.K, CW = K.CW, R = TR * CW;
-    for (let it = 0; it < 4; it++){
-      const C = K.solidsAt(G.H, t.x, t.y, R, G.t);
-      if (!C.length) break;
-      let best = C[0]; for (const c of C) if (c[2] > best[2]) best = c;
-      t.x += best[0] * best[2]; t.y += best[1] * best[2];
-    }
-    if (k != null) G.tanks.forEach((o, j) => { if (j === k || !o.alive) return; const dx = t.x - o.x, dy = t.y - o.y, d = Math.hypot(dx, dy);
-      if (d < 2 * R && d > 1e-9){ const p = (2 * R - d) / 2; t.x += dx / d * p; t.y += dy / d * p; o.x -= dx / d * p; o.y -= dy / d * p; } });
-  }
-  const foeOf = (G, k, j) => j !== k && (!G.team || G.team[j] !== G.team[k]);
-  function kill(G, k, by, how){
-    const t = G.tanks[k]; if (!t.alive) return;
-    if (t.safe != null && G.t < t.safe && how !== 'splash') return;          // (just come back: Oct 29)
-    t.alive = false; t.deadAt = G.t;
-    G.booms.push({ x: t.x, y: t.y, z: G.K.hOf(G.H, t.x, t.y), t: G.t, k, by, kind: how || 'hit' });
-    if (G.downAt == null) G.downAt = G.t;
-  }
-  function moveTank(G, k, cmd, dt){
-    const K = G.K, H = G.H, CW = K.CW, t = G.tanks[k];
-    if (!t.alive) return;
-    let drive = cmd.drive, turn = cmd.turn;
-    if (t.stun > 0){ t.stun -= dt; drive = 0; turn = 0; }
-    t.h += turn * TURN * dt + t.spin * dt; t.spin *= Math.exp(-KNOCK_DECAY * dt);
-    const dx = Math.cos(t.h), dy = Math.sin(t.h), [gx, gy] = K.gradOf(H, t.x, t.y), dir = drive >= 0 ? 1 : -1;
-    const up = (gx * dx + gy * dy) * dir;
-    let f = clamp(1 - SLOPE_K * up, 0.2, 1.5);
-    if (K.groundAt(H, t.x, t.y) === 's') f *= SAND;
-    let vx = dx * drive * TV * CW * f, vy = dy * drive * TV * CW * f;
-    // (too steep ahead, here or where the step would land: only the part of the way that runs along the slope is kept)
-    const ahead = (ax, ay) => { const [hx, hy] = K.gradOf(H, ax, ay), m = Math.hypot(vx, vy) || 1; return (hx * vx + hy * vy) / m; };
-    if (vx || vy){ const sx = t.x + vx * dt * 4, sy = t.y + vy * dt * 4;
-      if (ahead(t.x, t.y) > SLOPE_MAX || ahead(sx, sy) > SLOPE_MAX){ const [hx, hy] = K.gradOf(H, sx, sy), g2 = hx * hx + hy * hy || 1, along = (vx * hx + vy * hy) / g2;
-        if (along > 0){ vx -= hx * along; vy -= hy * along; } } }
-    const gm = Math.hypot(gx, gy);
-    // (sliding down a slope steeper than SLIDE, whatever the tank is doing)
-    if (gm > SLIDE){ const s = (gm - SLIDE) * SLIDE_V * CW; vx -= gx / gm * s; vy -= gy / gm * s; }
-    vx += t.kx; vy += t.ky; const dec = Math.exp(-KNOCK_DECAY * dt); t.kx *= dec; t.ky *= dec;
-    const thrown = Math.hypot(t.kx, t.ky) > 0.8 * CW;
-    const nx = t.x + vx * dt, ny = t.y + vy * dt, ox = t.x, oy = t.y;
-    if (!wet(G, nx, ny) || thrown){ t.x = nx; t.y = ny; }
-    else if (!wet(G, nx, t.y)) t.x = nx; else if (!wet(G, t.x, ny)) t.y = ny;   // (along the shore)
-    settle(G, t, k);
-    t.vx = (t.x - ox) / dt; t.vy = (t.y - oy) / dt;
-    if (wet(G, t.x, t.y)){ kill(G, k, -1, 'splash'); return; }       // (pushed or thrown in: under it goes)
-    // a mine, once a round: thrown out from it, turning, and stunned
-    for (const M of minesOf(G)){
-      if (G.blown[M.j] != null) continue;
-      const mx = t.x - M.x, my = t.y - M.y, d = Math.hypot(mx, my);
-      if (d >= (MINE_R + TR) * CW) continue;
-      G.blown[M.j] = G.t; G.blownAt.push([M.j, G.t]); G.sounds.push('mine');
-      const ux = d > 1e-6 ? mx / d : -Math.cos(t.h), uy = d > 1e-6 ? my / d : -Math.sin(t.h);
-      t.kx += ux * THROW * CW; t.ky += uy * THROW * CW; t.spin += (G.R() < 0.5 ? -1 : 1) * 9; t.stun = STUN;
-      G.booms.push({ x: M.x, y: M.y, z: K.hOf(H, M.x, M.y), t: G.t, k: -1, by: -1, kind: 'mine' });
-    }
-  }
-  const minesOf = G => G.H._gtMines || (G.H._gtMines = G.K.minesOf(G.H));
-  // the height a shell may fly at over (x, y): the ground, or a lake's water
-  function floorAt(G, x, y){ const h = G.K.hOf(G.H, x, y); return wet(G, x, y) ? Math.max(h, G.K.waterAt(G.H, x, y)) : h; }
-  function fireShell(G, k, da){
-    const K = G.K, CW = K.CW, t = G.tanks[k], a = t.h + (da || 0), ux = Math.cos(a), uy = Math.sin(a), off = (TR + BRAD + 0.05) * CW;
-    const b = { k, x: t.x + ux * off, y: t.y + uy * off, vx: ux * BV * CW, vy: uy * BV * CW, t0: G.t, end: Infinity, bounces: 0, P: [] };
-    b.z = floorAt(G, t.x, t.y) + GUN_Z * CW;
-    G.shots.push(b); G.lastFire[k] = G.t; t.cool = 0.25;
-    G.sounds.push('fire');
-    b.P.push(G.t, b.x, b.y, b.z);
-    if (K.solidsAt(G.H, b.x, b.y, BRAD * CW, G.t).length) endShell(G, b, 'hill');   // (fired into a wall)
-    return b;
-  }
-  function endShell(G, b, kind){
-    b.end = G.t; b.P.push(G.t, b.x, b.y, b.z);
-    if (kind) G.booms.push({ x: b.x, y: b.y, z: b.z, t: G.t, k: -1, by: b.k, kind });
-  }
-  /* one step of a shell (or of the computer's guess at one: `sim` set, nothing recorded, the round untouched): the charges,
-     the ground, the solid things at the clock tt, the tanks. Gives the tank it hit, or -2 for ground or a wall's end, or -1. */
-  function shellStep(G, b, ds, tt, sim){
-    const K = G.K, H = G.H, CW = K.CW, sp = BV * CW;
-    if (K.chargesOf(H).length){
-      const [ax, ay] = K.chargePull(H, b.x, b.y); b.vx += ax * CHG * ds; b.vy += ay * CHG * ds;
-      const v = Math.hypot(b.vx, b.vy) || 1; b.vx *= sp / v; b.vy *= sp / v;
-    }
-    b.x += b.vx * ds; b.y += b.vy * ds;
-    const dist = sp * ds, need = floorAt(G, b.x, b.y) + CLEAR * CW;
-    if (need > b.z){ if (need - b.z <= CLIMB * dist) b.z = need; else return -2; }
-    else b.z = Math.max(need, b.z - DROP * dist);
-    const C = K.solidsAt(H, b.x, b.y, BRAD * CW, tt);
-    if (C.length){
-      let n = C[0]; for (const c of C) if (c[2] > n[2]) n = c;
-      b.x += n[0] * n[2]; b.y += n[1] * n[2];
-      const vn = b.vx * n[0] + b.vy * n[1];
-      if (vn < 0){ b.vx -= 2 * vn * n[0]; b.vy -= 2 * vn * n[1]; b.bounces++; if (!sim) b.P.push(tt, b.x, b.y, b.z); }
-    }
-    const tanks = sim ? sim.tanks : G.tanks;
-    for (let k = 0; k < tanks.length; k++){
-      const t = tanks[k]; if (!t.alive) continue;
-      if (k === b.k && tt - b.t0 < GRACE) continue;
-      if (Math.hypot(b.x - t.x, b.y - t.y) < (HIT_R + BRAD) * CW) return k;
-    }
-    return -1;
-  }
-  /* ─── THE LONG-RANGE WEAPONS (Oct 22, above) ─── */
-  const inBoard = (G, x, y) => { const K = G.K, m = K.RT; return x > m && x < K.WD - m && y > m && y < 1 - m; };
-  // where a mortar fired now from tank k would land without a point given: on the other tank if it is ahead, else ahead
-  function autoRange(G, k){
-    const K = G.K, CW = K.CW, t = G.tanks[k];
-    let best = null;
-    G.tanks.forEach((o, j) => { if (!foeOf(G, k, j) || !o.alive) return; const d = Math.hypot(o.x - t.x, o.y - t.y);
-      if (Math.abs(angDiff(Math.atan2(o.y - t.y, o.x - t.x), t.h)) < AUTO_CONE && d >= MORTAR_MIN * CW && d <= MORTAR_MAX * CW && (!best || d < best.d)) best = { x: o.x, y: o.y, d }; });
-    if (best) return best;
-    let d = AUTO_RANGE * CW;
-    while (d > MORTAR_MIN * CW && !inBoard(G, t.x + Math.cos(t.h) * d, t.y + Math.sin(t.h) * d)) d -= 0.25 * CW;
-    return { x: t.x + Math.cos(t.h) * d, y: t.y + Math.sin(t.h) * d };
-  }
-  function fireMortar(G, k, tx, ty){
-    const K = G.K, CW = K.CW, t = G.tanks[k], dx = tx - t.x, dy = ty - t.y, d0 = Math.hypot(dx, dy) || 1e-9;
-    const d = clamp(d0, MORTAR_MIN * CW, MORTAR_MAX * CW), m = K.RT + 0.1 * CW;
-    tx = clamp(t.x + dx / d0 * d, m, K.WD - m); ty = clamp(t.y + dy / d0 * d, m, 1 - m);
-    const dist = Math.hypot(tx - t.x, ty - t.y);
-    const b = { kind: 'mortar', k, x0: t.x, y0: t.y, z0: floorAt(G, t.x, t.y) + GUN_Z * CW, tx, ty, tz: floorAt(G, tx, ty), t0: G.t, T: MORTAR_T0 + MORTAR_TK * dist / CW,
-                arc: (0.6 + 0.35 * dist / CW) * CW, end: Infinity, P: [] };
-    b.x = b.x0; b.y = b.y0; b.z = b.z0; b.vx = (tx - t.x) / b.T; b.vy = (ty - t.y) / b.T;
-    G.shots.push(b); b.P.push(G.t, b.x, b.y, b.z); G.sounds.push('mortar');
-    return b;
-  }
-  function mortarAt(b, tt){
-    const f = clamp((tt - b.t0) / b.T, 0, 1);
-    return [b.x0 + (b.tx - b.x0) * f, b.y0 + (b.ty - b.y0) * f, b.z0 + (b.tz - b.z0) * f + b.arc * 4 * f * (1 - f), f];
-  }
-  // a burst that takes every tank within r of (x, y): the mortar's and the missile's
-  function blast(G, x, y, r, by){
-    const CW = G.K.CW;
-    G.booms.push({ x, y, z: floorAt(G, x, y), t: G.t, k: -1, by, kind: 'blast' });
-    G.tanks.forEach((o, j) => { if (o.alive && Math.hypot(o.x - x, o.y - y) < r + TR * CW * 0.5) kill(G, j, by, 'hit'); });
-  }
-  /* the rail's way from tank k along a: a shell's way at once, no bounce: the points it passes (for drawing) and the tank it
-     reaches first (-1 for none). `only` (the computer's look) counts only that tank. */
-  function railTrace(G, k, a, only){
-    const K = G.K, H = G.H, CW = K.CW, t = G.tanks[k], ux = Math.cos(a), uy = Math.sin(a), off = (TR + BRAD + 0.05) * CW, ds = RAIL_STEP * CW;
-    let x = t.x + ux * off, y = t.y + uy * off, z = floorAt(G, t.x, t.y) + GUN_Z * CW, gone = 0, hit = -1, mark = 0;
-    const P = [x, y, z];
-    while (gone < RAIL_LEN * CW){
-      x += ux * ds; y += uy * ds; gone += ds;
-      const need = floorAt(G, x, y) + CLEAR * CW;
-      if (need > z){ if (need - z <= CLIMB * ds) z = need; else break; } else z = Math.max(need, z - DROP * ds);
-      if (K.solidsAt(H, x, y, BRAD * CW, G.t).length) break;
-      for (let j = 0; j < G.tanks.length && hit < 0; j++){ const o = G.tanks[j];
-        if (j !== k && o.alive && (only == null || j === only) && Math.hypot(o.x - x, o.y - y) < HIT_R * CW) hit = j; }
-      if ((mark += ds) >= 0.5 * CW){ mark = 0; P.push(x, y, z); }
-      if (hit >= 0) break;
-    }
-    P.push(x, y, z);
-    return { P, hit, len: gone };
-  }
-  function fireRail(G, k, da){
-    const t = G.tanks[k], R = railTrace(G, k, t.h + (da || 0));
-    G.beams.push({ t: G.t, k, P: R.P }); G.sounds.push('rail');
-    if (R.hit >= 0) kill(G, R.hit, k, 'hit');
-    else G.booms.push({ x: R.P[R.P.length - 3], y: R.P[R.P.length - 2], z: R.P[R.P.length - 1], t: G.t, k: -1, by: k, kind: 'hill' });
-  }
-  function fireMissile(G, k){
-    const K = G.K, CW = K.CW, t = G.tanks[k], off = (TR + 0.1) * CW;
-    const b = { kind: 'missile', k, x: t.x + Math.cos(t.h) * off, y: t.y + Math.sin(t.h) * off, z: floorAt(G, t.x, t.y) + GUN_Z * CW, h: t.h, t0: G.t, end: Infinity, P: [], tg: -1 };
-    b.vx = Math.cos(b.h) * MIS_V * CW; b.vy = Math.sin(b.h) * MIS_V * CW;
-    G.shots.push(b); b.P.push(G.t, b.x, b.y, b.z); G.sounds.push('missile');
-    return b;
-  }
-  function stepMissile(G, b, dt){
-    const K = G.K, CW = K.CW;
-    let T = b.tg >= 0 && G.tanks[b.tg].alive ? G.tanks[b.tg] : null;
-    if (!T){ let bd = Infinity; G.tanks.forEach((o, j) => { if (!foeOf(G, b.k, j) || !o.alive) return; const d = Math.hypot(o.x - b.x, o.y - b.y); if (d < bd){ bd = d; b.tg = j; T = o; } }); }
-    if (T){ const want = Math.atan2(T.y - b.y, T.x - b.x), da = angDiff(want, b.h); b.h += clamp(da, -MIS_TURN * dt, MIS_TURN * dt); }
-    b.vx = Math.cos(b.h) * MIS_V * CW; b.vy = Math.sin(b.h) * MIS_V * CW;
-    b.x += b.vx * dt; b.y += b.vy * dt;
-    const fl = floorAt(G, b.x, b.y), near = T ? Math.hypot(T.x - b.x, T.y - b.y) : Infinity;
-    const cruise = fl + (near < 1.5 * CW ? GUN_Z : MIS_Z) * CW;          // (down onto its tank at the last)
-    b.z += clamp(cruise - b.z, -1.5 * CW * dt, 2 * CW * dt); b.z = Math.max(b.z, fl + CLEAR * CW);
-    if (T && near < MIS_HIT * CW){ b.end = G.t; b.P.push(G.t, b.x, b.y, b.z); blast(G, b.x, b.y, MIS_R * CW, b.k); return; }
-    if (!inBoard(G, b.x, b.y) || G.t - b.t0 >= MIS_LIFE) endShell(G, b, 'fizz');
-  }
-  function stepShells(G, dt){
-    for (const b of G.shots){
-      if (b.end <= G.t) continue;
-      if (b.kind === 'mortar'){ const [x, y, z, f] = mortarAt(b, G.t); b.x = x; b.y = y; b.z = z;
-        if (f >= 1){ b.end = G.t; b.P.push(G.t, x, y, z); blast(G, b.tx, b.ty, MORTAR_R * G.K.CW, b.k); } continue; }
-      if (b.kind === 'missile'){ stepMissile(G, b, dt); continue; }
-      if (G.t - b.t0 >= LIFE){ endShell(G, b, 'fizz'); continue; }
-      const n = 2;
-      for (let i = 0; i < n && b.end > G.t; i++){
-        const hit = shellStep(G, b, dt / n, G.t);
-        if (hit >= 0){ endShell(G, b, null); kill(G, hit, b.k, 'hit'); }
-        else if (hit === -2) endShell(G, b, 'hill');
-      }
-    }
-  }
-  // a tank fires the weapon a command names (`w`, the cannon if none), at `at` for a mortar; false when it cannot
-  function fire(G, k, cmd){
-    const t = G.tanks[k], w = clamp(cmd.w | 0, 0, WEAPONS.length - 1);
-    if (!(t.ammo[w] > 0)) return false;
-    if (w === 0){ if (G.shots.filter(b => b.k === k && !b.kind && b.end > G.t).length >= MAXB) return false; fireShell(G, k, cmd.da); }
-    else if (w === 1){ const at = cmd.at || autoRange(G, k); fireMortar(G, k, at.x, at.y); }
-    else if (w === 2) fireRail(G, k, cmd.da);
-    else fireMissile(G, k);
-    t.ammo[w]--; t.cool = WEAPONS[w].cool; G.lastFire[k] = G.t;
-    return true;
-  }
-  function stepRound(G, cmds, dt){
-    if (G.over) return;
-    G.t += dt;
-    G.tanks.forEach((t, k) => { if (!t.alive) return; t.cool = Math.max(0, t.cool - dt); moveTank(G, k, cmds[k], dt); });
-    G.tanks.forEach((t, k) => {
-      if (!t.alive || !cmds[k].fire || t.cool > 0 || t.stun > 0) return;
-      fire(G, k, cmds[k]);
-    });
-    stepShells(G, dt);
-    // (a shell long over is dropped from the live round, so the list does not grow without end; a recording keeps them)
-    if (!G.keep && G.shots.length > 24) G.shots = G.shots.filter(b => b.end > G.t - 1);
-    if (!G.keep && G.beams.length > 8) G.beams = G.beams.filter(Z => G.t - Z.t < RAIL_SHOW);
-    if (G.roam) return;                                       // (Roam: the game sees to its own ends, Oct 29)
-    const alive = G.tanks.filter(t => t.alive).length;
-    if ((G.downAt != null && (alive <= 1) && G.t - G.downAt >= BOOM_T) || G.t >= ROUND_CAP){
-      G.over = true; G.winner = alive === 1 ? G.tanks.findIndex(t => t.alive) : -1;
-    }
-  }
-
-  /* ─── THE COMPUTER ─── it thinks every `think` seconds: a shell coming its way (seen with the chance `dodge`) and it drives
-     out of the way; else it looks for a shot, flying a shell from its gun in the round's own physics, the movers where they
-     will be, the straight line at the foe first and then `rays` headings nearest its own, off up to `bounce` walls, and turns
-     to the first that reaches the foe and not itself; else it drives toward the foe along the hole (a way through the cells
-     round water, walls and planters, mini golf's `cellBlocked`), backing off when stuck. */
-  function simShot(G, k, a, foe, D, step){
-    const K = G.K, CW = K.CW, t = G.tanks[k], ux = Math.cos(a), uy = Math.sin(a), off = (TR + BRAD + 0.05) * CW;
-    const b = { k, x: t.x + ux * off, y: t.y + uy * off, vx: ux * BV * CW, vy: uy * BV * CW, t0: G.t, bounces: 0, z: floorAt(G, t.x, t.y) + GUN_Z * CW };
-    if (K.solidsAt(G.H, b.x, b.y, BRAD * CW, G.t).length) return false;
-    const F = G.tanks[foe], lead = D.lead, sim = { tanks: G.tanks.map((o, j) => ({ x: o.x, y: o.y, alive: o.alive && (j === k || j === foe) })) };
-    const ds = step || 1 / 30, end = Math.min(LIFE, AIM_LEN + 0.6);
-    for (let s = ds; s <= end; s += ds){
-      if (lead){ sim.tanks[foe].x = F.x + F.vx * s; sim.tanks[foe].y = F.y + F.vy * s; }
-      const hit = shellStep(G, b, ds, G.t + s, sim);
-      if (hit === foe) return true;
-      if (hit >= 0 || hit === -2 || b.bounces > D.bounce) return false;
-    }
-    return false;
-  }
-  function navTo(G, k, foe){
-    const K = G.K, H = G.H, CW = K.CW, NX = K.NX, NY = K.NY, t = G.tanks[k], F = G.tanks[foe];
-    const ci = x => clamp(Math.floor(x / CW), 0, NX - 1), cj = y => clamp(Math.floor(y / CW), 0, NY - 1);
-    const key = H._gtBlk || (H._gtBlk = Uint8Array.from({ length: NX * NY }, (_, q) => K.cellBlocked(H, q % NX, (q / NX) | 0) ? 1 : 0));
-    /* (a step to a cell whose middle stands more than SLOPE_MAX a cell above this one's, or with a slope steeper than that
-        between them, cannot be driven up: Oct 22. The search runs from the foe outward, so the step taken is r to p.) */
-    const hc = H._gtH || (H._gtH = Float32Array.from({ length: NX * NY }, (_, q) => K.hOf(H, ((q % NX) + 0.5) * CW, (((q / NX) | 0) + 0.5) * CW)));
-    const steep = (r, p) => { if (hc[p] - hc[r] > SLOPE_MAX * CW * 0.85) return true;
-      const ax = ((r % NX) + 0.5) * CW, ay = (((r / NX) | 0) + 0.5) * CW, bx = ((p % NX) + 0.5) * CW, by = (((p / NX) | 0) + 0.5) * CW;
-      for (const f of [0.33, 0.66]){ const mx = ax + (bx - ax) * f, my = ay + (by - ay) * f, [hx, hy] = K.gradOf(H, mx, my), L = Math.hypot(bx - ax, by - ay);
-        if ((hx * (bx - ax) + hy * (by - ay)) / L > SLOPE_MAX) return true; }
-      return false; };
-    const SK = H._gtSteep || (H._gtSteep = new Map());
-    const isSteep = (r, p) => { const k2 = r * 4096 + p; let v = SK.get(k2); if (v === undefined){ v = steep(r, p); SK.set(k2, v); } return v; };
-    const dist = new Float32Array(NX * NY).fill(Infinity), q = [ci(F.x) + cj(F.y) * NX]; dist[q[0]] = 0;
-    for (let h = 0; h < q.length; h++){
-      const p = q[h], i = p % NX, j = (p / NX) | 0;
-      for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]){
-        if (a < 0 || b < 0 || a >= NX || b >= NY) continue; const r = a + b * NX;
-        if (key[r] || dist[r] !== Infinity || isSteep(r, p)) continue; dist[r] = dist[p] + 1; q.push(r);
-      }
-    }
-    const i = ci(t.x), j = cj(t.y), here = dist[i + j * NX];
-    if (here === Infinity || here <= 1) return { x: F.x, y: F.y };
-    let best = null, bd = here;
-    for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1], [i + 1, j + 1], [i - 1, j - 1], [i + 1, j - 1], [i - 1, j + 1]]){
-      if (a < 0 || b < 0 || a >= NX || b >= NY) continue;
-      if (a !== i && b !== j && (key[a + j * NX] || key[i + b * NX])) continue;   // (no corner cut past a blocked cell)
-      if (isSteep(i + j * NX, a + b * NX)) continue;
-      const d = dist[a + b * NX] + (a !== i && b !== j ? 0.4 : 0); if (d < bd){ bd = d; best = [a, b]; }
-    }
-    return best ? { x: (best[0] + 0.5) * CW, y: (best[1] + 0.5) * CW } : { x: F.x, y: F.y };
-  }
-  const MOVES = [[1, 0], [-0.7, 0], [1, 1], [1, -1], [-0.7, 1], [-0.7, -1], [0, 0]];
-  function threatened(G, k){
-    const CW = G.K.CW, t = G.tanks[k], R = (HIT_R + BRAD + 0.25) * CW;
-    for (const b of G.shots){
-      if (b.end <= G.t || (b.k === k && G.t - b.t0 < GRACE)) continue;
-      // (a mortar coming down near it, a missile after it: Oct 22)
-      if (b.kind === 'mortar'){ if (b.t0 + b.T - G.t < 2 && Math.hypot(b.tx - t.x, b.ty - t.y) < (MORTAR_R + TR + 0.3) * CW) return b; continue; }
-      if (b.kind === 'missile' && b.tg === k && Math.hypot(b.x - t.x, b.y - t.y) < 3 * CW) return b;
-      for (let s = 0; s <= 0.8; s += 0.05){ if (Math.hypot(b.x + b.vx * s - t.x, b.y + b.vy * s - t.y) < R) return b; }
-    }
-    return null;
-  }
-  function escape(G, k){
-    const CW = G.K.CW, t = G.tanks[k];
-    let best = MOVES[6], bs = -1;
-    for (const [dr, tu] of MOVES){
-      let h = t.h, x = t.x, y = t.y, worst = Infinity;
-      for (let s = 0.05; s <= 0.7; s += 0.05){
-        h += tu * TURN * 0.05; x += Math.cos(h) * dr * TV * CW * 0.05; y += Math.sin(h) * dr * TV * CW * 0.05;
-        if (wet(G, x, y) || G.K.solidsAt(G.H, x, y, TR * CW, G.t + s).length){ worst = Math.min(worst, 0); break; }
-        for (const b of G.shots){ if (b.end <= G.t || (b.k === k && G.t - b.t0 < GRACE)) continue;
-          if (b.kind === 'mortar'){ if (G.t + s >= b.t0 + b.T - 0.05) worst = Math.min(worst, Math.hypot(b.tx - x, b.ty - y) - MORTAR_R * CW); continue; }
-          worst = Math.min(worst, Math.hypot(b.x + b.vx * s - x, b.y + b.vy * s - y)); }
-      }
-      if (worst > bs){ bs = worst; best = [dr, tu]; }
-    }
-    return best;
-  }
-  function think(G, k, D){
-    const A = G.tanks[k].ai, t = G.tanks[k];
-    const foes = G.tanks.map((o, j) => foeOf(G, k, j) && o.alive ? j : -1).filter(j => j >= 0);
-    if (!foes.length){ A.aim = null; A.way = null; return; }
-    const foe = foes.sort((a, b) => Math.hypot(G.tanks[a].x - t.x, G.tanks[a].y - t.y) - Math.hypot(G.tanks[b].x - t.x, G.tanks[b].y - t.y))[0];
-    A.foe = foe;
-    if (D.dodge && threatened(G, k) && G.R() < D.dodge){ A.dodge = escape(G, k); A.dodgeTo = G.t + 0.5; return; }
-    A.aim = null; A.w = 0;
-    const mine = G.shots.filter(b => b.k === k && b.end > G.t).length;
-    const F0 = G.tanks[foe], far = Math.hypot(F0.x - t.x, F0.y - t.y) / G.K.CW;
-    // (the rail first, at a tank in plain sight a long way off: Oct 22)
-    if (D.rail && t.ammo[2] > 0 && far > 4 && G.t >= A.coolTo && G.t >= LONG_HOLD){
-      const direct = Math.atan2(F0.y - t.y, F0.x - t.x);
-      if (railTrace(G, k, direct, foe).hit === foe){ const e = (G.R() - 0.5) * 2 * D.err * Math.PI / 180; A.aim = direct + e; A.e = e; A.w = 2; }
-    }
-    // (a shot that would not stand when looked at again as it fired is not looked for again for a moment: it drives instead)
-    if (A.aim == null && mine < D.most && G.t >= A.coolTo && G.t >= (A.noShot || 0)){
-      const F = G.tanks[foe], direct = Math.atan2(F.y - t.y, F.x - t.x), cand = [direct];
-      for (let i = 0; i < D.rays; i++) cand.push(t.h + TAU * (i + 0.5 * (G.R() - 0.5)) / D.rays);
-      cand.sort((a, b) => (a === direct ? -1 : b === direct ? 1 : Math.abs(angDiff(a, t.h)) - Math.abs(angDiff(b, t.h))));
-      // (its hands: the heading it turns to is off by up to `err` degrees, and it fires once it is there)
-      for (const a of cand) if (simShot(G, k, a, foe, D)){ const e = (G.R() - 0.5) * 2 * D.err * Math.PI / 180; A.aim = a + e; A.e = e; break; }
-    }
-    // (no straight shot: now and then a mortar onto where it will be, its hands off by `merr` of the range, or a missile)
-    A.now = null;
-    // (not in a round's first LONG_HOLD seconds: a mortar onto a tank still sitting where it began ended rounds in four seconds)
-    if (A.aim == null && G.t >= A.coolTo && G.t >= LONG_HOLD && far >= 3){
-      if (t.ammo[1] > 0 && far <= MORTAR_MAX && G.R() < D.mortar){
-        const T = MORTAR_T0 + MORTAR_TK * far, q = G.R() * TAU, m = G.R() * D.merr * far * G.K.CW;
-        A.now = { w: 1, at: { x: F0.x + (D.lead ? F0.vx * T : 0) + Math.cos(q) * m, y: F0.y + (D.lead ? F0.vy * T : 0) + Math.sin(q) * m } };
-      } else if (t.ammo[3] > 0 && far >= 4 && G.R() < D.missile) A.now = { w: 3 };
-    }
-    A.way = A.aim == null ? navTo(G, k, foe) : null;
-  }
-  function cpuCmd(G, k){
-    const t = G.tanks[k], D = LV[clamp(G.lv | 0, 1, 5) - 1], CW = G.K.CW;
-    if (!t.alive) return { drive: 0, turn: 0, fire: false };
-    const A = t.ai || (t.ai = { next: 0, aim: null, way: null, coolTo: 0, dodgeTo: -1, dodge: null, back: -1, mark: { x: t.x, y: t.y, t: 0 } });
-    if (G.hold != null && G.t < G.hold) return { drive: 0, turn: 0, fire: false };   // (you just came on to the board: Oct 29)
-    if (G.t >= A.next){ A.next = G.t + D.think; think(G, k, D); }
-    if (G.t < A.dodgeTo && A.dodge) return { drive: A.dodge[0], turn: A.dodge[1], fire: false };
-    if (A.now && t.cool <= 0){ const n = A.now; A.now = null; A.coolTo = G.t + D.cool + 1; return { drive: 0, turn: 0, fire: true, w: n.w, at: n.at }; }
-    if (A.aim != null){
-      const da = angDiff(A.aim, t.h);
-      if (Math.abs(da) < 0.012 && t.cool <= 0){
-        /* (looked at again as it fires, in the shells' own steps: the movers have moved on while it turned, and a door that was
-           open may be shut; then it thinks again. The shot it meant, that is: its hands' error, `e`, is fired as it is) */
-        const still = A.w === 2 ? railTrace(G, k, t.h + da - A.e, A.foe).hit === A.foe : simShot(G, k, t.h + da - A.e, A.foe, D, STEP / 2);
-        if (!still){ A.aim = null; A.next = G.t; A.noShot = G.t + 0.6; return { drive: 0, turn: 0, fire: false }; }
-        A.aim = null; A.coolTo = G.t + D.cool; A.next = Math.min(A.next, G.t + 0.1);
-        return { drive: 0, turn: 0, fire: true, da, w: A.w };
-      }
-      return { drive: 0, turn: clamp(da * 8, -1, 1), fire: false };
-    }
-    // (stuck: no headway for a second while meaning to drive, then back off turning for half a second)
-    if (G.t < A.back) return { drive: -0.7, turn: A.backTurn, fire: false };
-    if (G.t - A.mark.t > 1){ if (Math.hypot(t.x - A.mark.x, t.y - A.mark.y) < 0.15 * CW && A.way){ A.back = G.t + 0.5; A.backTurn = G.R() < 0.5 ? -1 : 1; } A.mark = { x: t.x, y: t.y, t: G.t }; }
-    if (!A.way) return { drive: 0, turn: 0, fire: false };
-    const F = A.foe != null ? G.tanks[A.foe] : null;
-    /* (close by with no shot, a ridge or a hump between them: it goes round the other tank, a side it keeps, rather than
-        sitting face to face with it; two did, a whole round, once the hills held tanks: Oct 22) */
-    if (F && Math.hypot(F.x - t.x, F.y - t.y) < 1.6 * CW){
-      if (A.side == null) A.side = G.R() < 0.5 ? -1 : 1;
-      const q = Math.atan2(t.y - F.y, t.x - F.x) + A.side * 0.9, wx = F.x + Math.cos(q) * 2.2 * CW, wy = F.y + Math.sin(q) * 2.2 * CW;
-      const da = angDiff(Math.atan2(wy - t.y, wx - t.x), t.h);
-      return { drive: Math.abs(da) < 0.9 ? 1 : 0, turn: clamp(da * 4, -1, 1), fire: false };
-    }
-    const da = angDiff(Math.atan2(A.way.y - t.y, A.way.x - t.x), t.h);
-    return { drive: Math.abs(da) < 0.9 ? 1 : 0, turn: clamp(da * 4, -1, 1), fire: false };
-  }
-
-  /* ─── BOARDS NO ONE PLAYS ─── a round of two computer tanks on the board's hole, worked out a few steps at a time (as the
-     tank maze's), sampled REC_HZ times a second, and played back on the page's clock with a rest; the hole's movers are drawn
-     at the recording's own clock, so the shells bounce off them where they were. */
-  const RECS = new Map(), REC_CAP = 300, SOON = BOARD_KIT.budget(4, 40);
-  const recKey = (idx, lv) => idx * 8 + lv;
-  const WAITING = new Map();                               // (Roam: the boards' enemies as they wait, Oct 29)
-  function recSoon(c, r, hk, force){
-    const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
-    let E = RECS.get(key);
-    if (E && E.H !== K.HOLES[E.hk]){ RECS.delete(key); E = null; }   // (its hole's slot went to another)
-    if (!E){
-      if (hk == null) return null;
-      const G = roundNew(K, hk, ['cpu', 'cpu'], idx * 31 + lv, lv); G.keep = true;
-      E = { hk, H: K.HOLES[hk], G, F: [], phase: BOARD_KIT.phase(idx), done: false };
-      RECS.set(key, E); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value);
-    } else { RECS.delete(key); RECS.set(key, E); }
-    if (E.done) return E;
-    /* (4 ms in every 40, a tenth of the page's time, not 6 in 30: a step is both tanks thinking, so a slice runs past its end
-        by up to a step, and zoomed out on a slow phone these battles took a fifth of every second, Oct 27) */
-    const budget = SOON.left();
-    if (budget <= 0 && !force) return E;
-    const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
-    let n = 0;
-    while (!G.over && G.t < 40){
-      if (Math.round(G.t / STEP) % every === 0){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
-        for (const b of G.shots) if (b.end > G.t) b.P.push(G.t, b.x, b.y, b.z); }
-      stepRound(G, G.tanks.map((_, k) => cpuCmd(G, k)), STEP);
-      // (the clock asked after every step: a step is a whole tick of two computer tanks thinking, and twenty of them ran to
-      //  60 ms on a slow phone, past the 6 ms this was meant to take, Oct 27: "mini-golf and golf tanks are to slow to be usable")
-      if (!force && performance.now() - t0 > budget) break;
-    }
-    SOON.spend(t0);
-    if (G.over || G.t >= 40){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
-      Object.assign(E, { T: G.t, shots: G.shots.map(b => ({ k: b.k, t0: b.t0, end: b.end, P: b.P, kind: b.kind, tx: b.tx, ty: b.ty })), beams: G.beams,
-                         booms: G.booms, blownAt: G.blownAt, winner: G.winner, done: true, G: null }); }
-    return E;
-  }
-  // a shell's place at time t along its recorded points [t, x, y, z, …]
-  function shellAt(P, t){
-    let i = 0; while (i + 4 < P.length && P[i + 4] <= t) i += 4;
-    if (i + 4 >= P.length) return [P[i + 1], P[i + 2], P[i + 3]];
-    const w = clamp((t - P[i]) / ((P[i + 4] - P[i]) || 1), 0, 1);
-    return [P[i + 1] + (P[i + 5] - P[i + 1]) * w, P[i + 2] + (P[i + 6] - P[i + 2]) * w, P[i + 3] + (P[i + 7] - P[i + 3]) * w];
-  }
-  function shownOf(E){
-    const K = kit(), N = 2;
-    if (!E.done){ const P = spawnsOf(K, E.H); return { hk: E.hk, H: E.H, t: 0, tanks: P.map((p, k) => ({ x: p.x, y: p.y, h: Math.atan2(P[1 - k].y - p.y, P[1 - k].x - p.x), alive: true })), shots: [], beams: [], booms: [], blown: {}, seats: ['cpu', 'cpu'], cols: [SEAT.cpu, SEAT.p2] }; }
-    const t = Math.min(E.T, BOARD_KIT.loopT(E.phase, E.T + 1.5)), n = E.F.length / (3 * N);
-    const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
-    const tanks = Array.from({ length: N }, (_, k) => { const a = 3 * N * i + 3 * k, b = 3 * N * j + 3 * k;
-      return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
-               alive: !E.booms.some(B => B.k === k && B.t <= t) }; });
-    const shots = E.shots.filter(b => b.t0 <= t && b.end > t).map(b => { const [x, y, z] = shellAt(b.P, t), [px, py] = shellAt(b.P, t - 0.07);
-      return { x, y, z, kind: b.kind, tx: b.tx, ty: b.ty, h: Math.atan2(y - py, x - px) }; });
-    const blown = {}; for (const [j2, bt] of E.blownAt) if (bt <= t) blown[j2] = bt;
-    return { hk: E.hk, H: E.H, t, tanks, shots, beams: E.beams || [], booms: E.booms, blown, seats: ['cpu', 'cpu'], cols: [SEAT.cpu, SEAT.p2] };
-  }
-
-  /* ─── PLAYING ─── a match on the board's hole: rounds one after another on the same hole, the score kept. */
-  const GAMES = new Map();
-  let LIVE = null, DRAG = null, ateAt = 0;
-  const { BEST, saveBest } = BOARD_KIT.best('golftanks.best');
-  const seatsNow = () => SET.players === 2 ? ['you', 'p2'] : ['you', 'cpu'];
-  const isPerson = s => s !== 'cpu';
-  const colsOf = seats => seats.map(s => SEAT[s]);
-  const namesOf = seats => seats.map(s => NAME[s]);
-  /* ─── ROAMING (Oct 29, above) ─── a board's enemies: the first where the cup was, the rest each in turn at the open cell
-     farthest from your tank and the ones placed, a little shuffled by the board's own numbers, so a board always holds the same */
-  function enemySpots(K, H, n, R){
-    const CW = K.CW, NX = K.NX, NY = K.NY, a = H.tee, out = [{ x: H.cup.x, y: H.cup.y }];
-    const ok = (x, y) => !(K.groundAt(H, x, y) === '~') && !K.solidsAt(H, x, y, TR * CW, 0).length && Math.hypot(...K.gradOf(H, x, y)) < SLIDE * 0.8;
-    const cand = [];
-    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){ const x = (i + 0.5) * CW, y = (j + 0.5) * CW;
-      if (!K.cellBlocked(H, i, j) && ok(x, y) && Math.hypot(x - a.x, y - a.y) > 3 * CW) cand.push({ x, y, j: R() }); }
-    while (out.length < n && cand.length){
-      let best = null, bd = -1;
-      for (const q of cand){ let d = Math.hypot(q.x - a.x, q.y - a.y) * 0.6; for (const o of out) d = Math.min(d, Math.hypot(q.x - o.x, q.y - o.y));
-        d += q.j * 0.3 * CW; if (d > bd){ bd = d; best = q; } }
-      out.push(best); cand.splice(cand.indexOf(best), 1);
-    }
-    return out.slice(0, n);
-  }
-  function roamRound(K, hk, idx, lv, cleared){
-    const n = cleared ? 0 : ROAM_N[clamp(lv | 0, 1, 5) - 1], seats = ['you', ...Array(n).fill('cpu')];
-    const G = roundNew(K, hk, seats, idx * 31 + lv, lv), H = G.H, P = enemySpots(K, H, n, rngOf(idx * 131 + lv));
-    G.roam = true; G.team = seats.map((s, k) => k ? 1 : 0); G.hold = HOLD_T;     // (they hold their fire as a board begins too)
-    G.tanks.forEach((t, k) => { if (!k) return; const p = P[k - 1] || P[0] || H.cup; t.x = p.x; t.y = p.y; t.h = Math.atan2(H.tee.y - p.y, H.tee.x - p.x) || 1e-6; settle(G, t, k); });
-    return G;
-  }
-  // a place for your tank near (x, y), stepping inward (ix, iy) and along until it is dry, clear and not too steep
-  function entryAt(G, x, y, ix, iy){
-    const K = G.K, H = G.H, CW = K.CW, m = K.RT + TR * CW + 0.06 * CW;
-    const ok = (px, py) => px >= m && px <= K.WD - m && py >= m && py <= 1 - m && !wet(G, px, py) && !K.solidsAt(H, px, py, TR * CW, G.t).length && Math.hypot(...K.gradOf(H, px, py)) < SLIDE;
-    const jx = -iy, jy = ix;
-    for (let d = 0; d <= 6 * CW; d += 0.25 * CW) for (const s of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 3, -3])
-      { const px = clamp(x + ix * d + jx * s * CW, m, K.WD - m), py = clamp(y + iy * d + jy * s * CW, m, 1 - m); if (ok(px, py)) return { x: px, y: py }; }
-    return { x: H.tee.x, y: H.tee.y };
-  }
-  function hop(g, du, dv){
-    let tc = null;
-    try { tc = { x: target.cellX, z: target.cellZ }; } catch {}
-    const GS = fieldGS();
-    // (from where the view is, unwrapped, as Asteroids does, so the flight is to the board beside; else from the board itself)
-    if (!tc || ((tc.x % GS) + GS) % GS !== g.c || ((tc.z % GS) + GS) % GS !== g.r) tc = { x: g.c, z: g.r };
-    // u grows toward −x and v toward −z, so off the right edge (x ≥ WD) is the board at x − 1.
-    const gx = tc.x - du, gz = tc.z - dv, nc = ((gx % GS) + GS) % GS, nr = ((gz % GS) + GS) % GS;
-    const K = kit(), o = g.G.tanks[0], m = K.RT + TR * K.CW + 0.06 * K.CW;
-    const ng = fresh(nc, nr, true), N = ng.G;
-    const x = du > 0 ? m : du < 0 ? K.WD - m : o.x, y = dv > 0 ? m : dv < 0 ? 1 - m : o.y, at = entryAt(N, x, y, du > 0 ? 1 : du < 0 ? -1 : 0, dv > 0 ? 1 : dv < 0 ? -1 : 0);
-    Object.assign(N.tanks[0], { x: at.x, y: at.y, h: o.h || 1e-6, safe: N.t + SAFE_T });
-    settle(N, N.tanks[0], 0);
-    N.hold = N.t + HOLD_T;
-    Object.assign(ng, { state: 'play', wait: 0, last: performance.now(), kills: g.kills, lost: g.lost, wid: g.wid.slice(), entry: { x: N.tanks[0].x, y: N.tanks[0].y, h: N.tanks[0].h } });
-    GAMES.delete(gkey(g.c, g.r));
-    GAMES.set(gkey(nc, nr), ng);
-    LIVE = { c: nc, r: nr };
-    SND.play('slide');
-    try { gotoCell(gx, gz); } catch {}
-    try { fieldItemsChanged(); } catch {}
-    return ng;
-  }
-  // which edge your tank is driving off, [du, dv], or null: pressed against the rail, heading out and driving on
-  function offEdge(g, cmd){
-    const G = g.G, K = G.K, t = G.tanks[0], m = K.RT + TR * K.CW + 0.12 * K.CW;
-    if (!t.alive || !cmd || !(cmd.drive > 0)) return null;
-    const cx = Math.cos(t.h), cy = Math.sin(t.h);
-    const du = t.x <= m && cx < -0.45 ? -1 : t.x >= K.WD - m && cx > 0.45 ? 1 : 0, dv = t.y <= m && cy < -0.45 ? -1 : t.y >= 1 - m && cy > 0.45 ? 1 : 0;
-    return du || dv ? [du, dv] : null;
-  }
-  function roamStep(g, booms0){
-    const G = g.G, t = G.tanks[0];
-    for (const B of G.booms.slice(booms0)) if (B.k >= 1 && B.by === 0) g.kills++;
-    if (!g.cleared && G.tanks.length > 1 && G.tanks.every((o, k) => !k || !o.alive) && G.t - Math.max(...G.tanks.slice(1).map(o => o.deadAt || 0)) >= 1){
-      g.cleared = true;
-      if (!isCleared(g.c, g.r)){ CLEARED.add(clearKey(g.c, g.r)); saveCleared(); }
-      t.ammo = WEAPONS.map(w => w.ammo);
-      SND.play('win'); say('Board cleared! ' + g.kills + ' destroyed. Drive off any edge for the next board.', 2600);
-    }
-    if (!t.alive && t.deadAt != null && G.t - t.deadAt >= BOOM_T){
-      g.lost++;
-      if (!SET.endless && g.lost >= 3){ g.state = 'over'; g.overAt = performance.now(); SND.play('lose'); say('Your third tank is out: ' + g.kills + ' destroyed. Tap to start again.', 4200); return; }
-      const e = g.entry || { x: G.H.tee.x, y: G.H.tee.y, h: t.h }, at = entryAt(G, e.x, e.y, 0, 0);
-      Object.assign(t, { x: at.x, y: at.y, h: e.h || 1e-6, alive: true, deadAt: null, vx: 0, vy: 0, kx: 0, ky: 0, spin: 0, stun: 0, cool: 0, safe: G.t + SAFE_T });
-      settle(G, t, 0);
-      say('A new tank' + (SET.endless ? ' (' + g.lost + ' lost)' : ' (' + (3 - g.lost) + ' left)') + '.', 1300);
-    }
-  }
-  function fresh(c, r, roamIt){
-    const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), hk = K.bareOf(K.holeAt(K.boardIdx(c, r)));
-    if (roamIt || roamOn()){
-      const g = { c, r, idx, lv, seats: null, roam: true, kills: 0, lost: 0, cleared: isCleared(c, r), state: 'ready', wait: 0, last: performance.now(), fireReq: [false], fireAt: [null], wid: [0], hk, H: K.HOLES[hk], score: [0, 0], round: 0 };
-      g.G = roamRound(K, hk, idx, lv, g.cleared); g.seats = g.G.seats;
-      g.entry = { x: g.G.tanks[0].x, y: g.G.tanks[0].y, h: g.G.tanks[0].h };
-      return g;
-    }
-    const seats = seatsNow();
-    const g = { c, r, idx, lv, seats, n: 2, score: [0, 0], round: 0, state: 'ready', wait: 0, last: performance.now(), fireReq: [false, false], fireAt: [null, null], wid: [0, 0], hk, H: K.HOLES[hk] };
-    g.G = roundNew(K, hk, seats, idx * 31 + lv, lv);
-    return g;
-  }
-  function gameAt(c, r){
-    const k = gkey(c, r), K = kit(); let g = GAMES.get(k);
-    if (g && g.H !== K.HOLES[g.hk]) g = null;                        // (its hole's slot went to another: begin again)
-    if (!g){ g = fresh(c, r); GAMES.set(k, g); }
-    return g;
-  }
-  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
-  function nextRound(g){
-    g.round++;
-    g.G = roundNew(kit(), g.hk, g.seats, g.idx * 31 + g.lv + g.round * 7919, g.lv);
-    g.state = 'count'; g.wait = COUNT_T; g.fireReq = [false, false]; g.fireAt = [null, null];
-    try { fieldItemsChanged(); } catch {}
-  }
-  function begin(g){ if (g.state !== 'ready') return; g.state = 'count'; g.wait = COUNT_T * 0.6; g.last = performance.now(); }
-  // the keys, as the tank maze's: one player, either set drives you; two, Player 1 on WASD (Q or Space), Player 2 on the arrows (M or Enter)
-  const HELD = new Set();
-  const KEYS = { w: ['F', 0], s: ['B', 0], a: ['L', 0], d: ['R', 0], W: ['F', 0], S: ['B', 0], A: ['L', 0], D: ['R', 0],
-                 ArrowUp: ['F', 1], ArrowDown: ['B', 1], ArrowLeft: ['L', 1], ArrowRight: ['R', 1] };
-  const FIRE_KEYS = { ' ': 0, q: 0, Q: 0, Enter: 1, m: 1, M: 1 };
-  // the weapons: 1–4 (Player 2 with two players: 7, 8, 9, 0)
-  const WEAPON_KEYS = { 1: [0, 0], 2: [1, 0], 3: [2, 0], 4: [3, 0], 7: [0, 1], 8: [1, 1], 9: [2, 1], 0: [3, 1] };
-  const seatOfKeys = (g, set) => g.seats[1] === 'p2' ? set : 0;
-  function choose(g, k, w){
-    const t = g.G.tanks[k], W = WEAPONS[w]; if (!W) return false;
-    if (!(t.ammo[w] > 0)){ say('No ' + W.name.toLowerCase() + ' left this round.', 1400); return true; }
-    g.wid[k] = w; say((g.seats[1] === 'p2' ? namesOf(g.seats)[k] + ': ' : '') + W.says + (W.ammo === Infinity ? '' : ' (' + t.ammo[w] + ' left)') + '.', 1800);
-    try { bbRefreshNow(); } catch {}
-    return true;
-  }
-  addEventListener('keydown', e => {
-    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
-    const g = liveGame(); if (!g || g.state === 'over') return;
-    const K = KEYS[e.key], F = FIRE_KEYS[e.key], Wk = WEAPON_KEYS[e.key];
-    if (Wk){ const k = seatOfKeys(g, Wk[1]); if (k === 0 || g.seats[k] === 'p2'){ e.preventDefault(); e.stopPropagation(); choose(g, k, Wk[0]); } return; }
-    if (K){ e.preventDefault(); e.stopPropagation(); HELD.add(K[0] + seatOfKeys(g, K[1])); begin(g); return; }
-    if (F != null){ e.preventDefault(); e.stopPropagation(); if (g.state === 'ready') begin(g); else if (!e.repeat) g.fireReq[seatOfKeys(g, F)] = g.G.t; }
-  }, true);
-  addEventListener('keyup', e => { const K = KEYS[e.key]; if (K){ let hit = false; for (const k of [0, 1]) hit = HELD.delete(K[0] + k) || hit; if (hit){ e.preventDefault(); e.stopPropagation(); } } }, true);
-  addEventListener('blur', () => HELD.clear());
-  function personCmd(g, k){
-    const t = g.G.tanks[k], CW = g.G.K.CW;
-    let drive = (HELD.has('F' + k) ? 1 : 0) - (HELD.has('B' + k) ? 0.7 : 0), turn = (HELD.has('R' + k) ? 1 : 0) - (HELD.has('L' + k) ? 1 : 0);
-    if (DRAG && DRAG.k === k && DRAG.at){
-      const dx = DRAG.at.x - t.x, dy = DRAG.at.y - t.y, da = angDiff(Math.atan2(dy, dx), t.h), d = Math.hypot(dx, dy);
-      turn = clamp(turn + da * 5, -1, 1);
-      if (d > 0.6 * CW && Math.abs(da) < 0.8) drive = Math.max(drive, Math.abs(da) < 0.35 ? 1 : 0.4);
-    }
-    // (the weapon in hand; a used-up one falls back to the cannon)
-    if (!(t.ammo[g.wid[k]] > 0)) g.wid[k] = 0;
-    return { drive, turn, fire: g.fireReq[k] !== false, w: g.wid[k], at: g.wid[k] === 1 ? g.fireAt[k] : null };
-  }
-  function stepGame(g){
-    const tn = performance.now(), dt = Math.min(0.25, (tn - g.last) / 1000); g.last = tn;
-    if (ARCADE.paused || g.state === 'ready' || g.state === 'over') return;
-    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + '.', 900); }
-    const G = g.G, booms = G.booms.length, heard = G.sounds.length;
-    for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--){
-      const cmds = g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k));
-      // (Roam: driving off an edge goes on to the next board, Oct 29)
-      if (g.roam){ const off = offEdge(g, cmds[0]); if (off){ hop(g, off[0], off[1]); return; } }
-      stepRound(G, cmds, STEP);
-      g.fireReq = g.fireReq.map((q, k) => q === false || G.lastFire[k] >= q || G.t - q > REQ_T ? false : q);
-      g.fireAt = g.fireAt.map((a, k) => g.fireReq[k] === false ? null : a);
-    }
-    for (const e of G.sounds.slice(heard)) SND.play(e === 'fire' ? 'tap' : e === 'mortar' ? 'turn' : e === 'rail' ? 'flag' : 'slide');
-    if (G.sounds.length > heard) try { bbRefreshNow(); } catch {}
-    if (G.booms.slice(booms).some(B => B.k >= 0)) SND.play('boom');
-    if (g.roam){ roamStep(g, booms); return; }
-    if (G.over) roundOver(g);
-  }
-  const bestKey = g => g.idx + '@' + g.lv + '@' + kit().SIZE;
-  function roundOver(g){
-    const G = g.G, w = G.winner, names = namesOf(g.seats);
-    if (w >= 0) g.score[w]++;
-    const tally = names.map((nm, k) => nm + ' ' + g.score[k]).join(', ');
-    const top = g.score.findIndex(x => x >= WIN);
-    if (top >= 0){
-      g.state = 'over'; g.overAt = performance.now();
-      const won = top === 0, rest = g.score[1];
-      if (SET.players === 1){
-        g.stars = won ? (rest <= 1 ? 3 : rest <= 3 ? 2 : 1) : 0;
-        const k = bestKey(g), was = +(BEST.get(k) || 0);
-        if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
-        SND.play(won ? 'win' : 'lose');
-        say((won ? 'You won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : names[top] + ' won the match, ' + tally) + '. Tap for the next board, hold to play again.', 4200);
-      } else { SND.play('win'); say((top === 0 ? 'Player 1' : 'Player 2') + ' won the match, ' + tally + '. Tap for the next board.', 4200); }
-      return;
-    }
-    const how = G.booms.find(B => B.k >= 0), drowned = how && how.kind === 'splash';
-    SND.play(w >= 0 && isPerson(g.seats[w]) ? 'good' : w < 0 ? 'turn' : 'bad');
-    say((w < 0 ? 'No one left standing' : names[w] + (names[w] === 'You' ? ' take' : ' takes') + ' the round' + (drowned ? ' (into the water!)' : '')) + ': ' + tally + '.', 1600);
-    nextRound(g);
-  }
-  function seatNear(g, x, y){
-    const P = g.seats.map((s, k) => isPerson(s) && g.G.tanks[k].alive ? k : -1).filter(k => k >= 0);
-    if (!P.length) return -1;
-    return P.sort((a, b) => Math.hypot(g.G.tanks[a].x - x, g.G.tanks[a].y - y) - Math.hypot(g.G.tanks[b].x - x, g.G.tanks[b].y - y))[0];
-  }
-
-  /* ─── WHAT A BOARD DRAWS ─── the hole, by mini golf, its movers at the round's clock and its mines as they went off; then
-     the tanks (the tank maze's pieces, standing on the ground), the shells at their height, the aim line and the bursts.
-     Everything is laid out in the hole's units and divided by WD at the end, as mini golf does. */
-  const lighten = c => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.min(255, Math.round(((c >> sh) & 255) * 1.25 + 18)) << sh; return o; };
-  const yawOf = BOARD_KIT.yawOf;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
-  function aimOf(g){
-    if (!SET.aim || (g.state !== 'play' && g.state !== 'count')) return [];
-    const G = g.G, K = G.K, CW = K.CW, out = [];
-    g.seats.forEach((st, k) => {
-      const t = G.tanks[k]; if (!isPerson(st) || !t.alive) return;
-      const segs = AIM_SEG[clamp(G.lv | 0, 1, 5)], w = g.wid[k], key = [t.x.toFixed(5), t.y.toFixed(5), t.h.toFixed(4), Math.round(G.t * 4), w].join(':');
-      // (the mortar shows where it would land, ringed; the rail its whole straight way; the missile nothing: Oct 22)
-      if (w === 1){ const at = autoRange(G, k); out.push({ ring: at, col: 0xff5a3a }); return; }
-      if (w === 3) return;
-      if (w === 2){ if (!t._aim || t._aim.key !== key){ const R = railTrace(G, k, t.h), P = [];
-          for (let i = 3; i < R.P.length; i += 3){ const ax = R.P[i - 3], ay = R.P[i - 2], az = R.P[i - 1], n = 2;
-            for (let q = 1; q <= n; q++){ const f = q / n; P.push(ax + (R.P[i] - ax) * f, ay + (R.P[i + 1] - ay) * f, az + (R.P[i + 2] - az) * f); } }
-          t._aim = { key, P }; }
-        out.push({ P: t._aim.P, col: 0x7fe8ff }); return; }
-      if (!t._aim || t._aim.key !== key){
-        const ux = Math.cos(t.h), uy = Math.sin(t.h), off = (TR + BRAD + 0.05) * CW, P = [];
-        const b = { k, x: t.x + ux * off, y: t.y + uy * off, vx: ux * BV * CW, vy: uy * BV * CW, t0: G.t, bounces: 0, z: floorAt(G, t.x, t.y) + GUN_Z * CW };
-        const sim = { tanks: G.tanks.map(o => ({ x: o.x, y: o.y, alive: false })) };
-        if (!K.solidsAt(G.H, b.x, b.y, BRAD * CW, G.t).length){
-          const ds = 1 / 60; let gone = 0;
-          for (let s = ds; s <= AIM_LEN; s += ds){
-            const hit = shellStep(G, b, ds, G.t + s, sim);
-            if (hit === -2 || b.bounces >= segs) break;
-            gone += BV * CW * ds; if (gone >= 0.22 * CW){ gone = 0; P.push(b.x, b.y, b.z); }
-          }
-        }
-        t._aim = { key, P };
-      }
-      out.push({ P: t._aim.P, col: lighten(SEAT[st]) });
-    });
-    return out;
-  }
-  function itemsOf(V, c, r, bp){
-    const K = kit(), CW = K.CW, WD = K.WD, H = V.H;
-    const out = K.drawHole(c, r, bp, { hk: V.hk, t: V.t, now: !!V.live, blown: V.blown });
-    const mine = [], s = CW;
-    const hOf = (x, y) => K.hOf(H, x, y);
-    V.tanks.forEach((t, k) => {
-      if (t.safe != null && V.t < t.safe && Math.floor(V.t * 8) % 2) return;     // (just come back: blinking, Oct 29)
-      // (stood on the slope under it, the slope taken across its own length, TILT_E a cell either way, so it lies along the
-      //  ground and not into it: Oct 22)
-      const col = V.cols[k], y = yawOf(t.h), h = hOf(t.x, t.y), sc = TS * s, e = TILT_E * s;
-      const tilt = [(hOf(t.x + e, t.y) - hOf(t.x - e, t.y)) / (2 * e), (hOf(t.x, t.y + e) - hOf(t.x, t.y - e)) / (2 * e)];
-      mine.push({ kind: 'mzTracks', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? TRACKC : 0x1a1a1a });
-      mine.push({ kind: 'mzHull', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? col : WRECK });
-      mine.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? lighten(col) : WRECK });
-      mine.push({ kind: 'mzGun', u: t.x, v: t.y, scale: sc, yaw: y, tilt, lift: h, color: t.alive ? GUNC : 0x1a1a1a });
-    });
-    const ring = (x, y, r, col, n) => { for (let q = 0; q < n; q++){ const a = q * TAU / n, px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
-      mine.push({ kind: 'mzDot', u: px, v: py, scale: 0.12 * s, lift: hOf(px, py) + 0.02 * s, color: col }); } };
-    for (const b of V.shots){
-      if (b.kind === 'mortar'){                                 // (the shell high on its arc, and where it will come down, ringed)
-        mine.push({ kind: 'mzShot', u: b.x, v: b.y, scale: 3.4 * BRAD * s, lift: b.z - 1.7 * BRAD * s, color: 0x3a3424 });
-        if (b.tx != null) ring(b.tx, b.ty, MORTAR_R * s, Math.floor(V.t * 6) % 2 ? 0xff3a22 : 0xffa080, 14);
-      } else if (b.kind === 'missile'){
-        const h = b.h || 0;
-        mine.push({ kind: 'mzMissile', u: b.x, v: b.y, scale: 1.5 * s, yaw: yawOf(h), lift: b.z, color: 0xe05ad8 },
-                  { kind: 'mzPuff', u: b.x - Math.cos(h) * 0.3 * s, v: b.y - Math.sin(h) * 0.3 * s, scale: 0.22 * s, lift: b.z, color: 0x9a9a9a });
-      } else mine.push({ kind: 'mzShot', u: b.x, v: b.y, scale: 2.4 * BRAD * s, lift: b.z - 1.2 * BRAD * s, color: SHOTC });
-    }
-    // the rail's beam, bright and fading, a thin bar a piece of its way
-    for (const Z of V.beams || []){ const a = V.t - Z.t; if (a < 0 || a > RAIL_SHOW) continue;
-      const P = Z.P, wd = (0.09 * (1 - a / RAIL_SHOW) + 0.025) * s;
-      for (let i = 3; i < P.length; i += 3){ const dx = P[i] - P[i - 3], dy = P[i + 1] - P[i - 2], l = Math.hypot(dx, dy); if (l < 1e-9) continue;
-        mine.push({ kind: 'mzBeam', u: (P[i] + P[i - 3]) / 2, v: (P[i + 1] + P[i - 2]) / 2, scale: s, sx: l / s, sy: wd / s, sz: wd / s, lift: (P[i + 2] + P[i - 1]) / 2, yaw: yawOf(Math.atan2(dy, dx)), color: 0x7fe8ff }); } }
-    for (const A of V.aim || []){
-      if (A.ring){ ring(A.ring.x, A.ring.y, MORTAR_R * s, A.col, 12); continue; }
-      for (let i = 0; i < A.P.length; i += 3) mine.push({ kind: 'mzDot', u: A.P[i], v: A.P[i + 1], scale: 0.11 * s, lift: A.P[i + 2] - 0.05 * s, color: A.col });
-    }
-    for (const B of V.booms){
-      const a = V.t - B.t; if (a < 0 || a > 1.8) continue;
-      const R = rngOf((B.k + 3) * 977 + Math.round(B.t * 1000) + Math.round(B.x * 1e4)), big = B.k >= 0 || B.kind === 'mine' || B.kind === 'blast', z = B.z;
-      if (B.kind === 'splash'){
-        for (let i = 0; i < 7; i++){ const q = R() * TAU, d = (0.1 + 0.3 * R()) * Math.min(1, a / 0.6) * s, f = Math.min(1, a / 1.2);
-          mine.push({ kind: 'mzPuff', u: B.x + Math.cos(q) * d, v: B.y + Math.sin(q) * d, scale: s * (0.25 + 0.4 * f), lift: z + (0.1 + 0.5 * f) * s * (1 - f), color: 0xdff2ff }); }
-        continue;
-      }
-      const k0 = B.kind === 'blast' ? 1.5 : big ? 1 : 0.45;
-      if (a < 0.7){ const f = a / 0.7, col = f < 0.25 ? 0xfff4d0 : f < 0.5 ? 0xffc040 : 0xf06a1a;
-        for (let i = 0; i < (big ? 6 : 3); i++){ const q = R() * TAU, d = (0.1 + 0.25 * R()) * f * s * k0;
-          mine.push({ kind: 'mzFire', u: B.x + Math.cos(q) * d, v: B.y + Math.sin(q) * d, scale: s * k0 * (0.35 + 0.5 * f) * (0.7 + 0.5 * R()), lift: z, color: col }); } }
-      for (let i = 0; i < (big ? 5 : 3); i++){ const q = R() * TAU, d = (0.15 + 0.3 * R()) * Math.min(1, a / 1.2) * s * k0, f = Math.min(1, a / 1.8);
-        mine.push({ kind: 'mzPuff', u: B.x + Math.cos(q) * d, v: B.y + Math.sin(q) * d, scale: s * k0 * (0.25 + 0.5 * f), lift: z + (0.2 + 0.6 * f) * s * k0, color: B.kind === 'hill' ? 0x7a6a50 : 0x3a3a3a }); }
-    }
-    for (const it of mine){ it.u /= WD; it.scale /= WD; it.lift /= WD; if (it.tilt) it.tilt = [it.tilt[0], it.tilt[1] / WD]; out.push(it); }   // (tilt: the field's lift a unit of u and of v)
-    return out;
-  }
-  function liveView(g){ const G = g.G; return { hk: G.hk, H: G.H, t: G.t, live: true, tanks: G.tanks, shots: G.shots.filter(b => b.end > G.t), beams: G.beams, booms: G.booms, blown: G.blown, seats: g.seats, cols: colsOf(g.seats), aim: aimOf(g) }; }
-  function viewOf(c, r){
-    const K = kit(), k = gkey(c, r), here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(k);
-    if (g && g.H === K.HOLES[g.hk]){ if (here) stepGame(g); return liveView(g); }
-    const h0 = K.holeSoon(c, r);
-    /* (Roam: a board no one plays shows its own enemy tanks waiting where they stand, their turrets looking about, or its hole
-        empty once cleared; not a duel of two computer tanks, red against blue, which read as someone playing: Oct 29) */
-    if (roamOn()){
-      if (h0 == null) return null;
-      const hk = K.bareOf(h0), H = K.HOLES[hk], ts = now() / 1000;
-      if (isCleared(c, r)) return { hk, H, t: ts, live: true, tanks: [], shots: [], beams: [], booms: [], blown: {}, seats: [], cols: [] };
-      const idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
-      let W = WAITING.get(key);
-      if (!W || W.H !== H){ const G = roamRound(K, hk, idx, lv, false); W = { H, tanks: G.tanks.slice(1).map(t => ({ x: t.x, y: t.y, h: t.h })) };
-        WAITING.set(key, W); if (WAITING.size > REC_CAP) WAITING.delete(WAITING.keys().next().value); }
-      const ph = BOARD_KIT.phase(idx) * TAU;
-      return { hk, H, t: ts, live: true, tanks: W.tanks.map((t, k) => ({ x: t.x, y: t.y, h: t.h + 0.6 * Math.sin(ts * 0.45 + ph + k * 2.1), alive: true })),
-               shots: [], beams: [], booms: [], blown: {}, seats: W.tanks.map(() => 'cpu'), cols: W.tanks.map(() => SEAT.cpu) };
-    }
-    const E = recSoon(c, r, h0 == null ? null : K.bareOf(h0));
-    return E ? shownOf(E) : null;
-  }
-  // the tanks' pieces are the tank maze's; everything else is mini golf's (its ground kinds are made as its holes are)
-  const tankGeo = { mzTracks: 1, mzHull: 1, mzTurret: 1, mzGun: 1, mzShot: 1, mzDot: 1, mzFire: 1, mzPuff: 1, mzMissile: 1, mzBeam: 1 };
-  const geos = new Proxy({}, { get(_, kind){ if (typeof kind !== 'string') return undefined; return tankGeo[kind] ? TANKMAZE_APP.itemGeometries[kind] : GOLF_APP.itemGeometries[kind]; } });
-
-  const restart = (c, r) => { GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; try { fieldItemsChanged(); } catch {} };
-  let TOLD = false;
-  const app = {
-    name: 'golf tanks',
-    menu: [{ head: 'Golf tanks', items: [
-      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Aim line: ' + (SET.aim ? 'on' : 'off'), title: 'Dots along where your shell would go, over the ground and off the walls: the most at level 1, the straight run alone farther out.',
-        on(){ SET.aim = !SET.aim; ARCADE.save('golftanks.aim', SET.aim ? 'on' : 'off'); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s red tank. Two: you and a friend on one keyboard (Player 1 green at the near end: WASD, Q or Space fires; Player 2 blue at the far end: the arrows, M or Enter fires), or a finger each on a phone.',
-        on(){ SET.players = SET.players === 2 ? 1 : 2; ARCADE.save('golftanks.players', String(SET.players)); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Mode: ' + (SET.mode === 'roam' ? 'roam' : 'match'), title: 'Roam: as Asteroids plays, with tanks: every board holds enemy tanks; drive off an edge to go on to the next board; a board you clear stays cleared. Match: one on one against the computer (or a friend), first to ' + WIN + ' rounds. Two players always play matches.',
-        on(){ SET.mode = SET.mode === 'roam' ? 'match' : 'roam'; ARCADE.save('golftanks.mode', SET.mode); GAMES.clear(); TOLD = false; try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Tanks: ' + (SET.endless ? 'endless' : 'three'), title: 'Roam: endless, a tank put out comes back and the losses are counted; three, the third ends the run.',
-        on(){ SET.endless = !SET.endless; ARCADE.save('golftanks.lives', SET.endless ? 'endless' : 'three'); } },
-      { label: () => 'Forget cleared boards (' + CLEARED.size + ')', title: 'Every board you cleared holds its enemy tanks again.',
-        on(){ CLEARED.clear(); saveCleared(); GAMES.clear(); say('Every board has its enemy tanks again.', 1800); try { fieldItemsChanged(); } catch {} } },
-      SND.item,
-      { label: 'Start this board again', title: 'A new game on this board: in a match nothing to nothing, roaming its enemies back (unless it is cleared).', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
-    ]}],
-    // (the board is mini golf's: its shape, its tilt floor and zoom ceiling, its far colours and the room its kinds ask for)
-    get boardShape(){ return GOLF_APP.boardShape; },
-    get cellFar(){ return GOLF_APP.cellFar; },
-    pitchMin: 45,
-    zoomMaxH: 4,
-    itemMinPx: 20,
-    itemGeometries: geos,
-    itemCaps(kind){ return GOLF_APP.itemCaps ? GOLF_APP.itemCaps(kind) : 0; },
-    fabricCell(ctx, rect){ return GOLF_APP.fabricCell && GOLF_APP.fabricCell(ctx, rect); },
-    cellGrid(c, r){
-      const K = kit(), g = GAMES.get(gkey(c, r)), hk = g ? g.hk : K.holeSoon(c, r, true);
-      return hk == null ? K.PLAIN_GRID : K.gridOf(hk);
-    },
-    cellItems(c, r, bp){ const V = viewOf(c, r); return V ? itemsOf(V, c, r, bp) : []; },
-    cellTitle(c, r){
-      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), best = BEST.get(idx + '@' + lv + '@' + kit().SIZE);
-      const head = 'Golf tanks — level ' + lv + (best ? ' · best ' + '★'.repeat(best) : '');
-      if (!g) return head + (roamOn() && isCleared(c, r) ? ' · cleared' : '');
-      if (g.roam){ const left = g.G.tanks.filter((o, k) => k && o.alive).length;
-        return head + ' · ' + (left ? left + (left === 1 ? ' enemy tank' : ' enemy tanks') + ' left' : 'cleared') + ' · ' + g.kills + ' destroyed' + (g.lost ? ' · ' + g.lost + ' lost' : '') + (SET.endless ? '' : ' · ' + Math.max(0, 3 - g.lost) + ' tanks left'); }
-      return head + ' · ' + namesOf(g.seats).map((n, k) => n + ' ' + g.score[k]).join(', ') + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')';
-    },
-    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g && !g.roam ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
-    // the bottom row: the four weapons, what is left of each this round, the one in hand lit (Oct 22; as the tanks' row)
-    statTiles(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || g.state === 'over' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
-      const t = g.G.tanks[0];
-      return WEAPONS.map((W, i) => ({ glyph: W.glyph, value: W.name, label: W.ammo === Infinity ? 'always' : t.ammo[i] + ' left', bg: g.wid[0] === i ? '#2f5e3a' : null, dim: !(t.ammo[i] > 0) })); },
-    statsStay(){ const g = liveGame(); return !!g && g.state !== 'over'; },
-    onStatTap(c, r, i){ const g = GAMES.get(gkey(c, r)); if (!g || !WEAPONS[i]) return false; return choose(g, 0, i); },
-    // (THE PLAY PAD, Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced users.",
-    //  then "Mostly getstures, but some buttons if needed.": the mortar, the rail gun and the missile were the row's or the keys';
-    //  one round button holds the weapon in hand and a tap takes up the next with ammo left)
-    playActs(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || g.state === 'over' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
-      const t = g.G.tanks[0], W = WEAPONS[g.wid[0]];
-      return [{ key: 'weapon', glyph: W.glyph, label: W.ammo === Infinity ? W.name.toLowerCase() : W.name.split(' ')[0].toLowerCase() + ' ' + t.ammo[g.wid[0]], title: W.name + ': tap for the next weapon with ammo left' }]; },
-    onPlayAct(c, r, key){ const g = GAMES.get(gkey(c, r)); if (!g || key !== 'weapon') return false; const t = g.G.tanks[0], n = WEAPONS.length;
-      for (let d = 1; d <= n; d++){ const i = (g.wid[0] + d) % n; if (t.ammo[i] > 0){ choose(g, 0, i); break; } } return true; },
-    onReset(c, r){ restart(c, r); return true; },
-    onSelect(c, r){ return true; },
-    onFramed(c, r){
-      LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD && roamOn()){ TOLD = true; say('Your tank is green; the red ones are the enemy. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires; 1–4 choose the cannon, the mortar, the rail gun or a missile. Clear a board of its tanks and it stays cleared; drive off any edge to go on to the next board.', 7500); }
-      if (LIVE && !TOLD){ TOLD = true; say('One on one: your tank is green. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires; 1–4 (or the bottom row) choose the cannon, the mortar (tap where it should land), the rail gun or a missile. Hills are cover, shells bounce off the rails, fences and movers, and water stops tanks.', 7500); }
-    },
-    noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
-    onCellTap(c, r, u, v){
-      if (performance.now() - ateAt < 400) return true;       // (the tap the field still calls after a short drag)
-      const g = gameAt(c, r);
-      if (g.state === 'over'){
-        if (performance.now() - (g.overAt || 0) < 800) return true;
-        if (g.roam){ restart(c, r); return true; }
-        const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
-      LIVE = { c, r };
-      if (g.state === 'ready'){ begin(g); return true; }
-      const k = u == null ? 0 : seatNear(g, u * kit().WD, v);
-      if (k >= 0){ g.fireReq[k] = g.G.t; g.fireAt[k] = u != null && g.wid[k] === 1 ? { x: u * kit().WD, y: v } : null; }   // (a mortar comes down where you tap: Oct 22)
-      return true;
-    },
-    onCellHold(c, r){ restart(c, r); say('A new match on this board.', 1400); return true; },
-    keepsPress: true,
-    claimsPan(u, v){
-      const g = liveGame(); if (!g || g.state === 'over' || u == null) return false;
-      const x = u * kit().WD, k = seatNear(g, x, v); if (k < 0) return false;
-      begin(g); DRAG = { k, at: { x, y: v }, moved: false }; return true;
-    },
-    onPan(dx, dy, at){ if (!DRAG) return false; if (at){ DRAG.at = { x: at.u * kit().WD, y: at.v }; DRAG.moved = true; } return true; },
-    onPanEnd(){ if (DRAG && DRAG.moved) ateAt = performance.now(); DRAG = null; },
-    drawIcon(ctx, sz){
-      ctx.fillStyle = '#63b86a'; ctx.fillRect(0, 0, sz, sz);
-      ctx.fillStyle = '#4f9a56'; ctx.beginPath(); ctx.ellipse(sz * 0.5, sz * 0.5, sz * 0.3, sz * 0.14, -0.5, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#5aa0e0'; ctx.beginPath(); ctx.ellipse(sz * 0.25, sz * 0.3, sz * 0.13, sz * 0.09, 0.3, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.fillRect(sz * 0.78, sz * 0.12, sz * 0.02, sz * 0.2); ctx.fillStyle = '#e0443a'; ctx.fillRect(sz * 0.8, sz * 0.12, sz * 0.09, sz * 0.06);
-      const tank = (x, y, col, q) => { ctx.save(); ctx.translate(x * sz, y * sz); ctx.rotate(q); ctx.fillStyle = '#2b2b2b'; ctx.fillRect(-sz * 0.09, -sz * 0.08, sz * 0.18, sz * 0.16);
-        ctx.fillStyle = col; ctx.fillRect(-sz * 0.07, -sz * 0.055, sz * 0.14, sz * 0.11); ctx.fillStyle = '#30352c'; ctx.fillRect(0, -sz * 0.012, sz * 0.12, sz * 0.024); ctx.restore(); };
-      tank(0.22, 0.8, '#5a9e3e', -0.9); tank(0.75, 0.32, '#c8463c', 2.3);
-      ctx.fillStyle = '#1c1c1c'; [[0.34, 0.66], [0.42, 0.56]].forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x * sz, y * sz, sz / 40, 0, TAU); ctx.fill(); });
-    },
-    _debug: { CLEARED, isCleared, clearKey, roamOn, roamRound, enemySpots, entryAt, hop, offEdge, roamStep, foeOf, ROAM_N, SAFE_T, HOLD_T,
-              WEAPONS, fire, fireMortar, fireRail, fireMissile, railTrace, autoRange, choose, MORTAR_R, MORTAR_MAX, RAIL_LEN, MIS_LIFE,
-              LV, kit, roundNew, stepRound, moveTank, fireShell, shellStep, simShot, navTo, cpuCmd, think, escape, threatened, recSoon, shownOf, itemsOf, viewOf, aimOf, liveView,
-              spawnsOf, floorAt, fresh, gameAt, stepGame, begin, nextRound, personCmd, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
-              GAMES, RECS, BEST, HELD, SET, WIN, STEP, BV, TR, LIFE, GRACE, GUN_Z, CLEAR, CLIMB, DROP, THROW, MINE_R,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
-  };
-  return app;
-})();
 /* ═══ TRICK SHOTS: WANDER'S POOL TABLE ════════════════════════════════════════════════════════════════════════════════════
    (Oct 22: "could you add the trick shot demo from wander. repos to the games application?") wander's play-trick.html, a pool
    table where you set an angle and a power and see the whole shot ahead of time, every ball it reaches, to rest. Its engine
@@ -63503,7 +62448,7 @@ onmessage = ev => {
     GEO['gl_' + k] = f;
     GEO['gl_' + k + '_L'] = T => { const g = f(T); g.userData.unlit = true; return g; };
   }
-  // (a letter's kind is made when first asked for, as golf tanks' Proxy gives its kinds)
+  // (a letter's kind is made when first asked for)
   const itemGeometries = new Proxy(GEO, {
     get: (o, k) => typeof k === 'string' && /^gch_\d+$/.test(k) ? (T => glyphGeo(T, +k.slice(4))) : o[k],
     has: (o, k) => (typeof k === 'string' && /^gch_\d+$/.test(k)) || k in o,
@@ -64106,7 +63051,7 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, GOLFTANK_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -64115,7 +63060,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [GOLFTANK_APP, 'golftanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
@@ -64775,7 +63720,7 @@ const _itemMeshes = new Map();
    boards do, and they are one instance each, so depth is cheap.
    48,000 × ~76 bytes ≈ 3.6 MB a kind; draughts has two (man, king), Go one. */
 const _ITEM_CAP = 48000;
-const _ip = new THREE.Vector3(), _iq = new THREE.Quaternion(), _is = new THREE.Vector3(), _iUp = new THREE.Vector3(0, 1, 0), _iN = new THREE.Vector3(), _iq2 = new THREE.Quaternion();
+const _ip = new THREE.Vector3(), _iq = new THREE.Quaternion(), _is = new THREE.Vector3(), _iUp = new THREE.Vector3(0, 1, 0);
 const _im = new THREE.Matrix4();
 let _itemLightsOn = false;
 /* NOTHING TO ADD ANY MORE. The app items used to bring their own hemisphere
@@ -65073,11 +64018,6 @@ function _emitInto(rec, it, cx, cz, bWX, bWZ, flatW){
      about +y, so the world's turn is H·q: (z, w, −x, −y). (Until Oct 23 it was H·q·H⁻¹, which turned the item's own axes half
      round as well: the cue lay forward along the shot, its butt over the ball it was aimed at. A ball rolls the same either way.) */
   if (it.rot) _iq.set(it.rot[2], it.rot[3], -it.rot[0], -it.rot[1]);
-  /* `tilt` (Oct 22, golf tanks: "the tanks just drive through hills. they should respect the terrain."): [du, dv], the slope of
-     the ground under an item as lift a unit of u and of v. The item is then stood on that slope (its upright turned to the
-     ground's normal, after its yaw), not level with its front buried in the hillside. The board runs +u to −x and +v to −z,
-     and v is bWZ long where u and lift are bWX, so the normal is (du, 1, dv·bWX/bWZ). */
-  if (it.tilt){ _iN.set(it.tilt[0], 1, it.tilt[1] * bWX / bWZ).normalize(); _iq2.setFromUnitVectors(_iUp, _iN); _iq.premultiply(_iq2); }
   _im.compose(_ip, _iq, _is);
   rec.mesh.setMatrixAt(rec.n, _im);
   rec.mesh.setColorAt(rec.n, _appColor(it.color == null ? 0xf0e6d2 : it.color));
