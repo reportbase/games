@@ -3887,22 +3887,33 @@ function turnStart(x, y){
      An app's own hold (onCellHold — Minesweeper's flag, the pipe games'
      turn-back) is taken on RELEASE, and only if the hand did not pull: hold
      and let go is the app's; hold and pull is the view's. */
+  /* …AND DECIDED A FRAME LATE (Oct 29: a drag on a gem in bejeweled sometimes did nothing). The browser holds a
+     finger's moves until just before the next frame is drawn, so on a slow page (a second a frame in the sandbox's
+     renderer, a slow phone) the 600 ms ran out with the first move still waiting: the hand read as still, the press
+     was taken back from the game as a hold, and the drag went nowhere. So when the time is up the hold waits for one
+     more frame, whose moves come in first: a hand that has started moving clears the timer as it would have before
+     the time was up (turnMove), and the frame's callback finds it gone. A real hold comes a frame later. */
+  const _holdTok = {};
   turn.longPressTimer = setTimeout(() => {
-    turn.longPressTimer = null;
-    if (!turn.active) return;
-    /* …unless the app keeps its presses (Oct 1, Falling tiles: "i still cant move anywhere on the
-       board"): there a finger resting on the king is steering, and a hold that took the press away
-       to tilt the view is exactly what stopped it moving. */
-    try { const _ka = window.getFieldApp && window.getFieldApp(); if (turn.appPan && _ka && _ka.keepsPress){ turn.keptHold = true; return; } } catch {}
-    const _moved = Math.hypot(turn.currentX - turn.anchorX, turn.currentY - turn.anchorY);
-    if (_moved >= (turn.isTouch ? 16 : TAP_PX)) return;       // already dragging: not a hold
-    turn.appPan = false;
-    try {
-      const _a = window.getFieldApp && window.getFieldApp();
-      if (_a && _a.onCellHold && _a.holdKeeps) turn.holdAt = _framedUV(turn.anchorX, turn.anchorY);
-    } catch {}
-    turn.longPressed = true;
-    if (_hooks.onLongPress) _hooks.onLongPress();
+    turn.longPressTimer = _holdTok;
+    requestAnimationFrame(() => {
+      if (turn.longPressTimer !== _holdTok) return;   // moved, let go or cancelled meanwhile
+      turn.longPressTimer = null;
+      if (!turn.active) return;
+      /* …unless the app keeps its presses (Oct 1, Falling tiles: "i still cant move anywhere on the
+         board"): there a finger resting on the king is steering, and a hold that took the press away
+         to tilt the view is exactly what stopped it moving. */
+      try { const _ka = window.getFieldApp && window.getFieldApp(); if (turn.appPan && _ka && _ka.keepsPress){ turn.keptHold = true; return; } } catch {}
+      const _moved = Math.hypot(turn.currentX - turn.anchorX, turn.currentY - turn.anchorY);
+      if (_moved >= (turn.isTouch ? 16 : TAP_PX)) return;       // already dragging: not a hold
+      turn.appPan = false;
+      try {
+        const _a = window.getFieldApp && window.getFieldApp();
+        if (_a && _a.onCellHold && _a.holdKeeps) turn.holdAt = _framedUV(turn.anchorX, turn.anchorY);
+      } catch {}
+      turn.longPressed = true;
+      if (_hooks.onLongPress) _hooks.onLongPress();
+    });
   }, LONG_PRESS_MS);
 
   st.dragging = true;

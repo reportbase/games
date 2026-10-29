@@ -2362,6 +2362,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     yourself. Minesweeper keeps its hold (Oct 25, later: "minesweeper should restore the long press, its fundemental to its game
     play."): an app with `holdKeeps` is asked first, and a hold it takes (a covered square in a game under way) flags it; a hold
     anywhere else is the row's. Its menu's Taps: dig / flag (F on the keys, localStorage `minesweeper.taps`) stays too.
+- **A hold is decided a frame late** (Oct 29, found by the smoke test's bejeweled drag): the browser holds a finger's moves until
+  just before the next frame, so on a slow page the 600 ms long-press timer (`LONG_PRESS_MS`) ran out with the first move still
+  waiting, the press was taken back from the game as a hold and the drag went nowhere (3 page loads in 6 here). When the time is
+  up the hold now waits one frame (`_holdTok`, a `requestAnimationFrame`): a hand that has started moving clears the timer first
+  (`turnMove`), as it would have before the time was up.
 - **Games play with the row shut** (Oct 28: "you should not need to have the bottom browser open to play games. that is only
   for advanced users.", then "Mostly getstures, but some buttons if needed."):
   - **The row never opens by itself.** `bbStatTick` opened it when a game's numbers first appeared (Sep 30), and put back a row a
