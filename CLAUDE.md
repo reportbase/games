@@ -1555,7 +1555,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     no way on from them, every piece goes back to the tray. Filled: stars by the hints (none 3, one 2, more 1), the best (most
     stars, then quickest) kept (localStorage `soma.best`); a tap goes on to the next board.
   - **A board no one plays** (`shownOf`, from the clock alone) builds its figure: the solution's pieces coming down into place one
-    after another, held whole, and round again. `frameFit` 1.5, `pitchMin` 60, `tapMargin` 0.4, as 3D Tetris's.
+    after another, held whole, and round again. `frameFit` 1.5, `tapMargin` 0.4, as 3D Tetris's. **The tilt is free** (Oct 29: "soma clamping of the tilt is to aggressive. I want to see all sides of the cube from the ground level and from above."): it opened at a floor of 60° (`pitchMin`) with the field's bottom stop at 75°, so the figure could not be seen from the side or from straight above. Now `pitchFloor` 3 (the field's altitude coupling raises it a little as the eye climbs, about 5° at the opening zoom) and `pitchMax` 89, a new app field: the field's `PITCH_MAX` is a `let`, set from the app by `setFieldApp` (75 for every other game). `fitView` opens it at 60°, where `frameFit` was worked out.
   - **The course** (Oct 23: "whats next for soma", then "1,2", the first the famous figures on the boards nearest the corner):
     the first sixteen boards (`boardIdx` 0–15, the 4 × 4 corner block) hold named figures of all seven pieces (`COURSE`, written
     as layers from the ground up, `courseFigure`): the cube, the pyramid, the steps, the bathtub, the sofa, the bed, the throne,

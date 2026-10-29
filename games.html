@@ -2635,7 +2635,7 @@ function syncTargetToCell(){
    one number rather than six. Beyond ~75 the horizon leaves the top of the
    frame and the field stops receding — it reads as a flat plan of a few
    boards, and the foveated LOD is tuned for a receding plane. */
-const PITCH_MAX = 75;
+let PITCH_MAX = 75;     // (the field's bottom stop for the tilt; an app may move it, `pitchMax`: Soma looks straight down, Oct 29)
 /* ─── THE TWO EDGE GAUGES, MAPPED ONCE ─────────────────────────────────────
    Each rail turns a position on itself into a value, and a value back into a
    position. Those are one function and its inverse, and they were written
@@ -30406,7 +30406,13 @@ const SOMA_APP = (() => {
     name: 'soma',
     realtime: true,
     frameFit: 1.5,
-    pitchMin: 60,
+    /* THE TILT IS FREE (Oct 29: "soma clamping of the tilt is to aggressive. I want to see all sides of the cube from the ground
+       level and from above."): the floor was 60° (pitchMin) and the field's bottom stop 75°, so the figure could never be seen
+       from the side or from straight above. Now from 3°, nearly along the ground, to 89°, straight down (90° looks along the
+       camera's up). It still opens at 60°, where the framing (frameFit) was worked out. */
+    pitchFloor: 3,
+    pitchMax: 89,
+    fitView(F){ F.st.pitch = 60; zoomBoardToFit(); },
     tapMargin: 0.4,
     cellFar: { light: FLOOR, dark: BASE },
     itemMinPx: 6,
@@ -62656,6 +62662,7 @@ window.setFieldApp = app => {
   try { if (typeof PLAY !== 'undefined' && PLAY.on) exitPlay(); } catch {}
   _framedWatchKey = '·';                                      // re-announce to the newcomer
   FIELD_APP = app || CHESS_APP;
+  PITCH_MAX = FIELD_APP.pitchMax || 75;                      // (an app may let the tilt go lower than the field's 75°: Soma, Oct 29)
   // (the tilt an app's floor lifted is put back for one whose floor is lower, before it is framed, Oct 23: see _pitchLift)
   try {
     if (_pitchLift){

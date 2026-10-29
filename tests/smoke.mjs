@@ -3842,6 +3842,25 @@ try {
     if (!ok2) failures.push('[soma can it be built] ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma can it be built: the real N on one that cannot be built takes it, a real click on ✗ on one that can costs a hint`);
   }
+  // SOMA'S TILT IS FREE (Oct 29: "soma clamping of the tilt is to aggressive. I want to see all sides of the cube from the ground
+  // level and from above."): it opens at 60°, may be tipped to nearly along the ground and to straight down, and the next game
+  // has the field's own stops again (mini golf's floor 45°, nothing past 75°)
+  {
+    current = 'soma tilt';
+    const before = failures.length;
+    const t = await page.evaluate(async () => {
+      const W = window.FIELD_WORLD, wait = ms => new Promise(ok => setTimeout(ok, ms)), out = {};
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')); await wait(2500);
+      out.open = W.st.pitch;
+      for (const [k, v] of [['low', 0], ['high', 95], ['mid', 30]]){ W.st.pitch = v; await wait(800); out[k] = W.st.pitch; }
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'minigolf')); await wait(2500);
+      W.st.pitch = 95; await wait(800); out.golfHigh = W.st.pitch;
+      W.st.pitch = 0; await wait(800); out.golfLow = W.st.pitch;
+      return out; });
+    if (!(Math.abs(t.open - 60) < 1 && t.low < 10 && t.high >= 88 && Math.abs(t.mid - 30) < 1 && t.golfHigh <= 75 && t.golfLow >= 44))
+      failures.push(`[${current}] ${JSON.stringify(t)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} soma tilt (opens at ${Math.round(t.open)}°, tipped to ${t.low.toFixed(1)}° and ${t.high.toFixed(0)}°; mini golf kept to ${t.golfLow.toFixed(0)}–${t.golfHigh.toFixed(0)}°)`);
+  }
   // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
   // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt
   {
