@@ -7220,6 +7220,18 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(1500);
     const live = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g ? { at: [f.c, f.r], roam: g.roam, n: g.G.tanks.length, team: g.G.team, kills: g.kills, lost: g.lost, state: g.state } : null; });
     const o = { start: await live() };
+    // (Oct 29: "the users tank should always be shooting like asteroids.   there should be more opponent tanks.   different type of
+    //  tanks.": your cannon firing with no input, 3 to 7 enemies by level of every type by level 5, a heavy taking three hits)
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); g.G.tanks[0].safe = g.G.t + 30; });
+    await page.waitForTimeout(2500);
+    o.kinds = await page.evaluate(() => { const D = window.getFieldApp()._debug, K = D.kit(), f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r), out = {};
+      out.auto = g.G.shots.filter(b => b.k === 0 && !b.kind).length;
+      out.n = [1, 3, 5].map(lv => D.roamRound(K, K.bareOf(K.holeAt(130)), 130, lv, false).tanks.length - 1);
+      const seen = new Set(); for (let idx = 100; idx < 140; idx++) for (const t of D.roamRound(K, K.bareOf(K.holeAt(idx)), idx, 5, false).tanks.slice(1)) seen.add(t.type);
+      out.types = seen.size;
+      let G = null, k = -1; for (let idx = 100; idx < 140 && k < 0; idx++){ G = D.roamRound(K, K.bareOf(K.holeAt(idx)), idx, 3, false); k = G.tanks.findIndex(t => t.type === 'heavy'); }
+      out.heavy = []; for (let i = 0; i < 3; i++){ G.t += 0.5; D.kill(G, k, 0, 'hit'); out.heavy.push(G.tanks[k].alive); }
+      return out; });
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r), K = D.kit(), t = g.G.tanks[0];
       Object.assign(t, { x: K.WD - K.RT - D.TR * K.CW - 0.05 * K.CW, y: 0.5, h: 1e-6, safe: g.G.t + 30 }); g.kills = 3; });
     await page.keyboard.down('w');
@@ -7227,7 +7239,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.keyboard.up('w'); await page.waitForTimeout(800);
     o.hop = await live();
     const r = await page.evaluate(() => { const D = window.getFieldApp()._debug, A = window.getFieldApp(), f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r), G = g.G, out = {};
-      out.waitView = (() => { const K = D.kit(); K.holeAt(K.boardIdx(f.c + 5, f.r + 2)); const V = D.viewOf(f.c + 5, f.r + 2); return V ? [V.tanks.length, V.cols.every(c => c === V.cols[0])] : null; })();
+      out.waitView = (() => { const K = D.kit(); K.holeAt(K.boardIdx(f.c + 5, f.r + 2)); const V = D.viewOf(f.c + 5, f.r + 2); return V ? [V.tanks.length, V.cols.length === V.tanks.length] : null; })();
       G.tanks.forEach((t, k) => { if (k){ t.alive = false; t.deadAt = G.t - 2; } });
       D.roamStep(g, G.booms.length); out.cleared = [g.cleared, D.isCleared(f.c, f.r)];
       G.tanks[0].safe = null; G.tanks[0].alive = false; G.tanks[0].deadAt = G.t - 2; D.roamStep(g, G.booms.length); out.back = [G.tanks[0].alive, g.lost, g.state];
@@ -7237,12 +7249,13 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       D.CLEARED.delete(D.clearKey(f.c, f.r)); try { localStorage.removeItem('golftanks.cleared'); } catch {}
       return out; });
     Object.assign(o, r);
-    const ok = o.start && o.start.roam && o.start.n >= 2 && o.start.team[0] === 0 && o.start.team.slice(1).every(x => x === 1)
+    const ok = o.kinds.auto >= 2 && o.kinds.n.join() === '3,5,7' && o.kinds.types === 6 && o.kinds.heavy.join() === 'true,true,false'
+      && o.start && o.start.roam && o.start.n >= 2 && o.start.team[0] === 0 && o.start.team.slice(1).every(x => x === 1)
       && o.hop && o.hop.at[0] !== o.start.at[0] && o.hop.kills === 3 && o.hop.state === 'play'
       && o.cleared[0] && o.cleared[1] && o.back[0] && o.back[1] >= 1 && o.back[2] === 'play' && /cleared/.test(o.title) && o.empty === 0 && o.again === 1
       && o.waitView && o.waitView[0] >= 1 && o.waitView[1];
     if (!ok) failures.push(`[${current}] ${JSON.stringify(o)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks roam (a real click started ${o.start && o.start.n - 1} enemy tanks; the real W drove off the edge to board ${o.hop && o.hop.at.join('·')} with ${o.hop && o.hop.kills} destroyed; its enemies out cleared it, empty when left and played again; a tank lost came back; a board beside shows ${o.waitView && o.waitView[0]} waiting)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} golf tanks roam (a real click started ${o.start && o.start.n - 1} enemy tanks; your cannon fired ${o.kinds.auto} shells unasked; ${o.kinds.n.join(', ')} enemies at levels 1, 3, 5, ${o.kinds.types} kinds, a heavy out on its third hit; the real W drove off the edge to board ${o.hop && o.hop.at.join('·')} with ${o.hop && o.hop.kills} destroyed; its enemies out cleared it, empty when left and played again; a tank lost came back; a board beside shows ${o.waitView && o.waitView[0]} waiting)`);
   }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take

@@ -1476,7 +1476,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     a mortar where it was clicked; and a tank driven at steep ground staying at its foot, drawn tilted to it.
   - **Like Asteroids, with tanks** (Oct 29: "golf tanks  should be like asteroids.      instead of asteroids, use takes."): the menu's
     Mode is Roam (the default, localStorage `golftanks.mode`) or Match (the one-on-one above; two players always play matches).
-    - Roaming, every board's hole holds enemy tanks (`ROAM_N` by level: 1, 2, 3, 3, 4; `roamRound`, `enemySpots`: the first where the
+    - Roaming, every board's hole holds enemy tanks (`ROAM_N` by level: 3, 4, 5, 6, 7 since the kinds below, 1 to 4 before; `roamRound`, `enemySpots`: the first where the
       cup was, the rest each at the open cell farthest from you and the ones placed), all of one side (`G.team`, `foeOf`: a tank's
       foes are the other side's; with no sides, a match, every other tank). They hold their fire `HOLD_T` (2.5 s) as a board begins
       and as you arrive (`G.hold`).
@@ -1489,8 +1489,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     - Tanks are endless by default (the menu's Tanks: endless or three, `golftanks.lives`): yours, put out, comes back where it came on
       to the board after `BOOM_T`, the losses counted in the title; with three, the third ends the run and a tap starts again.
     - Measured: a step of a round at levels 1, 3 and 5 (one, three, four enemies) 0.07, 0.14 and 0.17 ms.
+    - **Always firing, more of them, kinds of tank** (Oct 29: "the users tank should always be shooting like asteroids.   there
+      should be more opponent tanks.   different type of tanks."): roaming, your cannon fires by itself whenever it can (`personCmd`:
+      a shell every 0.25 s, each living `ROAM_LIFE` 1.4 s, up to `ROAM_MAXB` 6), its shots not sounded one by one (`'auto'`); a tap,
+      Enter or Space fires the weapon in hand when it is not the cannon. Roaming, no shell hurts its own side, its tank included
+      (`shellStep`); a burst still takes anyone. `ROAM_N` is now 3, 4, 5, 6, 7 by level. Every enemy is one of `TYPES`, drawn by the
+      board's own numbers from those its level has (`TYPE_LV`: scout and trooper at level 1, the heavy from 2, the sniper from 3,
+      artillery from 4, the rocket tank at 5): its colour (`G.cols`), size (drawn and hit), speed and turn (`sp`, `tn`), hits (`hp`:
+      the heavy three, artillery two; a hit short of the last dents it, `dent`, a white flash, pips over it for hits left) and how its
+      computer plays (`dial` over the level's `LV`, `t.D`; its own `ammo`: the sniper's rail, artillery's mortars, the rocket tank's
+      missiles). Measured: a step 0.11, 0.2 and 0.43 ms with 3, 5 and 7 enemies.
     - The smoke test (part 7, "golf tanks roam") starts a board by a real click, drives off the edge with the real W, clears the new
-      board and finds it empty when left and played again, brings a lost tank back, and sees a board beside showing its enemies.
+      board and finds it empty when left and played again, brings a lost tank back, and sees a board beside showing its enemies;
+      since the kinds, also your cannon firing unasked, 3, 5 and 7 enemies at levels 1, 3 and 5, all six kinds, a heavy out on its third hit.
 - **Trick shots** (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): `TRICK_APP`, id
   `trickshots`, after golf tanks. wander's `play-trick.html` (its main at 335fa6c), a pool table where you set an angle and a power
   and see the whole shot ahead of time, every ball it reaches, to rest.
