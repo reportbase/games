@@ -15348,8 +15348,10 @@ function clarityAt_ctx(camHt, alongNear){
    levels (chess, say) has none and keeps its own colours. Near, a board gets a mat the colour of its level under it,
    showing in the gutter, and its squares are mixed `DIFF_K` toward it where the app paints squares (a game that hangs a
    picture, the photo tier, has the mat alone); far, the whole cell, the gutter fully and the board `DIFF_K`. */
-const DIFF_COL = [0x3fae5a, 0x3f7fd0, 0xe0c040, 0xe08030, 0xd03a3a];   // levels 1 to 5
-const DIFF_K = 0.3, DIFF_GAP = 0.85, DIFF_BG = 0x0b0d12;
+/* (Oct 29: "the difficulty colors are to strong, make them lighter shades.") Pastels now, and less of them: the gutter takes
+   half of its colour (0.85 before) and the board a fifth (0.3), the saturated green, blue, yellow, orange and red they were. */
+const DIFF_COL = [0xa6dcae, 0xa2c8f0, 0xf1e594, 0xf3c08c, 0xeba0a0];   // levels 1 to 5
+const DIFF_K = 0.18, DIFF_GAP = 0.5, DIFF_BG = 0x0b0d12;
 const DIFF_PROBE = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 18, 22, 27, 33, 40, 50, 62, 75, 100, 150, 250, 500, 1000, 2500, 4999];
 const DIFF = { n: 0, app: null, sig: '', at: -99, thr: [1e9, 1e9, 1e9, 1e9], val: [0, 0, 0, 0, 0], on: false };
 try { window.__diff = DIFF; } catch {}
@@ -16531,10 +16533,13 @@ function handleGroundTap(hit, ev){
            0°, for every app — chess included: turning a chess board to face
            your own side spun a board that was already the right way round.
            A board already within a degree of it is left alone. */
-        if (!onFramed) gotoCell(gx, gz);
-        zoomBoardToFit();
+        /* (Oct 29: "double clicking a board does not center the board properly.") The heading goes first, since the framing
+           is worked out for the heading it arrives at (`frameSelectedBoardAt` reads `target.yaw`): set after, a board
+           double-tapped at any other heading than forward was centred for the old one and then turned off its middle. */
         const _off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;       // −180…180 from forward
         if (Math.abs(_off) > 1) target.yaw = 0;
+        if (!onFramed) gotoCell(gx, gz);
+        zoomBoardToFit();
         target.active = true;
         return;
       }
