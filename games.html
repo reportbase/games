@@ -15336,9 +15336,70 @@ function clarityAt_ctx(camHt, alongNear){
   };
 }
 
+/* BOARDS COLOURED BY DIFFICULTY (Oct 29: "boards should be colored by difficulty. so when I'm panning board of an
+   application, I can know how difficult the board is by color. the background of the board should show the difficulty of
+   the board, so when I'm panning the horizen, I can pan towards colors that match my desired difficulty."): every game
+   with levels tells the field a board's level, and the field paints it, green (easiest), blue, yellow, orange, red.
+   The level is a function of the board's ring alone (golf's `ringOf`: the distance from the corner the short way round the
+   wrapped field, the larger of the two), so the field works out, per app and per Difficulty setting, the rings at which the
+   level steps (`diffRefresh`: the app's `difficultyAt(c, r)`, else its `_debug.levelOf`, asked at a few rings and the steps
+   found by halving) and everything else follows from a ring: the near boards in JS (`diffAtRing`), the fabric at the
+   horizon in its shader (the same steps as uniforms), so a board does not change colour at the handoff. A game with no
+   levels (chess, say) has none and keeps its own colours. Near, a board gets a mat the colour of its level under it,
+   showing in the gutter, and its squares are mixed `DIFF_K` toward it where the app paints squares (a game that hangs a
+   picture, the photo tier, has the mat alone); far, the whole cell, the gutter fully and the board `DIFF_K`. */
+const DIFF_COL = [0x3fae5a, 0x3f7fd0, 0xe0c040, 0xe08030, 0xd03a3a];   // levels 1 to 5
+const DIFF_K = 0.3, DIFF_GAP = 0.85, DIFF_BG = 0x0b0d12;
+const DIFF_PROBE = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15, 18, 22, 27, 33, 40, 50, 62, 75, 100, 150, 250, 500, 1000, 2500, 4999];
+const DIFF = { n: 0, app: null, sig: '', at: -99, thr: [1e9, 1e9, 1e9, 1e9], val: [0, 0, 0, 0, 0], on: false };
+try { window.__diff = DIFF; } catch {}
+function diffLevelOf(app, c, r){
+  let v = null;
+  try {
+    const D = app._debug || {};
+    // (the tilt maze, pinball, Sokoban and the game lab keep a level by board number: levelAt(idx))
+    v = app.difficultyAt ? app.difficultyAt(c, r) : D.levelOf ? D.levelOf(c, r) : D.levelAt ? D.levelAt(BOARD_KIT.boardIdx(c, r)) : null;
+  } catch {}
+  if (typeof v === 'string') v = ({ easy: 1, normal: 3, hard: 5 })[v];
+  return (typeof v === 'number' && v >= 1 && v <= 5) ? Math.round(v) : 0;
+}
+function diffRefresh(app, frameNo){
+  if (!app){ DIFF.app = null; DIFF.on = false; return; }
+  if (app === DIFF.app && frameNo - DIFF.at < 20) return;
+  DIFF.at = frameNo;
+  const sig = [0, 7, 15, 31, 63, 300, 4000].map(k => diffLevelOf(app, k, 0)).join(',');
+  if (app === DIFF.app && sig === DIFF.sig) return;
+  DIFF.app = app; DIFF.sig = sig;
+  const lv = DIFF_PROBE.map(k => diffLevelOf(app, k, 0));
+  DIFF.thr = [1e9, 1e9, 1e9, 1e9]; DIFF.val = [lv[0], 0, 0, 0, 0];
+  DIFF.on = lv.every(v => v > 0);
+  if (!DIFF.on) return;
+  let j = 0;
+  for (let i = 1; i < lv.length && j < 4; i++){
+    if (lv[i] === lv[i - 1]) continue;
+    let lo = DIFF_PROBE[i - 1], hi = DIFF_PROBE[i];            // the level at lo is lv[i - 1], at hi it is lv[i]
+    while (hi - lo > 1){ const mid = (lo + hi) >> 1; if (diffLevelOf(app, mid, 0) === lv[i - 1]) lo = mid; else hi = mid; }
+    DIFF.thr[j] = hi; DIFF.val[j + 1] = lv[i]; j++;
+  }
+  for (let k = j + 1; k < 5; k++) DIFF.val[k] = DIFF.val[j];
+}
+function diffAtRing(k){
+  let l = DIFF.val[0];
+  for (let i = 0; i < 4; i++) if (k >= DIFF.thr[i]) l = DIFF.val[i + 1];
+  return l;
+}
+function diffRingOf(ix, iz, GS){
+  const w = v => Math.min(v, GS - v);
+  return Math.max(w(((ix % GS) + GS) % GS), w(((iz % GS) + GS) % GS));
+}
+const _diffMix = new THREE.Color();
+function diffMix(v, tint){ return _diffMix.copy(_appColor(v)).lerp(tint, DIFF_K); }
+const _diffMat = new THREE.Color(), _diffBg = new THREE.Color(DIFF_BG), _diffCol = DIFF_COL.map(h => new THREE.Color(h));
+
 function buildInstances(){
   const GS  = Math.max(1, Math.round(Math.sqrt(st.N)));
   const wrap = c => ((c % GS) + GS) % GS;
+  diffRefresh(window.getFieldApp && window.getFieldApp(), ++DIFF.n);
   const SP  = gridSpacing();
   const SPX = gridSpacingX(), SPZ = gridSpacingZ();
   const cgx = Math.round(st.camX / SPX), cgz = Math.round(st.camZ / SPZ);
@@ -15723,6 +15784,20 @@ function buildInstances(){
     const bx = cx - bWX / 2 + tX / 2;
     const bz = cz - bWZ / 2 + tZ / 2;
 
+    /* THE BOARD'S DIFFICULTY (Oct 29): its mat under the whole cell, and the tint its squares take. */
+    let _dTint = null;
+    if (DIFF.on){
+      _dTint = _diffCol[diffAtRing(diffRingOf(ix, iz, GS)) - 1];
+      if (n + 1 <= MAXI_WALK){
+        _diffMat.copy(_diffBg).lerp(_dTint, DIFF_GAP);
+        _tileRoom(n);
+        _p.set(cx, 0.0, cz); _s.set(SPX, 1, SPZ);
+        _m.compose(_p, _q, _s);
+        boardMesh.setMatrixAt(n, _m); boardMesh.setColorAt(n, _diffMat);
+        n++;
+      }
+    }
+
     // Heatmap or Doppler tint precomputed once per board; reused for all
     // 64 tiles via setTile's override.
     let lightOv = null, darkOv = null;
@@ -15869,7 +15944,7 @@ function buildInstances(){
         // the same orientation the text labels and onCellTap's (u,v) use.
         for (let r2 = 0; r2 < gN; r2++) for (let c4 = 0; c4 < gN; c4++){
           setTile(n, bx2 + (gN - 1 - c4) * tX2, bz2 + (gN - 1 - r2) * tZ2, tX2, 0,
-                  _appColor(_appGrid.colors[r2 * gN + c4]), tZ2);
+                  _dTint ? diffMix(_appGrid.colors[r2 * gN + c4], _dTint) : _appColor(_appGrid.colors[r2 * gN + c4]), tZ2);
           n++;
         }
       }
@@ -17553,6 +17628,20 @@ function frame(now){
     const _sz = Math.round(st.camZ / _spz) * _spz;
     _fb.position.set(_sx, -0.02, _sz);
     u.uSnap.value.set(_sx, _sz);
+    /* DIFFICULTY on the fabric (Oct 29, see DIFF): the snapped origin as a cell, the steps, the colours. */
+    {
+      u.uDiffOn.value = DIFF.on ? 1 : 0;
+      if (DIFF.on){
+        u.uSnapCell.value.set(Math.round(_sx / gridSpacingX()), Math.round(_sz / gridSpacingZ()));
+        u.uDiffGS.value = Math.max(1, Math.round(Math.sqrt(st.N)));
+        u.uDiffThr.value.set(DIFF.thr[0], DIFF.thr[1], DIFF.thr[2], DIFF.thr[3]);
+        for (let i = 0; i < 5; i++){
+          const lv = DIFF.val[i] || DIFF.val[0];
+          u.uDiffCol.value[i].copy(_diffCol[lv - 1]);
+          u.uGap.value[i].copy(_diffBg).lerp(_diffCol[lv - 1], DIFF_GAP);
+        }
+      }
+    }
     /* Start settling exactly where the drawn field ends — not at some fixed
        pixel size the field may never reach. Anything the fabric shows past
        that line is ground no board covers, and there is nothing out there a
@@ -43048,6 +43137,7 @@ const GOLF_MAKE = SIZE => {
     keepsPress: true,                                  // a still finger is aiming, not asking the view to tilt
     claimMargin: 0.12,                                 // …and so is one pressed just past the rail, on a ball against it (Oct 7)
     firstTapPlays: true,                               // one tap on a hole selects it and tees off (Oct 8)
+    difficultyAt: (c, r) => levelAt(boardIdx(c, r)),    // the board's colour on the field (Oct 29: boards coloured by difficulty)
     cellFar: { light: GRASS[0], dark: GRASS[0] },
     /* LIGHTER ON A FIELD OF THOUSANDS (Oct 9: "yes, is getting heavy. what can we do to reduce that. we can resrict the
        tilt, clamp it, so less boards can be shown at once"). Every board now has a hole of its own, each with its own
@@ -67659,7 +67749,7 @@ document.getElementById('bClarity')?.addEventListener('click', () => {
       } catch {}
     }
     tex.needsUpdate = true;
-    try { fabMat.uniforms.uRepeat.value = N; } catch {}
+    try { fabMat.uniforms.uRepeat.value = N; fabMat.uniforms.uFill.value.set(w / pw, h / ph); } catch {}
   };
   drawFabric();
   window.__syncFieldFabric = drawFabric;
@@ -67718,6 +67808,17 @@ document.getElementById('bClarity')?.addEventListener('click', () => {
          turns out to shimmer without it; 1e9 means the ramp never starts. */
       uSettle:  { value: new THREE.Vector2(1e9, 1e9) },
       uNear:    { value: 0 },      // inside this range the fabric stands down
+      /* DIFFICULTY (Oct 29, see DIFF): the cell's ring gives its level, its level a colour. uSnapCell is the
+         snapped origin as a cell index; uDiffThr the rings at which the level steps; uDiffCol the colour of each
+         stage (its level's, already mixed toward the gutter's colour); uFill the board's share of its cell. */
+      uDiffOn:  { value: 0 },
+      uDiffK:   { value: DIFF_K },
+      uDiffGS:  { value: 10000 },
+      uSnapCell: { value: new THREE.Vector2() },
+      uDiffThr: { value: new THREE.Vector4(1e9, 1e9, 1e9, 1e9) },
+      uDiffCol: { value: [0, 1, 2, 3, 4].map(() => new THREE.Color()) },
+      uGap:     { value: [0, 1, 2, 3, 4].map(() => new THREE.Color()) },
+      uFill:    { value: new THREE.Vector2(0.9, 0.9) },
     },
     /* PRECISION. This used to hand the fragment stage an absolute world
        position and do the arithmetic there, under a hard-coded `precision
@@ -67745,6 +67846,7 @@ document.getElementById('bClarity')?.addEventListener('click', () => {
     vertexShader: [
       'varying vec2 vUv;',
       'varying vec3 vRel;',
+      'varying vec2 vCell;',
       'uniform vec2 uSP;',
       'uniform float uRepeat;',
       'uniform vec3 uCamPos;',
@@ -67753,17 +67855,24 @@ document.getElementById('bClarity')?.addEventListener('click', () => {
       '  vec4 w = modelMatrix * vec4(position, 1.0);',
       '  vRel = w.xyz - uCamPos;',
       '  vUv  = (w.xz - uSnap + 0.5 * uSP) / (uSP * uRepeat);',   // per-axis pitch × block
+      '  vCell = vUv * uRepeat;',
       '  gl_Position = projectionMatrix * viewMatrix * w;',
       '}',
     ].join('\n'),
     fragmentShader: [
       'varying vec2 vUv;',
       'varying vec3 vRel;',
+      'varying vec2 vCell;',
       'uniform sampler2D tMap;',
       'uniform float uFogNear, uFogFar;',
       'uniform vec2 uSettle;',
       'uniform float uNear;',
       'uniform vec3 uFogCol;',
+      'uniform float uDiffOn, uDiffK, uDiffGS;',
+      'uniform vec2 uSnapCell, uFill;',
+      'uniform vec4 uDiffThr;',
+      'uniform vec3 uDiffCol[5];',
+      'uniform vec3 uGap[5];',
       'void main(){',
       '  float d = length(vRel);',
       /* THE GAPS BETWEEN BOARDS. "Near boards cover the fabric completely" is
@@ -67795,6 +67904,26 @@ document.getElementById('bClarity')?.addEventListener('click', () => {
          mip chain and maximum anisotropy, which is the hardware settling the
          sampling properly and per pixel. That is the whole defence now. */
       '  vec3 rgb = c.rgb;',
+      '  if (uDiffOn > 0.5){',
+      '    vec2 cell = vCell;',
+      '    vec2 g = uSnapCell + floor(cell);',
+      '    vec2 m = mod(g, uDiffGS);',
+      '    vec2 w = min(m, uDiffGS - m);',
+      '    float ring = max(w.x, w.y);',
+      '    int s = 0;',
+      '    if (ring >= uDiffThr.x) s = 1;',
+      '    if (ring >= uDiffThr.y) s = 2;',
+      '    if (ring >= uDiffThr.z) s = 3;',
+      '    if (ring >= uDiffThr.w) s = 4;',
+      '    vec3 dc = uDiffCol[0]; vec3 gc = uGap[0];',
+      '    if (s == 1){ dc = uDiffCol[1]; gc = uGap[1]; }',
+      '    if (s == 2){ dc = uDiffCol[2]; gc = uGap[2]; }',
+      '    if (s == 3){ dc = uDiffCol[3]; gc = uGap[3]; }',
+      '    if (s == 4){ dc = uDiffCol[4]; gc = uGap[4]; }',
+      '    vec2 fc = abs(fract(cell) - 0.5);',
+      '    float inB = step(max(fc.x / max(uFill.x, 0.01), fc.y / max(uFill.y, 0.01)), 0.5);',
+      '    rgb = mix(gc, mix(rgb, dc, uDiffK), inB);',
+      '  }',
       '  float f = smoothstep(uFogNear, uFogFar, d);',
       '  gl_FragColor = vec4(mix(rgb, uFogCol, f), 1.0);',
       '}',

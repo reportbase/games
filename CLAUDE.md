@@ -2385,6 +2385,20 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the next piece from the tray), the tanks (the shell in hand, a tap for the next; drive either way) and curling (the curl, beside the twist).
   - The smoke test (part 7, "played with the row shut") checks the row staying shut through a game and each of these by real
     input; the checks that click row tiles in 3D Tetris and Soma open the row first, as an advanced user would.
+- **Boards coloured by difficulty** (Oct 29: "boards should be colored by difficulty. so when I'm panning board of an application, I can
+  know how difficult the board is by color. the background of the board should show the difficulty of the board, so when I'm panning
+  the horizen, I can pan towards colors that match my desired difficulty."): the field paints a board's level, green, blue, yellow,
+  orange, red for 1 to 5 (`DIFF_COL`), in every game that has levels (48 of 56 apps: not chess, Go, 2048, Queens, Air raid, flash
+  cards, Levels, the gallery). A level is a function of the ring (the larger of the board's two wrapped distances from the corner),
+  so the field asks the app (`difficultyAt(c, r)`, mini golf's; else `_debug.levelOf(c, r)`; else `_debug.levelAt(boardIdx)`: the tilt
+  maze, pinball, Sokoban, the game lab; a 'easy' / 'normal' / 'hard' game counts as 1, 3, 5) along row 0 and finds where it steps
+  (`diffRefresh`: 27 rings probed, the steps found by halving, redone when the setting changes, every 20 frames at most), so
+  `window.__diff` has `thr` (the rings at which the level steps) and `val` (the levels). Near, each board has a mat the colour of its
+  level (85% toward it from the ground's) under the whole cell, showing in the gutters, and where the app paints squares (`cellGrid`)
+  they are mixed `DIFF_K` (0.3) toward it; a game that hangs a picture (the photo tier) has the mat alone. Far, the fabric's shader
+  does the same from the ring of the cell it is over (`uSnapCell`, `uDiffThr`, `uDiffCol`, `vCell`), the gutter fully and the board
+  `DIFF_K`, so a board does not change colour at the handoff. The smoke test (part 7) checks the steps for Lights Out and mini golf,
+  none for chess, and the fabric given them.
 - **Only you move to another board** (Oct 29: "Often times boards auto move to another board. They should never do that. Only
   the user can move to a new board."): no game flies the view anywhere by itself any more.
   - A tap on a finished board plays it again where it is (the app's own `onReset`, as the menu's Reset), in the seventeen games

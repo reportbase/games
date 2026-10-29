@@ -6880,6 +6880,25 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!Object.values(out).every(r => r.at && r.kept && !r.moved && r.back)) failures.push(`[${current}] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} double tap off default (Lights Out, Pong and pinball, a game under way and the view zoomed by the real wheel: a real double tap put the board back where the 0 key does)`);
   }
+  {
+    /* BOARDS COLOURED BY DIFFICULTY (Oct 29: "boards should be colored by difficulty"): a game with levels has its steps by ring
+       (the field asks the app, `__diff`), a game with none (chess) has no tint, the near boards have a mat each, and the fabric has the steps. */
+    current = 'difficulty colours'; const before = failures.length;
+    const r = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms)), out = {};
+      for (const id of ['lightsout', 'chess', 'minigolf']){
+        window.setFieldApp(window.FIELD_APPS.find(a => (a.id || a.name) === id)); await wait(2500);
+        out[id] = { on: window.__diff.on, thr: window.__diff.thr.slice(0, 3), val: window.__diff.val.slice() };
+      }
+      const U = window.__fieldFabric.material.uniforms;
+      out.fabric = { on: U.uDiffOn.value, thr: U.uDiffThr.value.toArray().slice(0, 3), gs: U.uDiffGS.value };
+      return out;
+    });
+    const ok = r.lightsout.on && r.minigolf.on && !r.chess.on && r.lightsout.thr.join() === '7,15,31' && r.minigolf.thr.join() === '7,15,31'
+      && r.fabric.on === 1 && r.fabric.thr.join() === '7,15,31' && r.fabric.gs >= 1;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} difficulty colours (the steps at rings 7, 15 and 31 for Lights Out and mini golf, none for chess, the fabric given them)`);
+  }
   }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
