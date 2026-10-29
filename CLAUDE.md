@@ -1300,8 +1300,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Tank maze: the chase** (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal
   is to evade the oponent tank. when he overtakes you, you lose."): `TANKMAZE_APP`, id `tankmaze`, after Tanks. Tanks seen from
   above in a maze, and no shells: you (tank 0, the runner) drive and turn, the computer's tanks hunt you. A hunter coming
-  within `CATCH` × `TR` (2.06 × 0.26 of a cell) catches you and takes the round; holding out for the level's `hold` seconds
-  takes it for you. The first to `WIN` (3) rounds takes the match; every round is a new maze.
+  within `CATCH` × `TR` (2.06 × 0.26 of a cell) catches you and the game is over. **Nothing else ends it** (Oct 29: "tank maze still has a timer to exit maze. DONT exit the maze
+  from a timer. remove it. only the user can exit the game, not you."): there was a time that won the round for you, `hold`, and
+  a match of first to three rounds; both are gone, with the rounds and the stars. You stay in the maze as long as you can, and the
+  best a board keeps is the longest you lasted, in seconds (`tankmaze.best`, `g.survived`). `hold` is only how long a board no one
+  plays shows its runner (a recording is cut there, never a game).
   - **Every board its own mazes** (`makeMaze(idx, lv, round, tanks)`: the tilt maze's backtracking walk with loops, the tanks
     in cells far apart along it), a level 1–5 by ring plus the Difficulty (Easy 0, Normal 1, Hard 2). `LV`, easy to hard: 9 to
     7 cells a side (a cell more a side for each tank past two), loops 0.5 down to 0.15 (more ways round at level 1), `hold`
@@ -1318,23 +1321,22 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **Controls**: the arrow keys or WASD drive (up forward, down back, left and right turn); a drag steers the tank toward the
     finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`). Two players (the menu's Players,
     localStorage `tankmaze.players`): Player 1 runs on WASD, Player 2 hunts on the arrows, a finger steers the tank nearest it.
-  - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a catch is a burst and the round
-    ends `BOOM_T` (1.5 s) later. A gold bar along the near wall is the time left. Through: stars by the match (3–0 three, 3–1
-    two, else one), the most kept a board (localStorage `tankmaze.best`); a tap on a finished board goes on to the next.
+  - States: 'ready' until the first key or touch, 'count' (`COUNT_T`) once, 'play'; a catch is a burst, and the game is over `BOOM_T`
+    (1.5 s) later with how long you lasted (`roundOver`); a tap on a finished board plays it again. There is no timer shown (Oct 29:
+    "Remove the Tank maze timer": the gold bar along the near wall, the "hold out N s" in the title and the seconds left went).
   - **A board no one plays** shows a round of the steady runner against its board's hunters (`recSoon`, a little at a time in
     the boards' share of time, `REC_HZ` 15 a second, `shownOf`), played back on the page's clock with a rest.
-  - The menu: Difficulty, Tanks (2–4, localStorage `tankmaze.count`), Players, Sound (a burst when caught, a chime for a round
-    held out), Start this board again.
+  - The menu: Difficulty, Tanks (2–4, localStorage `tankmaze.count`), Players, Sound (a burst when caught), Start this board again.
   - Drawn: walls as boxes (the outer one the level's colour), each tank tracks, hull, turret and gun turned to its heading
-    (never a yaw of 0, `yawOf`), the time bar, a burst on a catch. An inner wall stops at the outer wall's inner face (Oct 22:
+    (never a yaw of 0, `yawOf`), a burst on a catch. An inner wall stops at the outer wall's inner face (Oct 22:
     "the inner walls of the maze should not extend into the outer walls."); the tilt maze's walls too.
   - **Until Oct 29** it was a battle, as Tank Trouble plays it: shells bouncing off every wall for 9 s, the computer finding
     shots off up to three walls and dodging, power-ups (laser, frag, spread, mine, homing missile), an aim line, first to 5.
     Tom found it too hard; the shells, the powers and the aim line went.
   - The smoke test checks the levels by ring, the same maze each time and another each round, the sizes for 2, 3 and 4 tanks,
-    a catch and a hold-out, the hunters' wait, the steady runner holding out more at level 1 than at level 5, 3- and 4-tank
-    rounds ending, a real key driving, a real drag steering, a round held out counted with a new maze, a match won with three
-    stars and a best, two players with Player 2 hunting on the arrows, and a board no one plays moving with no shells drawn.
+    a catch, nothing ending the game with the hunter far away for three times the old time, the hunters' wait, the steady runner
+    lasting longer at level 1 than at level 5, 3- and 4-tank rounds ending only with a catch, a real key driving, a real drag
+    steering, a catch ending the game and keeping how long it lasted, two players with Player 2 hunting on the arrows, and a board no one plays moving with no shells drawn.
 - **Golf tanks, taken out** (Oct 29: "this ame does not work very well. it seems very complicated, but not very easy to play.",
   then "remove  golf tanks."): `GOLFTANK_APP` (Oct 22–29, the tank maze's battle on mini golf's holes, then roaming them as
   Asteroids) is gone, with what mini golf kept only for it: its kit (`_kit`, `solidsAt`, `bareOf` and the bare copies
@@ -1555,7 +1557,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     no way on from them, every piece goes back to the tray. Filled: stars by the hints (none 3, one 2, more 1), the best (most
     stars, then quickest) kept (localStorage `soma.best`); a tap goes on to the next board.
   - **A board no one plays** (`shownOf`, from the clock alone) builds its figure: the solution's pieces coming down into place one
-    after another, held whole, and round again. `frameFit` 1.5, `pitchMin` 60, `tapMargin` 0.4, as 3D Tetris's.
+    after another, held whole, and round again. `frameFit` 1.5, `tapMargin` 0.4, as 3D Tetris's. **The tilt is free** (Oct 29: "soma clamping of the tilt is to aggressive. I want to see all sides of the cube from the ground level and from above."): it opened at a floor of 60° (`pitchMin`) with the field's bottom stop at 75°, so the figure could not be seen from the side or from straight above. Now `pitchFloor` 3 (the field's altitude coupling raises it a little as the eye climbs, about 5° at the opening zoom) and `pitchMax` 89, a new app field: the field's `PITCH_MAX` is a `let`, set from the app by `setFieldApp` (75 for every other game). `fitView` opens it at 60°, where `frameFit` was worked out.
   - **The course** (Oct 23: "whats next for soma", then "1,2", the first the famous figures on the boards nearest the corner):
     the first sixteen boards (`boardIdx` 0–15, the 4 × 4 corner block) hold named figures of all seven pieces (`COURSE`, written
     as layers from the ground up, `courseFigure`): the cube, the pyramid, the steps, the bathtub, the sofa, the bed, the throne,
@@ -2320,6 +2322,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     curling's sweep; pinball's own) ask `pressReframes(e, x, y)` of each press: the second of a double, by the events' own times
     within 40 px, with the board off its default position, puts it back (`reframeDefault`) and is not the game's. The smoke test
     (part 7) zooms Lights Out, Pong and pinball off with the real wheel, a game under way, and a real double tap brings each back.
+  - **A single tap never selects a board** (Oct 29: "double click selects a centers board, not a single click. don't select a board
+    with only one tap."): a tap on a board you are not on did nothing but select it in place (Sep 23: the view stays) and join it
+    to the strip, and in an app with `firstTapPlays` (mini golf) tee off on it. Now it does nothing at all (`handleGroundTap`
+    returns after the framed-board guard; `selectCellInPlace` went). Only a double tap goes to another board, selecting it and
+    framing it as the 0 key does, with Tab, Enter, the game index and a strip tile; a tap on the board you are on is the game's
+    as ever. So every note above that says a tap on another board selects it, or tees off on it, or moves the editor there, now
+    means a double tap, and then a tap. The smoke test's "first tap tees off" checks a single click leaving the view and the hole
+    alone, a double click bringing it in, and the first click then teeing off.
   - Air raid keeps its taps while its plane flies (`worldTap`: they drop bombs). The smoke test double-taps a neighbour in ten
     games with a game under way and wants the view where the 0 key puts it.
 - **The dots, full screen, Tab from the board in view** (Oct 17: "1) the three dots on the bottom for the bottom panel should be

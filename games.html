@@ -2635,7 +2635,7 @@ function syncTargetToCell(){
    one number rather than six. Beyond ~75 the horizon leaves the top of the
    frame and the field stops receding — it reads as a flat plan of a few
    boards, and the foveated LOD is tuned for a receding plane. */
-const PITCH_MAX = 75;
+let PITCH_MAX = 75;     // (the field's bottom stop for the tilt; an app may move it, `pitchMax`: Soma looks straight down, Oct 29)
 /* ─── THE TWO EDGE GAUGES, MAPPED ONCE ─────────────────────────────────────
    Each rail turns a position on itself into a value, and a value back into a
    position. Those are one function and its inverse, and they were written
@@ -7796,16 +7796,6 @@ function goHomeBoard(){
    nothing left to set it is worse than no state, so the flag and its guard
    went with the button rather than lingering as an always-false branch on the
    one function every selection in the build passes through.) */
-/* SELECT WITHOUT MOVING: everything gotoCell does to make a board the one
-   you are on, except frameBoard — the view does not move. */
-function selectCellInPlace(gx, gz){
-  target.cellX = gx; target.cellZ = gz;
-  target.boardX = gx * gridSpacingX(); target.boardZ = gz * gridSpacingZ(); target.shown = true;
-  target.active = false; target.zoom = null; target.yaw = null;
-  resetThrust();
-  resumeAnim();
-  if (!appHangsPictures()) enterPlay();
-}
 function gotoCell(gx, gz){
   const SP = gridSpacing();
   target.cellX = gx; target.cellZ = gz;                 // the cell is the truth — see syncTargetToCell
@@ -16305,6 +16295,20 @@ function templateSelectCell(gx, gz){
   try { rebuildBoardBrowser(); } catch (e){ _reportError('board browser', e); }
 }
 
+/* A tap on the framed board's red margin: the band between its face and its ring, aspect-aware (a board of 8 by 13 is not
+   square) and exactly as wide as the ring is drawn, so a tap just past it still reaches the neighbouring board and no part of
+   the board's own face is dead. Furniture, to a tap or to a double. */
+function tapOnFramedMargin(hit){
+  if (!target.shown) return false;
+  const SP = gridSpacing(), boardW = SP * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
+  const cwM = (window.LAB && window.LAB.cellW) || 1, chM = (window.LAB && window.LAB.cellH) || 1;
+  const bwxM = boardW * cwM, bwzM = boardW * chM, hxM = bwxM / 2, hzM = bwzM / 2;
+  const mWM = Math.min(boardW * 0.10,
+    Math.max(0, (gridSpacingX() - bwxM) / 2) * 0.86,
+    Math.max(0, (gridSpacingZ() - bwzM) / 2) * 0.86);
+  const axM = Math.abs(hit.x - target.boardX), azM = Math.abs(hit.z - target.boardZ);
+  return !(axM <= hxM && azM <= hzM) && axM <= hxM + mWM && azM <= hzM + mWM;
+}
 function handleGroundTap(hit, ev){
       // Drop the synthesised duplicate of a touch tap before anything else.
       if (!tapGestureIsFresh()) return;
@@ -16405,14 +16409,11 @@ function handleGroundTap(hit, ev){
         // cell from the board's centre, so rounding the hit to a grid cell
         // landed on the NEIGHBOUR and the double walked the view one board
         // sideways. Squares still reframe; the ring around them does nothing.
-        if (target.shown){
-          const SP1 = gridSpacing();
-          const bW = SP1 * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
-          const h1 = bW / 2, ring1 = h1 + bW * 0.10, pad1 = bW * 0.15;
-          const ax1 = Math.abs(hit.x - target.boardX), az1 = Math.abs(hit.z - target.boardZ);
-          const inRing = ax1 <= ring1 + pad1 && az1 <= ring1 + pad1;
-          if (inRing && (ax1 > h1 || az1 > h1)) return;
-        }
+        /* (Oct 29, "double click selects a centers board": the ring was worked out for a square board, 0.25 of a board wide past its
+           face, so on mini golf's narrow boards (8 of 13) the board beside, one spacing off, lay inside it and a double tap there
+           was taken for furniture and never went. It is the margin the single tap's guard uses, aspect-aware and exactly the
+           width drawn, `tapOnFramedMargin`.) */
+        if (tapOnFramedMargin(hit)) return;
         clearSelection();                   // the first click of the pair may have lifted a piece
         PLAY.hint = null;
         const gx = Math.round(hit.x / gridSpacingX()), gz = Math.round(hit.z / gridSpacingZ());
@@ -16686,22 +16687,7 @@ function handleGroundTap(hit, ev){
       // the margin and the board spins" report. The band is the margin proper
       // (face edge to ring, aspect-aware for wide prints) — taps past it still
       // select across the field.
-      if (target.shown){
-        const _cwM = (window.LAB && window.LAB.cellW) || 1;
-        const _chM = (window.LAB && window.LAB.cellH) || 1;
-        const bwxM = boardW * _cwM, bwzM = boardW * _chM;
-        const hxM = bwxM / 2, hzM = bwzM / 2;
-        // The same width the ring is DRAWN at, by the same formula — the
-        // swallowed band is exactly the red the user sees, so a tap just
-        // past it still reaches the neighbouring board and no part of the
-        // board's own face is dead.
-        const mWM = Math.min(boardW * 0.10,
-          Math.max(0, (gridSpacingX() - bwxM) / 2) * 0.86,
-          Math.max(0, (gridSpacingZ() - bwzM) / 2) * 0.86);
-        const axM = Math.abs(hit.x - target.boardX), azM = Math.abs(hit.z - target.boardZ);
-        const onFaceM = axM <= hxM && azM <= hzM;
-        if (!onFaceM && axM <= hxM + mWM && azM <= hzM + mWM) return;
-      }
+      if (tapOnFramedMargin(hit)) return;
       // Tapping the board that is ALREADY framed is not a new instruction.
       // gotoCell would re-aim the frame and re-assert the home-side yaw, and
       // the settled view twitched with every click. Same guard the double-
@@ -16713,52 +16699,13 @@ function handleGroundTap(hit, ev){
             && Math.round(target.boardX / gridSpacingX()) === _gx
             && Math.round(target.boardZ / gridSpacingZ()) === _gz) return;
       }
-      resetThrust();
-      templateSelectCell(Math.round(hit.x / gridSpacingX()), Math.round(hit.z / gridSpacingZ()));   // …and it joins the strip
-      /* A CLICK MAKES THAT BOARD THE DEFAULT VIEW: squared up to the screen
-         and fitted to the window (Sep 3 ruling — "clicking a board should set
-         it as default and fitted to the window. currently it is not being
-         rotated so that it aligns up and down").
-         SQUARE UP IS NOT THE HOME SIDE. gotoCell stopped rotating on a click
-         because it used to spin the board to the side you play from — a half
-         turn of the world for a tap that only meant "look at this". This is
-         the other kind of turn: the nearest quarter, so the board's own axes
-         run up-and-down and across the screen instead of sitting at whatever
-         angle the last pan left. It is the smallest rotation that squares the
-         board, never more than 45°, and it says nothing about sides.
-         The yaw is set BEFORE gotoCell because frameBoard reads target.yaw to
-         work out which way "a row nearer" is; setting it after would frame the
-         old heading and then turn under the frame. Then the fit, which is the
-         same default framing the 0 key and page load use. */
-      /* ═══ SUPERSEDED Sep 23: "dont center and zoom a board when selecting
-         it." A tap SELECTS — the board becomes the one you are on, its game is
-         taken, it joins the strip — and the camera stays exactly where you
-         left it: no fly-to, no fit, no squaring-up turn. Moving the view is
-         yours (drag, pinch, the keys, the 0 key for the fit, a double tap to
-         square up). The Sep 3 ruling above is kept as history. */
-      selectCellInPlace(Math.round(hit.x / gridSpacingX()), Math.round(hit.z / gridSpacingZ()));
-      /* THE FIRST TAP CAN PLAY (Oct 8: "the first tap should select the board, not the second"). A tap on a board you are
-         not on selects it, and only a SECOND tap, on the board now selected, reached the app (the APP TAP above), so mini
-         golf took two taps to tee off. An app that says firstTapPlays gets this first tap too, at the same (u, v), so
-         selecting the board and starting on it are one tap. Opt-in, because in a board game a first tap that also moved a
-         piece would be a move you never meant. */
-      try {
-        const _fa = window.getFieldApp && window.getFieldApp();
-        if (_fa && _fa.firstTapPlays && _fa.onCellTap && target.shown){
-          const _cw = (window.LAB && window.LAB.cellW) || 1, _ch = (window.LAB && window.LAB.cellH) || 1;
-          const _bx = boardW * _cw, _bz = boardW * _ch, _dx = hit.x - target.boardX, _dz = hit.z - target.boardZ;
-          const _GS = Math.max(1, Math.round(Math.sqrt(st.N))), _w = v => ((v % _GS) + _GS) % _GS;
-          if (Math.abs(_dx) <= _bx / 2 && Math.abs(_dz) <= _bz / 2)
-            _fa.onCellTap(_w(Math.round(target.boardX / gridSpacingX())), _w(Math.round(target.boardZ / gridSpacingZ())), 0.5 - _dx / _bx, 0.5 - _dz / _bz);
-        }
-      } catch {}
-      /* …AND A RECORDING STOPS WHEN YOU GO TO IT. Reaching for a board is
-         reaching for what is on it, and a game that carries on moving while
-         you arrive is a game you have to chase. It keeps replaying everywhere
-         you are NOT — that is what the field is — and holds still the moment
-         you pick it out. From here taps step it; at the end it rounds again
-         and the replay resumes. */
-      try { stopPgnReel(cellKey(target.boardX, target.boardZ)); } catch {}
+      /* A SINGLE TAP ON A BOARD YOU ARE NOT ON DOES NOTHING (Oct 29: "double click selects a centers board, not a single click. don't
+         select a board with only one tap."). Until now a tap selected it in place (the Sep 23 ruling: the camera stays where it
+         was), took its game, joined it to the strip and, in an app with `firstTapPlays` (mini golf), teed off on it; and a stray
+         tap on the neighbour of the board you were playing made it the board you were on. Now only a double tap (the pair above)
+         goes to a board: it selects it and frames it, as the 0 key does. Tab, Enter, the game index and a strip tile still go to
+         one, and a tap on the board you are on is the game's, as ever. (`selectCellInPlace`, which only this tap used, went with it.) */
+      return;
 }
 
 const ctl = mountControls({
@@ -30406,7 +30353,13 @@ const SOMA_APP = (() => {
     name: 'soma',
     realtime: true,
     frameFit: 1.5,
-    pitchMin: 60,
+    /* THE TILT IS FREE (Oct 29: "soma clamping of the tilt is to aggressive. I want to see all sides of the cube from the ground
+       level and from above."): the floor was 60° (pitchMin) and the field's bottom stop 75°, so the figure could never be seen
+       from the side or from straight above. Now from 3°, nearly along the ground, to 89°, straight down (90° looks along the
+       camera's up). It still opens at 60°, where the framing (frameFit) was worked out. */
+    pitchFloor: 3,
+    pitchMax: 89,
+    fitView(F){ F.st.pitch = 60; zoomBoardToFit(); },
     tapMargin: 0.4,
     cellFar: { light: FLOOR, dark: BASE },
     itemMinPx: 6,
@@ -52605,7 +52558,7 @@ const TANKMAZE_APP = (() => {
   // sizes in cells (a cell is L.s of the board), speeds in cells a second
   const TR = 0.26, WALL_T = 0.1, WALL_H = 0.5, TV = 1.7, TURN = 3.3, CATCH = 2.06;
   const EXTRA = 0.88;                                  // (the second and third hunters this much slower than the first)
-  const STEP = 1 / 60, WIN = 3, BOOM_T = 1.5, COUNT_T = 1.2, HEAD = 0.8, REC_HZ = 15;
+  const STEP = 1 / 60, BOOM_T = 1.5, COUNT_T = 1.2, HEAD = 0.8, REC_HZ = 15;
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('tankmaze.level', 'Every board has its own mazes, and its hunter is quicker and sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('tankmaze.sound', 'A burst when you are caught, a chime for a round held out.');
@@ -52739,7 +52692,6 @@ const TANKMAZE_APP = (() => {
     if (G.caughtAt == null){
       for (let k = 1; k < G.tanks.length; k++){ const t = G.tanks[k];
         if (Math.hypot(t.x - run.x, t.y - run.y) <= CATCH * TR * s){ G.caughtAt = G.t; G.by = k; run.alive = false; G.booms.push({ t: G.t, x: run.x, y: run.y, k: 0, by: k }); break; } }
-      if (G.caughtAt == null && G.t >= G.hold){ G.over = true; G.winner = 0; }
     } else if (G.t - G.caughtAt >= BOOM_T){ G.over = true; G.winner = G.by; }
   }
 
@@ -52819,13 +52771,15 @@ const TANKMAZE_APP = (() => {
     if (budget <= 0 && !force) return E;
     const t0 = performance.now(), G = E.G, every = Math.round(1 / (REC_HZ * STEP));
     let n = 0;
-    while (!G.over){
+    // (a recording is `hold` seconds at most of a runner no one has caught: a board no one plays shows that much and loops; it
+    //  is never the game's end. Oct 29: "DONT exit the maze from a timer.")
+    while (!G.over && G.t < G.hold){
       if (Math.round(G.t / STEP) % every === 0) for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h);
       stepRound(G, G.tanks.map((_, k) => cpuCmd(G, k)), STEP);
       if (++n % 30 === 0 && !force && performance.now() - t0 > budget) break;
     }
     SOON.spend(t0);
-    if (G.over){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h); Object.assign(E, { T: G.t, hold: G.hold, booms: G.booms, winner: G.winner, done: true, G: null }); }
+    if (G.over || G.t >= G.hold){ for (const tk of G.tanks) E.F.push(tk.x, tk.y, tk.h); Object.assign(E, { T: G.t, hold: G.hold, booms: G.booms, winner: G.winner, done: true, G: null }); }
     return E;
   }
   // what a recorded round shows at the page's clock
@@ -52840,8 +52794,7 @@ const TANKMAZE_APP = (() => {
     return { L, tanks, booms: E.booms, t, hold: E.hold, seats, cols };
   }
 
-  /* ─── PLAYING ─── a match: rounds one after another, each its own maze (the board's number and the round), the score kept:
-     the runner's rounds held out, the hunters' rounds caught. */
+  /* ─── PLAYING ─── one game on the board's maze: you run until a hunter catches you; the longest you last is kept. */
   const GAMES = new Map();
   let LIVE = null, DRAG = null, ateAt = 0;
   const { BEST, saveBest } = BOARD_KIT.best('tankmaze.best');
@@ -52849,18 +52802,12 @@ const TANKMAZE_APP = (() => {
   const isPerson = s => s !== 'cpu';
   function fresh(c, r){
     const idx = boardIdx(c, r), lv = levelAt(idx), seats = seatsNow();
-    const g = { c, r, idx, lv, seats, n: seats.length, score: [0, 0], round: 0, state: 'ready', wait: 0, last: performance.now() };
+    const g = { c, r, idx, lv, seats, n: seats.length, state: 'ready', wait: 0, last: performance.now() };
     g.G = roundNew(makeMaze(idx, lv, 0, g.n), seats, idx * 31 + lv);
     return g;
   }
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
-  function nextRound(g){
-    g.round++;
-    g.G = roundNew(makeMaze(g.idx, g.lv, g.round, g.n), g.seats, g.idx * 31 + g.lv + g.round * 7919);
-    g.state = 'count'; g.wait = COUNT_T;
-    try { fieldItemsChanged(); } catch {}
-  }
   function begin(g){ if (g.state !== 'ready') return; g.state = 'count'; g.wait = COUNT_T * 0.6; g.last = performance.now(); }
   // the keys: one player, either set drives you; two, Player 1 (the runner) on WASD, Player 2 (a hunter) on the arrows
   const HELD = new Set();
@@ -52889,7 +52836,7 @@ const TANKMAZE_APP = (() => {
   function stepGame(g){
     const tn = performance.now(), dt = Math.min(0.25, (tn - g.last) / 1000); g.last = tn;
     if (ARCADE.paused || g.state === 'ready' || g.state === 'over') return;
-    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + ': hold out ' + g.G.hold + ' s.', 1200); }
+    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; }
     const G = g.G, booms = G.booms.length;
     for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--)
       stepRound(G, g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k)), STEP);
@@ -52899,25 +52846,19 @@ const TANKMAZE_APP = (() => {
   // (a board's best: by board and level, and the number of tanks when more than two)
   const bestKey = g => g.idx + '@' + g.lv + (g.n > 2 ? '#' + g.n : '');
   const sideNames = g => g.seats[1] === 'p2' ? ['Player 1', 'Player 2'] : ['You', g.n > 2 ? 'the hunters' : 'Red'];
+  /* THE GAME ENDS WHEN YOU ARE CAUGHT, AND ONLY THEN (Oct 29: "tank maze still has a timer to exit maze. DONT exit the maze from a
+     timer. remove it. only the user can exit the game, not you."): until then the runner won a round by holding out the level's
+     time, and the match was the first to three rounds. There are no rounds now, no time that wins and no stars: you stay in the
+     maze as long as you can, and the best a board keeps is the longest you lasted, in seconds. */
   function roundOver(g){
-    const G = g.G, side = G.winner === 0 ? 0 : 1, nm = sideNames(g);
-    g.score[side]++;
-    const tally = nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1];
-    if (g.score[side] >= WIN){
-      g.state = 'over'; g.overAt = performance.now();
-      if (SET.players === 1){
-        const won = side === 0;
-        g.stars = won ? (g.score[1] === 0 ? 3 : g.score[1] === 1 ? 2 : 1) : 0;
-        const k = bestKey(g), was = +(BEST.get(k) || 0);
-        if (g.stars > was){ BEST.delete(k); BEST.set(k, g.stars); saveBest(); }
-        SND.play(won ? 'win' : 'lose');
-        say((won ? 'You got away: you won the match, ' + tally + ' ' + BOARD_KIT.stars(g.stars) : 'Caught: ' + nm[1] + ' won the match, ' + tally) + '. Tap to play it again.', 4200);
-      } else { SND.play('win'); say(nm[side] + ' won the match, ' + tally + '. Tap to play it again.', 4200); }
-      return;
-    }
-    SND.play(side === 0 ? 'good' : 'bad');
-    say((side === 0 ? (nm[0] === 'You' ? 'You held out' : nm[0] + ' held out') : 'Caught by ' + namesOf(g.seats)[G.winner]) + ': ' + tally + '.', 1600);
-    nextRound(g);
+    const G = g.G, nm = sideNames(g), secs = Math.round(G.caughtAt * 10) / 10;
+    g.state = 'over'; g.overAt = performance.now(); g.survived = secs;
+    if (SET.players === 1){
+      const k = bestKey(g), was = +(BEST.get(k) || 0), better = secs > was;
+      if (better){ BEST.delete(k); BEST.set(k, secs); saveBest(); }
+      SND.play('lose');
+      say('Caught by ' + namesOf(g.seats)[G.winner] + ' after ' + secs + ' s' + (better && was ? ', your longest yet (was ' + was + ' s)' : was ? ' (your longest is ' + was + ' s)' : '') + '. Tap to play it again.', 4200);
+    } else { SND.play('win'); say(nm[1] + ' caught ' + nm[0] + ' after ' + secs + ' s. Tap to play it again.', 4200); }
   }
   // the human tank a finger means: yours, or with two players the one nearest it
   function seatNear(g, u, v){
@@ -52927,7 +52868,7 @@ const TANKMAZE_APP = (() => {
   }
 
   /* ─── WHAT A BOARD DRAWS ─── walls (the outer one in the level's colour), the tanks (tracks, hull, turret and gun, each
-     turned to its heading; caught, dark), the time left as a bar along the near wall, and the burst of a catch. */
+     turned to its heading; caught, dark), and the burst of a catch. */
   const lighten = c => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.min(255, Math.round(((c >> sh) & 255) * 1.25 + 18)) << sh; return o; };
   const yawOf = BOARD_KIT.yawOf;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   function itemsOf(V){
@@ -52941,9 +52882,7 @@ const TANKMAZE_APP = (() => {
       out.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? lighten(col) : WRECK });
       out.push({ kind: 'mzGun', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? GUNC : 0x1a1a1a });
     });
-    // (the time left to hold out: a bar along the top of the near wall, shrinking toward its left end)
-    const left = clamp(1 - V.t / (V.hold || 1), 0, 1);
-    if (left > 0 && !V.booms.some(B => B.t <= V.t)) out.push({ kind: 'mzBar', u: left / 2, v: 1, scale: s, sx: left / s, sy: 0.08, sz: WALL_T * 1.6, lift: WALL_H * s, color: 0xffd23a });
+    // (the time left to hold out was a gold bar along the near wall until Oct 29: "Remove the Tank maze timer")
     for (const B of V.booms){
       const a = V.t - B.t; if (a < 0 || a > 1.8) continue;
       const R = rngOf((B.k + 2) * 977 + Math.round(B.t * 1000));
@@ -52977,7 +52916,6 @@ const TANKMAZE_APP = (() => {
   const cyl = (T, r, h, x, y, z, seg) => { const g = new T.CylinderGeometry(r, r, h, seg || 16); g.translate(x, y + h / 2, z); return g; };
   const geos = {
     mzWall: T => boxAt(T, 1, 1, 1, 0, 0, 0),
-    mzBar: T => { const g = boxAt(T, 1, 1, 1, 0, 0, 0); g.userData.unlit = true; return g; },
     mzTracks: T => merge(T, [boxAt(T, 0.6, 0.13, 0.13, 0, 0, 0.19), boxAt(T, 0.6, 0.13, 0.13, 0, 0, -0.19)]),
     mzHull: T => merge(T, [boxAt(T, 0.5, 0.12, 0.3, 0, 0.04, 0), boxAt(T, 0.1, 0.07, 0.24, 0.27, 0.04, 0)]),
     mzTurret: T => merge(T, [cyl(T, 0.12, 0.08, -0.02, 0.16, 0, 18)]),
@@ -52997,7 +52935,7 @@ const TANKMAZE_APP = (() => {
       { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you run from the computer\'s red tank. Two: Player 1 green runs (WASD), Player 2 blue hunts (the arrows), on one keyboard, or a finger each on a phone.',
         on(){ SET.players = SET.players === 2 ? 1 : 2; ARCADE.save('tankmaze.players', String(SET.players)); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
-      { label: 'Start this board again', title: 'A new match on this board, nothing to nothing.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+      { label: 'Start this board again', title: 'A new game on this board.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
     ]}],
     cellFar: { light: FLOOR, dark: FLOOR2 },
     itemMinPx: 16,
@@ -53009,17 +52947,15 @@ const TANKMAZE_APP = (() => {
     cellItems(c, r){ return itemsOf(viewOf(c, r)); },
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), D = LV[lv - 1], m = D.m + SET.n - 2, best = BEST.get(idx + '@' + lv + (SET.n > 2 ? '#' + SET.n : ''));
-      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + ', hold out ' + D.hold + ' s' + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
+      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · longest ' + best + ' s' : '');
       if (!g) return head;
-      const nm = sideNames(g), left = Math.max(0, Math.ceil(g.G.hold - g.G.t));
-      return head + ' · ' + nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1] + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')' + (g.state === 'play' ? ' · ' + left + ' s left' : '');
+      return head + (g.state === 'over' ? ' · caught after ' + g.survived + ' s' : g.state === 'play' ? ' · ' + (SET.players === 2 ? 'Player 2 hunting' : 'keep away') : '');
     },
-    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green and has no gun: keep away from the red one until the time runs out. Drive with the arrows or WASD, or drag toward where it should go.', 6000); }
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green and has no gun: keep away from the red one for as long as you can. Drive with the arrows or WASD, or drag toward where it should go.', 6000); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
     onCellTap(c, r){
@@ -53032,7 +52968,7 @@ const TANKMAZE_APP = (() => {
       if (g.state === 'ready') begin(g);
       return true;
     },
-    onCellHold(c, r){ restart(c, r); say('A new match on this board.', 1400); return true; },
+    onCellHold(c, r){ restart(c, r); say('A new game on this board.', 1400); return true; },
     // a press anywhere on the board and a drag steers the tank toward the finger, for as long as it is down
     keepsPress: true,
     claimsPan(u, v){
@@ -53051,8 +52987,8 @@ const TANKMAZE_APP = (() => {
       tank(0.17, 0.78, '#5a9e3e', -0.6); tank(0.5, 0.82, '#c8463c', 3.1);
     },
     _debug: { LV, makeMaze, roundNew, stepRound, moveTank, cpuCmd, think, flee, aheadOf, recSoon, shownOf, itemsOf, viewOf, liveView, namesOf, colsOf,
-              fresh, gameAt, stepGame, begin, nextRound, personCmd, roundOver, bfs, pathOf, cellOf, centre, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
-              GAMES, RECS, BEST, HELD, SET, WIN, STEP, TR, CATCH, HEAD, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+              fresh, gameAt, stepGame, begin, personCmd, roundOver, bfs, pathOf, cellOf, centre, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              GAMES, RECS, BEST, HELD, SET, STEP, TR, CATCH, HEAD, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
@@ -62659,6 +62595,7 @@ window.setFieldApp = app => {
   try { if (typeof PLAY !== 'undefined' && PLAY.on) exitPlay(); } catch {}
   _framedWatchKey = '·';                                      // re-announce to the newcomer
   FIELD_APP = app || CHESS_APP;
+  PITCH_MAX = FIELD_APP.pitchMax || 75;                      // (an app may let the tilt go lower than the field's 75°: Soma, Oct 29)
   // (the tilt an app's floor lifted is put back for one whose floor is lower, before it is framed, Oct 23: see _pitchLift)
   try {
     if (_pitchLift){

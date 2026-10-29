@@ -1276,8 +1276,9 @@ try {
   await page.evaluate(() => { const A = window.getFieldApp(); A.statTiles = A._statTiles0; delete A._statTiles0; try { window.refreshFieldBrowser && window.refreshFieldBrowser(); } catch {} });
   console.log(`${failures.length === before6 ? 'ok  ' : 'FAIL'} ${current}`);
 
-  // The first tap on a board you are not on selects it and, in mini golf, tees off (Oct 8: "the first tap should select
-  // the board, not the second" / "remove the long press to select board")
+  // A single tap on a board you are not on does nothing; a double tap selects it and brings it in; then the first tap on it, in
+  // mini golf, tees off (Oct 8: "the first tap should select the board, not the second" / "remove the long press to select
+  // board", until Oct 29: "double click selects a centers board, not a single click. don't select a board with only one tap.")
   current = 'first tap tees off';
   const before7 = failures.length;
   {
@@ -1307,8 +1308,21 @@ try {
     await page.mouse.click(N.x, N.y);
     now = await held();
     const after = await playing();
-    if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] one tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
-    if (before === 'play' || after !== 'play') failures.push(`[${current}] the round on the tapped hole: ${before} → ${after}, expected it to start on the first tap`);
+    if (!now || now.c !== N.from.c || now.r !== N.from.r) failures.push(`[${current}] one tap on ${JSON.stringify(N.to)} moved us to ${JSON.stringify(now)}`);
+    if (after === 'play') failures.push(`[${current}] one tap on another board started its round`);
+    // a double tap goes there (two quick clicks), and lands framed
+    await page.waitForTimeout(700);
+    await page.mouse.click(N.x, N.y); await page.waitForTimeout(120); await page.mouse.click(N.x, N.y);
+    for (let k = 0; k < 40; k++){ await page.waitForTimeout(500); if (!(await page.evaluate(() => !!window.FIELD_WORLD.target.active))) break; }
+    now = await held();
+    if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] a double tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
+    // …and the first tap on it then tees off
+    await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; if (E.ED.on) E.editStop(true); });
+    const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, v = new W.THREE.Vector3(T.boardX, 0.02, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; });
+    await page.waitForTimeout(700);
+    await page.mouse.click(mid.x, mid.y);
+    await page.waitForTimeout(600);
+    if ((await playing()) !== 'play') failures.push(`[${current}] the first tap on the board now on did not start its round (${before} → ${await playing()})`);
     }
   }
   console.log(`${failures.length === before7 ? 'ok  ' : 'FAIL'} ${current}`);
@@ -1635,8 +1649,15 @@ try {
     const view0 = await page.evaluate(() => { const W = window.FIELD_WORLD; return { st: { camX: W.st.camX, camZ: W.st.camZ, yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom },
       target: Object.fromEntries(Object.entries(W.target).filter(([, v]) => v === null || typeof v !== 'object' && typeof v !== 'function')) }; });
     const g0 = await sample(), during = [];
-    await page.mouse.move(200, 650); await page.mouse.down();
-    for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
+    // (from a neighbouring board: a drag that starts on the board in play is its aim's, never the view's; a double tap now brings
+    //  the board in to the middle of the screen, so a point fixed on the screen could lie on it, Oct 29)
+    const from = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, [sx, sz] = W.spacing();
+      for (const [dx, dz] of [[-sx, 0], [sx, 0], [0, sz], [0, -sz]]){
+        const v = new W.THREE.Vector3(T.boardX + dx, 0.02, T.boardZ + dz).project(W.camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+        if (x > 80 && x < innerWidth - 120 && y > 80 && y < innerHeight - 150) return { x, y }; }
+      return { x: 200, y: 650 }; });
+    await page.mouse.move(from.x, from.y); await page.mouse.down();
+    for (let k = 1; k <= 6; k++){ await page.mouse.move(from.x + 12 * k, from.y - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
     await page.mouse.up();
     await page.waitForTimeout(2000);                         // (its glide spent before the view is put back: CI, Oct 12)
     const g1 = during[during.length - 1];
@@ -3842,6 +3863,27 @@ try {
     if (!ok2) failures.push('[soma can it be built] ' + JSON.stringify(real));
     console.log(`${ok2 ? 'ok  ' : 'FAIL'} soma can it be built: the real N on one that cannot be built takes it, a real click on ✗ on one that can costs a hint`);
   }
+  // SOMA'S TILT IS FREE (Oct 29: "soma clamping of the tilt is to aggressive. I want to see all sides of the cube from the ground
+  // level and from above."): it opens at 60°, may be tipped to nearly along the ground and to straight down, and the next game
+  // has the field's own stops again (mini golf's floor 45°, nothing past 75°)
+  {
+    current = 'soma tilt';
+    const before = failures.length;
+    const t = await page.evaluate(async () => {
+      const W = window.FIELD_WORLD, wait = ms => new Promise(ok => setTimeout(ok, ms)), out = {};
+      // (a tilt is held to the stops once a frame is drawn, and mini golf's frames take seconds in the software renderer: ask, then
+      //  wait until the number has moved, up to 15 s, and a moment more)
+      const tilt = async (v, held = true) => { W.st.pitch = v; for (let k = 0; held && k < 60 && Math.abs(W.st.pitch - v) < 1e-6; k++) await wait(250); await wait(300); return W.st.pitch; };
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')); await wait(5000);   // (the opening fit looks again for about three seconds, until a touch: a tilt set inside them was put back to 60° on CI)
+      out.open = W.st.pitch;
+      out.low = await tilt(0); out.high = await tilt(95); out.mid = await tilt(30, false);
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'minigolf')); await wait(5000);
+      out.golfHigh = await tilt(95); out.golfLow = await tilt(0);
+      return out; });
+    if (!(Math.abs(t.open - 60) < 1 && t.low < 10 && t.high >= 88 && Math.abs(t.mid - 30) < 1 && t.golfHigh <= 75 && t.golfLow >= 44))
+      failures.push(`[${current}] ${JSON.stringify(t)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} soma tilt (opens at ${Math.round(t.open)}°, tipped to ${t.low.toFixed(1)}° and ${t.high.toFixed(0)}°; mini golf kept to ${t.golfLow.toFixed(0)}–${t.golfHigh.toFixed(0)}°)`);
+  }
   // THE TILT AN APP'S FLOOR LIFTED IS PUT BACK (Oct 23: 3D Tetris's floor of 68° stayed on every game after it, and mini golf
   // opened at 68° at its zoom ceiling): mini golf, then 3D Tetris (lifted to its floor), then mini golf again at its own tilt
   {
@@ -5079,8 +5121,8 @@ try {
   }
   // TANK MAZE, THE CHASE (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal is to
   // evade the oponent tank. when he overtakes you, you lose."): every board its own maze at a level by its ring; the hunter
-  // reaching you takes the round and holding out wins it; the steady runner holds out more often at level 1 than at level 5;
-  // real keys drive and a real drag steers; a round counts and starts the next maze; a match won gives stars and a best; two
+  // reaching you ends the game and nothing else does (no clock); the steady runner lasts longer at level 1 than at level 5;
+  // real keys drive and a real drag steers; a catch ends the game and keeps how long you lasted as the best; two
   // players, Player 2 hunting on the arrows; a board no one plays moves; the drawing, with no shells.
   {
     await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'tankmaze'); window.setFieldApp(A); Object.assign(A._debug.SET, { players: 1, n: 2 }); });
@@ -5099,21 +5141,21 @@ try {
       D.stepRound(G, [null, null], D.STEP); const caught = G.caughtAt != null && !G.tanks[0].alive && G.booms.length === 1;
       for (let n = 0; n < 120 && !G.over; n++) D.stepRound(G, [null, null], D.STEP);
       out.caught = caught && G.over && G.winner === 1;
-      // nobody near for the round's time: you hold out
-      G = D.roundNew(a, ['you', 'cpu'], 1); while (!G.over) D.stepRound(G, [null, null], D.STEP);
-      out.held = G.winner === 0 && Math.abs(G.t - D.LV[2].hold) < 0.05;
+      // nobody near for three times the level's old time: nothing ends the game but a catch (Oct 29: "DONT exit the maze from a timer.")
+      G = D.roundNew(a, ['you', 'cpu'], 1); G.tanks[1].sp = 0; for (let n = 0; n < Math.round(3 * D.LV[2].hold / D.STEP); n++) D.stepRound(G, [null, null], D.STEP);
+      out.held = !G.over && G.caughtAt == null && G.t > 2 * D.LV[2].hold;
       // the hunters wait a moment at the start, then come
       G = D.roundNew(a, ['you', 'cpu'], 1); const h0 = [G.tanks[1].x, G.tanks[1].y];
       for (let n = 0; n < Math.round(D.HEAD / D.STEP) - 2; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
       const waited = Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]);
       for (let n = 0; n < 120; n++) D.stepRound(G, [null, D.cpuCmd(G, 1)], D.STEP);
       out.head = waited < 1e-9 && Math.hypot(G.tanks[1].x - h0[0], G.tanks[1].y - h0[1]) > 0.05;
-      // the steady runner against the hunter, 12 mazes a level: held out more at level 1 than at level 5
-      out.held = [out.held, ...[1, 5].map(lv => { let held = 0; for (let i = 0; i < 12; i++){ const L = D.makeMaze(300 + i * 17, lv, 0, 2), R = D.roundNew(L, ['you', 'cpu'], i + 3);
-        while (!R.over) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.winner === 0) held++; } return held; })];
-      // three and four tanks: every round ends
-      out.more = [3, 4].map(n => { let ended = 0; for (let i = 0; i < 4; i++){ const L = D.makeMaze(400 + i * 13, 3, 0, n), R = D.roundNew(L, ['you'].concat(Array(n - 1).fill('cpu')), i + 7);
-        while (!R.over && R.t < 60) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (R.over) ended++; } return ended; });
+      // the steady runner against the hunter, 12 mazes a level, 40 s at most: it lasts longer at level 1 than at level 5
+      out.held = [out.held, ...[1, 5].map(lv => { let lasted = 0; for (let i = 0; i < 12; i++){ const L = D.makeMaze(300 + i * 17, lv, 0, 2), R = D.roundNew(L, ['you', 'cpu'], i + 3);
+        while (!R.over && R.t < 40) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); lasted += R.caughtAt != null ? R.caughtAt : 40; } return lasted / 12; })];
+      // three and four tanks: a round ends only with a catch, never with the runner winning by time
+      out.more = [3, 4].map(n => { let ok = 0; for (let i = 0; i < 4; i++){ const L = D.makeMaze(400 + i * 13, 3, 0, n), R = D.roundNew(L, ['you'].concat(Array(n - 1).fill('cpu')), i + 7);
+        while (!R.over && R.t < 60) D.stepRound(R, R.tanks.map((_, k) => D.cpuCmd(R, k)), D.STEP); if (!R.over || R.winner >= 1) ok++; } return ok; });
       return out; });
     // real input on the framed board
     await page.evaluate(() => window.getFieldApp()._debug.fly(2, 1));
@@ -5123,7 +5165,7 @@ try {
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
       return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
     const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); if (!g) return null; const t = g.G.tanks[0];
-      return { state: g.state, x: t.x, y: t.y, h: t.h, score: g.score.slice(), round: g.round, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
+      return { state: g.state, x: t.x, y: t.y, h: t.h, t: g.G.t, t1: g.G.tanks[1] && [g.G.tanks[1].x, g.G.tanks[1].y] }; }, fc[0] + '_' + fc[1]);
     const live = {};
     if (fc){
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
@@ -5141,14 +5183,14 @@ try {
       for (let w = 0; w < 24; w++){ const s = await gs(); if (Math.abs(Math.atan2(Math.sin(s.h - want), Math.cos(s.h - want))) < 0.3) break; await page.waitForTimeout(250); }
       await page.mouse.up();
       live.steered = await gs(); live.want = want;
-      // a round held out: counted, and the next round on a maze of its own; then the match, with stars and a best
+      // long past the level's old time, uncaught: still playing (the game is never ended by a clock); then caught: over, with how long
+      // it lasted kept as the board's best
       live.match = await page.evaluate(([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r), out = {};
-        const m0 = g.G.L.E.join() + g.G.L.S.join();
-        g.score = [0, 0]; g.round = 0;
-        g.G.t = g.G.hold; g.state = 'play'; g.last = performance.now() - 20; D.stepGame(g);
-        out.after = { score: g.score.join(), round: g.round, state: g.state, newMaze: g.G.L.E.join() + g.G.L.S.join() !== m0 };
-        g.score = [2, 0]; g.state = 'play'; g.G.t = g.G.hold; g.last = performance.now() - 20; D.stepGame(g);
-        out.end = { state: g.state, stars: g.stars, best: D.BEST.get(g.idx + '@' + g.lv) };
+        g.state = 'play'; g.G.t = 5 * g.G.hold; g.last = performance.now() - 20; D.stepGame(g);
+        out.after = { state: g.state, over: g.G.over };
+        Object.assign(g.G.tanks[1], { x: g.G.tanks[0].x + 0.5 * D.TR * g.G.L.s, y: g.G.tanks[0].y });
+        for (let i = 0; i < 200 && g.state !== 'over'; i++){ g.last = performance.now() - 50; D.stepGame(g); }
+        out.end = { state: g.state, survived: g.survived, caughtAt: g.G.caughtAt, best: D.BEST.get(g.idx + '@' + g.lv) };
         return out; }, fc);
       // two players: Player 2 hunts on the arrows, Player 1 runs on WASD
       live.two = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.SET.players = 2; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r);
@@ -5165,18 +5207,18 @@ try {
       const E = D.recSoon(c, r, true), a = D.shownOf(E); await new Promise(ok => setTimeout(ok, 1500)); const b = D.shownOf(E);
       const moved = Math.hypot(a.tanks[0].x - b.tanks[0].x, a.tanks[0].y - b.tanks[0].y) + Math.hypot(a.tanks[1].x - b.tanks[1].x, a.tanks[1].y - b.tanks[1].y) + Math.abs(a.t - b.t);
       const V = { ...D.shownOf(E), t: Math.min(2, E.T) }, it = D.itemsOf(V), kinds = k => it.filter(i => i.kind === k);
-      return { done: E.done, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, bar: kinds('mzBar').length,
+      return { done: E.done, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length,
                yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shells: it.filter(i => /Shot|Crate|Mine|Beam|Missile/.test(i.kind)).length }; }, fc);
     const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '9,10,11' && r.apart >= 2 && r.caught && r.head
       && r.held[0] && r.held[1] > r.held[2] && r.more.join() === '4,4'
       && live.drove && Math.hypot(live.drove.x - live.ready.x, live.drove.y - live.ready.y) > 0.02 && live.ready.state === 'ready'
       && live.steered && Math.abs(Math.atan2(Math.sin(live.steered.h - live.want), Math.cos(live.steered.h - live.want))) < 0.3
-      && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.newMaze
-      && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
+      && live.match && live.match.after.state === 'play' && !live.match.after.over
+      && live.match.end.state === 'over' && live.match.end.survived > 50 && live.match.end.best === live.match.end.survived
       && live.two && live.two.seats === 'you,p2' && live.two.moved2 > 0.02 && live.two.moved1 < 0.005
-      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.bar === 1 && shown.yaws && shown.shells === 0;
+      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.yaws && shown.shells === 0;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side for 2/3/4 tanks; a hunter beside you caught you, nobody near you held out; the steady runner held out ${r.held[1]} of 12 at level 1 and ${r.held[2]} at level 5; a real key drove, a real drag steered; a round held out counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; Player 2 hunted on the arrows; a board no one plays moved)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side for 2/3/4 tanks; a hunter beside you caught you, nobody near you and nothing ended it; the steady runner lasted ${r.held[1].toFixed(1)} s at level 1 and ${r.held[2].toFixed(1)} s at level 5 (40 s at most); a real key drove, a real drag steered; caught after ${live.match && live.match.end.survived} s, kept as the best; Player 2 hunted on the arrows; a board no one plays moved)`);
   }
   // TRICK SHOTS (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): wander's engine
   // gives the textbook results (the thresholds wander's own smoke test holds it to), every challenge's reference shot solves it
@@ -5286,7 +5328,9 @@ try {
     }
     const shown = await page.evaluate(async () => { const D = window.getFieldApp()._debug, idx = 3, R = D.recSoon(idx, true), [c, r] = D.cellOfIdx(idx); D.GAMES.delete(c + '_' + r);
       const a = D.shownOf(R); let moved = 0, sawCue = !!a.cue, sawPlay = !a.cue;
-      for (let k = 0; k < 16; k++){ await new Promise(ok => setTimeout(ok, 300)); const b = D.shownOf(R); sawCue = sawCue || !!b.cue; sawPlay = sawPlay || !b.cue;
+      // (looked at for a whole loop and a little more, from wherever the board's own phase begins it: 4.8 s could fall wholly in the
+      //  shot's flight and miss the cue, which failed on CI, Oct 29)
+      for (let k = 0; k < Math.ceil((R.cycle + 1) / 0.3); k++){ await new Promise(ok => setTimeout(ok, 300)); const b = D.shownOf(R); sawCue = sawCue || !!b.cue; sawPlay = sawPlay || !b.cue;
         moved += a.pos.reduce((s, p, i) => s + (p && b.pos[i] ? Math.hypot(p[0] - b.pos[i][0], p[1] - b.pos[i][1]) : 0), 0); }
       const it = D.itemsOf({ B: R.S.B, pos: R.S.B.map(b => [b.x, b.z, 0]), ch: R.S.ch, sim: R.s, hz: R.s.hz, see: 3, paths: 'all', cue: { ang: 0.3, power: 14, elev: 0, tip: { x: 0, y: 0 }, chalk: true } });
       const kinds = k => it.filter(i => i.kind === k).length;
@@ -6758,8 +6802,11 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.again = g2.rocks.length;
       // (another board played the same way has its rocks, or its next wave: its picture alone, a reel frame by the clock, can fall
       //  between two waves with none, which failed once on CI, Oct 29)
-      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); for (let k = 0; k < 300; k++) D.step(g3, 1 / 60);
-      out.other = g3.rocks.length; D.games.delete((L.c + 3) + '_' + L.r);
+      // (a board of an earlier check may have been left cleared, and a wave comes a moment after the last one: the most rocks it had
+      //  in six seconds, from a board that is not cleared, Oct 29)
+      D.CLEARED.delete((L.c + 3) + '_' + L.r);
+      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); out.other = 0; for (let k = 0; k < 360; k++){ D.step(g3, 1 / 60); out.other = Math.max(out.other, g3.rocks.length); }
+      D.games.delete((L.c + 3) + '_' + L.r); D.CLEARED.delete((L.c + 3) + '_' + L.r);
       D.LIVE = was; D.CLEARED.delete(L.c + '_' + L.r); try { localStorage.removeItem('asteroids.cleared'); } catch {}
       return out;
     });
