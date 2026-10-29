@@ -619,6 +619,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (localStorage `airhockey.best`).
   - **The row** (`tilesOf`, `setting`, `ORDER`, localStorage `airhockey.settings`): New match, Theme, Goals (5, 7, 11), Players,
     Puck speed, Your mallet (Small, Normal, Large: `MALLETS` 0.034, 0.042, 0.052), Trail, Shake & flash, Sound.
+    Defaults (Oct 29: "defaults: puck speed slow.   trail - on.   shake & flash - on"): the puck Slow, Trail and Shake & flash on;
+    settings saved before (`v` under 2) take those three afresh once.
+  - **Rounded corners** (Oct 29: "balls get stuck in the corners in air hockey"): the corners were square, so a puck pushed into
+    one met both rails, lost its speed into each and sat dead (in a corner 6% of the computer's matches, up to 7 s; pressed by a
+    mallet and let go, it stayed till the 6 s nudge). Each is now an arc of radius `CR` (0.085; `cornerAt`, `inCorner`), painted
+    as rail: the puck bounces off it as off a rail, a mallet is kept off it, a pinned puck loses only its speed into the arc and
+    slides out along it, and a puck still in a corner for `CORNER_T` (1 s) is sent toward the middle. Measured: in a corner under
+    1% of the time, 0.2 s at most; a pressed puck out in 0.45 s. The smoke test (part 7, "air hockey corners") checks all three.
   - The smoke test checks the levels by ring, a swing passed into the puck, the rail and a goal only in the mouth, the puck never
     inside a mallet, matches ending at levels 1, 3 and 5 with the steady player's share falling, a recording's par, the four themes
     painted, and real input: a click starting, a real drag putting the mallet under the finger across and along, the real arrow, a
@@ -882,12 +890,40 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     1–4, X), a tap on an empty square lays the stock's piece that fits best (`bestFits`: every way of every piece left, scored as
     `fitsAt` scores them, more in stock first on a tie); a tap again on one of yours steps through the other ways and pieces that
     join, then takes it back (`tapAuto`); a tap on the chute or the cup runs the marble.
-- **Bejeweled's pearls and lit squares** (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the
-  white one, but with different colors. also, when sliding pieces, highlight the selected cells."): `GEMS_APP` draws all seven kinds
-  as the white one's flattened sphere (`PEARL`, `CUTS[6]`), told apart by `COLS` alone (the faceted cuts are kept, not drawn). The
-  squares being swapped are lit pale blue (`litOf`, kind 8 entries in a frame, `gridOf`): the square a drag began on, and the one it
-  heads for once the finger has gone 0.08 of a square (`g.drag`), then both while the gems slide and slide back (`g.lit`,
-  `g.litUntil`); a drag lets go a gem tapped before. The smoke test (part 7) drags with the real mouse.
+- **Bejeweled** (`GEMS_APP`, id `bejeweled`):
+  - **Pearls and lit squares** (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the white
+    one, but with different colors. also, when sliding pieces, highlight the selected cells."): all seven kinds are the white one's
+    flattened sphere (`PEARL`, `CUTS[6]`), told apart by `COLS`; the faceted cuts are kept, not drawn. The squares being swapped are
+    lit pale blue (`litOf`, `gridOf`): the square a drag began on, the one it heads for once the finger has gone 0.08 of a square
+    (`g.drag`, which also lets go a gem tapped before), then both while the gems slide and slide back (`g.lit`, `g.litUntil`).
+  - **Special gems, a goal on every board, the feel, size and colours** (Oct 28: "whats next for bejeweld", then "1,2,5,6"):
+    - A gem is `{ k, sp }`: k a colour 0–6, `HYPER_K` 7 or `STONE_K` 8. `groupsOf` finds the runs and joins them where they share a
+      gem. A group of five or more makes a hypercube, a line across meeting a line down a star, four a flame (`clearGroups`), at the
+      swapped gem of the group, else where the lines meet, else the longest run's middle. `spread` fires every special caught (a
+      flame its 3 × 3, a star its row and column, a hypercube blasted the commonest colour); a hypercube swapped takes every gem of
+      the other's colour, two of them the board (`hyperSwap`). A stone goes when a matched gem beside it does or a blast covers it.
+    - **Goals** (`specOf(idx, lv)`, seeded; `LV` by level, the ring level plus the Difficulty): a score, so many of a colour (two
+      colours farther out), all the ice (panes on squares, one or two thick: a gem cleared on a square breaks one; `ICE1`, `ICE2`, a
+      frost pane `bjIce`), or all the stones; stones also stand in the way at levels 4–5; 5 colours at levels 1–2, 6 at 3–4, 7 at 5.
+    - **Par** (`parGen`, `parFor`, `PARS`): the steady player (`plan`: every swap tried in a copy, `copyOf`/`simMove`, its cascades
+      falling with gems of its own drawn, the one doing most for the goal taken, then specials and score) over `PAR_RUNS` (3) games,
+      `PAR_CAP` 60. The moves allowed (`g.limit`) are par × the level's `slack` (2 at level 1 to 1.15 at 5), at least par + 2. Worked
+      out for the framed board `URGENT_MS` a frame, at once for a board played (10–50 ms). Measured on 24 boards a level: median par
+      8, 8, 13, 14 and 34 moves at levels 1–5; ice the slowest goal (25–50 from level 3).
+    - Made: stars by moves against par (`starsOf`: par 3, 1.3 × par 2, else 1), the fewest kept (`bejeweled.best`, by board, level,
+      size and colours); a tap after `GRACE` goes on to the board beside. Out of moves: a tap begins again. No swap left: the gems
+      shuffle where they stand (`shuffle`), stones kept.
+    - **Endless** (the Mode): the game as it was with the specials, no goal, no limit; taking a board carries on from what it showed.
+    - **Boards no one plays** (`SHOWS`, `showAt`): each a game of its own on its own clock, played by `quickPick` (the swap clearing
+      most, the goal's squares first), begun again `HOLD_T` after its goal is made or `SHOW_CAP` moves.
+    - **The feel**: pops (`pops`, `POP_T`), the points floating up in the small dot font (`floats`), cascades called GOOD … INCREDIBLE
+      in the big one (`words`, `text5`), a star's row and column flashing (`beams`), bursts (`BOOM`), a special made swelling once
+      (`born`); sounds (`beep`, `bejeweled.sound`): a chime climbing a whole tone a cascade step, the specials, ice, stones, a fanfare.
+    - **Settings** (`SET`, `bejeweled.settings`, the menu and the row: New/Restart, Mode, Board size 6–10, Colours 5/6/7 or by level,
+      Sound): a change starts every board afresh. `g.n` and `g.K` are the game's own.
+  - The smoke test (part 7) checks every kind the pearl, the levels, pars, each special made and a flame's 3 × 3, and real input: a
+    drag lighting both squares and making a flame, clicks swapping a hypercube, a goal made with stars and a best, a click going on
+    to the next board, a board out of moves, the real Size tile, and a board no one plays moving.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
@@ -1743,6 +1779,23 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     piece and not the view, the glow on and off); and the difficulty (level 4's ways fewer as the fewest of four than made alone,
     the pars, stars for time, a figure that cannot be built proved so, shown a piece short, its count kept back) with real input
     (the real N on one that cannot be built taking it, a real click on ✗ on one that can costing a hint).
+- **Asteroids: cleared boards stay cleared, endless ships** (Oct 29: "asteroids - dont reset the board, once a board is cleared keep
+  it cleared.    continuos lives don't end game after 3 deaths."): `ASTEROIDS_APP` (Sep 28; flying between boards, saucers, gems).
+  While flying between boards (`HOP`), a board whose last rock is broken is cleared for good (`CLEARED`, localStorage
+  `asteroids.cleared`, the latest 5,000): no new wave, empty space when no one is on it (`shown`, `EMPTY`), empty when flown back
+  into (`adopt`); the menu's Forget cleared boards fills them again. With the edges wrapping the waves come as in the arcade. Ships
+  are endless by default (`LIVES`, the menu's Ships: endless or three, localStorage `asteroids.lives`): a ship lost comes back and
+  is counted (`g.lost`, the title's "N lost"), the game never over; three is the arcade's. The recordings keep the arcade's. The
+  smoke test (part 7) checks both.
+  - **The settings row** (Oct 29: "what are cusomization options", then "1,2,3,4,5,6"; `SET`, localStorage `asteroids.settings`,
+    `tilesOf`, `setting`, `ORDER`, and the menu's Look, Rocks, Drift and Start wave): New game, Look (3D; Vector, white outlines on
+    black, `outlineGeo`, `vrock`, `vship`, `vflame`, `vsaucer`; Neon, the outlines glowing on deep violet; `LOOK_COL`), Rocks (×0.6,
+    1, 1.5 a wave, `ROCKS_N`), Rock speed (×0.7, 1, 1.35, `ROCK_SP`), Turn (×0.7, 1, 1.4, `TURNS`), Drift (classic, or arcade: twice
+    the thrust, the ship stopping when you stop), Rapid fire, Triple shot and Shield always on (`shielded`), Saucers and Gems on or
+    off, Start wave (1, 3, 5, 10), Ships, Fly between boards, Sound. All of it is the game you play (`mine()`: not QUIET); the
+    boards no one plays keep the arcade's rules and take the look. A game's `spawned` says a wave came to it, so a board started at
+    a later wave is not called cleared before its first. The smoke test (part 7, "asteroids settings") checks each and a real
+    click on the Look tile.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
