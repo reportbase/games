@@ -54113,7 +54113,25 @@ const GOLFTANK_APP = (() => {
   const TAU = Math.PI * 2;
   const DL = ARCADE.difficulty('golftanks.level', 'Every board is its own golf hole, and its computer tank is sharper the farther it is from the corner. Easy, Normal and Hard move every board a level up.', true);
   const SND = ARCADE.sounds('golftanks.sound', 'A pop as a shell leaves, a burst when a tank is hit, a chime for a round won.');
-  const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('golftanks.players', '1') || 1)), aim: ARCADE.load('golftanks.aim', 'on') !== 'off' };
+  const SET = { players: Math.max(1, Math.min(2, +ARCADE.load('golftanks.players', '1') || 1)), aim: ARCADE.load('golftanks.aim', 'on') !== 'off',
+                mode: ARCADE.load('golftanks.mode', 'roam') === 'match' ? 'match' : 'roam', endless: ARCADE.load('golftanks.lives', 'endless') !== 'three' };
+  /* LIKE ASTEROIDS, WITH TANKS (Oct 29: "golf tanks  should be like asteroids.      instead of asteroids, use takes."): the game
+     you play is Asteroids' way of playing (Roam, the menu's Mode; the one-on-one match of Oct 22 is Match, and two players
+     always play matches). Each board's hole holds a few enemy tanks (`ROAM_N` by level: 1, 2, 3, 3, 4), all on one side, red,
+     come for you where Asteroids' rocks drift; your tank drives off any edge of the board (pressed against the rail, heading
+     out) on to the next board that way, the view following, and that board's game becomes yours, your tank coming in at the
+     edge it crossed (`hop`, `entryAt`), with what you have destroyed and lost. The board left goes back to its recording.
+     Destroy every enemy on a board and it is cleared for good (`CLEARED`, localStorage `golftanks.cleared`, the latest 5,000):
+     flying back finds its hole empty and quiet, and a board no one plays that is cleared shows it so; the menu's Forget cleared
+     boards fills them again. Tanks are endless by default (the menu's Tanks: endless or three, localStorage `golftanks.lives`):
+     yours, put out, comes back where it came on to the board, blinking and safe for `SAFE_T`, the losses counted; with three,
+     the third ends the run. The weapons are full again on every board. The enemies hold their fire `HOLD_T` after you arrive. */
+  const ROAM_N = [1, 2, 3, 3, 4], SAFE_T = 2.5, HOLD_T = 2.5;
+  const CLEARED = new Set((() => { try { return JSON.parse(localStorage.getItem('golftanks.cleared') || '[]'); } catch { return []; } })());
+  const saveCleared = () => { try { localStorage.setItem('golftanks.cleared', JSON.stringify([...CLEARED].slice(-5000))); } catch {} };
+  const clearKey = (c, r) => BOARD_KIT.gkey(c, r) + '@' + (GOLF_APP._kit ? GOLF_APP._kit.SIZE : '');
+  const isCleared = (c, r) => CLEARED.has(clearKey(c, r));
+  const roamOn = () => SET.mode === 'roam' && SET.players === 1;
   const say = BOARD_KIT.say(3000);
   const now = BOARD_KIT.now;
   const clamp = BOARD_KIT.clamp;
@@ -54130,7 +54148,7 @@ const GOLFTANK_APP = (() => {
   /* mini golf's kit, asked for each time: mini golf is made again at another board size (setGolfSize), and then its holes are
      other holes, so the games and recordings made on the old ones go */
   let KIT = null;
-  function kit(){ const k = GOLF_APP._kit; if (k !== KIT){ KIT = k; GAMES.clear(); RECS.clear(); } return k; }
+  function kit(){ const k = GOLF_APP._kit; if (k !== KIT){ KIT = k; GAMES.clear(); RECS.clear(); WAITING.clear(); } return k; }
 
   /* ─── A ROUND ─── the hole (its index in mini golf's HOLES, kept with the hole itself, since a generated hole's slot can be
      given to another), the tanks (on the tee and by the cup, facing each other), and its own clock, which the movers keep. */
@@ -54162,9 +54180,11 @@ const GOLFTANK_APP = (() => {
     if (k != null) G.tanks.forEach((o, j) => { if (j === k || !o.alive) return; const dx = t.x - o.x, dy = t.y - o.y, d = Math.hypot(dx, dy);
       if (d < 2 * R && d > 1e-9){ const p = (2 * R - d) / 2; t.x += dx / d * p; t.y += dy / d * p; o.x -= dx / d * p; o.y -= dy / d * p; } });
   }
+  const foeOf = (G, k, j) => j !== k && (!G.team || G.team[j] !== G.team[k]);
   function kill(G, k, by, how){
     const t = G.tanks[k]; if (!t.alive) return;
-    t.alive = false;
+    if (t.safe != null && G.t < t.safe && how !== 'splash') return;          // (just come back: Oct 29)
+    t.alive = false; t.deadAt = G.t;
     G.booms.push({ x: t.x, y: t.y, z: G.K.hOf(G.H, t.x, t.y), t: G.t, k, by, kind: how || 'hit' });
     if (G.downAt == null) G.downAt = G.t;
   }
@@ -54256,7 +54276,7 @@ const GOLFTANK_APP = (() => {
   function autoRange(G, k){
     const K = G.K, CW = K.CW, t = G.tanks[k];
     let best = null;
-    G.tanks.forEach((o, j) => { if (j === k || !o.alive) return; const d = Math.hypot(o.x - t.x, o.y - t.y);
+    G.tanks.forEach((o, j) => { if (!foeOf(G, k, j) || !o.alive) return; const d = Math.hypot(o.x - t.x, o.y - t.y);
       if (Math.abs(angDiff(Math.atan2(o.y - t.y, o.x - t.x), t.h)) < AUTO_CONE && d >= MORTAR_MIN * CW && d <= MORTAR_MAX * CW && (!best || d < best.d)) best = { x: o.x, y: o.y, d }; });
     if (best) return best;
     let d = AUTO_RANGE * CW;
@@ -54319,7 +54339,7 @@ const GOLFTANK_APP = (() => {
   function stepMissile(G, b, dt){
     const K = G.K, CW = K.CW;
     let T = b.tg >= 0 && G.tanks[b.tg].alive ? G.tanks[b.tg] : null;
-    if (!T){ let bd = Infinity; G.tanks.forEach((o, j) => { if (j === b.k || !o.alive) return; const d = Math.hypot(o.x - b.x, o.y - b.y); if (d < bd){ bd = d; b.tg = j; T = o; } }); }
+    if (!T){ let bd = Infinity; G.tanks.forEach((o, j) => { if (!foeOf(G, b.k, j) || !o.alive) return; const d = Math.hypot(o.x - b.x, o.y - b.y); if (d < bd){ bd = d; b.tg = j; T = o; } }); }
     if (T){ const want = Math.atan2(T.y - b.y, T.x - b.x), da = angDiff(want, b.h); b.h += clamp(da, -MIS_TURN * dt, MIS_TURN * dt); }
     b.vx = Math.cos(b.h) * MIS_V * CW; b.vy = Math.sin(b.h) * MIS_V * CW;
     b.x += b.vx * dt; b.y += b.vy * dt;
@@ -54367,6 +54387,7 @@ const GOLFTANK_APP = (() => {
     // (a shell long over is dropped from the live round, so the list does not grow without end; a recording keeps them)
     if (!G.keep && G.shots.length > 24) G.shots = G.shots.filter(b => b.end > G.t - 1);
     if (!G.keep && G.beams.length > 8) G.beams = G.beams.filter(Z => G.t - Z.t < RAIL_SHOW);
+    if (G.roam) return;                                       // (Roam: the game sees to its own ends, Oct 29)
     const alive = G.tanks.filter(t => t.alive).length;
     if ((G.downAt != null && (alive <= 1) && G.t - G.downAt >= BOOM_T) || G.t >= ROUND_CAP){
       G.over = true; G.winner = alive === 1 ? G.tanks.findIndex(t => t.alive) : -1;
@@ -54455,7 +54476,7 @@ const GOLFTANK_APP = (() => {
   }
   function think(G, k, D){
     const A = G.tanks[k].ai, t = G.tanks[k];
-    const foes = G.tanks.map((o, j) => j !== k && o.alive ? j : -1).filter(j => j >= 0);
+    const foes = G.tanks.map((o, j) => foeOf(G, k, j) && o.alive ? j : -1).filter(j => j >= 0);
     if (!foes.length){ A.aim = null; A.way = null; return; }
     const foe = foes.sort((a, b) => Math.hypot(G.tanks[a].x - t.x, G.tanks[a].y - t.y) - Math.hypot(G.tanks[b].x - t.x, G.tanks[b].y - t.y))[0];
     A.foe = foe;
@@ -54491,6 +54512,7 @@ const GOLFTANK_APP = (() => {
     const t = G.tanks[k], D = LV[clamp(G.lv | 0, 1, 5) - 1], CW = G.K.CW;
     if (!t.alive) return { drive: 0, turn: 0, fire: false };
     const A = t.ai || (t.ai = { next: 0, aim: null, way: null, coolTo: 0, dodgeTo: -1, dodge: null, back: -1, mark: { x: t.x, y: t.y, t: 0 } });
+    if (G.hold != null && G.t < G.hold) return { drive: 0, turn: 0, fire: false };   // (you just came on to the board: Oct 29)
     if (G.t >= A.next){ A.next = G.t + D.think; think(G, k, D); }
     if (G.t < A.dodgeTo && A.dodge) return { drive: A.dodge[0], turn: A.dodge[1], fire: false };
     if (A.now && t.cool <= 0){ const n = A.now; A.now = null; A.coolTo = G.t + D.cool + 1; return { drive: 0, turn: 0, fire: true, w: n.w, at: n.at }; }
@@ -54528,6 +54550,7 @@ const GOLFTANK_APP = (() => {
      at the recording's own clock, so the shells bounce off them where they were. */
   const RECS = new Map(), REC_CAP = 300, SOON = BOARD_KIT.budget(4, 40);
   const recKey = (idx, lv) => idx * 8 + lv;
+  const WAITING = new Map();                               // (Roam: the boards' enemies as they wait, Oct 29)
   function recSoon(c, r, hk, force){
     const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
     let E = RECS.get(key);
@@ -54588,8 +54611,96 @@ const GOLFTANK_APP = (() => {
   const isPerson = s => s !== 'cpu';
   const colsOf = seats => seats.map(s => SEAT[s]);
   const namesOf = seats => seats.map(s => NAME[s]);
-  function fresh(c, r){
-    const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), seats = seatsNow(), hk = K.bareOf(K.holeAt(K.boardIdx(c, r)));
+  /* ─── ROAMING (Oct 29, above) ─── a board's enemies: the first where the cup was, the rest each in turn at the open cell
+     farthest from your tank and the ones placed, a little shuffled by the board's own numbers, so a board always holds the same */
+  function enemySpots(K, H, n, R){
+    const CW = K.CW, NX = K.NX, NY = K.NY, a = H.tee, out = [{ x: H.cup.x, y: H.cup.y }];
+    const ok = (x, y) => !(K.groundAt(H, x, y) === '~') && !K.solidsAt(H, x, y, TR * CW, 0).length && Math.hypot(...K.gradOf(H, x, y)) < SLIDE * 0.8;
+    const cand = [];
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++){ const x = (i + 0.5) * CW, y = (j + 0.5) * CW;
+      if (!K.cellBlocked(H, i, j) && ok(x, y) && Math.hypot(x - a.x, y - a.y) > 3 * CW) cand.push({ x, y, j: R() }); }
+    while (out.length < n && cand.length){
+      let best = null, bd = -1;
+      for (const q of cand){ let d = Math.hypot(q.x - a.x, q.y - a.y) * 0.6; for (const o of out) d = Math.min(d, Math.hypot(q.x - o.x, q.y - o.y));
+        d += q.j * 0.3 * CW; if (d > bd){ bd = d; best = q; } }
+      out.push(best); cand.splice(cand.indexOf(best), 1);
+    }
+    return out.slice(0, n);
+  }
+  function roamRound(K, hk, idx, lv, cleared){
+    const n = cleared ? 0 : ROAM_N[clamp(lv | 0, 1, 5) - 1], seats = ['you', ...Array(n).fill('cpu')];
+    const G = roundNew(K, hk, seats, idx * 31 + lv, lv), H = G.H, P = enemySpots(K, H, n, rngOf(idx * 131 + lv));
+    G.roam = true; G.team = seats.map((s, k) => k ? 1 : 0); G.hold = HOLD_T;     // (they hold their fire as a board begins too)
+    G.tanks.forEach((t, k) => { if (!k) return; const p = P[k - 1] || P[0] || H.cup; t.x = p.x; t.y = p.y; t.h = Math.atan2(H.tee.y - p.y, H.tee.x - p.x) || 1e-6; settle(G, t, k); });
+    return G;
+  }
+  // a place for your tank near (x, y), stepping inward (ix, iy) and along until it is dry, clear and not too steep
+  function entryAt(G, x, y, ix, iy){
+    const K = G.K, H = G.H, CW = K.CW, m = K.RT + TR * CW + 0.06 * CW;
+    const ok = (px, py) => px >= m && px <= K.WD - m && py >= m && py <= 1 - m && !wet(G, px, py) && !K.solidsAt(H, px, py, TR * CW, G.t).length && Math.hypot(...K.gradOf(H, px, py)) < SLIDE;
+    const jx = -iy, jy = ix;
+    for (let d = 0; d <= 6 * CW; d += 0.25 * CW) for (const s of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 3, -3])
+      { const px = clamp(x + ix * d + jx * s * CW, m, K.WD - m), py = clamp(y + iy * d + jy * s * CW, m, 1 - m); if (ok(px, py)) return { x: px, y: py }; }
+    return { x: H.tee.x, y: H.tee.y };
+  }
+  function hop(g, du, dv){
+    let tc = null;
+    try { tc = { x: target.cellX, z: target.cellZ }; } catch {}
+    const GS = fieldGS();
+    // (from where the view is, unwrapped, as Asteroids does, so the flight is to the board beside; else from the board itself)
+    if (!tc || ((tc.x % GS) + GS) % GS !== g.c || ((tc.z % GS) + GS) % GS !== g.r) tc = { x: g.c, z: g.r };
+    // u grows toward −x and v toward −z, so off the right edge (x ≥ WD) is the board at x − 1.
+    const gx = tc.x - du, gz = tc.z - dv, nc = ((gx % GS) + GS) % GS, nr = ((gz % GS) + GS) % GS;
+    const K = kit(), o = g.G.tanks[0], m = K.RT + TR * K.CW + 0.06 * K.CW;
+    const ng = fresh(nc, nr, true), N = ng.G;
+    const x = du > 0 ? m : du < 0 ? K.WD - m : o.x, y = dv > 0 ? m : dv < 0 ? 1 - m : o.y, at = entryAt(N, x, y, du > 0 ? 1 : du < 0 ? -1 : 0, dv > 0 ? 1 : dv < 0 ? -1 : 0);
+    Object.assign(N.tanks[0], { x: at.x, y: at.y, h: o.h || 1e-6, safe: N.t + SAFE_T });
+    settle(N, N.tanks[0], 0);
+    N.hold = N.t + HOLD_T;
+    Object.assign(ng, { state: 'play', wait: 0, last: performance.now(), kills: g.kills, lost: g.lost, wid: g.wid.slice(), entry: { x: N.tanks[0].x, y: N.tanks[0].y, h: N.tanks[0].h } });
+    GAMES.delete(gkey(g.c, g.r));
+    GAMES.set(gkey(nc, nr), ng);
+    LIVE = { c: nc, r: nr };
+    SND.play('slide');
+    try { gotoCell(gx, gz); } catch {}
+    try { fieldItemsChanged(); } catch {}
+    return ng;
+  }
+  // which edge your tank is driving off, [du, dv], or null: pressed against the rail, heading out and driving on
+  function offEdge(g, cmd){
+    const G = g.G, K = G.K, t = G.tanks[0], m = K.RT + TR * K.CW + 0.12 * K.CW;
+    if (!t.alive || !cmd || !(cmd.drive > 0)) return null;
+    const cx = Math.cos(t.h), cy = Math.sin(t.h);
+    const du = t.x <= m && cx < -0.45 ? -1 : t.x >= K.WD - m && cx > 0.45 ? 1 : 0, dv = t.y <= m && cy < -0.45 ? -1 : t.y >= 1 - m && cy > 0.45 ? 1 : 0;
+    return du || dv ? [du, dv] : null;
+  }
+  function roamStep(g, booms0){
+    const G = g.G, t = G.tanks[0];
+    for (const B of G.booms.slice(booms0)) if (B.k >= 1 && B.by === 0) g.kills++;
+    if (!g.cleared && G.tanks.length > 1 && G.tanks.every((o, k) => !k || !o.alive) && G.t - Math.max(...G.tanks.slice(1).map(o => o.deadAt || 0)) >= 1){
+      g.cleared = true;
+      if (!isCleared(g.c, g.r)){ CLEARED.add(clearKey(g.c, g.r)); saveCleared(); }
+      t.ammo = WEAPONS.map(w => w.ammo);
+      SND.play('win'); say('Board cleared! ' + g.kills + ' destroyed. Drive off any edge for the next board.', 2600);
+    }
+    if (!t.alive && t.deadAt != null && G.t - t.deadAt >= BOOM_T){
+      g.lost++;
+      if (!SET.endless && g.lost >= 3){ g.state = 'over'; g.overAt = performance.now(); SND.play('lose'); say('Your third tank is out: ' + g.kills + ' destroyed. Tap to start again.', 4200); return; }
+      const e = g.entry || { x: G.H.tee.x, y: G.H.tee.y, h: t.h }, at = entryAt(G, e.x, e.y, 0, 0);
+      Object.assign(t, { x: at.x, y: at.y, h: e.h || 1e-6, alive: true, deadAt: null, vx: 0, vy: 0, kx: 0, ky: 0, spin: 0, stun: 0, cool: 0, safe: G.t + SAFE_T });
+      settle(G, t, 0);
+      say('A new tank' + (SET.endless ? ' (' + g.lost + ' lost)' : ' (' + (3 - g.lost) + ' left)') + '.', 1300);
+    }
+  }
+  function fresh(c, r, roamIt){
+    const K = kit(), idx = boardIdx(c, r), lv = levelAt(idx), hk = K.bareOf(K.holeAt(K.boardIdx(c, r)));
+    if (roamIt || roamOn()){
+      const g = { c, r, idx, lv, seats: null, roam: true, kills: 0, lost: 0, cleared: isCleared(c, r), state: 'ready', wait: 0, last: performance.now(), fireReq: [false], fireAt: [null], wid: [0], hk, H: K.HOLES[hk], score: [0, 0], round: 0 };
+      g.G = roamRound(K, hk, idx, lv, g.cleared); g.seats = g.G.seats;
+      g.entry = { x: g.G.tanks[0].x, y: g.G.tanks[0].y, h: g.G.tanks[0].h };
+      return g;
+    }
+    const seats = seatsNow();
     const g = { c, r, idx, lv, seats, n: 2, score: [0, 0], round: 0, state: 'ready', wait: 0, last: performance.now(), fireReq: [false, false], fireAt: [null, null], wid: [0, 0], hk, H: K.HOLES[hk] };
     g.G = roundNew(K, hk, seats, idx * 31 + lv, lv);
     return g;
@@ -54651,13 +54762,17 @@ const GOLFTANK_APP = (() => {
     if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + '.', 900); }
     const G = g.G, booms = G.booms.length, heard = G.sounds.length;
     for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--){
-      stepRound(G, g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k)), STEP);
+      const cmds = g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k));
+      // (Roam: driving off an edge goes on to the next board, Oct 29)
+      if (g.roam){ const off = offEdge(g, cmds[0]); if (off){ hop(g, off[0], off[1]); return; } }
+      stepRound(G, cmds, STEP);
       g.fireReq = g.fireReq.map((q, k) => q === false || G.lastFire[k] >= q || G.t - q > REQ_T ? false : q);
       g.fireAt = g.fireAt.map((a, k) => g.fireReq[k] === false ? null : a);
     }
     for (const e of G.sounds.slice(heard)) SND.play(e === 'fire' ? 'tap' : e === 'mortar' ? 'turn' : e === 'rail' ? 'flag' : 'slide');
     if (G.sounds.length > heard) try { bbRefreshNow(); } catch {}
     if (G.booms.slice(booms).some(B => B.k >= 0)) SND.play('boom');
+    if (g.roam){ roamStep(g, booms); return; }
     if (G.over) roundOver(g);
   }
   const bestKey = g => g.idx + '@' + g.lv + '@' + kit().SIZE;
@@ -54732,6 +54847,7 @@ const GOLFTANK_APP = (() => {
     const mine = [], s = CW;
     const hOf = (x, y) => K.hOf(H, x, y);
     V.tanks.forEach((t, k) => {
+      if (t.safe != null && V.t < t.safe && Math.floor(V.t * 8) % 2) return;     // (just come back: blinking, Oct 29)
       // (stood on the slope under it, the slope taken across its own length, TILT_E a cell either way, so it lies along the
       //  ground and not into it: Oct 22)
       const col = V.cols[k], y = yawOf(t.h), h = hOf(t.x, t.y), sc = TS * s, e = TILT_E * s;
@@ -54784,7 +54900,22 @@ const GOLFTANK_APP = (() => {
   function viewOf(c, r){
     const K = kit(), k = gkey(c, r), here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(k);
     if (g && g.H === K.HOLES[g.hk]){ if (here) stepGame(g); return liveView(g); }
-    const h0 = K.holeSoon(c, r), E = recSoon(c, r, h0 == null ? null : K.bareOf(h0));
+    const h0 = K.holeSoon(c, r);
+    /* (Roam: a board no one plays shows its own enemy tanks waiting where they stand, their turrets looking about, or its hole
+        empty once cleared; not a duel of two computer tanks, red against blue, which read as someone playing: Oct 29) */
+    if (roamOn()){
+      if (h0 == null) return null;
+      const hk = K.bareOf(h0), H = K.HOLES[hk], ts = now() / 1000;
+      if (isCleared(c, r)) return { hk, H, t: ts, live: true, tanks: [], shots: [], beams: [], booms: [], blown: {}, seats: [], cols: [] };
+      const idx = boardIdx(c, r), lv = levelAt(idx), key = recKey(idx, lv);
+      let W = WAITING.get(key);
+      if (!W || W.H !== H){ const G = roamRound(K, hk, idx, lv, false); W = { H, tanks: G.tanks.slice(1).map(t => ({ x: t.x, y: t.y, h: t.h })) };
+        WAITING.set(key, W); if (WAITING.size > REC_CAP) WAITING.delete(WAITING.keys().next().value); }
+      const ph = BOARD_KIT.phase(idx) * TAU;
+      return { hk, H, t: ts, live: true, tanks: W.tanks.map((t, k) => ({ x: t.x, y: t.y, h: t.h + 0.6 * Math.sin(ts * 0.45 + ph + k * 2.1), alive: true })),
+               shots: [], beams: [], booms: [], blown: {}, seats: W.tanks.map(() => 'cpu'), cols: W.tanks.map(() => SEAT.cpu) };
+    }
+    const E = recSoon(c, r, h0 == null ? null : K.bareOf(h0));
     return E ? shownOf(E) : null;
   }
   // the tanks' pieces are the tank maze's; everything else is mini golf's (its ground kinds are made as its holes are)
@@ -54801,8 +54932,14 @@ const GOLFTANK_APP = (() => {
         on(){ SET.aim = !SET.aim; ARCADE.save('golftanks.aim', SET.aim ? 'on' : 'off'); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s red tank. Two: you and a friend on one keyboard (Player 1 green at the near end: WASD, Q or Space fires; Player 2 blue at the far end: the arrows, M or Enter fires), or a finger each on a phone.',
         on(){ SET.players = SET.players === 2 ? 1 : 2; ARCADE.save('golftanks.players', String(SET.players)); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Mode: ' + (SET.mode === 'roam' ? 'roam' : 'match'), title: 'Roam: as Asteroids plays, with tanks: every board holds enemy tanks; drive off an edge to go on to the next board; a board you clear stays cleared. Match: one on one against the computer (or a friend), first to ' + WIN + ' rounds. Two players always play matches.',
+        on(){ SET.mode = SET.mode === 'roam' ? 'match' : 'roam'; ARCADE.save('golftanks.mode', SET.mode); GAMES.clear(); TOLD = false; try { fieldItemsChanged(); } catch {} } },
+      { label: () => 'Tanks: ' + (SET.endless ? 'endless' : 'three'), title: 'Roam: endless, a tank put out comes back and the losses are counted; three, the third ends the run.',
+        on(){ SET.endless = !SET.endless; ARCADE.save('golftanks.lives', SET.endless ? 'endless' : 'three'); } },
+      { label: () => 'Forget cleared boards (' + CLEARED.size + ')', title: 'Every board you cleared holds its enemy tanks again.',
+        on(){ CLEARED.clear(); saveCleared(); GAMES.clear(); say('Every board has its enemy tanks again.', 1800); try { fieldItemsChanged(); } catch {} } },
       SND.item,
-      { label: 'Start this board again', title: 'A new match on this board, nothing to nothing.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+      { label: 'Start this board again', title: 'A new game on this board: in a match nothing to nothing, roaming its enemies back (unless it is cleared).', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
     ]}],
     // (the board is mini golf's: its shape, its tilt floor and zoom ceiling, its far colours and the room its kinds ask for)
     get boardShape(){ return GOLF_APP.boardShape; },
@@ -54821,10 +54958,12 @@ const GOLFTANK_APP = (() => {
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), best = BEST.get(idx + '@' + lv + '@' + kit().SIZE);
       const head = 'Golf tanks — level ' + lv + (best ? ' · best ' + '★'.repeat(best) : '');
-      if (!g) return head;
+      if (!g) return head + (roamOn() && isCleared(c, r) ? ' · cleared' : '');
+      if (g.roam){ const left = g.G.tanks.filter((o, k) => k && o.alive).length;
+        return head + ' · ' + (left ? left + (left === 1 ? ' enemy tank' : ' enemy tanks') + ' left' : 'cleared') + ' · ' + g.kills + ' destroyed' + (g.lost ? ' · ' + g.lost + ' lost' : '') + (SET.endless ? '' : ' · ' + Math.max(0, 3 - g.lost) + ' tanks left'); }
       return head + ' · ' + namesOf(g.seats).map((n, k) => n + ' ' + g.score[k]).join(', ') + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')';
     },
-    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
+    scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g && !g.roam ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
     // the bottom row: the four weapons, what is left of each this round, the one in hand lit (Oct 22; as the tanks' row)
     statTiles(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || g.state === 'over' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
       const t = g.G.tanks[0];
@@ -54843,6 +54982,7 @@ const GOLFTANK_APP = (() => {
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
+      if (LIVE && !TOLD && roamOn()){ TOLD = true; say('Your tank is green; the red ones are the enemy. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires; 1–4 choose the cannon, the mortar, the rail gun or a missile. Clear a board of its tanks and it stays cleared; drive off any edge to go on to the next board.', 7500); }
       if (LIVE && !TOLD){ TOLD = true; say('One on one: your tank is green. Drive with the arrows or WASD, or drag toward where it should go; tap, Space or Enter fires; 1–4 (or the bottom row) choose the cannon, the mortar (tap where it should land), the rail gun or a missile. Hills are cover, shells bounce off the rails, fences and movers, and water stops tanks.', 7500); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
@@ -54851,6 +54991,7 @@ const GOLFTANK_APP = (() => {
       const g = gameAt(c, r);
       if (g.state === 'over'){
         if (performance.now() - (g.overAt || 0) < 800) return true;
+        if (g.roam){ restart(c, r); return true; }
         const [nc, nr] = nextBoard(c, r); try { gotoCell(nc, nr); } catch {} LIVE = { c: nc, r: nr }; gameAt(nc, nr); return true; }
       LIVE = { c, r };
       if (g.state === 'ready'){ begin(g); return true; }
@@ -54877,7 +55018,8 @@ const GOLFTANK_APP = (() => {
       tank(0.22, 0.8, '#5a9e3e', -0.9); tank(0.75, 0.32, '#c8463c', 2.3);
       ctx.fillStyle = '#1c1c1c'; [[0.34, 0.66], [0.42, 0.56]].forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x * sz, y * sz, sz / 40, 0, TAU); ctx.fill(); });
     },
-    _debug: { WEAPONS, fire, fireMortar, fireRail, fireMissile, railTrace, autoRange, choose, MORTAR_R, MORTAR_MAX, RAIL_LEN, MIS_LIFE,
+    _debug: { CLEARED, isCleared, clearKey, roamOn, roamRound, enemySpots, entryAt, hop, offEdge, roamStep, foeOf, ROAM_N, SAFE_T, HOLD_T,
+              WEAPONS, fire, fireMortar, fireRail, fireMissile, railTrace, autoRange, choose, MORTAR_R, MORTAR_MAX, RAIL_LEN, MIS_LIFE,
               LV, kit, roundNew, stepRound, moveTank, fireShell, shellStep, simShot, navTo, cpuCmd, think, escape, threatened, recSoon, shownOf, itemsOf, viewOf, aimOf, liveView,
               spawnsOf, floorAt, fresh, gameAt, stepGame, begin, nextRound, personCmd, boardIdx, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               GAMES, RECS, BEST, HELD, SET, WIN, STEP, BV, TR, LIFE, GRACE, GUN_Z, CLEAR, CLIMB, DROP, THROW, MINE_R,

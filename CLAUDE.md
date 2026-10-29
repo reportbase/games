@@ -1460,7 +1460,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     backs off when stuck. Rounds of two computer tanks: 3–15 s, 30 ms to work out at level 1, 215 ms at level 5.
   - Controls, keys, two players (Player 1 at the near end, Player 2 at the far end), the match, stars and best (localStorage
     `golftanks.best`, by board, level and size) and the aim line (`aimOf`: the shell's own way, `AIM_SEG` bounces by level, at
-    most `AIM_LEN` 2.2 s) are the tank maze's. Two tanks only, no power-ups.
+    most `AIM_LEN` 2.2 s) are the tank maze's. A match is two tanks only, no power-ups (Roam, below, has more).
   - **Drawn**: the hole by mini golf (`drawHole`), then the tank maze's pieces in golf's units, standing on the ground and
     divided by WD at the end; the board's shape, tilt floor, zoom ceiling, far colours and kinds' room are mini golf's (getters
     on `GOLF_APP`); `itemGeometries` is a Proxy giving the tank kinds from `TANKMAZE_APP` and every other kind from mini golf.
@@ -1474,6 +1474,23 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     landing on its tank, the rail stopped by the rail and reaching a tank in the open, a missile fired away turning back for its
     tank, the rail's ammo running out, the computer using long-range shots at level 5, and the real key 2 and a real click putting
     a mortar where it was clicked; and a tank driven at steep ground staying at its foot, drawn tilted to it.
+  - **Like Asteroids, with tanks** (Oct 29: "golf tanks  should be like asteroids.      instead of asteroids, use takes."): the menu's
+    Mode is Roam (the default, localStorage `golftanks.mode`) or Match (the one-on-one above; two players always play matches).
+    - Roaming, every board's hole holds enemy tanks (`ROAM_N` by level: 1, 2, 3, 3, 4; `roamRound`, `enemySpots`: the first where the
+      cup was, the rest each at the open cell farthest from you and the ones placed), all of one side (`G.team`, `foeOf`: a tank's
+      foes are the other side's; with no sides, a match, every other tank). They hold their fire `HOLD_T` (2.5 s) as a board begins
+      and as you arrive (`G.hold`).
+    - Your tank pressed against the rail, heading out and driving on (`offEdge`), goes on to the board beside that way (`hop`, the
+      view following, as Asteroids' ship does): that board's game becomes yours, your tank coming in at the edge it crossed
+      (`entryAt`: dry, clear, not too steep), safe `SAFE_T` (2.5 s, blinking), with what you destroyed and lost; the weapons full
+      again. The board left goes back to showing its enemies waiting (`WAITING`: where they stand, turrets looking about), not a duel.
+    - Every enemy on a board put out clears it for good (`CLEARED`, localStorage `golftanks.cleared` by board and board size, the
+      latest 5,000; `roamStep`): empty when flown back to, played or not; the menu's Forget cleared boards fills them again.
+    - Tanks are endless by default (the menu's Tanks: endless or three, `golftanks.lives`): yours, put out, comes back where it came on
+      to the board after `BOOM_T`, the losses counted in the title; with three, the third ends the run and a tap starts again.
+    - Measured: a step of a round at levels 1, 3 and 5 (one, three, four enemies) 0.07, 0.14 and 0.17 ms.
+    - The smoke test (part 7, "golf tanks roam") starts a board by a real click, drives off the edge with the real W, clears the new
+      board and finds it empty when left and played again, brings a lost tank back, and sees a board beside showing its enemies.
 - **Trick shots** (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): `TRICK_APP`, id
   `trickshots`, after golf tanks. wander's `play-trick.html` (its main at 335fa6c), a pool table where you set an angle and a power
   and see the whole shot ahead of time, every ball it reaches, to rest.
