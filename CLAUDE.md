@@ -2322,6 +2322,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     curling's sweep; pinball's own) ask `pressReframes(e, x, y)` of each press: the second of a double, by the events' own times
     within 40 px, with the board off its default position, puts it back (`reframeDefault`) and is not the game's. The smoke test
     (part 7) zooms Lights Out, Pong and pinball off with the real wheel, a game under way, and a real double tap brings each back.
+  - **A single tap never selects a board** (Oct 29: "double click selects a centers board, not a single click. don't select a board
+    with only one tap."): a tap on a board you are not on did nothing but select it in place (Sep 23: the view stays) and join it
+    to the strip, and in an app with `firstTapPlays` (mini golf) tee off on it. Now it does nothing at all (`handleGroundTap`
+    returns after the framed-board guard; `selectCellInPlace` went). Only a double tap goes to another board, selecting it and
+    framing it as the 0 key does, with Tab, Enter, the game index and a strip tile; a tap on the board you are on is the game's
+    as ever. So every note above that says a tap on another board selects it, or tees off on it, or moves the editor there, now
+    means a double tap, and then a tap. The smoke test's "first tap tees off" checks a single click leaving the view and the hole
+    alone, a double click bringing it in, and the first click then teeing off.
   - Air raid keeps its taps while its plane flies (`worldTap`: they drop bombs). The smoke test double-taps a neighbour in ten
     games with a game under way and wants the view where the 0 key puts it.
 - **The dots, full screen, Tab from the board in view** (Oct 17: "1) the three dots on the bottom for the bottom panel should be

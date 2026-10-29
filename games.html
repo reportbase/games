@@ -7796,16 +7796,6 @@ function goHomeBoard(){
    nothing left to set it is worse than no state, so the flag and its guard
    went with the button rather than lingering as an always-false branch on the
    one function every selection in the build passes through.) */
-/* SELECT WITHOUT MOVING: everything gotoCell does to make a board the one
-   you are on, except frameBoard — the view does not move. */
-function selectCellInPlace(gx, gz){
-  target.cellX = gx; target.cellZ = gz;
-  target.boardX = gx * gridSpacingX(); target.boardZ = gz * gridSpacingZ(); target.shown = true;
-  target.active = false; target.zoom = null; target.yaw = null;
-  resetThrust();
-  resumeAnim();
-  if (!appHangsPictures()) enterPlay();
-}
 function gotoCell(gx, gz){
   const SP = gridSpacing();
   target.cellX = gx; target.cellZ = gz;                 // the cell is the truth — see syncTargetToCell
@@ -16305,6 +16295,20 @@ function templateSelectCell(gx, gz){
   try { rebuildBoardBrowser(); } catch (e){ _reportError('board browser', e); }
 }
 
+/* A tap on the framed board's red margin: the band between its face and its ring, aspect-aware (a board of 8 by 13 is not
+   square) and exactly as wide as the ring is drawn, so a tap just past it still reaches the neighbouring board and no part of
+   the board's own face is dead. Furniture, to a tap or to a double. */
+function tapOnFramedMargin(hit){
+  if (!target.shown) return false;
+  const SP = gridSpacing(), boardW = SP * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
+  const cwM = (window.LAB && window.LAB.cellW) || 1, chM = (window.LAB && window.LAB.cellH) || 1;
+  const bwxM = boardW * cwM, bwzM = boardW * chM, hxM = bwxM / 2, hzM = bwzM / 2;
+  const mWM = Math.min(boardW * 0.10,
+    Math.max(0, (gridSpacingX() - bwxM) / 2) * 0.86,
+    Math.max(0, (gridSpacingZ() - bwzM) / 2) * 0.86);
+  const axM = Math.abs(hit.x - target.boardX), azM = Math.abs(hit.z - target.boardZ);
+  return !(axM <= hxM && azM <= hzM) && axM <= hxM + mWM && azM <= hzM + mWM;
+}
 function handleGroundTap(hit, ev){
       // Drop the synthesised duplicate of a touch tap before anything else.
       if (!tapGestureIsFresh()) return;
@@ -16405,14 +16409,11 @@ function handleGroundTap(hit, ev){
         // cell from the board's centre, so rounding the hit to a grid cell
         // landed on the NEIGHBOUR and the double walked the view one board
         // sideways. Squares still reframe; the ring around them does nothing.
-        if (target.shown){
-          const SP1 = gridSpacing();
-          const bW = SP1 * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
-          const h1 = bW / 2, ring1 = h1 + bW * 0.10, pad1 = bW * 0.15;
-          const ax1 = Math.abs(hit.x - target.boardX), az1 = Math.abs(hit.z - target.boardZ);
-          const inRing = ax1 <= ring1 + pad1 && az1 <= ring1 + pad1;
-          if (inRing && (ax1 > h1 || az1 > h1)) return;
-        }
+        /* (Oct 29, "double click selects a centers board": the ring was worked out for a square board, 0.25 of a board wide past its
+           face, so on mini golf's narrow boards (8 of 13) the board beside, one spacing off, lay inside it and a double tap there
+           was taken for furniture and never went. It is the margin the single tap's guard uses, aspect-aware and exactly the
+           width drawn, `tapOnFramedMargin`.) */
+        if (tapOnFramedMargin(hit)) return;
         clearSelection();                   // the first click of the pair may have lifted a piece
         PLAY.hint = null;
         const gx = Math.round(hit.x / gridSpacingX()), gz = Math.round(hit.z / gridSpacingZ());
@@ -16686,22 +16687,7 @@ function handleGroundTap(hit, ev){
       // the margin and the board spins" report. The band is the margin proper
       // (face edge to ring, aspect-aware for wide prints) — taps past it still
       // select across the field.
-      if (target.shown){
-        const _cwM = (window.LAB && window.LAB.cellW) || 1;
-        const _chM = (window.LAB && window.LAB.cellH) || 1;
-        const bwxM = boardW * _cwM, bwzM = boardW * _chM;
-        const hxM = bwxM / 2, hzM = bwzM / 2;
-        // The same width the ring is DRAWN at, by the same formula — the
-        // swallowed band is exactly the red the user sees, so a tap just
-        // past it still reaches the neighbouring board and no part of the
-        // board's own face is dead.
-        const mWM = Math.min(boardW * 0.10,
-          Math.max(0, (gridSpacingX() - bwxM) / 2) * 0.86,
-          Math.max(0, (gridSpacingZ() - bwzM) / 2) * 0.86);
-        const axM = Math.abs(hit.x - target.boardX), azM = Math.abs(hit.z - target.boardZ);
-        const onFaceM = axM <= hxM && azM <= hzM;
-        if (!onFaceM && axM <= hxM + mWM && azM <= hzM + mWM) return;
-      }
+      if (tapOnFramedMargin(hit)) return;
       // Tapping the board that is ALREADY framed is not a new instruction.
       // gotoCell would re-aim the frame and re-assert the home-side yaw, and
       // the settled view twitched with every click. Same guard the double-
@@ -16713,52 +16699,13 @@ function handleGroundTap(hit, ev){
             && Math.round(target.boardX / gridSpacingX()) === _gx
             && Math.round(target.boardZ / gridSpacingZ()) === _gz) return;
       }
-      resetThrust();
-      templateSelectCell(Math.round(hit.x / gridSpacingX()), Math.round(hit.z / gridSpacingZ()));   // …and it joins the strip
-      /* A CLICK MAKES THAT BOARD THE DEFAULT VIEW: squared up to the screen
-         and fitted to the window (Sep 3 ruling — "clicking a board should set
-         it as default and fitted to the window. currently it is not being
-         rotated so that it aligns up and down").
-         SQUARE UP IS NOT THE HOME SIDE. gotoCell stopped rotating on a click
-         because it used to spin the board to the side you play from — a half
-         turn of the world for a tap that only meant "look at this". This is
-         the other kind of turn: the nearest quarter, so the board's own axes
-         run up-and-down and across the screen instead of sitting at whatever
-         angle the last pan left. It is the smallest rotation that squares the
-         board, never more than 45°, and it says nothing about sides.
-         The yaw is set BEFORE gotoCell because frameBoard reads target.yaw to
-         work out which way "a row nearer" is; setting it after would frame the
-         old heading and then turn under the frame. Then the fit, which is the
-         same default framing the 0 key and page load use. */
-      /* ═══ SUPERSEDED Sep 23: "dont center and zoom a board when selecting
-         it." A tap SELECTS — the board becomes the one you are on, its game is
-         taken, it joins the strip — and the camera stays exactly where you
-         left it: no fly-to, no fit, no squaring-up turn. Moving the view is
-         yours (drag, pinch, the keys, the 0 key for the fit, a double tap to
-         square up). The Sep 3 ruling above is kept as history. */
-      selectCellInPlace(Math.round(hit.x / gridSpacingX()), Math.round(hit.z / gridSpacingZ()));
-      /* THE FIRST TAP CAN PLAY (Oct 8: "the first tap should select the board, not the second"). A tap on a board you are
-         not on selects it, and only a SECOND tap, on the board now selected, reached the app (the APP TAP above), so mini
-         golf took two taps to tee off. An app that says firstTapPlays gets this first tap too, at the same (u, v), so
-         selecting the board and starting on it are one tap. Opt-in, because in a board game a first tap that also moved a
-         piece would be a move you never meant. */
-      try {
-        const _fa = window.getFieldApp && window.getFieldApp();
-        if (_fa && _fa.firstTapPlays && _fa.onCellTap && target.shown){
-          const _cw = (window.LAB && window.LAB.cellW) || 1, _ch = (window.LAB && window.LAB.cellH) || 1;
-          const _bx = boardW * _cw, _bz = boardW * _ch, _dx = hit.x - target.boardX, _dz = hit.z - target.boardZ;
-          const _GS = Math.max(1, Math.round(Math.sqrt(st.N))), _w = v => ((v % _GS) + _GS) % _GS;
-          if (Math.abs(_dx) <= _bx / 2 && Math.abs(_dz) <= _bz / 2)
-            _fa.onCellTap(_w(Math.round(target.boardX / gridSpacingX())), _w(Math.round(target.boardZ / gridSpacingZ())), 0.5 - _dx / _bx, 0.5 - _dz / _bz);
-        }
-      } catch {}
-      /* …AND A RECORDING STOPS WHEN YOU GO TO IT. Reaching for a board is
-         reaching for what is on it, and a game that carries on moving while
-         you arrive is a game you have to chase. It keeps replaying everywhere
-         you are NOT — that is what the field is — and holds still the moment
-         you pick it out. From here taps step it; at the end it rounds again
-         and the replay resumes. */
-      try { stopPgnReel(cellKey(target.boardX, target.boardZ)); } catch {}
+      /* A SINGLE TAP ON A BOARD YOU ARE NOT ON DOES NOTHING (Oct 29: "double click selects a centers board, not a single click. don't
+         select a board with only one tap."). Until now a tap selected it in place (the Sep 23 ruling: the camera stays where it
+         was), took its game, joined it to the strip and, in an app with `firstTapPlays` (mini golf), teed off on it; and a stray
+         tap on the neighbour of the board you were playing made it the board you were on. Now only a double tap (the pair above)
+         goes to a board: it selects it and frames it, as the 0 key does. Tab, Enter, the game index and a strip tile still go to
+         one, and a tap on the board you are on is the game's, as ever. (`selectCellInPlace`, which only this tap used, went with it.) */
+      return;
 }
 
 const ctl = mountControls({

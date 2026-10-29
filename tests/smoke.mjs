@@ -1276,8 +1276,9 @@ try {
   await page.evaluate(() => { const A = window.getFieldApp(); A.statTiles = A._statTiles0; delete A._statTiles0; try { window.refreshFieldBrowser && window.refreshFieldBrowser(); } catch {} });
   console.log(`${failures.length === before6 ? 'ok  ' : 'FAIL'} ${current}`);
 
-  // The first tap on a board you are not on selects it and, in mini golf, tees off (Oct 8: "the first tap should select
-  // the board, not the second" / "remove the long press to select board")
+  // A single tap on a board you are not on does nothing; a double tap selects it and brings it in; then the first tap on it, in
+  // mini golf, tees off (Oct 8: "the first tap should select the board, not the second" / "remove the long press to select
+  // board", until Oct 29: "double click selects a centers board, not a single click. don't select a board with only one tap.")
   current = 'first tap tees off';
   const before7 = failures.length;
   {
@@ -1307,8 +1308,21 @@ try {
     await page.mouse.click(N.x, N.y);
     now = await held();
     const after = await playing();
-    if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] one tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
-    if (before === 'play' || after !== 'play') failures.push(`[${current}] the round on the tapped hole: ${before} → ${after}, expected it to start on the first tap`);
+    if (!now || now.c !== N.from.c || now.r !== N.from.r) failures.push(`[${current}] one tap on ${JSON.stringify(N.to)} moved us to ${JSON.stringify(now)}`);
+    if (after === 'play') failures.push(`[${current}] one tap on another board started its round`);
+    // a double tap goes there (two quick clicks), and lands framed
+    await page.waitForTimeout(700);
+    await page.mouse.click(N.x, N.y); await page.waitForTimeout(120); await page.mouse.click(N.x, N.y);
+    for (let k = 0; k < 40; k++){ await page.waitForTimeout(500); if (!(await page.evaluate(() => !!window.FIELD_WORLD.target.active))) break; }
+    now = await held();
+    if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] a double tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
+    // …and the first tap on it then tees off
+    await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; if (E.ED.on) E.editStop(true); });
+    const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, v = new W.THREE.Vector3(T.boardX, 0.02, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; });
+    await page.waitForTimeout(700);
+    await page.mouse.click(mid.x, mid.y);
+    await page.waitForTimeout(600);
+    if ((await playing()) !== 'play') failures.push(`[${current}] the first tap on the board now on did not start its round (${before} → ${await playing()})`);
     }
   }
   console.log(`${failures.length === before7 ? 'ok  ' : 'FAIL'} ${current}`);
@@ -1635,8 +1649,15 @@ try {
     const view0 = await page.evaluate(() => { const W = window.FIELD_WORLD; return { st: { camX: W.st.camX, camZ: W.st.camZ, yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom },
       target: Object.fromEntries(Object.entries(W.target).filter(([, v]) => v === null || typeof v !== 'object' && typeof v !== 'function')) }; });
     const g0 = await sample(), during = [];
-    await page.mouse.move(200, 650); await page.mouse.down();
-    for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
+    // (from a neighbouring board: a drag that starts on the board in play is its aim's, never the view's; a double tap now brings
+    //  the board in to the middle of the screen, so a point fixed on the screen could lie on it, Oct 29)
+    const from = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, [sx, sz] = W.spacing();
+      for (const [dx, dz] of [[-sx, 0], [sx, 0], [0, sz], [0, -sz]]){
+        const v = new W.THREE.Vector3(T.boardX + dx, 0.02, T.boardZ + dz).project(W.camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+        if (x > 80 && x < innerWidth - 120 && y > 80 && y < innerHeight - 150) return { x, y }; }
+      return { x: 200, y: 650 }; });
+    await page.mouse.move(from.x, from.y); await page.mouse.down();
+    for (let k = 1; k <= 6; k++){ await page.mouse.move(from.x + 12 * k, from.y - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
     await page.mouse.up();
     await page.waitForTimeout(2000);                         // (its glide spent before the view is put back: CI, Oct 12)
     const g1 = during[during.length - 1];
