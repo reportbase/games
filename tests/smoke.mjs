@@ -6752,7 +6752,11 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       D.games.delete(L.c + '_' + L.r); const was = D.LIVE; D.LIVE = null;
       out.shown = D.shown(L.c, L.r).rocks.length;
       const g2 = D.gameAt(L.c, L.r); D.start(g2); for (let k = 0; k < 300; k++) D.step(g2, 1 / 60);
-      out.again = g2.rocks.length; out.other = D.shown(L.c + 3, L.r).rocks.length;
+      out.again = g2.rocks.length;
+      // (another board played the same way has its rocks, or its next wave: its picture alone, a reel frame by the clock, can fall
+      //  between two waves with none, which failed once on CI, Oct 29)
+      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); for (let k = 0; k < 300; k++) D.step(g3, 1 / 60);
+      out.other = g3.rocks.length; D.games.delete((L.c + 3) + '_' + L.r);
       D.LIVE = was; D.CLEARED.delete(L.c + '_' + L.r); try { localStorage.removeItem('asteroids.cleared'); } catch {}
       return out;
     });
