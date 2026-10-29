@@ -3850,10 +3850,10 @@ try {
     const before = failures.length;
     const t = await page.evaluate(async () => {
       const W = window.FIELD_WORLD, wait = ms => new Promise(ok => setTimeout(ok, ms)), out = {};
-      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')); await wait(2500);
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'soma')); await wait(5000);   // (the opening fit looks again for about three seconds, until a touch: a tilt set inside them was put back to 60° on CI)
       out.open = W.st.pitch;
       for (const [k, v] of [['low', 0], ['high', 95], ['mid', 30]]){ W.st.pitch = v; await wait(800); out[k] = W.st.pitch; }
-      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'minigolf')); await wait(2500);
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'minigolf')); await wait(5000);
       W.st.pitch = 95; await wait(800); out.golfHigh = W.st.pitch;
       W.st.pitch = 0; await wait(800); out.golfLow = W.st.pitch;
       return out; });
