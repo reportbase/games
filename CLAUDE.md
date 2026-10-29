@@ -1394,105 +1394,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the wall beside you, a frag's 14 shards, a spread's 3 shells, a mine armed and set off, a missile finding its tank, a crate
     dropped and taken, the aim line from the gun along its heading (3 pieces at level 1, 1 at level 5), and the crates, mines,
     beams, missiles and aim dots drawn.
-- **Golf tanks** (Oct 22: "the mini-golf game could be reused as a tank battle game. it has interesting terrain options.", then
-  "Real-time"): `GOLFTANK_APP`, id `golftanks`, after the tank maze. The tank maze's battle (drive, turn, fire, shells bouncing,
-  first to `WIN` 5 rounds) on each board's own golf hole, as mini golf makes it at its size; every round is on the same hole.
-  - **One on one, no golf** (Oct 22, later: "remove the golf hole and tee box. this is one on one tank combat."): the battle is
-    fought on a bare copy of the hole (mini golf's `bareOf(k)`: the compiled hole copied without its kept heights, marked
-    `bare`, in a slot of its own in HOLES so its ground meshes are its own; `BARE_CAP` 400, the one wanted least lately giving
-    up its slot). `rawH` raises no tee box on it, `hOf` sinks no cup, `onTeeBox` mows no stripes, and `cellItems` draws no cup,
-    flag, flag dots, tee markers or number. The tanks start where the tee and the cup were (`spawnsOf`), the two ends the
-    hole was made round, kept clear of its things; the title gives no hole name.
-  - **Long-range weapons** (Oct 22: "the game can be changed to accomodate tank combat. more long range weapons."): the cannon's
-    shell skims the ground, so every hill was cover. `WEAPONS`: Cannon (always), Mortar (3 a round), Rail gun (2), Missile (2),
-    `ammo` back to full each round; chosen with 1–4 (Player 2: 7–0, `WEAPON_KEYS`, `choose`) or the bottom row (`statTiles`, the
-    ammo left, the one in hand lit; `statsStay`), fired by `fire(G, k, cmd)` (`cmd.w`, a mortar's `cmd.at`).
-    - **Mortar** (`fireMortar`, `mortarAt`): lobbed over everything onto a point, `MORTAR_MIN`–`MORTAR_MAX` (1.5–16) cells, landing
-      `MORTAR_T0` + `MORTAR_TK` a cell later, a burst `MORTAR_R` (0.8 cell) that takes any tank, its own too (`blast`). A tap puts it
-      where you tap (`g.fireAt`); the fire key on the other tank within `AUTO_CONE` of the heading, else `AUTO_RANGE` cells ahead
-      (`autoRange`). Its landing place is ringed in red while it flies, and with it in hand the aim line is that ring.
-    - **Rail gun** (`railTrace`, `fireRail`): a shell's way at once, no bounce, `RAIL_LEN` (30) cells: the ground and every solid
-      thing stop it as they stop a shell; drawn as a fading beam (`G.beams`, `RAIL_SHOW`); its aim line is its whole way.
-    - **Missile** (`fireMissile`, `stepMissile`): rises to `MIS_Z` over the ground and flies after the nearest other tank at `MIS_V`,
-      turning `MIS_TURN` a second, over everything, bursting within `MIS_HIT` (`MIS_R`); out after `MIS_LIFE` or off the board.
-    - The computer: the rail at a tank in plain sight more than 4 cells off (from level 2), else the cannon's search as before;
-      with no straight shot, now and then (`LV`'s `mortar` and `missile`, a chance each time it thinks) a mortar onto where the
-      tank will be, off by `merr` of the range, or a missile; never in a round's first `LONG_HOLD` (2.5 s: mortars onto tanks still
-      where they began ended rounds in four seconds). It sees a mortar coming down near it or a missile after it and drives clear
-      (`threatened`, `escape`). Measured over 12 rounds a level: 10.1, 9.7 and 8.6 s a round at levels 1, 3 and 5, long-range
-      shots 1, 2 and 11 of them. Recordings keep each shot's kind and the beams.
-  - **Mini golf's kit** (`GOLF_APP._kit`, asked for each time, `kit()`; a new kit, after Board size, clears the games and
-    recordings): the holes, `holeSoon`/`holeAt`, `hOf`, `gradOf`, `groundAt`, `waterAt`, `toyAt`, `chargePull`, `minesOf`,
-    `cellBlocked`, `gridOf`, `bareOf`, and two made for this: `solidsAt(H, x, y, R, t)`, every solid thing a circle of radius R touches at
-    the clock t as [nx, ny, depth] (the ball's own tests with any radius: the rail, wall cells, slides, windmills, turnstiles'
-    and doors' bars, fences, curved fences, planters, charges' posts, boulders, bumpers, path riders, a gate standing up), and
-    `drawHole(c, r, bp, opt)`, mini golf's `cellItems` with `opt` = { hk, t, now, blown, kicked }: the hole at the clock t with
-    no golf game's ball, ghost or aim.
-  - **The ground** (`moveTank`, in cells of the hole, CW; Oct 22, later: "the tanks just drive through hills. they should respect
-    the terrain."): speed × (1 − `SLOPE_K` 1.4 × the slope ahead), 0.2 to 1.5; ground rising more steeply than `SLOPE_MAX` 1.05
-    along the tank's way, where it stands or where the step would take it, keeps only the part of the way running along the
-    slope, so a tank stops at a hill's foot or slides along it; anything steeper than `SLIDE` 0.95 slides it down, whatever it
-    is doing; sand × `SAND` 0.6. (Before, it climbed anything to 2.4, since a raised green's edge, 1.7, had held two computer
-    tanks at its foot for a round; now the computer goes round: `navTo` treats a step up to a cell more than 0.85 × `SLOPE_MAX`
-    a cell higher, or steeper than `SLOPE_MAX` between the two, as a wall, kept a hole on `H._gtSteep`.) Measured: 0.53 cells
-    in half a second up a slope of 0.3, 1.09 down it; driven at a slope of 1.63, a tank rose 0.05 of the hill's 1.25 cells.
-    - **Tilted to the slope**: the field's items take `tilt` [du, dv] (`_emitInto`: the ground's slope as lift a unit of u and
-      of v; the item's upright turned to the normal (du, 1, dv·bWX/bWZ), after its yaw). A tank's is the slope across
-      `TILT_E` (0.3) of a cell either way under it, so it lies along a hillside, not into it.
-    - The computer up close with no shot (a ridge between) goes round the other tank on a side of its own (`A.side`, 2.2
-      cells out) instead of sitting face to face, and after a shot that would not stand when looked at again it looks for none
-      for 0.6 s (`A.noShot`). With hills holding tanks, 3 of 36 rounds had run to `ROUND_CAP` that way; after, none: 9.1, 5.9
-      and 6.9 s a round at levels 1, 3 and 5.
-  - **Water** stops a tank (it slides along the shore; a bridge is ground); a tank pushed or thrown into a lake goes under and
-    is out (`splash`). **A mine** (once a round, `G.blown`) throws a tank `THROW` 5 cells a second, spinning, stunned `STUN`
-    0.9 s (2.9 cells, measured). Pipes and zap zones are not used.
-  - **Shells** (`shellStep`, stepped every frame since the movers move): fired at `GUN_Z` above the ground, they fly `CLEAR`
-    over it (over a lake, its water), following it down at most `DROP` 0.6 a unit along and up at most `CLIMB` 0.35, and burst
-    against anything steeper (`-2`, 'hill'): ridges, hills, raised greens, a crater's rim, the tee box are cover. They turn
-    back off whatever `solidsAt` gives at the round's clock, so the movers are moving cover; a charge bends them
-    (`chargePull` × `CHG` 0.35: 0.37 rad over about three cells, measured). `LIFE` 4.5 s, `MAXB` 4 each.
-  - **The computer** (`cpuCmd`, `think`, `LV` by level, the ring level plus the Difficulty as the tank maze's): sees a shell
-    coming (`dodge`) and drives clear (`escape`); else flies shells in the round's own physics (`simShot`, 1/30 s, the movers
-    where they will be), the straight line first and then `rays` headings nearest its own, off up to `bounce` walls, and turns
-    to the first that hits (off by up to `err` degrees); as it fires it flies the shot it meant again in the shells' own steps
-    and thinks again if the movers have shut it (`STEP / 2`: without that, against a still target, 75 shots made 19 kills; with
-    it, 23 made 17). Else it drives toward the foe through the cells mini golf's players can cross (`navTo`, `cellBlocked`), and
-    backs off when stuck. Rounds of two computer tanks: 3–15 s, 30 ms to work out at level 1, 215 ms at level 5.
-  - Controls, keys, two players (Player 1 at the near end, Player 2 at the far end), the match, stars and best (localStorage
-    `golftanks.best`, by board, level and size) and the aim line (`aimOf`: the shell's own way, `AIM_SEG` bounces by level, at
-    most `AIM_LEN` 2.2 s) are the tank maze's. A match is two tanks only, no power-ups (Roam, below, has more).
-  - **Drawn**: the hole by mini golf (`drawHole`), then the tank maze's pieces in golf's units, standing on the ground and
-    divided by WD at the end; the board's shape, tilt floor, zoom ceiling, far colours and kinds' room are mini golf's (getters
-    on `GOLF_APP`); `itemGeometries` is a Proxy giving the tank kinds from `TANKMAZE_APP` and every other kind from mini golf.
-  - **A board no one plays** shows a round of two computer tanks on its hole (`recSoon`: worked out about 6 ms in 30, `REC_CAP`
-    300, 40 s at most; tanks sampled `REC_HZ` 15 a second, each shell's points as it went, `shellAt`), its movers and mines at
-    the recording's own clock.
-  - The smoke test checks the levels by ring, the spawns, the bare copy (the tee box's rise gone, no cup, flag or markers
-    drawn, the golf hole itself unchanged), uphill slower than down, the shore and a sinking, a mine's throw, a
-    rider solid where the clock has it, a charge's bend, a shell off the rail and against a rise, computer rounds ending at levels
-    1, 3 and 5, a real key, click and drag, a round and a match won, and a board no one plays moving and drawn; since Oct 22 also a mortar
-    landing on its tank, the rail stopped by the rail and reaching a tank in the open, a missile fired away turning back for its
-    tank, the rail's ammo running out, the computer using long-range shots at level 5, and the real key 2 and a real click putting
-    a mortar where it was clicked; and a tank driven at steep ground staying at its foot, drawn tilted to it.
-  - **Like Asteroids, with tanks** (Oct 29: "golf tanks  should be like asteroids.      instead of asteroids, use takes."): the menu's
-    Mode is Roam (the default, localStorage `golftanks.mode`) or Match (the one-on-one above; two players always play matches).
-    - Roaming, every board's hole holds enemy tanks (`ROAM_N` by level: 1, 2, 3, 3, 4; `roamRound`, `enemySpots`: the first where the
-      cup was, the rest each at the open cell farthest from you and the ones placed), all of one side (`G.team`, `foeOf`: a tank's
-      foes are the other side's; with no sides, a match, every other tank). They hold their fire `HOLD_T` (2.5 s) as a board begins
-      and as you arrive (`G.hold`).
-    - Your tank pressed against the rail, heading out and driving on (`offEdge`), goes on to the board beside that way (`hop`, the
-      view following, as Asteroids' ship does): that board's game becomes yours, your tank coming in at the edge it crossed
-      (`entryAt`: dry, clear, not too steep), safe `SAFE_T` (2.5 s, blinking), with what you destroyed and lost; the weapons full
-      again. The board left goes back to showing its enemies waiting (`WAITING`: where they stand, turrets looking about), not a duel.
-    - Every enemy on a board put out clears it for good (`CLEARED`, localStorage `golftanks.cleared` by board and board size, the
-      latest 5,000; `roamStep`): empty when flown back to, played or not; the menu's Forget cleared boards fills them again.
-    - Tanks are endless by default (the menu's Tanks: endless or three, `golftanks.lives`): yours, put out, comes back where it came on
-      to the board after `BOOM_T`, the losses counted in the title; with three, the third ends the run and a tap starts again.
-    - Measured: a step of a round at levels 1, 3 and 5 (one, three, four enemies) 0.07, 0.14 and 0.17 ms.
-    - The smoke test (part 7, "golf tanks roam") starts a board by a real click, drives off the edge with the real W, clears the new
-      board and finds it empty when left and played again, brings a lost tank back, and sees a board beside showing its enemies.
+- **Golf tanks, taken out** (Oct 29: "this ame does not work very well. it seems very complicated, but not very easy to play.",
+  then "remove  golf tanks."): `GOLFTANK_APP` (Oct 22–29, the tank maze's battle on mini golf's holes, then roaming them as
+  Asteroids) is gone, with what mini golf kept only for it: its kit (`_kit`, `solidsAt`, `bareOf` and the bare copies
+  `H.bare`), `drawHole` (`cellItems`' `opt`), and the field items' `tilt`. Its notes below are kept as the record.
 - **Trick shots** (Oct 22: "could you add the trick shot demo from wander. repos to the games application?"): `TRICK_APP`, id
-  `trickshots`, after golf tanks. wander's `play-trick.html` (its main at 335fa6c), a pool table where you set an angle and a power
+  `trickshots`, after the tank maze. wander's `play-trick.html` (its main at 335fa6c), a pool table where you set an angle and a power
   and see the whole shot ahead of time, every ball it reaches, to rest.
   - **The engine is wander's, moved whole** (two spaces left): the table played from inside (`image`, `respond`, `pairs`: each ball
     reads the other's direction and v = r/d and they touch at h + v = 1, found exactly), cushions as the ball's mirror image,
@@ -2532,7 +2439,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     putt, Simon's start) keep it; Tab always steps. The smoke test slides the view two boards along in the gallery and checkers.
 - **The dots shut the row, and a hold toggles it** (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
   display should toggle the visiblibility of the bottom panel."):
-  - A row an app holds up while you play (`statsStay`: trick shots, the tanks, golf tanks) was put straight back after the dots
+  - A row an app holds up while you play (`statsStay`: trick shots, the tanks) was put straight back after the dots
     shut it (`bbStatTick`). A row shut by hand (`bbOverride` false) now stays shut; every opening, an editor's too, sets it true.
   - A long press and let go toggles the row in every game. An app's own hold (`onCellHold`) is asked only where it is a move in
     play (`holdIsMove`: Minesweeper's flag, Pipes' and Loops' turn back, Nonograms' cross, Sokoban's undo, Air raid's bomb), and
@@ -2562,8 +2469,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The play pad** (`#playPad`, `playPadTick`): an app's `playActs(c, r)` gives round buttons ([{ key, glyph, label, title, on
     }]) shown on the right above the bottom band while it is played, whether or not the row is open; a press reaches
     `onPlayAct(c, r, key)`. Used only where no gesture would do: 3D Tetris (spin the other way, tip, roll), Soma (spin, tip, roll,
-    the next piece from the tray), the tanks (the shell in hand, a tap for the next; drive either way), golf tanks (the weapon in
-    hand, a tap for the next) and curling (the curl, beside the twist).
+    the next piece from the tray), the tanks (the shell in hand, a tap for the next; drive either way) and curling (the curl, beside the twist).
   - The smoke test (part 7, "played with the row shut") checks the row staying shut through a game and each of these by real
     input; the checks that click row tiles in 3D Tetris and Soma open the row first, as an advanced user would.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
