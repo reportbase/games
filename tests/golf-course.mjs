@@ -73,29 +73,18 @@ const report = await page.evaluate(SAMPLE => {
     }
     return { hole: H.num || k + 1, name: H.name, par: H.par, strokes, sunk };
   };
-  /* (Oct 11: a generated hole the page's rater, with a person's hands, sinks in fewer than half its rounds is one the page
-     makes again (REMADE) once it rates it as it is played; one this player cannot finish is rated so, and if the page would
-     make it again, its new hole is played instead and the old one is counted. More than one in thirty-three of the sample
-     made again fails the run, as does a new hole that cannot be finished either.) */
-  for (const k of ks){
-    let r = playHole(k);
-    if (!(r.sunk && r.strokes <= r.par + 3) && HOLES[k].gen != null){
-      const was = r.name, v = D.editor.vetHole(k);
-      if (v.remade){ r = { ...playHole(k), remadeFrom: was, rated: v.sunk }; }
-    }
-    out.push(r);
-  }
+  for (const k of ks) out.push(playHole(k));
   return out;
 }, Number(process.env.GEN_SAMPLE || 40));
 // THE LEVELS, RATED (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"). Holes made at
-// levels 1, 3 and 5 (LEVEL_SAMPLE of each, 10 unless asked: six were too few, Oct 10) are rated by the page's own rater (a player with a person's
-// small errors of aim, strength and timing); each level must come out harder on average than the one below it, level 5
-// by a stroke more than level 1, and no level so hard that its holes average more than 7 strokes.
+// levels 1, 3 and 5 (LEVEL_SAMPLE of each, 10 unless asked: six were too few, Oct 10) are rated by the page's guess (its
+// rating player went on Oct 29); each level must come out harder on average than the one below it, level 5 by a stroke
+// more than level 1, and no level so hard that its holes average more than 7 strokes.
 const levels = await page.evaluate(N => {
   const D = window.getFieldApp()._debug, E = D.editor, out = {};
   for (const lv of [1, 3, 5]){
     const ms = [];
-    for (let i = 0; i < N; i++){ const k = E.addHole(E.cleanSrc(D.genSrc(70000 + i * 977, lv))); ms.push(E.rateHole(k).mean); }
+    for (let i = 0; i < N; i++){ const k = E.addHole(E.cleanSrc(D.genSrc(70000 + i * 977, lv))); ms.push(+E.ratingOf(k).mean.toFixed(2)); }
     out[lv] = { mean: +(ms.reduce((a, b) => a + b, 0) / ms.length).toFixed(2), each: ms };
   }
   return out;
@@ -106,10 +95,7 @@ if (!(levels[1].mean < levels[3].mean && levels[3].mean < levels[5].mean && leve
   bad++; console.log('FAIL the levels do not climb: ' + JSON.stringify(levels));
 }
 for (const r of report){ const ok = r.sunk && r.strokes <= r.par + 3; if (!ok) bad++;
-  console.log(`${ok ? 'ok  ' : 'FAIL'} ${String(r.hole).padStart(4)} ${r.name.padEnd(22)} par ${r.par}: ${r.sunk ? r.strokes + ' strokes' : 'not sunk in ' + r.strokes}`
-    + (r.remadeFrom ? ` (made again: ${r.remadeFrom} was sunk ${[0, 1, 2].includes(Math.round(r.rated * 8)) ? ['no times', 'once', 'twice'][Math.round(r.rated * 8)] : Math.round(r.rated * 8) + ' times'} in 8 by the rater)` : '')); }
-const remade = report.filter(r => r.remadeFrom).length, gen = Number(process.env.GEN_SAMPLE || 40);
-if (remade > Math.max(1, Math.floor(gen / 33))){ bad++; console.log(`FAIL ${remade} generated holes in ${gen} had to be made again`); }
+  console.log(`${ok ? 'ok  ' : 'FAIL'} ${String(r.hole).padStart(4)} ${r.name.padEnd(22)} par ${r.par}: ${r.sunk ? r.strokes + ' strokes' : 'not sunk in ' + r.strokes}`); }
 if (errors.length){ bad++; console.log('uncaught: ' + errors.join(' · ')); }
 await browser.close(); server.close();
 console.log(bad ? `\n${bad} hole(s) failed` : '\nevery hole can be played');
