@@ -1319,7 +1319,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`). Two players (the menu's Players,
     localStorage `tankmaze.players`): Player 1 runs on WASD, Player 2 hunts on the arrows, a finger steers the tank nearest it.
   - Rounds: 'ready' until the first key or touch, 'count' (`COUNT_T`) before each, 'play'; a catch is a burst and the round
-    ends `BOOM_T` (1.5 s) later. A gold bar along the near wall is the time left. Through: stars by the match (3–0 three, 3–1
+    ends `BOOM_T` (1.5 s) later. There is no timer shown any more (Oct 29: "Remove the Tank maze timer": the gold bar along the near wall, the "hold out N s" in the title and the seconds left went); a round is still held out when `hold` seconds pass uncaught, unannounced. Through: stars by the match (3–0 three, 3–1
     two, else one), the most kept a board (localStorage `tankmaze.best`); a tap on a finished board goes on to the next.
   - **A board no one plays** shows a round of the steady runner against its board's hunters (`recSoon`, a little at a time in
     the boards' share of time, `REC_HZ` 15 a second, `shownOf`), played back on the page's clock with a rest.

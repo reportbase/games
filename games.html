@@ -52889,7 +52889,7 @@ const TANKMAZE_APP = (() => {
   function stepGame(g){
     const tn = performance.now(), dt = Math.min(0.25, (tn - g.last) / 1000); g.last = tn;
     if (ARCADE.paused || g.state === 'ready' || g.state === 'over') return;
-    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + ': hold out ' + g.G.hold + ' s.', 1200); }
+    if (g.state === 'count'){ g.wait -= dt; if (g.wait > 0) return; g.state = 'play'; if (g.round) say('Round ' + (g.round + 1) + ': stay away from the hunters.', 1200); }
     const G = g.G, booms = G.booms.length;
     for (let n = Math.max(1, Math.round(dt / STEP)); n > 0 && !G.over; n--)
       stepRound(G, g.seats.map((s, k) => isPerson(s) ? personCmd(g, k) : cpuCmd(G, k)), STEP);
@@ -52927,7 +52927,7 @@ const TANKMAZE_APP = (() => {
   }
 
   /* ─── WHAT A BOARD DRAWS ─── walls (the outer one in the level's colour), the tanks (tracks, hull, turret and gun, each
-     turned to its heading; caught, dark), the time left as a bar along the near wall, and the burst of a catch. */
+     turned to its heading; caught, dark), and the burst of a catch. */
   const lighten = c => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.min(255, Math.round(((c >> sh) & 255) * 1.25 + 18)) << sh; return o; };
   const yawOf = BOARD_KIT.yawOf;                // (the field reads a yaw of exactly 0 as none: the tanks' lesson of Oct 20)
   function itemsOf(V){
@@ -52941,9 +52941,7 @@ const TANKMAZE_APP = (() => {
       out.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? lighten(col) : WRECK });
       out.push({ kind: 'mzGun', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? GUNC : 0x1a1a1a });
     });
-    // (the time left to hold out: a bar along the top of the near wall, shrinking toward its left end)
-    const left = clamp(1 - V.t / (V.hold || 1), 0, 1);
-    if (left > 0 && !V.booms.some(B => B.t <= V.t)) out.push({ kind: 'mzBar', u: left / 2, v: 1, scale: s, sx: left / s, sy: 0.08, sz: WALL_T * 1.6, lift: WALL_H * s, color: 0xffd23a });
+    // (the time left to hold out was a gold bar along the near wall until Oct 29: "Remove the Tank maze timer")
     for (const B of V.booms){
       const a = V.t - B.t; if (a < 0 || a > 1.8) continue;
       const R = rngOf((B.k + 2) * 977 + Math.round(B.t * 1000));
@@ -52977,7 +52975,6 @@ const TANKMAZE_APP = (() => {
   const cyl = (T, r, h, x, y, z, seg) => { const g = new T.CylinderGeometry(r, r, h, seg || 16); g.translate(x, y + h / 2, z); return g; };
   const geos = {
     mzWall: T => boxAt(T, 1, 1, 1, 0, 0, 0),
-    mzBar: T => { const g = boxAt(T, 1, 1, 1, 0, 0, 0); g.userData.unlit = true; return g; },
     mzTracks: T => merge(T, [boxAt(T, 0.6, 0.13, 0.13, 0, 0, 0.19), boxAt(T, 0.6, 0.13, 0.13, 0, 0, -0.19)]),
     mzHull: T => merge(T, [boxAt(T, 0.5, 0.12, 0.3, 0, 0.04, 0), boxAt(T, 0.1, 0.07, 0.24, 0.27, 0.04, 0)]),
     mzTurret: T => merge(T, [cyl(T, 0.12, 0.08, -0.02, 0.16, 0, 18)]),
@@ -53009,10 +53006,10 @@ const TANKMAZE_APP = (() => {
     cellItems(c, r){ return itemsOf(viewOf(c, r)); },
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), D = LV[lv - 1], m = D.m + SET.n - 2, best = BEST.get(idx + '@' + lv + (SET.n > 2 ? '#' + SET.n : ''));
-      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + ', hold out ' + D.hold + ' s' + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
+      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + ', ' + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · best ' + '★'.repeat(best) : '');
       if (!g) return head;
-      const nm = sideNames(g), left = Math.max(0, Math.ceil(g.G.hold - g.G.t));
-      return head + ' · ' + nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1] + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')' + (g.state === 'play' ? ' · ' + left + ' s left' : '');
+      const nm = sideNames(g);
+      return head + ' · ' + nm[0] + ' ' + g.score[0] + ', ' + nm[1] + ' ' + g.score[1] + ' · round ' + (g.round + 1) + ' (first to ' + WIN + ')';
     },
     scoreBar(c, r){ const g = GAMES.get(gkey(c, r)); return g ? (g.score[0] + 1) / (g.score[0] + g.score[1] + 2) : null; },
     onReset(c, r){ restart(c, r); return true; },

@@ -5165,7 +5165,7 @@ try {
       const E = D.recSoon(c, r, true), a = D.shownOf(E); await new Promise(ok => setTimeout(ok, 1500)); const b = D.shownOf(E);
       const moved = Math.hypot(a.tanks[0].x - b.tanks[0].x, a.tanks[0].y - b.tanks[0].y) + Math.hypot(a.tanks[1].x - b.tanks[1].x, a.tanks[1].y - b.tanks[1].y) + Math.abs(a.t - b.t);
       const V = { ...D.shownOf(E), t: Math.min(2, E.T) }, it = D.itemsOf(V), kinds = k => it.filter(i => i.kind === k);
-      return { done: E.done, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length, bar: kinds('mzBar').length,
+      return { done: E.done, moved, walls: kinds('mzWall').length, nwalls: E.L.walls.length, hulls: kinds('mzHull').length,
                yaws: it.filter(i => /^mz(Hull|Tracks|Turret|Gun)$/.test(i.kind)).every(i => i.yaw), shells: it.filter(i => /Shot|Crate|Mine|Beam|Missile/.test(i.kind)).length }; }, fc);
     const r = rules, ok = r.levels[0] < r.levels[2] && r.same && r.differ && r.sizes.join() === '9,10,11' && r.apart >= 2 && r.caught && r.head
       && r.held[0] && r.held[1] > r.held[2] && r.more.join() === '4,4'
@@ -5174,7 +5174,7 @@ try {
       && live.match && live.match.after.score === '1,0' && live.match.after.round === 1 && live.match.after.state === 'count' && live.match.after.newMaze
       && live.match.end.state === 'over' && live.match.end.stars === 3 && live.match.end.best >= 3
       && live.two && live.two.seats === 'you,p2' && live.two.moved2 > 0.02 && live.two.moved1 < 0.005
-      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.bar === 1 && shown.yaws && shown.shells === 0;
+      && shown.done && shown.moved > 0.01 && shown.walls === shown.nwalls && shown.hulls === 2 && shown.yaws && shown.shells === 0;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} tank maze (levels ${r.levels.join('/')} by ring, mazes ${r.sizes.join('/')} a side for 2/3/4 tanks; a hunter beside you caught you, nobody near you held out; the steady runner held out ${r.held[1]} of 12 at level 1 and ${r.held[2]} at level 5; a real key drove, a real drag steered; a round held out counted and a new maze came; a match won ${live.match && live.match.end.stars} stars; Player 2 hunted on the arrows; a board no one plays moved)`);
   }
