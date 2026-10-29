@@ -27219,6 +27219,18 @@ const ASTEROIDS_APP = (() => {
      back to its recording. Rocks, shots and saucers keep to their own boards. (Menu: off makes
      the edges wrap, as in the arcade.) */
   const HOP = { on: ARCADE.load('asteroids.hop', 'on') !== 'off' };
+  /* CLEARED BOARDS STAY CLEARED, AND THE SHIPS NEVER RUN OUT (Oct 29: "asteroids - dont reset the board, once a board is cleared
+     keep it cleared.    continuos lives don't end game after 3 deaths."): while you fly between boards, a board whose last rock you
+     break is cleared for good: no new wave comes to it, it shows empty space when no one is on it, and flying back into it finds
+     it empty (`CLEARED`, by board, localStorage `asteroids.cleared`, the latest 5,000; the menu's Forget cleared boards fills them
+     again). With the edges wrapping (Fly between boards off) the waves come as in the arcade. And the ships are endless by
+     default (`LIVES`, the menu's Ships: endless or three, localStorage `asteroids.lives`): a ship lost comes back, the losses are
+     counted, and the game never ends; three is the arcade's, with an extra ship every 10,000. The recordings keep the arcade's. */
+  const CLEARED = new Set((() => { try { return JSON.parse(localStorage.getItem('asteroids.cleared') || '[]'); } catch { return []; } })());
+  const saveCleared = () => { try { localStorage.setItem('asteroids.cleared', JSON.stringify([...CLEARED].slice(-5000))); } catch {} };
+  const LIVES = { endless: ARCADE.load('asteroids.lives', 'endless') !== 'three' };
+  const isCleared = (c, r) => CLEARED.has(gkey(c, r));
+  const EMPTY = { t: 0, ship: null, rocks: [], shots: [], booms: [], shield: 0, ufo: null, eshots: [], gems: [] };
   function hop(g, c, r){
     const [du, dv] = g.hop;
     g.hop = null;
@@ -27231,6 +27243,7 @@ const ASTEROIDS_APP = (() => {
     try { GS = Math.max(1, Math.round(Math.sqrt(st.N))); } catch {}
     const nc = ((gx % GS) + GS) % GS, nr = ((gz % GS) + GS) % GS;
     const ng = adopt(nc, nr), s = g.ship;
+    ng.at = [nc, nr]; ng.lv = lvAt(nc, nr);
     Object.assign(ng, { state: 'play', last: 0, score: g.score, lives: g.lives, extra: g.extra, pow: g.pow, aim: null, drag: g.drag, broke: g.broke, lost: g.lost });
     ng.ship = Object.assign({}, s, { safe: Math.max(s.safe, 0.6) });
     // Room to arrive: nothing sitting right on the edge you come in by.
@@ -27352,13 +27365,15 @@ const ASTEROIDS_APP = (() => {
     if (!noGem && r.size > 1 && g.gems.length < 2 && rnd() < 0.09) g.gems.push({ x: r.x, y: r.y, type: 'STRB'[(rnd() * 4) | 0], ttl: 10 });
     BOOM.add(g, r.x, r.y, r.size === 3 ? 'r' : 'p', rnd); beep('rock');
     if (r.size > 1) for (let k = 0; k < 2; k++) g.rocks.push(rockAt(g, r.x, r.y, r.size - 1));
-    if (g.score >= g.extra){ g.extra += 10000; g.lives++; say('Extra ship!', 1200); beep('good'); }
+    if (g.score >= g.extra){ g.extra += 10000; if (!(LIVES.endless && !QUIET)){ g.lives++; say('Extra ship!', 1200); beep('good'); } }
   }
   function lose(g){
     const s = g.ship;
     s.alive = false; BOOM.add(g, s.x, s.y, 'k', rnd); beep('boom');
     g.pow = { S: 0, T: 0, R: 0 };
-    g.lives--; g.lost = (g.lost || 0) + 1; g.respawn = 2;
+    g.lost = (g.lost || 0) + 1; g.respawn = 2;
+    if (LIVES.endless && !QUIET){ say('Ship lost — ' + g.lost + ' so far. Another is on its way', 1400); return; }
+    g.lives--;
     if (g.lives <= 0){
       if (QUIET){ const t = g.t, booms = g.booms; Object.assign(g, newGame(), { state: 'play', t, booms }); return; }
       g.state = 'over'; beep('lose');
@@ -27397,7 +27412,11 @@ const ASTEROIDS_APP = (() => {
       if ((g.respawn -= dt) <= 0 && !g.rocks.some(r => dist({ x: 0.5, y: 0.5 }, r) < RAD[r.size] + 0.12)) Object.assign(g.ship, newShip());
     }
     if (!g.rocks.length){
-      if ((g.pause -= dt) <= 0){ g.pause = 2; if (g.wave) beep('win'); nextWave(g); }
+      const keep = !QUIET && HOP.on && g.at && (g.wave >= 1 || isCleared(g.at[0], g.at[1]));
+      if (keep){
+        if (!isCleared(g.at[0], g.at[1])){ CLEARED.add(gkey(g.at[0], g.at[1])); saveCleared(); beep('win');
+          say('Board cleared — it stays clear. Fly off an edge to the next board', 2600); }
+      } else if ((g.pause -= dt) <= 0){ g.pause = 2; if (g.wave) beep('win'); nextWave(g); }
     }
     // Steering: the pilot, or you (a drag, a tap's aim, the keys, the tilt).
     let thrust = 0;
@@ -27554,6 +27573,7 @@ const ASTEROIDS_APP = (() => {
     return { which, reel, k: (Math.floor(t / 1000 * REEL_FPS) + ((h >>> 8) % reel.length)) % reel.length };
   }
   function adopt(c, r){
+    if (HOP.on && isCleared(c, r)){ const g = newGame(); g.wave = 1; g.state = 'play'; g.ship.safe = 2; return g; }   // (cleared: empty space)
     const { which, k } = reelAt(c, r), g = bakeReel(seedOf(which), k);
     if (!(g && g.ship)) return newGame();
     if (!g.ship.alive){ Object.assign(g.ship, newShip()); }
@@ -27569,6 +27589,7 @@ const ASTEROIDS_APP = (() => {
     const g = GAMES.get(gkey(c, r));
     if (g && g.state !== 'ready') return snap(g);
     if (LIVE && LIVE.key === gkey(c, r)) return snap(gameAt(c, r));
+    if (HOP.on && isCleared(c, r)) return EMPTY;
     const { reel, k } = reelAt(c, r);
     return reel[k];
   };
@@ -27699,13 +27720,19 @@ const ASTEROIDS_APP = (() => {
     menu: [{ head: 'Asteroids', items: [LV_ITEM, SND.item,
       { label: () => 'Fly between boards: ' + (HOP.on ? 'on' : 'off'), title: 'On: fly off an edge and you go on to the next board, and its game becomes yours. Off: the edges wrap round, as in the arcade.',
         on(){ HOP.on = !HOP.on; ARCADE.save('asteroids.hop', HOP.on ? 'on' : 'off'); } },
+      { label: () => 'Ships: ' + (LIVES.endless ? 'endless' : 'three'), title: 'Endless: a ship lost comes back and the game goes on, the losses counted. Three: the arcade\'s, an extra ship every 10,000, and the game over when the last is lost.',
+        on(){ LIVES.endless = !LIVES.endless; ARCADE.save('asteroids.lives', LIVES.endless ? 'endless' : 'three'); } },
+      { label: () => 'Forget cleared boards (' + CLEARED.size + ')', title: 'Every board you cleared fills with rocks again.',
+        on(){ CLEARED.clear(); saveCleared(); say('Every board has its rocks again', 1800); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want the ship to fly; it fires as it goes. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } }] }],
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r));
-      if (!g || g.state === 'ready') return 'Asteroids — board ' + c + '·' + r;
+      if (!g || g.state === 'ready') return 'Asteroids — board ' + c + '·' + r + (HOP.on && isCleared(c, r) ? ' · cleared' : '');
       const pw = ['S', 'T', 'R'].filter(k => g.pow[k] > 0).map(k => GEM_NAME[k].toLowerCase() + ' ' + Math.ceil(g.pow[k]) + 's').join(', ');
-      return 'Asteroids — wave ' + g.wave + ' · ' + g.score + ' points · ' + g.lives + (g.lives === 1 ? ' ship' : ' ships') + (pw ? ' · ' + pw : '')
+      const ships = LIVES.endless ? (g.lost || 0) + ' lost' : g.lives + (g.lives === 1 ? ' ship' : ' ships');
+      const clear = g.at && HOP.on && isCleared(g.at[0], g.at[1]) ? ' · cleared' : '';
+      return 'Asteroids — ' + (clear ? 'board cleared' : 'wave ' + g.wave) + ' · ' + g.score + ' points · ' + ships + (pw ? ' · ' + pw : '')
            + (g.state === 'over' ? ' · over' : g.state === 'wait' ? ' · tap to go on' : '');
     },
     // THE RESET (Sep 30: "All games need a reset option to start over. similar to chess"): the menu's Reset line.
@@ -27747,7 +27774,7 @@ const ASTEROIDS_APP = (() => {
       for (const [x, y, size] of s.rocks){ ctx.beginPath(); ctx.arc(x * sz, y * sz, RAD[size] * sz, 0, Math.PI * 2); ctx.fill(); }
       if (s.ship){ ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(s.ship[0] * sz, s.ship[1] * sz, Math.max(1.5, 0.02 * sz), 0, Math.PI * 2); ctx.fill(); }
     },
-    _debug: { newGame, start, step, fire, pilot, bakeReel, adopt, games: GAMES, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
+    _debug: { newGame, start, step, fire, pilot, bakeReel, adopt, games: GAMES, CLEARED, LIVES, HOP, lose, shown, gameAt, get LIVE(){ return LIVE; }, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
   };
   return app;
 })();

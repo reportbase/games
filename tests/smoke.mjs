@@ -7147,6 +7147,34 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!(o.pressed < 2 && o.round && o.share < 0.03 && o.longest < 1.5)) failures.push(`[${current}] ${JSON.stringify(o)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} air hockey corners (a pressed puck out in ${o.pressed} s, one along the rail round the corner, the puck in a corner ${o.share} of two matches, ${o.longest} s at most)`);
   }
+  // ASTEROIDS: CLEARED BOARDS STAY CLEARED, ENDLESS SHIPS (Oct 29: "asteroids - dont reset the board, once a board is cleared keep it
+  // cleared.    continuos lives don't end game after 3 deaths."): a real click starting, four ships lost and still playing, the last
+  // rock gone and no new wave, the board empty when left and when played again, another board's rocks still there
+  current = 'asteroids cleared and endless';
+  {
+    const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'asteroids')); await new Promise(ok => setTimeout(ok, 2000)); await window.__settle(); });
+    await page.mouse.click(640, 400); await page.waitForTimeout(1200);
+    const o = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, L = D.LIVE, g = L && D.games.get(L.c + '_' + L.r), out = { started: !!g && g.state === 'play' };
+      if (!g) return out;
+      D.CLEARED.delete(L.c + '_' + L.r);
+      for (let k = 0; k < 4; k++) D.lose(g);
+      out.losses = [g.state, g.lost];
+      g.rocks.length = 0; g.ufo = null;
+      for (let k = 0; k < 300; k++) D.step(g, 1 / 60);
+      out.cleared = [D.CLEARED.has(L.c + '_' + L.r), g.rocks.length];
+      D.games.delete(L.c + '_' + L.r); const was = D.LIVE; D.LIVE = null;
+      out.shown = D.shown(L.c, L.r).rocks.length;
+      const g2 = D.gameAt(L.c, L.r); D.start(g2); for (let k = 0; k < 300; k++) D.step(g2, 1 / 60);
+      out.again = g2.rocks.length; out.other = D.shown(L.c + 3, L.r).rocks.length;
+      D.LIVE = was; D.CLEARED.delete(L.c + '_' + L.r); try { localStorage.removeItem('asteroids.cleared'); } catch {}
+      return out;
+    });
+    if (!(o.started && o.losses[0] === 'play' && o.losses[1] === 4 && o.cleared[0] && o.cleared[1] === 0 && o.shown === 0 && o.again === 0 && o.other > 0))
+      failures.push(`[${current}] ${JSON.stringify(o)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} asteroids cleared and endless (a real click started; four ships lost, still ${o.losses && o.losses[0]}; cleared and no new wave; empty when left and played again; another board ${o.other} rocks)`);
+  }
   // OFF ITS DEFAULT POSITION, A DOUBLE TAP PUTS IT BACK (Oct 28: "If a board is not in the default position than let double click
   // put it in the default position."): in Lights Out (whose quick second taps are moves) and in Pong and pinball (which take
   // every press before the field), a game under way, the view zoomed by the real wheel, a real touch double tap on the board

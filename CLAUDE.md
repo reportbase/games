@@ -1779,6 +1779,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     piece and not the view, the glow on and off); and the difficulty (level 4's ways fewer as the fewest of four than made alone,
     the pars, stars for time, a figure that cannot be built proved so, shown a piece short, its count kept back) with real input
     (the real N on one that cannot be built taking it, a real click on ✗ on one that can costing a hint).
+- **Asteroids: cleared boards stay cleared, endless ships** (Oct 29: "asteroids - dont reset the board, once a board is cleared keep
+  it cleared.    continuos lives don't end game after 3 deaths."): `ASTEROIDS_APP` (Sep 28; flying between boards, saucers, gems).
+  While flying between boards (`HOP`), a board whose last rock is broken is cleared for good (`CLEARED`, localStorage
+  `asteroids.cleared`, the latest 5,000): no new wave, empty space when no one is on it (`shown`, `EMPTY`), empty when flown back
+  into (`adopt`); the menu's Forget cleared boards fills them again. With the edges wrapping the waves come as in the arcade. Ships
+  are endless by default (`LIVES`, the menu's Ships: endless or three, localStorage `asteroids.lives`): a ship lost comes back and
+  is counted (`g.lost`, the title's "N lost"), the game never over; three is the arcade's. The recordings keep the arcade's. The
+  smoke test (part 7) checks both.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
