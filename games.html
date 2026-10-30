@@ -59801,6 +59801,500 @@ const BOWLING_APP = (() => {
   SHARE.install(app, takeLeave);
   return app;
 })();
+/* ═══ PLATFORMER (Oct 30: "what about a platform that continues to the next board") ════════════════════════════════
+   A side-on platformer, a screen of level a board, seen as the tanks' boards are (sky at the far edge, the ground a board's
+   width across and `ASP` times wider than it is tall). You run and jump along it, and run off the edge to go on to the board
+   beside: the level goes on across the whole field, and the view follows you there (yours to move, as Asteroids' flight is).
+   - THE SEAMS: board (c, r)'s right edge meets (c − 1, r)'s left one (u grows toward −x, as Asteroids' hop reads it), and the
+     ground at that edge is one height both boards agree on (`seamH`: the left board's number alone gives it), flat for four
+     columns each side, with nothing on it, so the way across is always there.
+   - EVERY BOARD ITS OWN LEVEL (`makeLevel`, seeded by `boardIdx` and a level 1–5, the ring level plus the Difficulty: Easy 0,
+     Normal 1, Hard 2, as Simon's): ground in 40 columns (a pit or a step now and then, a gap `LV.gap` wide at most, a step up no
+     higher than `LV.step`), spikes, walkers patrolling a flat run, bats from level 3, one-way platforms to jump onto, and a
+     flag in the middle (a checkpoint). Made so it can always be crossed on the ground alone: a gap is under what a jump clears
+     with room to spare (`JUMP`, `RUN`, `GRAV`: a jump 0.225 high and about 0.47 along), a step up under `LV.step`.
+   - THE FEEL (`stepS`, steps of 1/120 s): running speeds up and slows down (`ACC_G`, `ACC_A`), a jump cut short when the key is
+     let go (`CUT`), a jump a moment after leaving a ledge (`COYOTE`) and one pressed a moment before landing (`BUFFER`). The
+     ground is solid from the side; platforms only from above. Landing on a walker from above kills it (`stomp`: the jump
+     bounces, higher while the key is held); touching one any other way, a spike or a fall off the bottom costs a life: no
+     life is lost for good, you stand again at the board's checkpoint (the edge you came in by, or the flag once touched).
+   - THE STEADY PLAYER (`botInp`): runs right and jumps at an edge, a step, a spike, a walker or a bat coming. Its run of the
+     board, sampled `REC_HZ` a second (`recordOf`, worked out a few at a time in the boards' share of time: `RECS`), is what a
+     board no one plays shows, each at its own phase, and its time is the board's par. Stars (`starsOf`): crossing left to right
+     from the left edge in twice par or less ★★★, 3.5 × ★★, else ★; the fastest kept (localStorage `platformer.best`).
+   - CONTROLS: ← → or A D run, ↑ W Z or K jump (Space is the field's pause). On a touch screen the lower part of the board is a
+     run pad (hold left or right of the player, a finger of its own) and a press on the upper part is the jump (hold for a
+     higher one): a thumb each. A press on the board starts it; those presses are the game's, before the field's, as pinball's.
+   - The smoke test checks the seams meeting, every level crossed on its ground alone, the physics (a jump's height, a gap
+     cleared, a step refused, a stomp, a spike, a fall), the steady player finishing, crossing to the board beside with the view
+     following, and real keys and real touches. */
+const PLATFORM_APP = (() => {
+  const ASP = 1.6, NC = 40, CW = ASP / NC, SUB = 1 / 120, REC_HZ = 30, CAP_T = 60, REST_T = 1.5;
+  const HW = 0.016, PH = 0.06, EW = 0.017, EH = 0.036, SPIKE_H = 0.034;
+  const RUN = 0.62, ACC_G = 7, ACC_A = 4.5, GRAV = 3.2, JUMP = 1.2, CUT = 0.4, COYOTE = 0.09, BUFFER = 0.1, VMAXY = 2.2;
+  const TRIES = 8, GY_MIN = 0.5, GY_MAX = 0.88, FALL_Y = 1.12, DEAD_T = 0.6, SAFE_T = 0.8, GRACE = 0.8, PHOTO_PX = 20;
+  const SEAMS = [0.62, 0.7, 0.78], START_X = 0.1, PAD_V = 0.45, TILE_N = 16;
+  const GRASS = 0x5fae45, EARTH = 0x8a6540, SKY0 = 0x5aa9e6, SKY1 = 0xcfe8ff, HILL = 0x9ccf9e;
+  /* The levels: gapP the chance of a gap after a run, gap its widest, step the highest step up, spk spikes, walk walkers,
+     bat bats, plat platforms, sp a walker's speed. */
+  const LV = [
+    { gapP: 0,    gap: 0,    step: 0.06, spk: 0, walk: 1, bat: 0, plat: 1, sp: 0.1 },
+    { gapP: 0.55, gap: 0.13, step: 0.08, spk: 1, walk: 2, bat: 0, plat: 2, sp: 0.12 },
+    { gapP: 0.65, gap: 0.18, step: 0.09, spk: 2, walk: 3, bat: 1, plat: 2, sp: 0.15 },
+    { gapP: 0.8,  gap: 0.23, step: 0.1,  spk: 3, walk: 3, bat: 2, plat: 3, sp: 0.18 },
+    { gapP: 0.9,  gap: 0.27, step: 0.1,  spk: 3, walk: 4, bat: 3, plat: 3, sp: 0.22 },
+  ];
+  const DL = ARCADE.difficulty('platformer.level', 'Every board has its own level, harder the farther it is from the corner: no gaps and one walker near it, then pits, spikes, more walkers and bats far out. Easy, Normal and Hard move every board a level up.', true);
+  const SND = ARCADE.sounds('platformer.sound', 'A hop for a jump, a squeak for a stomp, a drop when you fall, a fanfare for a board crossed in par.');
+  const say = BOARD_KIT.say(2600);
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, rngOf = BOARD_KIT.rng, clamp = BOARD_KIT.clamp, yawOf = BOARD_KIT.yawOf;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const GS = () => BOARD_KIT.gs();
+  const wrap = v => { const n = GS(); return ((v % n) + n) % n; };
+  const clock = () => performance.now() / 1000;
+
+  /* ─── THE LEVELS ─── seamH(c, r): the ground's height where board (c, r)'s right edge meets (c − 1, r)'s left one. */
+  const seamH = (c, r) => SEAMS[Math.floor(rngOf((boardIdx(wrap(c), wrap(r)) * 7919) ^ 0x5eaa1)() * 3)];
+  const snap = y => Math.round(y * 100) / 100;
+  function makeLevel(idx, lv, sL, sR, a = 0){
+    const D = LV[lv - 1], R = rngOf((idx * 2654435761) ^ (lv * 40503) ^ 0x91a7f ^ Math.imul(a, 0x9e3779b1)), pick = (a, b) => a + (b - a) * R(), ri = (a, b) => a + Math.floor(R() * (b - a + 1));
+    const gy = new Array(NC).fill(null);
+    let i = 0, cur = sL;
+    const put = (n, y) => { for (let k = 0; k < n && i < NC; k++) gy[i++] = y; };
+    // (a gap wants a flat run of four columns before it and gives four after, a step three: jumps that began on a step, or ended
+    //  one column from a gap's edge, were the steady player's every fall)
+    let flat = 4;
+    function walk(to, gaps, home){
+      while (i < to){
+        const room = to - i, x = R();
+        if (home != null && room <= 3 * Math.ceil(Math.abs(cur - home) / 0.09) + 3 && Math.abs(cur - home) > 0.001){ cur = snap(cur + clamp(home - cur, -0.09, 0.09)); put(Math.min(3, room), cur); flat = 3; continue; }
+        const gw = Math.max(2, Math.ceil(pick(0.08, Math.max(0.08, D.gap)) / CW));
+        if (gaps && D.gapP && flat >= 4 && i >= 6 && x < D.gapP && room >= gw + 3 + (home != null ? 3 * Math.ceil(Math.abs(cur - home) / 0.09) + 2 : 0)){
+          i += gw;
+          cur = snap(clamp(cur + pick(-0.03, 0.03), GY_MIN, GY_MAX)); put(Math.min(4, to - i), cur); flat = 4; continue;
+        }
+        if (x < 0.45){
+          let ny = cur + (R() < 0.5 ? -1 : 1) * pick(0.03, D.step);
+          if (cur - ny > D.step) ny = cur - D.step;
+          ny = clamp(ny, GY_MIN, GY_MAX); if (home != null) ny = clamp(ny, home - 0.2, home + 0.2);
+          cur = snap(ny); put(Math.min(ri(3, 5), room), cur); flat = 3;
+        } else { const n = Math.min(ri(3, 7), room); put(n, cur); flat += n; }
+      }
+    }
+    put(4, sL); walk(18, true, null);
+    put(4, cur); walk(36, true, sR);
+    put(NC - i, sR);
+    const segs = [];
+    for (let k = 0; k < NC; k++){
+      if (gy[k] == null) continue;
+      const last = segs[segs.length - 1];
+      if (last && last.y === gy[k] && Math.abs(last.x1 - k * CW) < 1e-9) last.x1 = (k + 1) * CW; else segs.push({ x0: k * CW, x1: (k + 1) * CW, y: gy[k] });
+    }
+    // flat runs clear of the seams' and the flag's columns, to put hazards on (two columns of each end left bare)
+    const zone = k => k < 4 || (k >= 18 && k < 22) || k >= 36;
+    const runs = [];
+    for (const s of segs){
+      let a = Math.round(s.x0 / CW), b = Math.round(s.x1 / CW) - 1, st = a;
+      for (let k = a; k <= b + 1; k++) if (k > b || zone(k)){ if (k - 1 >= st && k - st >= 6) runs.push({ a: st, b: k - 1, y: s.y }); st = k + 1; }
+    }
+    for (let k = runs.length - 1; k > 0; k--){ const j = Math.floor(R() * (k + 1)); [runs[k], runs[j]] = [runs[j], runs[k]]; }
+    const spikes = [], enemies = [];
+    // (a spike wants a run of eight columns and stands six in or more, so a hop onto the run from a step has landed and can see it; the longest runs first)
+    const free = runs.slice().sort((p, q) => (q.b - q.a) - (p.b - p.a));
+    for (let n = 0; n < D.spk; n++){
+      const q = free.find(r => r.b - r.a >= 7 && !r.used); if (!q) break;
+      q.used = true; const m = q.a + 6 + Math.floor(R() * Math.max(1, q.b - q.a - 7));
+      spikes.push({ x: (m + 0.5) * CW, w: 0.07, y: q.y });
+    }
+    for (let n = 0; n < D.walk; n++){
+      const q = free.find(r => !r.used); if (!q) break;
+      q.used = true;
+      const x0 = (q.a + 1) * CW, x1 = q.b * CW, sp = D.sp * (0.8 + 0.4 * R());
+      enemies.push({ k: 'walk', x0, x1, y: q.y, T: 2 * (x1 - x0) / sp, ph: R() });
+    }
+    for (let n = 0; n < D.bat; n++){
+      const a = ri(6, 28), w = ri(8, 11), ref = gy[Math.min(NC - 1, a + (w >> 1))] != null ? gy[Math.min(NC - 1, a + (w >> 1))] : 0.7, sp = D.sp * 1.2;
+      const x0 = a * CW, x1 = Math.min(ASP - 5 * CW, (a + w) * CW);
+      enemies.push({ k: 'bat', x0, x1, yc: ref - 0.14 - R() * 0.06, amp: 0.04, T: 2 * (x1 - x0) / sp, ph: R() });
+    }
+    const plats = [];
+    for (let n = 0; n < D.plat; n++){
+      const a = ri(6, 32), w = ri(3, 6);
+      let top = null; for (let k = a - 1; k <= a + w + 1; k++) if (gy[k] != null) top = top == null ? gy[k] : Math.min(top, gy[k]);
+      plats.push({ x0: a * CW, x1: (a + w) * CW, y: Math.max(0.25, (top == null ? 0.7 : top) - pick(0.15, 0.19)) });
+    }
+    return { idx, lv, sL, sR, a, gy, segs, spikes, enemies, plats, flag: { x: 20 * CW, y: gy[20] } };
+  }
+  const LEVELS = new Map(), CAP = 1500;
+  /* A level is made up to `TRIES` times (the attempt in its seed) until the steady player crosses it without losing a life, the
+     nearest kept (a crossing at all first, then fewest lives lost); its run is the board's recording, so it is not worked out twice. */
+  function levelFor(idx, lv, c, r){
+    const key = idx * 8 + lv;
+    let L = LEVELS.get(key);
+    if (L){ LEVELS.delete(key); LEVELS.set(key, L); return L; }
+    let best = null, bestR = null, bestScore = Infinity;
+    for (let a = 0; a < TRIES; a++){
+      const Q = makeLevel(idx, lv, seamH(c + 1, r), seamH(c, r), a), R = recordOf(Q), score = (R.done ? 0 : 100) + R.deaths;
+      if (score < bestScore){ best = Q; bestR = R; bestScore = score; }
+      if (!score) break;
+    }
+    L = best; L.phase = BOARD_KIT.phase(idx); L.tries = L.a + 1;
+    LEVELS.set(key, L); if (LEVELS.size > CAP) LEVELS.delete(LEVELS.keys().next().value);
+    RECS.set(key, bestR); if (RECS.size > CAP) RECS.delete(RECS.keys().next().value);
+    return L;
+  }
+  const levelOf = (c, r) => { const idx = boardIdx(c, r); return levelFor(idx, levelAt(idx), c, r); };
+  const topAt = (L, x) => { for (const s of L.segs) if (x >= s.x0 && x < s.x1) return s.y; return null; };
+
+  /* ─── THE MOVERS: pure functions of the level's clock, so a board no one plays and a game share them ─── */
+  const tri = u => { u = ((u % 1) + 1) % 1; return u < 0.5 ? 2 * u : 2 - 2 * u; };
+  function enemyAt(E, t){
+    const u = t / E.T + E.ph, f = tri(u), dir = ((u % 1) + 1) % 1 < 0.5 ? 1 : -1, x = E.x0 + (E.x1 - E.x0) * f;
+    return E.k === 'bat' ? { x, y: E.yc + E.amp * Math.sin(6.283 * (t * 0.9 + E.ph * 7)), dir } : { x, y: E.y - EH / 2, dir };
+  }
+
+  /* ─── THE PHYSICS ─── a sim S = { L, P (the player), check (where to stand again), killed (enemy index → when), deaths, t, ev,
+     exit (±1 once past an edge) }. */
+  const newP = (x, y) => ({ x, y, vx: 0, vy: 0, on: true, coy: 0, buf: 0, held: false, jumping: false, face: 1, dead: 0, safe: 0 });
+  const newSim = (L, x, y, check) => ({ L, P: newP(x, y), check: check || { x, y }, killed: new Map(), deaths: 0, t: 0, ev: [], exit: 0 });
+  function die(S, why){ const P = S.P; if (P.dead > 0) return; P.dead = DEAD_T; P.vx = 0; P.vy = 0; S.deaths++; S.ev.push('die:' + why); }
+  function stepS(S, inp, dt){
+    const P = S.P, L = S.L; S.t += dt;
+    if (P.dead > 0){
+      P.dead -= dt;
+      if (P.dead <= 0){ P.dead = 0; P.x = S.check.x; P.y = S.check.y; P.vx = P.vy = 0; P.on = true; P.safe = SAFE_T; P.buf = 0; }
+      return;
+    }
+    if (P.safe > 0) P.safe -= dt;
+    const want = (inp.R ? 1 : 0) - (inp.L ? 1 : 0);
+    if (want) P.face = want;
+    const a = (P.on ? ACC_G : ACC_A) * dt;
+    P.vx += clamp(want * RUN - P.vx, -a, a);
+    if (inp.jump && !P.held) P.buf = BUFFER;
+    P.held = !!inp.jump;
+    P.buf = Math.max(0, P.buf - dt);
+    P.coy = P.on ? COYOTE : Math.max(0, P.coy - dt);
+    if (P.buf > 0 && P.coy > 0){ P.vy = -JUMP; P.buf = 0; P.coy = 0; P.on = false; P.jumping = true; S.ev.push('jump'); }
+    if (P.jumping && !inp.jump && P.vy < -JUMP * CUT) P.vy = -JUMP * CUT, P.jumping = false;
+    if (P.vy >= 0) P.jumping = false;
+    P.vy = Math.min(VMAXY, P.vy + GRAV * dt);
+    // across: the ground is solid from the side (a wall is any ground higher than the feet by more than a hair)
+    P.x += P.vx * dt;
+    for (const s of L.segs){
+      if (P.y > s.y + 0.006 && P.x + HW > s.x0 && P.x - HW < s.x1){
+        const l = P.x + HW - s.x0, r = s.x1 - (P.x - HW);
+        if (l < r){ P.x = s.x0 - HW; if (P.vx > 0) P.vx = 0; } else { P.x = s.x1 + HW; if (P.vx < 0) P.vx = 0; }
+      }
+    }
+    // down: onto the ground, or onto a platform from above
+    const py = P.y; P.y += P.vy * dt; P.on = false;
+    if (P.vy >= 0){
+      for (const s of L.segs) if (P.x + HW > s.x0 && P.x - HW < s.x1 && py <= s.y + 0.004 && P.y >= s.y){ P.y = s.y; P.vy = 0; P.on = true; }
+      for (const s of L.plats) if (P.x + HW > s.x0 && P.x - HW < s.x1 && py <= s.y + 0.002 && P.y >= s.y){ P.y = s.y; P.vy = 0; P.on = true; }
+    }
+    if (P.y > FALL_Y){ die(S, 'fall'); return; }
+    const top = P.y - PH;
+    for (const s of L.spikes) if (Math.abs(P.x - s.x) < HW + s.w / 2 - 0.006 && P.y > s.y - SPIKE_H * 0.8 && top < s.y){ if (P.safe <= 0){ die(S, 'spike'); return; } }
+    for (let k = 0; k < L.enemies.length; k++){
+      if (S.killed.has(k)) continue;
+      const e = enemyAt(L.enemies[k], S.t);
+      if (Math.abs(P.x - e.x) < HW + EW && top < e.y + EH / 2 && P.y > e.y - EH / 2){
+        if (P.vy > 0.05 && py <= e.y + 0.004){ S.killed.set(k, S.t); P.vy = -JUMP * (inp.jump ? 0.95 : 0.65); P.on = false; P.jumping = !!inp.jump; S.ev.push('stomp'); }
+        else if (P.safe <= 0){ die(S, 'enemy'); return; }
+      }
+    }
+    const f = L.flag;
+    if (Math.abs(P.x - f.x) < 0.035 && P.y > f.y - 0.12 && P.y < f.y + 0.05 && (S.check.x !== f.x || S.check.y !== f.y)){ S.check = { x: f.x, y: f.y }; S.ev.push('flag'); }
+    if (P.x > ASP) S.exit = 1; else if (P.x < 0) S.exit = -1;
+  }
+
+  /* ─── THE STEADY PLAYER ─── runs right; jumps at an edge, a step, a spike, a walker or a bat coming, holding the jump while it rises */
+  // (would a jump begun now come down alive? the bot runs it ahead on a copy, holding the jump while it rises, then running on)
+  function rollOk(S, rise){
+    const C = { L: S.L, P: Object.assign({}, S.P), check: S.check, killed: new Map(S.killed), deaths: 0, t: S.t, ev: [], exit: 0 }, y0 = C.P.y;
+    let up = false;
+    for (let n = 0; n < 150; n++){
+      const jump = n === 0 || (!C.P.on && C.P.vy < 0 && y0 - C.P.y < rise);
+      stepS(C, { L: false, R: true, jump }, SUB); C.ev.length = 0;
+      if (C.P.dead > 0) return false;
+      if (!C.P.on) up = true; else if (up) return true;
+      if (C.exit) return true;
+    }
+    return true;
+  }
+  /* A jump over a step is held only as far as it needs (0.1 up): held to the top it came down 0.46 on, as often as not on a spike
+     or off the next ledge. Other jumps are held 0.2. A bat is only a thing to jump when it flies at the body's height. */
+  function botInp(S){
+    const P = S.P, L = S.L, out = { L: false, R: true, jump: false };
+    if (P.dead > 0) return { L: false, R: false, jump: false };
+    if (!P.on){ out.jump = P.vy < 0 && S.rise != null && S.y0 - P.y < S.rise; return out; }
+    let must = false, maybe = false;
+    const edge = topAt(L, P.x + HW + 0.012) == null;
+    const wall = topAt(L, P.x + HW + 0.02);
+    const step = wall != null && wall < P.y - 0.005;
+    if (edge || step) must = true;
+    for (const s of L.spikes){ const d = s.x - s.w / 2 - (P.x + HW); if (d < 0.2 && d > -s.w) maybe = true; }
+    for (let k = 0; k < L.enemies.length; k++){
+      if (S.killed.has(k)) continue;
+      const E = L.enemies[k], e = enemyAt(E, S.t), dx = e.x - P.x;
+      if (dx > 0.02 && dx < 0.2 && e.y > P.y - (E.k === 'bat' ? 0.1 : 0.2) && e.y < P.y + 0.05) maybe = true;
+    }
+    const rise = step && !edge ? 0.1 : 0.2;
+    out.jump = must || (maybe && rollOk(S, rise));
+    if (out.jump){ S.y0 = P.y; S.rise = rise; }
+    return out;
+  }
+  /* A board's run by the steady player from its left edge, sampled REC_HZ a second: [x, feet, facing, state (0 stand, 1 run, 2 air,
+     3 gone)]; `killed` the walkers it stomped and when, `dur` how long it took (60 s if it never crossed), `deaths`. */
+  function recordOf(L){
+    const S = newSim(L, START_X, L.sL), frames = [], every = 1 / REC_HZ;
+    let next = 0;
+    for (let n = 0; S.t < CAP_T && !S.exit; n++){
+      if (S.t >= next){ const P = S.P; frames.push([P.x, P.y, P.face, P.dead > 0 ? 3 : !P.on ? 2 : Math.abs(P.vx) > 0.05 ? 1 : 0]); next += every; }
+      stepS(S, botInp(S), SUB); S.ev.length = 0;
+    }
+    const dur = S.exit ? S.t : CAP_T;
+    frames.push([S.P.x, S.P.y, 1, 1]);
+    return { frames, dur, par: Math.max(0.5, Math.ceil(dur * 10) / 10), deaths: S.deaths, killed: [...S.killed], done: !!S.exit };
+  }
+  const RECS = new Map();
+  const recFor = L => RECS.get(L.idx * 8 + L.lv) || (RECS.set(L.idx * 8 + L.lv, recordOf(L)), RECS.get(L.idx * 8 + L.lv));
+  const starsOf = (t, par) => t <= par * 2 ? 3 : t <= par * 3.5 ? 2 : 1;
+
+  /* ─── PLAYING ─── a game is a sim on its own board, running on the page's clock; running off an edge hands it to the board beside */
+  const GAMES = new Map();
+  let LIVE = null;
+  const { BEST, saveBest } = BOARD_KIT.best('platformer.best');
+  const bestKey = L => L.idx + '@' + L.lv;
+  const KEYS = new Set(), HANDS = new Map();
+  const fresh = (c, r) => { const L = levelOf(c, r); return { c, r, L, state: 'ready', S: null, last: 0, acc: 0, t0: 0, fromLeft: true, said: 0 }; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, fresh);
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  function begin(g){
+    const L = g.L;
+    Object.assign(g, { state: 'play', S: newSim(L, START_X, L.sL), last: clock(), acc: 0, t0: 0, fromLeft: true });
+    say('← → run, ↑ jump. Run off the right edge to go on.', 3200);
+  }
+  function inputOf(g){
+    const P = g.S.P, inp = { L: false, R: false, jump: false };
+    let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
+    const flip = dirs && dirs[1] === 3;
+    if (KEYS.has('L')) inp[flip ? 'R' : 'L'] = true;
+    if (KEYS.has('R')) inp[flip ? 'L' : 'R'] = true;
+    if (KEYS.has('J')) inp.jump = true;
+    for (const h of HANDS.values()){
+      if (h.kind === 'jump') inp.jump = true;
+      else if (h.kind === 'run' && h.tx != null){ const d = h.tx - P.x; if (Math.abs(d) > 0.05) inp[d > 0 ? 'R' : 'L'] = true; }
+    }
+    return inp;
+  }
+  function beep(kind){
+    if (!SND.on) return;
+    try {
+      if (!ARCADE.audio()) return;
+      if (kind === 'jump') ARCADE.tone(300, 620, 0.09, 'square', 0.03);
+      else if (kind === 'stomp') ARCADE.tone(520, 880, 0.08, 'square', 0.04);
+      else if (kind === 'flag') SND.play('flag');
+      else if (kind === 'die') SND.play('bad');
+    } catch {}
+  }
+  function stepGame(g){
+    if (g.state !== 'play') return;
+    const t = clock(); g.acc = Math.min(0.25, g.acc + Math.max(0, t - g.last)); g.last = t;
+    const S = g.S;
+    while (g.acc >= SUB && !S.exit){
+      g.acc -= SUB;
+      stepS(S, inputOf(g), SUB);
+      if (S.ev.length){ for (const e of S.ev) beep(e.startsWith('die') ? 'die' : e); S.ev.length = 0; }
+    }
+    if (S.exit) cross(g);
+  }
+  /* off an edge: the board beside takes the player (u grows toward −x, so off the right edge is the board at x − 1), the view
+     flies there if you were looking at this board, and a board crossed from its left edge is timed against par */
+  function cross(g){
+    const S = g.S, du = S.exit, L = g.L;
+    const nc = wrap(g.c - du), nr = g.r, ng = fresh(nc, nr), P = S.P;
+    if (du > 0 && g.fromLeft){
+      const R = recFor(L), t = S.t, k = bestKey(L), was = BEST.get(k), s = starsOf(t, R.par);
+      if (was == null || t < was){ BEST.delete(k); BEST.set(k, Math.round(t * 100) / 100); saveBest(); }
+      say('Board crossed in ' + t.toFixed(1) + ' s, par ' + R.par.toFixed(1) + ' ' + BOARD_KIT.stars(s) + (was != null && t < was ? ', a new best' : was != null ? ', best ' + was.toFixed(1) : ''), 3000);
+      if (s >= 3) SND.play('good');
+    }
+    const x = du > 0 ? P.x - ASP : P.x + ASP, y = du > 0 ? ng.L.sL : ng.L.sR;
+    ng.state = 'play'; ng.last = clock();
+    ng.S = newSim(ng.L, x, P.y, { x: du > 0 ? 0.06 : ASP - 0.06, y });
+    Object.assign(ng.S.P, { vx: P.vx, vy: P.vy, on: P.on, face: P.face, coy: P.coy, held: P.held, jumping: P.jumping });
+    ng.fromLeft = du > 0;
+    GAMES.delete(gkey(g.c, g.r)); GAMES.set(gkey(nc, nr), ng);
+    const was = LIVE; LIVE = { c: nc, r: nr };
+    let tc = null; try { tc = { x: target.cellX, z: target.cellZ }; } catch {}
+    if (tc && typeof gotoCell === 'function' && (!was || wrap(tc.x) === wrap(g.c))){ try { gotoCell(tc.x - du, tc.z); } catch {} }
+  }
+  const startKeys = { ArrowLeft: 'L', a: 'L', A: 'L', ArrowRight: 'R', d: 'R', D: 'R', ArrowUp: 'J', w: 'J', W: 'J', z: 'J', Z: 'J', k: 'J', K: 'J' };
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = startKeys[e.key]; if (!k) return;
+    const g = liveGame(); if (!g) return;
+    e.preventDefault(); e.stopPropagation(); KEYS.add(k);
+    if (g.state === 'ready') begin(g);
+  }, true);
+  addEventListener('keyup', e => { const k = startKeys[e.key]; if (k && KEYS.delete(k)){ e.preventDefault(); e.stopPropagation(); } }, true);
+  addEventListener('blur', () => { KEYS.clear(); HANDS.clear(); });
+
+  /* ─── THE HANDS ─── a press on the framed board is the game's: the lower part runs toward the finger, the upper part jumps */
+  const OWN = new Map();
+  function pressAt(x, y){
+    let g = liveGame(); if (!g) return null;
+    const at = _framedUV(x, y, 0.3); if (!at || at.c !== g.c || at.r !== g.r) return null;
+    if (g.state === 'ready') begin(g);
+    return { g, kind: at.v >= PAD_V ? 'run' : 'jump', at: performance.now() };
+  }
+  function handAt(p, x, y){
+    const at = _framedUV(x, y, 0.3); if (!at) return;
+    p.tx = clamp(at.u, 0, 1) * ASP;
+    p.id = p.id || 'h' + Math.random();
+    HANDS.set(p.id, p);
+  }
+  function handUp(id){ const p = OWN.get(id); if (!p) return false; OWN.delete(id); HANDS.delete(p.id); return true; }
+  MATCH_KIT.hands({ pressAt, handAt, handUp, OWN });
+  addEventListener('mouseup', e => { if (handUp('m')){ e.preventDefault(); e.stopPropagation(); } }, true);
+
+  /* ─── DRAWING ─── one kind each, coloured per vertex; game x is u × ASP, game y the board's v, and an item's z runs up the screen */
+  const prism = (T, pts, d) => {
+    const sh = new T.Shape(); pts.forEach(([x, z], k) => k ? sh.lineTo(x, z) : sh.moveTo(x, z)); sh.closePath();
+    const g = new T.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false }); g.rotateX(Math.PI / 2); g.translate(0, d, 0); return g;
+  };
+  const boxP = (T, x0, z0, x1, z1, y0, y1) => { const g = new T.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); return g; };
+  function merged(T, parts){
+    const pos = [], nrm = [], col = [];
+    for (const [g0, c] of parts){
+      const g = g0.index ? g0.toNonIndexed() : g0, P = g.attributes.position.array, N = g.attributes.normal.array;
+      const cr = (c >> 16 & 255) / 255, cg = (c >> 8 & 255) / 255, cb = (c & 255) / 255;
+      for (let k = 0; k < P.length; k++){ pos.push(P[k]); nrm.push(N[k]); }
+      for (let k = 0; k < P.length / 3; k++) col.push(cr, cg, cb);
+    }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+    g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    g.userData.vertexColors = true;
+    return g;
+  }
+  // (a unit tall, feet at the origin, facing `dir` along x: a red body with a blue cap, a face, an eye and two boots)
+  const heroGeo = dir => T => merged(T, [
+    [prism(T, [[-0.3, 0.1], [0.3, 0.1], [0.34, 0.5], [0.24, 0.8], [-0.24, 0.8], [-0.34, 0.5]], 0.5), 0xd8402e],
+    [prism(T, [[-0.2 + 0.08 * dir, 0.5], [0.2 + 0.08 * dir, 0.5], [0.2 + 0.08 * dir, 0.76], [-0.2 + 0.08 * dir, 0.76]], 0.56), 0xf0c9a0],
+    [boxP(T, 0.14 * dir - 0.04 + 0.08 * dir, 0.6, 0.14 * dir + 0.04 + 0.08 * dir, 0.7, 0, 0.6), 0x15151a],
+    [prism(T, [[-0.26, 0.76], [0.26, 0.76], [0.2, 0.98], [-0.2, 0.98]], 0.54), 0x2c5fb8],
+    [boxP(T, -0.28, 0, -0.04, 0.14, 0, 0.45), 0x5a3a22], [boxP(T, 0.04, 0, 0.28, 0.14, 0, 0.45), 0x5a3a22],
+  ]);
+  const walkerGeo = T => merged(T, [
+    [prism(T, [[-0.5, 0.1], [0.5, 0.1], [0.5, 0.4], [0.3, 0.8], [-0.3, 0.8], [-0.5, 0.4]], 0.5), 0x8a3a8f],
+    [boxP(T, -0.3, 0.45, -0.1, 0.65, 0, 0.56), 0xffffff], [boxP(T, 0.1, 0.45, 0.3, 0.65, 0, 0.56), 0xffffff],
+    [boxP(T, -0.22, 0.47, -0.12, 0.6, 0, 0.6), 0x15151a], [boxP(T, 0.12, 0.47, 0.22, 0.6, 0, 0.6), 0x15151a],
+    [boxP(T, -0.5, 0, -0.1, 0.14, 0, 0.45), 0x3a1d3d], [boxP(T, 0.1, 0, 0.5, 0.14, 0, 0.45), 0x3a1d3d],
+  ]);
+  const batGeo = T => merged(T, [
+    [prism(T, [[-0.2, -0.2], [0.2, -0.2], [0.25, 0.1], [0, 0.3], [-0.25, 0.1]], 0.5), 0x3a3550],
+    [prism(T, [[-0.2, 0], [-0.55, 0.3], [-0.6, -0.1]], 0.4), 0x57507a], [prism(T, [[0.2, 0], [0.55, 0.3], [0.6, -0.1]], 0.4), 0x57507a],
+    [boxP(T, -0.12, 0.02, -0.04, 0.1, 0, 0.56), 0xff4a3a], [boxP(T, 0.04, 0.02, 0.12, 0.1, 0, 0.56), 0xff4a3a],
+  ]);
+  const spikeGeo = T => merged(T, [-1, 0, 1].map(k => [prism(T, [[(k - 0.5) / 3.2, 0], [(k + 0.5) / 3.2, 0], [k / 3.2, 1]], 1), 0xc9ccd6]));
+  const flagGeo = col => T => merged(T, [[boxP(T, -0.03, 0, 0.03, 1, 0, 0.5), 0xdddddd], [prism(T, [[0.03, 1], [0.5, 0.82], [0.03, 0.64]], 0.4), col]]);
+  const itemsOf = (L, view) => {
+    const out = [], add = o => { out.push({ u: o.x / ASP, v: o.y, scale: (o.s || 1) / ASP, lift: (o.lift || 0) / ASP, yaw: yawOf(0), sx: o.sx, sy: o.sy, sz: o.sz, kind: o.kind, color: o.color == null ? 0xffffff : o.color }); };
+    for (const s of L.segs){
+      const h = 1 - s.y;
+      add({ kind: 'pfBox', x: (s.x0 + s.x1) / 2, y: s.y + h / 2, sx: s.x1 - s.x0, sz: h, sy: 0.03, color: EARTH });
+      add({ kind: 'pfBox', x: (s.x0 + s.x1) / 2, y: s.y + 0.007, sx: s.x1 - s.x0, sz: 0.016, sy: 0.034, color: GRASS });
+    }
+    for (const p of L.plats){
+      add({ kind: 'pfBox', x: (p.x0 + p.x1) / 2, y: p.y + 0.01, sx: p.x1 - p.x0, sz: 0.022, sy: 0.03, color: 0xa8743c });
+      add({ kind: 'pfBox', x: (p.x0 + p.x1) / 2, y: p.y + 0.003, sx: p.x1 - p.x0, sz: 0.008, sy: 0.034, color: GRASS });
+    }
+    for (const s of L.spikes) add({ kind: 'pfSpike', x: s.x, y: s.y, sx: s.w, sz: SPIKE_H, sy: 0.03 });
+    add({ kind: view.flagOn ? 'pfFlagOn' : 'pfFlag', x: L.flag.x, y: L.flag.y, sx: 0.07, sz: 0.1, sy: 0.04 });
+    for (let k = 0; k < L.enemies.length; k++){
+      const E = L.enemies[k], kt = view.killed.get(k);
+      if (kt != null && view.t - kt > 0.35) continue;
+      const e = enemyAt(E, view.t), sq = kt != null ? Math.max(0.12, 1 - (view.t - kt) / 0.1) : 1;
+      if (E.k === 'bat') add({ kind: 'pfBat', x: e.x, y: e.y, sx: EH * 1.5, sz: EH * 1.4 * sq, sy: 0.03, lift: 0.012 });
+      else add({ kind: 'pfWalk', x: e.x, y: E.y, sx: EH * 1.1 * (kt != null ? 1.3 : 1), sz: EH * sq, sy: 0.03, lift: 0.01 });
+    }
+    const P = view.P;
+    if (P){
+      if (P.dead > 0){
+        const d = DEAD_T - P.dead;
+        for (let k = 0; k < 8; k++){ const a = k * 0.785 + 0.4, r = 0.012 + 0.16 * d; add({ kind: 'pfBox', x: P.x + Math.cos(a) * r, y: P.y - PH / 2 - Math.sin(a) * r + 0.35 * d * d, sx: 0.012, sz: 0.012, sy: 0.02, lift: 0.02, color: k % 2 ? 0xd8402e : 0xf0c9a0 }); }
+      } else if (!(P.safe > 0 && Math.floor(view.t * 14) % 2)) add({ kind: P.face < 0 ? 'pfHeroL' : 'pfHeroR', x: P.x, y: P.y, sx: PH, sz: PH, sy: PH * 0.6, lift: 0.012 });
+    }
+    return out;
+  };
+  function viewOf(c, r){
+    const L = levelOf(c, r), g = GAMES.get(gkey(c, r));
+    if (g && g.state === 'play'){
+      if (LIVE && LIVE.c === c && LIVE.r === r) stepGame(g);
+      const S = g.S; if (!S) return { L, view: { t: 0, killed: new Map(), P: null } };
+      return { L, view: { t: S.t, killed: S.killed, P: S.P, flagOn: S.check.x === L.flag.x && S.check.y === L.flag.y } };
+    }
+    const R = recFor(L);
+    if (!R) return { L, view: { t: 0, killed: new Map(), P: null } };
+    const s = BOARD_KIT.loopT(L.phase, R.frames.length / REC_HZ + REST_T), a = BOARD_KIT.frameAt(R.frames.length, REC_HZ, REST_T, L.phase);
+    const f = R.frames[Math.min(R.frames.length - 1, a.i)], P = newP(f[0], f[1]); P.face = f[2]; P.dead = f[3] === 3 ? DEAD_T * 0.5 : 0;
+    const killed = new Map(); for (const [k, tt] of R.killed) if (tt <= s) killed.set(k, tt);
+    return { L, view: { t: s, killed, P: f[3] === 3 && f[0] > ASP ? null : P, flagOn: f[0] > L.flag.x } };
+  }
+  const skyCol = v => { const t = clamp(v / 0.85, 0, 1), a = SKY0, b = SKY1; return ((a >> 16) + (((b >> 16) - (a >> 16)) * t | 0)) << 16 | (((a >> 8 & 255) + (((b >> 8 & 255) - (a >> 8 & 255)) * t | 0)) << 8) | ((a & 255) + (((b & 255) - (a & 255)) * t | 0)); };
+
+  const app = {
+    name: 'platformer',
+    boardShape: { cellW: 1, cellH: 1 / ASP },
+    menu: [{ head: 'Platformer', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); LEVELS.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: 'Start this board again', title: 'This board from its left edge, the checkpoint put back.', on(){ const f = framedCell(); if (f){ const g = fresh(f.c, f.r); GAMES.set(gkey(f.c, f.r), g); LIVE = { c: f.c, r: f.r }; begin(g); } } },
+    ]}],
+    cellFar: { light: SKY1, dark: EARTH },
+    itemMinPx: 12,
+    itemGeometries: {
+      pfBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
+      pfSpike: spikeGeo, pfWalk: walkerGeo, pfBat: batGeo,
+      pfHeroR: heroGeo(1), pfHeroL: heroGeo(-1),
+      pfFlag: flagGeo(0xd8402e), pfFlagOn: flagGeo(0x3fbf5f),
+    },
+    cellGrid(c, r){
+      const L = levelOf(c, r), n = TILE_N, colors = [];
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++){
+        const x = (i + 0.5) / n * ASP, v = (j + 0.5) / n, top = topAt(L, x);
+        colors.push(top != null && v > top ? (v < top + 1 / n ? GRASS : EARTH) : v > 0.7 && Math.sin(x * 5 + L.idx) > 0.1 ? HILL : skyCol(v));
+      }
+      return { n, colors };
+    },
+    cellItems(c, r){ const { L, view } = viewOf(c, r); return itemsOf(L, view); },
+    cellTitle(c, r){
+      const L = levelOf(c, r), g = GAMES.get(gkey(c, r)), R = RECS.get(L.idx * 8 + L.lv), best = BEST.get(bestKey(L));
+      return 'Platformer — level ' + L.lv + (R ? ' · par ' + R.par.toFixed(1) + ' s' : '') + (best != null ? ' · best ' + best.toFixed(1) + ' s' : '')
+           + (g && g.state === 'play' ? ' · ' + g.S.deaths + (g.S.deaths === 1 ? ' fall' : ' falls') : '');
+    },
+    onReset(c, r){ const g = fresh(c, r); GAMES.set(gkey(c, r), g); LIVE = { c, r }; begin(g); return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    onCellTap(c, r){ LIVE = { c, r }; const g = gameAt(c, r); if (g.state === 'ready') begin(g); return true; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#5aa9e6'; ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = '#8a6540'; ctx.fillRect(0, sz * 0.7, sz * 0.42, sz * 0.3); ctx.fillRect(sz * 0.62, sz * 0.7, sz * 0.38, sz * 0.3);
+      ctx.fillStyle = '#5fae45'; ctx.fillRect(0, sz * 0.7, sz * 0.42, sz * 0.05); ctx.fillRect(sz * 0.62, sz * 0.7, sz * 0.38, sz * 0.05);
+      ctx.fillStyle = '#d8402e'; ctx.fillRect(sz * 0.42, sz * 0.32, sz * 0.16, sz * 0.22);
+      ctx.fillStyle = '#2c5fb8'; ctx.fillRect(sz * 0.42, sz * 0.28, sz * 0.16, sz * 0.07);
+    },
+    _debug: { makeLevel, levelOf, levelFor, seamH, topAt, enemyAt, newSim, stepS, botInp, recordOf, recFor, starsOf, begin, stepGame, cross, gameAt, fresh, inputOf,
+              LV, ASP, NC, CW, HW, PH, JUMP, RUN, GRAV, SUB, GAMES, LEVELS, RECS, BEST, KEYS, HANDS, clock, levelAt, boardIdx,
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; } },
+  };
+  // (`levelOf` is what the field asks for a board's difficulty colour: the number, not the level's own data, `levelObj`)
+  app._debug.levelObj = app._debug.levelOf; app._debug.levelOf = (c, r) => levelAt(boardIdx(c, r));
+  return app;
+})();
 /* ═══ MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run", the third of the new games: "build a track in the bottom row,
    the steady player tests it") ═════════════════════════════════════════════════════════════════════════════════════════════
    Every board a grid with a start chute at its far edge, high up, and a cup lower down; rocks in the way; some pieces already
@@ -62177,7 +62671,7 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TANKMAZE_APP, PLATFORM_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -62186,7 +62680,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TANKMAZE_APP, 'tankmaze'], [PLATFORM_APP, 'platformer'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
