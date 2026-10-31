@@ -4292,18 +4292,22 @@ try {
         return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
       await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
       const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
-      const p0 = await aimAt(0.5, 0.95), p1 = await aimAt(0.5, 0.85);
+      const p0 = await aimAt(0.5, 0.95), p1 = await aimAt(0.5, 0.85), p2 = await aimAt(0.5, 0.62);
       await page.mouse.move(p0[0], p0[1]); await page.mouse.down();
       for (let k = 1; k <= 8; k++){ await page.mouse.move(p0[0], p0[1] + (p1[1] - p0[1]) * k / 8); await page.waitForTimeout(30); }
       await page.waitForTimeout(300);
       const dyIn = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
+      // (Oct 31: anywhere on his half) on up the table to the middle, the paddle follows, and let go it stays there
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(p1[0], p1[1] + (p2[1] - p1[1]) * k / 8); await page.waitForTimeout(30); }
+      await page.waitForTimeout(900);
+      const dyFar = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
       await page.mouse.up(); await page.waitForTimeout(500);
       const dyOut = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
-      step = { dyIn: +dyIn.toFixed(3), dyOut: +dyOut.toFixed(3) };
+      step = { dyIn: +dyIn.toFixed(3), dyFar: +dyFar.toFixed(3), dyOut: +dyOut.toFixed(3) };
     }
-    const ok2 = !!step && step.dyIn > 0.05 && step.dyOut < 0.01;
+    const ok2 = !!step && step.dyIn > 0.05 && step.dyFar > 0.25 && Math.abs(step.dyOut - step.dyFar) < 0.03;
     if (!ok2) failures.push('[pong] a real drag stepping forward: ' + JSON.stringify(step));
-    console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real drag up the table steps the paddle forward (${step && step.dyIn}), and let go it steps back`);
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real drag up the table takes the paddle with it (${step && step.dyIn}, then ${step && step.dyFar} near the middle), and let go it stays`);
   }
   // AIR HOCKEY (Oct 27: "this is a cool game. what other games could we create like pong.", then "1"): levels by ring; a mallet's
   // swing passed into the puck; the rails, and goals only through a mouth; the puck never inside a mallet; matches ending at
@@ -6886,6 +6890,48 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       && r.fabric.on === 1 && r.fabric.thr.join() === '7,15,31' && r.fabric.gs >= 1;
     if (!ok) failures.push(`[${current}] ${JSON.stringify(r)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} difficulty colours (the steps at rings 7, 15 and 31 for Lights Out and mini golf, none for chess, the fabric given them)`);
+  }
+  {
+    /* THE BOARD LOCK and THE DIFFICULTY FLIGHT (Oct 31: "double clicking a board should lock the board in position and set the board so
+       it does not pan." and "difficulty setting in the menu should move to a board with that difficulty setting."): a real double
+       tap frames the board and locks it, a real drag then moves nothing, a double tap on the square board lets it go and a drag pans
+       again; and each step of the Difficulty item flies to the nearest board of its colour (1, 3, 5). */
+    current = 'board lock and difficulty flight'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'checkers')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const camX = () => page.evaluate(() => [window.FIELD_WORLD.st.camX, window.FIELD_WORLD.st.camZ]);
+    const mid = () => page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; });
+    const dbl = async ([x, y]) => page.evaluate(async ([x, y]) => { const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms)), T = window.FIELD_WORLD.target, S = window.tvf.state;
+      for (let k = 0; k < 80 && (T.active || S.heldPanRate); k++) await wait(250);
+      const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+        const te = type => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] });
+        const pe = type => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y });
+        return [pe('pointerdown'), te('touchstart'), pe('pointerup'), te('touchend')]; };
+      for (const e of [...tap(), ...tap()]) cv.dispatchEvent(e);
+      await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); }, [x, y]);
+    const drag = async () => { const m = await mid(); await page.mouse.move(m.x, m.y); await page.mouse.down(); for (let k = 1; k <= 8; k++){ await page.mouse.move(m.x + 18 * k, m.y + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await page.waitForTimeout(500); };
+    const out = {};
+    let m = await mid(); await dbl([m.x, m.y]);
+    out.locked = await page.evaluate(() => window.__boardLock());
+    const c0 = await camX(); await drag(); const c1 = await camX();
+    out.heldStill = Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 1e-6;
+    m = await mid(); await dbl([m.x, m.y]);
+    out.unlocked = await page.evaluate(() => !window.__boardLock());
+    const c2 = await camX(); await drag(); const c3 = await camX();
+    out.pansAgain = Math.hypot(c3[0] - c2[0], c3[1] - c2[1]) > 1e-3;
+    // the Difficulty item: each step on a game with levels goes to a board of its colour
+    out.fly = await page.evaluate(async () => {
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'lightsout')); const wait = ms => new Promise(ok => setTimeout(ok, ms)); await wait(2500); await window.__settle();
+      const A = window.getFieldApp(), item = A.menu[0].items.find(i => /^Difficulty/.test(typeof i.label === 'function' ? i.label() : i.label)), W = window.FIELD_WORLD, T = W.target, rows = [];
+      for (let k = 0; k < 3; k++){
+        item.on(); const lab = typeof item.label === 'function' ? item.label() : item.label; await wait(400);
+        for (let j = 0; j < 80 && T.active; j++) await wait(250);
+        const f = W.cellAt(T.boardX, T.boardZ), want = /easy/.test(lab) ? 1 : /hard/.test(lab) ? 5 : 3;
+        rows.push({ lab: lab.slice(0, 20), want, got: A._debug.levelOf(f.c, f.r) });
+      }
+      item.on(); item.on(); item.on();   // (round to where it began)
+      return rows; });
+    if (!(out.locked && out.heldStill && out.unlocked && out.pansAgain && out.fly.every(r => r.want === r.got))) failures.push(`[${current}] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} board lock and difficulty flight (a real double tap locked the board and a real drag moved nothing, another let it go and the drag panned; the Difficulty item went to levels ${out.fly.map(r => r.got).join('/')})`);
   }
   }   // (end of part 7)
 } catch (e){

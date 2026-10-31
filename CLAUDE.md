@@ -224,6 +224,21 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   the box's half, its sides and the 0.35 strip (`mt`). A finished hole (`nextHole`: 'holed' on the board you leave, 'done' at the end
   of a round or a hole of your own) puts its ball back on the tee (`ballToTee`) and the board draws it there; the ball still drops into
   the cup (state 'sunk') first.
+- **Pong and air hockey move freely, the board lock, the difficulty flight** (Oct 31: "pong - dont use rackets in tennis. use a paddle", "pong
+  - let the user move anywhere on his side of the board", "airhockey - let the user move anywhere on his side", "double clicking a board
+  should lock the board in position and set the board so it does not pan", "difficulty setting in the menu should move to a board with
+  that difficulty setting"):
+  - Pong's tennis theme draws the same paddle as the others (the racket went). A person's paddle goes anywhere on its half (`ROOM` 0.4
+    forward of its end line, `REACH` 0.07 kept for the tests' stepping face): the finger takes it to the finger's own place along the
+    table as well as across (`handAt`), ↑ ↓ move it, and let go it stays where it was left (it used to step back). Air hockey's mallet
+    already went anywhere on its half; its `HAND_V` went from 5 to 9 so it keeps up with a quick finger.
+  - **The board lock** (`BOARD_LOCK`, `setBoardLock`): a double tap frames the board as before and locks it there; `applyPan` then moves
+    nothing (one finger, two, the trackpad; an app's own drag, aim or steering is still its own, asked first). A double tap on the framed,
+    square, locked board, the menu's Unlock the board (`#bBoardLock`, shown only while locked), any flight (`gotoCell`) or another app lets
+    it go. Zoom, tilt, turn, the keys and the rails still work.
+  - **The difficulty flight** (`flyToLevel`): the Difficulty menu item (the arcade kit's, and mini golf's) flies to the nearest board of
+    its colour after each step: Easy level 1, Normal 3, Hard 5 (mini golf's four: 1, 3, 4, 5), found along the first row, which has every
+    ring; no flight if the board in view is one. The smoke test (part 7, "board lock and difficulty flight") checks both with real input.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

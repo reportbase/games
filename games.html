@@ -1175,6 +1175,8 @@
   <div class="m-sec"><button id="bApp" title="Choose what the field is - chess, Go, draughts, the photo gallery, the games and the rest.">Application&#8230;</button>
   <!-- FULL SCREEN (Oct 17: "add full screen option to the menu"): the field fills the screen, the browser's bars gone;
        the same item, or Escape, brings them back. Hidden where the browser cannot (an iPhone's Safari takes only video). -->
+  <!-- THE BOARD LOCK (Oct 31): shown only while a double tap has locked the view on a board; lets it pan again. -->
+  <button id="bBoardLock" hidden title="A double tap locked this board in place, so the view does not pan. Unlock it to pan again.">Unlock the board</button>
   <button id="bFullScreen" title="Fill the whole screen with the field, the browser's own bars hidden. Choose it again, or press Escape, to leave.">Full screen</button>
   </div>
   <div id="appMenu"></div>
@@ -4407,6 +4409,7 @@ function applyPan(ddx, ddy, src){
       if (_a && _a.onPan && _a.onPan(ddx, ddy, _framedUV(turn.currentX, turn.currentY))) return;   // 3rd: where the finger is on the board, whatever way the view is turned
     } catch {}
   }
+  if (BOARD_LOCK) return;                           // a locked board does not pan (Oct 31)
   const yaw = (st.yaw || 0) * Math.PI / 180;
   const rx = Math.cos(yaw), rz = -Math.sin(yaw);   // screen-right in world
   const fx = Math.sin(yaw), fz = Math.cos(yaw);    // screen-up/forward in world
@@ -7802,6 +7805,7 @@ function goHomeBoard(){
    went with the button rather than lingering as an always-false branch on the
    one function every selection in the build passes through.) */
 function gotoCell(gx, gz){
+  if (BOARD_LOCK) setBoardLock(false);                  // (any flight to a board lets the lock go)
   const SP = gridSpacing();
   target.cellX = gx; target.cellZ = gz;                 // the cell is the truth — see syncTargetToCell
   target.boardX = gx * gridSpacingX(); target.boardZ = gz * gridSpacingZ(); target.shown = true;
@@ -15359,6 +15363,30 @@ function diffLevelOf(app, c, r){
   if (typeof v === 'string') v = ({ easy: 1, normal: 3, hard: 5 })[v];
   return (typeof v === 'number' && v >= 1 && v <= 5) ? Math.round(v) : 0;
 }
+/* (Oct 31: "difficulty setting in the menu should move to a board with that difficulty setting"): choosing Easy, Normal or Hard
+   flies the view to the nearest board of that colour, level 1, 3 or 5 (mini golf's four: 1, 3, 4, 5), found along the first row,
+   which has a board of every ring; the view stays where it is if the board in view is already one. The board is framed as a double
+   tap frames it, without locking it. */
+function flyToLevel(level){
+  try {
+    const app = window.getFieldApp && window.getFieldApp(); if (!app || !level) return false;
+    const GS = Math.max(1, Math.round(Math.sqrt(st.N))), f = framedCell();
+    if (f && diffLevelOf(app, f.c, f.r) === level) return false;
+    const ringNow = f ? diffRingOf(f.c, f.r, GS) : 0;
+    let best = -1;
+    for (let k = 0; k <= GS >> 1; k++){
+      if (diffLevelOf(app, k, 0) !== level) continue;
+      if (best < 0 || Math.abs(k - ringNow) < Math.abs(best - ringNow)) best = k;
+      else if (k > ringNow) break;
+    }
+    if (best < 0) return false;
+    const _off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;
+    if (Math.abs(_off) > 1) target.yaw = 0;
+    gotoCell(best, 0); zoomBoardToFit(); target.active = true;
+    return true;
+  } catch { return false; }
+}
+try { window.flyToLevel = flyToLevel; } catch {}
 function diffRefresh(app, frameNo){
   if (!app){ DIFF.app = null; DIFF.on = false; return; }
   if (app === DIFF.app && frameNo - DIFF.at < 20) return;
@@ -16224,6 +16252,17 @@ mountDials({
    the second undoes the piece selection and leaves the board framed. */
 const DOUBLE_TAP_MS = 400;
 let _lastTap = { x: 0, z: 0, at: -1e9 };
+/* THE BOARD LOCK (Oct 31: "double clicking a board should lock the board in position and set the board so it does not pan."): a
+   double tap frames the board as it always did and now locks it there: no drag, two-finger pan or trackpad scroll moves the view
+   (an app's own drag, aiming or steering, is still the app's). Zoom, tilt and turn, the keys, the rails and the menu work as ever.
+   A double tap on the locked board lets it go again, and any flight to another board (`gotoCell`: Tab, the index, a game's own)
+   or another app unlocks it. */
+let BOARD_LOCK = false;
+function setBoardLock(v){
+  BOARD_LOCK = !!v;
+  try { const b = document.getElementById('bBoardLock'); if (b) b.hidden = !BOARD_LOCK; } catch {}
+}
+try { window.__boardLock = () => BOARD_LOCK; window.__boardLockSet = setBoardLock; } catch {}
 let _lastTapSelected = { at: -1e9, sel: false };   // (was the last tap on a board not yet framed: see noDoubleTap, Oct 16)
 /* ── One gesture, one tap ────────────────────────────────────────────────
    A touch fires pointerdown, and then the browser SYNTHESISES a mouse event
@@ -16532,9 +16571,13 @@ function handleGroundTap(hit, ev){
            double-tapped at any other heading than forward was centred for the old one and then turned off its middle. */
         const _off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;       // −180…180 from forward
         if (Math.abs(_off) > 1) target.yaw = 0;
+        // (Oct 31: a double tap on the board already framed, locked and square lets it go; else it frames the board and locks it there)
+        if (BOARD_LOCK && onFramed && framedAsDefault()){ setBoardLock(false); try { engineNotice('Board unlocked: the view pans again.', 1800); } catch {} return; }
         if (!onFramed) gotoCell(gx, gz);
         zoomBoardToFit();
         target.active = true;
+        PAN.vx = PAN.vz = 0; setBoardLock(true);
+        try { engineNotice('Board locked in place. Double tap it again to pan.', 2200); } catch {}
         return;
       }
       if (autoMode){ setAutoMode(false); return; }   // the stopping click is EATEN —
@@ -17208,6 +17251,9 @@ document.getElementById('bDebugTier')?.addEventListener('click', () => setMenuDe
 
 /* (The menu's own text size, A−, Text N% and A+ (Oct 24), went on Oct 31: "remove text size option from the menu". Every size is still in rem
    and follows the system's own; a size saved under `ui.textScale` is no longer read, so the page is at the system's size.) */
+
+// (the menu's Unlock the board: shown while a double tap has the board locked, Oct 31)
+{ const b = document.getElementById('bBoardLock'); if (b) b.addEventListener('click', () => { setBoardLock(false); try { engineNotice('Board unlocked: the view pans again.', 1800); } catch {} }); }
 
 // Menu show/hide.
 const menuEl    = document.getElementById('menu');
@@ -18693,7 +18739,7 @@ const ARCADE = (() => {
     let v = load(key, 'normal'); if (!/^(easy|normal|hard)$/.test(v)) v = 'normal';
     const L = { get: () => v, set: x => { v = x; }, at: (c, r) => levelOn(v, c, r) };
     L.item = { label: () => 'Difficulty: ' + v + (own ? '' : ' at the corner'), title: (title || '') + (own ? '' : FARTHER),
-               on(){ v = v === 'easy' ? 'normal' : v === 'normal' ? 'hard' : 'easy'; save(key, v); } };
+               on(){ v = v === 'easy' ? 'normal' : v === 'normal' ? 'hard' : 'easy'; save(key, v); try { window.flyToLevel && window.flyToLevel({ easy: 1, normal: 3, hard: 5 }[v]); } catch {} } };
     return L;
   }
   /* BOARD GAMES (Sep 28): after a move, a click; a chime when you take (or turn) pieces, a buzz when
@@ -43149,7 +43195,7 @@ const GOLF_MAKE = SIZE => {
       { label: () => 'Board size: ' + GOLF_SIZE_NAMES[SIZE] + ' (' + NX + ' × ' + NY + ')', title: 'Small 8 × 13 (the course near the corner), Medium 13 × 21 or Tall 8 × 21: every board\'s hole is made at that size. Each size keeps its own holes and best lines.',
         on(){ const ks = Object.keys(GOLF_SIZES); setGolfSize(ks[(ks.indexOf(SIZE) + 1) % ks.length]); } },   // (Oct 20)
       { label: () => 'Difficulty: ' + LEVEL_NAMES[LEVEL_SET], title: 'Easy, Normal, Hard or Expert: the grass\'s speed, the cup\'s size, and how hard the holes are made. Boards near the corner are gentlest and they get harder the farther out you fly; this shifts the whole field easier or harder.',
-        on(){ setLevel(LEVEL_SET + 1); } },
+        on(){ setLevel(LEVEL_SET + 1); try { window.flyToLevel && window.flyToLevel([1, 3, 4, 5][LEVEL_SET]); } catch {} } },   // (and to a board of that level: Oct 31)
       { label: 'Set par for this hole…', title: 'Choose the par the hole on the selected board is played to (1 to 9), or put back its own. Kept in this browser.',
         on(){ return setParHere(); } },
       { label: () => 'Hole numbers: ' + (NUMS.on ? 'on' : 'off'), title: 'Each board shows its hole number in the far left corner.',
@@ -55472,7 +55518,10 @@ const PONG_APP = (() => {
   const SMASH = 0.55, SMASH_UP = 0.15, POINT_T = 0.9, GRACE = 0.8, REC_HZ = 30, REEL_T = 40, MATCH_CAP = 600, REC_CAP = 400, PHOTO_PX = 20, HI_PX = 300;
   const HAND_V = 4, KEY_V = 1.35, KEY_ACC = 12, AI_GAIN = 9, PW_GAP = [6, 10], PW_R = 0.032, PW_LIFE = 9;
   // (Oct 27, "3,4,5": the paddle's step forward and the curved face; each theme's own physics; the arenas)
-  const REACH = 0.07, FWD_V = 1.6, FWD_K = 0.5, FWD_SMASH = 0.7, CURVE_N = 0.42;
+  /* (Oct 31: "pong - let the user move anywhere on his side of the board": the step forward was `REACH` 0.07; now a person's paddle goes
+     anywhere on its own half, `ROOM` forward of its end line, to the finger's own place or by ↑ ↓, and stays where it was left.
+     `REACH` is what the step was, kept for the tests' stepping face.) */
+  const REACH = 0.07, ROOM = 0.4, FWD_V = 1.6, FWD_K = 0.5, FWD_SMASH = 0.7, CURVE_N = 0.42;
   const BOUNCE = { table: { at: 0.72, h1: 0.045, h2: 0.028 }, tennis: { at: 0.78, h1: 0.075, h2: 0.045 } };
   const ICE_F = 0.22, ICE_FLOOR = 0.8, GOAL = 0.26, GRAV = 0.004, GRAV_S = 0.07;
   const LV = [
@@ -55615,9 +55664,9 @@ const PONG_APP = (() => {
       else { P.vd = P.dir * KEY_V; P.acc = KEY_ACC; }
       // (the step forward: a finger moved up from where it pressed, or ↑ / W held; let go, the paddle steps back)
       if (!G.reach || P.ai){ P.vyd = -P.dy * 8; P.accY = 20; }
-      else if (P.dyT != null){ P.vyd = clamp((clamp(P.dyT, 0, REACH) - P.dy) / TICK, -FWD_V, FWD_V); P.accY = 400; }
+      else if (P.dyT != null){ P.vyd = clamp((clamp(P.dyT, 0, ROOM) - P.dy) / TICK, -FWD_V, FWD_V); P.accY = 400; }
       else if (P.ddir){ P.vyd = P.ddir * 0.9; P.accY = 14; }
-      else { P.vyd = clamp(-P.dy * 8, -FWD_V, FWD_V); P.accY = 14; }
+      else { P.vyd = 0; P.accY = 14; }                   // (left where it was put)
     }
     for (let s = 0; s < SUB; s++){
       for (let k = 0; k < 2; k++){
@@ -55627,7 +55676,7 @@ const PONG_APP = (() => {
         if (P.x < hw){ P.x = hw; P.v = Math.max(0, P.v); } else if (P.x > W - hw){ P.x = W - hw; P.v = Math.min(0, P.v); }
         P.fyPrev = faceY(k, G);
         const my = P.accY * dt; P.vy += clamp(P.vyd - P.vy, -my, my); P.dy += P.vy * dt;
-        if (P.dy < 0){ P.dy = 0; P.vy = Math.max(0, P.vy); } else if (P.dy > REACH){ P.dy = REACH; P.vy = Math.min(0, P.vy); }
+        if (P.dy < 0){ P.dy = 0; P.vy = Math.max(0, P.vy); } else if (P.dy > ROOM){ P.dy = ROOM; P.vy = Math.min(0, P.vy); }
       }
       G.t += dt;
       if (G.state === 'serve'){ if (G.t >= G.serveAt) launch(G); continue; }
@@ -56174,13 +56223,7 @@ const PONG_APP = (() => {
     // (the paddles: squashed a moment when they hit; in table tennis a bat with its handle, on the ice a mallet with its knob)
     V.pads.forEach((P, k) => {
       const y = P.y != null ? P.y : PY[k], sq = P.age < 0.12 ? 1 - 0.35 * (1 - P.age / 0.12) : 1, len = 2 * P.hw, col = L.pad[k], back = k === 0 ? 1 : -1;
-      if (th === 'tennis'){
-        // (a racket: its head an oval whose front edge is the face, strings across it, the handle behind)
-        const cy = y - back * PT / 2 + back * len * 0.275;
-        out.push({ kind: 'pgFlat', u: P.x, v: cy, scale: len * 0.92, sz: 0.55, lift: 0.004, color: 0xe9ecef },
-                 { kind: 'pgRing', u: P.x, v: cy, scale: len, sz: 0.55, lift: 0.006 * sq, color: col },
-                 { kind: 'pgPad', u: P.x, v: cy + back * len * 0.38, scale: PT * 0.8, sz: len * 0.3 / (PT * 0.8), sy: 0.8, color: 0x3a2a1e });
-      } else if (th === 'air'){
+      if (th === 'air'){
         // (a mallet: a squat disc, its front the face, a knob on top)
         out.push({ kind: 'pgCap', u: P.x, v: y + back * P.hw * 0.35, scale: len, sz: 0.5, sy: 0.022 / len * sq, color: col },
                  { kind: 'pgCap', u: P.x, v: y + back * P.hw * 0.35, scale: len * 0.3, sy: 0.05 / (len * 0.3), color: mixC(col, 0x000000, 0.35) });
@@ -56259,7 +56302,7 @@ const PONG_APP = (() => {
   function handAt(p, x, y){
     const at = _framedUV(x, y, 0.3); if (!at) return;
     HAND[p.seat].tx = clamp(at.u, 0, 1) * W;
-    HAND[p.seat].dyT = clamp(p.dy0 + (p.seat === 0 ? p.v0 - at.v : at.v - p.v0), 0, REACH);
+    HAND[p.seat].dyT = clamp(p.seat === 0 ? PY[0] - at.v : at.v - PY[1], 0, ROOM);   // (the paddle goes to the finger, along as well as across)
     if (Math.hypot(x - p.x0, y - p.y0) > 10) p.moved = true;
   }
   function handUp(id){
@@ -56341,7 +56384,7 @@ const PONG_APP = (() => {
     if (key === 'theme'){ SET.theme = step(['board', ...THEMES.map(t => t.id)], SET.theme); msg = 'Theme: ' + (SET.theme === 'board' ? 'each board its own' : THEMES.find(t => t.id === SET.theme).name);
       fresh = SET.phys === 'theme'; }                     // (a theme's physics change with it)
     else if (key === 'face'){ SET.face = SET.face === 'curved' ? 'flat' : 'curved'; fresh = true; msg = SET.face === 'curved' ? 'Curved paddles: the ball comes off them as off a curve, its angle in counting' : 'Flat paddles: where the ball meets the paddle sets its angle'; }
-    else if (key === 'reach'){ SET.reach = !SET.reach; fresh = true; msg = SET.reach ? 'Your paddle steps forward too: drag up (or ↑) to step in, into a smash' : 'Your paddle moves across only'; }
+    else if (key === 'reach'){ SET.reach = !SET.reach; fresh = true; msg = SET.reach ? 'Your paddle goes anywhere on your half: the finger (or ↑ ↓) takes it up the table too' : 'Your paddle moves across only'; }
     else if (key === 'phys'){ SET.phys = SET.phys === 'theme' ? 'plain' : 'theme'; fresh = true; msg = SET.phys === 'theme' ? 'Each theme its own physics: a bounce in table tennis and tennis, the puck sliding on the ice, goals in air hockey, a gravity well in space' : 'Plain physics on every table'; }
     else if (key === 'arena'){ SET.arena = !SET.arena; fresh = true; msg = SET.arena ? 'Arenas: every board its own bumpers, walls, sliding walls and portals, more farther out' : 'Arenas off'; }
     else if (i === 2){ SET.target = step([5, 11, 21], SET.target); fresh = true; msg = 'Matches to ' + SET.target + ', won by two'; }
@@ -56445,7 +56488,7 @@ const PONG_APP = (() => {
     _debug: { newMatch, tick, launch, landing, think, hit, point, take, recOf, recWork, recView, recSoon, parOf, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, themeOf,
               gameAt, fresh, begin, stepGame, over, serveNow, pressAt, setting, tilesOf, LV, STEADY, SET, GAMES, RECS, BEST, HAND, KEYS, OWN, POWERS, THEMES,
               arenaOf, arenaStep, physStep, bounceStep, moverX, PHYS, ORDER, LOOK,
-              consts: { W, PY, PT, BR, CPU_HW, TICK, SUB, VMAX, REEL_T, REC_HZ, REACH, CURVE_N, GOAL, BOUNCE }, levelOf: (c, r) => levelAt(boardIdx(c, r)), faceY, padY, hwOf,
+              consts: { W, PY, PT, BR, CPU_HW, TICK, SUB, VMAX, REEL_T, REC_HZ, REACH, ROOM, CURVE_N, GOAL, BOUNCE }, levelOf: (c, r) => levelAt(boardIdx(c, r)), faceY, padY, hwOf,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   return app;
@@ -56471,7 +56514,7 @@ const PONG_APP = (() => {
      knobs, the puck and its trail, a ring where it is struck, the goal's flash, dot-digit scores. */
 const AIRHOCKEY_APP = (() => {
   const W = 0.62, PR = 0.024, GOAL = 0.26, E_RAIL = 0.88, E_MAL = 0.9, VMAX = 3.2, PUCK_H = 0.012, MAL_H = 0.03;
-  const TICK = 1 / 60, SUB = 8, DT = TICK / SUB, GOAL_T = 1.0, STILL_T = 3, GRACE = 0.8, HAND_V = 5, KEY_V = 1.3, KEY_ACC = 14, AI_GAIN = 9;
+  const TICK = 1 / 60, SUB = 8, DT = TICK / SUB, GOAL_T = 1.0, STILL_T = 3, GRACE = 0.8, HAND_V = 9, KEY_V = 1.3, KEY_ACC = 14, AI_GAIN = 9;   // (HAND_V 5 until Oct 31: "let the user move anywhere on his side of the board": the mallet already went anywhere on its half, but lagged a quick finger; now it keeps up)
   const REC_HZ = 30, REEL_T = 40, MATCH_CAP = 600, REC_CAP = 400, PHOTO_PX = 20, HI_PX = 300, SMASH_V = 2.1;
   const LV = [
     { speed: 0.85, drag: 0.35, react: 0.32, err: 0.06,  v: 0.95, acc: 5,  attack: 0.45, aimErr: 0.35, bank: 0 },
@@ -62665,6 +62708,7 @@ function _defaultFitSoon(app){
 }
 for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, () => { _defFitArmed++; }, true);
 window.setFieldApp = app => {
+  try { window.__boardLock && window.__boardLockSet && window.__boardLockSet(false); } catch {}   // (another app: the lock lets go, Oct 31)
   // (the app being left may put back what it changed for its own view: Levels its tilt, Oct 13)
   try { if (FIELD_APP && FIELD_APP !== app && FIELD_APP.onLeave) FIELD_APP.onLeave(); } catch {}
   try { restWake(); } catch {}                                // (another game: the field wakes from rest, Oct 11)
