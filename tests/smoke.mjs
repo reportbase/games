@@ -2704,7 +2704,8 @@ try {
       for (const k of [0, 5, 11, 21]){ const H = D.HOLES[k], T = H.tee, h0 = D.hOf(H, T.x, T.y), lvl = Math.max(...[[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]].map(([a, b]) => Math.abs(D.hOf(H, T.x + a * CW, T.y + b * CW) - h0)));
         out.push({ k, rise: +(h0 - D.hOf(H, T.x, T.y - 1.6 * CW)).toFixed(3), lvl: +lvl.toFixed(5), inX: T.x / CW, inY: T.y / CW }); }
       return out; });
-    if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.5 && t.inX >= 1.5 && t.inX <= 8 - 1.5) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
+    // (the tee in from the rail by the box's half, its sides and the strip, 1.1 cells: Oct 31's smaller box, 1.4 before)
+    if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.0 && t.inX >= 1.0 && t.inX <= 8 - 1.0) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
     // the par set through the menu's own prompt
     // (a board framed first: Set par acts on the framed one, and CI may have none framed here, Oct 20)
     await page.evaluate(async () => { const D = window.getFieldApp()._debug; D.editor.fly(2, 1); await new Promise(ok => setTimeout(ok, 2500)); });
