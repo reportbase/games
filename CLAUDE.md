@@ -1346,20 +1346,20 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **Controls**: the arrow keys or WASD drive (up forward, down back, left and right turn); a drag steers the tank toward the
     finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`). Two players (the menu's Players,
     localStorage `tankmaze.players`): Player 1 runs on WASD, Player 2 hunts on the arrows, a finger steers the tank nearest it.
-  - **Click to move, the time and the best** (Oct 31: "tank maze should show the time elapsed since the start of the game ... and the best
-    elapsed time for that board ... should move the tank to where the user clicks, unless he clicks again or pans or uses the keyboard.
-    escape cancels motion."): a tap on the board sets `g.goal` (the spot, for the nearest person's tank: `onCellTap(c, r, u, v)`), which
-    `personCmd` follows along the maze (`pathOf`, cell by cell, then straight to the spot, `steer` as the hunters' own), clearing it on
-    arrival. A second tap is a new goal; a drag that moves, a key (`KEYS`) or Escape takes it away (Escape is the field's again once
-    there is no goal). The title says `time N s` while it plays (the round's own clock, `G.t`) and `best N s` (the longest lasted, kept
-    as before; it said "longest"). The smoke test (part 7, "tank maze click to move") checks the goal reached, a new goal, the real
-    Escape and a real key clearing it, and the title.
+  - **The time and the best; more tanks farther out** (Oct 31: "tank maze should show the time elapsed since the start of the game ... and the
+    best elapsed time for that board", then "remove the tap to move. Higher difficulty levels should have more tanks."): the title says
+    `time N s` while it plays (the round's own clock, `G.t`) and `best N s` (the longest lasted). A tap on the board moves nothing (a
+    click-to-move, `g.goal`, lived a day and went); a drag steers and the keys drive, as before. The number of tanks is the level's
+    (`TANKS` [2, 2, 3, 3, 4], `tanksOf`: you and one hunter at levels 1 and 2, two at 3 and 4, three at 5), for games and for the boards no
+    one plays; the maze a cell a side bigger for each tank past two, and the best's key says `#n` past two. The menu's Tanks setting
+    (`tankmaze.count`) went. Measured, the steady runner over 12 mazes a level (40 s at most): lasted 36.3, 34.9, 21.8, 15.0 and 12.4 s,
+    caught 2, 5, 9, 12 and 12 times of 12 at levels 1–5. The smoke test (part 7, "tank maze tanks by level") checks the counts, a tap moving nothing and the title.
   - States: 'ready' until the first key or touch, 'count' (`COUNT_T`) once, 'play'; a catch is a burst, and the game is over `BOOM_T`
     (1.5 s) later with how long you lasted (`roundOver`); a tap on a finished board plays it again. There is no timer shown (Oct 29:
     "Remove the Tank maze timer": the gold bar along the near wall, the "hold out N s" in the title and the seconds left went).
   - **A board no one plays** shows a round of the steady runner against its board's hunters (`recSoon`, a little at a time in
     the boards' share of time, `REC_HZ` 15 a second, `shownOf`), played back on the page's clock with a rest.
-  - The menu: Difficulty, Tanks (2–4, localStorage `tankmaze.count`), Players, Sound (a burst when caught), Start this board again.
+  - The menu: Difficulty, Players, Sound (a burst when caught), Start this board again.
   - Drawn: walls as boxes (the outer one the level's colour), each tank tracks, hull, turret and gun turned to its heading
     (never a yaw of 0, `yawOf`), a burst on a catch. An inner wall stops at the outer wall's inner face (Oct 22:
     "the inner walls of the maze should not extend into the outer walls."); the tilt maze's walls too.
