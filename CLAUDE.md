@@ -2510,11 +2510,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   and Android Chrome's font size (`<meta name="text-scale" content="scale">`). Write new text sizes in rem. Pictures drawn on
   canvases (the bottom row's tiles, the boards' lettering) are sized to their tiles and boards and stay as they were. The
   smoke test sets the root to 150% and wants the menu's words and the button's glyph half again as big, and no text left in px.
-  **The page's own text size** (Oct 24: "its just broken on one of my android phones chromium browser", a Pixel 10 Pro, where
-  draw's plain gallery pages were small too): not every browser passes the phone's size on, so the menu's first section has
-  A−, Text N% and A+ (`#textSizeRow`, `data-keep-open`, so the menu stays open): the root steps through 85%–200% of what the
-  system gives (read with the page's own size taken off), the middle button puts it back, kept in localStorage `ui.textScale`
-  (`window.uiTextScale`). The smoke test clicks the real A+ and the middle button.
+  **The page's own text size, taken out** (Oct 24, then Oct 31: "remove text size option from the menu"): the menu's A−, Text N% and A+
+  (`#textSizeRow`, kept in `ui.textScale`) went, with its smoke check. The page follows the system's size only; a scale saved before is
+  ignored.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 - **The walk over the boards in view** (Oct 27: "mini-golf and golf tanks are to slow to be usable. they are pretty, the best
