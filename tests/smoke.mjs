@@ -6796,7 +6796,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // (a board of an earlier check may have been left cleared, and a wave comes a moment after the last one: the most rocks it had
       //  in six seconds, from a board that is not cleared, Oct 29)
       D.CLEARED.delete((L.c + 3) + '_' + L.r);
-      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); out.other = 0; for (let k = 0; k < 720; k++){   // (twelve seconds: six gave a board with no rock on CI, Oct 31)
+      const g3 = D.newGame(); g3.at = [L.c + 3, L.r]; g3.lv = 'normal'; D.start(g3);   // (a game of its own, not the board's reel adopted at a frame the clock picks: it sat between waves on CI twice, Oct 31)
+       out.other = 0; for (let k = 0; k < 720; k++){   // (twelve seconds: six gave a board with no rock on CI, Oct 31)
        D.step(g3, 1 / 60); out.other = Math.max(out.other, g3.rocks.length); }
       D.games.delete((L.c + 3) + '_' + L.r); D.CLEARED.delete((L.c + 3) + '_' + L.r);
       D.LIVE = was; D.CLEARED.delete(L.c + '_' + L.r); try { localStorage.removeItem('asteroids.cleared'); } catch {}
