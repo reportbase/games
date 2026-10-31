@@ -239,6 +239,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - **The difficulty flight** (`flyToLevel`): the Difficulty menu item (the arcade kit's, and mini golf's) flies to the nearest board of
     its colour after each step: Easy level 1, Normal 3, Hard 5 (mini golf's four: 1, 3, 4, 5), found along the first row, which has every
     ring; no flight if the board in view is one. The smoke test (part 7, "board lock and difficulty flight") checks both with real input.
+- **Rotation on a trackpad** (Oct 31: "the two finger rotation works on touch devices, not on touch pads on portable computers"): a pad's two
+  fingers are wheel events, not touches, so the glass twist never reached them. WebKit's `gesturechange` carries a `rotation` (degrees,
+  clockwise rising), now turned into the view's yaw about the screen's middle as the glass twist is, after the same `TWIST_DEAD`; Chrome and
+  Firefox send a pad no rotation gesture at all, so Alt (Option) with a two-finger sideways scroll turns the view there (`WHEEL`'s pad
+  branch, 0.25° a pixel). The smoke test (part 7, "trackpad rotation") sends the Alt scroll; WebKit's gesture events cannot be made by a test.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

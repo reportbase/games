@@ -6934,6 +6934,22 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!(out.locked && out.heldStill && out.unlocked && out.pansAgain && out.fly.every(r => r.want === r.got))) failures.push(`[${current}] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} board lock and difficulty flight (a real double tap locked the board and a real drag moved nothing, another let it go and the drag panned; the Difficulty item went to levels ${out.fly.map(r => r.got).join('/')})`);
   }
+  {
+    /* TWO-FINGER ROTATION ON A TRACKPAD (Oct 31: "the two finger rotation works on touch devices, not on touch pads on portable computers"): a
+       pad sends wheel events, not touches, and Chrome sends no rotation: Alt with a two-finger sideways scroll turns the view about its
+       middle (WebKit's gesture rotation, which a test cannot send, goes the same way). */
+    current = 'trackpad rotation'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'checkers')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const yaw = () => page.evaluate(() => window.FIELD_WORLD.st.yaw);
+    const y0 = await yaw();
+    await page.mouse.move(640, 400); await page.keyboard.down('Alt');
+    for (let k = 0; k < 8; k++){ await page.mouse.wheel(12.5, 0); await page.waitForTimeout(30); }
+    await page.keyboard.up('Alt'); await page.waitForTimeout(300);
+    const y1 = await yaw();
+    const turned = Math.abs(y1 - y0) > 10 && Math.abs(y1 - y0) < 60;
+    if (!turned) failures.push(`[${current}] yaw ${y0} -> ${y1}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trackpad rotation (Alt with a two-finger sideways scroll turned the view ${(y1 - y0).toFixed(1)} degrees)`);
+  }
   }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);

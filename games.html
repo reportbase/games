@@ -4497,13 +4497,20 @@ function _panRelease(e){
    `scale` is cumulative from gesturestart (1 at the start), so what matters is
    the RATIO since the last event; a gesture that ends and starts again begins
    from 1 without a jump. */
+/* (Oct 31: "the two finger rotation works on touch devices, not on touch pads on portable computers"): WebKit's gesture events carry the
+   pair's turn too, `rotation` in degrees, clockwise rising and cumulative from gesturestart, as the glass twist is. It turns the view
+   about the middle of the screen as the twist does (`yawAboutCentre`), after the same dead stretch `TWIST_DEAD` so a pinch's wobble
+   turns nothing and not paid back, so nothing jumps. Chrome and Firefox send a trackpad no rotation at all (only ctrl+wheel for a
+   pinch), so there Alt (Option) with a two-finger sideways scroll turns the view: see the wheel handler. */
+let _gestureRot = null, _gestureTurning = false;
 let _gestureScale = null;          // last scale seen, null between gestures
 let _gestureZoomAt = 0;            // when WebKit last drove the altitude
 addEventListener('gesturestart', e => {
   e.preventDefault();
   _gestureScale = (typeof e.scale === 'number' && e.scale > 0) ? e.scale : 1;
+  _gestureRot = (typeof e.rotation === 'number') ? e.rotation : null; _gestureTurning = false;
 }, { passive: false });
-addEventListener('gestureend', e => { e.preventDefault(); _gestureScale = null; },
+addEventListener('gestureend', e => { e.preventDefault(); _gestureScale = null; _gestureRot = null; _gestureTurning = false; },
                  { passive: false });
 addEventListener('gesturechange', e => {
   e.preventDefault();                          // never the document's zoom
@@ -4515,6 +4522,13 @@ addEventListener('gesturechange', e => {
      this one, and the altitude would move while the pair was committing to a
      pitch or a slide. The pair wins wherever it is live. */
   if (pinchD !== null) return;
+  // the pair's turn, if the browser says one (a trackpad twist in Safari)
+  if (typeof e.rotation === 'number' && _gestureRot !== null){
+    let dr = e.rotation - _gestureRot;
+    if (!_gestureTurning){
+      if (Math.abs(dr) >= TWIST_DEAD){ _gestureTurning = true; dr -= Math.sign(dr) * TWIST_DEAD; _gestureRot = e.rotation; if (dr) yawAboutCentre(dr); }
+    } else { _gestureRot = e.rotation; if (dr) yawAboutCentre(dr); }
+  }
   const s = (typeof e.scale === 'number' && e.scale > 0) ? e.scale : null;
   if (s === null) return;
   const prev = _gestureScale || s;
@@ -5086,6 +5100,13 @@ function mountControls(opts){
        inertia pass discards it) — the system already sends its own momentum
        events after the fingers lift, and two momenta on one flick is a
        gesture that will not stop. */
+    if (e.altKey && wheelIsPad(e)){
+      /* ALT (OPTION) AND TWO FINGERS TURN THE VIEW (Oct 31, as above): a trackpad that sends no rotation gesture turns the view about
+         its middle with the sideways (or, failing that, the up-and-down) travel of the pair, as a twist on glass does. */
+      const d = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
+      if (d) yawAboutCentre(d * 0.25);
+      return;
+    }
     if (wheelIsPad(e)){
       /* AN APP MAY TAKE THE PAD'S TWO FINGERS (Sep 29, Air raid: "recenter the bomber when using the
          two finger touch pad, maybe something like what the keyboard is doing"). onPadPan(dx, dy),
