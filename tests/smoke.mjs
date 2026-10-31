@@ -6958,15 +6958,15 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tankmaze')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
     const out = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, f = window.FIELD_WORLD.cellAt(window.FIELD_WORLD.target.boardX, window.FIELD_WORLD.target.boardZ), o = {};
-      o.tanks = [1, 2, 3, 4, 5].map(lv => { let c = 0, r = 0; for (let k = 0; k < 400; k++){ c = 3 * k; r = 0; if (D.levelOf(c, r) === lv) break; }
-        const g = D.fresh(c, r); return g.G.tanks.length; });
+      // (Normal puts the corner at level 2, so level 1 has no board: take whichever of the five levels some board along row 0 has)
+      o.tanks = []; for (let lv = 1; lv <= 5; lv++){ for (let k = 0; k < 400; k++){ if (D.levelOf(3 * k, 0) === lv){ o.tanks.push([lv, D.fresh(3 * k, 0).G.tanks.length]); break; } } }
       const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; D.begin(g); g.state = 'play'; g.last = performance.now();
       A.onCellTap(f.c, f.r, 0.9, 0.9); o.noGoal = !g.goal;
       g.G.t = 12.34; o.title = A.cellTitle(f.c, f.r);
       return o; });
-    const ok = out.tanks.join() === '2,2,3,3,4' && out.noGoal && /time 12\.3 s/.test(out.title);
+    const ok = out.tanks.length >= 3 && out.tanks.every(([lv, n]) => n === [2, 2, 3, 3, 4][lv - 1]) && out.tanks.some(([lv]) => lv >= 3) && out.noGoal && /time 12\.3 s/.test(out.title);
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ out })}`);
-    console.log(`${ok ? 'ok  ' : 'FAIL'} tank maze tanks by level (${out.tanks.join('/')} tanks at levels 1-5, a tap moving nothing, the title "${out.title}")`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} tank maze tanks by level (${out.tanks.map(([lv, n]) => n + ' at level ' + lv).join(', ')}, a tap moving nothing, the title "${out.title}")`);
   }
   }   // (end of part 7)
 } catch (e){
