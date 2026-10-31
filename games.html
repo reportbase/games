@@ -52963,13 +52963,35 @@ const TANKMAZE_APP = (() => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     const g = liveGame(); if (!g || g.state === 'over') return;
     const K = KEYS[e.key];
-    if (K){ e.preventDefault(); e.stopPropagation(); HELD.add(K[0] + seatOfKeys(g, K[1])); begin(g); }
+    if (K){ e.preventDefault(); e.stopPropagation(); g.goal = null; HELD.add(K[0] + seatOfKeys(g, K[1])); begin(g); }   // (a key takes the tank back from a click's goal)
+  }, true);
+  // (Escape cancels the motion a click began: Oct 31; with no goal it is the field's, as ever)
+  addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || !g.goal) return;
+    g.goal = null; e.preventDefault(); e.stopPropagation();
   }, true);
   addEventListener('keyup', e => { const K = KEYS[e.key]; if (K){ let hit = false; for (const k of [0, 1]) hit = HELD.delete(K[0] + k) || hit; if (hit){ e.preventDefault(); e.stopPropagation(); } } }, true);
   addEventListener('blur', () => HELD.clear());
   // a person's command this step: the keys, and the finger steering toward itself
   function personCmd(g, k){
     const t = g.G.tanks[k], s = g.G.L.s;
+    /* A CLICK SENDS THE TANK THERE (Oct 31: "tank maze should move the tank to where the user clicks, unless he clicks again or pans or
+       uses the keyboard. escape cancels motion."): `g.goal` is the spot clicked, followed along the maze (`pathOf`, cell by cell, as the
+       hunters follow theirs) until the tank is there; another click makes a new goal, a drag, a key or Escape takes it away. */
+    if (g.goal && g.goal.k === k){
+      if (DRAG && DRAG.k === k && DRAG.moved) g.goal = null;
+      else if (!HELD.has('F' + k) && !HELD.has('B' + k) && !HELD.has('L' + k) && !HELD.has('R' + k) && !(DRAG && DRAG.k === k && DRAG.at)){
+        const L = g.G.L, here = cellOf(L, t.x, t.y), there = cellOf(L, g.goal.u, g.goal.v);
+        if (here === there){
+          if (Math.hypot(g.goal.u - t.x, g.goal.v - t.y) < 0.18 * s){ g.goal = null; return { drive: 0, turn: 0 }; }
+          return steer(t, g.goal.u, g.goal.v);
+        }
+        const p = pathOf(L, here, there);
+        if (p.length > 1){ const [x, y] = centre(L, p[1]); return steer(t, x, y); }
+        g.goal = null;
+      }
+    }
     let drive = (HELD.has('F' + k) ? 1 : 0) - (HELD.has('B' + k) ? 0.7 : 0), turn = (HELD.has('R' + k) ? 1 : 0) - (HELD.has('L' + k) ? 1 : 0);
     if (DRAG && DRAG.k === k && DRAG.at){
       const dx = DRAG.at.u - t.x, dy = DRAG.at.v - t.y, da = angDiff(Math.atan2(dy, dx), t.h), d = Math.hypot(dx, dy);
@@ -53092,9 +53114,10 @@ const TANKMAZE_APP = (() => {
     cellItems(c, r){ return itemsOf(viewOf(c, r)); },
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), D = LV[lv - 1], m = D.m + SET.n - 2, best = BEST.get(idx + '@' + lv + (SET.n > 2 ? '#' + SET.n : ''));
-      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · longest ' + best + ' s' : '');
+      const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + (SET.n > 2 ? ', ' + (SET.n - 1) + ' hunters' : '') + (best ? ' · best ' + best + ' s' : '');
       if (!g) return head;
-      return head + (g.state === 'over' ? ' · caught after ' + g.survived + ' s' : g.state === 'play' ? ' · ' + (SET.players === 2 ? 'Player 2 hunting' : 'keep away') : '');
+      return head + (g.state === 'over' ? ' · caught after ' + g.survived + ' s'
+        : g.state === 'play' ? ' · time ' + g.G.t.toFixed(1) + ' s · ' + (SET.players === 2 ? 'Player 2 hunting' : 'keep away') : '');
     },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(c, r){ return true; },
@@ -53103,9 +53126,12 @@ const TANKMAZE_APP = (() => {
       if (LIVE && !TOLD){ TOLD = true; say('Your tank is green and has no gun: keep away from the red one for as long as you can. Drive with the arrows or WASD, or drag toward where it should go.', 6000); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
-    onCellTap(c, r){
+    onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;       // (the tap the field still calls after a short drag)
       const g = gameAt(c, r);
+      if (g.state !== 'over' && u != null && u >= 0 && u <= 1 && v >= 0 && v <= 1){      // (a click sends the tank there: see personCmd)
+        const k = seatNear(g, u, v); if (k >= 0){ g.goal = { k, u, v }; begin(g); LIVE = { c, r }; return true; }
+      }
       if (g.state === 'over'){
         if (performance.now() - (g.overAt || 0) < 800) return true;
         app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
