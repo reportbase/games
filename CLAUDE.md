@@ -219,6 +219,26 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     One of My holes takes it into its source. Any other hole keeps it in localStorage `golf.pars` (by size, `SIZED`) under
     `originOf` the hole as written, put on the hole when a game starts on it (`parApply`, in `holeGame`; `H.par0` is its own).
   - The editor has a Par tile again (it steps 1 to 9), and the menu's Par higher and Par lower.
+- **A smaller tee box, the ball back on the tee** (Oct 31: "mini golf - put ball back on tee after it goes in hole", "mini-golf - smaller tee
+  box"): `TEE_BOX` is 0.8 of a cell across (1.2), its sides `TEE_EDGE` 0.35 (0.45), and `compileHole` keeps the tee in from the rail by
+  the box's half, its sides and the 0.35 strip (`mt`). A finished hole (`nextHole`: 'holed' on the board you leave, 'done' at the end
+  of a round or a hole of your own) puts its ball back on the tee (`ballToTee`) and the board draws it there; the ball still drops into
+  the cup (state 'sunk') first.
+- **Pong and air hockey move freely, the board lock, the difficulty flight** (Oct 31: "pong - dont use rackets in tennis. use a paddle", "pong
+  - let the user move anywhere on his side of the board", "airhockey - let the user move anywhere on his side", "double clicking a board
+  should lock the board in position and set the board so it does not pan", "difficulty setting in the menu should move to a board with
+  that difficulty setting"):
+  - Pong's tennis theme draws the same paddle as the others (the racket went). A person's paddle goes anywhere on its half (`ROOM` 0.4
+    forward of its end line, `REACH` 0.07 kept for the tests' stepping face): the finger takes it to the finger's own place along the
+    table as well as across (`handAt`), ↑ ↓ move it, and let go it stays where it was left (it used to step back). Air hockey's mallet
+    already went anywhere on its half; its `HAND_V` went from 5 to 9 so it keeps up with a quick finger.
+  - **The board lock** (`BOARD_LOCK`, `setBoardLock`): a double tap frames the board as before and locks it there; `applyPan` then moves
+    nothing (one finger, two, the trackpad; an app's own drag, aim or steering is still its own, asked first). A double tap on the framed,
+    square, locked board, the menu's Unlock the board (`#bBoardLock`, shown only while locked), any flight (`gotoCell`) or another app lets
+    it go. Zoom, tilt, turn, the keys and the rails still work.
+  - **The difficulty flight** (`flyToLevel`): the Difficulty menu item (the arcade kit's, and mini golf's) flies to the nearest board of
+    its colour after each step: Easy level 1, Normal 3, Hard 5 (mini golf's four: 1, 3, 4, 5), found along the first row, which has every
+    ring; no flight if the board in view is one. The smoke test (part 7, "board lock and difficulty flight") checks both with real input.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
@@ -1337,51 +1357,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     a catch, nothing ending the game with the hunter far away for three times the old time, the hunters' wait, the steady runner
     lasting longer at level 1 than at level 5, 3- and 4-tank rounds ending only with a catch, a real key driving, a real drag
     steering, a catch ending the game and keeping how long it lasted, two players with Player 2 hunting on the arrows, and a board no one plays moving with no shells drawn.
-- **Platformer: a level that goes on across the boards** (Oct 30: "what about a platform that continues to the next board", then
-  "go" on the offered design: right and left only, stomping walkers, no coins): `PLATFORM_APP`, id `platformer`, before the marble
-  run (it uses `MATCH_KIT`, which is defined first). A side-on level a board, seen as the tanks' boards are (the board is `ASP` 1.6
-  times as wide as it is tall, `boardShape`; game x is u × ASP, game y the board's v, down is toward you, and an item's z runs up
-  the screen: a box is `pfBox`, its sx the width, sz the height, sy the thickness, every item a yaw of 1e-6).
-  - **The seams** (`seamH`): board (c, r)'s right edge meets (c − 1, r)'s left one (u grows toward −x, as Asteroids' `hop` reads
-    it); both read the ground's height there from the left board's number alone (0.62, 0.7 or 0.78), and every board is flat for
-    four of its 40 columns each side with nothing on them, so the way over is always there.
-  - **Every board its own level** (`makeLevel(idx, lv, sL, sR, a)`, seeded by `boardIdx`, a level 1–5 (ring plus the Difficulty,
-    Easy 0, Normal 1, Hard 2, as Simon's) and an attempt): `LV` gives the chance of a gap after a flat run and its widest (0.13 to
-    0.27 against a jump's 0.47), the highest step up (0.06 to 0.1 against a jump's 0.225), spikes, walkers (`walk`, patrolling a
-    flat run: a pure function of the level's clock, `enemyAt`), bats (`bat`, bobbing high, from level 2), platforms (one-way) and
-    the walkers' speed. A gap wants four flat columns before it and gives four after, a step three (without that, every fall the
-    steady player had was a hop that began on a step or landed a column from an edge); a spike wants a run of eight columns and
-    stands six in or more (a hop over a step lands 0.23 on); the flag (a checkpoint) is in the flat columns 18–21.
-  - **Made until the steady player crosses it clean** (`levelFor`, `TRIES` 8): each attempt's run is the board's recording
-    (`recordOf`, `RECS`), the first with no life lost kept, else the nearest. Measured on 100 boards a level: every one crossed,
-    clean 100/100 at levels 1–4 and 99 at level 5, 1.0 to 1.9 attempts, about 1 ms a level; par about 2.6 s at every level (a
-    run of 1.6 at 0.62 a second, the hazards cost the steady player no time).
-  - **The physics** (`stepS`, steps of 1/120 s; `RUN` 0.62, `GRAV` 3.2, `JUMP` 1.2: a jump 0.22 high and 0.46 along, cut short to
-    about 0.1 when the key is let go, `CUT`; `COYOTE` 0.09 s after a ledge, `BUFFER` 0.1 s before landing): the ground is solid
-    from the side and from above, platforms from above only. A walker landed on from above (feet above its middle, falling) is
-    stomped (the jump bounces, higher with the key held); any other touch of one, a spike or a fall past the bottom costs a life
-    (`die`: the player bursts, `DEAD_T` 0.6 s, then stands again at the board's checkpoint with `SAFE_T` 0.8 s of blinking
-    safety). The checkpoint is where you came in, the flag once touched. No life is ever lost for good.
-  - **The steady player** (`botInp`): runs right, jumps at an edge or a step (a step's jump held only 0.1 up, else it lands on
-    the next thing), and for a spike, a walker or a bat at its height a jump only if a rollout of it on a copy (`rollOk`) comes
-    down alive. A board no one plays shows its run (`REC_HZ` 30, each board at its own phase, 1.5 s rest); its time is the
-    board's par, stars (`starsOf`) by your time crossing from the left edge: twice par ★★★, 3.5 times ★★, else ★ (a person's
-    hands are slower than a bot that never hesitates); the fastest kept (localStorage `platformer.best`).
-  - **Playing**: ← → or A D run, ↑ W Z or K jump (Space is the field's pause, so not that). A press on the framed board is the
-    game's (`MATCH_KIT.hands`, before the field, as Pong's and pinball's): the lower part (v ≥ 0.45) runs toward the finger's side
-    of the player, a press on the upper part is a jump held as long as it is, a finger each; a press on a board not begun
-    starts it. **Running off an edge** (`cross`): the board beside takes the player (right edge: the board at x − 1, by `gotoCell`
-    from `target.cellX`, as Asteroids' `hop`), with its speed and its jump, the checkpoint at the edge it came in by; the view
-    flies there if you were looking at the board you left (yours to move, as the flight in Asteroids), and a board crossed from
-    its left edge is timed. The old board goes back to showing its steady player.
-  - Not done: a level editor in the bottom row (the bot proving the level crossable, as the tilt maze's editor), moving
-    platforms, coins and power-ups, going up or down between boards.
-  - The smoke test (part 7, "platformer") checks the seams meeting and flat, 60 levels at each of levels 1, 3 and 5 crossed by the
-    steady player (and the flag's columns flat), the physics on levels of its own (a jump's height and cut, a gap cleared and a
-    pit falling, a step stopping you and a hop getting over, a spike, a walker walked into and stomped, a checkpoint kept through
-    a fall), a board's par and stars, and real input: the real arrow running it, the real up jumping, the steady player's keys
-    carrying it over the edge with the view following, real touches (lower part run, upper part jump, a finger each), and a
-    board no one plays moving.
+- **Platformer, taken out** (Oct 30–31: "remove platformer application."): `PLATFORM_APP` (a side-on level a board, seams agreeing by
+  the left board's number, levels made until a steady bot crossed them clean, the player handed on to the board beside with the
+  view following) lived one day, PR 152, and is gone with its smoke check.
 - **Golf tanks, taken out** (Oct 29: "this ame does not work very well. it seems very complicated, but not very easy to play.",
   then "remove  golf tanks."): `GOLFTANK_APP` (Oct 22–29, the tank maze's battle on mini golf's holes, then roaming them as
   Asteroids) is gone, with what mini golf kept only for it: its kit (`_kit`, `solidsAt`, `bareOf` and the bare copies
@@ -2524,9 +2502,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (50) boards long centred where you were (`RAIL`, `window.__posRail`): top ahead, bottom behind. The thumb (`#railThumb`) is
   where you are in it (`railFrac`), as tall as the screen's share of it (`railThumb`, 5%–40%), and moves as you move: auto
   motion's steps, the drift, a pan. A drag of the thumb moves the view with it (`railMoveTo`; the glide in `stepThrust` and
-  `autoTick` wait while it is held), a press on the track goes there and drags on; let go, or travel off either end, or the way
+  `autoTick` wait while it is held), a press on the track takes it where it is and moves it by the finger's travel (Oct 31: "scroll bars - don't support taps, only support panning": no rail goes anywhere on a press that never moves, the tilt and turn rails' press-to-choose included); let go, or travel off either end, or the way
   of motion turns, and the window centres on you again (`railCentre`). Speed stays with the keys, a swipe's drift, the dial and
-  auto motion. The smoke test drags the real thumb a quarter up (12.5 boards ahead), presses low on the track, and runs Space's
+  auto motion. The smoke test drags the real thumb a quarter up (12.5 boards ahead), presses low on the track (nothing moves: a tap, Oct 31), and runs Space's
   auto motion, wanting the thumb to climb.
 - **Screen diagnostics** (Oct 29: the default framing sits about a fifth left of centre, and the buttons and text are very small, on one
   of the owner's Google phones only): `?diag=1` shows a box at the top left (the last script in the page) with `innerWidth` and
@@ -2547,11 +2525,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   and Android Chrome's font size (`<meta name="text-scale" content="scale">`). Write new text sizes in rem. Pictures drawn on
   canvases (the bottom row's tiles, the boards' lettering) are sized to their tiles and boards and stay as they were. The
   smoke test sets the root to 150% and wants the menu's words and the button's glyph half again as big, and no text left in px.
-  **The page's own text size** (Oct 24: "its just broken on one of my android phones chromium browser", a Pixel 10 Pro, where
-  draw's plain gallery pages were small too): not every browser passes the phone's size on, so the menu's first section has
-  A−, Text N% and A+ (`#textSizeRow`, `data-keep-open`, so the menu stays open): the root steps through 85%–200% of what the
-  system gives (read with the page's own size taken off), the middle button puts it back, kept in localStorage `ui.textScale`
-  (`window.uiTextScale`). The smoke test clicks the real A+ and the middle button.
+  **The page's own text size, taken out** (Oct 24, then Oct 31: "remove text size option from the menu"): the menu's A−, Text N% and A+
+  (`#textSizeRow`, kept in `ui.textScale`) went, with its smoke check. The page follows the system's size only; a scale saved before is
+  ignored.
 - **Libraries** come from CDNs: three.js r128 (cdnjs), chess.js (jsdelivr),
   pdf.js, unzipit and libarchive (unpkg).
 - **The walk over the boards in view** (Oct 27: "mini-golf and golf tanks are to slow to be usable. they are pretty, the best

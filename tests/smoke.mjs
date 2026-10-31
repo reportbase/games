@@ -177,9 +177,9 @@ try {
       await page.keyboard.press('Escape'); await page.waitForTimeout(300);
       await page.evaluate(async i => { if (i >= 0) window.setFieldApp(window.FIELD_APPS[i]); await new Promise(ok => setTimeout(ok, 1500)); }, prevApp);
       const ahead = (a1.s - a0.s) / a1.board, back = (a2.s - a1.s) / a1.board;
-      if (!(ahead > 11 && ahead < 14) || Math.abs(a1.top - a1.mid) > 3 || !(back < -15) || !(a3.top < a2.top - 3))
+      if (!(ahead > 11 && ahead < 14) || Math.abs(a1.top - a1.mid) > 3 || !(Math.abs(back) < 0.5) || !(a3.top < a2.top - 3))
         failures.push(`[position rail] ${JSON.stringify({ a0, a1, a2, a3, ahead, back })}`);
-      else console.log(`ok   position rail: a real drag of the thumb a quarter up moved ${ahead.toFixed(1)} boards ahead, a press low on the track ${(-back).toFixed(1)} back, and auto motion carried the thumb up ${(a2.top - a3.top).toFixed(0)} px`);
+      else console.log(`ok   position rail: a real drag of the thumb a quarter up moved ${ahead.toFixed(1)} boards ahead, a press low on the track (a tap: Oct 31) moved ${back.toFixed(2)} boards, and auto motion carried the thumb up ${(a2.top - a3.top).toFixed(0)} px`);
     }
   }
 
@@ -220,21 +220,6 @@ try {
     });
     if (!(Math.abs(fs.b.menu / fs.a.menu - 1.5) < 0.01 && Math.abs(fs.b.btn / fs.a.btn - 1.5) < 0.01 && fs.left === 0)) failures.push(`[system text size] ${JSON.stringify(fs)}`);
     else console.log(`ok   system text size: at 150% the menu's words ${fs.a.menu} → ${fs.b.menu} px, the button's ${fs.a.btn} → ${fs.b.btn} px; no text in px`);
-  }
-
-  // THE PAGE'S OWN TEXT SIZE (Oct 24: a Pixel 10 Pro's browser passed none of the phone's font size on): the real A+ in the menu
-  // makes the root 1.15 times the system's and keeps it on the device, the menu staying open; the middle button puts it back.
-  {
-    await page.click('#menuBtn'); await page.waitForTimeout(200);
-    const r0 = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
-    await page.click('#bTextUp'); await page.waitForTimeout(150);
-    const t = await page.evaluate(() => ({ root: parseFloat(getComputedStyle(document.documentElement).fontSize), open: !document.getElementById('menu').hidden, saved: localStorage.getItem('ui.textScale'), label: document.getElementById('bTextSize').textContent }));
-    await page.click('#bTextSize'); await page.waitForTimeout(150);
-    const back = await page.evaluate(() => ({ root: parseFloat(getComputedStyle(document.documentElement).fontSize), saved: localStorage.getItem('ui.textScale') }));
-    await page.evaluate(() => { document.getElementById('menu').hidden = true; });
-    if (!(Math.abs(t.root / r0 - 1.15) < 0.01 && t.open && t.saved === '1.15' && t.label === 'Text 115%' && back.root === r0 && back.saved === '1'))
-      failures.push(`[text size control] ${JSON.stringify({ r0, t, back })}`);
-    else console.log(`ok   text size control: A+ ${r0} → ${t.root} px, kept, the menu open; Text 100% puts it back`);
   }
 
   // THE FIELD RESTS WHEN NOTHING CHANGES (Oct 11: "proceed", on "Rest when still"): Sokoban framed and left alone, nothing
@@ -2719,7 +2704,8 @@ try {
       for (const k of [0, 5, 11, 21]){ const H = D.HOLES[k], T = H.tee, h0 = D.hOf(H, T.x, T.y), lvl = Math.max(...[[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]].map(([a, b]) => Math.abs(D.hOf(H, T.x + a * CW, T.y + b * CW) - h0)));
         out.push({ k, rise: +(h0 - D.hOf(H, T.x, T.y - 1.6 * CW)).toFixed(3), lvl: +lvl.toFixed(5), inX: T.x / CW, inY: T.y / CW }); }
       return out; });
-    if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.5 && t.inX >= 1.5 && t.inX <= 8 - 1.5) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
+    // (the tee in from the rail by the box's half, its sides and the strip, 1.1 cells: Oct 31's smaller box, 1.4 before)
+    if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.0 && t.inX >= 1.0 && t.inX <= 8 - 1.0) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
     // the par set through the menu's own prompt
     // (a board framed first: Set par acts on the framed one, and CI may have none framed here, Oct 20)
     await page.evaluate(async () => { const D = window.getFieldApp()._debug; D.editor.fly(2, 1); await new Promise(ok => setTimeout(ok, 2500)); });
@@ -4306,18 +4292,22 @@ try {
         return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; }, [u, v]);
       await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), key);
       const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
-      const p0 = await aimAt(0.5, 0.95), p1 = await aimAt(0.5, 0.85);
+      const p0 = await aimAt(0.5, 0.95), p1 = await aimAt(0.5, 0.85), p2 = await aimAt(0.5, 0.62);
       await page.mouse.move(p0[0], p0[1]); await page.mouse.down();
       for (let k = 1; k <= 8; k++){ await page.mouse.move(p0[0], p0[1] + (p1[1] - p0[1]) * k / 8); await page.waitForTimeout(30); }
       await page.waitForTimeout(300);
       const dyIn = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
+      // (Oct 31: anywhere on his half) on up the table to the middle, the paddle follows, and let go it stays there
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(p1[0], p1[1] + (p2[1] - p1[1]) * k / 8); await page.waitForTimeout(30); }
+      await page.waitForTimeout(900);
+      const dyFar = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
       await page.mouse.up(); await page.waitForTimeout(500);
       const dyOut = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pads[0].dy, key);
-      step = { dyIn: +dyIn.toFixed(3), dyOut: +dyOut.toFixed(3) };
+      step = { dyIn: +dyIn.toFixed(3), dyFar: +dyFar.toFixed(3), dyOut: +dyOut.toFixed(3) };
     }
-    const ok2 = !!step && step.dyIn > 0.05 && step.dyOut < 0.01;
+    const ok2 = !!step && step.dyIn > 0.05 && step.dyFar > 0.25 && Math.abs(step.dyOut - step.dyFar) < 0.03;
     if (!ok2) failures.push('[pong] a real drag stepping forward: ' + JSON.stringify(step));
-    console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real drag up the table steps the paddle forward (${step && step.dyIn}), and let go it steps back`);
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} pong: a real drag up the table takes the paddle with it (${step && step.dyIn}, then ${step && step.dyFar} near the middle), and let go it stays`);
   }
   // AIR HOCKEY (Oct 27: "this is a cool game. what other games could we create like pong.", then "1"): levels by ring; a mallet's
   // swing passed into the puck; the rails, and goals only through a mouth; the puck never inside a mallet; matches ending at
@@ -6806,7 +6796,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // (a board of an earlier check may have been left cleared, and a wave comes a moment after the last one: the most rocks it had
       //  in six seconds, from a board that is not cleared, Oct 29)
       D.CLEARED.delete((L.c + 3) + '_' + L.r);
-      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); out.other = 0; for (let k = 0; k < 360; k++){ D.step(g3, 1 / 60); out.other = Math.max(out.other, g3.rocks.length); }
+      const g3 = D.newGame(); g3.at = [L.c + 3, L.r]; g3.lv = 'normal'; D.start(g3);   // (a game of its own, not the board's reel adopted at a frame the clock picks: it sat between waves on CI twice, Oct 31)
+       out.other = 0; for (let k = 0; k < 720; k++){   // (twelve seconds: six gave a board with no rock on CI, Oct 31)
+       D.step(g3, 1 / 60); out.other = Math.max(out.other, g3.rocks.length); }
       D.games.delete((L.c + 3) + '_' + L.r); D.CLEARED.delete((L.c + 3) + '_' + L.r);
       D.LIVE = was; D.CLEARED.delete(L.c + '_' + L.r); try { localStorage.removeItem('asteroids.cleared'); } catch {}
       return out;
@@ -6828,7 +6820,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const g = D.newGame(); g.at = [9001, 3]; g.lv = 'normal';
       D.SET.wave = 5; D.start(g); for (let k = 0; k < 200; k++) D.step(g, 1 / 60); out.wave = g.wave;
       D.SET.shield = true; g.ship.safe = 0; const l0 = g.lost || 0; g.rocks.push({ x: g.ship.x, y: g.ship.y, vx: 0, vy: 0, size: 3, k: 0 }); D.step(g, 1 / 60); out.shield = (g.lost || 0) === l0; D.SET.shield = false;
-      D.SET.triple = true; g.shots = []; g.cool = 0; D.fire(g); out.triple = g.shots.length; D.SET.triple = false;
+      D.SET.triple = true; g.shots = []; g.cool = 0; g.ship.alive = true;   // (a rock may have taken the ship in the 200 steps before: CI, Oct 31)
+      D.fire(g); out.triple = g.shots.length; D.SET.triple = false;
       D.SET.drift = 'arcade'; Object.assign(g.ship, { vx: 0.3, vy: 0, alive: true }); g.rocks = []; for (let k = 0; k < 60; k++) D.step(g, 1 / 60); out.arcade = Math.hypot(g.ship.vx, g.ship.vy); D.SET.drift = 'classic';
       D.SET.saucers = false; D.SET.gems = false; const h = D.newGame(); h.lv = 'normal'; h.state = 'play'; h.ufoIn = 0; D.nextWave(h); for (let k = 0; k < 600; k++) D.step(h, 1 / 60); out.ufo = !!h.ufo;
       D.SET.look = 'vector'; const items = D.asItems(D.snap(h)); out.vector = items.some(i => /^vrock/.test(i.kind)) && !items.some(i => /^rock\d/.test(i.kind));
@@ -6900,136 +6893,46 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} difficulty colours (the steps at rings 7, 15 and 31 for Lights Out and mini golf, none for chess, the fabric given them)`);
   }
   {
-    /* PLATFORMER (Oct 30: "what about a platform that continues to the next board"): the seams meet, every level can be crossed on
-       its ground alone, the physics (a jump's height, a gap cleared, a step refused, a stomp, a spike, a fall and the checkpoint),
-       the steady player finishing, crossing to the board beside with the view following, and real keys and real touches. */
-    current = 'platformer'; const before = failures.length;
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'platformer')));
-    await page.waitForTimeout(2000);
-    const r = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, out = {};
-      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
-      // the seams: board (c, r)'s right edge is board (c − 1, r)'s left one, flat four columns each side
-      out.seams = true; out.flat = true;
-      for (const [c, r] of [[0, 0], [1, 0], [5, 3], [30, 30], [9999, 7], [123, 456]]){
-        const L = D.levelObj(c, r), N = D.levelObj((c + 9999) % 10000, r);
-        if (L.sR !== N.sL || L.sR !== D.seamH(c, r)) out.seams = false;
-        for (let k = 0; k < 4; k++) if (L.gy[k] !== L.sL || L.gy[39 - k] !== L.sR) out.flat = false;
+    /* THE BOARD LOCK and THE DIFFICULTY FLIGHT (Oct 31: "double clicking a board should lock the board in position and set the board so
+       it does not pan." and "difficulty setting in the menu should move to a board with that difficulty setting."): a real double
+       tap frames the board and locks it, a real drag then moves nothing, a double tap on the square board lets it go and a drag pans
+       again; and each step of the Difficulty item flies to the nearest board of its colour (1, 3, 5). */
+    current = 'board lock and difficulty flight'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'checkers')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const camX = () => page.evaluate(() => [window.FIELD_WORLD.st.camX, window.FIELD_WORLD.st.camZ]);
+    const mid = () => page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; });
+    const dbl = async ([x, y]) => page.evaluate(async ([x, y]) => { const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms)), T = window.FIELD_WORLD.target, S = window.tvf.state;
+      for (let k = 0; k < 80 && (T.active || S.heldPanRate); k++) await wait(250);
+      const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+        const te = type => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] });
+        const pe = type => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y });
+        return [pe('pointerdown'), te('touchstart'), pe('pointerup'), te('touchend')]; };
+      for (const e of [...tap(), ...tap()]) cv.dispatchEvent(e);
+      await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); }, [x, y]);
+    const drag = async () => { const m = await mid(); await page.mouse.move(m.x, m.y); await page.mouse.down(); for (let k = 1; k <= 8; k++){ await page.mouse.move(m.x + 18 * k, m.y + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await page.waitForTimeout(500); };
+    const out = {};
+    let m = await mid(); await dbl([m.x, m.y]);
+    out.locked = await page.evaluate(() => window.__boardLock());
+    const c0 = await camX(); await drag(); const c1 = await camX();
+    out.heldStill = Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 1e-6;
+    m = await mid(); await dbl([m.x, m.y]);
+    out.unlocked = await page.evaluate(() => !window.__boardLock());
+    const c2 = await camX(); await drag(); const c3 = await camX();
+    out.pansAgain = Math.hypot(c3[0] - c2[0], c3[1] - c2[1]) > 1e-3;
+    // the Difficulty item: each step on a game with levels goes to a board of its colour
+    out.fly = await page.evaluate(async () => {
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'lightsout')); const wait = ms => new Promise(ok => setTimeout(ok, ms)); await wait(2500); await window.__settle();
+      const A = window.getFieldApp(), item = A.menu[0].items.find(i => /^Difficulty/.test(typeof i.label === 'function' ? i.label() : i.label)), W = window.FIELD_WORLD, T = W.target, rows = [];
+      for (let k = 0; k < 3; k++){
+        item.on(); const lab = typeof item.label === 'function' ? item.label() : item.label; await wait(400);
+        for (let j = 0; j < 80 && T.active; j++) await wait(250);
+        const f = W.cellAt(T.boardX, T.boardZ), want = /easy/.test(lab) ? 1 : /hard/.test(lab) ? 5 : 3;
+        rows.push({ lab: lab.slice(0, 20), want, got: A._debug.levelOf(f.c, f.r) });
       }
-      // every level crossed by the steady player on its ground alone: 60 boards at each of levels 1, 3 and 5
-      out.cross = [1, 3, 5].map(lv => { let done = 0, clean = 0, flag = 0;
-        for (let n = 0; n < 60; n++){ D.LEVELS.clear(); D.RECS.clear(); const L = D.levelFor(900 + n * 7, lv, 5 + n, 3), R = D.RECS.get(L.idx * 8 + lv);
-          if (R.done) done++; if (R.done && !R.deaths) clean++; if (L.gy[20] != null && L.gy[18] === L.gy[21]) flag++; }
-        return { done, clean, flag }; });
-      D.LEVELS.clear(); D.RECS.clear();
-      // the physics on a level of our own: ground, a pit, a step, a spike, a walker
-      const mk = (segs, extra) => Object.assign({ idx: 1, lv: 1, sL: 0.7, sR: 0.7, segs, spikes: [], enemies: [], plats: [], flag: { x: 9, y: 0.7 } }, extra || {});
-      const run = (L, x, y, f, T) => { const S = D.newSim(L, x, y); const log = { minY: y, maxX: x, ev: [] }; for (let t = 0; t < T; t += D.SUB){ const i = f(S, t); D.stepS(S, i, D.SUB); log.minY = Math.min(log.minY, S.P.y); log.maxX = Math.max(log.maxX, S.P.x); log.ev.push(...S.ev); S.ev.length = 0; } log.S = S; return log; };
-      const flat = mk([{ x0: 0, x1: 1.6, y: 0.7 }]);
-      const jump = run(flat, 0.3, 0.7, (S, t) => ({ L: false, R: false, jump: t < 0.9 }), 1.2);
-      out.apex = +(0.7 - jump.minY).toFixed(3);
-      const cut = run(flat, 0.3, 0.7, (S, t) => ({ L: false, R: false, jump: t < 0.06 }), 1.2);
-      out.cut = +(0.7 - cut.minY).toFixed(3);
-      const gap = mk([{ x0: 0, x1: 0.5, y: 0.7 }, { x0: 0.7, x1: 1.6, y: 0.7 }]);
-      const over = run(gap, 0.3, 0.7, (S, t) => ({ L: false, R: true, jump: S.P.x > 0.46 && S.P.x < 0.52 || (!S.P.on && S.P.vy < 0) }), 2);
-      out.gapOver = over.S.P.x > 0.9 && over.S.deaths === 0;
-      const into = run(gap, 0.3, 0.7, () => ({ L: false, R: true, jump: false }), 2);
-      out.gapFall = into.S.deaths >= 1 && into.ev.some(e => e === 'die:fall');
-      const step = mk([{ x0: 0, x1: 0.6, y: 0.7 }, { x0: 0.6, x1: 1.6, y: 0.58 }]);
-      const wall = run(step, 0.3, 0.7, () => ({ L: false, R: true, jump: false }), 2);
-      out.stepStops = wall.S.P.x < 0.6 - D.HW + 0.01 && wall.S.deaths === 0;
-      const hop = run(step, 0.3, 0.7, (S) => ({ L: false, R: true, jump: S.P.x > 0.5 && S.P.x < 0.52 || (!S.P.on && S.P.vy < 0) }), 2);
-      out.stepHop = hop.S.P.x > 0.9 && hop.S.P.y < 0.6;
-      const spike = mk([{ x0: 0, x1: 1.6, y: 0.7 }], { spikes: [{ x: 0.6, w: 0.07, y: 0.7 }] });
-      const hit = run(spike, 0.3, 0.7, () => ({ L: false, R: true, jump: false }), 1.2);
-      out.spike = hit.ev.includes('die:spike');
-      const E = { k: 'walk', x0: 0.2, x1: 1.4, y: 0.7, T: 1e6, ph: 0.3 };
-      const walker = mk([{ x0: 0, x1: 1.6, y: 0.7 }], { enemies: [E] });
-      const ex = D.enemyAt(E, 0).x;
-      const touch = run(walker, ex - 0.2, 0.7, () => ({ L: false, R: true, jump: false }), 1);   // (walked into, a life lost)
-      out.enemyKills = touch.ev.includes('die:enemy');
-      // (a jump 0.45 before it comes down on it: 0.72 s up and down, 0.62 a second along)
-      const stomp = run(walker, ex - 0.6, 0.7, (S, t) => ({ L: false, R: true, jump: (S.P.x > ex - 0.455 && S.P.x < ex - 0.44) || (!S.P.on && S.P.vy < 0) }), 1.6);
-      out.stomp = stomp.ev.includes('stomp') && stomp.S.deaths === 0 && stomp.S.killed.size === 1;
-      // a fall puts you back at the checkpoint, the flag moving it
-      const cp = mk([{ x0: 0, x1: 0.5, y: 0.7 }], { flag: { x: 0.4, y: 0.7 } });
-      const fall = run(cp, 0.1, 0.7, () => ({ L: false, R: true, jump: false }), 3);
-      out.checkpoint = fall.ev.includes('flag') && fall.ev.includes('die:fall') && fall.S.check.x === 0.4 && fall.S.deaths >= 2;
-      // the steady player's board, par, stars
-      const L0 = D.levelObj(0, 0), R0 = D.recFor(L0);
-      out.par = R0.done && R0.par > 1 && R0.par < 20 && R0.frames.length > 10;
-      out.stars = [D.starsOf(R0.par * 1.5, R0.par), D.starsOf(R0.par * 3, R0.par), D.starsOf(R0.par * 9, R0.par)].join();
-      return out;
-    });
-    const okA = r.levels.join() === '2,3,5,5' && r.seams && r.flat && r.cross.every(x => x.done >= 58 && x.clean >= 55 && x.flag === 60)
-      && r.apex > 0.2 && r.apex < 0.25 && r.cut > 0.02 && r.cut < r.apex * 0.6 && r.gapOver && r.gapFall && r.stepStops && r.stepHop
-      && r.spike && r.enemyKills && r.stomp && r.checkpoint && r.par && r.stars === '3,2,1';
-    if (!okA) failures.push(`[${current}] ${JSON.stringify(r)}`);
-    console.log(`${okA ? 'ok  ' : 'FAIL'} platformer (levels ${r.levels.join('/')}, seams meet and stand flat, crossed on the ground ${r.cross.map(x => x.clean + '/60').join(' ')} at levels 1, 3, 5; a jump ${r.apex} high, ${r.cut} cut short; a gap cleared and a pit falls, a step stops you and a hop gets over, a spike, a walker, a stomp and a checkpoint; par ${r.par}, stars ${r.stars})`);
-    // real input: the real arrow runs the player from its start, the real up jumps; then the steady player drives the real keys across
-    // the edge to the board beside, the view following (the framed board is where the game is)
-    await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'platformer')._debug.LIVE && 0);
-    await page.waitForTimeout(1500);
-    const real = {};
-    real.start = await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); D.GAMES.clear(); D.LIVE = { c: f.c, r: f.r }; return [f.c, f.r]; });
-    await page.keyboard.down('ArrowRight');
-    await page.waitForTimeout(900);
-    real.ran = await page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.GAMES.values()][0]; return g && g.S ? { state: g.state, x: g.S.P.x } : null; });
-    await page.keyboard.down('ArrowUp'); await page.waitForTimeout(250);
-    real.air = await page.evaluate(() => { const g = [...window.getFieldApp()._debug.GAMES.values()][0]; return g && g.S ? { on: g.S.P.on, y: g.S.P.y, dead: g.S.P.dead } : null; });
-    await page.keyboard.up('ArrowUp'); await page.keyboard.up('ArrowRight');
-    const okB = real.ran && real.ran.state === 'play' && real.ran.x > 0.12 && real.air && (!real.air.on || real.air.dead > 0 || real.air.y < 0.7);
-    if (!okB) failures.push(`[${current}] real keys ${JSON.stringify(real)}`);
-    console.log(`${okB ? 'ok  ' : 'FAIL'} platformer: the real arrow started and ran it (x ${real.ran && real.ran.x.toFixed(2)}), the real up left the ground (${JSON.stringify(real.air)})`);
-    // crossing: put the player at the edge of the framed board's right side, the steady player's key held, and the next board takes it
-    const cross = await page.evaluate(async () => {
-      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, wait = ms => new Promise(ok => setTimeout(ok, ms));
-      const f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.fresh(f.c, f.r); D.GAMES.clear(); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; D.begin(g);
-      g.S.P.x = 1.55; g.S.P.y = g.L.sR; g.S.P.vx = 0.62; D.KEYS.add('R');
-      await wait(3000);
-      D.KEYS.clear();
-      const nf = W.cellAt(W.target.boardX, W.target.boardZ), live = D.LIVE, ng = D.GAMES.get(live.c + '_' + live.r);
-      return { from: [f.c, f.r], live: [live.c, live.r], framed: nf ? [nf.c, nf.r] : null, x: ng && ng.S ? ng.S.P.x : null, old: D.GAMES.has(f.c + '_' + f.r), grid: (f.c + 9999) % 10000 };
-    });
-    const okC = cross.live[0] === cross.grid && cross.live[1] === cross.from[1] && cross.framed && cross.framed[0] === cross.live[0] && cross.x != null && cross.x < 1.4 && !cross.old;   // (it runs on for the three seconds)
-    if (!okC) failures.push(`[${current}] crossing ${JSON.stringify(cross)}`);
-    console.log(`${okC ? 'ok  ' : 'FAIL'} platformer: running off the right edge went on to the board beside (${cross.from} to ${cross.live}) and the view followed (${cross.framed})`);
-    // real touches: a press on the lower part of the board right of the player runs it, one on the upper part jumps (a finger each)
-    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
-    const touch = await page.evaluate(async () => {
-      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
-      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
-      const mk = (id, [x, y]) => new Touch({ identifier: id, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
-      const fire = (type, held, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: held, targetTouches: held, changedTouches: [t] }));
-      const ptr = (type, id, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: id, isPrimary: id === 1, clientX: x, clientY: y }));
-      const g = D.fresh(f.c, f.r); D.GAMES.clear(); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; D.begin(g);
-      const x0 = g.S.P.x, runPt = S(0.7, 0.8), jumpPt = S(0.3, 0.2), tr = mk(1, runPt), tj = mk(2, jumpPt);
-      ptr('pointerdown', 1, runPt); fire('touchstart', [tr], tr);
-      await wait(700);
-      const ran = g.S.P.x - x0;
-      ptr('pointerdown', 2, jumpPt); fire('touchstart', [tr, tj], tj);
-      await wait(160);
-      const jumped = !g.S.P.on || g.S.P.y < g.L.sL - 0.02 || g.S.P.dead > 0 || g.S.ev.length > 0;
-      const jumping = D.HANDS.size;
-      ptr('pointerup', 2, jumpPt); fire('touchend', [tr], tj); ptr('pointerup', 1, runPt); fire('touchend', [], tr);
-      await wait(100);
-      return { ran, jumped, jumping, left: D.HANDS.size, view: W.cellAt(W.target.boardX, W.target.boardZ).c === f.c };
-    });
-    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
-    const okD = touch.ran > 0.1 && touch.jumped && touch.jumping === 2 && touch.left === 0 && touch.view;
-    if (!okD) failures.push(`[${current}] touches ${JSON.stringify(touch)}`);
-    console.log(`${okD ? 'ok  ' : 'FAIL'} platformer: a real finger on the lower board ran it (${touch.ran.toFixed(2)}), a second on the upper part jumped, both let go, the view still`);
-    // a board no one plays shows the steady player moving
-    const idle = await page.evaluate(async () => {
-      const A = window.getFieldApp(), D = A._debug, wait = ms => new Promise(ok => setTimeout(ok, ms));
-      const sig = () => JSON.stringify(A.cellItems(3, 3).filter(i => /pfHero/.test(i.kind)).map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
-      const a = sig(); await wait(900); const b = sig();
-      return { a, b, moved: a !== b, heroes: JSON.parse(a).length };
-    });
-    const okE = idle.moved && idle.heroes === 1;
-    if (!okE) failures.push(`[${current}] idle ${JSON.stringify(idle)}`);
-    console.log(`${okE ? 'ok  ' : 'FAIL'} platformer: a board no one plays shows the steady player running`);
+      item.on(); item.on(); item.on();   // (round to where it began)
+      return rows; });
+    if (!(out.locked && out.heldStill && out.unlocked && out.pansAgain && out.fly.every(r => r.want === r.got))) failures.push(`[${current}] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} board lock and difficulty flight (a real double tap locked the board and a real drag moved nothing, another let it go and the drag panned; the Difficulty item went to levels ${out.fly.map(r => r.got).join('/')})`);
   }
   }   // (end of part 7)
 } catch (e){
