@@ -6792,7 +6792,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // (a board of an earlier check may have been left cleared, and a wave comes a moment after the last one: the most rocks it had
       //  in six seconds, from a board that is not cleared, Oct 29)
       D.CLEARED.delete((L.c + 3) + '_' + L.r);
-      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); out.other = 0; for (let k = 0; k < 360; k++){ D.step(g3, 1 / 60); out.other = Math.max(out.other, g3.rocks.length); }
+      const g3 = D.gameAt(L.c + 3, L.r); D.start(g3); out.other = 0; for (let k = 0; k < 720; k++){   // (twelve seconds: six gave a board with no rock on CI, Oct 31)
+       D.step(g3, 1 / 60); out.other = Math.max(out.other, g3.rocks.length); }
       D.games.delete((L.c + 3) + '_' + L.r); D.CLEARED.delete((L.c + 3) + '_' + L.r);
       D.LIVE = was; D.CLEARED.delete(L.c + '_' + L.r); try { localStorage.removeItem('asteroids.cleared'); } catch {}
       return out;
@@ -6814,7 +6815,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const g = D.newGame(); g.at = [9001, 3]; g.lv = 'normal';
       D.SET.wave = 5; D.start(g); for (let k = 0; k < 200; k++) D.step(g, 1 / 60); out.wave = g.wave;
       D.SET.shield = true; g.ship.safe = 0; const l0 = g.lost || 0; g.rocks.push({ x: g.ship.x, y: g.ship.y, vx: 0, vy: 0, size: 3, k: 0 }); D.step(g, 1 / 60); out.shield = (g.lost || 0) === l0; D.SET.shield = false;
-      D.SET.triple = true; g.shots = []; g.cool = 0; D.fire(g); out.triple = g.shots.length; D.SET.triple = false;
+      D.SET.triple = true; g.shots = []; g.cool = 0; g.ship.alive = true;   // (a rock may have taken the ship in the 200 steps before: CI, Oct 31)
+      D.fire(g); out.triple = g.shots.length; D.SET.triple = false;
       D.SET.drift = 'arcade'; Object.assign(g.ship, { vx: 0.3, vy: 0, alive: true }); g.rocks = []; for (let k = 0; k < 60; k++) D.step(g, 1 / 60); out.arcade = Math.hypot(g.ship.vx, g.ship.vy); D.SET.drift = 'classic';
       D.SET.saucers = false; D.SET.gems = false; const h = D.newGame(); h.lv = 'normal'; h.state = 'play'; h.ufoIn = 0; D.nextWave(h); for (let k = 0; k < 600; k++) D.step(h, 1 / 60); out.ufo = !!h.ufo;
       D.SET.look = 'vector'; const items = D.asItems(D.snap(h)); out.vector = items.some(i => /^vrock/.test(i.kind)) && !items.some(i => /^rock\d/.test(i.kind));
