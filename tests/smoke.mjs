@@ -6227,9 +6227,10 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       await page.waitForTimeout(800);
       return shape();
     };
-    const before = await shape();
-    const p1 = await tapKind(true), p2 = await tapKind(false);
-    if (!(before.w > before.h)) bad.push('the collection did not start landscape: ' + JSON.stringify(before));
+    // (a landscape print first, then a portrait one, then a landscape one: every load is a fresh set, so the board's shape at the start is
+    //  the load's own pick over two shapes of each and is not asked)
+    const p0 = await tapKind(false), p1 = await tapKind(true), p2 = await tapKind(false);
+    if (!(p0.w > p0.h)) bad.push('a tap on a landscape print did not make the board landscape: ' + JSON.stringify(p0));
     if (!(p1.h > p1.w)) bad.push('a tap on a portrait print did not make the board portrait: ' + JSON.stringify(p1));
     if (!(p2.w > p2.h)) bad.push('a tap on a landscape print did not make it landscape again: ' + JSON.stringify(p2));
     if (bad.length) failures.push('[tap reshapes] ' + bad.join('; '));
@@ -6250,8 +6251,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.keyboard.press('Tab');
     await page.waitForFunction(() => { try { return Object.keys(JSON.parse(localStorage.getItem('gallery.pos') || '{}')).length > 0; } catch { return false; } }, null, { timeout: 30000 }).catch(() => {});
     const r = await page.evaluate(() => { let m = {}; try { m = JSON.parse(localStorage.getItem('gallery.pos') || '{}'); } catch {} const G = window.GALLERY_APP, T = window.FIELD_TARGET; return { saved: Object.values(m), now: G._pick(T.cellX | 0, T.cellZ | 0) }; });
-    if (r.saved.length !== 1) bad.push('nothing was kept: ' + JSON.stringify(r));
-    else if (!Number.isInteger(r.saved[0].i) || r.saved[0].i < 0) bad.push('the kept print is not a print number: ' + JSON.stringify(r));   // (not compared with the framed board's: the flight's last board and the first it framed differ, and earlier checks' pictures may still be hung)
+    // (an entry or two: the collection before this one, which every load now keys, may have written its own just before this one began)
+    if (r.saved.length < 1) bad.push('nothing was kept: ' + JSON.stringify(r));
+    else if (r.saved.some(v => !Number.isInteger(v.i) || v.i < 0)) bad.push('the kept print is not a print number: ' + JSON.stringify(r));   // (not compared with the framed board's: the flight's last board and the first it framed differ, and earlier checks' pictures may still be hung)
     // …and a view only PANNED (no flight, so no framing) keeps its page too: clear the store, drag the view across a board or two, wait.
     await page.evaluate(() => { try { localStorage.removeItem('gallery.pos'); } catch {} window.GALLERY_APP._posReset && window.GALLERY_APP._posReset(); });
     await page.mouse.move(1000, 200); await page.mouse.down();
@@ -6259,7 +6261,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.mouse.up();
     await page.waitForFunction(() => { try { return Object.keys(JSON.parse(localStorage.getItem('gallery.pos') || '{}')).length > 0; } catch { return false; } }, null, { timeout: 15000 }).catch(() => {});
     const pn = await page.evaluate(() => { try { return Object.keys(JSON.parse(localStorage.getItem('gallery.pos') || '{}')).length; } catch { return -1; } });
-    if (pn !== 1) bad.push('a panned view kept nothing: ' + pn);
+    if (pn < 1) bad.push('a panned view kept nothing: ' + pn);
     if (bad.length) failures.push('[gallery position] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery position: the print on the framed board is kept in localStorage under the collection's key after the view steps on`);
   }
