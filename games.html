@@ -16609,12 +16609,11 @@ function handleGroundTap(hit, ev){
         const _off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;       // −180…180 from forward
         if (Math.abs(_off) > 1) target.yaw = 0;
         // (Oct 31: a double tap on the board already framed, locked and square lets it go; else it frames the board and locks it there)
-        if (BOARD_LOCK && onFramed && framedAsDefault()){ setBoardLock(false); try { engineNotice('Board unlocked: the view pans again.', 1800); } catch {} return; }
+        if (BOARD_LOCK && onFramed && framedAsDefault()){ setBoardLock(false); return; }   // (Nov 1: "telling me I just double clicked is stupid": no notice says it)
         if (!onFramed) gotoCell(gx, gz);
         zoomBoardToFit();
         target.active = true;
         PAN.vx = PAN.vz = 0; setBoardLock(true);
-        try { engineNotice('Board locked in place. Double tap it again to pan.', 2200); } catch {}
         return;
       }
       if (autoMode){ setAutoMode(false); return; }   // the stopping click is EATEN —
@@ -17290,7 +17289,7 @@ document.getElementById('bDebugTier')?.addEventListener('click', () => setMenuDe
    and follows the system's own; a size saved under `ui.textScale` is no longer read, so the page is at the system's size.) */
 
 // (the menu's Unlock the board: shown while a double tap has the board locked, Oct 31)
-{ const b = document.getElementById('bBoardLock'); if (b) b.addEventListener('click', () => { setBoardLock(false); try { engineNotice('Board unlocked: the view pans again.', 1800); } catch {} }); }
+{ const b = document.getElementById('bBoardLock'); if (b) b.addEventListener('click', () => { setBoardLock(false); }); }
 
 // Menu show/hide.
 const menuEl    = document.getElementById('menu');
@@ -18571,7 +18570,10 @@ const BOARD_KIT = (() => {
   /* A game's word in the notice at the top (Oct 27: "do the message helpers next"): `say(ms, quiet)` gives the function forty-odd
      games each wrote out, say(message, how long), shown for `ms` unless told otherwise, and not at all while `quiet()` says so
      (a game playing its own demo, Settings muted). The notice may not be there yet, so a failure is let go. */
-  const say = (ms, quiet) => (m, t) => { if (quiet && quiet()) return; try { engineNotice(m, t || ms); } catch {} };
+  // (Nov 1: "You add message all over the place. mostly they are stupid and not needed.") No game's routine words go to the notice
+  // any more: this returns a function that says nothing, and the games' own state (titles, the board) says what happened. The
+  // field's notices for errors, sign-in, chess and files are `engineNotice` itself and stay.
+  const say = (ms, quiet) => (m, t) => {};
   /* The rest each game wrote out for itself (Oct 27: "what else could be shared between games?", then "do 1 and 2"): a game a
      board, kept by the board's key (`gkey`, `gameAt(GAMES, fresh)`: made on first want) and the board being played, if this
      game is the one up (`liveGame(appOf, liveOf, gameAt)`, each a getter, since a game's own `app` and `LIVE` come later in its
