@@ -6432,7 +6432,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const bad = [];
     await page.route(/flare\.tangent\.workers\.dev\/bucket\?bucket=BUCKET1&key=kept\.md/, r => r.fulfill({ contentType: 'text/markdown', headers: { 'access-control-allow-origin': '*' }, body: '# Kept\n\n' + 'Some words here. '.repeat(40) + '\n' }));
     await page.evaluate(() => localStorage.setItem('gallery.last', JSON.stringify({ k: 'bucket', bucket: 'BUCKET1', names: ['kept.md'] })));
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.goto(page.url().split('?')[0].split('#')[0] + '?app=gallery', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().id === 'gallery', null, { timeout: 150000 }).catch(() => {});
     await page.waitForFunction(() => { const E = window.GALLERY_APP && window.GALLERY_APP._epub; return E && E.md && E.label === 'Kept'; }, null, { timeout: 60000 }).catch(() => {});
     const r = await page.evaluate(() => { const E = window.GALLERY_APP._epub; return E ? E.label : null; });
