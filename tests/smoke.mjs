@@ -3359,6 +3359,10 @@ try {
       const live = await look();
       const okSl = right.view === 5 && left.view === 0 && right.dots >= 6 && live.view === -1;
       // a real click in the margin (a corner) hides the slider, another shows it again (Nov 1: "toggle the bottom row visibility ...")
+      // (the wrong pad above ended that game, and a tap on a game that is over begins another: a live one again for the margin)
+      await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.fresh(f.c, f.r);
+        D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; g.n = 6; g.state = 'input'; g.i = 0; g.deadline = performance.now() / 1000 + 600; });
+      await page.waitForTimeout(600);
       const cor = await aimAt(0.97, 0.03);
       await page.mouse.click(cor.x, cor.y); await page.waitForTimeout(300);
       const hid = await look();
@@ -3378,6 +3382,17 @@ try {
       const okFig = Object.values(off).every(d => Math.abs(d) < 1e-9);
       if (!okFig) failures.push('[2048 figures] ' + JSON.stringify(off));
       console.log(`${okFig ? 'ok  ' : 'FAIL'} 2048: the figures are centred on their tile (2, 16, 128, 1024)`);
+    }
+    // the crossing catches you only by touching a piece (Nov 1: "seems like it would be better to just ignore the cells ... cell based
+    // contact conflates that."): a pawn left on its start square for a minute is never caught, however many pieces take aim past it, and
+    // the game keeps no threats
+    {
+      const cr = await page.evaluate(() => { const D = window.FIELD_APPS.find(a => a.id === 'crossing')._debug, g = D.newGame(D.SIZE.easy, 'easy');
+        g.state = 'play'; let caught = 0, dead = 0; for (let k = 0; k < 600; k++){ D.step(g, 0.1); if (g.dead > 0) dead++; }
+        return { caught: g.caught || 0, dead, threats: 'threats' in g, row: g.row }; });
+      const okCr = cr.caught === 0 && cr.dead === 0 && !cr.threats;
+      if (!okCr) failures.push('[crossing] ' + JSON.stringify(cr));
+      console.log(`${okCr ? 'ok  ' : 'FAIL'} crossing: only touching a piece catches you (a minute on the start square, nothing struck, no threats kept)`);
     }
     // a board no one plays lights its pads in turn
     const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
@@ -3430,7 +3445,7 @@ try {
       const at = () => JSON.stringify(sn.body.map(x => [x.r, x.c])), was = at();
       for (let k = 0; k < 40; k++) D.step(g, 0.2);
       const stopped = { alive: sn.alive, same: at() === was };
-      sn.queue = [[0, 1]]; for (let k = 0; k < 10; k++) D.step(g, 0.2);
+      sn.queue = [[0, -1]]; for (let k = 0; k < 10; k++) D.step(g, 0.2);       // (left, along the row: right would turn it back into its own neck)
       return { stopped, moved: at() !== was, alive: sn.alive }; });
     const ok = r.stopped.alive && r.stopped.same && r.moved && r.alive;
     if (!ok) failures.push('[snake sides] ' + JSON.stringify(r));
