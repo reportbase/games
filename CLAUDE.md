@@ -2423,6 +2423,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   app with its boards' games in `_debug.GAMES` or `_debug.games` and an `onReset` is read by the words its state uses for an end (`ENDS`,
   `ANY`: state over / won / done / solved / lost, or a truthy over / won / done / solved), so Snake, Tetris, 2048, Minesweeper, the
   board games and the rest reset on a double tap too. Chess, Go, Air raid, flash cards, the game lab, Levels and the gallery have none.
+  **No notice for a double tap** (Nov 1: "stop showing stupid message boxes. they are rarely needed, telling me I just double clicked is stupid."): the field no longer says "Board locked in place" or "Board unlocked"; the lock shows in the view and the menu item.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under

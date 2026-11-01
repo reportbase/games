@@ -16609,12 +16609,11 @@ function handleGroundTap(hit, ev){
         const _off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;       // −180…180 from forward
         if (Math.abs(_off) > 1) target.yaw = 0;
         // (Oct 31: a double tap on the board already framed, locked and square lets it go; else it frames the board and locks it there)
-        if (BOARD_LOCK && onFramed && framedAsDefault()){ setBoardLock(false); try { engineNotice('Board unlocked: the view pans again.', 1800); } catch {} return; }
+        if (BOARD_LOCK && onFramed && framedAsDefault()){ setBoardLock(false); return; }   // (Nov 1: "telling me I just double clicked is stupid": no notice says it)
         if (!onFramed) gotoCell(gx, gz);
         zoomBoardToFit();
         target.active = true;
         PAN.vx = PAN.vz = 0; setBoardLock(true);
-        try { engineNotice('Board locked in place. Double tap it again to pan.', 2200); } catch {}
         return;
       }
       if (autoMode){ setAutoMode(false); return; }   // the stopping click is EATEN —
@@ -17290,7 +17289,7 @@ document.getElementById('bDebugTier')?.addEventListener('click', () => setMenuDe
    and follows the system's own; a size saved under `ui.textScale` is no longer read, so the page is at the system's size.) */
 
 // (the menu's Unlock the board: shown while a double tap has the board locked, Oct 31)
-{ const b = document.getElementById('bBoardLock'); if (b) b.addEventListener('click', () => { setBoardLock(false); try { engineNotice('Board unlocked: the view pans again.', 1800); } catch {} }); }
+{ const b = document.getElementById('bBoardLock'); if (b) b.addEventListener('click', () => { setBoardLock(false); }); }
 
 // Menu show/hide.
 const menuEl    = document.getElementById('menu');
