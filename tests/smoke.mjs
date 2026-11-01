@@ -6968,6 +6968,31 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ out })}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} tank maze tanks by level (${out.tanks.map(([lv, n]) => n + ' at level ' + lv).join(', ')}, a tap moving nothing, the title "${out.title}")`);
   }
+  {
+    /* TANK MAZE: YOU SHOOT, THEY CANNOT (Nov 1: "I should be able to shoot tanks. they can't shoot me. when a tank is shot, they return to
+       their home and start over. the goal of the game is to last as long as you can. show the elapsed time."): the real Enter fires a shell
+       along the heading, it stops on a wall, a hunter it hits goes back to its starting cell and waits there, a second shell inside the
+       reload is refused, the hunters never fire, and the title carries the time and the number shot. */
+    current = 'tank maze shooting'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tankmaze')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = window.FIELD_WORLD.cellAt(window.FIELD_WORLD.target.boardX, window.FIELD_WORLD.target.boardZ);
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; D.begin(g); g.state = 'play'; g.last = performance.now();
+      // (the hunter put in line ahead of the runner, in an open row, held where it stands)
+      const L = g.G.L; let ok = null; for (let k = 0; k < L.m * L.m && ok == null; k++) if (k % L.m < L.m - 2 && !L.E[k] && !L.E[k + 1]) ok = k;
+      if (ok == null) ok = 0;
+      const [x, y] = D.centre(L, ok), run = g.G.tanks[0], h = g.G.tanks[1]; g.G.t = 2; g.G.start1 = { x: L.spawn[1].x, y: L.spawn[1].y };
+      Object.assign(run, { x, y, h: 0 }); Object.assign(h, { x: x + 1.6 * L.s, y, sp: 0 }); g.G.tanks.slice(2).forEach(t => { t.sp = 0; }); });
+    await page.keyboard.press('Enter');
+    const out = await page.evaluate(async () => { const D = window.getFieldApp()._debug, A = window.getFieldApp(), g = D.GAMES.get(D.LIVE.c + '_' + D.LIVE.r), G = g.G, o = {};
+      for (let n = 0; n < 90 && !G.pops.length; n++){ g.last = performance.now() - 17; D.stepGame(g); }
+      const h = G.tanks[1]; o.shot = G.shots; o.home = Math.hypot(h.x - G.start1.x, h.y - G.start1.y) < 1e-6; o.pops = G.pops.length;
+      o.title = A.cellTitle(D.LIVE.c, D.LIVE.r); o.pad = (A.playActs(D.LIVE.c, D.LIVE.r) || []).map(b => b.key).join();
+      const n0 = G.t; G.fireAt = G.t; g.fireReq = true; g.last = performance.now() - 17; D.stepGame(g); o.reload = G.shells.length;
+      return o; });
+    const ok = out.shot === 1 && out.home && out.pops === 1 && /time [\d.]+ s · 1 shot/.test(out.title) && out.pad === 'fire' && out.reload === 0;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ out })}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} tank maze shooting (the real Enter fired, a hunter hit went home, a second shell inside the reload refused, the title "${out.title}")`);
+  }
   }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
