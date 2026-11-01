@@ -6902,7 +6902,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     let st = null; for (let w = 0; w < 30; w++){ st = await tileAt(2); if (st && st[1] < (await page.evaluate(() => innerHeight)) - 20) break; await page.waitForTimeout(200); }   // (the row slides up)
     if (st){ await page.mouse.click(st[0], st[1]); await page.waitForTimeout(600); }
     const size = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; return [D.SET.size, D.showAt(L.c + 1, L.r).n]; });
-    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(400); }
+    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ await page.evaluate(() => document.getElementById('bbHandle').click());   // (the dots are hidden while the row is open, Nov 1: shut through the element itself)
+      await page.waitForTimeout(400); }
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.size = 8; try { localStorage.setItem('bejeweled.settings', JSON.stringify(D.SET)); } catch {} D.games.clear(); D.SHOWS.clear(); });
     // a board no one plays moves
     const sig = () => page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.LIVE; return JSON.stringify(A.cellItems(L.c + 2, L.r).filter(i => /^gem|^bj/.test(i.kind)).map(i => [i.kind, +i.u.toFixed(3), +i.v.toFixed(3)])); });
@@ -7004,7 +7005,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (lt){ await page.mouse.click(lt[0], lt[1]); await page.waitForTimeout(500); }
     const look = await page.evaluate(() => window.getFieldApp()._debug.SET.look);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.look = '3d'; try { localStorage.removeItem('asteroids.settings'); } catch {} });
-    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(400); }
+    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ await page.evaluate(() => document.getElementById('bbHandle').click());   // (the dots are hidden while the row is open, Nov 1: shut through the element itself)
+      await page.waitForTimeout(400); }
     if (!(o.counts.join() === '2,4,6' && o.wave === 5 && o.shield && o.triple === 3 && o.arcade < 0.03 && !o.ufo && o.vector && look === 'vector'))
       failures.push(`[${current}] ${JSON.stringify({ o, look })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} asteroids settings (rocks ${o.counts}, start at wave ${o.wave}, the shield, ${o.triple} shots, arcade drift stopping, no saucer, the outlines; the real Look tile to ${look})`);
