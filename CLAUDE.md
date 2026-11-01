@@ -1019,6 +1019,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     at its time with the score kept as best, a real click starting a board's count and real clicks on two up moles scoring and on
     an empty hole costing, five quick real touches on one hole (moles there one after another) all taken, and a board no one plays
     popping.
+  - **A margin and a history slider** (Nov 1: "similarly, the memory game should let the user browse the games history. adjust the board size to accomodate."; `FRAME`, `sliderItems`, `viewIdx`): `MEMORY_APP`'s cards stand in a board one square larger all round (a 6 × 6 is 8 × 8 squares of the board, `gridOf` gives `n + 2`, the margin a dark wood; `itemsOf`, `onCellTap` and the far fabric follow), and the top margin holds a dot for each turn so far (`g.moves`, `{ a, b, hit }`, from two turns up): green for a pair made, red for a miss, oldest on the left. A press or drag along it (`claimsPan`, `onPan`) picks a turn (`g.view`): the pairs made up to it and its two cards turned up (`viewOf`), the dot ringed white; a tap on a card puts it live again. The smoke test ("memory: the cards in a margin …") drags it with the real mouse.
 - **Nonograms** (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): `NONOGRAM_APP`,
   id `nonograms`, after Simon. Picross: numbers along the top of each column and the left of each row give its runs of filled
   squares in order; fill the squares to match every line and the picture comes out in colour.

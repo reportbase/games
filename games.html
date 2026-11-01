@@ -43856,8 +43856,10 @@ const MEMORY_APP = (() => {
     const face = deal(n), done = new Uint8Array(n * n);
     face.forEach((f, i) => { if (f < 0) done[i] = 1; });
     return { n, lv: LV_OF[n], P: (n * n) >> 1, face, up: new Uint8Array(n * n), done,
-             pick: [], wait: 0, turns: 0, pairs: 0, over: false };
+             pick: [], wait: 0, turns: 0, pairs: 0, over: false, moves: [], view: -1 };
   }
+  let SLIDE = null;
+  const liveGame = () => (LIVE && GAMES.get(LIVE.key)) || null;
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     let g = GAMES.get(k);
@@ -43874,6 +43876,7 @@ const MEMORY_APP = (() => {
   }
   function flip(g, i, now){
     if (g.over || g.done[i] || g.up[i]) return;
+    g.view = -1;
     if (g.pick.length === 2){                        // tapping on hurries the turn-back
       for (const k of g.pick) g.up[k] = 0;
       g.pick = [];
@@ -43883,6 +43886,7 @@ const MEMORY_APP = (() => {
     if (g.pick.length === 2){
       g.turns++;
       const [a, b] = g.pick;
+      g.moves.push({ a, b, hit: g.face[a] === g.face[b] });          // (the history the slider walks, Nov 1)
       if (g.face[a] === g.face[b]){
         g.done[a] = g.done[b] = 1; g.pick = []; g.pairs++;
         SND.play(g.pairs === g.P ? 'win' : 'good', QUIET);
@@ -43897,6 +43901,12 @@ const MEMORY_APP = (() => {
   /* ─── WHAT A BOARD SHOWS: per card, −1 face down, else its face ─────── */
   function viewOf(g){
     const n = g.n || 6, out = new Int8Array(n * n);
+    if (g.view >= 0 && g.moves && g.view < g.moves.length){         // a turn looked back at: the pairs made up to it, and its two cards up
+      for (let i = 0; i < n * n; i++) out[i] = g.face[i] < 0 ? g.face[i] : -1;
+      for (let k = 0; k <= g.view; k++){ const t = g.moves[k]; if (t.hit) out[t.a] = out[t.b] = g.face[t.a]; }
+      const t = g.moves[g.view]; out[t.a] = g.face[t.a]; out[t.b] = g.face[t.b];
+      return out;
+    }
     for (let i = 0; i < n * n; i++) out[i] = (g.up[i] || g.done[i]) ? g.face[i] : -1;
     return out;
   }
@@ -43906,25 +43916,44 @@ const MEMORY_APP = (() => {
     const key = view.join(',');
     let g = GRID_CACHE.get(key);
     if (g) return g;
-    const N = sideOf(view), cols = new Array(N * N);
+    const N = sideOf(view), M = N + 2, cols = new Array(M * M).fill(FRAME);
     for (let i = 0; i < N * N; i++)
       /* THE STANDARD CHECKERBOARD UNDERNEATH (Sep 30: "memory background should have the standard
          checkerboard pattern"): every square is its own wood, face down or up; a card turned up
          is the piece standing on it, a card face down is the bare square. */
-      cols[i] = (((i % N) + ((i / N) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ;
-    g = { n: N, colors: cols };
+      cols[(((i / N) | 0) + 1) * M + (i % N) + 1] = (((i % N) + ((i / N) | 0)) % 2 === 0) ? LIGHT_SQ : DARK_SQ;
+    g = { n: M, colors: cols };
     if (GRID_CACHE.size > 2048) GRID_CACHE.clear();
     GRID_CACHE.set(key, g);
     return g;
   }
-  function itemsOf(view){
-    const N = sideOf(view), SQ = 1 / N, out = [];
+  /* THE MARGIN AND THE HISTORY SLIDER (Nov 1: "similar[ly], the memory game should let the user browse the games history. adjust the
+     board size to accomodate."): the cards stand in a board one square larger all round (`FRAME`, a dark wood), so six by six is
+     eight by eight squares of the board, and the top margin holds the slider: a dot for each turn so far, oldest on the left,
+     green for a pair made and red for a miss. A press or drag on the margin picks a turn (`g.view`): the pairs made up to it and its
+     two cards turned up, the game itself waiting; a tap on a card puts it live again. */
+  const FRAME = 0x3a2a1e, SL_HIT = 1;                                   // (the strip is the top margin's one square)
+  const histOf = g => (g && g.moves) ? g.moves.length : 0;
+  const sliderOn = g => histOf(g) >= 2;
+  const slSp = H => Math.min(0.04, 0.76 / Math.max(1, H - 1));
+  const viewIdx = (g, u) => { const H = histOf(g), sp = slSp(H), u0 = 0.5 - sp * (H - 1) / 2; return Math.max(0, Math.min(H - 1, Math.round((u - u0) / sp))); };
+  function sliderItems(g, M, out){
+    const H = histOf(g), sp = slSp(H), r = Math.min(0.011, sp * 0.4), u0 = 0.5 - sp * (H - 1) / 2, v = 0.5 / M;
+    for (let k = 0; k < H; k++){
+      const hit = g.moves[k].hit, sel = k === g.view, u = u0 + k * sp, col = hit ? 0x22c55e : 0xef4444;
+      if (sel) out.push({ kind: 'mmDot', u, v, scale: 1.9 * r / 0.01, lift: 0.003, color: 0xffffff });
+      out.push({ kind: 'mmDot', u, v, scale: (sel ? 1.2 : 1) * r / 0.01, lift: 0.012, color: sel ? col : (hit ? 0x179a48 : 0xa83232) });
+    }
+  }
+  function itemsOf(view, g){
+    const N = sideOf(view), M = N + 2, SQ = 1 / M, out = [];
     for (let i = 0; i < N * N; i++){
       const f = view[i];
       if (f < 0) continue;
       const k = faceKind(f), piece = faceWhite(f) ? k.toUpperCase() : k;
-      out.push({ kind: piece, piece, u: ((i % N) + 0.5) * SQ, v: (((i / N) | 0) + 0.5) * SQ, scale: SQ * 0.8 });
+      out.push({ kind: piece, piece, u: ((i % N) + 1.5) * SQ, v: (((i / N) | 0) + 1.5) * SQ, scale: SQ * 0.8 });
     }
+    if (g && sliderOn(g)) sliderItems(g, M, out);
     return out;
   }
 
@@ -44016,16 +44045,20 @@ const MEMORY_APP = (() => {
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },     // the far field is the checkerboard (Sep 30)
     itemMinPx: 4,
     faceMinPx: 8,
-    itemGeometries: {},
+    itemGeometries: { mmDot: T => FieldKit.disc(T, 0.01, 0.004) },
     cellGrid(c, r){ return gridOf(viewAt(c, r)); },
     fabricCell(ctx, rect){
-      const n = SIZE[DL.get()], t = rect.w / n;
+      const n = SIZE[DL.get()], M = n + 2, t = rect.w / M;
+      ctx.fillStyle = '#3a2a1e'; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
       for (let i = 0; i < n * n; i++){
         ctx.fillStyle = (((i % n) + ((i / n) | 0)) % 2) ? '#b58863' : '#f0d9b5';
-        ctx.fillRect(rect.x + (i % n) * t, rect.y + ((i / n) | 0) * t, t + 0.5, t + 0.5);
+        ctx.fillRect(rect.x + ((i % n) + 1) * t, rect.y + (((i / n) | 0) + 1) * t, t + 0.5, t + 0.5);
       }
     },
-    cellItems(c, r){ return itemsOf(viewAt(c, r)); },
+    cellItems(c, r){
+      const g = GAMES.get(gkey(c, r)) || (LIVE && LIVE.key === gkey(c, r) ? gameAt(c, r) : null);
+      return itemsOf(viewAt(c, r), g);
+    },
     cellTitle(c, r){
       const g = GAMES.get(gkey(c, r));
       if (!g){ const n = sizeAt(c, r); return 'Memory ' + n + '×' + n + ' — ' + ((n * n) >> 1) + ' pairs'; }
@@ -44035,23 +44068,44 @@ const MEMORY_APP = (() => {
     onReset(c, r){ GAMES.set(gkey(c, r), newGame(sizeAt(c, r))); LIVE = { key: gkey(c, r), c, r }; return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
+    claimsPan(u, v){
+      SLIDE = null;
+      const g = liveGame();
+      if (!g || u == null || v == null || !sliderOn(g) || v > SL_HIT / (g.n + 2)) return false;
+      SLIDE = { moved: false };
+      g.view = viewIdx(g, u);
+      return true;
+    },
+    onPan(dx, dy, at){
+      const g = liveGame();
+      if (!g || !SLIDE) return false;
+      if (at && sliderOn(g)){ SLIDE.moved = true; g.view = viewIdx(g, at.u); }
+      return true;
+    },
     onCellTap(c, r, u, v){
+      if (SLIDE){ const moved = SLIDE.moved; SLIDE = null; if (moved) return true; }
       LIVE = { key: gkey(c, r), c, r };
       const g = gameAt(c, r);
+      if (g.over && g.view < 0){ GAMES.set(gkey(c, r), newGame(sizeAt(c, r))); return true; }
+      const n = g.n, M = n + 2;
+      if (u != null && v != null && sliderOn(g) && v <= SL_HIT / M){ g.view = viewIdx(g, u); return true; }
       if (g.over){ GAMES.set(gkey(c, r), newGame(sizeAt(c, r))); return true; }
+      g.view = -1;
       settle(g);
-      const n = g.n, i = Math.max(0, Math.min(n - 1, Math.floor(v * n))) * n + Math.max(0, Math.min(n - 1, Math.floor(u * n)));
-      flip(g, i);
+      const cx = Math.floor(u * M) - 1, cy = Math.floor(v * M) - 1;
+      if (cx < 0 || cy < 0 || cx >= n || cy >= n) return true;       // (the margin is no card)
+      flip(g, cy * n + cx);
       return true;
     },
     drawIcon(ctx, sz, c, r){
-      const view = viewAt(c, r), N = sideOf(view), t = sz / N, cols = gridOf(view).colors;
+      const view = viewAt(c, r), N = sideOf(view) + 2, t = sz / N, cols = gridOf(view).colors;
       const hx = n => '#' + n.toString(16).padStart(6, '0');
       for (let i = 0; i < N * N; i++){
         ctx.fillStyle = hx(cols[i]);
         ctx.fillRect((i % N) * t + 1, ((i / N) | 0) * t + 1, t - 2, t - 2);
       }
       for (const it of itemsOf(view)){
+        if (!it.piece) continue;
         ctx.fillStyle = it.piece === it.piece.toUpperCase() ? '#fff' : '#000';
         ctx.beginPath(); ctx.arc(it.u * sz, it.v * sz, t * 0.3, 0, Math.PI * 2); ctx.fill();
       }
