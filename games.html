@@ -43933,8 +43933,8 @@ const MEMORY_APP = (() => {
   }
   /* THE MARGIN AND THE HISTORY SLIDER (Nov 1: "similar[ly], the memory game should let the user browse the games history. adjust the
      board size to accomodate."): the cards stand in a board one square larger all round (`FRAME`, a dark wood), so six by six is
-     eight by eight squares of the board, and the top margin holds the slider: a dot for each turn so far, oldest on the left,
-     green for a pair made and red for a miss. A press or drag on the margin picks a turn (`g.view`): the pairs made up to it and its
+     eight by eight squares of the board, and the bottom margin holds the slider: a dot for each turn so far, oldest on the left,
+     green for a pair made and red for a miss. A press or drag on the bottom margin picks a turn (`g.view`): the pairs made up to it and its
      two cards turned up, the game itself waiting; a tap on a card puts it live again. */
   const FRAME = 0x3a2a1e, SL_HIT = 1;                                   // (the strip is the top margin's one square)
   const histOf = g => (g && g.moves) ? g.moves.length : 0;
@@ -43942,7 +43942,7 @@ const MEMORY_APP = (() => {
   const slSp = H => Math.min(0.04, 0.76 / Math.max(1, H - 1));
   const viewIdx = (g, u) => { const H = histOf(g), sp = slSp(H), u0 = 0.5 - sp * (H - 1) / 2; return Math.max(0, Math.min(H - 1, Math.round((u - u0) / sp))); };
   function sliderItems(g, M, out){
-    const H = histOf(g), sp = slSp(H), r = Math.min(0.011, sp * 0.4), u0 = 0.5 - sp * (H - 1) / 2, v = 0.5 / M;
+    const H = histOf(g), sp = slSp(H), r = Math.min(0.011, sp * 0.4), u0 = 0.5 - sp * (H - 1) / 2, v = 1 - 0.5 / M;
     for (let k = 0; k < H; k++){
       const hit = g.moves[k].hit, sel = k === g.view, u = u0 + k * sp, col = hit ? 0x22c55e : 0xef4444;
       if (sel) out.push({ kind: 'mmDot', u, v, scale: 1.9 * r / 0.01, lift: 0.003, color: 0xffffff });
@@ -44075,7 +44075,7 @@ const MEMORY_APP = (() => {
     claimsPan(u, v){
       SLIDE = null;
       const g = liveGame();
-      if (!g || u == null || v == null || !sliderOn(g) || v > SL_HIT / (g.n + 2)) return false;
+      if (!g || u == null || v == null || !sliderOn(g) || v < 1 - SL_HIT / (g.n + 2)) return false;
       SLIDE = { moved: false };
       g.view = viewIdx(g, u);
       return true;
@@ -44092,7 +44092,7 @@ const MEMORY_APP = (() => {
       const g = gameAt(c, r);
       if (g.over && g.view < 0){ GAMES.set(gkey(c, r), newGame(sizeAt(c, r))); return true; }
       const n = g.n, M = n + 2;
-      if (u != null && v != null && sliderOn(g) && v <= SL_HIT / M){ g.view = viewIdx(g, u); return true; }
+      if (u != null && v != null && sliderOn(g) && v >= 1 - SL_HIT / M){ g.view = viewIdx(g, u); return true; }
       if (g.over){ GAMES.set(gkey(c, r), newGame(sizeAt(c, r))); return true; }
       g.view = -1;
       settle(g);
@@ -49989,14 +49989,9 @@ const SIMON_APP = (() => {
      (the keys 1 to 8 are the same numbers), lit when its pad is. The ring is drawn `RING_K` of its size to leave the strip. */
   const RING_K = 0.84, DOT_V = 0.967, DOT_R = 0.0075;
   function dotItems(P, lit, out){
-    const d = P > 6 ? 0.0165 : 0.021, gap = P > 6 ? 0.026 : 0.034;
-    let W = 0; for (let p = 0; p < P; p++) W += p * d + 2 * DOT_R + (p ? gap : 0);
-    let u = 0.5 - W / 2 + DOT_R;
-    for (let p = 0; p < P; p++){
-      const col = p === lit ? PAD[p] : dim(PAD[p], 0.55);
-      for (let k = 0; k <= p; k++) out.push({ kind: 'smDot', u: u + k * d, v: DOT_V, scale: 1, lift: 0.003, color: col });
-      u += p * d + 2 * DOT_R + gap;
-    }
+    // (Nov 1, again: "why do some colors have more beeps than others, should they not all just beep once per color?": one dot a colour)
+    const sp = P > 6 ? 0.055 : 0.07, u0 = 0.5 - sp * (P - 1) / 2;
+    for (let p = 0; p < P; p++) out.push({ kind: 'smDot', u: u0 + p * sp, v: DOT_V, scale: 1.3, lift: 0.003, color: p === lit ? PAD[p] : dim(PAD[p], 0.55) });
   }
   /* THE HISTORY SLIDER (Nov 1: "the top of simon board should have a slider that lets the player pan through the current games
      history."): along the far edge a row of dots, one for each step of the sequence so far, oldest on the left and in the step's

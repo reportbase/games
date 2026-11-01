@@ -3368,7 +3368,7 @@ try {
     console.log(`${ok1 && ok2 && demo >= 2 ? 'ok  ' : 'FAIL'} simon (pads ${r.pads.join('/')} by ring, three rounds played back then a wrong pad ends it at ${r.wrong.score}; a real click on the right pad took)`);
   }
   // MEMORY'S HISTORY SLIDER (Nov 1: "similar[ly], the memory game should let the user browse the games history. adjust the board size to
-  // accomodate."): the cards stand in a margin one square wide all round, whose top row is a dot for each turn so far; a real drag along
+  // accomodate."): the cards stand in a margin one square wide all round, whose bottom row is a dot for each turn so far; a real drag along
   // it walks through the turns (the pairs made up to one, its two cards up), a tap on a card is live again
   {
     current = 'memory slider'; const before = failures.length;
@@ -3385,7 +3385,7 @@ try {
     await page.waitForTimeout(600);
     const M = made.n + 2, look = () => page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.games.get(f.c + '_' + f.r);
       return { view: g.view, up: [...window.getFieldApp().cellItems(f.c, f.r).filter(i => i.piece)].length, dots: window.getFieldApp().cellItems(f.c, f.r).filter(i => i.kind === 'mmDot').length }; });
-    const a0 = await aimAt(0.5, 0.5 / M), a1 = await aimAt(0.2, 0.5 / M), a2 = await aimAt(0.8, 0.5 / M);
+    const a0 = await aimAt(0.5, 1 - 0.5 / M), a1 = await aimAt(0.2, 1 - 0.5 / M), a2 = await aimAt(0.8, 1 - 0.5 / M);
     await page.mouse.move(a0.x, a0.y); await page.mouse.down();
     for (let k = 1; k <= 8; k++){ await page.mouse.move(a0.x + (a1.x - a0.x) * k / 8, a0.y + (a1.y - a0.y) * k / 8); await page.waitForTimeout(30); }
     await page.mouse.up(); await page.waitForTimeout(300);
@@ -3399,7 +3399,7 @@ try {
     const live = await look();
     const ok = made.moves === 4 && first.view === 0 && first.up === 2 && last.view === 3 && last.dots >= 4 && live.view === -1;
     if (!ok) failures.push('[memory slider] ' + JSON.stringify({ made, first, last, live }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} memory: the cards in a margin with a dot a turn along the top, a real drag along it walked the turns (the first with its two cards up, then the last of ${made.moves}), a tap on a card was live again`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} memory: the cards in a margin with a dot a turn along the bottom, a real drag along it walked the turns (the first with its two cards up, then the last of ${made.moves}), a tap on a card was live again`);
   }
   // SNAKE STOPS AT A SIDE (Nov 1: "snake should not crash when hitting the sides. it should just stop."): a head heading off the board
   // stays alive where it is, its body unmoved, and goes on once it is turned
