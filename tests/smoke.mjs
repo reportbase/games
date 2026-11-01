@@ -2929,7 +2929,7 @@ try {
     // (the field reads the tap and the game begins as a frame is drawn; on CI a frame took more than the 600 ms this waited: wait for it)
     // (and in a part of its own, on a fresh page, longer still; a tap that only reframed the board is tapped again)
     await page.waitForTimeout(600); for (let k = 0; k < 60; k++){ const q = await state(); if (q.st === 'play') break; await page.waitForTimeout(250);
-      if (k === 30){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 4 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } }
+      if (k > 0 && k % 8 === 0){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 4 + k }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } }
     const t4 = await state();
     // game over: stars and a best; a click after it plays the table again where it is (Oct 29: only you move to another board)
     const ov = await page.evaluate(async () => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
@@ -3876,10 +3876,11 @@ try {
   {
     current = 'tilt put back';
     const tilt = async id => { await page.evaluate(id => window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)), id); await page.waitForTimeout(1500); return page.evaluate(() => window.FIELD_WORLD.st.pitch); };
-    const p0 = await tilt('minigolf'), p1 = await tilt('blockout'), p2 = await tilt('minigolf');
-    const ok = p0 < 68 && p1 >= 68 && Math.abs(p2 - p0) < 1e-6;
-    if (!ok) failures.push(`[${current}] mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°`);
-    console.log(`${ok ? 'ok  ' : 'FAIL'} the tilt an app's floor lifted is put back (mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°)`);
+    // (Nov 1: 3D Tetris's tilt is free now, `pitchFloor`, so it lifts nothing; air raid's floor of 50° is the lift this checks)
+    const p0 = await tilt('minigolf'), p1 = await tilt('airraid'), p2 = await tilt('minigolf');
+    const ok = p1 >= 50 && Math.abs(p2 - p0) < 1e-6;
+    if (!ok) failures.push(`[${current}] mini golf ${p0}°, air raid ${p1}°, mini golf again ${p2}°`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} the tilt an app's floor lifted is put back (mini golf ${p0}°, air raid ${p1}°, mini golf again ${p2}°)`);
   }
   // LIGHTS OUT (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
   // its own pattern at a level by its ring, its par the fewest presses (checked here by light chasing, a different way to
@@ -4561,8 +4562,14 @@ try {
       if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
       const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
       const t0 = await page.evaluate(() => window.getFieldApp()._debug.SET.target);
-      const tile = await tileAt(3);
-      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
+      // (the row's tiles are laid out a few frames after it opens, and on a slow runner one click landed before they were: tried up to five
+      //  times, a second apart, until the setting moves; a click that works the first time is taken once)
+      for (let k = 0; k < 5; k++){
+        const tile = await tileAt(3);
+        if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
+        if (await page.evaluate(() => window.getFieldApp()._debug.SET.target) !== t0) break;
+        await page.waitForTimeout(1000);
+      }
       real.tile = [t0, await page.evaluate(() => window.getFieldApp()._debug.SET.target)];
       await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 0) D.setting('target'); });
       const gt = await tileAt(1);
@@ -6810,17 +6817,22 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); }, [x, y]);
     const drag = async () => { const m = await mid(); await page.mouse.move(m.x, m.y); await page.mouse.down(); for (let k = 1; k <= 8; k++){ await page.mouse.move(m.x + 18 * k, m.y + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await page.waitForTimeout(500); };
     const out = {};
+    // (Nov 1: "double click still not reseting games when the board is in default view. Add a confirmation dialog": in its default view a
+    //  double tap on the board asks to start the game over, so the lock is taken from a double in any other view, here a wheel's zoom
+    //  away, and let go by the menu's Unlock the board)
+    const off = async () => { const m0 = await mid(); await page.mouse.move(m0.x, m0.y); await page.mouse.wheel(0, 500); await page.waitForTimeout(1200); await page.evaluate(() => window.__settle()); };
+    await off();
     let m = await mid(); await dbl([m.x, m.y]);
     out.locked = await page.evaluate(() => window.__boardLock());
     const c0 = await camX(); await drag(); const c1 = await camX();
     out.heldStill = Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) < 1e-6;
-    m = await mid(); await dbl([m.x, m.y]);
+    await page.evaluate(() => document.getElementById('bBoardLock').click());
     out.unlocked = await page.evaluate(() => !window.__boardLock());
     const c2 = await camX(); await drag(); const c3 = await camX();
     out.pansAgain = Math.hypot(c3[0] - c2[0], c3[1] - c2[1]) > 1e-3;
     // a locked board holds only against a drag on it (Nov 1: "don't block panning of non-selected boards."): locked again, a drag that
     // starts on another board (out at the screen's edge) pans the view and lets the lock go
-    m = await mid(); await dbl([m.x, m.y]);
+    await off(); m = await mid(); await dbl([m.x, m.y]);
     out.relocked = await page.evaluate(() => window.__boardLock());
     const c4 = await camX();
     { const x0 = 40, y0 = Math.round((await page.evaluate(() => innerHeight)) * 0.45); await page.mouse.move(x0, y0); await page.mouse.down();
@@ -6891,7 +6903,34 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok) failures.push(`[${current}] ${JSON.stringify(out)}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} double tap resets a completed board (every finished-game app answers gameDone; a real double on a board in play left its game, on a finished Lights Out board began it again)`);
   }
-  }   // (end of part 7)
+    {
+    current = 'double tap asks to start over'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === '2048')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const mid = () => page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; });
+    const dbl = async ([x, y]) => page.evaluate(async ([x, y]) => { const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms)), T = window.FIELD_WORLD.target, S = window.tvf.state;
+      for (let k = 0; k < 80 && (T.active || S.heldPanRate); k++) await wait(250);
+      const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+        const te = type => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] });
+        const pe = type => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y });
+        return [pe('pointerdown'), te('touchstart'), pe('pointerup'), te('touchend')]; };
+      for (const e of [...tap(), ...tap()]) cv.dispatchEvent(e);
+      await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); }, [x, y]);
+    const key = () => page.evaluate(() => { const f = window.FIELD_WORLD.cellAt(window.FIELD_WORLD.target.boardX, window.FIELD_WORLD.target.boardZ); return [f.c, f.r]; });
+    const out = {}; const [c, r] = await key();
+    const mark = () => page.evaluate(() => { const A = window.getFieldApp(); if (!A.__wrapped){ A.__wrapped = A.onReset; A.onReset = (...a) => { window.__resets = (window.__resets || 0) + 1; return A.__wrapped(...a); }; } window.__resets = 0; return 1; });
+    const fresh = () => page.evaluate(() => window.__resets === 1);
+    let asked = 0, answer = false; const on = d => { asked++; if (d.type() === 'confirm') (answer ? d.accept() : d.dismiss()); else d.dismiss(); };
+    page.on('dialog', on);
+    await mark(); let m = await mid(); answer = false; await dbl([m.x, m.y]);
+    out.declined = { asked, kept: !(await fresh()) };
+    await mark(); m = await mid(); answer = true; await dbl([m.x, m.y]);
+    out.accepted = { asked, fresh: await fresh() };
+    page.off('dialog', on);
+    const ok = out.declined.asked === 1 && out.declined.kept && out.accepted.asked === 2 && out.accepted.fresh;
+    if (!ok) failures.push('[double tap asks] ' + JSON.stringify(out));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} double tap asks to start over (a real double on the board in its default view asks once; declined it keeps the game, accepted it begins again)`);
+  }
+}   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
