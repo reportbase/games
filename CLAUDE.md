@@ -2419,6 +2419,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   already plays it again, so by the second the board is new) the second is the field's double and not a first move on the new game.
   Boards in play are untouched by a double, which only reframes as before. The smoke test (part 7, "double tap resets a completed
   board") checks the apps answer, a real double on a board in play leaving its game and on a finished Lights Out board beginning it again.
+  **Every game with an end** (Nov 1: "double click is still not reseting the board."): the first cut named seventeen games; every other
+  app with its boards' games in `_debug.GAMES` or `_debug.games` and an `onReset` is read by the words its state uses for an end (`ENDS`,
+  `ANY`: state over / won / done / solved / lost, or a truthy over / won / done / solved), so Snake, Tetris, 2048, Minesweeper, the
+  board games and the rest reset on a double tap too. Chess, Go, Air raid, flash cards, the game lab, Levels and the gallery have none.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
