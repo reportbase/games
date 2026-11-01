@@ -29221,7 +29221,12 @@ const BLOCKOUT_APP = (() => {
     realtime: true,
     // (framed from farther back, so the pit's rim and a piece coming in over it are on the screen: frameBoard's `frameFit`)
     frameFit: 1.9,
-    pitchMin: 68,
+    /* (Nov 1: "i can't look around when i am down low next to the pieces."): the floor was 68°, so the eye could never get down beside the
+       stack. Free as Soma's: down to the field's altitude floor, and straight down at 89°. It still opens at 68° (`fitView`), where
+       `frameFit` was worked out. */
+    pitchFloor: 3,
+    pitchMax: 89,
+    fitView(F){ F.st.pitch = 68; zoomBoardToFit(); },
     cellFar: { light: FLOOR, dark: BASE },
     itemMinPx: 6,
     itemGeometries: {

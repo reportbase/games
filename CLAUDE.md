@@ -1532,6 +1532,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     cleared by its own pieces and the same twice, par by level, out of pieces over, a board no one plays solving its own, glass and
     holes on and off, and real input: a click starting one, its own pieces by the real Enter clearing it in par with a best, the
     real V and See tile, a real click on a cleared board going on.
+  **The tilt is free** (Nov 1: "i can't look around when i am down low next to the pieces."): `pitchMin: 68` became `pitchFloor: 3` and `pitchMax: 89`, as Soma's, with `fitView` opening it at 68° where `frameFit` was worked out.
 - **Soma** (Oct 23: "any games that require 3d spatial rotation", then of the five offered "Soma or burr puzzles"): `SOMA_APP`, id
   `soma`, after 3D Tetris. Piet Hein's seven pieces (`PIECES`, `NAMES`: V, L, T, Z, the tripod P and the two screws A and B, 27
   cubes), turned about all three axes as 3D Tetris's are (its frame, `turnVec`, `opFor`; no gravity, no kicks), filling a figure
