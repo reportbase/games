@@ -15423,7 +15423,7 @@ function diffRefresh(app, frameNo){
   DIFF.app = app; DIFF.sig = sig;
   const lv = DIFF_PROBE.map(k => diffLevelOf(app, k, 0));
   DIFF.thr = [1e9, 1e9, 1e9, 1e9]; DIFF.val = [lv[0], 0, 0, 0, 0];
-  DIFF.on = lv.every(v => v > 0);
+  DIFF.on = lv.every(v => v > 0) && !app.noDifficultyColor;   // (an app may keep its own ground: Asteroids' is black, Nov 1)
   if (!DIFF.on) return;
   let j = 0;
   for (let i = 1; i < lv.length && j < 4; i++){
@@ -27310,7 +27310,7 @@ const MISSILE_APP = (() => {
    who turns on the nearest rock, leads it and fires, and slips aside when one comes too close. */
 const ASTEROIDS_APP = (() => {
   const N = 20, SQ = 1 / N, FAR_PX = 16;
-  const SPACE = 0x05070d, ROCK = 0x8a8f99, SHIP = 0xf2f4f8;
+  const SPACE = 0x000000, ROCK = 0x8a8f99, SHIP = 0xf2f4f8;
   const RAD = [0, 0.022, 0.04, 0.07], PTS = [0, 100, 50, 20];
   const SHIP_R = 0.026, SHOT_SP = 0.8, SHOT_LIFE = 0.9, MAX_SHOTS = 5, TURN = 6, THRUST = 0.55, VMAX = 0.45;
   const HEADS = 32;
@@ -27656,7 +27656,7 @@ const ASTEROIDS_APP = (() => {
   // (the look: 3D as built, or the outlines, white or glowing; LOOK_COL by look)
   const LOOK_COL = { '3d': { space: SPACE, rock: ROCK, ship: SHIP, shot: 0xffffff, star: 0x9aa4c0 },
                      vector: { space: 0x000000, rock: 0xe8ecf2, ship: 0xffffff, shot: 0xffffff, star: 0x5a6070 },
-                     neon: { space: 0x0c0420, rock: 0x22d3ee, ship: 0xf472b6, shot: 0xfde047, star: 0x8b5cf6 } };
+                     neon: { space: 0x000000, rock: 0x22d3ee, ship: 0xf472b6, shot: 0xfde047, star: 0x8b5cf6 } };
   function asItems(s){
     const L = SET.look, C = LOOK_COL[L], lines = L !== '3d';
     const out = L === '3d' ? STARS.slice() : STARS.map(t => ({ ...t, color: C.star }));
@@ -27920,6 +27920,7 @@ const ASTEROIDS_APP = (() => {
   const app = {
     name: 'asteroids',
     realtime: true,
+    noDifficultyColor: true,        // (Nov 1: "astroid background and difficulty color should always be black.": the field paints no level mat under its boards)
     get cellFar(){ const c = LOOK_COL[SET.look].space; return { light: c, dark: c }; },
     faceMinPx: 1,
     itemMinPx: FAR_PX,

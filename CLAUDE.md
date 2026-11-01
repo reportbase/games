@@ -1658,6 +1658,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     boards no one plays keep the arcade's rules and take the look. A game's `spawned` says a wave came to it, so a board started at
     a later wave is not called cleared before its first. The smoke test (part 7, "asteroids settings") checks each and a real
     click on the Look tile.
+  **Always black** (Nov 1: "astroid background and difficulty color should always be black."): space is `0x000000` in every look (the 3D one was `0x05070d`, Neon's deep violet) and the app says `noDifficultyColor`, which `diffRefresh` reads as no level mat under its boards (`DIFF.on` false, near and far), so the field shows its own dark ground.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.
