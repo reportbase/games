@@ -3379,6 +3379,17 @@ try {
       if (!okFig) failures.push('[2048 figures] ' + JSON.stringify(off));
       console.log(`${okFig ? 'ok  ' : 'FAIL'} 2048: the figures are centred on their tile (2, 16, 128, 1024)`);
     }
+    // the crossing catches you only by touching a piece (Nov 1: "seems like it would be better to just ignore the cells ... cell based
+    // contact conflates that."): a pawn left on its start square for a minute is never caught, however many pieces take aim past it, and
+    // the game keeps no threats
+    {
+      const cr = await page.evaluate(() => { const D = window.FIELD_APPS.find(a => a.id === 'crossing')._debug, g = D.newGame(D.SIZE.easy, 'easy');
+        g.state = 'play'; let caught = 0, dead = 0; for (let k = 0; k < 600; k++){ D.step(g, 0.1); if (g.dead > 0) dead++; }
+        return { caught: g.caught || 0, dead, threats: 'threats' in g, row: g.row }; });
+      const okCr = cr.caught === 0 && cr.dead === 0 && !cr.threats;
+      if (!okCr) failures.push('[crossing] ' + JSON.stringify(cr));
+      console.log(`${okCr ? 'ok  ' : 'FAIL'} crossing: only touching a piece catches you (a minute on the start square, nothing struck, no threats kept)`);
+    }
     // a board no one plays lights its pads in turn
     const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
       for (let k = 0; k < 40; k++){ seen.add(D.shownLit(S)); await new Promise(ok => setTimeout(ok, 60)); } return seen.size; });

@@ -25160,22 +25160,22 @@ const CROSSING_APP = (() => {
   }
   use(8);
   /* DIFFICULTY, SOUND, TILT (Sep 27: the basics, the same as Breakout's). Difficulty sets how fast
-     the lanes run, how often pieces strike and how long their warning shows. */
-  const DIFF = { easy:   { speed: 0.8,  every: 1.5, warn: 1.35 },
-                 normal: { speed: 1,    every: 1,   warn: 1 },
-                 hard:   { speed: 1.2,  every: 0.7, warn: 0.75 } };
+     the lanes run (the strikes' rate and warning went with the strikes, Nov 1). */
+  const DIFF = { easy:   { speed: 0.8 },
+                 normal: { speed: 1 },
+                 hard:   { speed: 1.2 } };
   let LEVEL = ARCADE.load('crossing.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the setting is the corner block's, and each board farther out plays a step or two harder
      (`ARCADE.levelOn`, by its ring), so on Easy the corner's boards are 8×8, the ones round them 10×10 and the far field
      12×12, side by side. A board's game takes its level when it is made, adopted or started (`levelAt`) and keeps it as
-     `g.lv` beside its size `g.n`: the lanes' speed, the strikes and their warning are that game's own. A board no one plays
+     `g.lv` beside its size `g.n`: the lanes' speed is that game's own. A board no one plays
      shows a recording of its own size (`reelAt`), and each size's recordings are played at that size's level (`LV_OF`),
      so a far board's recording runs at Hard's pace. */
   const levelAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   const LV_OF = { 8: 'easy', 10: 'normal', 12: 'hard' };
   const D = g => DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = ARCADE.sounds('crossing.sound', 'Hops, warnings, strikes and fanfares — all made in the browser.', { gaps: { hop: 0.05, warn: 0.15 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
+  const SND = ARCADE.sounds('crossing.sound', 'Hops, crashes and fanfares — all made in the browser.', { gaps: { hop: 0.05 }, quiet: () => QUIET });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
     const A = SND.gate(kind); if (!A) return;
@@ -25183,8 +25183,6 @@ const CROSSING_APP = (() => {
     try {
       switch (kind){
         case 'hop':    tone(520, 780, 0.07, 'triangle', 0.05); break;
-        case 'warn':   tone(740, 740, 0.08, 'sine', 0.05); break;
-        case 'strike': tone(300, 120, 0.15, 'sawtooth', 0.04); break;
         case 'caught': hiss(0.6, 0.45, 800); tone(220, 50, 0.6, 'sawtooth', 0.1); break;
         case 'over':   hiss(1.0, 0.5, 500); tone(160, 30, 1.1, 'sine', 0.25); break;
         case 'across': [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.08, i * 0.09)); break;
@@ -25197,55 +25195,16 @@ const CROSSING_APP = (() => {
 
   /* YOU ARE THE WHITE KING (Sep 27: "player piece should be the king"). One square at a time, any
      of the eight ways: tap or swipe toward where you want to go — straight or diagonal — or use the
-     keys. The pieces' strikes on your square are CHECK: step out of it before it lands. (The
-     promotion ladder that was here is gone — a king does not promote.) */
+     keys. Only the pieces themselves catch you: touching one ends the crossing. (The promotion ladder that was here is gone — a king
+     does not promote; and the chess pieces' strikes on squares, which lit cells red and took you on one, are gone too, Nov 1: "seems
+     like it would be better to just ignore the cells. its very difficult to get across, so you need full control of the pieces and
+     know how to avoid them. cell based contact conflates that.") */
   const moveFor = (g, dr, dc) => [dr, dc];
   // A direction on the board → one of the eight king moves.
   function eightWay(dx, dy){
     const a = Math.atan2(dy, dx), k = Math.round(a / (Math.PI / 4));
     const dc = Math.round(Math.cos(k * Math.PI / 4)), dr = Math.round(Math.sin(k * Math.PI / 4));
     return [dr, dc];
-  }
-  /* THE PIECES STRIKE AS CHESS PIECES DO (Sep 27). Now and then a piece near you takes aim at the
-     squares it attacks in chess and they light red for a moment; stand on one when it strikes and
-     you are taken. Pawns take diagonally toward you; a knight its eight L's; a bishop the diagonals
-     around it; the rook its file, down to the verge; the queen her file and diagonals, two deep.
-     Its own lane is dangerous anyway — this is the reach beyond it. */
-  const REACH = {
-    p: () => [[1, -1], [1, 1]],
-    n: () => [[1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]],
-    b: () => [[1, 1], [1, -1], [-1, 1], [-1, -1], [2, 2], [2, -2], [-2, 2], [-2, -2]],
-    r: () => [[1, 0], [2, 0], [3, 0], [-1, 0]],
-    q: () => [[1, 0], [2, 0], [1, 1], [1, -1], [2, 2], [2, -2], [-1, 0], [-1, 1], [-1, -1]],
-  };
-  const WARN_T = g => 0.75 * D(g).warn;
-  function threatTick(g, dt, p){
-    for (const th of g.threats){
-      if (th.struck) continue;
-      if (g.t >= th.at){
-        th.struck = true; th.flash = g.t; beep('strike');
-        const col = Math.floor(p.x * N);
-        if (!g.crash && !g.dead && th.sq.some(([r, c]) => r === p.row && c === col)) return th;
-      }
-    }
-    g.threats = g.threats.filter(th => !th.struck || g.t - th.flash < 0.25);
-    if ((g.nextThreat = (g.nextThreat == null ? 2 : g.nextThreat) - dt) > 0) return null;
-    g.nextThreat = (2.2 + rnd() * 1.6) * D(g).every / Math.sqrt(g.level);
-    // A piece within reach of where you are.
-    const cand = [];
-    for (const lane of LANES) lanePieces(lane, g.t, speedUp(g)).forEach(([x, vis]) => {
-      if (vis < 0.9) return;
-      const col = Math.floor(x * N);
-      if (Math.abs(col - Math.floor(p.x * N)) <= 3 && Math.abs(lane.row - p.row) <= 3) cand.push({ lane, col });
-    });
-    if (!cand.length) return null;
-    const { lane, col } = cand[(rnd() * cand.length) | 0];
-    const sq = REACH[lane.kind]().map(([dr, dc]) => [lane.row + dr, col + dc]).filter(([r, c]) => r >= 0 && r < N && c >= 0 && c < N && r !== lane.row);
-    if (!sq.length) return null;
-    g.threats.push({ sq, at: g.t + WARN_T(g), kind: lane.kind, x: (col + 0.5) * SQ, row: lane.row });
-    beep('warn');
-    if (sq.some(([r, c]) => r === p.row && c === Math.floor(p.x * N))) say('Check!', 700);
-    return null;
   }
   /* Where every piece of a lane is at game time t: [x, visibility] pairs.
      Visibility is 1 on the board and falls to 0 across the half square at
@@ -25284,7 +25243,7 @@ const CROSSING_APP = (() => {
     use(n || N);
     return { n: N, lv: lv || LV_OF[N] || LEVEL, state: 'ready', score: 0, lives: 3, level: 1, last: 0, t: 0,
              row: START_ROW, col: START_COL, hop: null, dead: 0, best: START_ROW, crash: null, back: null,
-             me: 'K', threats: [], nextThreat: 2, tiltIn: 0 };
+             me: 'K', tiltIn: 0 };
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
@@ -25341,7 +25300,6 @@ const CROSSING_APP = (() => {
       g.score += 10 * g.level;
       g.level++;
       say('Across! Level ' + g.level, 1400); beep('across');
-      g.threats = [];
       home(g);
       return;
     }
@@ -25350,17 +25308,8 @@ const CROSSING_APP = (() => {
       g.tiltIn = 0.3;
       const [dr, dc] = eightWay(TILT.x, TILT.y); hop(g, dr, dc);
     }
-    const struck = threatTick(g, dt, p);
-    if (struck){
-      g.dead = CRASH_T; g.threats = [];
-      g.crash = { row: -1, i: -1, kind: struck.kind, x: p.x, y: p.y, t0: g.t, seed: (rnd() * 4294967296) >>> 0 };
-      beep('caught'); g.caught = (g.caught || 0) + 1;
-      say('Checkmated by a ' + ({ p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' })[struck.kind] + ' — back to the start', 1600);
-      return;
-    }
     const hit = hitBy(g, p.row, p.x, g.t);
     if (hit){
-      g.threats = [];
       beep('caught'); g.caught = (g.caught || 0) + 1;
       g.dead = CRASH_T;
       g.crash = { row: hit.lane.row, i: hit.i, kind: hit.lane.kind, x: (p.x + hit.x) / 2, y: (p.y + (hit.lane.row + 0.5) * SQ) / 2,
@@ -25384,9 +25333,7 @@ const CROSSING_APP = (() => {
   function bot(g){
     if (g.hop || g.dead > 0) return;
     if ((g.botWait = (g.botWait || 0) - 1 / REEL_FPS) > 0) return;
-    const threatened = (row, col) => (g.threats || []).some(th => !th.struck && th.sq.some(([r, c]) => r === row && c === col));
     const clearFor = (row, col, span) => {
-      if (threatened(row, col)) return false;
       const cx = (col + 0.5) * SQ;
       for (let s = 0; s <= span; s += 0.05) if (hitAt(g, row, cx, g.t + s)) return false;
       return true;
@@ -25413,7 +25360,6 @@ const CROSSING_APP = (() => {
   const REEL_N = 6, REEL_FPS = 30, REEL_SECS = 60;
   const KCODE = { p: 0, n: 1, b: 2, r: 3, q: 4, k: 5, P: 6, N: 7, B: 8, R: 9, Q: 10, K: 11 };
   const KNAME = ['p', 'n', 'b', 'r', 'q', 'k', 'P', 'N', 'B', 'R', 'Q', 'K'];
-  const WARN = 20, FLASH = 21;                       // frame codes for a square about to be struck, and the strike
   const SIZE_CODE = 98;
   /* EVERY BOARD AT THE DIFFICULTY'S SIZE (Sep 30: "when you change the difficulty, change all the
      boards"): the recordings are made per size, and changing the difficulty drops every game in play. */
@@ -25437,7 +25383,6 @@ const CROSSING_APP = (() => {
         if (g.back && g.back.row === lane.row && g.back.i === i) vis *= clamp((g.t - g.back.t0) / 0.3, 0, 1);
         if (vis > 0.02) out.push(KCODE[lane.kind], x, (lane.row + 0.5) * SQ, vis, 0);
       });
-    for (const th of g.threats || []) for (const [r, c] of th.sq) out.push(th.struck ? FLASH : WARN, (c + 0.5) * SQ, (r + 0.5) * SQ, 1, 0);
     if (g.crash) crashItems(g, out);
     else if (g.state !== 'over'){ const p = pawnPos(g); out.push(KCODE.K, p.x, p.y, 1, 0); }
     return out;
@@ -25492,7 +25437,6 @@ const CROSSING_APP = (() => {
       const code = fr[j], u = fr[j + 1], v = fr[j + 2];
       if (code === SIZE_CODE){ use(u); continue; }
       if (code >= 900){ BOOM.items(out, u, v, fr[j + 3], fr[j + 4], 'p' + ATTACK[code - 900], SQ); continue; }
-      if (code === WARN || code === FLASH){ out.push({ kind: 'warn', u, v, scale: SQ * 0.9, color: code === WARN ? 0xff2a2a : 0xffd040 }); continue; }
       const kind = KNAME[code];
       out.push({ kind, piece: kind, u, v, scale: SQ * fr[j + 3] });
     }
@@ -25534,8 +25478,7 @@ const CROSSING_APP = (() => {
     realtime: true,
     cellFar: { light: LIGHT_SQ, dark: DARK_SQ },
     itemMinPx: 4,
-    itemGeometries: { ...BOOM.geometries(['pp', 'pn', 'pb', 'pr', 'pq']),
-      warn: T => { const g = new T.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); g.translate(0, 0.01, 0); g.userData.opacity = 0.5; g.userData.unlit = true; return g; } },
+    itemGeometries: { ...BOOM.geometries(['pp', 'pn', 'pb', 'pr', 'pq']) },
     itemCaps: BOOM.caps,
     // A board's own squares, when it is not the 8×8 the recordings play on.
     cellGrid(c, r){
@@ -25635,7 +25578,7 @@ const CROSSING_APP = (() => {
         ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t + 0.5, t + 0.5);
       }
       for (let j = 0; j < fr.length; j += 5){
-        if (fr[j] === WARN || fr[j] === FLASH || fr[j] === SIZE_CODE) continue;
+        if (fr[j] === SIZE_CODE) continue;
         ctx.fillStyle = (fr[j] >= 6 && fr[j] <= 11) ? '#fff' : fr[j] >= 900 ? '#ff9a2e' : '#000';
         ctx.beginPath(); ctx.arc(fr[j + 1] * sz, fr[j + 2] * sz, t * 0.3 * fr[j + 3], 0, Math.PI * 2); ctx.fill();
       }
