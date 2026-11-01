@@ -6951,35 +6951,22 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trackpad rotation (Alt with a two-finger sideways scroll turned the view ${(y1 - y0).toFixed(1)} degrees)`);
   }
   {
-    /* TANK MAZE: A CLICK SENDS THE TANK THERE (Oct 31: "tank maze should move the tank to where the user clicks, unless he clicks again or
-       pans or uses the keyboard. escape cancels motion."; "show the time elapsed ... and the best elapsed time for that board"): a tap's
-       goal is followed along the maze to the spot, a second tap makes a new goal, a real key or a real Escape takes it away, a drag
-       takes it over; and the title carries the time elapsed and the board's best. */
-    current = 'tank maze click to move'; const before = failures.length;
+    /* TANK MAZE: MORE TANKS FARTHER OUT (Oct 31: "Higher difficulty levels should have more tanks."; the tap to move went the same day):
+       a board's tanks are its level's (2, 2, 3, 3, 4), games and recordings alike, the maze a cell a side bigger for each past two; a
+       tap on the board moves nothing; the title carries the time elapsed and the board's best. */
+    current = 'tank maze tanks by level'; const before = failures.length;
     await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tankmaze')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
     const out = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, f = window.FIELD_WORLD.cellAt(window.FIELD_WORLD.target.boardX, window.FIELD_WORLD.target.boardZ), o = {};
-      const mk = () => { const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; D.begin(g); g.state = 'play'; g.last = performance.now(); return g; };
-      const idle = g => g.seats.map((s, k) => k === 0 ? D.personCmd(g, 0) : { drive: 0, turn: 0 });
-      let g = mk(); const L = g.G.L, far = L.m * L.m - 1, [gu, gv] = D.centre(L, far);
-      A.onCellTap(f.c, f.r, gu, gv);
-      o.goal = !!g.goal;
-      for (let n = 0; n < 6000 && g.goal; n++) D.stepRound(g.G, idle(g), D.STEP);
-      const t0 = g.G.tanks[0]; o.arrived = !g.goal && Math.hypot(t0.x - gu, t0.y - gv) < 0.3 * L.s;
-      // a second tap is a new goal; a key (below, real) and Escape (real) take it away
-      g = mk(); A.onCellTap(f.c, f.r, gu, gv); const first = g.goal; A.onCellTap(f.c, f.r, 0.5, 0.5); o.retarget = g.goal && g.goal !== first && g.goal.u === 0.5;
-      g.goal = { k: 0, u: gu, v: gv }; o.setForKeys = true;
-      // the title: time elapsed while it plays
+      // (Normal puts the corner at level 2, so level 1 has no board: take whichever of the five levels some board along row 0 has)
+      o.tanks = []; for (let lv = 1; lv <= 5; lv++){ for (let k = 0; k < 400; k++){ if (D.levelOf(3 * k, 0) === lv){ o.tanks.push([lv, D.fresh(3 * k, 0).G.tanks.length]); break; } } }
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; D.begin(g); g.state = 'play'; g.last = performance.now();
+      A.onCellTap(f.c, f.r, 0.9, 0.9); o.noGoal = !g.goal;
       g.G.t = 12.34; o.title = A.cellTitle(f.c, f.r);
       return o; });
-    await page.keyboard.press('Escape'); await page.waitForTimeout(200);
-    const esc = await page.evaluate(() => { const D = window.getFieldApp()._debug, g = D.GAMES.get(D.LIVE.c + '_' + D.LIVE.r); return !g.goal; });
-    await page.evaluate(() => { const D = window.getFieldApp()._debug, g = D.GAMES.get(D.LIVE.c + '_' + D.LIVE.r); g.goal = { k: 0, u: 0.5, v: 0.5 }; });
-    await page.keyboard.down('ArrowUp'); await page.waitForTimeout(150); await page.keyboard.up('ArrowUp');
-    const key = await page.evaluate(() => { const D = window.getFieldApp()._debug, g = D.GAMES.get(D.LIVE.c + '_' + D.LIVE.r); return !g.goal; });
-    const ok = out.goal && out.arrived && out.retarget && esc && key && /time 12\.3 s/.test(out.title);
-    if (!ok) failures.push(`[${current}] ${JSON.stringify({ out, esc, key })}`);
-    console.log(`${ok ? 'ok  ' : 'FAIL'} tank maze click to move (a tap's goal reached along the maze, a second tap a new goal, the real Escape and a real key took it away; the title said "${(out.title || '').slice(-40)}")`);
+    const ok = out.tanks.length >= 3 && out.tanks.every(([lv, n]) => n === [2, 2, 3, 3, 4][lv - 1]) && out.tanks.some(([lv]) => lv >= 3) && out.noGoal && /time 12\.3 s/.test(out.title);
+    if (!ok) failures.push(`[${current}] ${JSON.stringify({ out })}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} tank maze tanks by level (${out.tanks.map(([lv, n]) => n + ' at level ' + lv).join(', ')}, a tap moving nothing, the title "${out.title}")`);
   }
   }   // (end of part 7)
 } catch (e){
