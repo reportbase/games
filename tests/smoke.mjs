@@ -6215,6 +6215,26 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[tap reshapes] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} tap reshapes: the gallery board took a portrait print's shape on a tap and a landscape print's on the next`);
   }
+  // THE PAGE YOU ARE ON IS KEPT FOR EACH COLLECTION (Nov 1: "can you save the current page to the localstorage, and use that as the current page on load"):
+  // after a folder is opened and the view steps to another board (the real Tab), localStorage `gallery.pos` holds that board's print under
+  // the collection's key. (The restore on the next load is the same move the other way; a reload is too slow for this part.)
+  {
+    current = 'gallery position';
+    const bad = [];
+    await page.evaluate(() => { try { localStorage.removeItem('gallery.pos'); } catch {} window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')); });
+    await page.waitForTimeout(800);
+    const pngs = await page.evaluate(() => Array.from({ length: 6 }, (_, k) => { const c = document.createElement('canvas'); c.width = 240; c.height = 160; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 50},70%,45%)`; x.fillRect(0, 0, 240, 160); return c.toDataURL('image/png').split(',')[1]; }));
+    await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `z${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^z\d$/.test(e.name)).length >= 3, null, { timeout: 120000 }).catch(() => {});
+    await page.waitForTimeout(3000);                      // (the place is kept only once the opening move is over)
+    await page.keyboard.press('Tab');
+    await page.waitForFunction(() => { try { return Object.keys(JSON.parse(localStorage.getItem('gallery.pos') || '{}')).length > 0; } catch { return false; } }, null, { timeout: 30000 }).catch(() => {});
+    const r = await page.evaluate(() => { let m = {}; try { m = JSON.parse(localStorage.getItem('gallery.pos') || '{}'); } catch {} const G = window.GALLERY_APP, T = window.FIELD_TARGET; return { saved: Object.values(m), now: G._pick(T.cellX | 0, T.cellZ | 0) }; });
+    if (r.saved.length !== 1) bad.push('nothing was kept: ' + JSON.stringify(r));
+    else if (r.saved[0].i !== r.now) bad.push('the kept print is not the framed one: ' + JSON.stringify(r));
+    if (bad.length) failures.push('[gallery position] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery position: the print on the framed board is kept in localStorage under the collection's key after the view steps on`);
+  }
   // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
   // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space
   // printing, numbered, every page headed by the path it begins at; the row its settings (a real click on Shallower and
