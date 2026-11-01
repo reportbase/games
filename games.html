@@ -67197,6 +67197,12 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         }
       } catch (e){ console.warn('[gallery] could not measure shapes —', e && e.message); }
       const base = await POUR.claim(pour, slot, list.length, aspects);
+      /* A REPLACEMENT STANDS THIS LOAD DOWN (Nov 1: "when I load images, then something else, say an epub file or pdf, and some of the
+         original images are still showing, and the aspect ratio has not been reset to the new epub or pdf."): pictures are read one a
+         frame, so a long folder is still arriving when a book or PDF is opened; the new collection began over the old, but this loop
+         went on putting its pictures into it, by index, among the pages, and the board shape measured from them. A collection that
+         starts afresh bumps `_gen` (COLL_GEN); once it has changed from what this load joined, no more are added. */
+      const gen0 = GALLERY_APP._gen;
       let at = 0;
       /* PACED TO THE VIEW (Sep 22). Loose files were read, decoded and cut
          back to back as fast as the loop could go — every one of them a
@@ -67211,11 +67217,13 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       for (const f of list){
         await _frame();
         while (_moving()) await _frame();
+        if (GALLERY_APP._gen !== gen0) return;          // (another collection has replaced this one: see above)
         try {
           const im = window.createImageBitmap
             ? await createImageBitmap(f).catch(() => null) : null;
           if (im){
             await _frame();
+            if (GALLERY_APP._gen !== gen0){ if (im.close) im.close(); return; }
             GALLERY_APP._addAt(base + (at++), im, (f.name || 'image').replace(/\.[^.]+$/, ''));
             if (im.close) im.close();
             if (!_moving() && performance.now() - _lastFab > 1500){
