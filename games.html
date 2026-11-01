@@ -61775,8 +61775,13 @@ SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own shar
     whackamole: g => g.state === 'over', nonograms: g => g.state === 'solved', tanks: g => g.state === 'over', pong: g => g.state === 'over',
     airhockey: g => g.state === 'over', squash: g => g.state === 'over', curling: g => g.state === 'over', bowling: g => g.state === 'over',
     marblerun: g => g.state === 'won', trickshots: g => !!(g.ch && g.solvedIn) };
-  for (const a of window.FIELD_APPS){ const f = DONE[a.id]; if (!f) continue;
-    a.gameDone = (c, r) => { try { const M = a._debug && a._debug.GAMES, g = M && M.get(BOARD_KIT.gkey(c, r)); return !!(g && f(g)); } catch { return false; } }; }
+  /* Every other game with its boards' games in `_debug.GAMES` and an `onReset` is read by the words its own state uses for an end
+     (Nov 1: "double click is still not reseting the board": the first cut named seventeen games; Snake, Tetris, 2048 and the
+     rest had no answer, so a double tap there only reframed). */
+  const ENDS = new Set(['over', 'won', 'done', 'solved', 'lost', 'failed', 'endover', 'gameover']);
+  const ANY = g => !!g && (ENDS.has(g.state) || !!g.over || !!g.won || !!g.done || !!g.solved || !!g.gameOver);
+  for (const a of window.FIELD_APPS){ const f = DONE[a.id] || (a.onReset && a._debug && (a._debug.GAMES || a._debug.games) ? ANY : null); if (!f) continue;
+    a.gameDone = (c, r) => { try { const M = a._debug && (a._debug.GAMES || a._debug.games), g = M && M.get(BOARD_KIT.gkey(c, r)); return !!(g && f(g)); } catch { return false; } }; }
 }
 let FIELD_APP = CHESS_APP;               // ...unless you left it somewhere else
 /* WHICH APP YOU WERE LAST IN. Chess is the build's opening move and stays the
