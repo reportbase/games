@@ -52702,6 +52702,12 @@ const TANKMAZE_APP = (() => {
   ];
   // sizes in cells (a cell is L.s of the board), speeds in cells a second
   const TR = 0.26, WALL_T = 0.1, WALL_H = 0.5, TV = 1.7, TURN = 3.3, CATCH = 2.06;
+  /* YOU SHOOT, THEY CANNOT (Nov 1: "I should be able to shoot tanks. they can't shoot me. when a tank is shot, they return to their
+     home and start over. the goal of the game is to last as long as you can. show the elapsed time."): your tank fires a shell along
+     its heading (Enter, F, the play pad's button), SHELL_V cells a second for SHELL_LIFE seconds, stopped by a wall, reloading RELOAD
+     seconds. A hunter it reaches goes back to the cell it started in and waits HEAD seconds there, as at the start of a game. The hunters
+     never fire: only touching you catches you, as before. */
+  const SHELL_V = 6, SHELL_LIFE = 1.6, RELOAD = 0.45, HIT_R = 1.0;
   const EXTRA = 0.88;                                  // (the second and third hunters this much slower than the first)
   const STEP = 1 / 60, BOOM_T = 1.5, COUNT_T = 1.2, HEAD = 0.8, REC_HZ = 15;
   const TAU = Math.PI * 2;
@@ -52811,7 +52817,7 @@ const TANKMAZE_APP = (() => {
      CATCH tank radii of the runner's catches it. */
   function roundNew(L, seats, seed){
     const R = rngOf(seed), D = LV[L.lv - 1];
-    return { L, seats, t: 0, R, hold: D.hold, booms: [], caughtAt: null, by: -1, over: false, winner: -1,
+    return { L, seats, t: 0, R, hold: D.hold, booms: [], shells: [], pops: [], shots: 0, fireAt: -9, caughtAt: null, by: -1, over: false, winner: -1,
              tanks: L.spawn.slice(0, seats.length).map((p, k) => ({ x: p.x, y: p.y, h: p.h, vx: 0, vy: 0, alive: true, plan: null, nextThink: HEAD + 0.08 * k, sp: !k ? 1 : k === 1 ? D.v : D.v * EXTRA })) };
   }
   // a tank moved for dt: turned, driven, pushed out of the walls round it and off the other tanks
@@ -52832,9 +52838,28 @@ const TANKMAZE_APP = (() => {
   function stepRound(G, cmds, dt){
     const L = G.L, s = L.s, run = G.tanks[0];
     if (G.caughtAt == null) G.tanks.forEach((t, k) => {
-      if (!t.alive || (k && G.t < HEAD)) return;
+      if (!t.alive || (k && G.t < HEAD) || (t.holdUntil && G.t < t.holdUntil)) return;
       const c = cmds[k] || { drive: 0, turn: 0 };
       moveTank(L, t, clamp(c.drive, -0.7, 1), clamp(c.turn, -1, 1), dt, G.tanks);
+    });
+    // your shell leaves the muzzle; every shell flies on and ends on a wall, a hunter (sent home) or its time
+    if (G.caughtAt == null && run.alive && cmds[0] && cmds[0].fire && G.t - G.fireAt >= RELOAD){
+      G.fireAt = G.t; const mx = Math.cos(run.h), my = Math.sin(run.h);
+      G.shells.push({ x: run.x + mx * 0.3 * s, y: run.y + my * 0.3 * s, vx: mx * SHELL_V * s, vy: my * SHELL_V * s, born: G.t });
+    }
+    G.shells = G.shells.filter(sh => {
+      if (G.t - sh.born > SHELL_LIFE) return false;
+      for (let part = 0; part < 2; part++){
+        sh.x += sh.vx * dt / 2; sh.y += sh.vy * dt / 2;
+        if (sh.x < 0 || sh.y < 0 || sh.x > 1 || sh.y > 1) return false;
+        for (const w of L.WB[cellOf(L, sh.x, sh.y)]) if (sh.x >= w[0] && sh.x <= w[2] && sh.y >= w[1] && sh.y <= w[3]) return false;
+        for (let k = 1; k < G.tanks.length; k++){ const h = G.tanks[k];
+          if (h.alive && Math.hypot(h.x - sh.x, h.y - sh.y) <= HIT_R * TR * s){
+            G.pops.push({ t: G.t, x: h.x, y: h.y }); G.shots++;
+            const sp = L.spawn[k]; Object.assign(h, { x: sp.x, y: sp.y, h: sp.h, vx: 0, vy: 0, plan: null, holdUntil: G.t + HEAD, nextThink: G.t + HEAD + 0.08 * k });
+            return false; } }
+      }
+      return true;
     });
     G.t += dt;
     if (G.caughtAt == null){
@@ -52933,13 +52958,13 @@ const TANKMAZE_APP = (() => {
   // what a recorded round shows at the page's clock
   function shownOf(E){
     const L = E.L, N = E.n || 2, seats = ['you'].concat(Array(N - 1).fill('cpu')), cols = colsOf(seats);
-    if (!E.done) return { L, tanks: L.spawn.slice(0, N).map(p => ({ x: p.x, y: p.y, h: p.h, alive: true })), booms: [], t: 0, hold: LV[L.lv - 1].hold, seats, cols };
+    if (!E.done) return { L, tanks: L.spawn.slice(0, N).map(p => ({ x: p.x, y: p.y, h: p.h, alive: true })), booms: [], shells: [], pops: [], t: 0, hold: LV[L.lv - 1].hold, seats, cols };
     const t = Math.min(E.T, BOARD_KIT.loopT(E.phase, E.T + 1.5)), n = E.F.length / (3 * N);
     const f = clamp(t * REC_HZ, 0, n - 1), i = Math.floor(f), j = Math.min(n - 1, i + 1), w = f - i;
     const tanks = Array.from({ length: N }, (_, k) => { const a = 3 * N * i + 3 * k, b = 3 * N * j + 3 * k;
       return { x: E.F[a] + (E.F[b] - E.F[a]) * w, y: E.F[a + 1] + (E.F[b + 1] - E.F[a + 1]) * w, h: E.F[a + 2] + angDiff(E.F[b + 2], E.F[a + 2]) * w,
                alive: !E.booms.some(B => B.k === k && B.t <= t) }; });
-    return { L, tanks, booms: E.booms, t, hold: E.hold, seats, cols };
+    return { L, tanks, booms: E.booms, shells: [], pops: [], t, hold: E.hold, seats, cols };
   }
 
   /* ─── PLAYING ─── one game on the board's maze: you run until a hunter catches you; the longest you last is kept. */
@@ -52967,6 +52992,7 @@ const TANKMAZE_APP = (() => {
     const g = liveGame(); if (!g || g.state === 'over') return;
     const K = KEYS[e.key];
     if (K){ e.preventDefault(); e.stopPropagation(); HELD.add(K[0] + seatOfKeys(g, K[1])); begin(g); }
+    else if (e.key === 'Enter' || e.key === 'f' || e.key === 'F'){ e.preventDefault(); e.stopPropagation(); if (g.state !== 'count'){ begin(g); g.fireReq = true; } }
   }, true);
   addEventListener('keyup', e => { const K = KEYS[e.key]; if (K){ let hit = false; for (const k of [0, 1]) hit = HELD.delete(K[0] + k) || hit; if (hit){ e.preventDefault(); e.stopPropagation(); } } }, true);
   addEventListener('blur', () => HELD.clear());
@@ -52979,7 +53005,8 @@ const TANKMAZE_APP = (() => {
       turn = clamp(turn + da * 5, -1, 1);
       if (d > 0.5 * s && Math.abs(da) < 0.8) drive = Math.max(drive, Math.abs(da) < 0.35 ? 1 : 0.4);
     }
-    return { drive, turn };
+    const fire = k === 0 && !!g.fireReq; if (k === 0) g.fireReq = false;
+    return { drive, turn, fire };
   }
   function stepGame(g){
     const tn = performance.now(), dt = Math.min(0.25, (tn - g.last) / 1000); g.last = tn;
@@ -53030,6 +53057,9 @@ const TANKMAZE_APP = (() => {
       out.push({ kind: 'mzTurret', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? lighten(col) : WRECK });
       out.push({ kind: 'mzGun', u: t.x, v: t.y, scale: s, yaw: y, color: t.alive ? GUNC : 0x1a1a1a });
     });
+    for (const sh of V.shells || []) out.push({ kind: 'mzShell', u: sh.x, v: sh.y, scale: s * 0.13, lift: 0.17 * s, color: 0xffe08a });
+    for (const P of V.pops || []){ const a = V.t - P.t; if (a < 0 || a > 0.7) continue; const f = a / 0.7;
+      for (let i = 0; i < 4; i++){ const q = (i + 0.5) * TAU / 4 + P.t * 7, d = 0.3 * f * s; out.push({ kind: 'mzFire', u: P.x + Math.cos(q) * d, v: P.y + Math.sin(q) * d, scale: s * (0.3 + 0.3 * f), lift: 0.05 * s, color: f < 0.4 ? 0xfff4d0 : 0xffc040 }); } }
     // (the time left to hold out was a gold bar along the near wall until Oct 29: "Remove the Tank maze timer")
     for (const B of V.booms){
       const a = V.t - B.t; if (a < 0 || a > 1.8) continue;
@@ -53042,7 +53072,7 @@ const TANKMAZE_APP = (() => {
     }
     return out;
   }
-  function liveView(g){ const G = g.G; return { L: G.L, tanks: G.tanks, booms: G.booms, t: G.t, hold: G.hold, seats: g.seats, cols: colsOf(g.seats) }; }
+  function liveView(g){ const G = g.G; return { L: G.L, tanks: G.tanks, booms: G.booms, shells: G.shells, pops: G.pops, t: G.t, hold: G.hold, seats: g.seats, cols: colsOf(g.seats) }; }
   function viewOf(c, r){
     const k = gkey(c, r), here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(k);
     if (g){ if (here) stepGame(g); return liveView(g); }
@@ -53069,6 +53099,7 @@ const TANKMAZE_APP = (() => {
     mzTurret: T => merge(T, [cyl(T, 0.12, 0.08, -0.02, 0.16, 0, 18)]),
     mzGun: T => merge(T, [boxAt(T, 0.3, 0.045, 0.05, 0.22, 0.185, 0)]),
     mzFire: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.7, 1); g.translate(0, 0.35, 0); g.userData.unlit = true; g.userData.opacity = 0.9; return g; },
+    mzShell: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.userData.unlit = true; return g; },
     mzPuff: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.6, 1); g.translate(0, 0.3, 0); g.userData.opacity = 0.45; return g; },
   };
 
@@ -53096,13 +53127,13 @@ const TANKMAZE_APP = (() => {
       const head = 'Tank maze — level ' + lv + ', ' + m + '×' + m + (N > 2 ? ', ' + (N - 1) + ' hunters' : '') + (best ? ' · best ' + best + ' s' : '');
       if (!g) return head;
       return head + (g.state === 'over' ? ' · caught after ' + g.survived + ' s'
-        : g.state === 'play' ? ' · time ' + g.G.t.toFixed(1) + ' s · ' + (SET.players === 2 ? 'Player 2 hunting' : 'keep away') : '');
+        : g.state === 'play' ? ' · time ' + g.G.t.toFixed(1) + ' s · ' + g.G.shots + ' shot · ' + (SET.players === 2 ? 'Player 2 hunting' : 'keep away') : '');
     },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(c, r){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r };
-      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green and has no gun: keep away from the red one for as long as you can. Drive with the arrows or WASD, or drag toward where it should go.', 6000); }
+      if (LIVE && !TOLD){ TOLD = true; say('Your tank is green: last as long as you can. Shoot a hunter (Enter, F or the fire button) and it goes home and starts over; it cannot shoot you, but touching you ends the game. Drive with the arrows or WASD, or drag.', 6000); }
     },
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'play' || g.state === 'count'); },
     onCellTap(c, r, u, v){
@@ -53115,6 +53146,9 @@ const TANKMAZE_APP = (() => {
       if (g.state === 'ready') begin(g);
       return true;
     },
+    playActs(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || g.state === 'over' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      return [{ key: 'fire', glyph: '💥', label: 'fire', title: 'Fire a shell along your tank\'s heading: a hunter it hits goes home and starts over' }]; },
+    onPlayAct(c, r, key){ const g = GAMES.get(gkey(c, r)); if (!g || g.state === 'over' || key !== 'fire') return false; begin(g); g.fireReq = true; return true; },
     onCellHold(c, r){ restart(c, r); say('A new game on this board.', 1400); return true; },
     // a press anywhere on the board and a drag steers the tank toward the finger, for as long as it is down
     keepsPress: true,
