@@ -4432,8 +4432,15 @@ function applyPan(ddx, ddy, src, at){
   const _now = performance.now();
   const _dt = Math.max(1, Math.min(120, _now - (PAN.movedMs || _now - 16)));
   const _k = 1 - Math.exp(-_dt / PAN_TAU);          // over time, not over events
-  PAN.vx += (dX - PAN.vx) * _k;                     // running average, for the release
-  PAN.vz += (dZ - PAN.vz) * _k;
+  /* A STALLED FRAME IS NOT A FAST HAND (Nov 1: "panning is broken … all of a sudden it moves 100's of boards, and it does not pan, it
+     moves between images."): the velocity is a distance a sample, quoted against a 60 fps frame. When the page stalls (a big picture
+     decoded and sent to the card) the browser hands back one move that covers everything since the last, so a slow drag read as a
+     flick, passed `SWIPE_LAUNCH`, and launched the endless drift at release: boards streaming past, one image after another. A sample
+     that came more than two frames after the last is scaled to two frames' worth; quicker ones are left as they were. */
+  const _gap = Math.min(1000, _now - (PAN.movedMs || _now - FRAME_MS));
+  const _sc = _gap > 2 * FRAME_MS ? 2 * FRAME_MS / _gap : 1;
+  PAN.vx += (dX * _sc - PAN.vx) * _k;               // running average, for the release
+  PAN.vz += (dZ * _sc - PAN.vz) * _k;
   PAN.dtMs = _dt;                                   // how far apart the samples are coming
   PAN.movedMs = _now;                               // the hand is moving NOW (see launchDriftIfSwipe)
   try { noteDrift(); } catch {}                     // …and which way that was
@@ -23331,9 +23338,10 @@ const GALLERY_APP = (() => {
        softer. Tiles are pushed out of the way entirely (faceMinPx), since a
        flat averaged colour is a third answer for the same board. */
     photoMinPx: 0.25,          // …and by width, down to a quarter of a pixel
-    /* (Nov 1: "It will not be used to show high resolution images so this is not needed.") A print stays the 256 px copy the photo tier
-       first hangs: it is never swapped for the full one when its board grows, so a picture never changes under you as it sharpens. */
-    photoSmallOnly: true,
+    /* (Nov 1: "are you still doing an intermediate image. it is very pixalated.") A print is hung as the whole picture the first
+       time it is drawn, never as the 256 px copy the photo tier gives other apps first and sharpens later: that copy was the
+       intermediate picture, and kept for good (`photoSmallOnly`, the cut before this) it was pixelated on a framed board. */
+    photoFullAtOnce: true,
     /* NO FLOOR. This was 0.5px of screen height, and everything below it was
        handed to the fabric — which is a REPEATING block, drawn through a mip
        bias that reaches 8× blur at range. A blurred average of the whole
@@ -63176,7 +63184,7 @@ function _flushAppPhotos(){
   const _mayUpgrade = _photoSpeed < _PHOTO_UP_SPD;
   for (const [key, rec] of (_mayUpgrade ? _photoMeshes : [])){
     if (ups >= _PHOTO_UP_FRAME || !_photoHasMs()) break;
-    if (rec.hi || rec.want < _PHOTO_HI_PX || !rec.full || (_upApp && _upApp.photoSmallOnly)) continue;
+    if (rec.hi || rec.want < _PHOTO_HI_PX || !rec.full) continue;
     const _t0 = performance.now();
     try {
       const old = rec.mesh.material.map;
@@ -63284,12 +63292,17 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     /* THE FRAME'S BUILD BUDGET. Past it the board draws the fabric for this
        frame and asks again on the next — a picture arriving a few frames
        late is invisible; forty texture uploads in one frame is a stutter. */
-    if (_photoNewThisFrame >= _PHOTO_NEW_FRAME){ _photoDeclined++; return false; }
+    /* A BOARD THAT IS BIG ON SCREEN NEVER WAITS ON THE BUDGET, for an app that says photoFullAtOnce (Nov 1: "are you still doing an
+       intermediate image. it is very pixalated."): a declined board draws the fabric, whose block of pictures is a low-resolution
+       texture, so a big board showed that blown up until its print was built a frame or more later. Only a few boards are ever
+       this big at once. */
+    const _urgent = !!app.photoFullAtOnce && (bp || 0) >= 120;
+    if (!_urgent && _photoNewThisFrame >= _PHOTO_NEW_FRAME){ _photoDeclined++; return false; }
     /* …AND THE FRAME'S REMAINING MILLISECONDS, which is the limit that
        actually keeps an autopan smooth — see the budget block above. A board
        that misses out draws the backdrop this frame and asks again on the
        next, which is what the count cap has always done. */
-    if (!_photoHasMs()){ _photoDeclined++; return false; }
+    if (!_urgent && !_photoHasMs()){ _photoDeclined++; return false; }
     const _t0 = performance.now();
     if (_photoMeshes.size >= _PHOTO_KEYMAX){
       if (!_photoPoolWarned){ _photoPoolWarned = true;
@@ -63301,7 +63314,7 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     let cv = null;
     try { cv = app.photoCanvas ? app.photoCanvas(key) : null; } catch {}
     if (!cv){ _photoDeclined++; return false; }
-    const hi  = (bp || 0) >= _PHOTO_HI_PX && !app.photoSmallOnly;      // big on screen now? cut it full (not for an app that keeps its prints small)
+    const hi  = (bp || 0) >= _PHOTO_HI_PX || !!app.photoFullAtOnce;      // big on screen now? cut it full (an app that says photoFullAtOnce never gets the small copy)
     const src = hi ? cv : _photoSmallCanvas(cv);
     const _tex = _photoTexture(src);
     _photoApplyWindow(app, key, _tex);          // the fit, from the frame it appears
