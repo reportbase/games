@@ -2410,6 +2410,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test's checks that wanted a click on a finished board to land on another (Sokoban, the tilt maze, pinball, 3D Tetris,
     Soma, Nonograms, trick shots, Bejeweled) now want the view where it was and the board's game begun again; the flash cards'
     want the view still after grading and the real N to fly to the next card.
+- **A double tap resets a completed board** (Nov 1: "double clicking a completed board should reset it."): an app that can say a board's game
+  is over has `gameDone(c, r)` (set after the id list from a table of each game's own finished state: 3D Tetris and Soma 'done', Bejeweled
+  and marble run 'won', Sokoban `solved`, the tilt maze 'done', Lights Out `done`, Nonograms 'solved', trick shots `ch && solvedIn`, and
+  'over' for pinball, Simon, Whack-a-mole, the tanks, Pong, air hockey, squash, curling and bowling; each reads its `_debug.GAMES`, which
+  3D Tetris, Soma, Bejeweled and Sokoban now expose). `handleGroundTap` asks it on every tap (`_lastTapDone`): a double on a finished board
+  calls the app's `onReset` for it before the field's reframe, and when the pair's first tap landed on a finished board (a tap there
+  already plays it again, so by the second the board is new) the second is the field's double and not a first move on the new game.
+  Boards in play are untouched by a double, which only reframes as before. The smoke test (part 7, "double tap resets a completed
+  board") checks the apps answer, a real double on a board in play leaving its game and on a finished Lights Out board beginning it again.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under

@@ -16290,6 +16290,7 @@ function setBoardLock(v){
   try { const b = document.getElementById('bBoardLock'); if (b) b.hidden = !BOARD_LOCK; } catch {}
 }
 try { window.__boardLock = () => BOARD_LOCK; window.__boardLockSet = setBoardLock; } catch {}
+let _lastTapDone = { at: -1e9, c: -1, r: -1, done: false };   // (was the last tap on a finished board: a double there resets it, Nov 1)
 let _lastTapSelected = { at: -1e9, sel: false };   // (was the last tap on a board not yet framed: see noDoubleTap, Oct 16)
 /* ── One gesture, one tap ────────────────────────────────────────────────
    A touch fires pointerdown, and then the browser SYNTHESISES a mouse event
@@ -16497,11 +16498,20 @@ function handleGroundTap(hit, ev){
       //  editor's answer is 'always', since a hole, a maze or a table is made zoomed in, and its quick second taps (a thing laid,
       //  then taken; a leaf taken away) are the editor's wherever the view is: CI's hole editor lost them)
       if (_noDbl && _noDbl !== 'always' && !framedAsDefault()) _noDbl = false;
+      /* A DOUBLE ON A FINISHED BOARD RESETS IT (Nov 1: "double clicking a completed board should reset it."): an app that can say a
+         board's game is over (`gameDone(c, r)`) has it begun again by a double tap there, whatever its own single tap did; and when
+         the first tap of the pair landed on a finished board (a tap there already plays it again, so the board is fresh by the second)
+         the second is the field's double and not a first move on the new game. */
+      const _GSd = Math.max(1, Math.round(Math.sqrt(st.N))), _wd = v => ((v % _GSd) + _GSd) % _GSd, _dc = _wd(_gx0), _dr = _wd(_gz0);
+      let _doneNow = false; try { const _a = window.getFieldApp && window.getFieldApp(); _doneNow = !!(_a && _a.gameDone && _a.gameDone(_dc, _dr)); } catch {}
+      if (_noDbl && (_doneNow || _lastTapDone.done) && _lastTapDone.c === _dc && _lastTapDone.r === _dr && _tapAt - _lastTapDone.at < DOUBLE_TAP_MS) _noDbl = false;
+      _lastTapDone = { at: _tapAt, c: _dc, r: _dr, done: _doneNow };
       _lastTapSelected = { at: _tapAt, sel: !_onFramedNow };
       const _isDbl = tapIsDouble(hit, _tapAt);
       if (!_noDbl && _isDbl){
         cancelSidePanelToggle();     // the first tap of this pair was not a toggle
         if (autoMode){ setAutoMode(false); return; }   // eaten here too
+        try { const _ra = window.getFieldApp && window.getFieldApp(); if (_ra && _ra.gameDone && _ra.onReset && _ra.gameDone(_dc, _dr)) _ra.onReset(_dc, _dr); } catch (e){ _reportError('app reset by double tap', e); }
         // Doubling on the piece the hint points at PLAYS the hint. Checked
         // before the reframe below, and only when a hint is actually being
         // shown on your move — so the gesture exists exactly when there is
@@ -29328,7 +29338,7 @@ const BLOCKOUT_APP = (() => {
         ctx.fillRect(o + (i % P) * t + 1, o + ((i / P) | 0) * t + 1, t - 2, t - 2);
       }
     },
-    _debug: { PZ, SET, makePuzzle, puzzleOf, puzzleGame, playSeq, shownPuzzle, starsOf, setMode, setGlass, PIECES, ORI, OPS, LV, newGame, start, step, turn, ask, opFor, shift, hardDrop, lock, plan, pathTo, bakeReel, adopt, gameAt, fits, cellsOf, dropZ,
+    _debug: { GAMES, PZ, SET, makePuzzle, puzzleOf, puzzleGame, playSeq, shownPuzzle, starsOf, setMode, setGlass, PIECES, ORI, OPS, LV, newGame, start, step, turn, ask, opFor, shift, hardDrop, lock, plan, pathTo, bakeReel, adopt, gameAt, fits, cellsOf, dropZ,
               games: GAMES, BEST, itemsOf, snap, levelAt, boardIdx, fallEvery,
               levelOf: (c, r) => lvOf(c, r), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
@@ -30639,7 +30649,7 @@ const SOMA_APP = (() => {
       const t = sz / 5, cells = [[1, 1, 0], [2, 1, 0], [3, 1, 1], [1, 2, 4], [2, 2, 3], [3, 2, 3], [1, 3, 5], [2, 3, 6], [3, 3, 2]];
       for (const [x, y, k] of cells){ ctx.fillStyle = '#' + COLS[k].toString(16).padStart(6, '0'); ctx.fillRect(x * t + 1, y * t + 1, t - 2, t - 2); }
     },
-    _debug: { handAt, PICK_K, PICK_CAP, IMPOSSIBLE, quickWays, parFor, parOf, timeStars, makeImpossible, shownSol, declare, canSay, figSoon, SOONF, FIGS,
+    _debug: { GAMES, handAt, PICK_K, PICK_CAP, IMPOSSIBLE, quickWays, parFor, parOf, timeStars, makeImpossible, shownSol, declare, canSay, figSoon, SOONF, FIGS,
               SETS, useSet, get SET_ID(){ return SET_ID; }, get MIRROR(){ return MIRROR; }, get FLAT(){ return FLAT; }, get PIECES_NOW(){ return PIECES; }, get NAMES_NOW(){ return NAMES; }, polycubes, snapNear, fitGlow, sqOf, SET, ED, GAL, get DEMO(){ return DEMO; }, MINE, SHARE, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edCount, edNeed, cellAtTap, cleanFig, takeFig, shareFig, forgetFig, figOfData, galOpen, galStep, galClose, galItems, showUnfound, demoEnd, figKey, builtAt,
               get COURSE(){ return COURSE; }, courseFigure, countGen, countAll, countSoon, canon, symsOf, WAYS, FOUND, waysText, bestKey, get PIECES(){ return PIECES; }, get ORI(){ return ORI; }, get LV(){ return LV; }, get NAMES(){ return NAMES; }, makeFigure, figureOf, solve, fresh, gameAt, takeUp, slide, turn, ask, opFor, stepZ, place, hint, fitsAt, curZ, shownOf, starsOf, itemsFor, viewOf,
               games: GAMES, BEST, boardIdx, levelOf: (c, r) => lvOf(c, r), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
@@ -31511,7 +31521,7 @@ const GEMS_APP = (() => {
         ctx.beginPath(); ctx.arc((i % n + 0.5) * t, (((i / n) | 0) + 0.5) * t, t * 0.36, 0, Math.PI * 2); ctx.fill();
       });
     },
-    _debug: { newGame, step, act, trySwap, swap, groupsOf, moves, deal, shuffle, specOf, specAt, prog, met, plan, quickPick, simMove, copyOf, parFor, parGen, limitFor,
+    _debug: { GAMES, newGame, step, act, trySwap, swap, groupsOf, moves, deal, shuffle, specOf, specAt, prog, met, plan, quickPick, simMove, copyOf, parFor, parGen, limitFor,
               itemsOf, gridOf, litOf, starsOf, bestKey, restart, setting, tilesOf, titleOf, fresh, showAt, LV, SET, PARS, SPECS, BEST, SHOWS, games: GAMES,
               NONE, FLAME, STAR, HYPER, HYPER_K, STONE_K, levelAt, boardIdx,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; } },
@@ -47364,7 +47374,7 @@ const SOKOBAN_APP = (() => {
       const cols = colorsOf(levelOfState(s), s.player, s.boxes).colors;
       paint(ctx, 0, 0, sz / V, cols);
     },
-    _debug: { shareLevel, takeLevel, fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edCheck, edPlace, edTile, edTiles, mine: MINE, mineLevel, gameAt, MAP, deal, step, undo, path, framesOf, boardLevel, boardIdx, ringOf, levelAt, makeLevel, dealBack, solve, starsFor, LV_DIALS, BOARDS, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
+    _debug: { GAMES, shareLevel, takeLevel, fly: (c, r) => gotoCell(c, r), ed: () => ED, edOpen, edDone, edCancel, edCheck, edPlace, edTile, edTiles, mine: MINE, mineLevel, gameAt, MAP, deal, step, undo, path, framesOf, boardLevel, boardIdx, ringOf, levelAt, makeLevel, dealBack, solve, starsFor, LV_DIALS, BOARDS, games: GAMES, uvAt: (x, y) => _framedUV(x, y), dirs: () => screenToBoardDirs() },
   };
   SHARE.install(app, takeLevel);
   return app;
@@ -61756,6 +61766,18 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
  [CONNECT4_APP, 'connectfour'], [LOA_APP, 'linesofaction'],
  [ATAXX_APP, 'ataxx'], [LEVELS_APP, 'levels'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
 SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own share link, Oct 13)
+/* WHICH BOARDS ARE COMPLETED (Nov 1: "double clicking a completed board should reset it."): the games whose finished board a tap plays
+   again say when a board's game is over, by their own state, so the field can offer a double tap there the same (`gameDone`, read in
+   `handleGroundTap`). Each reads its own board's game by `_debug.GAMES`, the state its own tap tests before `onReset`. */
+{
+  const DONE = { blockout: g => g.state === 'done', soma: g => g.state === 'done', bejeweled: g => g.state === 'won', sokoban: g => !!g.solved,
+    tiltmaze: g => g.state === 'done', pinball: g => g.state === 'over', simon: g => g.state === 'over', lightsout: g => !!g.done,
+    whackamole: g => g.state === 'over', nonograms: g => g.state === 'solved', tanks: g => g.state === 'over', pong: g => g.state === 'over',
+    airhockey: g => g.state === 'over', squash: g => g.state === 'over', curling: g => g.state === 'over', bowling: g => g.state === 'over',
+    marblerun: g => g.state === 'won', trickshots: g => !!(g.ch && g.solvedIn) };
+  for (const a of window.FIELD_APPS){ const f = DONE[a.id]; if (!f) continue;
+    a.gameDone = (c, r) => { try { const M = a._debug && a._debug.GAMES, g = M && M.get(BOARD_KIT.gkey(c, r)); return !!(g && f(g)); } catch { return false; } }; }
+}
 let FIELD_APP = CHESS_APP;               // ...unless you left it somewhere else
 /* WHICH APP YOU WERE LAST IN. Chess is the build's opening move and stays the
    answer for a first visit, but coming back to a field you have been using as

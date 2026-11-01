@@ -6858,6 +6858,39 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!turned) failures.push(`[${current}] yaw ${y0} -> ${y1}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} trackpad rotation (Alt with a two-finger sideways scroll turned the view ${(y1 - y0).toFixed(1)} degrees)`);
   }
+  {
+    /* A DOUBLE ON A COMPLETED BOARD RESETS IT (Nov 1: "double clicking a completed board should reset it."): the games that can say a
+       board is finished (`gameDone`) have it begun again by a real double tap there; a double on a board still in play is the field's
+       reframe and leaves its game as it was, and every one of those games answers `gameDone`. */
+    current = 'double tap resets a completed board'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'lightsout')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const mid = () => page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; });
+    const dbl = async ([x, y]) => page.evaluate(async ([x, y]) => { const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms)), T = window.FIELD_WORLD.target, S = window.tvf.state;
+      for (let k = 0; k < 80 && (T.active || S.heldPanRate); k++) await wait(250);
+      const tap = () => { const t = new Touch({ identifier: 7, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+        const te = type => new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] });
+        const pe = type => new PointerEvent(type, { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: x, clientY: y });
+        return [pe('pointerdown'), te('touchstart'), pe('pointerup'), te('touchend')]; };
+      for (const e of [...tap(), ...tap()]) cv.dispatchEvent(e);
+      await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); }, [x, y]);
+    const key = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = window.FIELD_WORLD.cellAt(window.FIELD_WORLD.target.boardX, window.FIELD_WORLD.target.boardZ); return [f.c, f.r]; });
+    const out = {};
+    out.has = await page.evaluate(() => ['blockout', 'soma', 'bejeweled', 'sokoban', 'tiltmaze', 'pinball', 'simon', 'lightsout', 'whackamole', 'nonograms', 'tanks', 'pong', 'airhockey', 'squash', 'curling', 'bowling', 'marblerun', 'trickshots']
+      .filter(id => { const a = window.FIELD_APPS.find(x => x.id === id); return !(a && typeof a.gameDone === 'function' && a._debug && a._debug.GAMES && typeof a._debug.GAMES.get === 'function'); }));
+    // a board in play: the double leaves its game alone
+    let [c, r] = await key(); await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(D.gkeyOf ? D.gkeyOf(c, r) : c + '_' + r); const g = D.gameAt(c, r); g.mark = 'same'; g.done = false; window.__g0 = g; }, [c, r]);
+    let m = await mid(); await dbl([m.x, m.y]);
+    out.inPlay = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; return { same: D.GAMES.get(c + '_' + r) === window.__g0 || !!(D.GAMES.get(c + '_' + r) && D.GAMES.get(c + '_' + r).mark), done: window.getFieldApp().gameDone(c, r) }; }, [c, r]);
+    // the same board finished: the double begins it again
+    [c, r] = await key();
+    await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.gameAt(c, r); g.mark = 'old'; g.done = true; }, [c, r]);
+    out.finished = await page.evaluate(([c, r]) => window.getFieldApp().gameDone(c, r), [c, r]);
+    m = await mid(); await dbl([m.x, m.y]);
+    out.reset = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r); return { fresh: !!g && g.mark !== 'old' && !g.done, done: window.getFieldApp().gameDone(c, r) }; }, [c, r]);
+    const ok = out.has.length === 0 && out.inPlay.same && !out.inPlay.done && out.finished && out.reset.fresh && !out.reset.done;
+    if (!ok) failures.push(`[${current}] ${JSON.stringify(out)}`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} double tap resets a completed board (every finished-game app answers gameDone; a real double on a board in play left its game, on a finished Lights Out board began it again)`);
+  }
   }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
