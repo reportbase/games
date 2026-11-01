@@ -23555,12 +23555,12 @@ const GALLERY_APP = (() => {
           const at = still ? { c: Math.round(target.boardX / SPX), r: Math.round(target.boardZ / SPZ) } : viewBoardCell();
           if (!at) return;
           const i = pick(at.c, at.r);
-          if (i >= 0 && i < COLLN && i !== POS_LAST){ POS_LAST = i; posSave(COLLK, { i }); }
+          if (i >= 0 && i < Math.max(COLLN, EXPECT.n | 0, LIST.length) && i !== POS_LAST){ POS_LAST = i; posSave(COLLK, { i }); }   // (the size as it is now: pictures joined later make it larger than when the key was made)
         } catch {}
       }, 500);
     },
     onFramed(c, r){                        // flew to another board: that was the way out too
-      try { if (POS_ON && COLLK && c !== null && c !== undefined){ const i = pick(c, r); if (i >= 0 && i < COLLN) posSave(COLLK, { i }); } } catch {}
+      try { if (POS_ON && COLLK && c !== null && c !== undefined){ const i = pick(c, r); if (i >= 0 && i < Math.max(COLLN, EXPECT.n | 0, LIST.length)) posSave(COLLK, { i }); } } catch {}
       // …unless this is the board a tap just took us to (worldTap, below): that tap IS the zoom.
       if (this._arrive && this._arrive === c + '\u00b7' + r){ this._arrive = null; return; }
       if (this._zoomKey !== null) this._remember();
