@@ -49857,12 +49857,12 @@ const SIMON_APP = (() => {
   const { BEST, saveBest } = BOARD_KIT.best('simon.best');
   const bestKey = S => S.idx + '@' + S.lv;
   const clock = () => performance.now() / 1000;
-  const fresh = (c, r) => ({ S: seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1 });
+  const fresh = (c, r) => ({ S: seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1, view: -1 });
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   function beep(p, dur, quiet){ if (quiet) return; try { if (SND.on && ARCADE.audio()) ARCADE.tone(TONE[p], TONE[p], Math.max(0.12, dur), 'triangle', 0.08); } catch {} }
-  function begin(g){ g.n = 1; g.score = 0; g.miss = -1; showRound(g, 0.5); }
-  function showRound(g, wait){ g.state = 'show'; g.t0 = clock() + (wait || 0); g.i = 0; g.shown = -1; }
+  function begin(g){ g.n = 1; g.score = 0; g.miss = -1; g.view = -1; showRound(g, 0.5); }
+  function showRound(g, wait){ g.state = 'show'; g.view = -1; g.t0 = clock() + (wait || 0); g.i = 0; g.shown = -1; }
   function stepGame(g, quiet){
     const t = clock();
     if (g.state === 'show'){
@@ -49877,6 +49877,7 @@ const SIMON_APP = (() => {
     }
     if (g.state === 'input'){
       if (g.litTo && t > g.litTo){ g.lit = -1; g.litTo = 0; }
+      if (g.view >= 0) g.deadline = t + g.S.D.wait;       // (looking back stops the clock)
       if (t > g.deadline) over(g, 'Too slow.', quiet);
       return;
     }
@@ -49886,6 +49887,7 @@ const SIMON_APP = (() => {
   // your press: right, the next one or the round done; wrong, the game over
   function press(g, p, quiet){
     if (g.state !== 'input') return false;
+    g.view = -1;
     const t = clock(), want = g.S.at(g.i);
     if (p !== want){ g.miss = want; over(g, 'Not that one.', quiet); return true; }
     g.lit = p; g.litTo = t + 0.22; beep(p, 0.2, quiet);
@@ -49927,7 +49929,7 @@ const SIMON_APP = (() => {
   /* THE COLOURS' NUMBERS (Nov 1: "simon should show a dot for each color on the bottom of the board. The first simon color should have
      1 dot for example."): along the board's near edge each pad's colour stands as dots, the first one dot, the second two, and so on
      (the keys 1 to 8 are the same numbers), lit when its pad is. The ring is drawn `RING_K` of its size to leave the strip. */
-  const RING_K = 0.9, DOT_V = 0.967, DOT_R = 0.0075;
+  const RING_K = 0.84, DOT_V = 0.967, DOT_R = 0.0075;
   function dotItems(P, lit, out){
     const d = P > 6 ? 0.0165 : 0.021, gap = P > 6 ? 0.026 : 0.034;
     let W = 0; for (let p = 0; p < P; p++) W += p * d + 2 * DOT_R + (p ? gap : 0);
@@ -49938,7 +49940,25 @@ const SIMON_APP = (() => {
       u += p * d + 2 * DOT_R + gap;
     }
   }
+  /* THE HISTORY SLIDER (Nov 1: "the top of simon board should have a slider that lets the player pan through the current games
+     history."): along the far edge a row of dots, one for each step of the sequence so far, oldest on the left and in the step's
+     pad colour. A press or drag on that strip picks a step (`g.view`): its pad lights, with its tone, and its dot is ringed in
+     white, while the game itself waits (the time to answer stops). A tap on a pad or the next round puts it back to live. */
+  const SL_V = 0.05, SL_HIT = 0.1, SL_U0 = 0.1, SL_U1 = 0.9;
+  const histOf = g => (g && g.state !== 'ready') ? g.n : 0;
+  const sliderOn = g => histOf(g) >= 2;
+  const slSp = H => Math.min(0.05, (SL_U1 - SL_U0) / Math.max(1, H - 1));                 // (the dots' spacing, and the drag's)
+  const viewAt = (g, u) => { const H = histOf(g), sp = slSp(H), u0 = 0.5 - sp * (H - 1) / 2; return Math.max(0, Math.min(H - 1, Math.round((u - u0) / sp))); };
+  function sliderItems(S, g, out){
+    const H = histOf(g), sp = slSp(H), r = Math.min(0.012, sp * 0.4), W = sp * (H - 1), u0 = 0.5 - W / 2;
+    for (let k = 0; k < H; k++){
+      const p = S.at(k), sel = k === g.view, u = u0 + k * sp;
+      if (sel) out.push({ kind: 'smDot', u, v: SL_V, scale: 1.9 * r / DOT_R, lift: 0.003, color: 0xffffff });
+      out.push({ kind: 'smDot', u, v: SL_V, scale: (sel ? 1.2 : 1) * r / DOT_R, lift: 0.012, color: sel ? PAD[p] : dim(PAD[p], 0.6) });
+    }
+  }
   function itemsOf(S, lit, g){
+    if (g && g.view >= 0 && sliderOn(g)) lit = S.at(g.view);
     const P = S.D.pads, out = [{ kind: 'smBase', u: 0.5, v: 0.5, scale: RING_K, color: RING_C }];
     for (let p = 0; p < P; p++){
       const on = p === lit;
@@ -49947,6 +49967,7 @@ const SIMON_APP = (() => {
     const hc = g && g.state === 'over' ? 0x5a1f22 : g && (g.state === 'input' || g.state === 'pause') ? 0x1f3a2a : HUB;
     out.push({ kind: 'smHub', u: 0.5, v: 0.5, scale: RING_K, color: hc });
     dotItems(P, lit, out);
+    if (g && sliderOn(g)) sliderItems(S, g, out);
     return out;
   }
   /* A pad: a flat wedge of the ring between R_IN and R_OUT, a little gap either side, standing PAD_H high with its outer and
@@ -49980,6 +50001,9 @@ const SIMON_APP = (() => {
   }
   const padKinds = {};
   for (const P of [4, 6, 8]) for (let p = 0; p < P; p++) padKinds['smPad' + P + '_' + p] = T => padGeo(T, P, p);
+  let SLIDE = null;
+  // a step looked at: its pad lights and sounds once as the slider reaches it
+  function look(g, k){ if (g.view === k) return; g.view = k; g.lit = -1; g.litTo = 0; beep(g.S.at(k), 0.2); }
   const KEYS = { ArrowUp: [0, 3], ArrowRight: [1, 0], ArrowDown: [2, 1], ArrowLeft: [3, 2] };
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -50030,11 +50054,30 @@ const SIMON_APP = (() => {
        second quick tap on the same spot as a double-tap, which reframes the view and never reaches the game: of five quick
        taps on one pad, two were lost. While a game is going every tap is a tap, as in mini golf's editor. */
     noDoubleTap(){ const g = liveGame(); return !!g && (g.state === 'show' || g.state === 'input' || g.state === 'pause'); },
+    /* the slider: a press on the far strip is the slider's, so the view never pans under it (`claimsPan`), and a drag along it
+       walks through the steps; the tap the field still calls at the end of a drag is eaten */
+    claimsPan(u, v){
+      SLIDE = null;
+      const g = liveGame();
+      if (!g || u == null || v == null || !sliderOn(g) || v > SL_HIT) return false;
+      SLIDE = { moved: false };
+      look(g, viewAt(g, u));
+      return true;
+    },
+    onPan(dx, dy, at){
+      const g = liveGame();
+      if (!g || !SLIDE) return false;
+      if (at && sliderOn(g)){ SLIDE.moved = true; look(g, viewAt(g, at.u)); }
+      return true;
+    },
     onCellTap(c, r, u, v){
+      if (SLIDE){ const moved = SLIDE.moved; SLIDE = null; if (moved) return true; }
       LIVE = { c, r };
       let g = gameAt(c, r);
+      if (g.state !== 'over' && g.state !== 'ready' && u != null && v != null && sliderOn(g) && v <= SL_HIT){ look(g, viewAt(g, u)); return true; }
       if (g.state === 'over'){ g = fresh(c, r); GAMES.set(gkey(c, r), g); begin(g); return true; }
       if (g.state === 'ready'){ begin(g); say('Watch, then play it back: tap the pads (or press 1–' + g.S.D.pads + ').', 2600); return true; }
+      g.view = -1;                                // (a tap anywhere else puts the board back to live)
       const p = u == null ? -1 : padAt(g.S.D, u, v);
       if (typeof p === 'number' && p >= 0) press(g, p);
       return true;

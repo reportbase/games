@@ -3333,6 +3333,31 @@ try {
     const ok3 = quick.score === 5 && quick.state !== 'over' && quick.corner === 0;
     if (!ok3) failures.push('[simon] quick taps on one pad: ' + JSON.stringify(quick));
     console.log(`${ok3 ? 'ok  ' : 'FAIL'} simon: five quick real touches on one pad are five presses (${quick.score}), a corner is its pad's`);
+    // the history slider (Nov 1: "the top of simon board should have a slider that lets the player pan through the current games history."):
+    // a real drag along the far strip walks through the steps, lighting each step's pad and leaving the answer's clock still; a tap on a pad
+    // is live again
+    {
+      await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.fresh(f.c, f.r);
+        D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; g.n = 6; g.state = 'input'; g.i = 0; g.deadline = performance.now() / 1000 + 60; });
+      await page.waitForTimeout(600);
+      const a0 = await aimAt(0.5, 0.05), a1 = await aimAt(0.9, 0.05), a2 = await aimAt(0.1, 0.05);
+      const look = async () => page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.GAMES.get(f.c + '_' + f.r);
+        return { view: g.view, want: g.view >= 0 ? g.S.at(g.view) : null, n: g.n, dots: window.getFieldApp().cellItems(f.c, f.r).filter(i => i.kind === 'smDot').length, state: g.state }; });
+      await page.mouse.move(a0.x, a0.y); await page.mouse.down();
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(a0.x + (a1.x - a0.x) * k / 8, a0.y + (a1.y - a0.y) * k / 8); await page.waitForTimeout(30); }
+      await page.mouse.up(); await page.waitForTimeout(300);
+      const right = await look();
+      await page.mouse.move(a1.x, a1.y); await page.mouse.down();
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(a1.x + (a2.x - a1.x) * k / 8, a1.y + (a2.y - a1.y) * k / 8); await page.waitForTimeout(30); }
+      await page.mouse.up(); await page.waitForTimeout(300);
+      const left = await look();
+      const pad = await aimAt(0.5 + 0.31 * Math.cos(-Math.PI / 2 + Math.PI / 4), 0.5 + 0.31 * Math.sin(-Math.PI / 2 + Math.PI / 4));
+      await page.mouse.click(pad.x, pad.y); await page.waitForTimeout(300);
+      const live = await look();
+      const okSl = right.view === 5 && left.view === 0 && right.dots >= 6 + 6 && live.view === -1;
+      if (!okSl) failures.push('[simon slider] ' + JSON.stringify({ right, left, live }));
+      console.log(`${okSl ? 'ok  ' : 'FAIL'} simon: a real drag along the top slider walked the history (the last of ${right.n} steps, then the first), a tap on a pad was live again`);
+    }
     // a board no one plays lights its pads in turn
     const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
       for (let k = 0; k < 40; k++){ seen.add(D.shownLit(S)); await new Promise(ok => setTimeout(ok, 60)); } return seen.size; });
