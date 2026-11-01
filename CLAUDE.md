@@ -955,6 +955,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     Simon) keeps the label plain and leaves out the steps at rings 7 and 31.
   - The smoke test checks the pads by ring, the same sequence on a board each time, three rounds played back and a wrong
     pad ending it, a real click starting a board and a real click on the right pad taken, and a board no one plays lighting.
+  - **The colours' numbers** (Nov 1: "simon should show a dot for each color on the bottom of the board. The first simon color should have 1 dot for example."): along the board's near edge each pad's colour is a row of dots, the first pad one dot, the second two and so on, in the pad's colour, bright while its pad is lit (`dotItems`, `smDot`; the keys 1 to 8 are the same numbers). The ring is drawn at 0.9 (`RING_K`) to leave the strip; `padAt`'s hub test follows it.
+  - **The history slider** (Nov 1: "the top of simon board should have a slider that lets the player pan through the current games history."): along the far edge a row of dots, one for each step of the sequence so far (`g.n`, from two steps up), oldest on the left, each in its pad's colour (`sliderItems`, `slSp`). A press on that strip (`SL_HIT`, the top tenth of the board; `claimsPan`, so the view never pans under it) or a drag along it (`onPan`, the tap after a drag eaten) picks a step (`g.view`, `look`, `viewAt`): its pad lights with its tone, its dot is ringed white and the answer's clock stops. A tap anywhere else, a pad pressed or the next round puts it live again. The ring is `RING_K` 0.84. The smoke test ("simon: a real drag along the top slider") drags it both ways with the real mouse.
 - **Lights Out** (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): `LIGHTS_APP`,
   id `lightsout`, after Simon. A grid of lights; a press flips its square and the four beside it; put every light out in as
   few presses as you can.
@@ -1017,6 +1019,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     at its time with the score kept as best, a real click starting a board's count and real clicks on two up moles scoring and on
     an empty hole costing, five quick real touches on one hole (moles there one after another) all taken, and a board no one plays
     popping.
+  - **A margin and a history slider** (Nov 1: "similarly, the memory game should let the user browse the games history. adjust the board size to accomodate."; `FRAME`, `sliderItems`, `viewIdx`): `MEMORY_APP`'s cards stand in a board one square larger all round (a 6 × 6 is 8 × 8 squares of the board, `gridOf` gives `n + 2`, the margin a dark wood; `itemsOf`, `onCellTap` and the far fabric follow), and the top margin holds a dot for each turn so far (`g.moves`, `{ a, b, hit }`, from two turns up): green for a pair made, red for a miss, oldest on the left. A press or drag along it (`claimsPan`, `onPan`) picks a turn (`g.view`): the pairs made up to it and its two cards turned up (`viewOf`), the dot ringed white; a tap on a card puts it live again. The smoke test ("memory: the cards in a margin …") drags it with the real mouse.
 - **Nonograms** (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): `NONOGRAM_APP`,
   id `nonograms`, after Simon. Picross: numbers along the top of each column and the left of each row give its runs of filled
   squares in order; fill the squares to match every line and the picture comes out in colour.
@@ -1658,6 +1661,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     boards no one plays keep the arcade's rules and take the look. A game's `spawned` says a wave came to it, so a board started at
     a later wave is not called cleared before its first. The smoke test (part 7, "asteroids settings") checks each and a real
     click on the Look tile.
+  **Always black** (Nov 1: "astroid background and difficulty color should always be black."): space is `0x000000` in every look (the 3D one was `0x05070d`, Neon's deep violet) and the app says `noDifficultyColor`, which `diffRefresh` reads as no level mat under its boards (`DIFF.on` false, near and far), so the field shows its own dark ground.
+  **Snake stops at the sides** (Nov 1: "snake should not crash when hitting the sides. it should just stop."): in `SNAKE_APP`'s `step` a head that would leave the board stays where it is that tick, its body unmoved, and goes on once it is turned; the sides no longer kill (bodies, hazards and heads meeting still do). The smoke test ("snake: a head at a side stops …") steps one into the top edge and then turns it.
 - **Harder farther out** (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
   move away from the center."): mini golf, Sokoban and the tilt maze already had levels by ring; every other game with a
   Difficulty (the board games' computer players, the arcade games, the puzzles) now plays each board at its own level.

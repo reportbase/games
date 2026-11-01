@@ -3333,11 +3333,90 @@ try {
     const ok3 = quick.score === 5 && quick.state !== 'over' && quick.corner === 0;
     if (!ok3) failures.push('[simon] quick taps on one pad: ' + JSON.stringify(quick));
     console.log(`${ok3 ? 'ok  ' : 'FAIL'} simon: five quick real touches on one pad are five presses (${quick.score}), a corner is its pad's`);
+    // the history slider (Nov 1: "the top of simon board should have a slider that lets the player pan through the current games history."):
+    // a real drag along the far strip walks through the steps, lighting each step's pad and leaving the answer's clock still; a tap on a pad
+    // is live again
+    {
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.fresh(f.c, f.r);
+        D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; g.n = 6; g.state = 'input'; g.i = 0; g.deadline = performance.now() / 1000 + 60; });
+      await page.waitForTimeout(600);
+      const a0 = await aimAt(0.5, 0.05), a1 = await aimAt(0.9, 0.05), a2 = await aimAt(0.1, 0.05);
+      const look = async () => page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.GAMES.get(f.c + '_' + f.r);
+        return { view: g.view, want: g.view >= 0 ? g.S.at(g.view) : null, n: g.n, dots: window.getFieldApp().cellItems(f.c, f.r).filter(i => i.kind === 'smDot').length, state: g.state }; });
+      await page.mouse.move(a0.x, a0.y); await page.mouse.down();
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(a0.x + (a1.x - a0.x) * k / 8, a0.y + (a1.y - a0.y) * k / 8); await page.waitForTimeout(30); }
+      await page.mouse.up(); await page.waitForTimeout(300);
+      const right = await look();
+      await page.mouse.move(a1.x, a1.y); await page.mouse.down();
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(a1.x + (a2.x - a1.x) * k / 8, a1.y + (a2.y - a1.y) * k / 8); await page.waitForTimeout(30); }
+      await page.mouse.up(); await page.waitForTimeout(300);
+      const left = await look();
+      const pad = await aimAt(0.5 + 0.31 * Math.cos(-Math.PI / 2 + Math.PI / 4), 0.5 + 0.31 * Math.sin(-Math.PI / 2 + Math.PI / 4));
+      await page.mouse.click(pad.x, pad.y); await page.waitForTimeout(300);
+      const live = await look();
+      const okSl = right.view === 5 && left.view === 0 && right.dots >= 6 + 6 && live.view === -1;
+      if (!okSl) failures.push('[simon slider] ' + JSON.stringify({ right, left, live }));
+      console.log(`${okSl ? 'ok  ' : 'FAIL'} simon: a real drag along the top slider walked the history (the last of ${right.n} steps, then the first), a tap on a pad was live again`);
+    }
     // a board no one plays lights its pads in turn
     const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
       for (let k = 0; k < 40; k++){ seen.add(D.shownLit(S)); await new Promise(ok => setTimeout(ok, 60)); } return seen.size; });
     if (!ok1 || !ok2 || demo < 2) failures.push('[simon] ' + JSON.stringify({ r, real, demo }));
     console.log(`${ok1 && ok2 && demo >= 2 ? 'ok  ' : 'FAIL'} simon (pads ${r.pads.join('/')} by ring, three rounds played back then a wrong pad ends it at ${r.wrong.score}; a real click on the right pad took)`);
+  }
+  // MEMORY'S HISTORY SLIDER (Nov 1: "similar[ly], the memory game should let the user browse the games history. adjust the board size to
+  // accomodate."): the cards stand in a margin one square wide all round, whose top row is a dot for each turn so far; a real drag along
+  // it walks through the turns (the pairs made up to one, its two cards up), a tap on a card is live again
+  {
+    current = 'memory slider'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'memory')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+    const made = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); A.onReset(f.c, f.r);
+      const g = D.games.get(f.c + '_' + f.r), byFace = new Map(); g.face.forEach((fc, i) => { if (fc >= 0) (byFace.get(fc) || byFace.set(fc, []).get(fc)).push(i); });
+      const pairs = [...byFace.values()];
+      for (const p of pairs.slice(0, 3)){ D.flip(g, p[0], 0); D.flip(g, p[1], 0); }
+      D.flip(g, pairs[3][0], 0); D.flip(g, pairs[4][0], 0); g.wait = 0; D.settle(g);
+      return { moves: g.moves.length, n: g.n }; });
+    await page.waitForTimeout(600);
+    const M = made.n + 2, look = () => page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.games.get(f.c + '_' + f.r);
+      return { view: g.view, up: [...window.getFieldApp().cellItems(f.c, f.r).filter(i => i.piece)].length, dots: window.getFieldApp().cellItems(f.c, f.r).filter(i => i.kind === 'mmDot').length }; });
+    const a0 = await aimAt(0.5, 0.5 / M), a1 = await aimAt(0.2, 0.5 / M), a2 = await aimAt(0.8, 0.5 / M);
+    await page.mouse.move(a0.x, a0.y); await page.mouse.down();
+    for (let k = 1; k <= 8; k++){ await page.mouse.move(a0.x + (a1.x - a0.x) * k / 8, a0.y + (a1.y - a0.y) * k / 8); await page.waitForTimeout(30); }
+    await page.mouse.up(); await page.waitForTimeout(300);
+    const first = await look();
+    await page.mouse.move(a1.x, a1.y); await page.mouse.down();
+    for (let k = 1; k <= 8; k++){ await page.mouse.move(a1.x + (a2.x - a1.x) * k / 8, a1.y + (a2.y - a1.y) * k / 8); await page.waitForTimeout(30); }
+    await page.mouse.up(); await page.waitForTimeout(300);
+    const last = await look();
+    const card = await aimAt(1.5 / M, 1.5 / M);
+    await page.mouse.click(card.x, card.y); await page.waitForTimeout(400);
+    const live = await look();
+    const ok = made.moves === 4 && first.view === 0 && first.up === 2 && last.view === 3 && last.dots >= 4 && live.view === -1;
+    if (!ok) failures.push('[memory slider] ' + JSON.stringify({ made, first, last, live }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} memory: the cards in a margin with a dot a turn along the top, a real drag along it walked the turns (the first with its two cards up, then the last of ${made.moves}), a tap on a card was live again`);
+  }
+  // SNAKE STOPS AT A SIDE (Nov 1: "snake should not crash when hitting the sides. it should just stop."): a head heading off the board
+  // stays alive where it is, its body unmoved, and goes on once it is turned
+  {
+    current = 'snake sides'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'snake')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const r = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onReset(f.c, f.r); const g = D.games.get(f.c + '_' + f.r) || D.gameAt(f.c, f.r); g.state = 'play'; g.pause = 0;
+      const sn = g.snakes[0]; sn.body.forEach((x, i) => { x.r = 0; x.c = 3 + i; x.pr = 0; x.pc = 3 + i; }); sn.dir = [-1, 0]; sn.queue = [];
+      const at = () => JSON.stringify(sn.body.map(x => [x.r, x.c])), was = at();
+      for (let k = 0; k < 40; k++) D.step(g, 0.2);
+      const stopped = { alive: sn.alive, same: at() === was };
+      sn.queue = [[0, 1]]; for (let k = 0; k < 10; k++) D.step(g, 0.2);
+      return { stopped, moved: at() !== was, alive: sn.alive }; });
+    const ok = r.stopped.alive && r.stopped.same && r.moved && r.alive;
+    if (!ok) failures.push('[snake sides] ' + JSON.stringify(r));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} snake: a head at a side stops where it is, alive, and goes on when turned`);
   }
   // 3D TETRIS (Oct 23: "any games that require 3d spatial rotation", then "2": Blockout): every orientation of every piece
   // found (24 for a chiral tetracube's mirror-free cousin L4, 8 for the tripod), a turn about each axis taking the top where
