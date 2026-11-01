@@ -6189,6 +6189,39 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[folder then book] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} folder then book: a markdown book opened while a folder of pictures was still arriving holds its ${r.pages} pages alone`);
   }
+  // THE CURRENT IMAGE SETS THE SHAPE WHEN IT LOADS (Nov 1: "the current image should be set as the aspect ratio when loading it."): a
+  // portrait print on the framed board with three landscape ones beside it would get a landscape board from the load's survey; the
+  // board takes the framed print's own shape once it is read.
+  {
+    current = 'load shape from current image';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const pngs = await page.evaluate(() => [0, 1, 2, 3].map(k => { const c = document.createElement('canvas'); const L = k !== 0; c.width = L ? 600 : 300; c.height = L ? 300 : 600; const x = c.getContext('2d'); x.fillStyle = '#c33'; x.fillRect(0, 0, c.width, c.height); return c.toDataURL('image/png').split(',')[1]; }));
+    await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `q${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => ['q0', 'q1'].every(n => window.GALLERY_APP._list.some(e => e && e.name === n)), null, { timeout: 120000 }).catch(() => {});
+    await page.waitForFunction(() => window.LAB.cellH > window.LAB.cellW, null, { timeout: 30000 }).catch(() => {});
+    const sh = await page.evaluate(() => ({ w: window.LAB.cellW, h: window.LAB.cellH }));
+    if (!(sh.h > sh.w)) bad.push('the board did not take the framed portrait print\'s shape: ' + JSON.stringify(sh));
+    if (bad.length) failures.push('[load shape] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} load shape: the board took the framed print's (portrait) shape as the collection loaded`);
+  }
+  // THE LAST BUCKET LOAD IS KEPT (Nov 1: "save the last bucket file to load on refresh."): what `gallery.last` holds is opened again on a
+  // load into the gallery (the bucket mocked, one markdown file).
+  {
+    current = 'bucket restore';
+    const bad = [];
+    await page.route(/flare\.tangent\.workers\.dev\/bucket\?bucket=BUCKET1&key=kept\.md/, r => r.fulfill({ contentType: 'text/markdown', headers: { 'access-control-allow-origin': '*' }, body: '# Kept\n\n' + 'Some words here. '.repeat(40) + '\n' }));
+    await page.evaluate(() => localStorage.setItem('gallery.last', JSON.stringify({ k: 'bucket', bucket: 'BUCKET1', names: ['kept.md'] })));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().id === 'gallery', null, { timeout: 150000 }).catch(() => {});
+    await page.waitForFunction(() => { const E = window.GALLERY_APP && window.GALLERY_APP._epub; return E && E.md && E.label === 'Kept'; }, null, { timeout: 60000 }).catch(() => {});
+    const r = await page.evaluate(() => { const E = window.GALLERY_APP._epub; return E ? E.label : null; });
+    if (r !== 'Kept') bad.push('the bucket file was not opened again on a load: ' + r);
+    if (bad.length) failures.push('[bucket restore] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} bucket restore: the last bucket file opened again on a load`);
+    await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); } catch {} });
+  }
   // A TAP ON A PRINT TAKES THE BOARD'S SHAPE FROM IT (Nov 1: "tapping an image should reset the aspect ratio."): four pictures, two
   // landscape and two portrait, so the board starts landscape; a tap on a portrait one makes the board portrait, every print's windows
   // follow (a portrait print's window is the whole of it), and a tap on a landscape one makes it landscape again.
