@@ -233,7 +233,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     table as well as across (`handAt`), ↑ ↓ move it, and let go it stays where it was left (it used to step back). Air hockey's mallet
     already went anywhere on its half; its `HAND_V` went from 5 to 9 so it keeps up with a quick finger.
   - **The board lock** (`BOARD_LOCK`, `setBoardLock`): a double tap frames the board as before and locks it there; `applyPan` then moves
-    nothing (one finger, two, the trackpad; an app's own drag, aim or steering is still its own, asked first). A double tap on the framed,
+    nothing for a drag that starts on that board (one finger, two, the trackpad; an app's own drag, aim or steering is still its own, asked
+    first); a drag that starts on any other board or the ground pans as ever and lets the lock go (Nov 1: "don't block panning of
+    non-selected boards.": `applyPan`'s `at` is the gesture's place, read through `_framedUV`; the tilt, which has none, is held). A double tap on the framed,
     square, locked board, the menu's Unlock the board (`#bBoardLock`, shown only while locked), any flight (`gotoCell`) or another app lets
     it go. Zoom, tilt, turn, the keys and the rails still work.
   - **The difficulty flight** (`flyToLevel`): the Difficulty menu item (the arcade kit's, and mini golf's) flies to the nearest board of
