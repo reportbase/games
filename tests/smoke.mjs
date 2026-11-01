@@ -6167,6 +6167,28 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[markdown] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} markdown: a .md opened through the picker as a book of ${r ? r.pages : '?'} pages, a chapter a top heading, its words in order, the picture beside it placed and not hung again, a missing one in words, code shaded, each chapter its own paper and its title large on a band, a real click on Larger laying it out again`);
   }
+  // A BOOK REPLACES A FOLDER STILL ARRIVING (Nov 1: "when I load images, then something else, say an epub file or pdf, and some of the
+  // original images are still showing, and the aspect ratio has not been reset"): forty pictures are dropped (read a frame at a
+  // time), and a .md is opened before they are all in. The collection is then the book's pages alone, none of the pictures.
+  {
+    current = 'folder then book';
+    const bad = [];
+    const G = 'window.FIELD_APPS.find(a => a.id === \'gallery\')';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const pngs = await page.evaluate(() => Array.from({ length: 40 }, (_, k) => { const c = document.createElement('canvas'); c.width = 200; c.height = 200; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 9},70%,45%)`; x.fillRect(0, 0, 200, 200); return c.toDataURL('image/png').split(',')[1]; }));
+    await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `f${String(i).padStart(2, '0')}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(g => eval(g)._list.filter(Boolean).length >= 1, G, { timeout: 30000 }).catch(() => {});
+    const md = '# Alone\n\n' + 'Some words here. '.repeat(30) + '\n';
+    await page.setInputFiles('#importImageFile', [{ name: 'alone.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
+    await page.waitForFunction(g => { const E = eval(g)._epub; return E && E.md && E.label === 'Alone'; }, G, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(6000);
+    const r = await page.evaluate(g => { const A = eval(g), E = A._epub; return { pages: E ? E.pages.length : -1, have: A._list.filter(Boolean).length, names: A._list.filter(Boolean).map(e => e.name) }; }, G);
+    if (r.pages < 1) bad.push('the book did not open');
+    else if (r.names.some(n => !/ · /.test(n || ''))) bad.push('pictures of the folder are still in the collection: ' + r.names.filter(n => !/ · /.test(n || '')).slice(0, 3).join(', '));
+    if (bad.length) failures.push('[folder then book] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} folder then book: a markdown book opened while a folder of pictures was still arriving holds its ${r.pages} pages alone`);
+  }
   // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
   // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space
   // printing, numbered, every page headed by the path it begins at; the row its settings (a real click on Shallower and
