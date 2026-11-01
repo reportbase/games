@@ -3368,6 +3368,17 @@ try {
       if (!okSl || !okTg) failures.push('[simon slider] ' + JSON.stringify({ right, left, live, hid, shown }));
       console.log(`${okSl && okTg ? 'ok  ' : 'FAIL'} simon: a real drag along the bottom slider walked the history (the last of ${right.n} steps, then the first), a tap on a pad was live again, a click in the margin hid the slider and another showed it`);
     }
+    // 2048's figures are centred on their tile (Nov 1: "center 2048 numbers, they are currently right aligned."): a 1 is a stroke at its
+    // glyph's right, so "16", "128" and "1024" sat to the right of the middle
+    {
+      const off = await page.evaluate(() => { const F = window.FIELD_APPS.find(a => a.id === '2048')._debug.figures, out = {};
+        for (const e of [1, 4, 7, 10]){ const it = F(e, 0.5, 0.5), n = it.length, ends = it.map((i, k) => { const d = String(Math.pow(2, e))[k], hw = (d === '1' ? 0.065 : 0.25) * i.scale; return [i.u - hw, i.u + hw]; });
+          out[Math.pow(2, e)] = (Math.min(...ends.map(x => x[0])) + Math.max(...ends.map(x => x[1]))) / 2 - 0.5; }
+        return out; });
+      const okFig = Object.values(off).every(d => Math.abs(d) < 1e-9);
+      if (!okFig) failures.push('[2048 figures] ' + JSON.stringify(off));
+      console.log(`${okFig ? 'ok  ' : 'FAIL'} 2048: the figures are centred on their tile (2, 16, 128, 1024)`);
+    }
     // a board no one plays lights its pads in turn
     const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, S = D.seqOf(9, 9), seen = new Set();
       for (let k = 0; k < 40; k++){ seen.add(D.shownLit(S)); await new Promise(ok => setTimeout(ok, 60)); } return seen.size; });

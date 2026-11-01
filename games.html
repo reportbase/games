@@ -46472,7 +46472,10 @@ const T2048_APP = (() => {
     const w = 0.25, t = 0.13, rect = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
     const S = { a: rect(-w, -0.5, w, -0.5 + t), g: rect(-w, -t / 2, w, t / 2), d: rect(-w, 0.5 - t, w, 0.5),
                 f: rect(-w, -0.5, -w + t, 0), b: rect(w - t, -0.5, w, 0), e: rect(-w, 0, -w + t, 0.5), c: rect(w - t, 0, w, 0.5) };
-    const pos = [], at = ([u, v]) => [-u, 0.003, -v];
+    // (Nov 1: "center 2048 numbers, they are currently right aligned.": a 1 is two right-hand segments, so in a box as wide as the other
+    // digits it sat to the right of its slot; its stroke is centred here, and `figures` gives it a narrower slot)
+    const cx = d === 1 ? w - t / 2 : 0;
+    const pos = [], at = ([u, v]) => [-(u - cx), 0.003, -v];
     const tri = (A, B, C) => { const n = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]); if (n < 0) pos.push(...A, ...C, ...B); else pos.push(...A, ...B, ...C); };
     for (const k of SEG7[d]){ const [a, b, c, e] = S[k].map(at); tri(a, b, c); tri(a, c, e); }
     const g = new T.BufferGeometry();
@@ -46482,8 +46485,12 @@ const T2048_APP = (() => {
   }
   const inkOf = col => { const r = (col >> 16) & 255, gr = (col >> 8) & 255, b = col & 255; return (0.299 * r + 0.587 * gr + 0.114 * b) > 150 ? 0x2b2b2b : 0xffffff; };
   function figures(e, u, v){
-    const ds = String(Math.pow(2, e)), n = ds.length, h = Math.min(0.55 * SQ, 0.84 * SQ / ((n - 1) * 0.62 + 0.5)), sp = 0.62 * h, u0 = u - (n - 1) * sp / 2, ink = inkOf(colOf(e));
-    return [...ds].map((d, k) => ({ kind: 't8D' + d, u: u0 + k * sp, v, scale: h, lift: TILE_H * SQ, color: ink }));
+    const ds = String(Math.pow(2, e)), n = ds.length, ink = inkOf(colOf(e));
+    const adv = [...ds].map(d => d === '1' ? 0.32 : 0.62), cs = [];                     // (each digit's slot, in digit heights; a 1's is narrow)
+    let x = 0; adv.forEach((a, k) => { x += k ? (adv[k - 1] + a) / 2 : 0; cs.push(x); });
+    const half = d => d === '1' ? 0.065 : 0.25, lo = cs[0] - half(ds[0]), hi = cs[n - 1] + half(ds[n - 1]), mid = (lo + hi) / 2;   // (the ink's own ends, so the figures sit in the middle of the tile)
+    const h = Math.min(0.55 * SQ, 0.84 * SQ / (hi - lo));
+    return [...ds].map((d, k) => ({ kind: 't8D' + d, u: u + (cs[k] - mid) * h, v, scale: h, lift: TILE_H * SQ, color: ink }));
   }
   const piece = (e, r, c) => [
     { kind: 'tile', u: (c + 0.5) * SQ, v: (r + 0.5) * SQ, scale: SQ, color: colOf(e) },
@@ -46680,7 +46687,7 @@ const T2048_APP = (() => {
       return true;
     },
     drawIcon(ctx, sz, c, r){ const cols = gridOf(shownExps(c, r)).colors; paint(ctx, 0, 0, sz / N, cols); },
-    _debug: { newGame, move, botMove, bakeReel, adopt, games: GAMES },
+    _debug: { newGame, move, botMove, bakeReel, adopt, figures, games: GAMES },
   };
   return app;
 })();
