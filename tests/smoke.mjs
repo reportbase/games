@@ -6189,6 +6189,32 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[folder then book] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} folder then book: a markdown book opened while a folder of pictures was still arriving holds its ${r.pages} pages alone`);
   }
+  // A TAP ON A PRINT TAKES THE BOARD'S SHAPE FROM IT (Nov 1: "tapping an image should reset the aspect ratio."): four pictures, two
+  // landscape and two portrait, so the board starts landscape; a tap on a portrait one makes the board portrait, every print's windows
+  // follow (a portrait print's window is the whole of it), and a tap on a landscape one makes it landscape again.
+  {
+    current = 'tap reshapes';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const pngs = await page.evaluate(() => [0, 1, 2, 3].map(k => { const c = document.createElement('canvas'); const L = k % 2 === 0; c.width = L ? 600 : 300; c.height = L ? 300 : 600; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 80},70%,45%)`; x.fillRect(0, 0, c.width, c.height); return c.toDataURL('image/png').split(',')[1]; }));
+    await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `s${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => window.GALLERY_APP._list.filter(Boolean).length >= 4, null, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(2500);
+    const shape = () => page.evaluate(() => ({ w: window.LAB.cellW, h: window.LAB.cellH }));
+    const tapKind = async odd => {
+      await page.evaluate(odd => { const G = window.GALLERY_APP; for (let c = -3; c <= 3; c++) for (let r = -3; r <= 3; r++) if ((G._pick(c, r) % 2 === 1) === odd){ window.FIELD_TARGET.shown = true; G._zoomKey = null; G.onCellTap(c, r, 0.5, 0.5); return; } }, odd);
+      await page.waitForTimeout(800);
+      return shape();
+    };
+    const before = await shape();
+    const p1 = await tapKind(true), p2 = await tapKind(false);
+    if (!(before.w > before.h)) bad.push('the collection did not start landscape: ' + JSON.stringify(before));
+    if (!(p1.h > p1.w)) bad.push('a tap on a portrait print did not make the board portrait: ' + JSON.stringify(p1));
+    if (!(p2.w > p2.h)) bad.push('a tap on a landscape print did not make it landscape again: ' + JSON.stringify(p2));
+    if (bad.length) failures.push('[tap reshapes] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} tap reshapes: the gallery board took a portrait print's shape on a tap and a landscape print's on the next`);
+  }
   // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
   // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space
   // printing, numbered, every page headed by the path it begins at; the row its settings (a real click on Shallower and
