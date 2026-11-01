@@ -6452,6 +6452,27 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${bad.length ? 'FAIL' : 'ok  '} loaded name: the open row carries the file's name in place of the dots, and the menu item says Open`);
     await page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
   }
+  // EVERY LOAD IS A FRESH SET (Nov 1: "opening images, reset the display, so the aspect ratio and number of images are set by each loading of a set of
+  // images or file."): three landscape pictures are opened, then two portrait ones; the collection is the two alone and the board is portrait.
+  {
+    current = 'every load a fresh set';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const png = (w, h, c) => page.evaluate(([w, h, c]) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, w, h); return cv.toDataURL('image/png').split(',')[1]; }, [w, h, c]);
+    const A = await Promise.all([0, 1, 2].map(k => png(600, 300, '#c33')));
+    await page.setInputFiles('#importImageFile', A.map((b, i) => ({ name: `first${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^first/.test(e.name)).length >= 3, null, { timeout: 120000 }).catch(() => {});
+    const B = await Promise.all([0, 1].map(k => png(300, 600, '#36c')));
+    await page.setInputFiles('#importImageFile', B.map((b, i) => ({ name: `second${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^second/.test(e.name)).length >= 2, null, { timeout: 120000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => ({ names: window.GALLERY_APP._list.filter(Boolean).map(e => e.name), n: window.GALLERY_APP._expect, w: window.LAB.cellW, h: window.LAB.cellH }));
+    if (r.names.some(n => /^first/.test(n))) bad.push('the first set is still in the collection: ' + r.names.join(','));
+    if (!(r.h > r.w)) bad.push('the board is not the second set\'s portrait shape: ' + JSON.stringify(r));
+    if (bad.length) failures.push('[fresh set] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} every load a fresh set: two portrait pictures opened after three landscape ones are the whole collection, the board portrait`);
+  }
   // THE LAST BUCKET LOAD IS KEPT (Nov 1: "save the last bucket file to load on refresh."): what `gallery.last` holds is opened again on a
   // load into the gallery (the bucket mocked, one markdown file).
   {
