@@ -22865,7 +22865,7 @@ const GALLERY_APP = (() => {
      that replaced it. Joining does not bump it: a second comic added to the
      first is the same collection. */
   let COLL_GEN = 0;
-  let COLLK = null, COLLN = 0, POS_ON = false;       // (the collection's key, its size, and whether its place may be kept: `_collStart`)
+  let COLLK = null, COLLN = 0, POS_ON = false, POS_TIMER = 0, POS_LAST = -1;       // (the collection's key, its size, and whether its place may be kept: `_collStart`)
   const POS_KEY = 'gallery.pos';
   const posLoad = () => { try { return JSON.parse(localStorage.getItem(POS_KEY) || '{}') || {}; } catch { return {}; } };
   const posSave = (k, v) => {
@@ -23526,9 +23526,10 @@ const GALLERY_APP = (() => {
        the print on the framed board is kept under that key (localStorage `gallery.pos`, the latest 300) each time the view comes to rest
        on a board; the next time the same files are opened, `_collStart` takes the view to the board holding that print once the pages
        are declared. Nothing is written until that move is made (or found not wanted), so the opening corner never overwrites it. */
+    _posReset(){ POS_LAST = -1; },            // (for the tests: the next change of page is kept again)
     _collStart(key, n){
       const gen = COLL_GEN;
-      COLLK = key || null; COLLN = n | 0; POS_ON = false;
+      COLLK = key || null; COLLN = n | 0; POS_ON = false; POS_LAST = -1;
       if (!COLLK) return;
       setTimeout(() => {
         if (gen !== COLL_GEN) return;
@@ -23541,6 +23542,22 @@ const GALLERY_APP = (() => {
         } catch {}
         setTimeout(() => { if (gen === COLL_GEN) POS_ON = true; }, 1500);
       }, 600);
+      /* THE PAGE IN VIEW, NOT ONLY THE ONE FRAMED (Nov 1: "the current page is not being save to localstorage."): `onFramed` hears only
+         a flight to a board (Tab, a double tap), so a view panned or swiped from page to page kept nothing. Twice a second, while the
+         gallery is the app and the place may be kept, the board the view is on (the framed one while the view still sits on it, else
+         the one under the eye, `viewBoardCell`) gives the print to keep, written only when it changes. */
+      clearInterval(POS_TIMER);
+      POS_TIMER = setInterval(() => {
+        try {
+          if (!POS_ON || !COLLK || gen !== COLL_GEN || !(window.getFieldApp && window.getFieldApp() === GALLERY_APP)) return;
+          const SPX = gridSpacingX(), SPZ = gridSpacingZ();
+          const still = target.shown && Math.hypot(st.camX - target.x, st.camZ - target.z) < 0.25 * Math.min(SPX, SPZ);
+          const at = still ? { c: Math.round(target.boardX / SPX), r: Math.round(target.boardZ / SPZ) } : viewBoardCell();
+          if (!at) return;
+          const i = pick(at.c, at.r);
+          if (i >= 0 && i < COLLN && i !== POS_LAST){ POS_LAST = i; posSave(COLLK, { i }); }
+        } catch {}
+      }, 500);
     },
     onFramed(c, r){                        // flew to another board: that was the way out too
       try { if (POS_ON && COLLK && c !== null && c !== undefined){ const i = pick(c, r); if (i >= 0 && i < COLLN) posSave(COLLK, { i }); } } catch {}

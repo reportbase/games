@@ -6232,6 +6232,14 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const r = await page.evaluate(() => { let m = {}; try { m = JSON.parse(localStorage.getItem('gallery.pos') || '{}'); } catch {} const G = window.GALLERY_APP, T = window.FIELD_TARGET; return { saved: Object.values(m), now: G._pick(T.cellX | 0, T.cellZ | 0) }; });
     if (r.saved.length !== 1) bad.push('nothing was kept: ' + JSON.stringify(r));
     else if (!Number.isInteger(r.saved[0].i) || r.saved[0].i < 0) bad.push('the kept print is not a print number: ' + JSON.stringify(r));   // (not compared with the framed board's: the flight's last board and the first it framed differ, and earlier checks' pictures may still be hung)
+    // …and a view only PANNED (no flight, so no framing) keeps its page too: clear the store, drag the view across a board or two, wait.
+    await page.evaluate(() => { try { localStorage.removeItem('gallery.pos'); } catch {} window.GALLERY_APP._posReset && window.GALLERY_APP._posReset(); });
+    await page.mouse.move(1000, 200); await page.mouse.down();
+    for (let j = 1; j <= 14; j++){ await page.mouse.move(1000 - 60 * j, 200 + 8 * j); await page.waitForTimeout(40); }
+    await page.mouse.up();
+    await page.waitForFunction(() => { try { return Object.keys(JSON.parse(localStorage.getItem('gallery.pos') || '{}')).length > 0; } catch { return false; } }, null, { timeout: 15000 }).catch(() => {});
+    const pn = await page.evaluate(() => { try { return Object.keys(JSON.parse(localStorage.getItem('gallery.pos') || '{}')).length; } catch { return -1; } });
+    if (pn !== 1) bad.push('a panned view kept nothing: ' + pn);
     if (bad.length) failures.push('[gallery position] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery position: the print on the framed board is kept in localStorage under the collection's key after the view steps on`);
   }
