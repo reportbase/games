@@ -63285,12 +63285,17 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     /* THE FRAME'S BUILD BUDGET. Past it the board draws the fabric for this
        frame and asks again on the next — a picture arriving a few frames
        late is invisible; forty texture uploads in one frame is a stutter. */
-    if (_photoNewThisFrame >= _PHOTO_NEW_FRAME){ _photoDeclined++; return false; }
+    /* A BOARD THAT IS BIG ON SCREEN NEVER WAITS ON THE BUDGET, for an app that says photoFullAtOnce (Nov 1: "are you still doing an
+       intermediate image. it is very pixalated."): a declined board draws the fabric, whose block of pictures is a low-resolution
+       texture, so a big board showed that blown up until its print was built a frame or more later. Only a few boards are ever
+       this big at once. */
+    const _urgent = !!app.photoFullAtOnce && (bp || 0) >= 120;
+    if (!_urgent && _photoNewThisFrame >= _PHOTO_NEW_FRAME){ _photoDeclined++; return false; }
     /* …AND THE FRAME'S REMAINING MILLISECONDS, which is the limit that
        actually keeps an autopan smooth — see the budget block above. A board
        that misses out draws the backdrop this frame and asks again on the
        next, which is what the count cap has always done. */
-    if (!_photoHasMs()){ _photoDeclined++; return false; }
+    if (!_urgent && !_photoHasMs()){ _photoDeclined++; return false; }
     const _t0 = performance.now();
     if (_photoMeshes.size >= _PHOTO_KEYMAX){
       if (!_photoPoolWarned){ _photoPoolWarned = true;
