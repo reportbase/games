@@ -67328,7 +67328,12 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       /* (Loose pictures join pictures, never a book's or a JSON file's pages: joined, the collection stayed the document's, so
          its settings row stayed up over forty pictures and they hung as pages after it. Found by CI on the flash cards' PR.) */
       const docHangs = () => { const G = GALLERY_APP; return !!((G._book && G._book.live()) || (G._jsonRow && G._jsonRow.live())); };
-      try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded && !docHangs(); } catch {}
+      /* EVERY LOAD IS A FRESH SET (Nov 1: "I opend up a zip file then opend images and the zip file and comic files were not closed.   opening images,
+         reset the display, so the aspect ratio and number of images are set by each loading of a set of images or file."): loose pictures
+         opened after a zip, a comic or other pictures used to join what was hanging (`onlyLoose`, not a book's pages), so the first set stayed
+         and the board's shape and count were the two sets' together. Now a load never adds to what is there: its files, together, replace it,
+         and the shape and the count are theirs alone. (`docHangs` still tells a book's or JSON file's row from the pictures'.) */
+      addsToWhatIsThere = false;
       const pour = POUR.open(jobs.length, addsToWhatIsThere);
       if (!addsToWhatIsThere && !restoring){ lastSet({ k: 'drop' }); try { KEEP.put(all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '') && !/\.tvf3d$/i.test(f.name || ''))); } catch {} }
       // (the collection's key: every file's name and size, whichever kind: the same files opened again come back to their page; a book re-hung for a setting is not a fresh drop, BOOK_GO)
