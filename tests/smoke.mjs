@@ -4562,8 +4562,14 @@ try {
       if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
       const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
       const t0 = await page.evaluate(() => window.getFieldApp()._debug.SET.target);
-      const tile = await tileAt(3);
-      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
+      // (the row's tiles are laid out a few frames after it opens, and on a slow runner one click landed before they were: tried up to five
+      //  times, a second apart, until the setting moves; a click that works the first time is taken once)
+      for (let k = 0; k < 5; k++){
+        const tile = await tileAt(3);
+        if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
+        if (await page.evaluate(() => window.getFieldApp()._debug.SET.target) !== t0) break;
+        await page.waitForTimeout(1000);
+      }
       real.tile = [t0, await page.evaluate(() => window.getFieldApp()._debug.SET.target)];
       await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 0) D.setting('target'); });
       const gt = await tileAt(1);
