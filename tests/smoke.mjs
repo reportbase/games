@@ -3401,6 +3401,23 @@ try {
     if (!ok) failures.push('[memory slider] ' + JSON.stringify({ made, first, last, live }));
     console.log(`${ok ? 'ok  ' : 'FAIL'} memory: the cards in a margin with a dot a turn along the top, a real drag along it walked the turns (the first with its two cards up, then the last of ${made.moves}), a tap on a card was live again`);
   }
+  // SNAKE STOPS AT A SIDE (Nov 1: "snake should not crash when hitting the sides. it should just stop."): a head heading off the board
+  // stays alive where it is, its body unmoved, and goes on once it is turned
+  {
+    current = 'snake sides'; const before = failures.length;
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'snake')); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    const r = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      A.onReset(f.c, f.r); const g = D.games.get(f.c + '_' + f.r) || D.gameAt(f.c, f.r); g.state = 'play'; g.pause = 0;
+      const sn = g.snakes[0]; sn.body.forEach((x, i) => { x.r = 0; x.c = 3 + i; x.pr = 0; x.pc = 3 + i; }); sn.dir = [-1, 0]; sn.queue = [];
+      const at = () => JSON.stringify(sn.body.map(x => [x.r, x.c])), was = at();
+      for (let k = 0; k < 40; k++) D.step(g, 0.2);
+      const stopped = { alive: sn.alive, same: at() === was };
+      sn.queue = [[0, 1]]; for (let k = 0; k < 10; k++) D.step(g, 0.2);
+      return { stopped, moved: at() !== was, alive: sn.alive }; });
+    const ok = r.stopped.alive && r.stopped.same && r.moved && r.alive;
+    if (!ok) failures.push('[snake sides] ' + JSON.stringify(r));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} snake: a head at a side stops where it is, alive, and goes on when turned`);
+  }
   // 3D TETRIS (Oct 23: "any games that require 3d spatial rotation", then "2": Blockout): every orientation of every piece
   // found (24 for a chiral tetracube's mirror-free cousin L4, 8 for the tripod), a turn about each axis taking the top where
   // the screen says, a full layer clearing with everything above coming down, the pit by level, the bot clearing layers at

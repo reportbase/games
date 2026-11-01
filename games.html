@@ -26184,11 +26184,15 @@ const SNAKE_APP = (() => {
           if ((dr || dc) && !t.has(k)){ t.delete(f.r * N + f.c); f.r += dr; f.c += dc; t.add(k); }
         }
       }
-      const heads = moving.map(sn => ({ sn, r: sn.body[0].r + sn.dir[0], c: sn.body[0].c + sn.dir[1] }));
+      /* A SNAKE AT A SIDE JUST STOPS (Nov 1: "snake should not crash when hitting the sides. it should just stop."): a head that
+         would leave the board stays where it is this tick, its body unmoved, and goes on only when it is turned; the sides no
+         longer kill, bodies, hazards and heads meeting still do. */
+      const heads = moving.map(sn => ({ sn, r: sn.body[0].r + sn.dir[0], c: sn.body[0].c + sn.dir[1] }))
+        .filter(h => h.r >= 0 && h.r < N && h.c >= 0 && h.c < N);
       const eats = h => g.food.findIndex(f => f.r === h.r && f.c === h.c);
       // What is solid after this tick: every body (not a ghost's), less each moving tail tip that goes away.
       const solid = new Set(g.hazards.map(h => h.r * N + h.c)), bodies = new Set();
-      const movers = new Set(moving);
+      const movers = new Set(heads.map(h => h.sn));
       for (const sn of g.snakes){
         if (!sn.alive || sn.pow.G > 0) continue;
         const grows = movers.has(sn) && (sn.grow > 0 || eats(heads.find(h => h.sn === sn)) >= 0);
