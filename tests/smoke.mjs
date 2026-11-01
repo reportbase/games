@@ -6178,7 +6178,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.waitForTimeout(1000);
     const pngs = await page.evaluate(() => Array.from({ length: 40 }, (_, k) => { const c = document.createElement('canvas'); c.width = 200; c.height = 200; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 9},70%,45%)`; x.fillRect(0, 0, 200, 200); return c.toDataURL('image/png').split(',')[1]; }));
     await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `f${String(i).padStart(2, '0')}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
-    await page.waitForFunction(g => eval(g)._list.filter(Boolean).length >= 1, G, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(1500);   // (a picture or two may be in, or the folder still being measured: the book wins either way)
     const md = '# Alone\n\n' + 'Some words here. '.repeat(30) + '\n';
     await page.setInputFiles('#importImageFile', [{ name: 'alone.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
     await page.waitForFunction(g => { const E = eval(g)._epub; return E && E.md && E.label === 'Alone'; }, G, { timeout: 30000 }).catch(() => {});
@@ -6188,6 +6188,52 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     else if (r.names.some(n => !/ · /.test(n || ''))) bad.push('pictures of the folder are still in the collection: ' + r.names.filter(n => !/ · /.test(n || '')).slice(0, 3).join(', '));
     if (bad.length) failures.push('[folder then book] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} folder then book: a markdown book opened while a folder of pictures was still arriving holds its ${r.pages} pages alone`);
+  }
+  // A TAP ON A PRINT TAKES THE BOARD'S SHAPE FROM IT (Nov 1: "tapping an image should reset the aspect ratio."): four pictures, two
+  // landscape and two portrait, so the board starts landscape; a tap on a portrait one makes the board portrait, every print's windows
+  // follow (a portrait print's window is the whole of it), and a tap on a landscape one makes it landscape again.
+  {
+    current = 'tap reshapes';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const pngs = await page.evaluate(() => [0, 1, 2, 3].map(k => { const c = document.createElement('canvas'); const L = k % 2 === 0; c.width = L ? 600 : 300; c.height = L ? 300 : 600; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 80},70%,45%)`; x.fillRect(0, 0, c.width, c.height); return c.toDataURL('image/png').split(',')[1]; }));
+    await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `s${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => ['s0', 's1'].every(n => window.GALLERY_APP._list.some(e => e && e.name === n)), null, { timeout: 120000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const shape = () => page.evaluate(() => ({ w: window.LAB.cellW, h: window.LAB.cellH }));
+    const tapKind = async odd => {
+      await page.evaluate(odd => { const G = window.GALLERY_APP; for (let c = -3; c <= 3; c++) for (let r = -3; r <= 3; r++) if ((G._pick(c, r) % 2 === 1) === odd && G._list[G._pick(c, r)]){ window.FIELD_TARGET.shown = true; G._zoomKey = null; G.onCellTap(c, r, 0.5, 0.5); return; } }, odd);
+      await page.waitForTimeout(800);
+      return shape();
+    };
+    const before = await shape();
+    const p1 = await tapKind(true), p2 = await tapKind(false);
+    if (!(before.w > before.h)) bad.push('the collection did not start landscape: ' + JSON.stringify(before));
+    if (!(p1.h > p1.w)) bad.push('a tap on a portrait print did not make the board portrait: ' + JSON.stringify(p1));
+    if (!(p2.w > p2.h)) bad.push('a tap on a landscape print did not make it landscape again: ' + JSON.stringify(p2));
+    if (bad.length) failures.push('[tap reshapes] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} tap reshapes: the gallery board took a portrait print's shape on a tap and a landscape print's on the next`);
+  }
+  // THE PAGE YOU ARE ON IS KEPT FOR EACH COLLECTION (Nov 1: "can you save the current page to the localstorage, and use that as the current page on load"):
+  // after a folder is opened and the view steps to another board (the real Tab), localStorage `gallery.pos` holds that board's print under
+  // the collection's key. (The restore on the next load is the same move the other way; a reload is too slow for this part.)
+  {
+    current = 'gallery position';
+    const bad = [];
+    await page.evaluate(() => { try { localStorage.removeItem('gallery.pos'); } catch {} window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')); });
+    await page.waitForTimeout(800);
+    const pngs = await page.evaluate(() => Array.from({ length: 6 }, (_, k) => { const c = document.createElement('canvas'); c.width = 240; c.height = 160; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 50},70%,45%)`; x.fillRect(0, 0, 240, 160); return c.toDataURL('image/png').split(',')[1]; }));
+    await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `z${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^z\d$/.test(e.name)).length >= 3, null, { timeout: 120000 }).catch(() => {});
+    await page.waitForTimeout(3000);                      // (the place is kept only once the opening move is over)
+    await page.keyboard.press('Tab');
+    await page.waitForFunction(() => { try { return Object.keys(JSON.parse(localStorage.getItem('gallery.pos') || '{}')).length > 0; } catch { return false; } }, null, { timeout: 30000 }).catch(() => {});
+    const r = await page.evaluate(() => { let m = {}; try { m = JSON.parse(localStorage.getItem('gallery.pos') || '{}'); } catch {} const G = window.GALLERY_APP, T = window.FIELD_TARGET; return { saved: Object.values(m), now: G._pick(T.cellX | 0, T.cellZ | 0) }; });
+    if (r.saved.length !== 1) bad.push('nothing was kept: ' + JSON.stringify(r));
+    else if (!Number.isInteger(r.saved[0].i) || r.saved[0].i < 0) bad.push('the kept print is not a print number: ' + JSON.stringify(r));   // (not compared with the framed board's: the flight's last board and the first it framed differ, and earlier checks' pictures may still be hung)
+    if (bad.length) failures.push('[gallery position] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery position: the print on the framed board is kept in localStorage under the collection's key after the view steps on`);
   }
   // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
   // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space

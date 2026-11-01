@@ -22799,7 +22799,36 @@ const GALLERY_APP = (() => {
     const full = { ox: bx0 / PW, oy: (PH - by0 - BH) / PH, rx: BW / PW, ry: BH / PH };
     const photos = windows.map(() => print);            // one canvas, shared
     const vnames = variants.map(v => v[4]);
-    return { name, avg, avgInt, icon, photos, uv, full, vnames, levels, grids: {} };
+    /* THE BOARD'S SHAPE CHANGED UNDER THIS PRINT (Nov 1: "tapping an image should reset the aspect ratio"): the print holds the whole
+       picture and every window is a rectangle on it, so a new board shape is new windows on the same canvas, worked out here with the
+       numbers in hand (the source itself is closed). The icon and the pyramid, cut from the old cover window, keep the old shape. */
+    const reshape = A2 => {
+      A2 = Math.max(0.05, A2 || 1);
+      let cw2 = w, ch2 = w / A2;
+      if (ch2 > h){ ch2 = h; cw2 = h * A2; }
+      const freeX2 = w - cw2, freeY2 = h - ch2;
+      const fx2 = (freeX2 / 2) / w, fy2 = 0, fw2 = cw2 / w, fh2 = ch2 / h;
+      const win = [];
+      if (many){ win.push([fx2, fy2, fw2, fh2, 'top']); }
+      else if (freeX2 > freeY2 * 1.15){
+        win.push([fx2, fy2, fw2, fh2, 'center']); win.push([0, fy2, fw2, fh2, 'left']); win.push([freeX2 / w, fy2, fw2, fh2, 'right']);
+      } else if (freeY2 > freeX2 * 1.15){
+        win.push([fx2, fy2, fw2, fh2, 'top']); win.push([fx2, (freeY2 / 2) / h, fw2, fh2, 'center']); win.push([fx2, freeY2 / h, fw2, fh2, 'bottom']);
+      } else {
+        win.push([fx2, fy2, fw2, fh2, 'full']);
+        const zw = fw2 / 1.6, zh = fh2 / 1.6;
+        win.push([(1 - zw) / 2, (1 - zh) / 2, zw, zh, 'detail']);
+      }
+      const uv2 = win.map(([x, y, ww, hh]) => {
+        const cx0 = dx0 + (1 - (x + ww)) * dw, cy0 = dy0 + (1 - (y + hh)) * dh;
+        return { ox: cx0 / PW, oy: (PH - cy0 - hh * dh) / PH, rx: ww * dw / PW, ry: hh * dh / PH };
+      });
+      const BW2 = Math.max(dw, dh * A2), BH2 = BW2 / A2;
+      const bx2 = dx0 + (dw - BW2) / 2, by2 = dy0 + (dh - BH2) / 2;
+      return { uv: uv2, vnames: win.map(v => v[4]), photos: win.map(() => print),
+               full: { ox: bx2 / PW, oy: (PH - by2 - BH2) / PH, rx: BW2 / PW, ry: BH2 / PH } };
+    };
+    return { name, avg, avgInt, icon, photos, uv, full, vnames, levels, grids: {}, aspect: w / h, reshape };
   }
   function applyLook(){
     if (!LIST.length) return;
@@ -22836,6 +22865,16 @@ const GALLERY_APP = (() => {
      that replaced it. Joining does not bump it: a second comic added to the
      first is the same collection. */
   let COLL_GEN = 0;
+  let COLLK = null, COLLN = 0, POS_ON = false;       // (the collection's key, its size, and whether its place may be kept: `_collStart`)
+  const POS_KEY = 'gallery.pos';
+  const posLoad = () => { try { return JSON.parse(localStorage.getItem(POS_KEY) || '{}') || {}; } catch { return {}; } };
+  const posSave = (k, v) => {
+    try {
+      const m = posLoad(); delete m[k]; m[k] = v;
+      const ks = Object.keys(m); while (ks.length > 300) delete m[ks.shift()];
+      localStorage.setItem(POS_KEY, JSON.stringify(m));
+    } catch {}
+  };
   const FULLP  = { on: false };            // full-res prints: user's call, user's memory
   /* A NEW COLLECTION, not an addition. An archive replaces what is hanging:
      without this the second zip's prints joined the first zip's, so the board
@@ -23482,7 +23521,29 @@ const GALLERY_APP = (() => {
     },
     /* Also fires with (null, null) when the app is swapped out, which is the
        same answer: you are no longer in the zoomed view. */
+    /* WHERE YOU WERE, KEPT FOR EACH COLLECTION (Nov 1: "can you save the current page to the localstorage, and use that as the current
+       page on load for each pdf or epub or image set?"): a collection is known by its files (their names and sizes, `_loadFiles`), and
+       the print on the framed board is kept under that key (localStorage `gallery.pos`, the latest 300) each time the view comes to rest
+       on a board; the next time the same files are opened, `_collStart` takes the view to the board holding that print once the pages
+       are declared. Nothing is written until that move is made (or found not wanted), so the opening corner never overwrites it. */
+    _collStart(key, n){
+      const gen = COLL_GEN;
+      COLLK = key || null; COLLN = n | 0; POS_ON = false;
+      if (!COLLK) return;
+      setTimeout(() => {
+        if (gen !== COLL_GEN) return;
+        try {
+          const sv = posLoad()[COLLK];
+          if (sv && sv.i > 0 && sv.i < COLLN && target.shown){
+            const cell = GALLERY_APP._cellFor(sv.i, target.cellX | 0, target.cellZ | 0);
+            if (cell) gotoCell(cell.c, cell.r);
+          }
+        } catch {}
+        setTimeout(() => { if (gen === COLL_GEN) POS_ON = true; }, 1500);
+      }, 600);
+    },
     onFramed(c, r){                        // flew to another board: that was the way out too
+      try { if (POS_ON && COLLK && c !== null && c !== undefined){ const i = pick(c, r); if (i >= 0 && i < COLLN) posSave(COLLK, { i }); } } catch {}
       // …unless this is the board a tap just took us to (worldTap, below): that tap IS the zoom.
       if (this._arrive && this._arrive === c + '\u00b7' + r){ this._arrive = null; return; }
       if (this._zoomKey !== null) this._remember();
@@ -23529,6 +23590,21 @@ const GALLERY_APP = (() => {
         zoomBoardToFit();                  // back to the default fit, which never moves
         return true;
       }
+      /* A TAP ON A PRINT TAKES THE BOARD'S SHAPE FROM IT (Nov 1: "taping an image sets the aspect ratio to that image." … "I would like
+         that as a feature. tapping an image should reset the aspect ratio."): the whole field is reshaped to that picture's own, as a
+         load measures it (`applyBoardAspect`, kept to 3:1), every print's windows are worked again on the shape (`reshape`), and the
+         zoom below goes on in the new one. A picture already the board's shape changes nothing. */
+      try {
+        const e0 = LIST[pick(col, row)];
+        if (e0 && e0.aspect && Math.abs(Math.log(e0.aspect / (PRINT_ASPECT.a || 1))) > 0.02){
+          const shape = applyBoardAspect([e0.aspect]);
+          if (shape){
+            for (const e of LIST){ if (!e || !e.reshape) continue; Object.assign(e, e.reshape(PRINT_ASPECT.a)); }
+            try { if (window.__disposeAppPhotos) window.__disposeAppPhotos(); } catch {}
+            try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
+          }
+        }
+      } catch (err){ console.warn('[gallery] reshape on tap —', err && err.message); }
       const SP = gridSpacing();
       const boardW = SP * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
       const cw = (window.LAB && window.LAB.cellW) || 1;
@@ -64285,6 +64361,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         for (let k = 0; k < p.counts.length; k++) total += p.counts[k] | 0;
         let at = 0;
         try { at = GALLERY_APP._begin(total, p.join) | 0; } catch {}
+        try { if (!p.join) GALLERY_APP._collStart(p.key, total); } catch {}
         console.log('[pour] ' + p.counts.length + ' file(s), ' + total
                     + ' prints, from index ' + at + (p.join ? ' (joined)' : ''));
         for (let k = 0; k < p.counts.length; k++){
@@ -67149,6 +67226,12 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const docHangs = () => { const G = GALLERY_APP; return !!((G._book && G._book.live()) || (G._jsonRow && G._jsonRow.live())); };
       try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded && !docHangs(); } catch {}
       const pour = POUR.open(jobs.length, addsToWhatIsThere);
+      // (the collection's key: every file's name and size, whichever kind: the same files opened again come back to their page; a book re-hung for a setting is not a fresh drop, BOOK_GO)
+      try {
+        const sig = [...zips, ...pdfs, ...books, ...mds, ...jsons, ...list].map(f => (f.name || '') + ':' + (f.size || 0)).sort().join('|');
+        let hh = 5381; for (let q = 0; q < sig.length; q++) hh = ((hh * 33) ^ sig.charCodeAt(q)) >>> 0;
+        pour.key = (addsToWhatIsThere || BOOK_GO) ? null : 'c' + hh.toString(36) + '.' + sig.length;
+      } catch {}
       await Promise.all(jobs.map(async (run, slot) => {
         try { await run({ join: slot > 0, pour, slot }); }
         catch (e){ console.warn('[pour] file ' + slot + ' failed —', e && e.message); }
@@ -67196,6 +67279,9 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           } catch {}
         }
       } catch (e){ console.warn('[gallery] could not measure shapes —', e && e.message); }
+      /* A DROP MADE AFTER THIS ONE WINS (found by CI): the survey above takes a while, and a book opened in the meantime had hung and
+         begun its own collection; claiming now would begin another over it and bring the folder back on top of the book. */
+      if (POUR.live !== pour) return;
       const base = await POUR.claim(pour, slot, list.length, aspects);
       /* A REPLACEMENT STANDS THIS LOAD DOWN (Nov 1: "when I load images, then something else, say an epub file or pdf, and some of the
          original images are still showing, and the aspect ratio has not been reset to the new epub or pdf."): pictures are read one a
@@ -67245,6 +67331,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           });
           // at++ only on success, so a file that fails leaves no gap and the
           // order is still filename order — _finish settles the count.
+          if (GALLERY_APP._gen !== gen0) return;           // (replaced while this one decoded: see gen0 above; found by CI)
           GALLERY_APP._addAt(base + (at++), im2, (f.name || 'image').replace(/\.[^.]+$/, ''));
         } catch (e){
           console.warn('[gallery]', f && f.name, '—', e.message);   // skip it, keep the order
