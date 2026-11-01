@@ -2519,8 +2519,9 @@ try {
     const rowOn = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       return { on: E.ED.on, open: !document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, first: ((A.statTiles(f.c, f.r) || [])[0] || {}).value }; });
     await page.waitForTimeout(800);
-    const dotsXY2 = await dotsReady();
-    await page.mouse.click(dotsXY2.x, dotsXY2.y);
+    // (the dots are hidden while the row is open, Nov 1: it is shut through the element itself)
+    const shutRow = () => page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
+    await shutRow();
     await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(800);
     const rowOff = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = A._debug.games.get(f.c + '_' + f.r);
@@ -2549,7 +2550,7 @@ try {
     const shut0 = await page.evaluate(() => document.body.classList.contains('bb-collapsed'));
     if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false); dotsAt = await dotsReady(); }
     await quickIs(true); const openVis = await qVis();
-    await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(true); await quickIs(false);
+    await shutRow(); await isShut(true); await quickIs(false);
     const shutNow = await page.evaluate(() => document.body.classList.contains('bb-collapsed')), shutVis = await qVis();
     dotsAt = await dotsReady(); await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false);
     if (!openVis || !shutNow || shutVis) failures.push(`[${current}] quick buttons with the pane open ${openVis}, shut ${shutNow} and still showing ${shutVis}`);
