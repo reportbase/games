@@ -15965,8 +15965,11 @@ function buildInstances(){
        gallery. The framed/taken-over/tinted cases still get real squares. */
     const _photoApp = !!(window.getFieldApp && window.getFieldApp()
                          && window.getFieldApp().cellPhoto);
+    /* (Nov 1: "Why does photo gallery show an intermediate picture, it is showing scene drawing problems before the image is drawn":
+       a framed board whose print had not arrived drew the 8×8 chess squares until it did. An app that hangs pictures has no use for
+       them: the board stays the plain field until the print lands. The tinted views still colour real squares.) */
     const needsSquares = !_photoDrawn
-      && (((FARFIELD.mode === 'tiles' && !_photoApp) || _framed || isUserBoard || lightOv !== null));
+      && (((FARFIELD.mode === 'tiles' && !_photoApp) || ((_framed || isUserBoard) && !_photoApp) || lightOv !== null));
     if (_photoDrawn){
       // The quad covers the board; tiles would only z-fight it.
     }
@@ -23328,6 +23331,9 @@ const GALLERY_APP = (() => {
        softer. Tiles are pushed out of the way entirely (faceMinPx), since a
        flat averaged colour is a third answer for the same board. */
     photoMinPx: 0.25,          // …and by width, down to a quarter of a pixel
+    /* (Nov 1: "It will not be used to show high resolution images so this is not needed.") A print stays the 256 px copy the photo tier
+       first hangs: it is never swapped for the full one when its board grows, so a picture never changes under you as it sharpens. */
+    photoSmallOnly: true,
     /* NO FLOOR. This was 0.5px of screen height, and everything below it was
        handed to the fabric — which is a REPEATING block, drawn through a mip
        bias that reaches 8× blur at range. A blurred average of the whole
@@ -63170,7 +63176,7 @@ function _flushAppPhotos(){
   const _mayUpgrade = _photoSpeed < _PHOTO_UP_SPD;
   for (const [key, rec] of (_mayUpgrade ? _photoMeshes : [])){
     if (ups >= _PHOTO_UP_FRAME || !_photoHasMs()) break;
-    if (rec.hi || rec.want < _PHOTO_HI_PX || !rec.full) continue;
+    if (rec.hi || rec.want < _PHOTO_HI_PX || !rec.full || (_upApp && _upApp.photoSmallOnly)) continue;
     const _t0 = performance.now();
     try {
       const old = rec.mesh.material.map;
@@ -63295,7 +63301,7 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     let cv = null;
     try { cv = app.photoCanvas ? app.photoCanvas(key) : null; } catch {}
     if (!cv){ _photoDeclined++; return false; }
-    const hi  = (bp || 0) >= _PHOTO_HI_PX;      // big on screen now? cut it full
+    const hi  = (bp || 0) >= _PHOTO_HI_PX && !app.photoSmallOnly;      // big on screen now? cut it full (not for an app that keeps its prints small)
     const src = hi ? cv : _photoSmallCanvas(cv);
     const _tex = _photoTexture(src);
     _photoApplyWindow(app, key, _tex);          // the fit, from the frame it appears
