@@ -22865,7 +22865,16 @@ const GALLERY_APP = (() => {
      that replaced it. Joining does not bump it: a second comic added to the
      first is the same collection. */
   let COLL_GEN = 0;
-  let COLLK = null, COLLN = 0, POS_ON = false;       // (the collection's key, its size, and whether its place may be kept: `_collStart`)
+  function shapeTo(e0){      // (the board takes a print's own shape: a tap on it, or the current image as a collection loads)
+    if (!e0 || !e0.aspect || !(Math.abs(Math.log(e0.aspect / (PRINT_ASPECT.a || 1))) > 0.02)) return false;
+    const shape = applyBoardAspect([e0.aspect]);
+    if (!shape) return false;
+    for (const e of LIST){ if (!e || !e.reshape) continue; Object.assign(e, e.reshape(PRINT_ASPECT.a)); }
+    try { if (window.__disposeAppPhotos) window.__disposeAppPhotos(); } catch {}
+    try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
+    return true;
+  }
+  let COLLK = null, COLLN = 0, POS_ON = false, POS_TIMER = 0, POS_LAST = -1;       // (the collection's key, its size, and whether its place may be kept: `_collStart`)
   const POS_KEY = 'gallery.pos';
   const posLoad = () => { try { return JSON.parse(localStorage.getItem(POS_KEY) || '{}') || {}; } catch { return {}; } };
   const posSave = (k, v) => {
@@ -23526,9 +23535,28 @@ const GALLERY_APP = (() => {
        the print on the framed board is kept under that key (localStorage `gallery.pos`, the latest 300) each time the view comes to rest
        on a board; the next time the same files are opened, `_collStart` takes the view to the board holding that print once the pages
        are declared. Nothing is written until that move is made (or found not wanted), so the opening corner never overwrites it. */
+    _posReset(){ POS_LAST = -1; },            // (for the tests: the next change of page is kept again)
+    /* THE CURRENT IMAGE SETS THE SHAPE WHEN IT LOADS (Nov 1: "the current image should be set as the aspect ratio when loading it."): a load
+       measured a few pictures for one board shape; now, as soon as the print on the framed board (the page kept for the collection, else
+       the first) has been read and its own shape is known, the board takes it, as a tap on a print does (`shapeTo`). Tried every
+       300 ms for up to 20 s, once. */
+    _shapeToFramed(gen){
+      let tries = 0;
+      const go = () => {
+        if (gen !== COLL_GEN || ++tries > 66) return;
+        try {
+          const SPX = gridSpacingX(), SPZ = gridSpacingZ();
+          const e0 = target.shown ? LIST[pick(Math.round(target.boardX / SPX), Math.round(target.boardZ / SPZ))] : null;
+          if (e0 && e0.aspect){ shapeTo(e0); return; }
+        } catch {}
+        setTimeout(go, 300);
+      };
+      setTimeout(go, 700);
+    },
     _collStart(key, n){
       const gen = COLL_GEN;
-      COLLK = key || null; COLLN = n | 0; POS_ON = false;
+      COLLK = key || null; COLLN = n | 0; POS_ON = false; POS_LAST = -1;
+      GALLERY_APP._shapeToFramed(gen);
       if (!COLLK) return;
       setTimeout(() => {
         if (gen !== COLL_GEN) return;
@@ -23541,9 +23569,25 @@ const GALLERY_APP = (() => {
         } catch {}
         setTimeout(() => { if (gen === COLL_GEN) POS_ON = true; }, 1500);
       }, 600);
+      /* THE PAGE IN VIEW, NOT ONLY THE ONE FRAMED (Nov 1: "the current page is not being save to localstorage."): `onFramed` hears only
+         a flight to a board (Tab, a double tap), so a view panned or swiped from page to page kept nothing. Twice a second, while the
+         gallery is the app and the place may be kept, the board the view is on (the framed one while the view still sits on it, else
+         the one under the eye, `viewBoardCell`) gives the print to keep, written only when it changes. */
+      clearInterval(POS_TIMER);
+      POS_TIMER = setInterval(() => {
+        try {
+          if (!POS_ON || !COLLK || gen !== COLL_GEN || !(window.getFieldApp && window.getFieldApp() === GALLERY_APP)) return;
+          const SPX = gridSpacingX(), SPZ = gridSpacingZ();
+          const still = target.shown && Math.hypot(st.camX - target.x, st.camZ - target.z) < 0.25 * Math.min(SPX, SPZ);
+          const at = still ? { c: Math.round(target.boardX / SPX), r: Math.round(target.boardZ / SPZ) } : viewBoardCell();
+          if (!at) return;
+          const i = pick(at.c, at.r);
+          if (i >= 0 && i < Math.max(COLLN, EXPECT.n | 0, LIST.length) && i !== POS_LAST){ POS_LAST = i; posSave(COLLK, { i }); }   // (the size as it is now: pictures joined later make it larger than when the key was made)
+        } catch {}
+      }, 500);
     },
     onFramed(c, r){                        // flew to another board: that was the way out too
-      try { if (POS_ON && COLLK && c !== null && c !== undefined){ const i = pick(c, r); if (i >= 0 && i < COLLN) posSave(COLLK, { i }); } } catch {}
+      try { if (POS_ON && COLLK && c !== null && c !== undefined){ const i = pick(c, r); if (i >= 0 && i < Math.max(COLLN, EXPECT.n | 0, LIST.length)) posSave(COLLK, { i }); } } catch {}
       // …unless this is the board a tap just took us to (worldTap, below): that tap IS the zoom.
       if (this._arrive && this._arrive === c + '\u00b7' + r){ this._arrive = null; return; }
       if (this._zoomKey !== null) this._remember();
@@ -23594,17 +23638,7 @@ const GALLERY_APP = (() => {
          that as a feature. tapping an image should reset the aspect ratio."): the whole field is reshaped to that picture's own, as a
          load measures it (`applyBoardAspect`, kept to 3:1), every print's windows are worked again on the shape (`reshape`), and the
          zoom below goes on in the new one. A picture already the board's shape changes nothing. */
-      try {
-        const e0 = LIST[pick(col, row)];
-        if (e0 && e0.aspect && Math.abs(Math.log(e0.aspect / (PRINT_ASPECT.a || 1))) > 0.02){
-          const shape = applyBoardAspect([e0.aspect]);
-          if (shape){
-            for (const e of LIST){ if (!e || !e.reshape) continue; Object.assign(e, e.reshape(PRINT_ASPECT.a)); }
-            try { if (window.__disposeAppPhotos) window.__disposeAppPhotos(); } catch {}
-            try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
-          }
-        }
-      } catch (err){ console.warn('[gallery] reshape on tap —', err && err.message); }
+      try { shapeTo(LIST[pick(col, row)]); } catch (err){ console.warn('[gallery] reshape on tap —', err && err.message); }
       const SP = gridSpacing();
       const boardW = SP * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
       const cw = (window.LAB && window.LAB.cellW) || 1;
@@ -66242,10 +66276,19 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      start bumps it, and a loop that finds the number has moved on stops.
      Checked once per image, so a superseded run ends within one fetch. */
   let _ingestGen = 0;
-  const _bucketIngest = async (bucket, objects) => {
+  /* THE LAST BUCKET LOAD IS KEPT (Nov 1: "save the last bucket file to load on refresh."): what a bucket load was asked for (the bucket and
+     the names, none when it was the whole bucket or more than 200) goes in localStorage `gallery.last`, as a drop's files go in
+     IndexedDB (`KEEP`); whichever came last is what a refresh opens again. Each bucket source also gets a collection key of its own
+     (`_bpour`), so the page you were on comes back with it (`gallery.pos`). */
+  const LAST_KEY = 'gallery.last';
+  const lastSet = v => { try { localStorage.setItem(LAST_KEY, JSON.stringify(v)); } catch {} };
+  const lastGet = () => { try { const v = JSON.parse(localStorage.getItem(LAST_KEY) || 'null'); return v && typeof v === 'object' ? v : null; } catch { return null; } };
+  const _bucketIngest = async (bucket, objects, quiet) => {
     const gen = ++_ingestGen;
     const superseded = () => gen !== _ingestGen;
+    const _bpour = name => { const p = POUR.open(1, false); p.key = 'b:' + bucket + ':' + name; return p; };
     try {
+      if (!quiet) lastSet({ k: 'bucket', bucket, names: objects.length <= 200 ? objects.map(o => o.name).filter(n => typeof n === 'string') : [] });
       const urlOf = o => o.__url || _bucketURL(bucket, o);
       const imgs = objects
         .filter(o => /\.(jpe?g|png|gif|webp|bmp|avif)$/i.test(o.name))
@@ -66319,7 +66362,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
            why .cbr and .7z from a bucket need nothing here beyond being let
            through the filter — one door, and the bytes decide. */
         await _loadZip(new File([blob], z.name, { type: 'application/zip' }),
-                       false, POUR.open(1, false), 0);
+                       false, _bpour(z.name), 0);
         _zipShowsGallery();                    // an archive IS the picture app
         _setBucketBtn(_bucketBtnIdle());
         return;
@@ -66335,7 +66378,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
            demand behind us. So the button can go idle here while the field
            fills in as you fly — the same shape the local drop has. */
         await _loadPdf(new File([blob], d.name, { type: 'application/pdf' }),
-                       false, POUR.open(1, false), 0);
+                       false, _bpour(d.name), 0);
         _zipShowsGallery();
         _setBucketBtn(_bucketBtnIdle());
         return;
@@ -66346,7 +66389,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         const dr = await fetch(urlOf(d));
         if (!dr.ok) throw new Error('epub HTTP ' + dr.status);
         await _loadEpub(new File([await dr.blob()], d.name, { type: 'application/epub+zip' }),
-                        false, POUR.open(1, false), 0);
+                        false, _bpour(d.name), 0);
         _zipShowsGallery();
         _setBucketBtn(_bucketBtnIdle());
         return;
@@ -66368,7 +66411,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         if (!imgs.length || named){
           const f = new File([text], d.name.split('/').pop(), { type: 'text/markdown' });
           _bookDrop = null;
-          await _loadMarkdown(f, false, POUR.open(1, false), 0, pics);
+          await _loadMarkdown(f, false, _bpour(d.name), 0, pics);
           _zipShowsGallery();
           _setBucketBtn(_bucketBtnIdle());
           return;
@@ -66381,7 +66424,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       }
       if (!imgs.length && datas.length){        // a data file, read as pages (Oct 25)
         const d = datas[0];
-        await _loadJson(new File([d.text], d.name, { type: 'application/json' }), false, POUR.open(1, false), 0);
+        await _loadJson(new File([d.text], d.name, { type: 'application/json' }), false, _bpour(d.name), 0);
         _zipShowsGallery();
         _setBucketBtn(_bucketBtnIdle());
         return;
@@ -67264,7 +67307,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const docHangs = () => { const G = GALLERY_APP; return !!((G._book && G._book.live()) || (G._jsonRow && G._jsonRow.live())); };
       try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded && !docHangs(); } catch {}
       const pour = POUR.open(jobs.length, addsToWhatIsThere);
-      if (!addsToWhatIsThere && !restoring){ try { KEEP.put(all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '') && !/\.tvf3d$/i.test(f.name || ''))); } catch {} }
+      if (!addsToWhatIsThere && !restoring){ lastSet({ k: 'drop' }); try { KEEP.put(all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '') && !/\.tvf3d$/i.test(f.name || ''))); } catch {} }
       // (the collection's key: every file's name and size, whichever kind: the same files opened again come back to their page; a book re-hung for a setting is not a fresh drop, BOOK_GO)
       try {
         const sig = [...zips, ...pdfs, ...books, ...mds, ...jsons, ...list].map(f => (f.name || '') + ':' + (f.size || 0)).sort().join('|');
@@ -67436,6 +67479,21 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      nothing else asked for, the files kept in IndexedDB are opened as a drop, unless something was dropped meanwhile. The place in them
      comes back by the page-position keeping (`gallery.pos`). */
   try {
+    const LB = lastGet();
+    if (!CLI_POURS_IMAGES && !CLI_ARGS.help && !CLI_ARGS.h && FIELD_APP === GALLERY_APP && LB && LB.k === 'bucket' && LB.bucket){
+      /* (the last thing opened was from a bucket: it is fetched again, by the names it was asked with, else the whole bucket) */
+      BP.bucket = LB.bucket; if (!BP.known.includes(LB.bucket)) BP.known.push(LB.bucket);
+      setTimeout(async () => {
+        try {
+          if (!GALLERY_APP._seeded) return;       // (something was dropped meanwhile)
+          const names = Array.isArray(LB.names) ? LB.names.filter(n => typeof n === 'string') : [];
+          const objects = names.length ? names.map(name => ({ name })) : (await _bucketList(LB.bucket)).filter(o =>
+            (BP_LOADABLE.test(o.name) || /\.json$/i.test(o.name)) && !_isRecord(o.name));
+          if (!GALLERY_APP._seeded) return;
+          await _bucketIngest(LB.bucket, objects, true);
+        } catch (e) { console.warn('[gallery] bucket restore —', e && e.message); }
+      }, 0);
+    } else
     if (!CLI_POURS_IMAGES && !CLI_ARGS.help && !CLI_ARGS.h && FIELD_APP === GALLERY_APP){   // (an ?app=gallery link is still a plain open: only a load of files or a bucket asks for something else)
       KEEP.get().then(fs => {
         try {
