@@ -67101,7 +67101,45 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         window.tvfBucket.args = CLI_ARGS;
         window.tvfBucket.usage = () => console.log(CLI_USAGE); } catch {}
 
+  /* THE LAST DROP IS KEPT ACROSS A REFRESH (Nov 1: "If I hit refresh, after loading a book, I loose the book."): the files of the drop
+     that made the collection (a book, a PDF, an archive, a folder of pictures, whatever came together) go into IndexedDB (a Blob
+     is stored as it is, localStorage could not hold one), and the page opens them again on load when the gallery is the app and nothing
+     else is being opened. One drop is kept, the latest that replaced the collection; one over KEEP_MAX is not kept. */
+  const KEEP_MAX = 400e6;
+  const KEEP = {
+    db(){
+      return new Promise((ok, no) => {
+        try {
+          const q = indexedDB.open('games.gallery', 1);
+          q.onupgradeneeded = () => { try { q.result.createObjectStore('drop'); } catch {} };
+          q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error);
+        } catch (e){ no(e); }
+      });
+    },
+    async put(files){
+      try {
+        let n = 0; for (const f of files) n += f.size || 0;
+        const db = await this.db();
+        const tx = db.transaction('drop', 'readwrite');
+        if (!files.length || n > KEEP_MAX) tx.objectStore('drop').delete('last');
+        else tx.objectStore('drop').put(files.map(f => ({ name: f.name, type: f.type, mod: f.lastModified, blob: f })), 'last');
+        await new Promise(r => { tx.oncomplete = tx.onerror = tx.onabort = () => r(); });
+        db.close();
+      } catch {}
+    },
+    async get(){
+      try {
+        const db = await this.db();
+        const v = await new Promise(r => { const g = db.transaction('drop').objectStore('drop').get('last'); g.onsuccess = () => r(g.result); g.onerror = () => r(null); });
+        db.close();
+        return (v || []).map(o => new File([o.blob], o.name, { type: o.type, lastModified: o.mod }));
+      } catch { return []; }
+    },
+  };
+  let _restoring = false;
+  window.__galleryKeep = KEEP;
   const _loadFiles = files => {
+    const restoring = _restoring;            // (read now: the pour is made after awaits, when the flag is down again)
     const all = Array.prototype.slice.call(files || []);
     /* A GAME RECORD, DROPPED OR PICKED. Same entry point as the command line
        and the Import game button: the layer reads the extension and picks the
@@ -67226,6 +67264,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const docHangs = () => { const G = GALLERY_APP; return !!((G._book && G._book.live()) || (G._jsonRow && G._jsonRow.live())); };
       try { addsToWhatIsThere = onlyLoose && !GALLERY_APP._seeded && !docHangs(); } catch {}
       const pour = POUR.open(jobs.length, addsToWhatIsThere);
+      if (!addsToWhatIsThere && !restoring){ try { KEEP.put(all.filter(f => f && !FIELD_RECORD.EXT.test(f.name || '') && !/\.tvf3d$/i.test(f.name || ''))); } catch {} }
       // (the collection's key: every file's name and size, whichever kind: the same files opened again come back to their page; a book re-hung for a setting is not a fresh drop, BOOK_GO)
       try {
         const sig = [...zips, ...pdfs, ...books, ...mds, ...jsons, ...list].map(f => (f.name || '') + ':' + (f.size || 0)).sort().join('|');
@@ -67393,6 +67432,19 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     });
   } catch (e) { console.warn(e); }
 
+  /* …AND THE LAST DROP COMES BACK (Nov 1: "If I hit refresh, after loading a book, I loose the book."): on a load into the gallery with
+     nothing else asked for, the files kept in IndexedDB are opened as a drop, unless something was dropped meanwhile. The place in them
+     comes back by the page-position keeping (`gallery.pos`). */
+  try {
+    if (!CLI_POURS_IMAGES && !CLI_ARGS.help && !CLI_ARGS.h && FIELD_APP === GALLERY_APP){   // (an ?app=gallery link is still a plain open: only a load of files or a bucket asks for something else)
+      KEEP.get().then(fs => {
+        try {
+          if (!fs || !fs.length || !GALLERY_APP._seeded) return;
+          _restoring = true; try { _loadFiles(fs); } finally { _restoring = false; }
+        } catch (e) { console.warn('[gallery] restore —', e && e.message); }
+      });
+    }
+  } catch {}
   // Console seam for explorations: camera state and both image apps.
   try { window.FIELD_ST = st; window.FIELD_TARGET = target;
         window.GALLERY_APP = GALLERY_APP; } catch {}

@@ -6235,6 +6235,24 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[gallery position] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery position: the print on the framed board is kept in localStorage under the collection's key after the view steps on`);
   }
+  // THE LAST DROP IS KEPT ACROSS A REFRESH (Nov 1: "If I hit refresh, after loading a book, I loose the book."): a .md opened through the real
+  // picker is kept in IndexedDB (`window.__galleryKeep`); read back it is the same file, by name and size. (The reopening on a load is
+  // the same files through the same path as a drop; a reload by hand brought the book back with its two pages.)
+  {
+    current = 'gallery keeps the drop';
+    const bad = [];
+    const md = '# Kept\n\n' + 'Words to keep. '.repeat(40) + '\n';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(800);
+    await page.setInputFiles('#importImageFile', [{ name: 'keepme.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
+    await page.waitForFunction(() => { const E = window.GALLERY_APP._epub; return E && E.md && E.label === 'Kept'; }, null, { timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(async () => { const f = await window.__galleryKeep.get(); return f.map(x => [x.name, x.size]); });
+    if (r.length !== 1 || r[0][0] !== 'keepme.md') bad.push('the drop was not kept: ' + JSON.stringify(r));
+    else if (r[0][1] !== Buffer.byteLength(md)) bad.push('the kept file is not the one dropped: ' + JSON.stringify(r));
+    if (bad.length) failures.push('[gallery keeps the drop] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery keeps the drop: the file opened is kept in IndexedDB and reads back the same`);
+  }
   // A JSON FILE IS READ AS PAGES (Oct 25: "what about a json file viewer", then "Pages, like the EPUB reader"): a file built here
   // is opened through the real file picker. It must come up as the gallery, its lines exactly JSON.stringify's two-space
   // printing, numbered, every page headed by the path it begins at; the row its settings (a real click on Shallower and
