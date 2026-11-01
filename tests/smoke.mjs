@@ -3876,10 +3876,11 @@ try {
   {
     current = 'tilt put back';
     const tilt = async id => { await page.evaluate(id => window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)), id); await page.waitForTimeout(1500); return page.evaluate(() => window.FIELD_WORLD.st.pitch); };
-    const p0 = await tilt('minigolf'), p1 = await tilt('blockout'), p2 = await tilt('minigolf');
-    const ok = p0 < 68 && p1 >= 68 && Math.abs(p2 - p0) < 1e-6;
-    if (!ok) failures.push(`[${current}] mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°`);
-    console.log(`${ok ? 'ok  ' : 'FAIL'} the tilt an app's floor lifted is put back (mini golf ${p0}°, 3D Tetris ${p1}°, mini golf again ${p2}°)`);
+    // (Nov 1: 3D Tetris's tilt is free now, `pitchFloor`, so it lifts nothing; air raid's floor of 50° is the lift this checks)
+    const p0 = await tilt('minigolf'), p1 = await tilt('airraid'), p2 = await tilt('minigolf');
+    const ok = p1 >= 50 && Math.abs(p2 - p0) < 1e-6;
+    if (!ok) failures.push(`[${current}] mini golf ${p0}°, air raid ${p1}°, mini golf again ${p2}°`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} the tilt an app's floor lifted is put back (mini golf ${p0}°, air raid ${p1}°, mini golf again ${p2}°)`);
   }
   // LIGHTS OUT (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): every board
   // its own pattern at a level by its ring, its par the fewest presses (checked here by light chasing, a different way to
