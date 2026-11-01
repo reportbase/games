@@ -49968,6 +49968,7 @@ const SIMON_APP = (() => {
   function padAt(D, u, v){
     const du = u - 0.5, dv = v - 0.5, rho = Math.hypot(du, dv);
     if (rho < R_IN * RING_K * 0.8) return 'hub';
+    if (rho > R_OUT * RING_K * 1.12) return 'bg';          // (Nov 1: the margin and the board's background are not a pad: a tap there shows or hides the slider)
     const a = ((Math.atan2(dv, du) + Math.PI / 2) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
     return Math.floor(a / (2 * Math.PI / D.pads)) % D.pads;
   }
@@ -49984,22 +49985,20 @@ const SIMON_APP = (() => {
     return -1;
   }
   const dim = (c, f) => (((c >> 16 & 255) * f) << 16) | (((c >> 8 & 255) * f) << 8) | ((c & 255) * f);
-  /* THE COLOURS' NUMBERS (Nov 1: "simon should show a dot for each color on the bottom of the board. The first simon color should have
-     1 dot for example."): along the board's near edge each pad's colour stands as dots, the first one dot, the second two, and so on
-     (the keys 1 to 8 are the same numbers), lit when its pad is. The ring is drawn `RING_K` of its size to leave the strip. */
-  const RING_K = 0.84, DOT_V = 0.967, DOT_R = 0.0075;
-  function dotItems(P, lit, out){
-    // (Nov 1, again: "why do some colors have more beeps than others, should they not all just beep once per color?": one dot a colour)
-    const sp = P > 6 ? 0.055 : 0.07, u0 = 0.5 - sp * (P - 1) / 2;
-    for (let p = 0; p < P; p++) out.push({ kind: 'smDot', u: u0 + p * sp, v: DOT_V, scale: 1.3, lift: 0.003, color: p === lit ? PAD[p] : dim(PAD[p], 0.55) });
-  }
+  /* (Nov 1: "simon - remove the bottom row, and move the top row to the bottom.": the dots for each colour went, and the history
+     slider below took the near edge. The ring is drawn `RING_K` of its size to leave the strip.) */
+  const RING_K = 0.84, DOT_R = 0.0075;
   /* THE HISTORY SLIDER (Nov 1: "the top of simon board should have a slider that lets the player pan through the current games
-     history."): along the far edge a row of dots, one for each step of the sequence so far, oldest on the left and in the step's
+     history."): along the near edge a row of dots, one for each step of the sequence so far, oldest on the left and in the step's
      pad colour. A press or drag on that strip picks a step (`g.view`): its pad lights, with its tone, and its dot is ringed in
      white, while the game itself waits (the time to answer stops). A tap on a pad or the next round puts it back to live. */
-  const SL_V = 0.05, SL_HIT = 0.1, SL_U0 = 0.1, SL_U1 = 0.9;
+  const SL_V = 0.95, SL_HIT = 0.1, SL_U0 = 0.1, SL_U1 = 0.9;
+  /* (Nov 1: "toggle the bottom row visibility by clicking anywhere in the margin or board background.": a tap past the pads' ring,
+     in the margin or the corners, shows or hides the slider, kept in localStorage `simon.slider`.) */
+  let SLIDER = true; try { SLIDER = localStorage.getItem('simon.slider') !== 'off'; } catch (e) {}
+  const setSlider = on => { SLIDER = on; try { localStorage.setItem('simon.slider', on ? 'on' : 'off'); } catch (e) {} };
   const histOf = g => (g && g.state !== 'ready') ? g.n : 0;
-  const sliderOn = g => histOf(g) >= 2;
+  const sliderOn = g => histOf(g) >= 2 && SLIDER;
   const slSp = H => Math.min(0.05, (SL_U1 - SL_U0) / Math.max(1, H - 1));                 // (the dots' spacing, and the drag's)
   const viewAt = (g, u) => { const H = histOf(g), sp = slSp(H), u0 = 0.5 - sp * (H - 1) / 2; return Math.max(0, Math.min(H - 1, Math.round((u - u0) / sp))); };
   function sliderItems(S, g, out){
@@ -50019,7 +50018,6 @@ const SIMON_APP = (() => {
     }
     const hc = g && g.state === 'over' ? 0x5a1f22 : g && (g.state === 'input' || g.state === 'pause') ? 0x1f3a2a : HUB;
     out.push({ kind: 'smHub', u: 0.5, v: 0.5, scale: RING_K, color: hc });
-    dotItems(P, lit, out);
     if (g && sliderOn(g)) sliderItems(S, g, out);
     return out;
   }
@@ -50112,7 +50110,7 @@ const SIMON_APP = (() => {
     claimsPan(u, v){
       SLIDE = null;
       const g = liveGame();
-      if (!g || u == null || v == null || !sliderOn(g) || v > SL_HIT) return false;
+      if (!g || u == null || v == null || !sliderOn(g) || v < 1 - SL_HIT) return false;
       SLIDE = { moved: false };
       look(g, viewAt(g, u));
       return true;
@@ -50127,11 +50125,12 @@ const SIMON_APP = (() => {
       if (SLIDE){ const moved = SLIDE.moved; SLIDE = null; if (moved) return true; }
       LIVE = { c, r };
       let g = gameAt(c, r);
-      if (g.state !== 'over' && g.state !== 'ready' && u != null && v != null && sliderOn(g) && v <= SL_HIT){ look(g, viewAt(g, u)); return true; }
+      if (g.state !== 'over' && g.state !== 'ready' && u != null && v != null && sliderOn(g) && v >= 1 - SL_HIT){ look(g, viewAt(g, u)); return true; }
       if (g.state === 'over'){ g = fresh(c, r); GAMES.set(gkey(c, r), g); begin(g); return true; }
       if (g.state === 'ready'){ begin(g); say('Watch, then play it back: tap the pads (or press 1–' + g.S.D.pads + ').', 2600); return true; }
       g.view = -1;                                // (a tap anywhere else puts the board back to live)
       const p = u == null ? -1 : padAt(g.S.D, u, v);
+      if (p === 'bg'){ setSlider(!SLIDER); return true; }
       if (typeof p === 'number' && p >= 0) press(g, p);
       return true;
     },
