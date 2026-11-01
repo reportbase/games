@@ -3359,6 +3359,10 @@ try {
       const live = await look();
       const okSl = right.view === 5 && left.view === 0 && right.dots >= 6 && live.view === -1;
       // a real click in the margin (a corner) hides the slider, another shows it again (Nov 1: "toggle the bottom row visibility ...")
+      // (the wrong pad above ended that game, and a tap on a game that is over begins another: a live one again for the margin)
+      await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.fresh(f.c, f.r);
+        D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r }; g.n = 6; g.state = 'input'; g.i = 0; g.deadline = performance.now() / 1000 + 600; });
+      await page.waitForTimeout(600);
       const cor = await aimAt(0.97, 0.03);
       await page.mouse.click(cor.x, cor.y); await page.waitForTimeout(300);
       const hid = await look();
@@ -3441,7 +3445,7 @@ try {
       const at = () => JSON.stringify(sn.body.map(x => [x.r, x.c])), was = at();
       for (let k = 0; k < 40; k++) D.step(g, 0.2);
       const stopped = { alive: sn.alive, same: at() === was };
-      sn.queue = [[0, 1]]; for (let k = 0; k < 10; k++) D.step(g, 0.2);
+      sn.queue = [[0, -1]]; for (let k = 0; k < 10; k++) D.step(g, 0.2);       // (left, along the row: right would turn it back into its own neck)
       return { stopped, moved: at() !== was, alive: sn.alive }; });
     const ok = r.stopped.alive && r.stopped.same && r.moved && r.alive;
     if (!ok) failures.push('[snake sides] ' + JSON.stringify(r));
