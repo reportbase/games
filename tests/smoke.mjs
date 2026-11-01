@@ -5763,7 +5763,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
       if (!(await shown())){ await page.click('#bbHandle'); await page.waitForTimeout(800); }
       out.up = await shown();
-      await page.click('#bbHandle'); await page.waitForTimeout(1500);
+      await page.evaluate(() => document.getElementById('bbHandle').click()); await page.waitForTimeout(1500);   // (the dots are hidden while the row is open, Nov 1: the click is made on the element itself; a long press shuts it by hand)
       out.shut = !(await shown());
       await hold(); out.heldOpen = await shown();
       await hold(); out.heldShut = !(await shown());
@@ -6424,6 +6424,29 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     }
     if (bad.length) failures.push('[dots, full screen, tab] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} the dots 6px with a shadow, Full screen on the menu, Tab and Enter step from the board in view (${steps.join('; ')})`);
+  }
+  // THE LOADED FILE'S NAME OVER THE BOTTOM ROW, THE DOTS GONE WHILE IT IS OPEN, THE MENU ITEM JUST "Open" (Nov 1: "show … the name of the file that
+  // was loaded on the top of the bottom browser, above the images. don't show the three dots when the bottom browser is open." and "the menu item
+  // to open files should just say Open, not the file name."): a file opened through the picker, the row opened.
+  {
+    current = 'loaded name over the row';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const md = '# Named\n\n' + 'Some words here. '.repeat(40) + '\n';
+    await page.setInputFiles('#importImageFile', [{ name: 'shown-name.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
+    await page.waitForFunction(() => { const E = window.GALLERY_APP._epub; return E && E.md; }, null, { timeout: 60000 }).catch(() => {});
+    await page.evaluate(() => { if (document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
+    await page.waitForFunction(() => !document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const r = await page.evaluate(() => { const n = document.getElementById('bbName'), h = document.getElementById('bbHandle'), m = document.getElementById('bLoadImage'), rc = n.getBoundingClientRect();
+      return { name: n.textContent, shown: getComputedStyle(n).display !== 'none' && rc.width > 0, dots: getComputedStyle(h).display, menu: m.textContent }; });
+    if (r.name !== 'shown-name.md' || !r.shown) bad.push('the file name is not over the open row: ' + JSON.stringify(r));
+    if (r.dots !== 'none') bad.push('the dots are shown while the row is open: ' + r.dots);
+    if (r.menu !== 'Open') bad.push('the menu item says ' + JSON.stringify(r.menu));
+    if (bad.length) failures.push('[loaded name] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} loaded name: the open row carries the file's name in place of the dots, and the menu item says Open`);
+    await page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
   }
   // THE LAST BUCKET LOAD IS KEPT (Nov 1: "save the last bucket file to load on refresh."): what `gallery.last` holds is opened again on a
   // load into the gallery (the bucket mocked, one markdown file).
