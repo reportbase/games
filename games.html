@@ -4432,8 +4432,15 @@ function applyPan(ddx, ddy, src, at){
   const _now = performance.now();
   const _dt = Math.max(1, Math.min(120, _now - (PAN.movedMs || _now - 16)));
   const _k = 1 - Math.exp(-_dt / PAN_TAU);          // over time, not over events
-  PAN.vx += (dX - PAN.vx) * _k;                     // running average, for the release
-  PAN.vz += (dZ - PAN.vz) * _k;
+  /* A STALLED FRAME IS NOT A FAST HAND (Nov 1: "panning is broken … all of a sudden it moves 100's of boards, and it does not pan, it
+     moves between images."): the velocity is a distance a sample, quoted against a 60 fps frame. When the page stalls (a big picture
+     decoded and sent to the card) the browser hands back one move that covers everything since the last, so a slow drag read as a
+     flick, passed `SWIPE_LAUNCH`, and launched the endless drift at release: boards streaming past, one image after another. A sample
+     that took longer than a frame is scaled to what a frame of it would have moved; faster samples are left as they were. */
+  const _gap = Math.min(1000, _now - (PAN.movedMs || _now - FRAME_MS));
+  const _sc = _gap > 2 * FRAME_MS ? 2 * FRAME_MS / _gap : 1;
+  PAN.vx += (dX * _sc - PAN.vx) * _k;               // running average, for the release
+  PAN.vz += (dZ * _sc - PAN.vz) * _k;
   PAN.dtMs = _dt;                                   // how far apart the samples are coming
   PAN.movedMs = _now;                               // the hand is moving NOW (see launchDriftIfSwipe)
   try { noteDrift(); } catch {}                     // …and which way that was
