@@ -1322,63 +1322,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     in a live exchange; since Oct 21 also what each weapon does, duels of two, three and four tanks ending, a real key (D)
     driving on fuel, the row's big shell chosen and spent, and three tanks with two players: after Player 1 and the computer,
     Player 2's turn with the controls theirs.
-- **Tank maze: the chase** (Oct 21: "maze tank battle"; Oct 29: "tank maze is to hard. remove the cannon balls. the new goal
-  is to evade the oponent tank. when he overtakes you, you lose."): `TANKMAZE_APP`, id `tankmaze`, after Tanks. Tanks seen from
-  above in a maze, and no shells: you (tank 0, the runner) drive and turn, the computer's tanks hunt you. A hunter coming
-  within `CATCH` × `TR` (2.06 × 0.26 of a cell) catches you and the game is over. **Nothing else ends it** (Oct 29: "tank maze still has a timer to exit maze. DONT exit the maze
-  from a timer. remove it. only the user can exit the game, not you."): there was a time that won the round for you, `hold`, and
-  a match of first to three rounds; both are gone, with the rounds and the stars. You stay in the maze as long as you can, and the
-  best a board keeps is the longest you lasted, in seconds (`tankmaze.best`, `g.survived`). `hold` is only how long a board no one
-  plays shows its runner (a recording is cut there, never a game).
-  - **Every board its own mazes** (`makeMaze(idx, lv, round, tanks)`: the tilt maze's backtracking walk with loops, the tanks
-    in cells far apart along it), a level 1–5 by ring plus the Difficulty (Easy 0, Normal 1, Hard 2). `LV`, easy to hard: 9 to
-    7 cells a side (a cell more a side for each tank past two), loops 0.5 down to 0.15 (more ways round at level 1), `hold`
-    20 to 30 s, the hunter's speed `v` 0.72 to 1 of yours, `think` 0.5 down to 0.12 s between plans, `lead` (from level 3: it
-    heads for the cell you are going into) and `flank` (from level 4: a second or third hunter heads farther along your way,
-    to cut you off). Later hunters run at `EXTRA` (0.88) of the first's speed. Hunters wait `HEAD` (0.8 s) before they move.
-  - **The hunters** (`think`, `cpuCmd`, `steer`, `aheadOf`): straight at you in your cell or within 0.9 of a cell, else along
-    the maze (`pathOf`) to your cell, or ahead of you with `lead` and `flank`.
-  - **The steady runner** (`flee`, what a board no one plays shows, and what the levels were measured with): of the cells it
-    reaches before every hunter, the one farthest from them with the most ways out, never a dead end if it can help it, kept
-    until it is nearly there (re-planned every 0.6 s), turning back only when nothing else is safe. Measured over 20 mazes a
-    level, it held out 19, 16, 13, 10 and 4 times against one hunter at levels 1–5, 8 to 1 against two, 7 to 0 against
-    three; 4–17 ms a round.
-  - **Controls**: the arrow keys or WASD drive (up forward, down back, left and right turn); a drag steers the tank toward the
-    finger, driving while it is more than half a cell off (`claimsPan`, `keepsPress`). Two players (the menu's Players,
-    localStorage `tankmaze.players`): Player 1 runs on WASD, Player 2 hunts on the arrows, a finger steers the tank nearest it.
-  - **The time and the best; more tanks farther out** (Oct 31: "tank maze should show the time elapsed since the start of the game ... and the
-    best elapsed time for that board", then "remove the tap to move. Higher difficulty levels should have more tanks."): the title says
-    `time N s` while it plays (the round's own clock, `G.t`) and `best N s` (the longest lasted). A tap on the board moves nothing (a
-    click-to-move, `g.goal`, lived a day and went); a drag steers and the keys drive, as before. The number of tanks is the level's
-    (`TANKS` [2, 2, 3, 3, 4], `tanksOf`: you and one hunter at levels 1 and 2, two at 3 and 4, three at 5), for games and for the boards no
-    one plays; the maze a cell a side bigger for each tank past two, and the best's key says `#n` past two. The menu's Tanks setting
-    (`tankmaze.count`) went. Measured, the steady runner over 12 mazes a level (40 s at most): lasted 36.3, 34.9, 21.8, 15.0 and 12.4 s,
-    caught 2, 5, 9, 12 and 12 times of 12 at levels 1–5. The smoke test (part 7, "tank maze tanks by level") checks the counts, a tap moving nothing and the title.
-  - **You shoot, they cannot** (Nov 1: "I should be able to shoot tanks. they can't shoot me. when a tank is shot, they return to their home
-    and start over. the goal of the game is to last as long as you can. show the elapsed time."): your tank fires a shell along its heading
-    (Enter or F, or the play pad's 💥 button for a phone: `playActs`, `onPlayAct`, `g.fireReq`, which `personCmd` turns into `fire` on tank 0's
-    command), `SHELL_V` 6 cells a second for `SHELL_LIFE` 1.6 s, one every `RELOAD` 0.45 s (`G.shells`, `G.fireAt`). A shell ends on a wall
-    (`L.WB`), its time, or a hunter within `HIT_R` tank radii: that hunter goes back to the cell it started in (`L.spawn`), its plan dropped,
-    and waits `HEAD` seconds there (`t.holdUntil`), `G.shots` counts them and `G.pops` is the flash drawn. Only tank 0 fires (Player 2, who
-    hunts, and the computer's hunters never do); touching you still ends the game, and the steady runner of the recordings and the level
-    measurements does not shoot. The title says `time N s · N shot` while it plays (the round's own clock), and `best N s` is the longest you
-    lasted. The smoke test (part 7, "tank maze shooting") checks the real Enter, a hit hunter at its start, the reload and the title.
-  - States: 'ready' until the first key or touch, 'count' (`COUNT_T`) once, 'play'; a catch is a burst, and the game is over `BOOM_T`
-    (1.5 s) later with how long you lasted (`roundOver`); a tap on a finished board plays it again. There is no timer shown (Oct 29:
-    "Remove the Tank maze timer": the gold bar along the near wall, the "hold out N s" in the title and the seconds left went).
-  - **A board no one plays** shows a round of the steady runner against its board's hunters (`recSoon`, a little at a time in
-    the boards' share of time, `REC_HZ` 15 a second, `shownOf`), played back on the page's clock with a rest.
-  - The menu: Difficulty, Players, Sound (a burst when caught), Start this board again.
-  - Drawn: walls as boxes (the outer one the level's colour), each tank tracks, hull, turret and gun turned to its heading
-    (never a yaw of 0, `yawOf`), a burst on a catch. An inner wall stops at the outer wall's inner face (Oct 22:
-    "the inner walls of the maze should not extend into the outer walls."); the tilt maze's walls too.
-  - **Until Oct 29** it was a battle, as Tank Trouble plays it: shells bouncing off every wall for 9 s, the computer finding
-    shots off up to three walls and dodging, power-ups (laser, frag, spread, mine, homing missile), an aim line, first to 5.
-    Tom found it too hard; the shells, the powers and the aim line went.
-  - The smoke test checks the levels by ring, the same maze each time and another each round, the sizes for 2, 3 and 4 tanks,
-    a catch, nothing ending the game with the hunter far away for three times the old time, the hunters' wait, the steady runner
-    lasting longer at level 1 than at level 5, 3- and 4-tank rounds ending only with a catch, a real key driving, a real drag
-    steering, a catch ending the game and keeping how long it lasted, two players with Player 2 hunting on the arrows, and a board no one plays moving with no shells drawn.
+- **Tank maze, taken out** (Nov 1: "remove tank maze."): `TANKMAZE_APP` (Oct 21 to Nov 1, id `tankmaze`: tanks in a maze, one chased by the
+  computer's hunters, first a battle with shells, from Oct 29 a chase with no guns, then you could shoot them) is gone, with its smoke
+  checks and its `tankmaze.*` localStorage keys left behind unread. Its last form: you ran from hunters (2, 2, 3, 3, 4 tanks by level), a
+  shell of yours sent a hit hunter back to its start, they never fired, touching you ended it and the best was the longest you lasted.
 - **Platformer, taken out** (Oct 30–31: "remove platformer application."): `PLATFORM_APP` (a side-on level a board, seams agreeing by
   the left board's number, levels made until a steady bot crossed them clean, the player handed on to the board beside with the
   view following) lived one day, PR 152, and is gone with its smoke check.
