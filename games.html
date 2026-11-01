@@ -242,6 +242,15 @@
                       box-shadow: 0 1px 4px rgba(0, 0, 0, .6); box-sizing: border-box; pointer-events: none;
                       transition: border-color .12s ease; }
   #bbHandle svg { position: relative; }
+  /* THE DOTS GO WHEN THE ROW IS OPEN, AND THE FILE'S NAME TAKES THEIR PLACE (Nov 1: "show the … name of the file that was loaded on the top of the
+     bottom browser, above the images. don't show the three dots when the bottom browser is open."): open, the band's middle is the
+     loaded file's name (centred, one line, cut short, between the lock and turn chips and the quick buttons); a long press still
+     shuts the row, and shut, the dots are back, since they are how it opens. */
+  body:not(.bb-collapsed) #bbHandle { display: none; }
+  #bbName { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: var(--bb-peek); display: flex; align-items: center;
+            max-width: calc(100% - 260px); padding: 0 8px; box-sizing: border-box; font-size: 0.75rem; color: #f3f1ea; letter-spacing: .02em;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 2; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
+  #bbName:empty, body.bb-collapsed #bbName { display: none; }
   #bbHandle:hover::before { border-color: rgba(232, 200, 106, .95); }
   body:not(.bb-collapsed) #bbHandle::before { border-color: rgba(232, 200, 106, .75); }
   /* THE QUICK BUTTONS (Oct 9: "add small icon buttons, no text, for most common things, in the top of the bottom pane on
@@ -1287,7 +1296,7 @@
          switches the app to them — but the bar's open chip is the field's own
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
-    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Load images &#8679;</button>
+    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Open</button>
     <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json,.csv,.tsv,.txt,text/csv,.md,.markdown,.mdown,.mkd,text/markdown" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution: up to 4096px on the long side (PDF and book pages 3072) instead of 2048 (1536). Costs about four times the graphics memory per print, ~90MB at 4096, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to pictures opened after it is ticked."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
@@ -1301,7 +1310,7 @@
      for a rebuild to decide whether there was anything worth showing, which
      left the screen without its lock and turn until the first board was
      picked. -->
-<div id="boardBrowser"><button id="bbHandle" type="button" aria-label="Show or hide the row of boards"><svg viewBox="0 0 30 8" aria-hidden="true"><circle cx="4" cy="4" r="3"/><circle cx="15" cy="4" r="3"/><circle cx="26" cy="4" r="3"/></svg></button></div>
+<div id="boardBrowser"><div id="bbName" aria-live="off"></div><button id="bbHandle" type="button" aria-label="Show or hide the row of boards"><svg viewBox="0 0 30 8" aria-hidden="true"><circle cx="4" cy="4" r="3"/><circle cx="15" cy="4" r="3"/><circle cx="26" cy="4" r="3"/></svg></button></div>
 
 <!-- Bucket browser: field.html's answer to tangent.fit's ResultPanel file
      list (result.js) — same job, DOM instead of canvas. Opened by the
@@ -13686,6 +13695,14 @@ function bbQuickTick(a){
    the frame loop, and a view standing still draws no frames, so a button greyed out a moment ago (Undo, with nothing yet
    to undo) stayed grey. An app calls this when what its row shows has just changed. */
 function bbRefreshNow(){ _bbStatT = 0; _bbQuickSig = null; try { bbStatTick(); } catch {} try { syncBrowserVisibility(); } catch {} try { restWake(); } catch {} }
+/* THE LOADED FILE'S NAME over the open row (Nov 1), kept from the frame loop's tick as well as the rebuild: the pictures of a file arrive after the
+   row was built, and a rebuild that came before them left the name empty. Shown while the gallery holds prints. */
+function bbNameTick(a){
+  const nm = document.getElementById('bbName');
+  if (!nm) return;
+  const w = (a && a._list && a._list.length && window.__loadedName) || '';
+  if (nm.textContent !== w) nm.textContent = w;
+}
 function bbStatTick(){
   const now = performance.now();
   if (now - _bbStatT < 200) return;
@@ -13693,6 +13710,7 @@ function bbStatTick(){
   const a = window.getFieldApp && window.getFieldApp();
   try { bbQuickTick(a); } catch {}
   try { playPadTick(a); } catch {}
+  try { bbNameTick(a); } catch {}
   if (!a || !a.statTiles){ if (_bbStatSig){ _bbStatSig = ''; _bbStatNow = null; rebuildBoardBrowser(); } return; }
   if (bbKeys.length && !String(bbKeys[0]).startsWith('stat_') && !_bbStatSig) return;   // the row is busy with something else
   const L = bbStatList(), sig = L ? L.length + '@' + bbStatOwner() : '';
@@ -13918,6 +13936,7 @@ function rebuildBoardBrowser(){
   const _wasU = _wasN ? ((-VCP.foldFocus(bbAngle) * _wasN / Math.PI) % _wasN + _wasN) % _wasN : 0;
   const _iapp = window.getFieldApp && window.getFieldApp();
   let _gal  = _iapp && _iapp._list && _iapp._list.length ? _iapp : null;
+  { const nm = document.getElementById('bbName'); if (nm) nm.textContent = (_gal && window.__loadedName) || ''; }   // (the loaded file's name, Nov 1)
   /* WHAT THE STRIP IS, in two cases and no third:
        · IMAGE MODE — the gallery is showing and holds prints, so the strip
          is an image browser: every loaded picture in arrival order, zip,
@@ -64144,8 +64163,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
    coordinate labels off so nothing sits over the picture. */
 {
   const _setLoadBtn = t => {
+    /* THE MENU ITEM JUST SAYS Open (Nov 1: "them menu item to open files should just say Open, not the file name."): it used to
+       carry what was being read ("Reading book.epub …", "Unpacking …"); that goes to its tooltip, the label stays. */
     const b = document.getElementById('bLoadImage');
-    if (b) b.textContent = t;
+    if (b){ b.textContent = 'Open'; b.dataset.status = t; }
   };
   const _decodeBlob = async blob => {
     if (window.createImageBitmap){
@@ -66288,6 +66309,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const superseded = () => gen !== _ingestGen;
     const _bpour = name => { const p = POUR.open(1, false); p.key = 'b:' + bucket + ':' + name; return p; };
     try {
+      { const ns = objects.map(o => String(o.name || '')).filter(Boolean);      // (the name over the bottom row: the file, else the bucket)
+        window.__loadedName = ns.length === 1 ? ns[0] : (ns.length ? bucket + '  (' + ns.length + ' files)' : bucket); }
       if (!quiet) lastSet({ k: 'bucket', bucket, names: objects.length <= 200 ? objects.map(o => o.name).filter(n => typeof n === 'string') : [] });
       const urlOf = o => o.__url || _bucketURL(bucket, o);
       const imgs = objects
@@ -67313,6 +67336,11 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         const sig = [...zips, ...pdfs, ...books, ...mds, ...jsons, ...list].map(f => (f.name || '') + ':' + (f.size || 0)).sort().join('|');
         let hh = 5381; for (let q = 0; q < sig.length; q++) hh = ((hh * 33) ^ sig.charCodeAt(q)) >>> 0;
         pour.key = (addsToWhatIsThere || BOOK_GO) ? null : 'c' + hh.toString(36) + '.' + sig.length;
+        if (!addsToWhatIsThere && !BOOK_GO){        // (the name over the bottom row: one file's own, else the first and how many more)
+          const ns = [...zips, ...pdfs, ...books, ...mds, ...jsons, ...list].map(f => String(f.name || '')).filter(Boolean);
+          window.__loadedName = ns.length ? ns[0] + (ns.length > 1 ? '  + ' + (ns.length - 1) + ' more' : '') : '';
+          try { rebuildBoardBrowser(); } catch {}
+        }
       } catch {}
       await Promise.all(jobs.map(async (run, slot) => {
         try { await run({ join: slot > 0, pour, slot }); }

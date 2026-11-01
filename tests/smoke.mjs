@@ -2519,8 +2519,9 @@ try {
     const rowOn = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       return { on: E.ED.on, open: !document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, first: ((A.statTiles(f.c, f.r) || [])[0] || {}).value }; });
     await page.waitForTimeout(800);
-    const dotsXY2 = await dotsReady();
-    await page.mouse.click(dotsXY2.x, dotsXY2.y);
+    // (the dots are hidden while the row is open, Nov 1: it is shut through the element itself)
+    const shutRow = () => page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
+    await shutRow();
     await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(800);
     const rowOff = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = A._debug.games.get(f.c + '_' + f.r);
@@ -2549,7 +2550,7 @@ try {
     const shut0 = await page.evaluate(() => document.body.classList.contains('bb-collapsed'));
     if (shut0){ await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false); dotsAt = await dotsReady(); }
     await quickIs(true); const openVis = await qVis();
-    await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(true); await quickIs(false);
+    await shutRow(); await isShut(true); await quickIs(false);
     const shutNow = await page.evaluate(() => document.body.classList.contains('bb-collapsed')), shutVis = await qVis();
     dotsAt = await dotsReady(); await page.mouse.click(dotsAt.x, dotsAt.y); await isShut(false);
     if (!openVis || !shutNow || shutVis) failures.push(`[${current}] quick buttons with the pane open ${openVis}, shut ${shutNow} and still showing ${shutVis}`);
@@ -5763,7 +5764,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
       if (!(await shown())){ await page.click('#bbHandle'); await page.waitForTimeout(800); }
       out.up = await shown();
-      await page.click('#bbHandle'); await page.waitForTimeout(1500);
+      await page.evaluate(() => document.getElementById('bbHandle').click()); await page.waitForTimeout(1500);   // (the dots are hidden while the row is open, Nov 1: the click is made on the element itself; a long press shuts it by hand)
       out.shut = !(await shown());
       await hold(); out.heldOpen = await shown();
       await hold(); out.heldShut = !(await shown());
@@ -6392,6 +6393,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   {
     current = 'dots, full screen, tab';
     const bad = [];
+    await page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });   // (the dots are hidden while the row is open: measured with it shut)
+    await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
     const d = await page.evaluate(() => {
       const svg = document.querySelector('#bbHandle svg'), c = svg && svg.querySelector('circle');
       const r = c && c.getBoundingClientRect();
@@ -6424,6 +6428,29 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     }
     if (bad.length) failures.push('[dots, full screen, tab] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} the dots 6px with a shadow, Full screen on the menu, Tab and Enter step from the board in view (${steps.join('; ')})`);
+  }
+  // THE LOADED FILE'S NAME OVER THE BOTTOM ROW, THE DOTS GONE WHILE IT IS OPEN, THE MENU ITEM JUST "Open" (Nov 1: "show … the name of the file that
+  // was loaded on the top of the bottom browser, above the images. don't show the three dots when the bottom browser is open." and "the menu item
+  // to open files should just say Open, not the file name."): a file opened through the picker, the row opened.
+  {
+    current = 'loaded name over the row';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const md = '# Named\n\n' + 'Some words here. '.repeat(40) + '\n';
+    await page.setInputFiles('#importImageFile', [{ name: 'shown-name.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
+    await page.waitForFunction(() => { const E = window.GALLERY_APP._epub; return E && E.md; }, null, { timeout: 60000 }).catch(() => {});
+    await page.evaluate(() => { if (document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
+    await page.waitForFunction(() => !document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
+    await page.waitForFunction(() => document.getElementById('bbName').textContent === 'shown-name.md', null, { timeout: 15000 }).catch(() => {});
+    const r = await page.evaluate(() => { const n = document.getElementById('bbName'), h = document.getElementById('bbHandle'), m = document.getElementById('bLoadImage'), rc = n.getBoundingClientRect();
+      return { name: n.textContent, shown: getComputedStyle(n).display !== 'none' && rc.width > 0, dots: getComputedStyle(h).display, menu: m.textContent }; });
+    if (r.name !== 'shown-name.md' || !r.shown) bad.push('the file name is not over the open row: ' + JSON.stringify(r));
+    if (r.dots !== 'none') bad.push('the dots are shown while the row is open: ' + r.dots);
+    if (r.menu !== 'Open') bad.push('the menu item says ' + JSON.stringify(r.menu));
+    if (bad.length) failures.push('[loaded name] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} loaded name: the open row carries the file's name in place of the dots, and the menu item says Open`);
+    await page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
   }
   // THE LAST BUCKET LOAD IS KEPT (Nov 1: "save the last bucket file to load on refresh."): what `gallery.last` holds is opened again on a
   // load into the gallery (the bucket mocked, one markdown file).
@@ -6879,7 +6906,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     let st = null; for (let w = 0; w < 30; w++){ st = await tileAt(2); if (st && st[1] < (await page.evaluate(() => innerHeight)) - 20) break; await page.waitForTimeout(200); }   // (the row slides up)
     if (st){ await page.mouse.click(st[0], st[1]); await page.waitForTimeout(600); }
     const size = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; return [D.SET.size, D.showAt(L.c + 1, L.r).n]; });
-    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(400); }
+    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ await page.evaluate(() => document.getElementById('bbHandle').click());   // (the dots are hidden while the row is open, Nov 1: shut through the element itself)
+      await page.waitForTimeout(400); }
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.size = 8; try { localStorage.setItem('bejeweled.settings', JSON.stringify(D.SET)); } catch {} D.games.clear(); D.SHOWS.clear(); });
     // a board no one plays moves
     const sig = () => page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.LIVE; return JSON.stringify(A.cellItems(L.c + 2, L.r).filter(i => /^gem|^bj/.test(i.kind)).map(i => [i.kind, +i.u.toFixed(3), +i.v.toFixed(3)])); });
@@ -6981,7 +7009,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (lt){ await page.mouse.click(lt[0], lt[1]); await page.waitForTimeout(500); }
     const look = await page.evaluate(() => window.getFieldApp()._debug.SET.look);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.look = '3d'; try { localStorage.removeItem('asteroids.settings'); } catch {} });
-    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(400); }
+    if (await page.evaluate(() => window.tvf.bottomRow.visible)){ await page.evaluate(() => document.getElementById('bbHandle').click());   // (the dots are hidden while the row is open, Nov 1: shut through the element itself)
+      await page.waitForTimeout(400); }
     if (!(o.counts.join() === '2,4,6' && o.wave === 5 && o.shield && o.triple === 3 && o.arcade < 0.03 && !o.ufo && o.vector && look === 'vector'))
       failures.push(`[${current}] ${JSON.stringify({ o, look })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} asteroids settings (rocks ${o.counts}, start at wave ${o.wave}, the shield, ${o.triple} shots, arcade drift stopping, no saucer, the outlines; the real Look tile to ${look})`);
