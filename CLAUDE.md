@@ -955,6 +955,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     Simon) keeps the label plain and leaves out the steps at rings 7 and 31.
   - The smoke test checks the pads by ring, the same sequence on a board each time, three rounds played back and a wrong
     pad ending it, a real click starting a board and a real click on the right pad taken, and a board no one plays lighting.
+  - **The colours' numbers** (Nov 1: "simon should show a dot for each color on the bottom of the board. The first simon color should have 1 dot for example."): along the board's near edge each pad's colour is a row of dots, the first pad one dot, the second two and so on, in the pad's colour, bright while its pad is lit (`dotItems`, `smDot`; the keys 1 to 8 are the same numbers). The ring is drawn at 0.9 (`RING_K`) to leave the strip; `padAt`'s hub test follows it.
 - **Lights Out** (Oct 16: "what other simple games could we do", then "lights out, nonograms and whack a mole"): `LIGHTS_APP`,
   id `lightsout`, after Simon. A grid of lights; a press flips its square and the four beside it; put every light out in as
   few presses as you can.

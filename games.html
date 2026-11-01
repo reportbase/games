@@ -49907,7 +49907,7 @@ const SIMON_APP = (() => {
      past a pad's edge did nothing). */
   function padAt(D, u, v){
     const du = u - 0.5, dv = v - 0.5, rho = Math.hypot(du, dv);
-    if (rho < R_IN * 0.8) return 'hub';
+    if (rho < R_IN * RING_K * 0.8) return 'hub';
     const a = ((Math.atan2(dv, du) + Math.PI / 2) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
     return Math.floor(a / (2 * Math.PI / D.pads)) % D.pads;
   }
@@ -49924,14 +49924,29 @@ const SIMON_APP = (() => {
     return -1;
   }
   const dim = (c, f) => (((c >> 16 & 255) * f) << 16) | (((c >> 8 & 255) * f) << 8) | ((c & 255) * f);
+  /* THE COLOURS' NUMBERS (Nov 1: "simon should show a dot for each color on the bottom of the board. The first simon color should have
+     1 dot for example."): along the board's near edge each pad's colour stands as dots, the first one dot, the second two, and so on
+     (the keys 1 to 8 are the same numbers), lit when its pad is. The ring is drawn `RING_K` of its size to leave the strip. */
+  const RING_K = 0.9, DOT_V = 0.967, DOT_R = 0.0075;
+  function dotItems(P, lit, out){
+    const d = P > 6 ? 0.0165 : 0.021, gap = P > 6 ? 0.026 : 0.034;
+    let W = 0; for (let p = 0; p < P; p++) W += p * d + 2 * DOT_R + (p ? gap : 0);
+    let u = 0.5 - W / 2 + DOT_R;
+    for (let p = 0; p < P; p++){
+      const col = p === lit ? PAD[p] : dim(PAD[p], 0.55);
+      for (let k = 0; k <= p; k++) out.push({ kind: 'smDot', u: u + k * d, v: DOT_V, scale: 1, lift: 0.003, color: col });
+      u += p * d + 2 * DOT_R + gap;
+    }
+  }
   function itemsOf(S, lit, g){
-    const P = S.D.pads, out = [{ kind: 'smBase', u: 0.5, v: 0.5, scale: 1, color: RING_C }];
+    const P = S.D.pads, out = [{ kind: 'smBase', u: 0.5, v: 0.5, scale: RING_K, color: RING_C }];
     for (let p = 0; p < P; p++){
       const on = p === lit;
-      out.push({ kind: 'smPad' + P + '_' + p, u: 0.5, v: 0.5, scale: 1, lift: on ? LIT_UP : 0, color: on ? PAD[p] : dim(PAD[p], 0.38) });
+      out.push({ kind: 'smPad' + P + '_' + p, u: 0.5, v: 0.5, scale: RING_K, lift: on ? LIT_UP : 0, color: on ? PAD[p] : dim(PAD[p], 0.38) });
     }
     const hc = g && g.state === 'over' ? 0x5a1f22 : g && (g.state === 'input' || g.state === 'pause') ? 0x1f3a2a : HUB;
-    out.push({ kind: 'smHub', u: 0.5, v: 0.5, scale: 1, color: hc });
+    out.push({ kind: 'smHub', u: 0.5, v: 0.5, scale: RING_K, color: hc });
+    dotItems(P, lit, out);
     return out;
   }
   /* A pad: a flat wedge of the ring between R_IN and R_OUT, a little gap either side, standing PAD_H high with its outer and
@@ -49992,6 +50007,7 @@ const SIMON_APP = (() => {
     itemGeometries: {
       smBase: T => FieldKit.disc(T, R_OUT + 0.025, 0.004),
       smHub: T => FieldKit.disc(T, R_IN, 0.02),
+      smDot: T => FieldKit.disc(T, DOT_R, 0.004),
       ...padKinds,
     },
     cellGrid(){ return { n: 1, colors: [BASE] }; },
