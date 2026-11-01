@@ -6818,6 +6818,15 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     out.unlocked = await page.evaluate(() => !window.__boardLock());
     const c2 = await camX(); await drag(); const c3 = await camX();
     out.pansAgain = Math.hypot(c3[0] - c2[0], c3[1] - c2[1]) > 1e-3;
+    // a locked board holds only against a drag on it (Nov 1: "don't block panning of non-selected boards."): locked again, a drag that
+    // starts on another board (out at the screen's edge) pans the view and lets the lock go
+    m = await mid(); await dbl([m.x, m.y]);
+    out.relocked = await page.evaluate(() => window.__boardLock());
+    const c4 = await camX();
+    { const x0 = 40, y0 = Math.round((await page.evaluate(() => innerHeight)) * 0.45); await page.mouse.move(x0, y0); await page.mouse.down();
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(x0 + 18 * k, y0 + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await page.waitForTimeout(300); }
+    const c5 = await camX();
+    out.otherPans = Math.hypot(c5[0] - c4[0], c5[1] - c4[1]) > 1e-3 && await page.evaluate(() => !window.__boardLock());
     // the Difficulty item: each step on a game with levels goes to a board of its colour
     out.fly = await page.evaluate(async () => {
       window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'lightsout')); const wait = ms => new Promise(ok => setTimeout(ok, ms)); await wait(2500); await window.__settle();
@@ -6830,8 +6839,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       }
       item.on(); item.on(); item.on();   // (round to where it began)
       return rows; });
-    if (!(out.locked && out.heldStill && out.unlocked && out.pansAgain && out.fly.every(r => r.want === r.got))) failures.push(`[${current}] ${JSON.stringify(out)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} board lock and difficulty flight (a real double tap locked the board and a real drag moved nothing, another let it go and the drag panned; the Difficulty item went to levels ${out.fly.map(r => r.got).join('/')})`);
+    if (!(out.locked && out.heldStill && out.unlocked && out.pansAgain && out.relocked && out.otherPans && out.fly.every(r => r.want === r.got))) failures.push(`[${current}] ${JSON.stringify(out)}`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} board lock and difficulty flight (a real double tap locked the board and a real drag moved nothing, another let it go and the drag panned, and locked again a drag from another board panned and let the lock go; the Difficulty item went to levels ${out.fly.map(r => r.got).join('/')})`);
   }
   {
     /* TWO-FINGER ROTATION ON A TRACKPAD (Oct 31: "the two finger rotation works on touch devices, not on touch pads on portable computers"): a

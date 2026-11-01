@@ -4026,7 +4026,7 @@ function turnMove(x, y){
       turn.panY = turn.anchorY + _bdy * (_bt / _bd);
       if (_hooks.onViewPan) _hooks.onViewPan();
     }
-    applyPan(x - turn.panX, y - turn.panY, 'one');   // one finger or the mouse — the only pan an app may claim
+    applyPan(x - turn.panX, y - turn.panY, 'one', { x: turn.anchorX, y: turn.anchorY });   // one finger or the mouse — the only pan an app may claim
   }
   turn.panX = x; turn.panY = y;
   turn.currentX = x; turn.currentY = y;
@@ -4391,7 +4391,7 @@ function _pairGlide(){
   PAN.until = performance.now() + SWIPE_MS;
   pinchPanned = false;
 }
-function applyPan(ddx, ddy, src){
+function applyPan(ddx, ddy, src, at){
   /* ═══ AN APP MAY CLAIM THE ONE-FINGER PAN (Sep 22) ══════════════════════
      Every way of panning ends here — one finger or the mouse (turnMove), two
      fingers on glass, a trackpad's two-finger scroll, pan mode. Only the
@@ -4409,7 +4409,13 @@ function applyPan(ddx, ddy, src){
       if (_a && _a.onPan && _a.onPan(ddx, ddy, _framedUV(turn.currentX, turn.currentY))) return;   // 3rd: where the finger is on the board, whatever way the view is turned
     } catch {}
   }
-  if (BOARD_LOCK) return;                           // a locked board does not pan (Oct 31)
+  /* A LOCKED BOARD HOLDS ONLY AGAINST A DRAG ON IT (Nov 1: "don't block panning of non-selected boards."): `at` is where the gesture
+     is (a press's start, the pair's middle, the pad's pointer); on the framed board, or nowhere (the tilt), nothing moves, as
+     before (Oct 31); started on any other board or the ground between, the view pans as ever and the lock lets go. */
+  if (BOARD_LOCK){
+    if (!at || _framedUV(at.x, at.y, 0.08)) return;
+    setBoardLock(false);
+  }
   const yaw = (st.yaw || 0) * Math.PI / 180;
   const rx = Math.cos(yaw), rz = -Math.sin(yaw);   // screen-right in world
   const fx = Math.sin(yaw), fz = Math.cos(yaw);    // screen-up/forward in world
@@ -4578,7 +4584,7 @@ function mountPan(){
       PAN.lastY = PAN.startY + _dy * (_t / _d);
       if (_hooks.onViewPan) _hooks.onViewPan();
     }
-    if (PAN.dragging) applyPan(e.clientX - PAN.lastX, e.clientY - PAN.lastY);
+    if (PAN.dragging) applyPan(e.clientX - PAN.lastX, e.clientY - PAN.lastY, undefined, { x: PAN.startX, y: PAN.startY });
     PAN.lastX = e.clientX; PAN.lastY = e.clientY;
   }, true);
   addEventListener('pointerup', _panRelease, true);
@@ -4857,7 +4863,7 @@ function mountControls(opts){
          inertia. No deadzone here: the pair has already declared itself by
          being two fingers, and a second finger arriving cancelled the tap. */
       if (pinchC && (c.x !== pinchC.x || c.y !== pinchC.y)){
-        applyPan(c.x - pinchC.x, c.y - pinchC.y);
+        applyPan(c.x - pinchC.x, c.y - pinchC.y, undefined, { x: c.x, y: c.y });
         pinchPanned = true;                       // …so the release can coast
       }
       /* AND THE GAP PINCHES. Measured from the last distance that was acted
@@ -5112,7 +5118,7 @@ function mountControls(opts){
          two finger touch pad, maybe something like what the keyboard is doing"). onPadPan(dx, dy),
          the fingers' movement in pixels, returning true: the app used it and the view stays put. */
       try { const _pa = window.getFieldApp && window.getFieldApp(); if (_pa && _pa.onPadPan && _pa.onPadPan(-dx, -dy)) return; } catch {}
-      if (dx || dy) applyPan(-dx * PAD_PAN_GAIN, -dy * PAD_PAN_GAIN);
+      if (dx || dy) applyPan(-dx * PAD_PAN_GAIN, -dy * PAD_PAN_GAIN, undefined, { x: e.clientX, y: e.clientY });
       return;
     }
     /* template: the wheel no longer brakes the dial's coast — orbiting and
