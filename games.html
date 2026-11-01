@@ -13695,6 +13695,14 @@ function bbQuickTick(a){
    the frame loop, and a view standing still draws no frames, so a button greyed out a moment ago (Undo, with nothing yet
    to undo) stayed grey. An app calls this when what its row shows has just changed. */
 function bbRefreshNow(){ _bbStatT = 0; _bbQuickSig = null; try { bbStatTick(); } catch {} try { syncBrowserVisibility(); } catch {} try { restWake(); } catch {} }
+/* THE LOADED FILE'S NAME over the open row (Nov 1), kept from the frame loop's tick as well as the rebuild: the pictures of a file arrive after the
+   row was built, and a rebuild that came before them left the name empty. Shown while the gallery holds prints. */
+function bbNameTick(a){
+  const nm = document.getElementById('bbName');
+  if (!nm) return;
+  const w = (a && a._list && a._list.length && window.__loadedName) || '';
+  if (nm.textContent !== w) nm.textContent = w;
+}
 function bbStatTick(){
   const now = performance.now();
   if (now - _bbStatT < 200) return;
@@ -13702,6 +13710,7 @@ function bbStatTick(){
   const a = window.getFieldApp && window.getFieldApp();
   try { bbQuickTick(a); } catch {}
   try { playPadTick(a); } catch {}
+  try { bbNameTick(a); } catch {}
   if (!a || !a.statTiles){ if (_bbStatSig){ _bbStatSig = ''; _bbStatNow = null; rebuildBoardBrowser(); } return; }
   if (bbKeys.length && !String(bbKeys[0]).startsWith('stat_') && !_bbStatSig) return;   // the row is busy with something else
   const L = bbStatList(), sig = L ? L.length + '@' + bbStatOwner() : '';

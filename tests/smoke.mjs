@@ -6392,6 +6392,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   {
     current = 'dots, full screen, tab';
     const bad = [];
+    await page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });   // (the dots are hidden while the row is open: measured with it shut)
+    await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800);
     const d = await page.evaluate(() => {
       const svg = document.querySelector('#bbHandle svg'), c = svg && svg.querySelector('circle');
       const r = c && c.getBoundingClientRect();
@@ -6438,7 +6441,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.waitForFunction(() => { const E = window.GALLERY_APP._epub; return E && E.md; }, null, { timeout: 60000 }).catch(() => {});
     await page.evaluate(() => { if (document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
     await page.waitForFunction(() => !document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(800);
+    await page.waitForFunction(() => document.getElementById('bbName').textContent === 'shown-name.md', null, { timeout: 15000 }).catch(() => {});
     const r = await page.evaluate(() => { const n = document.getElementById('bbName'), h = document.getElementById('bbHandle'), m = document.getElementById('bLoadImage'), rc = n.getBoundingClientRect();
       return { name: n.textContent, shown: getComputedStyle(n).display !== 'none' && rc.width > 0, dots: getComputedStyle(h).display, menu: m.textContent }; });
     if (r.name !== 'shown-name.md' || !r.shown) bad.push('the file name is not over the open row: ' + JSON.stringify(r));
