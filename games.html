@@ -18570,7 +18570,10 @@ const BOARD_KIT = (() => {
   /* A game's word in the notice at the top (Oct 27: "do the message helpers next"): `say(ms, quiet)` gives the function forty-odd
      games each wrote out, say(message, how long), shown for `ms` unless told otherwise, and not at all while `quiet()` says so
      (a game playing its own demo, Settings muted). The notice may not be there yet, so a failure is let go. */
-  const say = (ms, quiet) => (m, t) => { if (quiet && quiet()) return; try { engineNotice(m, t || ms); } catch {} };
+  // (Nov 1: "You add message all over the place. mostly they are stupid and not needed.") No game's routine words go to the notice
+  // any more: this returns a function that says nothing, and the games' own state (titles, the board) says what happened. The
+  // field's notices for errors, sign-in, chess and files are `engineNotice` itself and stay.
+  const say = (ms, quiet) => (m, t) => {};
   /* The rest each game wrote out for itself (Oct 27: "what else could be shared between games?", then "do 1 and 2"): a game a
      board, kept by the board's key (`gkey`, `gameAt(GAMES, fresh)`: made on first want) and the board being played, if this
      game is the one up (`liveGame(appOf, liveOf, gameAt)`, each a getter, since a game's own `app` and `LIVE` come later in its

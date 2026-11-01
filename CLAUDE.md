@@ -2424,6 +2424,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `ANY`: state over / won / done / solved / lost, or a truthy over / won / done / solved), so Snake, Tetris, 2048, Minesweeper, the
   board games and the rest reset on a double tap too. Chess, Go, Air raid, flash cards, the game lab, Levels and the gallery have none.
   **No notice for a double tap** (Nov 1: "stop showing stupid message boxes. they are rarely needed, telling me I just double clicked is stupid."): the field no longer says "Board locked in place" or "Board unlocked"; the lock shows in the view and the menu item.
+  **No game says anything in the notice** (Nov 1: "You add message all over the place. mostly they are stupid and not needed."): `BOARD_KIT.say` returns a function that does nothing, so the games' routine messages ("Tap to play it again", tee and result lines, and the rest of the 45) never show; every note above that says a game "says" something in the notice is out of date. The field's own notices (errors, sign-in, chess, files) are `engineNotice` and stay.
 - **The bottom row coasts on physics** (Oct 17: "swipe is broken in bottom browser of the photo gallary, it should use
   physics."): a swipe let go is a body at the finger's speed, slowed in proportion to its speed, read off the clock:
   v(t) = v0·e^(−t/τ), gone v0·τ·(1 − e^(−t/τ)) (`bbMomentum`: `TAU` 325 ms, starts above `START_V` 0.2 px/ms, stops under
