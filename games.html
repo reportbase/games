@@ -4436,7 +4436,7 @@ function applyPan(ddx, ddy, src, at){
      moves between images."): the velocity is a distance a sample, quoted against a 60 fps frame. When the page stalls (a big picture
      decoded and sent to the card) the browser hands back one move that covers everything since the last, so a slow drag read as a
      flick, passed `SWIPE_LAUNCH`, and launched the endless drift at release: boards streaming past, one image after another. A sample
-     that took longer than a frame is scaled to what a frame of it would have moved; faster samples are left as they were. */
+     that came more than two frames after the last is scaled to two frames' worth; quicker ones are left as they were. */
   const _gap = Math.min(1000, _now - (PAN.movedMs || _now - FRAME_MS));
   const _sc = _gap > 2 * FRAME_MS ? 2 * FRAME_MS / _gap : 1;
   PAN.vx += (dX * _sc - PAN.vx) * _k;               // running average, for the release
