@@ -6178,7 +6178,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.waitForTimeout(1000);
     const pngs = await page.evaluate(() => Array.from({ length: 40 }, (_, k) => { const c = document.createElement('canvas'); c.width = 200; c.height = 200; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 9},70%,45%)`; x.fillRect(0, 0, 200, 200); return c.toDataURL('image/png').split(',')[1]; }));
     await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `f${String(i).padStart(2, '0')}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
-    await page.waitForFunction(g => eval(g)._list.filter(Boolean).length >= 1, G, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(1500);   // (a picture or two may be in, or the folder still being measured: the book wins either way)
     const md = '# Alone\n\n' + 'Some words here. '.repeat(30) + '\n';
     await page.setInputFiles('#importImageFile', [{ name: 'alone.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
     await page.waitForFunction(g => { const E = eval(g)._epub; return E && E.md && E.label === 'Alone'; }, G, { timeout: 30000 }).catch(() => {});
@@ -6199,11 +6199,11 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.waitForTimeout(1000);
     const pngs = await page.evaluate(() => [0, 1, 2, 3].map(k => { const c = document.createElement('canvas'); const L = k % 2 === 0; c.width = L ? 600 : 300; c.height = L ? 300 : 600; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 80},70%,45%)`; x.fillRect(0, 0, c.width, c.height); return c.toDataURL('image/png').split(',')[1]; }));
     await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `s${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
-    await page.waitForFunction(() => window.GALLERY_APP._list.filter(Boolean).length >= 4, null, { timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(2500);
+    await page.waitForFunction(() => ['s0', 's1'].every(n => window.GALLERY_APP._list.some(e => e && e.name === n)), null, { timeout: 120000 }).catch(() => {});
+    await page.waitForTimeout(1500);
     const shape = () => page.evaluate(() => ({ w: window.LAB.cellW, h: window.LAB.cellH }));
     const tapKind = async odd => {
-      await page.evaluate(odd => { const G = window.GALLERY_APP; for (let c = -3; c <= 3; c++) for (let r = -3; r <= 3; r++) if ((G._pick(c, r) % 2 === 1) === odd){ window.FIELD_TARGET.shown = true; G._zoomKey = null; G.onCellTap(c, r, 0.5, 0.5); return; } }, odd);
+      await page.evaluate(odd => { const G = window.GALLERY_APP; for (let c = -3; c <= 3; c++) for (let r = -3; r <= 3; r++) if ((G._pick(c, r) % 2 === 1) === odd && G._list[G._pick(c, r)]){ window.FIELD_TARGET.shown = true; G._zoomKey = null; G.onCellTap(c, r, 0.5, 0.5); return; } }, odd);
       await page.waitForTimeout(800);
       return shape();
     };

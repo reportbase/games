@@ -67240,6 +67240,9 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           } catch {}
         }
       } catch (e){ console.warn('[gallery] could not measure shapes —', e && e.message); }
+      /* A DROP MADE AFTER THIS ONE WINS (found by CI): the survey above takes a while, and a book opened in the meantime had hung and
+         begun its own collection; claiming now would begin another over it and bring the folder back on top of the book. */
+      if (POUR.live !== pour) return;
       const base = await POUR.claim(pour, slot, list.length, aspects);
       /* A REPLACEMENT STANDS THIS LOAD DOWN (Nov 1: "when I load images, then something else, say an epub file or pdf, and some of the
          original images are still showing, and the aspect ratio has not been reset to the new epub or pdf."): pictures are read one a
@@ -67289,6 +67292,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           });
           // at++ only on success, so a file that fails leaves no gap and the
           // order is still filename order — _finish settles the count.
+          if (GALLERY_APP._gen !== gen0) return;           // (replaced while this one decoded: see gen0 above; found by CI)
           GALLERY_APP._addAt(base + (at++), im2, (f.name || 'image').replace(/\.[^.]+$/, ''));
         } catch (e){
           console.warn('[gallery]', f && f.name, '—', e.message);   // skip it, keep the order
