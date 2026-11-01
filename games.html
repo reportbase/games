@@ -23331,9 +23331,10 @@ const GALLERY_APP = (() => {
        softer. Tiles are pushed out of the way entirely (faceMinPx), since a
        flat averaged colour is a third answer for the same board. */
     photoMinPx: 0.25,          // …and by width, down to a quarter of a pixel
-    /* (Nov 1: "It will not be used to show high resolution images so this is not needed.") A print stays the 256 px copy the photo tier
-       first hangs: it is never swapped for the full one when its board grows, so a picture never changes under you as it sharpens. */
-    photoSmallOnly: true,
+    /* (Nov 1: "are you still doing an intermediate image. it is very pixalated.") A print is hung as the whole picture the first
+       time it is drawn, never as the 256 px copy the photo tier gives other apps first and sharpens later: that copy was the
+       intermediate picture, and kept for good (`photoSmallOnly`, the cut before this) it was pixelated on a framed board. */
+    photoFullAtOnce: true,
     /* NO FLOOR. This was 0.5px of screen height, and everything below it was
        handed to the fabric — which is a REPEATING block, drawn through a mip
        bias that reaches 8× blur at range. A blurred average of the whole
@@ -63176,7 +63177,7 @@ function _flushAppPhotos(){
   const _mayUpgrade = _photoSpeed < _PHOTO_UP_SPD;
   for (const [key, rec] of (_mayUpgrade ? _photoMeshes : [])){
     if (ups >= _PHOTO_UP_FRAME || !_photoHasMs()) break;
-    if (rec.hi || rec.want < _PHOTO_HI_PX || !rec.full || (_upApp && _upApp.photoSmallOnly)) continue;
+    if (rec.hi || rec.want < _PHOTO_HI_PX || !rec.full) continue;
     const _t0 = performance.now();
     try {
       const old = rec.mesh.material.map;
@@ -63301,7 +63302,7 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     let cv = null;
     try { cv = app.photoCanvas ? app.photoCanvas(key) : null; } catch {}
     if (!cv){ _photoDeclined++; return false; }
-    const hi  = (bp || 0) >= _PHOTO_HI_PX && !app.photoSmallOnly;      // big on screen now? cut it full (not for an app that keeps its prints small)
+    const hi  = (bp || 0) >= _PHOTO_HI_PX || !!app.photoFullAtOnce;      // big on screen now? cut it full (an app that says photoFullAtOnce never gets the small copy)
     const src = hi ? cv : _photoSmallCanvas(cv);
     const _tex = _photoTexture(src);
     _photoApplyWindow(app, key, _tex);          // the fit, from the frame it appears
