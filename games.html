@@ -23040,6 +23040,23 @@ const GALLERY_APP = (() => {
     if (!_placedAny){ _placedAny = true; applyLook(); }
     if (LOADFIT.pending) fitSoon();
   }
+  /* CLEAR ALL, AND RESET THE BOARDS (Nov 2: "Images are still visible when I load a file from the bucket.   Clear all images and reset the boards"):
+     a load used to leave what was hanging until its own pictures were counted (seconds, after the file was fetched and opened), and
+     the far field's picture was only redone then, so the old pictures stayed in view all that while. Now the moment a load is asked for
+     the collection is emptied (the prints, their textures, the far field's fabric, the name over the row, the page kept for the old
+     collection) and the board put back to a square, to be shaped by what arrives. */
+  function clearAll(){
+    LIST.length = 0;
+    seeded = false;
+    EXPECT.n = 0;
+    COLL_GEN++;                             // the old collection's loaders stand down
+    COLLK = null; POS_ON = false; clearInterval(POS_TIMER);
+    window.__loadedName = '';
+    try { if (window.__disposeAppPhotos) window.__disposeAppPhotos(); } catch {}
+    try { applyBoardAspect([1]); } catch {}
+    try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
+    try { rebuildBoardBrowser(); } catch {}
+  }
   function seedWith(sources){
     // The shipped set: one print per source, hung as-is. Each source is
     // either a loaded <img> or a flat-colour canvas standing in for a file
@@ -23265,6 +23282,7 @@ const GALLERY_APP = (() => {
     _add: add,
     _wantFit: wantFit, _refitIfOpen: refitIfOpen,
     _begin: begin,
+    _clear: clearAll,
     _finish: finish,
     set _expect(v){ EXPECT.n = v | 0; },
     get _expect(){ return EXPECT.n; },
@@ -66309,6 +66327,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const superseded = () => gen !== _ingestGen;
     const _bpour = name => { const p = POUR.open(1, false); p.key = 'b:' + bucket + ':' + name; return p; };
     try {
+      if (objects.some(o => /\.(jpe?g|png|gif|webp|bmp|avif|zip|cbz|cbr|cb7|cbt|7z|tar|tgz|pdf|epub|md|markdown|mdown|mkd|jsonl?|ndjson|geojson)$/i.test(o.name || ''))){ try { GALLERY_APP._clear(); } catch {} }   // (what was hanging goes the moment a load is asked for, Nov 2)
       { const ns = objects.map(o => String(o.name || '')).filter(Boolean);      // (the name over the bottom row: the file, else the bucket)
         window.__loadedName = ns.length === 1 ? ns[0] : (ns.length ? bucket + '  (' + ns.length + ' files)' : bucket); }
       if (!quiet) lastSet({ k: 'bucket', bucket, names: objects.length <= 200 ? objects.map(o => o.name).filter(n => typeof n === 'string') : [] });
@@ -67323,6 +67342,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       for (const f of jsons) jobs.push(j => _loadJson(f, j.join, j.pour, j.slot));
       if (list.length)      jobs.push(j => _loadLoose(list, j.join, j.pour, j.slot));
       if (!jobs.length) return;
+      if (!BOOK_GO && !JSON_GO){ try { GALLERY_APP._clear(); } catch {} }     // (a load asked for empties the field at once, Nov 2; a book or JSON file laid out again for a setting is hung afresh as before)
       const onlyLoose = !zips.length && !pdfs.length && !books.length && !jsons.length && !mds.length;
       let addsToWhatIsThere = false;
       /* (Loose pictures join pictures, never a book's or a JSON file's pages: joined, the collection stayed the document's, so
