@@ -6515,6 +6515,24 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${bad.length ? 'FAIL' : 'ok  '} bucket restore: the last bucket file opened again on a load`);
     await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); } catch {} });
   }
+  /* A TAP ON THE MAIN DISPLAY SHUTS THE ROW (Nov 2: "tapping the main display should close the bottom browser"): the gallery's row
+     (its prints, not a numbers row, which already went) open, a real click on the field shuts it. */
+  {
+    current = 'tap closes the row';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => (a.id || a.name) === 'gallery')));
+    await page.waitForTimeout(SETTLE_MS);
+    await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); });
+    await page.waitForTimeout(700);
+    const was = await page.evaluate(() => window.tvf.bottomRow.visible);
+    await page.mouse.click(640, 300);
+    await page.waitForTimeout(800);
+    const now = await page.evaluate(() => window.tvf.bottomRow.visible);
+    const bad = [];
+    if (!was) bad.push('the row did not open');
+    if (now) bad.push('a click on the field left the row open');
+    if (bad.length) failures.push('[tap closes the row] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} tap closes the row: a click on the field shut the gallery's row`);
+  }
   }   // (end of part 6)
   if (part(7)) {   // (the three games of Oct 28: curling, bowling, the marble run)
   // CURLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the ice (a draw solved to the button, the curl the way

@@ -13625,8 +13625,12 @@ function bbPaintStat(ico, s, S){
    bottom info panel"): a tap on the field or a drag that really moves shuts the statistics row. A long
    press brings it back. Only the statistics row — the moves of a board game and the gallery's prints
    are left as they are. */
-function bbStatsAway(){
-  if (!bbVisible || !bbKeys.length || !String(bbKeys[0]).startsWith('stat_')) return;
+/* A TAP ON THE MAIN DISPLAY SHUTS ANY ROW (Nov 2: "tapping the main display should close the bottom browser"): `any` is true for a
+   tap, which now shuts the row whatever it holds (a game's moves, the gallery's prints, a book's settings); a drag that moves the
+   view still shuts only the numbers, since panning the field with the prints in view is how one looks through them. */
+function bbStatsAway(any){
+  if (!bbVisible || !bbKeys.length) return;
+  if (!any && !String(bbKeys[0]).startsWith('stat_')) return;
   try { const _a = window.getFieldApp && window.getFieldApp(); if (_a && _a.statsStay && _a.statsStay()) return; } catch {}   // (an editor's tools stay up)
   toggleBoardBrowser(false);
 }
@@ -16493,7 +16497,7 @@ function handleGroundTap(hit, ev){
       _tapCount++;
       if (COACH.swallowTap){ COACH.swallowTap = false; return; }   // this gesture only closed the coach note
       if (_pressBtn === 2) return;          // right-click is menu-only — never select/act on a board
-      try { bbStatsAway(); } catch {}
+      try { bbStatsAway(true); } catch {}
       // A PAUSED GAME RESUMES ON A TAP (Oct 1: "both clicking the board and escape should un-pause"),
       // and the tap does nothing else — it does not fire, move or reselect.
       /* …but not the tap that chose Pause from the menu (Oct 1: "Menu pause does not work"): on a
