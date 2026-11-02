@@ -150,6 +150,9 @@ try {
     const rr = await page.evaluate(() => { const g = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
       const y = g('yawZone'), t = g('tiltZone'), h = g('thrustZone'); return y && t && h ? { yaw: y.height, tilt: t.width, thrust: h.width } : null; });
     if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
+    // THE TURN RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed."): a short strip centred on the screen.
+    { const yr = await page.evaluate(() => { const e = document.getElementById('yawZone'); if (!e) return null; const b = e.getBoundingClientRect(); return { w: b.width, mid: b.left + b.width / 2, vw: innerWidth }; });
+      if (!yr || yr.w > Math.min(241, yr.vw * 0.61) || Math.abs(yr.mid - yr.vw / 2) > 1) failures.push(`[rails] the turn rail is not a short strip in the middle: ${JSON.stringify(yr)}`); }
     // THE COMPASS'S ANGLES PACKED IN THE MIDDLE (Nov 2: "the top rotation angles should be show just in the center, not spread over the complete
     // screen. I want the angles to be tighly packed in the center."): every heading mark on show sits in the middle third of the screen.
     { await page.waitForTimeout(600);

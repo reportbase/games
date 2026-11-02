@@ -1133,7 +1133,10 @@
      end is −180°, the middle is facing forward, right end +180°.
      (Oct 10: "the top slider for rotation should be the same height as the side sliders are wide." It was
      min(64px, 11vh), twice the side rails' band; now the very same measure as their width.) */
-  #yawZone { top: 0; left: min(32px, 5.25vw); right: min(32px, 5.25vw); height: min(32px, 5.25vw); z-index: 5;
+  /* THE RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed.", after the compass's angles were): the turn rail is a
+     short strip centred on the top edge, 240px or 60% of the width on a narrow screen, not the whole top. Its width is still one full turn
+     (−180° at the left end, +180° at the right), so a drag turns the view faster per pixel than it did across the screen. */
+  #yawZone { top: 0; left: 50%; width: min(240px, 60vw); margin-left: calc(min(240px, 60vw) / -2); height: min(32px, 5.25vw); z-index: 5;
              cursor: ew-resize; touch-action: none;
              background: transparent !important; border: none !important;
              border-radius: 0; backdrop-filter: none !important;
