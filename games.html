@@ -16680,6 +16680,16 @@ function handleGroundTap(hit, ev){
         zoomBoardToFit();
         target.active = true;
         PAN.vx = PAN.vz = 0; setBoardLock(true);
+        /* …AND AN APP THAT PLAYS ON ITS FIRST TAP STARTS HERE TOO (Nov 2: "in mini-golf double click should set the golf-hole current.   user
+           should NOT have to tap the board again to start.    double click should suffice."): the double brings the board in and, in an app
+           with `startOnDouble` (mini golf), begins its game, as the tap on the framed board would have. */
+        try {
+          const _sa = window.getFieldApp && window.getFieldApp();
+          if (_sa && _sa.startOnDouble){
+            const _G = Math.max(1, Math.round(Math.sqrt(st.N))), _ww = v => ((v % _G) + _G) % _G;
+            _sa.startOnDouble(_ww(gx), _ww(gz));
+          }
+        } catch (e){ _reportError('app start on double tap', e); }
         return;
       }
       if (autoMode){ setAutoMode(false); return; }   // the stopping click is EATEN —
@@ -23529,6 +23539,10 @@ const GALLERY_APP = (() => {
     },
     fit(){ return FIT; },
     faceMinPx: 1e9,                       // never: the fabric owns the far field
+    /* JUST IMAGES, NO GRID (Nov 2: "the photo gallery should not have a visible grid, just images."): the prints fill their cells, so there is no
+       gutter between them and no room for the red ring round the framed one; they meet edge to edge. (They overlap by the posture's 5%, so a
+       board's quad is lifted a hair by the parity of its cell, `_emitAppPhoto`, and two never fight over the same pixel.) */
+    fillsCell: true,
     cellFar: { light: 0x0b0d12, dark: 0x0b0d12 },   // the ground, near and far: a board with no picture drawn is not there (Nov 2)
     cellGrid(col, row, bp){
       /* NEVER A GRID OF BLOCKS, AND NEVER A TONE (Nov 2: "just don't show the image."): the tile layer under a print is nothing at all. A board
@@ -43492,6 +43506,17 @@ const GOLF_MAKE = SIZE => {
       if (!g || g.state === 'done') startRound(c, r);
       return true;
     },
+    /* A DOUBLE TAP BEGINS THE HOLE (Nov 2: "in mini-golf double click should set the golf-hole current.   user should NOT have to tap the board
+       again to start.    double click should suffice."): the field's double tap brings the board in; this is what the next tap there did, so
+       the hole is the one in play when the view has landed. A game already under way is left alone. */
+    startOnDouble(c, r){
+      if (ED.on) return false;
+      LIVE = { key: gkey(c, r), c, r };
+      if (PENDING != null){ const k = PENDING; PENDING = null; playHoleHere(k, pendingNote(k)); return true; }
+      const g = GAMES.get(gkey(c, r));
+      if (!g || g.state === 'done') startRound(c, r);
+      return true;
+    },
     // A board in play keeps its drags: the board never moves under an aim.
     // Only a finger on the selected board aims; anywhere else the view moves (Oct 2: "touch should only be locked in the selected board").
     claimsPan(u, v){
@@ -62553,7 +62578,7 @@ try { window.fieldRecord = FIELD_RECORD; } catch {}
 function _applyAppPosture(app){
   const photo = !!(app && app.cellPhoto);
   try {
-    const size = photo ? 1.05 : 1.0;
+    const size = photo ? (app.fillsCell ? 1.002 : 1.05) : 1.0;   // (prints that fill their cell meet edge to edge, a hair over so no seam shows: Nov 2)
     st.objSize = size;
     if (window.__syncFieldFabric) window.__syncFieldFabric();
   } catch {}
@@ -63545,7 +63570,8 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     rec.mesh = bigger; rec.cap *= 2;
   }
   if (window.__veiled && !app._seeded) window.__loadVeil(false);   // (the first print of a load is being drawn: the field is shown, Nov 2)
-  _ip.set(cx, 0.012, cz);                 // above the fabric, below the pieces
+  /* (a hair higher on every other cell, so the 5% where neighbouring prints overlap has one winner, not a flicker: Nov 2) */
+  _ip.set(cx, 0.012 + 0.0004 * ((Math.round(cx / gridSpacingX()) + Math.round(cz / gridSpacingZ())) & 1), cz);   // above the fabric, below the pieces
   _is.set(bWX * _photoYawScale, 1, bWZ * _photoYawScale);
   _im.compose(_ip, _pq, _is);             // _pq carries the gallery's quarter-turns
   rec.mesh.setMatrixAt(rec.n, _im);

@@ -1315,7 +1315,10 @@ try {
     for (let k = 0; k < 40; k++){ await page.waitForTimeout(500); if (!(await page.evaluate(() => !!window.FIELD_WORLD.target.active))) break; }
     now = await held();
     if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] a double tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
-    // …and the first tap on it then tees off
+    // …AND IT HAS BEGUN THE HOLE (Nov 2: "in mini-golf double click should set the golf-hole current.   user should NOT have to tap the board again to
+    // start.    double click should suffice."): the double itself started the round, with no tap after it
+    if ((await playing()) !== 'play') failures.push(`[${current}] a double tap on ${JSON.stringify(N.to)} did not start its round (${await playing()})`);
+    // …and a tap on it after that leaves the round going
     await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; if (E.ED.on) E.editStop(true); });
     const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, v = new W.THREE.Vector3(T.boardX, 0.02, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; });
     await page.waitForTimeout(700);
