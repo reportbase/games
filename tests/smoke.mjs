@@ -6625,6 +6625,22 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (now) bad.push('a click on the field left the row open');
     if (bad.length) failures.push('[tap closes the row] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} tap closes the row: a click on the field shut the gallery's row`);
+    // A SWIPE ALWAYS SETS THE AUTO MOVE AT THE SWIPE'S SPEED, A TAP STOPS IT (Nov 2: "Always auto move on swipe.   Tap stops the auto move.
+    // Panning controls the auto move speed."): the launch is called with a release speed (a hand's timing cannot be scripted through the
+    // software renderer): a slow swipe, a hard one while the first still runs, a gentle one again, then a real click on the field.
+    {
+      const sw = await page.evaluate(() => { const g = window.FIELD_WORLD.spacing()[0], T = window.tvf, o = {}; o.slow = T.swipeDrift(g * 0.03).rate; o.fast = T.swipeDrift(g * 0.25).rate; o.slowAgain = T.swipeDrift(g * 0.03).rate; return o; });
+      await page.mouse.click(300, 300);
+      await page.waitForTimeout(400);
+      sw.afterTap = await page.evaluate(() => window.FIELD_WORLD.st.heldPanRate || 0);
+      const bd = [];
+      if (!(sw.slow > 0)) bd.push('a swipe did not start the auto move: ' + JSON.stringify(sw));
+      if (!(sw.fast > sw.slow * 1.5)) bd.push('a harder swipe did not make it faster: ' + JSON.stringify(sw));
+      if (Math.abs(sw.slowAgain - sw.slow) > 1e-6) bd.push('a swipe while it ran did not set its speed: ' + JSON.stringify(sw));
+      if (sw.afterTap !== 0) bd.push('a tap did not stop the auto move: ' + JSON.stringify(sw));
+      if (bd.length) failures.push('[swipe auto move] ' + bd.join('; '));
+      console.log(`${bd.length ? 'FAIL' : 'ok  '} swipe auto move: speeds ${sw.slow.toFixed(2)} → ${sw.fast.toFixed(2)} → ${sw.slowAgain.toFixed(2)} screens a second by the swipe, a tap stopped it`);
+    }
   }
   }   // (end of part 6)
   if (part(7)) {   // (the three games of Oct 28: curling, bowling, the marble run)
