@@ -1315,7 +1315,10 @@ try {
     for (let k = 0; k < 40; k++){ await page.waitForTimeout(500); if (!(await page.evaluate(() => !!window.FIELD_WORLD.target.active))) break; }
     now = await held();
     if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] a double tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
-    // …and the first tap on it then tees off
+    // …AND IT HAS BEGUN THE HOLE (Nov 2: "in mini-golf double click should set the golf-hole current.   user should NOT have to tap the board again to
+    // start.    double click should suffice."): the double itself started the round, with no tap after it
+    if ((await playing()) !== 'play') failures.push(`[${current}] a double tap on ${JSON.stringify(N.to)} did not start its round (${await playing()})`);
+    // …and a tap on it after that leaves the round going
     await page.evaluate(() => { const E = window.getFieldApp()._debug.editor; if (E.ED.on) E.editStop(true); });
     const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, v = new W.THREE.Vector3(T.boardX, 0.02, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; });
     await page.waitForTimeout(700);
@@ -6582,14 +6585,17 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.goto(page.url().split('?')[0].split('#')[0] + '?app=gallery', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.FIELD_WORLD && window.getFieldApp && window.getFieldApp() && window.getFieldApp().id === 'gallery', null, { timeout: 150000 }).catch(() => {});
     const seen = [], t0 = Date.now();
+    let firstShown = null;   // (the camera the first moment the field is on show: Nov 2, "load that image directly, don't first load the first image")
     while (Date.now() - t0 < 14000){
-      const c = await page.evaluate(() => { try { const q = window.FIELD_WORLD.camera.position; return q.x.toFixed(1) + ',' + q.z.toFixed(1); } catch { return null; } });
-      if (c && seen[seen.length - 1] !== c) seen.push(c);
+      const c = await page.evaluate(() => { try { const q = window.FIELD_WORLD.camera.position; return q.x.toFixed(1) + ',' + q.z.toFixed(1) + (document.querySelector('canvas').style.visibility === 'hidden' ? '#h' : ''); } catch { return null; } });
+      if (c && !c.endsWith('#h') && firstShown === null) firstShown = c;
+      if (c && seen[seen.length - 1] !== c.replace('#h', '')) seen.push(c.replace('#h', ''));
       await page.waitForTimeout(40);
     }
     // (the corner, perhaps a settling nudge, then the page: a glide would show a dozen steps)
     if (seen.length > 5) bad.push('the view glided to the kept page through ' + seen.length + ' positions');
     if (seen.length < 2) bad.push('the view never moved to the kept page: ' + seen.join(' '));
+    if (firstShown !== null && seen.length >= 2 && firstShown !== seen[seen.length - 1]) bad.push('the field was shown at ' + firstShown + ' before the kept page ' + seen[seen.length - 1]);
     if (bad.length) failures.push('[first placing is a jump] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} first placing is a jump: the kept page was reached in ${seen.length} camera positions, no glide`);
     await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); localStorage.removeItem('gallery.pos'); } catch {} });
