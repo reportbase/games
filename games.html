@@ -4249,11 +4249,12 @@ function panBreakPx(isTouch){
 const PAN_TAU = 26;               // ms; the average's time constant
 const SWIPE_CAP  = 0.30;          // max launch speed, in grid cells per frame
 const SWIPE_STOP = 1e-4;          // below this the glide is over
-const SWIPE_LIFT_MS = 100;        // a lift within this of the last move is a SWIPE; later, a pan that stopped
+const SWIPE_LIFT_MS = 150;        // a lift within this of the last move is a SWIPE; later, a pan that stopped
 /* A LITTLE EASIER TO START (Nov 2: "make the swipe slightly easier to start the auto motion."): the floor was 0.06 and the lift window 80 ms;
-   a quarter lower and 100 ms, so a gentler flick, or one lifted a moment after the last move, still sets the drift going. A pan that
+   a quarter lower and 100 ms, so a gentler flick, or one lifted a moment after the last move, still sets the drift going. (Nov 2, "I still
+   have to swipe to hard to start auto motion.": that was not enough: now 0.02, a third of the original, and 150 ms.) A pan that
    stopped before lifting, and a slow creep, still do not (the stalled-frame scaling in applyPan is untouched). */
-const SWIPE_LAUNCH = 0.045;       // release speed, in grid cells per frame, below which a lift is a pan, not a swipe (cap is 0.30)
+const SWIPE_LAUNCH = 0.02;        // release speed, in grid cells per frame, below which a lift is a pan, not a swipe (cap is 0.30)
 const FRAME_MS   = 1000 / 60;     // the frame the friction and velocity are quoted against
 const SWIPE_MS   = 900;           // a coast lasts this long at most, whatever the frame rate
 const SWIPE_DT_CAP = 100;         // a stalled tab hands back seconds; do not honour them
@@ -22799,7 +22800,11 @@ const GALLERY_APP = (() => {
        is the collection's geometric mean. ceil() rather than round() so the
        zero-border axis cannot land half a pixel short of the picture. */
     const B  = Math.max(6, Math.min(64, Math.round(0.02 * Math.min(dw, dh))));
-    const Bx = BW > dw + 1e-6 ? B : 0, By = BH > dh + 1e-6 ? B : 0;
+    /* …ON BOTH AXES, ALWAYS (Nov 2: "the blur is extending the top and bottom pixel colors all the way to the border."): the border used to be
+       laid only on the axis that overhangs the board, and a print that matched its board had none at all, so when a tap reshaped the board
+       (`reshape`: new windows on this same canvas) the new bars were the picture's own edge rows and columns smeared out to the border by
+       the clamp. Every print now carries the mat all round, so whatever the board's shape becomes, a bar is the mat and never the picture. */
+    const Bx = B, By = B;
     const PW = Math.max(16, Math.ceil(dw + 2 * Bx));
     const PH = Math.max(16, Math.ceil(dh + 2 * By));
     const dx0 = (PW - dw) / 2, dy0 = (PH - dh) / 2;     // centred: the border is even
@@ -22915,6 +22920,10 @@ const GALLERY_APP = (() => {
     if (!shape) return false;
     for (const e of LIST){ if (!e || !e.reshape) continue; Object.assign(e, e.reshape(PRINT_ASPECT.a)); }
     try { if (window.__disposeAppPhotos) window.__disposeAppPhotos(); } catch {}
+    /* THE BOARD IS CLEAR WHILE THE PICTURES ARE DRAWN AGAIN (Nov 2: "images are bluring when I tap an image to switch the aspect ratio.   clear
+       the board when re-drawing. the images."): every picture is let go above, and none is drawn for a quarter of a second, so the boards
+       are the dark ground while the view reframes and the new shapes' prints are made, and each comes in whole, not stretched or soft. */
+    window.__photoHoldUntil = performance.now() + 250;
     try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
     return true;
   }
@@ -23412,26 +23421,12 @@ const GALLERY_APP = (() => {
        is not merely the right kind of picture, it is the same picture. */
     get fabricRepeat(){ return blockN(); },
     fabricCellAt(ctx, rect, i, j){
-      if (!LIST.length) return;
-      // Mid-turn the cell keeps its plain fill (drawFabric already laid it
-      // down) so a board swings against a clean backdrop, not against a
-      // second, un-rotated copy of the picture it is turning.
-      if (window.__photoTurning && window.__photoTurning()) return;
-      /* THE SAME CALL THE GEOMETRY MAKES. Not a parallel sampling of the
-         collection that happens to look similar — literally `pick`, on the
-         same (col,row), because the fabric's cell (i,j) IS a board's cell
-         modulo the repeat. That identity is the whole point of the block:
-         a board keeps its picture across the handoff and only gets softer.
-         A cell whose print has not arrived draws nothing and keeps the
-         plain fill, exactly as the near boards do — no substitute picture
-         that would have to be swapped out later. */
-      const e = LIST[pick(i, j)];
-      if (!e) return;
-      /* NEVER A SMALL PICTURE BLOWN UP (Nov 2: "it is still animating on load and your still showing heavily pixelated images."): this is the far
-         ground, a block of every print at 224 px each, which is what a board shows while its own print is not drawn yet (being built, or the
-         frame's budget declined it): that was a streaked, pixelated picture on every neighbour for the first seconds of a load. A board
-         with no print drawn is now the print's one average tone, the mat it will sit on, and the print comes in whole when it is drawn. */
-      ctx.fillStyle = e.avg;
+      /* A BOARD WITH NO PICTURE SHOWS NOTHING (Nov 2: "What are you doing to boards that don't have an image loaded yet. It looks like shit.
+         just don't show the image."): this is the far ground, which painted every board with no picture drawn yet in the warm red cell fill,
+         then the print's average tone, then a small copy of the print; each was a coloured slab or a blurry picture on a field of boards
+         still waiting. Now such a board is the field's own dark ground, as if it were not there; the print is drawn whole by the photo
+         tier when it is ready, and nothing else is ever drawn in its place. */
+      ctx.fillStyle = '#0b0d12';
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     },
     // The photo tier carries every board from here to the horizon cutoff;
@@ -23533,18 +23528,11 @@ const GALLERY_APP = (() => {
     },
     fit(){ return FIT; },
     faceMinPx: 1e9,                       // never: the fabric owns the far field
+    cellFar: { light: 0x0b0d12, dark: 0x0b0d12 },   // the ground, near and far: a board with no picture drawn is not there (Nov 2)
     cellGrid(col, row, bp){
-      const e = LIST[pick(col, row)];
-      if (!e) return null;
-      /* NEVER PIXELATED, UNDER ANY CIRCUMSTANCES (Nov 2: "you are still loading images with heavy pixelation. Under no circumstances are
-         you to do that."): this is the tile layer under a print, seen whenever the print is not drawn yet (it is being built, the frame's
-         budget declined it, a load has just begun). It showed the picture as a grid of coarse colour blocks, up to 64 × 64 (`levelFor`:
-         a board 560 px across had blocks 9 px wide), which is exactly a pixelated picture. A board with no print yet shows its own
-         one flat average tone instead, the mat it will sit on, and the print comes in whole when it is ready. */
-      const n = 1;
-      let g = e.grids[n];
-      if (!g) g = e.grids[n] = { n, colors: e.levels[n] };  // shared by reference
-      return g;
+      /* NEVER A GRID OF BLOCKS, AND NEVER A TONE (Nov 2: "just don't show the image."): the tile layer under a print is nothing at all. A board
+         whose print is not drawn yet is the ground (see fabricCellAt); the print arrives whole from the photo tier. */
+      return null;
     },
     /* ═══ TAP TO ZOOM TO THE SPOT, TAP AGAIN TO COME BACK ═══════════════
        A print is a thing you look INTO, which a board is not: the whole point
@@ -23720,7 +23708,8 @@ const GALLERY_APP = (() => {
          that as a feature. tapping an image should reset the aspect ratio."): the whole field is reshaped to that picture's own, as a
          load measures it (`applyBoardAspect`, kept to 3:1), every print's windows are worked again on the shape (`reshape`), and the
          zoom below goes on in the new one. A picture already the board's shape changes nothing. */
-      try { shapeTo(LIST[pick(col, row)]); } catch (err){ console.warn('[gallery] reshape on tap —', err && err.message); }
+      let _reshaped = false;
+      try { _reshaped = shapeTo(LIST[pick(col, row)]); } catch (err){ console.warn('[gallery] reshape on tap —', err && err.message); }
       const SP = gridSpacing();
       const boardW = SP * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
       const cw = (window.LAB && window.LAB.cellW) || 1;
@@ -23746,6 +23735,10 @@ const GALLERY_APP = (() => {
       frameSelectedBoardAt(tabletopZoom() * birdFit);
       target.boardX = bx; target.boardZ = bz;
       this._zoomKey = key;
+      /* A TAP THAT CHANGES THE SHAPE MOVES WITHOUT MOTION (Nov 2: "when tapping an image and it triggers a change in the aspect ratio, don't use
+         motion, just move directly to that image, set it as current, without any motion."): the view lands on the tapped print's spot at
+         once, not in a flight. A tap that leaves the shape alone zooms in as before. */
+      if (_reshaped){ try { settleCameraNow(); } catch {} }
       return true;
     },
     cellTitle(col, row){
@@ -63479,6 +63472,7 @@ function _photoMaterial(tex, cv){
 }
 
 function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
+  if (window.__photoHoldUntil && performance.now() < window.__photoHoldUntil) return false;   // (a board's pictures are being drawn again: none shown, Nov 2)
   let rec = _photoMeshes.get(key);
   if (!rec){
     /* THE FRAME'S BUILD BUDGET. Past it the board draws the fabric for this

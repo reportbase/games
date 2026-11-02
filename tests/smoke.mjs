@@ -6535,12 +6535,16 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     current = 'gallery never pixelated';
     const bad = [];
     const r = await page.evaluate(() => { const G = window.GALLERY_APP, out = []; if (!G || !G._cellFor) return null;
-      for (let i = 0; i < 6; i++){ const c = G._cellFor(i, 0, 0); if (!c) continue; for (const bp of [20, 100, 300, 800]){ const g = G.cellGrid(c.c, c.r, bp); if (g) out.push(g.n); } }
+      for (let i = 0; i < 6; i++){ const c = G._cellFor(i, 0, 0); if (!c) continue; for (const bp of [20, 100, 300, 800]) out.push(G.cellGrid(c.c, c.r, bp)); }
       return out; });
-    if (!r || !r.length) bad.push('no print had a tile layer to read: ' + JSON.stringify(r));
-    else if (r.some(n => n !== 1)) bad.push('a print\'s tile layer was a grid of blocks: ' + JSON.stringify(r));
+    if (!r || !r.length) bad.push('no cell to read: ' + JSON.stringify(r));
+    else if (r.some(g => g !== null)) bad.push('a board\'s tile layer drew something under its print: ' + JSON.stringify(r));
+    // (and the far ground is the field's own dark, for a board with no picture drawn: nothing coloured, nothing small)
+    const fb = await page.evaluate(() => { const G = window.GALLERY_APP, cv = document.createElement('canvas'); cv.width = cv.height = 8; const x = cv.getContext('2d'); x.fillStyle = '#f00'; x.fillRect(0, 0, 8, 8);
+      G.fabricCellAt(x, { x: 0, y: 0, w: 8, h: 8 }, 0, 0); const d = x.getImageData(4, 4, 1, 1).data; return [d[0], d[1], d[2]]; });
+    if (fb[0] > 30 || fb[1] > 30 || fb[2] > 40) bad.push('the far ground painted a board with no picture drawn as ' + fb.join(','));
     if (bad.length) failures.push('[gallery never pixelated] ' + bad.join('; '));
-    console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery never pixelated: ${r ? r.length : 0} tile layers read, every one a single flat tone`);
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery never pixelated: ${r ? r.length : 0} tile layers read, none drawn; a board with no picture is the dark ground`);
   }
   /* A FRESH LOAD DOES NOT ANIMATE (Nov 2: "it is still animating on load."): three pictures opened through the real picker, the camera sampled
      every 40 ms for five seconds, goes from where it was to where the default fit puts it in a step or two, never a glide. */
