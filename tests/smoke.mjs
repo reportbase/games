@@ -6542,6 +6542,26 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[gallery never pixelated] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery never pixelated: ${r ? r.length : 0} tile layers read, every one a single flat tone`);
   }
+  /* A FRESH LOAD DOES NOT ANIMATE (Nov 2: "it is still animating on load."): three pictures opened through the real picker, the camera sampled
+     every 40 ms for five seconds, goes from where it was to where the default fit puts it in a step or two, never a glide. */
+  {
+    current = 'fresh load does not animate';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1500);
+    const png = (w, h, c) => page.evaluate(([w, h, c]) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, w, h); for (let k = 0; k < 200; k++){ x.fillStyle = 'hsl(' + (k * 47 % 360) + ',70%,50%)'; x.fillRect((k * 37) % w, (k * 91) % h, 12, 12); } return cv.toDataURL('image/png').split(',')[1]; }, [w, h, c]);
+    const A = await Promise.all([0, 1, 2].map(k => png(1200, 800, '#274')));
+    await page.setInputFiles('#importImageFile', A.map((b, i) => ({ name: `anim${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    const seen = [], t0 = Date.now();
+    while (Date.now() - t0 < 5000){
+      const c = await page.evaluate(() => { try { const q = window.FIELD_WORLD.camera.position, s = window.tvf.state; return q.x.toFixed(1) + ',' + q.y.toFixed(1) + ',' + q.z.toFixed(1) + '|' + (s.zoom || 0).toFixed(0); } catch { return null; } });
+      if (c && seen[seen.length - 1] !== c) seen.push(c);
+      await page.waitForTimeout(40);
+    }
+    if (seen.length > 6) bad.push('the view glided through ' + seen.length + ' positions on a load: ' + seen.slice(0, 8).join(' '));
+    if (bad.length) failures.push('[fresh load does not animate] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} fresh load does not animate: the camera went through ${seen.length} positions in five seconds, no glide`);
+  }
   /* THE FIRST PLACING IS A JUMP (Nov 2: "the inital load and display of images is not smooth because images are being loaded and
      panning is then not smooth. I propose the initial load does not animate, it should go directly to the image"): a bucket file of
      eight chapters is opened again on a load with page 3 kept for it; the camera, sampled every 40 ms, must go from the corner to

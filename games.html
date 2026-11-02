@@ -20071,7 +20071,10 @@ function applyBoardShape(cw, ch){
    picture, so its size grows with the same disagreement this minimises — a
    board that keeps more area also builds smaller canvases. One number, two
    problems. Measured at 256 mixed pictures: 5.58GB on the mean, 3.03GB here. */
-function applyBoardAspect(aspects){
+/* `instant` is for a LOAD (Nov 2: "it is still animating on load"): the board's new shape reframes the view, which glided for seconds
+   while the pictures were still being read; a load's own reshaping lands at once (`settleCameraNow`). A tap on a print, which reshapes
+   too, keeps its glide. */
+function applyBoardAspect(aspects, instant){
   if (!aspects || !aspects.length) return null;
   const LOG = [];
   for (const a of aspects) if (a > 0 && isFinite(a)) LOG.push(Math.log(a));
@@ -20152,6 +20155,7 @@ function applyBoardAspect(aspects){
   ch = Math.max(LO, Math.min(HI, ch));
   PHOTO_SHAPE.cellW = cw; PHOTO_SHAPE.cellH = ch;   // the gallery's own shape, kept
   applyBoardShape(cw, ch);
+  if (instant){ try { settleCameraNow(); } catch {} }
   /* `raw` is gone: it used to be the unclamped mean, and every reader of it
      was a log line saying "clamped from". Nothing reads it now, and a field
      that would always equal `aspect` is a field that will be believed. */
@@ -23033,6 +23037,10 @@ const GALLERY_APP = (() => {
         target.yaw = 0; st.yawV = 0;
         try { if (window.__yawLever){ window.__yawLever.active = false; window.__yawLever.on = false; } } catch {}
         zoomBoardToFit();
+        /* …AND IT LANDS AT ONCE (Nov 2: "it is still animating on load."): the fit a load asks for was a flight, a glide of three seconds
+           while the first prints were still being read and sent to the card. The window only runs while no hand has touched the view
+           (LOADFIT.until, shut by a press, a wheel or a key), so running the camera to rest here moves nothing anyone is holding. */
+        try { settleCameraNow(); } catch {}
       } catch {}
     }, 60);
   }
@@ -23074,7 +23082,7 @@ const GALLERY_APP = (() => {
     COLLK = null; POS_ON = false; clearInterval(POS_TIMER);
     window.__loadedName = '';
     try { if (window.__disposeAppPhotos) window.__disposeAppPhotos(); } catch {}
-    try { applyBoardAspect([1]); } catch {}
+    try { applyBoardAspect([1], true); } catch {}
     try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
     try { rebuildBoardBrowser(); } catch {}
   }
@@ -23419,13 +23427,12 @@ const GALLERY_APP = (() => {
          that would have to be swapped out later. */
       const e = LIST[pick(i, j)];
       if (!e) return;
-      const cv = e.photos[vpick(i, j, e)] || e.icon;
-      ctx.imageSmoothingEnabled = true;
-      ctx.save();                          // prints are stored rotated 180°
-      ctx.translate(rect.x + rect.w / 2, rect.y + rect.h / 2);
-      ctx.rotate(Math.PI);
-      ctx.drawImage(cv, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
-      ctx.restore();
+      /* NEVER A SMALL PICTURE BLOWN UP (Nov 2: "it is still animating on load and your still showing heavily pixelated images."): this is the far
+         ground, a block of every print at 224 px each, which is what a board shows while its own print is not drawn yet (being built, or the
+         frame's budget declined it): that was a streaked, pixelated picture on every neighbour for the first seconds of a load. A board
+         with no print drawn is now the print's one average tone, the mat it will sit on, and the print comes in whole when it is drawn. */
+      ctx.fillStyle = e.avg;
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     },
     // The photo tier carries every board from here to the horizon cutoff;
     // the tile face below is only the fallback (pool exhaustion, tinted views).
@@ -64466,7 +64473,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
            different page shapes gets the one board that suits them all, rather
            than the last file's shape imposed on everyone else's pages. */
         if (p.aspects.length){
-          const shape = applyBoardAspect(p.aspects);
+          const shape = applyBoardAspect(p.aspects, true);
           if (shape) console.log('[pour] ' + p.aspects.length + ' pages measured · board '
                                  + shape.aspect.toFixed(3) + ' keeps '
                                  + Math.round(shape.kept * 100) + '%'
@@ -66534,7 +66541,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           if (sz && sz.w > 0 && sz.h > 0) aspects.push(sz.w / sz.h);
         } catch {}
       }));
-      const shape = applyBoardAspect(aspects);
+      const shape = applyBoardAspect(aspects, true);
       if (shape){
         console.log('[bucket] measured ' + shape.n + ' of ' + imgs.length +
                     ' images \u00b7 board ' + shape.aspect.toFixed(3) +
