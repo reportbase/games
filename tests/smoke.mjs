@@ -6475,6 +6475,30 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[fresh set] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} every load a fresh set: two portrait pictures opened after three landscape ones are the whole collection, the board portrait`);
   }
+  // A LOAD CLEARS THE FIELD AT ONCE (Nov 2: "Images are still visible when I load a file from the bucket.   Clear all images and reset the boards"):
+  // pictures are opened, then a bucket file (the bucket mocked, its answer held back two seconds); while it is still on its way the field holds
+  // no picture and the board is square, and then the file arrives.
+  {
+    current = 'a load clears the field';
+    const bad = [];
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const pn = await Promise.all([0, 1].map(k => page.evaluate(() => { const c = document.createElement('canvas'); c.width = 300; c.height = 600; const x = c.getContext('2d'); x.fillStyle = '#36c'; x.fillRect(0, 0, 300, 600); return c.toDataURL('image/png').split(',')[1]; })));
+    await page.setInputFiles('#importImageFile', pn.map((b, i) => ({ name: `clr${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+    await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^clr/.test(e.name)).length >= 2, null, { timeout: 120000 }).catch(() => {});
+    await page.route(/flare\.tangent\.workers\.dev\/bucket\?bucket=BUCKET1&key=slow\.md/, async r => { await new Promise(ok => setTimeout(ok, 2500)); r.fulfill({ contentType: 'text/markdown', headers: { 'access-control-allow-origin': '*' }, body: '# Slow\n\n' + 'Some words here. '.repeat(40) + '\n' }); });
+    await page.evaluate(() => { window.tvfBucket.cli({ bucket: 'BUCKET1', file: 'slow.md' }); });
+    await page.waitForTimeout(700);
+    const mid = await page.evaluate(() => ({ n: window.GALLERY_APP._list.filter(Boolean).length, expect: window.GALLERY_APP._expect, w: window.LAB.cellW, h: window.LAB.cellH }));
+    if (mid.n !== 0 || mid.expect !== 0) bad.push('pictures are still held while the file is on its way: ' + JSON.stringify(mid));
+    if (Math.abs(mid.w - mid.h) > 0.01) bad.push('the board was not put back to a square: ' + JSON.stringify(mid));
+    await page.waitForFunction(() => { const E = window.GALLERY_APP._epub; return E && E.md && E.label === 'Slow'; }, null, { timeout: 60000 }).catch(() => {});
+    const after = await page.evaluate(() => { const E = window.GALLERY_APP._epub; return { label: E ? E.label : null, names: window.GALLERY_APP._list.filter(Boolean).map(e => e.name).filter(n => /^clr/.test(n)) }; });
+    if (after.label !== 'Slow' || after.names.length) bad.push('the file did not arrive alone: ' + JSON.stringify(after));
+    if (bad.length) failures.push('[load clears] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} a load clears the field: the pictures went the moment a bucket file was asked for, the board square, and the file came alone`);
+    await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); } catch {} });
+  }
   // THE LAST BUCKET LOAD IS KEPT (Nov 1: "save the last bucket file to load on refresh."): what `gallery.last` holds is opened again on a
   // load into the gallery (the bucket mocked, one markdown file).
   {
