@@ -4239,8 +4239,11 @@ function panBreakPx(isTouch){
 const PAN_TAU = 26;               // ms; the average's time constant
 const SWIPE_CAP  = 0.30;          // max launch speed, in grid cells per frame
 const SWIPE_STOP = 1e-4;          // below this the glide is over
-const SWIPE_LIFT_MS = 80;         // a lift within this of the last move is a SWIPE; later, a pan that stopped
-const SWIPE_LAUNCH = 0.06;        // release speed, in grid cells per frame, below which a lift is a pan, not a swipe (cap is 0.30)
+const SWIPE_LIFT_MS = 100;        // a lift within this of the last move is a SWIPE; later, a pan that stopped
+/* A LITTLE EASIER TO START (Nov 2: "make the swipe slightly easier to start the auto motion."): the floor was 0.06 and the lift window 80 ms;
+   a quarter lower and 100 ms, so a gentler flick, or one lifted a moment after the last move, still sets the drift going. A pan that
+   stopped before lifting, and a slow creep, still do not (the stalled-frame scaling in applyPan is untouched). */
+const SWIPE_LAUNCH = 0.045;       // release speed, in grid cells per frame, below which a lift is a pan, not a swipe (cap is 0.30)
 const FRAME_MS   = 1000 / 60;     // the frame the friction and velocity are quoted against
 const SWIPE_MS   = 900;           // a coast lasts this long at most, whatever the frame rate
 const SWIPE_DT_CAP = 100;         // a stalled tab hands back seconds; do not honour them
@@ -23249,9 +23252,6 @@ const GALLERY_APP = (() => {
     h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b) >>> 0; h ^= h >>> 16;
     return (h >>> 0) % m;              // ^= yields a SIGNED int32; re-unsign it
   };
-  const levelFor = bp =>
-    bp >= 560 ? 64 : bp >= 280 ? 32 : bp >= 150 ? 16 :
-    bp >=  80 ?  8 : bp >=  40 ?  4 : bp >=  18 ?  2 : 1;
   return {
     name: 'photo gallery',
     /* THE GALLERY'S MENU. Both doors are here — Load images for a file on the
@@ -23518,7 +23518,12 @@ const GALLERY_APP = (() => {
     cellGrid(col, row, bp){
       const e = LIST[pick(col, row)];
       if (!e) return null;
-      const n = levelFor(bp);
+      /* NEVER PIXELATED, UNDER ANY CIRCUMSTANCES (Nov 2: "you are still loading images with heavy pixelation. Under no circumstances are
+         you to do that."): this is the tile layer under a print, seen whenever the print is not drawn yet (it is being built, the frame's
+         budget declined it, a load has just begun). It showed the picture as a grid of coarse colour blocks, up to 64 × 64 (`levelFor`:
+         a board 560 px across had blocks 9 px wide), which is exactly a pixelated picture. A board with no print yet shows its own
+         one flat average tone instead, the mat it will sit on, and the print comes in whole when it is ready. */
+      const n = 1;
       let g = e.grids[n];
       if (!g) g = e.grids[n] = { n, colors: e.levels[n] };  // shared by reference
       return g;

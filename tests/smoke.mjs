@@ -6515,6 +6515,19 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${bad.length ? 'FAIL' : 'ok  '} bucket restore: the last bucket file opened again on a load`);
     await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); } catch {} });
   }
+  /* NEVER PIXELATED (Nov 2: "you are still loading images with heavy pixelation. Under no circumstances are you to do that."): the gallery's
+     tile layer, seen under a print that is not drawn yet, is one flat tone for every print at every size, never a grid of coarse blocks. */
+  {
+    current = 'gallery never pixelated';
+    const bad = [];
+    const r = await page.evaluate(() => { const G = window.GALLERY_APP, out = []; if (!G || !G._cellFor) return null;
+      for (let i = 0; i < 6; i++){ const c = G._cellFor(i, 0, 0); if (!c) continue; for (const bp of [20, 100, 300, 800]){ const g = G.cellGrid(c.c, c.r, bp); if (g) out.push(g.n); } }
+      return out; });
+    if (!r || !r.length) bad.push('no print had a tile layer to read: ' + JSON.stringify(r));
+    else if (r.some(n => n !== 1)) bad.push('a print\'s tile layer was a grid of blocks: ' + JSON.stringify(r));
+    if (bad.length) failures.push('[gallery never pixelated] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery never pixelated: ${r ? r.length : 0} tile layers read, every one a single flat tone`);
+  }
   /* THE FIRST PLACING IS A JUMP (Nov 2: "the inital load and display of images is not smooth because images are being loaded and
      panning is then not smooth. I propose the initial load does not animate, it should go directly to the image"): a bucket file of
      eight chapters is opened again on a load with page 3 kept for it; the camera, sampled every 40 ms, must go from the corner to
