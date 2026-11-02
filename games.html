@@ -1059,7 +1059,11 @@
      leave settles it. */
   /* Sep 30: "the left and right scrollbars are too wide - reduce by 65%": 90px / 15vw → 32px / 5.25vw
      (and the top rail's ends with them). */
-  #tiltZone { left: 0; top: 0; bottom: 0; width: min(32px, 5.25vw); z-index: 5;
+  /* THE TILT RAIL PACKED IN THE MIDDLE TOO, WITH A READOUT (Nov 2: "the left scroll bar for tilt should be similary compressed, add a tilt
+     readout."): a short strip centred on the left edge, 240px or 60% of the height on a short screen, as the turn rail is across the top; the
+     tilt still runs from the floor at its top end to PITCH_MAX at its bottom end, so a drag tips the view faster per pixel. #tiltRead beside it
+     says the angle. */
+  #tiltZone { left: 0; top: 50%; height: min(240px, 60vh); margin-top: calc(min(240px, 60vh) / -2); width: min(32px, 5.25vw); z-index: 5;
               cursor: ns-resize; touch-action: none;
               background: transparent !important; border: none !important;
               border-radius: 0; backdrop-filter: none !important;
@@ -1121,6 +1125,9 @@
   #tiltZone .strip-mark { left: 0; background: var(--acc);
                           box-shadow: 0 0 7px rgba(127,119,221,.9); }
   #tiltZone #tiltMark    { background: var(--hot); box-shadow: 0 0 10px rgba(232, 200, 106,.95), 0 1px 3px rgba(0,0,0,.9); }
+  #tiltZone #tiltRead { position: absolute; left: calc(100% + 4px); transform: translateY(-50%); pointer-events: none;
+    font-size: 0.6875rem; font-weight: 700; letter-spacing: .5px; color: rgba(232,200,106,.95);
+    text-shadow: 0 1px 3px rgba(4,6,10,.85); font-variant-numeric: tabular-nums; white-space: nowrap; }
   #tiltZone #tiltMarkTgt { background: var(--acc); box-shadow: 0 0 7px rgba(127,119,221,.9); }
   #tiltZone #tiltEndTop, #tiltZone #tiltEndBot {
     background: rgba(159,182,200,.45); width: 12px !important;
@@ -68226,6 +68233,7 @@ function updateStripMarkers(dt){
     updateStripMarkers.tiltTgt = mk('tiltMarkTgt', tz);
     updateStripMarkers.tiltT   = mk('tiltEndTop', tz);
     updateStripMarkers.tiltB   = mk('tiltEndBot', tz);
+    { const el = document.createElement('div'); el.id = 'tiltRead'; tz.appendChild(el); updateStripMarkers.tiltTxt = el; }   // (the tilt's readout, Nov 2)
     updateStripMarkers.cur  = mk('railThumb', hz);
   }
   const M = updateStripMarkers;
@@ -68278,6 +68286,9 @@ function updateStripMarkers(dt){
   // exactly where the thumb put it.
   const yTilt = p => (EdgeGauge.tiltToFrac(p) * (tz.clientHeight - 2)).toFixed(1) + 'px';
   M.tilt.style.top = yTilt(st.pitch);
+  { const deg = Math.round(st.pitch) + '\u00b0';                       // the readout rides beside the nub, in degrees
+    if (M.tiltTxt._t !== deg){ M.tiltTxt._t = deg; M.tiltTxt.textContent = deg; }
+    M.tiltTxt.style.top = (parseFloat(yTilt(st.pitch)) + 4).toFixed(1) + 'px'; }
   M.tiltT.style.top = '0px';
   M.tiltB.style.top = (tz.clientHeight - 1) + 'px';
   M.tiltTgt.style.display = (lv && lv.active) ? '' : 'none';

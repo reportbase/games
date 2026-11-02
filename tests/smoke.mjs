@@ -150,6 +150,12 @@ try {
     const rr = await page.evaluate(() => { const g = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
       const y = g('yawZone'), t = g('tiltZone'), h = g('thrustZone'); return y && t && h ? { yaw: y.height, tilt: t.width, thrust: h.width } : null; });
     if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
+    // THE TILT RAIL PACKED IN THE MIDDLE TOO, WITH A READOUT (Nov 2: "the left scroll bar for tilt should be similary compressed, add a tilt readout."):
+    // a short strip centred on the left edge, and a readout that says the angle the view is tipped at.
+    { const tr = await page.evaluate(() => { const e = document.getElementById('tiltZone'), r = document.getElementById('tiltRead'); if (!e || !r) return null; const b = e.getBoundingClientRect();
+        return { h: b.height, mid: b.top + b.height / 2, vh: innerHeight, txt: r.textContent, pitch: window.tvf.state.pitch }; });
+      if (!tr || tr.h > Math.min(241, tr.vh * 0.61) || Math.abs(tr.mid - tr.vh / 2) > 1) failures.push(`[rails] the tilt rail is not a short strip in the middle: ${JSON.stringify(tr)}`);
+      else if (tr.txt !== Math.round(tr.pitch) + '\u00b0') failures.push(`[rails] the tilt readout does not say the tilt: ${JSON.stringify(tr)}`); }
     // THE TURN RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed."): a short strip centred on the screen.
     { const yr = await page.evaluate(() => { const e = document.getElementById('yawZone'); if (!e) return null; const b = e.getBoundingClientRect(); return { w: b.width, mid: b.left + b.width / 2, vw: innerWidth }; });
       if (!yr || yr.w > Math.min(241, yr.vw * 0.61) || Math.abs(yr.mid - yr.vw / 2) > 1) failures.push(`[rails] the turn rail is not a short strip in the middle: ${JSON.stringify(yr)}`); }
