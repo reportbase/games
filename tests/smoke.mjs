@@ -6585,14 +6585,17 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.goto(page.url().split('?')[0].split('#')[0] + '?app=gallery', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.FIELD_WORLD && window.getFieldApp && window.getFieldApp() && window.getFieldApp().id === 'gallery', null, { timeout: 150000 }).catch(() => {});
     const seen = [], t0 = Date.now();
+    let firstShown = null;   // (the camera the first moment the field is on show: Nov 2, "load that image directly, don't first load the first image")
     while (Date.now() - t0 < 14000){
-      const c = await page.evaluate(() => { try { const q = window.FIELD_WORLD.camera.position; return q.x.toFixed(1) + ',' + q.z.toFixed(1); } catch { return null; } });
-      if (c && seen[seen.length - 1] !== c) seen.push(c);
+      const c = await page.evaluate(() => { try { const q = window.FIELD_WORLD.camera.position; return q.x.toFixed(1) + ',' + q.z.toFixed(1) + (document.querySelector('canvas').style.visibility === 'hidden' ? '#h' : ''); } catch { return null; } });
+      if (c && !c.endsWith('#h') && firstShown === null) firstShown = c;
+      if (c && seen[seen.length - 1] !== c.replace('#h', '')) seen.push(c.replace('#h', ''));
       await page.waitForTimeout(40);
     }
     // (the corner, perhaps a settling nudge, then the page: a glide would show a dozen steps)
     if (seen.length > 5) bad.push('the view glided to the kept page through ' + seen.length + ' positions');
     if (seen.length < 2) bad.push('the view never moved to the kept page: ' + seen.join(' '));
+    if (firstShown !== null && seen.length >= 2 && firstShown !== seen[seen.length - 1]) bad.push('the field was shown at ' + firstShown + ' before the kept page ' + seen[seen.length - 1]);
     if (bad.length) failures.push('[first placing is a jump] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} first placing is a jump: the kept page was reached in ${seen.length} camera positions, no glide`);
     await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); localStorage.removeItem('gallery.pos'); } catch {} });

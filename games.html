@@ -23635,6 +23635,11 @@ const GALLERY_APP = (() => {
       COLLK = key || null; COLLN = n | 0; POS_ON = false; POS_LAST = -1;
       GALLERY_APP._shapeToFramed(gen);
       if (!COLLK) return;
+      /* THE KEPT PAGE IS THE FIRST ONE SEEN (Nov 2: "When loading from local storage, load that image directly, don't first load the first
+         image."): the field was shown as soon as the first print was drawn, which was the corner's, a moment before the move to the kept
+         page 0.6 s on. When a page is kept the field stays veiled (`window.__placeHold`) until that move is made, so the first print
+         drawn is the kept one. Let go at once if there is nothing to move to, and after 5 s at the latest. */
+      try { const sv0 = posLoad()[COLLK]; if (sv0 && sv0.i > 0 && sv0.i < COLLN){ window.__placeHold = true; setTimeout(() => { if (gen === COLL_GEN) window.__placeHold = false; }, 5000); } } catch {}
       setTimeout(() => {
         if (gen !== COLL_GEN) return;
         try {
@@ -23652,6 +23657,7 @@ const GALLERY_APP = (() => {
             }
           }
         } catch {}
+        window.__placeHold = false;
         setTimeout(() => { if (gen === COLL_GEN) POS_ON = true; }, 1500);
       }, 600);
       /* THE PAGE IN VIEW, NOT ONLY THE ONE FRAMED (Nov 1: "the current page is not being save to localstorage."): `onFramed` hears only
@@ -63569,7 +63575,7 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     scene.add(bigger);
     rec.mesh = bigger; rec.cap *= 2;
   }
-  if (window.__veiled && !app._seeded) window.__loadVeil(false);   // (the first print of a load is being drawn: the field is shown, Nov 2)
+  if (window.__veiled && !app._seeded && !window.__placeHold) window.__loadVeil(false);   // (the first print of a load is being drawn: the field is shown, Nov 2)
   /* (a hair higher on every other cell, so the 5% where neighbouring prints overlap has one winner, not a flicker: Nov 2) */
   _ip.set(cx, 0.012 + 0.0004 * ((Math.round(cx / gridSpacingX()) + Math.round(cz / gridSpacingZ())) & 1), cz);   // above the fabric, below the pieces
   _is.set(bWX * _photoYawScale, 1, bWZ * _photoYawScale);
