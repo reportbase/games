@@ -1059,7 +1059,11 @@
      leave settles it. */
   /* Sep 30: "the left and right scrollbars are too wide - reduce by 65%": 90px / 15vw → 32px / 5.25vw
      (and the top rail's ends with them). */
-  #tiltZone { left: 0; top: 0; bottom: 0; width: min(32px, 5.25vw); z-index: 5;
+  /* THE TILT RAIL PACKED IN THE MIDDLE TOO, WITH A READOUT (Nov 2: "the left scroll bar for tilt should be similary compressed, add a tilt
+     readout."): a short strip centred on the left edge, 240px or 60% of the height on a short screen, as the turn rail is across the top; the
+     tilt still runs from the floor at its top end to PITCH_MAX at its bottom end, so a drag tips the view faster per pixel. #tiltRead beside it
+     says the angle. */
+  #tiltZone { left: 0; top: 50%; height: min(240px, 60vh); margin-top: calc(min(240px, 60vh) / -2); width: min(32px, 5.25vw); z-index: 5;
               cursor: ns-resize; touch-action: none;
               background: transparent !important; border: none !important;
               border-radius: 0; backdrop-filter: none !important;
@@ -1121,6 +1125,9 @@
   #tiltZone .strip-mark { left: 0; background: var(--acc);
                           box-shadow: 0 0 7px rgba(127,119,221,.9); }
   #tiltZone #tiltMark    { background: var(--hot); box-shadow: 0 0 10px rgba(232, 200, 106,.95), 0 1px 3px rgba(0,0,0,.9); }
+  #tiltZone #tiltRead { position: absolute; left: calc(100% + 4px); transform: translateY(-50%); pointer-events: none;
+    font-size: 0.6875rem; font-weight: 700; letter-spacing: .5px; color: rgba(232,200,106,.95);
+    text-shadow: 0 1px 3px rgba(4,6,10,.85); font-variant-numeric: tabular-nums; white-space: nowrap; }
   #tiltZone #tiltMarkTgt { background: var(--acc); box-shadow: 0 0 7px rgba(127,119,221,.9); }
   #tiltZone #tiltEndTop, #tiltZone #tiltEndBot {
     background: rgba(159,182,200,.45); width: 12px !important;
@@ -1133,7 +1140,10 @@
      end is −180°, the middle is facing forward, right end +180°.
      (Oct 10: "the top slider for rotation should be the same height as the side sliders are wide." It was
      min(64px, 11vh), twice the side rails' band; now the very same measure as their width.) */
-  #yawZone { top: 0; left: min(32px, 5.25vw); right: min(32px, 5.25vw); height: min(32px, 5.25vw); z-index: 5;
+  /* THE RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed.", after the compass's angles were): the turn rail is a
+     short strip centred on the top edge, 240px or 60% of the width on a narrow screen, not the whole top. Its width is still one full turn
+     (−180° at the left end, +180° at the right), so a drag turns the view faster per pixel than it did across the screen. */
+  #yawZone { top: 0; left: 50%; width: min(240px, 60vw); margin-left: calc(min(240px, 60vw) / -2); height: min(32px, 5.25vw); z-index: 5;
              cursor: ew-resize; touch-action: none;
              background: transparent !important; border: none !important;
              border-radius: 0; backdrop-filter: none !important;
@@ -4239,8 +4249,11 @@ function panBreakPx(isTouch){
 const PAN_TAU = 26;               // ms; the average's time constant
 const SWIPE_CAP  = 0.30;          // max launch speed, in grid cells per frame
 const SWIPE_STOP = 1e-4;          // below this the glide is over
-const SWIPE_LIFT_MS = 80;         // a lift within this of the last move is a SWIPE; later, a pan that stopped
-const SWIPE_LAUNCH = 0.06;        // release speed, in grid cells per frame, below which a lift is a pan, not a swipe (cap is 0.30)
+const SWIPE_LIFT_MS = 100;        // a lift within this of the last move is a SWIPE; later, a pan that stopped
+/* A LITTLE EASIER TO START (Nov 2: "make the swipe slightly easier to start the auto motion."): the floor was 0.06 and the lift window 80 ms;
+   a quarter lower and 100 ms, so a gentler flick, or one lifted a moment after the last move, still sets the drift going. A pan that
+   stopped before lifting, and a slow creep, still do not (the stalled-frame scaling in applyPan is untouched). */
+const SWIPE_LAUNCH = 0.045;       // release speed, in grid cells per frame, below which a lift is a pan, not a swipe (cap is 0.30)
 const FRAME_MS   = 1000 / 60;     // the frame the friction and velocity are quoted against
 const SWIPE_MS   = 900;           // a coast lasts this long at most, whatever the frame rate
 const SWIPE_DT_CAP = 100;         // a stalled tab hands back seconds; do not honour them
@@ -17932,6 +17945,7 @@ window.__stereoFwdNdc = function(ndc){
    level IS the true horizon, so the marks sit just over the field's edge and
    slide with yaw, rise and fall with pitch, and warp with the projection. */
 const COMPASS = { on: true };
+const COMPASS_SPREAD = 0.28;               // how far from the middle the marks go, of where they fall (Nov 2: packed in the centre)
 const _CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
 const _compassEl = (() => {
   const el = document.createElement('div');
@@ -23249,9 +23263,6 @@ const GALLERY_APP = (() => {
     h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b) >>> 0; h ^= h >>> 16;
     return (h >>> 0) % m;              // ^= yields a SIGNED int32; re-unsign it
   };
-  const levelFor = bp =>
-    bp >= 560 ? 64 : bp >= 280 ? 32 : bp >= 150 ? 16 :
-    bp >=  80 ?  8 : bp >=  40 ?  4 : bp >=  18 ?  2 : 1;
   return {
     name: 'photo gallery',
     /* THE GALLERY'S MENU. Both doors are here — Load images for a file on the
@@ -23518,7 +23529,12 @@ const GALLERY_APP = (() => {
     cellGrid(col, row, bp){
       const e = LIST[pick(col, row)];
       if (!e) return null;
-      const n = levelFor(bp);
+      /* NEVER PIXELATED, UNDER ANY CIRCUMSTANCES (Nov 2: "you are still loading images with heavy pixelation. Under no circumstances are
+         you to do that."): this is the tile layer under a print, seen whenever the print is not drawn yet (it is being built, the frame's
+         budget declined it, a load has just begun). It showed the picture as a grid of coarse colour blocks, up to 64 × 64 (`levelFor`:
+         a board 560 px across had blocks 9 px wide), which is exactly a pixelated picture. A board with no print yet shows its own
+         one flat average tone instead, the mat it will sit on, and the print comes in whole when it is ready. */
+      const n = 1;
       let g = e.grids[n];
       if (!g) g = e.grids[n] = { n, colors: e.levels[n] };  // shared by reference
       return g;
@@ -23591,7 +23607,14 @@ const GALLERY_APP = (() => {
         try {
           const SPX = gridSpacingX(), SPZ = gridSpacingZ();
           const e0 = target.shown ? LIST[pick(Math.round(target.boardX / SPX), Math.round(target.boardZ / SPZ))] : null;
-          if (e0 && e0.aspect){ shapeTo(e0); return; }
+          if (e0 && e0.aspect){
+            const was = tries;
+            shapeTo(e0);
+            /* (the board's new shape re-frames the view, which glided: on the first load it lands at once, unless a hand is already on the
+               view, Nov 2) */
+            try { if (!st.dragging && !(turn && turn.active) && was <= 20) settleCameraNow(); } catch {}
+            return;
+          }
         } catch {}
         setTimeout(go, 300);
       };
@@ -23608,7 +23631,15 @@ const GALLERY_APP = (() => {
           const sv = posLoad()[COLLK];
           if (sv && sv.i > 0 && sv.i < COLLN && target.shown){
             const cell = GALLERY_APP._cellFor(sv.i, target.cellX | 0, target.cellZ | 0);
-            if (cell) gotoCell(cell.c, cell.r);
+            if (cell){
+              gotoCell(cell.c, cell.r);
+              /* THE FIRST PLACING IS A JUMP, NOT A FLIGHT (Nov 2: "the inital load and display of images is not smooth because images are
+                 being loaded and panning is then not smooth. … the initial load does not animate, it should go directly to the image"):
+                 the kept page was flown to while its prints were still being read and sent to the card, so the glide stuttered. The camera
+                 is run to rest at once, as the page does when it opens (settleCameraNow). Only this first placing; every later move
+                 (Tab, a tap, a pan) glides as ever. */
+              try { settleCameraNow(); } catch {}
+            }
           }
         } catch {}
         setTimeout(() => { if (gen === COLL_GEN) POS_ON = true; }, 1500);
@@ -63637,7 +63668,11 @@ function updateCompass(){
       m.style.display = 'none'; continue;
     }
     m.style.display = '';
-    m.style.left = ((_cpV.x * 0.5 + 0.5) * W).toFixed(1) + 'px';
+    /* PACKED IN THE MIDDLE (Nov 2: "the top rotation angles should be show just in the center, not spread over the complete screen.
+       I want the angles to be tighly packed in the center."): the marks are still where their headings fall, in order and sliding with
+       the yaw, but their x is drawn COMPASS_SPREAD of the way out from the middle, so the whole tape is a short strip in the centre of
+       the top edge, not a row of labels across the screen. */
+    m.style.left = ((_cpV.x * 0.5 * COMPASS_SPREAD + 0.5) * W).toFixed(1) + 'px';
     // With the tilt floor at 35° the true horizon sits above the view, so the
     // marks ride the top edge as a heading tape, under the compass rose.
     m.style.top  = (_cpV.y > 1 ? 48 : (0.5 - _cpV.y * 0.5) * H - 8).toFixed(1) + 'px';
@@ -68198,6 +68233,7 @@ function updateStripMarkers(dt){
     updateStripMarkers.tiltTgt = mk('tiltMarkTgt', tz);
     updateStripMarkers.tiltT   = mk('tiltEndTop', tz);
     updateStripMarkers.tiltB   = mk('tiltEndBot', tz);
+    { const el = document.createElement('div'); el.id = 'tiltRead'; tz.appendChild(el); updateStripMarkers.tiltTxt = el; }   // (the tilt's readout, Nov 2)
     updateStripMarkers.cur  = mk('railThumb', hz);
   }
   const M = updateStripMarkers;
@@ -68250,6 +68286,9 @@ function updateStripMarkers(dt){
   // exactly where the thumb put it.
   const yTilt = p => (EdgeGauge.tiltToFrac(p) * (tz.clientHeight - 2)).toFixed(1) + 'px';
   M.tilt.style.top = yTilt(st.pitch);
+  { const deg = Math.round(st.pitch) + '\u00b0';                       // the readout rides beside the nub, in degrees
+    if (M.tiltTxt._t !== deg){ M.tiltTxt._t = deg; M.tiltTxt.textContent = deg; }
+    M.tiltTxt.style.top = (parseFloat(yTilt(st.pitch)) + 4).toFixed(1) + 'px'; }
   M.tiltT.style.top = '0px';
   M.tiltB.style.top = (tz.clientHeight - 1) + 'px';
   M.tiltTgt.style.display = (lv && lv.active) ? '' : 'none';

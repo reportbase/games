@@ -150,6 +150,20 @@ try {
     const rr = await page.evaluate(() => { const g = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
       const y = g('yawZone'), t = g('tiltZone'), h = g('thrustZone'); return y && t && h ? { yaw: y.height, tilt: t.width, thrust: h.width } : null; });
     if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
+    // THE TILT RAIL PACKED IN THE MIDDLE TOO, WITH A READOUT (Nov 2: "the left scroll bar for tilt should be similary compressed, add a tilt readout."):
+    // a short strip centred on the left edge, and a readout that says the angle the view is tipped at.
+    { const tr = await page.evaluate(() => { const e = document.getElementById('tiltZone'), r = document.getElementById('tiltRead'); if (!e || !r) return null; const b = e.getBoundingClientRect();
+        return { h: b.height, mid: b.top + b.height / 2, vh: innerHeight, txt: r.textContent, pitch: window.tvf.state.pitch }; });
+      if (!tr || tr.h > Math.min(241, tr.vh * 0.61) || Math.abs(tr.mid - tr.vh / 2) > 1) failures.push(`[rails] the tilt rail is not a short strip in the middle: ${JSON.stringify(tr)}`);
+      else if (tr.txt !== Math.round(tr.pitch) + '\u00b0') failures.push(`[rails] the tilt readout does not say the tilt: ${JSON.stringify(tr)}`); }
+    // THE TURN RAIL PACKED IN THE MIDDLE TOO (Nov 2: "the scroll bar should be similarly compressed."): a short strip centred on the screen.
+    { const yr = await page.evaluate(() => { const e = document.getElementById('yawZone'); if (!e) return null; const b = e.getBoundingClientRect(); return { w: b.width, mid: b.left + b.width / 2, vw: innerWidth }; });
+      if (!yr || yr.w > Math.min(241, yr.vw * 0.61) || Math.abs(yr.mid - yr.vw / 2) > 1) failures.push(`[rails] the turn rail is not a short strip in the middle: ${JSON.stringify(yr)}`); }
+    // THE COMPASS'S ANGLES PACKED IN THE MIDDLE (Nov 2: "the top rotation angles should be show just in the center, not spread over the complete
+    // screen. I want the angles to be tighly packed in the center."): every heading mark on show sits in the middle third of the screen.
+    { await page.waitForTimeout(600);
+      const cr = await page.evaluate(() => { const els = [...document.querySelectorAll('#compass .cm')].filter(e => e.style.display !== 'none'); return { n: els.length, xs: els.map(e => parseFloat(e.style.left) / innerWidth) }; });
+      if (!cr.n || cr.xs.some(x => x < 1 / 3 || x > 2 / 3)) failures.push(`[rails] compass marks not packed in the middle: ${JSON.stringify(cr)}`); }
     // THE RIGHT RAIL IS A SCROLL BAR FOR WHERE YOU ARE (Oct 25: "the right scroll bar for speed lever should be more like a normal
     // scroll bar to move the current position. it should follow the auto motion for the direction of movement."): a real drag of
     // its thumb a quarter of the rail up moves the view a quarter of the 50-board window ahead along the way of motion, and the
@@ -6514,6 +6528,47 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (bad.length) failures.push('[bucket restore] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} bucket restore: the last bucket file opened again on a load`);
     await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); } catch {} });
+  }
+  /* NEVER PIXELATED (Nov 2: "you are still loading images with heavy pixelation. Under no circumstances are you to do that."): the gallery's
+     tile layer, seen under a print that is not drawn yet, is one flat tone for every print at every size, never a grid of coarse blocks. */
+  {
+    current = 'gallery never pixelated';
+    const bad = [];
+    const r = await page.evaluate(() => { const G = window.GALLERY_APP, out = []; if (!G || !G._cellFor) return null;
+      for (let i = 0; i < 6; i++){ const c = G._cellFor(i, 0, 0); if (!c) continue; for (const bp of [20, 100, 300, 800]){ const g = G.cellGrid(c.c, c.r, bp); if (g) out.push(g.n); } }
+      return out; });
+    if (!r || !r.length) bad.push('no print had a tile layer to read: ' + JSON.stringify(r));
+    else if (r.some(n => n !== 1)) bad.push('a print\'s tile layer was a grid of blocks: ' + JSON.stringify(r));
+    if (bad.length) failures.push('[gallery never pixelated] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} gallery never pixelated: ${r ? r.length : 0} tile layers read, every one a single flat tone`);
+  }
+  /* THE FIRST PLACING IS A JUMP (Nov 2: "the inital load and display of images is not smooth because images are being loaded and
+     panning is then not smooth. I propose the initial load does not animate, it should go directly to the image"): a bucket file of
+     eight chapters is opened again on a load with page 3 kept for it; the camera, sampled every 40 ms, must go from the corner to
+     that page in at most one step in between, not glide there over seconds. */
+  {
+    current = 'first placing is a jump';
+    const bad = [];
+    await page.route(/flare\.tangent\.workers\.dev\/bucket\?bucket=BUCKET1&key=jump\.md/, r => r.fulfill({ contentType: 'text/markdown', headers: { 'access-control-allow-origin': '*' },
+      body: Array.from({ length: 8 }, (_, i) => `# Chapter ${i}\n\n` + 'Some words here. '.repeat(120) + '\n').join('\n') }));
+    await page.evaluate(() => {
+      localStorage.setItem('gallery.last', JSON.stringify({ k: 'bucket', bucket: 'BUCKET1', names: ['jump.md'] }));
+      localStorage.setItem('gallery.pos', JSON.stringify({ 'b:BUCKET1:jump.md': { i: 3 } }));
+    });
+    await page.goto(page.url().split('?')[0].split('#')[0] + '?app=gallery', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.FIELD_WORLD && window.getFieldApp && window.getFieldApp() && window.getFieldApp().id === 'gallery', null, { timeout: 150000 }).catch(() => {});
+    const seen = [], t0 = Date.now();
+    while (Date.now() - t0 < 14000){
+      const c = await page.evaluate(() => { try { const q = window.FIELD_WORLD.camera.position; return q.x.toFixed(1) + ',' + q.z.toFixed(1); } catch { return null; } });
+      if (c && seen[seen.length - 1] !== c) seen.push(c);
+      await page.waitForTimeout(40);
+    }
+    // (the corner, perhaps a settling nudge, then the page: a glide would show a dozen steps)
+    if (seen.length > 5) bad.push('the view glided to the kept page through ' + seen.length + ' positions');
+    if (seen.length < 2) bad.push('the view never moved to the kept page: ' + seen.join(' '));
+    if (bad.length) failures.push('[first placing is a jump] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} first placing is a jump: the kept page was reached in ${seen.length} camera positions, no glide`);
+    await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); localStorage.removeItem('gallery.pos'); } catch {} });
   }
   /* A TAP ON THE MAIN DISPLAY SHUTS THE ROW (Nov 2: "tapping the main display should close the bottom browser"): the gallery's row
      (its prints, not a numbers row, which already went) open, a real click on the field shuts it. */
