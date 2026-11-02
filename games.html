@@ -17935,6 +17935,7 @@ window.__stereoFwdNdc = function(ndc){
    level IS the true horizon, so the marks sit just over the field's edge and
    slide with yaw, rise and fall with pitch, and warp with the projection. */
 const COMPASS = { on: true };
+const COMPASS_SPREAD = 0.28;               // how far from the middle the marks go, of where they fall (Nov 2: packed in the centre)
 const _CARDINAL = { 0: 'N', 90: 'E', 180: 'S', 270: 'W' };
 const _compassEl = (() => {
   const el = document.createElement('div');
@@ -63657,7 +63658,11 @@ function updateCompass(){
       m.style.display = 'none'; continue;
     }
     m.style.display = '';
-    m.style.left = ((_cpV.x * 0.5 + 0.5) * W).toFixed(1) + 'px';
+    /* PACKED IN THE MIDDLE (Nov 2: "the top rotation angles should be show just in the center, not spread over the complete screen.
+       I want the angles to be tighly packed in the center."): the marks are still where their headings fall, in order and sliding with
+       the yaw, but their x is drawn COMPASS_SPREAD of the way out from the middle, so the whole tape is a short strip in the centre of
+       the top edge, not a row of labels across the screen. */
+    m.style.left = ((_cpV.x * 0.5 * COMPASS_SPREAD + 0.5) * W).toFixed(1) + 'px';
     // With the tilt floor at 35° the true horizon sits above the view, so the
     // marks ride the top edge as a heading tape, under the compass rose.
     m.style.top  = (_cpV.y > 1 ? 48 : (0.5 - _cpV.y * 0.5) * H - 8).toFixed(1) + 'px';

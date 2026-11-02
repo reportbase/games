@@ -150,6 +150,11 @@ try {
     const rr = await page.evaluate(() => { const g = id => { const e = document.getElementById(id); return e ? e.getBoundingClientRect() : null; };
       const y = g('yawZone'), t = g('tiltZone'), h = g('thrustZone'); return y && t && h ? { yaw: y.height, tilt: t.width, thrust: h.width } : null; });
     if (!rr || Math.abs(rr.yaw - rr.tilt) > 0.5 || Math.abs(rr.yaw - rr.thrust) > 0.5) failures.push(`[rails] top rail height vs side rail width: ${JSON.stringify(rr)}`);
+    // THE COMPASS'S ANGLES PACKED IN THE MIDDLE (Nov 2: "the top rotation angles should be show just in the center, not spread over the complete
+    // screen. I want the angles to be tighly packed in the center."): every heading mark on show sits in the middle third of the screen.
+    { await page.waitForTimeout(600);
+      const cr = await page.evaluate(() => { const els = [...document.querySelectorAll('#compass .cm')].filter(e => e.style.display !== 'none'); return { n: els.length, xs: els.map(e => parseFloat(e.style.left) / innerWidth) }; });
+      if (!cr.n || cr.xs.some(x => x < 1 / 3 || x > 2 / 3)) failures.push(`[rails] compass marks not packed in the middle: ${JSON.stringify(cr)}`); }
     // THE RIGHT RAIL IS A SCROLL BAR FOR WHERE YOU ARE (Oct 25: "the right scroll bar for speed lever should be more like a normal
     // scroll bar to move the current position. it should follow the auto motion for the direction of movement."): a real drag of
     // its thumb a quarter of the rail up moves the view a quarter of the 50-board window ahead along the way of motion, and the
