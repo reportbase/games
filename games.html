@@ -4060,6 +4060,7 @@ function turnEnd(e){
   }
   if (turn.longPressed){
     turn.longPressed = false;
+    _holdEndedAt = performance.now();    // (a hold that opened the row must not be read as a tap that shuts it, Nov 2)
     turn.vSamples.length = 0;
     /* HOLD AND PULL TILTS; HOLD AND LET GO TOGGLES THE ROW. The two do not
        collide because they are told apart by the only thing that distinguishes
@@ -13628,8 +13629,10 @@ function bbPaintStat(ico, s, S){
 /* A TAP ON THE MAIN DISPLAY SHUTS ANY ROW (Nov 2: "tapping the main display should close the bottom browser"): `any` is true for a
    tap, which now shuts the row whatever it holds (a game's moves, the gallery's prints, a book's settings); a drag that moves the
    view still shuts only the numbers, since panning the field with the prints in view is how one looks through them. */
+let _holdEndedAt = -1e9;
 function bbStatsAway(any){
   if (!bbVisible || !bbKeys.length) return;
+  if (any && performance.now() - _holdEndedAt < 900) any = false;   // (the release of a long press has just toggled the row: not a tap)
   if (!any && !String(bbKeys[0]).startsWith('stat_')) return;
   try { const _a = window.getFieldApp && window.getFieldApp(); if (_a && _a.statsStay && _a.statsStay()) return; } catch {}   // (an editor's tools stay up)
   toggleBoardBrowser(false);
