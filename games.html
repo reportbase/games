@@ -23412,26 +23412,12 @@ const GALLERY_APP = (() => {
        is not merely the right kind of picture, it is the same picture. */
     get fabricRepeat(){ return blockN(); },
     fabricCellAt(ctx, rect, i, j){
-      if (!LIST.length) return;
-      // Mid-turn the cell keeps its plain fill (drawFabric already laid it
-      // down) so a board swings against a clean backdrop, not against a
-      // second, un-rotated copy of the picture it is turning.
-      if (window.__photoTurning && window.__photoTurning()) return;
-      /* THE SAME CALL THE GEOMETRY MAKES. Not a parallel sampling of the
-         collection that happens to look similar — literally `pick`, on the
-         same (col,row), because the fabric's cell (i,j) IS a board's cell
-         modulo the repeat. That identity is the whole point of the block:
-         a board keeps its picture across the handoff and only gets softer.
-         A cell whose print has not arrived draws nothing and keeps the
-         plain fill, exactly as the near boards do — no substitute picture
-         that would have to be swapped out later. */
-      const e = LIST[pick(i, j)];
-      if (!e) return;
-      /* NEVER A SMALL PICTURE BLOWN UP (Nov 2: "it is still animating on load and your still showing heavily pixelated images."): this is the far
-         ground, a block of every print at 224 px each, which is what a board shows while its own print is not drawn yet (being built, or the
-         frame's budget declined it): that was a streaked, pixelated picture on every neighbour for the first seconds of a load. A board
-         with no print drawn is now the print's one average tone, the mat it will sit on, and the print comes in whole when it is drawn. */
-      ctx.fillStyle = e.avg;
+      /* A BOARD WITH NO PICTURE SHOWS NOTHING (Nov 2: "What are you doing to boards that don't have an image loaded yet. It looks like shit.
+         just don't show the image."): this is the far ground, which painted every board with no picture drawn yet in the warm red cell fill,
+         then the print's average tone, then a small copy of the print; each was a coloured slab or a blurry picture on a field of boards
+         still waiting. Now such a board is the field's own dark ground, as if it were not there; the print is drawn whole by the photo
+         tier when it is ready, and nothing else is ever drawn in its place. */
+      ctx.fillStyle = '#0b0d12';
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     },
     // The photo tier carries every board from here to the horizon cutoff;
@@ -23533,18 +23519,11 @@ const GALLERY_APP = (() => {
     },
     fit(){ return FIT; },
     faceMinPx: 1e9,                       // never: the fabric owns the far field
+    cellFar: { light: 0x0b0d12, dark: 0x0b0d12 },   // the ground, near and far: a board with no picture drawn is not there (Nov 2)
     cellGrid(col, row, bp){
-      const e = LIST[pick(col, row)];
-      if (!e) return null;
-      /* NEVER PIXELATED, UNDER ANY CIRCUMSTANCES (Nov 2: "you are still loading images with heavy pixelation. Under no circumstances are
-         you to do that."): this is the tile layer under a print, seen whenever the print is not drawn yet (it is being built, the frame's
-         budget declined it, a load has just begun). It showed the picture as a grid of coarse colour blocks, up to 64 × 64 (`levelFor`:
-         a board 560 px across had blocks 9 px wide), which is exactly a pixelated picture. A board with no print yet shows its own
-         one flat average tone instead, the mat it will sit on, and the print comes in whole when it is ready. */
-      const n = 1;
-      let g = e.grids[n];
-      if (!g) g = e.grids[n] = { n, colors: e.levels[n] };  // shared by reference
-      return g;
+      /* NEVER A GRID OF BLOCKS, AND NEVER A TONE (Nov 2: "just don't show the image."): the tile layer under a print is nothing at all. A board
+         whose print is not drawn yet is the ground (see fabricCellAt); the print arrives whole from the photo tier. */
+      return null;
     },
     /* ═══ TAP TO ZOOM TO THE SPOT, TAP AGAIN TO COME BACK ═══════════════
        A print is a thing you look INTO, which a board is not: the whole point
