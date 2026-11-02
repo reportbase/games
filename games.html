@@ -23591,7 +23591,14 @@ const GALLERY_APP = (() => {
         try {
           const SPX = gridSpacingX(), SPZ = gridSpacingZ();
           const e0 = target.shown ? LIST[pick(Math.round(target.boardX / SPX), Math.round(target.boardZ / SPZ))] : null;
-          if (e0 && e0.aspect){ shapeTo(e0); return; }
+          if (e0 && e0.aspect){
+            const was = tries;
+            shapeTo(e0);
+            /* (the board's new shape re-frames the view, which glided: on the first load it lands at once, unless a hand is already on the
+               view, Nov 2) */
+            try { if (!st.dragging && !(turn && turn.active) && was <= 20) settleCameraNow(); } catch {}
+            return;
+          }
         } catch {}
         setTimeout(go, 300);
       };
@@ -23608,7 +23615,15 @@ const GALLERY_APP = (() => {
           const sv = posLoad()[COLLK];
           if (sv && sv.i > 0 && sv.i < COLLN && target.shown){
             const cell = GALLERY_APP._cellFor(sv.i, target.cellX | 0, target.cellZ | 0);
-            if (cell) gotoCell(cell.c, cell.r);
+            if (cell){
+              gotoCell(cell.c, cell.r);
+              /* THE FIRST PLACING IS A JUMP, NOT A FLIGHT (Nov 2: "the inital load and display of images is not smooth because images are
+                 being loaded and panning is then not smooth. … the initial load does not animate, it should go directly to the image"):
+                 the kept page was flown to while its prints were still being read and sent to the card, so the glide stuttered. The camera
+                 is run to rest at once, as the page does when it opens (settleCameraNow). Only this first placing; every later move
+                 (Tab, a tap, a pan) glides as ever. */
+              try { settleCameraNow(); } catch {}
+            }
           }
         } catch {}
         setTimeout(() => { if (gen === COLL_GEN) POS_ON = true; }, 1500);

@@ -6515,6 +6515,34 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${bad.length ? 'FAIL' : 'ok  '} bucket restore: the last bucket file opened again on a load`);
     await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); } catch {} });
   }
+  /* THE FIRST PLACING IS A JUMP (Nov 2: "the inital load and display of images is not smooth because images are being loaded and
+     panning is then not smooth. I propose the initial load does not animate, it should go directly to the image"): a bucket file of
+     eight chapters is opened again on a load with page 3 kept for it; the camera, sampled every 40 ms, must go from the corner to
+     that page in at most one step in between, not glide there over seconds. */
+  {
+    current = 'first placing is a jump';
+    const bad = [];
+    await page.route(/flare\.tangent\.workers\.dev\/bucket\?bucket=BUCKET1&key=jump\.md/, r => r.fulfill({ contentType: 'text/markdown', headers: { 'access-control-allow-origin': '*' },
+      body: Array.from({ length: 8 }, (_, i) => `# Chapter ${i}\n\n` + 'Some words here. '.repeat(120) + '\n').join('\n') }));
+    await page.evaluate(() => {
+      localStorage.setItem('gallery.last', JSON.stringify({ k: 'bucket', bucket: 'BUCKET1', names: ['jump.md'] }));
+      localStorage.setItem('gallery.pos', JSON.stringify({ 'b:BUCKET1:jump.md': { i: 3 } }));
+    });
+    await page.goto(page.url().split('?')[0].split('#')[0] + '?app=gallery', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.FIELD_WORLD && window.getFieldApp && window.getFieldApp() && window.getFieldApp().id === 'gallery', null, { timeout: 150000 }).catch(() => {});
+    const seen = [], t0 = Date.now();
+    while (Date.now() - t0 < 14000){
+      const c = await page.evaluate(() => { try { const q = window.FIELD_WORLD.camera.position; return q.x.toFixed(1) + ',' + q.z.toFixed(1); } catch { return null; } });
+      if (c && seen[seen.length - 1] !== c) seen.push(c);
+      await page.waitForTimeout(40);
+    }
+    // (the corner, perhaps a settling nudge, then the page: a glide would show a dozen steps)
+    if (seen.length > 5) bad.push('the view glided to the kept page through ' + seen.length + ' positions');
+    if (seen.length < 2) bad.push('the view never moved to the kept page: ' + seen.join(' '));
+    if (bad.length) failures.push('[first placing is a jump] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} first placing is a jump: the kept page was reached in ${seen.length} camera positions, no glide`);
+    await page.evaluate(() => { try { localStorage.removeItem('gallery.last'); localStorage.removeItem('gallery.pos'); } catch {} });
+  }
   /* A TAP ON THE MAIN DISPLAY SHUTS THE ROW (Nov 2: "tapping the main display should close the bottom browser"): the gallery's row
      (its prints, not a numbers row, which already went) open, a real click on the field shuts it. */
   {
