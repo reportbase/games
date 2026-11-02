@@ -22915,6 +22915,10 @@ const GALLERY_APP = (() => {
     if (!shape) return false;
     for (const e of LIST){ if (!e || !e.reshape) continue; Object.assign(e, e.reshape(PRINT_ASPECT.a)); }
     try { if (window.__disposeAppPhotos) window.__disposeAppPhotos(); } catch {}
+    /* THE BOARD IS CLEAR WHILE THE PICTURES ARE DRAWN AGAIN (Nov 2: "images are bluring when I tap an image to switch the aspect ratio.   clear
+       the board when re-drawing. the images."): every picture is let go above, and none is drawn for a quarter of a second, so the boards
+       are the dark ground while the view reframes and the new shapes' prints are made, and each comes in whole, not stretched or soft. */
+    window.__photoHoldUntil = performance.now() + 250;
     try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
     return true;
   }
@@ -63458,6 +63462,7 @@ function _photoMaterial(tex, cv){
 }
 
 function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
+  if (window.__photoHoldUntil && performance.now() < window.__photoHoldUntil) return false;   // (a board's pictures are being drawn again: none shown, Nov 2)
   let rec = _photoMeshes.get(key);
   if (!rec){
     /* THE FRAME'S BUILD BUDGET. Past it the board draws the fabric for this
