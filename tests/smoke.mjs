@@ -6250,6 +6250,14 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!(p0.w > p0.h)) bad.push('a tap on a landscape print did not make the board landscape: ' + JSON.stringify(p0));
     if (!(p1.h > p1.w)) bad.push('a tap on a portrait print did not make the board portrait: ' + JSON.stringify(p1));
     if (!(p2.w > p2.h)) bad.push('a tap on a landscape print did not make it landscape again: ' + JSON.stringify(p2));
+    // (prints stand edge to edge and never over one another, in either shape: Nov 2, "the images in photo gallery are overlapping")
+    const fill = () => page.evaluate(() => { const W = window.FIELD_WORLD, sp = W.spacing(), bw = W.boardW(), L = window.LAB; return { x: bw * L.cellW / sp[0], z: bw * L.cellH / sp[1] }; });
+    for (const nm of ['landscape', 'portrait']){
+      if (nm === 'portrait') await tapKind(true);
+      const f = await fill();
+      if (f.x > 1.01 || f.z > 1.01) bad.push('prints overlap their neighbours (a ' + nm + ' board is ' + f.x.toFixed(3) + ' × ' + f.z.toFixed(3) + ' of its cell)');
+      if (Math.max(f.x, f.z) < 0.99) bad.push('prints leave a gutter (a ' + nm + ' board is ' + f.x.toFixed(3) + ' × ' + f.z.toFixed(3) + ')');
+    }
     if (bad.length) failures.push('[tap reshapes] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} tap reshapes: the gallery board took a portrait print's shape on a tap and a landscape print's on the next`);
   }

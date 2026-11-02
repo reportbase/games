@@ -62584,7 +62584,11 @@ try { window.fieldRecord = FIELD_RECORD; } catch {}
 function _applyAppPosture(app){
   const photo = !!(app && app.cellPhoto);
   try {
-    const size = photo ? (app.fillsCell ? 1.002 : 1.05) : 1.0;   // (prints that fill their cell meet edge to edge, a hair over so no seam shows: Nov 2)
+    /* (prints that fill their cell meet edge to edge, a hair over so no seam shows: Nov 2. Nov 2, later: "Something broke, the images in photo
+       gallery are overlapping": the board's width is boardW × cellW, and the gallery's cellW is 1.05 on its longer side (`applyBoardAspect`'s
+       HI), which the old 1.05 here and the 0.9 gap together came to 0.992 of the pitch. With the gap gone and 1.002 here it was 1.052, so every
+       print stood 5% over its neighbours. The 1.05 now divides out: 1.002 / 1.05 of the pitch's own, a hair over once cellW is in.) */
+    const size = photo ? (app.fillsCell ? 1.002 / 1.05 : 1.05) : 1.0;
     st.objSize = size;
     if (window.__syncFieldFabric) window.__syncFieldFabric();
   } catch {}
