@@ -23094,6 +23094,7 @@ const GALLERY_APP = (() => {
     try { applyBoardAspect([1], true); } catch {}
     try { if (window.__syncFieldFabric) window.__syncFieldFabric(); } catch {}
     try { rebuildBoardBrowser(); } catch {}
+    try { if (window.__loadVeil) window.__loadVeil(true); } catch {}   // (the field waits for the first print, Nov 2)
   }
   function seedWith(sources){
     // The shipped set: one print per source, hung as-is. Each source is
@@ -63471,6 +63472,20 @@ function _photoMaterial(tex, cv){
   return mat;
 }
 
+/* THE FIELD IS NOT SHOWN WHILE A LOAD SETS UP (Nov 2: "the background still moves on load.  I see the empty grid moving before any images are
+   loaded."): a load reshapes the board, refits the view and re-lays the ground, all within a quarter of a second and all over an empty
+   grid, which showed as the grid moving. The picture of the field is held back (the canvas is hidden) from the moment a load is asked for
+   until the first print of it is drawn, which happens in the same frame the view has landed; a quarter of a minute at the most, so a load
+   that brings nothing never leaves a blank screen. The rails, compass and menu stay. */
+let _veilTimer = 0;
+window.__loadVeil = on => {
+  try {
+    clearTimeout(_veilTimer);
+    window.__veiled = !!on;
+    renderer.domElement.style.visibility = on ? 'hidden' : '';
+    if (on) _veilTimer = setTimeout(() => window.__loadVeil(false), 15000);
+  } catch {}
+};
 function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
   if (window.__photoHoldUntil && performance.now() < window.__photoHoldUntil) return false;   // (a board's pictures are being drawn again: none shown, Nov 2)
   let rec = _photoMeshes.get(key);
@@ -63529,6 +63544,7 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
     scene.add(bigger);
     rec.mesh = bigger; rec.cap *= 2;
   }
+  if (window.__veiled && !app._seeded) window.__loadVeil(false);   // (the first print of a load is being drawn: the field is shown, Nov 2)
   _ip.set(cx, 0.012, cz);                 // above the fabric, below the pieces
   _is.set(bWX * _photoYawScale, 1, bWZ * _photoYawScale);
   _im.compose(_ip, _pq, _is);             // _pq carries the gallery's quarter-turns
@@ -67576,6 +67592,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
      comes back by the page-position keeping (`gallery.pos`). */
   try {
     const LB = lastGet();
+    if (!CLI_POURS_IMAGES && !CLI_ARGS.help && !CLI_ARGS.h && FIELD_APP === GALLERY_APP && LB && (LB.k === 'bucket' || LB.k === 'drop')){ try { window.__loadVeil(true); } catch {} }   // (a refresh that reopens what was loaded: the field is held back from the start, Nov 2)
     if (!CLI_POURS_IMAGES && !CLI_ARGS.help && !CLI_ARGS.h && FIELD_APP === GALLERY_APP && LB && LB.k === 'bucket' && LB.bucket){
       /* (the last thing opened was from a bucket: it is fetched again, by the names it was asked with, else the whole bucket) */
       BP.bucket = LB.bucket; if (!BP.known.includes(LB.bucket)) BP.known.push(LB.bucket);
@@ -67593,7 +67610,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     if (!CLI_POURS_IMAGES && !CLI_ARGS.help && !CLI_ARGS.h && FIELD_APP === GALLERY_APP){   // (an ?app=gallery link is still a plain open: only a load of files or a bucket asks for something else)
       KEEP.get().then(fs => {
         try {
-          if (!fs || !fs.length || !GALLERY_APP._seeded) return;
+          if (!fs || !fs.length || !GALLERY_APP._seeded){ try { window.__loadVeil(false); } catch {} return; }
           _restoring = true; try { _loadFiles(fs); } finally { _restoring = false; }
         } catch (e) { console.warn('[gallery] restore —', e && e.message); }
       });
