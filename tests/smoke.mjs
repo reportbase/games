@@ -1064,7 +1064,8 @@ try {
       const kinds = Object.keys(KINDS).filter(n => (H.toys || []).some(T => T[n]));
       if (!kinds.length) continue;
       let c = 0, r = 0;
-      search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
+      search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search;
+      D.games.delete(c + '_' + r);                           // (Nov 4: a framed board begins its hole by itself, so the corner board has a game; the movers are looked at with none)
       const sig = its => its.filter(i => ALL.includes(i.kind)).map(i => i.kind + i.u.toFixed(4) + i.v.toFixed(4) + i.lift.toFixed(4)).join();
       const a = D.cellItems(c, r);
       let moved = false;                                     // (a gate stands up or lies down a while: give it a few seconds)
@@ -1121,7 +1122,7 @@ try {
   // until they are in their final state"), then full drawing (Oct 12, later: "restore full drawing functionaility. no special
   // handeling."): a board at 400 px and at 200 px has the very pieces it has at 2000, kind for kind and as many
   const lod = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, k = D.HOLES.findIndex(H => H.name === 'the fences');
-    let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
+    let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search; D.games.delete(c + '_' + r);
     const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
     const big = D.cellItems(c, r, 2000), mid = D.cellItems(c, r, 400), small = D.cellItems(c, r, 200), kinds = its => [...new Set(its.map(i => i.kind.replace(/\d+$/, '').replace(/^land[ML]$/, 'land').replace(/~$/, '')))].sort().join(',');   // (the ground's grains are one ground, and a piece's plain twin the piece: Oct 14)
     return { floor: window.LAB.pitchMin, appFloor: A.pitchMin, big: big.length, mid: mid.length, small: small.length, smallKinds: kinds(small), midKinds: kinds(mid), bigKinds: kinds(big),
@@ -1403,7 +1404,7 @@ try {
       const A = window.getFieldApp(), D = A._debug, P = { RT: D.CW * 0.2, R: 0.042 };
       const mats = D.HOLES.map(H => H.fence), left = D.HOLES.filter(H => (H.toys || []).some(T => T.bush || T.tree)).map(H => H.name);
       const k = D.HOLES.findIndex(H => H.name === 'the fences');
-      let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k && !D.games.get(c + '_' + r)) break search;
+      let c = 0, r = 0; search: for (r = 0; r < 40; r++) for (c = 0; c < 40; c++) if (D.holeOf(c, r) === k) break search; D.games.delete(c + '_' + r);
       const kinds = [...new Set(D.cellItems(c, r).map(i => i.kind))], m = D.HOLES[k].fence;
       const close = D.HOLES.filter(H => { const g = P.RT + P.R * 1.5 - 1e-9; return H.cup.x < g || H.cup.y < g || H.cup.x > D.WD - g || H.cup.y > 1 - g; }).map(H => H.name);
       const old = D.editor.cleanSrc({ map: Array(13).fill('........'), toys: [{ tree: [2, 3, 0.26] }, { bush: [4, 6, 0.4] }] });
