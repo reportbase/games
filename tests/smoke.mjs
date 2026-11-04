@@ -6641,6 +6641,25 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       if (bd.length) failures.push('[swipe auto move] ' + bd.join('; '));
       console.log(`${bd.length ? 'FAIL' : 'ok  '} swipe auto move: speeds ${sw.slow.toFixed(2)} → ${sw.fast.toFixed(2)} → ${sw.slowAgain.toFixed(2)} screens a second by the swipe, a tap stopped it`);
     }
+    // THE TILT NUB IS GRABBED, NOT CHASED (Nov 4: "I can't grab the tilt nub on the left scroll bar for tilt."): a real press on the nub and a
+    // real drag down the rail must leave the nub under the finger as it goes (it trailed by seconds on the tangent ramp), and let go it stays.
+    {
+      await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => (a.id || a.name) === 'checkers')));
+      await page.waitForTimeout(SETTLE_MS);
+      const nub = () => page.evaluate(() => { const m = document.getElementById('tiltMark').getBoundingClientRect(); return { x: m.left + 10, y: m.top + 4 }; });
+      const n0 = await nub();
+      const hit = await page.evaluate(([x, y]) => (document.elementFromPoint(x, y) || {}).id, [n0.x, n0.y]);
+      await page.mouse.move(n0.x, n0.y); await page.mouse.down();
+      for (let i = 1; i <= 8; i++){ await page.mouse.move(n0.x, n0.y + i * 10); await page.waitForTimeout(30); }
+      await page.waitForTimeout(150);
+      const n1 = await nub();
+      await page.mouse.up();
+      const bd = [];
+      if (hit !== 'tiltZone') bd.push('the nub is covered by ' + hit);
+      if (Math.abs(n1.y - (n0.y + 80)) > 12) bd.push(`the nub trailed the finger: finger ${n0.y + 80}, nub ${n1.y.toFixed(1)}`);
+      if (bd.length) failures.push('[tilt nub grab] ' + bd.join('; '));
+      console.log(`${bd.length ? 'FAIL' : 'ok  '} tilt nub grab: dragged 80 px, the nub is at ${(n1.y - n0.y).toFixed(0)} px`);
+    }
   }
   }   // (end of part 6)
   if (part(7)) {   // (the three games of Oct 28: curling, bowling, the marble run)

@@ -68341,7 +68341,11 @@ function updateStripMarkers(dt){
     const speed = 16 * Math.tan(Math.min(lv.held * 0.85, 1.23));   // °/s, tangent ramp
     const tgt = Math.min(PITCH_MAX, Math.max(lv.target, _pitchFloor()));   // never under the floor
     const gap = tgt - st.pitch;
-    const step = Math.min(Math.abs(gap), speed * _s);
+    /* THE NUB IS GRABBED, NOT CHASED (Nov 4: "I can't grab the tilt nub on the left scroll bar for tilt."): while a finger is down the
+       tilt goes to where the finger is at once, so the nub stays under it. The tangent ramp (16°/s from rest) let the nub trail the
+       finger by seconds on the packed 240 px rail, which feels like a nub that cannot be held; it still eases for a lever left
+       travelling (an aborted or keyed gesture never reaches here with `on` true). */
+    const step = lv.on ? Math.abs(gap) : Math.min(Math.abs(gap), speed * _s);
     st.pitch += Math.sign(gap) * step;
     if (Math.abs(tgt - st.pitch) < 0.05){
       st.pitch = tgt;
