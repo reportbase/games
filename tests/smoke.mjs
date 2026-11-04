@@ -1328,6 +1328,15 @@ try {
     }
   }
   console.log(`${failures.length === before7 ? 'ok  ' : 'FAIL'} ${current}`);
+  // A BOARD SET ACTIVE CAN BE PLAYED AT ONCE (Nov 4: "when setting a board to active, you should be able to interact with it.  for example, in
+  // mini-golf, after a refresh, the board is selected but it is still locked, You make me click the board to unlock it."): a board framed
+  // with no game on it (the page just loaded, a flight) has its hole begun, with no tap
+  {
+    const r = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), k = f.c + '_' + f.r;
+      D.games.delete(k); const none = !D.games.get(k); A.onFramed(f.c, f.r); const g = D.games.get(k); return { none, st: g && g.state }; });
+    if (!(r.none && r.st === 'play')) failures.push(`[${current}] a board framed with no game did not begin its hole: ${JSON.stringify(r)}`);
+    console.log(`${r.st === 'play' ? 'ok  ' : 'FAIL'} mini golf: a board set active begins its hole, no tap`);
+  }
 
   // Round ponds and bunkers, and the skate park (Oct 8)
   current = 'mini golf shapes';
@@ -7302,6 +7311,16 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       for (let k = 1; k <= 8; k++){ await page.mouse.move(x0 + 18 * k, y0 + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await page.waitForTimeout(300); }
     const c5 = await camX();
     out.otherPans = Math.hypot(c5[0] - c4[0], c5[1] - c4[1]) > 1e-3 && await page.evaluate(() => !window.__boardLock());
+    // TWO FINGERS AND THE WHEEL ARE NEVER LOCKED (Nov 4: "two finger panning and wheel should always work, don't lock them down."): locked
+    // again, a trackpad's two-finger scroll over the locked board still pans the view, and the lock stays
+    await off(); m = await mid(); await dbl([m.x, m.y]);
+    out.relocked2 = await page.evaluate(() => window.__boardLock());
+    const c6 = await camX();
+    await page.evaluate(([x, y]) => { const cv = document.querySelector('canvas'); for (let k = 0; k < 8; k++) cv.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: x, clientY: y, deltaX: 14.5 + k * 0.25, deltaY: 6.25, deltaMode: 0 })); }, [m.x, m.y]);
+    await page.waitForTimeout(400);
+    const c7 = await camX();
+    out.padPans = Math.hypot(c7[0] - c6[0], c7[1] - c6[1]) > 1e-3 && await page.evaluate(() => window.__boardLock());
+    await page.evaluate(() => window.__boardLockSet(false));
     // the Difficulty item: each step on a game with levels goes to a board of its colour
     out.fly = await page.evaluate(async () => {
       window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'lightsout')); const wait = ms => new Promise(ok => setTimeout(ok, ms)); await wait(2500); await window.__settle();
@@ -7314,7 +7333,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       }
       item.on(); item.on(); item.on();   // (round to where it began)
       return rows; });
-    if (!(out.locked && out.heldStill && out.unlocked && out.pansAgain && out.relocked && out.otherPans && out.fly.every(r => r.want === r.got))) failures.push(`[${current}] ${JSON.stringify(out)}`);
+    if (!(out.locked && out.heldStill && out.unlocked && out.pansAgain && out.relocked && out.otherPans && out.relocked2 && out.padPans && out.fly.every(r => r.want === r.got))) failures.push(`[${current}] ${JSON.stringify(out)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} board lock and difficulty flight (a real double tap locked the board and a real drag moved nothing, another let it go and the drag panned, and locked again a drag from another board panned and let the lock go; the Difficulty item went to levels ${out.fly.map(r => r.got).join('/')})`);
   }
   {
