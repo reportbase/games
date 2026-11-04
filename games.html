@@ -41011,10 +41011,10 @@ const GOLF_MAKE = SIZE => {
      on) in the same seven segments, each in a colour of its own (gold, green, orange). The hole's number is the course's or the board's own;
      a hole of your own has none (a dash). The shot is the stroke the ball is about to take, or is taking while it rolls, and what it took once
      the hole is sunk; a board with no game shows a dash. It is made new each frame with the rest of a board's pieces, so it follows the game. */
-  const LETTER = { H: 'bcefg', P: 'abefg', S: 'afgcd', '-': 'g' };
-  function scoreboardItems(out, H, num, par, shot){
+  const LETTER = { H: 'bcefg', P: 'abefg', S: 'afgcd', o: 'cdeg', F: 'aefg', ' ': '', '-': 'g' };
+  function scoreboardItems(out, H, where, par, shot){
     const u0 = 0.04, v0 = 0.032;
-    const groups = [['H', num == null ? '-' : String(num), 0xffe9a8], ['P', String(par), 0x9ae6a0], ['S', shot == null ? '-' : String(shot), 0xffb060]];
+    const groups = [['', where, 0xffe9a8]];                                  // (Nov 4: "just say 1 of 5, nothing else.": no par, no shot)
     /* (a far board's number runs to seven digits and more: the glyphs shrink together so the plate never runs past the board's width) */
     let k = 1, W, HH, GAP, GROUP, w, glyphs;
     for (let tries = 0; tries < 2; tries++){
@@ -41031,7 +41031,7 @@ const GOLF_MAKE = SIZE => {
     const L = top + 0.032, lf = L + 0.006;
     out.push({ kind: 'plate', u: u0 - 0.015 + pw / 2, v: v0 - 0.015 + ph / 2, scale: 1, sx: pw, sy: 0.07, sz: ph / 0.78, lift: L, color: 0x10301a });
     for (const { x, ch, col } of glyphs){
-      const segs = LETTER[ch] || DIGIT[+ch] || '';
+      const segs = ch in LETTER ? LETTER[ch] : (DIGIT[+ch] || '');
       const put = (kind, u, v, sc) => out.push({ kind, u, v, scale: sc, lift: lf, color: col });
       if (segs.includes('a')) put('segH', x + W / 2, v0, W);
       if (segs.includes('g')) put('segH', x + W / 2, v0 + HH, W);
@@ -41103,7 +41103,9 @@ const GOLF_MAKE = SIZE => {
     if (WIRE.on) out.push({ kind: 'wire' + k, u: WD / 2, v: 0.5, scale: 1, color: 0x3a8a44 });
     if (SCORE.on){                                                           // (the scoreboard, Nov 4: hole number, par and the shot you are on)
       const shot = !G ? null : (G.state === 'play' && !G.moving) ? G.strokes + 1 : G.strokes;
-      scoreboardItems(out, H, H.custom ? null : (H.num || k + 1), H.par, shot);
+      // (Nov 4: "remove the board number. just say 1 of 5... / 2 of 5 / ect.": where the hole falls in the round, not the board's own number)
+      // (Nov 4: "1 of 5,   5 is the par.": the shot you are on, of the hole's par: not the hole's place in the round)
+      scoreboardItems(out, H, (shot == null ? '-' : shot) + ' oF ' + H.par, H.par, shot);
     } else if (NUMS.on && !H.custom) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)

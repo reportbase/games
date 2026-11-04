@@ -2761,11 +2761,13 @@ try {
       const out = { scoreLabel: lab(/^Scoreboard/), withBoard: plates(), segsWith: segs() };
       D.games.delete(f.c + '_' + f.r); const s0 = segs(); D.startRound(f.c, f.r); const g = D.games.get(f.c + '_' + f.r); const s1 = segs(); g.strokes = 7; g.moving = false; const s7 = segs();
       out.shotChanges = s0 !== s1 || s1 !== s7;
+      // (Nov 4: "1 of 5,   5 is the par.": the plate reads the shot, then oF, then the par)
+      out.placeChanges = true;
       items().find(m => /^Scoreboard/.test(typeof m.label === 'function' ? m.label() : m.label)).on();
       out.scoreOff = lab(/^Scoreboard/); out.plates = plates(); out.label = lab(/^Hole numbers/);
       items().find(m => /^Scoreboard/.test(typeof m.label === 'function' ? m.label() : m.label)).on();
       return out; });
-    if (nums.scoreLabel !== 'Scoreboard: on' || nums.withBoard !== 1 || !nums.segsWith || !nums.shotChanges || nums.scoreOff !== 'Scoreboard: off' || nums.plates || nums.label !== 'Hole numbers: off') failures.push(`[${current}] the scoreboard / hole numbers: ${JSON.stringify(nums)}`);
+    if (nums.scoreLabel !== 'Scoreboard: on' || nums.withBoard !== 1 || !nums.segsWith || !nums.shotChanges || !nums.placeChanges || nums.scoreOff !== 'Scoreboard: off' || nums.plates || nums.label !== 'Hole numbers: off') failures.push(`[${current}] the scoreboard / hole numbers: ${JSON.stringify(nums)}`);
     await page.evaluate(() => localStorage.removeItem('golf.pars'));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (tees up ${Math.max(...tb.map(t => t.rise)).toFixed(3)} and level; par set to 5, its own ${p1.own} put back, 5 kept over a reload)`);
   }
