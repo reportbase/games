@@ -41014,7 +41014,7 @@ const GOLF_MAKE = SIZE => {
   const LETTER = { H: 'bcefg', P: 'abefg', S: 'afgcd', o: 'cdeg', F: 'aefg', ' ': '', '-': 'g' };
   function scoreboardItems(out, H, where, par, shot){
     const u0 = 0.04, v0 = 0.032;
-    const groups = [['', where, 0xffe9a8], ['P', String(par), 0x9ae6a0], ['S', shot == null ? '-' : String(shot), 0xffb060]];
+    const groups = [['', where, 0xffe9a8]];                                  // (Nov 4: "just say 1 of 5, nothing else.": no par, no shot)
     /* (a far board's number runs to seven digits and more: the glyphs shrink together so the plate never runs past the board's width) */
     let k = 1, W, HH, GAP, GROUP, w, glyphs;
     for (let tries = 0; tries < 2; tries++){
