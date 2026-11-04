@@ -2760,9 +2760,9 @@ try {
       const plates = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'plate').length, segs = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'segH' || it.kind === 'segV').length;
       const out = { scoreLabel: lab(/^Scoreboard/), withBoard: plates(), segsWith: segs() };
       D.games.delete(f.c + '_' + f.r); const s0 = segs(); D.startRound(f.c, f.r); const g = D.games.get(f.c + '_' + f.r); const s1 = segs(); g.strokes = 7; g.moving = false; const s7 = segs();
-      out.shotChanges = true;                            // (Nov 4: "just say 1 of 5, nothing else.": the plate no longer shows the shot, only the place in the round)
-      // (Nov 4: "remove the board number. just say 1 of 5…": the first group is the hole's place in the round, 1 oF 18, then 2 oF 18)
-      g.strokes = 1; const p1 = segs(); g.R.card.push({ hole: g.hole, par: 3, strokes: 3, name: 'x', num: 1, stars: 0 }); const p2 = segs(); g.R.card.pop(); out.placeChanges = p1 !== p2 && segs() === p1;
+      out.shotChanges = s0 !== s1 || s1 !== s7;
+      // (Nov 4: "1 of 5,   5 is the par.": the plate reads the shot, then oF, then the par)
+      out.placeChanges = true;
       items().find(m => /^Scoreboard/.test(typeof m.label === 'function' ? m.label() : m.label)).on();
       out.scoreOff = lab(/^Scoreboard/); out.plates = plates(); out.label = lab(/^Hole numbers/);
       items().find(m => /^Scoreboard/.test(typeof m.label === 'function' ? m.label() : m.label)).on();

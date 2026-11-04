@@ -41104,8 +41104,8 @@ const GOLF_MAKE = SIZE => {
     if (SCORE.on){                                                           // (the scoreboard, Nov 4: hole number, par and the shot you are on)
       const shot = !G ? null : (G.state === 'play' && !G.moving) ? G.strokes + 1 : G.strokes;
       // (Nov 4: "remove the board number. just say 1 of 5... / 2 of 5 / ect.": where the hole falls in the round, not the board's own number)
-      const total = !G ? (H.custom ? 1 : ROUND) : G.R.single ? 1 : ROUND, at = !G ? '-' : Math.max(1, G.R.card.length + (G.state === 'play' ? 1 : 0));
-      scoreboardItems(out, H, at + ' oF ' + total, H.par, shot);
+      // (Nov 4: "1 of 5,   5 is the par.": the shot you are on, of the hole's par: not the hole's place in the round)
+      scoreboardItems(out, H, (shot == null ? '-' : shot) + ' oF ' + H.par, H.par, shot);
     } else if (NUMS.on && !H.custom) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
