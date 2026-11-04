@@ -4363,7 +4363,22 @@ function launchDriftIfSwipe(){
      at the old 80, says the same thing in units that travel. */
   const _win = Math.max(SWIPE_LIFT_MS, 2.5 * (PAN.dtMs || 16));
   if (performance.now() - PAN.movedMs > _win) return;               // a pan that stopped, then lifted
-  try { thrustForward(); startDriftIfIdle(); } catch {}
+  try { thrustForward(); setDriftFromSwipe(Math.hypot(vx, vz)); } catch {}
+}
+/* A SWIPE ALWAYS SETS THE AUTO MOVE, AND ITS SPEED IS THE SWIPE'S (Nov 2: "Always auto move on swipe.   Tap stops the auto move.   Panning
+   controls the auto move speed."): it used to start the drift only if none was running (a swipe while drifting was "steering", and the
+   speed stayed the lever's or the gentle default whatever the hand did). Now every swipe sets the way (`noteDrift` already had) and the
+   speed from how fast the hand was moving at the lift: the release speed in screens a second (`worldPerScreenHeight`), a seventh of it
+   (a swipe is a fast hand and the drift a walking pace), kept between DRIFT_MIN and DRIFT_MAX screens a second. A harder swipe is a faster
+   drift, a gentler one a slower, while it runs as well as from standing. A tap stops it (`handleGroundTap`: the braking tap is eaten). */
+const DRIFT_MIN = 0.06, DRIFT_MAX = 0.9, DRIFT_FROM_SWIPE = 1 / 7;
+function setDriftFromSwipe(worldPerFrame){
+  const screensPerSec = worldPerFrame * 60 / Math.max(1e-6, worldPerScreenHeight());
+  const rate = Math.max(DRIFT_MIN, Math.min(DRIFT_MAX, screensPerSec * DRIFT_FROM_SWIPE));
+  st.heldPanRate = rate;                              // screens/s, altitude-free
+  st.heldBeta    = Math.min(_betaMax, rate / _driftScreens);
+  st.heldTheta   = Math.asin(st.heldBeta);
+  LAST_SPEED     = st.heldBeta;                       // the lever resumes at this speed
 }
 /* THE ARROW KEYS ARE MOVEMENT, so they aim the walk and the thrust lever
    exactly as a drag or a swipe does — otherwise the lever would still be
@@ -68326,7 +68341,11 @@ function updateStripMarkers(dt){
     const speed = 16 * Math.tan(Math.min(lv.held * 0.85, 1.23));   // °/s, tangent ramp
     const tgt = Math.min(PITCH_MAX, Math.max(lv.target, _pitchFloor()));   // never under the floor
     const gap = tgt - st.pitch;
-    const step = Math.min(Math.abs(gap), speed * _s);
+    /* THE NUB IS GRABBED, NOT CHASED (Nov 4: "I can't grab the tilt nub on the left scroll bar for tilt."): while a finger is down the
+       tilt goes to where the finger is at once, so the nub stays under it. The tangent ramp (16°/s from rest) let the nub trail the
+       finger by seconds on the packed 240 px rail, which feels like a nub that cannot be held; it still eases for a lever left
+       travelling (an aborted or keyed gesture never reaches here with `on` true). */
+    const step = lv.on ? Math.abs(gap) : Math.min(Math.abs(gap), speed * _s);
     st.pitch += Math.sign(gap) * step;
     if (Math.abs(tgt - st.pitch) < 0.05){
       st.pitch = tgt;
@@ -68555,6 +68574,7 @@ window.tvf = {
   get play(){ return PLAY; },
   get coach(){ return COACH; },
   get tapCount(){ return _tapCount; },
+  swipeDrift(worldPerFrame){ setDriftFromSwipe(worldPerFrame); return { rate: st.heldPanRate, beta: st.heldBeta }; },   // (the swipe's launch, for the tests: a hand's timing cannot be scripted)
   get state(){ return st; },
   get walkDeclined(){ return _walkDeclined; },
   get target(){ return target; },
