@@ -4451,7 +4451,11 @@ function applyPan(ddx, ddy, src, at){
   /* A LOCKED BOARD HOLDS ONLY AGAINST A DRAG ON IT (Nov 1: "don't block panning of non-selected boards."): `at` is where the gesture
      is (a press's start, the pair's middle, the pad's pointer); on the framed board, or nowhere (the tilt), nothing moves, as
      before (Oct 31); started on any other board or the ground between, the view pans as ever and the lock lets go. */
-  if (BOARD_LOCK){
+  /* TWO FINGERS AND THE WHEEL ARE NEVER LOCKED (Nov 4: "two finger panning and wheel should always work, don't lock them down."): the lock
+     holds only against the one-finger (or mouse) drag, the one an app may take for its own aim; two fingers on glass and a trackpad's
+     or wheel's scroll always fly the camera, on the locked board too, and leave the lock as it was (pan mode's mouse drag and the phone's tilt steering are
+     one pointer's, so they are held). */
+  if (BOARD_LOCK && (src === 'one' || src === 'pan' || src === 'tilt')){
     if (!at || _framedUV(at.x, at.y, 0.08)) return;
     setBoardLock(false);
   }
@@ -4630,7 +4634,7 @@ function mountPan(){
       PAN.lastY = PAN.startY + _dy * (_t / _d);
       if (_hooks.onViewPan) _hooks.onViewPan();
     }
-    if (PAN.dragging) applyPan(e.clientX - PAN.lastX, e.clientY - PAN.lastY, undefined, { x: PAN.startX, y: PAN.startY });
+    if (PAN.dragging) applyPan(e.clientX - PAN.lastX, e.clientY - PAN.lastY, 'pan', { x: PAN.startX, y: PAN.startY });
     PAN.lastX = e.clientX; PAN.lastY = e.clientY;
   }, true);
   addEventListener('pointerup', _panRelease, true);
@@ -43498,7 +43502,12 @@ const GOLF_MAKE = SIZE => {
     },
     statsStay(){ return ED.on; },
     noDoubleTap(){ return ED.on ? 'always' : false; },        // (while editing, a quick second tap is a tap: Oct 10, wherever the view is)                             // …and its row stays up while the hole is painted
-    onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r }; },
+    /* A BOARD SET ACTIVE CAN BE PLAYED AT ONCE (Nov 4: "when setting a board to active, you should be able to interact with it.  for example,
+       in mini-golf, after a refresh, the board is selected but it is still locked, You make me click the board to unlock it."): a board
+       framed with no game on it (after a refresh, a Tab, a flight) begins its hole as a tap on it would have (`startOnDouble`), so the
+       first drag aims. A game already there, finished or under way, is left alone, and so is the editor. */
+    onFramed(c, r){ LIVE = (c == null) ? null : { key: gkey(c, r), c, r };
+      if (c != null && !ED.on && !GAMES.get(gkey(c, r))){ try { app.startOnDouble(c, r); } catch {} } },
     onCellTap(c, r, u, v){
       if (ED.on){
         const at = ED.ateTap; ED.ateTap = null;
