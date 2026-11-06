@@ -946,6 +946,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   finished board again (`gameDone` is no longer read by the field); on the board you are on in its default view it is the lock/reframe
   it was before Nov 1. The menu's Reset starts a game over. The notes of Nov 1 on a double resetting a completed board and on the
   confirmation are out of date, and so are their smoke checks, which are gone.
+- **Invaders' board grows with the Difficulty** (Nov 6: "easy should have smaller board size, normal should have medium board size."): a game carries
+  its board's side `g.n`, 16 on easy, 20 on normal, 24 on hard (`DIFF[lv].n`); `N`, `SQ` and every length in squares (`PIECE_S`, `SHIP_S`,
+  `MARGIN`, `SHIP_Y`, `FWD`, the shields) are worked out again by `use(n)`, which each entry point calls with the game's own `n`
+  (`step`, `frameOf`, `fire`, `loseShip`, `botInput`, `cellItems`, `onPan`, `drawIcon`). A smaller board has bigger squares, so bigger
+  pieces and a ship, fewer across (`cols` 7, 9, 11). The checkerboard follows (`checkerOf(n)`); boards no one plays show recordings at 20.
+  A waiting board takes its size afresh when the setting changes (`relevel`), a game in play keeps its own.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

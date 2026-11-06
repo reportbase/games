@@ -7423,6 +7423,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const iv = await page.evaluate(() => {
       const D = window.getFieldApp()._debug, out = {};
       out.cols = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.cols);
+      out.sizes = ['easy', 'normal', 'hard'].map(l => D.newGame(l).n);
       out.n = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.inv.length);
       const g = D.newGame('normal'); g.state = 'play'; g.lv = 'normal';
       const y0 = g.ship.y; for (let i = 0; i < 30; i++) D.step(g, 1 / 30, { kx: 0, ky: -1, fire: false });
@@ -7431,7 +7432,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.y = [y0, y1, g.ship.y];
       return out;
     });
-    const ok = iv.cols.join() === '7,9,11' && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
+    const ok = iv.cols.join() === '7,9,11' && iv.sizes.join() === '16,20,24' && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
     if (!ok) failures.push('[invaders forward] ' + JSON.stringify(iv));
     console.log(`${ok ? 'ok  ' : 'FAIL'} invaders: a smaller formation when easy, the ship going forward and back, its shots from where it is`);
   }
