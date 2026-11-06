@@ -7475,6 +7475,26 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok) failures.push('[double tap asks] ' + JSON.stringify(out));
     console.log(`${ok ? 'ok  ' : 'FAIL'} double tap asks to start over (a real double on the board in its default view asks once; declined it keeps the game, accepted it begins again)`);
   }
+  // INVADERS (Nov 6: "Invaders let the user move forward.  Add difficulty menu setting.   Less difficult smaller board and slower."):
+  // the formation 7, 9 or 11 across by level, easy marching slower, and the ship going forward under ky with its shots from there.
+  current = 'invaders';
+  {
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'invaders')); await new Promise(ok => setTimeout(ok, 1500)); });
+    const iv = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      out.cols = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.cols);
+      out.n = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.inv.length);
+      const g = D.newGame('normal'); g.state = 'play'; g.lv = 'normal';
+      const y0 = g.ship.y; for (let i = 0; i < 30; i++) D.step(g, 1 / 30, { kx: 0, ky: -1, fire: false });
+      const y1 = g.ship.y; D.fire(g); out.shotFromShip = g.shots.length === 1 && g.shots[0].y < y1;
+      for (let i = 0; i < 90; i++) D.step(g, 1 / 30, { kx: 0, ky: 1, fire: false });
+      out.y = [y0, y1, g.ship.y];
+      return out;
+    });
+    const ok = iv.cols.join() === '7,9,11' && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
+    if (!ok) failures.push('[invaders forward] ' + JSON.stringify(iv));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} invaders: a smaller formation when easy, the ship going forward and back, its shots from where it is`);
+  }
 }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);

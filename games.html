@@ -36142,9 +36142,16 @@ const INVADERS_APP = (() => {
   let rnd = Math.random, QUIET = false;
   const say = BOARD_KIT.say(1800, () => QUIET);
 
-  const DIFF = { easy:   { march: 0.8,  rate: 1.4, shot: 0.8 },
-                 normal: { march: 1,    rate: 1,   shot: 1 },
-                 hard:   { march: 1.25, rate: 0.7, shot: 1.2 } };
+  /* A SMALLER, SLOWER BOARD WHEN EASY, FORWARD TO MEET THEM (Nov 6: "Invaders let the user move forward.  Add difficulty menu
+     setting.   Less difficult smaller board and slower.    Further from center more difficult boards."): the Difficulty
+     (already by ring, `lvAt`) now also sets how wide the formation is (`cols`: 7, 9 or 11 invaders across, so easy is a
+     smaller board of them, hard the full eleven) and slows easy further (march 0.65, shots 0.7); the ship may now go forward
+     (up, down, W, S, or a drag up the board) up to `FWD` from its base line, and `ship.y` is where its shots start and
+     where hits are taken. Invasion is still the formation reaching the base line. */
+  const DIFF = { easy:   { march: 0.65, rate: 1.5, shot: 0.7, cols: 7 },
+                 normal: { march: 1,    rate: 1,   shot: 1,   cols: 9 },
+                 hard:   { march: 1.25, rate: 0.7, shot: 1.2, cols: 11 } };
+  const FWD = 9 * SQ;
   let LEVEL = ARCADE.load('invaders.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the menu's setting is the corner block's, and each board plays at its own level, a step
@@ -36209,16 +36216,16 @@ const INVADERS_APP = (() => {
   ];
   const BOSS_EVERY = 5;
   const isBoss = level => level % BOSS_EVERY === 0;
-  function formation(level){
-    const inv = [];
+  function formation(level, lv){
+    const inv = [], cols = (DIFF[lv] || DIFF.normal).cols, off = (COLS - cols) / 2;
     if (isBoss(level)){                                     // the boss's wave: a row of pawns before him
-      for (let c = 0; c < COLS; c++) inv.push({ kind: 'p', row: 4, col: c, alive: true });
-      return { inv, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ, dir: 1, drop: 0, shape: 'the king' };
+      for (let c = 0; c < cols; c++) inv.push({ kind: 'p', row: 4, col: c, alive: true });
+      return { inv, cols, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ, dir: 1, drop: 0, shape: 'the king' };
     }
     const [name, has] = SHAPES[(level - 1 - Math.floor((level - 1) / BOSS_EVERY)) % SHAPES.length];
     for (let r = 0; r < ROWS.length; r++)
-      for (let c = 0; c < COLS; c++) if (has(r, c)) inv.push({ kind: ROWS[r], row: r, col: c, alive: true });
-    return { inv, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ + Math.min(level - 1, 5) * SQ, dir: 1, drop: 0, shape: name };
+      for (let c = 0; c < cols; c++) if (has(r, c + off)) inv.push({ kind: ROWS[r], row: r, col: c, alive: true });
+    return { inv, cols, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ + Math.min(level - 1, 5) * SQ, dir: 1, drop: 0, shape: name };
   }
   function bossFor(level){
     if (!isBoss(level)) return null;
@@ -36228,10 +36235,10 @@ const INVADERS_APP = (() => {
   /* THE MYSTERY SHIP, and what he drops. */
   const PICK = { D: 0x3aa8ff, R: 0xffd23a, H: 0x4be38a, P: 0xff4a3a };
   const PICK_NAME = { D: 'Double shot', R: 'Rapid fire', H: 'Shield', P: 'Pierce' };
-  function newGame(){
+  function newGame(lv){
     return { state: 'ready', score: 0, lives: 3, kills: 0, lost: 0, level: 1, last: 0, t: 0, booms: [],
-             ship: { x: 0.5, inv: 0, cool: 0 }, shots: [], bombs: [],
-             f: formation(1), bombIn: 1.5, nextIn: 0, shield: shields(), beat: 0, diveIn: 6, leapIn: 4,
+             ship: { x: 0.5, y: SHIP_Y, inv: 0, cool: 0 }, shots: [], bombs: [],
+             f: formation(1, lv), bombIn: 1.5, nextIn: 0, shield: shields(), beat: 0, diveIn: 6, leapIn: 4,
              boss: null, ufo: null, ufoIn: 12, picks: [], pow: { D: 0, R: 0, P: 0 }, guard: false };
   }
   const gameAt = (c, r) => {
@@ -36247,7 +36254,7 @@ const INVADERS_APP = (() => {
 
   function start(g, framing){
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
-    Object.assign(g, newGame(), { lv: g.lv });              // (Oct 15: its level kept)
+    Object.assign(g, newGame(g.lv), { lv: g.lv });              // (Oct 15: its level kept)
     g.state = 'play';
     say(TILT.on ? 'Tilt to move — it fires by itself' : 'Drag to move, tap to fire', 2000);
   }
@@ -36255,7 +36262,7 @@ const INVADERS_APP = (() => {
     const s = g.ship;
     const rapid = g.pow && g.pow.R > 0, dbl = g.pow && g.pow.D > 0, pierce = g.pow && g.pow.P > 0 ? 3 : 1;
     if (g.state !== 'play' || s.cool > 0 || g.shots.length >= (rapid ? 6 : 2) * (dbl ? 2 : 1)) return;
-    for (const dx of dbl ? [-0.35, 0.35] : [0]) g.shots.push({ x: s.x + dx * SQ, y: SHIP_Y - 0.6 * SQ, pierce });
+    for (const dx of dbl ? [-0.35, 0.35] : [0]) g.shots.push({ x: s.x + dx * SQ, y: s.y - 0.6 * SQ, pierce });
     s.cool = FIRE_EVERY * (rapid ? 0.45 : 1);
     beep('shot');
   }
@@ -36263,7 +36270,7 @@ const INVADERS_APP = (() => {
     g.bombs = [];
     // The ship goes up (Sep 27): a burst on it, or a bigger one on the last.
     const last = g.lives <= 1, n = last ? 5 : 2;
-    for (let i = 0; i < n; i++){ const a = rnd() * 6.3, d = i ? (0.3 + rnd() * 0.6) * SQ * (last ? 1.6 : 1) : 0; BOOM.add(g, g.ship.x + Math.cos(a) * d, SHIP_Y + Math.sin(a) * d, i % 2 ? 'q' : 'r', rnd); }
+    for (let i = 0; i < n; i++){ const a = rnd() * 6.3, d = i ? (0.3 + rnd() * 0.6) * SQ * (last ? 1.6 : 1) : 0; BOOM.add(g, g.ship.x + Math.cos(a) * d, g.ship.y + Math.sin(a) * d, i % 2 ? 'q' : 'r', rnd); }
     beep(last ? 'over' : 'dead');
     for (const v of g.f.inv) v.out = null;                  // anyone out comes home
     g.lost = (g.lost || 0) + 1;
@@ -36279,6 +36286,7 @@ const INVADERS_APP = (() => {
   const PACE = 1.0;
   function liveInput(){
     return { kx: clamp((HELD.has('R') ? 1 : 0) - (HELD.has('L') ? 1 : 0) + (TILT.on ? TILT.x : 0), -1, 1),
+             ky: (HELD.has('D') ? 1 : 0) - (HELD.has('U') ? 1 : 0),
              fire: HELD.has('F') || TILT.on || performance.now() - dragAt < 150 };
   }
   // A shot at the ship: [x, y, vx, vy, kind] — a pawn's bomb, a bishop's diagonal, a rook's fast bolt.
@@ -36303,7 +36311,7 @@ const INVADERS_APP = (() => {
     if (g.ufo){ g.ufo.x += g.ufo.dir * 0.16 * dt; if (g.ufo.x < -0.08 || g.ufo.x > 1.08){ g.ufo = null; g.ufoIn = 15 + rnd() * 10; } }
     for (const p of g.picks){
       p.y += 0.25 * dt;
-      if (Math.abs(p.x - g.ship.x) < SHIP_S * 0.5 && Math.abs(p.y - SHIP_Y) < SHIP_S * 0.4){
+      if (Math.abs(p.x - g.ship.x) < SHIP_S * 0.5 && Math.abs(p.y - g.ship.y) < SHIP_S * 0.4){
         p.dead = true; say(PICK_NAME[p.type], 1000); beep('level');
         if (p.type === 'H') g.guard = true; else g.pow[p.type] = 10;
       }
@@ -36331,7 +36339,7 @@ const INVADERS_APP = (() => {
       o.t += dt;
       if (v.kind === 'q'){
         const T = 3.2, s = Math.min(1, o.t / T), [hx, hy] = slotOf(g.f, v);
-        const deep = SHIP_Y - 0.6 * SQ - o.y0;
+        const deep = g.ship.y - 0.6 * SQ - o.y0;
         o.x = (s < 0.5 ? o.x0 + (o.tx - o.x0) * (s * 2) : o.tx + (hx - o.tx) * ((s - 0.5) * 2)) + Math.sin(s * Math.PI * 2) * 0.08;
         o.y = o.y0 + (hy - o.y0) * s + Math.sin(s * Math.PI) * deep;
         if (s >= 1) v.out = null;
@@ -36358,6 +36366,8 @@ const INVADERS_APP = (() => {
     if (inp.kx) s.x += inp.kx * SHIP_SPEED * dt;
     if (inp.to != null) s.x += clamp(inp.to - s.x, -SHIP_SPEED * dt, SHIP_SPEED * dt);
     s.x = clamp(s.x, MARGIN, 1 - MARGIN);
+    if (inp.ky) s.y += inp.ky * SHIP_SPEED * 0.7 * dt;
+    s.y = clamp(s.y, SHIP_Y - FWD, SHIP_Y);
     s.inv = Math.max(0, s.inv - dt);
     s.cool = Math.max(0, s.cool - dt);
     if (inp.fire) fire(g);
@@ -36367,7 +36377,7 @@ const INVADERS_APP = (() => {
     mystery(g, dt);
     if (!live.length && !g.boss){                    // cleared: the next formation
       if ((g.nextIn -= dt) <= 0){
-        g.level++; g.f = formation(g.level); g.boss = bossFor(g.level); g.shots = []; g.bombs = []; g.bombIn = 1.5; g.shield = shields();
+        g.level++; g.f = formation(g.level, g.lv); g.boss = bossFor(g.level); g.shots = []; g.bombs = []; g.bombIn = 1.5; g.shield = shields();
         say(g.boss ? 'Level ' + g.level + ' — the king!' : 'Level ' + g.level + ' — ' + g.f.shape, 1600); beep('level');
       }
       return;
@@ -36376,7 +36386,7 @@ const INVADERS_APP = (() => {
     flights(g, dt);
     const home = live.filter(v => !v.out);
     // THE MARCH: faster as the formation thins, and every level.
-    const total = ROWS.length * COLS;
+    const total = ROWS.length * (f.cols || COLS);
     const speed = 0.045 * (1 + 2.6 * (1 - live.length / total)) * (1 + 0.15 * (g.level - 1)) * D(g).march;
     // The march's beat quickens with it: one of the four notes each step.
     if ((g.beat -= dt) <= 0){ g.beat = 0.05 / speed; beep('march'); }
@@ -36462,7 +36472,7 @@ const INVADERS_APP = (() => {
     g.shots = g.shots.filter(sh => !sh.dead);
     // Bombs against the ship; the formation against your edge.
     if (s.inv <= 0) for (const b of g.bombs){
-      if (Math.abs(b.x - s.x) < SHIP_S * 0.42 && Math.abs(b.y - SHIP_Y) < SHIP_S * 0.35){
+      if (Math.abs(b.x - s.x) < SHIP_S * 0.42 && Math.abs(b.y - s.y) < SHIP_S * 0.35){
         if (g.guard){ g.guard = false; b.dead = true; s.inv = 1; beep('shield'); say('Shield!', 800); break; }
         loseShip(g, 'Hit'); break;
       }
@@ -36470,8 +36480,8 @@ const INVADERS_APP = (() => {
     // A piece out of the formation that runs into the ship takes it — and itself.
     if (s.inv <= 0 && g.state === 'play') for (const v of alive(f)){
       if (!v.out) continue;
-      if (Math.abs(v.out.x - s.x) < SHIP_S * 0.45 && Math.abs(v.out.y - SHIP_Y) < SHIP_S * 0.45){
-        v.alive = false; v.out = null; BOOM.add(g, s.x, SHIP_Y, v.kind, rnd); loseShip(g, 'Rammed by a ' + (v.kind === 'q' ? 'queen' : 'knight')); break;
+      if (Math.abs(v.out.x - s.x) < SHIP_S * 0.45 && Math.abs(v.out.y - s.y) < SHIP_S * 0.45){
+        v.alive = false; v.out = null; BOOM.add(g, s.x, s.y, v.kind, rnd); loseShip(g, 'Rammed by a ' + (v.kind === 'q' ? 'queen' : 'knight')); break;
       }
     }
     if (g.state === 'play'){
@@ -36495,9 +36505,9 @@ const INVADERS_APP = (() => {
       out.push(['kb', B.x, B.y]);
       for (let i = 0; i < 10; i++) out.push([i < lit ? 'hp' : 'hpOff', B.x + (i - 4.5) * 0.3 * SQ, B.y - 1.9 * SQ]);
     }
-    if (g.guard && g.state !== 'over') out.push(['ring', g.ship.x, SHIP_Y]);
+    if (g.guard && g.state !== 'over') out.push(['ring', g.ship.x, g.ship.y]);
     for (const k of g.shield || []){ const [i, j] = k.split(',').map(Number); out.push(['shield', (i + 0.5) * HALF, (j + 0.5) * HALF]); }
-    if (g.state !== 'over' && !(g.ship.inv > 0 && ((g.t * 9) | 0) % 2)) out.push(['ship', g.ship.x, SHIP_Y, 0.85 + 0.3 * Math.abs(Math.sin(g.t * 37))]);
+    if (g.state !== 'over' && !(g.ship.inv > 0 && ((g.t * 9) | 0) % 2)) out.push(['ship', g.ship.x, g.ship.y, 0.85 + 0.3 * Math.abs(Math.sin(g.t * 37))]);
     for (const [u, v, e, seed, mix] of BOOM.burning(g)) out.push(['boom' + mix, u, v, e, seed & 0xffffff]);
     return out;
   }
@@ -36564,13 +36574,13 @@ const INVADERS_APP = (() => {
     QUIET = true;
     const frames = [];
     try {
-      const g = newGame(); g.state = 'play';
+      const g = newGame('normal'); g.state = 'play';
       const dt = 1 / REEL_FPS;
       let overFor = 0;
       for (let i = 0; i < REEL_SECS * REEL_FPS; i++){
         if (g.state === 'over'){
           g.t += dt;
-          if ((overFor += dt) > 1.5){ Object.assign(g, newGame()); g.state = 'play'; overFor = 0; }
+          if ((overFor += dt) > 1.5){ Object.assign(g, newGame('normal')); g.state = 'play'; overFor = 0; }
         } else step(g, dt, botInput(g));
         if (i === upTo){ g.last = 0; return g; }
         const it = frameOf(g), fr = new Float32Array(it.length * 5);
@@ -36593,7 +36603,7 @@ const INVADERS_APP = (() => {
   // Taking a board carries on from what it is showing: the reel's game, replayed up to now.
   function adopt(c, r){
     const { seed, k } = reelAt(c, r), g = bakeReel(seed, k);
-    return (g && g.state) ? g : newGame();
+    return (g && g.state) ? g : newGame('normal');
   }
   function reelFrame(c, r){
     const { reel, k } = reelAt(c, r), fr = reel[k];
@@ -36608,7 +36618,8 @@ const INVADERS_APP = (() => {
     return { n: N, colors: cols };
   })();
 
-  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', a: 'L', d: 'R', A: 'L', D: 'R', Enter: 'F' };
+  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', a: 'L', d: 'R', A: 'L', D: 'R', Enter: 'F',
+                   ArrowUp: 'U', ArrowDown: 'D', w: 'U', s: 'D', W: 'U', S: 'D' };
   const liveGame = () => {
     try { if (window.getFieldApp() !== app) return null; } catch { return null; }
     return LIVE ? gameAt(LIVE.c, LIVE.r) : null;
@@ -36715,7 +36726,7 @@ const INVADERS_APP = (() => {
       const g = liveGame();
       return !!(g && g.state === 'play' && u != null);
     },
-    onPan(dx){
+    onPan(dx, dy){
       const g = liveGame();
       if (!g || g.state !== 'play') return false;
       let k = 0;
@@ -36724,6 +36735,7 @@ const INVADERS_APP = (() => {
         k = panWorldPerPixel() / Math.max(1e-6, boardW);
       } catch { return false; }
       g.ship.x = clamp(g.ship.x + dx * k, MARGIN, 1 - MARGIN);
+      if (dy) g.ship.y = clamp(g.ship.y + dy * k, SHIP_Y - FWD, SHIP_Y);   // a drag up the board goes forward
       dragAt = performance.now();
       return true;
     },

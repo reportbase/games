@@ -933,6 +933,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test (part 7) checks every kind the pearl, the levels, pars, each special made and a flame's 3 × 3, and real input: a
     drag lighting both squares and making a flame, clicks swapping a hypercube, a goal made with stars and a best, a click going on
     to the next board, a board out of moves, the real Size tile, and a board no one plays moving.
+- **Invaders: forward, a smaller easy board** (Nov 6: "Invaders let the user move forward.  Add difficulty menu setting.   Less difficult
+  smaller board and slower.    Further from center more difficult boards."): the ship has a `y` (up, down, W, S, or a drag up the board;
+  `FWD` 9 squares from its base line, `SHIP_Y`); its shots start and bombs, pickups and rammers meet it there; invasion is still the
+  formation reaching the base line. The Difficulty (already by ring, `lvAt`) also sets the formation's width, `DIFF[lv].cols` 7, 9, 11
+  (`formation(level, lv)`, `f.cols`; shapes are cut from the middle of the eleven), and easy marches 0.65 and fires 0.7 as fast.
+  The boards' recorded reels are made at normal. The smoke test ("invaders: a smaller formation when easy …") checks both.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
