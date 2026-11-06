@@ -22721,8 +22721,9 @@ const GALLERY_APP = (() => {
       windows.push([fx, freeY / h,           fw, fh, 'bottom']);
     } else {                                            // already the right shape
       windows.push([fx, fy, fw, fh, 'full']);
-      const zw = fw / 1.6, zh = fh / 1.6;
-      windows.push([(1 - zw) / 2, (1 - zh) / 2, zw, zh, 'detail']);
+      /* (Nov 6: "the same image with the same aspect ratio is shown zoomed in sometimes.": there was a second window here, 'detail', the
+         middle at 1.6 times, and a board's place picked between the two, so one picture hung zoomed on some boards and whole on others.
+         A picture already the board's shape has the one window now, here and in `reshape`.) */
     }
     /* THE ICON's window is the first one, so the strip tile is the crop it
        always was. */
@@ -22893,8 +22894,6 @@ const GALLERY_APP = (() => {
         win.push([fx2, fy2, fw2, fh2, 'top']); win.push([fx2, (freeY2 / 2) / h, fw2, fh2, 'center']); win.push([fx2, freeY2 / h, fw2, fh2, 'bottom']);
       } else {
         win.push([fx2, fy2, fw2, fh2, 'full']);
-        const zw = fw2 / 1.6, zh = fh2 / 1.6;
-        win.push([(1 - zw) / 2, (1 - zh) / 2, zw, zh, 'detail']);
       }
       const uv2 = win.map(([x, y, ww, hh]) => {
         const cx0 = dx0 + (1 - (x + ww)) * dw, cy0 = dy0 + (1 - (y + hh)) * dh;
