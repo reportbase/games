@@ -36142,9 +36142,16 @@ const INVADERS_APP = (() => {
   let rnd = Math.random, QUIET = false;
   const say = BOARD_KIT.say(1800, () => QUIET);
 
-  const DIFF = { easy:   { march: 0.8,  rate: 1.4, shot: 0.8 },
-                 normal: { march: 1,    rate: 1,   shot: 1 },
-                 hard:   { march: 1.25, rate: 0.7, shot: 1.2 } };
+  /* A SMALLER, SLOWER BOARD WHEN EASY, FORWARD TO MEET THEM (Nov 6: "Invaders let the user move forward.  Add difficulty menu
+     setting.   Less difficult smaller board and slower.    Further from center more difficult boards."): the Difficulty
+     (already by ring, `lvAt`) now also sets how wide the formation is (`cols`: 7, 9 or 11 invaders across, so easy is a
+     smaller board of them, hard the full eleven) and slows easy further (march 0.65, shots 0.7); the ship may now go forward
+     (up, down, W, S, or a drag up the board) up to `FWD` from its base line, and `ship.y` is where its shots start and
+     where hits are taken. Invasion is still the formation reaching the base line. */
+  const DIFF = { easy:   { march: 0.65, rate: 1.5, shot: 0.7, cols: 7 },
+                 normal: { march: 1,    rate: 1,   shot: 1,   cols: 9 },
+                 hard:   { march: 1.25, rate: 0.7, shot: 1.2, cols: 11 } };
+  const FWD = 9 * SQ;
   let LEVEL = ARCADE.load('invaders.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the menu's setting is the corner block's, and each board plays at its own level, a step
@@ -36209,16 +36216,16 @@ const INVADERS_APP = (() => {
   ];
   const BOSS_EVERY = 5;
   const isBoss = level => level % BOSS_EVERY === 0;
-  function formation(level){
-    const inv = [];
+  function formation(level, lv){
+    const inv = [], cols = (DIFF[lv] || DIFF.normal).cols, off = (COLS - cols) / 2;
     if (isBoss(level)){                                     // the boss's wave: a row of pawns before him
-      for (let c = 0; c < COLS; c++) inv.push({ kind: 'p', row: 4, col: c, alive: true });
-      return { inv, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ, dir: 1, drop: 0, shape: 'the king' };
+      for (let c = 0; c < cols; c++) inv.push({ kind: 'p', row: 4, col: c, alive: true });
+      return { inv, cols, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ, dir: 1, drop: 0, shape: 'the king' };
     }
     const [name, has] = SHAPES[(level - 1 - Math.floor((level - 1) / BOSS_EVERY)) % SHAPES.length];
     for (let r = 0; r < ROWS.length; r++)
-      for (let c = 0; c < COLS; c++) if (has(r, c)) inv.push({ kind: ROWS[r], row: r, col: c, alive: true });
-    return { inv, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ + Math.min(level - 1, 5) * SQ, dir: 1, drop: 0, shape: name };
+      for (let c = 0; c < cols; c++) if (has(r, c + off)) inv.push({ kind: ROWS[r], row: r, col: c, alive: true });
+    return { inv, cols, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ + Math.min(level - 1, 5) * SQ, dir: 1, drop: 0, shape: name };
   }
   function bossFor(level){
     if (!isBoss(level)) return null;
@@ -36228,10 +36235,10 @@ const INVADERS_APP = (() => {
   /* THE MYSTERY SHIP, and what he drops. */
   const PICK = { D: 0x3aa8ff, R: 0xffd23a, H: 0x4be38a, P: 0xff4a3a };
   const PICK_NAME = { D: 'Double shot', R: 'Rapid fire', H: 'Shield', P: 'Pierce' };
-  function newGame(){
+  function newGame(lv){
     return { state: 'ready', score: 0, lives: 3, kills: 0, lost: 0, level: 1, last: 0, t: 0, booms: [],
-             ship: { x: 0.5, inv: 0, cool: 0 }, shots: [], bombs: [],
-             f: formation(1), bombIn: 1.5, nextIn: 0, shield: shields(), beat: 0, diveIn: 6, leapIn: 4,
+             ship: { x: 0.5, y: SHIP_Y, inv: 0, cool: 0 }, shots: [], bombs: [],
+             f: formation(1, lv), bombIn: 1.5, nextIn: 0, shield: shields(), beat: 0, diveIn: 6, leapIn: 4,
              boss: null, ufo: null, ufoIn: 12, picks: [], pow: { D: 0, R: 0, P: 0 }, guard: false };
   }
   const gameAt = (c, r) => {
@@ -36247,7 +36254,7 @@ const INVADERS_APP = (() => {
 
   function start(g, framing){
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
-    Object.assign(g, newGame(), { lv: g.lv });              // (Oct 15: its level kept)
+    Object.assign(g, newGame(g.lv), { lv: g.lv });              // (Oct 15: its level kept)
     g.state = 'play';
     say(TILT.on ? 'Tilt to move — it fires by itself' : 'Drag to move, tap to fire', 2000);
   }
@@ -36255,7 +36262,7 @@ const INVADERS_APP = (() => {
     const s = g.ship;
     const rapid = g.pow && g.pow.R > 0, dbl = g.pow && g.pow.D > 0, pierce = g.pow && g.pow.P > 0 ? 3 : 1;
     if (g.state !== 'play' || s.cool > 0 || g.shots.length >= (rapid ? 6 : 2) * (dbl ? 2 : 1)) return;
-    for (const dx of dbl ? [-0.35, 0.35] : [0]) g.shots.push({ x: s.x + dx * SQ, y: SHIP_Y - 0.6 * SQ, pierce });
+    for (const dx of dbl ? [-0.35, 0.35] : [0]) g.shots.push({ x: s.x + dx * SQ, y: s.y - 0.6 * SQ, pierce });
     s.cool = FIRE_EVERY * (rapid ? 0.45 : 1);
     beep('shot');
   }
@@ -36263,7 +36270,7 @@ const INVADERS_APP = (() => {
     g.bombs = [];
     // The ship goes up (Sep 27): a burst on it, or a bigger one on the last.
     const last = g.lives <= 1, n = last ? 5 : 2;
-    for (let i = 0; i < n; i++){ const a = rnd() * 6.3, d = i ? (0.3 + rnd() * 0.6) * SQ * (last ? 1.6 : 1) : 0; BOOM.add(g, g.ship.x + Math.cos(a) * d, SHIP_Y + Math.sin(a) * d, i % 2 ? 'q' : 'r', rnd); }
+    for (let i = 0; i < n; i++){ const a = rnd() * 6.3, d = i ? (0.3 + rnd() * 0.6) * SQ * (last ? 1.6 : 1) : 0; BOOM.add(g, g.ship.x + Math.cos(a) * d, g.ship.y + Math.sin(a) * d, i % 2 ? 'q' : 'r', rnd); }
     beep(last ? 'over' : 'dead');
     for (const v of g.f.inv) v.out = null;                  // anyone out comes home
     g.lost = (g.lost || 0) + 1;
@@ -36279,6 +36286,7 @@ const INVADERS_APP = (() => {
   const PACE = 1.0;
   function liveInput(){
     return { kx: clamp((HELD.has('R') ? 1 : 0) - (HELD.has('L') ? 1 : 0) + (TILT.on ? TILT.x : 0), -1, 1),
+             ky: (HELD.has('D') ? 1 : 0) - (HELD.has('U') ? 1 : 0),
              fire: HELD.has('F') || TILT.on || performance.now() - dragAt < 150 };
   }
   // A shot at the ship: [x, y, vx, vy, kind] — a pawn's bomb, a bishop's diagonal, a rook's fast bolt.
@@ -36303,7 +36311,7 @@ const INVADERS_APP = (() => {
     if (g.ufo){ g.ufo.x += g.ufo.dir * 0.16 * dt; if (g.ufo.x < -0.08 || g.ufo.x > 1.08){ g.ufo = null; g.ufoIn = 15 + rnd() * 10; } }
     for (const p of g.picks){
       p.y += 0.25 * dt;
-      if (Math.abs(p.x - g.ship.x) < SHIP_S * 0.5 && Math.abs(p.y - SHIP_Y) < SHIP_S * 0.4){
+      if (Math.abs(p.x - g.ship.x) < SHIP_S * 0.5 && Math.abs(p.y - g.ship.y) < SHIP_S * 0.4){
         p.dead = true; say(PICK_NAME[p.type], 1000); beep('level');
         if (p.type === 'H') g.guard = true; else g.pow[p.type] = 10;
       }
@@ -36331,7 +36339,7 @@ const INVADERS_APP = (() => {
       o.t += dt;
       if (v.kind === 'q'){
         const T = 3.2, s = Math.min(1, o.t / T), [hx, hy] = slotOf(g.f, v);
-        const deep = SHIP_Y - 0.6 * SQ - o.y0;
+        const deep = g.ship.y - 0.6 * SQ - o.y0;
         o.x = (s < 0.5 ? o.x0 + (o.tx - o.x0) * (s * 2) : o.tx + (hx - o.tx) * ((s - 0.5) * 2)) + Math.sin(s * Math.PI * 2) * 0.08;
         o.y = o.y0 + (hy - o.y0) * s + Math.sin(s * Math.PI) * deep;
         if (s >= 1) v.out = null;
@@ -36358,6 +36366,8 @@ const INVADERS_APP = (() => {
     if (inp.kx) s.x += inp.kx * SHIP_SPEED * dt;
     if (inp.to != null) s.x += clamp(inp.to - s.x, -SHIP_SPEED * dt, SHIP_SPEED * dt);
     s.x = clamp(s.x, MARGIN, 1 - MARGIN);
+    if (inp.ky) s.y += inp.ky * SHIP_SPEED * 0.7 * dt;
+    s.y = clamp(s.y, SHIP_Y - FWD, SHIP_Y);
     s.inv = Math.max(0, s.inv - dt);
     s.cool = Math.max(0, s.cool - dt);
     if (inp.fire) fire(g);
@@ -36367,7 +36377,7 @@ const INVADERS_APP = (() => {
     mystery(g, dt);
     if (!live.length && !g.boss){                    // cleared: the next formation
       if ((g.nextIn -= dt) <= 0){
-        g.level++; g.f = formation(g.level); g.boss = bossFor(g.level); g.shots = []; g.bombs = []; g.bombIn = 1.5; g.shield = shields();
+        g.level++; g.f = formation(g.level, g.lv); g.boss = bossFor(g.level); g.shots = []; g.bombs = []; g.bombIn = 1.5; g.shield = shields();
         say(g.boss ? 'Level ' + g.level + ' — the king!' : 'Level ' + g.level + ' — ' + g.f.shape, 1600); beep('level');
       }
       return;
@@ -36376,7 +36386,7 @@ const INVADERS_APP = (() => {
     flights(g, dt);
     const home = live.filter(v => !v.out);
     // THE MARCH: faster as the formation thins, and every level.
-    const total = ROWS.length * COLS;
+    const total = ROWS.length * (f.cols || COLS);
     const speed = 0.045 * (1 + 2.6 * (1 - live.length / total)) * (1 + 0.15 * (g.level - 1)) * D(g).march;
     // The march's beat quickens with it: one of the four notes each step.
     if ((g.beat -= dt) <= 0){ g.beat = 0.05 / speed; beep('march'); }
@@ -36462,7 +36472,7 @@ const INVADERS_APP = (() => {
     g.shots = g.shots.filter(sh => !sh.dead);
     // Bombs against the ship; the formation against your edge.
     if (s.inv <= 0) for (const b of g.bombs){
-      if (Math.abs(b.x - s.x) < SHIP_S * 0.42 && Math.abs(b.y - SHIP_Y) < SHIP_S * 0.35){
+      if (Math.abs(b.x - s.x) < SHIP_S * 0.42 && Math.abs(b.y - s.y) < SHIP_S * 0.35){
         if (g.guard){ g.guard = false; b.dead = true; s.inv = 1; beep('shield'); say('Shield!', 800); break; }
         loseShip(g, 'Hit'); break;
       }
@@ -36470,8 +36480,8 @@ const INVADERS_APP = (() => {
     // A piece out of the formation that runs into the ship takes it — and itself.
     if (s.inv <= 0 && g.state === 'play') for (const v of alive(f)){
       if (!v.out) continue;
-      if (Math.abs(v.out.x - s.x) < SHIP_S * 0.45 && Math.abs(v.out.y - SHIP_Y) < SHIP_S * 0.45){
-        v.alive = false; v.out = null; BOOM.add(g, s.x, SHIP_Y, v.kind, rnd); loseShip(g, 'Rammed by a ' + (v.kind === 'q' ? 'queen' : 'knight')); break;
+      if (Math.abs(v.out.x - s.x) < SHIP_S * 0.45 && Math.abs(v.out.y - s.y) < SHIP_S * 0.45){
+        v.alive = false; v.out = null; BOOM.add(g, s.x, s.y, v.kind, rnd); loseShip(g, 'Rammed by a ' + (v.kind === 'q' ? 'queen' : 'knight')); break;
       }
     }
     if (g.state === 'play'){
@@ -36495,9 +36505,9 @@ const INVADERS_APP = (() => {
       out.push(['kb', B.x, B.y]);
       for (let i = 0; i < 10; i++) out.push([i < lit ? 'hp' : 'hpOff', B.x + (i - 4.5) * 0.3 * SQ, B.y - 1.9 * SQ]);
     }
-    if (g.guard && g.state !== 'over') out.push(['ring', g.ship.x, SHIP_Y]);
+    if (g.guard && g.state !== 'over') out.push(['ring', g.ship.x, g.ship.y]);
     for (const k of g.shield || []){ const [i, j] = k.split(',').map(Number); out.push(['shield', (i + 0.5) * HALF, (j + 0.5) * HALF]); }
-    if (g.state !== 'over' && !(g.ship.inv > 0 && ((g.t * 9) | 0) % 2)) out.push(['ship', g.ship.x, SHIP_Y, 0.85 + 0.3 * Math.abs(Math.sin(g.t * 37))]);
+    if (g.state !== 'over' && !(g.ship.inv > 0 && ((g.t * 9) | 0) % 2)) out.push(['ship', g.ship.x, g.ship.y, 0.85 + 0.3 * Math.abs(Math.sin(g.t * 37))]);
     for (const [u, v, e, seed, mix] of BOOM.burning(g)) out.push(['boom' + mix, u, v, e, seed & 0xffffff]);
     return out;
   }
@@ -36564,13 +36574,13 @@ const INVADERS_APP = (() => {
     QUIET = true;
     const frames = [];
     try {
-      const g = newGame(); g.state = 'play';
+      const g = newGame('normal'); g.state = 'play';
       const dt = 1 / REEL_FPS;
       let overFor = 0;
       for (let i = 0; i < REEL_SECS * REEL_FPS; i++){
         if (g.state === 'over'){
           g.t += dt;
-          if ((overFor += dt) > 1.5){ Object.assign(g, newGame()); g.state = 'play'; overFor = 0; }
+          if ((overFor += dt) > 1.5){ Object.assign(g, newGame('normal')); g.state = 'play'; overFor = 0; }
         } else step(g, dt, botInput(g));
         if (i === upTo){ g.last = 0; return g; }
         const it = frameOf(g), fr = new Float32Array(it.length * 5);
@@ -36593,7 +36603,7 @@ const INVADERS_APP = (() => {
   // Taking a board carries on from what it is showing: the reel's game, replayed up to now.
   function adopt(c, r){
     const { seed, k } = reelAt(c, r), g = bakeReel(seed, k);
-    return (g && g.state) ? g : newGame();
+    return (g && g.state) ? g : newGame('normal');
   }
   function reelFrame(c, r){
     const { reel, k } = reelAt(c, r), fr = reel[k];
@@ -36608,7 +36618,8 @@ const INVADERS_APP = (() => {
     return { n: N, colors: cols };
   })();
 
-  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', a: 'L', d: 'R', A: 'L', D: 'R', Enter: 'F' };
+  const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', a: 'L', d: 'R', A: 'L', D: 'R', Enter: 'F',
+                   ArrowUp: 'U', ArrowDown: 'D', w: 'U', s: 'D', W: 'U', S: 'D' };
   const liveGame = () => {
     try { if (window.getFieldApp() !== app) return null; } catch { return null; }
     return LIVE ? gameAt(LIVE.c, LIVE.r) : null;
@@ -36715,7 +36726,7 @@ const INVADERS_APP = (() => {
       const g = liveGame();
       return !!(g && g.state === 'play' && u != null);
     },
-    onPan(dx){
+    onPan(dx, dy){
       const g = liveGame();
       if (!g || g.state !== 'play') return false;
       let k = 0;
@@ -36724,6 +36735,7 @@ const INVADERS_APP = (() => {
         k = panWorldPerPixel() / Math.max(1e-6, boardW);
       } catch { return false; }
       g.ship.x = clamp(g.ship.x + dx * k, MARGIN, 1 - MARGIN);
+      if (dy) g.ship.y = clamp(g.ship.y + dy * k, SHIP_Y - FWD, SHIP_Y);   // a drag up the board goes forward
       dragAt = performance.now();
       return true;
     },
@@ -65134,6 +65146,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const [r, g, b] = h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x];
       return '#' + [r, g, b].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join(''); };
     const TINT = 0.13, BAND = 0.4, TITLE_K = 1.9;
+    const ALERT_COL = { note: '#4a7fc1', tip: '#3f9a5c', important: '#8a5cc8', warning: '#d09a2a', caution: '#c9483f' };   // (GitHub's alerts: the bar's colour)
     const fontOf = (r, size) => (r.i ? 'italic ' : '') + (r.b ? 'bold ' : '') + size + 'px ' + (r.mono ? MONO : SERIF);
 
     /* ── the zip: paths, lookups, the package ── */
@@ -65304,7 +65317,13 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const walk = (n, st) => {
         if (n.nodeType === 3){
           const s = st.pre ? n.nodeValue : n.nodeValue.replace(/[\s­]+/g, m => (/\s/.test(m) ? ' ' : ''));
-          if (s) runs.push({ s, b: st.b, i: st.i, mono: st.mono });
+          if (s){
+            const r = { s, b: st.b, i: st.i, mono: st.mono };
+            if (st.sup || st.sub || st.mark || st.strike || st.u)       // (Nov 5: the Markdown reader's ==marks==, x^2^, H~2~O, ~~strike~~ and links)
+              Object.assign(r, { fx: (st.mark ? 'm' : '') + (st.strike ? 's' : '') + (st.u ? 'u' : '') + (st.sup || st.sub ? 'p' : ''),
+                                 sc: st.sup || st.sub ? 0.7 : 0, dy: st.sup ? -0.34 : st.sub ? 0.16 : 0 });
+            runs.push(r);
+          }
           return;
         }
         if (n.nodeType !== 1) return;
@@ -65319,6 +65338,32 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         if (/^(em|i|cite|var|dfn|address)$/.test(tag)) s2 = Object.assign({}, st, { i: !st.i });
         else if (/^(strong|b|th)$/.test(tag)) s2 = Object.assign({}, st, { b: true });
         else if (/^(code|tt|kbd|samp)$/.test(tag)) s2 = Object.assign({}, st, { mono: true });
+        else if (tag === 'sup') s2 = Object.assign({}, st, { sup: true, sub: false });
+        else if (tag === 'sub') s2 = Object.assign({}, st, { sub: true, sup: false });
+        else if (tag === 'mark') s2 = Object.assign({}, st, { mark: true });
+        else if (/^(s|del|strike)$/.test(tag)) s2 = Object.assign({}, st, { strike: true });
+        else if (tag === 'u' || tag === 'ins' || (flat && tag === 'a')) s2 = Object.assign({}, st, { u: true });
+        else if (flat && tag === 'dt') s2 = Object.assign({}, st, { b: true });
+        if (flat && tag === 'table'){                                   // a document's table: real columns (see layout)
+          flush();
+          const rows = [];
+          for (const tr of byTag(n, 'tr')){
+            const cells = [];
+            for (const c of Array.from(tr.children)){
+              const ct = (c.localName || '').toLowerCase();
+              if (ct !== 'td' && ct !== 'th') continue;
+              const saved = runs; runs = [];
+              for (const k of c.childNodes) walk(k, ct === 'th' ? Object.assign({}, s2, { b: true }) : s2);
+              const cr = runs; runs = saved;
+              while (cr.length && !/\S/.test(cr[0].s)) cr.shift();
+              while (cr.length && !/\S/.test(cr[cr.length - 1].s)) cr.pop();
+              cells.push({ runs: cr, align: c.getAttribute('align') || '', th: ct === 'th' });
+            }
+            if (cells.length) rows.push({ head: cells.every(c => c.th), cells });
+          }
+          if (rows.length) out.push({ t: 'table', rows, inset: blk.inset || 0, flat: true });
+          return;
+        }
         if (tag === 'td' || tag === 'th'){ if (n.previousElementSibling) runs.push({ s: ' ' }); }
         if (!BLOCK.has(tag)){ for (const c of n.childNodes) walk(c, s2); return; }
         flush();
@@ -65326,7 +65371,11 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         blk = Object.assign({}, was);
         const h = /^h([1-6])$/.exec(tag);
         if (h){ blk.h = +h[1]; blk.align = flat ? undefined : 'center'; s2 = Object.assign({}, s2, { b: true }); }
-        if (tag === 'blockquote'){ blk.inset = (was.inset || 0) + 32; blk.quote = true; }
+        if (tag === 'blockquote'){
+          blk.inset = (was.inset || 0) + 32; blk.quote = true;
+          const al = /\balert-(\w+)/.exec(n.getAttribute('class') || '');
+          if (al) blk.alert = al[1];
+        }
         if (tag === 'ul' || tag === 'ol' || tag === 'dd') blk.inset = (was.inset || 0) + 24;
         if (tag === 'pre'){ blk.pre = true; s2 = Object.assign({}, s2, { mono: true, pre: true }); }
         if (tag === 'figcaption' || tag === 'caption'){ blk.align = 'center'; blk.small = true; }
@@ -65376,7 +65425,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       const words = [];
       let cur = null, space = 0, nl = false;
       for (const r of runs){
-        const font = fontOf(r, size);
+        const font = fontOf(r, r.sc ? size * r.sc : size);
         for (const m of r.s.matchAll(TOK)){
           const s = m[0];
           if (s === '\n'){ cur = null; nl = true; space = 0; continue; }
@@ -65392,7 +65441,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             words.push(cur);
             space = 0; nl = false;
           }
-          cur.parts.push({ s, font, wd: wid(s, font) });
+          cur.parts.push(r.fx ? { s, font, wd: wid(s, font), fx: r.fx, dy: r.dy * size, h: size } : { s, font, wd: wid(s, font) });
           cur.wd += cur.parts[cur.parts.length - 1].wd;
         }
       }
@@ -65406,8 +65455,8 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         const cw = wid(ch, p.font);
         if (cur.wd + cw > room && cur.wd > 0){ out.push(cur); cur = { parts: [], wd: 0, sp: 0, nl: false }; }
         const last = cur.parts[cur.parts.length - 1];
-        if (last && last.font === p.font){ last.s += ch; last.wd += cw; }
-        else cur.parts.push({ s: ch, font: p.font, wd: cw });
+        if (last && last.font === p.font && last.fx === p.fx){ last.s += ch; last.wd += cw; }
+        else cur.parts.push(p.fx ? { s: ch, font: p.font, wd: cw, fx: p.fx, dy: p.dy, h: p.h } : { s: ch, font: p.font, wd: cw });
         cur.wd += cw;
       }
       if (cur.parts.length) out.push(cur);
@@ -65425,7 +65474,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         const r = room();
         const gaps = line.filter((e, k) => k > 0 && e.sp > 0).length;
         let extra = 0;
-        if (!last && !b.pre && b.align !== 'center' && gaps){
+        if (!last && !b.pre && b.align !== 'center' && !b.ragged && gaps){
           extra = (r - lw) / gaps;
           if (extra > size * 0.9) extra = 0;   // three long words on a line: ragged beats rivers
         }
@@ -65433,7 +65482,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
         let x = lines.length ? 0 : indent;
         line.forEach((e, k) => {
           if (k > 0) x += e.sp + (e.sp > 0 ? extra : 0);
-          for (const p of e.w.parts){ items.push({ x, s: p.s, font: p.font }); x += p.wd; }
+          for (const p of e.w.parts){ items.push(p.fx ? { x, s: p.s, font: p.font, fx: p.fx, dy: p.dy, h: p.h, wd: p.wd } : { x, s: p.s, font: p.font }); x += p.wd; }
         });
         lines.push({ items, w: x });
         line = []; lw = 0;
@@ -65507,6 +65556,58 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             afterHead = false;
             continue;
           }
+          if (b.t === 'table'){
+            /* A TABLE IS REAL COLUMNS (Nov 5: "is it possible to add better md support."): each column as wide as its longest line wants,
+               or, when the page cannot hold that, between its longest word and its longest line in the room there is; every cell wraps in
+               its column and is left, centred or right as the separator row said; the head row is shaded and comes again at the top
+               of a page the table carries over to; a thin rule under every row. */
+            const inset = b.inset || 0, W = CW - 2 * inset, PAD = 9, size = Math.round(BODY * 0.92), lh = Math.round(size * 1.35), vp = Math.round(size * 0.3);
+            const n = Math.max(...b.rows.map(r => r.cells.length));
+            const mn = Array(n).fill(0), mx = Array(n).fill(0);
+            for (const r of b.rows) r.cells.forEach((c, q) => {
+              const ws = wordsOf(c.runs, size, false);
+              mn[q] = Math.max(mn[q], ...ws.map(w => w.wd));
+              mx[q] = Math.max(mx[q], ws.reduce((a, w, j) => a + (j ? w.sp : 0) + w.wd, 0));
+            });
+            for (let q = 0; q < n; q++){ mn[q] += 2 * PAD; mx[q] = Math.max(mx[q] + 2 * PAD, mn[q]); }
+            const sMn = mn.reduce((a, v) => a + v, 0), sMx = mx.reduce((a, v) => a + v, 0);
+            const wd = sMx <= W ? mx : sMn >= W ? mn.map(v => v * W / sMn) : mn.map((v, q) => v + (mx[q] - v) * (W - sMn) / (sMx - sMn));
+            const tw = wd.reduce((a, v) => a + v, 0), xs = wd.map((_, q) => wd.slice(0, q).reduce((a, v) => a + v, 0));
+            const maxLines = Math.max(1, Math.floor((BOTTOM - M.t - 2 * vp) / lh));
+            const laid = b.rows.map(r => {
+              const cells = r.cells.map((c, q) => linesOf({ runs: c.runs, ragged: true }, size, wd[q] - 2 * PAD, 0).slice(0, maxLines));
+              return { r, cells, h: Math.max(1, ...cells.map(c => c.length)) * lh + 2 * vp };
+            });
+            const draw = (L) => {
+              if (L.r.head) pg.shades.push({ k: 'code', x: M.l + inset, y, w: tw, h: L.h });
+              L.cells.forEach((lines, q) => {
+                const al = L.r.cells[q].align, cw = wd[q] - 2 * PAD;
+                lines.forEach((ln, li) => {
+                  const off = al === 'right' ? cw - ln.w : al === 'center' ? (cw - ln.w) / 2 : 0;
+                  const x0 = M.l + inset + xs[q] + PAD + Math.max(0, off);
+                  pg.lines.push({ y: y + vp + li * lh + (lh - size) / 2 + size * 0.8, items: ln.items.map(it => Object.assign({}, it, { x: it.x + x0 })) });
+                  words += ln.items.length;
+                });
+              });
+              pg.shades.push({ k: 'rule', x: M.l + inset, y: y + L.h - 1, w: tw, h: L.r.head ? 2 : 1 });
+              y += L.h;
+            };
+            const first = laid.findIndex(L => !L.r.head);
+            const headRow = laid[0] && laid[0].r.head ? laid[0] : null;
+            if (y > M.t) y += BODY * 0.6;
+            if (y + (headRow ? headRow.h : 0) + (laid[first] ? laid[first].h : 0) > BOTTOM && y > M.t) newPage();
+            pg.shades.push({ k: 'rule', x: M.l + inset, y, w: tw, h: 1 });
+            laid.forEach((L, q) => {
+              if (y + L.h > BOTTOM && y > M.t){
+                newPage();
+                if (headRow && L !== headRow){ pg.shades.push({ k: 'rule', x: M.l + inset, y, w: tw, h: 1 }); draw(headRow); }   // (the head again)
+              }
+              draw(L);
+            });
+            y += BODY * 0.6;
+            afterHead = false;
+            continue;
+          }
           // (a document's chapter title, its first heading of the top level, is set large on its band: see A CHAPTER'S OWN COLOUR)
           const title = !!(book.flat && b.h && b.h === book.top && k === 0 && blank());
           const size = title ? Math.round(HEAD[1] * TITLE_K) : b.h ? HEAD[b.h] : (b.small ? SMALL : BODY);
@@ -65516,7 +65617,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           const lines = linesOf(b, size, CW - 2 * inset, indent);
           if (!lines.length) continue;
           // (a document's paragraphs are spaced apart instead of indented, the Markdown reader's `flat`)
-          let gap = b.h ? (y > M.t ? size * 1.1 : size * 0.4) : (y > M.t ? BODY * (b.flat && !(b.list && ch[k - 1] && ch[k - 1].list) ? 0.6 : 0.3) : 0);
+          let gap = b.h ? (y > M.t ? size * 1.1 : size * 0.4) : (y > M.t ? BODY * (b.flat && !(b.list && ch[k - 1] && ch[k - 1].list) && !(b.quote && ch[k - 1] && ch[k - 1].quote) ? 0.6 : 0.3) : 0);
           /* A heading keeps two lines of what follows it on its page. */
           if (b.h && y + gap + lines.length * lh + 2 * BODY * LEAD > BOTTOM && y > M.t){ newPage(); gap = size * 0.4; }
           y += gap;
@@ -65528,7 +65629,9 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             /* A document's code sits on a faint box and its quotes have a bar down their left (the Markdown reader's `flat`):
                a strip a line, so a block carried over to the next page is shaded on both. */
             if (b.flat && b.pre) pg.shades.push({ k: 'code', x: M.l + inset - 8, y: y - 1, w: CW - 2 * inset + 16, h: lh + 2 });
-            if (b.flat && b.quote) pg.shades.push({ k: 'bar', x: M.l + inset - 16, y, w: 3, h: lh });
+            // (a quote's next paragraph, or an alert's body under its title, carries the bar on through the gap between them)
+            const joined = ln === lines[0] && b.quote && ch[k - 1] && ch[k - 1].quote && y > M.t && pg.lines.length;
+            if (b.flat && b.quote) pg.shades.push({ k: 'bar', x: M.l + inset - 16, y: joined ? y - gap : y, w: b.alert ? 5 : 3, h: joined ? lh + gap : lh, alert: b.alert });
             pg.lines.push({ y: base, items: ln.items });
             words += ln.items.length;
             y += lh;
@@ -65557,7 +65660,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       cx.fillRect(0, 0, PAGE_W, PAGE_H);
       cx.imageSmoothingQuality = 'high';
       for (const sh of pg.shades || []){
-        cx.fillStyle = sh.k === 'band' ? hexMix(C.paper, hueOf(sh.hue), BAND) : sh.k === 'code' ? hexMix(P, C.ink, 0.07) : C.faint;
+        cx.fillStyle = sh.k === 'band' ? hexMix(C.paper, hueOf(sh.hue), BAND) : sh.k === 'code' ? hexMix(P, C.ink, 0.07) : sh.alert ? ALERT_COL[sh.alert] || C.faint : C.faint;
         cx.fillRect(sh.x, sh.y, sh.w, sh.h);
       }
       for (const im of pg.imgs){
@@ -65569,7 +65672,12 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       let font = '';
       for (const ln of pg.lines) for (const it of ln.items){
         if (font !== it.font){ cx.font = it.font; font = it.font; }
-        cx.fillText(it.s, it.x, ln.y);
+        if (!it.fx){ cx.fillText(it.s, it.x, ln.y); continue; }
+        // a mark behind, a rise or fall for a super- or subscript, a line through or under (Nov 5, the Markdown reader's)
+        if (it.fx.includes('m')){ cx.fillStyle = hexMix(P, '#f2c94c', 0.5); cx.fillRect(it.x - 1, ln.y - it.h * 0.82, it.wd + 2, it.h * 1.1); cx.fillStyle = C.ink; }
+        cx.fillText(it.s, it.x, ln.y + (it.dy || 0));
+        if (it.fx.includes('s')) cx.fillRect(it.x, ln.y - it.h * 0.28, it.wd, Math.max(1, it.h * 0.055));
+        if (it.fx.includes('u')) cx.fillRect(it.x, ln.y + it.h * 0.12, it.wd, Math.max(1, it.h * 0.055));
       }
       cx.strokeStyle = C.faint;
       cx.lineWidth = 1;
@@ -65757,6 +65865,16 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const plainOf = s => s.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
                           .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1').replace(/(\*\*|__|~~|`)/g, '').replace(/(^|\W)[*_](\S[^*_]*?)[*_](?=\W|$)/g, '$1$2')
                           .replace(/\\([\\`*_{}\[\]()#+\-.!|>~])/g, '$1').trim();
+    const EMOJI = { smile: '😄', smiley: '😃', grin: '😁', laughing: '😆', joy: '😂', wink: '😉', blush: '😊', heart_eyes: '😍', sunglasses: '😎',
+      thinking: '🤔', neutral_face: '😐', cry: '😢', sob: '😭', angry: '😠', scream: '😱', sleeping: '😴', thumbsup: '👍', '+1': '👍', thumbsdown: '👎',
+      '-1': '👎', clap: '👏', wave: '👋', pray: '🙏', muscle: '💪', ok_hand: '👌', point_right: '👉', point_left: '👈', eyes: '👀', heart: '❤️',
+      broken_heart: '💔', star: '⭐', sparkles: '✨', fire: '🔥', zap: '⚡', boom: '💥', tada: '🎉', rocket: '🚀', warning: '⚠️', x: '❌',
+      white_check_mark: '✅', heavy_check_mark: '✔️', question: '❓', exclamation: '❗', bulb: '💡', memo: '📝', book: '📖', books: '📚',
+      bookmark: '🔖', link: '🔗', lock: '🔒', key: '🔑', mag: '🔍', bell: '🔔', calendar: '📅', chart_with_upwards_trend: '📈', package: '📦',
+      gear: '⚙️', hammer: '🔨', wrench: '🔧', bug: '🐛', computer: '💻', phone: '📱', email: '📧', cloud: '☁️', sunny: '☀️', rainbow: '🌈',
+      snowflake: '❄️', tree: '🌳', seedling: '🌱', dog: '🐶', cat: '🐱', coffee: '☕', pizza: '🍕', beer: '🍺', trophy: '🏆', medal: '🏅',
+      tada_: '🎉', hourglass: '⌛', clock: '🕐', globe: '🌍', house: '🏠', car: '🚗', airplane: '✈️', arrow_right: '➡️', arrow_left: '⬅️',
+      arrow_up: '⬆️', arrow_down: '⬇️', one: '1️⃣', two: '2️⃣', three: '3️⃣', hundred: '💯', skull: '💀', ghost: '👻', robot: '🤖' };
     // The inline spans of one block's text, given the link references and a way to name a picture.
     function inline(src, refs, pic){
       const keep = [];
@@ -65766,6 +65884,14 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (m, f, c) => hold('<code>' + esc(c.trim() === '' ? c : c.replace(/^ (.*) $/, '$1')) + '</code>'));
       s = s.replace(/<((?:https?|ftp|mailto):[^\s>]+)>/gi, (m, u) => hold(esc(u)));            // autolinks: the words are the link
       s = s.replace(/<([^\s@>]+@[^\s@>]+\.[^\s>]+)>/g, (m, u) => hold(esc(u)));
+      // footnote marks, numbered in the order they are first met (their notes are laid at the end: toHtml)
+      const fn = refs.fn;
+      if (fn) s = s.replace(/\[\^([^\]\s]+)\]/g, (m, id) => {
+        if (!fn.defs.has(id)) return m;
+        let n = fn.order.indexOf(id);
+        if (n < 0) n = fn.order.push(id) - 1;
+        return hold('<sup>' + (n + 1) + '</sup>');
+      });
       const target = (t, ref) => {
         if (ref != null){ const r = refs.get((ref || t).toLowerCase().replace(/\s+/g, ' ')); return r ? r.url : null; }
         return t;
@@ -65784,6 +65910,12 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       s = s.replace(/(^|[^*\w])\*(?=[^\s*])([\s\S]*?[^\s*])\*(?!\*)/g, '$1<i>$2</i>');
       s = s.replace(/(^|[^_\w])_(?=[^\s_])([\s\S]*?[^\s_])_(?![_\w])/g, '$1<i>$2</i>');
       s = s.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>');
+      /* (Nov 5: "is it possible to add better md support."): ==highlight==, H~2~O, x^2^ and :smile: (no spaces inside a sub or
+         superscript, as Pandoc has it, so "~5 and ~10" is only text) */
+      s = s.replace(/==(?=\S)([^=\n]*?[^\s=])==/g, '<mark>$1</mark>');
+      s = s.replace(/\^([^\s^]+)\^/g, '<sup>$1</sup>');
+      s = s.replace(/(^|[^~])~([^\s~]+)~(?!~)/g, '$1<sub>$2</sub>');
+      s = s.replace(/(^|[^\w:]):([a-z][a-z0-9_+-]*):(?![\w])/g, (m, a, k) => (EMOJI[k] ? a + EMOJI[k] : m));
       // a line ended with two spaces or a backslash breaks there
       s = s.replace(/( {2,}|\\)\n/g, '<br>');
       for (let k = 0; k < 4 && /\u0000\d+\u0000/.test(s); k++) s = s.replace(/\u0000(\d+)\u0000/g, (m, i) => keep[+i]);
@@ -65797,6 +65929,9 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const TROW = /^\s*\|?(.+?)\|?\s*$/;
     const TSEP = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
     const HTMLB = /^ {0,3}<(\/?)([A-Za-z][A-Za-z0-9-]*)(\s|>|\/>|$)|^ {0,3}<!--/;
+    const DEF = /^ {0,3}:(?: +|\t)(.*)$/;
+    const ALERTS = { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' };
+    const alignsOf = line => cellsOf(line).map(c => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : /^:-/.test(c) ? 'left' : ''));
     const cellsOf = line => { const m = TROW.exec(line); return (m ? m[1] : line).split(/(?<!\\)\|/).map(c => c.trim()); };
     // Block structure of some lines into HTML, with the headings seen (level, text) pushed onto `heads`.
     function blocks(lines, refs, pic, heads){
@@ -65838,7 +65973,12 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
             if (q) body.push(q[1]); else if (startsBlock(lines[i])) break; else body.push(lines[i]);
             i++;
           }
-          out.push('<blockquote>' + blocks(body, refs, pic, []).map(b => (typeof b === 'string' ? b : b.html)).join('') + '</blockquote>');
+          // (a GitHub alert: the first line says [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION]; its title in bold, a bar in its colour)
+          const am = body.length && /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i.exec(body[0]);
+          const kind = am ? am[1].toLowerCase() : '';
+          if (am) body.shift();
+          out.push('<blockquote' + (kind ? ' class="alert-' + kind + '"' : '') + '>' + (kind ? '<p><b>' + ALERTS[kind] + '</b></p>' : '')
+                   + blocks(body, refs, pic, []).map(b => (typeof b === 'string' ? b : b.html)).join('') + '</blockquote>');
           continue;
         }
         if ((m = ITEM.exec(l))){                       // a list: its items, each read again as blocks of their own
@@ -65873,20 +66013,43 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
           continue;
         }
         if (l.includes('|') && i + 1 < lines.length && TSEP.test(lines[i + 1]) && lines[i + 1].includes('-')){
-          // a table, set out as columns of the monospaced face (the book has no tables), its head in bold
-          const head = cellsOf(l).map(plainOf), rows = [];
+          // a table: real columns (Nov 5: "better md support"), each cell its own inline text, aligned as the separator row says; the
+          // book reader lays it out (a `table` block), the head shaded and repeated if it carries over a page
+          const head = cellsOf(l), al = alignsOf(lines[i + 1]), rows = [];
           i += 2;
-          while (i < lines.length && !blank(lines[i]) && lines[i].includes('|')){ rows.push(cellsOf(lines[i]).map(plainOf)); i++; }
+          while (i < lines.length && !blank(lines[i]) && lines[i].includes('|')){ rows.push(cellsOf(lines[i])); i++; }
           const n = Math.max(head.length, ...rows.map(r => r.length));
-          const wd = Array.from({ length: n }, (_, c) => Math.max(1, ...[head, ...rows].map(r => [...(r[c] || '')].length)));
-          const line = r => Array.from({ length: n }, (_, c) => (r[c] || '') + ' '.repeat(wd[c] - [...(r[c] || '')].length)).join('  ').replace(/\s+$/, '');
-          out.push('<pre><b>' + esc(line(head)) + '</b>\n' + esc(wd.map(w => '─'.repeat(w)).join('  ')) + (rows.length ? '\n' + rows.map(r => esc(line(r))).join('\n') : '') + '</pre>');
+          const row = (r, tag) => '<tr>' + Array.from({ length: n }, (_, c) => '<' + tag + (al[c] ? ' align="' + al[c] + '"' : '') + '>' + inline(r[c] || '', refs, pic) + '</' + tag + '>').join('') + '</tr>';
+          out.push('<table><thead>' + row(head, 'th') + '</thead><tbody>' + rows.map(r => row(r, 'td')).join('') + '</tbody></table>');
           continue;
         }
         if (HTMLB.test(l)){                              // HTML written in, to a blank line
           const body = [];
           while (i < lines.length && !blank(lines[i])){ body.push(lines[i]); i++; }
           out.push(body.join('\n'));
+          continue;
+        }
+        if (i + 1 < lines.length && !startsBlock(l) && !DEF.test(l) && DEF.test(lines[i + 1])){
+          // a definition list: a term, then one or more `: definition` lines (the next lines indented carry a definition on)
+          let html = '<dl>';
+          while (i < lines.length){
+            if (blank(lines[i])){
+              let j = i;
+              while (j < lines.length && blank(lines[j])) j++;
+              if (j + 1 < lines.length && !startsBlock(lines[j]) && !DEF.test(lines[j]) && DEF.test(lines[j + 1])){ i = j; continue; }
+              break;
+            }
+            if (!(i + 1 < lines.length && !startsBlock(lines[i]) && !DEF.test(lines[i]) && DEF.test(lines[i + 1]))) break;
+            html += '<dt>' + inline(lines[i].trim(), refs, pic) + '</dt>';
+            i++;
+            while (i < lines.length && DEF.test(lines[i])){
+              const body = [DEF.exec(lines[i])[1]];
+              i++;
+              while (i < lines.length && !blank(lines[i]) && /^( {2,}|\t)\S/.test(lines[i])){ body.push(lines[i].trim()); i++; }
+              html += '<dd>' + inline(body.join('\n'), refs, pic) + '</dd>';
+            }
+          }
+          out.push(html + '</dl>');
           continue;
         }
         // a paragraph, or an underlined heading
@@ -65917,14 +66080,33 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       if (fm){ const t = /^title:\s*["']?(.*?)["']?\s*$/m.exec(fm[1]); if (t) title = t[1]; src = src.slice(fm[0].length); }
       // link references, taken out of the text (outside code)
       const refs = new Map();
+      // footnotes (Nov 5): `[^id]: the note`, its next lines indented to carry it on (a blank line and an indented one is another
+      // paragraph of it); the marks are numbered as they are met, the notes laid after the last block
+      const fn = { defs: new Map(), order: [] };
+      refs.fn = fn;
       let inFence = false;
-      const lines = src.split('\n').filter(l => {
+      const raw = src.split('\n'), kept = [];
+      for (let q = 0; q < raw.length; q++){
+        const l = raw[q];
         if (FENCE.test(l)) inFence = !inFence;
-        if (inFence) return true;
+        if (inFence){ kept.push(l); continue; }
+        const f = /^ {0,3}\[\^([^\]\s]+)\]:[ \t]*(.*)$/.exec(l);
+        if (f){
+          const body = [f[2]];
+          while (q + 1 < raw.length){
+            const nx = raw[q + 1];
+            if (/^( {2,}|\t)\S/.test(nx)){ body.push(nx.trim()); q++; }
+            else if (!/\S/.test(nx) && q + 2 < raw.length && /^( {4}|\t)\S/.test(raw[q + 2])){ body.push(''); q++; }
+            else break;
+          }
+          fn.defs.set(f[1], body.join('\n').split(/\n{2,}/));
+          continue;
+        }
         const m = /^ {0,3}\[([^\]]+)\]:\s*<?(\S+?)>?(?:\s+["'(].*["')])?\s*$/.exec(l);
-        if (m && !/^\^/.test(m[1])){ refs.set(m[1].toLowerCase().replace(/\s+/g, ' '), { url: m[2] }); return false; }
-        return true;
-      }).map(l => l.replace(/^(\t+)/, t => '    '.repeat(t.length)));
+        if (m && !/^\^/.test(m[1])){ refs.set(m[1].toLowerCase().replace(/\s+/g, ' '), { url: m[2] }); continue; }
+        kept.push(l);
+      }
+      const lines = kept.map(l => l.replace(/^(\t+)/, t => '    '.repeat(t.length)));
       const pics = [];
       const pic = (u, alt) => {
         const key = find(u);
@@ -65933,6 +66115,10 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
       };
       const heads = [];
       const bl = blocks(lines, refs, pic, heads);
+      if (fn.order.length){                                          // the notes, numbered as their marks were
+        bl.push('<hr>');
+        fn.order.forEach((id, k) => fn.defs.get(id).forEach((para, j) => bl.push('<p>' + (j ? '' : '<sup>' + (k + 1) + '</sup> ') + inline(para, refs, pic) + '</p>')));
+      }
       if (!title){ const h1 = heads.find(h => h.n === 1); if (h1) title = h1.t; }
       // chapters: at each heading of the top level used, when there are two or more of them
       const top = heads.length ? Math.min(...heads.map(h => h.n)) : 0;

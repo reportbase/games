@@ -6175,7 +6175,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     else {
       if (r.app !== 'photo gallery' || r.chapters !== 2 || r.pages !== 2) bad.push('opened as ' + JSON.stringify({ app: r.app, chapters: r.chapters, pages: r.pages }));
       if (r.imgs !== 1 || r.n !== r.pages) bad.push(`the picture: ${r.imgs} placed, ${r.n} prints for ${r.pages} pages (it should be on its page and not hung on its own)`);
-      if (r.pre !== 2 || !r.quote) bad.push('code and quote blocks: ' + JSON.stringify({ pre: r.pre, quote: r.quote }));
+      if (r.pre !== 1 || !r.quote) bad.push('code and quote blocks (the table is a table now, no longer a block of monospaced lines, Nov 5): ' + JSON.stringify({ pre: r.pre, quote: r.quote }));
       if (!/^Smaller,\d+,Larger,Serif/.test(r.row)) bad.push('the row is not the book\'s settings: ' + r.row);
       // a real click on Larger lays it out again (the row opened first: a book's settings do not hold it open)
       await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); });
@@ -6206,6 +6206,56 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     }
     if (bad.length) failures.push('[markdown] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} markdown: a .md opened through the picker as a book of ${r ? r.pages : '?'} pages, a chapter a top heading, its words in order, the picture beside it placed and not hung again, a missing one in words, code shaded, each chapter its own paper and its title large on a band, a real click on Larger laying it out again`);
+  }
+  // BETTER MARKDOWN (Nov 5: "is it possible to add better md support." … tables, footnotes and definition lists, alerts, highlight,
+  // sub- and superscript, emoji): a .md with each of them opened through the real picker. A table is real columns (a `table` block,
+  // its cells aligned as the separator row says, none of the old monospaced lines), a footnote's mark is a superscript number and its note
+  // comes after the last block, a definition's term is bold with its definition indented, an alert's title and bar are its kind's,
+  // and the marks, rises, falls and strikes are flags on the words, painted (a mark's yellow behind its words).
+  {
+    current = 'markdown more';
+    const bad = [];
+    const G = 'window.FIELD_APPS.find(a => a.id === \'gallery\')';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
+    await page.waitForTimeout(1000);
+    const md = ['# More', '', 'A note[^a], ==marked words==, H~2~O, x^2^, :smile: and ~~struck~~ with ~5 and ~10 left alone.', '', '> [!WARNING]', '> Mind the step.', '',
+      'Term', ': Its definition.', '', '| Left | Mid | Right |', '|:-----|:---:|------:|', '| a | **b** | `c` |', '| long cell words that wrap | 2 | 3 |', '',
+      '[^a]: The note.', ''].join('\n');
+    await page.setInputFiles('#importImageFile', [{ name: 'more.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
+    await page.waitForFunction(g => { const E = eval(g)._epub; return E && E.md && E.label === 'More'; }, G, { timeout: 30000 }).catch(() => {});
+    const r = await page.evaluate(g => {
+      const E = eval(g)._epub; if (!E || !E.md) return null;
+      const items = E.pages.flatMap(p => p.lines.flatMap(l => l.items)), blocks = E.book.chapters.flat();
+      const fx = f => items.filter(it => it.fx && it.fx.includes(f)).map(it => it.s).join('');
+      const tbl = blocks.find(b => b.t === 'table');
+      const pg = E.pages.find(p => p.shades.some(s => s.k === 'bar' && s.alert));
+      const mk = items.find(it => it.fx && it.fx.includes('m'));
+      let mark = null;
+      if (mk){ const p = E.pages.find(q => q.lines.some(l => l.items.includes(mk))), ln = p.lines.find(l => l.items.includes(mk)), cv = document.createElement('canvas');
+        E.EPUB.paint(cv, p, 1100, new Map()); const z = 1100 / E.EPUB.PAGE_H, d = cv.getContext('2d').getImageData(Math.round((mk.x + mk.wd / 2) * z), Math.round((ln.y - mk.h * 0.7) * z), 1, 1).data,
+          e = cv.getContext('2d').getImageData(4, 1090, 1, 1).data; mark = [d[0], d[1], d[2]].join() !== [e[0], e[1], e[2]].join(); }
+      return { text: E.pages.map(p => E.EPUB.textOf(p)).join(' | '), mark: fx('m'), sup: fx('p'), strike: fx('s'), cols: tbl && tbl.rows.map(x => x.cells.map(c => c.align).join()),
+               heads: tbl && tbl.rows.map(x => x.head), pre: blocks.filter(b => b.pre).length, bar: pg && pg.shades.find(s => s.k === 'bar' && s.alert).alert,
+               rules: E.pages.reduce((k, p) => k + p.shades.filter(s => s.k === 'rule').length, 0), dd: blocks.some(b => b.t === 'p' && b.inset >= 24 && /Its definition/.test(b.runs.map(x => x.s).join('')) && !b.list),
+               dt: blocks.some(b => b.t === 'p' && b.runs.every(x => x.b) && /^Term/.test(b.runs.map(x => x.s).join(''))), marked: mark };
+    }, G);
+    if (!r) bad.push('the file did not open');
+    else {
+      if (r.mark !== 'markedwords') bad.push('the highlight: ' + JSON.stringify(r.mark));
+      if (r.sup !== '1221') bad.push('the super- and subscripts (the mark, H~2~, x^2^, the note\'s number): ' + JSON.stringify(r.sup));
+      if (r.strike !== 'struck') bad.push('the strike: ' + JSON.stringify(r.strike));
+      if (!r.text.includes('😄') || !r.text.includes('~5 and ~10 left alone')) bad.push('emoji and tildes in words: ' + r.text.slice(0, 200));
+      if (!r.cols || r.cols.join('|') !== 'left,center,right|left,center,right|left,center,right' || r.heads.join() !== 'true,false,false') bad.push('the table: ' + JSON.stringify({ cols: r.cols, heads: r.heads }));
+      if (r.pre) bad.push('the table is still monospaced lines');
+      if (r.rules < 3) bad.push('the table has no rules: ' + r.rules);
+      if (!/Left Mid Right/.test(r.text) || !/long cell words that wrap/.test(r.text)) bad.push('the table words: ' + r.text.slice(0, 300));
+      if (r.bar !== 'warning' || !/Warning Mind the step\./.test(r.text)) bad.push('the alert: ' + JSON.stringify({ bar: r.bar }));
+      if (!r.dt || !r.dd) bad.push('the definition list: ' + JSON.stringify({ dt: r.dt, dd: r.dd }));
+      if (!/1 The note\./.test(r.text)) bad.push('the footnote\'s note is not after the text: ' + r.text.slice(-120));
+      if (!r.marked) bad.push('the highlight is not painted behind its words');
+    }
+    if (bad.length) failures.push('[markdown more] ' + bad.join('; '));
+    console.log(`${bad.length ? 'FAIL' : 'ok  '} markdown more (a table of real columns aligned as written, a footnote numbered with its note after, a definition list, an alert, ==highlight==, H~2~O, x^2^, ~~strike~~ and emoji)`);
   }
   // A BOOK REPLACES A FOLDER STILL ARRIVING (Nov 1: "when I load images, then something else, say an epub file or pdf, and some of the
   // original images are still showing, and the aspect ratio has not been reset"): forty pictures are dropped (read a frame at a
@@ -7424,6 +7474,26 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const ok = out.declined.asked === 1 && out.declined.kept && out.accepted.asked === 2 && out.accepted.fresh;
     if (!ok) failures.push('[double tap asks] ' + JSON.stringify(out));
     console.log(`${ok ? 'ok  ' : 'FAIL'} double tap asks to start over (a real double on the board in its default view asks once; declined it keeps the game, accepted it begins again)`);
+  }
+  // INVADERS (Nov 6: "Invaders let the user move forward.  Add difficulty menu setting.   Less difficult smaller board and slower."):
+  // the formation 7, 9 or 11 across by level, easy marching slower, and the ship going forward under ky with its shots from there.
+  current = 'invaders';
+  {
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'invaders')); await new Promise(ok => setTimeout(ok, 1500)); });
+    const iv = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      out.cols = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.cols);
+      out.n = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.inv.length);
+      const g = D.newGame('normal'); g.state = 'play'; g.lv = 'normal';
+      const y0 = g.ship.y; for (let i = 0; i < 30; i++) D.step(g, 1 / 30, { kx: 0, ky: -1, fire: false });
+      const y1 = g.ship.y; D.fire(g); out.shotFromShip = g.shots.length === 1 && g.shots[0].y < y1;
+      for (let i = 0; i < 90; i++) D.step(g, 1 / 30, { kx: 0, ky: 1, fire: false });
+      out.y = [y0, y1, g.ship.y];
+      return out;
+    });
+    const ok = iv.cols.join() === '7,9,11' && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
+    if (!ok) failures.push('[invaders forward] ' + JSON.stringify(iv));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} invaders: a smaller formation when easy, the ship going forward and back, its shots from where it is`);
   }
 }   // (end of part 7)
 } catch (e){

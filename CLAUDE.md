@@ -933,6 +933,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test (part 7) checks every kind the pearl, the levels, pars, each special made and a flame's 3 × 3, and real input: a
     drag lighting both squares and making a flame, clicks swapping a hypercube, a goal made with stars and a best, a click going on
     to the next board, a board out of moves, the real Size tile, and a board no one plays moving.
+- **Invaders: forward, a smaller easy board** (Nov 6: "Invaders let the user move forward.  Add difficulty menu setting.   Less difficult
+  smaller board and slower.    Further from center more difficult boards."): the ship has a `y` (up, down, W, S, or a drag up the board;
+  `FWD` 9 squares from its base line, `SHIP_Y`); its shots start and bombs, pickups and rammers meet it there; invasion is still the
+  formation reaching the base line. The Difficulty (already by ring, `lvAt`) also sets the formation's width, `DIFF[lv].cols` 7, 9, 11
+  (`formation(level, lv)`, `f.cols`; shapes are cut from the middle of the eleven), and easy marches 0.65 and fires 0.7 as fast.
+  The boards' recorded reels are made at normal. The smoke test ("invaders: a smaller formation when easy …") checks both.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
@@ -2331,6 +2337,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test opens a `.md` and a picture through the real picker (the title, two chapters, the words in order, the picture
     placed once, a missing one in words, code and quote blocks, the code's shade painted) and a real click on Larger laying it
     out again. `GALLERY_APP._md` is the converter, `_epub.md` says the book is one.
+  - **Better Markdown** (Nov 5: "is it possible to add better md support.", then tables, footnotes and definition lists, and alerts,
+    highlight, sub/superscript and emoji of the four offered; code colouring and math left for later): a table is real columns (the
+    converter writes `<table>`, `blocksOf` a `table` block of rows of cells with their runs and `align`; `layout` sizes each column between
+    its longest word and its longest line in the room there is, wraps every cell in it, aligns it as the separator row said, shades the
+    head, rules under every row, repeats the head at the top of a page the table carries over to; only a document's, `flat`; a book's
+    tables are as they were); `[^id]` marks are superscript numbers in the order first met, their notes (`[^id]: …` with indented
+    carry-on lines) after the last block; `Term` / `: definition` is a `dl` (the term bold, the definition indented); `> [!NOTE]`
+    (TIP, IMPORTANT, WARNING, CAUTION) is a quote with its title in bold and a bar in its kind's colour (`ALERT_COL`), the bar carried
+    over the gap to the next paragraph of a quote; `==mark==`, `H~2~O`, `x^2^`, `~~strike~~`, `:smile:` (`EMOJI`, about a hundred) and
+    a link (underlined, no address kept) are runs with `fx` flags (`m`, `s`, `u`, `p` for a rise or fall at 0.7 of the size, `sc`, `dy`),
+    carried by words' parts into the line's items (`fx`, `dy`, `h`, `wd`), and `paint` lays a mark's yellow behind, a line through or
+    under, and a rise or fall. Pandoc's rule for the scripts: no spaces inside, so "~5 and ~10" stays words. The smoke test ("markdown
+    more") opens one file with each of them.
 - **A double tap brings a board in** (Oct 16: "double click should select the board and move it into the default position,
   unless the game has a good reason not to."): a double tap (two taps on one spot within `DOUBLE_TAP_MS`, 400) selects the
   board and frames it as the 0 key does (`gotoCell`, `zoomBoardToFit`, the heading back to forward) in every game.
