@@ -946,6 +946,21 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   finished board again (`gameDone` is no longer read by the field); on the board you are on in its default view it is the lock/reframe
   it was before Nov 1. The menu's Reset starts a game over. The notes of Nov 1 on a double resetting a completed board and on the
   confirmation are out of date, and so are their smoke checks, which are gone.
+- **Invaders' board grows with the Difficulty** (Nov 6: "easy should have smaller board size, normal should have medium board size."): a game carries
+  its board's side `g.n`, 16 on easy, 20 on normal, 24 on hard (`DIFF[lv].n`); `N`, `SQ` and every length in squares (`PIECE_S`, `SHIP_S`,
+  `MARGIN`, `SHIP_Y`, `FWD`, the shields) are worked out again by `use(n)`, which each entry point calls with the game's own `n`
+  (`step`, `frameOf`, `fire`, `loseShip`, `botInput`, `cellItems`, `onPan`, `drawIcon`). A smaller board has bigger squares, so bigger
+  pieces and a ship, fewer across (`cols` 7, 9, 11). The checkerboard follows (`checkerOf(n)`); boards no one plays show recordings at 20.
+  A waiting board takes its size afresh when the setting changes (`relevel`), a game in play keeps its own.
+- **Invaders' Difficulty changes how it plays** (Nov 6: "the difficulty menu option should affect game play.   more difficult boards should be harder to
+  play."): beside the size, `DIFF[lv]` sets ships (`lives` 5, 3, 2), the march (0.55, 1, 1.4), how often they fire (`rate` 1.7, 1, 0.6) and how
+  fast their shots fall (0.6, 1, 1.3), the ship's cooldown between shots (`cool` 0.7, 1, 1.4), the step down at each edge (`drop` 0.6, 1,
+  1.25) and how many bombs may be falling (`cap` −1, 0, +2). A board plays at its ring's level (`lvAt`), so the far boards are the hard ones.
+- **Invaders: power-ups from kills, twelve formations, one to a board** (Nov 6: "Yes.   also add different formations of invaders."): a destroyed
+  invader may drop a power-up (double shot, rapid fire, shield, pierce; the mystery ship that used to drop them is still off) at `DIFF[lv].pwr`
+  (1 in 6 on easy, 10, 16 on hard) lasting `pwrT` seconds (14, 10, 7). `SHAPES` has twelve waves (the block, a V, a diamond, a checkerboard,
+  a frame, two wings, a pyramid, a chevron, columns, a cross, an hourglass, stairs), cut from the middle of the eleven at any width, and a board
+  begins at its own (`g.seed` = board number mod 12, `formation(level, lv, seed)`), going round them as the levels climb (a boss every fifth).
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

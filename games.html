@@ -36103,20 +36103,30 @@ const AIR_APP = (() => {
    fires while it slides), a TAP fires, arrows or A/D move and Enter fires.
    Selecting a board frames it; a tap starts. Every other board plays itself. */
 const INVADERS_APP = (() => {
-  const N = 24, SQ = 1 / N;
+  /* BOARD SIZE BY DIFFICULTY (Nov 6: "easy should have smaller board size, normal should have medium board size."): a game carries
+     its board's side `g.n`, 16 on easy, 20 on normal, 24 on hard (`DIFF[lv].n`), as the other games' boards grow with the level.
+     A smaller board has bigger squares, so the pieces, the ship and the shields are bigger and fewer fit across (`cols`). Every
+     length here is in squares, so `use(n)` puts a size in force and works them out again; each entry point calls it with the
+     game's own `n` (the boards no one plays show recordings made at 20). */
+  let N = 20, SQ = 1 / N;
+  let GAP_X, GAP_Y, PIECE_S, MARGIN, SHIP_Y, SHIP_S, FWD, HALF, SH_TOP, UFO_Y;
+  const use = n => {
+    n = n || 20; if (n === N && PIECE_S) return;
+    N = n; SQ = 1 / n;
+    GAP_X = 1.6 * SQ; GAP_Y = 1.5 * SQ; PIECE_S = 1.3 * SQ; MARGIN = 0.8 * SQ;
+    SHIP_Y = 1 - 1.4 * SQ; SHIP_S = 1.6 * SQ; FWD = 9 * SQ; HALF = SQ / 2; SH_TOP = SHIP_Y - 4.2 * SQ; UFO_Y = 0.9 * SQ;
+  };
+  use(20);
   // The ordinary chessboard woods (Sep 22: "normal chess board color").
   const DARK_A = 0xb58863, DARK_B = 0xf0d9b5;
   const GAMES = new Map();
-  const gkey = BOARD_KIT.gkey;
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx;
   let LIVE = null;
   const HELD = new Set();
   let dragAt = 0;
   const ROWS = ['q', 'r', 'b', 'n', 'p'], COLS = 11;
   const VALUE = { p: 1, n: 3, b: 3, r: 5, q: 9 };
-  const GAP_X = 1.6 * SQ, GAP_Y = 1.5 * SQ;            // formation spacing
-  const PIECE_S = 1.3 * SQ;                             // an invader, a bit over a square
-  const MARGIN = 0.8 * SQ;
-  const SHIP_Y = 1 - 1.4 * SQ, SHIP_S = 1.6 * SQ, SHIP_SPEED = 0.8;
+  const SHIP_SPEED = 0.8;
   const SHOT_SPEED = 1.4, BOMB_SPEED = 0.32, FIRE_EVERY = 0.22;
   const GOLD = 0xe8c86a, SHOT_GOLD = 0xfff0b0, BOMB_RED = 0xe0443a;
   const clamp = BOARD_KIT.clamp;
@@ -36129,10 +36139,9 @@ const INVADERS_APP = (() => {
      smaller board of them, hard the full eleven) and slows easy further (march 0.65, shots 0.7); the ship may now go forward
      (up, down, W, S, or a drag up the board) up to `FWD` from its base line, and `ship.y` is where its shots start and
      where hits are taken. Invasion is still the formation reaching the base line. */
-  const DIFF = { easy:   { march: 0.65, rate: 1.5, shot: 0.7, cols: 7 },
-                 normal: { march: 1,    rate: 1,   shot: 1,   cols: 9 },
-                 hard:   { march: 1.25, rate: 0.7, shot: 1.2, cols: 11 } };
-  const FWD = 9 * SQ;
+  const DIFF = { easy:   { march: 0.55, rate: 1.7, shot: 0.6, cols: 7,  n: 16, lives: 5, cool: 0.7, drop: 0.6, cap: -1, pwr: 1 / 6,  pwrT: 14 },
+                 normal: { march: 1,    rate: 1,   shot: 1,   cols: 9,  n: 20, lives: 3, cool: 1,   drop: 1,   cap: 0,  pwr: 1 / 10, pwrT: 10 },
+                 hard:   { march: 1.4,  rate: 0.6, shot: 1.3, cols: 11, n: 24, lives: 2, cool: 1.4, drop: 1.25, cap: 2,  pwr: 1 / 16, pwrT: 7 } };
   let LEVEL = ARCADE.load('invaders.level', 'normal'); if (!DIFF[LEVEL]) LEVEL = 'normal';
   /* HARDER FARTHER OUT (Oct 15: "games that have a difficulty setting should switch to being more difficult as the boards
      move away from the center."): the menu's setting is the corner block's, and each board plays at its own level, a step
@@ -36141,7 +36150,7 @@ const INVADERS_APP = (() => {
      own while it is played. The boards nobody plays still show recordings made at normal (QUIET), as before. */
   const lvAt = (c, r) => ARCADE.levelOn(LEVEL, c, r);
   // A board waiting, not in play, takes its level afresh when the setting changes (Oct 15); one in play keeps its own.
-  const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number); g.lv = lvAt(c, r); } };
+  const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number), lv = lvAt(c, r), st = g.state; Object.assign(g, newGame(lv, g.seed), { lv, state: st === 'ready' ? 'ready' : 'wait', last: 0 }); } };
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
   const SND = Object.assign(ARCADE.sounds('invaders.sound', 'The march, shots, hits and explosions — made in the browser.', { gaps: { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05 }, quiet: () => QUIET }), { note: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
@@ -36165,8 +36174,7 @@ const INVADERS_APP = (() => {
   addEventListener('pointerdown', () => { try { if (SND.on && window.getFieldApp() === app) ARCADE.audio(); } catch {} }, true);
 
   /* SHIELDS: four bunkers of half-square blocks, the arcade's arch shape. */
-  const HALF = SQ / 2, BUNKER = ['.######.', '########', '########', '##....##'];
-  const SH_TOP = SHIP_Y - 4.2 * SQ;
+  const BUNKER = ['.######.', '########', '########', '##....##'];
   function shields(){
     const set = new Set();
     for (const cx of [0.2, 0.4, 0.6, 0.8]){
@@ -36194,16 +36202,23 @@ const INVADERS_APP = (() => {
     ['a checkerboard', (r, c) => (r + c) % 2 === 0],
     ['a frame',   (r, c) => r === 0 || r === 4 || c <= 1 || c >= 9],
     ['two wings', (r, c) => c < 4 || c > 6],
+    // (Nov 6: "also add different formations of invaders.")
+    ['a pyramid', (r, c) => Math.abs(c - 5) <= r + 1],
+    ['a chevron', (r, c) => Math.abs(c - 5) === r || Math.abs(c - 5) === r + 1],
+    ['columns',   (r, c) => c % 2 === 0],
+    ['a cross',   (r, c) => c === 5 || r === 2 || Math.abs(c - 5) === 1 && r !== 2],
+    ['an hourglass', (r, c) => Math.abs(c - 5) <= [5, 3, 1, 3, 5][r]],
+    ['stairs',    (r, c) => c <= 2 * r + 2],
   ];
   const BOSS_EVERY = 5;
   const isBoss = level => level % BOSS_EVERY === 0;
-  function formation(level, lv){
+  function formation(level, lv, seed){
     const inv = [], cols = (DIFF[lv] || DIFF.normal).cols, off = (COLS - cols) / 2;
     if (isBoss(level)){                                     // the boss's wave: a row of pawns before him
       for (let c = 0; c < cols; c++) inv.push({ kind: 'p', row: 4, col: c, alive: true });
       return { inv, cols, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ, dir: 1, drop: 0, shape: 'the king' };
     }
-    const [name, has] = SHAPES[(level - 1 - Math.floor((level - 1) / BOSS_EVERY)) % SHAPES.length];
+    const [name, has] = SHAPES[(level - 1 - Math.floor((level - 1) / BOSS_EVERY) + (seed || 0)) % SHAPES.length];
     for (let r = 0; r < ROWS.length; r++)
       for (let c = 0; c < cols; c++) if (has(r, c + off)) inv.push({ kind: ROWS[r], row: r, col: c, alive: true });
     return { inv, cols, ox: MARGIN + PIECE_S / 2, oy: 2 * SQ + Math.min(level - 1, 5) * SQ, dir: 1, drop: 0, shape: name };
@@ -36216,16 +36231,17 @@ const INVADERS_APP = (() => {
   /* THE MYSTERY SHIP, and what he drops. */
   const PICK = { D: 0x3aa8ff, R: 0xffd23a, H: 0x4be38a, P: 0xff4a3a };
   const PICK_NAME = { D: 'Double shot', R: 'Rapid fire', H: 'Shield', P: 'Pierce' };
-  function newGame(lv){
-    return { state: 'ready', score: 0, lives: 3, kills: 0, lost: 0, level: 1, last: 0, t: 0, booms: [],
+  function newGame(lv, seed){
+    const n = (DIFF[lv] || DIFF.normal).n; use(n);
+    return { n, seed: seed || 0, state: 'ready', score: 0, lives: (DIFF[lv] || DIFF.normal).lives, kills: 0, lost: 0, level: 1, last: 0, t: 0, booms: [],
              ship: { x: 0.5, y: SHIP_Y, inv: 0, cool: 0 }, shots: [], bombs: [],
-             f: formation(1, lv), bombIn: 1.5, nextIn: 0, shield: shields(), beat: 0, diveIn: 6, leapIn: 4,
+             f: formation(1, lv, seed), bombIn: 1.5, nextIn: 0, shield: shields(), beat: 0, diveIn: 6, leapIn: 4,
              boss: null, ufo: null, ufoIn: 12, picks: [], pow: { D: 0, R: 0, P: 0 }, guard: false };
   }
   const gameAt = (c, r) => {
     const k = gkey(c, r);
     let g = GAMES.get(k);
-    if (!g){ g = adopt(c, r); g.lv = lvAt(c, r); if (g.state === 'play') g.state = 'wait'; GAMES.set(k, g); }   // Oct 15: the board's level
+    if (!g){ g = adopt(c, r); g.lv = lvAt(c, r); g.seed = boardIdx(c, r) % SHAPES.length; if (g.state === 'play') g.state = 'wait'; if (g.lv !== 'normal' || g.seed) Object.assign(g, newGame(g.lv, g.seed), { lv: g.lv, state: 'wait', last: 0 }); GAMES.set(k, g); }   // (Nov 6: a board's own size)   // Oct 15: the board's level
     return g;
   };
   const slotOf = (f, v) => [f.ox + v.col * GAP_X, f.oy + v.row * GAP_Y];
@@ -36235,19 +36251,21 @@ const INVADERS_APP = (() => {
 
   function start(g, framing){
     if (g.state === 'wait'){ g.state = 'play'; g.last = 0; return; }   // Sep 27: a framed board waited for you; now it goes on from there
-    Object.assign(g, newGame(g.lv), { lv: g.lv });              // (Oct 15: its level kept)
+    Object.assign(g, newGame(g.lv, g.seed), { lv: g.lv });              // (Oct 15: its level kept)
     g.state = 'play';
     say(TILT.on ? 'Tilt to move — it fires by itself' : 'Drag to move, tap to fire', 2000);
   }
   function fire(g){
+    use(g.n);
     const s = g.ship;
     const rapid = g.pow && g.pow.R > 0, dbl = g.pow && g.pow.D > 0, pierce = g.pow && g.pow.P > 0 ? 3 : 1;
     if (g.state !== 'play' || s.cool > 0 || g.shots.length >= (rapid ? 6 : 2) * (dbl ? 2 : 1)) return;
     for (const dx of dbl ? [-0.35, 0.35] : [0]) g.shots.push({ x: s.x + dx * SQ, y: s.y - 0.6 * SQ, pierce });
-    s.cool = FIRE_EVERY * (rapid ? 0.45 : 1);
+    s.cool = FIRE_EVERY * (rapid ? 0.45 : 1) * D(g).cool;
     beep('shot');
   }
   function loseShip(g, why){
+    use(g.n);
     g.bombs = [];
     // The ship goes up (Sep 27): a burst on it, or a bigger one on the last.
     const last = g.lives <= 1, n = last ? 5 : 2;
@@ -36294,12 +36312,11 @@ const INVADERS_APP = (() => {
       p.y += 0.25 * dt;
       if (Math.abs(p.x - g.ship.x) < SHIP_S * 0.5 && Math.abs(p.y - g.ship.y) < SHIP_S * 0.4){
         p.dead = true; say(PICK_NAME[p.type], 1000); beep('level');
-        if (p.type === 'H') g.guard = true; else g.pow[p.type] = 10;
+        if (p.type === 'H') g.guard = true; else g.pow[p.type] = D(g).pwrT;
       }
     }
     g.picks = g.picks.filter(p => !p.dead && p.y < 1.02);
   }
-  const UFO_Y = 0.9 * SQ;
   // The boss: across the top, a spread of five, and a health bar.
   function bossTick(g, dt){
     const B = g.boss;
@@ -36340,6 +36357,7 @@ const INVADERS_APP = (() => {
   }
   function step(g, dtReal, inp){
     if (g.state !== 'play') return;
+    use(g.n);
     const dt = dtReal * PACE;
     g.t += dt;
     inp = inp || liveInput();
@@ -36358,7 +36376,7 @@ const INVADERS_APP = (() => {
     mystery(g, dt);
     if (!live.length && !g.boss){                    // cleared: the next formation
       if ((g.nextIn -= dt) <= 0){
-        g.level++; g.f = formation(g.level, g.lv); g.boss = bossFor(g.level); g.shots = []; g.bombs = []; g.bombIn = 1.5; g.shield = shields();
+        g.level++; g.f = formation(g.level, g.lv, g.seed); g.boss = bossFor(g.level); g.shots = []; g.bombs = []; g.bombIn = 1.5; g.shield = shields();
         say(g.boss ? 'Level ' + g.level + ' — the king!' : 'Level ' + g.level + ' — ' + g.f.shape, 1600); beep('level');
       }
       return;
@@ -36379,7 +36397,7 @@ const INVADERS_APP = (() => {
       let lo = 1, hi = 0;
       for (const v of home){ const x = slotOf(f, v)[0]; if (x < lo) lo = x; if (x > hi) hi = x; }
       if (hi + PIECE_S / 2 > 1 - MARGIN / 2 || lo - PIECE_S / 2 < MARGIN / 2){
-        f.ox -= f.dir * speed * dt; f.dir = -f.dir; f.drop = SQ;
+        f.ox -= f.dir * speed * dt; f.dir = -f.dir; f.drop = SQ * D(g).drop;
       }
     }
     // THEIR FIRE: the lowest piece in a random column fires as its kind does; now and then a knight
@@ -36390,10 +36408,10 @@ const INVADERS_APP = (() => {
       const col = cols[(rnd() * cols.length) | 0];
       let low = null;
       for (const v of home) if (v.col === col && (!low || v.row > low.row)) low = v;
-      if (low && g.bombs.length < 3 + g.level) shoot(g, low, low.kind === 'n' || low.kind === 'q' ? 'p' : low.kind);
+      if (low && g.bombs.length < 3 + g.level + D(g).cap) shoot(g, low, low.kind === 'n' || low.kind === 'q' ? 'p' : low.kind);
       // A bishop or rook anywhere in the formation joins in, now and then.
       const gunners = home.filter(v => v.kind === 'b' || v.kind === 'r');
-      if (gunners.length && rnd() < 0.35 && g.bombs.length < 4 + g.level) { const v = gunners[(rnd() * gunners.length) | 0]; shoot(g, v, v.kind); }
+      if (gunners.length && rnd() < 0.35 && g.bombs.length < 4 + g.level + D(g).cap) { const v = gunners[(rnd() * gunners.length) | 0]; shoot(g, v, v.kind); }
     }
     const out = live.filter(v => v.out).length;
     if ((g.leapIn -= dt) <= 0){
@@ -36443,6 +36461,7 @@ const INVADERS_APP = (() => {
         if (Math.abs(x - sh.x) < PIECE_S * 0.42 && Math.abs(y - sh.y) < PIECE_S * 0.5){
           v.alive = false; g.kills = (g.kills || 0) + 1; if (--sh.pierce <= 0) sh.dead = true; g.score += VALUE[v.kind] * (v.out ? 2 : 1);   // out of the formation: double
           if (v.out){ v.out = null; say('Double! +' + VALUE[v.kind] * 2, 700); }
+          if (rnd() < D(g).pwr) g.picks.push({ x, y, type: 'DRHP'[(rnd() * 4) | 0] });   // Nov 6: a power-up may fall from it
           BOOM.add(g, x, y, v.kind, rnd);              // it explodes (Sep 24: the shared BOOM)
           beep('hit');
           if (!alive(f).length && !g.boss) g.nextIn = 1.2;
@@ -36475,6 +36494,7 @@ const INVADERS_APP = (() => {
   /* Items: invaders are chess's own white pieces (the `piece` item); the
      ship, shots and bombs are this app's. */
   function frameOf(g){
+    use(g.n);
     const out = [], f = g.f;
     for (const v of f.inv) if (v.alive){ const [x, y] = posOf(f, v); out.push([v.kind, x, y]); }
     for (const sh of g.shots) out.push(['shot', sh.x, sh.y]);
@@ -36512,6 +36532,7 @@ const INVADERS_APP = (() => {
   /* THE BOT for the reels: slide under the nearest of the lowest pieces,
      step aside from a bomb that is about to land on you, hold fire. */
   function botInput(g){
+    use(g.n);
     const s = g.ship, f = g.f, live = alive(f);
     if (!((g.botT = (g.botT || 0) + 1) % 15)) g.botErr = (rnd() - 0.5) * 0.05;
     let to = s.x, best = Infinity;
@@ -36587,17 +36608,20 @@ const INVADERS_APP = (() => {
     return (g && g.state) ? g : newGame('normal');
   }
   function reelFrame(c, r){
+    use(20);
     const { reel, k } = reelAt(c, r), fr = reel[k];
     const out = [];
     for (let j = 0; j < fr.length; j += 5) out.push([KN[fr[j]], fr[j + 1], fr[j + 2], fr[j + 3], fr[j + 4]]);
     return out;
   }
 
-  const CHECKER = (() => {
-    const cols = new Array(N * N);
-    for (let i = 0; i < N * N; i++) cols[i] = (((i % N) + ((i / N) | 0)) % 2 === 0) ? DARK_B : DARK_A;
-    return { n: N, colors: cols };
-  })();
+  const CHECKERS = {};
+  const checkerOf = n => CHECKERS[n] || (CHECKERS[n] = (() => {
+    const cols = new Array(n * n);
+    for (let i = 0; i < n * n; i++) cols[i] = (((i % n) + ((i / n) | 0)) % 2 === 0) ? DARK_B : DARK_A;
+    return { n, colors: cols };
+  })());
+  const nOf = (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state !== 'ready' && g.n) || 20; };
 
   const KEYMAP = { ArrowLeft: 'L', ArrowRight: 'R', a: 'L', d: 'R', A: 'L', D: 'R', Enter: 'F',
                    ArrowUp: 'U', ArrowDown: 'D', w: 'U', s: 'D', W: 'U', S: 'D' };
@@ -36649,17 +36673,18 @@ const INVADERS_APP = (() => {
       shot: T => { const g = new T.SphereGeometry(0.5, 10, 8); g.translate(0, 0.5, 0); return g; },
       bomb: () => TVF.shape('bomb', TVF.R.bomb, 1.1),          // a finned TVF bomb (Sep 24)
     },
-    cellGrid(){ return CHECKER; },
+    cellGrid(c, r){ return checkerOf(nOf(c, r)); },
     fabricCell(ctx, rect){
-      const t = rect.w / N, hx = n => '#' + n.toString(16).padStart(6, '0');
-      for (let i = 0; i < N * N; i++){
-        ctx.fillStyle = hx(CHECKER.colors[i]);
-        ctx.fillRect(rect.x + (i % N) * t, rect.y + ((i / N) | 0) * t, t + 0.5, t + 0.5);
+      const K = checkerOf(20), n = K.n, t = rect.w / n, hx = v => '#' + v.toString(16).padStart(6, '0');
+      for (let i = 0; i < n * n; i++){
+        ctx.fillStyle = hx(K.colors[i]);
+        ctx.fillRect(rect.x + (i % n) * t, rect.y + ((i / n) | 0) * t, t + 0.5, t + 0.5);
       }
     },
     cellItems(c, r){
       const g = GAMES.get(gkey(c, r));
       const framed = !!(LIVE && LIVE.key === gkey(c, r));
+      use(g && g.state !== 'ready' ? g.n : 20);
       if (g && g.state !== 'ready'){
         if (framed){
           const now = performance.now();
@@ -36710,6 +36735,7 @@ const INVADERS_APP = (() => {
     onPan(dx, dy){
       const g = liveGame();
       if (!g || g.state !== 'play') return false;
+      use(g.n);
       let k = 0;
       try {
         const boardW = gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize));
@@ -36721,12 +36747,12 @@ const INVADERS_APP = (() => {
       return true;
     },
     drawIcon(ctx, sz, c, r){
-      const t = sz / N, hx = n => '#' + n.toString(16).padStart(6, '0');
-      for (let i = 0; i < N * N; i++){
-        ctx.fillStyle = hx(CHECKER.colors[i]);
-        ctx.fillRect((i % N) * t, ((i / N) | 0) * t, t + 0.5, t + 0.5);
+      const g = GAMES.get(gkey(c, r)), K = checkerOf(nOf(c, r)), n = K.n, t = sz / n, hx = v => '#' + v.toString(16).padStart(6, '0');
+      for (let i = 0; i < n * n; i++){
+        ctx.fillStyle = hx(K.colors[i]);
+        ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t + 0.5, t + 0.5);
       }
-      const g = GAMES.get(gkey(c, r));
+      use(g && g.state !== 'ready' ? g.n : 20);
       for (const [k, u, v] of (g && g.state !== 'ready') ? frameOf(g) : reelFrame(c, r)){
         if (k === 'hp' || k === 'hpOff' || k === 'ring') continue;
         if (k === 'shield'){ ctx.fillStyle = '#3cbf4a'; ctx.fillRect((u - HALF / 2) * sz, (v - HALF / 2) * sz, HALF * sz, HALF * sz); continue; }
@@ -36734,7 +36760,7 @@ const INVADERS_APP = (() => {
         ctx.beginPath(); ctx.arc(u * sz, v * sz, (k === 'ship' ? 0.8 : k.length === 1 ? 0.55 : 0.25) * t * 1.3, 0, Math.PI * 2); ctx.fill();
       }
     },
-    _debug: { newGame, step, start, fire, botInput, bakeReel, games: GAMES, held: HELD, setLevel: v => { LEVEL = v; relevel(); }, sortie,
+    _debug: { newGame, gameAt, step, start, fire, botInput, bakeReel, games: GAMES, held: HELD, setLevel: v => { LEVEL = v; relevel(); }, sortie,
               // Oct 15: the level a board plays at: its game's own, else what it would be taken up at now.
               levelOf(c, r){ const g = GAMES.get(gkey(c, r)); return (g && g.lv) || lvAt(c, r); } },
   };

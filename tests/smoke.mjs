@@ -3253,7 +3253,7 @@ try {
         window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 400));
         const find = m => { for (const x of (m || [])){ if (x && typeof x.label === 'function' && /^Difficulty/.test(x.label())) return x; const y = x && find(x.items); if (y) return y; } return null; };
         const item = find(A.menu); if (!item) return { why: 'no Difficulty item' };
-        const setTo = w => { for (let k = 0; k < 4 && !item.label().includes(w); k++) item.on(); return item.label().includes(w); };
+        const setTo = w => { for (let k = 0; k < 4 && !item.label().toLowerCase().includes(w); k++) item.on(); return item.label().toLowerCase().includes(w); };
         if (!setTo('easy')) return { why: 'the item never says easy: ' + item.label() };
         const label = item.label(), D = A._debug || {};
         if (typeof D.levelOf !== 'function') return { why: 'no _debug.levelOf' };
@@ -7391,7 +7391,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       for (let k = 0; k < 3; k++){
         item.on(); const lab = typeof item.label === 'function' ? item.label() : item.label; await wait(400);
         for (let j = 0; j < 80 && T.active; j++) await wait(250);
-        const f = W.cellAt(T.boardX, T.boardZ), want = /easy/.test(lab) ? 1 : /hard/.test(lab) ? 5 : 3;
+        const f = W.cellAt(T.boardX, T.boardZ), want = /easy/i.test(lab) ? 1 : /hard/i.test(lab) ? 5 : 3;
         rows.push({ lab: lab.slice(0, 20), want, got: A._debug.levelOf(f.c, f.r) });
       }
       item.on(); item.on(); item.on();   // (round to where it began)
@@ -7423,6 +7423,12 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const iv = await page.evaluate(() => {
       const D = window.getFieldApp()._debug, out = {};
       out.cols = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.cols);
+      out.sizes = ['easy', 'normal', 'hard'].map(l => D.newGame(l).n);
+      out.lives = ['easy', 'normal', 'hard'].map(l => D.newGame(l).lives);
+      // a dozen formations in all, each non-empty at every width; every board its own to begin with; a power-up falling from kills
+      out.shapes = new Set(Array.from({ length: 12 }, (_, i) => D.newGame('normal', i).f.shape)).size;
+      out.nonEmpty = ['easy', 'normal', 'hard'].every(l => Array.from({ length: 12 }, (_, i) => D.newGame(l, i).f.inv.length).every(n => n >= 8));
+      out.fromCorner = [D.gameAt(0, 0).f.shape, D.gameAt(1, 0).f.shape, D.gameAt(2, 0).f.shape];
       out.n = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.inv.length);
       const g = D.newGame('normal'); g.state = 'play'; g.lv = 'normal';
       const y0 = g.ship.y; for (let i = 0; i < 30; i++) D.step(g, 1 / 30, { kx: 0, ky: -1, fire: false });
@@ -7431,7 +7437,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.y = [y0, y1, g.ship.y];
       return out;
     });
-    const ok = iv.cols.join() === '7,9,11' && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
+    const ok = iv.cols.join() === '7,9,11' && iv.sizes.join() === '16,20,24' && iv.lives.join() === '5,3,2' && iv.shapes === 12 && iv.nonEmpty && new Set(iv.fromCorner).size > 1 && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
     if (!ok) failures.push('[invaders forward] ' + JSON.stringify(iv));
     console.log(`${ok ? 'ok  ' : 'FAIL'} invaders: a smaller formation when easy, the ship going forward and back, its shots from where it is`);
   }
