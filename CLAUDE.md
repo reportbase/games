@@ -939,6 +939,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   formation reaching the base line. The Difficulty (already by ring, `lvAt`) also sets the formation's width, `DIFF[lv].cols` 7, 9, 11
   (`formation(level, lv)`, `f.cols`; shapes are cut from the middle of the eleven), and easy marches 0.65 and fires 0.7 as fast.
   The boards' recorded reels are made at normal. The smoke test ("invaders: a smaller formation when easy …") checks both.
+- **Difficulty reads Easy, Normal, Hard** (Nov 6: "The menu options for difficult should say Easy Normal  Hard.  for all applications."): every
+  game's Difficulty item says `Difficulty: Easy | Normal | Hard` (`ARCADE.levelName`), as mini golf's does; "at the corner" left the label
+  (the item's title still says the rings step harder, `ARCADE.FARTHER`). The smoke test's per-game level check reads the label that way.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

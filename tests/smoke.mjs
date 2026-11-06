@@ -3277,7 +3277,7 @@ try {
         setTo('normal');
         return { label, lv, near, far };
       }, [id, how]);
-      if (r.why || r.lv.join() !== 'easy,normal,hard' || !(r.far > r.near) || !/at the corner/.test(r.label)) bad.push(id + ' ' + JSON.stringify(r));
+      if (r.why || r.lv.join() !== 'easy,normal,hard' || !(r.far > r.near) || !/^Difficulty: (Easy|Normal|Hard)$/.test(r.label)) bad.push(id + ' ' + JSON.stringify(r));
     }
     if (bad.length) failures.push('[harder farther out] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} harder farther out (${Object.keys(SPEC).length} games: the corner as set, ring 7 a step harder, ring 40 hard, a far game really harder)`);
