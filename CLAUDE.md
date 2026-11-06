@@ -952,6 +952,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`step`, `frameOf`, `fire`, `loseShip`, `botInput`, `cellItems`, `onPan`, `drawIcon`). A smaller board has bigger squares, so bigger
   pieces and a ship, fewer across (`cols` 7, 9, 11). The checkerboard follows (`checkerOf(n)`); boards no one plays show recordings at 20.
   A waiting board takes its size afresh when the setting changes (`relevel`), a game in play keeps its own.
+- **Invaders' Difficulty changes how it plays** (Nov 6: "the difficulty menu option should affect game play.   more difficult boards should be harder to
+  play."): beside the size, `DIFF[lv]` sets ships (`lives` 5, 3, 2), the march (0.55, 1, 1.4), how often they fire (`rate` 1.7, 1, 0.6) and how
+  fast their shots fall (0.6, 1, 1.3), the ship's cooldown between shots (`cool` 0.7, 1, 1.4), the step down at each edge (`drop` 0.6, 1,
+  1.25) and how many bombs may be falling (`cap` −1, 0, +2). A board plays at its ring's level (`lvAt`), so the far boards are the hard ones.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
