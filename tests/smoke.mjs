@@ -7391,7 +7391,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       for (let k = 0; k < 3; k++){
         item.on(); const lab = typeof item.label === 'function' ? item.label() : item.label; await wait(400);
         for (let j = 0; j < 80 && T.active; j++) await wait(250);
-        const f = W.cellAt(T.boardX, T.boardZ), want = /easy/.test(lab) ? 1 : /hard/.test(lab) ? 5 : 3;
+        const f = W.cellAt(T.boardX, T.boardZ), want = /easy/i.test(lab) ? 1 : /hard/i.test(lab) ? 5 : 3;
         rows.push({ lab: lab.slice(0, 20), want, got: A._debug.levelOf(f.c, f.r) });
       }
       item.on(); item.on(); item.on();   // (round to where it began)
