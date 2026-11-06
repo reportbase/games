@@ -942,6 +942,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
 - **Difficulty reads Easy, Normal, Hard** (Nov 6: "The menu options for difficult should say Easy Normal  Hard.  for all applications."): every
   game's Difficulty item says `Difficulty: Easy | Normal | Hard` (`ARCADE.levelName`), as mini golf's does; "at the corner" left the label
   (the item's title still says the rings step harder, `ARCADE.FARTHER`). The smoke test's per-game level check reads the label that way.
+- **No double-tap reset** (Nov 6: "remove the double click reset game option"): a double tap no longer asks "Start this game over?" or begins a
+  finished board again (`gameDone` is no longer read by the field); on the board you are on in its default view it is the lock/reframe
+  it was before Nov 1. The menu's Reset starts a game over. The notes of Nov 1 on a double resetting a completed board and on the
+  confirmation are out of date, and so are their smoke checks, which are gone.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the

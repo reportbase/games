@@ -16359,7 +16359,6 @@ function setBoardLock(v){
   try { const b = document.getElementById('bBoardLock'); if (b) b.hidden = !BOARD_LOCK; } catch {}
 }
 try { window.__boardLock = () => BOARD_LOCK; window.__boardLockSet = setBoardLock; } catch {}
-let _lastTapDone = { at: -1e9, c: -1, r: -1, done: false };   // (was the last tap on a finished board: a double there resets it, Nov 1)
 let _lastTapSelected = { at: -1e9, sel: false };   // (was the last tap on a board not yet framed: see noDoubleTap, Oct 16)
 /* ── One gesture, one tap ────────────────────────────────────────────────
    A touch fires pointerdown, and then the browser SYNTHESISES a mouse event
@@ -16567,36 +16566,14 @@ function handleGroundTap(hit, ev){
       //  editor's answer is 'always', since a hole, a maze or a table is made zoomed in, and its quick second taps (a thing laid,
       //  then taken; a leaf taken away) are the editor's wherever the view is: CI's hole editor lost them)
       if (_noDbl && _noDbl !== 'always' && !framedAsDefault()) _noDbl = false;
-      /* A DOUBLE ON A FINISHED BOARD RESETS IT (Nov 1: "double clicking a completed board should reset it."): an app that can say a
-         board's game is over (`gameDone(c, r)`) has it begun again by a double tap there, whatever its own single tap did; and when
-         the first tap of the pair landed on a finished board (a tap there already plays it again, so the board is fresh by the second)
-         the second is the field's double and not a first move on the new game. */
-      const _GSd = Math.max(1, Math.round(Math.sqrt(st.N))), _wd = v => ((v % _GSd) + _GSd) % _GSd, _dc = _wd(_gx0), _dr = _wd(_gz0);
-      let _doneNow = false; try { const _a = window.getFieldApp && window.getFieldApp(); _doneNow = !!(_a && _a.gameDone && _a.gameDone(_dc, _dr)); } catch {}
-      if (_noDbl && (_doneNow || _lastTapDone.done) && _lastTapDone.c === _dc && _lastTapDone.r === _dr && _tapAt - _lastTapDone.at < DOUBLE_TAP_MS) _noDbl = false;
-      const _prevDone = _lastTapDone;       // (the tap before this one, for "was it on a finished board": that tap already began the game again)
-      _lastTapDone = { at: _tapAt, c: _dc, r: _dr, done: _doneNow };
+      /* (Nov 6: "remove the double click reset game option": a double tap no longer resets a game, finished or not, and asks nothing;
+          the notes of Nov 1 about `gameDone`, "Start this game over?" and a double on a finished board are out of date. The menu's
+          Reset starts a game over.) */
       _lastTapSelected = { at: _tapAt, sel: !_onFramedNow };
       const _isDbl = tapIsDouble(hit, _tapAt);
       if (!_noDbl && _isDbl){
         cancelSidePanelToggle();     // the first tap of this pair was not a toggle
         if (autoMode){ setAutoMode(false); return; }   // eaten here too
-        /* A DOUBLE TAP ON THE BOARD YOU ARE ON, IN ITS DEFAULT VIEW, STARTS ITS GAME OVER, AFTER ASKING (Nov 1: "double click still
-           not reseting games when the board is in default view. Add a confirmation dialog to confirm reset."): the view is already
-           where a double tap would put it, so there is nothing left for the double to do but this; it used to lock the board there
-           (the lock is still taken by a double from any other view, and let go by the menu). A finished board's own tap has begun
-           it again by the pair's second tap, so then nothing is asked. */
-        try {
-          const _ra = window.getFieldApp && window.getFieldApp();
-          if (_ra && _ra.gameDone && _ra.onReset){
-            const _prevOn = _prevDone.done && _prevDone.c === _dc && _prevDone.r === _dr && _tapAt - _prevDone.at < DOUBLE_TAP_MS;
-            if (_prevOn) return;
-            if ((_onFramedNow && framedAsDefault()) || _ra.gameDone(_dc, _dr)){
-              if (window.confirm('Start this game over?')) _ra.onReset(_dc, _dr);
-              if (_onFramedNow && framedAsDefault()) return;
-            }
-          }
-        } catch (e){ _reportError('app reset by double tap', e); }
         // Doubling on the piece the hint points at PLAYS the hint. Checked
         // before the reframe below, and only when a hint is actually being
         // shown on your move — so the gesture exists exactly when there is
