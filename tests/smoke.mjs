@@ -3253,7 +3253,7 @@ try {
         window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 400));
         const find = m => { for (const x of (m || [])){ if (x && typeof x.label === 'function' && /^Difficulty/.test(x.label())) return x; const y = x && find(x.items); if (y) return y; } return null; };
         const item = find(A.menu); if (!item) return { why: 'no Difficulty item' };
-        const setTo = w => { for (let k = 0; k < 4 && !item.label().includes(w); k++) item.on(); return item.label().includes(w); };
+        const setTo = w => { for (let k = 0; k < 4 && !item.label().toLowerCase().includes(w); k++) item.on(); return item.label().toLowerCase().includes(w); };
         if (!setTo('easy')) return { why: 'the item never says easy: ' + item.label() };
         const label = item.label(), D = A._debug || {};
         if (typeof D.levelOf !== 'function') return { why: 'no _debug.levelOf' };
