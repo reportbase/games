@@ -7425,6 +7425,10 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.cols = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.cols);
       out.sizes = ['easy', 'normal', 'hard'].map(l => D.newGame(l).n);
       out.lives = ['easy', 'normal', 'hard'].map(l => D.newGame(l).lives);
+      // a dozen formations in all, each non-empty at every width; every board its own to begin with; a power-up falling from kills
+      out.shapes = new Set(Array.from({ length: 12 }, (_, i) => D.newGame('normal', i).f.shape)).size;
+      out.nonEmpty = ['easy', 'normal', 'hard'].every(l => Array.from({ length: 12 }, (_, i) => D.newGame(l, i).f.inv.length).every(n => n >= 8));
+      out.fromCorner = [D.gameAt(0, 0).f.shape, D.gameAt(1, 0).f.shape, D.gameAt(2, 0).f.shape];
       out.n = ['easy', 'normal', 'hard'].map(l => D.newGame(l).f.inv.length);
       const g = D.newGame('normal'); g.state = 'play'; g.lv = 'normal';
       const y0 = g.ship.y; for (let i = 0; i < 30; i++) D.step(g, 1 / 30, { kx: 0, ky: -1, fire: false });
@@ -7433,7 +7437,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.y = [y0, y1, g.ship.y];
       return out;
     });
-    const ok = iv.cols.join() === '7,9,11' && iv.sizes.join() === '16,20,24' && iv.lives.join() === '5,3,2' && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
+    const ok = iv.cols.join() === '7,9,11' && iv.sizes.join() === '16,20,24' && iv.lives.join() === '5,3,2' && iv.shapes === 12 && iv.nonEmpty && new Set(iv.fromCorner).size > 1 && iv.n[0] < iv.n[1] && iv.n[1] < iv.n[2] && iv.shotFromShip && iv.y[1] < iv.y[0] - 0.2 && iv.y[2] === iv.y[0];
     if (!ok) failures.push('[invaders forward] ' + JSON.stringify(iv));
     console.log(`${ok ? 'ok  ' : 'FAIL'} invaders: a smaller formation when easy, the ship going forward and back, its shots from where it is`);
   }
