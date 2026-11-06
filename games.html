@@ -36152,7 +36152,7 @@ const INVADERS_APP = (() => {
   // A board waiting, not in play, takes its level afresh when the setting changes (Oct 15); one in play keeps its own.
   const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number), lv = lvAt(c, r), st = g.state; Object.assign(g, newGame(lv, g.seed), { lv, state: st === 'ready' ? 'ready' : 'wait', last: 0 }); } };
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = Object.assign(ARCADE.sounds('invaders.sound', 'The march, shots, hits and explosions — made in the browser.', { gaps: { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05 }, quiet: () => QUIET }), { note: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
+  const SND = Object.assign(ARCADE.sounds('invaders.sound', 'The march, shots, hits and explosions — made in the browser.', { gaps: { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05, drop: 0.12, expire: 0.3 }, quiet: () => QUIET }), { note: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
     const A = SND.gate(kind); if (!A) return;
@@ -36166,6 +36166,10 @@ const INVADERS_APP = (() => {
         case 'shield':hiss(0.08, 0.1, 3000); break;
         case 'dive':  tone(900, 300, 0.5, 'sine', 0.05); break;
         case 'dead':  hiss(0.9, 0.5, 600); tone(200, 35, 0.9, 'sawtooth', 0.12); break;
+        // (Nov 6: "Add sound": the power-ups' own sounds: a blip as one falls out, a rising run as it is caught, a sinking tone as it wears off)
+        case 'drop':  tone(700, 1000, 0.1, 'triangle', 0.04); break;
+        case 'power': [660, 880, 1320].forEach((f, i) => tone(f, f, 0.1, 'triangle', 0.07, i * 0.06)); break;
+        case 'expire':tone(520, 220, 0.3, 'sine', 0.05); break;
         case 'level': [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.08, i * 0.09)); break;
         case 'over':  hiss(1.2, 0.55, 500); tone(160, 30, 1.2, 'sine', 0.25); break;
       }
@@ -36311,7 +36315,7 @@ const INVADERS_APP = (() => {
     for (const p of g.picks){
       p.y += 0.25 * dt;
       if (Math.abs(p.x - g.ship.x) < SHIP_S * 0.5 && Math.abs(p.y - g.ship.y) < SHIP_S * 0.4){
-        p.dead = true; say(PICK_NAME[p.type], 1000); beep('level');
+        p.dead = true; say(PICK_NAME[p.type], 1000); beep('power');
         if (p.type === 'H') g.guard = true; else g.pow[p.type] = D(g).pwrT;
       }
     }
@@ -36372,7 +36376,7 @@ const INVADERS_APP = (() => {
     if (inp.fire) fire(g);
 
     const f = g.f, live = alive(f);
-    for (const k in g.pow) g.pow[k] = Math.max(0, g.pow[k] - dt);
+    for (const k in g.pow){ const was = g.pow[k]; g.pow[k] = Math.max(0, was - dt); if (was > 0 && !g.pow[k]) beep('expire'); }
     mystery(g, dt);
     if (!live.length && !g.boss){                    // cleared: the next formation
       if ((g.nextIn -= dt) <= 0){
@@ -36461,7 +36465,7 @@ const INVADERS_APP = (() => {
         if (Math.abs(x - sh.x) < PIECE_S * 0.42 && Math.abs(y - sh.y) < PIECE_S * 0.5){
           v.alive = false; g.kills = (g.kills || 0) + 1; if (--sh.pierce <= 0) sh.dead = true; g.score += VALUE[v.kind] * (v.out ? 2 : 1);   // out of the formation: double
           if (v.out){ v.out = null; say('Double! +' + VALUE[v.kind] * 2, 700); }
-          if (rnd() < D(g).pwr) g.picks.push({ x, y, type: 'DRHP'[(rnd() * 4) | 0] });   // Nov 6: a power-up may fall from it
+          if (rnd() < D(g).pwr) { g.picks.push({ x, y, type: 'DRHP'[(rnd() * 4) | 0] }); beep('drop'); }   // Nov 6: a power-up may fall from it
           BOOM.add(g, x, y, v.kind, rnd);              // it explodes (Sep 24: the shared BOOM)
           beep('hit');
           if (!alive(f).length && !g.boss) g.nextIn = 1.2;

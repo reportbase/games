@@ -961,6 +961,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (1 in 6 on easy, 10, 16 on hard) lasting `pwrT` seconds (14, 10, 7). `SHAPES` has twelve waves (the block, a V, a diamond, a checkerboard,
   a frame, two wings, a pyramid, a chevron, columns, a cross, an hourglass, stairs), cut from the middle of the eleven at any width, and a board
   begins at its own (`g.seed` = board number mod 12, `formation(level, lv, seed)`), going round them as the levels climb (a boss every fifth).
+- **Invaders' power-ups have sounds** (Nov 6: "Add sound"): a blip as one drops from a kill (`drop`), a rising run when it is caught (`power`, which
+  replaced the level jingle there) and a sinking tone when a timed one wears off (`expire`), all through the game's own Sound switch (`SND`).
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
