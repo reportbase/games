@@ -18901,6 +18901,24 @@ const ARCADE = (() => {
   }
   return { audio, tone, hiss, tilt, setTilt, load, save, sounds, difficulty, boardMove, noise, twoPly, ringAt, stepsAt, levelOn, levelName, LEVEL3, RING_STEPS, FARTHER };
 })();
+/* SOUND THAT STARTS (Nov 6: "sound is broken everywhere", after "Add sound"): a browser keeps a page's audio shut until a real user
+   gesture has started or resumed it, and a phone is stricter: iOS takes only a finished touch or click (`touchend`, `click`), not
+   `pointerdown`, which was all that woke it, and its ring/silent switch mutes the Web Audio of a page that has not said it is
+   playing sound (`navigator.audioSession.type = 'playback'`, Safari 17+). Now the first touch, click or key anywhere wakes the shared
+   audio and plays one silent sample inside that gesture, and the page says it plays sound, so every game's sound (the ARCADE kit's
+   and the shared context; games that keep an engine of their own still start theirs, but are no longer muted by the switch) can start. */
+(() => {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+  let done = false;
+  const wake = () => {
+    if (done) return;
+    try {
+      const A = ARCADE.audio();
+      if (A && A.state === 'running'){ const s = A.createBufferSource(); s.buffer = A.createBuffer(1, 1, 22050); s.connect(A.destination); s.start(0); done = true; }
+    } catch {}
+  };
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, wake, { capture: true, passive: true });
+})();
 /* ═══ A POSITION EDITOR FOR THE BOARD GAMES ════════════════════════════════
    (Oct 13: "1,2", on "a position editor for checkers, Reversi, Ataxx, Gomoku and Go in one PR: each already has a computer
    opponent, so set up a position and play it, as in chess", after chess's, tower defense's and Sokoban's editors in the

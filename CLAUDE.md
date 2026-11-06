@@ -963,6 +963,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   begins at its own (`g.seed` = board number mod 12, `formation(level, lv, seed)`), going round them as the levels climb (a boss every fifth).
 - **Invaders' power-ups have sounds** (Nov 6: "Add sound"): a blip as one drops from a kill (`drop`), a rising run when it is caught (`power`, which
   replaced the level jingle there) and a sinking tone when a timed one wears off (`expire`), all through the game's own Sound switch (`SND`).
+- **Sound starts on the first gesture** (Nov 6: "sound is broken everywhere"): the kit's audio woke only on `pointerdown`, which a phone's browser does not
+  count as a gesture for sound, and the ring/silent switch muted a page that had not said it plays sound. After `ARCADE`, the first
+  `pointerdown`, `pointerup`, `touchend`, `click` or `keydown` anywhere wakes `ARCADE.audio()` and plays a silent sample inside it, and
+  `navigator.audioSession.type` is 'playback' (Safari 17+). Not heard here (no speakers); checked only that the context runs. Games with an
+  audio engine of their own (pinball, the tanks, trick shots, air raid, Simon, Asteroids) start theirs as before.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
