@@ -22702,7 +22702,10 @@ const GALLERY_APP = (() => {
        comes from the photos themselves. Under 12, neighbouring boards show
        different parts of the same picture. */
     const _size = Math.max(LIST.length, EXPECT.n | 0);   // finished size, not current
-    const many = _size >= 12;
+    /* (Nov 6: "yes", to one fixed view per picture: fewer than twelve used to give a print three windows, the sides or the top and
+       bottom of what did not fit, and a board's place picked one, so the same picture showed different parts on neighbouring boards.
+       Every print has the one window now, as a big collection always did: centred across, from the top down.) */
+    const many = true;
     /* THE WINDOWS, AS FRACTIONS OF THE SOURCE. These used to be separate
        canvases — one cut per variant, which is why a big collection was held
        to a single one. They are UV windows now, so they cost nothing and the

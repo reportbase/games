@@ -970,9 +970,9 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   audio engine of their own (pinball, the tanks, trick shots, air raid, Simon, Asteroids) start theirs as before.
 - **One window for a picture that fits** (Nov 6: "the same image with the same aspect ratio is shown zoomed in sometimes."): a print already the board's
   shape had two windows, `full` and `detail` (the middle at 1.6 ×), and `vpick` chose between them by the board's place, so one picture hung
-  zoomed on some boards and whole on others. It has the one `full` window now (in `buildEntry` and in `reshape`). A picture whose shape differs
-  from the board's still has its pan windows (left, centre, right or top, centre, bottom) when fewer than twelve hang, each a different part at the
-  same size; with twelve or more it has one (`many`).
+  zoomed on some boards and whole on others. It has the one `full` window now (in `buildEntry` and in `reshape`). Nov 6, then "yes": a picture
+  whose shape differs from the board's no longer has pan windows either (left, centre, right or top, centre, bottom, picked by the board's
+  place when fewer than twelve hang); every print has the one window (`many` is always true), centred across and from the top down.
 - **Simon** (Oct 15: "Are you familiar with the game called simon?", then "Yes"): `SIMON_APP`, id `simon`, after the tilt maze.
   Coloured pads round a hub, each with its tone (the toy's four, 415/310/252/209 Hz, then a pentatonic run): it plays a
   sequence, you play it back, a step longer each round; a wrong pad or too long a wait (`wait`) ends it, the score the
