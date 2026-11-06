@@ -18901,6 +18901,24 @@ const ARCADE = (() => {
   }
   return { audio, tone, hiss, tilt, setTilt, load, save, sounds, difficulty, boardMove, noise, twoPly, ringAt, stepsAt, levelOn, levelName, LEVEL3, RING_STEPS, FARTHER };
 })();
+/* SOUND THAT STARTS (Nov 6: "sound is broken everywhere", after "Add sound"): a browser keeps a page's audio shut until a real user
+   gesture has started or resumed it, and a phone is stricter: iOS takes only a finished touch or click (`touchend`, `click`), not
+   `pointerdown`, which was all that woke it, and its ring/silent switch mutes the Web Audio of a page that has not said it is
+   playing sound (`navigator.audioSession.type = 'playback'`, Safari 17+). Now the first touch, click or key anywhere wakes the shared
+   audio and plays one silent sample inside that gesture, and the page says it plays sound, so every game's sound (the ARCADE kit's
+   and the shared context; games that keep an engine of their own still start theirs, but are no longer muted by the switch) can start. */
+(() => {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+  let done = false;
+  const wake = () => {
+    if (done) return;
+    try {
+      const A = ARCADE.audio();
+      if (A && A.state === 'running'){ const s = A.createBufferSource(); s.buffer = A.createBuffer(1, 1, 22050); s.connect(A.destination); s.start(0); done = true; }
+    } catch {}
+  };
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, wake, { capture: true, passive: true });
+})();
 /* ═══ A POSITION EDITOR FOR THE BOARD GAMES ════════════════════════════════
    (Oct 13: "1,2", on "a position editor for checkers, Reversi, Ataxx, Gomoku and Go in one PR: each already has a computer
    opponent, so set up a position and play it, as in chess", after chess's, tower defense's and Sokoban's editors in the
@@ -22684,7 +22702,10 @@ const GALLERY_APP = (() => {
        comes from the photos themselves. Under 12, neighbouring boards show
        different parts of the same picture. */
     const _size = Math.max(LIST.length, EXPECT.n | 0);   // finished size, not current
-    const many = _size >= 12;
+    /* (Nov 6: "yes", to one fixed view per picture: fewer than twelve used to give a print three windows, the sides or the top and
+       bottom of what did not fit, and a board's place picked one, so the same picture showed different parts on neighbouring boards.
+       Every print has the one window now, as a big collection always did: centred across, from the top down.) */
+    const many = true;
     /* THE WINDOWS, AS FRACTIONS OF THE SOURCE. These used to be separate
        canvases — one cut per variant, which is why a big collection was held
        to a single one. They are UV windows now, so they cost nothing and the
@@ -22703,8 +22724,9 @@ const GALLERY_APP = (() => {
       windows.push([fx, freeY / h,           fw, fh, 'bottom']);
     } else {                                            // already the right shape
       windows.push([fx, fy, fw, fh, 'full']);
-      const zw = fw / 1.6, zh = fh / 1.6;
-      windows.push([(1 - zw) / 2, (1 - zh) / 2, zw, zh, 'detail']);
+      /* (Nov 6: "the same image with the same aspect ratio is shown zoomed in sometimes.": there was a second window here, 'detail', the
+         middle at 1.6 times, and a board's place picked between the two, so one picture hung zoomed on some boards and whole on others.
+         A picture already the board's shape has the one window now, here and in `reshape`.) */
     }
     /* THE ICON's window is the first one, so the strip tile is the crop it
        always was. */
@@ -22875,8 +22897,6 @@ const GALLERY_APP = (() => {
         win.push([fx2, fy2, fw2, fh2, 'top']); win.push([fx2, (freeY2 / 2) / h, fw2, fh2, 'center']); win.push([fx2, freeY2 / h, fw2, fh2, 'bottom']);
       } else {
         win.push([fx2, fy2, fw2, fh2, 'full']);
-        const zw = fw2 / 1.6, zh = fh2 / 1.6;
-        win.push([(1 - zw) / 2, (1 - zh) / 2, zw, zh, 'detail']);
       }
       const uv2 = win.map(([x, y, ww, hh]) => {
         const cx0 = dx0 + (1 - (x + ww)) * dw, cy0 = dy0 + (1 - (y + hh)) * dh;
@@ -36152,7 +36172,7 @@ const INVADERS_APP = (() => {
   // A board waiting, not in play, takes its level afresh when the setting changes (Oct 15); one in play keeps its own.
   const relevel = () => { for (const [k, g] of GAMES) if (g.state !== 'play'){ const [c, r] = k.split('_').map(Number), lv = lvAt(c, r), st = g.state; Object.assign(g, newGame(lv, g.seed), { lv, state: st === 'ready' ? 'ready' : 'wait', last: 0 }); } };
   const D = g => QUIET ? DIFF.normal : DIFF[(g && DIFF[g.lv]) ? g.lv : LEVEL];
-  const SND = Object.assign(ARCADE.sounds('invaders.sound', 'The march, shots, hits and explosions — made in the browser.', { gaps: { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05 }, quiet: () => QUIET }), { note: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
+  const SND = Object.assign(ARCADE.sounds('invaders.sound', 'The march, shots, hits and explosions — made in the browser.', { gaps: { shot: 0.06, hit: 0.04, bomb: 0.08, shield: 0.05, drop: 0.12, expire: 0.3 }, quiet: () => QUIET }), { note: 0 });   // (the switch, its menu item and the gate: ARCADE.sounds)
   const TILT = ARCADE.tilt;
   function beep(kind){
     const A = SND.gate(kind); if (!A) return;
@@ -36166,6 +36186,10 @@ const INVADERS_APP = (() => {
         case 'shield':hiss(0.08, 0.1, 3000); break;
         case 'dive':  tone(900, 300, 0.5, 'sine', 0.05); break;
         case 'dead':  hiss(0.9, 0.5, 600); tone(200, 35, 0.9, 'sawtooth', 0.12); break;
+        // (Nov 6: "Add sound": the power-ups' own sounds: a blip as one falls out, a rising run as it is caught, a sinking tone as it wears off)
+        case 'drop':  tone(700, 1000, 0.1, 'triangle', 0.04); break;
+        case 'power': [660, 880, 1320].forEach((f, i) => tone(f, f, 0.1, 'triangle', 0.07, i * 0.06)); break;
+        case 'expire':tone(520, 220, 0.3, 'sine', 0.05); break;
         case 'level': [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.08, i * 0.09)); break;
         case 'over':  hiss(1.2, 0.55, 500); tone(160, 30, 1.2, 'sine', 0.25); break;
       }
@@ -36311,7 +36335,7 @@ const INVADERS_APP = (() => {
     for (const p of g.picks){
       p.y += 0.25 * dt;
       if (Math.abs(p.x - g.ship.x) < SHIP_S * 0.5 && Math.abs(p.y - g.ship.y) < SHIP_S * 0.4){
-        p.dead = true; say(PICK_NAME[p.type], 1000); beep('level');
+        p.dead = true; say(PICK_NAME[p.type], 1000); beep('power');
         if (p.type === 'H') g.guard = true; else g.pow[p.type] = D(g).pwrT;
       }
     }
@@ -36372,7 +36396,7 @@ const INVADERS_APP = (() => {
     if (inp.fire) fire(g);
 
     const f = g.f, live = alive(f);
-    for (const k in g.pow) g.pow[k] = Math.max(0, g.pow[k] - dt);
+    for (const k in g.pow){ const was = g.pow[k]; g.pow[k] = Math.max(0, was - dt); if (was > 0 && !g.pow[k]) beep('expire'); }
     mystery(g, dt);
     if (!live.length && !g.boss){                    // cleared: the next formation
       if ((g.nextIn -= dt) <= 0){
@@ -36461,7 +36485,7 @@ const INVADERS_APP = (() => {
         if (Math.abs(x - sh.x) < PIECE_S * 0.42 && Math.abs(y - sh.y) < PIECE_S * 0.5){
           v.alive = false; g.kills = (g.kills || 0) + 1; if (--sh.pierce <= 0) sh.dead = true; g.score += VALUE[v.kind] * (v.out ? 2 : 1);   // out of the formation: double
           if (v.out){ v.out = null; say('Double! +' + VALUE[v.kind] * 2, 700); }
-          if (rnd() < D(g).pwr) g.picks.push({ x, y, type: 'DRHP'[(rnd() * 4) | 0] });   // Nov 6: a power-up may fall from it
+          if (rnd() < D(g).pwr) { g.picks.push({ x, y, type: 'DRHP'[(rnd() * 4) | 0] }); beep('drop'); }   // Nov 6: a power-up may fall from it
           BOOM.add(g, x, y, v.kind, rnd);              // it explodes (Sep 24: the shared BOOM)
           beep('hit');
           if (!alive(f).length && !g.boss) g.nextIn = 1.2;
