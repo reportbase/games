@@ -16359,7 +16359,6 @@ function setBoardLock(v){
   try { const b = document.getElementById('bBoardLock'); if (b) b.hidden = !BOARD_LOCK; } catch {}
 }
 try { window.__boardLock = () => BOARD_LOCK; window.__boardLockSet = setBoardLock; } catch {}
-let _lastTapDone = { at: -1e9, c: -1, r: -1, done: false };   // (was the last tap on a finished board: a double there resets it, Nov 1)
 let _lastTapSelected = { at: -1e9, sel: false };   // (was the last tap on a board not yet framed: see noDoubleTap, Oct 16)
 /* ── One gesture, one tap ────────────────────────────────────────────────
    A touch fires pointerdown, and then the browser SYNTHESISES a mouse event
@@ -16567,36 +16566,14 @@ function handleGroundTap(hit, ev){
       //  editor's answer is 'always', since a hole, a maze or a table is made zoomed in, and its quick second taps (a thing laid,
       //  then taken; a leaf taken away) are the editor's wherever the view is: CI's hole editor lost them)
       if (_noDbl && _noDbl !== 'always' && !framedAsDefault()) _noDbl = false;
-      /* A DOUBLE ON A FINISHED BOARD RESETS IT (Nov 1: "double clicking a completed board should reset it."): an app that can say a
-         board's game is over (`gameDone(c, r)`) has it begun again by a double tap there, whatever its own single tap did; and when
-         the first tap of the pair landed on a finished board (a tap there already plays it again, so the board is fresh by the second)
-         the second is the field's double and not a first move on the new game. */
-      const _GSd = Math.max(1, Math.round(Math.sqrt(st.N))), _wd = v => ((v % _GSd) + _GSd) % _GSd, _dc = _wd(_gx0), _dr = _wd(_gz0);
-      let _doneNow = false; try { const _a = window.getFieldApp && window.getFieldApp(); _doneNow = !!(_a && _a.gameDone && _a.gameDone(_dc, _dr)); } catch {}
-      if (_noDbl && (_doneNow || _lastTapDone.done) && _lastTapDone.c === _dc && _lastTapDone.r === _dr && _tapAt - _lastTapDone.at < DOUBLE_TAP_MS) _noDbl = false;
-      const _prevDone = _lastTapDone;       // (the tap before this one, for "was it on a finished board": that tap already began the game again)
-      _lastTapDone = { at: _tapAt, c: _dc, r: _dr, done: _doneNow };
+      /* (Nov 6: "remove the double click reset game option": a double tap no longer resets a game, finished or not, and asks nothing;
+          the notes of Nov 1 about `gameDone`, "Start this game over?" and a double on a finished board are out of date. The menu's
+          Reset starts a game over.) */
       _lastTapSelected = { at: _tapAt, sel: !_onFramedNow };
       const _isDbl = tapIsDouble(hit, _tapAt);
       if (!_noDbl && _isDbl){
         cancelSidePanelToggle();     // the first tap of this pair was not a toggle
         if (autoMode){ setAutoMode(false); return; }   // eaten here too
-        /* A DOUBLE TAP ON THE BOARD YOU ARE ON, IN ITS DEFAULT VIEW, STARTS ITS GAME OVER, AFTER ASKING (Nov 1: "double click still
-           not reseting games when the board is in default view. Add a confirmation dialog to confirm reset."): the view is already
-           where a double tap would put it, so there is nothing left for the double to do but this; it used to lock the board there
-           (the lock is still taken by a double from any other view, and let go by the menu). A finished board's own tap has begun
-           it again by the pair's second tap, so then nothing is asked. */
-        try {
-          const _ra = window.getFieldApp && window.getFieldApp();
-          if (_ra && _ra.gameDone && _ra.onReset){
-            const _prevOn = _prevDone.done && _prevDone.c === _dc && _prevDone.r === _dr && _tapAt - _prevDone.at < DOUBLE_TAP_MS;
-            if (_prevOn) return;
-            if ((_onFramedNow && framedAsDefault()) || _ra.gameDone(_dc, _dr)){
-              if (window.confirm('Start this game over?')) _ra.onReset(_dc, _dr);
-              if (_onFramedNow && framedAsDefault()) return;
-            }
-          }
-        } catch (e){ _reportError('app reset by double tap', e); }
         // Doubling on the piece the hint points at PLAYS the hint. Checked
         // before the reframe below, and only when a hint is actually being
         // shown on your move — so the gesture exists exactly when there is
@@ -18866,6 +18843,10 @@ const ARCADE = (() => {
     const i = Math.max(0, LEVEL3.indexOf(set));
     return (c == null || r == null) ? LEVEL3[i] : LEVEL3[Math.min(2, i + stepsAt(c, r))];
   }
+  /* (Nov 6: "The menu options for difficult should say Easy Normal  Hard.  for all applications."): every game's Difficulty item
+     names its level as mini golf's does, Easy, Normal or Hard; "at the corner" left the label (the title still says how the
+     rings step harder, FARTHER). */
+  const levelName = v => { v = String(v || ''); return v.charAt(0).toUpperCase() + v.slice(1); };
   const FARTHER = ' Boards farther from the corner are harder: a step from the 7th ring out, another from the 31st, as far as Hard.';
   // A difficulty switch, remembered: easy → normal → hard. It takes effect with the next puzzle. at(c, r): a board's own (above).
   // (own: the game has levels of its own by ring, 1 to 5, as Sokoban, the tilt maze and Simon do, so neither the label's
@@ -18873,7 +18854,7 @@ const ARCADE = (() => {
   function difficulty(key, title, own){
     let v = load(key, 'normal'); if (!/^(easy|normal|hard)$/.test(v)) v = 'normal';
     const L = { get: () => v, set: x => { v = x; }, at: (c, r) => levelOn(v, c, r) };
-    L.item = { label: () => 'Difficulty: ' + v + (own ? '' : ' at the corner'), title: (title || '') + (own ? '' : FARTHER),
+    L.item = { label: () => 'Difficulty: ' + levelName(v), title: (title || '') + (own ? '' : FARTHER),
                on(){ v = v === 'easy' ? 'normal' : v === 'normal' ? 'hard' : 'easy'; save(key, v); try { window.flyToLevel && window.flyToLevel({ easy: 1, normal: 3, hard: 5 }[v]); } catch {} } };
     return L;
   }
@@ -18918,7 +18899,7 @@ const ARCADE = (() => {
     }
     return pick;
   }
-  return { audio, tone, hiss, tilt, setTilt, load, save, sounds, difficulty, boardMove, noise, twoPly, ringAt, stepsAt, levelOn, LEVEL3, RING_STEPS, FARTHER };
+  return { audio, tone, hiss, tilt, setTilt, load, save, sounds, difficulty, boardMove, noise, twoPly, ringAt, stepsAt, levelOn, levelName, LEVEL3, RING_STEPS, FARTHER };
 })();
 /* ═══ A POSITION EDITOR FOR THE BOARD GAMES ════════════════════════════════
    (Oct 13: "1,2", on "a position editor for checkers, Reversi, Ataxx, Gomoku and Go in one PR: each already has a computer
@@ -24723,7 +24704,7 @@ const DEFENDER_APP = (() => {
       return frameOf(g, performance.now() / 1000).flatMap(itemOf);
     },
     menu: [{ head: 'Defender', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: pieces fire less often, bolts are slower and the red warning lasts longer. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: pieces fire less often, bolts are slower and the red warning lasts longer. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
         // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('defender.level', LEVEL);
               if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
@@ -25266,7 +25247,7 @@ const BREAKOUT_APP = (() => {
       return out;
     },
     menu: [{ head: 'Breakout', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: a slower ball, a wider paddle, more power-ups and calmer pieces. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: a slower ball, a wider paddle, more power-ups and calmer pieces. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
         // The board in play takes its new level at once (Oct 15), as its own: the setting moved by its ring.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('breakout.level', LEVEL);
               if (LIVE){ const g = GAMES.get(LIVE.key); if (g) g.lv = levelAt(LIVE.c, LIVE.r); } } },
@@ -25749,7 +25730,7 @@ const CROSSING_APP = (() => {
       return itemsOf(reelFrame(c, r));
     },
     menu: [{ head: 'Crossing', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: an 8×8 board, slower lanes, fewer strikes and longer warnings. Normal: 10×10. Hard: 12×12, faster, more strikes. The board you are on starts again at the new size.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: an 8×8 board, slower lanes, fewer strikes and longer warnings. Normal: 10×10. Hard: 12×12, faster, more strikes. The board you are on starts again at the new size.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('crossing.level', LEVEL);
               GAMES.clear();
               // The board in play starts again at its own new level (Oct 15): the setting moved by its ring.
@@ -26646,7 +26627,7 @@ const SNAKE_APP = (() => {
       return asItems(reelFrame(c, r));
     },
     menu: [{ head: 'Snake', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: a 16×16 board, and the others blunder into you more. Normal: 20×20. Hard: 24×24, and they rarely do. The board you are on starts again at the new size.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: a 16×16 board, and the others blunder into you more. Normal: 20×20. Hard: 24×24, and they rarely do. The board you are on starts again at the new size.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('snake.level', LEVEL);
               GAMES.clear();
               // The board in play starts again at its own new level (Oct 15): the setting moved by its ring.
@@ -28668,7 +28649,7 @@ const TETRIS_APP = (() => {
       return itemsOf(shown(c, r));
     },
     menu: [{ head: 'Tetris', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: pieces start slower and can slide longer after landing. Hard: faster, and they lock quickly. Press to switch.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: pieces start slower and can slide longer after landing. Hard: faster, and they lock quickly. Press to switch.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('tetris.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
       SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it left or right to slide the piece, toward you to drop it faster. Tap still turns it.',
@@ -32316,7 +32297,7 @@ const BOMBER_APP = (() => {
       return asItems(shown(c, r));
     },
     menu: [{ head: 'Bomberman', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: the bots think slower and bomb less boldly. Hard: quick and bold. Press to switch.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: the bots think slower and bomb less boldly. Hard: quick and bold. Press to switch.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('bomber.level', LEVEL); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } },
       SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it the way you want to walk. Tap yourself to drop a bomb.',
@@ -33000,7 +32981,7 @@ const PACMAN_APP = (() => {
       return 'Pac-Man — ' + g.score + ' · level ' + g.level + ' · ' + g.lives + (g.lives === 1 ? ' life' : ' lives') + (g.state === 'over' ? ' · over' : '');
     },
     menu: [{ head: 'Pac-Man', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: slower ghosts that stay blue longer. Hard: faster ghosts, and blue does not last. Press to switch.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: slower ghosts that stay blue longer. Hard: faster ghosts, and blue does not last. Press to switch.' + ARCADE.FARTHER,
         // Oct 15: the board in play starts again at its own level under the new setting.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('pacman.level', LEVEL); relevel();
               if (LIVE) app.onReset(LIVE.c, LIVE.r); } },
@@ -33830,7 +33811,7 @@ const TD_APP = (() => {
         on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MAPS.delete(k); saveMaps(); GAMES.delete(k); say('The board is as it came', 1500); try { window.fieldItemsChanged && window.fieldItemsChanged(); } catch {} } },
       { label: 'Send next wave', title: 'Send the next wave now (tapping the grey entrance does the same).',
         on(){ try { const g = LIVE && GAMES.get(LIVE.key); if (g && g.state === 'play' && !g.queue.length && !g.creeps.length){ g.waitT = 0; nextWave(g); } } catch {} } },
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: a 12×12 board, more gold to start, weaker pieces and fewer of them. Normal: 16×16. Hard: 20×20, the other way. The board you are on starts again at the new size.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: a 12×12 board, more gold to start, weaker pieces and fewer of them. Normal: 16×16. Hard: 20×20, the other way. The board you are on starts again at the new size.' + ARCADE.FARTHER,
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('td.level', LEVEL);
               GAMES.clear();
               if (LIVE){ const m = MAPS.get(LIVE.key), g = newGame(roadOf(LIVE.c, LIVE.r), 0, m, lvAt(LIVE.c, LIVE.r)); g.state = 'wait'; GAMES.set(LIVE.key, g); say('A ' + g.n + '×' + g.n + ' board — tap to play', 1800); } } },
@@ -36692,7 +36673,7 @@ const INVADERS_APP = (() => {
       return reelFrame(c, r).flatMap(itemOf);
     },
     menu: [{ head: 'Invaders', items: [
-      { label: () => 'Difficulty: ' + LEVEL + ' at the corner', title: 'Easy: a slower march, and they fire less often and more slowly. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
+      { label: () => 'Difficulty: ' + ARCADE.levelName(LEVEL), title: 'Easy: a slower march, and they fire less often and more slowly. Hard: the other way. Press to switch.' + ARCADE.FARTHER,
         // Oct 15: the board in play starts again at its own level under the new setting.
         on(){ LEVEL = LEVEL === 'easy' ? 'normal' : LEVEL === 'normal' ? 'hard' : 'easy'; ARCADE.save('invaders.level', LEVEL); relevel();
               if (LIVE) app.onReset(LIVE.c, LIVE.r); } },
