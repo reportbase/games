@@ -88,7 +88,8 @@ let code = 0;
 try {
   // (not 'load': that waits on every request the page makes, and one from a CDN that never answered held a part's page load
   //  past two minutes on CI, Oct 28; the page is ready when its apps are, which the next line waits for)
-  await page.goto(new URL('games.html', base).href, { waitUntil: 'domcontentloaded', timeout: 120000 });
+  // (?app=chess: the page opens on Home now (Nov 7), and these checks begin where the page used to open)
+  await page.goto(new URL('games.html?app=chess', base).href, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.FIELD_APPS.length > 0
                                    && typeof window.setFieldApp === 'function', null, { timeout: 120000 });
   await page.waitForTimeout(SETTLE_MS);
@@ -435,6 +436,84 @@ try {
     const a1 = during[during.length - 1], ok = a1.at > a0.at && during.every((d, k) => k === 0 || d.at > during[k - 1].at) && during.some(d => d.cam !== a0.cam);
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ a0, during })}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the clock ran ${(a1.at - a0.at).toFixed(0)} ms over the drag)`);
+  }
+  // HOME (Nov 7: "how about a home page, that shows all games as a board"): the page's opening app, every game one board in a block eight across, each a
+  // picture (its own icon, its name along the foot), Home first in the application picker, the page opening on Home framed on the game last in, and a
+  // tap on a board opening that game on its first board.
+  {
+    current = 'home';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = { bad: [] };
+      const games = window.FIELD_APPS.filter(a => a.id !== 'home').map(a => a.id).sort(), ord = D.order();
+      out.every = ord.length === games.length && JSON.stringify(ord.map(o => o.id).sort()) === JSON.stringify(games) && new Set(ord.map(o => o.title)).size === ord.length;
+      out.sorted = ord.every((o, i) => !i || ord[i - 1].title.localeCompare(o.title, 'en', { numeric: true }) <= 0);
+      // the block: a game once on its own board, in the order the list is, and nothing to the right of it, above it or past the field's wrap
+      const seen = new Set();
+      for (let rr = 0; rr < 10; rr++) for (let cc = 0; cc < 12; cc++){
+        const id = D.idAt(cc, rr);
+        if (cc >= D.COLS){ if (id) out.leak = [cc, rr]; continue; }
+        if (id){ if (seen.has(id)) out.dup = id; seen.add(id); if (D.slotOf(id).join() !== cc + ',' + rr || ord[rr * D.COLS + cc].id !== id) out.slotBad = id; }
+      }
+      out.placed = seen.size === games.length;
+      out.wrap = D.idAt(9999, 0) === null && D.idAt(0, 9999) === null && D.idAt(10003, 10001) === D.idAt(3, 1) && D.idAt(3, 1) !== null;
+      out.names = ['airhockey', 'whackamole', 'pacman', 'blockout', 'chess'].map(id => D.titleOf(D.appById(id))).join('|');
+      // the pictures: a key by game and by size, painted (the game's own board and a name), and none past the block
+      const picks = ['chess', 'tetris', 'hashi', 'tiltmaze', 'pinball', 'levels', 'minigolf', 'sudoku'], pix = {};
+      for (const id of picks){
+        const [c, r] = D.slotOf(id), kh = A.cellPhoto(c, r, 400), kl = A.cellPhoto(c, r, 100), ch = A.photoCanvas(kh), cl = A.photoCanvas(kl);
+        const px = ch.getContext('2d').getImageData(0, 0, ch.width, ch.height).data, cols = new Set(), foot = new Set();
+        for (let y = 0; y < ch.height; y += 6) for (let x = 0; x < ch.width; x += 6){ const i = (y * ch.width + x) * 4, key = (px[i] >> 4) + ',' + (px[i + 1] >> 4) + ',' + (px[i + 2] >> 4); cols.add(key); if (y > ch.height * 0.88) foot.add(key); }
+        pix[id] = { ok: /:h$/.test(kh) && /:l$/.test(kl) && ch.width === 512 && cl.width === 256 && cols.size > 12 && foot.size > 3, colours: cols.size, foot: foot.size };
+        if (!pix[id].ok) out.bad.push(id);
+      }
+      out.pictures = picks.length + ' ' + out.bad.length;
+      out.none = A.cellPhoto(D.COLS + 2, 0, 400) === null && A.cellPhoto(0, 9999, 400) === null && A.cellGrid(D.COLS + 2, 0).colors[0] !== A.cellGrid(0, 0).colors[0];
+      // the page's start: the game last in is where Home arrives, and Home is not remembered as the last game
+      localStorage.setItem('tvf.field.app.v1', 'mini golf');
+      out.named = window.__restoreLastApp('chess') === null;
+      const got = window.__restoreLastApp(null);
+      out.opened = got && got.name === 'home' && window.getFieldApp() === got && localStorage.getItem('tvf.field.app.v1') === 'mini golf' && D.LAST === null;
+      out.golfSlot = D.slotOf('minigolf');
+      return out;
+    });
+    await page.waitForTimeout(800);
+    const f1 = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return f && [f.c, f.r]; });
+    // the application picker: Home first, and from a game Home brings the view to the board of the game just left
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await page.waitForTimeout(800);
+    const pick = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms));
+      document.getElementById('appBtn').click(); await wait(300);
+      const rows = [...document.querySelectorAll('#appPicker .ap-row')], first = rows[0] && rows[0].textContent.trim(), n = rows.length;
+      const home = rows.find(x => /^Home/.test(x.textContent.trim())); home.click(); await wait(1200);
+      const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), slot = A._debug.slotOf('chess');
+      return { first, n, app: A.name, f: f && [f.c, f.r], slot, apps: window.FIELD_APPS.length, thumb: !!document.querySelector('#appPicker') };
+    });
+    // a tap on a board opens that game on its first board: a real click on the framed board
+    const target = 'tetris';
+    await page.evaluate(id => { const D = window.getFieldApp()._debug, [c, r] = D.slotOf(id); D.fly(c, r); }, target);
+    const tc = await page.evaluate(id => window.getFieldApp()._debug.slotOf(id), target);
+    await page.evaluate(([c, r]) => window.__settle(c, r), tc);
+    const aimOnce = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+      const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
+      return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
+    const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+    const pt = await aimAt(0.5, 0.45);
+    await page.mouse.click(pt.x, pt.y);
+    const tap = await page.evaluate(async id => { for (let k = 0; k < 60; k++){ const A = window.getFieldApp(); if (A.id === id) break; await new Promise(ok => setTimeout(ok, 100)); }
+      const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: A.id, f: f && [f.c, f.r], last: localStorage.getItem('tvf.field.app.v1'), name: A.name }; }, target);
+    // …and a double tap on any board does the same (the field frames it, then the game opens): the model's call, since the field's double tap is tested on its own
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home'))); await page.waitForTimeout(600);
+    const dbl = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, [c, r] = D.slotOf('sudoku'); A.startOnDouble(c, r); await new Promise(ok => setTimeout(ok, 500));
+      const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: window.getFieldApp().id, f: f && [f.c, f.r] }; });
+    const ok = r.every && r.sorted && !r.leak && !r.dup && !r.slotBad && r.placed && r.wrap && r.names === 'Air hockey|Whack-a-mole|Pac-Man|3D Tetris|Chess' && !r.bad.length && r.none
+      && r.named && r.opened && f1 && f1.join() === r.golfSlot.join()
+      && pick.first === 'Home' && pick.n === pick.apps && pick.app === 'home' && pick.f && pick.f.join() === pick.slot.join() && !pick.thumb
+      && tap.app === 'tetris' && tap.f && tap.f.join() === '0,0' && tap.last === tap.name && dbl.app === 'sudoku' && dbl.f && dbl.f.join() === '0,0';
+    if (!ok) failures.push('[home] ' + JSON.stringify({ r, f1, pick, tap, dbl }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} home: ${r.every ? 'every' : 'not every'} game, one board each in a block eight across (${r.pictures} pictures), Home first in the picker and the page's start framed on the game last in, a real tap and a double tap opening a game on its first board`);
   }
   }   // (end of part 1)
 
@@ -2636,7 +2715,8 @@ try {
     // exact copies in storage are kept once after a reload
     await page.evaluate(() => { const h = { name: 'twin', par: 3, map: Array.from({ length: 13 }, (_, j) => j === 1 ? '...O....' : j === 11 ? '...T....' : '........') };
       localStorage.setItem('golf.myholes', JSON.stringify([h, h, h, { ...h, name: 'other' }])); });
-    await page.reload({ waitUntil: 'load' });
+    // (a page that names its game: the page opens on Home otherwise now, Nov 7, and used to reopen the game last in)
+    await page.goto(new URL('games.html?app=minigolf', base).href, { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
     const merged = await page.evaluate(() => ({ mine: window.getFieldApp()._debug.editor.MINE.map(m => m.name), stored: JSON.parse(localStorage.getItem('golf.myholes')).length }));
     if (merged.mine.join('|') !== 'twin|other' || merged.stored !== 2) failures.push(`[${current}] copies merged on load: ${JSON.stringify(merged)}`);

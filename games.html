@@ -48744,6 +48744,18 @@ const TILT_APP = (() => {
     noDoubleTap(){ return ED.on ? 'always' : false; },         // (two quick taps on an edge are two walls: Simon's lesson)
     /* THE ROW IS THE MAZE EDITOR (Oct 20, YOUR OWN MAZES above): opening it makes a maze for the framed board, shutting it plays it. */
     ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
+    // (Nov 7, for Home, which draws every game's own board: the tilt maze had none) a little maze, two holes, the gold ring, the marble
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#d9c9a3'; ctx.fillRect(0, 0, sz, sz);
+      const t = sz / 6, line = (a, b, c, d) => { ctx.beginPath(); ctx.moveTo(a * t, b * t); ctx.lineTo(c * t, d * t); ctx.stroke(); };
+      ctx.strokeStyle = '#3a4150'; ctx.lineWidth = Math.max(1.5, sz * 0.05); ctx.lineCap = 'square';
+      for (const w of [[1, 0, 1, 2], [2, 1, 4, 1], [3, 1, 3, 3], [0, 3, 2, 3], [2, 3, 2, 5], [4, 2, 4, 4], [4, 4, 6, 4], [3, 5, 5, 5], [5, 2, 5, 3]]) line(...w);
+      ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, sz - ctx.lineWidth, sz - ctx.lineWidth);
+      const dot = (x, y, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x * t, y * t, r * t, 0, 7); ctx.fill(); };
+      dot(0.5, 1.5, 0.28, '#1c2230'); dot(3.5, 3.5, 0.28, '#1c2230');
+      ctx.strokeStyle = '#d4a017'; ctx.lineWidth = Math.max(1.5, sz * 0.04); ctx.beginPath(); ctx.arc(5.5 * t, 0.5 * t, 0.32 * t, 0, 7); ctx.stroke();
+      dot(0.5, 5.5, 0.3, '#2a5db0');
+    },
     _debug: { makeMaze, mazeFor, playRun, stepBall, botTilt, bfs, pathOf, nbrs, cellOf, centre, gameAt, fresh, stepGame, finish, starsOf, levelAt, boardIdx,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, GAMES, MAZES, BEST, HELD, LV, fly: (c, r) => gotoCell(c, r),
               ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edgeAt, cleanMaze, dataOf, mineMaze, MINE, shareMaze, takeMaze, ED_TOOLS, ED_ACTS },
@@ -50538,6 +50550,18 @@ const PINBALL_APP = (() => {
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved) ED.ateAt = performance.now(); ED.drag = null; } },
     /* THE ROW IS THE TABLE EDITOR (A TABLE OF YOUR OWN): opening it makes a table for the framed board, shutting it plays it. */
     ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
+    // (Nov 7, for Home) a table: three bumpers, the plunger lane, the flippers and the ball
+    drawIcon(ctx, sz){
+      const g = ctx.createLinearGradient(0, 0, 0, sz); g.addColorStop(0, '#16224d'); g.addColorStop(1, '#2a1550');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, sz, sz);
+      const dot = (x, y, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x * sz, y * sz, r * sz, 0, 7); ctx.fill(); };
+      ctx.strokeStyle = '#c9ccd2'; ctx.lineWidth = Math.max(1.5, sz * 0.03); ctx.strokeRect(sz * 0.04, sz * 0.04, sz * 0.92, sz * 0.92);
+      ctx.beginPath(); ctx.moveTo(sz * 0.84, sz * 0.2); ctx.lineTo(sz * 0.84, sz * 0.96); ctx.stroke();
+      for (const [x, y, c] of [[0.35, 0.28, '#e0443a'], [0.58, 0.36, '#f2c14e'], [0.3, 0.48, '#3b82c4']]){ dot(x, y, 0.075, '#f2f2ee'); dot(x, y, 0.05, c); }
+      ctx.lineCap = 'round'; ctx.lineWidth = sz * 0.05; ctx.strokeStyle = '#f2f2ee';
+      ctx.beginPath(); ctx.moveTo(sz * 0.25, sz * 0.8); ctx.lineTo(sz * 0.42, sz * 0.87); ctx.moveTo(sz * 0.66, sz * 0.8); ctx.lineTo(sz * 0.49, sz * 0.87); ctx.stroke();
+      dot(0.45, 0.68, 0.032, '#ffffff');
+    },
     _debug: { makeTable, tableFor, newState, sub, launch, setFlipper, toPlunger, endBall, botStep, botNew, simGen, simRun, work, finishJob, starsOf, levelAt, boardIdx, ringOf,
               fitGen, lifeOf, offBand, readyNow, eraOf, pathAt, rampZ, palette, ERAS, LIFE_BAND, FIT_TRIES, COMBO_T,
               THEMES, lockLit, startMulti, MIS, MIS_T, MIS_AWARD, misStart, misCode, misRead, shotNow, offOf, wantOf, ev, REC_PRE, magOn, mbX, dispText, dotsOf, reelsOf, lockSpot, frameOf, MSGS, JACK0, REEL_PX, DOT_PX, fly: (c, r) => gotoCell(c, r),
@@ -57039,6 +57063,15 @@ const LEVELS_APP = (() => {
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
+    // (Nov 7, for Home) the corner's rings, each farther one half as wide as the last, and a body at their middle
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#06080c'; ctx.fillRect(0, 0, sz, sz);
+      const cx = sz / 2, cy = sz / 2;
+      for (let k = 0; k < 5; k++){ ctx.strokeStyle = k === 0 ? '#d4a017' : 'rgba(150,170,210,' + (0.75 - k * 0.12).toFixed(2) + ')'; ctx.lineWidth = Math.max(1, sz * (k === 0 ? 0.02 : 0.012));
+        ctx.beginPath(); ctx.arc(cx, cy, sz * [0.46, 0.33, 0.25, 0.2, 0.165][k], 0, 7); ctx.stroke(); }
+      const g = ctx.createRadialGradient(cx - sz * 0.05, cy - sz * 0.05, sz * 0.02, cx, cy, sz * 0.2);
+      g.addColorStop(0, '#d9e2f5'); g.addColorStop(1, '#4a5f93'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, sz * 0.12, 0, 7); ctx.fill();
+    },
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
@@ -63870,7 +63903,152 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+/* ═══ HOME ════════════════════════════════════════════════════════════════
+   (Nov 7: "how about a home page, that shows all games as a board".) The page opens here: every game is one board of this field,
+   its own little board drawn big (the same picture the application picker and the bottom row draw, `drawIcon`) on a mat in a hue of its
+   own, its name along the foot. Eight across, in the order the application picker lists them (by title), so a game stays where it was
+   and a new one takes its place by name; the field past the block is bare. Nothing here plays, so every board is a still picture
+   (the photo tier, as Missile Command's sky), and the field rests.
+   - TAP the framed board, or DOUBLE TAP any board, and that game opens on its first board (the corner, where its levels begin), as the
+     picker would open it (`openApp`: the gallery asks for something to show). Tab steps along the games as it steps along any boards.
+   - THE PAGE OPENS ON HOME, framed on the game you were last in (`restoreLastApp`, which used to open that game itself: the last
+     game is still the board in the middle and one tap away), and Home is first in the application picker (`isHome`), from any game.
+   - Where a game has no `drawIcon` of its own (the tilt maze, pinball, Levels) its board is the colours its `cellGrid` gives, or
+     its hue with its first letter; chess's is the opening position, as the picker draws it. */
+const HOME_APP = (() => {
+  const VOID = 0x0b0d12, COLS = 8, HI_PX = 300, PHOTO_PX = 20;
+  // the names the application picker's rule ("field chess" → "Chess") leaves run together or wrongly cased
+  const NAMES = { airhockey: 'Air hockey', whackamole: 'Whack-a-mole', pacman: 'Pac-Man', blockout: '3D Tetris' };
+  const titleOf = a => NAMES[a.id] || _appLabel(a);
+  const appById = id => (window.FIELD_APPS || []).find(a => a.id === id) || null;
+  const gs = () => BOARD_KIT.gs();
+  // a board's column or row as a distance from the corner, through the field's wrap (the boards left of and above the corner are not the far side)
+  const fold = v => { const g = gs(); v = ((v % g) + g) % g; return v > g / 2 ? v - g : v; };
+  // the games, by title, as the picker lists them; made again only when the set of apps changes (mini golf made again at another size keeps its id)
+  let ORD = null, ORD_KEY = '';
+  function order(){
+    const list = (window.FIELD_APPS || []).filter(a => a !== app && a.id), key = list.map(a => a.id).join('|');
+    if (ORD && key === ORD_KEY) return ORD;
+    ORD_KEY = key;
+    ORD = list.map(a => ({ id: a.id, title: titleOf(a) })).sort((x, y) => x.title.localeCompare(y.title, 'en', { numeric: true }));
+    ORD.forEach((o, k) => { o.k = k; o.hue = (k * 137.508) % 360; });          // (the golden angle: neighbours never match)
+    return ORD;
+  }
+  // the game on a board, or null past the block
+  function slotAt(c, r){
+    const cc = fold(c), rr = fold(r);
+    if (cc < 0 || cc >= COLS || rr < 0) return null;
+    return order()[rr * COLS + cc] || null;
+  }
+  const idAt = (c, r) => { const s = slotAt(c, r); return s ? s.id : null; };
+  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [o.k % COLS, Math.floor(o.k / COLS)] : null; };
+  const hsl = (h, s, l) => 'hsl(' + h.toFixed(1) + ',' + s + '%,' + l + '%)';
+  const hexOf = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
+  const cssOf = v => typeof v === 'number' ? '#' + (v >>> 0).toString(16).padStart(6, '0').slice(-6) : typeof v === 'string' ? v : v && v.getHexString ? '#' + v.getHexString() : '#222';
+
+  /* ─── OPENING A GAME ─── */
+  let LAST = null;           // the id of the game the page was last in (read at the page's start, for the first arrival)
+  function openGame(id){
+    const a = appById(id);
+    if (!a) return false;
+    openApp(a, [0, 0]);
+    return true;
+  }
+
+  /* ─── THE PICTURE A BOARD HANGS ─── (the photo tier lays a canvas's top left at the board's far right, so `paint` is drawn turned a half turn,
+     in the board's own terms: x across, y down toward you.) The mat in the game's hue, the game's own board inset in a rounded frame, the name
+     along the foot, fitted to the width. */
+  function paint(P, hi){
+    const S = hi ? 512 : 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-1, 0, 0, -1, S, S);
+    const o = order().find(x => x.id === P.id), H = o ? o.hue : 210, a = appById(P.id);
+    let g = c.createLinearGradient(0, 0, 0, S); g.addColorStop(0, hsl(H, 38, 27)); g.addColorStop(1, hsl(H, 44, 13));
+    c.fillStyle = g; c.fillRect(0, 0, S, S);
+    const side = Math.round(0.78 * S), x0 = Math.round(0.11 * S), y0 = Math.round(0.06 * S), rad = 0.04 * S;
+    c.save(); c.beginPath(); c.roundRect(x0, y0, side, side, rad); c.clip();
+    c.fillStyle = hsl(H, 30, 15); c.fillRect(x0, y0, side, side);
+    if (a && (a === CHESS_APP || a.drawIcon)) c.drawImage(_appIconDraw(a, side), x0, y0, side, side);
+    else if (a) {
+      let gr = null; try { gr = a.cellGrid && a.cellGrid(3, 5); } catch {}
+      if (gr && gr.colors && gr.n > 1 && gr.colors.length >= gr.n * gr.n){
+        const n = gr.n, t = side / n;
+        for (let i = 0; i < n * n; i++){ c.fillStyle = cssOf(gr.colors[i]); c.fillRect(x0 + (i % n) * t, y0 + Math.floor(i / n) * t, t + 0.5, t + 0.5); }
+      } else {
+        c.fillStyle = hsl(H, 40, 34); c.fillRect(x0, y0, side, side);
+        c.fillStyle = 'rgba(255,255,255,0.85)'; c.font = 'bold ' + Math.round(side * 0.55) + 'px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(titleOf(a).charAt(0), x0 + side / 2, y0 + side * 0.54);
+      }
+    }
+    c.restore();
+    c.strokeStyle = 'rgba(255,255,255,0.22)'; c.lineWidth = Math.max(1, S / 256); c.beginPath(); c.roundRect(x0, y0, side, side, rad); c.stroke();
+    // the name, along the foot, as large as fits
+    const name = a ? titleOf(a) : P.id, family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
+    let fs = Math.round(0.082 * S);
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#f3ead6';
+    for (; fs > 0.045 * S; fs--){ c.font = 'bold ' + fs + 'px ' + family; if (c.measureText(name).width <= 0.86 * S) break; }
+    c.fillText(name, S / 2, y0 + side + (S - y0 - side) / 2 + 1);
+    return cv;
+  }
+  const PIC = BOARD_KIT.painted(160, (P, hi) => paint(P, hi)), HIRES = new Map();
+  function photoKey(c, r, bp){
+    const s = slotAt(c, r); if (!s) return null;
+    const k = BOARD_KIT.gkey(c, r); let hi = HIRES.get(k) || false;
+    if (bp > HI_PX * 1.1) hi = true; else if (bp < HI_PX * 0.9) hi = false;      // (a band, so a board on the line does not flip between the two)
+    if (hi) HIRES.set(k, true); else HIRES.delete(k);
+    return PIC.key('home:' + s.id, hi, () => ({ id: s.id }));
+  }
+  // the picker's own thumbnail: a few boards of hues, the home of them
+  function iconMosaic(ctx, S){
+    ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, S, S);
+    const t = S / 3, m = S * 0.04;
+    for (let i = 0; i < 9; i++){ ctx.fillStyle = hsl((i * 137.508) % 360, 45, 38); ctx.fillRect((i % 3) * t + m, Math.floor(i / 3) * t + m, t - 2 * m, t - 2 * m); }
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(t + m * 2, t + m * 2, t - 4 * m, t - 4 * m);
+  }
+
+  const app = {
+    name: 'home',
+    isHome: true,
+    menu: [{ head: 'Home', items: [
+      { label: 'Open the game on this board', title: 'The game whose board is in the middle of the view opens on its first board, as a tap on that board does.',
+        on(){ const f = framedCell(), id = f && idAt(f.c, f.r); if (id) openGame(id); } },
+    ]}],
+    cellFar: { light: VOID, dark: VOID },
+    faceMinPx: 1,
+    photoMinPx: PHOTO_PX,
+    itemGeometries: {},
+    cellItems(){ return []; },
+    cellPhoto(c, r, bp){ return photoKey(c, r, bp || 0); },
+    photoCanvas(key){ return PIC.canvas(key); },
+    // (a board too small for its picture, or past the block: its game's hue, or the bare field)
+    cellGrid(c, r){ const s = slotAt(c, r); return { n: 1, colors: [s ? hexOf(s.hue, 38, 24) : VOID] }; },
+    cellTitle(c, r){ const s = slotAt(c, r); return s ? s.title + ' — tap this board, or double tap any board, to play it' : 'Home'; },
+    onCellTap(c, r){ const id = idAt(c, r); if (id) openGame(id); return true; },
+    startOnDouble(c, r){ const id = idAt(c, r); if (id) openGame(id); },
+    // coming here from a game (the picker, the menu) or at the page's start: the view goes to that game's board
+    onEnter(prev){
+      const id = prev && prev !== app && prev.id ? prev.id : LAST, at = id && slotOf(id);
+      LAST = null;
+      if (at){ try { gotoCell(at[0], at[1]); settleCameraNow(); } catch {} }
+    },
+    // the page's start: the game last played (its name, as the field keeps it) is where Home arrives
+    rememberLast(name){ const a = name && (window.FIELD_APPS || []).find(x => String(x.name || '') === name && x !== app); LAST = a ? a.id : null; },
+    iconMosaic,
+    // the bottom row's tile for a board: that game's own board
+    drawIcon(ctx, sz, c, r, h){
+      const hh = h || sz, id = idAt(c, r), a = id && appById(id);
+      ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, sz, hh);
+      if (!a) return;
+      const side = Math.min(sz, hh);
+      ctx.drawImage(_appIconDraw(a, Math.max(8, Math.round(side))), (sz - side) / 2, (hh - side) / 2, side, side);
+    },
+    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, COLS, appById, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
+
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, HOME_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -63884,7 +64062,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
  [CONNECT4_APP, 'connectfour'], [LOA_APP, 'linesofaction'],
- [ATAXX_APP, 'ataxx'], [LEVELS_APP, 'levels'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
+ [ATAXX_APP, 'ataxx'], [LEVELS_APP, 'levels'], [HOME_APP, 'home'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
 SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own share link, Oct 13)
 /* WHICH BOARDS ARE COMPLETED (Nov 1: "double clicking a completed board should reset it."): the games whose finished board a tap plays
    again say when a board's game is over, by their own state, so the field can offer a double tap there the same (`gameDone`, read in
@@ -64407,6 +64585,7 @@ function _defaultFitSoon(app){
 }
 for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, () => { _defFitArmed++; }, true);
 window.setFieldApp = app => {
+  const _prev = FIELD_APP;
   try { window.__boardLock && window.__boardLockSet && window.__boardLockSet(false); } catch {}   // (another app: the lock lets go, Oct 31)
   // (the app being left may put back what it changed for its own view: Levels its tilt, Oct 13)
   try { if (FIELD_APP && FIELD_APP !== app && FIELD_APP.onLeave) FIELD_APP.onLeave(); } catch {}
@@ -64498,7 +64677,8 @@ window.setFieldApp = app => {
      exactly why this is the only line needed. Written AFTER the switch has
      succeeded, so a throw on the way through does not record a place the
      field never actually reached. */
-  try { localStorage.setItem(FIELD_APP_KEY, String(FIELD_APP.name || '')); } catch {}
+  try { if (!FIELD_APP.isHome) localStorage.setItem(FIELD_APP_KEY, String(FIELD_APP.name || '')); } catch {}   // (Home is not a game you were in: the last game stays what it was)
+  try { if (FIELD_APP.onEnter) FIELD_APP.onEnter(_prev); } catch (e){ console.warn('[field] onEnter', e); }   // (an app may take the view somewhere as it comes forward: Home, to the game just left, Nov 7)
 };
 window.getFieldApp = () => FIELD_APP;
 /* ═══ AND OPENED THERE NEXT TIME ══════════════════════════════════════════
@@ -64518,12 +64698,12 @@ function restoreLastApp(named){
   if (named) return null;                       // you asked for one: that is the answer
   let want = null;
   try { want = localStorage.getItem(FIELD_APP_KEY); } catch {}
-  if (!want) return null;
-  const app = (window.FIELD_APPS || []).find(a => String(a.name || '') === want);
-  if (!app || app === FIELD_APP) return null;
-  try { window.setFieldApp(app); } catch (e){ console.warn('[field] could not reopen ' + want, e); return null; }
-  return app;
+  /* THE PAGE OPENS ON HOME (Nov 7: "how about a home page, that shows all games as a board"), framed on the board of the game you were
+     last in, so that game is one tap away; this used to open that game itself. */
+  try { HOME_APP.rememberLast(want); window.setFieldApp(HOME_APP); } catch (e){ console.warn('[field] could not open home', e); return null; }
+  return HOME_APP;
 }
+window.__restoreLastApp = restoreLastApp;       // (for the tests)
 /* Apps call this after their state changes so the board browser's icons and
    titles redraw (a move was played, content updated, etc.). */
 window.refreshFieldBrowser = () => { try { rebuildBoardBrowser(); } catch {} };
@@ -65616,7 +65796,8 @@ const LAB = window.LAB = { fovWide: 60, fovCapH: 75, pitchMin: 35, groutDissolve
    Built from FIELD_APPS rather than written out, so registering an app is
    still one line and the menu follows. */
 // The apps as the menus list them: by title (Sep 28: "sort the application menu by title").
-const _appsByTitle = () => (window.FIELD_APPS || []).slice().sort((a, b) => _appLabel(a).localeCompare(_appLabel(b)));
+// (Home first, Nov 7: "a home page"; the rest by title)
+const _appsByTitle = () => (window.FIELD_APPS || []).slice().sort((a, b) => (b.isHome ? 1 : 0) - (a.isHome ? 1 : 0) || _appLabel(a).localeCompare(_appLabel(b)));
 function _appLabel(a){
   // "field lines of action" → "Lines of action". The apps name themselves
   // for the console; the menu wants them in a sentence.
@@ -65742,6 +65923,8 @@ function _appIconDraw(a, S){
         ctx.beginPath(); ctx.arc((c + 0.5) * t, (r + 0.5) * t, t * 0.32, 0, Math.PI * 2); ctx.fill();
       }
     }
+  } else if (a && a.iconMosaic){
+    try { a.iconMosaic(ctx, S); } catch {}                // (Home's: its own boards, not the one at (3, 5))
   } else if (a && a.drawIcon){
     try { a.drawIcon(ctx, S, 3, 5, S); } catch {}
   }
@@ -65773,6 +65956,38 @@ function _appThumb(a, on){
   paint();
   cv._paintIcon = () => { if (!_APP_ICONS.has(a)) _APP_ICONS.set(a, _appIconDraw(a, S)); paint(); };
   return cv;
+}
+/* OPENING AN APP: the one way every route in takes (the application picker, Home's boards). `at` is a board to go to once it is open (Home
+   opens a game on its first board, [0, 0]); the picker leaves the view where it was. */
+function openApp(a, at){
+  try { window.setFieldApp(a); } catch {}
+  try { syncAppSelect(); } catch {}
+  if (at){ try { gotoCell(at[0], at[1]); settleCameraNow(); } catch {} }
+  /* PICKING THE GALLERY WITH NOTHING IN IT ASKS FOR SOMETHING TO SHOW.
+     Every other app arrives with a field already full — its own boards,
+     playing themselves. The gallery arrives empty, so choosing it landed
+     you on a hundred million blank cells and the next move was to find
+     the Open chip and do the thing you had just said you wanted.
+     The same door as that chip, not a second one: #openBtn's handler owns
+     the file input, and this clicks it. It has to happen inside this click
+     to count as a user gesture — a file dialog opened from a timer is one
+     browsers refuse.
+     ONLY WHEN IT HAS NOTHING OF YOURS. Coming back to a gallery that is
+     holding your pictures is coming back to look at them, and a modal file
+     dialog over the top of that is an interruption, not an offer.
+     "Nothing of yours" is NOT an empty list: the gallery opens seeded with
+     flat colour prints so the field has something to hang, so it is never
+     empty and the first version of this test never fired. `_seeded` is the
+     flag that already knew, and every real pour clears it. */
+  try {
+    /* THE GALLERY, BY IDENTITY — not "any app with fabricCellAt". That was
+       the test, and fabricCellAt only means "every cell holds a different
+       picture", which is true of the generated world too: choosing it
+       opened a file dialog over a world that needs no files. An app is the
+       one that wants pictures or it is not, and there is exactly one. */
+    if (a === GALLERY_APP && (a._seeded || !(a._list && a._list.length)))
+      document.getElementById('openBtn')?.click();
+  } catch {}
 }
 function openAppPicker(){
   const prev = document.getElementById('appPicker');
@@ -65835,33 +66050,7 @@ function openAppPicker(){
     row.addEventListener('click', () => {
       close();
       if (a === cur) return;                   // already there: a press is not a reload
-      try { window.setFieldApp(a); } catch {}
-      try { syncAppSelect(); } catch {}
-      /* PICKING THE GALLERY WITH NOTHING IN IT ASKS FOR SOMETHING TO SHOW.
-         Every other app arrives with a field already full — its own boards,
-         playing themselves. The gallery arrives empty, so choosing it landed
-         you on a hundred million blank cells and the next move was to find
-         the Open chip and do the thing you had just said you wanted.
-         The same door as that chip, not a second one: #openBtn's handler owns
-         the file input, and this clicks it. It has to happen inside this click
-         to count as a user gesture — a file dialog opened from a timer is one
-         browsers refuse.
-         ONLY WHEN IT HAS NOTHING OF YOURS. Coming back to a gallery that is
-         holding your pictures is coming back to look at them, and a modal file
-         dialog over the top of that is an interruption, not an offer.
-         "Nothing of yours" is NOT an empty list: the gallery opens seeded with
-         flat colour prints so the field has something to hang, so it is never
-         empty and the first version of this test never fired. `_seeded` is the
-         flag that already knew, and every real pour clears it. */
-      try {
-        /* THE GALLERY, BY IDENTITY — not "any app with fabricCellAt". That was
-           the test, and fabricCellAt only means "every cell holds a different
-           picture", which is true of the generated world too: choosing it
-           opened a file dialog over a world that needs no files. An app is the
-           one that wants pictures or it is not, and there is exactly one. */
-        if (a === GALLERY_APP && (a._seeded || !(a._list && a._list.length)))
-          document.getElementById('openBtn')?.click();
-      } catch {}
+      openApp(a);
     });
     rows.push(row);
     box.appendChild(row);

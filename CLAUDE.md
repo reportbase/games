@@ -1231,6 +1231,33 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   in its slot as a calculator's does. The smoke test (Sudoku's and Hashi's first checks) wants every digit's ink on its column's or island's middle. The
   idle-board checks (Sudoku, Hashi) now sample until the board has moved three times, up to a cycle: a four-second window fell wholly in the rest at either
   end of a cycle about one run in ten.
+- **Home: every game a board, and the page opens on it** (Nov 7: "how about a home page, that shows all games as a board"): `HOME_APP`, id `home`,
+  before the gallery in `FIELD_APPS`. Each game is one board: its own little board drawn big (the picture the application picker and the bottom row
+  draw, `drawIcon`; chess's the opening position as the picker draws it) on a mat in a hue of its own (the golden angle round the list, so neighbours
+  never match), its name along the foot, fitted to the width (`paint`, the photo tier as Missile Command's sky: 512 px from a board `HI_PX` 300 across,
+  else 256, `PIC` keeps 160). The games are in the order the picker lists them (`order`: by title, digits first, `NAMES` fixing the four the picker's
+  rule leaves run together or wrongly cased: Air hockey, Whack-a-mole, Pac-Man, 3D Tetris), eight across (`COLS`), row after row from the corner
+  (`slotAt`: a column and row through the field's wrap, so nothing hangs left of or above the corner), and the field past the block is bare. A new
+  game appears by being in `FIELD_APPS`; nothing is registered with Home. Nothing here plays, so the field rests; a board too small for its picture
+  is its game's hue (`cellGrid`).
+  - **Opening a game**: a tap on the framed board (`onCellTap`), a double tap on any board (`startOnDouble`, after the field has framed it) or the
+    menu's Open the game on this board open it on its FIRST board, the corner (`openGame`, `openApp(a, [0, 0])`), where its levels begin. `openApp` is
+    now the one way in for the application picker too (it was the picker's click handler: `setFieldApp`, `syncAppSelect`, the gallery asking for something
+    to show); an `at` takes the view to a board after, settled at once.
+  - **The page opens on Home**, framed on the game you were last in: `restoreLastApp` used to reopen that game; it now opens Home
+    (`rememberLast(name)`), and `setFieldApp` calls the arriving app's new `onEnter(prev)` hook, which takes Home's view to the board of the game just
+    left (from the picker or the menu) or of the remembered one (the page's start; none at a first visit, the corner board). `FIELD_APP_KEY` still holds the
+    last GAME (Home, `isHome`, never overwrites it). Home is first in the picker (`_appsByTitle`), with a thumbnail of its own (`iconMosaic`, since the
+    picker asks every app's `drawIcon` for the board at (3, 5)). A page that names its game (`?app=`, a share link, a file or bucket) opens that, as ever.
+    To go back to opening the last game itself, `restoreLastApp` is the one place.
+  - The tilt maze, pinball and Levels had no `drawIcon` (their picker thumbnails and bottom-row tiles were flat or blank, and their boards here would
+    have been): each has a small one now (a maze with its holes, ring and marble; a table with bumpers, flippers and ball; the corner's rings round a body).
+  - The smoke test (end of part 1) checks every game on one board each in the picker's order and nothing past the block or the wrap, the names, a picture
+    for each of eight games (both sizes, painted: colours on the board and a name at the foot) and none past the block, `restoreLastApp` (named: nothing;
+    else Home, framed on the golf slot, the last game still mini golf), the application picker (Home first, one row an app, Home from chess framed on
+    chess's board), a real click on the framed Tetris board opening Tetris on (0, 0), and a double tap opening Sudoku there. The test harness opens
+    `games.html?app=chess` (the page's old opening, so every check begins where it did), and the My holes reload check names `?app=minigolf` (a plain reload
+    used to reopen the last game).
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or
