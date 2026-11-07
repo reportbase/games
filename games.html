@@ -16004,7 +16004,11 @@ function buildInstances(){
            and the fabric is told about it — see uNear in the frame loop. Both
            ways of missing count: the print has not arrived (cellPhoto returned
            null), or its texture was past this frame's build budget. */
-        if (!_photoDrawn) _photoHoles++;
+        /* (An app that says `photoHolesOk` fills a board with no picture itself, by `cellGrid`, which is real geometry, so that board is no hole
+           in the ground: Home's boards past its block, and any its picture has not reached yet. Counted, each one switched the fabric's
+           near edge on and off as the view moved, which showed in the gutters as a flash: Nov 7, "the home page has draw problems sometimes
+           if flashes.") */
+        if (!_photoDrawn && !_app.photoHolesOk) _photoHoles++;
       }
     }
     // APP FACE: the app may claim this cell with its own n×n color grid —
@@ -27645,6 +27649,16 @@ const MISSILE_APP = (() => {
   ];
   const skyOf = idx => idx % SKY_N;
   const palOf = k => k === 0 ? 0 : k % 4;
+  /* A GAME'S PICTURE IS DRAWN ONCE (Nov 7: "the home page has draw problems sometimes if flashes."): a picture is made again whenever its
+     texture is (a mesh not drawn for a while is let go, a board crossing the size where its picture goes sharper takes the other key), and
+     some games' `drawIcon` shows what is happening now (a table's reel, a board's live game), so the same board came back as another picture.
+     The icon is drawn once, about 400 px, kept, and both sizes of the board's picture are made from it. */
+  const ICONS = new Map();
+  function iconOf(a){
+    let cv = ICONS.get(a.id);
+    if (!cv){ const dpr = Math.min(3, Math.max(1, devicePixelRatio || 1)); cv = _appIconDraw(a, Math.round(400 / dpr)); ICONS.set(a.id, cv); }
+    return cv;
+  }
   function paint(P, hi){
     const S = hi ? 512 : 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
     const c = cv.getContext('2d'); if (!c) return null;
@@ -63924,8 +63938,9 @@ onmessage = ev => {
 /* ═══ HOME ════════════════════════════════════════════════════════════════
    (Nov 7: "how about a home page, that shows all games as a board".) The page opens here: every game is one board of this field,
    its own little board drawn big (the same picture the application picker and the bottom row draw, `drawIcon`) on a mat in a hue of its
-   own, its name along the foot. Eight across, in the order the application picker lists them (by title), so a game stays where it was
-   and a new one takes its place by name; the field past the block is bare. Nothing here plays, so every board is a still picture
+   own, its name along the foot. Eight across, sorted by title and read left to right, top to bottom, as the photo gallery's pages are (Nov 7: "the
+   home page should be sorted by game title.    the home page should be arranged like photo gallary, where the pages are arranged left to right and top
+   to bottom."), so a new game takes its place by name; the field past the block is bare. Nothing here plays, so every board is a still picture
    (the photo tier, as Missile Command's sky), and the field rests.
    - TAP the framed board, or DOUBLE TAP any board, and that game opens on its first board (the corner, where its levels begin), as the
      picker would open it (`openApp`: the gallery asks for something to show). Tab steps along the games as it steps along any boards.
@@ -63948,18 +63963,25 @@ const HOME_APP = (() => {
     const list = (window.FIELD_APPS || []).filter(a => a !== app && a.id), key = list.map(a => a.id).join('|');
     if (ORD && key === ORD_KEY) return ORD;
     ORD_KEY = key;
-    ORD = list.map(a => ({ id: a.id, title: titleOf(a) })).sort((x, y) => x.title.localeCompare(y.title, 'en', { numeric: true }));
+    /* (Nov 7: "the home page should be sorted by game title": plain alphabetical, 2048 before 3D Tetris: `numeric` put 3D Tetris first, 3 < 2048.) */
+    ORD = list.map(a => ({ id: a.id, title: titleOf(a) })).sort((x, y) => x.title.localeCompare(y.title, 'en', { sensitivity: 'base' }) || (x.id < y.id ? -1 : 1));
     ORD.forEach((o, k) => { o.k = k; o.hue = (k * 137.508) % 360; });          // (the golden angle: neighbours never match)
     return ORD;
   }
+  /* THE GAMES READ LEFT TO RIGHT AND TOP TO BOTTOM, as the photo gallery's pages do (Nov 7: "the home page should be arranged like photo gallary,
+     where the pages are arranged left to right and top to bottom."): the field's column and row numbers rise to the LEFT and UP the screen (the
+     gallery's pages go right and down by falling numbers, `pick`: −(row + col)), so a game's place across is minus its column's distance from the
+     corner and its place down is minus its row's. The first game is the corner board, top left of the block; the block runs right and down. */
+  const wrap = v => { const g = gs(); return ((v % g) + g) % g; };
   // the game on a board, or null past the block
   function slotAt(c, r){
-    const cc = fold(c), rr = fold(r);
+    const cc = -fold(c), rr = -fold(r);
     if (cc < 0 || cc >= COLS || rr < 0) return null;
     return order()[rr * COLS + cc] || null;
   }
   const idAt = (c, r) => { const s = slotAt(c, r); return s ? s.id : null; };
-  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [o.k % COLS, Math.floor(o.k / COLS)] : null; };
+  // (the board's own column and row, as the field numbers them: wrapped, never negative)
+  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [wrap(-(o.k % COLS)), wrap(-Math.floor(o.k / COLS))] : null; };
   const hsl = (h, s, l) => 'hsl(' + h.toFixed(1) + ',' + s + '%,' + l + '%)';
   const hexOf = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
@@ -63977,6 +63999,16 @@ const HOME_APP = (() => {
   /* ─── THE PICTURE A BOARD HANGS ─── (the photo tier lays a canvas's top left at the board's far right, so `paint` is drawn turned a half turn,
      in the board's own terms: x across, y down toward you.) The mat in the game's hue, the game's own board inset in a rounded frame, the name
      along the foot, fitted to the width. */
+  /* A GAME'S PICTURE IS DRAWN ONCE (Nov 7: "the home page has draw problems sometimes if flashes."): a picture is made again whenever its
+     texture is (a mesh not drawn for a while is let go, a board crossing the size where its picture goes sharper takes the other key), and
+     some games' `drawIcon` shows what is happening now (a table's reel, a board's live game), so the same board came back as another picture.
+     The icon is drawn once, about 400 px, kept, and both sizes of the board's picture are made from it. */
+  const ICONS = new Map();
+  function iconOf(a){
+    let cv = ICONS.get(a.id);
+    if (!cv){ const dpr = Math.min(3, Math.max(1, devicePixelRatio || 1)); cv = _appIconDraw(a, Math.round(400 / dpr)); ICONS.set(a.id, cv); }
+    return cv;
+  }
   function paint(P, hi){
     const S = hi ? 512 : 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
     const c = cv.getContext('2d'); if (!c) return null;
@@ -63987,7 +64019,7 @@ const HOME_APP = (() => {
     const side = Math.round(0.78 * S), x0 = Math.round(0.11 * S), y0 = Math.round(0.06 * S), rad = 0.04 * S;
     c.save(); c.beginPath(); c.roundRect(x0, y0, side, side, rad); c.clip();
     c.fillStyle = hsl(H, 30, 15); c.fillRect(x0, y0, side, side);
-    if (a && (a === CHESS_APP || a.drawIcon)) c.drawImage(_appIconDraw(a, side), x0, y0, side, side);
+    if (a && (a === CHESS_APP || a.drawIcon)) c.drawImage(iconOf(a), x0, y0, side, side);
     else if (a) {
       let gr = null; try { gr = a.cellGrid && a.cellGrid(3, 5); } catch {}
       if (gr && gr.colors && gr.n > 1 && gr.colors.length >= gr.n * gr.n){
@@ -64010,6 +64042,32 @@ const HOME_APP = (() => {
     return cv;
   }
   const PIC = BOARD_KIT.painted(160, (P, hi) => paint(P, hi)), HIRES = new Map();
+  /* THE SMALL PICTURES ARE MADE AHEAD AND KEPT (the same request): no board of Home waits on the frame's build budget (`photoUrgentPx` 0), so a
+     board that comes into view is made the frame it is wanted; its icon and its small picture are made in the browser's idle time from the
+     page's start, a game a turn, so the first sight of the whole field is only texture uploads. A kept picture is the same pixels every time. */
+  const WARM = new Map(), later = fn => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 2500 }) : setTimeout(() => fn(null), 80));
+  let warming = false;
+  function lowOf(key){
+    let cv = WARM.get(key);
+    if (!cv){ cv = PIC.canvas(key); if (cv) WARM.set(key, cv); }
+    return cv;
+  }
+  function warm(){
+    if (warming) return;
+    warming = true;
+    let i = 0;
+    const turn = dl => {
+      const ids = order().map(o => o.id);
+      do {
+        const id = ids[i++], a = id && appById(id);
+        if (a){
+          try { if (a === CHESS_APP || a.drawIcon) iconOf(a); lowOf(PIC.key('home:' + id, false, () => ({ id }))); } catch {}
+        }
+      } while (i < ids.length && dl && dl.timeRemaining && dl.timeRemaining() > 6);
+      if (i < ids.length) later(turn);
+    };
+    later(turn);
+  }
   function photoKey(c, r, bp){
     const s = slotAt(c, r); if (!s) return null;
     const k = BOARD_KIT.gkey(c, r); let hi = HIRES.get(k) || false;
@@ -64035,10 +64093,13 @@ const HOME_APP = (() => {
     cellFar: { light: VOID, dark: VOID },
     faceMinPx: 1,
     photoMinPx: PHOTO_PX,
+    photoFullAtOnce: true,          // (a picture is the one built once, never a small copy sharpened later)
+    photoUrgentPx: 0,               // (and no board waits for the frame's budget)
+    photoHolesOk: true,             // (a board with no picture is `cellGrid`'s tile, not a hole the fabric must cover)
     itemGeometries: {},
     cellItems(){ return []; },
-    cellPhoto(c, r, bp){ return photoKey(c, r, bp || 0); },
-    photoCanvas(key){ return PIC.canvas(key); },
+    cellPhoto(c, r, bp){ warm(); return photoKey(c, r, bp || 0); },
+    photoCanvas(key){ return key.endsWith(':l') ? lowOf(key) : PIC.canvas(key); },
     // (a board too small for its picture, or past the block: its game's hue, or the bare field)
     cellGrid(c, r){ const s = slotAt(c, r); return { n: 1, colors: [s ? hexOf(s.hue, 38, 24) : VOID] }; },
     cellTitle(c, r){ const s = slotAt(c, r); return s ? s.title + ' — tap this board, or double tap any board, to play it' : 'Home'; },
@@ -64059,9 +64120,9 @@ const HOME_APP = (() => {
       ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, sz, hh);
       if (!a) return;
       const side = Math.min(sz, hh);
-      ctx.drawImage(_appIconDraw(a, Math.max(8, Math.round(side))), (sz - side) / 2, (hh - side) / 2, side, side);
+      ctx.drawImage(a === CHESS_APP || a.drawIcon ? iconOf(a) : _appIconDraw(a, Math.max(8, Math.round(side))), (sz - side) / 2, (hh - side) / 2, side, side);
     },
-    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, COLS, appById, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
+    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, COLS, appById, iconOf, WARM, wrap, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
@@ -65516,7 +65577,7 @@ function _emitAppPhoto(app, key, cx, cz, bWX, bWZ, bp){
        intermediate image. it is very pixalated."): a declined board draws the fabric, whose block of pictures is a low-resolution
        texture, so a big board showed that blown up until its print was built a frame or more later. Only a few boards are ever
        this big at once. */
-    const _urgent = !!app.photoFullAtOnce && (bp || 0) >= 120;
+    const _urgent = !!app.photoFullAtOnce && (bp || 0) >= (app.photoUrgentPx != null ? app.photoUrgentPx : 120);   // (Home says 0: no board of its waits, so none shows its flat hue for a frame before its picture, Nov 7)
     if (!_urgent && _photoNewThisFrame >= _PHOTO_NEW_FRAME){ _photoDeclined++; return false; }
     /* …AND THE FRAME'S REMAINING MILLISECONDS, which is the limit that
        actually keeps an autopan smooth — see the budget block above. A board

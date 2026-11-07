@@ -1235,9 +1235,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   before the gallery in `FIELD_APPS`. Each game is one board: its own little board drawn big (the picture the application picker and the bottom row
   draw, `drawIcon`; chess's the opening position as the picker draws it) on a mat in a hue of its own (the golden angle round the list, so neighbours
   never match), its name along the foot, fitted to the width (`paint`, the photo tier as Missile Command's sky: 512 px from a board `HI_PX` 300 across,
-  else 256, `PIC` keeps 160). The games are in the order the picker lists them (`order`: by title, digits first, `NAMES` fixing the four the picker's
+  else 256, `PIC` keeps 160). The games are sorted by title (`order`: plain alphabetical, 2048 before 3D Tetris, `NAMES` fixing the four the picker's
   rule leaves run together or wrongly cased: Air hockey, Whack-a-mole, Pac-Man, 3D Tetris), eight across (`COLS`), row after row from the corner
-  (`slotAt`: a column and row through the field's wrap, so nothing hangs left of or above the corner), and the field past the block is bare. A new
+  (`slotAt`: a column and row through the field's wrap), and the field past the block is bare; **read left to right and top to bottom, as the photo
+  gallery's pages are** (see the Nov 7 note below: the first game is the corner board, top left of the block). A new
   game appears by being in `FIELD_APPS`; nothing is registered with Home. Nothing here plays, so the field rests; a board too small for its picture
   is its game's hue (`cellGrid`).
   - **Opening a game**: a tap on the framed board (`onCellTap`), a double tap on any board (`startOnDouble`, after the field has framed it) or the
@@ -1258,6 +1259,32 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     chess's board), a real click on the framed Tetris board opening Tetris on (0, 0), and a double tap opening Sudoku there. The test harness opens
     `games.html?app=chess` (the page's old opening, so every check begins where it did), and the My holes reload check names `?app=minigolf` (a plain reload
     used to reopen the last game).
+- **Home sorted by title, read like the gallery, and steady** (Nov 7: "the home page should be sorted by game title.    the home page should be
+  arranged like photo gallary, where the pages are arranged left to right and top to bottom.    the home page has draw problems sometimes if flashes."):
+  - **Sorted by title** (`order`): `localeCompare` with `numeric: true` put 3D Tetris (3) before 2048; it is plain alphabetical now (`sensitivity: 'base'`,
+    the id breaking a tie), so the block starts 2048, 3D Tetris, Air hockey, Air raid, Asteroids, Ataxx, Bejeweled, Bomberman.
+  - **Left to right, top to bottom** (`slotAt`, `slotOf`): the field numbers a board's column and row UP the screen's left and far side (the gallery's
+    pages go right and down by FALLING numbers, `pick`: −(row + col)), so Home read right to left and bottom to top, Chess's neighbour Checkers on its
+    right. A game's place across is now minus its column's distance from the corner (`fold`) and its place down minus its row's: the first game is the corner
+    board (0, 0), the block runs right and down through the field's wrap (the second game is board 9,999, the ninth 0, 9,999), and `slotOf` gives the
+    board's own wrapped, never negative column and row (`onEnter` flies there). Tab steps right, so it steps to the next game by title.
+  - **Why it flashed** (found by reading the photo tier and tracing frames): (1) the field counted every board that wanted a picture and drew none as a
+    HOLE in the ground (`_photoHoles`), which makes the fabric draw all the way in (`uNear`) and stops the field resting; Home's boards past its block
+    (and any whose picture was past the frame's budget) counted, 587 frames of 618 while panning, and the fabric's edge switched with the boards in view.
+    An app that says `photoHolesOk` fills such a board itself (`cellGrid`, real geometry), so it is no hole: Home says it (0 hole frames of 586 now).
+    (2) A picture waiting on the frame's build budget showed its flat hue for a frame or more, then jumped: an app's `photoUrgentPx` (default 120
+    with `photoFullAtOnce`) is the size from which a board never waits; Home says 0, so none does, and `photoFullAtOnce` too, so no small copy is
+    sharpened later. (3) A picture was made again whenever its texture was (a mesh let go after 600 unused frames, a board crossing 300 px taking the
+    other key), and some games' `drawIcon` shows what is happening now (a table's reel, a board's live game), so a board could come back as another
+    picture: the icon is drawn once, about 400 px, and kept (`iconOf`), the small picture is kept too (`lowOf`), and both are made ahead in the browser's
+    idle time from the page's start, a game a turn (`warm`), so the first sight of the whole field is only texture uploads. Not seen in the sandbox's software
+    renderer as one flash in isolation (a trace of 875 frames over a pan showed one board missing for a frame and five key swaps), so these are the
+    causes found and closed, not one reproduced and fixed.
+  - The smoke test (end of part 1, "home") now also wants the list sorted with 2048 first and 3D Tetris second, the block read as reading order through
+    the wrap (the corner the first game, the next on 9,999, a row down on 0 and 9,999, the left of the corner and above it bare), the screen positions of
+    the games before and after Chess on its left and right and the rows above and below it above and below, the same pixels each time a picture is
+    painted for six games and the kept small picture the same canvas, the three flags, and no hole and no declined board counted with the corner framed and
+    the view moving.
 - **One sans for every word** (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): Home's board
   names are set in the system's own face (`-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`), the stack the page's text
   was already in (`field-styles.css`'s `html, body`: menus, notices, boxes, so none of that moved). Words drawn elsewhere were in other sans faces:
