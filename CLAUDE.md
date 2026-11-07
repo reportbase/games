@@ -1235,9 +1235,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   before the gallery in `FIELD_APPS`. Each game is one board: its own little board drawn big (the picture the application picker and the bottom row
   draw, `drawIcon`; chess's the opening position as the picker draws it) on a mat in a hue of its own (the golden angle round the list, so neighbours
   never match), its name along the foot, fitted to the width (`paint`, the photo tier as Missile Command's sky: 512 px from a board `HI_PX` 300 across,
-  else 256, `PIC` keeps 160). The games are in the order the picker lists them (`order`: by title, digits first, `NAMES` fixing the four the picker's
+  else 256, `PIC` keeps 160). The games are sorted by title (`order`: plain alphabetical, 2048 before 3D Tetris, `NAMES` fixing the four the picker's
   rule leaves run together or wrongly cased: Air hockey, Whack-a-mole, Pac-Man, 3D Tetris), eight across (`COLS`), row after row from the corner
-  (`slotAt`: a column and row through the field's wrap, so nothing hangs left of or above the corner), and the field past the block is bare. A new
+  (`slotAt`: a column and row through the field's wrap); **read left to right and top to bottom, as the photo gallery's pages are, and the block
+  repeats over the whole field so no board is bare** (see the Nov 7 note below: the first game is the corner board, top left of its block). A new
   game appears by being in `FIELD_APPS`; nothing is registered with Home. Nothing here plays, so the field rests; a board too small for its picture
   is its game's hue (`cellGrid`).
   - **Opening a game**: a tap on the framed board (`onCellTap`), a double tap on any board (`startOnDouble`, after the field has framed it) or the
@@ -1258,6 +1259,48 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     chess's board), a real click on the framed Tetris board opening Tetris on (0, 0), and a double tap opening Sudoku there. The test harness opens
     `games.html?app=chess` (the page's old opening, so every check begins where it did), and the My holes reload check names `?app=minigolf` (a plain reload
     used to reopen the last game).
+- **Home sorted by title, read like the gallery, and steady** (Nov 7: "the home page should be sorted by game title.    the home page should be
+  arranged like photo gallary, where the pages are arranged left to right and top to bottom.    the home page has draw problems sometimes if flashes."):
+  - **Sorted by title** (`order`): `localeCompare` with `numeric: true` put 3D Tetris (3) before 2048; it is plain alphabetical now (`sensitivity: 'base'`,
+    the id breaking a tie), so the block starts 2048, 3D Tetris, Air hockey, Air raid, Asteroids, Ataxx, Bejeweled, Bomberman.
+  - **Left to right, top to bottom** (`slotAt`, `slotOf`): the field numbers a board's column and row UP the screen's left and far side (the gallery's
+    pages go right and down by FALLING numbers, `pick`: −(row + col)), so Home read right to left and bottom to top, Chess's neighbour Checkers on its
+    right. A game's place across is now minus its column's distance from the corner (`fold`) and its place down minus its row's: the first game is the corner
+    board (0, 0), the block runs right and down through the field's wrap (the second game is board 9,999, the ninth 0, 9,999), and `slotOf` gives the
+    board's own wrapped, never negative column and row (`onEnter` flies there). Tab steps right, so it steps to the next game by title.
+  - **Every board has a game** (Nov 7: "your screen shot for home shows the games on the bottom browser.     keep them in the main viewer.    all boards
+    should have  a game, don't leave empty boards.  see photo gallary."): I had left the field past the 8 × 8 block bare, so a zoomed-out view showed the block's
+    far row along the bottom edge of the screen like a strip, and the user took it for the bottom row (Home's bottom row is empty: the games are boards,
+    not tiles in it). The block now repeats over the whole field, as the gallery's prints do: a board's game is its place in the block (`slotAt`: minus
+    its column and minus its row, modulo the block's side `cols`), the 64 cells holding the 58 games in order and the last six taking the first six again
+    (game number modulo the count). The side is the smallest of 8, 10, 16, 20, 25, 40, 50, 80, 100 that holds every game, always a divisor of the
+    field's side (10,000), so a board's wrapped number and its raw one give the same game and the repeat has no seam at the field's wrap. The far field's
+    texture is the same block (`fabricRepeat` the side, `fabricCellAt` each cell its game's mat colour, which is what a board too small for its picture is),
+    so a board keeps its colour from its picture to the horizon (the texture's cell is the world's column and row modulo the block). `slotOf` is a game's
+    first block's board, where `onEnter` flies. Looked at in screenshots at three zooms: every board a picture with its name, rows reading left to right,
+    no hole counted and none declined (82 pictures, 52 MB of textures).
+  - **Why it flashed** (found by reading the photo tier and tracing frames): (1) the field counted every board that wanted a picture and drew none as a
+    HOLE in the ground (`_photoHoles`), which makes the fabric draw all the way in (`uNear`) and stops the field resting; Home's boards past its block
+    (and any whose picture was past the frame's budget) counted, 587 frames of 618 while panning, and the fabric's edge switched with the boards in view.
+    An app that says `photoHolesOk` fills such a board itself (`cellGrid`, real geometry), so it is no hole: Home says it (0 hole frames of 586 now).
+    (2) A picture waiting on the frame's build budget showed its flat hue for a frame or more, then jumped: an app's `photoUrgentPx` (default 120
+    with `photoFullAtOnce`) is the size from which a board never waits; Home says 0, so none does, and `photoFullAtOnce` too, so no small copy is
+    sharpened later. (3) A picture was made again whenever its texture was (a mesh let go after 600 unused frames, a board crossing 300 px taking the
+    other key), and some games' `drawIcon` shows what is happening now (a table's reel, a board's live game), so a board could come back as another
+    picture: the icon is drawn once, about 400 px, and kept (`iconOf`), the small picture is kept too (`lowOf`), and both are made ahead in the browser's
+    idle time from the page's start, a game a turn (`warm`), so the first sight of the whole field is only texture uploads. Not seen in the sandbox's software
+    renderer as one flash in isolation (a trace of 875 frames over a pan showed one board missing for a frame and five key swaps), so these are the
+    causes found and closed, not one reproduced and fixed.
+  - The smoke test (end of part 1, "home") now also wants the list sorted with 2048 first and 3D Tetris second, the block read as reading order through
+    the wrap (the corner the first game, the next on 9,999, a row down on 0 and 9,999) and repeating every `cols` boards each way and at the wrap, every
+    game on a board in 29 × 29 boards round the corner, a picture asked for anywhere and a colour of its own for each board, the far texture's cells the
+    colour of the boards they stand for, the screen positions of
+    the games before and after Chess on its left and right and the rows above and below it above and below, the same pixels each time a picture is
+    painted for six games and the kept small picture the same canvas, the three flags, and no hole and no declined board counted with the corner framed and
+    the view moving.
+- **Soma's "can it be built" click waits for its tile** (Nov 7, CI on the Home PR, smoke 4/7): the real click on the row's ✗ tile was skipped when the tile
+  had not been laid out 700 ms after the row opened (a busy runner), so the hint was never counted; the check now waits for the tile to be found and to
+  hold still (up to 10 s) and keeps where it clicked for the failure's message. Nothing in the page changed.
 - **One sans for every word** (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): Home's board
   names are set in the system's own face (`-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`), the stack the page's text
   was already in (`field-styles.css`'s `html, body`: menus, notices, boxes, so none of that moved). Words drawn elsewhere were in other sans faces:
@@ -1266,10 +1309,27 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `UI_MONO`) is the one stack now, and each of those says it (`F` in the tile painters, `SANS` in the cards and the viewer, the book reader's Sans
   face, the inline `font:` strings). Left alone on purpose: monospace for notation and readouts (`UI_MONO`: chess's file letters, the review
   panel and coach button, the margin numbers; "Courier New" in the diagnostic boxes), the pinball reels' serif figures, the book reader's own
-  Serif, Book and Mono faces (its default is Serif), and the dot and seven-segment lettering the boards are built of (flat pieces, not a font:
-  scores, clocks, calls, puzzle numbers). Measured: with each of the 59 apps shown in turn for a moment, the only canvas font set was this stack (15 of them draw any). New text
+  Serif, Book and Mono faces (its default is Serif), and the dot-matrix lettering some boards are built of (Pong's, air hockey's and squash's
+  scores and calls, pinball's panel, the game lab's words: pieces, not a font; the seven-segment numbers went the same day, next note). Measured: with each of the 59 apps shown in turn for a moment, the only canvas font set was this stack (15 of them draw any). New text
   uses `UI_SANS`. The smoke test (end of part 1, "one sans") fails on a stray generic sans in the source and reads every canvas font Home, the
   flash cards, Sudoku and Hashi set.
+- **Numbers and words on boards in the page's own font** (Nov 7: "why cant you use the same font from home page on mini-golf and elsewhere?"): the
+  numbers on a board were seven-segment pieces (`BOARD_KIT.flat.digit`, mini golf's `segH` and `segV`), which no font can be, and mini golf's plate
+  read "1 oF 5" for want of an "of". `BOARD_KIT.type` (before `flat`) lays letters instead: a letter is a flat unlit quad, `geo(T, ch)`, wearing its
+  glyph drawn once on a canvas in `UI_SANS` (bold, white, so the item's colour tints it; `userData.map` the picture, `userData.glyph` which the
+  field's item materials read as see-through and depth-write-free), its kind `tg` + the code point (`kind`, `kinds(str)` for an app's
+  `itemGeometries`), laid by `put(out, str, { u, v, h, color, align, lift })` (u across, v the middle of the capitals, h the height of a digit's box
+  as the old digits were laid) with `width(str, h)` and `inkHalf(ch)`. In a piece's units a digit's slot is 0.62 wide (the old pitch) with its ink
+  centred in it, and the capitals 0.8 tall (smaller by what a fallback face's wider digits overshoot, `fit`, so numbers never touch); any other
+  letter has the face's own advance. Used by: the kit's digit kinds (`flat.digit` now gives the glyph, so Nonograms' clues, Sudoku's squares, keys,
+  clock and strikes, Hashi's islands and Missile Command's lit score changed with it and their layouts did not), 2048's figures (a 1 gets a
+  slot of 0.48, `figures`) and mini golf's scoreboard and hole numbers (`scoreboardItems`, `numberItems`: gold on the dark green plate, now "1 of 5"
+  and the digits at 0.0875 of a board). A lone 1 stands in the middle of its square by itself, so `ONE_AT` and the shifts of the lone-1 note
+  above are gone. The notes of Oct–Nov that call these numbers seven-segment, or mini golf's scoreboard segments with `LETTER` and `DIGIT`, are out
+  of date. Left as they were: the dot-matrix lettering (`DOT_FONT`: Pong, air hockey and squash scores and calls, pinball's panel, the game lab's
+  words) and the pinball reels, which are the look of those games. The smoke test: part 1's "letters" (every digit's ink read back from its picture is
+  centred and 0.6–0.9 of a digit tall, 0.62 apart in a line), Sudoku's and Hashi's ink checks without any shift, and mini golf's plate read back as its
+  text (a dash with no game, 1 on the tee, 8 with seven strokes, then "of" and the par).
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or
