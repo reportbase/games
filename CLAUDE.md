@@ -1303,6 +1303,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `openApp`, whose `onEnter` takes the view to the board of the game just left. The three dots (`#bbHandle`) were on every game since Oct 9; `bbHasRow` now says whether
   the app has a bottom browser at all (something already in the row, or `nativePieces`, `_record`, `statTiles`, `statsFirst`, `quickActs`, or the gallery's prints) and
   the dots go where it has none: Home, Tetris, Sudoku, Hashi and the other games that play on the board alone. The smoke test (end of part 1, "home chip") checks both.
+- **Home returns to where it was left** (Nov 7: "save the position, title and rotation of home so it returns in the same position.": "title" read as tilt): `HOME_APP` keeps the eye's
+  place, turn, tilt and zoom and the board framed (`keepView`: `st.camX`, `camZ`, `yaw`, `pitch`, `zoom`, `target.cellX/cellZ`) when Home is left (`onLeave`), twice a second while it is up
+  and on `pagehide`, in localStorage `home.view`; `onEnter` puts it back (`savedView`, the camera settled at once, the arrival's default fit given up with `_defFitArmed++`), so the Home
+  chip, the picker and a reload all come back to it. Only a first visit, with nothing kept, frames the game just left (or the last one). `forgetView` clears it (the smoke test's earlier
+  Home checks, which want that first-visit framing). The dots follow the app at the switch too (`syncBrowserDots`), not only on the next row refresh. The smoke test ("home chip") flies
+  Home somewhere, turns and tilts it, opens a game and clicks the chip, wanting the same position, turn, tilt and zoom and the store written.
 - **Soma's "can it be built" click waits for its tile** (Nov 7, CI on the Home PR, smoke 4/7): the real click on the row's ✗ tile was skipped when the tile
   had not been laid out 700 ms after the row opened (a busy runner), so the hint was never counted; the check now waits for the tile to be found and to
   hold still (up to 10 s) and keeps where it clicked for the failure's message. Nothing in the page changed.

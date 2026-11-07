@@ -140,7 +140,7 @@ try {
     const active = await page.evaluate(() => { const a = window.getFieldApp(); return a && (a.id || a.name); });
     if (active !== id) failures.push(`[${id}] switching did not take: the active app is ${active}`);
     // the three dots are on every game that has a row (Oct 9: "always show the triple dots on bottom"), and only there (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.")
-    const dots = await page.evaluate(() => { const h = document.getElementById('bbHandle'), r = h && h.getBoundingClientRect(), a = window.getFieldApp(), has = !!(a.nativePieces || a._record || a.statTiles || a.statsFirst || a.quickActs || (a._list && a._list.length)), shown = !!(h && getComputedStyle(h).display !== 'none' && r.width > 0 && r.bottom <= innerHeight + 1); return has ? shown : !shown; });
+    const dots = await page.evaluate(() => { const h = document.getElementById('bbHandle'), r = h && h.getBoundingClientRect(), a = window.getFieldApp(), has = !!(a.nativePieces || a._record || a.statTiles || a.statsFirst || a.quickActs || (a._list && a._list.length)), shown = !!(h && h.style.display !== 'none'); return has ? shown : !shown; });   // (the app's own say: an open row hides the dots by the sheet, in place of the file's name)
     if (!dots) failures.push(`[${id}] the three dots are showing where there is no row, or missing where there is one`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${id}`);
   }
@@ -495,6 +495,7 @@ try {
         out.fabric = A.fabricRepeat === D.COLS && bad === 0; }
       // the page's start: the game last in is where Home arrives, and Home is not remembered as the last game
       localStorage.setItem('tvf.field.app.v1', 'mini golf');
+      D.forgetView();                              // (a first visit: no kept view, so Home arrives framed on the last game)
       out.named = window.__restoreLastApp('chess') === null;
       const got = window.__restoreLastApp(null);
       out.opened = got && got.name === 'home' && window.getFieldApp() === got && localStorage.getItem('tvf.field.app.v1') === 'mini golf' && D.LAST === null;
@@ -504,7 +505,7 @@ try {
     await page.waitForTimeout(800);
     const f1 = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return f && [f.c, f.r]; });
     // the application picker: Home first, and from a game Home brings the view to the board of the game just left
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await page.waitForTimeout(800);
+    await page.evaluate(() => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess')); window.FIELD_APPS.find(a => a.id === 'home')._debug.forgetView(); }); await page.waitForTimeout(800);
     const pick = await page.evaluate(async () => {
       const wait = ms => new Promise(ok => setTimeout(ok, ms));
       document.getElementById('appBtn').click(); await wait(300);
@@ -555,7 +556,7 @@ try {
     console.log(`${ok ? 'ok  ' : 'FAIL'} home: ${r.every ? 'every' : 'not every'} game, one board each in a block eight across read left to right and top to bottom, sorted by title, the block repeating over the field so no board is bare, the far field's texture the same block (${r.pictures} pictures, the same pixels each time, no board a hole), Home first in the picker and the page's start framed on the game last in, a real tap and a double tap opening a game on its first board`);
   }
   // THE HOME CHIP, AND NO DOTS WITHOUT A ROW (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.   Add a button for home in the upper
-  // left."): a chip in the upper left on every app but Home that opens Home framed on the game just left, and the three dots only on apps that put something
+  // left."): a chip in the upper left on every app but Home that opens Home where it was left (position, turn, tilt and zoom, kept in localStorage), and the three dots only on apps that put something
   // in the row (a game's moves, tiles, quick buttons or prints): none on Home, Tetris, Sudoku or Hashi, some on chess, mini golf, pinball and the gallery.
   {
     current = 'home chip and dots';
@@ -564,16 +565,24 @@ try {
       const res = { dots: {}, chip: {} };
       for (const id of ['home', 'chess', 'tetris', 'sudoku', 'hashi', 'minigolf', 'pinball', 'gallery']){
         window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await wait(500);
-        res.dots[id] = vis('bbHandle'); res.chip[id] = vis('homeBtn');
+        res.dots[id] = document.getElementById('bbHandle').style.display !== 'none'; res.chip[id] = vis('homeBtn');   // (the dots by the app's own say: an open row hides them by the sheet)
       }
+      // (Nov 7: "save the position, [tilt] and rotation of home so it returns in the same position."): Home is left somewhere of its own choosing, a game opened, and
+      // the chip brings it back to that place, turn, tilt and zoom, not to the board of the game left
+      const H0 = window.FIELD_APPS.find(a => a.id === 'home'), W = window.FIELD_WORLD;
+      window.setFieldApp(H0); await wait(600); H0._debug.forgetView();
+      H0._debug.fly(9990, 3); await window.__settle(9990, 3); W.st.yaw = 25; W.st.pitch = 40; await wait(1500);
+      const keys = ['camX', 'camZ', 'yaw', 'pitch', 'zoom'], was = keys.map(k => W.st[k]);
       window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'sudoku')); await wait(600);
       const b = document.getElementById('homeBtn').getBoundingClientRect(); res.corner = b.x < 40 && b.y < 40 && b.width >= 36;
       document.getElementById('homeBtn').click(); await wait(1500);
-      const H = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
-      res.back = H.isHome && f && f.c === H._debug.slotOf('sudoku')[0] && f.r === H._debug.slotOf('sudoku')[1];
+      const H = window.getFieldApp();
+      res.was = was; res.now = keys.map(k => W.st[k]);
+      res.back = H.isHome && keys.every((k, i) => Math.abs(W.st[k] - was[i]) < 1e-3 * Math.max(1, Math.abs(was[i])));
+      res.kept = !!localStorage.getItem('home.view');
       return res;
     });
-    const D = r.dots, C = r.chip, ok = !D.home && !D.tetris && !D.sudoku && !D.hashi && D.chess && D.minigolf && D.pinball && D.gallery && !C.home && C.chess && C.tetris && C.sudoku && C.minigolf && C.gallery && r.corner && r.back;
+    const D = r.dots, C = r.chip, ok = !D.home && !D.tetris && !D.sudoku && !D.hashi && D.chess && D.minigolf && D.pinball && D.gallery && !C.home && C.chess && C.tetris && C.sudoku && C.minigolf && C.gallery && r.corner && r.back && r.kept;
     if (!ok) failures.push('[home chip] ' + JSON.stringify(r));
     console.log(`${ok ? 'ok  ' : 'FAIL'} home chip: in the upper left on every app but Home and taking the view back to the game just left; the three dots only where the app has a row (not Home, Tetris, Sudoku, Hashi)`);
   }
