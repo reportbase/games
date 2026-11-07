@@ -6347,8 +6347,8 @@ const UI_MONO = 'ui-monospace, Menlo, monospace';
    page's text (menus, notices, boxes: field-styles.css's html and body) and Home's board names were already set in. Every place that drew words
    in another sans (`sans-serif`, Arial, Helvetica Neue with Helvetica, system-ui) says UI_SANS now, so a flash card, an icon's number and a tile's
    label are set in the same face as the menu. Left as they were on purpose: the monospace of notation and readouts (UI_MONO: chess's files, the
-   review panel, the margin numbers), the pinball reels' serif figures, the reader's own Serif, Book and Mono faces, and the dot and seven-segment
-   lettering the boards are built of (pieces, not a font). */
+   review panel, the margin numbers), the pinball reels' serif figures, the reader's own Serif, Book and Mono faces, and the dot-matrix lettering some
+   boards are built of (Pong's score, pinball's panel, the game lab's words: pieces, not a font). The numbers on boards are letters in this face too (BOARD_KIT.type). */
 const UI_SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
 const _evalBarGeo = new THREE.PlaneGeometry(1, 1);  _evalBarGeo.rotateX(-Math.PI / 2);
 const evalBar3DTrack = new THREE.Mesh(
@@ -18700,6 +18700,67 @@ const BOARD_KIT = (() => {
       canvas(k){ const P = SPECS.get(k); return P ? paint(P, k.endsWith(':h')) : null; },
     };
   }
+  /* LETTERS IN THE PAGE'S OWN FONT (Nov 7: "why cant you use the same font from home page on mini-golf and elsewhere?"): a board's numbers and
+     words were pieces built of segments and dots, which no font can be; a letter is now a flat unlit quad wearing its own glyph, drawn once on a
+     canvas in `UI_SANS` (bold, white, so the item's colour tints it) and laid on the board like the old digit was. `geo(T, ch)` is a letter's
+     geometry (its `userData.map` the picture, `userData.glyph` asking the field for a see-through material), `kind(ch)` its kind's name
+     ('tg' and its code), `kinds(str)` the entries an app spreads into its `itemGeometries`, `put(out, str, { u, v, h, color, align, lift })`
+     lays a line of them (u across, v the middle of the capitals, h the height of a digit's box, as the old digits were laid) and gives its width,
+     `width(str, h)` that without laying it, `inkHalf(ch)` half the ink's width in the same units.
+     In a piece's own units (scale h): the capitals are 0.8 tall, centred on v = 0, their baseline at 0.4; a digit has a slot 0.62 wide (the old
+     pitch) and its ink is centred in it, so a lone 1 stands in the middle of its square with no shift of any kind; any other letter has the
+     font's own advance and its own side bearings. The quad reaches from -0.6 to 0.75 so an ascender and a descender have room. */
+  const type = (() => {
+    const S = 160, EM0 = 0.8 / 0.72, TOP = -0.6, BOT = 0.75, SLOT = 0.62, PAD = 0.06, INK_MAX = 0.56;
+    const FONT = px => 'bold ' + px + 'px ' + UI_SANS;
+    let mc = null, K = 0; const cache = new Map(), tex = new Map();
+    /* (the capitals are 0.8 tall when the widest digit's ink fits 0.56 of the slot's 0.62, which the system's own faces do; a face with wider digits,
+       a fallback on a machine without them, is made smaller all through by what it overshoots, so numbers never touch their neighbours) */
+    function fit(){
+      if (K) return K;
+      mc = mc || document.createElement('canvas').getContext('2d'); mc.font = FONT(EM0 * S);
+      let mx = 0; for (const d of '0123456789'){ const t = mc.measureText(d); mx = Math.max(mx, ((t.actualBoundingBoxRight || t.width) + (t.actualBoundingBoxLeft || 0)) / S); }
+      return (K = Math.min(1, INK_MAX / Math.max(mx, 0.01)));
+    }
+    const em = () => EM0 * fit() * S, base = () => (0.4 * fit() - TOP) * S;     // (the font's px, and the baseline's y on a letter's picture: the capitals centred on v = 0)
+    const isDigit = ch => ch >= '0' && ch <= '9';
+    function metrics(ch){
+      let m = cache.get(ch); if (m) return m;
+      fit(); mc.font = FONT(em());
+      const t = mc.measureText(ch), abl = t.actualBoundingBoxLeft || 0, abr = t.actualBoundingBoxRight || t.width, adv = ch === ' ' ? 0.3 : t.width / S;
+      if (isDigit(ch)) m = { w: SLOT, qw: SLOT + 2 * PAD, x: ((SLOT + 2 * PAD) * S - (abr - abl)) / 2, ink: (abr + abl) / 2 / S };
+      else m = { w: adv, qw: adv + 2 * PAD, x: PAD * S, ink: (abr + abl) / 2 / S };
+      cache.set(ch, m); return m;
+    }
+    function picture(T, ch){
+      let t = tex.get(ch); if (t) return t;
+      const m = metrics(ch), cv = document.createElement('canvas'); cv.width = Math.ceil(m.qw * S); cv.height = Math.ceil((BOT - TOP) * S);
+      const c = cv.getContext('2d'); c.font = FONT(em()); c.textBaseline = 'alphabetic'; c.textAlign = 'left'; c.fillStyle = '#ffffff';
+      c.fillText(ch, m.x, base());
+      t = new T.CanvasTexture(cv); tex.set(ch, t); return t;
+    }
+    function geo(T, ch){
+      const hw = metrics(ch).qw / 2, at = ([u, v]) => [-u, 0.003, -v];
+      const V = [[-hw, TOP, 0, 1], [hw, TOP, 1, 1], [hw, BOT, 1, 0], [-hw, BOT, 0, 0]].map(([u, v, s, t]) => ({ p: at([u, v]), t: [s, t] }));
+      const pos = [], uv = [];
+      const tri = (A, B, C) => { const n = (B.p[2] - A.p[2]) * (C.p[0] - A.p[0]) - (B.p[0] - A.p[0]) * (C.p[2] - A.p[2]); for (const q of (n < 0 ? [A, C, B] : [A, B, C])){ pos.push(...q.p); uv.push(...q.t); } };
+      tri(V[0], V[1], V[2]); tri(V[0], V[2], V[3]);
+      const g = new T.BufferGeometry();
+      g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+      g.computeVertexNormals(); g.userData.unlit = true; g.userData.glyph = true; g.userData.map = picture(T, ch);
+      return g;
+    }
+    const kind = ch => 'tg' + ch.codePointAt(0);
+    const kinds = str => [...new Set([...String(str)].filter(ch => ch !== ' '))].map(ch => [kind(ch), T => geo(T, ch)]);
+    const width = (str, h) => [...String(str)].reduce((a, ch) => a + metrics(ch).w, 0) * h;
+    function put(out, str, o){
+      const chars = [...String(str)], ws = chars.map(ch => metrics(ch).w * o.h), W = ws.reduce((a, b) => a + b, 0);
+      let x = o.align === 'left' ? o.u : o.align === 'right' ? o.u - W : o.u - W / 2;
+      chars.forEach((ch, i) => { if (ch !== ' '){ const it = { kind: kind(ch), u: x + ws[i] / 2, v: o.v, scale: o.h, color: o.color }; if (o.lift != null) it.lift = o.lift; out.push(it); } x += ws[i]; });
+      return W;
+    }
+    return { geo, kind, kinds, put, width, inkHalf: ch => metrics(ch).ink, SLOT, metrics };
+  })();
   /* Flat pieces that lie on a board (Nov 7: Sudoku's numbers, after Nonograms' own, which were moved here whole so the two share
      one copy): unlit quads in the board's own terms (the field runs +u to -x and +v to -z), each wound to face up, so a number or
      a mark reads the same at any light. `geo(T, quads)` makes the geometry of a list of quads (each four [u, v] corners, in a
@@ -18718,25 +18779,18 @@ const BOARD_KIT = (() => {
       return g;
     }
     const rect = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
-    const SEGS = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
-    function digit(T, d){
-      const w = 0.25, t = 0.12, q = [];
-      const S = { a: rect(-w, -0.5, w, -0.5 + t), g: rect(-w, -t / 2, w, t / 2), d: rect(-w, 0.5 - t, w, 0.5),
-                  f: rect(-w, -0.5, -w + t, 0), b: rect(w - t, -0.5, w, 0), e: rect(-w, 0, -w + t, 0.5), c: rect(w - t, 0, w, 0.5) };
-      for (const k of SEGS[d]) q.push(S[k]);
-      return geo(T, q);
-    }
+    // (Nov 7, "the same font from home page": a digit is its glyph in UI_SANS now, in a slot 0.62 wide with its ink centred, and 0.8 tall; the segments it was built of are gone)
+    function digit(T, d){ return type.geo(T, String(d)); }
     function cross(T){
       const L = 0.3, t = 0.06, q = [];
       for (const s of [1, -1]){ const ax = [Math.SQRT1_2, s * Math.SQRT1_2], nx = [-ax[1], ax[0]];
         q.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [a * L * ax[0] + b * t * nx[0], a * L * ax[1] + b * t * nx[1]])); }
       return geo(T, q);
     }
-    const ONE_AT = 0.25 - 0.12 / 2;   // a 1 is two strokes at its glyph's right edge (w - t to w): its ink's middle, in the glyph's own units, so a lone 1 is shifted back by this to stand in the middle of its square
-    return { geo, rect, digit, cross, ONE_AT };
+    return { geo, rect, digit, cross };
   })();
   return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say,
-           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted, flat };
+           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted, flat, type };
 })();
 /* ═══ DOT_FONT — the page's two dot fonts, once (Oct 27: "do the dot font next", after the board kit). A 5 × 7 (each glyph seven
    rows of five bits, the top bit the left dot: the capitals, the digits, a few signs and ♥ ★), which pinball's dot-matrix panel
@@ -41437,8 +41491,8 @@ const GOLF_MAKE = SIZE => {
       g.userData.unlit = true; return g; }])),
     // The hole number's parts: a dark plate, and the bars of seven-segment digits lying on it.
     plate: T => { const g = new T.BoxGeometry(1, 0.08, 0.78); g.translate(0, 0.04, 0); return g; },
-    segH: T => { const g = new T.BoxGeometry(1, 0.15, 0.22); g.translate(0, 0.075, 0); g.userData.unlit = true; return g; },
-    segV: T => { const g = new T.BoxGeometry(0.25, 0.15, 1); g.translate(0, 0.075, 0); g.userData.unlit = true; return g; },
+    // (the scoreboard's and the hole numbers' letters: BOARD_KIT.type, the page's own font; the seven-segment bars they were built of, Nov 7: "the same font from home page")
+    ...Object.fromEntries(BOARD_KIT.type.kinds('0123456789of-')),
     dot: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
     ghost: T => { const g = new T.SphereGeometry(0.5, 6, 4); g.scale(1, 0.4, 1); g.translate(0, 0.2, 0); g.userData.unlit = true; g.userData.opacity = 0.6; return g; },
     kicker: T => { const g = new T.CylinderGeometry(0.5, 0.5, 0.9, 20); g.translate(0, 0.45, 0); return g; },
@@ -41458,66 +41512,37 @@ const GOLF_MAKE = SIZE => {
     // the rail as a plain box, for boards too small on screen to show its planks or bricks (Oct 9)
     ...Object.fromEntries(HOLES.map((H, k) => ['wire' + k, T => wireGeo(T, H)])),
   };
-  /* THE HOLE NUMBER, in the board's far left corner: seven-segment digits on a dark plate, up above
-     the walls and the ground so nothing hides it. */
-  const DIGIT = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
-  /* THE SCOREBOARD: one dark plate along the board's far edge, over the walls, reading H (the hole's number), P (its par) and S (the shot you are
-     on) in the same seven segments, each in a colour of its own (gold, green, orange). The hole's number is the course's or the board's own;
-     a hole of your own has none (a dash). The shot is the stroke the ball is about to take, or is taking while it rolls, and what it took once
-     the hole is sunk; a board with no game shows a dash. It is made new each frame with the rest of a board's pieces, so it follows the game. */
-  const LETTER = { H: 'bcefg', P: 'abefg', S: 'afgcd', o: 'cdeg', F: 'aefg', ' ': '', '-': 'g' };
+  /* THE HOLE NUMBER, in the board's far left corner: digits in the page's own font on a dark plate, up above the walls and the ground so
+     nothing hides it. (Nov 7: "why cant you use the same font from home page on mini-golf and elsewhere?": they were seven segments, and the
+     scoreboard read "1 oF 5" for want of an "of"; both are BOARD_KIT.type's letters now, gold, laid on the plate the same way.) */
+  /* THE SCOREBOARD: one dark plate along the board's far edge, over the walls, reading the shot you are on, "of", and the hole's par (Nov 4: "1 of 5,
+     5 is the par."; no hole number, no board number, no other letters). The shot is the stroke the ball is about to take, or is taking while it
+     rolls, and what it took once the hole is sunk; a board with no game shows a dash. It is made new each frame with the rest of a board's pieces,
+     so it follows the game. */
   function scoreboardItems(out, H, where, par, shot){
-    const u0 = 0.04, v0 = 0.032;
-    const groups = [['', where, 0xffe9a8]];                                  // (Nov 4: "just say 1 of 5, nothing else.": no par, no shot)
-    /* (a far board's number runs to seven digits and more: the glyphs shrink together so the plate never runs past the board's width) */
-    let k = 1, W, HH, GAP, GROUP, w, glyphs;
-    for (let tries = 0; tries < 2; tries++){
-      W = 0.026 * k; HH = 0.022 * k; GAP = 0.012 * k; GROUP = 0.03 * k; w = 0; glyphs = [];
-      groups.forEach(([lt, ds, col], gi) => { if (gi) w += GROUP; for (const ch of lt + ds){ glyphs.push({ x: u0 + w, ch, col }); w += W + GAP; } });
-      w -= GAP;
-      const room = WD - 2 * u0 - 0.03;
-      if (w <= room) break;
-      k *= room / w;
-    }
-    const ph = 2 * HH + 0.03, pw = w + 0.03;
+    const u0 = 0.04, v0 = 0.032, TY = BOARD_KIT.type, room = WD - 2 * u0 - 0.03;
+    /* (a far board's number runs to seven digits and more: the letters shrink together so the plate never runs past the board's width) */
+    let h = 0.055, w = TY.width(where, h);
+    if (w > room){ h *= room / w; w = TY.width(where, h); }
+    const cap = 0.8 * h, ph = cap + 0.03, pw = w + 0.03;
     let top = 0;
     for (let q = 0; q <= 8; q++) for (const y of [0, v0 + ph]) top = Math.max(top, hOf(H, Math.min(WD, u0 + pw * q / 8), Math.min(1, y)));
-    const L = top + 0.032, lf = L + 0.006;
+    const L = top + 0.032;
     out.push({ kind: 'plate', u: u0 - 0.015 + pw / 2, v: v0 - 0.015 + ph / 2, scale: 1, sx: pw, sy: 0.07, sz: ph / 0.78, lift: L, color: 0x10301a });
-    for (const { x, ch, col } of glyphs){
-      const segs = ch in LETTER ? LETTER[ch] : (DIGIT[+ch] || '');
-      const put = (kind, u, v, sc) => out.push({ kind, u, v, scale: sc, lift: lf, color: col });
-      if (segs.includes('a')) put('segH', x + W / 2, v0, W);
-      if (segs.includes('g')) put('segH', x + W / 2, v0 + HH, W);
-      if (segs.includes('d')) put('segH', x + W / 2, v0 + 2 * HH, W);
-      if (segs.includes('f')) put('segV', x, v0 + HH / 2, HH);
-      if (segs.includes('b')) put('segV', x + W, v0 + HH / 2, HH);
-      if (segs.includes('e')) put('segV', x, v0 + 1.5 * HH, HH);
-      if (segs.includes('c')) put('segV', x + W, v0 + 1.5 * HH, HH);
-    }
+    TY.put(out, where, { u: u0, v: v0 + cap / 2, h, color: 0xffe9a8, align: 'left', lift: L + 0.012 });
   }
   function numberItems(out, H, n){
-    const W = 0.04, HH = 0.035, GAP = 0.018, ds = String(n), u0 = 0.035, v0 = 0.03;
-    const pw = ds.length * W + (ds.length - 1) * GAP + 0.03, ph = 2 * HH + 0.03;
+    const TY = BOARD_KIT.type, ds = String(n), h = 0.0875, cap = 0.8 * h, u0 = 0.035, v0 = 0.03, slot = TY.SLOT * h;
+    const w = TY.width(ds, h), pw = w + 0.03, ph = cap + 0.03;
     let top = 0;
     for (const [x, y] of [[0, 0], [u0 + pw, 0], [0, v0 + ph], [u0 + pw, v0 + ph]]) top = Math.max(top, hOf(H, Math.min(1, x), Math.min(1, y)));
     const L = top + 0.032;                                     // over a wall's top
     /* (Oct 9: with a hole on every board the numbers run to four digits and more. The plate is a box scaled by the width it
        covers, so a long number made it a great thick slab that buried its own digits; it is laid as plates of a one-digit
        number's size, side by side, instead.) */
-    const p1 = W + 0.03, np = Math.max(1, Math.ceil(pw / p1 - 0.01));
+    const p1 = slot + 0.03, np = Math.max(1, Math.ceil(pw / p1 - 0.01));
     for (let q = 0; q < np; q++) out.push({ kind: 'plate', u: u0 - 0.015 + (np === 1 ? pw / 2 : p1 / 2 + q * (pw - p1) / (np - 1)), v: v0 - 0.015 + ph / 2, scale: p1, lift: L, color: 0x10301a });
-    [...ds].forEach((d, k) => {
-      const x = u0 + k * (W + GAP), segs = DIGIT[+d], lf = L + 0.006;
-      const put = (kind, u, v, sc) => out.push({ kind, u, v, scale: sc, lift: lf, color: 0xffe9a8 });
-      if (segs.includes('a')) put('segH', x + W / 2, v0, W);
-      if (segs.includes('g')) put('segH', x + W / 2, v0 + HH, W);
-      if (segs.includes('d')) put('segH', x + W / 2, v0 + 2 * HH, W);
-      if (segs.includes('f')) put('segV', x, v0 + HH / 2, HH);
-      if (segs.includes('b')) put('segV', x + W, v0 + HH / 2, HH);
-      if (segs.includes('e')) put('segV', x, v0 + 1.5 * HH, HH);
-      if (segs.includes('c')) put('segV', x + W, v0 + 1.5 * HH, HH);
-    });
+    TY.put(out, ds, { u: u0, v: v0 + cap / 2, h, color: 0xffe9a8, align: 'left', lift: L + 0.012 });
   }
   /* (opt, Oct 22: the hole of board (c, r) drawn for another game, the tank battle on the golf holes: { hk, t, now, blown,
       kicked }. Its hole, its movers at the clock t, the mines gone off in `blown`, with no golf game's ball, ghost or aim.) */
@@ -41559,7 +41584,7 @@ const GOLF_MAKE = SIZE => {
       const shot = !G ? null : (G.state === 'play' && !G.moving) ? G.strokes + 1 : G.strokes;
       // (Nov 4: "remove the board number. just say 1 of 5... / 2 of 5 / ect.": where the hole falls in the round, not the board's own number)
       // (Nov 4: "1 of 5,   5 is the par.": the shot you are on, of the hole's par: not the hole's place in the round)
-      scoreboardItems(out, H, (shot == null ? '-' : shot) + ' oF ' + H.par, H.par, shot);
+      scoreboardItems(out, H, (shot == null ? '-' : shot) + ' of ' + H.par, H.par, shot);
     } else if (NUMS.on && !H.custom) numberItems(out, H, H.num || k + 1);         // (a hole of your own has no number on the course)
     // the rails, a segment a half cell, each on the ground there (half, since the skate park's walls: a cell's length
     // climbed the half-pipe in steps)
@@ -47164,28 +47189,14 @@ const T2048_APP = (() => {
   /* (Nov 1: "2048 game should use standard numbers, not chess pieces."): the tile wears its value in plain figures, seven-segment
      digits lying flat and unlit on its top (nonograms' way: `digitGeo`), dark on a light tile and white on a dark one. The chess
      piece letters (`pieceOf`) are no longer drawn. */
-  const SEG7 = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
-  function digitGeo(T, d){
-    const w = 0.25, t = 0.13, rect = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
-    const S = { a: rect(-w, -0.5, w, -0.5 + t), g: rect(-w, -t / 2, w, t / 2), d: rect(-w, 0.5 - t, w, 0.5),
-                f: rect(-w, -0.5, -w + t, 0), b: rect(w - t, -0.5, w, 0), e: rect(-w, 0, -w + t, 0.5), c: rect(w - t, 0, w, 0.5) };
-    // (Nov 1: "center 2048 numbers, they are currently right aligned.": a 1 is two right-hand segments, so in a box as wide as the other
-    // digits it sat to the right of its slot; its stroke is centred here, and `figures` gives it a narrower slot)
-    const cx = d === 1 ? w - t / 2 : 0;
-    const pos = [], at = ([u, v]) => [-(u - cx), 0.003, -v];
-    const tri = (A, B, C) => { const n = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]); if (n < 0) pos.push(...A, ...C, ...B); else pos.push(...A, ...B, ...C); };
-    for (const k of SEG7[d]){ const [a, b, c, e] = S[k].map(at); tri(a, b, c); tri(a, c, e); }
-    const g = new T.BufferGeometry();
-    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    g.computeVertexNormals(); g.userData.unlit = true;
-    return g;
-  }
+  // (Nov 7, "the same font from home page": a figure is its glyph in UI_SANS, ink centred in its slot, as every board's numbers are (BOARD_KIT.type); the seven segments it was built of are gone)
+  const digitGeo = (T, d) => BOARD_KIT.type.geo(T, String(d));
   const inkOf = col => { const r = (col >> 16) & 255, gr = (col >> 8) & 255, b = col & 255; return (0.299 * r + 0.587 * gr + 0.114 * b) > 150 ? 0x2b2b2b : 0xffffff; };
   function figures(e, u, v){
     const ds = String(Math.pow(2, e)), n = ds.length, ink = inkOf(colOf(e));
-    const adv = [...ds].map(d => d === '1' ? 0.32 : 0.62), cs = [];                     // (each digit's slot, in digit heights; a 1's is narrow)
+    const adv = [...ds].map(d => d === '1' ? 0.48 : 0.62), cs = [];                     // (each digit's slot, in digit heights; a 1's is narrow)
     let x = 0; adv.forEach((a, k) => { x += k ? (adv[k - 1] + a) / 2 : 0; cs.push(x); });
-    const half = d => d === '1' ? 0.065 : 0.25, lo = cs[0] - half(ds[0]), hi = cs[n - 1] + half(ds[n - 1]), mid = (lo + hi) / 2;   // (the ink's own ends, so the figures sit in the middle of the tile)
+    const half = d => BOARD_KIT.type.inkHalf(d), lo = cs[0] - half(ds[0]), hi = cs[n - 1] + half(ds[n - 1]), mid = (lo + hi) / 2;   // (the ink's own ends, so the figures sit in the middle of the tile)
     const h = Math.min(0.55 * SQ, 0.84 * SQ / (hi - lo));
     return [...ds].map((d, k) => ({ kind: 't8D' + d, u: u + (cs[k] - mid) * h, v, scale: h, lift: TILE_H * SQ, color: ink }));
   }
@@ -51761,7 +51772,7 @@ const NONOGRAM_APP = (() => {
   }
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;   // (a glyph's ink is centred in its slot, so a lone 1 needs no shift: BOARD_KIT.type)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'ngD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
   }
   const DIGIT_PX = 120;         // (a board under this many pixels across shows its picture alone: a 12×12's numbers would be specks)
@@ -52387,7 +52398,7 @@ const SUDOKU_APP = (() => {
   const DIGIT_PX = 100, NOTE_PX = 240;      // (a board under the first shows its tiles alone; pencil marks only on boards this wide)
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;   // (a glyph's ink is centred in its slot, so a lone 1 needs no shift: BOARD_KIT.type)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'skD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
   }
   function itemsOf(P, V, g, live, bp){
@@ -53035,7 +53046,7 @@ const HASHI_APP = (() => {
   const DIGIT_PX = 100;      // (a board under it shows its islands, not their numbers)
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color, lift){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;   // (a glyph's ink is centred in its slot, so a lone 1 needs no shift: BOARD_KIT.type)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'hsD' + ds[k], u: u0 + k * sp, v, scale: h, lift: lift || 0.0028, color });
   }
   function itemsOf(P, V, g, live, bp){
@@ -64711,6 +64722,7 @@ function restoreLastApp(named){
   return HOME_APP;
 }
 window.__restoreLastApp = restoreLastApp;       // (for the tests)
+window.__boardType = BOARD_KIT.type;                 // (for the tests: the letters' pictures and metrics)
 /* Apps call this after their state changes so the board browser's icons and
    titles redraw (a move was played, content updated, etc.). */
 window.refreshFieldBrowser = () => { try { rebuildBoardBrowser(); } catch {} };
@@ -64976,6 +64988,9 @@ function _itemRec(app, kind){
        drawn at its own colour whatever the lighting — a lit window at night,
        a muzzle flash. */
     const _mo = _op ? { transparent: true, opacity: _op, depthWrite: false } : {};
+    /* …and a kind may be a LETTER (geometry.userData.glyph, Nov 7: BOARD_KIT.type): its picture is white on clear, so its material blends and
+       writes no depth, and the item's colour tints it. */
+    if (geo.userData && geo.userData.glyph){ _mo.transparent = true; _mo.depthWrite = false; }
     /* …and a kind may carry its own colours (geometry.userData.vertexColors, Oct 2, Mini golf's grass):
        a colour per vertex, times the item's colour — give the item white to show them as they are. */
     if (geo.userData && geo.userData.vertexColors) _mo.vertexColors = true;

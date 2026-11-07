@@ -535,6 +535,24 @@ try {
     console.log(`${okF ? 'ok  ' : 'FAIL'} one sans: no canvas or style sets its own generic sans, and the words Home, the flash cards, Sudoku and Hashi draw are all in ${def.split(',')[0]}…`);
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await page.waitForTimeout(400);
   }
+  // THE LETTERS (Nov 7: "why cant you use the same font from home page on mini-golf and elsewhere?"): a board's numbers and words are BOARD_KIT.type's
+  // letters, each a quad wearing its glyph in that font. Every digit's ink, read back from the picture it wears, is centred in its slot (the lone 1
+  // the old segments sat at the right edge of) and about 0.8 of a digit's height, narrower than its slot; a line lays them 0.62 apart; the pieces are
+  // see-through; and the games that had segments now ask for letters (Sudoku's squares and mini golf's plate are read in their own checks).
+  {
+    const r = await page.evaluate(() => { const T = window.__boardType, THREE = window.FIELD_WORLD.THREE, out = { off: [], cap: [], wide: [], kinds: [] };
+      for (const ch of '0123456789'){ const g = T.geo(THREE, ch), cv = g.userData.map.image, w = cv.width, h = cv.height, d = cv.getContext('2d').getImageData(0, 0, w, h).data;
+        let lo = w, hi = -1, top = h, bot = -1;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 40){ lo = Math.min(lo, x); hi = Math.max(hi, x); top = Math.min(top, y); bot = Math.max(bot, y); }
+        out.off.push(Math.abs(((lo + hi) / 2 - (w - 1) / 2) / 160)); out.cap.push((bot - top + 1) / 160); out.wide.push((hi - lo + 1) / 160);
+        out.glyph = out.glyph !== false && !!g.userData.glyph && !!g.userData.unlit && g.attributes.uv.count === 6; }
+      const row = []; T.put(row, '10', { u: 0.5, v: 0.5, h: 0.1, color: 0xffffff, align: 'center' });
+      out.kinds = row.map(i => i.kind).join(); out.pitch = +(row[1].u - row[0].u).toFixed(4); out.width = +T.width('10', 0.1).toFixed(4); out.mid = +((row[0].u + row[1].u) / 2).toFixed(4);
+      return out; });
+    const okL = Math.max(...r.off) < 0.012 && r.cap.every(c => c > 0.6 && c < 0.9) && r.wide.every(w => w < 0.58) && r.glyph && r.kinds === 'tg49,tg48' && r.pitch === 0.062 && r.width === 0.124 && r.mid === 0.5;
+    if (!okL) failures.push('[letters] ' + JSON.stringify(r));
+    console.log(`${okL ? 'ok  ' : 'FAIL'} letters: every digit's ink centred in its slot (off by ${Math.max(...r.off).toFixed(3)} of a digit at most), ${Math.min(...r.cap).toFixed(2)}–${Math.max(...r.cap).toFixed(2)} tall and under ${Math.max(...r.wide).toFixed(2)} wide, laid ${r.pitch} apart at height 0.1`);
+  }
   }   // (end of part 1)
 
   if (part(2)) {
@@ -2857,10 +2875,12 @@ try {
     //  plate with H, P and S in seven segments, the shot following the game; the menu's Scoreboard turns it off, and the corner number is then off by default)
     const nums = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), D = A._debug;
       const items = () => A.menu[0].items, lab = re => items().map(m => typeof m.label === 'function' ? m.label() : m.label).find(l => re.test(l));
-      const plates = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'plate').length, segs = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'segH' || it.kind === 'segV').length;
+      const plates = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'plate').length, segs = () => A.cellItems(f.c, f.r, 600).filter(it => /^tg\d+$/.test(it.kind)).map(it => it.kind).join();
       const out = { scoreLabel: lab(/^Scoreboard/), withBoard: plates(), segsWith: segs() };
-      D.games.delete(f.c + '_' + f.r); const s0 = segs(); D.startRound(f.c, f.r); const g = D.games.get(f.c + '_' + f.r); const s1 = segs(); g.strokes = 7; g.moving = false; const s7 = segs();
-      out.shotChanges = s0 !== s1 || s1 !== s7;
+      // (Nov 7, "the same font from home page": the plate's letters are BOARD_KIT.type's, so it is read back as the text it is: a dash with no game, then the shot about to be taken (1; with 7 strokes taken, 8), "of", the par)
+      const text = () => segs().split(',').filter(Boolean).map(k => String.fromCodePoint(+k.slice(2))).join('');
+      D.games.delete(f.c + '_' + f.r); const s0 = text(); D.startRound(f.c, f.r); const g = D.games.get(f.c + '_' + f.r); const s1 = text(); g.strokes = 7; g.moving = false; const s7 = text();
+      out.reads = [s0, s1, s7]; out.shotChanges = /^-of\d+$/.test(s0) && /^1of\d+$/.test(s1) && /^8of\d+$/.test(s7) && s0.slice(3) === s1.slice(3) && s1.slice(3) === s7.slice(3);
       // (Nov 4: "1 of 5,   5 is the par.": the plate reads the shot, then oF, then the par)
       out.placeChanges = true;
       items().find(m => /^Scoreboard/.test(typeof m.label === 'function' ? m.label() : m.label)).on();
@@ -3514,11 +3534,11 @@ try {
       if (!okSl || !okTg) failures.push('[simon slider] ' + JSON.stringify({ right, left, live, hid, shown }));
       console.log(`${okSl && okTg ? 'ok  ' : 'FAIL'} simon: a real drag along the bottom slider walked the history (the last of ${right.n} steps, then the first), a tap on a pad was live again, a click in the margin hid the slider and another showed it`);
     }
-    // 2048's figures are centred on their tile (Nov 1: "center 2048 numbers, they are currently right aligned."): a 1 is a stroke at its
-    // glyph's right, so "16", "128" and "1024" sat to the right of the middle
+    // 2048's figures are centred on their tile (Nov 1: "center 2048 numbers, they are currently right aligned."): a 1 was a stroke at its
+    // glyph's right, so "16", "128" and "1024" sat to the right of the middle (since Nov 7 the figures are glyphs of the page's font, ink centred in their slots: the ends are the ink's own)
     {
       const off = await page.evaluate(() => { const F = window.FIELD_APPS.find(a => a.id === '2048')._debug.figures, out = {};
-        for (const e of [1, 4, 7, 10]){ const it = F(e, 0.5, 0.5), n = it.length, ends = it.map((i, k) => { const d = String(Math.pow(2, e))[k], hw = (d === '1' ? 0.065 : 0.25) * i.scale; return [i.u - hw, i.u + hw]; });
+        for (const e of [1, 4, 7, 10]){ const it = F(e, 0.5, 0.5), n = it.length, ends = it.map((i, k) => { const d = String(Math.pow(2, e))[k], hw = window.__boardType.inkHalf(d) * i.scale; return [i.u - hw, i.u + hw]; });
           out[Math.pow(2, e)] = (Math.min(...ends.map(x => x[0])) + Math.max(...ends.map(x => x[1]))) / 2 - 0.5; }
         return out; });
       const okFig = Object.values(off).every(d => Math.abs(d) < 1e-9);
@@ -5963,7 +5983,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // (Nov 7: "#1 is not center aligned") a digit's ink stands in the middle of its column: a 1 is two strokes at its glyph's right edge, so its piece is shifted back
       const Ps = D.puzzleFor(3, 1), Vs = D.shownView(Ps, 0), cols = new Set([...Array(Ps.N).keys()].map(c => ((1 + c + 0.5) / Ps.M).toFixed(9)));
       const dg = D.itemsOf(Ps, Vs, null, false, 400).filter(it => /^skD\d$/.test(it.kind) && it.v > 1.5 / Ps.M);
-      out.ink = dg.some(it => it.kind === 'skD1') && dg.every(it => cols.has((it.u + (it.kind === 'skD1' ? 0.19 * it.scale : 0)).toFixed(9)));
+      out.ink = dg.some(it => it.kind === 'skD1') && dg.every(it => cols.has(it.u.toFixed(9)));
       return out;
     });
     const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '6,9,9,9,9' && r.ink && !r.bad.length && r.climbs && r.classic.count === 1 && r.classic.rated && r.many === 5 && r.broken === 0
@@ -6276,7 +6296,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // so its piece is shifted back by 0.19 of its height
       const Pn = D.puzzleFor(3, 1), Vn = D.shownView(Pn, 0), nums = D.itemsOf(Pn, Vn, null, false, 400).filter(it => /^hsD\d$/.test(it.kind) && it.lift > 0.0025);
       const mid = new Set(Pn.isl.map((s, i) => D.islC(Pn, i).map(x => x.toFixed(9)).join()));
-      out.ink = nums.length === Pn.K && Pn.n.includes(1) && nums.every(it => mid.has([it.u + (it.kind === 'hsD1' ? 0.19 * it.scale : 0), it.v].map(x => x.toFixed(9)).join()));
+      out.ink = nums.length === Pn.K && Pn.n.includes(1) && nums.every(it => mid.has([it.u, it.v].map(x => x.toFixed(9)).join()));
       return out;
     });
     const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '7,9,11,13,15' && !r.bad.length && r.climbs && r.ring.join() === '1,2,0' && r.cross.edges === 2 && r.cross.crossed && r.cross.one === 0 && r.side

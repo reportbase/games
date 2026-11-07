@@ -1266,10 +1266,27 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `UI_MONO`) is the one stack now, and each of those says it (`F` in the tile painters, `SANS` in the cards and the viewer, the book reader's Sans
   face, the inline `font:` strings). Left alone on purpose: monospace for notation and readouts (`UI_MONO`: chess's file letters, the review
   panel and coach button, the margin numbers; "Courier New" in the diagnostic boxes), the pinball reels' serif figures, the book reader's own
-  Serif, Book and Mono faces (its default is Serif), and the dot and seven-segment lettering the boards are built of (flat pieces, not a font:
-  scores, clocks, calls, puzzle numbers). Measured: with each of the 59 apps shown in turn for a moment, the only canvas font set was this stack (15 of them draw any). New text
+  Serif, Book and Mono faces (its default is Serif), and the dot-matrix lettering some boards are built of (Pong's, air hockey's and squash's
+  scores and calls, pinball's panel, the game lab's words: pieces, not a font; the seven-segment numbers went the same day, next note). Measured: with each of the 59 apps shown in turn for a moment, the only canvas font set was this stack (15 of them draw any). New text
   uses `UI_SANS`. The smoke test (end of part 1, "one sans") fails on a stray generic sans in the source and reads every canvas font Home, the
   flash cards, Sudoku and Hashi set.
+- **Numbers and words on boards in the page's own font** (Nov 7: "why cant you use the same font from home page on mini-golf and elsewhere?"): the
+  numbers on a board were seven-segment pieces (`BOARD_KIT.flat.digit`, mini golf's `segH` and `segV`), which no font can be, and mini golf's plate
+  read "1 oF 5" for want of an "of". `BOARD_KIT.type` (before `flat`) lays letters instead: a letter is a flat unlit quad, `geo(T, ch)`, wearing its
+  glyph drawn once on a canvas in `UI_SANS` (bold, white, so the item's colour tints it; `userData.map` the picture, `userData.glyph` which the
+  field's item materials read as see-through and depth-write-free), its kind `tg` + the code point (`kind`, `kinds(str)` for an app's
+  `itemGeometries`), laid by `put(out, str, { u, v, h, color, align, lift })` (u across, v the middle of the capitals, h the height of a digit's box
+  as the old digits were laid) with `width(str, h)` and `inkHalf(ch)`. In a piece's units a digit's slot is 0.62 wide (the old pitch) with its ink
+  centred in it, and the capitals 0.8 tall (smaller by what a fallback face's wider digits overshoot, `fit`, so numbers never touch); any other
+  letter has the face's own advance. Used by: the kit's digit kinds (`flat.digit` now gives the glyph, so Nonograms' clues, Sudoku's squares, keys,
+  clock and strikes, Hashi's islands and Missile Command's lit score changed with it and their layouts did not), 2048's figures (a 1 gets a
+  slot of 0.48, `figures`) and mini golf's scoreboard and hole numbers (`scoreboardItems`, `numberItems`: gold on the dark green plate, now "1 of 5"
+  and the digits at 0.0875 of a board). A lone 1 stands in the middle of its square by itself, so `ONE_AT` and the shifts of the lone-1 note
+  above are gone. The notes of Oct–Nov that call these numbers seven-segment, or mini golf's scoreboard segments with `LETTER` and `DIGIT`, are out
+  of date. Left as they were: the dot-matrix lettering (`DOT_FONT`: Pong, air hockey and squash scores and calls, pinball's panel, the game lab's
+  words) and the pinball reels, which are the look of those games. The smoke test: part 1's "letters" (every digit's ink read back from its picture is
+  centred and 0.6–0.9 of a digit tall, 0.62 apart in a line), Sudoku's and Hashi's ink checks without any shift, and mini golf's plate read back as its
+  text (a dash with no game, 1 on the tee, 8 with seven strokes, then "of" and the par).
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or
