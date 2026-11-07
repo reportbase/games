@@ -5786,6 +5786,166 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} game lab: level 5 measured against level 1 (the starters climb, a flat game goes back to Claude and is kept with a note after the last try), and My games lists the boards changed with a real Play going there`);
   }
 
+
+  // SUDOKU (Nov 7: "lets build a new game based our experice with the other games"): every board its own puzzle at a level by its
+  // ring (a 6×6, then four 9×9s that want more and more of what a person knows), each with one answer the human solver finds
+  // without a guess; the rules by hand (givens fixed, pencil marks, a digit clearing its peers' notes, undo, a wrong digit and a hint
+  // as faults, the stars); real clicks on a square and a digit, the keys and the play pad; quick real touches on one digit; a board
+  // no one plays solves itself.
+  {
+    current = 'sudoku';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'sudoku')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { bad: [] }, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      out.sizes = [1, 2, 3, 4, 5].map(lv => D.makePuzzle(1234, lv).N);
+      const mean = [0, 0, 0, 0, 0, 0], grade = [0, 0, 0, 0, 0, 0], K = 6, t0 = performance.now();
+      for (let lv = 1; lv <= 5; lv++) for (let k = 0; k < K; k++){
+        const idx = 50 + k * 97, P = D.makePuzzle(idx, lv), N = P.N, geom = D.suGeom(N), empty = P.givens.filter(g => !g).length;
+        const validSol = geom.units.every(U => new Set(U.map(i => P.sol[i])).size === N) && P.sol.every(d => d >= 1 && d <= N);
+        const rt = D.suRate(N, P.givens);
+        const ok = validSol && P.givens.every((g, i) => !g || g === P.sol[i]) && D.suSolve(N, P.givens, 2).count === 1
+          && rt.solved && rt.steps.length === empty && rt.steps.every(s => s.d === P.sol[s.i]) && rt.level === P.level
+          && P.order.length === empty && P.order.every(s => !P.givens[s.i] && s.d === P.sol[s.i]) && N === D.LV[lv - 1].N
+          && P.level >= D.LV[lv - 1].grade[0] && P.level <= D.LV[lv - 1].grade[1];
+        if (!ok) out.bad.push({ lv, idx, level: P.level, count: P.count, solved: rt.solved });
+        mean[lv] += P.count / K; grade[lv] += P.level / K;
+      }
+      out.ms = Math.round(performance.now() - t0);
+      out.givens = mean.slice(1).map(x => +x.toFixed(1)); out.grade = grade.slice(1).map(x => +x.toFixed(1));
+      // (the 9×9s: fewer givens and a harder grade at every level)
+      out.climbs = out.givens[1] > out.givens[2] && out.givens[2] > out.givens[3] && out.givens[3] > out.givens[4] && out.grade[1] < out.grade[2] && out.grade[2] < out.grade[3] && out.grade[3] < out.grade[4];
+      // the solvers on known grids: a classic has one answer and the people's steps finish it; an empty 4×4 has many; a grid breaking its own rules none
+      const classic = Uint8Array.from('530070000600195000098000060800060003400803001700020006060000280000419005000080079'.split('').map(Number));
+      out.classic = { count: D.suSolve(9, classic, 3).count, rated: D.suRate(9, classic).solved };
+      out.many = D.suSolve(4, new Uint8Array(16), 5).count;
+      const broken = new Uint8Array(81); broken[0] = 5; broken[1] = 5;
+      out.broken = D.suSolve(9, broken, 2).count;
+      // a board made a few milliseconds at a time (as one only looked at is) is the board made whole
+      const a = D.makePuzzle(1000, 5), b = D.makePaced(1000, 5, 2);
+      out.paced = { same: same([...a.givens], [...b.P.givens]) && same([...a.sol], [...b.P.sol]), calls: b.calls };
+      out.sameBoard = same([...D.makePuzzle(777, 3).givens], [...D.makePuzzle(777, 3).givens]);
+      out.differ = !same([...D.makePuzzle(777, 3).givens], [...D.makePuzzle(778, 3).givens]);
+      // the rules by hand
+      const g = D.fresh(0, 0); D.GAMES.set('0_0', g);
+      const P = g.P, N = P.N, G = D.suGeom(N), empt = [...P.givens.keys()].filter(i => !P.givens[i]), e0 = empt[0];
+      const gi = P.givens.findIndex(x => x); D.select(g, gi);
+      out.givenLocked = D.enter(g, 1, true) === false && D.erase(g, true) === false && g.v[gi] === P.givens[gi];
+      D.select(g, e0); g.pencil = true; D.enter(g, 1, true); D.enter(g, 2, true); g.pencil = false;
+      const peer = empt.find(i => i !== e0 && G.peers[e0].includes(i)), d0 = P.sol[e0];
+      D.select(g, peer); g.pencil = true; D.enter(g, d0, true); g.pencil = false;
+      D.select(g, e0); D.enter(g, d0, true);
+      out.peerNotes = g.v[e0] === d0 && g.notes[e0] === 0 && !(g.notes[peer] >> (d0 - 1) & 1) && g.wrong === 0;
+      D.undo(g, true);
+      out.undo = g.v[e0] === 0 && g.notes[e0] === 3 && (g.notes[peer] >> (d0 - 1) & 1) === 1;
+      const wd = d0 % N + 1; D.enter(g, wd, true);
+      out.wrong = g.v[e0] === wd && g.wrong === 1;
+      const h = D.hintOf(g);
+      out.hintWrong = h.kind === 'wrong' && h.i === e0 && h.d === d0;
+      D.hint(g, true); out.h1 = g.hints === 1 && g.sel === e0 && g.hint && g.hint.kind === 'wrong' && g.v[e0] === wd;
+      D.hint(g, true); out.h2 = g.hints === 2 && g.v[e0] === d0 && !g.hint;
+      for (const i of empt) D.put(g, i, P.sol[i], true);
+      out.solved = { state: g.state, stars: g.stars, faults: D.faults(g) };
+      const g2 = D.fresh(0, 0), h2 = D.hintOf(g2);
+      out.stepHint = h2.kind === 'step' && h2.d === g2.P.sol[h2.i] && !g2.P.givens[h2.i] && h2.tech >= 1;
+      out.stars = [0, 1, 2, 3, 6].map(D.starsOf);
+      D.GAMES.delete('0_0');
+      return out;
+    });
+    const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '6,9,9,9,9' && !r.bad.length && r.climbs && r.classic.count === 1 && r.classic.rated && r.many === 5 && r.broken === 0
+      && r.paced.same && r.paced.calls > 1 && r.sameBoard && r.differ && r.givenLocked && r.peerNotes && r.undo && r.wrong && r.hintWrong && r.h1 && r.h2
+      && r.solved.state === 'solved' && r.solved.stars === 1 && r.solved.faults === 3 && r.stepHint && r.stars.join() === '3,2,2,1,1';
+    if (!ok1) failures.push('[sudoku] puzzles and rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} sudoku: 6×6 then 9×9s, 30 sampled puzzles each with one answer the human solver finds (${r.ms} ms; givens ${r.givens.join('/')}, grade ${r.grade.join('/')}), the rules, hints and stars`);
+    // real input on the framed board: a click on a square and a digit, the keys, the play pad, a puzzle finished by a real click
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 1));
+    await page.evaluate(() => window.__settle(3, 1));     // (the camera at rest on the board: a click while it still glides lands a row off)
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      // (where to click: projected from the square's middle, and only once the camera has really come to rest there: on the screen, reading back as
+      //  the same square, and in the same place 300 ms later. A frame can take seconds in the software renderer, and a camera that looks still
+      //  between two frames is only between them)
+      const aimOnce = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
+        return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
+      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+      const info = await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug, g = D.fresh(c, r); D.GAMES.set(k, g); D.LIVE = { c, r }; const P = g.P;
+        return { N: P.N, sol: [...P.sol], giv: [...P.givens], cen: [...P.sol.keys()].map(i => D.centreOf(P, i)), dig: [...Array(P.N).keys()].map(d => D.digitAt(P, d + 1)) }; }, [...fc, key]);
+      const st = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return { v: [...g.v], sel: g.sel, state: g.state, wrong: g.wrong, hints: g.hints, pencil: g.pencil, notes: [...g.notes] }; }, key);
+      const click = async ([u, v]) => { const p = await aimAt(u, v); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); };
+      // (a frame can take a second in the software renderer, and a press is read in the frame after it: each step waits for what it wants to see, up to 6 s)
+      const until = async test => { for (let k = 0; k < 60; k++){ const s = await st(); if (test(s)) return true; await page.waitForTimeout(100); } return false; };
+      const empties = info.giv.map((g, i) => g ? -1 : i).filter(i => i >= 0), [e0, e1, e2] = empties, N = info.N, last = empties[empties.length - 1];
+      real = {};
+      await click(info.cen[e0]); real.sel = await until(s => s.sel === e0);
+      await click(info.dig[info.sol[e0] - 1]); real.placed = await until(s => s.v[e0] === info.sol[e0]);
+      const gi = info.giv.findIndex(x => x); await click(info.cen[gi]); await until(s => s.sel === gi); await click(info.dig[0]); await page.waitForTimeout(600); real.givenKept = (await st()).v[gi] === info.giv[gi];
+      await click(info.cen[e1]); await until(s => s.sel === e1); const wd = info.sol[e1] % N + 1; await click(info.dig[wd - 1]); real.wrong = await until(s => s.v[e1] === wd && s.wrong === 1);
+      await click(info.dig[wd - 1]); real.erased = await until(s => s.v[e1] === 0);
+      await page.keyboard.press(String(info.sol[e1])); real.key = await until(s => s.v[e1] === info.sol[e1]);
+      await page.keyboard.press('Backspace'); real.bs = await until(s => s.v[e1] === 0);
+      await page.keyboard.press('z'); real.undo = await until(s => s.v[e1] === info.sol[e1]);
+      const before = (await st()).sel; await page.keyboard.press('ArrowRight'); await until(s => s.sel !== before); const after = (await st()).sel;
+      real.arrow = after !== before && Math.abs(((after / N) | 0) - ((before / N) | 0)) + Math.abs(after % N - before % N) === 1;
+      real.pad = (await page.evaluate(() => [...document.querySelectorAll('#playPad button')].map(b => b.dataset.key))).join();
+      await page.click('#playPad button[data-key="notes"]'); real.pencil = await until(s => s.pencil);
+      await click(info.cen[e2]); await until(s => s.sel === e2); await click(info.dig[0]); await until(s => s.notes[e2] === 1); await click(info.dig[1]); real.notes = await until(s => s.notes[e2] === 3);
+      await page.click('#playPad button[data-key="notes"]'); real.pencilOff = await until(s => !s.pencil);
+      await page.click('#playPad button[data-key="hint"]'); real.hint = await until(s => s.hints === 1);
+      // the whole puzzle but its last square by the model, the last by a real click on the square and a real click on the digit
+      await page.evaluate(([k, last]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k);
+        for (let i = 0; i < g.v.length; i++) if (!g.P.givens[i] && i !== last) D.put(g, i, g.P.sol[i], true);
+        g.hint = null; g.sel = -1; g.ver++; }, [key, last]);
+      await click(info.cen[last]); await until(s => s.sel === last); await click(info.dig[info.sol[last] - 1]);
+      real.solved = (await until(s => s.state === 'solved')) ? 'solved' : (await st()).state;
+      await click(info.cen[0]);
+      real.again = { live: true, state: 'ready' };
+      real.again.state = await page.evaluate(async ([k, c, r]) => { for (let q = 0; q < 60; q++){ const D = window.getFieldApp()._debug, g = D.GAMES.get(k); if (g && g.state === 'ready') return 'ready'; await new Promise(ok => setTimeout(ok, 100)); } return D.GAMES.get(k).state; }, [key, ...fc]);
+      real.again.live = await page.evaluate(([c, r]) => { const L = window.getFieldApp()._debug.LIVE; return !!L && L.c === c && L.r === r; }, fc);
+    }
+    const ok2 = real && real.sel && real.placed && real.givenKept && real.wrong && real.erased && real.key && real.bs && real.undo && real.arrow && real.pad === 'notes,erase,undo,hint'
+      && real.pencil && real.notes && real.pencilOff && real.hint && real.solved === 'solved' && real.again.live && real.again.state === 'ready';
+    if (!ok2) failures.push('[sudoku] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} sudoku: real clicks select a square and put a digit in (a given stays), the same digit again takes it out, the keys, arrows and the play pad work, a real click finishes it and another starts it again`);
+    // (Oct 15, Simon's lesson) quick real touches on one digit with a square selected are each a tap: in, out, in, out, and the view never reframed
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const quick = await page.evaluate(async () => {
+      const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const tap = async (u, v, after) => { const p = S(u, v); ptr('pointerdown', p); const t = mk(p); fire('touchstart', t); ptr('pointerup', p); fire('touchend', t); await wait(after); };
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r };
+      const i = g.P.givens.findIndex(x => !x), d = g.P.sol[i], seen = [];
+      const [cu, cv2] = D.centreOf(g.P, i), [du, dv] = D.digitAt(g.P, d);
+      await tap(cu, cv2, 200);
+      for (let k = 0; k < 4; k++){ await tap(du, dv, 200); seen.push(g.v[i]); }
+      const f2 = W.cellAt(W.target.boardX, W.target.boardZ);
+      return { seen, d, still: !!f2 && f2.c === f.c && f2.r === f.r, noDbl: window.getFieldApp().noDoubleTap() };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    const ok3 = quick.seen.join() === [quick.d, 0, quick.d, 0].join() && quick.still && quick.noDbl;
+    if (!ok3) failures.push('[sudoku] quick taps on one digit: ' + JSON.stringify(quick));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} sudoku: four quick real touches on one digit are four taps (${quick.seen.join(', ')})`);
+    // a board no one plays solves itself: over one cycle of its clock every digit of the solver's order is seen going in, the whole
+    // grid is held, the puzzle comes back to its givens, and on the page's own clock it moves
+    const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, P = D.puzzleFor(9, 9), T = D.cycleOf(P), seen = new Set(), counts = new Set();
+      let solved = false, blank = false;
+      for (let k = 0; k < 600; k++){ const V = D.shownView(P, 1000 + T * k / 600); seen.add(V.m); counts.add(V.v.filter(x => x).length); solved = solved || (V.solved && V.v.every((x, i) => x === P.sol[i])); blank = blank || V.v.every((x, i) => x === P.givens[i]); }
+      const live = new Set(), t0 = performance.now();
+      while (performance.now() - t0 < 4000){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
+      return { stages: seen.size, steps: P.order.length, counts: counts.size, solved, blank, live: live.size }; });
+    const ok4 = demo.stages >= demo.steps && demo.counts > demo.steps * 0.8 && demo.solved && demo.blank && demo.live >= 3;
+    if (!ok4) failures.push('[sudoku] a board no one plays: ' + JSON.stringify(demo));
+    console.log(`${ok4 ? 'ok  ' : 'FAIL'} sudoku: a board no one plays solves itself (${demo.stages} stages for ${demo.steps} digits, ${demo.live} seen live)`);
+  }
+
   }   // (end of part 5)
   if (part(6)) {
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the

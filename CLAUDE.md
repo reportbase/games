@@ -1101,6 +1101,53 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     touches on one square read as four taps; and a board no one plays going through every stage of its cycle (`shownView(P,
     at)`, `cycleOf`: a few seconds sampled on the page's clock can fall wholly in the picture's rest, which failed once) and
     moving on the page's clock over a whole cycle.
+- **Sudoku** (Nov 7: "lets build a new game based our experice with the other games"): `SUDOKU_APP`, id `sudoku`, after Nonograms. The
+  classic, built the way the other puzzles were: every board its own puzzle, harder further out, one answer, rated by a solver that plays
+  like a person, the board itself the controls, a board no one plays solving itself.
+  - **Every board its own puzzle** (`makePuzzle(idx, lv)`, `puzzleFor`, `PUZZLES` 1,500): from the board's number (`boardIdx`) at a level
+    1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as Lights Out and Nonograms. `LV` (a level's grid, the givens it may
+    keep, the grade of the human solver it must need, the full grids to try): 6×6 with 2×3 boxes; then four 9×9s: grade 1 (naked singles
+    alone, 40–46 givens), 2 (hidden singles, 32–37), 3–4 (locked candidates, pairs and triples, 27–31), 4–5 (X-wing, swordfish, XY-wing, 22–27).
+    Measured on 60 boards a level: every one with one answer; givens 16.7, 42.8, 33.5, 28.4, 26.3; mean grade 1, 1, 2, 3.2, 4.6; 0.1, 0.3, 1.7, 15
+    and 47 ms to make (154 at worst).
+  - **The solvers** (`SUDOKU CORE START … END`, pure, so a probe can run them in node): `suSolve(N, grid, limit, R)` counts answers by
+    backtracking on the square with fewest candidates (a full grid is one drawn from an empty grid with `R` shuffling the digits);
+    `suRate(N, grid, firstOnly)` is the human solver, easiest first and one thing at a time: naked single (1), hidden single (2), locked
+    candidates (3), naked pairs and triples and hidden pairs (4), X-wing, swordfish, XY-wing (5); its `steps` are the placements in order,
+    each with the grade of what it took since the last, and its `level` the puzzle's grade (checked against the answers over 300 puzzles: it
+    never put a wrong digit down, and about 12% of minimal puzzles stall it, which is why the hardest levels keep trying). `suMake` takes
+    squares out of a full grid (a square and its half-turn twin together) while one answer remains, down to the level's givens, and keeps the
+    first of up to `tries` grids whose grade is in the level's band, else the nearest (a board whose grade missed says "beyond the logic here").
+  - **Boards looked at are made a few milliseconds a frame** (the boards' share of time, `SOON`): a level 5 takes 47 ms on average, one go a
+    visible stop, so `suMake` is worked a try at a time and carried on from where it got to (`suJob`, `JOBS`); the answer is the same however
+    it is paced (`makePaced` in the smoke test). The board you play is made at once.
+  - **The board is the controls** (Oct 28, "Games play with the row shut"): M = N + 2 squares across, the grid in a margin of one; the far
+    margin holds the level as dots in its flag colour, the clock (m:ss, seven segments) and a red strike for each fault (most five), the near
+    margin the digits 1 to N as buttons (cream; dim where a digit is all placed). Tap a square (gold; its row, column and box a cool tint, the
+    same digit a warm one, a wrong digit pink), tap a digit; the same digit again takes it out; a given never changes. The play pad has what a
+    gesture does not: Notes (pencil marks, a bit a digit, small digits in the square from boards 240 px wide; a digit put in clears it from
+    its peers' notes), Erase, Undo and Hint. The keys do it all: 1–9, Backspace, arrows (the screen's directions, `screenToBoardDirs`), N, Z,
+    H (not 0, which frames the board). No message ever shows; the title says what the game is (`cellTitle`: the level, the grade, best, the
+    digits placed, the hint's technique).
+  - **Faults and stars**: a wrong digit put down (shown red as it goes in; the menu's Show mistakes turns that off) or a press of Hint is a
+    fault; none ★★★, one or two ★★, more ★; the best (most stars, then quickest) kept (`sudoku.best`, by board and level). **Hint**: a wrong
+    digit is found first (shown pink; the second press puts the right one in), else the human solver is asked for its next step from the
+    digits as they stand (never your notes), the square lit and selected and the technique in the title, the second press putting its digit in;
+    a grid it cannot go on from lights the square with fewest candidates and says it is a guess.
+  - **A board no one plays solves itself**: its givens, then each digit in the order the human solver found them (`P.order`; a stalled
+    puzzle's rest in answer order), a step (0.32 s) apart, the grid held, then again, each board at its own phase (`shownView`, `cycleOf`).
+    Solved, a tap plays it again where it is.
+  - **`BOARD_KIT.flat`** (`geo`, `rect`, `digit`, `cross`): Nonograms' flat unlit pieces and seven-segment digits, moved into the kit whole
+    so the two share one copy (item kinds `skD0`…`skD9`, `skX`, `skDot` here).
+  - Found building it: the sandbox's software renderer takes 2–5 s a frame (the page's JS is idle 97% of that, Sudoku's included), so a
+    camera that "looks still" over four looks a quarter second apart is only between two frames: a real click right after `__settle` landed
+    off the board. The check aims only once the point reads back as the square and holds still 300 ms (`aimAt`).
+  - The smoke test (part 5) checks the sizes and levels by ring, 30 sampled puzzles each with one answer that the human solver finishes with
+    the answer's digits, the climb in givens and grade, a classic grid's one answer, an empty 4×4's many and a broken grid's none, a paced
+    make equal to a whole one, the rules by hand (a given fixed, notes, a digit clearing its peers' notes, undo, a wrong digit, both hint
+    presses, the stars), real input (a click on a square and a digit, a given staying, the same digit taking it out, the keys, arrows,
+    Backspace, Z, the play pad's four buttons, a real click finishing a puzzle and another starting it again), four quick real touches on one
+    digit, and a board no one plays going through every step of its solve.
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or
@@ -2675,7 +2722,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   also has `gkey` (50 games), `gameAt(GAMES, fresh)` (a board's game made on first want; 11), `liveGame(() => app, () => LIVE,
   gameAt)` (the board being played while this game is up; 10), `clamp` (12), `now` (the paused-aware clock in ms; 17), `yawOf`
   (never a yaw of exactly 0; 5), `hash` (FNV-1a in base 36: the keys of your own tables, figures and trick shots; 4, the same
-  keys as before), `LV_COL` (the levels' flag colours; 5) and `stars(n)` (★★☆; 15 places). Trick shots' worker is made from its
+  keys as before), `LV_COL` (the levels' flag colours; 5) and `stars(n)` (★★☆; 15 places), and since Nov 7 `flat` (flat unlit pieces and seven-segment digits: Nonograms' and Sudoku's). Trick shots' worker is made from its
   own text up to "IN THE FIELD", so nothing of the kit may go above that line; the game lab's starters and sandbox keep their
   own. Checked: every app loads with the same levels, every hash the same, a tap starts the same game.
   **Boards no one plays, played back** (Oct 27: "do the idle-board playback"): `BOARD_KIT.phase(idx)` (a board's own place in its

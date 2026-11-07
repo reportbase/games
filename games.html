@@ -18693,8 +18693,42 @@ const BOARD_KIT = (() => {
       canvas(k){ const P = SPECS.get(k); return P ? paint(P, k.endsWith(':h')) : null; },
     };
   }
+  /* Flat pieces that lie on a board (Nov 7: Sudoku's numbers, after Nonograms' own, which were moved here whole so the two share
+     one copy): unlit quads in the board's own terms (the field runs +u to -x and +v to -z), each wound to face up, so a number or
+     a mark reads the same at any light. `geo(T, quads)` makes the geometry of a list of quads (each four [u, v] corners, in a
+     piece's own unit square, -0.5 to 0.5), `rect(u0, v0, u1, v1)` one such quad, `digit(T, d)` a seven-segment 0-9 (a top, f top
+     left, b top right, g middle, e bottom left, c bottom right, d bottom; mini golf's scoreboard has the same segments) and
+     `cross(T)` a thin X. Pieces of these kinds are laid with a scale of their height. */
+  const flat = (() => {
+    function geo(T, quads){
+      const pos = [];
+      const at = ([u, v]) => [-u, 0.003, -v];
+      const tri = (A, B, C) => { const n = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]); if (n < 0) pos.push(...A, ...C, ...B); else pos.push(...A, ...B, ...C); };
+      for (const q of quads){ const [a, b, c, d] = q.map(at); tri(a, b, c); tri(a, c, d); }
+      const g = new T.BufferGeometry();
+      g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+      g.computeVertexNormals(); g.userData.unlit = true;
+      return g;
+    }
+    const rect = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+    const SEGS = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
+    function digit(T, d){
+      const w = 0.25, t = 0.12, q = [];
+      const S = { a: rect(-w, -0.5, w, -0.5 + t), g: rect(-w, -t / 2, w, t / 2), d: rect(-w, 0.5 - t, w, 0.5),
+                  f: rect(-w, -0.5, -w + t, 0), b: rect(w - t, -0.5, w, 0), e: rect(-w, 0, -w + t, 0.5), c: rect(w - t, 0, w, 0.5) };
+      for (const k of SEGS[d]) q.push(S[k]);
+      return geo(T, q);
+    }
+    function cross(T){
+      const L = 0.3, t = 0.06, q = [];
+      for (const s of [1, -1]){ const ax = [Math.SQRT1_2, s * Math.SQRT1_2], nx = [-ax[1], ax[0]];
+        q.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [a * L * ax[0] + b * t * nx[0], a * L * ax[1] + b * t * nx[1]])); }
+      return geo(T, q);
+    }
+    return { geo, rect, digit, cross };
+  })();
   return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say,
-           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted };
+           gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted, flat };
 })();
 /* ═══ DOT_FONT — the page's two dot fonts, once (Oct 27: "do the dot font next", after the board kit). A 5 × 7 (each glyph seven
    rows of five bits, the top bit the left dot: the capitals, the digits, a few signs and ♥ ★), which pinball's dot-matrix panel
@@ -51360,33 +51394,10 @@ const NONOGRAM_APP = (() => {
     return out;
   }
   /* The pieces' shapes: flat, unlit quads lying on the board (a number has to read the same at any light), laid in the board's
-     own terms (the field runs +u to −x and +v to −z), each wound to face up. */
-  function flatGeo(T, quads){
-    const pos = [];
-    const at = ([u, v]) => [-u, 0.003, -v];
-    const tri = (A, B, C) => { const n = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]); if (n < 0) pos.push(...A, ...C, ...B); else pos.push(...A, ...B, ...C); };
-    for (const q of quads){ const [a, b, c, d] = q.map(at); tri(a, b, c); tri(a, c, d); }
-    const g = new T.BufferGeometry();
-    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    g.computeVertexNormals(); g.userData.unlit = true;
-    return g;
-  }
-  const rect = (u0, v0, u1, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
-  // (mini golf's seven segments: a top, f top left, b top right, g middle, e bottom left, c bottom right, d bottom)
-  const SEGS = ['abcdef', 'bc', 'abged', 'abgcd', 'fgbc', 'afgcd', 'afgedc', 'abc', 'abcdefg', 'abcdfg'];
-  function digitGeo(T, d){
-    const w = 0.25, t = 0.12, q = [];
-    const S = { a: rect(-w, -0.5, w, -0.5 + t), g: rect(-w, -t / 2, w, t / 2), d: rect(-w, 0.5 - t, w, 0.5),
-                f: rect(-w, -0.5, -w + t, 0), b: rect(w - t, -0.5, w, 0), e: rect(-w, 0, -w + t, 0.5), c: rect(w - t, 0, w, 0.5) };
-    for (const k of SEGS[d]) q.push(S[k]);
-    return flatGeo(T, q);
-  }
-  function crossGeo(T){
-    const L = 0.3, t = 0.06, q = [];
-    for (const s of [1, -1]){ const ax = [Math.SQRT1_2, s * Math.SQRT1_2], nx = [-ax[1], ax[0]];
-      q.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [a * L * ax[0] + b * t * nx[0], a * L * ax[1] + b * t * nx[1]])); }
-    return flatGeo(T, q);
-  }
+     own terms (the field runs +u to -x and +v to -z), each wound to face up. They are the board kit's now (`BOARD_KIT.flat`, Nov 7,
+     once Sudoku wanted the same numbers); the seven segments are mini golf's: a top, f top left, b top right, g middle, e bottom
+     left, c bottom right, d bottom. */
+  const { geo: flatGeo, rect, digit: digitGeo, cross: crossGeo } = BOARD_KIT.flat;
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key !== 'x' && e.key !== 'X') return;
@@ -51506,6 +51517,615 @@ const NONOGRAM_APP = (() => {
               finish, starsOf, shownView, cycleOf, viewAt, itemsOf, levelAt, boardIdx, LV, GAMES, BEST, PUZZLES,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; },
               get MODE(){ return MODE; }, set MODE(v){ MODE = v; }, get DRAG(){ return DRAG; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
+/* ═══ SUDOKU ══════════════════════════════════════════════════════════════
+   (Nov 7: "lets build a new game based our experice with the other games".) The classic: fill the grid so every row, column and
+   box holds each digit once. What the other puzzles taught, put to work here:
+   - EVERY BOARD ITS OWN PUZZLE, harder further out: drawn from the board's number (boardIdx, golf's Szudzik pairing) and its
+     level, 1 to 5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as Lights Out and Nonograms. A level (LV) is a size
+     and a grade: 6×6 with 2×3 boxes, then four 9×9s that need more and more of what a person knows: naked singles alone, hidden
+     singles, locked candidates or pairs, X-wings and their kin. Boards are never the same twice and never the same on two visits.
+   - ONE ANSWER, RATED BY A SOLVER THAT PLAYS LIKE A PERSON (`suRate`): squares come out of a full grid (a square and its
+     half-turn twin together, as the newspapers do) only while the backtracking solver (`suSolve`) still finds exactly one answer,
+     and the puzzle is kept when the human solver (naked and hidden singles, locked candidates, naked pairs and triples, hidden
+     pairs, X-wing, swordfish, XY-wing, easiest first, one thing at a time) needs the level's hardest technique and finishes with
+     no guess. Up to `tries` grids; the nearest is kept (a level 4 or 5 one that could not be found shows in its title).
+     Measured on 60 boards a level: 0.1, 0.3, 1.7, 15 and 47 ms each, every one with one answer and in its level's grade; the
+     solver never put a wrong digit down (300 puzzles checked against their answers).
+   - THE BOARD IS THE CONTROLS (Oct 28: "you should not need to have the bottom browser open to play games"): the grid sits in a
+     margin of one square all round, the digits 1 to N along the near margin as buttons (a digit with all its places filled goes
+     dark), the clock and the strikes along the far margin, and the level as dots in its colour. Tap a square, tap a digit. The play
+     pad has the four things a gesture does not (Notes, Erase, Undo, Hint); the keys do all of it too (1-9, Backspace, arrows, N, Z, H).
+   - Mistakes are shown as you make them (red; the menu's Show mistakes turns it off). The stars at the end are by faults: a wrong
+     digit put down, or a press of Hint (the first shows the square the next logical step finds, and the technique in the title;
+     the second puts its digit in). None ★★★, one or two ★★, more ★; the best on a board (most stars, then quickest) is kept.
+   - A board no one is playing solves itself, a digit at a time in the order the human solver found them, holds the finished
+     grid, and starts again, each board at its own phase.
+   - Solved, a tap plays it again where it is. */
+const SUDOKU_APP = (() => {
+  const BAND = 0x1b2130, BAND2 = 0x232b3d, DEAD = 0x151a26, LIT = 0x3a4766;
+  const PAPER = 0xece6d6, PAPER2 = 0xdcd2bb, SEL = 0xf3cf6b, SAME = 0xf6dd9a, BAD = 0xefb4ab, HINT = 0x93cff2, DONE = 0xc8e6c1, PEER = 0x8fa4e0;
+  const GIVEN = 0x1c2230, MINE = 0x2a5db0, WRONG = 0xc23b2a, NOTE = 0x6a7390, CREAM = 0xf3ead6, DIM = 0x5d6578;
+  const DL = ARCADE.difficulty('sudoku.level', 'Every board deals its own puzzle, harder the farther it is from the corner: a 6×6, then 9×9s that want only the obvious squares, then hidden ones, then locked candidates and pairs, then X-wings and the like, with fewer digits given. Easy, Normal and Hard move every board a level up.', true);
+  const SND = ARCADE.sounds('sudoku.sound', 'A tick for each digit, a chime when a row, column or box is complete, a buzz for a wrong one, a fanfare for the grid.');
+  const say = BOARD_KIT.say(3000);
+  const gkey = BOARD_KIT.gkey;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const clock = () => performance.now() / 1000;
+  const mix = (a, b, t) => FieldKit.mixInt(a, b, t);
+  // a level: the grid's side, the givens a puzzle may keep (inclusive), the grade of the human solver it must need (1 naked singles,
+  // 2 hidden singles, 3 locked candidates, 4 pairs and triples, 5 X-wing, swordfish or XY-wing), and how many full grids to try
+  const LV = [
+    { N: 6, givens: [16, 19], grade: [1, 1], tries: 12 },
+    { N: 9, givens: [40, 46], grade: [1, 1], tries: 12 },
+    { N: 9, givens: [32, 37], grade: [2, 2], tries: 24 },
+    { N: 9, givens: [27, 31], grade: [3, 4], tries: 60 },
+    { N: 9, givens: [22, 27], grade: [4, 5], tries: 80 },
+  ];
+  const HARD = ['', 'naked singles', 'hidden singles', 'locked candidates', 'pairs and triples', 'an X-wing, swordfish or XY-wing'];
+
+  /* SUDOKU CORE START: pure (no page, no kits: the generator is passed in), so a probe can run it in node. */
+  const SU_POP = (() => { const t = new Uint8Array(1 << 9); for (let i = 1; i < t.length; i++) t[i] = t[i >> 1] + (i & 1); return t; })();
+  const SU_GEOM = new Map();
+  // a board's shape: N a side, boxes bh tall by bw wide (4: 2×2, 6: 2×3, 9: 3×3); every unit as a list of cells, every cell's peers
+  function suGeom(N){
+    let G = SU_GEOM.get(N);
+    if (G) return G;
+    const bh = N === 9 ? 3 : 2, bw = N === 4 ? 2 : 3, per = N / bw;
+    const rowOf = new Uint8Array(N * N), colOf = new Uint8Array(N * N), boxOf = new Uint8Array(N * N);
+    for (let i = 0; i < N * N; i++){ const r = (i / N) | 0, c = i % N; rowOf[i] = r; colOf[i] = c; boxOf[i] = Math.floor(r / bh) * per + Math.floor(c / bw); }
+    const rows = [], cols = [], boxes = [];
+    for (let k = 0; k < N; k++){ rows.push([]); cols.push([]); boxes.push([]); }
+    for (let i = 0; i < N * N; i++){ rows[rowOf[i]].push(i); cols[colOf[i]].push(i); boxes[boxOf[i]].push(i); }
+    const units = [...rows, ...cols, ...boxes];
+    const peers = Array.from({ length: N * N }, (_, i) => { const s = new Set([...rows[rowOf[i]], ...cols[colOf[i]], ...boxes[boxOf[i]]]); s.delete(i); return [...s]; });
+    G = { N, bh, bw, per, full: (1 << N) - 1, rowOf, colOf, boxOf, rows, cols, boxes, units, peers };
+    SU_GEOM.set(N, G);
+    return G;
+  }
+  /* HOW MANY ANSWERS (up to `limit`): backtracking on the square with the fewest candidates. `R` (an rng) shuffles the order the
+     digits are tried, which is how a full grid is drawn from an empty one; without it they go in order. Returns the count and the
+     first answer found (a grid that breaks its own rules has none). */
+  function suSolve(N, grid, limit, R){
+    const G = suGeom(N), { rowOf, colOf, boxOf, full } = G, NN = N * N;
+    const g = Uint8Array.from(grid), ru = new Uint16Array(N), cu = new Uint16Array(N), bu = new Uint16Array(N);
+    for (let i = 0; i < NN; i++) if (g[i]){ const b = 1 << (g[i] - 1); if ((ru[rowOf[i]] | cu[colOf[i]] | bu[boxOf[i]]) & b) return { count: 0, sol: null }; ru[rowOf[i]] |= b; cu[colOf[i]] |= b; bu[boxOf[i]] |= b; }
+    let count = 0, sol = null;
+    (function go(){
+      if (count >= limit) return;
+      let bi = -1, bm = 0, bn = 99;
+      for (let i = 0; i < NN; i++) if (!g[i]){
+        const m = full & ~(ru[rowOf[i]] | cu[colOf[i]] | bu[boxOf[i]]), n = SU_POP[m];
+        if (n < bn){ bn = n; bi = i; bm = m; if (n <= 1) break; }
+      }
+      if (bi < 0){ count++; if (!sol) sol = Uint8Array.from(g); return; }
+      if (!bn) return;
+      const ds = [];
+      for (let d = 0; d < N; d++) if (bm >> d & 1) ds.push(d);
+      if (R) for (let j = ds.length - 1; j > 0; j--){ const s = Math.floor(R() * (j + 1)); [ds[j], ds[s]] = [ds[s], ds[j]]; }
+      const r = rowOf[bi], c = colOf[bi], b = boxOf[bi];
+      for (const d of ds){
+        const bit = 1 << d;
+        g[bi] = d + 1; ru[r] |= bit; cu[c] |= bit; bu[b] |= bit;
+        go();
+        g[bi] = 0; ru[r] &= ~bit; cu[c] &= ~bit; bu[b] &= ~bit;
+        if (count >= limit) return;
+      }
+    })();
+    return { count, sol };
+  }
+  const suFull = (N, R) => suSolve(N, new Uint8Array(N * N), 1, R).sol;
+  /* THE HUMAN SOLVER. What a person does, easiest first, one thing at a time: a cell with one candidate left (a naked single),
+     a digit with one place left in a row, column or box (a hidden single), a digit locked in a box to one line or in a line to one
+     box (pointing and claiming), a pair or triple of cells sharing as many digits (naked), a pair of digits sharing two cells
+     (hidden), and then a digit in the same two places in each of two rows or columns (an X-wing), the same in three (a swordfish),
+     or a cell of two candidates with two peers that each share one and a third between them (an XY-wing). The grade of a puzzle
+     is the hardest it needs, 1 to 5; `steps` are its placements in order, each with the grade of what it took since the last.
+     `firstOnly` stops at the first placement (a hint). Candidates are worked out from the digits alone, never from a player's notes. */
+  const SU_TECH = ['', 'a naked single', 'a hidden single', 'locked candidates', 'a pair or triple', 'an X-wing, swordfish or XY-wing'];
+  function suRate(N, grid, firstOnly){
+    const G = suGeom(N), { units, peers, rows, cols, boxes, rowOf, colOf, boxOf, full } = G, NN = N * N;
+    const val = Uint8Array.from(grid), cand = new Uint16Array(NN), steps = [];
+    const place = (i, d) => { val[i] = d; cand[i] = 0; const b = ~(1 << (d - 1)); for (const p of peers[i]) cand[p] &= b; };
+    for (let i = 0; i < NN; i++) cand[i] = val[i] ? 0 : full;
+    for (let i = 0; i < NN; i++) if (val[i]){ const b = ~(1 << (val[i] - 1)); for (const p of peers[i]) cand[p] &= b; }
+    let pending = 0, level = 0, bad = false;
+    const done = (i, d, own) => { place(i, d); const t = Math.max(pending, own); steps.push({ i, d, tech: t }); level = Math.max(level, t); pending = 0; };
+    const empty = () => { for (let i = 0; i < NN; i++) if (!val[i]) return true; return false; };
+    while (empty() && !bad){
+      if (firstOnly && steps.length) break;
+      let moved = false;
+      // 1. a naked single (a cell with no candidate and no digit is a contradiction)
+      for (let i = 0; i < NN && !moved; i++) if (!val[i]){
+        if (!cand[i]){ bad = true; break; }
+        if (SU_POP[cand[i]] === 1){ done(i, 32 - Math.clz32(cand[i]), 1); moved = true; }
+      }
+      if (bad || moved) continue;
+      // 2. a hidden single
+      for (const U of units){
+        for (let d = 0; d < N && !moved; d++){
+          let at = -1, k = 0;
+          for (const i of U) if (cand[i] >> d & 1){ at = i; k++; if (k > 1) break; }
+          if (k === 1){ done(at, d + 1, 2); moved = true; }
+        }
+        if (moved) break;
+      }
+      if (moved) continue;
+      // 3. locked candidates: a box's digit all on one line, or a line's digit all in one box
+      for (let b = 0; b < N && !moved; b++) for (let d = 0; d < N && !moved; d++){
+        const cs = boxes[b].filter(i => cand[i] >> d & 1);
+        if (cs.length < 2) continue;
+        for (const [key, line] of [[rowOf, rows], [colOf, cols]]){
+          const l = key[cs[0]];
+          if (cs.every(i => key[i] === l)){
+            for (const i of line[l]) if (boxOf[i] !== b && (cand[i] >> d & 1)){ cand[i] &= ~(1 << d); moved = true; }
+          }
+        }
+      }
+      for (const line of [...rows, ...cols]){
+        if (moved) break;
+        for (let d = 0; d < N && !moved; d++){
+          const cs = line.filter(i => cand[i] >> d & 1);
+          if (cs.length < 2 || !cs.every(i => boxOf[i] === boxOf[cs[0]])) continue;
+          for (const i of boxes[boxOf[cs[0]]]) if (!line.includes(i) && (cand[i] >> d & 1)){ cand[i] &= ~(1 << d); moved = true; }
+        }
+      }
+      if (moved){ pending = Math.max(pending, 3); continue; }
+      // 4. naked pairs and triples, hidden pairs
+      for (const U of units){
+        const cells = U.filter(i => !val[i]);
+        for (let a = 0; a < cells.length && !moved; a++) for (let b = a + 1; b < cells.length && !moved; b++){
+          const m = cand[cells[a]] | cand[cells[b]];
+          if (SU_POP[m] === 2){
+            for (const i of cells) if (i !== cells[a] && i !== cells[b] && (cand[i] & m)){ cand[i] &= ~m; moved = true; }
+          }
+          if (moved) break;
+          for (let c = b + 1; c < cells.length && !moved; c++){
+            const m3 = m | cand[cells[c]];
+            if (SU_POP[m3] === 3 && cand[cells[a]] && cand[cells[b]] && cand[cells[c]]){
+              for (const i of cells) if (i !== cells[a] && i !== cells[b] && i !== cells[c] && (cand[i] & m3)){ cand[i] &= ~m3; moved = true; }
+            }
+          }
+        }
+        // a hidden pair: two digits that between them live in only two cells of the unit
+        for (let d1 = 0; d1 < N && !moved; d1++) for (let d2 = d1 + 1; d2 < N && !moved; d2++){
+          const w1 = cells.filter(i => cand[i] >> d1 & 1), w2 = cells.filter(i => cand[i] >> d2 & 1);
+          if (w1.length !== 2 || w2.length !== 2 || w1[0] !== w2[0] || w1[1] !== w2[1]) continue;
+          const keep = (1 << d1) | (1 << d2);
+          for (const i of w1) if (cand[i] & ~keep){ cand[i] &= keep; moved = true; }
+        }
+        if (moved) break;
+      }
+      if (moved){ pending = Math.max(pending, 4); continue; }
+      // 5. an X-wing, in rows then columns
+      for (const [lines, cross, across] of [[rows, colOf, cols], [cols, rowOf, rows]]){
+        for (let d = 0; d < N && !moved; d++){
+          const two = [];
+          for (let l = 0; l < N; l++){ const at = lines[l].filter(i => cand[i] >> d & 1).map(i => cross[i]); if (at.length === 2) two.push([l, at[0], at[1]]); }
+          for (let a = 0; a < two.length && !moved; a++) for (let b = a + 1; b < two.length && !moved; b++){
+            if (two[a][1] !== two[b][1] || two[a][2] !== two[b][2]) continue;
+            for (const x of [two[a][1], two[a][2]]) for (const i of across[x]){
+              const l = lines === rows ? rowOf[i] : colOf[i];
+              if (l !== two[a][0] && l !== two[b][0] && (cand[i] >> d & 1)){ cand[i] &= ~(1 << d); moved = true; }
+            }
+          }
+        }
+        if (moved) break;
+      }
+      // 5b. a swordfish: a digit in two or three places in each of three rows (or columns), all in the same three columns (rows)
+      if (!moved) for (const [lines, cross, across] of [[rows, colOf, cols], [cols, rowOf, rows]]){
+        for (let d = 0; d < N && !moved; d++){
+          const some = [];
+          for (let l = 0; l < N; l++){ const at = lines[l].filter(i => cand[i] >> d & 1).map(i => cross[i]); if (at.length >= 2 && at.length <= 3) some.push([l, at]); }
+          for (let a = 0; a < some.length && !moved; a++) for (let b = a + 1; b < some.length && !moved; b++) for (let c = b + 1; c < some.length && !moved; c++){
+            const u = new Set([...some[a][1], ...some[b][1], ...some[c][1]]);
+            if (u.size !== 3) continue;
+            const ls = [some[a][0], some[b][0], some[c][0]];
+            for (const x of u) for (const i of across[x]){
+              const l = lines === rows ? rowOf[i] : colOf[i];
+              if (!ls.includes(l) && (cand[i] >> d & 1)){ cand[i] &= ~(1 << d); moved = true; }
+            }
+          }
+        }
+        if (moved) break;
+      }
+      // 5c. an XY-wing: a cell of two candidates, two of its peers sharing one each and a third digit between them
+      if (!moved) for (let p = 0; p < NN && !moved; p++){
+        if (SU_POP[cand[p]] !== 2) continue;
+        const ps = peers[p].filter(i => SU_POP[cand[i]] === 2);
+        for (let a = 0; a < ps.length && !moved; a++) for (let b = a + 1; b < ps.length && !moved; b++){
+          const q1 = ps[a], q2 = ps[b], x = cand[q1] & cand[q2];
+          if (SU_POP[x] !== 1 || (x & cand[p]) || SU_POP[cand[q1] | cand[q2] | cand[p]] !== 3) continue;
+          for (const i of peers[q1]) if (i !== p && i !== q2 && (cand[i] & x) && peers[q2].includes(i)){ cand[i] &= ~x; moved = true; }
+        }
+      }
+      if (moved){ pending = Math.max(pending, 5); continue; }
+      break;
+    }
+    return { solved: !empty() && !bad, bad, steps, level, val };
+  }
+  /* A PUZZLE: a full grid drawn from the board's generator, then squares taken out (a square and its half-turn twin together)
+     as long as one answer remains, down to the level's number of givens; the human solver's grade decides whether it stays. Up to
+     `spec.tries` grids; the nearest is kept. Returns { N, givens, sol, steps, level (9: the solver stalled), count, tries, miss }.
+     Worked a try at a time, so a board only looked at can be made a few milliseconds a frame: `job` ({ R, tries, pick, miss }, made
+     by `suJob`) keeps where it got to, and a call with `ms` stops after the try that passes it and returns { pending: job }. The
+     answer is the same however it is paced: the generator's draws come in the same order. */
+  const suJob = R => ({ R, tries: 0, pick: null, miss: Infinity });
+  function suMake(N, spec, R, job, ms){
+    const NN = N * N, J = job || suJob(R), t0 = ms ? performance.now() : 0;
+    R = J.R;                       // (a carried-on job goes on with its own generator, not a new one from the seed)
+    while (J.tries < spec.tries && J.miss > 0){
+      if (ms && J.tries && performance.now() - t0 >= ms) return { pending: J };
+      const sol = suFull(N, R), g = Uint8Array.from(sol), order = [...Array(NN).keys()];
+      for (let j = NN - 1; j > 0; j--){ const s = Math.floor(R() * (j + 1)); [order[j], order[s]] = [order[s], order[j]]; }
+      const want = spec.givens[0] + Math.floor(R() * (spec.givens[1] - spec.givens[0] + 1));
+      let count = NN;
+      for (const i of order){
+        if (count <= want) break;
+        if (!g[i]) continue;
+        const j = NN - 1 - i, twin = j !== i && !!g[j];
+        const a = g[i], b = g[j]; g[i] = 0; if (twin) g[j] = 0;
+        if (suSolve(N, g, 2).count === 1) count -= twin ? 2 : 1; else { g[i] = a; if (twin) g[j] = b; }
+      }
+      const rt = suRate(N, g), lv = rt.solved ? rt.level : 9;
+      const miss = (count < spec.givens[0] ? spec.givens[0] - count : count > spec.givens[1] ? count - spec.givens[1] : 0) * 0.01
+                 + (lv < spec.grade[0] ? spec.grade[0] - lv : lv > spec.grade[1] ? lv - spec.grade[1] : 0);
+      if (miss < J.miss){ J.miss = miss; J.pick = { N, givens: g, sol, steps: rt.steps, level: lv, count }; }
+      J.tries++;
+    }
+    return { ...J.pick, tries: J.tries, miss: J.miss };
+  }
+  /* SUDOKU CORE END */
+
+  /* ─── THE BOARDS' PUZZLES ─── made on first want and kept (the latest CAP); a board only looked at gets its puzzle a few at a time. */
+  const PUZZLES = new Map(), CAP = 1500;
+  const seedOf = (idx, lv) => (idx * 2654435761) ^ (lv * 40503) ^ 0x5d0c;
+  // (`job`, `ms`: see suMake; returns { pending: job } while a paced make is not done)
+  function makePuzzle(idx, lv, job, ms){
+    const D = LV[lv - 1], q = suMake(D.N, D, rngOf(seedOf(idx, lv)), job, ms);
+    if (q.pending) return q;
+    const N = D.N, NN = N * N, order = q.steps.map(s => ({ i: s.i, d: s.d, tech: s.tech })), seen = new Set(order.map(s => s.i));
+    // (a puzzle the solver stalled on shows the rest of its answer in order, so a board no one plays still ends up whole)
+    for (let i = 0; i < NN; i++) if (!q.givens[i] && !seen.has(i)) order.push({ i, d: q.sol[i], tech: 9 });
+    return { idx, lv, D, N, M: N + 2, givens: q.givens, sol: q.sol, order, level: q.level, count: q.count, tries: q.tries, miss: q.miss, phase: BOARD_KIT.phase(idx) };
+  }
+  function puzzleFor(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let P = PUZZLES.get(key);
+    if (P){ PUZZLES.delete(key); PUZZLES.set(key, P); return P; }
+    JOBS.delete(key);
+    P = makePuzzle(idx, lv);
+    PUZZLES.set(key, P); if (PUZZLES.size > CAP) PUZZLES.delete(PUZZLES.keys().next().value);
+    return P;
+  }
+  /* Boards only looked at get their puzzle a few milliseconds a frame (the boards' share of time): a level 5 takes 30 ms on average
+     and 70 or more at worst, all in one go a visible stop, but it is a try a few milliseconds each, so a job is carried on from where
+     it got to (JOBS) and the board is bare tiles until it is made. The board you play is made at once. */
+  const SOON = BOARD_KIT.budget(8), JOBS = new Map();
+  function puzzleSoon(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv, P = PUZZLES.get(key);
+    if (P) return P;
+    SOON.take(left => {
+      const job = JOBS.get(key) || suJob(rngOf(seedOf(idx, lv))), q = makePuzzle(idx, lv, job, Math.min(left, 8));
+      if (q.pending) JOBS.set(key, q.pending);
+      else { JOBS.delete(key); PUZZLES.set(key, q); if (PUZZLES.size > CAP) PUZZLES.delete(PUZZLES.keys().next().value); }
+    });
+    return PUZZLES.get(key) || null;
+  }
+  // (for the tests: a puzzle made `ms` at a time as a board looked at is, and how many goes it took)
+  function makePaced(idx, lv, ms){
+    const job = suJob(rngOf(seedOf(idx, lv)));
+    let q, calls = 0;
+    do { q = makePuzzle(idx, lv, job, ms); calls++; } while (q.pending);
+    return { P: q, calls };
+  }
+
+  /* ─── THE BOARD'S LAYOUT ─── M = N + 2 squares across: the grid inside a margin of one; the far margin (row 0) holds the level's
+     dots, the clock and the strikes; the near margin (row N + 1) the digits 1 to N under the columns 1 to N. */
+  function tileAt(P, u, v){
+    const M = P.M, N = P.N, cc = Math.floor(u * M), rr = Math.floor(v * M);
+    if (rr >= 1 && rr <= N && cc >= 1 && cc <= N) return { k: 'cell', i: (rr - 1) * N + (cc - 1) };
+    if (rr === N + 1 && cc >= 1 && cc <= N) return { k: 'digit', d: cc };
+    return { k: 'margin' };
+  }
+  const centreOf = (P, i) => [(1 + (i % P.N) + 0.5) / P.M, (1 + ((i / P.N) | 0) + 0.5) / P.M];
+  const digitAt = (P, d) => [(d + 0.5) / P.M, (P.N + 1.5) / P.M];
+
+  /* ─── PLAYING ─── A game: its digits (givens and yours: `v`), pencil marks (`notes`, a bit a digit), the selected square, 'ready'
+     (untouched), 'play' or 'solved', the clock from the first move, the faults (`wrong` digits put down, `hints` pressed), the hint
+     showing, and the moves taken (`undo`). `ver` goes up at every change, so the board's tiles and pieces are made again only then. */
+  const GAMES = new Map();
+  let LIVE = null, GID = 0;
+  let MISTAKES = (() => { try { return localStorage.getItem('sudoku.mistakes') !== 'off'; } catch { return true; } })();
+  const setMistakes = on => { MISTAKES = on; try { localStorage.setItem('sudoku.mistakes', on ? 'on' : 'off'); } catch {} try { fieldItemsChanged(); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('sudoku.best');
+  const bestKey = P => P.idx + '@' + P.lv;
+  const fresh = (c, r) => { const P = puzzleFor(c, r);
+    return { P, c, r, id: ++GID, v: Uint8Array.from(P.givens), notes: new Uint16Array(P.N * P.N), sel: -1, pencil: false, state: 'ready', t0: 0, t: 0, wrong: 0, hints: 0, ver: 0, stars: 0, hint: null, undo: [] }; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  const faults = g => g.wrong + g.hints;
+  const starsOf = f => f === 0 ? 3 : f <= 2 ? 2 : 1;
+  const touch = g => { if (g.state === 'ready'){ g.state = 'play'; g.t0 = clock(); } };
+  const unitDone = (g, i) => { const G = suGeom(g.P.N);
+    return [G.rows[G.rowOf[i]], G.cols[G.colOf[i]], G.boxes[G.boxOf[i]]].some(U => U.every(j => g.v[j] === g.P.sol[j])); };
+  const solvedNow = g => { const sol = g.P.sol; for (let i = 0; i < sol.length; i++) if (g.v[i] !== sol[i]) return false; return true; };
+  function select(g, i){ if (g.sel === i) return; g.sel = i; g.hint = null; g.ver++; }
+  // the one way a digit goes in or comes out of a square (`how`: 'hint' is not a claim, so not a fault)
+  function put(g, i, d, quiet, how){
+    const P = g.P;
+    if (g.state === 'solved' || i < 0 || P.givens[i] || g.v[i] === d) return false;
+    touch(g);
+    const peers = [];
+    if (d){ const b = ~(1 << (d - 1)); for (const p of suGeom(P.N).peers[i]) if (g.notes[p] & (1 << (d - 1))){ peers.push([p, g.notes[p]]); g.notes[p] &= b; } }
+    g.undo.push({ i, v: g.v[i], n: g.notes[i], peers }); if (g.undo.length > 400) g.undo.shift();
+    g.v[i] = d; g.notes[i] = 0; g.hint = null; g.ver++;
+    const wrong = d && d !== P.sol[i];
+    if (wrong && how !== 'hint') g.wrong++;
+    if (d && solvedNow(g)){ finish(g, quiet); return true; }
+    if (!quiet) SND.play(!d ? 'tap' : wrong ? (MISTAKES ? 'bad' : 'tap') : unitDone(g, i) ? 'good' : 'tap');
+    return true;
+  }
+  // a digit from the strip or the keys: into the selected square, or, with pencil, a note there
+  function enter(g, d, quiet){
+    const P = g.P;
+    if (g.state === 'solved' || d < 1 || d > P.N || g.sel < 0 || P.givens[g.sel]) return false;
+    const i = g.sel;
+    if (g.pencil){
+      if (g.v[i]) return false;
+      touch(g);
+      g.undo.push({ i, v: 0, n: g.notes[i], peers: [] }); g.notes[i] ^= 1 << (d - 1); g.hint = null; g.ver++;
+      if (!quiet) SND.play('tap');
+      return true;
+    }
+    return put(g, i, g.v[i] === d ? 0 : d, quiet);
+  }
+  function erase(g, quiet){
+    const i = g.sel;
+    if (g.state === 'solved' || i < 0 || g.P.givens[i] || (!g.v[i] && !g.notes[i])) return false;
+    touch(g);
+    g.undo.push({ i, v: g.v[i], n: g.notes[i], peers: [] }); g.v[i] = 0; g.notes[i] = 0; g.hint = null; g.ver++;
+    if (!quiet) SND.play('tap');
+    return true;
+  }
+  function undo(g, quiet){
+    const u = g.undo.pop();
+    if (!u || g.state === 'solved') return false;
+    g.v[u.i] = u.v; g.notes[u.i] = u.n; for (const [p, m] of u.peers) g.notes[p] = m;
+    g.sel = u.i; g.hint = null; g.ver++;
+    if (!quiet) SND.play('turn');
+    return true;
+  }
+  /* A HINT. A digit that is wrong is found first (the first, by square), shown red, and its press puts the right one in; else the human
+     solver is asked from the digits as they stand (never your notes) for its next step: its square is lit and selected, with the
+     technique it took in the title, and a second press puts its digit in. A grid the solver cannot go on from (a puzzle past its
+     techniques) lights the square with fewest candidates and says it is a guess. */
+  function hintOf(g){
+    const P = g.P, N = P.N, NN = N * N;
+    for (let i = 0; i < NN; i++) if (!P.givens[i] && g.v[i] && g.v[i] !== P.sol[i]) return { i, d: P.sol[i], kind: 'wrong' };
+    const rt = suRate(N, g.v, true);
+    if (rt.steps.length){ const s = rt.steps[0]; return { i: s.i, d: s.d, kind: 'step', tech: s.tech }; }
+    let best = -1, bn = 99; const G = suGeom(N);
+    for (let i = 0; i < NN; i++) if (!g.v[i]){ let m = G.full; for (const p of G.peers[i]) if (g.v[p]) m &= ~(1 << (g.v[p] - 1)); if (SU_POP[m] < bn){ bn = SU_POP[m]; best = i; } }
+    return best < 0 ? null : { i: best, d: P.sol[best], kind: 'guess' };
+  }
+  function hint(g, quiet){
+    if (!g || g.state === 'solved') return null;
+    if (g.hint && g.hint.at === g.ver){            // (the second press: its digit goes in)
+      const h = g.hint; g.hints++; g.sel = h.i; put(g, h.i, h.d, quiet, 'hint'); return h;
+    }
+    const h = hintOf(g);
+    if (!h) return null;
+    touch(g); g.hints++; g.sel = h.i; g.ver++; g.hint = { ...h, at: g.ver };
+    return h;
+  }
+  function finish(g, quiet){
+    g.state = 'solved'; g.t = Math.round((clock() - g.t0) * 10) / 10; g.stars = starsOf(faults(g)); g.hint = null;
+    const k = bestKey(g.P), was = BEST.get(k), better = !was || g.stars > was[0] || (g.stars === was[0] && g.t < was[1]);
+    if (better){ BEST.delete(k); BEST.set(k, [g.stars, g.t]); saveBest(); }
+    if (!quiet) SND.play('win');
+  }
+
+  /* A board no one is playing solves itself: its givens, then each digit the human solver found, in its order, a STEP apart, the
+     finished grid held, then the puzzle again, on the page's clock, each board at its own phase. */
+  const HOLD0 = 1.6, STEP = 0.32, HOLD1 = 3.2, FLASH_S = 0.28;
+  const cycleOf = P => HOLD0 + P.order.length * STEP + HOLD1;
+  // (`at`, seconds on the page's clock, for the tests)
+  function shownView(P, at){
+    const k = P.order.length, T = cycleOf(P), t = BOARD_KIT.loopT(P.phase, T, at);
+    const m = t < HOLD0 ? 0 : Math.min(k, Math.floor((t - HOLD0) / STEP) + 1);
+    const last = m > 0 && m < k && t - HOLD0 - (m - 1) * STEP < FLASH_S ? P.order[m - 1].i : -1, stamp = 'd' + m + '.' + last;
+    if (P._dv && P._dv.stamp === stamp) return P._dv;
+    const v = Uint8Array.from(P.givens);
+    for (let j = 0; j < m; j++) v[P.order[j].i] = P.order[j].d;
+    return (P._dv = { stamp, v, notes: null, sel: -1, hint: null, last, sec: 0, solved: m >= k, g: null, m });
+  }
+  const gameView = g => {
+    const sec = g.state === 'play' ? Math.min(5999, Math.floor(clock() - g.t0)) : g.state === 'solved' ? Math.min(5999, Math.floor(g.t)) : 0;
+    return { stamp: 'g' + g.id + '.' + g.ver + g.state + (MISTAKES ? 'm' : '') + (g.pencil ? 'p' : '') + (g.state === 'play' ? '.' + sec : ''),
+             v: g.v, notes: g.notes, sel: g.sel, hint: g.hint, last: -1, sec, solved: g.state === 'solved', g };
+  };
+  // what a board shows: the game on it if it is framed or has been played, else its own puzzle solving itself
+  function viewAt(c, r, soon){
+    const live = !!LIVE && LIVE.c === c && LIVE.r === r, g0 = GAMES.get(gkey(c, r));
+    if (live || (g0 && g0.state !== 'ready')){ const g = g0 || gameAt(c, r); return { P: g.P, V: gameView(g), g, live }; }
+    const P = soon ? puzzleSoon(c, r) : puzzleFor(c, r);
+    return P ? { P, V: shownView(P), g: null, live: false } : null;
+  }
+
+  /* ─── DRAWN ─── The tiles are the board's colours (cellGrid): the margin slate, the squares paper with the boxes a shade apart (so a
+     box reads without lines), the selected square gold, what it sees (its row, column and box) a cool tint, the same digit a warm
+     one, a wrong digit pink, a hint pale blue; the digit strip lit under the selected square's digit and dark where a digit is all
+     placed. The pieces are flat, unlit digits (BOARD_KIT.flat, Nonograms') lying on them. */
+  function colorsOf(P, V){
+    if (P._gc && P._gc.stamp === V.stamp) return P._gc.colors;
+    const N = P.N, M = P.M, G = suGeom(N), out = new Array(M * M).fill(BAND);
+    const sv = V.sel >= 0 ? V.v[V.sel] : 0, seeSel = V.sel >= 0 ? new Set(G.peers[V.sel]) : null;
+    const placed = new Uint8Array(N + 1); for (let i = 0; i < N * N; i++) if (V.v[i]) placed[V.v[i]]++;
+    for (let i = 0; i < N * N; i++){
+      let col = (Math.floor(G.rowOf[i] / G.bh) + Math.floor(G.colOf[i] / G.bw)) % 2 ? PAPER2 : PAPER;
+      if (V.solved) col = mix(col, DONE, 0.55);
+      else {
+        if (seeSel && seeSel.has(i)) col = mix(col, PEER, 0.3);
+        if (sv && V.v[i] === sv) col = SAME;
+        if (MISTAKES && V.v[i] && !P.givens[i] && V.v[i] !== P.sol[i]) col = BAD;
+        if (i === V.sel) col = SEL;
+        if (V.last === i) col = SEL;
+        if (V.hint && V.hint.i === i) col = V.hint.kind === 'wrong' ? BAD : HINT;
+      }
+      out[(1 + G.rowOf[i]) * M + 1 + G.colOf[i]] = col;
+    }
+    for (let d = 1; d <= N; d++) out[(N + 1) * M + d] = placed[d] >= N ? DEAD : sv === d ? LIT : BAND2;
+    P._gc = { stamp: V.stamp, colors: out };
+    return out;
+  }
+  const DIGIT_PX = 100, NOTE_PX = 240;      // (a board under the first shows its tiles alone; pencil marks only on boards this wide)
+  // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
+  function numItems(out, num, u, v, h, color){
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    for (let k = 0; k < ds.length; k++) out.push({ kind: 'skD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
+  }
+  function itemsOf(P, V, g, live, bp){
+    const words = !(bp > 0) || bp >= DIGIT_PX, notes = !!V.notes && (!(bp > 0) || bp >= NOTE_PX);
+    const stamp = V.stamp + (live ? 'L' : '') + (words ? 'w' : '') + (notes ? 'n' : '');
+    if (P._ic && P._ic.stamp === stamp) return P._ic.items;
+    const N = P.N, M = P.M, s = 1 / M, h = 0.6 * s, out = [], G = suGeom(N);
+    if (words){
+      for (let i = 0; i < N * N; i++) if (V.v[i]){
+        const [u, v] = centreOf(P, i), bad = MISTAKES && !P.givens[i] && V.v[i] !== P.sol[i];
+        numItems(out, V.v[i], u, v, h, P.givens[i] ? GIVEN : bad ? WRONG : MINE);
+      }
+      if (notes){
+        const nc = N === 4 ? 2 : 3, nr = Math.ceil(N / nc), nh = 0.8 * s / Math.max(nc, nr);
+        for (let i = 0; i < N * N; i++) if (!V.v[i] && V.notes[i]){
+          const r0 = 1 + G.rowOf[i], c0 = 1 + G.colOf[i];
+          for (let d = 1; d <= N; d++) if (V.notes[i] >> (d - 1) & 1){
+            const k = d - 1, col = k % nc, row = (k / nc) | 0;
+            out.push({ kind: 'skD' + d, u: (c0 + (col + 0.5) / nc) * s, v: (r0 + (row + 0.5) / nr) * s, scale: nh, lift: 0.002, color: NOTE });
+          }
+        }
+      }
+      // the digit strip, the numbers a square is still wanted for in cream
+      const placed = new Uint8Array(N + 1); for (let i = 0; i < N * N; i++) if (V.v[i]) placed[V.v[i]]++;
+      for (let d = 1; d <= N; d++){ const [u, v] = digitAt(P, d); numItems(out, d, u, v, h, placed[d] >= N ? DIM : CREAM); }
+      // the level, as dots in its colour along the far margin's left
+      for (let k = 0; k < P.lv; k++) out.push({ kind: 'skDot', u: (1.25 + k * 0.4) * s, v: 0.5 * s, scale: 0.24 * s, lift: 0.002, color: BOARD_KIT.LV_COL[P.lv - 1] });
+      if (V.g && V.g.state !== 'ready'){
+        // the clock, m:ss, centred on the far margin, and a strike for every fault (a wrong digit, a hint), most five
+        const mm = Math.floor(V.sec / 60), ss = V.sec % 60, str = mm + ':' + (ss < 10 ? '0' : '') + ss, dw = 0.62 * h, cw = 0.5 * h;
+        const total = [...str].reduce((a, ch) => a + (ch === ':' ? cw : dw), 0);
+        let x = 0.5 - total / 2;
+        for (const ch of str){
+          if (ch === ':'){ for (const dy of [-0.16, 0.16]) out.push({ kind: 'skDot', u: x + cw / 2, v: 0.5 * s + dy * h, scale: 0.12 * h, lift: 0.002, color: CREAM }); x += cw; }
+          else { out.push({ kind: 'skD' + ch, u: x + dw / 2, v: 0.5 * s, scale: h, lift: 0.002, color: CREAM }); x += dw; }
+        }
+        for (let k = 0; k < Math.min(5, faults(V.g)); k++) out.push({ kind: 'skX', u: (M - 0.8 - k * 0.5) * s, v: 0.5 * s, scale: 0.5 * s, lift: 0.002, color: WRONG });
+      }
+    }
+    P._ic = { stamp, items: out };
+    return out;
+  }
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || g.state === 'solved') return;
+    const k = e.key, N = g.P.N;
+    let did = true;
+    if (k >= '1' && k <= '9' && +k <= N) enter(g, +k);
+    else if (k === 'Backspace' || k === 'Delete') erase(g);   // (not 0: that is the field's key for framing the board)
+    else if (k === 'n' || k === 'N') g.pencil = !g.pencil;    // (the view's stamp has it: no new version, so a lit hint stays lit)
+    else if (k === 'z' || k === 'Z') undo(g);
+    else if (k === 'h' || k === 'H') hint(g);
+    else if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight'){
+      // the key means the screen's direction; the view says which way that is on the board
+      const sk = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 }[k], dirs = (() => { try { return screenToBoardDirs(); } catch { return null; } })(), bd = dirs ? dirs[sk] : sk;
+      const [dx, dy] = [[0, -1], [1, 0], [0, 1], [-1, 0]][bd];
+      if (g.sel < 0) select(g, Math.floor(N / 2) * N + Math.floor(N / 2));
+      else { const x = Math.max(0, Math.min(N - 1, g.sel % N + dx)), y = Math.max(0, Math.min(N - 1, ((g.sel / N) | 0) + dy)); select(g, y * N + x); }
+    } else did = false;
+    if (did){ e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  const app = {
+    name: 'sudoku',
+    menu: [{ head: 'Sudoku', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: () => 'Show mistakes: ' + (MISTAKES ? 'on' : 'off'), title: 'A wrong digit shows red as soon as it is put down. Off, nothing says so until a hint or the end.', on(){ setMistakes(!MISTAKES); } },
+      { label: 'Hint', title: 'Light the square the next logical step finds, and name the technique in the title; again puts its digit in. Each press is a fault.',
+        on(){ const f = framedCell(); if (f){ LIVE = { c: f.c, r: f.r }; hint(gameAt(f.c, f.r)); try { fieldItemsChanged(); } catch {} } } },
+      { label: 'Start this board again', title: 'This board\'s puzzle as dealt, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
+    ]}],
+    cellFar: { light: BAND, dark: BAND },
+    faceMinPx: 8,
+    itemMinPx: 30,
+    itemGeometries: {
+      ...Object.fromEntries([...Array(10).keys()].map(d => ['skD' + d, T => BOARD_KIT.flat.digit(T, d)])),
+      skX: T => BOARD_KIT.flat.cross(T),
+      skDot: T => BOARD_KIT.flat.geo(T, [BOARD_KIT.flat.rect(-0.5, -0.5, 0.5, 0.5)]),
+    },
+    cellGrid(c, r){
+      const W = viewAt(c, r, true);
+      if (!W) return { n: 1, colors: [BAND] };
+      return { n: W.P.M, colors: colorsOf(W.P, W.V) };
+    },
+    cellItems(c, r, bp){
+      const W = viewAt(c, r, true);
+      return W ? itemsOf(W.P, W.V, W.g, W.live, bp) : [];
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), D = LV[lv - 1], P = PUZZLES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
+      const best = P ? BEST.get(bestKey(P)) : null;
+      const h = g && g.hint ? (g.hint.kind === 'wrong' ? ' · that digit is wrong' : g.hint.kind === 'guess' ? ' · hint: no logic left, a guess' : ' · hint: ' + SU_TECH[g.hint.tech]) : '';
+      return 'Sudoku — level ' + lv + ', ' + D.N + '×' + D.N + (P ? ' · ' + (P.level > 5 ? 'beyond the logic here' : 'needs ' + HARD[P.level]) : '')
+           + (best ? ' · best ' + '★'.repeat(best[0]) + ' ' + Math.floor(best[1] / 60) + ':' + String(Math.floor(best[1] % 60)).padStart(2, '0') : '')
+           + (g && g.state === 'solved' ? ' · solved in ' + g.t.toFixed(1) + ' s ' + '★'.repeat(g.stars) : g && g.state === 'play' ? ' · ' + g.v.reduce((a, x) => a + (x > 0), 0) + ' of ' + g.v.length : '') + h;
+    },
+    onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    /* (Oct 15, Simon: "the simon buttons are very hard to push".) A digit tapped twice in a row (put in, taken out) or two squares
+       tapped quickly read as a double-tap, which reframes the view and never reaches the game. While a puzzle is on the framed board
+       every tap is a tap. */
+    noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'solved'; },
+    onCellTap(c, r, u, v){
+      const live = !!LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      const g = gameAt(c, r);
+      if (live && g.state === 'solved'){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
+      if (u == null || g.state === 'solved') return true;
+      const t = tileAt(g.P, u, v);
+      if (t.k === 'cell') select(g, t.i);
+      else if (t.k === 'digit') enter(g, t.d);
+      else if (g.sel >= 0) select(g, -1);
+      return true;
+    },
+    // the play pad (Oct 28): what a gesture does not do, round buttons on the right while a board is played
+    playActs(c, r){ const g = liveGame(); if (!g || g.state === 'solved' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      return [{ key: 'notes', glyph: '✎', label: 'Notes', title: 'Pencil: a digit tapped on the strip becomes a note in the selected square instead of going in (N).', on: g.pencil },
+              { key: 'erase', glyph: '⌫', label: 'Erase', title: 'Take the digit and notes out of the selected square (Backspace).' },
+              { key: 'undo', glyph: '↶', label: 'Undo', title: 'Take back the last move (Z).' },
+              { key: 'hint', glyph: '?', label: 'Hint', title: 'Light the square the next logical step finds; again puts its digit in. Each press is a fault (H).' }]; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (!g) return false;
+      if (key === 'notes') g.pencil = !g.pencil; else if (key === 'erase') erase(g); else if (key === 'undo') undo(g); else if (key === 'hint') hint(g);
+      return true; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#ece6d6'; ctx.fillRect(0, 0, sz, sz);
+      const t = sz / 3;
+      ctx.fillStyle = '#dcd2bb'; for (const [a, b] of [[0, 1], [1, 0], [1, 2], [2, 1]]) ctx.fillRect(a * t, b * t, t, t);
+      ctx.strokeStyle = '#1c2230'; ctx.lineWidth = Math.max(1, sz * 0.025);
+      for (let k = 0; k <= 9; k++){ ctx.lineWidth = Math.max(1, sz * (k % 3 ? 0.012 : 0.035)); ctx.beginPath(); ctx.moveTo(k * sz / 9, 0); ctx.lineTo(k * sz / 9, sz); ctx.moveTo(0, k * sz / 9); ctx.lineTo(sz, k * sz / 9); ctx.stroke(); }
+      ctx.font = 'bold ' + Math.round(sz * 0.12) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const mine = { 0: 5, 4: 3, 8: 7, 10: 1, 14: 9, 18: 8, 22: 4, 26: 6, 31: 2, 34: 6, 37: 4, 40: 9, 44: 3, 49: 1, 52: 8, 57: 5, 60: 7, 64: 2, 68: 9, 71: 4, 75: 6, 79: 3 };
+      for (const [i, d] of Object.entries(mine)){ ctx.fillStyle = i % 2 ? '#2a5db0' : '#1c2230'; ctx.fillText(String(d), ((i % 9) + 0.5) * sz / 9, (((i / 9) | 0) + 0.54) * sz / 9); }
+    },
+    _debug: { suGeom, suSolve, suFull, suRate, suMake, suJob, SU_TECH, makePuzzle, makePaced, seedOf, puzzleFor, tileAt, centreOf, digitAt, gameAt, fresh, select, enter, put, erase, undo, hint, hintOf,
+              finish, starsOf, faults, shownView, cycleOf, viewAt, itemsOf, colorsOf, levelAt, boardIdx, LV, GAMES, BEST, PUZZLES,
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; },
+              get MISTAKES(){ return MISTAKES; }, set MISTAKES(v){ MISTAKES = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
@@ -62200,7 +62820,7 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -62209,7 +62829,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
