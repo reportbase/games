@@ -3054,7 +3054,9 @@ try {
     // game over: stars and a best; a click after it plays the table again where it is (Oct 29: only you move to another board)
     const ov = await page.evaluate(async () => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
       g.balls = 1; g.S.score = 123450; g.S.onPl = false; g.S.launchT = -99; g.S.b = { x: 0.26, y: 1.05, vx: 0, vy: 1 }; g.last = performance.now() - 30; D.stepGame(g);
-      return { st: g.state, stars: g.stars, best: D.BEST.get(g.M.idx + '@' + g.M.lv), par: g.M.par }; });
+      // (CI once found the game over with its stars and the best not under this board's key, and said nothing more: the key and what the map held are kept in the failure)
+      const key = g.M.mine ? 'm' + g.M.hash : g.M.idx + '@' + g.M.lv;
+      return { st: g.state, stars: g.stars, best: D.BEST.get(key), par: g.M.par, key, mine: !!g.M.mine, held: [...D.BEST].slice(-4) }; });
     await page.waitForTimeout(1000);
     const bx0 = await page.evaluate(() => window.FIELD_WORLD.target.boardX);
     await page.mouse.click(mid.x, mid.y); await page.waitForTimeout(600);
