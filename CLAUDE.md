@@ -1258,6 +1258,18 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     chess's board), a real click on the framed Tetris board opening Tetris on (0, 0), and a double tap opening Sudoku there. The test harness opens
     `games.html?app=chess` (the page's old opening, so every check begins where it did), and the My holes reload check names `?app=minigolf` (a plain reload
     used to reopen the last game).
+- **One sans for every word** (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): Home's board
+  names are set in the system's own face (`-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`), the stack the page's text
+  was already in (`field-styles.css`'s `html, body`: menus, notices, boxes, so none of that moved). Words drawn elsewhere were in other sans faces:
+  the flash cards and the JSON viewer's page chrome in Helvetica Neue, the bottom row's tiles and a dozen inline styles in the same stack without
+  Segoe UI, five icon and board paints in the bare `sans-serif`, one in Arial, the trick shots' pull strip in `system-ui`. `UI_SANS` (next to
+  `UI_MONO`) is the one stack now, and each of those says it (`F` in the tile painters, `SANS` in the cards and the viewer, the book reader's Sans
+  face, the inline `font:` strings). Left alone on purpose: monospace for notation and readouts (`UI_MONO`: chess's file letters, the review
+  panel and coach button, the margin numbers; "Courier New" in the diagnostic boxes), the pinball reels' serif figures, the book reader's own
+  Serif, Book and Mono faces (its default is Serif), and the dot and seven-segment lettering the boards are built of (flat pieces, not a font:
+  scores, clocks, calls, puzzle numbers). Measured: with each of the 59 apps shown in turn for a moment, the only canvas font set was this stack (15 of them draw any). New text
+  uses `UI_SANS`. The smoke test (end of part 1, "one sans") fails on a stray generic sans in the source and reads every canvas font Home, the
+  flash cards, Sudoku and Hashi set.
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or
