@@ -6343,6 +6343,13 @@ for (const m of [labelTopFiles, labelBotFiles, labelLftRanks, labelRgtRanks]){
    are the same width. A proportional 1 next to a proportional 8 makes a
    readout that jitters as it counts. */
 const UI_MONO = 'ui-monospace, Menlo, monospace';
+/* THE ONE SANS (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): the system's own face, the stack the
+   page's text (menus, notices, boxes: field-styles.css's html and body) and Home's board names were already set in. Every place that drew words
+   in another sans (`sans-serif`, Arial, Helvetica Neue with Helvetica, system-ui) says UI_SANS now, so a flash card, an icon's number and a tile's
+   label are set in the same face as the menu. Left as they were on purpose: the monospace of notation and readouts (UI_MONO: chess's files, the
+   review panel, the margin numbers), the pinball reels' serif figures, the reader's own Serif, Book and Mono faces, and the dot and seven-segment
+   lettering the boards are built of (pieces, not a font). */
+const UI_SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
 const _evalBarGeo = new THREE.PlaneGeometry(1, 1);  _evalBarGeo.rotateX(-Math.PI / 2);
 const evalBar3DTrack = new THREE.Mesh(
   _evalBarGeo,
@@ -6510,7 +6517,7 @@ function updateBoardCoords(){
   while (el.childElementCount < need){
     const d = document.createElement('div');
     d.style.cssText = 'position:absolute;transform:translate(-50%,-50%);'
-      + 'font:600 0.6875rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;'
+      + 'font:600 0.6875rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#c9c7be;'
       + 'text-shadow:0 1px 4px rgba(0,0,0,.95);opacity:.85';
     el.appendChild(d);
   }
@@ -9910,14 +9917,14 @@ function confirmAction(text, okLabel, onOk){
     + 'background:#1c1d21;opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;'
     + 'border:1px solid #55585f;border-radius:10px;box-shadow:0 10px 36px rgba(0,0,0,.6)';
   const msg = document.createElement('div');
-  msg.style.cssText = 'font:0.9375rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#ffffff;line-height:1.5';
+  msg.style.cssText = 'font:0.9375rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#ffffff;line-height:1.5';
   msg.textContent = text;
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:10px;justify-content:center';
   const close = () => { box.remove(); document.removeEventListener('keydown', onKey, true); };
   const cancel = document.createElement('button');
   cancel.type = 'button'; cancel.textContent = 'Cancel';
-  const BTN = 'font:600 0.875rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:9px 18px;border-radius:7px;opacity:1;cursor:pointer;';
+  const BTN = 'font:600 0.875rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:9px 18px;border-radius:7px;opacity:1;cursor:pointer;';
   cancel.style.cssText = BTN + 'color:#ffffff;background:#3a3d44;border:1px solid #6a6e76';
   cancel.addEventListener('click', close);
   const ok = document.createElement('button');
@@ -10073,7 +10080,7 @@ function coachNoteEl(){
          than a new one — it looks the same over a dark field and stops
          disappearing over a white print. */
       + 'background:#0c0a13;border:1px solid rgba(178,142,255,.28);'
-      + 'font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;line-height:1.45;'
+      + 'font:0.75rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#c9c7be;line-height:1.45;'
       + 'pointer-events:auto;cursor:default;display:none;text-align:center;'
       // …and the blur goes with the transparency: behind an opaque fill it is
       // computed every frame and painted over.
@@ -11121,7 +11128,7 @@ function openTutPicker(){
   box.className = 'panel';
   box.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:95;'
     + 'width:min(92vw,420px);padding:14px;background:rgba(18, 21, 28,.94);border:1px solid #2a3340;'
-    + 'border-radius:12px;font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;color:#c9c7be;display:flex;flex-direction:column;gap:6px';
+    + 'border-radius:12px;font:0.75rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#c9c7be;display:flex;flex-direction:column;gap:6px';
   const hd = document.createElement('div');
   hd.innerHTML = '&#10035; Interactive tutorial';
   hd.style.cssText = 'color:#c9a6ff;font-weight:bold;letter-spacing:.08em;margin-bottom:4px';
@@ -12891,7 +12898,7 @@ function bbIcoSize(){
 let _bbStatW = 0;
 function bbStatWidth(list){
   const z = LATTICE.z || 1, x = LATTICE.x || 1, base = Math.max(24, Math.round(BB_ICO * x / z)), h = BB_ICO;
-  const F = '-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif';
+  const F = UI_SANS;
   const c = (bbStatWidth._c || (bbStatWidth._c = document.createElement('canvas'))).getContext('2d');
   if (!c) return base;
   let need = 0;
@@ -13631,7 +13638,7 @@ function bbPaintStat(ico, s, S){
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, S.w, S.h);
   if (!s) return;
-  const w = S.w, h = S.h, F = '-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif';
+  const w = S.w, h = S.h, F = UI_SANS;
   c.globalAlpha = s.dim ? 0.4 : 1;
   /* (Oct 10, mini golf's editor: "remove the in hand, paint, editing anything on the top line of the button. when the
      object is selected, change the color of the button to selected." A tile may give its own background, bg, and a
@@ -14941,7 +14948,7 @@ function engineNotice(msg, holdMs, html){
       + 'left:76px;right:76px;margin:0 auto;'
       + 'width:fit-content;max-width:min(640px, calc(100vw - 152px));'
       + 'background:rgba(42,26,16,.92);color:#ffb070;border:1px solid #e8a25c;padding:7px 13px;'
-      + 'font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;border-radius:8px;text-align:center;'
+      + 'font:0.75rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;border-radius:8px;text-align:center;'
       + 'box-sizing:border-box;'
       + 'max-height:calc(5 * 1.45em + 14px);overflow-y:auto;overscroll-behavior:contain;'
       + 'pointer-events:auto;cursor:pointer;white-space:pre-line;line-height:1.45';
@@ -42616,7 +42623,7 @@ const GOLF_MAKE = SIZE => {
   function closeCardBox(){ const b = document.getElementById('golfCardBox'); if (b) b.remove(); }
   function openCardBox(R){
     closeCardBox();
-    const F = 'font:0.875rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;', card = R.card || [];
+    const F = 'font:0.875rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;', card = R.card || [];
     const tot = card.reduce((a, h) => a + h.strokes, 0), par = card.reduce((a, h) => a + h.par, 0), d = par - tot;
     const starsAt = h => h.stars || 0;
     const veil = document.createElement('div');
@@ -42644,7 +42651,7 @@ const GOLF_MAKE = SIZE => {
     const foot = document.createElement('div'); foot.style.cssText = 'display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap';
     foot.appendChild(cell(n ? 'the holes averaged ' + starText(Math.round(sum / n)) + ' (' + (sum / n).toFixed(1) + ')' : 'no hole was rated in time', 'color:#c9ccd2;font-size:0.8125rem'));
     const close = document.createElement('button'); close.type = 'button'; close.textContent = 'Close'; close.title = 'Close the scorecard.';
-    close.style.cssText = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#1a1206;background:#f0a95e;border:1px solid #f0a95e;';
+    close.style.cssText = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#1a1206;background:#f0a95e;border:1px solid #f0a95e;';
     close.addEventListener('click', e => { e.stopPropagation(); closeCardBox(); });
     foot.appendChild(close);
     box.append(head, list, foot);
@@ -43852,8 +43859,8 @@ const GOLF_MAKE = SIZE => {
   function closeMineBox(){ const b = document.getElementById('golfMineBox'); if (b) b.remove(); }
   function openMineBox(){
     closeMineBox();
-    const F = 'font:0.9375rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;';
-    const BTN = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
+    const F = 'font:0.9375rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;';
+    const BTN = 'font:600 0.8125rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;padding:7px 12px;border-radius:7px;cursor:pointer;color:#ffffff;background:#3a3d44;border:1px solid #6a6e76;';
     const HOT = 'color:#1a1206;background:#f0a95e;border:1px solid #f0a95e;';
     const veil = document.createElement('div');
     veil.id = 'golfMineBox';
@@ -52512,7 +52519,7 @@ const SUDOKU_APP = (() => {
       ctx.fillStyle = '#dcd2bb'; for (const [a, b] of [[0, 1], [1, 0], [1, 2], [2, 1]]) ctx.fillRect(a * t, b * t, t, t);
       ctx.strokeStyle = '#1c2230'; ctx.lineWidth = Math.max(1, sz * 0.025);
       for (let k = 0; k <= 9; k++){ ctx.lineWidth = Math.max(1, sz * (k % 3 ? 0.012 : 0.035)); ctx.beginPath(); ctx.moveTo(k * sz / 9, 0); ctx.lineTo(k * sz / 9, sz); ctx.moveTo(0, k * sz / 9); ctx.lineTo(sz, k * sz / 9); ctx.stroke(); }
-      ctx.font = 'bold ' + Math.round(sz * 0.12) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold ' + Math.round(sz * 0.12) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const mine = { 0: 5, 4: 3, 8: 7, 10: 1, 14: 9, 18: 8, 22: 4, 26: 6, 31: 2, 34: 6, 37: 4, 40: 9, 44: 3, 49: 1, 52: 8, 57: 5, 60: 7, 64: 2, 68: 9, 71: 4, 75: 6, 79: 3 };
       for (const [i, d] of Object.entries(mine)){ ctx.fillStyle = i % 2 ? '#2a5db0' : '#1c2230'; ctx.fillText(String(d), ((i % 9) + 0.5) * sz / 9, (((i / 9) | 0) + 0.54) * sz / 9); }
     },
@@ -53190,7 +53197,7 @@ const HASHI_APP = (() => {
       const bridge = (a, b, n) => { const [x1, y1] = at(isl[a]), [x2, y2] = at(isl[b]), h = y1 === y2; ctx.lineWidth = Math.max(1, g * 0.14);
         for (let k = 0; k < n; k++){ const o = n === 1 ? 0 : (k ? 1 : -1) * g * 0.14; ctx.beginPath(); ctx.moveTo(x1 + (h ? 0 : o), y1 + (h ? o : 0)); ctx.lineTo(x2 + (h ? 0 : o), y2 + (h ? o : 0)); ctx.stroke(); } };
       bridge(0, 1, 1); bridge(0, 2, 2); bridge(2, 3, 1); bridge(3, 4, 2); bridge(1, 4, 1); bridge(3, 5, 1); bridge(4, 6, 1); bridge(5, 6, 1);
-      ctx.font = 'bold ' + Math.round(g * 0.78) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold ' + Math.round(g * 0.78) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (const I of isl){ const [x, y] = at(I);
         ctx.fillStyle = '#8d7a49'; ctx.beginPath(); ctx.arc(x, y, g * 0.47, 0, 7); ctx.fill();
         ctx.fillStyle = '#e8d8a2'; ctx.beginPath(); ctx.arc(x, y, g * 0.4, 0, 7); ctx.fill();
@@ -53456,7 +53463,7 @@ const FLASH_APP = (() => {
   /* ─── THE PICTURE ─── a card: cream, rounded, its state's colour along the far edge, the deck and the card's number small at
      the top, what it asks over the front; the back the question small and the answer large, a note under it, and on the
      framed card the four grade buttons along the near edge with their intervals. Text set as large as fits (`fitText`). */
-  const SANS = '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif';
+  const SANS = UI_SANS;
   const PIC = BOARD_KIT.painted(6000, (P, hi) => paint(P, hi ? 640 : 320)), SPECS = PIC.SPECS;   // (a card's picture by its key: BOARD_KIT)
   const BTN_V = 0.78;                                 // (the grade buttons: v from here to the near edge)
   function fitText(cx, text, maxW, maxH, big, small, weight){
@@ -53657,7 +53664,7 @@ const FLASH_APP = (() => {
       ctx.fillStyle = '#20242c'; ctx.fillRect(0, 0, sz, sz);
       const card = (x, y, col, rot) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = '#fbf8f1'; ctx.fillRect(-sz * 0.32, -sz * 0.2, sz * 0.64, sz * 0.4); ctx.fillStyle = col; ctx.fillRect(-sz * 0.32, -sz * 0.2, sz * 0.64, sz * 0.05); ctx.restore(); };
       card(sz * 0.45, sz * 0.4, '#3b82f6', -0.18); card(sz * 0.55, sz * 0.6, '#22c55e', 0.12);
-      ctx.fillStyle = '#1d1b18'; ctx.font = 'bold ' + Math.round(sz * 0.16) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A?', sz * 0.55, sz * 0.62);
+      ctx.fillStyle = '#1d1b18'; ctx.font = 'bold ' + Math.round(sz * 0.16) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('A?', sz * 0.55, sz * 0.62);
     },
     importDeckFiles, deckOfText, addDecks, isDeckFile, importAnyFiles,
     _debug: { readDeckText, deckOfJson, deckOfText, deckOfAny, importAnyFiles, pickDecks, addDecks, importDeckFiles, cid, hasDeck, splitLine, saveDecks, DECKS, get DECK(){ return DECK; }, set DECK(v){ DECK = v; }, deck, cardOf, boardIdx, after, grade, stateOf, counts, nextDue, nextAt, boardFor,
@@ -56102,7 +56109,7 @@ const TRICK_APP = (() => {
     if (n >= 9){ c.fillStyle = col; c.fillRect(0, 128 * 0.31, 256, 128 * 0.38); }
     if (n === 0){ c.fillStyle = '#c0392b'; for (const [x, y] of [[0, 64], [64, 64], [128, 64], [192, 64], [256, 64], [32, 26], [160, 102]]){ const sx = 1 / Math.max(0.3, Math.sin(y / 128 * Math.PI)); c.beginPath(); c.ellipse(x, y, 4.5 * sx, 4.5, 0, 0, 7); c.fill(); } }
     else for (const x of [64, 192]){ c.fillStyle = '#f7f5ee'; c.beginPath(); c.arc(x, 64, 17, 0, 7); c.fill();
-      c.fillStyle = '#111'; c.font = 'bold ' + (n > 9 ? 17 : 21) + 'px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(n), x, 65); }
+      c.fillStyle = '#111'; c.font = 'bold ' + (n > 9 ? 17 : 21) + 'px ' + UI_SANS; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(n), x, 65); }
     const t = new T.CanvasTexture(cv); return t;
   }
   // the pieces' shapes, a unit across (a ball sits on the cloth; the cue lies along +x back from its tip, the field turning +x to the yaw)
@@ -56257,11 +56264,11 @@ const TRICK_APP = (() => {
     el.style.cssText = 'position:fixed;right:calc(min(32px,5.25vw) + 12px);top:76px;width:92px;z-index:30;display:none;flex-direction:column;align-items:center;gap:8px;touch-action:none;user-select:none;-webkit-user-select:none';
     const tip = document.createElement('canvas'); tip.id = 'tsTip'; tip.width = tip.height = 184; tip.title = 'Where the tip meets the white: drag on it (dashed ring: the chalk\'s grip; gold tick: rolls at once)';
     tip.style.cssText = 'width:92px;height:92px;border-radius:50%;background:rgba(12,12,17,0.72);cursor:crosshair;touch-action:none';
-    const label = document.createElement('div'); label.style.cssText = 'font:0.6875rem/1.2 system-ui,sans-serif;color:#d8d4c8;text-shadow:0 1px 2px #000;text-align:center;pointer-events:none';
+    const label = document.createElement('div'); label.style.cssText = 'font:0.6875rem/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#d8d4c8;text-shadow:0 1px 2px #000;text-align:center;pointer-events:none';
     const pull = document.createElement('div'); pull.id = 'tsPull'; pull.title = 'Pull down and let go to shoot: the farther, the harder';
     pull.style.cssText = 'position:relative;width:46px;height:min(30vh,230px);border:1px solid rgba(255,255,255,0.18);border-radius:23px;background:rgba(12,12,17,0.6);overflow:hidden;cursor:ns-resize;touch-action:none';
     const fill = document.createElement('div'); fill.style.cssText = 'position:absolute;left:0;right:0;top:0;height:0;background:linear-gradient(#d4a05233,#d4a052cc)';
-    const word = document.createElement('span'); word.textContent = 'pull'; word.style.cssText = 'position:absolute;left:0;right:0;bottom:8px;text-align:center;font:0.75rem system-ui,sans-serif;color:#b8b4a8;pointer-events:none';
+    const word = document.createElement('span'); word.textContent = 'pull'; word.style.cssText = 'position:absolute;left:0;right:0;bottom:8px;text-align:center;font:0.75rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#b8b4a8;pointer-events:none';
     pull.append(fill, word); el.append(tip, label, pull); document.body.appendChild(el);
     Object.assign(CTL, { el, tip, pull, fill, label });
     setInterval(() => { if (CTL.el.style.display !== 'none' && !CTL.pulling && performance.now() - CTL.seen > CTL_GONE) ctlHide(); }, 200);
@@ -63893,7 +63900,7 @@ onmessage = ev => {
       ctx.fillStyle = '#20242c'; ctx.fillRect(0, 0, sz, sz);
       const n = 4, t = sz / n;
       for (let i = 0; i < n * n; i++){ ctx.fillStyle = ((i % n) + ((i / n) | 0)) % 2 ? '#2b2f38' : '#3a4050'; ctx.fillRect((i % n) * t, ((i / n) | 0) * t, t, t); }
-      ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
+      ctx.fillStyle = '#facc15'; ctx.font = (sz * 0.55) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sz / 2, sz / 2);
     },
     _debug: { RUN, MINE, STARTERS, BOX, ASK, LAB_SYS, srcOf, recOf, restart, change, fixIt, historyOf, itemsOf, FONT, SND, get drag(){ return DRAG; }, PLAYS, checkOf, hardness, openMineList, mineList, playOf, shownAt, shownView, starsAt, BEST, undo, startFrom, forget, trialOf, parseReply, cleanView,
               takeShared, openRules, levelAt, boardIdx, get model(){ return MODEL; }, isLive, get live(){ return LIVE; }, uvAt: (x, y) => _framedUV(x, y),
@@ -63977,14 +63984,14 @@ const HOME_APP = (() => {
         for (let i = 0; i < n * n; i++){ c.fillStyle = cssOf(gr.colors[i]); c.fillRect(x0 + (i % n) * t, y0 + Math.floor(i / n) * t, t + 0.5, t + 0.5); }
       } else {
         c.fillStyle = hsl(H, 40, 34); c.fillRect(x0, y0, side, side);
-        c.fillStyle = 'rgba(255,255,255,0.85)'; c.font = 'bold ' + Math.round(side * 0.55) + 'px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillStyle = 'rgba(255,255,255,0.85)'; c.font = 'bold ' + Math.round(side * 0.55) + 'px ' + UI_SANS; c.textAlign = 'center'; c.textBaseline = 'middle';
         c.fillText(titleOf(a).charAt(0), x0 + side / 2, y0 + side * 0.54);
       }
     }
     c.restore();
     c.strokeStyle = 'rgba(255,255,255,0.22)'; c.lineWidth = Math.max(1, S / 256); c.beginPath(); c.roundRect(x0, y0, side, side, rad); c.stroke();
     // the name, along the foot, as large as fits
-    const name = a ? titleOf(a) : P.id, family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
+    const name = a ? titleOf(a) : P.id, family = UI_SANS;
     let fs = Math.round(0.082 * S);
     c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#f3ead6';
     for (; fs > 0.045 * S; fs--){ c.font = 'bold ' + fs + 'px ' + family; if (c.measureText(name).width <= 0.86 * S) break; }
@@ -66029,7 +66036,7 @@ function openAppPicker(){
     row.className = 'ap-row';                             // so a touch screen can make it bigger (Oct 17)
     row.style.cssText = 'display:flex;align-items:center;gap:10px;width:100%;'
       + 'padding:7px 9px;border:1px solid transparent;border-radius:5px;background:none;'
-      + 'font:0.75rem -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;'
+      + 'font:0.75rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;'
       + 'color:' + (on ? '#e8c86a' : '#c9c7be') + ';text-align:left;cursor:pointer';
     row.appendChild(_appThumb(a, on));
     const name = document.createElement('span');
@@ -66979,7 +66986,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
        book out again (the words fall on other pages); a colour only paints them again. */
     const FONTS = [
       { key: 'serif', name: 'Serif', css: 'Georgia, "Times New Roman", Times, "DejaVu Serif", serif' },
-      { key: 'sans',  name: 'Sans',  css: '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif' },
+      { key: 'sans',  name: 'Sans',  css: UI_SANS },
       { key: 'book',  name: 'Book',  css: 'Palatino, "Palatino Linotype", "Book Antiqua", "URW Palladio L", Georgia, serif' },
       { key: 'mono',  name: 'Mono',  css: 'Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace' },
     ];
@@ -68105,7 +68112,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     const PAGE_W = 640, PAGE_H = 960, ASPECT = PAGE_W / PAGE_H;
     const M = { l: 30, r: 28, t: 66, b: 54 };
     const MONO = 'Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace';
-    const SANS = '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif';
+    const SANS = UI_SANS;
     const LINE_CAP = 50000, MAX_BYTES = 128 * 1024 * 1024;
     const SIZES = [10, 11, 12, 13, 14, 16, 18, 20, 22];
     const DEPTHS = [1, 2, 3, 4, 5, 6, 8, 99];          // 99 is every level ("All")
@@ -70666,7 +70673,7 @@ function _selfCheckPanel(out){
     el.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:60;'
       + 'max-width:min(680px,94vw);background:rgba(18, 21, 28,.94);color:#cfe0ee;'
       + 'border:1px solid rgba(140,170,200,.35);border-radius:8px;padding:10px 12px;'
-      + 'font:0.75rem/1.45 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;'
+      + 'font:0.75rem/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;'
       + 'box-shadow:0 6px 24px rgba(0,0,0,.55);cursor:pointer;white-space:pre-wrap';
     el.title = 'Click to dismiss';
     el.addEventListener('click', () => el.remove());

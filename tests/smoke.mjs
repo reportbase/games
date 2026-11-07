@@ -515,6 +515,26 @@ try {
     if (!ok) failures.push('[home] ' + JSON.stringify({ r, f1, pick, tap, dbl }));
     console.log(`${ok ? 'ok  ' : 'FAIL'} home: ${r.every ? 'every' : 'not every'} game, one board each in a block eight across (${r.pictures} pictures), Home first in the picker and the page's start framed on the game last in, a real tap and a double tap opening a game on its first board`);
   }
+  // THE ONE SANS (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): every place that draws words
+  // names UI_SANS, the stack the page's text and Home's names are set in; no canvas or style sets its own generic sans, Arial or Helvetica Neue
+  // any more. And what is drawn: while Home, the flash cards, Sudoku and Hashi are shown, every canvas font that was set is that stack.
+  {
+    const src = await readFile(join(ROOT, 'games.html'), 'utf8');
+    const stray = (src.match(/'px (Arial, )?sans-serif'|"Helvetica Neue"|system-ui,sans-serif|BlinkMacSystemFont,Helvetica/g) || []);
+    const def = (src.match(/const UI_SANS = '([^']*)'/) || [])[1] || '';
+    const seen = await page.evaluate(async () => {
+      const m = new Set(), d = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'font');
+      Object.defineProperty(CanvasRenderingContext2D.prototype, 'font', { configurable: true, get(){ return d.get.call(this); }, set(v){ m.add(String(v).replace(/^.*?\d+(\.\d+)?px\s*/, '')); d.set.call(this, v); } });
+      // (Home's own pictures are painted by hand, so a slow frame cannot leave this with nothing to read; the apps shown after it add what they draw)
+      const H = window.FIELD_APPS.find(a => a.id === 'home')._debug; for (const id of ['sudoku', 'hashi', 'flashcards']) H.paint({ id }, false);
+      for (const id of ['home', 'flashcards', 'sudoku', 'hashi']){ window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await new Promise(ok => setTimeout(ok, 1200)); }
+      Object.defineProperty(CanvasRenderingContext2D.prototype, 'font', d);
+      return [...m]; });
+    const okF = !stray.length && /apple-system/.test(def) && /Segoe UI/.test(def) && seen.length > 0 && seen.every(f => f === def);
+    if (!okF) failures.push('[one sans] ' + JSON.stringify({ stray, def, seen }));
+    console.log(`${okF ? 'ok  ' : 'FAIL'} one sans: no canvas or style sets its own generic sans, and the words Home, the flash cards, Sudoku and Hashi draw are all in ${def.split(',')[0]}…`);
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await page.waitForTimeout(400);
+  }
   }   // (end of part 1)
 
   if (part(2)) {
