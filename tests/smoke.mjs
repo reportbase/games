@@ -5851,9 +5851,13 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.stepHint = h2.kind === 'step' && h2.d === g2.P.sol[h2.i] && !g2.P.givens[h2.i] && h2.tech >= 1;
       out.stars = [0, 1, 2, 3, 6].map(D.starsOf);
       D.GAMES.delete('0_0');
+      // (Nov 7: "#1 is not center aligned") a digit's ink stands in the middle of its column: a 1 is two strokes at its glyph's right edge, so its piece is shifted back
+      const Ps = D.puzzleFor(3, 1), Vs = D.shownView(Ps, 0), cols = new Set([...Array(Ps.N).keys()].map(c => ((1 + c + 0.5) / Ps.M).toFixed(9)));
+      const dg = D.itemsOf(Ps, Vs, null, false, 400).filter(it => /^skD\d$/.test(it.kind) && it.v > 1.5 / Ps.M);
+      out.ink = dg.some(it => it.kind === 'skD1') && dg.every(it => cols.has((it.u + (it.kind === 'skD1' ? 0.19 * it.scale : 0)).toFixed(9)));
       return out;
     });
-    const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '6,9,9,9,9' && !r.bad.length && r.climbs && r.classic.count === 1 && r.classic.rated && r.many === 5 && r.broken === 0
+    const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '6,9,9,9,9' && r.ink && !r.bad.length && r.climbs && r.classic.count === 1 && r.classic.rated && r.many === 5 && r.broken === 0
       && r.paced.same && r.paced.calls > 1 && r.sameBoard && r.differ && r.givenLocked && r.peerNotes && r.undo && r.wrong && r.hintWrong && r.h1 && r.h2
       && r.solved.state === 'solved' && r.solved.stars === 1 && r.solved.faults === 3 && r.stepHint && r.stars.join() === '3,2,2,1,1';
     if (!ok1) failures.push('[sudoku] puzzles and rules: ' + JSON.stringify(r));
@@ -5939,7 +5943,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       let solved = false, blank = false;
       for (let k = 0; k < 600; k++){ const V = D.shownView(P, 1000 + T * k / 600); seen.add(V.m); counts.add(V.v.filter(x => x).length); solved = solved || (V.solved && V.v.every((x, i) => x === P.sol[i])); blank = blank || V.v.every((x, i) => x === P.givens[i]); }
       const live = new Set(), t0 = performance.now();
-      while (performance.now() - t0 < 4000){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
+      // (sampled until it has moved three times, up to a whole cycle: a few seconds on the page's clock can fall wholly in the rest at either end of it)
+      while (performance.now() - t0 < T * 1000 + 1500 && live.size < 3){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
       return { stages: seen.size, steps: P.order.length, counts: counts.size, solved, blank, live: live.size }; });
     const ok4 = demo.stages >= demo.steps && demo.counts > demo.steps * 0.8 && demo.solved && demo.blank && demo.live >= 3;
     if (!ok4) failures.push('[sudoku] a board no one plays: ' + JSON.stringify(demo));
@@ -6153,11 +6158,16 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         }
       }
       out.sound = sound;
+      // (Nov 7: "#1 is not center aligned") every island's number stands in the middle of its island: a 1 is two strokes at its glyph's right edge,
+      // so its piece is shifted back by 0.19 of its height
+      const Pn = D.puzzleFor(3, 1), Vn = D.shownView(Pn, 0), nums = D.itemsOf(Pn, Vn, null, false, 400).filter(it => /^hsD\d$/.test(it.kind) && it.lift > 0.0025);
+      const mid = new Set(Pn.isl.map((s, i) => D.islC(Pn, i).map(x => x.toFixed(9)).join()));
+      out.ink = nums.length === Pn.K && Pn.n.includes(1) && nums.every(it => mid.has([it.u + (it.kind === 'hsD1' ? 0.19 * it.scale : 0), it.v].map(x => x.toFixed(9)).join()));
       return out;
     });
     const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '7,9,11,13,15' && !r.bad.length && r.climbs && r.ring.join() === '1,2,0' && r.cross.edges === 2 && r.cross.crossed && r.cross.one === 0 && r.side
       && r.paced.same && r.paced.calls > 1 && r.sameBoard && r.differ && r.cycle === '1,2,0,1' && r.undo === '2,1,0' && r.refused && r.undoLast && r.wrong && r.hintWrong && r.h1 && r.h2
-      && r.erase && r.eraseUndo && r.solved.state === 'solved' && r.solved.stars === 3 && r.solved.faults === 0 && r.solved.best && r.stars.join() === '3,2,2,1,1' && r.sound.bad.length === 0;
+      && r.erase && r.eraseUndo && r.solved.state === 'solved' && r.solved.stars === 3 && r.solved.faults === 0 && r.solved.best && r.stars.join() === '3,2,2,1,1' && r.sound.bad.length === 0 && r.ink;
     if (!ok1) failures.push('[hashi] puzzles and rules: ' + JSON.stringify(r));
     console.log(`${ok1 ? 'ok  ' : 'FAIL'} hashi: seas of 7 to 15 squares, 30 sampled puzzles each with one answer the human solver finds (${r.ms} ms; islands ${r.isl.join('/')}, grade ${r.grade.join('/')}), the solver on known puzzles, the rules, hints and stars`);
     // real input on the framed board: a click on an island and the next, a click on the sea between them, the keys, the play pad, a real drag
@@ -6268,7 +6278,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       let solved = false, blank = false;
       for (let k = 0; k < 600; k++){ const V = D.shownView(P, 1000 + T * k / 600); seen.add(V.m); counts.add(V.b.reduce((a, x) => a + x, 0)); solved = solved || (V.solved && V.b.every((x, i) => x === P.sol[i])); blank = blank || V.b.every(x => !x); }
       const live = new Set(), t0 = performance.now();
-      while (performance.now() - t0 < 4000){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
+      // (sampled until it has moved three times, up to a whole cycle: a few seconds on the page's clock can fall wholly in the rest at either end of it)
+      while (performance.now() - t0 < T * 1000 + 1500 && live.size < 3){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
       return { stages: seen.size, steps: P.order.length, counts: counts.size, solved, blank, live: live.size }; });
     const ok4 = demo.stages >= demo.steps && demo.counts > demo.steps * 0.8 && demo.solved && demo.blank && demo.live >= 3;
     if (!ok4) failures.push('[hashi] a board no one plays: ' + JSON.stringify(demo));

@@ -1224,6 +1224,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     bridge's hint, the stars), a hint's step sound from fifteen states a player could be in, real input (clicks on two islands, the sea between them,
     the keys, the play pad, a real drag laying two bridges, a real click finishing it and another starting it again), four quick real touches, and
     a board no one plays going through every step.
+- **A lone 1 stands in the middle of its square** (Nov 7: "#1 is not center aligned", on Hashi's islands; Sudoku's and Nonograms' squares had it too):
+  the kit's seven-segment 1 (`BOARD_KIT.flat.digit`) is two strokes at its glyph's right edge, so a piece laid on a square's middle put the 1 a
+  fifth of its height to the right (2048's digits were centred the same way on Nov 1, `figures`). The three games' `numItems` (Nonograms', Sudoku's,
+  Hashi's) shift a number that is a lone 1 back by `BOARD_KIT.flat.ONE_AT` (0.19) of its height; a 1 beside other digits (a clue of 12, a clock) stands
+  in its slot as a calculator's does. The smoke test (Sudoku's and Hashi's first checks) wants every digit's ink on its column's or island's middle. The
+  idle-board checks (Sudoku, Hashi) now sample until the board has moved three times, up to a cycle: a four-second window fell wholly in the rest at either
+  end of a cycle about one run in ten.
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or

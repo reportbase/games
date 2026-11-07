@@ -18725,7 +18725,8 @@ const BOARD_KIT = (() => {
         q.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [a * L * ax[0] + b * t * nx[0], a * L * ax[1] + b * t * nx[1]])); }
       return geo(T, q);
     }
-    return { geo, rect, digit, cross };
+    const ONE_AT = 0.25 - 0.12 / 2;   // a 1 is two strokes at its glyph's right edge (w - t to w): its ink's middle, in the glyph's own units, so a lone 1 is shifted back by this to stand in the middle of its square
+    return { geo, rect, digit, cross, ONE_AT };
   })();
   return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say,
            gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted, flat };
@@ -51729,7 +51730,7 @@ const NONOGRAM_APP = (() => {
   }
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'ngD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
   }
   const DIGIT_PX = 120;         // (a board under this many pixels across shows its picture alone: a 12×12's numbers would be specks)
@@ -52355,7 +52356,7 @@ const SUDOKU_APP = (() => {
   const DIGIT_PX = 100, NOTE_PX = 240;      // (a board under the first shows its tiles alone; pencil marks only on boards this wide)
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'skD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
   }
   function itemsOf(P, V, g, live, bp){
@@ -53003,7 +53004,7 @@ const HASHI_APP = (() => {
   const DIGIT_PX = 100;      // (a board under it shows its islands, not their numbers)
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color, lift){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'hsD' + ds[k], u: u0 + k * sp, v, scale: h, lift: lift || 0.0028, color });
   }
   function itemsOf(P, V, g, live, bp){
