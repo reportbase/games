@@ -27174,8 +27174,8 @@ const TRON_APP = (() => {
   return app;
 })();
 /* ═══ MISSILE COMMAND (Sep 28: "Missile Command") ═══════════════════════════════════════════
-   Night over six cities on the near edge, with three white rooks — the bases — at the ends and
-   in the middle. Enemy missiles fall from the far edge, trailing red, each at a city or a base.
+   Night over six cities on the near edge, with three bunkers — the bases — at the ends and
+   in the middle. Enemy missiles fall from the far edge, trailing fire, each at a city or a base.
    TAP anywhere above the ground: the nearest base with missiles left fires at that spot, and the
    missile bursts into a ball of fire there that takes out any enemy missile inside it — and each
    one caught bursts in turn, so a well-placed shot clears a cluster. A base holds ten missiles
@@ -27185,15 +27185,38 @@ const TRON_APP = (() => {
    Controls: TAP to fire (the tap waits for the board, so the view still pans with a drag).
    Menu: Difficulty (how fast and how many), Sound. Selecting a board frames it and waits for a
    tap. Every other board replays recorded games of a computer player that fires where each
-   missile will be. */
+   missile will be.
+
+   THE LOOK (Nov 7: "Missle command uses bad animations. It should be a beautiful game with explosions and effects from the other
+   games"): until then a missile was a red dot on a row of small spheres, a burst a ball flashing between two colours twelve times a
+   second, and the sky a flat blue. Now, with the other games' ways:
+   - THE SKY IS A PICTURE (the photo tier, as the tanks'): a night of stars and soft colour, a moon on some boards, a haze at the
+     horizon and two far skylines with their windows lit, over a cratered ground. Four skies (night, dusk, an ember red, a polar
+     green), by the board's number among 24 pictures (`SKY_N`: a field of boards shares 24 textures, not one each), the corner's night.
+   - EFFECTS ARE WORKED OUT FROM HOW LONG AGO AND A SEED (the tanks' `fxItems`), so a recorded game shows them with nothing kept
+     but a list of what happened (`g.fx`, `snap`): a launch (a muzzle flash and smoke at the bunker), a burst, a ground impact.
+   - A BURST is the fireball you must keep clear of, exactly as big as what it can destroy (`blastR`), boiling in lobes, white at its
+     heart and cooling over its life (your bursts blue-white, the enemy's yellow to red), a wider glow round it, a ring of shock, sparks
+     falling and, for an enemy missile shot down, smoke drifting up.
+   - A MISSILE is a hot head in a glow and a line behind it that cools from white through orange to dark red (yours cyan), the enemy's
+     with smoke that spreads and thins with its age; your shot's target is a ringed cross that closes in as it nears.
+   - A GROUND IMPACT: a flash, a ring along the ground, a fireball thrown up in lobes, dust rolling out, embers (and the page's rock
+     debris, `BOOM`); it leaves a scorch on the ground, and a city or base destroyed burns and smokes for the rest of the game,
+     less as it goes. Cities have lit windows that flicker and a beacon; bases a barrel that turns to the last target, a lamp (green,
+     amber when low, red and blinking when empty) and their missiles standing in rows.
+   - The score and the wave are lit in the sky (seven segments, `BOARD_KIT.flat`).
+   Every board draws all of it at any size: the effects are a few dozen low pieces. */
 const MISSILE_APP = (() => {
-  const N = 20, SQ = 1 / N, FAR_PX = 16;
+  const N = 20, SQ = 1 / N, FAR_PX = 16, PHOTO_PX = 20, HI_PX = 320;
   const SKY = 0x0b1026, GROUND = 0x5c4a26, GROUND_V = 0.9;
   const CITY = 0x8fd0ff, FOE = 0xff4a3a, MINE = 0x7fd4ff;
   const CITY_U = [0.17, 0.26, 0.35, 0.65, 0.74, 0.83], BASE_U = [0.06, 0.5, 0.94];
   const R_BLAST = 0.075, SHOT_SP = 0.9, AMMO = 10;
+  const FX_LIFE = 2.8, G_FALL = 0.55, SKY_N = 24, SCAR_MAX = 24, MISS_P = 0.12;
   const GAMES = new Map();
   const gkey = BOARD_KIT.gkey;
+  const clamp = BOARD_KIT.clamp, rngOf = BOARD_KIT.rng, flat = BOARD_KIT.flat;
+  const mixc = (a, b, t) => FieldKit.mixInt(a, b, t);
   let LIVE = null, rnd = Math.random, QUIET = false;
   const say = BOARD_KIT.say(1800, () => QUIET);
 
@@ -27211,12 +27234,26 @@ const MISSILE_APP = (() => {
   const LV_ITEM = { label: () => DL.item.label(), title: DL.item.title,   // the board in play takes its new level at once (Oct 15)
                    on(){ DL.item.on(); const g = LIVE && GAMES.get(LIVE.key); if (g && g.at) g.lv = lvAt(g.at[0], g.at[1]); } };
   const SND = ARCADE.sounds('missile.sound', 'Launches, bursts, cities lost, and the end of each wave.');
-  function blastSound(){ if (!SND.on || QUIET) return; try { ARCADE.hiss(0.45, 0.22, 900); } catch {} }
+  /* THE SOUNDS (Nov 7): each its own few tones and a hiss, through the page's audio, only for the board in play (a recording
+     makes none) and no kind twice within 45 ms. A launch is a rising whoosh, your burst a low boom with a bright crack on it, an
+     enemy missile shot down a sharp pop, a ground impact a long deep thump with a rumble after it. */
+  const sfxLast = {};
+  function sfx(kind){
+    if (!SND.on || QUIET) return;
+    const t = performance.now(); if (t - (sfxLast[kind] || -1e9) < 45) return; sfxLast[kind] = t;
+    try {
+      if (kind === 'launch'){ ARCADE.hiss(0.28, 0.07, 2600); ARCADE.tone(180, 760, 0.26, 'sawtooth', 0.02); }
+      else if (kind === 'burst'){ ARCADE.tone(150, 38, 0.55, 'sine', 0.13); ARCADE.hiss(0.5, 0.16, 1100); ARCADE.tone(1500, 500, 0.14, 'triangle', 0.025, 0.02); }
+      else if (kind === 'pop'){ ARCADE.tone(520, 110, 0.2, 'square', 0.028); ARCADE.hiss(0.22, 0.1, 2000); }
+      else if (kind === 'hit'){ ARCADE.tone(90, 28, 0.9, 'sine', 0.2); ARCADE.hiss(0.95, 0.32, 520); ARCADE.tone(240, 60, 0.4, 'sawtooth', 0.04, 0.03); }
+    } catch {}
+  }
 
   function newGame(){
     return { state: 'ready', t: 0, last: 0, wave: 0, score: 0, downed: 0, landed: 0, cities: [1, 1, 1, 1, 1, 1],
-             bases: BASE_U.map(u => ({ u, ammo: AMMO, up: true })), foes: [], shots: [], blasts: [],
-             queue: 0, spawnT: 0, pause: 1.5, booms: [], id: 0, cool: 0 };
+             bases: BASE_U.map(u => ({ u, ammo: AMMO, up: true, aim: -Math.PI / 2 })), foes: [], shots: [], blasts: [],
+             queue: 0, spawnT: 0, pause: 1.5, booms: [], id: 0, cool: 0,
+             fx: [], scars: [], _sc: null, ruin: new Array(9).fill(-1) };         // (what happened, for the effects; where it scorched; when each city and base fell)
   }
   function start(g){
     if (g.at) g.lv = lvAt(g.at[0], g.at[1]);   // a game takes its board's level as the setting is when it starts, or goes on from waiting (Oct 15)
@@ -27241,8 +27278,11 @@ const MISSILE_APP = (() => {
     g.bases.forEach(b => { if (b.up) targets.push(b.u); });
     if (!targets.length) return;
     const tx = targets[(rnd() * targets.length) | 0], x0 = 0.05 + rnd() * 0.9;
-    g.foes.push({ id: ++g.id, x0, y0: 0, x: x0, y: 0, tx, ty: GROUND_V, sp: (0.055 + 0.006 * g.wave) * D(g).sp });
+    // (a recording's player overlooks a missile now and then, and a board shows what that does: a scorch, a ruin burning on; a missile another burst
+    //  catches on its way down is still caught)
+    g.foes.push({ id: ++g.id, x0, y0: 0, x: x0, y: 0, tx, ty: GROUND_V, sp: (0.055 + 0.006 * g.wave) * D(g).sp, skip: QUIET && rnd() < MISS_P });
   }
+  const seedOfRnd = () => (rnd() * 4294967296) >>> 0;
   // Fire at (u, v) from the nearest base that can.
   function fire(g, u, v){
     if (g.state !== 'play' || v > GROUND_V - 0.04) return false;
@@ -27250,18 +27290,28 @@ const MISSILE_APP = (() => {
     for (const b of g.bases) if (b.up && b.ammo > 0 && (!best || Math.abs(b.u - u) < Math.abs(best.u - u))) best = b;
     if (!best){ SND.play('bad', QUIET); return false; }
     best.ammo--;
-    g.shots.push({ x0: best.u, y0: GROUND_V - 0.02, x: best.u, y: GROUND_V - 0.02, tx: u, ty: v });
-    SND.play('slide', QUIET);
+    const y0 = GROUND_V - 0.02;
+    best.aim = Math.atan2(v - y0, u - best.u);
+    g.shots.push({ x0: best.u, y0, x: best.u, y: y0, tx: u, ty: v });
+    g.fx.push({ k: 'l', x: best.u, y: y0, t0: g.t, seed: seedOfRnd(), a: best.aim });
+    sfx('launch');
     return true;
   }
-  function burst(g, x, y, mine){ g.blasts.push({ x, y, t0: g.t, mine }); if (mine) blastSound(); }
-  // Something hit the ground at u: a city or a base there is gone.
+  function burst(g, x, y, mine){
+    g.blasts.push({ x, y, t0: g.t, mine });
+    g.fx.push({ k: 'b', x, y, t0: g.t, seed: seedOfRnd(), m: mine ? 1 : 0 });
+    sfx(mine ? 'burst' : 'pop');
+  }
+  // Something hit the ground at u: a city or a base there is gone, and the ground is scorched.
   function impact(g, u){
     BOOM.add(g, u, GROUND_V, 'r', rnd);
+    g.fx.push({ k: 'i', x: u, y: GROUND_V, t0: g.t, seed: seedOfRnd() });
+    g.scars.push([u, seedOfRnd()]); if (g.scars.length > SCAR_MAX) g.scars.shift();
+    sfx('hit');
     const ci = CITY_U.findIndex(x => Math.abs(x - u) < 0.01);
-    if (ci >= 0 && g.cities[ci]){ g.cities[ci] = 0; SND.play('boom', QUIET); say(g.cities.some(x => x) ? 'A city is lost' : 'The last city is gone', 1200); }
-    const b = g.bases.find(b => Math.abs(b.u - u) < 0.01);
-    if (b && b.up){ b.up = false; b.ammo = 0; SND.play('boom', QUIET); }
+    if (ci >= 0 && g.cities[ci]){ g.cities[ci] = 0; g.ruin[ci] = g.t; say(g.cities.some(x => x) ? 'A city is lost' : 'The last city is gone', 1200); }
+    const bi = g.bases.findIndex(b => Math.abs(b.u - u) < 0.01), b = g.bases[bi];
+    if (b && b.up){ b.up = false; b.ammo = 0; g.ruin[6 + bi] = g.t; }
   }
 
   /* THE BOT: every so often, the lowest enemy missile not already under a burst — aimed where it
@@ -27270,7 +27320,7 @@ const MISSILE_APP = (() => {
     if ((g.cool -= 1 / 30) > 0) return;
     const covered = f => g.blasts.some(b => Math.hypot(b.x - f.x, b.y - f.y) < R_BLAST * 1.2)
                       || g.shots.some(s => Math.hypot(s.tx - f.x, s.ty - f.y) < R_BLAST * 1.5);
-    const foes = g.foes.filter(f => !covered(f) && f.y > 0.15).sort((a, b) => b.y - a.y);
+    const foes = g.foes.filter(f => !f.skip && !covered(f) && f.y > 0.15).sort((a, b) => b.y - a.y);
     for (const f of foes){
       const len = Math.hypot(f.tx - f.x0, f.ty - f.y0), dx = (f.tx - f.x0) / len, dy = (f.ty - f.y0) / len;
       let px = f.x, py = f.y;
@@ -27288,6 +27338,7 @@ const MISSILE_APP = (() => {
     if (g.state !== 'play') return;
     g.t += dt;
     if (inp) bot(g);
+    if (g.fx.length) g.fx = g.fx.filter(e => g.t - e.t0 < FX_LIFE);
     // Between waves: the bonus, then the next.
     if (!g.queue && !g.foes.length && !g.shots.length && !g.blasts.some(b => g.t - b.t0 < BLAST_T)){
       if (g.pause <= 0 && g.wave){
@@ -27329,35 +27380,187 @@ const MISSILE_APP = (() => {
     say('The cities are gone — ' + g.score + ' points, wave ' + g.wave + '. Tap the board to play again.', 5000);
   }
 
-  /* ─── WHAT A BOARD SHOWS ─────────────────────────────────────────────── */
+  /* ─── WHAT A BOARD SHOWS ─── a snapshot of a game (what a recording keeps, a frame at a time): where everything is, and the list of
+     what is still burning, each with how long ago it began (`fx`: [kind, x, y, age, seed, mine, angle]) and the scorches and the
+     ruins' ages, so a board's effects are worked out from the snapshot alone. */
   function snap(g){
-    return { t: g.t, cities: g.cities.slice(), bases: g.bases.map(b => [b.up ? 1 : 0, b.ammo]),
-             foes: g.foes.map(f => [f.x0, f.y0, f.x, f.y]), shots: g.shots.map(s => [s.x0, s.y0, s.x, s.y, s.tx, s.ty]),
-             blasts: g.blasts.map(b => [b.x, b.y, g.t - b.t0, b.mine ? 1 : 0]), booms: BOOM.burning(g) };
+    if (!g._sc || g._sc.length !== g.scars.length) g._sc = g.scars.slice();   // (shared between frames until there is a new scar)
+    return { t: g.t, score: g.score, wave: g.wave, cities: g.cities.slice(), bases: g.bases.map(b => [b.up ? 1 : 0, b.ammo, b.aim]),
+             foes: g.foes.map(f => [f.x0, f.y0, f.x, f.y, f.sp, f.id]), shots: g.shots.map(s => [s.x0, s.y0, s.x, s.y, s.tx, s.ty]),
+             blasts: g.blasts.map(b => [b.x, b.y, g.t - b.t0, b.mine ? 1 : 0]), booms: BOOM.burning(g),
+             fx: g.fx.filter(e => g.t - e.t0 < FX_LIFE).map(e => [e.k, e.x, e.y, g.t - e.t0, e.seed, e.m || 0, e.a || 0]),
+             scars: g._sc, ruin: g.ruin.map(t => t < 0 ? -1 : g.t - t) };
   }
-  const trail = (out, x0, y0, x, y, color, kind) => {
-    const d = Math.hypot(x - x0, y - y0), n = Math.floor(d / 0.022);
-    for (let k = 1; k <= n; k++){ const f = k / (n + 1); out.push({ kind, u: x0 + (x - x0) * f, v: y0 + (y - y0) * f, scale: 0.008, color }); }
-  };
-  function asItems(s){
-    const out = [];
-    s.cities.forEach((on, i) => out.push(on ? { kind: 'city', u: CITY_U[i], v: GROUND_V + 0.035, scale: 0.06, color: CITY }
-                                             : { kind: 'rubble', u: CITY_U[i], v: GROUND_V + 0.035, scale: 0.06, color: 0x3a3a3a }));
-    s.bases.forEach(([up, ammo], i) => {
-      if (up) out.push({ kind: 'R', piece: 'R', u: BASE_U[i], v: GROUND_V + 0.03, scale: SQ * 1.4 });
-      else out.push({ kind: 'rubble', u: BASE_U[i], v: GROUND_V + 0.035, scale: 0.05, color: 0x3a3a3a });
-      for (let k = 0; k < ammo; k++) out.push({ kind: 'dot', u: BASE_U[i] - 0.036 + (k % 5) * 0.018, v: GROUND_V + 0.07 + ((k / 5) | 0) * 0.016, scale: 0.01, color: 0xffffff });
-    });
-    for (const [x0, y0, x, y] of s.foes){ trail(out, x0, y0, x, y, 0x8a2a22, 'trail'); out.push({ kind: 'dot', u: x, v: y, scale: 0.016, color: FOE }); }
-    for (const [x0, y0, x, y, tx, ty] of s.shots){
-      trail(out, x0, y0, x, y, 0x2f6f95, 'trail'); out.push({ kind: 'dot', u: x, v: y, scale: 0.014, color: MINE });
-      out.push({ kind: 'mark', u: tx, v: ty, scale: 0.03, color: MINE });
+  const FIRE_FOE = [0xffffff, 0xfff1b8, 0xffd060, 0xff9a30, 0xe85a22, 0xb02a18, 0x6a1c18, 0x2f1c24];
+  const FIRE_MINE = [0xffffff, 0xe4f8ff, 0xa8e6ff, 0x62bdff, 0x3d84ee, 0x2b52b8, 0x1d2f78, 0x151c40];
+  const SMOKE = [0x8a5a44, 0x4a3a44, 0x2e2c3c, 0x242634];
+  const rampAt = (A, f) => { const x = clamp(f, 0, 1) * (A.length - 1), i = Math.min(A.length - 2, Math.floor(x)); return mixc(A[i], A[i + 1], x - i); };
+  const fade = (f, from) => f > from ? Math.max(0, (1 - f) / (1 - from)) : 1;
+  /* A LINE from (x0, y0) to the head at (x, y), laid back from the head in pieces whose far ends are `cuts` (distances back, the last
+     long enough to reach the start), each its colour, thinning from th[0] at the head to th[1] at the far end; stretched pieces turned
+     along the way (`yaw`), a hair longer than their length so no gap shows. */
+  function streaks(out, x0, y0, x, y, cols, cuts, th, lift){
+    const dx = x - x0, dy = y - y0, L = Math.hypot(dx, dy);
+    if (L < 0.004) return;
+    const yaw = Math.atan2(dy, dx) || 1e-6;
+    let a = 0;
+    for (let i = 0; i < cuts.length && a < L; i++){
+      const b = Math.min(L, cuts[i]), mid = (a + b) / 2, len = b - a, thick = th[0] + (th[1] - th[0]) * (mid / L);
+      a = b;
+      if (len <= 0) continue;
+      out.push({ kind: 'mcStreak', u: x - dx / L * mid, v: y - dy / L * mid, scale: thick, sx: len / thick * 1.08, yaw, lift, color: cols[Math.min(cols.length - 1, i)] });
     }
-    for (const [x, y, e, mine] of s.blasts){
-      const r = blastR(e);
-      if (r > 0.002) out.push({ kind: 'blast', u: x, v: y, scale: 2 * r, color: ((e * 12) | 0) % 2 ? (mine ? 0xfff4c2 : 0xffd966) : (mine ? 0x9fe0ff : 0xff8a3a) });
+  }
+  const FOE_COLS = [0xfff2c0, 0xffc060, 0xff7a38, 0xd8402a, 0xa2302c, 0x6e2a30, 0x47222e];
+  const MINE_COLS = [0xffffff, 0xd8f4ff, 0x9fe0ff, 0x62bdff, 0x3d84ee];
+  // an enemy missile: a hot head in a glow, the line behind it cooling to dark red, and smoke along it that spreads and thins with its age
+  function foeFx(out, x0, y0, x, y, sp, id, t){
+    const dx = x - x0, dy = y - y0, L = Math.hypot(dx, dy);
+    if (L > 0.01){
+      const ux = dx / L, uy = dy / L;
+      for (let k = 0; k < 9; k++){
+        const d = 0.05 + k * 0.075; if (d > L - 0.01) break;
+        const age = d / Math.max(0.01, sp), f = clamp(age / 14, 0, 1), side = Math.sin(id * 1.7 + k * 2.3) * (0.003 + age * 0.0022);
+        out.push({ kind: 'mcPuff', u: x - ux * d - uy * side, v: y - uy * d + ux * side, scale: Math.min(0.026, 0.005 + age * 0.004) * fade(f, 0.55), lift: 0.006, color: rampAt(SMOKE, f * 0.9) });
+      }
+      streaks(out, x0, y0, x, y, FOE_COLS, [0.012, 0.03, 0.06, 0.11, 0.2, 0.35, 10], [0.0055, 0.0022], 0.008);
+    }
+    out.push({ kind: 'mcGlow', u: x, v: y, scale: 0.05 * (0.85 + 0.15 * Math.sin(t * 19 + id)), lift: 0.006, color: 0xff5a3a });
+    out.push({ kind: 'mcHead', u: x, v: y, scale: 0.013, lift: 0.01, color: 0xfff6dc });
+  }
+  // your missile: a bright head, a short cyan line behind it, a flickering exhaust; and the ringed cross where it will burst, closing in as it nears
+  function shotFx(out, x0, y0, x, y, tx, ty, t){
+    const dx = x - x0, dy = y - y0, L = Math.hypot(dx, dy);
+    if (L > 0.004){
+      streaks(out, x0, y0, x, y, MINE_COLS, [0.015, 0.04, 0.09, 0.17, 0.3], [0.0045, 0.0018], 0.008);
+      out.push({ kind: 'mcFire', u: x - dx / L * 0.012, v: y - dy / L * 0.012, scale: 0.012 + 0.005 * Math.sin(t * 41), lift: 0.009, color: rampAt(FIRE_MINE, 0.2) });
+    }
+    out.push({ kind: 'mcGlow', u: x, v: y, scale: 0.045, lift: 0.006, color: 0x7fd4ff });
+    out.push({ kind: 'mcHead', u: x, v: y, scale: 0.011, lift: 0.01, color: 0xffffff });
+    const total = Math.hypot(tx - x0, ty - y0), prog = total > 0 ? clamp(1 - Math.hypot(tx - x, ty - y) / total, 0, 1) : 1;
+    const rr = 0.012 + 0.03 * (1 - prog * 0.7) + 0.003 * Math.sin(t * 9);
+    out.push({ kind: 'mcRing', u: tx, v: ty, scale: 2 * rr, lift: 0.002, color: 0x9fe0ff });
+    for (let k = 0; k < 4; k++){
+      const an = k * Math.PI / 2 + Math.PI / 4 + prog * 0.9, d = rr * 0.55;
+      out.push({ kind: 'mcStreak', u: tx + Math.cos(an) * d, v: ty + Math.sin(an) * d, scale: 0.0026, sx: 5, yaw: an || 1e-6, lift: 0.004, color: 0xbff0ff });
+    }
+    out.push({ kind: 'mcSpark', u: tx, v: ty, scale: 0.005, lift: 0.004, color: 0xffffff });
+  }
+  /* A BURST (yours blue-white, the enemy's yellow to red): the ball is exactly as big as what it can destroy (`blastR` at its age), so a
+     player reads the danger from it; inside it a core, boiling lobes about the middle in colours a little apart, outside it a glow
+     (light, not harm), a ring of shock, sparks thrown out and falling, and smoke rising from a missile shot down. */
+  function burstFx(out, x, y, e, seed, mine){
+    const R = rngOf(seed), ramp = mine ? FIRE_MINE : FIRE_FOE, f = e / BLAST_T, r = blastR(e);
+    if (r > 0.002){
+      out.push({ kind: 'mcGlow', u: x, v: y, scale: 3.4 * r, lift: 0.001, color: rampAt(ramp, 0.2 + f * 0.5) });
+      out.push({ kind: 'mcFire', u: x, v: y, scale: 2 * r, lift: 0.004, color: rampAt(ramp, 0.1 + f * 0.8) });
+      for (let k = 0; k < 6; k++){
+        const th = R() * 6.2832 + e * (1.2 + R() * 1.4) * (k % 2 ? 1 : -1), d = (0.3 + R() * 0.4) * r, s0 = (0.45 + R() * 0.3) * r;
+        out.push({ kind: 'mcFire', u: x + Math.cos(th) * d, v: y + Math.sin(th) * d * 0.9, scale: 2 * s0 * (0.9 + 0.1 * Math.sin(e * 13 + k * 2.1)), lift: 0.007 + k * 0.0012, color: rampAt(ramp, clamp(f * 0.92 + 0.03 * k - 0.04, 0, 1)) });
+      }
+      const core = 1 - f * 1.7; if (core > 0.03) out.push({ kind: 'mcFire', u: x, v: y, scale: 1.25 * r * core + 0.003, lift: 0.016, color: 0xffffff });
+    }
+    if (e < 0.5){ const k = e / 0.5; out.push({ kind: 'mcRing', u: x, v: y, scale: 2 * R_BLAST * (0.5 + k * 2.1), lift: 0.002, color: rampAt(ramp, k * 0.55) }); }
+    for (let k = 0; k < (mine ? 12 : 16); k++){
+      const th = R() * 6.2832, sp = 0.28 + R() * 0.6, life = 0.35 + R() * 0.55;
+      if (e > life) continue;
+      out.push({ kind: 'mcSpark', u: x + Math.cos(th) * sp * e, v: y + Math.sin(th) * sp * e + 0.5 * G_FALL * e * e, scale: 0.006 * (1 - e / life) + 0.0016, lift: 0.01, color: rampAt(ramp, e / life * 0.55) });
+    }
+    if (!mine) for (let k = 0; k < 5; k++){
+      const d = 0.3 + R() * 0.4, life = 1.2 + R() * 0.9, ox = (R() - 0.5) * R_BLAST * 1.2, rise = 0.03 + R() * 0.05, s0 = 0.014 + R() * 0.012, b = e - d;
+      if (b < 0 || b > life) continue;
+      const fk = b / life;
+      out.push({ kind: 'mcPuff', u: x + ox + 0.02 * b, v: y - rise * b - 0.01, scale: (s0 + fk * 0.04) * fade(fk, 0.6), lift: 0.012, color: rampAt(SMOKE, 0.2 + fk * 0.8) });
+    }
+  }
+  // a launch: the muzzle's flash and a few puffs of smoke thrown along the barrel and drifting up
+  function launchFx(out, x, y, a, seed, ang){
+    const R = rngOf(seed), dx = Math.cos(ang), dy = Math.sin(ang);
+    if (a < 0.14){
+      const f = a / 0.14;
+      out.push({ kind: 'mcFire', u: x + dx * 0.012, v: y + dy * 0.012, scale: 0.034 * (1 - f) + 0.008, lift: 0.012, color: rampAt(FIRE_MINE, f * 0.4) });
+      out.push({ kind: 'mcGlow', u: x + dx * 0.01, v: y + dy * 0.01, scale: 0.08 * (1 - f) + 0.01, lift: 0.008, color: 0x9fe0ff });
+    }
+    for (let k = 0; k < 4; k++){
+      const sp = 0.05 + R() * 0.07, sw = (R() - 0.5) * 0.9, life = 0.8 + R() * 0.6, s0 = 0.007 + R() * 0.006;
+      if (a > life) continue;
+      const f = a / life, go = sp * (1 - Math.exp(-3 * a)) / 3;
+      out.push({ kind: 'mcPuff', u: x + Math.cos(ang + sw) * go, v: y + Math.sin(ang + sw) * go - a * 0.008, scale: (s0 + f * 0.026) * fade(f, 0.6), lift: 0.01, color: rampAt(SMOKE, 0.5 + f * 0.5) });
+    }
+  }
+  // a ground impact: a flash, a ring racing along the ground, a fireball thrown up in lobes, dust rolling out and embers falling back
+  function impactFx(out, x, y, a, seed){
+    const R = rngOf(seed);
+    if (a < 0.18) out.push({ kind: 'mcGlow', u: x, v: y, scale: 0.28 * (1 - a / 0.18) + 0.04, lift: 0.004, color: 0xffe8b0 });
+    if (a < 0.45){ const k = a / 0.45; out.push({ kind: 'mcRing', u: x, v: y, scale: 0.06 + k * 0.26, lift: 0.002, color: rampAt(FIRE_FOE, k * 0.55) }); }
+    for (let k = 0; k < 7; k++){
+      const ox = (R() - 0.5) * 0.07, oy = -R() * 0.05, s0 = 0.022 + R() * 0.02, d = R() * 0.08, b = a - d;
+      if (b < 0 || b > 1) continue;
+      const grow = b < 0.12 ? b / 0.12 : 1 + (b - 0.12) * 0.6;
+      out.push({ kind: 'mcFire', u: x + ox * grow, v: y + oy * grow - b * 0.04, scale: 2 * s0 * grow * fade(b, 0.55), lift: 0.006 + k * 0.0015, color: rampAt(FIRE_FOE, b * 0.95 + k * 0.02) });
+    }
+    for (let k = 0; k < 7; k++){
+      const dir = k < 4 ? -1 : 1, d = R() * 0.1, life = 1.3 + R() * 0.8, sp = 0.05 + R() * 0.08, s0 = 0.012 + R() * 0.01, oy = (R() - 0.5) * 0.01, b = a - d;
+      if (b < 0 || b > life) continue;
+      const f = b / life;
+      out.push({ kind: 'mcPuff', u: x + dir * sp * (1 - Math.exp(-2.5 * b)) * 1.2, v: y + oy - b * 0.006, scale: (s0 + f * 0.04) * fade(f, 0.6), lift: 0.006, color: rampAt(SMOKE, 0.1 + f * 0.7) });
+    }
+    for (let k = 0; k < 12; k++){
+      const th = -Math.PI * (0.05 + R() * 0.9), sp = 0.3 + R() * 0.55, life = 0.4 + R() * 0.7;
+      if (a > life) continue;
+      const cy = y + Math.sin(th) * sp * a + 0.45 * a * a;
+      if (cy > y + 0.03) continue;
+      out.push({ kind: 'mcSpark', u: x + Math.cos(th) * sp * a, v: cy, scale: 0.005 * (1 - a / life) + 0.0016, lift: 0.01, color: rampAt(FIRE_FOE, a / life * 0.6) });
+    }
+  }
+  // what is left of a city or a base burns on, less as it goes: a few flames and a column of smoke
+  function ruinFx(out, u, v, age, t, k){
+    const f = clamp(age / 22, 0, 1), n = f < 0.35 ? 3 : f < 0.8 ? 2 : 1, m = f < 0.5 ? 5 : 3;
+    for (let j = 0; j < n; j++)
+      out.push({ kind: 'mcFire', u: u + (j - (n - 1) / 2) * 0.014, v: v - 0.004, scale: (0.012 + 0.006 * Math.sin(t * 21 + j * 2.3 + k)) * (1 - 0.5 * f), lift: 0.016, color: rampAt(FIRE_FOE, 0.18 + 0.2 * (0.5 + 0.5 * Math.sin(t * 17 + j * 1.7 + k))) });
+    for (let j = 0; j < m; j++){
+      const ph = (t * 0.42 + j / m + k * 0.37) % 1;
+      out.push({ kind: 'mcPuff', u: u + 0.012 * Math.sin(j * 3 + ph * 5) + 0.03 * ph * ph, v: v - 0.015 - ph * 0.1, scale: (0.012 + ph * 0.03) * fade(ph, 0.7) * (1 - 0.4 * f), lift: 0.018, color: rampAt(SMOKE, 0.3 + ph * 0.7) });
+    }
+  }
+  const HUD = 0x9fd8ff, HUD_OFF = 0x2b3a66;
+  function asItems(s){
+    const out = [], t = s.t;
+    // the scorched ground, a mark for every impact that fell
+    for (const [x, seed] of s.scars){
+      const R = rngOf(seed);
+      for (let k = 0; k < 2; k++) out.push({ kind: 'mcScorch', u: x + (R() - 0.5) * 0.03, v: GROUND_V + 0.012 + R() * 0.02, scale: 0.035 + R() * 0.035, lift: 0.001 + k * 0.0004, color: 0x14100c });
+    }
+    s.cities.forEach((on, i) => {
+      const u = CITY_U[i], v = GROUND_V + 0.035;
+      if (on){
+        out.push({ kind: 'mcCity', u, v, scale: 0.06, color: 0xffffff });
+        out.push({ kind: 'mcWin' + (Math.floor(t * 0.7 + i * 1.7) % 3), u, v, scale: 0.06, color: 0xffe6a0 });
+        if (Math.sin(t * 3.1 + i) > 0.55) out.push({ kind: 'mcHead', u, v, scale: 0.006, lift: 0.088, color: 0xff3a3a });
+      } else out.push({ kind: 'mcRuin', u, v, scale: 0.055, color: 0x3a3636 });
+    });
+    s.bases.forEach(([up, ammo, aim], i) => {
+      const u = BASE_U[i], v = GROUND_V + 0.03;
+      if (up){
+        out.push({ kind: 'mcMound', u, v, scale: 0.075, color: 0x9aa7c4 });
+        out.push({ kind: 'mcBar', u: u + Math.cos(aim) * 0.026, v: v + Math.sin(aim) * 0.026, scale: 0.008, sx: 0.052 / 0.008, yaw: aim || 1e-6, lift: 0.022, color: 0x5d6882 });
+        if (ammo > 3 || Math.sin(t * 8) > 0) out.push({ kind: 'mcHead', u: u - 0.03, v: v + 0.012, scale: 0.007, lift: 0.014, color: ammo > 3 ? 0x4cff8a : ammo > 0 ? 0xffb347 : 0xff3a3a });
+      } else out.push({ kind: 'mcRuin', u, v: v + 0.005, scale: 0.05, color: 0x3a3636 });
+      for (let k = 0; k < ammo; k++)
+        out.push({ kind: 'mcAmmo', u: u - 0.036 + (k % 5) * 0.018, v: GROUND_V + 0.078 + ((k / 5) | 0) * 0.02, scale: 0.0075, sx: 1, yaw: -Math.PI / 2, lift: 0.004, color: 0xcfeeff });
+    });
+    s.ruin.forEach((age, i) => { if (age >= 0.5) ruinFx(out, i < 6 ? CITY_U[i] : BASE_U[i - 6], GROUND_V + 0.035, age, t, i); });
+    for (const [x0, y0, x, y, sp, id] of s.foes) foeFx(out, x0, y0, x, y, sp, id, t);
+    for (const [x0, y0, x, y, tx, ty] of s.shots) shotFx(out, x0, y0, x, y, tx, ty, t);
+    for (const [k, x, y, a, seed, m, ang] of s.fx){
+      if (k === 'b') burstFx(out, x, y, a, seed, m); else if (k === 'l') launchFx(out, x, y, a, seed, ang); else if (k === 'i') impactFx(out, x, y, a, seed);
     }
     for (const [u, v, e, seed, mix] of s.booms) BOOM.items(out, u, v, e, seed, mix, SQ * 1.8);
+    // the score and the wave, lit in the sky (a recording keeps them): the score's leading zeros dim, a pip for every wave
+    const sc = String(Math.min(999999, s.score)).padStart(6, '0'), len = String(Math.min(999999, s.score)).length, h = 0.034, sp = 0.62 * h, u0 = 0.5 - (sc.length - 1) * sp / 2;
+    for (let k = 0; k < sc.length; k++) out.push({ kind: 'mcD' + sc[k], u: u0 + k * sp, v: 0.055, scale: h, lift: 0.002, color: k < sc.length - len ? HUD_OFF : HUD });
+    const wv = Math.min(s.wave, 15);
+    for (let k = 0; k < wv; k++) out.push({ kind: 'mcPip', u: 0.5 + (k - (wv - 1) / 2) * 0.016, v: 0.098, scale: 0.008, lift: 0.002, color: 0x5f8fd8 });
     return out;
   }
   const GRID_COLORS = Array.from({ length: N * N }, (_, i) => ((i / N) | 0) >= Math.round(GROUND_V * N) ? GROUND : SKY);
@@ -27367,6 +27570,123 @@ const MISSILE_APP = (() => {
     for (const [, , x, y] of s.foes){ const q = Math.min(N - 1, Math.floor(y * N)) * N + Math.min(N - 1, Math.floor(x * N)); colors[q] = FOE; }
     for (const [x, y, e] of s.blasts) if (blastR(e) > 0.02){ const q = Math.min(N - 1, Math.floor(y * N)) * N + Math.min(N - 1, Math.floor(x * N)); colors[q] = 0xffd966; }
     return { n: N, colors };
+  }
+
+  /* ─── THE PICTURE A BOARD HANGS ─── (the tanks' way: the photo tier lays a canvas's top left at the board's far right, u = 1, v = 1,
+     so `paint` is drawn turned a half turn, in the board's own unit square: u across, v down the board). Four skies, one of 24 pictures
+     by a board's number, each its own stars, nebulae, moon (some), haze and skylines, over a cratered ground; the corner's is the night. */
+  const SKIES = [
+    { sky: ['#03050e', '#0a1130', '#1b2a5e'], glow: 'rgba(120,150,255,', neb: ['rgba(80,100,255,', 'rgba(150,80,255,'], ground: ['#2b2418', '#100d08'], far: '#0c1330', near: '#070b1c', moon: true },
+    { sky: ['#07040f', '#2a1244', '#8a3f5e'], glow: 'rgba(255,150,120,', neb: ['rgba(255,90,160,', 'rgba(120,70,255,'], ground: ['#33241a', '#120c09'], far: '#2a1640', near: '#150b24', moon: false },
+    { sky: ['#0b0405', '#2c0f12', '#7a2c1a'], glow: 'rgba(255,120,60,', neb: ['rgba(255,70,40,', 'rgba(200,40,80,'], ground: ['#33201a', '#120a08'], far: '#2d1214', near: '#180a0b', moon: false },
+    { sky: ['#02080d', '#07242c', '#15606a'], glow: 'rgba(120,255,225,', neb: ['rgba(60,255,200,', 'rgba(60,140,255,'], ground: ['#1e2a2a', '#0a1112'], far: '#0a2a30', near: '#061a1e', moon: true },
+  ];
+  const skyOf = idx => idx % SKY_N;
+  const palOf = k => k === 0 ? 0 : k % 4;
+  function paint(P, hi){
+    const S = hi ? 512 : 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-S, 0, 0, -S, S, S);
+    const R = rngOf(P.k * 7919 + 0x4d43), K = SKIES[P.pal], px = 1.2 / S;
+    // (a canvas pays for every call, not every pixel: the thousand small marks of a sky are laid in a few paths, a path for each colour
+    //  and brightness, and a soft gradient fills only the box it reaches. A sky took 120 ms drawn one mark at a time.)
+    const glow = (cx, cy, rad, stops) => {
+      const rg = c.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      for (const [o, col] of stops) rg.addColorStop(o, col);
+      c.fillStyle = rg; c.fillRect(cx - rad, cy - rad, 2 * rad, 2 * rad);
+    };
+    const batch = (list, alpha, color, grow) => {
+      if (!list.length) return;
+      c.globalAlpha = alpha; c.fillStyle = color; c.beginPath();
+      for (const [x, y, w, h] of list) c.rect(x, y, w, h);
+      c.fill(); c.globalAlpha = 1;
+    };
+    let g = c.createLinearGradient(0, 0, 0, GROUND_V);
+    g.addColorStop(0, K.sky[0]); g.addColorStop(0.55, K.sky[1]); g.addColorStop(1, K.sky[2]);
+    c.fillStyle = g; c.fillRect(0, 0, 1, GROUND_V + 0.004);
+    // soft colour clouds and a faint band across the sky
+    c.save(); c.beginPath(); c.rect(0, 0, 1, GROUND_V); c.clip();
+    for (let k = 0; k < 4; k++){
+      const cx = R(), cy = R() * 0.6, rad = 0.2 + R() * 0.25, col = K.neb[k % K.neb.length];
+      glow(cx, cy, rad, [[0, col + (0.1 + R() * 0.1).toFixed(3) + ')'], [1, col + '0)']]);
+    }
+    const bx = R() * 0.4 + 0.3, by = R() * 0.25 + 0.1;
+    for (let k = 0; k < 4; k++){ const t = k / 3 - 0.5; glow(bx + t * 0.7, by + t * 0.25, 0.22, [[0, 'rgba(255,255,255,0.05)'], [1, 'rgba(255,255,255,0)']]); }
+    c.restore();
+    // stars: many faint, some bright with a glow, a few with a cross of light
+    const tints = ['255,255,255', '200,220,255', '255,236,200'], ALPHA = [0.3, 0.5, 0.75, 1], sb = tints.map(() => ALPHA.map(() => []));
+    for (let i = 0; i < 230; i++){
+      const x = R(), y = Math.pow(R(), 1.25) * (GROUND_V - 0.14), r = Math.max(px, 0.0007 + R() * 0.0015) * (R() < 0.08 ? 1.9 : 1), al = 0.25 + R() * 0.75, ti = (R() * 3) | 0;
+      sb[ti][Math.min(3, Math.floor(al * 4))].push([x - r, y - r, 2 * r, 2 * r]);
+    }
+    tints.forEach((t, ti) => ALPHA.forEach((_, ai) => batch(sb[ti][ai], 0.3 + ai * 0.23, 'rgb(' + t + ')')));
+    const cross = [];
+    for (let i = 0; i < 9; i++){
+      const x = 0.04 + R() * 0.92, y = 0.03 + R() * (GROUND_V - 0.3), r = 0.005 + R() * 0.006;
+      glow(x, y, r * 2.4, [[0, 'rgba(255,255,255,0.9)'], [0.25, 'rgba(210,225,255,0.35)'], [1, 'rgba(210,225,255,0)']]);
+      if (i < 4) cross.push([x - r * 2.2, y - px * 0.5, r * 4.4, px], [x - px * 0.5, y - r * 2.2, px, r * 4.4]);
+    }
+    batch(cross, 0.55, 'rgb(235,242,255)');
+    if (K.moon){
+      const mx = 0.12 + R() * 0.76, my = 0.12 + R() * 0.22, mr = 0.034 + R() * 0.012;
+      glow(mx, my, mr * 5, [[0, K.glow + '0.5)'], [0.12, K.glow + '0.4)'], [0.3, K.glow + '0.14)'], [1, K.glow + '0)']]);
+      c.fillStyle = '#e8ecf8'; c.beginPath(); c.arc(mx, my, mr, 0, 7); c.fill();
+      c.fillStyle = 'rgba(140,150,180,0.5)'; c.beginPath();
+      for (const [ox, oy, orr] of [[-0.3, -0.25, 0.3], [0.25, -0.1, 0.22], [0.05, 0.35, 0.26], [-0.35, 0.3, 0.15], [0.3, 0.32, 0.12]]){ c.moveTo(mx + ox * mr + orr * mr, my + oy * mr); c.arc(mx + ox * mr, my + oy * mr, orr * mr, 0, 7); }
+      c.fill();
+    }
+    // the haze at the horizon, then two skylines behind the cities: far and pale, near and dark, their windows lit
+    const hz = c.createLinearGradient(0, GROUND_V - 0.3, 0, GROUND_V); hz.addColorStop(0, K.glow + '0)'); hz.addColorStop(1, K.glow + '0.5)');
+    c.fillStyle = hz; c.fillRect(0, GROUND_V - 0.3, 1, 0.3);
+    const skyline = (col, hmin, hmax, lit, wmin, wmax) => {
+      const body = [], warm = [[], [], []], blue = [], beacon = [], mast = [];
+      let x = -0.01;
+      while (x < 1.01){
+        const w = wmin + R() * (wmax - wmin), h = hmin + Math.pow(R(), 1.6) * (hmax - hmin);
+        body.push([x, GROUND_V - h, w, h + 0.004]);
+        if (R() < 0.18){ const top = GROUND_V - h - 0.04 - R() * 0.02; mast.push([x + w * 0.45, GROUND_V - h - 0.02, px * 1.4, 0.04]); beacon.push([x + w * 0.45 - px * 0.3, top, px * 2, px * 2]); }
+        const cols = Math.max(1, Math.floor(w / 0.0065)), rows = Math.floor(h / 0.0085);
+        for (let a = 0; a < cols; a++) for (let b = 0; b < rows; b++) if (R() < lit){
+          const q = [x + 0.0025 + a * 0.0065, GROUND_V - h + 0.004 + b * 0.0085, 0.0028, 0.0042];
+          if (R() < 0.85) warm[(R() * 3) | 0].push(q); else blue.push(q);
+        }
+        x += w + R() * 0.006;
+      }
+      batch(body, 1, col); batch(mast, 1, col); batch(beacon, 0.9, 'rgb(255,70,60)');
+      warm.forEach((l, i) => batch(l, 0.5 + i * 0.2, 'rgb(255,228,150)')); batch(blue, 0.7, 'rgb(170,220,255)');
+    };
+    skyline(K.far, 0.015, 0.075, 0.2, 0.012, 0.036);
+    skyline(K.near, 0.01, 0.048, 0.32, 0.014, 0.04);
+    // the ground: earth that darkens toward the near edge, a lit rim along the horizon, craters, grit and cracks
+    g = c.createLinearGradient(0, GROUND_V, 0, 1); g.addColorStop(0, K.ground[0]); g.addColorStop(1, K.ground[1]);
+    c.fillStyle = g; c.fillRect(0, GROUND_V, 1, 1 - GROUND_V + 0.002);
+    c.fillStyle = 'rgba(0,0,0,0.30)'; c.beginPath();
+    const rims = [];
+    for (let i = 0; i < 44; i++){
+      const x = R(), y = GROUND_V + 0.008 + R() * (1 - GROUND_V - 0.012), rx = 0.012 + R() * 0.045, ry = rx * (0.12 + R() * 0.12);
+      c.moveTo(x + rx, y); c.ellipse(x, y, rx, ry, 0, 0, 7); rims.push([x, y - ry * 0.25, rx, ry]);
+    }
+    c.fill();
+    c.strokeStyle = 'rgba(255,230,190,0.10)'; c.lineWidth = px; c.beginPath();
+    for (const [x, y, rx, ry] of rims){ c.moveTo(x + rx * Math.cos(Math.PI * 1.05), y + ry * Math.sin(Math.PI * 1.05)); c.ellipse(x, y, rx, ry, 0, Math.PI * 1.05, Math.PI * 1.95); }
+    c.stroke();
+    const dark = [], pale = [];
+    for (let i = 0; i < 200; i++) (R() < 0.5 ? dark : pale).push([R(), GROUND_V + 0.006 + R() * (1 - GROUND_V), px * (1 + R() * 2), px * (1 + R())]);
+    batch(dark, 0.32, '#000'); batch(pale, 0.1, 'rgb(255,235,200)');
+    c.strokeStyle = 'rgba(0,0,0,0.3)'; c.lineWidth = px; c.beginPath();
+    for (let i = 0; i < 9; i++){ let x = R(), y = GROUND_V + 0.01 + R() * 0.07; c.moveTo(x, y); for (let k = 0; k < 5; k++){ x += (R() - 0.5) * 0.05; y += R() * 0.012; c.lineTo(x, y); } }
+    c.stroke();
+    const rim = c.createLinearGradient(0, GROUND_V - 0.006, 0, GROUND_V + 0.02); rim.addColorStop(0, K.glow + '0)'); rim.addColorStop(0.3, K.glow + '0.65)'); rim.addColorStop(1, K.glow + '0)');
+    c.fillStyle = rim; c.fillRect(0, GROUND_V - 0.006, 1, 0.026);
+    return cv;
+  }
+  const PIC = BOARD_KIT.painted(80, (P, hi) => paint(P, hi)), HIRES = new Map();
+  function photoKey(c, r, bp){
+    const k = gkey(c, r); let hi = HIRES.get(k) || false;
+    if (bp > HI_PX * 1.1) hi = true; else if (bp < HI_PX * 0.9) hi = false;      // (a band, so a board on the line does not flip between the two)
+    if (hi) HIRES.set(k, true); else HIRES.delete(k);
+    const sk = skyOf(BOARD_KIT.boardIdx(c, r));
+    return PIC.key('mc' + sk, hi, () => ({ k: sk, pal: palOf(sk) }));
   }
 
   /* ─── THE RECORDINGS ─────────────────────────────────────────────────── */
@@ -27430,6 +27750,24 @@ const MISSILE_APP = (() => {
     if (!e.repeat) start(g);
   }, true);
   const hex = n => '#' + n.toString(16).padStart(6, '0');
+  // (a city, tower by tower, one colour a vertex: the item's own colour white shows them as they are)
+  const merged = (T, parts) => {
+    const pos = [], col = [];
+    for (const [geo, rgb] of parts){ const b = geo.toNonIndexed(), a = b.getAttribute('position').array; pos.push(...a); for (let i = 0; i < a.length; i += 3) col.push(rgb[0], rgb[1], rgb[2]); }
+    const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals(); g.userData.vertexColors = true; return g;
+  };
+  const TOWERS = [[-0.38, 0.14, 0.55], [-0.2, 0.15, 0.85], [0, 0.17, 1.2], [0.2, 0.15, 0.78], [0.38, 0.14, 0.5]];
+  // the windows of a city, a few of them lit, a quad on both faces of every tower (two triangles each: boxes cost six times as much); three patterns, turned through over time so they flicker
+  const windowsGeo = (T, seed) => {
+    const R = rngOf(seed), parts = [];
+    for (const [x, w, h] of TOWERS){
+      const cols = w > 0.16 ? 3 : 2, rows = Math.floor((h - 0.1) / 0.11);
+      for (let a = 0; a < cols; a++) for (let b = 0; b < rows; b++) if (R() < 0.6)
+        for (const z of [-1, 1]){ const q = new T.PlaneGeometry(0.03, 0.05); if (z < 0) q.rotateY(Math.PI); q.translate(x - w / 2 + (a + 0.5) * w / cols, 0.17 + b * 0.11, z * 0.152); parts.push([q, [1, 1, 1]]); }
+    }
+    const g = merged(T, parts); g.deleteAttribute('color'); g.userData.vertexColors = false; g.userData.unlit = true; return g;
+  };
   const app = {
     name: 'missile command',
     realtime: true,
@@ -27437,20 +27775,43 @@ const MISSILE_APP = (() => {
     faceMinPx: 1,
     itemMinPx: FAR_PX,
     itemCaps: BOOM.caps,
+    // the sky and the ground are a picture a board (THE PICTURE A BOARD HANGS); a board under PHOTO_PX is its tiles
+    photoMinPx: PHOTO_PX,
+    cellPhoto(c, r, bp){ return photoKey(c, r, bp || 0); },
+    photoCanvas(key){ return PIC.canvas(key); },
     itemGeometries: {
       ...BOOM.geometries(['r']),
-      dot:   T => { const g = new T.SphereGeometry(0.5, 10, 8); g.translate(0, 0.6, 0); g.userData.unlit = true; return g; },
-      trail: T => { const g = new T.SphereGeometry(0.5, 6, 4); g.translate(0, 0.6, 0); g.userData.unlit = true; g.userData.opacity = 0.8; return g; },
-      blast: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.scale(1, 0.6, 1); g.translate(0, 0.1, 0); g.userData.unlit = true; g.userData.opacity = 0.85; return g; },
-      mark:  T => { const g = new T.TorusGeometry(0.5, 0.08, 6, 20); g.rotateX(Math.PI / 2); g.translate(0, 0.05, 0); g.userData.unlit = true; return g; },
-      // A city: a few towers of different heights on a slab.
-      city:  T => {
-        const parts = [[0, 0.5, 0.9, 0.12, 0.5], [-0.28, 0.35, 0.22, 0.7, 0.3], [0, 0.3, 0.2, 1.0, 0.3], [0.28, 0.35, 0.22, 0.55, 0.3]];
-        const pos = [];
-        for (const [x, , w, h, d] of parts){ const b = new T.BoxGeometry(w, h, d).toNonIndexed(); b.translate(x, h / 2, 0); pos.push(...b.getAttribute('position').array); }
-        const g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.computeVertexNormals(); return g;
+      ...Object.fromEntries([...Array(10).keys()].map(d => ['mcD' + d, T => flat.digit(T, d)])),
+      mcPip: T => flat.geo(T, [flat.rect(-0.5, -0.5, 0.5, 0.5)]),
+      mcHead: T => { const g = new T.IcosahedronGeometry(0.5, 0); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
+      mcGlow: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.7, 1); g.translate(0, 0.3, 0); g.userData.unlit = true; g.userData.opacity = 0.28; return g; },
+      mcFire: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.8, 1); g.translate(0, 0.4, 0); g.userData.unlit = true; g.userData.opacity = 0.88; return g; },
+      mcPuff: T => { const g = new T.IcosahedronGeometry(0.5, 1); g.scale(1, 0.7, 1); g.translate(0, 0.35, 0); g.userData.unlit = true; g.userData.opacity = 0.42; return g; },
+      mcRing: T => { const g = FieldKit.ring(T, 0.46, 0.5, 0.004); g.userData.unlit = true; g.userData.opacity = 0.75; return g; },
+      mcSpark: T => { const g = new T.OctahedronGeometry(0.5, 0); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
+      mcStreak: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); g.userData.unlit = true; g.userData.opacity = 0.85; return g; },
+      mcScorch: T => { const g = FieldKit.disc(T, 0.5, 0.003, 20); g.userData.unlit = true; g.userData.opacity = 0.55; return g; },
+      // a city: a slab and five towers of different heights, each with a lighter cap, and a spire on the tallest
+      mcCity: T => {
+        const parts = [], box = (w, h, d, x, y, rgb) => { const b = new T.BoxGeometry(w, h, d); b.translate(x, y + h / 2, 0); parts.push([b, rgb]); };
+        box(1.0, 0.1, 0.6, 0, 0, [0.26, 0.3, 0.38]);
+        TOWERS.forEach(([x, w, h], i) => { box(w, h, 0.3, x, 0.1, [0.4 + 0.05 * (i % 2), 0.6, 0.8]); box(w + 0.02, 0.04, 0.32, x, 0.1 + h, [0.75, 0.9, 1]); });
+        box(0.025, 0.3, 0.025, 0, 1.34, [0.8, 0.85, 0.95]);
+        return merged(T, parts);
       },
-      rubble: T => { const g = new T.BoxGeometry(0.8, 0.12, 0.4); g.translate(0, 0.06, 0); return g; },
+      mcWin0: T => windowsGeo(T, 11), mcWin1: T => windowsGeo(T, 23), mcWin2: T => windowsGeo(T, 37),
+      // a bunker: a low dome, its barrel a stretched box turned to the last target, its lamp and its missiles
+      mcMound: T => { const g = new T.SphereGeometry(0.5, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2); g.scale(1, 0.7, 0.8); return g; },
+      mcBar: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
+      mcAmmo: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1.6, 4, 1, true); g.rotateZ(-Math.PI / 2); g.translate(0, 0.5, 0);
+        const tip = new T.ConeGeometry(0.5, 0.7, 4); tip.rotateZ(-Math.PI / 2); tip.translate(1.15, 0.5, 0);
+        const m = merged(T, [[g, [1, 1, 1]], [tip, [1, 1, 1]]]); m.deleteAttribute('color'); m.userData.vertexColors = false; m.userData.unlit = true; return m; },
+      // what a city or a base is when it is gone: a heap of dark blocks
+      mcRuin: T => {
+        const parts = [], R = rngOf(5);
+        for (let k = 0; k < 7; k++){ const w = 0.16 + R() * 0.24, h = 0.08 + R() * 0.2, b = new T.BoxGeometry(w, h, 0.14 + R() * 0.16); b.rotateY(R() * 1.2); b.translate((R() - 0.5) * 0.8, h / 2, (R() - 0.5) * 0.3); parts.push([b, [0.7 + R() * 0.3, 0.7 + R() * 0.3, 0.7 + R() * 0.3]]); }
+        return merged(T, parts);
+      },
     },
     cellGrid(c, r, px){
       if (LIVE && LIVE.key === gkey(c, r)) gameAt(c, r);
@@ -27499,15 +27860,23 @@ const MISSILE_APP = (() => {
       return true;
     },
     drawIcon(ctx, sz, c, r){
-      const s = shown(c, r);
-      ctx.fillStyle = hex(SKY); ctx.fillRect(0, 0, sz, sz);
+      const s = shown(c, r), K = SKIES[0];
+      const sky = ctx.createLinearGradient(0, 0, 0, sz * GROUND_V); sky.addColorStop(0, K.sky[0]); sky.addColorStop(0.6, K.sky[1]); sky.addColorStop(1, K.sky[2]);
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, sz, sz);
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      for (let k = 0; k < 26; k++){ const x = ((k * 0.6180339) % 1) * sz, y = ((k * 0.4142135) % 1) * sz * 0.7; ctx.fillRect(x, y, Math.max(1, sz / 90), Math.max(1, sz / 90)); }
       ctx.fillStyle = hex(GROUND); ctx.fillRect(0, sz * GROUND_V, sz, sz * (1 - GROUND_V));
-      s.cities.forEach((on, i) => { if (on){ ctx.fillStyle = hex(CITY); ctx.fillRect((CITY_U[i] - 0.03) * sz, (GROUND_V - 0.03) * sz, 0.06 * sz, 0.03 * sz); } });
+      s.cities.forEach((on, i) => { if (on){ ctx.fillStyle = hex(CITY); ctx.fillRect((CITY_U[i] - 0.03) * sz, (GROUND_V - 0.035) * sz, 0.06 * sz, 0.035 * sz); ctx.fillStyle = '#ffe6a0'; ctx.fillRect((CITY_U[i] - 0.01) * sz, (GROUND_V - 0.025) * sz, 0.02 * sz, 0.012 * sz); } });
       ctx.lineWidth = Math.max(1, sz / 60);
-      for (const [x0, y0, x, y] of s.foes){ ctx.strokeStyle = hex(FOE); ctx.beginPath(); ctx.moveTo(x0 * sz, y0 * sz); ctx.lineTo(x * sz, y * sz); ctx.stroke(); }
-      for (const [x, y, e] of s.blasts){ const r = blastR(e); if (r > 0){ ctx.fillStyle = '#ffd966'; ctx.beginPath(); ctx.arc(x * sz, y * sz, r * sz, 0, Math.PI * 2); ctx.fill(); } }
+      for (const [x0, y0, x, y] of s.foes){
+        const g2 = ctx.createLinearGradient(x0 * sz, y0 * sz, x * sz, y * sz); g2.addColorStop(0, 'rgba(255,74,58,0)'); g2.addColorStop(1, '#ffd0a0');
+        ctx.strokeStyle = g2; ctx.beginPath(); ctx.moveTo(x0 * sz, y0 * sz); ctx.lineTo(x * sz, y * sz); ctx.stroke(); }
+      for (const [x, y, e, mine] of s.blasts){ const r = blastR(e); if (r > 0){
+        const rg = ctx.createRadialGradient(x * sz, y * sz, 0, x * sz, y * sz, r * sz * 1.3); rg.addColorStop(0, '#ffffff'); rg.addColorStop(0.45, mine ? '#9fe0ff' : '#ffd060'); rg.addColorStop(1, mine ? 'rgba(60,130,240,0)' : 'rgba(240,90,40,0)');
+        ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x * sz, y * sz, r * sz * 1.3, 0, Math.PI * 2); ctx.fill(); } }
     },
-    _debug: { newGame, start, step, fire, bot, bakeReel, adopt, games: GAMES, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
+    _debug: { newGame, start, step, fire, bot, burst, impact, bakeReel, adopt, snap, asItems, burstFx, impactFx, launchFx, foeFx, shotFx, ruinFx, blastR, paint, photoKey, skyOf, palOf, SKIES, SKY_N, PIC,
+              games: GAMES, setLevel: DL.set, levelOf: (c, r) => { const g = GAMES.get(gkey(c, r)); return (g && g.state === 'play' && g.lv) || lvAt(c, r); } },
   };
   return app;
 })();

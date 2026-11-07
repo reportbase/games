@@ -1101,6 +1101,38 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     touches on one square read as four taps; and a board no one plays going through every stage of its cycle (`shownView(P,
     at)`, `cycleOf`: a few seconds sampled on the page's clock can fall wholly in the picture's rest, which failed once) and
     moving on the page's clock over a whole cycle.
+- **Missile Command's look** (Nov 7: "Missle command uses bad animations.  It should be a beautiful game with explosions and effects from the other
+  games"): the rules are as they were (`blastR`, the speeds, the bot's aim, the waves, `D(g)`); what a board draws is new, in the other games' ways.
+  - **The sky is a picture** (the photo tier, as the tanks'; `paint`, `photoKey`, `PIC`): stars (faint, bright with a glow, a few with a cross),
+    soft colour clouds and a band, a moon on some boards, a haze at the horizon, two far skylines with their windows lit, over cratered ground with a
+    lit rim. Four skies (`SKIES`: night, dusk, ember red, polar green), one of `SKY_N` = 24 pictures by the board's number (so a field of boards shares 24
+    textures, not one each), the corner's the night; 512 px from a board `HI_PX` (320) across, 256 under. The marks are laid in a few canvas paths
+    (a canvas pays by the call): 4–5 ms a sky on a software canvas (the sandbox's GPU canvas, `--use-angle=swiftshader`, takes 100 ms for the same).
+  - **Effects are worked out from how long ago and a seed** (the tanks' `fxItems`): `g.fx` keeps what happened ([kind, x, y, age, seed, mine, angle] in a
+    snapshot: `l` a launch, `b` a burst, `i` a ground impact), `g.scars` where the ground scorched (the last 24, shared between snapshots until a new one),
+    `g.ruin` when each city and base fell. A recording is snapshots, so it shows all of it with nothing else kept (about 425,000 numbers for three
+    minutes of reels; baked in 35 ms).
+  - **A burst** (`burstFx`) is exactly as big as what it can destroy (`blastR` at its age: the player reads the danger from it), a core and six boiling
+    lobes in colours a little apart, cooling with its life (yours white to cyan to blue, the enemy's white to yellow to red: the old ball flashed
+    between two colours twelve times a second), a glow wider than it (light, not harm), a ring of shock, sparks that fall, and smoke rising from an
+    enemy missile shot down. **A missile** is a hot head in a glow and a line behind it that cools to dark red, with smoke along the enemy's that spreads
+    and thins with its age (`foeFx`); yours cyan, with a flickering exhaust and a ringed cross that closes in on where it will burst (`shotFx`). The line
+    is stretched boxes turned along the way (`streaks`: `sx` and `yaw`). **A launch** has a muzzle flash and smoke; **a ground impact** a flash, a ring along the
+    ground, a fireball thrown up in lobes, dust, embers (and `BOOM`'s rock debris, as before) and a scorch that stays; a city or base destroyed burns and
+    smokes on for the rest of the game, less as it goes (`ruinFx`). Cities have lit windows that flicker (three patterns turned through), a beacon and
+    a spire; a bunker a barrel that turns to the last target, a lamp (green, amber at three or fewer, red and blinking at none) and its missiles in rows;
+    the score and the wave are lit in the sky (seven segments from `BOARD_KIT.flat`, the score's leading zeros dim, a pip a wave).
+  - **A recording's player overlooks one missile in eight** (`MISS_P`, a foe made with `skip` only in a recording): the bot is so good that no recorded game ever
+    lost a city, so no board showed an impact, a scorch or a ruin; now they do, and a game taken over from a recording goes on from there.
+  - **Cost**: windows are quads (two triangles each) not boxes; about 68,000 triangles for the 33 boards in a framed view (checkers' framed view
+    is 57,000), 1,400 pieces; `asItems` 0.12 ms a board. Every board draws all of it at any size (Oct 12: "no special handeling").
+  - **Sounds** (`sfx`): a launch a rising whoosh, your burst a low boom with a bright crack, an enemy missile shot down a pop, an impact a long deep thump and
+    rumble; only the board in play, no kind twice within 45 ms.
+  - The smoke test (part 5, "missile command") checks a computer-played game leaving all three kinds of effect and drawing every kind of piece, a burst's
+    ball exactly `2 × blastR` at six ages and gone at 1.25 s, its colour never jumping by more than a third of a channel's range between two frames,
+    yours blue and the enemy's red, a snapshot drawn the same twice and another seed another picture, a launch turning the barrel, three impacts leaving
+    ruins, scorches and fire that dies down, the lit score, a recording's frames, the sky's sizes, keys, luminance (a haze at the horizon over a darker
+    ground), stars, windows and four skies, and a real click starting a game and the next firing.
 - **Sudoku** (Nov 7: "lets build a new game based our experice with the other games"): `SUDOKU_APP`, id `sudoku`, after Nonograms. The
   classic, built the way the other puzzles were: every board its own puzzle, harder further out, one answer, rated by a solver that plays
   like a person, the board itself the controls, a board no one plays solving itself.

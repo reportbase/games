@@ -5946,6 +5946,120 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok4 ? 'ok  ' : 'FAIL'} sudoku: a board no one plays solves itself (${demo.stages} stages for ${demo.steps} digits, ${demo.live} seen live)`);
   }
 
+
+  // MISSILE COMMAND, THE LOOK (Nov 7: "Missle command uses bad animations. It should be a beautiful game with explosions and effects
+  // from the other games"): the game's rules are as they were; what a board draws is new. A burst's ball is exactly as big as what it
+  // can destroy and never strobes; a launch, a burst and an impact each leave their effects, worked out from how long ago and a seed
+  // (so the same snapshot is always the same picture); an impact scorches the ground and burns on in the ruin; the barrel turns to
+  // its target; the score is lit in the sky; the sky is a picture (four of them, 24 a field) with stars, a moon, skylines and a
+  // cratered ground; a real click starts a game and the next one fires.
+  {
+    current = 'missile command look';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'missilecommand')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {}, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      const kinds = items => { const k = {}; for (const it of items) k[it.kind] = (k[it.kind] || 0) + 1; return k; };
+      // a game played by the computer: the effects it leaves are recorded, and the snapshot draws them
+      const g = D.newGame(); g.state = 'play'; g.lv = 'normal'; D.games.set('t_t', g);
+      const seen = new Set(), all = {}; let maxItems = 0, shotsSeen = false, foesSeen = false;
+      for (let i = 0; i < 50 * 30; i++){
+        D.step(g, 1 / 30, true);
+        if (i % 3 === 0){ const s = D.snap(g), it = D.asItems(s); maxItems = Math.max(maxItems, it.length); for (const e of s.fx) seen.add(e[0]); for (const k of Object.keys(kinds(it))) all[k] = 1; shotsSeen = shotsSeen || s.shots.length > 0; foesSeen = foesSeen || s.foes.length > 0; }
+      }
+      out.played = { score: g.score, wave: g.wave, fx: [...seen].sort().join(''), maxItems, shotsSeen, foesSeen };
+      out.kinds = ['mcHead', 'mcGlow', 'mcStreak', 'mcPuff', 'mcFire', 'mcRing', 'mcSpark', 'mcAmmo', 'mcCity', 'mcMound', 'mcBar', 'mcPip', 'mcD0'].filter(k => !all[k]);
+      // a burst is as big as it can destroy, at every age, and goes out
+      const big = (e, mine) => { const o = []; D.burstFx(o, 0.5, 0.4, e, 12345, mine); return o.filter(it => it.kind === 'mcFire' && it.lift === 0.004).map(it => it.scale); };
+      out.size = [0.1, 0.3, 0.5, 0.65, 0.9, 1.1].every(e => big(e, 1).length === 1 && Math.abs(big(e, 1)[0] - 2 * D.blastR(e)) < 1e-12) && big(1.25, 1).length === 0 && big(1.25, 0).length === 0;
+      // (no strobe: the colour of the ball changes a little between two frames, never by half its range)
+      const colAt = e => { const o = []; D.burstFx(o, 0.5, 0.4, e, 777, 0); return o.find(it => it.kind === 'mcFire' && it.lift === 0.004).color; };
+      let worst = 0; for (let e = 0.05; e < 1.1; e += 1 / 60){ const a = colAt(e), b = colAt(e + 1 / 60); for (const sh of [16, 8, 0]) worst = Math.max(worst, Math.abs(((a >> sh) & 255) - ((b >> sh) & 255))); }
+      out.smooth = worst;
+      // yours blue-white, the enemy's yellow to red
+      const hot = (mine) => { const o = []; D.burstFx(o, 0.5, 0.4, 0.6, 99, mine); return o.find(it => it.kind === 'mcFire' && it.lift === 0.004).color; };
+      out.hues = { mine: hot(1) & 255, foe: hot(0) & 255 };
+      out.hueOk = (hot(1) & 255) > ((hot(1) >> 16) & 255) && ((hot(0) >> 16) & 255) > (hot(0) & 255);
+      // the same snapshot is the same picture; another seed another
+      const snap = D.snap(g);
+      out.again = same(D.asItems(snap), D.asItems(snap));
+      const a1 = [], a2 = []; D.burstFx(a1, 0.5, 0.4, 0.3, 1, 0); D.burstFx(a2, 0.5, 0.4, 0.3, 2, 0);
+      out.seeds = !same(a1, a2);
+      // a launch, an impact on a city, an impact on a base: the ruin, the scorch and the fire
+      const h = D.newGame(); h.state = 'play'; h.lv = 'normal'; h.wave = 1; h.queue = 0; h.pause = 99;
+      D.fire(h, 0.1, 0.3);
+      const fired = h.fx.some(e => e.k === 'l') && h.shots.length === 1 && h.bases[0].ammo === 9 && Math.abs(h.bases[0].aim - Math.atan2(0.3 - (0.9 - 0.02), 0.1 - 0.06)) < 1e-9;
+      const barYaw = D.asItems(D.snap(h)).filter(it => it.kind === 'mcBar').map(it => it.yaw);
+      out.barrel = fired && barYaw.length === 3 && Math.abs(barYaw[0] - h.bases[0].aim) < 1e-9 && Math.abs(barYaw[1] - (-Math.PI / 2)) < 1e-9;
+      h.shots.length = 0; h.t = 5;
+      D.impact(h, 0.35); D.impact(h, 0.5); D.impact(h, 0.6);
+      out.ruin = h.cities[2] === 0 && h.cities.filter(x => x).length === 5 && h.ruin[2] === 5 && !h.bases[1].up && h.bases[1].ammo === 0 && h.ruin[7] === 5 && h.ruin[0] === -1 && h.scars.length === 3 && h.fx.filter(e => e.k === 'i').length === 3;
+      h.t = 8;
+      const it3 = D.asItems(D.snap(h)), near = it3.filter(it => Math.abs(it.u - 0.35) < 0.03);
+      out.burning = { fire: near.some(it => it.kind === 'mcFire'), smoke: near.some(it => it.kind === 'mcPuff'), ruin: it3.some(it => it.kind === 'mcRuin' && it.u === 0.35), scorch: it3.filter(it => it.kind === 'mcScorch').length === 6,
+                      noCity: !it3.some(it => it.kind === 'mcCity' && it.u === 0.35) };
+      // (the fire dies down as the ruin ages: fewer flames after twenty seconds)
+      h.t = 40; const late = D.asItems(D.snap(h)).filter(it => Math.abs(it.u - 0.35) < 0.03 && it.kind === 'mcFire').length;
+      out.dying = late < near.filter(it => it.kind === 'mcFire').length;
+      // the score lit in the sky, a pip a wave
+      h.score = 1250; h.wave = 4; const hud = D.asItems(D.snap(h));
+      out.hud = hud.filter(it => /^mcD\d$/.test(it.kind) && it.v === 0.055).map(it => it.kind.slice(3)).join('') === '001250' && hud.filter(it => it.kind === 'mcPip').length === 4;
+      D.games.delete('t_t');
+      // a recording carries all of it
+      const reel = D.bakeReel(0x3c11), f = reel[reel.length - 1];
+      out.reel = { n: reel.length, hasFx: Array.isArray(f.fx), hasScars: Array.isArray(f.scars), hasRuin: f.ruin.length === 9, score: typeof f.score === 'number', wave: f.wave };
+      return out;
+    });
+    const ok1 = !r.kinds.length && r.played.score > 0 && r.played.fx === 'bl' && r.played.shotsSeen && r.played.foesSeen && r.played.maxItems > 100 && r.size && r.smooth < 90 && r.hueOk && r.again && r.seeds
+      && r.barrel && r.ruin && r.burning.fire && r.burning.smoke && r.burning.ruin && r.burning.scorch && r.burning.noCity && r.dying && r.hud
+      && r.reel.n === 1800 && r.reel.hasFx && r.reel.hasScars && r.reel.hasRuin && r.reel.score && r.reel.wave >= 1;
+    if (!ok1) failures.push('[missile command look] effects: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} missile command: a burst is as big as it can destroy and never strobes, launches, bursts and impacts leave their effects, an impact scorches the ground and the ruin burns on, the barrel turns to its target, the score is lit in the sky (${r.played.maxItems} pieces at the busiest)`);
+    // the picture a board hangs: four skies by a board's number, big and small, stars and a moon and skylines over a cratered ground
+    const pic = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { keys: [] };
+      const hi = D.PIC.canvas(D.photoKey(0, 0, 600)), lo = D.PIC.canvas(D.photoKey(0, 0, 100));
+      out.sizes = [hi.width, lo.width];
+      out.keys = [D.photoKey(0, 0, 600), D.photoKey(0, 0, 100), D.photoKey(1, 0, 600), D.photoKey(24, 0, 600), D.photoKey(0, 24, 600)];
+      const luma = (cv, u, v) => { const S = cv.width, d = cv.getContext('2d').getImageData(Math.round(S - S * u) - 1, Math.round(S - S * v) - 1, 3, 3).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; return s / 9; };
+      out.luma = { top: luma(hi, 0.5, 0.04), haze: luma(hi, 0.5, 0.885), ground: luma(hi, 0.5, 0.97) };
+      // stars: bright pixels in the high sky; windows and the haze: warm pixels in the skyline's band
+      const px = (cv, v0, v1) => { const S = cv.width, y0 = Math.round(S - S * v1), y1 = Math.round(S - S * v0), d = cv.getContext('2d').getImageData(0, y0, S, y1 - y0).data; let bright = 0, warm = 0; for (let i = 0; i < d.length; i += 4){ if (d[i] > 190 && d[i + 1] > 190 && d[i + 2] > 190) bright++; if (d[i] > 200 && d[i + 1] > 170 && d[i + 2] < 190) warm++; } return { bright, warm }; };
+      out.stars = px(hi, 0.02, 0.6).bright; out.windows = px(hi, 0.82, 0.9).warm;
+      out.skies = [0, 1, 2, 3].map(k => { const cv = D.paint({ k, pal: k }, false), S = cv.width, d = cv.getContext('2d').getImageData(S >> 1, Math.round(S - S * 0.85), 1, 1).data; return [d[0], d[1], d[2]].join(','); });
+      return out;
+    });
+    const ok2 = pic.sizes.join() === '512,256' && pic.keys[0] !== pic.keys[1] && pic.keys[0] !== pic.keys[2] && pic.keys[0] === pic.keys[3].replace('mc0', 'mc0') && pic.keys[3] === pic.keys[0] && pic.keys[4] === pic.keys[0]
+      && pic.luma.haze > pic.luma.top + 15 && pic.luma.ground < pic.luma.haze && pic.stars > 25 && pic.windows > 15 && new Set(pic.skies).size === 4;
+    if (!ok2) failures.push('[missile command look] the picture: ' + JSON.stringify(pic));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} missile command: the sky is a picture (${pic.sizes.join(' and ')} px, 24 of them a field, four skies; ${pic.stars} bright stars, ${pic.windows} lit windows, a haze at the horizon over a darker ground)`);
+    // real input: a click on the framed board starts a game and the next one fires from the nearest bunker
+    await page.evaluate(() => { const A = window.getFieldApp(); A._debug.games.clear(); window.gotoCell ? window.gotoCell(3, 1) : A.onSelect(3, 1); });
+    await page.evaluate(() => window.__settle(3, 1));
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const aimOnce = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
+        return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
+      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+      // (the game on a board is the recording's moment taken over, so its missiles are whatever that moment had: the check is the change a click makes)
+      const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.games.get(k); return g ? { state: g.state, ammo: g.bases.map(b => b.ammo), aim: g.bases.map(b => b.aim) } : null; }, fc.join('_'));
+      const until = async test => { for (let k = 0; k < 80; k++){ const s = await gs(); if (s && test(s)) return s; await page.waitForTimeout(100); } return await gs(); };
+      real = { before: await gs() };
+      let p = await aimAt(0.5, 0.4); await page.mouse.click(p.x, p.y);
+      real.started = await until(s => s.state === 'play');
+      const left = real.started.ammo[0], total = real.started.ammo.reduce((a, b) => a + b, 0);
+      p = await aimAt(0.2, 0.4); await page.mouse.click(p.x, p.y);
+      real.fired = await until(s => s.ammo[0] === left - 1 || s.ammo.reduce((a, b) => a + b, 0) < total);
+      real.left = left; real.total = total;
+    }
+    const ok3 = real && real.started && real.started.state === 'play' && real.fired && real.fired.ammo[0] === real.left - 1 && Math.abs(real.fired.aim[0] + Math.PI / 2) > 0.05 && real.fired.aim[0] > -Math.PI / 2;
+    if (!ok3) failures.push('[missile command look] real input: ' + JSON.stringify(real));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} missile command: a real click starts the game and the next fires from the nearest bunker (its barrel turns to the target)`);
+  }
+
   }   // (end of part 5)
   if (part(6)) {
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
