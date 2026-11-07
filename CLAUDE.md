@@ -1237,8 +1237,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   never match), its name along the foot, fitted to the width (`paint`, the photo tier as Missile Command's sky: 512 px from a board `HI_PX` 300 across,
   else 256, `PIC` keeps 160). The games are sorted by title (`order`: plain alphabetical, 2048 before 3D Tetris, `NAMES` fixing the four the picker's
   rule leaves run together or wrongly cased: Air hockey, Whack-a-mole, Pac-Man, 3D Tetris), eight across (`COLS`), row after row from the corner
-  (`slotAt`: a column and row through the field's wrap), and the field past the block is bare; **read left to right and top to bottom, as the photo
-  gallery's pages are** (see the Nov 7 note below: the first game is the corner board, top left of the block). A new
+  (`slotAt`: a column and row through the field's wrap); **read left to right and top to bottom, as the photo gallery's pages are, and the block
+  repeats over the whole field so no board is bare** (see the Nov 7 note below: the first game is the corner board, top left of its block). A new
   game appears by being in `FIELD_APPS`; nothing is registered with Home. Nothing here plays, so the field rests; a board too small for its picture
   is its game's hue (`cellGrid`).
   - **Opening a game**: a tap on the framed board (`onCellTap`), a double tap on any board (`startOnDouble`, after the field has framed it) or the
@@ -1268,6 +1268,17 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     right. A game's place across is now minus its column's distance from the corner (`fold`) and its place down minus its row's: the first game is the corner
     board (0, 0), the block runs right and down through the field's wrap (the second game is board 9,999, the ninth 0, 9,999), and `slotOf` gives the
     board's own wrapped, never negative column and row (`onEnter` flies there). Tab steps right, so it steps to the next game by title.
+  - **Every board has a game** (Nov 7: "your screen shot for home shows the games on the bottom browser.     keep them in the main viewer.    all boards
+    should have  a game, don't leave empty boards.  see photo gallary."): I had left the field past the 8 × 8 block bare, so a zoomed-out view showed the block's
+    far row along the bottom edge of the screen like a strip, and the user took it for the bottom row (Home's bottom row is empty: the games are boards,
+    not tiles in it). The block now repeats over the whole field, as the gallery's prints do: a board's game is its place in the block (`slotAt`: minus
+    its column and minus its row, modulo the block's side `cols`), the 64 cells holding the 58 games in order and the last six taking the first six again
+    (game number modulo the count). The side is the smallest of 8, 10, 16, 20, 25, 40, 50, 80, 100 that holds every game, always a divisor of the
+    field's side (10,000), so a board's wrapped number and its raw one give the same game and the repeat has no seam at the field's wrap. The far field's
+    texture is the same block (`fabricRepeat` the side, `fabricCellAt` each cell its game's mat colour, which is what a board too small for its picture is),
+    so a board keeps its colour from its picture to the horizon (the texture's cell is the world's column and row modulo the block). `slotOf` is a game's
+    first block's board, where `onEnter` flies. Looked at in screenshots at three zooms: every board a picture with its name, rows reading left to right,
+    no hole counted and none declined (82 pictures, 52 MB of textures).
   - **Why it flashed** (found by reading the photo tier and tracing frames): (1) the field counted every board that wanted a picture and drew none as a
     HOLE in the ground (`_photoHoles`), which makes the fabric draw all the way in (`uNear`) and stops the field resting; Home's boards past its block
     (and any whose picture was past the frame's budget) counted, 587 frames of 618 while panning, and the fabric's edge switched with the boards in view.
@@ -1281,10 +1292,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     renderer as one flash in isolation (a trace of 875 frames over a pan showed one board missing for a frame and five key swaps), so these are the
     causes found and closed, not one reproduced and fixed.
   - The smoke test (end of part 1, "home") now also wants the list sorted with 2048 first and 3D Tetris second, the block read as reading order through
-    the wrap (the corner the first game, the next on 9,999, a row down on 0 and 9,999, the left of the corner and above it bare), the screen positions of
+    the wrap (the corner the first game, the next on 9,999, a row down on 0 and 9,999) and repeating every `cols` boards each way and at the wrap, every
+    game on a board in 29 × 29 boards round the corner, a picture asked for anywhere and a colour of its own for each board, the far texture's cells the
+    colour of the boards they stand for, the screen positions of
     the games before and after Chess on its left and right and the rows above and below it above and below, the same pixels each time a picture is
     painted for six games and the kept small picture the same canvas, the three flags, and no hole and no declined board counted with the corner framed and
     the view moving.
+- **Soma's "can it be built" click waits for its tile** (Nov 7, CI on the Home PR, smoke 4/7): the real click on the row's ✗ tile was skipped when the tile
+  had not been laid out 700 ms after the row opened (a busy runner), so the hint was never counted; the check now waits for the tile to be found and to
+  hold still (up to 10 s) and keeps where it clicked for the failure's message. Nothing in the page changed.
 - **One sans for every word** (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): Home's board
   names are set in the system's own face (`-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif`), the stack the page's text
   was already in (`field-styles.css`'s `html, body`: menus, notices, boxes, so none of that moved). Words drawn elsewhere were in other sans faces:

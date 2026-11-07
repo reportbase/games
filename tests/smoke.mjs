@@ -450,18 +450,20 @@ try {
       out.every = ord.length === games.length && JSON.stringify(ord.map(o => o.id).sort()) === JSON.stringify(games) && new Set(ord.map(o => o.title)).size === ord.length;
       // (Nov 7: "the home page should be sorted by game title": plain alphabetical, so 2048 comes before 3D Tetris; `numeric` had 3D Tetris first)
       out.sorted = ord.every((o, i) => !i || ord[i - 1].title.localeCompare(o.title, 'en', { sensitivity: 'base' }) <= 0) && ord[0].title === '2048' && ord[1].title === '3D Tetris';
-      // the block (Nov 7: "arranged like photo gallary, where the pages are arranged left to right and top to bottom"): reading across, a game once on its
-      // own board in the order the list is, nothing past the eighth column, above the first row or past the field's wrap. The field numbers a board's column
-      // and row UP the screen's left and far side, so the reading place (gc across, gr down) is the board (−gc, −gr) from the corner, wrapped.
-      const G = 10000, at = (gc, gr) => [(G - gc) % G, (G - gr) % G], seen = new Set();
-      for (let gr = -2; gr < 10; gr++) for (let gc = -2; gc < 12; gc++){
-        const [c, r] = at(gc, gr), id = D.idAt(c, r);
-        if (gc < 0 || gc >= D.COLS || gr < 0){ if (id) out.leak = [gc, gr]; continue; }
-        if (id){ if (seen.has(id)) out.dup = id; seen.add(id); if (D.slotOf(id).join() !== c + ',' + r || ord[gr * D.COLS + gc].id !== id) out.slotBad = id; }
+      // the block (Nov 7: "arranged like photo gallary, where the pages are arranged left to right and top to bottom", then "all boards should have a game,
+      // don't leave empty boards. see photo gallary."): reading across, a game once on its own board in the order the list is, and the block repeating over the
+      // whole field, so no board is bare. The field numbers a board's column and row UP the screen's left and far side, so the reading place (gc across, gr down)
+      // is the board (−gc, −gr) from the corner, wrapped; the block's side divides the field's, so the repeat has no seam at the wrap.
+      const G = 10000, P = D.COLS, N = ord.length, at = (gc, gr) => [(G - gc % G + G) % G, (G - gr % G + G) % G], seen = new Set(), md = v => ((v % P) + P) % P;
+      out.side = P === 8 && P * P >= N;
+      for (let gr = -9; gr < 20; gr++) for (let gc = -9; gc < 20; gc++){
+        const [c, r] = at(gc, gr), id = D.idAt(c, r), k = md(gr) * P + md(gc), want = ord[k % N].id;
+        if (id !== want && !out.slotBad) out.slotBad = [gc, gr, id, want];
+        if (gr >= 0 && gr < P && gc >= 0 && gc < P && k < N){ if (seen.has(id)) out.dup = id; seen.add(id); if (D.slotOf(id).join() !== c + ',' + r) out.slotBad = id; }
       }
-      out.placed = seen.size === games.length;
-      out.wrap = D.idAt(1, 0) === null && D.idAt(0, 1) === null && D.idAt(9999, 0) === ord[1].id && D.idAt(0, 9999) === ord[D.COLS].id && D.idAt(0, 0) === ord[0].id
-        && D.idAt(9997 + 10000, 9999 + 10000) === D.idAt(9997, 9999) && D.idAt(9997, 9999) === ord[D.COLS + 3].id;
+      out.placed = seen.size === N;
+      out.wrap = D.idAt(0, 0) === ord[0].id && D.idAt(9999, 0) === ord[1].id && D.idAt(0, 9999) === ord[P].id && D.idAt(P, 0) === ord[0].id && D.idAt(0, P) === ord[0].id
+        && D.idAt(10000 - P, 0) === ord[0].id && D.idAt(9997 + 10000, 9999 + 10000) === D.idAt(9997, 9999) && D.idAt(9997, 9999) === ord[P + 3].id;
       out.names = ['airhockey', 'whackamole', 'pacman', 'blockout', 'chess'].map(id => D.titleOf(D.appById(id))).join('|');
       // the pictures: a key by game and by size, painted (the game's own board and a name), and none past the block
       const picks = ['chess', 'tetris', 'hashi', 'tiltmaze', 'pinball', 'levels', 'minigolf', 'sudoku'], pix = {};
@@ -480,7 +482,17 @@ try {
       out.stable = ['pinball', 'minigolf', 'tetris', 'sudoku', 'tiltmaze', 'chess'].every(id => sig(id) === sig(id)) && D.iconOf(D.appById('pinball')) === D.iconOf(D.appById('pinball'));
       { const [c, r] = D.slotOf('hashi'), kl = A.cellPhoto(c, r, 100); out.kept = A.photoCanvas(kl) === A.photoCanvas(kl); }
       out.flags = A.photoFullAtOnce === true && A.photoUrgentPx === 0 && A.photoHolesOk === true;
-      out.none = A.cellPhoto(10000 - D.COLS - 2, 0, 400) === null && A.cellPhoto(1, 0, 400) === null && A.cellPhoto(0, 1, 400) === null && A.cellGrid(1, 0).colors[0] !== A.cellGrid(0, 0).colors[0];
+      // every board has a game: a picture asked for anywhere, and a colour of its own where it is too small for one
+      out.none = ['1,0', '0,1', '5000,5000', '1234,8765', '9999,9999'].every(q => { const [c, r] = q.split(',').map(Number); return A.cellPhoto(c, r, 400) !== null && A.cellPhoto(c, r, 100) !== null; })
+        && new Set([0, 1, 2, 3, 4, 5, 6, 7].map(c => A.cellGrid(c, 0).colors[0])).size === 8;
+      // the far field's texture is the same block: its repeat is the block's side and each of its cells the colour of the board it stands for
+      { const cv = document.createElement('canvas'); cv.width = cv.height = 4; const x = cv.getContext('2d'); let bad = 0;
+        for (const [i, j] of [[0, 0], [1, 0], [0, 1], [3, 5], [7, 7], [6, 2]]){
+          x.fillStyle = '#000'; x.fillRect(0, 0, 4, 4); A.fabricCellAt(x, { x: 0, y: 0, w: 4, h: 4 }, i, j);
+          const d = x.getImageData(1, 1, 1, 1).data, h = A.cellGrid(i, j).colors[0];
+          if (Math.abs(d[0] - (h >> 16 & 255)) > 1 || Math.abs(d[1] - (h >> 8 & 255)) > 1 || Math.abs(d[2] - (h & 255)) > 1) bad++;
+        }
+        out.fabric = A.fabricRepeat === D.COLS && bad === 0; }
       // the page's start: the game last in is where Home arrives, and Home is not remembered as the last game
       localStorage.setItem('tvf.field.app.v1', 'mini golf');
       out.named = window.__restoreLastApp('chess') === null;
@@ -534,13 +546,13 @@ try {
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home'))); await page.waitForTimeout(600);
     const dbl = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, [c, r] = D.slotOf('sudoku'); A.startOnDouble(c, r); await new Promise(ok => setTimeout(ok, 500));
       const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: window.getFieldApp().id, f: f && [f.c, f.r] }; });
-    const ok = r.every && r.sorted && !r.leak && !r.dup && !r.slotBad && r.placed && r.wrap && r.names === 'Air hockey|Whack-a-mole|Pac-Man|3D Tetris|Chess' && !r.bad.length && r.none
+    const ok = r.every && r.sorted && r.side && !r.dup && !r.slotBad && r.placed && r.wrap && r.fabric && r.names === 'Air hockey|Whack-a-mole|Pac-Man|3D Tetris|Chess' && !r.bad.length && r.none
       && r.stable && r.kept && r.flags && seenAs.ok && holes.max === 0 && holes.decl === 0
       && r.named && r.opened && f1 && f1.join() === r.golfSlot.join()
       && pick.first === 'Home' && pick.n === pick.apps && pick.app === 'home' && pick.f && pick.f.join() === pick.slot.join() && !pick.thumb
       && tap.app === 'tetris' && tap.f && tap.f.join() === '0,0' && tap.last === tap.name && dbl.app === 'sudoku' && dbl.f && dbl.f.join() === '0,0';
     if (!ok) failures.push('[home] ' + JSON.stringify({ r, f1, pick, seenAs, holes, tap, dbl }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} home: ${r.every ? 'every' : 'not every'} game, one board each in a block eight across read left to right and top to bottom, sorted by title (${r.pictures} pictures, the same pixels each time, no board a hole), Home first in the picker and the page's start framed on the game last in, a real tap and a double tap opening a game on its first board`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} home: ${r.every ? 'every' : 'not every'} game, one board each in a block eight across read left to right and top to bottom, sorted by title, the block repeating over the field so no board is bare, the far field's texture the same block (${r.pictures} pictures, the same pixels each time, no board a hole), Home first in the picker and the page's start framed on the game last in, a real tap and a double tap opening a game on its first board`);
   }
   // THE ONE SANS (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): every place that draws words
   // names UI_SANS, the stack the page's text and Home's names are set in; no canvas or style sets its own generic sans, Arial or Helvetica Neue
@@ -4140,9 +4152,13 @@ try {
         else {
           const tiles = await page.evaluate(([c, rr]) => window.getFieldApp().statTiles(c, rr).length, at);
           await page.evaluate(() => { if (!window.tvf.bottomRow.visible){ window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); } }); await page.waitForTimeout(700);   // (the row is opened by hand: Oct 28)
-          
-          const t = await page.evaluate(n => { const el = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + (n - 1) && t.style.display !== 'none'); if (!el) return null; const b = el.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, tiles);
+          // (the tile is waited for, and for it to hold still: on a busy runner the row had not laid it out 700 ms after it opened, the click was skipped
+          // and the hint never counted: CI, Nov 7. Where it was found is kept for the failure's message.)
+          const where = n => page.evaluate(n => { const el = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + (n - 1) && t.style.display !== 'none'); if (!el) return null; const b = el.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
+          let t = null, tries = 0;
+          for (; tries < 40; tries++){ const a = await where(tiles); await page.waitForTimeout(250); const b = await where(tiles); if (a && b && Math.abs(a[0] - b[0]) < 1 && Math.abs(a[1] - b[1]) < 1){ t = b; break; } }
           if (t){ await page.mouse.click(t[0], t[1]); await page.waitForTimeout(400); }
+          real.tile = { tiles, at: t, tries };
         }
         real[key] = await page.evaluate(([c, rr]) => { const A = window.getFieldApp(), g = A._debug.games.get(c + '_' + rr); return g && { st: g.state, said: !!g.said, hints: g.hints, title: A.cellTitle(c, rr) }; }, at);
       }

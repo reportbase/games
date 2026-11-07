@@ -63940,7 +63940,8 @@ onmessage = ev => {
    its own little board drawn big (the same picture the application picker and the bottom row draw, `drawIcon`) on a mat in a hue of its
    own, its name along the foot. Eight across, sorted by title and read left to right, top to bottom, as the photo gallery's pages are (Nov 7: "the
    home page should be sorted by game title.    the home page should be arranged like photo gallary, where the pages are arranged left to right and top
-   to bottom."), so a new game takes its place by name; the field past the block is bare. Nothing here plays, so every board is a still picture
+   to bottom."), so a new game takes its place by name. The block repeats over the whole field, as the gallery's prints do (Nov 7: "all boards
+   should have a game, don't leave empty boards. see photo gallary."): every board has a game, in the far field's texture too. Nothing here plays, so every board is a still picture
    (the photo tier, as Missile Command's sky), and the field rests.
    - TAP the framed board, or DOUBLE TAP any board, and that game opens on its first board (the corner, where its levels begin), as the
      picker would open it (`openApp`: the gallery asks for something to show). Tab steps along the games as it steps along any boards.
@@ -63949,14 +63950,19 @@ onmessage = ev => {
    - Where a game has no `drawIcon` of its own (the tilt maze, pinball, Levels) its board is the colours its `cellGrid` gives, or
      its hue with its first letter; chess's is the opening position, as the picker draws it. */
 const HOME_APP = (() => {
-  const VOID = 0x0b0d12, COLS = 8, HI_PX = 300, PHOTO_PX = 20;
+  const VOID = 0x0b0d12, HI_PX = 300, PHOTO_PX = 20;
   // the names the application picker's rule ("field chess" → "Chess") leaves run together or wrongly cased
   const NAMES = { airhockey: 'Air hockey', whackamole: 'Whack-a-mole', pacman: 'Pac-Man', blockout: '3D Tetris' };
   const titleOf = a => NAMES[a.id] || _appLabel(a);
   const appById = id => (window.FIELD_APPS || []).find(a => a.id === id) || null;
   const gs = () => BOARD_KIT.gs();
-  // a board's column or row as a distance from the corner, through the field's wrap (the boards left of and above the corner are not the far side)
-  const fold = v => { const g = gs(); v = ((v % g) + g) % g; return v > g / 2 ? v - g : v; };
+  /* THE BLOCK'S SIDE (`cols`, also its rows): the games make a square block read left to right and top to bottom, and the block repeats over the whole
+     field, so every board has a game (Nov 7: "all boards should have a game, don't leave empty boards. see photo gallary."). The side divides the
+     field's (10,000), so the repeat has no seam at the field's wrap, and it is as small as holds every game: 8 × 8 for up to 64 games, then 10, 16, 20…
+     The cells past the last game take the first games again (game number mod the count). The far field's texture is the same block (`fabricRepeat`). */
+  const SIDES = [8, 10, 16, 20, 25, 40, 50, 80, 100];
+  let cols = 8;
+  const mod = (v, m) => ((v % m) + m) % m;
   // the games, by title, as the picker lists them; made again only when the set of apps changes (mini golf made again at another size keeps its id)
   let ORD = null, ORD_KEY = '';
   function order(){
@@ -63966,22 +63972,22 @@ const HOME_APP = (() => {
     /* (Nov 7: "the home page should be sorted by game title": plain alphabetical, 2048 before 3D Tetris: `numeric` put 3D Tetris first, 3 < 2048.) */
     ORD = list.map(a => ({ id: a.id, title: titleOf(a) })).sort((x, y) => x.title.localeCompare(y.title, 'en', { sensitivity: 'base' }) || (x.id < y.id ? -1 : 1));
     ORD.forEach((o, k) => { o.k = k; o.hue = (k * 137.508) % 360; });          // (the golden angle: neighbours never match)
+    cols = SIDES.find(n => n * n >= ORD.length && gs() % n === 0) || 100;
     return ORD;
   }
   /* THE GAMES READ LEFT TO RIGHT AND TOP TO BOTTOM, as the photo gallery's pages do (Nov 7: "the home page should be arranged like photo gallary,
      where the pages are arranged left to right and top to bottom."): the field's column and row numbers rise to the LEFT and UP the screen (the
-     gallery's pages go right and down by falling numbers, `pick`: −(row + col)), so a game's place across is minus its column's distance from the
-     corner and its place down is minus its row's. The first game is the corner board, top left of the block; the block runs right and down. */
+     gallery's pages go right and down by falling numbers, `pick`: −(row + col)), so a game's place across is minus its column and its place down minus
+     its row, modulo the block's side. The first game is the corner board, top left of its block; the block runs right and down and is the same
+     in every direction, so there is no bare board (it divides the field's side, so a board's wrapped number and its raw one give the same place). */
   const wrap = v => { const g = gs(); return ((v % g) + g) % g; };
-  // the game on a board, or null past the block
   function slotAt(c, r){
-    const cc = -fold(c), rr = -fold(r);
-    if (cc < 0 || cc >= COLS || rr < 0) return null;
-    return order()[rr * COLS + cc] || null;
+    const o = order();
+    return o.length ? o[(mod(-r, cols) * cols + mod(-c, cols)) % o.length] : null;
   }
   const idAt = (c, r) => { const s = slotAt(c, r); return s ? s.id : null; };
-  // (the board's own column and row, as the field numbers them: wrapped, never negative)
-  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [wrap(-(o.k % COLS)), wrap(-Math.floor(o.k / COLS))] : null; };
+  // (the board of the game's first block, as the field numbers it: wrapped, never negative)
+  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [wrap(-(o.k % cols)), wrap(-Math.floor(o.k / cols))] : null; };
   const hsl = (h, s, l) => 'hsl(' + h.toFixed(1) + ',' + s + '%,' + l + '%)';
   const hexOf = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
@@ -64102,6 +64108,15 @@ const HOME_APP = (() => {
     photoCanvas(key){ return key.endsWith(':l') ? lowOf(key) : PIC.canvas(key); },
     // (a board too small for its picture, or past the block: its game's hue, or the bare field)
     cellGrid(c, r){ const s = slotAt(c, r); return { n: 1, colors: [s ? hexOf(s.hue, 38, 24) : VOID] }; },
+    /* THE FAR FIELD IS THE SAME BLOCK (Nov 7: "all boards should have a game"): the field's texture past the boards drawn one by one repeats
+       the block, each cell its game's own mat colour, which is what a board too small for its picture is, so a board keeps its colour from
+       the pictures to the horizon. (The texture's cell is the world's column and row modulo the block, as the gallery's is.) */
+    get fabricRepeat(){ order(); return cols; },
+    fabricCellAt(ctx, rect, i, j){
+      const s = slotAt(i, j);
+      ctx.fillStyle = cssOf(s ? hexOf(s.hue, 38, 24) : VOID);
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    },
     cellTitle(c, r){ const s = slotAt(c, r); return s ? s.title + ' — tap this board, or double tap any board, to play it' : 'Home'; },
     onCellTap(c, r){ const id = idAt(c, r); if (id) openGame(id); return true; },
     startOnDouble(c, r){ const id = idAt(c, r); if (id) openGame(id); },
@@ -64122,7 +64137,7 @@ const HOME_APP = (() => {
       const side = Math.min(sz, hh);
       ctx.drawImage(a === CHESS_APP || a.drawIcon ? iconOf(a) : _appIconDraw(a, Math.max(8, Math.round(side))), (sz - side) / 2, (hh - side) / 2, side, side);
     },
-    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, COLS, appById, iconOf, WARM, wrap, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
+    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, get COLS(){ order(); return cols; }, appById, iconOf, WARM, wrap, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
