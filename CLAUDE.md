@@ -1180,6 +1180,84 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     presses, the stars), real input (a click on a square and a digit, a given staying, the same digit taking it out, the keys, arrows,
     Backspace, Z, the play pad's four buttons, a real click finishing a puzzle and another starting it again), four quick real touches on one
     digit, and a board no one plays going through every step of its solve.
+- **Hashi** (Nov 7: "what next game should we add", then "hashi"): `HASHI_APP`, id `hashi`, after Sudoku. Bridges: islands on a sea carry numbers;
+  lay one or two bridges between islands that face one another along a row or column so each island has its number, none across another, all
+  one group. Built the way Sudoku was.
+  - **Every board its own sea** (`makePuzzle(idx, lv)`, `puzzleFor`, `PUZZLES` 1,500): from the board's number (`boardIdx`) at a level 1–5, the
+    ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as Lights Out and Sudoku. `LV`: 7, 9, 11, 13 and 15 squares a side with 8–10,
+    14–17, 22–26, 32–38 and 44–50 islands, and the grades a puzzle may need (see below). Islands are never side by side (a bridge needs a square
+    to lie on); two are a pair when they face along a row or column with no island between (`hsGraph`: `E` the pairs with the squares between
+    them, `cross` the pairs each would cross, `by` an island's pairs, `islAt`, `eH`/`eV` the pair a square lies on).
+  - **Made so it has one answer** (`hsLayout`, `hsMake`): a layout is grown, each island a bridge away (2 to `reach` squares) from one with
+    nothing that way, on squares no bridge lies on, then loose neighbours are joined now and then for loops (`o.p2` the share given two bridges,
+    `o.extra` the loops); the numbers are what each island ends up with. It is kept when the human solver (`hsRate`) finishes it, which proves one
+    answer, or `hsSolve` (backtracking over the techniques, to two answers) finds exactly one when the human solver stalls; the hardest technique
+    it needed must fall in the level's `grade` band (and `ifs` what-ifs at least, level 5), else the nearest of `tries` is kept (`P.miss`).
+    Measured on 60 boards a level (Node): 0.3, 0.7, 0.9, 1.3 and 36 ms each (level 5 takes about 30 layouts to find one with one answer that needs
+    two what-ifs), every one in its band; the human solver and the backtracking solver agree on 600 random layouts, and a layout's own bridges are
+    always an answer.
+  - **The human solver** (`hsRate`, `hsProp`): each pair holds the fewest and most bridges it can still take (`lo`, `hi`, 0–2, hi starting at
+    the smaller of 2 and its two islands' numbers); a technique is one sweep, the easiest first, back to the easiest after any change: 1 counting
+    (an island's bridges add up to its number: what it needs against what its neighbours can still give), 2 crossings (a bridge laid shuts every
+    pair it crosses), 3 loose groups (a bridge that would close a group of full islands off from the rest is not laid; `hsGroups`), 4 the way out
+    (a group not yet joined with one way left takes it), 5 what-ifs (a pair's fewest or most, followed through 1–4, cannot be). The grade is the
+    hardest technique that changed anything; 6 is a puzzle it stalled on. (Found while checking: the loose-group rule counted an island's need
+    with the pair's own bridges in it, so it closed a pair off that was not; fixed by a run of the two solvers against each other.) Way out
+    (4) is rarely the hardest need: the levels' bands are counting, crossings, loose groups, then what-ifs.
+  - **The board is the controls**: `M = N + 2` squares across, the sea in a margin of one, the far margin the level's dots, the clock and a strike
+    for each fault. Tap an island and the next one it faces (the second becomes the first of the next pair), drag from island to island (one drag
+    goes on through several, `claimsPan`, `onPan`), or tap the sea between two islands (`tileAt`: at a crossing, the pair with a bridge, else the
+    line nearer the tap): a pair goes none, one, two, none (`cycle`); a pair another bridge crosses cannot take its first. An island turns green
+    when it has its number and pink with too many; the pairs the selected island could still bridge show pale blue. The play pad has Erase (the
+    island's bridges, one move), Undo and Hint; the keys: arrows select the neighbour that way (the screen's, `nbrDir`), Shift with an arrow lays the
+    bridge, Backspace, Z, H. `noDoubleTap` while a puzzle is on the framed board.
+  - **Faults and stars**: a bridge laid that the answer does not have (the count above the answer's) shows red (the menu's Show mistakes turns that
+    off) and is a fault; a press of Hint is one. The first press lights the pair the next logical step finds (the solver run from the bridges as they
+    stand, `hintOf`: a wrong bridge first, else `hsRate`'s first bridge laid; no logic left lights a pair the answer wants and says it is a guess)
+    and the technique in the title, the second lays it. None ★★★, one or two ★★, more ★; the best on a board is kept (`hashi.best`).
+  - **A board no one plays** lays its bridges one at a time in the order the solver found them (`P.order`, `shownView`, `cycleOf`: 1.6 s bare, a
+    bridge every 0.32 s, 3.2 s held, each board at its own phase). Boards only looked at get their puzzle a few milliseconds a frame (`SOON`,
+    `JOBS`, `hsJob`: a job is a layout a try), bare sea till then.
+  - The smoke test (part 5) checks the sizes and levels by ring, 30 sampled puzzles (one answer, the solvers agreeing, a valid answer, the grade in
+    its band, the order laying the answer), the climb in islands and grade, the solver on a ring of 2s, 3s and 1s, a crossing and two islands side
+    by side, a paced make equal to a whole one, the rules by hand (the cycle and its fault, undo, a crossing refused, erase and its undo, a wrong
+    bridge's hint, the stars), a hint's step sound from fifteen states a player could be in, real input (clicks on two islands, the sea between them,
+    the keys, the play pad, a real drag laying two bridges, a real click finishing it and another starting it again), four quick real touches, and
+    a board no one plays going through every step.
+- **A lone 1 stands in the middle of its square** (Nov 7: "#1 is not center aligned", on Hashi's islands; Sudoku's and Nonograms' squares had it too):
+  the kit's seven-segment 1 (`BOARD_KIT.flat.digit`) is two strokes at its glyph's right edge, so a piece laid on a square's middle put the 1 a
+  fifth of its height to the right (2048's digits were centred the same way on Nov 1, `figures`). The three games' `numItems` (Nonograms', Sudoku's,
+  Hashi's) shift a number that is a lone 1 back by `BOARD_KIT.flat.ONE_AT` (0.19) of its height; a 1 beside other digits (a clue of 12, a clock) stands
+  in its slot as a calculator's does. The smoke test (Sudoku's and Hashi's first checks) wants every digit's ink on its column's or island's middle. The
+  idle-board checks (Sudoku, Hashi) now sample until the board has moved three times, up to a cycle: a four-second window fell wholly in the rest at either
+  end of a cycle about one run in ten.
+- **Home: every game a board, and the page opens on it** (Nov 7: "how about a home page, that shows all games as a board"): `HOME_APP`, id `home`,
+  before the gallery in `FIELD_APPS`. Each game is one board: its own little board drawn big (the picture the application picker and the bottom row
+  draw, `drawIcon`; chess's the opening position as the picker draws it) on a mat in a hue of its own (the golden angle round the list, so neighbours
+  never match), its name along the foot, fitted to the width (`paint`, the photo tier as Missile Command's sky: 512 px from a board `HI_PX` 300 across,
+  else 256, `PIC` keeps 160). The games are in the order the picker lists them (`order`: by title, digits first, `NAMES` fixing the four the picker's
+  rule leaves run together or wrongly cased: Air hockey, Whack-a-mole, Pac-Man, 3D Tetris), eight across (`COLS`), row after row from the corner
+  (`slotAt`: a column and row through the field's wrap, so nothing hangs left of or above the corner), and the field past the block is bare. A new
+  game appears by being in `FIELD_APPS`; nothing is registered with Home. Nothing here plays, so the field rests; a board too small for its picture
+  is its game's hue (`cellGrid`).
+  - **Opening a game**: a tap on the framed board (`onCellTap`), a double tap on any board (`startOnDouble`, after the field has framed it) or the
+    menu's Open the game on this board open it on its FIRST board, the corner (`openGame`, `openApp(a, [0, 0])`), where its levels begin. `openApp` is
+    now the one way in for the application picker too (it was the picker's click handler: `setFieldApp`, `syncAppSelect`, the gallery asking for something
+    to show); an `at` takes the view to a board after, settled at once.
+  - **The page opens on Home**, framed on the game you were last in: `restoreLastApp` used to reopen that game; it now opens Home
+    (`rememberLast(name)`), and `setFieldApp` calls the arriving app's new `onEnter(prev)` hook, which takes Home's view to the board of the game just
+    left (from the picker or the menu) or of the remembered one (the page's start; none at a first visit, the corner board). `FIELD_APP_KEY` still holds the
+    last GAME (Home, `isHome`, never overwrites it). Home is first in the picker (`_appsByTitle`), with a thumbnail of its own (`iconMosaic`, since the
+    picker asks every app's `drawIcon` for the board at (3, 5)). A page that names its game (`?app=`, a share link, a file or bucket) opens that, as ever.
+    To go back to opening the last game itself, `restoreLastApp` is the one place.
+  - The tilt maze, pinball and Levels had no `drawIcon` (their picker thumbnails and bottom-row tiles were flat or blank, and their boards here would
+    have been): each has a small one now (a maze with its holes, ring and marble; a table with bumpers, flippers and ball; the corner's rings round a body).
+  - The smoke test (end of part 1) checks every game on one board each in the picker's order and nothing past the block or the wrap, the names, a picture
+    for each of eight games (both sizes, painted: colours on the board and a name at the foot) and none past the block, `restoreLastApp` (named: nothing;
+    else Home, framed on the golf slot, the last game still mini golf), the application picker (Home first, one row an app, Home from chess framed on
+    chess's board), a real click on the framed Tetris board opening Tetris on (0, 0), and a double tap opening Sudoku there. The test harness opens
+    `games.html?app=chess` (the page's old opening, so every check begins where it did), and the My holes reload check names `?app=minigolf` (a plain reload
+    used to reopen the last game).
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or

@@ -18725,7 +18725,8 @@ const BOARD_KIT = (() => {
         q.push([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [a * L * ax[0] + b * t * nx[0], a * L * ax[1] + b * t * nx[1]])); }
       return geo(T, q);
     }
-    return { geo, rect, digit, cross };
+    const ONE_AT = 0.25 - 0.12 / 2;   // a 1 is two strokes at its glyph's right edge (w - t to w): its ink's middle, in the glyph's own units, so a lone 1 is shifted back by this to stand in the middle of its square
+    return { geo, rect, digit, cross, ONE_AT };
   })();
   return { SHIFT, gs, boardIdx, cellOfIdx, ringOf, ringLevel, levelAt, rng, nextBoard, best, budget, say,
            gkey, gameAt, liveGame, clamp, now, yawOf, hash, LV_COL, stars, phase, loopT, frameAt, painted, flat };
@@ -48743,6 +48744,18 @@ const TILT_APP = (() => {
     noDoubleTap(){ return ED.on ? 'always' : false; },         // (two quick taps on an edge are two walls: Simon's lesson)
     /* THE ROW IS THE MAZE EDITOR (Oct 20, YOUR OWN MAZES above): opening it makes a maze for the framed board, shutting it plays it. */
     ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
+    // (Nov 7, for Home, which draws every game's own board: the tilt maze had none) a little maze, two holes, the gold ring, the marble
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#d9c9a3'; ctx.fillRect(0, 0, sz, sz);
+      const t = sz / 6, line = (a, b, c, d) => { ctx.beginPath(); ctx.moveTo(a * t, b * t); ctx.lineTo(c * t, d * t); ctx.stroke(); };
+      ctx.strokeStyle = '#3a4150'; ctx.lineWidth = Math.max(1.5, sz * 0.05); ctx.lineCap = 'square';
+      for (const w of [[1, 0, 1, 2], [2, 1, 4, 1], [3, 1, 3, 3], [0, 3, 2, 3], [2, 3, 2, 5], [4, 2, 4, 4], [4, 4, 6, 4], [3, 5, 5, 5], [5, 2, 5, 3]]) line(...w);
+      ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, sz - ctx.lineWidth, sz - ctx.lineWidth);
+      const dot = (x, y, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x * t, y * t, r * t, 0, 7); ctx.fill(); };
+      dot(0.5, 1.5, 0.28, '#1c2230'); dot(3.5, 3.5, 0.28, '#1c2230');
+      ctx.strokeStyle = '#d4a017'; ctx.lineWidth = Math.max(1.5, sz * 0.04); ctx.beginPath(); ctx.arc(5.5 * t, 0.5 * t, 0.32 * t, 0, 7); ctx.stroke();
+      dot(0.5, 5.5, 0.3, '#2a5db0');
+    },
     _debug: { makeMaze, mazeFor, playRun, stepBall, botTilt, bfs, pathOf, nbrs, cellOf, centre, gameAt, fresh, stepGame, finish, starsOf, levelAt, boardIdx,
               get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, GAMES, MAZES, BEST, HELD, LV, fly: (c, r) => gotoCell(c, r),
               ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edgeAt, cleanMaze, dataOf, mineMaze, MINE, shareMaze, takeMaze, ED_TOOLS, ED_ACTS },
@@ -50537,6 +50550,18 @@ const PINBALL_APP = (() => {
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved) ED.ateAt = performance.now(); ED.drag = null; } },
     /* THE ROW IS THE TABLE EDITOR (A TABLE OF YOUR OWN): opening it makes a table for the framed board, shutting it plays it. */
     ...EDK.hooks,                                             // (the row's hooks: EDIT_KIT's, Oct 27)
+    // (Nov 7, for Home) a table: three bumpers, the plunger lane, the flippers and the ball
+    drawIcon(ctx, sz){
+      const g = ctx.createLinearGradient(0, 0, 0, sz); g.addColorStop(0, '#16224d'); g.addColorStop(1, '#2a1550');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, sz, sz);
+      const dot = (x, y, r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x * sz, y * sz, r * sz, 0, 7); ctx.fill(); };
+      ctx.strokeStyle = '#c9ccd2'; ctx.lineWidth = Math.max(1.5, sz * 0.03); ctx.strokeRect(sz * 0.04, sz * 0.04, sz * 0.92, sz * 0.92);
+      ctx.beginPath(); ctx.moveTo(sz * 0.84, sz * 0.2); ctx.lineTo(sz * 0.84, sz * 0.96); ctx.stroke();
+      for (const [x, y, c] of [[0.35, 0.28, '#e0443a'], [0.58, 0.36, '#f2c14e'], [0.3, 0.48, '#3b82c4']]){ dot(x, y, 0.075, '#f2f2ee'); dot(x, y, 0.05, c); }
+      ctx.lineCap = 'round'; ctx.lineWidth = sz * 0.05; ctx.strokeStyle = '#f2f2ee';
+      ctx.beginPath(); ctx.moveTo(sz * 0.25, sz * 0.8); ctx.lineTo(sz * 0.42, sz * 0.87); ctx.moveTo(sz * 0.66, sz * 0.8); ctx.lineTo(sz * 0.49, sz * 0.87); ctx.stroke();
+      dot(0.45, 0.68, 0.032, '#ffffff');
+    },
     _debug: { makeTable, tableFor, newState, sub, launch, setFlipper, toPlunger, endBall, botStep, botNew, simGen, simRun, work, finishJob, starsOf, levelAt, boardIdx, ringOf,
               fitGen, lifeOf, offBand, readyNow, eraOf, pathAt, rampZ, palette, ERAS, LIFE_BAND, FIT_TRIES, COMBO_T,
               THEMES, lockLit, startMulti, MIS, MIS_T, MIS_AWARD, misStart, misCode, misRead, shotNow, offOf, wantOf, ev, REC_PRE, magOn, mbX, dispText, dotsOf, reelsOf, lockSpot, frameOf, MSGS, JACK0, REEL_PX, DOT_PX, fly: (c, r) => gotoCell(c, r),
@@ -51729,7 +51754,7 @@ const NONOGRAM_APP = (() => {
   }
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'ngD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
   }
   const DIGIT_PX = 120;         // (a board under this many pixels across shows its picture alone: a 12×12's numbers would be specks)
@@ -52355,7 +52380,7 @@ const SUDOKU_APP = (() => {
   const DIGIT_PX = 100, NOTE_PX = 240;      // (a board under the first shows its tiles alone; pencil marks only on boards this wide)
   // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
   function numItems(out, num, u, v, h, color){
-    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
     for (let k = 0; k < ds.length; k++) out.push({ kind: 'skD' + ds[k], u: u0 + k * sp, v, scale: h, lift: 0.002, color });
   }
   function itemsOf(P, V, g, live, bp){
@@ -52495,6 +52520,686 @@ const SUDOKU_APP = (() => {
               finish, starsOf, faults, shownView, cycleOf, viewAt, itemsOf, colorsOf, levelAt, boardIdx, LV, GAMES, BEST, PUZZLES,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; },
               get MISTAKES(){ return MISTAKES; }, set MISTAKES(v){ MISTAKES = v; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
+/* ═══ HASHI ═══════════════════════════════════════════════════════════════
+   (Nov 7: "what next game should we add", then "hashi".) Hashiwokakero, Bridges: islands on a sea carry numbers; lay bridges between
+   islands that face one another along a row or a column so that every island has exactly its number of bridges (one or two between a pair,
+   never across another bridge) and all the islands end up one group. Built the way Sudoku was, from what the other puzzles taught:
+   - EVERY BOARD ITS OWN PUZZLE, harder further out: drawn from the board's number (boardIdx, golf's Szudzik pairing) and its level, 1 to 5,
+     the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2). A level (LV) is a grid (7, 9, 11, 13, 15 squares a side, 9 to 50
+     islands) and a grade of what a person must know: counting, crossings, loose groups, the one way out of a group, what-ifs.
+   - ONE ANSWER, RATED BY A SOLVER THAT PLAYS LIKE A PERSON (`hsRate`): a layout is grown (islands out of islands, each a bridge away, then
+     a few loops: `hsLayout`) and kept only when the human solver finishes it with no guess (so it has one answer, `hsSolve` proves it for
+     the few it cannot finish) and the hardest thing it needed is in the level's band. Each pair holds the fewest and most bridges it can
+     still take; a technique is one sweep, easiest first, back to the easiest after any change:
+       1 counting     an island's bridges add up to its number: what it needs against what its neighbours can still give
+       2 crossings    a bridge laid shuts every pair whose line it crosses
+       3 loose groups a bridge that would close a group of full islands off from the rest is not laid
+       4 the way out  a group not yet joined to the rest with one way left must take it
+       5 what if      suppose a pair had the fewest or the most it could, follow 1 to 4, and find it cannot be
+   - THE BOARD IS THE CONTROLS (Oct 28: "you should not need to have the bottom browser open to play games"): tap two islands in turn, or
+     drag from one to the next (a drag goes on from island to island, laying a bridge at each), or tap the sea between two islands: a pair
+     goes none, one, two, none. An island turns green when it has its number, pink when it has too many; the pairs an island could still
+     bridge show lit while it is selected. The play pad has Erase (the island's bridges), Undo and Hint; the keys do all of it too.
+   - Faults and stars as Sudoku's: a bridge laid that the answer does not have, or a press of Hint (the first lights the pair the next
+     logical step finds and names the technique, the second lays it). None ★★★, one or two ★★, more ★; the best on a board is kept.
+   - A board no one is playing lays its own bridges, one at a time in the order the human solver found them, holds the finished sea, and
+     starts again, each board at its own phase.
+   - Solved, a tap plays it again where it is. */
+const HASHI_APP = (() => {
+  const BAND = 0x1b2130, BAND2 = 0x232b3d, SEA = 0x2c6f93, SEA2 = 0x286586, DONE = 0x3f9a86;
+  const SAND = 0xe8d8a2, RIM = 0x8d7a49, FULLC = 0xb9e3a4, OVERC = 0xf0b3a8, SELC = 0xf6d96b, HINTC = 0x93cff2, PEER = 0x8fc1e8;
+  const PLANK = 0xf3e4b8, BADB = 0xd8483a, HINTB = 0xcfeeff, INK = 0x1c2230, FULLINK = 0x1d4a22, OVERINK = 0x7a1f14, CREAM = 0xf3ead6, WRONG = 0xc23b2a;
+  const DL = ARCADE.difficulty('hashi.level', 'Every board deals its own islands, harder the farther it is from the corner: a small sea that counting alone solves, then bigger ones that want crossings, loose groups and the one way out, and last what-ifs. Easy, Normal and Hard move every board a level up.', true);
+  const SND = ARCADE.sounds('hashi.sound', 'A tick for each bridge, a chime when an island has its number, a buzz for a bridge that is wrong, a fanfare for the sea.');
+  const say = BOARD_KIT.say(3000);
+  const gkey = BOARD_KIT.gkey;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const clock = () => performance.now() / 1000;
+  const mix = (a, b, t) => FieldKit.mixInt(a, b, t);
+  const clamp = BOARD_KIT.clamp;
+  // a level: the grid's side, the islands it may have (fewest, most), how its layout is drawn (`o`: the share of pairs given two bridges,
+  // of loose neighbours joined for loops, the longest bridge, the share of islands grown off the last), the technique grades a puzzle
+  // may need (1 counting … 5 what-ifs), at least `ifs` what-ifs, and how many layouts to try before taking the nearest
+  const LV = [
+    { N: 7,  K: [8, 10],  o: { p2: 0.35, extra: 0.2,  reach: 5, last: 0.3 }, grade: [1, 2], tries: 60 },
+    { N: 9,  K: [14, 17], o: { p2: 0.3,  extra: 0.2,  reach: 6, last: 0.3 }, grade: [2, 3], tries: 60 },
+    { N: 11, K: [22, 26], o: { p2: 0.3,  extra: 0.2,  reach: 7, last: 0.3 }, grade: [3, 3], tries: 80 },
+    { N: 13, K: [32, 38], o: { p2: 0.25, extra: 0.2,  reach: 7, last: 0.3 }, grade: [3, 5], tries: 80 },
+    { N: 15, K: [44, 50], o: { p2: 0.25, extra: 0.15, reach: 6, last: 0.3 }, grade: [5, 5], ifs: 2, tries: 120 },
+  ];
+  const HARD = ['', 'counting alone', 'counting and crossings', 'loose groups', 'a way out', 'what-ifs'];
+  const HS_TECH = ['', 'counting what an island still needs', 'a crossing', 'a loose group', 'the only way out of its group', 'a what-if (suppose not, and it breaks)'];
+
+  /* HASHI CORE START: pure (no page, no kits: the generator is passed in), so a probe can run it in node. */
+  // The shape of a puzzle: islands [{x, y, n}] on an N-square grid. Two islands are NEIGHBOURS when they are next to each other along
+  // a row or a column (no island between, and never side by side: a bridge needs a square to lie on). An EDGE is such a pair, with
+  // the squares between them (`cells`), the edges it would cross (`cross`) and, for each island, its edges (`by`).
+  function hsGraph(N, isl){
+    const K = isl.length, islAt = new Int16Array(N * N).fill(-1);
+    isl.forEach((s, i) => { islAt[s.y * N + s.x] = i; });
+    const E = [], by = isl.map(() => []), eH = new Int16Array(N * N).fill(-1), eV = new Int16Array(N * N).fill(-1);
+    const add = (a, b, h) => {
+      const A = isl[a], B = isl[b], cells = [], e = E.length;
+      if (h){ for (let x = A.x + 1; x < B.x; x++){ cells.push(A.y * N + x); eH[A.y * N + x] = e; } }
+      else { for (let y = A.y + 1; y < B.y; y++){ cells.push(y * N + A.x); eV[y * N + A.x] = e; } }
+      E.push({ a, b, h, cells, x1: A.x, y1: A.y, x2: B.x, y2: B.y, cross: [] }); by[a].push(e); by[b].push(e);
+    };
+    for (let y = 0; y < N; y++){ let p = -1; for (let x = 0; x < N; x++){ const i = islAt[y * N + x]; if (i < 0) continue; if (p >= 0 && isl[p].x < x - 1) add(p, i, true); p = i; } }
+    for (let x = 0; x < N; x++){ let p = -1; for (let y = 0; y < N; y++){ const i = islAt[y * N + x]; if (i < 0) continue; if (p >= 0 && isl[p].y < y - 1) add(p, i, false); p = i; } }
+    for (let e = 0; e < E.length; e++) if (E[e].h) for (let f = 0; f < E.length; f++){
+      const H = E[e], V = E[f];
+      if (!V.h && V.x1 > H.x1 && V.x1 < H.x2 && H.y1 > V.y1 && H.y1 < V.y2){ H.cross.push(f); V.cross.push(e); }
+    }
+    return { N, K, E, by, islAt, eH, eV };
+  }
+  // every bridge a pair may take: 2, and never more than either island's number
+  const hsStart = (G, n) => { const lo = new Int8Array(G.E.length), hi = G.E.map(e => Math.min(2, n[e.a], n[e.b])); return { lo, hi: Int8Array.from(hi) }; };
+
+  /* THE HUMAN SOLVER. Each edge holds the fewest and most bridges it can still take (lo, hi: 0, 1 or 2). A technique is one sweep of
+     what a person sees at a glance, easiest first; the solver goes back to the easiest after every change, so the grade of a puzzle
+     is the hardest technique it could not do without:
+       1 counting     an island's bridges must add up to its number: what it still needs against what its neighbours can still give
+       2 crossings    a bridge laid shuts every pair whose line it crosses
+       3 loose groups a bridge that would close a group of islands off from the rest, all full, is not laid
+       4 the way out  a group not yet joined to the rest that has one way left to reach it must take it
+       5 what if      suppose a pair has the fewest or the most it could, follow 1 to 4, and find it cannot be: it has the other
+     `log(e, v, tier)` is told each time an edge's lo goes up (a bridge laid). Returns false on a contradiction. */
+  function hsStep1(G, n, lo, hi, log){
+    let changed = false;
+    for (let i = 0; i < G.K; i++){
+      const L = G.by[i]; let sl = 0, sh = 0;
+      for (const e of L){ sl += lo[e]; sh += hi[e]; }
+      if (sl > n[i] || sh < n[i]) return -1;
+      for (const e of L){
+        const nl = n[i] - (sh - hi[e]), nh = n[i] - (sl - lo[e]);
+        if (nl > lo[e]){ lo[e] = nl; changed = true; if (log) log(e, nl, 1); }
+        if (nh < hi[e]){ hi[e] = nh; changed = true; }
+        if (lo[e] > hi[e]) return -1;
+      }
+    }
+    return changed ? 1 : 0;
+  }
+  function hsStep2(G, n, lo, hi){
+    let changed = false;
+    for (let e = 0; e < G.E.length; e++) if (lo[e] > 0) for (const f of G.E[e].cross){
+      if (lo[f] > 0) return -1;
+      if (hi[f] > 0){ hi[f] = 0; changed = true; }
+    }
+    return changed ? 1 : 0;
+  }
+  // the groups the bridges laid so far make (union-find), each island's need, and per group its size and how many islands still need
+  function hsGroups(G, n, lo){
+    const K = G.K, p = new Int16Array(K), rem = new Int8Array(K), size = new Int16Array(K), bad = new Int16Array(K);
+    for (let i = 0; i < K; i++) p[i] = i;
+    const find = x => { while (p[x] !== x){ p[x] = p[p[x]]; x = p[x]; } return x; };
+    for (let i = 0; i < K; i++){ let s = 0; for (const e of G.by[i]) s += lo[e]; rem[i] = n[i] - s; }
+    for (let e = 0; e < G.E.length; e++) if (lo[e] > 0){ const a = find(G.E[e].a), b = find(G.E[e].b); if (a !== b) p[a] = b; }
+    for (let i = 0; i < K; i++){ const r = find(i); size[r]++; if (rem[i] > 0) bad[r]++; }
+    return { find, rem, size, bad };
+  }
+  function hsStep3(G, n, lo, hi){
+    const K = G.K, g = hsGroups(G, n, lo); let changed = false;
+    for (let i = 0; i < K; i++){ const r = g.find(i); if (g.size[r] < K && g.bad[r] === 0) return -1; }
+    for (let e = 0; e < G.E.length; e++){
+      if (hi[e] <= lo[e]) continue;
+      const i = G.E[e].a, j = G.E[e].b, ri = g.find(i), rj = g.find(j), nI = g.rem[i] > 0 ? 1 : 0, nJ = g.rem[j] > 0 ? 1 : 0;
+      // the islands of the group (or two groups) the pair would join, but for its two ends, must all be full already
+      const others = ri === rj ? g.bad[ri] - nI - nJ : g.bad[ri] - nI + g.bad[rj] - nJ, total = ri === rj ? g.size[ri] : g.size[ri] + g.size[rj];
+      if (others !== 0 || total >= K) continue;
+      for (let v = lo[e] + 1; v <= hi[e]; v++) if (g.rem[i] === v - lo[e] && g.rem[j] === v - lo[e]){ hi[e] = v - 1; changed = true; break; }   // (rem is with what the pair has already)
+    }
+    return changed ? 1 : 0;
+  }
+  function hsStep4(G, n, lo, hi, log){
+    const K = G.K, g = hsGroups(G, n, lo), cnt = new Int16Array(K), last = new Int16Array(K).fill(-1); let changed = false;
+    for (let e = 0; e < G.E.length; e++){
+      if (hi[e] < 1) continue;
+      const a = g.find(G.E[e].a), b = g.find(G.E[e].b);
+      if (a === b) continue;
+      cnt[a]++; last[a] = e; cnt[b]++; last[b] = e;
+    }
+    for (let i = 0; i < K; i++) if (g.find(i) === i && g.size[i] < K){
+      if (cnt[i] === 0) return -1;
+      if (cnt[i] === 1 && lo[last[i]] === 0){ lo[last[i]] = 1; changed = true; if (log) log(last[i], 1, 4); }
+    }
+    return changed ? 1 : 0;
+  }
+  const HS_STEPS = [null, hsStep1, hsStep2, hsStep3, hsStep4];
+  // one to four, easiest first, back to the easiest after any change; `tier` is the hardest allowed. `note(t)` hears of each technique
+  // that changed something. false on a contradiction.
+  function hsProp(G, n, lo, hi, tier, log, note){
+    for (;;){
+      let t = 1;
+      for (; t <= tier; t++){
+        const r = HS_STEPS[t](G, n, lo, hi, log ? (e, v) => log(e, v, t) : null);
+        if (r < 0) return false;
+        if (r > 0){ if (note) note(t); break; }
+      }
+      if (t > tier) return true;
+    }
+  }
+  const hsSolved = (G, lo, hi) => { for (let e = 0; e < lo.length; e++) if (lo[e] !== hi[e]) return false; return true; };
+  /* hsRate: the human solver on a puzzle from `lo0` (the bridges already laid, or none). Returns { solved, level (the hardest
+     technique used, 1 to 5; 6 if it stalled), steps (the bridges laid, in order: { e, v, tier }), lo, hi, work }. `tier` 4 stops
+     before what-ifs. A what-if is tried only when 1 to 4 have nothing: each edge's fewest and most in turn; the first that
+     cannot be is dropped, then 1 to 4 again. */
+  function hsRate(G, n, tier, lo0, firstOnly){
+    const S = hsStart(G, n), lo = S.lo, hi = S.hi, steps = [];
+    if (lo0) for (let e = 0; e < lo.length; e++) if (lo0[e] > lo[e]) lo[e] = Math.min(lo0[e], hi[e]);
+    let level = 1, work = 0, ifs = 0;
+    const log = (e, v, t) => { steps.push({ e, v, tier: t }); if (t > level) level = t; };
+    const note = t => { if (t > level) level = t; };
+    const base = () => hsProp(G, n, lo, hi, 4, log, note);
+    let ok = base();
+    while (ok && !hsSolved(G, lo, hi) && !(firstOnly && steps.length)){
+      if ((tier || 5) < 5) break;
+      let found = false;
+      for (let e = 0; e < lo.length && !found; e++){
+        if (lo[e] >= hi[e]) continue;
+        for (const side of [0, 1]){
+          const l2 = Int8Array.from(lo), h2 = Int8Array.from(hi);
+          if (side === 0) h2[e] = lo[e]; else l2[e] = hi[e];
+          work++;
+          if (!hsProp(G, n, l2, h2, 4, null)){
+            // that cannot be: the edge takes the other side
+            if (side === 0){ lo[e]++; steps.push({ e, v: lo[e], tier: 5 }); } else hi[e]--;
+            level = Math.max(level, 5); found = true; ifs++; break;
+          }
+        }
+      }
+      if (!found) break;
+      ok = base();
+    }
+    return { solved: ok && hsSolved(G, lo, hi), ok, level: ok && hsSolved(G, lo, hi) ? level : 6, steps, lo, hi, work, ifs };
+  }
+  /* hsSolve: how many answers a puzzle has, up to `limit`, by propagating 1 to 4 and branching on an undecided edge. */
+  function hsSolve(G, n, limit){
+    const S = hsStart(G, n); let count = 0, first = null, nodes = 0;
+    const rec = (lo, hi) => {
+      if (count >= limit) return;
+      nodes++;
+      if (!hsProp(G, n, lo, hi, 4, null)) return;
+      let best = -1, bs = 99;
+      for (let e = 0; e < lo.length; e++) if (lo[e] < hi[e]){ const s = hi[e] - lo[e]; if (s < bs){ bs = s; best = e; } }
+      if (best < 0){ count++; if (!first) first = Int8Array.from(lo); return; }
+      for (let v = hi[best]; v >= lo[best]; v--){
+        const l2 = Int8Array.from(lo), h2 = Int8Array.from(hi); l2[best] = v; h2[best] = v;
+        rec(l2, h2);
+        if (count >= limit) return;
+      }
+    };
+    rec(S.lo, S.hi);
+    return { count, sol: first, nodes };
+  }
+  /* hsLayout: a random puzzle solution. Islands grow out of one another: each new one a bridge away (2 to `reach` squares) from an
+     island with nothing yet that way, on squares no bridge lies on and not beside another island; then pairs of neighbours that can
+     be joined are, now and then (loops). The numbers are what each island ends up with. `R` is a generator of [0, 1). */
+  function hsLayout(N, K, R, o){
+    const occ = new Int16Array(N * N).fill(-1), br = new Uint8Array(N * N), isl = [], ed = [];
+    const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
+    const beside = (x, y, skip) => { for (let d = 0; d < 4; d++){ const X = x + DX[d], Y = y + DY[d]; if (X >= 0 && Y >= 0 && X < N && Y < N && occ[Y * N + X] >= 0 && occ[Y * N + X] !== skip) return true; } return false; };
+    const put = (x, y) => { occ[y * N + x] = isl.length; isl.push({ x, y, n: 0 }); return isl.length - 1; };
+    put(1 + Math.floor(R() * (N - 2)), 1 + Math.floor(R() * (N - 2)));
+    let fails = 0;
+    while (isl.length < K && fails < 600){
+      const a = o.last && R() < o.last ? isl.length - 1 : Math.floor(R() * isl.length), d = Math.floor(R() * 4), A = isl[a];
+      let m = 0;
+      while (true){ const X = A.x + DX[d] * (m + 1), Y = A.y + DY[d] * (m + 1); if (X < 0 || Y < 0 || X >= N || Y >= N || occ[Y * N + X] >= 0 || br[Y * N + X]) break; m++; }
+      const reach = Math.min(m, o.reach);
+      if (reach < 2){ fails++; continue; }
+      const L = 2 + Math.floor(R() * (reach - 1)), x = A.x + DX[d] * L, y = A.y + DY[d] * L;
+      if (beside(x, y, -1)){ fails++; continue; }
+      const b = put(x, y), mult = R() < o.p2 ? 2 : 1;
+      for (let k = 1; k < L; k++) br[(A.y + DY[d] * k) * N + A.x + DX[d] * k] = d % 2 ? 2 : 1;
+      ed.push([a, b, mult]);
+    }
+    // loops: neighbours not yet joined whose squares between are free
+    const G = hsGraph(N, isl), have = new Set(ed.map(e => Math.min(e[0], e[1]) * 4096 + Math.max(e[0], e[1])));
+    for (let e = 0; e < G.E.length; e++){
+      const E = G.E[e];
+      if (have.has(Math.min(E.a, E.b) * 4096 + Math.max(E.a, E.b))) continue;
+      if (R() >= o.extra || E.cells.some(c => br[c])) continue;
+      for (const c of E.cells) br[c] = E.h ? 1 : 2;
+      ed.push([E.a, E.b, R() < o.p2 ? 2 : 1]);
+    }
+    for (const [a, b, m] of ed){ isl[a].n += m; isl[b].n += m; }
+    return { isl, ed };
+  }
+  /* hsMake: a puzzle for a level D = { N, K: [fewest, most] islands, o: layout options, grade: [easiest, hardest] technique it must
+     need, ifs (what-ifs at least), tries }. Layouts are drawn until one has ONE answer (the human solver finds it, or the backtracking solver proves it) and
+     needs a technique in the band; the first such is kept, else the nearest of the `tries`. Paced: with `ms`, a job (`hsJob`) is carried
+     on from where it got to and { pending: job } comes back until it is made. */
+  const hsJob = R => ({ R, k: 0, best: null, bd: 99 });
+  function hsMake(D, R, job, ms){
+    const J = job || hsJob(R), t0 = performance.now();
+    for (;;){
+      const rnd = J.R, k = D.K[0] + Math.floor(rnd() * (D.K[1] - D.K[0] + 1)), L = hsLayout(D.N, k, rnd, D.o);
+      const G = hsGraph(D.N, L.isl), n = L.isl.map(s => s.n), rt = hsRate(G, n, 5);
+      let level = 0, sol = null;
+      if (rt.solved){ level = rt.level; sol = rt.lo; }
+      else { const s = hsSolve(G, n, 2); if (s.count === 1){ level = 6; sol = s.sol; } }
+      J.k++;
+      if (level){
+        let d = level < D.grade[0] ? D.grade[0] - level : level > D.grade[1] ? level - D.grade[1] : 0;
+        if (!d && D.ifs && (rt.ifs || 0) < D.ifs) d = 1;      // (a level asking for what-ifs wants that many of them)
+        if (d < J.bd){ J.bd = d; J.best = { isl: L.isl, G, n, level, rt, sol, ifs: rt.ifs || 0, tries: J.k }; }
+        if (d === 0) break;
+      }
+      if (J.k >= D.tries && J.best) break;
+      if (J.k >= D.tries * 8) break;
+      if (ms != null && performance.now() - t0 > ms) return { pending: J };
+    }
+    const b = J.best; b.tries = J.k; b.miss = J.bd;
+    return b;
+  }
+  /* HASHI CORE END */
+
+  /* ─── THE BOARDS' PUZZLES ─── made on first want and kept (the latest CAP); a board only looked at gets its puzzle a few at a time. */
+  const PUZZLES = new Map(), CAP = 1500;
+  const seedOf = (idx, lv) => (idx * 2246822519) ^ (lv * 40503) ^ 0x4a51;
+  // the steps the solver took, one bridge at a time (a jump of two is two), then whatever it did not reach (a puzzle it stalled on) in
+  // pair order, so a board no one plays still ends up whole
+  function finishPuzzle(idx, lv, D, q){
+    const G = q.G, E = G.E, sol = Int8Array.from(q.sol), cur = new Int8Array(E.length), order = [], pair = new Map();
+    for (const s of q.rt.steps) while (cur[s.e] < s.v){ cur[s.e]++; order.push({ e: s.e, v: cur[s.e], tier: s.tier }); }
+    for (let e = 0; e < E.length; e++) while (cur[e] < sol[e]){ cur[e]++; order.push({ e, v: cur[e], tier: 9 }); }
+    E.forEach((X, e) => { pair.set(X.a * 4096 + X.b, e); pair.set(X.b * 4096 + X.a, e); });
+    return { idx, lv, D, N: D.N, M: D.N + 2, isl: q.isl, G, K: q.isl.length, n: q.n, E, sol, order, pair, level: q.level, ifs: q.ifs, tries: q.tries, miss: q.miss, phase: BOARD_KIT.phase(idx) };
+  }
+  // (`job`, `ms`: see hsMake; returns { pending: job } while a paced make is not done)
+  function makePuzzle(idx, lv, job, ms){
+    const D = LV[lv - 1], q = hsMake(D, rngOf(seedOf(idx, lv)), job, ms);
+    return q.pending ? q : finishPuzzle(idx, lv, D, q);
+  }
+  function puzzleFor(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let P = PUZZLES.get(key);
+    if (P){ PUZZLES.delete(key); PUZZLES.set(key, P); return P; }
+    JOBS.delete(key);
+    P = makePuzzle(idx, lv);
+    PUZZLES.set(key, P); if (PUZZLES.size > CAP) PUZZLES.delete(PUZZLES.keys().next().value);
+    return P;
+  }
+  /* Boards only looked at get their puzzle a few milliseconds a frame (the boards' share of time): a level 5 takes 30 ms on average and
+     more at worst, all in one go a visible stop, but it is a layout a millisecond or so, so a job is carried on from where it got to
+     (JOBS) and the board is bare sea till it is made. The board you play is made at once. */
+  const SOON = BOARD_KIT.budget(8), JOBS = new Map();
+  function puzzleSoon(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv, P = PUZZLES.get(key);
+    if (P) return P;
+    SOON.take(left => {
+      const job = JOBS.get(key) || hsJob(rngOf(seedOf(idx, lv))), q = makePuzzle(idx, lv, job, Math.min(left, 8));
+      if (q.pending) JOBS.set(key, q.pending);
+      else { JOBS.delete(key); PUZZLES.set(key, q); if (PUZZLES.size > CAP) PUZZLES.delete(PUZZLES.keys().next().value); }
+    });
+    return PUZZLES.get(key) || null;
+  }
+  // (for the tests: a puzzle made `ms` at a time as a board looked at is, and how many goes it took)
+  function makePaced(idx, lv, ms){
+    const job = hsJob(rngOf(seedOf(idx, lv)));
+    let q, calls = 0;
+    do { q = makePuzzle(idx, lv, job, ms); calls++; } while (q.pending);
+    return { P: q, calls };
+  }
+
+  /* ─── THE BOARD'S LAYOUT ─── M = N + 2 squares across: the sea inside a margin of one; the far margin (row 0) holds the level's dots,
+     the clock and the strikes. An island is one square; a pair's bridge lies on the squares between. */
+  const centre = (P, x, y) => [(1 + x + 0.5) / P.M, (1 + y + 0.5) / P.M];
+  const islC = (P, i) => centre(P, P.isl[i].x, P.isl[i].y);
+  // what a point of the board is: an island, a square a pair's bridge would lie on (`b`, the bridges laid, says which of two crossing
+  // pairs is meant when one has a bridge; else the line nearer the point), the sea, or the margin
+  function tileAt(P, u, v, b){
+    const M = P.M, N = P.N, fx = u * M - 1, fy = v * M - 1, x = Math.floor(fx), y = Math.floor(fy);
+    if (x < 0 || y < 0 || x >= N || y >= N) return { k: 'margin' };
+    const c = y * N + x, i = P.G.islAt[c], eh = P.G.eH[c], ev = P.G.eV[c];
+    if (i >= 0) return { k: 'isl', i };
+    if (eh >= 0 || ev >= 0){
+      let e = eh >= 0 ? eh : ev;
+      if (eh >= 0 && ev >= 0){
+        if (b && b[eh] && !b[ev]) e = eh; else if (b && b[ev] && !b[eh]) e = ev;
+        else e = Math.abs(fy - y - 0.5) <= Math.abs(fx - x - 0.5) ? eh : ev;
+      }
+      return { k: 'edge', e };
+    }
+    return { k: 'sea', x, y };
+  }
+  const degsOf = (P, b) => { const d = new Uint8Array(P.K); for (let e = 0; e < P.E.length; e++) if (b[e]){ d[P.E[e].a] += b[e]; d[P.E[e].b] += b[e]; } return d; };
+  const blockedB = (P, b, e) => { for (const f of P.E[e].cross) if (b[f]) return true; return false; };
+  // the island next to island i in a board direction (0 up, 1 right, 2 down, 3 left): [island, pair] or null
+  function nbrDir(P, i, bd){
+    for (const e of P.G.by[i]){
+      const X = P.E[e], j = X.a === i ? X.b : X.a, A = P.isl[i], B = P.isl[j];
+      const d = X.h ? (B.x > A.x ? 1 : 3) : (B.y > A.y ? 2 : 0);
+      if (d === bd) return [j, e];
+    }
+    return null;
+  }
+
+  /* ─── PLAYING ─── A game: its bridges (`b`, a count a pair), the selected island, 'ready' (untouched), 'play' or 'solved', the clock
+     from the first move, the faults (`wrong` bridges laid, `hints` pressed), the hint showing, and the moves taken (`undo`, each a list
+     of [pair, what it had]). `ver` goes up at every change, so the board's tiles and pieces are made again only then. */
+  const GAMES = new Map();
+  let LIVE = null, GID = 0, DRAG = null;
+  let MISTAKES = (() => { try { return localStorage.getItem('hashi.mistakes') !== 'off'; } catch { return true; } })();
+  const setMistakes = on => { MISTAKES = on; try { localStorage.setItem('hashi.mistakes', on ? 'on' : 'off'); } catch {} try { fieldItemsChanged(); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('hashi.best');
+  const bestKey = P => P.idx + '@' + P.lv;
+  const fresh = (c, r) => { const P = puzzleFor(c, r);
+    return { P, c, r, id: ++GID, b: new Uint8Array(P.E.length), sel: -1, state: 'ready', t0: 0, t: 0, wrong: 0, hints: 0, ver: 0, stars: 0, hint: null, undo: [] }; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  const faults = g => g.wrong + g.hints;
+  const starsOf = f => f === 0 ? 3 : f <= 2 ? 2 : 1;
+  const touch = g => { if (g.state === 'ready'){ g.state = 'play'; g.t0 = clock(); } };
+  const solvedNow = g => { const s = g.P.sol; for (let e = 0; e < s.length; e++) if (g.b[e] !== s[e]) return false; return true; };
+  const deg = (g, i) => { let d = 0; for (const e of g.P.G.by[i]) d += g.b[e]; return d; };
+  function select(g, i){ if (g.sel === i) return; g.sel = i; g.hint = null; g.ver++; }
+  // the one way a pair's bridges change (`how`: 'hint' is not a claim, so not a fault); false if nothing changed
+  function setBridge(g, e, v, quiet, how){
+    const P = g.P, old = g.b[e];
+    if (g.state === 'solved' || old === v) return false;
+    touch(g);
+    g.undo.push([[e, old]]); if (g.undo.length > 400) g.undo.shift();
+    g.b[e] = v; g.hint = null; g.ver++;
+    const wrong = v > P.sol[e];
+    if (wrong && v > old && how !== 'hint') g.wrong++;
+    if (solvedNow(g)){ finish(g, quiet); return true; }
+    if (!quiet){
+      const X = P.E[e], full = deg(g, X.a) === P.n[X.a] || deg(g, X.b) === P.n[X.b];
+      SND.play(wrong && v > old ? (MISTAKES ? 'bad' : 'tap') : v > old && full ? 'good' : 'tap');
+    }
+    return true;
+  }
+  // a tap on a pair: none, one, two, none (a pair a laid bridge crosses cannot take the first)
+  function cycle(g, e, quiet){
+    if (g.state === 'solved') return false;
+    const b = g.b[e];
+    if (b === 0 && blockedB(g.P, g.b, e)){ if (!quiet) SND.play('bad'); return false; }
+    return setBridge(g, e, (b + 1) % 3, quiet);
+  }
+  // every bridge of the selected island taken off, as one move
+  function erase(g, quiet){
+    const i = g.sel;
+    if (g.state === 'solved' || i < 0) return false;
+    const list = g.P.G.by[i].filter(e => g.b[e]).map(e => [e, g.b[e]]);
+    if (!list.length) return false;
+    touch(g); g.undo.push(list); for (const [e] of list) g.b[e] = 0; g.hint = null; g.ver++;
+    if (!quiet) SND.play('tap');
+    return true;
+  }
+  function undo(g, quiet){
+    const u = g.undo.pop();
+    if (!u || g.state === 'solved') return false;
+    for (const [e, v] of u) g.b[e] = v;
+    g.hint = null; g.ver++;
+    if (!quiet) SND.play('turn');
+    return true;
+  }
+  /* A HINT. A bridge that is wrong (more than the answer has) is found first and shown red; its press takes it down to what the answer
+     has. Else the human solver is asked from the bridges as they stand for its next step: its pair is lit pale blue with the technique
+     in the title, and a second press lays that bridge. A sea it cannot go on from (a puzzle past its techniques) lights a pair the answer
+     wants and says it is a guess. */
+  function hintOf(g){
+    const P = g.P;
+    for (let e = 0; e < P.E.length; e++) if (g.b[e] > P.sol[e]) return { e, v: P.sol[e], kind: 'wrong' };
+    const rt = hsRate(P.G, P.n, 5, g.b, true);
+    if (rt.steps.length){ const s = rt.steps[0]; return { e: s.e, v: g.b[s.e] + 1, kind: 'step', tech: s.tier }; }
+    for (let e = 0; e < P.E.length; e++) if (g.b[e] < P.sol[e]) return { e, v: g.b[e] + 1, kind: 'guess' };
+    return null;
+  }
+  function hint(g, quiet){
+    if (!g || g.state === 'solved') return null;
+    if (g.hint && g.hint.at === g.ver){            // (the second press: the bridge goes down or in)
+      const h = g.hint; g.hints++; setBridge(g, h.e, h.v, quiet, 'hint'); return h;
+    }
+    const h = hintOf(g);
+    if (!h) return null;
+    touch(g); g.hints++; g.ver++; g.hint = { ...h, at: g.ver };
+    return h;
+  }
+  function finish(g, quiet){
+    g.state = 'solved'; g.t = Math.round((clock() - g.t0) * 10) / 10; g.stars = starsOf(faults(g)); g.hint = null; g.sel = -1;
+    const k = bestKey(g.P), was = BEST.get(k), better = !was || g.stars > was[0] || (g.stars === was[0] && g.t < was[1]);
+    if (better){ BEST.delete(k); BEST.set(k, [g.stars, g.t]); saveBest(); }
+    if (!quiet) SND.play('win');
+  }
+
+  /* A board no one is playing lays its bridges: bare islands, then each bridge the human solver laid, in its order, a STEP apart, the
+     finished sea held, then the puzzle again, on the page's clock, each board at its own phase. */
+  const HOLD0 = 1.6, STEP = 0.32, HOLD1 = 3.2, FLASH_S = 0.28;
+  const cycleOf = P => HOLD0 + P.order.length * STEP + HOLD1;
+  // (`at`, seconds on the page's clock, for the tests)
+  function shownView(P, at){
+    const k = P.order.length, T = cycleOf(P), t = BOARD_KIT.loopT(P.phase, T, at);
+    const m = t < HOLD0 ? 0 : Math.min(k, Math.floor((t - HOLD0) / STEP) + 1);
+    const last = m > 0 && m < k && t - HOLD0 - (m - 1) * STEP < FLASH_S ? P.order[m - 1].e : -1, stamp = 'd' + m + '.' + last;
+    if (P._dv && P._dv.stamp === stamp) return P._dv;
+    const b = new Uint8Array(P.E.length);
+    for (let j = 0; j < m; j++) b[P.order[j].e] = P.order[j].v;
+    return (P._dv = { stamp, b, sel: -1, hint: null, last, sec: 0, solved: m >= k, g: null, m });
+  }
+  const gameView = g => {
+    const sec = g.state === 'play' ? Math.min(5999, Math.floor(clock() - g.t0)) : g.state === 'solved' ? Math.min(5999, Math.floor(g.t)) : 0;
+    return { stamp: 'g' + g.id + '.' + g.ver + g.state + (MISTAKES ? 'm' : '') + (g.state === 'play' ? '.' + sec : ''),
+             b: g.b, sel: g.sel, hint: g.hint, last: -1, sec, solved: g.state === 'solved', g };
+  };
+  // what a board shows: the game on it if it is framed or has been played, else its own puzzle laying itself
+  function viewAt(c, r, soon){
+    const live = !!LIVE && LIVE.c === c && LIVE.r === r, g0 = GAMES.get(gkey(c, r));
+    if (live || (g0 && g0.state !== 'ready')){ const g = g0 || gameAt(c, r); return { P: g.P, V: gameView(g), g, live }; }
+    const P = soon ? puzzleSoon(c, r) : puzzleFor(c, r);
+    return P ? { P, V: shownView(P), g: null, live: false } : null;
+  }
+
+  /* ─── DRAWN ─── The tiles are the board's colours (cellGrid): the margin slate, the sea a checker of two blues, an island's square a
+     shallow of sand (green once it has its number), the squares of a bridge a touch of plank, the selected island gold and the pairs it
+     could still bridge a pale blue, a hint's pair and islands pale blue (red if the bridge is wrong). The pieces lie on them: a bridge a
+     flat plank or two (red if the answer has fewer), an island a round rim and body with its number as seven-segment digits. */
+  function colorsOf(P, V){
+    if (P._gc && P._gc.stamp === V.stamp) return P._gc.colors;
+    const N = P.N, M = P.M, out = new Array(M * M).fill(BAND), deg0 = degsOf(P, V.b);
+    const at = (x, y) => (1 + y) * M + 1 + x, cell = c => at(c % N, (c / N) | 0);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) out[at(x, y)] = V.solved ? mix((x + y) % 2 ? SEA2 : SEA, DONE, 0.35) : (x + y) % 2 ? SEA2 : SEA;
+    P.E.forEach((X, e) => { if (V.b[e]) for (const c of X.cells) out[cell(c)] = mix(out[cell(c)], PLANK, 0.3); });
+    P.isl.forEach((s, i) => { const j = at(s.x, s.y); out[j] = mix(out[j], deg0[i] === P.n[i] ? FULLC : SAND, 0.45); });
+    if (!V.solved && V.sel >= 0){
+      const s = P.isl[V.sel];
+      for (const e of P.G.by[V.sel]){
+        if (!V.b[e] && blockedB(P, V.b, e)) continue;
+        const X = P.E[e], o = P.isl[X.a === V.sel ? X.b : X.a];
+        for (const c of X.cells) out[cell(c)] = mix(out[cell(c)], PEER, 0.4);
+        out[at(o.x, o.y)] = mix(out[at(o.x, o.y)], PEER, 0.55);
+      }
+      out[at(s.x, s.y)] = SELC;
+    }
+    if (!V.solved && V.hint){
+      const X = P.E[V.hint.e], col = V.hint.kind === 'wrong' ? 0xefb4ab : HINTC;
+      for (const c of X.cells) out[cell(c)] = col;
+      for (const i of [X.a, X.b]) out[at(P.isl[i].x, P.isl[i].y)] = col;
+    }
+    P._gc = { stamp: V.stamp, colors: out };
+    return out;
+  }
+  const DIGIT_PX = 100;      // (a board under it shows its islands, not their numbers)
+  // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
+  function numItems(out, num, u, v, h, color, lift){
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2 - (ds === '1' ? BOARD_KIT.flat.ONE_AT * h : 0);   // (a lone 1's two strokes stand at its glyph's right edge: it is shifted back to the middle)
+    for (let k = 0; k < ds.length; k++) out.push({ kind: 'hsD' + ds[k], u: u0 + k * sp, v, scale: h, lift: lift || 0.0028, color });
+  }
+  function itemsOf(P, V, g, live, bp){
+    const words = !(bp > 0) || bp >= DIGIT_PX;
+    const stamp = V.stamp + (live ? 'L' : '') + (words ? 'w' : '');
+    if (P._ic && P._ic.stamp === stamp) return P._ic.items;
+    const M = P.M, s = 1 / M, out = [], dg = degsOf(P, V.b), th = 0.15 * s, gap = 0.13 * s;
+    // the bridges, under the islands
+    P.E.forEach((X, e) => {
+      const bv = V.b[e]; if (!bv) return;
+      const [ua, va] = islC(P, X.a), [ub, vb] = islC(P, X.b);
+      const col = V.hint && V.hint.e === e ? (V.hint.kind === 'wrong' ? BADB : HINTB) : MISTAKES && bv > P.sol[e] ? BADB : V.last === e ? 0xffffff : PLANK;
+      for (let k = 0; k < bv; k++){
+        const off = bv === 1 ? 0 : (k ? gap : -gap);
+        if (X.h) out.push({ kind: 'hsBar', u: (ua + ub) / 2, v: va + off, scale: 1, sx: ub - ua, sz: th, lift: 0.0008, color: col });
+        else out.push({ kind: 'hsBar', u: ua + off, v: (va + vb) / 2, scale: 1, sx: th, sz: vb - va, lift: 0.0008, color: col });
+      }
+    });
+    // the islands: a rim and a body, the body green with its number, pink with too many, gold when selected
+    P.isl.forEach((I, i) => {
+      const [u, v] = islC(P, i), full = dg[i] === P.n[i], over = dg[i] > P.n[i];
+      const body = V.solved ? FULLC : V.hint && (P.E[V.hint.e].a === i || P.E[V.hint.e].b === i) ? HINTC : V.sel === i ? SELC : over ? OVERC : full ? FULLC : SAND;
+      out.push({ kind: 'hsIsle', u, v, scale: 0.94 * s, lift: 0.0014, color: RIM }, { kind: 'hsIsle', u, v, scale: 0.8 * s, lift: 0.002, color: body });
+      if (words) numItems(out, P.n[i], u, v, 0.5 * s, over ? OVERINK : full ? FULLINK : INK);
+    });
+    if (words){
+      // the level, as dots in its colour along the far margin's left
+      for (let k = 0; k < P.lv; k++) out.push({ kind: 'hsDot', u: (1.25 + k * 0.4) * s, v: 0.5 * s, scale: 0.24 * s, lift: 0.002, color: BOARD_KIT.LV_COL[P.lv - 1] });
+      if (V.g && V.g.state !== 'ready'){
+        // the clock, m:ss, centred on the far margin, and a strike for every fault (a wrong bridge, a hint), most five
+        const h = 0.6 * s, mm = Math.floor(V.sec / 60), ss = V.sec % 60, str = mm + ':' + (ss < 10 ? '0' : '') + ss, dw = 0.62 * h, cw = 0.5 * h;
+        const total = [...str].reduce((a, ch) => a + (ch === ':' ? cw : dw), 0);
+        let x = 0.5 - total / 2;
+        for (const ch of str){
+          if (ch === ':'){ for (const dy of [-0.16, 0.16]) out.push({ kind: 'hsDot', u: x + cw / 2, v: 0.5 * s + dy * h, scale: 0.12 * h, lift: 0.002, color: CREAM }); x += cw; }
+          else { out.push({ kind: 'hsD' + ch, u: x + dw / 2, v: 0.5 * s, scale: h, lift: 0.002, color: CREAM }); x += dw; }
+        }
+        for (let k = 0; k < Math.min(5, faults(V.g)); k++) out.push({ kind: 'hsX', u: (M - 0.8 - k * 0.5) * s, v: 0.5 * s, scale: 0.5 * s, lift: 0.002, color: WRONG });
+      }
+    }
+    P._ic = { stamp, items: out };
+    return out;
+  }
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || g.state === 'solved') return;
+    const k = e.key, P = g.P;
+    let did = true;
+    if (k === 'Backspace' || k === 'Delete') erase(g);   // (not 0: that is the field's key for framing the board)
+    else if (k === 'z' || k === 'Z') undo(g);
+    else if (k === 'h' || k === 'H') hint(g);
+    else if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight'){
+      // the key means the screen's direction; the view says which way that is on the board. Shift lays the bridge that way.
+      const sk = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 }[k], dirs = (() => { try { return screenToBoardDirs(); } catch { return null; } })(), bd = dirs ? dirs[sk] : sk;
+      if (g.sel < 0){ let best = 0, bdist = 9e9; P.isl.forEach((I, i) => { const d = Math.hypot(I.x - (P.N - 1) / 2, I.y - (P.N - 1) / 2); if (d < bdist){ bdist = d; best = i; } }); select(g, best); }
+      else { const nb = nbrDir(P, g.sel, bd); if (nb){ if (e.shiftKey){ cycle(g, nb[1]); g.sel = nb[0]; g.ver++; } else select(g, nb[0]); } }
+    } else did = false;
+    if (did){ e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  const app = {
+    name: 'hashi',
+    menu: [{ head: 'Hashi', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: () => 'Show mistakes: ' + (MISTAKES ? 'on' : 'off'), title: 'A bridge the answer does not have shows red as soon as it is laid. Off, nothing says so until a hint or the end.', on(){ setMistakes(!MISTAKES); } },
+      { label: 'Hint', title: 'Light the pair the next logical step finds, and name the technique in the title; again lays its bridge. Each press is a fault.',
+        on(){ const f = framedCell(); if (f){ LIVE = { c: f.c, r: f.r }; hint(gameAt(f.c, f.r)); try { fieldItemsChanged(); } catch {} } } },
+      { label: 'Start this board again', title: 'This board\'s sea as dealt, no bridges, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
+    ]}],
+    cellFar: { light: BAND, dark: BAND },
+    faceMinPx: 8,
+    itemMinPx: 30,
+    itemGeometries: {
+      ...Object.fromEntries([...Array(10).keys()].map(d => ['hsD' + d, T => BOARD_KIT.flat.digit(T, d)])),
+      hsX: T => BOARD_KIT.flat.cross(T),
+      hsDot: T => BOARD_KIT.flat.geo(T, [BOARD_KIT.flat.rect(-0.5, -0.5, 0.5, 0.5)]),
+      hsBar: T => { const g = new T.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); g.userData.unlit = true; return g; },
+      hsIsle: T => { const g = FieldKit.disc(T, 0.5, 0, 40); g.userData.unlit = true; return g; },
+    },
+    cellGrid(c, r){
+      const W = viewAt(c, r, true);
+      if (!W) return { n: 1, colors: [BAND] };
+      return { n: W.P.M, colors: colorsOf(W.P, W.V) };
+    },
+    cellItems(c, r, bp){
+      const W = viewAt(c, r, true);
+      return W ? itemsOf(W.P, W.V, W.g, W.live, bp) : [];
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), D = LV[lv - 1], P = PUZZLES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
+      const best = P ? BEST.get(bestKey(P)) : null;
+      const h = g && g.hint ? (g.hint.kind === 'wrong' ? ' · that bridge is wrong' : g.hint.kind === 'guess' ? ' · hint: no logic left, a guess' : ' · hint: ' + HS_TECH[g.hint.tech]) : '';
+      const laid = g ? g.b.reduce((a, x) => a + x, 0) : 0, need = P ? P.sol.reduce((a, x) => a + x, 0) : 0;
+      return 'Hashi — level ' + lv + ', ' + D.N + '×' + D.N + (P ? ', ' + P.K + ' islands · ' + (P.level > 5 ? 'beyond the logic here' : 'by ' + HARD[P.level]) : '')
+           + (!g || g.state === 'ready' ? ' · bridge the islands so each has its number, none across another, all one group' : '')
+           + (best ? ' · best ' + '★'.repeat(best[0]) + ' ' + Math.floor(best[1] / 60) + ':' + String(Math.floor(best[1] % 60)).padStart(2, '0') : '')
+           + (g && g.state === 'solved' ? ' · solved in ' + g.t.toFixed(1) + ' s ' + '★'.repeat(g.stars) : g && g.state === 'play' ? ' · ' + laid + ' of ' + need + ' bridges' : '') + h;
+    },
+    onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    /* (Oct 15, Simon: "the simon buttons are very hard to push".) Two quick taps on an island and the next, or on one pair twice, read as
+       a double-tap, which reframes the view and never reaches the game. While a puzzle is on the framed board every tap is a tap. */
+    noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'solved'; },
+    onCellTap(c, r, u, v){
+      // (the tap the field still calls at the end of a short drag: the drag has done what it meant, as in Nonograms)
+      if (DRAG && DRAG.moved){ DRAG = null; return true; }
+      DRAG = null;
+      const live = !!LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      const g = gameAt(c, r);
+      if (live && g.state === 'solved'){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
+      if (u == null || g.state === 'solved') return true;
+      const P = g.P, t = tileAt(P, u, v, g.b);
+      if (t.k === 'isl'){
+        const e = g.sel >= 0 && g.sel !== t.i ? P.pair.get(g.sel * 4096 + t.i) : null;
+        if (e != null){ cycle(g, e); if (g.state !== 'solved'){ g.sel = t.i; g.ver++; } }       // (the second island of a pair: its bridge goes on, and this island is the next one's first)
+        else select(g, g.sel === t.i ? -1 : t.i);
+      } else if (t.k === 'edge'){ cycle(g, t.e); if (g.sel >= 0 && g.state !== 'solved') select(g, -1); }
+      else if (g.sel >= 0) select(g, -1);
+      return true;
+    },
+    /* A DRAG FROM ISLAND TO ISLAND: pressed on an island, the drag lays (or steps) the bridge to each neighbouring island the finger reaches,
+       and goes on from there, so one drag can lay a whole path. Pressed anywhere else the view pans as ever. */
+    claimsPan(u, v){
+      DRAG = null;
+      const g = liveGame();
+      if (!g || g.state === 'solved' || u == null) return false;
+      const t = tileAt(g.P, u, v, g.b);
+      if (t.k !== 'isl') return false;
+      DRAG = { last: t.i, moved: false };
+      return true;
+    },
+    onPan(dx, dy, at){
+      const g = liveGame();
+      if (!g || !DRAG) return false;
+      if (!at || g.state === 'solved') return true;
+      const P = g.P, N = P.N, x = clamp(Math.floor(at.u * P.M) - 1, 0, N - 1), y = clamp(Math.floor(at.v * P.M) - 1, 0, N - 1), j = P.G.islAt[y * N + x];
+      if (j < 0 || j === DRAG.last) return true;
+      const e = P.pair.get(DRAG.last * 4096 + j);
+      if (e != null){ cycle(g, e); DRAG.moved = true; if (g.state !== 'solved'){ g.sel = j; g.ver++; } }
+      DRAG.last = j;
+      return true;
+    },
+    // the play pad (Oct 28): what a gesture does not do, round buttons on the right while a board is played
+    playActs(c, r){ const g = liveGame(); if (!g || g.state === 'solved' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      return [{ key: 'erase', glyph: '⌫', label: 'Erase', title: 'Take every bridge off the selected island (Backspace).' },
+              { key: 'undo', glyph: '↶', label: 'Undo', title: 'Take back the last move (Z).' },
+              { key: 'hint', glyph: '?', label: 'Hint', title: 'Light the pair the next logical step finds; again lays its bridge. Each press is a fault (H).' }]; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (!g) return false;
+      if (key === 'erase') erase(g); else if (key === 'undo') undo(g); else if (key === 'hint') hint(g);
+      return true; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#2c6f93'; ctx.fillRect(0, 0, sz, sz);
+      const g = sz / 7, isl = [[1, 1, 3], [5, 1, 2], [1, 3, 3], [3, 3, 4], [5, 3, 3], [3, 5, 2], [5, 5, 1]];
+      const at = ([x, y]) => [(x + 0.5) * g, (y + 0.5) * g];
+      ctx.strokeStyle = '#f3e4b8'; ctx.lineCap = 'round';
+      const bridge = (a, b, n) => { const [x1, y1] = at(isl[a]), [x2, y2] = at(isl[b]), h = y1 === y2; ctx.lineWidth = Math.max(1, g * 0.14);
+        for (let k = 0; k < n; k++){ const o = n === 1 ? 0 : (k ? 1 : -1) * g * 0.14; ctx.beginPath(); ctx.moveTo(x1 + (h ? 0 : o), y1 + (h ? o : 0)); ctx.lineTo(x2 + (h ? 0 : o), y2 + (h ? o : 0)); ctx.stroke(); } };
+      bridge(0, 1, 1); bridge(0, 2, 2); bridge(2, 3, 1); bridge(3, 4, 2); bridge(1, 4, 1); bridge(3, 5, 1); bridge(4, 6, 1); bridge(5, 6, 1);
+      ctx.font = 'bold ' + Math.round(g * 0.78) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const I of isl){ const [x, y] = at(I);
+        ctx.fillStyle = '#8d7a49'; ctx.beginPath(); ctx.arc(x, y, g * 0.47, 0, 7); ctx.fill();
+        ctx.fillStyle = '#e8d8a2'; ctx.beginPath(); ctx.arc(x, y, g * 0.4, 0, 7); ctx.fill();
+        ctx.fillStyle = '#1c2230'; ctx.fillText(String(I[2]), x, y + g * 0.04); }
+    },
+    _debug: { hsGraph, hsRate, hsSolve, hsLayout, hsMake, hsJob, makePuzzle, makePaced, seedOf, puzzleFor, tileAt, centre, islC, degsOf, blockedB, nbrDir, gameAt, fresh, select, cycle, setBridge, erase, undo, hint, hintOf,
+              finish, starsOf, faults, deg, shownView, cycleOf, viewAt, itemsOf, colorsOf, levelAt, boardIdx, LV, GAMES, BEST, PUZZLES,
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; },
+              get MISTAKES(){ return MISTAKES; }, set MISTAKES(v){ MISTAKES = v; }, get DRAG(){ return DRAG; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
@@ -56358,6 +57063,15 @@ const LEVELS_APP = (() => {
       { label: () => 'Wireframe: ' + (wire ? 'on' : 'off'), title: 'The bodies drawn as their meshes\' lines, so each level\'s grain shows.', on(){ setWire(!wire); } },
       { label: 'About the levels (wander)', title: 'The theory: wander\'s flight.html, levels.html and zoom.html.', on(){ try { window.open('https://reportbase.github.io/wander/flight.html', '_blank', 'noopener'); } catch {} } },
     ]}],
+    // (Nov 7, for Home) the corner's rings, each farther one half as wide as the last, and a body at their middle
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#06080c'; ctx.fillRect(0, 0, sz, sz);
+      const cx = sz / 2, cy = sz / 2;
+      for (let k = 0; k < 5; k++){ ctx.strokeStyle = k === 0 ? '#d4a017' : 'rgba(150,170,210,' + (0.75 - k * 0.12).toFixed(2) + ')'; ctx.lineWidth = Math.max(1, sz * (k === 0 ? 0.02 : 0.012));
+        ctx.beginPath(); ctx.arc(cx, cy, sz * [0.46, 0.33, 0.25, 0.2, 0.165][k], 0, 7); ctx.stroke(); }
+      const g = ctx.createRadialGradient(cx - sz * 0.05, cy - sz * 0.05, sz * 0.02, cx, cy, sz * 0.2);
+      g.addColorStop(0, '#d9e2f5'); g.addColorStop(1, '#4a5f93'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, sz * 0.12, 0, 7); ctx.fill();
+    },
     _debug: { recover, bodyFrame, recoverShow, get recoverOn(){ return recoverOn; }, set recoverOn(x){ recoverOn = !!x; }, get recoverGroup(){ return RCG; }, get bodies(){ return BODIES; }, get bodyLines(){ return BODYLINES; }, edgesOf, get list(){ return lastList; }, partsOf, topoOf, bandWeights, fadeOf, detailOf: (k, v, h) => detailOf(k, v, h), get hs(){ return hs; }, setH, shareOf, grainOf: (k, v, h) => grainOf(k, v, h), get farR(){ return farR; }, get ADDR(){ return ADDR; }, get as(){ return as; }, setLeaves, boardIdx, bodyOf, get mode(){ return mode; }, setMode, get wire(){ return wire; }, setWire, get shown(){ return shown; }, TRIS, levelAt: (h, v) => levelAt(h, v), get rings(){ return rings; } },
   };
 })();
@@ -63189,7 +63903,152 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+/* ═══ HOME ════════════════════════════════════════════════════════════════
+   (Nov 7: "how about a home page, that shows all games as a board".) The page opens here: every game is one board of this field,
+   its own little board drawn big (the same picture the application picker and the bottom row draw, `drawIcon`) on a mat in a hue of its
+   own, its name along the foot. Eight across, in the order the application picker lists them (by title), so a game stays where it was
+   and a new one takes its place by name; the field past the block is bare. Nothing here plays, so every board is a still picture
+   (the photo tier, as Missile Command's sky), and the field rests.
+   - TAP the framed board, or DOUBLE TAP any board, and that game opens on its first board (the corner, where its levels begin), as the
+     picker would open it (`openApp`: the gallery asks for something to show). Tab steps along the games as it steps along any boards.
+   - THE PAGE OPENS ON HOME, framed on the game you were last in (`restoreLastApp`, which used to open that game itself: the last
+     game is still the board in the middle and one tap away), and Home is first in the application picker (`isHome`), from any game.
+   - Where a game has no `drawIcon` of its own (the tilt maze, pinball, Levels) its board is the colours its `cellGrid` gives, or
+     its hue with its first letter; chess's is the opening position, as the picker draws it. */
+const HOME_APP = (() => {
+  const VOID = 0x0b0d12, COLS = 8, HI_PX = 300, PHOTO_PX = 20;
+  // the names the application picker's rule ("field chess" → "Chess") leaves run together or wrongly cased
+  const NAMES = { airhockey: 'Air hockey', whackamole: 'Whack-a-mole', pacman: 'Pac-Man', blockout: '3D Tetris' };
+  const titleOf = a => NAMES[a.id] || _appLabel(a);
+  const appById = id => (window.FIELD_APPS || []).find(a => a.id === id) || null;
+  const gs = () => BOARD_KIT.gs();
+  // a board's column or row as a distance from the corner, through the field's wrap (the boards left of and above the corner are not the far side)
+  const fold = v => { const g = gs(); v = ((v % g) + g) % g; return v > g / 2 ? v - g : v; };
+  // the games, by title, as the picker lists them; made again only when the set of apps changes (mini golf made again at another size keeps its id)
+  let ORD = null, ORD_KEY = '';
+  function order(){
+    const list = (window.FIELD_APPS || []).filter(a => a !== app && a.id), key = list.map(a => a.id).join('|');
+    if (ORD && key === ORD_KEY) return ORD;
+    ORD_KEY = key;
+    ORD = list.map(a => ({ id: a.id, title: titleOf(a) })).sort((x, y) => x.title.localeCompare(y.title, 'en', { numeric: true }));
+    ORD.forEach((o, k) => { o.k = k; o.hue = (k * 137.508) % 360; });          // (the golden angle: neighbours never match)
+    return ORD;
+  }
+  // the game on a board, or null past the block
+  function slotAt(c, r){
+    const cc = fold(c), rr = fold(r);
+    if (cc < 0 || cc >= COLS || rr < 0) return null;
+    return order()[rr * COLS + cc] || null;
+  }
+  const idAt = (c, r) => { const s = slotAt(c, r); return s ? s.id : null; };
+  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [o.k % COLS, Math.floor(o.k / COLS)] : null; };
+  const hsl = (h, s, l) => 'hsl(' + h.toFixed(1) + ',' + s + '%,' + l + '%)';
+  const hexOf = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
+  const cssOf = v => typeof v === 'number' ? '#' + (v >>> 0).toString(16).padStart(6, '0').slice(-6) : typeof v === 'string' ? v : v && v.getHexString ? '#' + v.getHexString() : '#222';
+
+  /* ─── OPENING A GAME ─── */
+  let LAST = null;           // the id of the game the page was last in (read at the page's start, for the first arrival)
+  function openGame(id){
+    const a = appById(id);
+    if (!a) return false;
+    openApp(a, [0, 0]);
+    return true;
+  }
+
+  /* ─── THE PICTURE A BOARD HANGS ─── (the photo tier lays a canvas's top left at the board's far right, so `paint` is drawn turned a half turn,
+     in the board's own terms: x across, y down toward you.) The mat in the game's hue, the game's own board inset in a rounded frame, the name
+     along the foot, fitted to the width. */
+  function paint(P, hi){
+    const S = hi ? 512 : 256, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const c = cv.getContext('2d'); if (!c) return null;
+    c.setTransform(-1, 0, 0, -1, S, S);
+    const o = order().find(x => x.id === P.id), H = o ? o.hue : 210, a = appById(P.id);
+    let g = c.createLinearGradient(0, 0, 0, S); g.addColorStop(0, hsl(H, 38, 27)); g.addColorStop(1, hsl(H, 44, 13));
+    c.fillStyle = g; c.fillRect(0, 0, S, S);
+    const side = Math.round(0.78 * S), x0 = Math.round(0.11 * S), y0 = Math.round(0.06 * S), rad = 0.04 * S;
+    c.save(); c.beginPath(); c.roundRect(x0, y0, side, side, rad); c.clip();
+    c.fillStyle = hsl(H, 30, 15); c.fillRect(x0, y0, side, side);
+    if (a && (a === CHESS_APP || a.drawIcon)) c.drawImage(_appIconDraw(a, side), x0, y0, side, side);
+    else if (a) {
+      let gr = null; try { gr = a.cellGrid && a.cellGrid(3, 5); } catch {}
+      if (gr && gr.colors && gr.n > 1 && gr.colors.length >= gr.n * gr.n){
+        const n = gr.n, t = side / n;
+        for (let i = 0; i < n * n; i++){ c.fillStyle = cssOf(gr.colors[i]); c.fillRect(x0 + (i % n) * t, y0 + Math.floor(i / n) * t, t + 0.5, t + 0.5); }
+      } else {
+        c.fillStyle = hsl(H, 40, 34); c.fillRect(x0, y0, side, side);
+        c.fillStyle = 'rgba(255,255,255,0.85)'; c.font = 'bold ' + Math.round(side * 0.55) + 'px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(titleOf(a).charAt(0), x0 + side / 2, y0 + side * 0.54);
+      }
+    }
+    c.restore();
+    c.strokeStyle = 'rgba(255,255,255,0.22)'; c.lineWidth = Math.max(1, S / 256); c.beginPath(); c.roundRect(x0, y0, side, side, rad); c.stroke();
+    // the name, along the foot, as large as fits
+    const name = a ? titleOf(a) : P.id, family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
+    let fs = Math.round(0.082 * S);
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#f3ead6';
+    for (; fs > 0.045 * S; fs--){ c.font = 'bold ' + fs + 'px ' + family; if (c.measureText(name).width <= 0.86 * S) break; }
+    c.fillText(name, S / 2, y0 + side + (S - y0 - side) / 2 + 1);
+    return cv;
+  }
+  const PIC = BOARD_KIT.painted(160, (P, hi) => paint(P, hi)), HIRES = new Map();
+  function photoKey(c, r, bp){
+    const s = slotAt(c, r); if (!s) return null;
+    const k = BOARD_KIT.gkey(c, r); let hi = HIRES.get(k) || false;
+    if (bp > HI_PX * 1.1) hi = true; else if (bp < HI_PX * 0.9) hi = false;      // (a band, so a board on the line does not flip between the two)
+    if (hi) HIRES.set(k, true); else HIRES.delete(k);
+    return PIC.key('home:' + s.id, hi, () => ({ id: s.id }));
+  }
+  // the picker's own thumbnail: a few boards of hues, the home of them
+  function iconMosaic(ctx, S){
+    ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, S, S);
+    const t = S / 3, m = S * 0.04;
+    for (let i = 0; i < 9; i++){ ctx.fillStyle = hsl((i * 137.508) % 360, 45, 38); ctx.fillRect((i % 3) * t + m, Math.floor(i / 3) * t + m, t - 2 * m, t - 2 * m); }
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(t + m * 2, t + m * 2, t - 4 * m, t - 4 * m);
+  }
+
+  const app = {
+    name: 'home',
+    isHome: true,
+    menu: [{ head: 'Home', items: [
+      { label: 'Open the game on this board', title: 'The game whose board is in the middle of the view opens on its first board, as a tap on that board does.',
+        on(){ const f = framedCell(), id = f && idAt(f.c, f.r); if (id) openGame(id); } },
+    ]}],
+    cellFar: { light: VOID, dark: VOID },
+    faceMinPx: 1,
+    photoMinPx: PHOTO_PX,
+    itemGeometries: {},
+    cellItems(){ return []; },
+    cellPhoto(c, r, bp){ return photoKey(c, r, bp || 0); },
+    photoCanvas(key){ return PIC.canvas(key); },
+    // (a board too small for its picture, or past the block: its game's hue, or the bare field)
+    cellGrid(c, r){ const s = slotAt(c, r); return { n: 1, colors: [s ? hexOf(s.hue, 38, 24) : VOID] }; },
+    cellTitle(c, r){ const s = slotAt(c, r); return s ? s.title + ' — tap this board, or double tap any board, to play it' : 'Home'; },
+    onCellTap(c, r){ const id = idAt(c, r); if (id) openGame(id); return true; },
+    startOnDouble(c, r){ const id = idAt(c, r); if (id) openGame(id); },
+    // coming here from a game (the picker, the menu) or at the page's start: the view goes to that game's board
+    onEnter(prev){
+      const id = prev && prev !== app && prev.id ? prev.id : LAST, at = id && slotOf(id);
+      LAST = null;
+      if (at){ try { gotoCell(at[0], at[1]); settleCameraNow(); } catch {} }
+    },
+    // the page's start: the game last played (its name, as the field keeps it) is where Home arrives
+    rememberLast(name){ const a = name && (window.FIELD_APPS || []).find(x => String(x.name || '') === name && x !== app); LAST = a ? a.id : null; },
+    iconMosaic,
+    // the bottom row's tile for a board: that game's own board
+    drawIcon(ctx, sz, c, r, h){
+      const hh = h || sz, id = idAt(c, r), a = id && appById(id);
+      ctx.fillStyle = '#0b0d12'; ctx.fillRect(0, 0, sz, hh);
+      if (!a) return;
+      const side = Math.min(sz, hh);
+      ctx.drawImage(_appIconDraw(a, Math.max(8, Math.round(side))), (sz - side) / 2, (hh - side) / 2, side, side);
+    },
+    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, COLS, appById, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
+
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, HOME_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -63198,12 +64057,12 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
  [CONNECT4_APP, 'connectfour'], [LOA_APP, 'linesofaction'],
- [ATAXX_APP, 'ataxx'], [LEVELS_APP, 'levels'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
+ [ATAXX_APP, 'ataxx'], [LEVELS_APP, 'levels'], [HOME_APP, 'home'], [GALLERY_APP, 'gallery']].forEach(([a, id]) => { a.id = id; });
 SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own share link, Oct 13)
 /* WHICH BOARDS ARE COMPLETED (Nov 1: "double clicking a completed board should reset it."): the games whose finished board a tap plays
    again say when a board's game is over, by their own state, so the field can offer a double tap there the same (`gameDone`, read in
@@ -63726,6 +64585,7 @@ function _defaultFitSoon(app){
 }
 for (const ev of ['pointerdown', 'wheel', 'keydown']) addEventListener(ev, () => { _defFitArmed++; }, true);
 window.setFieldApp = app => {
+  const _prev = FIELD_APP;
   try { window.__boardLock && window.__boardLockSet && window.__boardLockSet(false); } catch {}   // (another app: the lock lets go, Oct 31)
   // (the app being left may put back what it changed for its own view: Levels its tilt, Oct 13)
   try { if (FIELD_APP && FIELD_APP !== app && FIELD_APP.onLeave) FIELD_APP.onLeave(); } catch {}
@@ -63817,7 +64677,8 @@ window.setFieldApp = app => {
      exactly why this is the only line needed. Written AFTER the switch has
      succeeded, so a throw on the way through does not record a place the
      field never actually reached. */
-  try { localStorage.setItem(FIELD_APP_KEY, String(FIELD_APP.name || '')); } catch {}
+  try { if (!FIELD_APP.isHome) localStorage.setItem(FIELD_APP_KEY, String(FIELD_APP.name || '')); } catch {}   // (Home is not a game you were in: the last game stays what it was)
+  try { if (FIELD_APP.onEnter) FIELD_APP.onEnter(_prev); } catch (e){ console.warn('[field] onEnter', e); }   // (an app may take the view somewhere as it comes forward: Home, to the game just left, Nov 7)
 };
 window.getFieldApp = () => FIELD_APP;
 /* ═══ AND OPENED THERE NEXT TIME ══════════════════════════════════════════
@@ -63837,12 +64698,12 @@ function restoreLastApp(named){
   if (named) return null;                       // you asked for one: that is the answer
   let want = null;
   try { want = localStorage.getItem(FIELD_APP_KEY); } catch {}
-  if (!want) return null;
-  const app = (window.FIELD_APPS || []).find(a => String(a.name || '') === want);
-  if (!app || app === FIELD_APP) return null;
-  try { window.setFieldApp(app); } catch (e){ console.warn('[field] could not reopen ' + want, e); return null; }
-  return app;
+  /* THE PAGE OPENS ON HOME (Nov 7: "how about a home page, that shows all games as a board"), framed on the board of the game you were
+     last in, so that game is one tap away; this used to open that game itself. */
+  try { HOME_APP.rememberLast(want); window.setFieldApp(HOME_APP); } catch (e){ console.warn('[field] could not open home', e); return null; }
+  return HOME_APP;
 }
+window.__restoreLastApp = restoreLastApp;       // (for the tests)
 /* Apps call this after their state changes so the board browser's icons and
    titles redraw (a move was played, content updated, etc.). */
 window.refreshFieldBrowser = () => { try { rebuildBoardBrowser(); } catch {} };
@@ -64935,7 +65796,8 @@ const LAB = window.LAB = { fovWide: 60, fovCapH: 75, pitchMin: 35, groutDissolve
    Built from FIELD_APPS rather than written out, so registering an app is
    still one line and the menu follows. */
 // The apps as the menus list them: by title (Sep 28: "sort the application menu by title").
-const _appsByTitle = () => (window.FIELD_APPS || []).slice().sort((a, b) => _appLabel(a).localeCompare(_appLabel(b)));
+// (Home first, Nov 7: "a home page"; the rest by title)
+const _appsByTitle = () => (window.FIELD_APPS || []).slice().sort((a, b) => (b.isHome ? 1 : 0) - (a.isHome ? 1 : 0) || _appLabel(a).localeCompare(_appLabel(b)));
 function _appLabel(a){
   // "field lines of action" → "Lines of action". The apps name themselves
   // for the console; the menu wants them in a sentence.
@@ -65061,6 +65923,8 @@ function _appIconDraw(a, S){
         ctx.beginPath(); ctx.arc((c + 0.5) * t, (r + 0.5) * t, t * 0.32, 0, Math.PI * 2); ctx.fill();
       }
     }
+  } else if (a && a.iconMosaic){
+    try { a.iconMosaic(ctx, S); } catch {}                // (Home's: its own boards, not the one at (3, 5))
   } else if (a && a.drawIcon){
     try { a.drawIcon(ctx, S, 3, 5, S); } catch {}
   }
@@ -65092,6 +65956,38 @@ function _appThumb(a, on){
   paint();
   cv._paintIcon = () => { if (!_APP_ICONS.has(a)) _APP_ICONS.set(a, _appIconDraw(a, S)); paint(); };
   return cv;
+}
+/* OPENING AN APP: the one way every route in takes (the application picker, Home's boards). `at` is a board to go to once it is open (Home
+   opens a game on its first board, [0, 0]); the picker leaves the view where it was. */
+function openApp(a, at){
+  try { window.setFieldApp(a); } catch {}
+  try { syncAppSelect(); } catch {}
+  if (at){ try { gotoCell(at[0], at[1]); settleCameraNow(); } catch {} }
+  /* PICKING THE GALLERY WITH NOTHING IN IT ASKS FOR SOMETHING TO SHOW.
+     Every other app arrives with a field already full — its own boards,
+     playing themselves. The gallery arrives empty, so choosing it landed
+     you on a hundred million blank cells and the next move was to find
+     the Open chip and do the thing you had just said you wanted.
+     The same door as that chip, not a second one: #openBtn's handler owns
+     the file input, and this clicks it. It has to happen inside this click
+     to count as a user gesture — a file dialog opened from a timer is one
+     browsers refuse.
+     ONLY WHEN IT HAS NOTHING OF YOURS. Coming back to a gallery that is
+     holding your pictures is coming back to look at them, and a modal file
+     dialog over the top of that is an interruption, not an offer.
+     "Nothing of yours" is NOT an empty list: the gallery opens seeded with
+     flat colour prints so the field has something to hang, so it is never
+     empty and the first version of this test never fired. `_seeded` is the
+     flag that already knew, and every real pour clears it. */
+  try {
+    /* THE GALLERY, BY IDENTITY — not "any app with fabricCellAt". That was
+       the test, and fabricCellAt only means "every cell holds a different
+       picture", which is true of the generated world too: choosing it
+       opened a file dialog over a world that needs no files. An app is the
+       one that wants pictures or it is not, and there is exactly one. */
+    if (a === GALLERY_APP && (a._seeded || !(a._list && a._list.length)))
+      document.getElementById('openBtn')?.click();
+  } catch {}
 }
 function openAppPicker(){
   const prev = document.getElementById('appPicker');
@@ -65154,33 +66050,7 @@ function openAppPicker(){
     row.addEventListener('click', () => {
       close();
       if (a === cur) return;                   // already there: a press is not a reload
-      try { window.setFieldApp(a); } catch {}
-      try { syncAppSelect(); } catch {}
-      /* PICKING THE GALLERY WITH NOTHING IN IT ASKS FOR SOMETHING TO SHOW.
-         Every other app arrives with a field already full — its own boards,
-         playing themselves. The gallery arrives empty, so choosing it landed
-         you on a hundred million blank cells and the next move was to find
-         the Open chip and do the thing you had just said you wanted.
-         The same door as that chip, not a second one: #openBtn's handler owns
-         the file input, and this clicks it. It has to happen inside this click
-         to count as a user gesture — a file dialog opened from a timer is one
-         browsers refuse.
-         ONLY WHEN IT HAS NOTHING OF YOURS. Coming back to a gallery that is
-         holding your pictures is coming back to look at them, and a modal file
-         dialog over the top of that is an interruption, not an offer.
-         "Nothing of yours" is NOT an empty list: the gallery opens seeded with
-         flat colour prints so the field has something to hang, so it is never
-         empty and the first version of this test never fired. `_seeded` is the
-         flag that already knew, and every real pour clears it. */
-      try {
-        /* THE GALLERY, BY IDENTITY — not "any app with fabricCellAt". That was
-           the test, and fabricCellAt only means "every cell holds a different
-           picture", which is true of the generated world too: choosing it
-           opened a file dialog over a world that needs no files. An app is the
-           one that wants pictures or it is not, and there is exactly one. */
-        if (a === GALLERY_APP && (a._seeded || !(a._list && a._list.length)))
-          document.getElementById('openBtn')?.click();
-      } catch {}
+      openApp(a);
     });
     rows.push(row);
     box.appendChild(row);
