@@ -13235,11 +13235,11 @@ function syncBrowserVisibility(){
    bar itself. This function stays because the button may be gone and the
    callers are many; it does nothing when there is nothing to update. */
 /* DOES THE APP HAVE A BOTTOM BROWSER AT ALL: something to put in the row (a game's moves, an app's tiles or quick buttons, the gallery's
-   prints), or the row already holds something. */
+   prints). Not "the row holds something now": at an app switch the row still holds the app before's tiles until it is rebuilt. */
 function bbHasRow(){
   const a = window.getFieldApp && window.getFieldApp();
   if (!a) return true;
-  return !!(bbKeys.length || a.nativePieces || a._record || a.statTiles || a.statsFirst || a.quickActs || (a._list && a._list.length));
+  return !!(a.nativePieces || a._record || a.statTiles || a.statsFirst || a.quickActs || (a._list && a._list.length));
 }
 function syncBrowserDots(){
   const h = document.getElementById('bbHandle');
