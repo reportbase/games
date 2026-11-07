@@ -52498,6 +52498,686 @@ const SUDOKU_APP = (() => {
   };
   return app;
 })();
+/* ═══ HASHI ═══════════════════════════════════════════════════════════════
+   (Nov 7: "what next game should we add", then "hashi".) Hashiwokakero, Bridges: islands on a sea carry numbers; lay bridges between
+   islands that face one another along a row or a column so that every island has exactly its number of bridges (one or two between a pair,
+   never across another bridge) and all the islands end up one group. Built the way Sudoku was, from what the other puzzles taught:
+   - EVERY BOARD ITS OWN PUZZLE, harder further out: drawn from the board's number (boardIdx, golf's Szudzik pairing) and its level, 1 to 5,
+     the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2). A level (LV) is a grid (7, 9, 11, 13, 15 squares a side, 9 to 50
+     islands) and a grade of what a person must know: counting, crossings, loose groups, the one way out of a group, what-ifs.
+   - ONE ANSWER, RATED BY A SOLVER THAT PLAYS LIKE A PERSON (`hsRate`): a layout is grown (islands out of islands, each a bridge away, then
+     a few loops: `hsLayout`) and kept only when the human solver finishes it with no guess (so it has one answer, `hsSolve` proves it for
+     the few it cannot finish) and the hardest thing it needed is in the level's band. Each pair holds the fewest and most bridges it can
+     still take; a technique is one sweep, easiest first, back to the easiest after any change:
+       1 counting     an island's bridges add up to its number: what it needs against what its neighbours can still give
+       2 crossings    a bridge laid shuts every pair whose line it crosses
+       3 loose groups a bridge that would close a group of full islands off from the rest is not laid
+       4 the way out  a group not yet joined to the rest with one way left must take it
+       5 what if      suppose a pair had the fewest or the most it could, follow 1 to 4, and find it cannot be
+   - THE BOARD IS THE CONTROLS (Oct 28: "you should not need to have the bottom browser open to play games"): tap two islands in turn, or
+     drag from one to the next (a drag goes on from island to island, laying a bridge at each), or tap the sea between two islands: a pair
+     goes none, one, two, none. An island turns green when it has its number, pink when it has too many; the pairs an island could still
+     bridge show lit while it is selected. The play pad has Erase (the island's bridges), Undo and Hint; the keys do all of it too.
+   - Faults and stars as Sudoku's: a bridge laid that the answer does not have, or a press of Hint (the first lights the pair the next
+     logical step finds and names the technique, the second lays it). None ★★★, one or two ★★, more ★; the best on a board is kept.
+   - A board no one is playing lays its own bridges, one at a time in the order the human solver found them, holds the finished sea, and
+     starts again, each board at its own phase.
+   - Solved, a tap plays it again where it is. */
+const HASHI_APP = (() => {
+  const BAND = 0x1b2130, BAND2 = 0x232b3d, SEA = 0x2c6f93, SEA2 = 0x286586, DONE = 0x3f9a86;
+  const SAND = 0xe8d8a2, RIM = 0x8d7a49, FULLC = 0xb9e3a4, OVERC = 0xf0b3a8, SELC = 0xf6d96b, HINTC = 0x93cff2, PEER = 0x8fc1e8;
+  const PLANK = 0xf3e4b8, BADB = 0xd8483a, HINTB = 0xcfeeff, INK = 0x1c2230, FULLINK = 0x1d4a22, OVERINK = 0x7a1f14, CREAM = 0xf3ead6, WRONG = 0xc23b2a;
+  const DL = ARCADE.difficulty('hashi.level', 'Every board deals its own islands, harder the farther it is from the corner: a small sea that counting alone solves, then bigger ones that want crossings, loose groups and the one way out, and last what-ifs. Easy, Normal and Hard move every board a level up.', true);
+  const SND = ARCADE.sounds('hashi.sound', 'A tick for each bridge, a chime when an island has its number, a buzz for a bridge that is wrong, a fanfare for the sea.');
+  const say = BOARD_KIT.say(3000);
+  const gkey = BOARD_KIT.gkey;
+  const boardIdx = BOARD_KIT.boardIdx;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const rngOf = BOARD_KIT.rng;
+  const clock = () => performance.now() / 1000;
+  const mix = (a, b, t) => FieldKit.mixInt(a, b, t);
+  const clamp = BOARD_KIT.clamp;
+  // a level: the grid's side, the islands it may have (fewest, most), how its layout is drawn (`o`: the share of pairs given two bridges,
+  // of loose neighbours joined for loops, the longest bridge, the share of islands grown off the last), the technique grades a puzzle
+  // may need (1 counting … 5 what-ifs), at least `ifs` what-ifs, and how many layouts to try before taking the nearest
+  const LV = [
+    { N: 7,  K: [8, 10],  o: { p2: 0.35, extra: 0.2,  reach: 5, last: 0.3 }, grade: [1, 2], tries: 60 },
+    { N: 9,  K: [14, 17], o: { p2: 0.3,  extra: 0.2,  reach: 6, last: 0.3 }, grade: [2, 3], tries: 60 },
+    { N: 11, K: [22, 26], o: { p2: 0.3,  extra: 0.2,  reach: 7, last: 0.3 }, grade: [3, 3], tries: 80 },
+    { N: 13, K: [32, 38], o: { p2: 0.25, extra: 0.2,  reach: 7, last: 0.3 }, grade: [3, 5], tries: 80 },
+    { N: 15, K: [44, 50], o: { p2: 0.25, extra: 0.15, reach: 6, last: 0.3 }, grade: [5, 5], ifs: 2, tries: 120 },
+  ];
+  const HARD = ['', 'counting alone', 'counting and crossings', 'loose groups', 'a way out', 'what-ifs'];
+  const HS_TECH = ['', 'counting what an island still needs', 'a crossing', 'a loose group', 'the only way out of its group', 'a what-if (suppose not, and it breaks)'];
+
+  /* HASHI CORE START: pure (no page, no kits: the generator is passed in), so a probe can run it in node. */
+  // The shape of a puzzle: islands [{x, y, n}] on an N-square grid. Two islands are NEIGHBOURS when they are next to each other along
+  // a row or a column (no island between, and never side by side: a bridge needs a square to lie on). An EDGE is such a pair, with
+  // the squares between them (`cells`), the edges it would cross (`cross`) and, for each island, its edges (`by`).
+  function hsGraph(N, isl){
+    const K = isl.length, islAt = new Int16Array(N * N).fill(-1);
+    isl.forEach((s, i) => { islAt[s.y * N + s.x] = i; });
+    const E = [], by = isl.map(() => []), eH = new Int16Array(N * N).fill(-1), eV = new Int16Array(N * N).fill(-1);
+    const add = (a, b, h) => {
+      const A = isl[a], B = isl[b], cells = [], e = E.length;
+      if (h){ for (let x = A.x + 1; x < B.x; x++){ cells.push(A.y * N + x); eH[A.y * N + x] = e; } }
+      else { for (let y = A.y + 1; y < B.y; y++){ cells.push(y * N + A.x); eV[y * N + A.x] = e; } }
+      E.push({ a, b, h, cells, x1: A.x, y1: A.y, x2: B.x, y2: B.y, cross: [] }); by[a].push(e); by[b].push(e);
+    };
+    for (let y = 0; y < N; y++){ let p = -1; for (let x = 0; x < N; x++){ const i = islAt[y * N + x]; if (i < 0) continue; if (p >= 0 && isl[p].x < x - 1) add(p, i, true); p = i; } }
+    for (let x = 0; x < N; x++){ let p = -1; for (let y = 0; y < N; y++){ const i = islAt[y * N + x]; if (i < 0) continue; if (p >= 0 && isl[p].y < y - 1) add(p, i, false); p = i; } }
+    for (let e = 0; e < E.length; e++) if (E[e].h) for (let f = 0; f < E.length; f++){
+      const H = E[e], V = E[f];
+      if (!V.h && V.x1 > H.x1 && V.x1 < H.x2 && H.y1 > V.y1 && H.y1 < V.y2){ H.cross.push(f); V.cross.push(e); }
+    }
+    return { N, K, E, by, islAt, eH, eV };
+  }
+  // every bridge a pair may take: 2, and never more than either island's number
+  const hsStart = (G, n) => { const lo = new Int8Array(G.E.length), hi = G.E.map(e => Math.min(2, n[e.a], n[e.b])); return { lo, hi: Int8Array.from(hi) }; };
+
+  /* THE HUMAN SOLVER. Each edge holds the fewest and most bridges it can still take (lo, hi: 0, 1 or 2). A technique is one sweep of
+     what a person sees at a glance, easiest first; the solver goes back to the easiest after every change, so the grade of a puzzle
+     is the hardest technique it could not do without:
+       1 counting     an island's bridges must add up to its number: what it still needs against what its neighbours can still give
+       2 crossings    a bridge laid shuts every pair whose line it crosses
+       3 loose groups a bridge that would close a group of islands off from the rest, all full, is not laid
+       4 the way out  a group not yet joined to the rest that has one way left to reach it must take it
+       5 what if      suppose a pair has the fewest or the most it could, follow 1 to 4, and find it cannot be: it has the other
+     `log(e, v, tier)` is told each time an edge's lo goes up (a bridge laid). Returns false on a contradiction. */
+  function hsStep1(G, n, lo, hi, log){
+    let changed = false;
+    for (let i = 0; i < G.K; i++){
+      const L = G.by[i]; let sl = 0, sh = 0;
+      for (const e of L){ sl += lo[e]; sh += hi[e]; }
+      if (sl > n[i] || sh < n[i]) return -1;
+      for (const e of L){
+        const nl = n[i] - (sh - hi[e]), nh = n[i] - (sl - lo[e]);
+        if (nl > lo[e]){ lo[e] = nl; changed = true; if (log) log(e, nl, 1); }
+        if (nh < hi[e]){ hi[e] = nh; changed = true; }
+        if (lo[e] > hi[e]) return -1;
+      }
+    }
+    return changed ? 1 : 0;
+  }
+  function hsStep2(G, n, lo, hi){
+    let changed = false;
+    for (let e = 0; e < G.E.length; e++) if (lo[e] > 0) for (const f of G.E[e].cross){
+      if (lo[f] > 0) return -1;
+      if (hi[f] > 0){ hi[f] = 0; changed = true; }
+    }
+    return changed ? 1 : 0;
+  }
+  // the groups the bridges laid so far make (union-find), each island's need, and per group its size and how many islands still need
+  function hsGroups(G, n, lo){
+    const K = G.K, p = new Int16Array(K), rem = new Int8Array(K), size = new Int16Array(K), bad = new Int16Array(K);
+    for (let i = 0; i < K; i++) p[i] = i;
+    const find = x => { while (p[x] !== x){ p[x] = p[p[x]]; x = p[x]; } return x; };
+    for (let i = 0; i < K; i++){ let s = 0; for (const e of G.by[i]) s += lo[e]; rem[i] = n[i] - s; }
+    for (let e = 0; e < G.E.length; e++) if (lo[e] > 0){ const a = find(G.E[e].a), b = find(G.E[e].b); if (a !== b) p[a] = b; }
+    for (let i = 0; i < K; i++){ const r = find(i); size[r]++; if (rem[i] > 0) bad[r]++; }
+    return { find, rem, size, bad };
+  }
+  function hsStep3(G, n, lo, hi){
+    const K = G.K, g = hsGroups(G, n, lo); let changed = false;
+    for (let i = 0; i < K; i++){ const r = g.find(i); if (g.size[r] < K && g.bad[r] === 0) return -1; }
+    for (let e = 0; e < G.E.length; e++){
+      if (hi[e] <= lo[e]) continue;
+      const i = G.E[e].a, j = G.E[e].b, ri = g.find(i), rj = g.find(j), nI = g.rem[i] > 0 ? 1 : 0, nJ = g.rem[j] > 0 ? 1 : 0;
+      // the islands of the group (or two groups) the pair would join, but for its two ends, must all be full already
+      const others = ri === rj ? g.bad[ri] - nI - nJ : g.bad[ri] - nI + g.bad[rj] - nJ, total = ri === rj ? g.size[ri] : g.size[ri] + g.size[rj];
+      if (others !== 0 || total >= K) continue;
+      for (let v = lo[e] + 1; v <= hi[e]; v++) if (g.rem[i] === v - lo[e] && g.rem[j] === v - lo[e]){ hi[e] = v - 1; changed = true; break; }   // (rem is with what the pair has already)
+    }
+    return changed ? 1 : 0;
+  }
+  function hsStep4(G, n, lo, hi, log){
+    const K = G.K, g = hsGroups(G, n, lo), cnt = new Int16Array(K), last = new Int16Array(K).fill(-1); let changed = false;
+    for (let e = 0; e < G.E.length; e++){
+      if (hi[e] < 1) continue;
+      const a = g.find(G.E[e].a), b = g.find(G.E[e].b);
+      if (a === b) continue;
+      cnt[a]++; last[a] = e; cnt[b]++; last[b] = e;
+    }
+    for (let i = 0; i < K; i++) if (g.find(i) === i && g.size[i] < K){
+      if (cnt[i] === 0) return -1;
+      if (cnt[i] === 1 && lo[last[i]] === 0){ lo[last[i]] = 1; changed = true; if (log) log(last[i], 1, 4); }
+    }
+    return changed ? 1 : 0;
+  }
+  const HS_STEPS = [null, hsStep1, hsStep2, hsStep3, hsStep4];
+  // one to four, easiest first, back to the easiest after any change; `tier` is the hardest allowed. `note(t)` hears of each technique
+  // that changed something. false on a contradiction.
+  function hsProp(G, n, lo, hi, tier, log, note){
+    for (;;){
+      let t = 1;
+      for (; t <= tier; t++){
+        const r = HS_STEPS[t](G, n, lo, hi, log ? (e, v) => log(e, v, t) : null);
+        if (r < 0) return false;
+        if (r > 0){ if (note) note(t); break; }
+      }
+      if (t > tier) return true;
+    }
+  }
+  const hsSolved = (G, lo, hi) => { for (let e = 0; e < lo.length; e++) if (lo[e] !== hi[e]) return false; return true; };
+  /* hsRate: the human solver on a puzzle from `lo0` (the bridges already laid, or none). Returns { solved, level (the hardest
+     technique used, 1 to 5; 6 if it stalled), steps (the bridges laid, in order: { e, v, tier }), lo, hi, work }. `tier` 4 stops
+     before what-ifs. A what-if is tried only when 1 to 4 have nothing: each edge's fewest and most in turn; the first that
+     cannot be is dropped, then 1 to 4 again. */
+  function hsRate(G, n, tier, lo0, firstOnly){
+    const S = hsStart(G, n), lo = S.lo, hi = S.hi, steps = [];
+    if (lo0) for (let e = 0; e < lo.length; e++) if (lo0[e] > lo[e]) lo[e] = Math.min(lo0[e], hi[e]);
+    let level = 1, work = 0, ifs = 0;
+    const log = (e, v, t) => { steps.push({ e, v, tier: t }); if (t > level) level = t; };
+    const note = t => { if (t > level) level = t; };
+    const base = () => hsProp(G, n, lo, hi, 4, log, note);
+    let ok = base();
+    while (ok && !hsSolved(G, lo, hi) && !(firstOnly && steps.length)){
+      if ((tier || 5) < 5) break;
+      let found = false;
+      for (let e = 0; e < lo.length && !found; e++){
+        if (lo[e] >= hi[e]) continue;
+        for (const side of [0, 1]){
+          const l2 = Int8Array.from(lo), h2 = Int8Array.from(hi);
+          if (side === 0) h2[e] = lo[e]; else l2[e] = hi[e];
+          work++;
+          if (!hsProp(G, n, l2, h2, 4, null)){
+            // that cannot be: the edge takes the other side
+            if (side === 0){ lo[e]++; steps.push({ e, v: lo[e], tier: 5 }); } else hi[e]--;
+            level = Math.max(level, 5); found = true; ifs++; break;
+          }
+        }
+      }
+      if (!found) break;
+      ok = base();
+    }
+    return { solved: ok && hsSolved(G, lo, hi), ok, level: ok && hsSolved(G, lo, hi) ? level : 6, steps, lo, hi, work, ifs };
+  }
+  /* hsSolve: how many answers a puzzle has, up to `limit`, by propagating 1 to 4 and branching on an undecided edge. */
+  function hsSolve(G, n, limit){
+    const S = hsStart(G, n); let count = 0, first = null, nodes = 0;
+    const rec = (lo, hi) => {
+      if (count >= limit) return;
+      nodes++;
+      if (!hsProp(G, n, lo, hi, 4, null)) return;
+      let best = -1, bs = 99;
+      for (let e = 0; e < lo.length; e++) if (lo[e] < hi[e]){ const s = hi[e] - lo[e]; if (s < bs){ bs = s; best = e; } }
+      if (best < 0){ count++; if (!first) first = Int8Array.from(lo); return; }
+      for (let v = hi[best]; v >= lo[best]; v--){
+        const l2 = Int8Array.from(lo), h2 = Int8Array.from(hi); l2[best] = v; h2[best] = v;
+        rec(l2, h2);
+        if (count >= limit) return;
+      }
+    };
+    rec(S.lo, S.hi);
+    return { count, sol: first, nodes };
+  }
+  /* hsLayout: a random puzzle solution. Islands grow out of one another: each new one a bridge away (2 to `reach` squares) from an
+     island with nothing yet that way, on squares no bridge lies on and not beside another island; then pairs of neighbours that can
+     be joined are, now and then (loops). The numbers are what each island ends up with. `R` is a generator of [0, 1). */
+  function hsLayout(N, K, R, o){
+    const occ = new Int16Array(N * N).fill(-1), br = new Uint8Array(N * N), isl = [], ed = [];
+    const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
+    const beside = (x, y, skip) => { for (let d = 0; d < 4; d++){ const X = x + DX[d], Y = y + DY[d]; if (X >= 0 && Y >= 0 && X < N && Y < N && occ[Y * N + X] >= 0 && occ[Y * N + X] !== skip) return true; } return false; };
+    const put = (x, y) => { occ[y * N + x] = isl.length; isl.push({ x, y, n: 0 }); return isl.length - 1; };
+    put(1 + Math.floor(R() * (N - 2)), 1 + Math.floor(R() * (N - 2)));
+    let fails = 0;
+    while (isl.length < K && fails < 600){
+      const a = o.last && R() < o.last ? isl.length - 1 : Math.floor(R() * isl.length), d = Math.floor(R() * 4), A = isl[a];
+      let m = 0;
+      while (true){ const X = A.x + DX[d] * (m + 1), Y = A.y + DY[d] * (m + 1); if (X < 0 || Y < 0 || X >= N || Y >= N || occ[Y * N + X] >= 0 || br[Y * N + X]) break; m++; }
+      const reach = Math.min(m, o.reach);
+      if (reach < 2){ fails++; continue; }
+      const L = 2 + Math.floor(R() * (reach - 1)), x = A.x + DX[d] * L, y = A.y + DY[d] * L;
+      if (beside(x, y, -1)){ fails++; continue; }
+      const b = put(x, y), mult = R() < o.p2 ? 2 : 1;
+      for (let k = 1; k < L; k++) br[(A.y + DY[d] * k) * N + A.x + DX[d] * k] = d % 2 ? 2 : 1;
+      ed.push([a, b, mult]);
+    }
+    // loops: neighbours not yet joined whose squares between are free
+    const G = hsGraph(N, isl), have = new Set(ed.map(e => Math.min(e[0], e[1]) * 4096 + Math.max(e[0], e[1])));
+    for (let e = 0; e < G.E.length; e++){
+      const E = G.E[e];
+      if (have.has(Math.min(E.a, E.b) * 4096 + Math.max(E.a, E.b))) continue;
+      if (R() >= o.extra || E.cells.some(c => br[c])) continue;
+      for (const c of E.cells) br[c] = E.h ? 1 : 2;
+      ed.push([E.a, E.b, R() < o.p2 ? 2 : 1]);
+    }
+    for (const [a, b, m] of ed){ isl[a].n += m; isl[b].n += m; }
+    return { isl, ed };
+  }
+  /* hsMake: a puzzle for a level D = { N, K: [fewest, most] islands, o: layout options, grade: [easiest, hardest] technique it must
+     need, ifs (what-ifs at least), tries }. Layouts are drawn until one has ONE answer (the human solver finds it, or the backtracking solver proves it) and
+     needs a technique in the band; the first such is kept, else the nearest of the `tries`. Paced: with `ms`, a job (`hsJob`) is carried
+     on from where it got to and { pending: job } comes back until it is made. */
+  const hsJob = R => ({ R, k: 0, best: null, bd: 99 });
+  function hsMake(D, R, job, ms){
+    const J = job || hsJob(R), t0 = performance.now();
+    for (;;){
+      const rnd = J.R, k = D.K[0] + Math.floor(rnd() * (D.K[1] - D.K[0] + 1)), L = hsLayout(D.N, k, rnd, D.o);
+      const G = hsGraph(D.N, L.isl), n = L.isl.map(s => s.n), rt = hsRate(G, n, 5);
+      let level = 0, sol = null;
+      if (rt.solved){ level = rt.level; sol = rt.lo; }
+      else { const s = hsSolve(G, n, 2); if (s.count === 1){ level = 6; sol = s.sol; } }
+      J.k++;
+      if (level){
+        let d = level < D.grade[0] ? D.grade[0] - level : level > D.grade[1] ? level - D.grade[1] : 0;
+        if (!d && D.ifs && (rt.ifs || 0) < D.ifs) d = 1;      // (a level asking for what-ifs wants that many of them)
+        if (d < J.bd){ J.bd = d; J.best = { isl: L.isl, G, n, level, rt, sol, ifs: rt.ifs || 0, tries: J.k }; }
+        if (d === 0) break;
+      }
+      if (J.k >= D.tries && J.best) break;
+      if (J.k >= D.tries * 8) break;
+      if (ms != null && performance.now() - t0 > ms) return { pending: J };
+    }
+    const b = J.best; b.tries = J.k; b.miss = J.bd;
+    return b;
+  }
+  /* HASHI CORE END */
+
+  /* ─── THE BOARDS' PUZZLES ─── made on first want and kept (the latest CAP); a board only looked at gets its puzzle a few at a time. */
+  const PUZZLES = new Map(), CAP = 1500;
+  const seedOf = (idx, lv) => (idx * 2246822519) ^ (lv * 40503) ^ 0x4a51;
+  // the steps the solver took, one bridge at a time (a jump of two is two), then whatever it did not reach (a puzzle it stalled on) in
+  // pair order, so a board no one plays still ends up whole
+  function finishPuzzle(idx, lv, D, q){
+    const G = q.G, E = G.E, sol = Int8Array.from(q.sol), cur = new Int8Array(E.length), order = [], pair = new Map();
+    for (const s of q.rt.steps) while (cur[s.e] < s.v){ cur[s.e]++; order.push({ e: s.e, v: cur[s.e], tier: s.tier }); }
+    for (let e = 0; e < E.length; e++) while (cur[e] < sol[e]){ cur[e]++; order.push({ e, v: cur[e], tier: 9 }); }
+    E.forEach((X, e) => { pair.set(X.a * 4096 + X.b, e); pair.set(X.b * 4096 + X.a, e); });
+    return { idx, lv, D, N: D.N, M: D.N + 2, isl: q.isl, G, K: q.isl.length, n: q.n, E, sol, order, pair, level: q.level, ifs: q.ifs, tries: q.tries, miss: q.miss, phase: BOARD_KIT.phase(idx) };
+  }
+  // (`job`, `ms`: see hsMake; returns { pending: job } while a paced make is not done)
+  function makePuzzle(idx, lv, job, ms){
+    const D = LV[lv - 1], q = hsMake(D, rngOf(seedOf(idx, lv)), job, ms);
+    return q.pending ? q : finishPuzzle(idx, lv, D, q);
+  }
+  function puzzleFor(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv;
+    let P = PUZZLES.get(key);
+    if (P){ PUZZLES.delete(key); PUZZLES.set(key, P); return P; }
+    JOBS.delete(key);
+    P = makePuzzle(idx, lv);
+    PUZZLES.set(key, P); if (PUZZLES.size > CAP) PUZZLES.delete(PUZZLES.keys().next().value);
+    return P;
+  }
+  /* Boards only looked at get their puzzle a few milliseconds a frame (the boards' share of time): a level 5 takes 30 ms on average and
+     more at worst, all in one go a visible stop, but it is a layout a millisecond or so, so a job is carried on from where it got to
+     (JOBS) and the board is bare sea till it is made. The board you play is made at once. */
+  const SOON = BOARD_KIT.budget(8), JOBS = new Map();
+  function puzzleSoon(c, r){
+    const idx = boardIdx(c, r), lv = levelAt(idx), key = idx * 8 + lv, P = PUZZLES.get(key);
+    if (P) return P;
+    SOON.take(left => {
+      const job = JOBS.get(key) || hsJob(rngOf(seedOf(idx, lv))), q = makePuzzle(idx, lv, job, Math.min(left, 8));
+      if (q.pending) JOBS.set(key, q.pending);
+      else { JOBS.delete(key); PUZZLES.set(key, q); if (PUZZLES.size > CAP) PUZZLES.delete(PUZZLES.keys().next().value); }
+    });
+    return PUZZLES.get(key) || null;
+  }
+  // (for the tests: a puzzle made `ms` at a time as a board looked at is, and how many goes it took)
+  function makePaced(idx, lv, ms){
+    const job = hsJob(rngOf(seedOf(idx, lv)));
+    let q, calls = 0;
+    do { q = makePuzzle(idx, lv, job, ms); calls++; } while (q.pending);
+    return { P: q, calls };
+  }
+
+  /* ─── THE BOARD'S LAYOUT ─── M = N + 2 squares across: the sea inside a margin of one; the far margin (row 0) holds the level's dots,
+     the clock and the strikes. An island is one square; a pair's bridge lies on the squares between. */
+  const centre = (P, x, y) => [(1 + x + 0.5) / P.M, (1 + y + 0.5) / P.M];
+  const islC = (P, i) => centre(P, P.isl[i].x, P.isl[i].y);
+  // what a point of the board is: an island, a square a pair's bridge would lie on (`b`, the bridges laid, says which of two crossing
+  // pairs is meant when one has a bridge; else the line nearer the point), the sea, or the margin
+  function tileAt(P, u, v, b){
+    const M = P.M, N = P.N, fx = u * M - 1, fy = v * M - 1, x = Math.floor(fx), y = Math.floor(fy);
+    if (x < 0 || y < 0 || x >= N || y >= N) return { k: 'margin' };
+    const c = y * N + x, i = P.G.islAt[c], eh = P.G.eH[c], ev = P.G.eV[c];
+    if (i >= 0) return { k: 'isl', i };
+    if (eh >= 0 || ev >= 0){
+      let e = eh >= 0 ? eh : ev;
+      if (eh >= 0 && ev >= 0){
+        if (b && b[eh] && !b[ev]) e = eh; else if (b && b[ev] && !b[eh]) e = ev;
+        else e = Math.abs(fy - y - 0.5) <= Math.abs(fx - x - 0.5) ? eh : ev;
+      }
+      return { k: 'edge', e };
+    }
+    return { k: 'sea', x, y };
+  }
+  const degsOf = (P, b) => { const d = new Uint8Array(P.K); for (let e = 0; e < P.E.length; e++) if (b[e]){ d[P.E[e].a] += b[e]; d[P.E[e].b] += b[e]; } return d; };
+  const blockedB = (P, b, e) => { for (const f of P.E[e].cross) if (b[f]) return true; return false; };
+  // the island next to island i in a board direction (0 up, 1 right, 2 down, 3 left): [island, pair] or null
+  function nbrDir(P, i, bd){
+    for (const e of P.G.by[i]){
+      const X = P.E[e], j = X.a === i ? X.b : X.a, A = P.isl[i], B = P.isl[j];
+      const d = X.h ? (B.x > A.x ? 1 : 3) : (B.y > A.y ? 2 : 0);
+      if (d === bd) return [j, e];
+    }
+    return null;
+  }
+
+  /* ─── PLAYING ─── A game: its bridges (`b`, a count a pair), the selected island, 'ready' (untouched), 'play' or 'solved', the clock
+     from the first move, the faults (`wrong` bridges laid, `hints` pressed), the hint showing, and the moves taken (`undo`, each a list
+     of [pair, what it had]). `ver` goes up at every change, so the board's tiles and pieces are made again only then. */
+  const GAMES = new Map();
+  let LIVE = null, GID = 0, DRAG = null;
+  let MISTAKES = (() => { try { return localStorage.getItem('hashi.mistakes') !== 'off'; } catch { return true; } })();
+  const setMistakes = on => { MISTAKES = on; try { localStorage.setItem('hashi.mistakes', on ? 'on' : 'off'); } catch {} try { fieldItemsChanged(); } catch {} };
+  const { BEST, saveBest } = BOARD_KIT.best('hashi.best');
+  const bestKey = P => P.idx + '@' + P.lv;
+  const fresh = (c, r) => { const P = puzzleFor(c, r);
+    return { P, c, r, id: ++GID, b: new Uint8Array(P.E.length), sel: -1, state: 'ready', t0: 0, t: 0, wrong: 0, hints: 0, ver: 0, stars: 0, hint: null, undo: [] }; };
+  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
+  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
+  const faults = g => g.wrong + g.hints;
+  const starsOf = f => f === 0 ? 3 : f <= 2 ? 2 : 1;
+  const touch = g => { if (g.state === 'ready'){ g.state = 'play'; g.t0 = clock(); } };
+  const solvedNow = g => { const s = g.P.sol; for (let e = 0; e < s.length; e++) if (g.b[e] !== s[e]) return false; return true; };
+  const deg = (g, i) => { let d = 0; for (const e of g.P.G.by[i]) d += g.b[e]; return d; };
+  function select(g, i){ if (g.sel === i) return; g.sel = i; g.hint = null; g.ver++; }
+  // the one way a pair's bridges change (`how`: 'hint' is not a claim, so not a fault); false if nothing changed
+  function setBridge(g, e, v, quiet, how){
+    const P = g.P, old = g.b[e];
+    if (g.state === 'solved' || old === v) return false;
+    touch(g);
+    g.undo.push([[e, old]]); if (g.undo.length > 400) g.undo.shift();
+    g.b[e] = v; g.hint = null; g.ver++;
+    const wrong = v > P.sol[e];
+    if (wrong && v > old && how !== 'hint') g.wrong++;
+    if (solvedNow(g)){ finish(g, quiet); return true; }
+    if (!quiet){
+      const X = P.E[e], full = deg(g, X.a) === P.n[X.a] || deg(g, X.b) === P.n[X.b];
+      SND.play(wrong && v > old ? (MISTAKES ? 'bad' : 'tap') : v > old && full ? 'good' : 'tap');
+    }
+    return true;
+  }
+  // a tap on a pair: none, one, two, none (a pair a laid bridge crosses cannot take the first)
+  function cycle(g, e, quiet){
+    if (g.state === 'solved') return false;
+    const b = g.b[e];
+    if (b === 0 && blockedB(g.P, g.b, e)){ if (!quiet) SND.play('bad'); return false; }
+    return setBridge(g, e, (b + 1) % 3, quiet);
+  }
+  // every bridge of the selected island taken off, as one move
+  function erase(g, quiet){
+    const i = g.sel;
+    if (g.state === 'solved' || i < 0) return false;
+    const list = g.P.G.by[i].filter(e => g.b[e]).map(e => [e, g.b[e]]);
+    if (!list.length) return false;
+    touch(g); g.undo.push(list); for (const [e] of list) g.b[e] = 0; g.hint = null; g.ver++;
+    if (!quiet) SND.play('tap');
+    return true;
+  }
+  function undo(g, quiet){
+    const u = g.undo.pop();
+    if (!u || g.state === 'solved') return false;
+    for (const [e, v] of u) g.b[e] = v;
+    g.hint = null; g.ver++;
+    if (!quiet) SND.play('turn');
+    return true;
+  }
+  /* A HINT. A bridge that is wrong (more than the answer has) is found first and shown red; its press takes it down to what the answer
+     has. Else the human solver is asked from the bridges as they stand for its next step: its pair is lit pale blue with the technique
+     in the title, and a second press lays that bridge. A sea it cannot go on from (a puzzle past its techniques) lights a pair the answer
+     wants and says it is a guess. */
+  function hintOf(g){
+    const P = g.P;
+    for (let e = 0; e < P.E.length; e++) if (g.b[e] > P.sol[e]) return { e, v: P.sol[e], kind: 'wrong' };
+    const rt = hsRate(P.G, P.n, 5, g.b, true);
+    if (rt.steps.length){ const s = rt.steps[0]; return { e: s.e, v: g.b[s.e] + 1, kind: 'step', tech: s.tier }; }
+    for (let e = 0; e < P.E.length; e++) if (g.b[e] < P.sol[e]) return { e, v: g.b[e] + 1, kind: 'guess' };
+    return null;
+  }
+  function hint(g, quiet){
+    if (!g || g.state === 'solved') return null;
+    if (g.hint && g.hint.at === g.ver){            // (the second press: the bridge goes down or in)
+      const h = g.hint; g.hints++; setBridge(g, h.e, h.v, quiet, 'hint'); return h;
+    }
+    const h = hintOf(g);
+    if (!h) return null;
+    touch(g); g.hints++; g.ver++; g.hint = { ...h, at: g.ver };
+    return h;
+  }
+  function finish(g, quiet){
+    g.state = 'solved'; g.t = Math.round((clock() - g.t0) * 10) / 10; g.stars = starsOf(faults(g)); g.hint = null; g.sel = -1;
+    const k = bestKey(g.P), was = BEST.get(k), better = !was || g.stars > was[0] || (g.stars === was[0] && g.t < was[1]);
+    if (better){ BEST.delete(k); BEST.set(k, [g.stars, g.t]); saveBest(); }
+    if (!quiet) SND.play('win');
+  }
+
+  /* A board no one is playing lays its bridges: bare islands, then each bridge the human solver laid, in its order, a STEP apart, the
+     finished sea held, then the puzzle again, on the page's clock, each board at its own phase. */
+  const HOLD0 = 1.6, STEP = 0.32, HOLD1 = 3.2, FLASH_S = 0.28;
+  const cycleOf = P => HOLD0 + P.order.length * STEP + HOLD1;
+  // (`at`, seconds on the page's clock, for the tests)
+  function shownView(P, at){
+    const k = P.order.length, T = cycleOf(P), t = BOARD_KIT.loopT(P.phase, T, at);
+    const m = t < HOLD0 ? 0 : Math.min(k, Math.floor((t - HOLD0) / STEP) + 1);
+    const last = m > 0 && m < k && t - HOLD0 - (m - 1) * STEP < FLASH_S ? P.order[m - 1].e : -1, stamp = 'd' + m + '.' + last;
+    if (P._dv && P._dv.stamp === stamp) return P._dv;
+    const b = new Uint8Array(P.E.length);
+    for (let j = 0; j < m; j++) b[P.order[j].e] = P.order[j].v;
+    return (P._dv = { stamp, b, sel: -1, hint: null, last, sec: 0, solved: m >= k, g: null, m });
+  }
+  const gameView = g => {
+    const sec = g.state === 'play' ? Math.min(5999, Math.floor(clock() - g.t0)) : g.state === 'solved' ? Math.min(5999, Math.floor(g.t)) : 0;
+    return { stamp: 'g' + g.id + '.' + g.ver + g.state + (MISTAKES ? 'm' : '') + (g.state === 'play' ? '.' + sec : ''),
+             b: g.b, sel: g.sel, hint: g.hint, last: -1, sec, solved: g.state === 'solved', g };
+  };
+  // what a board shows: the game on it if it is framed or has been played, else its own puzzle laying itself
+  function viewAt(c, r, soon){
+    const live = !!LIVE && LIVE.c === c && LIVE.r === r, g0 = GAMES.get(gkey(c, r));
+    if (live || (g0 && g0.state !== 'ready')){ const g = g0 || gameAt(c, r); return { P: g.P, V: gameView(g), g, live }; }
+    const P = soon ? puzzleSoon(c, r) : puzzleFor(c, r);
+    return P ? { P, V: shownView(P), g: null, live: false } : null;
+  }
+
+  /* ─── DRAWN ─── The tiles are the board's colours (cellGrid): the margin slate, the sea a checker of two blues, an island's square a
+     shallow of sand (green once it has its number), the squares of a bridge a touch of plank, the selected island gold and the pairs it
+     could still bridge a pale blue, a hint's pair and islands pale blue (red if the bridge is wrong). The pieces lie on them: a bridge a
+     flat plank or two (red if the answer has fewer), an island a round rim and body with its number as seven-segment digits. */
+  function colorsOf(P, V){
+    if (P._gc && P._gc.stamp === V.stamp) return P._gc.colors;
+    const N = P.N, M = P.M, out = new Array(M * M).fill(BAND), deg0 = degsOf(P, V.b);
+    const at = (x, y) => (1 + y) * M + 1 + x, cell = c => at(c % N, (c / N) | 0);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) out[at(x, y)] = V.solved ? mix((x + y) % 2 ? SEA2 : SEA, DONE, 0.35) : (x + y) % 2 ? SEA2 : SEA;
+    P.E.forEach((X, e) => { if (V.b[e]) for (const c of X.cells) out[cell(c)] = mix(out[cell(c)], PLANK, 0.3); });
+    P.isl.forEach((s, i) => { const j = at(s.x, s.y); out[j] = mix(out[j], deg0[i] === P.n[i] ? FULLC : SAND, 0.45); });
+    if (!V.solved && V.sel >= 0){
+      const s = P.isl[V.sel];
+      for (const e of P.G.by[V.sel]){
+        if (!V.b[e] && blockedB(P, V.b, e)) continue;
+        const X = P.E[e], o = P.isl[X.a === V.sel ? X.b : X.a];
+        for (const c of X.cells) out[cell(c)] = mix(out[cell(c)], PEER, 0.4);
+        out[at(o.x, o.y)] = mix(out[at(o.x, o.y)], PEER, 0.55);
+      }
+      out[at(s.x, s.y)] = SELC;
+    }
+    if (!V.solved && V.hint){
+      const X = P.E[V.hint.e], col = V.hint.kind === 'wrong' ? 0xefb4ab : HINTC;
+      for (const c of X.cells) out[cell(c)] = col;
+      for (const i of [X.a, X.b]) out[at(P.isl[i].x, P.isl[i].y)] = col;
+    }
+    P._gc = { stamp: V.stamp, colors: out };
+    return out;
+  }
+  const DIGIT_PX = 100;      // (a board under it shows its islands, not their numbers)
+  // a number as seven-segment digits, one piece a digit, centred on (u, v), h tall
+  function numItems(out, num, u, v, h, color, lift){
+    const ds = String(num), sp = 0.62 * h, u0 = u - (ds.length - 1) * sp / 2;
+    for (let k = 0; k < ds.length; k++) out.push({ kind: 'hsD' + ds[k], u: u0 + k * sp, v, scale: h, lift: lift || 0.0028, color });
+  }
+  function itemsOf(P, V, g, live, bp){
+    const words = !(bp > 0) || bp >= DIGIT_PX;
+    const stamp = V.stamp + (live ? 'L' : '') + (words ? 'w' : '');
+    if (P._ic && P._ic.stamp === stamp) return P._ic.items;
+    const M = P.M, s = 1 / M, out = [], dg = degsOf(P, V.b), th = 0.15 * s, gap = 0.13 * s;
+    // the bridges, under the islands
+    P.E.forEach((X, e) => {
+      const bv = V.b[e]; if (!bv) return;
+      const [ua, va] = islC(P, X.a), [ub, vb] = islC(P, X.b);
+      const col = V.hint && V.hint.e === e ? (V.hint.kind === 'wrong' ? BADB : HINTB) : MISTAKES && bv > P.sol[e] ? BADB : V.last === e ? 0xffffff : PLANK;
+      for (let k = 0; k < bv; k++){
+        const off = bv === 1 ? 0 : (k ? gap : -gap);
+        if (X.h) out.push({ kind: 'hsBar', u: (ua + ub) / 2, v: va + off, scale: 1, sx: ub - ua, sz: th, lift: 0.0008, color: col });
+        else out.push({ kind: 'hsBar', u: ua + off, v: (va + vb) / 2, scale: 1, sx: th, sz: vb - va, lift: 0.0008, color: col });
+      }
+    });
+    // the islands: a rim and a body, the body green with its number, pink with too many, gold when selected
+    P.isl.forEach((I, i) => {
+      const [u, v] = islC(P, i), full = dg[i] === P.n[i], over = dg[i] > P.n[i];
+      const body = V.solved ? FULLC : V.hint && (P.E[V.hint.e].a === i || P.E[V.hint.e].b === i) ? HINTC : V.sel === i ? SELC : over ? OVERC : full ? FULLC : SAND;
+      out.push({ kind: 'hsIsle', u, v, scale: 0.94 * s, lift: 0.0014, color: RIM }, { kind: 'hsIsle', u, v, scale: 0.8 * s, lift: 0.002, color: body });
+      if (words) numItems(out, P.n[i], u, v, 0.5 * s, over ? OVERINK : full ? FULLINK : INK);
+    });
+    if (words){
+      // the level, as dots in its colour along the far margin's left
+      for (let k = 0; k < P.lv; k++) out.push({ kind: 'hsDot', u: (1.25 + k * 0.4) * s, v: 0.5 * s, scale: 0.24 * s, lift: 0.002, color: BOARD_KIT.LV_COL[P.lv - 1] });
+      if (V.g && V.g.state !== 'ready'){
+        // the clock, m:ss, centred on the far margin, and a strike for every fault (a wrong bridge, a hint), most five
+        const h = 0.6 * s, mm = Math.floor(V.sec / 60), ss = V.sec % 60, str = mm + ':' + (ss < 10 ? '0' : '') + ss, dw = 0.62 * h, cw = 0.5 * h;
+        const total = [...str].reduce((a, ch) => a + (ch === ':' ? cw : dw), 0);
+        let x = 0.5 - total / 2;
+        for (const ch of str){
+          if (ch === ':'){ for (const dy of [-0.16, 0.16]) out.push({ kind: 'hsDot', u: x + cw / 2, v: 0.5 * s + dy * h, scale: 0.12 * h, lift: 0.002, color: CREAM }); x += cw; }
+          else { out.push({ kind: 'hsD' + ch, u: x + dw / 2, v: 0.5 * s, scale: h, lift: 0.002, color: CREAM }); x += dw; }
+        }
+        for (let k = 0; k < Math.min(5, faults(V.g)); k++) out.push({ kind: 'hsX', u: (M - 0.8 - k * 0.5) * s, v: 0.5 * s, scale: 0.5 * s, lift: 0.002, color: WRONG });
+      }
+    }
+    P._ic = { stamp, items: out };
+    return out;
+  }
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const g = liveGame(); if (!g || g.state === 'solved') return;
+    const k = e.key, P = g.P;
+    let did = true;
+    if (k === 'Backspace' || k === 'Delete') erase(g);   // (not 0: that is the field's key for framing the board)
+    else if (k === 'z' || k === 'Z') undo(g);
+    else if (k === 'h' || k === 'H') hint(g);
+    else if (k === 'ArrowUp' || k === 'ArrowDown' || k === 'ArrowLeft' || k === 'ArrowRight'){
+      // the key means the screen's direction; the view says which way that is on the board. Shift lays the bridge that way.
+      const sk = { ArrowUp: 0, ArrowRight: 1, ArrowDown: 2, ArrowLeft: 3 }[k], dirs = (() => { try { return screenToBoardDirs(); } catch { return null; } })(), bd = dirs ? dirs[sk] : sk;
+      if (g.sel < 0){ let best = 0, bdist = 9e9; P.isl.forEach((I, i) => { const d = Math.hypot(I.x - (P.N - 1) / 2, I.y - (P.N - 1) / 2); if (d < bdist){ bdist = d; best = i; } }); select(g, best); }
+      else { const nb = nbrDir(P, g.sel, bd); if (nb){ if (e.shiftKey){ cycle(g, nb[1]); g.sel = nb[0]; g.ver++; } else select(g, nb[0]); } }
+    } else did = false;
+    if (did){ e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  const app = {
+    name: 'hashi',
+    menu: [{ head: 'Hashi', items: [
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: () => 'Show mistakes: ' + (MISTAKES ? 'on' : 'off'), title: 'A bridge the answer does not have shows red as soon as it is laid. Off, nothing says so until a hint or the end.', on(){ setMistakes(!MISTAKES); } },
+      { label: 'Hint', title: 'Light the pair the next logical step finds, and name the technique in the title; again lays its bridge. Each press is a fault.',
+        on(){ const f = framedCell(); if (f){ LIVE = { c: f.c, r: f.r }; hint(gameAt(f.c, f.r)); try { fieldItemsChanged(); } catch {} } } },
+      { label: 'Start this board again', title: 'This board\'s sea as dealt, no bridges, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
+    ]}],
+    cellFar: { light: BAND, dark: BAND },
+    faceMinPx: 8,
+    itemMinPx: 30,
+    itemGeometries: {
+      ...Object.fromEntries([...Array(10).keys()].map(d => ['hsD' + d, T => BOARD_KIT.flat.digit(T, d)])),
+      hsX: T => BOARD_KIT.flat.cross(T),
+      hsDot: T => BOARD_KIT.flat.geo(T, [BOARD_KIT.flat.rect(-0.5, -0.5, 0.5, 0.5)]),
+      hsBar: T => { const g = new T.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); g.userData.unlit = true; return g; },
+      hsIsle: T => { const g = FieldKit.disc(T, 0.5, 0, 40); g.userData.unlit = true; return g; },
+    },
+    cellGrid(c, r){
+      const W = viewAt(c, r, true);
+      if (!W) return { n: 1, colors: [BAND] };
+      return { n: W.P.M, colors: colorsOf(W.P, W.V) };
+    },
+    cellItems(c, r, bp){
+      const W = viewAt(c, r, true);
+      return W ? itemsOf(W.P, W.V, W.g, W.live, bp) : [];
+    },
+    cellTitle(c, r){
+      const idx = boardIdx(c, r), lv = levelAt(idx), D = LV[lv - 1], P = PUZZLES.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
+      const best = P ? BEST.get(bestKey(P)) : null;
+      const h = g && g.hint ? (g.hint.kind === 'wrong' ? ' · that bridge is wrong' : g.hint.kind === 'guess' ? ' · hint: no logic left, a guess' : ' · hint: ' + HS_TECH[g.hint.tech]) : '';
+      const laid = g ? g.b.reduce((a, x) => a + x, 0) : 0, need = P ? P.sol.reduce((a, x) => a + x, 0) : 0;
+      return 'Hashi — level ' + lv + ', ' + D.N + '×' + D.N + (P ? ', ' + P.K + ' islands · ' + (P.level > 5 ? 'beyond the logic here' : 'by ' + HARD[P.level]) : '')
+           + (!g || g.state === 'ready' ? ' · bridge the islands so each has its number, none across another, all one group' : '')
+           + (best ? ' · best ' + '★'.repeat(best[0]) + ' ' + Math.floor(best[1] / 60) + ':' + String(Math.floor(best[1] % 60)).padStart(2, '0') : '')
+           + (g && g.state === 'solved' ? ' · solved in ' + g.t.toFixed(1) + ' s ' + '★'.repeat(g.stars) : g && g.state === 'play' ? ' · ' + laid + ' of ' + need + ' bridges' : '') + h;
+    },
+    onReset(c, r){ GAMES.set(gkey(c, r), fresh(c, r)); LIVE = { c, r }; return true; },
+    onSelect(c, r){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    /* (Oct 15, Simon: "the simon buttons are very hard to push".) Two quick taps on an island and the next, or on one pair twice, read as
+       a double-tap, which reframes the view and never reaches the game. While a puzzle is on the framed board every tap is a tap. */
+    noDoubleTap(){ const g = liveGame(); return !!g && g.state !== 'solved'; },
+    onCellTap(c, r, u, v){
+      // (the tap the field still calls at the end of a short drag: the drag has done what it meant, as in Nonograms)
+      if (DRAG && DRAG.moved){ DRAG = null; return true; }
+      DRAG = null;
+      const live = !!LIVE && LIVE.c === c && LIVE.r === r;
+      LIVE = { c, r };
+      const g = gameAt(c, r);
+      if (live && g.state === 'solved'){ app.onReset(c, r); return true; }   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
+      if (u == null || g.state === 'solved') return true;
+      const P = g.P, t = tileAt(P, u, v, g.b);
+      if (t.k === 'isl'){
+        const e = g.sel >= 0 && g.sel !== t.i ? P.pair.get(g.sel * 4096 + t.i) : null;
+        if (e != null){ cycle(g, e); if (g.state !== 'solved'){ g.sel = t.i; g.ver++; } }       // (the second island of a pair: its bridge goes on, and this island is the next one's first)
+        else select(g, g.sel === t.i ? -1 : t.i);
+      } else if (t.k === 'edge'){ cycle(g, t.e); if (g.sel >= 0 && g.state !== 'solved') select(g, -1); }
+      else if (g.sel >= 0) select(g, -1);
+      return true;
+    },
+    /* A DRAG FROM ISLAND TO ISLAND: pressed on an island, the drag lays (or steps) the bridge to each neighbouring island the finger reaches,
+       and goes on from there, so one drag can lay a whole path. Pressed anywhere else the view pans as ever. */
+    claimsPan(u, v){
+      DRAG = null;
+      const g = liveGame();
+      if (!g || g.state === 'solved' || u == null) return false;
+      const t = tileAt(g.P, u, v, g.b);
+      if (t.k !== 'isl') return false;
+      DRAG = { last: t.i, moved: false };
+      return true;
+    },
+    onPan(dx, dy, at){
+      const g = liveGame();
+      if (!g || !DRAG) return false;
+      if (!at || g.state === 'solved') return true;
+      const P = g.P, N = P.N, x = clamp(Math.floor(at.u * P.M) - 1, 0, N - 1), y = clamp(Math.floor(at.v * P.M) - 1, 0, N - 1), j = P.G.islAt[y * N + x];
+      if (j < 0 || j === DRAG.last) return true;
+      const e = P.pair.get(DRAG.last * 4096 + j);
+      if (e != null){ cycle(g, e); DRAG.moved = true; if (g.state !== 'solved'){ g.sel = j; g.ver++; } }
+      DRAG.last = j;
+      return true;
+    },
+    // the play pad (Oct 28): what a gesture does not do, round buttons on the right while a board is played
+    playActs(c, r){ const g = liveGame(); if (!g || g.state === 'solved' || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+      return [{ key: 'erase', glyph: '⌫', label: 'Erase', title: 'Take every bridge off the selected island (Backspace).' },
+              { key: 'undo', glyph: '↶', label: 'Undo', title: 'Take back the last move (Z).' },
+              { key: 'hint', glyph: '?', label: 'Hint', title: 'Light the pair the next logical step finds; again lays its bridge. Each press is a fault (H).' }]; },
+    onPlayAct(c, r, key){ const g = liveGame(); if (!g) return false;
+      if (key === 'erase') erase(g); else if (key === 'undo') undo(g); else if (key === 'hint') hint(g);
+      return true; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#2c6f93'; ctx.fillRect(0, 0, sz, sz);
+      const g = sz / 7, isl = [[1, 1, 3], [5, 1, 2], [1, 3, 3], [3, 3, 4], [5, 3, 3], [3, 5, 2], [5, 5, 1]];
+      const at = ([x, y]) => [(x + 0.5) * g, (y + 0.5) * g];
+      ctx.strokeStyle = '#f3e4b8'; ctx.lineCap = 'round';
+      const bridge = (a, b, n) => { const [x1, y1] = at(isl[a]), [x2, y2] = at(isl[b]), h = y1 === y2; ctx.lineWidth = Math.max(1, g * 0.14);
+        for (let k = 0; k < n; k++){ const o = n === 1 ? 0 : (k ? 1 : -1) * g * 0.14; ctx.beginPath(); ctx.moveTo(x1 + (h ? 0 : o), y1 + (h ? o : 0)); ctx.lineTo(x2 + (h ? 0 : o), y2 + (h ? o : 0)); ctx.stroke(); } };
+      bridge(0, 1, 1); bridge(0, 2, 2); bridge(2, 3, 1); bridge(3, 4, 2); bridge(1, 4, 1); bridge(3, 5, 1); bridge(4, 6, 1); bridge(5, 6, 1);
+      ctx.font = 'bold ' + Math.round(g * 0.78) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const I of isl){ const [x, y] = at(I);
+        ctx.fillStyle = '#8d7a49'; ctx.beginPath(); ctx.arc(x, y, g * 0.47, 0, 7); ctx.fill();
+        ctx.fillStyle = '#e8d8a2'; ctx.beginPath(); ctx.arc(x, y, g * 0.4, 0, 7); ctx.fill();
+        ctx.fillStyle = '#1c2230'; ctx.fillText(String(I[2]), x, y + g * 0.04); }
+    },
+    _debug: { hsGraph, hsRate, hsSolve, hsLayout, hsMake, hsJob, makePuzzle, makePaced, seedOf, puzzleFor, tileAt, centre, islC, degsOf, blockedB, nbrDir, gameAt, fresh, select, cycle, setBridge, erase, undo, hint, hintOf,
+              finish, starsOf, faults, deg, shownView, cycleOf, viewAt, itemsOf, colorsOf, levelAt, boardIdx, LV, GAMES, BEST, PUZZLES,
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; },
+              get MISTAKES(){ return MISTAKES; }, set MISTAKES(v){ MISTAKES = v; }, get DRAG(){ return DRAG; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
 /* ═══ FLASH CARDS ══════════════════════════════════════════════════════════════════════════════════════════════════════
    (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition".) A deck of cards laid over the
    field, a card a board, studied on a schedule that brings back what you miss sooner and what you know later.
@@ -63189,7 +63869,7 @@ onmessage = ev => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -63198,7 +63878,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

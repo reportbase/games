@@ -1180,6 +1180,50 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     presses, the stars), real input (a click on a square and a digit, a given staying, the same digit taking it out, the keys, arrows,
     Backspace, Z, the play pad's four buttons, a real click finishing a puzzle and another starting it again), four quick real touches on one
     digit, and a board no one plays going through every step of its solve.
+- **Hashi** (Nov 7: "what next game should we add", then "hashi"): `HASHI_APP`, id `hashi`, after Sudoku. Bridges: islands on a sea carry numbers;
+  lay one or two bridges between islands that face one another along a row or column so each island has its number, none across another, all
+  one group. Built the way Sudoku was.
+  - **Every board its own sea** (`makePuzzle(idx, lv)`, `puzzleFor`, `PUZZLES` 1,500): from the board's number (`boardIdx`) at a level 1–5, the
+    ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as Lights Out and Sudoku. `LV`: 7, 9, 11, 13 and 15 squares a side with 8–10,
+    14–17, 22–26, 32–38 and 44–50 islands, and the grades a puzzle may need (see below). Islands are never side by side (a bridge needs a square
+    to lie on); two are a pair when they face along a row or column with no island between (`hsGraph`: `E` the pairs with the squares between
+    them, `cross` the pairs each would cross, `by` an island's pairs, `islAt`, `eH`/`eV` the pair a square lies on).
+  - **Made so it has one answer** (`hsLayout`, `hsMake`): a layout is grown, each island a bridge away (2 to `reach` squares) from one with
+    nothing that way, on squares no bridge lies on, then loose neighbours are joined now and then for loops (`o.p2` the share given two bridges,
+    `o.extra` the loops); the numbers are what each island ends up with. It is kept when the human solver (`hsRate`) finishes it, which proves one
+    answer, or `hsSolve` (backtracking over the techniques, to two answers) finds exactly one when the human solver stalls; the hardest technique
+    it needed must fall in the level's `grade` band (and `ifs` what-ifs at least, level 5), else the nearest of `tries` is kept (`P.miss`).
+    Measured on 60 boards a level (Node): 0.3, 0.7, 0.9, 1.3 and 36 ms each (level 5 takes about 30 layouts to find one with one answer that needs
+    two what-ifs), every one in its band; the human solver and the backtracking solver agree on 600 random layouts, and a layout's own bridges are
+    always an answer.
+  - **The human solver** (`hsRate`, `hsProp`): each pair holds the fewest and most bridges it can still take (`lo`, `hi`, 0–2, hi starting at
+    the smaller of 2 and its two islands' numbers); a technique is one sweep, the easiest first, back to the easiest after any change: 1 counting
+    (an island's bridges add up to its number: what it needs against what its neighbours can still give), 2 crossings (a bridge laid shuts every
+    pair it crosses), 3 loose groups (a bridge that would close a group of full islands off from the rest is not laid; `hsGroups`), 4 the way out
+    (a group not yet joined with one way left takes it), 5 what-ifs (a pair's fewest or most, followed through 1–4, cannot be). The grade is the
+    hardest technique that changed anything; 6 is a puzzle it stalled on. (Found while checking: the loose-group rule counted an island's need
+    with the pair's own bridges in it, so it closed a pair off that was not; fixed by a run of the two solvers against each other.) Way out
+    (4) is rarely the hardest need: the levels' bands are counting, crossings, loose groups, then what-ifs.
+  - **The board is the controls**: `M = N + 2` squares across, the sea in a margin of one, the far margin the level's dots, the clock and a strike
+    for each fault. Tap an island and the next one it faces (the second becomes the first of the next pair), drag from island to island (one drag
+    goes on through several, `claimsPan`, `onPan`), or tap the sea between two islands (`tileAt`: at a crossing, the pair with a bridge, else the
+    line nearer the tap): a pair goes none, one, two, none (`cycle`); a pair another bridge crosses cannot take its first. An island turns green
+    when it has its number and pink with too many; the pairs the selected island could still bridge show pale blue. The play pad has Erase (the
+    island's bridges, one move), Undo and Hint; the keys: arrows select the neighbour that way (the screen's, `nbrDir`), Shift with an arrow lays the
+    bridge, Backspace, Z, H. `noDoubleTap` while a puzzle is on the framed board.
+  - **Faults and stars**: a bridge laid that the answer does not have (the count above the answer's) shows red (the menu's Show mistakes turns that
+    off) and is a fault; a press of Hint is one. The first press lights the pair the next logical step finds (the solver run from the bridges as they
+    stand, `hintOf`: a wrong bridge first, else `hsRate`'s first bridge laid; no logic left lights a pair the answer wants and says it is a guess)
+    and the technique in the title, the second lays it. None ★★★, one or two ★★, more ★; the best on a board is kept (`hashi.best`).
+  - **A board no one plays** lays its bridges one at a time in the order the solver found them (`P.order`, `shownView`, `cycleOf`: 1.6 s bare, a
+    bridge every 0.32 s, 3.2 s held, each board at its own phase). Boards only looked at get their puzzle a few milliseconds a frame (`SOON`,
+    `JOBS`, `hsJob`: a job is a layout a try), bare sea till then.
+  - The smoke test (part 5) checks the sizes and levels by ring, 30 sampled puzzles (one answer, the solvers agreeing, a valid answer, the grade in
+    its band, the order laying the answer), the climb in islands and grade, the solver on a ring of 2s, 3s and 1s, a crossing and two islands side
+    by side, a paced make equal to a whole one, the rules by hand (the cycle and its fault, undo, a crossing refused, erase and its undo, a wrong
+    bridge's hint, the stars), a hint's step sound from fifteen states a player could be in, real input (clicks on two islands, the sea between them,
+    the keys, the play pad, a real drag laying two bridges, a real click finishing it and another starting it again), four quick real touches, and
+    a board no one plays going through every step.
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or

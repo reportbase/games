@@ -6060,6 +6060,221 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok3 ? 'ok  ' : 'FAIL'} missile command: a real click starts the game and the next fires from the nearest bunker (its barrel turns to the target)`);
   }
 
+  // HASHI (Nov 7: "what next game should we add", then "hashi"): every board its own sea of islands at a level by its ring (7, 9, 11, 13 and 15
+  // squares a side), each with one answer the human solver finds and a grade in its level's band; the solver on small known puzzles (one
+  // answer, two, none); the rules by hand (a pair goes none, one, two, none; a bridge across another refused; a bridge the answer lacks a
+  // fault; erase, undo, hints, stars); a hint's step sound from any state of a game; real clicks on islands and on the sea between them, a real
+  // drag from island to island, the keys and the play pad; quick real touches; a board no one plays lays its own bridges.
+  {
+    current = 'hashi';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'hashi')));
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = { bad: [] }, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+      out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
+      out.sizes = [1, 2, 3, 4, 5].map(lv => D.makePuzzle(1234, lv).N);
+      const isl = [0, 0, 0, 0, 0, 0], grade = [0, 0, 0, 0, 0, 0], K = 6, t0 = performance.now();
+      for (let lv = 1; lv <= 5; lv++) for (let k = 0; k < K; k++){
+        const idx = 50 + k * 97, P = D.makePuzzle(idx, lv), G = P.G, E = P.E, sum = P.sol.reduce((a, x) => a + x, 0);
+        const sums = P.isl.map((s, i) => G.by[i].reduce((a, e) => a + P.sol[e], 0)), p = [...P.isl.keys()];
+        const find = x => { while (p[x] !== x) x = p[x] = p[p[x]]; return x; };
+        E.forEach((X, e) => { if (P.sol[e]) p[find(X.a)] = find(X.b); });
+        const rt = D.hsRate(G, P.n, 5), D5 = D.LV[lv - 1];
+        const ok = sums.every((s, i) => s === P.n[i]) && P.sol.every(x => x >= 0 && x <= 2) && E.every((X, e) => !P.sol[e] || X.cross.every(f => !P.sol[f]))
+          && P.isl.every((s, i) => find(i) === find(0)) && D.hsSolve(G, P.n, 2).count === 1 && rt.solved && rt.level === P.level && same([...rt.lo], [...P.sol])
+          && P.order.length === sum && P.order.every((s, j) => s.v >= 1 && s.v <= P.sol[s.e]) && P.N === D5.N && P.K >= D5.K[0] && P.K <= D5.K[1]
+          && P.level >= D5.grade[0] && P.level <= D5.grade[1] && P.miss === 0;
+        if (!ok) out.bad.push({ lv, idx, level: P.level, miss: P.miss, solved: rt.solved });
+        isl[lv] += P.K / K; grade[lv] += P.level / K;
+      }
+      out.ms = Math.round(performance.now() - t0);
+      out.isl = isl.slice(1).map(x => +x.toFixed(1)); out.grade = grade.slice(1).map(x => +x.toFixed(1));
+      // (a bigger sea and a harder grade at every level)
+      out.climbs = out.isl[0] < out.isl[1] && out.isl[1] < out.isl[2] && out.isl[2] < out.isl[3] && out.isl[3] < out.isl[4]
+        && out.grade[0] <= out.grade[1] && out.grade[1] <= out.grade[2] && out.grade[2] <= out.grade[3] && out.grade[3] <= out.grade[4];
+      // the solvers on small known puzzles: a ring of four 2s has one answer, four 3s two (one pair double, the other single, either way round), four 1s
+      // in two rows none (each answer leaves two groups); two pairs crossing are told so
+      const corners = n => [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 0, y: 4 }, { x: 4, y: 4 }].map(s => ({ ...s, n }));
+      out.ring = [2, 3, 1].map(n => D.hsSolve(D.hsGraph(5, corners(n)), [n, n, n, n], 5).count);
+      const X = D.hsGraph(5, [{ x: 0, y: 2 }, { x: 4, y: 2 }, { x: 2, y: 0 }, { x: 2, y: 4 }]);
+      out.cross = { edges: X.E.length, crossed: X.E[0].cross.length === 1 && X.E[1].cross.length === 1 && X.E[0].cross[0] === 1, one: D.hsSolve(X, [1, 1, 1, 1], 5).count };
+      const side = D.hsGraph(4, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 3, y: 0 }]);       // (islands side by side are no pair: a bridge needs a square to lie on)
+      out.side = side.E.length === 1 && side.E[0].cells.length === 1;
+      // a board made a few milliseconds at a time (as one only looked at is) is the board made whole
+      const a = D.makePuzzle(1000, 5), b = D.makePaced(1000, 5, 2);
+      out.paced = { same: same([...a.sol], [...b.P.sol]) && same(a.isl, b.P.isl), calls: b.calls };
+      out.sameBoard = same(D.makePuzzle(777, 3).isl, D.makePuzzle(777, 3).isl);
+      out.differ = !same(D.makePuzzle(777, 3).isl, D.makePuzzle(778, 3).isl);
+      // the rules by hand, on the first board that has a bridge the answer lays across a line some other pair would use
+      let cc = 0, g = null, cr = null;
+      for (; cc < 40 && !cr; cc++){ g = D.fresh(cc, 0); const P = g.P; P.E.forEach((X, e) => { if (!cr && P.sol[e] === 1 && X.cross.length) cr = { e, f: X.cross[0] }; }); }
+      D.GAMES.set((cc - 1) + '_0', g);
+      const P = g.P, E = P.E, e0 = cr.e, f0 = cr.f;
+      D.cycle(g, e0, true); const b1 = g.b[e0]; D.cycle(g, e0, true); const b2 = g.b[e0], w2 = g.wrong; D.cycle(g, e0, true);
+      out.cycle = [b1, b2, g.b[e0], w2].join();       // 1,2,0 and the second bridge a fault (the answer has one)
+      D.undo(g, true); const u1 = g.b[e0]; D.undo(g, true); const u2 = g.b[e0]; D.undo(g, true);
+      out.undo = [u1, u2, g.b[e0]].join();            // 2,1,0
+      D.setBridge(g, e0, 1, true);
+      out.refused = D.cycle(g, f0, true) === false && g.b[f0] === 0 && D.blockedB(P, g.b, f0);
+      const n0 = g.undo.length; D.undo(g, true);
+      out.undoLast = g.b[e0] === 0 && g.undo.length === n0 - 1;
+      const w0 = g.wrong, zero = E.findIndex((X, e) => !P.sol[e] && !D.blockedB(P, g.b, e));
+      D.setBridge(g, zero, 1, true);
+      out.wrong = g.wrong === w0 + 1 && g.b[zero] === 1;
+      const h = D.hintOf(g);
+      out.hintWrong = h.kind === 'wrong' && h.e === zero && h.v === 0;
+      const hs0 = g.hints;
+      D.hint(g, true); out.h1 = g.hints === hs0 + 1 && g.hint && g.hint.kind === 'wrong' && g.b[zero] === 1;
+      D.hint(g, true); out.h2 = g.hints === hs0 + 2 && g.b[zero] === 0 && !g.hint;
+      // erase takes every bridge off the selected island, as one move, and undo puts them back
+      for (let e = 0; e < E.length; e++) if (P.sol[e]) D.setBridge(g, e, 1, true);
+      D.setBridge(g, zero, 0, true);
+      const hub = P.isl.findIndex((s, i) => P.G.by[i].filter(e => g.b[e]).length >= 2), had = P.G.by[hub].map(e => g.b[e]);
+      D.select(g, hub);
+      const n1 = g.undo.length; D.erase(g, true);
+      out.erase = P.G.by[hub].every(e => g.b[e] === 0) && g.undo.length === n1 + 1;
+      D.undo(g, true); out.eraseUndo = same(P.G.by[hub].map(e => g.b[e]), had);
+      D.GAMES.delete((cc - 1) + '_0');
+      // finishing: every bridge as the answer has it
+      const g3 = D.fresh(cc - 1, 0); D.GAMES.set((cc - 1) + '_0', g3);
+      E.forEach((X, e) => { if (P.sol[e]) D.setBridge(g3, e, P.sol[e], true); });
+      out.solved = { state: g3.state, stars: g3.stars, faults: D.faults(g3), best: D.BEST.has(P.idx + '@' + P.lv) };
+      out.stars = [0, 1, 2, 3, 6].map(D.starsOf);
+      D.GAMES.delete((cc - 1) + '_0');
+      // a hint's step is always sound: from any state a player could have reached (a prefix of the solver's own order), the pair it lights is one
+      // the answer still wants, one bridge more than the game has
+      const sound = { n: 0, bad: [] };
+      for (let lv = 1; lv <= 5; lv++) for (let k = 0; k < 3; k++){
+        const Q = D.makePuzzle(300 + k * 41, lv), gq = { P: Q, b: new Uint8Array(Q.E.length) };     // (hintOf asks only the puzzle and the bridges)
+        for (const frac of [0, 0.35, 0.7]){
+          gq.b.fill(0); for (let j = 0; j < Math.floor(Q.order.length * frac); j++) gq.b[Q.order[j].e] = Q.order[j].v;
+          const hq = D.hintOf(gq); sound.n++;
+          if (!hq || hq.kind !== 'step' || hq.v !== gq.b[hq.e] + 1 || hq.v > Q.sol[hq.e]) sound.bad.push({ lv, frac, kind: hq && hq.kind, level: Q.level });
+        }
+      }
+      out.sound = sound;
+      return out;
+    });
+    const ok1 = r.levels.join() === '2,3,5,5' && r.sizes.join() === '7,9,11,13,15' && !r.bad.length && r.climbs && r.ring.join() === '1,2,0' && r.cross.edges === 2 && r.cross.crossed && r.cross.one === 0 && r.side
+      && r.paced.same && r.paced.calls > 1 && r.sameBoard && r.differ && r.cycle === '1,2,0,1' && r.undo === '2,1,0' && r.refused && r.undoLast && r.wrong && r.hintWrong && r.h1 && r.h2
+      && r.erase && r.eraseUndo && r.solved.state === 'solved' && r.solved.stars === 3 && r.solved.faults === 0 && r.solved.best && r.stars.join() === '3,2,2,1,1' && r.sound.bad.length === 0;
+    if (!ok1) failures.push('[hashi] puzzles and rules: ' + JSON.stringify(r));
+    console.log(`${ok1 ? 'ok  ' : 'FAIL'} hashi: seas of 7 to 15 squares, 30 sampled puzzles each with one answer the human solver finds (${r.ms} ms; islands ${r.isl.join('/')}, grade ${r.grade.join('/')}), the solver on known puzzles, the rules, hints and stars`);
+    // real input on the framed board: a click on an island and the next, a click on the sea between them, the keys, the play pad, a real drag
+    // from island to island, a puzzle finished by real clicks
+    await page.evaluate(() => window.getFieldApp()._debug.fly(3, 1));
+    await page.evaluate(() => window.__settle(3, 1));     // (the camera at rest on the board: a click while it still glides lands a row off)
+    const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
+    let real = null;
+    if (fc){
+      const key = fc[0] + '_' + fc[1];
+      // (where to click: projected from the square's middle, and only once the camera has really come to rest there: on the screen, reading back as
+      //  the same square, and in the same place 300 ms later. A frame can take seconds in the software renderer, and a camera that looks still
+      //  between two frames is only between them)
+      const aimOnce = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
+        return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
+      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+      // a board with a path of three islands (two pairs the answer bridges once, sharing an island) and a pair whose middle square is clear of any crossing line
+      const info = await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug, g = D.fresh(c, r); D.GAMES.set(k, g); D.LIVE = { c, r }; const P = g.P, E = P.E, N = P.N;
+        const mid = e => { const cs = E[e].cells, cell = cs[Math.floor(cs.length / 2)]; return { cell, cross: P.G.eH[cell] >= 0 && P.G.eV[cell] >= 0, at: D.centre(P, cell % N, (cell / N) | 0) }; };
+        const ones = E.map((X, e) => e).filter(e => P.sol[e] >= 1 && !mid(e).cross);
+        let path = null;
+        for (const e1 of ones){ for (const e2 of ones) if (e1 !== e2){ const A = E[e1], B = E[e2], sh = [A.a, A.b].find(i => i === B.a || i === B.b);
+          if (sh != null){ const a = A.a === sh ? A.b : A.a, c2 = B.a === sh ? B.b : B.a; if (a !== c2){ path = { e1, e2, a, b: sh, c: c2 }; break; } } } if (path) break; }
+        const ed = ones[0];
+        return { N, K: P.K, sol: [...P.sol], path, pair: { e: ed, a: E[ed].a, b: E[ed].b }, midU: mid(ed).at, isl: P.isl.map((s, i) => D.islC(P, i)), midOf: E.map((X, e) => mid(e).at), E: E.map(X => [X.a, X.b]), needs: [...P.sol.keys()].filter(e => P.sol[e]) }; }, [...fc, key]);
+      const st = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return { b: [...g.b], sel: g.sel, state: g.state, wrong: g.wrong, hints: g.hints, undo: g.undo.length }; }, key);
+      const click = async ([u, v]) => { const p = await aimAt(u, v); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); };
+      // (a frame can take a second in the software renderer, and a press is read in the frame after it: each step waits for what it wants to see, up to 6 s)
+      const until = async test => { for (let k = 0; k < 60; k++){ const s = await st(); if (test(s)) return true; await page.waitForTimeout(100); } return false; };
+      const { e: ep, a: pa, b: pb } = info.pair;
+      real = {};
+      await click(info.isl[pa]); real.sel = await until(s => s.sel === pa);
+      await click(info.isl[pb]); real.bridge = await until(s => s.b[ep] === 1 && s.sel === pb);
+      await click(info.midU); real.second = await until(s => s.b[ep] === 2);
+      await click(info.midU); real.none = await until(s => s.b[ep] === 0);
+      await click(info.midU); real.again = await until(s => s.b[ep] === 1);
+      // a click on the sea clears the selection; a click on an island that is no neighbour moves it
+      await click(info.isl[pa]); await until(s => s.sel === pa);
+      const far = [...info.isl.keys()].find(i => i !== pa && i !== pb && !info.E.some(([x, y]) => (x === pa && y === i) || (y === pa && x === i)));
+      await click(info.isl[far]); real.moved = await until(s => s.sel === far && s.b.reduce((a, x) => a + x, 0) === 1);
+      // the keys: an arrow selects the neighbour that way (the screen's way), Shift with it lays the bridge, Backspace takes an island's bridges off, z takes them back
+      await page.evaluate(([k, i]) => { const g = window.getFieldApp()._debug.GAMES.get(k); window.getFieldApp()._debug.select(g, i); }, [key, pa]);
+      const before = (await st()).sel;
+      for (const kk of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']){ await page.keyboard.press(kk); if ((await st()).sel !== before) break; await page.waitForTimeout(150); }
+      real.arrow = await until(s => s.sel !== before && s.sel >= 0);
+      const selNow = (await st()).sel;
+      await page.evaluate(([k, i]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); D.select(g, i); }, [key, pa]);
+      await page.keyboard.press('Backspace'); real.bs = await until(s => s.b[ep] === 0);
+      await page.keyboard.press('z'); real.undo = await until(s => s.b[ep] === 1);
+      real.pad = (await page.evaluate(() => [...document.querySelectorAll('#playPad button')].map(b => b.dataset.key))).join();
+      await page.click('#playPad button[data-key="erase"]'); real.erase = await until(s => s.b[ep] === 0);
+      await page.click('#playPad button[data-key="undo"]'); real.padUndo = await until(s => s.b[ep] === 1);
+      await page.click('#playPad button[data-key="hint"]'); real.hint = await until(s => s.hints === 1);
+      // a real drag from island to island, on to the next: one drag lays two bridges (a clean board, the path's islands in a line of the finger's way)
+      await page.evaluate(([k, c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.set(k, D.fresh(c, r)); D.LIVE = { c, r }; }, [key, ...fc]);
+      const { e1, e2, a, b, c: c3 } = info.path;
+      const A = await aimAt(...info.isl[a]), B = await aimOnce(...info.isl[b]), C = await aimOnce(...info.isl[c3]);
+      await page.mouse.move(A.x, A.y); await page.mouse.down();
+      for (let k = 1; k <= 12; k++){ await page.mouse.move(A.x + (B.x - A.x) * k / 12, A.y + (B.y - A.y) * k / 12); await page.waitForTimeout(40); }
+      for (let k = 1; k <= 12; k++){ await page.mouse.move(B.x + (C.x - B.x) * k / 12, B.y + (C.y - B.y) * k / 12); await page.waitForTimeout(40); }
+      await page.mouse.up();
+      real.drag = await until(s => s.b[e1] === 1 && s.b[e2] === 1 && s.b.reduce((x, y) => x + y, 0) === 2);
+      // the whole puzzle but its last pair by the model, the last by a real click on each island
+      const lastE = info.needs.filter(e => info.sol[e] === 1).pop();
+      await page.evaluate(([k, last]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k);
+        for (let e = 0; e < g.b.length; e++) if (g.P.sol[e] && e !== last) D.setBridge(g, e, g.P.sol[e], true);
+        g.hint = null; g.sel = -1; g.ver++; }, [key, lastE]);
+      await click(info.isl[info.E[lastE][0]]); await until(s => s.sel === info.E[lastE][0]); await click(info.isl[info.E[lastE][1]]);
+      real.solved = (await until(s => s.state === 'solved')) ? 'solved' : (await st()).state;
+      await click(info.isl[0]);
+      real.restart = { live: true, state: 'ready' };
+      real.restart.state = await page.evaluate(async ([k, c, r]) => { for (let q = 0; q < 60; q++){ const D = window.getFieldApp()._debug, g = D.GAMES.get(k); if (g && g.state === 'ready') return 'ready'; await new Promise(ok => setTimeout(ok, 100)); } return D.GAMES.get(k).state; }, [key, ...fc]);
+      real.restart.live = await page.evaluate(([c, r]) => { const L = window.getFieldApp()._debug.LIVE; return !!L && L.c === c && L.r === r; }, fc);
+    }
+    const ok2 = real && real.sel && real.bridge && real.second && real.none && real.again && real.moved && real.arrow && real.bs && real.undo && real.pad === 'erase,undo,hint'
+      && real.erase && real.padUndo && real.hint && real.drag && real.solved === 'solved' && real.restart.live && real.restart.state === 'ready';
+    if (!ok2) failures.push('[hashi] real input: ' + JSON.stringify(real));
+    console.log(`${ok2 ? 'ok  ' : 'FAIL'} hashi: real clicks select an island and bridge it to the next, the sea between them steps the pair, a real drag lays two bridges, the keys and the play pad work, a real click finishes it and another starts it again`);
+    // (Oct 15, Simon's lesson) quick real touches alternating between two islands are each a tap: select, one bridge, two, none, and the view never reframed
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const quick = await page.evaluate(async () => {
+      const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      const S = (u, v) => { const T = W.target, bW = W.boardW(), L = window.LAB || {}; const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0.02, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
+      const cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
+      const mk = ([x, y]) => new Touch({ identifier: 9, target: cv, clientX: x, clientY: y, radiusX: 4, radiusY: 4 });
+      const fire = (type, t) => cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], targetTouches: type === 'touchend' ? [] : [t], changedTouches: [t] }));
+      const ptr = (type, [x, y]) => cv.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 9, isPrimary: true, clientX: x, clientY: y }));
+      const tap = async (u, v, after) => { const p = S(u, v); ptr('pointerdown', p); const t = mk(p); fire('touchstart', t); ptr('pointerup', p); fire('touchend', t); await wait(after); };
+      const g = D.fresh(f.c, f.r); D.GAMES.set(f.c + '_' + f.r, g); D.LIVE = { c: f.c, r: f.r };
+      const P = g.P, e = P.E.findIndex((X, e) => P.sol[e] === 2) >= 0 ? P.E.findIndex((X, e) => P.sol[e] === 2) : P.E.findIndex((X, e) => P.sol[e] === 1), X = P.E[e], seen = [];
+      const [au, av] = D.islC(P, X.a), [bu, bv] = D.islC(P, X.b);
+      await tap(au, av, 200); seen.push(g.b[e]);
+      await tap(bu, bv, 200); seen.push(g.b[e]);
+      await tap(au, av, 200); seen.push(g.b[e]);
+      await tap(bu, bv, 200); seen.push(g.b[e]);
+      const f2 = W.cellAt(W.target.boardX, W.target.boardZ);
+      return { seen, still: !!f2 && f2.c === f.c && f2.r === f.r, noDbl: window.getFieldApp().noDoubleTap() };
+    });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    const ok3 = quick.seen.join() === '0,1,2,0' && quick.still && quick.noDbl;
+    if (!ok3) failures.push('[hashi] quick taps between two islands: ' + JSON.stringify(quick));
+    console.log(`${ok3 ? 'ok  ' : 'FAIL'} hashi: four quick real touches alternating between two islands are four taps (${quick.seen.join(', ')})`);
+    // a board no one plays lays its own bridges: over one cycle of its clock every bridge of the solver's order is seen going in, the finished
+    // sea is held, the puzzle comes back to bare islands, and on the page's own clock it moves
+    const demo = await page.evaluate(async () => { const D = window.getFieldApp()._debug, P = D.puzzleFor(9, 9), T = D.cycleOf(P), seen = new Set(), counts = new Set();
+      let solved = false, blank = false;
+      for (let k = 0; k < 600; k++){ const V = D.shownView(P, 1000 + T * k / 600); seen.add(V.m); counts.add(V.b.reduce((a, x) => a + x, 0)); solved = solved || (V.solved && V.b.every((x, i) => x === P.sol[i])); blank = blank || V.b.every(x => !x); }
+      const live = new Set(), t0 = performance.now();
+      while (performance.now() - t0 < 4000){ live.add(D.shownView(P).stamp); await new Promise(ok => setTimeout(ok, 150)); }
+      return { stages: seen.size, steps: P.order.length, counts: counts.size, solved, blank, live: live.size }; });
+    const ok4 = demo.stages >= demo.steps && demo.counts > demo.steps * 0.8 && demo.solved && demo.blank && demo.live >= 3;
+    if (!ok4) failures.push('[hashi] a board no one plays: ' + JSON.stringify(demo));
+    console.log(`${ok4 ? 'ok  ' : 'FAIL'} hashi: a board no one plays lays its own bridges (${demo.stages} stages for ${demo.steps} bridges, ${demo.live} seen live)`);
+  }
+
   }   // (end of part 5)
   if (part(6)) {
   // THE DOTS SHUT THE ROW, AND A HOLD TOGGLES IT (Oct 23: "I can't close the bottom panel by tapping the dots.     long press the
