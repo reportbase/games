@@ -139,9 +139,9 @@ try {
     await page.waitForTimeout(SETTLE_MS);
     const active = await page.evaluate(() => { const a = window.getFieldApp(); return a && (a.id || a.name); });
     if (active !== id) failures.push(`[${id}] switching did not take: the active app is ${active}`);
-    // the three dots are on every game (Oct 9: "always show the triple dots on bottom")
-    const dots = await page.evaluate(() => { const h = document.getElementById('bbHandle'), r = h && h.getBoundingClientRect(); return !!(h && getComputedStyle(h).display !== 'none' && r.width > 0 && r.bottom <= innerHeight + 1); });
-    if (!dots) failures.push(`[${id}] the three dots are not showing`);
+    // the three dots are on every game that has a row (Oct 9: "always show the triple dots on bottom"), and only there (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.")
+    const dots = await page.evaluate(() => { const h = document.getElementById('bbHandle'), r = h && h.getBoundingClientRect(), a = window.getFieldApp(), has = !!(a.nativePieces || a._record || a.statTiles || a.statsFirst || a.quickActs || (a._list && a._list.length)), shown = !!(h && getComputedStyle(h).display !== 'none' && r.width > 0 && r.bottom <= innerHeight + 1); return has ? shown : !shown; });
+    if (!dots) failures.push(`[${id}] the three dots are showing where there is no row, or missing where there is one`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${id}`);
   }
 
@@ -553,6 +553,29 @@ try {
       && tap.app === 'tetris' && tap.f && tap.f.join() === '0,0' && tap.last === tap.name && dbl.app === 'sudoku' && dbl.f && dbl.f.join() === '0,0';
     if (!ok) failures.push('[home] ' + JSON.stringify({ r, f1, pick, seenAs, holes, tap, dbl }));
     console.log(`${ok ? 'ok  ' : 'FAIL'} home: ${r.every ? 'every' : 'not every'} game, one board each in a block eight across read left to right and top to bottom, sorted by title, the block repeating over the field so no board is bare, the far field's texture the same block (${r.pictures} pictures, the same pixels each time, no board a hole), Home first in the picker and the page's start framed on the game last in, a real tap and a double tap opening a game on its first board`);
+  }
+  // THE HOME CHIP, AND NO DOTS WITHOUT A ROW (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.   Add a button for home in the upper
+  // left."): a chip in the upper left on every app but Home that opens Home framed on the game just left, and the three dots only on apps that put something
+  // in the row (a game's moves, tiles, quick buttons or prints): none on Home, Tetris, Sudoku or Hashi, some on chess, mini golf, pinball and the gallery.
+  {
+    current = 'home chip and dots';
+    const r = await page.evaluate(async () => {
+      const wait = ms => new Promise(ok => setTimeout(ok, ms)), vis = id => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== 'none'; };
+      const res = { dots: {}, chip: {} };
+      for (const id of ['home', 'chess', 'tetris', 'sudoku', 'hashi', 'minigolf', 'pinball', 'gallery']){
+        window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await wait(500);
+        res.dots[id] = vis('bbHandle'); res.chip[id] = vis('homeBtn');
+      }
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'sudoku')); await wait(600);
+      const b = document.getElementById('homeBtn').getBoundingClientRect(); res.corner = b.x < 40 && b.y < 40 && b.width >= 36;
+      document.getElementById('homeBtn').click(); await wait(1500);
+      const H = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
+      res.back = H.isHome && f && f.c === H._debug.slotOf('sudoku')[0] && f.r === H._debug.slotOf('sudoku')[1];
+      return res;
+    });
+    const D = r.dots, C = r.chip, ok = !D.home && !D.tetris && !D.sudoku && !D.hashi && D.chess && D.minigolf && D.pinball && D.gallery && !C.home && C.chess && C.tetris && C.sudoku && C.minigolf && C.gallery && r.corner && r.back;
+    if (!ok) failures.push('[home chip] ' + JSON.stringify(r));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} home chip: in the upper left on every app but Home and taking the view back to the game just left; the three dots only where the app has a row (not Home, Tetris, Sudoku, Hashi)`);
   }
   // THE ONE SANS (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): every place that draws words
   // names UI_SANS, the stack the page's text and Home's names are set in; no canvas or style sets its own generic sans, Arial or Helvetica Neue

@@ -813,6 +813,9 @@
      because it grew its display rule later than its hidden logic. */
   body .chip[hidden] { display: none; }
   body #menuBtn { left: auto; right: 16px; }
+  /* HOME sits in the upper left, the corner the menu left for the right (Nov 7); a finger's size on a touch screen, as the menu's. */
+  body #homeBtn { left: 16px; right: auto; top: 16px; bottom: auto; }
+  @media (pointer: coarse) { body #homeBtn { width: var(--menu-chip); height: var(--menu-chip); border-radius: 11px; } }
   /* THE LOCK SITS ON THE STRIP, NOT IN THE CORNER. It is the strip's
      companion — the strip is every board you could go to, the lock is the
      refusal to go — so it belongs at the strip's left end rather than
@@ -961,6 +964,8 @@
 <!-- svg.html's own glyphs, stroked rather than typeset: an emoji padlock is
      whatever the platform decides it is, and the two corners were wearing two
      different type designs. These are one line weight and one geometry. -->
+<!-- HOME, upper left (Nov 7: "add a button for home in the upper left"): back to the page of every game, framed on the game you are in. Hidden on Home itself. -->
+<button id="homeBtn" class="panel chip" aria-label="home" hidden title="Home: every game as a board."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5M6.5 10v9.5h11V10M10 19.5v-5h4v5"/></svg></button>
 <button id="menuBtn" class="panel chip" aria-label="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></button>
 <!-- THE TURN. What the double tap used to do, on a button beside the lock:
      one press turns the framed board round (rotateBoard90 is a HALF turn,
@@ -13216,7 +13221,11 @@ function syncBrowserVisibility(){
        empty (Sep 26: "remove the three dots on the bottom browser for games that don't use the bottom browser"); since
        then most games put their numbers in the row, and the dots are the one mark that says the pane is down there, so
        they stay on every game. */
-    if (h.style.display) h.style.display = '';
+    /* …BUT NOT WHERE THERE IS NO ROW (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button."): an app that gives the
+       row nothing (no moves, no tiles, no pictures, no quick buttons: Home, the arcade games, the pipe puzzles) has no dots, since there is nothing for
+       them to open. `bbHasRow` says which. */
+    const want = bbHasRow() ? '' : 'none';
+    if (h.style.display !== want) h.style.display = want;
     const t = on ? 'Hide the row of boards' : 'Show the row of boards';
     if (t !== _bbLabelLast){ _bbLabelLast = t; h.title = t; }
   }
@@ -13226,6 +13235,13 @@ function syncBrowserVisibility(){
    the row or fills it. Opening and shutting the row is the DOTS' job, on the
    bar itself. This function stays because the button may be gone and the
    callers are many; it does nothing when there is nothing to update. */
+/* DOES THE APP HAVE A BOTTOM BROWSER AT ALL: something to put in the row (a game's moves, an app's tiles or quick buttons, the gallery's
+   prints), or the row already holds something. */
+function bbHasRow(){
+  const a = window.getFieldApp && window.getFieldApp();
+  if (!a) return true;
+  return !!(bbKeys.length || a.nativePieces || a._record || a.statTiles || a.statsFirst || a.quickActs || (a._list && a._list.length));
+}
 function syncBrowserButton(){
   const b = document.getElementById('bBrowser');
   if (!b) return;
@@ -14728,6 +14744,18 @@ function syncFitButton(){
                    : 'Fit window: the picture fills the board, and whatever does not fit is lost.')
           + ' Press to show ' + (image ? 'fit window' : 'fit image') + '.';
 }
+/* THE HOME CHIP (Nov 7): shown on every app but Home, synced where an app change is noticed; it opens Home (`openApp`), whose `onEnter` takes the view to the
+   board of the game just left. */
+function syncHomeButton(){
+  const b = document.getElementById('homeBtn');
+  if (!b) return;
+  const a = window.getFieldApp && window.getFieldApp();
+  b.hidden = !a || !!a.isHome;
+}
+document.getElementById('homeBtn')?.addEventListener('click', () => {
+  const H = (window.FIELD_APPS || []).find(a => a.isHome);
+  if (H) openApp(H);
+});
 document.getElementById('fitBtn')?.addEventListener('click', () => {
   const app = window.getFieldApp && window.getFieldApp();
   if (!app || !app.setFit) return;
@@ -65927,6 +65955,7 @@ function syncAppSelect(){
      screen is worse than none. */
   try { syncChessChips(); } catch {}   // undo and the game index are chess's
   try { syncFitButton(); } catch {}    // ...and the fit chip is the gallery's
+  try { syncHomeButton(); } catch {}   // ...and Home's chip is every app's but Home's
   try { renderAppMenu(); } catch {}    // and so is its whole menu — see #menuStock
   // How much of its cell a board fills — a raster asks for all of it.
   BOARD_FILL = (FIELD_APP && FIELD_APP.fillsCell) ? 1 : 0.9;

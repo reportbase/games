@@ -1298,6 +1298,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the games before and after Chess on its left and right and the rows above and below it above and below, the same pixels each time a picture is
     painted for six games and the kept small picture the same canvas, the three flags, and no hole and no declined board counted with the corner framed and
     the view moving.
+- **A Home chip, and no dots where there is no row** (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.   Add a button for home in the
+  upper left."): `#homeBtn`, a chip in the upper left (the menu's is upper right), shown on every app but Home (`syncHomeButton`, from `setFieldApp`), opens Home with
+  `openApp`, whose `onEnter` takes the view to the board of the game just left. The three dots (`#bbHandle`) were on every game since Oct 9; `bbHasRow` now says whether
+  the app has a bottom browser at all (something already in the row, or `nativePieces`, `_record`, `statTiles`, `statsFirst`, `quickActs`, or the gallery's prints) and
+  the dots go where it has none: Home, Tetris, Sudoku, Hashi and the other games that play on the board alone. The smoke test (end of part 1, "home chip") checks both.
 - **Soma's "can it be built" click waits for its tile** (Nov 7, CI on the Home PR, smoke 4/7): the real click on the row's ✗ tile was skipped when the tile
   had not been laid out 700 ms after the row opened (a busy runner), so the hint was never counted; the check now waits for the tile to be found and to
   hold still (up to 10 s) and keeps where it clicked for the failure's message. Nothing in the page changed.
