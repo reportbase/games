@@ -1101,6 +1101,85 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     touches on one square read as four taps; and a board no one plays going through every stage of its cycle (`shownView(P,
     at)`, `cycleOf`: a few seconds sampled on the page's clock can fall wholly in the picture's rest, which failed once) and
     moving on the page's clock over a whole cycle.
+- **Missile Command's look** (Nov 7: "Missle command uses bad animations.  It should be a beautiful game with explosions and effects from the other
+  games"): the rules are as they were (`blastR`, the speeds, the bot's aim, the waves, `D(g)`); what a board draws is new, in the other games' ways.
+  - **The sky is a picture** (the photo tier, as the tanks'; `paint`, `photoKey`, `PIC`): stars (faint, bright with a glow, a few with a cross),
+    soft colour clouds and a band, a moon on some boards, a haze at the horizon, two far skylines with their windows lit, over cratered ground with a
+    lit rim. Four skies (`SKIES`: night, dusk, ember red, polar green), one of `SKY_N` = 24 pictures by the board's number (so a field of boards shares 24
+    textures, not one each), the corner's the night; 512 px from a board `HI_PX` (320) across, 256 under. The marks are laid in a few canvas paths
+    (a canvas pays by the call): 4–5 ms a sky on a software canvas (the sandbox's GPU canvas, `--use-angle=swiftshader`, takes 100 ms for the same).
+  - **Effects are worked out from how long ago and a seed** (the tanks' `fxItems`): `g.fx` keeps what happened ([kind, x, y, age, seed, mine, angle] in a
+    snapshot: `l` a launch, `b` a burst, `i` a ground impact), `g.scars` where the ground scorched (the last 24, shared between snapshots until a new one),
+    `g.ruin` when each city and base fell. A recording is snapshots, so it shows all of it with nothing else kept (about 425,000 numbers for three
+    minutes of reels; baked in 35 ms).
+  - **A burst** (`burstFx`) is exactly as big as what it can destroy (`blastR` at its age: the player reads the danger from it), a core and six boiling
+    lobes in colours a little apart, cooling with its life (yours white to cyan to blue, the enemy's white to yellow to red: the old ball flashed
+    between two colours twelve times a second), a glow wider than it (light, not harm), a ring of shock, sparks that fall, and smoke rising from an
+    enemy missile shot down. **A missile** is a hot head in a glow and a line behind it that cools to dark red, with smoke along the enemy's that spreads
+    and thins with its age (`foeFx`); yours cyan, with a flickering exhaust and a ringed cross that closes in on where it will burst (`shotFx`). The line
+    is stretched boxes turned along the way (`streaks`: `sx` and `yaw`). **A launch** has a muzzle flash and smoke; **a ground impact** a flash, a ring along the
+    ground, a fireball thrown up in lobes, dust, embers (and `BOOM`'s rock debris, as before) and a scorch that stays; a city or base destroyed burns and
+    smokes on for the rest of the game, less as it goes (`ruinFx`). Cities have lit windows that flicker (three patterns turned through), a beacon and
+    a spire; a bunker a barrel that turns to the last target, a lamp (green, amber at three or fewer, red and blinking at none) and its missiles in rows;
+    the score and the wave are lit in the sky (seven segments from `BOARD_KIT.flat`, the score's leading zeros dim, a pip a wave).
+  - **A recording's player overlooks one missile in eight** (`MISS_P`, a foe made with `skip` only in a recording): the bot is so good that no recorded game ever
+    lost a city, so no board showed an impact, a scorch or a ruin; now they do, and a game taken over from a recording goes on from there.
+  - **Cost**: windows are quads (two triangles each) not boxes; about 68,000 triangles for the 33 boards in a framed view (checkers' framed view
+    is 57,000), 1,400 pieces; `asItems` 0.12 ms a board. Every board draws all of it at any size (Oct 12: "no special handeling").
+  - **Sounds** (`sfx`): a launch a rising whoosh, your burst a low boom with a bright crack, an enemy missile shot down a pop, an impact a long deep thump and
+    rumble; only the board in play, no kind twice within 45 ms.
+  - The smoke test (part 5, "missile command") checks a computer-played game leaving all three kinds of effect and drawing every kind of piece, a burst's
+    ball exactly `2 × blastR` at six ages and gone at 1.25 s, its colour never jumping by more than a third of a channel's range between two frames,
+    yours blue and the enemy's red, a snapshot drawn the same twice and another seed another picture, a launch turning the barrel, three impacts leaving
+    ruins, scorches and fire that dies down, the lit score, a recording's frames, the sky's sizes, keys, luminance (a haze at the horizon over a darker
+    ground), stars, windows and four skies, and a real click starting a game and the next firing.
+- **Sudoku** (Nov 7: "lets build a new game based our experice with the other games"): `SUDOKU_APP`, id `sudoku`, after Nonograms. The
+  classic, built the way the other puzzles were: every board its own puzzle, harder further out, one answer, rated by a solver that plays
+  like a person, the board itself the controls, a board no one plays solving itself.
+  - **Every board its own puzzle** (`makePuzzle(idx, lv)`, `puzzleFor`, `PUZZLES` 1,500): from the board's number (`boardIdx`) at a level
+    1–5, the ring level plus the Difficulty (Easy 0, Normal 1, Hard 2), as Lights Out and Nonograms. `LV` (a level's grid, the givens it may
+    keep, the grade of the human solver it must need, the full grids to try): 6×6 with 2×3 boxes; then four 9×9s: grade 1 (naked singles
+    alone, 40–46 givens), 2 (hidden singles, 32–37), 3–4 (locked candidates, pairs and triples, 27–31), 4–5 (X-wing, swordfish, XY-wing, 22–27).
+    Measured on 60 boards a level: every one with one answer; givens 16.7, 42.8, 33.5, 28.4, 26.3; mean grade 1, 1, 2, 3.2, 4.6; 0.1, 0.3, 1.7, 15
+    and 47 ms to make (154 at worst).
+  - **The solvers** (`SUDOKU CORE START … END`, pure, so a probe can run them in node): `suSolve(N, grid, limit, R)` counts answers by
+    backtracking on the square with fewest candidates (a full grid is one drawn from an empty grid with `R` shuffling the digits);
+    `suRate(N, grid, firstOnly)` is the human solver, easiest first and one thing at a time: naked single (1), hidden single (2), locked
+    candidates (3), naked pairs and triples and hidden pairs (4), X-wing, swordfish, XY-wing (5); its `steps` are the placements in order,
+    each with the grade of what it took since the last, and its `level` the puzzle's grade (checked against the answers over 300 puzzles: it
+    never put a wrong digit down, and about 12% of minimal puzzles stall it, which is why the hardest levels keep trying). `suMake` takes
+    squares out of a full grid (a square and its half-turn twin together) while one answer remains, down to the level's givens, and keeps the
+    first of up to `tries` grids whose grade is in the level's band, else the nearest (a board whose grade missed says "beyond the logic here").
+  - **Boards looked at are made a few milliseconds a frame** (the boards' share of time, `SOON`): a level 5 takes 47 ms on average, one go a
+    visible stop, so `suMake` is worked a try at a time and carried on from where it got to (`suJob`, `JOBS`); the answer is the same however
+    it is paced (`makePaced` in the smoke test). The board you play is made at once.
+  - **The board is the controls** (Oct 28, "Games play with the row shut"): M = N + 2 squares across, the grid in a margin of one; the far
+    margin holds the level as dots in its flag colour, the clock (m:ss, seven segments) and a red strike for each fault (most five), the near
+    margin the digits 1 to N as buttons (cream; dim where a digit is all placed). Tap a square (gold; its row, column and box a cool tint, the
+    same digit a warm one, a wrong digit pink), tap a digit; the same digit again takes it out; a given never changes. The play pad has what a
+    gesture does not: Notes (pencil marks, a bit a digit, small digits in the square from boards 240 px wide; a digit put in clears it from
+    its peers' notes), Erase, Undo and Hint. The keys do it all: 1–9, Backspace, arrows (the screen's directions, `screenToBoardDirs`), N, Z,
+    H (not 0, which frames the board). No message ever shows; the title says what the game is (`cellTitle`: the level, the grade, best, the
+    digits placed, the hint's technique).
+  - **Faults and stars**: a wrong digit put down (shown red as it goes in; the menu's Show mistakes turns that off) or a press of Hint is a
+    fault; none ★★★, one or two ★★, more ★; the best (most stars, then quickest) kept (`sudoku.best`, by board and level). **Hint**: a wrong
+    digit is found first (shown pink; the second press puts the right one in), else the human solver is asked for its next step from the
+    digits as they stand (never your notes), the square lit and selected and the technique in the title, the second press putting its digit in;
+    a grid it cannot go on from lights the square with fewest candidates and says it is a guess.
+  - **A board no one plays solves itself**: its givens, then each digit in the order the human solver found them (`P.order`; a stalled
+    puzzle's rest in answer order), a step (0.32 s) apart, the grid held, then again, each board at its own phase (`shownView`, `cycleOf`).
+    Solved, a tap plays it again where it is.
+  - **`BOARD_KIT.flat`** (`geo`, `rect`, `digit`, `cross`): Nonograms' flat unlit pieces and seven-segment digits, moved into the kit whole
+    so the two share one copy (item kinds `skD0`…`skD9`, `skX`, `skDot` here).
+  - Found building it: the sandbox's software renderer takes 2–5 s a frame (the page's JS is idle 97% of that, Sudoku's included), so a
+    camera that "looks still" over four looks a quarter second apart is only between two frames: a real click right after `__settle` landed
+    off the board. The check aims only once the point reads back as the square and holds still 300 ms (`aimAt`).
+  - The smoke test (part 5) checks the sizes and levels by ring, 30 sampled puzzles each with one answer that the human solver finishes with
+    the answer's digits, the climb in givens and grade, a classic grid's one answer, an empty 4×4's many and a broken grid's none, a paced
+    make equal to a whole one, the rules by hand (a given fixed, notes, a digit clearing its peers' notes, undo, a wrong digit, both hint
+    presses, the stars), real input (a click on a square and a digit, a given staying, the same digit taking it out, the keys, arrows,
+    Backspace, Z, the play pad's four buttons, a real click finishing a puzzle and another starting it again), four quick real touches on one
+    digit, and a board no one plays going through every step of its solve.
 - **Flash cards** (Oct 25: "how about flash card application?", then "Built-in decks" and "Spaced repetition"): `FLASH_APP`, id
   `flashcards`, after Nonograms. A deck laid over the field, a card a board, studied on a spaced-repetition schedule.
   - **Decks are loaded, not written in the page** (Oct 25, later: "dont type out the cards by hand. it must be loaded like json or
@@ -2675,7 +2754,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   also has `gkey` (50 games), `gameAt(GAMES, fresh)` (a board's game made on first want; 11), `liveGame(() => app, () => LIVE,
   gameAt)` (the board being played while this game is up; 10), `clamp` (12), `now` (the paused-aware clock in ms; 17), `yawOf`
   (never a yaw of exactly 0; 5), `hash` (FNV-1a in base 36: the keys of your own tables, figures and trick shots; 4, the same
-  keys as before), `LV_COL` (the levels' flag colours; 5) and `stars(n)` (★★☆; 15 places). Trick shots' worker is made from its
+  keys as before), `LV_COL` (the levels' flag colours; 5) and `stars(n)` (★★☆; 15 places), and since Nov 7 `flat` (flat unlit pieces and seven-segment digits: Nonograms' and Sudoku's). Trick shots' worker is made from its
   own text up to "IN THE FIELD", so nothing of the kit may go above that line; the game lab's starters and sandbox keep their
   own. Checked: every app loads with the same levels, every hash the same, a tap starts the same game.
   **Boards no one plays, played back** (Oct 27: "do the idle-board playback"): `BOARD_KIT.phase(idx)` (a board's own place in its
