@@ -4623,9 +4623,16 @@ try {
       await page.evaluate(() => window.getFieldApp()._debug.setting('players'));
       if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
       const t0 = await page.evaluate(() => window.getFieldApp()._debug.SET.target);
-      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
-      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
-      real.tile = [t0, await page.evaluate(() => window.getFieldApp()._debug.SET.target)];
+      // (the row has just opened and a slow frame on CI left its tile still sliding when it was clicked: found once at 7 → 7. The tile is clicked
+      //  once it holds still, and once more if the click did not take)
+      const tileAt = () => page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      const target = () => page.evaluate(() => window.getFieldApp()._debug.SET.target);
+      for (let tries = 0; tries < 3 && (await target()) === t0; tries++){
+        let tile = null;
+        for (let k = 0; k < 40 && !tile; k++){ const a = await tileAt(); if (a){ await page.waitForTimeout(250); const b = await tileAt(); if (b && Math.abs(a[0] - b[0]) < 1 && Math.abs(a[1] - b[1]) < 1) tile = b; } else await page.waitForTimeout(250); }
+        if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(600); }
+      }
+      real.tile = [t0, await target()];
       await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 7) D.setting('target'); });
       real.idle = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), s = () => JSON.stringify(A.cellItems(c + 3, r).filter(i => /^ahDisc/.test(i.kind)).map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
         // asked again and again until it changes, up to 10 s: on CI the board's recording is worked out a few boards at a time
@@ -6135,6 +6142,11 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       real = { before: await gs() };
       let p = await aimAt(0.5, 0.4); await page.mouse.click(p.x, p.y);
       real.started = await until(s => s.state === 'play');
+      // (the game on a board is the recording's moment taken over, and the recording's player overlooks a missile now and then, so at some
+      //  moments the nearest bunker is already destroyed and empty, which sends the next shot from another: CI failed once with bunker 0 at
+      //  ammo 0, and so did a local run. Every bunker is made whole and filled, so the check is about the nearest one)
+      await page.evaluate(k => { const g = window.getFieldApp()._debug.games.get(k); if (g) g.bases.forEach(b => { b.up = true; if (b.ammo < 6) b.ammo = 6; }); }, fc.join('_'));
+      real.started = await gs();
       const left = real.started.ammo[0], total = real.started.ammo.reduce((a, b) => a + b, 0);
       p = await aimAt(0.2, 0.4); await page.mouse.click(p.x, p.y);
       real.fired = await until(s => s.ammo[0] === left - 1 || s.ammo.reduce((a, b) => a + b, 0) < total);
@@ -6375,8 +6387,12 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   {
     const before = failures.length, out = {};
     const shown = () => page.evaluate(() => { const b = document.body; return !b.classList.contains('bb-collapsed'); });
-    const hold = async () => { const p = await page.evaluate(() => ({ x: innerWidth * 0.45, y: innerHeight * 0.4 })); await page.mouse.move(p.x, p.y); await page.mouse.down();
-      await page.waitForTimeout(1400); await page.mouse.up(); await page.waitForTimeout(900); };
+    // (a hold is decided a frame after its time is up, and on a loaded CI runner that frame can come later than the fixed 900 ms this waited
+    //  after the press let go: found once, the row toggled after it was read, twice over. It waits for the switch it is to flip, up to 8 s)
+    const hold = async (read = shown) => { const p = await page.evaluate(() => ({ x: innerWidth * 0.45, y: innerHeight * 0.4 })); await page.mouse.move(p.x, p.y);
+      const was = await read(); await page.mouse.down();
+      await page.waitForTimeout(1400); await page.mouse.up(); await page.waitForTimeout(900);
+      for (let k = 0; k < 40 && (await read()) === was; k++) await page.waitForTimeout(200); };
     try {
       await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); const D = A._debug, [c, r] = D.cellOfIdx(1); D.GAMES.clear(); D.fly(c, r); D.LIVE = { c, r }; D.gameAt(c, r); });
       // (settled, not a fixed 3 s: in a part of its own the page is fresh and its frames slow, and a hold during the flight was a pan)
@@ -6391,7 +6407,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       await page.waitForTimeout(2500);
       // (Simon's row is empty, so it is drawn shut either way: the field's own switch is read)
       const vis = () => page.evaluate(() => window.tvf.bottomRow.visible);
-      const s0 = await vis(); await hold(); out.simon = { before: s0, after: await vis() };
+      const s0 = await vis(); await hold(vis); out.simon = { before: s0, after: await vis() };
       // (Oct 25: "Long press is always toggle of bottom browser"): in Minesweeper, a game under way, a hold flips the switch and
       // plants no flag; with Taps: flag (the real F) a real click on a covered square plants one. (Oct 25, later: "minesweeper should
       // restore the long press, its fundemental to its game play."): a real hold on a covered square flags it and leaves the switch
