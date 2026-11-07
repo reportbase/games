@@ -813,6 +813,9 @@
      because it grew its display rule later than its hidden logic. */
   body .chip[hidden] { display: none; }
   body #menuBtn { left: auto; right: 16px; }
+  /* HOME sits in the upper left, the corner the menu left for the right (Nov 7); a finger's size on a touch screen, as the menu's. */
+  body #homeBtn { left: 16px; right: auto; top: 16px; bottom: auto; }
+  @media (pointer: coarse) { body #homeBtn { width: var(--menu-chip); height: var(--menu-chip); border-radius: 11px; } }
   /* THE LOCK SITS ON THE STRIP, NOT IN THE CORNER. It is the strip's
      companion — the strip is every board you could go to, the lock is the
      refusal to go — so it belongs at the strip's left end rather than
@@ -961,6 +964,8 @@
 <!-- svg.html's own glyphs, stroked rather than typeset: an emoji padlock is
      whatever the platform decides it is, and the two corners were wearing two
      different type designs. These are one line weight and one geometry. -->
+<!-- HOME, upper left (Nov 7: "add a button for home in the upper left"): back to the page of every game, framed on the game you are in. Hidden on Home itself. -->
+<button id="homeBtn" class="panel chip" aria-label="home" hidden title="Home: every game as a board."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5M6.5 10v9.5h11V10M10 19.5v-5h4v5"/></svg></button>
 <button id="menuBtn" class="panel chip" aria-label="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></button>
 <!-- THE TURN. What the double tap used to do, on a button beside the lock:
      one press turns the framed board round (rotateBoard90 is a HALF turn,
@@ -13216,7 +13221,10 @@ function syncBrowserVisibility(){
        empty (Sep 26: "remove the three dots on the bottom browser for games that don't use the bottom browser"); since
        then most games put their numbers in the row, and the dots are the one mark that says the pane is down there, so
        they stay on every game. */
-    if (h.style.display) h.style.display = '';
+    /* …BUT NOT WHERE THERE IS NO ROW (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button."): an app that gives the
+       row nothing (no moves, no tiles, no pictures, no quick buttons: Home, the arcade games, the pipe puzzles) has no dots, since there is nothing for
+       them to open. `bbHasRow` says which. */
+    syncBrowserDots();
     const t = on ? 'Hide the row of boards' : 'Show the row of boards';
     if (t !== _bbLabelLast){ _bbLabelLast = t; h.title = t; }
   }
@@ -13226,6 +13234,19 @@ function syncBrowserVisibility(){
    the row or fills it. Opening and shutting the row is the DOTS' job, on the
    bar itself. This function stays because the button may be gone and the
    callers are many; it does nothing when there is nothing to update. */
+/* DOES THE APP HAVE A BOTTOM BROWSER AT ALL: something to put in the row (a game's moves, an app's tiles or quick buttons, the gallery's
+   prints). Not "the row holds something now": at an app switch the row still holds the app before's tiles until it is rebuilt. */
+function bbHasRow(){
+  const a = window.getFieldApp && window.getFieldApp();
+  if (!a) return true;
+  return !!(a.nativePieces || a._record || a.statTiles || a.statsFirst || a.quickActs || (a._list && a._list.length));
+}
+function syncBrowserDots(){
+  const h = document.getElementById('bbHandle');
+  if (!h) return;
+  const want = bbHasRow() ? '' : 'none';
+  if (h.style.display !== want) h.style.display = want;
+}
 function syncBrowserButton(){
   const b = document.getElementById('bBrowser');
   if (!b) return;
@@ -14728,6 +14749,18 @@ function syncFitButton(){
                    : 'Fit window: the picture fills the board, and whatever does not fit is lost.')
           + ' Press to show ' + (image ? 'fit window' : 'fit image') + '.';
 }
+/* THE HOME CHIP (Nov 7): shown on every app but Home, synced where an app change is noticed; it opens Home (`openApp`), whose `onEnter` takes the view to the
+   board of the game just left. */
+function syncHomeButton(){
+  const b = document.getElementById('homeBtn');
+  if (!b) return;
+  const a = window.getFieldApp && window.getFieldApp();
+  b.hidden = !a || !!a.isHome;
+}
+document.getElementById('homeBtn')?.addEventListener('click', () => {
+  const H = (window.FIELD_APPS || []).find(a => a.isHome);
+  if (H) openApp(H);
+});
 document.getElementById('fitBtn')?.addEventListener('click', () => {
   const app = window.getFieldApp && window.getFieldApp();
   if (!app || !app.setFit) return;
@@ -63993,6 +64026,33 @@ const HOME_APP = (() => {
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
   const cssOf = v => typeof v === 'number' ? '#' + (v >>> 0).toString(16).padStart(6, '0').slice(-6) : typeof v === 'string' ? v : v && v.getHexString ? '#' + v.getHexString() : '#222';
 
+  /* ─── WHERE HOME WAS LEFT (Nov 7: "save the position, [tilt] and rotation of home so it returns in the same position.") ─── the eye's place,
+     turn, tilt and zoom and the board framed, kept when Home is left and twice a second while it is up, in localStorage `home.view`, so the chip,
+     the picker and a reload all come back to it. */
+  const VIEW_KEY = 'home.view';
+  let SAVED = null, ENTERED = false, VIEW_SIG = '';
+  const KEYS = ['camX', 'camZ', 'yaw', 'pitch', 'zoom', 'cx', 'cz'];
+  function keepView(){
+    const v = { camX: st.camX, camZ: st.camZ, yaw: st.yaw, pitch: st.pitch, zoom: st.zoom, cx: target.cellX, cz: target.cellZ, shown: !!target.shown };
+    if (!KEYS.every(k => Number.isFinite(v[k]))) return;
+    SAVED = v; VIEW_SIG = KEYS.map(k => v[k].toFixed(4)).join();
+    try { localStorage.setItem(VIEW_KEY, JSON.stringify(v)); } catch {}
+  }
+  function savedView(){
+    if (SAVED) return SAVED;
+    try { const v = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); if (v && KEYS.every(k => Number.isFinite(v[k]))) return (SAVED = v); } catch {}
+    return null;
+  }
+  const forgetView = () => { SAVED = null; try { localStorage.removeItem(VIEW_KEY); } catch {} };
+  setInterval(() => {
+    try {
+      if (!ENTERED || window.getFieldApp() !== app) return;
+      const sig = KEYS.map(k => (k === 'cx' ? target.cellX : k === 'cz' ? target.cellZ : st[k]).toFixed(4)).join();
+      if (sig !== VIEW_SIG) keepView();
+    } catch {}
+  }, 500);
+  addEventListener('pagehide', () => { try { if (ENTERED && window.getFieldApp() === app) keepView(); } catch {} });
+
   /* ─── OPENING A GAME ─── */
   let LAST = null;           // the id of the game the page was last in (read at the page's start, for the first arrival)
   function openGame(id){
@@ -64120,12 +64180,23 @@ const HOME_APP = (() => {
     cellTitle(c, r){ const s = slotAt(c, r); return s ? s.title + ' — tap this board, or double tap any board, to play it' : 'Home'; },
     onCellTap(c, r){ const id = idAt(c, r); if (id) openGame(id); return true; },
     startOnDouble(c, r){ const id = idAt(c, r); if (id) openGame(id); },
-    // coming here from a game (the picker, the menu) or at the page's start: the view goes to that game's board
+    // coming here from a game (the picker, the menu, the Home chip) or at the page's start: the view returns to where Home was left (position,
+    // tilt, turn and zoom, kept across a reload too); a first visit goes to that game's board
     onEnter(prev){
-      const id = prev && prev !== app && prev.id ? prev.id : LAST, at = id && slotOf(id);
+      const id = prev && prev !== app && prev.id ? prev.id : LAST, at = id && slotOf(id), v = savedView();
       LAST = null;
-      if (at){ try { gotoCell(at[0], at[1]); settleCameraNow(); } catch {} }
+      if (v){
+        try {
+          st.camX = v.camX; st.camZ = v.camZ; st.yaw = v.yaw; st.pitch = v.pitch; st.zoom = v.zoom; st.yawV = 0;
+          target.cellX = v.cx; target.cellZ = v.cz; target.boardX = v.cx * gridSpacingX(); target.boardZ = v.cz * gridSpacingZ(); target.shown = v.shown;
+          target.zoom = null; target.yaw = null; target.active = false;
+          resetThrust(); settleCameraNow();
+          _defFitArmed++;                     // (the arrival's default fit would frame the board again: given up, the view is where it was left)
+        } catch {}
+      } else if (at){ try { gotoCell(at[0], at[1]); settleCameraNow(); } catch {} }
+      ENTERED = true;
     },
+    onLeave(){ keepView(); ENTERED = false; },
     // the page's start: the game last played (its name, as the field keeps it) is where Home arrives
     rememberLast(name){ const a = name && (window.FIELD_APPS || []).find(x => String(x.name || '') === name && x !== app); LAST = a ? a.id : null; },
     iconMosaic,
@@ -64137,7 +64208,7 @@ const HOME_APP = (() => {
       const side = Math.min(sz, hh);
       ctx.drawImage(a === CHESS_APP || a.drawIcon ? iconOf(a) : _appIconDraw(a, Math.max(8, Math.round(side))), (sz - side) / 2, (hh - side) / 2, side, side);
     },
-    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, get COLS(){ order(); return cols; }, appById, iconOf, WARM, wrap, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
+    _debug: { order, slotAt, idAt, slotOf, titleOf, openGame, paint, photoKey, PIC, get COLS(){ order(); return cols; }, appById, iconOf, WARM, wrap, keepView, forgetView, savedView, get LAST(){ return LAST; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();
@@ -65927,6 +65998,8 @@ function syncAppSelect(){
      screen is worse than none. */
   try { syncChessChips(); } catch {}   // undo and the game index are chess's
   try { syncFitButton(); } catch {}    // ...and the fit chip is the gallery's
+  try { syncHomeButton(); } catch {}   // ...and Home's chip is every app's but Home's
+  try { syncBrowserDots(); } catch {}  // ...and the bottom dots are the apps' that have a row
   try { renderAppMenu(); } catch {}    // and so is its whole menu — see #menuStock
   // How much of its cell a board fills — a raster asks for all of it.
   BOARD_FILL = (FIELD_APP && FIELD_APP.fillsCell) ? 1 : 0.9;
