@@ -21,6 +21,7 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   without it the windmills are drawn with the old plain shapes. `bumper`, `rock` and
   `pipe` (Oct 7) are the course's other props, each with a plain fallback shape.
   New props go here too.
+- `explainers/`: nine MP4 videos of draw's scrolling explainers (reading, turned, addresses, nearfar, standpoints, pictures, rates, bridge, leaves), 1280×720, made from draw's scenes by `npm run video` there (`tools/explainer-video.mjs`: the player's frames into ffmpeg, a chapter a beat, the beat words as soft subtitles; Nov 8: "can you make videos of the explainers?", then "add them to the repo"). They are outputs of draw's `player/examples/*.tvfs`, so draw is their source: render them again there, not here. The page does not load them.
 - `decks/`: deck files for the flash cards (`.tsv`, Anki-style `#deck`/`#ask` lines and a header), to open, drop or put in a
   bucket. The page never loads them by itself: decks are loaded as files are (Oct 25).
 
