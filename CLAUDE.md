@@ -325,6 +325,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (a shell comes down onto the keep's foot, under the wall's top, unless it comes through the gate's side): rockets and the cruise missile are for launchers and outer works, the
     high arcs for keeps. The smoke test wants the four sides' castles to differ in walls, towers, roofs and keep, each with its own kinds.
 
+- **Board War: a goal and a territory minimap** (Nov 8: "where could we take this game?" … "proceed"): the war had no end, so the menu's Goal (`CAPTURE_GOALS` 0, 10, 25, 50; localStorage
+  `boardwar.goal`, ten by default) is a number of boards to take from the other sides, won when `realm().took` reaches it and lost when none of the 25 boards of your home block is yours
+  (`realm`, `checkGoal`); the result is kept once (`boardwar.result`), said once in the page's own box (`confirmAction`, Keep playing), and cleared by a new war or another goal; Free war never ends.
+  A minimap (`#warMap`, `mapShow`, `mapDraw`: 61 × 61 boards round the one in view, 3 px a board in its owner's colour, the view in white, home and taken counts and the goal under it)
+  stands bottom left while the game is up, redrawn twice a second and when a board changes hands; a tap on it flies to the board (`gotoCell`). Next in the plan: a resource from held castles
+  that upgrades launchers, faction doctrines in `ai`, siege tools. The smoke test (part 7, "board war goal") plays the win, the single saying, the defeat, the free war and the map.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

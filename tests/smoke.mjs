@@ -8303,6 +8303,39 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const bwrOk = bwr.sel === 2 && bwr.fired && bwr.fired.length === 1 && bwr.fired[0] === '2:0_0:9999_0';
     if (!bwrOk) failures.push('[boardwar real input] ' + JSON.stringify(bwr));
     console.log(`${bwrOk ? 'ok  ' : 'FAIL'} board war: a real click on the third launcher takes it (${bwr.sel}) and a real click toward the hostile board fires it there (${bwr.fired && bwr.fired.join()})`);
+    // BOARD WAR's goal and minimap (Nov 8: "where could we take this game?" … "proceed"): taking boards counts toward the goal, a victory is kept once and said in a
+    // box, losing the home block is a defeat, a new war clears it, and the minimap shows the owners round the view and flies where it is tapped
+    const bwg = await page.evaluate(async () => {
+      const D = window.getFieldApp()._debug, out = {}, S = D.SIDE, foe = (S + 1) % 4;
+      D.newWar(); D.SIM.quiet = true; D.LIVE = { c: 0, r: 0 };
+      D.setGoal(1);                                              // (take 10 boards)
+      out.start = JSON.stringify(D.realm()) + ',' + D.RESULT;
+      const far = []; for (let c = 20; far.length < 12; c++) if (D.regionSide(c, 20) !== S) far.push(c);   // (boards that began hostile)
+      for (let i = 0; i < 9; i++) D.capture(far[i], 20, S);      // nine taken
+      const nine = D.realm().took, none = D.RESULT;
+      D.capture(far[9], 20, S);
+      out.won = [nine, none, D.RESULT && D.RESULT.r, !!document.getElementById('confirmBox')].join();
+      document.getElementById('confirmBox')?.remove();
+      const keep = JSON.stringify(D.RESULT); D.capture(far[10], 20, S); out.once = keep === JSON.stringify(D.RESULT);
+      D.newWar(); out.cleared = D.RESULT === null;
+      D.setGoal(1);                                              // (lose the home block: all 25 boards to the foe)
+      for (let c = 0; c < 5; c++) for (let r = 0; r < 5; r++) D.capture(c, r, foe);
+      out.lost = D.RESULT && D.RESULT.r + ':' + D.realm().home;
+      document.getElementById('confirmBox')?.remove();
+      D.newWar(); D.setGoal(0);                                  // (a free war never ends)
+      for (let c = 0; c < 5; c++) for (let r = 0; r < 5; r++) D.capture(c, r, foe);
+      out.free = D.RESULT === null;
+      D.newWar(); D.setGoal(1);
+      D.mapShow(true); D.mapDraw();
+      const m = document.getElementById('warMap');
+      out.map = !!m && m.querySelector('canvas').width === 183 && /home 25\/25/.test(m.textContent);
+      D.mapShow(false); out.gone = !document.getElementById('warMap');
+      D.SIM.quiet = false; D.newWar();
+      return out;
+    });
+    const bwgOk = /^\{"home":25,"took":0\},null$/.test(bwg.start) && bwg.won === '9,,won,true' && bwg.once && bwg.cleared && bwg.lost === 'lost:0' && bwg.free && bwg.map && bwg.gone;
+    if (!bwgOk) failures.push('[boardwar goal] ' + JSON.stringify(bwg));
+    console.log(`${bwgOk ? 'ok  ' : 'FAIL'} board war: a goal of ten boards won on the tenth (said once in a box), the home block lost is a defeat, a free war never ends, the minimap drawn and gone (${JSON.stringify(bwg)})`);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SIM.quiet = false; D.newWar(); });
 }   // (end of part 7)
 } catch (e){

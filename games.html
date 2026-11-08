@@ -63927,7 +63927,9 @@ onmessage = ev => {
     },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(){ return true; },
-    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    onEnter(){ mapShow(true); },
+    onLeave(){ mapShow(false); },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; mapDraw(); },
     noDoubleTap(){ return !!LIVE; },
     /* DRAGS AND SWIPES (Oct 26: "1,2", the second's "drags and swipes"): a game with drag(state, x0, y0, x1, y1, done, rand)
        takes a press on its board: told where the finger went down and where it is now, in squares (fractional), as it moves,
@@ -64517,7 +64519,7 @@ const WAR_APP = (() => {
     OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
     FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
     if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
-    saveOwn();
+    saveOwn(); checkGoal(); mapDraw();
     if (side === SIDE || was === SIDE) SND.play(side === SIDE ? 'win' : 'lose');
   }
   function impact(m){
@@ -64593,13 +64595,72 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; saveOwn(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
     const n = [0, 0, 0, 0];
     for (let dc = -R; dc <= R; dc++) for (let dr = -R; dr <= R; dr++) n[ownerOf(c + dc, r + dr)]++;
     return n;
+  }
+
+  /* A reason to play (Nov 8: "where could we take this game?" … "proceed"): a goal, a territory minimap. The goal (the menu's Goal, localStorage
+     `boardwar.goal`) is a number of boards to capture from the other sides (`CAPTURE_GOALS`, 0 the free war that never ends); it is lost when none of
+     the 25 boards of your home block is yours any more. `realm` counts what you hold: the home block's boards still yours and every board you took.
+     A result (`boardwar.result`) is kept once, said in a box once, and cleared by a new war or another goal. */
+  const CAPTURE_GOALS = [0, 10, 25, 50], HOME_N = 5;
+  let GOAL = Math.max(0, Math.min(CAPTURE_GOALS.length - 1, load('boardwar.goal', 1) | 0));
+  let RESULT = load('boardwar.result', null);
+  function realm(){
+    let home = 0, took = 0;
+    for (let c = 0; c < HOME_N; c++) for (let r = 0; r < HOME_N; r++) if (ownerOf(c, r) === SIDE) home++;
+    for (const [k, v] of OWN) if (v === SIDE){ const c = Math.floor(k / GS), r = k % GS; if (regionSide(c, r) !== SIDE) took++; }
+    return { home, took };
+  }
+  function checkGoal(){
+    if (RESULT || !CAPTURE_GOALS[GOAL]) return;
+    const R = realm();
+    const res = R.took >= CAPTURE_GOALS[GOAL] ? 'won' : (R.home === 0 ? 'lost' : null);
+    if (!res) return;
+    RESULT = { goal: CAPTURE_GOALS[GOAL], r: res, took: R.took }; save('boardwar.result', RESULT);
+    try { confirmAction(res === 'won' ? 'Victory! ' + R.took + ' boards taken from the other sides.' : 'Defeat. Your home block has fallen with ' + R.took + ' boards taken.', 'Keep playing', () => {}); } catch {}
+  }
+  function setGoal(g){ GOAL = (g + CAPTURE_GOALS.length) % CAPTURE_GOALS.length; save('boardwar.goal', GOAL); RESULT = null; save('boardwar.result', null); checkGoal(); }
+
+  /* The minimap: a square of boards round the one in view (`MAP_R` each way), a pixel block a board in its owner's colour, the view marked white,
+     your home block outlined; a tap flies to the board tapped. Redrawn twice a second while this game is up, and when a board changes hands. */
+  const MAP_R = 30, MAP_PX = 3;
+  let MAP = null, MAP_TIMER = 0;
+  function mapDraw(){
+    if (!MAP) return;
+    const [cc, cr] = center(), n = MAP_R * 2 + 1, g = MAP.cv.getContext('2d');
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++){
+      g.fillStyle = '#' + SIDES[ownerOf(cc - MAP_R + i, cr - MAP_R + j)].a.toString(16).padStart(6, '0');
+      g.fillRect(i * MAP_PX, j * MAP_PX, MAP_PX, MAP_PX);
+    }
+    g.strokeStyle = '#fff'; g.lineWidth = 1; g.strokeRect(MAP_R * MAP_PX - 1.5, MAP_R * MAP_PX - 1.5, MAP_PX + 3, MAP_PX + 3);
+    const R = realm(), goal = CAPTURE_GOALS[GOAL];
+    MAP.tx.textContent = SIDES[SIDE].name + ' · home ' + R.home + '/25 · taken ' + R.took + (goal ? ' of ' + goal : '') + (RESULT ? (RESULT.r === 'won' ? ' · VICTORY' : ' · DEFEAT') : '');
+    MAP.at = [cc, cr];
+  }
+  function mapShow(on){
+    if (!on){ if (MAP){ clearInterval(MAP_TIMER); MAP.el.remove(); MAP = null; } return; }
+    if (MAP) return;
+    const el = document.createElement('div'), cv = document.createElement('canvas'), tx = document.createElement('div'), n = MAP_R * 2 + 1;
+    el.id = 'warMap'; cv.width = cv.height = n * MAP_PX;
+    el.style.cssText = 'position:fixed;left:8px;bottom:64px;z-index:30;background:rgba(14,16,20,.82);border:1px solid #55585f;border-radius:8px;padding:5px;'
+      + 'font:0.6875rem ' + UI_SANS + ';color:#e8eaee;line-height:1.3;max-width:' + (n * MAP_PX + 4) + 'px';
+    cv.style.cssText = 'display:block;cursor:pointer;image-rendering:pixelated';
+    el.append(cv, tx); document.body.appendChild(el);
+    MAP = { el, cv, tx, at: [0, 0] };
+    cv.addEventListener('click', e => {
+      const b = cv.getBoundingClientRect(), i = Math.floor((e.clientX - b.left) / b.width * n), j = Math.floor((e.clientY - b.top) / b.height * n);
+      if (i < 0 || j < 0 || i >= n || j >= n) return;
+      e.stopPropagation();
+      try { gotoCell(wrapc(MAP.at[0] - MAP_R + i), wrapc(MAP.at[1] - MAP_R + j)); } catch {}
+    });
+    for (const t of ['pointerdown', 'touchstart', 'mousedown', 'wheel']) el.addEventListener(t, e => e.stopPropagation(), { passive: true });
+    mapDraw(); MAP_TIMER = setInterval(mapDraw, 500);
   }
 
   /* ─── DRAWING ─── */
@@ -64828,6 +64889,7 @@ const WAR_APP = (() => {
       { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
       { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
       { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
+      { label: () => 'Goal: ' + (CAPTURE_GOALS[GOAL] ? 'take ' + CAPTURE_GOALS[GOAL] + ' boards' : 'free war'), title: 'What ends the war: take this many boards from the other sides (victory), or lose your whole home block (defeat). Free war never ends.', on(){ setGoal(GOAL + 1); mapDraw(); } },
       { label: 'New war', title: 'Every board back to where the war began, and the score at nothing.', on(){ newWar(); } },
     ]}],
     cellFar: { light: 0x3b4150, dark: 0x343946 },
@@ -64875,7 +64937,7 @@ const WAR_APP = (() => {
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
     _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
-              selectKind, newWar, setSide, tally, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              selectKind, newWar, setSide, tally, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
