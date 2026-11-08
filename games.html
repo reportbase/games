@@ -64619,27 +64619,58 @@ const WAR_APP = (() => {
   const mixC = (a, b, f) => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.round(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f) << sh; return o; };
   /* The castle's pieces (see terrOf): each on the ground under it, in stone with the owner's colour on roofs and banners; the curtain wall is knocked down in an order the
      hole sets as the board is hurt (rubble where a segment stood) and stands whole again as it heals. */
-  function castleItems(out, T, S, f, idx, WD){
-    const C = T.castle, stone = mixC(0xb9b2a2, S.col, 0.16), dark = mixC(0x8f897c, S.col, 0.16), CW = GOLFD().CW, lost = Math.floor((1 - Math.max(0, Math.min(1, f))) * 10 - 1e-6);
+  /* The four castle types (side by side with their geometries, GEOS): what each is made of. `tw` is a tower kind with the width and height of its mesh and where its roof ends,
+     `corner` the tower at each corner of the curtain and `hill` on high ground (width in cells, height in the board's units, its roof kind, a flag on it), `mid` small towers
+     half way along the walls, `inner` a second ring of lower wall inside, `keep` the donjon (kind, scale), `house` the cottages' roof and wall colour. */
+  const TWR = { bwTower: { d: 1.36, h: 2.2, top: 3.45 }, bwTowerSq: { d: 1.3, h: 2.2, top: 2.55 }, bwTowerFr: { d: 1.1, h: 2.8, top: 4.9 }, bwTowerWood: { d: 1.1, h: 2.3, top: 3.1 }, bwMinaret: { d: 1.0, h: 3.0, top: 4.05 } };
+  const CASTLES = [
+    { name: 'Norman fortress', stone: 0xb59482, dark: 0x8d6f60, wall: 'bwWallM', wallH: 1.3, gate: 'bwGateTop',
+      corner: () => ({ kind: 'bwTowerSq', w: 0.6, ht: 0.14, roof: null, flag: false }), hill: { kind: 'bwTowerSq', w: 0.8, ht: 0.1, roof: null, flag: true }, mid: { kind: 'bwTowerSq', w: 0.4, ht: 0.12 },
+      keep: { kind: 'bwKeepSq', sc: 0.15 }, house: { roof: 'bwRoof', wall: 0xb59482 } },
+    { name: 'Château', stone: 0xc9d1e0, dark: 0xa4adc0, wall: 'bwWallM', wallH: 0.95, gate: 'bwGateTop', inner: true,
+      corner: i => ({ kind: 'bwTowerFr', w: 0.34, ht: 0.12, roof: 'bwSpire', flag: i % 2 === 0 }), hill: { kind: 'bwTowerFr', w: 0.5, ht: 0.1, roof: 'bwSpire', flag: true },
+      keep: { kind: 'bwKeepFr', sc: 0.14 }, house: { roof: 'bwRoof', wall: 0xdfe3ea } },
+    { name: 'Timber stockade', stone: 0x9a7a4c, dark: 0x7a5e38, wall: 'bwPalisade', wallH: 0.85, gate: 'bwGateTop',
+      corner: i => (i % 2 ? { kind: 'bwTowerWood', w: 0.34, ht: 0.1, roof: null, flag: false } : { kind: 'bwTowerWood', w: 0.56, ht: 0.14, roof: 'bwWoodRoof', flag: false }),
+      hill: { kind: 'bwTowerWood', w: 0.75, ht: 0.1, roof: 'bwWoodRoof', flag: true }, keep: { kind: 'bwKeepWood', sc: 0.16 }, house: { roof: 'bwWoodRoof', wall: 0x8a6a40 } },
+    { name: 'Desert citadel', stone: 0xe3cd93, dark: 0xc4ad74, wall: 'bwWallS', wallH: 1.0, gate: 'bwGateTop',
+      corner: i => (i % 2 ? { kind: 'bwTower', w: 0.5, ht: 0.12, roof: 'bwDome', flag: false } : { kind: 'bwMinaret', w: 0.3, ht: 0.15, roof: 'bwDomeTop', flag: false }),
+      hill: { kind: 'bwMinaret', w: 0.45, ht: 0.12, roof: 'bwDomeTop', flag: true }, keep: { kind: 'bwKeepDome', sc: 0.15 }, house: { roof: 'bwDome', wall: 0xe3cd93 } },
+  ];
+  /* The castle's pieces (see terrOf): each on the ground under it, in the faction's own kind of castle (CASTLES), with its colour on roofs, banners and the keep; the curtain wall
+     is knocked down in an order the hole sets as the board is hurt (rubble where a segment stood) and stands whole again as it heals. */
+  function castleItems(out, T, S, f, idx, WD, own){
+    const C = T.castle, Z = CASTLES[(own == null ? 1 : own) % 4], stone = mixC(Z.stone, S.col, 0.1), dark = mixC(Z.dark, S.col, 0.1), CW = GOLFD().CW, lost = Math.floor((1 - Math.max(0, Math.min(1, f))) * 10 - 1e-6);
+    const flagAt = (x, y, h0, topY, sc) => { out.push({ kind: 'bwPole', u: x / WD, v: y, scale: sc * 0.9, lift: h0 + topY, color: 0xe8e8e8 }, { kind: 'bwFlag', u: x / WD, v: y, scale: sc * 0.9, lift: h0 + topY, color: S.col }); };
+    const kp = T.keep;
+    out.push({ kind: Z.keep.kind, u: kp.x / WD, v: kp.y, scale: Z.keep.sc, lift: kp.h / WD, color: S.col });
     for (const m of C.moat) out.push({ kind: 'bwWater', u: m.x / WD, v: m.y, scale: m.w / WD, sx: m.len / m.w, yaw: m.a, lift: T.hh(m.x, m.y) / WD + 0.002, color: 0x2f6fb5 });
-    if (C.gate){ const [, , , , ga] = C.gate, k = T.keep, rr = T.RC + CW * 0.95, bx = k.x + Math.cos(ga) * rr, by = k.y + Math.sin(ga) * rr, wd = CW * 0.55, ln = CW * 1.7;
-      out.push({ kind: 'bwBridge', u: bx / WD, v: by, scale: wd / WD, sx: ln / wd, yaw: ga, lift: T.hh(bx, by) / WD + 0.012, color: 0x8a6240 }); }
+    if (C.gate){ const [gx0, gy0, gx1, gy1, ga] = C.gate, rr = T.RC + CW * 0.95, bx = kp.x + Math.cos(ga) * rr, by = kp.y + Math.sin(ga) * rr, wd = CW * 0.55, ln = CW * 1.7;
+      out.push({ kind: 'bwBridge', u: bx / WD, v: by, scale: wd / WD, sx: ln / wd, yaw: ga, lift: T.hh(bx, by) / WD + 0.012, color: 0x8a6240 });
+      const mx = (gx0 + gx1) / 2, my = (gy0 + gy1) / 2, L = Math.hypot(gx1 - gx0, gy1 - gy0), sc = 0.09 / WD * Z.wallH;                          // (the gatehouse's lintel over the way in)
+      out.push({ kind: Z.gate, u: mx / WD, v: my, scale: sc, sx: L * 0.9 / WD / sc, yaw: Math.atan2(gy1 - gy0, gx1 - gx0), lift: T.hh(mx, my) / WD, color: stone }); }
     for (const [x0, y0, x1, y1, ht, i] of C.walls){
-      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, L = Math.hypot(x1 - x0, y1 - y0), sc = ht / WD, yaw = Math.atan2(y1 - y0, x1 - x0);
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, L = Math.hypot(x1 - x0, y1 - y0), sc = ht / WD * (i < 0 ? 1 : Z.wallH), yaw = Math.atan2(y1 - y0, x1 - x0);
       if (i >= 0 && ((i * 3 + idx) % 10) < lost){ out.push({ kind: 'bwRubble', u: mx / WD, v: my, scale: 0.05, lift: T.hh(mx, my) / WD, yaw, color: 0x6a655c }); continue; }
-      out.push({ kind: 'bwWall', u: mx / WD, v: my, scale: sc, sx: L * 1.04 / WD / sc, yaw, lift: T.hh(mx, my) / WD, color: i < 0 ? dark : stone });
+      out.push({ kind: i < 0 ? 'bwWall' : Z.wall, u: mx / WD, v: my, scale: sc, sx: L * 1.04 / WD / sc, yaw, lift: T.hh(mx, my) / WD, color: i < 0 ? dark : stone });
+      if (Z.mid && i >= 0 && i % 2 === 0){ const Q = TWR[Z.mid.kind], ts = Z.mid.w * CW / WD / Q.d, ty = (Z.mid.ht / WD) / (Q.h * ts);     // (small towers half way along every other wall)
+        out.push({ kind: Z.mid.kind, u: mx / WD, v: my, scale: ts, sy: ty, lift: T.hh(mx, my) / WD, color: stone }); }
     }
+    if (Z.inner){                                                                                  // (a second, lower ring inside the first, the château's concentric wall)
+      const R2 = T.RC * 0.58, n = 10;
+      for (let i = 0; i < n; i++){ const a0 = i * 2 * Math.PI / n, a1 = (i + 1) * 2 * Math.PI / n, x0 = kp.x + Math.cos(a0) * R2, y0 = kp.y + Math.sin(a0) * R2, x1 = kp.x + Math.cos(a1) * R2, y1 = kp.y + Math.sin(a1) * R2;
+        const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, L = Math.hypot(x1 - x0, y1 - y0), sc = 0.05 / WD;
+        out.push({ kind: Z.wall, u: mx / WD, v: my, scale: sc, sx: L * 1.04 / WD / sc, yaw: Math.atan2(y1 - y0, x1 - x0), lift: T.hh(mx, my) / WD, color: dark }); }
+    }
+    let ci = 0;
     for (const [x, y, rr, ht, kind] of C.towers){
-      const sc = (kind === 'hill' ? 0.75 : 0.42) * CW / WD / 1.16, sy = (ht / WD) / (2.2 * sc), h0 = T.hh(x, y) / WD;      // (as wide as the kind asks, as tall as it stands)
-      out.push({ kind: 'bwTower', u: x / WD, v: y, scale: sc, sy, lift: h0, color: stone });
-      out.push({ kind: 'bwTowerRoof', u: x / WD, v: y, scale: sc, sy, lift: h0, color: S.col });
-      if (kind === 'hill'){
-        out.push({ kind: 'bwPole', u: x / WD, v: y, scale: sc * sy * 1.6, lift: h0 + sc * sy * 3.5, color: 0xe8e8e8 });
-        out.push({ kind: 'bwFlag', u: x / WD, v: y, scale: sc * sy * 1.6, lift: h0 + sc * sy * 3.5, color: S.col });
-      }
+      const spec = kind === 'hill' ? Z.hill : Z.corner(ci++), Q = TWR[spec.kind], sc = spec.w * CW / WD / Q.d, sy = (spec.ht / WD) / (Q.h * sc), h0 = T.hh(x, y) / WD;       // (as wide as its kind asks, as tall as it stands)
+      out.push({ kind: spec.kind, u: x / WD, v: y, scale: sc, sy, lift: h0, color: stone });
+      if (spec.roof) out.push({ kind: spec.roof, u: x / WD, v: y, scale: sc, sy, lift: h0, color: S.col });
+      if (spec.flag) flagAt(x, y, h0, sc * sy * (spec.roof ? Q.top : Q.top + 0.3), sc * sy);
     }
     for (const [x, y] of C.houses){ const sc = CW * 0.6 / WD, h0 = T.hh(x, y) / WD;
-      out.push({ kind: 'bwHouse', u: x / WD, v: y, scale: sc, lift: h0, color: 0xcdbf9d }, { kind: 'bwRoof', u: x / WD, v: y, scale: sc, lift: h0, color: S.col }); }
+      out.push({ kind: 'bwHouse', u: x / WD, v: y, scale: sc, lift: h0, color: Z.house.wall }, { kind: Z.house.roof, u: x / WD, v: y, scale: sc, lift: h0, color: S.col }); }
   }
   function itemsOf(c, r, bp){
     const out = [], own = ownerOf(c, r), S = SIDES[own], hp = hpOf(c, r), mine = own === SIDE, now = SIM.t, D = GOLFD(), WD = D.WD, live = isLive(c, r);
@@ -64653,8 +64684,7 @@ const WAR_APP = (() => {
     let Hh = null; try { Hh = holeFor(c, r); } catch {}
     if (!Hh) return out;
     const TT = terrOf(Hh), kp = keepOf(c, r), rd = rdyOf(c, r);
-    out.push({ kind: 'bwKeep', u: kp.u, v: kp.v, scale: 0.13, lift: kp.h, color: S.col });
-    castleItems(out, TT, S, hp / MAXHP, boardIdx(c, r), WD);
+    castleItems(out, TT, S, hp / MAXHP, boardIdx(c, r), WD, own);
     const LH = lhpOf(c, r);
     for (let k = 0; k < KINDS.length; k++){
       const P = padOf(c, r, k), K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
@@ -64737,6 +64767,33 @@ const WAR_APP = (() => {
     bwRubble: T => { const parts = []; for (const [x, z, w, h, r] of [[0, 0, 0.7, 0.14, 0.3], [0.25, 0.2, 0.3, 0.2, -0.5], [-0.3, -0.15, 0.35, 0.12, 0.9], [0.1, -0.3, 0.25, 0.25, 0.2]]){ const b = new T.BoxGeometry(w, h, w * 0.8); b.rotateY(r); b.translate(x, h / 2, z); parts.push(b); } return mergeG(T, parts); },
     // (the castle: a wall's box, its foot sunk; a tower with its battlement; roofs, a cottage, the moat's ribbon, the drawbridge, a banner)
     bwWall: T => new T.BoxGeometry(1, 1.6, 0.35).translate(0, 0.2, 0),
+    /* The four factions' castles (Nov 8: "make the castles more detailed. Each color faction should have a different type of castle."): Red a Norman fortress (battlemented
+       walls, square towers, a square donjon), Blue a château (slim round towers under tall spires, an inner ring, a keep of turrets), Green a timber stockade (palisade,
+       towers on stilts, a log hall on a mound) and Gold a desert citadel (stepped sandstone walls, minarets and domes, a palace). Each kind is one merged mesh. */
+    bwWallM: T => { const p = [new T.BoxGeometry(1, 1.6, 0.35).translate(0, 0.2, 0)]; for (let i = 0; i < 4; i++) p.push(new T.BoxGeometry(0.16, 0.26, 0.22).translate(-0.375 + i * 0.25, 1.13, 0)); return mergeG(T, p); },
+    bwWallS: T => mergeG(T, [new T.BoxGeometry(1, 1.6, 0.35).translate(0, 0.2, 0), new T.BoxGeometry(0.5, 0.34, 0.3).translate(0, 1.17, 0), new T.BoxGeometry(0.12, 0.2, 0.3).translate(-0.44, 1.1, 0), new T.BoxGeometry(0.12, 0.2, 0.3).translate(0.44, 1.1, 0)]),
+    bwPalisade: T => { const p = [new T.BoxGeometry(1, 0.08, 0.14).translate(0, 0.45, 0)]; for (let i = 0; i < 10; i++){ const x = -0.45 + i * 0.1, h = 1.7 + ((i * 7) % 3) * 0.12; p.push(new T.CylinderGeometry(0.02, 0.065, h, 6).translate(x, -0.6 + h / 2, 0)); } return mergeG(T, p); },
+    bwGateTop: T => mergeG(T, [new T.BoxGeometry(1, 0.5, 0.5).translate(0, 0.78, 0), new T.BoxGeometry(1, 0.2, 0.6).translate(0, 1.13, 0)]),
+    bwTowerSq: T => { const p = [new T.BoxGeometry(1, 2.8, 1).translate(0, 0.8, 0), new T.BoxGeometry(1.25, 0.2, 1.25).translate(0, 2.3, 0)];
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) p.push(new T.BoxGeometry(0.24, 0.26, 0.24).translate(x * 0.55, 2.53, z * 0.55)); return mergeG(T, p); },
+    bwTowerFr: T => mergeG(T, [new T.CylinderGeometry(0.36, 0.42, 3.4, 12).translate(0, 1.1, 0), new T.CylinderGeometry(0.55, 0.5, 0.16, 12).translate(0, 2.7, 0)]),
+    bwSpire: T => new T.ConeGeometry(0.62, 2.2, 12).translate(0, 3.9, 0),
+    bwTowerWood: T => { const p = [new T.BoxGeometry(1.1, 0.14, 1.1).translate(0, 1.67, 0), new T.BoxGeometry(0.75, 0.55, 0.75).translate(0, 2.02, 0)];
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) p.push(new T.CylinderGeometry(0.07, 0.09, 2.2, 6).translate(x * 0.38, 0.5, z * 0.38)); return mergeG(T, p); },
+    bwWoodRoof: T => new T.ConeGeometry(0.85, 0.8, 4).rotateY(Math.PI / 4).translate(0, 2.7, 0),
+    bwMinaret: T => mergeG(T, [new T.CylinderGeometry(0.28, 0.34, 3.6, 12).translate(0, 1.2, 0), new T.CylinderGeometry(0.5, 0.5, 0.12, 12).translate(0, 2.4, 0), new T.CylinderGeometry(0.4, 0.28, 0.1, 12).translate(0, 2.2, 0)]),
+    bwDome: T => mergeG(T, [new T.SphereGeometry(0.75, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 2.2, 0), new T.ConeGeometry(0.08, 0.5, 6).translate(0, 3.2, 0)]),
+    bwDomeTop: T => mergeG(T, [new T.SphereGeometry(0.55, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 3.0, 0), new T.ConeGeometry(0.07, 0.5, 6).translate(0, 3.8, 0)]),
+    bwKeepSq: T => { const p = [new T.BoxGeometry(0.9, 1.5, 0.9).translate(0, 0.75, 0), new T.BoxGeometry(1.1, 0.16, 1.1).translate(0, 1.58, 0), new T.BoxGeometry(0.5, 0.5, 0.5).translate(0, 1.9, 0),
+        new T.CylinderGeometry(0.02, 0.02, 0.6, 6).translate(0, 2.45, 0), new T.BoxGeometry(0.34, 0.2, 0.02).translate(0.19, 2.6, 0)];
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]){ p.push(new T.CylinderGeometry(0.16, 0.18, 0.5, 8).translate(x * 0.5, 1.8, z * 0.5)); p.push(new T.ConeGeometry(0.22, 0.3, 8).translate(x * 0.5, 2.2, z * 0.5)); } return mergeG(T, p); },
+    bwKeepFr: T => { const p = [new T.CylinderGeometry(0.32, 0.4, 2.0, 12).translate(0, 1.0, 0), new T.ConeGeometry(0.5, 1.0, 12).translate(0, 2.5, 0), new T.CylinderGeometry(0.02, 0.02, 0.6, 6).translate(0, 3.3, 0), new T.BoxGeometry(0.34, 0.2, 0.02).translate(0.19, 3.45, 0)];
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]){ p.push(new T.CylinderGeometry(0.14, 0.16, 1.4, 8).translate(x * 0.4, 0.7, z * 0.4)); p.push(new T.ConeGeometry(0.22, 0.5, 8).translate(x * 0.4, 1.65, z * 0.4)); } return mergeG(T, p); },
+    bwKeepWood: T => mergeG(T, [new T.CylinderGeometry(0.32, 0.55, 0.4, 12).translate(0, 0.2, 0), new T.BoxGeometry(0.7, 0.45, 0.5).translate(0, 0.62, 0), new T.CylinderGeometry(0.38, 0.38, 0.8, 3).rotateZ(Math.PI / 2).translate(0, 1.05, 0),
+      new T.CylinderGeometry(0.02, 0.02, 0.6, 6).translate(0, 1.6, 0), new T.BoxGeometry(0.34, 0.2, 0.02).translate(0.19, 1.75, 0)]),
+    bwKeepDome: T => { const p = [new T.BoxGeometry(0.9, 0.8, 0.9).translate(0, 0.4, 0), new T.CylinderGeometry(0.34, 0.34, 0.3, 12).translate(0, 0.95, 0), new T.SphereGeometry(0.36, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.1, 0),
+        new T.CylinderGeometry(0.02, 0.02, 0.6, 6).translate(0, 1.76, 0), new T.BoxGeometry(0.34, 0.2, 0.02).translate(0.19, 1.92, 0)];
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]){ p.push(new T.CylinderGeometry(0.07, 0.08, 1.3, 8).translate(x * 0.5, 0.65, z * 0.5)); p.push(new T.SphereGeometry(0.1, 8, 5).translate(x * 0.5, 1.38, z * 0.5)); } return mergeG(T, p); },
     bwTower: T => { const parts = [cyl(T, 0.5, 0.58, 2.8, 0.8, 12), cyl(T, 0.68, 0.68, 0.22, 2.3, 12)];
       for (let i = 0; i < 8; i++){ const a = i * Math.PI / 4, m = new T.BoxGeometry(0.2, 0.28, 0.2); m.translate(Math.cos(a) * 0.62, 2.54, Math.sin(a) * 0.62); parts.push(m); }
       return mergeG(T, parts); },
@@ -64818,8 +64875,8 @@ const WAR_APP = (() => {
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
     _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
-              selectKind, newWar, setSide, tally, itemsOf, castleItems, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
-              get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+              selectKind, newWar, setSide, tally, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
 })();

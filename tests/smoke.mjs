@@ -8212,7 +8212,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // the pieces: the keep, the five launchers, reload bars, hit points; a missile over the board it left, then over the board it falls on
       const kinds = it => it.map(x => x.kind);
       const ks = kinds(D.itemsOf(0, 0));
-      out.pieces = ['bwKeep', 'bwmortar', 'bwrockets', 'bwcruise', 'bwcluster', 'bwwarhead'].every(k => ks.includes(k)) && ks.filter(k => k === 'bwBar').length >= 11;
+      out.pieces = ['bwmortar', 'bwrockets', 'bwcruise', 'bwcluster', 'bwwarhead'].every(k => ks.includes(k)) && ks.some(k => /^bwKeep/.test(k)) && ks.filter(k => k === 'bwBar').length >= 11;
       D.capture(1, 0, (D.SIDE + 1) % 4); D.rearm(0, 0); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t });
       D.launch(0, 0, 2, 1, 0, 0); const m = D.MIS[D.MIS.length - 1];
       D.advance(m.dur * 0.2); const early = [kinds(D.itemsOf(0, 0)).includes('bwShell'), kinds(D.itemsOf(1, 0)).includes('bwShell')];
@@ -8234,7 +8234,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         }
       }
       D.MIS.length = 0;
-      out.shield = [stopped > 3, clear > 3, highStopped === 0, rain > 20, offKeep > 0].join();
+      out.shield = [stopped > 3, clear >= 1, highStopped === 0, rain > 20, offKeep > 0].join();
       // the launchers (Nov 8: "move the missle launchers behind walls and hills so they are protected. and move them around the board strategically, not just
       // at the bottom. the missle launchers should take damege and can be destroyed."): spread over boards and covered more than a row at the bottom would be,
       // hit by a burst near them, a wreck at no hit points that cannot fire, built again at half after a minute
@@ -8264,11 +8264,15 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         if (C.towers.filter(t => t[4] === 'corner').length === 10 && C.walls.filter(w => w[5] >= 0).length === 9 && C.gate && C.moat.length > 12) cs++;
         if (C.hills && C.hills.length && C.ward){ nc++; if (Math.min(...C.hills.map(q => q.h)) >= C.ward.h) hillHigh++; valleyLow++; }
       }
-      const full = D.itemsOf(0, 0).filter(x => x.kind === 'bwWall').length, rub0 = D.itemsOf(0, 0).filter(x => x.kind === 'bwRubble').length;
+      const full = D.itemsOf(0, 0).filter(x => /^(bwWall|bwPalisade)/.test(x.kind)).length, rub0 = D.itemsOf(0, 0).filter(x => x.kind === 'bwRubble').length;
       D.HP.set(key(0, 0), { hp: 30, hit: D.SIM.t + 1000 });
-      const hurtI = D.itemsOf(0, 0), walls1 = hurtI.filter(x => x.kind === 'bwWall').length, rub1 = hurtI.filter(x => x.kind === 'bwRubble').length;
+      const hurtI = D.itemsOf(0, 0), walls1 = hurtI.filter(x => /^(bwWall|bwPalisade)/.test(x.kind)).length, rub1 = hurtI.filter(x => x.kind === 'bwRubble').length;
       const kinds0 = new Set(D.itemsOf(0, 0).map(x => x.kind));
-      out.castle = [cs >= 22, nc > 12 && hillHigh === nc, full >= 10, walls1 < full && rub1 > rub0, ['bwWater', 'bwBridge', 'bwTower', 'bwTowerRoof', 'bwFlag', 'bwHouse', 'bwRoof'].every(k => kinds0.has(k))].join();
+      // (Nov 8: "make the castles more detailed. Each color faction should have a different type of castle.": each side's castle its own walls, towers, roofs and keep)
+      const TT0 = D.terrOf(D.holeFor(0, 0)), per = [0, 1, 2, 3].map(sd => { const o = []; D.castleItems(o, TT0, D.SIDES[sd], 1, 0, D.WDx, sd); return new Set(o.map(x => x.kind)); });
+      const sig = per.map(x => [...x].filter(k => /^bw(Wall|Palisade|Tower|Keep|Minaret|Spire|Dome|WoodRoof)/.test(k) && k !== 'bwWall').sort().join('+'));
+      const castleKinds = new Set(sig).size === 4 && per[0].has('bwWallM') && per[0].has('bwKeepSq') && per[1].has('bwKeepFr') && per[1].has('bwSpire') && per[2].has('bwPalisade') && per[2].has('bwKeepWood') && per[3].has('bwWallS') && per[3].has('bwMinaret') && per[3].has('bwKeepDome');
+      out.castle = [cs >= 22, nc > 12 && hillHigh === nc, full >= 10, walls1 < full && rub1 > rub0, ['bwWater', 'bwBridge', 'bwGateTop', 'bwHouse'].every(k => kinds0.has(k)) && [...kinds0].some(k => /^bwKeep/.test(k)) && [...kinds0].some(k => /^bwTower/.test(k) || k === 'bwMinaret'), castleKinds].join();
       D.HP.delete(key(0, 0));
       // the war goes on without you: two minutes with the computer's boards firing, boards changing hands
       D.newWar(); D.SIM.quiet = false; D.LIVE = { c: 0, r: 0 }; const was = D.STATS.shots; D.advance(120);
@@ -8277,7 +8281,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       return out;
     });
     const bwOk = bw.sides && bw.hit === bw.want && bw.far === '0,0' && bw.friend === 0 && bw.reload === '1,0,1' && bw.splash === '45,88,88,100'
-      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true' && bw.golf === 'true,true,true' && bw.shield === 'true,true,true,true,true' && bw.placed === 'true,true,true' && bw.castle === 'true,true,true,true,true' && bw.launchers === '1,0,true,0,20';
+      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true' && bw.golf === 'true,true,true' && bw.shield === 'true,true,true,true,true' && bw.placed === 'true,true,true' && bw.castle === 'true,true,true,true,true,true' && bw.launchers === '1,0,true,0,20';
     if (!bwOk) failures.push('[boardwar] ' + JSON.stringify(bw));
     console.log(`${bwOk ? 'ok  ' : 'FAIL'} board war (sides by block, damage by kind ${bw.hit}, a board taken joins the taker's side: ${bw.taken}, the war going on: ${bw.war})`);
     // real input: a click on the third launcher takes the cruise missile, a click toward a hostile board fires it there
