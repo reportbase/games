@@ -50711,6 +50711,31 @@ const SIMON_APP = (() => {
     SEQS.set(key, S); if (SEQS.size > CAP) SEQS.delete(SEQS.keys().next().value);
     return S;
   }
+  /* SONGS (Nov 8: "can you add buttons to pre-set songs?", Simon: "play a tune"): the bottom row has a button a song, and a tap on one begins a game of
+     that tune on the framed board: round n plays its first n notes and you play them back; the whole song played back wins. Each distinct note of a song is
+     a pad (lowest pitch first, clockwise, `rank`), the pads 4, 6 or 8 as many as the song needs, and each sounds at its note's own pitch (`freq`), so the
+     tune is the tune and not the toy's four tones. Notes are MIDI numbers (60 middle C); a song's steps all one length, as Simon's are. */
+  const SONGS = [
+    { name: 'Twinkle',        notes: [60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60] },
+    { name: 'Mary’s lamb',    notes: [64, 62, 60, 62, 64, 64, 64, 62, 62, 62, 64, 67, 67] },
+    { name: 'Ode to Joy',     notes: [64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62] },
+    { name: 'Jingle Bells',   notes: [64, 64, 64, 64, 64, 64, 64, 67, 60, 62, 64, 65, 65, 65, 65, 65, 64, 64, 64, 64, 62, 62, 64, 62, 67] },
+    { name: 'Happy Birthday', notes: [67, 67, 69, 67, 72, 71, 67, 67, 69, 67, 74, 72, 67, 67, 79, 76, 72, 71, 69, 77, 77, 76, 72, 74, 72] },
+  ];
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  let SONG = -1;                                          // (the song in hand, -1 the board's own sequence; kept for the session)
+  const SONGSEQ = new Map();
+  function songSeq(c, r, k){
+    const idx = boardIdx(c, r), lv = levelAt(idx), sg = SONGS[k], key = 's' + k;
+    let S = SONGSEQ.get(key);
+    if (!S){
+      const ps = [...new Set(sg.notes)].sort((x, y) => x - y), P = ps.length <= 4 ? 4 : ps.length <= 6 ? 6 : 8;
+      const rank = new Map(ps.map((m, i) => [m, i])), seq = sg.notes.map(m => rank.get(m));
+      S = { key, song: k, name: sg.name, len: seq.length, freq: ps.map(hz), D: { pads: P, on: 0.4, gap: 0.12, wait: 5 }, at: i => seq[i] };
+      SONGSEQ.set(key, S);
+    }
+    return { ...S, idx, lv, phase: BOARD_KIT.phase(idx) };
+  }
   // a step's length while round n plays back: the toy's quickening as the sequence grows
   const stepOf = (D, n) => { const q = Math.max(QUICK_MIN, 1 - QUICKEN * (n - 1)); return { on: D.on * q, gap: D.gap * q }; };
 
@@ -50719,12 +50744,12 @@ const SIMON_APP = (() => {
   const GAMES = new Map();
   let LIVE = null;
   const { BEST, saveBest } = BOARD_KIT.best('simon.best');
-  const bestKey = S => S.idx + '@' + S.lv;
+  const bestKey = S => S.key || S.idx + '@' + S.lv;
   const clock = () => performance.now() / 1000;
-  const fresh = (c, r) => ({ S: seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1, view: -1 });
+  const fresh = (c, r) => ({ S: SONG >= 0 ? songSeq(c, r, SONG) : seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1, view: -1 });
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
-  function beep(p, dur, quiet){ if (quiet) return; try { if (SND.on && ARCADE.audio()) ARCADE.tone(TONE[p], TONE[p], Math.max(0.12, dur), 'triangle', 0.08); } catch {} }
+  function beep(p, dur, quiet, S){ if (quiet) return; try { const f = S && S.freq && S.freq[p] || TONE[p]; if (SND.on && ARCADE.audio()) ARCADE.tone(f, f, Math.max(0.12, dur), 'triangle', 0.08); } catch {} }
   function begin(g){ g.n = 1; g.score = 0; g.miss = -1; g.view = -1; showRound(g, 0.5); }
   function showRound(g, wait){ g.state = 'show'; g.view = -1; g.t0 = clock() + (wait || 0); g.i = 0; g.shown = -1; }
   function stepGame(g, quiet){
@@ -50736,7 +50761,7 @@ const SIMON_APP = (() => {
       if (k >= g.n){ g.lit = -1; g.state = 'input'; g.i = 0; g.deadline = t + g.S.D.wait; return; }
       const into = dt - k * (on + gap);
       g.lit = into < on ? g.S.at(k) : -1;
-      if (into < on && g.shown !== k){ g.shown = k; beep(g.S.at(k), on, quiet); }
+      if (into < on && g.shown !== k){ g.shown = k; beep(g.S.at(k), on, quiet, g.S); }
       return;
     }
     if (g.state === 'input'){
@@ -50754,10 +50779,22 @@ const SIMON_APP = (() => {
     g.view = -1;
     const t = clock(), want = g.S.at(g.i);
     if (p !== want){ g.miss = want; over(g, 'Not that one.', quiet); return true; }
-    g.lit = p; g.litTo = t + 0.22; beep(p, 0.2, quiet);
+    g.lit = p; g.litTo = t + 0.22; beep(p, 0.2, quiet, g.S);
     g.i++; g.deadline = t + g.S.D.wait;
-    if (g.i >= g.n){ g.score = g.n; g.n++; g.state = 'pause'; g.t0 = t + 0.8; }
+    if (g.i >= g.n){
+      g.score = g.n;
+      if (g.S.len && g.n >= g.S.len){ finishSong(g, quiet); return true; }       // (the whole song played back)
+      g.n++; g.state = 'pause'; g.t0 = t + 0.8;
+    }
     return true;
+  }
+  function finishSong(g, quiet){
+    g.state = 'over'; g.won = true; g.lit = -1; g.litTo = 0; g.miss = -1;
+    const k = bestKey(g.S), was = BEST.get(k);
+    if (was == null || g.score > was){ BEST.delete(k); BEST.set(k, g.score); saveBest(); }
+    if (quiet) return;
+    try { SND.play('win'); } catch {}
+    say('You played ' + g.S.name + '! Tap to play it again.', 3600);
   }
   function over(g, why, quiet){
     if (g.miss < 0) g.miss = g.S.at(g.i);
@@ -50860,7 +50897,7 @@ const SIMON_APP = (() => {
   for (const P of [4, 6, 8]) for (let p = 0; p < P; p++) padKinds['smPad' + P + '_' + p] = T => padGeo(T, P, p);
   let SLIDE = null;
   // a step looked at: its pad lights and sounds once as the slider reaches it
-  function look(g, k){ if (g.view === k) return; g.view = k; g.lit = -1; g.litTo = 0; beep(g.S.at(k), 0.2); }
+  function look(g, k){ if (g.view === k) return; g.view = k; g.lit = -1; g.litTo = 0; beep(g.S.at(k), 0.2, false, g.S); }
   const KEYS = { ArrowUp: [0, 3], ArrowRight: [1, 0], ArrowDown: [2, 1], ArrowLeft: [3, 2] };
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -50876,13 +50913,27 @@ const SIMON_APP = (() => {
     if (g.state === 'ready' || g.state === 'over'){ if (g.state === 'over') Object.assign(g, fresh(g.c, g.r)); begin(g); return; }
     press(g, p);
   }, true);
+  // a song (or -1, the board's own sequence) taken up on a board: a new game of it begun at once
+  function playSong(c, r, k){
+    SONG = k < 0 || k >= SONGS.length ? -1 : k;
+    const g = fresh(c, r); GAMES.set(gkey(c, r), g); LIVE = { c, r }; begin(g);
+    try { fieldItemsChanged(); } catch {}
+  }
   const app = {
     name: 'simon',
     menu: [{ head: 'Simon', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
+      { label: () => 'Song: ' + (SONG < 0 ? 'your own sequence' : SONGS[SONG].name), title: 'Play a preset tune instead of the board\'s own sequence (also the buttons in the bottom row).', on(){ const f = framedCell(); if (f) playSong(f.c, f.r, SONG + 1 >= SONGS.length ? -1 : SONG + 1); else SONG = SONG + 1 >= SONGS.length ? -1 : SONG + 1; } },
       { label: 'Start this board again', title: 'A new game of this board\'s sequence, from one step.', on(){ const f = framedCell(); if (f){ const g = fresh(f.c, f.r); GAMES.set(gkey(f.c, f.r), g); LIVE = { c: f.c, r: f.r }; begin(g); } } },
     ]}],
+    // (the bottom row: Own sequence, then a button a song; a tap begins that tune on the framed board)
+    statTiles(c, r){
+      const ON = '#2f4a3a';
+      return [{ glyph: '🎲', value: 'Own', label: 'sequence', bg: SONG < 0 ? ON : undefined },
+              ...SONGS.map((sg, i) => ({ glyph: '♪', value: sg.name, label: sg.notes.length + ' notes' + (BEST.get('s' + i) != null ? ' ✓' : ''), bg: SONG === i ? ON : undefined }))];
+    },
+    onStatTap(c, r, i){ playSong(c, r, i - 1); return true; },
     cellFar: { light: BASE, dark: BASE },
     itemMinPx: 12,
     itemGeometries: {
@@ -50901,6 +50952,7 @@ const SIMON_APP = (() => {
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), S = SEQS.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
       const best = S ? BEST.get(bestKey(S)) : null;
+      if (g && g.S.song != null) return 'Simon — ' + g.S.name + (BEST.get(bestKey(g.S)) != null ? ' · played through' : '') + (g.state === 'over' ? (g.won ? ' · you played it' : ' · over at ' + g.score + ' of ' + g.S.len) : g.state !== 'ready' ? ' · note ' + g.n + ' of ' + g.S.len : ' (tap to play)');
       return 'Simon — level ' + lv + ', ' + LV[lv - 1].pads + ' pads' + (best != null ? ' · best ' + best : '')
            + (g && g.state !== 'ready' ? ' · ' + (g.state === 'over' ? 'over at ' + g.score : 'round ' + g.n) : '');
     },
@@ -50947,7 +50999,7 @@ const SIMON_APP = (() => {
       for (let p = 0; p < 4; p++){ const a0 = -Math.PI / 2 + p * Math.PI / 2 + 0.05, a1 = a0 + Math.PI / 2 - 0.1;
         ctx.fillStyle = '#' + PAD[p].toString(16).padStart(6, '0'); ctx.beginPath(); ctx.arc(cx, cx, R, a0, a1); ctx.arc(cx, cx, r, a1, a0, true); ctx.closePath(); ctx.fill(); }
     },
-    _debug: { seqOf, stepOf, padAt, gameAt, fresh, begin, press, stepGame, shownLit, levelAt, boardIdx, LV, GAMES, BEST, SEQS,
+    _debug: { SONGS, songSeq, playSong, get SONG(){ return SONG; }, seqOf, stepOf, padAt, gameAt, fresh, begin, press, stepGame, shownLit, levelAt, boardIdx, LV, GAMES, BEST, SEQS,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
