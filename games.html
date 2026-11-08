@@ -1201,6 +1201,8 @@
        the same item, or Escape, brings them back. Hidden where the browser cannot (an iPhone's Safari takes only video). -->
   <!-- THE BOARD LOCK (Oct 31): shown only while a double tap has locked the view on a board; lets it pan again. -->
   <button id="bBoardLock" hidden title="A double tap locked this board in place, so the view does not pan. Unlock it to pan again.">Unlock the board</button>
+  <!-- OPEN… IS EVERY APP'S (Nov 8: "Open should be Open...  in the menu.   And it should be in every application.    You should not have to select photo gallery first."): it sat in the gallery's own menu section; now in the field's top section beside Application…, so any app opens a file (the load switches to the app the file belongs to). -->
+<button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Open&#8230;</button>
   <button id="bFullScreen" title="Fill the whole screen with the field, the browser's own bars hidden. Choose it again, or press Escape, to leave.">Full screen</button>
   </div>
   <div id="appMenu"></div>
@@ -1311,7 +1313,6 @@
          switches the app to them — but the bar's open chip is the field's own
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
-    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Open</button>
     <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json,.csv,.tsv,.txt,text/csv,.md,.markdown,.mdown,.mkd,text/markdown" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution: up to 4096px on the long side (PDF and book pages 3072) instead of 2048 (1536). Costs about four times the graphics memory per print, ~90MB at 4096, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to pictures opened after it is ticked."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
@@ -23477,7 +23478,6 @@ const GALLERY_APP = (() => {
       { label: () => 'Tilt to glide: ' + (ARCADE.tilt.on ? 'on' : 'off'),
         title: 'On a phone: tip it the way you want to travel over the pictures; the further you tip, the faster. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!ARCADE.tilt.on, (m, ms) => { try { engineNotice(m, ms); } catch {} }).then(() => galleryTiltLoop()); } },
-      { ref: 'bLoadImage' },
       { ref: 'bLoadBucket' },
       { ref: 'bFullPrintsRow' },
       { ref: 'bSelfCheck', debug: true },
@@ -67223,7 +67223,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     /* THE MENU ITEM JUST SAYS Open (Nov 1: "them menu item to open files should just say Open, not the file name."): it used to
        carry what was being read ("Reading book.epub …", "Unpacking …"); that goes to its tooltip, the label stays. */
     const b = document.getElementById('bLoadImage');
-    if (b){ b.textContent = 'Open'; b.dataset.status = t; }
+    if (b){ b.textContent = 'Open\u2026'; b.dataset.status = t; }
   };
   const _decodeBlob = async blob => {
     if (window.createImageBitmap){

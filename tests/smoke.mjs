@@ -7274,7 +7274,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       return { name: n.textContent, shown: getComputedStyle(n).display !== 'none' && rc.width > 0, dots: getComputedStyle(h).display, menu: m.textContent }; });
     if (r.name !== 'shown-name.md' || !r.shown) bad.push('the file name is not over the open row: ' + JSON.stringify(r));
     if (r.dots !== 'none') bad.push('the dots are shown while the row is open: ' + r.dots);
-    if (r.menu !== 'Open') bad.push('the menu item says ' + JSON.stringify(r.menu));
+    if (r.menu !== 'Open\u2026') bad.push('the menu item says ' + JSON.stringify(r.menu));
     if (bad.length) failures.push('[loaded name] ' + bad.join('; '));
     console.log(`${bad.length ? 'FAIL' : 'ok  '} loaded name: the open row carries the file's name in place of the dots, and the menu item says Open`);
     await page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
