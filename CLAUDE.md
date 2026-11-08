@@ -331,6 +331,10 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   A minimap (`#warMap`, `mapShow`, `mapDraw`: 61 × 61 boards round the one in view, 3 px a board in its owner's colour, the view in white, home and taken counts and the goal under it)
   stands bottom left while the game is up, redrawn twice a second and when a board changes hands; a tap on it flies to the board (`gotoCell`). Next in the plan: a resource from held castles
   that upgrades launchers, faction doctrines in `ai`, siege tools. The smoke test (part 7, "board war goal") plays the win, the single saying, the defeat, the free war and the map.
+- **Board War: doctrines** (Nov 8, "proceed" on the plan): the four sides choose differently (`DOCTRINES`, `chooseFor`, used by `ai`): Red the Rusher (reloads at 0.8, 15% of its shots at launchers, the
+  weakest board), Blue the Sniper (80% at launchers), Green the Turtle (1.25, the nearest board, 30%), Gold the Hoarder (a warhead only at a board with 85 or more hit points). The same shots and
+  rules; only the choosing differs, and a side's doctrine also drives its garrison boards. A fresh save starts at the goal of ten boards, a war already under way (saved ownership) as a free war, so a
+  first capture never ends it at once. Found here: the minimap's hooks first landed in the game lab (an anchor matching an earlier app's identical lines); check which app an edit landed in.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

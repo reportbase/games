@@ -8180,7 +8180,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.waitForTimeout(1500);
     const bw = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, K = D.KINDS, key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
-      D.newWar(); D.SIM.quiet = true; D.SIM.ideal = true; D.LIVE = { c: 0, r: 0 };   // (ideal: no scatter and nothing in the way, so each kind's damage is exact)
+      D.newWar(); D.setGoal(0); D.SIM.quiet = true; D.SIM.ideal = true; D.LIVE = { c: 0, r: 0 };   // (a free war: these checks take boards; ideal: no scatter and nothing in the way, so each kind's damage is exact)
       // the sides: the corner's block yours, all four across the field, the same each time
       const own = () => { const a = []; for (let c = 0; c < 40; c++) for (let r = 0; r < 40; r++) a.push(D.ownerOf(c, r)); return a.join(''); };
       const a1 = own(); out.sides = [0, 1, 2, 3].every(s => a1.includes(String(s))) && own() === a1 && [0, 1, 2, 3, 4].every(c => [0, 1, 2, 3, 4].every(r => D.ownerOf(c, r) === D.SIDE));
@@ -8336,6 +8336,22 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const bwgOk = /^\{"home":25,"took":0\},null$/.test(bwg.start) && bwg.won === '9,,won,true' && bwg.once && bwg.cleared && bwg.lost === 'lost:0' && bwg.free && bwg.map && bwg.gone;
     if (!bwgOk) failures.push('[boardwar goal] ' + JSON.stringify(bwg));
     console.log(`${bwgOk ? 'ok  ' : 'FAIL'} board war: a goal of ten boards won on the tenth (said once in a box), the home block lost is a defeat, a free war never ends, the minimap drawn and gone (${JSON.stringify(bwg)})`);
+    // BOARD WAR's doctrines (Nov 8: "proceed" on the plan): four sides, four ways of choosing; the same shots, only the choosing differs
+    const bwd = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {}, X = D.DOCTRINES;
+      const list = [{ c: 1, r: 0, hp: 90, dist: 1 }, { c: 2, r: 0, hp: 20, dist: 2.2 }, { c: 3, r: 0, hp: 60, dist: 1.4 }];
+      out.n = X.length;
+      out.weak = D.chooseFor(0, list).c;                       // Red: the weakest by hit points and distance (20 + 26 beats 90 + 12 and 60 + 17)
+      out.near = D.chooseFor(2, list).c;                       // Green: the nearest, whatever its hit points
+      out.rates = X[0].rate < X[1].rate && X[1].rate < X[2].rate;
+      out.snipe = X[1].aimL > X[3].aimL && X[3].aimL > X[2].aimL && X[2].aimL > X[0].aimL;
+      out.hoard = X[3].warhead > X[0].warhead && X[3].warhead >= 80;
+      out.pick = X.map(d => d.pick).join();
+      return out;
+    });
+    const bwdOk = bwd.n === 4 && bwd.weak === 2 && bwd.near === 1 && bwd.rates && bwd.snipe && bwd.hoard && bwd.pick === 'weakest,weakest,nearest,weakest';
+    if (!bwdOk) failures.push('[boardwar doctrines] ' + JSON.stringify(bwd));
+    console.log(`${bwdOk ? 'ok  ' : 'FAIL'} board war: four doctrines, Red the weakest and fastest, Green the nearest and slowest, Blue aiming at launchers most, Gold keeping warheads for the strong (${JSON.stringify(bwd)})`);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SIM.quiet = false; D.newWar(); });
 }   // (end of part 7)
 } catch (e){

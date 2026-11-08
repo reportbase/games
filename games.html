@@ -63927,9 +63927,7 @@ onmessage = ev => {
     },
     onReset(c, r){ restart(c, r); return true; },
     onSelect(){ return true; },
-    onEnter(){ mapShow(true); },
-    onLeave(){ mapShow(false); },
-    onFramed(c, r){ LIVE = c == null ? null : { c, r }; mapDraw(); },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
     noDoubleTap(){ return !!LIVE; },
     /* DRAGS AND SWIPES (Oct 26: "1,2", the second's "drags and swipes"): a game with drag(state, x0, y0, x1, y1, done, rand)
        takes a press on its board: told where the finger went down and where it is now, in squares (fractional), as it moves,
@@ -64467,6 +64465,18 @@ const WAR_APP = (() => {
     return out.sort((x, y) => x.dist - y.dist);
   }
   const weakest = list => list.reduce((b, t) => !b || t.hp + t.dist * 12 < b.hp + b.dist * 12 ? t : b, null);
+  /* Doctrines (Nov 8: "where could we take this game?" … "proceed"): the four sides fight differently, so the war reads as four opponents. `rate` stretches a side's reload
+     (below 1 fires faster), `aimL` is the share of its shots aimed at a launcher instead of the keep, `pick` how it chooses a board (the `weakest` by hit points and distance, or
+     the `nearest`), `warhead` the hit points a board must still have for a warhead to be worth it. Red rushes (fast, at keeps, the weakest), Blue snipes launchers, Green
+     turtles (slow, the nearest, a little at launchers), Gold hoards its warheads for the strong. The same shots and rules as ever; only the choosing differs. */
+  const DOCTRINES = [
+    { name: 'Rusher',  rate: 0.8,  aimL: 0.15, pick: 'weakest', warhead: 50 },
+    { name: 'Sniper',  rate: 1.0,  aimL: 0.8,  pick: 'weakest', warhead: 50 },
+    { name: 'Turtle',  rate: 1.25, aimL: 0.3,  pick: 'nearest', warhead: 50 },
+    { name: 'Hoarder', rate: 1.0,  aimL: 0.45, pick: 'weakest', warhead: 85 },
+  ];
+  const nearestOf = list => list.reduce((b, t) => !b || t.dist < b.dist ? t : b, null);
+  const chooseFor = (side, list) => DOCTRINES[side].pick === 'nearest' ? nearestOf(list) : weakest(list);
   /* Where a tap at (u, v) of the board points: the hostile board in range whose way from the middle is within 60° of it (the board beside is at
      (-1, 0) when the column rises, so the tap's way is turned over), the nearest of those; else, and for a tap in the middle, the weakest. */
   function pickTarget(c, r, k, tu, tv){
@@ -64554,13 +64564,13 @@ const WAR_APP = (() => {
     for (let dc = -WAR_R; dc <= WAR_R; dc++) for (let dr = -WAR_R; dr <= WAR_R; dr++){
       const c = wrapc(cc + dc), r = wrapc(cr + dr), own = ownerOf(c, r);
       if (own === SIDE && isLive(c, r)) continue;
-      const lv = levelAt(boardIdx(c, r)), mult = LEVEL_MULT[lv - 1] * (own === SIDE ? GARRISON : 1), rd = rdyOf(c, r);
+      const D = DOCTRINES[own], lv = levelAt(boardIdx(c, r)), mult = LEVEL_MULT[lv - 1] * (own === SIDE ? GARRISON : 1) * D.rate, rd = rdyOf(c, r);
       for (let k = 0; k < KINDS.length; k++){
         if (rd[k] > SIM.t) continue;
-        const t = weakest(reach(c, r, k));
-        if (!t || (k === 4 && t.hp < 50)){ rd[k] = SIM.t + 0.8 + rnd(); continue; }
+        const t = chooseFor(own, reach(c, r, k));
+        if (!t || (k === 4 && t.hp < D.warhead)){ rd[k] = SIM.t + 0.8 + rnd(); continue; }
         let aim = -1;
-        if (rnd() < 0.45){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
+        if (rnd() < D.aimL){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
         launch(c, r, k, t.c, t.r, mult, aim);
       }
     }
@@ -64609,7 +64619,7 @@ const WAR_APP = (() => {
      the 25 boards of your home block is yours any more. `realm` counts what you hold: the home block's boards still yours and every board you took.
      A result (`boardwar.result`) is kept once, said in a box once, and cleared by a new war or another goal. */
   const CAPTURE_GOALS = [0, 10, 25, 50], HOME_N = 5;
-  let GOAL = Math.max(0, Math.min(CAPTURE_GOALS.length - 1, load('boardwar.goal', 1) | 0));
+  let GOAL = Math.max(0, Math.min(CAPTURE_GOALS.length - 1, load('boardwar.goal', OWN.size ? 0 : 1) | 0));
   let RESULT = load('boardwar.result', null);
   function realm(){
     let home = 0, took = 0;
@@ -64918,7 +64928,10 @@ const WAR_APP = (() => {
            + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost;
     },
     onSelect(){ return true; },
-    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    onEnter(){ mapShow(true); },
+    onLeave(){ mapShow(false); },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; mapDraw(); },
+
     noDoubleTap(){ return !!LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE; },
     onReset(){ newWar(); return true; },
     onCellTap(c, r, u, v){
@@ -64937,7 +64950,7 @@ const WAR_APP = (() => {
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
     _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
-              selectKind, newWar, setSide, tally, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
