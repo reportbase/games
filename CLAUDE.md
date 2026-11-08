@@ -284,6 +284,20 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   - The smoke test (part 7, "board war") checks the sides, each kind's volley and damage to the point (1:10, 4:24, 1:26, 6:30, 1:55), range, friends refused, the reload, the
     warhead's splash (45, 88, 88 and a friend's 100), a board taken joining the taker's side with 40 back and kept in storage, the pieces, a missile over the board it left and
     then the one it falls on, two minutes of war by itself, and real clicks: one on the third launcher, one toward the hostile board firing the cruise missile there.
+  - **On mini golf's ground** (Nov 8: "I was thinking more like combining missle command and mini-golf terrain and walls."): every board is the mini golf hole of its
+    number (`holeFor`, golf's own `holeAt`; the page's golf size and difficulty, so its `boardShape` is golf's, `get boardShape`): its ground, rails, walls, fences,
+    planters, bumpers and windmills are golf's `cellItems` as they are, less the flag, cup, ball and scoreboard (`KEEP_OUT`), in the owner's colour (white pieces
+    multiplied toward the side's, `tintL`, `tintW`; the far tiles' `cellGrid` mixed toward it), the kinds asked of golf's `itemGeometries` through a Proxy. The keep
+    stands on the cup (`keepOf`, which every hole guards), the five launchers near the tee each on the nearest free ground (`terrOf`, `padOf`: grass or sand, nothing
+    standing there, off the rail, apart from one another). Missiles fly as Missile Command's do and burst on the target board: **a high arc** (mortar, cluster,
+    warhead) comes down where it was aimed, a **flat shot** (rockets at `flat` 0.17, cruise 0.10, a height over the ground it comes in at) flies in from the side it
+    came from and stops at the first wall cell, fence, boulder, windmill tower or rise of ground higher than it flies (`los`), bursting there in dust. What a burst
+    does to the keep falls off with its distance from it (`blast`, `m.f`: `CHIP` 0.18 of the damage anywhere on the board, the whole of it on the keep), so a wall or
+    a hill in front of the keep is a shield and where the cup lies matters. `SIM.ideal` (tests) takes away the scatter and the obstacles. A tap on a launcher takes it
+    (within 0.085 of its pad), a tap elsewhere fires toward the hostile board that way (true proportions: the board is 8 : 13). The smoke test: the damage by kind
+    exact in the ideal case, a golf hole's ground under it without its flag, flat shots stopped and clear on 39 boards and no high arc ever stopped, and a real
+    click on the third launcher's pad. The notes above describing the plain boards, bars along the edges and `LEVEL` of the launchers' places are older.
+
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
