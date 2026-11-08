@@ -306,6 +306,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     menu's "Aim at: the keep / the launchers" (the strongest standing, warhead first) for you, 45% of the computer's shots at a standing launcher of its choice. A
     launcher behind a wall is covered from flat shots (they stop at the wall) and exposed to high arcs. The smoke test checks the spread and cover of 30 boards' pads, a
     cruise missile taking a launcher to 1 and then destroying it, the wreck drawn, a wreck refusing to fire and the rebuild at 20.
+    **The castle** (Nov 8: "do more construction to build up a castle with walls and a moat, and build them on top of hills and down in valleys. be creative."): the keep
+    stands in a curtain wall of ten sides (`castle` in `terrOf`, drawn by `castleItems`) with a tower and battlement at each corner, its gate on the side that faces the tee
+    with a drawbridge over the moat that rings it (28 ribbons of water a little above the ground under each, `bwWater`; clipped at the rail), every piece standing on the ground
+    under it (`hh`) with the wall's foot sunk so a slope shows no gap. Outworks go where the ground asks: a watchtower with a banner on each of the two highest free places
+    and a sunken ward (a low ring of wall with a door and two cottages) in the lowest, off the launchers and each other. The walls and towers are in `obst`, so they shelter
+    the keep from flat shots (the launchers keep 3.4 cells off the castle); the curtain is built up and knocked down with the board's hit points (`lost` of ten segments,
+    in an order the hole sets, rubble where one stood). The smoke test checks ten corner towers, nine wall segments, a gate and a moat on 24 boards, the watchtowers on higher
+    ground than the ward, the walls going to rubble at 30 hit points, and each piece drawn.
 
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').

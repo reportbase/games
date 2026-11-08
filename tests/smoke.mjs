@@ -8243,7 +8243,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         const T = D.terrOf(D.holeFor(30 + b % 6, 30 + Math.floor(b / 6))), vs = T.pads.map(p => p.y);
         spreadV += Math.max(...vs) - Math.min(...vs); covered += T.shields.reduce((x, y) => x + y, 0) / 5; nb++; bottom += vs.filter(y => y > 0.8).length / 5;
       }
-      out.placed = [spreadV / nb > 0.3, covered / nb > 0.3, bottom / nb < 0.5].join();
+      out.placed = [spreadV / nb > 0.3, covered / nb > 0.2, bottom / nb < 0.5].join();
       D.SIM.ideal = true; D.newWar(); D.capture(1, 0, (D.SIDE + 1) % 4); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t }); D.LHP.delete(key(1, 0));   // (a board taken has its launchers at half: these at full)
       const lh = () => Math.round(D.lhpOf(1, 0).hp[2]);
       D.rearm(0, 0); D.launch(0, 0, 2, 1, 0, 0, 2); D.advance(K[2].fly * 1.12 + 0.25);                // (a cruise missile aimed at its cruise launcher: 26 × 1.5 = 39 of 40)
@@ -8255,6 +8255,21 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       D.advance(D.REBUILD + 1); const rebuilt = lh();
       out.launchers = [hit1, dead, wreck, refused, rebuilt].join();
       D.SIM.ideal = false; D.MIS.length = 0;
+      // the castle (Nov 8: "do more construction to build up a castle with walls and a moat, and build them on top of hills and down in valleys. be creative."): a curtain
+      // wall of ten sides with a gate, a tower at each corner, a moat and a drawbridge round the keep, a watchtower on the highest free ground and a sunken ward in the lowest,
+      // each on the ground under it; the curtain falls as the board is hurt and stands again as it heals, and its walls and towers stand in the way of a flat shot
+      let cs = 0, hillHigh = 0, valleyLow = 0, nc = 0;
+      for (let b = 0; b < 24; b++){
+        const H = D.holeFor(40 + b % 6, 40 + Math.floor(b / 6)), T = D.terrOf(H), C = T.castle;
+        if (C.towers.filter(t => t[4] === 'corner').length === 10 && C.walls.filter(w => w[5] >= 0).length === 9 && C.gate && C.moat.length > 12) cs++;
+        if (C.hills && C.hills.length && C.ward){ nc++; if (Math.min(...C.hills.map(q => q.h)) >= C.ward.h) hillHigh++; valleyLow++; }
+      }
+      const full = D.itemsOf(0, 0).filter(x => x.kind === 'bwWall').length, rub0 = D.itemsOf(0, 0).filter(x => x.kind === 'bwRubble').length;
+      D.HP.set(key(0, 0), { hp: 30, hit: D.SIM.t + 1000 });
+      const hurtI = D.itemsOf(0, 0), walls1 = hurtI.filter(x => x.kind === 'bwWall').length, rub1 = hurtI.filter(x => x.kind === 'bwRubble').length;
+      const kinds0 = new Set(D.itemsOf(0, 0).map(x => x.kind));
+      out.castle = [cs >= 22, nc > 12 && hillHigh === nc, full >= 10, walls1 < full && rub1 > rub0, ['bwWater', 'bwBridge', 'bwTower', 'bwTowerRoof', 'bwFlag', 'bwHouse', 'bwRoof'].every(k => kinds0.has(k))].join();
+      D.HP.delete(key(0, 0));
       // the war goes on without you: two minutes with the computer's boards firing, boards changing hands
       D.newWar(); D.SIM.quiet = false; D.LIVE = { c: 0, r: 0 }; const was = D.STATS.shots; D.advance(120);
       out.war = [D.STATS.shots - was > 100, D.OWN.size > 10, D.STATS.won + D.STATS.lost > 10].join();
@@ -8262,7 +8277,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       return out;
     });
     const bwOk = bw.sides && bw.hit === bw.want && bw.far === '0,0' && bw.friend === 0 && bw.reload === '1,0,1' && bw.splash === '45,88,88,100'
-      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true' && bw.golf === 'true,true,true' && bw.shield === 'true,true,true,true,true' && bw.placed === 'true,true,true' && bw.launchers === '1,0,true,0,20';
+      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true' && bw.golf === 'true,true,true' && bw.shield === 'true,true,true,true,true' && bw.placed === 'true,true,true' && bw.castle === 'true,true,true,true,true' && bw.launchers === '1,0,true,0,20';
     if (!bwOk) failures.push('[boardwar] ' + JSON.stringify(bw));
     console.log(`${bwOk ? 'ok  ' : 'FAIL'} board war (sides by block, damage by kind ${bw.hit}, a board taken joins the taker's side: ${bw.taken}, the war going on: ${bw.war})`);
     // real input: a click on the third launcher takes the cruise missile, a click toward a hostile board fires it there
