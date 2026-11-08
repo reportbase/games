@@ -336,6 +336,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   weakest board), Blue the Sniper (80% at launchers), Green the Turtle (1.25, the nearest board, 30%), Gold the Hoarder (a warhead only at a board with 85 or more hit points). The same shots and
   rules; only the choosing differs, and a side's doctrine also drives its garrison boards. A fresh save starts at the goal of ten boards, a war already under way (saved ownership) as a free war, so a
   first capture never ends it at once. Found here: the minimap's hooks first landed in the game lab (an anchor matching an earlier app's identical lines); check which app an edit landed in.
+- **Board War: supplies and upgrades** (Nov 8: "What's next" … "Proceed", the plan's next step, a resource that upgrades launchers): your side's boards within `WAR_R` of the one in view each bring
+  `INCOME` (0.02) supplies a second (about 1.5 a second at the corner; `advance` adds it, `SUPPLY`, kept as `boardwar.supply`), and supplies buy a launcher kind a level (`UPG`, `upgrade(k)`, up to
+  `UP_MAX` 3, kept as `boardwar.upg`): level n + 1 costs `UP_COST` 30 × (n + 1)², each level adds `UP_DMG` (a quarter) to the kind's damage and takes `UP_RELOAD` (an eighth) off its reload, for every
+  launcher of that kind on your side's boards (`upOf(side, k)`: the computer's sides are never upgraded), in `launch`. The menu's Upgrade item (the launcher in hand, its cost, greyed when short or at its
+  best) and the title (supplies and the five levels) show it; a new war (`newWar`, a change of side) starts supplies and levels over. Fifteen levels in all cost 2,100 supplies, about 25 minutes of holding
+  the corner. Not yet: siege tools, the castle's state changing the income. The smoke test (part 7, "board war: supplies") checks the income, the costs, a mortar's damage 10 → 12.5 and reload 1.6 → 1.408 s,
+  the cap and the reset.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

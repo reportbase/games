@@ -8352,6 +8352,31 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const bwdOk = bwd.n === 4 && bwd.weak === 2 && bwd.near === 1 && bwd.rates && bwd.snipe && bwd.hoard && bwd.pick === 'weakest,weakest,nearest,weakest';
     if (!bwdOk) failures.push('[boardwar doctrines] ' + JSON.stringify(bwd));
     console.log(`${bwdOk ? 'ok  ' : 'FAIL'} board war: four doctrines, Red the weakest and fastest, Green the nearest and slowest, Blue aiming at launchers most, Gold keeping warheads for the strong (${JSON.stringify(bwd)})`);
+    // BOARD WAR'S SUPPLIES AND UPGRADES (Nov 8: "What's next" … "Proceed"): your side's boards near the one in view bring supplies a second, a level of a launcher kind costs 30 × level²,
+    // adds a quarter to its damage and takes an eighth off its reload for your side only, three levels at most, and a new war starts them over
+    const bwu = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {};
+      D.newWar(); D.SIM.ideal = true; D.LIVE = { c: 0, r: 0 };
+      out.zero = [D.getSupply(), D.UPG.join()];
+      const s0 = D.getSupply(); D.advance(10); out.gain = D.getSupply() - s0;
+      out.cost = [D.upCost(0), D.upCost(4)];
+      out.broke = D.upgrade(0);
+      D.setSupply(5000);
+      const side = D.SIDE; let f = null;
+      for (let c = 0; c < 8 && !f; c++) for (let r = 0; r < 8 && !f; r++) if (D.ownerOf(c, r) === side) for (const [a, b] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) if (D.ownerOf(c + a, r + b) !== side){ f = [c, r, c + a, r + b]; break; }
+      const shot = () => { D.RDY.clear(); D.MIS.length = 0; D.rdyOf(f[0], f[1]).fill(0); D.launch(f[0], f[1], 0, f[2], f[3], 0, -1); return [D.MIS[0].dmg, D.rdyOf(f[0], f[1])[0] - D.SIM.t]; };
+      const a = shot(); out.up1 = D.upgrade(0); out.spent = 5000 - D.getSupply(); const b = shot();
+      out.dmg = [a[0], b[0]]; out.reload = [+a[1].toFixed(3), +b[1].toFixed(3)];
+      D.upgrade(0); D.upgrade(0); out.max = [D.UPG[0], D.upgrade(0), D.getSupply() < 5000 - 30 - 120 - 270 + 1e-6 && D.getSupply() > 5000 - 30 - 120 - 270 - 1];
+      D.newWar(); out.reset = [D.getSupply(), D.UPG.join()];
+      D.SIM.ideal = false;
+      return out;
+    });
+    const bwuOk = bwu.zero[0] === 0 && bwu.zero[1] === '0,0,0,0,0' && bwu.gain > 3 && bwu.cost[0] === 30 && bwu.cost[1] === 30 && bwu.broke === false && bwu.up1 === true && bwu.spent === 30
+      && bwu.dmg[0] === 10 && Math.abs(bwu.dmg[1] - 12.5) < 1e-9 && Math.abs(bwu.reload[0] - 1.6) < 1e-6 && Math.abs(bwu.reload[1] - 1.408) < 1e-6
+      && bwu.max[0] === 3 && bwu.max[1] === false && bwu.max[2] && bwu.reset[0] === 0 && bwu.reset[1] === '0,0,0,0,0';
+    if (!bwuOk) failures.push('[boardwar supplies] ' + JSON.stringify(bwu));
+    console.log(`${bwuOk ? 'ok  ' : 'FAIL'} board war: supplies from your side's boards, a level for 30 × level² (the first 30), a mortar's damage 10 → 12.5 and reload 1.6 → 1.408 s for your side, three levels at most, a new war starting over`);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SIM.quiet = false; D.newWar(); });
     // SIMON'S SONGS (Nov 8: "can you add buttons to pre-set songs?", then "can you add more songs?"): twelve tunes, a pad a distinct note lowest first and sounding at its own pitch, a button a song
     // in the bottom row beginning that tune on the framed board, each round playing one more note, the whole song played back winning (kept as the best), a wrong pad losing
