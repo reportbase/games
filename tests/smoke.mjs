@@ -8165,6 +8165,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} invaders: a smaller formation when easy, the ship going forward and back, its shots from where it is`);
   }
 
+    // BOARD WAR, on mini golf's ground (Nov 8: "I was thinking more like combining missle command and mini-golf terrain and walls."): every board a mini golf
+    // hole's hills and walls in its owner's colour, the keep on the cup, high arcs coming down where aimed, flat shots stopped by what stands in their way
     // BOARD WAR (Nov 8: "create a game where boards are at war with each other.   when a board is defeated, it joins the side that defeated it.   create
     // various types of missel launchers to lauch missles at each other."): the sides by block, each launcher's range, damage, volley and reload, a board
     // at no hit points joining the side whose missile took it (kept in storage), the warhead's splash, the war going on by itself, the pieces, and real input
@@ -8173,7 +8175,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.waitForTimeout(1500);
     const bw = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, K = D.KINDS, key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
-      D.newWar(); D.SIM.quiet = true; D.LIVE = { c: 0, r: 0 };
+      D.newWar(); D.SIM.quiet = true; D.SIM.ideal = true; D.LIVE = { c: 0, r: 0 };   // (ideal: no scatter and nothing in the way, so each kind's damage is exact)
       // the sides: the corner's block yours, all four across the field, the same each time
       const own = () => { const a = []; for (let c = 0; c < 40; c++) for (let r = 0; r < 40; r++) a.push(D.ownerOf(c, r)); return a.join(''); };
       const a1 = own(); out.sides = [0, 1, 2, 3].every(s => a1.includes(String(s))) && own() === a1 && [0, 1, 2, 3, 4].every(c => [0, 1, 2, 3, 4].every(r => D.ownerOf(c, r) === D.SIDE));
@@ -8212,6 +8214,42 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       D.advance(m.dur * 0.5); const late = [kinds(D.itemsOf(0, 0)).includes('bwShell'), kinds(D.itemsOf(1, 0)).includes('bwShell')];
       out.flight = early.join() + '|' + late.join();
       D.advance(5); D.MIS.length = 0;
+      // the ground is mini golf's: a golf hole's ground and rails under every board, none of its flag, ball or scoreboard, the keep on the cup, the
+      // launchers on ground that is free; a high arc comes down where it was aimed, a flat shot stops at the first wall, fence, boulder or rise in its way
+      D.SIM.ideal = false;
+      const g0 = D.itemsOf(0, 0).map(x => x.kind);
+      out.golf = [g0.some(k => /^land/.test(k)), g0.some(k => /^rail[VH]_/.test(k)), !g0.some(k => /^(cup|pole|pennant|ball|plate)$/.test(k))].join();
+      let stopped = 0, clear = 0, highStopped = 0, rain = 0, offKeep = 0;
+      for (let b = 1; b < 40; b++){
+        const tc = b % 7 + 20, tr = Math.floor(b / 7) + 20, side = D.SIDE;
+        for (const k of [1, 2, 0, 4]){
+          D.MIS.length = 0; D.capture(tc + 1, tr, side); D.capture(tc, tr, (side + 1) % 4); D.rearm(tc + 1, tr);
+          D.launch(tc + 1, tr, k, tc, tr, 0);
+          for (const m of D.MIS){ if (K[k].flat){ if (m.stopped) stopped++; else clear++; } else { if (m.stopped) highStopped++; rain++; } if (m.f < 0.99) offKeep++; }
+        }
+      }
+      D.MIS.length = 0;
+      out.shield = [stopped > 3, clear > 3, highStopped === 0, rain > 20, offKeep > 0].join();
+      // the launchers (Nov 8: "move the missle launchers behind walls and hills so they are protected. and move them around the board strategically, not just
+      // at the bottom. the missle launchers should take damege and can be destroyed."): spread over boards and covered more than a row at the bottom would be,
+      // hit by a burst near them, a wreck at no hit points that cannot fire, built again at half after a minute
+      let spreadV = 0, covered = 0, nb = 0, bottom = 0;
+      for (let b = 0; b < 30; b++){
+        const T = D.terrOf(D.holeFor(30 + b % 6, 30 + Math.floor(b / 6))), vs = T.pads.map(p => p.y);
+        spreadV += Math.max(...vs) - Math.min(...vs); covered += T.shields.reduce((x, y) => x + y, 0) / 5; nb++; bottom += vs.filter(y => y > 0.8).length / 5;
+      }
+      out.placed = [spreadV / nb > 0.3, covered / nb > 0.3, bottom / nb < 0.5].join();
+      D.SIM.ideal = true; D.newWar(); D.capture(1, 0, (D.SIDE + 1) % 4); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t }); D.LHP.delete(key(1, 0));   // (a board taken has its launchers at half: these at full)
+      const lh = () => Math.round(D.lhpOf(1, 0).hp[2]);
+      D.rearm(0, 0); D.launch(0, 0, 2, 1, 0, 0, 2); D.advance(K[2].fly * 1.12 + 0.25);                // (a cruise missile aimed at its cruise launcher: 26 × 1.5 = 39 of 40)
+      const hit1 = lh(); D.rearm(0, 0); D.launch(0, 0, 2, 1, 0, 0, 2); D.advance(K[2].fly * 1.12 + 0.25);
+      const dead = lh(), wreck = D.itemsOf(1, 0).some(x => x.kind === 'bwRubble');
+      D.LHP.set(key(1, 0), { hp: [40, 40, 0, 40, 60], at: [0, 0, D.SIM.t, 0, 0] }); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t });
+      D.capture(0, 0, (D.SIDE + 2) % 4);
+      const refused = D.launch(1, 0, 2, 0, 0, 0);                                                  // (a wreck does not fire)
+      D.advance(D.REBUILD + 1); const rebuilt = lh();
+      out.launchers = [hit1, dead, wreck, refused, rebuilt].join();
+      D.SIM.ideal = false; D.MIS.length = 0;
       // the war goes on without you: two minutes with the computer's boards firing, boards changing hands
       D.newWar(); D.SIM.quiet = false; D.LIVE = { c: 0, r: 0 }; const was = D.STATS.shots; D.advance(120);
       out.war = [D.STATS.shots - was > 100, D.OWN.size > 10, D.STATS.won + D.STATS.lost > 10].join();
@@ -8219,7 +8257,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       return out;
     });
     const bwOk = bw.sides && bw.hit === bw.want && bw.far === '0,0' && bw.friend === 0 && bw.reload === '1,0,1' && bw.splash === '45,88,88,100'
-      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true';
+      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true' && bw.golf === 'true,true,true' && bw.shield === 'true,true,true,true,true' && bw.placed === 'true,true,true' && bw.launchers === '1,0,true,0,20';
     if (!bwOk) failures.push('[boardwar] ' + JSON.stringify(bw));
     console.log(`${bwOk ? 'ok  ' : 'FAIL'} board war (sides by block, damage by kind ${bw.hit}, a board taken joins the taker's side: ${bw.taken}, the war going on: ${bw.war})`);
     // real input: a click on the third launcher takes the cruise missile, a click toward a hostile board fires it there
@@ -8231,7 +8269,8 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
         return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
-      const slot = await aimAt(0.5, 0.9); await page.mouse.click(slot.x, slot.y); await page.waitForTimeout(400);
+      const pad = await page.evaluate(() => { const D = window.getFieldApp()._debug; return D.padOf(0, 0, 2); });
+      const slot = await aimAt(pad.u, pad.v); await page.mouse.click(slot.x, slot.y); await page.waitForTimeout(400);
       const sel = await page.evaluate(() => window.getFieldApp()._debug.SEL);
       const toward = await aimAt(0.9, 0.4); await page.mouse.click(toward.x, toward.y); await page.waitForTimeout(400);
       const fired = await page.evaluate(() => { const D = window.getFieldApp()._debug; return D.MIS.map(m => [m.k, m.from.join('_'), m.to.join('_')].join(':')); });

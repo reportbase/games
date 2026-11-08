@@ -64260,14 +64260,17 @@ const WAR_APP = (() => {
     { name: 'Gold',  col: 0xe0b43a, a: 0xb59a45, b: 0xa38a3b },
   ];
   /* The launchers: range in boards (a board beside is 1, a diagonal 1.41), damage a missile, missiles a shot (n, gap seconds apart), the reload
-     and the flight in seconds, the arc's height, how far across the target board they scatter, and the warhead's splash on the boards round. */
+     and the flight in seconds, the arc's height, how far across the target board they scatter (in mini golf's units, a cell is 1/13), the burst's
+     reach (`blast`: full damage at the keep, less to its edge and `CHIP` of it anywhere else) and, for the two flat shots, the height they fly in over
+     the target board (`flat`: a wall or a hill higher than that in their way stops them short; a high arc goes over), and the warhead's splash. */
   const KINDS = [
-    { id: 'mortar',  name: 'Mortar',          range: 1.5, dmg: 10, n: 1, gap: 0,    reload: 1.6, fly: 1.7, arc: 0.5,  spread: 0.1,  col: 0xf0d070 },
-    { id: 'rockets', name: 'Rocket battery',  range: 2.3, dmg: 6,  n: 4, gap: 0.14, reload: 4.2, fly: 1.5, arc: 0.22, spread: 0.12, col: 0xff8a4a },
-    { id: 'cruise',  name: 'Cruise missile',  range: 3.3, dmg: 26, n: 1, gap: 0,    reload: 7.5, fly: 2.6, arc: 0.06, spread: 0.05, col: 0xe8f2ff },
-    { id: 'cluster', name: 'Cluster',         range: 2.3, dmg: 5,  n: 6, gap: 0.05, reload: 6,   fly: 2.1, arc: 0.7,  spread: 0.36, col: 0xb8e86a },
-    { id: 'warhead', name: 'Warhead',         range: 5.3, dmg: 55, n: 1, gap: 0,    reload: 20,  fly: 4.2, arc: 1.1,  spread: 0.04, col: 0xff4a4a, splash: 12 },
+    { id: 'mortar',  name: 'Mortar',          range: 1.5, dmg: 10, n: 1, gap: 0,    reload: 1.6, fly: 1.7, arc: 0.5,  spread: 0.035, blast: 0.12, col: 0xf0d070 },
+    { id: 'rockets', name: 'Rocket battery',  range: 2.3, dmg: 6,  n: 4, gap: 0.14, reload: 4.2, fly: 1.5, arc: 0.22, spread: 0.05,  blast: 0.1,  col: 0xff8a4a, flat: 0.17 },
+    { id: 'cruise',  name: 'Cruise missile',  range: 3.3, dmg: 26, n: 1, gap: 0,    reload: 7.5, fly: 2.6, arc: 0.06, spread: 0.02,  blast: 0.1,  col: 0xe8f2ff, flat: 0.1 },
+    { id: 'cluster', name: 'Cluster',         range: 2.3, dmg: 5,  n: 6, gap: 0.05, reload: 6,   fly: 2.1, arc: 0.7,  spread: 0.16,  blast: 0.14, col: 0xb8e86a },
+    { id: 'warhead', name: 'Warhead',         range: 5.3, dmg: 55, n: 1, gap: 0,    reload: 20,  fly: 4.2, arc: 1.1,  spread: 0.02,  blast: 0.3,  col: 0xff4a4a, splash: 12 },
   ];
+  const CHIP = 0.18;
   const MAXHP = 100, CAPTURED_HP = 40, REGEN = 2, REGEN_AFTER = 6, WAR_R = 5, GARRISON = 1.4, BURST = 0.8, CAP_FX = 1.4, MAX_FX = 80;
   const LEVEL_MULT = [1.7, 1.35, 1.0, 0.8, 0.65];                   // (an enemy's reload by the board's level: slower near the corner)
   const DL = ARCADE.difficulty('boardwar.level', 'Every board has its own level, harder the farther it is from the corner: its launchers reload quicker out there. Easy, Normal and Hard move every board a level up.', true);
@@ -64288,10 +64291,21 @@ const WAR_APP = (() => {
   const OWN = new Map(Object.entries(load('boardwar.own', {})).map(([k, v]) => [+k, v]));
   const STATS = Object.assign({ won: 0, lost: 0, shots: 0 }, load('boardwar.stats', {}));
   const saveOwn = () => { const e = [...OWN.entries()]; save('boardwar.own', Object.fromEntries(e.length > 5000 ? e.slice(-5000) : e)); save('boardwar.stats', STATS); };
-  const HP = new Map(), RDY = new Map();
+  const HP = new Map(), RDY = new Map(), LHP = new Map();
+  /* The launchers can be hit and destroyed (Nov 8: "the missle launchers should take damege and can be destroyed."): each has hit points (`LMAX`), loses them
+     to a burst near it (the burst's reach for it, 1.5 times the missile's damage at the heart of it), is a wreck at none (it cannot fire) and is built again
+     `REBUILD` seconds on at half strength; a board that changes sides has its launchers at half. */
+  const LMAX = [40, 40, 40, 40, 60], REBUILD = 60;
+  function lhpOf(c, r){
+    const k = key(c, r); let e = LHP.get(k);
+    if (!e){ e = { hp: LMAX.slice(), at: LMAX.map(() => 0) }; LHP.set(k, e); }
+    for (let i = 0; i < e.hp.length; i++) if (e.hp[i] <= 0 && e.at[i] && SIM.t - e.at[i] >= REBUILD){ e.hp[i] = LMAX[i] / 2; e.at[i] = 0; }
+    return e;
+  }
+  const alive = (c, r, k) => lhpOf(c, r).hp[k] > 0;
   const SIM = { t: 0, ai: 0 };
   const MIS = [], FX = [];
-  let SEL = 0, LIVE = null, AIM = null, PID = 0, lastReal = 0;
+  let SEL = 0, AIMMODE = false, LIVE = null, AIM = null, PID = 0, lastReal = 0;
 
   /* The sides at the start: blocks of 5 × 5 boards, one side each by a hash of the block, the corner's block yours. */
   function regionSide(c, r){
@@ -64314,6 +64328,85 @@ const WAR_APP = (() => {
   const rearm = (c, r) => { const a = rdyOf(c, r); for (let k = 0; k < a.length; k++) a[k] = SIM.t; };
   const center = () => LIVE ? [LIVE.c, LIVE.r] : [0, 0];
 
+  /* ─── THE GROUND IS MINI GOLF'S (Nov 8: "I was thinking more like combining missle command and mini-golf terrain and walls.") ───
+     Every board is the mini golf hole of its number (the page's own: its hills and hollows, rails, walls, fences, water, bumpers and
+     windmills, drawn by golf's `cellItems`, less the flag, the ball and the scoreboard, in the owner's colour). The keep stands on the cup, which
+     every hole guards, the five launchers near the tee, each on the ground it finds there. A missile flies as Missile Command's do and bursts on
+     the target board: a high arc (mortar, cluster, warhead) comes down where it was aimed, a flat shot (rockets, cruise missile) flies in low from
+     the side it came from and stops at the first wall, fence, rock or rise of ground that stands higher than it flies; and what it does to the
+     keep falls off with the burst's distance from it, so what stands in the way is a shield. */
+  const GOLFD = () => GOLF_APP._debug;
+  const holeFor = (c, r) => { const D = GOLFD(), g = D.games.get(gkey(c, r)); return D.HOLES[g ? g.hole : D.holeAt(boardIdx(c, r))]; };
+  const TERR = new WeakMap();
+  function terrOf(H){
+    let T = TERR.get(H); if (T) return T;
+    const D = GOLFD(), WD = D.WD, CW = D.CW, hh = (x, y) => D.hOf(H, x, y);
+    const fences = [], rocks = [], mills = [];
+    for (const t of H.toys || []){ if (t.fence) fences.push(t.fence); else if (t.rock) rocks.push(t.rock); else if (t.mill) mills.push(t.mill); }
+    // how high something stands over the ground at (x, y): a wall cell, a fence, a boulder, a windmill's tower
+    const obst = (x, y) => {
+      let o = D.groundAt(H, x, y) === '#' ? 0.07 : 0;
+      for (const [x0, y0, x1, y1] of fences){ const dx = x1 - x0, dy = y1 - y0, s = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / ((dx * dx + dy * dy) || 1)));
+        if (Math.hypot(x - x0 - dx * s, y - y0 - dy * s) < CW * 0.25) o = Math.max(o, 0.06); }
+      for (const [rx, ry, rr] of rocks) if (Math.hypot(x - rx, y - ry) < rr * 0.9) o = Math.max(o, 0.05);
+      for (const [mx, my] of mills) if (Math.hypot(x - mx, y - my) < CW * 0.3) o = Math.max(o, 0.12);
+      return o;
+    };
+    const free = (x, y) => { const ch = D.groundAt(H, x, y); return (ch === '.' || ch === 's') && !obst(x, y) && x > CW * 0.7 && x < WD - CW * 0.7 && y > CW * 0.7 && y < 1 - CW * 0.7; };
+    const keep = { x: H.cup.x, y: H.cup.y, h: hh(H.cup.x, H.cup.y) }, pads = [], shields = [];
+    /* Where the launchers stand (Nov 8: "move the missle launchers behind walls and hills so they are protected. and move them around the board
+       strategically, not just at the bottom."): of the free ground, each takes the spot that is most covered (`cover`: of the eight ways a flat shot
+       can come, how many have a wall, fence, boulder or rise of ground within a cell and a half that stands over the spot), near its own anchor, so the
+       five spread over the board (the anchors turned by the hole's own hash), off the keep and apart from one another. */
+    const cover = (x, y) => {
+      const base = hh(x, y); let n = 0;
+      for (let d = 0; d < 8; d++){
+        const a = d * Math.PI / 4;
+        for (const q of [0.55, 1.1, 1.7]){
+          const px = x + Math.cos(a) * q * CW, py = y + Math.sin(a) * q * CW;
+          if (px < CW * 0.5 || px > WD - CW * 0.5 || py < CW * 0.5 || py > 1 - CW * 0.5) continue;
+          if (hh(px, py) + obst(px, py) > base + 0.045){ n++; break; }
+        }
+      }
+      return n / 8;
+    };
+    const cands = [];
+    for (let y = CW * 0.9; y < 1 - CW * 0.8; y += CW * 0.75) for (let x = CW * 0.9; x < WD - CW * 0.8; x += CW * 0.75) if (free(x, y)) cands.push({ x, y, cv: cover(x, y) });
+    let sd = (Math.floor(H.cup.x * 7919 + H.cup.y * 104729) * 2654435761) >>> 0;
+    const jit = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+    const rot = jit() * 0.35, flip = jit() < 0.5;
+    const ANCH = [[0.22, 0.22], [0.78, 0.3], [0.25, 0.62], [0.75, 0.68], [0.5, 0.45]];
+    for (let k = 0; k < KINDS.length; k++){
+      let [ax, ay] = ANCH[k]; if (flip) ax = 1 - ax; ay = Math.max(0.12, Math.min(0.88, ay + (rot - 0.17)));
+      let best = null, bs = -1e9;
+      for (const q of cands){
+        if (Math.hypot(q.x - keep.x, q.y - keep.y) < CW * 2 || pads.some(o => Math.hypot(q.x - o.x, q.y - o.y) < CW * 2.5)) continue;
+        const sc = q.cv * 3 - 2.2 * Math.hypot(q.x / WD - ax, q.y - ay) + jit() * 0.3;
+        if (sc > bs){ bs = sc; best = q; }
+      }
+      if (!best) best = cands.find(q => pads.every(o => Math.hypot(q.x - o.x, q.y - o.y) > CW)) || { x: WD * (0.1 + 0.2 * k), y: Math.min(1 - CW, H.tee.y), cv: 0 };
+      pads.push({ x: best.x, y: best.y, h: hh(best.x, best.y) }); shields.push(best.cv);
+    }
+    /* Where a flat shot at height h0 over its entry stops on its way to (tx, ty): the first place the ground and what stands on it are higher than the
+       shot, which comes down in a straight line to the ground at the target (the last half cell is the target's own). [x, y, stopped] */
+    const los = (ex, ey, tx, ty, h0) => {
+      const n = 32, hT = hh(tx, ty) + 0.012, lo = CW * 0.5;
+      for (let i = 1; i <= n; i++){
+        const s = i / n, x = ex + (tx - ex) * s, y = ey + (ty - ey) * s;
+        if (x < lo || x > WD - lo || y < lo || y > 1 - lo) continue;
+        if (Math.hypot(x - tx, y - ty) < CW * 0.45) break;
+        if (hh(x, y) + obst(x, y) > h0 * (1 - s) + hT * s) return [x, y, true];
+      }
+      return [tx, ty, false];
+    };
+    return TERR.set(H, T = { keep, pads, shields, los, obst, hh }), T;
+  }
+  const lerp = (a, b, s) => a + (b - a) * s;
+  /* Board spacing in board widths along u and along the far side, and in v fractions (a board is 1 across in u and 1 down in v): [Pu, Pvw, Pv]. */
+  const pitch = () => { try { const W = window.FIELD_WORLD, sp = W.spacing(), bW = W.boardW(), WD = GOLFD().WD; return [sp[0] / bW, sp[1] / bW, sp[1] / bW * WD]; } catch { return [1.1, 1.1, 1.1 * 8 / 13]; } };
+  const padOf = (c, r, k) => { const T = terrOf(holeFor(c, r)), WD = GOLFD().WD, p = T.pads[k]; return { u: p.x / WD, v: p.y, h: p.h / WD }; };
+  const keepOf = (c, r) => { const T = terrOf(holeFor(c, r)), WD = GOLFD().WD, q = T.keep; return { u: q.x / WD, v: q.y, h: q.h / WD }; };
+
   /* The hostile boards a launcher of kind k on board (c, r) can reach, nearest first: [{ c, r, dist, hp }]. */
   function reach(c, r, k){
     const K = KINDS[k], side = ownerOf(c, r), R = Math.ceil(K.range), out = [];
@@ -64330,10 +64423,10 @@ const WAR_APP = (() => {
   function pickTarget(c, r, k, tu, tv){
     const list = reach(c, r, k); if (!list.length) return null;
     if (tu != null){
-      const x = -(tu - 0.5), y = -(tv - 0.5), m = Math.hypot(x, y);
-      if (m > 0.12){
+      const [PU, PVW] = pitch(), WD = GOLFD().WD, x = -(tu - 0.5), y = -(tv - 0.5) / WD, m = Math.hypot(x, y);
+      if (m > 0.1){
         let best = null, bd = 0;
-        for (const t of list){ const cs = (t.dc * x + t.dr * y) / (t.dist * m); if (cs >= 0.5 && (!best || t.dist < bd - 1e-9 || (Math.abs(t.dist - bd) < 1e-9 && cs > best.cs))){ best = Object.assign({ cs }, t); bd = t.dist; } }
+        for (const t of list){ const vx = t.dc * PU, vy = t.dr * PVW, cs = (vx * x + vy * y) / (Math.hypot(vx, vy) * m); if (cs >= 0.5 && (!best || t.dist < bd - 1e-9 || (Math.abs(t.dist - bd) < 1e-9 && cs > best.cs))){ best = Object.assign({ cs }, t); bd = t.dist; } }
         if (best) return best;
       }
     }
@@ -64342,15 +64435,24 @@ const WAR_APP = (() => {
 
   /* One shot: the kind's n missiles, a gap apart, from board (c, r)'s launcher k to board (tc, tr). Refused (0) out of range, at a friend, or while reloading.
      `mult` is the reload's stretch for the computer's boards (a person's own board reloads in the kind's own time). */
-  function launch(c, r, k, tc, tr, mult){
+  function launch(c, r, k, tc, tr, mult, aim){
     const K = KINDS[k], side = ownerOf(c, r), dc = dwrap(tc, c), dr = dwrap(tr, r), dist = Math.hypot(dc, dr);
-    if (!dist || dist > K.range + 1e-9 || ownerOf(tc, tr) === side) return 0;
+    if (!dist || dist > K.range + 1e-9 || ownerOf(tc, tr) === side || !alive(c, r, k)) return 0;
     const rd = rdyOf(c, r); if (rd[k] > SIM.t + 1e-9) return 0;
     rd[k] = SIM.t + (K.n - 1) * K.gap + K.reload * (mult || 1) * (mult ? 0.8 + 0.6 * rnd() : 1);
+    const D = GOLFD(), WD = D.WD, [PU, , PV] = pitch(), HT = holeFor(tc, tr), TT = terrOf(HT), pad = padOf(c, r, k), keep = TT.keep, ak = aim != null && aim >= 0 && alive(tc, tr, aim) ? TT.pads[aim] : keep;   // (aim: a launcher of the target to fire at, else its keep)
+    // (where the launcher stands, in the target board's frame: a board a column on is at −u, so the source is at +u)
+    const ou = pad.u + dc * PU, ov = pad.v + dr * PV, tu0 = ak.x / WD, tv0 = ak.y;
+    // (where the flight comes onto the target board: the first point of its line inside the board)
+    let eu = tu0, ev = tv0;
+    for (let q = 0; q <= 120; q++){ const s = q / 120, u = lerp(ou, tu0, s), v = lerp(ov, tv0, s); if (u >= 0 && u <= 1 && v >= 0 && v <= 1){ eu = u; ev = v; break; } }
     for (let i = 0; i < K.n; i++){
-      const sp = K.spread;
-      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg,
-                 su: 0.1 + 0.2 * k, sv: 0.88, tu: 0.5 + (rnd() - 0.5) * 2 * sp, tv: 0.5 + (rnd() - 0.5) * 2 * sp, dc, dr, id: ++PID });
+      const a = rnd() * 2 * Math.PI, rr = SIM.ideal ? 0 : K.spread * Math.sqrt(rnd());
+      let bx = Math.max(D.CW, Math.min(WD - D.CW, ak.x + Math.cos(a) * rr)), by = Math.max(D.CW, Math.min(1 - D.CW, ak.y + Math.sin(a) * rr)), stopped = false;
+      if (K.flat && !SIM.ideal){ const L = TT.los(eu * WD, ev, bx, by, TT.hh(eu * WD, ev) + K.flat); bx = L[0]; by = L[1]; stopped = L[2]; }
+      const f = CHIP + (1 - CHIP) * Math.max(0, 1 - Math.hypot(bx - keep.x, by - keep.y) / K.blast);
+      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * f, base: K.dmg, f, stopped, aim: ak === keep ? -1 : aim,
+                 su: pad.u, sv: pad.v, gs: pad.h, tu: bx / WD, tv: by, gy: TT.hh(bx, by) / WD, dc, dr, id: ++PID });
     }
     STATS.shots++;
     return K.n;
@@ -64365,7 +64467,7 @@ const WAR_APP = (() => {
   function capture(c, r, side){
     const k = key(c, r), was = ownerOf(c, r);
     if (was === side) return;
-    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k);
+    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
     FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
     if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
     saveOwn();
@@ -64373,11 +64475,21 @@ const WAR_APP = (() => {
   }
   function impact(m){
     const [tc, tr] = m.to, K = KINDS[m.k];
-    FX.push({ c: tc, r: tr, u: m.tu, v: m.tv, t: SIM.t, k: m.k });
+    FX.push({ c: tc, r: tr, u: m.tu, v: m.tv, y: m.gy, t: SIM.t, k: m.k, stopped: m.stopped });
     if (FX.length > MAX_FX) FX.splice(0, FX.length - MAX_FX);
     if (isLive(tc, tr)) SND.play('boom');
     if (ownerOf(tc, tr) === m.side) return;                                  // (the board changed sides while it flew: it falls on a friend's ground)
-    hurt(tc, tr, m.dmg, m.side);
+    const taken = hurt(tc, tr, m.dmg, m.side);
+    if (!taken){                                                              // (and the launchers near the burst)
+      const D = GOLFD(), WD = D.WD, L = lhpOf(tc, tr);
+      for (let k = 0; k < KINDS.length; k++){
+        if (L.hp[k] <= 0) continue;
+        const P = padOf(tc, tr, k), d = Math.hypot((P.u - m.tu) * WD, P.v - m.tv), fl = Math.max(0, 1 - d / (K.blast * 0.9));
+        if (fl <= 0) continue;
+        L.hp[k] -= m.base * fl * 1.5;
+        if (L.hp[k] <= 0){ L.hp[k] = 0; L.at[k] = SIM.t; FX.push({ c: wrapc(tc), r: wrapc(tr), u: P.u, v: P.v, y: P.h, t: SIM.t, k: 4, wreck: true }); if (isLive(tc, tr)) SND.play('boom'); }
+      }
+    }
     if (K.splash) for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++){
       if (!dc && !dr) continue;
       const nc = wrapc(tc + dc), nr = wrapc(tr + dr);
@@ -64398,7 +64510,9 @@ const WAR_APP = (() => {
         if (rd[k] > SIM.t) continue;
         const t = weakest(reach(c, r, k));
         if (!t || (k === 4 && t.hp < 50)){ rd[k] = SIM.t + 0.8 + rnd(); continue; }
-        launch(c, r, k, t.c, t.r, mult);
+        let aim = -1;
+        if (rnd() < 0.45){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
+        launch(c, r, k, t.c, t.r, mult, aim);
       }
     }
   }
@@ -64424,12 +64538,15 @@ const WAR_APP = (() => {
     const t = pickTarget(c, r, SEL, tu, tv);
     if (!t) return 'none';
     if (rdyOf(c, r)[SEL] > SIM.t + 1e-9) return 'reload';
-    const n = launch(c, r, SEL, t.c, t.r, 0);
+    if (!alive(c, r, SEL)) return 'wrecked';
+    let aim = -1;
+    if (AIMMODE){ const L = lhpOf(t.c, t.r); for (let i = KINDS.length - 1; i >= 0; i--) if (L.hp[i] > 0){ aim = i; break; } }   // (the most dangerous standing)
+    const n = launch(c, r, SEL, t.c, t.r, 0, aim);
     if (n){ AIM = { c: t.c, r: t.r, t: SIM.t }; SND.play('tap'); }
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; saveOwn(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; saveOwn(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -64439,39 +64556,56 @@ const WAR_APP = (() => {
   }
 
   /* ─── DRAWING ─── */
-  const lerp = (a, b, s) => a + (b - a) * s;
-  const pitch = () => { try { const W = window.FIELD_WORLD, sp = W.spacing(), bW = W.boardW(); return [sp[0] / bW, sp[1] / bW]; } catch { return [1.1, 1.1]; } };
   /* A missile's place at s (0 to 1 of its flight) in the frame of board (c, r): the board it left, or the one it falls on (that one a column
-     and row away, a column to the +u side being a board at −u). */
+     and row away, a column to the +u side being a board at −u). Its height is the ground it leaves, the arc, and the ground it falls on. */
   function spot(m, s, c, r){
-    const [PU, PV] = pitch();
+    const [PU, , PV] = pitch();
     const fromHere = wrapc(c) === m.from[0] && wrapc(r) === m.from[1];
     const o = fromHere ? [0, 0] : [m.dc * PU, m.dr * PV];                               // (the origin's launcher in the target's frame)
     const t = fromHere ? [m.tu - m.dc * PU, m.tv - m.dr * PV] : [m.tu, m.tv];
     const du = lerp(m.su + o[0], t[0], s), dv = lerp(m.sv + o[1], t[1], s);
     const K = KINDS[m.k], dist = Math.hypot(m.dc, m.dr);
-    return { u: du, v: dv, lift: 0.02 + K.arc * 0.1 * (1 + dist) * 4 * s * (1 - s) };
+    return { u: du, v: dv, lift: (m.gs || 0) * (1 - s) + (m.gy || 0) * s + 0.03 + K.arc * 0.1 * (1 + dist) * 4 * s * (1 - s) };
   }
-  function itemsOf(c, r){
-    const out = [], own = ownerOf(c, r), S = SIDES[own], hp = hpOf(c, r), mine = own === SIDE, now = SIM.t;
-    out.push({ kind: 'bwKeep', u: 0.5, v: 0.42, scale: 0.17, color: S.col });
-    const rd = rdyOf(c, r);
-    for (let k = 0; k < KINDS.length; k++){
-      const u = 0.1 + 0.2 * k, K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
-      out.push({ kind: 'bw' + K.id, u, v: 0.88, scale: 0.11, color: S.col });
-      out.push({ kind: 'bwBar', u, v: 0.965, scale: 1, sx: 0.15, color: 0x20242c });
-      if (f > 0.02) out.push({ kind: 'bwBar', u: u - 0.075 * (1 - f), v: 0.965, scale: 1, sx: 0.15 * f, lift: 0.001, color: f >= 1 ? 0xf2e6a0 : 0x8c93a3 });
-      if (mine && k === SEL && isLive(c, r)) out.push({ kind: 'bwSel', u, v: 0.88, scale: 0.19, color: 0xffe9a8 });
+  const TINTED = new WeakMap();
+  const KEEP_OUT = /^(plate|cup|pole|pennant|ball|ghost|dot|teeMark|flagDots\d|tg\d+)$/;
+  const mixC = (a, b, f) => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.round(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f) << sh; return o; };
+  function itemsOf(c, r, bp){
+    const out = [], own = ownerOf(c, r), S = SIDES[own], hp = hpOf(c, r), mine = own === SIDE, now = SIM.t, D = GOLFD(), WD = D.WD, live = isLive(c, r);
+    // the ground and everything standing on it, mini golf's, less what only a golf hole has (the cup and flag, the ball, the scoreboard), in the owner's colour
+    const tintL = mixC(0xffffff, S.col, 0.6), tintW = mixC(0xffffff, S.col, 0.85);
+    for (const it of GOLF_APP.cellItems(c, r, bp)){
+      if (KEEP_OUT.test(it.kind)) continue;
+      if (it.color === 0xffffff) it.color = /^(land|wire)/.test(it.kind) ? tintL : tintW;
+      out.push(it);
     }
-    // (hit points along the far edge)
-    const f = Math.max(0, Math.min(1, hp / MAXHP));
-    out.push({ kind: 'bwBar', u: 0.5, v: 0.04, scale: 1, sx: 0.8, color: 0x20242c });
-    if (f > 0) out.push({ kind: 'bwBar', u: 0.1 + 0.4 * f, v: 0.04, scale: 1, sx: 0.8 * f, lift: 0.001, color: f > 0.5 ? 0x9be36a : f > 0.25 ? 0xf2c14b : 0xf26a4b });
-    // (craters where it has been hit)
+    let Hh = null; try { Hh = holeFor(c, r); } catch {}
+    if (!Hh) return out;
+    const TT = terrOf(Hh), kp = keepOf(c, r), rd = rdyOf(c, r);
+    out.push({ kind: 'bwKeep', u: kp.u, v: kp.v, scale: 0.13, lift: kp.h, color: S.col });
+    const LH = lhpOf(c, r);
+    for (let k = 0; k < KINDS.length; k++){
+      const P = padOf(c, r, k), K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
+      if (LH.hp[k] <= 0){ out.push({ kind: 'bwRubble', u: P.u, v: P.v, scale: 0.085, lift: P.h, color: 0x4a4540 }); continue; }
+      out.push({ kind: 'bw' + K.id, u: P.u, v: P.v, scale: 0.085, lift: P.h, color: S.col });
+      const bv = P.v + 0.05 * WD;                                                       // (the reload bar in front of it)
+      out.push({ kind: 'bwBar', u: P.u, v: bv, scale: 1, sx: 0.1, lift: P.h + 0.004, color: 0x20242c });
+      if (f > 0.02) out.push({ kind: 'bwBar', u: P.u - 0.05 * (1 - f), v: bv, scale: 1, sx: 0.1 * f, lift: P.h + 0.006, color: f >= 1 ? 0xf2e6a0 : 0x8c93a3 });
+      const lf = LH.hp[k] / LMAX[k];                                                    // (and its own hit points over it, once it is hurt)
+      if (lf < 0.999){ out.push({ kind: 'bwBar', u: P.u, v: P.v, scale: 1, sx: 0.1, lift: P.h + 0.13, color: 0x20242c });
+        out.push({ kind: 'bwBar', u: P.u - 0.05 * (1 - lf), v: P.v, scale: 1, sx: 0.1 * lf, lift: P.h + 0.132, color: lf > 0.5 ? 0x9be36a : lf > 0.25 ? 0xf2c14b : 0xf26a4b }); }
+      if (mine && k === SEL && live) out.push({ kind: 'bwSel', u: P.u, v: P.v, scale: 0.15, lift: P.h + 0.006, color: 0xffe9a8 });
+    }
+    // (hit points over the keep)
+    const f = Math.max(0, Math.min(1, hp / MAXHP)), hy = kp.h + 0.2;
+    out.push({ kind: 'bwBar', u: kp.u, v: kp.v, scale: 1, sx: 0.3, lift: hy, color: 0x20242c });
+    if (f > 0) out.push({ kind: 'bwBar', u: kp.u - 0.15 * (1 - f), v: kp.v, scale: 1, sx: 0.3 * f, lift: hy + 0.002, color: f > 0.5 ? 0x9be36a : f > 0.25 ? 0xf2c14b : 0xf26a4b });
+    // (craters round the keep where it has been hit)
     const idx = boardIdx(c, r), nc = Math.min(6, Math.floor((MAXHP - hp) / 16));
     for (let i = 0; i < nc; i++){
-      const h = Math.imul(idx + 1, 0x9e3779b1) ^ Math.imul(i + 3, 0x85ebca6b);
-      out.push({ kind: 'bwCrater', u: 0.18 + 0.64 * (((h >>> 3) & 255) / 255), v: 0.12 + 0.6 * (((h >>> 13) & 255) / 255), scale: 0.07 + 0.05 * (((h >>> 21) & 7) / 7), color: 0x2a1d14 });
+      const h = Math.imul(idx + 1, 0x9e3779b1) ^ Math.imul(i + 3, 0x85ebca6b), a = ((h >>> 3) & 255) / 255 * 6.283, d = (0.06 + 0.12 * (((h >>> 13) & 255) / 255)) / WD;
+      const cu = Math.max(0.06, Math.min(0.94, kp.u + Math.cos(a) * d)), cv = Math.max(0.04, Math.min(0.96, kp.v + Math.sin(a) * d * WD));
+      out.push({ kind: 'bwCrater', u: cu, v: cv, scale: 0.05 + 0.04 * (((h >>> 21) & 7) / 7), lift: TT.hh(cu * WD, cv) / WD + 0.002, color: 0x2a1d14 });
     }
     // (missiles with their trails: the half of the flight that is over this board)
     for (const m of MIS){
@@ -64490,13 +64624,14 @@ const WAR_APP = (() => {
     for (const e of FX){
       if (e.c !== wrapc(c) || e.r !== wrapc(r)) continue;
       const a = now - e.t;
-      if (e.cap != null){ if (a >= 0 && a < CAP_FX) out.push({ kind: 'bwRing', u: 0.5, v: 0.5, scale: 0.25 + 0.9 * a / CAP_FX, lift: 0.01, color: SIDES[e.cap].col }); continue; }
+      if (e.cap != null){ if (a >= 0 && a < CAP_FX) out.push({ kind: 'bwRing', u: kp.u, v: kp.v, scale: 0.25 + 0.9 * a / CAP_FX, lift: kp.h + 0.01, color: SIDES[e.cap].col }); continue; }
       if (a < 0 || a >= BURST) continue;
-      const q = a / BURST, big = e.k === 4 ? 1.8 : e.small ? 1.2 : 1;
-      out.push({ kind: 'bwFlash', u: e.u, v: e.v, scale: 0.09 * big * (1 - q * 0.6), lift: 0.01, color: 0xffd25a });
-      out.push({ kind: 'bwRing', u: e.u, v: e.v, scale: (0.05 + 0.2 * q) * big, lift: 0.012, color: 0xff7a30 });
+      const q = a / BURST, big = e.k === 4 ? 1.8 : e.small ? 1.2 : 1, ey = (e.y == null ? kp.h : e.y) + 0.012;
+      const eu = e.u == null ? kp.u : e.u, ev = e.v == null ? kp.v : e.v;
+      out.push({ kind: 'bwFlash', u: eu, v: ev, scale: 0.09 * big * (1 - q * 0.6), lift: ey, color: e.stopped ? 0xd8c8a8 : 0xffd25a });
+      out.push({ kind: 'bwRing', u: eu, v: ev, scale: (0.05 + 0.2 * q) * big, lift: ey + 0.002, color: 0xff7a30 });
     }
-    if (AIM && AIM.c === wrapc(c) && AIM.r === wrapc(r) && now - AIM.t < 2.5) out.push({ kind: 'bwSel', u: 0.5, v: 0.5, scale: 0.5 + 0.06 * Math.sin(now * 8), lift: 0.01, color: 0xff5a4a });
+    if (AIM && AIM.c === wrapc(c) && AIM.r === wrapc(r) && now - AIM.t < 2.5) out.push({ kind: 'bwSel', u: kp.u, v: kp.v, scale: 0.4 + 0.05 * Math.sin(now * 8), lift: kp.h + 0.01, color: 0xff5a4a });
     return out;
   }
 
@@ -64527,6 +64662,7 @@ const WAR_APP = (() => {
       return mergeG(T, parts); },
     bwwarhead: T => { const nose = new T.ConeGeometry(0.16, 0.34, 10); nose.translate(0, 1.18, 0);
       return mergeG(T, [cyl(T, 0.34, 0.42, 0.45, 0.225, 12), cyl(T, 0.16, 0.16, 0.55, 0.72, 10), nose]); },
+    bwRubble: T => { const parts = []; for (const [x, z, w, h, r] of [[0, 0, 0.7, 0.14, 0.3], [0.25, 0.2, 0.3, 0.2, -0.5], [-0.3, -0.15, 0.35, 0.12, 0.9], [0.1, -0.3, 0.25, 0.25, 0.2]]){ const b = new T.BoxGeometry(w, h, w * 0.8); b.rotateY(r); b.translate(x, h / 2, z); parts.push(b); } return mergeG(T, parts); },
     bwShell: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
     bwBar: T => { const g = new T.BoxGeometry(1, 0.004, 0.012); g.translate(0, 0.002, 0); return g; },
     bwCrater: T => FieldKit.disc(T, 0.5, 0.003),
@@ -64549,14 +64685,30 @@ const WAR_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
+      { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
       { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
       { label: 'New war', title: 'Every board back to where the war began, and the score at nothing.', on(){ newWar(); } },
     ]}],
     cellFar: { light: 0x3b4150, dark: 0x343946 },
-    itemMinPx: 14,
-    itemGeometries: GEOS,
-    cellGrid(c, r){ const S = SIDES[ownerOf(c, r)]; return { n: 8, colors: Array.from({ length: 64 }, (_, k) => ((k % 8) + ((k >> 3))) % 2 ? S.a : S.b) }; },
-    cellItems(c, r){ pump(); return itemsOf(c, r); },
+    itemMinPx: 20,
+    // (the ground's and the walls' kinds are mini golf's, the page's own: asked of it as they are wanted, since a hole's are made when it is)
+    itemGeometries: new Proxy(GEOS, {
+      get: (o, k) => k in o ? o[k] : (GOLF_APP.itemGeometries || {})[k],
+      has: (o, k) => k in o || k in (GOLF_APP.itemGeometries || {}),
+    }),
+    get boardShape(){ return GOLF_APP.boardShape; },                      // (mini golf's golden board, 8 × 13 cells)
+    pitchMin: 45, zoomMaxH: 4,                                              // (and its tilt floor and zoom ceiling: the same boards to draw)
+    itemCaps(kind){ return GOLF_APP.itemCaps ? GOLF_APP.itemCaps(kind) : 0; },
+    cellGrid(c, r){
+      const S = SIDES[ownerOf(c, r)], g = GOLF_APP.cellGrid(c, r);
+      if (!g || !g.colors) return g;
+      const key = S.col, M = TINTED.get(g.colors);
+      if (M && M.key === key) return M.g;
+      const out = { n: g.n, colors: g.colors.map(x => mixC(x, S.col, 0.4)) };
+      TINTED.set(g.colors, { key, g: out });
+      return out;
+    },
+    cellItems(c, r, bp){ pump(); return itemsOf(c, r, bp); },
     cellTitle(c, r){
       const own = ownerOf(c, r), hp = Math.round(hpOf(c, r)), t = tally(c, r, 4), lv = levelAt(boardIdx(c, r));
       return 'Board War — ' + SIDES[own].name + ' board, ' + hp + ' hit points, level ' + lv + (own === SIDE ? ' · yours: ' + KINDS[SEL].name : ' · an enemy: fly to a ' + SIDES[SIDE].name + ' board')
@@ -64570,7 +64722,8 @@ const WAR_APP = (() => {
       LIVE = { c, r };
       if (u == null) return true;
       if (ownerOf(c, r) !== SIDE) return true;
-      if (v >= 0.8){ selectKind(Math.max(0, Math.min(4, Math.floor(u * 5)))); return true; }
+      const WD = GOLFD().WD;
+      for (let k = 0; k < KINDS.length; k++){ const P = padOf(c, r, k); if (Math.hypot(u - P.u, (v - P.v) / WD) < 0.085){ selectKind(k); return true; } }
       fireHere(c, r, u, v);
       return true;
     },
@@ -64581,7 +64734,7 @@ const WAR_APP = (() => {
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
     _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
-              selectKind, newWar, setSide, tally, itemsOf, spot, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              selectKind, newWar, setSide, tally, itemsOf, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
