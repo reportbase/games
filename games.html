@@ -64013,7 +64013,6 @@ const HOME_APP = (() => {
      field, so every board has a game (Nov 7: "all boards should have a game, don't leave empty boards. see photo gallary."). The side divides the
      field's (10,000), so the repeat has no seam at the field's wrap, and it is as small as holds every game: 8 × 8 for up to 64 games, then 10, 16, 20…
      The cells past the last game take the first games again (game number mod the count). The far field's texture is the same block (`fabricRepeat`). */
-  const SIDES = [8, 10, 16, 20, 25, 40, 50, 80, 100];
   let cols = 8;
   const mod = (v, m) => ((v % m) + m) % m;
   // the games, by title, as the picker lists them; made again only when the set of apps changes (mini golf made again at another size keeps its id)
@@ -64025,7 +64024,7 @@ const HOME_APP = (() => {
     /* (Nov 7: "the home page should be sorted by game title": plain alphabetical, 2048 before 3D Tetris: `numeric` put 3D Tetris first, 3 < 2048.) */
     ORD = list.map(a => ({ id: a.id, title: titleOf(a) })).sort((x, y) => x.title.localeCompare(y.title, 'en', { sensitivity: 'base' }) || (x.id < y.id ? -1 : 1));
     ORD.forEach((o, k) => { o.k = k; o.hue = (k * 137.508) % 360; });          // (the golden angle: neighbours never match)
-    cols = SIDES.find(n => n * n >= ORD.length && gs() % n === 0) || 100;
+    cols = Math.max(1, ORD.length);
     return ORD;
   }
   /* THE GAMES READ LEFT TO RIGHT AND TOP TO BOTTOM, as the photo gallery's pages do (Nov 7: "the home page should be arranged like photo gallary,
@@ -64034,13 +64033,19 @@ const HOME_APP = (() => {
      its row, modulo the block's side. The first game is the corner board, top left of its block; the block runs right and down and is the same
      in every direction, so there is no bare board (it divides the field's side, so a board's wrapped number and its raw one give the same place). */
   const wrap = v => { const g = gs(); return ((v % g) + g) % g; };
+  /* (Nov 8: "home page is not correct. all boards should go across both horizontally and vertically. photo gallery gets this correct.": the 8 × 8 block read
+     across and down by eights, so a column held every eighth game and the rows had a seam at the block's edge. The gallery's rule instead, print i where
+     −(row + col) mod N = i, the board's column and row first folded to a signed distance from the corner (`side`, as `pick` does): every row AND every
+     column runs through all the games in title order, the next game one board right and one board down, with no block and no repeat before the list
+     ends. The one seam is half the field away, as the gallery's.) */
+  const side = v => { const w = wrap(v); return w > gs() / 2 ? w - gs() : w; };
   function slotAt(c, r){
     const o = order();
-    return o.length ? o[(mod(-r, cols) * cols + mod(-c, cols)) % o.length] : null;
+    return o.length ? o[mod(-(side(r) + side(c)), o.length)] : null;
   }
   const idAt = (c, r) => { const s = slotAt(c, r); return s ? s.id : null; };
-  // (the board of the game's first block, as the field numbers it: wrapped, never negative)
-  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [wrap(-(o.k % cols)), wrap(-Math.floor(o.k / cols))] : null; };
+  // (the board that holds the game on the corner's row: wrapped, never negative)
+  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [wrap(-o.k), 0] : null; };
   const hsl = (h, s, l) => 'hsl(' + h.toFixed(1) + ',' + s + '%,' + l + '%)';
   const hexOf = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };
@@ -64341,7 +64346,7 @@ const WAR_APP = (() => {
   function terrOf(H){
     let T = TERR.get(H); if (T) return T;
     const D = GOLFD(), WD = D.WD, CW = D.CW, hh = (x, y) => D.hOf(H, x, y);
-    const fences = [], rocks = [], mills = [];
+    const fences = [], rocks = [], mills = [], castle = { walls: [], towers: [], moat: [], houses: [], rubble: [], gate: null };
     for (const t of H.toys || []){ if (t.fence) fences.push(t.fence); else if (t.rock) rocks.push(t.rock); else if (t.mill) mills.push(t.mill); }
     // how high something stands over the ground at (x, y): a wall cell, a fence, a boulder, a windmill's tower
     const obst = (x, y) => {
@@ -64350,10 +64355,33 @@ const WAR_APP = (() => {
         if (Math.hypot(x - x0 - dx * s, y - y0 - dy * s) < CW * 0.25) o = Math.max(o, 0.06); }
       for (const [rx, ry, rr] of rocks) if (Math.hypot(x - rx, y - ry) < rr * 0.9) o = Math.max(o, 0.05);
       for (const [mx, my] of mills) if (Math.hypot(x - mx, y - my) < CW * 0.3) o = Math.max(o, 0.12);
+      for (const w of castle.walls){ const [x0, y0, x1, y1, ht] = w, dx = x1 - x0, dy = y1 - y0, s = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / ((dx * dx + dy * dy) || 1)));
+        if (Math.hypot(x - x0 - dx * s, y - y0 - dy * s) < CW * 0.2) o = Math.max(o, ht); }
+      for (const [tx, ty, tr, ht] of castle.towers) if (Math.hypot(x - tx, y - ty) < tr) o = Math.max(o, ht);   // (a tower: [x, y, radius, height, 'corner' | 'hill'])
       return o;
     };
     const free = (x, y) => { const ch = D.groundAt(H, x, y); return (ch === '.' || ch === 's') && !obst(x, y) && x > CW * 0.7 && x < WD - CW * 0.7 && y > CW * 0.7 && y < 1 - CW * 0.7; };
     const keep = { x: H.cup.x, y: H.cup.y, h: hh(H.cup.x, H.cup.y) }, pads = [], shields = [];
+    /* THE CASTLE (Nov 8: "do more construction to build up a castle with walls and a moat, and build them on top of hills and down in valleys. be creative."): the keep
+       stands in a ring of curtain wall (ten sides, a tower at each corner) with its gate toward the tee and a drawbridge over the moat that rings it, each piece standing on the
+       ground where it is, the wall's foot sunk so a slope never shows a gap. Outworks go where the ground asks: a watchtower with a banner on each of the two highest free
+       places and a sunken ward (a low wall round a courtyard with two cottages) in the lowest. The walls and towers stand in the way of flat shots (`obst`), so the castle
+       is what shelters the keep; it is built up and knocked down with the board's hit points (the curtain's segments go, in an order the hole sets, as it is hurt). */
+    const RC = CW * 1.5, NCW = 10, gAng = Math.atan2(H.tee.y - keep.y, H.tee.x - keep.x);
+    {
+      const gk = ((Math.round(((gAng + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * NCW - 0.5) % NCW) + NCW) % NCW;   // (the side that faces the tee is the gate: that edge)
+      const vx = i => keep.x + Math.cos(i * 2 * Math.PI / NCW) * RC, vy = i => keep.y + Math.sin(i * 2 * Math.PI / NCW) * RC;
+      for (let i = 0; i < NCW; i++){ castle.towers.push([vx(i), vy(i), CW * 0.4, 0.15, 'corner']);
+        if (i === gk) { castle.gate = [vx(i), vy(i), vx(i + 1), vy(i + 1), (i + 0.5) * 2 * Math.PI / NCW]; continue; }
+        castle.walls.push([vx(i), vy(i), vx(i + 1), vy(i + 1), 0.09, i]); }
+      // (the moat, a ribbon of water two thirds of a cell wide a little way off the wall, broken by nothing: the bridge crosses it)
+      const M = 28, r0 = RC + CW * 0.6, r1 = RC + CW * 1.25;
+      for (let j = 0; j < M; j++){
+        const a = (j + 0.5) / M * 2 * Math.PI, mx = keep.x + Math.cos(a) * (r0 + r1) / 2, my = keep.y + Math.sin(a) * (r0 + r1) / 2;
+        if (mx < CW * 0.35 || mx > WD - CW * 0.35 || my < CW * 0.35 || my > 1 - CW * 0.35) continue;
+        castle.moat.push({ x: mx, y: my, a: a + Math.PI / 2, len: 2 * Math.PI * (r0 + r1) / 2 / M * 1.12, w: r1 - r0 });
+      }
+    }
     /* Where the launchers stand (Nov 8: "move the missle launchers behind walls and hills so they are protected. and move them around the board
        strategically, not just at the bottom."): of the free ground, each takes the spot that is most covered (`cover`: of the eight ways a flat shot
        can come, how many have a wall, fence, boulder or rise of ground within a cell and a half that stands over the spot), near its own anchor, so the
@@ -64380,12 +64408,31 @@ const WAR_APP = (() => {
       let [ax, ay] = ANCH[k]; if (flip) ax = 1 - ax; ay = Math.max(0.12, Math.min(0.88, ay + (rot - 0.17)));
       let best = null, bs = -1e9;
       for (const q of cands){
-        if (Math.hypot(q.x - keep.x, q.y - keep.y) < CW * 2 || pads.some(o => Math.hypot(q.x - o.x, q.y - o.y) < CW * 2.5)) continue;
+        if (Math.hypot(q.x - keep.x, q.y - keep.y) < CW * 3.4 || pads.some(o => Math.hypot(q.x - o.x, q.y - o.y) < CW * 2.5)) continue;
         const sc = q.cv * 3 - 2.2 * Math.hypot(q.x / WD - ax, q.y - ay) + jit() * 0.3;
         if (sc > bs){ bs = sc; best = q; }
       }
       if (!best) best = cands.find(q => pads.every(o => Math.hypot(q.x - o.x, q.y - o.y) > CW)) || { x: WD * (0.1 + 0.2 * k), y: Math.min(1 - CW, H.tee.y), cv: 0 };
       pads.push({ x: best.x, y: best.y, h: hh(best.x, best.y) }); shields.push(best.cv);
+    }
+    {
+      // outworks: a watchtower on each of the two highest free places and a sunken ward in the lowest, off the keep, the launchers and each other
+      const far = (q, list, d) => list.every(o => Math.hypot(q.x - o.x, q.y - o.y) > d);
+      const used = pads.slice(), byH = cands.filter(q => Math.hypot(q.x - keep.x, q.y - keep.y) > CW * 4 && far(q, pads, CW * 1.8)).map(q => ({ x: q.x, y: q.y, h: hh(q.x, q.y) }));
+      byH.sort((a, b) => b.h - a.h);
+      const hills = [];
+      for (const q of byH){ if (hills.length >= 2) break; if (far(q, hills, CW * 3) && far(q, used, CW * 1.2)) hills.push(q); }
+      const valley = byH.slice().reverse().find(q => far(q, hills, CW * 2.5) && far(q, used, CW * 1.6));
+      for (const q of hills) castle.towers.push([q.x, q.y, CW * 0.5, 0.14, 'hill']);
+      castle.hills = hills;
+      if (valley){
+        const rv = CW * 0.85, nv = 6;
+        for (let i = 0; i < nv; i++){ const a0 = i * 2 * Math.PI / nv, a1 = (i + 1) * 2 * Math.PI / nv;
+          if (i === 0) continue;                                                    // (a gap in the ring: the ward's door)
+          castle.walls.push([valley.x + Math.cos(a0) * rv, valley.y + Math.sin(a0) * rv, valley.x + Math.cos(a1) * rv, valley.y + Math.sin(a1) * rv, 0.06, -1]); }
+        castle.houses = [[valley.x - rv * 0.25, valley.y - rv * 0.2], [valley.x + rv * 0.28, valley.y + rv * 0.25]];
+        castle.ward = valley;
+      }
     }
     /* Where a flat shot at height h0 over its entry stops on its way to (tx, ty): the first place the ground and what stands on it are higher than the
        shot, which comes down in a straight line to the ground at the target (the last half cell is the target's own). [x, y, stopped] */
@@ -64399,7 +64446,7 @@ const WAR_APP = (() => {
       }
       return [tx, ty, false];
     };
-    return TERR.set(H, T = { keep, pads, shields, los, obst, hh }), T;
+    return TERR.set(H, T = { keep, pads, shields, castle, RC, los, obst, hh }), T;
   }
   const lerp = (a, b, s) => a + (b - a) * s;
   /* Board spacing in board widths along u and along the far side, and in v fractions (a board is 1 across in u and 1 down in v): [Pu, Pvw, Pv]. */
@@ -64570,6 +64617,30 @@ const WAR_APP = (() => {
   const TINTED = new WeakMap();
   const KEEP_OUT = /^(plate|cup|pole|pennant|ball|ghost|dot|teeMark|flagDots\d|tg\d+)$/;
   const mixC = (a, b, f) => { let o = 0; for (const sh of [16, 8, 0]) o |= Math.round(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f) << sh; return o; };
+  /* The castle's pieces (see terrOf): each on the ground under it, in stone with the owner's colour on roofs and banners; the curtain wall is knocked down in an order the
+     hole sets as the board is hurt (rubble where a segment stood) and stands whole again as it heals. */
+  function castleItems(out, T, S, f, idx, WD){
+    const C = T.castle, stone = mixC(0xb9b2a2, S.col, 0.16), dark = mixC(0x8f897c, S.col, 0.16), CW = GOLFD().CW, lost = Math.floor((1 - Math.max(0, Math.min(1, f))) * 10 - 1e-6);
+    for (const m of C.moat) out.push({ kind: 'bwWater', u: m.x / WD, v: m.y, scale: m.w / WD, sx: m.len / m.w, yaw: m.a, lift: T.hh(m.x, m.y) / WD + 0.002, color: 0x2f6fb5 });
+    if (C.gate){ const [, , , , ga] = C.gate, k = T.keep, rr = T.RC + CW * 0.95, bx = k.x + Math.cos(ga) * rr, by = k.y + Math.sin(ga) * rr, wd = CW * 0.55, ln = CW * 1.7;
+      out.push({ kind: 'bwBridge', u: bx / WD, v: by, scale: wd / WD, sx: ln / wd, yaw: ga, lift: T.hh(bx, by) / WD + 0.012, color: 0x8a6240 }); }
+    for (const [x0, y0, x1, y1, ht, i] of C.walls){
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, L = Math.hypot(x1 - x0, y1 - y0), sc = ht / WD, yaw = Math.atan2(y1 - y0, x1 - x0);
+      if (i >= 0 && ((i * 3 + idx) % 10) < lost){ out.push({ kind: 'bwRubble', u: mx / WD, v: my, scale: 0.05, lift: T.hh(mx, my) / WD, yaw, color: 0x6a655c }); continue; }
+      out.push({ kind: 'bwWall', u: mx / WD, v: my, scale: sc, sx: L * 1.04 / WD / sc, yaw, lift: T.hh(mx, my) / WD, color: i < 0 ? dark : stone });
+    }
+    for (const [x, y, rr, ht, kind] of C.towers){
+      const sc = (kind === 'hill' ? 0.75 : 0.42) * CW / WD / 1.16, sy = (ht / WD) / (2.2 * sc), h0 = T.hh(x, y) / WD;      // (as wide as the kind asks, as tall as it stands)
+      out.push({ kind: 'bwTower', u: x / WD, v: y, scale: sc, sy, lift: h0, color: stone });
+      out.push({ kind: 'bwTowerRoof', u: x / WD, v: y, scale: sc, sy, lift: h0, color: S.col });
+      if (kind === 'hill'){
+        out.push({ kind: 'bwPole', u: x / WD, v: y, scale: sc * sy * 1.6, lift: h0 + sc * sy * 3.5, color: 0xe8e8e8 });
+        out.push({ kind: 'bwFlag', u: x / WD, v: y, scale: sc * sy * 1.6, lift: h0 + sc * sy * 3.5, color: S.col });
+      }
+    }
+    for (const [x, y] of C.houses){ const sc = CW * 0.6 / WD, h0 = T.hh(x, y) / WD;
+      out.push({ kind: 'bwHouse', u: x / WD, v: y, scale: sc, lift: h0, color: 0xcdbf9d }, { kind: 'bwRoof', u: x / WD, v: y, scale: sc, lift: h0, color: S.col }); }
+  }
   function itemsOf(c, r, bp){
     const out = [], own = ownerOf(c, r), S = SIDES[own], hp = hpOf(c, r), mine = own === SIDE, now = SIM.t, D = GOLFD(), WD = D.WD, live = isLive(c, r);
     // the ground and everything standing on it, mini golf's, less what only a golf hole has (the cup and flag, the ball, the scoreboard), in the owner's colour
@@ -64583,6 +64654,7 @@ const WAR_APP = (() => {
     if (!Hh) return out;
     const TT = terrOf(Hh), kp = keepOf(c, r), rd = rdyOf(c, r);
     out.push({ kind: 'bwKeep', u: kp.u, v: kp.v, scale: 0.13, lift: kp.h, color: S.col });
+    castleItems(out, TT, S, hp / MAXHP, boardIdx(c, r), WD);
     const LH = lhpOf(c, r);
     for (let k = 0; k < KINDS.length; k++){
       const P = padOf(c, r, k), K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
@@ -64663,6 +64735,18 @@ const WAR_APP = (() => {
     bwwarhead: T => { const nose = new T.ConeGeometry(0.16, 0.34, 10); nose.translate(0, 1.18, 0);
       return mergeG(T, [cyl(T, 0.34, 0.42, 0.45, 0.225, 12), cyl(T, 0.16, 0.16, 0.55, 0.72, 10), nose]); },
     bwRubble: T => { const parts = []; for (const [x, z, w, h, r] of [[0, 0, 0.7, 0.14, 0.3], [0.25, 0.2, 0.3, 0.2, -0.5], [-0.3, -0.15, 0.35, 0.12, 0.9], [0.1, -0.3, 0.25, 0.25, 0.2]]){ const b = new T.BoxGeometry(w, h, w * 0.8); b.rotateY(r); b.translate(x, h / 2, z); parts.push(b); } return mergeG(T, parts); },
+    // (the castle: a wall's box, its foot sunk; a tower with its battlement; roofs, a cottage, the moat's ribbon, the drawbridge, a banner)
+    bwWall: T => new T.BoxGeometry(1, 1.6, 0.35).translate(0, 0.2, 0),
+    bwTower: T => { const parts = [cyl(T, 0.5, 0.58, 2.8, 0.8, 12), cyl(T, 0.68, 0.68, 0.22, 2.3, 12)];
+      for (let i = 0; i < 8; i++){ const a = i * Math.PI / 4, m = new T.BoxGeometry(0.2, 0.28, 0.2); m.translate(Math.cos(a) * 0.62, 2.54, Math.sin(a) * 0.62); parts.push(m); }
+      return mergeG(T, parts); },
+    bwTowerRoof: T => { const g = new T.ConeGeometry(0.78, 1.1, 12); g.translate(0, 2.9, 0); return g; },
+    bwWater: T => { const g = new T.BoxGeometry(1, 0.1, 1); g.translate(0, 0.04, 0); return g; },
+    bwBridge: T => { const g = new T.BoxGeometry(1, 0.14, 1); g.translate(0, 0.08, 0); return g; },
+    bwHouse: T => { const g = new T.BoxGeometry(1, 0.8, 0.8); g.translate(0, 0.3, 0); return g; },
+    bwRoof: T => { const g = new T.ConeGeometry(0.82, 0.6, 4); g.rotateY(Math.PI / 4); g.translate(0, 1.0, 0); return g; },
+    bwPole: T => { const g = new T.CylinderGeometry(0.03, 0.03, 1, 6); g.translate(0, 0.5, 0); return g; },
+    bwFlag: T => { const g = new T.BoxGeometry(0.5, 0.28, 0.03); g.translate(-0.25, 0.86, 0); return g; },
     bwShell: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
     bwBar: T => { const g = new T.BoxGeometry(1, 0.004, 0.012); g.translate(0, 0.002, 0); return g; },
     bwCrater: T => FieldKit.disc(T, 0.5, 0.003),
@@ -64734,7 +64818,7 @@ const WAR_APP = (() => {
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
     _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
-              selectKind, newWar, setSide, tally, itemsOf, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              selectKind, newWar, setSide, tally, itemsOf, castleItems, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;

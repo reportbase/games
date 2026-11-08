@@ -306,6 +306,14 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     menu's "Aim at: the keep / the launchers" (the strongest standing, warhead first) for you, 45% of the computer's shots at a standing launcher of its choice. A
     launcher behind a wall is covered from flat shots (they stop at the wall) and exposed to high arcs. The smoke test checks the spread and cover of 30 boards' pads, a
     cruise missile taking a launcher to 1 and then destroying it, the wreck drawn, a wreck refusing to fire and the rebuild at 20.
+    **The castle** (Nov 8: "do more construction to build up a castle with walls and a moat, and build them on top of hills and down in valleys. be creative."): the keep
+    stands in a curtain wall of ten sides (`castle` in `terrOf`, drawn by `castleItems`) with a tower and battlement at each corner, its gate on the side that faces the tee
+    with a drawbridge over the moat that rings it (28 ribbons of water a little above the ground under each, `bwWater`; clipped at the rail), every piece standing on the ground
+    under it (`hh`) with the wall's foot sunk so a slope shows no gap. Outworks go where the ground asks: a watchtower with a banner on each of the two highest free places
+    and a sunken ward (a low ring of wall with a door and two cottages) in the lowest, off the launchers and each other. The walls and towers are in `obst`, so they shelter
+    the keep from flat shots (the launchers keep 3.4 cells off the castle); the curtain is built up and knocked down with the board's hit points (`lost` of ten segments,
+    in an order the hole sets, rubble where one stood). The smoke test checks ten corner towers, nine wall segments, a gate and a moat on 24 boards, the watchtowers on higher
+    ground than the ward, the walls going to rubble at 30 hit points, and each piece drawn.
 
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
@@ -1358,6 +1366,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the games before and after Chess on its left and right and the rows above and below it above and below, the same pixels each time a picture is
     painted for six games and the kept small picture the same canvas, the three flags, and no hole and no declined board counted with the corner framed and
     the view moving.
+- **Home runs through the games both ways, as the gallery does** (Nov 8: "home page is not correct. all boards should go across both horizontally and vertically. photo
+  gallery gets this correct."): the 8 × 8 block (a row of eight, the next row eight on) put a game every eighth board down a column. `slotAt` is now the gallery's rule: the
+  game whose number is −(row + col) mod N, the column and row first folded to a signed distance from the corner (`side`, as the gallery's `pick`), so every row and every
+  column runs through all N games in title order, the next game one board right and one board down, with no block. `cols` is N (the far texture's `fabricRepeat`, as the
+  gallery's `blockN`), `slotOf(id)` the board on the corner's row that holds a game. The one seam is half the field away, as the gallery's. The notes below about the block
+  of eight, `SIDES`, the repeat dividing the field's side and the reading of the block are older. The smoke test (end of part 1, "home") checks the rule on boards far each way,
+  a whole row and a whole column each holding every game once, the wrap at the corner and the neighbours as the gallery's.
 - **A Home chip, and no dots where there is no row** (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.   Add a button for home in the
   upper left."): `#homeBtn`, a chip in the upper left (the menu's is upper right), shown on every app but Home (`syncHomeButton`, from `setFieldApp`), opens Home with
   `openApp`, whose `onEnter` takes the view to the board of the game just left. The three dots (`#bbHandle`) were on every game since Oct 9; `bbHasRow` now says whether
