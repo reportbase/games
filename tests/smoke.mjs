@@ -2941,16 +2941,26 @@ try {
       const tile = A.statTiles ? (A.statTiles(0, 0) || []).find(t => /^Par /.test(t.value)) : null; E.editStop(true); return { p0, p1, p2, tile: tile && tile.value }; });
     if (!p1.item || p1.set !== 5 || p1.back !== p1.own || p2 !== 5 || !p1.stored.includes(5)) failures.push(`[${current}] the par: ${JSON.stringify({ p1, p2 })}`);
     if (ep.p1 !== ep.p0 + 1 || ep.p2 !== ep.p0 - 1 || !ep.tile) failures.push(`[${current}] the editor's par: ${JSON.stringify(ep)}`);
+    // (Nov 8, "Replace the confirmation dialog font with the system font.": the menu's Set par asks in the page's own box, in the page's one sans, not the browser's prompt; the typed answer sets it)
+    const pq = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug; const r = D.setParHere(); await new Promise(ok => setTimeout(ok, 100));
+      const box = document.getElementById('confirmBox'), inp = box && box.querySelector('input');
+      const out = { opened: !!box, field: !!inp, font: box ? getComputedStyle(box).fontFamily : '', btn: box ? getComputedStyle(box.querySelector('button')).fontFamily : '', returned: r };
+      if (inp){ inp.value = '4'; inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(ok => setTimeout(ok, 100)); out.gone = !document.getElementById('confirmBox'); out.par = D.HOLES[D.setParHere('4').k].par; D.setParHere('5'); }
+      return out; });
+    if (!pq.opened || !pq.field || !/Segoe UI/.test(pq.font) || !/Segoe UI/.test(pq.btn) || !pq.gone || pq.par !== 4) failures.push(`[${current}] set par in the page's own box: ${JSON.stringify(pq)}`);
     // (the hole's number in the corner is off unless turned on: Oct 20, "turn hole number off by default.")
     // (the scoreboard, Nov 4: "show the scoreboard next to each mini-golf hole that shows the hole number, par and current shot #.": on by default, one
     //  plate with H, P and S in seven segments, the shot following the game; the menu's Scoreboard turns it off, and the corner number is then off by default)
     const nums = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), D = A._debug;
       const items = () => A.menu[0].items, lab = re => items().map(m => typeof m.label === 'function' ? m.label() : m.label).find(l => re.test(l));
-      const plates = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'plate').length, segs = () => A.cellItems(f.c, f.r, 600).filter(it => /^tg\d+$/.test(it.kind)).map(it => it.kind).join();
+      const plates = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'plate' && it.rot).length, segs = () => A.cellItems(f.c, f.r, 600).filter(it => /^tg\d+$/.test(it.kind)).map(it => it.kind).join();
       const out = { scoreLabel: lab(/^Scoreboard/), withBoard: plates(), segsWith: segs() };
       // (Nov 7, "the same font from home page": the plate's letters are BOARD_KIT.type's, so it is read back as the text it is: a dash with no game, then the shot about to be taken (1; with 7 strokes taken, 8), "of", the par)
       const text = () => segs().split(',').filter(Boolean).map(k => String.fromCodePoint(+k.slice(2))).join('');
       D.games.delete(f.c + '_' + f.r); const s0 = text(); D.startRound(f.c, f.r); const g = D.games.get(f.c + '_' + f.r); const s1 = text(); g.strokes = 7; g.moving = false; const s7 = text();
+      // (Nov 8, "a sign that is vertical to the golf hole": the board stands on two posts, and its letters stand with it, one turn, all at the one height and the one depth, in front of the board)
+      { const all = A.cellItems(f.c, f.r, 600), board = all.find(it => it.kind === 'plate' && it.rot), ls = all.filter(it => /^tg\d+$/.test(it.kind)), posts = all.filter(it => it.kind === 'plate' && !it.rot && it.sy > 0.3);
+        out.stands = !!board && ls.length > 0 && posts.length === 2 && ls.every(it => it.rot && it.rot.join() === board.rot.join() && Math.abs(it.lift - board.lift) < 1e-9 && it.v > board.v) && board.sz > 0 && posts.every(q => q.lift < board.lift); }
       out.reads = [s0, s1, s7]; out.shotChanges = /^-of\d+$/.test(s0) && /^1of\d+$/.test(s1) && /^8of\d+$/.test(s7) && s0.slice(3) === s1.slice(3) && s1.slice(3) === s7.slice(3);
       // (Nov 4: "1 of 5,   5 is the par.": the plate reads the shot, then oF, then the par)
       out.placeChanges = true;
@@ -2958,7 +2968,7 @@ try {
       out.scoreOff = lab(/^Scoreboard/); out.plates = plates(); out.label = lab(/^Hole numbers/);
       items().find(m => /^Scoreboard/.test(typeof m.label === 'function' ? m.label() : m.label)).on();
       return out; });
-    if (nums.scoreLabel !== 'Scoreboard: on' || nums.withBoard !== 1 || !nums.segsWith || !nums.shotChanges || !nums.placeChanges || nums.scoreOff !== 'Scoreboard: off' || nums.plates || nums.label !== 'Hole numbers: off') failures.push(`[${current}] the scoreboard / hole numbers: ${JSON.stringify(nums)}`);
+    if (nums.scoreLabel !== 'Scoreboard: on' || nums.withBoard !== 1 || !nums.segsWith || !nums.shotChanges || !nums.stands || !nums.placeChanges || nums.scoreOff !== 'Scoreboard: off' || nums.plates || nums.label !== 'Hole numbers: off') failures.push(`[${current}] the scoreboard / hole numbers: ${JSON.stringify(nums)}`);
     await page.evaluate(() => localStorage.removeItem('golf.pars'));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (tees up ${Math.max(...tb.map(t => t.rise)).toFixed(3)} and level; par set to 5, its own ${p1.own} put back, 5 kept over a reload)`);
   }
@@ -8154,6 +8164,83 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok) failures.push('[invaders forward] ' + JSON.stringify(iv));
     console.log(`${ok ? 'ok  ' : 'FAIL'} invaders: a smaller formation when easy, the ship going forward and back, its shots from where it is`);
   }
+
+    // BOARD WAR (Nov 8: "create a game where boards are at war with each other.   when a board is defeated, it joins the side that defeated it.   create
+    // various types of missel launchers to lauch missles at each other."): the sides by block, each launcher's range, damage, volley and reload, a board
+    // at no hit points joining the side whose missile took it (kept in storage), the warhead's splash, the war going on by itself, the pieces, and real input
+    current = 'boardwar';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'boardwar')));
+    await page.waitForTimeout(1500);
+    const bw = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {}, K = D.KINDS, key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
+      D.newWar(); D.SIM.quiet = true; D.LIVE = { c: 0, r: 0 };
+      // the sides: the corner's block yours, all four across the field, the same each time
+      const own = () => { const a = []; for (let c = 0; c < 40; c++) for (let r = 0; r < 40; r++) a.push(D.ownerOf(c, r)); return a.join(''); };
+      const a1 = own(); out.sides = [0, 1, 2, 3].every(s => a1.includes(String(s))) && own() === a1 && [0, 1, 2, 3, 4].every(c => [0, 1, 2, 3, 4].every(r => D.ownerOf(c, r) === D.SIDE));
+      // the kinds: a mortar's reach, a rocket battery's volley of four, a cruise missile, a cluster's six, a warhead; each takes exactly its damage
+      D.capture(1, 0, (D.SIDE + 1) % 4); D.capture(2, 0, (D.SIDE + 1) % 4); D.capture(2, 1, (D.SIDE + 1) % 4); D.capture(3, 0, (D.SIDE + 2) % 4);
+      const hit = [];
+      for (let k = 0; k < 5; k++){
+        D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t }); D.rearm(0, 0);
+        const n = D.launch(0, 0, k, 1, 0, 0);
+        D.advance(K[k].fly * 1.12 + (K[k].n - 1) * K[k].gap + 0.25);
+        hit.push([n, Math.round(100 - D.hpOf(1, 0))]);
+      }
+      out.hit = hit.map(h => h.join(':')).join();
+      out.want = K.map(x => x.n + ':' + x.n * x.dmg).join();
+      // the range (a mortar will not reach two boards), a friend refused, the reload (no second shot at once, one after its time)
+      D.rearm(0, 0); out.far = D.launch(0, 0, 0, 3, 0, 0) + ',' + D.launch(0, 0, 0, 2, 0, 0);
+      D.rearm(0, 0); out.friend = D.launch(0, 0, 0, 0, 1, 0);
+      D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t }); D.rearm(0, 0); D.MIS.length = 0;
+      const first = D.launch(0, 0, 0, 1, 0, 0), second = D.launch(0, 0, 0, 1, 0, 0); D.advance(K[0].reload + 0.1); const third = D.launch(0, 0, 0, 1, 0, 0);
+      out.reload = [first, second, third].join();
+      D.advance(3); D.MIS.length = 0;
+      // the warhead's splash: the boards round the one it strikes take 12 (the hostile ones; a friend's is left)
+      D.capture(2, 0, (D.SIDE + 1) % 4); D.HP.set(key(2, 0), { hp: 100, hit: D.SIM.t }); D.HP.set(key(2, 1), { hp: 100, hit: D.SIM.t }); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t }); D.HP.set(key(0, 0), { hp: 100, hit: D.SIM.t });
+      D.rearm(0, 0); D.launch(0, 0, 4, 1, 0, 0); D.advance(K[4].fly * 1.12 + 0.25);
+      out.splash = [D.hpOf(1, 0), D.hpOf(2, 0), D.hpOf(2, 1), D.hpOf(0, 0)].map(Math.round).join();
+      // a board at no hit points joins the side whose missile finished it, with 40 back, kept in storage; the ring in its new colours is drawn
+      D.capture(1, 0, (D.SIDE + 1) % 4); D.HP.set(key(1, 0), { hp: 5, hit: D.SIM.t }); D.rearm(0, 0); D.launch(0, 0, 0, 1, 0, 0); D.advance(K[0].fly * 1.12 + 0.25);
+      out.taken = [D.ownerOf(1, 0) === D.SIDE, Math.round(D.hpOf(1, 0)), JSON.parse(localStorage.getItem('boardwar.own'))[key(1, 0)] === D.SIDE, D.FX.some(e => e.cap === D.SIDE && e.c === 1)].join();
+      // the pieces: the keep, the five launchers, reload bars, hit points; a missile over the board it left, then over the board it falls on
+      const kinds = it => it.map(x => x.kind);
+      const ks = kinds(D.itemsOf(0, 0));
+      out.pieces = ['bwKeep', 'bwmortar', 'bwrockets', 'bwcruise', 'bwcluster', 'bwwarhead'].every(k => ks.includes(k)) && ks.filter(k => k === 'bwBar').length >= 11;
+      D.capture(1, 0, (D.SIDE + 1) % 4); D.rearm(0, 0); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t });
+      D.launch(0, 0, 2, 1, 0, 0); const m = D.MIS[D.MIS.length - 1];
+      D.advance(m.dur * 0.2); const early = [kinds(D.itemsOf(0, 0)).includes('bwShell'), kinds(D.itemsOf(1, 0)).includes('bwShell')];
+      D.advance(m.dur * 0.5); const late = [kinds(D.itemsOf(0, 0)).includes('bwShell'), kinds(D.itemsOf(1, 0)).includes('bwShell')];
+      out.flight = early.join() + '|' + late.join();
+      D.advance(5); D.MIS.length = 0;
+      // the war goes on without you: two minutes with the computer's boards firing, boards changing hands
+      D.newWar(); D.SIM.quiet = false; D.LIVE = { c: 0, r: 0 }; const was = D.STATS.shots; D.advance(120);
+      out.war = [D.STATS.shots - was > 100, D.OWN.size > 10, D.STATS.won + D.STATS.lost > 10].join();
+      D.SIM.quiet = true; D.MIS.length = 0;
+      return out;
+    });
+    const bwOk = bw.sides && bw.hit === bw.want && bw.far === '0,0' && bw.friend === 0 && bw.reload === '1,0,1' && bw.splash === '45,88,88,100'
+      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true';
+    if (!bwOk) failures.push('[boardwar] ' + JSON.stringify(bw));
+    console.log(`${bwOk ? 'ok  ' : 'FAIL'} board war (sides by block, damage by kind ${bw.hit}, a board taken joins the taker's side: ${bw.taken}, the war going on: ${bw.war})`);
+    // real input: a click on the third launcher takes the cruise missile, a click toward a hostile board fires it there
+    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.newWar(); D.SIM.quiet = true; D.capture(D.wrapc(-1), 0, (D.SIDE + 1) % 4); D.rearm(0, 0); D.MIS.length = 0; D.fly(0, 0); });
+    await page.waitForTimeout(3000);
+    const bwr = await (async () => {
+      const f = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return f ? [f.c, f.r] : null; });
+      if (!f || f[0] !== 0 || f[1] !== 0) return { framed: f };
+      const aimAt = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
+        const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
+        return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
+      const slot = await aimAt(0.5, 0.9); await page.mouse.click(slot.x, slot.y); await page.waitForTimeout(400);
+      const sel = await page.evaluate(() => window.getFieldApp()._debug.SEL);
+      const toward = await aimAt(0.9, 0.4); await page.mouse.click(toward.x, toward.y); await page.waitForTimeout(400);
+      const fired = await page.evaluate(() => { const D = window.getFieldApp()._debug; return D.MIS.map(m => [m.k, m.from.join('_'), m.to.join('_')].join(':')); });
+      return { framed: f, sel, fired };
+    })();
+    const bwrOk = bwr.sel === 2 && bwr.fired && bwr.fired.length === 1 && bwr.fired[0] === '2:0_0:9999_0';
+    if (!bwrOk) failures.push('[boardwar real input] ' + JSON.stringify(bwr));
+    console.log(`${bwrOk ? 'ok  ' : 'FAIL'} board war: a real click on the third launcher takes it (${bwr.sel}) and a real click toward the hostile board fires it there (${bwr.fired && bwr.fired.join()})`);
+    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SIM.quiet = false; D.newWar(); });
 }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
