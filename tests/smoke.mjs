@@ -8353,7 +8353,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!bwdOk) failures.push('[boardwar doctrines] ' + JSON.stringify(bwd));
     console.log(`${bwdOk ? 'ok  ' : 'FAIL'} board war: four doctrines, Red the weakest and fastest, Green the nearest and slowest, Blue aiming at launchers most, Gold keeping warheads for the strong (${JSON.stringify(bwd)})`);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SIM.quiet = false; D.newWar(); });
-    // SIMON'S SONGS (Nov 8: "can you add buttons to pre-set songs?"): five tunes, a pad a distinct note lowest first and sounding at its own pitch, a button a song
+    // SIMON'S SONGS (Nov 8: "can you add buttons to pre-set songs?", then "can you add more songs?"): twelve tunes, a pad a distinct note lowest first and sounding at its own pitch, a button a song
     // in the bottom row beginning that tune on the framed board, each round playing one more note, the whole song played back winning (kept as the best), a wrong pad losing
     current = 'simon';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'simon')));
@@ -8382,10 +8382,10 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.own = (D.playSong(0, 0, -1), D.SONG + ',' + (D.gameAt(0, 0).S.song == null));
       D.GAMES.clear(); return out;
     });
-    const sgOk = sg.n === 5 && sg.pads === '6,4,6,6,8' && sg.pitch && /^Own\|Twinkle\|Mary/.test(sg.tiles) && sg.began === 'show,Twinkle,0' && sg.mid === 'pause:4' && sg.end === 'over,true,14,14'
+    const sgOk = sg.n === 12 && sg.pads === '6,4,6,6,8,6,6,4,4,6,4,4' && sg.pitch && /^Own\|Twinkle\|Mary/.test(sg.tiles) && sg.began === 'show,Twinkle,0' && sg.mid === 'pause:4' && sg.end === 'over,true,14,14'
       && /you played it/.test(sg.title) && sg.wrong === 'over,false' && sg.own === '-1,true';
     if (!sgOk) failures.push('[simon songs] ' + JSON.stringify(sg));
-    console.log(`${sgOk ? 'ok  ' : 'FAIL'} simon songs: five tunes (pads ${sg.pads}) at their own pitches, a button a song, round n playing n notes, the whole of Twinkle played back won (${JSON.stringify(sg.end)}), a wrong pad lost`);
+    console.log(`${sgOk ? 'ok  ' : 'FAIL'} simon songs: twelve tunes (pads ${sg.pads}) at their own pitches, a button a song, round n playing n notes, the whole of Twinkle played back won (${JSON.stringify(sg.end)}), a wrong pad lost`);
 }   // (end of part 7)
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
