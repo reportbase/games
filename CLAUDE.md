@@ -314,6 +314,16 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the keep from flat shots (the launchers keep 3.4 cells off the castle); the curtain is built up and knocked down with the board's hit points (`lost` of ten segments,
     in an order the hole sets, rubble where one stood). The smoke test checks ten corner towers, nine wall segments, a gate and a moat on 24 boards, the watchtowers on higher
     ground than the ward, the walls going to rubble at 30 hit points, and each piece drawn.
+    **Four castles, one for each faction** (Nov 8: "make the castles more detailed.     Each color faction should have a different type of castle."): the walls, towers, roofs and
+    keep are the owner's kind (`CASTLES`, by side; the ring, moat, gate and shelter are the hole's and the same): Red a Norman fortress (battlemented walls `bwWallM` 1.3 high,
+    square battlemented towers `bwTowerSq`, small towers half way along every other wall, a square donjon with corner turrets `bwKeepSq`), Blue a château (slim round towers
+    under tall spires `bwTowerFr`/`bwSpire` with banners, an inner ring of lower wall, a keep of turrets `bwKeepFr`), Green a timber stockade (a palisade of stakes `bwPalisade`,
+    towers on stilts with thatched roofs `bwTowerWood`/`bwWoodRoof`, a log hall on a mound `bwKeepWood`) and Gold a desert citadel (stepped sandstone walls `bwWallS`, minarets
+    `bwMinaret` and domed towers `bwDome` alternating round the ring, a domed palace with four minarets `bwKeepDome`); every side's gate has a lintel (`bwGateTop`), its
+    hilltop watchtowers and valley cottages in its own kind. The keep is the faction's colour, the walls a stone of its own tinted a tenth toward it. A tower is sized by its
+    kind's width and height (`TWR`: the mesh's width, height and top), so a taller one is a stretch, not another mesh. The ring now shelters the keep from nearly every flat shot
+    (a shell comes down onto the keep's foot, under the wall's top, unless it comes through the gate's side): rockets and the cruise missile are for launchers and outer works, the
+    high arcs for keeps. The smoke test wants the four sides' castles to differ in walls, towers, roofs and keep, each with its own kinds.
 
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
