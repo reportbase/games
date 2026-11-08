@@ -64013,7 +64013,6 @@ const HOME_APP = (() => {
      field, so every board has a game (Nov 7: "all boards should have a game, don't leave empty boards. see photo gallary."). The side divides the
      field's (10,000), so the repeat has no seam at the field's wrap, and it is as small as holds every game: 8 × 8 for up to 64 games, then 10, 16, 20…
      The cells past the last game take the first games again (game number mod the count). The far field's texture is the same block (`fabricRepeat`). */
-  const SIDES = [8, 10, 16, 20, 25, 40, 50, 80, 100];
   let cols = 8;
   const mod = (v, m) => ((v % m) + m) % m;
   // the games, by title, as the picker lists them; made again only when the set of apps changes (mini golf made again at another size keeps its id)
@@ -64025,7 +64024,7 @@ const HOME_APP = (() => {
     /* (Nov 7: "the home page should be sorted by game title": plain alphabetical, 2048 before 3D Tetris: `numeric` put 3D Tetris first, 3 < 2048.) */
     ORD = list.map(a => ({ id: a.id, title: titleOf(a) })).sort((x, y) => x.title.localeCompare(y.title, 'en', { sensitivity: 'base' }) || (x.id < y.id ? -1 : 1));
     ORD.forEach((o, k) => { o.k = k; o.hue = (k * 137.508) % 360; });          // (the golden angle: neighbours never match)
-    cols = SIDES.find(n => n * n >= ORD.length && gs() % n === 0) || 100;
+    cols = Math.max(1, ORD.length);
     return ORD;
   }
   /* THE GAMES READ LEFT TO RIGHT AND TOP TO BOTTOM, as the photo gallery's pages do (Nov 7: "the home page should be arranged like photo gallary,
@@ -64034,13 +64033,19 @@ const HOME_APP = (() => {
      its row, modulo the block's side. The first game is the corner board, top left of its block; the block runs right and down and is the same
      in every direction, so there is no bare board (it divides the field's side, so a board's wrapped number and its raw one give the same place). */
   const wrap = v => { const g = gs(); return ((v % g) + g) % g; };
+  /* (Nov 8: "home page is not correct. all boards should go across both horizontally and vertically. photo gallery gets this correct.": the 8 × 8 block read
+     across and down by eights, so a column held every eighth game and the rows had a seam at the block's edge. The gallery's rule instead, print i where
+     −(row + col) mod N = i, the board's column and row first folded to a signed distance from the corner (`side`, as `pick` does): every row AND every
+     column runs through all the games in title order, the next game one board right and one board down, with no block and no repeat before the list
+     ends. The one seam is half the field away, as the gallery's.) */
+  const side = v => { const w = wrap(v); return w > gs() / 2 ? w - gs() : w; };
   function slotAt(c, r){
     const o = order();
-    return o.length ? o[(mod(-r, cols) * cols + mod(-c, cols)) % o.length] : null;
+    return o.length ? o[mod(-(side(r) + side(c)), o.length)] : null;
   }
   const idAt = (c, r) => { const s = slotAt(c, r); return s ? s.id : null; };
-  // (the board of the game's first block, as the field numbers it: wrapped, never negative)
-  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [wrap(-(o.k % cols)), wrap(-Math.floor(o.k / cols))] : null; };
+  // (the board that holds the game on the corner's row: wrapped, never negative)
+  const slotOf = id => { const o = order().find(x => x.id === id); return o ? [wrap(-o.k), 0] : null; };
   const hsl = (h, s, l) => 'hsl(' + h.toFixed(1) + ',' + s + '%,' + l + '%)';
   const hexOf = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
     return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); };

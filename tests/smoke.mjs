@@ -454,16 +454,20 @@ try {
       // don't leave empty boards. see photo gallary."): reading across, a game once on its own board in the order the list is, and the block repeating over the
       // whole field, so no board is bare. The field numbers a board's column and row UP the screen's left and far side, so the reading place (gc across, gr down)
       // is the board (−gc, −gr) from the corner, wrapped; the block's side divides the field's, so the repeat has no seam at the wrap.
-      const G = 10000, P = D.COLS, N = ord.length, at = (gc, gr) => [(G - gc % G + G) % G, (G - gr % G + G) % G], seen = new Set(), md = v => ((v % P) + P) % P;
-      out.side = P === 8 && P * P >= N;
-      for (let gr = -9; gr < 20; gr++) for (let gc = -9; gc < 20; gc++){
-        const [c, r] = at(gc, gr), id = D.idAt(c, r), k = md(gr) * P + md(gc), want = ord[k % N].id;
+      // (Nov 8: "home page is not correct. all boards should go across both horizontally and vertically. photo gallery gets this correct.": the gallery's rule, game i
+      // where −(row + col) mod N = i, folded through a signed distance from the corner, so every row and every column runs through all the games in order)
+      const G = 10000, N = ord.length, at = (gc, gr) => [(G - gc % G + G) % G, (G - gr % G + G) % G], md = v => ((v % N) + N) % N;
+      out.side = D.COLS === N;
+      for (let gr = -70; gr < 70; gr += 3) for (let gc = -70; gc < 70; gc += 3){
+        const [c, r] = at(gc, gr), id = D.idAt(c, r), want = ord[md(gr + gc)].id;
         if (id !== want && !out.slotBad) out.slotBad = [gc, gr, id, want];
-        if (gr >= 0 && gr < P && gc >= 0 && gc < P && k < N){ if (seen.has(id)) out.dup = id; seen.add(id); if (D.slotOf(id).join() !== c + ',' + r) out.slotBad = id; }
       }
-      out.placed = seen.size === N;
-      out.wrap = D.idAt(0, 0) === ord[0].id && D.idAt(9999, 0) === ord[1].id && D.idAt(0, 9999) === ord[P].id && D.idAt(P, 0) === ord[0].id && D.idAt(0, P) === ord[0].id
-        && D.idAt(10000 - P, 0) === ord[0].id && D.idAt(9997 + 10000, 9999 + 10000) === D.idAt(9997, 9999) && D.idAt(9997, 9999) === ord[P + 3].id;
+      const row = [], col = [];
+      for (let i = 0; i < N; i++){ row.push(D.idAt(G - i, 5)); col.push(D.idAt(7, G - i)); }
+      out.placed = new Set(row).size === N && new Set(col).size === N;    // (a whole row and a whole column each hold every game once)
+      out.dup = row.concat(col).some(id => !id);
+      for (const o of ord) if (D.slotOf(o.id).join() !== (G - o.k) % G + ',0' || D.idAt(...D.slotOf(o.id)) !== o.id) out.slotBad = o.id;
+      out.wrap = D.idAt(0, 0) === ord[0].id && D.idAt(9999, 0) === ord[1].id && D.idAt(0, 9999) === ord[1].id && D.idAt(9998, 9999) === ord[3].id && D.idAt(9999, 1) === ord[0].id;
       out.names = ['airhockey', 'whackamole', 'pacman', 'blockout', 'chess'].map(id => D.titleOf(D.appById(id))).join('|');
       // the pictures: a key by game and by size, painted (the game's own board and a name), and none past the block
       const picks = ['chess', 'tetris', 'hashi', 'tiltmaze', 'pinball', 'levels', 'minigolf', 'sudoku'], pix = {};
@@ -520,8 +524,9 @@ try {
       const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, [sx, sz] = W.spacing(), T = W.target, G = 10000, ord = D.order();
       const near = (v, s, ref) => { let g = v; while (g * s - ref > G * s / 2) g -= G; while (g * s - ref < -G * s / 2) g += G; return g * s; };
       const scr = id => { const [c, r] = D.slotOf(id), p = new W.THREE.Vector3(near(c, sx, T.boardX), 0, near(r, sz, T.boardZ)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
-      const k = ord.findIndex(o => o.id === 'chess'), at = i => scr(ord[i].id), L = at(k - 1), M = at(k), R = at(k + 1), U = at(k - D.COLS), B = at(k + D.COLS);
-      return { L, M, R, U, B, ok: L[0] < M[0] && M[0] < R[0] && Math.abs(L[1] - M[1]) < 60 && Math.abs(R[1] - M[1]) < 60 && U[1] < M[1] && M[1] < B[1] };
+      const k = ord.findIndex(o => o.id === 'chess'), at = i => scr(ord[i].id), L = at(k - 1), M = at(k), R = at(k + 1);   // (the board above chess holds the game before it and the board below the game after it, as the gallery's rows and columns run)
+      const [c0, r0] = D.slotOf('chess'), above = D.idAt(c0, r0 + 1), below = D.idAt(c0, r0 - 1), left = D.idAt(c0 + 1, r0), right = D.idAt(c0 - 1, r0);
+      return { L, M, R, ok: L[0] < M[0] && M[0] < R[0] && Math.abs(L[1] - M[1]) < 60 && Math.abs(R[1] - M[1]) < 60 && above === ord[k - 1].id && below === ord[k + 1].id && left === ord[k - 1].id && right === ord[k + 1].id };
     });
     // and none of it a hole in the ground: with the corner framed (bare field on two sides) and while the view moves, no board counts as one the fabric must cover
     const holes = await page.evaluate(async () => {

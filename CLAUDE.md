@@ -1358,6 +1358,13 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     the games before and after Chess on its left and right and the rows above and below it above and below, the same pixels each time a picture is
     painted for six games and the kept small picture the same canvas, the three flags, and no hole and no declined board counted with the corner framed and
     the view moving.
+- **Home runs through the games both ways, as the gallery does** (Nov 8: "home page is not correct. all boards should go across both horizontally and vertically. photo
+  gallery gets this correct."): the 8 × 8 block (a row of eight, the next row eight on) put a game every eighth board down a column. `slotAt` is now the gallery's rule: the
+  game whose number is −(row + col) mod N, the column and row first folded to a signed distance from the corner (`side`, as the gallery's `pick`), so every row and every
+  column runs through all N games in title order, the next game one board right and one board down, with no block. `cols` is N (the far texture's `fabricRepeat`, as the
+  gallery's `blockN`), `slotOf(id)` the board on the corner's row that holds a game. The one seam is half the field away, as the gallery's. The notes below about the block
+  of eight, `SIDES`, the repeat dividing the field's side and the reading of the block are older. The smoke test (end of part 1, "home") checks the rule on boards far each way,
+  a whole row and a whole column each holding every game once, the wrap at the corner and the neighbours as the gallery's.
 - **A Home chip, and no dots where there is no row** (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.   Add a button for home in the
   upper left."): `#homeBtn`, a chip in the upper left (the menu's is upper right), shown on every app but Home (`syncHomeButton`, from `setFieldApp`), opens Home with
   `openApp`, whose `onEnter` takes the view to the board of the game just left. The three dots (`#bbHandle`) were on every game since Oct 9; `bbHasRow` now says whether
