@@ -9909,7 +9909,7 @@ function _resignedBanner(){
    are worth keeping in mind if a choice is ever needed again: disable an
    action that cannot apply rather than hiding it, so the buttons do not move
    between appearances, and give focus to the first safe one.) */
-function confirmAction(text, okLabel, onOk){
+function confirmAction(text, okLabel, onOk, field){
   const prev = document.getElementById('confirmBox');
   if (prev) prev.remove();
   const box = document.createElement('div');
@@ -9924,6 +9924,15 @@ function confirmAction(text, okLabel, onOk){
   const msg = document.createElement('div');
   msg.style.cssText = 'font:0.9375rem -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;color:#ffffff;line-height:1.5';
   msg.textContent = text;
+  /* (Nov 8: "Replace the confirmation dialog font with the system font.": the box and everything in it is set in UI_SANS, the page's one sans, and the
+     questions the browser's own confirm() and prompt() asked, which come in whatever face the browser likes, are asked here instead. `field` {value} adds a
+     line to type in, and onOk is then given what was typed.) */
+  box.style.fontFamily = UI_SANS;
+  let inp = null;
+  if (field){
+    inp = document.createElement('input'); inp.type = 'text'; inp.value = field.value == null ? '' : String(field.value);
+    inp.style.cssText = 'font:0.9375rem ' + UI_SANS + ';color:#ffffff;background:#2a2c32;border:1px solid #6a6e76;border-radius:7px;padding:8px 10px;text-align:center;width:100%';
+  }
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:10px;justify-content:center';
   const close = () => { box.remove(); document.removeEventListener('keydown', onKey, true); };
@@ -9935,14 +9944,15 @@ function confirmAction(text, okLabel, onOk){
   const ok = document.createElement('button');
   ok.type = 'button'; ok.textContent = okLabel || 'OK';
   ok.style.cssText = BTN + 'color:#1a1206;background:#f0a95e;border:1px solid #f0a95e';
-  ok.addEventListener('click', () => { close(); try { onOk(); } catch {} });
+  ok.addEventListener('click', () => { const v = inp ? inp.value : undefined; close(); try { onOk(v); } catch {} });
   row.append(cancel, ok);
-  box.append(msg, row);
+  box.append(msg); if (inp) box.append(inp); box.append(row);
   /* The app's own keys must not fire while a question is on screen — every
      one of them does something to the board being asked about. */
   const onKey = e => {
     e.stopPropagation();
     if (e.key === 'Escape'){ e.preventDefault(); close(); }
+    else if (e.key === 'Enter' && inp && e.target === inp){ e.preventDefault(); ok.click(); }     // (heard here, since this listener comes first and stops every key)
   };
   document.addEventListener('keydown', onKey, true);
   box.addEventListener('pointerdown', e => e.stopPropagation());
@@ -9956,7 +9966,7 @@ function confirmAction(text, okLabel, onOk){
     };
     document.addEventListener('pointerdown', off, true);
   }, 0);
-  cancel.focus();
+  if (inp){ inp.focus(); inp.select(); } else cancel.focus();
   return box;
 }
 function resignGame(confirmed){
@@ -18793,7 +18803,7 @@ const BOARD_KIT = (() => {
     function put(out, str, o){
       const chars = [...String(str)], ws = chars.map(ch => metrics(ch).w * o.h), W = ws.reduce((a, b) => a + b, 0);
       let x = o.align === 'left' ? o.u : o.align === 'right' ? o.u - W : o.u - W / 2;
-      chars.forEach((ch, i) => { if (ch !== ' '){ const it = { kind: kind(ch), u: x + ws[i] / 2, v: o.v, scale: o.h, color: o.color }; if (o.lift != null) it.lift = o.lift; out.push(it); } x += ws[i]; });
+      chars.forEach((ch, i) => { if (ch !== ' '){ const it = { kind: kind(ch), u: x + ws[i] / 2, v: o.v, scale: o.h, color: o.color }; if (o.lift != null) it.lift = o.lift; if (o.rot) it.rot = o.rot; if (o.dv) it.v += o.dv; out.push(it); } x += ws[i]; });
       return W;
     }
     return { geo, kind, kinds, put, width, inkHalf: ch => metrics(ch).ink, SLOT, metrics };
@@ -41566,17 +41576,24 @@ const GOLF_MAKE = SIZE => {
      5 is the par."; no hole number, no board number, no other letters). The shot is the stroke the ball is about to take, or is taking while it
      rolls, and what it took once the hole is sunk; a board with no game shows a dash. It is made new each frame with the rest of a board's pieces,
      so it follows the game. */
+  const SIGN_Q = [0, Math.SQRT1_2, Math.SQRT1_2, 0];            // (a flat piece stood up, its face toward the near edge, its letters upright and reading across as they do on the flat: worked out from the field's own turn, H·q, in the item's note)
   function scoreboardItems(out, H, where, par, shot){
+    /* (Nov 8: "mini-golf should show the shot/par (1 of 4) using the same font as the home page. It should show the shot/par as a sign that is vertical
+       to the golf hole.": the plate lay flat on the walls with its letters on it; it now STANDS, a sign board upright on two short posts with its
+       face toward the tee end of the board, the letters on its face in BOARD_KIT.type's glyphs as before. It stands along the far edge, in the corner
+       beside the hole's far wall, tipped up by a quarter turn about u: `rot` is the item's own turn in the board's frame, SIGN_Q below.) */
     const u0 = 0.04, v0 = 0.032, TY = BOARD_KIT.type, room = WD - 2 * u0 - 0.03;
-    /* (a far board's number runs to seven digits and more: the letters shrink together so the plate never runs past the board's width) */
     let h = 0.055, w = TY.width(where, h);
     if (w > room){ h *= room / w; w = TY.width(where, h); }
     const cap = 0.8 * h, ph = cap + 0.03, pw = w + 0.03;
     let top = 0;
-    for (let q = 0; q <= 8; q++) for (const y of [0, v0 + ph]) top = Math.max(top, hOf(H, Math.min(WD, u0 + pw * q / 8), Math.min(1, y)));
-    const L = top + 0.032;
-    out.push({ kind: 'plate', u: u0 - 0.015 + pw / 2, v: v0 - 0.015 + ph / 2, scale: 1, sx: pw, sy: 0.07, sz: ph / 0.78, lift: L, color: 0x10301a });
-    TY.put(out, where, { u: u0, v: v0 + cap / 2, h, color: 0xffe9a8, align: 'left', lift: L + 0.012 });
+    for (let q = 0; q <= 8; q++) top = Math.max(top, hOf(H, Math.min(WD, u0 + pw * q / 8), Math.min(1, v0)));
+    const L = top + 0.032, post = 0.05, sy = 0.012;            // (the sign's foot above the walls, the posts' height, the board's thickness)
+    const cx = u0 - 0.015 + pw / 2, vz = v0, base = L + post + ph / 2;     // (the board's middle: its box is centred on its lift)
+    for (const x of [cx - pw * 0.4, cx + pw * 0.4]) out.push({ kind: 'plate', u: x, v: vz, scale: 1, sx: 0.012, sy: post / 0.08, sz: 0.012 / 0.78, lift: L - 0.004, color: 0x6b4a2a });
+    out.push({ kind: 'plate', u: cx, v: vz, scale: 1, sx: pw, sy: sy / 0.08, sz: ph / 0.78, lift: base, rot: SIGN_Q, color: 0x10301a });
+    const faceV = sy + 0.0007;                                    // (the plate's box runs 0 to its thickness out from its middle line, so the letters go just past that)
+    TY.put(out, where, { u: u0, v: vz, h, color: 0xffe9a8, align: 'left', lift: base, rot: SIGN_Q, dv: faceV });
   }
   function numberItems(out, H, n){
     const TY = BOARD_KIT.type, ds = String(n), h = 0.0875, cap = 0.8 * h, u0 = 0.035, v0 = 0.03, slot = TY.SLOT * h;
@@ -42577,8 +42594,11 @@ const GOLF_MAKE = SIZE => {
     const h = hereHole(); if (!h || h.k == null || !HOLES[h.k]){ say('Select a hole on the field first.', 2400); return false; }
     const H = HOLES[h.k]; parApply(h.k);
     const own = H.mine != null ? MINE[H.mine].par : (H.par0 != null ? H.par0 : H.par);
-    const a = answer != null ? String(answer) : prompt('Par for ' + H.name + ' (1 to 9; leave it empty for its own, ' + own + ')', String(H.par));
-    if (a == null) return false;
+    if (answer == null){
+      confirmAction('Par for ' + H.name + ' (1 to 9; leave it empty for its own, ' + own + ')', 'Set par', v => setParHere(v == null ? '' : v), { value: H.par });
+      return false;
+    }
+    const a = String(answer);
     const n = Math.round(Number(a)), p = String(a).trim() === '' ? null : n >= 1 && n <= 9 ? n : NaN;
     if (Number.isNaN(p)){ say('A par is a whole number from 1 to 9.', 2400); return false; }
     if (H.mine != null){ MINE[H.mine].par = p || own; H.par = p || own; if (H.src) H.src.par = H.par; storeMine(); }
@@ -43642,7 +43662,7 @@ const GOLF_MAKE = SIZE => {
     }
     if (a === 'undo'){ const u = ED.undo.pop(); if (u){ ED.redo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to undo'; return; }
     if (a === 'redo'){ const u = ED.redo.pop(); if (u){ ED.undo.push(JSON.stringify(ED.src)); ED.src = JSON.parse(u); if (!pickValid()) ED.pick = null; editRefresh(true); } else ED.msg = 'nothing to redo'; return; }
-    if (a === 'name'){ const n = prompt('Name this hole', S.name); if (n != null){ S.name = String(n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); } return; }
+    if (a === 'name'){ confirmAction('Name this hole', 'Name it', n => { S.name = String(n == null ? '' : n).replace(/\s+/g, ' ').trim().slice(0, 40) || 'my hole'; editRefresh(true); }, { value: S.name }); return; }
     // (the Par tile steps 1 to 9 and round again; the menu's Par higher and lower step one way: Oct 20)
     if (a === 'par' || a === 'parUp' || a === 'parDown'){ snapEdit(); S.par = a === 'parDown' ? Math.max(1, S.par - 1) : a === 'parUp' ? Math.min(9, S.par + 1) : S.par >= 9 ? 1 : S.par + 1;
       ED.msg = 'par ' + S.par; editRefresh(true); return; }
@@ -53677,9 +53697,9 @@ const FLASH_APP = (() => {
         on(){ if (!DECKS.length) return openPicker(); DECK = (DECK + 1) % DECKS.length; try { localStorage.setItem('flashcards.deck', deck().key); } catch {} TURNED.clear(); say(deck().name + ': ' + deck().cards.length + ' cards.', 2000); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } },
       { label: 'Next card due', title: 'Fly to the nearest board holding the next card to study (N).', on(){ goNext(); } },
       { label: 'Remove this deck', title: 'Take this deck off the page, and its progress with it. Open its file again to bring it back.',
-        on(){ if (!hasDeck() || !confirm('Remove ' + deck().name + ' and your progress on it?')) return; delete SRS[deck().key]; saveSrs(); DECKS.splice(DECK, 1); DECK = 0; saveDecks();
-              try { localStorage.setItem('flashcards.deck', deck().key); } catch {} TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } },
-      { label: 'Forget this deck\'s progress', title: 'Every card in this deck new again.', on(){ if (hasDeck() && confirm('Forget your progress on ' + deck().name + '?')){ delete SRS[deck().key]; saveSrs(); TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} } } },
+        on(){ if (!hasDeck()) return; confirmAction('Remove ' + deck().name + ' and your progress on it?', 'Remove', () => { delete SRS[deck().key]; saveSrs(); DECKS.splice(DECK, 1); DECK = 0; saveDecks();
+              try { localStorage.setItem('flashcards.deck', deck().key); } catch {} TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} }); } },
+      { label: 'Forget this deck\'s progress', title: 'Every card in this deck new again.', on(){ if (hasDeck()) confirmAction('Forget your progress on ' + deck().name + '?', 'Forget', () => { delete SRS[deck().key]; saveSrs(); TURNED.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} }); } },
     ]}],
     boardShape: { cellW: 1, cellH: 1 / ASP },
     cellFar: { light: 0x2b2f38, dark: 0x20242c },
@@ -63769,7 +63789,7 @@ onmessage = ev => {
       it.append(txt,
         btn('Play', () => { box.hidden = true; LIVE = { c: g.c, r: g.r }; try { gotoCell(g.c, g.r); } catch {} say('Playing ' + g.title + '.', 1600); }),
         btn('Share', () => share(g.c, g.r)),
-        btn('Forget', () => { if (confirm('Forget every version of ' + g.title + ' on this board?')){ forget(g.c, g.r); openMineList(); } }));
+        btn('Forget', () => { confirmAction('Forget every version of ' + g.title + ' on this board?', 'Forget', () => { forget(g.c, g.r); openMineList(); }); }));
       box._list.appendChild(it);
     }
     box.hidden = false;
@@ -63862,7 +63882,7 @@ onmessage = ev => {
       ...STARTERS.map((S, s) => ({ label: 'Start from ' + S.name, title: 'This board plays ' + S.name + ' as it came, to change from there (your versions so far stay in Undo).', on: withFramed((c, r) => startFrom(c, r, s)) })),
       { label: 'Show the rules (code)…', title: 'The game\'s module, to read or change by hand.', on: withFramed((c, r) => openRules(c, r)) },
       { label: 'Share this board\'s game', title: 'Copy a link that opens the page on this game. Whoever opens it runs it in the same sandbox.', on: withFramed((c, r) => share(c, r)) },
-      { label: 'Forget this board\'s versions', title: 'Back to the board\'s own starter, every version gone.', on: withFramed((c, r) => { if (confirm('Forget every version of this board\'s game?')) forget(c, r); }) },
+      { label: 'Forget this board\'s versions', title: 'Back to the board\'s own starter, every version gone.', on: withFramed((c, r) => { confirmAction('Forget every version of this board\'s game?', 'Forget', () => forget(c, r)); }) },
       { label: () => 'Claude: ' + (MODELS.find(x => x[0] === MODEL) || MODELS[0])[1], title: 'Which Claude writes the changes. Each request counts against the gateway\'s daily allowance.',
         on(){ const i = MODELS.findIndex(x => x[0] === MODEL); MODEL = MODELS[(i + 1) % MODELS.length][0]; try { localStorage.setItem('gamelab.model', MODEL); } catch {} } },
       SND.item,

@@ -2941,16 +2941,26 @@ try {
       const tile = A.statTiles ? (A.statTiles(0, 0) || []).find(t => /^Par /.test(t.value)) : null; E.editStop(true); return { p0, p1, p2, tile: tile && tile.value }; });
     if (!p1.item || p1.set !== 5 || p1.back !== p1.own || p2 !== 5 || !p1.stored.includes(5)) failures.push(`[${current}] the par: ${JSON.stringify({ p1, p2 })}`);
     if (ep.p1 !== ep.p0 + 1 || ep.p2 !== ep.p0 - 1 || !ep.tile) failures.push(`[${current}] the editor's par: ${JSON.stringify(ep)}`);
+    // (Nov 8, "Replace the confirmation dialog font with the system font.": the menu's Set par asks in the page's own box, in the page's one sans, not the browser's prompt; the typed answer sets it)
+    const pq = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug; const r = D.setParHere(); await new Promise(ok => setTimeout(ok, 100));
+      const box = document.getElementById('confirmBox'), inp = box && box.querySelector('input');
+      const out = { opened: !!box, field: !!inp, font: box ? getComputedStyle(box).fontFamily : '', btn: box ? getComputedStyle(box.querySelector('button')).fontFamily : '', returned: r };
+      if (inp){ inp.value = '4'; inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await new Promise(ok => setTimeout(ok, 100)); out.gone = !document.getElementById('confirmBox'); out.par = D.HOLES[D.setParHere('4').k].par; D.setParHere('5'); }
+      return out; });
+    if (!pq.opened || !pq.field || !/Segoe UI/.test(pq.font) || !/Segoe UI/.test(pq.btn) || !pq.gone || pq.par !== 4) failures.push(`[${current}] set par in the page's own box: ${JSON.stringify(pq)}`);
     // (the hole's number in the corner is off unless turned on: Oct 20, "turn hole number off by default.")
     // (the scoreboard, Nov 4: "show the scoreboard next to each mini-golf hole that shows the hole number, par and current shot #.": on by default, one
     //  plate with H, P and S in seven segments, the shot following the game; the menu's Scoreboard turns it off, and the corner number is then off by default)
     const nums = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), D = A._debug;
       const items = () => A.menu[0].items, lab = re => items().map(m => typeof m.label === 'function' ? m.label() : m.label).find(l => re.test(l));
-      const plates = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'plate').length, segs = () => A.cellItems(f.c, f.r, 600).filter(it => /^tg\d+$/.test(it.kind)).map(it => it.kind).join();
+      const plates = () => A.cellItems(f.c, f.r, 600).filter(it => it.kind === 'plate' && it.rot).length, segs = () => A.cellItems(f.c, f.r, 600).filter(it => /^tg\d+$/.test(it.kind)).map(it => it.kind).join();
       const out = { scoreLabel: lab(/^Scoreboard/), withBoard: plates(), segsWith: segs() };
       // (Nov 7, "the same font from home page": the plate's letters are BOARD_KIT.type's, so it is read back as the text it is: a dash with no game, then the shot about to be taken (1; with 7 strokes taken, 8), "of", the par)
       const text = () => segs().split(',').filter(Boolean).map(k => String.fromCodePoint(+k.slice(2))).join('');
       D.games.delete(f.c + '_' + f.r); const s0 = text(); D.startRound(f.c, f.r); const g = D.games.get(f.c + '_' + f.r); const s1 = text(); g.strokes = 7; g.moving = false; const s7 = text();
+      // (Nov 8, "a sign that is vertical to the golf hole": the board stands on two posts, and its letters stand with it, one turn, all at the one height and the one depth, in front of the board)
+      { const all = A.cellItems(f.c, f.r, 600), board = all.find(it => it.kind === 'plate' && it.rot), ls = all.filter(it => /^tg\d+$/.test(it.kind)), posts = all.filter(it => it.kind === 'plate' && !it.rot && it.sy > 0.3);
+        out.stands = !!board && ls.length > 0 && posts.length === 2 && ls.every(it => it.rot && it.rot.join() === board.rot.join() && Math.abs(it.lift - board.lift) < 1e-9 && it.v > board.v) && board.sz > 0 && posts.every(q => q.lift < board.lift); }
       out.reads = [s0, s1, s7]; out.shotChanges = /^-of\d+$/.test(s0) && /^1of\d+$/.test(s1) && /^8of\d+$/.test(s7) && s0.slice(3) === s1.slice(3) && s1.slice(3) === s7.slice(3);
       // (Nov 4: "1 of 5,   5 is the par.": the plate reads the shot, then oF, then the par)
       out.placeChanges = true;
@@ -2958,7 +2968,7 @@ try {
       out.scoreOff = lab(/^Scoreboard/); out.plates = plates(); out.label = lab(/^Hole numbers/);
       items().find(m => /^Scoreboard/.test(typeof m.label === 'function' ? m.label() : m.label)).on();
       return out; });
-    if (nums.scoreLabel !== 'Scoreboard: on' || nums.withBoard !== 1 || !nums.segsWith || !nums.shotChanges || !nums.placeChanges || nums.scoreOff !== 'Scoreboard: off' || nums.plates || nums.label !== 'Hole numbers: off') failures.push(`[${current}] the scoreboard / hole numbers: ${JSON.stringify(nums)}`);
+    if (nums.scoreLabel !== 'Scoreboard: on' || nums.withBoard !== 1 || !nums.segsWith || !nums.shotChanges || !nums.stands || !nums.placeChanges || nums.scoreOff !== 'Scoreboard: off' || nums.plates || nums.label !== 'Hole numbers: off') failures.push(`[${current}] the scoreboard / hole numbers: ${JSON.stringify(nums)}`);
     await page.evaluate(() => localStorage.removeItem('golf.pars'));
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (tees up ${Math.max(...tb.map(t => t.rise)).toFixed(3)} and level; par set to 5, its own ${p1.own} put back, 5 kept over a reload)`);
   }
