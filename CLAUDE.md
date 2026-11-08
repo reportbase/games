@@ -297,6 +297,15 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
     (within 0.085 of its pad), a tap elsewhere fires toward the hostile board that way (true proportions: the board is 8 : 13). The smoke test: the damage by kind
     exact in the ideal case, a golf hole's ground under it without its flag, flat shots stopped and clear on 39 boards and no high arc ever stopped, and a real
     click on the third launcher's pad. The notes above describing the plain boards, bars along the edges and `LEVEL` of the launchers' places are older.
+    **Launchers behind cover, and breakable** (Nov 8: "move the missle launchers behind walls and hills so they are protected. and move them around the board
+    strategically, not just at the bottom. the missle launchers should take damege and can be destroyed."): each launcher takes the free spot with most `cover` (of
+    eight ways a flat shot can come, how many have a wall, fence, boulder or rise within a cell and a half standing over it) near its own anchor on the board (the five
+    anchors spread over it, turned by the hole's hash), off the keep and 2.5 cells from one another. Each has hit points (`LMAX` 40, the warhead 60; `lhpOf`, `LHP`):
+    a burst within 0.9 of its blast of a launcher takes 1.5 times the missile's damage there; at none it is a wreck (`bwRubble`, cannot fire), built again at half
+    after `REBUILD` 60 s, and a board that changes sides has them at half. A shot is aimed at the keep or, with `launch`'s `aim`, a launcher of the target: the
+    menu's "Aim at: the keep / the launchers" (the strongest standing, warhead first) for you, 45% of the computer's shots at a standing launcher of its choice. A
+    launcher behind a wall is covered from flat shots (they stop at the wall) and exposed to high arcs. The smoke test checks the spread and cover of 30 boards' pads, a
+    cruise missile taking a launcher to 1 and then destroying it, the wreck drawn, a wreck refusing to fire and the rebuild at 20.
 
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').

@@ -8230,6 +8230,26 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       }
       D.MIS.length = 0;
       out.shield = [stopped > 3, clear > 3, highStopped === 0, rain > 20, offKeep > 0].join();
+      // the launchers (Nov 8: "move the missle launchers behind walls and hills so they are protected. and move them around the board strategically, not just
+      // at the bottom. the missle launchers should take damege and can be destroyed."): spread over boards and covered more than a row at the bottom would be,
+      // hit by a burst near them, a wreck at no hit points that cannot fire, built again at half after a minute
+      let spreadV = 0, covered = 0, nb = 0, bottom = 0;
+      for (let b = 0; b < 30; b++){
+        const T = D.terrOf(D.holeFor(30 + b % 6, 30 + Math.floor(b / 6))), vs = T.pads.map(p => p.y);
+        spreadV += Math.max(...vs) - Math.min(...vs); covered += T.shields.reduce((x, y) => x + y, 0) / 5; nb++; bottom += vs.filter(y => y > 0.8).length / 5;
+      }
+      out.placed = [spreadV / nb > 0.3, covered / nb > 0.3, bottom / nb < 0.5].join();
+      D.SIM.ideal = true; D.newWar(); D.capture(1, 0, (D.SIDE + 1) % 4); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t }); D.LHP.delete(key(1, 0));   // (a board taken has its launchers at half: these at full)
+      const lh = () => Math.round(D.lhpOf(1, 0).hp[2]);
+      D.rearm(0, 0); D.launch(0, 0, 2, 1, 0, 0, 2); D.advance(K[2].fly * 1.12 + 0.25);                // (a cruise missile aimed at its cruise launcher: 26 × 1.5 = 39 of 40)
+      const hit1 = lh(); D.rearm(0, 0); D.launch(0, 0, 2, 1, 0, 0, 2); D.advance(K[2].fly * 1.12 + 0.25);
+      const dead = lh(), wreck = D.itemsOf(1, 0).some(x => x.kind === 'bwRubble');
+      D.LHP.set(key(1, 0), { hp: [40, 40, 0, 40, 60], at: [0, 0, D.SIM.t, 0, 0] }); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t });
+      D.capture(0, 0, (D.SIDE + 2) % 4);
+      const refused = D.launch(1, 0, 2, 0, 0, 0);                                                  // (a wreck does not fire)
+      D.advance(D.REBUILD + 1); const rebuilt = lh();
+      out.launchers = [hit1, dead, wreck, refused, rebuilt].join();
+      D.SIM.ideal = false; D.MIS.length = 0;
       // the war goes on without you: two minutes with the computer's boards firing, boards changing hands
       D.newWar(); D.SIM.quiet = false; D.LIVE = { c: 0, r: 0 }; const was = D.STATS.shots; D.advance(120);
       out.war = [D.STATS.shots - was > 100, D.OWN.size > 10, D.STATS.won + D.STATS.lost > 10].join();
@@ -8237,7 +8257,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       return out;
     });
     const bwOk = bw.sides && bw.hit === bw.want && bw.far === '0,0' && bw.friend === 0 && bw.reload === '1,0,1' && bw.splash === '45,88,88,100'
-      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true' && bw.golf === 'true,true,true' && bw.shield === 'true,true,true,true,true';
+      && bw.taken === 'true,40,true,true' && bw.pieces && bw.flight === 'true,false|false,true' && bw.war === 'true,true,true' && bw.golf === 'true,true,true' && bw.shield === 'true,true,true,true,true' && bw.placed === 'true,true,true' && bw.launchers === '1,0,true,0,20';
     if (!bwOk) failures.push('[boardwar] ' + JSON.stringify(bw));
     console.log(`${bwOk ? 'ok  ' : 'FAIL'} board war (sides by block, damage by kind ${bw.hit}, a board taken joins the taker's side: ${bw.taken}, the war going on: ${bw.war})`);
     // real input: a click on the third launcher takes the cruise missile, a click toward a hostile board fires it there

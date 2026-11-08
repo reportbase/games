@@ -64291,10 +64291,21 @@ const WAR_APP = (() => {
   const OWN = new Map(Object.entries(load('boardwar.own', {})).map(([k, v]) => [+k, v]));
   const STATS = Object.assign({ won: 0, lost: 0, shots: 0 }, load('boardwar.stats', {}));
   const saveOwn = () => { const e = [...OWN.entries()]; save('boardwar.own', Object.fromEntries(e.length > 5000 ? e.slice(-5000) : e)); save('boardwar.stats', STATS); };
-  const HP = new Map(), RDY = new Map();
+  const HP = new Map(), RDY = new Map(), LHP = new Map();
+  /* The launchers can be hit and destroyed (Nov 8: "the missle launchers should take damege and can be destroyed."): each has hit points (`LMAX`), loses them
+     to a burst near it (the burst's reach for it, 1.5 times the missile's damage at the heart of it), is a wreck at none (it cannot fire) and is built again
+     `REBUILD` seconds on at half strength; a board that changes sides has its launchers at half. */
+  const LMAX = [40, 40, 40, 40, 60], REBUILD = 60;
+  function lhpOf(c, r){
+    const k = key(c, r); let e = LHP.get(k);
+    if (!e){ e = { hp: LMAX.slice(), at: LMAX.map(() => 0) }; LHP.set(k, e); }
+    for (let i = 0; i < e.hp.length; i++) if (e.hp[i] <= 0 && e.at[i] && SIM.t - e.at[i] >= REBUILD){ e.hp[i] = LMAX[i] / 2; e.at[i] = 0; }
+    return e;
+  }
+  const alive = (c, r, k) => lhpOf(c, r).hp[k] > 0;
   const SIM = { t: 0, ai: 0 };
   const MIS = [], FX = [];
-  let SEL = 0, LIVE = null, AIM = null, PID = 0, lastReal = 0;
+  let SEL = 0, AIMMODE = false, LIVE = null, AIM = null, PID = 0, lastReal = 0;
 
   /* The sides at the start: blocks of 5 × 5 boards, one side each by a hash of the block, the corner's block yours. */
   function regionSide(c, r){
@@ -64342,19 +64353,39 @@ const WAR_APP = (() => {
       return o;
     };
     const free = (x, y) => { const ch = D.groundAt(H, x, y); return (ch === '.' || ch === 's') && !obst(x, y) && x > CW * 0.7 && x < WD - CW * 0.7 && y > CW * 0.7 && y < 1 - CW * 0.7; };
-    const keep = { x: H.cup.x, y: H.cup.y, h: hh(H.cup.x, H.cup.y) }, pads = [];
-    for (let k = 0; k < KINDS.length; k++){
-      const nx = WD * (0.1 + 0.2 * k), ny = Math.min(1 - CW, H.tee.y);
-      let best = null;
-      for (let R = 0; R <= 7 && !best; R++){
-        const m = R ? 8 * R : 1;
-        for (let i = 0; i < m && !best; i++){
-          const a = i / m * 2 * Math.PI, x = nx + Math.cos(a) * R * CW * 0.5, y = ny + Math.sin(a) * R * CW * 0.5;
-          if (free(x, y) && Math.hypot(x - keep.x, y - keep.y) > CW * 1.3 && pads.every(q => Math.hypot(x - q.x, y - q.y) > CW * 0.8)) best = { x, y };
+    const keep = { x: H.cup.x, y: H.cup.y, h: hh(H.cup.x, H.cup.y) }, pads = [], shields = [];
+    /* Where the launchers stand (Nov 8: "move the missle launchers behind walls and hills so they are protected. and move them around the board
+       strategically, not just at the bottom."): of the free ground, each takes the spot that is most covered (`cover`: of the eight ways a flat shot
+       can come, how many have a wall, fence, boulder or rise of ground within a cell and a half that stands over the spot), near its own anchor, so the
+       five spread over the board (the anchors turned by the hole's own hash), off the keep and apart from one another. */
+    const cover = (x, y) => {
+      const base = hh(x, y); let n = 0;
+      for (let d = 0; d < 8; d++){
+        const a = d * Math.PI / 4;
+        for (const q of [0.55, 1.1, 1.7]){
+          const px = x + Math.cos(a) * q * CW, py = y + Math.sin(a) * q * CW;
+          if (px < CW * 0.5 || px > WD - CW * 0.5 || py < CW * 0.5 || py > 1 - CW * 0.5) continue;
+          if (hh(px, py) + obst(px, py) > base + 0.045){ n++; break; }
         }
       }
-      if (!best) best = { x: nx, y: ny };
-      best.h = hh(best.x, best.y); pads.push(best);
+      return n / 8;
+    };
+    const cands = [];
+    for (let y = CW * 0.9; y < 1 - CW * 0.8; y += CW * 0.75) for (let x = CW * 0.9; x < WD - CW * 0.8; x += CW * 0.75) if (free(x, y)) cands.push({ x, y, cv: cover(x, y) });
+    let sd = (Math.floor(H.cup.x * 7919 + H.cup.y * 104729) * 2654435761) >>> 0;
+    const jit = () => { sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+    const rot = jit() * 0.35, flip = jit() < 0.5;
+    const ANCH = [[0.22, 0.22], [0.78, 0.3], [0.25, 0.62], [0.75, 0.68], [0.5, 0.45]];
+    for (let k = 0; k < KINDS.length; k++){
+      let [ax, ay] = ANCH[k]; if (flip) ax = 1 - ax; ay = Math.max(0.12, Math.min(0.88, ay + (rot - 0.17)));
+      let best = null, bs = -1e9;
+      for (const q of cands){
+        if (Math.hypot(q.x - keep.x, q.y - keep.y) < CW * 2 || pads.some(o => Math.hypot(q.x - o.x, q.y - o.y) < CW * 2.5)) continue;
+        const sc = q.cv * 3 - 2.2 * Math.hypot(q.x / WD - ax, q.y - ay) + jit() * 0.3;
+        if (sc > bs){ bs = sc; best = q; }
+      }
+      if (!best) best = cands.find(q => pads.every(o => Math.hypot(q.x - o.x, q.y - o.y) > CW)) || { x: WD * (0.1 + 0.2 * k), y: Math.min(1 - CW, H.tee.y), cv: 0 };
+      pads.push({ x: best.x, y: best.y, h: hh(best.x, best.y) }); shields.push(best.cv);
     }
     /* Where a flat shot at height h0 over its entry stops on its way to (tx, ty): the first place the ground and what stands on it are higher than the
        shot, which comes down in a straight line to the ground at the target (the last half cell is the target's own). [x, y, stopped] */
@@ -64368,7 +64399,7 @@ const WAR_APP = (() => {
       }
       return [tx, ty, false];
     };
-    return TERR.set(H, T = { keep, pads, los, obst, hh }), T;
+    return TERR.set(H, T = { keep, pads, shields, los, obst, hh }), T;
   }
   const lerp = (a, b, s) => a + (b - a) * s;
   /* Board spacing in board widths along u and along the far side, and in v fractions (a board is 1 across in u and 1 down in v): [Pu, Pvw, Pv]. */
@@ -64404,23 +64435,23 @@ const WAR_APP = (() => {
 
   /* One shot: the kind's n missiles, a gap apart, from board (c, r)'s launcher k to board (tc, tr). Refused (0) out of range, at a friend, or while reloading.
      `mult` is the reload's stretch for the computer's boards (a person's own board reloads in the kind's own time). */
-  function launch(c, r, k, tc, tr, mult){
+  function launch(c, r, k, tc, tr, mult, aim){
     const K = KINDS[k], side = ownerOf(c, r), dc = dwrap(tc, c), dr = dwrap(tr, r), dist = Math.hypot(dc, dr);
-    if (!dist || dist > K.range + 1e-9 || ownerOf(tc, tr) === side) return 0;
+    if (!dist || dist > K.range + 1e-9 || ownerOf(tc, tr) === side || !alive(c, r, k)) return 0;
     const rd = rdyOf(c, r); if (rd[k] > SIM.t + 1e-9) return 0;
     rd[k] = SIM.t + (K.n - 1) * K.gap + K.reload * (mult || 1) * (mult ? 0.8 + 0.6 * rnd() : 1);
-    const D = GOLFD(), WD = D.WD, [PU, , PV] = pitch(), HT = holeFor(tc, tr), TT = terrOf(HT), pad = padOf(c, r, k), keep = TT.keep;
+    const D = GOLFD(), WD = D.WD, [PU, , PV] = pitch(), HT = holeFor(tc, tr), TT = terrOf(HT), pad = padOf(c, r, k), keep = TT.keep, ak = aim != null && aim >= 0 && alive(tc, tr, aim) ? TT.pads[aim] : keep;   // (aim: a launcher of the target to fire at, else its keep)
     // (where the launcher stands, in the target board's frame: a board a column on is at −u, so the source is at +u)
-    const ou = pad.u + dc * PU, ov = pad.v + dr * PV, tu0 = keep.x / WD, tv0 = keep.y;
+    const ou = pad.u + dc * PU, ov = pad.v + dr * PV, tu0 = ak.x / WD, tv0 = ak.y;
     // (where the flight comes onto the target board: the first point of its line inside the board)
     let eu = tu0, ev = tv0;
     for (let q = 0; q <= 120; q++){ const s = q / 120, u = lerp(ou, tu0, s), v = lerp(ov, tv0, s); if (u >= 0 && u <= 1 && v >= 0 && v <= 1){ eu = u; ev = v; break; } }
     for (let i = 0; i < K.n; i++){
       const a = rnd() * 2 * Math.PI, rr = SIM.ideal ? 0 : K.spread * Math.sqrt(rnd());
-      let bx = Math.max(D.CW, Math.min(WD - D.CW, keep.x + Math.cos(a) * rr)), by = Math.max(D.CW, Math.min(1 - D.CW, keep.y + Math.sin(a) * rr)), stopped = false;
+      let bx = Math.max(D.CW, Math.min(WD - D.CW, ak.x + Math.cos(a) * rr)), by = Math.max(D.CW, Math.min(1 - D.CW, ak.y + Math.sin(a) * rr)), stopped = false;
       if (K.flat && !SIM.ideal){ const L = TT.los(eu * WD, ev, bx, by, TT.hh(eu * WD, ev) + K.flat); bx = L[0]; by = L[1]; stopped = L[2]; }
       const f = CHIP + (1 - CHIP) * Math.max(0, 1 - Math.hypot(bx - keep.x, by - keep.y) / K.blast);
-      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * f, f, stopped,
+      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * f, base: K.dmg, f, stopped, aim: ak === keep ? -1 : aim,
                  su: pad.u, sv: pad.v, gs: pad.h, tu: bx / WD, tv: by, gy: TT.hh(bx, by) / WD, dc, dr, id: ++PID });
     }
     STATS.shots++;
@@ -64436,7 +64467,7 @@ const WAR_APP = (() => {
   function capture(c, r, side){
     const k = key(c, r), was = ownerOf(c, r);
     if (was === side) return;
-    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k);
+    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
     FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
     if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
     saveOwn();
@@ -64448,7 +64479,17 @@ const WAR_APP = (() => {
     if (FX.length > MAX_FX) FX.splice(0, FX.length - MAX_FX);
     if (isLive(tc, tr)) SND.play('boom');
     if (ownerOf(tc, tr) === m.side) return;                                  // (the board changed sides while it flew: it falls on a friend's ground)
-    hurt(tc, tr, m.dmg, m.side);
+    const taken = hurt(tc, tr, m.dmg, m.side);
+    if (!taken){                                                              // (and the launchers near the burst)
+      const D = GOLFD(), WD = D.WD, L = lhpOf(tc, tr);
+      for (let k = 0; k < KINDS.length; k++){
+        if (L.hp[k] <= 0) continue;
+        const P = padOf(tc, tr, k), d = Math.hypot((P.u - m.tu) * WD, P.v - m.tv), fl = Math.max(0, 1 - d / (K.blast * 0.9));
+        if (fl <= 0) continue;
+        L.hp[k] -= m.base * fl * 1.5;
+        if (L.hp[k] <= 0){ L.hp[k] = 0; L.at[k] = SIM.t; FX.push({ c: wrapc(tc), r: wrapc(tr), u: P.u, v: P.v, y: P.h, t: SIM.t, k: 4, wreck: true }); if (isLive(tc, tr)) SND.play('boom'); }
+      }
+    }
     if (K.splash) for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++){
       if (!dc && !dr) continue;
       const nc = wrapc(tc + dc), nr = wrapc(tr + dr);
@@ -64469,7 +64510,9 @@ const WAR_APP = (() => {
         if (rd[k] > SIM.t) continue;
         const t = weakest(reach(c, r, k));
         if (!t || (k === 4 && t.hp < 50)){ rd[k] = SIM.t + 0.8 + rnd(); continue; }
-        launch(c, r, k, t.c, t.r, mult);
+        let aim = -1;
+        if (rnd() < 0.45){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
+        launch(c, r, k, t.c, t.r, mult, aim);
       }
     }
   }
@@ -64495,12 +64538,15 @@ const WAR_APP = (() => {
     const t = pickTarget(c, r, SEL, tu, tv);
     if (!t) return 'none';
     if (rdyOf(c, r)[SEL] > SIM.t + 1e-9) return 'reload';
-    const n = launch(c, r, SEL, t.c, t.r, 0);
+    if (!alive(c, r, SEL)) return 'wrecked';
+    let aim = -1;
+    if (AIMMODE){ const L = lhpOf(t.c, t.r); for (let i = KINDS.length - 1; i >= 0; i--) if (L.hp[i] > 0){ aim = i; break; } }   // (the most dangerous standing)
+    const n = launch(c, r, SEL, t.c, t.r, 0, aim);
     if (n){ AIM = { c: t.c, r: t.r, t: SIM.t }; SND.play('tap'); }
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; saveOwn(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; saveOwn(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -64537,12 +64583,17 @@ const WAR_APP = (() => {
     if (!Hh) return out;
     const TT = terrOf(Hh), kp = keepOf(c, r), rd = rdyOf(c, r);
     out.push({ kind: 'bwKeep', u: kp.u, v: kp.v, scale: 0.13, lift: kp.h, color: S.col });
+    const LH = lhpOf(c, r);
     for (let k = 0; k < KINDS.length; k++){
       const P = padOf(c, r, k), K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
+      if (LH.hp[k] <= 0){ out.push({ kind: 'bwRubble', u: P.u, v: P.v, scale: 0.085, lift: P.h, color: 0x4a4540 }); continue; }
       out.push({ kind: 'bw' + K.id, u: P.u, v: P.v, scale: 0.085, lift: P.h, color: S.col });
       const bv = P.v + 0.05 * WD;                                                       // (the reload bar in front of it)
       out.push({ kind: 'bwBar', u: P.u, v: bv, scale: 1, sx: 0.1, lift: P.h + 0.004, color: 0x20242c });
       if (f > 0.02) out.push({ kind: 'bwBar', u: P.u - 0.05 * (1 - f), v: bv, scale: 1, sx: 0.1 * f, lift: P.h + 0.006, color: f >= 1 ? 0xf2e6a0 : 0x8c93a3 });
+      const lf = LH.hp[k] / LMAX[k];                                                    // (and its own hit points over it, once it is hurt)
+      if (lf < 0.999){ out.push({ kind: 'bwBar', u: P.u, v: P.v, scale: 1, sx: 0.1, lift: P.h + 0.13, color: 0x20242c });
+        out.push({ kind: 'bwBar', u: P.u - 0.05 * (1 - lf), v: P.v, scale: 1, sx: 0.1 * lf, lift: P.h + 0.132, color: lf > 0.5 ? 0x9be36a : lf > 0.25 ? 0xf2c14b : 0xf26a4b }); }
       if (mine && k === SEL && live) out.push({ kind: 'bwSel', u: P.u, v: P.v, scale: 0.15, lift: P.h + 0.006, color: 0xffe9a8 });
     }
     // (hit points over the keep)
@@ -64611,6 +64662,7 @@ const WAR_APP = (() => {
       return mergeG(T, parts); },
     bwwarhead: T => { const nose = new T.ConeGeometry(0.16, 0.34, 10); nose.translate(0, 1.18, 0);
       return mergeG(T, [cyl(T, 0.34, 0.42, 0.45, 0.225, 12), cyl(T, 0.16, 0.16, 0.55, 0.72, 10), nose]); },
+    bwRubble: T => { const parts = []; for (const [x, z, w, h, r] of [[0, 0, 0.7, 0.14, 0.3], [0.25, 0.2, 0.3, 0.2, -0.5], [-0.3, -0.15, 0.35, 0.12, 0.9], [0.1, -0.3, 0.25, 0.25, 0.2]]){ const b = new T.BoxGeometry(w, h, w * 0.8); b.rotateY(r); b.translate(x, h / 2, z); parts.push(b); } return mergeG(T, parts); },
     bwShell: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
     bwBar: T => { const g = new T.BoxGeometry(1, 0.004, 0.012); g.translate(0, 0.002, 0); return g; },
     bwCrater: T => FieldKit.disc(T, 0.5, 0.003),
@@ -64633,6 +64685,7 @@ const WAR_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
+      { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
       { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
       { label: 'New war', title: 'Every board back to where the war began, and the score at nothing.', on(){ newWar(); } },
     ]}],
@@ -64681,7 +64734,7 @@ const WAR_APP = (() => {
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
     _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
-              selectKind, newWar, setSide, tally, itemsOf, spot, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              selectKind, newWar, setSide, tally, itemsOf, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
