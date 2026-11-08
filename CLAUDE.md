@@ -257,6 +257,33 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   a deck, the game lab's Forget, mini golf's Set par and Name this hole) are asked there instead, so no question comes in the browser's face. Left: the
   copy-this-link fallbacks and the chess FEN prompts, which are the browser's. The smoke test (mini golf's par check) wants the board and its letters on one
   turn at one height with two posts, and Set par opening the box with a field in the page's sans and Enter setting it.
+- **Board War** (Nov 8: "create a game where boards are at war with each other.   when a board is defeated, it joins the side that defeated it.   create various
+  types of missel launchers to lauch missles at each other."): `WAR_APP`, id `boardwar`, after Whack-a-mole (the code's header comment has the whole design).
+  - **Sides**: four (`SIDES`: Red, Blue, Green, Gold), a side to each 5 × 5 block of boards by a hash of the block (`regionSide`), the corner's block yours (your side
+    is the menu's Your side, Blue to begin; changing it begins a new war). Who owns a board is `ownerOf`: a capture kept in `OWN` (localStorage `boardwar.own`, with
+    `boardwar.stats`), else the block's side. Hit points (`HP`, 100, healing 2 a second from `REGEN_AFTER` 6 s after the last hit; not kept) and each launcher's
+    reload (`RDY`) are per board.
+  - **Launchers** (`KINDS`; every board has all five along its near edge, told apart by their shapes, `GEOS`): mortar (range 1.5 boards, 10 damage, reload 1.6 s),
+    rocket battery (2.3, a volley of four at 6, 4.2 s), cruise missile (3.3, 26, 7.5 s, flat and fast), cluster (2.3, six bomblets at 5 scattered over the board, 6 s)
+    and warhead (5.3, 55 and 12 on every hostile board round the one it falls on, 20 s). A shot (`launch`) is refused out of range, at a friend or while the launcher
+    reloads. Missiles (`MIS`) fly 1.5–4 s along an arc; drawn on the board that fired them for the first half of the flight and on the board they fall on for the
+    second (in that board's frame, a board a column on being `PU` = spacing / board width at −u, `spot`), so no board needs another's pieces; bursts and the
+    capture ring are `FX`.
+  - **A board at no hit points joins the side whose missile finished it** (`hurt`, `capture`): hit points back at 40, its launchers reload, its missiles from then on
+    fall on its old friends; missiles already in flight from it keep their old side's name. A missile that falls on a board that has joined its own side by then
+    does nothing.
+  - **The war goes on without you** (`ai`, `advance`, `pump`): the war's clock is the page's, in steps of 0.1 s, never more than a quarter second a frame; every board
+    within `WAR_R` (5) boards of the one in view fires its launchers that are ready at the weakest hostile board in range (a warhead only at one with 50 or more),
+    reloading by the kind's time × the board's level (`LEVEL_MULT`: 1.7 at level 1 to 0.65 at level 5, the ring level plus the Difficulty) × a chance; your side's boards
+    that you are not on fire at 1.4 × that (`GARRISON`). Measured over six minutes from the corner: about 35 shots a second in the region, a hundred boards changing
+    hands, 0.08 s of script per simulated minute. Further out the war waits.
+  - **You play** on a board of your side: a tap on one of the five launchers takes that kind (keys 1–5), a tap anywhere else fires it at the hostile board in range
+    that lies that way from the board's middle (within 60°, the nearest; a tap in the middle or none that way: the weakest in range), Space / Enter fires at the weakest.
+    The row is not used. A tap on another side's board does nothing; `noDoubleTap` on yours, so quick taps are both shots. The title says the side, hit points, level, the
+    count of each side within four boards and your side's captures and losses.
+  - The smoke test (part 7, "board war") checks the sides, each kind's volley and damage to the point (1:10, 4:24, 1:26, 6:30, 1:55), range, friends refused, the reload, the
+    warhead's splash (45, 88, 88 and a friend's 100), a board taken joining the taker's side with 40 back and kept in storage, the pieces, a missile over the board it left and
+    then the one it falls on, two minutes of war by itself, and real clicks: one on the third launcher, one toward the hostile board firing the cruise missile there.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

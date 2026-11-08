@@ -64233,7 +64233,360 @@ const HOME_APP = (() => {
   return app;
 })();
 
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, HOME_APP, GALLERY_APP];
+/* ═══ BOARD WAR ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
+   (Nov 8: "create a game where boards are at war with each other.   when a board is defeated, it joins the side that defeated it.
+   create various types of missel launchers to lauch missles at each other.")
+   Every board is a fortress that belongs to one of four sides (Red, Blue, Green, Gold). The field starts as a quilt of 5 × 5 blocks of
+   boards, a side to a block (`regionSide`; the corner's block is yours), and every board has 100 hit points and five launchers along its near
+   edge, each of its own kind (KINDS): a mortar (short, quick, weak), a rocket battery (a volley of four), a cruise missile (long, low, hard),
+   a cluster (six bomblets over the target board) and a warhead (the whole field in range, a huge blast that splashes the boards round it).
+   Missiles fly from one board to another, rising off the board that fired and falling on the board they strike; a board that runs out of
+   hit points JOINS THE SIDE WHOSE MISSILE FINISHED IT (`capture`: its hit points come back at 40, its launchers reload, and its own missiles
+   now fall on its old friends). Ownership is kept (localStorage `boardwar.own`); hit points heal on their own a while after the last hit.
+   - THE WAR GOES ON WITHOUT YOU (`ai`): every board within `WAR_R` boards of the one in view fires its own launchers at hostile boards in
+     range as they reload (the weakest in range first), slower near the corner and quicker far out (`LEVEL_MULT`, the ring level plus the
+     Difficulty, as every game's); your side's boards that you are not on fire too, a little slower (`GARRISON`), so the front moves while you
+     look at it. Further than that the war is frozen as it was, and wakes when you fly there.
+   - YOU play on a board of your side: a tap on one of its launchers (the row of five along the near edge) takes that kind, a tap anywhere else
+     fires it at the hostile board in range that lies that way from the board's middle (a tap in the middle: the weakest in range), or the
+     keys 1 to 5 and Space / Enter. A launcher reloads (its own time) before it fires again. A tap on a board of another side does nothing.
+   - Pieces: the keep and its side's flag, the five launchers (told apart by their shapes), a reload bar under each, hit points along the far
+     edge, craters where it has been hit, the missiles and their trails, bursts, and a ring in the new colours when a board changes sides. */
+const WAR_APP = (() => {
+  const SIDES = [
+    { name: 'Red',   col: 0xd9483b, a: 0x9b4a40, b: 0x8c4038 },
+    { name: 'Blue',  col: 0x3b78d9, a: 0x3f6aa8, b: 0x375e98 },
+    { name: 'Green', col: 0x3fae5a, a: 0x4a8f55, b: 0x417f4c },
+    { name: 'Gold',  col: 0xe0b43a, a: 0xb59a45, b: 0xa38a3b },
+  ];
+  /* The launchers: range in boards (a board beside is 1, a diagonal 1.41), damage a missile, missiles a shot (n, gap seconds apart), the reload
+     and the flight in seconds, the arc's height, how far across the target board they scatter, and the warhead's splash on the boards round. */
+  const KINDS = [
+    { id: 'mortar',  name: 'Mortar',          range: 1.5, dmg: 10, n: 1, gap: 0,    reload: 1.6, fly: 1.7, arc: 0.5,  spread: 0.1,  col: 0xf0d070 },
+    { id: 'rockets', name: 'Rocket battery',  range: 2.3, dmg: 6,  n: 4, gap: 0.14, reload: 4.2, fly: 1.5, arc: 0.22, spread: 0.12, col: 0xff8a4a },
+    { id: 'cruise',  name: 'Cruise missile',  range: 3.3, dmg: 26, n: 1, gap: 0,    reload: 7.5, fly: 2.6, arc: 0.06, spread: 0.05, col: 0xe8f2ff },
+    { id: 'cluster', name: 'Cluster',         range: 2.3, dmg: 5,  n: 6, gap: 0.05, reload: 6,   fly: 2.1, arc: 0.7,  spread: 0.36, col: 0xb8e86a },
+    { id: 'warhead', name: 'Warhead',         range: 5.3, dmg: 55, n: 1, gap: 0,    reload: 20,  fly: 4.2, arc: 1.1,  spread: 0.04, col: 0xff4a4a, splash: 12 },
+  ];
+  const MAXHP = 100, CAPTURED_HP = 40, REGEN = 2, REGEN_AFTER = 6, WAR_R = 5, GARRISON = 1.4, BURST = 0.8, CAP_FX = 1.4, MAX_FX = 80;
+  const LEVEL_MULT = [1.7, 1.35, 1.0, 0.8, 0.65];                   // (an enemy's reload by the board's level: slower near the corner)
+  const DL = ARCADE.difficulty('boardwar.level', 'Every board has its own level, harder the farther it is from the corner: its launchers reload quicker out there. Easy, Normal and Hard move every board a level up.', true);
+  const SND = ARCADE.sounds('boardwar.sound', 'A thump for a launch, a boom for a hit, a fanfare for a board won and a groan for one lost.');
+  const say = BOARD_KIT.say(2600);
+  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, fieldGS = BOARD_KIT.gs;
+  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
+  const GS = fieldGS();
+  const wrapc = n => ((n % GS) + GS) % GS;
+  const dwrap = (a, b) => ((((a - b) + GS / 2) % GS) + GS) % GS - GS / 2;             // (the short way round the wrapped field, signed)
+  const key = (c, r) => wrapc(c) * GS + wrapc(r);
+
+  let SEED = 12345;
+  const rnd = () => { SEED = (Math.imul(SEED, 1664525) + 1013904223) >>> 0; return SEED / 4294967296; };
+  const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch { return d; } };
+  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  let SIDE = Math.max(0, Math.min(3, load('boardwar.side', 1) | 0));
+  const OWN = new Map(Object.entries(load('boardwar.own', {})).map(([k, v]) => [+k, v]));
+  const STATS = Object.assign({ won: 0, lost: 0, shots: 0 }, load('boardwar.stats', {}));
+  const saveOwn = () => { const e = [...OWN.entries()]; save('boardwar.own', Object.fromEntries(e.length > 5000 ? e.slice(-5000) : e)); save('boardwar.stats', STATS); };
+  const HP = new Map(), RDY = new Map();
+  const SIM = { t: 0, ai: 0 };
+  const MIS = [], FX = [];
+  let SEL = 0, LIVE = null, AIM = null, PID = 0, lastReal = 0;
+
+  /* The sides at the start: blocks of 5 × 5 boards, one side each by a hash of the block, the corner's block yours. */
+  function regionSide(c, r){
+    const bc = Math.floor(wrapc(c) / 5), br = Math.floor(wrapc(r) / 5);
+    if (!bc && !br) return SIDE;
+    let h = Math.imul(bc + 1, 0x9e3779b1) ^ Math.imul(br + 7, 0x85ebca6b);
+    h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12;
+    return (h >>> 0) % 4;
+  }
+  const ownerOf = (c, r) => { const o = OWN.get(key(c, r)); return o != null ? o : regionSide(c, r); };
+  function hpOf(c, r){
+    const e = HP.get(key(c, r)); if (!e) return MAXHP;
+    return Math.min(MAXHP, e.hp + Math.max(0, SIM.t - e.hit - REGEN_AFTER) * REGEN);
+  }
+  function rdyOf(c, r){
+    const k = key(c, r); let a = RDY.get(k);
+    if (!a){ a = KINDS.map(K => SIM.t + rnd() * K.reload * 0.6); RDY.set(k, a); }
+    return a;
+  }
+  const rearm = (c, r) => { const a = rdyOf(c, r); for (let k = 0; k < a.length; k++) a[k] = SIM.t; };
+  const center = () => LIVE ? [LIVE.c, LIVE.r] : [0, 0];
+
+  /* The hostile boards a launcher of kind k on board (c, r) can reach, nearest first: [{ c, r, dist, hp }]. */
+  function reach(c, r, k){
+    const K = KINDS[k], side = ownerOf(c, r), R = Math.ceil(K.range), out = [];
+    for (let dc = -R; dc <= R; dc++) for (let dr = -R; dr <= R; dr++){
+      const d = Math.hypot(dc, dr); if (!d || d > K.range + 1e-9) continue;
+      const tc = wrapc(c + dc), tr = wrapc(r + dr);
+      if (ownerOf(tc, tr) !== side) out.push({ c: tc, r: tr, dc, dr, dist: d, hp: hpOf(tc, tr) });
+    }
+    return out.sort((x, y) => x.dist - y.dist);
+  }
+  const weakest = list => list.reduce((b, t) => !b || t.hp + t.dist * 12 < b.hp + b.dist * 12 ? t : b, null);
+  /* Where a tap at (u, v) of the board points: the hostile board in range whose way from the middle is within 60° of it (the board beside is at
+     (-1, 0) when the column rises, so the tap's way is turned over), the nearest of those; else, and for a tap in the middle, the weakest. */
+  function pickTarget(c, r, k, tu, tv){
+    const list = reach(c, r, k); if (!list.length) return null;
+    if (tu != null){
+      const x = -(tu - 0.5), y = -(tv - 0.5), m = Math.hypot(x, y);
+      if (m > 0.12){
+        let best = null, bd = 0;
+        for (const t of list){ const cs = (t.dc * x + t.dr * y) / (t.dist * m); if (cs >= 0.5 && (!best || t.dist < bd - 1e-9 || (Math.abs(t.dist - bd) < 1e-9 && cs > best.cs))){ best = Object.assign({ cs }, t); bd = t.dist; } }
+        if (best) return best;
+      }
+    }
+    return weakest(list);
+  }
+
+  /* One shot: the kind's n missiles, a gap apart, from board (c, r)'s launcher k to board (tc, tr). Refused (0) out of range, at a friend, or while reloading.
+     `mult` is the reload's stretch for the computer's boards (a person's own board reloads in the kind's own time). */
+  function launch(c, r, k, tc, tr, mult){
+    const K = KINDS[k], side = ownerOf(c, r), dc = dwrap(tc, c), dr = dwrap(tr, r), dist = Math.hypot(dc, dr);
+    if (!dist || dist > K.range + 1e-9 || ownerOf(tc, tr) === side) return 0;
+    const rd = rdyOf(c, r); if (rd[k] > SIM.t + 1e-9) return 0;
+    rd[k] = SIM.t + (K.n - 1) * K.gap + K.reload * (mult || 1) * (mult ? 0.8 + 0.6 * rnd() : 1);
+    for (let i = 0; i < K.n; i++){
+      const sp = K.spread;
+      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg,
+                 su: 0.1 + 0.2 * k, sv: 0.88, tu: 0.5 + (rnd() - 0.5) * 2 * sp, tv: 0.5 + (rnd() - 0.5) * 2 * sp, dc, dr, id: ++PID });
+    }
+    STATS.shots++;
+    return K.n;
+  }
+  const isLive = (c, r) => LIVE && wrapc(LIVE.c) === wrapc(c) && wrapc(LIVE.r) === wrapc(r);
+  function hurt(c, r, d, side){
+    const k = key(c, r), cur = hpOf(c, r) - d;
+    if (cur <= 0){ capture(c, r, side); return true; }
+    HP.set(k, { hp: cur, hit: SIM.t });
+    return false;
+  }
+  function capture(c, r, side){
+    const k = key(c, r), was = ownerOf(c, r);
+    if (was === side) return;
+    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k);
+    FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
+    if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
+    saveOwn();
+    if (side === SIDE || was === SIDE) SND.play(side === SIDE ? 'win' : 'lose');
+  }
+  function impact(m){
+    const [tc, tr] = m.to, K = KINDS[m.k];
+    FX.push({ c: tc, r: tr, u: m.tu, v: m.tv, t: SIM.t, k: m.k });
+    if (FX.length > MAX_FX) FX.splice(0, FX.length - MAX_FX);
+    if (isLive(tc, tr)) SND.play('boom');
+    if (ownerOf(tc, tr) === m.side) return;                                  // (the board changed sides while it flew: it falls on a friend's ground)
+    hurt(tc, tr, m.dmg, m.side);
+    if (K.splash) for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++){
+      if (!dc && !dr) continue;
+      const nc = wrapc(tc + dc), nr = wrapc(tr + dr);
+      if (ownerOf(nc, nr) !== m.side){ FX.push({ c: nc, r: nr, u: 0.5, v: 0.5, t: SIM.t, k: m.k, small: true }); hurt(nc, nr, K.splash, m.side); }
+    }
+  }
+  /* The computer's boards: each launcher that is ready fires at the weakest hostile board in its range (a warhead only at a board with hit points to
+     lose), then reloads for the kind's time times the board's stretch and a little chance. A board you are on, and a board with nothing to hit, do not. */
+  function ai(){
+    if (SIM.quiet || SIM.t - SIM.ai < 0.1) return;
+    SIM.ai = SIM.t;
+    const [cc, cr] = center();
+    for (let dc = -WAR_R; dc <= WAR_R; dc++) for (let dr = -WAR_R; dr <= WAR_R; dr++){
+      const c = wrapc(cc + dc), r = wrapc(cr + dr), own = ownerOf(c, r);
+      if (own === SIDE && isLive(c, r)) continue;
+      const lv = levelAt(boardIdx(c, r)), mult = LEVEL_MULT[lv - 1] * (own === SIDE ? GARRISON : 1), rd = rdyOf(c, r);
+      for (let k = 0; k < KINDS.length; k++){
+        if (rd[k] > SIM.t) continue;
+        const t = weakest(reach(c, r, k));
+        if (!t || (k === 4 && t.hp < 50)){ rd[k] = SIM.t + 0.8 + rnd(); continue; }
+        launch(c, r, k, t.c, t.r, mult);
+      }
+    }
+  }
+  /* The war's clock, the page's own and no more than a quarter second a step (a tab left alone does not fire a thousand missiles when it wakes). */
+  function advance(dt){
+    while (dt > 1e-9){
+      const s = Math.min(dt, 0.1); dt -= s; SIM.t += s;
+      for (let i = MIS.length - 1; i >= 0; i--){ const m = MIS[i]; if (SIM.t >= m.t0 + m.dur){ MIS.splice(i, 1); impact(m); } }
+      ai();
+    }
+    while (FX.length && SIM.t - FX[0].t > CAP_FX + 0.1) FX.shift();
+  }
+  function pump(){
+    const r = performance.now() / 1000;
+    if (!lastReal){ lastReal = r; return; }
+    const dt = Math.min(0.25, r - lastReal); lastReal = r;
+    if (dt > 0) advance(dt);
+  }
+
+  /* ─── YOUR MOVES ─── */
+  function fireHere(c, r, tu, tv){
+    if (ownerOf(c, r) !== SIDE) return 'foe';
+    const t = pickTarget(c, r, SEL, tu, tv);
+    if (!t) return 'none';
+    if (rdyOf(c, r)[SEL] > SIM.t + 1e-9) return 'reload';
+    const n = launch(c, r, SEL, t.c, t.r, 0);
+    if (n){ AIM = { c: t.c, r: t.r, t: SIM.t }; SND.play('tap'); }
+    return n ? 'fired' : 'none';
+  }
+  function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
+  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; saveOwn(); try { fieldItemsChanged(); } catch {} }
+  function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
+
+  function tally(c, r, R){
+    const n = [0, 0, 0, 0];
+    for (let dc = -R; dc <= R; dc++) for (let dr = -R; dr <= R; dr++) n[ownerOf(c + dc, r + dr)]++;
+    return n;
+  }
+
+  /* ─── DRAWING ─── */
+  const lerp = (a, b, s) => a + (b - a) * s;
+  const pitch = () => { try { const W = window.FIELD_WORLD, sp = W.spacing(), bW = W.boardW(); return [sp[0] / bW, sp[1] / bW]; } catch { return [1.1, 1.1]; } };
+  /* A missile's place at s (0 to 1 of its flight) in the frame of board (c, r): the board it left, or the one it falls on (that one a column
+     and row away, a column to the +u side being a board at −u). */
+  function spot(m, s, c, r){
+    const [PU, PV] = pitch();
+    const fromHere = wrapc(c) === m.from[0] && wrapc(r) === m.from[1];
+    const o = fromHere ? [0, 0] : [m.dc * PU, m.dr * PV];                               // (the origin's launcher in the target's frame)
+    const t = fromHere ? [m.tu - m.dc * PU, m.tv - m.dr * PV] : [m.tu, m.tv];
+    const du = lerp(m.su + o[0], t[0], s), dv = lerp(m.sv + o[1], t[1], s);
+    const K = KINDS[m.k], dist = Math.hypot(m.dc, m.dr);
+    return { u: du, v: dv, lift: 0.02 + K.arc * 0.1 * (1 + dist) * 4 * s * (1 - s) };
+  }
+  function itemsOf(c, r){
+    const out = [], own = ownerOf(c, r), S = SIDES[own], hp = hpOf(c, r), mine = own === SIDE, now = SIM.t;
+    out.push({ kind: 'bwKeep', u: 0.5, v: 0.42, scale: 0.17, color: S.col });
+    const rd = rdyOf(c, r);
+    for (let k = 0; k < KINDS.length; k++){
+      const u = 0.1 + 0.2 * k, K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
+      out.push({ kind: 'bw' + K.id, u, v: 0.88, scale: 0.11, color: S.col });
+      out.push({ kind: 'bwBar', u, v: 0.965, scale: 1, sx: 0.15, color: 0x20242c });
+      if (f > 0.02) out.push({ kind: 'bwBar', u: u - 0.075 * (1 - f), v: 0.965, scale: 1, sx: 0.15 * f, lift: 0.001, color: f >= 1 ? 0xf2e6a0 : 0x8c93a3 });
+      if (mine && k === SEL && isLive(c, r)) out.push({ kind: 'bwSel', u, v: 0.88, scale: 0.19, color: 0xffe9a8 });
+    }
+    // (hit points along the far edge)
+    const f = Math.max(0, Math.min(1, hp / MAXHP));
+    out.push({ kind: 'bwBar', u: 0.5, v: 0.04, scale: 1, sx: 0.8, color: 0x20242c });
+    if (f > 0) out.push({ kind: 'bwBar', u: 0.1 + 0.4 * f, v: 0.04, scale: 1, sx: 0.8 * f, lift: 0.001, color: f > 0.5 ? 0x9be36a : f > 0.25 ? 0xf2c14b : 0xf26a4b });
+    // (craters where it has been hit)
+    const idx = boardIdx(c, r), nc = Math.min(6, Math.floor((MAXHP - hp) / 16));
+    for (let i = 0; i < nc; i++){
+      const h = Math.imul(idx + 1, 0x9e3779b1) ^ Math.imul(i + 3, 0x85ebca6b);
+      out.push({ kind: 'bwCrater', u: 0.18 + 0.64 * (((h >>> 3) & 255) / 255), v: 0.12 + 0.6 * (((h >>> 13) & 255) / 255), scale: 0.07 + 0.05 * (((h >>> 21) & 7) / 7), color: 0x2a1d14 });
+    }
+    // (missiles with their trails: the half of the flight that is over this board)
+    for (const m of MIS){
+      const s = (now - m.t0) / m.dur; if (s < 0 || s > 1) continue;
+      const here = wrapc(c) === m.from[0] && wrapc(r) === m.from[1], there = wrapc(c) === m.to[0] && wrapc(r) === m.to[1];
+      if (!((here && s < 0.5) || (there && s >= 0.5))) continue;
+      const K = KINDS[m.k], P = spot(m, s, c, r);
+      out.push({ kind: 'bwShell', u: P.u, v: P.v, scale: m.k === 4 ? 0.05 : 0.032, lift: P.lift, color: K.col });
+      for (let j = 1; j <= 4; j++){
+        const s2 = s - j * 0.035; if (s2 < 0) break;
+        const P2 = spot(m, s2, c, r);
+        out.push({ kind: 'bwShell', u: P2.u, v: P2.v, scale: (m.k === 4 ? 0.04 : 0.024) * (1 - j * 0.17), lift: P2.lift, color: 0xc8c8d0 });
+      }
+    }
+    // (bursts on this board, and a ring in the new colours where a board changed sides; the target the last shot was aimed at is ringed)
+    for (const e of FX){
+      if (e.c !== wrapc(c) || e.r !== wrapc(r)) continue;
+      const a = now - e.t;
+      if (e.cap != null){ if (a >= 0 && a < CAP_FX) out.push({ kind: 'bwRing', u: 0.5, v: 0.5, scale: 0.25 + 0.9 * a / CAP_FX, lift: 0.01, color: SIDES[e.cap].col }); continue; }
+      if (a < 0 || a >= BURST) continue;
+      const q = a / BURST, big = e.k === 4 ? 1.8 : e.small ? 1.2 : 1;
+      out.push({ kind: 'bwFlash', u: e.u, v: e.v, scale: 0.09 * big * (1 - q * 0.6), lift: 0.01, color: 0xffd25a });
+      out.push({ kind: 'bwRing', u: e.u, v: e.v, scale: (0.05 + 0.2 * q) * big, lift: 0.012, color: 0xff7a30 });
+    }
+    if (AIM && AIM.c === wrapc(c) && AIM.r === wrapc(r) && now - AIM.t < 2.5) out.push({ kind: 'bwSel', u: 0.5, v: 0.5, scale: 0.5 + 0.06 * Math.sin(now * 8), lift: 0.01, color: 0xff5a4a });
+    return out;
+  }
+
+  function mergeG(T, list){
+    const pos = [], nrm = [];
+    for (const g0 of list){ const g = g0.index ? g0.toNonIndexed() : g0, P = g.attributes.position.array, N = g.attributes.normal.array; for (let k = 0; k < P.length; k++){ pos.push(P[k]); nrm.push(N[k]); } }
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3));
+    return g;
+  }
+  // (the board's far side is the item's +z, so the barrels tip toward +z: rotateX of a positive angle takes +y toward +z)
+  const cyl = (T, r0, r1, h, y, seg) => { const g = new T.CylinderGeometry(r0, r1, h, seg || 12); g.translate(0, y, 0); return g; };
+  const GEOS = {
+    bwKeep: T => { const flag = new T.BoxGeometry(0.34, 0.2, 0.02); flag.translate(0.19, 1.28, 0);
+      return mergeG(T, [cyl(T, 0.38, 0.45, 0.7, 0.35, 14), cyl(T, 0.47, 0.47, 0.12, 0.76, 14), cyl(T, 0.02, 0.02, 0.55, 1.07, 6), flag]); },
+    bwmortar: T => { const t = cyl(T, 0.14, 0.18, 0.85, 0.42, 10); t.rotateX(0.55); return mergeG(T, [cyl(T, 0.42, 0.46, 0.12, 0.06, 12), t]); },
+    bwrockets: T => { const parts = [new T.BoxGeometry(0.9, 0.18, 0.6)]; parts[0].translate(0, 0.09, 0);
+      for (const ix of [-1, 0, 1]) for (const iy of [0, 1]){ const t = new T.CylinderGeometry(0.09, 0.09, 0.7, 8); t.translate(0, 0.35, 0); t.rotateX(0.6); t.translate(ix * 0.27, 0.22 + iy * 0.2, -0.1); parts.push(t); }
+      return mergeG(T, parts); },
+    bwcruise: T => { const rail = new T.BoxGeometry(0.4, 0.12, 0.95); rail.translate(0, 0.06, 0);
+      const body = new T.CylinderGeometry(0.12, 0.12, 0.85, 10); body.rotateX(Math.PI / 2); body.translate(0, 0.27, 0);
+      const nose = new T.ConeGeometry(0.12, 0.28, 10); nose.rotateX(Math.PI / 2); nose.translate(0, 0.27, 0.56);
+      const fin = new T.BoxGeometry(0.4, 0.02, 0.16); fin.translate(0, 0.27, -0.36);
+      return mergeG(T, [rail, body, nose, fin]); },
+    bwcluster: T => { const dome = new T.SphereGeometry(0.34, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2); dome.translate(0, 0.25, 0);
+      const parts = [cyl(T, 0.42, 0.46, 0.25, 0.125, 12), dome];
+      for (const [x, z] of [[0.3, 0.3], [-0.3, 0.3], [0.3, -0.3], [-0.3, -0.3]]){ const s = new T.SphereGeometry(0.1, 8, 5); s.translate(x, 0.3, z); parts.push(s); }
+      return mergeG(T, parts); },
+    bwwarhead: T => { const nose = new T.ConeGeometry(0.16, 0.34, 10); nose.translate(0, 1.18, 0);
+      return mergeG(T, [cyl(T, 0.34, 0.42, 0.45, 0.225, 12), cyl(T, 0.16, 0.16, 0.55, 0.72, 10), nose]); },
+    bwShell: T => { const g = new T.SphereGeometry(0.5, 8, 6); g.translate(0, 0.5, 0); g.userData.unlit = true; return g; },
+    bwBar: T => { const g = new T.BoxGeometry(1, 0.004, 0.012); g.translate(0, 0.002, 0); return g; },
+    bwCrater: T => FieldKit.disc(T, 0.5, 0.003),
+    bwSel: T => FieldKit.ring(T, 0.4, 0.5, 0.005),
+    bwRing: T => FieldKit.ring(T, 0.42, 0.5, 0.006),
+    bwFlash: T => { const g = FieldKit.disc(T, 0.5, 0.008); g.userData.unlit = true; return g; },
+  };
+
+  addEventListener('keydown', e => {
+    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!LIVE || !window.getFieldApp || window.getFieldApp() !== app) return;
+    if (/^[1-5]$/.test(e.key)){ e.preventDefault(); e.stopPropagation(); selectKind(+e.key - 1); return; }
+    if (e.key === 'Enter' || e.key === ' '){ if (ownerOf(LIVE.c, LIVE.r) === SIDE){ e.preventDefault(); e.stopPropagation(); fireHere(LIVE.c, LIVE.r, null, null); } }
+  }, true);
+
+  const app = {
+    name: 'boardwar',
+    menu: [{ head: 'Board War', items: [
+      { label: () => 'Your side: ' + SIDES[SIDE].name, title: 'Which side you fight for. Changing it starts a new war with your side holding the corner.', on(){ setSide(SIDE + 1); } },
+      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); try { fieldItemsChanged(); } catch {} } },
+      SND.item,
+      { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
+      { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
+      { label: 'New war', title: 'Every board back to where the war began, and the score at nothing.', on(){ newWar(); } },
+    ]}],
+    cellFar: { light: 0x3b4150, dark: 0x343946 },
+    itemMinPx: 14,
+    itemGeometries: GEOS,
+    cellGrid(c, r){ const S = SIDES[ownerOf(c, r)]; return { n: 8, colors: Array.from({ length: 64 }, (_, k) => ((k % 8) + ((k >> 3))) % 2 ? S.a : S.b) }; },
+    cellItems(c, r){ pump(); return itemsOf(c, r); },
+    cellTitle(c, r){
+      const own = ownerOf(c, r), hp = Math.round(hpOf(c, r)), t = tally(c, r, 4), lv = levelAt(boardIdx(c, r));
+      return 'Board War — ' + SIDES[own].name + ' board, ' + hp + ' hit points, level ' + lv + (own === SIDE ? ' · yours: ' + KINDS[SEL].name : ' · an enemy: fly to a ' + SIDES[SIDE].name + ' board')
+           + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost;
+    },
+    onSelect(){ return true; },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    noDoubleTap(){ return !!LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE; },
+    onReset(){ newWar(); return true; },
+    onCellTap(c, r, u, v){
+      LIVE = { c, r };
+      if (u == null) return true;
+      if (ownerOf(c, r) !== SIDE) return true;
+      if (v >= 0.8){ selectKind(Math.max(0, Math.min(4, Math.floor(u * 5)))); return true; }
+      fireHere(c, r, u, v);
+      return true;
+    },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#20242c'; ctx.fillRect(0, 0, sz, sz);
+      SIDES.forEach((S, i) => { ctx.fillStyle = '#' + S.a.toString(16).padStart(6, '0'); ctx.fillRect((i % 2) * sz / 2 + sz * 0.02, ((i / 2) | 0) * sz / 2 + sz * 0.02, sz * 0.46, sz * 0.46); });
+      ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = sz * 0.03; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.3); ctx.quadraticCurveTo(sz * 0.5, sz * 0.0, sz * 0.78, sz * 0.7); ctx.stroke();
+      ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
+    },
+    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
+              selectKind, newWar, setSide, tally, itemsOf, spot, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+  };
+  return app;
+})();
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, HOME_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -64242,7 +64595,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
