@@ -50711,6 +50711,31 @@ const SIMON_APP = (() => {
     SEQS.set(key, S); if (SEQS.size > CAP) SEQS.delete(SEQS.keys().next().value);
     return S;
   }
+  /* SONGS (Nov 8: "can you add buttons to pre-set songs?", Simon: "play a tune"): the bottom row has a button a song, and a tap on one begins a game of
+     that tune on the framed board: round n plays its first n notes and you play them back; the whole song played back wins. Each distinct note of a song is
+     a pad (lowest pitch first, clockwise, `rank`), the pads 4, 6 or 8 as many as the song needs, and each sounds at its note's own pitch (`freq`), so the
+     tune is the tune and not the toy's four tones. Notes are MIDI numbers (60 middle C); a song's steps all one length, as Simon's are. */
+  const SONGS = [
+    { name: 'Twinkle',        notes: [60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60] },
+    { name: 'Mary’s lamb',    notes: [64, 62, 60, 62, 64, 64, 64, 62, 62, 62, 64, 67, 67] },
+    { name: 'Ode to Joy',     notes: [64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62] },
+    { name: 'Jingle Bells',   notes: [64, 64, 64, 64, 64, 64, 64, 67, 60, 62, 64, 65, 65, 65, 65, 65, 64, 64, 64, 64, 62, 62, 64, 62, 67] },
+    { name: 'Happy Birthday', notes: [67, 67, 69, 67, 72, 71, 67, 67, 69, 67, 74, 72, 67, 67, 79, 76, 72, 71, 69, 77, 77, 76, 72, 74, 72] },
+  ];
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  let SONG = -1;                                          // (the song in hand, -1 the board's own sequence; kept for the session)
+  const SONGSEQ = new Map();
+  function songSeq(c, r, k){
+    const idx = boardIdx(c, r), lv = levelAt(idx), sg = SONGS[k], key = 's' + k;
+    let S = SONGSEQ.get(key);
+    if (!S){
+      const ps = [...new Set(sg.notes)].sort((x, y) => x - y), P = ps.length <= 4 ? 4 : ps.length <= 6 ? 6 : 8;
+      const rank = new Map(ps.map((m, i) => [m, i])), seq = sg.notes.map(m => rank.get(m));
+      S = { key, song: k, name: sg.name, len: seq.length, freq: ps.map(hz), D: { pads: P, on: 0.4, gap: 0.12, wait: 5 }, at: i => seq[i] };
+      SONGSEQ.set(key, S);
+    }
+    return { ...S, idx, lv, phase: BOARD_KIT.phase(idx) };
+  }
   // a step's length while round n plays back: the toy's quickening as the sequence grows
   const stepOf = (D, n) => { const q = Math.max(QUICK_MIN, 1 - QUICKEN * (n - 1)); return { on: D.on * q, gap: D.gap * q }; };
 
@@ -50719,12 +50744,12 @@ const SIMON_APP = (() => {
   const GAMES = new Map();
   let LIVE = null;
   const { BEST, saveBest } = BOARD_KIT.best('simon.best');
-  const bestKey = S => S.idx + '@' + S.lv;
+  const bestKey = S => S.key || S.idx + '@' + S.lv;
   const clock = () => performance.now() / 1000;
-  const fresh = (c, r) => ({ S: seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1, view: -1 });
+  const fresh = (c, r) => ({ S: SONG >= 0 ? songSeq(c, r, SONG) : seqOf(c, r), c, r, state: 'ready', n: 0, i: 0, t0: 0, lit: -1, litTo: 0, deadline: 0, score: 0, shown: -1, miss: -1, view: -1 });
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
-  function beep(p, dur, quiet){ if (quiet) return; try { if (SND.on && ARCADE.audio()) ARCADE.tone(TONE[p], TONE[p], Math.max(0.12, dur), 'triangle', 0.08); } catch {} }
+  function beep(p, dur, quiet, S){ if (quiet) return; try { const f = S && S.freq && S.freq[p] || TONE[p]; if (SND.on && ARCADE.audio()) ARCADE.tone(f, f, Math.max(0.12, dur), 'triangle', 0.08); } catch {} }
   function begin(g){ g.n = 1; g.score = 0; g.miss = -1; g.view = -1; showRound(g, 0.5); }
   function showRound(g, wait){ g.state = 'show'; g.view = -1; g.t0 = clock() + (wait || 0); g.i = 0; g.shown = -1; }
   function stepGame(g, quiet){
@@ -50736,7 +50761,7 @@ const SIMON_APP = (() => {
       if (k >= g.n){ g.lit = -1; g.state = 'input'; g.i = 0; g.deadline = t + g.S.D.wait; return; }
       const into = dt - k * (on + gap);
       g.lit = into < on ? g.S.at(k) : -1;
-      if (into < on && g.shown !== k){ g.shown = k; beep(g.S.at(k), on, quiet); }
+      if (into < on && g.shown !== k){ g.shown = k; beep(g.S.at(k), on, quiet, g.S); }
       return;
     }
     if (g.state === 'input'){
@@ -50754,10 +50779,22 @@ const SIMON_APP = (() => {
     g.view = -1;
     const t = clock(), want = g.S.at(g.i);
     if (p !== want){ g.miss = want; over(g, 'Not that one.', quiet); return true; }
-    g.lit = p; g.litTo = t + 0.22; beep(p, 0.2, quiet);
+    g.lit = p; g.litTo = t + 0.22; beep(p, 0.2, quiet, g.S);
     g.i++; g.deadline = t + g.S.D.wait;
-    if (g.i >= g.n){ g.score = g.n; g.n++; g.state = 'pause'; g.t0 = t + 0.8; }
+    if (g.i >= g.n){
+      g.score = g.n;
+      if (g.S.len && g.n >= g.S.len){ finishSong(g, quiet); return true; }       // (the whole song played back)
+      g.n++; g.state = 'pause'; g.t0 = t + 0.8;
+    }
     return true;
+  }
+  function finishSong(g, quiet){
+    g.state = 'over'; g.won = true; g.lit = -1; g.litTo = 0; g.miss = -1;
+    const k = bestKey(g.S), was = BEST.get(k);
+    if (was == null || g.score > was){ BEST.delete(k); BEST.set(k, g.score); saveBest(); }
+    if (quiet) return;
+    try { SND.play('win'); } catch {}
+    say('You played ' + g.S.name + '! Tap to play it again.', 3600);
   }
   function over(g, why, quiet){
     if (g.miss < 0) g.miss = g.S.at(g.i);
@@ -50860,7 +50897,7 @@ const SIMON_APP = (() => {
   for (const P of [4, 6, 8]) for (let p = 0; p < P; p++) padKinds['smPad' + P + '_' + p] = T => padGeo(T, P, p);
   let SLIDE = null;
   // a step looked at: its pad lights and sounds once as the slider reaches it
-  function look(g, k){ if (g.view === k) return; g.view = k; g.lit = -1; g.litTo = 0; beep(g.S.at(k), 0.2); }
+  function look(g, k){ if (g.view === k) return; g.view = k; g.lit = -1; g.litTo = 0; beep(g.S.at(k), 0.2, false, g.S); }
   const KEYS = { ArrowUp: [0, 3], ArrowRight: [1, 0], ArrowDown: [2, 1], ArrowLeft: [3, 2] };
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -50876,13 +50913,27 @@ const SIMON_APP = (() => {
     if (g.state === 'ready' || g.state === 'over'){ if (g.state === 'over') Object.assign(g, fresh(g.c, g.r)); begin(g); return; }
     press(g, p);
   }, true);
+  // a song (or -1, the board's own sequence) taken up on a board: a new game of it begun at once
+  function playSong(c, r, k){
+    SONG = k < 0 || k >= SONGS.length ? -1 : k;
+    const g = fresh(c, r); GAMES.set(gkey(c, r), g); LIVE = { c, r }; begin(g);
+    try { fieldItemsChanged(); } catch {}
+  }
   const app = {
     name: 'simon',
     menu: [{ head: 'Simon', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
+      { label: () => 'Song: ' + (SONG < 0 ? 'your own sequence' : SONGS[SONG].name), title: 'Play a preset tune instead of the board\'s own sequence (also the buttons in the bottom row).', on(){ const f = framedCell(); if (f) playSong(f.c, f.r, SONG + 1 >= SONGS.length ? -1 : SONG + 1); else SONG = SONG + 1 >= SONGS.length ? -1 : SONG + 1; } },
       { label: 'Start this board again', title: 'A new game of this board\'s sequence, from one step.', on(){ const f = framedCell(); if (f){ const g = fresh(f.c, f.r); GAMES.set(gkey(f.c, f.r), g); LIVE = { c: f.c, r: f.r }; begin(g); } } },
     ]}],
+    // (the bottom row: Own sequence, then a button a song; a tap begins that tune on the framed board)
+    statTiles(c, r){
+      const ON = '#2f4a3a';
+      return [{ glyph: '🎲', value: 'Own', label: 'sequence', bg: SONG < 0 ? ON : undefined },
+              ...SONGS.map((sg, i) => ({ glyph: '♪', value: sg.name, label: sg.notes.length + ' notes' + (BEST.get('s' + i) != null ? ' ✓' : ''), bg: SONG === i ? ON : undefined }))];
+    },
+    onStatTap(c, r, i){ playSong(c, r, i - 1); return true; },
     cellFar: { light: BASE, dark: BASE },
     itemMinPx: 12,
     itemGeometries: {
@@ -50901,6 +50952,7 @@ const SIMON_APP = (() => {
     cellTitle(c, r){
       const idx = boardIdx(c, r), lv = levelAt(idx), S = SEQS.get(idx * 8 + lv), g = GAMES.get(gkey(c, r));
       const best = S ? BEST.get(bestKey(S)) : null;
+      if (g && g.S.song != null) return 'Simon — ' + g.S.name + (BEST.get(bestKey(g.S)) != null ? ' · played through' : '') + (g.state === 'over' ? (g.won ? ' · you played it' : ' · over at ' + g.score + ' of ' + g.S.len) : g.state !== 'ready' ? ' · note ' + g.n + ' of ' + g.S.len : ' (tap to play)');
       return 'Simon — level ' + lv + ', ' + LV[lv - 1].pads + ' pads' + (best != null ? ' · best ' + best : '')
            + (g && g.state !== 'ready' ? ' · ' + (g.state === 'over' ? 'over at ' + g.score : 'round ' + g.n) : '');
     },
@@ -50947,7 +50999,7 @@ const SIMON_APP = (() => {
       for (let p = 0; p < 4; p++){ const a0 = -Math.PI / 2 + p * Math.PI / 2 + 0.05, a1 = a0 + Math.PI / 2 - 0.1;
         ctx.fillStyle = '#' + PAD[p].toString(16).padStart(6, '0'); ctx.beginPath(); ctx.arc(cx, cx, R, a0, a1); ctx.arc(cx, cx, r, a1, a0, true); ctx.closePath(); ctx.fill(); }
     },
-    _debug: { seqOf, stepOf, padAt, gameAt, fresh, begin, press, stepGame, shownLit, levelAt, boardIdx, LV, GAMES, BEST, SEQS,
+    _debug: { SONGS, songSeq, playSong, get SONG(){ return SONG; }, seqOf, stepOf, padAt, gameAt, fresh, begin, press, stepGame, shownLit, levelAt, boardIdx, LV, GAMES, BEST, SEQS,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
@@ -64465,6 +64517,18 @@ const WAR_APP = (() => {
     return out.sort((x, y) => x.dist - y.dist);
   }
   const weakest = list => list.reduce((b, t) => !b || t.hp + t.dist * 12 < b.hp + b.dist * 12 ? t : b, null);
+  /* Doctrines (Nov 8: "where could we take this game?" … "proceed"): the four sides fight differently, so the war reads as four opponents. `rate` stretches a side's reload
+     (below 1 fires faster), `aimL` is the share of its shots aimed at a launcher instead of the keep, `pick` how it chooses a board (the `weakest` by hit points and distance, or
+     the `nearest`), `warhead` the hit points a board must still have for a warhead to be worth it. Red rushes (fast, at keeps, the weakest), Blue snipes launchers, Green
+     turtles (slow, the nearest, a little at launchers), Gold hoards its warheads for the strong. The same shots and rules as ever; only the choosing differs. */
+  const DOCTRINES = [
+    { name: 'Rusher',  rate: 0.8,  aimL: 0.15, pick: 'weakest', warhead: 50 },
+    { name: 'Sniper',  rate: 1.0,  aimL: 0.8,  pick: 'weakest', warhead: 50 },
+    { name: 'Turtle',  rate: 1.25, aimL: 0.3,  pick: 'nearest', warhead: 50 },
+    { name: 'Hoarder', rate: 1.0,  aimL: 0.45, pick: 'weakest', warhead: 85 },
+  ];
+  const nearestOf = list => list.reduce((b, t) => !b || t.dist < b.dist ? t : b, null);
+  const chooseFor = (side, list) => DOCTRINES[side].pick === 'nearest' ? nearestOf(list) : weakest(list);
   /* Where a tap at (u, v) of the board points: the hostile board in range whose way from the middle is within 60° of it (the board beside is at
      (-1, 0) when the column rises, so the tap's way is turned over), the nearest of those; else, and for a tap in the middle, the weakest. */
   function pickTarget(c, r, k, tu, tv){
@@ -64517,7 +64581,7 @@ const WAR_APP = (() => {
     OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
     FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
     if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
-    saveOwn();
+    saveOwn(); checkGoal(); mapDraw();
     if (side === SIDE || was === SIDE) SND.play(side === SIDE ? 'win' : 'lose');
   }
   function impact(m){
@@ -64552,13 +64616,13 @@ const WAR_APP = (() => {
     for (let dc = -WAR_R; dc <= WAR_R; dc++) for (let dr = -WAR_R; dr <= WAR_R; dr++){
       const c = wrapc(cc + dc), r = wrapc(cr + dr), own = ownerOf(c, r);
       if (own === SIDE && isLive(c, r)) continue;
-      const lv = levelAt(boardIdx(c, r)), mult = LEVEL_MULT[lv - 1] * (own === SIDE ? GARRISON : 1), rd = rdyOf(c, r);
+      const D = DOCTRINES[own], lv = levelAt(boardIdx(c, r)), mult = LEVEL_MULT[lv - 1] * (own === SIDE ? GARRISON : 1) * D.rate, rd = rdyOf(c, r);
       for (let k = 0; k < KINDS.length; k++){
         if (rd[k] > SIM.t) continue;
-        const t = weakest(reach(c, r, k));
-        if (!t || (k === 4 && t.hp < 50)){ rd[k] = SIM.t + 0.8 + rnd(); continue; }
+        const t = chooseFor(own, reach(c, r, k));
+        if (!t || (k === 4 && t.hp < D.warhead)){ rd[k] = SIM.t + 0.8 + rnd(); continue; }
         let aim = -1;
-        if (rnd() < 0.45){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
+        if (rnd() < D.aimL){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
         launch(c, r, k, t.c, t.r, mult, aim);
       }
     }
@@ -64593,13 +64657,72 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; saveOwn(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
     const n = [0, 0, 0, 0];
     for (let dc = -R; dc <= R; dc++) for (let dr = -R; dr <= R; dr++) n[ownerOf(c + dc, r + dr)]++;
     return n;
+  }
+
+  /* A reason to play (Nov 8: "where could we take this game?" … "proceed"): a goal, a territory minimap. The goal (the menu's Goal, localStorage
+     `boardwar.goal`) is a number of boards to capture from the other sides (`CAPTURE_GOALS`, 0 the free war that never ends); it is lost when none of
+     the 25 boards of your home block is yours any more. `realm` counts what you hold: the home block's boards still yours and every board you took.
+     A result (`boardwar.result`) is kept once, said in a box once, and cleared by a new war or another goal. */
+  const CAPTURE_GOALS = [0, 10, 25, 50], HOME_N = 5;
+  let GOAL = Math.max(0, Math.min(CAPTURE_GOALS.length - 1, load('boardwar.goal', OWN.size ? 0 : 1) | 0));
+  let RESULT = load('boardwar.result', null);
+  function realm(){
+    let home = 0, took = 0;
+    for (let c = 0; c < HOME_N; c++) for (let r = 0; r < HOME_N; r++) if (ownerOf(c, r) === SIDE) home++;
+    for (const [k, v] of OWN) if (v === SIDE){ const c = Math.floor(k / GS), r = k % GS; if (regionSide(c, r) !== SIDE) took++; }
+    return { home, took };
+  }
+  function checkGoal(){
+    if (RESULT || !CAPTURE_GOALS[GOAL]) return;
+    const R = realm();
+    const res = R.took >= CAPTURE_GOALS[GOAL] ? 'won' : (R.home === 0 ? 'lost' : null);
+    if (!res) return;
+    RESULT = { goal: CAPTURE_GOALS[GOAL], r: res, took: R.took }; save('boardwar.result', RESULT);
+    try { confirmAction(res === 'won' ? 'Victory! ' + R.took + ' boards taken from the other sides.' : 'Defeat. Your home block has fallen with ' + R.took + ' boards taken.', 'Keep playing', () => {}); } catch {}
+  }
+  function setGoal(g){ GOAL = (g + CAPTURE_GOALS.length) % CAPTURE_GOALS.length; save('boardwar.goal', GOAL); RESULT = null; save('boardwar.result', null); checkGoal(); }
+
+  /* The minimap: a square of boards round the one in view (`MAP_R` each way), a pixel block a board in its owner's colour, the view marked white,
+     your home block outlined; a tap flies to the board tapped. Redrawn twice a second while this game is up, and when a board changes hands. */
+  const MAP_R = 30, MAP_PX = 3;
+  let MAP = null, MAP_TIMER = 0;
+  function mapDraw(){
+    if (!MAP) return;
+    const [cc, cr] = center(), n = MAP_R * 2 + 1, g = MAP.cv.getContext('2d');
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++){
+      g.fillStyle = '#' + SIDES[ownerOf(cc - MAP_R + i, cr - MAP_R + j)].a.toString(16).padStart(6, '0');
+      g.fillRect(i * MAP_PX, j * MAP_PX, MAP_PX, MAP_PX);
+    }
+    g.strokeStyle = '#fff'; g.lineWidth = 1; g.strokeRect(MAP_R * MAP_PX - 1.5, MAP_R * MAP_PX - 1.5, MAP_PX + 3, MAP_PX + 3);
+    const R = realm(), goal = CAPTURE_GOALS[GOAL];
+    MAP.tx.textContent = SIDES[SIDE].name + ' · home ' + R.home + '/25 · taken ' + R.took + (goal ? ' of ' + goal : '') + (RESULT ? (RESULT.r === 'won' ? ' · VICTORY' : ' · DEFEAT') : '');
+    MAP.at = [cc, cr];
+  }
+  function mapShow(on){
+    if (!on){ if (MAP){ clearInterval(MAP_TIMER); MAP.el.remove(); MAP = null; } return; }
+    if (MAP) return;
+    const el = document.createElement('div'), cv = document.createElement('canvas'), tx = document.createElement('div'), n = MAP_R * 2 + 1;
+    el.id = 'warMap'; cv.width = cv.height = n * MAP_PX;
+    el.style.cssText = 'position:fixed;left:8px;bottom:64px;z-index:30;background:rgba(14,16,20,.82);border:1px solid #55585f;border-radius:8px;padding:5px;'
+      + 'font:0.6875rem ' + UI_SANS + ';color:#e8eaee;line-height:1.3;max-width:' + (n * MAP_PX + 4) + 'px';
+    cv.style.cssText = 'display:block;cursor:pointer;image-rendering:pixelated';
+    el.append(cv, tx); document.body.appendChild(el);
+    MAP = { el, cv, tx, at: [0, 0] };
+    cv.addEventListener('click', e => {
+      const b = cv.getBoundingClientRect(), i = Math.floor((e.clientX - b.left) / b.width * n), j = Math.floor((e.clientY - b.top) / b.height * n);
+      if (i < 0 || j < 0 || i >= n || j >= n) return;
+      e.stopPropagation();
+      try { gotoCell(wrapc(MAP.at[0] - MAP_R + i), wrapc(MAP.at[1] - MAP_R + j)); } catch {}
+    });
+    for (const t of ['pointerdown', 'touchstart', 'mousedown', 'wheel']) el.addEventListener(t, e => e.stopPropagation(), { passive: true });
+    mapDraw(); MAP_TIMER = setInterval(mapDraw, 500);
   }
 
   /* ─── DRAWING ─── */
@@ -64828,6 +64951,7 @@ const WAR_APP = (() => {
       { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
       { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
       { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
+      { label: () => 'Goal: ' + (CAPTURE_GOALS[GOAL] ? 'take ' + CAPTURE_GOALS[GOAL] + ' boards' : 'free war'), title: 'What ends the war: take this many boards from the other sides (victory), or lose your whole home block (defeat). Free war never ends.', on(){ setGoal(GOAL + 1); mapDraw(); } },
       { label: 'New war', title: 'Every board back to where the war began, and the score at nothing.', on(){ newWar(); } },
     ]}],
     cellFar: { light: 0x3b4150, dark: 0x343946 },
@@ -64856,7 +64980,10 @@ const WAR_APP = (() => {
            + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost;
     },
     onSelect(){ return true; },
-    onFramed(c, r){ LIVE = c == null ? null : { c, r }; },
+    onEnter(){ mapShow(true); },
+    onLeave(){ mapShow(false); },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; mapDraw(); },
+
     noDoubleTap(){ return !!LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE; },
     onReset(){ newWar(); return true; },
     onCellTap(c, r, u, v){
@@ -64875,7 +65002,7 @@ const WAR_APP = (() => {
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
     _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
-              selectKind, newWar, setSide, tally, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
+              selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
