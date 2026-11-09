@@ -4209,7 +4209,14 @@ try {
           const where = n => page.evaluate(n => { const el = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + (n - 1) && t.style.display !== 'none'); if (!el) return null; const b = el.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
           let t = null, tries = 0;
           for (; tries < 40; tries++){ const a = await where(tiles); await page.waitForTimeout(250); const b = await where(tiles); if (a && b && Math.abs(a[0] - b[0]) < 1 && Math.abs(a[1] - b[1]) < 1){ t = b; break; } }
-          if (t){ await page.mouse.click(t[0], t[1]); await page.waitForTimeout(400); }
+          // (Nov 9: if the click did not count a hint it is given again, once the tile has held still: on CI and on main the first click sometimes fell on a row still moving. A click that worked is not repeated, since a second would cost another hint)
+          const hintsNow = () => page.evaluate(([c, rr]) => { const g = window.getFieldApp()._debug.games.get(c + '_' + rr); return g ? g.hints : -1; }, at);
+          for (let again = 0; again < 3 && t; again++){
+            await page.mouse.click(t[0], t[1]); await page.waitForTimeout(600);
+            if ((await hintsNow()) >= 1) break;
+            let t2 = null; for (let k = 0; k < 40 && !t2; k++){ const a = await where(tiles); await page.waitForTimeout(250); const b = await where(tiles); if (a && b && Math.abs(a[0] - b[0]) < 1 && Math.abs(a[1] - b[1]) < 1) t2 = b; }
+            if (t2) t = t2;
+          }
           real.tile = { tiles, at: t, tries };
         }
         real[key] = await page.evaluate(([c, rr]) => { const A = window.getFieldApp(), g = A._debug.games.get(c + '_' + rr); return g && { st: g.state, said: !!g.said, hints: g.hints, title: A.cellTitle(c, rr) }; }, at);
@@ -4560,8 +4567,13 @@ try {
       // the row's settings: a real click on the Points tile
       if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
       const t0 = await page.evaluate(() => window.getFieldApp()._debug.SET.target);
-      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
-      if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(400); }
+      // (Nov 9: the tile is clicked once it holds still, and again if the setting did not move: a click on the row while it was still sliding in changed nothing, 11 → 11, on CI and on main alike)
+      const pTile = () => page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      for (let tries = 0; tries < 4 && (await page.evaluate(() => window.getFieldApp()._debug.SET.target)) === t0; tries++){
+        let tile = null;
+        for (let k = 0; k < 40 && !tile; k++){ const a = await pTile(); if (a){ await page.waitForTimeout(250); const b = await pTile(); if (b && Math.abs(a[0] - b[0]) < 1 && Math.abs(a[1] - b[1]) < 1) tile = b; } else await page.waitForTimeout(250); }
+        if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(600); }
+      }
       real.tile = { from: t0, to: await page.evaluate(() => window.getFieldApp()._debug.SET.target), stored: await page.evaluate(() => JSON.parse(localStorage.getItem('pong.settings') || '{}').target) };
       await page.evaluate(() => { const D = window.getFieldApp()._debug; while (D.SET.target !== 11) D.setting(2); });
       // a board no one plays moves
@@ -4909,8 +4921,10 @@ try {
       real.arrow = (await rd()).x > a0 + 0.05;
       // your serve, waiting: a real click serves it
       await page.evaluate(k => { const D = window.getFieldApp()._debug, G = D.GAMES.get(k).G; D.setServe(G, 0); G.serveAt = G.t + 100; }, key);
-      await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
-      const sv = await rd(); real.serve = sv.gs === 'play' || sv.gs === 'point' ? 'served' : sv.gs;
+      // (Nov 9: clicked again, up to four times, until it is served: on a busy runner the click was taken before the board was ready and the serve stayed waiting, on CI and on main alike)
+      let sv = null;
+      for (let k = 0; k < 4; k++){ await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(600); sv = await rd(); if (sv.gs === 'play' || sv.gs === 'point') break; }
+      real.serve = sv.gs === 'play' || sv.gs === 'point' ? 'served' : sv.gs;
       // the match: the computer held in a back corner, your player put where each ball comes
       real.match = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), G = g.G, P = G.pl[0], Q = G.pl[1];
         G.target = 3; G.score = [0, 0]; Q.ai = { react: 99, err: 0.03, v: 0, acc: 0, aim: 0, drop: 0, lob: 0 }; Q.think.next = 1e9;
