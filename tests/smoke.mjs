@@ -8379,7 +8379,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${bwuOk ? 'ok  ' : 'FAIL'} board war: supplies from your side's boards, a level for 30 × level² (the first 30), a mortar's damage 10 → 12.5 and reload 1.6 → 1.408 s for your side, three levels at most, a new war starting over`);
     // BOARD WAR: CASTLES PAY, REPAIR, FLAK (Nov 9: "1,2,5" of the playground ideas): income falls to 0.4 of full with every board's walls gone, repair costs by the damage and puts
     // hit points and launchers back, flak brings down some high arcs (a playground: loose bounds)
-    const bwr = await page.evaluate(() => {
+    const bwrf = await page.evaluate(() => {
   const D = window.getFieldApp()._debug, out = {}, GS = window.FIELD_WORLD.gridSize ? window.FIELD_WORLD.gridSize() : 10000, key = (c, r) => ((c % GS + GS) % GS) * GS + ((r % GS + GS) % GS);
   D.newWar(); D.SIM.ideal = true; D.SIM.quiet = true; D.LIVE = { c: 0, r: 0 };
   const full = D.income();
@@ -8395,11 +8395,11 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   for (let i = 0; i < 40; i++){ D.FLAK.clear(); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t + 1e6 }); D.rearm(0, 0); D.MIS.length = 0; D.launch(0, 0, 0, 1, 0, 0); D.advance(3); shot++; if (D.HP.get(key(1, 0)).hp < 100) hits++; }
   out.flak = [shot, hits];
   return out;
-}));
-    const bwrOk = Math.abs(bwr.income[0] - 1.6) < 0.05 && bwr.income[1] < bwr.income[0] * 0.45 && bwr.income[1] > bwr.income[0] * 0.35 && bwr.nothing[0] === 0 && bwr.nothing[1] === false
-      && bwr.cost > 0 && bwr.broke === false && bwr.ok === true && bwr.after[0] === 0 && bwr.flak[1] > 2 && bwr.flak[1] < bwr.flak[0] - 2;
-    if (!bwrOk) failures.push('[boardwar repair, flak] ' + JSON.stringify(bwr));
-    console.log(`${bwrOk ? 'ok  ' : 'FAIL'} board war: walls whole pay full income (${bwr.income.map(x => x.toFixed(2)).join(' → ')} with none), repair costs ${bwr.cost} and mends, flak lets ${bwr.flak[1]} of ${bwr.flak[0]} mortar shots through`);
+});
+    const bwrfOk = Math.abs(bwrf.income[0] - 1.6) < 0.05 && bwrf.income[1] < bwrf.income[0] * 0.45 && bwrf.income[1] > bwrf.income[0] * 0.35 && bwrf.nothing[0] === 0 && bwrf.nothing[1] === false
+      && bwrf.cost > 0 && bwrf.broke === false && bwrf.ok === true && bwrf.after[0] === 0 && bwrf.flak[1] > 2 && bwrf.flak[1] < bwrf.flak[0] - 2;
+    if (!bwrfOk) failures.push('[boardwar repair, flak] ' + JSON.stringify(bwrf));
+    console.log(`${bwrfOk ? 'ok  ' : 'FAIL'} board war: walls whole pay full income (${bwrf.income.map(x => x.toFixed(2)).join(' → ')} with none), repair costs ${bwrf.cost} and mends, flak lets ${bwrf.flak[1]} of ${bwrf.flak[0]} mortar shots through`);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SIM.quiet = false; D.newWar(); });
     // SIMON'S SONGS (Nov 8: "can you add buttons to pre-set songs?", then "can you add more songs?"): twelve tunes, a pad a distinct note lowest first and sounding at its own pitch, a button a song
     // in the bottom row beginning that tune on the framed board, each round playing one more note, the whole song played back winning (kept as the best), a wrong pad losing
