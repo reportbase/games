@@ -1201,6 +1201,8 @@
        the same item, or Escape, brings them back. Hidden where the browser cannot (an iPhone's Safari takes only video). -->
   <!-- THE BOARD LOCK (Oct 31): shown only while a double tap has locked the view on a board; lets it pan again. -->
   <button id="bBoardLock" hidden title="A double tap locked this board in place, so the view does not pan. Unlock it to pan again.">Unlock the board</button>
+  <!-- OPEN… IS EVERY APP'S (Nov 8: "Open should be Open...  in the menu.   And it should be in every application.    You should not have to select photo gallery first."): it sat in the gallery's own menu section; now in the field's top section beside Application…, so any app opens a file (the load switches to the app the file belongs to). -->
+<button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Open&#8230;</button>
   <button id="bFullScreen" title="Fill the whole screen with the field, the browser's own bars hidden. Choose it again, or press Escape, to leave.">Full screen</button>
   </div>
   <div id="appMenu"></div>
@@ -1311,7 +1313,6 @@
          switches the app to them — but the bar's open chip is the field's own
          door (same input, same handler), so the field loses nothing by the
          menu item belonging to the app that reaches for it. -->
-    <button id="bLoadImage" title="Open anything into the field: images, a PDF, a book (.epub), a JSON file, a deck of flash cards (.csv, .tsv) or a comic archive (.cbz, .cbr, .cb7) hang one per board in the photo gallery; a game record (.pgn, .pdn, .sgf) lays its boards out and switches to chess, draughts or Go. Dropping files anywhere on the window does the same.">Open</button>
     <input type="file" id="importImageFile" accept="image/*,.zip,application/zip,.cbz,.cbr,.cb7,.cbt,.7z,.tar,.tgz,.pdf,application/pdf,.epub,application/epub+zip,.pgn,.pdn,.sgf,.tvf3d,.golf,.tvf,.json,.jsonl,.ndjson,.geojson,application/json,.csv,.tsv,.txt,text/csv,.md,.markdown,.mdown,.mkd,text/markdown" multiple hidden>
     <button id="bLoadBucket" title="Browse a bucket and open a file from it. The list shows what THIS app can open — .pgn games under chess, pictures and archives under the gallery. Type another bucket name and press Enter to list it. Same load without the panel: field.html?bucket=NAME&amp;file=match.pgn (tvfBucket.usage() for the flags).">Bucket&#8230;</button>
     <label id="bFullPrintsRow" title="Bake prints at full resolution: up to 4096px on the long side (PDF and book pages 3072) instead of 2048 (1536). Costs about four times the graphics memory per print, ~90MB at 4096, and a big comic can pass what an integrated GPU holds — eviction looks like pictures swapping on their own. Applies to pictures opened after it is ticked."><input type="checkbox" id="bFullPrints"> Full-res prints</label>
@@ -23477,7 +23478,6 @@ const GALLERY_APP = (() => {
       { label: () => 'Tilt to glide: ' + (ARCADE.tilt.on ? 'on' : 'off'),
         title: 'On a phone: tip it the way you want to travel over the pictures; the further you tip, the faster. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!ARCADE.tilt.on, (m, ms) => { try { engineNotice(m, ms); } catch {} }).then(() => galleryTiltLoop()); } },
-      { ref: 'bLoadImage' },
       { ref: 'bLoadBucket' },
       { ref: 'bFullPrintsRow' },
       { ref: 'bSelfCheck', debug: true },
@@ -50721,6 +50721,14 @@ const SIMON_APP = (() => {
     { name: 'Ode to Joy',     notes: [64, 64, 65, 67, 67, 65, 64, 62, 60, 60, 62, 64, 64, 62, 62] },
     { name: 'Jingle Bells',   notes: [64, 64, 64, 64, 64, 64, 64, 67, 60, 62, 64, 65, 65, 65, 65, 65, 64, 64, 64, 64, 62, 62, 64, 62, 67] },
     { name: 'Happy Birthday', notes: [67, 67, 69, 67, 72, 71, 67, 67, 69, 67, 74, 72, 67, 67, 79, 76, 72, 71, 69, 77, 77, 76, 72, 74, 72] },
+    // (Nov 8: "can you add more songs?": seven more, all old tunes in the public domain, appended so the first five keep their places)
+    { name: 'Row Your Boat',   notes: [60, 60, 60, 62, 64, 64, 62, 64, 65, 67, 72, 72, 72, 67, 67, 67, 64, 64, 64, 60, 60, 60, 67, 65, 64, 62, 60] },
+    { name: 'Frère Jacques',   notes: [60, 62, 64, 60, 60, 62, 64, 60, 64, 65, 67, 64, 65, 67] },
+    { name: 'Au clair',        notes: [60, 60, 60, 62, 64, 62, 60, 64, 62, 62, 60, 60, 60, 60, 62, 64, 62, 60, 64, 62, 62, 60] },
+    { name: 'Hot Cross Buns',  notes: [64, 62, 60, 64, 62, 60, 60, 60, 60, 60, 62, 62, 62, 62, 64, 62, 60] },
+    { name: 'London Bridge',   notes: [67, 69, 67, 65, 64, 65, 67, 62, 64, 65, 64, 65, 67, 67, 69, 67, 65, 64, 65, 67, 62, 67, 64, 60] },
+    { name: 'Itsy Bitsy',      notes: [67, 60, 60, 60, 62, 64, 64, 64, 62, 60, 62, 64, 60] },
+    { name: 'Fifth Symphony',  notes: [67, 67, 67, 63, 65, 65, 65, 62] },
   ];
   const hz = m => 440 * Math.pow(2, (m - 69) / 12);
   let SONG = -1;                                          // (the song in hand, -1 the board's own sequence; kept for the session)
@@ -64353,6 +64361,61 @@ const WAR_APP = (() => {
      to a burst near it (the burst's reach for it, 1.5 times the missile's damage at the heart of it), is a wreck at none (it cannot fire) and is built again
      `REBUILD` seconds on at half strength; a board that changes sides has its launchers at half. */
   const LMAX = [40, 40, 40, 40, 60], REBUILD = 60;
+  /* Supplies and upgrades (Nov 8: "What's next" … "Proceed", the plan's next step: "a resource from held castles that upgrades launchers"): the boards of
+     your side near the one in view (the war's own reach, `WAR_R`) each bring `INCOME` supplies a second, whatever the castle's state, so holding ground
+     pays and losing it costs; supplies buy a launcher kind a level (`UPG`, up to `UP_MAX`), each level adding `UP_DMG` of its damage and taking `UP_RELOAD`
+     off its reload, for every launcher of that kind on your side's boards (the computer's sides are not upgraded). The cost of level n + 1 is `UP_COST` × (n + 1)².
+     Kept in localStorage (`boardwar.supply`, `boardwar.upg`); a new war starts them over. */
+  const INCOME = 0.02, UP_MAX = 3, UP_DMG = 0.25, UP_RELOAD = 0.12, UP_COST = 30;
+  let SUPPLY = +load('boardwar.supply', 0) || 0;
+  const UPG = (() => { const u = load('boardwar.upg', null); return KINDS.map((_, i) => Math.max(0, Math.min(UP_MAX, u && u[i] | 0))); })();
+  const upOf = (side, k) => side === SIDE ? UPG[k] : 0;
+  /* Castles pay by their state, repair, and flak (Nov 9: "1,2,5" of the playground ideas): a board of yours brings its full `INCOME` only with its walls whole, and
+     `CASTLE_FLOOR` (0.4) of it with none standing (its hit points are what the curtain shows), so defending the walls pays. Repair spends supplies to put a board's
+     hit points and its launchers back at once (`REPAIR_HP` a point, `REPAIR_L` a launcher point) in place of waiting out the heal and the rebuild. Flak: every board has
+     `FLAK_MAX` shots that bring down a high arc (mortar or cluster; rockets and cruise fly too flat, the warhead too big) with chance `FLAK_P`, one charge back every
+     `FLAK_EVERY` seconds, so a lone mortar is a nuisance to a board and a barrage is not. */
+  const CASTLE_FLOOR = 0.4, REPAIR_HP = 0.25, REPAIR_L = 0.15, FLAK_MAX = 2, FLAK_P = 0.55, FLAK_EVERY = 12;
+  const FLAK = new Map();
+  function flakTry(c, r){
+    const k = key(c, r); let e = FLAK.get(k);
+    if (!e) FLAK.set(k, e = { n: FLAK_MAX, t: SIM.t });
+    if (e.n < FLAK_MAX){ const got = Math.floor((SIM.t - e.t) / FLAK_EVERY); if (got > 0){ e.n = Math.min(FLAK_MAX, e.n + got); e.t += got * FLAK_EVERY; } }
+    if (e.n === FLAK_MAX) e.t = SIM.t;
+    if (e.n <= 0) return false;
+    e.n--; if (e.n === FLAK_MAX - 1) e.t = SIM.t;
+    return rnd() < FLAK_P;
+  }
+  function income(){
+    let sum = 0; const [c0, r0] = [LIVE.c, LIVE.r];
+    for (let dc = -WAR_R; dc <= WAR_R; dc++) for (let dr = -WAR_R; dr <= WAR_R; dr++){
+      const c = c0 + dc, r = r0 + dr;
+      if (ownerOf(c, r) === SIDE) sum += INCOME * (CASTLE_FLOOR + (1 - CASTLE_FLOOR) * hpOf(c, r) / MAXHP);
+    }
+    return sum;
+  }
+  function repairCost(c, r){
+    const L = lhpOf(c, r); let x = (MAXHP - hpOf(c, r)) * REPAIR_HP;
+    for (let i = 0; i < LMAX.length; i++) x += (LMAX[i] - L.hp[i]) * REPAIR_L;
+    return Math.ceil(x - 1e-9);
+  }
+  function repair(c, r){
+    if (c == null){ if (!LIVE) return false; c = LIVE.c; r = LIVE.r; }
+    if (ownerOf(c, r) !== SIDE) return false;
+    const x = repairCost(c, r); if (x <= 0 || SUPPLY + 1e-9 < x) return false;
+    SUPPLY -= x; HP.delete(key(c, r)); LHP.set(key(c, r), { hp: LMAX.slice(), at: LMAX.map(() => 0) }); saveUp();
+    try { SND.play('win'); fieldItemsChanged(); } catch {}
+    return true;
+  }
+  const upCost = k => UPG[k] >= UP_MAX ? 0 : UP_COST * (UPG[k] + 1) ** 2;
+  const saveUp = () => { save('boardwar.supply', Math.floor(SUPPLY * 100) / 100); save('boardwar.upg', UPG); };
+  function upgrade(k){
+    if (k == null) k = SEL;
+    const c = upCost(k);
+    if (!c || SUPPLY + 1e-9 < c) return false;
+    SUPPLY -= c; UPG[k]++; saveUp(); try { SND.play('win'); fieldItemsChanged(); } catch {}
+    return true;
+  }
   function lhpOf(c, r){
     const k = key(c, r); let e = LHP.get(k);
     if (!e){ e = { hp: LMAX.slice(), at: LMAX.map(() => 0) }; LHP.set(k, e); }
@@ -64550,7 +64613,8 @@ const WAR_APP = (() => {
     const K = KINDS[k], side = ownerOf(c, r), dc = dwrap(tc, c), dr = dwrap(tr, r), dist = Math.hypot(dc, dr);
     if (!dist || dist > K.range + 1e-9 || ownerOf(tc, tr) === side || !alive(c, r, k)) return 0;
     const rd = rdyOf(c, r); if (rd[k] > SIM.t + 1e-9) return 0;
-    rd[k] = SIM.t + (K.n - 1) * K.gap + K.reload * (mult || 1) * (mult ? 0.8 + 0.6 * rnd() : 1);
+    const up = upOf(side, k);
+    rd[k] = SIM.t + (K.n - 1) * K.gap + K.reload * (1 - UP_RELOAD * up) * (mult || 1) * (mult ? 0.8 + 0.6 * rnd() : 1);
     const D = GOLFD(), WD = D.WD, [PU, , PV] = pitch(), HT = holeFor(tc, tr), TT = terrOf(HT), pad = padOf(c, r, k), keep = TT.keep, ak = aim != null && aim >= 0 && alive(tc, tr, aim) ? TT.pads[aim] : keep;   // (aim: a launcher of the target to fire at, else its keep)
     // (where the launcher stands, in the target board's frame: a board a column on is at −u, so the source is at +u)
     const ou = pad.u + dc * PU, ov = pad.v + dr * PV, tu0 = ak.x / WD, tv0 = ak.y;
@@ -64562,7 +64626,7 @@ const WAR_APP = (() => {
       let bx = Math.max(D.CW, Math.min(WD - D.CW, ak.x + Math.cos(a) * rr)), by = Math.max(D.CW, Math.min(1 - D.CW, ak.y + Math.sin(a) * rr)), stopped = false;
       if (K.flat && !SIM.ideal){ const L = TT.los(eu * WD, ev, bx, by, TT.hh(eu * WD, ev) + K.flat); bx = L[0]; by = L[1]; stopped = L[2]; }
       const f = CHIP + (1 - CHIP) * Math.max(0, 1 - Math.hypot(bx - keep.x, by - keep.y) / K.blast);
-      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * f, base: K.dmg, f, stopped, aim: ak === keep ? -1 : aim,
+      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * (1 + UP_DMG * up) * f, base: K.dmg * (1 + UP_DMG * up), f, stopped, aim: ak === keep ? -1 : aim,
                  su: pad.u, sv: pad.v, gs: pad.h, tu: bx / WD, tv: by, gy: TT.hh(bx, by) / WD, dc, dr, id: ++PID });
     }
     STATS.shots++;
@@ -64590,6 +64654,10 @@ const WAR_APP = (() => {
     if (FX.length > MAX_FX) FX.splice(0, FX.length - MAX_FX);
     if (isLive(tc, tr)) SND.play('boom');
     if (ownerOf(tc, tr) === m.side) return;                                  // (the board changed sides while it flew: it falls on a friend's ground)
+    if (!SIM.ideal && !K.flat && m.k !== 4 && flakTry(tc, tr)){               // (flak: a high arc shot down above the board, a puff and no harm)
+      FX.push({ c: tc, r: tr, u: m.tu, v: m.tv, y: m.gy + 0.08, t: SIM.t, k: 0, small: true, stopped: true });
+      return;
+    }
     const taken = hurt(tc, tr, m.dmg, m.side);
     if (!taken){                                                              // (and the launchers near the burst)
       const D = GOLFD(), WD = D.WD, L = lhpOf(tc, tr);
@@ -64629,13 +64697,16 @@ const WAR_APP = (() => {
   }
   /* The war's clock, the page's own and no more than a quarter second a step (a tab left alone does not fire a thousand missiles when it wakes). */
   function advance(dt){
+    const dt0 = dt;
     while (dt > 1e-9){
       const s = Math.min(dt, 0.1); dt -= s; SIM.t += s;
       for (let i = MIS.length - 1; i >= 0; i--){ const m = MIS[i]; if (SIM.t >= m.t0 + m.dur){ MIS.splice(i, 1); impact(m); } }
       ai();
     }
     while (FX.length && SIM.t - FX[0].t > CAP_FX + 0.1) FX.shift();
+    if (LIVE){ SUPPLY += dt0 * income(); if (Math.floor(SIM.t) !== lastSave){ lastSave = Math.floor(SIM.t); saveUp(); } }
   }
+  let lastSave = 0;
   function pump(){
     const r = performance.now() / 1000;
     if (!lastReal){ lastReal = r; return; }
@@ -64657,7 +64728,7 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -64950,6 +65021,8 @@ const WAR_APP = (() => {
       SND.item,
       { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
       { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
+      { label: () => { const x = LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE ? repairCost(LIVE.c, LIVE.r) : 0; return x ? 'Repair this board (' + x + ' supplies)' : 'Repair this board: nothing to mend'; }, title: 'Spend supplies to put this board\'s hit points and every launcher back at full at once. A board with its walls standing pays more income.', disabled: () => !LIVE || ownerOf(LIVE.c, LIVE.r) !== SIDE || !repairCost(LIVE.c, LIVE.r) || SUPPLY + 1e-9 < repairCost(LIVE.c, LIVE.r), on(){ repair(); } },
+      { label: () => UPG[SEL] >= UP_MAX ? 'Upgrade ' + KINDS[SEL].name + ': at its best' : 'Upgrade ' + KINDS[SEL].name + ' to level ' + (UPG[SEL] + 1) + ' (' + upCost(SEL) + ' supplies)', title: 'Spend supplies on the launcher in hand: each level adds a quarter to its damage and takes an eighth off its reload, on every board of your side. Supplies come from your side\'s boards near the one in view.', disabled: () => UPG[SEL] >= UP_MAX || SUPPLY + 1e-9 < upCost(SEL), on(){ upgrade(SEL); } },
       { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
       { label: () => 'Goal: ' + (CAPTURE_GOALS[GOAL] ? 'take ' + CAPTURE_GOALS[GOAL] + ' boards' : 'free war'), title: 'What ends the war: take this many boards from the other sides (victory), or lose your whole home block (defeat). Free war never ends.', on(){ setGoal(GOAL + 1); mapDraw(); } },
       { label: 'New war', title: 'Every board back to where the war began, and the score at nothing.', on(){ newWar(); } },
@@ -64977,7 +65050,7 @@ const WAR_APP = (() => {
     cellTitle(c, r){
       const own = ownerOf(c, r), hp = Math.round(hpOf(c, r)), t = tally(c, r, 4), lv = levelAt(boardIdx(c, r));
       return 'Board War — ' + SIDES[own].name + ' board, ' + hp + ' hit points, level ' + lv + (own === SIDE ? ' · yours: ' + KINDS[SEL].name : ' · an enemy: fly to a ' + SIDES[SIDE].name + ' board')
-           + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost;
+           + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost + ' · supplies ' + Math.floor(SUPPLY) + ', ' + KINDS.map((k, i) => k.name.split(' ')[0] + ' ' + UPG[i]).join(' ');
     },
     onSelect(){ return true; },
     onEnter(){ mapShow(true); },
@@ -65001,7 +65074,7 @@ const WAR_APP = (() => {
       ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = sz * 0.03; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.3); ctx.quadraticCurveTo(sz * 0.5, sz * 0.0, sz * 0.78, sz * 0.7); ctx.stroke();
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
-    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
+    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, income, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
               selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
@@ -67215,7 +67288,7 @@ window.__gameRing = makeRing(document.getElementById('gameBar'));
     /* THE MENU ITEM JUST SAYS Open (Nov 1: "them menu item to open files should just say Open, not the file name."): it used to
        carry what was being read ("Reading book.epub …", "Unpacking …"); that goes to its tooltip, the label stays. */
     const b = document.getElementById('bLoadImage');
-    if (b){ b.textContent = 'Open'; b.dataset.status = t; }
+    if (b){ b.textContent = 'Open\u2026'; b.dataset.status = t; }
   };
   const _decodeBlob = async blob => {
     if (window.createImageBitmap){
