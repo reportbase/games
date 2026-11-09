@@ -64370,6 +64370,43 @@ const WAR_APP = (() => {
   let SUPPLY = +load('boardwar.supply', 0) || 0;
   const UPG = (() => { const u = load('boardwar.upg', null); return KINDS.map((_, i) => Math.max(0, Math.min(UP_MAX, u && u[i] | 0))); })();
   const upOf = (side, k) => side === SIDE ? UPG[k] : 0;
+  /* Castles pay by their state, repair, and flak (Nov 9: "1,2,5" of the playground ideas): a board of yours brings its full `INCOME` only with its walls whole, and
+     `CASTLE_FLOOR` (0.4) of it with none standing (its hit points are what the curtain shows), so defending the walls pays. Repair spends supplies to put a board's
+     hit points and its launchers back at once (`REPAIR_HP` a point, `REPAIR_L` a launcher point) in place of waiting out the heal and the rebuild. Flak: every board has
+     `FLAK_MAX` shots that bring down a high arc (mortar or cluster; rockets and cruise fly too flat, the warhead too big) with chance `FLAK_P`, one charge back every
+     `FLAK_EVERY` seconds, so a lone mortar is a nuisance to a board and a barrage is not. */
+  const CASTLE_FLOOR = 0.4, REPAIR_HP = 0.25, REPAIR_L = 0.15, FLAK_MAX = 2, FLAK_P = 0.55, FLAK_EVERY = 12;
+  const FLAK = new Map();
+  function flakTry(c, r){
+    const k = key(c, r); let e = FLAK.get(k);
+    if (!e) FLAK.set(k, e = { n: FLAK_MAX, t: SIM.t });
+    if (e.n < FLAK_MAX){ const got = Math.floor((SIM.t - e.t) / FLAK_EVERY); if (got > 0){ e.n = Math.min(FLAK_MAX, e.n + got); e.t += got * FLAK_EVERY; } }
+    if (e.n === FLAK_MAX) e.t = SIM.t;
+    if (e.n <= 0) return false;
+    e.n--; if (e.n === FLAK_MAX - 1) e.t = SIM.t;
+    return rnd() < FLAK_P;
+  }
+  function income(){
+    let sum = 0; const [c0, r0] = [LIVE.c, LIVE.r];
+    for (let dc = -WAR_R; dc <= WAR_R; dc++) for (let dr = -WAR_R; dr <= WAR_R; dr++){
+      const c = c0 + dc, r = r0 + dr;
+      if (ownerOf(c, r) === SIDE) sum += INCOME * (CASTLE_FLOOR + (1 - CASTLE_FLOOR) * hpOf(c, r) / MAXHP);
+    }
+    return sum;
+  }
+  function repairCost(c, r){
+    const L = lhpOf(c, r); let x = (MAXHP - hpOf(c, r)) * REPAIR_HP;
+    for (let i = 0; i < LMAX.length; i++) x += (LMAX[i] - L.hp[i]) * REPAIR_L;
+    return Math.ceil(x - 1e-9);
+  }
+  function repair(c, r){
+    if (c == null){ if (!LIVE) return false; c = LIVE.c; r = LIVE.r; }
+    if (ownerOf(c, r) !== SIDE) return false;
+    const x = repairCost(c, r); if (x <= 0 || SUPPLY + 1e-9 < x) return false;
+    SUPPLY -= x; HP.delete(key(c, r)); LHP.set(key(c, r), { hp: LMAX.slice(), at: LMAX.map(() => 0) }); saveUp();
+    try { SND.play('win'); fieldItemsChanged(); } catch {}
+    return true;
+  }
   const upCost = k => UPG[k] >= UP_MAX ? 0 : UP_COST * (UPG[k] + 1) ** 2;
   const saveUp = () => { save('boardwar.supply', Math.floor(SUPPLY * 100) / 100); save('boardwar.upg', UPG); };
   function upgrade(k){
@@ -64617,6 +64654,10 @@ const WAR_APP = (() => {
     if (FX.length > MAX_FX) FX.splice(0, FX.length - MAX_FX);
     if (isLive(tc, tr)) SND.play('boom');
     if (ownerOf(tc, tr) === m.side) return;                                  // (the board changed sides while it flew: it falls on a friend's ground)
+    if (!SIM.ideal && !K.flat && m.k !== 4 && flakTry(tc, tr)){               // (flak: a high arc shot down above the board, a puff and no harm)
+      FX.push({ c: tc, r: tr, u: m.tu, v: m.tv, y: m.gy + 0.08, t: SIM.t, k: 0, small: true, stopped: true });
+      return;
+    }
     const taken = hurt(tc, tr, m.dmg, m.side);
     if (!taken){                                                              // (and the launchers near the burst)
       const D = GOLFD(), WD = D.WD, L = lhpOf(tc, tr);
@@ -64663,7 +64704,7 @@ const WAR_APP = (() => {
       ai();
     }
     while (FX.length && SIM.t - FX[0].t > CAP_FX + 0.1) FX.shift();
-    if (LIVE){ SUPPLY += dt0 * INCOME * tally(LIVE.c, LIVE.r, WAR_R)[SIDE]; if (Math.floor(SIM.t) !== lastSave){ lastSave = Math.floor(SIM.t); saveUp(); } }
+    if (LIVE){ SUPPLY += dt0 * income(); if (Math.floor(SIM.t) !== lastSave){ lastSave = Math.floor(SIM.t); saveUp(); } }
   }
   let lastSave = 0;
   function pump(){
@@ -64687,7 +64728,7 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -64980,6 +65021,7 @@ const WAR_APP = (() => {
       SND.item,
       { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
       { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
+      { label: () => { const x = LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE ? repairCost(LIVE.c, LIVE.r) : 0; return x ? 'Repair this board (' + x + ' supplies)' : 'Repair this board: nothing to mend'; }, title: 'Spend supplies to put this board\'s hit points and every launcher back at full at once. A board with its walls standing pays more income.', disabled: () => !LIVE || ownerOf(LIVE.c, LIVE.r) !== SIDE || !repairCost(LIVE.c, LIVE.r) || SUPPLY + 1e-9 < repairCost(LIVE.c, LIVE.r), on(){ repair(); } },
       { label: () => UPG[SEL] >= UP_MAX ? 'Upgrade ' + KINDS[SEL].name + ': at its best' : 'Upgrade ' + KINDS[SEL].name + ' to level ' + (UPG[SEL] + 1) + ' (' + upCost(SEL) + ' supplies)', title: 'Spend supplies on the launcher in hand: each level adds a quarter to its damage and takes an eighth off its reload, on every board of your side. Supplies come from your side\'s boards near the one in view.', disabled: () => UPG[SEL] >= UP_MAX || SUPPLY + 1e-9 < upCost(SEL), on(){ upgrade(SEL); } },
       { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
       { label: () => 'Goal: ' + (CAPTURE_GOALS[GOAL] ? 'take ' + CAPTURE_GOALS[GOAL] + ' boards' : 'free war'), title: 'What ends the war: take this many boards from the other sides (victory), or lose your whole home block (defeat). Free war never ends.', on(){ setGoal(GOAL + 1); mapDraw(); } },
@@ -65032,7 +65074,7 @@ const WAR_APP = (() => {
       ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = sz * 0.03; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.3); ctx.quadraticCurveTo(sz * 0.5, sz * 0.0, sz * 0.78, sz * 0.7); ctx.stroke();
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
-    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
+    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, income, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
               selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };

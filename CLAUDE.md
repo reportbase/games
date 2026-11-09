@@ -343,6 +343,11 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   best) and the title (supplies and the five levels) show it; a new war (`newWar`, a change of side) starts supplies and levels over. Fifteen levels in all cost 2,100 supplies, about 25 minutes of holding
   the corner. Not yet: siege tools, the castle's state changing the income. The smoke test (part 7, "board war: supplies") checks the income, the costs, a mortar's damage 10 → 12.5 and reload 1.6 → 1.408 s,
   the cap and the reset.
+- **Board War: castles pay, repair, flak** (Nov 9: "The board war is a playground board to see whats possible and reasonable.", then ideas "1,2,5"): a playground, so keep these
+  small and drop what does not feel right. Income is `INCOME` × (`CASTLE_FLOOR` 0.4 + 0.6 × the board's hit points) over your boards within `WAR_R` (`income`), so whole walls pay
+  full; the menu's Repair this board (`repair`, `repairCost`: 0.25 supplies a hit point, 0.15 a launcher point) mends the board and every launcher at once; flak (`flakTry`, `FLAK`):
+  each board has 2 shots, one back every 12 s, each bringing down a mortar or cluster shell above it with chance 0.55 (rockets and cruise fly too flat, the warhead is too big;
+  `SIM.ideal` turns it off so the exact-damage checks stand). The smoke test ("board war: walls whole pay full income") has loose bounds.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
