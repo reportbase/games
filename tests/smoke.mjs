@@ -8416,6 +8416,32 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const bwnOk = bwn.aiRam.join() === 'true,true' && bwn.up0 === 0 && bwn.up1 === 1 && bwn.up9 === 3 && bwn.upI === 0 && bwn.mine === 0 && bwn.chain[0] > 0 && bwn.chain[1] > 40 && bwn.broke === 0 && bwn.rammed === 1 && bwn.sup === 35 && bwn.hp === 55 && Math.abs(bwn.wind[0] - bwn.wind[1]) > 0.1;
     if (!bwnOk) failures.push('[boardwar escalates, ram, wind] ' + JSON.stringify(bwn));
     console.log(`${bwnOk ? 'ok  ' : 'FAIL'} board war: the computer's sides upgrade with the war's age (${bwn.up0}, ${bwn.up1}, ${bwn.up9}), a capture beside your boards pays (${bwn.chain}), a ram costs 25 and breaks the keep for 45 (hit points ${bwn.hp}), the wind swells and fades`);
+    // BOARD WAR: TECHNOLOGY AND CONSTRUCTION GROW WITH TIME, AND START OVER WHEN A BOARD IS DESTROYED (Nov 9: "a board in war should get more technology and future construction as time goes on. the go back to
+    // the baseline at when they are destroyed."): a step every 90 s to four, none in the ideal case, a capture back to zero, launchers 10% harder and 6% quicker a step, 5% less damage taken a step, more built
+    const bwt = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, A = window.getFieldApp(), out = {}, GS = 10000, key = (c, r) => ((c % GS + GS) % GS) * GS + ((r % GS + GS) % GS), e = (D.SIDE + 1) % 4;
+      D.newWar(); D.SIM.quiet = true; D.SIM.ideal = false; D.LIVE = { c: 0, r: 0 };
+      const w = D.getWar0(), at = dt => { D.SIM.t = w + dt; return D.techOf(0, 0); };
+      out.steps = [at(0), at(89), at(90), at(185), at(280), at(400), at(99999)]; D.SIM.ideal = true; out.ideal = D.techOf(0, 0); D.SIM.ideal = false;
+      const count = () => { const it = A.cellItems(0, 0, 600); return [it.length, it.filter(i => i.kind === 'bwFlag').length]; };
+      D.SIM.t = w; out.built0 = count(); D.SIM.t = w + 400; out.built4 = count();
+      // a board taken is back at the baseline, its neighbour untouched
+      D.capture(1, 0, e); out.afterCap = [D.techOf(1, 0), D.techOf(0, 0)]; D.SIM.t = w + 1000; out.later = [D.techOf(1, 0), D.techOf(0, 0)];
+      // launchers: damage and reload by the firing board's tech (the mortar, level 0 upgrades)
+      const fire = tc => { D.SIM.t = w + tc; D.rearm(0, 0); D.MIS.length = 0; const before = D.SIM.t; D.launch(0, 0, 0, 1, 0); return [D.MIS[0].base, +(D.rdyOf(0, 0)[0] - before).toFixed(4)]; };
+      D.SINCE.set(key(1, 0), w + 1000 - 1);                                        // (the neighbour at baseline for the shot's target; the firing board old)
+      out.fireOld = fire(1000); D.SINCE.set(key(0, 0), w + 1000); out.fireNew = fire(1000);
+      // damage taken
+      D.SINCE.set(key(1, 0), w); D.SIM.t = w + 400; D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t + 1e6 }); D.hurt(1, 0, 20, D.SIDE); out.armour = Math.round(D.HP.get(key(1, 0)).hp);
+      D.SINCE.set(key(1, 0), D.SIM.t); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t + 1e6 }); D.hurt(1, 0, 20, D.SIDE); out.bare = Math.round(D.HP.get(key(1, 0)).hp);
+      D.newWar(); out.reset = [D.SINCE.size, at(0)];
+      return out;
+    });
+    const bwtOk = bwt.steps.join() === '0,0,1,2,3,4,4' && bwt.ideal === 0 && bwt.built4[0] > bwt.built0[0] && bwt.built4[1] > bwt.built0[1]
+      && bwt.afterCap.join() === '0,4' && bwt.later[0] === 4 && Math.abs(bwt.fireOld[0] - 14) < 1e-9 && Math.abs(bwt.fireNew[0] - 10) < 1e-9
+      && Math.abs(bwt.fireOld[1] - 1.6 * 0.76) < 1e-3 && Math.abs(bwt.fireNew[1] - 1.6) < 1e-3 && bwt.armour === 84 && bwt.bare === 80 && bwt.reset.join() === '0,0';
+    if (!bwtOk) failures.push('[boardwar technology] ' + JSON.stringify(bwt));
+    console.log(`${bwtOk ? 'ok  ' : 'FAIL'} board war: technology a step every 90 s to four (${bwt.steps}), more built at four (${bwt.built0} → ${bwt.built4}), a captured board back to ${bwt.afterCap[0]} while its neighbour stays at ${bwt.afterCap[1]}, a mortar at four ${bwt.fireOld} against ${bwt.fireNew}, 20 damage leaving ${bwt.armour} against ${bwt.bare}`);
     // BOARD WAR: CASTLES PAY, REPAIR, FLAK (Nov 9: "1,2,5" of the playground ideas): income falls to 0.4 of full with every board's walls gone, repair costs by the damage and puts
     // hit points and launchers back, flak brings down some high arcs (a playground: loose bounds)
     const bwrf = await page.evaluate(() => {

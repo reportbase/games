@@ -64385,6 +64385,14 @@ const WAR_APP = (() => {
      `FLAK_MAX` shots that bring down a high arc (mortar or cluster; rockets and cruise fly too flat, the warhead too big) with chance `FLAK_P`, one charge back every
      `FLAK_EVERY` seconds, so a lone mortar is a nuisance to a board and a barrage is not. */
   const CASTLE_FLOOR = 0.4, REPAIR_HP = 0.25, REPAIR_L = 0.15, FLAK_MAX = 2, FLAK_P = 0.55, FLAK_EVERY = 12;
+  /* Technology and construction grow with time (Nov 9: "a board in war should get more technology and future construction as time goes on. the go back to the baseline at when they are
+     destroyed."): every board has a tech level from 0 to `TECH_MAX`, a step for each `TECH_EVERY` (90) seconds since its baseline (`SINCE`: the war's start, or the moment the board was
+     last destroyed, which is when it changes hands, `capture`; a new war starts every board over). Each level makes the board's launchers hit `TECH_DMG` (10%) harder and reload `TECH_RELOAD`
+     (6%) quicker, and takes `TECH_ARMOUR` (5%) off the damage it suffers, and it builds: a pennant on the keep, taller walls and keep, small towers along the walls (2), a second ring
+     inside the first (3), banners on every tower (4). Not kept across a reload (the war's clock starts over with the page), and none in `SIM.ideal`, so the exact-damage checks stand. */
+  const TECH_MAX = 4, TECH_EVERY = 90, TECH_DMG = 0.1, TECH_RELOAD = 0.06, TECH_ARMOUR = 0.05, TECH_NAMES = ['outpost', 'fort', 'stronghold', 'citadel', 'fortress city'];
+  const SINCE = new Map();
+  const techOf = (c, r) => SIM.ideal ? 0 : Math.max(0, Math.min(TECH_MAX, Math.floor((SIM.t - (SINCE.has(key(c, r)) ? SINCE.get(key(c, r)) : WAR0)) / TECH_EVERY)));
   const FLAK = new Map();
   function flakTry(c, r){
     const k = key(c, r); let e = FLAK.get(k);
@@ -64622,8 +64630,8 @@ const WAR_APP = (() => {
     const K = KINDS[k], side = ownerOf(c, r), dc = dwrap(tc, c), dr = dwrap(tr, r), dist = Math.hypot(dc, dr);
     if (!dist || dist > K.range + 1e-9 || ownerOf(tc, tr) === side || !alive(c, r, k)) return 0;
     const rd = rdyOf(c, r); if (rd[k] > SIM.t + 1e-9) return 0;
-    const up = upOf(side, k);
-    rd[k] = SIM.t + (K.n - 1) * K.gap + K.reload * (1 - UP_RELOAD * up) * (mult || 1) * (mult ? 0.8 + 0.6 * rnd() : 1);
+    const up = upOf(side, k), tk = techOf(c, r);
+    rd[k] = SIM.t + (K.n - 1) * K.gap + K.reload * (1 - UP_RELOAD * up) * (1 - TECH_RELOAD * tk) * (mult || 1) * (mult ? 0.8 + 0.6 * rnd() : 1);
     const D = GOLFD(), WD = D.WD, [PU, , PV] = pitch(), HT = holeFor(tc, tr), TT = terrOf(HT), pad = padOf(c, r, k), keep = TT.keep, ak = aim != null && aim >= 0 && alive(tc, tr, aim) ? TT.pads[aim] : keep;   // (aim: a launcher of the target to fire at, else its keep)
     // (where the launcher stands, in the target board's frame: a board a column on is at −u, so the source is at +u)
     const ou = pad.u + dc * PU, ov = pad.v + dr * PV, tu0 = ak.x / WD, tv0 = ak.y;
@@ -64636,7 +64644,7 @@ const WAR_APP = (() => {
       if (!SIM.ideal){ const W = windAt(SIM.t), pk = WIND_PUSH * (K.flat ? 0.4 : 1) * (0.6 + 0.4 * K.arc); bx = Math.max(D.CW, Math.min(WD - D.CW, bx + W.x * pk)); by = Math.max(D.CW, Math.min(1 - D.CW, by + W.y * pk)); }
       if (K.flat && !SIM.ideal){ const L = TT.los(eu * WD, ev, bx, by, TT.hh(eu * WD, ev) + K.flat); bx = L[0]; by = L[1]; stopped = L[2]; }
       const f = CHIP + (1 - CHIP) * Math.max(0, 1 - Math.hypot(bx - keep.x, by - keep.y) / K.blast);
-      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * (1 + UP_DMG * up) * f, base: K.dmg * (1 + UP_DMG * up), f, stopped, aim: ak === keep ? -1 : aim,
+      MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * (1 + UP_DMG * up) * (1 + TECH_DMG * tk) * f, base: K.dmg * (1 + UP_DMG * up) * (1 + TECH_DMG * tk), f, stopped, aim: ak === keep ? -1 : aim,
                  su: pad.u, sv: pad.v, gs: pad.h, tu: bx / WD, tv: by, gy: TT.hh(bx, by) / WD, dc, dr, id: ++PID });
     }
     STATS.shots++;
@@ -64661,7 +64669,7 @@ const WAR_APP = (() => {
   }
   const isLive = (c, r) => LIVE && wrapc(LIVE.c) === wrapc(c) && wrapc(LIVE.r) === wrapc(r);
   function hurt(c, r, d, side){
-    const k = key(c, r), cur = hpOf(c, r) - d;
+    const k = key(c, r), cur = hpOf(c, r) - d * (1 - TECH_ARMOUR * techOf(c, r));
     if (cur <= 0){ capture(c, r, side); return true; }
     HP.set(k, { hp: cur, hit: SIM.t });
     return false;
@@ -64672,7 +64680,7 @@ const WAR_APP = (() => {
     let chain = 0;
     if (side === SIDE && !SIM.ideal) for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++) if ((dc || dr) && ownerOf(c + dc, r + dr) === SIDE) chain++;
     if (chain) SUPPLY += chain * CHAIN_SUP;
-    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP + chain * CHAIN_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
+    SINCE.set(k, SIM.t); OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP + chain * CHAIN_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
     FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
     if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
     saveOwn(); checkGoal(); mapDraw();
@@ -64766,7 +64774,7 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ WAR0 = SIM.t; RAMRDY.clear(); OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ WAR0 = SIM.t; SINCE.clear(); RAMRDY.clear(); OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -64871,24 +64879,27 @@ const WAR_APP = (() => {
   ];
   /* The castle's pieces (see terrOf): each on the ground under it, in the faction's own kind of castle (CASTLES), with its colour on roofs, banners and the keep; the curtain wall
      is knocked down in an order the hole sets as the board is hurt (rubble where a segment stood) and stands whole again as it heals. */
-  function castleItems(out, T, S, f, idx, WD, own){
+  function castleItems(out, T, S, f, idx, WD, own, tech){
+    tech = tech || 0;
     const C = T.castle, Z = CASTLES[(own == null ? 1 : own) % 4], stone = mixC(Z.stone, S.col, 0.1), dark = mixC(Z.dark, S.col, 0.1), CW = GOLFD().CW, lost = Math.floor((1 - Math.max(0, Math.min(1, f))) * 10 - 1e-6);
     const flagAt = (x, y, h0, topY, sc) => { out.push({ kind: 'bwPole', u: x / WD, v: y, scale: sc * 0.9, lift: h0 + topY, color: 0xe8e8e8 }, { kind: 'bwFlag', u: x / WD, v: y, scale: sc * 0.9, lift: h0 + topY, color: S.col }); };
     const kp = T.keep;
-    out.push({ kind: Z.keep.kind, u: kp.x / WD, v: kp.y, scale: Z.keep.sc, lift: kp.h / WD, color: S.col });
+    out.push({ kind: Z.keep.kind, u: kp.x / WD, v: kp.y, scale: Z.keep.sc * (1 + 0.07 * tech), lift: kp.h / WD, color: S.col });
+    if (tech >= 1) flagAt(kp.x + 0.02, kp.y, kp.h / WD, 1.5 * Z.keep.sc * (1 + 0.07 * tech), 0.06);                   // (tech 1: a pennant over the keep)
+    const midT = Z.mid || (tech >= 2 ? (q => ({ kind: q.kind, w: q.w * 0.6, ht: q.ht * 0.85 }))(Z.corner(1)) : null);       // (tech 2: small towers along the walls, in the faction's own kind)
     for (const m of C.moat) out.push({ kind: 'bwWater', u: m.x / WD, v: m.y, scale: m.w / WD, sx: m.len / m.w, yaw: m.a, lift: T.hh(m.x, m.y) / WD + 0.002, color: 0x2f6fb5 });
     if (C.gate){ const [gx0, gy0, gx1, gy1, ga] = C.gate, rr = T.RC + CW * 0.95, bx = kp.x + Math.cos(ga) * rr, by = kp.y + Math.sin(ga) * rr, wd = CW * 0.55, ln = CW * 1.7;
       out.push({ kind: 'bwBridge', u: bx / WD, v: by, scale: wd / WD, sx: ln / wd, yaw: ga, lift: T.hh(bx, by) / WD + 0.012, color: 0x8a6240 });
       const mx = (gx0 + gx1) / 2, my = (gy0 + gy1) / 2, L = Math.hypot(gx1 - gx0, gy1 - gy0), sc = 0.09 / WD * Z.wallH;                          // (the gatehouse's lintel over the way in)
       out.push({ kind: Z.gate, u: mx / WD, v: my, scale: sc, sx: L * 0.9 / WD / sc, yaw: Math.atan2(gy1 - gy0, gx1 - gx0), lift: T.hh(mx, my) / WD, color: stone }); }
     for (const [x0, y0, x1, y1, ht, i] of C.walls){
-      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, L = Math.hypot(x1 - x0, y1 - y0), sc = ht / WD * (i < 0 ? 1 : Z.wallH), yaw = Math.atan2(y1 - y0, x1 - x0);
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, L = Math.hypot(x1 - x0, y1 - y0), sc = ht / WD * (i < 0 ? 1 : Z.wallH * (1 + 0.08 * tech)), yaw = Math.atan2(y1 - y0, x1 - x0);
       if (i >= 0 && ((i * 3 + idx) % 10) < lost){ out.push({ kind: 'bwRubble', u: mx / WD, v: my, scale: 0.05, lift: T.hh(mx, my) / WD, yaw, color: 0x6a655c }); continue; }
       out.push({ kind: i < 0 ? 'bwWall' : Z.wall, u: mx / WD, v: my, scale: sc, sx: L * 1.04 / WD / sc, yaw, lift: T.hh(mx, my) / WD, color: i < 0 ? dark : stone });
-      if (Z.mid && i >= 0 && i % 2 === 0){ const Q = TWR[Z.mid.kind], ts = Z.mid.w * CW / WD / Q.d, ty = (Z.mid.ht / WD) / (Q.h * ts);     // (small towers half way along every other wall)
-        out.push({ kind: Z.mid.kind, u: mx / WD, v: my, scale: ts, sy: ty, lift: T.hh(mx, my) / WD, color: stone }); }
+      if (midT && i >= 0 && i % 2 === 0){ const Q = TWR[midT.kind], ts = midT.w * CW / WD / Q.d, ty = (midT.ht / WD) / (Q.h * ts);     // (small towers half way along every other wall)
+        out.push({ kind: midT.kind, u: mx / WD, v: my, scale: ts, sy: ty, lift: T.hh(mx, my) / WD, color: stone }); }
     }
-    if (Z.inner){                                                                                  // (a second, lower ring inside the first, the château's concentric wall)
+    if (Z.inner || tech >= 3){                                                                                  // (a second, lower ring inside the first, the château's concentric wall)
       const R2 = T.RC * 0.58, n = 10;
       for (let i = 0; i < n; i++){ const a0 = i * 2 * Math.PI / n, a1 = (i + 1) * 2 * Math.PI / n, x0 = kp.x + Math.cos(a0) * R2, y0 = kp.y + Math.sin(a0) * R2, x1 = kp.x + Math.cos(a1) * R2, y1 = kp.y + Math.sin(a1) * R2;
         const mx = (x0 + x1) / 2, my = (y0 + y1) / 2, L = Math.hypot(x1 - x0, y1 - y0), sc = 0.05 / WD;
@@ -64896,10 +64907,10 @@ const WAR_APP = (() => {
     }
     let ci = 0;
     for (const [x, y, rr, ht, kind] of C.towers){
-      const spec = kind === 'hill' ? Z.hill : Z.corner(ci++), Q = TWR[spec.kind], sc = spec.w * CW / WD / Q.d, sy = (spec.ht / WD) / (Q.h * sc), h0 = T.hh(x, y) / WD;       // (as wide as its kind asks, as tall as it stands)
+      const spec = kind === 'hill' ? Z.hill : Z.corner(ci++), Q = TWR[spec.kind], sc = spec.w * CW / WD / Q.d, sy = (spec.ht / WD) * (1 + 0.08 * tech) / (Q.h * sc), h0 = T.hh(x, y) / WD;       // (as wide as its kind asks, as tall as it stands)
       out.push({ kind: spec.kind, u: x / WD, v: y, scale: sc, sy, lift: h0, color: stone });
       if (spec.roof) out.push({ kind: spec.roof, u: x / WD, v: y, scale: sc, sy, lift: h0, color: S.col });
-      if (spec.flag) flagAt(x, y, h0, sc * sy * (spec.roof ? Q.top : Q.top + 0.3), sc * sy);
+      if (spec.flag || tech >= 4) flagAt(x, y, h0, sc * sy * (spec.roof ? Q.top : Q.top + 0.3), sc * sy);
     }
     for (const [x, y] of C.houses){ const sc = CW * 0.6 / WD, h0 = T.hh(x, y) / WD;
       out.push({ kind: 'bwHouse', u: x / WD, v: y, scale: sc, lift: h0, color: Z.house.wall }, { kind: Z.house.roof, u: x / WD, v: y, scale: sc, lift: h0, color: S.col }); }
@@ -64916,7 +64927,7 @@ const WAR_APP = (() => {
     let Hh = null; try { Hh = holeFor(c, r); } catch {}
     if (!Hh) return out;
     const TT = terrOf(Hh), kp = keepOf(c, r), rd = rdyOf(c, r);
-    castleItems(out, TT, S, hp / MAXHP, boardIdx(c, r), WD, own);
+    castleItems(out, TT, S, hp / MAXHP, boardIdx(c, r), WD, own, techOf(c, r));
     const LH = lhpOf(c, r);
     for (let k = 0; k < KINDS.length; k++){
       const P = padOf(c, r, k), K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
@@ -65092,7 +65103,7 @@ const WAR_APP = (() => {
     cellItems(c, r, bp){ pump(); return itemsOf(c, r, bp); },
     cellTitle(c, r){
       const own = ownerOf(c, r), hp = Math.round(hpOf(c, r)), t = tally(c, r, 4), lv = levelAt(boardIdx(c, r));
-      return 'Board War — ' + SIDES[own].name + ' board, ' + hp + ' hit points, level ' + lv + (own === SIDE ? ' · yours: ' + KINDS[SEL].name : ' · an enemy: fly to a ' + SIDES[SIDE].name + ' board')
+      return 'Board War — ' + SIDES[own].name + ' board, ' + hp + ' hit points, level ' + lv + ', ' + TECH_NAMES[techOf(c, r)] + (own === SIDE ? ' · yours: ' + KINDS[SEL].name : ' · an enemy: fly to a ' + SIDES[SIDE].name + ' board')
            + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost + ' · wind ' + Math.round(windAt(SIM.t).w * 100) + '% · supplies ' + Math.floor(SUPPLY) + ', ' + KINDS.map((k, i) => k.name.split(' ')[0] + ' ' + UPG[i]).join(' ');
     },
     onSelect(){ return true; },
@@ -65117,7 +65128,7 @@ const WAR_APP = (() => {
       ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = sz * 0.03; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.3); ctx.quadraticCurveTo(sz * 0.5, sz * 0.0, sz * 0.78, sz * 0.7); ctx.stroke();
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
-    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, upOf, income, ram, sendRam, RAMRDY, windAt, getWar0: () => WAR0, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
+    _debug: { SINCE, techOf, TECH_MAX, TECH_EVERY, TECH_NAMES, SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, upOf, income, ram, sendRam, RAMRDY, windAt, getWar0: () => WAR0, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
               selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
