@@ -355,6 +355,12 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   and 1) pushes a landing `WIND_PUSH` (0.06 of a board) at most, a high arc fully and a flat shot two fifths (not in `SIM.ideal`), a streamer of dots on every board and "wind N%" in the title.
   The computer rams too (`sendRam`, `RAM_AI` 40 s × its level's stretch × its doctrine's rate, free, a first one at a random time; never your garrison, none in `SIM.ideal`; `RAMRDY`).
   Not yet: spies, a moat that slows. The smoke test ("board war: the computer's sides upgrade …") has loose bounds.
+- **Board War: technology and construction grow with time** (Nov 9: "a board in war should get more technology and future construction as time goes on.   the go back to the baseline at when they are destroyed."): every board has
+  a tech level 0 to `TECH_MAX` 4 (`techOf`), a step for each `TECH_EVERY` (90) seconds since its baseline (`SINCE`: the war's start, or when the board was last destroyed, which is when it changes hands in `capture`; a new war
+  starts every board over; not kept across a reload, since the war's clock starts over with the page; none in `SIM.ideal`). Each step makes the board's launchers hit `TECH_DMG` (10%) harder and reload `TECH_RELOAD` (6%) quicker
+  (`launch`, from the firing board), and takes `TECH_ARMOUR` (5%) off the damage the board suffers (`hurt`). It builds (`castleItems`' `tech`): 1 a pennant on the keep, taller walls, towers and keep by 7–8% a step, 2 small towers
+  along the walls (the faction's own kind, for the ones that had none), 3 a second ring of wall inside the first, 4 a banner on every tower. The title names it (outpost, fort, stronghold, citadel, fortress city). The smoke test
+  ("board war: technology …") checks the steps, none when ideal, a capture back to zero with its neighbour untouched, a mortar's 14 and 1.216 s against 10 and 1.6, 20 damage leaving 84 against 80, and more built at four.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
