@@ -16,7 +16,7 @@ on:
 jobs:
   part:
     name: smoke ${{ matrix.shard }}/7
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -39,7 +39,7 @@ jobs:
 
   course:
     name: golf course
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +58,7 @@ jobs:
   smoke:
     needs: [part, course]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: every part and the course passed
         run: |
