@@ -64369,7 +64369,16 @@ const WAR_APP = (() => {
   const INCOME = 0.02, UP_MAX = 3, UP_DMG = 0.25, UP_RELOAD = 0.12, UP_COST = 30;
   let SUPPLY = +load('boardwar.supply', 0) || 0;
   const UPG = (() => { const u = load('boardwar.upg', null); return KINDS.map((_, i) => Math.max(0, Math.min(UP_MAX, u && u[i] | 0))); })();
-  const upOf = (side, k) => side === SIDE ? UPG[k] : 0;
+  /* The war escalates, a ram, wind (Nov 9: "1,2,3" of the next ideas): the computer's sides now upgrade too, every launcher of every kind a level for each `AI_UP_EVERY` (240)
+     seconds of the war's age (`WAR0`), to `UP_MAX`, so a long war grows teeth (not in `SIM.ideal`, which the exact-damage checks use). Taking a board beside ones you hold
+     pays (`CHAIN_HP`, `CHAIN_SUP`: for each of its eight neighbours that is yours, 6 more hit points and 5 supplies). A ram (`RAM_COST` supplies, `RAM_T` 8 s over the ground,
+     `RAM_DMG` 45, key R, the menu's Send a ram) walks to the weakest hostile board within a board and a half and breaks on its keep wherever the walls stand, flak and cover not
+     touching it. Wind (`windAt`: its way turning once in about seven minutes, its strength swelling and fading) pushes a shell's landing `WIND_PUSH` (0.06 of a board) at most,
+     a high arc fully and a flat shot two fifths; a streamer on every board shows it and the title says it. */
+  const AI_UP_EVERY = 240, CHAIN_HP = 6, CHAIN_SUP = 5, RAM_COST = 25, RAM_T = 8, RAM_DMG = 45, WIND_PUSH = 0.06;
+  let WAR0 = 0;
+  const upOf = (side, k) => side === SIDE ? UPG[k] : (SIM.ideal ? 0 : Math.min(UP_MAX, Math.floor((SIM.t - WAR0) / AI_UP_EVERY)));
+  const windAt = t => { const a = 0.9 + t * 0.015, w = 0.55 + 0.45 * Math.sin(t * 0.031); return { x: Math.cos(a) * w, y: Math.sin(a) * w, w }; };
   /* Castles pay by their state, repair, and flak (Nov 9: "1,2,5" of the playground ideas): a board of yours brings its full `INCOME` only with its walls whole, and
      `CASTLE_FLOOR` (0.4) of it with none standing (its hit points are what the curtain shows), so defending the walls pays. Repair spends supplies to put a board's
      hit points and its launchers back at once (`REPAIR_HP` a point, `REPAIR_L` a launcher point) in place of waiting out the heal and the rebuild. Flak: every board has
@@ -64624,6 +64633,7 @@ const WAR_APP = (() => {
     for (let i = 0; i < K.n; i++){
       const a = rnd() * 2 * Math.PI, rr = SIM.ideal ? 0 : K.spread * Math.sqrt(rnd());
       let bx = Math.max(D.CW, Math.min(WD - D.CW, ak.x + Math.cos(a) * rr)), by = Math.max(D.CW, Math.min(1 - D.CW, ak.y + Math.sin(a) * rr)), stopped = false;
+      if (!SIM.ideal){ const W = windAt(SIM.t), pk = WIND_PUSH * (K.flat ? 0.4 : 1) * (0.6 + 0.4 * K.arc); bx = Math.max(D.CW, Math.min(WD - D.CW, bx + W.x * pk)); by = Math.max(D.CW, Math.min(1 - D.CW, by + W.y * pk)); }
       if (K.flat && !SIM.ideal){ const L = TT.los(eu * WD, ev, bx, by, TT.hh(eu * WD, ev) + K.flat); bx = L[0]; by = L[1]; stopped = L[2]; }
       const f = CHIP + (1 - CHIP) * Math.max(0, 1 - Math.hypot(bx - keep.x, by - keep.y) / K.blast);
       MIS.push({ from: [wrapc(c), wrapc(r)], to: [wrapc(tc), wrapc(tr)], k, side, t0: SIM.t + i * K.gap, dur: K.fly * (0.92 + 0.16 * rnd()), dmg: K.dmg * (1 + UP_DMG * up) * f, base: K.dmg * (1 + UP_DMG * up), f, stopped, aim: ak === keep ? -1 : aim,
@@ -64631,6 +64641,23 @@ const WAR_APP = (() => {
     }
     STATS.shots++;
     return K.n;
+  }
+  /* The computer rams too (Nov 9: "2" of the Board War ideas left, the first, so the war is two-sided): a computer board (never your garrison) sends a ram at the hostile board its
+     doctrine picks within a board and a half, free, about every `RAM_AI` (40) s times its level's stretch and its doctrine's rate, from a first one at a random time. */
+  const RAM_AI = 40, RAMRDY = new Map();
+  function sendRam(c, r, t, side){
+    const D = GOLFD(), WD = D.WD, TS = terrOf(holeFor(c, r)), TT = terrOf(holeFor(t.c, t.r)), a = TS.keep, b = TT.keep, dc = dwrap(t.c, c), dr = dwrap(t.r, r);
+    MIS.push({ ram: true, from: [wrapc(c), wrapc(r)], to: [wrapc(t.c), wrapc(t.r)], k: 0, side, t0: SIM.t, dur: RAM_T, dmg: RAM_DMG, base: 0, f: 1, stopped: false, aim: -1,
+               su: a.x / WD, sv: a.y, gs: TS.hh(a.x, a.y) / WD, tu: b.x / WD, tv: b.y, gy: TT.hh(b.x, b.y) / WD, dc, dr, id: ++PID });
+  }
+  function ram(c, r){
+    if (c == null){ if (!LIVE) return 0; c = LIVE.c; r = LIVE.r; }
+    if (ownerOf(c, r) !== SIDE || SUPPLY + 1e-9 < RAM_COST) return 0;
+    const t = weakest(reach(c, r, 0)); if (!t) return 0;
+    SUPPLY -= RAM_COST; saveUp();
+    sendRam(c, r, t, SIDE);
+    try { SND.play('tap'); fieldItemsChanged(); } catch {}
+    return 1;
   }
   const isLive = (c, r) => LIVE && wrapc(LIVE.c) === wrapc(c) && wrapc(LIVE.r) === wrapc(r);
   function hurt(c, r, d, side){
@@ -64642,7 +64669,10 @@ const WAR_APP = (() => {
   function capture(c, r, side){
     const k = key(c, r), was = ownerOf(c, r);
     if (was === side) return;
-    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
+    let chain = 0;
+    if (side === SIDE && !SIM.ideal) for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++) if ((dc || dr) && ownerOf(c + dc, r + dr) === SIDE) chain++;
+    if (chain) SUPPLY += chain * CHAIN_SUP;
+    OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP + chain * CHAIN_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
     FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
     if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
     saveOwn(); checkGoal(); mapDraw();
@@ -64654,7 +64684,7 @@ const WAR_APP = (() => {
     if (FX.length > MAX_FX) FX.splice(0, FX.length - MAX_FX);
     if (isLive(tc, tr)) SND.play('boom');
     if (ownerOf(tc, tr) === m.side) return;                                  // (the board changed sides while it flew: it falls on a friend's ground)
-    if (!SIM.ideal && !K.flat && m.k !== 4 && flakTry(tc, tr)){               // (flak: a high arc shot down above the board, a puff and no harm)
+    if (!SIM.ideal && !m.ram && !K.flat && m.k !== 4 && flakTry(tc, tr)){               // (flak: a high arc shot down above the board, a puff and no harm)
       FX.push({ c: tc, r: tr, u: m.tu, v: m.tv, y: m.gy + 0.08, t: SIM.t, k: 0, small: true, stopped: true });
       return;
     }
@@ -64693,6 +64723,14 @@ const WAR_APP = (() => {
         if (rnd() < D.aimL){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
         launch(c, r, k, t.c, t.r, mult, aim);
       }
+      if (own !== SIDE && !SIM.ideal){
+        const kk = key(c, r); let nxt = RAMRDY.get(kk);
+        if (nxt == null){ nxt = SIM.t + rnd() * RAM_AI * mult; RAMRDY.set(kk, nxt); }
+        if (nxt <= SIM.t){
+          RAMRDY.set(kk, SIM.t + RAM_AI * mult * (0.7 + 0.6 * rnd()));
+          const t = chooseFor(own, reach(c, r, 0)); if (t) sendRam(c, r, t, own);
+        }
+      }
     }
   }
   /* The war's clock, the page's own and no more than a quarter second a step (a tab left alone does not fire a thousand missiles when it wakes). */
@@ -64728,7 +64766,7 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ WAR0 = SIM.t; RAMRDY.clear(); OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -64806,7 +64844,7 @@ const WAR_APP = (() => {
     const t = fromHere ? [m.tu - m.dc * PU, m.tv - m.dr * PV] : [m.tu, m.tv];
     const du = lerp(m.su + o[0], t[0], s), dv = lerp(m.sv + o[1], t[1], s);
     const K = KINDS[m.k], dist = Math.hypot(m.dc, m.dr);
-    return { u: du, v: dv, lift: (m.gs || 0) * (1 - s) + (m.gy || 0) * s + 0.03 + K.arc * 0.1 * (1 + dist) * 4 * s * (1 - s) };
+    return { u: du, v: dv, lift: (m.gs || 0) * (1 - s) + (m.gy || 0) * s + 0.03 + (m.ram ? 0 : K.arc * 0.1 * (1 + dist) * 4 * s * (1 - s)) };
   }
   const TINTED = new WeakMap();
   const KEEP_OUT = /^(plate|cup|pole|pennant|ball|ghost|dot|teeMark|flagDots\d|tg\d+)$/;
@@ -64909,6 +64947,7 @@ const WAR_APP = (() => {
       const here = wrapc(c) === m.from[0] && wrapc(r) === m.from[1], there = wrapc(c) === m.to[0] && wrapc(r) === m.to[1];
       if (!((here && s < 0.5) || (there && s >= 0.5))) continue;
       const K = KINDS[m.k], P = spot(m, s, c, r);
+      if (m.ram){ for (let j = 0; j < 3; j++){ const Pj = spot(m, Math.max(0, s - j * 0.02), c, r); out.push({ kind: 'bwShell', u: Pj.u, v: Pj.v, scale: 0.05 - j * 0.008, lift: Pj.lift, color: 0x8a5a2a }); } continue; }
       out.push({ kind: 'bwShell', u: P.u, v: P.v, scale: m.k === 4 ? 0.05 : 0.032, lift: P.lift, color: K.col });
       for (let j = 1; j <= 4; j++){
         const s2 = s - j * 0.035; if (s2 < 0) break;
@@ -64916,6 +64955,8 @@ const WAR_APP = (() => {
         out.push({ kind: 'bwShell', u: P2.u, v: P2.v, scale: (m.k === 4 ? 0.04 : 0.024) * (1 - j * 0.17), lift: P2.lift, color: 0xc8c8d0 });
       }
     }
+    // (the wind: a streamer of dots along its way from a corner, longer when it is stronger)
+    { const W = windAt(now), du = W.x * 0.05, dv = W.y * 0.05 / WD; for (let j = 0; j < 4; j++) out.push({ kind: 'bwFlash', u: 0.12 + du * j * 1.4, v: 0.07 + dv * j * 1.4, scale: 0.018 * (1 - j * 0.15) * (0.5 + W.w), lift: kp.h + 0.12, color: 0xdfe8f5 }); }
     // (bursts on this board, and a ring in the new colours where a board changed sides; the target the last shot was aimed at is ringed)
     for (const e of FX){
       if (e.c !== wrapc(c) || e.r !== wrapc(r)) continue;
@@ -65009,6 +65050,7 @@ const WAR_APP = (() => {
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (!LIVE || !window.getFieldApp || window.getFieldApp() !== app) return;
+    if (e.key === 'r' || e.key === 'R'){ e.preventDefault(); e.stopPropagation(); ram(); return; }
     if (/^[1-5]$/.test(e.key)){ e.preventDefault(); e.stopPropagation(); selectKind(+e.key - 1); return; }
     if (e.key === 'Enter' || e.key === ' '){ if (ownerOf(LIVE.c, LIVE.r) === SIDE){ e.preventDefault(); e.stopPropagation(); fireHere(LIVE.c, LIVE.r, null, null); } }
   }, true);
@@ -65023,6 +65065,7 @@ const WAR_APP = (() => {
       { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
       { label: () => { const x = LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE ? repairCost(LIVE.c, LIVE.r) : 0; return x ? 'Repair this board (' + x + ' supplies)' : 'Repair this board: nothing to mend'; }, title: 'Spend supplies to put this board\'s hit points and every launcher back at full at once. A board with its walls standing pays more income.', disabled: () => !LIVE || ownerOf(LIVE.c, LIVE.r) !== SIDE || !repairCost(LIVE.c, LIVE.r) || SUPPLY + 1e-9 < repairCost(LIVE.c, LIVE.r), on(){ repair(); } },
       { label: () => UPG[SEL] >= UP_MAX ? 'Upgrade ' + KINDS[SEL].name + ': at its best' : 'Upgrade ' + KINDS[SEL].name + ' to level ' + (UPG[SEL] + 1) + ' (' + upCost(SEL) + ' supplies)', title: 'Spend supplies on the launcher in hand: each level adds a quarter to its damage and takes an eighth off its reload, on every board of your side. Supplies come from your side\'s boards near the one in view.', disabled: () => UPG[SEL] >= UP_MAX || SUPPLY + 1e-9 < upCost(SEL), on(){ upgrade(SEL); } },
+      { label: () => 'Send a ram (' + RAM_COST + ' supplies)', title: 'A ram walks eight seconds to the weakest hostile board within a board and a half and breaks on its keep, past walls and flak (R).', disabled: () => !LIVE || ownerOf(LIVE.c, LIVE.r) !== SIDE || SUPPLY + 1e-9 < RAM_COST || !reach(LIVE.c, LIVE.r, 0).length, on(){ ram(); } },
       { label: 'Fire at the weakest', title: 'Fire the launcher in hand from this board at the weakest hostile board in its range (Space).', on(){ const f = framedCell(); if (f) fireHere(f.c, f.r, null, null); } },
       { label: () => 'Goal: ' + (CAPTURE_GOALS[GOAL] ? 'take ' + CAPTURE_GOALS[GOAL] + ' boards' : 'free war'), title: 'What ends the war: take this many boards from the other sides (victory), or lose your whole home block (defeat). Free war never ends.', on(){ setGoal(GOAL + 1); mapDraw(); } },
       { label: 'New war', title: 'Every board back to where the war began, and the score at nothing.', on(){ newWar(); } },
@@ -65050,7 +65093,7 @@ const WAR_APP = (() => {
     cellTitle(c, r){
       const own = ownerOf(c, r), hp = Math.round(hpOf(c, r)), t = tally(c, r, 4), lv = levelAt(boardIdx(c, r));
       return 'Board War — ' + SIDES[own].name + ' board, ' + hp + ' hit points, level ' + lv + (own === SIDE ? ' · yours: ' + KINDS[SEL].name : ' · an enemy: fly to a ' + SIDES[SIDE].name + ' board')
-           + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost + ' · supplies ' + Math.floor(SUPPLY) + ', ' + KINDS.map((k, i) => k.name.split(' ')[0] + ' ' + UPG[i]).join(' ');
+           + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost + ' · wind ' + Math.round(windAt(SIM.t).w * 100) + '% · supplies ' + Math.floor(SUPPLY) + ', ' + KINDS.map((k, i) => k.name.split(' ')[0] + ' ' + UPG[i]).join(' ');
     },
     onSelect(){ return true; },
     onEnter(){ mapShow(true); },
@@ -65074,7 +65117,7 @@ const WAR_APP = (() => {
       ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = sz * 0.03; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.3); ctx.quadraticCurveTo(sz * 0.5, sz * 0.0, sz * 0.78, sz * 0.7); ctx.stroke();
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
-    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, income, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
+    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, upOf, income, ram, sendRam, RAMRDY, windAt, getWar0: () => WAR0, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
               selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
