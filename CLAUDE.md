@@ -341,13 +341,19 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   `UP_MAX` 3, kept as `boardwar.upg`): level n + 1 costs `UP_COST` 30 × (n + 1)², each level adds `UP_DMG` (a quarter) to the kind's damage and takes `UP_RELOAD` (an eighth) off its reload, for every
   launcher of that kind on your side's boards (`upOf(side, k)`: the computer's sides are never upgraded), in `launch`. The menu's Upgrade item (the launcher in hand, its cost, greyed when short or at its
   best) and the title (supplies and the five levels) show it; a new war (`newWar`, a change of side) starts supplies and levels over. Fifteen levels in all cost 2,100 supplies, about 25 minutes of holding
-  the corner. Not yet: siege tools, the castle's state changing the income. The smoke test (part 7, "board war: supplies") checks the income, the costs, a mortar's damage 10 → 12.5 and reload 1.6 → 1.408 s,
+  the corner. Not yet at the time: siege tools, the castle's state changing the income (both since done). The smoke test (part 7, "board war: supplies") checks the income, the costs, a mortar's damage 10 → 12.5 and reload 1.6 → 1.408 s,
   the cap and the reset.
 - **Board War: castles pay, repair, flak** (Nov 9: "The board war is a playground board to see whats possible and reasonable.", then ideas "1,2,5"): a playground, so keep these
   small and drop what does not feel right. Income is `INCOME` × (`CASTLE_FLOOR` 0.4 + 0.6 × the board's hit points) over your boards within `WAR_R` (`income`), so whole walls pay
   full; the menu's Repair this board (`repair`, `repairCost`: 0.25 supplies a hit point, 0.15 a launcher point) mends the board and every launcher at once; flak (`flakTry`, `FLAK`):
   each board has 2 shots, one back every 12 s, each bringing down a mortar or cluster shell above it with chance 0.55 (rockets and cruise fly too flat, the warhead is too big;
   `SIM.ideal` turns it off so the exact-damage checks stand). The smoke test ("board war: walls whole pay full income") has loose bounds.
+- **Board War: escalation, a ram, wind** (Nov 9: "1,2,3" of the next ideas, a playground): the computer's sides upgrade every launcher kind a level per `AI_UP_EVERY` (240) s of the war's age
+  (`WAR0`, set by `newWar`; `upOf`; none in `SIM.ideal`); taking a board beside ones you hold pays `CHAIN_HP` (6) hit points and `CHAIN_SUP` (5) supplies for each of its eight neighbours that is
+  yours (`capture`; not in `SIM.ideal`); a ram (`ram`, key R, the menu's Send a ram, `RAM_COST` 25 supplies) walks `RAM_T` (8) s to the weakest hostile board within 1.5 and breaks on its keep for
+  `RAM_DMG` 45, past walls and flak (a `MIS` entry with `ram`, drawn as three brown shells along the ground); wind (`windAt`: a way turning once in about seven minutes, a strength between 0.1
+  and 1) pushes a landing `WIND_PUSH` (0.06 of a board) at most, a high arc fully and a flat shot two fifths (not in `SIM.ideal`), a streamer of dots on every board and "wind N%" in the title.
+  Not yet: the computer using rams, spies, a moat that slows. The smoke test ("board war: the computer's sides upgrade …") has loose bounds.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

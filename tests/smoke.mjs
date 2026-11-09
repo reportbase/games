@@ -8377,6 +8377,22 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       && bwu.max[0] === 3 && bwu.max[1] === false && bwu.max[2] && bwu.reset[0] === 0 && bwu.reset[1] === '0,0,0,0,0';
     if (!bwuOk) failures.push('[boardwar supplies] ' + JSON.stringify(bwu));
     console.log(`${bwuOk ? 'ok  ' : 'FAIL'} board war: supplies from your side's boards, a level for 30 × level² (the first 30), a mortar's damage 10 → 12.5 and reload 1.6 → 1.408 s for your side, three levels at most, a new war starting over`);
+    // BOARD WAR: THE WAR ESCALATES, A RAM, WIND (Nov 9: "1,2,3"): the computer's sides upgrade with the war's age (not in the ideal case), taking a board beside ones you hold pays supplies and
+    // hit points, a ram costs supplies and breaks on the keep 8 s later, the wind pushes and is not always the same (a playground: loose bounds)
+    const bwn = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, out = {}, GS = 10000, key = (c, r) => ((c % GS + GS) % GS) * GS + ((r % GS + GS) % GS), e = (D.SIDE + 1) % 4;
+      D.newWar(); D.SIM.quiet = true; D.SIM.ideal = false; D.LIVE = { c: 0, r: 0 };
+      const w0 = D.getWar0(); D.SIM.t = w0; out.up0 = D.upOf(e, 0); D.SIM.t = w0 + 250; out.up1 = D.upOf(e, 0); D.SIM.t = w0 + 5000; out.up9 = D.upOf(e, 0); D.SIM.ideal = true; out.upI = D.upOf(e, 0); out.mine = D.upOf(D.SIDE, 0); D.SIM.ideal = false;
+      D.setSupply(0); D.capture(1, 0, e); D.capture(1, 0, D.SIDE); out.chain = [D.getSupply(), Math.round(D.HP.get(key(1, 0)).hp)];
+      D.newWar(); D.LIVE = { c: 0, r: 0 }; D.capture(1, 0, e); D.setSupply(10); out.broke = D.ram(); D.setSupply(60); out.rammed = D.ram(); out.sup = D.getSupply();
+      const tg = D.MIS[0].to; D.HP.set(key(tg[0], tg[1]), { hp: 100, hit: D.SIM.t + 1e6 }); D.advance(9); out.hp = Math.round(D.HP.get(key(tg[0], tg[1])).hp);
+      out.wind = [D.windAt(0).w, D.windAt(50).w];
+      D.newWar();
+      return out;
+    });
+    const bwnOk = bwn.up0 === 0 && bwn.up1 === 1 && bwn.up9 === 3 && bwn.upI === 0 && bwn.mine === 0 && bwn.chain[0] > 0 && bwn.chain[1] > 40 && bwn.broke === 0 && bwn.rammed === 1 && bwn.sup === 35 && bwn.hp === 55 && Math.abs(bwn.wind[0] - bwn.wind[1]) > 0.1;
+    if (!bwnOk) failures.push('[boardwar escalates, ram, wind] ' + JSON.stringify(bwn));
+    console.log(`${bwnOk ? 'ok  ' : 'FAIL'} board war: the computer's sides upgrade with the war's age (${bwn.up0}, ${bwn.up1}, ${bwn.up9}), a capture beside your boards pays (${bwn.chain}), a ram costs 25 and breaks the keep for 45 (hit points ${bwn.hp}), the wind swells and fades`);
     // BOARD WAR: CASTLES PAY, REPAIR, FLAK (Nov 9: "1,2,5" of the playground ideas): income falls to 0.4 of full with every board's walls gone, repair costs by the damage and puts
     // hit points and launchers back, flak brings down some high arcs (a playground: loose bounds)
     const bwrf = await page.evaluate(() => {
