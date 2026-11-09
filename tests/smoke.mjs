@@ -3171,11 +3171,13 @@ try {
     const z1 = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
     // (a new game by a real tap: the ball waits on the plunger, the tap's echo as a mouse press not launching it)
     await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); D.gameAt(f.c, f.r).state = 'over'; D.gameAt(f.c, f.r).overAt = 0; D.GAMES.delete(f.c + '_' + f.r); });
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 3 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    // (Nov 9: aimed afresh, not at the point worked out before the touches: on CI the view had moved and the tap missed the board, the game never began)
+    const mid2 = await aimAt(0.5, 0.5);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid2.x, y: mid2.y, id: 3 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     // (the field reads the tap and the game begins as a frame is drawn; on CI a frame took more than the 600 ms this waited: wait for it)
     // (and in a part of its own, on a fresh page, longer still; a tap that only reframed the board is tapped again)
     await page.waitForTimeout(600); for (let k = 0; k < 60; k++){ const q = await state(); if (q.st === 'play') break; await page.waitForTimeout(250);
-      if (k > 0 && k % 8 === 0){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid.x, y: mid.y, id: 4 + k }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } }
+      if (k > 0 && k % 8 === 0){ const m3 = await aimAt(0.5, 0.5); await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: m3.x, y: m3.y, id: 4 + k }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } }
     const t4 = await state();
     // game over: stars and a best; a click after it plays the table again where it is (Oct 29: only you move to another board)
     const ov = await page.evaluate(async () => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
@@ -3543,7 +3545,10 @@ try {
       // enough on Oct 29, so four, 5 s apart, as patient as pinball's new game)
       let started = null;
       for (let k = 0; k < 4 && !started; k++){
-        await page.mouse.click(mid.x, mid.y);
+        // (Nov 9: aimed afresh for each click, once the point has held still 300 ms: the camera may still have been settling from the flight, and a click on where the board WAS started nothing, on CI and on main alike)
+        let at = await aimAt(0.5, 0.5);
+        for (let j = 0; j < 20; j++){ await page.waitForTimeout(300); const at2 = await aimAt(0.5, 0.5); const still = Math.abs(at2.x - at.x) < 1 && Math.abs(at2.y - at.y) < 1; at = at2; if (still) break; }
+        await page.mouse.click(at.x, at.y);
         await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return !!g; }, key, { timeout: 5000 }).catch(() => {});
         started = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key);
       }
