@@ -353,7 +353,8 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   yours (`capture`; not in `SIM.ideal`); a ram (`ram`, key R, the menu's Send a ram, `RAM_COST` 25 supplies) walks `RAM_T` (8) s to the weakest hostile board within 1.5 and breaks on its keep for
   `RAM_DMG` 45, past walls and flak (a `MIS` entry with `ram`, drawn as three brown shells along the ground); wind (`windAt`: a way turning once in about seven minutes, a strength between 0.1
   and 1) pushes a landing `WIND_PUSH` (0.06 of a board) at most, a high arc fully and a flat shot two fifths (not in `SIM.ideal`), a streamer of dots on every board and "wind N%" in the title.
-  Not yet: the computer using rams, spies, a moat that slows. The smoke test ("board war: the computer's sides upgrade …") has loose bounds.
+  The computer rams too (`sendRam`, `RAM_AI` 40 s × its level's stretch × its doctrine's rate, free, a first one at a random time; never your garrison, none in `SIM.ideal`; `RAMRDY`).
+  Not yet: spies, a moat that slows. The smoke test ("board war: the computer's sides upgrade …") has loose bounds.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):

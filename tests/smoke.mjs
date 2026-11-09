@@ -8387,10 +8387,14 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       D.newWar(); D.LIVE = { c: 0, r: 0 }; D.capture(1, 0, e); D.setSupply(10); out.broke = D.ram(); D.setSupply(60); out.rammed = D.ram(); out.sup = D.getSupply();
       const tg = D.MIS[0].to; D.HP.set(key(tg[0], tg[1]), { hp: 100, hit: D.SIM.t + 1e6 }); D.advance(9); out.hp = Math.round(D.HP.get(key(tg[0], tg[1])).hp);
       out.wind = [D.windAt(0).w, D.windAt(50).w];
-      D.newWar();
+      // the computer's rams: a computer board among hostile ones sends a ram on its own within a couple of minutes of a war
+      D.newWar(); D.SIM.quiet = false; D.SIM.ideal = false; D.LIVE = { c: 0, r: 0 }; D.MIS.length = 0;
+      let ramsSeen = 0, enemyRam = false; for (let i = 0; i < 1200; i++){ D.advance(0.1); for (const m of D.MIS) if (m.ram && !m.seen){ m.seen = true; ramsSeen++; if (m.side !== D.SIDE) enemyRam = true; } }
+      out.aiRam = [ramsSeen > 0, enemyRam];
+      D.SIM.quiet = true; D.newWar();
       return out;
     });
-    const bwnOk = bwn.up0 === 0 && bwn.up1 === 1 && bwn.up9 === 3 && bwn.upI === 0 && bwn.mine === 0 && bwn.chain[0] > 0 && bwn.chain[1] > 40 && bwn.broke === 0 && bwn.rammed === 1 && bwn.sup === 35 && bwn.hp === 55 && Math.abs(bwn.wind[0] - bwn.wind[1]) > 0.1;
+    const bwnOk = bwn.aiRam.join() === 'true,true' && bwn.up0 === 0 && bwn.up1 === 1 && bwn.up9 === 3 && bwn.upI === 0 && bwn.mine === 0 && bwn.chain[0] > 0 && bwn.chain[1] > 40 && bwn.broke === 0 && bwn.rammed === 1 && bwn.sup === 35 && bwn.hp === 55 && Math.abs(bwn.wind[0] - bwn.wind[1]) > 0.1;
     if (!bwnOk) failures.push('[boardwar escalates, ram, wind] ' + JSON.stringify(bwn));
     console.log(`${bwnOk ? 'ok  ' : 'FAIL'} board war: the computer's sides upgrade with the war's age (${bwn.up0}, ${bwn.up1}, ${bwn.up9}), a capture beside your boards pays (${bwn.chain}), a ram costs 25 and breaks the keep for 45 (hit points ${bwn.hp}), the wind swells and fades`);
     // BOARD WAR: CASTLES PAY, REPAIR, FLAK (Nov 9: "1,2,5" of the playground ideas): income falls to 0.4 of full with every board's walls gone, repair costs by the damage and puts

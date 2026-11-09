@@ -64642,14 +64642,20 @@ const WAR_APP = (() => {
     STATS.shots++;
     return K.n;
   }
+  /* The computer rams too (Nov 9: "2" of the Board War ideas left, the first, so the war is two-sided): a computer board (never your garrison) sends a ram at the hostile board its
+     doctrine picks within a board and a half, free, about every `RAM_AI` (40) s times its level's stretch and its doctrine's rate, from a first one at a random time. */
+  const RAM_AI = 40, RAMRDY = new Map();
+  function sendRam(c, r, t, side){
+    const D = GOLFD(), WD = D.WD, TS = terrOf(holeFor(c, r)), TT = terrOf(holeFor(t.c, t.r)), a = TS.keep, b = TT.keep, dc = dwrap(t.c, c), dr = dwrap(t.r, r);
+    MIS.push({ ram: true, from: [wrapc(c), wrapc(r)], to: [wrapc(t.c), wrapc(t.r)], k: 0, side, t0: SIM.t, dur: RAM_T, dmg: RAM_DMG, base: 0, f: 1, stopped: false, aim: -1,
+               su: a.x / WD, sv: a.y, gs: TS.hh(a.x, a.y) / WD, tu: b.x / WD, tv: b.y, gy: TT.hh(b.x, b.y) / WD, dc, dr, id: ++PID });
+  }
   function ram(c, r){
     if (c == null){ if (!LIVE) return 0; c = LIVE.c; r = LIVE.r; }
     if (ownerOf(c, r) !== SIDE || SUPPLY + 1e-9 < RAM_COST) return 0;
     const t = weakest(reach(c, r, 0)); if (!t) return 0;
-    const D = GOLFD(), WD = D.WD, TS = terrOf(holeFor(c, r)), TT = terrOf(holeFor(t.c, t.r)), a = TS.keep, b = TT.keep, dc = dwrap(t.c, c), dr = dwrap(t.r, r);
     SUPPLY -= RAM_COST; saveUp();
-    MIS.push({ ram: true, from: [wrapc(c), wrapc(r)], to: [wrapc(t.c), wrapc(t.r)], k: 0, side: SIDE, t0: SIM.t, dur: RAM_T, dmg: RAM_DMG, base: 0, f: 1, stopped: false, aim: -1,
-               su: a.x / WD, sv: a.y, gs: TS.hh(a.x, a.y) / WD, tu: b.x / WD, tv: b.y, gy: TT.hh(b.x, b.y) / WD, dc, dr, id: ++PID });
+    sendRam(c, r, t, SIDE);
     try { SND.play('tap'); fieldItemsChanged(); } catch {}
     return 1;
   }
@@ -64717,6 +64723,14 @@ const WAR_APP = (() => {
         if (rnd() < D.aimL){ const L = lhpOf(t.c, t.r); const up = KINDS.map((_, i) => i).filter(i => L.hp[i] > 0); if (up.length) aim = up[Math.floor(rnd() * up.length)]; }
         launch(c, r, k, t.c, t.r, mult, aim);
       }
+      if (own !== SIDE && !SIM.ideal){
+        const kk = key(c, r); let nxt = RAMRDY.get(kk);
+        if (nxt == null){ nxt = SIM.t + rnd() * RAM_AI * mult; RAMRDY.set(kk, nxt); }
+        if (nxt <= SIM.t){
+          RAMRDY.set(kk, SIM.t + RAM_AI * mult * (0.7 + 0.6 * rnd()));
+          const t = chooseFor(own, reach(c, r, 0)); if (t) sendRam(c, r, t, own);
+        }
+      }
     }
   }
   /* The war's clock, the page's own and no more than a quarter second a step (a tab left alone does not fire a thousand missiles when it wakes). */
@@ -64752,7 +64766,7 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ WAR0 = SIM.t; OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ WAR0 = SIM.t; RAMRDY.clear(); OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -65103,7 +65117,7 @@ const WAR_APP = (() => {
       ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = sz * 0.03; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.3); ctx.quadraticCurveTo(sz * 0.5, sz * 0.0, sz * 0.78, sz * 0.7); ctx.stroke();
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
-    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, upOf, income, ram, windAt, getWar0: () => WAR0, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
+    _debug: { SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, upOf, income, ram, sendRam, RAMRDY, windAt, getWar0: () => WAR0, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
               selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
