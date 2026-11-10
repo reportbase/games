@@ -361,6 +361,24 @@ Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
   (`launch`, from the firing board), and takes `TECH_ARMOUR` (5%) off the damage the board suffers (`hurt`). It builds (`castleItems`' `tech`): 1 a pennant on the keep, taller walls, towers and keep by 7–8% a step, 2 small towers
   along the walls (the faction's own kind, for the ones that had none), 3 a second ring of wall inside the first, 4 a banner on every tower. The title names it (outpost, fort, stronghold, citadel, fortress city). The smoke test
   ("board war: technology …") checks the steps, none when ideal, a capture back to zero with its neighbour untouched, a mortar's 14 and 1.216 s against 10 and 1.6, 20 damage leaving 84 against 80, and more built at four.
+- **Board War: Medium boards, troops, the margins** (Nov 10: "make the boards bigger in board war.   replace the moving bumpers with troops moving around.   use the margins between the boards to
+  move troops to other boards to fight."): (1) **Bigger boards** (asked which of three readings: more ground, bigger on screen, zoomed closer; "more ground"): the war is played on mini golf's Medium boards,
+  13 × 21 cells, golf's own Board size borrowed (`applySize`: `setGolfSize(size, true)`, not kept as golf's own choice, then the war's app set again so the field takes the new `boardShape`); the menu's Board
+  size steps Small, Medium, Tall (`boardwar.size`, default Medium, saved with `save` so as JSON), and `restoreGolf` puts golf's saved size back when another game comes forward (golf too, if that is where you
+  went). (2) **No bumpers on loops**: golf tags the bumpers and boulders that ride a path `rider`, and `itemsOf` leaves them out. (3) **Troops** (`GAR`, `TROOPS`): every board has a garrison of up to `GAR_MAX` 4
+  foot soldiers in its owner's colour (`bwTroop`, `bwTroopHead`; one grows back every `GAR_REGEN` 12 s) who patrol a loop over clear ground through the launchers' places, the hilltop towers and the ward
+  (`patrolOf`, `patrolAt`). A squad of `SQUAD` 3 goes from a board to a hostile board among the eight round it (`sendTroops`, `foes`; the menu's Send troops or T for you, `marchHere`; the computer's boards,
+  about every `TROOP_AI` 22 s × their stretch, when the garrison is three or more: `ai`): the route (`troopRoute`) is a gate on clear ground outside the moat, the board's edge, **a point in the margin lane
+  between the boards** (the gap `BOARD_FILL` leaves, a lane between every two columns and every two rows), along it when the target is a corner away, the target's edge, and a place on a ring round its
+  keep; each soldier's place is worked out from the war's clock along that line in the source board's own (u, v) (`troopAt`, `TROOP_V`), and drawn by whichever board its place falls in (`troopBoards`,
+  `troopItems`: a place in the margin belongs to the nearest board). On a friend's board a soldier joins the garrison; on a hostile one he stands and fights (`troopTick`, twice a second): each attacker
+  has `KILL_A` 0.34 of felling a defender, each defender `KILL_D` 0.28 (a tenth more a tech step) of felling an attacker, and with no defender left the attackers wear the keep down at `TROOP_DPS`
+  2.2 hit points a second each until it falls (`hurt`, `capture`: the survivors become its garrison, `troopsCaptured`). Measured over 40 fights: a squad beats a garrison of one 38 times, of two 28, of three 13,
+  of four 7; two squads beat four 29 times of 40 in about 24 s. Not kept across a reload. **Found here: `pitch()` was wrong** (the field puts an item at `cx + (0.5 - u) * bWX`, a board `boardW() * cellW` across
+  and `boardW()` down, so a neighbour is 1.11 boards away in u and in v alike; `pitch` gave 0.68, the board's width over its height, twice), so a missile's far end was drawn two fifths of a board short of
+  the board beside and a tap's direction was read through a squashed pitch; both now follow the real one. The smoke test ("board war: no bumpers riding loops …", written on the Small boards, the earlier
+  war checks too: `boardwar.size` set to small first) checks the pitch, no rider, a garrison of four drawn on every board, a squad out through the edge, along the margin and in, two squads taking a
+  garrison of one, a friend's board taking a squad in, Medium boards and golf's size put back.
 - **Hole numbers off by default** (Oct 20: "turn hole number off by default."): the number in a board's far corner (`NUMS`,
   `numberItems`) shows only once the menu's Hole numbers is turned on (localStorage `golf.nums` 'on').
 - **Difficulty** (Oct 10: "Now we way to adjust the difficulty, what do you suggest" … "ok, proceed"):
