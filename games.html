@@ -64951,7 +64951,7 @@ const WAR_APP = (() => {
     while (dt > 1e-9){
       const s = Math.min(dt, 0.1); dt -= s; SIM.t += s;
       for (let i = MIS.length - 1; i >= 0; i--){ const m = MIS[i]; if (SIM.t >= m.t0 + m.dur){ MIS.splice(i, 1); impact(m); } }
-      if (SIM.t - TROOP_T >= TROOP_TICK){ TROOP_T = SIM.t; troopTick(); }
+      if (SIM.t - TROOP_T >= TROOP_TICK || SIM.t < TROOP_T){ TROOP_T = SIM.t; troopTick(); }   // (or the clock set back, as the tests do: a tick kept from a later time would otherwise hold every squad on the road)
       ai();
     }
     while (FX.length && SIM.t - FX[0].t > CAP_FX + 0.1) FX.shift();

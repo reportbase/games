@@ -8200,6 +8200,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     await page.waitForTimeout(1500);
     const bw = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, K = D.KINDS, key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
+      D.applySize();   // (the Small boards, 8 × 13, for sure: a slow runner had not yet switched golf's size by now)
       D.newWar(); D.setGoal(0); D.SIM.quiet = true; D.SIM.ideal = true; D.LIVE = { c: 0, r: 0 };   // (a free war: these checks take boards; ideal: no scatter and nothing in the way, so each kind's damage is exact)
       // the sides: the corner's block yours, all four across the field, the same each time
       const own = () => { const a = []; for (let c = 0; c < 40; c++) for (let r = 0; r < 40; r++) a.push(D.ownerOf(c, r)); return a.join(''); };
@@ -8245,7 +8246,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const g0 = D.itemsOf(0, 0).map(x => x.kind);
       out.golf = [g0.some(k => /^land/.test(k)), g0.some(k => /^rail[VH]_/.test(k)), !g0.some(k => /^(cup|pole|pennant|ball|plate)$/.test(k))].join();
       let stopped = 0, clear = 0, highStopped = 0, rain = 0, offKeep = 0;
-      for (let b = 1; b < 40; b++){
+      for (let b = 1; b < 120; b++){      // (a flat shot gets through the ring only now and then, 3 of 195 on 39 boards: more boards, so the chance of none is nil)
         const tc = b % 7 + 20, tr = Math.floor(b / 7) + 20, side = D.SIDE;
         for (const k of [1, 2, 0, 4]){
           D.MIS.length = 0; D.capture(tc + 1, tr, side); D.capture(tc, tr, (side + 1) % 4); D.rearm(tc + 1, tr);
@@ -8450,7 +8451,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     // unless the menu says otherwise, golf's size put back when another game comes forward
     const bwq = await page.evaluate(async () => {
       const A = window.getFieldApp(), D = A._debug, out = {}, W = window.FIELD_WORLD, PU = W.spacing()[0] / (W.boardW() * (window.LAB.cellW || 1)), key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
-      D.newWar(); D.SIM.quiet = true; D.SIM.ideal = false; D.LIVE = { c: 0, r: 0 };
+      D.applySize(); D.newWar(); D.SIM.quiet = true; D.SIM.ideal = false; D.LIVE = { c: 0, r: 0 };
       const e = (D.SIDE + 1) % 4;
       out.pitch = +PU.toFixed(3);
       out.riders = 0; out.drawn = [];
@@ -8462,7 +8463,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const rt = D.TROOPS[0].rt; out.lane = rt.pts.some(p => p[0] < 0 && p[0] > 1 - PU);
       let margin = 0; for (let i = 0; i < 200; i++){ D.advance(0.2); for (const list of D.troopBoards().values()) for (const x of list) if (x.moving && x.u < 0 && x.u > 1 - PU) margin++; if (D.TROOPS.every(t => t.arrived)) break; }
       out.margin = margin > 0;
-      D.garSet(0, 0, 4); D.sendTroops(0, 0, { c: 1, r: 0 }, D.SIDE, 3);                     // (a second squad)
+      for (let q = 0; q < 3; q++){ D.garSet(0, 0, 4); D.sendTroops(0, 0, { c: 1, r: 0 }, D.SIDE, 3); }   // (three more squads: one fight is chance, 38 in 40, and the garrison grows back while it goes on)
       for (let i = 0; i < 300 && D.ownerOf(1, 0) !== D.SIDE; i++) D.advance(0.5);
       out.taken = [D.ownerOf(1, 0) === D.SIDE, D.garOf(1, 0) >= 1, D.TROOPS.filter(t => t.arrived && t.tc === 1 && t.tr === 0).length].join();
       // a friend's board takes a squad into its garrison
