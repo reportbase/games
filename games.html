@@ -41701,10 +41701,10 @@ const GOLF_MAKE = SIZE => {
           if (tracks) for (let q = 0; q < m; q++){ const A = loopAt(v, q / m); out.push({ kind: 'ghost', u: A.x, v: A.y, scale: 0.012, lift: hOf(H, A.x, A.y) + 0.001, color: 0xd8efd0 }); }
           if (v[2 * n + 3] >= 1){
             const lit = G && G.kicked && t - (G.kicked[j] ?? -9) < 0.15, kd = v[2 * n + 3] - 1;
-            if (propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0 });
-            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : kd ? RIDER_PLAIN[kd] : 0xe05a9a });
-          } else if (propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff });
-          else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c });
+            if (propGeo('bumper')) out.push({ kind: 'propBumper', u: S.x, v: S.y, scale: r * PROP_K.bumper, lift: hOf(H, S.x, S.y), color: lit ? 0xffe680 : RIDER_TINT[kd] || 0xffc2e0, rider: true });
+            else out.push({ kind: 'kicker', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: lit ? 0xffffff : kd ? RIDER_PLAIN[kd] : 0xe05a9a, rider: true });
+          } else if (propGeo('rock')) out.push({ kind: 'propRock', u: S.x, v: S.y, scale: r * PROP_K.rock, lift: hOf(H, S.x, S.y) - 0.002, yaw: -S.a, color: 0xffffff, rider: true });
+          else out.push({ kind: 'rockPlain', u: S.x, v: S.y, scale: r * 2, lift: hOf(H, S.x, S.y), color: 0x8a857c, rider: true });
         } else {
           const [x0, y0, x1, y1] = T.gate, L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / CW)), yaw = Math.atan2(y1 - y0, x1 - x0);
           for (let q = 0; q < n; q++){                        // CW-long pieces, red and white, sunk by how far down the gate is
@@ -64578,11 +64578,13 @@ const WAR_APP = (() => {
       }
       return [tx, ty, false];
     };
-    return TERR.set(H, T = { keep, pads, shields, castle, RC, los, obst, hh }), T;
+    return TERR.set(H, T = { keep, pads, shields, castle, RC, los, obst, hh, free }), T;
   }
   const lerp = (a, b, s) => a + (b - a) * s;
   /* Board spacing in board widths along u and along the far side, and in v fractions (a board is 1 across in u and 1 down in v): [Pu, Pvw, Pv]. */
-  const pitch = () => { try { const W = window.FIELD_WORLD, sp = W.spacing(), bW = W.boardW(), WD = GOLFD().WD; return [sp[0] / bW, sp[1] / bW, sp[1] / bW * WD]; } catch { return [1.1, 1.1, 1.1 * 8 / 13]; } };
+  /* (Nov 10: worked out from how the field puts an item on the ground, `cx + (0.5 - u) * bWX`, with a board `boardW() * cellW` across and `boardW()` down: a neighbour is 1 / BOARD_FILL
+     boards away in u and in v alike, 1.11. Until then PU and PV came out as 0.68, the board's width again, so a missile's far end was drawn two fifths of a board short of the board beside.) */
+  const pitch = () => { try { const W = window.FIELD_WORLD, sp = W.spacing(), bW = W.boardW(), cw = (window.LAB && window.LAB.cellW) || GOLFD().WD; return [sp[0] / (bW * cw), sp[1] / (bW * cw), sp[1] / bW]; } catch { return [1.11, 1.11 * 13 / 8, 1.11]; } };
   const padOf = (c, r, k) => { const T = terrOf(holeFor(c, r)), WD = GOLFD().WD, p = T.pads[k]; return { u: p.x / WD, v: p.y, h: p.h / WD }; };
   const keepOf = (c, r) => { const T = terrOf(holeFor(c, r)), WD = GOLFD().WD, q = T.keep; return { u: q.x / WD, v: q.y, h: q.h / WD }; };
 
@@ -64683,6 +64685,7 @@ const WAR_APP = (() => {
     SINCE.set(k, SIM.t); OWN.set(k, side); HP.set(k, { hp: CAPTURED_HP + chain * CHAIN_HP, hit: SIM.t }); RDY.delete(k); LHP.set(k, { hp: LMAX.map(x => x / 2), at: LMAX.map(() => 0) });
     FX.push({ c: wrapc(c), r: wrapc(r), u: 0.5, v: 0.5, t: SIM.t, cap: side });
     if (side === SIDE) STATS.won++; else if (was === SIDE) STATS.lost++;
+    troopsCaptured(c, r, side);
     saveOwn(); checkGoal(); mapDraw();
     if (side === SIDE || was === SIDE) SND.play(side === SIDE ? 'win' : 'lose');
   }
@@ -64713,6 +64716,201 @@ const WAR_APP = (() => {
       if (ownerOf(nc, nr) !== m.side){ FX.push({ c: nc, r: nr, u: 0.5, v: 0.5, t: SIM.t, k: m.k, small: true }); hurt(nc, nr, K.splash, m.side); }
     }
   }
+  /* ─── TROOPS (Nov 10: "make the boards bigger in board war. replace the moving bumpers with troops moving around. use the margins between the boards to move troops to
+     other boards to fight.") ───
+     Every board keeps a garrison of up to `GAR_MAX` (4) foot soldiers in its owner's colour, who patrol it from post to post over ground that is clear (`patrolOf`: the
+     launchers' places, the hilltop towers and the ward, in a loop that crosses no wall); they take the place of the bumpers and boulders that rode golf's loops (golf tags those
+     `rider`, and the war leaves them out). A garrison grows back a soldier every `GAR_REGEN` (12) s. A squad of `SQUAD` (3) can be sent from a board to a hostile board beside
+     it, the eight round it (the menu's Send troops, T; the computer's boards send them too, about every `TROOP_AI` seconds): it leaves by a gate on the ground outside the
+     moat, steps out through the board's edge into the MARGIN between the boards (the gap that is left of a cell, `pitch`), walks along the margin, which is a lane that runs
+     between every two columns and every two rows, to the edge of the target and in to a place round its keep (`troopRoute`). A soldier that arrives on a friend's board joins its
+     garrison; on a hostile board it stands and fights (`troopTick`, twice a second): each attacker has a chance of felling a defender, each defender of felling an attacker, and with
+     no defender left the attackers wear the keep down (`TROOP_DPS` hit points a second a soldier) until it falls and the board changes sides (`capture`), when the survivors become its
+     garrison. A squad is a walk along a line in the source board's own (u, v), worked out from the war's clock, so it can be drawn from any board it passes. Nothing is kept across a reload. */
+  const GAR_MAX = 4, GAR_REGEN = 12, SQUAD = 3, TROOP_V = 0.07, PATROL_V = 0.035, TROOP_TICK = 0.5, TROOP_DPS = 2.2, KILL_A = 0.34, KILL_D = 0.28, TROOP_AI = 22, TROOP_MAX = 360;
+  const GAR = new Map(), TROOPS = [], TROOPRDY = new Map();
+  let TROOP_T = 0, TROOP_ID = 0, TB = new Map(), TBT = -1;
+  const garOf = (c, r) => {
+    const k = key(c, r); let g = GAR.get(k);
+    if (!g){ g = { n: GAR_MAX, at: SIM.t }; GAR.set(k, g); }
+    if (g.n >= GAR_MAX) g.at = SIM.t;
+    else { const add = Math.floor((SIM.t - g.at) / GAR_REGEN); if (add > 0){ g.n = Math.min(GAR_MAX, g.n + add); g.at = g.n >= GAR_MAX ? SIM.t : g.at + add * GAR_REGEN; } }
+    return g.n;
+  };
+  const garSet = (c, r, n) => GAR.set(key(c, r), { n: Math.max(0, Math.min(GAR_MAX, n)), at: SIM.t });
+  const clearTroops = () => { TROOPS.length = 0; GAR.clear(); TROOPRDY.clear(); TB = new Map(); TBT = -1; };
+  const isoLen = (a, b, WD) => Math.hypot((b[0] - a[0]) * WD, b[1] - a[1]);
+  /* The loop a board's garrison walks (in golf's x, y): the launchers' places, the hilltop towers and the ward by their angle round the keep, each kept only if the way from the
+     one before is clear ground; closed when the last can reach the first, else walked there and back. */
+  function patrolOf(T){
+    if (T.patrol) return T.patrol;
+    const WD = GOLFD().WD, CW = GOLFD().CW, K = T.keep;
+    const want = T.pads.map(p => [p.x, p.y]);
+    for (const q of T.castle.hills || []) want.push([q.x, q.y]);
+    if (T.castle.ward) want.push([T.castle.ward.x, T.castle.ward.y]);
+    want.sort((a, b) => Math.atan2(a[1] - K.y, a[0] - K.x) - Math.atan2(b[1] - K.y, b[0] - K.x));
+    const clear = (a, b) => { for (let i = 1; i < 8; i++){ const f = i / 8; if (!T.free(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f)) return false; } return true; };
+    const pts = [];
+    for (const w of want) if (T.free(w[0], w[1]) && (!pts.length || clear(pts[pts.length - 1], w))) pts.push(w);
+    let closed = pts.length >= 3 && clear(pts[pts.length - 1], pts[0]);
+    while (!closed && pts.length > 2 && !clear(pts[pts.length - 1], pts[0])) pts.pop();
+    if (pts.length < 2){ const g = outPoint(T, 1, 0); pts.length = 0; pts.push([g.x, g.y]); }
+    let L = 0; const cum = [0];
+    for (let i = 1; i < pts.length; i++){ L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); cum.push(L); }
+    if (closed){ L += Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]); cum.push(L); }
+    return T.patrol = { pts, cum, L, closed };
+  }
+  /* Where the i-th of n soldiers stands at time t on a patrol, and the way he faces (golf's x, y). */
+  function patrolAt(P, i, n, t){
+    if (P.pts.length < 2 || P.L < 1e-6) return { x: P.pts[0][0] + (i - (n - 1) / 2) * 0.02, y: P.pts[0][1], a: 0.3 + i };
+    let d = (t * PATROL_V + (i / Math.max(1, n)) * P.L * (P.closed ? 1 : 2));
+    let dir = 1;
+    if (P.closed) d = ((d % P.L) + P.L) % P.L;
+    else { const m = ((d % (2 * P.L)) + 2 * P.L) % (2 * P.L); if (m > P.L){ d = 2 * P.L - m; dir = -1; } else d = m; }
+    const pts = P.closed ? P.pts.concat([P.pts[0]]) : P.pts;
+    let j = 1; while (j < pts.length - 1 && P.cum[j] < d) j++;
+    const a = pts[j - 1], b = pts[j], f = Math.max(0, Math.min(1, (d - P.cum[j - 1]) / ((P.cum[j] - P.cum[j - 1]) || 1)));
+    return { x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, a: Math.atan2((b[1] - a[1]) * dir, (b[0] - a[0]) * dir) };
+  }
+  /* A clear place on board T toward (dc, dr), the boards beside: outside the moat, as far toward that edge as there is ground. */
+  function outPoint(T, dc, dr){
+    const D = GOLFD(), WD = D.WD, CW = D.CW, K = T.keep, [PU, , PV] = pitch();
+    let dx = -dc * PU * WD, dy = -dr * PV; const m = Math.hypot(dx, dy) || 1; dx /= m; dy /= m;
+    let best = null;
+    for (let q = T.RC + CW * 2.2; q < 2; q += CW * 0.5){
+      const x = K.x + dx * q, y = K.y + dy * q;
+      if (x < CW * 0.7 || x > WD - CW * 0.7 || y < CW * 0.7 || y > 1 - CW * 0.7) break;
+      if (T.free(x, y)) best = { x, y };
+    }
+    if (best) return best;
+    for (let q = T.RC + CW * 2; q < T.RC + CW * 4; q += CW * 0.5) for (let a = 0; a < 6.3; a += 0.52){ const x = K.x + Math.cos(a) * q, y = K.y + Math.sin(a) * q; if (T.free(x, y)) return { x, y }; }
+    return { x: K.x + dx * (T.RC + CW * 2), y: K.y + dy * (T.RC + CW * 2) };
+  }
+  /* The boards (c, r) can send troops to: the hostile ones among the eight round it, with their hit points. */
+  function foes(c, r){
+    const side = ownerOf(c, r), out = [];
+    for (let dc = -1; dc <= 1; dc++) for (let dr = -1; dr <= 1; dr++){ if (!dc && !dr) continue; const tc = wrapc(c + dc), tr = wrapc(r + dr); if (ownerOf(tc, tr) !== side) out.push({ c: tc, r: tr, dc, dr, dist: Math.hypot(dc, dr), hp: hpOf(tc, tr) }); }
+    return out;
+  }
+  /* A squad's route from board (c, r) to the board beside it, as points in (c, r)'s own (u, v): the gate, the edge, a point in the margin lane between the boards, along the
+     lane when the target is a corner away, the target's edge, and a place on a ring round its keep toward where the soldiers came from (`ang` spreads them out). */
+  function troopRoute(c, r, tc, tr, ang){
+    const D = GOLFD(), WD = D.WD, CW = D.CW, [PU, , PV] = pitch(), dc = dwrap(tc, c), dr = dwrap(tr, r);
+    const TS = terrOf(holeFor(c, r)), TT = terrOf(holeFor(tc, tr)), g = outPoint(TS, dc, dr), K = TT.keep;
+    const back = Math.atan2(dr * PV, dc * PU * WD);                                             // (golf's x, y: the way back to the source from the target is the board's (+dc, +dr) turned over)
+    let X = null;
+    for (let tries = 0; tries < 10 && !X; tries++){
+      const a = back + ang + (tries % 2 ? 1 : -1) * Math.ceil(tries / 2) * 0.45, q = TT.RC + CW * 1.9;
+      const x = K.x + Math.cos(a) * q, y = K.y + Math.sin(a) * q;
+      if (TT.free(x, y)) X = { x, y };
+    }
+    if (!X) X = { x: K.x + Math.cos(back + ang) * (TT.RC + CW * 1.9), y: K.y + Math.sin(back + ang) * (TT.RC + CW * 1.9) };
+    const S = [g.x / WD, g.y], Xs = [X.x / WD - dc * PU, X.y - dr * PV];                        // (the target's own frame to the source's)
+    const laneU = dc > 0 ? -(PU - 1) / 2 : 1 + (PU - 1) / 2, laneV = dr > 0 ? -(PV - 1) / 2 : 1 + (PV - 1) / 2;
+    const edgeU = dc > 0 ? 0 : 1, edgeV = dr > 0 ? 0 : 1, nearU = dc > 0 ? 1 - PU : PU, nearV = dr > 0 ? 1 - PV : PV;
+    let pts;
+    if (dc && !dr)      pts = [S, [edgeU, S[1]], [laneU, S[1]], [nearU, S[1]], Xs];
+    else if (dr && !dc) pts = [S, [S[0], edgeV], [S[0], laneV], [S[0], nearV], Xs];
+    else                pts = [S, [edgeU, S[1]], [laneU, S[1]], [laneU, Xs[1]], [nearU, Xs[1]], Xs];
+    const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + isoLen(pts[i - 1], pts[i], WD));
+    return { pts, cum, len: cum[cum.length - 1] };
+  }
+  /* A soldier of a squad at time t: { u, v, a (golf's x, y), moving }, in the source board's frame. */
+  function troopAt(T, t, WD){
+    const R = T.rt, d = Math.max(0, Math.min(R.len, (t - T.t0) * TROOP_V)), done = d >= R.len - 1e-9;
+    let j = 1; while (j < R.pts.length - 1 && R.cum[j] < d) j++;
+    const a = R.pts[j - 1], b = R.pts[j], f = Math.max(0, Math.min(1, (d - R.cum[j - 1]) / ((R.cum[j] - R.cum[j - 1]) || 1)));
+    return { u: a[0] + (b[0] - a[0]) * f, v: a[1] + (b[1] - a[1]) * f, a: done ? T.face : Math.atan2(b[1] - a[1], (b[0] - a[0]) * WD), moving: !done && t >= T.t0 };
+  }
+  function sendTroops(c, r, t, side, n){
+    if (TROOPS.length >= TROOP_MAX) return 0;
+    const have = garOf(c, r), take = Math.min(n || SQUAD, have - 1);
+    if (take < 1) return 0;
+    garSet(c, r, have - take);
+    const D = GOLFD(), WD = D.WD, TT = terrOf(holeFor(t.c, t.r));
+    for (let i = 0; i < take; i++){
+      const ang = (i - (take - 1) / 2) * 0.5, rt = troopRoute(c, r, t.c, t.r, ang);
+      const K = TT.keep, last = rt.pts[rt.pts.length - 1], [PU, , PV] = pitch(), dc = dwrap(t.c, c), dr = dwrap(t.r, r);
+      const face = Math.atan2(K.y - (last[1] + dr * PV), K.x - (last[0] + dc * PU) * WD);     // (toward the keep it besieges)
+      TROOPS.push({ id: ++TROOP_ID, side, c0: wrapc(c), r0: wrapc(r), tc: wrapc(t.c), tr: wrapc(t.r), rt, t0: SIM.t + i * 0.7, face, arrived: false, fi: i });
+    }
+    try { fieldItemsChanged(); } catch {}
+    return take;
+  }
+  /* Your squad: from the board you are on to the weakest hostile board beside it. */
+  function marchHere(c, r){
+    if (c == null){ if (!LIVE) return 0; c = LIVE.c; r = LIVE.r; }
+    if (ownerOf(c, r) !== SIDE) return 0;
+    const t = weakest(foes(c, r)); if (!t) return 0;
+    const n = sendTroops(c, r, t, SIDE, SQUAD);
+    if (n){ try { SND.play('tap'); } catch {} }
+    return n;
+  }
+  /* Twice a second: arrivals, fights, and the keep worn down. */
+  function troopTick(){
+    const groups = new Map();
+    for (let i = TROOPS.length - 1; i >= 0; i--){
+      const T = TROOPS[i];
+      if (!T.arrived && SIM.t >= T.t0 + T.rt.len / TROOP_V){
+        T.arrived = true;
+        if (ownerOf(T.tc, T.tr) === T.side){ garSet(T.tc, T.tr, garOf(T.tc, T.tr) + 1); TROOPS.splice(i, 1); continue; }   // (a friend's board: he joins its garrison)
+      }
+      if (T.arrived){ const k = key(T.tc, T.tr); let g = groups.get(k); if (!g){ g = { c: T.tc, r: T.tr, sides: new Map() }; groups.set(k, g); } if (!g.sides.has(T.side)) g.sides.set(T.side, []); g.sides.get(T.side).push(T); }
+    }
+    for (const g of groups.values()){
+      const own = ownerOf(g.c, g.r), tk = techOf(g.c, g.r);
+      for (const [side, atk] of g.sides){
+        if (side === own){ for (const T of atk){ garSet(g.c, g.r, garOf(g.c, g.r) + 1); const i = TROOPS.indexOf(T); if (i >= 0) TROOPS.splice(i, 1); } continue; }
+        let def = garOf(g.c, g.r); const def0 = def, kp = keepOf(g.c, g.r);
+        const spark = () => FX.push({ c: g.c, r: g.r, u: kp.u, v: kp.v, y: kp.h + 0.05, t: SIM.t, k: 0, small: true, tiny: true });
+        for (let i = 0; i < atk.length && def > 0; i++) if (rnd() < KILL_A){ def--; spark(); }
+        for (let i = 0; i < def0 && atk.length; i++) if (rnd() < KILL_D * (1 + 0.1 * tk)){ const j = Math.floor(rnd() * atk.length), T = atk[j]; atk.splice(j, 1); const x = TROOPS.indexOf(T); if (x >= 0) TROOPS.splice(x, 1); spark(); }
+        garSet(g.c, g.r, def);
+        if (def <= 0 && atk.length) hurt(g.c, g.r, atk.length * TROOP_DPS * TROOP_TICK, side);
+      }
+    }
+  }
+  /* A board changed hands: the soldiers of the side that took it who are standing there become its garrison (one at least), and the old garrison is gone. */
+  function troopsCaptured(c, r, side){
+    const k = key(c, r); let n = 0;
+    for (let i = TROOPS.length - 1; i >= 0; i--){ const T = TROOPS[i]; if (T.arrived && T.side === side && key(T.tc, T.tr) === k){ n++; TROOPS.splice(i, 1); } }
+    garSet(c, r, Math.max(1, n));
+  }
+  /* Who stands on board (c, r) to be drawn: the squads whose place falls in its cell, each in its frame. Rebuilt when the war's clock has moved. */
+  function troopBoards(){
+    if (TBT === SIM.t) return TB;
+    TBT = SIM.t; TB = new Map();
+    if (!TROOPS.length) return TB;
+    const [PU, , PV] = pitch(), WD = GOLFD().WD;
+    for (const T of TROOPS){
+      const p = troopAt(T, SIM.t, WD), kc = Math.round((0.5 - p.u) / PU), kr = Math.round((0.5 - p.v) / PV), k = wrapc(T.c0 + kc) * GS + wrapc(T.r0 + kr);
+      let L = TB.get(k); if (!L){ L = []; TB.set(k, L); }
+      L.push({ T, u: p.u + kc * PU, v: p.v + kr * PV, a: p.a, moving: p.moving });
+    }
+    return TB;
+  }
+  function troopItems(out, c, r, S, TT, WD){
+    const now = SIM.t, here = troopBoards().get(key(c, r)) || [];
+    const siege = here.some(e => !e.moving && e.T.arrived && e.T.side !== ownerOf(c, r));
+    const emit = (u, v, lift, a, col, bob) => {
+      const ya = BOARD_KIT.yawOf(a);
+      out.push({ kind: 'bwTroop', u, v, scale: 0.06, lift: lift + bob, yaw: ya, color: col },
+               { kind: 'bwTroopHead', u, v, scale: 0.06, lift: lift + bob, yaw: ya, color: 0xe6b98c });
+    };
+    const n = garOf(c, r), P = patrolOf(TT), K = TT.keep, CW = GOLFD().CW;
+    for (let i = 0; i < n; i++){
+      let x, y, a, bob = 0;
+      if (siege){ const th = (i / Math.max(1, n)) * 2 * Math.PI + 0.7; x = K.x + Math.cos(th) * (TT.RC + CW * 1.1); y = K.y + Math.sin(th) * (TT.RC + CW * 1.1); a = th + Math.PI + 0.4 * Math.sin(now * 6 + i); bob = Math.abs(Math.sin(now * 7 + i)) * 0.004; }
+      else { const q = patrolAt(P, i, n, now); x = q.x; y = q.y; a = q.a; bob = Math.abs(Math.sin(now * 5 + i * 1.7)) * 0.003; }
+      emit(x / WD, y, TT.hh(x, y) / WD, a, S.col, bob);
+    }
+    for (const e of here){
+      const col = SIDES[e.T.side].col, inside = e.u > 0.02 && e.u < 0.98 && e.v > 0.02 && e.v < 0.98;
+      const cx = Math.max(0.02, Math.min(0.98, e.u)) * WD, cy = Math.max(0.02, Math.min(0.98, e.v));
+      const lift = inside ? TT.hh(cx, cy) / WD : 0, bob = e.moving ? Math.abs(Math.sin(now * 8 + e.T.id)) * 0.005 : Math.abs(Math.sin(now * 7 + e.T.id)) * 0.003;
+      emit(e.u, e.v, lift, e.moving ? e.a : e.a + 0.35 * Math.sin(now * 6 + e.T.id), col, bob);
+    }
+  }
   /* The computer's boards: each launcher that is ready fires at the weakest hostile board in its range (a warhead only at a board with hit points to
      lose), then reloads for the kind's time times the board's stretch and a little chance. A board you are on, and a board with nothing to hit, do not. */
   function ai(){
@@ -64738,6 +64936,12 @@ const WAR_APP = (() => {
           RAMRDY.set(kk, SIM.t + RAM_AI * mult * (0.7 + 0.6 * rnd()));
           const t = chooseFor(own, reach(c, r, 0)); if (t) sendRam(c, r, t, own);
         }
+        let tn = TROOPRDY.get(kk);                                                 // (and a squad of foot soldiers along the margins to a board beside, about every TROOP_AI seconds)
+        if (tn == null){ tn = SIM.t + rnd() * TROOP_AI * mult; TROOPRDY.set(kk, tn); }
+        if (tn <= SIM.t){
+          TROOPRDY.set(kk, SIM.t + TROOP_AI * mult * (0.7 + 0.6 * rnd()));
+          const f = foes(c, r); if (f.length && garOf(c, r) >= 3) sendTroops(c, r, chooseFor(own, f), own, SQUAD);
+        }
       }
     }
   }
@@ -64747,6 +64951,7 @@ const WAR_APP = (() => {
     while (dt > 1e-9){
       const s = Math.min(dt, 0.1); dt -= s; SIM.t += s;
       for (let i = MIS.length - 1; i >= 0; i--){ const m = MIS[i]; if (SIM.t >= m.t0 + m.dur){ MIS.splice(i, 1); impact(m); } }
+      if (SIM.t - TROOP_T >= TROOP_TICK || SIM.t < TROOP_T){ TROOP_T = SIM.t; troopTick(); }   // (or the clock set back, as the tests do: a tick kept from a later time would otherwise hold every squad on the road)
       ai();
     }
     while (FX.length && SIM.t - FX[0].t > CAP_FX + 0.1) FX.shift();
@@ -64774,7 +64979,7 @@ const WAR_APP = (() => {
     return n ? 'fired' : 'none';
   }
   function selectKind(k){ if (k >= 0 && k < KINDS.length) SEL = k; try { fieldItemsChanged(); } catch {} }
-  function newWar(){ WAR0 = SIM.t; SINCE.clear(); RAMRDY.clear(); OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
+  function newWar(){ WAR0 = SIM.t; SINCE.clear(); RAMRDY.clear(); clearTroops(); OWN.clear(); HP.clear(); RDY.clear(); LHP.clear(); FLAK.clear(); MIS.length = 0; FX.length = 0; STATS.won = 0; STATS.lost = 0; STATS.shots = 0; SUPPLY = 0; UPG.fill(0); saveUp(); RESULT = null; save('boardwar.result', null); saveOwn(); mapDraw(); try { fieldItemsChanged(); } catch {} }
   function setSide(s){ SIDE = (s + 4) % 4; save('boardwar.side', SIDE); newWar(); }
 
   function tally(c, r, R){
@@ -64920,7 +65125,7 @@ const WAR_APP = (() => {
     // the ground and everything standing on it, mini golf's, less what only a golf hole has (the cup and flag, the ball, the scoreboard), in the owner's colour
     const tintL = mixC(0xffffff, S.col, 0.6), tintW = mixC(0xffffff, S.col, 0.85);
     for (const it of GOLF_APP.cellItems(c, r, bp)){
-      if (KEEP_OUT.test(it.kind)) continue;
+      if (KEEP_OUT.test(it.kind) || it.rider) continue;                                  // (the bumpers and boulders that ride golf's loops give way to the troops)
       if (it.color === 0xffffff) it.color = /^(land|wire)/.test(it.kind) ? tintL : tintW;
       out.push(it);
     }
@@ -64928,6 +65133,7 @@ const WAR_APP = (() => {
     if (!Hh) return out;
     const TT = terrOf(Hh), kp = keepOf(c, r), rd = rdyOf(c, r);
     castleItems(out, TT, S, hp / MAXHP, boardIdx(c, r), WD, own, techOf(c, r));
+    troopItems(out, c, r, S, TT, WD);
     const LH = lhpOf(c, r);
     for (let k = 0; k < KINDS.length; k++){
       const P = padOf(c, r, k), K = KINDS[k], left = Math.max(0, rd[k] - now), f = 1 - Math.min(1, left / (K.reload * (mine ? 1 : LEVEL_MULT[levelAt(boardIdx(c, r)) - 1])));
@@ -64974,7 +65180,7 @@ const WAR_APP = (() => {
       const a = now - e.t;
       if (e.cap != null){ if (a >= 0 && a < CAP_FX) out.push({ kind: 'bwRing', u: kp.u, v: kp.v, scale: 0.25 + 0.9 * a / CAP_FX, lift: kp.h + 0.01, color: SIDES[e.cap].col }); continue; }
       if (a < 0 || a >= BURST) continue;
-      const q = a / BURST, big = e.k === 4 ? 1.8 : e.small ? 1.2 : 1, ey = (e.y == null ? kp.h : e.y) + 0.012;
+      const q = a / BURST, big = e.tiny ? 0.3 : e.k === 4 ? 1.8 : e.small ? 1.2 : 1, ey = (e.y == null ? kp.h : e.y) + 0.012;
       const eu = e.u == null ? kp.u : e.u, ev = e.v == null ? kp.v : e.v;
       out.push({ kind: 'bwFlash', u: eu, v: ev, scale: 0.09 * big * (1 - q * 0.6), lift: ey, color: e.stopped ? 0xd8c8a8 : 0xffd25a });
       out.push({ kind: 'bwRing', u: eu, v: ev, scale: (0.05 + 0.2 * q) * big, lift: ey + 0.002, color: 0xff7a30 });
@@ -65056,15 +65262,44 @@ const WAR_APP = (() => {
     bwSel: T => FieldKit.ring(T, 0.4, 0.5, 0.005),
     bwRing: T => FieldKit.ring(T, 0.42, 0.5, 0.006),
     bwFlash: T => { const g = FieldKit.disc(T, 0.5, 0.008); g.userData.unlit = true; return g; },
+    // (a foot soldier, 1 high: legs, body, arms, a helmet, a spear along his facing (+x); his face is the other kind, skin colour)
+    bwTroop: T => mergeG(T, [cyl(T, 0.1, 0.12, 0.34, 0.17, 6), cyl(T, 0.15, 0.13, 0.36, 0.52, 7), new T.SphereGeometry(0.17, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.92, 0),
+      new T.BoxGeometry(0.9, 0.025, 0.025).translate(0.2, 0.62, 0.15), new T.ConeGeometry(0.04, 0.12, 5).rotateZ(-Math.PI / 2).translate(0.69, 0.62, 0.15)]),
+    bwTroopHead: T => new T.SphereGeometry(0.13, 8, 6).translate(0, 0.8, 0),
   };
 
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (!LIVE || !window.getFieldApp || window.getFieldApp() !== app) return;
     if (e.key === 'r' || e.key === 'R'){ e.preventDefault(); e.stopPropagation(); ram(); return; }
+    if (e.key === 't' || e.key === 'T'){ e.preventDefault(); e.stopPropagation(); marchHere(); return; }
     if (/^[1-5]$/.test(e.key)){ e.preventDefault(); e.stopPropagation(); selectKind(+e.key - 1); return; }
     if (e.key === 'Enter' || e.key === ' '){ if (ownerOf(LIVE.c, LIVE.r) === SIDE){ e.preventDefault(); e.stopPropagation(); fireHere(LIVE.c, LIVE.r, null, null); } }
   }, true);
+
+  /* BIGGER BOARDS (Nov 10: "make the boards bigger in board war."): the war is played on mini golf's Medium boards (13 × 21 cells, golf's own Board size), more ground for castles,
+     hills and the troops, and the menu's Board size steps Small, Medium, Tall (`boardwar.size`). Golf's size follows while the war is up (`setGolfSize`, not kept as golf's own choice),
+     and is put back to the one golf had when another game comes forward. */
+  const SIZES = ['small', 'medium', 'tall'];
+  const sizePref = () => { const s = load('boardwar.size', 'medium'); return SIZES.includes(s) ? s : 'medium'; };
+  let sizing = 0;
+  function applySize(){
+    const want = sizePref();
+    if (!GOLF_APP || GOLF_APP._size === want) return false;
+    clearTroops();
+    setGolfSize(want, true);
+    try { if (window.getFieldApp() === app) window.setFieldApp(app); } catch {}
+    try { fieldItemsChanged(); } catch {}
+    return true;
+  }
+  function restoreGolf(){
+    setTimeout(() => {
+      let cur = null; try { cur = window.getFieldApp(); } catch {}
+      if (cur === app) return;
+      let want = 'small'; try { const z = localStorage.getItem('golf.size'); if (GOLF_SIZES[z]) want = z; } catch {}
+      if (GOLF_APP && GOLF_APP._size !== want) setGolfSize(want, true);
+    }, 0);
+  }
 
   const app = {
     name: 'boardwar',
@@ -65072,6 +65307,8 @@ const WAR_APP = (() => {
       { label: () => 'Your side: ' + SIDES[SIDE].name, title: 'Which side you fight for. Changing it starts a new war with your side holding the corner.', on(){ setSide(SIDE + 1); } },
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
+      { label: () => 'Board size: ' + sizePref(), title: 'How much ground each board has: Small (8 × 13 cells), Medium (13 × 21, the default, room for the castles, the hills and the troops) or Tall (8 × 21). It is mini golf\'s board size, which the war borrows while it is up.', on(){ save('boardwar.size', SIZES[(SIZES.indexOf(sizePref()) + 1) % SIZES.length]); applySize(); } },
+      { label: () => { const f = LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE ? foes(LIVE.c, LIVE.r).length : 0; return f ? 'Send troops (T)' : 'Send troops: no hostile board beside'; }, title: 'A squad of three foot soldiers leaves this board for the weakest hostile board beside it (the eight round it), through the margin between the boards, and fights there; if the garrison is beaten the keep is worn down until the board is yours. Each board keeps four soldiers, and one grows back every twelve seconds.', disabled: () => !LIVE || ownerOf(LIVE.c, LIVE.r) !== SIDE || !foes(LIVE.c, LIVE.r).length || garOf(LIVE.c, LIVE.r) < 2, on(){ marchHere(); } },
       { label: () => 'Launcher: ' + KINDS[SEL].name, title: 'The launcher a tap fires: mortar, rocket battery, cruise missile, cluster, warhead (keys 1 to 5).', on(){ selectKind((SEL + 1) % KINDS.length); } },
       { label: () => 'Aim at: ' + (AIMMODE ? 'the launchers' : 'the keep'), title: 'Where your shots fall on a hostile board: its keep (hit points), or its strongest launcher still standing (warhead first). Launchers behind walls and hills are covered from the flat shots, rockets and the cruise missile.', on(){ AIMMODE = !AIMMODE; } },
       { label: () => { const x = LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE ? repairCost(LIVE.c, LIVE.r) : 0; return x ? 'Repair this board (' + x + ' supplies)' : 'Repair this board: nothing to mend'; }, title: 'Spend supplies to put this board\'s hit points and every launcher back at full at once. A board with its walls standing pays more income.', disabled: () => !LIVE || ownerOf(LIVE.c, LIVE.r) !== SIDE || !repairCost(LIVE.c, LIVE.r) || SUPPLY + 1e-9 < repairCost(LIVE.c, LIVE.r), on(){ repair(); } },
@@ -65104,11 +65341,11 @@ const WAR_APP = (() => {
     cellTitle(c, r){
       const own = ownerOf(c, r), hp = Math.round(hpOf(c, r)), t = tally(c, r, 4), lv = levelAt(boardIdx(c, r));
       return 'Board War — ' + SIDES[own].name + ' board, ' + hp + ' hit points, level ' + lv + ', ' + TECH_NAMES[techOf(c, r)] + (own === SIDE ? ' · yours: ' + KINDS[SEL].name : ' · an enemy: fly to a ' + SIDES[SIDE].name + ' board')
-           + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost + ' · wind ' + Math.round(windAt(SIM.t).w * 100) + '% · supplies ' + Math.floor(SUPPLY) + ', ' + KINDS.map((k, i) => k.name.split(' ')[0] + ' ' + UPG[i]).join(' ');
+           + ' · garrison ' + garOf(c, r) + (TROOPS.length ? ', ' + TROOPS.length + ' troops on the march' : '') + ' · near here ' + SIDES.map((s, i) => s.name + ' ' + t[i]).join(', ') + ' · your side has won ' + STATS.won + ' boards and lost ' + STATS.lost + ' · wind ' + Math.round(windAt(SIM.t).w * 100) + '% · supplies ' + Math.floor(SUPPLY) + ', ' + KINDS.map((k, i) => k.name.split(' ')[0] + ' ' + UPG[i]).join(' ');
     },
     onSelect(){ return true; },
-    onEnter(){ mapShow(true); },
-    onLeave(){ mapShow(false); },
+    onEnter(){ mapShow(true); if (!sizing && GOLF_APP && GOLF_APP._size !== sizePref()){ sizing = 1; setTimeout(() => { sizing = 0; applySize(); }, 0); } },
+    onLeave(){ mapShow(false); restoreGolf(); },
     onFramed(c, r){ LIVE = c == null ? null : { c, r }; mapDraw(); },
 
     noDoubleTap(){ return !!LIVE && ownerOf(LIVE.c, LIVE.r) === SIDE; },
@@ -65128,7 +65365,7 @@ const WAR_APP = (() => {
       ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = sz * 0.03; ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.3); ctx.quadraticCurveTo(sz * 0.5, sz * 0.0, sz * 0.78, sz * 0.7); ctx.stroke();
       ctx.fillStyle = '#ff7a30'; ctx.beginPath(); ctx.arc(sz * 0.78, sz * 0.7, sz * 0.07, 0, 2 * Math.PI); ctx.fill();
     },
-    _debug: { SINCE, techOf, TECH_MAX, TECH_EVERY, TECH_NAMES, SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, upOf, income, ram, sendRam, RAMRDY, windAt, getWar0: () => WAR0, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
+    _debug: { TROOPS, GAR, garOf, garSet, foes, sendTroops, marchHere, troopTick, troopAt, troopBoards, troopRoute, patrolOf, patrolAt, outPoint, troopItems, applySize, sizePref, GAR_MAX, SQUAD, TROOP_V, SINCE, techOf, TECH_MAX, TECH_EVERY, TECH_NAMES, SIDES, KINDS, SIM, OWN, HP, RDY, MIS, FX, STATS, UPG, upgrade, upCost, upOf, income, ram, sendRam, RAMRDY, windAt, getWar0: () => WAR0, repair, repairCost, flakTry, FLAK, FLAK_MAX, getSupply: () => SUPPLY, setSupply: v => { SUPPLY = v; }, INCOME, MAXHP, CAPTURED_HP, WAR_R, ownerOf, regionSide, hpOf, rdyOf, rearm, reach, pickTarget, launch, hurt, capture, advance, ai, fireHere,
               selectKind, newWar, setSide, tally, DOCTRINES, chooseFor, realm, checkGoal, setGoal, CAPTURE_GOALS, mapDraw, mapShow, get RESULT(){ return RESULT; }, get GOAL(){ return GOAL; }, itemsOf, castleItems, CASTLES, spot, LHP, LMAX, REBUILD, lhpOf, alive, padOf, keepOf, terrOf, holeFor, wrapc, dwrap, levelOf: (c, r) => levelAt(boardIdx(c, r)),
               get WDx(){ return GOLFD().WD; }, get SEL(){ return SEL; }, get SIDE(){ return SIDE; }, get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };

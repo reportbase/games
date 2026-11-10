@@ -8195,10 +8195,12 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     // various types of missel launchers to lauch missles at each other."): the sides by block, each launcher's range, damage, volley and reload, a board
     // at no hit points joining the side whose missile took it (kept in storage), the warhead's splash, the war going on by itself, the pieces, and real input
     current = 'boardwar';
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'boardwar')));
+    // (the war opens on mini golf's Medium boards unless its own Board size says otherwise, Nov 10; these checks are written on the Small ones, 8 × 13)
+    await page.evaluate(() => { localStorage.setItem('boardwar.size', JSON.stringify('small')); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'boardwar')); });
     await page.waitForTimeout(1500);
     const bw = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, K = D.KINDS, key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
+      D.applySize();   // (the Small boards, 8 × 13, for sure: a slow runner had not yet switched golf's size by now)
       D.newWar(); D.setGoal(0); D.SIM.quiet = true; D.SIM.ideal = true; D.LIVE = { c: 0, r: 0 };   // (a free war: these checks take boards; ideal: no scatter and nothing in the way, so each kind's damage is exact)
       // the sides: the corner's block yours, all four across the field, the same each time
       const own = () => { const a = []; for (let c = 0; c < 40; c++) for (let r = 0; r < 40; r++) a.push(D.ownerOf(c, r)); return a.join(''); };
@@ -8244,7 +8246,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const g0 = D.itemsOf(0, 0).map(x => x.kind);
       out.golf = [g0.some(k => /^land/.test(k)), g0.some(k => /^rail[VH]_/.test(k)), !g0.some(k => /^(cup|pole|pennant|ball|plate)$/.test(k))].join();
       let stopped = 0, clear = 0, highStopped = 0, rain = 0, offKeep = 0;
-      for (let b = 1; b < 40; b++){
+      for (let b = 1; b < 120; b++){      // (a flat shot gets through the ring only now and then, 3 of 195 on 39 boards: more boards, so the chance of none is nil)
         const tc = b % 7 + 20, tr = Math.floor(b / 7) + 20, side = D.SIDE;
         for (const k of [1, 2, 0, 4]){
           D.MIS.length = 0; D.capture(tc + 1, tr, side); D.capture(tc, tr, (side + 1) % 4); D.rearm(tc + 1, tr);
@@ -8442,6 +8444,51 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       && Math.abs(bwt.fireOld[1] - 1.6 * 0.76) < 1e-3 && Math.abs(bwt.fireNew[1] - 1.6) < 1e-3 && bwt.armour === 84 && bwt.bare === 80 && bwt.reset.join() === '0,0';
     if (!bwtOk) failures.push('[boardwar technology] ' + JSON.stringify(bwt));
     console.log(`${bwtOk ? 'ok  ' : 'FAIL'} board war: technology a step every 90 s to four (${bwt.steps}), more built at four (${bwt.built0} → ${bwt.built4}), a captured board back to ${bwt.afterCap[0]} while its neighbour stays at ${bwt.afterCap[1]}, a mortar at four ${bwt.fireOld} against ${bwt.fireNew}, 20 damage leaving ${bwt.armour} against ${bwt.bare}`);
+    // BOARD WAR: TROOPS (Nov 10: "make the boards bigger in board war.   replace the moving bumpers with troops moving around.   use the margins between the boards to
+    // move troops to other boards to fight."): no bumper or boulder rides a loop (golf tags them `rider`, the war leaves them out), every board draws its garrison of four on
+    // patrol, a squad sent to a hostile board beside it walks out through the board's edge into the margin between the boards, along it and in at the target's edge, two squads
+    // against a garrison of one take the board (the survivors its garrison), a friend's board takes a squad into its garrison, and the war's own boards are Medium (13 × 21)
+    // unless the menu says otherwise, golf's size put back when another game comes forward
+    const bwq = await page.evaluate(async () => {
+      const A = window.getFieldApp(), D = A._debug, out = {}, W = window.FIELD_WORLD, PU = W.spacing()[0] / (W.boardW() * (window.LAB.cellW || 1)), key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
+      D.applySize(); D.newWar(); D.SIM.quiet = true; D.SIM.ideal = false; D.LIVE = { c: 0, r: 0 };
+      const e = (D.SIDE + 1) % 4;
+      out.pitch = +PU.toFixed(3);
+      out.riders = 0; out.drawn = [];
+      for (let c = 0; c < 6; c++) for (let r = 0; r < 4; r++){ const it = A.cellItems(c, r, 600); out.riders += it.filter(i => i.rider).length; out.drawn.push(it.filter(i => i.kind === 'bwTroop').length === D.garOf(c, r)); }
+      out.drawn = out.drawn.every(Boolean);
+      D.capture(1, 0, e); D.garSet(1, 0, 1); D.HP.set(key(1, 0), { hp: 100, hit: D.SIM.t });
+      D.garSet(0, 0, 4); const n1 = D.sendTroops(0, 0, { c: 1, r: 0 }, D.SIDE, 3);
+      out.sent = [n1, D.garOf(0, 0), D.TROOPS.length].join();
+      const rt = D.TROOPS[0].rt; out.lane = rt.pts.some(p => p[0] < 0 && p[0] > 1 - PU);
+      let margin = 0; for (let i = 0; i < 200; i++){ D.advance(0.2); for (const list of D.troopBoards().values()) for (const x of list) if (x.moving && x.u < 0 && x.u > 1 - PU) margin++; if (D.TROOPS.every(t => t.arrived)) break; }
+      out.margin = margin > 0;
+      for (let q = 0; q < 3; q++){ D.garSet(0, 0, 4); D.sendTroops(0, 0, { c: 1, r: 0 }, D.SIDE, 3); }   // (three more squads: one fight is chance, 38 in 40, and the garrison grows back while it goes on)
+      for (let i = 0; i < 300 && D.ownerOf(1, 0) !== D.SIDE; i++) D.advance(0.5);
+      out.taken = [D.ownerOf(1, 0) === D.SIDE, D.garOf(1, 0) >= 1, D.TROOPS.filter(t => t.arrived && t.tc === 1 && t.tr === 0).length].join();
+      // a friend's board takes a squad into its garrison
+      D.garSet(1, 0, 1); D.garSet(0, 0, 4); D.sendTroops(0, 0, { c: 1, r: 0 }, D.SIDE, 3); D.advance(40);
+      out.joined = D.garOf(1, 0);
+      // medium: the war's own choice
+      localStorage.setItem('boardwar.size', JSON.stringify('medium')); D.applySize();
+      return out;
+    });
+    await page.waitForTimeout(800);
+    const bwm = await page.evaluate(async () => {
+      const g = () => window.FIELD_APPS.find(a => a.id === 'minigolf'), out = {};
+      out.medium = [g()._size, Math.abs(window.getFieldApp()._debug.WDx - 13 / 21) < 1e-9];
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'));
+      await new Promise(ok => setTimeout(ok, 600));
+      out.back = g()._size;
+      localStorage.setItem('boardwar.size', JSON.stringify('small'));
+      return out;
+    });
+    const bwqOk = bwq.pitch > 1.1 && bwq.pitch < 1.12 && bwq.riders === 0 && bwq.drawn && bwq.sent === '3,1,3' && bwq.lane && bwq.margin && bwq.taken.startsWith('true,true') && bwq.joined >= 3
+      && bwm.medium.join() === 'medium,true' && bwm.back === 'small';
+    if (!bwqOk) failures.push('[boardwar troops] ' + JSON.stringify({ bwq, bwm }));
+    console.log(`${bwqOk ? 'ok  ' : 'FAIL'} board war: no bumpers riding loops (${bwq.riders}), a garrison of four drawn on every board, a squad out through the edge, along the margin and in (${bwq.lane}, ${bwq.margin}), two squads take a garrison of one (${bwq.taken}), a friend's board takes one in (${bwq.joined}), Medium boards (${bwm.medium}) and golf's size back (${bwm.back})`);
+    await page.evaluate(() => { localStorage.setItem('boardwar.size', JSON.stringify('small')); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'boardwar')); });
+    await page.waitForTimeout(800);
     // BOARD WAR: CASTLES PAY, REPAIR, FLAK (Nov 9: "1,2,5" of the playground ideas): income falls to 0.4 of full with every board's walls gone, repair costs by the damage and puts
     // hit points and launchers back, flak brings down some high arcs (a playground: loose bounds)
     const bwrf = await page.evaluate(() => {
