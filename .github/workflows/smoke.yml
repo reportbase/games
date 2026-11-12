@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
 
 # Side by side (Oct 28: "2", the faster smoke test): on one runner a run took 30 minutes, 26 of the smoke test and 3.5 of
-# the course test. The smoke test is cut into parts (PARTS in tests/smoke.mjs, seven, three to five minutes each) and every part
-# and the course test run as jobs of their own at once, so a run takes about as long as its longest part. The last job keeps
+# the course test. The smoke test is cut into parts (seven, three to five minutes each; since 12 Nov 2026 each a file of its
+# own, tests/part1.mjs to part7.mjs, with what they share in tests/harness.mjs) and every part and the course test run as jobs of their own at once, so a run takes about as long as its longest part. The last job keeps
 # the name "smoke" and passes only when every part and the course have passed, so the PR's check reads as it did.
 # The runner stays on ubuntu-24.04 and Playwright at 1.56.1 (12 Nov 2026). Playwright 1.63.0, whose Chromium runs on
 # ubuntu-latest (26.04), was tried on both runners. On each the tanks' turn had not ended 20 s after a real tap fired
@@ -37,9 +37,8 @@ jobs:
       # (Oct 28: a CDN that would not answer held every part's page from loading. The libraries the page loads from CDNs are
       # installed here at the same versions and served by the tests from them, LIBS_DIR, as in a sandbox.)
       - run: npm install --prefix "$RUNNER_TEMP/libs" --no-save --no-package-lock three@0.128.0 chess.js@1.4.0 unzipit@2.0.1
-      - run: node tests/smoke.mjs
+      - run: node tests/part${{ matrix.shard }}.mjs
         env:
-          SHARD: ${{ matrix.shard }}/7
           LIBS_DIR: ${{ runner.temp }}/libs/node_modules
 
   course:

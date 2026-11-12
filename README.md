@@ -35,7 +35,7 @@ Pieces made of several parts work too.
 | `games.html` | The whole game: one self-contained page. This is the file to edit. |
 | `stockfish-18-lite-single.js` / `.wasm` | The Stockfish chess engine. `games.html` loads them from beside itself, so they must stay in the same folder. |
 | `index.html` | Forwards `/games/` to `games.html`. |
-| `tests/smoke.mjs` | The smoke test (see below). |
+| `tests/smoke.mjs` | The smoke test (see below): it runs the seven parts, `tests/part1.mjs` to `part7.mjs`, which share `tests/harness.mjs`. |
 
 Libraries (three.js, chess.js, pdf.js, unzipit, libarchive.js) load from public
 CDNs at runtime, so the page needs an internet connection.
@@ -52,7 +52,8 @@ python3 -m http.server 8000
 
 ## Smoke test
 
-Every pull request runs `tests/smoke.mjs` in GitHub Actions. It opens the page
+Every pull request runs the smoke test in GitHub Actions, its seven parts side
+by side (`tests/smoke.mjs` runs them one after another). It opens the page
 in headless Chromium, switches to every game in turn, and fails if any of them
 throws an uncaught error. It also loads a two-part chess piece and checks it
 is built where its file says. To run it yourself:
