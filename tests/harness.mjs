@@ -139,7 +139,11 @@ export async function begin(k, current){
        another square (a click once landed a row off), the nearest pixel it reads as this one. Returns { x, y, ok }. */
     // (and after a flight to a board, until a board is framed and the camera has stopped: a check that pressed the dots
     //  1.5 s after flying, mid-flight, opened its editor on the board left before, Oct 13)
-    await page.evaluate(() => {
+    /* (12 Nov 2026) The helpers below are put in every document the page loads, not only the first: a check that loads
+       the page again (part 3's mini golf share link and reloads) found window.__settle gone ("__settle is not a function")
+       once a flight there waited on it. `both` adds a function to every new document and runs it in this one. */
+    const both = async fn => { await page.addInitScript(fn); await page.evaluate(fn); };
+    await both(() => {
       // (still means unchanged at full precision over four looks a quarter second apart; with a board asked for, that board
       //  framed: a glide not yet begun, or creeping, passed a looser test and the click landed a row off, Oct 13)
       window.__settle = async (c, r) => {
@@ -154,7 +158,7 @@ export async function begin(k, current){
       };
       window.__still = () => window.__settle();
     });
-    await page.evaluate(() => {
+    await both(() => {
       window.__aim = (n, col, row, nh) => {
         nh = nh || n;
         const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
