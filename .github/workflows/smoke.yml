@@ -13,10 +13,14 @@ on:
 # the course test. The smoke test is cut into parts (PARTS in tests/smoke.mjs, seven, three to five minutes each) and every part
 # and the course test run as jobs of their own at once, so a run takes about as long as its longest part. The last job keeps
 # the name "smoke" and passes only when every part and the course have passed, so the PR's check reads as it did.
+# The runner stays on ubuntu-24.04 (12 Nov 2026): on ubuntu-latest (26.04) with the same Playwright two checks that wait on
+# the page's frames ran out of time (the tanks' computer not answering in 20 s, the bottom row's long press), the software
+# renderer drawing slower there. Playwright 1.63.0 has a Chromium for both, so moving on is a change of this line once the
+# checks' waits no longer depend on the frame rate.
 jobs:
   part:
     name: smoke ${{ matrix.shard }}/7
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -39,7 +43,7 @@ jobs:
 
   course:
     name: golf course
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
@@ -58,7 +62,7 @@ jobs:
   smoke:
     needs: [part, course]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: every part and the course passed
         run: |
