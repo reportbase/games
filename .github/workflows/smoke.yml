@@ -11,17 +11,18 @@ on:
 
 # Side by side (Oct 28: "2", the faster smoke test): on one runner a run took 30 minutes, 26 of the smoke test and 3.5 of
 # the course test. The smoke test is cut into parts (seven, three to five minutes each; since 12 Nov 2026 each a file of its
-# own, tests/part1.mjs to part7.mjs, with what they share in tests/harness.mjs) and every part and the course test run as jobs of their own at once, so a run takes about as long as its longest part. The last job keeps
-# the name "smoke" and passes only when every part and the course have passed, so the PR's check reads as it did.
-# The runner stays on ubuntu-24.04 and Playwright at 1.56.1 (12 Nov 2026). Playwright 1.63.0, whose Chromium runs on
-# ubuntu-latest (26.04), was tried on both runners. On each the tanks' turn had not ended 20 s after a real tap fired
-# (state still 'play', one turn), so that is the newer Chromium, not the runner; on 26.04 the bottom row's long press
-# did not toggle it either (the 24.04 run was not waited for). 1.56.1 has no Chromium for 26.04, so both move together, once those two
-# checks pass on the newer browser.
+# own, tests/part1.mjs to part7.mjs, with what they share in tests/harness.mjs) and every part and the course test run as
+# jobs of their own at once, so a run takes about as long as its longest part. The last job keeps the name "smoke" and
+# passes only when every part and the course have passed, so the PR's check reads as it did.
+# The runner is ubuntu-latest and Playwright 1.63.0 (12 Nov 2026). They move together: 1.56.1 has no Chromium for 26.04. On
+# 1.63.0's Chromium, on 24.04 and 26.04 alike, two checks failed every time: the tanks' turn had not ended 20 s after a real
+# tap fired, and the bottom row's long press did not toggle it. Its first frames take seconds each in the software renderer,
+# and both checks counted seconds where the page counts frames; they wait on the game's clock and on frames now
+# (docs/field.md, "The smoke test waits on frames").
 jobs:
   part:
     name: smoke ${{ matrix.shard }}/7
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -43,7 +44,7 @@ jobs:
 
   course:
     name: golf course
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
@@ -62,7 +63,7 @@ jobs:
   smoke:
     needs: [part, course]
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: every part and the course passed
         run: |
