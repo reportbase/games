@@ -280,7 +280,9 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     flight that only waited so many seconds also waits for `__settle` (20). With frames quicker than the wait each is the wait
     it was. Left as they were, because they are the gesture itself: waits while a press is held, the steps of a drag or of a
     wheel, the gap between two taps or keys, anything under a tenth of a second. No check asserts less and none calls the page
-    where it sent input.
+    where it sent input. Every part then ran whole once in a sandbox on that browser and passed, but for one wait this
+    pass had not touched: part 3 gave mini golf's windmill 20 s to load, which is asked for as the field is first drawn; it
+    has two minutes, and part 3 passed.
   Parts 5 and 6 then passed whole twice in a row on that browser in a sandbox, so `package.json` asks for Playwright 1.63.0 and
   the smoke jobs run on `ubuntu-latest`. The parts are files since the same day (`tests/part1.mjs` … `part7.mjs`,
   `tests/harness.mjs`; `CLAUDE.md`, Testing).

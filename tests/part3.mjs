@@ -58,7 +58,9 @@ try {
   current = 'mini golf windmill';
   const before2 = failures.length;
   await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'mini golf')));
-  await page.waitForFunction(() => window.__props.propC('windmill') && window.__props.PROPS.windmill.state === 'ready', null, { timeout: 20000 })
+  // (two minutes, not 20 s (12 Nov 2026): the prop is asked for as mini golf's field is first drawn, and with Playwright 1.63.0's
+  //  Chromium those first frames took longer than that in a sandbox, once; the rest of the check found it loaded, 11 parts)
+  await page.waitForFunction(() => window.__props.propC('windmill') && window.__props.PROPS.windmill.state === 'ready', null, { timeout: 120000 })
     .catch(() => failures.push(`[${current}] res/windmill.tvf3d did not load`));
   const mill = await page.evaluate(async () => {
     const D = window.getFieldApp()._debug, k = D.HOLES.findIndex(H => (H.toys || []).some(T => T.mill));
