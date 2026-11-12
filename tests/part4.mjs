@@ -516,6 +516,10 @@ try {
         const pt = await aimAt(u, v);
         await page.mouse.click(pt.x, pt.y);
         await drawn(page, 400);
+        // (12 Nov 2026: the press is taken at once, the round's end a step of the game later, and a step waits on a frame:
+        //  on CI the score read 1 with the state still 'input'. The game is looked at a frame at a time, 20 at most, until it
+        //  has left 'input'; what is asserted below is unchanged)
+        for (let k = 0; k < 20; k++){ const g = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? g.state : null; }, key); if (g !== 'input') break; await frame(page, 200); }
       }
       const after = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { state: g.state, score: g.score } : null; }, key);
       real = { started, want, after };
