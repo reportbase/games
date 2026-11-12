@@ -240,6 +240,27 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   waiting, the press was taken back from the game as a hold and the drag went nowhere (3 page loads in 6 here). When the time is
   up the hold now waits one frame (`_holdTok`, a `requestAnimationFrame`): a hand that has started moving clears the timer first
   (`turnMove`), as it would have before the time was up.
+- **The smoke test waits on frames and the game's clock, not the wall's** (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix
+  the flaky checks and move to the newer browser", the sixth "Games: split its smoke test like draw's"). With Playwright 1.63.0's
+  Chromium the software renderer's first frames of a field, and the first that show a new thing (a shot), take seconds each while
+  the page's own thread sits idle (in a sandbox: 11, 6 and 4 s for the first three frames of a tank's shot, then under a second;
+  a second shot's all under two; 36 s for one frame as the tanks' field was first drawn). Nothing in the page was wrong; three
+  checks counted seconds where the page counts frames, and one did not wait for a flight:
+  - **The tanks** (part 5): a game steps a quarter of a second a frame at most (`stepGame`), so 20 s on the wall after a real
+    tap fired the game's clock stood at half a second and the turn had not ended, every time on CI. Its waits (`until`,
+    `waitAim`, the drive, the row's shell, the win) are given seconds of `g.t`, with five minutes of the wall as the end.
+  - **The hold** (part 6, the part's first check): the 600 ms timer fired on time, the frame it waits for (`_holdTok`, above) came
+    10.9 s later, 10 s after the 1.4 s press had let go, so there was no hold. And once the press was held long enough, the
+    switch flipped but the page's class, which the check reads, follows on the next frame (`syncBrowserVisibility`), 13.6 s on,
+    past the 8 s it waited. The press is now held until a frame has come after the hold's time (`held`) and the row read
+    after frames (`frame`). A person's hold of 1.4 s on a page that slow would not be one either: the page was left as it is.
+  - **The game lab** (part 5): "a real click did not move the block", once on CI on the older browser. The clicks were made 1.2 s
+    after the lab called board (2, 0) its own, with the camera still gliding (x 6.37, 6.45, 7.40, 7.72 at the pixel's working
+    out and the three clicks), so each landed a square further off. It waits for `__settle(2, 0)` now, as Snake's real arrow
+    key waits for `__settle(1, 0)` (run alone, the flight had not begun 2.5 s on and the key went to the board before).
+  Parts 5 and 6 then passed whole twice in a row on that browser in a sandbox, so `package.json` asks for Playwright 1.63.0 and
+  the smoke jobs run on `ubuntu-latest`. The parts are files since the same day (`tests/part1.mjs` … `part7.mjs`,
+  `tests/harness.mjs`; `CLAUDE.md`, Testing).
 - **Games play with the row shut** (Oct 28: "you should not need to have the bottom browser open to play games. that is only
   for advanced users.", then "Mostly getstures, but some buttons if needed."):
   - **The row never opens by itself.** `bbStatTick` opened it when a game's numbers first appeared (Sep 30), and put back a row a

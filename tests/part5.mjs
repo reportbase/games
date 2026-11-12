@@ -64,8 +64,17 @@ try {
     const at = (x, y) => page.evaluate(([x, y]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, u = x / window.getFieldApp()._debug.ASP;
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - y) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [x, y]);
-    const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && { state: g.state, turn: g.turn, turns: g.turns.length, a: g.a[0], p: g.p[0], hp: g.S.hp.slice(), x: g.S.xs[0], fuel: g.S.fuel[0], wid: g.wid[0], big: g.S.ammo[0][1] }; }, fc[0] + '_' + fc[1]);
-    const waitAim = async () => { for (let w = 0; w < 80; w++){ const s = await gs(); if (s.state === 'over' || (s.state === 'aim' && s.turn === 0)) return s; await page.waitForTimeout(250); } return gs(); };
+    const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && { state: g.state, turn: g.turn, turns: g.turns.length, a: g.a[0], p: g.p[0], hp: g.S.hp.slice(), x: g.S.xs[0], fuel: g.S.fuel[0], wid: g.wid[0], big: g.S.ammo[0][1], t: g.t }; }, fc[0] + '_' + fc[1]);
+    /* WAITS ARE COUNTED ON THE GAME'S OWN CLOCK (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix the flaky checks and move to
+       the newer browser"). A game here moves only when a frame is drawn, a quarter of a second of its time a frame at most
+       (`stepGame`), so a turn of a second and a half is six frames or more and the computer's answer a dozen. The waits were
+       seconds on the wall (20 for the answer), and with Playwright 1.63.0's Chromium the first frames that show a shot take
+       seconds each in the software renderer (measured in a sandbox: 11 s, 6 s and 4 s for the first three, the page's own
+       thread idle the while, then under a second; a second shot's frames all under two): 20 s on, the game's clock stood at
+       half a second and the turn had not ended, on CI every time. So a wait is given seconds of the game's clock (`g.t`), and
+       stops early only when five minutes on the wall have gone with the clock short of that. */
+    const until = async (ok, secs) => { let s = await gs(); const t0 = s.t; for (let w = 0; w < 1200 && !ok(s) && s.t - t0 < secs; w++){ await page.waitForTimeout(250); s = await gs(); } return s; };
+    const waitAim = () => until(s => s.state === 'over' || (s.state === 'aim' && s.turn === 0), 30);
     const live = {};
     if (fc){
       const tank = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.GAMES.delete(c + '_' + r); D.LIVE = { c, r }; const g = D.gameAt(c, r); return [g.S.xs[0], D.surfAt(g.S.H, g.S.xs[0])]; }, fc);
@@ -80,8 +89,9 @@ try {
       live.tap = await gs();
       live.answered = await waitAim();
       // a real key drives (D, held), on fuel
+      // (the tank moves when a frame steps the game with the key held: two seconds of the game's clock for it)
       const x0 = (await gs()).x; await page.keyboard.down('d');
-      for (let w = 0; w < 24 && !((await gs()).x > x0 + 0.01); w++) await page.waitForTimeout(250);
+      await until(s => s.x > x0 + 0.01, 2);
       await page.keyboard.up('d'); await page.waitForTimeout(100);
       live.drove = await gs(); live.x0 = x0;
       // a real drag anywhere on the board aims and fires nothing; then the real Enter key fires
@@ -98,7 +108,8 @@ try {
       live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
         // (your tank kept whole while it waits, as the win's wait below keeps it: the computer's answer to the Enter shot put you
         //  out from 81 on CI, Oct 28, and with the game over there was no win left to play)
-        for (let w = 0; w < 240 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
+        // (and waited for on the game's clock, as above: the Enter shot's turn and the computer's answer)
+        for (let w = 0, t0 = g.t; w < 1200 && g.t - t0 < 30 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
         if (g.state === 'over') return { over: true };
         // (the row's ◀ a degree up, − two in a hundred of the power down, then Big shell and the row's Fire)
         const ready = g.state + g.turn, tiles = A.statTiles(c, r), a = g.a[0], p = g.p[0];
@@ -111,10 +122,11 @@ try {
         for (let n = 0; n < 6 && g.state !== 'over'; n++){
           // (your tank kept whole while it waits: the computer's answer to the big shell before this could be a big shell too, and
           //  put you out before a steady shot was fired, on CI, Oct 21)
-          for (let w = 0; w < 80 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
+          // (both waits on the game's clock, as above)
+          for (let w = 0, t0 = g.t; w < 1200 && g.t - t0 < 30 && !(g.state === 'aim' && g.turn === 0) && g.state !== 'over'; w++){ g.S.hp[0] = 100; await new Promise(ok => setTimeout(ok, 250)); }
           if (g.state === 'over') break;
           g.S.hp[0] = 100; const b = D.aimFor(g.S.H, g.S.xs, 0, g.S.wind, 1); g.a[0] = b.a; g.p[0] = b.p; g.wid[0] = 0; D.fire(g);
-          for (let w = 0; w < 80 && g.state === 'play'; w++) await new Promise(ok => setTimeout(ok, 100));
+          for (let w = 0, t0 = g.t; w < 3000 && g.t - t0 < 30 && g.state === 'play'; w++) await new Promise(ok => setTimeout(ok, 100));
         }
         return { state: g.state, won: g.won, stars: g.stars, best: D.BEST.get(g.T.idx + '@' + g.T.lv) === g.S.hp[0] }; }, fc);
     }
@@ -481,12 +493,16 @@ const game = { title: 'Gold Lights', size: l => l < 3 ? 4 : 5,
         const r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title; });
       if (U !== 'Lights Out') bad.push('Undo went to ' + U);
       // Snake (board (1, 0)) waits for the player, then the real ArrowUp turns it up
-      await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0)); await page.waitForTimeout(2500);
+      // (settled on board (1, 0), not a fixed 2.5 s (12 Nov 2026): with the page fresh and its frames seconds apart the flight had
+      //  not begun 2.5 s on, the lab's board was still (0, 0) and the key went to Lights Out; the camera left four seconds later)
+      await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0)); await page.waitForTimeout(500); await page.evaluate(() => window.__settle(1, 0));
+      await page.waitForFunction(() => { const L = window.getFieldApp()._debug.live; return L && L.c === 1 && L.r === 0; }, null, { timeout: 30000 }).catch(() => {});
       const head = () => page.evaluate(() => { const r = window.getFieldApp()._debug.RUN.get('1_0'); return r && r.view && r.view.pieces[0] ? [r.view.pieces[0].x, r.view.pieces[0].y, r.view.over] : null; });
       const h0 = await head();
       await page.keyboard.press('ArrowUp');
       let h1 = null;                                   // (a slow runner's frames are far apart: wait for the first step up)
-      for (let k = 0; k < 60; k++){ await page.waitForTimeout(100); h1 = await head(); if (h1 && (h1[1] < 6.5 || h1[0] !== 5.5 || h1[2])) break; }
+      // (the snake steps once a frame, and a frame can be seconds: up to a minute for the first, 12 Nov 2026)
+      for (let k = 0; k < 600; k++){ await page.waitForTimeout(100); h1 = await head(); if (h1 && (h1[1] < 6.5 || h1[0] !== 5.5 || h1[2])) break; }
       if (!h0 || h0[0] !== 5.5 || h0[1] !== 6.5) bad.push('Snake did not wait: ' + JSON.stringify(h0));
       if (!h1 || !(h1[1] < 6.5) || h1[0] !== 5.5 || h1[2]) bad.push('the real ArrowUp did not turn the snake up: ' + JSON.stringify(h1));
     } catch (e){ bad.push(String(e)); }
@@ -527,7 +543,14 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         return r ? { L, title: r.meta && r.meta.title, drags: r.meta && r.meta.drags, status: r.view && r.view.status, err: r.err, sounds: r.view && r.view.sounds.map(x => x[0]),
                      me: r.view && (r.view.pieces.find(p => p.id === 'me') || {}), anim: r.anim && r.anim.get('me') } : null; });
       await page.evaluate(async src => { const D = window.getFieldApp()._debug; await D.takeShared(2, 0, { s: src }); D.fly(2, 0); }, WORDS);
-      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = L && D.RUN.get(L.c + '_' + L.r); return L && L.c === 2 && L.r === 0 && r && r.view && r.meta && r.meta.title === 'Words'; }, null, { timeout: 10000 }).catch(() => {});
+      /* THE CLICKS WAIT FOR THE CAMERA TO STOP (12 Nov 2026, the flaky check of "1,2,3,4,5,6"'s first: "a real click did not move
+         the block", once on CI and again in a sandbox). The flight to board (2, 0) was given until the lab called the board its
+         own and 1.2 s more; with frames far apart the camera was still gliding then (its x read 6.37, 6.45, 7.40 and 7.72 at the
+         pixel's working out and the three clicks), so the pixel worked out for square (3, 2) was square 2, then 1, then 0 by the
+         time each click landed, and the block went there. `__settle` waits until board (2, 0) is framed and the camera has not
+         moved over four looks, as the checks that click squares do. */
+      await page.waitForTimeout(500); await page.evaluate(() => window.__settle(2, 0));
+      await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = L && D.RUN.get(L.c + '_' + L.r); return L && L.c === 2 && L.r === 0 && r && r.view && r.meta && r.meta.title === 'Words'; }, null, { timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(1200);
       const sys = await page.evaluate(() => window.getFieldApp()._debug.LAB_SYS);
       if (!/sound\(kind, pitch, seconds\)/.test(sys) || !/shape: "text"/.test(sys) || !/game\.drag\(/.test(sys) || !/glide/.test(sys)) bad.push('the system prompt does not tell Claude about sound, text, drag and glide');

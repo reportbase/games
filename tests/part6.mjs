@@ -26,11 +26,26 @@ try {
     const before = failures.length, out = {};
     const shown = () => page.evaluate(() => { const b = document.body; return !b.classList.contains('bb-collapsed'); });
     // (a hold is decided a frame after its time is up, and on a loaded CI runner that frame can come later than the fixed 900 ms this waited
-    //  after the press let go: found once, the row toggled after it was read, twice over. It waits for the switch it is to flip, up to 8 s)
+    //  after the press let go: found once, the row toggled after it was read, twice over. It waits for the switch it is to flip)
+    /* THE PRESS IS HELD UNTIL THE PAGE HAS DRAWN A FRAME PAST THE HOLD'S TIME (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix
+       the flaky checks and move to the newer browser"). A hold is decided a frame after its 600 ms are up (`_holdTok`), and
+       letting go before that frame takes it back. The press was held 1.4 s by the wall; this check is the part's first, the page
+       fresh, and with Playwright 1.63.0's Chromium the software renderer's first frames of trick shots are seconds each (measured
+       in a sandbox: the hold's timer fired 600 ms after the press, the frame it then asked for came 10.9 s later, 10 s after the
+       press had let go), so the row was not toggled, on CI every time. `held` is the hold a person makes, until the page has
+       seen it: 700 ms, then the next frame (asked for after the hold's own, so it runs after it), and never less than the 1.4 s
+       it was; a minute at most, should no frame come. */
+    const held = () => page.evaluate(() => new Promise(ok => { const t0 = performance.now(); setTimeout(ok, 60000);
+      setTimeout(() => requestAnimationFrame(() => setTimeout(ok, Math.max(0, 1400 - (performance.now() - t0)))), 700); }));
+    /* …AND THE ROW IS READ A FRAME ON. The hold flips the field's switch; the page's class, which `shown` reads, follows on the
+       next frame (`syncBrowserVisibility`). With the press held as above the first hold did flip the switch, and the class came
+       13.6 s later, past the 8 s this waited: read as not opened, and the second hold, which then shut it, as not shut. So the
+       wait for the switch is counted in frames, twelve at most (each a fifth of a second at least, a minute at most). */
+    const frame = () => page.evaluate(() => new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 200)); }));
     const hold = async (read = shown) => { const p = await page.evaluate(() => ({ x: innerWidth * 0.45, y: innerHeight * 0.4 })); await page.mouse.move(p.x, p.y);
       const was = await read(); await page.mouse.down();
-      await page.waitForTimeout(1400); await page.mouse.up(); await page.waitForTimeout(900);
-      for (let k = 0; k < 40 && (await read()) === was; k++) await page.waitForTimeout(200); };
+      await held(); await page.mouse.up(); await page.waitForTimeout(900);
+      for (let k = 0; k < 12 && (await read()) === was; k++) await frame(); };
     try {
       await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); const D = A._debug, [c, r] = D.cellOfIdx(1); D.GAMES.clear(); D.fly(c, r); D.LIVE = { c, r }; D.gameAt(c, r); });
       // (settled, not a fixed 3 s: in a part of its own the page is fresh and its frames slow, and a hold during the flight was a pan)
@@ -64,7 +79,7 @@ try {
         for (let y = 40; y < innerHeight - 40; y += 6) for (let x = 40; x < innerWidth - 40; x += 6){ const b = uv(x, y); if (!b) continue;
           const i = Math.floor(b.v * n) * n + Math.floor(b.u * n), cu = (b.u * n) % 1, cv = (b.v * n) % 1;
           if (b.u > 0 && b.u < 1 && b.v > 0 && b.v < 1 && cu > 0.3 && cu < 0.7 && cv > 0.3 && cv < 0.7 && (covered ? !g.open[i] && !g.flag[i] : g.open[i])) return { x, y }; } return null; }, covered);
-      const holdAt = async p => { await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.waitForTimeout(1400); await page.mouse.up(); await page.waitForTimeout(900); };
+      const holdAt = async p => { await page.mouse.move(p.x, p.y); await page.mouse.down(); await held(); await page.mouse.up(); await page.waitForTimeout(900); };
       out.mines = {};
       const cov = await squareAt(true);
       if (cov){ const m0 = await vis(), f0 = await flags(); await holdAt(cov); out.mines.holdFlag = (await flags()) === f0 + 1 && m0 === await vis(); }
