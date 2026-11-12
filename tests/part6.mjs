@@ -11,7 +11,7 @@ import { writeFile, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { deflateSync } from 'node:zlib';
 import { join } from 'node:path';
-import { begin, SETTLE_MS } from './harness.mjs';
+import { begin, SETTLE_MS, frame, held, drawn } from './harness.mjs';
 
 let current = 'page load';
 const T = await begin(6, () => current);
@@ -35,29 +35,26 @@ try {
        press had let go), so the row was not toggled, on CI every time. `held` is the hold a person makes, until the page has
        seen it: 700 ms, then the next frame (asked for after the hold's own, so it runs after it), and never less than the 1.4 s
        it was; a minute at most, should no frame come. */
-    const held = () => page.evaluate(() => new Promise(ok => { const t0 = performance.now(); setTimeout(ok, 60000);
-      setTimeout(() => requestAnimationFrame(() => setTimeout(ok, Math.max(0, 1400 - (performance.now() - t0)))), 700); }));
     /* …AND THE ROW IS READ A FRAME ON. The hold flips the field's switch; the page's class, which `shown` reads, follows on the
        next frame (`syncBrowserVisibility`). With the press held as above the first hold did flip the switch, and the class came
        13.6 s later, past the 8 s this waited: read as not opened, and the second hold, which then shut it, as not shut. So the
        wait for the switch is counted in frames, twelve at most (each a fifth of a second at least, a minute at most). */
-    const frame = () => page.evaluate(() => new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 200)); }));
     const hold = async (read = shown) => { const p = await page.evaluate(() => ({ x: innerWidth * 0.45, y: innerHeight * 0.4 })); await page.mouse.move(p.x, p.y);
       const was = await read(); await page.mouse.down();
-      await held(); await page.mouse.up(); await page.waitForTimeout(900);
-      for (let k = 0; k < 12 && (await read()) === was; k++) await frame(); };
+      await held(page); await page.mouse.up(); await drawn(page, 900);
+      for (let k = 0; k < 12 && (await read()) === was; k++) await frame(page); };
     try {
       await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); const D = A._debug, [c, r] = D.cellOfIdx(1); D.GAMES.clear(); D.fly(c, r); D.LIVE = { c, r }; D.gameAt(c, r); });
       // (settled, not a fixed 3 s: in a part of its own the page is fresh and its frames slow, and a hold during the flight was a pan)
-      await page.waitForTimeout(500); await page.evaluate(() => window.__settle());
-      if (!(await shown())){ await page.click('#bbHandle'); await page.waitForTimeout(800); }
+      await drawn(page, 500); await page.evaluate(() => window.__settle());
+      if (!(await shown())){ await page.click('#bbHandle'); await drawn(page, 800); }
       out.up = await shown();
-      await page.evaluate(() => document.getElementById('bbHandle').click()); await page.waitForTimeout(1500);   // (the dots are hidden while the row is open, Nov 1: the click is made on the element itself; a long press shuts it by hand)
+      await page.evaluate(() => document.getElementById('bbHandle').click()); await drawn(page, 1500);   // (the dots are hidden while the row is open, Nov 1: the click is made on the element itself; a long press shuts it by hand)
       out.shut = !(await shown());
       await hold(); out.heldOpen = await shown();
       await hold(); out.heldShut = !(await shown());
       await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'simon'); window.setFieldApp(A); });
-      await page.waitForTimeout(2500);
+      await drawn(page, 2500);
       // (Simon's row is empty, so it is drawn shut either way: the field's own switch is read)
       const vis = () => page.evaluate(() => window.tvf.bottomRow.visible);
       const s0 = await vis(); await hold(vis); out.simon = { before: s0, after: await vis() };
@@ -66,10 +63,10 @@ try {
       // restore the long press, its fundemental to its game play."): a real hold on a covered square flags it and leaves the switch
       // alone; one on an open square flips the switch.
       await page.evaluate(() => { localStorage.removeItem('minesweeper.taps'); const A = window.FIELD_APPS.find(a => a.name === 'minesweeper'); window.setFieldApp(A); });
-      await page.waitForTimeout(2500);
+      await drawn(page, 2500);
       const P = await page.evaluate(() => ({ x: innerWidth * 0.45, y: innerHeight * 0.4 }));
       const playing = () => page.evaluate(() => { let n = 0; window.getFieldApp()._debug.games.forEach(g => { if (g.state === 'play') n++; }); return n; });
-      for (let k = 0; k < 3 && !(await playing()); k++){ await page.mouse.click(P.x, P.y); await page.waitForTimeout(900); }   // (the first may only select)
+      for (let k = 0; k < 3 && !(await playing()); k++){ await page.mouse.click(P.x, P.y); await frame(page, 900); }   // (the first may only select)
       // (the row is empty, so it is drawn shut and a hold always opens it: the switch is put off first)
       await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(false); window.tvf.fn.syncBrowserVisibility(); });
       const flags = () => page.evaluate(() => { let n = 0; window.getFieldApp()._debug.games.forEach(g => { if (g.state === 'play') n += g.flag.reduce((s, f) => s + f, 0); }); return n; });
@@ -79,7 +76,7 @@ try {
         for (let y = 40; y < innerHeight - 40; y += 6) for (let x = 40; x < innerWidth - 40; x += 6){ const b = uv(x, y); if (!b) continue;
           const i = Math.floor(b.v * n) * n + Math.floor(b.u * n), cu = (b.u * n) % 1, cv = (b.v * n) % 1;
           if (b.u > 0 && b.u < 1 && b.v > 0 && b.v < 1 && cu > 0.3 && cu < 0.7 && cv > 0.3 && cv < 0.7 && (covered ? !g.open[i] && !g.flag[i] : g.open[i])) return { x, y }; } return null; }, covered);
-      const holdAt = async p => { await page.mouse.move(p.x, p.y); await page.mouse.down(); await held(); await page.mouse.up(); await page.waitForTimeout(900); };
+      const holdAt = async p => { await page.mouse.move(p.x, p.y); await page.mouse.down(); await held(page); await page.mouse.up(); await drawn(page, 900); };
       out.mines = {};
       const cov = await squareAt(true);
       if (cov){ const m0 = await vis(), f0 = await flags(); await holdAt(cov); out.mines.holdFlag = (await flags()) === f0 + 1 && m0 === await vis(); }
@@ -87,10 +84,10 @@ try {
       const opn = await squareAt(false);
       if (opn){ const m0 = await vis(), f0 = await flags(); await holdAt(opn); out.mines.holdRow = m0 !== await vis() && (await flags()) === f0; }
       else out.mines.holdRow = 'no open square found';
-      await page.keyboard.press('f'); await page.waitForTimeout(200);
+      await page.keyboard.press('f'); await drawn(page, 200);
       out.mines.flagMode = await page.evaluate(() => window.getFieldApp().menu[0].items.at(-1).label());
       const at = await squareAt(true);
-      if (at){ const f1 = await flags(); await page.mouse.click(at.x, at.y); await page.waitForTimeout(600); out.mines.tapFlag = (await flags()) === f1 + 1; }
+      if (at){ const f1 = await flags(); await page.mouse.click(at.x, at.y); await drawn(page, 600); out.mines.tapFlag = (await flags()) === f1 + 1; }
       else out.mines.tapFlag = 'no square found';
       await page.keyboard.press('f');
     } catch (e) { out.err = String(e); }
@@ -109,7 +106,7 @@ try {
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
     for (const id of ['chess', 'tetris', 'towerdefense', 'minigolf', 'sokoban', 'checkers', 'simon', 'lightsout', 'whackamole', 'nonograms']){
       await page.evaluate(id => window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)), id);
-      await page.waitForTimeout(1500);
+      await drawn(page, 1500);
       // a game under way on the framed board (a tap on it), then the view pulled back so the neighbours show
       await page.evaluate(async () => {
         const W = window.FIELD_WORLD, T = W.target, cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
@@ -120,14 +117,14 @@ try {
         cv.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: at[0], clientY: at[1] })); fire('touchend', t);
         await wait(700);
       });
-      await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await page.waitForTimeout(1500);
+      await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await drawn(page, 1500);
       // (until a neighbour shows: on CI chess, the first game here, once had none on the screen 1.5 s after the wheel, Oct 27)
       for (let k = 0; k < 4; k++){
         const shows = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, [spx, spz] = W.spacing(), cv = document.querySelector('canvas');
           return [[spx, 0], [-spx, 0], [0, spz], [0, -spz]].some(([dx, dz]) => { const v = new W.THREE.Vector3(T.boardX + dx, 0, T.boardZ + dz).project(W.camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
             return x > 60 && y > 60 && x < innerWidth - 60 && y < innerHeight - 140 && document.elementFromPoint(x, y) === cv; }); });
         if (shows) break;
-        await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await page.waitForTimeout(1500);
+        await page.mouse.move(640, 400); await page.mouse.wheel(0, -500); await drawn(page, 1500);
       }
       const r = await page.evaluate(async () => {
         const W = window.FIELD_WORLD, T = W.target, [spx, spz] = W.spacing(), cv = document.querySelector('canvas'), wait = ms => new Promise(ok => setTimeout(ok, ms));
@@ -215,7 +212,7 @@ try {
       buffer: pngOf(48, 36, [(i * 37) % 255, (i * 91) % 255, (i * 53) % 255]) })));
     await page.waitForFunction(() => window.tvf.bottomRow.n === 40, null, { timeout: 60000 }).catch(() => {});
     await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); });
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const y = await page.evaluate(() => { const r = document.getElementById('boardBrowser').getBoundingClientRect(); return r.top + r.height * 0.6; });
     const cdp2 = await page.context().newCDPSession(page);
     const swipe = async (liftAfter) => {          // 10 moves of 16 px, 16 ms apart, then the lift liftAfter steps after the last
@@ -232,7 +229,7 @@ try {
     const coast = await moved(a0, await page.evaluate(() => window.tvf.bottomRow.angle));
     const b0 = await swipe(10);                 // the finger stops 160 ms before it lifts
     const still = await page.evaluate(() => window.tvf.bottomRow.coasting);
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const after = await moved(b0, await page.evaluate(() => window.tvf.bottomRow.angle));
     const ok = st0.n === 40 && st0.coasting && -coast > st0.itemW && !still && Math.abs(after) < 1;
     if (!ok) failures.push('[bottom row coast] ' + JSON.stringify({ n: st0.n, coastingAtRelease: st0.coasting, vel: st0.vel, coast, still, after }));
@@ -296,7 +293,7 @@ try {
     else {
       await page.setInputFiles('#importImageFile', file);
       await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._epub && G._epub.label === 'The Smoke Book'; }, null, { timeout: 30000 }).catch(() => {});
-      await page.waitForTimeout(4000);
+      await drawn(page, 4000);
       const r = await page.evaluate(() => {
         const G = window.FIELD_APPS.find(a => a.id === 'gallery'), E = G._epub;
         if (!E) return { why: 'no book laid out' };
@@ -348,7 +345,7 @@ try {
         else {
           await page.mouse.click(box.x, box.y);
           await page.waitForFunction(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'); return G._epub.EPUB.style.size === 22 && !G._book.busy; }, null, { timeout: 20000 }).catch(() => {});
-          await page.waitForTimeout(1500);
+          await drawn(page, 1500);
           const big = await page.evaluate(() => { const G = window.FIELD_APPS.find(a => a.id === 'gallery'), E = G._epub, i = G._pick(tvf.target.cellX, tvf.target.cellZ) - E.base;
                                                   return { n: E.pages.length, size: E.EPUB.style.size, from: E.pages[i] && E.pages[i].at, to: E.pages[i + 1] ? E.pages[i + 1].at : 1e9 }; });
           if (big.size !== 22) bad.push('Larger left the size at ' + big.size);
@@ -396,7 +393,7 @@ try {
     const bad = [];
     const G = 'window.FIELD_APPS.find(a => a.id === \'gallery\')';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const md = ['---', 'title: "The Garden Notes"', '---', '# Planting', '',
       'Some **bold** words, some *italic* ones, `inline code` and a [link](https://example.com).', 'A line that carries on.', '',
       '![a red square](pics/red.png)', '', '- one', '- two', '  - two and a half', '- [x] done', '- [ ] not yet', '', '1. first', '2. second', '',
@@ -428,7 +425,7 @@ try {
       if (!/^Smaller,\d+,Larger,Serif/.test(r.row)) bad.push('the row is not the book\'s settings: ' + r.row);
       // a real click on Larger lays it out again (the row opened first: a book's settings do not hold it open)
       await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); });
-      await page.waitForTimeout(1200);
+      await drawn(page, 1200);
       const tile = await page.evaluate(() => {
         const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(e => e._key === 'stat_2' && e.style.display !== 'none'); if (!t) return null;
         const b = t.getBoundingClientRect(); return b.width > 4 && b.left >= 0 && b.right <= innerWidth ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null; });
@@ -466,7 +463,7 @@ try {
     const bad = [];
     const G = 'window.FIELD_APPS.find(a => a.id === \'gallery\')';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1000);
+    await drawn(page, 1000);
     const md = ['# More', '', 'A note[^a], ==marked words==, H~2~O, x^2^, :smile: and ~~struck~~ with ~5 and ~10 left alone.', '', '> [!WARNING]', '> Mind the step.', '',
       'Term', ': Its definition.', '', '| Left | Mid | Right |', '|:-----|:---:|------:|', '| a | **b** | `c` |', '| long cell words that wrap | 2 | 3 |', '',
       '[^a]: The note.', ''].join('\n');
@@ -514,14 +511,14 @@ try {
     const bad = [];
     const G = 'window.FIELD_APPS.find(a => a.id === \'gallery\')';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1000);
+    await drawn(page, 1000);
     const pngs = await page.evaluate(() => Array.from({ length: 40 }, (_, k) => { const c = document.createElement('canvas'); c.width = 200; c.height = 200; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 9},70%,45%)`; x.fillRect(0, 0, 200, 200); return c.toDataURL('image/png').split(',')[1]; }));
     await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `f${String(i).padStart(2, '0')}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
-    await page.waitForTimeout(1500);   // (a picture or two may be in, or the folder still being measured: the book wins either way)
+    await drawn(page, 1500);   // (a picture or two may be in, or the folder still being measured: the book wins either way)
     const md = '# Alone\n\n' + 'Some words here. '.repeat(30) + '\n';
     await page.setInputFiles('#importImageFile', [{ name: 'alone.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
     await page.waitForFunction(g => { const E = eval(g)._epub; return E && E.md && E.label === 'Alone'; }, G, { timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(6000);
+    await drawn(page, 6000);
     const r = await page.evaluate(g => { const A = eval(g), E = A._epub; return { pages: E ? E.pages.length : -1, have: A._list.filter(Boolean).length, names: A._list.filter(Boolean).map(e => e.name) }; }, G);
     if (r.pages < 1) bad.push('the book did not open');
     else if (r.names.some(n => !/ · /.test(n || ''))) bad.push('pictures of the folder are still in the collection: ' + r.names.filter(n => !/ · /.test(n || '')).slice(0, 3).join(', '));
@@ -535,7 +532,7 @@ try {
     current = 'load shape from current image';
     const bad = [];
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1000);
+    await drawn(page, 1000);
     const pngs = await page.evaluate(() => [0, 1, 2, 3].map(k => { const c = document.createElement('canvas'); const L = k !== 0; c.width = L ? 600 : 300; c.height = L ? 300 : 600; const x = c.getContext('2d'); x.fillStyle = '#c33'; x.fillRect(0, 0, c.width, c.height); return c.toDataURL('image/png').split(',')[1]; }));
     await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `q${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
     await page.waitForFunction(() => ['q0', 'q1'].every(n => window.GALLERY_APP._list.some(e => e && e.name === n)), null, { timeout: 120000 }).catch(() => {});
@@ -554,15 +551,15 @@ try {
     current = 'tap reshapes';
     const bad = [];
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1000);
+    await drawn(page, 1000);
     const pngs = await page.evaluate(() => [0, 1, 2, 3].map(k => { const c = document.createElement('canvas'); const L = k % 2 === 0; c.width = L ? 600 : 300; c.height = L ? 300 : 600; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 80},70%,45%)`; x.fillRect(0, 0, c.width, c.height); return c.toDataURL('image/png').split(',')[1]; }));
     await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `s${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
     await page.waitForFunction(() => ['s0', 's1'].every(n => window.GALLERY_APP._list.some(e => e && e.name === n)), null, { timeout: 120000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const shape = () => page.evaluate(() => ({ w: window.LAB.cellW, h: window.LAB.cellH }));
     const tapKind = async odd => {
       await page.evaluate(odd => { const G = window.GALLERY_APP; for (let c = -3; c <= 3; c++) for (let r = -3; r <= 3; r++) if ((G._pick(c, r) % 2 === 1) === odd && G._list[G._pick(c, r)]){ window.FIELD_TARGET.shown = true; G._zoomKey = null; G.onCellTap(c, r, 0.5, 0.5); return; } }, odd);
-      await page.waitForTimeout(800);
+      await drawn(page, 800);
       return shape();
     };
     // (a landscape print first, then a portrait one, then a landscape one: every load is a fresh set, so the board's shape at the start is
@@ -589,7 +586,7 @@ try {
     current = 'gallery position';
     const bad = [];
     await page.evaluate(() => { try { localStorage.removeItem('gallery.pos'); } catch {} window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')); });
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const pngs = await page.evaluate(() => Array.from({ length: 6 }, (_, k) => { const c = document.createElement('canvas'); c.width = 240; c.height = 160; const x = c.getContext('2d'); x.fillStyle = `hsl(${k * 50},70%,45%)`; x.fillRect(0, 0, 240, 160); return c.toDataURL('image/png').split(',')[1]; }));
     await page.setInputFiles('#importImageFile', pngs.map((b, i) => ({ name: `z${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
     await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^z\d$/.test(e.name)).length >= 3, null, { timeout: 120000 }).catch(() => {});
@@ -619,10 +616,10 @@ try {
     const bad = [];
     const md = '# Kept\n\n' + 'Words to keep. '.repeat(40) + '\n';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     await page.setInputFiles('#importImageFile', [{ name: 'keepme.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
     await page.waitForFunction(() => { const E = window.GALLERY_APP._epub; return E && E.md && E.label === 'Kept'; }, null, { timeout: 60000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const r = await page.evaluate(async () => { const f = await window.__galleryKeep.get(); return f.map(x => [x.name, x.size]); });
     if (r.length !== 1 || r[0][0] !== 'keepme.md') bad.push('the drop was not kept: ' + JSON.stringify(r));
     else if (r[0][1] !== Buffer.byteLength(md)) bad.push('the kept file is not the one dropped: ' + JSON.stringify(r));
@@ -647,7 +644,7 @@ try {
     await writeFile(file, JSON.stringify(v));
     await page.setInputFiles('#importImageFile', file);
     await page.waitForFunction(g => { const G = eval(g); return G._json && G._json.label === 'smoke-data.json'; }, G, { timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const r = await page.evaluate(([g, want]) => {
       const G = eval(g), J = G._json;
       if (!J) return { why: 'no JSON laid out' };
@@ -675,14 +672,14 @@ try {
                                               const b = t && t.getBoundingClientRect(); return b && b.width ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : null; }, k);
       // Larger, the place kept: page 4 framed, its path, then the page framed after must hold that path's line.
       await page.evaluate(g => { const G = eval(g), J = G._json, c = G._cellFor(J.base + 3, tvf.target.cellX | 0, tvf.target.cellZ | 0); tvf.fn.gotoCell(c.c, c.r); }, G);
-      await page.waitForTimeout(1200);
+      await drawn(page, 1200);
       const p0 = await page.evaluate(g => { const G = eval(g), J = G._json, i = G._pick(tvf.target.cellX, tvf.target.cellZ) - J.base; return J.pages[i] && J.pages[i].p; }, G);
       let box = await tile('stat_2');
       if (!box) bad.push('no Larger tile on the screen');
       else {
         await page.mouse.click(box.x, box.y);
         await page.waitForFunction(g => { const G = eval(g); return G._json.JSONV.style.size === 14 && !G._jsonRow.busy; }, G, { timeout: 20000 }).catch(() => {});
-        await page.waitForTimeout(1500);
+        await drawn(page, 1500);
         const k = await page.evaluate(([g, p0]) => {
           const G = eval(g), J = G._json, i = G._pick(tvf.target.cellX, tvf.target.cellZ) - J.base, L = J.L;
           const li = L.lines.findIndex(l => l.p === p0);
@@ -743,7 +740,7 @@ try {
     const bad = [];
     await page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });   // (the dots are hidden while the row is open: measured with it shut)
     await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const d = await page.evaluate(() => {
       const svg = document.querySelector('#bbHandle svg'), c = svg && svg.querySelector('circle');
       const r = c && c.getBoundingClientRect();
@@ -756,10 +753,10 @@ try {
     const steps = [];
     for (const id of ['gallery', 'checkers']){
       await page.evaluate(id => { const a = window.FIELD_APPS.find(a => a.id === id); window.setFieldApp(a); }, id);
-      await page.waitForTimeout(2500);
+      await drawn(page, 2500);
       await page.evaluate(() => { FIELD_WORLD.st.yaw = 0; tvf.target.yaw = null; tvf.fn.gotoCell(0, 0); });   // facing forward, so right is −x
       await page.waitForFunction(() => !tvf.target.active, null, { timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(500);
+      await drawn(page, 500);
       const slid = await page.evaluate(() => { const st = FIELD_WORLD.st, [sx, sz] = FIELD_WORLD.spacing(); st.camX -= 2 * sx; st.camZ -= sz;
                                                 const v = tvf.fn.viewBoardCell(); return [v.c, v.r]; });
       await page.waitForTimeout(800);
@@ -784,7 +781,7 @@ try {
     current = 'loaded name over the row';
     const bad = [];
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1000);
+    await drawn(page, 1000);
     const md = '# Named\n\n' + 'Some words here. '.repeat(40) + '\n';
     await page.setInputFiles('#importImageFile', [{ name: 'shown-name.md', mimeType: 'text/markdown', buffer: Buffer.from(md) }]);
     await page.waitForFunction(() => { const E = window.GALLERY_APP._epub; return E && E.md; }, null, { timeout: 60000 }).catch(() => {});
@@ -806,7 +803,7 @@ try {
     current = 'every load a fresh set';
     const bad = [];
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1000);
+    await drawn(page, 1000);
     const png = (w, h, c) => page.evaluate(([w, h, c]) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, w, h); return cv.toDataURL('image/png').split(',')[1]; }, [w, h, c]);
     const A = await Promise.all([0, 1, 2].map(k => png(600, 300, '#c33')));
     await page.setInputFiles('#importImageFile', A.map((b, i) => ({ name: `first${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
@@ -814,7 +811,7 @@ try {
     const B = await Promise.all([0, 1].map(k => png(300, 600, '#36c')));
     await page.setInputFiles('#importImageFile', B.map((b, i) => ({ name: `second${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
     await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^second/.test(e.name)).length >= 2, null, { timeout: 120000 }).catch(() => {});
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const r = await page.evaluate(() => ({ names: window.GALLERY_APP._list.filter(Boolean).map(e => e.name), n: window.GALLERY_APP._expect, w: window.LAB.cellW, h: window.LAB.cellH }));
     if (r.names.some(n => /^first/.test(n))) bad.push('the first set is still in the collection: ' + r.names.join(','));
     if (!(r.h > r.w)) bad.push('the board is not the second set\'s portrait shape: ' + JSON.stringify(r));
@@ -828,13 +825,13 @@ try {
     current = 'a load clears the field';
     const bad = [];
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1000);
+    await drawn(page, 1000);
     const pn = await Promise.all([0, 1].map(k => page.evaluate(() => { const c = document.createElement('canvas'); c.width = 300; c.height = 600; const x = c.getContext('2d'); x.fillStyle = '#36c'; x.fillRect(0, 0, 300, 600); return c.toDataURL('image/png').split(',')[1]; })));
     await page.setInputFiles('#importImageFile', pn.map((b, i) => ({ name: `clr${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
     await page.waitForFunction(() => window.GALLERY_APP._list.filter(e => e && /^clr/.test(e.name)).length >= 2, null, { timeout: 120000 }).catch(() => {});
     await page.route(/flare\.tangent\.workers\.dev\/bucket\?bucket=BUCKET1&key=slow\.md/, async r => { await new Promise(ok => setTimeout(ok, 2500)); r.fulfill({ contentType: 'text/markdown', headers: { 'access-control-allow-origin': '*' }, body: '# Slow\n\n' + 'Some words here. '.repeat(40) + '\n' }); });
     await page.evaluate(() => { window.tvfBucket.cli({ bucket: 'BUCKET1', file: 'slow.md' }); });
-    await page.waitForTimeout(700);
+    await drawn(page, 700);
     const mid = await page.evaluate(() => ({ n: window.GALLERY_APP._list.filter(Boolean).length, expect: window.GALLERY_APP._expect, w: window.LAB.cellW, h: window.LAB.cellH }));
     if (mid.n !== 0 || mid.expect !== 0) bad.push('pictures are still held while the file is on its way: ' + JSON.stringify(mid));
     if (Math.abs(mid.w - mid.h) > 0.01) bad.push('the board was not put back to a square: ' + JSON.stringify(mid));
@@ -884,7 +881,7 @@ try {
     current = 'fresh load does not animate';
     const bad = [];
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gallery')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const png = (w, h, c) => page.evaluate(([w, h, c]) => { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, w, h); for (let k = 0; k < 200; k++){ x.fillStyle = 'hsl(' + (k * 47 % 360) + ',70%,50%)'; x.fillRect((k * 37) % w, (k * 91) % h, 12, 12); } return cv.toDataURL('image/png').split(',')[1]; }, [w, h, c]);
     const A = await Promise.all([0, 1, 2].map(k => png(1200, 800, '#274')));
     await page.setInputFiles('#importImageFile', A.map((b, i) => ({ name: `anim${i}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
@@ -934,12 +931,12 @@ try {
   {
     current = 'tap closes the row';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => (a.id || a.name) === 'gallery')));
-    await page.waitForTimeout(SETTLE_MS);
+    await drawn(page, SETTLE_MS);
     await page.evaluate(() => { window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); });
-    await page.waitForTimeout(700);
+    await drawn(page, 700);
     const was = await page.evaluate(() => window.tvf.bottomRow.visible);
     await page.mouse.click(640, 300);
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const now = await page.evaluate(() => window.tvf.bottomRow.visible);
     const bad = [];
     if (!was) bad.push('the row did not open');
@@ -952,7 +949,7 @@ try {
     {
       const sw = await page.evaluate(() => { const g = window.FIELD_WORLD.spacing()[0], T = window.tvf, o = {}; o.slow = T.swipeDrift(g * 0.03).rate; o.fast = T.swipeDrift(g * 0.25).rate; o.slowAgain = T.swipeDrift(g * 0.03).rate; return o; });
       await page.mouse.click(300, 300);
-      await page.waitForTimeout(400);
+      await drawn(page, 400);
       sw.afterTap = await page.evaluate(() => window.FIELD_WORLD.st.heldPanRate || 0);
       const bd = [];
       if (!(sw.slow > 0)) bd.push('a swipe did not start the auto move: ' + JSON.stringify(sw));
@@ -966,7 +963,7 @@ try {
     // real drag down the rail must leave the nub under the finger as it goes (it trailed by seconds on the tangent ramp), and let go it stays.
     {
       await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => (a.id || a.name) === 'checkers')));
-      await page.waitForTimeout(SETTLE_MS);
+      await drawn(page, SETTLE_MS);
       const nub = () => page.evaluate(() => { const m = document.getElementById('tiltMark').getBoundingClientRect(); return { x: m.left + 10, y: m.top + 4 }; });
       const n0 = await nub();
       const hit = await page.evaluate(([x, y]) => (document.elementFromPoint(x, y) || {}).id, [n0.x, n0.y]);

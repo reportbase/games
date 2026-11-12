@@ -10,7 +10,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { begin, timeLimit } from './harness.mjs';
+import { begin, timeLimit, drawn } from './harness.mjs';
 
 let current = 'page load';
 const T = await begin(2, () => current);
@@ -169,7 +169,7 @@ try {
     // (where the click went, for a failure: in one full run it placed nothing, Oct 13)
     await page.evaluate(() => { const A = window.getFieldApp(); window.__tdTaps = []; const o = A.onCellTap; A.__tdTap = o;
       A.onCellTap = function(c, r, u, v){ window.__tdTaps.push([c, r, u == null ? null : +u.toFixed(3), v == null ? null : +v.toFixed(3)]); return o.apply(this, arguments); }; });
-    if (rc.aimed) await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    if (rc.aimed) await page.mouse.click(rc.x, rc.y); await drawn(page, 800);
     rc.taps = await page.evaluate(() => { const A = window.getFieldApp(); A.onCellTap = A.__tdTap; delete A.__tdTap; const W = window.FIELD_WORLD, T = W.target; return { taps: window.__tdTaps, ed: [A._debug.ed().c, A._debug.ed().r], framed: T.shown && W.cellAt(T.boardX, T.boardZ) }; });
     const rc2 = await page.evaluate(async i => { const D = window.getFieldApp()._debug, E = D.ed(); const v = i == null ? null : E.g && E.g.towers[i]; D.edCancel();
       const h = window.__tdHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.i);
@@ -246,7 +246,7 @@ try {
       }
       return { x: v.x, y: v.y, aimed: v.ok, n, i: v.i, before: E.L.wall[v.i] };
     });
-    if (rc.aimed) await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    if (rc.aimed) await page.mouse.click(rc.x, rc.y); await drawn(page, 800);
     const rc2 = await page.evaluate(async i => { const D = window.getFieldApp()._debug, E = D.ed(); const v = i == null ? null : E.L && E.L.wall[i]; D.edCancel();
       const h = window.__skHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.i);
     if (rc.before !== 0 || rc2 !== 1) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
@@ -306,7 +306,7 @@ try {
         await wait(400);
         const shut = document.body.classList.contains('bb-collapsed');
         let moved = false;
-        for (let k = 0; k < 40 && !moved; k++){ await wait(150); const s1 = D.map.get(key); moved = !!s1 && Array.from(s1.bd).some((x, i) => (x ? (typeof x === 'object' ? (x.red ? (x.k === 'k' ? 3 : 1) : (x.k === 'k' ? 4 : 2)) : x) : 0) !== want[i]); }
+        for (let k = 0; k < 40 && !moved; k++){ await new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 150)); }); const s1 = D.map.get(key); moved = !!s1 && Array.from(s1.bd).some((x, i) => (x ? (typeof x === 'object' ? (x.red ? (x.k === 'k' ? 3 : 1) : (x.k === 'k' ? 4 : 2)) : x) : 0) !== want[i]); }
         // Escape leaves the board as it was
         const kept = D.map.get(key);
         D.open(); tile('Clear');
@@ -330,7 +330,7 @@ try {
       const v = window.__aim(n, 2, 5);
       return { x: v.x, y: v.y, aimed: v.ok, n };
     });
-    await page.mouse.click(rc.x, rc.y); await page.waitForTimeout(800);
+    await page.mouse.click(rc.x, rc.y); await drawn(page, 800);
     rc.got = await page.evaluate(n => { const D = window.getFieldApp()._edDebug, E = D.ed(); const v = E.cells && E.cells[5 * n + 2]; D.cancel(); return v; }, rc.n);
     if (rc.got !== 1) failures.push(`[${current}] a real click: ${JSON.stringify(rc)}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (${out.map(o => o.app.replace('field ', '') + (o.moved ? ' answered' : '')).join(', ')})`);
@@ -369,7 +369,7 @@ try {
     // in software kept every link page from loading in 90 s, while the puzzle makers' pages, opened with a resting game behind
     // them, loaded (Oct 13)
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const open = async (url, check) => {
       // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
       //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)
@@ -469,7 +469,7 @@ try {
     });
     let click = null;
     if (res.flowClick){
-      await page.mouse.click(res.flowClick.x, res.flowClick.y); await page.waitForTimeout(800);
+      await page.mouse.click(res.flowClick.x, res.flowClick.y); await drawn(page, 800);
       click = await page.evaluate(async i => { const P = window.getFieldApp()._debug.pz(), d = P.ed && P.ed.d, got = !!d && d.dots[3].includes(i);
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise(ok => setTimeout(ok, 400));
         const f = window.FIELD_WORLD, k = P.ed ? null : true; return { got, escOff: !P.ed, kept: !!k }; }, res.flowClick.i);
@@ -500,7 +500,7 @@ try {
     // in software kept every link page from loading in 90 s, while the puzzle makers' pages, opened with a resting game behind
     // them, loaded (Oct 13)
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.name === 'sokoban')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const open = async (url, check) => {
       // (a context of its own: its own process and its own storage, so the page takes the link and not what this one kept,
       //  and does not wait on this page's work; in the main page's context every link page timed out on CI, Oct 13)

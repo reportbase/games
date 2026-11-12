@@ -138,6 +138,12 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   at a time). CI (`smoke.yml`) runs the seven parts and the course test as eight jobs at once, then a job named `smoke`
   that passes only if all of them did, so a run takes about as long as its longest part. A new check goes at the end of the
   part it sits beside or in the shortest one.
+- **A check waits on frames or the game's clock, never on seconds alone** (12 Nov 2026, `docs/field.md`): the page does its
+  work as frames are drawn and the software renderer's can take seconds. After real input or a flight use the harness's
+  `drawn(page, ms)` (not `page.waitForTimeout`), step a loop that looks again with `frame(page, ms)`, hold a press with
+  `held(page)`, tap a finger with `tapTouch(cdp, p, id)` (press and lift together), wait on a game with
+  `onClock(page, read, ok, secs, clock)`, and settle the camera (`__settle(c, r)`) before working out a pixel. A plain wait
+  is for the inside of a gesture (a press held, a drag's steps, the gap of a double tap).
 - **CI serves the CDN libraries itself** (Oct 28): a CDN that would not answer held every part's page from loading, so `smoke.yml`
   installs three@0.128.0, chess.js@1.4.0 and unzipit@2.0.1 and runs the tests with `LIBS_DIR`; every other request off the
   test's own server is given 20 s and dropped past it (`timeLimit` in `tests/harness.mjs`, the same in the course test).

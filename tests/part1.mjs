@@ -11,7 +11,7 @@
 import { devices } from 'playwright';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { begin, ROOT, SETTLE_MS, timeLimit } from './harness.mjs';
+import { begin, ROOT, SETTLE_MS, timeLimit, drawn, frame } from './harness.mjs';
 
 let current = 'page load';
 const T = await begin(1, () => current);
@@ -22,7 +22,7 @@ try {
     current = id;
     const before = failures.length;
     await page.evaluate(id => window.setFieldApp(window.FIELD_APPS.find(a => (a.id || a.name) === id)), id);
-    await page.waitForTimeout(SETTLE_MS);
+    await drawn(page, SETTLE_MS);
     const active = await page.evaluate(() => { const a = window.getFieldApp(); return a && (a.id || a.name); });
     if (active !== id) failures.push(`[${id}] switching did not take: the active app is ${active}`);
     // the three dots are on every game that has a row (Oct 9: "always show the triple dots on bottom"), and only there (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.")
@@ -48,7 +48,7 @@ try {
       if (!yr || yr.w > Math.min(241, yr.vw * 0.61) || Math.abs(yr.mid - yr.vw / 2) > 1) failures.push(`[rails] the turn rail is not a short strip in the middle: ${JSON.stringify(yr)}`); }
     // THE COMPASS'S ANGLES PACKED IN THE MIDDLE (Nov 2: "the top rotation angles should be show just in the center, not spread over the complete
     // screen. I want the angles to be tighly packed in the center."): every heading mark on show sits in the middle third of the screen.
-    { await page.waitForTimeout(600);
+    { await drawn(page, 600);
       const cr = await page.evaluate(() => { const els = [...document.querySelectorAll('#compass .cm')].filter(e => e.style.display !== 'none'); return { n: els.length, xs: els.map(e => parseFloat(e.style.left) / innerWidth) }; });
       if (!cr.n || cr.xs.some(x => x < 1 / 3 || x > 2 / 3)) failures.push(`[rails] compass marks not packed in the middle: ${JSON.stringify(cr)}`); }
     // THE RIGHT RAIL IS A SCROLL BAR FOR WHERE YOU ARE (Oct 25: "the right scroll bar for speed lever should be more like a normal
@@ -68,14 +68,14 @@ try {
       const a0 = await at();
       await page.mouse.move(box.x, box.ty); await page.mouse.down();
       for (let k = 1; k <= 10; k++){ await page.mouse.move(box.x, box.ty - box.h * 0.25 * k / 10); await page.waitForTimeout(30); }
-      await page.mouse.up(); await page.waitForTimeout(400);
+      await page.mouse.up(); await drawn(page, 400);
       const a1 = await at();
-      await page.mouse.click(box.x, box.y + box.h * 0.9); await page.waitForTimeout(400);
+      await page.mouse.click(box.x, box.y + box.h * 0.9); await drawn(page, 400);
       const a2 = await at();
       await page.mouse.move(640, 400); await page.keyboard.press('Space');
-      await page.waitForTimeout(3500);
+      await drawn(page, 3500);
       const a3 = await at();
-      await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+      await page.keyboard.press('Escape'); await drawn(page, 300);
       await page.evaluate(async i => { if (i >= 0) window.setFieldApp(window.FIELD_APPS[i]); await new Promise(ok => setTimeout(ok, 1500)); }, prevApp);
       const ahead = (a1.s - a0.s) / a1.board, back = (a2.s - a1.s) / a1.board;
       if (!(ahead > 11 && ahead < 14) || Math.abs(a1.top - a1.mid) > 3 || !(Math.abs(back) < 0.5) || !(a3.top < a2.top - 3))
@@ -282,7 +282,7 @@ try {
       for (let k = 0; k < 240 && !(D.list.length > 6250); k++){ if (W.st.pitch > 6.5){ W.st.pitch = 6; window.fieldWake && window.fieldWake(); } await new Promise(ok => setTimeout(ok, 250)); }   // (the opening fit, still to come, could tilt it back)
       const out = { bodies: D.list.length }; W.st.pitch = p0; window.fieldWake && window.fieldWake(); await new Promise(ok => setTimeout(ok, 1500)); return out; }, L0.pitch);
     for (let i = 0; i < 6; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, -400); await page.waitForTimeout(400); }
-    await page.waitForTimeout(3500);
+    await drawn(page, 3500);
     const L1 = await look();
     /* (Oct 17: "Let's create a new lab that recovers 3d shapes" … "in levels application"; wander plans/rsh-plan.md) One reader at a
        body's centre reads the sweep's own directions, the same for every body, the census a unit sphere; three readers inside,
@@ -318,7 +318,7 @@ try {
     const a0 = await at(), during = [];
     await page.mouse.move(200, 650); await page.mouse.down();
     for (let k = 1; k <= 6; k++){ await page.mouse.move(200 + 12 * k, 650 - 4 * k); await page.waitForTimeout(120); during.push(await at()); }
-    await page.mouse.up(); await page.waitForTimeout(1500);
+    await page.mouse.up(); await drawn(page, 1500);
     const a1 = during[during.length - 1], ok = a1.at > a0.at && during.every((d, k) => k === 0 || d.at > during[k - 1].at) && during.some(d => d.cam !== a0.cam);
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ a0, during })}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the clock ran ${(a1.at - a0.at).toFixed(0)} ms over the drag)`);
@@ -329,7 +329,7 @@ try {
   {
     current = 'home';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const r = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = { bad: [] };
       const games = window.FIELD_APPS.filter(a => a.id !== 'home').map(a => a.id).sort(), ord = D.order();
@@ -392,10 +392,10 @@ try {
       out.golfSlot = D.slotOf('minigolf');
       return out;
     });
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const f1 = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return f && [f.c, f.r]; });
     // the application picker: Home first, and from a game Home brings the view to the board of the game just left
-    await page.evaluate(() => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess')); window.FIELD_APPS.find(a => a.id === 'home')._debug.forgetView(); }); await page.waitForTimeout(800);
+    await page.evaluate(() => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess')); window.FIELD_APPS.find(a => a.id === 'home')._debug.forgetView(); }); await drawn(page, 800);
     const pick = await page.evaluate(async () => {
       const wait = ms => new Promise(ok => setTimeout(ok, ms));
       document.getElementById('appBtn').click(); await wait(300);
@@ -429,13 +429,13 @@ try {
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
       const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
       return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
-    const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+    const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await frame(page, 300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await frame(page, 500); } return p; };
     const pt = await aimAt(0.5, 0.45);
     await page.mouse.click(pt.x, pt.y);
     const tap = await page.evaluate(async id => { for (let k = 0; k < 60; k++){ const A = window.getFieldApp(); if (A.id === id) break; await new Promise(ok => setTimeout(ok, 100)); }
       const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: A.id, f: f && [f.c, f.r], last: localStorage.getItem('tvf.field.app.v1'), name: A.name }; }, target);
     // …and a double tap on any board does the same (the field frames it, then the game opens): the model's call, since the field's double tap is tested on its own
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home'))); await page.waitForTimeout(600);
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home'))); await drawn(page, 600);
     const dbl = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, [c, r] = D.slotOf('sudoku'); A.startOnDouble(c, r); await new Promise(ok => setTimeout(ok, 500));
       const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: window.getFieldApp().id, f: f && [f.c, f.r] }; });
     const ok = r.every && r.sorted && r.side && !r.dup && !r.slotBad && r.placed && r.wrap && r.fabric && r.names === 'Air hockey|Whack-a-mole|Pac-Man|3D Tetris|Chess' && !r.bad.length && r.none
@@ -495,7 +495,7 @@ try {
     const okF = !stray.length && /apple-system/.test(def) && /Segoe UI/.test(def) && seen.length > 0 && seen.every(f => f === def);
     if (!okF) failures.push('[one sans] ' + JSON.stringify({ stray, def, seen }));
     console.log(`${okF ? 'ok  ' : 'FAIL'} one sans: no canvas or style sets its own generic sans, and the words Home, the flash cards, Sudoku and Hashi draw are all in ${def.split(',')[0]}…`);
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await page.waitForTimeout(400);
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await drawn(page, 400);
   }
   // THE LETTERS (Nov 7: "why cant you use the same font from home page on mini-golf and elsewhere?"): a board's numbers and words are BOARD_KIT.type's
   // letters, each a quad wearing its glyph in that font. Every digit's ink, read back from the picture it wears, is centred in its slot (the lone 1

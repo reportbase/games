@@ -8,7 +8,7 @@
 // Cut from tests/smoke.mjs (12 Nov 2026) as it stood: the checks and their comments are unchanged. What every part
 // needs (the server, the browser, the page loaded, the failures and how a run ends) is tests/harness.mjs.
 
-import { begin } from './harness.mjs';
+import { begin, onClock, drawn, frame } from './harness.mjs';
 
 let current = 'page load';
 const T = await begin(7, () => current);
@@ -50,22 +50,26 @@ try {
     const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
       const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
-    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, thrown: g.G.thrown, bx: g.G.shot.bx, sweep: g.G.sweepK } }; });
+    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, thrown: g.G.thrown, bx: g.G.shot.bx, sweep: g.G.sweepK, t: g.G.t } }; });
     await page.evaluate(() => window.__settle());
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await drawn(page, 600);
     const live = { started: await gs() };
-    p = await at(0.4, 0.25); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    p = await at(0.4, 0.25); await page.mouse.click(p.x, p.y); await drawn(page, 600);
     live.aimed = await gs();
     await page.keyboard.press('Enter');
     // (a press counts as sweeping only once the stone runs: on a slow first frame the press came before the throw)
-    for (let w = 0; w < 40 && (await gs()).G.state !== 'throw'; w++) await page.waitForTimeout(150);
+    for (let w = 0; w < 40 && (await gs()).G.state !== 'throw'; w++) await frame(page, 150);
     p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down();
     // (a press that did not take, on a slow runner, is pressed again while the stone still runs)
-    for (let w = 0; w < 40 && !((await gs()).G.sweep > 0); w++){ await page.waitForTimeout(150);
-      if (w % 6 === 5 && (await gs()).G.state === 'throw'){ await page.mouse.up(); await page.waitForTimeout(100); p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down(); } }
+    for (let w = 0; w < 40 && !((await gs()).G.sweep > 0); w++){ await frame(page, 150);
+      if (w % 6 === 5 && (await gs()).G.state === 'throw'){ await page.mouse.up(); await drawn(page, 100); p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down(); } }
     live.swept = await gs(); await page.mouse.up();
-    for (let w = 0; w < 120 && (await gs()).G.thrown < 2; w++) await page.waitForTimeout(250);
-    live.answered = await gs();
+    /* THE ANSWER IS WAITED FOR ON THE GAME'S CLOCK (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix the flaky checks and move to
+       the newer browser"; part 7 failed here once on CI with Playwright 1.63.0, `answered` read as state 'rest', one stone thrown).
+       Your stone runs out, rests, and the computer throws, all in ticks of the game's own time, a quarter of a second of it a
+       frame at most (`stepGame`); this waited 30 s on the wall, which slow frames used up with the stone only just at rest. It is
+       given a minute of the game's time (`G.t`), five of the wall's at most. */
+    live.answered = await onClock(page, gs, s => s.G.thrown >= 2, 60, s => s.G.t);
     // a board no one plays: its recorded end, moving on the page's clock
     live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
       const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 30 && !M.done; k++) D.recWork(M);
@@ -107,12 +111,12 @@ try {
       return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
     const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, rolls: g.G.rolls.length, tx: g.G.shot.tx } }; });
     await page.evaluate(() => window.__settle());
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await drawn(page, 600);
     const live = { started: await gs() };
-    p = await at(0.42, 0.4); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+    p = await at(0.42, 0.4); await page.mouse.click(p.x, p.y); await drawn(page, 600);
     live.aimed = await gs();
     await page.keyboard.press('Enter');
-    for (let w = 0; w < 60 && (await gs()).G.rolls < 1; w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 60 && (await gs()).G.rolls < 1; w++) await frame(page, 250);
     live.bowled = await gs();
     live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
       const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 40 && !M.done; k++) D.recWork(M);
@@ -153,29 +157,29 @@ try {
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
     await page.evaluate(() => window.__settle());
     let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
-    for (let w = 0; w < 20 && !((await gs()) || {}).G; w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 20 && !((await gs()) || {}).G; w++) await frame(page, 250);
     live.started = await gs();
     await page.keyboard.press('Enter');
-    for (let w = 0; w < 60 && ((await gs()).G.tries || 0) < 1 && (await gs()).state !== 'over'; w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 60 && ((await gs()).G.tries || 0) < 1 && (await gs()).state !== 'over'; w++) await frame(page, 250);
     live.tried = await gs();
     if (live.tried && live.tried.state !== 'over'){
       await page.evaluate(() => window.getFieldApp().menu[0].items.find(i => i.label === 'Show me the shot').on());
       await page.waitForTimeout(300); await page.keyboard.press('Enter');
-      for (let w = 0; w < 60 && (await gs()).state !== 'over'; w++) await page.waitForTimeout(250);
+      for (let w = 0; w < 60 && (await gs()).state !== 'over'; w++) await frame(page, 250);
     }
     live.made = await gs();
     // the editor, by the real ✎
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; D.GAMES.delete(f.c + '_' + f.r); });
-    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ await page.click('#bbHandle'); await page.waitForTimeout(800); }
+    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ await page.click('#bbHandle'); await drawn(page, 800); }
     const pen = await page.evaluate(() => { try { bbRefreshNow(); } catch {} const b = [...document.querySelectorAll('#bbQuick button')].find(b => b.textContent.includes('✎')); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
-    if (pen){ await page.mouse.click(pen[0], pen[1]); await page.waitForTimeout(800); }
+    if (pen){ await page.mouse.click(pen[0], pen[1]); await drawn(page, 800); }
     live.opened = await page.evaluate(() => window.getFieldApp()._debug.ed().on);
     await page.evaluate(() => window.getFieldApp()._debug.edTile(4));             // (Clear)
-    for (const [u, v] of [[0.5, 0.25], [0.3, 0.2]]){ p = await at(u, v); await page.mouse.click(p.x, p.y); await page.waitForTimeout(700); }
+    for (const [u, v] of [[0.5, 0.25], [0.3, 0.2]]){ p = await at(u, v); await page.mouse.click(p.x, p.y); await frame(page, 700); }
     live.laid = await page.evaluate(() => window.getFieldApp()._debug.ed().xy.length);
     live.check = await page.evaluate(() => { const r = window.getFieldApp()._debug.edCheck(false); return r.why || r.par; });
     const tick = await page.evaluate(() => { try { bbRefreshNow(); } catch {} const b = [...document.querySelectorAll('#bbQuick button')].filter(b => b.textContent.trim() === '✓').pop(); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
-    if (tick){ await page.mouse.click(tick[0], tick[1]); await page.waitForTimeout(800); }
+    if (tick){ await page.mouse.click(tick[0], tick[1]); await drawn(page, 800); }
     live.kept = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, st = JSON.parse(localStorage.getItem('bowling.mine') || '{}')[f.c + '_' + f.r];
       return { off: !D.ed().on, stored: st ? st.xy.length : 0, title: window.getFieldApp().cellTitle(f.c, f.r) }; });
     live.shared = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, d = D.MINE.get(f.c + '_' + f.r); D.takeLeave(f.c + 3, f.r, { xy: d.xy }); const J = D.jobFor(f.c + 3, f.r); D.leaveNow(J);
@@ -222,13 +226,13 @@ try {
       const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
       return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight, k: D.ck(i, j), H: P.H, blocked: P.rocks.has(D.ck(i, j)) || P.given.has(D.ck(i, j)) }; });
     const pieceAt = () => page.evaluate(k => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); const pc = g.placed.get(k) || g.P.given.get(k); return pc ? { ...pc, mine: g.placed.has(k) } : null; }, cellXY.k);
-    await page.mouse.click(cellXY.x, cellXY.y); await page.waitForTimeout(500);
+    await page.mouse.click(cellXY.x, cellXY.y); await drawn(page, 500);
     const live = { laid: await pieceAt() };
-    await page.mouse.click(cellXY.x, cellXY.y); await page.waitForTimeout(500);
+    await page.mouse.click(cellXY.x, cellXY.y); await drawn(page, 500);
     live.turned = await pieceAt();
     live.run = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r);
       A.menu[0].items.find(i => i.label === 'Show the way').on(); D.onTile(f.c, f.r, 0);
-      for (let k = 0; k < 120 && g.state === 'run'; k++) await new Promise(ok => setTimeout(ok, 250)); return { state: g.state, why: g.run && g.run.why }; });
+      for (let k = 0; k < 120 && g.state === 'run'; k++) await new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 250)); }); return { state: g.state, why: g.run && g.run.why }; });
     live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r; D.puzzleOf(D.boardIdx(c, r), D.levelOf(c, r), true);
       const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => i.kind === 'mrMarble').map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
       const seen = new Set(); for (let k = 0; k < 12; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 300)); } return seen.size; });
@@ -259,29 +263,29 @@ try {
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.setMode('spares'); const f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
     let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
     const bs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && g.G && { st: g.G.state, tries: g.G.tries, sx: g.G.shot.sx, v: g.G.shot.v, h: g.G.shot.h, over: g.state === 'over' }; });
-    for (let w = 0; w < 20 && !(await bs()); w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 20 && !(await bs()); w++) await frame(page, 250);
     out.bwShut = await shut();
     const K = await page.evaluate(() => window.getFieldApp()._debug.consts), b0 = await bs(), y0 = K.FOUL - K.BR - 0.004;
     let a = await at(b0.sx / K.W, y0), b = await at((b0.sx + 0.035) / K.W, y0), pts = [];
     for (let k = 0; k <= 8; k++) pts.push({ x: a.x + (b.x - a.x) * k / 8, y: a.y + (b.y - a.y) * k / 8 });
-    await swipe(pts, 30); await page.waitForTimeout(500);
+    await swipe(pts, 30); await drawn(page, 500);
     const b1 = await bs(); out.bwStand = +(b1.sx - b0.sx).toFixed(3);
     pts = []; for (let k = 0; k <= 10; k++){ const t = k / 10; pts.push(await at((b1.sx + 0.03 * Math.sin(Math.PI * t)) / K.W, y0 - 0.4 * t)); }
     await swipe(pts, 10);
-    for (let w = 0; w < 60; w++){ const q = await bs(); if (q.tries > 0 || q.over) break; await page.waitForTimeout(250); }
+    for (let w = 0; w < 60; w++){ const q = await bs(); if (q.tries > 0 || q.over) break; await frame(page, 250); }
     const b2 = await bs(); out.bwSwipe = { tries: b2.tries, over: b2.over, h: +b2.h.toFixed(2) };
     // curling
     await go('curling');
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
     p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
     const cs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && g.G && { st: g.G.state, w: g.G.shot.w, curl: g.G.shot.curl }; });
-    for (let w = 0; w < 20 && !((await cs()) || {}).st; w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 20 && !((await cs()) || {}).st; w++) await frame(page, 250);
     const c0 = await cs();
     a = await at(0.5, 0.93); b = await at(0.5, 0.3); pts = []; for (let k = 0; k <= 10; k++) pts.push({ x: a.x + (b.x - a.x) * k / 10, y: a.y + (b.y - a.y) * k / 10 });
-    await swipe(pts, 30); await page.waitForTimeout(500);
+    await swipe(pts, 30); await drawn(page, 500);
     const c1 = await cs(); out.cuWeight = [+c0.w.toFixed(3), +c1.w.toFixed(3)];
-    for (let w = 0; w < 10 && !(await pad('curl')); w++) await page.waitForTimeout(250);
-    const pc = await pad('curl'); if (pc){ await page.mouse.click(pc[0], pc[1]); await page.waitForTimeout(400); }
+    for (let w = 0; w < 10 && !(await pad('curl')); w++) await frame(page, 250);
+    const pc = await pad('curl'); if (pc){ await page.mouse.click(pc[0], pc[1]); await drawn(page, 400); }
     out.cuCurl = [c1.curl, (await cs()).curl]; out.cuShut = await shut();
     // marble run, taps alone
     await go('marblerun');
@@ -290,24 +294,24 @@ try {
       const own = [...P.sol.keys()].find(k => !P.given.has(k)); const [i, j] = own.split(',').map(Number); return { i, j, n: P.n, start: P.start, k: own }; });
     const cell = (i, j) => at((i + 0.5) / mr.n, (j + 0.5) / mr.n);
     const piece = () => page.evaluate(k => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); const pc = g.placed.get(k); return pc ? pc.t + pc.rot + '/' + pc.z : null; }, mr.k);
-    p = await cell(mr.i, mr.j); await page.mouse.click(p.x, p.y); await page.waitForTimeout(500);
-    const m1 = await piece(); await page.mouse.click(p.x, p.y); await page.waitForTimeout(500); const m2 = await piece();
-    p = await cell(mr.start.i, mr.start.j); await page.mouse.click(p.x, p.y); await page.waitForTimeout(500);
+    p = await cell(mr.i, mr.j); await page.mouse.click(p.x, p.y); await drawn(page, 500);
+    const m1 = await piece(); await page.mouse.click(p.x, p.y); await drawn(page, 500); const m2 = await piece();
+    p = await cell(mr.start.i, mr.start.j); await page.mouse.click(p.x, p.y); await drawn(page, 500);
     out.mr = { laid: m1, next: m2, ran: await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); return g.state; }) };
     // 3D Tetris: tip by the pad
     await go('blockout');
-    p = await at(0.5, 0.5); await page.mouse.click(p.x, p.y); await page.waitForTimeout(1200);
+    p = await at(0.5, 0.5); await page.mouse.click(p.x, p.y); await drawn(page, 1200);
     const turns = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.games.get(f.c + '_' + f.r); return g ? g.turns : null; });
-    for (let w = 0; w < 10 && !(await pad('tip')); w++) await page.waitForTimeout(250);
-    const t0 = await turns(), pt = await pad('tip'); if (pt){ await page.mouse.click(pt[0], pt[1]); await page.waitForTimeout(500); }
+    for (let w = 0; w < 10 && !(await pad('tip')); w++) await frame(page, 250);
+    const t0 = await turns(), pt = await pad('tip'); if (pt){ await page.mouse.click(pt[0], pt[1]); await drawn(page, 500); }
     out.bk = [t0, await turns()]; out.bkShut = await shut();
     // the tanks: the next shell by the pad
     await go('tanks');
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
     p = await at(0.5, 0.3); await page.mouse.click(p.x, p.y);
     const wid = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g ? g.wid[0] : null; });
-    for (let w = 0; w < 20 && !(await pad('weapon')); w++) await page.waitForTimeout(250);
-    const w0 = await wid(), pw = await pad('weapon'); if (pw){ await page.mouse.click(pw[0], pw[1]); await page.waitForTimeout(500); }
+    for (let w = 0; w < 20 && !(await pad('weapon')); w++) await frame(page, 250);
+    const w0 = await wid(), pw = await pad('weapon'); if (pw){ await page.mouse.click(pw[0], pw[1]); await drawn(page, 500); }
     out.tk = [w0, await wid()];
     const ok = out.bwShut && out.bwStand > 0.015 && (out.bwSwipe.tries >= 1 || out.bwSwipe.over) && out.bwSwipe.h > 0.2
       && out.cuWeight[1] !== out.cuWeight[0] && out.cuCurl[0] === -out.cuCurl[1] && out.cuShut
@@ -347,13 +351,13 @@ try {
     // real input: the pad's ball button, then the real B
     const live = {};
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.gameAt(f.c, f.r); for (let n = 0; g.G.state !== 'aim' && n < 20000; n++) D.tick(g.G); try { bbRefreshNow(); } catch {} });
-    await page.waitForTimeout(900);
+    await drawn(page, 900);
     const pb = await page.evaluate(() => { const b = document.querySelector('#playPad button[data-key="ball"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
     const ball = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); return [D.SET.ball, g && g.G && g.G.shot.b]; });
     live.b0 = await ball();
-    if (pb){ await page.mouse.click(pb[0], pb[1]); await page.waitForTimeout(500); }
+    if (pb){ await page.mouse.click(pb[0], pb[1]); await drawn(page, 500); }
     live.pad = await ball();
-    await page.keyboard.press('b'); await page.waitForTimeout(400);
+    await page.keyboard.press('b'); await drawn(page, 400);
     live.key = await ball();
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.ball = 0; });
     const T = o.turn;
@@ -397,7 +401,7 @@ try {
       const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW, 0, T.boardZ + (0.5 - v) * bW).project(W.camera);
       return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
     const cellPt = (c, r) => bPt((c + 0.5) / 8, (r + 0.5) / 8);
-    let q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await page.waitForTimeout(1500);
+    let q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await drawn(page, 1500);
     // the live board laid by hand: a drag of (2, 3) down to (2, 4) makes four in a line
     const layLive = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n;
       g.ice = new Uint8Array(n * n); g.after = null; g.until = 0; g.state = 'play'; g.sel = -1; g.drag = null;
@@ -414,14 +418,14 @@ try {
     await page.mouse.move(a.x + (b.x - a.x) * 0.3, a.y + (b.y - a.y) * 0.3, { steps: 3 }); await page.waitForTimeout(300);
     const mid = await live();
     await page.mouse.move(b.x, b.y, { steps: 4 }); await page.mouse.up();
-    for (let w = 0; w < 80 && (await live()).busy; w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 80 && (await live()).busy; w++) await frame(page, 250);
     const flamed = await live();
     // two real clicks swap a hypercube with a colour: every gem of it goes
     await layLive();
     const ones = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n;
       g.b[5 * n + 5] = { k: D.HYPER_K, sp: D.HYPER, fr: 5, fc: 0, t0: -9, how: 'fall' }; g.b[5 * n + 6] = { k: 1, sp: 0, fr: 5, fc: 0, t0: -9, how: 'fall' }; g.sel = -1; return g.b.filter(x => x && x.k === 1).length; });
-    for (const [c, r] of [[5, 5], [6, 5]]){ const p = await cellPt(c, r); await page.mouse.click(p.x, p.y); await page.waitForTimeout(450); }
-    for (let w = 0; w < 80 && (await live()).busy; w++) await page.waitForTimeout(250);
+    for (const [c, r] of [[5, 5], [6, 5]]){ const p = await cellPt(c, r); await page.mouse.click(p.x, p.y); await frame(page, 450); }
+    for (let w = 0; w < 80 && (await live()).busy; w++) await frame(page, 250);
     const hyp = await live();
     // a goal made: the next match makes it, stars and a best kept; a real click after starts the board again where it is (Oct 29)
     await layLive();
@@ -429,34 +433,34 @@ try {
       g.S = { ...g.S, goal: { kind: 'score', n: 10 } }; put(0, 6, 5); put(1, 6, 5); put(2, 5, 5); });
     let p1 = await cellPt(2, 5), p2 = await cellPt(2, 6);
     await page.mouse.click(p1.x, p1.y); await page.waitForTimeout(350); await page.mouse.click(p2.x, p2.y);
-    for (let w = 0; w < 80 && (await live()).state === 'play'; w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 80 && (await live()).state === 'play'; w++) await frame(page, 250);
     const won = await live();
     const best = await page.evaluate(() => { try { return Object.keys(JSON.parse(localStorage.getItem('bejeweled.best') || '{}')).length; } catch { return -1; } });
-    await page.waitForTimeout(1000);
-    q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await page.waitForTimeout(1800);
+    await drawn(page, 1000);
+    q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await drawn(page, 1800);
     const next = await live() || { at: await page.evaluate(() => { const L = window.getFieldApp()._debug.LIVE; return L && [L.c, L.r]; }) };
     // out of moves: a limit of one more, a goal not made
     await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; D.games.delete(L.c + '_' + L.r); });
-    q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await page.waitForTimeout(800);
+    q = await bPt(0.5, 0.5); await page.mouse.click(q.x, q.y); await drawn(page, 800);
     await layLive();
     await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.games.get(L.c + '_' + L.r), n = g.n, put = (c, r, k) => { g.b[r * n + c] = { k, sp: 0, fr: r, fc: 0, t0: -9, how: 'fall' }; };
       g.S = { ...g.S, goal: { kind: 'score', n: 1e9 } }; g.limit = g.moves + 1; g.sel = -1; put(0, 6, 5); put(1, 6, 5); put(2, 5, 5); });
     p1 = await cellPt(2, 5); p2 = await cellPt(2, 6);
     await page.mouse.click(p1.x, p1.y); await page.waitForTimeout(350); await page.mouse.click(p2.x, p2.y);
-    for (let w = 0; w < 80 && (await live()).state === 'play'; w++) await page.waitForTimeout(250);
+    for (let w = 0; w < 80 && (await live()).state === 'play'; w++) await frame(page, 250);
     const lost = await live();
     // the real Size tile: a board of 9
-    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await page.waitForTimeout(600); }
+    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); await drawn(page, 600); }
     const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
-    let st = null; for (let w = 0; w < 30; w++){ st = await tileAt(2); if (st && st[1] < (await page.evaluate(() => innerHeight)) - 20) break; await page.waitForTimeout(200); }   // (the row slides up)
-    if (st){ await page.mouse.click(st[0], st[1]); await page.waitForTimeout(600); }
+    let st = null; for (let w = 0; w < 30; w++){ st = await tileAt(2); if (st && st[1] < (await page.evaluate(() => innerHeight)) - 20) break; await frame(page, 200); }   // (the row slides up)
+    if (st){ await page.mouse.click(st[0], st[1]); await drawn(page, 600); }
     const size = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE; return [D.SET.size, D.showAt(L.c + 1, L.r).n]; });
     if (await page.evaluate(() => window.tvf.bottomRow.visible)){ await page.evaluate(() => document.getElementById('bbHandle').click());   // (the dots are hidden while the row is open, Nov 1: shut through the element itself)
-      await page.waitForTimeout(400); }
+      await drawn(page, 400); }
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.size = 8; try { localStorage.setItem('bejeweled.settings', JSON.stringify(D.SET)); } catch {} D.games.clear(); D.SHOWS.clear(); });
     // a board no one plays moves
     const sig = () => page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.LIVE; return JSON.stringify(A.cellItems(L.c + 2, L.r).filter(i => /^gem|^bj/.test(i.kind)).map(i => [i.kind, +i.u.toFixed(3), +i.v.toFixed(3)])); });
-    let moved = false; const s0 = await sig(); for (let w = 0; w < 25 && !moved; w++){ await page.waitForTimeout(300); moved = (await sig()) !== s0; }
+    let moved = false; const s0 = await sig(); for (let w = 0; w < 25 && !moved; w++){ await frame(page, 300); moved = (await sig()) !== s0; }
     const ok = o.shapes === 1 && o.levels[0] < o.levels[3] && o.pars.every(([, par, lim]) => par >= 1 && lim > par) && o.flame === 1 && o.hyper === 1 && o.star === 1 && o.flameTook >= 9
       && mid && mid.lit.join() === '26,34' && mid.sel === 2 && flamed.moves === 1 && flamed.flames >= 1
       && hyp.col1 >= ones && won.state === 'won' && won.stars >= 1 && best >= 1 && next.at && next.at[0] === won.at[0] && next.at[1] === won.at[1] && next.state !== 'won'
@@ -496,7 +500,7 @@ try {
   {
     const before = failures.length;
     await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'asteroids')); await new Promise(ok => setTimeout(ok, 2000)); await window.__settle(); });
-    await page.mouse.click(640, 400); await page.waitForTimeout(1200);
+    await page.mouse.click(640, 400); await drawn(page, 1200);
     const o = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, L = D.LIVE, g = L && D.games.get(L.c + '_' + L.r), out = { started: !!g && g.state === 'play' };
       if (!g) return out;
@@ -550,12 +554,12 @@ try {
     });
     if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ const h = await page.$('#bbHandle'); if (h) await h.click(); }
     const tileAt = n => page.evaluate(n => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_' + n && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; }, n);
-    let lt = null; for (let w = 0; w < 30; w++){ lt = await tileAt(1); if (lt && lt[1] < (await page.evaluate(() => innerHeight)) - 20) break; await page.waitForTimeout(200); }
-    if (lt){ await page.mouse.click(lt[0], lt[1]); await page.waitForTimeout(500); }
+    let lt = null; for (let w = 0; w < 30; w++){ lt = await tileAt(1); if (lt && lt[1] < (await page.evaluate(() => innerHeight)) - 20) break; await frame(page, 200); }
+    if (lt){ await page.mouse.click(lt[0], lt[1]); await drawn(page, 500); }
     const look = await page.evaluate(() => window.getFieldApp()._debug.SET.look);
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.look = '3d'; try { localStorage.removeItem('asteroids.settings'); } catch {} });
     if (await page.evaluate(() => window.tvf.bottomRow.visible)){ await page.evaluate(() => document.getElementById('bbHandle').click());   // (the dots are hidden while the row is open, Nov 1: shut through the element itself)
-      await page.waitForTimeout(400); }
+      await drawn(page, 400); }
     if (!(o.counts.join() === '2,4,6' && o.wave === 5 && o.shield && o.triple === 3 && o.arcade < 0.03 && !o.ufo && o.vector && look === 'vector'))
       failures.push(`[${current}] ${JSON.stringify({ o, look })}`);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} asteroids settings (rocks ${o.counts}, start at wave ${o.wave}, the shield, ${o.triple} shots, arcade drift stopping, no saucer, the outlines; the real Look tile to ${look})`);
@@ -572,10 +576,10 @@ try {
       const mid = () => page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; const p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; });
       const fd = () => page.evaluate(() => window.tvf.fn.framedAsDefault());
       const r = { at: await fd() };
-      let m = await mid(); await page.mouse.click(m.x, m.y); await page.waitForTimeout(1500);       // (starts the board's game)
+      let m = await mid(); await page.mouse.click(m.x, m.y); await drawn(page, 1500);       // (starts the board's game)
       r.kept = await page.evaluate(() => { const a = window.getFieldApp(); return !!(a.noDoubleTap && a.noDoubleTap()); });
       await page.mouse.move(m.x, m.y); for (let k = 0; k < 6; k++){ await page.mouse.wheel(0, 200); await page.waitForTimeout(150); }
-      await page.waitForTimeout(1500);
+      await drawn(page, 1500);
       r.moved = await fd();
       m = await mid();
       // (the view at rest first, as the double-tap check above waits: a tap while it coasts is the brake; both taps' events made
@@ -630,12 +634,12 @@ try {
         return [pe('pointerdown'), te('touchstart'), pe('pointerup'), te('touchend')]; };
       for (const e of [...tap(), ...tap()]) cv.dispatchEvent(e);
       await wait(300); for (let k = 0; k < 120 && T.active; k++) await wait(250); await wait(600); }, [x, y]);
-    const drag = async () => { const m = await mid(); await page.mouse.move(m.x, m.y); await page.mouse.down(); for (let k = 1; k <= 8; k++){ await page.mouse.move(m.x + 18 * k, m.y + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await page.waitForTimeout(500); };
+    const drag = async () => { const m = await mid(); await page.mouse.move(m.x, m.y); await page.mouse.down(); for (let k = 1; k <= 8; k++){ await page.mouse.move(m.x + 18 * k, m.y + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await frame(page, 500); };
     const out = {};
     // (Nov 1: "double click still not reseting games when the board is in default view. Add a confirmation dialog": in its default view a
     //  double tap on the board asks to start the game over, so the lock is taken from a double in any other view, here a wheel's zoom
     //  away, and let go by the menu's Unlock the board)
-    const off = async () => { const m0 = await mid(); await page.mouse.move(m0.x, m0.y); await page.mouse.wheel(0, 500); await page.waitForTimeout(1200); await page.evaluate(() => window.__settle()); };
+    const off = async () => { const m0 = await mid(); await page.mouse.move(m0.x, m0.y); await page.mouse.wheel(0, 500); await drawn(page, 1200); await page.evaluate(() => window.__settle()); };
     await off();
     let m = await mid(); await dbl([m.x, m.y]);
     out.locked = await page.evaluate(() => window.__boardLock());
@@ -651,7 +655,7 @@ try {
     out.relocked = await page.evaluate(() => window.__boardLock());
     const c4 = await camX();
     { const x0 = 40, y0 = Math.round((await page.evaluate(() => innerHeight)) * 0.45); await page.mouse.move(x0, y0); await page.mouse.down();
-      for (let k = 1; k <= 8; k++){ await page.mouse.move(x0 + 18 * k, y0 + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await page.waitForTimeout(300); }
+      for (let k = 1; k <= 8; k++){ await page.mouse.move(x0 + 18 * k, y0 + 6 * k); await page.waitForTimeout(40); } await page.mouse.up(); await frame(page, 300); }
     const c5 = await camX();
     out.otherPans = Math.hypot(c5[0] - c4[0], c5[1] - c4[1]) > 1e-3 && await page.evaluate(() => !window.__boardLock());
     // TWO FINGERS AND THE WHEEL ARE NEVER LOCKED (Nov 4: "two finger panning and wheel should always work, don't lock them down."): locked
@@ -660,7 +664,7 @@ try {
     out.relocked2 = await page.evaluate(() => window.__boardLock());
     const c6 = await camX();
     await page.evaluate(([x, y]) => { const cv = document.querySelector('canvas'); for (let k = 0; k < 8; k++) cv.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: x, clientY: y, deltaX: 14.5 + k * 0.25, deltaY: 6.25, deltaMode: 0 })); }, [m.x, m.y]);
-    await page.waitForTimeout(400);
+    await drawn(page, 400);
     const c7 = await camX();
     out.padPans = Math.hypot(c7[0] - c6[0], c7[1] - c6[1]) > 1e-3 && await page.evaluate(() => window.__boardLock());
     await page.evaluate(() => window.__boardLockSet(false));
@@ -689,7 +693,7 @@ try {
     const y0 = await yaw();
     await page.mouse.move(640, 400); await page.keyboard.down('Alt');
     for (let k = 0; k < 8; k++){ await page.mouse.wheel(12.5, 0); await page.waitForTimeout(30); }
-    await page.keyboard.up('Alt'); await page.waitForTimeout(300);
+    await page.keyboard.up('Alt'); await drawn(page, 300);
     const y1 = await yaw();
     const turned = Math.abs(y1 - y0) > 10 && Math.abs(y1 - y0) < 60;
     if (!turned) failures.push(`[${current}] yaw ${y0} -> ${y1}`);
@@ -730,7 +734,7 @@ try {
     current = 'boardwar';
     // (the war opens on mini golf's Medium boards unless its own Board size says otherwise, Nov 10; these checks are written on the Small ones, 8 × 13)
     await page.evaluate(() => { localStorage.setItem('boardwar.size', JSON.stringify('small')); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'boardwar')); });
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const bw = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, K = D.KINDS, key = (c, r) => D.wrapc(c) * 10000 + D.wrapc(r);
       D.applySize();   // (the Small boards, 8 × 13, for sure: a slow runner had not yet switched golf's size by now)
@@ -840,7 +844,7 @@ try {
     console.log(`${bwOk ? 'ok  ' : 'FAIL'} board war (sides by block, damage by kind ${bw.hit}, a board taken joins the taker's side: ${bw.taken}, the war going on: ${bw.war})`);
     // real input: a click on the third launcher takes the cruise missile, a click toward a hostile board fires it there
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.newWar(); D.SIM.quiet = true; D.capture(D.wrapc(-1), 0, (D.SIDE + 1) % 4); D.rearm(0, 0); D.MIS.length = 0; D.fly(0, 0); });
-    await page.waitForTimeout(3000);
+    await drawn(page, 3000); await page.evaluate(() => window.__settle && window.__settle());   // (and the camera at rest after the flight, 12 Nov 2026)
     const bwr = await (async () => {
       const f = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return f ? [f.c, f.r] : null; });
       if (!f || f[0] !== 0 || f[1] !== 0) return { framed: f };
@@ -848,9 +852,9 @@ try {
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
         return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [u, v]);
       const pad = await page.evaluate(() => { const D = window.getFieldApp()._debug; return D.padOf(0, 0, 2); });
-      const slot = await aimAt(pad.u, pad.v); await page.mouse.click(slot.x, slot.y); await page.waitForTimeout(400);
+      const slot = await aimAt(pad.u, pad.v); await page.mouse.click(slot.x, slot.y); await drawn(page, 400);
       const sel = await page.evaluate(() => window.getFieldApp()._debug.SEL);
-      const toward = await aimAt(0.9, 0.4); await page.mouse.click(toward.x, toward.y); await page.waitForTimeout(400);
+      const toward = await aimAt(0.9, 0.4); await page.mouse.click(toward.x, toward.y); await drawn(page, 400);
       const fired = await page.evaluate(() => { const D = window.getFieldApp()._debug; return D.MIS.map(m => [m.k, m.from.join('_'), m.to.join('_')].join(':')); });
       return { framed: f, sel, fired };
     })();
@@ -1006,7 +1010,7 @@ try {
       localStorage.setItem('boardwar.size', JSON.stringify('medium')); D.applySize();
       return out;
     });
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const bwm = await page.evaluate(async () => {
       const g = () => window.FIELD_APPS.find(a => a.id === 'minigolf'), out = {};
       out.medium = [g()._size, Math.abs(window.getFieldApp()._debug.WDx - 13 / 21) < 1e-9];
@@ -1021,7 +1025,7 @@ try {
     if (!bwqOk) failures.push('[boardwar troops] ' + JSON.stringify({ bwq, bwm }));
     console.log(`${bwqOk ? 'ok  ' : 'FAIL'} board war: no bumpers riding loops (${bwq.riders}), a garrison of four drawn on every board, a squad out through the edge, along the margin and in (${bwq.lane}, ${bwq.margin}), two squads take a garrison of one (${bwq.taken}), a friend's board takes one in (${bwq.joined}), Medium boards (${bwm.medium}) and golf's size back (${bwm.back})`);
     await page.evaluate(() => { localStorage.setItem('boardwar.size', JSON.stringify('small')); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'boardwar')); });
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     // BOARD WAR: CASTLES PAY, REPAIR, FLAK (Nov 9: "1,2,5" of the playground ideas): income falls to 0.4 of full with every board's walls gone, repair costs by the damage and puts
     // hit points and launchers back, flak brings down some high arcs (a playground: loose bounds)
     const bwrf = await page.evaluate(() => {
@@ -1050,7 +1054,7 @@ try {
     // in the bottom row beginning that tune on the framed board, each round playing one more note, the whole song played back winning (kept as the best), a wrong pad losing
     current = 'simon';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'simon')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const sg = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, hz = m => 440 * Math.pow(2, (m - 69) / 12);
       D.LIVE = { c: 0, r: 0 };

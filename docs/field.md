@@ -269,6 +269,18 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     time. **3D Tetris's** Tip tile was clicked 700 ms after the row was opened, its middle still at y 851 in a window 800 high,
     the row rising as frames are drawn, 2.8 s apart: it is waited for until it is inside the window and still. Part 4 then
     passed whole twice in a row.
+  - **Part 7's curling, and one pass over every part** (the same day: the next CI run passed part 4 and failed part 7 once, the
+    computer's stone not yet thrown when 30 s on the wall were up; from the sweep to the answer is 8.2 s of the game's time, a
+    quarter of a second of it a frame at most, so frames slower than a second use the 30 s up). It waits a minute of `G.t`. Then,
+    rather than one CI run a check, the helpers went into `tests/harness.mjs` for every part: `drawn(page, ms)` (ms, and two
+    frames drawn since), `frame(page, ms)` (the step of a loop that looks again), `held(page)` (a press until a frame past the
+    hold's time), `tapTouch(cdp, p, id)` (a tap's press and lift together) and `onClock(page, read, ok, secs, clock)` (seconds
+    of a game's own clock). Every fixed `page.waitForTimeout` after real input or a switch that is followed by a look at the
+    page became `drawn` (318 of them), every loop that looks again steps by `frame` (71, and six more inside the page), and a
+    flight that only waited so many seconds also waits for `__settle` (20). With frames quicker than the wait each is the wait
+    it was. Left as they were, because they are the gesture itself: waits while a press is held, the steps of a drag or of a
+    wheel, the gap between two taps or keys, anything under a tenth of a second. No check asserts less and none calls the page
+    where it sent input.
   Parts 5 and 6 then passed whole twice in a row on that browser in a sandbox, so `package.json` asks for Playwright 1.63.0 and
   the smoke jobs run on `ubuntu-latest`. The parts are files since the same day (`tests/part1.mjs` … `part7.mjs`,
   `tests/harness.mjs`; `CLAUDE.md`, Testing).

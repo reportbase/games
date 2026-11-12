@@ -5,7 +5,7 @@
 // its smoke test like draw's"). Its checks were already cut into seven parts that shared nothing but what stood
 // above the first, so each part is now a file (tests/part1.mjs … part7.mjs) that runs on its own or side by side,
 // and this file is what stood above and below them. A part begins `const T = await begin(k, () => current)` and
-// ends `await T.finish()`.
+// ends `await T.finish()`. The waits every part uses are here too (`drawn`, `frame`, `held`, `tapTouch`, `onClock`).
 //
 //   BASE_URL=http://host/        test an already-running server instead of serving the repo
 //   LIBS_DIR=path/node_modules   serve three.js, chess.js and unzipit from local npm copies (three@0.128.0,
@@ -50,6 +50,36 @@ export const timeLimit = pg => pg.route(u => !/^https?:\/\/(127\.0\.0\.1|localho
   try { const res = await r.fetch({ timeout: 20000 }); await r.fulfill({ response: res }); }
   catch { try { await r.abort(); } catch {} }
 });
+
+/* WAITS THAT COUNT WHAT THE PAGE COUNTS (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix the flaky checks and move to the newer
+   browser"). The page does most things as a frame is drawn: a game's clock steps (a quarter of a second a frame at most), a hold
+   is decided, a touch is handed over, the row's class follows its switch, the camera glides. In the software renderer a frame
+   can take seconds (with Playwright 1.63.0's Chromium the first frames of a field took 5 to 36 s in a sandbox, the page's own
+   thread idle), so a wait of so many seconds on the wall says nothing of how far the page has got. The checks were found one
+   CI run at a time, each with its own copy of a helper; these are the helpers, for every part.
+
+   drawn(page, ms, n)   waits ms and until n frames (two unless said) have been drawn since it was called: what a fixed wait
+                        after real input should have been. With frames quicker than ms it is the wait it replaced; two
+                        minutes at most should no frame come.
+   frame(page, ms)      one frame and ms (a fifth of a second unless said) at least: the step of a loop that looks again.
+   held(page, ms)       for a press held: until a frame has come after the hold's 600 ms are up (the page decides a hold a
+                        frame late, `_holdTok`), and ms (1.4 s unless said) at least; a minute at most.
+   tapTouch(cdp, p, id) a finger's tap at p: the press and the lift sent without waiting between. The browser hands a touch to
+                        the page as a frame begins and answers only then, so a lift sent after the press's answer is handled a
+                        frame or two after the press (26 s apart, measured), longer than a touch may rest and still be a tap.
+   onClock(page, read, ok, secs, clock)
+                        looks with read() every quarter of a second until ok(state), giving it secs of the game's own clock
+                        (clock(state), `state.t` unless said) and five minutes of the wall's at most. */
+export const drawn = (page, ms = 0, n = 2) => page.evaluate(([ms, n]) => new Promise(ok => { const t0 = performance.now(); let k = 0; setTimeout(ok, 60000 * n);
+  const f = () => { if (++k >= n) setTimeout(ok, Math.max(0, ms - (performance.now() - t0))); else requestAnimationFrame(f); }; requestAnimationFrame(f); }), [ms, n]).catch(() => page.waitForTimeout(ms));   // (a page that went elsewhere meanwhile: the plain wait)
+export const frame = (page, ms = 200) => drawn(page, ms, 1);
+export const held = (page, ms = 1400) => page.evaluate(ms => new Promise(ok => { const t0 = performance.now(); setTimeout(ok, 60000);
+  setTimeout(() => requestAnimationFrame(() => setTimeout(ok, Math.max(0, ms - (performance.now() - t0)))), 700); }), ms);
+export const tapTouch = async (cdp, p, id = 1) => {
+  const a = cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id }] }), b = cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await a; await b; };
+export const onClock = async (page, read, ok, secs, clock = s => s.t) => { let s = await read(); const t0 = clock(s);
+  for (let w = 0; w < 1200 && !ok(s) && clock(s) - t0 < secs; w++){ await page.waitForTimeout(250); s = await read(); } return s; };
 
 /* begin(k, current): part k's server, browser and page, the page loaded on chess with its apps ready. `current` is a function
    that returns the part's own `current`, the check under way, which names an uncaught error: the checks set it as a plain

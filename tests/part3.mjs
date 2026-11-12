@@ -8,7 +8,7 @@
 // Cut from tests/smoke.mjs (12 Nov 2026) as it stood: the checks and their comments are unchanged. What every part
 // needs (the server, the browser, the page loaded, the failures and how a run ends) is tests/harness.mjs.
 
-import { begin, SETTLE_MS } from './harness.mjs';
+import { begin, SETTLE_MS, drawn, frame } from './harness.mjs';
 
 let current = 'page load';
 const T = await begin(3, () => current);
@@ -48,7 +48,7 @@ try {
     failures.push(`[${current}] piece spans y ${got.minY}..${got.maxY}, x to ${got.maxX}; expected 0..1 and 0.4`);
   if (got.loaded !== 1 || got.knightParts !== 2) failures.push(`[${current}] dropping my_knight.tvf3d did not replace the knight`);
   if (got.refused !== 1) failures.push(`[${current}] a file named after no piece was not refused`);
-  await page.waitForTimeout(SETTLE_MS);         // let the board rebuild with it
+  await drawn(page, SETTLE_MS);         // let the board rebuild with it
   console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
 
   // Mini golf's windmill, from the 3d studio (res/windmill.tvf3d beside the page): it loads, its
@@ -119,7 +119,7 @@ try {
       const sig = its => its.filter(i => ALL.includes(i.kind)).map(i => i.kind + i.u.toFixed(4) + i.v.toFixed(4) + i.lift.toFixed(4)).join();
       const a = D.cellItems(c, r);
       let moved = false;                                     // (a gate stands up or lies down a while: give it a few seconds)
-      for (let q = 0; q < 10 && !moved; q++){ await new Promise(ok => setTimeout(ok, 400)); moved = sig(D.cellItems(c, r)) !== sig(a); }
+      for (let q = 0; q < 10 && !moved; q++){ await new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 400)); }); moved = sig(D.cellItems(c, r)) !== sig(a); }
       res.push({ name: H.name, kinds, drawn: kinds.every(n => a.some(i => KINDS[n].includes(i.kind))), moved,
                  water: a.some(i => /^(drop|foam|ripple|fountBowl|cliff)$/.test(i.kind)) });
     }
@@ -259,12 +259,12 @@ try {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pts(0) });
     for (let k = 1; k <= 12; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pts(deg * k / 12) }); await page.waitForTimeout(16); }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(100);
+    await drawn(page, 100);
   };
   for (const name of ['field checkers', 'mini golf']){
     await page.evaluate(n => window.setFieldApp(window.FIELD_APPS.find(a => a.name === n)), name);
     // let the switch's framing finish turning the view first
-    for (let k = 0, y = null; k < 40; k++){ await page.waitForTimeout(250); const n = (await look()).yaw; if (n === y && !(await page.evaluate(() => window.FIELD_TARGET.active))) break; y = n; }
+    for (let k = 0, y = null; k < 40; k++){ await frame(page, 250); const n = (await look()).yaw; if (n === y && !(await page.evaluate(() => window.FIELD_TARGET.active))) break; y = n; }
     const a = await look(); await twist(6); const b = await look();
     if (Math.abs(b.yaw - a.yaw) > 1e-6) failures.push(`[${current}] ${name}: a 6° roll turned the view ${b.yaw - a.yaw}°`);
     await twist(60); const c = await look();
@@ -288,7 +288,7 @@ try {
   const at = q => [{ x: q.x, y: q.y, id: 0 }];
   let S = await scr();
   await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); window.getFieldApp().onCellTap(f.c, f.r); });
-  await page.waitForTimeout(300);
+  await drawn(page, 300);
   S = await scr();
   const g0 = await golf();
   if (!S.shown || g0.strokes == null) failures.push(`[${current}] starting a round on the framed hole failed (${JSON.stringify({ S, g0, n: await page.evaluate(() => [...window.getFieldApp()._debug.games.values()].map(g => g.state)) })})`);
@@ -297,7 +297,7 @@ try {
     await page.waitForTimeout(900);                                  // past the long press
     for (let k = 1; k <= 8; k++){ await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at({ x: S.out.x + 8 * k, y: S.out.y + 6 * k }) }); await page.waitForTimeout(16); }
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(200);
+    await drawn(page, 200);
     const g1 = await golf();
     if (g1.strokes !== g0.strokes + 1) failures.push(`[${current}] a held press past the rail did not putt (strokes ${g0.strokes} → ${g1.strokes})`);
     if (Math.abs(g1.pitch - g0.pitch) > 1e-6) failures.push(`[${current}] it tilted the view instead (${g0.pitch} → ${g1.pitch})`);
@@ -311,7 +311,7 @@ try {
   // (mini golf's row is the editor's since Oct 10, "remove the game mode", so four stand-in tiles are lent it for this)
   await page.evaluate(() => { const A = window.getFieldApp(); A._statTiles0 = A.statTiles; A.statTiles = () => [1, 2, 3, 4].map(n => ({ label: 'T' + n, value: n }));
     try { window.refreshFieldBrowser && window.refreshFieldBrowser(); } catch {} });
-  await page.waitForTimeout(600);
+  await drawn(page, 600);
   const row = await page.evaluate(() => {
     const st = document.getElementById('boardBrowser');
     if (!st || st.hidden) return null;
@@ -343,7 +343,7 @@ try {
     if (!N) failures.push(`[${current}] no neighbouring board in view`);
     else {
     const playing = () => page.evaluate(to => { const g = window.getFieldApp()._debug.games.get(to.c + '_' + to.r); return g ? g.state : null; }, N.to);
-    const held = async () => { await page.waitForTimeout(400); return page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; return W.cellAt(T.boardX, T.boardZ); }); };
+    const held = async () => { await drawn(page, 400); return page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target; return W.cellAt(T.boardX, T.boardZ); }); };
     // a hold and let go no longer moves you (the mouse: a headless touch tap arrives seconds long, so taps are clicks here)
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
     await page.mouse.move(N.x, N.y); await page.mouse.down(); await page.waitForTimeout(900); await page.mouse.up();
@@ -363,7 +363,7 @@ try {
     // a double tap goes there (two quick clicks), and lands framed
     await page.waitForTimeout(700);
     await page.mouse.click(N.x, N.y); await page.waitForTimeout(120); await page.mouse.click(N.x, N.y);
-    for (let k = 0; k < 40; k++){ await page.waitForTimeout(500); if (!(await page.evaluate(() => !!window.FIELD_WORLD.target.active))) break; }
+    for (let k = 0; k < 40; k++){ await frame(page, 500); if (!(await page.evaluate(() => !!window.FIELD_WORLD.target.active))) break; }
     now = await held();
     if (!now || now.c !== N.to.c || now.r !== N.to.r) failures.push(`[${current}] a double tap on ${JSON.stringify(N.to)} left us on ${JSON.stringify(now)}`);
     // …AND IT HAS BEGUN THE HOLE (Nov 2: "in mini-golf double click should set the golf-hole current.   user should NOT have to tap the board again to
@@ -374,7 +374,7 @@ try {
     const mid = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, v = new W.THREE.Vector3(T.boardX, 0.02, T.boardZ).project(W.camera); return { x: (v.x + 1) / 2 * innerWidth, y: (1 - v.y) / 2 * innerHeight }; });
     await page.waitForTimeout(700);
     await page.mouse.click(mid.x, mid.y);
-    await page.waitForTimeout(600);
+    await drawn(page, 600);
     if ((await playing()) !== 'play') failures.push(`[${current}] the first tap on the board now on did not start its round (${before} → ${await playing()})`);
     }
   }
@@ -566,7 +566,7 @@ try {
     await page.click('#golfCardBox button').catch(() => {});
     const closed = await page.evaluate(() => !document.getElementById('golfCardBox'));
     await page.evaluate(() => window.getFieldApp()._debug.editor.openCardBox({ card: [] }));
-    await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+    await page.keyboard.press('Escape'); await drawn(page, 200);
     const esc = await page.evaluate(() => !document.getElementById('golfCardBox'));
     if (sc.stars !== 3 || !sc.name || sc.rows !== 3 || !sc.head || !sc.shown || !closed || !esc) failures.push(`[${current}] rated as you play, and the scorecard: ${JSON.stringify({ ...sc, closed, esc })}`);
   }
@@ -704,7 +704,7 @@ try {
     await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       for (const k of [...D.games.keys()]) D.games.delete(k); A.onCellTap(f.c, f.r);
       const orig = A.cellItems; window.__ph = { f, n: 0, orig }; A.cellItems = function(c, r, bp){ if (c === f.c && r === f.r) window.__ph.n++; return orig.call(this, c, r, bp); }; });
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const sample = () => page.evaluate(() => { const D = window.getFieldApp()._debug, g = [...D.games.values()].find(g => g.state === 'play'), W = window.FIELD_WORLD;
       return { n: window.__ph.n, gt: g ? +g.t.toFixed(4) : null, at: +window.fieldAnimTime().toFixed(1), cam: [W.st.camX, W.st.camZ, W.st.yaw, W.st.pitch, W.st.zoom].map(v => (+v).toFixed(4)).join(',') }; });
     // (the view as it was, to put back after: a turned view sent the editor's real touches across the board, Oct 12)
@@ -721,11 +721,11 @@ try {
     await page.mouse.move(from.x, from.y); await page.mouse.down();
     for (let k = 1; k <= 6; k++){ await page.mouse.move(from.x + 12 * k, from.y - 4 * k); await page.waitForTimeout(120); during.push(await sample()); }
     await page.mouse.up();
-    await page.waitForTimeout(2000);                         // (its glide spent before the view is put back: CI, Oct 12)
+    await drawn(page, 2000);                         // (its glide spent before the view is put back: CI, Oct 12)
     const g1 = during[during.length - 1];
     if (!(g1.gt > g0.gt) || !(g1.n > g0.n) || !(g1.at > g0.at) || !during.some(d => d.cam !== g0.cam)) failures.push(`[${current}] ${JSON.stringify({ g0, during })}`);
     await page.evaluate(v => { const W = window.FIELD_WORLD; window.getFieldApp().cellItems = window.__ph.orig; Object.assign(W.target, v.target); Object.assign(W.st, v.st); }, view0);
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current} (the round's clock ran ${(g1.gt - g0.gt).toFixed(2)} s over the drag)`);
   }
   // MINI GOLF'S CEILING (Oct 14: "pinching zooms in to far show to many mini-golf boards, clamp zoom in mini-golf to keep the
@@ -735,12 +735,12 @@ try {
   {
     const view0 = await page.evaluate(() => { const W = window.FIELD_WORLD; return { camX: W.st.camX, camZ: W.st.camZ, yaw: W.st.yaw, pitch: W.st.pitch, zoom: W.st.zoom }; });
     for (let i = 0; i < 12; i++){ await page.mouse.move(640, 300); await page.mouse.wheel(0, -600); await page.waitForTimeout(150); }
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const hi = await page.evaluate(() => { const W = window.FIELD_WORLD; return { up: W.camera.position.y / W.spacing()[0], zoom: W.st.zoom, cap: window.getFieldApp().zoomMaxH }; });
-    await page.mouse.wheel(0, 300); await page.waitForTimeout(1200);
+    await page.mouse.wheel(0, 300); await drawn(page, 1200);
     const lo = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
     await page.evaluate(v => { const W = window.FIELD_WORLD; W.target.zoom = null; Object.assign(W.st, v); }, view0);
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const ok = hi.cap === 4 && hi.up <= 4.02 && hi.up > 3.5 && lo < hi.zoom - 5;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ hi, lo })}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the wheel stopped ${hi.up.toFixed(2)} board spacings up)`);
@@ -810,14 +810,14 @@ try {
     // (the row slides up when it opens, a frame at a time; mini golf in software rendering can take seconds a frame, as on
     //  CI, where 10 s was not always enough: Oct 9)
     await page.waitForFunction(findTile, null, { timeout: 30000, polling: 200 }).catch(() => {});
-    await page.waitForTimeout(400);
+    await drawn(page, 400);
     const tile = await page.evaluate(findTile);
     const why = tile ? null : await page.evaluate(() => { const st = document.getElementById('boardBrowser'); return st ? { hidden: st.hidden, rect: st.getBoundingClientRect().toJSON(), keys: [...st.children].filter(t => t._key).map(t => t._key + ':' + t.style.display).slice(0, 12) } : 'no strip'; });
     if (!tile) failures.push(`[${current}] no tool tile in view on the bottom panel: ${JSON.stringify(why)}`);
     else {
       const before = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), b = window.tvf.browser;
         return { tool: A._debug.editor.ED.tool, on: A._debug.editor.ED.on, shut: document.body.classList.contains('bb-collapsed'), keys: b.keys.length, visible: b.visible, mode: b.mode, tiles: (A.statTiles(f.c, f.r) || []).length }; });
-      await page.mouse.click(tile.x, tile.y); await page.waitForTimeout(300);
+      await page.mouse.click(tile.x, tile.y); await drawn(page, 300);
       const inHand = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.tool);
       if (inHand !== tile.tool) failures.push(`[${current}] clicking the ${tile.tool} tile left ${inHand} in hand ${JSON.stringify(before)}`);
     }
@@ -832,7 +832,7 @@ try {
     });
     await page.mouse.move(P.a.x, P.a.y); await page.mouse.down();
     for (let q = 1; q <= 12; q++){ await page.mouse.move(P.a.x + (P.b.x - P.a.x) * q / 12, P.a.y + (P.b.y - P.a.y) * q / 12); await page.waitForTimeout(20); }
-    await page.mouse.up(); await page.waitForTimeout(300);
+    await page.mouse.up(); await drawn(page, 300);
     const st1 = await page.evaluate(() => { const D = window.getFieldApp()._debug, E = D.editor; return { walls: E.ED.src.map.join('').split('#').length - 1, holeWalls: D.HOLES[E.ED.k].map.join('').split('#').length - 1 }; });
     if (st1.walls < 3 || st1.holeWalls !== st1.walls) failures.push(`[${current}] a drag with Wall painted ${st1.walls} walls (the hole on the board has ${st1.holeWalls})`);
     const st2 = await page.evaluate(async () => {
@@ -976,7 +976,7 @@ try {
       return { n: bs.length, text: bs.map(b => b.textContent).join(''), titles: bs.map(b => b.title), at: r && { x: r.x + r.width / 2, y: r.y + r.height / 2, right: innerWidth - r.right, w: r.width } }; });
     let qbUndo = -1;
     if (qb.at){ const before = await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
-      await page.mouse.click(qb.at.x, qb.at.y); await page.waitForTimeout(300);
+      await page.mouse.click(qb.at.x, qb.at.y); await drawn(page, 300);
       qbUndo = before - await page.evaluate(() => window.getFieldApp()._debug.editor.ED.src.toys.length);
       if (qbUndo !== 1) qb.dbg = await page.evaluate(at => { const E = window.getFieldApp()._debug.editor, el = document.elementFromPoint(at.x, at.y); return { el: el && (el.id || el.tagName) + '/' + (el.parentElement && el.parentElement.id), on: E.ED.on, undo: E.ED.undo.length, redo: (E.ED.redo || []).length, shut: document.body.classList.contains('bb-collapsed') }; }, qb.at); }
     if (qb.n !== 6 || !qb.at || qb.at.right > 220 || qb.at.w > 40 || /[a-z]/i.test(qb.text) || qbUndo !== 1) failures.push(`[${current}] quick buttons: ${JSON.stringify(qb)}, undo took ${qbUndo}`);
@@ -1063,7 +1063,7 @@ try {
       await page.mouse.move(scr.x + 6, scr.y + 3); await page.mouse.down();
       await page.mouse.move(scr.x + 6, scr.y - 21); await page.waitForTimeout(30);
       for (let q = 1; q <= 6; q++){ await page.mouse.move(scr.x + 6, scr.y - 21 - 8 * q); await page.waitForTimeout(30); }
-      await page.mouse.up(); await page.waitForTimeout(300);
+      await page.mouse.up(); await drawn(page, 300);
       const after = await page.evaluate(i => { const ED = window.getFieldApp()._debug.editor.ED; return { lift: (ED.src.lift && ED.src.lift[i]) || 0, pick: ED.pick }; }, scr.idx);
       if (!(after.lift - scr.h0 > 0.01) || !after.pick || after.pick.type !== 'dot' || after.pick.i !== scr.idx) failures.push(`[${current}] a real drag up from a dot: ${JSON.stringify({ scr, after })}`);
     }
@@ -1460,7 +1460,7 @@ try {
     // (a tap selects it, as a finger would, and the quick buttons follow the selection)
     const srPrep = async (js, want) => { await page.evaluate(js); await page.waitForFunction(n => document.querySelectorAll('#bbQuick button[title="Smoother"]').length === n, want, { timeout: 5000 }).catch(() => {}); };
     const srBtn = t => page.locator(`#bbQuick button[title="${t}"]`);
-    const srClick = async t => { await srBtn(t).click(); await page.waitForTimeout(120); };
+    const srClick = async t => { await srBtn(t).click(); await drawn(page, 120); };
     await srPrep(() => { const E = window.getFieldApp()._debug.editor, ED = E.ED, wob = [];
       for (let q = 0; q < 16; q++){ const a = (q + 0.5) / 16 * 2 * Math.PI, r = 1.3 + 0.28 * Math.cos(5 * a) + 0.12 * Math.cos(7 * a + 1); wob.push(+(4 + r * Math.cos(a)).toFixed(2), +(6.5 + 0.8 * r * Math.sin(a)).toFixed(2)); }
       window.getFieldApp().onQuickAct(0, 0, 'select'); ED.src.toys = []; ED.src.land = [{ sand: wob }]; const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); ED.pick = null; A.onCellTap(f.c, f.r, 4 / A._debug.NX, 6.5 / A._debug.NY); window.__wob = wob; }, 1);
@@ -1578,7 +1578,7 @@ try {
     // THE ROW IS THE EDITOR (Oct 10: "the bottom browser in the golf application should turn edit mode on when it displayed
     // and turned off when not displayed. remove the game mode of the bottom browser."): the dots, clicked, open the row
     // and the editor with it; clicked again they shut both; no playing tiles or buttons are ever in the row
-    await page.waitForTimeout(800);                           // (the pane slides shut first; the dots ride on it)
+    await drawn(page, 800);                           // (the pane slides shut first; the dots ride on it)
     // (the dots are clicked only once they stay where they are and nothing covers them: the pane slides a frame at a time,
     //  and a software renderer under load, as on CI, can take seconds a frame, so a fixed wait was sometimes too short and
     //  the click fell on the board: Oct 11; and 15 s was still too short once every board drew its full pieces: Oct 12)
@@ -1600,7 +1600,7 @@ try {
     const shutRow = () => page.evaluate(() => { if (!document.body.classList.contains('bb-collapsed')) document.getElementById('bbHandle').click(); });
     await shutRow();
     await page.waitForFunction(() => document.body.classList.contains('bb-collapsed'), null, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(800);
+    await drawn(page, 800);
     const rowOff = await page.evaluate(() => { const A = window.getFieldApp(), E = A._debug.editor, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = A._debug.games.get(f.c + '_' + f.r);
       return { on: E.ED.on, shut: document.body.classList.contains('bb-collapsed'), tiles: (A.statTiles(f.c, f.r) || []).length, quick: (A.quickActs(f.c, f.r) || []).length, state: g && g.state }; });
     if (!rowOn.on) rowOn.dbg = await page.evaluate(at => { const el = document.elementFromPoint(at.x, at.y), b = window.tvf.browser; return { el: el && (el.id || el.tagName), visible: b.visible, mode: b.mode }; }, dotsXY);
@@ -1608,12 +1608,12 @@ try {
       failures.push(`[${current}] the row is the editor: ${JSON.stringify({ pre, rowOn, rowOff })}`);
     // Escape (Oct 9: "don't change the zoom level with escape, instead cancel the edit mode."): in the editor it leaves the
     // editor and the view stays where it was; out of it, it does nothing to the view either
-    await page.waitForTimeout(2500);                          // (the view settled first)
+    await drawn(page, 2500);                          // (the view settled first)
     const escZ = await page.evaluate(() => { const E = window.getFieldApp()._debug.editor, W = window.FIELD_WORLD;
       E.editStart(E.ED.k); return { on: E.ED.on, zoom: W.st.zoom, target: W.target.zoom }; });
-    await page.keyboard.press('Escape'); await page.waitForTimeout(600);
+    await page.keyboard.press('Escape'); await drawn(page, 600);
     const escZ2 = await page.evaluate(() => ({ on: window.getFieldApp()._debug.editor.ED.on, zoom: window.FIELD_WORLD.st.zoom, target: window.FIELD_WORLD.target.zoom }));
-    await page.keyboard.press('Escape'); await page.waitForTimeout(600);
+    await page.keyboard.press('Escape'); await drawn(page, 600);
     const escZ3 = await page.evaluate(() => window.FIELD_WORLD.st.zoom);
     // (the view may still be finishing a settle of its own: Escape must set no flight of its own, nor move it far)
     if (!escZ.on || escZ2.on || escZ2.target !== escZ.target || Math.abs(escZ2.zoom - escZ.zoom) > 5 || Math.abs(escZ3 - escZ.zoom) > 5) failures.push(`[${current}] Escape: ${JSON.stringify({ escZ, escZ2, escZ3 })}`);
@@ -1634,7 +1634,7 @@ try {
     // the share link opens the page on the hole
     await page.goto(st2.link.replace(/^https?:\/\/[^/]+\//, base), { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
-    await page.waitForTimeout(4000);
+    await drawn(page, 4000);
     const st4 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       A.onCellTap(f.c, f.r, 0.5, 0.5);                            // the first tap on a board
       const g = D.games.get(f.c + '_' + f.r);
@@ -1659,11 +1659,11 @@ try {
     const home = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), E = window.getFieldApp()._debug.editor;
       const i = E.MINE.findIndex(m => m.from && m.at && m.at[0] === f.c && m.at[1] === f.r);
       E.fly(f.c + 2, f.r + 1); return { c: f.c, r: f.r, i, name: i >= 0 ? E.MINE[i].name : null }; });
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());   // (and the camera at rest after the flight, 12 Nov 2026)
     const away = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return [f.c, f.r]; });
     await page.evaluate(() => window.getFieldApp()._debug.editor.openMineBox());
     if (home.i >= 0) await page.locator('#golfMineBox .golfMineRow').nth(home.i).getByRole('button', { name: 'Play' }).click();
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const back = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.games.get(f.c + '_' + f.r);
       return { at: [f.c, f.r], name: g && D.HOLES[g.hole].name, open: !!document.getElementById('golfMineBox') }; });
     if (home.i < 0 || (away[0] === home.c && away[1] === home.r) || back.at[0] !== home.c || back.at[1] !== home.r || back.name !== home.name || back.open)
@@ -1706,14 +1706,14 @@ try {
         label: item ? (typeof item.label === 'function' ? item.label() : item.label) : null, items: A.cellItems(f.c, f.r, 600).length, stored: localStorage.getItem('golf.size') }; });
     for (const s of ['medium', 'tall']){
       await page.evaluate(s => window.setGolfSize(s), s);
-      await page.waitForTimeout(1500);
+      await drawn(page, 1500);
       out[s] = await look();
     }
     // (a page opened from a hole's link takes that hole's size, so a plain page, not a reload of whatever link the page is on)
     await page.goto(new URL('games.html?app=minigolf', base).href, { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
     out.reloaded = await look();
-    await page.evaluate(() => window.setGolfSize('small')); await page.waitForTimeout(1000);
+    await page.evaluate(() => window.setGolfSize('small')); await drawn(page, 1000);
     out.small = await look();
     const want = { medium: [13, 21], tall: [8, 21], small: [8, 13] };
     for (const k of ['medium', 'tall', 'small']){ const o = out[k], [nx, ny] = want[k];
@@ -1855,12 +1855,12 @@ try {
     // the real arrow key, on the framed board
     const f = await page.evaluate(() => { const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); A._debug.GAMES.clear(); A.onCellTap(f.c, f.r); const g = A._debug.gameAt(f.c, f.r); return { c: f.c, r: f.r, x: g.b.x, y: g.b.y }; });
     await page.keyboard.down('ArrowRight'); await page.keyboard.down('ArrowDown'); await page.waitForTimeout(900); await page.keyboard.up('ArrowRight'); await page.keyboard.up('ArrowDown');
-    await page.waitForTimeout(300);
+    await drawn(page, 300);
     const live = await page.evaluate(async f => { const A = window.getFieldApp(), D = A._debug, g = D.gameAt(f.c, f.r), out = { moved: Math.hypot(g.b.x - f.x, g.b.y - f.y), state: g.state, t: g.t };
       // a hole: the marble set on one drops, and is back at the start a moment later
       const L = g.M.L;
       if (L.holes.length){ g.state = 'play'; g.b = { x: L.holes[0].x, y: L.holes[0].y, vx: 0, vy: 0 }; g.last = performance.now() - 16; D.stepGame(g); out.fell = g.state === 'falling';
-        for (let w = 0; w < 30 && g.state === 'falling'; w++) await new Promise(ok => setTimeout(ok, 200)); const [sx, sy] = D.centre(L, L.start);   // (the drop is 0.6 s of the game's own time, a few frames)
+        for (let w = 0; w < 30 && g.state === 'falling'; w++) await new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 200)); }); const [sx, sy] = D.centre(L, L.start);   // (the drop is 0.6 s of the game's own time, a few frames)
         out.back = Math.hypot(g.b.x - sx, g.b.y - sy) < 0.05 && g.falls === 1; }
       else { out.fell = out.back = true; }
       // the ring: through, with stars and a best kept

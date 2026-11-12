@@ -7,7 +7,7 @@
 // Cut from tests/smoke.mjs (12 Nov 2026) as it stood: the checks and their comments are unchanged. What every part
 // needs (the server, the browser, the page loaded, the failures and how a run ends) is tests/harness.mjs.
 
-import { begin } from './harness.mjs';
+import { begin, onClock, drawn, frame } from './harness.mjs';
 
 let current = 'page load';
 const T = await begin(5, () => current);
@@ -21,7 +21,7 @@ try {
   // shot wins with stars; a board no one plays shows its duel; the picture, the effects, the tanks upright, the sounds.
   {
     await page.evaluate(() => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'tanks')); window.getFieldApp()._debug.setMode(2, 1); });
-    await page.waitForTimeout(2000);
+    await drawn(page, 2000);
     current = 'tanks';
     const before = failures.length;
     const rules = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, out = {};
@@ -57,7 +57,7 @@ try {
     // (on a fresh page a frame can take a second or more, so the camera can sit still before its flight has begun and the
     //  settle passes early: wait until the board's middle is near the middle of the screen, then settle)
     for (let k = 0; k < 160; k++){ if (await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, p = new W.THREE.Vector3(T.boardX, 0, T.boardZ).project(W.camera);
-      return Math.abs(p.x) < 0.3 && Math.abs(p.y) < 0.4; })) break; await page.waitForTimeout(250); }
+      return Math.abs(p.x) < 0.3 && Math.abs(p.y) < 0.4; })) break; await drawn(page, 250); }
     await page.evaluate(() => window.__settle());
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     // (a point of the board in its own x and y, projected here: across the width u is x / ASP)
@@ -73,7 +73,7 @@ try {
        thread idle the while, then under a second; a second shot's frames all under two): 20 s on, the game's clock stood at
        half a second and the turn had not ended, on CI every time. So a wait is given seconds of the game's clock (`g.t`), and
        stops early only when five minutes on the wall have gone with the clock short of that. */
-    const until = async (ok, secs) => { let s = await gs(); const t0 = s.t; for (let w = 0; w < 1200 && !ok(s) && s.t - t0 < secs; w++){ await page.waitForTimeout(250); s = await gs(); } return s; };
+    const until = (ok, secs) => onClock(page, gs, ok, secs);
     const waitAim = () => until(s => s.state === 'over' || (s.state === 'aim' && s.turn === 0), 30);
     const live = {};
     if (fc){
@@ -81,28 +81,28 @@ try {
       // a tap aims (and fires nothing); a tap on your own tank fires
       const tx = tank[0] + 0.45, ty = 0.3, pt = await at(tx, ty); await page.mouse.click(pt.x, pt.y);
       // (the software renderer can take a second a frame, so the tap lands when it lands: wait for it before reading)
-      for (let w = 0; w < 40 && (await gs()).a === 45; w++){ await page.waitForTimeout(250); if (w === 20) await page.mouse.click(pt.x, pt.y); }
+      for (let w = 0; w < 40 && (await gs()).a === 45; w++){ await frame(page, 250); if (w === 20) await page.mouse.click(pt.x, pt.y); }
       live.aimed = await gs(); live.want = Math.atan2(tank[1] - 0.022 - ty, tx - tank[0]) * 180 / Math.PI;
       live.arc = await page.evaluate(k => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.viewOf(...k.split('_').map(Number)); return V.preview ? V.preview.length / 2 : 0; }, fc[0] + '_' + fc[1]);
       const pk = await at(tank[0], tank[1] - 0.022); await page.mouse.click(pk.x, pk.y);
-      for (let w = 0; w < 40 && !((await gs()).turns >= 1); w++) await page.waitForTimeout(250);
+      for (let w = 0; w < 40 && !((await gs()).turns >= 1); w++) await frame(page, 250);
       live.tap = await gs();
       live.answered = await waitAim();
       // a real key drives (D, held), on fuel
       // (the tank moves when a frame steps the game with the key held: two seconds of the game's clock for it)
       const x0 = (await gs()).x; await page.keyboard.down('d');
       await until(s => s.x > x0 + 0.01, 2);
-      await page.keyboard.up('d'); await page.waitForTimeout(100);
+      await page.keyboard.up('d'); await drawn(page, 100);
       live.drove = await gs(); live.x0 = x0;
       // a real drag anywhere on the board aims and fires nothing; then the real Enter key fires
       const a0 = (await gs()).a, p0 = await at(live.drove.x + 0.5, 0.45), p1 = await at(live.drove.x + 0.4, 0.3), p2 = await at(live.drove.x + 0.3, 0.2);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 6 }); await page.mouse.move(p2.x, p2.y, { steps: 6 });
       await page.mouse.up();
-      for (let w = 0; w < 40 && Math.abs((await gs()).a - a0) < 0.5; w++) await page.waitForTimeout(250);
-      await page.waitForTimeout(600);
+      for (let w = 0; w < 40 && Math.abs((await gs()).a - a0) < 0.5; w++) await frame(page, 250);
+      await drawn(page, 600);
       live.dragged = await gs(); live.a0 = a0;
       await page.keyboard.press('Enter');
-      for (let w = 0; w < 40 && !((await gs()).turns >= 3); w++) await page.waitForTimeout(250);
+      for (let w = 0; w < 40 && !((await gs()).turns >= 3); w++) await frame(page, 250);
       live.entered = await gs();
       // the row's Big shell, then a shot: one fewer left
       live.chose = await page.evaluate(async ([c, r]) => { const A = window.getFieldApp(), D = A._debug, g = D.GAMES.get(c + '_' + r);
@@ -207,7 +207,7 @@ try {
   // going on to the next; the real spin inset and pull strip; the balls rolling, numbered, with trails.)
   {
     await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); A._debug.GAMES.clear(); });
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     current = 'trickshots';
     const before = failures.length;
     const rules = await page.evaluate(() => { const D = window.getFieldApp()._debug, sc = D.spinChecks(), out = {};
@@ -240,7 +240,7 @@ try {
       return out; });
     // the ½-ball challenge framed for real: a real drag aims, and a real click on the white plays the reference shot through
     await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = D.cellOfIdx(0); D.GAMES.delete(c + '_' + r); D.fly(c, r); });
-    await page.waitForTimeout(2500);
+    await drawn(page, 2500); await page.evaluate(() => window.__settle && window.__settle());   // (and the camera at rest after the flight, 12 Nov 2026)
     const fc = await page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, f = W.cellAt(T.boardX, T.boardZ); return f ? [f.c, f.r] : null; });
     const at = (x, z) => page.evaluate(([x, z]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, D = window.getFieldApp()._debug;
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
@@ -255,16 +255,16 @@ try {
       // a drag from beside the white toward a point straight up the board from it: the cue turns to it (−90°)
       const p0 = await at(w.x + 3, w.z - 2), p1 = await at(w.x, w.z - 3);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
-      for (let k = 0; k < 20 && Math.abs((await gs()).ang + 90) > 8; k++) await page.waitForTimeout(250);
+      for (let k = 0; k < 20 && Math.abs((await gs()).ang + 90) > 8; k++) await frame(page, 250);
       await page.mouse.up();
       live.dragged = (await gs()).ang;
-      await page.waitForTimeout(500);   // (past the tap the field still calls after a drag)
+      await drawn(page, 500);   // (past the tap the field still calls after a drag)
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), o = g.ch.sol; g.ang = o.a * D.D; D.setPower(g, o.p); D.setTip(g, 0, 0); }, fc);
       const pw = await at(w.x, w.z);
       await page.mouse.click(pw.x, pw.y);
       const rot0 = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).rot[0].join(), fc[0] + '_' + fc[1]);
       live.playing = (await gs()).anim;
-      for (let k = 0; k < 40 && (await gs()).anim; k++) await page.waitForTimeout(250);
+      for (let k = 0; k < 40 && (await gs()).anim; k++) await frame(page, 250);
       live.after = await gs();
       // the white rolled (its turn is not where it began; after a try it goes back with the balls), and the frame wears the stars
       live.rolled = await page.evaluate(([k, r0]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k), V = D.liveView(g), it = D.itemsOf(V);
@@ -284,10 +284,10 @@ try {
       await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 8000 }).catch(() => {});
       const pullBox = await page.evaluate(() => { const e = document.getElementById('tsPull'), r = e && e.getBoundingClientRect(); return r && r.height ? { x: r.left + r.width / 2, y: r.top + 8, h: r.height } : null; });
       if (pullBox){ const s0 = (await gs()).shots; await page.mouse.move(pullBox.x, pullBox.y); await page.mouse.down(); await page.mouse.move(pullBox.x, pullBox.y + pullBox.h * 0.3, { steps: 6 });
-        live.pulled = (await gs()).power; await page.mouse.up(); await page.waitForTimeout(300); live.pull = { shots: (await gs()).shots - s0, anim: (await gs()).anim };
-        for (let k = 0; k < 40 && (await gs()).anim; k++) await page.waitForTimeout(250); }
+        live.pulled = (await gs()).power; await page.mouse.up(); await drawn(page, 300); live.pull = { shots: (await gs()).shots - s0, anim: (await gs()).anim };
+        for (let k = 0; k < 40 && (await gs()).anim; k++) await frame(page, 250); }
       // solved, a real click on the table (away from the white) sets it up again where it is (Oct 29: only you move to another board)
-      { const g = await gs(), w = g.balls[0], p = await at(w.x > 0 ? w.x - 4 : w.x + 4, 0); await page.mouse.click(p.x, p.y); await page.waitForTimeout(400);
+      { const g = await gs(), w = g.balls[0], p = await at(w.x > 0 ? w.x - 4 : w.x + 4, 0); await page.mouse.click(p.x, p.y); await drawn(page, 400);
         live.next = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.gameAt(L.c, L.r); return L ? [D.boardIdx(L.c, L.r), !!(g && g.solvedIn)] : null; }); }
       // free play on the next board along: a real Space shoots a straight pot (the 1 set before a corner pocket, the white behind it)
       const fr = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; let k = D.boardIdx(c, r) + 20; const [fc2, fr2] = D.cellOfIdx(k);
@@ -298,7 +298,7 @@ try {
       const fk = fr[0] + '_' + fr[1];
       const fgs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return { anim: !!g.anim, potted: g.potted, shots: g.shots, back: g.history.length }; }, fk);
       live.space = await fgs();
-      for (let k = 0; k < 40 && (await fgs()).anim; k++) await page.waitForTimeout(250);
+      for (let k = 0; k < 40 && (await fgs()).anim; k++) await frame(page, 250);
       live.free = { ...(await fgs()), challenge: fr[2] };
       await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.FREEPLAY.delete(k); D.LIVE = null; }, fk);
       await page.evaluate(k => window.getFieldApp()._debug.GAMES.delete(k), fc[0] + '_' + fc[1]);
@@ -331,26 +331,26 @@ try {
   {
     const before = failures.length, out = {};
     const [c, r] = await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = D.cellOfIdx(60); D.GAMES.delete(c + '_' + r); D.MINE.delete(60); D.fly(c, r); return [c, r]; });
-    await page.waitForTimeout(3000);
+    await drawn(page, 3000); await page.evaluate(() => window.__settle && window.__settle());   // (and the camera at rest after the flight, 12 Nov 2026)
     const at = (x, z) => page.evaluate(([x, z]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, D = window.getFieldApp()._debug;
       const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
       return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, [x, z]);
     const est = () => page.evaluate(() => { const E = window.getFieldApp()._debug.ed(); return { on: E.on, balls: E.balls.map(b => b.slice()), target: E.target, found: E.found && { par: E.found.par, w: E.found.window }, checking: E.checking }; });
     try {
-      await page.evaluate(() => { if (!window.tvf.bottomRow.visible){ window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); } }); await page.waitForTimeout(700);   // (✎ is in the row's band: the row opened by hand, Oct 28)
+      await page.evaluate(() => { if (!window.tvf.bottomRow.visible){ window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); } }); await drawn(page, 700);   // (✎ is in the row's band: the row opened by hand, Oct 28)
       await page.waitForSelector('#bbQuick button[title^="Make"]', { state: 'visible', timeout: 15000 });
-      await page.click('#bbQuick button[title^="Make"]'); await page.waitForTimeout(800);
+      await page.click('#bbQuick button[title^="Make"]'); await drawn(page, 800);
       out.opened = (await est()).on;
       const tile = i => page.evaluate(i => window.getFieldApp()._debug.edTile(i), i);
       await tile(11);                                            // Clear: the white alone
-      await tile(0); let p = await at(-8, 0); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
-      await tile(1); p = await at(2, 1); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
-      await tile(2); p = await at(2, 1); await page.mouse.click(p.x, p.y); await page.waitForTimeout(600);
+      await tile(0); let p = await at(-8, 0); await page.mouse.click(p.x, p.y); await drawn(page, 600);
+      await tile(1); p = await at(2, 1); await page.mouse.click(p.x, p.y); await drawn(page, 600);
+      await tile(2); p = await at(2, 1); await page.mouse.click(p.x, p.y); await drawn(page, 600);
       out.placed = await est();
       await tile(12);                                            // Check
-      for (let k = 0; k < 60 && !(await est()).found; k++) await page.waitForTimeout(500);
+      for (let k = 0; k < 60 && !(await est()).found; k++) await frame(page, 500);
       out.found = (await est()).found;
-      await tile(13); await page.waitForTimeout(2500);           // Play: kept and played
+      await tile(13); await drawn(page, 2500);           // Play: kept and played
       out.kept = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), m = D.MINE.get(60);
         let stored = false; try { stored = JSON.parse(localStorage.getItem('trickshots.mine')).some(([k]) => k === 60); } catch {}
         const res = { on: D.ed().on, mine: !!m, stored, game: !!(g && g.ch && g.ch.mine), text: g && g.ch && g.ch.text, par: g && g.ch && g.ch.par };
@@ -359,7 +359,7 @@ try {
         res.shared = !!D.MINE.get(61) && JSON.stringify(D.MINE.get(61).balls) === JSON.stringify(m.balls);
         D.edOpen(); const E = D.ed(); E.balls = [[0, -8, 0], [1, 5, 0], ...[0, 1, 2, 3, 4, 5].map(k => [k + 2, 5 + 0.92 * Math.cos(k * Math.PI / 3), 0.92 * Math.sin(k * Math.PI / 3)])];
         E.target = 1; E.avoid = [2, 3, 4, 5, 6, 7]; E.first = null; E.zone = null; E.found = null; D.edCheck(); return res; }, [c, r]);
-      for (let k = 0; k < 120 && (await est()).checking; k++) await page.waitForTimeout(500);
+      for (let k = 0; k < 120 && (await est()).checking; k++) await frame(page, 500);
       out.ringed = await est();
       await page.evaluate(() => { const D = window.getFieldApp()._debug; D.edCancel(); D.MINE.delete(60); D.MINE.delete(61); D.GAMES.clear(); });
     } catch (e) { out.err = String(e); }
@@ -379,16 +379,16 @@ try {
       out.idx = await page.evaluate(() => { const D = window.getFieldApp()._debug;
         for (let i = 40; i < 2000; i++){ const lv = D.levelAt(i); if (lv < 2) continue; const P = D.runGen(D.makePuzzle(i, lv)); if (P && P.kind === 'run' && P.sols.length === 2) return i; } return -1; });
       await page.evaluate(i => { const D = window.getFieldApp()._debug, [c, r] = D.cellOfIdx(i); D.GAMES.delete(c + '_' + r); D.fly(c, r); window.__run = [c, r]; }, out.idx);
-      await page.waitForTimeout(3500);
+      await drawn(page, 3500); await page.evaluate(() => window.__settle && window.__settle());   // (and the camera at rest after the flight, 12 Nov 2026)
       await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run; D.LIVE = { c, r }; D.gameAt(c, r); });
-      for (let k = 0; k < 40; k++){ if (await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.gameAt(c, r); return !!(g && g.ch); })) break; await page.waitForTimeout(500); }
+      for (let k = 0; k < 40; k++){ if (await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.gameAt(c, r); return !!(g && g.ch); })) break; await frame(page, 500); }
       const rs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.GAMES.get(c + '_' + r);
         return { kind: g.ch.kind, stage: g.stage, tries: g.tries, solvedIn: g.solvedIn, anim: !!g.anim, left: g.balls.filter(b => !b.cue && !b.sunk).length, why: g.lastWhy, white: (b => [b.x, b.z])(g.balls.find(b => b.cue)) }; });
       const whiteAt = async () => { const w = (await rs()).white; return page.evaluate(([x, z]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB, D = window.getFieldApp()._debug;
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
         return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, w); };
       const showMe = () => page.evaluate(() => window.getFieldApp().menu[0].items.find(i => i.label === 'Show me the trick').on());
-      const play = async () => { const p = await whiteAt(); await page.mouse.click(p.x, p.y); for (let k = 0; k < 40 && (await rs()).anim; k++) await page.waitForTimeout(250); await page.waitForTimeout(300); };
+      const play = async () => { const p = await whiteAt(); await page.mouse.click(p.x, p.y); for (let k = 0; k < 40 && (await rs()).anim; k++) await frame(page, 250); await frame(page, 300); };
       out.start = await rs();
       // a miss first: the cue turned away from every ball, softly
       await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.GAMES.get(c + '_' + r), w = g.balls.find(b => b.cue);
@@ -433,11 +433,11 @@ const game = { title: 'Gold Lights', size: l => l < 3 ? 4 : 5,
     });
     try {
       await page.evaluate(() => { localStorage.removeItem('gamelab.mine'); const A = window.FIELD_APPS.find(a => a.id === 'gamelab'); window.setFieldApp(A); });
-      await page.waitForTimeout(3000);
+      await drawn(page, 3000);
       // (the board left framed by the checks before is not the corner, and boards go round eight starters since Oct 26: fly there)
       await page.evaluate(() => window.getFieldApp()._debug.fly(0, 0));
       await page.waitForFunction(() => { const L = window.getFieldApp()._debug.live; return L && L.c === 0 && L.r === 0; }, null, { timeout: 8000 }).catch(() => {});
-      await page.waitForTimeout(1500);
+      await drawn(page, 1500);
       const S = await page.evaluate(async () => { const D = window.getFieldApp()._debug, out = {};
         for (const s of D.STARTERS){ const T = await D.trialOf(s.src); out[s.id] = T.error || T.meta.title; }
         const L = D.live, r = D.RUN.get(L.c + '_' + L.r);
@@ -459,7 +459,7 @@ const game = { title: 'Gold Lights', size: l => l < 3 ? 4 : 5,
       else {
         // (opened after another game the first click may only select the board: it is clicked again until one flips something)
         const l0 = await lit(); let l1 = l0;
-        for (let k = 0; k < 3 && l1 === l0; k++){ await page.mouse.click(at.x, at.y); await page.waitForTimeout(900); l1 = await lit(); }
+        for (let k = 0; k < 3 && l1 === l0; k++){ await page.mouse.click(at.x, at.y); await frame(page, 900); l1 = await lit(); }
         const diff = [...l0].map((ch, i) => ch !== l1[i] ? i : -1).filter(i => i >= 0).join(',');
         const n = at.n, want = [1 + n, 1 + n - n, 1 + n - 1, 1 + n + 1, 1 + n + n].sort((a, b) => a - b).join(',');
         if (diff !== want) bad.push('a real click flipped ' + diff + ', not the cross ' + want);
@@ -470,10 +470,10 @@ const game = { title: 'Gold Lights', size: l => l < 3 ? 4 : 5,
         await new Promise(r => setTimeout(r, 800)); D.recOf(3, 0); await new Promise(r => setTimeout(r, 800));
         const r = D.RUN.get('3_0'); return { status: r && r.view && r.view.status, kept: !!D.MINE.get('3_0') }; });
       if (shared.status !== 'undefined undefined undefined undefined' || !shared.kept) bad.push('the sandbox reaches: ' + JSON.stringify(shared));
-      await page.evaluate(() => window.getFieldApp()._debug.fly(0, 0)); await page.waitForTimeout(1500);
+      await page.evaluate(() => window.getFieldApp()._debug.fly(0, 0)); await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
       // Change it… through the real box: the first reply breaks, goes back with its error, the second is kept
       await page.evaluate(() => { const D = window.getFieldApp()._debug; D.session('smoke-session'); const L = D.live; window.getFieldApp().onStatTap(L.c, L.r, 0); });
-      await page.waitForTimeout(300);
+      await drawn(page, 300);
       await page.fill('#labAskBox textarea', 'make the lit squares gold gems');
       await page.click('#labAskBox button:has-text("Send to Claude")');
       await page.waitForFunction(() => /✓/.test(document.querySelector('#labAskBox').innerText) || /fails/.test(document.querySelector('#labAskBox').innerText), null, { timeout: 20000 }).catch(() => {});
@@ -495,14 +495,14 @@ const game = { title: 'Gold Lights', size: l => l < 3 ? 4 : 5,
       // Snake (board (1, 0)) waits for the player, then the real ArrowUp turns it up
       // (settled on board (1, 0), not a fixed 2.5 s (12 Nov 2026): with the page fresh and its frames seconds apart the flight had
       //  not begun 2.5 s on, the lab's board was still (0, 0) and the key went to Lights Out; the camera left four seconds later)
-      await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0)); await page.waitForTimeout(500); await page.evaluate(() => window.__settle(1, 0));
+      await page.evaluate(() => window.getFieldApp()._debug.fly(1, 0)); await drawn(page, 500); await page.evaluate(() => window.__settle(1, 0));
       await page.waitForFunction(() => { const L = window.getFieldApp()._debug.live; return L && L.c === 1 && L.r === 0; }, null, { timeout: 30000 }).catch(() => {});
       const head = () => page.evaluate(() => { const r = window.getFieldApp()._debug.RUN.get('1_0'); return r && r.view && r.view.pieces[0] ? [r.view.pieces[0].x, r.view.pieces[0].y, r.view.over] : null; });
       const h0 = await head();
       await page.keyboard.press('ArrowUp');
       let h1 = null;                                   // (a slow runner's frames are far apart: wait for the first step up)
       // (the snake steps once a frame, and a frame can be seconds: up to a minute for the first, 12 Nov 2026)
-      for (let k = 0; k < 600; k++){ await page.waitForTimeout(100); h1 = await head(); if (h1 && (h1[1] < 6.5 || h1[0] !== 5.5 || h1[2])) break; }
+      for (let k = 0; k < 600; k++){ await frame(page, 100); h1 = await head(); if (h1 && (h1[1] < 6.5 || h1[0] !== 5.5 || h1[2])) break; }
       if (!h0 || h0[0] !== 5.5 || h0[1] !== 6.5) bad.push('Snake did not wait: ' + JSON.stringify(h0));
       if (!h1 || !(h1[1] < 6.5) || h1[0] !== 5.5 || h1[2]) bad.push('the real ArrowUp did not turn the snake up: ' + JSON.stringify(h1));
     } catch (e){ bad.push(String(e)); }
@@ -549,9 +549,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
          pixel's working out and the three clicks), so the pixel worked out for square (3, 2) was square 2, then 1, then 0 by the
          time each click landed, and the block went there. `__settle` waits until board (2, 0) is framed and the camera has not
          moved over four looks, as the checks that click squares do. */
-      await page.waitForTimeout(500); await page.evaluate(() => window.__settle(2, 0));
+      await drawn(page, 500); await page.evaluate(() => window.__settle(2, 0));
       await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = L && D.RUN.get(L.c + '_' + L.r); return L && L.c === 2 && L.r === 0 && r && r.view && r.meta && r.meta.title === 'Words'; }, null, { timeout: 30000 }).catch(() => {});
-      await page.waitForTimeout(1200);
+      await drawn(page, 1200);
       const sys = await page.evaluate(() => window.getFieldApp()._debug.LAB_SYS);
       if (!/sound\(kind, pitch, seconds\)/.test(sys) || !/shape: "text"/.test(sys) || !/game\.drag\(/.test(sys) || !/glide/.test(sys)) bad.push('the system prompt does not tell Claude about sound, text, drag and glide');
       const letters = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r);
@@ -563,7 +563,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // a real click on square (3, 2), within the three squares a piece glides: the block glides there, and a click is asked for
       const t = await at(3.5, 2.5);
       let A = null;
-      for (let k = 0; k < 3; k++){ await page.mouse.click(t.x, t.y); await page.waitForTimeout(700); A = await live(); if (A && A.me.x === 3.5) break; }
+      for (let k = 0; k < 3; k++){ await page.mouse.click(t.x, t.y); await frame(page, 700); A = await live(); if (A && A.me.x === 3.5) break; }
       if (!A || A.me.x !== 3.5 || A.me.y !== 2.5) bad.push('a real click did not move the block: ' + JSON.stringify(A && A.me));
       else {
         if (!A.anim || A.anim.d !== 0.5 || A.anim.x0 === A.anim.x1) bad.push('the block did not glide: ' + JSON.stringify(A.anim));
@@ -579,9 +579,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       if (!/^([2-9]|\d\d+) drags LEFT$/.test(B.status || '')) bad.push('a real drag left read as ' + JSON.stringify(B.status));
       if (B.me.x !== 3.5) bad.push('the drag was taken as a tap too: the block went to ' + B.me.x);
       // broken in play: the real Z, then a real click on (0, 0)
-      await page.keyboard.press('z'); await page.waitForTimeout(400);
+      await page.keyboard.press('z'); await drawn(page, 400);
       const z = await at(0.5, 0.5);
-      for (let k = 0; k < 3; k++){ await page.mouse.click(z.x, z.y); await page.waitForTimeout(700); if ((await live()).err) break; }
+      for (let k = 0; k < 3; k++){ await page.mouse.click(z.x, z.y); await frame(page, 700); if ((await live()).err) break; }
       const C = await live();
       const tile = await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.live; return A.statTiles(L.c, L.r)[0].value; });
       if (!C.err) bad.push('the game did not break in play');
@@ -618,7 +618,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     });
     try {
       await page.evaluate(() => { localStorage.removeItem('gamelab.mine'); localStorage.removeItem('gamelab.best'); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gamelab')); });
-      await page.waitForTimeout(2500);
+      await drawn(page, 2500);
       const K = await page.evaluate(async () => { const D = window.getFieldApp()._debug, out = {};
         for (const s of D.STARTERS){ const k = await D.checkOf(s.src); out[s.id] = k.ok ? 'ok' : k.why; }
         out.atOnce = (await D.checkOf("const game = { size: 3, setup(){ return {}; }, bot(){ return [0, 0]; }, view(){ return { over: true }; } };")).why;
@@ -633,7 +633,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       if (!/never won it at level 1/.test(K.nowin || '')) bad.push('a game to win never won: ' + K.nowin);
       // Change it…: the reply with no player goes back, the next is kept
       await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug; D.session('smoke-session'); const L = D.live; A.onStatTap(L.c, L.r, 0); });
-      await page.waitForTimeout(300);
+      await drawn(page, 300);
       await page.fill('#labAskBox textarea', 'count my taps');
       await page.click('#labAskBox button:has-text("Send to Claude")');
       await page.waitForFunction(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.meta && r.meta.title === 'With player'; }, null, { timeout: 15000 }).catch(() => {});
@@ -662,7 +662,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const pt = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live;
         for (let y = 120; y < innerHeight - 120; y += 6) for (let x = 120; x < innerWidth - 120; x += 6){ const b = D.uvAt(x, y); if (b && b.c === L.c && b.r === L.r && Math.abs(b.u - 0.5) < 0.06 && Math.abs(b.v - 0.5) < 0.06) return { x, y }; } return null; });
       if (!pt) bad.push('the framed board is not on the screen');
-      else for (let k = 0; k < 3; k++){ await page.mouse.click(pt.x, pt.y); await page.waitForTimeout(900);
+      else for (let k = 0; k < 3; k++){ await page.mouse.click(pt.x, pt.y); await frame(page, 900);
         if (await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.live, r = D.RUN.get(L.c + '_' + L.r); return r && r.view && r.view.over; })) break; }
       const S = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, L = D.live; return { best: JSON.parse(localStorage.getItem('gamelab.best') || '{}'), title: A.cellTitle(L.c, L.r) }; });
       if (!Object.values(S.best).includes(3) || !/best ★★★/.test(S.title)) bad.push('a win in par did not keep three stars: ' + JSON.stringify(S));
@@ -686,7 +686,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     });
     try {
       await page.evaluate(() => { localStorage.removeItem('gamelab.mine'); window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'gamelab')); });
-      await page.waitForTimeout(2500);
+      await drawn(page, 2500);
       const K = await page.evaluate(async src => { const D = window.getFieldApp()._debug, out = {};
         for (const s of D.STARTERS.slice(0, 3)){ const k = await D.checkOf(s.src); out[s.id] = k.ok ? k.note : 'NO ' + k.why; }
         out.flat = (await D.checkOf(src)).why; return out; }, FLAT);
@@ -695,7 +695,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       if (!/level 5 is no harder than level 1/.test(K.flat || '')) bad.push('a game the same at every level passed: ' + K.flat);
       // through the real box: sent back each time, then kept with a note
       await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug; D.session('smoke-session'); const L = D.live; A.onStatTap(L.c, L.r, 0); });
-      await page.waitForTimeout(300);
+      await drawn(page, 300);
       await page.fill('#labAskBox textarea', 'a tapping game');
       await page.click('#labAskBox button:has-text("Send to Claude")');
       await page.waitForFunction(() => /✓|fails/.test(document.querySelector('#labAskBox').innerText), null, { timeout: 30000 }).catch(() => {});
@@ -711,12 +711,12 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         await new Promise(r => setTimeout(r, 20));
         await D.takeShared(4, 1, { s: "const game = { title: 'Beta', size: 3, setup(){ return {}; }, view(){ return {}; } };" }); });
       await page.evaluate(() => { const A = window.getFieldApp(), L = A._debug.live; A.onStatTap(L.c, L.r, 6); });
-      await page.waitForTimeout(400);
+      await drawn(page, 400);
       const rows = await page.evaluate(() => [...document.querySelectorAll('#labMineBox .labMineRow')].map(e => [e.dataset.k, e.innerText.split('\n')[0]]));
       // (boards changed by the checks above are listed too: the newest two first, the flat game among the rest)
       if (rows.length < 3 || rows[0][0] !== '4_1' || !/Beta/.test(rows[0][1]) || rows[1][0] !== '6_3' || !/Alpha/.test(rows[1][1]) || !rows.some(x => /Flat/.test(x[1]))) bad.push('My games listed ' + JSON.stringify(rows));
       await page.click('#labMineBox .labMineRow[data-k="4_1"] button:has-text("Play")');
-      await page.waitForTimeout(2500);
+      await drawn(page, 2500);
       const W = await page.evaluate(() => { const D = window.getFieldApp()._debug; let f = null; try { f = window.framedCell ? window.framedCell() : null; } catch {} return { live: D.live, hidden: document.querySelector('#labMineBox').hidden }; });
       if (!W.live || W.live.c !== 4 || W.live.r !== 1 || !W.hidden) bad.push('Play did not go to the board: ' + JSON.stringify(W));
     } catch (e){ bad.push(String(e)); }
@@ -734,7 +734,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   {
     current = 'sudoku';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'sudoku')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const r = await page.evaluate(() => {
       const D = window.getFieldApp()._debug, out = { bad: [] }, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
@@ -815,18 +815,18 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
         const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
         return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
-      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await frame(page, 300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await frame(page, 500); } return p; };
       const info = await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug, g = D.fresh(c, r); D.GAMES.set(k, g); D.LIVE = { c, r }; const P = g.P;
         return { N: P.N, sol: [...P.sol], giv: [...P.givens], cen: [...P.sol.keys()].map(i => D.centreOf(P, i)), dig: [...Array(P.N).keys()].map(d => D.digitAt(P, d + 1)) }; }, [...fc, key]);
       const st = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return { v: [...g.v], sel: g.sel, state: g.state, wrong: g.wrong, hints: g.hints, pencil: g.pencil, notes: [...g.notes] }; }, key);
-      const click = async ([u, v]) => { const p = await aimAt(u, v); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); };
+      const click = async ([u, v]) => { const p = await aimAt(u, v); await page.mouse.click(p.x, p.y); await drawn(page, 150); };
       // (a frame can take a second in the software renderer, and a press is read in the frame after it: each step waits for what it wants to see, up to 6 s)
-      const until = async test => { for (let k = 0; k < 60; k++){ const s = await st(); if (test(s)) return true; await page.waitForTimeout(100); } return false; };
+      const until = async test => { for (let k = 0; k < 60; k++){ const s = await st(); if (test(s)) return true; await frame(page, 100); } return false; };
       const empties = info.giv.map((g, i) => g ? -1 : i).filter(i => i >= 0), [e0, e1, e2] = empties, N = info.N, last = empties[empties.length - 1];
       real = {};
       await click(info.cen[e0]); real.sel = await until(s => s.sel === e0);
       await click(info.dig[info.sol[e0] - 1]); real.placed = await until(s => s.v[e0] === info.sol[e0]);
-      const gi = info.giv.findIndex(x => x); await click(info.cen[gi]); await until(s => s.sel === gi); await click(info.dig[0]); await page.waitForTimeout(600); real.givenKept = (await st()).v[gi] === info.giv[gi];
+      const gi = info.giv.findIndex(x => x); await click(info.cen[gi]); await until(s => s.sel === gi); await click(info.dig[0]); await drawn(page, 600); real.givenKept = (await st()).v[gi] === info.giv[gi];
       await click(info.cen[e1]); await until(s => s.sel === e1); const wd = info.sol[e1] % N + 1; await click(info.dig[wd - 1]); real.wrong = await until(s => s.v[e1] === wd && s.wrong === 1);
       await click(info.dig[wd - 1]); real.erased = await until(s => s.v[e1] === 0);
       await page.keyboard.press(String(info.sol[e1])); real.key = await until(s => s.v[e1] === info.sol[e1]);
@@ -900,7 +900,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   {
     current = 'missile command look';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'missilecommand')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const r = await page.evaluate(() => {
       const D = window.getFieldApp()._debug, out = {}, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       const kinds = items => { const k = {}; for (const it of items) k[it.kind] = (k[it.kind] || 0) + 1; return k; };
@@ -987,10 +987,10 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
         const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
         return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
-      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await frame(page, 300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await frame(page, 500); } return p; };
       // (the game on a board is the recording's moment taken over, so its missiles are whatever that moment had: the check is the change a click makes)
       const gs = () => page.evaluate(k => { const g = window.getFieldApp()._debug.games.get(k); return g ? { state: g.state, ammo: g.bases.map(b => b.ammo), aim: g.bases.map(b => b.aim) } : null; }, fc.join('_'));
-      const until = async test => { for (let k = 0; k < 80; k++){ const s = await gs(); if (s && test(s)) return s; await page.waitForTimeout(100); } return await gs(); };
+      const until = async test => { for (let k = 0; k < 80; k++){ const s = await gs(); if (s && test(s)) return s; await frame(page, 100); } return await gs(); };
       real = { before: await gs() };
       let p = await aimAt(0.5, 0.4); await page.mouse.click(p.x, p.y);
       real.started = await until(s => s.state === 'play');
@@ -1017,7 +1017,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
   {
     current = 'hashi';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'hashi')));
-    await page.waitForTimeout(1500);
+    await drawn(page, 1500);
     const r = await page.evaluate(() => {
       const D = window.getFieldApp()._debug, out = { bad: [] }, same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       out.levels = [[0, 0], [10, 0], [40, 40], [200, 3]].map(([c, r]) => D.levelOf(c, r));
@@ -1129,7 +1129,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
         const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
         return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
-      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await page.waitForTimeout(300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await page.waitForTimeout(500); } return p; };
+      const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await frame(page, 300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await frame(page, 500); } return p; };
       // a board with a path of three islands (two pairs the answer bridges once, sharing an island) and a pair whose middle square is clear of any crossing line
       const info = await page.evaluate(([c, r, k]) => { const D = window.getFieldApp()._debug, g = D.fresh(c, r); D.GAMES.set(k, g); D.LIVE = { c, r }; const P = g.P, E = P.E, N = P.N;
         const mid = e => { const cs = E[e].cells, cell = cs[Math.floor(cs.length / 2)]; return { cell, cross: P.G.eH[cell] >= 0 && P.G.eV[cell] >= 0, at: D.centre(P, cell % N, (cell / N) | 0) }; };
@@ -1140,9 +1140,9 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
         const ed = ones[0];
         return { N, K: P.K, sol: [...P.sol], path, pair: { e: ed, a: E[ed].a, b: E[ed].b }, midU: mid(ed).at, isl: P.isl.map((s, i) => D.islC(P, i)), midOf: E.map((X, e) => mid(e).at), E: E.map(X => [X.a, X.b]), needs: [...P.sol.keys()].filter(e => P.sol[e]) }; }, [...fc, key]);
       const st = () => page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return { b: [...g.b], sel: g.sel, state: g.state, wrong: g.wrong, hints: g.hints, undo: g.undo.length }; }, key);
-      const click = async ([u, v]) => { const p = await aimAt(u, v); await page.mouse.click(p.x, p.y); await page.waitForTimeout(150); };
+      const click = async ([u, v]) => { const p = await aimAt(u, v); await page.mouse.click(p.x, p.y); await drawn(page, 150); };
       // (a frame can take a second in the software renderer, and a press is read in the frame after it: each step waits for what it wants to see, up to 6 s)
-      const until = async test => { for (let k = 0; k < 60; k++){ const s = await st(); if (test(s)) return true; await page.waitForTimeout(100); } return false; };
+      const until = async test => { for (let k = 0; k < 60; k++){ const s = await st(); if (test(s)) return true; await frame(page, 100); } return false; };
       const { e: ep, a: pa, b: pb } = info.pair;
       real = {};
       await click(info.isl[pa]); real.sel = await until(s => s.sel === pa);
@@ -1157,7 +1157,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // the keys: an arrow selects the neighbour that way (the screen's way), Shift with it lays the bridge, Backspace takes an island's bridges off, z takes them back
       await page.evaluate(([k, i]) => { const g = window.getFieldApp()._debug.GAMES.get(k); window.getFieldApp()._debug.select(g, i); }, [key, pa]);
       const before = (await st()).sel;
-      for (const kk of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']){ await page.keyboard.press(kk); if ((await st()).sel !== before) break; await page.waitForTimeout(150); }
+      for (const kk of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown']){ await page.keyboard.press(kk); if ((await st()).sel !== before) break; await frame(page, 150); }
       real.arrow = await until(s => s.sel !== before && s.sel >= 0);
       const selNow = (await st()).sel;
       await page.evaluate(([k, i]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(k); D.select(g, i); }, [key, pa]);
