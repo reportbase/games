@@ -14,9 +14,9 @@ on:
 # and the course test run as jobs of their own at once, so a run takes about as long as its longest part. The last job keeps
 # the name "smoke" and passes only when every part and the course have passed, so the PR's check reads as it did.
 # The runner stays on ubuntu-24.04 and Playwright at 1.56.1 (12 Nov 2026). Playwright 1.63.0, whose Chromium runs on
-# ubuntu-latest (26.04), was tried on both runners and two checks failed the same way on each: the tanks' turn had not
-# ended 20 s after a real tap fired (state still 'play', one turn), and the bottom row's long press did not toggle it.
-# So it is the newer Chromium, not the runner. 1.56.1 has no Chromium for 26.04, so both move together, once those two
+# ubuntu-latest (26.04), was tried on both runners. On each the tanks' turn had not ended 20 s after a real tap fired
+# (state still 'play', one turn), so that is the newer Chromium, not the runner; on 26.04 the bottom row's long press
+# did not toggle it either (the 24.04 run was not waited for). 1.56.1 has no Chromium for 26.04, so both move together, once those two
 # checks pass on the newer browser.
 jobs:
   part:
