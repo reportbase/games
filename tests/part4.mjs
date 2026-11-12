@@ -105,7 +105,11 @@ try {
     await page.keyboard.down('ArrowDown'); await page.waitForTimeout(700); await page.keyboard.up('ArrowDown'); await page.waitForTimeout(400);
     // (the game steps as its board is drawn, and a slow frame on CI left the ball launched but not yet moved at 400 ms: wait for it)
     // (and in a part of its own the page is fresh, every board's table still being made, and a frame can take seconds: up to 15 s)
-    for (let k = 0; k < 75; k++){ const q = await state(); if (q.by == null || (!q.onPl && q.by < 0.9)) break; await page.waitForTimeout(200); }
+    // (and counted in frames, not seconds (12 Nov 2026, Playwright 1.63.0's Chromium): run alone in a sandbox the ball was launched and
+    //  had not moved 15 s on, the fresh page's first frames being longer than that. Forty frames at most, each a fifth of a second
+    //  at least and a minute at most; the wait for the tapped game below is counted the same way)
+    const frame = () => page.evaluate(() => new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 200)); }));
+    for (let k = 0; k < 40; k++){ const q = await state(); if (q.by == null || (!q.onPl && q.by < 0.9)) break; await frame(); }
     const s1 = await state();
     await page.keyboard.down('ArrowLeft'); await page.waitForTimeout(200); const s2 = await state(); await page.keyboard.up('ArrowLeft'); await page.waitForTimeout(150);
     const s3 = await state();
@@ -119,11 +123,19 @@ try {
     await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); D.gameAt(f.c, f.r).state = 'over'; D.gameAt(f.c, f.r).overAt = 0; D.GAMES.delete(f.c + '_' + f.r); });
     // (Nov 9: aimed afresh, not at the point worked out before the touches: on CI the view had moved and the tap missed the board, the game never began)
     const mid2 = await aimAt(0.5, 0.5);
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: mid2.x, y: mid2.y, id: 3 }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    /* A TAP'S PRESS AND LIFT ARE SENT TOGETHER (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix the flaky checks and move to
+       the newer browser"; part 4 failed here on CI with Playwright 1.63.0, the game still 'ready'). The browser hands a touch to
+       the page as a frame begins and answers the test only then, so a lift sent after the press's answer is stamped a frame after
+       it and handled a frame after that: measured in a sandbox, a press handled at 35.1 s and its lift at 61.6 s, 26 s of one
+       finger's tap, and past the 600 ms a touch may rest (`LONG_PRESS_MS`) whenever a frame is slower than that. Sent without
+       waiting between, the two are stamped together and handled in the same frame (2 ms apart, with frames 6 s apart). A finger's
+       tap is a few hundredths of a second whatever the page is doing; this is that tap. */
+    const tapTouch = async (p, id) => { const a = cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, id }] }), b = cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await a; await b; };
+    await tapTouch(mid2, 3);
     // (the field reads the tap and the game begins as a frame is drawn; on CI a frame took more than the 600 ms this waited: wait for it)
     // (and in a part of its own, on a fresh page, longer still; a tap that only reframed the board is tapped again)
-    await page.waitForTimeout(600); for (let k = 0; k < 60; k++){ const q = await state(); if (q.st === 'play') break; await page.waitForTimeout(250);
-      if (k > 0 && k % 8 === 0){ const m3 = await aimAt(0.5, 0.5); await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: m3.x, y: m3.y, id: 4 + k }] }); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } }
+    await page.waitForTimeout(600); for (let k = 0; k < 60; k++){ const q = await state(); if (q.st === 'play') break; await frame();
+      if (k > 0 && k % 8 === 0){ const m3 = await aimAt(0.5, 0.5); await tapTouch(m3, 4 + k); } }
     const t4 = await state();
     // game over: stars and a best; a click after it plays the table again where it is (Oct 29: only you move to another board)
     const ov = await page.evaluate(async () => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
@@ -735,7 +747,15 @@ try {
       real.dragged = s7.cur[2] !== s6b.cur[2] && s7.cubes === s6b.cubes;
       // the row's Tip tile (the third), clicked
       await page.evaluate(() => { if (!window.tvf.bottomRow.visible){ window.tvf.fn.toggleBoardBrowser(true); window.tvf.fn.syncBrowserVisibility(); } }); await page.waitForTimeout(700);   // (the row is opened by hand: Oct 28)
-      const tile = await page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; });
+      /* THE TILE IS CLICKED ONCE THE ROW HAS COME UP (12 Nov 2026, the same request; part 4 failed here on CI with Playwright
+         1.63.0, `tile` false and the rest true). The row rises as frames are drawn, and 700 ms after it was opened, with frames
+         2.8 s apart in a sandbox, the Tip tile's middle was still at y 851 in a window 800 high: the click was made below the
+         window and reached nothing. The tile is waited for until it is inside the window and has stopped moving, a frame a look
+         (forty at most, each a fifth of a second at least and a minute at most). */
+      const tileAt = () => page.evaluate(() => { const t = [...document.querySelectorAll('#boardBrowser .bb-tile')].find(t => t._key === 'stat_2' && t.style.display !== 'none'); if (!t) return null; const b = t.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2, innerHeight]; });
+      const frame = () => page.evaluate(() => new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 200)); }));
+      let tile = await tileAt();
+      for (let k = 0, was = null; k < 40 && !(tile && was && tile[1] < tile[2] - 4 && tile[0] === was[0] && tile[1] === was[1]); k++){ was = tile; await frame(); tile = await tileAt(); }
       if (tile){ await page.mouse.click(tile[0], tile[1]); await page.waitForTimeout(300); }
       const s8 = await rd(); real.tile = !!tile && s8.turns > s7.turns;
       // a board no one plays moves
@@ -2006,16 +2026,27 @@ try {
       const mid = await aimAt(0.5, 0.45); await page.mouse.click(mid[0], mid[1]); await page.waitForTimeout(300);
       // a rally under way, the ball high and far: a real finger lifted swings
       const rally = () => page.evaluate(k => { const G = window.getFieldApp()._debug.GAMES.get(k).G; Object.assign(G, { state: 'play', to: 0, wall: false, lastHit: 1 }); Object.assign(G.ball, { x: 0.5, y: 0.25, z: 0.45, vx: 0, vy: 0, vz: 0, roll: false }); G.pl[0].swingAt = -9; return G.t; }, key);
-      await rally();
+      /* THE FINGER'S PRESS AND LIFT GO OUT TOGETHER, AND THE SWING IS READ ONCE THE GAME HAS STEPPED (12 Nov 2026, the same
+         request; part 4 failed here on CI with Playwright 1.63.0, `lift` false and the rest true). The browser hands a touch to
+         the page as a frame begins and answers the test only then (the pinball check above has the measure), so the lift, sent
+         after the press's answer and 80 ms, reached the page two frames or more after the rally was set, and a lift swings only
+         while the rally is on (`handUp`); and the swing it asks for starts at the game's next step (`SWING`), a frame on, which
+         250 ms on the wall did not always hold. The press is sent, the lift 80 ms after it without waiting for the press's answer,
+         and the swing is looked for a frame at a time (twelve at most, each a fifth of a second at least and a minute at most);
+         the same for the key's. */
+      const frame = () => page.evaluate(() => new Promise(ok => { setTimeout(ok, 60000); requestAnimationFrame(() => setTimeout(ok, 200)); }));
+      const swung = async () => { const sw = () => page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
+        let on = await sw(); for (let q = 0; q < 12 && !on; q++){ await frame(); on = await sw(); } return on; };
       const p0 = await aimAt(0.3, 0.8);
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p0[0], y: p0[1], id: 7 }] });
-      await page.waitForTimeout(80);
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await page.waitForTimeout(250);
-      real.lift = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
       await rally();
-      await page.keyboard.press('Enter'); await page.waitForTimeout(250);
-      real.space = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).G.pl[0].swingAt > 0, key);
+      const down = cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p0[0], y: p0[1], id: 7 }] });
+      await page.waitForTimeout(80);
+      const up = cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await down; await up;
+      real.lift = await swung();
+      await rally();
+      await page.keyboard.press('Enter');
+      real.space = await swung();
       await page.evaluate(k => { const D = window.getFieldApp()._debug; D.GAMES.delete(k); D.SET.hands = 'auto'; D.SET.shot = 'auto'; }, key);
     }
     const ok2 = !!fc && real.tiles[0] === 'swing' && real.tiles[1] === 'drive' && real.lift && real.space;

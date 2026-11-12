@@ -258,6 +258,17 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     after the lab called board (2, 0) its own, with the camera still gliding (x 6.37, 6.45, 7.40, 7.72 at the pixel's working
     out and the three clicks), so each landed a square further off. It waits for `__settle(2, 0)` now, as Snake's real arrow
     key waits for `__settle(1, 0)` (run alone, the flight had not begun 2.5 s on and the key went to the board before).
+  - **Part 4, found by CI's first run on that browser** (the same day; parts 1, 2, 3, 5, 6 and 7 and the course passed). The
+    browser hands a touch to the page as a frame begins and answers the test only then, so a lift sent after its press's answer
+    is stamped a frame after the press and handled a frame after that (in a sandbox: a press handled at 35.1 s, its lift at
+    61.6 s; sent without waiting between, 2 ms apart with frames 6 s apart). **Pinball's** new game by a real touch was a tap
+    longer than a touch may rest and never began: a tap's two touches go out together (`tapTouch`), and its waits for the
+    launched ball and the tapped game are counted in frames. **Squash's** lift reached the page frames after the rally was set
+    and its swing starts at the game's next step (`SWING`), which 250 ms did not always hold (it did here, by 70 ms: this one did
+    not fail in a sandbox): the lift follows the press without waiting for its answer and the swing is looked for a frame at a
+    time. **3D Tetris's** Tip tile was clicked 700 ms after the row was opened, its middle still at y 851 in a window 800 high,
+    the row rising as frames are drawn, 2.8 s apart: it is waited for until it is inside the window and still. Part 4 then
+    passed whole twice in a row.
   Parts 5 and 6 then passed whole twice in a row on that browser in a sandbox, so `package.json` asks for Playwright 1.63.0 and
   the smoke jobs run on `ubuntu-latest`. The parts are files since the same day (`tests/part1.mjs` … `part7.mjs`,
   `tests/harness.mjs`; `CLAUDE.md`, Testing).
