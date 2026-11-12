@@ -515,7 +515,12 @@ try {
         const a = -Math.PI / 2 + (want.p + 0.5) * 2 * Math.PI / want.P, u = 0.5 + 0.31 * Math.cos(a), v = 0.5 + 0.31 * Math.sin(a);
         const pt = await aimAt(u, v);
         await page.mouse.click(pt.x, pt.y);
-        await drawn(page, 400);
+        // (12 Nov 2026: the press is taken at once and the round's end a step of the game later, which waits on a frame, and the
+        //  next round's start a step after that. Waiting two frames (the pass of that day) could step past the round's end into
+        //  the next round's playback and its answer's time running out ('over' on CI); before that, 250 ms could be too soon
+        //  ('input' on CI). So the game is read every 50 ms, without waiting on frames, until it has left 'input', 30 s at most,
+        //  and read at once then: the first state after the press. What is asserted below is unchanged)
+        await page.waitForFunction(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g && g.state !== 'input'; }, key, { timeout: 30000, polling: 50 }).catch(() => {});
       }
       const after = await page.evaluate(k => { const g = window.getFieldApp()._debug.GAMES.get(k); return g ? { state: g.state, score: g.score } : null; }, key);
       real = { started, want, after };

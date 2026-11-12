@@ -3914,11 +3914,16 @@ function turnStart(x, y){
      was taken back from the game as a hold, and the drag went nowhere. So when the time is up the hold waits for one
      more frame, whose moves come in first: a hand that has started moving clears the timer as it would have before
      the time was up (turnMove), and the frame's callback finds it gone. A real hold comes a frame later. */
+  /* …OR DECIDED WHEN THE HAND LETS GO, IF THAT COMES FIRST (12 Nov 2026: "1,2", the first "fix the long press in games").
+     Waiting for the frame cost a real hold on a slow page: a frame that comes a second or more after the 600 ms (seconds,
+     measured, in the software renderer) came after a hold of a second and a half had already let go, the release found
+     the hold still waiting, cleared it, and the hold did nothing: no row, no Minesweeper flag. The release is as good a
+     moment to decide as the frame: the browser hands over a finger's waiting moves before it hands over the lifting of it,
+     so a hand that moved has said so by then. So the hold's decision is `holdDecide`, run by the frame or, if the hand
+     lets go first, by turnEnd (`turn.holdTok` says one is waiting). */
   const _holdTok = {};
-  turn.longPressTimer = setTimeout(() => {
-    turn.longPressTimer = _holdTok;
-    requestAnimationFrame(() => {
-      if (turn.longPressTimer !== _holdTok) return;   // moved, let go or cancelled meanwhile
+  turn.holdTok = _holdTok;
+  const holdDecide = turn.holdDecide = () => {
       turn.longPressTimer = null;
       if (!turn.active) return;
       /* …unless the app keeps its presses (Oct 1, Falling tiles: "i still cant move anywhere on the
@@ -3934,6 +3939,12 @@ function turnStart(x, y){
       } catch {}
       turn.longPressed = true;
       if (_hooks.onLongPress) _hooks.onLongPress();
+  };
+  turn.longPressTimer = setTimeout(() => {
+    turn.longPressTimer = _holdTok;
+    requestAnimationFrame(() => {
+      if (turn.longPressTimer !== _holdTok) return;   // moved, let go or cancelled meanwhile
+      holdDecide();
     });
   }, LONG_PRESS_MS);
 
@@ -4058,6 +4069,8 @@ function turnMove(x, y){
 }
 function turnEnd(e){
   if (!turn.active) return;
+  // a hold whose time is up but whose frame has not come yet is decided now, by this release (12 Nov 2026, in turnStart)
+  if (turn.longPressTimer && turn.longPressTimer === turn.holdTok && turn.holdDecide){ try { turn.holdDecide(); } catch {} }
   if (turn.longPressTimer){ clearTimeout(turn.longPressTimer); turn.longPressTimer = null; }
   const dt_ms = performance.now() - turn.startMs;
   const dpx = Math.hypot(turn.currentX - turn.anchorX, turn.currentY - turn.anchorY);

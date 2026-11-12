@@ -172,7 +172,7 @@ try {
     if (rc.aimed) await page.mouse.click(rc.x, rc.y); await drawn(page, 800);
     rc.taps = await page.evaluate(() => { const A = window.getFieldApp(); A.onCellTap = A.__tdTap; delete A.__tdTap; const W = window.FIELD_WORLD, T = W.target; return { taps: window.__tdTaps, ed: [A._debug.ed().c, A._debug.ed().r], framed: T.shown && W.cellAt(T.boardX, T.boardZ) }; });
     const rc2 = await page.evaluate(async i => { const D = window.getFieldApp()._debug, E = D.ed(); const v = i == null ? null : E.g && E.g.towers[i]; D.edCancel();
-      const h = window.__tdHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.i);
+      const h = window.__tdHome; if (h){ D.fly(h.c, h.r); await window.__settle(h.c, h.r); } return v; }, rc.i);
     if (rc.before !== 0 || rc2 !== 6) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
     const n = 12;
     if (!td.open || td.tiles !== 13 || td.keys !== 13 || !td.midRefused || !/edge/.test(td.midMsg) || !/shut/.test(td.shutMsg) || !td.rockOpen
@@ -248,7 +248,7 @@ try {
     });
     if (rc.aimed) await page.mouse.click(rc.x, rc.y); await drawn(page, 800);
     const rc2 = await page.evaluate(async i => { const D = window.getFieldApp()._debug, E = D.ed(); const v = i == null ? null : E.L && E.L.wall[i]; D.edCancel();
-      const h = window.__skHome; if (h){ D.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); } return v; }, rc.i);
+      const h = window.__skHome; if (h){ D.fly(h.c, h.r); await window.__settle(h.c, h.r); } return v; }, rc.i);
     if (rc.before !== 0 || rc2 !== 1) failures.push(`[${current}] a real click: ${JSON.stringify({ rc, rc2 })}`);
     if (!sk.open || sk.tiles !== 9 || sk.keys !== 9 || sk.noSpot !== false || !/as many/.test(sk.whyCount) || !sk.stillOn || !/no way/.test(sk.hopeless)
         || !/2 pushes/.test(sk.checked) || sk.ok !== true || !sk.shut || sk.par !== 2 || !sk.mine || !sk.player || sk.boxes !== sk.want
@@ -344,7 +344,7 @@ try {
     const before = failures.length;
     const urls = await page.evaluate(async () => {
       const wait = ms => new Promise(ok => setTimeout(ok, ms)), out = {};
-      const use = async (name, c, r) => { const A = window.FIELD_APPS.find(a => a.name === name); window.setFieldApp(A); await wait(1500); const D = A._edDebug || A._debug; D.fly(c, r); await wait(1500); return { A, D }; };
+      const use = async (name, c, r) => { const A = window.FIELD_APPS.find(a => a.name === name); window.setFieldApp(A); await wait(1500); const D = A._edDebug || A._debug; D.fly(c, r); await window.__settle(c, r); return { A, D }; };
       // a level and a map made for the purpose (the editors' own checks above made theirs on other boards)
       let { A, D } = await use('sokoban', 7, 3);
       D.edOpen(); let E = D.ed(); const tS = n => A.onStatTap(E.c, E.r, A.statTiles(E.c, E.r).findIndex(t => String(t.value).startsWith(n)));
@@ -539,7 +539,7 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} ${current}`);
   }
 
-  await page.evaluate(async h => { if (!h) return; const A = window.FIELD_APPS.find(a => a._debug && a._debug.fly); window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 1200)); A._debug.fly(h.c, h.r); await new Promise(ok => setTimeout(ok, 1500)); }, homeBefore);
+  await page.evaluate(async h => { if (!h) return; const A = window.FIELD_APPS.find(a => a._debug && a._debug.fly); window.setFieldApp(A); await new Promise(ok => setTimeout(ok, 1200)); A._debug.fly(h.c, h.r); await window.__settle(h.c, h.r); }, homeBefore);
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

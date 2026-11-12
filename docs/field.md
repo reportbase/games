@@ -240,6 +240,15 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   waiting, the press was taken back from the game as a hold and the drag went nowhere (3 page loads in 6 here). When the time is
   up the hold now waits one frame (`_holdTok`, a `requestAnimationFrame`): a hand that has started moving clears the timer first
   (`turnMove`), as it would have before the time was up.
+- **…or when the hand lets go, if that comes first** (12 Nov 2026: "1,2", the first "fix the long press in games"): waiting for
+  the frame cost a real hold on a slow page. A frame that came seconds after the 600 ms came after a hold of a second and a half
+  had let go; the release found the hold still waiting, cleared it, and the hold did nothing (no row, no Minesweeper flag). The
+  decision is now `turn.holdDecide`, run by the frame or by `turnEnd` when the hand lets go first (`turn.holdTok` says one is
+  waiting): the browser hands over a finger's waiting moves before the lifting of it, so a hand that moved has said so by then.
+  Measured with every frame made 4 s late: a real 1.4 s mouse hold toggled the row with this and did nothing without it. The
+  smoke test's `held()` (which holds until a frame has come) still holds as long; it is no longer the only reason a hold works.
+  The same day the flights the smoke test's pass had left followed by a fixed wait (parts 2 and 3: back to a home board, the
+  sokoban and tower defense share links, the par menu's board) wait for `__settle` on the board flown to instead.
 - **The smoke test waits on frames and the game's clock, not the wall's** (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix
   the flaky checks and move to the newer browser", the sixth "Games: split its smoke test like draw's"). With Playwright 1.63.0's
   Chromium the software renderer's first frames of a field, and the first that show a new thing (a shot), take seconds each while
