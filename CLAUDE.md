@@ -117,25 +117,36 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
   the pointer events a phone sends before them) to the canvas; checks that call `onCellTap`/`onPan`
   directly passed for a week while the phone did not. A tap's touchstart and touchend go together
   there, because the software renderer can take a second a frame.
-- `npm test` runs `tests/smoke.mjs`: it loads the page in headless Chromium,
-  switches to every app in `FIELD_APPS`, and fails on any uncaught error. Add checks there for new behaviour.
+- `npm test` runs `tests/smoke.mjs`, which runs the smoke test's seven parts one after another (`tests/part1.mjs` …
+  `part7.mjs`, each a process of its own): they load the page in headless Chromium,
+  switch to every app in `FIELD_APPS`, and fail on any uncaught error. Add checks there for new behaviour.
   **Not for every change** (Oct 17: "its not needed for every change."): CI runs it once, on the PR
   (`.github/workflows/smoke.yml`: not again on `main` after the merge, not for a PR of Markdown alone, and by hand
   from the Actions tab). Locally, a change is checked with a probe of what it touches and left to CI. **Don't run the full
   smoke test (about 20 minutes in a sandbox) or the whole course test locally unless the owner asks** (Oct 20: "the smoke test
-  takes to long. stop doing them unless I ask."). It then runs
+  takes to long. stop doing them unless I ask."). If every part passed it then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
 - **Seven parts side by side** (Oct 28: "2", the faster smoke test: a CI run took 30 minutes, 26 of the smoke test and 3.5 of
-  the course test): `tests/smoke.mjs`'s checks are cut into `PARTS` (7) contiguous parts of three to five minutes, each in an
-  `if (part(k)) { … }` at the end of its blocks (part 7 the three games of Oct 28), and `SHARD=k/7` runs one (the page loaded afresh, each part setting its own
-  app; no part uses a name another declares, `cdp` being made at the start for all). With no `SHARD` every part runs, as
-  `npm test` does. CI (`smoke.yml`) runs the seven parts and the course test as eight jobs at once, then a job named `smoke`
+  the course test): the smoke test's checks are in seven parts of three to five minutes (part 7 the three games of Oct 28),
+  each loading the page afresh and setting its own app. Since 12 Nov 2026 ("1,2,3,4,5,6", the sixth "Games: split its smoke
+  test like draw's") each part is a file, `tests/part1.mjs` … `part7.mjs`, its checks as they stood in the one file, and
+  `tests/harness.mjs` is what they share: the server, `LIBS_DIR`, `timeLimit`, the browser, the page loaded with `__settle`
+  and `__aim`, `ids`, `cdp`, the failures and how a run ends. A part begins `const T = await begin(k, () => current)` and
+  ends `await T.finish()`; no part uses a name another declares. One part alone runs as `node tests/part3.mjs`
+  (`SHARD=3/7 node tests/smoke.mjs` and `npm test -- 3 5` do the same through the runner; `JOBS=3 npm test` runs three parts
+  at a time). CI (`smoke.yml`) runs the seven parts and the course test as eight jobs at once, then a job named `smoke`
   that passes only if all of them did, so a run takes about as long as its longest part. A new check goes at the end of the
-  part it sits beside or in the shortest one; one part alone runs locally as `SHARD=3/7 node tests/smoke.mjs`.
+  part it sits beside or in the shortest one.
+- **A check waits on frames or the game's clock, never on seconds alone** (12 Nov 2026, `docs/field.md`): the page does its
+  work as frames are drawn and the software renderer's can take seconds. After real input or a flight use the harness's
+  `drawn(page, ms)` (not `page.waitForTimeout`), step a loop that looks again with `frame(page, ms)`, hold a press with
+  `held(page)`, tap a finger with `tapTouch(cdp, p, id)` (press and lift together), wait on a game with
+  `onClock(page, read, ok, secs, clock)`, and settle the camera (`__settle(c, r)`) before working out a pixel. A plain wait
+  is for the inside of a gesture (a press held, a drag's steps, the gap of a double tap).
 - **CI serves the CDN libraries itself** (Oct 28): a CDN that would not answer held every part's page from loading, so `smoke.yml`
   installs three@0.128.0, chess.js@1.4.0 and unzipit@2.0.1 and runs the tests with `LIBS_DIR`; every other request off the
-  test's own server is given 20 s and dropped past it (`timeLimit` in the smoke test, the same in the course test).
+  test's own server is given 20 s and dropped past it (`timeLimit` in `tests/harness.mjs`, the same in the course test).
 - In a cloud sandbox the CDNs may be blocked. Install `three@0.128.0` and
   `chess.js@1.4.0` somewhere and run `LIBS_DIR=that/node_modules npm test`; the
   test then serves both from there.

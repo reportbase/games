@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/smoke.mjs && node tests/golf-course.mjs"
+    "test": "node tests/smoke.mjs"
   },
   "devDependencies": {
-    "playwright": "1.56.1"
+    "playwright": "1.63.0"
   }
 }
