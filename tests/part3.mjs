@@ -1789,7 +1789,7 @@ try {
     if (!tb.every(t => t.lvl < 1e-6 && t.inY <= 13 - 1.0 && t.inX >= 1.0 && t.inX <= 8 - 1.0) || !tb.some(t => t.rise > 0.02)) failures.push(`[${current}] the tee box: ${JSON.stringify(tb)}`);
     // the par set through the menu's own prompt
     // (a board framed first: Set par acts on the framed one, and CI may have none framed here, Oct 20)
-    await page.evaluate(async () => { const D = window.getFieldApp()._debug; D.editor.fly(2, 1); await new Promise(ok => setTimeout(ok, 2500)); });
+    await page.evaluate(async () => { const D = window.getFieldApp()._debug; D.editor.fly(2, 1); await window.__settle(2, 1); });
     const p1 = await page.evaluate(() => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ);
       const item = !!A.menu[0].items.find(m => m.label === 'Set par for this hole…');
       // (the hole on the board the menu acts on, the one framed: setParHere says which)
