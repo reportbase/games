@@ -813,9 +813,8 @@
      because it grew its display rule later than its hidden logic. */
   body .chip[hidden] { display: none; }
   body #menuBtn { left: auto; right: 16px; }
-  /* HOME sits in the upper left, the corner the menu left for the right (Nov 7); a finger's size on a touch screen, as the menu's. */
-  body #homeBtn { left: 16px; right: auto; top: 16px; bottom: auto; }
-  @media (pointer: coarse) { body #homeBtn { width: var(--menu-chip); height: var(--menu-chip); border-radius: 11px; } }
+  /* (The Home chip stood in the upper left from Nov 7 to Nov 16: "Also get rid of the home button on the games upper left." Home is first in the
+     application picker, from any game.) */
   /* THE LOCK SITS ON THE STRIP, NOT IN THE CORNER. It is the strip's
      companion — the strip is every board you could go to, the lock is the
      refusal to go — so it belongs at the strip's left end rather than
@@ -943,6 +942,21 @@
     transform: translateY(0) scale(.94);
     box-shadow: inset 0 2px 5px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04);
   }
+  /* DRAW'S BUTTONS (Nov 16: "A.   Restlye only.", of bringing games in line with draw and 3d: every control stays where it is and does what it did,
+     and wears draw's look). The chips were draw's in shape already (its corner, its two shadows) but see-through, for the reason given above; draw's
+     are a solid plate with a fainter hairline, and one look across the three pages is what was asked for, so the plate is solid here now and the blur
+     that stood in for it is off. The play pad's round buttons are draw's tiles (a rounded square, the plate, the hairline, the shadows), lit by a gold
+     ring as a tile of draw's strip is; and a board in the bottom row has a tile's corner and hairline, the board you are on ringed in draw's gold. */
+  :root { --dchip-bg: #1a1a21; --dchip-bg-hover: #262630; --dchip-line: rgba(255, 255, 255, .18); --dchip-line-hover: rgba(255, 255, 255, .34); --dgold: #d4a052;
+          --dchip-shadow: 0 1px 2px rgba(0, 0, 0, .22), 0 3px 8px rgba(0, 0, 0, .16), inset 0 1px 0 rgba(255, 255, 255, .06); }
+  body .chip { background: var(--dchip-bg); border-color: var(--dchip-line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  body .chip:hover { background: var(--dchip-bg-hover); border-color: var(--dchip-line-hover); }
+  body .chip[aria-pressed="true"] { background: var(--dgold); color: #14141a !important; border-color: rgba(212, 160, 82, .9); }
+  #playPad button { border-radius: 16px; border: 1px solid var(--dchip-line); background: var(--dchip-bg); color: #e6e4ee; box-shadow: var(--dchip-shadow); }
+  #playPad button:active { box-shadow: inset 0 2px 5px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04); }
+  #playPad button.on { border-color: var(--dgold); box-shadow: 0 0 0 1.5px var(--dgold), var(--dchip-shadow); color: var(--dgold); }
+  #boardBrowser .bb-ico { border-radius: 12px; border-color: var(--dchip-line); box-shadow: var(--dchip-shadow); }
+  #boardBrowser .bb-tile.active .bb-ico { border: 2px solid var(--dgold); box-shadow: 0 0 0 2px rgba(6, 8, 12, .92), 0 0 14px 2px rgba(212, 160, 82, .5), 0 8px 22px rgba(0, 0, 0, .6); }
   #gameIndex { z-index: 95; }
   /* ABOVE THE PANEL IT BELONGS TO. The track is a sibling in <body>, not a
      child of the scroller, and it is drawn INSIDE the panel's right edge — so
@@ -965,7 +979,6 @@
      whatever the platform decides it is, and the two corners were wearing two
      different type designs. These are one line weight and one geometry. -->
 <!-- HOME, upper left (Nov 7: "add a button for home in the upper left"): back to the page of every game, framed on the game you are in. Hidden on Home itself. -->
-<button id="homeBtn" class="panel chip" aria-label="home" hidden title="Home: every game as a board."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 4l8 7.5M6.5 10v9.5h11V10M10 19.5v-5h4v5"/></svg></button>
 <button id="menuBtn" class="panel chip" aria-label="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6.5h16M4 12h16M4 17.5h16"/></svg></button>
 <!-- THE TURN. What the double tap used to do, on a button beside the lock:
      one press turns the framed board round (rotateBoard90 is a HALF turn,
@@ -14773,18 +14786,10 @@ function syncFitButton(){
                    : 'Fit window: the picture fills the board, and whatever does not fit is lost.')
           + ' Press to show ' + (image ? 'fit window' : 'fit image') + '.';
 }
-/* THE HOME CHIP (Nov 7): shown on every app but Home, synced where an app change is noticed; it opens Home (`openApp`), whose `onEnter` takes the view to the
-   board of the game just left. */
-function syncHomeButton(){
-  const b = document.getElementById('homeBtn');
-  if (!b) return;
-  const a = window.getFieldApp && window.getFieldApp();
-  b.hidden = !a || !!a.isHome;
-}
-document.getElementById('homeBtn')?.addEventListener('click', () => {
-  const H = (window.FIELD_APPS || []).find(a => a.isHome);
-  if (H) openApp(H);
-});
+/* THE HOME CHIP IS GONE (Nov 16: "Also get rid of the home button on the games upper left."; it was Nov 7's, shown on every app but Home). Home is still
+   one press away: it is first in the application picker, and its `onEnter` still takes the view to the board of the game just left. The function stays
+   because `setFieldApp` calls it. */
+function syncHomeButton(){}
 document.getElementById('fitBtn')?.addEventListener('click', () => {
   const app = window.getFieldApp && window.getFieldApp();
   if (!app || !app.setFit) return;

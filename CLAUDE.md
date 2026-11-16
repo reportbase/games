@@ -86,6 +86,8 @@ a new game or a change keeps to them.
   goes on the play pad (`playActs`). An editor's row is opened by its ✎ or menu item.
 - **No notices from games.** `BOARD_KIT.say` does nothing; a board's title and the board
   itself say what is going on. The field's own notices (`engineNotice`) are for errors.
+- **The buttons wear draw's look** (Nov 16, `docs/field.md`): a new chip, play-pad button or row tile takes the styles under DRAW'S BUTTONS
+  (`--dchip-*`, `--dgold`), not colours of its own. There is no Home chip: Home is first in the application picker.
 - **Never a yaw of exactly 0** on a turned item (`BOARD_KIT.yawOf`): the field leaves it
   unturned, half a turn from the rest.
 - **Trick shots' worker** is made from its own text up to "IN THE FIELD": nothing of a kit
