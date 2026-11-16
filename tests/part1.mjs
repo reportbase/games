@@ -456,7 +456,7 @@ try {
       const res = { dots: {}, chip: {} };
       for (const id of ['home', 'chess', 'tetris', 'sudoku', 'hashi', 'minigolf', 'pinball', 'gallery']){
         window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await wait(500);
-        res.dots[id] = document.getElementById('bbHandle').style.display !== 'none'; res.chip[id] = vis('homeBtn');   // (the dots by the app's own say: an open row hides them by the sheet)
+        res.dots[id] = document.getElementById('bbHandle').style.display !== 'none'; res.chip[id] = vis('homeBtn');   // (the chip is gone: never)   // (the dots by the app's own say: an open row hides them by the sheet)
       }
       // (Nov 7: "save the position, [tilt] and rotation of home so it returns in the same position."): Home is left somewhere of its own choosing, a game opened, and
       // the chip brings it back to that place, turn, tilt and zoom, not to the board of the game left
@@ -465,17 +465,19 @@ try {
       H0._debug.fly(9990, 3); await window.__settle(9990, 3); W.st.yaw = 25; W.st.pitch = 40; await wait(1500);
       const keys = ['camX', 'camZ', 'yaw', 'pitch', 'zoom'], was = keys.map(k => W.st[k]);
       window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'sudoku')); await wait(600);
-      const b = document.getElementById('homeBtn').getBoundingClientRect(); res.corner = b.x < 40 && b.y < 40 && b.width >= 36;
-      document.getElementById('homeBtn').click(); await wait(1500);
+      // (Nov 16: "Also get rid of the home button on the games upper left."): there is no chip; Home is the first line of the application picker
+      res.corner = !document.getElementById('homeBtn');
+      document.getElementById('appBtn').click(); await wait(300);
+      const first = document.querySelector('#appPicker button[role="option"]'); res.first = first ? first.textContent.trim() : ''; if (first) first.click(); await wait(1500);
       const H = window.getFieldApp();
       res.was = was; res.now = keys.map(k => W.st[k]);
       res.back = H.isHome && keys.every((k, i) => Math.abs(W.st[k] - was[i]) < 1e-3 * Math.max(1, Math.abs(was[i])));
       res.kept = !!localStorage.getItem('home.view');
       return res;
     });
-    const D = r.dots, C = r.chip, ok = !D.home && !D.tetris && !D.sudoku && !D.hashi && D.chess && D.minigolf && D.pinball && D.gallery && !C.home && C.chess && C.tetris && C.sudoku && C.minigolf && C.gallery && r.corner && r.back && r.kept;
+    const D = r.dots, C = r.chip, ok = !D.home && !D.tetris && !D.sudoku && !D.hashi && D.chess && D.minigolf && D.pinball && D.gallery && !Object.values(C).some(Boolean) && r.corner && /home/i.test(r.first) && r.back && r.kept;
     if (!ok) failures.push('[home chip] ' + JSON.stringify(r));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} home chip: in the upper left on every app but Home and taking the view back to the game just left; the three dots only where the app has a row (not Home, Tetris, Sudoku, Hashi)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} no home chip: Home is the picker's first line and comes back where it was left; the three dots only where the app has a row (not Home, Tetris, Sudoku, Hashi)`);
   }
   // THE ONE SANS (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): every place that draws words
   // names UI_SANS, the stack the page's text and Home's names are set in; no canvas or style sets its own generic sans, Arial or Helvetica Neue

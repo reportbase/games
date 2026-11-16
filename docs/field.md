@@ -112,6 +112,14 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   gallery's `blockN`), `slotOf(id)` the board on the corner's row that holds a game. The one seam is half the field away, as the gallery's. The notes below about the block
   of eight, `SIDES`, the repeat dividing the field's side and the reading of the block are older. The smoke test (end of part 1, "home") checks the rule on boards far each way,
   a whole row and a whole column each holding every game once, the wrap at the corner and the neighbours as the gallery's.
+- **Draw's buttons, and no Home chip** (Nov 16: "A.   Restlye only.   Also get rid of the home button on the games upper left.", of bringing games in
+  line with draw and 3d, which share a toolbar and a footer now). Nothing moved and nothing does anything new: the rails, the compass, the row that
+  opens only when asked and the play pad are where they were. What changed is the look, under DRAW'S BUTTONS in the styles: a chip is draw's solid
+  plate (`#1a1a21`, hairline `rgba(255,255,255,.18)`), not the see-through one with a blur behind it, and a pressed one (`aria-pressed`) is gold;
+  the play pad's buttons are draw's tiles, rounded squares (16px) lit by a gold ring; a board in the bottom row has a 12px corner, the hairline and
+  the chip's shadow, and the board you are on is ringed in draw's gold (`#d4a052`; the amber was `#e8c86a`). `#homeBtn` is gone from the page
+  (`syncHomeButton` is empty, kept because `setFieldApp` calls it): Home is the first line of the application picker. Part 1's check now asks that
+  there is no chip on any app, that the picker's first line is Home, and that pressing it brings Home back where it was left.
 - **A Home chip, and no dots where there is no row** (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.   Add a button for home in the
   upper left."): `#homeBtn`, a chip in the upper left (the menu's is upper right), shown on every app but Home (`syncHomeButton`, from `setFieldApp`), opens Home with
   `openApp`, whose `onEnter` takes the view to the board of the game just left. The three dots (`#bbHandle`) were on every game since Oct 9; `bbHasRow` now says whether
