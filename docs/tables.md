@@ -732,6 +732,10 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     fourth argument, the finger's screen place, and `FIELD_WORLD.uvFree(x, y)` reads it on the ground in the board's own terms, past 0 and 1. When the
     hand lets the cue go the view turns to look along the shot, the cue toward you (`FIELD_WORLD.turnTo(deg)`, the board kept in the middle at its
     zoom); on letting go, not while dragging, since the finger is read through the view. The keys, the row's nudges and a tap's aim do not turn it.
+  - **A lower tilt, and the turn in place** (Nov 21: "1) minimum tilt should be 20 degrees in pool.    2) dont center the board after moving the pools
+    stick, just rotate the view."): trick shots says `pitchFloor: 20` (the field's own floor is 35; it still opens at the tilt the view has). `turnTo`
+    no longer frames the board again: it turns the view about the place on the ground it is looking at, which stays where it is on the screen, at the
+    zoom and tilt it has. Probed with a real pan and a real cue drag: the looked-at place the same before and after the turn.
   - **Playing** (`fresh`, `shoot`, `finish`, `undo`: the page's): drag on the table to aim (`claimsPan`, `keepsPress`), tap a point
     to aim at it, tap the white, Shoot or Space/Enter to shoot; a tap while it plays jumps to its end; in free play a drag that
     starts on a ball moves it. The row (`tilesOf`, `onTile`): Shoot, Aim ◀ ▶ (0.1°), Power − +, Spin (`SPINS`: centre, follow,
