@@ -38,6 +38,23 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   `pointerdown`, `pointerup`, `touchend`, `click` or `keydown` anywhere wakes `ARCADE.audio()` and plays a silent sample inside it, and
   `navigator.audioSession.type` is 'playback' (Safari 17+). Not heard here (no speakers); checked only that the context runs. Games with an
   audio engine of their own (pinball, the tanks, trick shots, air raid, Simon, Asteroids) start theirs as before.
+- **No Home, and a click selects** (Nov 21: "1) remove the home page with all the applications and the home button. 2) single click should select a board
+  but not move to that board.   clicking a selected board sets it as the default board in the center.    remove the double click hander to change the default
+  board."):
+  - **Home is gone**: `HOME_APP` (Nov 7 to Nov 21), its place in `FIELD_APPS`, `isHome`, `iconMosaic` and the empty `syncHomeButton` are out. The page reopens
+    the game you were last in (`restoreLastApp`, as before Nov 7; `FIELD_APP_KEY`), and the application picker lists the games by title. Every Home note
+    below is history. The `home.view` key in localStorage is left behind unread. `openApp` and the `onEnter(prev)` hook stay (the picker, any app).
+  - **A click selects, a click on the selected board brings it in** (`PICKED`, `setPicked`, `window.__picked`, in `handleGroundTap`): a tap on a board you
+    are not on selects it where it stands: a gold ring round it (`PICK_MARGIN`, drawn beside the framed board's red one, so only where the gutter has room:
+    none in the gallery, whose prints meet), the view unmoved, its game untouched. A tap on another board moves the selection. A tap on the selected
+    board frames it as the double tap used to (the heading forward, `gotoCell`, the page-load fit, the board lock, an app's `startOnDouble`). A quick tap
+    after that on the board just brought in is eaten (`_broughtAt`, within `DOUBLE_TAP_MS`), so a hand that double-clicks makes no move in the game it
+    arrives at. Any flight (`gotoCell`) or another app lets the selection go.
+  - **A double tap goes to no other board**: the field's double is only for the board you are on (off its default position it puts it back; it takes and
+    lets go the lock; chess's hint). Two quick clicks on another board are a select and a bring-in, so they still arrive, by clicks and not by the pair's
+    timing. The notes below that say only a double tap goes to another board, or that a single tap does nothing, are out of date.
+  - The smoke test (part 1, "no home, a click selects") checks no Home app or chip, the picker a row an app, the last game reopened, and real clicks:
+    one selecting a neighbour with the view unmoved, one moving the selection, one on the selected board bringing it in.
 - **Home: every game a board, and the page opens on it** (Nov 7: "how about a home page, that shows all games as a board"): `HOME_APP`, id `home`,
   before the gallery in `FIELD_APPS`. Each game is one board: its own little board drawn big (the picture the application picker and the bottom row
   draw, `drawIcon`; chess's the opening position as the picker draws it) on a mat in a hue of its own (the golden angle round the list, so neighbours

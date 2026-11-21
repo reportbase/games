@@ -323,165 +323,58 @@ try {
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ a0, during })}`);
     console.log(`${ok ? 'ok  ' : 'FAIL'} ${current} (the clock ran ${(a1.at - a0.at).toFixed(0)} ms over the drag)`);
   }
-  // HOME (Nov 7: "how about a home page, that shows all games as a board"): the page's opening app, every game one board in a block eight across, each a
-  // picture (its own icon, its name along the foot), Home first in the application picker, the page opening on Home framed on the game last in, and a
-  // tap on a board opening that game on its first board.
+  // NO HOME, AND A CLICK SELECTS (Nov 21: "1) remove the home page with all the applications and the home button. 2) single click should select a board
+  // but not move to that board.   clicking a selected board sets it as the default board in the center.    remove the double click hander to change the
+  // default board."): no app is Home and no chip stands in the corner, the page reopens the game last in, and the dots show only where a row has something;
+  // a real click on another board selects it with the view unmoved, a click on a third moves the selection, and a click on the selected board frames it.
   {
-    current = 'home';
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home')));
-    await drawn(page, 1500);
-    const r = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, out = { bad: [] };
-      const games = window.FIELD_APPS.filter(a => a.id !== 'home').map(a => a.id).sort(), ord = D.order();
-      out.every = ord.length === games.length && JSON.stringify(ord.map(o => o.id).sort()) === JSON.stringify(games) && new Set(ord.map(o => o.title)).size === ord.length;
-      // (Nov 7: "the home page should be sorted by game title": plain alphabetical, so 2048 comes before 3D Tetris; `numeric` had 3D Tetris first)
-      out.sorted = ord.every((o, i) => !i || ord[i - 1].title.localeCompare(o.title, 'en', { sensitivity: 'base' }) <= 0) && ord[0].title === '2048' && ord[1].title === '3D Tetris';
-      // the block (Nov 7: "arranged like photo gallary, where the pages are arranged left to right and top to bottom", then "all boards should have a game,
-      // don't leave empty boards. see photo gallary."): reading across, a game once on its own board in the order the list is, and the block repeating over the
-      // whole field, so no board is bare. The field numbers a board's column and row UP the screen's left and far side, so the reading place (gc across, gr down)
-      // is the board (−gc, −gr) from the corner, wrapped; the block's side divides the field's, so the repeat has no seam at the wrap.
-      // (Nov 8: "home page is not correct. all boards should go across both horizontally and vertically. photo gallery gets this correct.": the gallery's rule, game i
-      // where −(row + col) mod N = i, folded through a signed distance from the corner, so every row and every column runs through all the games in order)
-      const G = 10000, N = ord.length, at = (gc, gr) => [(G - gc % G + G) % G, (G - gr % G + G) % G], md = v => ((v % N) + N) % N;
-      out.side = D.COLS === N;
-      for (let gr = -70; gr < 70; gr += 3) for (let gc = -70; gc < 70; gc += 3){
-        const [c, r] = at(gc, gr), id = D.idAt(c, r), want = ord[md(gr + gc)].id;
-        if (id !== want && !out.slotBad) out.slotBad = [gc, gr, id, want];
-      }
-      const row = [], col = [];
-      for (let i = 0; i < N; i++){ row.push(D.idAt(G - i, 5)); col.push(D.idAt(7, G - i)); }
-      out.placed = new Set(row).size === N && new Set(col).size === N;    // (a whole row and a whole column each hold every game once)
-      out.dup = row.concat(col).some(id => !id);
-      for (const o of ord) if (D.slotOf(o.id).join() !== (G - o.k) % G + ',0' || D.idAt(...D.slotOf(o.id)) !== o.id) out.slotBad = o.id;
-      out.wrap = D.idAt(0, 0) === ord[0].id && D.idAt(9999, 0) === ord[1].id && D.idAt(0, 9999) === ord[1].id && D.idAt(9998, 9999) === ord[3].id && D.idAt(9999, 1) === ord[0].id;
-      out.names = ['airhockey', 'whackamole', 'pacman', 'blockout', 'chess'].map(id => D.titleOf(D.appById(id))).join('|');
-      // the pictures: a key by game and by size, painted (the game's own board and a name), and none past the block
-      const picks = ['chess', 'tetris', 'hashi', 'tiltmaze', 'pinball', 'levels', 'minigolf', 'sudoku'], pix = {};
-      for (const id of picks){
-        const [c, r] = D.slotOf(id), kh = A.cellPhoto(c, r, 400), kl = A.cellPhoto(c, r, 100), ch = A.photoCanvas(kh), cl = A.photoCanvas(kl);
-        const px = ch.getContext('2d').getImageData(0, 0, ch.width, ch.height).data, cols = new Set(), foot = new Set();
-        for (let y = 0; y < ch.height; y += 6) for (let x = 0; x < ch.width; x += 6){ const i = (y * ch.width + x) * 4, key = (px[i] >> 4) + ',' + (px[i + 1] >> 4) + ',' + (px[i + 2] >> 4); cols.add(key); if (y > ch.height * 0.88) foot.add(key); }
-        pix[id] = { ok: /:h$/.test(kh) && /:l$/.test(kl) && ch.width === 512 && cl.width === 256 && cols.size > 12 && foot.size > 3, colours: cols.size, foot: foot.size };
-        if (!pix[id].ok) out.bad.push(id);
-      }
-      out.pictures = picks.length + ' ' + out.bad.length;
-      // a picture is the same pixels every time it is made (the same request's "flashes"): a game's icon is drawn once and kept, so a board whose texture was
-      // let go and made again, or that crossed the size where its picture goes sharper, comes back as the picture it was, even for the games whose own icon
-      // shows what is happening now; the small picture is made once and kept, and Home says what the field needs to draw it without a flash
-      const sig = id => { const cv = D.paint({ id }, true), d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let h = 0; for (let i = 0; i < d.length; i += 7) h = (h * 31 + d[i]) | 0; return h; };
-      out.stable = ['pinball', 'minigolf', 'tetris', 'sudoku', 'tiltmaze', 'chess'].every(id => sig(id) === sig(id)) && D.iconOf(D.appById('pinball')) === D.iconOf(D.appById('pinball'));
-      { const [c, r] = D.slotOf('hashi'), kl = A.cellPhoto(c, r, 100); out.kept = A.photoCanvas(kl) === A.photoCanvas(kl); }
-      out.flags = A.photoFullAtOnce === true && A.photoUrgentPx === 0 && A.photoHolesOk === true;
-      // every board has a game: a picture asked for anywhere, and a colour of its own where it is too small for one
-      out.none = ['1,0', '0,1', '5000,5000', '1234,8765', '9999,9999'].every(q => { const [c, r] = q.split(',').map(Number); return A.cellPhoto(c, r, 400) !== null && A.cellPhoto(c, r, 100) !== null; })
-        && new Set([0, 1, 2, 3, 4, 5, 6, 7].map(c => A.cellGrid(c, 0).colors[0])).size === 8;
-      // the far field's texture is the same block: its repeat is the block's side and each of its cells the colour of the board it stands for
-      { const cv = document.createElement('canvas'); cv.width = cv.height = 4; const x = cv.getContext('2d'); let bad = 0;
-        for (const [i, j] of [[0, 0], [1, 0], [0, 1], [3, 5], [7, 7], [6, 2]]){
-          x.fillStyle = '#000'; x.fillRect(0, 0, 4, 4); A.fabricCellAt(x, { x: 0, y: 0, w: 4, h: 4 }, i, j);
-          const d = x.getImageData(1, 1, 1, 1).data, h = A.cellGrid(i, j).colors[0];
-          if (Math.abs(d[0] - (h >> 16 & 255)) > 1 || Math.abs(d[1] - (h >> 8 & 255)) > 1 || Math.abs(d[2] - (h & 255)) > 1) bad++;
-        }
-        out.fabric = A.fabricRepeat === D.COLS && bad === 0; }
-      // the page's start: the game last in is where Home arrives, and Home is not remembered as the last game
-      localStorage.setItem('tvf.field.app.v1', 'mini golf');
-      D.forgetView();                              // (a first visit: no kept view, so Home arrives framed on the last game)
-      out.named = window.__restoreLastApp('chess') === null;
-      const got = window.__restoreLastApp(null);
-      out.opened = got && got.name === 'home' && window.getFieldApp() === got && localStorage.getItem('tvf.field.app.v1') === 'mini golf' && D.LAST === null;
-      out.golfSlot = D.slotOf('minigolf');
-      return out;
-    });
-    await drawn(page, 800);
-    const f1 = await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return f && [f.c, f.r]; });
-    // the application picker: Home first, and from a game Home brings the view to the board of the game just left
-    await page.evaluate(() => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess')); window.FIELD_APPS.find(a => a.id === 'home')._debug.forgetView(); }); await drawn(page, 800);
-    const pick = await page.evaluate(async () => {
-      const wait = ms => new Promise(ok => setTimeout(ok, ms));
-      document.getElementById('appBtn').click(); await wait(300);
-      const rows = [...document.querySelectorAll('#appPicker .ap-row')], first = rows[0] && rows[0].textContent.trim(), n = rows.length;
-      const home = rows.find(x => /^Home/.test(x.textContent.trim())); home.click(); await wait(1200);
-      const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), slot = A._debug.slotOf('chess');
-      return { first, n, app: A.name, f: f && [f.c, f.r], slot, apps: window.FIELD_APPS.length, thumb: !!document.querySelector('#appPicker') };
-    });
-    // the block as it is seen (Home framed on Chess by the picker above): the game before it in the list is on its left, the next on its right, the
-    // game a row before above it and the next row's below, in the screen's own terms
-    const seenAs = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, [sx, sz] = W.spacing(), T = W.target, G = 10000, ord = D.order();
-      const near = (v, s, ref) => { let g = v; while (g * s - ref > G * s / 2) g -= G; while (g * s - ref < -G * s / 2) g += G; return g * s; };
-      const scr = id => { const [c, r] = D.slotOf(id), p = new W.THREE.Vector3(near(c, sx, T.boardX), 0, near(r, sz, T.boardZ)).project(W.camera); return [(p.x + 1) / 2 * innerWidth, (1 - p.y) / 2 * innerHeight]; };
-      const k = ord.findIndex(o => o.id === 'chess'), at = i => scr(ord[i].id), L = at(k - 1), M = at(k), R = at(k + 1);   // (the board above chess holds the game before it and the board below the game after it, as the gallery's rows and columns run)
-      const [c0, r0] = D.slotOf('chess'), above = D.idAt(c0, r0 + 1), below = D.idAt(c0, r0 - 1), left = D.idAt(c0 + 1, r0), right = D.idAt(c0 - 1, r0);
-      return { L, M, R, ok: L[0] < M[0] && M[0] < R[0] && Math.abs(L[1] - M[1]) < 60 && Math.abs(R[1] - M[1]) < 60 && above === ord[k - 1].id && below === ord[k + 1].id && left === ord[k - 1].id && right === ord[k + 1].id };
-    });
-    // and none of it a hole in the ground: with the corner framed (bare field on two sides) and while the view moves, no board counts as one the fabric must cover
-    const holes = await page.evaluate(async () => {
-      const A = window.getFieldApp(), D = A._debug, [c, r] = D.slotOf(D.order()[0].id); D.fly(c, r); await new Promise(ok => setTimeout(ok, 1800));
-      const out = { max: 0, decl: 0 }; for (let k = 0; k < 12; k++){ const p = window.tvf.photos; out.max = Math.max(out.max, p.holes); out.decl = Math.max(out.decl, p.declined); await new Promise(ok => setTimeout(ok, 120)); }
-      return out;
-    });
-    // a tap on a board opens that game on its first board: a real click on the framed board
-    const target = 'tetris';
-    await page.evaluate(id => { const D = window.getFieldApp()._debug, [c, r] = D.slotOf(id); D.fly(c, r); }, target);
-    const tc = await page.evaluate(id => window.getFieldApp()._debug.slotOf(id), target);
-    await page.evaluate(([c, r]) => window.__settle(c, r), tc);
-    const aimOnce = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
-      const pv = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
-      const x = (pv.x + 1) / 2 * innerWidth, y = (1 - pv.y) / 2 * innerHeight, q = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight ? W.uvAt(x, y) : null;
-      return { x, y, ok: !!q && Math.abs(q.u - u) < 0.03 && Math.abs(q.v - v) < 0.03 }; }, [u, v]);
-    const aimAt = async (u, v) => { let p = null; for (let k = 0; k < 120; k++){ p = await aimOnce(u, v); if (p.ok){ await frame(page, 300); const p2 = await aimOnce(u, v); if (p2.ok && Math.abs(p2.x - p.x) < 1 && Math.abs(p2.y - p.y) < 1) return p2; } await frame(page, 500); } return p; };
-    const pt = await aimAt(0.5, 0.45);
-    await page.mouse.click(pt.x, pt.y);
-    const tap = await page.evaluate(async id => { for (let k = 0; k < 60; k++){ const A = window.getFieldApp(); if (A.id === id) break; await new Promise(ok => setTimeout(ok, 100)); }
-      const A = window.getFieldApp(), W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: A.id, f: f && [f.c, f.r], last: localStorage.getItem('tvf.field.app.v1'), name: A.name }; }, target);
-    // …and a double tap on any board does the same (the field frames it, then the game opens): the model's call, since the field's double tap is tested on its own
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'home'))); await drawn(page, 600);
-    const dbl = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, [c, r] = D.slotOf('sudoku'); A.startOnDouble(c, r); await new Promise(ok => setTimeout(ok, 500));
-      const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return { app: window.getFieldApp().id, f: f && [f.c, f.r] }; });
-    const ok = r.every && r.sorted && r.side && !r.dup && !r.slotBad && r.placed && r.wrap && r.fabric && r.names === 'Air hockey|Whack-a-mole|Pac-Man|3D Tetris|Chess' && !r.bad.length && r.none
-      && r.stable && r.kept && r.flags && seenAs.ok && holes.max === 0 && holes.decl === 0
-      && r.named && r.opened && f1 && f1.join() === r.golfSlot.join()
-      && pick.first === 'Home' && pick.n === pick.apps && pick.app === 'home' && pick.f && pick.f.join() === pick.slot.join() && !pick.thumb
-      && tap.app === 'tetris' && tap.f && tap.f.join() === '0,0' && tap.last === tap.name && dbl.app === 'sudoku' && dbl.f && dbl.f.join() === '0,0';
-    if (!ok) failures.push('[home] ' + JSON.stringify({ r, f1, pick, seenAs, holes, tap, dbl }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} home: ${r.every ? 'every' : 'not every'} game, one board each in a block eight across read left to right and top to bottom, sorted by title, the block repeating over the field so no board is bare, the far field's texture the same block (${r.pictures} pictures, the same pixels each time, no board a hole), Home first in the picker and the page's start framed on the game last in, a real tap and a double tap opening a game on its first board`);
-  }
-  // THE HOME CHIP, AND NO DOTS WITHOUT A ROW (Nov 7: "if an applicaiton does not have a bottom browser, remove the bottom button.   Add a button for home in the upper
-  // left."): a chip in the upper left on every app but Home that opens Home where it was left (position, turn, tilt and zoom, kept in localStorage), and the three dots only on apps that put something
-  // in the row (a game's moves, tiles, quick buttons or prints): none on Home, Tetris, Sudoku or Hashi, some on chess, mini golf, pinball and the gallery.
-  {
-    current = 'home chip and dots';
+    current = 'no home, a click selects';
     const r = await page.evaluate(async () => {
-      const wait = ms => new Promise(ok => setTimeout(ok, ms)), vis = id => { const e = document.getElementById(id); return !!e && !e.hidden && getComputedStyle(e).display !== 'none'; };
-      const res = { dots: {}, chip: {} };
-      for (const id of ['home', 'chess', 'tetris', 'sudoku', 'hashi', 'minigolf', 'pinball', 'gallery']){
-        window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await wait(500);
-        res.dots[id] = document.getElementById('bbHandle').style.display !== 'none'; res.chip[id] = vis('homeBtn');   // (the chip is gone: never)   // (the dots by the app's own say: an open row hides them by the sheet)
-      }
-      // (Nov 7: "save the position, [tilt] and rotation of home so it returns in the same position."): Home is left somewhere of its own choosing, a game opened, and
-      // the chip brings it back to that place, turn, tilt and zoom, not to the board of the game left
-      const H0 = window.FIELD_APPS.find(a => a.id === 'home'), W = window.FIELD_WORLD;
-      window.setFieldApp(H0); await wait(600); H0._debug.forgetView();
-      H0._debug.fly(9990, 3); await window.__settle(9990, 3); W.st.yaw = 25; W.st.pitch = 40; await wait(1500);
-      const keys = ['camX', 'camZ', 'yaw', 'pitch', 'zoom'], was = keys.map(k => W.st[k]);
-      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'sudoku')); await wait(600);
-      // (Nov 16: "Also get rid of the home button on the games upper left."): there is no chip; Home is the first line of the application picker
-      res.corner = !document.getElementById('homeBtn');
+      const wait = ms => new Promise(ok => setTimeout(ok, ms)), res = { dots: {} };
+      res.none = !window.FIELD_APPS.some(a => a.id === 'home' || a.isHome) && !document.getElementById('homeBtn');
       document.getElementById('appBtn').click(); await wait(300);
-      const first = document.querySelector('#appPicker button[role="option"]'); res.first = first ? first.textContent.trim() : ''; if (first) first.click(); await wait(1500);
-      const H = window.getFieldApp();
-      res.was = was; res.now = keys.map(k => W.st[k]);
-      res.back = H.isHome && keys.every((k, i) => Math.abs(W.st[k] - was[i]) < 1e-3 * Math.max(1, Math.abs(was[i])));
-      res.kept = !!localStorage.getItem('home.view');
+      const rows = [...document.querySelectorAll('#appPicker .ap-row')]; res.rows = rows.length; res.apps = window.FIELD_APPS.length; res.first = rows[0] ? rows[0].textContent.trim() : '';
+      document.getElementById('appBtn').click(); await wait(200);
+      for (const id of ['chess', 'tetris', 'sudoku', 'hashi', 'minigolf', 'pinball', 'gallery']){
+        window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await wait(500);
+        res.dots[id] = document.getElementById('bbHandle').style.display !== 'none';
+      }
+      // the page reopens the game last in
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'checkers')); await wait(300);
+      const name = window.getFieldApp().name;
+      window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess')); await wait(300);
+      localStorage.setItem('tvf.field.app.v1', name);
+      res.named = window.__restoreLastApp('chess') === null && window.getFieldApp().id === 'chess';
+      const got = window.__restoreLastApp(null); res.reopened = !!got && got.id === 'checkers' && window.getFieldApp() === got;
       return res;
     });
-    const D = r.dots, C = r.chip, ok = !D.home && !D.tetris && !D.sudoku && !D.hashi && D.chess && D.minigolf && D.pinball && D.gallery && !Object.values(C).some(Boolean) && r.corner && /home/i.test(r.first) && r.back && r.kept;
-    if (!ok) failures.push('[home chip] ' + JSON.stringify(r));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} no home chip: Home is the picker's first line and comes back where it was left; the three dots only where the app has a row (not Home, Tetris, Sudoku, Hashi)`);
+    await drawn(page, 800);
+    await page.evaluate(() => { const W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ); return window.__settle(f.c, f.r); });
+    const where = () => page.evaluate(() => { const W = window.FIELD_WORLD, T = W.target, [sx, sz] = W.spacing(), P = window.__picked();
+      return { f: [Math.round(T.boardX / sx), Math.round(T.boardZ / sz)], cam: [W.st.camX, W.st.camZ, W.st.zoom].map(v => +v.toFixed(4)).join(), pick: P && [P.gx, P.gz] }; });
+    const scr = (dc, dr) => page.evaluate(([dc, dr]) => { const W = window.FIELD_WORLD, T = W.target, [sx, sz] = W.spacing();
+      const p = new W.THREE.Vector3(T.boardX + dc * sx, 0, T.boardZ + dr * sz).project(W.camera); return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [dc, dr]);
+    const w0 = await where();
+    const pa = await scr(0.72, 0), pb = await scr(-0.72, 0);        // (on the neighbours' near sides: their middles are off the screen at the default fit)
+    await page.mouse.click(pa.x, pa.y); await drawn(page, 700);
+    const w1 = await where();                                      // (selected where it stands)
+    await page.mouse.click(pb.x, pb.y); await drawn(page, 700);
+    const w2 = await where();                                      // (the selection moved)
+    await page.mouse.click(pb.x, pb.y); await drawn(page, 400);
+    await page.evaluate(() => window.__settle());
+    const w3 = await where();                                      // (brought in)
+    const D = r.dots, ok = r.none && r.rows === r.apps && !/^Home/.test(r.first) && !D.tetris && !D.sudoku && !D.hashi && D.chess && D.minigolf && D.pinball && D.gallery
+      && r.named && r.reopened
+      && w1.pick && w1.pick.join() === [w0.f[0] + 1, w0.f[1]].join() && w1.f.join() === w0.f.join() && w1.cam === w0.cam
+      && w2.pick && w2.pick.join() === [w0.f[0] - 1, w0.f[1]].join() && w2.f.join() === w0.f.join() && w2.cam === w0.cam
+      && !w3.pick && w3.f.join() === [w0.f[0] - 1, w0.f[1]].join();
+    if (!ok) failures.push('[no home, a click selects] ' + JSON.stringify({ r, w0, w1, w2, w3 }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} no Home (${r.rows} apps in the picker, the first ${r.first}; the last game reopened), a click selects ${JSON.stringify(w1.pick)} then ${JSON.stringify(w2.pick)} with the view unmoved, and a click on the selected board brings it in (${JSON.stringify(w3.f)})`);
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await drawn(page, 400);
   }
   // THE ONE SANS (Nov 7: "the fonts look very nice on the home page.  can you use that font in all applications?"): every place that draws words
   // names UI_SANS, the stack the page's text and Home's names are set in; no canvas or style sets its own generic sans, Arial or Helvetica Neue
-  // any more. And what is drawn: while Home, the flash cards, Sudoku and Hashi are shown, every canvas font that was set is that stack.
+  // any more. And what is drawn: while the flash cards, Sudoku and Hashi are shown, every canvas font that was set is that stack.
   {
     const src = await readFile(join(ROOT, 'games.html'), 'utf8');
     const stray = (src.match(/'px (Arial, )?sans-serif'|"Helvetica Neue"|system-ui,sans-serif|BlinkMacSystemFont,Helvetica/g) || []);
@@ -489,9 +382,9 @@ try {
     const seen = await page.evaluate(async () => {
       const m = new Set(), d = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'font');
       Object.defineProperty(CanvasRenderingContext2D.prototype, 'font', { configurable: true, get(){ return d.get.call(this); }, set(v){ m.add(String(v).replace(/^.*?\d+(\.\d+)?px\s*/, '')); d.set.call(this, v); } });
-      // (Home's own pictures are painted by hand, so a slow frame cannot leave this with nothing to read; the apps shown after it add what they draw)
-      const H = window.FIELD_APPS.find(a => a.id === 'home')._debug; for (const id of ['sudoku', 'hashi', 'flashcards']) H.paint({ id }, false);
-      for (const id of ['home', 'flashcards', 'sudoku', 'hashi']){ window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await new Promise(ok => setTimeout(ok, 1200)); }
+      // (a letter's picture is painted by hand, so a slow frame cannot leave this with nothing to read; the apps shown after it add what they draw)
+      try { const T = window.__boardType; T.geo(window.FIELD_WORLD.THREE, 'Q'); T.width('Qq7', 1); } catch {}
+      for (const id of ['flashcards', 'sudoku', 'hashi']){ window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); await new Promise(ok => setTimeout(ok, 1200)); }
       Object.defineProperty(CanvasRenderingContext2D.prototype, 'font', d);
       return [...m]; });
     const okF = !stray.length && /apple-system/.test(def) && /Segoe UI/.test(def) && seen.length > 0 && seen.every(f => f === def);

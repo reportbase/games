@@ -328,6 +328,8 @@ try {
   await page.evaluate(() => { const A = window.getFieldApp(); A.statTiles = A._statTiles0; delete A._statTiles0; try { window.refreshFieldBrowser && window.refreshFieldBrowser(); } catch {} });
   console.log(`${failures.length === before6 ? 'ok  ' : 'FAIL'} ${current}`);
 
+  // (Nov 21: a single tap on a board you are not on SELECTS it where it stands, the view and its game untouched, and a tap on the selected board
+  //  brings it in; the two quick clicks below are that second tap and one more, which is eaten.)
   // A single tap on a board you are not on does nothing; a double tap selects it and brings it in; then the first tap on it, in
   // mini golf, tees off (Oct 8: "the first tap should select the board, not the second" / "remove the long press to select
   // board", until Oct 29: "double click selects a centers board, not a single click. don't select a board with only one tap.")
@@ -1688,7 +1690,7 @@ try {
     // exact copies in storage are kept once after a reload
     await page.evaluate(() => { const h = { name: 'twin', par: 3, map: Array.from({ length: 13 }, (_, j) => j === 1 ? '...O....' : j === 11 ? '...T....' : '........') };
       localStorage.setItem('golf.myholes', JSON.stringify([h, h, h, { ...h, name: 'other' }])); });
-    // (a page that names its game: the page opens on Home otherwise now, Nov 7, and used to reopen the game last in)
+    // (a page that names its game)
     await page.goto(new URL('games.html?app=minigolf', base).href, { waitUntil: 'load' });
     await page.waitForFunction(() => window.getFieldApp && window.getFieldApp() && window.getFieldApp().name === 'mini golf', null, { timeout: 60000 });
     const merged = await page.evaluate(() => ({ mine: window.getFieldApp()._debug.editor.MINE.map(m => m.name), stored: JSON.parse(localStorage.getItem('golf.myholes')).length }));
