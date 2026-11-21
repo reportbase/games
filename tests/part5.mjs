@@ -252,10 +252,11 @@ try {
     if (fc){
       live.cell = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.LIVE = { c, r }; D.gameAt(c, r); return D.boardIdx(c, r); }, fc);
       const g0 = await gs(), w = g0.balls[0];
-      // a drag from beside the white toward a point straight up the board from it: the cue turns to it (−90°)
+      // a drag from beside the white to a point straight up the board from it: the cue is under the hand there and the shot goes straight down (+90°)
+      // (Nov 21: "to move the pool stick, the player should move the stick, not the other side of the ball.")
       const p0 = await at(w.x + 3, w.z - 2), p1 = await at(w.x, w.z - 3);
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
-      for (let k = 0; k < 20 && Math.abs((await gs()).ang + 90) > 8; k++) await frame(page, 250);
+      for (let k = 0; k < 20 && Math.abs((await gs()).ang - 90) > 8; k++) await frame(page, 250);
       await page.mouse.up();
       live.dragged = (await gs()).ang;
       await drawn(page, 500);   // (past the tap the field still calls after a drag)
@@ -314,7 +315,7 @@ try {
       return { cycle: +R.cycle.toFixed(1), moved: +moved.toFixed(2), sawCue, sawPlay, balls: it.filter(i => /^tsB\d+$/.test(i.kind)).length, cushions: kinds('tsBox'), cue: kinds('tsCueIdle'), dots: kinds('tsDot'), ghost: kinds('tsGhost'),
                yaws: it.filter(i => i.kind === 'tsCueIdle').every(i => i.rot), inside: it.every(i => i.u > -0.02 && i.u < 1.02 && i.v > -0.02 && i.v < 1.02), photo: !!D.paint(256) }; });
     const r = rules, ok = Object.values(r.spin).every(Boolean) && r.sols.every(Boolean) && r.cells && r.miss.tries === 1 && r.miss.why && r.miss.back
-      && live.cell === 0 && Math.abs(live.dragged + 90) < 10 && live.playing && live.after && !live.after.anim && live.after.tries === 1 && live.after.solvedIn === 1
+      && live.cell === 0 && Math.abs(live.dragged - 90) < 10 && live.playing && live.after && !live.after.anim && live.after.tries === 1 && live.after.solvedIn === 1
       && live.row.tip > 0.3 && live.row.power === 1 && live.row.tiles === 12 && live.space.anim && live.free.challenge === 0 && live.free.potted === 1 && live.free.shots === 1 && live.free.back === 1
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
       && r.call && r.call.pocket >= 0 && r.call.l1 && r.call.ok && /another pocket/.test(r.call.wrong || '') && r.call.see4 === 0 && r.call.ringed === 2

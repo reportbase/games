@@ -130,7 +130,7 @@ export async function begin(k, current){
   try {
     // (not 'load': that waits on every request the page makes, and one from a CDN that never answered held a part's page load
     //  past two minutes on CI, Oct 28; the page is ready when its apps are, which the next line waits for)
-    // (?app=chess: the page opens on Home now (Nov 7), and these checks begin where the page used to open)
+    // (?app=chess: the page reopens the game last in, and these checks begin on chess)
     await page.goto(new URL('games.html?app=chess', base).href, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForFunction(() => Array.isArray(window.FIELD_APPS) && window.FIELD_APPS.length > 0
                                      && typeof window.setFieldApp === 'function', null, { timeout: 120000 });

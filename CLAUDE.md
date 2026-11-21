@@ -84,10 +84,12 @@ a new game or a change keeps to them.
   the game's. A long press toggles the bottom row (Minesweeper keeps its flag).
 - **Games play with the row shut.** The row never opens by itself; what a gesture cannot do
   goes on the play pad (`playActs`). An editor's row is opened by its ✎ or menu item.
+- **A click selects a board, a click on the selected board brings it in** (Nov 21, `docs/field.md`): no double tap goes to another board, and there is
+  no Home page: the page reopens the game last in.
 - **No notices from games.** `BOARD_KIT.say` does nothing; a board's title and the board
   itself say what is going on. The field's own notices (`engineNotice`) are for errors.
 - **The buttons wear draw's look** (Nov 16, `docs/field.md`): a new chip, play-pad button or row tile takes the styles under DRAW'S BUTTONS
-  (`--dchip-*`, `--dgold`), not colours of its own. There is no Home chip: Home is first in the application picker.
+  (`--dchip-*`, `--dgold`), not colours of its own.
 - **Never a yaw of exactly 0** on a turned item (`BOARD_KIT.yawOf`): the field leaves it
   unturned, half a turn from the rest.
 - **Trick shots' worker** is made from its own text up to "IN THE FIELD": nothing of a kit
