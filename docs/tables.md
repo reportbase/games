@@ -725,6 +725,13 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   - **The hand moves the stick** (Nov 21: "to move the pool stick, the player should move the stick, not the other side of the ball."): a drag lays the
     cue from the white toward the finger and the shot goes the other way (`onPan`: the aim is the finger's place mirrored through the white); until
     then a drag aimed the shot at the finger. A tap on a point still aims at it. The smoke test's real drag ends above the white and wants the shot straight down, +90°.
+  - **The cue on the played board only, past the table, and the view behind it** (Nov 21: "1) only show pool stick for the default board.    2) rotate the
+    view to behind the ball aligned with the pool stick when moving the pool stick.   3) i should be able to move a pool stick without restriction.  don't
+    stop moving the pool stick when the movement is on another board."): a board no one plays shows its shot and no cue (`cueItems` lays the cue and tip
+    only when `V.live`; `tsCueIdle` and `tsTipIdle` are unused). The cue's drag goes on when the finger leaves the board: the field's `onPan` now has a
+    fourth argument, the finger's screen place, and `FIELD_WORLD.uvFree(x, y)` reads it on the ground in the board's own terms, past 0 and 1. When the
+    hand lets the cue go the view turns to look along the shot, the cue toward you (`FIELD_WORLD.turnTo(deg)`, the board kept in the middle at its
+    zoom); on letting go, not while dragging, since the finger is read through the view. The keys, the row's nudges and a tap's aim do not turn it.
   - **Playing** (`fresh`, `shoot`, `finish`, `undo`: the page's): drag on the table to aim (`claimsPan`, `keepsPress`), tap a point
     to aim at it, tap the white, Shoot or Space/Enter to shoot; a tap while it plays jumps to its end; in free play a drag that
     starts on a ball moves it. The row (`tilesOf`, `onTile`): Shoot, Aim ◀ ▶ (0.1°), Power − +, Spin (`SPINS`: centre, follow,

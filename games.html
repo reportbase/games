@@ -3850,6 +3850,11 @@ window.FIELD_WORLD = {
   boardW: () => gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize)),
   // where a point on the screen falls on the framed board, as a tap there is read (u, v), or null (for the tests' real clicks, Oct 13)
   uvAt: (x, y) => _framedUV(x, y),
+  // …and the same read however far off the board the point is (u, v past 0 and 1), for a drag that began on the board and has left it (trick shots' cue, Nov 21)
+  uvFree(x, y){ try { if (!target.shown) return null; const hit = raycastGround(x, y); if (!hit) return null; const bW = this.boardW(), L = window.LAB || {};
+    return { u: 0.5 - (hit.x - target.boardX) / (bW * (L.cellW || 1)), v: 0.5 - (hit.z - target.boardZ) / (bW * (L.cellH || 1)) }; } catch { return null; } },
+  // turn the view about the framed board to a heading (degrees; 0 is forward), the board kept in the middle at the zoom it has (trick shots, Nov 21)
+  turnTo(deg){ if (!target.shown || !isFinite(deg)) return; let a = ((deg % 360) + 360) % 360; if (a >= 180) a -= 360; target.yaw = a; try { resetThrust(); } catch {} frameSelectedBoardAt(st.zoom); },
   // the board whose pieces are being asked for, its middle on the ground (x, z), while cellItems runs (Levels, Oct 13)
   get itemAt(){ return _itemAt; },
   back: () => camGeom().back,
@@ -4475,7 +4480,7 @@ function applyPan(ddx, ddy, src, at){
   if (src === 'one' && turn.appPan){
     try {
       const _a = window.getFieldApp && window.getFieldApp();
-      if (_a && _a.onPan && _a.onPan(ddx, ddy, _framedUV(turn.currentX, turn.currentY))) return;   // 3rd: where the finger is on the board, whatever way the view is turned
+      if (_a && _a.onPan && _a.onPan(ddx, ddy, _framedUV(turn.currentX, turn.currentY), [turn.currentX, turn.currentY])) return;   // 3rd: where the finger is on the board, whatever way the view is turned
     } catch {}
   }
   /* A LOCKED BOARD HOLDS ONLY AGAINST A DRAG ON IT (Nov 1: "don't block panning of non-selected boards."): `at` is where the gesture
@@ -56239,9 +56244,10 @@ const TRICK_APP = (() => {
     const live = !!V.live, len = live ? CUE_LEN : CUE_IDLE;
     const T = [c.x + rt[0] * b - u[0] * back, c.z + rt[1] * b - u[1] * back], hy = R + bv * 0.6, e = elev * D;
     const sa = Math.sin(-ang / 2), ca = Math.cos(-ang / 2), se = Math.sin(-e / 2), ce = Math.cos(-e / 2);   // about up by −ang, then about its own z by −e
-    out.push({ kind: live ? 'tsCue' : 'tsCueIdle', u: Ub(T[0] - u[0] * R_TIP * Math.cos(e)), v: Vb(T[1] - u[1] * R_TIP * Math.cos(e)), scale: Sb(1), sx: len, sy: CUE_W, sz: CUE_W,
+    // (Nov 21: "only show pool stick for the default board.": a board no one plays shows its shot and no cue; the idle kinds are left unused)
+    if (live) out.push({ kind: live ? 'tsCue' : 'tsCueIdle', u: Ub(T[0] - u[0] * R_TIP * Math.cos(e)), v: Vb(T[1] - u[1] * R_TIP * Math.cos(e)), scale: Sb(1), sx: len, sy: CUE_W, sz: CUE_W,
                lift: Sb(hy + R_TIP * Math.sin(e)), rot: [sa * se, sa * ce, ca * se, ca * ce], color: 0xffffff });
-    out.push({ kind: live ? 'tsTip' : 'tsTipIdle', u: Ub(T[0]), v: Vb(T[1]), scale: Sb(2 * R_TIP), lift: Sb(hy), color: TIPC });
+    if (live) out.push({ kind: live ? 'tsTip' : 'tsTipIdle', u: Ub(T[0]), v: Vb(T[1]), scale: Sb(2 * R_TIP), lift: Sb(hy), color: TIPC });
     if (V.paths === 'off' || !V.sim){   // the aim alone: straight to the first ball or cushion the white would meet, and the ghost ball there
       const dirW = strikeOf(ang, tip.x, tip.y, power, V.cue.chalk ? MU_TIP : 0, elev * D).dir, stp = firstStop(V.B, c, dirW);
       const ex = c.x + Math.cos(dirW) * stp.t, ez = c.z + Math.sin(dirW) * stp.t, n = Math.floor(stp.t / DOT_GAP);
@@ -56765,19 +56771,30 @@ const TRICK_APP = (() => {
       const [x, z] = toTable(u, v), hit = g.ch ? null : g.balls.filter(b => !b.sunk).find(b => Math.hypot(b.x - x, b.z - z) < R * 1.15);
       DRAG = { g, moved: false, ball: hit || null, dx: hit ? hit.x - x : 0, dz: hit ? hit.z - z : 0 }; return true;
     },
-    onPan(dx, dy, at){
+    onPan(dx, dy, at, xy){
       if (ED.on){ if (ED.drag && at) edDragAt(at.u, at.v); return !!ED.drag; }
-      if (!DRAG) return false; if (!at) return true;
+      if (!DRAG) return false;
+      /* THE CUE GOES ON PAST THE TABLE (Nov 21: "i should be able to move a pool stick without restriction.  don't stop moving the pool stick when the
+         movement is on another board."): a finger off the board had no place on it and the cue stopped at the edge. The cue's drag (not a ball's)
+         reads the finger wherever it is on the ground, in the table's own terms (`uvFree`). */
+      if (!at && !DRAG.ball && xy){ try { at = window.FIELD_WORLD.uvFree(xy[0], xy[1]); } catch {} }
+      if (!at) return true;
       const g = DRAG.g, [x, z] = toTable(at.u, at.v); DRAG.moved = true;
       if (DRAG.ball){ const nx = x + DRAG.dx, nz = z + DRAG.dz; if (free(g.balls, nx, nz, DRAG.ball)){ DRAG.ball.x = nx; DRAG.ball.z = nz; g.dirty = true; } }
       /* THE HAND MOVES THE STICK (Nov 21: "to move the pool stick, the player should move the stick, not the other side of the ball."): a drag used to
          aim the shot at the finger, so the cue swung about on the far side of the white from the hand. Now the cue lies from the white toward the
          finger, as a stick held there, and the shot goes the other way: the aim is at the finger's place mirrored through the white. A tap on a
          point still aims the shot at it (a ball tapped is the ball meant). */
-      else { const w = g.balls.find(b => b.cue && !b.sunk); if (w) aimAt(g, 2 * w.x - x, 2 * w.z - z); }
+      else { const w = g.balls.find(b => b.cue && !b.sunk); if (w){ aimAt(g, 2 * w.x - x, 2 * w.z - z); DRAG.cue = true; } }
       return true;
     },
-    onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); touch(); } DRAG = null; } },
+    onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); touch(); }
+        /* THE VIEW COMES ROUND BEHIND THE CUE (Nov 21: "rotate the view to behind the ball aligned with the pool stick when moving the pool stick."):
+           when the hand lets the cue go the view turns to look along the shot, the cue toward you and the white's way up the screen. On letting go
+           and not while the cue moves: the finger's place on the table is read through the view, and a view turning under it would turn the cue again.
+           The table's +x and +z run to the world's −x and −z, and the view's gaze at a heading is (sin, cos). */
+        if (DRAG.cue){ try { const a = DRAG.g.ang; window.FIELD_WORLD.turnTo(Math.atan2(-Math.cos(a), -Math.sin(a)) * 180 / Math.PI); } catch {} }
+        DRAG = null; } },
     drawIcon(ctx, sz){
       ctx.fillStyle = '#4a2c18'; ctx.fillRect(0, sz * 0.2, sz, sz * 0.6);
       ctx.fillStyle = '#16513f'; ctx.fillRect(sz * 0.06, sz * 0.26, sz * 0.88, sz * 0.48);
