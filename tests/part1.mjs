@@ -389,7 +389,7 @@ try {
       return [...m]; });
     const okF = !stray.length && /apple-system/.test(def) && /Segoe UI/.test(def) && seen.length > 0 && seen.every(f => f === def);
     if (!okF) failures.push('[one sans] ' + JSON.stringify({ stray, def, seen }));
-    console.log(`${okF ? 'ok  ' : 'FAIL'} one sans: no canvas or style sets its own generic sans, and the words Home, the flash cards, Sudoku and Hashi draw are all in ${def.split(',')[0]}…`);
+    console.log(`${okF ? 'ok  ' : 'FAIL'} one sans: no canvas or style sets its own generic sans, and the words the flash cards, Sudoku and Hashi draw are all in ${def.split(',')[0]}…`);
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'chess'))); await drawn(page, 400);
   }
   // THE LETTERS (Nov 7: "why cant you use the same font from home page on mini-golf and elsewhere?"): a board's numbers and words are BOARD_KIT.type's

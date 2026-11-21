@@ -722,6 +722,9 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     the cue laid on its line with the shot seen ahead (`AIM_T`), played, held (`HOLD_T`), round again, each board at its own
     phase; a challenge its reference shot, a free table its layout's (`DEMO`) or the best of five seeded shots at a ball. One is
     worked out at most every 30 ms (about 11 ms for a scattered table), `REC_CAP` 300 kept, at `REC_HZ` 30.
+  - **The hand moves the stick** (Nov 21: "to move the pool stick, the player should move the stick, not the other side of the ball."): a drag lays the
+    cue from the white toward the finger and the shot goes the other way (`onPan`: the aim is the finger's place mirrored through the white); until
+    then a drag aimed the shot at the finger. A tap on a point still aims at it. The smoke test's real drag ends above the white and wants the shot straight down, +90°.
   - **Playing** (`fresh`, `shoot`, `finish`, `undo`: the page's): drag on the table to aim (`claimsPan`, `keepsPress`), tap a point
     to aim at it, tap the white, Shoot or Space/Enter to shoot; a tap while it plays jumps to its end; in free play a drag that
     starts on a ball moves it. The row (`tilesOf`, `onTile`): Shoot, Aim ◀ ▶ (0.1°), Power − +, Spin (`SPINS`: centre, follow,

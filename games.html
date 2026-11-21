@@ -56738,7 +56738,7 @@ const TRICK_APP = (() => {
     onSelect(){ return true; },
     onFramed(c, r){
       LIVE = c == null ? null : { c, r }; if (LIVE) gameAt(c, r); else ctlHide();
-      if (LIVE && !TOLD){ TOLD = true; say('Drag on the table to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
+      if (LIVE && !TOLD){ TOLD = true; say('Drag the cue round the white to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
     },
     onLeave(){ ctlHide(); },
     noDoubleTap(){ return ED.on ? 'always' : !!liveGame(); },
@@ -56770,7 +56770,11 @@ const TRICK_APP = (() => {
       if (!DRAG) return false; if (!at) return true;
       const g = DRAG.g, [x, z] = toTable(at.u, at.v); DRAG.moved = true;
       if (DRAG.ball){ const nx = x + DRAG.dx, nz = z + DRAG.dz; if (free(g.balls, nx, nz, DRAG.ball)){ DRAG.ball.x = nx; DRAG.ball.z = nz; g.dirty = true; } }
-      else aimAt(g, x, z);
+      /* THE HAND MOVES THE STICK (Nov 21: "to move the pool stick, the player should move the stick, not the other side of the ball."): a drag used to
+         aim the shot at the finger, so the cue swung about on the far side of the white from the hand. Now the cue lies from the white toward the
+         finger, as a stick held there, and the shot goes the other way: the aim is at the finger's place mirrored through the white. A tap on a
+         point still aims the shot at it (a ball tapped is the ball meant). */
+      else { const w = g.balls.find(b => b.cue && !b.sunk); if (w) aimAt(g, 2 * w.x - x, 2 * w.z - z); }
       return true;
     },
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); touch(); } DRAG = null; } },
