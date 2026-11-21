@@ -3853,8 +3853,16 @@ window.FIELD_WORLD = {
   // …and the same read however far off the board the point is (u, v past 0 and 1), for a drag that began on the board and has left it (trick shots' cue, Nov 21)
   uvFree(x, y){ try { if (!target.shown) return null; const hit = raycastGround(x, y); if (!hit) return null; const bW = this.boardW(), L = window.LAB || {};
     return { u: 0.5 - (hit.x - target.boardX) / (bW * (L.cellW || 1)), v: 0.5 - (hit.z - target.boardZ) / (bW * (L.cellH || 1)) }; } catch { return null; } },
-  // turn the view about the framed board to a heading (degrees; 0 is forward), the board kept in the middle at the zoom it has (trick shots, Nov 21)
-  turnTo(deg){ if (!target.shown || !isFinite(deg)) return; let a = ((deg % 360) + 360) % 360; if (a >= 180) a -= 360; target.yaw = a; try { resetThrust(); } catch {} frameSelectedBoardAt(st.zoom); },
+  // turn the view to a heading (degrees; 0 is forward) about the place on the ground it is looking at, which stays where it is on the screen, at the zoom
+  // and tilt it has (trick shots, Nov 21; it first framed the board again as it turned: "dont center the board after moving the pools stick, just
+  // rotate the view.")
+  turnTo(deg){
+    if (!isFinite(deg)) return; let a = ((deg % 360) + 360) % 360; if (a >= 180) a -= 360;
+    const back = camGeom().back, y0 = (st.yaw || 0) * Math.PI / 180, y1 = a * Math.PI / 180;
+    const fx = st.camX + back * Math.sin(y0), fz = st.camZ + back * Math.cos(y0);
+    try { resetThrust(); } catch {}
+    st.yawV = 0; target.yaw = a; target.zoom = null; target.x = fx - back * Math.sin(y1); target.z = fz - back * Math.cos(y1); target.active = true;
+  },
   // the board whose pieces are being asked for, its middle on the ground (x, z), while cellItems runs (Levels, Oct 13)
   get itemAt(){ return _itemAt; },
   back: () => camGeom().back,
@@ -56747,6 +56755,7 @@ const TRICK_APP = (() => {
       if (LIVE && !TOLD){ TOLD = true; say('Drag the cue round the white to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
     },
     onLeave(){ ctlHide(); },
+    pitchFloor: 20,                                           // (Nov 21: "minimum tilt should be 20 degrees in pool.": down to a player's eye over the cloth; the field's own floor is 35)
     noDoubleTap(){ return ED.on ? 'always' : !!liveGame(); },
     onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
