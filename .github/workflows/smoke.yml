@@ -1,12 +1,9 @@
 name: Smoke test
 
-# Once a change, on its PR (Oct 17: "its not needed for every change."). Not again on main after the merge, which ran
-# the same code the PR just passed, and not for a PR that only touches notes (Markdown). Run by hand from the Actions
-# tab when wanted.
+# Only when asked (Nov 21: "only test changes.   no test needed for simple tests.  full test only upon request or if you made a system change and
+# recommend a full test."): no PR runs this any more (from Oct 17 each PR ran it once). A change is checked with a probe of what it touches; the full
+# test is run here by hand, from the Actions tab or by Claude when the owner asks or agrees to a recommended one, on the branch chosen.
 on:
-  pull_request:
-    paths-ignore:
-      - '**.md'
   workflow_dispatch:
 
 # Side by side (Oct 28: "2", the faster smoke test): on one runner a run took 30 minutes, 26 of the smoke test and 3.5 of

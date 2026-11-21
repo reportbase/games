@@ -124,11 +124,12 @@ across. `node tests/draw-sync.mjs` (also the weekly "Draw sync" workflow) fails 
 - `npm test` runs `tests/smoke.mjs`, which runs the smoke test's seven parts one after another (`tests/part1.mjs` …
   `part7.mjs`, each a process of its own): they load the page in headless Chromium,
   switch to every app in `FIELD_APPS`, and fail on any uncaught error. Add checks there for new behaviour.
-  **Not for every change** (Oct 17: "its not needed for every change."): CI runs it once, on the PR
-  (`.github/workflows/smoke.yml`: not again on `main` after the merge, not for a PR of Markdown alone, and by hand
-  from the Actions tab). Locally, a change is checked with a probe of what it touches and left to CI. **Don't run the full
-  smoke test (about 20 minutes in a sandbox) or the whole course test locally unless the owner asks** (Oct 20: "the smoke test
-  takes to long. stop doing them unless I ask."). If every part passed it then runs
+  **Only what changed is tested** (Nov 21: "only test changes.   no test needed for simple tests.  full test only upon request or if you made a
+  system change and recommend a full test."): a change is checked with a probe of what it touches, or the one part its checks sit in
+  (`node tests/part3.mjs`); a simple change needs no test at all. The full smoke test runs only when the owner asks, or when a change to the
+  field itself or to what games share (taps, the camera, the kits, the harness) makes Claude recommend one and the owner agrees. CI no longer
+  runs it on a PR: `.github/workflows/smoke.yml` is run by hand (the Actions tab, or Claude dispatching it on the branch). Don't wait on CI
+  before a merge the owner asked for. If every part passed it then runs
   `tests/golf-course.mjs`, which plays every golf hole in the page's own physics
   with a greedy player and fails on a hole it can't sink within par + 3.
 - **Seven parts side by side** (Oct 28: "2", the faster smoke test: a CI run took 30 minutes, 26 of the smoke test and 3.5 of
