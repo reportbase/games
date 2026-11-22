@@ -976,3 +976,5 @@ at the left, clear of the dots in the middle and the chips on the right, its but
 while the bottom row is open (`#playPad.low`, `body:not(.bb-collapsed)`); other games' pads are where they were. The smoke test (part 5): a real
 click on the cloth puts the inset away with the aim and the shot count unmoved; nine-ball's pad is low, at the foot, without a label, gone with the
 row open and back with it shut.
+The inset is also put away by any tap anywhere on the screen, read on the window (`ctlEnsure`'s `tapFrom`): in the smoke test's own sequence the
+field did not hand the table that tap, and the inset stayed up; `_debug.ateIn` and the check's `tapDbg` are what that was read with.
