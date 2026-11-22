@@ -56561,6 +56561,7 @@ const TRICK_APP = (() => {
         if (Math.abs(nx) > LX / 2 - q.r && Math.abs(q.z) < HK_GOAL / 2 - q.r * 0.3) return nx > 0 ? 1 : 0;        // (through a mouth: scored on the side whose end it is)
         own(B, h, null, b => { if (b === q && onHit) onHit('rail', Math.hypot(b.vx, b.vz)); });
         pairs(B, (A, Bb) => { if (onHit) onHit('ball', Math.hypot(A.vx - Bb.vx, A.vz - Bb.vz)); });
+        for (const [m, sg] of [[B[0], -1], [B[2], 1]]) if (sg * m.x < HK_MAL){ m.x = sg * HK_MAL; if (sg * m.vx < 0) m.vx = 0; }   // (and after the step: never over the middle)
         q.y = 0; q.vy = 0; const v = Math.hypot(q.vx, q.vz); if (v > HK_PUCK_V){ q.vx *= HK_PUCK_V / v; q.vz *= HK_PUCK_V / v; }
       }
       return -1;
@@ -56573,7 +56574,7 @@ const TRICK_APP = (() => {
     const N = g.nine, by = on ^ 1; N.pts[by]++; N.said = (by === 0 ? 'you' : 'the computer') + ' scored';
     if (N.pts[by] >= HK_TO){ N.over = by === 0 ? 1 : 2;
       if (N.over === 1 && !g.auto){ N.stars = N.pts[1] === 0 ? 3 : N.pts[1] === 1 ? 2 : 1; const id = hkKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
-    else { hkFaceoff(g.balls, on); N.wait = N.t + 0.9; N.tg[0] = null; N.ai[0].T = N.ai[1].T = null; }
+    else { hkFaceoff(g.balls, on); N.wait = N.t + 0.9; if (!(DRAG && DRAG.rt && DRAG.g === g)) N.tg[0] = null; N.ai[0].T = N.ai[1].T = null; }   // (a finger still down keeps its place: the mallet comes back to it)
     if (!g.auto){ try { SOUND.pocket(); } catch {} touch(); }
   }
   // the played board, a frame of the page: as many of the table's frames as the time since the last (never more than six), the balls turned as they roll
