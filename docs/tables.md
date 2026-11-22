@@ -1130,3 +1130,35 @@ putted into it with the pool games' cue. Mini golf itself (`GOLF_APP`, its cours
   rolls over, a post turns the ball back, a wall stops it, sand shortens the roll, the engine's six pockets there after; a stroke counted and the
   ball left where it stopped; holed in two against a par of two, three stars, and in four, one; the steady player holes out and the recording
   sets par one over its strokes; the real Space putts.
+
+**Pool hockey, the engine in real time** (Nov 22: "You said real time games don't benefit from the pool engine?  Why, shv is real-time.", then
+"Proceed"). What had been said was wrong: the engine is a stepper (its `own` and `pairs` a tick, each pair of balls reading the other's h and v that
+tick and touching where they sum to one); only the pool games' use of it, a whole shot flown ahead and played back, is not real time. Pool golf
+had already run the two functions in a loop of its own. `POOLHOCKEY_APP`, id `poolhockey`, an entry of `MATCH` ('hockey', `rt: true`), runs them a
+frame at a time as it is played (`hkFrame` from `hkLive`, in `viewOf` where the other games' `nineTick` is).
+- **Air hockey was looked at first** (what "Proceed" was said to) and left as it is: its puck floats, with no roll and no cloth, where the engine's
+  ball is a rolling ball on cloth; and its computer, levels, par and recordings are fitted to its own puck. A new game where the rolling ball is
+  the point was built instead, said to the owner.
+- **The game**: the table with no pockets, a goal's mouth in each short cushion (`HK_GOAL`, 5.6 of the 10 across), a pool ball for the puck, and
+  two mallets, balls 0.85 in radius against 0.45: about seven times as heavy by the engine's own reckoning (the mass ratio is the sizes' cubed),
+  each kept to its own half. Your mallet goes where your finger is (`hkAim`, from `claimsPan`, `onPan` and a tap; play starts at the first touch);
+  it is set rolling at the speed that takes it there, capped at `HK_HAND`. The computer's (`hkAi`) goes behind the ball and through it toward your
+  goal when the ball is on its side, else home between the ball and its own goal, looking again every `HK_LAG` (0.34 to 0.08 s by level), at
+  `HK_V` (7 to 16), its aim off by `HK_ERR`. A ball through a mouth is a goal (read before the engine's cushion would turn it back); first to
+  `HK_TO` (3); stars by what the computer scored (none three, one two).
+- **The view** is over the whole table with your end, the head, the near one (`behindCue` and `wholeTable` for an `rt` game); no whole-table
+  button, no cue, no spin dial, nothing seen ahead.
+- **What a real-time game gives up**: the shot seen ahead and a planner flying shots forward. What it keeps: the ball's slide, roll and spin, the
+  cushions, ball on ball with spin passed on, the exact moment of contact.
+- **The table of games** took it with three more fields: `rt` (played as it is stepped: `liveView` shows no shot ahead, `shownOf` plays the
+  recording straight through), `recGen` (a recording of its own: `hkRecGen`, 16 seconds of the two computers), and a ball drawn at its own size
+  (`b.r`).
+- **Measured** (`hkAuto`, the level-3 computer at one end against a level at the other, twelve boards of two minutes each): the goals 5–0, 8–3,
+  3–3, 3–6, 5–39 for levels 1 to 5. Two computers seldom score on each other below level 5 (a goal in four minutes at level 3, the mouths at 4.6;
+  they were widened to 5.6 and the game shortened from 5 to 3 for it); a person at it has not been measured.
+- Not in it: pause (the app is not marked `realtime`, whose pause this does not answer to), two players, keys.
+- The smoke test (part 5): a mallet goes to its place and keeps to its half; driven through the ball it sends it on; a ball through a mouth
+  scores for the other side, at either end, and one beside the mouth comes off the cushion; the engine's six pockets there after; the two
+  computers at it stay on the table; a goal counted and the ball served to the side scored on, the third goal wins with three stars; a board
+  no one plays is a recording with no shot seen ahead; a real drag on your half, at the near end of the screen, starts play and takes your mallet
+  to the finger; the real Space shoots nothing.
