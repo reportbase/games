@@ -575,3 +575,9 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   says `const SND = ARCADE.sounds('snake.sound', '…', { gaps: { turn: 0.05, … }, quiet: () => QUIET })`, its menu `SND.item`, and
   its `beep` begins `const A = SND.gate(kind); if (!A) return;`; its tones stay its own. Pinball, the tanks, trick shots, air raid,
   Simon and Asteroids keep their own sounds (an engine of their own, or no gate). Checked: every game sounds, the items the same.
+
+**The menu and the whole-table button wear the dots' ring** (Nov 22: "The menu button and full board button should have same style as bottom option
+browser button."). The dots that open the bottom row are a dark see-through disc 44px across with a pale rim and a shadow; the menu's button and the
+pool games' low play pad (`#playPad.low`) are that disc now (white on it, the rim gold under the pointer and while lit), and the low pad stands level
+with the dots. An exception to "the buttons wear draw's look" (Nov 16), asked for: every other chip and pad keeps draw's plate. Measured in the
+page: the three are 44 × 44, round, the same fill, rim and width.

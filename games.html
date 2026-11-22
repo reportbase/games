@@ -270,7 +270,7 @@
   /* (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is
      visible.": an app with `playPadLow` has its pad at the foot of the screen, at the left, clear of the dots in the middle and the chips on the
      right, and it is gone while the bottom row is open) */
-  #playPad.low { right: auto; left: calc(min(32px, 5.25vw) + 10px); bottom: calc(var(--bb-bottom) + 10px); flex-direction: row; }
+  #playPad.low { right: auto; left: calc(min(32px, 5.25vw) + 10px); bottom: 5px; flex-direction: row; }   /* (level with the dots' ring) */
   body:not(.bb-collapsed) #playPad.low { display: none; }
   #bbQuick { position: absolute; top: 0; right: 10px; height: var(--bb-peek); display: flex; align-items: center; gap: 6px;
              z-index: 4; pointer-events: auto; }
@@ -966,6 +966,16 @@
   #playPad button:active { box-shadow: inset 0 2px 5px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .04); }
   #playPad button.on { border-color: var(--dgold); box-shadow: 0 0 0 1.5px var(--dgold), var(--dchip-shadow); color: var(--dgold); }
   #boardBrowser .bb-ico { border-radius: 12px; border-color: var(--dchip-line); box-shadow: var(--dchip-shadow); }
+  /* THE MENU AND THE WHOLE-TABLE BUTTON WEAR THE DOTS' RING (Nov 22: "The menu button and full board button should have same style as bottom option
+     browser button."): the three dots that open the bottom row are a dark see-through disc 44px across with a pale rim and a shadow (A RING ROUND
+     THEM); the menu's button at the top and the pool games' button at the foot were draw's solid plates. They are that disc now, white on it, the rim
+     gold under the pointer and while lit, so the three standing buttons on a board are one kind. The other chips and pads keep draw's look. */
+  body #menuBtn.chip, #playPad.low button { width: 44px; height: 44px; min-width: 0; padding: 0; border-radius: 50%; box-sizing: border-box; background: rgba(18, 21, 28, .55);
+    border: 1.5px solid rgba(255, 255, 255, .7); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); color: #fff; -webkit-backdrop-filter: none; backdrop-filter: none;
+    display: flex; align-items: center; justify-content: center; transition: border-color .12s ease; }
+  body #menuBtn.chip:hover, #playPad.low button:hover { background: rgba(18, 21, 28, .55); border-color: rgba(232, 200, 106, .95); }
+  body #menuBtn.chip[aria-pressed="true"], body #menuBtn.chip[aria-expanded="true"], #playPad.low button.on { background: rgba(18, 21, 28, .55); color: #fff !important; border-color: rgba(232, 200, 106, .95); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
+  #playPad.low button { font-size: 1.125rem; }
   #boardBrowser .bb-tile.active .bb-ico { border: 2px solid var(--dgold); box-shadow: 0 0 0 2px rgba(6, 8, 12, .92), 0 0 14px 2px rgba(212, 160, 82, .5), 0 8px 22px rgba(0, 0, 0, .6); }
   #gameIndex { z-index: 95; }
   /* ABOVE THE PANEL IT BELONGS TO. The track is a sibling in <body>, not a
