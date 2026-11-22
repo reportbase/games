@@ -1301,6 +1301,19 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const p = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(w.x)) * bW * (LB.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(w.z)) * bW * (LB.cellH || 1)).project(W.camera);
       const want = Math.atan2(-Math.cos(g.ang), -Math.sin(g.ang)) * 180 / Math.PI, off = ((W.st.yaw - want) % 360 + 540) % 360 - 180;
       return { pitch: W.st.pitch, off, lower: W.st.zoom < z0 * 0.5, x: (p.x + 1) / 2, y: (1 - p.y) / 2 }; });
+    // THE WHOLE TABLE AND BACK (Nov 22: "Proceed with 2 and 3", the second a play-pad button between the two views): the pad's real button tilts the view
+    // up over the whole table and the next press brings it back behind the white. And the levels' search (the third): level 5 looks at more shots than
+    // level 1, and a rack played out with no table drawn ends with a winner.
+    const pad = async () => { const b = await page.$('#playPad button'); if (!b) return false; const r = await b.boundingBox(); await page.mouse.click(r.x + r.width / 2, r.y + r.height / 2); await drawn(page, 400); await page.evaluate(() => window.__settle()); return true; };
+    const vw = () => page.evaluate(() => { const W = window.FIELD_WORLD; return { pitch: W.st.pitch, zoom: W.st.zoom, whole: window.getFieldApp()._debug.WHOLE }; });
+    const v0 = await vw(), p1 = await pad(), v1 = await vw(), p2 = await pad(), v2 = await vw();
+    const ai = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.GAMES.get(L.c + '_' + L.r), n = lv => { let k = 0; const it = D.ninePlanGen(g, lv); while (!it.next().done) k++; return k; };
+      const q = D.leaveQ(g.balls, D.lowOf(g.balls).n), r = D.nineAuto(7, 3, 3);
+      return { n1: n(1), n5: n(5), q, over: r.over, shots: r.shots }; });
+    const okW = p1 && p2 && !v0.whole && v1.whole && v1.pitch > 60 && v1.zoom > v0.zoom && !v2.whole && Math.abs(v2.pitch - 40) < 0.5 && Math.abs(v2.zoom - v0.zoom) < 0.05 * Math.max(1, v0.zoom)
+      && ai.n5 > ai.n1 && ai.q >= 0 && ai.q <= 1 && (ai.over === 1 || ai.over === 2) && ai.shots > 1;
+    if (!okW) failures.push('[pool whole table and the levels\' search] ' + JSON.stringify({ v0, v1, v2, ai }));
+    console.log(`${okW ? 'ok  ' : 'FAIL'} pool: the pad's button to the whole table (tilt ${v1.pitch}°) and back behind the white; the computer looks at ${ai.n1} shots at level 1 and ${ai.n5} at level 5, a rack played out in ${ai.shots} shots`);
     const okB = Math.abs(bh.pitch - 40) < 0.5 && Math.abs(bh.off) < 3 && bh.lower && Math.abs(bh.x - 0.5) < 0.1 && bh.y > 0.5 && bh.y < 1;
     if (!okB) failures.push('[pool behind the white] ' + JSON.stringify(bh));
     console.log(`${okB ? 'ok  ' : 'FAIL'} pool: behind the white, tilted ${bh.pitch}°, ${bh.off.toFixed(1)}° off the shot's line, low, the white at ${bh.x.toFixed(2)}, ${bh.y.toFixed(2)} of the screen`);

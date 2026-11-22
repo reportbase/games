@@ -902,4 +902,19 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   well."): `BEHIND_H` 0.42 of a table's length (0.2 for a day, which was the field's lowest) and `BEHIND_AHEAD` 3.2, so from behind the white the rack and
   the far pockets are in view. In 9-ball `nineTick` calls `behindCue` when the computer has planned its shot, so its aim is watched from behind the white
   as yours is. Probed: opened at zoom 18 (it was 0), and with the turn handed to the computer the view turned toward its aim.
+- **The whole table from the play pad, and a computer that plays position** (Nov 22: "What's your take on this pool game", then "Proceed with 2 and 3"):
+  - **The whole table** (`WHOLE`, `wholeTable`, `playActs`/`onPlayAct` in both pool games): one button on the play pad goes to the whole table from above
+    (the board framed at its default, tilted `WHOLE_PITCH` 68°, the table's long way up the screen from whichever end is nearer the way the view faced)
+    and back behind the white. While the whole table is up, shots do not pull the view back behind the white. It is behind the white again whenever a
+    game opens.
+  - **Position play** (`ninePlanGen`, `leaveQ`; the comment THE COMPUTER PLAYS POSITION): levels 1–2 take the first pot found at two powers; level 3 looks
+    at every pot among the four nearest pockets at four powers and keeps the one that leaves the best shot at the next ball; levels 4–5 try follow and
+    draw as well, and with no pot play the legal hit that leaves you least. The plan is a generator worked 10 ms a frame. Hands' error `NINE_ERR` is now
+    3.2°, 1.8°, 0.8°, 0.4°, 0.15° (the two easiest were 2.2° and 1.4°: measured, they did not differ).
+  - **Measured** (`nineAuto`, a rack played out with no table drawn; the steady player is the planner at level 3, the break alternating): the computer won
+    12 of 60 racks at level 1 and 18 of 60 at level 2 (after the wider errors), and 21, 26 and 32 of 40 at levels 3, 4 and 5 (before them, levels 1 and 2
+    were 15 and 11 of 40). A rack is 17 to 24 shots with about two fouls a side; a shot takes 5 to 60 ms to plan in the sandbox. Against a person it is
+    not measured: the steady player is the planner itself.
+  - Probed with real clicks on the pad's button (tilt 40° → 68° and back, the zoom back where it was) and the computer's turn on the page's frames. Part
+    5's new check ("the pad's button … the levels' search") was not run.
 
