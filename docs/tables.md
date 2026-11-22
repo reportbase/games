@@ -1200,3 +1200,24 @@ changed.
   apart by at most 7.8·10⁻¹³ (the other four starts under 10⁻¹⁴: the referee carries every held ball to the tick's frame and back each tick, the
   endless table only the ones read, a last digit's difference); the two wrote the same balls; the endless table handed the engine at most 4
   balls in a tick, with 29 to 66 reads a start, where the referee held 497. The engine's four cushions and six pockets were there after.
+- **What was built** (`ENDLESS_APP`, id `endless`, an entry of `MATCH` with `end: true`; THE ENDLESS TABLE in `games.html`):
+  - the rule, `endRule(E, i, j)`: a patch's two to four balls from its place alone; a board is a patch (`endWorld` reads a board's size in the
+    table's lengths from the field, 23.3 by 12.7 as it stands, and which way the table's x and z step among the boards; `endIJ`);
+  - the read, in `endTick`: for each moving ball, the balls of the nine patches about it that are within two radii and a tick's travel and ahead
+    of it (or touching it); those and the moving balls are all the engine's `own` and `pairs` are handed, sorted by name so the engine takes its
+    pairs in one order whoever holds the list, the pockets and cushions emptied for the call (`noWalls`);
+  - the writes, `E.wr`: a ball once struck, in its own patch's frame (`i`, `j`, `x`, `z`), with its motion, spin and how it has rolled; `E.by` is
+    which of them lie in a patch. A ball read and not struck stays the rule's;
+  - no frame for the whole: a tick is worked in the frame of the patch the shot began in (`E.anchor`);
+  - played with pool's cue (drag, spin dial, velocity bar, Space) from the board brought in, which takes the white if it lies more than a patch
+    off and nothing is moving (`endAdopt`); the shot runs as it is stepped (`endLive`); what is seen ahead is the white's way to the first ball
+    in its front half (`endLine`); the picture is cloth alone (`paint(S, true, true)`, `GRID_E`), no cushions drawn.
+  - The title says how many balls have been struck (all that is kept) and the most read in a tick.
+- **What it is not**: evidence. By wander's rules a simulation of our own against a referee is an illustration; what the runs show is that this
+  program's single view and its dual view agree on this cloth, and what each holds.
+- Not in it: a board no one plays playing itself (a patch nobody strikes lies as the rule made it: the rule for that, "a board no one plays
+  plays itself", is not kept here), the record kept between visits, levels, the far side of the field's own wrap.
+- The smoke test (part 5): a patch's balls the same each time, two to four, inside it, another patch's different; four aimed shots on the endless
+  table and for the referee of a 9 by 9 block: the same places to 10⁻⁹, the same balls written, more than the white, under 40 handed to the
+  engine where the referee hands over 100; the engine's four cushions and six pockets there after; the board brought in has the white on its
+  own patch, the cue, the white's way, and no cushion; the real Space sends the white rolling and it comes to rest elsewhere.

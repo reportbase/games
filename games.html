@@ -56781,7 +56781,7 @@ const TRICK_APP = (() => {
   }
   function endTitle(g){
     const E = EWORLD; if (!E) return 'The endless table';
-    return 'The endless table · ' + (E.moving.size ? E.moving.size + ' moving' : 'your shot') + ' · ' + (E.wr.size - 1) + ' balls struck so far, all that is kept'
+    return 'The endless table · ' + (E.moving.size ? E.moving.size + ' moving' : 'your shot') + ' · ' + (E.wr.size - 1) + (E.wr.size === 2 ? ' ball' : ' balls') + ' struck so far, all that is kept'
       + (E.best ? ' · most set moving by one shot ' + E.best : '') + (g.nine.said ? ' · ' + g.nine.said : '') + ' · the most read in a tick ' + E.maxB + ' · power ' + g.power + ', tip ' + spinName(g.tip);
   }
   const strKey = g => 's14:' + g.idx + '@' + g.lv;
