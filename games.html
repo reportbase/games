@@ -56056,7 +56056,55 @@ const TRICK_APP = (() => {
     }
     return out;
   }
+  /* A BOARD NO ONE PLAYS SHOWS A WHOLE RACK (Nov 22: "Can the auto play boards play complete games, not just the break"): in nine-ball a board no one is on
+     showed its break and nothing more. Now it shows the rack played out, the computer at the board's level against itself (`nineRecGen`: the break,
+     then each side's planned shot, the rules judging each, until the 9 goes down or `NINE_REC_SHOTS`), the shots laid end to end with a pause between
+     (`RUN_GAP`), the table in each pause as it stands for the next shot (the white back up after a scratch, placed when in hand, the 9 respotted).
+     A rack is twenty shots or so and each is planned, so it is made a little at a time (`nineRecSoon`: a generator a board, `NINE_REC_MS` a
+     frame for all of them together), the board showing its rack at rest until it is ready; kept at `NINE_REC_HZ` frames a second, the latest
+     `NINE_REC_CAP` boards (a rack is about a megabyte). The planner draws its hands' error at random, so a board's rack is another each visit. */
+  const RECS_N = new Map(), NREC = new Map(), NINE_REC_CAP = 30, NINE_REC_MS = 8, NINE_REC_HZ = 20, NINE_REC_SHOTS = 60;
+  let nrAt = 0, nrUsed = 0;
+  function* nineRecGen(idx){
+    const lv = levelAt(idx), B0 = rack9(idx), n = B0.length;
+    const g = { idx, lv, auto: true, balls: B0.map(b => ({ ...b })), potted: 0, shots: 0, ang: 0, power: 40, nine: { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 } };
+    const still = balls => { const f = new Array(2 * n), h = new Array(n).fill(0); balls.forEach((b, i) => { f[2 * i] = b.sunk ? NaN : b.x; f[2 * i + 1] = b.sunk ? NaN : b.z; }); return [f, h]; };
+    let plan = { a: 0.6 * D, p: 52, tip: [0, 0] }, out = null;
+    while (!g.nine.over && g.shots < NINE_REC_SHOTS){
+      const st = strikeOf(plan.a, plan.tip[0], plan.tip[1], plan.p, MU_TIP, 0), sm = simulate(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) break;
+      yield;
+      if (!out) out = { ...sm, frames: sm.frames.slice(), heights: sm.heights.slice(), contacts: sm.contacts.slice(), sunk: sm.sunk.slice(), cushions: sm.cushions.slice() };
+      else {
+        const [lf, lh] = still(g.balls); for (let k = 0; k < RUN_GAP * 60; k++){ out.frames.push(lf); out.heights.push(lh); }
+        const t0 = (out.frames.length - 1) / 60, sh = x => ({ ...x, t: x.t + t0 });
+        out.frames.push(...sm.frames.slice(1)); out.heights.push(...sm.heights.slice(1));
+        out.contacts.push(...sm.contacts.map(sh)); out.sunk.push(...sm.sunk.map(sh)); out.cushions.push(...sm.cushions.map(sh)); out.final = sm.final;
+      }
+      g.nine.hand = false; g.shots++; nineFinish(g, sm);
+      if (!g.nine.over) plan = yield* ninePlanGen(g, lv);
+    }
+    return { S: { ch: null, name: 'nine', B: B0, nine: true, lv }, s: out, shots: g.shots, over: g.nine.over };
+  }
+  function nineRecSoon(idx, force){
+    let R = RECS_N.get(idx); if (R){ RECS_N.delete(idx); RECS_N.set(idx, R); return R; }
+    const now = performance.now(); if (now - nrAt > 12){ nrAt = now; nrUsed = 0; }
+    if (!force && nrUsed >= NINE_REC_MS) return null;
+    let J = NREC.get(idx); if (!J){ J = { gen: nineRecGen(idx), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
+    J.at = now;
+    let step; const t0 = performance.now();
+    do { step = J.gen.next(); } while (!step.done && (force || performance.now() - t0 < NINE_REC_MS - nrUsed));
+    nrUsed += performance.now() - t0;
+    if (!step.done) return null;
+    NREC.delete(idx);
+    const d = step.value; if (!d.s) return null;
+    const s = thin(d.s, 60 / NINE_REC_HZ);
+    R = { idx, S: d.S, shot: { a: 0.6, p: 52, el: 0, tip: [0, 0] }, s, see: 3, play: (s.frames.length - 1) / s.hz, rots: rotsOf(s, d.S.B, idx), shots: d.shots, over: d.over };
+    R.cycle = AIM_T + R.play + HOLD_T;
+    RECS_N.set(idx, R); if (RECS_N.size > NINE_REC_CAP) RECS_N.delete(RECS_N.keys().next().value);
+    return R;
+  }
   function recSoon(idx, force){
+    if (NINE()) return nineRecSoon(idx, force);
     const own = NINE() ? null : MINE.get(idx), rk = NINE() ? 'n9:' + idx : own ? 'm' + idx + ':' + hashOf(own) : idx < CHALLENGES.length ? idx * 8 : pkey(idx, levelAt(idx));
     let R = RECS.get(rk); if (R){ RECS.delete(rk); RECS.set(rk, R); return R; }
     const t = performance.now(); if (!force && t - recAt < 30) return null;
@@ -56411,6 +56459,8 @@ const TRICK_APP = (() => {
     // (asked for every frame it is in view, so its job stays in the queue; the demo after it is made, one board in 30 ms)
     if (!NINE() && idx >= CHALLENGES.length && !MINE.has(idx) && !puzzleSoon(idx, levelAt(idx))) return making;
     const R = recSoon(idx);
+    // (nine-ball's rack still being played out for this board: the rack at rest meanwhile)
+    if (!R && NINE()){ const B = rack9(idx); return { B, pos: B.map(b => [b.x, b.z, 0]), ch: null, lv: levelAt(idx), rot: B.map(b => rotStart(idx, b.n)) }; }
     return R ? shownOf(R) : making;   // (its trick shot still being made: the bare table)
   }
 
@@ -57100,7 +57150,7 @@ const TRICK_APP = (() => {
   Object.assign(nineApp, {
     name: '9-ball',
     menu: [{ head: '9-ball', items: [
-      { label: DL.item.label, title: 'How steady the computer\'s hand is and how deep the shot is seen ahead; a step harder farther out.', on(){ DL.item.on(); GAMES_N.clear(); RECS.clear(); touch(); } },
+      { label: DL.item.label, title: 'How steady the computer\'s hand is and how deep the shot is seen ahead; a step harder farther out.', on(){ DL.item.on(); GAMES_N.clear(); RECS.clear(); RECS_N.clear(); NREC.clear(); touch(); } },
       SND.item,
       { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball.', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
       { label: 'Rack this board again', title: 'The nine racked, your break.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
@@ -57120,7 +57170,7 @@ const TRICK_APP = (() => {
       let k = 0; [1, 2, 3, 2, 1].forEach((n, row) => { for (let j = 0; j < n; j++){ ctx.fillStyle = cols[k++]; ctx.beginPath(); ctx.arc(sz * 0.58 + row * d * 0.9, sz * 0.5 + (j - (n - 1) / 2) * d, d * 0.48, 0, 7); ctx.fill(); } });
       ctx.fillStyle = '#f2f0ea'; ctx.beginPath(); ctx.arc(sz * 0.26, sz * 0.5, d * 0.5, 0, 7); ctx.fill();
     },
-    _debug: Object.assign(Object.create(app._debug), { GAMES: GAMES_N, rack9, lowOf, ninePlan, ninePlanGen, nineAuto, leaveQ, nineTick, nineFinish, NINE_ERR, NINE_SEE }),
+    _debug: Object.assign(Object.create(app._debug), { GAMES: GAMES_N, rack9, lowOf, RECS_N, nineRecSoon, ninePlan, ninePlanGen, nineAuto, leaveQ, nineTick, nineFinish, NINE_ERR, NINE_SEE }),
   });
   app.nine = nineApp;
   return app;

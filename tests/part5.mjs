@@ -1314,6 +1314,14 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       && ai.n5 > ai.n1 && ai.q >= 0 && ai.q <= 1 && (ai.over === 1 || ai.over === 2) && ai.shots > 1;
     if (!okW) failures.push('[pool whole table and the levels\' search] ' + JSON.stringify({ v0, v1, v2, ai }));
     console.log(`${okW ? 'ok  ' : 'FAIL'} pool: the pad's button to the whole table (tilt ${v1.pitch}°) and back behind the white; the computer looks at ${ai.n1} shots at level 1 and ${ai.n5} at level 5, a rack played out in ${ai.shots} shots`);
+    // A BOARD NO ONE PLAYS SHOWS A WHOLE RACK (Nov 22: "Can the auto play boards play complete games, not just the break"): its recording runs many shots
+    // to the 9 going down, and what the board shows moves on through it
+    const rec = await page.evaluate(async () => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true), i9 = R.S.B.findIndex(b => b.n === 9), last = R.s.frames[R.s.frames.length - 1];
+      const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
+      return { shots: R.shots, over: R.over, play: R.play, nineDown: isNaN(last[2 * i9]), moves: at(0) !== at(0.5) && at(0.5) !== at(1), again: D.nineRecSoon(40) === R }; });
+    const okR = rec.shots >= 3 && (rec.over === 1 || rec.over === 2) && rec.nineDown && rec.play > 15 && rec.moves && rec.again;
+    if (!okR) failures.push('[nineball a board no one plays] ' + JSON.stringify(rec));
+    console.log(`${okR ? 'ok  ' : 'FAIL'} nine-ball: a board no one plays shows a whole rack (${rec.shots} shots, ${rec.play.toFixed(0)} s, the 9 down)`);
     const okB = Math.abs(bh.pitch - 40) < 0.5 && Math.abs(bh.off) < 3 && bh.lower && Math.abs(bh.x - 0.5) < 0.1 && bh.y > 0.5 && bh.y < 1;
     if (!okB) failures.push('[pool behind the white] ' + JSON.stringify(bh));
     console.log(`${okB ? 'ok  ' : 'FAIL'} pool: behind the white, tilted ${bh.pitch}°, ${bh.off.toFixed(1)}° off the shot's line, low, the white at ${bh.x.toFixed(2)}, ${bh.y.toFixed(2)} of the screen`);
