@@ -270,7 +270,7 @@
   /* (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is
      visible.": an app with `playPadLow` has its pad at the foot of the screen, at the left, clear of the dots in the middle and the chips on the
      right, and it is gone while the bottom row is open) */
-  #playPad.low { right: auto; left: calc(min(32px, 5.25vw) + 10px); bottom: 5px; flex-direction: row; }   /* (level with the dots' ring) */
+  #playPad.low { right: auto; left: 16px; bottom: 16px; flex-direction: row; }   /* (Nov 22: "Put the full board button in lower left corner with the same margins as the upper right button.": the menu's button stands 16px from the top and the right) */
   body:not(.bb-collapsed) #playPad.low { display: none; }
   #bbQuick { position: absolute; top: 0; right: 10px; height: var(--bb-peek); display: flex; align-items: center; gap: 6px;
              z-index: 4; pointer-events: auto; }
