@@ -432,7 +432,8 @@ try {
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
         return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, w); };
       const showMe = () => page.evaluate(() => window.getFieldApp().menu[0].items.find(i => i.label === 'Show me the trick').on());
-      const play = async () => { const p = await whiteAt(); await page.mouse.click(p.x, p.y); for (let k = 0; k < 40 && (await rs()).anim; k++) await frame(page, 250); await frame(page, 300); };
+      // (the real Space shoots: a click on the white did until Nov 22, when a tap on it came to show the spin inset and then to do nothing)
+      const play = async () => { await page.keyboard.press('Space'); await drawn(page, 300); for (let k = 0; k < 40 && (await rs()).anim; k++) await frame(page, 250); await frame(page, 300); };
       out.start = await rs();
       // a miss first: the cue turned away from every ball, softly
       await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.GAMES.get(c + '_' + r), w = g.balls.find(b => b.cue);
@@ -1373,7 +1374,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const sc = (h, r) => { const x = D.carScore(shot(h, r)); return x.ok + ':' + x.rails; };
       out.rule = [sc([[1, 1], [5, 3]], [2, 3, 4]), sc([[1, 1], [5, 3]], [2, 3]), sc([[4, 3], [5, 1]], [1, 2, 3]), sc([[1, 1]], [2, 3, 4]), sc([], [1, 2, 3]), sc([[1, 1], [2, 1], [6, 3]], [3, 4, 5, 5.01])].join(' ');
       const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
-      out.start = [g.balls.length, g.nine.car, g.nine.turn, g.nine.pts.join('-')].join();
+      out.start = [g.balls.length, g.nine.kind === 'carom', g.nine.turn, g.nine.pts.join('-')].join();
       const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
       const play = (h, hits, rails) => { const s = { ...shot(hits, rails), final: h.balls.map(b => ({ ...b })) }; h.anim = { s }; D.carFinish(h, s); return h; };
       let h = play(fresh(), [[1, 1], [5, 3]], [2, 3, 4]); out.point = [h.nine.turn, h.nine.pts.join('-'), h.nine.over].join();
@@ -1407,7 +1408,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.rack = [B.length, B.slice(1).map(b => b.n).sort((a, b) => a - b).join('') === '123456789101112131415', B[5].n === 8 && B[5].z === 0, (back[0].n < 8) !== (back[4].n < 8), nums(B) === nums(B2), nums(B) !== nums(B3)].join();
       out.apart = D.GAMES !== N9.GAMES && A.name === '8-ball' && A.id === 'eightball';
       const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
-      out.start = [g.balls.length, g.nine.eight, g.nine.turn, g.nine.grp.join('|'), D.eightOn(g, 0).length].join();
+      out.start = [g.balls.length, g.nine.kind === 'eight', g.nine.turn, g.nine.grp.join('|'), D.eightOn(g, 0).length].join();
       const fresh = () => { D.GAMES.delete(k); const h = D.gameAt(L.c, L.r); h.shots = 5; return h; };   // (past the break)
       const play = (h, first, sunk) => { const s = { first: first == null ? null : { n: first }, sunk: sunk.map((n, i) => ({ n, pocket: 0, t: 1 + i })), contacts: [],
         final: h.balls.map(b => ({ ...b, sunk: b.sunk || sunk.includes(b.n) })) }; h.anim = { s }; D.eightFinish(h, s); return h; };
@@ -1448,7 +1449,7 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       out.rack = [B.length, B.slice(1).map(b => b.n).sort((a, b) => a - b).join('') === '123456789101112131415', nums(B) === nums(B2), nums(B) !== nums(B3)].join();
       out.apart = D.GAMES !== N9.GAMES && A.name === 'Straight pool' && A.id === 'straightpool';
       const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
-      out.start = [g.balls.length, g.nine.str, g.nine.turn, g.nine.pts.join('-')].join();
+      out.start = [g.balls.length, g.nine.kind === 'straight', g.nine.turn, g.nine.pts.join('-')].join();
       const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
       const play = (h, first, sunk) => { const s = { first: first == null ? null : { n: first }, sunk: sunk.map((n, i) => ({ n, pocket: 0, t: 1 + i })), contacts: [],
         final: h.balls.map(b => ({ ...b, sunk: b.sunk || sunk.includes(b.n) })) }; h.anim = { s }; D.strFinish(h, s); return h; };
