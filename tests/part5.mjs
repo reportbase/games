@@ -1599,6 +1599,59 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} pool golf: a board's green the same each time and more on it by level (${pg && pg.levels}), a gentle putt drops and a hard one rolls over, a post turns the ball back, a wall stops it, sand slows it, strokes counted and stars against par, the steady player holes out and sets par, the real Space putts`);
   }
 
+  // POOL HOCKEY (Nov 22: "You said real time games don't benefit from the pool engine?  Why, shv is real-time.", then "Proceed"): the pool engine
+  // stepped a frame at a time. Two mallets, each on its own half, and a ball between; a frame moves a mallet toward its place, a mallet driven
+  // through the ball sends it on (the heavier mallet hardly slowed), a ball through a goal's mouth scores for the other side and one beside the
+  // mouth comes off the cushion; the engine's pockets are as they were; the two computers at it stay on the table; a real drag on your half starts
+  // play and moves your mallet; the board no one plays is a recording played straight through; a tap on a finished game starts it again.
+  {
+    current = 'poolhockey';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'poolhockey')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const hk = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.app = A.name === 'Pool hockey' && A.id === 'poolhockey' && D.MATCH.hockey.app === A && D.MATCH.hockey.rt === true && A.cellGrid() === D.GRID_C;
+      const B0 = D.rackH(7); out.rack = [B0.length, B0[0].r === D.HK_MAL, B0[1].r < B0[0].r, B0[0].x < 0 && B0[2].x > 0].join();
+      const run = (B, T0, T1, frames) => { const N = D.hkNew(); let on = -1; for (let f = 0; f < frames && on < 0; f++){ N.t += 1 / 60; on = D.hkFrame(B, N, T0, T1, [26, 26], null); } return on; };
+      // a mallet goes to its place and stays on its half
+      let B = D.rackH(7); run(B, [-3, 2], null, 90); out.moves = [Math.abs(B[0].x + 3) < 0.05, Math.abs(B[0].z - 2) < 0.05].join();
+      B = D.rackH(7); run(B, [4, 0], null, 120); out.half = B[0].x <= -D.HK_MAL + 1e-6;
+      // driven through the ball: the ball goes on ahead of it, faster than the mallet was moved
+      B = D.rackH(7); Object.assign(B[1], { x: -4, z: 0 }); Object.assign(B[0], { x: -7, z: 0 }); run(B, [-2, 0], null, 20); out.hit = [B[1].x > -3, B[1].vx > 0, D.POCKETS.length].join();
+      // through the mouth, and beside it
+      B = D.rackH(7); Object.assign(B[1], { x: 6, z: 0, vx: 20, vz: 0 }); Object.assign(B[2], { x: 8, z: 4 }); out.goal = run(B, null, [8, 4], 60);
+      B = D.rackH(7); Object.assign(B[1], { x: -6, z: 0.5, vx: -20, vz: 0 }); Object.assign(B[0], { x: -8, z: -4 }); out.own = run(B, [-8, -4], null, 60);
+      B = D.rackH(7); Object.assign(B[1], { x: 6, z: 4.2, vx: 20, vz: 0 }); Object.assign(B[2], { x: 8, z: -4 }); const off = run(B, null, [8, -4], 60); out.rail = [off, B[1].vx < 0].join();
+      // the two computers at it: the ball and the mallets on the table throughout
+      const a = D.hkAuto(7, 3, 3, 30); out.auto = [a.pts.every(v => v >= 0), Math.abs(a.puck[0]) <= D.LX / 2 && Math.abs(a.puck[1]) <= D.LZ / 2].join();
+      // the game: a goal counted, the third wins
+      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
+      out.start = [g.nine.kind, g.nine.rt, g.nine.started, g.nine.pts.join('-'), D.WHOLE].join();
+      D.hkGoal(g, 1); out.scored = [g.nine.pts.join('-'), g.nine.over, g.balls[1].x, g.balls[1].vx > 0].join();
+      D.hkGoal(g, 1); D.hkGoal(g, 1); out.won = [g.nine.pts.join('-'), g.nine.over, g.nine.stars].join();
+      out.title = /^Pool hockey — level \d · ★★★ you won, tap to play again · you 3, the computer 0 \(to 3\)/.test(D.titleOf(g));
+      D.GAMES.delete(k); D.gameAt(L.c, L.r);
+      const R = D.nineRecSoon(9, true), V = R && D.shownOf(R); out.rec = [!!R, R && R.S.kind, V && !V.sim && !V.cue && V.pos.length === 3].join();
+      return out;
+    });
+    // a real drag on your half: play starts and your mallet goes to the finger
+    const hp = await page.evaluate(() => { const D = window.getFieldApp()._debug, W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB;
+      const P = (x, z) => { const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera); return [(pv.x + 1) / 2 * innerWidth, (1 - pv.y) / 2 * innerHeight]; };
+      return { a: P(-7.6, 0), b: P(-4, 2.5), near: P(-7.6, 0)[1] > P(7.6, 0)[1] }; });
+    const gH = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { started: g.nine.started, t: g.nine.t, m: [g.balls[0].x, g.balls[0].z], tg: g.nine.tg[0], shots: g.shots } : null; });
+    await page.mouse.move(hp.a[0], hp.a[1]); await page.mouse.down(); await page.mouse.move(hp.b[0], hp.b[1], { steps: 6 });
+    // (the finger's place on the table is read through the view, a little off the place aimed for here: the mallet is held to where the game took the finger to be)
+    const there = d => d && d.tg && Math.hypot(d.m[0] - d.tg[0], d.m[1] - d.tg[1]) < 0.3 && d.tg[0] > -6.5;
+    for (let k = 0; k < 60 && !there(await gH()); k++) await frame(page, 250);
+    const dragged = await gH(); await page.mouse.up();
+    await page.keyboard.press('Space'); await drawn(page, 300); const spaced = await gH();
+    const ok = hk && !hk.none && hk.app && hk.rack === '3,true,true,true' && hk.moves === 'true,true' && hk.half && hk.hit === 'true,true,6' && hk.goal === 1 && hk.own === 0 && hk.rail === '-1,true' && hk.auto === 'true,true'
+      && hk.start === 'hockey,true,false,0-0,true' && hk.scored === '1-0,0,0,true' && hk.won === '3-0,1,3' && hk.title && hk.rec === 'true,hockey,true'
+      && hp.near && dragged.started && dragged.t > 0 && there(dragged) && Math.abs(dragged.tg[0] + 4) < 1.5 && Math.abs(dragged.tg[1] - 2.5) < 1.5 && spaced.shots === 0;
+    if (!ok) failures.push('[poolhockey] ' + JSON.stringify({ hk, hp, dragged, spaced }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} pool hockey: the engine stepped a frame at a time (a mallet goes to its place and keeps its half, driven through the ball it sends it on, a ball through a mouth scores and one beside it comes off the cushion), the two computers at it stay on the table, a goal counted and the third wins, a real drag starts play and moves your mallet at the near end, a board no one plays is a recording with no shot seen ahead`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
