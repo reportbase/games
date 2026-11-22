@@ -1518,6 +1518,33 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} one-pocket: the two pockets ringed, a ball in your pocket scores and keeps the turn, one in a pocket no one owns comes back, one the computer sends to your pocket is yours, a foul takes a point and gives the white in hand, the eighth point wins, the computer plans a shot, a game played out has a winner, the real Space breaks`);
   }
 
+  // THE SHOT SEEN AS FAR AS THE AIM REACHES (Nov 22: "Can we apply these ideas to any game currently implemented", then "Proceed"): in the match games
+  // and free play a ball's way is in sight while the aim can still say where it is. On an open table of three balls in a line the aim of level 5
+  // (1°) sees the first contact, 0.3° the second, 0.1° the third; three balls touching cost nothing, all three contacts in sight even at 1°; the
+  // doubt grows along a run; a challenge keeps its count of contacts; and the dots drawn thin toward where the sight ends.
+  {
+    current = 'nineball';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'nineball')));
+    await drawn(page, 1200);
+    const as = await page.evaluate(() => { const D = window.getFieldApp()._debug, B = D.rack9(3), mk = (n, x, z) => ({ ...B.find(b => b.n === n), x, z }), out = {};
+      const fly = T => { const st = D.strikeOf(0, 0, 0, 30); return D.simulate(T, st.dir, st.speed, st.w, st.vy); };
+      const open3 = fly([mk(0, -8, 0), mk(1, -2, 0), mk(2, 4, 0.2), mk(3, 9, 0.6)]), near = fly([mk(0, -8, 0), mk(1, -6.9, 0), mk(2, -5.9, 0.05), mk(3, -4.9, 0.1)]);
+      const seen = (s, see) => { const t = D.aimSight(s, see); return s.contacts.filter(c => t.inSight(c)).length; };
+      out.open = [open3.contacts.length, seen(open3, 1), seen(open3, 2), seen(open3, 3)].join();
+      out.near = [near.contacts.length, seen(near, 1)].join();
+      const t3 = D.aimSight(open3, 3), k1 = Math.round(open3.contacts[1].t * 60); out.fade = t3.fade(1, k1) > t3.fade(1, Math.round(open3.contacts[0].t * 60) + 2) && t3.fade(1, k1) <= 1;
+      out.cut = D.aimSight(open3, 1).cut(1) < D.aimSight(open3, 3).cut(1);
+      const a = D.sightFor(open3, {}, 2), b = D.sightOf(open3, 2), c = D.sightFor(open3, null, 2); out.kept = a.cut(2) === b.cut(2) && !a.fade && !!c.fade;
+      out.zero = D.aimSight(open3, 0).cut(1) === D.sightOf(open3, 0).cut(1);
+      // drawn: the dots of a live game's preview are not all one size where the sight ends in the shot
+      const V = { B: open3.final.map(b => ({ ...b })), pos: [], ch: null, sim: open3, hz: 60, see: 2, paths: 'all' }, items = []; D.pathItems(items, V);
+      const sizes = new Set(items.filter(i => i.kind === 'tsDot').map(i => i.scale.toFixed(5))); out.thin = sizes.size > 3;
+      return out; });
+    const okA = as.open === '3,1,2,3' && as.near === '3,3' && as.fade && as.cut && as.kept && as.zero && as.thin;
+    if (!okA) failures.push('[pool the aim\'s sight] ' + JSON.stringify(as));
+    console.log(`${okA ? 'ok  ' : 'FAIL'} pool: the shot seen as far as the aim reaches (three balls in a line: ${as.open} contacts in sight at 1°, 0.3°, 0.1°; three touching: all at 1°; a challenge keeps its count)`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

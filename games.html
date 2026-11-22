@@ -56854,8 +56854,45 @@ const TRICK_APP = (() => {
     return out;
   })();
   const CUSHIONS_C = [[-LX / 2, -LZ / 2 - CUSH_W, LX / 2, -LZ / 2], [-LX / 2, LZ / 2, LX / 2, LZ / 2 + CUSH_W], [-LX / 2 - CUSH_W, -LZ / 2 - CUSH_W, -LX / 2, LZ / 2 + CUSH_W], [LX / 2, -LZ / 2 - CUSH_W, LX / 2 + CUSH_W, LZ / 2 + CUSH_W]];   // (three-cushion's: no pockets to leave open)
+  /* THE SHOT IS SEEN AS FAR AS THE AIM REACHES (Nov 22: "What does the read write paper say about the pool game", "Can we apply these ideas to any
+     game currently implemented", then "Proceed", to a preview that fades where the aim runs out). Until now a ball's way was shown while it was at
+     most `see` contacts from the white (`sightOf`), the same count whatever the shot. wander's *Reads and Writes* (§9, from POL runs 8–9) has what
+     that count stood for: a contact multiplies an error in the aim by s/(2r·cos φ), s the run before it and φ the cut, so a long run into a thin
+     cut spends several binary digits of the aim and a nudge inside a cluster spends none. `aimSight(s, see)` follows the shot itself:
+     - the white leaves with an aim good to `SEE_EPS[see]` (0.1° where three contacts used to be seen, 0.3° for two, 1° for one);
+     - a ball's place is in doubt by its direction's error times how far it has run since its last contact; where that passes a ball's radius (the
+       paper's half a pocket) its way is out of sight from there, and so is every ball it goes on to meet;
+     - at a contact the two balls leave with the doubt they came in with and, added to it, the doubt in where they met over 2r·cos φ.
+     So the dots stop where a player's aim can no longer say what happens, sooner after a long run and later in a cluster, and they thin toward
+     that place (`fade`). It is the rule for the match games and free play. A challenge keeps the count it was made and solved with (`sightFor`):
+     its par and its "past sight" were set by it, and `see` 0 is still the white to the first ball alone. Worked out once a shot (`SIGHTS`). */
+  const SEE_EPS = [0, 1, 0.3, 0.1, 0.03], SIGHTS = new WeakMap();
+  function aimSight(s, see){
+    if (!(see > 0)) return sightOf(s, 0);
+    let per = SIGHTS.get(s); if (!per){ per = {}; SIGHTS.set(s, per); } if (per[see]) return per[see];
+    const fr = s.frames, hz = s.hz || 60, K = fr.length - 1, idx = {}; s.final.forEach((b, i) => { idx[b.n] = i; });
+    const kOf = t => Math.max(0, Math.min(K, Math.round(t * hz))), at = (n, k) => [fr[k][2 * idx[n]], fr[k][2 * idx[n] + 1]];
+    const err = { 0: SEE_EPS[Math.min(4, see)] * D }, from = { 0: 0 }, cut = {}, doubt = {};   // err: a ball's direction, in doubt by this (rad); from: the frame of its last contact
+    // a ball's run from frame k0 to k1: its doubt a frame (as a share of R), and its way cut where the doubt passes 1; the doubt at the end comes back
+    const run = (n, k0, k1) => { const e = err[n]; if (e == null) return 0; const u = doubt[n] || (doubt[n] = new Float32Array(K + 1)); let len = 0, p = at(n, k0);
+      for (let k = k0 + 1; k <= k1; k++){ const q = at(n, k); if (isNaN(q[0])) break; len += Math.hypot(q[0] - p[0], q[1] - p[1]); p = q; const d = e * len / R; u[k] = Math.min(1, d);
+        if (d > 1 && cut[n] == null) cut[n] = k / hz; }
+      return e * len; };
+    for (const c of s.contacts){
+      const k = kOf(c.t), ma = run(c.a, from[c.a] ?? 0, k), mb = run(c.b, from[c.b] ?? 0, k);
+      const lost = (cut[c.a] != null && cut[c.a] <= c.t) || (cut[c.b] != null && cut[c.b] <= c.t);
+      const pa = at(c.a, k), pb = at(c.b, k), k0 = Math.max(0, k - 1), qa = at(c.a, k0), qb = at(c.b, k0);
+      const nx = pb[0] - pa[0], nz = pb[1] - pa[1], nl = Math.hypot(nx, nz) || 1, vx = (pa[0] - qa[0]) - (pb[0] - qb[0]), vz = (pa[1] - qa[1]) - (pb[1] - qb[1]), vl = Math.hypot(vx, vz);
+      const cos = vl > 1e-9 ? Math.max(0.15, Math.abs(vx * nx + vz * nz) / (vl * nl)) : 1, e2 = lost ? Infinity : Math.max(err[c.a] || 0, err[c.b] || 0) + (ma + mb) / (2 * R * cos);   // (what the balls came in with is kept: in a cluster, with no run, nothing is gained or spent)
+      for (const n of [c.a, c.b]){ err[n] = e2; from[n] = k; if (lost && cut[n] == null) cut[n] = c.t; }
+    }
+    for (const n in err) run(+n, from[n] ?? 0, K);
+    const out = { cut: n => cut[n] ?? Infinity, inSight: c => (cut[c.a] ?? Infinity) >= c.t && (cut[c.b] ?? Infinity) >= c.t, fade: (n, k) => { const u = doubt[n]; return u ? u[Math.min(K, k)] : 0; } };
+    per[see] = out; return out;
+  }
+  const sightFor = (s, ch, see) => ch ? sightOf(s, see) : aimSight(s, see);
   function pathItems(out, V){
-    const s = V.sim, fr = s.frames, sight = sightOf(s, V.see), hz = V.hz; let dots = 0;
+    const s = V.sim, fr = s.frames, sight = sightFor(s, V.ch, V.see), hz = V.hz; let dots = 0;
     V.B.forEach((b, i) => {
       if (b.sunk || (V.paths === 'cue' && !b.cue)) return;
       const kEnd = Math.min(fr.length - 1, Math.ceil(sight.cut(b.n) * hz)), col = b.cue ? 0xf2f0ea : b.n === 8 ? 0x9a9aa6 : hexOf(b.col);
@@ -56864,7 +56901,7 @@ const TRICK_APP = (() => {
         const x = fr[k][2 * i], z = fr[k][2 * i + 1]; if (isNaN(x)) break;
         let d = Math.hypot(x - px, z - pz); if (d > 0) moved = true;
         while (acc + d >= DOT_GAP && dots < DOT_MAX){ const f = (DOT_GAP - acc) / d; px += (x - px) * f; pz += (z - pz) * f; d = Math.hypot(x - px, z - pz); acc = 0;
-          out.push({ kind: 'tsDot', u: Ub(px), v: Vb(pz), scale: Sb(b.cue ? 0.15 : 0.13), color: col }); dots++; }
+          out.push({ kind: 'tsDot', u: Ub(px), v: Vb(pz), scale: Sb((b.cue ? 0.15 : 0.13) * (sight.fade ? 1 - 0.6 * sight.fade(b.n, k) : 1)), color: col }); dots++; }   // (thinner as the aim runs out)
         acc += d; px = x; pz = z;
       }
       if (!moved) return;
@@ -57052,7 +57089,7 @@ const TRICK_APP = (() => {
                  : 'Trick shots — free play (' + g.name + ') · potted ' + g.potted + ' of ' + g.total + ' · shot ' + g.shots + ' · ' + set;
     const sim = !g.anim && SET.paths !== 'off' ? g.sim : null;
     if (sim){
-      const f = sim.first, sight = sightOf(sim, g.see), seen = sim.sunk.filter(p => p.t <= sight.cut(p.n));
+      const f = sim.first, sight = sightFor(sim, g.ch, g.see), seen = sim.sunk.filter(p => p.t <= sight.cut(p.n));
       const pots = seen.filter(p => p.n !== 0 && p.pocket >= 0).map(p => p.n), scratch = seen.some(p => p.n === 0), hidden = sim.contacts.filter(c => !sight.inSight(c)).length;
       s += ' · ' + (f ? 'first: the ' + f.n + (f.rails ? ' after ' + f.rails + ' cushion' + (f.rails > 1 ? 's' : '') : '') + ', ' + frac(f.overlap) + ' hit (cut ' + f.cut.toFixed(0) + '°)' : 'no ball reached')
         + ' · ' + (pots.length ? 'pots ' + pots.join(', ') : hidden ? 'no pot in sight' : 'pots none') + (scratch ? ' · the white goes in' : '') + (hidden ? ' · ' + hidden + ' contact' + (hidden > 1 ? 's' : '') + ' past sight' : '');
@@ -57553,7 +57590,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, aimSight, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
   };
   SHARE.install(app, takeShot);
   /* THE MATCH GAMES' APPS (THE POOL GAMES, ONE TABLE, above): each is this app's own hooks with its entry's name, menu, titles and picture.
