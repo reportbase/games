@@ -56014,6 +56014,7 @@ const TRICK_APP = (() => {
      jump and the massé from wander's layouts, or fifteen balls scattered by the board's own number (LAYOUTS.scatter). */
   const FREE = ['rack', 'line', 'jump', 'masse', 'scatter', 'scatter', 'scatter', 'scatter'];
   function setupOf(idx, free, urgent){
+    if (EIGHT()){ const lv = levelAt(idx); return { ch: null, name: 'eight', B: rack8(idx), L: { ang: 0, power: 40, elev: 0 }, nine: true, eight: true, lv }; }
     if (CAR()){ const lv = levelAt(idx), B = rackC(idx); return { ch: null, name: 'carom', B, L: { ang: carAim(B), power: 22, elev: 0 }, nine: true, car: true, lv }; }
     if (NINE()){ const lv = levelAt(idx); return { ch: null, name: 'nine', B: rack9(idx), L: { ang: 0, power: 40, elev: 0 }, nine: true, lv }; }
     if (free){ const name = FREE[idx % FREE.length], L = LAYOUTS[name](name === 'scatter' ? 1000 + idx : undefined); return { ch: null, name, B: L.B, L, free: true }; }
@@ -56081,9 +56082,9 @@ const TRICK_APP = (() => {
      `NINE_REC_CAP` boards (a rack is about a megabyte). The planner draws its hands' error at random, so a board's rack is another each visit. */
   const RECS_N = new Map(), NREC = new Map(), NINE_REC_CAP = 30, NINE_REC_MS = 8, NINE_REC_HZ = 20, NINE_REC_SHOTS = 60;
   let nrAt = 0, nrUsed = 0;
-  function* nineRecGen(idx, car){   // (car: three-cushion's game, the computer against itself from the first shot)
-    const lv = levelAt(idx), B0 = car ? rackC(idx) : rack9(idx), n = B0.length;
-    const g = { idx, lv, auto: true, balls: B0.map(b => ({ ...b })), potted: 0, shots: 0, ang: 0, power: 40, nine: car ? carNew() : { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 } };
+  function* nineRecGen(idx, car, eight){   // (eight: eight-ball's rack)   // (car: three-cushion's game, the computer against itself from the first shot)
+    const lv = levelAt(idx), B0 = car ? rackC(idx) : eight ? rack8(idx) : rack9(idx), n = B0.length;
+    const g = { idx, lv, auto: true, balls: B0.map(b => ({ ...b })), potted: 0, shots: 0, ang: 0, power: 40, nine: car ? carNew() : eight ? eightNew() : { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 } };
     const still = balls => { const f = new Array(2 * n), h = new Array(n).fill(0); balls.forEach((b, i) => { f[2 * i] = b.sunk ? NaN : b.x; f[2 * i + 1] = b.sunk ? NaN : b.z; }); return [f, h]; };
     let plan = car ? yield* carPlanGen(g, lv) : { a: 0.6 * D, p: 52, tip: [0, 0] }, out = null; const first = plan;
     while (!g.nine.over && g.shots < (car ? CAR_REC_SHOTS : NINE_REC_SHOTS)){
@@ -56096,17 +56097,17 @@ const TRICK_APP = (() => {
         out.frames.push(...sm.frames.slice(1)); out.heights.push(...sm.heights.slice(1));
         out.contacts.push(...sm.contacts.map(sh)); out.sunk.push(...sm.sunk.map(sh)); out.cushions.push(...sm.cushions.map(sh)); out.final = sm.final;
       }
-      g.nine.hand = false; g.shots++; if (car) carFinish(g, sm); else nineFinish(g, sm);
-      if (!g.nine.over) plan = car ? yield* carPlanGen(g, lv) : yield* ninePlanGen(g, lv);
+      g.nine.hand = false; g.shots++; if (car) carFinish(g, sm); else if (eight) eightFinish(g, sm); else nineFinish(g, sm);
+      if (!g.nine.over) plan = car ? yield* carPlanGen(g, lv) : eight ? yield* eightPlanGen(g, lv) : yield* ninePlanGen(g, lv);
     }
-    return { S: { ch: null, name: car ? 'carom' : 'nine', B: B0, nine: true, car: !!car, lv }, s: out, shots: g.shots, over: g.nine.over, first };
+    return { S: { ch: null, name: car ? 'carom' : eight ? 'eight' : 'nine', B: B0, nine: true, car: !!car, eight: !!eight, lv }, s: out, shots: g.shots, over: g.nine.over, first };
   }
   function nineRecSoon(idx0, force){
-    const car = CAR(), idx = car ? 'c' + idx0 : idx0;      // (three-cushion's are kept beside nine-ball's, under their own keys)
+    const car = CAR(), eight = EIGHT(), idx = car ? 'c' + idx0 : eight ? 'e' + idx0 : idx0;      // (three-cushion's are kept beside nine-ball's, under their own keys)
     let R = RECS_N.get(idx); if (R){ RECS_N.delete(idx); RECS_N.set(idx, R); return R; }
     const now = performance.now(); if (now - nrAt > 12){ nrAt = now; nrUsed = 0; }
     if (!force && nrUsed >= NINE_REC_MS) return null;
-    let J = NREC.get(idx); if (!J){ J = { gen: nineRecGen(idx0, car), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
+    let J = NREC.get(idx); if (!J){ J = { gen: nineRecGen(idx0, car, eight), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
     J.at = now;
     let step; const t0 = performance.now();
     do { step = J.gen.next(); } while (!step.done && (force || performance.now() - t0 < NINE_REC_MS - nrUsed));
@@ -56193,10 +56194,131 @@ const TRICK_APP = (() => {
        plays the middle of the widest run of headings that score (the shot its hand is likeliest to bring off), looked at again more finely from
        level 3; then its hand's error, `CAR_ERR` by level. With nothing that scores it plays at the nearer ball.
      - A board no one plays shows a game played out, the computer against itself (`nineRecGen(idx, true)`). */
-  let nineApp = null, carApp = null;
+  /* EIGHT-BALL, ON THE SAME ENGINE (Nov 22: "Which pool game is next?", then "Proceed", to the recommendation of 8-ball). A fourth app, `eightApp`
+     (id `eightball`), made as nine-ball's is and riding its ways: the game carries `g.nine` with `eight: true` and the groups (`grp`, a side's
+     's' for the solids 1–7 or 't' for the stripes 9–15, null while the table is open), `NINE()` is true for it and `EIGHT()` asks which.
+     - THE RACK (`rack8`): fifteen in five rows, the 8 in the middle of the third, a solid and a stripe at the back corners, the rest where the
+       board's own number puts them.
+     - THE RULES (`eightFinish`): the ball met first must be one that is on (`eightOn`: with the table open any but the 8; then one of your group;
+       your group down, the 8). Met wrong, nothing met, or the white down: a foul, the other side's shot with the white in hand. The first ball
+       potted on a fair shot gives its group to the side that potted it. A ball of your group down on a fair shot keeps the turn; nothing of yours
+       down passes it. The 8 down wins if it was on and the shot fair, and loses otherwise; on the break it goes back on its spot.
+     - THE COMPUTER (`eightPlanGen`): as nine-ball's, over every ball that is on: the pots that look best where the balls lie (`eightCands`, the
+       cut, the two distances, both lines clear), a level's count of them, flown at the level's powers and tips; from level 3 the pot that leaves
+       the best shot at another ball of its own; its hand's error nine-ball's (`NINE_ERR`).
+     - A board no one plays shows a rack played out, the computer against itself (`nineRecGen(idx, false, true)`). */
+  let nineApp = null, carApp = null, eightApp = null;
   const CAR = () => { try { return !!carApp && window.getFieldApp() === carApp; } catch { return false; } };
-  const NINE = () => { try { const A = window.getFieldApp(); return (!!nineApp && A === nineApp) || (!!carApp && A === carApp); } catch { return false; } };
-  const GAMES_T = new Map(), GAMES_N = new Map(), GAMES_C = new Map(), GM = () => CAR() ? GAMES_C : NINE() ? GAMES_N : GAMES_T;
+  const EIGHT = () => { try { return !!eightApp && window.getFieldApp() === eightApp; } catch { return false; } };
+  const NINE = () => { try { const A = window.getFieldApp(); return (!!nineApp && A === nineApp) || (!!carApp && A === carApp) || (!!eightApp && A === eightApp); } catch { return false; } };
+  const GAMES_T = new Map(), GAMES_N = new Map(), GAMES_C = new Map(), GAMES_E = new Map(), GM = () => CAR() ? GAMES_C : EIGHT() ? GAMES_E : NINE() ? GAMES_N : GAMES_T;
+  const EIGHT_N = [2, 3, 4, 5, 6], grpOf = n => n === 8 ? 8 : n < 8 ? 's' : 't', GRP_NAME = { s: 'solids', t: 'stripes' };
+  function rack8(idx){
+    const rnd = rng(idx * 7919 + 8), sol = [1, 2, 3, 4, 5, 6, 7], str = [9, 10, 11, 12, 13, 14, 15], mix = a => { for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    mix(sol); mix(str); const c0 = sol.pop(), c1 = str.pop(), rest = mix(sol.concat(str)), flip = rnd() < 0.5;
+    const B = [ballOf(0, ...HEAD)], sp = 2 * R + 0.02; let k = 0;
+    for (let row = 0; row < 5; row++) for (let j = 0; j <= row; j++){
+      const n = row === 2 && j === 1 ? 8 : row === 4 && j === 0 ? (flip ? c0 : c1) : row === 4 && j === 4 ? (flip ? c1 : c0) : rest[k++];
+      B.push(ballOf(n, LX / 4 + row * sp * 0.866, (j - row / 2) * sp)); }
+    return B;
+  }
+  const eightNew = () => ({ eight: true, turn: 0, hand: false, fouls: [0, 0], grp: [null, null], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  const eightKey = g => 'e8:' + g.idx + '@' + g.lv;
+  // the balls that may be met first by the side whose turn it is
+  function eightOn(g, turn){
+    const live = g.balls.filter(b => !b.cue && !b.sunk), G = g.nine.grp[turn];
+    const pool = G ? live.filter(b => grpOf(b.n) === G) : live.filter(b => b.n !== 8);
+    return pool.length ? pool : live.filter(b => b.n === 8);
+  }
+  function eightFinish(g, s){
+    const N = g.nine, t = N.turn, on = eightOn(g, t).map(b => b.n), on8 = on.length === 1 && on[0] === 8, first = s.first ? s.first.n : null, out = whiteOut(s), brk = g.shots <= 1;
+    const pots = s.sunk.filter(p => p.n !== 0 && p.pocket >= 0).sort((a, b) => a.t - b.t).map(p => p.n), foul = !!out || first == null || !on.includes(first);
+    g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 })); g.potted += pots.length; respot(g.balls);
+    const who = t === 0 ? 'you' : 'the computer';
+    if (pots.includes(8) && brk){   // the 8 on the break goes back on its spot (or the nearest free place behind it)
+      const e = g.balls.find(b => b.n === 8); e.sunk = false; e.off = false; e.y = 0; e.x = FOOT9[0]; e.z = 0;
+      for (let k = 0; k < 40; k++){ const x = FOOT9[0] + k * 0.3; if (free(g.balls, x, 0, e)){ e.x = x; break; } }
+      g.potted--;
+    } else if (pots.includes(8)){
+      const won = !foul && on8; N.over = (t === 0) === won ? 1 : 2;
+      N.said = who + ' potted the 8' + (won ? '' : foul ? ' on a foul and lost' : ' too soon and lost');
+      if (N.over === 1 && won && !g.auto){ N.stars = N.fouls[0] === 0 ? 3 : N.fouls[0] <= 2 ? 2 : 1; const id = eightKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
+    }
+    if (!N.over){
+      const objs = pots.filter(n => n !== 8);
+      if (!N.grp[t] && !foul && objs.length){ N.grp[t] = grpOf(objs[0]); N.grp[t ^ 1] = N.grp[t] === 's' ? 't' : 's'; }
+      if (foul){ N.fouls[t]++; N.said = who + ' fouled: ' + (out || (first == null ? 'no ball was met' : 'the ' + first + ' was met first')) + '; ball in hand'; N.turn ^= 1; N.hand = true; }
+      else if (objs.some(n => grpOf(n) === N.grp[t])) N.said = who + ' potted the ' + objs.join(', ');
+      else { N.said = who + (objs.length ? ' potted only the other side\'s' : ' missed'); N.turn ^= 1; }
+      if (N.turn === 0){ const w = g.balls.find(b => b.cue && !b.sunk), o = w && eightOn(g, 0).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0]; if (o) g.ang = Math.atan2(o.z - w.z, o.x - w.x); }
+    }
+    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
+  }
+  // every pot the white has at the balls that are on, best first: the aim (at the ghost ball) and how good it looks, as `leaveQ` weighs one
+  function eightCands(balls, on){
+    const w = balls.find(b => b.cue && !b.sunk), out = []; if (!w) return out;
+    for (const t of on) for (const P of POCKETS){
+      const d = Math.hypot(P[0] - t.x, P[1] - t.z), ux = (t.x - P[0]) / d, uz = (t.z - P[1]) / d, gx = t.x + ux * 2 * R, gz = t.z + uz * 2 * R, dx = gx - w.x, dz = gz - w.z, dw = Math.hypot(dx, dz);
+      if (dw < 1e-6) continue;
+      const cut = (dx * -ux + dz * -uz) / dw; if (cut < 0.26) continue;
+      const a = Math.atan2(dz, dx), st = firstStop(balls, w, a); if (!st.ball || st.ball.n !== t.n) continue;
+      let clear = true;
+      for (const o of balls){ if (o.sunk || o.cue || o === t) continue; const ax = o.x - t.x, az = o.z - t.z, al = ax * -ux + az * -uz; if (al > 0 && al < d && Math.abs(ax * -uz - az * -ux) < 2 * R){ clear = false; break; } }
+      if (clear) out.push({ n: t.n, a, q: cut / (1 + dw / 12) / (1 + d / 14) });
+    }
+    return out.sort((x, y) => y.q - x.q);
+  }
+  function* eightPlanGen(g, lvIn){
+    const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), N = g.nine, t = N.turn, w = g.balls.find(b => b.cue && !b.sunk), on = eightOn(g, t);
+    if (!w || !on.length) return { a: g.ang, p: 16, tip: [0, 0], score: -1 };
+    const onN = on.map(b => b.n), on8 = onN.length === 1 && onN[0] === 8, G = N.grp[t];
+    if (N.hand){   // the white in hand: behind the ball that is on nearest a pocket, on its line to that pocket, where there is room
+      const pairs = []; for (const b of on) for (const P of POCKETS) pairs.push({ b, P, d: Math.hypot(P[0] - b.x, P[1] - b.z) });
+      place: for (const { b, P, d } of pairs.sort((x, y) => x.d - y.d)){ const ux = (b.x - P[0]) / d, uz = (b.z - P[1]) / d;
+        for (const back of [4, 3, 2.2]){ const x = b.x + ux * back, z = b.z + uz * back;
+          if (Math.abs(x) <= XL && Math.abs(z) <= ZL && free(g.balls, x, z, w)){ const ox = w.x, oz = w.z; w.x = x; w.z = z; if (eightCands(g.balls, [b]).length) break place; w.x = ox; w.z = oz; } } }
+    }
+    const mid = lv >= 3, deep = lv >= 4, powers = mid ? [12, 18, 26, 34] : [16, 28], tips = deep ? [[0, 0], [0, 0.4], [0, -0.45]] : [[0, 0]];
+    let best = null;
+    const tryShot = (a, p, tip) => { const st = strikeOf(a, tip[0], tip[1], p, MU_TIP, 0), sm = simulate(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) return;
+      const legal = sm.first && onN.includes(sm.first.n) && !whiteOut(sm), pots = sm.sunk.filter(q => q.n !== 0 && q.pocket >= 0).sort((x, y) => x.t - y.t).map(q => q.n), objs = pots.filter(n => n !== 8);
+      const grp = G || (objs.length ? grpOf(objs[0]) : null);
+      let score;
+      if (pots.includes(8)) score = legal && on8 ? 10 : -5;
+      else if (!legal) score = -1;
+      else if (objs.some(n => grpOf(n) === grp)){ score = 2;
+        if (mid){ const left = sm.final.filter(b => !b.cue && !b.sunk && grpOf(b.n) === grp), next = left.length ? left : sm.final.filter(b => b.n === 8 && !b.sunk); let q = 0; for (const b of next) q = Math.max(q, leaveQ(sm.final, b.n)); score += 3 * q; } }
+      else score = 0.6 - 0.01 * sm.contacts.length;
+      if (!best || score > best.score) best = { a, p, tip, score }; };
+    search: for (const c of eightCands(g.balls, on).slice(0, EIGHT_N[lv - 1]))
+      for (const p of powers) for (const tip of tips){ tryShot(c.a, p, tip); yield; if (best && (best.score >= 10 || (!mid && best.score >= 2))) break search; }
+    if (!best || best.score < 2){   // no pot: a fair hit on the nearest ball that is on
+      const o = on.slice().sort((x, y) => Math.hypot(x.x - w.x, x.z - w.z) - Math.hypot(y.x - w.x, y.z - w.z))[0], a0 = Math.atan2(o.z - w.z, o.x - w.x);
+      for (const p of deep ? [8, 14, 22] : [16]){ tryShot(a0, p, [0, 0]); yield; }
+      if (!best) best = { a: a0, p: 16, tip: [0, 0], score: -1 };
+    }
+    const u1 = Math.random() || 1e-9, u2 = Math.random(), gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return { a: best.a + gauss * NINE_ERR[lv - 1] * D, p: best.p, tip: best.tip, score: best.score };
+  }
+  function eightPlan(g, lv){ const it = eightPlanGen(g, lv); let r; do { r = it.next(); } while (!r.done); return r.value; }
+  function eightAuto(idx, lvA, lvB, maxShots = 200){   // a whole rack with no table drawn, the planner at lvA breaking against the planner at lvB
+    const g = { idx, lv: lvA, auto: true, balls: rack8(idx), potted: 0, shots: 0, ang: 0, power: 40, nine: eightNew() };
+    let plan = { a: 0.6 * D, p: 52, tip: [0, 0] };
+    while (!g.nine.over && g.shots < maxShots){
+      const st = strikeOf(plan.a, plan.tip[0], plan.tip[1], plan.p, MU_TIP, 0), sm = simulate(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) break;
+      g.nine.hand = false; g.shots++; eightFinish(g, sm);
+      if (!g.nine.over) plan = eightPlan(g, g.nine.turn === 0 ? lvA : lvB);
+    }
+    return { over: g.nine.over, shots: g.shots, fouls: g.nine.fouls.slice(), grp: g.nine.grp.slice(), said: g.nine.said };
+  }
+  function eightTitle(g){
+    const N = g.nine, b = BEST[eightKey(g)], left = k => N.grp[k] ? GRP_NAME[N.grp[k]] + ', ' + g.balls.filter(x => !x.cue && !x.sunk && grpOf(x.n) === N.grp[k]).length + ' left' : 'open';
+    const on = N.over ? [] : eightOn(g, N.turn), on8 = on.length === 1 && on[0].n === 8;
+    return '8-ball — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won the rack' : 'the computer won the rack') + ', tap to rack again'
+      : N.turn === 0 ? 'your shot' + (N.hand ? ', ball in hand: drag the white where you like' : '') : 'the computer\'s shot')
+      + (N.over ? '' : on8 ? ' · the 8 is on' : N.grp[N.turn] ? ' · the ' + GRP_NAME[N.grp[N.turn]] + ' are on' : ' · the table is open')
+      + ' · you: ' + left(0) + ' · the computer: ' + left(1) + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
   const noPock = f => { const P = POCKETS.splice(0); try { return f(); } finally { POCKETS.push(...P); } };
   const simC = (...a) => noPock(() => simulate(...a)), simM = (...a) => CAR() ? simC(...a) : simulate(...a);
   const CAR_TO = 3, CAR_SEE = [1, 1, 1, 1, 0], CAR_ERR = [2.4, 1.6, 1.0, 0.7, 0.45], CAR_ANG = [48, 72, 96, 120, 144], CAR_REC_SHOTS = 30;
@@ -56376,7 +56498,7 @@ const TRICK_APP = (() => {
     if (!N.plan){
       if (!N.thinkAt){ N.thinkAt = now; return; } if (now - N.thinkAt < 700) return;
       // (a few shots flown ahead a frame, 10 ms of them, so the page goes on while it thinks)
-      if (!N.gen) N.gen = N.car ? carPlanGen(g) : ninePlanGen(g);
+      if (!N.gen) N.gen = N.car ? carPlanGen(g) : N.eight ? eightPlanGen(g) : ninePlanGen(g);
       const t0 = performance.now(); let step; do { step = N.gen.next(); } while (!step.done && performance.now() - t0 < 10);
       if (!step.done) return;
       N.gen = null; N.plan = step.value; g.ang = N.plan.a; setPower(g, N.plan.p); setTip(g, N.plan.tip[0], N.plan.tip[1]); g.elev = 0; g.dirty = true; N.planAt = now; touch();
@@ -56433,12 +56555,13 @@ const TRICK_APP = (() => {
                 see: S.ch ? S.ch.see : 3, tries: 0, solvedIn: 0, lastWhy: null, potted: 0, shots: 0, history: [], anim: null, sim: null, dirty: true,
                 rot: S.B.map(b => rotStart(idx, b.n)), stage: 0 };
     g.rot0 = g.rot.slice();
-    if (S.car){ g.nine = carNew(); g.see = CAR_SEE[Math.max(0, Math.min(4, g.lv - 1))]; }
+    if (S.eight){ g.nine = eightNew(); g.see = NINE_SEE[Math.max(0, Math.min(4, g.lv - 1))]; }
+    else if (S.car){ g.nine = carNew(); g.see = CAR_SEE[Math.max(0, Math.min(4, g.lv - 1))]; }
     else if (S.nine){ g.nine = { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 }; g.see = NINE_SEE[Math.max(0, Math.min(4, g.lv - 1))]; }
     GAMES.set(gkey(c, r), g); return g;
   }
   const gameAt = (c, r) => GAMES.get(gkey(c, r)) || fresh(c, r);
-  const liveGame = BOARD_KIT.liveGame(() => CAR() ? carApp : NINE() ? nineApp : app, () => LIVE, gameAt);
+  const liveGame = BOARD_KIT.liveGame(() => CAR() ? carApp : EIGHT() ? eightApp : NINE() ? nineApp : app, () => LIVE, gameAt);
   // the stars a challenge solved earns: on par or under three, within two more two, else one (Oct 22, "1,2,5")
   const starsOf = (tries, par) => !tries ? 0 : tries <= par ? 3 : tries <= par + 2 ? 2 : 1;
   const starStr = n => BOARD_KIT.stars(n);
@@ -56457,7 +56580,7 @@ const TRICK_APP = (() => {
   }
   function finish(g){
     const s = g.anim.s;
-    if (g.nine) return g.nine.car ? carFinish(g, s) : nineFinish(g, s);
+    if (g.nine) return g.nine.car ? carFinish(g, s) : g.nine.eight ? eightFinish(g, s) : nineFinish(g, s);
     if (g.ch && g.ch.kind === 'run'){   // a run-out (A RUN-OUT, above): a shot that pots carries the table on; a miss starts the run again
       const why = g.ch.goal(s, g.ch) || null, n = g.ch.shotsN || g.start.length - 1;
       if (why){ g.tries++; g.lastWhy = why; g.stage = 0; g.balls = g.start.map(b => ({ ...b })); g.rot = g.rot0.slice();
@@ -56564,7 +56687,7 @@ const TRICK_APP = (() => {
     if (!NINE() && idx >= CHALLENGES.length && !MINE.has(idx) && !puzzleSoon(idx, levelAt(idx))) return making;
     const R = recSoon(idx);
     // (nine-ball's rack still being played out for this board: the rack at rest meanwhile)
-    if (!R && NINE()){ const B = CAR() ? rackC(idx) : rack9(idx); return { B, pos: B.map(b => [b.x, b.z, 0]), ch: null, lv: levelAt(idx), rot: B.map(b => rotStart(idx, b.n)) }; }
+    if (!R && NINE()){ const B = CAR() ? rackC(idx) : EIGHT() ? rack8(idx) : rack9(idx); return { B, pos: B.map(b => [b.x, b.z, 0]), ch: null, lv: levelAt(idx), rot: B.map(b => rotStart(idx, b.n)) }; }
     return R ? shownOf(R) : making;   // (its trick shot still being made: the bare table)
   }
 
@@ -56769,7 +56892,7 @@ const TRICK_APP = (() => {
   const frac = o => { const named = [[1, 'full'], [0.75, '¾'], [0.5, '½'], [0.25, '¼']].find(([v]) => Math.abs(o - v) < 0.03); return named ? (named[1] === 'full' ? 'full-ball' : named[1] + '-ball') : o.toFixed(2) + ' ball'; };
   const degOf = a => { const x = (((a / D) % 360) + 360) % 360; return x.toFixed(2); };
   function titleOf(g){
-    if (g.nine) return g.nine.car ? carTitle(g) : nineTitle(g);
+    if (g.nine) return g.nine.car ? carTitle(g) : g.nine.eight ? eightTitle(g) : nineTitle(g);
     const ci = g.ch ? CHALLENGES.indexOf(g.ch) : -1, best = g.ch ? BEST[g.ch.id] : 0, stH = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D);
     const set = 'cue ' + degOf(g.ang) + '°' + (g.elev ? ', raised ' + g.elev + '°' : '') + ' · ' + (g.chalk ? 'chalked' : 'bare') + ' tip ' + spinName(g.tip)
       + (!g.chalk ? (stH.turn ? ', the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '') : !stH.grip ? ', miscue: the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '')
@@ -57339,10 +57462,38 @@ const TRICK_APP = (() => {
     _debug: Object.assign(Object.create(app._debug), { GAMES: GAMES_C, rackC, carScore, carFinish, carPlan, carPlanGen, carAuto, carTitle, simC, RECS_N, nineRecSoon, nineTick, CAR_TO, CAR_ERR, CAR_SEE, GRID_C, CUSHIONS_C }),
   });
   app.carom = carApp;
+  // EIGHT-BALL'S APP (EIGHT-BALL, ON THE SAME ENGINE, above): nine-ball's hooks, with its own name, menu, titles and picture
+  eightApp = Object.defineProperties({}, Object.getOwnPropertyDescriptors(nineApp));
+  Object.assign(eightApp, {
+    name: '8-ball',
+    menu: [{ head: '8-ball', items: [
+      { label: DL.item.label, title: 'How steady the computer\'s hand is, how many pots it looks at and how deep the shot is seen ahead; a step harder farther out.', on(){ DL.item.on(); GAMES_E.clear(); RECS_N.clear(); NREC.clear(); touch(); } },
+      SND.item,
+      { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball.', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
+      { label: 'Rack this board again', title: 'The fifteen racked, your break.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+    ]}],
+    cellTitle(c, r){
+      const g = GAMES.get(gkey(c, r)); if (g) return titleOf(g);
+      const idx = boardIdx(c, r), lv = levelAt(idx), b = BEST['e8:' + idx + '@' + lv];
+      return '8-ball — level ' + lv + (b ? ', best ' + starStr(b) : '') + ' · pot your group, solids or stripes, then the 8';
+    },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#4a2c18'; ctx.fillRect(0, sz * 0.2, sz, sz * 0.6);
+      ctx.fillStyle = '#16513f'; ctx.fillRect(sz * 0.06, sz * 0.26, sz * 0.88, sz * 0.48);
+      ctx.fillStyle = '#060608'; for (const [x, y] of [[0.06, 0.26], [0.5, 0.25], [0.94, 0.26], [0.06, 0.74], [0.5, 0.75], [0.94, 0.74]]){ ctx.beginPath(); ctx.arc(x * sz, y * sz, sz * 0.05, 0, 7); ctx.fill(); }
+      ctx.fillStyle = '#111111'; ctx.beginPath(); ctx.arc(sz * 0.62, sz * 0.5, sz * 0.11, 0, 7); ctx.fill();
+      ctx.fillStyle = '#f2f0ea'; ctx.beginPath(); ctx.arc(sz * 0.62, sz * 0.5, sz * 0.055, 0, 7); ctx.fill();
+      ctx.fillStyle = '#111111'; ctx.font = 'bold ' + Math.round(sz * 0.085) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('8', sz * 0.62, sz * 0.505);
+      ctx.fillStyle = '#f2f0ea'; ctx.beginPath(); ctx.arc(sz * 0.26, sz * 0.5, sz * 0.045, 0, 7); ctx.fill();
+    },
+    _debug: Object.assign(Object.create(app._debug), { GAMES: GAMES_E, rack8, eightOn, eightFinish, eightCands, eightPlan, eightPlanGen, eightAuto, eightTitle, grpOf, RECS_N, nineRecSoon, nineTick, leaveQ, NINE_ERR, NINE_SEE }),
+  });
+  app.eight = eightApp;
   return app;
 })();
 const NINEBALL_APP = TRICK_APP.nine;   // (9-ball against the computer, on trick shots' engine and table, Nov 22)
 const CAROM_APP = TRICK_APP.carom;    // (three-cushion billiards against the computer, on the same engine, Nov 22)
+const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the same engine, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -65733,7 +65884,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, CAROM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, CAROM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -65742,7 +65893,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [CAROM_APP, 'threecushion'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [CAROM_APP, 'threecushion'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

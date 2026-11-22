@@ -978,3 +978,23 @@ click on the cloth puts the inset away with the aim and the shot count unmoved; 
 row open and back with it shut.
 The inset is also put away by any tap anywhere on the screen, read on the window (`ctlEnsure`'s `tapFrom`): in the smoke test's own sequence the
 field did not hand the table that tap, and the inset stayed up; `_debug.ateIn` and the check's `tapDbg` are what that was read with.
+
+**8-ball** (Nov 22: "Which pool game is next?", then "Proceed", to the recommendation of 8-ball). `EIGHTBALL_APP`, id `eightball`, made inside
+`TRICK_APP` as `eightApp`, as nine-ball's is (EIGHT-BALL, ON THE SAME ENGINE): the game carries `g.nine` with `eight: true` and `grp` (a side's 's'
+for the solids 1–7, 't' for the stripes 9–15, null while the table is open); `NINE()` is true for it and `EIGHT()` asks which (`GAMES_E`,
+`eightFinish`, `eightPlanGen`, `eightTitle`, `nineRecGen(idx, false, true)` for a board no one plays, its recordings in `RECS_N` under `'e' + idx`).
+- **The rack** (`rack8`): fifteen in five rows, the 8 in the middle of the third, a solid and a stripe at the back corners, the rest by the board's
+  own number.
+- **The rules** (`eightFinish`): the ball met first must be on (`eightOn`: the table open, any but the 8; then one of your group; your group down,
+  the 8); met wrong, nothing met or the white down is a foul, the other side in hand. The first ball potted on a fair shot gives its group (on the
+  break too). A ball of your group down on a fair shot keeps the turn. The 8 down wins if it was on and the shot fair, loses otherwise, and on the
+  break goes back on its spot. Not in it: calling the pocket, and the break's own fouls.
+- **The computer** (`eightPlanGen`): the pots that look best over every ball that is on (`eightCands`), 2, 3, 4, 5, 6 of them by level
+  (`EIGHT_N`), at nine-ball's powers, tips and hand (`NINE_ERR`); from level 3 the pot that leaves the best shot at another of its own; a shot that
+  would put the 8 down out of turn is the last it would choose. In hand it puts the white behind a ball that is on, on its line to a pocket.
+- **Measured** (`eightAuto`, 40 racks a level against the level-3 planner, the break alternating): levels 1 to 5 won 15%, 35%, 60%, 70% and 80%.
+  Three to nine racks in forty ended with the 8 down out of turn or on a foul (the hand's error; a fair hit played with nothing to pot).
+- The smoke test (part 5): the rack; games apart from nine-ball's; on shots made up, a solid down on an open table gives you the solids and keeps
+  the turn, nothing down passes it, the computer meeting a solid first is a foul with you in hand, the 8 down with solids still up loses, the solids
+  down and then the 8 wins with three stars, the 8 on the break is back on the table; the computer plans a shot; a rack played out with no table
+  drawn has a winner and groups; the real Space breaks.

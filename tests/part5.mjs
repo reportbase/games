@@ -1393,6 +1393,47 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} three-cushion: three balls, no pockets (a ball sent into a corner stays up), a point for both balls off three cushions before the second, a point keeps the turn, a miss passes it, the third point wins, the computer plans a shot, the real Space shoots`);
   }
 
+  // EIGHT-BALL (Nov 22: "Which pool game is next?", then "Proceed"): a fourth app on trick shots' engine. Fifteen racked with the 8 in the middle and a
+  // solid and a stripe at the back corners, the same on a board each time; the first ball potted on a fair shot gives its group; a ball of your group
+  // down keeps the turn, a miss passes it, the wrong ball met first is a foul with the white in hand; the 8 down wins when it was on and loses when it
+  // was not, and goes back on the break; the computer plans a shot at a ball that is on; a rack played out ends with a winner; the real Space breaks.
+  {
+    current = 'eightball';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'eightball')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const e8 = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, N9 = window.FIELD_APPS.find(a => a.id === 'nineball')._debug, out = {};
+      const B = D.rack8(7), B2 = D.rack8(7), B3 = D.rack8(8), nums = b => b.map(x => x.n).join(','), back = B.slice(11).sort((a, b) => a.z - b.z);
+      out.rack = [B.length, B.slice(1).map(b => b.n).sort((a, b) => a - b).join('') === '123456789101112131415', B[5].n === 8 && B[5].z === 0, (back[0].n < 8) !== (back[4].n < 8), nums(B) === nums(B2), nums(B) !== nums(B3)].join();
+      out.apart = D.GAMES !== N9.GAMES && A.name === '8-ball' && A.id === 'eightball';
+      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
+      out.start = [g.balls.length, g.nine.eight, g.nine.turn, g.nine.grp.join('|'), D.eightOn(g, 0).length].join();
+      const fresh = () => { D.GAMES.delete(k); const h = D.gameAt(L.c, L.r); h.shots = 5; return h; };   // (past the break)
+      const play = (h, first, sunk) => { const s = { first: first == null ? null : { n: first }, sunk: sunk.map((n, i) => ({ n, pocket: 0, t: 1 + i })), contacts: [],
+        final: h.balls.map(b => ({ ...b, sunk: b.sunk || sunk.includes(b.n) })) }; h.anim = { s }; D.eightFinish(h, s); return h; };
+      const st = h => [h.nine.turn, h.nine.hand, h.nine.grp.join('|'), h.nine.over].join();
+      let h = play(fresh(), 3, [3]); out.takes = st(h);                                  // a solid down on an open table: the solids are yours, your turn still
+      h = play(h, 4, []); out.miss = st(h);                                              // nothing down: the computer's shot
+      h = play(h, 2, []); out.wrong = st(h) + ',' + h.nine.fouls.join('/');              // the computer meets a solid first: a foul, you in hand
+      h = play(fresh(), 3, [3]); h = play(h, 5, [8]); out.early = st(h);                 // the 8 with solids still up: lost
+      h = fresh(); h.nine.grp = ['s', 't']; h.balls.forEach(b => { if (b.n >= 1 && b.n <= 7) b.sunk = true; }); out.on8 = D.eightOn(h, 0).map(b => b.n).join();
+      h = play(h, 8, [8]); out.win = st(h) + ',' + h.nine.stars;                         // the solids down, then the 8: the rack
+      h = fresh(); h.shots = 1; h = play(h, 1, [8]); out.brk = [h.nine.over, !h.balls.find(b => b.n === 8).sunk].join();   // the 8 on the break: back on its spot
+      h = fresh(); h.nine.grp = ['s', 't']; h.nine.turn = 1; const P = D.eightPlan(h, 3); out.plan = isFinite(P.a) && P.p >= 8;
+      out.title = /^8-ball — level \d · the computer's shot · the stripes are on · you: solids, 7 left · the computer: stripes, 7 left/.test(D.titleOf(h));
+      const r = D.eightAuto(7, 3, 3); out.auto = (r.over === 1 || r.over === 2) && r.shots > 2 && !!r.grp[0];
+      fresh().shots = 0;
+      return out;
+    });
+    const g8 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim } : null; });
+    await page.keyboard.press('Space'); await drawn(page, 300);
+    const broke8 = await g8();
+    const ok = e8 && !e8.none && e8.rack === '16,true,true,true,true,true' && e8.apart && e8.start === '16,true,0,|,14' && e8.takes === '0,false,s|t,0' && e8.miss === '1,false,s|t,0'
+      && e8.wrong === '0,true,s|t,0,0/1' && e8.early === '0,false,s|t,2' && e8.on8 === '8' && e8.win === '0,false,s|t,1,3' && e8.brk === '0,true' && e8.plan && e8.title && e8.auto && broke8 && broke8.shots === 1;
+    if (!ok) failures.push('[eightball] ' + JSON.stringify({ e8, broke8 }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} eight-ball: the rack (${e8 && e8.rack}), the first pot gives its group, a pot of yours keeps the turn, a miss passes it, the wrong ball first is a foul with the white in hand, the 8 wins when it is on and loses when it is not, the computer plans a shot, a rack played out has a winner, the real Space breaks`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
