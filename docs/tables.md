@@ -744,6 +744,14 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     press's screen place as a third argument and trick shots takes a press off its board too, so a drag begun anywhere moves the cue (two fingers, the
     wheel, the rails and the keys still move the view; a tap on another board still selects it). Probed: opens at 90° with the table upright, a drag
     begun on another board turned the cue, a click selected a board, the wheel stopped at zoom 500, the tilt at 40°.
+  - **The spin inset on a tap of the white, the velocity bar on a hold and a pull** (Nov 22: "If tap the cue ball, show the touch spin icon over the cue
+    ball.  Long press and pull show the velocity bar."): both stood at the right of the screen whenever a table was played. The inset (`#tsCtl`, `#tsTip`)
+    is hidden until the white is tapped and then lies over the white (`CTL.spin`, placed each frame by `ballScreen`); the white tapped again, a tap
+    elsewhere, a drag or a shot puts it away. The bar (`#tsPull`, now an element of its own) shows when a press is held still `HOLD_MS` (450) and stands
+    by the finger; the pull's length from the press (`PULL_PX` 200 the whole of it) is the power, and letting go shoots (`pullStart`, `pullMove`,
+    `pullEnd`, from `claimsPan`'s timer and `onPan`); let go unpulled, nothing is shot. **A tap on the white no longer shoots**: the bar, the row's
+    Shoot, Space and Enter do. The controls show at any board size (`CTL_PX` no longer gates them: the upright table measured under it). Probed with real
+    input; part 5's check is rewritten for it (the click on the white, the inset over it, the held press, the pull, the shot) and was not run.
   - **Playing** (`fresh`, `shoot`, `finish`, `undo`: the page's): drag on the table to aim (`claimsPan`, `keepsPress`), tap a point
     to aim at it, tap the white, Shoot or Space/Enter to shoot; a tap while it plays jumps to its end; in free play a drag that
     starts on a ball moves it. The row (`tilesOf`, `onTile`): Shoot, Aim ◀ ▶ (0.1°), Power − +, Spin (`SPINS`: centre, follow,
