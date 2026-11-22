@@ -1252,6 +1252,46 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     if (!ok4) failures.push('[hashi] a board no one plays: ' + JSON.stringify(demo));
     console.log(`${ok4 ? 'ok  ' : 'FAIL'} hashi: a board no one plays lays its own bridges (${demo.stages} stages for ${demo.steps} bridges, ${demo.live} seen live)`);
   }
+  // NINE-BALL (Nov 22: "What other games related to pool could we create?   The should share the pool engine.", "Proceed with your recommendation"): a
+  // second app on trick shots' engine. Its rack is nine in a diamond, the 1 at the head and the 9 in the middle, the same on a board each time; its games
+  // are kept apart from trick shots'; a shot is judged by the rules (the lowest ball first: a pot keeps the turn, a miss passes it, a foul passes it with
+  // the white in hand, the 9 down on a legal shot wins, down on a foul it is back on the table); the computer plans a legal shot; and the real Space breaks.
+  {
+    current = 'nineball';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'nineball')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const n9 = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, T = window.FIELD_APPS.find(a => a.id === 'trickshots')._debug, out = {};
+      const B = D.rack9(7), B2 = D.rack9(7), B3 = D.rack9(8), nums = b => b.map(x => x.n).join(''), byX = B.filter(b => !b.cue).sort((a, b) => a.x - b.x);
+      out.rack = [B.length, byX[0].n, B.find(b => b.n === 9).z === 0 && byX[4].n === 9, nums(B) === nums(B2), nums(B) !== nums(B3)].join();
+      out.apart = D.GAMES !== T.GAMES && A.name === '9-ball' && A.id === 'nineball';
+      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
+      out.start = [g.balls.length, g.nine.turn, g.nine.hand, D.lowOf(g.balls).n].join();
+      // the rules, on shots made up: what was met first, what went down
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      const play = (first, sunk) => { const h = fresh(), s = { first: first == null ? null : { n: first }, sunk: sunk.map(n => ({ n, pocket: 0, t: 1 })), contacts: [],
+        final: h.balls.map(b => ({ ...b, sunk: b.sunk || sunk.includes(b.n) })) }; h.anim = { s }; D.nineFinish(h, s); return h; };
+      let h;
+      h = play(1, [1]); out.pot = [h.nine.turn, h.nine.hand, h.nine.over].join();                 // a legal pot: your turn still
+      h = play(1, []); out.miss = [h.nine.turn, h.nine.hand, h.nine.over].join();                 // a miss: the computer's
+      h = play(3, [3]); out.wrong = [h.nine.turn, h.nine.hand, h.nine.fouls.join('/')].join();    // the wrong ball first: a foul, ball in hand
+      h = play(1, [0]); out.scratch = [h.nine.turn, h.nine.hand, h.nine.fouls.join('/'), !h.balls.find(b => b.cue).sunk].join();   // the white down: a foul, the white back up
+      h = play(1, [9]); out.win = [h.nine.over, h.nine.stars].join();                             // the 9 on a legal shot: the rack, three stars
+      h = play(3, [9]); out.nineBack = [h.nine.over, !h.balls.find(b => b.n === 9).sunk, h.nine.turn].join();
+      // the computer plans a shot that meets the lowest ball first and keeps the white up
+      h = fresh(); h.nine.turn = 1; const P = D.ninePlan(h); out.plan = P.score >= 0.4 && isFinite(P.a) && P.p >= 2;
+      fresh();
+      return out;
+    });
+    // the real Space breaks
+    const g9 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim, turn: g.nine.turn, over: g.nine.over } : null; });
+    await page.keyboard.press('Space'); await drawn(page, 300);
+    const broke = await g9();
+    const ok = n9 && !n9.none && n9.rack === '10,1,true,true,true' && n9.apart && n9.start === '10,0,false,1' && n9.pot === '0,false,0' && n9.miss === '1,false,0'
+      && n9.wrong === '1,true,1/0' && n9.scratch === '1,true,1/0,true' && n9.win === '1,3' && n9.nineBack === '0,true,1' && n9.plan && broke && broke.shots === 1;
+    if (!ok) failures.push('[nineball] ' + JSON.stringify({ n9, broke }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} nine-ball: the rack (${n9 && n9.rack}), games apart from trick shots', a pot keeps the turn, a miss passes it, a foul gives the white in hand, the 9 wins or goes back, the computer plans a legal shot, the real Space breaks`);
+  }
 
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
