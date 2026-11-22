@@ -55999,6 +55999,7 @@ const TRICK_APP = (() => {
      jump and the massé from wander's layouts, or fifteen balls scattered by the board's own number (LAYOUTS.scatter). */
   const FREE = ['rack', 'line', 'jump', 'masse', 'scatter', 'scatter', 'scatter', 'scatter'];
   function setupOf(idx, free, urgent){
+    if (CAR()){ const lv = levelAt(idx), B = rackC(idx); return { ch: null, name: 'carom', B, L: { ang: carAim(B), power: 22, elev: 0 }, nine: true, car: true, lv }; }
     if (NINE()){ const lv = levelAt(idx); return { ch: null, name: 'nine', B: rack9(idx), L: { ang: 0, power: 40, elev: 0 }, nine: true, lv }; }
     if (free){ const name = FREE[idx % FREE.length], L = LAYOUTS[name](name === 'scatter' ? 1000 + idx : undefined); return { ch: null, name, B: L.B, L, free: true }; }
     const own = mineAt(idx); if (own) return { ch: own, name: own.name, B: own.B(), mine: true };
@@ -56065,13 +56066,13 @@ const TRICK_APP = (() => {
      `NINE_REC_CAP` boards (a rack is about a megabyte). The planner draws its hands' error at random, so a board's rack is another each visit. */
   const RECS_N = new Map(), NREC = new Map(), NINE_REC_CAP = 30, NINE_REC_MS = 8, NINE_REC_HZ = 20, NINE_REC_SHOTS = 60;
   let nrAt = 0, nrUsed = 0;
-  function* nineRecGen(idx){
-    const lv = levelAt(idx), B0 = rack9(idx), n = B0.length;
-    const g = { idx, lv, auto: true, balls: B0.map(b => ({ ...b })), potted: 0, shots: 0, ang: 0, power: 40, nine: { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 } };
+  function* nineRecGen(idx, car){   // (car: three-cushion's game, the computer against itself from the first shot)
+    const lv = levelAt(idx), B0 = car ? rackC(idx) : rack9(idx), n = B0.length;
+    const g = { idx, lv, auto: true, balls: B0.map(b => ({ ...b })), potted: 0, shots: 0, ang: 0, power: 40, nine: car ? carNew() : { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 } };
     const still = balls => { const f = new Array(2 * n), h = new Array(n).fill(0); balls.forEach((b, i) => { f[2 * i] = b.sunk ? NaN : b.x; f[2 * i + 1] = b.sunk ? NaN : b.z; }); return [f, h]; };
-    let plan = { a: 0.6 * D, p: 52, tip: [0, 0] }, out = null;
-    while (!g.nine.over && g.shots < NINE_REC_SHOTS){
-      const st = strikeOf(plan.a, plan.tip[0], plan.tip[1], plan.p, MU_TIP, 0), sm = simulate(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) break;
+    let plan = car ? yield* carPlanGen(g, lv) : { a: 0.6 * D, p: 52, tip: [0, 0] }, out = null; const first = plan;
+    while (!g.nine.over && g.shots < (car ? CAR_REC_SHOTS : NINE_REC_SHOTS)){
+      const st = strikeOf(plan.a, plan.tip[0], plan.tip[1], plan.p, MU_TIP, 0), sm = (car ? simC : simulate)(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) break;
       yield;
       if (!out) out = { ...sm, frames: sm.frames.slice(), heights: sm.heights.slice(), contacts: sm.contacts.slice(), sunk: sm.sunk.slice(), cushions: sm.cushions.slice() };
       else {
@@ -56080,16 +56081,17 @@ const TRICK_APP = (() => {
         out.frames.push(...sm.frames.slice(1)); out.heights.push(...sm.heights.slice(1));
         out.contacts.push(...sm.contacts.map(sh)); out.sunk.push(...sm.sunk.map(sh)); out.cushions.push(...sm.cushions.map(sh)); out.final = sm.final;
       }
-      g.nine.hand = false; g.shots++; nineFinish(g, sm);
-      if (!g.nine.over) plan = yield* ninePlanGen(g, lv);
+      g.nine.hand = false; g.shots++; if (car) carFinish(g, sm); else nineFinish(g, sm);
+      if (!g.nine.over) plan = car ? yield* carPlanGen(g, lv) : yield* ninePlanGen(g, lv);
     }
-    return { S: { ch: null, name: 'nine', B: B0, nine: true, lv }, s: out, shots: g.shots, over: g.nine.over };
+    return { S: { ch: null, name: car ? 'carom' : 'nine', B: B0, nine: true, car: !!car, lv }, s: out, shots: g.shots, over: g.nine.over, first };
   }
-  function nineRecSoon(idx, force){
+  function nineRecSoon(idx0, force){
+    const car = CAR(), idx = car ? 'c' + idx0 : idx0;      // (three-cushion's are kept beside nine-ball's, under their own keys)
     let R = RECS_N.get(idx); if (R){ RECS_N.delete(idx); RECS_N.set(idx, R); return R; }
     const now = performance.now(); if (now - nrAt > 12){ nrAt = now; nrUsed = 0; }
     if (!force && nrUsed >= NINE_REC_MS) return null;
-    let J = NREC.get(idx); if (!J){ J = { gen: nineRecGen(idx), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
+    let J = NREC.get(idx); if (!J){ J = { gen: nineRecGen(idx0, car), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
     J.at = now;
     let step; const t0 = performance.now();
     do { step = J.gen.next(); } while (!step.done && (force || performance.now() - t0 < NINE_REC_MS - nrUsed));
@@ -56098,7 +56100,7 @@ const TRICK_APP = (() => {
     NREC.delete(idx);
     const d = step.value; if (!d.s) return null;
     const s = thin(d.s, 60 / NINE_REC_HZ);
-    R = { idx, S: d.S, shot: { a: 0.6, p: 52, el: 0, tip: [0, 0] }, s, see: 3, play: (s.frames.length - 1) / s.hz, rots: rotsOf(s, d.S.B, idx), shots: d.shots, over: d.over };
+    R = { idx: idx0, S: d.S, shot: car ? { a: d.first.a / D, p: d.first.p, el: 0, tip: d.first.tip } : { a: 0.6, p: 52, el: 0, tip: [0, 0] }, s, see: 3, play: (s.frames.length - 1) / s.hz, rots: rotsOf(s, d.S.B, idx), shots: d.shots, over: d.over };
     R.cycle = AIM_T + R.play + HOLD_T;
     RECS_N.set(idx, R); if (RECS_N.size > NINE_REC_CAP) RECS_N.delete(RECS_N.keys().next().value);
     return R;
@@ -56161,9 +56163,95 @@ const TRICK_APP = (() => {
        first that pots it (the 9 better) with the white kept up; none, the legal hit that leaves least; then its hands' error by level (`NINE_ERR`,
        2.2° at level 1 to 0.15° at 5). It shows its aim a moment, then shoots.
      Stars for a rack won: three with no foul of yours, two with one or two, else one; the most kept (`BEST`, 'n9:' + board + '@' + level). */
-  let nineApp = null;
-  const NINE = () => { try { return !!nineApp && window.getFieldApp() === nineApp; } catch { return false; } };
-  const GAMES_T = new Map(), GAMES_N = new Map(), GM = () => NINE() ? GAMES_N : GAMES_T;
+  /* THREE-CUSHION BILLIARDS, ON THE SAME ENGINE (Nov 22: "What is next pool game", then "Proceed", to three-cushion billiards). A third app, `carApp`
+     (id `threecushion`), made as nine-ball's is. Three balls on a table with no pockets: the white, which both sides play, and the yellow and the
+     red. A point is the white meeting both the others having touched three cushions or more before it reaches the second (`carScore`, read from the
+     shot's own contacts and cushions); a point keeps the turn, a miss passes it, and the first to `CAR_TO` points has the game. A match game as
+     nine-ball is, so it rides nine-ball's ways: its game carries `g.nine` (the turn, the computer's plan, what was said) with `car: true` and the
+     points, and `NINE()` is true for both; `CAR()` asks which.
+     - NO POCKETS: the engine above reads `POCKETS` (its text is the worker's and is not touched), so a carom shot is flown with the list emptied for
+       the length of the call (`simC`); the table's picture, its tiles and its cushions are drawn without them (`paint(S, true)`, `GRID_C`,
+       `CUSHIONS_C`).
+     - ONE WHITE: in the real game each side has a cue ball of its own and the other's is an object ball. Here both play the white, so the engine's
+       one cue ball, its preview and its cue serve as they are; what a miss leaves the other side is the same thing either way.
+     - THE COMPUTER (`carPlanGen`) flies the shot at every heading round the white, a level's count of them at a level's powers and side spins, and
+       plays the middle of the widest run of headings that score (the shot its hand is likeliest to bring off), looked at again more finely from
+       level 3; then its hand's error, `CAR_ERR` by level. With nothing that scores it plays softly at the nearer ball.
+     - A board no one plays shows a game played out, the computer against itself (`nineRecGen(idx, true)`). */
+  let nineApp = null, carApp = null;
+  const CAR = () => { try { return !!carApp && window.getFieldApp() === carApp; } catch { return false; } };
+  const NINE = () => { try { const A = window.getFieldApp(); return (!!nineApp && A === nineApp) || (!!carApp && A === carApp); } catch { return false; } };
+  const GAMES_T = new Map(), GAMES_N = new Map(), GAMES_C = new Map(), GM = () => CAR() ? GAMES_C : NINE() ? GAMES_N : GAMES_T;
+  const noPock = f => { const P = POCKETS.splice(0); try { return f(); } finally { POCKETS.push(...P); } };
+  const simC = (...a) => noPock(() => simulate(...a)), simM = (...a) => CAR() ? simC(...a) : simulate(...a);
+  const CAR_TO = 3, CAR_SEE = [1, 1, 1, 1, 0], CAR_ERR = [2.4, 1.6, 1.0, 0.7, 0.45], CAR_ANG = [48, 72, 96, 120, 144], CAR_REC_SHOTS = 30;
+  const CAR_TRY = [[[30, 0]], [[30, 0]], [[24, 0], [34, 0]], [[24, 0], [34, 0], [30, 0.4], [30, -0.4]], [[22, 0], [30, 0], [40, 0], [30, 0.4], [30, -0.4]]];
+  const CAR_NAME = { 1: 'yellow', 3: 'red' };
+  function rackC(idx){   // the three where the board's own number puts them, well apart and off the rails
+    const rnd = rng(idx * 7919 + 3), P = [];
+    for (let n = 0; n < 3; n++) for (let t = 0; t < 400; t++){ const x = (rnd() - 0.5) * (LX - 3.4), z = (rnd() - 0.5) * (LZ - 3.4);
+      if (P.every(q => Math.hypot(q[0] - x, q[1] - z) >= 3.2) || t === 399){ P.push([x, z]); break; } }
+    return [ballOf(0, ...P[0]), ballOf(1, ...P[1]), ballOf(3, ...P[2])];
+  }
+  // the point: the white met both balls, and touched three cushions or more before the second (touches within 0.02 s are one: a ball pressed on a rail)
+  function carScore(s){
+    const hits = s.contacts.filter(c => c.a === 0 || c.b === 0).map(c => ({ t: c.t, o: c.a === 0 ? c.b : c.a }));
+    const rt = []; for (const c of s.cushions) if (c.n === 0 && (!rt.length || c.t - rt[rt.length - 1] > 0.02)) rt.push(c.t);
+    if (!hits.length) return { ok: false, rails: rt.length, why: 'no ball was met' };
+    const o1 = hits[0].o, h2 = hits.find(h => h.o !== o1);
+    if (!h2) return { ok: false, rails: rt.length, why: 'only the ' + CAR_NAME[o1] + ' was met' };
+    const rails = rt.filter(t => t < h2.t).length;
+    return { ok: rails >= 3, rails, why: rails >= 3 ? null : (rails ? 'only ' + rails + (rails === 1 ? ' cushion' : ' cushions') : 'no cushion') + ' before the second ball' };
+  }
+  const carKey = g => 'c3:' + g.idx + '@' + g.lv;
+  const carNew = () => ({ car: true, turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  const carAim = balls => { const w = balls.find(b => b.cue), r = balls.find(b => b.n === 3); return Math.atan2(r.z - w.z, r.x - w.x); };
+  function carFinish(g, s){
+    const N = g.nine, sc = carScore(s), off = s.sunk.length > 0, who = N.turn === 0 ? 'you' : 'the computer';
+    g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 })); respot(g.balls);
+    if (sc.ok && !off){
+      N.pts[N.turn]++; N.said = who + ' scored off ' + sc.rails + ' cushions';
+      if (N.pts[N.turn] >= CAR_TO){ N.over = N.turn === 0 ? 1 : 2;
+        if (N.over === 1 && !g.auto){ N.stars = Math.max(1, 3 - N.pts[1]); const id = carKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
+    } else { N.said = who + ' missed: ' + (off ? 'a ball left the table' : sc.why); N.turn ^= 1; }
+    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
+  }
+  function* carPlanGen(g, lvIn){
+    const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), w = g.balls.find(b => b.cue && !b.sunk), NA = CAR_ANG[lv - 1], step = 2 * Math.PI / NA;
+    const scores = (a, p, tx) => { const st = strikeOf(a, tx, 0, p, MU_TIP, 0), sm = simC(g.balls, st.dir, st.speed, st.w, st.vy); return !!sm && !sm.sunk.length && carScore(sm).ok; };
+    let best = null;   // { a, p, tx, n }: the middle of the widest run of headings that score
+    for (const [p, tx] of CAR_TRY[lv - 1]){
+      const ok = new Array(NA); for (let i = 0; i < NA; i++){ ok[i] = scores(i * step, p, tx); yield; }
+      if (ok.every(Boolean)) { best = { a: 0, p, tx, n: NA }; continue; }
+      const i0 = ok.indexOf(false);
+      for (let k = 1, run = 0; k <= NA; k++){ const i = (i0 + k) % NA; if (ok[i]) run++; else { if (run && (!best || run > best.n)) best = { a: (i0 + k - 1 - (run - 1) / 2) * step, p, tx, n: run }; run = 0; } }
+    }
+    if (best && lv >= 3){   // looked at again, eight times as finely, a step either side of it: the middle of the run found there
+      const M = 16, f = step / 8, ok = []; for (let j = -M; j <= M; j++){ ok.push(scores(best.a + j * f, best.p, best.tx)); yield; }
+      let b2 = null; for (let j = 0, run = 0; j <= ok.length; j++){ if (ok[j]) run++; else { if (run && (!b2 || run > b2.n)) b2 = { j: j - 1 - (run - 1) / 2, n: run }; run = 0; } }
+      if (b2) best.a += (b2.j - M) * f;
+    }
+    const u1 = Math.random() || 1e-9, u2 = Math.random(), gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    if (!best){ const o = g.balls.filter(b => !b.cue).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
+      return { a: Math.atan2(o.z - w.z, o.x - w.x) + gauss * CAR_ERR[lv - 1] * D, p: 12, tip: [0, 0], score: -1 }; }
+    return { a: best.a + gauss * CAR_ERR[lv - 1] * D, p: best.p, tip: [best.tx, 0], score: best.n };
+  }
+  function carPlan(g, lv){ const it = carPlanGen(g, lv); let r; do { r = it.next(); } while (!r.done); return r.value; }
+  // a whole game with no table drawn, the planner at lvA against the planner at lvB (what the levels were measured with)
+  function carAuto(idx, lvA, lvB, maxShots = 200){
+    const B = rackC(idx), g = { idx, lv: lvA, auto: true, balls: B, potted: 0, shots: 0, ang: 0, power: 22, nine: carNew() }, made = [0, 0], tried = [0, 0];
+    while (!g.nine.over && g.shots < maxShots){
+      const t = g.nine.turn, plan = carPlan(g, t === 0 ? lvA : lvB), st = strikeOf(plan.a, plan.tip[0], plan.tip[1], plan.p, MU_TIP, 0), sm = simC(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) break;
+      const p0 = g.nine.pts[t]; g.shots++; tried[t]++; carFinish(g, sm); made[t] += g.nine.pts[t] - p0;
+    }
+    return { over: g.nine.over, shots: g.shots, pts: g.nine.pts.slice(), made, tried };
+  }
+  function carTitle(g){
+    const N = g.nine, b = BEST[carKey(g)];
+    return '3-cushion — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? starStr(N.stars) + ' you won' : 'the computer won') + ', tap to play again'
+      : N.turn === 0 ? 'your shot' : 'the computer\'s shot') + ' · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + CAR_TO + ')'
+      + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
   const GAMES = { get: k => GM().get(k), set: (k, v) => GM().set(k, v), has: k => GM().has(k), delete: k => GM().delete(k), clear: () => GM().clear(),
                   forEach: f => GM().forEach(f), values: () => GM().values(), keys: () => GM().keys(), get size(){ return GM().size; } };
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
@@ -56273,7 +56361,7 @@ const TRICK_APP = (() => {
     if (!N.plan){
       if (!N.thinkAt){ N.thinkAt = now; return; } if (now - N.thinkAt < 700) return;
       // (a few shots flown ahead a frame, 10 ms of them, so the page goes on while it thinks)
-      if (!N.gen) N.gen = ninePlanGen(g);
+      if (!N.gen) N.gen = N.car ? carPlanGen(g) : ninePlanGen(g);
       const t0 = performance.now(); let step; do { step = N.gen.next(); } while (!step.done && performance.now() - t0 < 10);
       if (!step.done) return;
       N.gen = null; N.plan = step.value; g.ang = N.plan.a; setPower(g, N.plan.p); setTip(g, N.plan.tip[0], N.plan.tip[1]); g.elev = 0; g.dirty = true; N.planAt = now; touch();
@@ -56330,11 +56418,12 @@ const TRICK_APP = (() => {
                 see: S.ch ? S.ch.see : 3, tries: 0, solvedIn: 0, lastWhy: null, potted: 0, shots: 0, history: [], anim: null, sim: null, dirty: true,
                 rot: S.B.map(b => rotStart(idx, b.n)), stage: 0 };
     g.rot0 = g.rot.slice();
-    if (S.nine){ g.nine = { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 }; g.see = NINE_SEE[Math.max(0, Math.min(4, g.lv - 1))]; }
+    if (S.car){ g.nine = carNew(); g.see = CAR_SEE[Math.max(0, Math.min(4, g.lv - 1))]; }
+    else if (S.nine){ g.nine = { turn: 0, hand: false, fouls: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 }; g.see = NINE_SEE[Math.max(0, Math.min(4, g.lv - 1))]; }
     GAMES.set(gkey(c, r), g); return g;
   }
   const gameAt = (c, r) => GAMES.get(gkey(c, r)) || fresh(c, r);
-  const liveGame = BOARD_KIT.liveGame(() => NINE() ? nineApp : app, () => LIVE, gameAt);
+  const liveGame = BOARD_KIT.liveGame(() => CAR() ? carApp : NINE() ? nineApp : app, () => LIVE, gameAt);
   // the stars a challenge solved earns: on par or under three, within two more two, else one (Oct 22, "1,2,5")
   const starsOf = (tries, par) => !tries ? 0 : tries <= par ? 3 : tries <= par + 2 ? 2 : 1;
   const starStr = n => BOARD_KIT.stars(n);
@@ -56342,10 +56431,10 @@ const TRICK_APP = (() => {
   function nextBoardOf(g){ const [c, r] = cellOfIdx(g.idx + 1); LIVE = { c, r }; try { gotoCell(c, r); } catch {} gameAt(c, r); touch(); return true; }
   const touch = () => { try { fieldItemsChanged(); } catch {} try { bbRefreshNow(); } catch {} };
   const shotOf = g => { const s = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D); return [s.dir, s.speed, s.w, s.vy]; };
-  function previewOf(g){ if (g.dirty && !g.anim){ g.sim = simulate(g.balls, ...shotOf(g)); g.dirty = false; } return g.sim; }
+  function previewOf(g){ if (g.dirty && !g.anim){ g.sim = simM(g.balls, ...shotOf(g)); g.dirty = false; } return g.sim; }
   function shoot(g){
     if (!g || g.anim) return false;
-    const shot = shotOf(g), s = simulate(g.balls, ...shot); if (!s) return false;
+    const shot = shotOf(g), s = simM(g.balls, ...shot); if (!s) return false;
     g.history.push({ balls: g.balls.map(b => ({ ...b })), potted: g.potted, shots: g.shots, rot: g.rot.slice() });
     if (g.nine) g.nine.hand = false;
     g.shots++; g.anim = { s, t0: performance.now(), speed: shot[1], heard: -1, rk: 0, rot0: g.rot.slice() }; try { ARCADE.audio(); } catch {}
@@ -56353,7 +56442,7 @@ const TRICK_APP = (() => {
   }
   function finish(g){
     const s = g.anim.s;
-    if (g.nine) return nineFinish(g, s);
+    if (g.nine) return g.nine.car ? carFinish(g, s) : nineFinish(g, s);
     if (g.ch && g.ch.kind === 'run'){   // a run-out (A RUN-OUT, above): a shot that pots carries the table on; a miss starts the run again
       const why = g.ch.goal(s, g.ch) || null, n = g.ch.shotsN || g.start.length - 1;
       if (why){ g.tries++; g.lastWhy = why; g.stage = 0; g.balls = g.start.map(b => ({ ...b })); g.rot = g.rot0.slice();
@@ -56460,7 +56549,7 @@ const TRICK_APP = (() => {
     if (!NINE() && idx >= CHALLENGES.length && !MINE.has(idx) && !puzzleSoon(idx, levelAt(idx))) return making;
     const R = recSoon(idx);
     // (nine-ball's rack still being played out for this board: the rack at rest meanwhile)
-    if (!R && NINE()){ const B = rack9(idx); return { B, pos: B.map(b => [b.x, b.z, 0]), ch: null, lv: levelAt(idx), rot: B.map(b => rotStart(idx, b.n)) }; }
+    if (!R && NINE()){ const B = CAR() ? rackC(idx) : rack9(idx); return { B, pos: B.map(b => [b.x, b.z, 0]), ch: null, lv: levelAt(idx), rot: B.map(b => rotStart(idx, b.n)) }; }
     return R ? shownOf(R) : making;   // (its trick shot still being made: the bare table)
   }
 
@@ -56477,6 +56566,7 @@ const TRICK_APP = (() => {
     out.push([-xs - CUSH_W, -zs + g, -xs, zs - g], [xs, -zs + g, xs + CUSH_W, zs - g]);
     return out;
   })();
+  const CUSHIONS_C = [[-LX / 2, -LZ / 2 - CUSH_W, LX / 2, -LZ / 2], [-LX / 2, LZ / 2, LX / 2, LZ / 2 + CUSH_W], [-LX / 2 - CUSH_W, -LZ / 2 - CUSH_W, -LX / 2, LZ / 2 + CUSH_W], [LX / 2, -LZ / 2 - CUSH_W, LX / 2 + CUSH_W, LZ / 2 + CUSH_W]];   // (three-cushion's: no pockets to leave open)
   function pathItems(out, V){
     const s = V.sim, fr = s.frames, sight = sightOf(s, V.see), hz = V.hz; let dots = 0;
     V.B.forEach((b, i) => {
@@ -56525,7 +56615,7 @@ const TRICK_APP = (() => {
   }
   function itemsOf(V){
     const out = [];
-    for (const [x0, z0, x1, z1] of CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: CUSH_H, sz: z1 - z0, color: CUSH });
+    for (const [x0, z0, x1, z1] of CAR() ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: CUSH_H, sz: z1 - z0, color: CUSH });
     const ch = V.ch;
     if (ch && ch.zone){ const [x, z, r] = ch.zone; out.push({ kind: 'tsZone', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }, { kind: 'tsZoneFill', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }); }
     if (V.sim) pathItems(out, V);
@@ -56626,7 +56716,7 @@ const TRICK_APP = (() => {
 
   /* THE TABLE'S PICTURE, the same on every board (one texture): the frame's wood, its sights, the cushions' tops, the cloth
      with a little nap, the head string and the spots, the pockets. A board under PHOTO_PX is its tiles (gridOf). */
-  function paint(S){
+  function paint(S, bare){   // (bare: no pockets, three-cushion's table)
     const k = S / BH, cv = document.createElement('canvas'); cv.width = Math.round(S * ASP); cv.height = S;
     const c = cv.getContext('2d'); if (!c) return null;
     // (the photo tier lays a picture's top-left at the board's far right corner, so it is drawn turned a half turn: tanks')
@@ -56645,7 +56735,7 @@ const TRICK_APP = (() => {
     c.globalAlpha = 1;
     c.strokeStyle = 'rgba(255,255,255,0.09)'; c.lineWidth = 0.04; c.beginPath(); c.moveTo(HEAD[0], -LZ / 2); c.lineTo(HEAD[0], LZ / 2); c.stroke();
     c.fillStyle = 'rgba(255,255,255,0.18)'; for (const x of [HEAD[0], LX / 4]){ c.beginPath(); c.arc(x, 0, 0.07, 0, 7); c.fill(); }
-    for (const [x, z] of POCKETS){
+    if (!bare) for (const [x, z] of POCKETS){
       const pg = c.createRadialGradient(x, z, 0, x, z, POCK); pg.addColorStop(0, '#000'); pg.addColorStop(0.8, '#060608'); pg.addColorStop(1, '#1a1a1e');
       c.fillStyle = pg; c.beginPath(); c.arc(x, z, POCK, 0, 7); c.fill();
     }
@@ -56658,12 +56748,13 @@ const TRICK_APP = (() => {
       colors.push(POCKETS.some(p => Math.hypot(p[0] - x, p[1] - z) < POCK) ? 0x060608 : Math.abs(x) < LX / 2 && Math.abs(z) < LZ / 2 ? CLOTH : WOOD);
     }
     return { n: GRID_N, colors }; })();
+  const GRID_C = { n: GRID_N, colors: GRID.colors.map((c, k) => { if (c !== 0x060608) return c; const [x, z] = toTable((k % GRID_N + 0.5) / GRID_N, (Math.floor(k / GRID_N) + 0.5) / GRID_N); return Math.abs(x) < LX / 2 && Math.abs(z) < LZ / 2 ? CLOTH : WOOD; }) };
 
   // the board's line of text: wander's readout, shortened
   const frac = o => { const named = [[1, 'full'], [0.75, '¾'], [0.5, '½'], [0.25, '¼']].find(([v]) => Math.abs(o - v) < 0.03); return named ? (named[1] === 'full' ? 'full-ball' : named[1] + '-ball') : o.toFixed(2) + ' ball'; };
   const degOf = a => { const x = (((a / D) % 360) + 360) % 360; return x.toFixed(2); };
   function titleOf(g){
-    if (g.nine) return nineTitle(g);
+    if (g.nine) return g.nine.car ? carTitle(g) : nineTitle(g);
     const ci = g.ch ? CHALLENGES.indexOf(g.ch) : -1, best = g.ch ? BEST[g.ch.id] : 0, stH = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D);
     const set = 'cue ' + degOf(g.ang) + '°' + (g.elev ? ', raised ' + g.elev + '°' : '') + ' · ' + (g.chalk ? 'chalked' : 'bare') + ' tip ' + spinName(g.tip)
       + (!g.chalk ? (stH.turn ? ', the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '') : !stH.grip ? ', miscue: the white turns ' + (Math.abs(stH.turn) / D).toFixed(1) + '°' : '')
@@ -57195,9 +57286,38 @@ const TRICK_APP = (() => {
     _debug: Object.assign(Object.create(app._debug), { GAMES: GAMES_N, rack9, lowOf, RECS_N, nineRecSoon, ninePlan, ninePlanGen, nineAuto, leaveQ, nineTick, nineFinish, NINE_ERR, NINE_SEE }),
   });
   app.nine = nineApp;
+  // THREE-CUSHION'S APP (THREE-CUSHION BILLIARDS, ON THE SAME ENGINE, above): nine-ball's hooks, with its own name, menu, titles and pictures
+  carApp = Object.defineProperties({}, Object.getOwnPropertyDescriptors(nineApp));
+  Object.assign(carApp, {
+    name: '3-cushion',
+    menu: [{ head: '3-cushion', items: [
+      { label: DL.item.label, title: 'How steady the computer\'s hand is, how many shots it looks at and how far your own shot is seen ahead; a step harder farther out.', on(){ DL.item.on(); GAMES_C.clear(); RECS_N.clear(); NREC.clear(); touch(); } },
+      SND.item,
+      { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball.', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
+      { label: 'Start this board again', title: 'The three balls back where the board puts them, your shot.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+    ]}],
+    cellTitle(c, r){
+      const g = GAMES.get(gkey(c, r)); if (g) return titleOf(g);
+      const idx = boardIdx(c, r), lv = levelAt(idx), b = BEST['c3:' + idx + '@' + lv];
+      return '3-cushion — level ' + lv + (b ? ', best ' + starStr(b) : '') + ' · the white must meet both balls, off three cushions before the second; first to ' + CAR_TO;
+    },
+    cellPhoto(c, r, bp){ return (bp || 0) >= HI_PX ? 'carom:h' : 'carom:l'; },
+    photoCanvas(key){ return paint(key === 'carom:h' ? 1024 : 256, true); },
+    cellGrid(){ return GRID_C; },
+    drawIcon(ctx, sz){
+      ctx.fillStyle = '#4a2c18'; ctx.fillRect(0, sz * 0.2, sz, sz * 0.6);
+      ctx.fillStyle = '#16513f'; ctx.fillRect(sz * 0.06, sz * 0.26, sz * 0.88, sz * 0.48);
+      ctx.strokeStyle = 'rgba(242,240,234,0.75)'; ctx.lineWidth = Math.max(1, sz / 40); ctx.setLineDash([sz / 30, sz / 30]);
+      ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.62); ctx.lineTo(sz * 0.5, sz * 0.28); ctx.lineTo(sz * 0.92, sz * 0.5); ctx.lineTo(sz * 0.7, sz * 0.72); ctx.lineTo(sz * 0.4, sz * 0.5); ctx.stroke(); ctx.setLineDash([]);
+      for (const [x, y, c] of [[0.2, 0.62, '#f2f0ea'], [0.4, 0.5, '#d23a2f'], [0.62, 0.4, '#e3c33b']]){ ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x * sz, y * sz, sz * 0.05, 0, 7); ctx.fill(); }
+    },
+    _debug: Object.assign(Object.create(app._debug), { GAMES: GAMES_C, rackC, carScore, carFinish, carPlan, carPlanGen, carAuto, carTitle, simC, RECS_N, nineRecSoon, nineTick, CAR_TO, CAR_ERR, CAR_SEE, GRID_C, CUSHIONS_C }),
+  });
+  app.carom = carApp;
   return app;
 })();
 const NINEBALL_APP = TRICK_APP.nine;   // (9-ball against the computer, on trick shots' engine and table, Nov 22)
+const CAROM_APP = TRICK_APP.carom;    // (three-cushion billiards against the computer, on the same engine, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -65588,7 +65708,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, CAROM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -65597,7 +65717,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [CAROM_APP, 'threecushion'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
