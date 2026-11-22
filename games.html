@@ -56532,7 +56532,7 @@ const TRICK_APP = (() => {
      - Air hockey was looked at for this and left as it is: its puck floats (no roll, no cloth), and its computer, levels and par are fitted to
        its own puck.
      - A board no one plays shows `HK_REC_T` seconds of the two computers at it (`hkRecGen`). */
-  const HK_TO = 5, HK_MAL = 0.85, HK_GOAL = 3.4, HK_HAND = 26, HK_V = [7, 9, 11, 13.5, 16], HK_LAG = [0.34, 0.26, 0.19, 0.13, 0.08], HK_ERR = [0.9, 0.6, 0.4, 0.25, 0.12], HK_PUCK_V = 42, HK_REC_T = 16;
+  const HK_TO = 3, HK_MAL = 0.85, HK_GOAL = 5.6, HK_HAND = 26, HK_V = [7, 9, 11, 13.5, 16], HK_LAG = [0.34, 0.26, 0.19, 0.13, 0.08], HK_ERR = [0.9, 0.6, 0.4, 0.25, 0.12], HK_PUCK_V = 42, HK_REC_T = 16;
   const hkNew = () => ({ rt: true, turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0,
                          t: 0, acc: 0, last: 0, wait: 0, started: false, tg: [null, null], ai: [{ at: -1, T: null }, { at: -1, T: null }], heardAt: 0 });
   const hkKey = g => 'ph:' + g.idx + '@' + g.lv, hkHome = k => [(k ? 1 : -1) * (LX / 2 - 2.4), 0];
@@ -56572,7 +56572,7 @@ const TRICK_APP = (() => {
   function hkGoal(g, on){
     const N = g.nine, by = on ^ 1; N.pts[by]++; N.said = (by === 0 ? 'you' : 'the computer') + ' scored';
     if (N.pts[by] >= HK_TO){ N.over = by === 0 ? 1 : 2;
-      if (N.over === 1 && !g.auto){ N.stars = N.pts[1] <= 1 ? 3 : N.pts[1] <= 3 ? 2 : 1; const id = hkKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
+      if (N.over === 1 && !g.auto){ N.stars = N.pts[1] === 0 ? 3 : N.pts[1] === 1 ? 2 : 1; const id = hkKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
     else { hkFaceoff(g.balls, on); N.wait = N.t + 0.9; N.tg[0] = null; N.ai[0].T = N.ai[1].T = null; }
     if (!g.auto){ try { SOUND.pocket(); } catch {} touch(); }
   }
@@ -56914,7 +56914,9 @@ const TRICK_APP = (() => {
     try {
       if (WHOLE){ const W = window.FIELD_WORLD, f = fwdYaw(), off = ((((W.st.yaw || 0) - f) % 360) + 540) % 360 - 180;
         // (the table's long way up the screen, from whichever end is nearer the way the view faces: never a half turn round)
-        W.st.pitch = WHOLE_PITCH; W.st.yawV = 0; W.target.yaw = Math.abs(off) <= 90 ? f : ((f + 360) % 360) - 180; zoomBoardToFit(); }
+        W.st.pitch = WHOLE_PITCH; W.st.yawV = 0; W.target.yaw = Math.abs(off) <= 90 ? f : ((f + 360) % 360) - 180;
+        { const lg = liveGame(); if (lg && lg.nine && lg.nine.rt) W.target.yaw = ((f + 360) % 360) - 180; }   // (pool hockey: your end, the table's head, is the near one)
+        zoomBoardToFit(); }
       else behindCue(liveGame());
     } catch {}
     touch();
@@ -57904,7 +57906,7 @@ const TRICK_APP = (() => {
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
       ctx.fillStyle = '#2a4fb0'; ctx.fillRect(sz * 0.03, sz * 0.4, sz * 0.035, sz * 0.2); ctx.fillStyle = '#d23a2f'; ctx.fillRect(sz * 0.935, sz * 0.4, sz * 0.035, sz * 0.2);
       dot(ctx, sz * 0.24, sz * 0.52, sz * 0.085, '#f2f0ea'); dot(ctx, sz * 0.76, sz * 0.46, sz * 0.085, '#d23a2f'); dot(ctx, sz * 0.48, sz * 0.5, sz * 0.045, '#e3c33b'); },
-    debug: { rackH, hkFrame, hkAi, hkAuto, hkLive, hkAim, hkGoal, hkFaceoff, hkRecGen, hkTitle, hkNew, HK_TO, HK_MAL, HK_GOAL, HK_V } });
+    debug: { rackH, hkFrame, hkAi, hkAuto, hkLive, hkAim, hkGoal, hkFaceoff, hkRecGen, hkTitle, hkNew, HK_TO, HK_MAL, HK_GOAL, HK_V, GRID_C } });
   app.golf = matchApp(MATCH.golf, { name: 'Pool golf', hint: 'putt the white into the hole in as few strokes as you can; too fast and it rolls over',
     level: 'How much stands on the green (posts, walls, sand, loose balls) and how far the shot is seen ahead; a step harder farther out.', again: 'Start this hole again', againTip: 'The ball back on the tee, the strokes at nothing.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
