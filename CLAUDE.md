@@ -3,8 +3,9 @@
 A 3D field of boards you fly over, with ~50 games in one page (and Levels, a demonstration of level of detail) (chess against
 Stockfish with a Claude coach, checkers, Go, Tetris, Pac-Man, Sokoban, …), served
 by GitHub Pages at https://reportbase.github.io/games/. The owner works through
-Claude Code: changes go on a branch, as a PR, and the owner merges. Merging to
-`main` publishes.
+Claude Code: changes go on a branch, as a PR. **Merge it when the edits are done** (Nov 22: "Auto merge when
+done with edits"): open the PR and squash-merge it without asking, then say what was merged and what was and
+was not tested; until then the owner merged. Merging to `main` publishes.
 
 This file holds the rules: what each file is, how the page is put together, what every game
 follows, how to test. The dated notes of what was built and why (the owner's words, the names to
