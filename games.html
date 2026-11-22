@@ -56844,6 +56844,13 @@ const TRICK_APP = (() => {
     for (const t of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'touchstart', 'touchmove', 'touchend', 'wheel', 'click', 'dblclick', 'contextmenu']){ el.addEventListener(t, stop); pull.addEventListener(t, stop); }
     const tipAt = e => { const g = CTL.g; if (!g || g.anim) return; const r = tip.getBoundingClientRect(), k = r.width * 0.36;
       setTip(g, (e.clientX - r.left - r.width / 2) / k, -(e.clientY - r.top - r.height / 2) / k); touch(); ctlDraw(g); };
+    /* ANY TAP ON THE SCREEN PUTS THE INSET AWAY (Nov 22: "Tapping the screen clears the dials of they are open."): read here on the window, so a tap
+       off the table, on another board or on the page's edge does it too, whatever the field makes of that tap. A press that began with the inset up,
+       outside it, and lifted where it came down within the hold's time. */
+    let tapFrom = null;
+    addEventListener('pointerdown', e => { tapFrom = CTL.spin && !el.contains(e.target) ? [e.clientX, e.clientY, performance.now()] : null; }, true);
+    addEventListener('pointerup', e => { const f = tapFrom; tapFrom = null;
+      if (f && CTL.spin && Math.hypot(e.clientX - f[0], e.clientY - f[1]) < 10 && performance.now() - f[2] < HOLD_MS){ CTL.spin = false; touch(); try { window.fieldWake && window.fieldWake(); } catch {} } }, true);
     let tipDrag = false;
     tip.addEventListener('pointerdown', e => { tipDrag = true; try { tip.setPointerCapture(e.pointerId); } catch {} tipAt(e); e.preventDefault(); });
     tip.addEventListener('pointermove', e => { if (tipDrag) tipAt(e); });
