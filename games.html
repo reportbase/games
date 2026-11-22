@@ -56116,6 +56116,7 @@ const TRICK_APP = (() => {
     const s = thin(d.s, 60 / NINE_REC_HZ);
     R = { idx: idx0, S: d.S, shot: { a: d.first.a / D, p: d.first.p, el: 0, tip: d.first.tip }, s, see: 3, play: (s.frames.length - 1) / s.hz, rots: rotsOf(s, d.S.B, idx), shots: d.shots, over: d.over };
     R.cycle = AIM_T + R.play + HOLD_T;
+    if (m.onRec) m.onRec(idx0, d);
     RECS_N.set(idx, R); if (RECS_N.size > NINE_REC_CAP) RECS_N.delete(RECS_N.keys().next().value);
     return R;
   }
@@ -56228,12 +56229,14 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => ninePlanGen(g, lv), title: g => nineTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     eight:    { key: 'eight', pre: 'e', best: 'e8:', games: new Map(), rack: i => rack8(i), cue: CUE0, fresh: () => eightNew(), see: () => NINE_SEE, finish: (g, s) => eightFinish(g, s),
                 planGen: (g, lv) => eightPlanGen(g, lv), title: g => eightTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
+    golf:     { key: 'golf', pre: 'g', best: 'pg:', games: new Map(), rack: i => golfRack(i), cue: B => ({ ang: golfAim(B), power: 8, elev: 0 }), fresh: () => golfNew(), see: () => NINE_SEE, finish: (g, s) => golfFinish(g, s),
+                planGen: (g, lv) => golfPlanGen(g, lv), title: g => golfTitle(g), sim: (...a) => golfSim(...a), brk: false, recShots: () => GOLF_MAX, bare: true, onRec: (i, d) => golfPar(i, d), app: null },
     one:      { key: 'one', pre: 'o', best: 'o1:', games: new Map(), rack: i => rackS(i), cue: CUE0, fresh: () => oneNew(), see: () => NINE_SEE, finish: (g, s) => oneFinish(g, s),
                 planGen: (g, lv) => onePlanGen(g, lv), title: g => oneTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     straight: { key: 'straight', pre: 's', best: 's14:', games: new Map(), rack: i => rackS(i), cue: CUE0, fresh: () => strNew(), see: () => NINE_SEE, finish: (g, s) => strFinish(g, s),
                 planGen: (g, lv) => strPlanGen(g, lv), title: g => strTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     carom:    { key: 'carom', pre: 'c', best: 'c3:', games: new Map(), rack: i => rackC(i), cue: B => ({ ang: carAim(B), power: 22, elev: 0 }), fresh: () => carNew(), see: () => CAR_SEE, finish: (g, s) => carFinish(g, s),
-                planGen: (g, lv) => carPlanGen(g, lv), title: g => carTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => CAR_REC_SHOTS, app: null },
+                planGen: (g, lv) => carPlanGen(g, lv), title: g => carTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => CAR_REC_SHOTS, bare: true, app: null },
   };
   const M = () => { try { const A = window.getFieldApp(); for (const k in MATCH) if (MATCH[k].app === A) return MATCH[k]; } catch {} return null; };
   const matchState = m => Object.assign(m.fresh(), { kind: m.key }), kindOf = g => MATCH[g.nine.kind];
@@ -56385,6 +56388,123 @@ const TRICK_APP = (() => {
     return 'One-pocket — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
       : N.turn === 0 ? 'your shot' + (N.hand ? ', ball in hand: drag the white where you like' : '') : 'the computer\'s shot')
       + ' · your pocket is ringed gold · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + ONE_TO + ')' + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
+  /* POOL GOLF (Nov 22: "create a new mini golf game using the pools engine.  Use the best ideas from the various games to make a mini golf game using
+     the best ideas from the pool engine"). An entry of `MATCH` ('golf', id `poolgolf`) for one player: the table with no pockets, one hole, and the
+     white putted into it with the pool games' own cue. What it takes from where:
+     - FROM THE POOL ENGINE: the ball itself (the cloth's grip, slide and roll, side spin off a cushion, follow and draw), the cushions for a bank,
+       ball on ball (loose balls stand on the green: knock one aside, or into the hole), the cue's drag, the spin dial and the velocity bar, the
+       view from behind the ball and the whole-table button, the shot seen ahead as far as the aim reaches, sounds, a board no one plays playing
+       itself.
+     - FROM MINI GOLF: a hole made from the board's number at its level (`golfLay`: a tee, a hole, posts, walls from a cushion with a gap, sand,
+       loose balls); strokes counted and par from a steady player playing it (`golfPlanGen`, the board's recording, `golfPar`); stars against par;
+       and the hole takes a ball only if it comes slowly (`GOLF_V`): a ball too fast rolls over it.
+     - HOW THE ENGINE IS USED: its text is not touched. `golfSim` is the engine's own loop (its `own` and `pairs` a tick, as `simulate` runs
+       them, with the pockets emptied) and, between the two, the green's own things a tick: a ball off a post (a circle) or a wall (a box), slowed
+       in sand, dropped in the hole. The layout rides on the white (`cue.H`), which every copy of the balls carries, so the shot, the preview, the
+       planner and the recording all find it.
+     - THE STEADY PLAYER (`golfPlanGen`): straight at the hole if any power holes it (the middle of the powers that do); else every heading at
+       seven powers, the middle of the widest run of headings that hole at the gentlest power; else the shot that leaves the ball nearest the
+       hole with the hole in view. No hand's error: a board's par is the same each visit. */
+  const GOLF_HOLE = 0.62, GOLF_V = 7, GOLF_SAND = 14, GOLF_MAX = 8, GOLF_POW = [3, 4.5, 6, 8, 10.5, 14, 19], GOLF_NA = 72, GLAYS = new Map(), GPAR = new Map();
+  const golfNew = () => ({ turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  const golfKey = g => 'pg:' + g.idx + '@' + g.lv, golfH = balls => (balls.find(b => b.cue) || {}).H;
+  function golfLay(idx){
+    const lv = levelAt(idx), key = idx + '@' + lv; let H = GLAYS.get(key); if (H) return H;
+    const rnd = rng(idx * 7919 + 77), rr = (a, b) => a + rnd() * (b - a);
+    const tee = [-LX / 2 + 2, rr(-3, 3)], hole = [rr(5.5, 8.3), rr(-3.4, 3.4)], posts = [], boxes = [], sand = [], loose = [];
+    const okAt = (x, z, r) => Math.hypot(x - tee[0], z - tee[1]) > r + 1.6 && Math.hypot(x - hole[0], z - hole[1]) > r + 1.5 && posts.every(q => Math.hypot(q.x - x, q.z - z) > q.r + r + 1.1)
+      && boxes.every(b => x < b[0] - r - 1 || x > b[2] + r + 1 || z < b[1] - r - 1 || z > b[3] + r + 1);
+    const nw = lv >= 5 ? 2 : lv >= 3 ? 1 : 0;      // walls: out from one long cushion, a gap left at the other; two of them stand opposite ways, an S to go round
+    for (let k = 0; k < nw; k++){ const x = nw === 2 ? (k ? 2.2 : -2.6) + rr(-0.5, 0.5) : rr(-1.5, 1.5), gap = rr(2.8, 3.6), top = nw === 2 ? k === 0 : rnd() < 0.5;
+      boxes.push(top ? [x - 0.3, -LZ / 2, x + 0.3, LZ / 2 - gap] : [x - 0.3, -LZ / 2 + gap, x + 0.3, LZ / 2]); }
+    for (let k = 0, t = 0; k < [1, 2, 2, 3, 3][lv - 1] && t < 300; t++){ const r = rr(0.5, 0.9), x = rr(-5, 5), z = rr(-4, 4); if (okAt(x, z, r)){ posts.push({ x, z, r }); k++; } }
+    for (let k = 0, t = 0; k < [0, 1, 1, 2, 2][lv - 1] && t < 300; t++){ const r = rr(1.1, 1.8), x = rr(-4, 7), z = rr(-3.5, 3.5);
+      if (Math.hypot(x - hole[0], z - hole[1]) > r + 0.9 && Math.hypot(x - tee[0], z - tee[1]) > r + 1){ sand.push({ x, z, r }); k++; } }
+    for (let k = 0, t = 0; k < [0, 0, 1, 2, 3][lv - 1] && t < 300; t++){ const x = hole[0] + rr(-3.2, 1.2), z = hole[1] + rr(-2.4, 2.4);
+      if (Math.abs(x) < XL && Math.abs(z) < ZL && okAt(x, z, R) && loose.every(q => Math.hypot(q[0] - x, q[1] - z) > 2 * R + 0.3)){ loose.push([x, z]); k++; } }
+    H = { idx, lv, tee, hole, posts, boxes, sand, loose }; GLAYS.set(key, H); if (GLAYS.size > 400) GLAYS.delete(GLAYS.keys().next().value);
+    return H;
+  }
+  function golfRack(idx){ const H = golfLay(idx), w = ballOf(0, ...H.tee); w.H = H; return [w, ...H.loose.map((q, k) => ballOf([1, 2, 3][k], q[0], q[1]))]; }
+  const golfAim = balls => { const w = balls.find(b => b.cue), H = w.H; return Math.atan2(H.hole[1] - w.z, H.hole[0] - w.x); };
+  // the engine's loop (`simulate`'s, its own and pairs a tick), the pockets emptied, and the green's things between the two
+  function golfSim(B0, ang, power, w, vy){
+    const H = golfH(B0); if (!H) return simC(B0, ang, power, w, vy);
+    return noPock(() => {
+      const B = B0.map(b => ({ y: 0, vy: 0, wx: 0, wy: 0, wz: 0, ...b })), n = B.length, cue = B.find(b => b.cue && !b.sunk); if (!cue) return null;
+      cue.vx = power * Math.cos(ang); cue.vz = power * Math.sin(ang); [cue.wx, cue.wy, cue.wz] = w || [0, 0, 0]; cue.vy = vy || 0;
+      const snap = () => { const f = new Float32Array(2 * n); B.forEach((b, k) => { f[2 * k] = b.sunk ? NaN : b.x; f[2 * k + 1] = b.sunk ? NaN : b.z; }); return f; };
+      const snapY = () => { const f = new Float32Array(n); B.forEach((b, k) => { f[k] = b.y; }); return f; };
+      const frames = [snap()], heights = [snapY()], contacts = [], sunk = [], cushions = []; let first = null, rails = 0, t = 0;
+      const log = (A, Bb, ia, ib, ra) => { const ax = A.x - A.vx * ra.tau, az = A.z - A.vz * ra.tau;
+        contacts.push({ t: t - ra.tau, x: ax + ra.n[0] * A.r, z: az + ra.n[1] * A.r, hv: ia.v + ib.v, hvC: ra.hvC, a: A.n, b: Bb.n, w: Math.hypot(A.vx - Bb.vx, A.vz - Bb.vz), A, Bb });
+        if (!first && (A.cue || Bb.cue)){ const c = A.cue ? A : Bb, o = A.cue ? Bb : A, n_ = ra.n, sp = Math.hypot(c.vx, c.vz) || 1, sinPhi = Math.min(1, Math.abs((c.vx * n_[1] - c.vz * n_[0]) / sp));
+          first = { n: o.n, rails, overlap: 1 - sinPhi, cut: Math.asin(sinPhi) / D, ghost: [c.x - c.vx * ra.tau, c.z - c.vz * ra.tau] }; } };
+      const onSink = (b, k) => sunk.push({ n: b.n, pocket: k, t }), onRail = b => { cushions.push({ n: b.n, t, w: Math.hypot(b.vx, b.vz) }); if (b.cue && !first) rails++; };
+      const moving = () => B.some(b => { if (b.sunk) return false; if (b.vx !== 0 || b.vz !== 0 || b.y > 0 || b.vy !== 0) return true; const u = slipOf(b); return Math.abs(u[0]) + Math.abs(u[1]) > 1e-12; });
+      const off = (b, nx, nz) => { const vn = b.vx * nx + b.vz * nz; if (vn < 0){ b.vx -= (1 + E_RAIL) * vn * nx; b.vz -= (1 + E_RAIL) * vn * nz; onRail(b); } };
+      const green = h => { for (const b of B){ if (b.sunk || b.y > CUSH_H) continue;
+        for (const q of H.posts){ const dx = b.x - q.x, dz = b.z - q.z, d = Math.hypot(dx, dz), rr = b.r + q.r; if (d < rr && d > 1e-9){ const nx = dx / d, nz = dz / d; b.x = q.x + nx * rr; b.z = q.z + nz * rr; off(b, nx, nz); } }
+        for (const q of H.boxes){ const cx = Math.max(q[0], Math.min(q[2], b.x)), cz = Math.max(q[1], Math.min(q[3], b.z)), dx = b.x - cx, dz = b.z - cz; let d = Math.hypot(dx, dz); if (!(d < b.r)) continue;
+          let nx, nz; if (d > 1e-9){ nx = dx / d; nz = dz / d; }
+          else { const l = b.x - q[0], r2 = q[2] - b.x, u = b.z - q[1], dn = q[3] - b.z, m = Math.min(l, r2, u, dn); nx = m === l ? -1 : m === r2 ? 1 : 0; nz = nx ? 0 : m === u ? -1 : 1; d = -m; }   // (its middle inside the wall: out by the nearest side)
+          b.x += nx * (b.r - d); b.z += nz * (b.r - d); off(b, nx, nz); }
+        if (b.y > 0) continue;
+        if (H.sand.some(q => Math.hypot(b.x - q.x, b.z - q.z) < q.r)){ const sp = Math.hypot(b.vx, b.vz); if (sp > 0){ const k = Math.max(0, sp - GOLF_SAND * h) / sp; b.vx *= k; b.vz *= k; b.wx *= k; b.wz *= k; } }
+        const hx = b.x - H.hole[0], hz = b.z - H.hole[1];
+        if (hx * hx + hz * hz < GOLF_HOLE * GOLF_HOLE && Math.hypot(b.vx, b.vz) < GOLF_V){ b.sunk = true; b.vx = b.vz = b.wx = b.wy = b.wz = 0; sunk.push({ n: b.n, pocket: -2, t }); }   // (pocket −2: the green's hole)
+      } };
+      for (let f = 0; f < 60 * 45 && moving(); f++){
+        for (let k = 0; k < SUB; k++){ t += FRAME / SUB; own(B, FRAME / SUB, onSink, onRail); green(FRAME / SUB); const c0 = contacts.length; pairs(B, log);
+          for (let j = c0; j < contacts.length; j++){ const c = contacts[j]; c.va = [c.A.vx, c.A.vz]; c.vb = [c.Bb.vx, c.Bb.vz]; delete c.A; delete c.Bb; } }
+        frames.push(snap()); heights.push(snapY());
+      }
+      return { frames, heights, contacts, sunk, cushions, first, final: B };
+    });
+  }
+  const golfHoled = s => s.sunk.some(p => p.n === 0 && p.pocket === -2);
+  function golfFinish(g, s){
+    const N = g.nine, w0 = g.balls.find(b => b.cue), was = [w0.x, w0.z], H = w0.H, holed = golfHoled(s);
+    N.pts[0]++;
+    g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 })); const w = g.balls.find(b => b.cue);
+    if (holed){ N.over = 1; const par = GPAR.get(g.idx + '@' + g.lv), n = N.pts[0]; N.stars = !par ? 2 : n <= par ? 3 : n <= par + 1 ? 2 : 1; N.said = 'in the hole';
+      if (!g.auto){ const id = golfKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
+    else { if (w.sunk){ w.sunk = false; w.off = false; w.y = 0; w.x = was[0]; w.z = was[1]; N.said = 'the ball left the green: back where it was'; }
+      else { const d = Math.hypot(H.hole[0] - w.x, H.hole[1] - w.z); N.said = d < GOLF_HOLE * 2.5 && Math.hypot(...was.map((v, k) => v - [w.x, w.z][k])) > 1 ? 'close' : ''; }
+      g.ang = golfAim(g.balls); }
+    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
+  }
+  function* golfPlanGen(g){
+    const w = g.balls.find(b => b.cue && !b.sunk), H = w.H, fly = (a, p) => { const st = strikeOf(a, 0, 0, p, MU_TIP, 0); return golfSim(g.balls, st.dir, st.speed, st.w, st.vy); };
+    const a0 = golfAim(g.balls), straight = [];
+    for (const p of GOLF_POW){ const sm = fly(a0, p); if (sm && golfHoled(sm)) straight.push(p); yield; }
+    if (straight.length) return { a: a0, p: straight[straight.length >> 1], tip: [0, 0], score: 10 };
+    // the hole in view from a place: no post or wall on the line to it
+    const view = (x, z) => { const dx = H.hole[0] - x, dz = H.hole[1] - z, L = Math.hypot(dx, dz), n = Math.ceil(L / 0.3);
+      for (let k = 1; k < n; k++){ const px = x + dx * k / n, pz = z + dz * k / n;
+        if (H.posts.some(q => Math.hypot(px - q.x, pz - q.z) < q.r + R) || H.boxes.some(q => px > q[0] - R && px < q[2] + R && pz > q[1] - R && pz < q[3] + R)) return false; }
+      return true; };
+    const step = 2 * Math.PI / GOLF_NA; let hole = null, near = null;
+    for (const p of GOLF_POW){ const ok = new Array(GOLF_NA);
+      for (let i = 0; i < GOLF_NA; i++){ const sm = fly(i * step, p); ok[i] = !!sm && golfHoled(sm);
+        if (sm && !ok[i]){ const f = sm.final.find(b => b.cue), d = f.sunk ? 99 : Math.hypot(H.hole[0] - f.x, H.hole[1] - f.z) + (view(f.x, f.z) ? 0 : 6); if (!near || d < near.d) near = { a: i * step, p, d }; }
+        yield; }
+      const i0 = ok.indexOf(false); if (i0 < 0) continue;
+      for (let k = 1, run = 0; k <= GOLF_NA; k++){ const i = (i0 + k) % GOLF_NA; if (ok[i]) run++; else { if (run && (!hole || run > hole.n)) hole = { a: (i0 + k - 1 - (run - 1) / 2) * step, p, n: run }; run = 0; } }
+    }
+    if (hole) return { a: hole.a, p: hole.p, tip: [0, 0], score: 5 };
+    return near ? { a: near.a, p: near.p, tip: [0, 0], score: 1 } : { a: a0, p: 8, tip: [0, 0], score: -1 };
+  }
+  const golfPlan = (g, lv) => matchPlan(MATCH.golf, g, lv);
+  // par: one over the strokes the steady player took in the board's recording
+  function golfPar(idx, d){ GPAR.set(idx + '@' + d.S.lv, d.shots + 1); }   // (one over the steady player's: it looks at five hundred shots a stroke, and holed every hole tried in one or two)
+  function golfAuto(idx, maxShots = GOLF_MAX){ const g = matchAuto('golf', idx, 3, 3, maxShots); return { over: g.nine.over, shots: g.shots }; }
+  function golfTitle(g){
+    const N = g.nine, b = BEST[golfKey(g)], par = GPAR.get(g.idx + '@' + g.lv);
+    if (!par) try { nineRecSoon(g.idx); } catch {}                    // (the board's own recording is where its par comes from: asked for until it is made)
+    return 'Pool golf — level ' + g.lv + ' · ' + (N.over ? starStr(N.stars) + ' holed in ' + N.pts[0] + ', tap to play again' : 'stroke ' + (N.pts[0] + 1))
+      + ' · par ' + (par || '…') + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
   }
   const strKey = g => 's14:' + g.idx + '@' + g.lv;
   function strRerack(g){
@@ -56948,7 +57068,15 @@ const TRICK_APP = (() => {
   }
   function itemsOf(V){
     const out = [];
-    for (const [x0, z0, x1, z1] of CAR() ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: CUSH_H, sz: z1 - z0, color: CUSH });
+    const bare = (M() || {}).bare;
+    for (const [x0, z0, x1, z1] of bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: CUSH_H, sz: z1 - z0, color: CUSH });
+    { const H = golfH(V.B);   // (pool golf's green: sand, the hole and its flag, the walls and the posts)
+      if (H){ for (const q of H.sand) out.push({ kind: 'tsSand', u: Ub(q.x), v: Vb(q.z), scale: Sb(2 * q.r), color: 0xcdb67c });
+        out.push({ kind: 'tsHole', u: Ub(H.hole[0]), v: Vb(H.hole[1]), scale: Sb(2 * GOLF_HOLE), color: 0x050506 });
+        out.push({ kind: 'tsBox', u: Ub(H.hole[0]), v: Vb(H.hole[1]), scale: Sb(1), sx: 0.07, sy: 2.4, sz: 0.07, color: 0xe8e4d8 });
+        out.push({ kind: 'tsBox', u: Ub(H.hole[0] - 0.42), v: Vb(H.hole[1]), scale: Sb(1), sx: 0.8, sy: 0.5, sz: 0.04, lift: Sb(1.9), color: 0xd23a2f });
+        for (const q of H.boxes) out.push({ kind: 'tsBox', u: Ub((q[0] + q[2]) / 2), v: Vb((q[1] + q[3]) / 2), scale: Sb(1), sx: q[2] - q[0], sy: CUSH_H, sz: q[3] - q[1], color: CUSH });
+        for (const q of H.posts) out.push({ kind: 'tsPost', u: Ub(q.x), v: Vb(q.z), scale: Sb(1), sx: 2 * q.r, sy: CUSH_H * 1.25, sz: 2 * q.r, color: 0x7a4a26 }); } }
     const ch = V.ch;
     if (ch && ch.zone){ const [x, z, r] = ch.zone; out.push({ kind: 'tsZone', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }, { kind: 'tsZoneFill', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }); }
     if (V.sim) pathItems(out, V);
@@ -57015,6 +57143,9 @@ const TRICK_APP = (() => {
     tsBall: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
     tsBand: T => { const g = new T.SphereGeometry(0.514, 20, 6, 0, Math.PI * 2, Math.PI / 2 - 0.47, 0.94); g.rotateX(Math.PI / 2); g.translate(0, 0.5, 0); return g; },
     tsBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
+    tsPost: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 28); g.translate(0, 0.5, 0); return g; },      // (pool golf's posts)
+    tsSand: T => { const g = FieldKit.disc(T, 0.5, 0.006, 48); g.userData.unlit = true; return g; },
+    tsHole: T => { const g = FieldKit.disc(T, 0.5, 0.012, 40); g.userData.unlit = true; return g; },
     // (the cue: a unit long from its tip at the origin back along −x, thick at the butt; a white ferrule, maple, a dark wrapped butt;
     //  drawn on top, as its tip is, the tip over it)
     tsCue: T => cueGeo(T, 1), tsCueIdle: T => cueGeo(T, 0),
@@ -57631,6 +57762,7 @@ const TRICK_APP = (() => {
       drawIcon: o.icon,
       _debug: Object.assign(Object.create(app._debug), { GAMES: m.games, MATCH, matchAuto, matchPlan, RECS_N, nineRecSoon, nineTick, leaveQ, NINE_ERR, NINE_SEE }, o.debug),
     }, o.more || {});
+    if (m.bare) Object.assign(A, { cellPhoto(c, r, bp){ return (bp || 0) >= HI_PX ? 'carom:h' : 'carom:l'; }, photoCanvas(key){ return paint(key === 'carom:h' ? 1024 : 256, true); }, cellGrid(){ return GRID_C; } });   // (no pockets)
     m.app = A; return A;
   }
   app.nine = matchApp(MATCH.nine, { name: '9-ball', hint: 'hit the lowest ball first; pot the 9 to win the rack',
@@ -57647,6 +57779,13 @@ const TRICK_APP = (() => {
       ctx.fillStyle = '#111111'; ctx.font = 'bold ' + Math.round(sz * 0.085) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('8', sz * 0.62, sz * 0.505);
       dot(ctx, sz * 0.26, sz * 0.5, sz * 0.045, '#f2f0ea'); },
     debug: { rack8, eightOn, eightFinish, eightCands, eightPlan, eightPlanGen, eightAuto, eightTitle, grpOf } });
+  app.golf = matchApp(MATCH.golf, { name: 'Pool golf', hint: 'putt the white into the hole in as few strokes as you can; too fast and it rolls over',
+    level: 'How much stands on the green (posts, walls, sand, loose balls) and how far the shot is seen ahead; a step harder farther out.', again: 'Start this hole again', againTip: 'The ball back on the tee, the strokes at nothing.',
+    icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
+      dot(ctx, sz * 0.78, sz * 0.42, sz * 0.05, '#050506'); ctx.fillStyle = '#e8e4d8'; ctx.fillRect(sz * 0.775, sz * 0.2, sz * 0.012, sz * 0.22); ctx.fillStyle = '#d23a2f'; ctx.fillRect(sz * 0.69, sz * 0.2, sz * 0.09, sz * 0.07);
+      dot(ctx, sz * 0.5, sz * 0.56, sz * 0.06, '#7a4a26'); dot(ctx, sz * 0.22, sz * 0.6, sz * 0.045, '#f2f0ea');
+      ctx.strokeStyle = 'rgba(242,240,234,0.75)'; ctx.lineWidth = Math.max(1, sz / 40); ctx.setLineDash([sz / 30, sz / 30]); ctx.beginPath(); ctx.moveTo(sz * 0.22, sz * 0.6); ctx.lineTo(sz * 0.52, sz * 0.3); ctx.lineTo(sz * 0.76, sz * 0.42); ctx.stroke(); ctx.setLineDash([]); },
+    debug: { golfLay, golfRack, golfSim, golfFinish, golfPlan, golfPlanGen, golfAuto, golfTitle, golfHoled, GPAR, GOLF_HOLE, GOLF_V, GOLF_MAX, GRID_C } });
   app.one = matchApp(MATCH.one, { name: 'One-pocket', hint: 'only balls in your own corner pocket score; first to ' + ONE_TO,
     level: 'How steady the computer\'s hand is, how many pots it looks at and how deep the shot is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The fifteen racked, the score at nothing, your break.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, true);
@@ -57667,7 +57806,6 @@ const TRICK_APP = (() => {
       ctx.strokeStyle = 'rgba(242,240,234,0.75)'; ctx.lineWidth = Math.max(1, sz / 40); ctx.setLineDash([sz / 30, sz / 30]);
       ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.62); ctx.lineTo(sz * 0.5, sz * 0.28); ctx.lineTo(sz * 0.92, sz * 0.5); ctx.lineTo(sz * 0.7, sz * 0.72); ctx.lineTo(sz * 0.4, sz * 0.5); ctx.stroke(); ctx.setLineDash([]);
       for (const [x, y, c] of [[0.2, 0.62, '#f2f0ea'], [0.4, 0.5, '#d23a2f'], [0.62, 0.4, '#e3c33b']]) dot(ctx, x * sz, y * sz, sz * 0.05, c); },
-    more: { cellPhoto(c, r, bp){ return (bp || 0) >= HI_PX ? 'carom:h' : 'carom:l'; }, photoCanvas(key){ return paint(key === 'carom:h' ? 1024 : 256, true); }, cellGrid(){ return GRID_C; } },
     debug: { rackC, carScore, carFinish, carPlan, carPlanGen, carAuto, carTitle, simC, CAR_TO, CAR_ERR, CAR_SEE, GRID_C, CUSHIONS_C } });
   return app;
 })();
@@ -57676,6 +57814,7 @@ const CAROM_APP = TRICK_APP.carom;    // (three-cushion billiards against the co
 const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the same engine, Nov 22)
 const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the computer, on the same engine, Nov 22)
 const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
+const POOLGOLF_APP = TRICK_APP.golf;   // (pool golf: one hole a board, putted with the pool games' cue, on the same engine, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -66066,7 +66205,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, POOLGOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -66075,7 +66214,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [POOLGOLF_APP, 'poolgolf'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

@@ -1102,3 +1102,31 @@ the middle of the widest run of headings that score.
   loses less by its shakiness.
 - A probe: a pot of 3 units is sure at levels 1, 3 and 5; a pot after a run of 10 into a ball 10 from the pocket is sure only at level 5.
 - The smoke test (part 5, with the aim's sight): those two pots, and a pot the hand cannot be sure of marked under 2 and over a plain hit.
+
+**Pool golf** (Nov 22: "Then create a new mini golf game using the pools engine.  Use the best ideas from the various games to make a mini golf game
+using the best ideas from the pool engine"). `POOLGOLF_APP`, id `poolgolf`: an entry of `MATCH` ('golf') for one player, a hole a board, the white
+putted into it with the pool games' cue. Mini golf itself (`GOLF_APP`, its course, slopes and movers) is untouched and stays on its own physics.
+- **From the pool engine**: the ball (the cloth's grip, slide and roll, side spin off a cushion, follow and draw), the cushions for a bank, ball on
+  ball (loose balls on the green: one knocked aside, or into the hole), the cue's drag, the spin dial and the velocity bar, the view from behind
+  the ball and the whole-table button, the shot seen ahead as far as the aim reaches, the sounds, a board no one plays playing itself.
+- **From mini golf**: a green made from the board's number at its level (`golfLay`: the tee at the head, the hole toward the foot, posts, walls
+  out from a long cushion with a gap of 2.8 to 3.6, sand, loose balls: by level 1 to 5 the walls 0, 0, 1, 1, 2, the posts 1, 2, 2, 3, 3, the
+  sand 0, 1, 1, 2, 2, the loose balls 0, 0, 1, 2, 3); strokes counted, par, stars against par (par or under three, one over two); and the hole
+  takes a ball only below `GOLF_V` (7): a ball too fast rolls over it.
+- **How the engine is used**: its text is not touched. `golfSim` is the engine's own loop (`own` and `pairs` a tick, as `simulate` runs them,
+  the pockets emptied) with the green's things between the two a tick: a ball off a post (a circle) or a wall (a box) at the cushions'
+  restitution, slowed in sand (`GOLF_SAND`), dropped in the hole (a `sunk` with pocket −2). The layout rides on the white (`cue.H`), which every
+  copy of the balls carries. A ball that leaves the green is put back where it was.
+- **The table**: `MATCH` entries may say `bare` (three-cushion, golf): no pockets in the picture, the tiles or the cushions (it was `CAR()` and
+  three-cushion's own hooks). An entry may say `onRec`, told when a board's recording is made: golf's sets the board's par.
+- **Par** is one over the steady player's strokes on the board's recording (`golfPlanGen`, `golfPar`, `GPAR`): it tries the straight putt at
+  seven powers, then every heading (72) at each, and plays the middle of the widest run that holes, or else to the place nearest the hole with
+  the hole in view; no hand's error, so a board's par is the same each visit. Tried on twelve boards of levels 2 to 4 it holed every one in one
+  or two strokes, which is why par is one over; a played board asks for its recording until its par is known (`golfTitle`, "par …" meanwhile).
+- New pieces: `tsPost` (a cylinder), `tsSand` and `tsHole` (discs); the flag is two `tsBox`es.
+- Not in it: slopes, moving obstacles, water, a course of holes in a row with a card (each board is a hole of its own); the preview's reckoning
+  of the aim does not count a post or a wall as a contact.
+- The smoke test (part 5): a board's green the same each time and its parts by level; on a green of our own a gentle putt drops and a hard one
+  rolls over, a post turns the ball back, a wall stops it, sand shortens the roll, the engine's six pockets there after; a stroke counted and the
+  ball left where it stopped; holed in two against a par of two, three stars, and in four, one; the steady player holes out and the recording
+  sets par one over its strokes; the real Space putts.
