@@ -56341,13 +56341,14 @@ const TRICK_APP = (() => {
      - THE RULES (`oneFinish`): each side owns one corner pocket at the foot of the table (`ONE_POCK`: yours, then the computer's). On a fair shot
        (a ball met, the white up) every ball down in the shooter's pocket is a point and keeps the turn; a ball down in the other side's pocket is
        that side's point, whoever sent it; a ball down anywhere else is back on the foot spot. A foul takes a point, puts back what went down in
-       the shooter's own pocket and gives the other side the white in hand. First to `ONE_TO`.
+       the shooter's own pocket, puts one of the shooter's potted balls back on the table with it, and gives the other side the white in hand. First
+       to `ONE_TO`.
      - THE COMPUTER (`onePlanGen`): the one search for a pot (`potPlanGen`) at its own pocket alone; a shot is marked up for each ball in its pocket
        and, from level 3, for the pot it leaves there, and down for each ball it sends to yours; with nothing to pot, from level 4, the fair hit
        that leaves you the least at your pocket.
      - Both pockets wear a ring on the table, yours gold and the computer's red (`itemsOf`). */
   const ONE_TO = 8, ONE_POCK = [2, 5];
-  const oneNew = () => ({ turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  const oneNew = () => ({ turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], down: [[], []], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
   const oneKey = g => 'o1:' + g.idx + '@' + g.lv;
   function oneFinish(g, s){
     const N = g.nine, t = N.turn, first = s.first ? s.first.n : null, out = whiteOut(s), who = t === 0 ? 'you' : 'the computer', foul = !!out || first == null;
@@ -56356,11 +56357,13 @@ const TRICK_APP = (() => {
     const back = n => { const b = g.balls.find(x => x.n === n); b.sunk = false; b.off = false; b.y = 0; b.x = FOOT9[0]; b.z = 0;   // (on the foot spot, or the nearest free place behind it)
       for (let k = 0; k < 40; k++){ const x = LX / 4 + k * 0.3; if (free(g.balls, x, 0, b)){ b.x = x; break; } } };
     for (const p of pots) if (p.pocket !== ONE_POCK[0] && p.pocket !== ONE_POCK[1]) back(p.n);
-    N.pts[t ^ 1] += theirs.length;
-    if (foul){ for (const p of mine) back(p.n); N.pts[t]--; N.fouls[t]++; N.said = who + ' fouled: ' + (out || 'no ball was met') + '; a point off, ball in hand'; N.hand = true; N.turn ^= 1; }
-    else if (mine.length){ N.pts[t] += mine.length; g.potted += mine.length; N.said = who + ' potted the ' + mine.map(p => p.n).join(', ') + ' in ' + (t === 0 ? 'your' : 'its') + ' pocket'; }
+    N.pts[t ^ 1] += theirs.length; for (const p of theirs) N.down[t ^ 1].push(p.n);
+    if (foul){ for (const p of mine) back(p.n); N.pts[t]--; N.fouls[t]++; if (N.down[t].length) back(N.down[t].pop());   // (the point given back is a ball given back: the table never runs dry of them)
+      N.said = who + ' fouled: ' + (out || 'no ball was met') + '; a point off, ball in hand'; N.hand = true; N.turn ^= 1; }
+    else if (mine.length){ N.pts[t] += mine.length; g.potted += mine.length; for (const p of mine) N.down[t].push(p.n); N.said = who + ' potted the ' + mine.map(p => p.n).join(', ') + ' in ' + (t === 0 ? 'your' : 'its') + ' pocket'; }
     else { N.said = who + (theirs.length ? ' potted the ' + theirs.map(p => p.n).join(', ') + ' in the other pocket' : ' missed'); N.turn ^= 1; }
-    const won = N.pts[0] >= ONE_TO ? 1 : N.pts[1] >= ONE_TO ? 2 : 0;
+    // (no ball left up with neither side there, which fouls before any pot can bring about: the side ahead has it)
+    const won = N.pts[0] >= ONE_TO ? 1 : N.pts[1] >= ONE_TO ? 2 : g.balls.some(b => !b.cue && !b.sunk) ? 0 : N.pts[0] > N.pts[1] ? 1 : 2;
     if (won){ N.over = won;
       if (won === 1 && !g.auto){ N.stars = N.pts[1] * 3 < ONE_TO ? 3 : N.pts[1] * 3 < 2 * ONE_TO ? 2 : 1; const id = oneKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
     else if (N.turn === 0){ const w = g.balls.find(b => b.cue && !b.sunk), o = w && g.balls.filter(b => !b.cue && !b.sunk).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0]; if (o) g.ang = Math.atan2(o.z - w.z, o.x - w.x); }

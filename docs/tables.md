@@ -1043,3 +1043,23 @@ eight-ball and straight pool were one loop written twice, and the four apps' men
 - **Nothing a player sees was meant to change.** Checked: with `Math.random` seeded alike, games played out by the planners on three boards a game
   come out the same before and after for all four (`eightAuto`, `strAuto`, `nineAuto`, `carAuto` against the page as it was on `main`); and the
   whole of the smoke test's part 5, where the five games' checks sit.
+
+**One-pocket** (Nov 22: "Which pool game is next?", then "Proceed", to the recommendation of one-pocket). `ONEPOCKET_APP`, id `onepocket`: the
+first game added since the table, and it is what the table said a game would be: an entry of `MATCH` ('one'), its state (`oneNew`), its rules
+(`oneFinish`), its marks for a shot (`onePlanGen`), its title (`oneTitle`), a `matchApp` call, and a line in `itemsOf` for the rings. It racks as
+straight pool does (`rackS`).
+- **The rules**: each side owns a corner pocket at the foot (`ONE_POCK`: yours pocket 2, the computer's 5), ringed on the table, yours gold and
+  the computer's red. On a fair shot every ball down in the shooter's pocket is a point and keeps the turn; a ball down in the other side's pocket
+  is that side's point, whoever sent it; a ball down anywhere else is back on the foot spot. A foul (no ball met, the white down) takes a point,
+  puts back what went down in the shooter's own pocket and one of the shooter's potted balls with it (`N.down`), and gives the other side the
+  white in hand. First to `ONE_TO` (8). Not in it: the break from behind the line, a ball driven to a rail, three fouls.
+- **A foul gives a ball back** was not in the first build: a foul took a point and the balls stayed down, so a table could run out of balls with
+  neither side able to reach 8, and every shot after was a foul for want of a ball to meet. Measured then: 135 fouls a game at level 1 and 10 of
+  24 games unfinished at 400 shots. A table with no ball up and no winner (fouls before any pot can still bring it about) goes to the side ahead.
+- **The computer** (`onePlanGen`): `potPlanGen` with its own pocket alone (`eightCands(balls, on, only)` and `placeInHand` take the pocket's
+  number); a shot is marked up for each ball in its pocket and, from level 3, for the pot it leaves there (`leave`), and down by 1.5 for each
+  ball sent to yours; with nothing to pot, from level 4, the fair hit that leaves you the least at your pocket.
+- The smoke test (part 5): the two pockets at the foot, ringed in two colours; on shots made up, two balls in your pocket are two points and the
+  turn kept, a ball in a pocket no one owns is back on the table and the turn passes, a ball the computer sends to your pocket is yours, a foul
+  takes a point and puts the ball and one of yours back with the computer in hand, the eighth point wins with three stars; the computer plans a
+  shot; the search at one pocket finds no more pots than the search at all six; a game played out has a winner; the real Space breaks.
