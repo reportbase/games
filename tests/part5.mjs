@@ -1434,6 +1434,48 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} eight-ball: the rack (${e8 && e8.rack}), the first pot gives its group, a pot of yours keeps the turn, a miss passes it, the wrong ball first is a foul with the white in hand, the 8 wins when it is on and loses when it is not, the computer plans a shot, a rack played out has a winner, the real Space breaks`);
   }
 
+  // STRAIGHT POOL (Nov 22: "Which pool game is next?", then "Proceed"): a fifth app on trick shots' engine. Fifteen racked, the same on a board each
+  // time; the ball met first is the ball called: down, it and every other ball down are points and the turn is kept; up, the turn passes and what else
+  // went down is back on the table; no ball met or the white down is a foul, a point off and the white in hand; one ball left, the fourteen are racked
+  // again with the head of the triangle empty; the twentieth point wins; the computer plans a shot; a game played out has a winner; the real Space breaks.
+  {
+    current = 'straightpool';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'straightpool')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const sp = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, N9 = window.FIELD_APPS.find(a => a.id === 'nineball')._debug, out = {};
+      const B = D.rackS(7), B2 = D.rackS(7), B3 = D.rackS(8), nums = b => b.map(x => x.n).join(',');
+      out.rack = [B.length, B.slice(1).map(b => b.n).sort((a, b) => a - b).join('') === '123456789101112131415', nums(B) === nums(B2), nums(B) !== nums(B3)].join();
+      out.apart = D.GAMES !== N9.GAMES && A.name === 'Straight pool' && A.id === 'straightpool';
+      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
+      out.start = [g.balls.length, g.nine.str, g.nine.turn, g.nine.pts.join('-')].join();
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      const play = (h, first, sunk) => { const s = { first: first == null ? null : { n: first }, sunk: sunk.map((n, i) => ({ n, pocket: 0, t: 1 + i })), contacts: [],
+        final: h.balls.map(b => ({ ...b, sunk: b.sunk || sunk.includes(b.n) })) }; h.anim = { s }; D.strFinish(h, s); return h; };
+      const st = h => [h.nine.turn, h.nine.hand, h.nine.pts.join('|'), h.nine.over].join(), up = h => h.balls.filter(b => !b.cue && !b.sunk).length;
+      let h = play(fresh(), 3, [3, 5]); out.called = st(h) + ',' + up(h);                // the ball met first down, and another: two points, your turn still
+      h = play(h, 4, [6]); out.miss = st(h) + ',' + up(h);                               // the 4 stays up, the 6 down: no point, the 6 back, the computer's shot
+      h = play(h, null, []); out.foul = st(h) + ',' + h.nine.fouls.join('/');            // the computer meets nothing: a point off, you in hand
+      // one ball left: the fourteen come back, the head of the triangle empty, the last ball where it lay
+      h = fresh(); h.balls.forEach(b => { if (!b.cue && b.n !== 2 && b.n !== 9) b.sunk = true; }); const b9 = h.balls.find(b => b.n === 9); b9.x = -5; b9.z = 3; h.balls.find(b => b.n === 2).x = 0;
+      h = play(h, 2, [2]); const head = D.STR_SLOTS[0];
+      out.rerack = [up(h), h.nine.racks, h.nine.pts.join('|'), h.nine.turn, h.balls.every(b => b.sunk || b.cue || Math.hypot(b.x - head[0], b.z - head[1]) > 0.5), b9.x === undefined].join() + ',' + [h.balls.find(b => b.n === 9).x, h.balls.find(b => b.n === 9).z].join('/');
+      h = fresh(); h.nine.pts = [D.STR_TO - 1, 4]; h = play(h, 7, [7]); out.win = st(h) + ',' + h.nine.stars;
+      h = fresh(); h.nine.turn = 1; const P = D.strPlan(h, 3); out.plan = isFinite(P.a) && P.p >= 8;
+      out.title = /^Straight pool — level \d · the computer's shot · you 0, the computer 0 \(to 20\)/.test(D.titleOf(h));
+      const r = D.strAuto(7, 3, 3); out.auto = (r.over === 1 || r.over === 2) && Math.max(...r.pts) === D.STR_TO && r.racks >= 2;
+      fresh();
+      return out;
+    });
+    const gS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim } : null; });
+    await page.keyboard.press('Space'); await drawn(page, 300);
+    const brokeS = await gS();
+    const ok = sp && !sp.none && sp.rack === '16,true,true,true' && sp.apart && sp.start === '16,true,0,0-0' && sp.called === '0,false,2|0,0,13' && sp.miss === '1,false,2|0,0,13'
+      && sp.foul === '0,true,2|-1,0,0/1' && sp.rerack === '15,2,1|0,0,true,false,-5/3' && sp.win === '0,false,20|4,1,3' && sp.plan && sp.title && sp.auto && brokeS && brokeS.shots === 1;
+    if (!ok) failures.push('[straightpool] ' + JSON.stringify({ sp, brokeS }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} straight pool: the rack (${sp && sp.rack}), the ball met first down scores with every other ball down and keeps the turn, up it passes the turn and the others come back, a foul takes a point and gives the white in hand, one ball left the fourteen are racked again, the twentieth point wins, the computer plans a shot, a game played out has a winner, the real Space breaks`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
