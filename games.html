@@ -267,6 +267,11 @@
                     box-shadow: 0 1px 4px rgba(0, 0, 0, .6); cursor: pointer; font-size: 1.375rem; line-height: 1; touch-action: manipulation; }
   #playPad button span { font-size: 0.5625rem; margin-top: 2px; opacity: .85; }
   #playPad button.on { border-color: rgba(232, 200, 106, .95); }
+  /* (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is
+     visible.": an app with `playPadLow` has its pad at the foot of the screen, at the left, clear of the dots in the middle and the chips on the
+     right, and it is gone while the bottom row is open) */
+  #playPad.low { right: auto; left: calc(min(32px, 5.25vw) + 10px); bottom: calc(var(--bb-bottom) + 10px); flex-direction: row; }
+  body:not(.bb-collapsed) #playPad.low { display: none; }
   #bbQuick { position: absolute; top: 0; right: 10px; height: var(--bb-peek); display: flex; align-items: center; gap: 6px;
              z-index: 4; pointer-events: auto; }
   #bbQuick button { width: 36px; height: 36px; padding: 0; border-radius: 10px; display: flex; align-items: center; justify-content: center;
@@ -13775,7 +13780,7 @@ function playPadTick(a){
   let f = null, L = null;
   try { f = bbFramedCell(); } catch {}
   try { L = a && a.playActs && f ? a.playActs(f.c, f.r) : null; } catch {}
-  const sig = L && L.length ? L.map(q => q.key + '|' + q.glyph + '|' + (q.label || '') + (q.on ? '+' : '')).join(',') : '';
+  const low = !!(a && a.playPadLow), sig = L && L.length ? (low ? 'low:' : '') + L.map(q => q.key + '|' + q.glyph + '|' + (q.label || '') + (q.on ? '+' : '')).join(',') : '';
   if (sig === _playPadSig) return;
   _playPadSig = sig;
   let pad = document.getElementById('playPad');
@@ -13785,7 +13790,7 @@ function playPadTick(a){
     for (const ev of ['pointerdown', 'pointerup', 'pointermove', 'pointercancel', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'wheel', 'click']) pad.addEventListener(ev, e => e.stopPropagation());
     document.body.appendChild(pad);
   }
-  pad.textContent = '';
+  pad.textContent = ''; pad.classList.toggle('low', low);
   for (const q of L){
     const b = document.createElement('button');
     b.type = 'button'; b.title = q.title || q.label || ''; b.setAttribute('aria-label', b.title); b.dataset.key = q.key;
@@ -57172,7 +57177,8 @@ const TRICK_APP = (() => {
     onLeave(){ ctlHide(); },
     fitView(){ WHOLE = false; behindCue(liveGame()); },
     playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
-      return [{ key: 'view', glyph: WHOLE ? '🎱' : '▦', label: WHOLE ? 'behind the white' : 'the whole table', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }]; },
+      return [{ key: 'view', glyph: WHOLE ? '🎱' : '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }]; },
+    playPadLow: true,                                         // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")
     onPlayAct(c, r, key){ if (key !== 'view') return false; wholeTable(!WHOLE); try { bbRefreshNow(); } catch {} return true; },                       // (the game opens behind the white: BEHIND THE WHITE)
     pitchFloor: 40,                                           // (Nov 22: "Minimum tilt 40degrees."; 20 for a day, Nov 21; the field's own floor is 35)
     frameYaw: 90,                                             // (Nov 22: "Default board position is up down.": the table's long way runs up the screen by default; the field's fwdYaw)
@@ -57186,14 +57192,16 @@ const TRICK_APP = (() => {
         if (u != null) edTap(u, v); return true; }
       LIVE = { c, r }; const g = gameAt(c, r);
       if (!g){ say('This board\'s trick shot is still being made; a moment.', 1500); return true; }
+      if (CTL.spin){ CTL.spin = false; touch(); }                             // (any tap puts the spin inset away, Nov 22)
       if (g.anim){ finish(g); behindCue(g); return true; }                    // a tap during the shot jumps to its end (wander's)
       if (g.nine && g.nine.over) return app.onReset(c, r), true;   // (the rack over: a tap racks again)
       if (g.nine && g.nine.turn) return true;                       // (the computer's shot)
       if (g.ch && g.solvedIn) return app.onReset(c, r), true;  // solved: a tap plays it again (Oct 29: only you move to another board)
       if (u == null) return true;
-      const [x, z] = toTable(u, v), w = g.balls.find(b => b.cue && !b.sunk);
-      if (w && Math.hypot(w.x - x, w.z - z) < R * 1.6){ /* (a tap on the white does nothing: a hold on it shows the spin inset, Nov 22) */ } else { CTL.spin = false; aimAt(g, x, z); }
-      touch(); return true;
+      /* A TAP PUTS THE DIALS AWAY AND MOVES NO CUE (Nov 22: "Tapping the screen clears the dials of they are open.   Tapping the screen should not move
+         the cue stick."): a tap on a point used to aim the shot at it, so a stray touch threw the aim away. Now a tap only shuts the spin inset if it
+         is up; the cue is moved by dragging it, the arrow keys and the row. */
+      CTL.spin = false; touch(); return true;
     },
     onCellHold(c, r){ if (ED.on) return true; restart(c, r); say('The table as it was set.', 1400); return true; },
     // a press and a drag aims, the preview following; in free play a press on a ball moves it (wander's: set up any trick shot)

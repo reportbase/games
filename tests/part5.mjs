@@ -314,6 +314,11 @@ try {
       { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x, w1.z); await page.mouse.click(q.x, q.y); await drawn(page, 800); const g2 = await gs(), w2 = g2.balls[0], q2 = await at(w2.x, w2.z); await page.mouse.move(q2.x, q2.y); await page.mouse.down(); await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 20000 }).catch(() => {}); await page.mouse.up(); }
       const tipBox = await page.evaluate(() => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(); return r && r.width && document.getElementById('tsCtl').style.display !== 'none' ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width } : null; });
       if (tipBox){ await page.mouse.click(tipBox.x - 0.2 * 0.36 * tipBox.w, tipBox.y - 0.5 * 0.36 * tipBox.w); live.inset = (await gs()).tip; }
+      // (Nov 22: "Tapping the screen clears the dials of they are open.   Tapping the screen should not move the cue stick.": a real click on the cloth,
+      //  away from the white, puts the inset away and leaves the aim where it was)
+      { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x > 0 ? w1.x - 5 : w1.x + 5, -2); await page.mouse.click(q.x, q.y);
+        await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return !e || e.style.display === 'none'; }, null, { timeout: 15000 }).catch(() => {});
+        live.tapClears = await page.evaluate(() => { const e = document.getElementById('tsCtl'); return !e || e.style.display === 'none'; }); live.tapAim = Math.abs((await gs()).ang - g1.ang) < 1e-9 && (await gs()).shots === g1.shots; }
       { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x > 0 ? w1.x - 4 : w1.x + 4, 0), s0 = g1.shots;
         const barUp = () => page.evaluate(() => { const e = document.getElementById('tsPull'); return !!e && e.style.display !== 'none'; });
         live.barBefore = await barUp();
@@ -357,7 +362,7 @@ try {
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
       && r.call && r.call.pocket >= 0 && r.call.l1 && r.call.ok && /another pocket/.test(r.call.wrong || '') && r.call.see4 === 0 && r.call.ringed === 2
       && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.cue && live.rolled.cue.len >= 20 && live.rolled.cue.onTop && live.rolled.cue.behind && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
-      && live.tapNo && live.holdAng && live.holdTip && live.holdTip.x > 0.15 && live.holdTip.y > 0.2 && live.spinAt && live.spinAt.shown && live.spinAt.near && !live.spinAt.anim && live.spinAt.shots === 0 && !live.barBefore && live.barHeld && live.pull && !live.pull.bar
+      && live.tapNo && live.holdAng && live.tapClears && live.tapAim && live.holdTip && live.holdTip.x > 0.15 && live.holdTip.y > 0.2 && live.spinAt && live.spinAt.shown && live.spinAt.near && !live.spinAt.anim && live.spinAt.shots === 0 && !live.barBefore && live.barHeld && live.pull && !live.pull.bar
       && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next && live.next[0] === 0 && !live.next[1]
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 0 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
@@ -1320,13 +1325,17 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     // level 1, and a rack played out with no table drawn ends with a winner.
     const pad = async () => { const b = await page.$('#playPad button'); if (!b) return false; const r = await b.boundingBox(); await page.mouse.click(r.x + r.width / 2, r.y + r.height / 2); await drawn(page, 400); await page.evaluate(() => window.__settle()); return true; };
     const vw = () => page.evaluate(() => { const W = window.FIELD_WORLD; return { pitch: W.st.pitch, zoom: W.st.zoom, whole: window.getFieldApp()._debug.WHOLE }; });
+    // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")
+    const low = await page.evaluate(() => { const p = document.getElementById('playPad'), b = p && p.querySelector('button'); if (!b) return null; const r = b.getBoundingClientRect(), shut = document.body.classList.contains('bb-collapsed');
+      document.body.classList.remove('bb-collapsed'); const gone = getComputedStyle(p).display === 'none'; document.body.classList.toggle('bb-collapsed', shut);
+      return { low: p.classList.contains('low'), label: !!b.querySelector('span'), foot: innerHeight - r.bottom < 40 && r.width > 40, shut, gone, back: getComputedStyle(p).display !== 'none' }; });
     const v0 = await vw(), p1 = await pad(), v1 = await vw(), p2 = await pad(), v2 = await vw();
     const ai = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.GAMES.get(L.c + '_' + L.r), n = lv => { let k = 0; const it = D.ninePlanGen(g, lv); while (!it.next().done) k++; return k; };
       const q = D.leaveQ(g.balls, D.lowOf(g.balls).n), r = D.nineAuto(7, 3, 3);
       return { n1: n(1), n5: n(5), q, over: r.over, shots: r.shots }; });
-    const okW = p1 && p2 && !v0.whole && v1.whole && v1.pitch > 60 && v1.zoom > v0.zoom && !v2.whole && Math.abs(v2.pitch - 40) < 0.5 && Math.abs(v2.zoom - v0.zoom) < 0.05 * Math.max(1, v0.zoom)
+    const okW = low && low.low && !low.label && low.foot && low.shut && low.gone && low.back && p1 && p2 && !v0.whole && v1.whole && v1.pitch > 60 && v1.zoom > v0.zoom && !v2.whole && Math.abs(v2.pitch - 40) < 0.5 && Math.abs(v2.zoom - v0.zoom) < 0.05 * Math.max(1, v0.zoom)
       && ai.n5 > ai.n1 && ai.q >= 0 && ai.q <= 1 && (ai.over === 1 || ai.over === 2) && ai.shots > 1;
-    if (!okW) failures.push('[pool whole table and the levels\' search] ' + JSON.stringify({ v0, v1, v2, ai }));
+    if (!okW) failures.push('[pool whole table and the levels\' search] ' + JSON.stringify({ low, v0, v1, v2, ai }));
     console.log(`${okW ? 'ok  ' : 'FAIL'} pool: the pad's button to the whole table (tilt ${v1.pitch}°) and back behind the white; the computer looks at ${ai.n1} shots at level 1 and ${ai.n5} at level 5, a rack played out in ${ai.shots} shots`);
     // A BOARD NO ONE PLAYS SHOWS A WHOLE RACK (Nov 22: "Can the auto play boards play complete games, not just the break"): its recording runs many shots
     // to the 9 going down, and what the board shows moves on through it

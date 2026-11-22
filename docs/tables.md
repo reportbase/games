@@ -966,3 +966,13 @@ in `RECS_N` under `'c' + idx`).
   stays up, where the same shot on the pool table goes down, and the engine's six pockets are there after; the rule on shots made up (three cushions
   then the second ball scores, two do not, cushions first then both balls scores, one ball alone does not); a point keeps the turn, a miss passes
   it, the third point wins with three stars; the computer plans a shot; the real Space shoots.
+
+**A tap puts the dials away and moves no cue; the whole-table button at the foot** (Nov 22: "Tapping the screen clears the dials of they are open.
+Tapping the screen should not move the cue stick.   Move the full board button to the bottom of the screen and remove the text label.   Hide the
+button when the bottom browser is visible."). In the three pool games a tap on a point used to aim the shot at it; now a tap only shuts the spin
+inset if it is up (`onCellTap`), and the cue is moved by dragging it, the keys and the row. A tap during a shot still jumps to its end, and a tap on
+a solved table or a finished rack still sets it up again. The play pad of an app with `playPadLow` (the pool games) sits at the foot of the screen
+at the left, clear of the dots in the middle and the chips on the right, its button without a label (the name is its tooltip), and is not shown
+while the bottom row is open (`#playPad.low`, `body:not(.bb-collapsed)`); other games' pads are where they were. The smoke test (part 5): a real
+click on the cloth puts the inset away with the aim and the shot count unmoved; nine-ball's pad is low, at the foot, without a label, gone with the
+row open and back with it shut.
