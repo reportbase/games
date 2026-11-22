@@ -1162,3 +1162,21 @@ frame at a time as it is played (`hkFrame` from `hkLive`, in `viewOf` where the 
   computers at it stay on the table; a goal counted and the ball served to the side scored on, the third goal wins with three stars; a board
   no one plays is a recording with no shot seen ahead; a real drag on your half, at the near end of the screen, starts play and takes your mallet
   to the finger; the real Space shoots nothing.
+
+**The endless table, the single view's counterpart to pool** (Nov 22: "The purpose of this is to push shv.", "No single hemisphere view.   Explained
+in read write paper", "Shv would just be one hemisphere of one ball", "This would be appropriate if there was unknowably large pool table with an
+unknowably large number of pool balls.", "Pool by definition defined the number of pool balls", "Pool as a game is just the metaphor,  it is dhv by
+definition.", then "Yes, build the endless table"). Pool the game stays the dual view's picture: its rules fix the count. The endless table is the
+same balls on the same cloth with the count taken away, and is not called pool. It is built as wander's *Reads and Writes* has it (§7, "A single
+vantage and the DHV, side by side"): a rule for everything nobody has touched, a read from each standpoint, and writes only where something
+changed.
+- **Predictions, written before the first run** (wander's lab rule):
+  - E1. With each moving ball reading only its front half within its reach (the balls ahead of it nearer than two radii and one tick's travel),
+    a shot on the endless table comes out as it does for a referee that holds every ball of a 7 by 7 block of patches and tests every pair: every
+    ball's place the same to 10⁻⁹, over twelve shots played one after another from three starts. Killed by any ball apart by more.
+  - E2. The most balls handed to the engine in any tick depends on the balls moving, not on the block: under 40 where the referee holds over a
+    hundred. Killed if it passes 40, or grows when the block does.
+  - E3. The record grows only by what was struck: after the twelve shots the balls written are those the referee's shots moved, and no others.
+    Killed by a written ball the referee left at rest, or a moved ball not written.
+  - Expected to hold because a closing pair always has one ball with the other in its front half (if B does not have A ahead, d·v_B ≤ 0 with
+    d = A − B, and closing gives d·v_A < d·v_B ≤ 0, so A has B ahead); what could kill E1 is the reach, a ball met within a tick from beyond it.
