@@ -1196,3 +1196,7 @@ changed.
   width at that distance so that cuts are among them, powers 8 to 13, eight shots a start, five starts, the 13 by 13 block, a start void if a
   written ball ends outside it. The run counts only if at least 25 balls are struck over the starts that stand. E1″: no ball apart by more than
   10⁻⁹. E2″: under 40 balls handed to the engine in any tick. E3″: the same balls written.
+- **Run 3** (E1″ to E3″; five starts of eight aimed shots, no start void): **nothing killed.** 30 balls struck (5, 7, 6, 4 and 8). The balls ended
+  apart by at most 7.8·10⁻¹³ (the other four starts under 10⁻¹⁴: the referee carries every held ball to the tick's frame and back each tick, the
+  endless table only the ones read, a last digit's difference); the two wrote the same balls; the endless table handed the engine at most 4
+  balls in a tick, with 29 to 66 reads a start, where the referee held 497. The engine's four cushions and six pockets were there after.
