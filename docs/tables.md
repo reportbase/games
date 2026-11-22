@@ -933,3 +933,10 @@ aims and shoots nothing, and the hand moving while it holds moves no cue. Held a
 9-ball alike. The smoke test (part 5, trick shots): a real click on the white shows nothing, a real press held 40 px from it shows the inset over the
 white with the aim unmoved and no shot. Found running it: on the software renderer a frame can outlast the hold before a drag's first move arrives,
 so the cue-drag check became a velocity pull and shot; `_debug.holdMs` puts the hold off for that drag (a test's switch, the game's 450 ms unchanged).
+
+**The same finger sets the spin** (Nov 22: "You should be able to adjust the dial after looking press and pan move.  Currently, I have to release and
+tap  the diall again to adjust."). The hold on the white showed the spin inset and the finger then had to lift and come down on it. Now, still down,
+the finger's move from where it held moves the tip's mark by as much on the inset, from where the tip was (so nothing jumps under a finger that held
+beside the ball); the inset can still be tapped or dragged afterwards. Read by a capturing `pointermove` on the window for the length of the hold
+(`pullStart`), since the inset stops the events that pass over it. The smoke test (part 5, trick shots): the real press that showed the inset, moved up
+and right without lifting, strikes the white high and right.

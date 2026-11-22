@@ -56805,8 +56805,17 @@ const TRICK_APP = (() => {
     { const w = g.balls.find(b => b.cue && !b.sunk), at = w && d.xy ? ballScreen(w.x, w.z) : null;
       if (at && Math.hypot(at[0] - d.xy[0], at[1] - d.xy[1]) <= SPIN_HIT_PX){
         d.spinHold = true; CTL.spin = true; ateAt = performance.now() + 1e6;      // (the lift that ends this hold is no tap; put right on the lift)
-        const up = () => { removeEventListener('pointerup', up, true); removeEventListener('pointercancel', up, true); ateAt = performance.now(); };
-        addEventListener('pointerup', up, true); addEventListener('pointercancel', up, true);
+        /* THE SAME FINGER SETS THE SPIN (Nov 22: "You should be able to adjust the dial after lo[ng] press and pan move.  Currently, I have to release and
+           tap  the diall again to adjust."): the hold showed the inset and the finger then had to lift and come down on it. Now, still down, the finger's
+           move from where it held moves the tip's mark by as much on the inset (from where the tip was, so nothing jumps under a finger that held beside
+           the ball). Read here on the window, before the inset's own handlers, which stop what passes over it. */
+        const t0 = { x: g.tip.x, y: g.tip.y }; let from = null;
+        const mv = e => { if (g.anim || !CTL.tip) return; if (!from) from = [e.clientX, e.clientY];
+          const k = (CTL.tip.getBoundingClientRect().width || 184) * 0.36;
+          setTip(g, t0.x + (e.clientX - from[0]) / k, t0.y - (e.clientY - from[1]) / k); touch(); try { ctlDraw(g); } catch {} };
+        if (d.xy) from = [d.xy[0], d.xy[1]];
+        const up = () => { removeEventListener('pointerup', up, true); removeEventListener('pointercancel', up, true); removeEventListener('pointermove', mv, true); ateAt = performance.now(); };
+        addEventListener('pointerup', up, true); addEventListener('pointercancel', up, true); addEventListener('pointermove', mv, true);
         try { window.fieldWake && window.fieldWake(); } catch {} touch(); return; } }
     d.pull = { x0: d.xy[0], y0: d.xy[1], was: g.power, f: 0 }; CTL.g = g; CTL.pulling = d.pull; CTL.spin = false;
     const h = CTL.pull.getBoundingClientRect().height || 220;

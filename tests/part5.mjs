@@ -280,7 +280,14 @@ try {
       await page.mouse.click(pw.x, pw.y); await drawn(page, 600);
       live.tapNo = await page.evaluate(() => { const e = document.getElementById('tsCtl'); return !e || e.style.display === 'none'; });
       const ang0 = (await gs()).ang;
-      await page.mouse.move(pw.x + 40, pw.y); await page.mouse.down(); await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 20000 }).catch(() => {}); await page.mouse.up();
+      await page.mouse.move(pw.x + 40, pw.y); await page.mouse.down(); await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 20000 }).catch(() => {});
+      // (Nov 22: "You should be able to adjust the dial after lo[ng] press and pan move.": still down, the same press moved up and right strikes the white
+      //  high and right; the tip is put back for the shot that follows)
+      await page.mouse.move(pw.x + 60, pw.y - 25, { steps: 4 });
+      for (let k = 0; k < 20 && !((await gs()).tip.y > 0.2); k++) await frame(page, 250);
+      live.holdTip = (await gs()).tip;
+      await page.mouse.up();
+      await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug; D.setTip(D.GAMES.get(c + '_' + r), 0, 0); }, fc);
       await drawn(page, 400); live.holdAng = Math.abs((await gs()).ang - ang0) < 1e-6;
       live.spinAt = await page.evaluate(([x, y]) => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(), shown = !!r && r.width > 0 && document.getElementById('tsCtl').style.display !== 'none';
         return { shown, near: shown && Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y) < 30, shots: null }; }, [pw.x, pw.y]);
@@ -350,7 +357,7 @@ try {
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
       && r.call && r.call.pocket >= 0 && r.call.l1 && r.call.ok && /another pocket/.test(r.call.wrong || '') && r.call.see4 === 0 && r.call.ringed === 2
       && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.cue && live.rolled.cue.len >= 20 && live.rolled.cue.onTop && live.rolled.cue.behind && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
-      && live.tapNo && live.holdAng && live.spinAt && live.spinAt.shown && live.spinAt.near && !live.spinAt.anim && live.spinAt.shots === 0 && !live.barBefore && live.barHeld && live.pull && !live.pull.bar
+      && live.tapNo && live.holdAng && live.holdTip && live.holdTip.x > 0.15 && live.holdTip.y > 0.2 && live.spinAt && live.spinAt.shown && live.spinAt.near && !live.spinAt.anim && live.spinAt.shots === 0 && !live.barBefore && live.barHeld && live.pull && !live.pull.bar
       && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next && live.next[0] === 0 && !live.next[1]
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 0 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
