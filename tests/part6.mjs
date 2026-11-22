@@ -49,10 +49,14 @@ try {
       await drawn(page, 500); await page.evaluate(() => window.__settle());
       if (!(await shown())){ await page.click('#bbHandle'); await drawn(page, 800); }
       out.up = await shown();
-      await page.evaluate(() => document.getElementById('bbHandle').click()); await drawn(page, 1500);   // (the dots are hidden while the row is open, Nov 1: the click is made on the element itself; a long press shuts it by hand)
+      // (Nov 22: "Long press should not show hide the bottom browser.   Add an x to the upper left of the bottom browser to close.": the row's real × shuts
+      //  it, at the row's upper left; a real long press then leaves it shut, and the real dots open it again)
+      out.xAt = await page.evaluate(() => { const x = document.getElementById('bbClose').getBoundingClientRect(), b = document.getElementById('boardBrowser').getBoundingClientRect(); return x.width > 20 && x.left - b.left < 60 && x.top - b.top < 40; });
+      await page.click('#bbClose'); await drawn(page, 1500);
       out.shut = !(await shown());
-      await hold(); out.heldOpen = await shown();
       await hold(); out.heldShut = !(await shown());
+      await page.click('#bbHandle'); await drawn(page, 800); out.dotsOpen = await shown();
+      await hold(); out.heldOpen = await shown();
       await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'simon'); window.setFieldApp(A); });
       await drawn(page, 2500);
       // (Simon's row is empty, so it is drawn shut either way: the field's own switch is read)
@@ -82,7 +86,7 @@ try {
       if (cov){ const m0 = await vis(), f0 = await flags(); await holdAt(cov); out.mines.holdFlag = (await flags()) === f0 + 1 && m0 === await vis(); }
       else out.mines.holdFlag = 'no covered square found';
       const opn = await squareAt(false);
-      if (opn){ const m0 = await vis(), f0 = await flags(); await holdAt(opn); out.mines.holdRow = m0 !== await vis() && (await flags()) === f0; }
+      if (opn){ const m0 = await vis(), f0 = await flags(); await holdAt(opn); out.mines.holdRow = m0 === await vis() && (await flags()) === f0; }
       else out.mines.holdRow = 'no open square found';
       await page.keyboard.press('f'); await drawn(page, 200);
       out.mines.flagMode = await page.evaluate(() => window.getFieldApp().menu[0].items.at(-1).label());
@@ -91,10 +95,10 @@ try {
       else out.mines.tapFlag = 'no square found';
       await page.keyboard.press('f');
     } catch (e) { out.err = String(e); }
-    const ok = !out.err && out.up && out.shut && out.heldOpen && out.heldShut && out.simon && out.simon.before !== out.simon.after
+    const ok = !out.err && out.up && out.xAt && out.shut && out.heldShut && out.dotsOpen && out.heldOpen && out.simon && out.simon.before === out.simon.after
       && out.mines && out.mines.holdFlag === true && out.mines.holdRow === true && out.mines.flagMode === 'Taps: flag' && out.mines.tapFlag === true;
     if (!ok) failures.push(`[bottom row] ${JSON.stringify(out)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} the dots shut trick shots' row and it stayed shut; a real long press opened it and another shut it; in Simon a hold toggled the row; in Minesweeper a hold on a covered square flagged it and one on an open square flipped the row, and Taps: flag (the real F) flagged by a real click`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} the row's × shut trick shots' row and a real long press left it shut, the dots opened it and a long press left it open; in Simon a hold left the row alone; in Minesweeper a hold on a covered square flagged it and one on an open square did nothing, and Taps: flag (the real F) flagged by a real click`);
   }
   // A DOUBLE TAP BRINGS A BOARD IN (Oct 16: "double click should select the board and move it into the default position,
   // unless the game has a good reason not to."): in every game a double tap (real touches) on another board selects it and

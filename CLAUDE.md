@@ -81,7 +81,7 @@ a new game or a change keeps to them.
   phase), worked out in the boards' share of time (`BOARD_KIT.budget`), never all at once.
 - **Only the user moves the view.** No game flies to another board by itself. A single tap
   never selects another board; a double tap brings one in; a tap on the board you are on is
-  the game's. A long press toggles the bottom row (Minesweeper keeps its flag).
+  the game's. A long press does nothing to the bottom row (Nov 22; Minesweeper keeps its flag): the dots open it, its × shuts it.
 - **Games play with the row shut.** The row never opens by itself; what a gesture cannot do
   goes on the play pad (`playActs`). An editor's row is opened by its ✎ or menu item.
 - **A click selects a board, a click on the selected board brings it in** (Nov 21, `docs/field.md`): no double tap goes to another board, and there is

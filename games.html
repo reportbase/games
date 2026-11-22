@@ -273,6 +273,12 @@
                     border: 1px solid rgba(201, 199, 190, .30); background: rgba(18, 21, 28, .58); color: #fff;
                     font-size: 1.125rem; line-height: 1; cursor: pointer; }
   #bbQuick button:disabled { opacity: .35; cursor: default; }
+  /* THE ROW'S × (Nov 22: "Add an x to the upper left of the bottom browser to close."): in the row's top band at its left, shown while the row is open;
+     the dots open the row and this shuts it, now that a long press does neither. Draw's chip look, as the quick buttons'. */
+  #bbClose { position: absolute; top: calc((var(--bb-peek) - 36px) / 2); left: 10px; width: 36px; height: 36px; padding: 0; border-radius: 10px; display: flex;
+             align-items: center; justify-content: center; border: 1px solid rgba(201, 199, 190, .30); background: rgba(18, 21, 28, .58); color: #fff;
+             font-size: 1.125rem; line-height: 1; cursor: pointer; z-index: 4; pointer-events: auto; }
+  body.bb-collapsed #bbClose { display: none; }
   /* …and only while the pane is open (Oct 9: "dont show any buttons when the bottom panel is not visible"). */
   body.bb-collapsed #bbQuick { display: none; }
   @media (max-width: 420px){ #bbQuick { right: 6px; gap: 4px; } #bbQuick button { width: 31px; height: 31px; font-size: 1rem; } }
@@ -1337,7 +1343,7 @@
      for a rebuild to decide whether there was anything worth showing, which
      left the screen without its lock and turn until the first board was
      picked. -->
-<div id="boardBrowser"><div id="bbName" aria-live="off"></div><button id="bbHandle" type="button" aria-label="Show or hide the row of boards"><svg viewBox="0 0 30 8" aria-hidden="true"><circle cx="4" cy="4" r="3"/><circle cx="15" cy="4" r="3"/><circle cx="26" cy="4" r="3"/></svg></button></div>
+<div id="boardBrowser"><button id="bbClose" type="button" aria-label="Close the row of boards" title="Close the row">×</button><div id="bbName" aria-live="off"></div><button id="bbHandle" type="button" aria-label="Show or hide the row of boards"><svg viewBox="0 0 30 8" aria-hidden="true"><circle cx="4" cy="4" r="3"/><circle cx="15" cy="4" r="3"/><circle cx="26" cy="4" r="3"/></svg></button></div>
 
 <!-- Bucket browser: field.html's answer to tangent.fit's ResultPanel file
      list (result.js) — same job, DOM instead of canvas. Opened by the
@@ -4121,7 +4127,8 @@ function turnEnd(e){
      hand stayed still; a hold that then moved was steering. */
   if (turn.keptHold){
     turn.keptHold = false;
-    if (dpx < (turn.isTouch ? 16 : TAP_PX)){ try { toggleBoardBrowser(); } catch {} return; }
+    // (Nov 22: "Long press should not show hide the bottom browser.": a hold no longer toggles the row; the dots open it and its × shuts it)
+    if (dpx < (turn.isTouch ? 16 : TAP_PX)) return;
   }
   if (turn.longPressed){
     turn.longPressed = false;
@@ -4161,7 +4168,8 @@ function turnEnd(e){
         const _a = window.getFieldApp && window.getFieldApp(), _b = turn.holdAt;
         if (_b && _a && _a.onCellHold && _a.holdKeeps) _took = !!_a.onCellHold(_b.c, _b.r, _b.u, _b.v);
       } catch {}
-      if (!_took){ try { toggleBoardBrowser(); } catch {} }
+      /* (Nov 22: "Long press should not show hide the bottom browser.   Add an x to the upper left of the bottom browser to close.": a hold toggled the
+         row from Oct 23; now it does nothing but what an app with `holdKeeps` makes of it. The dots open the row, `#bbClose` shuts it.) */
     }
     turn.holdAt = null;
     return;
@@ -14484,6 +14492,12 @@ function bbAttachTile(tile){
 (function bbMountDots(){
   const h = document.getElementById('bbHandle');
   if (!h) return;
+  // (the row's ×, Nov 22: shuts the row as the dots do when it is open, so an app's own wish about it is asked the same way)
+  const x = document.getElementById('bbClose');
+  if (x){
+    for (const t of ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown']) x.addEventListener(t, e => e.stopPropagation());
+    x.addEventListener('click', e => { e.stopPropagation(); if (!document.body.classList.contains('bb-collapsed')){ toggleBoardBrowser(false); syncBrowserVisibility(); } });
+  }
   h.addEventListener('pointerdown', e => e.stopPropagation());   // never spin the row underneath
   h.addEventListener('click', e => {
     e.stopPropagation();
@@ -56164,7 +56178,9 @@ const TRICK_APP = (() => {
     const now = performance.now();
     if (!N.plan){
       if (!N.thinkAt){ N.thinkAt = now; return; } if (now - N.thinkAt < 700) return;
-      N.plan = ninePlan(g); g.ang = N.plan.a; setPower(g, N.plan.p); g.tip = { x: 0, y: 0 }; g.elev = 0; g.dirty = true; N.planAt = now; touch(); return; }
+      N.plan = ninePlan(g); g.ang = N.plan.a; setPower(g, N.plan.p); g.tip = { x: 0, y: 0 }; g.elev = 0; g.dirty = true; N.planAt = now; touch();
+      behindCue(g);   // (Nov 22: "Rotate the computer shots behind the cue ball as well.": its aim is watched from behind the white, as yours is)
+      return; }
     if (now - N.planAt > 1400){ N.plan = null; shoot(g); touch(); }
   }
   /* BEHIND THE WHITE (Nov 22: "The board for pool games should be auto rotated so the player is behind the cue ball.    The default tilt should be 40
@@ -56173,7 +56189,7 @@ const TRICK_APP = (() => {
      little ahead of the white (`BEHIND_AHEAD`). It is put there when the game opens (`fitView`), when a board is brought in (`onFramed`) and after
      every shot, yours or the computer's (`finish`), so the white is found where it came to rest; a cue's drag still only turns the view where it is
      (Nov 21). The whole table is the wheel, a pinch or the menu's fit away. The table's +x and +z run to the world's −x and −z. */
-  const BEHIND_PITCH = 40, BEHIND_H = 0.2, BEHIND_AHEAD = 2.2;
+  const BEHIND_PITCH = 40, BEHIND_H = 0.42, BEHIND_AHEAD = 3.2;   // (0.2 and 2.2 for a day: "Pool shots should not so close by default.", Nov 22)
   let BEHIND_ON = true;      // (the tests turn it off: their real clicks are aimed over the whole table, framed as it used to open)
   function behindCue(g){
     try {
