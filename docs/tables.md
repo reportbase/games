@@ -736,6 +736,14 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     stick, just rotate the view."): trick shots says `pitchFloor: 20` (the field's own floor is 35; it still opens at the tilt the view has). `turnTo`
     no longer frames the board again: it turns the view about the place on the ground it is looking at, which stays where it is on the screen, at the
     zoom and tilt it has. Probed with a real pan and a real cue drag: the looked-at place the same before and after the turn.
+  - **Up and down, a 40° floor, half the height, the cue from anywhere** (Nov 22: "Minimum tilt 40degrees.  Default board position is up down.  Should
+    be able move the cue stick off the anywhere, doesn't restrict to the default board.   Reduce maximum zoom height by half."): `pitchFloor: 40` (20
+    for a day). `frameYaw: 90`: a new app field, the heading a board is framed at by default (`fwdYaw`, `_offFwd` in the field: the arrival's fit, a
+    double tap, a board brought in by a click, the menu's fit and `framedAsDefault` read it; 0 for every other app), so the table's long way runs up
+    the screen; the 0 key keeps the heading it has, as in every app. `zoomMaxH` is half the field's ceiling (zoom 500 of 1000). `claimsPan` now gets the
+    press's screen place as a third argument and trick shots takes a press off its board too, so a drag begun anywhere moves the cue (two fingers, the
+    wheel, the rails and the keys still move the view; a tap on another board still selects it). Probed: opens at 90° with the table upright, a drag
+    begun on another board turned the cue, a click selected a board, the wheel stopped at zoom 500, the tilt at 40°.
   - **Playing** (`fresh`, `shoot`, `finish`, `undo`: the page's): drag on the table to aim (`claimsPan`, `keepsPress`), tap a point
     to aim at it, tap the white, Shoot or Space/Enter to shoot; a tap while it plays jumps to its end; in free play a drag that
     starts on a ball moves it. The row (`tilesOf`, `onTile`): Shoot, Aim ◀ ▶ (0.1°), Power − +, Spin (`SPINS`: centre, follow,

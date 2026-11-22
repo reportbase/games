@@ -3886,7 +3886,7 @@ function _appClaimsPress(x, y){
      instead of aiming. An app with claimMargin (a fraction of the board) is asked about presses that
      far outside it too, read at the nearest edge. */
   const b = _framedUV(x, y) || (a.claimMargin ? _framedUV(x, y, a.claimMargin) : null);
-  try { return !!a.claimsPan(b ? b.u : null, b ? b.v : null); } catch { return false; }
+  try { return !!a.claimsPan(b ? b.u : null, b ? b.v : null, [x, y]); } catch { return false; }   // (3rd: the press's place on the screen, for an app that takes presses off its board: trick shots' cue, Nov 22)
 }
 
 /* ─── Drag joystick (yaw + altitude rates) ────────────────────────────── */
@@ -16505,10 +16505,16 @@ function tapIsDouble(hit, at){
    framedAsDefault: the framed board settled where frameBoard puts it at the page-load fit, heading forward (the same sums as
    frameBoard and frameSelectedBoardAt, at the tilt the view has now, since a double tap does not change the tilt); a flight
    under way counts as there. reframeDefault is what a double tap does once it is the field's. */
+/* AN APP'S OWN FORWARD (Nov 22, trick shots: "Default board position is up down."): the heading a board is framed at by default is 0, the one the field
+   opens at, unless the app says `frameYaw` (degrees). A pool table is laid along the field's left to right, so its app says 90 and its default view
+   looks along the table, the long way up the screen. The arrival's fit, the 0 key, a double tap, a board brought in by a click and `framedAsDefault`
+   all read it here; `_offFwd` is how far the view is turned from it, −180…180. */
+function fwdYaw(){ try { const a = window.getFieldApp && window.getFieldApp(), y = a && a.frameYaw; return isFinite(y) ? ((((+y % 360) + 540) % 360) - 180) : 0; } catch { return 0; } }
+function _offFwd(){ return ((((((st.yaw || 0) - fwdYaw()) % 360) + 540) % 360) - 180); }
 function framedAsDefault(){
   try {
     if (!target.shown || target.active) return true;
-    const off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;
+    const off = _offFwd();
     if (Math.abs(off) > 1) return false;
     if (birdFit !== FRAME_FIT) return false;
     let af = 1; const a = window.getFieldApp && window.getFieldApp(); if (a && a.frameFit > 0) af = a.frameFit;
@@ -16516,15 +16522,15 @@ function framedAsDefault(){
     const t1 = (gridSpacing() * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize))) / 8;
     const pitch = Math.max((window.LAB ? window.LAB.pitchMin : 35), Math.min(PITCH_MAX, st.pitch)) * Math.PI / 180;
     const back = THREE.MathUtils.lerp(0.75, CAM_H_MAX, zoom / 1000) / Math.tan(pitch);
-    const x = target.boardX, z = target.boardZ - t1 * BOARD_LIFT_ROWS - back;      // (heading forward: sin 0, cos 1)
+    const _fy = fwdYaw() * Math.PI / 180;                                          // (heading forward: the app's own, 0 for most)
+    const x = target.boardX - (t1 * BOARD_LIFT_ROWS + back) * Math.sin(_fy), z = target.boardZ - (t1 * BOARD_LIFT_ROWS + back) * Math.cos(_fy);
     const SP = Math.min(gridSpacingX(), gridSpacingZ());
     return Math.hypot(st.camX - x, st.camZ - z) < 0.04 * SP && Math.abs(st.zoom - zoom) <= Math.max(2, 0.03 * zoom);
   } catch { return true; }
 }
 function reframeDefault(){
+  if (Math.abs(_offFwd()) > 1) target.yaw = fwdYaw();     // (the heading first: the framing is worked out for the heading it arrives at)
   zoomBoardToFit();
-  const off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;
-  if (Math.abs(off) > 1) target.yaw = 0;
   target.active = true;
 }
 /* For a game that takes presses before the field (MATCH_KIT.hands, pinball): asked on each press it would take, true when the
@@ -16773,8 +16779,8 @@ function handleGroundTap(hit, ev){
         /* (Oct 29: "double clicking a board does not center the board properly.") The heading goes first, since the framing
            is worked out for the heading it arrives at (`frameSelectedBoardAt` reads `target.yaw`): set after, a board
            double-tapped at any other heading than forward was centred for the old one and then turned off its middle. */
-        const _off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;       // −180…180 from forward
-        if (Math.abs(_off) > 1) target.yaw = 0;
+        const _off = _offFwd();                                          // −180…180 from forward (the app's own: fwdYaw)
+        if (Math.abs(_off) > 1) target.yaw = fwdYaw();
         // (Oct 31: a double tap on the board already framed, locked and square lets it go; else it frames the board and locks it there)
         if (BOARD_LOCK && onFramed && framedAsDefault()){ setBoardLock(false); return; }   // (Nov 1: "telling me I just double clicked is stupid": no notice says it)
         if (!onFramed) gotoCell(gx, gz);
@@ -17048,8 +17054,8 @@ function handleGroundTap(hit, ev){
         if (!PICKED || PICKED.gx !== gx || PICKED.gz !== gz){ setPicked({ gx, gz }); return; }
         setPicked(null);
         clearSelection(); PLAY.hint = null;
-        const _off = ((((st.yaw || 0) % 360) + 540) % 360) - 180;       // (the heading first: the framing is worked out for the heading it arrives at, Oct 29)
-        if (Math.abs(_off) > 1) target.yaw = 0;
+        const _off = _offFwd();                                          // (the heading first: the framing is worked out for the heading it arrives at, Oct 29)
+        if (Math.abs(_off) > 1) target.yaw = fwdYaw();
         gotoCell(gx, gz);
         zoomBoardToFit();
         target.active = true;
@@ -23288,7 +23294,7 @@ const GALLERY_APP = (() => {
            the turn button, R, the top rail, a drag — is undone: the heading
            goes back to 0 on the short way round, with the fit. */
         st.yaw = ((((st.yaw || 0) % 360) + 540) % 360) - 180;
-        target.yaw = 0; st.yawV = 0;
+        target.yaw = fwdYaw(); st.yawV = 0;
         try { if (window.__yawLever){ window.__yawLever.active = false; window.__yawLever.on = false; } } catch {}
         zoomBoardToFit();
         /* …AND IT LANDS AT ONCE (Nov 2: "it is still animating on load."): the fit a load asks for was a flight, a glide of three seconds
@@ -56755,7 +56761,10 @@ const TRICK_APP = (() => {
       if (LIVE && !TOLD){ TOLD = true; say('Drag the cue round the white to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
     },
     onLeave(){ ctlHide(); },
-    pitchFloor: 20,                                           // (Nov 21: "minimum tilt should be 20 degrees in pool.": down to a player's eye over the cloth; the field's own floor is 35)
+    pitchFloor: 40,                                           // (Nov 22: "Minimum tilt 40degrees."; 20 for a day, Nov 21; the field's own floor is 35)
+    frameYaw: 90,                                             // (Nov 22: "Default board position is up down.": the table's long way runs up the screen by default; the field's fwdYaw)
+    // (Nov 22: "Reduce maximum zoom height by half.": the eye climbs to half the field's ceiling here, zoom 500 of 1000)
+    get zoomMaxH(){ try { return THREE.MathUtils.lerp(0.75, CAM_H_MAX, 0.5) / gridSpacingX(); } catch { return 0; } },
     noDoubleTap(){ return ED.on ? 'always' : !!liveGame(); },
     onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
@@ -56774,9 +56783,14 @@ const TRICK_APP = (() => {
     onCellHold(c, r){ if (ED.on) return true; restart(c, r); say('The table as it was set.', 1400); return true; },
     // a press and a drag aims, the preview following; in free play a press on a ball moves it (wander's: set up any trick shot)
     keepsPress: true,
-    claimsPan(u, v){
+    claimsPan(u, v, xy){
       if (ED.on) return u != null && edDragStart(u, v);
-      const g = liveGame(); if (!g || g.anim || u == null) return false;
+      const g = liveGame(); if (!g || g.anim) return false;
+      /* THE CUE IS TAKEN FROM ANYWHERE (Nov 22: "Should be able move the cue stick off the anywhere, doesn't restrict to the default board."): the cue
+         is 21 ball widths long and lies out over the boards beside, so a hand that takes it there, or anywhere off the table, moves it too; until
+         now a press off the played board panned the view. Two fingers, the wheel, the rails and the keys still move the view, and a tap (no drag)
+         on another board still selects it. */
+      if (u == null){ if (!xy) return false; DRAG = { g, moved: false, ball: null, dx: 0, dz: 0 }; return true; }
       const [x, z] = toTable(u, v), hit = g.ch ? null : g.balls.filter(b => !b.sunk).find(b => Math.hypot(b.x - x, b.z - z) < R * 1.15);
       DRAG = { g, moved: false, ball: hit || null, dx: hit ? hit.x - x : 0, dz: hit ? hit.z - z : 0 }; return true;
     },
@@ -65731,7 +65745,7 @@ function _defaultFitSoon(app){
     try {
       if (window.getFieldApp() !== app) return;
       if (!target.shown){ target.shown = true; target.boardX = target.boardX || 0; target.boardZ = target.boardZ || 0; }
-      st.yaw = ((((st.yaw || 0) % 360) + 540) % 360) - 180; target.yaw = 0; st.yawV = 0;
+      st.yaw = ((((st.yaw || 0) % 360) + 540) % 360) - 180; target.yaw = fwdYaw(); st.yawV = 0;
       zoomBoardToFit();
       // (an app may open on a view of its own after the fit: Levels looks out toward the horizon, from higher, Oct 13)
       if (app.fitView){ try { app.fitView({ st, frameAt: frameSelectedBoardAt, zoomFor: h => window.FIELD_WORLD.zoomFor(h) }); } catch {} }
