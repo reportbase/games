@@ -56421,6 +56421,14 @@ const TRICK_APP = (() => {
      flown at the level's powers and tips, each shot marked by the game's own `scoreOf(sm, mid, deep)` (2 and up: a pot worth playing; under 2 with
      nothing better: a fair hit on the nearest ball that is on instead), the search ending early at a mark of `stopAt` or, below level 3, at the
      first pot; then the hand's error. */
+  /* THE COMPUTER TRUSTS WHAT ITS HAND CAN BRING OFF (Nov 22: "Fix the computer[] losing precision.", the second of what *Reads and Writes* offered:
+     "a computer whose own aim spends digits the same way"). The planners flew every shot exactly, chose by what the exact shot did, and only then
+     added the hand's error: a pot off three balls counted as much as a straight one, and the hand then missed it. Now a pot counts in full only if
+     it is in sight at the hand's own error (`surePot`: the shot's sight worked out with `NINE_ERR` of the level for the aim, `aimSightAt`, the same
+     reckoning the player's preview is cut by); a pot past that is marked as a hope, above a plain hit and under every pot it can be sure of
+     (`hopeOf`). So a shaky hand takes the short straight pot before the long thin one and leaves a combination alone, as a player does. */
+  const surePot = (sm, lv) => { const t = aimSightAt(sm, NINE_ERR[lv - 1]); return sm.sunk.some(p => p.n !== 0 && p.pocket >= 0 && p.t <= t.cut(p.n)); };
+  const hopeOf = (score, sm, lv) => score >= 2 && !surePot(sm, lv) ? 1 + Math.min(0.9, score / 12) : score;
   function* potPlanGen(g, lvIn, on, scoreOf, stopAt, only){
     const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), w = g.balls.find(b => b.cue && !b.sunk);
     if (!w || !on.length) return { a: g.ang, p: 16, tip: [0, 0], score: -1 };
@@ -56428,7 +56436,7 @@ const TRICK_APP = (() => {
     const mid = lv >= 3, deep = lv >= 4, powers = mid ? [12, 18, 26, 34] : [16, 28], tips = deep ? [[0, 0], [0, 0.4], [0, -0.45]] : [[0, 0]];
     let best = null;
     const tryShot = (a, p, tip) => { const st = strikeOf(a, tip[0], tip[1], p, MU_TIP, 0), sm = simulate(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) return;
-      const score = scoreOf(sm, mid, deep); if (!best || score > best.score) best = { a, p, tip, score }; };
+      const score = hopeOf(scoreOf(sm, mid, deep), sm, lv); if (!best || score > best.score) best = { a, p, tip, score }; };
     search: for (const c of eightCands(g.balls, on, only).slice(0, EIGHT_N[lv - 1]))
       for (const p of powers) for (const tip of tips){ tryShot(c.a, p, tip); yield; if (best && (best.score >= stopAt || (!mid && best.score >= 2))) break search; }
     if (!best || best.score < 2){
@@ -56627,6 +56635,7 @@ const TRICK_APP = (() => {
       else if (pots.includes(low.n)) score = 2 + (mid && nextN != null ? 3 * leaveQ(sm.final, nextN) : 0);
       else if (pots.length) score = 1.5;
       else score = 0.6 - (deep ? 0.5 * leaveQ(sm.final, low.n) : 0.01 * sm.contacts.length);
+      score = hopeOf(score, sm, lv);
       if (!best || score > best.score) best = { a, p, tip, score }; };
     search: for (const { P, d } of pk.slice(0, 4)){
       const ux = (low.x - P[0]) / d, uz = (low.z - P[1]) / d, gx = low.x + ux * 2 * R, gz = low.z + uz * 2 * R, a = Math.atan2(gz - w.z, gx - w.x);
@@ -56867,12 +56876,12 @@ const TRICK_APP = (() => {
      that place (`fade`). It is the rule for the match games and free play. A challenge keeps the count it was made and solved with (`sightFor`):
      its par and its "past sight" were set by it, and `see` 0 is still the white to the first ball alone. Worked out once a shot (`SIGHTS`). */
   const SEE_EPS = [0, 1, 0.3, 0.1, 0.03], SIGHTS = new WeakMap();
-  function aimSight(s, see){
-    if (!(see > 0)) return sightOf(s, 0);
-    let per = SIGHTS.get(s); if (!per){ per = {}; SIGHTS.set(s, per); } if (per[see]) return per[see];
+  const aimSight = (s, see) => see > 0 ? aimSightAt(s, SEE_EPS[Math.min(4, see)]) : sightOf(s, 0);
+  function aimSightAt(s, eps){   // (eps: the aim's error in degrees)
+    let per = SIGHTS.get(s); if (!per){ per = {}; SIGHTS.set(s, per); } if (per[eps]) return per[eps];
     const fr = s.frames, hz = s.hz || 60, K = fr.length - 1, idx = {}; s.final.forEach((b, i) => { idx[b.n] = i; });
     const kOf = t => Math.max(0, Math.min(K, Math.round(t * hz))), at = (n, k) => [fr[k][2 * idx[n]], fr[k][2 * idx[n] + 1]];
-    const err = { 0: SEE_EPS[Math.min(4, see)] * D }, from = { 0: 0 }, cut = {}, doubt = {};   // err: a ball's direction, in doubt by this (rad); from: the frame of its last contact
+    const err = { 0: eps * D }, from = { 0: 0 }, cut = {}, doubt = {};   // err: a ball's direction, in doubt by this (rad); from: the frame of its last contact
     // a ball's run from frame k0 to k1: its doubt a frame (as a share of R), and its way cut where the doubt passes 1; the doubt at the end comes back
     const run = (n, k0, k1) => { const e = err[n]; if (e == null) return 0; const u = doubt[n] || (doubt[n] = new Float32Array(K + 1)); let len = 0, p = at(n, k0);
       for (let k = k0 + 1; k <= k1; k++){ const q = at(n, k); if (isNaN(q[0])) break; len += Math.hypot(q[0] - p[0], q[1] - p[1]); p = q; const d = e * len / R; u[k] = Math.min(1, d);
@@ -56888,7 +56897,7 @@ const TRICK_APP = (() => {
     }
     for (const n in err) run(+n, from[n] ?? 0, K);
     const out = { cut: n => cut[n] ?? Infinity, inSight: c => (cut[c.a] ?? Infinity) >= c.t && (cut[c.b] ?? Infinity) >= c.t, fade: (n, k) => { const u = doubt[n]; return u ? u[Math.min(K, k)] : 0; } };
-    per[see] = out; return out;
+    per[eps] = out; return out;
   }
   const sightFor = (s, ch, see) => ch ? sightOf(s, see) : aimSight(s, see);
   function pathItems(out, V){
@@ -57590,7 +57599,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, aimSight, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, aimSight, aimSightAt, surePot, hopeOf, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
   };
   SHARE.install(app, takeShot);
   /* THE MATCH GAMES' APPS (THE POOL GAMES, ONE TABLE, above): each is this app's own hooks with its entry's name, menu, titles and picture.

@@ -1088,3 +1088,17 @@ to the first ball, as it was. Trick shots' free-play title reads the same sight.
   error), and mini golf's aim line.
 - The smoke test (part 5): the three in a line (1, 2, 3 contacts), the three touching, the doubt growing along a run, the 1's way cut sooner at 1°
   than at 0.1°, a challenge's sight the count's, `see` 0 unchanged, and the dots drawn of more than three sizes.
+
+**The computer trusts what its hand can bring off** (Nov 22: "Fix the computer[] losing precision.", the second of what *Reads and Writes* offered).
+The planners flew every candidate exactly, chose by what the exact shot did, and only then added the hand's error, so a pot off a long run or a
+combination counted as much as a straight one. Now a pot counts in full only if it is in sight at the hand's own error (`surePot(sm, lv)`: the
+shot's sight worked out with `NINE_ERR` of the level as the aim, `aimSightAt(s, eps)`, the reckoning the player's preview is cut by, which
+`aimSight(s, see)` now calls with `SEE_EPS`); a pot past that is a hope (`hopeOf`: marked between 1 and 1.9, above a plain hit's 0.6 and under
+every pot it can be sure of). In nine-ball's planner and in `potPlanGen` (eight-ball, straight pool, one-pocket); three-cushion's already played
+the middle of the widest run of headings that score.
+- **Measured** (against the level-3 planner, the break alternating): nine-ball, 40 racks a level, levels 1 to 5 won 38%, 33%, 43%, 65%, 85%
+  (before: 20%, 30%, 53%, 65%, 80% of 60); eight-ball, 30 racks, 20%, 40%, 60%, 70%, 80% (before 15%, 35%, 60%, 70%, 80%). The low levels
+  come out closer to level 3 in nine-ball, levels 1 and 2 within a sample's noise of each other: a shaky hand that picks the pots it can make
+  loses less by its shakiness.
+- A probe: a pot of 3 units is sure at levels 1, 3 and 5; a pot after a run of 10 into a ball 10 from the pocket is sure only at level 5.
+- The smoke test (part 5, with the aim's sight): those two pots, and a pot the hand cannot be sure of marked under 2 and over a plain hit.

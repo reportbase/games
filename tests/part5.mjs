@@ -1539,8 +1539,15 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       // drawn: the dots of a live game's preview are not all one size where the sight ends in the shot
       const V = { B: open3.final.map(b => ({ ...b })), pos: [], ch: null, sim: open3, hz: 60, see: 2, paths: 'all' }, items = []; D.pathItems(items, V);
       const sizes = new Set(items.filter(i => i.kind === 'tsDot').map(i => i.scale.toFixed(5))); out.thin = sizes.size > 3;
+      // (Nov 22: "Fix the computer[] losing precision.": the computer trusts a pot only where its own hand's error still sees it: a short straight pot
+      //  is sure at every level, a long one only for a steady hand, and a pot it cannot be sure of is marked under any it can)
+      { const P = D.POCKETS[2], aim = T => { const w = T[0], t = T[1], d = Math.hypot(P[0] - t.x, P[1] - t.z); return Math.atan2(t.z + (t.z - P[1]) / d * 0.9 - w.z, t.x + (t.x - P[0]) / d * 0.9 - w.x); };
+        const shot = (T, p) => { const st = D.strikeOf(aim(T), 0, 0, p); return D.simulate(T, st.dir, st.speed, st.w, st.vy); };
+        const sn = shot([mk(0, 6, -2.5), mk(1, 8.6, -3.9)], 16), sf = shot([mk(0, -9, 4), mk(1, 0.5, -0.2)], 26);
+        out.sure = [sn.sunk.some(q => q.n === 1), sf.sunk.some(q => q.n === 1), [1, 3, 5].map(l => +D.surePot(sn, l)).join(''), [1, 3, 5].map(l => +D.surePot(sf, l)).join(''),
+          D.hopeOf(3, sn, 5) === 3, D.hopeOf(3, sf, 1) < 2 && D.hopeOf(3, sf, 1) > 0.6, D.hopeOf(0.6, sf, 1) === 0.6].join(); }
       return out; });
-    const okA = as.open === '3,1,2,3' && as.near === '3,3' && as.fade && as.cut && as.kept && as.zero && as.thin;
+    const okA = as.sure === 'true,true,111,001,true,true,true' && as.open === '3,1,2,3' && as.near === '3,3' && as.fade && as.cut && as.kept && as.zero && as.thin;
     if (!okA) failures.push('[pool the aim\'s sight] ' + JSON.stringify(as));
     console.log(`${okA ? 'ok  ' : 'FAIL'} pool: the shot seen as far as the aim reaches (three balls in a line: ${as.open} contacts in sight at 1°, 0.3°, 0.1°; three touching: all at 1°; a challenge keeps its count)`);
   }
