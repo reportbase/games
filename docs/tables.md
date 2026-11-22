@@ -940,3 +940,29 @@ the finger's move from where it held moves the tip's mark by as much on the inse
 beside the ball); the inset can still be tapped or dragged afterwards. Read by a capturing `pointermove` on the window for the length of the hold
 (`pullStart`), since the inset stops the events that pass over it. The smoke test (part 5, trick shots): the real press that showed the inset, moved up
 and right without lifting, strikes the white high and right.
+
+**Three-cushion billiards** (Nov 22: "What is next pool game", then "Proceed", to the recommendation of three-cushion billiards). `CAROM_APP`, id
+`threecushion`, made inside `TRICK_APP` as `carApp`, as nine-ball's `nineApp` is (THREE-CUSHION BILLIARDS, ON THE SAME ENGINE). Three balls (the
+white, the yellow 1 and the red 3) where the board's own number puts them (`rackC`), on a table with no pockets. A point is the white meeting both
+balls having touched three cushions or more before it reaches the second (`carScore`, from the shot's own `contacts` and `cushions`; touches within
+0.02 s count once); a point keeps the turn, a miss passes it, the first to `CAR_TO` (3) has the game; three stars with the computer on none, two on
+one, one on two. It is a match game as nine-ball is and rides its ways: the game carries `g.nine` with `car: true` and `pts`, `NINE()` is true for
+both apps and `CAR()` asks which (`GAMES_C`, `carFinish`, `carPlanGen`, `carTitle`, `nineRecGen(idx, true)` for a board no one plays, its recordings
+in `RECS_N` under `'c' + idx`).
+- **No pockets.** The engine above the IN THE FIELD line reads `POCKETS` and its text is the worker's, so it is not touched: a carom shot is flown
+  with the list emptied for the length of the call (`simC`; `simM` is what the preview and the shot ask, whichever game is up). The picture, the
+  tiles and the cushions are drawn without them (`paint(S, true)` under the photo keys `carom:h` and `carom:l`, `GRID_C`, `CUSHIONS_C`).
+- **One white.** In the real game each side has its own cue ball and the other's is an object ball. Here both sides play the white, so the engine's
+  one cue ball, its preview and the cue serve as they are. Said to the owner when it was built; two cue balls would mean the engine's `cue` flag,
+  `sightOf`'s ball 0 and the drawn colours each learning which ball is the shooter's.
+- **The computer** flies the shot at every heading round the white (`CAR_ANG`: 48, 72, 96, 120, 144 by level) at the level's powers and side spins
+  (`CAR_TRY`), plays the middle of the widest run of headings that score, looked at again eight times as finely from level 3, then its hand's error
+  (`CAR_ERR`: 2.4°, 1.6°, 1.0°, 0.7°, 0.45°). With nothing that scores it plays softly at the nearer ball. A shot of three balls takes about 0.8 ms
+  to fly, so level 5's 750 are well under a second, 10 ms a frame (`nineTick`).
+- **Measured** (`carAuto`, the planner against itself on eight boards a level): it scores on 5%, 6%, 15%, 43% and 52% of its shots at levels 1 to 5.
+  Powers of 22 and under were tried first and seldom reached a third cushion (level 1: 2%).
+- **What you see ahead** (`CAR_SEE`): the white's way up to the second ball at levels 1 to 4, to the first ball only at level 5.
+- The smoke test (part 5): three balls the same on a board each time and well apart; games apart from nine-ball's; a white sent hard into a corner
+  stays up, where the same shot on the pool table goes down, and the engine's six pockets are there after; the rule on shots made up (three cushions
+  then the second ball scores, two do not, cushions first then both balls scores, one ball alone does not); a point keeps the turn, a miss passes
+  it, the third point wins with three stars; the computer plans a shot; the real Space shoots.

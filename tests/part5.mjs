@@ -1343,6 +1343,47 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} nine-ball: the rack (${n9 && n9.rack}), games apart from trick shots', a pot keeps the turn, a miss passes it, a foul gives the white in hand, the 9 wins or goes back, the computer plans a legal shot, the real Space breaks`);
   }
 
+  // THREE-CUSHION BILLIARDS (Nov 22: "What is next pool game", then "Proceed"): a third app on trick shots' engine. Three balls and no pockets (a ball
+  // sent into a corner stays up, and the engine's pockets are as they were afterwards); a point is the white meeting both balls with three cushions
+  // or more before the second; a point keeps the turn, a miss passes it, the third point wins; the computer plans a shot; the real Space shoots.
+  {
+    current = 'threecushion';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'threecushion')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const c3 = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, N9 = window.FIELD_APPS.find(a => a.id === 'nineball')._debug, out = {};
+      const B = D.rackC(7), B2 = D.rackC(7), B3 = D.rackC(8), at = b => b.map(x => x.n + ':' + x.x.toFixed(3) + ',' + x.z.toFixed(3)).join(' ');
+      out.rack = [B.length, B.map(b => b.n).join(''), at(B) === at(B2), at(B) !== at(B3), B.every((a, i) => B.every((b, j) => i === j || Math.hypot(a.x - b.x, a.z - b.z) >= 3))].join();
+      out.apart = D.GAMES !== N9.GAMES && A.name === '3-cushion' && A.id === 'threecushion';
+      // no pockets: the white sent hard into a corner stays up, and the engine's six are there again after
+      const C = [{ ...B[0], x: 7, z: 3 }, { ...B[1], x: -8, z: -3 }, { ...B[2], x: -8, z: 3 }], st = D.strikeOf(Math.atan2(D.LZ / 2 - 3, D.LX / 2 - 7), 0, 0, 30);
+      const sm = D.simC(C, st.dir, st.speed, st.w, st.vy), sp = D.simulate(C, st.dir, st.speed, st.w, st.vy);
+      out.pockets = [sm.sunk.length, sp.sunk.length > 0, D.POCKETS.length, D.GRID_C.colors.includes(0x060608), D.CUSHIONS_C.length].join();
+      // the rule, on shots made up: the white's contacts and cushions in order
+      const shot = (hits, rails) => ({ contacts: hits.map(([t, o]) => ({ t, a: 0, b: o })), cushions: rails.map(t => ({ n: 0, t })), sunk: [] });
+      const sc = (h, r) => { const x = D.carScore(shot(h, r)); return x.ok + ':' + x.rails; };
+      out.rule = [sc([[1, 1], [5, 3]], [2, 3, 4]), sc([[1, 1], [5, 3]], [2, 3]), sc([[4, 3], [5, 1]], [1, 2, 3]), sc([[1, 1]], [2, 3, 4]), sc([], [1, 2, 3]), sc([[1, 1], [2, 1], [6, 3]], [3, 4, 5, 5.01])].join(' ');
+      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
+      out.start = [g.balls.length, g.nine.car, g.nine.turn, g.nine.pts.join('-')].join();
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      const play = (h, hits, rails) => { const s = { ...shot(hits, rails), final: h.balls.map(b => ({ ...b })) }; h.anim = { s }; D.carFinish(h, s); return h; };
+      let h = play(fresh(), [[1, 1], [5, 3]], [2, 3, 4]); out.point = [h.nine.turn, h.nine.pts.join('-'), h.nine.over].join();
+      h = play(h, [[1, 1], [5, 3]], [2, 3, 4]); h = play(h, [[1, 3], [5, 1]], [2, 3, 4]); out.win = [h.nine.over, h.nine.stars, h.nine.pts.join('-')].join();
+      h = play(fresh(), [[1, 1]], [2]); out.miss = [h.nine.turn, h.nine.pts.join('-')].join();
+      const P = D.carPlan(h, 3); out.plan = isFinite(P.a) && P.p >= 12;
+      out.title = /^3-cushion — level \d · the computer's shot · you 0, the computer 0 \(to 3\)/.test(D.titleOf(h));
+      fresh();
+      return out;
+    });
+    const g3 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim } : null; });
+    await page.keyboard.press('Space'); await drawn(page, 300);
+    const shot3 = await g3();
+    const ok = c3 && !c3.none && c3.rack === '3,013,true,true,true' && c3.apart && c3.pockets === '0,true,6,false,4' && c3.rule === 'true:3 false:2 true:3 false:3 false:3 true:3'
+      && c3.start === '3,true,0,0-0' && c3.point === '0,1-0,0' && c3.win === '1,3,3-0' && c3.miss === '1,0-0' && c3.plan && c3.title && shot3 && shot3.shots === 1;
+    if (!ok) failures.push('[threecushion] ' + JSON.stringify({ c3, shot3 }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} three-cushion: three balls, no pockets (a ball sent into a corner stays up), a point for both balls off three cushions before the second, a point keeps the turn, a miss passes it, the third point wins, the computer plans a shot, the real Space shoots`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
