@@ -206,7 +206,9 @@ try {
   // reference shot, the same each time, par rising and the window of aim narrowing farther out; stars; a tap on a solved board
   // going on to the next; the real spin inset and pull strip; the balls rolling, numbered, with trails.)
   {
-    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); window.setFieldApp(A); A._debug.GAMES.clear(); });
+    // (Nov 22: the pool games open behind the white, low and close; these checks' real clicks are aimed over the whole table, so that is turned off here
+    //  and checked by itself at the end of the nine-ball check)
+    await page.evaluate(() => { const A = window.FIELD_APPS.find(a => a.id === 'trickshots'); A._debug.behind(false); window.setFieldApp(A); A._debug.GAMES.clear(); });
     await drawn(page, 1500);
     current = 'trickshots';
     const before = failures.length;
@@ -1289,6 +1291,19 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const broke = await g9();
     const ok = n9 && !n9.none && n9.rack === '10,1,true,true,true' && n9.apart && n9.start === '10,0,false,1' && n9.pot === '0,false,0' && n9.miss === '1,false,0'
       && n9.wrong === '1,true,1/0' && n9.scratch === '1,true,1/0,true' && n9.win === '1,3' && n9.nineBack === '0,true,1' && n9.plan && broke && broke.shots === 1;
+    // BEHIND THE WHITE (Nov 22: "The board for pool games should be auto rotated so the player is behind the cue ball.    The default tilt should be 40
+    // degrees.  The zoom height should be very low so the player is close to the bal[l]."): asked for, the view tilts to 40°, looks along the shot and
+    // comes down low, the white in the lower middle of the screen
+    for (let k = 0; k < 80 && (await g9()).anim; k++) await frame(page, 300);
+    const bh = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, L = D.LIVE, g = D.GAMES.get(L.c + '_' + L.r), z0 = W.st.zoom;
+      D.behind(true); D.behindCue(g); await window.__settle();
+      const w = g.balls.find(b => b.cue && !b.sunk), T = W.target, bW = W.boardW(), LB = window.LAB || {};
+      const p = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(w.x)) * bW * (LB.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(w.z)) * bW * (LB.cellH || 1)).project(W.camera);
+      const want = Math.atan2(-Math.cos(g.ang), -Math.sin(g.ang)) * 180 / Math.PI, off = ((W.st.yaw - want) % 360 + 540) % 360 - 180;
+      return { pitch: W.st.pitch, off, lower: W.st.zoom < z0 * 0.5, x: (p.x + 1) / 2, y: (1 - p.y) / 2 }; });
+    const okB = Math.abs(bh.pitch - 40) < 0.5 && Math.abs(bh.off) < 3 && bh.lower && Math.abs(bh.x - 0.5) < 0.1 && bh.y > 0.5 && bh.y < 1;
+    if (!okB) failures.push('[pool behind the white] ' + JSON.stringify(bh));
+    console.log(`${okB ? 'ok  ' : 'FAIL'} pool: behind the white, tilted ${bh.pitch}°, ${bh.off.toFixed(1)}° off the shot's line, low, the white at ${bh.x.toFixed(2)}, ${bh.y.toFixed(2)} of the screen`);
     if (!ok) failures.push('[nineball] ' + JSON.stringify({ n9, broke }));
     console.log(`${ok ? 'ok  ' : 'FAIL'} nine-ball: the rack (${n9 && n9.rack}), games apart from trick shots', a pot keeps the turn, a miss passes it, a foul gives the white in hand, the 9 wins or goes back, the computer plans a legal shot, the real Space breaks`);
   }

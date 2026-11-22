@@ -888,4 +888,14 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   - Probed: a rack opened, the real Space broke and potted, turns passed, fouls were counted and a rack ran down to the 9 over 31 shots (the
     computer's planner playing both sides); the page evaluate of part 5's new check ("nine-ball") returned what it wants. Part 5 itself was not run.
   - Not measured: how often the computer wins at each level against a person, and the planner's time on a slow phone (up to nine `simulate` calls a turn).
+- **The pool games behind the white** (Nov 22: "The board for pool games should be auto rotated so the player is behind the cue ball.    The default tilt
+  should be 40 degrees.  The zoom height should be very low so the player is close to the bal[l]."): trick shots and 9-ball stand the view behind the white,
+  looking along the shot as it is aimed, tilted 40° (`BEHIND_PITCH`), as low as the eye goes (`BEHIND_H` 0.2 of a table's length asks for less than the
+  field's lowest, so it is the lowest), the place looked at 2.2 table units ahead of the white (`BEHIND_AHEAD`), so the white sits in the lower middle
+  of the screen. `behindCue(g)` does it through a new `FIELD_WORLD.viewTo({x, z, yaw, pitch, zoom})` when the game opens (`fitView`), when a board is
+  brought in (`onFramed`) and after every shot, yours or the computer's. A cue's drag still turns the view where it stands (`turnTo`). In 9-ball the
+  cue is laid toward the ball that is on when your shot comes. `noDoubleTap` is 'always' in both (the view is never the board's default, so the
+  field's double tap would have reframed the whole table at any two quick taps); the whole table is the wheel, a pinch or the menu's fit away. The
+  smoke test turns it off for trick shots' real clicks (`_debug.behind(false)`) and checks it by itself after the nine-ball check; that part was not run.
+  Probed in both games: 40°, the white at the same place low on the screen on opening and after a break and the computer's shots.
 
