@@ -1065,3 +1065,26 @@ straight pool does (`rackS`).
   shot; the search at one pocket finds no more pots than the search at all six; a game played out has a winner; the real Space breaks.
 One-pocket measured after the fix (`oneAuto`, 24 games a level against the level-3 planner, the break alternating): levels 1 to 5 won 8%, 21%,
 38%, 88% and 96%; a game took 67, 60, 56, 44 and 39 shots with 3.3, 2.2, 1.9, 1.1 and 0.6 fouls, and every game ended.
+
+**The shot seen as far as the aim reaches** (Nov 22: "What does the read write paper say about the pool game", "Can we apply these ideas to any game
+currently implemented", then "Proceed", to the first of what was offered: a preview that fades where the aim runs out). wander's *Reads and Writes*
+uses this engine as its clean case (played from inside each ball, contact at h + v = 1; the engine audited; a collision sorted into what is read,
+written and the whole table's) and has, from POL runs 8–9, that a contact multiplies an error in the aim by s/(2r·cos φ), s the run before it: on
+an open table 1.5 to 2 binary digits a contact, none inside a rack. The preview's reach was a count of contacts (`sightOf(s, see)`, 3, 2 or 1 by
+level), which stood for that. Now, in the match games and free play, it follows the shot (`aimSight(s, see)`, THE SHOT IS SEEN AS FAR AS THE AIM
+REACHES):
+- the white leaves with an aim good to `SEE_EPS[see]`: 0.1° where three contacts were seen, 0.3° for two, 1° for one (0.03° for four);
+- a ball's place is in doubt by its direction's error times its run since its last contact; past a ball's radius its way is out of sight from
+  there, and so is every ball it then meets;
+- at a contact both balls leave with the doubt they came in with and, added, the doubt in where they met over 2r·cos φ (the paper's factor; the
+  doubt carried in is kept so that a cluster, with no run, gains and spends nothing; the paper has a rack gaining digits, not followed here);
+- the dots thin toward where the sight ends (`fade`, to 0.4 of their size).
+A challenge keeps the count it was made and solved with (`sightFor(s, ch, see)`): its par and its "past sight" were set by it; `see` 0 is the white
+to the first ball, as it was. Trick shots' free-play title reads the same sight. Worked out once a shot (`SIGHTS`, a WeakMap).
+- **Measured** (a probe, the white at 30): three balls in a line six apart, the contacts in sight 1, 2, 3 at 1°, 0.3°, 0.1° (the count gave 0, 1, 3
+  as it marked a contact by the depth its balls ended at); three balls touching, all three at any aim; nine-ball's break at 0.1°, 17 of 20 contacts
+  and most balls' ways whole; a white run 18 units into a cut, the third contact past sight where the count showed none of four.
+- Not done of what was offered: a computer whose own aim spends digits the same way (it still flies every shot exactly and then adds its hand's
+  error), and mini golf's aim line.
+- The smoke test (part 5): the three in a line (1, 2, 3 contacts), the three touching, the doubt growing along a run, the 1's way cut sooner at 1°
+  than at 0.1°, a challenge's sight the count's, `see` 0 unchanged, and the dots drawn of more than three sizes.
