@@ -56709,7 +56709,11 @@ const TRICK_APP = (() => {
     const mk = () => { const E = endMake(PX, PZ); endCue(E, 0, 0, -4, 0.3); return E; }, E = mk(), F = mk();
     const block = () => { const L = []; for (let i = -half; i <= half; i++) for (let j = -half; j <= half; j++) for (const b of endIn(F, i, j)) if (b.id !== 'cue') L.push(b); return L; };
     let held = 0, ticks = 0;
-    for (const [a, p] of shots){
+    for (let [a, p, off] of shots){
+      if (a == null){   // (aimed: at the ball nearest the white, turned off it by `off` ball widths at that distance)
+        const w = E.wr.get('cue'); let best = null;
+        for (let di = -2; di <= 2; di++) for (let dj = -2; dj <= 2; dj++) for (const o of endIn(E, w.i + di, w.j + dj)){ if (o.id === 'cue') continue; const dx = o.x + di * PX - w.x, dz = o.z + dj * PZ - w.z, d = Math.hypot(dx, dz); if (!best || d < best.d) best = { d, a: Math.atan2(dz, dx) }; }
+        a = best ? best.a + Math.atan2((off || 0) * 2 * R, best.d) : 0; }
       endStrike(E, a, p); endStrike(F, a, p);
       for (let f = 0; f < 60 * 60 && E.moving.size; f++){ endTick(E); ticks++; }
       for (let f = 0; f < 60 * 60 && F.moving.size; f++){ const L = block(); held = Math.max(held, L.length); endTick(F, L); }

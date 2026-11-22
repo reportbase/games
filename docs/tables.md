@@ -1188,3 +1188,11 @@ changed.
   most, under two patches along and four across), six shots a start, a 13 by 13 block, and a start void (not a kill) if any written ball lies
   outside the block at the end. E1′: no ball apart by more than 10⁻⁹. E2′: the endless table hands the engine under 40 balls in any tick.
   E3′: the two write the same balls.
+- **Run 2** (E1′ to E3′; `endCompare`, three starts of six shots at powers 5 to 12, a 13 by 13 block, no start void): **nothing killed, and
+  little tried.** Every ball ended where the referee's did (apart by exactly 0), the two wrote the same balls, and the endless table handed the
+  engine at most 2 balls in a tick where the referee held 497. But shots at random headings on so sparse a cloth struck two balls in each of two
+  starts and none in the third (47, 0 and 17 reads): the claim was hardly put to it.
+- **E1″ to E3″, written before run 3**: the same claims with the shots aimed: each at the ball nearest the white, turned off it by up to a ball's
+  width at that distance so that cuts are among them, powers 8 to 13, eight shots a start, five starts, the 13 by 13 block, a start void if a
+  written ball ends outside it. The run counts only if at least 25 balls are struck over the starts that stand. E1″: no ball apart by more than
+  10⁻⁹. E2″: under 40 balls handed to the engine in any tick. E3″: the same balls written.
