@@ -925,3 +925,11 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   is its own). Measured on three boards: 24, 27 and 15 shots, loops of 95, 113 and 65 s, 120 to 290 ms of work each, every one ending with the 9 down.
   The hands' error is random, so a board's rack differs each visit. Part 5 has a check for it, not run.
 
+
+**A hold on the white shows the spin inset** (Nov 22: "Move tap the cue ball to  long press to show target readout.  Increase hit zone for long
+ress."). A tap on the white showed the spin inset; it does nothing now. A press held `HOLD_MS` (450 ms) within `SPIN_HIT_PX` (72 px on the screen) of
+the white shows it (`pullStart`, `spinHold`): the mark is wide for a finger, the ball being a few pixels across from above. The lift that ends the hold
+aims and shoots nothing, and the hand moving while it holds moves no cue. Held anywhere else, a press is still the velocity bar's. Trick shots and
+9-ball alike. The smoke test (part 5, trick shots): a real click on the white shows nothing, a real press held 40 px from it shows the inset over the
+white with the aim unmoved and no shot. Found running it: on the software renderer a frame can outlast the hold before a drag's first move arrives,
+so the cue-drag check became a velocity pull and shot; `_debug.holdMs` puts the hold off for that drag (a test's switch, the game's 450 ms unchanged).

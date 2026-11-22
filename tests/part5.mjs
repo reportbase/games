@@ -260,9 +260,12 @@ try {
       //  and a board no one plays shows no cue)
       const p0 = await at(w.x + 3, w.z - 2), p1 = await at(w.x, w.z - 11);
       live.off = await page.evaluate(([x, y]) => !window.FIELD_WORLD.uvAt(x, y), [p1.x, p1.y]);
+      // (the hold that shows the velocity bar or the spin inset is put off for this drag: a frame here can outlast it before the drag's first move arrives)
+      await page.evaluate(() => window.getFieldApp()._debug.holdMs(1e7));
       await page.mouse.move(p0.x, p0.y); await page.mouse.down(); await page.mouse.move(p1.x, p1.y, { steps: 8 });
       for (let k = 0; k < 20 && Math.abs((await gs()).ang - 90) > 8; k++) await frame(page, 250);
       await page.mouse.up();
+      await page.evaluate(() => window.getFieldApp()._debug.holdMs(450));
       live.dragged = (await gs()).ang;
       await drawn(page, 500);   // (past the tap the field still calls after a drag)
       live.yawT = await page.evaluate(() => window.FIELD_WORLD.target.yaw);
@@ -271,9 +274,14 @@ try {
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), o = g.ch.sol; g.ang = o.a * D.D; D.setPower(g, o.p); D.setTip(g, 0, 0); }, fc);
       // (Nov 22: "If tap the cue ball, show the touch spin icon over the cue  ball.": a real click on the white shows the spin inset over it and shoots
       //  nothing; the real Space plays the shot)
+      // (Nov 22, later: "Move tap the cue ball to  long press to show target readout.  Increase hit zone for long [p]ress.": a tap on the white shows
+      //  nothing; a press held 40 px from it, inside the wide mark, shows the inset, and its lift shoots and aims nothing)
       const pw = await at(w.x, w.z);
-      await page.mouse.click(pw.x, pw.y);
-      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 15000 }).catch(() => {});
+      await page.mouse.click(pw.x, pw.y); await drawn(page, 600);
+      live.tapNo = await page.evaluate(() => { const e = document.getElementById('tsCtl'); return !e || e.style.display === 'none'; });
+      const ang0 = (await gs()).ang;
+      await page.mouse.move(pw.x + 40, pw.y); await page.mouse.down(); await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 20000 }).catch(() => {}); await page.mouse.up();
+      await drawn(page, 400); live.holdAng = Math.abs((await gs()).ang - ang0) < 1e-6;
       live.spinAt = await page.evaluate(([x, y]) => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(), shown = !!r && r.width > 0 && document.getElementById('tsCtl').style.display !== 'none';
         return { shown, near: shown && Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y) < 30, shots: null }; }, [pw.x, pw.y]);
       live.spinAt.shots = (await gs()).shots; live.spinAt.anim = (await gs()).anim;
@@ -296,8 +304,7 @@ try {
       // the real spin inset (shown by a real click on the white): a click above its middle strikes the white high; the velocity bar (Nov 22: "Long press and
       // pull show the velocity bar."): a real press held on the table shows it, a pull fills it and sets the power, and letting go shoots
       // (the table is solved by now, and a click on a solved table sets it up again: that click first, then the one that shows the inset)
-      { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x, w1.z); await page.mouse.click(q.x, q.y); await drawn(page, 800); const g2 = await gs(), w2 = g2.balls[0], q2 = await at(w2.x, w2.z); await page.mouse.click(q2.x, q2.y); }
-      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 15000 }).catch(() => {});
+      { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x, w1.z); await page.mouse.click(q.x, q.y); await drawn(page, 800); const g2 = await gs(), w2 = g2.balls[0], q2 = await at(w2.x, w2.z); await page.mouse.move(q2.x, q2.y); await page.mouse.down(); await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 20000 }).catch(() => {}); await page.mouse.up(); }
       const tipBox = await page.evaluate(() => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(); return r && r.width && document.getElementById('tsCtl').style.display !== 'none' ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width } : null; });
       if (tipBox){ await page.mouse.click(tipBox.x - 0.2 * 0.36 * tipBox.w, tipBox.y - 0.5 * 0.36 * tipBox.w); live.inset = (await gs()).tip; }
       { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x > 0 ? w1.x - 4 : w1.x + 4, 0), s0 = g1.shots;
@@ -343,7 +350,7 @@ try {
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
       && r.call && r.call.pocket >= 0 && r.call.l1 && r.call.ok && /another pocket/.test(r.call.wrong || '') && r.call.see4 === 0 && r.call.ringed === 2
       && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.cue && live.rolled.cue.len >= 20 && live.rolled.cue.onTop && live.rolled.cue.behind && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
-      && live.spinAt && live.spinAt.shown && live.spinAt.near && !live.spinAt.anim && live.spinAt.shots === 0 && !live.barBefore && live.barHeld && live.pull && !live.pull.bar
+      && live.tapNo && live.holdAng && live.spinAt && live.spinAt.shown && live.spinAt.near && !live.spinAt.anim && live.spinAt.shots === 0 && !live.barBefore && live.barHeld && live.pull && !live.pull.bar
       && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next && live.next[0] === 0 && !live.next[1]
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 0 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
