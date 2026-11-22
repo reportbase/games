@@ -1022,3 +1022,24 @@ for the solids 1–7, 't' for the stripes 9–15, null while the table is open);
   turn, the ball met first up passes the turn with the other back on the table, nothing met takes a point and gives the white in hand; one ball
   left, the fourteen are back with the head of the triangle empty and the last ball where it lay; the twentieth point wins with three stars; the
   computer plans a shot; a game played out with no table drawn ends at 20 with the rack set again at least once; the real Space breaks.
+
+**The pool games, one table** (Nov 22: "Is there a lot of code reuse between the pool games?", then "Tidy the pool games into one table"). Asked how
+much the five share: the engine, the table's drawing, the controls, the view, the bottom row, the computer's turn and the boards no one plays are
+written once; a game adds its rack, its rules (a shot judged), its planner, its title, menu and icon, about 150 lines. What was not shared: the
+four match games were told apart by a flag a game (`car`, `eight`, `str`) and a chain of "which game is up?" in a dozen places, the planners of
+eight-ball and straight pool were one loop written twice, and the four apps' menus and hooks were near copies.
+- **`MATCH`** (THE POOL GAMES, ONE TABLE) is an entry a game: `key`, `pre` and `best` (its keys' prefixes), `games`, `rack`, `cue`, `fresh`, `see`,
+  `finish`, `planGen`, `title`, `sim`, `brk`, `recShots`, `app`. `M()` is the entry of the app that is up (null: trick shots); a game carries its
+  entry's key (`g.nine.kind`, a set-up's `kind`), and `kindOf(g)` is its entry. `setupOf`, `fresh`, `finish`, `titleOf`, `nineTick`, `nineRecGen`,
+  `nineRecSoon`, `simM` and the bare rack of a board being made ask the entry. `NINE()` is `!!M()` and `CAR()` is `M() === MATCH.carom` (its table
+  drawn without pockets); `EIGHT()` and `STR()` are gone, and so are the flags.
+- **`matchAuto(key, idx, lvA, lvB, max)`** plays a game out with no table drawn for any entry; `nineAuto`, `eightAuto` and `strAuto` are what they
+  return of it, and `ninePlan`, `eightPlan`, `strPlan`, `carPlan` are `matchPlan` of their entries.
+- **`potPlanGen(g, lv, on, scoreOf, stopAt)`** is the one search for a pot; `eightPlanGen` and `strPlanGen` are their games' marks for a shot
+  (`scoreOf`) handed to it. Nine-ball's planner (the lowest ball, its four nearest pockets) and three-cushion's (every heading) stay their own.
+- **`matchApp(m, o)`** makes an entry's app from this one's hooks: the name, the hint, the tooltips, the icon (`TABLE_ICON`, `dot`), hooks of its
+  own (three-cushion's pictures), what its tests reach. Every pool game's Difficulty item now clears trick shots' recordings too (nine-ball's did).
+- **A new game** is an entry in `MATCH`, its rack, rules, planner and title, a `matchApp` call, a line in `FIELD_APPS` and its id.
+- **Nothing a player sees was meant to change.** Checked: with `Math.random` seeded alike, games played out by the planners on three boards a game
+  come out the same before and after for all four (`eightAuto`, `strAuto`, `nineAuto`, `carAuto` against the page as it was on `main`); and the
+  whole of the smoke test's part 5, where the five games' checks sit.
