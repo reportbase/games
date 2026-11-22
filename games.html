@@ -56176,7 +56176,7 @@ const TRICK_APP = (() => {
        one cue ball, its preview and its cue serve as they are; what a miss leaves the other side is the same thing either way.
      - THE COMPUTER (`carPlanGen`) flies the shot at every heading round the white, a level's count of them at a level's powers and side spins, and
        plays the middle of the widest run of headings that score (the shot its hand is likeliest to bring off), looked at again more finely from
-       level 3; then its hand's error, `CAR_ERR` by level. With nothing that scores it plays softly at the nearer ball.
+       level 3; then its hand's error, `CAR_ERR` by level. With nothing that scores it plays at the nearer ball.
      - A board no one plays shows a game played out, the computer against itself (`nineRecGen(idx, true)`). */
   let nineApp = null, carApp = null;
   const CAR = () => { try { return !!carApp && window.getFieldApp() === carApp; } catch { return false; } };
@@ -56233,7 +56233,7 @@ const TRICK_APP = (() => {
     }
     const u1 = Math.random() || 1e-9, u2 = Math.random(), gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
     if (!best){ const o = g.balls.filter(b => !b.cue).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
-      return { a: Math.atan2(o.z - w.z, o.x - w.x) + gauss * CAR_ERR[lv - 1] * D, p: 12, tip: [0, 0], score: -1 }; }
+      return { a: Math.atan2(o.z - w.z, o.x - w.x) + gauss * CAR_ERR[lv - 1] * D, p: 18, tip: [0, 0], score: -1 }; }   // (12 stopped short of a far ball)
     return { a: best.a + gauss * CAR_ERR[lv - 1] * D, p: best.p, tip: [best.tx, 0], score: best.n };
   }
   function carPlan(g, lv){ const it = carPlanGen(g, lv); let r; do { r = it.next(); } while (!r.done); return r.value; }
