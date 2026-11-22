@@ -58081,7 +58081,7 @@ const TRICK_APP = (() => {
       dot(ctx, sz * 0.2, sz * 0.55, sz * 0.05, '#f2f0ea'); },
     more: { cellPhoto(c, r, bp){ return (bp || 0) >= HI_PX ? 'endless:h' : 'endless:l'; }, photoCanvas(key){ return paint(key === 'endless:h' ? 1024 : 256, true, true); }, cellGrid(){ return GRID_E; },
             cellFar: { light: CLOTH, dark: CLOTH } },
-    debug: { endMake, endRule, endIn, endTick, endStrike, endCue, endCompare, endWorld, endIJ, endLine, endView, get EWORLD(){ return EWORLD; }, noWalls, CUSHIONS } });
+    debug: { endMake, endRule, endIn, endTick, endStrike, endCue, endCompare, endWorld, endIJ, endLine, endView, world: () => EWORLD, noWalls, CUSHIONS } });
   app.hockey = matchApp(MATCH.hockey, { name: 'Pool hockey', hint: 'drive your mallet with a finger and knock the ball into the far goal; first to ' + HK_TO,
     level: 'How fast the computer\'s mallet moves, how soon it looks again and how true it aims; a step harder farther out.', again: 'Start this board again', againTip: 'The score at nothing, the ball in the middle.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
