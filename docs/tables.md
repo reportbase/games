@@ -865,3 +865,27 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     ball refused); and the called pocket (a level-3 puzzle's own shot sinking it there, the same shot with another pocket called a
     miss that says so, none called at level 1, level 4 seeing 0, the two red rings drawn); and a run-out (a board's run found, a real miss starting it again, its own two shots played by real
     clicks clearing it on the next try, a board no one plays showing the whole run with every ball down).
+- **9-ball** (Nov 22: "What other games related to pool could we create?   The should share the pool engine.", then "Proceed with your recommendation":
+  9-ball against the computer first, three-cushion billiards next): `NINEBALL_APP`, id `nineball`, made inside `TRICK_APP` as `nineApp` (the comment
+  NINE-BALL, ON THE SAME ENGINE has the design). It is trick shots' own app object copied (`Object.defineProperties` of its descriptors) with its name,
+  menu, titles and icon, so the table, the balls, the cue and its drag, the view turned behind it, the spin inset, the velocity bar, the picture, the
+  sounds, the row and the keys are the same code; the engine above "IN THE FIELD" is untouched, so the worker's text is as it was.
+  - **What asks `NINE()`** (is nine-ball the app that is up): `GAMES` (a facade over two maps, `GAMES_T` and `GAMES_N`, so each app's boards keep their
+    own games), the recordings' keys ('n9:' + board), `setupOf` (the rack), `demoShot` (a board no one plays shows its break), `viewOf` (no puzzle is
+    waited for), `liveGame` (which app is live).
+  - **The rack** (`rack9(idx)`): nine in a diamond, the 1 at its head, the 9 in its middle, the other seven by the board's number (seeded). The level is
+    trick shots' (`levelAt`: the ring level plus the Difficulty, one setting for both apps): the preview sees 3, 3, 2, 2, 1 contacts (`NINE_SEE`).
+  - **The rules** (`nineFinish`, called by `finish` for a game with `g.nine`): the white must meet the lowest ball first and stay on the table. A pot keeps
+    the turn; a miss passes it; a foul passes it with the white in hand (you drag it, anywhere on the cloth: `claimsPan` lets only the white be taken,
+    and only then); the 9 down on a legal shot wins the rack; down on a foul it goes back on its spot (`FOOT9`). You break. No push-out, no
+    three-foul rule, no rail-after-contact rule.
+  - **The computer** (`nineTick` from `viewOf` on the played board, `ninePlan`): 0.7 s after its turn comes it plans: with the white in hand it puts it
+    behind the lowest ball on the line to a pocket; then the ghost-ball aim at the lowest ball for the four nearest pockets at powers 16 and 28, each
+    flown ahead with `simulate`, the first that pots it kept (the 9 down is better), else the legal hit; then an error on the aim, normal, `NINE_ERR`
+    2.2°, 1.4°, 0.8°, 0.4°, 0.15° by level. It shows the aim 1.4 s and shoots. On its turn your taps, drags, keys and row tiles do nothing to the cue.
+  - **Won**: three stars with no foul of yours, two with one or two, else one; the most kept under 'n9:' + board + '@' + level in trick shots' `BEST`. A
+    tap on a finished rack racks it again.
+  - Probed: a rack opened, the real Space broke and potted, turns passed, fouls were counted and a rack ran down to the 9 over 31 shots (the
+    computer's planner playing both sides); the page evaluate of part 5's new check ("nine-ball") returned what it wants. Part 5 itself was not run.
+  - Not measured: how often the computer wins at each level against a person, and the planner's time on a slow phone (up to nine `simulate` calls a turn).
+
