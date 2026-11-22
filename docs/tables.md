@@ -1162,3 +1162,62 @@ frame at a time as it is played (`hkFrame` from `hkLive`, in `viewOf` where the 
   computers at it stay on the table; a goal counted and the ball served to the side scored on, the third goal wins with three stars; a board
   no one plays is a recording with no shot seen ahead; a real drag on your half, at the near end of the screen, starts play and takes your mallet
   to the finger; the real Space shoots nothing.
+
+**The endless table, the single view's counterpart to pool** (Nov 22: "The purpose of this is to push shv.", "No single hemisphere view.   Explained
+in read write paper", "Shv would just be one hemisphere of one ball", "This would be appropriate if there was unknowably large pool table with an
+unknowably large number of pool balls.", "Pool by definition defined the number of pool balls", "Pool as a game is just the metaphor,  it is dhv by
+definition.", then "Yes, build the endless table"). Pool the game stays the dual view's picture: its rules fix the count. The endless table is the
+same balls on the same cloth with the count taken away, and is not called pool. It is built as wander's *Reads and Writes* has it (§7, "A single
+vantage and the DHV, side by side"): a rule for everything nobody has touched, a read from each standpoint, and writes only where something
+changed.
+- **Predictions, written before the first run** (wander's lab rule):
+  - E1. With each moving ball reading only its front half within its reach (the balls ahead of it nearer than two radii and one tick's travel),
+    a shot on the endless table comes out as it does for a referee that holds every ball of a 7 by 7 block of patches and tests every pair: every
+    ball's place the same to 10⁻⁹, over twelve shots played one after another from three starts. Killed by any ball apart by more.
+  - E2. The most balls handed to the engine in any tick depends on the balls moving, not on the block: under 40 where the referee holds over a
+    hundred. Killed if it passes 40, or grows when the block does.
+  - E3. The record grows only by what was struck: after the twelve shots the balls written are those the referee's shots moved, and no others.
+    Killed by a written ball the referee left at rest, or a moved ball not written.
+  - Expected to hold because a closing pair always has one ball with the other in its front half (if B does not have A ahead, d·v_B ≤ 0 with
+    d = A − B, and closing gives d·v_A < d·v_B ≤ 0, so A has B ahead); what could kill E1 is the reach, a ball met within a tick from beyond it.
+- **Run 1** (as predicted above; `endCompare`, three starts of twelve shots at powers 14 to 44, a 7 by 7 block): **E1 killed, by my set-up.** The
+  balls ended 765, 559 and 167 apart and the two wrote different balls (19 against 3 on an 11 by 11 block). With no cushions a ball rolls on
+  v²/(2·1.2): at 30, over 300 lengths, a dozen patches, far out of the block the referee held, so the referee was missing most of what was met. E2's
+  first clause held (at most 4 balls handed to the engine in a tick, against 354 held); E3 could not be read.
+- **E1′, E2′, E3′, written before run 2**: the same three claims with a referee that can hold the shot: powers 5 to 12 (a roll of 50 lengths at
+  most, under two patches along and four across), six shots a start, a 13 by 13 block, and a start void (not a kill) if any written ball lies
+  outside the block at the end. E1′: no ball apart by more than 10⁻⁹. E2′: the endless table hands the engine under 40 balls in any tick.
+  E3′: the two write the same balls.
+- **Run 2** (E1′ to E3′; `endCompare`, three starts of six shots at powers 5 to 12, a 13 by 13 block, no start void): **nothing killed, and
+  little tried.** Every ball ended where the referee's did (apart by exactly 0), the two wrote the same balls, and the endless table handed the
+  engine at most 2 balls in a tick where the referee held 497. But shots at random headings on so sparse a cloth struck two balls in each of two
+  starts and none in the third (47, 0 and 17 reads): the claim was hardly put to it.
+- **E1″ to E3″, written before run 3**: the same claims with the shots aimed: each at the ball nearest the white, turned off it by up to a ball's
+  width at that distance so that cuts are among them, powers 8 to 13, eight shots a start, five starts, the 13 by 13 block, a start void if a
+  written ball ends outside it. The run counts only if at least 25 balls are struck over the starts that stand. E1″: no ball apart by more than
+  10⁻⁹. E2″: under 40 balls handed to the engine in any tick. E3″: the same balls written.
+- **Run 3** (E1″ to E3″; five starts of eight aimed shots, no start void): **nothing killed.** 30 balls struck (5, 7, 6, 4 and 8). The balls ended
+  apart by at most 7.8·10⁻¹³ (the other four starts under 10⁻¹⁴: the referee carries every held ball to the tick's frame and back each tick, the
+  endless table only the ones read, a last digit's difference); the two wrote the same balls; the endless table handed the engine at most 4
+  balls in a tick, with 29 to 66 reads a start, where the referee held 497. The engine's four cushions and six pockets were there after.
+- **What was built** (`ENDLESS_APP`, id `endless`, an entry of `MATCH` with `end: true`; THE ENDLESS TABLE in `games.html`):
+  - the rule, `endRule(E, i, j)`: a patch's two to four balls from its place alone; a board is a patch (`endWorld` reads a board's size in the
+    table's lengths from the field, 23.3 by 12.7 as it stands, and which way the table's x and z step among the boards; `endIJ`);
+  - the read, in `endTick`: for each moving ball, the balls of the nine patches about it that are within two radii and a tick's travel and ahead
+    of it (or touching it); those and the moving balls are all the engine's `own` and `pairs` are handed, sorted by name so the engine takes its
+    pairs in one order whoever holds the list, the pockets and cushions emptied for the call (`noWalls`);
+  - the writes, `E.wr`: a ball once struck, in its own patch's frame (`i`, `j`, `x`, `z`), with its motion, spin and how it has rolled; `E.by` is
+    which of them lie in a patch. A ball read and not struck stays the rule's;
+  - no frame for the whole: a tick is worked in the frame of the patch the shot began in (`E.anchor`);
+  - played with pool's cue (drag, spin dial, velocity bar, Space) from the board brought in, which takes the white if it lies more than a patch
+    off and nothing is moving (`endAdopt`); the shot runs as it is stepped (`endLive`); what is seen ahead is the white's way to the first ball
+    in its front half (`endLine`); the picture is cloth alone (`paint(S, true, true)`, `GRID_E`), no cushions drawn.
+  - The title says how many balls have been struck (all that is kept) and the most read in a tick.
+- **What it is not**: evidence. By wander's rules a simulation of our own against a referee is an illustration; what the runs show is that this
+  program's single view and its dual view agree on this cloth, and what each holds.
+- Not in it: a board no one plays playing itself (a patch nobody strikes lies as the rule made it: the rule for that, "a board no one plays
+  plays itself", is not kept here), the record kept between visits, levels, the far side of the field's own wrap.
+- The smoke test (part 5): a patch's balls the same each time, two to four, inside it, another patch's different; four aimed shots on the endless
+  table and for the referee of a 9 by 9 block: the same places to 10⁻⁹, the same balls written, more than the white, under 40 handed to the
+  engine where the referee hands over 100; the engine's four cushions and six pockets there after; the board brought in has the white on its
+  own patch, the cue, the white's way, and no cushion; the real Space sends the white rolling and it comes to rest elsewhere.
