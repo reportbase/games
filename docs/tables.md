@@ -917,4 +917,11 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     not measured: the steady player is the planner itself.
   - Probed with real clicks on the pad's button (tilt 40° → 68° and back, the zoom back where it was) and the computer's turn on the page's frames. Part
     5's new check ("the pad's button … the levels' search") was not run.
+- **Nine-ball's boards no one plays show whole racks** (Nov 22: "Can the auto play boards play complete games, not just the break"): `nineRecGen(idx)`
+  plays the board's rack out, the computer at the board's level against itself (the break, each side's planned shot, `nineFinish` judging each, to the
+  9 going down or 60 shots), the shots joined as a run-out's are (`RUN_GAP` between, the pause showing the table as it stands for the next shot: the
+  white back up, placed when in hand, the 9 respotted). `nineRecSoon` makes them a little a frame (a generator a board, 8 ms a frame for all of them)
+  and the board shows its rack at rest until its recording is ready; kept at 20 frames a second, the latest 30 boards (`RECS_N`; trick shots' `RECS`
+  is its own). Measured on three boards: 24, 27 and 15 shots, loops of 95, 113 and 65 s, 120 to 290 ms of work each, every one ending with the 9 down.
+  The hands' error is random, so a board's rack differs each visit. Part 5 has a check for it, not run.
 
