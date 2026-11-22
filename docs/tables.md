@@ -1180,3 +1180,11 @@ changed.
     Killed by a written ball the referee left at rest, or a moved ball not written.
   - Expected to hold because a closing pair always has one ball with the other in its front half (if B does not have A ahead, d·v_B ≤ 0 with
     d = A − B, and closing gives d·v_A < d·v_B ≤ 0, so A has B ahead); what could kill E1 is the reach, a ball met within a tick from beyond it.
+- **Run 1** (as predicted above; `endCompare`, three starts of twelve shots at powers 14 to 44, a 7 by 7 block): **E1 killed, by my set-up.** The
+  balls ended 765, 559 and 167 apart and the two wrote different balls (19 against 3 on an 11 by 11 block). With no cushions a ball rolls on
+  v²/(2·1.2): at 30, over 300 lengths, a dozen patches, far out of the block the referee held, so the referee was missing most of what was met. E2's
+  first clause held (at most 4 balls handed to the engine in a tick, against 354 held); E3 could not be read.
+- **E1′, E2′, E3′, written before run 2**: the same three claims with a referee that can hold the shot: powers 5 to 12 (a roll of 50 lengths at
+  most, under two patches along and four across), six shots a start, a 13 by 13 block, and a start void (not a kill) if any written ball lies
+  outside the block at the end. E1′: no ball apart by more than 10⁻⁹. E2′: the endless table hands the engine under 40 balls in any tick.
+  E3′: the two write the same balls.

@@ -56238,6 +56238,8 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => ninePlanGen(g, lv), title: g => nineTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     eight:    { key: 'eight', pre: 'e', best: 'e8:', games: new Map(), rack: i => rack8(i), cue: CUE0, fresh: () => eightNew(), see: () => NINE_SEE, finish: (g, s) => eightFinish(g, s),
                 planGen: (g, lv) => eightPlanGen(g, lv), title: g => eightTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
+    endless:  { key: 'endless', pre: 'x', best: 'en:', games: new Map(), rack: () => [ballOf(0, 0, 0)], cue: () => ({ ang: 0, power: 24, elev: 0 }), fresh: () => endState(), see: () => [0, 0, 0, 0, 0], finish: () => {}, planGen: null,
+                title: g => endTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => 1, end: true, reset: () => { EWORLD = null; }, app: null },
     hockey:   { key: 'hockey', pre: 'h', best: 'ph:', games: new Map(), rack: i => rackH(i), cue: CUE0, fresh: () => hkNew(), see: () => NINE_SEE, finish: () => {}, planGen: null, title: g => hkTitle(g),
                 sim: (...a) => simC(...a), brk: false, recShots: () => 1, bare: true, rt: true, recGen: i => hkRecGen(i), app: null },
     golf:     { key: 'golf', pre: 'g', best: 'pg:', games: new Map(), rack: i => golfRack(i), cue: B => ({ ang: golfAim(B), power: 8, elev: 0 }), fresh: () => golfNew(), see: () => NINE_SEE, finish: (g, s) => golfFinish(g, s),
@@ -56619,6 +56621,165 @@ const TRICK_APP = (() => {
       : !N.started ? 'drag on your half of the table to move your mallet: play starts when you do' : 'your goal is the near one')
       + ' · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + HK_TO + ')' + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '');
   }
+  /* THE ENDLESS TABLE (Nov 22: "The purpose of this is to push shv.", "Shv would just be one hemisphere of one ball", "This would be appropriate if
+     there was unknowably large pool table with an unknowably large number of pool balls.", "Pool as a game is just the metaphor,  it is dhv by
+     definition.", then "Yes, build the endless table"). Pool the game is the dual view's picture: its rules fix the count, and whoever plays it
+     holds the table whole. This is the single view's: the same balls on the same cloth with no end and no count, made as wander's *Reads and
+     Writes* has it (§7), the work falling three ways.
+     - THE RULE (`endRule`): the cloth lies in patches, a board a patch, and a patch's balls come from its place alone (two to four, the same
+       every time). They are made when asked for and kept nowhere.
+     - THE READ (`endTick`): a ball that is moving reads its front half: the balls ahead of it nearer than two radii and a tick's travel, asked of
+       the rule and the record for the patches about it. It reads nothing behind it, and a ball at rest reads nothing. A closing pair always has
+       one ball with the other ahead of it, so no meeting is missed (docs/tables.md, E1). What is read, with the balls moving, is all the engine is
+       handed that tick (its own `own` and `pairs`, the pockets and the cushions emptied: `noWalls`): a handful, however far the cloth goes.
+     - THE WRITES (`E.wr`): a ball that has been struck is kept, in its own patch's frame, where it came to rest. Nothing else is kept, so the
+       record grows with what was touched and with nothing else. The white is the first of them.
+     There is no frame for the whole: a ball is a patch's place (i, j) and its place in that patch, and a tick is worked in the frame of the
+     shot's own patch (`E.anchor`). Played with pool's cue, spin dial and velocity bar from the board brought in; the shot runs as it is stepped
+     (nothing is flown ahead: there is no whole table to fly it on), and all that is seen ahead is what the white's own front half holds, its
+     way to the first ball it meets. `endCompare` is the test of E1 to E3: the same shots on this table and for a referee holding every ball of a
+     block of patches. Not in it: a board no one plays playing itself (a patch nobody strikes lies as the rule made it), the record kept between
+     visits, levels. */
+  let EWORLD = null;
+  const noWalls = f => { const P = POCKETS.splice(0), C = CUSHIONS.splice(0); try { return f(); } finally { POCKETS.push(...P); CUSHIONS.push(...C); } };
+  const endState = () => ({ end: true, turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  const endMake = (PX, PZ) => ({ PX, PZ, wr: new Map(), by: new Map(), moving: new Set(), rules: new Map(), anchor: [0, 0], t: 0, acc: 0, last: 0, hits: 0, shot: 0, best: 0, maxB: 0, reads: 0, c0: null, r0: null, e1: [1, 0], e2: [0, 1], onHit: null });
+  // a patch's own balls, from its place alone
+  function endRule(E, i, j){
+    const key = i + ',' + j; let L = E.rules.get(key); if (L) return L;
+    const rnd = rng((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0), n = 2 + Math.floor(rnd() * 3); L = [];
+    for (let k = 0, t = 0; k < n && t < 200; t++){ const x = (rnd() - 0.5) * (E.PX - 2.4), z = (rnd() - 0.5) * (E.PZ - 2.4), num = 1 + Math.floor(rnd() * 15);
+      if (L.every(q => Math.hypot(q.x - x, q.z - z) > 2 * R + 0.6)){ L.push({ id: key + ',' + k, n: num, i, j, x, z }); k++; } }
+    E.rules.set(key, L); if (E.rules.size > 600) E.rules.delete(E.rules.keys().next().value);
+    return L;
+  }
+  // the balls in a patch now: the rule's that nothing has struck, and the written ones that lie there
+  function endIn(E, i, j){
+    const out = endRule(E, i, j).filter(b => !E.wr.has(b.id)), S = E.by.get(i + ',' + j);
+    if (S) for (const id of S) out.push(E.wr.get(id));
+    return out;
+  }
+  function endWrite(E, rec){ E.wr.set(rec.id, rec); const k = rec.i + ',' + rec.j; let S = E.by.get(k); if (!S){ S = new Set(); E.by.set(k, S); } S.add(rec.id); }
+  function endHome(E, rec, i, j){ if (rec.i === i && rec.j === j) return; const S = E.by.get(rec.i + ',' + rec.j); if (S){ S.delete(rec.id); if (!S.size) E.by.delete(rec.i + ',' + rec.j); } rec.i = i; rec.j = j; endWrite(E, rec); }
+  const endMoving = b => b.vx !== 0 || b.vz !== 0 || b.y > 0 || b.vy !== 0 || Math.abs(b.vx + b.r * b.wz) + Math.abs(b.vz - b.r * b.wx) > 1e-12;
+  // one tick: the moving balls and what each reads ahead of it, stepped by the engine; what was struck is written. `all`: a referee's list, every ball it holds, read by no one
+  function endTick(E, all){
+    if (!E.moving.size) return false;
+    const A = E.anchor, B = [], seen = new Set();
+    const add = (rec, rule) => { if (seen.has(rec.id)) return; seen.add(rec.id);
+      B.push({ ...ballOf(rec.n, rec.x + (rec.i - A[0]) * E.PX, rec.z + (rec.j - A[1]) * E.PZ), id: rec.id, vx: rec.vx || 0, vz: rec.vz || 0, vy: rec.vy || 0, y: rec.y || 0, wx: rec.wx || 0, wy: rec.wy || 0, wz: rec.wz || 0, src: rec, rule }); };
+    for (const id of E.moving) add(E.wr.get(id), false);
+    if (all) for (const rec of all) add(rec, !E.wr.has(rec.id));
+    else for (const id of [...E.moving]){ const m = E.wr.get(id), sp = Math.hypot(m.vx || 0, m.vz || 0), reach = 2 * R + sp * FRAME + 0.2;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const o of endIn(E, m.i + di, m.j + dj)){
+        if (o.id === id || seen.has(o.id)) continue;
+        const dx = o.x + di * E.PX - m.x, dz = o.z + dj * E.PZ - m.z, d = Math.hypot(dx, dz);
+        if (d > reach) continue;
+        if (sp > 0 && dx * m.vx + dz * m.vz <= 0 && d > 2 * R) continue;      // (behind it and not touching: not in its front half, not read)
+        E.reads++; add(o, !E.wr.has(o.id)); } }
+    B.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);                // (one order whoever holds the list: the engine takes its pairs in the list's)
+    if (B.length > E.maxB) E.maxB = B.length;
+    const was = B.map(b => [b.x, b.z]);
+    noWalls(() => { for (let k = 0; k < SUB; k++){ own(B, FRAME / SUB, null, null); pairs(B, (a, b) => { E.hits++; if (E.onHit) E.onHit(Math.hypot(a.vx - b.vx, a.vz - b.vz)); }); } });
+    B.forEach((b, n) => {
+      const mv = endMoving(b); let rec = b.src;
+      if (b.rule){ if (!mv && b.x === was[n][0] && b.z === was[n][1]) return;   // (read and not struck: still the rule's, nothing kept)
+        rec = { id: rec.id, n: rec.n, i: rec.i, j: rec.j, x: rec.x, z: rec.z, rot: rotStart(7, rec.n) }; endWrite(E, rec); E.shot++; }
+      const i = A[0] + Math.round(b.x / E.PX), j = A[1] + Math.round(b.z / E.PZ);
+      rec.x = b.x - (i - A[0]) * E.PX; rec.z = b.z - (j - A[1]) * E.PZ; endHome(E, rec, i, j);
+      rec.vx = b.vx; rec.vz = b.vz; rec.vy = b.vy; rec.y = b.y; rec.wx = b.wx; rec.wy = b.wy; rec.wz = b.wz;
+      if (rec.rot) rec.rot = roll(rec.rot, b.x - was[n][0], b.z - was[n][1]);
+      if (mv) E.moving.add(rec.id); else E.moving.delete(rec.id);
+    });
+    E.t += FRAME; return true;
+  }
+  // the white struck: its motion and spin from the cue, the tick's frame the white's own patch
+  function endStrike(E, ang, power, tip, chalk, elev){
+    const w = E.wr.get('cue'); if (!w || E.moving.size) return false;
+    const st = strikeOf(ang, tip ? tip.x : 0, tip ? tip.y : 0, power, chalk === false ? 0 : MU_TIP, (elev || 0) * D);
+    w.vx = st.speed * Math.cos(st.dir); w.vz = st.speed * Math.sin(st.dir); [w.wx, w.wy, w.wz] = st.w || [0, 0, 0]; w.vy = st.vy || 0; w.y = 0;
+    E.anchor = [w.i, w.j]; E.moving.add('cue'); E.shot = 0; return true;
+  }
+  const endCue = (E, i, j, x, z) => { let w = E.wr.get('cue'); if (!w){ w = { id: 'cue', n: 0, i, j, x, z, rot: rotStart(7, 0) }; endWrite(E, w); } else { endHome(E, w, i, j); w.x = x; w.z = z; }
+    w.vx = w.vz = w.vy = w.y = w.wx = w.wy = w.wz = 0; return w; };
+  /* THE TEST OF E1 TO E3 (docs/tables.md): the same shots, one after another, on the endless table and for a referee that holds every ball of a
+     block of patches (2·half + 1 a side) and hands the engine all of them every tick. Returns how far apart any ball of the block ends, the most
+     balls either handed the engine in a tick, the balls each wrote, and any ball one wrote and the other did not. */
+  function endCompare(shots, half = 3, PX = 26, PZ = 16){
+    const mk = () => { const E = endMake(PX, PZ); endCue(E, 0, 0, -4, 0.3); return E; }, E = mk(), F = mk();
+    const block = () => { const L = []; for (let i = -half; i <= half; i++) for (let j = -half; j <= half; j++) for (const b of endIn(F, i, j)) if (b.id !== 'cue') L.push(b); return L; };
+    let held = 0, ticks = 0;
+    for (const [a, p] of shots){
+      endStrike(E, a, p); endStrike(F, a, p);
+      for (let f = 0; f < 60 * 60 && E.moving.size; f++){ endTick(E); ticks++; }
+      for (let f = 0; f < 60 * 60 && F.moving.size; f++){ const L = block(); held = Math.max(held, L.length); endTick(F, L); }
+    }
+    let apart = 0; const only = [];
+    for (const [id, f] of F.wr){ const e = E.wr.get(id); if (!e){ only.push('referee:' + id); continue; }
+      apart = Math.max(apart, Math.hypot(e.x + e.i * PX - f.x - f.i * PX, e.z + e.j * PZ - f.z - f.j * PZ)); }
+    for (const id of E.wr.keys()) if (!F.wr.has(id)) only.push('endless:' + id);
+    const out = [...F.wr.values()].some(b => Math.abs(b.i) > half || Math.abs(b.j) > half);
+    return { apart, only, written: [E.wr.size, F.wr.size], maxB: [E.maxB, F.maxB], held, ticks, reads: E.reads, left: out };
+  }
+  // the field's boards and the cloth's patches: a board's size in the table's lengths, and which way the table's x and z step among the boards
+  function endWorld(c, r){
+    if (EWORLD) return EWORLD;
+    let PX = 26, PZ = 16, e1 = [-1, 0], e2 = [0, -1];
+    try { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, SPX = gridSpacingX(), SPZ = gridSpacingZ(), GS = fieldGS(), wd = d => { d = ((d % GS) + GS) % GS; return d > GS / 2 ? d - GS : d; };
+      PX = BW * SPX / (bW * (L.cellW || 1)); PZ = BH * SPZ / (bW * (L.cellH || 1));
+      const o = W.cellAt(T.boardX, T.boardZ), ax = W.cellAt(T.boardX - SPX, T.boardZ), az = W.cellAt(T.boardX, T.boardZ - SPZ);   // (the table's +x and +z run to the world's −x and −z)
+      if (o && ax && az){ e1 = [wd(ax.c - o.c), wd(ax.r - o.r)]; e2 = [wd(az.c - o.c), wd(az.r - o.r)]; }
+    } catch {}
+    EWORLD = endMake(PX, PZ); EWORLD.e1 = e1; EWORLD.e2 = e2; EWORLD.c0 = c; EWORLD.r0 = r;
+    EWORLD.onHit = w => { if (w > 1.5) try { SOUND.ball(w); } catch {} };
+    return EWORLD;
+  }
+  function endIJ(E, c, r){ const GS = fieldGS(), wd = d => { d = ((d % GS) + GS) % GS; return d > GS / 2 ? d - GS : d; }, dc = wd(c - E.c0), dr = wd(r - E.r0); return [dc * E.e1[0] + dr * E.e1[1], dc * E.e2[0] + dr * E.e2[1]]; }
+  // the board brought in takes the white: put down on it (where there is room) if it lies more than a patch away and nothing is moving
+  function endAdopt(g){
+    const E = endWorld(g.c, g.r), [i, j] = endIJ(E, g.c, g.r), w = E.wr.get('cue');
+    if (!w || (!E.moving.size && (Math.abs(w.i - i) > 1 || Math.abs(w.j - j) > 1))){
+      let x = -E.PX / 4, z = 0; for (let t = 0; t < 40 && endIn(E, i, j).some(b => b.id !== 'cue' && Math.hypot(b.x - x, b.z - z) < 2 * R + 0.4); t++){ x += 0.7; z = (t % 5 - 2) * 0.9; }
+      endCue(E, i, j, x, z); }
+    endSync(E, g);
+  }
+  function endSync(E, g){ const [i, j] = endIJ(E, g.c, g.r), w = E.wr.get('cue'); if (!w) return; const b = g.balls[0]; b.x = w.x + (w.i - i) * E.PX; b.z = w.z + (w.j - j) * E.PZ; b.sunk = false; }
+  // the played board, a frame of the page: the cloth stepped as many ticks as the time since (never more than six)
+  function endLive(E, g){
+    const now = performance.now(); if (!E.moving.size){ E.last = now; return; }
+    E.acc += Math.min(0.1, E.last ? (now - E.last) / 1000 : 0); E.last = now;
+    while (E.acc >= FRAME && E.moving.size){ E.acc -= FRAME; endTick(E); }
+    if (!E.moving.size){ E.acc = 0; E.best = Math.max(E.best, E.shot); g.nine.said = E.shot ? 'that shot set ' + E.shot + (E.shot === 1 ? ' ball' : ' balls') + ' moving' : 'nothing was met';
+      endSync(E, g); const w = g.balls[0], near = endIn(E, ...endIJ(E, g.c, g.r)).filter(b => b.id !== 'cue').sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
+      if (near) g.ang = Math.atan2(near.z - w.z, near.x - w.x); g.dirty = true; behindCue(g); touch(); }
+    try { window.fieldWake && window.fieldWake(); } catch {}
+  }
+  // what the white's front half holds along the shot: its way to the first ball it would meet (or a way's length, with nothing ahead)
+  function endLine(E, g){
+    const w = E.wr.get('cue'), [i, j] = endIJ(E, g.c, g.r), ux = Math.cos(g.ang), uz = Math.sin(g.ang), ox = w.x + (w.i - i) * E.PX, oz = w.z + (w.j - j) * E.PZ; let t = 14, hit = false;
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const o of endIn(E, w.i + di, w.j + dj)){ if (o.id === 'cue') continue;
+      const dx = o.x + di * E.PX - w.x, dz = o.z + dj * E.PZ - w.z, along = dx * ux + dz * uz, perp2 = dx * dx + dz * dz - along * along;
+      if (along > 0 && perp2 < 4 * R * R){ const tt = along - Math.sqrt(4 * R * R - perp2); if (tt < t){ t = Math.max(0, tt); hit = true; } } }
+    return { x0: ox, z0: oz, x1: ox + ux * t, z1: oz + uz * t, hit };
+  }
+  const ENDB = {}; const endBall = n => ENDB[n] || (ENDB[n] = ballOf(n, 0, 0));
+  function endView(c, r){
+    const g0 = LIVE ? liveGame() : null, here = g0 && LIVE.c === c && LIVE.r === r ? g0 : null;
+    if (!EWORLD && !here) return { B: [], pos: [], ch: null };          // (no board brought in yet: the cloth bare until one is)
+    const E = endWorld(c, r), [i, j] = endIJ(E, c, r);
+    if (here){ endLive(E, here); endSync(E, here); ctlSync(here); }
+    const B = [], pos = [], rot = [], w = E.wr.get('cue');
+    for (const b of endIn(E, i, j)){ if (b.id === 'cue') continue; B.push(endBall(b.n)); pos.push([b.x, b.z, b.y || 0]); rot.push(b.rot || rotStart(7, b.n)); }
+    if (w && (here || (!g0 && w.i === i && w.j === j))){ B.push(endBall(0)); pos.push([w.x + (w.i - i) * E.PX, w.z + (w.j - j) * E.PZ, w.y || 0]); rot.push(w.rot); }
+    const V = { B, pos, rot, ch: null, lv: 1, end: true };
+    if (here && !E.moving.size){ V.cue = { ang: here.ang, power: here.power, elev: here.elev, tip: here.tip, chalk: here.chalk }; V.live = true; V.line = endLine(E, here); }
+    return V;
+  }
+  function endTitle(g){
+    const E = EWORLD; if (!E) return 'The endless table';
+    return 'The endless table · ' + (E.moving.size ? E.moving.size + ' moving' : 'your shot') + ' · ' + (E.wr.size - 1) + ' balls struck so far, all that is kept'
+      + (E.best ? ' · most set moving by one shot ' + E.best : '') + (g.nine.said ? ' · ' + g.nine.said : '') + ' · the most read in a tick ' + E.maxB + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
   const strKey = g => 's14:' + g.idx + '@' + g.lv;
   function strRerack(g){
     const live = g.balls.filter(b => !b.cue && !b.sunk); if (live.length > 1) return false;
@@ -56951,7 +57112,7 @@ const TRICK_APP = (() => {
                 see: S.ch ? S.ch.see : 3, tries: 0, solvedIn: 0, lastWhy: null, potted: 0, shots: 0, history: [], anim: null, sim: null, dirty: true,
                 rot: S.B.map(b => rotStart(idx, b.n)), stage: 0 };
     g.rot0 = g.rot.slice();
-    if (S.kind){ const m = MATCH[S.kind]; g.nine = matchState(m); g.see = m.see()[Math.max(0, Math.min(4, g.lv - 1))]; }
+    if (S.kind){ const m = MATCH[S.kind]; g.nine = matchState(m); g.see = m.see()[Math.max(0, Math.min(4, g.lv - 1))]; if (m.end) endAdopt(g); }
     GAMES.set(gkey(c, r), g); return g;
   }
   const gameAt = (c, r) => GAMES.get(gkey(c, r)) || fresh(c, r);
@@ -56965,6 +57126,7 @@ const TRICK_APP = (() => {
   const shotOf = g => { const s = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D); return [s.dir, s.speed, s.w, s.vy]; };
   function previewOf(g){ if (g.dirty && !g.anim){ g.sim = simM(g.balls, ...shotOf(g)); g.dirty = false; } return g.sim; }
   function shoot(g){
+    if (g && g.nine && g.nine.end){ const E = EWORLD; if (!E || !endStrike(E, g.ang, g.power, g.tip, g.chalk, g.elev)) return false; g.shots++; E.last = performance.now(); try { ARCADE.audio(); SOUND.cue(g.power); } catch {} touch(); return true; }
     if (!g || g.anim || (g.nine && g.nine.rt)) return false;
     const shot = shotOf(g), s = simM(g.balls, ...shot); if (!s) return false;
     g.history.push({ balls: g.balls.map(b => ({ ...b })), potted: g.potted, shots: g.shots, rot: g.rot.slice() });
@@ -57073,6 +57235,7 @@ const TRICK_APP = (() => {
     return { B, pos: B.map((b, i) => isNaN(f[2 * i]) ? null : [f[2 * i], f[2 * i + 1], h[i]]), ch: R.S.ch, lv: R.S.lv, rot: B.map((_, i) => R.rots[k].subarray(4 * i, 4 * i + 4)), trail: { fr: s.frames, k, hz: s.hz } };
   }
   function viewOf(c, r, bp){
+    if ((M() || {}).end) return endView(c, r);     // (the endless table: a board is a patch of one cloth)
     pump();
     if (ED.on && ED.c === c && ED.r === r){ ctlHide(); return edView(); }
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
@@ -57188,7 +57351,10 @@ const TRICK_APP = (() => {
   function itemsOf(V){
     const out = [];
     const bare = (M() || {}).bare;
-    for (const [x0, z0, x1, z1] of bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: CUSH_H, sz: z1 - z0, color: CUSH });
+    if (V.line){ const L = V.line, d = Math.hypot(L.x1 - L.x0, L.z1 - L.z0);   // (the endless table: the white's way to the first ball ahead of it, and no further)
+      for (let t = 0.5; t < d; t += DOT_GAP) out.push({ kind: 'tsDot', u: Ub(L.x0 + (L.x1 - L.x0) * t / d), v: Vb(L.z0 + (L.z1 - L.z0) * t / d), scale: Sb(0.15), color: 0xf2f0ea });
+      if (L.hit) out.push({ kind: 'tsGhost', u: Ub(L.x1), v: Vb(L.z1), scale: Sb(2 * R), color: 0xf2f0ea }); }
+    for (const [x0, z0, x1, z1] of V.end ? [] : bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: CUSH_H, sz: z1 - z0, color: CUSH });
     if ((M() || {}).rt) for (const sg of [-1, 1]) out.push({ kind: 'tsBox', u: Ub(sg * (LX / 2 + CUSH_W / 2)), v: Vb(0), scale: Sb(1), sx: CUSH_W * 1.02, sy: CUSH_H * 1.04, sz: HK_GOAL, color: sg < 0 ? 0x2a4fb0 : 0xd23a2f });   // (pool hockey's goals: yours blue, the computer's red)
     { const H = golfH(V.B);   // (pool golf's green: sand, the hole and its flag, the walls and the posts)
       if (H){ for (const q of H.sand) out.push({ kind: 'tsSand', u: Ub(q.x), v: Vb(q.z), scale: Sb(2 * q.r), color: 0xcdb67c });
@@ -57301,7 +57467,7 @@ const TRICK_APP = (() => {
 
   /* THE TABLE'S PICTURE, the same on every board (one texture): the frame's wood, its sights, the cushions' tops, the cloth
      with a little nap, the head string and the spots, the pockets. A board under PHOTO_PX is its tiles (gridOf). */
-  function paint(S, bare){   // (bare: no pockets, three-cushion's table)
+  function paint(S, bare, cloth){   // (bare: no pockets, three-cushion's table; cloth: nothing but cloth, the endless table's patch)
     const k = S / BH, cv = document.createElement('canvas'); cv.width = Math.round(S * ASP); cv.height = S;
     const c = cv.getContext('2d'); if (!c) return null;
     // (the photo tier lays a picture's top-left at the board's far right corner, so it is drawn turned a half turn: tanks')
@@ -57318,6 +57484,7 @@ const TRICK_APP = (() => {
     const R0 = rng(4242); c.globalAlpha = 0.05;   // the nap
     for (let i = 0; i < 1400; i++){ c.fillStyle = R0() < 0.5 ? '#000' : '#fff'; c.fillRect(-LX / 2 + R0() * LX, -LZ / 2 + R0() * LZ, 0.05, 0.05); }
     c.globalAlpha = 1;
+    if (cloth){ c.fillStyle = cg; c.fillRect(-BW / 2, -BH / 2, BW, BH); return cv; }
     c.strokeStyle = 'rgba(255,255,255,0.09)'; c.lineWidth = 0.04; c.beginPath(); c.moveTo(HEAD[0], -LZ / 2); c.lineTo(HEAD[0], LZ / 2); c.stroke();
     c.fillStyle = 'rgba(255,255,255,0.18)'; for (const x of [HEAD[0], LX / 4]){ c.beginPath(); c.arc(x, 0, 0.07, 0, 7); c.fill(); }
     if (!bare) for (const [x, z] of POCKETS){
@@ -57333,6 +57500,7 @@ const TRICK_APP = (() => {
       colors.push(POCKETS.some(p => Math.hypot(p[0] - x, p[1] - z) < POCK) ? 0x060608 : Math.abs(x) < LX / 2 && Math.abs(z) < LZ / 2 ? CLOTH : WOOD);
     }
     return { n: GRID_N, colors }; })();
+  const GRID_E = { n: GRID_N, colors: GRID.colors.map(() => CLOTH) };
   const GRID_C = { n: GRID_N, colors: GRID.colors.map((c, k) => { if (c !== 0x060608) return c; const [x, z] = toTable((k % GRID_N + 0.5) / GRID_N, (Math.floor(k / GRID_N) + 0.5) / GRID_N); return Math.abs(x) < LX / 2 && Math.abs(z) < LZ / 2 ? CLOTH : WOOD; }) };
 
   // the board's line of text: wander's readout, shortened
@@ -57873,7 +58041,7 @@ const TRICK_APP = (() => {
         { label: DL.item.label, title: o.level, on(){ DL.item.on(); m.games.clear(); RECS.clear(); RECS_N.clear(); NREC.clear(); touch(); } },
         SND.item,
         { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball.', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
-        { label: o.again, title: o.againTip, on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
+        { label: o.again, title: o.againTip, on(){ if (m.reset){ m.reset(); m.games.clear(); } const f = framedCell(); if (f) restart(f.c, f.r); } },
       ]}],
       cellTitle(c, r){
         const g = GAMES.get(gkey(c, r)); if (g) return titleOf(g);
@@ -57902,6 +58070,14 @@ const TRICK_APP = (() => {
       ctx.fillStyle = '#111111'; ctx.font = 'bold ' + Math.round(sz * 0.085) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('8', sz * 0.62, sz * 0.505);
       dot(ctx, sz * 0.26, sz * 0.5, sz * 0.045, '#f2f0ea'); },
     debug: { rack8, eightOn, eightFinish, eightCands, eightPlan, eightPlanGen, eightAuto, eightTitle, grpOf } });
+  app.endless = matchApp(MATCH.endless, { name: 'The endless table', hint: 'one cloth without end, a board a patch of it: bring a board in and shoot',
+    level: 'The endless table has no levels: every patch is as the rule makes it.', again: 'Lay the cloth again', againTip: 'Every ball back where the rule puts it, nothing kept.',
+    icon(ctx, sz){ ctx.fillStyle = '#16513f'; ctx.fillRect(0, sz * 0.12, sz, sz * 0.76);
+      for (const [x, y, c] of [[0.12, 0.3, '#e3c33b'], [0.34, 0.66, '#d23a2f'], [0.5, 0.36, '#2a4fb0'], [0.7, 0.7, '#e07a2a'], [0.86, 0.3, '#6a3a9a'], [0.93, 0.62, '#1f7a4a']]) dot(ctx, x * sz, y * sz, sz * 0.045, c);
+      dot(ctx, sz * 0.2, sz * 0.55, sz * 0.05, '#f2f0ea'); },
+    more: { cellPhoto(c, r, bp){ return (bp || 0) >= HI_PX ? 'endless:h' : 'endless:l'; }, photoCanvas(key){ return paint(key === 'endless:h' ? 1024 : 256, true, true); }, cellGrid(){ return GRID_E; },
+            cellFar: { light: CLOTH, dark: CLOTH } },
+    debug: { endMake, endRule, endIn, endTick, endStrike, endCue, endCompare, endWorld, endIJ, endLine, endView, get EWORLD(){ return EWORLD; }, noWalls, CUSHIONS } });
   app.hockey = matchApp(MATCH.hockey, { name: 'Pool hockey', hint: 'drive your mallet with a finger and knock the ball into the far goal; first to ' + HK_TO,
     level: 'How fast the computer\'s mallet moves, how soon it looks again and how true it aims; a step harder farther out.', again: 'Start this board again', againTip: 'The score at nothing, the ball in the middle.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
@@ -57945,6 +58121,7 @@ const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the 
 const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
 const POOLGOLF_APP = TRICK_APP.golf;   // (pool golf: one hole a board, putted with the pool games' cue, on the same engine, Nov 22)
 const POOLHOCKEY_APP = TRICK_APP.hockey;   // (pool hockey: the pool engine stepped in real time, Nov 22)
+const ENDLESS_APP = TRICK_APP.endless;   // (the endless table: the single view's counterpart to pool, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -66335,7 +66512,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, POOLGOLF_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, POOLGOLF_APP, POOLHOCKEY_APP, ENDLESS_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -66344,7 +66521,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [POOLGOLF_APP, 'poolgolf'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [POOLGOLF_APP, 'poolgolf'], [POOLHOCKEY_APP, 'poolhockey'], [ENDLESS_APP, 'endless'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
