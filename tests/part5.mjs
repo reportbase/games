@@ -267,8 +267,15 @@ try {
       await page.evaluate(([c, r]) => window.__settle(c, r), fc);
       live.yaw = await page.evaluate(() => window.FIELD_WORLD.st.yaw);
       await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), o = g.ch.sol; g.ang = o.a * D.D; D.setPower(g, o.p); D.setTip(g, 0, 0); }, fc);
+      // (Nov 22: "If tap the cue ball, show the touch spin icon over the cue  ball.": a real click on the white shows the spin inset over it and shoots
+      //  nothing; the real Space plays the shot)
       const pw = await at(w.x, w.z);
       await page.mouse.click(pw.x, pw.y);
+      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 15000 }).catch(() => {});
+      live.spinAt = await page.evaluate(([x, y]) => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(), shown = !!r && r.width > 0 && document.getElementById('tsCtl').style.display !== 'none';
+        return { shown, near: shown && Math.hypot(r.left + r.width / 2 - x, r.top + r.height / 2 - y) < 30, shots: null }; }, [pw.x, pw.y]);
+      live.spinAt.shots = (await gs()).shots; live.spinAt.anim = (await gs()).anim;
+      await page.keyboard.press('Space');
       const rot0 = await page.evaluate(k => window.getFieldApp()._debug.GAMES.get(k).rot[0].join(), fc[0] + '_' + fc[1]);
       live.playing = (await gs()).anim;
       for (let k = 0; k < 40 && (await gs()).anim; k++) await frame(page, 250);
@@ -284,14 +291,22 @@ try {
       // the row: Spin steps the tip to follow, power + steps it up by one
       live.row = await page.evaluate(([c, r]) => { const D = window.getFieldApp()._debug, g = D.GAMES.get(c + '_' + r), p = g.power; D.onTile(g, 5); D.onTile(g, 4);
         return { tip: g.tip.y, power: g.power - p, tiles: D.tilesOf(g).length }; }, fc);
-      // the real spin inset: a click above its middle strikes the white high; the real pull strip: pulled and let go, it shoots
-      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 8000 }).catch(() => {});
-      const tipBox = await page.evaluate(() => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(); return r && r.width ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width } : null; });
+      // the real spin inset (shown by a real click on the white): a click above its middle strikes the white high; the velocity bar (Nov 22: "Long press and
+      // pull show the velocity bar."): a real press held on the table shows it, a pull fills it and sets the power, and letting go shoots
+      // (the table is solved by now, and a click on a solved table sets it up again: that click first, then the one that shows the inset)
+      { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x, w1.z); await page.mouse.click(q.x, q.y); await drawn(page, 800); const g2 = await gs(), w2 = g2.balls[0], q2 = await at(w2.x, w2.z); await page.mouse.click(q2.x, q2.y); }
+      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 15000 }).catch(() => {});
+      const tipBox = await page.evaluate(() => { const e = document.getElementById('tsTip'), r = e && e.getBoundingClientRect(); return r && r.width && document.getElementById('tsCtl').style.display !== 'none' ? { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width } : null; });
       if (tipBox){ await page.mouse.click(tipBox.x - 0.2 * 0.36 * tipBox.w, tipBox.y - 0.5 * 0.36 * tipBox.w); live.inset = (await gs()).tip; }
-      await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return e && e.style.display !== 'none'; }, null, { timeout: 8000 }).catch(() => {});
-      const pullBox = await page.evaluate(() => { const e = document.getElementById('tsPull'), r = e && e.getBoundingClientRect(); return r && r.height ? { x: r.left + r.width / 2, y: r.top + 8, h: r.height } : null; });
-      if (pullBox){ const s0 = (await gs()).shots; await page.mouse.move(pullBox.x, pullBox.y); await page.mouse.down(); await page.mouse.move(pullBox.x, pullBox.y + pullBox.h * 0.3, { steps: 6 });
-        live.pulled = (await gs()).power; await page.mouse.up(); await drawn(page, 300); live.pull = { shots: (await gs()).shots - s0, anim: (await gs()).anim };
+      { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x > 0 ? w1.x - 4 : w1.x + 4, 0), s0 = g1.shots;
+        const barUp = () => page.evaluate(() => { const e = document.getElementById('tsPull'); return !!e && e.style.display !== 'none'; });
+        live.barBefore = await barUp();
+        await page.mouse.move(q.x, q.y); await page.mouse.down();
+        for (let k = 0; k < 40 && !(await barUp()); k++) await page.waitForTimeout(250);
+        live.barHeld = await barUp();
+        await page.mouse.move(q.x, q.y + 80, { steps: 6 });
+        for (let k = 0; k < 20 && (await gs()).power < 15; k++) await frame(page, 250);
+        live.pulled = (await gs()).power; await page.mouse.up(); await drawn(page, 300); live.pull = { shots: (await gs()).shots - s0, anim: (await gs()).anim, bar: await barUp() };
         for (let k = 0; k < 40 && (await gs()).anim; k++) await frame(page, 250); }
       // solved, a real click on the table (away from the white) sets it up again where it is (Oct 29: only you move to another board)
       { const g = await gs(), w = g.balls[0], p = await at(w.x > 0 ? w.x - 4 : w.x + 4, 0); await page.mouse.click(p.x, p.y); await drawn(page, 400);
@@ -326,6 +341,7 @@ try {
       && r.gen.solved && r.gen.par5 > r.gen.par1 && r.gen.w5 < r.gen.w1 && r.gen.see[0] > r.gen.see[1] && r.gen.same && r.gen.levels[0] <= r.gen.levels[2] && r.gen.stars === '3,2,1'
       && r.call && r.call.pocket >= 0 && r.call.l1 && r.call.ok && /another pocket/.test(r.call.wrong || '') && r.call.see4 === 0 && r.call.ringed === 2
       && live.rolled.balls >= 2 && live.rolled.stars === 3 && live.rolled.cue && live.rolled.cue.len >= 20 && live.rolled.cue.onTop && live.rolled.cue.behind && live.rolled.best === 1 && live.inset && live.inset.y > 0.3 && live.inset.x < -0.05
+      && live.spinAt && live.spinAt.shown && live.spinAt.near && !live.spinAt.anim && live.spinAt.shots === 0 && !live.barBefore && live.barHeld && live.pull && !live.pull.bar
       && live.pulled > 10 && live.pull && live.pull.shots === 1 && live.next && live.next[0] === 0 && !live.next[1]
       && shown.moved > 0.5 && shown.sawCue && shown.sawPlay && shown.balls >= 2 && shown.cushions === 6 && shown.cue === 0 && shown.dots > 10 && shown.ghost >= 1 && shown.yaws && shown.inside && shown.photo;
     if (!ok) failures.push(`[${current}] ${JSON.stringify({ rules, live, shown })}`);
