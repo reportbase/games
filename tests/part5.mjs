@@ -432,7 +432,8 @@ try {
         const pv = new W.THREE.Vector3(T.boardX + (0.5 - D.Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - D.Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
         return { x: (pv.x + 1) / 2 * innerWidth, y: (1 - pv.y) / 2 * innerHeight }; }, w); };
       const showMe = () => page.evaluate(() => window.getFieldApp().menu[0].items.find(i => i.label === 'Show me the trick').on());
-      const play = async () => { const p = await whiteAt(); await page.mouse.click(p.x, p.y); for (let k = 0; k < 40 && (await rs()).anim; k++) await frame(page, 250); await frame(page, 300); };
+      // (the real Space shoots: a click on the white did until Nov 22, when a tap on it came to show the spin inset and then to do nothing)
+      const play = async () => { await page.keyboard.press('Space'); await drawn(page, 300); for (let k = 0; k < 40 && (await rs()).anim; k++) await frame(page, 250); await frame(page, 300); };
       out.start = await rs();
       // a miss first: the cue turned away from every ball, softly
       await page.evaluate(() => { const D = window.getFieldApp()._debug, [c, r] = window.__run, g = D.GAMES.get(c + '_' + r), w = g.balls.find(b => b.cue);
