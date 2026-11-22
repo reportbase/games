@@ -1063,3 +1063,5 @@ straight pool does (`rackS`).
   turn kept, a ball in a pocket no one owns is back on the table and the turn passes, a ball the computer sends to your pocket is yours, a foul
   takes a point and puts the ball and one of yours back with the computer in hand, the eighth point wins with three stars; the computer plans a
   shot; the search at one pocket finds no more pots than the search at all six; a game played out has a winner; the real Space breaks.
+One-pocket measured after the fix (`oneAuto`, 24 games a level against the level-3 planner, the break alternating): levels 1 to 5 won 8%, 21%,
+38%, 88% and 96%; a game took 67, 60, 56, 44 and 39 shots with 3.3, 2.2, 1.9, 1.1 and 0.6 fouls, and every game ended.
