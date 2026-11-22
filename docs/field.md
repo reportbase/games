@@ -583,3 +583,13 @@ with the dots. An exception to "the buttons wear draw's look" (Nov 16), asked fo
 page: the three are 44 × 44, round, the same fill, rim and width.
 The low pad in the corner (Nov 22, later: "Put the full board button in lower left corner with the same margins as the upper right button."): 16px
 from the left and the bottom, as the menu's button is from the right and the top (measured at 1280 × 800 and 390 × 844).
+
+**The boards at the screen's sides, from high up** (Nov 22: "When I zoom out to maximum height, the boards at the edge of the screen are hidden.").
+Seen in nine-ball at its greatest height: a dozen columns of tables up the middle of the screen and nothing either side. The walk that finds the
+boards in view (THE WALK ON BOARDS THAT ARE NOT SQUARE, TURNED, in the frame's draw) reads each cell's place ahead (`fwdF`, rows SPZ deep) and
+across (`lat`, columns SPX wide), and it turned the cell's numbers (ox, oz) by the yaw as though a cell were square. That is right at a yaw of 0
+or 180 and for square spacings, which is every game until the pool tables (1.6 times as wide as deep) were stood up-down by default (a yaw of 90,
+Nov 22): across the screen then ran the tables' short way, each column was counted 1.6 times as wide as it was, and the rows were built that much
+too narrow. Now the cell's place is turned in the ground's own lengths (`_cfx`, `_cfz`, `_crx`, `_crz`: ox·SPX and oz·SPZ turned, then put in
+rows and columns), and the walk's reach (`R`) is in cells either way. At a yaw of 0, and for square spacings at any yaw, the numbers are the ones
+they were. It shows wherever boards are not square and the view is turned: the pool games most, and mini golf's long boards turned by hand.

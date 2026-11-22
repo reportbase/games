@@ -15642,6 +15642,15 @@ function buildInstances(){
   const _yaw = (st.yaw || 0) * Math.PI / 180;
   const _fx = Math.sin(_yaw), _fz = Math.cos(_yaw);
   const _rx = Math.cos(_yaw), _rz = -Math.sin(_yaw);
+  /* THE WALK ON BOARDS THAT ARE NOT SQUARE, TURNED (Nov 22: "When I zoom out to maximum height, the boards at the edge of the screen are hidden."):
+     the boards in view are found by walking cells (ox, oz) and reading each one's place ahead (`fwdF`, in rows SPZ deep) and across (`lat`, in
+     columns SPX wide). That reading turned the cell's numbers by the yaw as though a cell were square: right at a yaw of 0 or 180, where ahead is
+     along z and across along x, and for every game whose boards are as deep as they are wide. A pool table is 1.6 times as wide as it is deep and
+     since Nov 22 stands up-down by default (a yaw of 90), so across the screen ran its short way: each column was counted 1.6 times as wide as it
+     was, the rows were built that much too narrow, and from high up the boards at the screen's sides were never made. Now a cell's place is
+     turned in the ground's own lengths (ox·SPX, oz·SPZ) and then put in rows and columns; at a yaw of 0, and for square spacings, these are the
+     numbers they were. */
+  const _cfx = _fx * SPX / SPZ, _cfz = _fz, _crx = _rx, _crz = _rz * SPZ / SPX;
   const cg = camGeom();
   const camHt = cg.h;
   const _fovDeg = dynamicFovDeg(camHt);
@@ -15884,7 +15893,7 @@ function buildInstances(){
   // footprint, each exactly once. Rotating the source band and rounding
   // onto integers is not a bijection — leaves ~10-16% gaps and double-hits.
   const maxHalf = rowData.reduce((m, r) => Math.max(m, r.half), 1);
-  const R = Math.max(Math.abs(dzMin), Math.abs(dzMax)) + maxHalf + 2;
+  const R = Math.ceil((Math.max(Math.abs(dzMin), Math.abs(dzMax)) + maxHalf + 2) * Math.max(SPX / SPZ, SPZ / SPX));   // (in cells either way: a row or a column may be the shorter length)
   const cells = [];
   /* The visible footprint is a BAND in the rotated frame, not a square in the
      grid. Walking the square and rejecting was O(R²) — fine at 20 rows, 52ms
@@ -15898,9 +15907,9 @@ function buildInstances(){
     return t1 <= t2 ? [t1, t2] : [t2, t1];
   };
   for (let oz = -R; oz <= R; oz++){
-    const A = _span(_fx, _fz, oz, dzMin - 0.5, dzMax + 0.5);   // lands on a live row
+    const A = _span(_cfx, _cfz, oz, dzMin - 0.5, dzMax + 0.5);   // lands on a live row
     if (!A) continue;
-    const B = _span(_rx, _rz, oz, -maxHalf - 1, maxHalf + 1);  // within the widest row
+    const B = _span(_crx, _crz, oz, -maxHalf - 1, maxHalf + 1);  // within the widest row
     if (!B) continue;
     let lo = Math.max(-R, Math.ceil (Math.max(A[0], B[0])));
     let hi = Math.min( R, Math.floor(Math.min(A[1], B[1])));
@@ -15910,17 +15919,17 @@ function buildInstances(){
         checkers: the field's slowest loop, in every game. Each of inFOV's tests is linear in fwdF and lat, so in ox; the
         interval they allow, a board's width wider each way, is walked, and inFOV still decides, so the same boards come out.) */
     for (const [ca, cb, cc] of _fovLines){
-      const k = ca * _fx + cb * _rx, d = (ca * _fz + cb * _rz) * oz + cc;
+      const k = ca * _cfx + cb * _crx, d = (ca * _cfz + cb * _crz) * oz + cc;
       if (Math.abs(k) < 1e-12){ if (d > 1e-9) { lo = 1; hi = 0; } continue; }
       const t = -d / k;
       if (k > 0) hi = Math.min(hi, Math.floor(t) + 1); else lo = Math.max(lo, Math.ceil(t) - 1);
     }
     for (let ox = lo; ox <= hi; ox++){
-      const fwdF = ox * _fx + oz * _fz;
+      const fwdF = ox * _cfx + oz * _cfz;
       const dz = Math.round(fwdF);
       if (dz < dzMin || dz > dzMax) continue;
       const row = rowByDz.get(dz); if (!row) continue;
-      const lat = ox * _rx + oz * _rz;
+      const lat = ox * _crx + oz * _crz;
       if (Math.abs(lat) > row.half) continue;
       if (!inFOV(fwdF, lat)) continue;
       cells.push({ ox, oz, dz, lat, row });
