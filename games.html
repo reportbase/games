@@ -56777,7 +56777,7 @@ const TRICK_APP = (() => {
      hidden until a press is held still `HOLD_MS` and then pulled (`pullStart`, from `claimsPan`'s timer): it stands by the finger, fills with how
      far the finger has gone from where it pressed (`PULL_PX` the whole of it), and letting go shoots as hard as it was pulled (let go at once, nothing
      is shot and the power is as it was). A tap on the white no longer shoots: the bar, Shoot in the row, Space and Enter do. */
-  const HOLD_MS = 450, PULL_PX = 200;
+  let HOLD_MS = 450; const PULL_PX = 200;   // (`_debug.holdMs` sets the hold for a test: the software renderer can take longer than this to hand a drag its first move)
   function ballScreen(x, z){
     try { const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {};
       const p = new W.THREE.Vector3(T.boardX + (0.5 - Ub(x)) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - Vb(z)) * bW * (L.cellH || 1)).project(W.camera);
@@ -56794,9 +56794,20 @@ const TRICK_APP = (() => {
   }
   const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } CTL.g = null; CTL.pulling = null; CTL.spin = false; };
   let HOLD_TM = 0;
+  /* A HOLD ON THE WHITE SHOWS THE SPIN INSET (Nov 22: "Move tap the cue ball to  long press to show target readout.  Increase hit zone for long
+     [p]ress."): a tap on the white showed it; now a press held `HOLD_MS` on or near the white does (within `SPIN_HIT_PX` of it on the screen, a wide
+     mark for a finger: the ball itself is a few pixels across from above), and a tap on the white does nothing. Held anywhere else, the press is the
+     velocity bar's, as before. */
+  const SPIN_HIT_PX = 72;
   function pullStart(d){
     if (DRAG !== d || d.moved || d.pull || !ctlEnsure()) return;
     const g = d.g; if (g.anim) return;
+    { const w = g.balls.find(b => b.cue && !b.sunk), at = w && d.xy ? ballScreen(w.x, w.z) : null;
+      if (at && Math.hypot(at[0] - d.xy[0], at[1] - d.xy[1]) <= SPIN_HIT_PX){
+        d.spinHold = true; CTL.spin = true; ateAt = performance.now() + 1e6;      // (the lift that ends this hold is no tap; put right on the lift)
+        const up = () => { removeEventListener('pointerup', up, true); removeEventListener('pointercancel', up, true); ateAt = performance.now(); };
+        addEventListener('pointerup', up, true); addEventListener('pointercancel', up, true);
+        try { window.fieldWake && window.fieldWake(); } catch {} touch(); return; } }
     d.pull = { x0: d.xy[0], y0: d.xy[1], was: g.power, f: 0 }; CTL.g = g; CTL.pulling = d.pull; CTL.spin = false;
     const h = CTL.pull.getBoundingClientRect().height || 220;
     CTL.pull.style.display = 'block'; CTL.fill.style.height = '0';
@@ -57081,7 +57092,7 @@ const TRICK_APP = (() => {
       if (g.ch && g.solvedIn) return app.onReset(c, r), true;  // solved: a tap plays it again (Oct 29: only you move to another board)
       if (u == null) return true;
       const [x, z] = toTable(u, v), w = g.balls.find(b => b.cue && !b.sunk);
-      if (w && Math.hypot(w.x - x, w.z - z) < R * 1.6) CTL.spin = !CTL.spin; else { CTL.spin = false; aimAt(g, x, z); }   // (Nov 22: a tap on the white shows the spin inset over it; it used to shoot)
+      if (w && Math.hypot(w.x - x, w.z - z) < R * 1.6){ /* (a tap on the white does nothing: a hold on it shows the spin inset, Nov 22) */ } else { CTL.spin = false; aimAt(g, x, z); }
       touch(); return true;
     },
     onCellHold(c, r){ if (ED.on) return true; restart(c, r); say('The table as it was set.', 1400); return true; },
@@ -57106,6 +57117,7 @@ const TRICK_APP = (() => {
       if (ED.on){ if (ED.drag && at) edDragAt(at.u, at.v); return !!ED.drag; }
       if (!DRAG) return false;
       if (DRAG.pull){ pullMove(DRAG, xy); DRAG.moved = true; return true; }   // (the velocity bar's pull, not an aim)
+      if (DRAG.spinHold) return true;                                         // (the hold that showed the spin inset: the hand moving off it aims nothing)
       clearTimeout(HOLD_TM); CTL.spin = false;
       /* THE CUE GOES ON PAST THE TABLE (Nov 21: "i should be able to move a pool stick without restriction.  don't stop moving the pool stick when the
          movement is on another board."): a finger off the board had no place on it and the cue stopped at the edge. The cue's drag (not a ball's)
@@ -57122,6 +57134,7 @@ const TRICK_APP = (() => {
       return true;
     },
     onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG){ clearTimeout(HOLD_TM); if (DRAG.pull){ pullEnd(DRAG); DRAG = null; return; }
+        if (DRAG.spinHold){ ateAt = performance.now(); DRAG = null; return; }
         if (DRAG.moved){ ateAt = performance.now(); touch(); }
         /* THE VIEW COMES ROUND BEHIND THE CUE (Nov 21: "rotate the view to behind the ball aligned with the pool stick when moving the pool stick."):
            when the hand lets the cue go the view turns to look along the shot, the cue toward you and the white's way up the screen. On letting go
@@ -57142,7 +57155,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, holdMs: v => { HOLD_MS = v; }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
   };
   SHARE.install(app, takeShot);
   // NINE-BALL'S APP (NINE-BALL, ON THE SAME ENGINE, above): this app's own hooks, with its name, menu, titles and picture
