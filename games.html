@@ -56228,6 +56228,8 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => ninePlanGen(g, lv), title: g => nineTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     eight:    { key: 'eight', pre: 'e', best: 'e8:', games: new Map(), rack: i => rack8(i), cue: CUE0, fresh: () => eightNew(), see: () => NINE_SEE, finish: (g, s) => eightFinish(g, s),
                 planGen: (g, lv) => eightPlanGen(g, lv), title: g => eightTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
+    one:      { key: 'one', pre: 'o', best: 'o1:', games: new Map(), rack: i => rackS(i), cue: CUE0, fresh: () => oneNew(), see: () => NINE_SEE, finish: (g, s) => oneFinish(g, s),
+                planGen: (g, lv) => onePlanGen(g, lv), title: g => oneTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     straight: { key: 'straight', pre: 's', best: 's14:', games: new Map(), rack: i => rackS(i), cue: CUE0, fresh: () => strNew(), see: () => NINE_SEE, finish: (g, s) => strFinish(g, s),
                 planGen: (g, lv) => strPlanGen(g, lv), title: g => strTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     carom:    { key: 'carom', pre: 'c', best: 'c3:', games: new Map(), rack: i => rackC(i), cue: B => ({ ang: carAim(B), power: 22, elev: 0 }), fresh: () => carNew(), see: () => CAR_SEE, finish: (g, s) => carFinish(g, s),
@@ -56293,9 +56295,9 @@ const TRICK_APP = (() => {
     N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
   }
   // every pot the white has at the balls that are on, best first: the aim (at the ghost ball) and how good it looks, as `leaveQ` weighs one
-  function eightCands(balls, on){
+  function eightCands(balls, on, only){   // (only: a pocket's number, for one-pocket: the pots at that pocket alone)
     const w = balls.find(b => b.cue && !b.sunk), out = []; if (!w) return out;
-    for (const t of on) for (const P of POCKETS){
+    for (const t of on) for (let pk = 0; pk < POCKETS.length; pk++){ if (only != null && pk !== only) continue; const P = POCKETS[pk];
       const d = Math.hypot(P[0] - t.x, P[1] - t.z), ux = (t.x - P[0]) / d, uz = (t.z - P[1]) / d, gx = t.x + ux * 2 * R, gz = t.z + uz * 2 * R, dx = gx - w.x, dz = gz - w.z, dw = Math.hypot(dx, dz);
       if (dw < 1e-6) continue;
       const cut = (dx * -ux + dz * -uz) / dw; if (cut < 0.26) continue;
@@ -56307,11 +56309,11 @@ const TRICK_APP = (() => {
     return out.sort((x, y) => y.q - x.q);
   }
   // the white in hand: behind the ball that is on nearest a pocket, on its line to that pocket, where there is room and a pot from there
-  function placeInHand(g, w, on){
-    const pairs = []; for (const b of on) for (const P of POCKETS) pairs.push({ b, P, d: Math.hypot(P[0] - b.x, P[1] - b.z) });
+  function placeInHand(g, w, on, only){
+    const pairs = []; for (const b of on) for (let pk = 0; pk < POCKETS.length; pk++){ if (only != null && pk !== only) continue; const P = POCKETS[pk]; pairs.push({ b, P, d: Math.hypot(P[0] - b.x, P[1] - b.z) }); }
     for (const { b, P, d } of pairs.sort((x, y) => x.d - y.d)){ const ux = (b.x - P[0]) / d, uz = (b.z - P[1]) / d;
       for (const back of [4, 3, 2.2]){ const x = b.x + ux * back, z = b.z + uz * back;
-        if (Math.abs(x) <= XL && Math.abs(z) <= ZL && free(g.balls, x, z, w)){ const ox = w.x, oz = w.z; w.x = x; w.z = z; if (eightCands(g.balls, [b]).length) return true; w.x = ox; w.z = oz; } } }
+        if (Math.abs(x) <= XL && Math.abs(z) <= ZL && free(g.balls, x, z, w)){ const ox = w.x, oz = w.z; w.x = x; w.z = z; if (eightCands(g.balls, [b], only).length) return true; w.x = ox; w.z = oz; } } }
     return false;
   }
   /* STRAIGHT POOL, ON THE SAME ENGINE (Nov 22: "Which pool game is next?", then "Proceed", to the recommendation of straight pool, 14.1 continuous).
@@ -56334,6 +56336,53 @@ const TRICK_APP = (() => {
     return [ballOf(0, ...HEAD), ...ns.map((n, k) => ballOf(n, ...STR_SLOTS[k]))];
   }
   const strNew = () => ({ turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], racks: 1, over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  /* ONE-POCKET (Nov 22: "Which pool game is next?", then "Proceed", to the recommendation of one-pocket). An entry of `MATCH` ('one', id `onepocket`),
+     the first game added since the table: its state, its rules, its marks for a shot and its title, and nothing else asked anywhere.
+     - THE RULES (`oneFinish`): each side owns one corner pocket at the foot of the table (`ONE_POCK`: yours, then the computer's). On a fair shot
+       (a ball met, the white up) every ball down in the shooter's pocket is a point and keeps the turn; a ball down in the other side's pocket is
+       that side's point, whoever sent it; a ball down anywhere else is back on the foot spot. A foul takes a point, puts back what went down in
+       the shooter's own pocket and gives the other side the white in hand. First to `ONE_TO`.
+     - THE COMPUTER (`onePlanGen`): the one search for a pot (`potPlanGen`) at its own pocket alone; a shot is marked up for each ball in its pocket
+       and, from level 3, for the pot it leaves there, and down for each ball it sends to yours; with nothing to pot, from level 4, the fair hit
+       that leaves you the least at your pocket.
+     - Both pockets wear a ring on the table, yours gold and the computer's red (`itemsOf`). */
+  const ONE_TO = 8, ONE_POCK = [2, 5];
+  const oneNew = () => ({ turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  const oneKey = g => 'o1:' + g.idx + '@' + g.lv;
+  function oneFinish(g, s){
+    const N = g.nine, t = N.turn, first = s.first ? s.first.n : null, out = whiteOut(s), who = t === 0 ? 'you' : 'the computer', foul = !!out || first == null;
+    const pots = s.sunk.filter(p => p.n !== 0 && p.pocket >= 0), mine = pots.filter(p => p.pocket === ONE_POCK[t]), theirs = pots.filter(p => p.pocket === ONE_POCK[t ^ 1]);
+    g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 })); respot(g.balls);
+    const back = n => { const b = g.balls.find(x => x.n === n); b.sunk = false; b.off = false; b.y = 0; b.x = FOOT9[0]; b.z = 0;   // (on the foot spot, or the nearest free place behind it)
+      for (let k = 0; k < 40; k++){ const x = LX / 4 + k * 0.3; if (free(g.balls, x, 0, b)){ b.x = x; break; } } };
+    for (const p of pots) if (p.pocket !== ONE_POCK[0] && p.pocket !== ONE_POCK[1]) back(p.n);
+    N.pts[t ^ 1] += theirs.length;
+    if (foul){ for (const p of mine) back(p.n); N.pts[t]--; N.fouls[t]++; N.said = who + ' fouled: ' + (out || 'no ball was met') + '; a point off, ball in hand'; N.hand = true; N.turn ^= 1; }
+    else if (mine.length){ N.pts[t] += mine.length; g.potted += mine.length; N.said = who + ' potted the ' + mine.map(p => p.n).join(', ') + ' in ' + (t === 0 ? 'your' : 'its') + ' pocket'; }
+    else { N.said = who + (theirs.length ? ' potted the ' + theirs.map(p => p.n).join(', ') + ' in the other pocket' : ' missed'); N.turn ^= 1; }
+    const won = N.pts[0] >= ONE_TO ? 1 : N.pts[1] >= ONE_TO ? 2 : 0;
+    if (won){ N.over = won;
+      if (won === 1 && !g.auto){ N.stars = N.pts[1] * 3 < ONE_TO ? 3 : N.pts[1] * 3 < 2 * ONE_TO ? 2 : 1; const id = oneKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
+    else if (N.turn === 0){ const w = g.balls.find(b => b.cue && !b.sunk), o = w && g.balls.filter(b => !b.cue && !b.sunk).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0]; if (o) g.ang = Math.atan2(o.z - w.z, o.x - w.x); }
+    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
+  }
+  function onePlanGen(g, lvIn){
+    const t = g.nine.turn, my = ONE_POCK[t], yours = ONE_POCK[t ^ 1], up = balls => balls.filter(b => !b.cue && !b.sunk);
+    const leave = (balls, pk) => { const c = eightCands(balls, up(balls), pk); return c.length ? c[0].q : 0; };
+    return potPlanGen(g, lvIn, up(g.balls), (sm, mid, deep) => {
+      if (!sm.first || whiteOut(sm)) return -1;
+      const pots = sm.sunk.filter(q => q.n !== 0 && q.pocket >= 0), mine = pots.filter(q => q.pocket === my).length, theirs = pots.filter(q => q.pocket === yours).length;
+      if (mine) return 2 + 0.3 * (mine - 1) - 1.5 * theirs + (mid ? 3 * leave(sm.final, my) : 0);
+      return 0.6 - 1.5 * theirs - (deep ? 0.5 * leave(sm.final, yours) : 0.01 * sm.contacts.length); }, Infinity, my);
+  }
+  const onePlan = (g, lv) => matchPlan(MATCH.one, g, lv);
+  function oneAuto(idx, lvA, lvB, maxShots = 400){ const g = matchAuto('one', idx, lvA, lvB, maxShots); return { over: g.nine.over, shots: g.shots, pts: g.nine.pts.slice(), fouls: g.nine.fouls.slice() }; }
+  function oneTitle(g){
+    const N = g.nine, b = BEST[oneKey(g)];
+    return 'One-pocket — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
+      : N.turn === 0 ? 'your shot' + (N.hand ? ', ball in hand: drag the white where you like' : '') : 'the computer\'s shot')
+      + ' · your pocket is ringed gold · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + ONE_TO + ')' + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
   const strKey = g => 's14:' + g.idx + '@' + g.lv;
   function strRerack(g){
     const live = g.balls.filter(b => !b.cue && !b.sunk); if (live.length > 1) return false;
@@ -56369,15 +56418,15 @@ const TRICK_APP = (() => {
      flown at the level's powers and tips, each shot marked by the game's own `scoreOf(sm, mid, deep)` (2 and up: a pot worth playing; under 2 with
      nothing better: a fair hit on the nearest ball that is on instead), the search ending early at a mark of `stopAt` or, below level 3, at the
      first pot; then the hand's error. */
-  function* potPlanGen(g, lvIn, on, scoreOf, stopAt){
+  function* potPlanGen(g, lvIn, on, scoreOf, stopAt, only){
     const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), w = g.balls.find(b => b.cue && !b.sunk);
     if (!w || !on.length) return { a: g.ang, p: 16, tip: [0, 0], score: -1 };
-    if (g.nine.hand) placeInHand(g, w, on);
+    if (g.nine.hand) placeInHand(g, w, on, only);
     const mid = lv >= 3, deep = lv >= 4, powers = mid ? [12, 18, 26, 34] : [16, 28], tips = deep ? [[0, 0], [0, 0.4], [0, -0.45]] : [[0, 0]];
     let best = null;
     const tryShot = (a, p, tip) => { const st = strikeOf(a, tip[0], tip[1], p, MU_TIP, 0), sm = simulate(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) return;
       const score = scoreOf(sm, mid, deep); if (!best || score > best.score) best = { a, p, tip, score }; };
-    search: for (const c of eightCands(g.balls, on).slice(0, EIGHT_N[lv - 1]))
+    search: for (const c of eightCands(g.balls, on, only).slice(0, EIGHT_N[lv - 1]))
       for (const p of powers) for (const tip of tips){ tryShot(c.a, p, tip); yield; if (best && (best.score >= stopAt || (!mid && best.score >= 2))) break search; }
     if (!best || best.score < 2){
       const o = on.slice().sort((x, y) => Math.hypot(x.x - w.x, x.z - w.z) - Math.hypot(y.x - w.x, y.z - w.z))[0], a0 = Math.atan2(o.z - w.z, o.x - w.x);
@@ -56863,6 +56912,7 @@ const TRICK_APP = (() => {
     });
     frameItems(out, V);
     // (the called pocket, two red rings about its mouth: CALL YOUR POCKET, above)
+    if (M() === MATCH.one) ONE_POCK.forEach((pk, k) => { const [x, z] = POCKETS[pk]; out.push({ kind: 'tsRing', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK + 0.45), color: k ? RED : GOLD }); });   // (one-pocket: yours gold, the computer's red)
     if (ch && ch.pocket != null && POCKETS[ch.pocket]){ const [x, z] = POCKETS[ch.pocket];
       for (const k of [0, 0.22]) out.push({ kind: 'tsRing', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK + 0.45 + k), color: RED }); }
     if (ch && ch.mark) for (const [list, col, kind] of [[ch.mark.target, GOLD, 'tsRing'], [ch.mark.avoid, RED, 'tsGhost'], [ch.mark.first, 0xf2f0ea, 'tsGhost']]) for (const n of list || []){
@@ -57548,6 +57598,13 @@ const TRICK_APP = (() => {
       ctx.fillStyle = '#111111'; ctx.font = 'bold ' + Math.round(sz * 0.085) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('8', sz * 0.62, sz * 0.505);
       dot(ctx, sz * 0.26, sz * 0.5, sz * 0.045, '#f2f0ea'); },
     debug: { rack8, eightOn, eightFinish, eightCands, eightPlan, eightPlanGen, eightAuto, eightTitle, grpOf } });
+  app.one = matchApp(MATCH.one, { name: 'One-pocket', hint: 'only balls in your own corner pocket score; first to ' + ONE_TO,
+    level: 'How steady the computer\'s hand is, how many pots it looks at and how deep the shot is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The fifteen racked, the score at nothing, your break.',
+    icon(ctx, sz){ TABLE_ICON(ctx, sz, true);
+      ctx.lineWidth = Math.max(1.5, sz / 28); ctx.strokeStyle = '#d4a052'; ctx.beginPath(); ctx.arc(sz * 0.94, sz * 0.26, sz * 0.085, 0, 7); ctx.stroke();
+      ctx.strokeStyle = '#d23a2f'; ctx.beginPath(); ctx.arc(sz * 0.94, sz * 0.74, sz * 0.085, 0, 7); ctx.stroke();
+      dot(ctx, sz * 0.78, sz * 0.36, sz * 0.045, '#e3c33b'); dot(ctx, sz * 0.7, sz * 0.58, sz * 0.045, '#2a4fb0'); dot(ctx, sz * 0.26, sz * 0.5, sz * 0.045, '#f2f0ea'); },
+    debug: { rackS, oneFinish, onePlan, onePlanGen, oneAuto, oneTitle, eightCands, ONE_TO, ONE_POCK } });
   app.straight = matchApp(MATCH.straight, { name: 'Straight pool', hint: 'pot the ball you hit first, any ball, a point each; first to ' + STR_TO,
     level: 'How steady the computer\'s hand is, how many pots it looks at and how deep the shot is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The fifteen racked, the score at nothing, your break.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, true);
@@ -57569,6 +57626,7 @@ const NINEBALL_APP = TRICK_APP.nine;   // (9-ball against the computer, on trick
 const CAROM_APP = TRICK_APP.carom;    // (three-cushion billiards against the computer, on the same engine, Nov 22)
 const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the same engine, Nov 22)
 const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the computer, on the same engine, Nov 22)
+const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -65959,7 +66017,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, CAROM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -65968,7 +66026,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [CAROM_APP, 'threecushion'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],

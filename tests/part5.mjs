@@ -1477,6 +1477,47 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} straight pool: the rack (${sp && sp.rack}), the ball met first down scores with every other ball down and keeps the turn, up it passes the turn and the others come back, a foul takes a point and gives the white in hand, one ball left the fourteen are racked again, the twentieth point wins, the computer plans a shot, a game played out has a winner, the real Space breaks`);
   }
 
+  // ONE-POCKET (Nov 22: "Which pool game is next?", then "Proceed"): an entry of the pool games' table. Each side owns a corner pocket at the foot
+  // (ringed on the table, yours gold, the computer's red); a ball down in the shooter's pocket is a point and keeps the turn; in the other side's
+  // pocket it is that side's point and the turn passes; anywhere else it is back on the table; a foul takes a point and gives the white in hand; the
+  // eighth point wins; the computer plans a shot; a game played out has a winner; the real Space breaks.
+  {
+    current = 'onepocket';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'onepocket')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const op = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, N9 = window.FIELD_APPS.find(a => a.id === 'nineball')._debug, out = {};
+      out.apart = D.GAMES !== N9.GAMES && A.name === 'One-pocket' && A.id === 'onepocket' && D.MATCH.one.app === A;
+      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
+      const [mine, theirs] = D.ONE_POCK, P = D.POCKETS;
+      out.start = [g.balls.length, g.nine.kind, g.nine.turn, g.nine.pts.join('-'), P[mine][0] > 0 && P[theirs][0] > 0 && P[mine][1] === -P[theirs][1]].join();
+      const rings = D.itemsOf(D.liveView(g)).filter(i => i.kind === 'tsRing'); out.rings = rings.length === 2 && rings[0].color !== rings[1].color;
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      const play = (h, first, sunk) => { const s = { first: first == null ? null : { n: first }, sunk: sunk.map(([n, pocket], i) => ({ n, pocket, t: 1 + i })), contacts: [],
+        final: h.balls.map(b => ({ ...b, sunk: b.sunk || sunk.some(q => q[0] === b.n) })) }; h.anim = { s }; D.oneFinish(h, s); return h; };
+      const st = h => [h.nine.turn, h.nine.hand, h.nine.pts.join('|'), h.nine.over].join(), up = h => h.balls.filter(b => !b.cue && !b.sunk).length;
+      let h = play(fresh(), 3, [[3, mine], [5, mine]]); out.mine = st(h) + ',' + up(h);           // two in your pocket: two points, your turn still
+      h = play(h, 4, [[4, 0]]); out.other = st(h) + ',' + up(h);                                  // one in a pocket no one owns: back on the table, the turn passes
+      h = play(h, 6, [[6, mine]]); out.theirs = st(h) + ',' + up(h);                              // the computer sends one to your pocket: your point, your shot
+      h = play(h, null, [[7, mine]]); out.foul = st(h) + ',' + up(h) + ',' + h.nine.fouls.join('/');   // you meet nothing: a point off, the 7 back, the computer in hand
+      h = fresh(); h.nine.pts = [D.ONE_TO - 1, 2]; h = play(h, 9, [[9, mine]]); out.win = st(h) + ',' + h.nine.stars;
+      h = fresh(); h.nine.turn = 1; const Pl = D.onePlan(h, 3); out.plan = isFinite(Pl.a) && Pl.p >= 8;
+      out.title = /^One-pocket — level \d · the computer's shot · your pocket is ringed gold · you 0, the computer 0 \(to 8\)/.test(D.titleOf(h));
+      // the search looks at its own pocket alone
+      const all = D.eightCands(g.balls, g.balls.filter(b => !b.cue && !b.sunk)).length, own = D.eightCands(g.balls, g.balls.filter(b => !b.cue && !b.sunk), mine).length; out.only = own <= all;
+      const r = D.oneAuto(7, 3, 3); out.auto = (r.over === 1 || r.over === 2) && Math.max(...r.pts) >= D.ONE_TO;
+      fresh();
+      return out;
+    });
+    const gO = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim } : null; });
+    await page.keyboard.press('Space'); await drawn(page, 300);
+    const brokeO = await gO();
+    const ok = op && !op.none && op.apart && op.start === '16,one,0,0-0,true' && op.rings && op.mine === '0,false,2|0,0,13' && op.other === '1,false,2|0,0,13' && op.theirs === '0,false,3|0,0,12'
+      && op.foul === '1,true,2|0,0,12,1/0' && op.win === '0,false,8|2,1,3' && op.plan && op.title && op.only && op.auto && brokeO && brokeO.shots === 1;
+    if (!ok) failures.push('[onepocket] ' + JSON.stringify({ op, brokeO }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} one-pocket: the two pockets ringed, a ball in your pocket scores and keeps the turn, one in a pocket no one owns comes back, one the computer sends to your pocket is yours, a foul takes a point and gives the white in hand, the eighth point wins, the computer plans a shot, a game played out has a winner, the real Space breaks`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
