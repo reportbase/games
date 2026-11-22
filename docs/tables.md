@@ -998,3 +998,27 @@ for the solids 1–7, 't' for the stripes 9–15, null while the table is open);
   the turn, nothing down passes it, the computer meeting a solid first is a foul with you in hand, the 8 down with solids still up loses, the solids
   down and then the 8 wins with three stars, the 8 on the break is back on the table; the computer plans a shot; a rack played out with no table
   drawn has a winner and groups; the real Space breaks.
+
+**Straight pool** (Nov 22: "Which pool game is next?", then "Proceed", to the recommendation of straight pool, 14.1 continuous). `STRAIGHT_APP`, id
+`straightpool`, made inside `TRICK_APP` as `strApp`, as nine-ball's is (STRAIGHT POOL, ON THE SAME ENGINE): the game carries `g.nine` with
+`str: true`, `pts` and `racks`; `NINE()` is true for it and `STR()` asks which (`GAMES_S`, `strFinish`, `strRerack`, `strPlanGen`, `strTitle`,
+`nineRecGen(idx, false, false, true)`, its recordings in `RECS_N` under `'s' + idx`).
+- **Called by playing it.** The real game has the ball and the pocket named before each shot. Here the ball the white meets first is the ball
+  called and it must go down, in any pocket: then every ball down on the shot is a point and the turn is kept. If it stays up the turn passes and
+  what else went down is back on the foot spot. Said to the owner before it was built; naming ball and pocket would be a tap before every shot.
+- **Fouls**: no ball met, or the white down: a point off (a score can go below nothing), the other side in hand. Not in it: the opening break's
+  own rules, three fouls in a row, the balls driven to a rail.
+- **The rack comes back** (`strRerack`): one ball left, the fourteen down are set again in the triangle with its head empty (`STR_SLOTS`), in an
+  order from the board's number and the count of racks; the last ball and the white stay where they lie, either moved to the head spot if it lies
+  where the rack goes. None left: all fifteen. First to `STR_TO` (20) has the game; stars by how far behind the computer was (under a third of
+  the way three, under two thirds two).
+- **The computer** (`strPlanGen`): eight-ball's search over every ball on the table, the pot that leaves the best shot at any other ball from
+  level 3, and from level 4 the fair hit that leaves you the least when there is nothing to pot. `placeInHand` is now one function for it and
+  eight-ball's.
+- **Measured** (`strAuto`, 24 games a level against the level-3 planner, the break alternating): levels 1 to 5 won 0%, 8%, 50%, 92% and 100%; a
+  game took 84, 89, 81, 63 and 45 shots and about three racks. A long game tells the levels apart more sharply than a rack of 8-ball does. A board
+  no one plays shows the first 60 shots of its game (`NINE_REC_SHOTS`), which is seldom the whole of it.
+- The smoke test (part 5): the rack; games apart from nine-ball's; on shots made up, the ball met first down with another scores two and keeps the
+  turn, the ball met first up passes the turn with the other back on the table, nothing met takes a point and gives the white in hand; one ball
+  left, the fourteen are back with the head of the triangle empty and the last ball where it lay; the twentieth point wins with three stars; the
+  computer plans a shot; a game played out with no table drawn ends at 20 with the rack set again at least once; the real Space breaks.
