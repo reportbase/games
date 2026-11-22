@@ -3856,6 +3856,18 @@ window.FIELD_WORLD = {
   // turn the view to a heading (degrees; 0 is forward) about the place on the ground it is looking at, which stays where it is on the screen, at the zoom
   // and tilt it has (trick shots, Nov 21; it first framed the board again as it turned: "dont center the board after moving the pools stick, just
   // rotate the view.")
+  // put the view at a place on the ground (x, z in the world), looking along a heading (degrees), at a zoom and a tilt of the caller's: the place lands
+  // where the view looks, as a framed board's middle does (trick shots and 9-ball, behind the white, Nov 22)
+  viewTo(o){
+    if (!o || !isFinite(o.x) || !isFinite(o.z)) return;
+    let a = isFinite(o.yaw) ? ((o.yaw % 360) + 360) % 360 : (st.yaw || 0); if (a >= 180) a -= 360;
+    if (isFinite(o.pitch)) st.pitch = Math.max((window.LAB ? window.LAB.pitchMin : 35), Math.min(PITCH_MAX, o.pitch));
+    const zoom = isFinite(o.zoom) ? Math.max(0, Math.min(1000, o.zoom)) : st.zoom, p = Math.max((window.LAB ? window.LAB.pitchMin : 35), Math.min(PITCH_MAX, st.pitch)) * Math.PI / 180;
+    const SPv = SPACING * st.gridScale, hFloor = 1.5 * ((SPv * BOARD_FILL * Math.max(0.3, Math.min(1.05, st.objSize))) / 8) * 1.05;
+    const back = Math.max(hFloor, THREE.MathUtils.lerp(0.75, CAM_H_MAX, zoom / 1000)) / Math.tan(p), y = a * Math.PI / 180;
+    try { resetThrust(); } catch {}
+    st.yawV = 0; st.zoomV = 0; target.yaw = a; target.zoom = zoom; target.x = o.x - back * Math.sin(y); target.z = o.z - back * Math.cos(y); target.active = true;
+  },
   turnTo(deg){
     if (!isFinite(deg)) return; let a = ((deg % 360) + 360) % 360; if (a >= 180) a -= 360;
     const back = camGeom().back, y0 = (st.yaw || 0) * Math.PI / 180, y1 = a * Math.PI / 180;
@@ -56119,6 +56131,7 @@ const TRICK_APP = (() => {
       N.turn ^= 1; N.hand = true;
     } else if (pots.length){ N.said = who + ' potted the ' + pots.join(', ');
     } else { N.said = who + ' missed'; N.turn ^= 1; }
+    if (!N.over && N.turn === 0){ const w = g.balls.find(b => b.cue && !b.sunk), lo = lowOf(g.balls); if (w && lo) g.ang = Math.atan2(lo.z - w.z, lo.x - w.x); }   // (your shot: the cue toward the ball that is on)
     N.plan = null; N.thinkAt = 0; g.anim = null; g.dirty = true; touch();
   }
   // the computer's shot: the lowest ball toward each pocket by its ghost ball, a few powers, flown ahead; then its hands' error
@@ -56153,6 +56166,23 @@ const TRICK_APP = (() => {
       if (!N.thinkAt){ N.thinkAt = now; return; } if (now - N.thinkAt < 700) return;
       N.plan = ninePlan(g); g.ang = N.plan.a; setPower(g, N.plan.p); g.tip = { x: 0, y: 0 }; g.elev = 0; g.dirty = true; N.planAt = now; touch(); return; }
     if (now - N.planAt > 1400){ N.plan = null; shoot(g); touch(); }
+  }
+  /* BEHIND THE WHITE (Nov 22: "The board for pool games should be auto rotated so the player is behind the cue ball.    The default tilt should be 40
+     degrees.  The zoom height should be very low so the player is close to the bal[l]."): in both pool games the view stands behind the white, looking
+     along the shot as it is aimed, tilted `BEHIND_PITCH` (40°) and low (`BEHIND_H`, the eye's height in table lengths), the place it looks at a
+     little ahead of the white (`BEHIND_AHEAD`). It is put there when the game opens (`fitView`), when a board is brought in (`onFramed`) and after
+     every shot, yours or the computer's (`finish`), so the white is found where it came to rest; a cue's drag still only turns the view where it is
+     (Nov 21). The whole table is the wheel, a pinch or the menu's fit away. The table's +x and +z run to the world's −x and −z. */
+  const BEHIND_PITCH = 40, BEHIND_H = 0.2, BEHIND_AHEAD = 2.2;
+  let BEHIND_ON = true;      // (the tests turn it off: their real clicks are aimed over the whole table, framed as it used to open)
+  function behindCue(g){
+    try {
+      if (!BEHIND_ON || !g || g.anim || liveGame() !== g) return;
+      const w = g.balls.find(b => b.cue && !b.sunk); if (!w) return;
+      const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, x = w.x + Math.cos(g.ang) * BEHIND_AHEAD, z = w.z + Math.sin(g.ang) * BEHIND_AHEAD;
+      W.viewTo({ x: T.boardX + (0.5 - Ub(x)) * bW * (L.cellW || 1), z: T.boardZ + (0.5 - Vb(z)) * bW * (L.cellH || 1),
+                 yaw: Math.atan2(-Math.cos(g.ang), -Math.sin(g.ang)) * 180 / Math.PI, pitch: BEHIND_PITCH, zoom: W.zoomFor(BEHIND_H * bW) });
+    } catch {}
   }
   function nineTitle(g){
     const N = g.nine, low = lowOf(g.balls), b = BEST[nineKey(g)];
@@ -56277,7 +56307,7 @@ const TRICK_APP = (() => {
       for (; an.rk < k; an.rk++){ const a = fr[an.rk], b = fr[an.rk + 1], h = an.s.heights[an.rk + 1];   // each frame since the last drawn, rolled
         for (let i = 0; i < g.balls.length; i++) if (!isNaN(a[2 * i]) && !isNaN(b[2 * i]) && h[i] < 0.02) g.rot[i] = roll(g.rot[i], b[2 * i] - a[2 * i], b[2 * i + 1] - a[2 * i + 1]); }
       pos = g.balls.map((b, i) => isNaN(fr[k][2 * i]) ? null : [fr[k][2 * i], fr[k][2 * i + 1], an.s.heights[k][i]]);
-      if (k >= fr.length - 1 && (!g.ch || el > (fr.length - 1) / 60 + 0.9)){ finish(g); return liveView(g); }   // a try's end held a moment
+      if (k >= fr.length - 1 && (!g.ch || el > (fr.length - 1) / 60 + 0.9)){ finish(g); behindCue(g); return liveView(g); }   // a try's end held a moment
       return { B: g.balls, pos, ch: g.ch, rot: g.rot, trail: { fr, k, hz: 60 }, lv: g.lv };
     }
     return { B: g.balls, pos, ch: g.ch, rot: g.rot, lv: g.lv, live: true, sim: SET.paths === 'off' ? null : previewOf(g), hz: 60, see: g.see, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: g.tip, chalk: g.chalk }, paths: SET.paths };
@@ -56894,15 +56924,16 @@ const TRICK_APP = (() => {
     onReset(c, r){ restart(c, r); return true; },
     onSelect(){ return true; },
     onFramed(c, r){
-      LIVE = c == null ? null : { c, r }; if (LIVE) gameAt(c, r); else ctlHide();
+      LIVE = c == null ? null : { c, r }; if (LIVE) behindCue(gameAt(c, r)); else ctlHide();
       if (LIVE && !TOLD){ TOLD = true; say('Drag the cue round the white to aim: the shot is seen ahead, every ball it reaches. Tap the white, Shoot, Space, or pull the strip at the right and let go. The round inset sets the spin. Every board is a trick shot, harder farther out.', 7000); }
     },
     onLeave(){ ctlHide(); },
+    fitView(){ behindCue(liveGame()); },                       // (the game opens behind the white: BEHIND THE WHITE)
     pitchFloor: 40,                                           // (Nov 22: "Minimum tilt 40degrees."; 20 for a day, Nov 21; the field's own floor is 35)
     frameYaw: 90,                                             // (Nov 22: "Default board position is up down.": the table's long way runs up the screen by default; the field's fwdYaw)
     // (Nov 22: "Reduce maximum zoom height by half.": the eye climbs to half the field's ceiling here, zoom 500 of 1000)
     get zoomMaxH(){ try { return THREE.MathUtils.lerp(0.75, CAM_H_MAX, 0.5) / gridSpacingX(); } catch { return 0; } },
-    noDoubleTap(){ return ED.on ? 'always' : !!liveGame(); },
+    noDoubleTap(){ return ED.on || liveGame() ? 'always' : false; },   // (always, Nov 22: the view stands behind the white, never the board's default, and two quick taps are the game's)
     onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
       if (ED.on){ if (performance.now() - ED.ateAt < 400) return true;
@@ -56910,7 +56941,7 @@ const TRICK_APP = (() => {
         if (u != null) edTap(u, v); return true; }
       LIVE = { c, r }; const g = gameAt(c, r);
       if (!g){ say('This board\'s trick shot is still being made; a moment.', 1500); return true; }
-      if (g.anim){ finish(g); return true; }                    // a tap during the shot jumps to its end (wander's)
+      if (g.anim){ finish(g); behindCue(g); return true; }                    // a tap during the shot jumps to its end (wander's)
       if (g.nine && g.nine.over) return app.onReset(c, r), true;   // (the rack over: a tap racks again)
       if (g.nine && g.nine.turn) return true;                       // (the computer's shot)
       if (g.ch && g.solvedIn) return app.onReset(c, r), true;  // solved: a tap plays it again (Oct 29: only you move to another board)
@@ -56977,7 +57008,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, behindCue },
   };
   SHARE.install(app, takeShot);
   // NINE-BALL'S APP (NINE-BALL, ON THE SAME ENGINE, above): this app's own hooks, with its name, menu, titles and picture
@@ -56996,7 +57027,7 @@ const TRICK_APP = (() => {
       return '9-ball — level ' + lv + (b ? ', best ' + starStr(b) : '') + ' · hit the lowest ball first; pot the 9 to win the rack';
     },
     quickActs(){ return null; }, onQuickAct(){ return false; },
-    onFramed(c, r){ LIVE = c == null ? null : { c, r }; if (LIVE) gameAt(c, r); else ctlHide(); },
+    onFramed(c, r){ LIVE = c == null ? null : { c, r }; if (LIVE) behindCue(gameAt(c, r)); else ctlHide(); },
     drawIcon(ctx, sz){
       ctx.fillStyle = '#4a2c18'; ctx.fillRect(0, sz * 0.2, sz, sz * 0.6);
       ctx.fillStyle = '#16513f'; ctx.fillRect(sz * 0.06, sz * 0.26, sz * 0.88, sz * 0.48);
