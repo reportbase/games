@@ -38,6 +38,13 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   `pointerdown`, `pointerup`, `touchend`, `click` or `keydown` anywhere wakes `ARCADE.audio()` and plays a silent sample inside it, and
   `navigator.audioSession.type` is 'playback' (Safari 17+). Not heard here (no speakers); checked only that the context runs. Games with an
   audio engine of their own (pinball, the tanks, trick shots, air raid, Simon, Asteroids) start theirs as before.
+- **A long press does not move the row; the row has an ×** (Nov 22: "Long press should not show hide the bottom browser.   Add an x to the upper left of
+  the bottom browser to close."): from Oct 23 a press held and let go toggled the bottom row in every game. Both toggles are out of `turnEnd` (the plain
+  hold and the hold in an app that keeps its presses); an app with `holdKeeps` (Minesweeper's flag) is still asked. The dots open the row as before, and
+  `#bbClose`, a chip in the row's top band at its left, shown while the row is open, shuts it (`toggleBoardBrowser(false)`, so an app's
+  `onBrowserToggle` is asked as for the dots). The notes below that say a long press toggles the row are out of date. Part 6's first check is rewritten
+  for it with real input (the × at the row's upper left shuts it, a hold leaves it shut, the dots open it, a hold leaves it open; Simon; Minesweeper's
+  hold on an open square does nothing) and passes.
 - **No Home, and a click selects** (Nov 21: "1) remove the home page with all the applications and the home button. 2) single click should select a board
   but not move to that board.   clicking a selected board sets it as the default board in the center.    remove the double click hander to change the default
   board."):

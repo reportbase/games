@@ -898,4 +898,8 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
   field's double tap would have reframed the whole table at any two quick taps); the whole table is the wheel, a pinch or the menu's fit away. The
   smoke test turns it off for trick shots' real clicks (`_debug.behind(false)`) and checks it by itself after the nine-ball check; that part was not run.
   Probed in both games: 40°, the white at the same place low on the screen on opening and after a break and the computer's shots.
+- **Not so close, and the computer's shots too** (Nov 22: "Pool shots should not so close by default.  Rotate the computer shots behind the cue ball as
+  well."): `BEHIND_H` 0.42 of a table's length (0.2 for a day, which was the field's lowest) and `BEHIND_AHEAD` 3.2, so from behind the white the rack and
+  the far pockets are in view. In 9-ball `nineTick` calls `behindCue` when the computer has planned its shot, so its aim is watched from behind the white
+  as yours is. Probed: opened at zoom 18 (it was 0), and with the turn handed to the computer the view turned toward its aim.
 
