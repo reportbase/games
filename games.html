@@ -56114,7 +56114,7 @@ const TRICK_APP = (() => {
     let R = RECS_N.get(idx); if (R){ RECS_N.delete(idx); RECS_N.set(idx, R); return R; }
     const now = performance.now(); if (now - nrAt > 12){ nrAt = now; nrUsed = 0; }
     if (!force && nrUsed >= NINE_REC_MS) return null;
-    let J = NREC.get(idx); if (!J){ J = { gen: nineRecGen(idx0, m), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
+    let J = NREC.get(idx); if (!J){ J = { gen: m.recGen ? m.recGen(idx0) : nineRecGen(idx0, m), at: now }; NREC.set(idx, J); if (NREC.size > 40) for (const [k, v] of NREC) if (now - v.at > 3000) NREC.delete(k); }
     J.at = now;
     let step; const t0 = performance.now();
     do { step = J.gen.next(); } while (!step.done && (force || performance.now() - t0 < NINE_REC_MS - nrUsed));
@@ -56238,6 +56238,8 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => ninePlanGen(g, lv), title: g => nineTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     eight:    { key: 'eight', pre: 'e', best: 'e8:', games: new Map(), rack: i => rack8(i), cue: CUE0, fresh: () => eightNew(), see: () => NINE_SEE, finish: (g, s) => eightFinish(g, s),
                 planGen: (g, lv) => eightPlanGen(g, lv), title: g => eightTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
+    hockey:   { key: 'hockey', pre: 'h', best: 'ph:', games: new Map(), rack: i => rackH(i), cue: CUE0, fresh: () => hkNew(), see: () => NINE_SEE, finish: () => {}, planGen: null, title: g => hkTitle(g),
+                sim: (...a) => simC(...a), brk: false, recShots: () => 1, bare: true, rt: true, recGen: i => hkRecGen(i), app: null },
     golf:     { key: 'golf', pre: 'g', best: 'pg:', games: new Map(), rack: i => golfRack(i), cue: B => ({ ang: golfAim(B), power: 8, elev: 0 }), fresh: () => golfNew(), see: () => NINE_SEE, finish: (g, s) => golfFinish(g, s),
                 planGen: (g, lv) => golfPlanGen(g, lv), title: g => golfTitle(g), sim: (...a) => golfSim(...a), brk: false, recShots: () => GOLF_MAX, bare: true, onRec: (i, d) => golfPar(i, d), app: null },
     one:      { key: 'one', pre: 'o', best: 'o1:', games: new Map(), rack: i => rackS(i), cue: CUE0, fresh: () => oneNew(), see: () => NINE_SEE, finish: (g, s) => oneFinish(g, s),
@@ -56514,6 +56516,107 @@ const TRICK_APP = (() => {
     if (!par) try { nineRecSoon(g.idx); } catch {}                    // (the board's own recording is where its par comes from: asked for until it is made)
     return 'Pool golf — level ' + g.lv + ' · ' + (N.over ? starStr(N.stars) + ' holed in ' + N.pts[0] + ', tap to play again' : 'stroke ' + (N.pts[0] + 1))
       + ' · par ' + (par || '…') + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
+  /* POOL HOCKEY, IN REAL TIME (Nov 22: "You said real time games don't benefit from the pool engine?  Why, shv is real-time.", then "Proceed"). The
+     owner was right: the engine is a stepper (its `own` and `pairs` a tick; each pair of balls reads the other's h and v that tick and touches
+     where they sum to one), and only the pool games' use of it, a whole shot flown ahead and played back, is not real time. This game runs the
+     same two functions one frame at a time as it is played (`hkFrame`, from `hkLive`, with the hands' pull between ticks), an entry of `MATCH`
+     ('hockey', id `poolhockey`, `rt: true`).
+     - THE GAME: the table with no pockets and a goal's mouth in each short cushion (`HK_GOAL` wide). A pool ball is the puck: it rolls, slides,
+       spins and comes off the cushions as a ball does. Each side drives a mallet, a ball nearly twice as wide (`HK_MAL`), so about seven times
+       as heavy by the engine's own reckoning (one material: the mass ratio is the sizes' cubed), kept to its own half. Your mallet goes where your
+       finger is on the table; the computer's goes behind the ball and through it toward your goal, or home between the ball and its own goal,
+       looking again every `HK_LAG` of the level and moving at `HK_V` of the level. A ball through a mouth is a goal; first to `HK_TO`.
+     - WHAT A REAL-TIME GAME GIVES UP: the shot seen ahead and a planner that flies shots forward. What it keeps: the ball, the contact, the
+       cushions, spin passed on at a touch.
+     - Air hockey was looked at for this and left as it is: its puck floats (no roll, no cloth), and its computer, levels and par are fitted to
+       its own puck.
+     - A board no one plays shows `HK_REC_T` seconds of the two computers at it (`hkRecGen`). */
+  const HK_TO = 5, HK_MAL = 0.85, HK_GOAL = 3.4, HK_HAND = 26, HK_V = [7, 9, 11, 13.5, 16], HK_LAG = [0.34, 0.26, 0.19, 0.13, 0.08], HK_ERR = [0.9, 0.6, 0.4, 0.25, 0.12], HK_PUCK_V = 42, HK_REC_T = 16;
+  const hkNew = () => ({ rt: true, turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0,
+                         t: 0, acc: 0, last: 0, wait: 0, started: false, tg: [null, null], ai: [{ at: -1, T: null }, { at: -1, T: null }], heardAt: 0 });
+  const hkKey = g => 'ph:' + g.idx + '@' + g.lv, hkHome = k => [(k ? 1 : -1) * (LX / 2 - 2.4), 0];
+  function rackH(idx){ const rnd = rng(idx * 7919 + 55); return [{ ...ballOf(0, ...hkHome(0)), r: HK_MAL }, ballOf(1, 0, (rnd() - 0.5) * 3), { ...ballOf(3, ...hkHome(1)), r: HK_MAL }]; }
+  // where a side's computer wants its mallet: behind the ball and through it toward the other goal when the ball is its to play, else home on the ball's side
+  function hkAi(B, k, lv, N){
+    const A = N.ai[k]; if (A.T && N.t - A.at < HK_LAG[lv - 1]) return A.T;
+    const sg = k ? 1 : -1, m = B[k ? 2 : 0], q = B[1], e = HK_ERR[lv - 1], jx = (Math.random() - 0.5) * e, jz = (Math.random() - 0.5) * e;
+    let T;
+    if (q.x * sg > -0.3){ const gx = -sg * LX / 2 - q.x, gz = 0 - q.z, gl = Math.hypot(gx, gz) || 1, ux = gx / gl, uz = gz / gl, behind = (q.x - m.x) * ux + (q.z - m.z) * uz;
+      T = behind > 0.2 ? [q.x + ux * 1.6 + jx, q.z + uz * 1.6 + jz] : [q.x - ux * (m.r + q.r + 0.5) + jx, q.z - uz * (m.r + q.r + 0.5) + (q.z >= m.z ? -1 : 1) * 0.6 + jz]; }
+    else T = [hkHome(k)[0], Math.max(-2.2, Math.min(2.2, q.z * 0.6)) + jz];
+    A.T = T; A.at = N.t; return T;
+  }
+  // one frame of the table: the engine's own and pairs a tick (the pockets emptied), the mallets pulled toward their places between; the side scored on, or −1
+  function hkFrame(B, N, T0, T1, vs, onHit){
+    return noPock(() => {
+      const q = B[1], h = FRAME / SUB;
+      for (let s = 0; s < SUB; s++){
+        [[B[0], T0, vs[0], -1], [B[2], T1, vs[1], 1]].forEach(([m, T, vmax, sg]) => {
+          if (T){ let vx = (T[0] - m.x) / (2 * FRAME), vz = (T[1] - m.z) / (2 * FRAME); const v = Math.hypot(vx, vz); if (v > vmax){ vx *= vmax / v; vz *= vmax / v; } m.vx = vx; m.vz = vz; }
+          else { m.vx = 0; m.vz = 0; }
+          m.wx = m.vz / m.r; m.wz = -m.vx / m.r; m.wy = 0; m.y = 0; m.vy = 0;                                       // (rolling as it goes: the cloth has nothing to take from it)
+          const lim = sg * HK_MAL; if (sg * m.x < HK_MAL){ m.x = lim; if (sg * m.vx < 0) m.vx = 0; } });           // (kept to its own half)
+        const nx = q.x + q.vx * h;
+        if (Math.abs(nx) > LX / 2 - q.r && Math.abs(q.z) < HK_GOAL / 2 - q.r * 0.3) return nx > 0 ? 1 : 0;        // (through a mouth: scored on the side whose end it is)
+        own(B, h, null, b => { if (b === q && onHit) onHit('rail', Math.hypot(b.vx, b.vz)); });
+        pairs(B, (A, Bb) => { if (onHit) onHit('ball', Math.hypot(A.vx - Bb.vx, A.vz - Bb.vz)); });
+        q.y = 0; q.vy = 0; const v = Math.hypot(q.vx, q.vz); if (v > HK_PUCK_V){ q.vx *= HK_PUCK_V / v; q.vz *= HK_PUCK_V / v; }
+      }
+      return -1;
+    });
+  }
+  function hkFaceoff(B, to){ const a = hkHome(0), b = hkHome(1);
+    Object.assign(B[0], { x: a[0], z: a[1], vx: 0, vz: 0 }); Object.assign(B[2], { x: b[0], z: b[1], vx: 0, vz: 0 });
+    Object.assign(B[1], { x: 0, z: 0, vx: (to ? 1 : -1) * 2.2, vz: 0, wx: 0, wy: 0, wz: 0, y: 0, vy: 0 }); }   // (the ball rolls gently to the side that was scored on)
+  function hkGoal(g, on){
+    const N = g.nine, by = on ^ 1; N.pts[by]++; N.said = (by === 0 ? 'you' : 'the computer') + ' scored';
+    if (N.pts[by] >= HK_TO){ N.over = by === 0 ? 1 : 2;
+      if (N.over === 1 && !g.auto){ N.stars = N.pts[1] <= 1 ? 3 : N.pts[1] <= 3 ? 2 : 1; const id = hkKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
+    else { hkFaceoff(g.balls, on); N.wait = N.t + 0.9; N.tg[0] = null; N.ai[0].T = N.ai[1].T = null; }
+    if (!g.auto){ try { SOUND.pocket(); } catch {} touch(); }
+  }
+  // the played board, a frame of the page: as many of the table's frames as the time since the last (never more than six), the balls turned as they roll
+  function hkLive(g){
+    const N = g.nine, now = performance.now(); if (N.over) return;
+    if (!N.started){ N.last = now; return; }
+    N.acc += Math.min(0.1, N.last ? (now - N.last) / 1000 : 0); N.last = now;
+    const hit = (kind, w) => { if (w > 2 && N.t - N.heardAt > 0.05){ N.heardAt = N.t; try { SOUND[kind](w); } catch {} } };
+    while (N.acc >= FRAME && !N.over){ N.acc -= FRAME; N.t += FRAME;
+      if (N.t < N.wait) continue;
+      const was = g.balls.map(b => [b.x, b.z]), on = hkFrame(g.balls, N, N.tg[0], hkAi(g.balls, 1, g.lv, N), [HK_HAND, HK_V[g.lv - 1]], hit);
+      if (on >= 0){ hkGoal(g, on); break; }
+      g.balls.forEach((b, i) => { g.rot[i] = roll(g.rot[i], (b.x - was[i][0]) * R / b.r, (b.z - was[i][1]) * R / b.r); }); }
+    try { window.fieldWake && window.fieldWake(); } catch {}
+  }
+  // your mallet's place from a finger's: on your half, inside the cushions
+  function hkAim(g, u, v, xy){
+    let at = u != null ? { u, v } : null; if (!at && xy){ try { at = window.FIELD_WORLD.uvFree(xy[0], xy[1]); } catch {} } if (!at) return;
+    const [x, z] = toTable(at.u, at.v), N = g.nine; N.started = true;
+    N.tg[0] = [Math.max(-LX / 2 + HK_MAL, Math.min(-HK_MAL, x)), Math.max(-LZ / 2 + HK_MAL, Math.min(LZ / 2 - HK_MAL, z))];
+  }
+  // the two computers at it with no table drawn, for `secs` of the table's time: the goals, for the levels' measuring (side 0 at lvA, side 1 at lvB)
+  function hkAuto(idx, lvA, lvB, secs = 60){
+    const B = rackH(idx), N = hkNew(), pts = [0, 0]; hkFaceoff(B, idx & 1);
+    for (let f = 0; f < secs * 60; f++){ N.t += FRAME; if (N.t < N.wait) continue;
+      const on = hkFrame(B, N, hkAi(B, 0, lvA, N), hkAi(B, 1, lvB, N), [HK_V[lvA - 1], HK_V[lvB - 1]], null);
+      if (on >= 0){ pts[on ^ 1]++; hkFaceoff(B, on); N.wait = N.t + 0.9; N.ai[0].T = N.ai[1].T = null; } }
+    return { pts, puck: [B[1].x, B[1].z] };
+  }
+  function* hkRecGen(idx){
+    const lv = levelAt(idx), B0 = rackH(idx), B = B0.map(b => ({ ...b })), N = hkNew(), n = B.length, frames = [], heights = [], zero = new Float32Array(n);
+    const snap = () => { const f = new Float32Array(2 * n); B.forEach((b, k) => { f[2 * k] = b.x; f[2 * k + 1] = b.z; }); return f; };
+    hkFaceoff(B, idx & 1); frames.push(snap()); heights.push(zero);
+    for (let f = 0; f < HK_REC_T * 60; f++){ N.t += FRAME;
+      if (N.t >= N.wait){ const on = hkFrame(B, N, hkAi(B, 0, 3, N), hkAi(B, 1, lv, N), [HK_V[2], HK_V[lv - 1]], null); if (on >= 0){ hkFaceoff(B, on); N.wait = N.t + 0.9; N.ai[0].T = N.ai[1].T = null; } }
+      frames.push(snap()); heights.push(zero); if (f % 20 === 19) yield; }
+    return { S: { ch: null, name: 'hockey', B: B0, nine: true, kind: 'hockey', lv }, s: { frames, heights, contacts: [], sunk: [], cushions: [], first: null, final: B }, shots: 1, over: 0, first: { a: 0, p: 10, tip: [0, 0] } };
+  }
+  function hkTitle(g){
+    const N = g.nine, b = BEST[hkKey(g)];
+    return 'Pool hockey — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
+      : !N.started ? 'drag on your half of the table to move your mallet: play starts when you do' : 'your goal is the near one')
+      + ' · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + HK_TO + ')' + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '');
   }
   const strKey = g => 's14:' + g.idx + '@' + g.lv;
   function strRerack(g){
@@ -56820,6 +56923,7 @@ const TRICK_APP = (() => {
   let BEHIND_ON = true;      // (the tests turn it off: their real clicks are aimed over the whole table, framed as it used to open)
   function behindCue(g){
     try {
+      if (g && g.nine && g.nine.rt){ if (!WHOLE && liveGame() === g) wholeTable(true); return; }   // (pool hockey is played from over the whole table)
       if (!BEHIND_ON || WHOLE || !g || g.anim || liveGame() !== g) return;
       const w = g.balls.find(b => b.cue && !b.sunk); if (!w) return;
       const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, x = w.x + Math.cos(g.ang) * BEHIND_AHEAD, z = w.z + Math.sin(g.ang) * BEHIND_AHEAD;
@@ -56858,7 +56962,7 @@ const TRICK_APP = (() => {
   const shotOf = g => { const s = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D); return [s.dir, s.speed, s.w, s.vy]; };
   function previewOf(g){ if (g.dirty && !g.anim){ g.sim = simM(g.balls, ...shotOf(g)); g.dirty = false; } return g.sim; }
   function shoot(g){
-    if (!g || g.anim) return false;
+    if (!g || g.anim || (g.nine && g.nine.rt)) return false;
     const shot = shotOf(g), s = simM(g.balls, ...shot); if (!s) return false;
     g.history.push({ balls: g.balls.map(b => ({ ...b })), potted: g.potted, shots: g.shots, rot: g.rot.slice() });
     if (g.nine) g.nine.hand = false;
@@ -56944,6 +57048,7 @@ const TRICK_APP = (() => {
      the shot seen ahead (the preview, as far as `see` reaches). */
   function liveView(g){
     let pos = g.balls.map(b => b.sunk ? null : [b.x, b.z, 0]);
+    if (g.nine && g.nine.rt) return { B: g.balls, pos, ch: null, rot: g.rot, lv: g.lv };   // (pool hockey: played as it is stepped, nothing seen ahead, no cue)
     if (g.anim){
       const an = g.anim, fr = an.s.frames, el = (performance.now() - an.t0) / 1000, k = Math.min(fr.length - 1, Math.floor(el * 60));
       soundsTo(an, el);
@@ -56957,6 +57062,8 @@ const TRICK_APP = (() => {
   }
   function shownOf(R){
     const t = (pageT() + phaseOf(R.idx) * R.cycle) % R.cycle, s = R.s, B = R.S.B;
+    if (R.S.kind && MATCH[R.S.kind].rt){ const k = Math.min(s.frames.length - 1, Math.floor(t * s.hz)), f = s.frames[k];
+      return { B, pos: B.map((b, i) => [f[2 * i], f[2 * i + 1], 0]), ch: null, lv: R.S.lv, rot: B.map((_, i) => R.rots[k].subarray(4 * i, 4 * i + 4)), trail: { fr: s.frames, k, hz: s.hz } }; }
     if (t < AIM_T){ const o = R.shot, tip = { x: o.tip[0], y: o.tip[1] };
       return { B, pos: B.map(b => [b.x, b.z, 0]), ch: R.S.ch, lv: R.S.lv, rot: B.map((_, i) => R.rots[0].subarray(4 * i, 4 * i + 4)), sim: s, hz: s.hz, see: R.see, cue: { ang: o.a * D, power: o.p, elev: o.el, tip, chalk: true }, paths: 'all' }; }
     const k = Math.min(s.frames.length - 1, Math.floor((t - AIM_T) * s.hz)), f = s.frames[k], h = s.heights[k];
@@ -56966,7 +57073,7 @@ const TRICK_APP = (() => {
     pump();
     if (ED.on && ED.c === c && ED.r === r){ ctlHide(); return edView(); }
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
-    if (here && g.nine) nineTick(g);
+    if (here && g.nine){ if (g.nine.rt) hkLive(g); else nineTick(g); }
     if (here) ctlSync(g);   // (whatever the board's size: the inset and the bar show only when the hand asks for them, Nov 22; until then from CTL_PX across)
     if (g) return liveView(g);
     const idx = boardIdx(c, r), making = { B: [], pos: [], ch: null, making: true };
@@ -57079,6 +57186,7 @@ const TRICK_APP = (() => {
     const out = [];
     const bare = (M() || {}).bare;
     for (const [x0, z0, x1, z1] of bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: CUSH_H, sz: z1 - z0, color: CUSH });
+    if ((M() || {}).rt) for (const sg of [-1, 1]) out.push({ kind: 'tsBox', u: Ub(sg * (LX / 2 + CUSH_W / 2)), v: Vb(0), scale: Sb(1), sx: CUSH_W * 1.02, sy: CUSH_H * 1.04, sz: HK_GOAL, color: sg < 0 ? 0x2a4fb0 : 0xd23a2f });   // (pool hockey's goals: yours blue, the computer's red)
     { const H = golfH(V.B);   // (pool golf's green: sand, the hole and its flag, the walls and the posts)
       if (H){ for (const q of H.sand) out.push({ kind: 'tsSand', u: Ub(q.x), v: Vb(q.z), scale: Sb(2 * q.r), color: 0xcdb67c });
         out.push({ kind: 'tsHole', u: Ub(H.hole[0]), v: Vb(H.hole[1]), scale: Sb(2 * GOLF_HOLE), color: 0x050506 });
@@ -57094,7 +57202,7 @@ const TRICK_APP = (() => {
     V.B.forEach((b, i) => {
       const p = V.pos[i]; if (!p) return; const hgt = p[2] || 0;
       if (hgt > 0.01) out.push({ kind: 'tsShadow', u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * R), color: 0x000000 });
-      out.push({ kind: 'tsB' + b.n, u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * R), lift: Sb(R + hgt), rot: V.rot ? V.rot[i] : null, color: 0xffffff });
+      out.push({ kind: 'tsB' + b.n, u: Ub(p[0]), v: Vb(p[1]), scale: Sb(2 * (b.r || R)), lift: Sb((b.r || R) + hgt), rot: V.rot ? V.rot[i] : null, color: 0xffffff });
     });
     frameItems(out, V);
     // (the called pocket, two red rings about its mouth: CALL YOUR POCKET, above)
@@ -57652,7 +57760,7 @@ const TRICK_APP = (() => {
     },
     onLeave(){ ctlHide(); },
     fitView(){ WHOLE = false; behindCue(liveGame()); },
-    playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
+    playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r || (g.nine && g.nine.rt)) return null;
       return [{ key: 'view', glyph: WHOLE ? '🎱' : '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }]; },
     playPadLow: true,                                         // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")
     onPlayAct(c, r, key){ if (key !== 'view') return false; wholeTable(!WHOLE); try { bbRefreshNow(); } catch {} return true; },                       // (the game opens behind the white: BEHIND THE WHITE)
@@ -57671,6 +57779,7 @@ const TRICK_APP = (() => {
       if (CTL.spin){ CTL.spin = false; touch(); }                             // (any tap puts the spin inset away, Nov 22)
       if (g.anim){ finish(g); behindCue(g); return true; }                    // a tap during the shot jumps to its end (wander's)
       if (g.nine && g.nine.over) return app.onReset(c, r), true;   // (the rack over: a tap racks again)
+      if (g.nine && g.nine.rt){ hkAim(g, u, v, null); return true; }   // (pool hockey: a tap is where the mallet is to go)
       if (g.nine && g.nine.turn) return true;                       // (the computer's shot)
       if (g.ch && g.solvedIn) return app.onReset(c, r), true;  // solved: a tap plays it again (Oct 29: only you move to another board)
       if (u == null) return true;
@@ -57685,6 +57794,7 @@ const TRICK_APP = (() => {
     claimsPan(u, v, xy){
       if (ED.on) return u != null && edDragStart(u, v);
       const g = liveGame(); if (!g || g.anim) return false;
+      if (g.nine && g.nine.rt){ if (g.nine.over) return false; hkAim(g, u, v, xy); DRAG = { g, moved: false, rt: true }; return true; }   // (pool hockey: the finger is the mallet's place)
       if (g.nine && (g.nine.turn || g.nine.over)) return false;   // (not your shot: the drag is the view's)
       /* THE CUE IS TAKEN FROM ANYWHERE (Nov 22: "Should be able move the cue stick off the anywhere, doesn't restrict to the default board."): the cue
          is 21 ball widths long and lies out over the boards beside, so a hand that takes it there, or anywhere off the table, moves it too; until
@@ -57700,6 +57810,7 @@ const TRICK_APP = (() => {
     onPan(dx, dy, at, xy){
       if (ED.on){ if (ED.drag && at) edDragAt(at.u, at.v); return !!ED.drag; }
       if (!DRAG) return false;
+      if (DRAG.rt){ hkAim(DRAG.g, at ? at.u : null, at ? at.v : null, xy); DRAG.moved = true; return true; }
       if (DRAG.pull){ pullMove(DRAG, xy); DRAG.moved = true; return true; }   // (the velocity bar's pull, not an aim)
       if (DRAG.spinHold) return true;                                         // (the hold that showed the spin inset: the hand moving off it aims nothing)
       clearTimeout(HOLD_TM); CTL.spin = false;
@@ -57717,7 +57828,7 @@ const TRICK_APP = (() => {
       else { const w = g.balls.find(b => b.cue && !b.sunk); if (w){ aimAt(g, 2 * w.x - x, 2 * w.z - z); DRAG.cue = true; } }
       return true;
     },
-    onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG){ clearTimeout(HOLD_TM); if (DRAG.pull){ pullEnd(DRAG); DRAG = null; return; }
+    onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; } if (DRAG && DRAG.rt){ ateAt = performance.now(); DRAG = null; return; } if (DRAG){ clearTimeout(HOLD_TM); if (DRAG.pull){ pullEnd(DRAG); DRAG = null; return; }
         if (DRAG.spinHold){ ateAt = performance.now(); DRAG = null; return; }
         if (DRAG.moved){ ateAt = performance.now(); touch(); }
         /* THE VIEW COMES ROUND BEHIND THE CUE (Nov 21: "rotate the view to behind the ball aligned with the pool stick when moving the pool stick."):
@@ -57788,6 +57899,12 @@ const TRICK_APP = (() => {
       ctx.fillStyle = '#111111'; ctx.font = 'bold ' + Math.round(sz * 0.085) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('8', sz * 0.62, sz * 0.505);
       dot(ctx, sz * 0.26, sz * 0.5, sz * 0.045, '#f2f0ea'); },
     debug: { rack8, eightOn, eightFinish, eightCands, eightPlan, eightPlanGen, eightAuto, eightTitle, grpOf } });
+  app.hockey = matchApp(MATCH.hockey, { name: 'Pool hockey', hint: 'drive your mallet with a finger and knock the ball into the far goal; first to ' + HK_TO,
+    level: 'How fast the computer\'s mallet moves, how soon it looks again and how true it aims; a step harder farther out.', again: 'Start this board again', againTip: 'The score at nothing, the ball in the middle.',
+    icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
+      ctx.fillStyle = '#2a4fb0'; ctx.fillRect(sz * 0.03, sz * 0.4, sz * 0.035, sz * 0.2); ctx.fillStyle = '#d23a2f'; ctx.fillRect(sz * 0.935, sz * 0.4, sz * 0.035, sz * 0.2);
+      dot(ctx, sz * 0.24, sz * 0.52, sz * 0.085, '#f2f0ea'); dot(ctx, sz * 0.76, sz * 0.46, sz * 0.085, '#d23a2f'); dot(ctx, sz * 0.48, sz * 0.5, sz * 0.045, '#e3c33b'); },
+    debug: { rackH, hkFrame, hkAi, hkAuto, hkLive, hkAim, hkGoal, hkFaceoff, hkRecGen, hkTitle, hkNew, HK_TO, HK_MAL, HK_GOAL, HK_V } });
   app.golf = matchApp(MATCH.golf, { name: 'Pool golf', hint: 'putt the white into the hole in as few strokes as you can; too fast and it rolls over',
     level: 'How much stands on the green (posts, walls, sand, loose balls) and how far the shot is seen ahead; a step harder farther out.', again: 'Start this hole again', againTip: 'The ball back on the tee, the strokes at nothing.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
@@ -57824,6 +57941,7 @@ const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the
 const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the computer, on the same engine, Nov 22)
 const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
 const POOLGOLF_APP = TRICK_APP.golf;   // (pool golf: one hole a board, putted with the pool games' cue, on the same engine, Nov 22)
+const POOLHOCKEY_APP = TRICK_APP.hockey;   // (pool hockey: the pool engine stepped in real time, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
    (Oct 13: "we are making signifcant progress in the wander project about LOD. is there is anything we can do in the games
@@ -66214,7 +66332,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, POOLGOLF_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, POOLGOLF_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -66223,7 +66341,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [POOLGOLF_APP, 'poolgolf'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [POOLGOLF_APP, 'poolgolf'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
