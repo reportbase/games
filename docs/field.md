@@ -581,3 +581,5 @@ browser button."). The dots that open the bottom row are a dark see-through disc
 pool games' low play pad (`#playPad.low`) are that disc now (white on it, the rim gold under the pointer and while lit), and the low pad stands level
 with the dots. An exception to "the buttons wear draw's look" (Nov 16), asked for: every other chip and pad keeps draw's plate. Measured in the
 page: the three are 44 × 44, round, the same fill, rim and width.
+The low pad in the corner (Nov 22, later: "Put the full board button in lower left corner with the same margins as the upper right button."): 16px
+from the left and the bottom, as the menu's button is from the right and the top (measured at 1280 × 800 and 390 × 844).
