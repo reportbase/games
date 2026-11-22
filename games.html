@@ -57263,7 +57263,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, holdMs: v => { HOLD_MS = v; }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
   };
   SHARE.install(app, takeShot);
   // NINE-BALL'S APP (NINE-BALL, ON THE SAME ENGINE, above): this app's own hooks, with its name, menu, titles and picture

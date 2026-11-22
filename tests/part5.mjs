@@ -318,7 +318,7 @@ try {
       //  away from the white, puts the inset away and leaves the aim where it was)
       { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x > 0 ? w1.x - 5 : w1.x + 5, -2); await page.mouse.click(q.x, q.y);
         await page.waitForFunction(() => { const e = document.getElementById('tsCtl'); return !e || e.style.display === 'none'; }, null, { timeout: 15000 }).catch(() => {});
-        live.tapClears = await page.evaluate(() => { const e = document.getElementById('tsCtl'); return !e || e.style.display === 'none'; }); live.tapAim = Math.abs((await gs()).ang - g1.ang) < 1e-9 && (await gs()).shots === g1.shots; }
+        live.tapClears = await page.evaluate(() => { const e = document.getElementById('tsCtl'); return !e || e.style.display === 'none'; }); live.tapDbg = await page.evaluate(([x, y]) => { const D = window.getFieldApp()._debug, t = document.elementFromPoint(x, y); return { spin: D.CTL.spin, ate: Math.round(D.ateIn), under: t && (t.id || t.tagName), anim: !!D.GAMES.get(D.LIVE.c + '_' + D.LIVE.r).anim }; }, [q.x, q.y]); live.tapAim = Math.abs((await gs()).ang - g1.ang) < 1e-9 && (await gs()).shots === g1.shots; }
       { const g1 = await gs(), w1 = g1.balls[0], q = await at(w1.x > 0 ? w1.x - 4 : w1.x + 4, 0), s0 = g1.shots;
         const barUp = () => page.evaluate(() => { const e = document.getElementById('tsPull'); return !!e && e.style.display !== 'none'; });
         live.barBefore = await barUp();
