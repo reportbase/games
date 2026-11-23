@@ -1635,6 +1635,44 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} pool replay: a match's shots kept as they are struck, each flown again to where the game went on from, the pad's ⏵ ⏭ ⏸ ⏮ ✕ play, step, stop and leave it (${r1 ? r1.log : '?'} shots)`);
   }
 
+  // BANK POOL (Nov 23: "What next pool game", then "Proceed"): an entry of the pool games' table. A ball down counts only if it met a cushion on
+  // its way: a point and the turn kept; a ball potted straight is back on the table and the turn passes; a foul puts back what went down, takes
+  // a point and one of the shooter's balls with it, and gives the white in hand; the fifth point wins; the computer finds banks and plans one; a
+  // game played out has a winner; the real Space breaks.
+  {
+    current = 'bankpool';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bankpool')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const bk = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      out.app = A.name === 'Bank pool' && A.id === 'bankpool' && D.MATCH.bank.app === A;
+      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
+      out.start = [g.balls.length, g.nine.kind, g.nine.turn, g.nine.pts.join('-')].join();
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      // (a shot as the engine reports it: who was met, what went down and when, which balls met a cushion and when)
+      const play = (h, first, sunk, cush) => { const s = { first: first == null ? null : { n: first }, sunk: sunk.map(([n, t]) => ({ n, pocket: 1, t })), cushions: cush.map(([n, t]) => ({ n, t })), contacts: [],
+        final: h.balls.map(b => ({ ...b, sunk: b.sunk || sunk.some(q => q[0] === b.n) })) }; h.anim = { s }; D.bankFinish(h, s); return h; };
+      const st = h => [h.nine.turn, h.nine.hand, h.nine.pts.join('|'), h.nine.over].join(), up = h => h.balls.filter(b => !b.cue && !b.sunk).length;
+      let h = play(fresh(), 3, [[3, 2]], [[3, 1]]); out.banked = st(h) + ',' + up(h);                 // off a cushion a second before it dropped: a point, your turn still
+      h = play(h, 4, [[4, 2]], [[4, 1.99], [0, 1]]); out.straight = st(h) + ',' + up(h);              // the cushion only as it fell (and the white's cushion is not the ball's): back up, the turn passes
+      h = play(h, 5, [[5, 2]], [[5, 1]]); out.theirs = st(h) + ',' + up(h);                           // the computer banks one: its point, its turn still
+      h.nine.turn = 0; h = play(h, null, [[6, 2]], [[6, 1]]); out.foul = st(h) + ',' + up(h) + ',' + h.nine.fouls.join('/');   // you meet nothing: the 6 back, a point off and the 3 back with it, the computer in hand
+      h = fresh(); h.nine.pts = [D.BANK_TO - 1, 1]; h = play(h, 7, [[7, 2]], [[7, 1]]); out.win = st(h) + ',' + h.nine.stars;
+      h = fresh(); h.nine.turn = 1; const C = D.bankCands(h.balls), Pl = D.bankPlan(h, 3); out.plan = C.length > 0 && C[0].q >= C[C.length - 1].q && isFinite(Pl.a) && Pl.p >= 8;
+      out.title = /^Bank pool — level \d · the computer's shot · only a ball off a cushion counts · you 0, the computer 0 \(to 5\)/.test(D.titleOf(h));
+      const r = D.bankAuto(5, 3, 3); out.auto = (r.over === 1 || r.over === 2) && Math.max(...r.pts) >= D.BANK_TO;
+      fresh();
+      return out;
+    });
+    const gB = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim } : null; });
+    await page.keyboard.press('Space'); await drawn(page, 300);
+    const brokeB = await gB();
+    const ok = bk && !bk.none && bk.app && bk.start === '10,bank,0,0-0' && bk.banked === '0,false,1|0,0,8' && bk.straight === '1,false,1|0,0,8' && bk.theirs === '1,false,1|1,0,7'
+      && bk.foul === '1,true,0|1,0,8,1/0' && bk.win === '0,false,5|1,1,3' && bk.plan && bk.title && bk.auto && brokeB && brokeB.shots === 1;
+    if (!ok) failures.push('[bankpool] ' + JSON.stringify({ bk, brokeB }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bank pool: a ball off a cushion a point and the turn kept, a straight pot back up and the turn passed, a foul a point and a ball back with the white in hand, the fifth point wins, banks found and one planned, a game played out, the real Space breaks`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

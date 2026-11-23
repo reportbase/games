@@ -1282,3 +1282,24 @@ step shot by shot). In the pool matches (9-ball, 8-ball, straight pool, one-pock
 (`golfLay`, `golfSim`, `golfPlanGen`, `golfPar` and the rest), its pieces (`tsPost`, `tsSand`, `tsHole`) and its check in part 5 are gone; the
 note above is the record of what it was. `MATCH`'s `onRec` stays (no entry uses it now). Mini golf is not touched. Checked by a probe: the page
 loads with 65 apps and no error, and 9-ball, three-cushion and pool hockey still show their tables.
+
+**Bank pool** (Nov 23: "What next pool game", then "Proceed", to the recommendation of bank pool). An entry of `MATCH` ('bank', id `bankpool`,
+`BANKPOOL_APP`), its own state, rules, search and title; the rack is 9-ball's, the replay, the minimap and the whole-table button the matches'.
+- **The rules** (`bankFinish`): any ball may be hit. A ball down counts only if it met a cushion on its way (`bankedIn`: in the engine's list of
+  cushions met, that ball's, at least `BANK_GAP` 0.08 s before it dropped, so a brush of the jaw as it falls is not a bank, and the white's
+  cushion is not the ball's): a point each, the turn kept. A ball potted straight is back on the foot spot and the turn passes. A foul (white
+  down or off, no ball met) puts back what went down, takes a point and puts one of the shooter's banked balls back with it (never below
+  nothing), white in hand to the other side. First to `BANK_TO` 5; a table run dry first is the leader's.
+- **The computer** (`bankCands`, `bankPlanGen`): every ball, pocket and cushion: the pocket's mouth mirrored in the cushion (`mirror`, `mouthOf`,
+  `ghostOf`, the mine-solver's), the ball aimed at the image, kept where the white meets that ball first and the cut is at least 0.35; the best
+  2, 3, 5, 8, 12 by level flown at two or three powers and, from level 4, a little either side of the mirror's line; marked 2 and up for a
+  bank, 0.6 less a little for a fair miss (less again for a straight pot), −1 for a foul, through the matches' `hopeOf`; its hand's error
+  `BANK_ERR` (4, 2.6, 1.5, 0.8, 0.3°), wider than the other matches'.
+- **Measured**, four boards a level, the computer against itself: level 1 55 to 143 shots a game, level 2 19 to 84, level 3 21 to 58, level 4
+  10 to 31, level 5 six or seven (it runs out from the break). With the first numbers tried (their hand's error, more banks looked at) level 3
+  ran out in five shots; and a table ran dry at 0 to 2 because fouls took points and left the balls down, which is why a foul gives a ball back.
+  No person has played it: how it sits against a hand is not known.
+- The smoke test (part 5): a ball off a cushion a second before it drops is a point and the turn kept; one that met the cushion only as it
+  fell is back up and the turn passes; the computer's bank is its point; a foul gives back the ball and a point's ball and the white in hand;
+  the fifth point wins with three stars at one against; banks are found in order and one is planned; a game played out at level 3 has a
+  winner at five; the real Space breaks.

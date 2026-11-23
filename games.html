@@ -56247,6 +56247,8 @@ const TRICK_APP = (() => {
                 sim: (...a) => simC(...a), brk: false, recShots: () => 1, bare: true, rt: true, recGen: i => hkRecGen(i), app: null },
     one:      { key: 'one', pre: 'o', best: 'o1:', games: new Map(), rack: i => rackS(i), cue: CUE0, fresh: () => oneNew(), see: () => NINE_SEE, finish: (g, s) => oneFinish(g, s),
                 planGen: (g, lv) => onePlanGen(g, lv), title: g => oneTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
+    bank:     { key: 'bank', pre: 'k', best: 'bk:', games: new Map(), rack: i => rack9(i), cue: CUE0, fresh: () => bankNew(), see: () => NINE_SEE, finish: (g, s) => bankFinish(g, s),
+                planGen: (g, lv) => bankPlanGen(g, lv), title: g => bankTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     straight: { key: 'straight', pre: 's', best: 's14:', games: new Map(), rack: i => rackS(i), cue: CUE0, fresh: () => strNew(), see: () => NINE_SEE, finish: (g, s) => strFinish(g, s),
                 planGen: (g, lv) => strPlanGen(g, lv), title: g => strTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     carom:    { key: 'carom', pre: 'c', best: 'c3:', games: new Map(), rack: i => rackC(i), cue: B => ({ ang: carAim(B), power: 22, elev: 0 }), fresh: () => carNew(), see: () => CAR_SEE, finish: (g, s) => carFinish(g, s),
@@ -56402,6 +56404,76 @@ const TRICK_APP = (() => {
     return 'One-pocket — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
       : N.turn === 0 ? 'your shot' + (N.hand ? ', ball in hand: drag the white where you like' : '') : 'the computer\'s shot')
       + ' · your pocket is ringed gold · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + ONE_TO + ')' + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
+  /* BANK POOL (Nov 23: "What next pool game", then "Proceed", to the recommendation of bank pool). An entry of `MATCH` ('bank', id `bankpool`): its
+     state, its rules, its search for a shot and its title.
+     - THE RULES (`bankFinish`): nine balls racked as 9-ball's are, any ball may be hit. A ball that goes down counts only if it met a cushion on
+       its way, after it was struck and at least `BANK_GAP` before it dropped (`bankedIn`: the engine's own list of cushions met, so a ball that
+       only brushes the jaw as it falls is not a bank); each is a point and keeps the turn. A ball potted straight is put back on the foot spot
+       and the turn passes. A foul (the white down or off, or no ball met) puts back whatever went down, takes a point (never below nothing) and
+       gives the other side the white in hand. First to `BANK_TO`; a table run dry first is the leader's.
+     - THE COMPUTER (`bankPlanGen`): for every ball, pocket and cushion, the pocket's mouth mirrored in the cushion and the ball aimed at the
+       image (`mirror`, `ghostOf`, the mine-solver's own), kept where the white meets that ball first and the cut is not too thin; the best few
+       are flown at two or three powers and, from level 4, a little either side of the mirror's line (a cushion does not give back the angle it
+       takes); marked by what it banks, then a fair hit, then a foul, with the matches' `hopeOf` and a hand less steady than theirs (`BANK_ERR`). */
+  const BANK_TO = 5, BANK_GAP = 0.08, BANK_N = [2, 3, 5, 8, 12], BANK_ERR = [4, 2.6, 1.5, 0.8, 0.3];   // (a bank forgives less than a cut: the hand's error is wider here than `NINE_ERR`)
+  const bankNew = () => ({ turn: 0, hand: false, fouls: [0, 0], pts: [0, 0], down: [[], []], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  const bankKey = g => 'bk:' + g.idx + '@' + g.lv;
+  const bankedIn = s => s.sunk.filter(p => p.n !== 0 && p.pocket >= 0 && s.cushions.some(c => c.n === p.n && c.t < p.t - BANK_GAP));
+  function bankFinish(g, s){
+    const N = g.nine, t = N.turn, first = s.first ? s.first.n : null, out = whiteOut(s), who = t === 0 ? 'you' : 'the computer', foul = !!out || first == null;
+    const pots = s.sunk.filter(p => p.n !== 0 && p.pocket >= 0), banked = bankedIn(s), straight = pots.filter(p => !banked.includes(p));
+    g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0 })); respot(g.balls);
+    const back = n => { const b = g.balls.find(x => x.n === n); b.sunk = false; b.off = false; b.y = 0; b.x = FOOT9[0]; b.z = 0;
+      for (let k = 0; k < 40; k++){ const x = LX / 4 + k * 0.3; if (free(g.balls, x, 0, b)){ b.x = x; break; } } };
+    if (foul){ for (const p of pots) back(p.n); if (N.pts[t] > 0){ N.pts[t]--; if (N.down[t].length) back(N.down[t].pop()); } N.fouls[t]++;   // (the point given back is a ball given back, as one-pocket's is)
+      N.said = who + ' fouled: ' + (out || 'no ball was met') + '; a point off, ball in hand'; N.hand = true; N.turn ^= 1; }
+    else { for (const p of straight) back(p.n);
+      if (banked.length){ N.pts[t] += banked.length; g.potted += banked.length; for (const p of banked) N.down[t].push(p.n); N.said = who + ' banked the ' + banked.map(p => p.n).join(', ') + (straight.length ? '; the ' + straight.map(p => p.n).join(', ') + ' went straight in and is back' : ''); }
+      else { N.said = who + (straight.length ? ' potted the ' + straight.map(p => p.n).join(', ') + ' straight: it is back on its spot' : ' missed'); N.turn ^= 1; } }
+    const won = N.pts[0] >= BANK_TO ? 1 : N.pts[1] >= BANK_TO ? 2 : g.balls.some(b => !b.cue && !b.sunk) ? 0 : N.pts[0] >= N.pts[1] ? 1 : 2;
+    if (won){ N.over = won;
+      if (won === 1 && !g.auto){ N.stars = N.pts[1] <= 1 ? 3 : N.pts[1] <= 3 ? 2 : 1; const id = bankKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } } }
+    else if (N.turn === 0){ const w = g.balls.find(b => b.cue && !b.sunk), o = w && g.balls.filter(b => !b.cue && !b.sunk).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0]; if (o) g.ang = Math.atan2(o.z - w.z, o.x - w.x); }
+    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
+  }
+  // the banks there are to try: a ball, a pocket and a cushion, the white meeting that ball first, the fuller hits and shorter ways first
+  function bankCands(balls){
+    const w = balls.find(b => b.cue && !b.sunk), out = []; if (!w) return out; const W = [w.x, w.z];
+    for (const t of balls){ if (t.cue || t.sunk) continue; const T = [t.x, t.z];
+      for (let q = 0; q < POCKETS.length; q++) for (const rl of RAILS){
+        const M2 = mirror(mouthOf(q), rl), G = ghostOf(T, M2), u = unit(T, M2), dx = G[0] - W[0], dz = G[1] - W[1], dw = Math.hypot(dx, dz); if (dw < 1e-6) continue;
+        const cut = (dx * u[0] + dz * u[1]) / dw; if (cut < 0.35) continue;
+        const a = Math.atan2(dz, dx), st = firstStop(balls, w, a); if (!st.ball || st.ball.n !== t.n) continue;
+        out.push({ n: t.n, a, q: cut / (1 + dw / 12) / (1 + Math.hypot(M2[0] - T[0], M2[1] - T[1]) / 16) }); } }
+    return out.sort((x, y) => y.q - x.q);
+  }
+  function* bankPlanGen(g, lvIn){
+    const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), w = g.balls.find(b => b.cue && !b.sunk), on = g.balls.filter(b => !b.cue && !b.sunk);
+    if (!w || !on.length) return { a: g.ang, p: 16, tip: [0, 0], score: -1 };
+    if (g.nine.hand) placeInHand(g, w, on);
+    const mid = lv >= 3, deep = lv >= 4, powers = mid ? [13, 19, 27] : [15, 24], offs = lv >= 5 ? [0, 0.5, -0.5, 1.1, -1.1] : deep ? [0, 0.7, -0.7] : [0];
+    let best = null;
+    const tryShot = (a, p) => { const st = strikeOf(a, 0, 0, p, MU_TIP, 0), sm = simulate(g.balls, st.dir, st.speed, st.w, st.vy); if (!sm) return;
+      const fair = sm.first && !whiteOut(sm), n = fair ? bankedIn(sm).length : 0, raw = !fair ? -1 : n ? 2 + 0.3 * (n - 1) : 0.6 - 0.01 * sm.contacts.length - 0.2 * sm.sunk.filter(q => q.n !== 0 && q.pocket >= 0).length;
+      const score = hopeOf(raw, sm, lv); if (!best || score > best.score) best = { a, p, tip: [0, 0], score }; };
+    search: for (const c of bankCands(g.balls).slice(0, BANK_N[lv - 1]))
+      for (const off of offs) for (const p of powers){ tryShot(c.a + off * D, p); yield; if (best && best.score >= 2 && !deep) break search; }
+    if (!best || best.score < 2){
+      const o = on.slice().sort((x, y) => Math.hypot(x.x - w.x, x.z - w.z) - Math.hypot(y.x - w.x, y.z - w.z))[0], a0 = Math.atan2(o.z - w.z, o.x - w.x);
+      for (const p of deep ? [8, 14] : [14]){ tryShot(a0, p); yield; }
+      if (!best) best = { a: a0, p: 14, tip: [0, 0], score: -1 };
+    }
+    const u1 = Math.random() || 1e-9, u2 = Math.random(), gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return { a: best.a + gauss * BANK_ERR[lv - 1] * D, p: best.p, tip: best.tip, score: best.score };
+  }
+  const bankPlan = (g, lv) => matchPlan(MATCH.bank, g, lv);
+  function bankAuto(idx, lvA, lvB, maxShots = 400){ const g = matchAuto('bank', idx, lvA, lvB, maxShots); return { over: g.nine.over, shots: g.shots, pts: g.nine.pts.slice(), fouls: g.nine.fouls.slice() }; }
+  function bankTitle(g){
+    const N = g.nine, b = BEST[bankKey(g)];
+    return 'Bank pool — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
+      : N.turn === 0 ? 'your shot' + (N.hand ? ', ball in hand: drag the white where you like' : '') : 'the computer\'s shot')
+      + ' · only a ball off a cushion counts · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + BANK_TO + ')' + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
   }
   /* POOL HOCKEY, IN REAL TIME (Nov 22: "You said real time games don't benefit from the pool engine?  Why, shv is real-time.", then "Proceed"). The
      owner was right: the engine is a stepper (its `own` and `pairs` a tick; each pair of balls reads the other's h and v that tick and touches
@@ -57880,6 +57952,12 @@ const TRICK_APP = (() => {
       ctx.strokeStyle = '#d23a2f'; ctx.beginPath(); ctx.arc(sz * 0.94, sz * 0.74, sz * 0.085, 0, 7); ctx.stroke();
       dot(ctx, sz * 0.78, sz * 0.36, sz * 0.045, '#e3c33b'); dot(ctx, sz * 0.7, sz * 0.58, sz * 0.045, '#2a4fb0'); dot(ctx, sz * 0.26, sz * 0.5, sz * 0.045, '#f2f0ea'); },
     debug: { rackS, oneFinish, onePlan, onePlanGen, oneAuto, oneTitle, eightCands, ONE_TO, ONE_POCK } });
+  app.bank = matchApp(MATCH.bank, { name: 'Bank pool', hint: 'a ball counts only if it goes in off a cushion; first to ' + BANK_TO,
+    level: 'How steady the computer\'s hand is, how many banks it looks at and how deep the shot is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The nine racked, the score at nothing, your break.',
+    icon(ctx, sz){ TABLE_ICON(ctx, sz, true);
+      ctx.strokeStyle = 'rgba(242,240,234,0.8)'; ctx.lineWidth = Math.max(1, sz / 36); ctx.setLineDash([sz / 28, sz / 28]); ctx.beginPath(); ctx.moveTo(sz * 0.3, sz * 0.6); ctx.lineTo(sz * 0.56, sz * 0.27); ctx.lineTo(sz * 0.9, sz * 0.7); ctx.stroke(); ctx.setLineDash([]);
+      dot(ctx, sz * 0.3, sz * 0.6, sz * 0.05, '#e3c33b'); dot(ctx, sz * 0.16, sz * 0.5, sz * 0.045, '#f2f0ea'); },
+    debug: { bankFinish, bankedIn, bankCands, bankPlan, bankPlanGen, bankAuto, bankTitle, BANK_TO, BANK_GAP } });
   app.straight = matchApp(MATCH.straight, { name: 'Straight pool', hint: 'pot the ball you hit first, any ball, a point each; first to ' + STR_TO,
     level: 'How steady the computer\'s hand is, how many pots it looks at and how deep the shot is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The fifteen racked, the score at nothing, your break.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, true);
@@ -57901,6 +57979,7 @@ const CAROM_APP = TRICK_APP.carom;    // (three-cushion billiards against the co
 const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the same engine, Nov 22)
 const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the computer, on the same engine, Nov 22)
 const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
+const BANKPOOL_APP = TRICK_APP.bank;   // (bank pool against the computer: only a ball off a cushion counts, Nov 23)
 const POOLHOCKEY_APP = TRICK_APP.hockey;   // (pool hockey: the pool engine stepped in real time, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
@@ -66292,7 +66371,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, BANKPOOL_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -66301,7 +66380,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [BANKPOOL_APP, 'bankpool'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
