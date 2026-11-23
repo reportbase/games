@@ -56626,8 +56626,8 @@ const TRICK_APP = (() => {
      definition.", then "Yes, build the endless table"). Pool the game is the dual view's picture: its rules fix the count, and whoever plays it
      holds the table whole. This is the single view's: the same balls on the same cloth with no end and no count, made as wander's *Reads and
      Writes* has it (§7), the work falling three ways.
-     - THE RULE (`endRule`): the cloth lies in patches, a board a patch, and a patch's balls come from its place alone (two to four, the same
-       every time). They are made when asked for and kept nowhere.
+     - THE RULE (`endRule`): the cloth lies in patches, a board a patch, and a patch's balls come from its place alone (a rack of fifteen since
+       Nov 23, the same every time). They are made when asked for and kept nowhere.
      - THE READ (`endTick`): a ball that is moving reads its front half: the balls ahead of it nearer than two radii and a tick's travel, asked of
        the rule and the record for the patches about it. It reads nothing behind it, and a ball at rest reads nothing. A closing pair always has
        one ball with the other ahead of it, so no meeting is missed (docs/tables.md, E1). What is read, with the balls moving, is all the engine is
@@ -67028,7 +67028,9 @@ function _applyAppPosture(app){
        gallery are overlapping": the board's width is boardW × cellW, and the gallery's cellW is 1.05 on its longer side (`applyBoardAspect`'s
        HI), which the old 1.05 here and the 0.9 gap together came to 0.992 of the pitch. With the gap gone and 1.002 here it was 1.052, so every
        print stood 5% over its neighbours. The 1.05 now divides out: 1.002 / 1.05 of the pitch's own, a hair over once cellW is in.) */
-    const size = photo ? (app.fillsCell ? 1.002 / 1.05 : 1.05) : 1.0;
+    /* (Nov 23: "Close the margin between boards.", of the endless table: a board with a shape of its own (`boardShape`, its longer side 1) has no
+       1.05 to divide out, so it takes the pitch itself and its cloth meets the next board's.) */
+    const size = photo ? (app.fillsCell ? (app.boardShape ? 1 : 1.002 / 1.05) : 1.05) : 1.0;
     st.objSize = size;
     if (window.__syncFieldFabric) window.__syncFieldFabric();
   } catch {}
