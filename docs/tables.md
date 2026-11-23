@@ -1221,3 +1221,25 @@ changed.
   table and for the referee of a 9 by 9 block: the same places to 10⁻⁹, the same balls written, more than the white, under 40 handed to the
   engine where the referee hands over 100; the engine's four cushions and six pockets there after; the board brought in has the white on its
   own patch, the cue, the white's way, and no cushion; the real Space sends the white rolling and it comes to rest elsewhere.
+
+**The endless table: a rack on every board, the boards edge to edge, nothing to win** (Nov 23: "This game should just let the user smash balls, no
+purpose needed.   Close the margin between boards.  Each board should have the full rack, let the player break them").
+- **The rule** (`endRule`): a patch's balls are the fifteen racked at its foot (the 8 in the middle, the rest shuffled by the patch's place), where
+  it had two to four scattered. The white is put down on the head spot of the board brought in (`endAdopt`).
+- **The boards** lie edge to edge (`fillsCell` on the app: the field's 0.9 gap dropped), so a patch is exactly a board and the cloth is one to
+  look at as it is one to play on.
+- **The read, handed on** (`endTick`): racked balls touch, so a ball struck is struck into its neighbour within the tick. A ball that is read
+  reads in turn: what lies about it within two radii and what is left of the tick's travel, all round. Without it the second ball of a rack
+  would be met a tick late.
+- **E4 and E5, written before run 4.** Four aimed breaks (powers 8, 9, 10, 11, each at the ball nearest the white, off it by 0.3, −0.4, 0.6 and
+  −0.2 ball widths) on the endless table and for a referee holding every ball of a 5 by 5 block of patches (375 balls and the white). E4: every
+  ball ends within 10⁻⁹ of the referee's and the two write the same balls. E5: the endless table hands the engine under 60 balls in any tick.
+  Killed if a ball is apart by more, a ball is written by one and not the other, or 60 or more are handed over. Void if a ball leaves the block.
+- **Run 4** (E4, E5; 701 ticks): **nothing killed, not void.** Every ball ended where the referee's did (apart by exactly 0), the two wrote the same
+  16 (the white and one rack: the four breaks stayed in the first patch), and the endless table handed the engine at most 16 balls in a tick
+  where the referee handed 376. One start, four shots: little tried, and no shot that carried a ball into a second rack; on the page a break at
+  the cue's first power struck 25 balls and handed over at most 17.
+- The boards meet: `_applyAppPosture` gave a `fillsCell` app with pictures 1.002 / 1.05 of the pitch (the gallery's, whose longer side is 1.05);
+  an app with a `boardShape` of its own now takes the pitch itself, so a patch is 22 by 12, a board.
+- The smoke test (part 5): a patch's fifteen, the 8 in the middle, the same each time and another patch's order different; a board as wide as
+  the pitch; the four breaks against the referee of a 5 by 5 block; the rest as it was.

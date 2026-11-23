@@ -1665,9 +1665,10 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       const A = window.getFieldApp(), D = A._debug, out = {};
       out.app = A.name === 'The endless table' && A.id === 'endless' && D.MATCH.endless.app === A && D.MATCH.endless.end === true;
       const E = D.endMake(26, 16), a = D.endRule(E, 3, -2), b = D.endRule(D.endMake(26, 16), 3, -2), c = D.endRule(E, 4, -2), J = JSON.stringify;
-      out.rule = [a.length >= 2 && a.length <= 4, J(a) === J(b), J(a.map(q => [q.x, q.z])) !== J(c.map(q => [q.x, q.z])), a.every(q => Math.abs(q.x) < 13 && Math.abs(q.z) < 8), D.endIn(E, 3, -2).length === a.length].join();
-      const shots = [[null, 9, 0.3], [null, 11, -0.4], [null, 10, 0.6], [null, 12, -0.2]], r = D.endCompare(shots, 4);
-      out.same = [r.apart < 1e-9, r.only.length, r.written[0] === r.written[1], r.written[0] > 1, r.maxB[0] < 40, r.maxB[1] > 100, r.left].join();
+      out.rule = [a.length === 15 && a[4].n === 8 && a.map(q => q.n).sort((x, y) => x - y).join() === '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15', J(a) === J(b), J(a.map(q => q.n)) !== J(c.map(q => q.n)), a.every(q => q.x > 0 && Math.abs(q.x) < 11 && Math.abs(q.z) < 6), D.endIn(E, 3, -2).length === a.length].join();
+      out.fill = Math.abs(window.FIELD_WORLD.boardW() / window.FIELD_WORLD.spacing()[0] - 1) < 1e-9;   // (Nov 23: the boards edge to edge)
+      const shots = [[null, 8, 0.3], [null, 9, -0.4], [null, 10, 0.6], [null, 11, -0.2]], r = D.endCompare(shots, 2, 22, 12);   // (Nov 23: breaks, a rack on every patch)
+      out.same = [r.apart < 1e-9, r.only.length, r.written[0] === r.written[1], r.written[0] > 10, r.maxB[0] < 60, r.maxB[1] > 300, r.left].join();
       out.walls = [D.CUSHIONS.length, D.POCKETS.length].join();
       const L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r), W = D.world(); if (!g || !W) return { ...out, none: true };
       const w = W.wr.get('cue'), [i, j] = D.endIJ(W, L.c, L.r), items = D.itemsOf(D.viewOf(L.c, L.r)).map(q => q.kind);
@@ -1681,10 +1682,10 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     const e1 = await eS();
     for (let k = 0; k < 240 && (await eS()).moving; k++) await frame(page, 250);
     const e2 = await eS();
-    const ok = en && !en.none && en.app && en.rule === 'true,true,true,true,true' && en.same === 'true,0,true,true,true,true,false' && en.walls === '4,6' && en.live === 'endless,true,1,true,true,true,false' && en.title
+    const ok = en && !en.none && en.app && en.rule === 'true,true,true,true,true' && en.same === 'true,0,true,true,true,true,false' && en.fill && en.walls === '4,6' && en.live === 'endless,true,1,true,true,true,false' && en.title
       && e0 && e0.moving === 0 && e1.shots === e0.shots + 1 && e1.moving >= 1 && e2.moving === 0 && e2.t > 0 && JSON.stringify(e2.at) !== JSON.stringify(e0.at) && e2.wr >= 1;
     if (!ok) failures.push('[endless] ' + JSON.stringify({ en, e0, e1, e2 }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} the endless table: a patch's balls from its place alone, aimed shots as a referee holding every ball has them with a handful read where it holds hundreds, the engine's cushions and pockets there after, the board brought in with the white, the cue and the white's way and no cushions, the real Space rolls the white and it comes to rest (${e2 ? e2.wr - 1 : '?'} struck)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} the endless table: a rack on every patch from its place alone and the boards edge to edge, aimed breaks as a referee holding every ball has them with a rack's worth read where it holds hundreds, the engine's cushions and pockets there after, the board brought in with the white, the cue and the white's way and no cushions, the real Space rolls the white and it comes to rest (${e2 ? e2.wr - 1 : '?'} struck)`);
   }
 
 } catch (e){
