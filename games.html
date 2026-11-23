@@ -56791,6 +56791,7 @@ const TRICK_APP = (() => {
     if (w && (here || (!g0 && w.i === i && w.j === j))){ B.push(endBall(0)); pos.push([w.x + (w.i - i) * E.PX, w.z + (w.j - j) * E.PZ, w.y || 0]); rot.push(w.rot); }
     const V = { B, pos, rot, ch: null, lv: 1, end: true };
     if (here && !E.moving.size){ V.cue = { ang: here.ang, power: here.power, elev: here.elev, tip: here.tip, chalk: here.chalk }; V.live = true; V.line = endLine(E, here); }
+    if (here) mapDraw(here, V);
     return V;
   }
   function endTitle(g){
@@ -57259,7 +57260,7 @@ const TRICK_APP = (() => {
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
     if (here && g.nine){ if (g.nine.rt) hkLive(g); else nineTick(g); }
     if (here) ctlSync(g);   // (whatever the board's size: the inset and the bar show only when the hand asks for them, Nov 22; until then from CTL_PX across)
-    if (g) return liveView(g);
+    if (g){ const V = liveView(g); if (here) mapDraw(g, V); return V; }
     const idx = boardIdx(c, r), making = { B: [], pos: [], ch: null, making: true };
     // (asked for every frame it is in view, so its job stays in the queue; the demo after it is made, one board in 30 ms)
     if (!NINE() && idx >= CHALLENGES.length && !MINE.has(idx) && !puzzleSoon(idx, levelAt(idx))) return making;
@@ -57661,7 +57662,45 @@ const TRICK_APP = (() => {
     if (at){ CTL.el.style.left = Math.round(Math.max(4, Math.min(innerWidth - 96, at[0] - 46))) + 'px'; CTL.el.style.top = Math.round(Math.max(4, Math.min(innerHeight - 120, at[1] - 46))) + 'px'; ctlDraw(g); }
     CTL.pull.style.display = CTL.pulling ? 'block' : 'none';
   }
-  const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } CTL.g = null; CTL.pulling = null; CTL.spin = false; };
+  const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } CTL.g = null; CTL.pulling = null; CTL.spin = false; mapHide(); };
+  /* THE WHOLE TABLE, SMALL, WHILE YOU STAND BEHIND THE WHITE (Nov 23: "When the full board is not shown, show a  minimap in the lower right"). From
+     behind the white the far balls hide one another and a ball behind you is not seen at all. While the whole table is not up (`WHOLE`), a small
+     picture of it from straight above stands in the lower right, 16px from the edges as the two buttons are: the cloth, the pockets (none on a
+     table without them), every ball where it is drawn this frame in its own colour (a stripe a white ring), and the shot's line from the white
+     while it is your shot. Drawn from the view the board itself is drawn from (`mapDraw(g, V)`), so a shot running runs on it too. It takes no
+     touches (what is under it is still the table's) and is away with the bottom row open, as the whole-table button is. */
+  const MAP = { el: null, seen: 0, sig: '' }, MAP_W = 150;
+  function mapEnsure(){
+    if (MAP.el || typeof document === 'undefined') return MAP.el;
+    // (the canvas in a box of its own: the page's `body > canvas` rule would put a canvas of the body's in the top left)
+    const el = document.createElement('div'), cv = document.createElement('canvas'); el.id = 'tsMap'; cv.width = MAP_W * 2; cv.height = Math.round(MAP_W * 2 * BH / BW);
+    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + Math.round(MAP_W * BH / BW) + 'px;z-index:29;display:none;pointer-events:none;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.28);box-shadow:0 1px 4px rgba(0,0,0,.6);box-sizing:border-box';
+    cv.style.cssText = 'display:block;width:100%;height:100%';
+    el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
+    setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > CTL_GONE) mapHide(); }, 200);
+    return el;
+  }
+  function mapHide(){ if (MAP.el) MAP.el.style.display = 'none'; MAP.sig = ''; }
+  function mapDraw(g, V){
+    if (!mapEnsure()) return;
+    let open = false; try { open = !document.body.classList.contains('bb-collapsed'); } catch {}
+    if (WHOLE || open || !V || !V.B || ED.on){ mapHide(); return; }
+    MAP.seen = performance.now(); MAP.el.style.display = 'block';
+    const m = M() || {}, cue = V.cue && !V.trail ? V.cue.ang : null;
+    const sig = V.B.map((b, i) => { const q = V.pos ? V.pos[i] : [b.x, b.z]; return q && !(b.sunk && !V.pos) ? b.n + ':' + q[0].toFixed(2) + ',' + q[1].toFixed(2) : ''; }).join('|') + '#' + (cue == null ? '' : cue.toFixed(3)) + (m.key || '');
+    if (sig === MAP.sig) return; MAP.sig = sig;
+    const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, Hd = MAP.cv.height, k = Wd / BW, X = x => (x + BW / 2) * k, Z = z => (z + BH / 2) * k, hex = n => '#' + n.toString(16).padStart(6, '0');
+    c.clearRect(0, 0, Wd, Hd); c.fillStyle = hex(CLOTH); c.fillRect(0, 0, Wd, Hd);
+    if (!m.end){ c.fillStyle = hex(WOOD2); c.fillRect(0, 0, Wd, Hd); c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
+      if (!m.bare && !m.rt){ c.fillStyle = '#07090c'; for (const [x, z] of POCKETS){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); } } }
+    let w = null;
+    V.B.forEach((b, i) => { const q = V.pos ? V.pos[i] : (b.sunk ? null : [b.x, b.z]); if (!q) return; if (b.cue) w = q;
+      const x = X(q[0]), z = Z(q[1]), r = Math.max(3.2, (b.r || R) * k * 1.25), col = b.cue ? '#f2f0ea' : b.col || COLS[b.n > 8 ? b.n - 8 : b.n] || '#c8c4b8';
+      c.beginPath(); c.arc(x, z, r, 0, 7); c.fillStyle = b.stripe ? '#f2f0ea' : col; c.fill();
+      if (b.stripe){ c.beginPath(); c.arc(x, z, r * 0.58, 0, 7); c.fillStyle = COLS[b.n - 8] || col; c.fill(); }
+      c.lineWidth = 1; c.strokeStyle = 'rgba(0,0,0,.55)'; c.beginPath(); c.arc(x, z, r, 0, 7); c.stroke(); });
+    if (w && cue != null){ c.strokeStyle = 'rgba(255,255,255,.8)'; c.lineWidth = 2; c.setLineDash([5, 5]); c.beginPath(); c.moveTo(X(w[0]), Z(w[1])); c.lineTo(X(w[0] + Math.cos(cue) * 6), Z(w[1] + Math.sin(cue) * 6)); c.stroke(); c.setLineDash([]); }
+  }
   let HOLD_TM = 0;
   /* A HOLD ON THE WHITE SHOWS THE SPIN INSET (Nov 22: "Move tap the cue ball to  long press to show target readout.  Increase hit zone for long
      [p]ress."): a tap on the white showed it; now a press held `HOLD_MS` on or near the white does (within `SPIN_HIT_PX` of it on the screen, a wide

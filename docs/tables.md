@@ -1243,3 +1243,13 @@ purpose needed.   Close the margin between boards.  Each board should have the f
   an app with a `boardShape` of its own now takes the pitch itself, so a patch is 22 by 12, a board.
 - The smoke test (part 5): a patch's fifteen, the 8 in the middle, the same each time and another patch's order different; a board as wide as
   the pitch; the four breaks against the referee of a 5 by 5 block; the rest as it was.
+
+**A minimap while you stand behind the white** (Nov 23: "When the full board is not shown, show a  minimap in the lower right"). On every pool
+table (the matches, trick shots, the endless table), while the whole table is not up (`WHOLE`), a small picture of the table from straight above
+stands in the lower right, 16px from the edges as the two buttons are (`mapDraw(g, V)`, `#tsMap`, 150px across): cloth, rails and pockets (no
+pockets on three-cushion, no rails on the endless table), every ball where the board draws it this frame in its own colour (a stripe a white ring
+round its colour), and the shot's line from the white while it is your shot. It is drawn from the board's own view, so a running shot runs on it;
+redrawn only when a ball or the aim has moved. It takes no touches, is away with the whole table up, with the bottom row open and in the editor,
+and goes when no table is played (`CTL_GONE`). The canvas sits in a box of its own: the page's `body > canvas` rule put a bare canvas in the top
+left. Not on it: pool golf's posts, sand and hole. Checked by a probe: on the endless table, 8-ball and three-cushion it stands 16px from the
+right and the bottom, the real click on the whole-table button hides it and the next brings it back.
