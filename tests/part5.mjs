@@ -1552,53 +1552,6 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${okA ? 'ok  ' : 'FAIL'} pool: the shot seen as far as the aim reaches (three balls in a line: ${as.open} contacts in sight at 1°, 0.3°, 0.1°; three touching: all at 1°; a challenge keeps its count)`);
   }
 
-  // POOL GOLF (Nov 22: "create a new mini golf game using the pools engine"): an entry of the pool games' table for one player. A board's green is
-  // the same each time and grows with its level; a gentle putt straight at the hole drops, the same putt hard rolls over it to the far cushion; a post turns the ball
-  // back, a wall stops it, sand slows it; the engine's pockets are as they were after; strokes are counted and the hole ends the game with stars
-  // against par, which is one over the steady player's strokes on the board's recording; the steady player holes out; the real Space putts.
-  {
-    current = 'poolgolf';
-    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'poolgolf')));
-    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
-    const pg = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, out = {};
-      out.app = A.name === 'Pool golf' && A.id === 'poolgolf' && D.MATCH.golf.app === A && A.cellGrid() === D.GRID_C;
-      const H = D.golfLay(7), H2 = D.golfLay(7), J = JSON.stringify; out.lay = [H === H2, J(D.golfLay(8).hole) !== J(H.hole), H.posts.length >= 1, Math.hypot(H.hole[0] - H.tee[0], H.hole[1] - H.tee[1]) > 8].join();
-      // by level: walls from level 3, loose balls from level 3, two walls at level 5 (boards looked for at each level)
-      const at = {}; for (let i = 0; i < 4000 && Object.keys(at).length < 5; i++){ const L = D.golfLay(i); if (!at[L.lv]) at[L.lv] = L; }
-      out.levels = [1, 2, 3, 4, 5].map(l => at[l] ? [at[l].boxes.length, at[l].posts.length, at[l].sand.length, at[l].loose.length].join('/') : '-').join(' ');
-      // a green of our own: the tee, the hole 8 away, nothing between; then a post, a wall, sand on the line
-      const lay = extra => ({ idx: -1, lv: 1, tee: [-6, 0], hole: [2, 0], posts: [], boxes: [], sand: [], loose: [], ...extra });
-      const putt = (Hh, p, a = 0) => { const w = { ...D.golfRack(7)[0], x: Hh.tee[0], z: Hh.tee[1], H: Hh }, st = D.strikeOf(a, 0, 0, p), s = D.golfSim([w], st.dir, st.speed, st.w, st.vy), f = s.final[0]; return { holed: D.golfHoled(s), x: f.x, z: f.z, rails: s.cushions.length }; };
-      const open = lay({}), soft = putt(open, 6), hard = putt(open, 30);
-      out.hole = [soft.holed, soft.rails === 0, hard.rails >= 1].join();   // (the hard one goes over the hole to the far cushion; it may drop on its way back, slower)
-      const post = putt(lay({ posts: [{ x: -2, z: 0, r: 0.8 }] }), 6); out.post = [post.holed, post.rails >= 1, post.x < -2].join();
-      const wall = putt(lay({ boxes: [[-2.3, -5, -1.7, 5]] }), 12); out.wall = [wall.holed, wall.x < -2.3].join();
-      const far = lay({ hole: [9, 4] }), dry = putt(far, 5), wet = putt(lay({ hole: [9, 4], sand: [{ x: -3, z: 0, r: 1.5 }] }), 5); out.sand = wet.x < dry.x - 1;
-      out.pockets = D.POCKETS.length;
-      // the game: strokes counted, the hole ends it
-      const L = D.LIVE, k = L && L.c + '_' + L.r, g = L && D.GAMES.get(k); if (!g) return { ...out, none: true };
-      out.start = [g.nine.kind, g.nine.pts[0], JSON.stringify(g.balls[0].H.hole) === JSON.stringify(D.golfLay(g.idx).hole), Math.abs(g.ang - Math.atan2(g.balls[0].H.hole[1] - g.balls[0].z, g.balls[0].H.hole[0] - g.balls[0].x)) < 1e-9].join();
-      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
-      const play = (h, holed, x, z) => { const s = { sunk: holed ? [{ n: 0, pocket: -2, t: 1 }] : [], final: h.balls.map(b => b.cue ? { ...b, x: x ?? b.x, z: z ?? b.z, sunk: !!holed } : { ...b }) }; h.anim = { s }; D.golfFinish(h, s); return h; };
-      let h = play(fresh(), false, 0, 0); out.stroke = [h.nine.pts[0], h.nine.over, h.balls[0].x, !!h.balls[0].H].join();
-      D.GPAR.set(h.idx + '@' + h.lv, 2); h = play(h, true); out.holed = [h.nine.pts[0], h.nine.over, h.nine.stars].join();
-      out.title = /^Pool golf — level \d · ★★★ holed in 2, tap to play again · par 2/.test(D.titleOf(h));
-      h = fresh(); D.GPAR.set(h.idx + '@' + h.lv, 2); h = play(play(play(play(h, false, 0, 0), false, 1, 0), false, 2, 0), true); out.over = [h.nine.pts[0], h.nine.stars].join();
-      // the steady player holes out, and the board's recording gives its par
-      const a = D.golfAuto(7); D.GPAR.delete('7@' + H.lv); const R = D.nineRecSoon(7, true); out.auto = [a.over, a.shots >= 1 && a.shots <= D.GOLF_MAX, R && R.over, R && D.GPAR.get('7@' + H.lv) === R.shots + 1].join();
-      fresh();
-      return out;
-    });
-    const gG = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim, strokes: g.nine.pts[0] } : null; });
-    await page.keyboard.press('Space'); await drawn(page, 300);
-    const putted = await gG();
-    const ok = pg && !pg.none && pg.app && pg.lay === 'true,true,true,true' && /^(-|0\/1\/0\/0) 0\/2\/1\/0 1\/2\/1\/[01] 1\/3\/2\/[012] 2\/3\/2\/[0123]$/.test(pg.levels) && pg.hole === 'true,true,true' && pg.post === 'false,true,true' && pg.wall === 'false,true'
-      && pg.sand && pg.pockets === 6 && pg.start === 'golf,0,true,true' && pg.stroke === '1,0,0,true' && pg.holed === '2,1,3' && pg.title && pg.over === '4,1' && pg.auto === '1,true,1,true' && putted && putted.shots === 1;
-    if (!ok) failures.push('[poolgolf] ' + JSON.stringify({ pg, putted }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} pool golf: a board's green the same each time and more on it by level (${pg && pg.levels}), a gentle putt drops and a hard one rolls over, a post turns the ball back, a wall stops it, sand slows it, strokes counted and stars against par, the steady player holes out and sets par, the real Space putts`);
-  }
-
   // POOL HOCKEY (Nov 22: "You said real time games don't benefit from the pool engine?  Why, shv is real-time.", then "Proceed"): the pool engine
   // stepped a frame at a time. Two mallets, each on its own half, and a ball between; a frame moves a mallet toward its place, a mallet driven
   // through the ball sends it on (the heavier mallet hardly slowed), a ball through a goal's mouth scores for the other side and one beside the

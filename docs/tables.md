@@ -1277,3 +1277,8 @@ step shot by shot). In the pool matches (9-ball, 8-ball, straight pool, one-pock
 - Measured on a 9-ball board, four shots: each replayed flight ends exactly (0) where the game's next shot began.
 - The smoke test (part 5): three shots played with the real Space and taps; each flown again ends where the next began; the real pad buttons
   play, step on, stop, step back and leave, the pad's glyphs and the title as they should be.
+
+**Pool golf is taken out** (Nov 23: "Remove pool golf"). The app (`POOLGOLF_APP`, id `poolgolf`), its entry in `MATCH`, the green and its sim
+(`golfLay`, `golfSim`, `golfPlanGen`, `golfPar` and the rest), its pieces (`tsPost`, `tsSand`, `tsHole`) and its check in part 5 are gone; the
+note above is the record of what it was. `MATCH`'s `onRec` stays (no entry uses it now). Mini golf is not touched. Checked by a probe: the page
+loads with 65 apps and no error, and 9-ball, three-cushion and pool hockey still show their tables.
