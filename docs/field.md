@@ -593,3 +593,8 @@ Nov 22): across the screen then ran the tables' short way, each column was count
 too narrow. Now the cell's place is turned in the ground's own lengths (`_cfx`, `_cfz`, `_crx`, `_crz`: ox·SPX and oz·SPZ turned, then put in
 rows and columns), and the walk's reach (`R`) is in cells either way. At a yaw of 0, and for square spacings at any yaw, the numbers are the ones
 they were. It shows wherever boards are not square and the view is turned: the pool games most, and mini golf's long boards turned by hand.
+
+**The whole-table button is a toggle with a colour** (Nov 23: "The button in the lower left should toggle like the button in the upper right and have
+a toggle color."). It switched views already, but changed its glyph (▦, then 🎱) and its pressed state was only the hover's gold ring. It keeps the
+one glyph now, and while the whole table is up the disc is draw's gold with a dark glyph (`#playPad.low button.on`, a pressed chip's colours). The
+menu button is as it was. Checked by a probe: the real click turns the button's class and colour on and off again.
