@@ -1332,3 +1332,17 @@ pool games' views and pad over and leaving each game's own physics). In `CURLING
 - Not done here: a replay of a frame, pool's hold-and-pull bar (the ball is still swiped up the lane), the spin dial (the hook is the row's).
 - The smoke test (part 7): as curling's check, on a ten-frame game begun by a real click; the pad's keys `view,ball`. Part 7 opens by turning
   bowling's view off for its older checks. Run: the new check and bowling's first check; not run: the spares, oil and row-shut checks.
+
+**The pull bar in curling and bowling** (Nov 23: "Neigther game work very well.  How do I shot the ball, long press doesn't work"). With pool's
+view and pool's pad the hand tried pool's shot, a press held and pulled, and nothing happened: curling was thrown by a tap on the stone and
+bowling by a swipe up the lane, which nothing on the screen said.
+- `PULL_BAR` (before `CURLING_APP`): pool's bar as a kit for any game. `arm(xy, o)` from `claimsPan`; a press still held still after 450 ms shows
+  the bar by the finger (`#pullBar`); it fills with how far the finger goes from where it pressed (200 px the whole); `o.set(f)` as it goes,
+  `o.go(f)` on the lift, `o.cancel()` if let go at once (under 0.03). A finger that moves 10 px before the wait is up is an ordinary drag. It
+  listens on the window; a game's `onPan` only stands aside while `active()`.
+- **Curling**: the fill is where the stone is to stop, from just up the sheet to a peel's weight (`weightAt((REL − 0.1)(1 − f))`), the dots
+  showing it; the lift throws. **Bowling**: the fill is the speed, `V_MIN` to `V_MAX`; the lift bowls. In both a press off the board does it
+  too, and the older ways (the stone dragged and tapped, the swipe, the tap on the ball, Enter, the row) still work.
+- The smoke test (part 7, "pull bar"): in each, a real press held shows the bar, let go at once nothing is shot and the setting is as it was;
+  held and pulled the setting changes and the lift throws or bowls.
+- Still not carried over: a replay, the spin dial. "Neither game works very well" may be more than the shot: nothing else was changed here.
