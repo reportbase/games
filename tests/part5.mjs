@@ -1652,6 +1652,36 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} pool hockey: the engine stepped a frame at a time (a mallet goes to its place and keeps its half, driven through the ball it sends it on, a ball through a mouth scores and one beside it comes off the cushion), the two computers at it stay on the table, a goal counted and the third wins, a real drag starts play and moves your mallet at the near end, a board no one plays is a recording with no shot seen ahead`);
   }
 
+  // A GAME PLAYED AGAIN (Nov 23: "Can you replay a game?", "Yes"): every shot of a match is kept as it is struck; the pad's ⏵ plays them back on
+  // the board, each flown again from the balls as they lay to where the game itself went on from; ⏭ ⏸ ⏮ step and stop it, ✕ gives the game back
+  // untouched.
+  {
+    current = 'replay';
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'nineball')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const rS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); if (!g) return null;
+      return { log: g.log ? g.log.length : 0, turn: g.nine.turn, anim: !!g.anim, over: g.nine.over, rp: g.rp ? [g.rp.k, g.rp.paused] : null, pad: [...document.querySelectorAll('#playPad.low button')].map(b => b.textContent).join(''), title: D.titleOf(g) }; });
+    const r0 = await rS();
+    for (let k = 0; k < 80; k++){ const q = await rS(); if (!q || q.over || (q.log >= 3 && !q.anim)) break;
+      if (!q.anim && q.turn === 0) await page.keyboard.press('Space'); else if (q.anim) await page.mouse.click(640, 400);
+      await frame(page, 600); }
+    const r1 = await rS();
+    const flown = await page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = D.GAMES.get(L.c + '_' + L.r), out = [];
+      for (let k = 0; k + 1 < g.log.length; k++){ D.rpGo(g, k); const nx = g.log[k + 1].balls;   // (a ball the rules put back, or the white in hand, is not where the flight left it: those apart by more than a ball are the rules')
+        out.push(Math.max(0, ...g.rp.s.final.map(b => { const q = nx.find(x => x.n === b.n), d = Math.hypot(q.x - b.x, q.z - b.z); return b.sunk || q.sunk || d > 0.9 ? 0 : d; }))); }
+      D.rpGo(g, g.log.length); return out; });
+    const press = async t => { await page.evaluate(t => { const b = [...document.querySelectorAll('#playPad.low button')].find(b => b.textContent === t); if (b) b.click(); }, t); await drawn(page, 400); };
+    await press('⏵'); const r2 = await rS();
+    await press('⏭'); const r3 = await rS();
+    await press('⏸'); const r4 = await rS();
+    await press('⏮'); const r5 = await rS();
+    await press('✕'); const r6 = await rS();
+    const ok = r0 && r0.log === 0 && r0.pad === '▦' && r1 && r1.log >= 3 && flown.length >= 2 && flown.every(d => d < 1e-9)
+      && r2.rp && r2.rp[0] === 0 && r2.pad === '▦⏮⏸⏭✕' && /played again · shot 1 of/.test(r2.title) && r3.rp && r3.rp[0] === 1 && r4.rp && r4.rp[1] === true && r5.rp && r5.rp[0] <= 1 && r6.rp === null && r6.log >= r1.log;
+    if (!ok) failures.push('[replay] ' + JSON.stringify({ r0, r1, flown, r2, r3, r4, r5, r6 }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} pool replay: a match's shots kept as they are struck, each flown again to where the game went on from, the pad's ⏵ ⏭ ⏸ ⏮ ✕ play, step, stop and leave it (${r1 ? r1.log : '?'} shots)`);
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }

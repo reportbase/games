@@ -56891,7 +56891,7 @@ const TRICK_APP = (() => {
   const ninePlan = (g, lv) => matchPlan(MATCH.nine, g, lv);
   function nineAuto(idx, lvA, lvB, maxShots = 120){ const g = matchAuto('nine', idx, lvA, lvB, maxShots); return { over: g.nine.over, shots: g.shots, fouls: g.nine.fouls.slice(), left: g.balls.filter(b => !b.cue && !b.sunk).length }; }
   function nineTick(g){
-    const N = g.nine; if (!N || N.over || g.anim || N.turn !== 1) return;
+    const N = g.nine; if (!N || N.over || g.anim || g.rp || N.turn !== 1) return;   // (g.rp: a replay is up, the game waits)
     const now = performance.now();
     if (!N.plan){
       if (!N.thinkAt){ N.thinkAt = now; return; } if (now - N.thinkAt < 700) return;
@@ -56929,10 +56929,10 @@ const TRICK_APP = (() => {
   }
   const BEHIND_PITCH = 40, BEHIND_H = 0.42, BEHIND_AHEAD = 3.2;   // (0.2 and 2.2 for a day: "Pool shots should not so close by default.", Nov 22)
   let BEHIND_ON = true;      // (the tests turn it off: their real clicks are aimed over the whole table, framed as it used to open)
-  function behindCue(g){
+  function behindCue(g, own){   // (own: the game a replay's stand-in belongs to)
     try {
       if (g && g.nine && g.nine.rt){ if (!WHOLE && liveGame() === g) wholeTable(true); return; }   // (pool hockey is played from over the whole table)
-      if (!BEHIND_ON || WHOLE || !g || g.anim || liveGame() !== g) return;
+      if (!BEHIND_ON || WHOLE || !g || g.anim || liveGame() !== (own || g)) return;
       const w = g.balls.find(b => b.cue && !b.sunk); if (!w) return;
       const W = window.FIELD_WORLD, T = W.target, bW = W.boardW(), L = window.LAB || {}, x = w.x + Math.cos(g.ang) * BEHIND_AHEAD, z = w.z + Math.sin(g.ang) * BEHIND_AHEAD;
       W.viewTo({ x: T.boardX + (0.5 - Ub(x)) * bW * (L.cellW || 1), z: T.boardZ + (0.5 - Vb(z)) * bW * (L.cellH || 1),
@@ -56969,9 +56969,41 @@ const TRICK_APP = (() => {
   const touch = () => { try { fieldItemsChanged(); } catch {} try { bbRefreshNow(); } catch {} };
   const shotOf = g => { const s = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D); return [s.dir, s.speed, s.w, s.vy]; };
   function previewOf(g){ if (g.dirty && !g.anim){ g.sim = simM(g.balls, ...shotOf(g)); g.dirty = false; } return g.sim; }
+  /* A GAME PLAYED AGAIN (Nov 23: "Can you replay a game?", then "Yes" to keeping every shot and playing the rack back from the break, a button to
+     step shot by shot). Every shot of a match, yours and the computer's, is kept as it is struck (`g.log`: the balls as they lay, a white put down
+     by hand or a ball put back on its spot with them, the strike, the cue and whose it was). The play pad's ⏵ plays them back from the first on
+     the board itself (`g.rp`, `rpView`): each is aimed for `RP_AIM`, flown by the engine again from the balls as they lay (the same shot: nothing
+     in it is drawn by chance), held `RP_HOLD` and followed by the next; the view stands behind the white for each as it does in play, and the
+     minimap follows. While it plays the pad has ⏮ and ⏭ (a shot back, a shot on), ⏸ (stop on this shot; ⏵ goes on) and ✕, and a tap on the table
+     pauses and goes on; the game itself is not touched and waits where it was, the computer's turn with it. After the last shot the replay ends.
+     A rack begun again starts its record again. Not kept between visits; not for pool hockey (played as it is stepped) nor the trick shots. */
+  const RP_AIM = 1.1, RP_HOLD = 0.7;
+  const rpCan = g => !!(g && g.nine && !g.nine.rt && g.log && g.log.length && !g.anim);
+  function rpGo(g, k){
+    if (!g || !g.log || !g.log.length){ if (g) g.rp = null; return; }
+    if (k >= g.log.length){ g.rp = null; g.dirty = true; behindCue(g); touch(); return; }
+    k = Math.max(0, k); const L = g.log[k], B = L.balls.map(b => ({ ...b })), was = g.rp;
+    g.rp = { k, B, s: simM(B, ...L.shot), t0: performance.now(), speed: L.shot[1], heard: -1, rk: 0, rot: B.map(b => rotStart(g.idx, b.n)), paused: !!(was && was.paused), cue: L.cue, turn: L.turn };
+    if (!g.rp.s){ rpGo(g, k + 1); return; }
+    const w = B.find(b => b.cue && !b.sunk); if (w) behindCue({ ...g, balls: B, ang: L.cue.ang, anim: null, rp: null }, g);
+    touch();
+  }
+  function rpView(g){
+    const rp = g.rp, B = rp.B, s = rp.s, fr = s.frames, now = performance.now();
+    if (rp.paused){ rp.t0 = now - (rp.at || 0) * 1000; } else rp.at = (now - rp.t0) / 1000;
+    const el = rp.at || 0;
+    if (el < RP_AIM) return { B, pos: B.map(b => b.sunk ? null : [b.x, b.z, 0]), ch: null, lv: g.lv, rot: rp.rot, sim: SET.paths === 'off' ? null : s, hz: 60, see: g.see, cue: rp.cue, paths: SET.paths, rp: true };
+    const e = el - RP_AIM, k = Math.min(fr.length - 1, Math.floor(e * 60));
+    if (!rp.paused) soundsTo(rp, e);
+    for (; rp.rk < k; rp.rk++){ const a = fr[rp.rk], b = fr[rp.rk + 1], h = s.heights[rp.rk + 1];
+      for (let i = 0; i < B.length; i++) if (!isNaN(a[2 * i]) && !isNaN(b[2 * i]) && h[i] < 0.02) rp.rot[i] = roll(rp.rot[i], b[2 * i] - a[2 * i], b[2 * i + 1] - a[2 * i + 1]); }
+    if (!rp.paused && e > (fr.length - 1) / 60 + RP_HOLD){ rpGo(g, rp.k + 1); return liveView(g); }
+    return { B, pos: B.map((b, i) => isNaN(fr[k][2 * i]) ? null : [fr[k][2 * i], fr[k][2 * i + 1], s.heights[k][i]]), ch: null, lv: g.lv, rot: rp.rot, trail: { fr, k, hz: 60 }, rp: true };
+  }
   function shoot(g){
-    if (!g || g.anim || (g.nine && g.nine.rt)) return false;
+    if (!g || g.anim || g.rp || (g.nine && g.nine.rt)) return false;
     const shot = shotOf(g), s = simM(g.balls, ...shot); if (!s) return false;
+    if (g.nine) (g.log || (g.log = [])).push({ balls: g.balls.map(b => ({ ...b })), shot, turn: g.nine.turn, cue: { ang: g.ang, power: g.power, elev: g.elev, tip: { ...g.tip }, chalk: g.chalk } });
     g.history.push({ balls: g.balls.map(b => ({ ...b })), potted: g.potted, shots: g.shots, rot: g.rot.slice() });
     if (g.nine) g.nine.hand = false;
     g.shots++; g.anim = { s, t0: performance.now(), speed: shot[1], heard: -1, rk: 0, rot0: g.rot.slice() }; try { ARCADE.audio(); } catch {}
@@ -57055,6 +57087,7 @@ const TRICK_APP = (() => {
   /* WHAT A BOARD SHOWS at a moment: the balls where they are (and how high), and, while a shot is being lined up, the cue and
      the shot seen ahead (the preview, as far as `see` reaches). */
   function liveView(g){
+    if (g.rp) return rpView(g);
     let pos = g.balls.map(b => b.sunk ? null : [b.x, b.z, 0]);
     if (g.nine && g.nine.rt) return { B: g.balls, pos, ch: null, rot: g.rot, lv: g.lv };   // (pool hockey: played as it is stepped, nothing seen ahead, no cue)
     if (g.anim){
@@ -57345,6 +57378,7 @@ const TRICK_APP = (() => {
   const frac = o => { const named = [[1, 'full'], [0.75, '¾'], [0.5, '½'], [0.25, '¼']].find(([v]) => Math.abs(o - v) < 0.03); return named ? (named[1] === 'full' ? 'full-ball' : named[1] + '-ball') : o.toFixed(2) + ' ball'; };
   const degOf = a => { const x = (((a / D) % 360) + 360) % 360; return x.toFixed(2); };
   function titleOf(g){
+    if (g.rp) return kindOf(g).app.name + ' — played again · shot ' + (g.rp.k + 1) + ' of ' + g.log.length + ', ' + (g.rp.turn ? 'the computer\'s' : 'yours') + (g.rp.paused ? ' · stopped: ⏵ or a tap goes on' : ' · a tap stops on it') + ' · ✕ is back to the game';
     if (g.nine) return kindOf(g).title(g);
     const ci = g.ch ? CHALLENGES.indexOf(g.ch) : -1, best = g.ch ? BEST[g.ch.id] : 0, stH = strikeOf(g.ang, g.tip.x, g.tip.y, g.power, g.chalk ? MU_TIP : 0, g.elev * D);
     const set = 'cue ' + degOf(g.ang) + '°' + (g.elev ? ', raised ' + g.elev + '°' : '') + ' · ' + (g.chalk ? 'chalked' : 'bare') + ' tip ' + spinName(g.tip)
@@ -57808,9 +57842,24 @@ const TRICK_APP = (() => {
     onLeave(){ ctlHide(); },
     fitView(){ WHOLE = false; behindCue(liveGame()); },
     playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r || (g.nine && g.nine.rt)) return null;
-      return [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }]; },
+      const L = [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }];
+      if (g.rp) L.push({ key: 'rpPrev', glyph: '⏮', title: 'The shot before' }, { key: 'rpPause', glyph: g.rp.paused ? '⏵' : '⏸', title: g.rp.paused ? 'Go on' : 'Stop on this shot', on: g.rp.paused },
+        { key: 'rpNext', glyph: '⏭', title: 'The next shot' }, { key: 'rpStop', glyph: '✕', title: 'Back to the game' });
+      else if (rpCan(g)) L.push({ key: 'rp', glyph: '⏵', title: 'Play this game again from its first shot (' + g.log.length + (g.log.length === 1 ? ' shot' : ' shots') + ')' });
+      return L; },
     playPadLow: true,                                         // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")
-    onPlayAct(c, r, key){ if (key !== 'view') return false; wholeTable(!WHOLE); try { bbRefreshNow(); } catch {} return true; },                       // (the game opens behind the white: BEHIND THE WHITE)
+    onPlayAct(c, r, key){
+      const g = liveGame();
+      if (key === 'view'){ wholeTable(!WHOLE); if (!WHOLE && g && g.rp){ const w = g.rp.B.find(b => b.cue && !b.sunk); if (w) behindCue({ ...g, balls: g.rp.B, ang: g.rp.cue.ang, anim: null, rp: null }, g); } }
+      else if (!g) return false;
+      else if (key === 'rp'){ if (rpCan(g)){ CTL.spin = false; try { ARCADE.audio(); } catch {} rpGo(g, 0); } }
+      else if (!g.rp) return false;
+      else if (key === 'rpPrev') rpGo(g, g.rp.k - ((g.rp.at || 0) > RP_AIM + 0.5 ? 0 : 1));   // (well into a shot: back to its start; at its start: the one before)
+      else if (key === 'rpNext') rpGo(g, g.rp.k + 1);
+      else if (key === 'rpPause'){ g.rp.paused = !g.rp.paused; touch(); }
+      else if (key === 'rpStop') rpGo(g, g.log.length);
+      else return false;
+      try { bbRefreshNow(); } catch {} return true; },                       // (the game opens behind the white: BEHIND THE WHITE)
     pitchFloor: 40,                                           // (Nov 22: "Minimum tilt 40degrees."; 20 for a day, Nov 21; the field's own floor is 35)
     frameYaw: 90,                                             // (Nov 22: "Default board position is up down.": the table's long way runs up the screen by default; the field's fwdYaw)
     // (Nov 22: "Reduce maximum zoom height by half.": the eye climbs to half the field's ceiling here, zoom 500 of 1000)
@@ -57824,6 +57873,7 @@ const TRICK_APP = (() => {
       LIVE = { c, r }; const g = gameAt(c, r);
       if (!g){ say('This board\'s trick shot is still being made; a moment.', 1500); return true; }
       if (CTL.spin){ CTL.spin = false; touch(); }                             // (any tap puts the spin inset away, Nov 22)
+      if (g.rp){ g.rp.paused = !g.rp.paused; touch(); return true; }           // (a replay: a tap stops it on this shot and goes on)
       if (g.anim){ finish(g); behindCue(g); return true; }                    // a tap during the shot jumps to its end (wander's)
       if (g.nine && g.nine.over) return app.onReset(c, r), true;   // (the rack over: a tap racks again)
       if (g.nine && g.nine.rt){ hkAim(g, u, v, null); return true; }   // (pool hockey: a tap is where the mallet is to go)
@@ -57897,7 +57947,7 @@ const TRICK_APP = (() => {
               makePuzzle, genOnce, runGen, trial, windowOf, GEN_LV, PUZ, JOBS, WK, workerSrc, plainOf, puzzleOf, goalFor, pump, puzzleSoon, levelAt, levelOf: (c, r) => levelAt(boardIdx(c, r)), ringOf,
               starsOf, roll, rotsOf, rotStart, FREEPLAY, CTL, ctlSync, nextBoardOf, DL, runSim, genRun,
               ed: () => ED, edOpen, edStart, edTap, edTile, edTiles, edCheck, edDone, edCancel, edView, draftOf, cleanMine, mineGoal, mineText, solveMine, solveSoon, MINE, mineAt, shareShot, takeShot, ED_TOOLS, ED_ACTS,
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, aimSight, aimSightAt, surePot, hopeOf, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), behind: v => { BEHIND_ON = !!v; }, rpGo, rpCan, RP_AIM, aimSight, aimSightAt, surePot, hopeOf, sightFor, SEE_EPS, pathItems, holdMs: v => { HOLD_MS = v; }, get ateIn(){ return ateAt - performance.now(); }, behindCue, wholeTable, get WHOLE(){ return WHOLE; } },
   };
   SHARE.install(app, takeShot);
   /* THE MATCH GAMES' APPS (THE POOL GAMES, ONE TABLE, above): each is this app's own hooks with its entry's name, menu, titles and picture.
