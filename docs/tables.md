@@ -1303,3 +1303,20 @@ loads with 65 apps and no error, and 9-ball, three-cushion and pool hockey still
   fell is back up and the turn passes; the computer's bank is its point; a foul gives back the ball and a point's ball and the white in hand;
   the fifth point wins with three stars at one against; banks are found in order and one is planned; a game played out at level 3 has a
   winner at five; the real Space breaks.
+
+**Curling from behind the stone** (Nov 23: "How about bowling and curling.  They could be similar to the pool games.", then "Proceed", to carrying the
+pool games' views and pad over and leaving each game's own physics). In `CURLING_APP`:
+- **Behind the stone** (`behind`, from `stepGame` once a throw, `g.viewTag`): for each throw, yours and the computer's, the view goes down behind
+  the stone at the delivery looking up the sheet, tilted `BEHIND_PITCH` 40°, the eye `BEHIND_H` 0.36 sheet lengths up, looking at `BEHIND_V` 0.76
+  down the sheet (0.3 and 0.6 first: the stone you drag and tap was off the bottom of the screen). A board brought in again goes there again.
+- **The pad in the lower left** (`playPadLow`, as pool's): ▦ the whole sheet from above and back (`wholeSheet`, `WHOLE`, tilted 62°, fitted; the
+  view is left alone while it is up), and beside it the curl while it is your throw (it had the pad to itself, with a label).
+- **The house, small** (`mapDraw`, `#cuMap`, 118 px across, lower right, 16px in): from the back line to just past the hog line from straight
+  above: rings, tee, centre and back lines, the hog line red, every stone grey with its side's colour, the broom ringed while a stone is aimed.
+  Redrawn when a stone or the broom moves. No touches; away with the whole sheet up and with the bottom row open.
+- Not done here: a replay of an end, pool's hold-and-pull bar (the weight is still the stone dragged up the sheet), the spin dial (the curl is
+  the twist and the pad's button). Bowling follows.
+- The smoke test (part 7): a game begun by a real click is seen tilted 40° and low, the pad in the lower left with ▦ (and the curl), the map 16px
+  from the lower right; the real ▦ shows the whole sheet (higher, tilted more, the map away) and the next ▦ comes back. The older curling checks
+  turn the view off (`_debug.behind(false)`): their clicks are aimed over the sheet framed whole. Run: the new check and the first curling
+  check; not run: "played with the row shut", which presses the pad's curl.

@@ -61616,6 +61616,7 @@ const CURLING_APP = (() => {
     const t = performance.now(), dt = g.last ? Math.min(0.25, (t - g.last) / 1000) : 0;
     g.last = t; g.acc += dt;
     while (g.acc >= TICK){ g.acc -= TICK; tick(g.G, sweeping()); if (g.G.state === 'over'){ over(g); break; } }
+    { const tag = g.G.end + ':' + g.G.thrown; if (g.viewTag !== tag){ g.viewTag = tag; behind(g); } }   // (behind the stone for each throw: BEHIND THE STONE)
   }
   function over(g){
     g.state = 'over'; g.overAt = performance.now();
@@ -61828,6 +61829,57 @@ const CURLING_APP = (() => {
     return true;
   }
 
+  /* BEHIND THE STONE, THE WHOLE SHEET A BUTTON AWAY, THE HOUSE SMALL (Nov 23: "How about bowling and curling.  They could be similar to the pool
+     games.", then "Proceed", to carrying the pool games' views over and leaving the ice as it is). As in pool, the game is played from behind
+     the shot: for each throw, yours and the computer's, the view goes down behind the stone at the delivery, looking up the sheet, tilted
+     `BEHIND_PITCH` and low (`BEHIND_H`, the eye's height in sheet lengths; `behind`, from `stepGame` once a throw). The play pad stands in the
+     lower left as pool's does (`playPadLow`): ▦ is the whole sheet from above and back (`wholeSheet`, `WHOLE`: while it is up the view is left
+     alone), and beside it the curl while it is your throw. And while the whole sheet is not up, the house from straight above stands in the
+     lower right (`mapDraw`, `#cuMap`): the rings, the tee and hog lines, every stone in its side's colour, the broom while a stone is aimed.
+     From behind the stone the house is far and flat, and which stone lies nearer the button is not to be seen; on the map it is. It takes no
+     touches and is away with the bottom row open. The ice, the broom, the weight and the sweeping are as they were. */
+  let WHOLE = false, BEHIND_ON = true; const BEHIND_PITCH = 40, BEHIND_H = 0.36, BEHIND_V = 0.76, WHOLE_PITCH = 62;
+  function behind(g){
+    try {
+      if (!BEHIND_ON || WHOLE || !g || g.state !== 'play' || liveGame() !== g) return;
+      const Wd = window.FIELD_WORLD, T = Wd.target, bW = Wd.boardW(), L = window.LAB || {};
+      Wd.viewTo({ x: T.boardX, z: T.boardZ + (0.5 - BEHIND_V) * bW * (L.cellH || 1), yaw: fwdYaw(), pitch: BEHIND_PITCH, zoom: Wd.zoomFor(BEHIND_H * bW) });
+    } catch {}
+  }
+  function wholeSheet(on){
+    WHOLE = !!on;
+    try { if (WHOLE){ const Wd = window.FIELD_WORLD; Wd.st.pitch = WHOLE_PITCH; Wd.st.yawV = 0; Wd.target.yaw = fwdYaw(); zoomBoardToFit(); } else behind(liveGame()); } catch {}
+    try { fieldItemsChanged(); } catch {} try { bbRefreshNow(); } catch {}
+  }
+  const MAP = { el: null, cv: null, seen: 0, sig: '' }, MAP_W = 118, MAP_V = HOG + 0.02;
+  function mapEnsure(){
+    if (MAP.el || typeof document === 'undefined') return MAP.el;
+    const el = document.createElement('div'), cv = document.createElement('canvas'), h = Math.round(MAP_W * MAP_V / W); el.id = 'cuMap'; cv.width = MAP_W * 2; cv.height = h * 2;
+    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + h + 'px;z-index:29;display:none;pointer-events:none;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.28);box-shadow:0 1px 4px rgba(0,0,0,.6);box-sizing:border-box';
+    cv.style.cssText = 'display:block;width:100%;height:100%';
+    el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
+    setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > 1200) mapHide(); }, 200);
+    return el;
+  }
+  function mapHide(){ if (MAP.el) MAP.el.style.display = 'none'; MAP.sig = ''; }
+  function mapDraw(g){
+    if (!mapEnsure()) return;
+    let open = false; try { open = !document.body.classList.contains('bb-collapsed'); } catch {}
+    if (WHOLE || open || !g || g.state !== 'play' || !g.G){ mapHide(); return; }
+    MAP.seen = performance.now(); MAP.el.style.display = 'block';
+    const G = g.G, aim = G.state === 'aim' || G.state === 'cpu', L = G.stones.filter(st => !st.out && st.y < MAP_V + SR);
+    const sig = L.map(st => st.team + ':' + st.x.toFixed(4) + ',' + st.y.toFixed(4)).join('|') + '#' + (aim ? G.shot.bx.toFixed(3) + ',' + G.shot.by.toFixed(3) + toThrow(G) : '');
+    if (sig === MAP.sig) return; MAP.sig = sig;
+    const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, Hd = MAP.cv.height, k = Wd / W, hex = n => '#' + n.toString(16).padStart(6, '0');
+    c.fillStyle = '#eaf1f8'; c.fillRect(0, 0, Wd, Hd);
+    ['#2b63c8', '#f4f7fb', '#d33a32', '#f4f7fb'].forEach((col, i) => { c.fillStyle = col; c.beginPath(); c.arc(CX * k, TEE * k, RINGS[i] * k, 0, 7); c.fill(); });
+    c.strokeStyle = 'rgba(30,40,60,.45)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(0, TEE * k); c.lineTo(Wd, TEE * k); c.moveTo(CX * k, 0); c.lineTo(CX * k, Hd); c.moveTo(0, BACK * k); c.lineTo(Wd, BACK * k); c.stroke();
+    c.strokeStyle = '#d33a32'; c.lineWidth = 3; c.beginPath(); c.moveTo(0, HOG * k); c.lineTo(Wd, HOG * k); c.stroke();
+    for (const st of L){ const r = Math.max(SR * k, 6); c.beginPath(); c.arc(st.x * k, st.y * k, r, 0, 7); c.fillStyle = '#8d939c'; c.fill(); c.lineWidth = 1; c.strokeStyle = 'rgba(0,0,0,.6)'; c.stroke();
+      c.beginPath(); c.arc(st.x * k, st.y * k, r * 0.62, 0, 7); c.fillStyle = hex(TEAM[st.team]); c.fill(); }
+    if (aim && G.shot.by < MAP_V){ c.strokeStyle = hex(TEAM[toThrow(G)]); c.lineWidth = 2.5; c.beginPath(); c.arc(G.shot.bx * k, G.shot.by * k, 9, 0, 7); c.stroke();
+      c.strokeStyle = '#1a1f2a'; c.lineWidth = 1; c.beginPath(); c.arc(G.shot.bx * k, G.shot.by * k, 11, 0, 7); c.stroke(); }
+  }
   const app = {
     name: 'curling',
     realtime: true,
@@ -61859,7 +61911,7 @@ const CURLING_APP = (() => {
     },
     cellItems(c, r, bp){
       const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
-      if (g && g.state !== 'ready' && g.G){ if (live) stepGame(g); else g.last = 0; return itemsOf(liveView(g), bp); }
+      if (g && g.state !== 'ready' && g.G){ if (live){ stepGame(g); mapDraw(g); } else g.last = 0; return itemsOf(liveView(g), bp); }
       const M = recSoon(idx, lv, live), V = recView(M);
       return itemsOf(V || { stones: [] }, bp);
     },
@@ -61872,7 +61924,9 @@ const CURLING_APP = (() => {
     },
     onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
     onSelect(){ return true; },
-    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
+    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) };
+      if (LIVE){ const g = GAMES.get(gkey(LIVE.c, LIVE.r)); if (g) g.viewTag = null; } else mapHide(); },   // (brought in again: behind the stone again)
+    onLeave(){ mapHide(); },
     onCellTap(c, r, u, v){
       if (performance.now() - ateAt < 400) return true;        // (the tap the field still calls after a short drag)
       const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
@@ -61901,9 +61955,12 @@ const CURLING_APP = (() => {
     onPanEnd(){ if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
     statTiles(c, r){ return tilesOf(c, r); },
     // (the play pad's one button, the curl; a twist of two fingers turns it too)
-    playActs(c, r){ const g = liveGame(); if (!myTurn(g) || g.c !== c || g.r !== r) return null; const k = g.G.shot.curl > 0;
-      return [{ key: 'curl', glyph: k ? '⟳' : '⟲', label: 'curl', title: 'The curl: ' + (k ? 'to the right' : 'to the left') + '. A twist of two fingers turns it too.' }]; },
-    onPlayAct(c, r, key){ const g = liveGame(); if (key === 'curl' && myTurn(g)) setCurl(g); return true; },
+    playActs(c, r){ const g = liveGame(); if (!g || g.state !== 'play' || g.c !== c || g.r !== r) return null;
+      const L = [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the stone, up the sheet' : 'The whole sheet from above', on: WHOLE }];
+      if (myTurn(g)){ const k = g.G.shot.curl > 0; L.push({ key: 'curl', glyph: k ? '⟳' : '⟲', title: 'The curl: ' + (k ? 'to the right' : 'to the left') + '. A twist of two fingers turns it too.' }); }
+      return L; },
+    playPadLow: true,
+    onPlayAct(c, r, key){ const g = liveGame(); if (key === 'view') wholeSheet(!WHOLE); else if (key === 'curl' && myTurn(g)) setCurl(g); return true; },
     twistTurns(){ return myTurn(liveGame()); },
     onTwist(s){ const g = liveGame(); if (myTurn(g)) setCurl(g, s > 0 ? 1 : -1); return true; },
     statsStay(){ const g = liveGame(); return !!(g && g.state === 'play'); },
@@ -61919,7 +61976,7 @@ const CURLING_APP = (() => {
               recOf, recWork, recView, recSoon, starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setBroom,
               setWeight, weightName, throwMine, tilesOf, onTile, toThrow, LV, STEADY, SET, GAMES, RECS, BEST, HOLD, KEYS, OWN, inHouse, dist,
               consts: { W, SR, TEE, HOG, REL, BACK, HOUSE, RINGS, A0, CURL, SWEEP_A, SWEEP_C, TICK, REC_HZ, PREVIEW }, levelOf: (c, r) => levelAt(boardIdx(c, r)),
-              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
+              get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, behind: v => { BEHIND_ON = !!v; }, wholeSheet, MAP, get WHOLE(){ return WHOLE; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   return app;
 })();
