@@ -15,6 +15,8 @@ const T = await begin(7, () => current);
 const { page, failures } = T;
 
 try {
+  // (Nov 23: bowling's older checks aim their clicks over the lane framed whole, as it used to open; its view from behind the ball is checked at the end)
+  await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'bowling')._debug.behind(false));
   // CURLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the ice (a draw solved to the button, the curl the way
   // it turns, sweeping farther and straighter, a takeout moving the stone it strikes, the hog line); an end's score; games between
   // the steady player and the computer ending, the steady player doing better at level 1 than at 5; and real input: a click
@@ -1106,6 +1108,28 @@ try {
     if (!ok) failures.push('[curling behind] ' + JSON.stringify({ b0, b1, b2 }));
     console.log(`${ok ? 'ok  ' : 'FAIL'} curling from behind the stone: a game begun is seen low and tilted 40° from the delivery, the pad in the lower left, the house small in the lower right; the real ▦ shows the whole sheet and back`);
     await page.evaluate(() => window.getFieldApp()._debug.wholeSheet(false));
+  }
+
+  // BOWLING FROM BEHIND THE BALL (Nov 23, with curling's): a game begun by a real click is seen from behind the ball, low and tilted 40°; the pad
+  // stands in the lower left with ▦ and the ball; the pin deck stands small in the lower right; the real ▦ shows the whole lane and back.
+  {
+    current = 'bowling behind the ball';
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); const D = window.getFieldApp()._debug; D.setMode('game'); D.behind(true); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    await page.mouse.click(640, 400); await drawn(page, 800);
+    const wS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, st = window.FIELD_WORLD.st, m = document.querySelector('#bwMap'), r = m && m.getBoundingClientRect(), pad = document.querySelector('#playPad');
+      return { pitch: st.pitch, zoom: st.zoom, whole: D.WHOLE, map: m ? [m.style.display, Math.round(innerWidth - r.right), Math.round(innerHeight - r.bottom)] : null, low: pad.className, keys: [...pad.querySelectorAll('button')].map(b => b.dataset.key).join() }; });
+    for (let k = 0; k < 40 && (await wS()).zoom > 30; k++) await frame(page, 400);
+    const w0 = await wS();
+    const view = async () => { const q = await page.evaluate(() => { const b = document.querySelector('#playPad button[data-key="view"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }); if (q){ await page.mouse.click(q[0], q[1]); await drawn(page, 600); } };
+    await view(); for (let k = 0; k < 40 && (await wS()).zoom < 45; k++) await frame(page, 400);
+    const w1 = await wS();
+    await view(); for (let k = 0; k < 40 && (await wS()).zoom > 30; k++) await frame(page, 400);
+    const w2 = await wS();
+    const ok = w0 && Math.abs(w0.pitch - 40) < 1 && w0.zoom < 30 && !w0.whole && w0.map && w0.map.join() === 'block,16,16' && w0.low === 'low' && w0.keys === 'view,ball'
+      && w1.whole && w1.zoom > 45 && w1.pitch > 55 && w1.map[0] === 'none' && !w2.whole && w2.zoom < 30 && Math.abs(w2.pitch - 40) < 1 && w2.map[0] === 'block';
+    if (!ok) failures.push('[bowling behind] ' + JSON.stringify({ w0, w1, w2 }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling from behind the ball: a game begun is seen low and tilted 40° from the foul line, the pad in the lower left, the pin deck small in the lower right; the real ▦ shows the whole lane and back`);
+    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.wholeLane(false); D.behind(false); });
   }
 
 } catch (e){
