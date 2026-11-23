@@ -1253,3 +1253,9 @@ redrawn only when a ball or the aim has moved. It takes no touches, is away with
 and goes when no table is played (`CTL_GONE`). The canvas sits in a box of its own: the page's `body > canvas` rule put a bare canvas in the top
 left. Not on it: pool golf's posts, sand and hole. Checked by a probe: on the endless table, 8-ball and three-cushion it stands 16px from the
 right and the bottom, the real click on the whole-table button hides it and the next brings it back.
+
+**The endless table is taken out** (Nov 23: "Remove the endless board."). The app (`ENDLESS_APP`, id `endless`), its entry in `MATCH`, the rule, the
+read and the writes (`endRule`, `endTick`, `endCompare` and the rest), its cloth picture's grid and its check in part 5 are gone; the three
+notes above are the record of what it was and what runs 1 to 4 found. The field's posture for a `fillsCell` app is as it was before it (the
+gallery's 1.002 / 1.05). The minimap draws rails on every table again. Checked by a probe: the page loads with 66 apps and no error, and 9-ball,
+three-cushion and pool golf still show their tables and the minimap, a shot played. Not checked: a page reopened with `endless` as the game last in.

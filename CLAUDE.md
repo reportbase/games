@@ -16,7 +16,7 @@ part you are about to change**, and add to it when you change it:
 | --- | --- |
 | mini golf: the course, the generator, difficulty, the ground's shapes, the movers, the hole editor | `docs/minigolf.md` |
 | Board War | `docs/boardwar.md` |
-| pinball, Pong, air hockey, squash, curling, bowling, marble run, the tanks, trick shots, 9-ball, 8-ball, straight pool, one-pocket, three-cushion billiards, pool golf, pool hockey, the endless table | `docs/tables.md` |
+| pinball, Pong, air hockey, squash, curling, bowling, marble run, the tanks, trick shots, 9-ball, 8-ball, straight pool, one-pocket, three-cushion billiards, pool golf, pool hockey | `docs/tables.md` |
 | the tilt maze, Bejeweled, Simon, Lights Out, Whack-a-mole, Nonograms, Sudoku, Hashi, Sokoban, the puzzle makers, 3D Tetris, Soma, the flash cards, the game lab | `docs/puzzles.md` |
 | Invaders, Missile Command, Asteroids, the crossing, tower defense | `docs/arcade.md` |
 | chess, the board games' position editor, share links, Levels | `docs/boards.md` |
