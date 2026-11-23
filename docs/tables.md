@@ -1259,3 +1259,21 @@ read and the writes (`endRule`, `endTick`, `endCompare` and the rest), its cloth
 notes above are the record of what it was and what runs 1 to 4 found. The field's posture for a `fillsCell` app is as it was before it (the
 gallery's 1.002 / 1.05). The minimap draws rails on every table again. Checked by a probe: the page loads with 66 apps and no error, and 9-ball,
 three-cushion and pool golf still show their tables and the minimap, a shot played. Not checked: a page reopened with `endless` as the game last in.
+
+**A game played again** (Nov 23: "Can you replay a game?", then "Yes" to keeping every shot and playing the rack back from the break with a button to
+step shot by shot). In the pool matches (9-ball, 8-ball, straight pool, one-pocket, three-cushion, pool golf):
+- **What is kept** (`g.log`, in `shoot`): for every shot, yours and the computer's, the balls as they lay (so a white put down by hand and a ball
+  put back by the rules are in it), the strike, the cue's settings and whose it was. Nothing of the flight: the engine flies the same shot the
+  same way, so the replay flies it again.
+- **Playing it** (`rpGo`, `rpView`, `g.rp`): the play pad's ⏵ (there once a shot has been played and none is running) starts at the first shot.
+  Each is aimed for `RP_AIM` (1.1 s, the cue and the shot's line shown), flown, held `RP_HOLD` (0.7 s), then the next; the view stands behind the
+  white for each (`behindCue` with the replay's balls) unless the whole table is up; sounds, the trail and the minimap follow. The pad then has
+  ⏮ (this shot again, or the one before if it has only begun), ⏸/⏵, ⏭ and ✕; a tap on the table stops and goes on. The title says which shot of
+  how many and whose.
+- **The game is not touched**: the replay plays copies; while it is up no shot is taken and the computer does not think (`nineTick`), and after
+  the last shot or ✕ the game is where it was.
+- Not in it: kept between visits (a rack begun again, or the page reloaded, starts the record again; a tap on a finished rack racks again and
+  the record goes with it), pool hockey (played as it is stepped), the trick shots.
+- Measured on a 9-ball board, four shots: each replayed flight ends exactly (0) where the game's next shot began.
+- The smoke test (part 5): three shots played with the real Space and taps; each flown again ends where the next began; the real pad buttons
+  play, step on, stop, step back and leave, the pad's glyphs and the title as they should be.
