@@ -56647,9 +56647,13 @@ const TRICK_APP = (() => {
   // a patch's own balls, from its place alone
   function endRule(E, i, j){
     const key = i + ',' + j; let L = E.rules.get(key); if (L) return L;
-    const rnd = rng((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0), n = 2 + Math.floor(rnd() * 3); L = [];
-    for (let k = 0, t = 0; k < n && t < 200; t++){ const x = (rnd() - 0.5) * (E.PX - 2.4), z = (rnd() - 0.5) * (E.PZ - 2.4), num = 1 + Math.floor(rnd() * 15);
-      if (L.every(q => Math.hypot(q.x - x, q.z - z) > 2 * R + 0.6)){ L.push({ id: key + ',' + k, n: num, i, j, x, z }); k++; } }
+    /* (Nov 23: "This game should just let the user smash balls, no purpose needed.", "Each board should have the full rack, let the player break
+       them": a patch's balls are the fifteen racked at its foot, the 8 in the middle and the rest shuffled by the patch's place, where its two to
+       four scattered balls were.) */
+    const rnd = rng((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0), ns = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15], sp = 2 * R + 0.02; L = [];
+    for (let a = ns.length - 1; a > 0; a--){ const b = Math.floor(rnd() * (a + 1)); [ns[a], ns[b]] = [ns[b], ns[a]]; }
+    for (let row = 0, k = 0, q = 0; row < 5; row++) for (let c = 0; c <= row; c++, k++)
+      L.push({ id: key + ',' + k, n: row === 2 && c === 1 ? 8 : ns[q++], i, j, x: LX / 4 + row * sp * 0.866, z: (c - row / 2) * sp });
     E.rules.set(key, L); if (E.rules.size > 600) E.rules.delete(E.rules.keys().next().value);
     return L;
   }
@@ -56670,13 +56674,20 @@ const TRICK_APP = (() => {
       B.push({ ...ballOf(rec.n, rec.x + (rec.i - A[0]) * E.PX, rec.z + (rec.j - A[1]) * E.PZ), id: rec.id, vx: rec.vx || 0, vz: rec.vz || 0, vy: rec.vy || 0, y: rec.y || 0, wx: rec.wx || 0, wy: rec.wy || 0, wz: rec.wz || 0, src: rec, rule }); };
     for (const id of E.moving) add(E.wr.get(id), false);
     if (all) for (const rec of all) add(rec, !E.wr.has(rec.id));
-    else for (const id of [...E.moving]){ const m = E.wr.get(id), sp = Math.hypot(m.vx || 0, m.vz || 0), reach = 2 * R + sp * FRAME + 0.2;
-      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const o of endIn(E, m.i + di, m.j + dj)){
+    else {
+      /* (Nov 23, with the racks: a ball read is one that may be struck this tick, and a ball struck moves within the tick, so it reads in turn:
+         whatever lies about it nearer than two radii and what is left of the tick's travel, all round, since its way is not known until it is
+         struck. A rack is read from its front ball back in the one tick, and nothing else is: E4 in docs/tables.md.) */
+      const P = new Map(), inP = (i, j) => { const k = i + ',' + j; let L = P.get(k); if (!L){ L = endIn(E, i, j); P.set(k, L); } return L; }, Q = [];
+      const look = (m, id, reach, vx, vz, sp) => { for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const o of inP(m.i + di, m.j + dj)){
         if (o.id === id || seen.has(o.id)) continue;
         const dx = o.x + di * E.PX - m.x, dz = o.z + dj * E.PZ - m.z, d = Math.hypot(dx, dz);
         if (d > reach) continue;
-        if (sp > 0 && dx * m.vx + dz * m.vz <= 0 && d > 2 * R) continue;      // (behind it and not touching: not in its front half, not read)
-        E.reads++; add(o, !E.wr.has(o.id)); } }
+        if (sp > 0 && dx * vx + dz * vz <= 0 && d > 2 * R) continue;          // (behind it and not touching: not in its front half, not read)
+        E.reads++; add(o, !E.wr.has(o.id)); Q.push([o, Math.max(0, reach - Math.max(0, d - 2 * R))]); } };
+      for (const id of [...E.moving]){ const m = E.wr.get(id), sp = Math.hypot(m.vx || 0, m.vz || 0); look(m, id, 2 * R + sp * FRAME + 0.2, m.vx, m.vz, sp); }
+      for (let n = 0; n < Q.length; n++){ const [o, reach] = Q[n]; if (reach > 2 * R) look(o, o.id, reach, 0, 0, 0); }
+    }
     B.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);                // (one order whoever holds the list: the engine takes its pairs in the list's)
     if (B.length > E.maxB) E.maxB = B.length;
     const was = B.map(b => [b.x, b.z]);
@@ -56743,7 +56754,7 @@ const TRICK_APP = (() => {
   function endAdopt(g){
     const E = endWorld(g.c, g.r), [i, j] = endIJ(E, g.c, g.r), w = E.wr.get('cue');
     if (!w || (!E.moving.size && (Math.abs(w.i - i) > 1 || Math.abs(w.j - j) > 1))){
-      let x = -E.PX / 4, z = 0; for (let t = 0; t < 40 && endIn(E, i, j).some(b => b.id !== 'cue' && Math.hypot(b.x - x, b.z - z) < 2 * R + 0.4); t++){ x += 0.7; z = (t % 5 - 2) * 0.9; }
+      let x = HEAD[0], z = HEAD[1]; for (let t = 0; t < 40 && endIn(E, i, j).some(b => b.id !== 'cue' && Math.hypot(b.x - x, b.z - z) < 2 * R + 0.4); t++){ x += 0.7; z = (t % 5 - 2) * 0.9; }
       endCue(E, i, j, x, z); }
     endSync(E, g);
   }
@@ -58074,12 +58085,13 @@ const TRICK_APP = (() => {
       ctx.fillStyle = '#111111'; ctx.font = 'bold ' + Math.round(sz * 0.085) + 'px ' + UI_SANS; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('8', sz * 0.62, sz * 0.505);
       dot(ctx, sz * 0.26, sz * 0.5, sz * 0.045, '#f2f0ea'); },
     debug: { rack8, eightOn, eightFinish, eightCands, eightPlan, eightPlanGen, eightAuto, eightTitle, grpOf } });
-  app.endless = matchApp(MATCH.endless, { name: 'The endless table', hint: 'one cloth without end, a board a patch of it: bring a board in and shoot',
+  app.endless = matchApp(MATCH.endless, { name: 'The endless table', hint: 'one cloth without end, a rack on every board: bring a board in and break',
     level: 'The endless table has no levels: every patch is as the rule makes it.', again: 'Lay the cloth again', againTip: 'Every ball back where the rule puts it, nothing kept.',
     icon(ctx, sz){ ctx.fillStyle = '#16513f'; ctx.fillRect(0, sz * 0.12, sz, sz * 0.76);
       for (const [x, y, c] of [[0.12, 0.3, '#e3c33b'], [0.34, 0.66, '#d23a2f'], [0.5, 0.36, '#2a4fb0'], [0.7, 0.7, '#e07a2a'], [0.86, 0.3, '#6a3a9a'], [0.93, 0.62, '#1f7a4a']]) dot(ctx, x * sz, y * sz, sz * 0.045, c);
       dot(ctx, sz * 0.2, sz * 0.55, sz * 0.05, '#f2f0ea'); },
-    more: { cellPhoto(c, r, bp){ return (bp || 0) >= HI_PX ? 'endless:h' : 'endless:l'; }, photoCanvas(key){ return paint(key === 'endless:h' ? 1024 : 256, true, true); }, cellGrid(){ return GRID_E; },
+    more: { fillsCell: true,   // (Nov 23: "Close the margin between boards.": the patches lie edge to edge, one cloth to look at as it is one to play on)
+            cellPhoto(c, r, bp){ return (bp || 0) >= HI_PX ? 'endless:h' : 'endless:l'; }, photoCanvas(key){ return paint(key === 'endless:h' ? 1024 : 256, true, true); }, cellGrid(){ return GRID_E; },
             cellFar: { light: CLOTH, dark: CLOTH } },
     debug: { endMake, endRule, endIn, endTick, endStrike, endCue, endCompare, endWorld, endIJ, endLine, endView, world: () => EWORLD, noWalls, CUSHIONS } });
   app.hockey = matchApp(MATCH.hockey, { name: 'Pool hockey', hint: 'drive your mallet with a finger and knock the ball into the far goal; first to ' + HK_TO,
