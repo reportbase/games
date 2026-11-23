@@ -1320,3 +1320,15 @@ pool games' views and pad over and leaving each game's own physics). In `CURLING
   from the lower right; the real ▦ shows the whole sheet (higher, tilted more, the map away) and the next ▦ comes back. The older curling checks
   turn the view off (`_debug.behind(false)`): their clicks are aimed over the sheet framed whole. Run: the new check and the first curling
   check; not run: "played with the row shut", which presses the pad's curl.
+
+**Bowling from behind the ball** (Nov 23, the second of "How about bowling and curling.  They could be similar to the pool games.", "Proceed"). In
+`BOWLING_APP`, as curling's above:
+- **Behind the ball** (`behind`, from `stepGame` once a ball, `g.viewTag`): the view goes down behind the ball at the foul line looking up the
+  lane, tilted 40°, the eye `BEHIND_H` 0.46 lane lengths up, looking at `BEHIND_V` 0.68 (0.36 and 0.78 first: the back rows of the deck were off
+  the top of the screen). Not in the leave editor.
+- **The pad in the lower left** (`playPadLow`): ▦ the whole lane and back (`wholeLane`, `WHOLE`), and the ball's button beside it.
+- **The pin deck, small** (`mapDraw`, `#bwMap`, lower right): the deck and gutters from above, the ten spots, every pin standing white with a
+  red centre, a pin down a grey oval lying the way it fell until it is swept, the ball as it comes through.
+- Not done here: a replay of a frame, pool's hold-and-pull bar (the ball is still swiped up the lane), the spin dial (the hook is the row's).
+- The smoke test (part 7): as curling's check, on a ten-frame game begun by a real click; the pad's keys `view,ball`. Part 7 opens by turning
+  bowling's view off for its older checks. Run: the new check and bowling's first check; not run: the spares, oil and row-shut checks.

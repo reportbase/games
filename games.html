@@ -62629,6 +62629,7 @@ const BOWLING_APP = (() => {
     const t = performance.now(), dt = g.last ? Math.min(0.25, (t - g.last) / 1000) : 0;
     g.last = t; g.acc += dt;
     while (g.acc >= TICK){ g.acc -= TICK; tick(g.G); if (g.G.state === 'over'){ over(g); break; } }
+    { const tag = g.G.rolls.length + ':' + (g.G.tries || 0); if (g.viewTag !== tag){ g.viewTag = tag; behind(g); } }   // (behind the ball for each one bowled: BEHIND THE BALL)
   }
   function over(g){
     g.state = 'over'; g.overAt = performance.now();
@@ -62827,6 +62828,55 @@ const BOWLING_APP = (() => {
     return true;
   }
 
+  /* BEHIND THE BALL, THE WHOLE LANE A BUTTON AWAY, THE PINS SMALL (Nov 23: "How about bowling and curling.  They could be similar to the pool
+     games.", then "Proceed": the pool games' views and pad carried over, the ball, the oil and the pins left as they are). For each ball the
+     view goes down behind it at the foul line, looking up the lane, tilted `BEHIND_PITCH` and low (`behind`, from `stepGame` once a ball). The
+     play pad stands in the lower left (`playPadLow`): ▦ is the whole lane from above and back (`wholeLane`, `WHOLE`: the view is left alone
+     while it is up), with the ball's button beside it. While the whole lane is not up the pin deck from straight above stands in the lower
+     right (`mapDraw`, `#bwMap`): every pin standing white with its red neck, a pin down lying grey until it is swept, the ball as it comes
+     through. From behind the ball the back rows hide behind the front ones, and which pins are left is what the next ball is aimed by. It
+     takes no touches and is away with the bottom row open and in the leave editor. */
+  let WHOLE = false, BEHIND_ON = true; const BEHIND_PITCH = 40, BEHIND_H = 0.46, BEHIND_V = 0.68, WHOLE_PITCH = 62;
+  function behind(g){
+    try {
+      if (!BEHIND_ON || WHOLE || ED.on || !g || g.state !== 'play' || liveGame() !== g) return;
+      const Wd = window.FIELD_WORLD, T = Wd.target, bW = Wd.boardW(), L = window.LAB || {};
+      Wd.viewTo({ x: T.boardX, z: T.boardZ + (0.5 - BEHIND_V) * bW * (L.cellH || 1), yaw: fwdYaw(), pitch: BEHIND_PITCH, zoom: Wd.zoomFor(BEHIND_H * bW) });
+    } catch {}
+  }
+  function wholeLane(on){
+    WHOLE = !!on;
+    try { if (WHOLE){ const Wd = window.FIELD_WORLD; Wd.st.pitch = WHOLE_PITCH; Wd.st.yawV = 0; Wd.target.yaw = fwdYaw(); zoomBoardToFit(); } else behind(liveGame()); } catch {}
+    try { fieldItemsChanged(); } catch {} try { bbRefreshNow(); } catch {}
+  }
+  const MAP = { el: null, cv: null, seen: 0, sig: '' }, MAP_W = 118, MAP_Y0 = HEAD - 3 * S * 0.866 - 0.05, MAP_Y1 = HEAD + 0.07;
+  function mapEnsure(){
+    if (MAP.el || typeof document === 'undefined') return MAP.el;
+    const el = document.createElement('div'), cv = document.createElement('canvas'), h = Math.round(MAP_W * (MAP_Y1 - MAP_Y0) / W); el.id = 'bwMap'; cv.width = MAP_W * 2; cv.height = h * 2;
+    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + h + 'px;z-index:29;display:none;pointer-events:none;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.28);box-shadow:0 1px 4px rgba(0,0,0,.6);box-sizing:border-box';
+    cv.style.cssText = 'display:block;width:100%;height:100%';
+    el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
+    setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > 1200) mapHide(); }, 200);
+    return el;
+  }
+  function mapHide(){ if (MAP.el) MAP.el.style.display = 'none'; MAP.sig = ''; }
+  function mapDraw(g){
+    if (!mapEnsure()) return;
+    let open = false; try { open = !document.body.classList.contains('bb-collapsed'); } catch {}
+    if (WHOLE || open || ED.on || !g || g.state !== 'play' || !g.G){ mapHide(); return; }
+    MAP.seen = performance.now(); MAP.el.style.display = 'block';
+    const G = g.G, P = G.pins.filter(p => !p.pit), ball = G.B && !G.B.pit && G.B.y < MAP_Y1 + BR ? G.B : null;
+    const sig = P.map(p => (p.down ? 'd' : 'u') + p.x.toFixed(3) + ',' + p.y.toFixed(3)).join('|') + '#' + (ball ? ball.x.toFixed(3) + ',' + ball.y.toFixed(3) : '');
+    if (sig === MAP.sig) return; MAP.sig = sig;
+    const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, Hd = MAP.cv.height, k = Wd / W, X = x => x * k, Y = y => (y - MAP_Y0) * k;
+    c.fillStyle = '#16181d'; c.fillRect(0, 0, Wd, Hd);                                            // (the gutters and the pit)
+    c.fillStyle = '#d9b47a'; c.fillRect(X(CX - EDGE), 0, LANE * k, Hd);                           // (the deck)
+    c.fillStyle = 'rgba(0,0,0,.18)'; for (const [x, y] of SPOTS){ c.beginPath(); c.arc(X(x), Y(y), PR * k * 0.55, 0, 7); c.fill(); }   // (the spots)
+    for (const p of P){ const x = X(p.x), y = Y(p.y), r = PR * k * 1.15;
+      if (p.down){ c.save(); c.translate(x, y); c.rotate(p.ang || 0); c.fillStyle = 'rgba(120,124,132,.9)'; c.beginPath(); c.ellipse(0, 0, r * 0.75, r * 1.9, 0, 0, 7); c.fill(); c.restore(); }
+      else { c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = '#f6f4ee'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = 'rgba(0,0,0,.65)'; c.stroke(); c.beginPath(); c.arc(x, y, r * 0.45, 0, 7); c.fillStyle = '#d23a2f'; c.fill(); } }
+    if (ball){ c.beginPath(); c.arc(X(ball.x), Y(ball.y), BR * k, 0, 7); c.fillStyle = '#2a3550'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = 'rgba(255,255,255,.7)'; c.stroke(); }
+  }
   const app = {
     name: 'bowling',
     realtime: true,
@@ -62876,7 +62926,7 @@ const BOWLING_APP = (() => {
     cellItems(c, r, bp){
       const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), lane = laneOf(idx, lv), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
       if (ED.on && ED.key === k) return itemsOf({ pins: leavePins(ED.xy), ball: null, score: null }, bp, lane);      // (the leave being made)
-      if (g && g.state !== 'ready' && g.G){ if (live) stepGame(g); else g.last = 0; return itemsOf(liveView(g), bp, lane); }
+      if (g && g.state !== 'ready' && g.G){ if (live){ stepGame(g); mapDraw(g); } else g.last = 0; return itemsOf(liveView(g), bp, lane); }
       if (SET.mode === 'spares'){
         const J = leaveSoon(jobFor(c, r), live);
         if (!J.done) return itemsOf({ pins: J.cur ? leavePins(J.cur) : [], ball: null, score: null }, bp, lane);
@@ -62902,7 +62952,9 @@ const BOWLING_APP = (() => {
     },
     onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
     onSelect(){ return true; },
-    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) }; },
+    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) };
+      if (LIVE){ const g = GAMES.get(gkey(LIVE.c, LIVE.r)); if (g) g.viewTag = null; } else mapHide(); },   // (brought in again: behind the ball again)
+    onLeave(){ mapHide(); },
     onCellTap(c, r, u, v){
       if (ED.on) return edTap(c, r, u, v);
       if (performance.now() - ateAt < 400) return true;
@@ -62922,8 +62974,10 @@ const BOWLING_APP = (() => {
     noDoubleTap(){ if (ED.on) return 'always'; const g = liveGame(); return !!(g && g.state === 'play'); },
     // (the play pad: the ball in hand, a tap for the next; Oct 28, "1,2")
     playActs(c, r){ if (ED.on) return null; const g = liveGame(); if (!g || g.state !== 'play' || g.c !== c || g.r !== r) return null; const B = BALLS[SET.ball];
-      return [{ key: 'ball', glyph: B.glyph, label: B.id, title: B.name + ': ' + B.say + '. A tap for the next ball (B).' }]; },
-    onPlayAct(c, r, key){ const g = liveGame(); if (key === 'ball') chooseBall(g); return true; },
+      return [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the ball, up the lane' : 'The whole lane from above', on: WHOLE },
+              { key: 'ball', glyph: B.glyph, title: B.name + ': ' + B.say + '. A tap for the next ball (B).' }]; },
+    playPadLow: true,
+    onPlayAct(c, r, key){ const g = liveGame(); if (key === 'view') wholeLane(!WHOLE); else if (key === 'ball') chooseBall(g); return true; },
     keepsPress: true,
     claimsPan(u, v){
       if (ED.on){ if (u == null || LIVE == null || gkey(LIVE.c, LIVE.r) !== ED.key) return false; const i = nearPin(u * W, v, 2 * PR); if (i < 0) return false; ED.drag = { i, moved: false }; return true; }
@@ -62960,7 +63014,7 @@ const BOWLING_APP = (() => {
               PATTERNS, BALLS, dryAt, wearOn, freshLane, chooseBall, colOf, ftY,
               swipeOf, BALL_GRAB, COURSE, SP_LV, parOfWindow, triesStars, shotSearch, leaveGen, leaveJob, leaveWork, leaveNow, jobFor, mineJob, spareRec, leavePins, spotsOf, clearsAll, setMode, LEAVES, SBEST,
               ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edPlace, cleanLeave, MINE, shareLeave, takeLeave, ED_TOOLS, ED_ACTS, DECK,
-              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
+              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, behind: v => { BEHIND_ON = !!v; }, wholeLane, MAP, get WHOLE(){ return WHOLE; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
   };
   // (a pin's outline turned on the lathe; lying down, laid along +z with its base at the middle)
   function pinGeo(T, down){
