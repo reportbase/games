@@ -978,7 +978,9 @@
   #playPad.low button { font-size: 1.125rem; }
   /* (Nov 23: "The button in the lower left should toggle like the button in the upper right and have a toggle color.": one glyph whichever way it
      stands, and while the whole table is up the disc is draw's gold, as a pressed chip is) */
-  #playPad.low button.on, #playPad.low button.on:hover { background: var(--dgold); color: #14141a !important; border-color: rgba(212, 160, 82, .9); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
+  /* (Nov 23, later: "Lowe's right button should be the same style as the upper right button.   The fill color is different": the gold disc was a
+     fill the menu's button never has. On, it is now the menu's own pressed look: the same dark disc, the ring gold.) */
+  #playPad.low button.on, #playPad.low button.on:hover { background: rgba(18, 21, 28, .55); color: #fff !important; border-color: rgba(232, 200, 106, .95); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
   #boardBrowser .bb-tile.active .bb-ico { border: 2px solid var(--dgold); box-shadow: 0 0 0 2px rgba(6, 8, 12, .92), 0 0 14px 2px rgba(212, 160, 82, .5), 0 8px 22px rgba(0, 0, 0, .6); }
   #gameIndex { z-index: 95; }
   /* ABOVE THE PANEL IT BELONGS TO. The track is a sibling in <body>, not a
