@@ -61286,6 +61286,43 @@ const SQUASH_APP = (() => {
      time in the boards' share of time, frames of every stone at `REC_HZ`), played back on its own phase (`BOARD_KIT.frameAt`).
    - THROUGH: the game's score as stars (a win by 3 or more ★★★, a win ★★, a draw ★), the most kept a board (`curling.best`);
      a tap on a finished board goes on to the board beside. */
+/* THE PULL BAR, FOR ANY GAME (Nov 23: "Neigther game work very well.  How do I shot the ball, long press doesn't work", of curling and bowling
+   after they took the pool games' views): in pool a press held still and then pulled is the shot, and with the same view and the same pad the
+   hand expected the same of these two. This is pool's bar as a kit: `PULL_BAR.arm(xy, o)` from a game's `claimsPan` starts the wait; a press
+   still held still after `hold` ms shows the bar by the finger; it fills with how far the finger then goes from where it pressed (`PX` the whole
+   of it), telling the game as it goes (`o.set(f)`, f 0 to 1); the lift shoots (`o.go(f)`) or, let go at once, shoots nothing (`o.cancel()`). A
+   finger that moves before the wait is up is an ordinary drag and the bar never shows. It listens on the window, before the field, so it needs
+   nothing of a game's `onPan` but to stand aside while it is up (`active()`). Pool's own bar is its own still. */
+const PULL_BAR = (() => {
+  const CFG = { hold: 450 }, PX = 200; let el = null, fill = null, armed = null, cur = null, tm = 0;
+  function ensure(){
+    if (el || typeof document === 'undefined') return el;
+    el = document.createElement('div'); el.id = 'pullBar';
+    el.style.cssText = 'position:fixed;left:0;top:0;z-index:30;display:none;width:46px;height:min(30vh,230px);border:1px solid rgba(255,255,255,0.18);border-radius:23px;background:rgba(12,12,17,0.6);overflow:hidden;pointer-events:none';
+    fill = document.createElement('div'); fill.style.cssText = 'position:absolute;left:0;right:0;top:0;height:0;background:linear-gradient(#d4a05233,#d4a052cc)';
+    const word = document.createElement('span'); word.textContent = 'pull'; word.style.cssText = 'position:absolute;left:0;right:0;bottom:8px;text-align:center;font:0.75rem ' + UI_SANS + ';color:#b8b4a8';
+    el.append(fill, word); document.body.appendChild(el); return el;
+  }
+  const wake = () => { try { window.fieldWake && window.fieldWake(); } catch {} };
+  function start(a){
+    if (!ensure()) return; cur = { x0: a.x, y0: a.y, f: 0, o: a.o };
+    el.style.display = 'block'; fill.style.height = '0'; const h = el.offsetHeight || 220;
+    el.style.left = Math.round(Math.max(4, Math.min(innerWidth - 52, a.x + 36))) + 'px'; el.style.top = Math.round(Math.max(4, Math.min(innerHeight - h - 4, a.y - h / 2))) + 'px';
+    try { ARCADE.audio(); } catch {} if (a.o.begin) try { a.o.begin(); } catch {} wake();
+  }
+  function end(){ const c = cur; if (!c) return; cur = null; if (el){ el.style.display = 'none'; fill.style.height = '0'; }
+    try { if (c.f > 0.03) c.o.go(c.f); else if (c.o.cancel) c.o.cancel(); } catch {} wake(); }
+  function cancel(){ clearTimeout(tm); armed = null; }
+  function arm(xy, o){ cancel(); if (!xy || cur) return; armed = { x: xy[0], y: xy[1], o }; tm = setTimeout(() => { const a = armed; armed = null; if (a) start(a); }, CFG.hold); }
+  if (typeof window !== 'undefined'){
+    addEventListener('pointermove', e => {
+      if (armed && Math.hypot(e.clientX - armed.x, e.clientY - armed.y) > 10) cancel();
+      if (cur){ cur.f = Math.max(0, Math.min(1, Math.hypot(e.clientX - cur.x0, e.clientY - cur.y0) / PX)); fill.style.height = (cur.f * 100) + '%'; try { cur.o.set(cur.f); } catch {} wake(); } }, true);
+    const up = () => { cancel(); if (cur) setTimeout(end, 0); };
+    addEventListener('pointerup', up, true); addEventListener('pointercancel', up, true);
+  }
+  return { arm, cancel, active: () => !!cur, armed: () => !!armed, hold: v => { CFG.hold = v; } };
+})();
 const CURLING_APP = (() => {
   const W = 0.42, SR = 0.0128, SH = 0.011, TEE = 0.2, HOG = 0.5, REL = 0.93, CX = W / 2;
   const RINGS = [0.162, 0.108, 0.054, 0.016], HOUSE = RINGS[0], BACK = TEE - HOUSE;
@@ -61946,8 +61983,17 @@ const CURLING_APP = (() => {
     },
     noDoubleTap(){ const g = liveGame(); return !!(g && g.state === 'play'); },
     keepsPress: true,
-    claimsPan(u, v){ const g = liveGame(); if (!myTurn(g) || u == null) return false; DRAG = { g, moved: false, stone: Math.hypot(u * W - CX, v - REL) < STONE_GRAB }; return true; },
+    /* (Nov 23: "How do I shot the ball, long press doesn't work": a press held still and then pulled is the throw, as it is the shot in pool
+       (`PULL_BAR`): the bar's fill is where the stone is to come to rest, from just up the sheet to a peel's weight, the dots showing it as the
+       finger goes, and the lift throws. A press off the sheet does it too. The stone dragged, the tap on it and Enter still throw.) */
+    claimsPan(u, v, xy){ const g = liveGame(); if (!myTurn(g) || (u == null && !xy)) return false;
+      DRAG = { g, moved: false, stone: u != null && Math.hypot(u * W - CX, v - REL) < STONE_GRAB };
+      const was = g.G.shot.w;
+      PULL_BAR.arm(xy, { set: f => { if (myTurn(g)){ setWeight(g, weightAt((REL - 0.1) * (1 - f))); try { fieldItemsChanged(); } catch {} } },
+        go: () => { ateAt = performance.now(); if (myTurn(g)) throwMine(g); }, cancel: () => { ateAt = performance.now(); if (myTurn(g)) setWeight(g, was); } });
+      return true; },
     onPan(dx, dy, at){ if (!DRAG) return false;
+      if (PULL_BAR.active()){ DRAG.moved = true; return true; }   // (the bar's pull, not the broom's or the stone's drag)
       if (at && myTurn(DRAG.g)){
         if (DRAG.stone){ if (at.v < REL - 0.03){ const w = weightAt(at.v); if (Math.abs(w - DRAG.g.G.shot.w) > 0.004){ setWeight(DRAG.g, w); DRAG.moved = true; say('Weight: ' + weightName(w), 900); } } }
         else { setBroom(DRAG.g, at.u * W, at.v); DRAG.moved = true; } }
@@ -62979,13 +63025,20 @@ const BOWLING_APP = (() => {
     playPadLow: true,
     onPlayAct(c, r, key){ const g = liveGame(); if (key === 'view') wholeLane(!WHOLE); else if (key === 'ball') chooseBall(g); return true; },
     keepsPress: true,
-    claimsPan(u, v){
+    claimsPan(u, v, xy){
       if (ED.on){ if (u == null || LIVE == null || gkey(LIVE.c, LIVE.r) !== ED.key) return false; const i = nearPin(u * W, v, 2 * PR); if (i < 0) return false; ED.drag = { i, moved: false }; return true; }
-      const g = liveGame(); if (!myTurn(g) || u == null) return false;
+      const g = liveGame(); if (!myTurn(g) || (u == null && !xy)) return false;
+      if (u == null){ u = -9; v = -9; }   // (a press off the lane: nothing of the lane's, but the bar's hold still)
       // (a press on the ball at the foul line is the ball's: along the line it moves where you stand, up the lane it bowls)
       const s = g.G.shot, onBall = Math.hypot(u * W - s.sx, v - (FOUL - BR - 0.004)) < BALL_GRAB;
-      DRAG = { g, moved: false, ball: onBall, pts: onBall ? [[u * W, v, performance.now()]] : null, up: false }; return true; },
+      DRAG = { g, moved: false, ball: onBall, pts: onBall ? [[u * W, v, performance.now()]] : null, up: false };
+      /* (Nov 23: "How do I shot the ball, long press doesn't work": a press held still and then pulled bowls, as it shoots in pool (`PULL_BAR`):
+         the bar's fill is the ball's speed, slowest to fastest, and the lift bowls. The swipe up the lane, the tap on the ball and Enter still do.) */
+      { const was = s.v; PULL_BAR.arm(xy, { set: f => { if (myTurn(g)){ setShot(g, { v: V_MIN + (V_MAX - V_MIN) * f }); try { fieldItemsChanged(); } catch {} } },
+          go: () => { ateAt = performance.now(); DRAG = null; if (myTurn(g)) bowlMine(g); }, cancel: () => { ateAt = performance.now(); if (myTurn(g)) setShot(g, { v: was }); } }); }
+      return true; },
     onPan(dx, dy, at){
+      if (PULL_BAR.active()){ if (DRAG) DRAG.moved = true; return true; }   // (the bar's pull: not an aim, nor the ball's swipe)
       if (DRAG && DRAG.ball){
         if (at && myTurn(DRAG.g)){ const x = at.u * W, y = at.v; DRAG.pts.push([x, y, performance.now()]); if (DRAG.pts.length > 400) DRAG.pts.splice(1, 1);
           if (y < FOUL - SWIPE_UP) DRAG.up = true;

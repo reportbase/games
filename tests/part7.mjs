@@ -1132,6 +1132,30 @@ try {
     await page.evaluate(() => { const D = window.getFieldApp()._debug; D.wholeLane(false); D.behind(false); });
   }
 
+  // THE PULL BAR IN CURLING AND BOWLING (Nov 23: "How do I shot the ball, long press doesn't work"): a real press held still shows the bar by the
+  // finger, the pull sets the weight (curling) or the speed (bowling), and the lift throws or bowls; a press let go without a pull shoots nothing.
+  {
+    current = 'pull bar';
+    for (const id of ['curling', 'bowling']){
+      await page.evaluate(async id => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); const D = window.getFieldApp()._debug; if (D.setMode) D.setMode('game'); D.behind(false); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); }, id);
+      await page.mouse.click(640, 400); await drawn(page, 800);
+      const pS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r), b = document.querySelector('#pullBar');
+        return g && g.G ? { G: g.G.state, set: g.G.shot.w != null ? g.G.shot.w : g.G.shot.v, mine: D.myTurn(g), bar: b ? b.style.display : 'none' } : null; });
+      for (let k = 0; k < 60 && !((await pS()) || {}).mine; k++) await frame(page, 500);
+      const p0 = await pS();
+      await page.mouse.move(640, 300); await page.mouse.down(); await page.waitForTimeout(900); await drawn(page, 300);   // (held, let go without a pull)
+      const p1 = await pS(); await page.mouse.up(); await drawn(page, 500);
+      const p2 = await pS();
+      await page.mouse.move(640, 300); await page.mouse.down(); await page.waitForTimeout(900); await drawn(page, 300);
+      for (let y = 320; y <= 440; y += 20){ await page.mouse.move(640, y); await page.waitForTimeout(60); }
+      const p3 = await pS(); await page.mouse.up(); await drawn(page, 700);
+      const p4 = await pS();
+      const ok = p0 && p0.mine && p1.bar === 'block' && p2.bar === 'none' && p2.G === 'aim' && p2.set === p0.set && p3.bar === 'block' && p3.set !== p0.set && p4.bar === 'none' && p4.G !== 'aim';
+      if (!ok) failures.push('[pull bar ' + id + '] ' + JSON.stringify({ p0, p1, p2, p3, p4 }));
+      console.log(`${ok ? 'ok  ' : 'FAIL'} the pull bar in ${id}: a real press held shows the bar, let go at once nothing is shot, pulled it sets the ${id === 'curling' ? 'weight' : 'speed'} and the lift ${id === 'curling' ? 'throws' : 'bowls'}`);
+    }
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
