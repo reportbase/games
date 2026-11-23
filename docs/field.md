@@ -598,3 +598,8 @@ they were. It shows wherever boards are not square and the view is turned: the p
 a toggle color."). It switched views already, but changed its glyph (▦, then 🎱) and its pressed state was only the hover's gold ring. It keeps the
 one glyph now, and while the whole table is up the disc is draw's gold with a dark glyph (`#playPad.low button.on`, a pressed chip's colours). The
 menu button is as it was. Checked by a probe: the real click turns the button's class and colour on and off again.
+
+**The whole-table button's fill is the menu's** (Nov 23: "Lowe's right button should be the same style as the upper right button.   The fill color is
+different", read as the lower-left button, the only one down there). Off, the two measured the same (fill, ring, glyph, shadow); on, the
+whole-table button was a gold disc, a fill the menu's button never has. On, it is now the menu's own pressed look: the dark disc with the ring
+gold. It keeps its one glyph. Checked by a probe of the computed fill, off and on, against the menu button's.
