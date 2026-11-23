@@ -974,8 +974,11 @@
     border: 1.5px solid rgba(255, 255, 255, .7); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); color: #fff; -webkit-backdrop-filter: none; backdrop-filter: none;
     display: flex; align-items: center; justify-content: center; transition: border-color .12s ease; }
   body #menuBtn.chip:hover, #playPad.low button:hover { background: rgba(18, 21, 28, .55); border-color: rgba(232, 200, 106, .95); }
-  body #menuBtn.chip[aria-pressed="true"], body #menuBtn.chip[aria-expanded="true"], #playPad.low button.on { background: rgba(18, 21, 28, .55); color: #fff !important; border-color: rgba(232, 200, 106, .95); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
+  body #menuBtn.chip[aria-pressed="true"], body #menuBtn.chip[aria-expanded="true"] { background: rgba(18, 21, 28, .55); color: #fff !important; border-color: rgba(232, 200, 106, .95); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
   #playPad.low button { font-size: 1.125rem; }
+  /* (Nov 23: "The button in the lower left should toggle like the button in the upper right and have a toggle color.": one glyph whichever way it
+     stands, and while the whole table is up the disc is draw's gold, as a pressed chip is) */
+  #playPad.low button.on, #playPad.low button.on:hover { background: var(--dgold); color: #14141a !important; border-color: rgba(212, 160, 82, .9); box-shadow: 0 1px 4px rgba(0, 0, 0, .6); }
   #boardBrowser .bb-tile.active .bb-ico { border: 2px solid var(--dgold); box-shadow: 0 0 0 2px rgba(6, 8, 12, .92), 0 0 14px 2px rgba(212, 160, 82, .5), 0 8px 22px rgba(0, 0, 0, .6); }
   #gameIndex { z-index: 95; }
   /* ABOVE THE PANEL IT BELONGS TO. The track is a sibling in <body>, not a
@@ -57947,7 +57950,7 @@ const TRICK_APP = (() => {
     onLeave(){ ctlHide(); },
     fitView(){ WHOLE = false; behindCue(liveGame()); },
     playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r || (g.nine && g.nine.rt)) return null;
-      return [{ key: 'view', glyph: WHOLE ? '🎱' : '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }]; },
+      return [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }]; },
     playPadLow: true,                                         // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")
     onPlayAct(c, r, key){ if (key !== 'view') return false; wholeTable(!WHOLE); try { bbRefreshNow(); } catch {} return true; },                       // (the game opens behind the white: BEHIND THE WHITE)
     pitchFloor: 40,                                           // (Nov 22: "Minimum tilt 40degrees."; 20 for a day, Nov 21; the field's own floor is 35)
