@@ -23,7 +23,8 @@ try {
   current = 'curling';
   {
     const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); await new Promise(ok => setTimeout(ok, 2500)); });
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); window.getFieldApp()._debug.behind(false);   // (Nov 23: these clicks are aimed over the sheet framed whole, as it used to open; the view behind the stone is checked at the end)
+      await new Promise(ok => setTimeout(ok, 2500)); });
     const cu = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
       out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
@@ -275,7 +276,7 @@ try {
     for (let w = 0; w < 60; w++){ const q = await bs(); if (q.tries > 0 || q.over) break; await frame(page, 250); }
     const b2 = await bs(); out.bwSwipe = { tries: b2.tries, over: b2.over, h: +b2.h.toFixed(2) };
     // curling
-    await go('curling');
+    await go('curling'); await page.evaluate(() => window.getFieldApp()._debug.behind(false));
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
     p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
     const cs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && g.G && { st: g.G.state, w: g.G.shot.w, curl: g.G.shot.curl }; });
@@ -1083,6 +1084,30 @@ try {
       && /you played it/.test(sg.title) && sg.wrong === 'over,false' && sg.own === '-1,true';
     if (!sgOk) failures.push('[simon songs] ' + JSON.stringify(sg));
     console.log(`${sgOk ? 'ok  ' : 'FAIL'} simon songs: twelve tunes (pads ${sg.pads}) at their own pitches, a button a song, round n playing n notes, the whole of Twinkle played back won (${JSON.stringify(sg.end)}), a wrong pad lost`);
+
+  // CURLING FROM BEHIND THE STONE (Nov 23: "How about bowling and curling.  They could be similar to the pool games.", "Proceed"): a game begun
+  // by a real click is seen from behind the stone, low and tilted 40°; the pad stands in the lower left with ▦ and the curl; the house stands
+  // small in the lower right; the real ▦ shows the whole sheet, tilted more and from higher, the map away, and the next ▦ comes back.
+  {
+    current = 'curling behind the stone';
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); window.getFieldApp()._debug.behind(true); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    await page.mouse.click(640, 400); await drawn(page, 800);
+    const cS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, st = window.FIELD_WORLD.st, m = document.querySelector('#cuMap'), r = m && m.getBoundingClientRect(), pad = document.querySelector('#playPad');
+      return { pitch: st.pitch, zoom: st.zoom, whole: D.WHOLE, map: m ? [m.style.display, Math.round(innerWidth - r.right), Math.round(innerHeight - r.bottom)] : null, low: pad.className, keys: [...pad.querySelectorAll('button')].map(b => b.dataset.key).join() }; });
+    for (let k = 0; k < 40 && (await cS()).zoom > 20; k++) await frame(page, 400);
+    const b0 = await cS();
+    const view = async () => { const q = await page.evaluate(() => { const b = document.querySelector('#playPad button[data-key="view"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }); if (q){ await page.mouse.click(q[0], q[1]); await drawn(page, 600); } };
+    await view(); for (let k = 0; k < 40 && (await cS()).zoom < 40; k++) await frame(page, 400);
+    const b1 = await cS();
+    await view(); for (let k = 0; k < 40 && (await cS()).zoom > 20; k++) await frame(page, 400);
+    const b2 = await cS();
+    const ok = b0 && Math.abs(b0.pitch - 40) < 1 && b0.zoom < 20 && !b0.whole && b0.map && b0.map.join() === 'block,16,16' && b0.low === 'low' && /^view(,curl)?$/.test(b0.keys)
+      && b1.whole && b1.zoom > 40 && b1.pitch > 55 && b1.map[0] === 'none' && !b2.whole && b2.zoom < 20 && Math.abs(b2.pitch - 40) < 1 && b2.map[0] === 'block';
+    if (!ok) failures.push('[curling behind] ' + JSON.stringify({ b0, b1, b2 }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} curling from behind the stone: a game begun is seen low and tilted 40° from the delivery, the pad in the lower left, the house small in the lower right; the real ▦ shows the whole sheet and back`);
+    await page.evaluate(() => window.getFieldApp()._debug.wholeSheet(false));
+  }
+
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
 }
