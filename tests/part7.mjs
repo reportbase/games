@@ -85,7 +85,7 @@ try {
   // BOWLING ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow bowling
   // rules."): the pins ten pool balls on their spots; bowling's scoring (300, all fives 150, all fours 80, the marks); the rules on balls made up (a strike
   // sets the pins again and passes the turn, a first ball leaves its pins and keeps it, a gutter ball off a cushion counts nothing and leaves them as they
-  // stood, the spare passes it); the computer's ball; the real Enter bowling; a board no one plays bowling a game out
+  // stood, the spare passes it); no cushions, a ball off the board in the ditch; the computer's ball; the real Enter bowling; a board no one plays bowling a game out
   current = 'bowling';
   {
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')));
@@ -106,6 +106,10 @@ try {
       h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); out.first = [h.nine.rolls[0].join(), h.nine.turn, up(h), h.balls.filter(b => !b.cue && !b.sunk).map(b => b.n).join('')].join(';');
       play(h, 4, [4, 7], 1); out.gutter = [h.nine.rolls[0].join(), h.nine.turn, up(h)].join(';');
       h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); play(h, 4, [4, 7, 10]); out.spare = [h.nine.rolls[0].join(), h.nine.turn, up(h), D.bwlMarks(h.nine.rolls[0])].join(';');
+      // no cushions, a ditch (Nov 25): a ball bowled off the side lies in the ditch and is a gutter ball; a full hit's pins in the ditch are down
+      { const B0 = D.rackB(), sd = D.simB(B0, Math.PI / 3, 40, [0, 0, 0], 0), fh = D.simB(B0, 0.02, 55, [0, 0, 0], 0), dn = D.bwlDown(B0, fh).down;
+        out.ditch = [sd.cushions.length, fh.cushions.length, sd.final[0].off && Math.abs(sd.final[0].z) > 5, D.bwlDown(B0, sd).gutter,
+          fh.final.filter(b => b.off && b.n > 0).every(b => dn.includes(b.n)), fh.final.some(b => b.off && b.n > 0)].join(); }
       // the computer's ball meets a pin
       h = fresh(); h.nine.turn = 1; const P = D.matchPlan(D.MATCH.bowl, h, 3); out.plan = P.score >= 1 && isFinite(P.a) && P.p >= 2;
       fresh();
@@ -120,11 +124,11 @@ try {
       const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
       return { shots: R.shots, over: R.over, moves: at(0) !== at(0.5) && at(0.5) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind, n: last.length / 2 }; });
     const ok = bw && !bw.none && bw.rack && bw.score === '300,150,80' && bw.marks === 'X 7/ 9- X X X 2/ -- X XXX' && bw.name === 'Bowling' && bw.start === '11,0,true,true'
-      && bw.strike === '10;1;10' && bw.first === '7;0;3;4710' && bw.gutter === '7,0;1;10' && bw.spare === '7,3;1;10;7/' && bw.plan
+      && bw.strike === '10;1;10' && bw.first === '7;0;3;4710' && bw.gutter === '7,0;1;10' && bw.spare === '7,3;1;10;7/' && bw.plan && bw.ditch === '0,0,true,true,true,true'
       && went && went.shots === 1 && after && !after.anim && after.rolls === 1
       && rec.kind === 'bowl' && rec.shots >= 20 && rec.moves && rec.again && rec.n === 11;
     if (!ok) failures.push('[bowling] ' + JSON.stringify({ bw, went, after, rec }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (scores ${bw.score}; a strike, a leave of 4-7-10, a gutter ball and the spare by the rules; the real Enter bowled; a board no one plays bowled ${rec.shots} balls)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (scores ${bw.score}; a strike, a leave of 4-7-10, a gutter ball and the spare by the rules; no cushions, a ball off the side in the ditch; the real Enter bowled; a board no one plays bowled ${rec.shots} balls)`);
   }
 
 
