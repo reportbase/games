@@ -83,52 +83,56 @@ try {
   }
 
   // BOWLING ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow bowling
-  // rules."): the pins ten pool balls on their spots; bowling's scoring (300, all fives 150, all fours 80, the marks); the rules on balls made up (a strike
-  // sets the pins again and passes the turn, a first ball leaves its pins and keeps it, a gutter ball off a cushion counts nothing and leaves them as they
-  // stood, the spare passes it); no cushions, a ball off the board in the ditch; the computer's ball; the real Enter bowling; a board no one plays bowling a game out
+  // rules.", then "remove the cushions, of the ball goes off the board it falls in a ditch", then "Don't limit to two moves.     Game over if cue ball goes
+  // on the ditch.     Make the balls slighty bigger.  Add a score board to keep track of the moves."): the pins ten pool balls on their spots, every ball
+  // 1.15 of a pool ball; on balls made up, pins down a point each and swept, the rest stood, all ten down the pins set again, a miss scoring nothing, the
+  // white in the ditch ending the game with what it took counted; no cushions, a ball off the side in the ditch; the computer's ball keeping the white;
+  // the real Enter bowling and the scoreboard showing the move; a board no one plays bowling a game
   current = 'bowling';
   {
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')));
     await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
     const bw = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, out = {}, sc = r => D.bwlScore(r).total;
-      const B = D.rackB(); out.rack = B.length === 11 && B[0].cue && B.slice(1).every(b => b.n >= 1 && b.n <= 10 && !b.sunk && b.x === D.BWL_SPOT[b.n][0] && b.z === D.BWL_SPOT[b.n][1]);
-      out.score = [sc(Array(12).fill(10)), sc(Array(21).fill(5)), sc(Array(20).fill(4))].join();
-      out.marks = D.bwlMarks([10, 7, 3, 9, 0, 10, 10, 10, 2, 8, 0, 0, 10, 10, 10, 10]);
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      const B = D.rackB(); out.rack = B.length === 11 && B[0].cue && B.every(b => b.r === D.BWL_R) && D.BWL_R > 0.45 && B.slice(1).every(b => !b.sunk && b.x === D.BWL_SPOT[b.n][0] && b.z === D.BWL_SPOT[b.n][1]);
       const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
-      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.turn, g.nine.hand, /^Bowling/.test(D.bwlTitle(g))].join(); })();
+      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.hand, g.nine.score, /^Bowling/.test(D.bwlTitle(g))].join(); })();
       const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
-      // a ball made up: the white meets `first` (after `rails` cushions), the pins in `down` knocked well off their spots
-      const play = (h, first, down, rails = 0) => { const s = { first: first == null ? null : { n: first, rails }, sunk: [], contacts: [], cushions: [],
-        final: h.balls.map(b => ({ ...b, x: down.includes(b.n) ? b.x + 3 : b.x })) }; h.anim = { s }; D.bwlFinish(h, s); return h; };
-      const up = h => h.balls.filter(b => !b.cue && !b.sunk).length;
-      let h = fresh(); play(h, 1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]); out.strike = [h.nine.rolls[0].join(), h.nine.turn, up(h)].join(';');
-      h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); out.first = [h.nine.rolls[0].join(), h.nine.turn, up(h), h.balls.filter(b => !b.cue && !b.sunk).map(b => b.n).join('')].join(';');
-      play(h, 4, [4, 7], 1); out.gutter = [h.nine.rolls[0].join(), h.nine.turn, up(h)].join(';');
-      h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); play(h, 4, [4, 7, 10]); out.spare = [h.nine.rolls[0].join(), h.nine.turn, up(h), D.bwlMarks(h.nine.rolls[0])].join(';');
-      // no cushions, a ditch (Nov 25): a ball bowled off the side lies in the ditch and is a gutter ball; a full hit's pins in the ditch are down
-      { const B0 = D.rackB(), sd = D.simB(B0, Math.PI / 3, 40, [0, 0, 0], 0), fh = D.simB(B0, 0.02, 55, [0, 0, 0], 0), dn = D.bwlDown(B0, fh).down;
-        out.ditch = [sd.cushions.length, fh.cushions.length, sd.final[0].off && Math.abs(sd.final[0].z) > 5, D.bwlDown(B0, sd).gutter,
+      // a ball made up: the white meets `first`, the pins in `down` knocked well off their spots, the white left at (wx, 0) or in the ditch
+      const play = (h, first, down, off) => { const s = { first: first == null ? null : { n: first, rails: 0 }, sunk: [], contacts: [], cushions: [],
+        final: h.balls.map(b => b.cue ? { ...b, x: -2, z: 0, sunk: !!off, off: !!off } : { ...b, x: down.includes(b.n) ? b.x + 3 : b.x }) }; h.anim = { s }; D.bwlFinish(h, s); return h; };
+      const up = h => h.balls.filter(b => !b.cue && !b.sunk).map(b => b.n).join('');
+      let h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); out.first = [h.nine.score, h.nine.moves.length, h.nine.over, up(h), h.nine.racks, h.balls[0].x].join(';');
+      play(h, 4, [4, 7, 10]); out.rerack = [h.nine.score, h.nine.racks, up(h), h.nine.over].join(';');
+      play(h, null, []); out.miss = [h.nine.score, h.nine.moves.length, h.nine.moves[2].miss].join(';');
+      play(h, 1, [1, 2], true); out.ditchEnd = [h.nine.score, h.nine.over, h.nine.moves.length, h.nine.moves[3].off, /game over/.test(D.bwlTitle(h))].join(';');
+      h = fresh(); play(h, 1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]); out.strike = [h.nine.score, h.nine.moves[0].x, h.nine.racks, up(h)].join(';');
+      // no cushions, a ditch: a ball bowled off the side lies in the ditch; a full hit's pins in the ditch are down
+      { const B0 = D.rackB(), sd = D.simB(B0, Math.PI / 3, 40, [0, 0, 0], 0), fh = D.simB(B0, 0.02, 55, [0, 0, 0], 0), dn = D.bwlDown(B0, fh).down, ds = D.bwlDown(B0, sd);
+        out.ditch = [sd.cushions.length, fh.cushions.length, sd.final[0].off && Math.abs(sd.final[0].z) > 5, ds.whiteOff && ds.miss,
           fh.final.filter(b => b.off && b.n > 0).every(b => dn.includes(b.n)), fh.final.some(b => b.off && b.n > 0)].join(); }
-      // the computer's ball meets a pin
-      h = fresh(); h.nine.turn = 1; const P = D.matchPlan(D.MATCH.bowl, h, 3); out.plan = P.score >= 1 && isFinite(P.a) && P.p >= 2;
+      // the computer's ball meets a pin and keeps the white
+      h = fresh(); const P = D.matchPlan(D.MATCH.bowl, h, 4); out.plan = P.score >= 1 && isFinite(P.a) && P.p >= 2;
       fresh();
       return out;
     });
-    const g1 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim, rolls: g.nine.rolls[0].length, turn: g.nine.turn } : null; });
+    const g1 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r), sb = document.getElementById('bwScore');
+      return g ? { shots: g.shots, anim: !!g.anim, moves: g.nine.moves.length, over: g.nine.over, sb: sb && sb.style.display !== 'none' ? sb.textContent : null } : null; });
     await page.keyboard.press('Enter'); await drawn(page, 300);
     const went = await g1();
     for (let k = 0; k < 120 && (await g1()).anim; k++) await frame(page, 300);
+    await drawn(page, 300);
     const after = await g1();
-    const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true), last = R.s.frames[R.s.frames.length - 1];
+    const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
       const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
-      return { shots: R.shots, over: R.over, moves: at(0) !== at(0.5) && at(0.5) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind, n: last.length / 2 }; });
-    const ok = bw && !bw.none && bw.rack && bw.score === '300,150,80' && bw.marks === 'X 7/ 9- X X X 2/ -- X XXX' && bw.name === 'Bowling' && bw.start === '11,0,true,true'
-      && bw.strike === '10;1;10' && bw.first === '7;0;3;4710' && bw.gutter === '7,0;1;10' && bw.spare === '7,3;1;10;7/' && bw.plan && bw.ditch === '0,0,true,true,true,true'
-      && went && went.shots === 1 && after && !after.anim && after.rolls === 1
-      && rec.kind === 'bowl' && rec.shots >= 20 && rec.moves && rec.again && rec.n === 11;
+      return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
+    const ok = bw && !bw.none && bw.rack && bw.name === 'Bowling' && bw.start === '11,true,0,true'
+      && bw.first === '7;1;0;4710;1;-2' && bw.rerack === '10;2;12345678910;0' && bw.miss === '10;3;true' && bw.ditchEnd === '12;1;4;true;true'
+      && bw.strike === '10;true;2;12345678910' && bw.ditch === '0,0,true,true,true,true' && bw.plan
+      && went && went.shots === 1 && after && !after.anim && after.moves === 1 && after.sb && /^SCORE \d+/.test(after.sb) && /\n  1 +\d+ +\d+/.test(after.sb)
+      && rec.kind === 'bowl' && rec.shots >= 1 && rec.moves && rec.again;
     if (!ok) failures.push('[bowling] ' + JSON.stringify({ bw, went, after, rec }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (scores ${bw.score}; a strike, a leave of 4-7-10, a gutter ball and the spare by the rules; no cushions, a ball off the side in the ditch; the real Enter bowled; a board no one plays bowled ${rec.shots} balls)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (bigger balls; pins a point each, the pins set again, a miss, the white in the ditch ending the game; no cushions, a ditch; the real Enter bowled and the scoreboard showed move 1; a board no one plays bowled ${rec.shots} balls)`);
   }
 
 

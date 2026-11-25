@@ -1385,3 +1385,22 @@ falls in a ditch").
 - The smoke test's bowling check (part 7) adds: no cushions met, a ball bowled off the side in the ditch and a gutter ball, a full hit's pins in the
   ditch counted down.
 
+**Bowling: no frames, the ditch ends it, bigger balls, a scoreboard** (Nov 25: "Don't limit to two moves.     Game over if cue ball goes on the ditch.
+Make the balls slighty bigger.  Add a score board to keep track of the moves."). The frames are gone (and with them `bwlFrames`, `bwlScore`,
+`bwlMarks`, `bwlAfter`, the computer's frames in turn); the notes above on the frames are the record. Search for NO FRAMES in `games.html`.
+- **A move is one ball** (`bwlFinish`): every pin it takes down is a point and is swept off; the rest go back on their spots (or stay where they
+  stand if the white now lies on a spot). All ten down: the pins are set again (`racks`), the white sent back to the head spot only if it lies on
+  a spot. A ball that meets no pin scores nothing.
+- **The white plays from where it stopped**, as in pool; in hand on the head string only at the start and when a new rack sends it back.
+- **Game over when the white goes into the ditch**; the pins it took on the way count. One player: the computer bowls only on boards no one plays.
+- **Bigger balls**: every ball `BWL_R`, 1.15 of a pool ball's radius (the engine reads each ball's own `r`; spacing unchanged, 5 pool radii).
+- **The scoreboard** (`sbDraw`, `#bwScore`, upper right below the menu): the score, the rack and move, every move's pins and running total (the
+  latest twelve; X a rack cleared by one ball, – no pin met, "ditch" the last), the par and the best. Away with the bottom row open, as the map is.
+- **Stars and par**: 3 at one and a half par, 2 at par, else 1; `BWL_PAR` 10, 15, 25, 45, 70 by level, from the computer's games (`bwlAuto`, four
+  boards a level): about 6–10 at levels 1–2, 3–28 at 3, 27–78 at 4, 27–137 at 5. The best score kept beside the stars (`bwh:`).
+- **The computer** (`bwlPlanGen`) judges each ball at its aim and at 1.3 × its hand's error either side, a ball that could lose the white scoring
+  −100 for each way it does; lower powers than before, and draw at levels 4–5, so the white stops. About 0.7 s of planning a move at level 5.
+- The smoke test's bowling check (part 7) is rewritten for these rules: the bigger balls; on balls made up a first ball's pins, the pins set
+  again, a miss, the white in the ditch ending the game with its pins counted, a strike marked; the ditch; the computer's ball; the real Enter
+  bowling and the scoreboard showing move 1; a board no one plays. Run: part 7, whole, passing.
+
