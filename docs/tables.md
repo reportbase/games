@@ -1478,3 +1478,10 @@ plays "Replay: the shot before", "Replay: stop on this shot" / "go on", "Replay:
 pad's did (`onPlayAct`). A menu item can now carry `when` (rendered only while it returns true; the menu is built each time it opens). A tap on
 the table still stops a replay on its shot and goes on. The row's dots, hidden while the pad showed the replay's buttons (`pad-replay`, above),
 now stay; the hook stays for any act marked `replay`. Part 5's replay check works the menu's items now, and passes.
+
+**Replay mode** (Nov 25: "the menu should just show one menu item called replay, and when selected it shows the replay button on the footer only and
+hide the full board and bottom browser buttons.   escape key or stop button cancels replay mode."). The menu's replay items are now one, Replay,
+shown while there is a game to play again. Chosen, the footer's pad has only the replay's buttons, ⏮ ⏸/⏵ ⏭ ⏹, in the middle of the footer; the
+whole board's ▦ and the row's dots are hidden (the acts marked `replay`, `pad-replay`). ⏹ or Escape (in the pool keys' handler, ahead of the rest)
+ends it, and ▦ and the dots come back. Part 5's replay check: the menu's one Replay, the pad ⏮⏸⏭⏹ with the dots hidden and no Replay in the menu
+while it plays, the steps, Escape ending it with ▦ and the dots back. Passing on its own.
