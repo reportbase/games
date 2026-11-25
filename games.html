@@ -57781,8 +57781,9 @@ const TRICK_APP = (() => {
   function mapEnsure(){
     if (MAP.el || typeof document === 'undefined') return MAP.el;
     // (the canvas in a box of its own: the page's `body > canvas` rule would put a canvas of the body's in the top left)
-    const el = document.createElement('div'), cv = document.createElement('canvas'); el.id = 'tsMap'; cv.width = MAP_W * 2; cv.height = Math.round(MAP_W * 2 * BH / BW);
-    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + Math.round(MAP_W * BH / BW) + 'px;z-index:29;display:none;pointer-events:none;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.28);box-shadow:0 1px 4px rgba(0,0,0,.6);box-sizing:border-box';
+    // (square since Nov 25, the table drawn in it turned as the board lies on the screen: TURNED AS THE BOARD, below)
+    const el = document.createElement('div'), cv = document.createElement('canvas'); el.id = 'tsMap'; cv.width = MAP_W * 2; cv.height = MAP_W * 2;
+    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + MAP_W + 'px;z-index:29;display:none;pointer-events:none;filter:drop-shadow(0 1px 3px rgba(0,0,0,.7))';
     cv.style.cssText = 'display:block;width:100%;height:100%';
     el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
     setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > CTL_GONE) mapHide(); }, 200);
@@ -57795,11 +57796,19 @@ const TRICK_APP = (() => {
     if (WHOLE || open || !V || !V.B || ED.on){ mapHide(); return; }
     MAP.seen = performance.now(); MAP.el.style.display = 'block';
     const m = M() || {}, cue = V.cue && !V.trail ? V.cue.ang : null;
-    const sig = V.B.map((b, i) => { const q = V.pos ? V.pos[i] : [b.x, b.z]; return q && !(b.sunk && !V.pos) ? b.n + ':' + q[0].toFixed(2) + ',' + q[1].toFixed(2) : ''; }).join('|') + '#' + (cue == null ? '' : cue.toFixed(3)) + (m.key || '');
+    /* TURNED AS THE BOARD (Nov 25: "orientate the mini map in the same direction as the board."): the table's +x and +z read off the screen through
+       the camera (`ballScreen`), the picture turned to lay the table's long way as the board's lies, and mirrored if the two axes come out the other
+       way round, so what is up the screen on the board is up the minimap. */
+    let rot = 0, mir = false;
+    { const o = ballScreen(0, 0), ax = ballScreen(1, 0), az = ballScreen(0, 1);
+      if (o && ax && az){ const a = [ax[0] - o[0], ax[1] - o[1]], b = [az[0] - o[0], az[1] - o[1]]; rot = Math.atan2(a[1], a[0]); mir = a[0] * b[1] - a[1] * b[0] < 0; } }
+    const sig = (rot.toFixed(2) + (mir ? 'm' : '') + '|') + V.B.map((b, i) => { const q = V.pos ? V.pos[i] : [b.x, b.z]; return q && !(b.sunk && !V.pos) ? b.n + ':' + q[0].toFixed(2) + ',' + q[1].toFixed(2) : ''; }).join('|') + '#' + (cue == null ? '' : cue.toFixed(3)) + (m.key || '');
     if (sig === MAP.sig) return; MAP.sig = sig;
-    const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, Hd = MAP.cv.height, k = Wd / BW, X = x => (x + BW / 2) * k, Z = z => (z + BH / 2) * k, hex = n => '#' + n.toString(16).padStart(6, '0');
-    c.clearRect(0, 0, Wd, Hd); c.fillStyle = hex(CLOTH); c.fillRect(0, 0, Wd, Hd);
-    c.fillStyle = hex(WOOD2); c.fillRect(0, 0, Wd, Hd); c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
+    const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, k = Wd * 0.97 / BW, X = x => x * k, Z = z => z * k, hex = n => '#' + n.toString(16).padStart(6, '0');
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, Wd, Wd); c.translate(Wd / 2, Wd / 2); c.rotate(rot); if (mir) c.scale(1, -1);
+    c.fillStyle = hex(WOOD2); c.beginPath(); c.roundRect ? c.roundRect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k, 10) : c.rect(X(-BW / 2), Z(-BH / 2), BW * k, BH * k); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.28)'; c.lineWidth = 2; c.stroke();
+    c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
     if (m.bumper){ c.fillStyle = '#07090c'; for (const [x, z] of BP_POCK){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); }
       c.fillStyle = '#1c1c20'; for (const [x, z] of BP_POSTS){ c.beginPath(); c.arc(X(x), Z(z), Math.max(2, BP_BR * k), 0, 7); c.fill(); } }
     if (!m.bare && !m.rt){ c.fillStyle = '#07090c'; for (const [x, z] of POCKETS){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); } }

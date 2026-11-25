@@ -1485,3 +1485,10 @@ shown while there is a game to play again. Chosen, the footer's pad has only the
 whole board's ▦ and the row's dots are hidden (the acts marked `replay`, `pad-replay`). ⏹ or Escape (in the pool keys' handler, ahead of the rest)
 ends it, and ▦ and the dots come back. Part 5's replay check: the menu's one Replay, the pad ⏮⏸⏭⏹ with the dots hidden and no Replay in the menu
 while it plays, the steps, Escape ending it with ▦ and the dots back. Passing on its own.
+
+**The minimap turned as the board** (Nov 25: "orientate the mini map in the same direction as the board."). The pool games' minimap (`mapDraw`,
+`#tsMap`) is now a square box with no frame of its own, the table drawn in it as a rounded wooden frame turned by the angle the table's +x makes on
+the screen (read through the camera with `ballScreen`), mirrored if +z comes out the other way round. So what is up the screen on the board is up
+on the minimap, behind the white at any aim. Its picture is redrawn when that angle changes by 0.01 rad. Checked by screenshots in 9-ball behind
+the white at two aims (the table diagonal, then across the screen): the minimap's table, white, rack and aim lie as the board's. Curling's minimap
+(`#cuMap`) is unchanged.
