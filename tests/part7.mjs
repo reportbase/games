@@ -85,7 +85,7 @@ try {
   // BOWLING ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow bowling
   // rules.", then "remove the cushions, of the ball goes off the board it falls in a ditch", then "Make the balls slighty bigger.", then "Leave the balls
   // in the ditch.   Let the player hit the cue ball from the ditch. … The balls in the ditch block other balls from going in the ditch.", then "The balls
-  // can move in the ditch lateraly.  Make this a two player game, first player to clear his balls wins"): the rack, the solids and the stripes one each
+  // can move in the ditch lateraly.  Make this a two player game, first player to clear his balls wins", then "Add the full rack of balls."): the rack, the solids and the stripes one each
   // on every pair of mirrored spots; on balls made up, the turn kept by clearing one's own, passed otherwise, all five cleared a win; in a shot, a ball
   // off the side on the ditch's middle line, a ball in the ditch knocked along it and staying on its line, one keeping another out; the computer's
   // ball; the real Enter bowling; a board no one plays bowling
@@ -96,8 +96,8 @@ try {
     const bw = await page.evaluate(() => {
       const A = window.getFieldApp(), D = A._debug, out = {}, LX = 20, LZ = 10, oz = LZ / 2 + D.BWL_DW / 2, ox = LX / 2 + D.BWL_DW / 2, G = D.BWL_GRP;
       const B = D.rackB(7), sp = b => D.BWL_SPOT[b.spot], at = s => B.find(b => b.spot === s), grp = b => G[0].includes(b.n) ? 0 : G[1].includes(b.n) ? 1 : -1;
-      out.rack = B.length === 11 && B[0].cue && B.every(b => b.r === D.BWL_R) && B.slice(1).every(b => b.x === sp(b)[0] && b.z === sp(b)[1])
-        && [[2, 3], [4, 6], [7, 10], [8, 9], [1, 5]].every(([p, q]) => grp(at(p)) + grp(at(q)) === 1 && grp(at(p)) >= 0)
+      out.rack = B.length === 16 && B[0].cue && B.every(b => b.r === D.BWL_R) && B.slice(1).every(b => b.x === sp(b)[0] && b.z === sp(b)[1] && Math.abs(b.x) < LX / 2 - b.r)
+        && [...D.BWL_PAIRS, D.BWL_MID].every(([p, q]) => grp(at(p)) + grp(at(q)) === 1 && grp(at(p)) >= 0) && at(D.BWL_EIGHT).n === 8
         && JSON.stringify(D.rackB(7)) === JSON.stringify(B);
       const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
       out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.hand, g.nine.turn, /^Bowling/.test(D.bwlTitle(g))].join(); })();
@@ -106,9 +106,9 @@ try {
       const play = (h, ditch, wd = false) => { const s = { first: { n: 1, rails: 0 }, sunk: [], contacts: [], cushions: [],
         final: h.balls.map(b => b.cue ? { ...b, x: -2, z: wd ? oz : 0, ditch: wd } : ditch.includes(b.n) ? { ...b, z: -oz, ditch: true, rail: [1, 0], rp: -oz } : { ...b }) };
         h.anim = { s }; D.bwlFinish(h, s); return [h.nine.turn, D.bwlCleared(h.balls).join('/'), h.nine.over].join(';'); };
-      let h = fresh(); out.turns = [play(h, [3]), play(h, [3, 11]), play(h, [3, 11]), play(h, [3, 11, 1, 2, 4, 5])].join(' ');
+      let h = fresh(); out.turns = [play(h, [3]), play(h, [3, 11]), play(h, [3, 11]), play(h, [3, 11, 1, 2, 4, 5, 6, 7]), play(h, [3, 11, 1, 2, 4, 5, 6, 7, 8])].join(' ');
       out.stars = [h.nine.stars, /you won/.test(D.bwlTitle(h))].join();
-      h = fresh(); out.lost = [play(h, [9]), play(h, [9, 10, 11, 12, 13])].join(' ');
+      h = fresh(); out.lost = [play(h, [9]), play(h, [9, 8])].join(' ');
       // the ditch in a shot
       { const B0 = D.rackB(0), sd = D.simB(B0, Math.PI / 3, 40, [0, 0, 0], 0), w0 = sd.final[0];
         out.fell = w0.ditch && !w0.sunk && (Math.abs(Math.abs(w0.z) - oz) < 1e-6 || Math.abs(Math.abs(w0.x) - ox) < 1e-6);
@@ -135,13 +135,66 @@ try {
     const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
       const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
       return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
-    const ok = bw && !bw.none && bw.rack && bw.name === 'Bowling' && bw.start === '11,true,0,true'
-      && bw.turns === '0;1/0;0 1;1/1;0 0;1/1;0 0;5/1;1' && bw.stars === '3,true' && bw.lost === '1;0/1;0 1;0/5;2'
+    const ok = bw && !bw.none && bw.rack && bw.name === 'Bowling' && bw.start === '16,true,0,true'
+      && bw.turns === '0;1/0;0 1;1/1;0 0;1/1;0 0;7/1;0 0;7/1;1' && bw.stars === '3,true' && bw.lost === '1;0/1;0 1;0/1;1'
       && bw.fell && bw.along === 'true,true,true' && bw.glance === 'true,true' && bw.block === 'true,true' && bw.plan
       && went && went.shots === 1 && after && !after.anim && after.moves === 1
       && rec.kind === 'bowl' && rec.shots >= 3 && rec.moves && rec.again;
     if (!ok) failures.push('[bowling] ' + JSON.stringify({ bw, went, after, rec }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (the solids and the stripes racked fairly; the turn kept by clearing one's own, passed otherwise, all five a win; a ball off the side on the ditch's line, one in it knocked along it, one keeping another out; the real Enter bowled; a board no one plays bowled ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (the full rack, the solids and the stripes racked fairly and the 8 in the middle; the turn kept by clearing one's own, passed otherwise, all seven then the 8 a win, the 8 too soon a loss; a ball off the side on the ditch's line, one in it knocked along it, one keeping another out; the real Enter bowled; a board no one plays bowled ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
+  }
+
+  // BUMPER POOL (Nov 25: "Then create a bumper pool game."): the rack (five a side, no white, the marked one struck first); on balls made up a ball
+  // before its marked one brought back and the turn passed, one in its own pocket keeping the turn, one in the wrong pocket brought back, all five a
+  // win; in shots a ball off a bumper that does not move, a ball between the guards into its pocket; a press picking a ball only once the marked
+  // one is in; the computer's shot; the real Enter; a board no one plays
+  current = 'bumper pool';
+  {
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bumperpool')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
+    const bp = await page.evaluate(() => {
+      const A = window.getFieldApp(), D = A._debug, out = {};
+      const B = D.rackBp(); out.rack = B.length === 10 && !B.some(b => b.n === 0) && B.filter(b => b.cue).map(b => b.n).join() === '16'
+        && B.every(b => b.x === D.BP_START[b.n][0] && b.z === D.BP_START[b.n][1]);
+      const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
+      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.turn, g.balls.find(b => b.cue).n, /^Bumper pool/.test(D.bpTitle(g))].join(); })();
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      const play = (h, ins) => { const s = { first: null, contacts: [], cushions: [], sunk: ins.map(([n, p], i) => ({ n, pocket: p, t: i })),
+        final: h.balls.map(b => ins.some(q => q[0] === b.n) ? { ...b, sunk: true } : { ...b }) };
+        h.anim = { s }; D.bpFinish(h, s); return [h.nine.turn, D.bpIn(h.balls).join('/'), h.nine.over].join(';'); };
+      let h = fresh();
+      const s17 = h.balls.find(b => b.n === 17); s17.x += 1;   // (moved, so its coming back shows)
+      out.turns = [play(h, [[17, 1]]), play(h, [[21, 0]]), play(h, [[22, 1]]), play(h, [[16, 1], [17, 1]]), play(h, [[18, 1], [19, 1], [20, 1]])].join(' ');
+      const b17 = (() => { const h2 = fresh(); h2.balls.find(b => b.n === 17).x += 1; play(h2, [[17, 1]]); const b = h2.balls.find(q => q.n === 17); return !b.sunk && b.x === D.BP_START[17][0] && b.z === D.BP_START[17][1]; })();
+      out.back = b17; out.stars = [h.nine.stars, /you won/.test(D.bpTitle(h))].join();
+      // in shots: off a bumper, the bumper still; between the guards into the pocket
+      { const red = (x, z) => ({ ...D.rackBp()[0], x, z, cue: true }), s1 = D.simBp([red(-3, 0)], 0, 10, [0, 0, 0], 0), f1 = s1.final[0];
+        out.post = [f1.x < -1.5 - 0.6, s1.cushions.length > 0, s1.frames[0].length === 2].join();
+        const s2 = D.simBp([red(6.0, 0)], 0, 6, [0, 0, 0], 0); out.pot = [s2.final[0].sunk, s2.sunk.length && s2.sunk[0].pocket].join(); }
+      // picking: only the marked one until it is in, then any of yours
+      { h = fresh(); const b17 = h.balls.find(b => b.n === 17), uv = D.uvOf(b17.x, b17.z);
+        const before = D.pickAt(h, uv[0], uv[1]); h.balls.find(b => b.n === 16).sunk = true; const after = D.pickAt(h, uv[0], uv[1]);
+        out.pick = [before, after, h.balls.find(b => b.cue).n].join(); }
+      h = fresh(); const P = D.matchPlan(D.MATCH.bumper, h, 3); out.plan = isFinite(P.score) && isFinite(P.a) && P.p >= 2;
+      fresh();
+      return out;
+    });
+    const g1 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r);
+      return g ? { shots: g.shots, anim: !!g.anim, moves: g.nine.moves.length, over: g.nine.over } : null; });
+    await page.keyboard.press('Enter'); await drawn(page, 300);
+    const went = await g1();
+    for (let k = 0; k < 120 && (await g1()).anim; k++) await frame(page, 300);
+    const after = await g1();
+    const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
+      const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
+      return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
+    const ok = bp && !bp.none && bp.rack && bp.name === 'Bumper pool' && bp.start === '10,0,16,true'
+      && bp.turns === '1;0/0;0 1;0/1;0 0;0/1;0 0;2/1;0 0;5/1;1' && bp.back && bp.stars === '3,true'
+      && bp.post === 'true,true,true' && bp.pot === 'true,1' && bp.pick === 'false,true,17' && bp.plan
+      && went && went.shots === 1 && after && !after.anim && after.moves === 1
+      && rec.kind === 'bumper' && rec.shots >= 3 && rec.moves && rec.again;
+    if (!ok) failures.push('[bumper pool] ' + JSON.stringify({ bp, went, after, rec }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bumper pool (five a side, the marked one first; a ball before its marked one brought back, one in its own pocket keeping the turn, one in the wrong pocket brought back, all five a win; off a bumper that stays, between the guards into the pocket; a press picking a ball once the marked one is in; the real Enter shot; a board no one plays shot ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
   }
 
 
