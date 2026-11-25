@@ -1492,3 +1492,6 @@ the screen (read through the camera with `ballScreen`), mirrored if +z comes out
 on the minimap, behind the white at any aim. Its picture is redrawn when that angle changes by 0.01 rad. Checked by screenshots in 9-ball behind
 the white at two aims (the table diagonal, then across the screen): the minimap's table, white, rack and aim lie as the board's. Curling's minimap
 (`#cuMap`) is unchanged.
+
+**The minimap see-through** (Nov 25: "make the mimap transparent"). `#tsMap` is drawn at opacity 0.55 (its drop shadow taken off, which would
+show through as a dark smear), so the board shows through it. Not tested beyond the style itself.
