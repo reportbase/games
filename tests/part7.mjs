@@ -83,59 +83,65 @@ try {
   }
 
   // BOWLING ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow bowling
-  // rules.", then "remove the cushions, of the ball goes off the board it falls in a ditch", then "Don't limit to two moves. … Make the balls slighty
-  // bigger.", then "Remove the billboard.   Leave the balls in the ditch.   Let the player hit the cue ball from the ditch.  Going on the ditch does not
-  // end the game.    The balls in the ditch block other balls from going in the ditch."): every ball 1.15 of a pool ball; on balls made up, pins down a
-  // point each, the rest stood, all ten down the pins set again, a miss scoring nothing, the white and a pin in the ditch staying there and the game
-  // going on; a ball off the side lying in the ditch, the white shot out of it, a ball in the ditch keeping another out; the computer's ball; the real
-  // Enter bowling; no scoreboard; a board no one plays bowling
+  // rules.", then "remove the cushions, of the ball goes off the board it falls in a ditch", then "Make the balls slighty bigger.", then "Leave the balls
+  // in the ditch.   Let the player hit the cue ball from the ditch. … The balls in the ditch block other balls from going in the ditch.", then "The balls
+  // can move in the ditch lateraly.  Make this a two player game, first player to clear his balls wins"): the rack, the solids and the stripes one each
+  // on every pair of mirrored spots; on balls made up, the turn kept by clearing one's own, passed otherwise, all five cleared a win; in a shot, a ball
+  // off the side on the ditch's middle line, a ball in the ditch knocked along it and staying on its line, one keeping another out; the computer's
+  // ball; the real Enter bowling; a board no one plays bowling
   current = 'bowling';
   {
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')));
     await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
     const bw = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, out = {}, LZ = 10;
-      const B = D.rackB(); out.rack = B.length === 11 && B[0].cue && B.every(b => b.r === D.BWL_R) && D.BWL_R > 0.45 && B.slice(1).every(b => !b.sunk && b.x === D.BWL_SPOT[b.n][0] && b.z === D.BWL_SPOT[b.n][1]);
+      const A = window.getFieldApp(), D = A._debug, out = {}, LX = 20, LZ = 10, oz = LZ / 2 + D.BWL_DW / 2, ox = LX / 2 + D.BWL_DW / 2, G = D.BWL_GRP;
+      const B = D.rackB(7), sp = b => D.BWL_SPOT[b.spot], at = s => B.find(b => b.spot === s), grp = b => G[0].includes(b.n) ? 0 : G[1].includes(b.n) ? 1 : -1;
+      out.rack = B.length === 11 && B[0].cue && B.every(b => b.r === D.BWL_R) && B.slice(1).every(b => b.x === sp(b)[0] && b.z === sp(b)[1])
+        && [[2, 3], [4, 6], [7, 10], [8, 9], [1, 5]].every(([p, q]) => grp(at(p)) + grp(at(q)) === 1 && grp(at(p)) >= 0)
+        && JSON.stringify(D.rackB(7)) === JSON.stringify(B);
       const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
-      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.hand, g.nine.score, /^Bowling/.test(D.bwlTitle(g))].join(); })();
+      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.hand, g.nine.turn, /^Bowling/.test(D.bwlTitle(g))].join(); })();
       const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
-      // a ball made up: the white meets `first`, the pins in `down` knocked well off their spots, the pins in `ditch` (and the white, if `wd`) in the ditch
-      const play = (h, first, down, ditch = [], wd = false) => { const s = { first: first == null ? null : { n: first, rails: 0 }, sunk: [], contacts: [], cushions: [],
-        final: h.balls.map(b => b.cue ? { ...b, x: -2, z: wd ? LZ / 2 + D.BWL_DW / 2 : 0, ditch: wd } : ditch.includes(b.n) ? { ...b, z: -LZ / 2 - D.BWL_DW / 2, ditch: true, off: true }
-          : { ...b, x: down.includes(b.n) ? b.x + 3 : b.x }) }; h.anim = { s }; D.bwlFinish(h, s); return h; };
-      const up = h => h.balls.filter(b => !b.cue && !b.sunk && !b.ditch).map(b => b.n).join(''), dt = h => h.balls.filter(b => b.ditch).map(b => b.n).join('');
-      let h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); out.first = [h.nine.score, h.nine.moves.length, up(h), h.nine.racks, h.balls[0].x].join(';');
-      play(h, 4, [4], [7], true); out.ditch = [h.nine.score, h.nine.over, up(h), dt(h), /in the ditch/.test(D.bwlTitle(h))].join(';');
-      play(h, null, [], [], true); out.miss = [h.nine.score, h.nine.moves.length, h.nine.moves[2].miss, dt(h)].join(';');
-      play(h, 10, [10]); out.rerack = [h.nine.score, h.nine.racks, up(h), dt(h)].join(';');
-      // the ditch in a shot: a ball off the side lies in it; the white shot out of it meets the pins; a ball in it keeps another out
-      { const B0 = D.rackB(), sd = D.simB(B0, Math.PI / 3, 40, [0, 0, 0], 0);
-        const B2 = B0.map(b => b.cue ? { ...b, x: -4, z: LZ / 2 + D.BWL_DW / 2, ditch: true } : b), so = D.simB(B2, Math.atan2(D.BWL_SPOT[1][1] - B2[0].z, D.BWL_SPOT[1][0] - B2[0].x), 30, [0, 0, 0], 0);
-        const B3 = B0.map(b => b.cue ? { ...b, x: -6, z: 0 } : b.n === 10 ? { ...b, x: -6, z: LZ / 2 + D.BWL_DW / 2, ditch: true } : b);
-        const sb = D.simB(B3, Math.PI / 2, 14, [0, 0, 0], 0), sn = D.simB(B3.map(b => b.n === 10 ? { ...b, ditch: false, sunk: true } : b), Math.PI / 2, 14, [0, 0, 0], 0);
-        const w3 = sb.final[0], p10 = sb.final.find(b => b.n === 10);
-        out.sim = [sd.cushions.length, sd.final[0].ditch && !sd.final[0].sunk, D.bwlDown(B2, so).down.length > 0,
-          !(w3.ditch && w3.z > 0), p10.x === -6 && p10.z === LZ / 2 + D.BWL_DW / 2, sn.final[0].ditch && sn.final[0].z > 0].join(); }
-      h = fresh(); const P = D.matchPlan(D.MATCH.bowl, h, 4); out.plan = P.score >= 1 && isFinite(P.a) && P.p >= 2;
+      // a ball made up: the balls in `ditch` (and the white, if `wd`) in the ditch
+      const play = (h, ditch, wd = false) => { const s = { first: { n: 1, rails: 0 }, sunk: [], contacts: [], cushions: [],
+        final: h.balls.map(b => b.cue ? { ...b, x: -2, z: wd ? oz : 0, ditch: wd } : ditch.includes(b.n) ? { ...b, z: -oz, ditch: true, rail: [1, 0], rp: -oz } : { ...b }) };
+        h.anim = { s }; D.bwlFinish(h, s); return [h.nine.turn, D.bwlCleared(h.balls).join('/'), h.nine.over].join(';'); };
+      let h = fresh(); out.turns = [play(h, [3]), play(h, [3, 11]), play(h, [3, 11]), play(h, [3, 11, 1, 2, 4, 5])].join(' ');
+      out.stars = [h.nine.stars, /you won/.test(D.bwlTitle(h))].join();
+      h = fresh(); out.lost = [play(h, [9]), play(h, [9, 10, 11, 12, 13])].join(' ');
+      // the ditch in a shot
+      { const B0 = D.rackB(0), sd = D.simB(B0, Math.PI / 3, 40, [0, 0, 0], 0), w0 = sd.final[0];
+        out.fell = w0.ditch && !w0.sunk && (Math.abs(Math.abs(w0.z) - oz) < 1e-6 || Math.abs(Math.abs(w0.x) - ox) < 1e-6);
+        // a ball in the ditch, the white rolled along the ditch at it: knocked along, on its line
+        const p = { ...B0[1], x: -6, z: oz, ditch: true, rail: [1, 0], rp: oz };
+        const B1 = [{ ...B0[0], x: -9, z: oz, ditch: true }, p], s1 = D.simB(B1, 0, 20, [0, 0, 0], 0), f1 = s1.final[1];
+        out.along = [f1.x > -4, Math.abs(f1.z - oz) < 1e-9, f1.ditch].join();
+        // the white from the table, glancing it: it rolls along, still on its line
+        const B2 = [{ ...B0[0], x: -7.5, z: 2 }, p], s2 = D.simB(B2, Math.atan2(oz - 2, -6 + 0.9 * D.BWL_R - -7.5), 24, [0, 0, 0], 0), f2 = s2.final[1];
+        out.glance = [Math.abs(f2.x + 6) > 0.3, Math.abs(f2.z - oz) < 1e-9].join();
+        // square at it: the white kept out; the ditch empty, it falls in
+        const B3 = [{ ...B0[0], x: -6, z: 0 }, p], s3 = D.simB(B3, Math.PI / 2, 14, [0, 0, 0], 0), s4 = D.simB([B3[0]], Math.PI / 2, 14, [0, 0, 0], 0);
+        out.block = [!(s3.final[0].ditch && s3.final[0].z > 0), s4.final[0].ditch && s4.final[0].z > 0].join(); }   // (kept out on that side: square at it, it rebounds back across)
+      h = fresh(); const P = D.matchPlan(D.MATCH.bowl, h, 4); out.plan = isFinite(P.score) && isFinite(P.a) && P.p >= 2;
       fresh();
       return out;
     });
     const g1 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r);
-      return g ? { shots: g.shots, anim: !!g.anim, moves: g.nine.moves.length, over: g.nine.over, sb: !!document.getElementById('bwScore') } : null; });
+      return g ? { shots: g.shots, anim: !!g.anim, moves: g.nine.moves.length, over: g.nine.over } : null; });
     await page.keyboard.press('Enter'); await drawn(page, 300);
     const went = await g1();
     for (let k = 0; k < 120 && (await g1()).anim; k++) await frame(page, 300);
     const after = await g1();
     const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
       const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
-      return { shots: R.shots, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
+      return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
     const ok = bw && !bw.none && bw.rack && bw.name === 'Bowling' && bw.start === '11,true,0,true'
-      && bw.first === '7;1;4710;1;-2' && bw.ditch === '9;0;10;07;true' && bw.miss === '9;3;true;07' && bw.rerack === '10;2;12345678910;'
-      && bw.sim === '0,true,true,true,true,true' && bw.plan
-      && went && went.shots === 1 && after && !after.anim && after.moves === 1 && !after.over && !after.sb
-      && rec.kind === 'bowl' && rec.shots >= 10 && rec.moves && rec.again;
+      && bw.turns === '0;1/0;0 1;1/1;0 0;1/1;0 0;5/1;1' && bw.stars === '3,true' && bw.lost === '1;0/1;0 1;0/5;2'
+      && bw.fell && bw.along === 'true,true,true' && bw.glance === 'true,true' && bw.block === 'true,true' && bw.plan
+      && went && went.shots === 1 && after && !after.anim && after.moves === 1
+      && rec.kind === 'bowl' && rec.shots >= 3 && rec.moves && rec.again;
     if (!ok) failures.push('[bowling] ' + JSON.stringify({ bw, went, after, rec }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (bigger balls; pins a point each, the pins set again, a miss; the white and a pin kept in the ditch, the game going on; a ball shot out of the ditch, one in it keeping another out; the real Enter bowled; a board no one plays bowled ${rec.shots} balls)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (the solids and the stripes racked fairly; the turn kept by clearing one's own, passed otherwise, all five a win; a ball off the side on the ditch's line, one in it knocked along it, one keeping another out; the real Enter bowled; a board no one plays bowled ${rec.shots} balls${rec.over ? ', to a win' : ''})`);
   }
 
 

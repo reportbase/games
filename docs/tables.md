@@ -1424,3 +1424,25 @@ from going in the ditch."). Search for THE DITCH KEEPS WHAT FALLS IN and NO FRAM
   meeting pins, a ball in the ditch keeping a rolled white out (and without it the white going in); no scoreboard. Run: part 7, whole, passing.
   Not run: the pool games' parts (the engine's change is inert without the flag).
 
+
+**Bowling: the balls roll along the ditch, and a race of two** (Nov 25: "The balls can move in the ditch lateraly.  Make this a two player game, first
+player to clear his balls wins").
+- The ditch is a trough. The engine gains a rail: a ball with `rail` (a direction) and `rp` (its place across it) moves only along the rail
+  (`railOn` in `own`), and `respond` gives it a push only along the rail, its share of a push along the line of centres the square of the line's
+  slope to its rail (a push square to the rail it stands against, as a fixed ball did). An engine hook `TRAP`, called on every ball after it moves,
+  is how bowling puts a ball on a rail as it falls in. Without either the engine is as it was. The same change is in wander's `play-trick.html`.
+- `simB` flies a ball with the cushions swapped for a frame at the ditch's outer edge (`BWL_FRAME`) and no pockets; `TRAP` puts a ball whose middle
+  passes the table's edge on the ditch's middle line on that side. So a ball in the ditch rolls on along it, is knocked along it by what comes after,
+  stops at the frame's ends, and still keeps out a ball that meets it square. A ball keeps its rail from shot to shot; the white struck from the
+  ditch is off its rail until it has been back on the table. The cut of frames and contacts of the fixed ditch is gone.
+- The race: you the solids 1–5, the computer the stripes 9–13, racked seeded by the board on the pin deck's ten spots, one of each on every pair of
+  mirrored spots and on the two spots of the middle line (`rackB(idx)`). A ball is cleared when it is in the ditch, whoever bowled it; nothing is
+  set again, the balls play where they lie and the white from where it stopped. You keep the turn while your ball clears one of your own;
+  otherwise it passes. The first with all five in the ditch wins (one ball clearing both sides' last: the one who bowled it). Stars for your win
+  by how many of the computer's are in the ditch (3 at most one, 2 at most three). The computer (`bwlPlanGen`) bowls at its own balls nearest the
+  white, straight and at the ghost ball that sends one square to the nearest edge, scored own cleared less 0.6 of yours, at its aim and its error
+  either side. The opponent is the computer, as in the other pool games.
+- The smoke test's bowling check (part 7) is rewritten: the rack fair and seeded; on balls made up the turn kept, passed, and a win (3 stars) and a
+  loss; in shots a ball off the side on the ditch's line, a ball in the ditch knocked along it by the white rolled down the ditch and by one glancing
+  it from the table, staying on its line, and one keeping a white out (none, the white falling in); the computer's plan; the real Enter; a board no
+  one plays (a game of 6 balls, to a win).
