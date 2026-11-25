@@ -55142,7 +55142,7 @@ const TRICK_APP = (() => {
 
   // ══ played from inside (pool.html, POL runs 1–2) ══
   // what arrives at a from b: b's direction and v = r_b/d
-  function image(a, b) { const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz); return { n: [dx / d, dz / d], v: b.r / d }; }
+  function image(a, b) { const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz); return { n: [dx / d, dz / d], v: b.r / d, fix: !!b.fixed }; }
   // what a does with it, in its own size: the other's motion converted by v/h, the mass ratio (h/v)³ (one material)
   function respond(a, ia, ib, ub, e, tick) {
       const v = ia.v, h = ib.v, n = ia.n, ua = [a.vx / a.r, a.vz / a.r];
@@ -55157,8 +55157,9 @@ const TRICK_APP = (() => {
       if (tau >= 0 && tau <= (tick || 0)) {   // the line of centres then; respond along it; since then it has moved with the new motion
           const pc = [p[0] - w[0] * tau, p[1] - w[1] * tau], l = Math.hypot(...pc); m = [pc[0] / l, pc[1] / l];
       } else tau = NaN;                        // overlapping from before this tick (a ball set down too close): the old push
-      const k = (1 + e) * (w[0] * m[0] + w[1] * m[1]) / (1 + (h / v) ** 3), du = [k * m[0], k * m[1]];
-      step = isNaN(tau) ? [-over * n[0], -over * n[1]] : [du[0] * tau, du[1] * tau];
+      // a fixed ball (games' bowling ditch, Nov 25: "The balls in the ditch block other balls") takes no push and gives the whole rebound
+      const k = a.fixed ? 0 : (1 + e) * (w[0] * m[0] + w[1] * m[1]) / (ia.fix ? 1 : 1 + (h / v) ** 3), du = [k * m[0], k * m[1]];
+      step = a.fixed ? [0, 0] : isNaN(tau) ? [-over * n[0], -over * n[1]] : [du[0] * tau, du[1] * tau];
       return { step, du, hit: true, n: m, tau: isNaN(tau) ? 0 : tau, hvC: isNaN(tau) ? h + v : c / Math.hypot(p[0] - w[0] * tau, p[1] - w[1] * tau) };
   }
   function pairs(B, log) {
@@ -56783,98 +56784,120 @@ const TRICK_APP = (() => {
      over, the contacts it would have made out there struck, and the shot ends when what is left on the table is still. In the final state a ball
      in the ditch is off the table (`sunk`, `off`), so a pin there is down and the white there before it met a pin is a gutter ball. */
   const BWL_SINK = -0.55 * R;
+  /* THE DITCH KEEPS WHAT FALLS IN, AND STOPS WHAT COMES AFTER (Nov 25: "Remove the billboard.   Leave the balls in the ditch.   Let the player hit the
+     cue ball from the ditch.  Going on the ditch does not end the game.    The balls in the ditch block other balls from going in the ditch."). The
+     ditch is a strip `BWL_DW` wide round the table, its middle line `BWL_DW`/2 past the edge. A ball that falls in lies on that line where it went over
+     (slid along it to the nearest place clear of the balls already there) and stays (`ditch` on the ball; not sunk, so it is still drawn and still
+     in the shot). In a shot every ball in the ditch but the one struck is flown as a fixed ball (`fixed`, read by the engine's `respond`: it takes no
+     push and gives the whole rebound; the engine reads a pair's masses from their sizes, so a heavy `m` alone did not hold it), so a ball rolling at it
+     rebounds off it short of the edge: what is in the ditch keeps the next ball out there. The white struck from the ditch is not caught again until it
+     has been back on the table; one that never comes out stays where it lay. */
+  const BWL_DW = 2 * 1.15 * R + 0.1, BWL_WALL = 1e9;
   function simB(B, ang, power, w, vy){
+    const B1 = B.map(b => b.ditch && !b.cue ? { ...b, m: BWL_WALL, fixed: true, y: 0 } : { ...b, y: 0 });
     const C = CUSHIONS.splice(0), P = POCKETS.splice(0); let s;
-    try { s = simulate(B, ang, power, w, vy); } finally { CUSHIONS.push(...C); POCKETS.push(...P); }
+    try { s = simulate(B1, ang, power, w, vy); } finally { CUSHIONS.push(...C); POCKETS.push(...P); }
     if (!s) return s;
     const n = B.length, fell = new Array(n).fill(-1), at = new Array(n).fill(null), F = s.frames, Hh = s.heights;
+    const outside = (x, z) => Math.abs(x) > LX / 2 || Math.abs(z) > LZ / 2;
+    const held = B.map(b => b.ditch ? [b.x, b.z] : null);   // (the places taken in the ditch: those there before, then each that falls in)
+    const exempt = B.map(b => !!(b.ditch && b.cue)), backIn = new Array(n).fill(false);
+    const place = (x, z, r) => {   // on the ditch's middle line where it went over, slid along it clear of the balls already there
+      const ex = Math.abs(x) > LX / 2, ez = Math.abs(z) > LZ / 2, ox = LX / 2 + BWL_DW / 2, oz = LZ / 2 + BWL_DW / 2;
+      let p = [ex ? Math.sign(x) * ox : Math.max(-ox, Math.min(ox, x)), ez ? Math.sign(z) * oz : Math.max(-oz, Math.min(oz, z))];
+      const clear = q => held.every(h => !h || Math.hypot(h[0] - q[0], h[1] - q[1]) >= 2 * r + 0.01);
+      if (!clear(p)) for (let k = 1; k < 400; k++){ const d = Math.ceil(k / 2) * 0.05 * (k % 2 ? 1 : -1), q = ez && !ex ? [p[0] + d, p[1]] : [p[0], p[1] + d];
+        if (Math.abs(q[0]) <= ox && Math.abs(q[1]) <= oz && clear(q)){ p = q; break; } }
+      return p;
+    };
     for (let k = 0; k < F.length; k++) for (let i = 0; i < n; i++){
-      if (fell[i] >= 0){ F[k][2 * i] = at[i][0]; F[k][2 * i + 1] = at[i][1]; Hh[k][i] = BWL_SINK; continue; }
+      if (fell[i] >= 0 || (B[i].ditch && !exempt[i])){ const p = fell[i] >= 0 ? at[i] : held[i]; F[k][2 * i] = p[0]; F[k][2 * i + 1] = p[1]; Hh[k][i] = BWL_SINK; continue; }
       const x = F[k][2 * i], z = F[k][2 * i + 1]; if (isNaN(x)) continue;
-      if (Math.abs(x) > LX / 2 || Math.abs(z) > LZ / 2){ fell[i] = k;
-        at[i] = [Math.abs(x) > LX / 2 ? Math.sign(x) * (LX / 2 + CUSH_W / 2) : x, Math.abs(z) > LZ / 2 ? Math.sign(z) * (LZ / 2 + CUSH_W / 2) : z];
+      if (exempt[i]){ if (!outside(x, z)) backIn[i] = true; else if (!backIn[i]){ Hh[k][i] = BWL_SINK; continue; } }
+      if (outside(x, z)){ fell[i] = k; at[i] = place(x, z, B[i].r || R); held[i] = at[i];
         F[k][2 * i] = at[i][0]; F[k][2 * i + 1] = at[i][1]; Hh[k][i] = BWL_SINK; }
     }
+    // the white struck from the ditch that never came back on the table: where it lay
+    for (let i = 0; i < n; i++) if (exempt[i] && !backIn[i] && fell[i] < 0){ at[i] = [B[i].x, B[i].z]; fell[i] = 0;
+      for (let k = 0; k < F.length; k++){ F[k][2 * i] = at[i][0]; F[k][2 * i + 1] = at[i][1]; Hh[k][i] = BWL_SINK; } }
     // the shot ends when nothing on the table moves (a ball out in the ditch region rolled on, in the engine, until it stopped)
     let last = 0; for (let k = 1; k < F.length; k++) for (let i = 0; i < n; i++){ const a = F[k - 1], b = F[k];
       if (!isNaN(b[2 * i]) && (Math.abs(b[2 * i] - a[2 * i]) > 1e-6 || Math.abs(b[2 * i + 1] - a[2 * i + 1]) > 1e-6 || Math.abs(Hh[k][i] - Hh[k - 1][i]) > 1e-6)){ last = k; break; } }
     s.frames = F.slice(0, last + 1); s.heights = Hh.slice(0, last + 1);
     const tOf = i => fell[i] < 0 ? Infinity : fell[i] / 60, ix = new Map(B.map((b, i) => [b.n, i]));
-    s.contacts = s.contacts.filter(c => c.t <= tOf(ix.get(c.a)) && c.t <= tOf(ix.get(c.b)));
-    if (!s.contacts.some(c => c.a === 0 || c.b === 0)) s.first = null;
-    s.final = s.final.map((b, i) => fell[i] < 0 ? b : { ...b, x: at[i][0], z: at[i][1], y: 0, vx: 0, vz: 0, vy: 0, sunk: true, off: true });
-    for (let i = 0; i < n; i++) if (fell[i] >= 0) s.sunk.push({ n: B[i].n, pocket: -1, t: fell[i] / 60 });
+    s.contacts = s.contacts.filter(c => c.t <= tOf(ix.get(c.a)) + 1e-9 && c.t <= tOf(ix.get(c.b)) + 1e-9 || (B[ix.get(c.a)].ditch || B[ix.get(c.b)].ditch));
+    if (!s.contacts.some(c => (c.a === 0 || c.b === 0) && !B[ix.get(c.a === 0 ? c.b : c.a)].ditch)) s.first = null;   // (a pin met, not a ball in the ditch)
+    s.final = s.final.map((b, i) => {
+      if (B[i].ditch && !exempt[i]) return { ...B[i] };
+      if (fell[i] < 0) return { ...b, m: B[i].m, ditch: false };
+      return { ...b, m: B[i].m, x: at[i][0], z: at[i][1], y: 0, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0, ditch: true, off: !B[i].ditch || backIn[i] }; });
     s.ditch = fell;
     return s;
   }
-  /* NO FRAMES: BOWL UNTIL THE WHITE GOES INTO THE DITCH (Nov 25: "Don't limit to two moves.     Game over if cue ball goes on the ditch.     Make the
-     balls slighty bigger.  Add a score board to keep track of the moves."). The frames are gone (two balls each, the tenth's bonus, the computer
-     bowling frames in turn): what was described above as THE RULES stands as the record. Now:
-     - A MOVE is one ball. Every pin it takes down (`bwlDown`: moved more than its radius off its spot, or into the ditch) is a point and is swept
-       off; the pins still up go back on their spots (or stay where they stand, if the white now lies on a spot). All ten down: the pins are set
-       again (a new rack), and the white goes back to the head spot only if it lies on a spot.
-     - THE WHITE PLAYS FROM WHERE IT STOPPED, as in pool; in hand on the head string only at the start (and when a new rack sends it back there).
-     - GAME OVER when the white goes into the ditch; the pins it took on the way still count. One player: the computer bowls only on a board no one
-       plays (`nineRecGen`), and its planner now steers the white clear of the ditch (a move that loses it scores −100).
+  /* NO FRAMES (Nov 25: "Don't limit to two moves.     Game over if cue ball goes on the ditch.     Make the balls slighty bigger.  Add a score board to
+     keep track of the moves."), and since the same day's next ("Remove the billboard.   Leave the balls in the ditch.   Let the player hit the cue
+     ball from the ditch.  Going on the ditch does not end the game.    The balls in the ditch block other balls from going in the ditch.") NO END
+     and no scoreboard. The frames are gone (two balls each, the tenth's bonus, the computer bowling frames in turn): what was described above as
+     THE RULES stands as the record. Now:
+     - A MOVE is one ball. Every pin it takes down is a point (`bwlDown`: moved more than its radius off its spot, or into the ditch). Those still on
+       the table are swept off; those in the ditch stay there (THE DITCH KEEPS WHAT FALLS IN, above); the pins still up go back on their spots (or
+       stay where they stand, if the white now lies on a spot). All ten down: the ten are set again, those in the ditch with them (a new rack), and
+       the white goes back to the head spot only if it lies on a spot.
+     - THE WHITE PLAYS FROM WHERE IT STOPPED, the ditch too; in hand on the head string only at the start and when a new rack sends it back.
+     - NOTHING ENDS THE GAME: it goes on; the menu's "Start this board again" sets it up afresh. The best score is kept as it is passed (`bwh:`).
      - BIGGER BALLS: every ball `BWL_R`, 1.15 of a pool ball's radius (the engine reads each ball's own `r`).
-     - STARS by the score against the level's par (`BWL_PAR`, about what the computer at that level scored, `bwlAuto`): 3 at one and a half par, 2 at
-       par; the best score kept beside them (`bwh:`).
-     - THE SCOREBOARD (`sbDraw`, `#bwScore`, the upper right, below the menu): the score, the rack and every move (its pins and the running total,
-       X a rack cleared by one ball, – no pin met, the last the ditch), the latest twelve; away with the bottom row open, as the map is. */
-  const BWL_R = 1.15 * R, BWL_PAR = [10, 15, 25, 45, 70];
+     - One player: the computer bowls only on a board no one plays (`nineRecGen`); its planner judges each ball at its aim and at its hand's error
+       either side, a ball that could put the white in the ditch a little worse. (The scoreboard of the first cut, `sbDraw`, is taken out.) */
+  const BWL_R = 1.15 * R;
   const bwlPin = (n, up) => ({ ...ballOf(n, ...BWL_SPOT[n]), r: BWL_R, sunk: !up });
-  const bwlWhite = (x, z) => ({ ...ballOf(0, x, z), r: BWL_R });
+  const bwlWhite = (x, z, ditch) => ({ ...ballOf(0, x, z), r: BWL_R, ditch: !!ditch });
   function rackB(){ return [bwlWhite(...HEAD), ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => bwlPin(n, true))]; }
-  // the pins a ball took down: moved more than their radius off their spots, or off the table; whether the white is in the ditch; whether it met none
+  // the pins a ball took down: moved more than their radius off their spots, or into the ditch; whether the white went in; whether it met none
   function bwlDown(balls, s){
-    const up = balls.filter(b => !b.cue && !b.sunk).map(b => b.n), w = s.final.find(b => b.cue), whiteOff = !!(w && (w.off || w.sunk));
+    const up = balls.filter(b => !b.cue && !b.sunk && !b.ditch).map(b => b.n), w = s.final.find(b => b.cue), whiteOff = !!(w && w.ditch);
     if (!s.first) return { miss: true, down: [], up, whiteOff };
     const down = [];
-    for (const n of up){ const b = s.final.find(q => q.n === n), P = BWL_SPOT[n]; if (!b || b.sunk || Math.hypot(b.x - P[0], b.z - P[1]) > (b.r || R)) down.push(n); }
+    for (const n of up){ const b = s.final.find(q => q.n === n), P = BWL_SPOT[n]; if (!b || b.ditch || b.sunk || Math.hypot(b.x - P[0], b.z - P[1]) > (b.r || R)) down.push(n); }
     return { miss: false, down, up, whiteOff };
   }
-  const bwlKey = g => 'bw:' + g.idx + '@' + g.lv, bwlHiKey = g => 'bwh:' + g.idx + '@' + g.lv;
+  const bwlHiKey = g => 'bwh:' + g.idx + '@' + g.lv;
   const bwlNew = () => ({ turn: 0, hand: true, fouls: [0, 0], moves: [], racks: 1, score: 0, over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
-  const bwlStars = (lv, score) => { const p = BWL_PAR[Math.max(1, Math.min(5, lv)) - 1]; return score >= 1.5 * p ? 3 : score >= p ? 2 : 1; };
-  const bwlAim = balls => { const w = balls.find(b => b.cue), p = balls.filter(b => !b.cue && !b.sunk).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
+  const bwlAim = balls => { const w = balls.find(b => b.cue), p = balls.filter(b => !b.cue && !b.sunk && !b.ditch).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
     return p ? Math.atan2(p.z - w.z, p.x - w.x) : 0; };
   function bwlFinish(g, s){
     const N = g.nine, r = bwlDown(g.balls, s), n = r.down.length, full = r.up.length === 10, fw = s.final.find(b => b.cue);
-    N.score += n; N.moves.push({ n, total: N.score, rack: N.racks, x: full && n === 10, miss: r.miss, off: r.whiteOff });
-    if (r.whiteOff){
-      N.over = 1; N.said = 'the white went into the ditch' + (n ? ', after taking ' + n : '');
-      g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0 }));
-      if (!g.auto){ N.stars = bwlStars(g.lv, N.score); const id = bwlKey(g), hk = bwlHiKey(g);
-        if (!(BEST[id] >= N.stars)) BEST[id] = N.stars; if (!(BEST[hk] >= N.score)) BEST[hk] = N.score; ARCADE.save('trickshots.best', JSON.stringify(BEST)); }
-    } else {
-      const stood = r.up.filter(k => !r.down.includes(k)), rack = !stood.length;
-      let w = bwlWhite(fw.x, fw.z), back = false;
-      const onSpot = (P, q) => Math.hypot(P[0] - q.x, P[1] - q.z) < 2 * BWL_R + 0.05;
-      if (rack){ N.racks++; if (Object.values(BWL_SPOT).some(P => onSpot(P, w))){ w = bwlWhite(...HEAD); back = true; } }
-      const pins = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(k => {
-        if (!rack && !stood.includes(k)) return bwlPin(k, false);
-        const P = BWL_SPOT[k], f = s.final.find(q => q.n === k);
-        return onSpot(P, w) && f && !rack ? { ...bwlPin(k, true), x: f.x, z: f.z } : bwlPin(k, true); });
-      g.balls = [w, ...pins];
-      N.hand = back;
-      N.said = r.miss ? 'no pin met' : full && n === 10 ? 'a strike' : 'took ' + n + (n === 1 ? ' pin' : ' pins');
-      if (rack) N.said += ', the pins set again' + (back ? ', the white back on the head spot' : '');
-      g.ang = bwlAim(g.balls);
-    }
+    N.score += n; N.moves.push({ n, total: N.score, rack: N.racks, x: full && n === 10, miss: r.miss, ditch: r.whiteOff });
+    const stood = r.up.filter(k => !r.down.includes(k)), rack = !stood.length;
+    let w = bwlWhite(fw.x, fw.z, fw.ditch), back = false;
+    const onSpot = (P, q) => Math.hypot(P[0] - q.x, P[1] - q.z) < 2 * BWL_R + 0.05;
+    if (rack){ N.racks++; if (!w.ditch && Object.values(BWL_SPOT).some(P => onSpot(P, w))){ w = bwlWhite(...HEAD); back = true; } }
+    const pins = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(k => {
+      const f = s.final.find(q => q.n === k), P = BWL_SPOT[k];
+      if (rack) return bwlPin(k, true);
+      if (f && f.ditch) return { ...bwlPin(k, true), x: f.x, z: f.z, ditch: true };   // (in the ditch, it stays there)
+      if (!stood.includes(k)) return bwlPin(k, false);
+      return onSpot(P, w) && f ? { ...bwlPin(k, true), x: f.x, z: f.z } : bwlPin(k, true); });
+    g.balls = [w, ...pins];
+    N.hand = back;
+    N.said = r.miss ? 'no pin met' : full && n === 10 ? 'a strike' : 'took ' + n + (n === 1 ? ' pin' : ' pins');
+    if (r.whiteOff) N.said += ', the white in the ditch';
+    if (rack) N.said += ', the pins set again' + (back ? ', the white back on the head spot' : '');
+    g.ang = bwlAim(g.balls);
+    if (!g.auto){ const hk = bwlHiKey(g); if (!(BEST[hk] >= N.score) && N.score > 0){ BEST[hk] = N.score; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
     N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
   }
   function* bwlPlanGen(g, lvIn){
     const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), T = BWL_TRY[lv - 1], w = g.balls.find(b => b.cue && !b.sunk);
-    const pins = g.balls.filter(b => !b.cue && !b.sunk).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z)).slice(0, T.pins);
+    const pins = g.balls.filter(b => !b.cue && !b.sunk && !b.ditch).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z)).slice(0, T.pins);
     let best = null; const e = 1.3 * BWL_ERR[lv - 1] * D;
     for (const p of pins) for (const off of T.offs){
       const a = Math.atan2(p.z + off * BWL_R - w.z, p.x - w.x);
       for (const pw of T.pows) for (const tip of T.tips){
-        // (each ball flown at its aim and at its hand's error either side: one that could lose the white is worth little, NO FRAMES)
-        let pins = 0, lost = 0, k = 0;
+        // (each ball flown at its aim and at its hand's error either side: one that could put the white in the ditch a little worse)
+        let got = 0, lost = 0, k = 0;
         for (const da of [0, -e, e]){ const st = strikeOf(a + da, tip[0], tip[1], pw, MU_TIP, 0), sm = simB(g.balls, st.dir, st.speed, st.w, st.vy); yield;
-          if (!sm) continue; const d = bwlDown(g.balls, sm); pins += d.down.length; lost += d.whiteOff ? 1 : 0; k++; }
-        if (!k) continue; const score = pins / k - 100 * lost / k;
+          if (!sm) continue; const d = bwlDown(g.balls, sm); got += d.down.length; lost += d.whiteOff ? 1 : 0; k++; }
+        if (!k) continue; const score = got / k - 1.5 * lost / k;
         if (!best || score > best.score) best = { a, p: pw, tip, score };
       }
     }
@@ -56883,38 +56906,12 @@ const TRICK_APP = (() => {
     return { a: best.a + gauss * BWL_ERR[lv - 1] * D, p: best.p, tip: best.tip, score: best.score };
   }
   function bwlTitle(g){
-    const N = g.nine, b = BEST[bwlKey(g)], hi = BEST[bwlHiKey(g)];
-    return 'Bowling — level ' + g.lv + ' · ' + (N.over ? starStr(N.stars || 1) + ' game over: the white went into the ditch, score ' + N.score + ', tap to bowl again'
-      : 'move ' + (N.moves.length + 1) + ', rack ' + N.racks + ', score ' + N.score + (N.hand ? ' (drag the white across to stand where you like)' : ''))
-      + (N.said && !N.over ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) + (hi ? ', ' + hi : '') : '') + ' · par ' + BWL_PAR[Math.max(1, Math.min(5, g.lv)) - 1] + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+    const N = g.nine, hi = BEST[bwlHiKey(g)], w = g.balls.find(b => b.cue);
+    return 'Bowling — level ' + g.lv + ' · move ' + (N.moves.length + 1) + ', rack ' + N.racks + ', score ' + N.score
+      + (N.hand ? ' (drag the white across to stand where you like)' : w && w.ditch ? ' (the white in the ditch: bowl it out)' : '')
+      + (N.said ? ' · ' + N.said : '') + (hi ? ' · best ' + hi : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
   }
-  function bwlAuto(idx, lvA, maxShots = 200){ const g = matchAuto('bowl', idx, lvA, lvA, maxShots); return { over: g.nine.over, shots: g.shots, score: g.nine.score, racks: g.nine.racks, moves: g.nine.moves.map(m => m.n) }; }
-  /* THE SCOREBOARD (above, NO FRAMES): a box of its own like the map's, drawn from the live board's game whenever it changes. */
-  const SB = { el: null, seen: 0, sig: '' };
-  function sbEnsure(){
-    if (SB.el || typeof document === 'undefined') return SB.el;
-    const el = document.createElement('div'); el.id = 'bwScore';
-    el.style.cssText = 'position:fixed;right:16px;top:76px;z-index:29;display:none;pointer-events:none;min-width:9.5rem;max-width:14rem;padding:8px 10px;border-radius:8px;background:rgba(10,12,16,.84);border:1px solid rgba(212,160,82,.55);box-shadow:0 1px 4px rgba(0,0,0,.6);color:#f2f0ea;font:0.75rem/1.45 ' + UI_MONO + ';white-space:pre';
-    document.body.appendChild(el); SB.el = el;
-    setInterval(() => { if (SB.el.style.display !== 'none' && performance.now() - SB.seen > CTL_GONE) sbHide(); }, 200);
-    return el;
-  }
-  function sbHide(){ if (SB.el) SB.el.style.display = 'none'; SB.sig = ''; }
-  function sbDraw(g){
-    if (!g || !g.nine || g.nine.kind !== 'bowl' || !sbEnsure()){ sbHide(); return; }
-    let open = false; try { open = !document.body.classList.contains('bb-collapsed'); } catch {}
-    if (open || ED.on){ sbHide(); return; }
-    SB.seen = performance.now(); SB.el.style.display = 'block';
-    const N = g.nine, sig = N.moves.length + ':' + N.over + ':' + N.score + ':' + N.racks;
-    if (sig === SB.sig) return; SB.sig = sig;
-    const pad = (v, k) => String(v).padStart(k), rows = N.moves.slice(-12).map((m, i, a) => {
-      const k = N.moves.length - a.length + i + 1, mark = m.off ? ' ditch' : m.x ? ' X' : m.miss ? ' –' : '';
-      return pad(k, 3) + pad(m.n, 4) + pad(m.total, 6) + mark; });
-    const hi = BEST[bwlHiKey(g)];
-    SB.el.textContent = 'SCORE ' + N.score + (N.over ? '  · over' : '') + '\nrack ' + N.racks + ', move ' + (N.moves.length + (N.over ? 0 : 1))
-      + '\n  #  pins total\n' + (rows.length ? rows.join('\n') : '  (no moves yet)') + (N.moves.length > 12 ? '\n  … ' + (N.moves.length - 12) + ' earlier' : '')
-      + '\npar ' + BWL_PAR[Math.max(1, Math.min(5, g.lv)) - 1] + (hi ? ', best ' + hi : '');
-  }
+  function bwlAuto(idx, lvA, maxShots = 40){ const g = matchAuto('bowl', idx, lvA, lvA, maxShots); return { shots: g.shots, score: g.nine.score, racks: g.nine.racks, moves: g.nine.moves.map(m => m.n), ditch: g.nine.moves.filter(m => m.ditch).length, balls: g.balls }; }
   const GAMES = { get: k => GM().get(k), set: (k, v) => GM().set(k, v), has: k => GM().has(k), delete: k => GM().delete(k), clear: () => GM().clear(),
                   forEach: f => GM().forEach(f), values: () => GM().values(), keys: () => GM().keys(), get size(){ return GM().size; } };
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
@@ -57208,7 +57205,7 @@ const TRICK_APP = (() => {
      the shot seen ahead (the preview, as far as `see` reaches). */
   function liveView(g){
     if (g.rp) return rpView(g);
-    let pos = g.balls.map(b => b.sunk ? null : [b.x, b.z, 0]);
+    let pos = g.balls.map(b => b.sunk ? null : [b.x, b.z, b.ditch ? BWL_SINK : 0]);   // (bowling: a ball in the ditch lies sunk in it)
     if (g.nine && g.nine.rt) return { B: g.balls, pos, ch: null, rot: g.rot, lv: g.lv };   // (pool hockey: played as it is stepped, nothing seen ahead, no cue)
     if (g.anim){
       const an = g.anim, fr = an.s.frames, el = (performance.now() - an.t0) / 1000, k = Math.min(fr.length - 1, Math.floor(el * 60));
@@ -57236,7 +57233,7 @@ const TRICK_APP = (() => {
     const here = LIVE && LIVE.c === c && LIVE.r === r && liveGame(), g = here || GAMES.get(gkey(c, r));
     if (here && g.nine){ if (g.nine.rt) hkLive(g); else nineTick(g); }
     if (here) ctlSync(g);   // (whatever the board's size: the inset and the bar show only when the hand asks for them, Nov 22; until then from CTL_PX across)
-    if (g){ const V = liveView(g); if (here){ mapDraw(g, V); sbDraw(g); } return V; }
+    if (g){ const V = liveView(g); if (here) mapDraw(g, V); return V; }
     const idx = boardIdx(c, r), making = { B: [], pos: [], ch: null, making: true };
     // (asked for every frame it is in view, so its job stays in the queue; the demo after it is made, one board in 30 ms)
     if (!NINE() && idx >= CHALLENGES.length && !MINE.has(idx) && !puzzleSoon(idx, levelAt(idx))) return making;
@@ -57347,7 +57344,8 @@ const TRICK_APP = (() => {
     const out = [];
     const bare = (M() || {}).bare;
     const ditch = (M() || {}).ditch;   // (bowling: no cushions, a dark ditch round the table, NO CUSHIONS, A DITCH)
-    for (const [x0, z0, x1, z1] of bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: ditch ? 0.02 : CUSH_H, sz: z1 - z0, color: ditch ? DITCH_C : CUSH });
+    const W2 = BWL_DW, DITCHES = [[-LX / 2 - W2, -LZ / 2 - W2, LX / 2 + W2, -LZ / 2], [-LX / 2 - W2, LZ / 2, LX / 2 + W2, LZ / 2 + W2], [-LX / 2 - W2, -LZ / 2, -LX / 2, LZ / 2], [LX / 2, -LZ / 2, LX / 2 + W2, LZ / 2]];
+    for (const [x0, z0, x1, z1] of ditch ? DITCHES : bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: ditch ? 0.02 : CUSH_H, sz: z1 - z0, color: ditch ? DITCH_C : CUSH });
     if ((M() || {}).rt) for (const sg of [-1, 1]) out.push({ kind: 'tsBox', u: Ub(sg * (LX / 2 + CUSH_W / 2)), v: Vb(0), scale: Sb(1), sx: CUSH_W * 1.02, sy: CUSH_H * 1.04, sz: HK_GOAL, color: sg < 0 ? 0x2a4fb0 : 0xd23a2f });   // (pool hockey's goals: yours blue, the computer's red)
     const ch = V.ch;
     if (ch && ch.zone){ const [x, z, r] = ch.zone; out.push({ kind: 'tsZone', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }, { kind: 'tsZoneFill', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }); }
@@ -57626,7 +57624,7 @@ const TRICK_APP = (() => {
     if (at){ CTL.el.style.left = Math.round(Math.max(4, Math.min(innerWidth - 96, at[0] - 46))) + 'px'; CTL.el.style.top = Math.round(Math.max(4, Math.min(innerHeight - 120, at[1] - 46))) + 'px'; ctlDraw(g); }
     CTL.pull.style.display = CTL.pulling ? 'block' : 'none';
   }
-  const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } CTL.g = null; CTL.pulling = null; CTL.spin = false; mapHide(); sbHide(); };
+  const ctlHide = () => { if (CTL.el){ CTL.el.style.display = 'none'; CTL.pull.style.display = 'none'; } CTL.g = null; CTL.pulling = null; CTL.spin = false; mapHide(); };
   /* THE WHOLE TABLE, SMALL, WHILE YOU STAND BEHIND THE WHITE (Nov 23: "When the full board is not shown, show a  minimap in the lower right"). From
      behind the white the far balls hide one another and a ball behind you is not seen at all. While the whole table is not up (`WHOLE`), a small
      picture of it from straight above stands in the lower right, 16px from the edges as the two buttons are: the cloth, the pockets (none on a
@@ -58140,12 +58138,12 @@ const TRICK_APP = (() => {
       ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.62); ctx.lineTo(sz * 0.5, sz * 0.28); ctx.lineTo(sz * 0.92, sz * 0.5); ctx.lineTo(sz * 0.7, sz * 0.72); ctx.lineTo(sz * 0.4, sz * 0.5); ctx.stroke(); ctx.setLineDash([]);
       for (const [x, y, c] of [[0.2, 0.62, '#f2f0ea'], [0.4, 0.5, '#d23a2f'], [0.62, 0.4, '#e3c33b']]) dot(ctx, x * sz, y * sz, sz * 0.05, c); },
     debug: { rackC, carScore, carFinish, carPlan, carPlanGen, carAuto, carTitle, simC, CAR_TO, CAR_ERR, CAR_SEE, GRID_C, CUSHIONS_C } });
-  app.bowl = matchApp(MATCH.bowl, { name: 'Bowling', hint: 'bowl from where the white stops, every pin a point, the pins set again when all are down; the white in the ditch ends the game',
+  app.bowl = matchApp(MATCH.bowl, { name: 'Bowling', hint: 'bowl from where the white stops, the ditch too; every pin a point, the pins set again when all are down',
     level: 'How steady the computer\'s hand is, how many balls it looks at and how far your own ball is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The ten pins set, the white on the head spot, the score at nothing.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
       const d = sz * 0.07; [1, 2, 3, 4].forEach((n, row) => { for (let j = 0; j < n; j++) dot(ctx, sz * 0.6 + row * d * 1.4, sz * 0.5 + (j - (n - 1) / 2) * d * 1.6, d * 0.5, ['#e3c33b', '#2f5fd0', '#d23a2f', '#6b3fa0', '#e0782a', '#2e8b57', '#7a2f2a', '#16161a', '#e3c33b', '#2f5fd0'][row * (row + 1) / 2 + j]); });
       dot(ctx, sz * 0.2, sz * 0.5, d * 0.55, '#f2f0ea'); },
-    debug: { rackB, simB, bwlDown, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, bwlStars, sbDraw, SB, BWL_SPOT, BWL_ERR, BWL_SEE, BWL_R, BWL_PAR } });
+    debug: { rackB, simB, bwlDown, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, BWL_SPOT, BWL_ERR, BWL_SEE, BWL_R, BWL_DW } });
   return app;
 })();
 const NINEBALL_APP = TRICK_APP.nine;   // (9-ball against the computer, on trick shots' engine and table, Nov 22)

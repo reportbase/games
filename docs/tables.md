@@ -1404,3 +1404,23 @@ Make the balls slighty bigger.  Add a score board to keep track of the moves.").
   again, a miss, the white in the ditch ending the game with its pins counted, a strike marked; the ditch; the computer's ball; the real Enter
   bowling and the scoreboard showing move 1; a board no one plays. Run: part 7, whole, passing.
 
+**Bowling: the ditch keeps what falls in, the white shot out of it, no end, no scoreboard** (Nov 25: "Remove the billboard.   Leave the balls in
+the ditch.   Let the player hit the cue ball from the ditch.  Going on the ditch does not end the game.    The balls in the ditch block other balls
+from going in the ditch."). Search for THE DITCH KEEPS WHAT FALLS IN and NO FRAMES in `games.html`.
+- **The scoreboard is taken out** (`sbDraw`, `#bwScore`); the title says the move, the rack, the score and the best.
+- **The ditch** is a strip `BWL_DW` (a ball's width and a little) round the table, drawn wider and dark. A ball that falls in lies on its middle line
+  where it went over, slid along it clear of the balls already there, and stays (`ditch` on the ball, not sunk). A pin in the ditch is down (a point)
+  and stays there until the pins are set again; the white stays there and is bowled out of it, and is not caught again until it has been back on
+  the table (one that never comes out stays where it lay).
+- **The ditch blocks**: in a shot every ball in the ditch but the white struck is flown `fixed`. The engine (above IN THE FIELD, wander's
+  `play-trick.html`) reads a pair's masses from their sizes, so a heavy `m` did not hold a ball still; `respond` now takes a flag: a fixed ball takes no
+  push and gives the whole rebound (`image` carries `fix`). No other game sets it, so nothing else changes; the same edit is in wander's
+  `play-trick.html`. A white rolled straight at a ball in the ditch rebounds off it short of the edge (hard: it is a ball's rebound, `E_BALL`).
+- **Nothing ends the game**; the menu's "Start this board again" starts afresh. Stars and par are gone with the end; the best score is kept as it is
+  passed (`bwh:`). The computer's planner counts a ball that could put the white in the ditch 1.5 pins worse (it was −100).
+- Measured: the computer at level 4, 30 moves, 110 pins in 12 racks, the white in the ditch 9 times.
+- The smoke test's bowling check (part 7) is rewritten for these rules: on balls made up the white and a pin kept in the ditch with the game going on,
+  a miss from the ditch, the pins set again (the ditch's pins with them); in shots, a ball off the side lying in the ditch, the white shot out of it
+  meeting pins, a ball in the ditch keeping a rolled white out (and without it the white going in); no scoreboard. Run: part 7, whole, passing.
+  Not run: the pool games' parts (the engine's change is inert without the flag).
+
