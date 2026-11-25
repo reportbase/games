@@ -1,6 +1,6 @@
 # Table and ball games
 
-Pinball, Pong, air hockey, squash, curling, bowling, marble run, the tanks, trick shots, and the three taken out.
+Pinball, Pong, air hockey, squash, curling, bowling, bumper pool, marble run, the tanks, trick shots, and the three taken out.
 
 Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood there: the dated notes of what was built, with the owner's words, the names to search for in `games.html` and the numbers measured. `CLAUDE.md` keeps the rules; read this before working on this part, and add to it when you change it. A later note overrides an earlier one where they differ (several say so).
 
@@ -1495,3 +1495,20 @@ the white at two aims (the table diagonal, then across the screen): the minimap'
 
 **The minimap see-through** (Nov 25: "make the mimap transparent"). `#tsMap` is drawn at opacity 0.55 (its drop shadow taken off, which would
 show through as a dark smear), so the board shows through it. Not tested beyond the style itself.
+
+**Curling on the pool table** (Nov 25: "lets do the same thing for curling that we did for bowling.   use the pool engine."). Curling's sheet of
+its own (`CURLING_APP` of Oct 28, its ice, sweeping, broom, weight names and the pull bar `PULL_BAR` it alone used) is taken out; the account above
+stands as the record. `CURLING_APP` is now `TRICK_APP.curl`, an entry of `MATCH` ('curl', id `curling` still); the rules in the comment over
+`CU_R` (CURLING, ON THE POOL TABLE).
+- The sheet is the pool table without cushions or pockets, drawn as ice with the house (a round disc a ring, `tsDisc`, each as thin at every
+  size so the smaller show over the larger), the far hog line, the tee line and the back line, the edges a dark gutter as bowling's. Stones are
+  balls 1.15 a pool ball, granite with a red or yellow cap (numbers 26–33, `ballTex`).
+- The throw is pool's (aim, power, the tip) from the hack; the tip's side is the curl: the engine's `TRAP` pushes a stone square to its way, the
+  way it turns, more as it slows, by the board's ice (`cuIce`), until its way turns at a contact; and takes a stone whose middle leaves the sheet
+  out. The default power is the weight that stops a lone stone on the button (`cuPowFor`, about 8).
+- Out (`cuOut`): off the sheet, wholly past the back line, the delivered stone short of the far hog line having met none. Four stones a side an
+  end, in turn; scored by the stones nearest the button (`cuEndScore`); the scorer throws first next end; four ends, an extra on a draw. Stars by
+  the margin. The computer (`cuPlanGen`) weighs draws, a guard and takeouts. Sweeping is gone (no broom on the pool table).
+- Part 7: the old curling checks (the sheet, its row-shut drag and pad, from behind the stone, its pull bar) are taken out; a new check covers the
+  hack, an end's score, four ends to a win (3 stars), a lone stone to the button, the curl both ways, a takeout, the hog line, the computer's
+  stone, the real Enter and a board no one plays. Looked at in screenshots: the house round, the stones, the view behind the stone.

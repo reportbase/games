@@ -1,4 +1,4 @@
-// Smoke test, part 7 of 7: curling, bowling, the marble run, playing with the row shut, Bejeweled, air hockey's corners, Asteroids, the Difficulty and
+// Smoke test, part 7 of 7: curling, bowling, bumper pool, the marble run, playing with the row shut, Bejeweled, air hockey's corners, Asteroids, the Difficulty and
 // the board lock, Invaders, Board War and Simon's songs.
 //
 //   node tests/part7.mjs            this part alone (LIBS_DIR, BASE_URL, SETTLE_MS and CHROMIUM_PATH as for npm test)
@@ -15,71 +15,59 @@ const T = await begin(7, () => current);
 const { page, failures } = T;
 
 try {
-  // CURLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the ice (a draw solved to the button, the curl the way
-  // it turns, sweeping farther and straighter, a takeout moving the stone it strikes, the hog line); an end's score; games between
-  // the steady player and the computer ending, the steady player doing better at level 1 than at 5; and real input: a click
-  // starting, a real click putting the broom where it fell, the real Enter throwing, a real press held sweeping, the computer
-  // answering; and a board no one plays moving through its recorded end
+  // CURLING ON THE POOL TABLE (Nov 25: "lets do the same thing for curling that we did for bowling.   use the pool engine."): the first stone at the
+  // hack; an end's score on stones made up; four ends of balls made up, scored, the scorer first next end, a win; in shots a lone stone's weight to
+  // the button, the tip's side curling it either way, a takeout putting a stone out, a stone short of the hog line out; the computer's stone; the
+  // real Enter; a board no one plays
   current = 'curling';
   {
-    const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); window.getFieldApp()._debug.behind(false);   // (Nov 23: these clicks are aimed over the sheet framed whole, as it used to open; the view behind the stone is checked at the end)
-      await new Promise(ok => setTimeout(ok, 2500)); });
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
     const cu = await page.evaluate(() => {
-      const A = window.getFieldApp(), D = A._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
-      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
-      const ice = D.iceOf(9, 3), alone = shot => D.throwSim([], 0, shot, ice).st;
-      const s = D.solveDraw(K.W / 2, K.TEE, 1, ice), d = alone(s); out.draw = +Math.hypot(d.x - K.W / 2, d.y - K.TEE).toFixed(4);
-      const straight = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: 0 }), right = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: 1 }), left = alone({ bx: K.W / 2, by: K.TEE, w: 0.72, curl: -1 });
-      out.curl = [+(right.x - straight.x).toFixed(3), +(left.x - straight.x).toFixed(3)];
-      const swept = D.throwSim([], 0, { bx: K.W / 2, by: K.TEE, w: 0.72, curl: 1 }, ice, { sweep: () => 1 }).st;
-      out.sweep = { farther: +(right.y - swept.y).toFixed(3), straighter: +((right.x - straight.x) - (swept.x - straight.x)).toFixed(3) };
-      const guard = [{ x: K.W / 2, y: K.TEE, vx: 0, vy: 0, s: 0, team: 1, rot: 0, out: false, hit: false, live: false }];
-      const hit = D.throwSim(guard, 0, D.solveHit(K.W / 2, K.TEE, 1, 2.2, ice), ice).S[0]; out.takeout = hit.out || Math.hypot(hit.x - K.W / 2, hit.y - K.TEE) > 0.1;
-      out.hog = alone({ bx: K.W / 2, by: K.TEE, w: 0.3, curl: 0 }).out;
-      const S = [[0, 0.003], [0, 0.03], [1, 0.05], [0, 0.07], [1, 0.4]].map(([team, dy]) => ({ x: K.W / 2, y: K.TEE + dy, team, out: false }));
-      const e = D.endScore(S); out.score = e.team + ':' + e.n;
-      out.games = [1, 5].map(lv => { let a = 0, b = 0; for (let k = 0; k < 2; k++){ const G = D.newMatch(300 + k, lv, { ai0: D.STEADY, ends: 2, seed: k }); let n = 0; while (G.state !== 'over' && n < 200000){ D.tick(G, false); n++; } if (G.state !== 'over') return null; a += G.score[0]; b += G.score[1]; } return [a, b]; });
+      const A = window.getFieldApp(), D = A._debug, out = {}, T = D.CU_TEE, st = (n, x, z) => ({ n, x, z, r: D.CU_R, y: 0, vx: 0, vz: 0, sunk: false });
+      const B = D.rackCu(3); out.rack = B.length === 1 && B[0].cue && B[0].n === 26 && B[0].x === D.CU_HACK[0] && B[0].z === D.CU_HACK[1];
+      out.score = [D.cuEndScore([st(26, T + 0.3, 0), st(27, T + 1, 0), st(30, T + 0.8, 0)]), D.cuEndScore([st(30, T, 0.2), st(31, T + 0.5, 0), st(26, T + 1.2, 0), st(32, T + 2, 0)]), D.cuEndScore([st(26, T - 4, 0)])].map(e => e.side + ':' + e.pts).join(' ');
+      const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
+      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.turn, /^Curling/.test(D.cuTitle(g))].join(); })();
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      // a stone made up: the delivered one comes to rest at (x, z), having met another if `met`
+      const throwTo = (h, x, z) => { const s = { first: null, contacts: [], cushions: [], sunk: [], final: h.balls.map(b => b.cue ? { ...b, x, z } : { ...b }) }; h.anim = { s }; D.cuFinish(h, s); };
+      let h = fresh(); const ends = [];
+      for (let e = 0; e < D.CU_ENDS; e++){ for (let j = 0; j < 2 * D.CU_STONES; j++){ const t = h.nine.turn; if (h.nine.over) break;
+          if (e === 0 && t === 0) throwTo(h, T + 0.25 * h.nine.thrown[0], 0.6 * (h.nine.thrown[0] - 1.5)); else throwTo(h, 9.6, 0); }   // (the computer's, and the later ends', past the back line: out)
+        ends.push([h.nine.pts.join('-'), h.nine.first, h.nine.end, h.balls.length].join(':')); }
+      out.ends = ends.join(' '); out.over = [h.nine.over, h.nine.stars, /you won/.test(D.cuTitle(h))].join();
+      h = fresh(); const P = D.matchPlan(D.MATCH.curl, h, 3); out.plan = isFinite(P.score) && isFinite(P.a) && P.p >= 1;
+      fresh();
       return out;
     });
-    const L = cu.levels;
-    const shareOk = cu.games[0] && cu.games[1] && cu.games[0][0] - cu.games[0][1] > cu.games[1][0] - cu.games[1][1];
-    if (!(L[0] < L[2] && L[2] <= L[3]) || cu.draw > 0.006 || !(cu.curl[0] > 0.01 && cu.curl[1] < -0.01) || !(cu.sweep.farther > 0.03 && cu.sweep.straighter > 0.003)
-        || !cu.takeout || !cu.hog || cu.score !== '0:2' || !shareOk)
-      failures.push(`[${current}] ${JSON.stringify(cu)}`);
-    // real input: a click starts, a click puts the broom, Enter throws, a press held sweeps, the computer answers
-    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
-      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
-    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, thrown: g.G.thrown, bx: g.G.shot.bx, sweep: g.G.sweepK, t: g.G.t } }; });
-    await page.evaluate(() => window.__settle());
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await drawn(page, 600);
-    const live = { started: await gs() };
-    p = await at(0.4, 0.25); await page.mouse.click(p.x, p.y); await drawn(page, 600);
-    live.aimed = await gs();
-    await page.keyboard.press('Enter');
-    // (a press counts as sweeping only once the stone runs: on a slow first frame the press came before the throw)
-    for (let w = 0; w < 40 && (await gs()).G.state !== 'throw'; w++) await frame(page, 150);
-    p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down();
-    // (a press that did not take, on a slow runner, is pressed again while the stone still runs)
-    for (let w = 0; w < 40 && !((await gs()).G.sweep > 0); w++){ await frame(page, 150);
-      if (w % 6 === 5 && (await gs()).G.state === 'throw'){ await page.mouse.up(); await drawn(page, 100); p = await at(0.5, 0.6); await page.mouse.move(p.x, p.y); await page.mouse.down(); } }
-    live.swept = await gs(); await page.mouse.up();
-    /* THE ANSWER IS WAITED FOR ON THE GAME'S CLOCK (12 Nov 2026: "1,2,3,4,5,6", the first "Games: fix the flaky checks and move to
-       the newer browser"; part 7 failed here once on CI with Playwright 1.63.0, `answered` read as state 'rest', one stone thrown).
-       Your stone runs out, rests, and the computer throws, all in ticks of the game's own time, a quarter of a second of it a
-       frame at most (`stepGame`); this waited 30 s on the wall, which slow frames used up with the stone only just at rest. It is
-       given a minute of the game's time (`G.t`), five of the wall's at most. */
-    live.answered = await onClock(page, gs, s => s.G.thrown >= 2, 60, s => s.G.t);
-    // a board no one plays: its recorded end, moving on the page's clock
-    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
-      const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 30 && !M.done; k++) D.recWork(M);
-      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => i.kind === 'cuStone').map(i => [i.u.toFixed(3), i.v.toFixed(3)]));
-      const seen = new Set(); for (let k = 0; k < 16; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return { done: M.done, looks: seen.size }; });
-    if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.bx - 0.4 * 0.42) > 0.02
-        || !(live.swept && live.swept.G.state === 'throw' && live.swept.G.sweep > 0) || !(live.answered && live.answered.G.thrown >= 2) || !live.shown.done || live.shown.looks < 3)
-      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} curling (levels ${L.join('/')}; a draw to ${cu.draw} of the button, curling ${cu.curl.join('/')}, sweeping ${cu.sweep.farther} farther and ${cu.sweep.straighter} straighter, a takeout, the hog line, an end scored ${cu.score}; the steady player ${cu.games.map(g => g && g.join('-')).join(' at level 1, ')} at level 5; a real click started, a real click put the broom, the real Enter threw, a real press swept, the computer answered; a board no one plays showed ${live.shown.looks} looks)`);
+    // shots through the match's own strike (the tip's side as the curl), from the page's own debug
+    const sh = await page.evaluate(() => {
+      const D = window.getFieldApp()._debug, T = D.CU_TEE, out = {}, p = D.cuPowFor(T - D.CU_HACK[0]);
+      const strike = (B, a, pw, tip) => { const st = D.strike(a, tip, pw); return D.simCu(B, st.dir, st.speed, st.w, st.vy); };
+      const stone = () => [{ ...D.rackCu(0)[0] }];
+      const s0 = strike(stone(), 0, p, 0), f0 = s0.final[0]; out.draw = [Math.abs(f0.x - T) < 0.6, Math.abs(f0.z) < 0.2].join();
+      const sl = strike(stone(), 0, p, 0.4), sr = strike(stone(), 0, p, -0.4); out.curl = [Math.abs(sl.final[0].z) > 0.3, Math.abs(sr.final[0].z) > 0.3, Math.sign(sl.final[0].z) === -Math.sign(sr.final[0].z)].join();
+      const tgt = { ...D.rackCu(0)[0], n: 30, cue: false, x: T, z: 0 }, B2 = [stone()[0], tgt], s2 = strike(B2, 0, Math.min(60, p * 1.9), 0); out.takeout = D.cuOut(B2, s2).includes(30);
+      const s3 = strike(stone(), 0, p * 0.5, 0); out.hog = D.cuOut(stone(), s3).includes(26);
+      return out;
+    });
+    const g1 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r);
+      return g ? { shots: g.shots, anim: !!g.anim, moves: g.nine.moves.length, over: g.nine.over, turn: g.nine.turn } : null; });
+    await page.keyboard.press('Enter'); await drawn(page, 300);
+    const went = await g1();
+    for (let k = 0; k < 120 && (await g1()).anim; k++) await frame(page, 300);
+    const after = await g1();
+    const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true);
+      const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
+      return { shots: R.shots, over: R.over, moves: at(0) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind }; });
+    const ok = cu && !cu.none && cu.rack && cu.name === 'Curling' && cu.start === '1,0,true' && cu.score === '0:1 1:2 -1:0'
+      && cu.ends === '4-0:0:2:1 4-0:0:3:1 4-0:0:4:1 4-0:0:5:0' && cu.over === '1,3,true' && cu.plan
+      && sh.draw === 'true,true' && sh.curl === 'true,true,true' && sh.takeout && sh.hog
+      && went && went.shots === 1 && after && !after.anim && after.moves === 1 && after.turn === 1
+      && rec.kind === 'curl' && rec.shots >= 8 && rec.moves && rec.again;
+    if (!ok) failures.push('[curling] ' + JSON.stringify({ cu, sh, went, after, rec }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} curling on the pool table (the stone at the hack; an end scored by the stones nearest the button; four ends to a win; a lone stone's weight to the button, the tip's side curling it either way, a takeout and the hog line; the computer's stone; the real Enter threw; a board no one plays threw ${rec.shots} stones${rec.over ? ', to a win' : ''})`);
   }
 
   // BOWLING ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow bowling
@@ -258,19 +246,7 @@ try {
       await new Promise(ok => setTimeout(ok, 2000)); }, id); await page.evaluate(() => window.__settle()); };
     const pad = key => page.evaluate(k => { const b = document.querySelector('#playPad button[data-key="' + k + '"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, key);
     let p, a, b, pts;   // (bowling was played here with the row shut by a swipe up its lane; since Nov 25 it is a pool game, its pad and keys pool's)
-    // curling
-    await go('curling'); await page.evaluate(() => window.getFieldApp()._debug.behind(false));
-    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
-    p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
-    const cs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && g.G && { st: g.G.state, w: g.G.shot.w, curl: g.G.shot.curl }; });
-    for (let w = 0; w < 20 && !((await cs()) || {}).st; w++) await frame(page, 250);
-    const c0 = await cs();
-    a = await at(0.5, 0.93); b = await at(0.5, 0.3); pts = []; for (let k = 0; k <= 10; k++) pts.push({ x: a.x + (b.x - a.x) * k / 10, y: a.y + (b.y - a.y) * k / 10 });
-    await swipe(pts, 30); await drawn(page, 500);
-    const c1 = await cs(); out.cuWeight = [+c0.w.toFixed(3), +c1.w.toFixed(3)];
-    for (let w = 0; w < 10 && !(await pad('curl')); w++) await frame(page, 250);
-    const pc = await pad('curl'); if (pc){ await page.mouse.click(pc[0], pc[1]); await drawn(page, 400); }
-    out.cuCurl = [c1.curl, (await cs()).curl]; out.cuShut = await shut();
+    // (curling was played here with the row shut by a drag of its stone; since Nov 25 it is a pool game, its pad and keys pool's)
     // marble run, taps alone
     await go('marblerun');
     const mr = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; D.GAMES.delete(f.c + '_' + f.r); const g = D.gameAt(f.c, f.r), P = g.P;
@@ -298,11 +274,10 @@ try {
     const w0 = await wid(), pw = await pad('weapon'); if (pw){ await page.mouse.click(pw[0], pw[1]); await drawn(page, 500); }
     out.tk = [w0, await wid()];
     const ok = true
-      && out.cuWeight[1] !== out.cuWeight[0] && out.cuCurl[0] === -out.cuCurl[1] && out.cuShut
       && out.mr.laid && out.mr.next !== out.mr.laid && out.mr.ran !== 'build'
       && out.bk[1] > (out.bk[0] || 0) && out.bkShut && out.tk[0] !== out.tk[1] && out.tk[1] != null;
     if (!ok) failures.push(`[${current}] ${JSON.stringify(out)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} played with the row shut (curling: a drag of the stone set the weight ${out.cuWeight.join(' → ')}, the pad's button turned the curl; marble run: real taps laid ${out.mr.laid} then ${out.mr.next}, a tap on the chute ${out.mr.ran}; 3D Tetris's Tip, the tanks' next shell by real clicks on the pad)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} played with the row shut (marble run: real taps laid ${out.mr.laid} then ${out.mr.next}, a tap on the chute ${out.mr.ran}; 3D Tetris's Tip, the tanks' next shell by real clicks on the pad)`);
   }
   // BEJEWELED (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the white one, but with
   // different colors. also, when sliding pieces, highlight the selected cells."; then "whats next for bejeweld", "1,2,5,6": special
@@ -1021,53 +996,8 @@ try {
     if (!sgOk) failures.push('[simon songs] ' + JSON.stringify(sg));
     console.log(`${sgOk ? 'ok  ' : 'FAIL'} simon songs: twelve tunes (pads ${sg.pads}) at their own pitches, a button a song, round n playing n notes, the whole of Twinkle played back won (${JSON.stringify(sg.end)}), a wrong pad lost`);
 
-  // CURLING FROM BEHIND THE STONE (Nov 23: "How about bowling and curling.  They could be similar to the pool games.", "Proceed"): a game begun
-  // by a real click is seen from behind the stone, low and tilted 40°; the pad stands in the lower left with ▦ and the curl; the house stands
-  // small in the lower right; the real ▦ shows the whole sheet, tilted more and from higher, the map away, and the next ▦ comes back.
-  {
-    current = 'curling behind the stone';
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); window.getFieldApp()._debug.behind(true); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle();
-      const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); if (g) g.viewTag = null; });   // (as if brought in again: an earlier check may have left a game on the framed sheet, its view already taken)
-    await page.mouse.click(640, 400); await drawn(page, 800);
-    const cS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, st = window.FIELD_WORLD.st, m = document.querySelector('#cuMap'), r = m && m.getBoundingClientRect(), pad = document.querySelector('#playPad');
-      return { pitch: st.pitch, zoom: st.zoom, whole: D.WHOLE, map: m ? [m.style.display, Math.round(innerWidth - r.right), Math.round(innerHeight - r.bottom)] : null, low: pad.className, keys: [...pad.querySelectorAll('button')].map(b => b.dataset.key).join() }; });
-    for (let k = 0; k < 40 && (await cS()).zoom > 20; k++) await frame(page, 400);
-    const b0 = await cS();
-    const view = async () => { const q = await page.evaluate(() => { const b = document.querySelector('#playPad button[data-key="view"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }); if (q){ await page.mouse.click(q[0], q[1]); await drawn(page, 600); } };
-    await view(); for (let k = 0; k < 40 && (await cS()).zoom < 40; k++) await frame(page, 400);
-    const b1 = await cS();
-    await view(); for (let k = 0; k < 40 && (await cS()).zoom > 20; k++) await frame(page, 400);
-    const b2 = await cS();
-    const ok = b0 && Math.abs(b0.pitch - 40) < 1 && b0.zoom < 20 && !b0.whole && b0.map && b0.map.join() === 'block,16,16' && b0.low === 'low' && /^view(,curl)?$/.test(b0.keys)
-      && b1.whole && b1.zoom > 40 && b1.pitch > 55 && b1.map[0] === 'none' && !b2.whole && b2.zoom < 20 && Math.abs(b2.pitch - 40) < 1 && b2.map[0] === 'block';
-    if (!ok) failures.push('[curling behind] ' + JSON.stringify({ b0, b1, b2 }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} curling from behind the stone: a game begun is seen low and tilted 40° from the delivery, the pad in the lower left, the house small in the lower right; the real ▦ shows the whole sheet and back`);
-    await page.evaluate(() => window.getFieldApp()._debug.wholeSheet(false));
-  }
-
-  // THE PULL BAR IN CURLING (Nov 23: "How do I shot the ball, long press doesn't work"): a real press held still shows the bar by the
-  // finger, the pull sets the weight (curling) or the speed (bowling), and the lift throws or bowls; a press let go without a pull shoots nothing.
-  {
-    current = 'pull bar';
-    for (const id of ['curling']){
-      await page.evaluate(async id => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); const D = window.getFieldApp()._debug; if (D.setMode) D.setMode('game'); D.behind(false); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); }, id);
-      await page.mouse.click(640, 400); await drawn(page, 800);
-      const pS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r), b = document.querySelector('#pullBar');
-        return g && g.G ? { G: g.G.state, set: g.G.shot.w != null ? g.G.shot.w : g.G.shot.v, mine: D.myTurn(g), bar: b ? b.style.display : 'none' } : null; });
-      for (let k = 0; k < 60 && !((await pS()) || {}).mine; k++) await frame(page, 500);
-      const p0 = await pS();
-      await page.mouse.move(640, 300); await page.mouse.down(); await page.waitForTimeout(900); await drawn(page, 300);   // (held, let go without a pull)
-      const p1 = await pS(); await page.mouse.up(); await drawn(page, 500);
-      const p2 = await pS();
-      await page.mouse.move(640, 300); await page.mouse.down(); await page.waitForTimeout(900); await drawn(page, 300);
-      for (let y = 320; y <= 440; y += 20){ await page.mouse.move(640, y); await page.waitForTimeout(60); }
-      const p3 = await pS(); await page.mouse.up(); await drawn(page, 700);
-      const p4 = await pS();
-      const ok = p0 && p0.mine && p1.bar === 'block' && p2.bar === 'none' && p2.G === 'aim' && p2.set === p0.set && p3.bar === 'block' && p3.set !== p0.set && p4.bar === 'none' && p4.G !== 'aim';
-      if (!ok) failures.push('[pull bar ' + id + '] ' + JSON.stringify({ p0, p1, p2, p3, p4 }));
-      console.log(`${ok ? 'ok  ' : 'FAIL'} the pull bar in ${id}: a real press held shows the bar, let go at once nothing is shot, pulled it sets the ${id === 'curling' ? 'weight' : 'speed'} and the lift ${id === 'curling' ? 'throws' : 'bowls'}`);
-    }
-  }
+  // (CURLING FROM BEHIND THE STONE and THE PULL BAR IN CURLING were checked here until Nov 25, when curling became a pool game: its view and
+  // its shot are pool's, checked with pool's)
 
 } catch (e){
   failures.push(`[${current}] ${e.message}`);
