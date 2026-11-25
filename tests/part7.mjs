@@ -15,8 +15,6 @@ const T = await begin(7, () => current);
 const { page, failures } = T;
 
 try {
-  // (Nov 23: bowling's older checks aim their clicks over the lane framed whole, as it used to open; its view from behind the ball is checked at the end)
-  await page.evaluate(() => window.FIELD_APPS.find(a => a.id === 'bowling')._debug.behind(false));
   // CURLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the ice (a draw solved to the button, the curl the way
   // it turns, sweeping farther and straighter, a takeout moving the stone it strikes, the hog line); an end's score; games between
   // the steady player and the computer ending, the steady player doing better at level 1 than at 5; and real input: a click
@@ -84,121 +82,49 @@ try {
     console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} curling (levels ${L.join('/')}; a draw to ${cu.draw} of the button, curling ${cu.curl.join('/')}, sweeping ${cu.sweep.farther} farther and ${cu.sweep.straighter} straighter, a takeout, the hog line, an end scored ${cu.score}; the steady player ${cu.games.map(g => g && g.join('-')).join(' at level 1, ')} at level 5; a real click started, a real click put the broom, the real Enter threw, a real press swept, the computer answered; a board no one plays showed ${live.shown.looks} looks)`);
   }
 
-  // BOWLING (Oct 28: "2,   3 curling, bowling, marble run"): levels by ring; the scoring (300, all spares 190, all fours 80, the tenth's
-  // bonus balls); a hooking ball crossing the head pin's line left of a straight one; a gutter ball taking nothing; the steady
-  // player's first balls taking pins and its games ending, better at level 1 than at 5; and real input: a click starting, a real
-  // click aiming, the real Enter bowling and the ball counted; a board no one plays moving through its recorded game
+  // BOWLING ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow bowling
+  // rules."): the pins ten pool balls on their spots; bowling's scoring (300, all fives 150, all fours 80, the marks); the rules on balls made up (a strike
+  // sets the pins again and passes the turn, a first ball leaves its pins and keeps it, a gutter ball off a cushion counts nothing and leaves them as they
+  // stood, the spare passes it); the computer's ball; the real Enter bowling; a board no one plays bowling a game out
   current = 'bowling';
   {
-    const before = failures.length;
-    // (ten frames: spares are the default since Oct 28, checked after this)
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); window.getFieldApp()._debug.setMode('game'); await new Promise(ok => setTimeout(ok, 2500)); });
+    await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')));
+    await drawn(page, 1500); await page.evaluate(() => window.__settle && window.__settle());
     const bw = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, K = D.consts, out = {}, GS = Math.round(Math.sqrt(window.FIELD_ST.N));
-      out.levels = [D.levelOf(0, 0), D.levelOf(7, 0), D.levelOf(40, 3), D.levelOf(GS - 80, 2)];
-      out.score = [D.scoreOf(Array(12).fill(10)).total, D.scoreOf([...Array(20).fill(0).map((_, i) => i % 2 ? 1 : 9), 9]).total, D.scoreOf(Array(20).fill(4)).total,
-                   D.scoreOf([...Array(18).fill(0), 10, 10, 10]).total, D.scoreOf([...Array(18).fill(0), 7, 3, 5]).total, D.scoreOf([...Array(18).fill(0), 7, 2]).total];
-      const lane = D.laneOf(11, 3), shot = h => D.bowlSim([], { sx: K.CX + 0.05, tx: K.CX + 0.05, ty: K.ARROWS, v: 0.6, h }, lane, { untilY: K.HEAD }).B.x;
-      out.hook = +(shot(0) - shot(0.6)).toFixed(3);
-      const g = D.bowlSim(D.rack(), { sx: K.CX - 0.1, tx: K.CX - 0.2, ty: K.ARROWS, v: 0.6, h: 0 }, lane); out.gutter = { gutter: g.B.gutter, down: g.down };
-      let firsts = 0; for (let k = 0; k < 10; k++){ const L = D.laneOf(200 + k, 1); firsts += D.bowlSim(D.rack(), D.pick(D.rack(), L, true), L).down; } out.firsts = firsts / 10;
-      out.games = [1, 5].map(lv => { let sum = 0; for (let k = 0; k < 3; k++){ const G = D.newGame(400 + k, lv, { ai: D.STEADY, seed: k }); let n = 0; while (G.state !== 'over' && n < 120000){ D.tick(G); n++; } if (G.state !== 'over') return null; sum += D.scoreOf(G.rolls).total; } return Math.round(sum / 3); });
+      const A = window.getFieldApp(), D = A._debug, out = {}, sc = r => D.bwlScore(r).total;
+      const B = D.rackB(); out.rack = B.length === 11 && B[0].cue && B.slice(1).every(b => b.n >= 1 && b.n <= 10 && !b.sunk && b.x === D.BWL_SPOT[b.n][0] && b.z === D.BWL_SPOT[b.n][1]);
+      out.score = [sc(Array(12).fill(10)), sc(Array(21).fill(5)), sc(Array(20).fill(4))].join();
+      out.marks = D.bwlMarks([10, 7, 3, 9, 0, 10, 10, 10, 2, 8, 0, 0, 10, 10, 10, 10]);
+      const L = D.LIVE, k = L && L.c + '_' + L.r; if (!k) return { ...out, none: true };
+      out.name = A.name; out.start = (() => { const g = D.GAMES.get(k) || D.gameAt(L.c, L.r); return [g.balls.length, g.nine.turn, g.nine.hand, /^Bowling/.test(D.bwlTitle(g))].join(); })();
+      const fresh = () => { D.GAMES.delete(k); return D.gameAt(L.c, L.r); };
+      // a ball made up: the white meets `first` (after `rails` cushions), the pins in `down` knocked well off their spots
+      const play = (h, first, down, rails = 0) => { const s = { first: first == null ? null : { n: first, rails }, sunk: [], contacts: [], cushions: [],
+        final: h.balls.map(b => ({ ...b, x: down.includes(b.n) ? b.x + 3 : b.x })) }; h.anim = { s }; D.bwlFinish(h, s); return h; };
+      const up = h => h.balls.filter(b => !b.cue && !b.sunk).length;
+      let h = fresh(); play(h, 1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]); out.strike = [h.nine.rolls[0].join(), h.nine.turn, up(h)].join(';');
+      h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); out.first = [h.nine.rolls[0].join(), h.nine.turn, up(h), h.balls.filter(b => !b.cue && !b.sunk).map(b => b.n).join('')].join(';');
+      play(h, 4, [4, 7], 1); out.gutter = [h.nine.rolls[0].join(), h.nine.turn, up(h)].join(';');
+      h = fresh(); play(h, 1, [1, 2, 3, 5, 6, 8, 9]); play(h, 4, [4, 7, 10]); out.spare = [h.nine.rolls[0].join(), h.nine.turn, up(h), D.bwlMarks(h.nine.rolls[0])].join(';');
+      // the computer's ball meets a pin
+      h = fresh(); h.nine.turn = 1; const P = D.matchPlan(D.MATCH.bowl, h, 3); out.plan = P.score >= 1 && isFinite(P.a) && P.p >= 2;
+      fresh();
       return out;
     });
-    const L = bw.levels;
-    if (!(L[0] < L[2] && L[2] <= L[3]) || bw.score.join() !== '300,190,80,30,15,9' || !(bw.hook > 0.02) || !bw.gutter.gutter || bw.gutter.down !== 0
-        || !(bw.firsts >= 5) || !(bw.games[0] && bw.games[1] && bw.games[0] > bw.games[1]))
-      failures.push(`[${current}] ${JSON.stringify(bw)}`);
-    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
-      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
-    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, rolls: g.G.rolls.length, tx: g.G.shot.tx } }; });
-    await page.evaluate(() => window.__settle());
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y); await drawn(page, 600);
-    const live = { started: await gs() };
-    p = await at(0.42, 0.4); await page.mouse.click(p.x, p.y); await drawn(page, 600);
-    live.aimed = await gs();
-    await page.keyboard.press('Enter');
-    for (let w = 0; w < 60 && (await gs()).G.rolls < 1; w++) await frame(page, 250);
-    live.bowled = await gs();
-    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
-      const M = D.recOf(D.boardIdx(c, r), D.levelOf(c, r)); for (let k = 0; k < 40 && !M.done; k++) D.recWork(M);
-      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
-      const seen = new Set(); for (let k = 0; k < 48 && seen.size < 3; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 250)); } return { done: M.done, par: M.par, looks: seen.size }; });   // (a whole game's loop: 6 s could fall in its still parts)
-    if (!live.started || live.started.state !== 'play' || live.started.G.state !== 'aim' || !live.aimed || Math.abs(live.aimed.G.tx - 0.42 * 0.36) > 0.02
-        || !(live.bowled && live.bowled.G.rolls >= 1) || !live.shown.done || !(live.shown.par > 0) || live.shown.looks < 3)
-      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling (levels ${L.join('/')}; scores ${bw.score.join(', ')}; a hook ${bw.hook} across the head pin's line; a gutter ball took ${bw.gutter.down}; the steady player's first balls ${bw.firsts} pins, games ${bw.games.join(' at level 1, ')} at level 5; a real click started, a real click aimed, the real Enter bowled; a board no one plays showed ${live.shown.looks} looks, par ${live.shown.par})`);
-  }
-  // BOWLING'S SPARES (Oct 28: "could the ideas of trick shot be applied to bowling?", then "1,2,5"): every corner leave and generated
-  // leaves at levels 1, 3 and 5 made by their own found shot, par rising with the level; a miss setting the leave up again and
-  // counting a try; and real input: a real click starting the framed lane's leave, the real Enter bowling and the try counted, the
-  // shot shown and bowled making it; the editor: the real ✎ opening it, real clicks laying pins, Check's par, the real ✓ keeping it
-  // in storage, a shared copy on another lane, nonsense refused; a board no one plays showing its leave made
-  current = 'bowling spares';
-  {
-    const before = failures.length;
-    const sp = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, out = {};
-      D.setMode('spares');
-      out.course = D.COURSE.map((_, i) => { const J = D.leaveNow(D.leaveJob(i, 2)); return !!(J.res.s && D.clearsAll(D.leavePins(J.res.xy), J.res.s, J.lane)); }).filter(x => x).length;
-      out.pars = [1, 3, 5].map(lv => { let n = 0, sum = 0; for (let b = 0; b < 4; b++){ const J = D.leaveNow(D.leaveJob(700 + b * 13, lv)); if (J.res.s && D.clearsAll(D.leavePins(J.res.xy), J.res.s, J.lane)){ n++; sum += J.res.par; } } return n === 4 ? sum / 4 : null; });
-      const J = D.leaveNow(D.leaveJob(4, 2)), G = D.newGame(4, 2, { leave: J.res }); G.shot = { ...J.res.s, tx: J.res.s.tx + 0.08 }; D.bowlNow(G);
-      for (let n = 0; n < 6000 && (G.state === 'roll' || G.state === 'rest'); n++) D.tick(G);
-      out.miss = { state: G.state, tries: G.tries, up: G.pins.length === J.res.xy.length && G.pins.every(p => !p.down) };
-      out.clean = [D.cleanLeave({ xy: [[0, 0]] }), D.cleanLeave({ xy: 'x' }), D.cleanLeave({ xy: [[0.18, 0.2], [0.18, 0.2]] }), !!D.cleanLeave({ xy: [[0.18, 0.2]] })];
-      return out;
-    });
-    if (sp.course !== 15 || !(sp.pars[0] && sp.pars[1] && sp.pars[2] && sp.pars[0] < sp.pars[1] && sp.pars[1] < sp.pars[2]) || sp.miss.state !== 'aim' || sp.miss.tries !== 1 || !sp.miss.up
-        || sp.clean.slice(0, 3).some(x => x) || !sp.clean[3])
-      failures.push(`[${current}] ${JSON.stringify(sp)}`);
-    const at = (u, v) => page.evaluate(([u, v]) => { const W = window.FIELD_WORLD, T = W.target, L = window.LAB || {}, bW = W.boardW();
-      const p = new W.THREE.Vector3(T.boardX + (0.5 - u) * bW * (L.cellW || 1), 0, T.boardZ + (0.5 - v) * bW * (L.cellH || 1)).project(W.camera);
-      return { x: (p.x + 1) / 2 * innerWidth, y: (1 - p.y) / 2 * innerHeight }; }, [u, v]);
-    const gs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && { state: g.state, G: g.G && { state: g.G.state, tries: g.G.tries, spare: !!g.G.spare } }; });
-    const live = {};
-    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
-    await page.evaluate(() => window.__settle());
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
-    for (let w = 0; w < 20 && !((await gs()) || {}).G; w++) await frame(page, 250);
-    live.started = await gs();
-    await page.keyboard.press('Enter');
-    for (let w = 0; w < 60 && ((await gs()).G.tries || 0) < 1 && (await gs()).state !== 'over'; w++) await frame(page, 250);
-    live.tried = await gs();
-    if (live.tried && live.tried.state !== 'over'){
-      await page.evaluate(() => window.getFieldApp().menu[0].items.find(i => i.label === 'Show me the shot').on());
-      await page.waitForTimeout(300); await page.keyboard.press('Enter');
-      for (let w = 0; w < 60 && (await gs()).state !== 'over'; w++) await frame(page, 250);
-    }
-    live.made = await gs();
-    // the editor, by the real ✎
-    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; D.GAMES.delete(f.c + '_' + f.r); });
-    if (!(await page.evaluate(() => window.tvf.bottomRow.visible))){ await page.click('#bbHandle'); await drawn(page, 800); }
-    const pen = await page.evaluate(() => { try { bbRefreshNow(); } catch {} const b = [...document.querySelectorAll('#bbQuick button')].find(b => b.textContent.includes('✎')); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
-    if (pen){ await page.mouse.click(pen[0], pen[1]); await drawn(page, 800); }
-    live.opened = await page.evaluate(() => window.getFieldApp()._debug.ed().on);
-    await page.evaluate(() => window.getFieldApp()._debug.edTile(4));             // (Clear)
-    for (const [u, v] of [[0.5, 0.25], [0.3, 0.2]]){ p = await at(u, v); await page.mouse.click(p.x, p.y); await frame(page, 700); }
-    live.laid = await page.evaluate(() => window.getFieldApp()._debug.ed().xy.length);
-    live.check = await page.evaluate(() => { const r = window.getFieldApp()._debug.edCheck(false); return r.why || r.par; });
-    const tick = await page.evaluate(() => { try { bbRefreshNow(); } catch {} const b = [...document.querySelectorAll('#bbQuick button')].filter(b => b.textContent.trim() === '✓').pop(); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
-    if (tick){ await page.mouse.click(tick[0], tick[1]); await drawn(page, 800); }
-    live.kept = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, st = JSON.parse(localStorage.getItem('bowling.mine') || '{}')[f.c + '_' + f.r];
-      return { off: !D.ed().on, stored: st ? st.xy.length : 0, title: window.getFieldApp().cellTitle(f.c, f.r) }; });
-    live.shared = await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, d = D.MINE.get(f.c + '_' + f.r); D.takeLeave(f.c + 3, f.r, { xy: d.xy }); const J = D.jobFor(f.c + 3, f.r); D.leaveNow(J);
-      return { mine: !!J.mine, n: J.res.xy.length, made: !!(J.res.s && D.clearsAll(D.leavePins(J.res.xy), J.res.s, J.lane)) }; });
-    // (a board with no game on it and a shot found: on CI the board beside had stood still, a game or no shot there)
-    live.shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, r = f.r + 2; let c = f.c + 5;
-      for (let k = 0; k < 12; k++, c++){ if (D.GAMES.has(c + '_' + r)) continue; const J = D.leaveNow(D.jobFor(c, r)); if (J.rec) break; }
-      const look = () => JSON.stringify(A.cellItems(c, r, 400).filter(i => /^bw(Pin|Ball)/.test(i.kind)).map(i => [i.kind, i.u.toFixed(3), i.v.toFixed(3)]));
-      // (a whole loop sampled: up to 7 s of the ball and pins, a second standing, a second and a half held and the rest, so 6 s
-      //  could fall in the still parts alone, as it did on CI)
-      const seen = new Set(); for (let k = 0; k < 48 && seen.size < 3; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 250)); } return seen.size; });
-    if (!live.started || live.started.state !== 'play' || !live.started.G.spare || !live.tried || !(live.tried.G.tries >= 1 || live.tried.state === 'over') || !live.made || live.made.state !== 'over'
-        || !live.opened || live.laid !== 2 || !(live.check >= 1) || !live.kept.off || live.kept.stored !== 2 || !/your leave/.test(live.kept.title)
-        || !live.shared.mine || live.shared.n !== 2 || !live.shared.made || live.shown < 3)
-      failures.push(`[${current}] real input: ${JSON.stringify(live)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling spares (all ${sp.course} corner leaves made by their own shot; generated pars ${sp.pars.join(', ')} at levels 1, 3, 5; a miss set the leave up again as try ${sp.miss.tries + 1}; a real click started the lane's leave, the real Enter bowled, the shot shown made it; the real ✎ opened the editor, real clicks laid ${live.laid} pins, par ${live.check}, the real ✓ kept it, a shared copy made on another lane; a board no one plays showed ${live.shown} looks)`);
+    const g1 = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r); return g ? { shots: g.shots, anim: !!g.anim, rolls: g.nine.rolls[0].length, turn: g.nine.turn } : null; });
+    await page.keyboard.press('Enter'); await drawn(page, 300);
+    const went = await g1();
+    for (let k = 0; k < 120 && (await g1()).anim; k++) await frame(page, 300);
+    const after = await g1();
+    const rec = await page.evaluate(() => { const D = window.getFieldApp()._debug, R = D.nineRecSoon(40, true), last = R.s.frames[R.s.frames.length - 1];
+      const at = k => JSON.stringify(Array.from(R.s.frames[Math.floor(k * (R.s.frames.length - 1))]).map(v => isNaN(v) ? null : +v.toFixed(2)));
+      return { shots: R.shots, over: R.over, moves: at(0) !== at(0.5) && at(0.5) !== at(1), again: D.nineRecSoon(40) === R, kind: R.S.kind, n: last.length / 2 }; });
+    const ok = bw && !bw.none && bw.rack && bw.score === '300,150,80' && bw.marks === 'X 7/ 9- X X X 2/ -- X XXX' && bw.name === 'Bowling' && bw.start === '11,0,true,true'
+      && bw.strike === '10;1;10' && bw.first === '7;0;3;4710' && bw.gutter === '7,0;1;10' && bw.spare === '7,3;1;10;7/' && bw.plan
+      && went && went.shots === 1 && after && !after.anim && after.rolls === 1
+      && rec.kind === 'bowl' && rec.shots >= 20 && rec.moves && rec.again && rec.n === 11;
+    if (!ok) failures.push('[bowling] ' + JSON.stringify({ bw, went, after, rec }));
+    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling on the pool table (scores ${bw.score}; a strike, a leave of 4-7-10, a gutter ball and the spare by the rules; the real Enter bowled; a board no one plays bowled ${rec.shots} balls)`);
   }
 
 
@@ -261,22 +187,7 @@ try {
     const go = async id => { await page.evaluate(async id => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); if (window.tvf.bottomRow.visible){ window.tvf.fn.toggleBoardBrowser(false); window.tvf.fn.syncBrowserVisibility(); }
       await new Promise(ok => setTimeout(ok, 2000)); }, id); await page.evaluate(() => window.__settle()); };
     const pad = key => page.evaluate(k => { const b = document.querySelector('#playPad button[data-key="' + k + '"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }, key);
-    // bowling, spares
-    await go('bowling');
-    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.setMode('spares'); const f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
-    let p = await at(0.5, 0.6); await page.mouse.click(p.x, p.y);
-    const bs = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); return g && g.G && { st: g.G.state, tries: g.G.tries, sx: g.G.shot.sx, v: g.G.shot.v, h: g.G.shot.h, over: g.state === 'over' }; });
-    for (let w = 0; w < 20 && !(await bs()); w++) await frame(page, 250);
-    out.bwShut = await shut();
-    const K = await page.evaluate(() => window.getFieldApp()._debug.consts), b0 = await bs(), y0 = K.FOUL - K.BR - 0.004;
-    let a = await at(b0.sx / K.W, y0), b = await at((b0.sx + 0.035) / K.W, y0), pts = [];
-    for (let k = 0; k <= 8; k++) pts.push({ x: a.x + (b.x - a.x) * k / 8, y: a.y + (b.y - a.y) * k / 8 });
-    await swipe(pts, 30); await drawn(page, 500);
-    const b1 = await bs(); out.bwStand = +(b1.sx - b0.sx).toFixed(3);
-    pts = []; for (let k = 0; k <= 10; k++){ const t = k / 10; pts.push(await at((b1.sx + 0.03 * Math.sin(Math.PI * t)) / K.W, y0 - 0.4 * t)); }
-    await swipe(pts, 10);
-    for (let w = 0; w < 60; w++){ const q = await bs(); if (q.tries > 0 || q.over) break; await frame(page, 250); }
-    const b2 = await bs(); out.bwSwipe = { tries: b2.tries, over: b2.over, h: +b2.h.toFixed(2) };
+    let p, a, b, pts;   // (bowling was played here with the row shut by a swipe up its lane; since Nov 25 it is a pool game, its pad and keys pool's)
     // curling
     await go('curling'); await page.evaluate(() => window.getFieldApp()._debug.behind(false));
     await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE; if (f) D.GAMES.delete(f.c + '_' + f.r); });
@@ -316,59 +227,12 @@ try {
     for (let w = 0; w < 20 && !(await pad('weapon')); w++) await frame(page, 250);
     const w0 = await wid(), pw = await pad('weapon'); if (pw){ await page.mouse.click(pw[0], pw[1]); await drawn(page, 500); }
     out.tk = [w0, await wid()];
-    const ok = out.bwShut && out.bwStand > 0.015 && (out.bwSwipe.tries >= 1 || out.bwSwipe.over) && out.bwSwipe.h > 0.2
+    const ok = true
       && out.cuWeight[1] !== out.cuWeight[0] && out.cuCurl[0] === -out.cuCurl[1] && out.cuShut
       && out.mr.laid && out.mr.next !== out.mr.laid && out.mr.ran !== 'build'
       && out.bk[1] > (out.bk[0] || 0) && out.bkShut && out.tk[0] !== out.tk[1] && out.tk[1] != null;
     if (!ok) failures.push(`[${current}] ${JSON.stringify(out)}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} played with the row shut (bowling: the row shut, a drag along the line stood ${out.bwStand} over, a real swipe bowled with hook ${out.bwSwipe.h}; curling: a drag of the stone set the weight ${out.cuWeight.join(' → ')}, the pad's button turned the curl; marble run: real taps laid ${out.mr.laid} then ${out.mr.next}, a tap on the chute ${out.mr.ran}; 3D Tetris's Tip, the tanks' next shell by real clicks on the pad)`);
-  }
-  // BOWLING'S OIL AND BALLS (Oct 28: "whats next for bowling", then "1,2"): house shots near the corner and sport patterns far out;
-  // a house shot holding a ball missed wide nearer the pocket than a flat one; the four balls (plastic all but straight, urethane
-  // turning earliest, pearl latest); a game's balls wearing the lane (the frame-1 line hooking sooner after) and a spare's not;
-  // the lane's picture painted again as it wears; and real input: the play pad's ball button and the real B changing the ball
-  current = 'bowling oil and balls';
-  {
-    const before = failures.length;
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); window.getFieldApp()._debug.setMode('game'); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
-    const o = await page.evaluate(() => {
-      const D = window.getFieldApp()._debug, K = D.consts, out = {};
-      let h1 = 0, h5 = 0; for (let k = 0; k < 40; k++){ if (D.laneOf(1000 + k, 1).pat.house) h1++; if (D.laneOf(1000 + k, 5).pat.house) h5++; } out.house = [h1, h5];
-      const at = (lane, s) => D.bowlSim([], s, lane, { untilY: K.HEAD }).B.x;
-      const mk = id => { const L = D.laneOf(11, 2); L.pat = D.PATTERNS[id]; L.oil = D.ftY(L.pat.ft); L.crown = L.pat.crown; return L; };
-      out.miss = ['house', 'chameleon'].map(id => { const L = mk(id), s = D.pick(D.rack(), L, true); return +Math.abs(at(L, { ...s, tx: s.tx + 0.015 }) - at(L, s)).toFixed(4); });
-      const L = mk('house'), turn = (b, y) => { const xAt = P => { for (let q = 0; q + 3 < P.length; q += 2) if (P[q + 1] >= y && P[q + 3] < y) return P[q]; return NaN; };
-        const s = { sx: K.CX + 0.05, tx: K.CX + 0.05, ty: K.ARROWS, v: 0.6, b }; return xAt(D.bowlSim([], { ...s, h: 0.6 }, L, { path: true }).path) - xAt(D.bowlSim([], { ...s, h: 0 }, L, { path: true }).path); };
-      out.turn = D.BALLS.map((b, i) => [+turn(i, 0.55).toFixed(4), +turn(i, 0.35).toFixed(4)]);
-      const G = D.newGame(500, 3, { ai: D.STEADY, seed: 1 }), s0 = D.pick(D.rack(), G.lane, true), x0 = at(G.lane, s0);
-      let n = 0; while (G.state !== 'over' && n < 200000){ D.tick(G); n++; }
-      out.wear = { max: +Math.max(...G.lane.wear).toFixed(3), moved: +(at(G.lane, s0) - x0).toFixed(4), balls: G.wearV };
-      const S = D.newGame(5, 3, { leave: { xy: D.spotsOf([10]) } }); out.spareWear = !!S.lane.wear;
-      return out;
-    });
-    // (the picture: a game started on the framed lane, its key changing once a ball has worn it)
-    const pic = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, W = window.FIELD_WORLD, f = W.cellAt(W.target.boardX, W.target.boardZ), g = D.gameAt(f.c, f.r);
-      D.LIVE = { c: f.c, r: f.r }; D.begin(g); const k0 = A.cellPhoto(f.c, f.r, 400);
-      g.G.shot = D.pick(g.G.pins, g.G.lane, true); D.bowlNow(g.G); let n = 0; while (g.G.state === 'roll' && n < 20000){ D.tick(g.G); n++; }
-      const k1 = A.cellPhoto(f.c, f.r, 400); return { k0, k1, cv: !!A.photoCanvas(k1) }; });
-    // real input: the pad's ball button, then the real B
-    const live = {};
-    await page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.gameAt(f.c, f.r); for (let n = 0; g.G.state !== 'aim' && n < 20000; n++) D.tick(g.G); try { bbRefreshNow(); } catch {} });
-    await drawn(page, 900);
-    const pb = await page.evaluate(() => { const b = document.querySelector('#playPad button[data-key="ball"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; });
-    const ball = () => page.evaluate(() => { const D = window.getFieldApp()._debug, f = D.LIVE, g = D.GAMES.get(f.c + '_' + f.r); return [D.SET.ball, g && g.G && g.G.shot.b]; });
-    live.b0 = await ball();
-    if (pb){ await page.mouse.click(pb[0], pb[1]); await drawn(page, 500); }
-    live.pad = await ball();
-    await page.keyboard.press('b'); await drawn(page, 400);
-    live.key = await ball();
-    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.SET.ball = 0; });
-    const T = o.turn;
-    if (!(o.house[0] === 40 && o.house[1] === 0) || !(o.miss[0] < o.miss[1]) || !(Math.abs(T[3][1]) < 0.2 * Math.abs(T[0][1])) || !(Math.abs(T[2][0]) > Math.abs(T[0][0])) || !(Math.abs(T[1][0]) < Math.abs(T[0][0]))
-        || !(o.wear.max > 0.05 && o.wear.moved < -0.01) || o.spareWear || !(pic.k0 !== pic.k1 && pic.cv)
-        || !pb || live.pad[0] !== (live.b0[0] + 1) % 4 || live.pad[1] !== live.pad[0] || live.key[0] !== (live.pad[0] + 1) % 4)
-      failures.push(`[${current}] ${JSON.stringify({ o, pic, live, pb })}`);
-    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} bowling oil and balls (house shots ${o.house[0]}/40 at level 1, ${o.house[1]}/40 at level 5; a miss off the house shot ${o.miss[0]} against ${o.miss[1]} off a flat one; the balls' turn at mid-lane and the pins ${JSON.stringify(T)}; a game wore ${o.wear.max} and moved the frame-1 line ${o.wear.moved}; the picture painted again; the real pad's ball button and B)`);
+    console.log(`${failures.length === before ? 'ok  ' : 'FAIL'} played with the row shut (curling: a drag of the stone set the weight ${out.cuWeight.join(' → ')}, the pad's button turned the curl; marble run: real taps laid ${out.mr.laid} then ${out.mr.next}, a tap on the chute ${out.mr.ran}; 3D Tetris's Tip, the tanks' next shell by real clicks on the pad)`);
   }
   // BEJEWELED (Oct 28: "in bejeweld application, the pieces should all be small raised circles like the white one, but with
   // different colors. also, when sliding pieces, highlight the selected cells."; then "whats next for bejeweld", "1,2,5,6": special
@@ -1092,7 +956,8 @@ try {
   // small in the lower right; the real ▦ shows the whole sheet, tilted more and from higher, the map away, and the next ▦ comes back.
   {
     current = 'curling behind the stone';
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); window.getFieldApp()._debug.behind(true); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
+    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'curling')); window.getFieldApp()._debug.behind(true); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle();
+      const D = window.getFieldApp()._debug, f = D.LIVE, g = f && D.GAMES.get(f.c + '_' + f.r); if (g) g.viewTag = null; });   // (as if brought in again: an earlier check may have left a game on the framed sheet, its view already taken)
     await page.mouse.click(640, 400); await drawn(page, 800);
     const cS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, st = window.FIELD_WORLD.st, m = document.querySelector('#cuMap'), r = m && m.getBoundingClientRect(), pad = document.querySelector('#playPad');
       return { pitch: st.pitch, zoom: st.zoom, whole: D.WHOLE, map: m ? [m.style.display, Math.round(innerWidth - r.right), Math.round(innerHeight - r.bottom)] : null, low: pad.className, keys: [...pad.querySelectorAll('button')].map(b => b.dataset.key).join() }; });
@@ -1110,33 +975,11 @@ try {
     await page.evaluate(() => window.getFieldApp()._debug.wholeSheet(false));
   }
 
-  // BOWLING FROM BEHIND THE BALL (Nov 23, with curling's): a game begun by a real click is seen from behind the ball, low and tilted 40°; the pad
-  // stands in the lower left with ▦ and the ball; the pin deck stands small in the lower right; the real ▦ shows the whole lane and back.
-  {
-    current = 'bowling behind the ball';
-    await page.evaluate(async () => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'bowling')); const D = window.getFieldApp()._debug; D.setMode('game'); D.behind(true); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); });
-    await page.mouse.click(640, 400); await drawn(page, 800);
-    const wS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, st = window.FIELD_WORLD.st, m = document.querySelector('#bwMap'), r = m && m.getBoundingClientRect(), pad = document.querySelector('#playPad');
-      return { pitch: st.pitch, zoom: st.zoom, whole: D.WHOLE, map: m ? [m.style.display, Math.round(innerWidth - r.right), Math.round(innerHeight - r.bottom)] : null, low: pad.className, keys: [...pad.querySelectorAll('button')].map(b => b.dataset.key).join() }; });
-    for (let k = 0; k < 40 && (await wS()).zoom > 30; k++) await frame(page, 400);
-    const w0 = await wS();
-    const view = async () => { const q = await page.evaluate(() => { const b = document.querySelector('#playPad button[data-key="view"]'); if (!b) return null; const r = b.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }); if (q){ await page.mouse.click(q[0], q[1]); await drawn(page, 600); } };
-    await view(); for (let k = 0; k < 40 && (await wS()).zoom < 45; k++) await frame(page, 400);
-    const w1 = await wS();
-    await view(); for (let k = 0; k < 40 && (await wS()).zoom > 30; k++) await frame(page, 400);
-    const w2 = await wS();
-    const ok = w0 && Math.abs(w0.pitch - 40) < 1 && w0.zoom < 30 && !w0.whole && w0.map && w0.map.join() === 'block,16,16' && w0.low === 'low' && w0.keys === 'view,ball'
-      && w1.whole && w1.zoom > 45 && w1.pitch > 55 && w1.map[0] === 'none' && !w2.whole && w2.zoom < 30 && Math.abs(w2.pitch - 40) < 1 && w2.map[0] === 'block';
-    if (!ok) failures.push('[bowling behind] ' + JSON.stringify({ w0, w1, w2 }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} bowling from behind the ball: a game begun is seen low and tilted 40° from the foul line, the pad in the lower left, the pin deck small in the lower right; the real ▦ shows the whole lane and back`);
-    await page.evaluate(() => { const D = window.getFieldApp()._debug; D.wholeLane(false); D.behind(false); });
-  }
-
-  // THE PULL BAR IN CURLING AND BOWLING (Nov 23: "How do I shot the ball, long press doesn't work"): a real press held still shows the bar by the
+  // THE PULL BAR IN CURLING (Nov 23: "How do I shot the ball, long press doesn't work"): a real press held still shows the bar by the
   // finger, the pull sets the weight (curling) or the speed (bowling), and the lift throws or bowls; a press let go without a pull shoots nothing.
   {
     current = 'pull bar';
-    for (const id of ['curling', 'bowling']){
+    for (const id of ['curling']){
       await page.evaluate(async id => { window.setFieldApp(window.FIELD_APPS.find(a => a.id === id)); const D = window.getFieldApp()._debug; if (D.setMode) D.setMode('game'); D.behind(false); await new Promise(ok => setTimeout(ok, 2500)); await window.__settle(); }, id);
       await page.mouse.click(640, 400); await drawn(page, 800);
       const pS = () => page.evaluate(() => { const D = window.getFieldApp()._debug, L = D.LIVE, g = L && D.GAMES.get(L.c + '_' + L.r), b = document.querySelector('#pullBar');

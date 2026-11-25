@@ -56253,6 +56253,8 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => strPlanGen(g, lv), title: g => strTitle(g), sim: (...a) => simulate(...a), brk: true, recShots: () => NINE_REC_SHOTS, app: null },
     carom:    { key: 'carom', pre: 'c', best: 'c3:', games: new Map(), rack: i => rackC(i), cue: B => ({ ang: carAim(B), power: 22, elev: 0 }), fresh: () => carNew(), see: () => CAR_SEE, finish: (g, s) => carFinish(g, s),
                 planGen: (g, lv) => carPlanGen(g, lv), title: g => carTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => CAR_REC_SHOTS, bare: true, app: null },
+    bowl:     { key: 'bowl', pre: 'w', best: 'bw:', games: new Map(), rack: () => rackB(), cue: B => ({ ang: bwlAim(B), power: 40, elev: 0 }), fresh: () => bwlNew(), see: () => BWL_SEE, finish: (g, s) => bwlFinish(g, s),
+                planGen: (g, lv) => bwlPlanGen(g, lv), title: g => bwlTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => BWL_REC_SHOTS, bare: true, kitchen: true, app: null },
   };
   const M = () => { try { const A = window.getFieldApp(); for (const k in MATCH) if (MATCH[k].app === A) return MATCH[k]; } catch {} return null; };
   const matchState = m => Object.assign(m.fresh(), { kind: m.key }), kindOf = g => MATCH[g.nine.kind];
@@ -56748,6 +56750,135 @@ const TRICK_APP = (() => {
       : N.turn === 0 ? 'your shot' : 'the computer\'s shot') + ' · you ' + N.pts[0] + ', the computer ' + N.pts[1] + ' (to ' + CAR_TO + ')'
       + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
   }
+  /* BOWLING, ON THE POOL TABLE (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow
+     bowling rules."). An entry of `MATCH` ('bowl'; its app is the field's `bowling`, which until now was a lane of its own, `BOWLING_APP` of Oct 28,
+     taken out): the pool table, its engine, its cue and its view from behind the white, the pins ten pool balls.
+     - THE PINS (`rackB`): the balls 1 to 10 on the ten spots of a pin deck, the 1 nearest the white, the rows 2–3, 4–6, 7–10 behind it, two ball
+       widths apart (a real deck's pins stand 2.5 of their widths apart; the balls here are the ball's size, not a pin's, so closer). The table has
+       no pockets (flown with `simC`, drawn as three-cushion's), the white rolled from the head spot, in hand behind the head string (`kitchen`):
+       drag it across to stand where you like.
+     - A PIN IS DOWN (`bwlDown`) when it has moved more than its own radius off its spot, or left the table. The pins still standing go back on their
+       spots (a pin that only rocked stands where it stood); the ones down are swept off. A GUTTER BALL: the white touching a cushion before it meets a
+       pin, or meeting none, counts nothing, and the pins stand as they stood.
+     - THE RULES are bowling's: ten frames, two balls a frame, all ten down with the first a strike (ten and the next two balls), with both a spare
+       (ten and the next ball); the tenth gives the balls a strike or a spare is owed, the pins set again after each strike and spare (`bwlAfter`).
+       You and the computer bowl frames in turn, as two bowlers on a lane do; the higher total wins. Stars: a win, 3 at 200 or more, 2 at 140.
+     - THE COMPUTER (`bwlPlanGen`) flies balls at the pins nearest the white, a level's count of them, each at a level's spread of points across it
+       (the pocket a ball's radius off the head pin among them), powers and tips, and plays the one that takes most down; then its hand's error,
+       `BWL_ERR` by level.
+     - A board no one plays shows a game bowled out, the computer against itself (`nineRecGen`). */
+  const BWL_SP = 5 * R, BWL_X = 2.6, BWL_ROWS = [[1], [2, 3], [4, 5, 6], [7, 8, 9, 10]], BWL_SPOT = {};
+  BWL_ROWS.forEach((ns, row) => ns.forEach((n, j) => { BWL_SPOT[n] = [BWL_X + row * BWL_SP * 0.866, (j - (ns.length - 1) / 2) * BWL_SP]; }));
+  const BWL_SEE = [2, 2, 1, 1, 0], BWL_ERR = [4, 2.6, 1.6, 0.9, 0.45], BWL_REC_SHOTS = 44;
+  const BWL_TRY = [   // per level: how many of the nearest pins, the points across each (in its radius), the powers, the tips
+    { pins: 1, offs: [0], pows: [40], tips: [[0, 0]] },
+    { pins: 2, offs: [-0.6, 0, 0.6], pows: [40], tips: [[0, 0]] },
+    { pins: 3, offs: [-1, -0.5, 0, 0.5, 1], pows: [34, 46], tips: [[0, 0]] },
+    { pins: 4, offs: [-1, -0.5, 0, 0.5, 1], pows: [30, 40, 50], tips: [[0, 0], [0, 0.4]] },
+    { pins: 6, offs: [-1, -0.5, 0, 0.5, 1], pows: [30, 40, 50], tips: [[0, 0], [0, 0.4]] }];
+  const bwlPin = (n, up) => ({ ...ballOf(n, ...BWL_SPOT[n]), sunk: !up });
+  function rackB(){ return [ballOf(0, ...HEAD), ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => bwlPin(n, true))]; }
+  // the frames of a bowler's balls: nine of one (a strike) or two, then the tenth with whatever it is owed
+  function bwlFrames(rolls){
+    const F = []; let i = 0;
+    for (let f = 0; f < 10 && i < rolls.length; f++){
+      if (f === 9){ F.push(rolls.slice(i)); break; }
+      if (rolls[i] === 10){ F.push([10]); i++; } else { F.push(rolls.slice(i, i + 2)); i += 2; }
+    }
+    return F;
+  }
+  const bwlFrameDone = (fr, f) => !!fr && (f < 9 ? fr[0] === 10 || fr.length === 2 : fr.length === 3 || (fr.length === 2 && fr[0] + fr[1] < 10));
+  const bwlDoneAll = rolls => { const F = bwlFrames(rolls); return F.length === 10 && bwlFrameDone(F[9], 9); };
+  // the running score at each frame that can be counted yet (a strike or a spare waits on the balls it is owed)
+  function bwlScore(rolls){
+    const out = []; let i = 0, tot = 0;
+    for (let f = 0; f < 10 && i < rolls.length; f++){
+      const a = rolls[i], b = rolls[i + 1], c = rolls[i + 2];
+      if (a === 10){ if (b == null || c == null) break; tot += 10 + b + c; i += 1; }
+      else { if (b == null) break; if (a + b === 10){ if (c == null) break; tot += 10 + c; } else tot += a + b; i += 2; }
+      out.push(tot);
+    }
+    return { frames: out, total: tot };
+  }
+  // a bowler's card in marks: X a strike, / a spare, - nothing
+  function bwlMarks(rolls){
+    const mk = n => n === 0 ? '-' : String(n);
+    return bwlFrames(rolls).map((fr, f) => {
+      if (f < 9) return fr[0] === 10 ? 'X' : mk(fr[0]) + (fr.length > 1 ? (fr[0] + fr[1] === 10 ? '/' : mk(fr[1])) : '');
+      let s = '', up = 10;   // (the tenth: each ball read against the pins it was bowled at)
+      fr.forEach((n, k) => { s += n === 10 && up === 10 ? 'X' : n + (10 - up) === 10 && up < 10 ? '/' : mk(n); up = up - n <= 0 || (k > 0 && n + (10 - up) === 10) ? 10 : up - n; });
+      return s;
+    }).join(' ');
+  }
+  // the pins a ball took down: moved more than their radius off their spots, or off the table; none at all for a gutter ball
+  function bwlDown(balls, s){
+    const up = balls.filter(b => !b.cue && !b.sunk).map(b => b.n), f = s.first;
+    if (!f || f.rails > 0) return { gutter: true, down: [], up };
+    const down = [];
+    for (const n of up){ const b = s.final.find(q => q.n === n), P = BWL_SPOT[n]; if (!b || b.sunk || Math.hypot(b.x - P[0], b.z - P[1]) > R) down.push(n); }
+    return { gutter: false, down, up };
+  }
+  const bwlKey = g => 'bw:' + g.idx + '@' + g.lv;
+  const bwlNew = () => ({ turn: 0, hand: true, fouls: [0, 0], rolls: [[], []], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  // where a bowler stands: the frame (0–9) and the ball in it about to be bowled
+  function bwlAt(rolls){ const F = bwlFrames(rolls), k = F.length - 1;
+    if (k < 0 || bwlFrameDone(F[k], k)) return { f: k + 1, b: 0 }; return { f: k, b: F[k].length }; }
+  // after a ball: whether the pins are set again (a frame done, or the tenth's strike or spare)
+  function bwlAfter(rolls){
+    const F = bwlFrames(rolls), k = F.length - 1, fr = F[k];
+    if (bwlFrameDone(fr, k)) return { reset: true, done: true };
+    if (k === 9){ const [a, b] = fr; if (fr.length === 1 && a === 10) return { reset: true, done: false };
+      if (fr.length === 2 && ((a === 10 && b === 10) || (a < 10 && a + b === 10))) return { reset: true, done: false }; }
+    return { reset: false, done: false };
+  }
+  const bwlAim = balls => { const w = balls.find(b => b.cue), p = balls.filter(b => !b.cue && !b.sunk).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
+    return p ? Math.atan2(p.z - w.z, p.x - w.x) : 0; };
+  function bwlFinish(g, s){
+    const N = g.nine, t = N.turn, who = t === 0 ? 'you' : 'the computer', r = bwlDown(g.balls, s), n = r.down.length;
+    N.rolls[t].push(n);
+    const A = bwlAfter(N.rolls[t]), wz = (g.balls.find(b => b.cue) || {}).z || 0;
+    const stood = A.reset ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : r.up.filter(k => !r.down.includes(k));
+    g.balls = [{ ...ballOf(0, HEAD[0], Math.abs(wz) <= ZL ? wz : 0) }, ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(k => bwlPin(k, stood.includes(k)))];
+    if (!free(g.balls, g.balls[0].x, g.balls[0].z, g.balls[0])) g.balls[0].z = 0;
+    const was = r.up.length;
+    N.said = r.gutter ? who + ' bowled a gutter ball' : n === 10 && was === 10 ? who + ' bowled a strike' : n === was && n > 0 ? who + ' made the spare'
+      : who + ' took ' + n + (n === 1 ? ' pin' : ' pins') + (stood.length && !A.reset ? ', ' + stood.length + ' left' : '');
+    if (A.done){
+      const doneMe = bwlDoneAll(N.rolls[t]), doneThem = bwlDoneAll(N.rolls[t ^ 1]);
+      if (doneMe && doneThem){
+        const a = bwlScore(N.rolls[0]).total, b = bwlScore(N.rolls[1]).total; N.over = a > b ? 1 : a < b ? 2 : 3;
+        if (N.over === 1 && !g.auto){ N.stars = a >= 200 ? 3 : a >= 140 ? 2 : 1; const id = bwlKey(g); if (!(BEST[id] >= N.stars)){ BEST[id] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
+      } else if (!doneThem) N.turn ^= 1;
+    }
+    N.hand = true;
+    if (!N.over) g.ang = bwlAim(g.balls);
+    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
+  }
+  function* bwlPlanGen(g, lvIn){
+    const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), T = BWL_TRY[lv - 1], w = g.balls.find(b => b.cue && !b.sunk);
+    const pins = g.balls.filter(b => !b.cue && !b.sunk).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z)).slice(0, T.pins);
+    let best = null;
+    for (const p of pins) for (const off of T.offs){
+      const a = Math.atan2(p.z + off * R - w.z, p.x - w.x);
+      for (const pw of T.pows) for (const tip of T.tips){
+        const st = strikeOf(a, tip[0], tip[1], pw, MU_TIP, 0), sm = simC(g.balls, st.dir, st.speed, st.w, st.vy); yield;
+        if (!sm) continue; const n = bwlDown(g.balls, sm).down.length;
+        if (!best || n > best.score) best = { a, p: pw, tip, score: n };
+      }
+      if (best && best.score === pins.length && pins.length === g.balls.filter(b => !b.cue && !b.sunk).length) break;
+    }
+    if (!best) best = { a: bwlAim(g.balls), p: 40, tip: [0, 0], score: -1 };
+    const u1 = Math.random() || 1e-9, u2 = Math.random(), gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return { a: best.a + gauss * BWL_ERR[lv - 1] * D, p: best.p, tip: best.tip, score: best.score };
+  }
+  function bwlTitle(g){
+    const N = g.nine, b = BEST[bwlKey(g)], at = bwlAt(N.rolls[N.turn]);
+    const card = t => bwlMarks(N.rolls[t]) + (N.rolls[t].length ? ' = ' + bwlScore(N.rolls[t]).total : '0');
+    return 'Bowling — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? starStr(N.stars) + ' you won' : N.over === 2 ? 'the computer won' : 'a tie') + ', tap to bowl again'
+      : (N.turn === 0 ? 'your ball' : 'the computer\'s ball') + ', frame ' + (at.f + 1) + ', ball ' + (at.b + 1) + (N.turn === 0 ? ' (drag the white across to stand where you like)' : ''))
+      + ' · you ' + card(0) + ' · the computer ' + card(1) + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
+  }
+  function bwlAuto(idx, lvA, lvB, maxShots = 60){ const g = matchAuto('bowl', idx, lvA, lvB, maxShots); return { over: g.nine.over, shots: g.shots, rolls: g.nine.rolls.map(r => r.slice()), score: g.nine.rolls.map(r => bwlScore(r).total) }; }
   const GAMES = { get: k => GM().get(k), set: (k, v) => GM().set(k, v), has: k => GM().has(k), delete: k => GM().delete(k), clear: () => GM().clear(),
                   forEach: f => GM().forEach(f), values: () => GM().values(), keys: () => GM().keys(), get size(){ return GM().size; } };
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
@@ -57860,7 +57991,7 @@ const TRICK_APP = (() => {
       if (!at && !DRAG.ball && xy){ try { at = window.FIELD_WORLD.uvFree(xy[0], xy[1]); } catch {} }
       if (!at) return true;
       const g = DRAG.g, [x, z] = toTable(at.u, at.v); DRAG.moved = true;
-      if (DRAG.ball){ const nx = x + DRAG.dx, nz = z + DRAG.dz; if ((!g.nine || (Math.abs(nx) <= XL && Math.abs(nz) <= ZL)) && free(g.balls, nx, nz, DRAG.ball)){ DRAG.ball.x = nx; DRAG.ball.z = nz; g.dirty = true; } }
+      if (DRAG.ball){ const nx = g.nine && kindOf(g).kitchen ? HEAD[0] : x + DRAG.dx, nz = z + DRAG.dz; if ((!g.nine || (Math.abs(nx) <= XL && Math.abs(nz) <= ZL)) && free(g.balls, nx, nz, DRAG.ball)){ DRAG.ball.x = nx; DRAG.ball.z = nz; g.dirty = true; } }
       /* THE HAND MOVES THE STICK (Nov 21: "to move the pool stick, the player should move the stick, not the other side of the ball."): a drag used to
          aim the shot at the finger, so the cue swung about on the far side of the white from the hand. Now the cue lies from the white toward the
          finger, as a stick held there, and the shot goes the other way: the aim is at the finger's place mirrored through the white. A tap on a
@@ -57972,6 +58103,12 @@ const TRICK_APP = (() => {
       ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.62); ctx.lineTo(sz * 0.5, sz * 0.28); ctx.lineTo(sz * 0.92, sz * 0.5); ctx.lineTo(sz * 0.7, sz * 0.72); ctx.lineTo(sz * 0.4, sz * 0.5); ctx.stroke(); ctx.setLineDash([]);
       for (const [x, y, c] of [[0.2, 0.62, '#f2f0ea'], [0.4, 0.5, '#d23a2f'], [0.62, 0.4, '#e3c33b']]) dot(ctx, x * sz, y * sz, sz * 0.05, c); },
     debug: { rackC, carScore, carFinish, carPlan, carPlanGen, carAuto, carTitle, simC, CAR_TO, CAR_ERR, CAR_SEE, GRID_C, CUSHIONS_C } });
+  app.bowl = matchApp(MATCH.bowl, { name: 'Bowling', hint: 'ten pins, ten frames, strikes and spares; a ball off a cushion first is a gutter ball',
+    level: 'How steady the computer\'s hand is, how many balls it looks at and how far your own ball is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The ten pins set, the score at nothing, your ball.',
+    icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
+      const d = sz * 0.07; [1, 2, 3, 4].forEach((n, row) => { for (let j = 0; j < n; j++) dot(ctx, sz * 0.6 + row * d * 1.4, sz * 0.5 + (j - (n - 1) / 2) * d * 1.6, d * 0.5, ['#e3c33b', '#2f5fd0', '#d23a2f', '#6b3fa0', '#e0782a', '#2e8b57', '#7a2f2a', '#16161a', '#e3c33b', '#2f5fd0'][row * (row + 1) / 2 + j]); });
+      dot(ctx, sz * 0.2, sz * 0.5, d * 0.55, '#f2f0ea'); },
+    debug: { rackB, bwlFrames, bwlScore, bwlMarks, bwlDown, bwlAfter, bwlAt, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, BWL_SPOT, BWL_ERR, BWL_SEE } });
   return app;
 })();
 const NINEBALL_APP = TRICK_APP.nine;   // (9-ball against the computer, on trick shots' engine and table, Nov 22)
@@ -57980,6 +58117,7 @@ const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the
 const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the computer, on the same engine, Nov 22)
 const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
 const BANKPOOL_APP = TRICK_APP.bank;   // (bank pool against the computer: only a ball off a cushion counts, Nov 23)
+const BOWLING_APP = TRICK_APP.bowl;   // (bowling on the pool table: the pins ten pool balls, bowling's rules, Nov 25)
 const POOLHOCKEY_APP = TRICK_APP.hockey;   // (pool hockey: the pool engine stepped in real time, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
 /* ═══ LEVELS: LEVEL OF DETAIL, SHOWN ON THE FIELD ══════════════════════════════════════════════════════════════════════
@@ -62026,1063 +62164,8 @@ const CURLING_APP = (() => {
   };
   return app;
 })();
-/* ═══ BOWLING (Oct 28: "2,   3 curling, bowling, marble run", the second of the new games: "spin and pins") ══════════════════
-   Ten-pin on every board: the far end of a lane, the pins on their deck near the top, the lane running down to your foul line at
-   the near end, gutters either side, the arrows to aim by. Ten frames, strikes and spares scored as they are.
-   - THE BALL (`roll`): it runs straight on the oil and hooks on the dry back end, from the board's own oil line (`lane.oil`)
-     on, by its spin (`hook`): `lane.hk` × hook, coming on over `RAMP`; a faster ball has less time to hook. Past the lane's edge
-     it drops into the gutter and runs to the pit, touching nothing.
-   - THE PINS (`roll` too): circles on the deck; the ball meets them as a ball of `MB` (4.5) pins' weight, pins meet pins, and the
-     side kickbacks send them back across the deck (`E_WALL`); a pin struck harder than `DOWN_V` falls (it lies along the way it
-     was sent, sliding on, and can take others down), one only touched rocks and stands; a pin past the back of the deck is in
-     the pit. Pins slide to rest under `PF`.
-   - A FRAME (`FR`): the first ball at a full rack; a strike, or the second ball at the pins left standing where they stand
-     (the fallen swept away); the tenth frame's bonus balls. Scored as the game is (`scoreOf`: a strike ten and the next two
-     balls, a spare ten and the next ball).
-   - YOUR SHOT: where you stand (the row's Stand ◀ ▶, A D), where you aim (a tap or a drag on the lane: the ball is rolled at
-     that point; ← → nudge it), the speed (the row's Speed − +, ↑ ↓) and the hook (the row's Hook − +, Q E). Enter, the row's Bowl
-     or a tap on the ball at the foul line bowls. The ball's way is dotted before it goes (`previewOf`), all of it at level 1, less
-     farther out (`PREVIEW`).
-   - EVERY BOARD ITS OWN LANE (`laneOf`, by the board's number, at a level 1–5 by ring plus the Difficulty): where its oil ends
-     and how hard it hooks after (shorter oil and more hook farther out, so a ball off its line goes farther wrong), how the pins
-     carry (`carry`: how readily a pin knocked falls).
-   - PAR is the steady player's game on the lane (`STEADY`: a person's hands, aiming for the pocket with its hook, then at what is
-     left by trying each line on the pins as they stand, `pick`), worked out a ball at a time in the boards' share of time; its
-     game is what a board no one plays shows (`recOf`, `recView`). Stars: par or better ★★★, within a fifth ★★, else ★; the best
-     score a board kept (`bowling.best`). */
-const BOWLING_APP = (() => {
-  const W = 0.36, CX = W / 2, LANE = 0.27, GUT = 0.035, EDGE = LANE / 2, WALL = EDGE + GUT;
-  const S = 0.078, PR = 0.0163, PH = 0.07, BR = 0.028, HEAD = 0.27, FOUL = 0.955, ARROWS = 0.66, PIT = 0.035;
-  const TOPPLE = 0.085, MB = 4.5, E_BALL = 0.75, E_PIN = 0.7, E_WALL = 0.55, PF = 1.1, BALL_F = 0.03, DOWN_V = 0.06, DT = 1 / 240;
-  const TICK = 1 / 60, SUB = 4, REC_HZ = 15, REC_CAP = 200, PHOTO_PX = 20, HI_PX = 300, GRACE = 0.8, REST_T = 1.1, SWEEP_T = 0.7;
-  const V_MIN = 0.35, V_MAX = 0.75, PREVIEW = [1, 0.7, 0.5, 0.4, 0.3];
-  // the rack: 1 at the head, 2 and 3 behind it, then 4 5 6, then 7 8 9 10 (left to right as you look down the lane)
-  const SPOTS = [[0, 0], [-0.5, 1], [0.5, 1], [-1, 2], [0, 2], [1, 2], [-1.5, 3], [-0.5, 3], [0.5, 3], [1.5, 3]].map(([i, j]) => [CX + i * S, HEAD - j * S * 0.866]);
-  // a level's lane: where the oil ends (y; the dry back end runs from there to the pins), how hard the back end hooks, how readily a struck pin falls
-  /* THE OIL (Oct 28: "whats next for bowling", then "1,2": oil you can read, and that wears; the ball chosen). A board's lane is
-     oiled to a named pattern (`PATTERNS`): its length (`ft`, feet from the foul line, as patterns are given; the lane is 60 to the
-     head pin) and its crown (`crown`): a house shot lays more oil down the middle than on the outside boards, so a ball missed
-     wide meets drier wood sooner and hooks back toward the pocket (the "wall" that forgives), while a sport pattern is flat, and
-     a miss stays a miss. The house shots are near the corner, the sport patterns (named after the PBA's animals) farther out,
-     shorter and longer. `dryAt` is how dry a spot is: 0 on full oil, 1 on the back end; past the pattern's end it comes on over
-     `RAMP`, the outside boards' end comes `CROWN_L` sooner at the most, and they are `CROWN_S` dry in the oil.
-     It WEARS (`wearOn`): each ball of a game of ten frames takes oil off where it runs, more toward the pattern's end (`WEAR`),
-     and carries a little down past it (`CARRY`), kept as a grid across the lane (`WX` × `WY`, `G.lane.wear`). A track used again
-     and again hooks sooner and then less at the back, so the line that struck in frame 1 comes in high by frame 7 and you move.
-     A spare (one ball a try) is bowled on the pattern as laid. */
-  const PATTERNS = {
-    house:   { name: 'the house shot', ft: 41, crown: 1, house: true },
-    houseL:  { name: 'a long house shot', ft: 44, crown: 0.9, house: true },
-    houseS:  { name: 'a short house shot', ft: 38, crown: 0.9, house: true },
-    bear:    { name: 'Bear', ft: 40, crown: 0.3 },
-    chameleon: { name: 'Chameleon', ft: 39, crown: 0.15 },
-    scorpion:  { name: 'Scorpion', ft: 42, crown: 0.2 },
-    shark:   { name: 'Shark', ft: 44, crown: 0.1 },
-    viper:   { name: 'Viper', ft: 37, crown: 0.15 },
-    cheetah: { name: 'Cheetah', ft: 35, crown: 0.25 },
-    wolf:    { name: 'Wolf', ft: 32, crown: 0.2 },
-    badger:  { name: 'Badger', ft: 47, crown: 0.05 },
-  };
-  for (const k in PATTERNS) PATTERNS[k].id = k;
-  const ftY = ft => FOUL - ft / 60 * (FOUL - HEAD);
-  const RAMP = 0.12, CROWN_L = 0.09, CROWN_S = 0.22, WX = 13, WY = 28, WEAR = 1.1, CARRY = 0.4, CARRY_RUN = 0.14;
-  const LV = [
-    { pats: ['houseL', 'house', 'house'], hk: [1.4, 1.7], carry: 1.25 },
-    { pats: ['house', 'houseS', 'bear', 'houseL'], hk: [1.65, 2.0], carry: 1.15 },
-    { pats: ['houseS', 'bear', 'chameleon', 'scorpion', 'shark'], hk: [1.95, 2.35], carry: 1.05 },
-    { pats: ['chameleon', 'viper', 'cheetah', 'scorpion', 'badger'], hk: [2.3, 2.75], carry: 0.95 },
-    { pats: ['viper', 'cheetah', 'wolf', 'badger', 'cheetah'], hk: [2.7, 3.2], carry: 0.85 },
-  ];
-  /* THE BALL (the "2"): what it is made of and how heavy. `react` is how much it turns on dry wood, `oilResp` how much it turns
-     on oil too (a urethane ball reads the lane early and gently), `shape` how late it waits (a pearl skids long and turns hard: the
-     dryness to that power). Weights were tried too (a heavier ball knocked aside less, or sending the pins faster) and left out:
-     on 120 pocket shots a little off line, an 11 lb ball struck more often than a 15 or 16 lb one in this deck's pin action,
-     however the weight was made to tell, so a weight to choose would have been noise or the wrong way round. The plastic ball hardly hooks, wear or no wear: the spare ball.
-     The solid reactive at 15 lb is the ball as it always was. The steady player throws it at the pocket and the plastic one at
-     its spares. Chosen with the play pad's two buttons, the row's Ball and Weight, or B and W; kept (`bowling.settings`). */
-  const BALLS = [
-    { id: 'solid', name: 'Reactive solid', glyph: '🔵', react: 1, oilResp: 0, shape: 1, say: 'the strike ball: a strong, smooth hook once it finds the dry' },
-    { id: 'pearl', name: 'Reactive pearl', glyph: '🟣', react: 1.5, oilResp: 0, shape: 2.2, say: 'skids long through the oil and turns hard at the back' },
-    { id: 'urethane', name: 'Urethane', glyph: '🟤', react: 0.5, oilResp: 0.12, shape: 1, say: 'an early, gentle arc that reads the oil, so wear and dry patches move it less' },
-    { id: 'plastic', name: 'Plastic', glyph: '⚪', react: 0.12, oilResp: 0, shape: 1, say: 'goes nearly straight whatever the oil: the spare ball' },
-  ];
-  const PLASTIC = 3;
-  const ballDef = s => BALLS[(s && s.b) | 0] || BALLS[0];
-  const STEADY = { errAim: 0.012, errV: 0.06, errH: 0.2 };
-  const DL = ARCADE.difficulty('bowling.level', 'Every board has its own lane, harder the farther it is from the corner: the oil ends sooner and the dry back end hooks harder, so a ball a little off its line goes farther wrong, and the pins carry less; and less of your ball\'s way is shown before it goes. Easy, Normal and Hard move every board a level up.', true);
-  const say = BOARD_KIT.say(2400);
-  const gkey = BOARD_KIT.gkey, boardIdx = BOARD_KIT.boardIdx, ringOf = BOARD_KIT.ringOf, clamp = BOARD_KIT.clamp, rngOf = BOARD_KIT.rng;
-  const levelAt = idx => BOARD_KIT.levelAt(idx, DL);
-  const gauss = R => { let u = 0; for (let k = 0; k < 4; k++) u += R(); return (u - 2) * 1.732; };
-  const SET = (() => {
-    const d = { sound: true, preview: true, mode: 'spares', ball: 0 };
-    try { const s = JSON.parse(localStorage.getItem('bowling.settings') || '{}'); for (const k of ['sound', 'preview']) if (typeof s[k] === 'boolean') d[k] = s[k]; if (s.mode === 'game' || s.mode === 'spares') d.mode = s.mode;
-      if (Number.isInteger(s.ball) && s.ball >= 0 && s.ball < 4) d.ball = s.ball; } catch {}
-    return d;
-  })();
-  const saveSet = () => { try { localStorage.setItem('bowling.settings', JSON.stringify(SET)); } catch {} };
-
-  /* ─── THE LANE ─── */
-  function laneOf(idx, lv){
-    const R = rngOf((idx * 2654435761) ^ 0xb0e1), D = LV[lv - 1];
-    // (the same draws in the same order as before, the pattern drawn last, so the hook and the ball's colour stay the board's)
-    const r0 = R(), hk = D.hk[0] + (D.hk[1] - D.hk[0]) * R(), ball = [0x2a4fb8, 0x9b2d8f, 0x1f7a5a, 0xc0392b, 0x22252b, 0xd2691e][Math.floor(R() * 6)];
-    const pat = PATTERNS[D.pats[Math.floor(R() * D.pats.length)]]; void r0;
-    return { lv, pat, oil: ftY(pat.ft), crown: pat.crown, hk, carry: D.carry, ball };
-  }
-  // how dry the lane is at (x, y): 0 on full oil, 1 on the back end (the pattern, then what the balls have done to it)
-  function dryAt(lane, x, y){
-    const u = Math.min(1, Math.abs(x - CX) / EDGE), u2 = u * u, c = lane.crown || 0;
-    const along = clamp((lane.oil + c * CROWN_L * u2 - y) / RAMP, 0, 1);
-    let d = along + (1 - along) * c * CROWN_S * u2;
-    if (lane.wear){ const i = Math.min(WX - 1, Math.max(0, Math.floor((x - (CX - EDGE)) / LANE * WX))), j = Math.min(WY - 1, Math.max(0, Math.floor((FOUL - y) / (FOUL - HEAD) * WY))); d += lane.wear[j * WX + i]; }
-    return clamp(d, 0, 1);
-  }
-  // a ball's run takes oil off the front of its track and carries a little past the pattern's end
-  function wearOn(lane, x, y, ds){
-    if (!lane.wear || y > FOUL || y < HEAD + 0.04) return;
-    const j = Math.min(WY - 1, Math.max(0, Math.floor((FOUL - y) / (FOUL - HEAD) * WY))), f = (x - (CX - EDGE)) / LANE * WX - 0.5, i0 = Math.floor(f), t = f - i0;
-    const past = lane.oil - y, end = lane.oil;
-    let k;
-    if (past < 0){ k = WEAR * ds * (0.35 + 0.65 * clamp((FOUL - y) / (FOUL - end), 0, 1)); }       // (in the oil: more toward its end)
-    else if (past < CARRY_RUN) k = -CARRY * ds * (1 - past / CARRY_RUN);                               // (just past it: oil carried down)
-    else return;
-    for (const [i, w] of [[i0, 1 - t], [i0 + 1, t]]) if (i >= 0 && i < WX){ const q = j * WX + i; lane.wear[q] = clamp(lane.wear[q] + k * w, -0.3, 0.6); }
-  }
-  const freshLane = (idx, lv, wear) => { const L = laneOf(idx, lv); if (wear) L.wear = new Float32Array(WX * WY); return L; };
-  const rack = () => SPOTS.map(([x, y], i) => ({ n: i + 1, x, y, vx: 0, vy: 0, down: false, ang: 0, pit: false, up: true }));
-
-  /* ─── ROLLING ─── `roll` moves the ball and the pins one step. The ball: { x, y, vx, vy, h (its hook: + to the left), gutter,
-     pit }. Returns true while anything moves. */
-  function roll(B, P, lane, dt, on){
-    let moving = false;
-    if (B && !B.pit){
-      moving = true;
-      const v = Math.hypot(B.vx, B.vy) || 1;
-      if (!B.gutter){
-        // (on the oil nothing; past the oil line the back end bites, coming on over RAMP)
-        // (the hook turns the ball across its way, to its left: (dy, −dx) for a way (dx, dy); its speed kept, less a little rolling)
-        // (and none once it is on the deck or among the pins: slowed by them it turned on the spot and came back up the lane)
-        // (the ball's own response: `react` on the dry, `oilResp` of it on the oil, and `shape` how late it waits: BALLS)
-        const dry = B.struck || B.y < HEAD + BR + PR ? 0 : dryAt(lane, B.x, B.y), bd = B.def || BALLS[0];
-        const al = B.h * lane.hk * bd.react * (bd.oilResp + (1 - bd.oilResp) * (bd.shape === 1 ? dry : Math.pow(dry, bd.shape))) * (B.struck ? 0 : 1), dx = B.vx / v, dy = B.vy / v;
-        B.vx += al * dy * dt; B.vy -= al * dx * dt;
-        const k = Math.max(0, v - BALL_F * dt) / Math.hypot(B.vx, B.vy); B.vx *= k; B.vy *= k;
-        if (Math.abs(B.x - CX) > EDGE){ B.gutter = true; B.x = CX + Math.sign(B.x - CX) * (EDGE + GUT / 2); B.vx = 0; B.vy = -Math.max(0.3, v); if (on) on('gutter', B); }
-      }
-      B.x += B.vx * dt; B.y += B.vy * dt;
-      if (B.y < PIT - BR){ B.pit = true; }
-    }
-    for (const p of P){
-      if (p.pit || (!p.vx && !p.vy)) continue;
-      const v = Math.hypot(p.vx, p.vy);
-      if (v < 0.004){ p.vx = p.vy = 0; continue; }
-      moving = true;
-      const nv = Math.max(0, v - PF * dt); p.vx *= nv / v; p.vy *= nv / v;
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      if (p.x < CX - WALL + PR){ p.x = CX - WALL + PR; p.vx = Math.abs(p.vx) * E_WALL; if (on) on('wall', p); }
-      else if (p.x > CX + WALL - PR){ p.x = CX + WALL - PR; p.vx = -Math.abs(p.vx) * E_WALL; if (on) on('wall', p); }
-      if (p.y < PIT){ p.pit = true; p.down = true; p.up = false; }
-      if (p.y > HEAD + 0.1 && p.vy > 0){ p.vy = -p.vy * 0.3; }
-    }
-    // the ball on the pins (none from the gutter), the pins on each other
-    // (a pin struck hard enough falls, and as it falls it lays its length (TOPPLE) onto any pin standing that way: real pin action)
-    const fell = (p, vn) => {
-      if (p.down || vn * lane.carry <= DOWN_V) return;
-      p.down = true; p.up = false; if (on) on('down', p);
-      const sp = Math.hypot(p.vx, p.vy); if (sp < 1e-6) return;
-      const ux = p.vx / sp, uy = p.vy / sp;
-      for (const q of P){ if (q === p || q.down || q.pit) continue;
-        const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
-        if (d < TOPPLE * lane.carry && (dx * ux + dy * uy) / d > 0.82){ q.vx += dx / d * sp * 0.45; q.vy += dy / d * sp * 0.45; q.ang = Math.atan2(q.vx, q.vy); fell(q, DOWN_V * 2 / lane.carry); } }
-    };
-    if (B && !B.gutter && !B.pit) for (const p of P){
-      if (p.pit) continue;
-      const dx = p.x - B.x, dy = p.y - B.y, d = Math.hypot(dx, dy), R = BR + PR;
-      if (d >= R || d < 1e-9) continue;
-      const nx = dx / d, ny = dy / d, vn = (B.vx - p.vx) * nx + (B.vy - p.vy) * ny;
-      p.x = B.x + nx * R; p.y = B.y + ny * R;
-      if (vn <= 0) continue;
-      const J = (1 + E_BALL) * vn / (1 / MB + 1);
-      B.vx -= J / MB * nx; B.vy -= J / MB * ny; p.vx += J * nx; p.vy += J * ny; B.struck = true;
-      p.ang = Math.atan2(p.vx, p.vy); fell(p, vn); moving = true; if (on) on('hit', { v: vn });
-    }
-    for (let i = 0; i < P.length; i++){
-      const a = P[i]; if (a.pit) continue;
-      for (let j = i + 1; j < P.length; j++){
-        const b = P[j]; if (b.pit) continue;
-        // (a pin lying down reaches farther along the way it lies: it is twice as long as it is wide)
-        const ra = a.down ? PR * 1.6 : PR, rb = b.down ? PR * 1.6 : PR, R = ra + rb;
-        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
-        if (d2 >= R * R || d2 < 1e-12) continue;
-        const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, vn = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
-        const push = (R - d) / 2; a.x -= nx * push; a.y -= ny * push; b.x += nx * push; b.y += ny * push;
-        if (vn <= 0) continue;
-        const J = (1 + E_PIN) / 2 * vn;
-        a.vx -= J * nx; a.vy -= J * ny; b.vx += J * nx; b.vy += J * ny;
-        if (a.down && !b.down) { b.ang = Math.atan2(b.vx, b.vy); fell(b, vn); }
-        else if (b.down && !a.down) { a.ang = Math.atan2(a.vx, a.vy); fell(a, vn); }
-        else { fell(a, vn * 0.8); fell(b, vn * 0.8); if (a.down) a.ang = Math.atan2(a.vx, a.vy); if (b.down) b.ang = Math.atan2(b.vx, b.vy); }
-        moving = true;
-      }
-    }
-    return moving;
-  }
-  // a ball let go from where you stand toward where you aim, at its speed and hook
-  function ballOf(shot){
-    const dx = shot.tx - shot.sx, dy = shot.ty - FOUL, d = Math.hypot(dx, dy) || 1;
-    return { x: shot.sx, y: FOUL, vx: shot.v * dx / d, vy: shot.v * dy / d, h: shot.h, gutter: false, pit: false, def: ballDef(shot) };
-  }
-  const copyPins = P => P.map(p => ({ ...p }));
-  // a ball bowled at once: where it went and what it knocked down
-  function bowlSim(P0, shot, lane, opt){
-    const o = opt || {}, P = copyPins(P0), B = ballOf(shot), dt = o.dt || DT, path = o.path ? [] : null;
-    let t = 0;
-    while (t < 8){
-      if (path && (path.length < 2 || Math.hypot(B.x - path[path.length - 2], B.y - path[path.length - 1]) > 0.012) && !B.pit) path.push(B.x, B.y);
-      if (!roll(B, P, lane, dt) && B.pit) break;
-      if (B.pit && t > 2.5) break;
-      t += dt;
-      if (o.untilY != null && B.y <= o.untilY) break;
-    }
-    return { P, B, path, down: P.filter(p => p.down).length - P0.filter(p => p.down).length };
-  }
-
-  /* ─── SCORING ─── rolls in order; frames from them */
-  function scoreOf(rolls){
-    const fr = []; let i = 0, tot = 0;
-    for (let f = 0; f < 10 && i < rolls.length; f++){
-      const a = rolls[i], b = rolls[i + 1], c = rolls[i + 2];
-      if (a === 10){ if (b == null || c == null){ fr.push({ rolls: [a], total: null }); i++; continue; } tot += 10 + b + c; fr.push({ rolls: [a], total: tot, strike: true }); i++; }
-      else if (b != null && a + b === 10){ if (c == null){ fr.push({ rolls: [a, b], total: null }); i += 2; continue; } tot += 10 + c; fr.push({ rolls: [a, b], total: tot, spare: true }); i += 2; }
-      else if (b != null){ tot += a + b; fr.push({ rolls: [a, b], total: tot }); i += 2; }
-      else { fr.push({ rolls: [a], total: null }); i++; }
-    }
-    return { frames: fr, total: tot };
-  }
-
-  /* ─── THE STEADY PLAYER ─── the pocket first, then what is left */
-  // where to aim from `sx` at speed v and hook h so the ball crosses y = yt at x = xt
-  function aimFor(sx, v, h, xt, yt, lane, b){
-    let tx = xt; const bb = b || 0;
-    for (let k = 0; k < 9; k++){
-      const r = bowlSim([], { sx, tx, ty: ARROWS, v, h, b: bb }, lane, { dt: 1 / 120, untilY: yt }).B;
-      // (a ball in the gutter never reaches yt: step back from the side it fell off)
-      if (r.gutter){ tx += (r.x < CX ? 1 : -1) * 0.02; continue; }
-      tx += (xt - r.x) * (FOUL - ARROWS) / (FOUL - yt) * 1.05;
-      tx = clamp(tx, CX - EDGE, CX + EDGE);
-    }
-    return { sx, tx, ty: ARROWS, v, h, b: bb };
-  }
-  function pick(P, lane, first){
-    const up = P.filter(p => !p.down && !p.pit);
-    // (less hook on a hookier lane, so the ball comes in at the pocket about as it does elsewhere)
-    // (a gentle hook, so the ball comes into the pocket at a few degrees and drives on into the 3 and the 5)
-    if (first || up.length === 10) return aimFor(CX + 0.05, 0.6, clamp(0.6 / lane.hk, 0.15, 0.5), SPOTS[0][0] + 0.42 * S, SPOTS[0][1] + BR + PR * 0.6, lane);
-    // (spares: a line at each standing pin and at the middle of them, straighter and faster; the most taken down; with the plastic
-    //  ball, which goes where it is aimed whatever the oil has become: Oct 28, the steady player's habit as a real player's)
-    const C = [], mx = up.reduce((s, p) => s + p.x, 0) / up.length, my = up.reduce((s, p) => s + p.y, 0) / up.length;
-    for (const [x, y] of [[mx, my], ...up.map(p => [p.x, p.y]), ...up.map(p => [p.x + 0.4 * S, p.y]), ...up.map(p => [p.x - 0.4 * S, p.y])]){
-      const sx = clamp(CX + (CX - x) * 0.8, CX - EDGE + BR, CX + EDGE - BR);
-      C.push(aimFor(sx, 0.62, 0.25, x, y + BR, lane, PLASTIC));
-    }
-    let best = null, bn = -1;
-    for (const s of C){ const n = bowlSim(P, s, lane, { dt: 1 / 120 }).down; if (n > bn){ bn = n; best = s; } }
-    return best;
-  }
-  const handsOn = (s, D, R) => ({ ...s, tx: s.tx + gauss(R) * D.errAim, v: clamp(s.v * (1 + gauss(R) * D.errV), V_MIN, V_MAX), h: clamp(s.h * (1 + gauss(R) * D.errH), 0, 1) });
-
-  /* ─── A GAME ─── ten frames; `G.state`: aim, roll (the ball going), rest (the pins settling, then swept), over */
-  function newGame(idx, lv, opt){
-    const o = opt || {};
-    const G = { idx, lv, lane: freshLane(idx, lv, !o.leave), R: rngOf((idx * 7919) ^ (lv * 977) ^ (o.seed || 0) ^ 0x707), ai: o.ai || null, frame: 1, ball: 1, rolls: [], pins: rack(), B: null,
-                state: 'aim', t: 0, wait: 0, tenth: [], shot: { sx: CX + 0.05, tx: CX + 0.01, ty: ARROWS, v: 0.6, h: 0.5, b: o.ai ? 0 : SET.ball }, ev: o.ev || null, fx: [], before: 10, wearV: 0 };
-    if (G.ai){ G.shot = handsOn(pick(G.pins, G.lane, true), G.ai, G.R); G.state = 'wait'; G.wait = 0.3; }
-    // (a spare to make: the leave's pins alone, a try a ball, the leave set again after every miss)
-    if (o.leave){ G.spare = o.leave; G.pins = leavePins(o.leave.xy); G.tries = 0; }
-    return G;
-  }
-  const emit = (G, kind, a) => { if (G.ev) try { G.ev(kind, a, G); } catch {} };
-  function bowlNow(G){
-    G.before = G.pins.filter(p => !p.down && !p.pit).length;
-    G.B = ballOf(G.shot); G.state = 'roll'; G.rollT = 0; emit(G, 'bowl', {});
-  }
-  function tick(G){
-    G.t += TICK;
-    if (G.state === 'wait'){ G.wait -= TICK; if (G.wait <= 0) bowlNow(G); return; }
-    if (G.state === 'rest'){ G.wait -= TICK; if (G.wait <= 0) afterBall(G); return; }
-    if (G.state !== 'roll') return;
-    G.rollT += TICK;
-    let mv = false;
-    for (let s = 0; s < SUB; s++){ const B = G.B, x0 = B.x, y0 = B.y;
-      mv = roll(B, G.pins, G.lane, TICK / SUB, (k, a) => { if (k === 'hit' || k === 'down' || k === 'gutter' || k === 'wall') emit(G, k, a); }) || mv;
-      if (G.lane.wear && !B.gutter && !B.pit) wearOn(G.lane, B.x, B.y, Math.hypot(B.x - x0, B.y - y0)); }
-    if ((G.B.pit && !G.pins.some(p => p.vx || p.vy)) || G.rollT > 7){ G.state = 'rest'; G.wait = REST_T; G.wearV++; }
-  }
-  function afterBall(G){
-    if (G.spare){
-      const left = G.pins.filter(p => !p.down && !p.pit).length; G.B = null; G.tries++;
-      emit(G, 'try', { left, tries: G.tries });
-      if (!left){ G.state = 'over'; G.made = true; emit(G, 'over', {}); return; }
-      G.pins = leavePins(G.spare.xy); G.state = 'aim'; emit(G, 'next', {});
-      return;
-    }
-    const left = G.pins.filter(p => !p.down && !p.pit).length, n = G.before - left, ball = G.ball;
-    const strike = G.before === 10 && left === 0, spare = !strike && ball >= 2 && left === 0;
-    G.rolls.push(n); G.B = null;
-    emit(G, 'ball', { n, strike, spare, left, frame: G.frame, ball });
-    // (frames 1–9: a strike or a second ball ends the frame; the tenth: a second ball always, a third after a strike or a spare,
-    //  the pins set again whenever all are down)
-    let reset = false, done = false;
-    if (G.frame < 10){ if (strike || ball === 2){ G.frame++; G.ball = 1; reset = true; } else G.ball = 2; }
-    else {
-      G.tenth.push(n); const t = G.tenth;
-      if (t.length === 1){ G.ball = 2; reset = left === 0; }
-      else if (t.length === 2){ if (t[0] === 10 || t[0] + t[1] === 10){ G.ball = 3; reset = left === 0; } else done = true; }
-      else done = true;
-    }
-    G.pins = reset ? rack() : G.pins.filter(p => !p.down && !p.pit).map(p => ({ ...p, vx: 0, vy: 0 }));
-    if (done){ G.state = 'over'; emit(G, 'over', { total: scoreOf(G.rolls).total }); return; }
-    G.state = G.ai ? 'wait' : 'aim'; G.wait = SWEEP_T;
-    if (G.ai) G.shot = handsOn(pick(G.pins, G.lane, G.pins.length === 10), G.ai, G.R);
-    emit(G, 'next', {});
-  }
-  function previewOf(G){
-    const s = G.shot, key = [s.sx, s.tx, s.ty, s.v, s.h, s.b, G.rolls.length, G.tries || 0, G.wearV].join();
-    if (G._pv && G._pv.key === key) return G._pv;
-    const r = bowlSim(G.pins, s, G.lane, { path: true, dt: 1 / 120 });
-    return G._pv = { key, path: r.path };
-  }
-
-  /* ─── RECORDINGS AND PAR ─── the steady player's game on the lane, a ball at a time: frames of the ball and every pin */
-  const RECS = new Map(), SOON = BOARD_KIT.budget(6, 40), REC_F = 2 + 10 * 4 + 1;
-  const recKey = (idx, lv) => idx * 8 + lv;
-  function recOf(idx, lv){
-    const k = recKey(idx, lv); let M = RECS.get(k);
-    if (!M){ M = { G: newGame(idx, lv, { ai: STEADY, seed: 23 }), F: [], ticks: 0, done: false, phase: BOARD_KIT.phase(idx), par: null };
-      RECS.set(k, M); if (RECS.size > REC_CAP) RECS.delete(RECS.keys().next().value); }
-    else { RECS.delete(k); RECS.set(k, M); }
-    return M;
-  }
-  function recFrame(M){
-    const G = M.G, F = M.F, B = G.B;
-    F.push(B && !B.pit ? B.x : -1, B && !B.pit ? B.y : -1);
-    for (let i = 0; i < 10; i++){ const p = G.pins.find(q => q.n === i + 1); if (p && !p.pit) F.push(p.x, p.y, p.down ? 1 : 0, p.ang); else F.push(-1, -1, 0, 0); }
-    F.push(scoreOf(G.rolls).total);
-  }
-  function recWork(M){
-    const G = M.G; if (M.done) return;
-    const per = Math.round(1 / (REC_HZ * TICK)), was = G.rolls.length;
-    for (let k = 0; k < 2000 && G.rolls.length === was && G.state !== 'over'; k++){ if (M.ticks++ % per === 0) recFrame(M); tick(G); }
-    if (G.state === 'over'){ for (let r = 0; r < REC_HZ * 2; r++) recFrame(M); M.done = true; M.par = scoreOf(G.rolls).total; M.F = Float32Array.from(M.F); M.G = null; }
-  }
-  function recSoon(idx, lv, urgent){
-    const M = recOf(idx, lv);
-    if (!M.done){ if (urgent) recWork(M); else SOON.take(() => recWork(M)); }
-    return M;
-  }
-  function parOf(idx, lv){ const M = recOf(idx, lv); for (let k = 0; k < 40 && !M.done; k++) recWork(M); return M.par; }
-  function recView(M){
-    const n = (M.F.length / REC_F) | 0;
-    if (!n) return null;
-    const pick = (a, b, f) => {
-      const F = M.F, pins = [];
-      for (let i = 0; i < 10; i++){ const o = a + 2 + 4 * i, q = b + 2 + 4 * i; if (F[o] < 0) continue;
-        const jump = F[q] < 0 || Math.hypot(F[q] - F[o], F[q + 1] - F[o + 1]) > 0.08;
-        pins.push({ x: jump ? F[o] : F[o] + (F[q] - F[o]) * f, y: jump ? F[o + 1] : F[o + 1] + (F[q + 1] - F[o + 1]) * f, down: F[o + 2] > 0.5, ang: F[o + 3] }); }
-      const bj = F[b] < 0 || F[a] < 0 || Math.hypot(F[b] - F[a], F[b + 1] - F[a + 1]) > 0.1;
-      return { ball: F[a] < 0 ? null : { x: bj ? F[a] : F[a] + (F[b] - F[a]) * f, y: bj ? F[a + 1] : F[a + 1] + (F[b + 1] - F[a + 1]) * f }, pins, score: F[a + REC_F - 1] };
-    };
-    if (!M.done){ const a = (n - 1) * REC_F; return pick(a, a, 0); }
-    const { i, j, f } = BOARD_KIT.frameAt(n, REC_HZ, 1.5, M.phase);
-    return pick(i * REC_F, j * REC_F, f);
-  }
-
-  /* ─── SPARES ─── (Oct 28: "could the ideas of trick shot be applied to bowling?", then "1,2,5": every board a spare to make,
-     par from how wide the window is that makes it, and your own leaves made in the bottom row and shared.) Trick shots' way:
-     the physics is deterministic, so a leave's shot can be searched for, and how far off it may be and still work measured.
-     - A LEAVE is the pins left standing, anywhere on the deck (`xy`, the board's own on the ten spots); it is made when one ball
-       takes every pin down. Missed, the pins go back up and it is another try; par is in tries.
-     - THE SEARCH (`shotSearch`, a generator so the boards no one plays work it out a little at a time): a line at the leave's
-       middle and at each pin, full and thin on either side (`THIN`), slow and fast, straight and hooking, from either side of
-       the lane, each aimed through `aimFor`; a line that clears the leave is widened in aim at the arrows a half thousandth at a
-       time (`W_STEP`) both ways while it still clears, and the widest window is the leave's (`w`, its middle the board's shot).
-     - PAR FROM THE WINDOW (`parOfWindow`): three lane boards (0.02) or more is one try, under half a board (0.004) five. Measured
-       on 16 boards a level, windows about 0.03, 0.017, 0.01, 0.007 and 0.004 at levels 1–5 (1 to 5 tries' par).
-     - THE CORNER is the famous leaves (`COURSE`): the 10 pin, the 7, the 5, a sleeper, two baby splits, the 2-4-7, the 3-6-10, the
-       bucket, the 1-3-6-10, the 1-2-4-7, a washout and three splits (each found makeable here; the 7-10, 4-6 and big four are
-       not, by any line the search tries, so they are left out). Every other board deals its own from its number at its level
-       (`SP_LV`: two to five pins, the window's band), tried up to `SP_TRIES` times until the window falls in the band, the
-       nearest kept. 0.1–0.5 s to work out a leave.
-     - A board no one plays shows its leave being made by the found shot (`spareRec`), round and round. */
-  const COURSE = [['the 10 pin', [10]], ['the 7 pin', [7]], ['the 5 pin', [5]], ['the 2-8, a sleeper', [2, 8]], ['the 3-10 baby split', [3, 10]],
-                  ['the 2-7 baby split', [2, 7]], ['the 2-4-7', [2, 4, 7]], ['the 3-6-10', [3, 6, 10]], ['the bucket', [2, 4, 5, 8]], ['the 1-3-6-10', [1, 3, 6, 10]],
-                  ['the 1-2-4-7', [1, 2, 4, 7]], ['the 1-2-4-10 washout', [1, 2, 4, 10]], ['the 5-7 split', [5, 7]], ['the 5-10 split', [5, 10]], ['the 4-9 split', [4, 9]]];
-  const SP_LV = [{ k: [1, 2], band: [0.02, 1] }, { k: [2, 3], band: [0.013, 0.03] }, { k: [2, 4], band: [0.008, 0.02] }, { k: [2, 4], band: [0.004, 0.012] }, { k: [2, 5], band: [0.0005, 0.007] }];
-  const SP_TRIES = 10, W_STEP = 0.0005, W_MAX = 0.04, THIN = [-0.55, -0.45, -0.3, 0, 0.3, 0.45, 0.55], URGENT_MS = 30, LEAVE_CAP = 600, BOARD_W = LANE / 39;
-  const parOfWindow = w => w >= 0.02 ? 1 : w >= 0.012 ? 2 : w >= 0.007 ? 3 : w >= 0.004 ? 4 : 5;
-  const triesStars = (n, par) => par == null ? (n <= 1 ? 3 : n <= 3 ? 2 : 1) : n <= par ? 3 : n <= par + 2 ? 2 : 1;
-  const pinAt = (x, y, n) => ({ n, x, y, vx: 0, vy: 0, down: false, ang: 0, pit: false, up: true });
-  const leavePins = xy => xy.map(([x, y], i) => pinAt(x, y, i + 1));
-  const spotsOf = ns => ns.map(n => SPOTS[n - 1].slice());
-  const nameOf = ns => { const q = ns.slice().sort((a, b) => a - b); return q.length === 1 ? 'the ' + q[0] + ' pin' : 'the ' + q.join('-'); };
-  const clearsAll = (P, s, lane) => bowlSim(P, s, lane, { dt: 1 / 120 }).P.every(p => p.down || p.pit);
-  function* shotSearch(P, lane, cap){
-    const mx = P.reduce((a, p) => a + p.x, 0) / P.length, my = P.reduce((a, p) => a + p.y, 0) / P.length, pts = [[mx, my]];
-    for (const p of P) for (const o of THIN) pts.push([p.x + o * S, p.y]);
-    let best = null;
-    for (const [x, y] of pts) for (const v of [0.55, 0.74]) for (const h of [0, 0.35]) for (const so of [-0.7, 0.7]){
-      const sx = clamp(CX + so * (CX - x + 0.04), CX - EDGE + BR, CX + EDGE - BR), s = aimFor(sx, v, h, x, y + BR, lane);
-      yield;
-      if (!clearsAll(P, s, lane)) continue;
-      let lo = s.tx, hi = s.tx;
-      while (hi - s.tx < W_MAX && clearsAll(P, { ...s, tx: hi + W_STEP }, lane)) hi += W_STEP;
-      while (s.tx - lo < W_MAX && clearsAll(P, { ...s, tx: lo - W_STEP }, lane)) lo -= W_STEP;
-      yield;
-      const w = hi - lo + W_STEP;
-      if (!best || w > best.w) best = { s: { ...s, tx: (lo + hi) / 2 }, w };
-      if (cap != null && best.w > cap) return best;
-    }
-    return best;
-  }
-  // (`J.cur` is the leave under trial, so a board still being worked out shows its pins standing, not a bare deck)
-  function* leaveGen(J, idx, lv, lane){
-    if (idx < COURSE.length){ const [name, ns] = COURSE[idx], xy = spotsOf(ns); J.cur = xy; const r = yield* shotSearch(leavePins(xy), lane); return r && { name, xy, ...r }; }
-    const L = SP_LV[lv - 1]; let keep = null;
-    for (let a = 0; a < SP_TRIES; a++){
-      const R = rngOf((idx * 9973 + lv * 131 + a * 7) ^ 0x5ba), k = L.k[0] + Math.floor(R() * (L.k[1] - L.k[0] + 1)), ns = [];
-      while (ns.length < k){ const n = 1 + Math.floor(R() * 10); if (!ns.includes(n)) ns.push(n); }
-      if (!keep) J.cur = spotsOf(ns);
-      const r = yield* shotSearch(leavePins(spotsOf(ns)), lane, L.band[1]);
-      if (!r) continue;
-      const off = r.w < L.band[0] ? L.band[0] - r.w : r.w > L.band[1] ? r.w - L.band[1] : 0;
-      if (!keep || off < keep.off) keep = { name: nameOf(ns), xy: spotsOf(ns), s: r.s, w: r.w, off };
-      if (!off) break;
-    }
-    return keep;
-  }
-  function* mineGen(xy, lane){ const r = yield* shotSearch(leavePins(xy), lane); return r && { name: 'your leave', xy, ...r }; }
-  const LEAVES = new Map();
-  function leaveJob(idx, lv){
-    const k = recKey(idx, lv); let J = LEAVES.get(k);
-    if (!J){ J = { key: 'g' + idx + '@' + lv, idx, lv, lane: laneOf(idx, lv), done: false, res: null, rec: null, phase: BOARD_KIT.phase(idx) };
-      J.gen = leaveGen(J, idx, lv, J.lane); LEAVES.set(k, J); if (LEAVES.size > LEAVE_CAP) LEAVES.delete(LEAVES.keys().next().value); }
-    return J;
-  }
-  function leaveWork(J, ms){
-    if (J.done) return;
-    const t0 = performance.now();
-    while (performance.now() - t0 < ms){ const r = J.gen.next(); if (r.done){ finishLeave(J, r.value); return; } }
-  }
-  function finishLeave(J, res){
-    J.res = res ? { ...res, par: parOfWindow(res.w) } : { name: J.mine ? 'your leave' : 'the 10 pin', xy: J.mine ? J.xy : spotsOf([10]), s: null, w: 0, par: null };
-    J.done = true; J.gen = null; J.rec = spareRec(J);
-    try { fieldItemsChanged(); } catch {}
-  }
-  const leaveSoon = (J, urgent) => { if (!J.done){ if (urgent) leaveWork(J, URGENT_MS); else SOON.take(l => leaveWork(J, l)); } return J; };
-  const leaveNow = J => { while (!J.done) leaveWork(J, 1000); return J; };
-  // the board's leave: your own if it has one, else the one it deals
-  const jobFor = (c, r) => mineJob(c, r) || leaveJob(boardIdx(c, r), levelAt(boardIdx(c, r)));
-  // the leave made by its shot, frames as the game's recordings are (a second standing, the ball, the pins at rest held)
-  function spareRec(J){
-    const R = J.res; if (!R.s) return null;
-    const P = leavePins(R.xy), B = ballOf(R.s), F = [], per = Math.round(1 / (REC_HZ * TICK));
-    const push = () => { F.push(B.pit ? -1 : B.x, B.pit ? -1 : B.y);
-      for (let i = 0; i < 10; i++){ const p = P.find(q => q.n === i + 1); if (p && !p.pit) F.push(p.x, p.y, p.down ? 1 : 0, p.ang); else F.push(-1, -1, 0, 0); } F.push(0); };
-    for (let k = 0; k < REC_HZ; k++) push();
-    for (let t = 0, n = 0; t < 7; t += TICK){
-      if (n++ % per === 0) push();
-      for (let q = 0; q < SUB; q++) roll(B, P, J.lane, TICK / SUB);
-      if (B.pit && !P.some(p => p.vx || p.vy)) break;
-    }
-    for (let k = 0; k < REC_HZ * 1.5; k++) push();
-    return { F: Float32Array.from(F), done: true, phase: J.phase };
-  }
-  const { BEST: SBEST, saveBest: saveSBest } = BOARD_KIT.best('bowling.spares');
-
-  /* ─── YOUR OWN LEAVE ─── (the "5" of the same request) The row becomes a leave editor, as trick shots' is a table editor: ✎ while
-     a leave is played, or the menu's Make a spare for this board…, takes the board's leave into it. Tools: Pin (a tap lays one
-     where it falls on the deck), On a spot (a tap lays or lifts the nearest of the ten spots), Erase; a drag moves a pin. Acts:
-     Rack (all ten), Clear, Check (the search: the widest window and its par, or no shot), Play. ✓ (or Play) keeps it on the
-     board once a shot is found (localStorage `bowling.mine`, the latest 300, read back through `cleanLeave`) and plays it; Escape
-     or ✕ leaves the board as it was. The menu shares it as a link (`shareLeave`, `takeLeave`, through the same checks). */
-  const DECK = { x0: CX - EDGE + PR, x1: CX + EDGE - PR, y0: PIT + PR + 0.012, y1: HEAD + 0.05 };
-  const r4 = v => Math.round(v * 1e4) / 1e4;
-  function cleanLeave(d){
-    if (!d || !Array.isArray(d.xy) || d.xy.length < 1 || d.xy.length > 10) return null;
-    const xy = [];
-    for (const q of d.xy){ if (!Array.isArray(q) || q.length < 2) return null; const x = +q[0], y = +q[1];
-      if (!isFinite(x) || !isFinite(y) || x < DECK.x0 - 1e-6 || x > DECK.x1 + 1e-6 || y < DECK.y0 - 1e-6 || y > DECK.y1 + 1e-6) return null;
-      if (xy.some(([a, b]) => Math.hypot(a - x, b - y) < 2 * PR - 1e-6)) return null;
-      xy.push([r4(x), r4(y)]); }
-    return { xy };
-  }
-  const { MINE, save: saveMine } = EDIT_KIT.store('bowling.mine', 300, cleanLeave);
-  const MINE_J = new Map();
-  function mineJob(c, r){
-    const k = gkey(c, r), d = MINE.get(k); if (!d) return null;
-    const h = BOARD_KIT.hash(JSON.stringify(d.xy));
-    let J = MINE_J.get(k); if (J && J.hash === h) return J;
-    const idx = boardIdx(c, r), lv = levelAt(idx), lane = laneOf(idx, lv);
-    J = { key: 'm' + h, hash: h, idx, lv, lane, mine: true, xy: d.xy, cur: d.xy, done: false, res: null, rec: null, phase: BOARD_KIT.phase(idx), gen: mineGen(d.xy, lane) };
-    MINE_J.set(k, J); return J;
-  }
-  const ED = { on: false, busy: false, c: 0, r: 0, key: null, xy: [], tool: 'pin', drag: null, ateAt: 0, found: null, foundKey: '' };
-  const ED_TOOLS = [['pin', '📍', 'Pin'], ['spot', '🎳', 'On a spot'], ['erase', '🧽', 'Erase']];
-  const ED_ACTS = ['rack', 'clear', 'check', 'play'];
-  const edSay = (m, ms) => say(m, ms || 3200);
-  const EDK = EDIT_KIT.make({ ED, app: () => app, open: edOpen, done: edDone, cancel: edCancel, tiles: edTiles, tile: edTile,
-    quick: [{ key: 'erase', glyph: '🧽', title: 'Erase: a pin away', tool: 'erase', run: () => edSay('Tap a pin to take it away.') },
-            { key: 'check', glyph: '✔', title: 'Check: is there a ball that makes it, and what par?', run: () => edCheck(true) }],
-    rowStays: true, gameRow: true, cancelTitle: 'Cancel: leave the board as it was', doneTitle: 'Done: keep this leave and play it',
-    make: { when: () => SET.mode === 'spares' && !ED.on, title: 'Make a spare for this board: place the pins, the search finds the shot and sets par' } }), edPane = EDK.pane;
-  function edStart(c, r){
-    const J = jobFor(c, r); leaveNow(J);
-    Object.assign(ED, { on: true, c, r, key: gkey(c, r), xy: J.res.xy.map(q => q.slice()), tool: 'pin', drag: null, found: null, foundKey: '' });
-    LIVE = { c, r }; try { fieldItemsChanged(); } catch {}
-  }
-  function edOpen(){
-    const f = framedCell();
-    if (!f){ say('Pick a lane first, then open the editor to make its leave', 2000); return false; }
-    if (SET.mode !== 'spares'){ SET.mode = 'spares'; saveSet(); GAMES.clear(); }
-    edStart(f.c, f.r);
-    edSay('Making a leave: tap the deck for a pin (or On a spot for the rack\'s spots), drag to move one. ✔ looks for the shot and sets par, ✓ keeps it and plays it.', 5000);
-    return true;
-  }
-  function edStop(){ ED.on = false; ED.drag = null; try { fieldItemsChanged(); } catch {} }
-  const draftKey = () => JSON.stringify(ED.xy);
-  // the search on the draft, at once: { why } or { w, par, s }
-  function edCheck(tell){
-    if (!ED.xy.length){ const why = 'There are no pins: lay one or more.'; if (tell) edSay(why); return { why }; }
-    if (ED.foundKey !== draftKey()){
-      const idx = boardIdx(ED.c, ED.r), lane = laneOf(idx, levelAt(idx)), gen = shotSearch(leavePins(ED.xy), lane);
-      let r; do { r = gen.next(); } while (!r.done);
-      ED.found = r.value ? { w: r.value.w, s: r.value.s, par: parOfWindow(r.value.w) } : null; ED.foundKey = draftKey();
-    }
-    if (!ED.found){ const why = 'No ball the search tries takes all of these down: move a pin or two.'; if (tell) edSay(why); return { why }; }
-    if (tell) edSay('A ball makes it with a window of ' + (ED.found.w / BOARD_W).toFixed(1) + ' boards: par ' + ED.found.par + '.', 3000);
-    return ED.found;
-  }
-  function edDone(){
-    if (!ED.on) return true;
-    const R = edCheck(false);
-    if (R.why){ edSay(R.why + ' (Cancel leaves the board as it was.)', 3200); return false; }
-    const d = cleanLeave({ xy: ED.xy }); if (!d){ edSay('This leave cannot be kept.'); return false; }
-    const k = ED.key; MINE.delete(k); MINE.set(k, d); MINE_J.delete(k); saveMine();
-    GAMES.set(k, fresh(ED.c, ED.r)); LIVE = { c: ED.c, r: ED.r };
-    edStop(); edPane(false);
-    edSay('Your leave, par ' + R.par + '. Tap the lane to bowl at it.', 3000);
-    return true;
-  }
-  function edCancel(){ if (!ED.on) return; edStop(); edPane(false); edSay('Left the board as it was.', 1800); }
-  const clampDeck = (x, y) => [clamp(x, DECK.x0, DECK.x1), clamp(y, DECK.y0, DECK.y1)];
-  const nearPin = (x, y, r) => { let bi = -1, bd = r; ED.xy.forEach(([a, b], i) => { const d = Math.hypot(a - x, b - y); if (d < bd){ bd = d; bi = i; } }); return bi; };
-  const roomAt = (x, y, skip) => ED.xy.every(([a, b], i) => i === skip || Math.hypot(a - x, b - y) >= 2 * PR);
-  function edPlace(x, y){
-    const t = ED.tool, i = nearPin(x, y, 2 * PR);
-    if (t === 'erase'){ if (i < 0) return false; ED.xy.splice(i, 1); return true; }
-    if (t === 'spot'){
-      let si = 0, sd = 1; SPOTS.forEach(([a, b], k) => { const d = Math.hypot(a - x, b - y); if (d < sd){ sd = d; si = k; } });
-      const [sx, sy] = SPOTS[si], at = nearPin(sx, sy, PR);
-      if (at >= 0){ ED.xy.splice(at, 1); return true; }
-      if (!roomAt(sx, sy, -1)){ edSay('A pin stands too near that spot.'); return false; }
-      if (ED.xy.length >= 10){ edSay('Ten pins at most.'); return false; }
-      ED.xy.push([sx, sy]); return true;
-    }
-    if (i >= 0) return false;                                  // (on a pin, Pin does nothing: a drag moves it)
-    const [px, py] = clampDeck(x, y);
-    if (y > DECK.y1 + 0.08){ edSay('Pins stand on the deck, at the far end.'); return false; }
-    if (!roomAt(px, py, -1)){ edSay('Too near another pin.'); return false; }
-    if (ED.xy.length >= 10){ edSay('Ten pins at most.'); return false; }
-    ED.xy.push([r4(px), r4(py)]); return true;
-  }
-  function edTiles(){
-    const sel = '#5a3e8a', out = ED_TOOLS.map(([k, gl, name]) => ({ glyph: gl, value: name, bg: ED.tool === k ? sel : null }));
-    const f = ED.foundKey === draftKey() ? ED.found : undefined;
-    out.push({ glyph: '🔟', value: 'Rack' }, { glyph: '⌫', value: 'Clear' }, { glyph: '✔', value: 'Check', label: f === undefined ? ED.xy.length + (ED.xy.length === 1 ? ' pin' : ' pins') : f ? 'par ' + f.par : 'no shot' }, { glyph: '▶', value: 'Play' });
-    return out;
-  }
-  function edTile(i){
-    if (!ED.on) return false;
-    if (i < ED_TOOLS.length){ ED.tool = ED_TOOLS[i][0]; edSay({ pin: 'Tap the deck to lay a pin; drag one to move it.', spot: 'Tap near a spot of the rack to lay a pin there, or lift the one that is.', erase: 'Tap a pin to take it away.' }[ED.tool], 2400); }
-    else {
-      const a = ED_ACTS[i - ED_TOOLS.length];
-      if (a === 'rack'){ ED.xy = SPOTS.map(q => q.slice()); edSay('The full rack.', 1500); }
-      else if (a === 'clear'){ ED.xy = []; edSay('No pins: lay your own.', 1500); }
-      else if (a === 'check') edCheck(true);
-      else if (a === 'play') return edDone();
-    }
-    try { fieldItemsChanged(); bbRefreshNow(); } catch {}
-    return true;
-  }
-  function edTap(c, r, u, v){
-    if (gkey(c, r) !== ED.key){ edStart(c, r); edSay('Making a leave for this lane.', 1500); return true; }
-    if (u == null || performance.now() - ED.ateAt < 350) return true;
-    if (edPlace(u * W, v)){ try { fieldItemsChanged(); bbRefreshNow(); } catch {} }
-    return true;
-  }
-  function shareLeave(){
-    const f = framedCell(), d = ED.on ? { xy: ED.xy } : f && MINE.get(gkey(f.c, f.r));
-    if (!d || !d.xy.length){ say('This lane has no leave of its own to share: make one first', 2000); return null; }
-    return SHARE.copy(SHARE.link(app, { xy: d.xy }), 'Link copied: it opens on this leave.');
-  }
-  function takeLeave(c, r, P){
-    const d = cleanLeave(P);
-    if (!d){ say('The shared leave cannot be played: its pins are not on the deck.', 3500); return; }
-    const idx = boardIdx(c, r), gen = shotSearch(leavePins(d.xy), laneOf(idx, levelAt(idx))); let q; do { q = gen.next(); } while (!q.done);
-    if (!q.value){ say('The shared leave cannot be made on this lane: no ball takes all its pins.', 3500); return; }
-    if (SET.mode !== 'spares'){ SET.mode = 'spares'; saveSet(); GAMES.clear(); }
-    const k = gkey(c, r); MINE.delete(k); MINE.set(k, d); MINE_J.delete(k); saveMine();
-    GAMES.set(k, fresh(c, r)); LIVE = { c, r };
-    say('A shared leave, par ' + parOfWindow(q.value.w) + '. Tap the lane to bowl at it.', 3200);
-    try { fieldItemsChanged(); } catch {}
-  }
-  function setMode(m){ if (m === SET.mode) return; SET.mode = m; saveSet(); GAMES.clear(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} }
-
-  /* ─── PLAYING ─── */
-  const GAMES = new Map();
-  let LIVE = null;
-  const { BEST, saveBest } = BOARD_KIT.best('bowling.best');
-  const bestKey = (idx, lv) => idx + '@' + lv;
-  const starsOf = (score, par) => par == null ? (score >= 150 ? 3 : score >= 100 ? 2 : 1) : score >= par ? 3 : score >= par * 0.8 ? 2 : 1;
-  const fresh = (c, r) => { const idx = boardIdx(c, r); return { c, r, idx, lv: levelAt(idx), state: 'ready', last: 0, acc: 0, overAt: 0, G: null, J: null, helped: false }; };
-  const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
-  const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
-  function begin(g){
-    const mine = g.mine;
-    Object.assign(g, fresh(g.c, g.r), { state: 'play', last: performance.now(), mine });
-    if (SET.mode === 'spares'){
-      // (a spare: the board's leave, worked out now if it was not yet)
-      const J = leaveNow(jobFor(g.c, g.r)); g.J = J;
-      g.G = newGame(g.idx, g.lv, { seed: 1, leave: J.res, ev: (k, a, G) => onEvent(g, k, a, G) });
-      if (mine) g.G.shot = { ...mine };
-      g.G.shot.b = SET.ball;
-      GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
-      say('Make ' + J.res.name + (J.res.par ? ' (par ' + J.res.par + (J.res.par === 1 ? ' try' : ' tries') + ')' : '') + ': one ball to take every pin. Tap where you aim, then swipe the ball up the lane: faster for speed, curved for hook. Drag it along the line to move where you stand.', 5000);
-      try { bbRefreshNow(); } catch {}
-      return;
-    }
-    g.G = newGame(g.idx, g.lv, { seed: (performance.now() * 1000) | 0, ev: (k, a, G) => onEvent(g, k, a, G) });
-    if (mine) g.G.shot = { ...mine };
-    g.G.shot.b = SET.ball;
-    GAMES.set(gkey(g.c, g.r), g); LIVE = { c: g.c, r: g.r };
-    const par = RECS.get(recKey(g.idx, g.lv));
-    say('Ten frames on ' + patSay(g.G.lane) + (par && par.done ? ', par ' + par.par : '') + '. ' + BALLS[SET.ball].name + ' in hand (the pad\'s button changes it). Tap the lane where you aim, then swipe the ball up the lane: faster for speed, curved for hook. Drag it along the line to move where you stand.', 5000);
-    try { bbRefreshNow(); } catch {}
-  }
-  function stepGame(g){
-    if (g.state !== 'play') return;
-    const t = performance.now(), dt = g.last ? Math.min(0.25, (t - g.last) / 1000) : 0;
-    g.last = t; g.acc += dt;
-    while (g.acc >= TICK){ g.acc -= TICK; tick(g.G); if (g.G.state === 'over'){ over(g); break; } }
-    { const tag = g.G.rolls.length + ':' + (g.G.tries || 0); if (g.viewTag !== tag){ g.viewTag = tag; behind(g); } }   // (behind the ball for each one bowled: BEHIND THE BALL)
-  }
-  function over(g){
-    g.state = 'over'; g.overAt = performance.now();
-    if (g.G.spare){
-      const n = g.G.tries, J = g.J, par = J.res.par, st = g.helped ? 1 : triesStars(n, par), was = SBEST.get(J.key);
-      if (!g.helped && (!was || n < was)){ SBEST.set(J.key, n); saveSBest(); }
-      sfx(st === 3 ? 'win' : 'spare');
-      say('Made in ' + n + (n === 1 ? ' try ' : ' tries ') + BOARD_KIT.stars(st) + (par ? ' (par ' + par + ')' : '') + (g.helped ? ', shown the shot' : was && n < was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
-      try { bbRefreshNow(); } catch {}
-      return;
-    }
-    const total = scoreOf(g.G.rolls).total, par = parOf(g.idx, g.lv), s = starsOf(total, par), k = bestKey(g.idx, g.lv), was = BEST.get(k) || 0;
-    if (total > was){ BEST.set(k, total); saveBest(); }
-    sfx(s === 3 ? 'win' : 'end');
-    say('Your game: ' + total + ' ' + BOARD_KIT.stars(s) + (par != null ? ' (par ' + par + ')' : '') + (total > was && was ? ', a new best here' : '') + '. Tap to play it again.', 4500);
-    try { bbRefreshNow(); } catch {}
-  }
-  const myTurn = g => !!(g && g.state === 'play' && g.G.state === 'aim');
-  const patSay = L => L.pat.name + ' (' + L.pat.ft + ' ft' + (L.pat.house ? ', more oil down the middle: a ball missed wide hooks back' : ', flat: a miss stays a miss') + ')';
-  function setShot(g, o){ const s = { ...g.G.shot, ...o }; s.sx = clamp(s.sx, CX - EDGE + BR, CX + EDGE - BR); s.tx = clamp(s.tx, CX - WALL, CX + WALL); s.ty = clamp(s.ty, HEAD, FOUL - 0.08); s.v = clamp(s.v, V_MIN, V_MAX); s.h = clamp(s.h, 0, 1); g.G.shot = s; g.mine = s; }
-  // (the ball in hand: the next of the four; kept for the next game too)
-  function chooseBall(g, step){
-    SET.ball = (SET.ball + (step || 1) + BALLS.length) % BALLS.length; saveSet();
-    if (myTurn(g)) setShot(g, { b: SET.ball });
-    const B = BALLS[SET.ball]; say(B.name + ': ' + B.say + '.', 2600); try { bbRefreshNow(); } catch {}
-  }
-  function bowlMine(g){ if (!myTurn(g)) return false; bowlNow(g.G); try { bbRefreshNow(); } catch {} return true; }
-  const hookName = h => h < 0.1 ? 'straight' : h < 0.4 ? 'a little' : h < 0.7 ? 'a hook' : 'a big hook';
-  /* ─── A SWIPE BOWLS ─── (Oct 28: "you should not need to have the bottom browser open to play games. that is only for advanced
-     users.", then "Mostly getstures, but some buttons if needed.") Where you stand, the speed and the hook were the row's (and the
-     keys'), so on a phone the ball went where the row last put it. Now the ball at the foul line is the hand: a press on it and a
-     drag along the line moves where you stand; dragged up the lane (past `SWIPE_UP`) and let go, it is bowled, as fast as the
-     swipe's last moments went (`SWIPE_V`, lane lengths a second, to the ball's speeds) and hooking as much as the swipe bowed away
-     from the straight line between its ends (`BOW_K`). A tap on the lane still aims; a tap on the ball still bowls as it stands. */
-  const BALL_GRAB = 0.045, SWIPE_UP = 0.07, SWIPE_V = [0.6, 3.6], BOW_K = 9;
-  function swipeOf(pts, vmax){
-    const n = pts.length, last = pts[n - 1];
-    let k = n - 1; while (k > 0 && last[2] - pts[k - 1][2] < 120) k--;      // (the last tenth of a second or so)
-    const a = pts[Math.max(0, k - 1)], dt = Math.max(16, last[2] - a[2]) / 1000, sp = Math.hypot(last[0] - a[0], last[1] - a[1]) / dt;
-    const t = clamp((sp - SWIPE_V[0]) / (SWIPE_V[1] - SWIPE_V[0]), 0, 1), v = V_MIN + ((vmax || V_MAX) - V_MIN) * t;
-    const p0 = pts[0], cx = last[0] - p0[0], cy = last[1] - p0[1], L = Math.hypot(cx, cy) || 1;
-    let bow = 0; for (const p of pts){ const off = ((p[0] - p0[0]) * cy - (p[1] - p0[1]) * cx) / L; if (Math.abs(off) > Math.abs(bow)) bow = off; }
-    return { v, h: clamp(Math.abs(bow) / L * BOW_K, 0, 1), sp, bow: bow / L };
-  }
-
-  /* ─── SOUNDS ─── the ball's roll, the pins' crash (more pins, more crash), a gutter, a cheer for a strike */
-  function sfx(kind, a){
-    if (!SET.sound) return;
-    try { if (!ARCADE.audio()) return; } catch { return; }
-    const T = ARCADE.tone, Hs = ARCADE.hiss;
-    try {
-      if (kind === 'bowl'){ Hs(1.4, 0.06, 220); T(60, 48, 1.2, 'sine', 0.06); }
-      else if (kind === 'hit'){ const v = Math.min(1, ((a && a.v) || 0.3) / 0.6); T(700 + 300 * Math.random(), 500, 0.05, 'square', 0.02 + 0.04 * v); Hs(0.06, 0.15 + 0.3 * v, 3500); }
-      else if (kind === 'gutter') T(140, 90, 0.4, 'triangle', 0.05);
-      else if (kind === 'strike') [523, 659, 784, 1047, 1319].forEach((q, i) => T(q, q, 0.14, 'triangle', 0.07, i * 0.08));
-      else if (kind === 'spare') [659, 880].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.06, i * 0.1));
-      else if (kind === 'win') [523, 659, 784, 1047].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.07, i * 0.1));
-      else if (kind === 'end') [440, 554].forEach((q, i) => T(q, q, 0.16, 'triangle', 0.05, i * 0.1));
-    } catch {}
-  }
-  function onEvent(g, kind, a, G){
-    if (liveGame() !== g) return;
-    if (kind === 'bowl' || kind === 'hit' || kind === 'gutter') sfx(kind, a);
-    if (kind === 'try' && a.left){ sfx('end'); say(a.left + (a.left === 1 ? ' pin stands' : ' pins stand') + ': set up again. Try ' + (a.tries + 1) + '.', 1800); try { bbRefreshNow(); } catch {} }
-    if (kind === 'ball'){
-      if (a.strike){ sfx('strike'); say('Strike!', 1400); }
-      else if (a.spare){ sfx('spare'); say('Spare!', 1400); }
-      else say(a.n + (a.n === 1 ? ' pin' : ' pins') + (a.left && a.ball === 1 && G.frame === a.frame ? ', ' + a.left + ' left' : '') + '. ' + scoreOf(G.rolls).total + ' so far.', 1400);
-      try { bbRefreshNow(); } catch {}
-    }
-  }
-
-  /* ─── DRAWN ─── the lane a picture (maple boards and the darker pine between, the arrows and dots, the foul line, the gutters,
-     the deck and the pit); on it the pins (standing, or lying the way they fell), the ball, your aim, the way dotted, the score
-     in dot digits by the foul line. In lane units, divided by W at the end. */
-  const PIC = BOARD_KIT.painted(160, (P, hi) => paint(P.idx, hi ? 512 : 256, P.lane));
-  function paint(idx, Sz, lane){
-    const cv = document.createElement('canvas'); cv.width = Math.round(Sz * W); cv.height = Sz;
-    const c = cv.getContext('2d'); if (!c) return null;
-    c.setTransform(-Sz, 0, 0, -Sz, cv.width, cv.height);      // (the photo tier lays a picture turned a half turn)
-    const R = rngOf(idx * 389 + 11);
-    c.fillStyle = '#1c1d22'; c.fillRect(0, 0, W, 1);
-    // (the lane: 39 boards, maple at the ends and pine between, each its own shade)
-    const b0 = CX - EDGE, bw = LANE / 39;
-    for (let k = 0; k < 39; k++){ const t = 0.5 + 0.5 * R(); for (const [y0, y1, pine] of [[PIT, HEAD + 0.06, false], [HEAD + 0.06, 0.78, true], [0.78, 1, false]]){
-      const base = pine ? [196, 150, 98] : [226, 190, 140]; c.fillStyle = `rgb(${Math.round(base[0] * (0.92 + 0.08 * t))},${Math.round(base[1] * (0.92 + 0.08 * t))},${Math.round(base[2] * (0.92 + 0.08 * t))})`;
-      c.fillRect(b0 + k * bw, y0, bw + 0.0004, y1 - y0); } }
-    c.strokeStyle = 'rgba(90,60,30,0.18)'; c.lineWidth = 0.0006; for (let k = 1; k < 39; k++){ c.beginPath(); c.moveTo(b0 + k * bw, PIT); c.lineTo(b0 + k * bw, 1); c.stroke(); }
-    // (the oil, to be read: a cool blue sheen a board at a time from the foul line to where the pattern ends there, fainter on the outside
-    //  boards of a house shot and ending sooner, fading over the last stretch; where a game's balls have taken it off, a duller
-    //  track; just past the end, the oil they carried down, a faint shine. Oct 28, "1,2")
-    if (lane){
-      for (let k = 0; k < 39; k++){ const x = b0 + (k + 0.5) * bw, u = Math.min(1, Math.abs(x - CX) / EDGE), cr = lane.crown * u * u, end = lane.oil + cr * CROWN_L, a = 0.26 * (1 - cr * CROWN_S * 2);
-        c.fillStyle = `rgba(105,150,235,${a.toFixed(3)})`; c.fillRect(b0 + k * bw, end, bw + 0.0003, FOUL - end);
-        const f = c.createLinearGradient(0, end, 0, end - RAMP * 0.6); f.addColorStop(0, `rgba(105,150,235,${(a * 0.7).toFixed(3)})`); f.addColorStop(1, 'rgba(105,150,235,0)');
-        c.fillStyle = f; c.fillRect(b0 + k * bw, end - RAMP * 0.6, bw + 0.0003, RAMP * 0.6); }
-      if (lane.wear){ const cw = LANE / WX, ch = (FOUL - HEAD) / WY;
-        for (let j = 0; j < WY; j++) for (let i = 0; i < WX; i++){ const w = lane.wear[j * WX + i]; if (Math.abs(w) < 0.015) continue;
-          c.fillStyle = w > 0 ? `rgba(150,85,25,${Math.min(0.6, w * 2.2).toFixed(3)})` : `rgba(105,150,235,${Math.min(0.35, -w * 2.5).toFixed(3)})`;
-          c.fillRect(b0 + i * cw, FOUL - (j + 1) * ch, cw, ch); } }
-    }
-    // the arrows and the dots
-    c.fillStyle = '#3a2618';
-    for (let k = 1; k <= 7; k++){ const x = b0 + (k * 5 - 0.5) * bw, y = ARROWS + Math.abs(k - 4) * 0.012; c.beginPath(); c.moveTo(x, y - 0.012); c.lineTo(x - 0.004, y + 0.006); c.lineTo(x + 0.004, y + 0.006); c.fill(); }
-    for (const k of [3, 5, 8, 11, 14, 25, 28, 31, 34, 36]){ c.beginPath(); c.arc(b0 + (k - 0.5) * bw, 0.88, 0.0018, 0, 6.283); c.fill(); }
-    c.fillStyle = '#20232a'; c.fillRect(b0, FOUL, LANE, 0.004);           // the foul line
-    // the gutters and the kickbacks; the deck's spots; the pit
-    for (const sg of [-1, 1]){ const gx = sg < 0 ? b0 - GUT : b0 + LANE; const gg = c.createLinearGradient(gx, 0, gx + GUT, 0); gg.addColorStop(0, '#3b3f48'); gg.addColorStop(0.5, '#1d2026'); gg.addColorStop(1, '#3b3f48'); c.fillStyle = gg; c.fillRect(gx, PIT, GUT, 1 - PIT); }
-    c.fillStyle = '#2c2f37'; c.fillRect(CX - WALL - 0.008, 0, 0.008, HEAD + 0.08); c.fillRect(CX + WALL, 0, 0.008, HEAD + 0.08);
-    c.fillStyle = 'rgba(60,40,20,0.35)'; for (const [x, y] of SPOTS){ c.beginPath(); c.arc(x, y, PR * 0.55, 0, 6.283); c.fill(); }
-    c.fillStyle = '#08090c'; c.fillRect(CX - WALL, 0, 2 * WALL, PIT);
-    return cv;
-  }
-  const digits = DOT_FONT.digits3;
-  function itemsOf(V, bp, lane){
-    const out = [];
-    for (const p of V.pins){
-      if (p.down) out.push({ kind: 'bwPinDown', u: p.x, v: p.y, scale: PH, yaw: BOARD_KIT.yawOf(p.ang || 0.3), color: 0xffffff });
-      else out.push({ kind: 'bwPin', u: p.x, v: p.y, scale: PH, color: 0xffffff });
-    }
-    const bc = colOf(V.bdef, lane);
-    if (V.ball) out.push({ kind: 'bwBall', u: V.ball.x, v: V.ball.y, scale: 2 * BR, color: bc });
-    if (V.aim){
-      out.push({ kind: 'bwBall', u: V.aim.sx, v: FOUL - BR - 0.004, scale: 2 * BR, color: bc });
-      out.push({ kind: 'bwRing', u: V.aim.tx, v: V.aim.ty, scale: 0.026, color: 0x1a1f2a }, { kind: 'bwDot', u: V.aim.tx, v: V.aim.ty, scale: 0.01, color: 0xe03a2f });
-    }
-    if (V.preview){ const P = V.preview.path, n = Math.max(2, Math.floor(P.length / 2 * V.previewFrac)) * 2;
-      for (let q = 2; q < Math.min(P.length, n); q += 2) out.push({ kind: 'bwDot', u: P[q], v: P[q + 1], scale: 0.006, color: 0x22303f }); }
-    if (V.score != null && (bp == null || bp > 60)) digits(out, V.score, CX, 0.985, 0.006, 0x22303f, 'bwPix');
-    for (const it of out){ it.u /= W; it.scale /= W; it.lift = (it.lift || 0) / W; }
-    return out;
-  }
-  // (a ball's colour: the board's own for a solid, paler for a pearl; urethane brown; plastic a pale clear blue)
-  function colOf(d, lane){ const id = d && d.id; if (id === 'plastic') return 0xbfe4ff; if (id === 'urethane') return 0x7a3b1f;
-    if (id === 'pearl'){ const c = lane.ball; return (((c >> 16 & 255) + 255) >> 1) << 16 | (((c >> 8 & 255) + 255) >> 1) << 8 | (((c & 255) + 255) >> 1); } return lane.ball; }
-  function liveView(g){
-    const G = g.G, V = { bdef: G.B && G.B.def ? G.B.def : ballDef(G.shot), pins: G.pins.filter(p => !p.pit), ball: G.B && !G.B.pit ? { x: G.B.x, y: G.B.y } : null, score: G.spare ? (G.tries || null) : scoreOf(G.rolls).total };
-    if (G.state === 'aim'){ V.aim = G.shot; if (SET.preview){ V.preview = previewOf(G); V.previewFrac = PREVIEW[g.lv - 1]; } }
-    return V;
-  }
-
-  /* ─── KEYS ─── */
-  let DRAG = null, ateAt = 0;
-  addEventListener('keydown', e => {
-    if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
-    const g = liveGame(); if (!g) return;
-    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-    if (k === 'Enter'){ if (g.state !== 'play'){ if (g.state === 'ready' || performance.now() - g.overAt > GRACE * 1000) begin(g); } else bowlMine(g); e.preventDefault(); e.stopPropagation(); return; }
-    if (ED.on) return;
-    if (k === 'b'){ chooseBall(g); e.preventDefault(); e.stopPropagation(); return; }
-    if (!myTurn(g)) return;
-    let dirs = null; try { dirs = screenToBoardDirs(); } catch {}
-    const flip = dirs && dirs[1] === 3 ? -1 : 1, s = g.G.shot;
-    if (k === 'ArrowLeft' || k === 'ArrowRight') setShot(g, { tx: s.tx + (k === 'ArrowRight' ? 1 : -1) * flip * 0.003 });
-    else if (k === 'a' || k === 'd') setShot(g, { sx: s.sx + (k === 'd' ? 1 : -1) * flip * 0.006 });
-    else if (k === 'ArrowUp' || k === 'ArrowDown') setShot(g, { v: s.v + (k === 'ArrowUp' ? 0.02 : -0.02) });
-    else if (k === 'q' || k === 'e') setShot(g, { h: s.h + (k === 'e' ? 0.1 : -0.1) });
-    else return;
-    e.preventDefault(); e.stopPropagation(); try { bbRefreshNow(); } catch {}
-  }, true);
-
-  /* ─── THE ROW ─── */
-  const ON = '#2f4a3a';
-  function tilesOf(c, r){
-    const g = GAMES.get(gkey(c, r)), idx = boardIdx(c, r), playing = g && g.state === 'play', G = playing ? g.G : null, s = G ? G.shot : { v: 0.6, h: 0.5 };
-    const kmh = v => Math.round(v * 30) + ' km/h', sp = SET.mode === 'spares';
-    return [
-      { glyph: playing ? '🎳' : '▶', value: playing ? (myTurn(g) ? 'Bowl' : 'Rolling') : sp ? 'New try' : 'New game',
-        label: playing ? (G.spare ? 'try ' + (G.tries + 1) + (g.J.res.par ? ' · par ' + g.J.res.par : '') : 'frame ' + Math.min(10, G.frame) + ' · ' + scoreOf(G.rolls).total) : 'level ' + levelAt(idx) },
-      { glyph: '◀', value: 'Stand left', label: 'where you stand' },
-      { glyph: '▶', value: 'Stand right', label: 'where you stand' },
-      { glyph: '−', value: 'Slower', label: 'speed ' + kmh(s.v) },
-      { glyph: '+', value: 'Faster', label: 'speed ' + kmh(s.v) },
-      { glyph: '↶', value: 'Less hook', label: 'hook: ' + hookName(s.h) },
-      { glyph: '↷', value: 'More hook', label: 'hook: ' + hookName(s.h) },
-      { glyph: '⋯', value: SET.preview ? 'On' : 'Off', label: 'show the way', bg: SET.preview ? ON : undefined },
-      { glyph: SET.sound ? '🔊' : '🔇', value: SET.sound ? 'On' : 'Off', label: 'sound', bg: SET.sound ? ON : undefined },
-      { glyph: sp ? '🎯' : '🔟', value: sp ? 'Spares' : 'Ten frames', label: 'mode' },
-      { glyph: BALLS[SET.ball].glyph, value: BALLS[SET.ball].name, label: 'ball (B)' },
-    ];
-  }
-  function onTile(c, r, i){
-    const g = gameAt(c, r); LIVE = { c, r };
-    if (i === 0){ if (g.state !== 'play') begin(g); else bowlMine(g); return true; }
-    if (i >= 1 && i <= 6){
-      if (!myTurn(g)) return true;
-      const s = g.G.shot;
-      setShot(g, [null, { sx: s.sx + 0.008 }, { sx: s.sx - 0.008 }, { v: s.v - 0.025 }, { v: s.v + 0.025 }, { h: s.h - 0.1 }, { h: s.h + 0.1 }][i]);
-      try { bbRefreshNow(); } catch {} return true;
-    }
-    if (i === 7){ SET.preview = !SET.preview; say('Your ball\'s way shown before it goes: ' + (SET.preview ? 'on' : 'off'), 1800); }
-    else if (i === 8){ SET.sound = !SET.sound; say('Sound ' + (SET.sound ? 'on' : 'off'), 1500); if (SET.sound) try { ARCADE.audio(); } catch {} }
-    else if (i === 9){ setMode(SET.mode === 'spares' ? 'game' : 'spares'); say(SET.mode === 'spares' ? 'Spares: every lane a leave to make in as few tries as you can.' : 'Ten frames: a whole game on every lane.', 2400); return true; }
-    else if (i === 10){ chooseBall(g); return true; }
-    saveSet(); try { fieldItemsChanged(); bbRefreshNow(); } catch {}
-    return true;
-  }
-
-  /* BEHIND THE BALL, THE WHOLE LANE A BUTTON AWAY, THE PINS SMALL (Nov 23: "How about bowling and curling.  They could be similar to the pool
-     games.", then "Proceed": the pool games' views and pad carried over, the ball, the oil and the pins left as they are). For each ball the
-     view goes down behind it at the foul line, looking up the lane, tilted `BEHIND_PITCH` and low (`behind`, from `stepGame` once a ball). The
-     play pad stands in the lower left (`playPadLow`): ▦ is the whole lane from above and back (`wholeLane`, `WHOLE`: the view is left alone
-     while it is up), with the ball's button beside it. While the whole lane is not up the pin deck from straight above stands in the lower
-     right (`mapDraw`, `#bwMap`): every pin standing white with its red neck, a pin down lying grey until it is swept, the ball as it comes
-     through. From behind the ball the back rows hide behind the front ones, and which pins are left is what the next ball is aimed by. It
-     takes no touches and is away with the bottom row open and in the leave editor. */
-  let WHOLE = false, BEHIND_ON = true; const BEHIND_PITCH = 40, BEHIND_H = 0.46, BEHIND_V = 0.68, WHOLE_PITCH = 62;
-  function behind(g){
-    try {
-      if (!BEHIND_ON || WHOLE || ED.on || !g || g.state !== 'play' || liveGame() !== g) return;
-      const Wd = window.FIELD_WORLD, T = Wd.target, bW = Wd.boardW(), L = window.LAB || {};
-      Wd.viewTo({ x: T.boardX, z: T.boardZ + (0.5 - BEHIND_V) * bW * (L.cellH || 1), yaw: fwdYaw(), pitch: BEHIND_PITCH, zoom: Wd.zoomFor(BEHIND_H * bW) });
-    } catch {}
-  }
-  function wholeLane(on){
-    WHOLE = !!on;
-    try { if (WHOLE){ const Wd = window.FIELD_WORLD; Wd.st.pitch = WHOLE_PITCH; Wd.st.yawV = 0; Wd.target.yaw = fwdYaw(); zoomBoardToFit(); } else behind(liveGame()); } catch {}
-    try { fieldItemsChanged(); } catch {} try { bbRefreshNow(); } catch {}
-  }
-  const MAP = { el: null, cv: null, seen: 0, sig: '' }, MAP_W = 118, MAP_Y0 = HEAD - 3 * S * 0.866 - 0.05, MAP_Y1 = HEAD + 0.07;
-  function mapEnsure(){
-    if (MAP.el || typeof document === 'undefined') return MAP.el;
-    const el = document.createElement('div'), cv = document.createElement('canvas'), h = Math.round(MAP_W * (MAP_Y1 - MAP_Y0) / W); el.id = 'bwMap'; cv.width = MAP_W * 2; cv.height = h * 2;
-    el.style.cssText = 'position:fixed;right:16px;bottom:16px;width:' + MAP_W + 'px;height:' + h + 'px;z-index:29;display:none;pointer-events:none;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.28);box-shadow:0 1px 4px rgba(0,0,0,.6);box-sizing:border-box';
-    cv.style.cssText = 'display:block;width:100%;height:100%';
-    el.appendChild(cv); document.body.appendChild(el); MAP.el = el; MAP.cv = cv;
-    setInterval(() => { if (MAP.el.style.display !== 'none' && performance.now() - MAP.seen > 1200) mapHide(); }, 200);
-    return el;
-  }
-  function mapHide(){ if (MAP.el) MAP.el.style.display = 'none'; MAP.sig = ''; }
-  function mapDraw(g){
-    if (!mapEnsure()) return;
-    let open = false; try { open = !document.body.classList.contains('bb-collapsed'); } catch {}
-    if (WHOLE || open || ED.on || !g || g.state !== 'play' || !g.G){ mapHide(); return; }
-    MAP.seen = performance.now(); MAP.el.style.display = 'block';
-    const G = g.G, P = G.pins.filter(p => !p.pit), ball = G.B && !G.B.pit && G.B.y < MAP_Y1 + BR ? G.B : null;
-    const sig = P.map(p => (p.down ? 'd' : 'u') + p.x.toFixed(3) + ',' + p.y.toFixed(3)).join('|') + '#' + (ball ? ball.x.toFixed(3) + ',' + ball.y.toFixed(3) : '');
-    if (sig === MAP.sig) return; MAP.sig = sig;
-    const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, Hd = MAP.cv.height, k = Wd / W, X = x => x * k, Y = y => (y - MAP_Y0) * k;
-    c.fillStyle = '#16181d'; c.fillRect(0, 0, Wd, Hd);                                            // (the gutters and the pit)
-    c.fillStyle = '#d9b47a'; c.fillRect(X(CX - EDGE), 0, LANE * k, Hd);                           // (the deck)
-    c.fillStyle = 'rgba(0,0,0,.18)'; for (const [x, y] of SPOTS){ c.beginPath(); c.arc(X(x), Y(y), PR * k * 0.55, 0, 7); c.fill(); }   // (the spots)
-    for (const p of P){ const x = X(p.x), y = Y(p.y), r = PR * k * 1.15;
-      if (p.down){ c.save(); c.translate(x, y); c.rotate(p.ang || 0); c.fillStyle = 'rgba(120,124,132,.9)'; c.beginPath(); c.ellipse(0, 0, r * 0.75, r * 1.9, 0, 0, 7); c.fill(); c.restore(); }
-      else { c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = '#f6f4ee'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = 'rgba(0,0,0,.65)'; c.stroke(); c.beginPath(); c.arc(x, y, r * 0.45, 0, 7); c.fillStyle = '#d23a2f'; c.fill(); } }
-    if (ball){ c.beginPath(); c.arc(X(ball.x), Y(ball.y), BR * k, 0, 7); c.fillStyle = '#2a3550'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = 'rgba(255,255,255,.7)'; c.stroke(); }
-  }
-  const app = {
-    name: 'bowling',
-    realtime: true,
-    boardShape: { cellW: W, cellH: 1 },
-    frameFit: 1.1,
-    menu: [{ head: 'Bowling', items: [
-      { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); LEAVES.clear(); MINE_J.clear(); try { fieldItemsChanged(); } catch {} } },
-      { label: () => 'Mode: ' + (SET.mode === 'spares' ? 'spares' : 'ten frames'), title: 'Spares: every lane a leave to make, par in tries from how wide the window is that makes it. Ten frames: a whole game.',
-        on(){ setMode(SET.mode === 'spares' ? 'game' : 'spares'); } },
-      { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The roll, the pins, a strike.', on(){ SET.sound = !SET.sound; saveSet(); } },
-      { label: () => 'Ball: ' + BALLS[SET.ball].name, title: 'A solid or pearl reactive ball for strikes, urethane for an early gentle arc, plastic straight for spares.', on(){ chooseBall(liveGame()); } },
-      { label: 'Start this lane again', title: 'A new game from the first frame, or the leave from its first try.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
-      // (spares: the found shot on the ball, as trick shots' Show me the trick; a leave made with it earns one star)
-      { label: 'Show me the shot', title: 'Put the shot the search found on your ball: where to stand, aim, speed and hook. Made with it, the leave earns one star.',
-        get disabled(){ return SET.mode !== 'spares'; },
-        on(){ const f = framedCell(); if (!f) return; const g = gameAt(f.c, f.r); LIVE = { c: f.c, r: f.r }; if (g.state !== 'play') begin(g);
-          if (!myTurn(g) || !g.J.res.s){ say('Not now: wait for the pins to be set.', 1500); return; }
-          g.G.shot = { ...g.J.res.s }; g.mine = { ...g.J.res.s }; g.helped = true; say('The shot is on your ball: Enter or Bowl.', 2400); try { bbRefreshNow(); } catch {} } },
-      { label: () => ED.on ? 'Done: play this leave' : 'Make a spare for this board…', title: 'The bottom row becomes a leave editor: pins anywhere on the deck. The search finds the shot that makes it and sets par; Done plays it.',
-        on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
-      { label: 'Cancel the leave', title: 'Leave the board as it was.', get disabled(){ return !ED.on; }, on(){ edCancel(); } },
-      { label: "Share this board's leave", title: 'Copy a link that opens the page on this leave.',
-        get disabled(){ const f = framedCell(); return !(ED.on || (f && MINE.has(gkey(f.c, f.r)))); }, on(){ shareLeave(); } },
-      { label: "Forget this board's leave", title: 'Back to the leave the board deals itself.',
-        get disabled(){ const f = framedCell(); return !(f && MINE.has(gkey(f.c, f.r))); },
-        on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); MINE.delete(k); MINE_J.delete(k); saveMine(); GAMES.delete(k); say('The lane deals its own leave again', 1800); try { fieldItemsChanged(); } catch {} } },
-      { label: 'How to play', title: 'The controls.', on(){ say('Tap or drag on the lane to aim: the ball is rolled at that point. Swipe the ball up the lane to bowl it: the faster the swipe the faster the ball, and the more it curves the more it hooks; drag the ball along the foul line to move where you stand (the row and the keys set them too): a hooking ball runs straight on the oil and turns left once it reaches the dry back end, so aim right of the pins and let it come in between the head pin and the next (the pocket). Enter or Bowl. Spares: every lane a leave to make with one ball, par in tries (the narrower the window that makes it, the higher). Ten frames: a strike scores ten and your next two balls, a spare ten and your next ball. The oil is painted on the lane in blue: a house shot (the corner\'s lanes) lays more down the middle, so a ball missed wide meets the dry sooner and hooks back; a sport pattern (farther out) is flat. Over ten frames your balls wear it where they run, painted as a dull track, so the line hooks sooner and you move. The ball (the pad\'s button, the row or B): a solid reactive for a smooth strong hook, a pearl that skids and turns hard late, urethane for an early gentle arc, plastic straight for spares. Par is the steady player\'s game on this lane.', 16000); } },
-    ]}],
-    cellFar: { light: 0xd6b88a, dark: 0x8a6a46 },
-    itemMinPx: 12,
-    photoMinPx: PHOTO_PX,
-    // (the picture is the board's wood and its pattern; a game being bowled paints its own lane's wear, again after every ball)
-    cellPhoto(c, r, bp){ const idx = boardIdx(c, r), g = GAMES.get(gkey(c, r)), worn = g && g.G && g.G.lane.wear && g.G.wearV > 0;
-      const lane = worn ? g.G.lane : laneOf(idx, levelAt(idx)), base = 'bw:' + (idx % 48) + ':' + lane.pat.id + (worn ? ':' + gkey(c, r) + ':' + g.G.wearV + ':' + g.G.rolls.length : '');
-      return PIC.key(base, (bp || 0) >= HI_PX, () => ({ idx: idx % 48, lane: worn ? { ...lane, wear: Float32Array.from(lane.wear) } : lane })); },
-    photoCanvas(key){ return PIC.canvas(key); },
-    cellGrid(){ return { n: 2, colors: [0xd8bd90, 0xd8bd90, 0xc39f70, 0xc39f70] }; },
-    itemGeometries: {
-      // (a pin: its curves, white, two red stripes at the neck; standing, and lying along +z)
-      bwPin: T => pinGeo(T, false),
-      bwPinDown: T => pinGeo(T, true),
-      bwBall: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
-      bwDot: T => { const g = FieldKit.disc(T, 0.5, 0.002); g.userData.unlit = true; return g; },
-      bwRing: T => { const g = FieldKit.ring(T, 0.4, 0.5, 0.003); g.userData.unlit = true; return g; },
-      bwPix: T => { const g = new T.BoxGeometry(1, 0.15, 1); g.translate(0, 0.1, 0); g.userData.unlit = true; return g; },
-    },
-    cellItems(c, r, bp){
-      const k = gkey(c, r), idx = boardIdx(c, r), lv = levelAt(idx), lane = laneOf(idx, lv), g = GAMES.get(k), live = LIVE && LIVE.c === c && LIVE.r === r;
-      if (ED.on && ED.key === k) return itemsOf({ pins: leavePins(ED.xy), ball: null, score: null }, bp, lane);      // (the leave being made)
-      if (g && g.state !== 'ready' && g.G){ if (live){ stepGame(g); mapDraw(g); } else g.last = 0; return itemsOf(liveView(g), bp, lane); }
-      if (SET.mode === 'spares'){
-        const J = leaveSoon(jobFor(c, r), live);
-        if (!J.done) return itemsOf({ pins: J.cur ? leavePins(J.cur) : [], ball: null, score: null }, bp, lane);
-        const V = J.rec && recView(J.rec); if (V) V.score = null;
-        return itemsOf(V || { pins: leavePins(J.res.xy), ball: null, score: null }, bp, lane);
-      }
-      const M = recSoon(idx, lv, live), V = recView(M);
-      return itemsOf(V || { pins: rack(), ball: null, score: null }, bp, lane);
-    },
-    cellTitle(c, r){
-      if (ED.on && ED.key === gkey(c, r)) return 'Bowling — making a leave, ' + ED.xy.length + (ED.xy.length === 1 ? ' pin' : ' pins');
-      if (SET.mode === 'spares'){
-        const idx = boardIdx(c, r), lv = levelAt(idx), J = jobFor(c, r), g = GAMES.get(gkey(c, r));
-        if (!J.done) return 'Bowling — ' + (J.mine ? 'your leave' : 'spares') + ', level ' + lv + ' (its shot being worked out)';
-        const R = J.res, best = SBEST.get(J.key);
-        return 'Bowling — ' + R.name + ', level ' + lv + ' on ' + J.lane.pat.name + (R.par ? ' · par ' + R.par + ' · a window of ' + (R.w / BOARD_W).toFixed(1) + ' boards' : '') + (best ? ' · best ' + best : '')
-             + (g && g.G && g.G.spare ? (g.state === 'over' ? ' · made in ' + g.G.tries : ' · try ' + (g.G.tries + 1)) : ' (tap to play)');
-      }
-      const idx = boardIdx(c, r), lv = levelAt(idx), g = GAMES.get(gkey(c, r)), M = RECS.get(recKey(idx, lv)), best = BEST.get(bestKey(idx, lv)), L = laneOf(idx, lv);
-      const head = 'Bowling — level ' + lv + ', ' + L.pat.name + ' (' + L.pat.ft + ' ft)' + (M && M.done ? ' · par ' + M.par : '') + (best ? ' · best ' + best : '');
-      if (!g || g.state === 'ready' || !g.G) return head + ' (tap to play)';
-      return head + ' · frame ' + Math.min(10, g.G.frame) + ', ' + scoreOf(g.G.rolls).total + (g.state === 'over' ? ' · game over' : '');
-    },
-    onReset(c, r){ LIVE = { c, r }; GAMES.set(gkey(c, r), fresh(c, r)); return true; },
-    onSelect(){ return true; },
-    onFramed(c, r){ const GS = BOARD_KIT.gs(), w = v => ((v % GS) + GS) % GS; LIVE = c == null ? null : { c: w(c), r: w(r) };
-      if (LIVE){ const g = GAMES.get(gkey(LIVE.c, LIVE.r)); if (g) g.viewTag = null; } else mapHide(); },   // (brought in again: behind the ball again)
-    onLeave(){ mapHide(); },
-    onCellTap(c, r, u, v){
-      if (ED.on) return edTap(c, r, u, v);
-      if (performance.now() - ateAt < 400) return true;
-      const g = gameAt(c, r), was = LIVE && LIVE.c === c && LIVE.r === r;
-      LIVE = { c, r };
-      if (g.state === 'ready'){ begin(g); return true; }
-      if (g.state === 'over'){
-        if (!was || performance.now() - g.overAt < GRACE * 1000) return true;
-        app.onReset(c, r); return true;   // (Oct 29: "Only the user can move to a new board." A finished board plays again)
-      }
-      if (u == null || !myTurn(g)) return true;
-      const x = u * W, s = g.G.shot;
-      if (Math.hypot(x - s.sx, v - (FOUL - BR)) < 0.04) bowlMine(g); else setShot(g, { tx: x, ty: v });
-      try { bbRefreshNow(); } catch {}
-      return true;
-    },
-    noDoubleTap(){ if (ED.on) return 'always'; const g = liveGame(); return !!(g && g.state === 'play'); },
-    // (the play pad: the ball in hand, a tap for the next; Oct 28, "1,2")
-    playActs(c, r){ if (ED.on) return null; const g = liveGame(); if (!g || g.state !== 'play' || g.c !== c || g.r !== r) return null; const B = BALLS[SET.ball];
-      return [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the ball, up the lane' : 'The whole lane from above', on: WHOLE },
-              { key: 'ball', glyph: B.glyph, title: B.name + ': ' + B.say + '. A tap for the next ball (B).' }]; },
-    playPadLow: true,
-    onPlayAct(c, r, key){ const g = liveGame(); if (key === 'view') wholeLane(!WHOLE); else if (key === 'ball') chooseBall(g); return true; },
-    keepsPress: true,
-    claimsPan(u, v, xy){
-      if (ED.on){ if (u == null || LIVE == null || gkey(LIVE.c, LIVE.r) !== ED.key) return false; const i = nearPin(u * W, v, 2 * PR); if (i < 0) return false; ED.drag = { i, moved: false }; return true; }
-      const g = liveGame(); if (!myTurn(g) || (u == null && !xy)) return false;
-      if (u == null){ u = -9; v = -9; }   // (a press off the lane: nothing of the lane's, but the bar's hold still)
-      // (a press on the ball at the foul line is the ball's: along the line it moves where you stand, up the lane it bowls)
-      const s = g.G.shot, onBall = Math.hypot(u * W - s.sx, v - (FOUL - BR - 0.004)) < BALL_GRAB;
-      DRAG = { g, moved: false, ball: onBall, pts: onBall ? [[u * W, v, performance.now()]] : null, up: false };
-      /* (Nov 23: "How do I shot the ball, long press doesn't work": a press held still and then pulled bowls, as it shoots in pool (`PULL_BAR`):
-         the bar's fill is the ball's speed, slowest to fastest, and the lift bowls. The swipe up the lane, the tap on the ball and Enter still do.) */
-      { const was = s.v; PULL_BAR.arm(xy, { set: f => { if (myTurn(g)){ setShot(g, { v: V_MIN + (V_MAX - V_MIN) * f }); try { fieldItemsChanged(); } catch {} } },
-          go: () => { ateAt = performance.now(); DRAG = null; if (myTurn(g)) bowlMine(g); }, cancel: () => { ateAt = performance.now(); if (myTurn(g)) setShot(g, { v: was }); } }); }
-      return true; },
-    onPan(dx, dy, at){
-      if (PULL_BAR.active()){ if (DRAG) DRAG.moved = true; return true; }   // (the bar's pull: not an aim, nor the ball's swipe)
-      if (DRAG && DRAG.ball){
-        if (at && myTurn(DRAG.g)){ const x = at.u * W, y = at.v; DRAG.pts.push([x, y, performance.now()]); if (DRAG.pts.length > 400) DRAG.pts.splice(1, 1);
-          if (y < FOUL - SWIPE_UP) DRAG.up = true;
-          if (!DRAG.up){ setShot(DRAG.g, { sx: x }); DRAG.moved = true; } }
-        return true;
-      }
-      if (ED.on){ const D = ED.drag; if (!D) return false; if (at){ const [x, y] = clampDeck(at.u * W, at.v); if (roomAt(x, y, D.i)){ ED.xy[D.i] = [r4(x), r4(y)]; D.moved = true; try { fieldItemsChanged(); } catch {} } } return true; }
-      if (!DRAG) return false; if (at && myTurn(DRAG.g)){ setShot(DRAG.g, { tx: at.u * W, ty: at.v }); DRAG.moved = true; } return true; },
-    onPanEnd(){ if (ED.drag){ if (ED.drag.moved){ ED.ateAt = performance.now(); try { bbRefreshNow(); } catch {} } ED.drag = null; }
-      if (DRAG && DRAG.ball){ const D = DRAG; DRAG = null; ateAt = performance.now(); if (D.up && myTurn(D.g)){ const sw = swipeOf(D.pts); setShot(D.g, { v: sw.v, h: sw.h }); bowlMine(D.g); } try { bbRefreshNow(); } catch {} return; }
-      if (DRAG){ if (DRAG.moved){ ateAt = performance.now(); try { bbRefreshNow(); } catch {} } DRAG = null; } },
-    ...EDK.hooks,                                             // (the leave editor's ✎, ✕, ✓ and the row's toggle: EDIT_KIT's)
-    statTiles(c, r){ return ED.on ? edTiles() : tilesOf(c, r); },
-    statsStay(){ if (ED.on) return true; const g = liveGame(); return !!(g && g.state === 'play'); },
-    onStatTap(c, r, i){ return ED.on ? edTile(i) : onTile(c, r, i); },
-    drawIcon(ctx, sz){
-      ctx.fillStyle = '#d8b884'; ctx.fillRect(0, 0, sz, sz);
-      ctx.fillStyle = '#2a2d34'; ctx.fillRect(0, 0, sz * 0.12, sz); ctx.fillRect(sz * 0.88, 0, sz * 0.12, sz);
-      for (const [i, j] of [[0, 0], [-0.5, 1], [0.5, 1], [-1, 2], [0, 2], [1, 2]]){ const x = sz * (0.5 + i * 0.13), y = sz * (0.42 - j * 0.11);
-        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, sz * 0.045, 0, 6.283); ctx.fill(); ctx.fillStyle = '#d33'; ctx.fillRect(x - sz * 0.03, y - sz * 0.005, sz * 0.06, sz * 0.012); }
-      ctx.fillStyle = '#2a4fb8'; ctx.beginPath(); ctx.arc(sz * 0.58, sz * 0.8, sz * 0.09, 0, 6.283); ctx.fill();
-    },
-    _debug: { newGame, tick, roll, ballOf, bowlSim, scoreOf, aimFor, pick, handsOn, laneOf, rack, previewOf, bowlNow, afterBall, recOf, recWork, recView, recSoon, parOf,
-              starsOf, liveView, itemsOf, paint, levelAt, boardIdx, ringOf, gameAt, fresh, begin, stepGame, over, myTurn, setShot, bowlMine, tilesOf, onTile,
-              LV, STEADY, SET, GAMES, RECS, BEST, SPOTS, consts: { W, CX, LANE, EDGE, S, PR, BR, HEAD, FOUL, ARROWS, PIT, TICK, REC_HZ, PREVIEW, BOARD_W },
-              PATTERNS, BALLS, dryAt, wearOn, freshLane, chooseBall, colOf, ftY,
-              swipeOf, BALL_GRAB, COURSE, SP_LV, parOfWindow, triesStars, shotSearch, leaveGen, leaveJob, leaveWork, leaveNow, jobFor, mineJob, spareRec, leavePins, spotsOf, clearsAll, setMode, LEAVES, SBEST,
-              ed: () => ED, edOpen, edStart, edDone, edCancel, edCheck, edTile, edTiles, edTap, edPlace, cleanLeave, MINE, shareLeave, takeLeave, ED_TOOLS, ED_ACTS, DECK,
-              levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, behind: v => { BEHIND_ON = !!v; }, wholeLane, MAP, get WHOLE(){ return WHOLE; }, fly: (c, r) => gotoCell(c, r), uvAt: (x, y) => _framedUV(x, y) },
-  };
-  // (a pin's outline turned on the lathe; lying down, laid along +z with its base at the middle)
-  function pinGeo(T, down){
-    const prof = [[0, 0], [0.11, 0], [0.16, 0.12], [0.19, 0.28], [0.17, 0.42], [0.1, 0.58], [0.075, 0.66], [0.09, 0.78], [0.1, 0.88], [0.07, 0.97], [0, 1]];
-    const g = new T.LatheGeometry(prof.map(([x, y]) => new T.Vector2(x * 0.92, y)), 14);
-    const n = g.attributes.position.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++){ const y = g.attributes.position.getY(i), red = (y > 0.62 && y < 0.66) || (y > 0.69 && y < 0.73);
-      col[i * 3] = red ? 0.85 : 1; col[i * 3 + 1] = red ? 0.12 : 1; col[i * 3 + 2] = red ? 0.12 : 1; }
-    g.setAttribute('color', new T.BufferAttribute(col, 3)); g.userData.vertexColors = true;
-    if (down){ g.rotateX(Math.PI / 2); g.translate(0, 0.14, -0.5); }
-    return g;
-  }
-  SHARE.install(app, takeLeave);
-  return app;
-})();
+/* Bowling (Oct 28) was a lane of its own here; since Nov 25 ("Let's rewrite it to use the pool engine and camera.   The pins should be pool
+   balls but otherwise follow bowling rules.") it is a game on the pool table, `MATCH.bowl` in TRICK SHOTS (BOWLING, ON THE POOL TABLE). */
 /* ═══ MARBLE RUN (Oct 28: "2,   3 curling, bowling, marble run", the third of the new games: "build a track in the bottom row,
    the steady player tests it") ═════════════════════════════════════════════════════════════════════════════════════════════
    Every board a grid with a start chute at its far edge, high up, and a cup lower down; rocks in the way; some pieces already
@@ -66558,7 +65641,7 @@ SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own shar
   const DONE = { blockout: g => g.state === 'done', soma: g => g.state === 'done', bejeweled: g => g.state === 'won', sokoban: g => !!g.solved,
     tiltmaze: g => g.state === 'done', pinball: g => g.state === 'over', simon: g => g.state === 'over', lightsout: g => !!g.done,
     whackamole: g => g.state === 'over', nonograms: g => g.state === 'solved', tanks: g => g.state === 'over', pong: g => g.state === 'over',
-    airhockey: g => g.state === 'over', squash: g => g.state === 'over', curling: g => g.state === 'over', bowling: g => g.state === 'over',
+    airhockey: g => g.state === 'over', squash: g => g.state === 'over', curling: g => g.state === 'over', bowling: g => !!(g.nine && g.nine.over),
     marblerun: g => g.state === 'won', trickshots: g => !!(g.ch && g.solvedIn) };
   /* Every other game with its boards' games in `_debug.GAMES` and an `onReset` is read by the words its own state uses for an end
      (Nov 1: "double click is still not reseting the board": the first cut named seventeen games; Snake, Tetris, 2048 and the

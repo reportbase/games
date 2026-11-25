@@ -446,6 +446,7 @@ Moved here from `CLAUDE.md` (12 Nov 2026), unchanged and in the order they stood
     a hit's and a peel's); a tap on a stone puts the broom on it with a hit's weight (`HIT_W`); a two-finger twist (`twistTurns`,
     `onTwist`) or the play pad's ⟳ turns the curl (`setCurl`).
 - **Bowling** (Oct 28: "2,   3 curling, bowling, marble run", the second: "spin and pins"): `BOWLING_APP`, id `bowling`, after curling.
+  *(Taken out Nov 25: bowling is now a game on the pool table, below, "Bowling on the pool table". This lane, its spares, oil, balls, view and pull bar are the record.)*
   Ten-pin, the far end of a lane a board, `W` (0.36) wide by 1 long: the pins on their deck (`SPOTS`, `S` 0.078 apart, the head
   pin at `HEAD` 0.27), the lane (`LANE` 0.27) between gutters (`GUT`) down to the foul line (`FOUL`), the arrows at `ARROWS`.
   - **The ball** (`roll`, steps of 1/240 s): straight on the oil; from the board's own oil line (`lane.oil`) the dry back end hooks
@@ -1346,3 +1347,30 @@ bowling by a swipe up the lane, which nothing on the screen said.
 - The smoke test (part 7, "pull bar"): in each, a real press held shows the bar, let go at once nothing is shot and the setting is as it was;
   held and pulled the setting changes and the lift throws or bowls.
 - Still not carried over: a replay, the spin dial. "Neither game works very well" may be more than the shot: nothing else was changed here.
+
+**Bowling on the pool table** (Nov 25: "Let's rewrite it to use the pool engine and camera.   The pins should be pool balls but otherwise follow
+bowling rules."). The lane of Oct 28 (`BOWLING_APP` of its own) is taken out; `BOWLING_APP` is now `TRICK_APP.bowl`, an entry of the pool games'
+`MATCH` (`bowl`, made by `matchApp` as the others are), id `bowling` as before. So it has pool's table, engine, cue, spin, pull bar, preview and the view
+from behind the white, and its pad.
+- **The pins** (`rackB`): the balls 1–10 on a deck's ten spots (`BWL_SPOT`), the 1 nearest the white, rows 2–3, 4–6, 7–10, 2.5 ball widths apart
+  centre to centre (a real deck's proportion; at two widths the computer scored 166 at level 1, too forgiving), the head pin 2.6 past the table's middle.
+  No pockets (flown with `simC`, drawn as three-cushion's table).
+- **The white** is rolled from the head spot, in hand on the head string: a drag moves it across, not up the table (`kitchen` in the entry; the drag's
+  one change in the shared code).
+- **A pin is down** (`bwlDown`) when it has moved more than its radius off its spot or left the table; the standing ones go back on their spots, the
+  ones down are swept off. **A gutter ball**: the white touching a cushion before the first pin, or meeting none: nothing counts and the pins stand
+  as they stood.
+- **The rules** (`bwlFinish`, `bwlFrames`, `bwlScore`, `bwlAfter`): ten frames, a strike ten and the next two balls, a spare ten and the next ball,
+  the tenth's bonus balls with the pins set again after its strikes and spares. You and the computer bowl frames in turn; the higher total wins
+  (a tie is `over` 3). Stars for a win: 3 at 200 or more, 2 at 140, else 1 (`bw:` in `trickshots.best`). The title gives each card in marks
+  (`bwlMarks`: X, /, -) and its total.
+- **The computer** (`bwlPlanGen`) flies balls at the nearest pins, at points across each (the pocket among them), at a level's powers and tips
+  (`BWL_TRY`), and plays the one that takes most down, then its hand's error (`BWL_ERR`, 4° at level 1 to 0.45° at level 5). Measured in games of the
+  computer against itself (`bwlAuto`, one board each): about 118–132 at level 1, 125–138 at level 3, 186–214 at level 5.
+- **How far your ball is seen ahead**: `BWL_SEE`, 2 contacts at levels 1–2, 1 at 3–4, none at 5.
+- **A board no one plays** shows a game bowled out, the computer against itself (`nineRecGen`, `BWL_REC_SHOTS` 44, a whole game).
+- The smoke test (part 7, "bowling on the pool table") replaces the lane's four checks: the rack; 300, all fives 150, all fours 80 and the marks; a
+  strike, a leave, a gutter ball and the spare on balls made up; the computer's plan; the real Enter bowling; a board no one plays bowling a game.
+  The row-shut check and the pull bar check now play curling only; the curling-behind check clears its game's `viewTag` first (with the old bowling
+  checks gone, it met a sheet whose view had been taken already). Run: part 7, whole, passing.
+
