@@ -247,6 +247,7 @@
      loaded file's name (centred, one line, cut short, between the lock and turn chips and the quick buttons); a long press still
      shuts the row, and shut, the dots are back, since they are how it opens. */
   body:not(.bb-collapsed) #bbHandle { display: none; }
+  body.pad-replay #bbHandle { display: none; }   /* (Nov 25: the replay's buttons up, the row's dots hidden: playPadTick) */
   #bbName { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: var(--bb-peek); display: flex; align-items: center;
             max-width: calc(100% - 260px); padding: 0 8px; box-sizing: border-box; font-size: 0.75rem; color: #f3f1ea; letter-spacing: .02em;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 2; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
@@ -13795,6 +13796,9 @@ function playPadTick(a){
   let f = null, L = null;
   try { f = bbFramedCell(); } catch {}
   try { L = a && a.playActs && f ? a.playActs(f.c, f.r) : null; } catch {}
+  // (Nov 25: "when showing the replay buttons, don't show the the bottom browser button.": a pad with a replay's buttons (`replay` on an act)
+  //  hides the row's dots while it is up; they come back with the game's own pad)
+  try { document.body.classList.toggle('pad-replay', !!(L && L.some(q => q.replay))); } catch {}
   const low = !!(a && a.playPadLow), sig = L && L.length ? (low ? 'low:' : '') + L.map(q => q.key + '|' + q.glyph + '|' + (q.label || '') + (q.on ? '+' : '')).join(',') : '';
   if (sig === _playPadSig) return;
   _playPadSig = sig;
@@ -58094,8 +58098,8 @@ const TRICK_APP = (() => {
     fitView(){ WHOLE = false; behindCue(liveGame()); },
     playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r || (g.nine && g.nine.rt)) return null;
       const L = [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }];
-      if (g.rp) L.push({ key: 'rpPrev', glyph: '⏮', title: 'The shot before' }, { key: 'rpPause', glyph: g.rp.paused ? '⏵' : '⏸', title: g.rp.paused ? 'Go on' : 'Stop on this shot', on: g.rp.paused },
-        { key: 'rpNext', glyph: '⏭', title: 'The next shot' }, { key: 'rpStop', glyph: '✕', title: 'Back to the game' });
+      if (g.rp) L.push({ key: 'rpPrev', glyph: '⏮', title: 'The shot before', replay: true }, { key: 'rpPause', glyph: g.rp.paused ? '⏵' : '⏸', title: g.rp.paused ? 'Go on' : 'Stop on this shot', on: g.rp.paused, replay: true },
+        { key: 'rpNext', glyph: '⏭', title: 'The next shot', replay: true }, { key: 'rpStop', glyph: '✕', title: 'Back to the game', replay: true });
       else if (rpCan(g)) L.push({ key: 'rp', glyph: '⏵', title: 'Play this game again from its first shot (' + g.log.length + (g.log.length === 1 ? ' shot' : ' shots') + ')' });
       return L; },
     playPadLow: true,                                         // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")

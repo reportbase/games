@@ -1466,3 +1466,8 @@ brings none back. The first with all five in wins. The computer (`bpPlanGen`) tr
 round (banks as likely as straight) and powers. The board's rack is the same on every board; the level is the computer's. A new part 7 check:
 the rack, the rules on balls made up, a ball off a bumper that stays put, a ball between the guards into its pocket, picking, the computer's shot,
 the real Enter, a board no one plays (25 balls, to a win).
+
+**The replay hides the row's dots** (Nov 25: "when showing the replay buttons, don't show the the bottom browser button."). The replay's play-pad
+buttons (⏮ ⏸/⏵ ⏭ ✕) carry `replay: true`; `playPadTick` sets `pad-replay` on the body while the pad shows one, and the CSS hides `#bbHandle`
+under it. The dots come back when the replay ends or is stopped. A field-wide hook: any app's act with `replay` does the same. Probed in 9-ball:
+the dots shown before, hidden during the replay, back after ✕.
