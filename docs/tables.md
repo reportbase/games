@@ -1374,3 +1374,14 @@ from behind the white, and its pad.
   The row-shut check and the pull bar check now play curling only; the curling-behind check clears its game's `viewTag` first (with the old bowling
   checks gone, it met a sheet whose view had been taken already). Run: part 7, whole, passing.
 
+**Bowling: no cushions, a ditch** (Nov 25: "Can you make it more like bowling, you get two tries, remove the cushions, of the ball goes off the board it
+falls in a ditch").
+- **No cushions** (`simB`): the engine lets a ball off the table only over a cushion, and its text is the worker's, so a bowling ball is flown with the
+  cushions and pockets taken away for the call, and the shot is cut afterwards: a ball whose middle passes the table's edge falls into the ditch from
+  that frame, lies there sunk (`BWL_SINK`) where it went over, its contacts out there struck; the shot ends when the table is still. A pin in the
+  ditch is down; the white in it before it meets a pin is a gutter ball. Drawn: the cushions are flat dark strips (`DITCH_C`, `ditch` in the entry).
+- **Two tries**: a frame was already two balls (the turn passes only at a strike or the frame's second ball); the title now says "ball 1 of 2".
+- Measured again (`bwlAuto`, computer against itself): about 57–77 at level 1, 129–134 at level 5 (the ditch takes pins that cushions sent back).
+- The smoke test's bowling check (part 7) adds: no cushions met, a ball bowled off the side in the ditch and a gutter ball, a full hit's pins in the
+  ditch counted down.
+
