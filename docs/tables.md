@@ -1446,3 +1446,23 @@ player to clear his balls wins").
   loss; in shots a ball off the side on the ditch's line, a ball in the ditch knocked along it by the white rolled down the ditch and by one glancing
   it from the table, staying on its line, and one keeping a white out (none, the white falling in); the computer's plan; the real Enter; a board no
   one plays (a game of 6 balls, to a win).
+
+**Bowling: the full rack** (Nov 25: "Add the full rack of balls.   Then create a bumper pool game."). All fifteen balls, on a triangle of fifteen
+spots (`BWL_ROWS` five rows, `BWL_SP` 4 radii, the head spot at `BWL_X` 1.8, so the last row stays on the table), racked as 8-ball's: the solids 1–7
+yours, the stripes 9–15 the computer's, one of each on every pair of mirrored spots and on the head spot and the last row's middle, the 8 in the
+middle of the third row. The 8 is the last ball (`bwlOn`): with all seven of yours in the ditch, the 8 in wins; the 8 in before then loses. Stars by
+the computer's in the ditch (3 at most two, 2 at most four). The planner scores a shot sending the 8 in ±10 by whether it wins. The part 7 check
+covers the rack, a win by the 8 after seven and a loss by the 8 too soon.
+
+**Bumper pool** (the same request's second part). A new entry of `MATCH` ('bumper', the field's `bumperpool`, `BUMPER_APP`), on the pool table and its
+engine; the rules in the comment over `rackBp`. Two pockets on the long middle line (`BP_POCK`, ±8.2), each guarded by two bumpers, four bumpers in a
+diamond in the middle (`BP_POSTS`): flown as fixed balls held still by the engine's `TRAP` and taken out of the shot after (`simBp`), a hit on one
+heard as a cushion; drawn as dark posts (`tsPost`), the pockets as dark discs ringed in their side's colour, on the pocketless table's picture.
+Five balls a side, no white (new numbers 16–25: reds yours, ivories the computer's, the marked one a dark band, `ballTex`); each side's start at its
+own end round the other's pocket and go into the pocket at the far end. You strike your own balls: the marked one first, then any of yours, picked by
+a tap or a press on it (`pickAt`, called from `onCellTap` and `claimsPan`). A ball in its own pocket counts for its side, whoever shot it, but not
+before its marked one; any other ball in, or off the table, goes back to its starting place. You shoot again while your shot puts one of yours in and
+brings none back. The first with all five in wins. The computer (`bpPlanGen`) tries its balls nearest its pocket at a level's count of directions all
+round (banks as likely as straight) and powers. The board's rack is the same on every board; the level is the computer's. A new part 7 check:
+the rack, the rules on balls made up, a ball off a bumper that stays put, a ball between the guards into its pocket, picking, the computer's shot,
+the real Enter, a board no one plays (25 balls, to a win).

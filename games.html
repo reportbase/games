@@ -55139,6 +55139,7 @@ const TRICK_APP = (() => {
   const POCKETS = [[-LX / 2, -LZ / 2], [0, -LZ / 2 - 0.2], [LX / 2, -LZ / 2], [-LX / 2, LZ / 2], [0, LZ / 2 + 0.2], [LX / 2, LZ / 2]];
   const COLS = { 1: '#e3c33b', 2: '#2f5fd0', 3: '#d23a2f', 4: '#6b3fa0', 5: '#e0782a', 6: '#2e8b57', 7: '#7a2f2a', 8: '#16161a' };
   for (let k = 9; k <= 15; k++) COLS[k] = COLS[k - 8];
+  for (let k = 16; k <= 25; k++) COLS[k] = k <= 20 ? '#c8312b' : '#ece4cf';   // (bumper pool's reds and ivories, Nov 25)
   const ballOf = (n, x, z) => ({ n, x, z, y: 0, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0, r: R, m: 1, col: n === 0 ? '#f2f0ea' : COLS[n], stripe: n >= 9, cue: n === 0, sunk: false });
 
   // ══ played from inside (pool.html, POL runs 1–2) ══
@@ -56267,6 +56268,8 @@ const TRICK_APP = (() => {
                 planGen: (g, lv) => carPlanGen(g, lv), title: g => carTitle(g), sim: (...a) => simC(...a), brk: false, recShots: () => CAR_REC_SHOTS, bare: true, app: null },
     bowl:     { key: 'bowl', pre: 'w', best: 'bw:', games: new Map(), rack: idx => rackB(idx), cue: B => ({ ang: bwlAim(B), power: 24, elev: 0 }), fresh: () => bwlNew(), see: () => BWL_SEE, finish: (g, s) => bwlFinish(g, s),
                 planGen: (g, lv) => bwlPlanGen(g, lv), title: g => bwlTitle(g), sim: (...a) => simB(...a), brk: false, recShots: () => BWL_REC_SHOTS, bare: true, kitchen: true, ditch: true, app: null },
+    bumper:   { key: 'bumper', pre: 'p', best: 'bp:', games: new Map(), rack: () => rackBp(), cue: B => ({ ang: bpAim(B, 0), power: 16, elev: 0 }), fresh: () => bpNew(), see: () => BP_SEE, finish: (g, s) => bpFinish(g, s),
+                planGen: (g, lv) => bpPlanGen(g, lv), title: g => bpTitle(g), sim: (...a) => simBp(...a), brk: false, recShots: () => BP_REC_SHOTS, bare: true, bumper: true, pick: (g, b) => bpCanPick(g.balls, 0, b), app: null },
   };
   const M = () => { try { const A = window.getFieldApp(); for (const k in MATCH) if (MATCH[k].app === A) return MATCH[k]; } catch {} return null; };
   const matchState = m => Object.assign(m.fresh(), { kind: m.key }), kindOf = g => MATCH[g.nine.kind];
@@ -56779,7 +56782,8 @@ const TRICK_APP = (() => {
        (the pocket a ball's radius off the head pin among them), powers and tips, and plays the one that takes most down; then its hand's error,
        `BWL_ERR` by level.
      - A board no one plays shows a game bowled out, the computer against itself (`nineRecGen`). */
-  const BWL_SP = 5 * R, BWL_X = 2.6, BWL_ROWS = [[1], [2, 3], [4, 5, 6], [7, 8, 9, 10]], BWL_SPOT = {};
+  // (since Nov 25's "Add the full rack of balls": fifteen spots in five rows, closer, the head spot nearer the head, so the last row is on the table)
+  const BWL_SP = 4 * R, BWL_X = 1.8, BWL_ROWS = [[1], [2, 3], [4, 5, 6], [7, 8, 9, 10], [11, 12, 13, 14, 15]], BWL_SPOT = {};
   BWL_ROWS.forEach((ns, row) => ns.forEach((n, j) => { BWL_SPOT[n] = [BWL_X + row * BWL_SP * 0.866, (j - (ns.length - 1) / 2) * BWL_SP]; }));
   const BWL_SEE = [2, 2, 1, 1, 0], BWL_ERR = [4, 2.6, 1.6, 0.9, 0.45], BWL_REC_SHOTS = 60;
   const BWL_TRY = [   // per level: how many of the nearest pins, the points across each (in its radius), the powers, the tips
@@ -56849,14 +56853,21 @@ const TRICK_APP = (() => {
        ball clears both sides' last, the one who bowled it). Stars for your win by how many of the computer's are still out of the ditch.
      - THE COMPUTER (`bwlPlanGen`) bowls its own balls nearest the white, at each straight and at the point that sends it square to the nearest edge,
        a level's spread, powers and tips, each judged at its aim and its hand's error either side: its own cleared, less 0.6 of yours. */
-  const BWL_R = 1.15 * R, BWL_GRP = [[1, 2, 3, 4, 5], [9, 10, 11, 12, 13]], bwlMine = (t, n) => BWL_GRP[t].includes(n);
-  const BWL_PAIRS = [[2, 3], [4, 6], [7, 10], [8, 9]], BWL_MID = [1, 5];
+  /* THE FULL RACK (Nov 25: "Add the full rack of balls.   Then create a bumper pool game."): all fifteen, on a triangle of fifteen spots, as 8-ball
+     racks them: the solids 1 to 7 yours, the stripes 9 to 15 the computer's, one of each on every pair of mirrored spots and on the head spot and the
+     last row's middle, the 8 in the middle of the third row. The 8 is the last ball: with all seven of yours in the ditch, the 8 in wins; the 8 sent
+     in before then (by your ball, alone or with your last) loses. Stars for your win by the computer's in the ditch (3 at most two, 2 at most four). */
+  const BWL_R = 1.15 * R, BWL_GRP = [[1, 2, 3, 4, 5, 6, 7], [9, 10, 11, 12, 13, 14, 15]], BWL_N = 7, bwlMine = (t, n) => BWL_GRP[t].includes(n);
+  const BWL_PAIRS = [[2, 3], [4, 6], [7, 10], [8, 9], [11, 15], [12, 14]], BWL_MID = [1, 13], BWL_EIGHT = 5;
+  // the balls a side is on: its own still out of the ditch, or the 8 once all its own are in
+  const bwlOn = (balls, t) => { const own = balls.filter(b => bwlMine(t, b.n) && !b.ditch); return own.length ? own : balls.filter(b => b.n === 8 && !b.ditch); };
   const bwlPin = (n, spot) => ({ ...ballOf(n, ...BWL_SPOT[spot]), r: BWL_R, spot });
   const bwlWhite = (x, z, ditch) => ({ ...ballOf(0, x, z), r: BWL_R, ditch: !!ditch });
   function rackB(idx){
     const rnd = rng((idx || 0) * 7919 + 31), mix = a => { for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
     const sol = mix(BWL_GRP[0].slice()), str = mix(BWL_GRP[1].slice()), B = [bwlWhite(...HEAD)];
     for (const pr of [...BWL_PAIRS, BWL_MID]){ const f = rnd() < 0.5; B.push(bwlPin(sol.pop(), pr[f ? 0 : 1]), bwlPin(str.pop(), pr[f ? 1 : 0])); }
+    B.push(bwlPin(8, BWL_EIGHT));
     return B;
   }
   // how many of each side's balls are in the ditch
@@ -56865,11 +56876,11 @@ const TRICK_APP = (() => {
   function bwlDown(balls, s){
     const was = new Set(balls.filter(b => b.ditch).map(b => b.n)), now = s.final.filter(b => b.ditch && !b.cue && !was.has(b.n)).map(b => b.n);
     const w = s.final.find(b => b.cue);
-    return { cleared: BWL_GRP.map(G => now.filter(n => G.includes(n))), whiteOff: !!(w && w.ditch && !was.has(0)), miss: !s.first };
+    return { cleared: BWL_GRP.map(G => now.filter(n => G.includes(n))), eight: now.includes(8), whiteOff: !!(w && w.ditch && !was.has(0)), miss: !s.first };
   }
   const bwlKey = g => 'bw:' + g.idx + '@' + g.lv;
   const bwlNew = () => ({ turn: 0, hand: true, fouls: [0, 0], moves: [], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
-  const bwlAim = (balls, t = 0) => { const w = balls.find(b => b.cue), p = balls.filter(b => bwlMine(t, b.n) && !b.ditch).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
+  const bwlAim = (balls, t = 0) => { const w = balls.find(b => b.cue), p = bwlOn(balls, t).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z))[0];
     return p && w ? Math.atan2(p.z - w.z, p.x - w.x) : 0; };
   function bwlFinish(g, s){
     const N = g.nine, t = N.turn, r = bwlDown(g.balls, s), mine = r.cleared[t].length, theirs = r.cleared[1 - t].length;
@@ -56877,18 +56888,19 @@ const TRICK_APP = (() => {
     const c = bwlCleared(g.balls), who = t === 0 ? 'you' : 'the computer';
     N.moves.push({ t, mine, theirs, miss: r.miss, ditch: r.whiteOff });
     N.said = r.miss ? who + ' met no ball' : !mine && !theirs ? who + ' cleared none' : who + ' cleared ' + [mine ? (t === 0 ? 'your ' : 'its ') + r.cleared[t].join(', ') : '', theirs ? (t === 0 ? 'the computer\'s ' : 'your ') + r.cleared[1 - t].join(', ') : ''].filter(Boolean).join(' and ');
+    if (r.eight) N.said = mine || theirs ? N.said + ', and the 8' : who + ' put the 8 in the ditch';
     if (r.whiteOff) N.said += ', the white in the ditch';
     N.hand = false;
-    if (c[t] === 5 || c[1 - t] === 5){
-      N.over = c[t] === 5 ? t + 1 : 2 - t; N.said += ' · ' + (N.over === 1 ? 'you cleared all five' : 'the computer cleared all five');
-      if (N.over === 1 && !g.auto){ N.stars = c[1] <= 1 ? 3 : c[1] <= 3 ? 2 : 1; const k = bwlKey(g); if (!(BEST[k] >= N.stars)){ BEST[k] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
+    if (r.eight){
+      N.over = c[t] === BWL_N ? t + 1 : 2 - t; N.said += c[t] === BWL_N ? ', all seven in first' : ', too soon';
+      if (N.over === 1 && !g.auto){ N.stars = c[1] <= 2 ? 3 : c[1] <= 4 ? 2 : 1; const k = bwlKey(g); if (!(BEST[k] >= N.stars)){ BEST[k] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
     } else if (!mine) N.turn ^= 1;
     if (!N.over) g.ang = bwlAim(g.balls, N.turn);
     N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
   }
   function* bwlPlanGen(g, lvIn){
     const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), T = BWL_TRY[lv - 1], t = g.nine.turn, w = g.balls.find(b => b.cue && !b.sunk);
-    const pins = g.balls.filter(b => bwlMine(t, b.n) && !b.ditch).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z)).slice(0, T.pins);
+    const pins = bwlOn(g.balls, t).sort((a, b) => Math.hypot(a.x - w.x, a.z - w.z) - Math.hypot(b.x - w.x, b.z - w.z)).slice(0, T.pins);
     let best = null; const e = 1.3 * BWL_ERR[lv - 1] * D;
     for (const p of pins){
       // (straight at it across its width, and at the ghost ball that sends it square to the nearest edge of the table)
@@ -56897,7 +56909,7 @@ const TRICK_APP = (() => {
       for (const a of aims) for (const pw of T.pows) for (const tip of T.tips){
         let got = 0, k = 0;
         for (const da of [0, -e, e]){ const st = strikeOf(a + da, tip[0], tip[1], pw, MU_TIP, 0), sm = simB(g.balls, st.dir, st.speed, st.w, st.vy); yield;
-          if (!sm) continue; const d = bwlDown(g.balls, sm); got += d.cleared[t].length - 0.6 * d.cleared[1 - t].length - (d.whiteOff ? 0.1 : 0); k++; }
+          if (!sm) continue; const d = bwlDown(g.balls, sm); got += (d.eight ? (bwlCleared(sm.final)[t] === BWL_N ? 10 : -10) : 0) + d.cleared[t].length - 0.6 * d.cleared[1 - t].length - (d.whiteOff ? 0.1 : 0); k++; }
         if (!k) continue; const score = got / k;
         if (!best || score > best.score) best = { a, p: pw, tip, score };
       }
@@ -56910,10 +56922,129 @@ const TRICK_APP = (() => {
     const N = g.nine, b = BEST[bwlKey(g)], w = g.balls.find(q => q.cue), c = bwlCleared(g.balls);
     return 'Bowling — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
       : (N.turn === 0 ? 'your ball (the solids)' : 'the computer\'s ball (the stripes)') + (N.turn === 0 && N.hand ? ', drag the white across to stand where you like' : N.turn === 0 && w && w.ditch ? ', the white in the ditch: bowl it out' : ''))
-      + ' · in the ditch: yours ' + c[0] + ' of 5, the computer\'s ' + c[1] + ' of 5'
+      + ' · in the ditch: yours ' + c[0] + ' of ' + BWL_N + ', the computer\'s ' + c[1] + ' of ' + BWL_N + ' (then the 8)'
       + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power + ', tip ' + spinName(g.tip);
   }
   function bwlAuto(idx, lvA, lvB = lvA, maxShots = 80){ const g = matchAuto('bowl', idx, lvA, lvB, maxShots); return { shots: g.shots, over: g.nine.over, cleared: bwlCleared(g.balls), moves: g.nine.moves, balls: g.balls }; }
+  /* BUMPER POOL (Nov 25: "Add the full rack of balls.   Then create a bumper pool game."): the pool table and its engine, with bumper pool's table and
+     rules. An entry of `MATCH` ('bumper'; the field's `bumperpool`).
+     - THE TABLE: two pockets, one at each end on the long middle line (`BP_POCK`), each guarded by two bumpers on its open side, and four bumpers
+       in a diamond in the middle (`BP_POSTS`): round rubber posts. They are flown as fixed balls (the engine's `fixed`: no push taken, the whole
+       rebound given), held still by the engine's `TRAP`, and taken out of the shot again after (`simBp`); a ball hitting one is heard as a cushion.
+     - THE BALLS: five each, no white. You the reds, the computer the ivories, each with one marked ball (a dark band). Each side's balls start at
+       its own end, round the other's pocket, the marked one in front of it, and go into the pocket at the far end: yours the one at +x.
+     - A SHOT strikes one of your own balls: the marked one until it is in, then any of yours (a tap or a press on one of yours picks it; it starts
+       as the marked one, then the one nearest your pocket).
+     - A BALL IN (`bpJudge`): one of a side's in its own pocket counts for that side, whoever's shot it was, but not before that side's marked ball.
+       Any other ball in a pocket (in the wrong pocket, or before its marked ball), or off the table, goes back on its own starting place (or the
+       nearest free place). You shoot again while your shot puts one of yours in and brings none back; otherwise the turn passes. The first with all
+       five in wins (both at once: the one who shot). Stars for your win by the computer's in (3 at most one, 2 at most three).
+     - THE COMPUTER (`bpPlanGen`) tries its balls nearest its pocket, each at a level's count of directions round about (a bank through the bumpers as
+       likely as straight) and powers, scored its balls in, less yours in, less its brought back, and a little for the struck ball's nearing its
+       pocket; then its hand's error, `BP_ERR` by level.
+     - A board no one plays shows a game played out, the computer against itself (`nineRecGen`). */
+  const BP_X = 8.2, BP_BR = 0.32, BP_POCK = [[-BP_X, 0], [BP_X, 0]];
+  const BP_POSTS = [[-(BP_X - 1.25), -1], [-(BP_X - 1.25), 1], [BP_X - 1.25, -1], [BP_X - 1.25, 1], [0, -1.5], [0, 1.5], [-1.5, 0], [1.5, 0]];
+  const BP_GRP = [[16, 17, 18, 19, 20], [21, 22, 23, 24, 25]], BP_MARK = [16, 21], bpOwner = n => n <= 20 ? 0 : 1, bpPocketOf = o => o === 0 ? 1 : 0;
+  const BP_START = {};
+  [[-5.6, 0], [-8.4, -2.4], [-8.4, 2.4], [-6.4, -3.6], [-6.4, 3.6]].forEach(([x, z], k) => { BP_START[16 + k] = [x, z]; BP_START[21 + k] = [-x, -z]; });
+  const BP_SEE = [2, 2, 1, 1, 0], BP_ERR = [5, 3, 1.8, 1, 0.5], BP_REC_SHOTS = 40;
+  const BP_TRY = [{ balls: 1, angs: 8, pows: [14] }, { balls: 1, angs: 12, pows: [12, 20] }, { balls: 2, angs: 16, pows: [12, 20] },
+                  { balls: 2, angs: 24, pows: [10, 16, 24] }, { balls: 3, angs: 32, pows: [10, 16, 24] }];
+  const bpBall = n => ({ ...ballOf(n, ...BP_START[n]), stripe: false, cue: n === 16 });
+  function rackBp(){ return [...BP_GRP[0], ...BP_GRP[1]].map(bpBall); }
+  // a place clear of the balls, the bumpers and the pockets, on the table
+  const bpFree = (B, x, z, skip) => Math.abs(x) <= LX / 2 - R && Math.abs(z) <= LZ / 2 - R && B.every(b => b === skip || b.sunk || Math.hypot(b.x - x, b.z - z) >= b.r + R + 0.02)
+    && BP_POSTS.every(([px, pz]) => Math.hypot(px - x, pz - z) >= BP_BR + R + 0.02) && BP_POCK.every(([px, pz]) => Math.hypot(px - x, pz - z) >= POCK + R);
+  function bpRespot(B, b){
+    const [x0, z0] = BP_START[b.n]; Object.assign(b, { sunk: false, off: false, y: 0, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0 });
+    for (let k = 0; k < 400; k++){ const r = 0.25 * Math.ceil(k / 8), a = k * Math.PI / 4 + Math.ceil(k / 8) * 0.4, x = x0 + r * Math.cos(a), z = z0 + r * Math.sin(a);
+      if (bpFree(B, x, z, b)){ b.x = x; b.z = z; return; } }
+    b.x = x0; b.z = z0;
+  }
+  // the balls a side may strike: its marked one until it is in, then any of its own
+  const bpCanPick = (balls, t, b) => !b.sunk && bpOwner(b.n) === t && BP_GRP[t].includes(b.n) && (b.n === BP_MARK[t] || balls.some(q => q.n === BP_MARK[t] && q.sunk));
+  const bpAim = (balls, t) => { const w = balls.find(b => b.cue && !b.sunk), pk = BP_POCK[bpPocketOf(t)]; return w ? Math.atan2(pk[1] - w.z, pk[0] - w.x) : 0; };
+  function bpSetCue(g, t){
+    const pk = BP_POCK[bpPocketOf(t)], can = g.balls.filter(b => bpCanPick(g.balls, t, b)).sort((a, b) => Math.hypot(a.x - pk[0], a.z - pk[1]) - Math.hypot(b.x - pk[0], b.z - pk[1]));
+    const pick = can.find(b => b.n === BP_MARK[t]) || can[0]; g.balls.forEach(b => { b.cue = b === pick; }); g.ang = bpAim(g.balls, t);
+  }
+  function simBp(B, ang, power, w, vy){
+    const n = B.length, posts = BP_POSTS.map(([x, z], k) => ({ ...ballOf(100 + k, x, z), r: BP_BR, m: 1e9, fixed: true, px: x, pz: z, cue: false }));
+    const P = POCKETS.splice(0, POCKETS.length, ...BP_POCK); let s;
+    TRAP = b => { if (b.fixed){ b.x = b.px; b.z = b.pz; b.y = 0; b.vx = b.vz = b.vy = b.wx = b.wy = b.wz = 0; } };
+    try { s = simulate([...B, ...posts], ang, power, w, vy); } finally { TRAP = null; POCKETS.splice(0, POCKETS.length, ...P); }
+    if (!s) return s;
+    s.frames = s.frames.map(f => f.slice(0, 2 * n)); s.heights = s.heights.map(h => h.slice(0, n)); s.final = s.final.slice(0, n);
+    const post = c => c.a >= 100 || c.b >= 100;
+    for (const c of s.contacts) if (post(c)) s.cushions.push({ n: c.a >= 100 ? c.b : c.a, t: c.t, w: c.w });   // (a bumper sounds as a cushion)
+    s.contacts = s.contacts.filter(c => !post(c)); s.cushions.sort((a, b) => a.t - b.t);
+    if (s.first && s.first.n >= 100) s.first = null;
+    return s;
+  }
+  // what a shot did: each side's balls in its own pocket and counted, and the balls that go back
+  function bpJudge(balls, s){
+    const was = new Set(balls.filter(b => b.sunk).map(b => b.n)), marked = [0, 1].map(o => was.has(BP_MARK[o])), good = [[], []], back = [];
+    for (const q of s.sunk.slice().sort((a, b) => a.t - b.t)){
+      if (was.has(q.n)) continue; const o = bpOwner(q.n);
+      if (q.pocket === bpPocketOf(o) && (marked[o] || q.n === BP_MARK[o])){ good[o].push(q.n); if (q.n === BP_MARK[o]) marked[o] = true; } else back.push(q.n);
+    }
+    return { good, back };
+  }
+  const bpIn = balls => [0, 1].map(o => balls.filter(b => BP_GRP[o].includes(b.n) && b.sunk).length);
+  const bpKey = g => 'bp:' + g.idx + '@' + g.lv;
+  const bpNew = () => ({ turn: 0, hand: false, fouls: [0, 0], moves: [], over: 0, stars: 0, said: '', plan: null, thinkAt: 0, planAt: 0 });
+  function bpFinish(g, s){
+    const N = g.nine, t = N.turn, J = bpJudge(g.balls, s), who = t === 0 ? 'you' : 'the computer';
+    g.balls = s.final.map(b => ({ ...b, vx: 0, vz: 0, vy: 0, wx: 0, wy: 0, wz: 0 }));
+    for (const n of J.back){ const b = g.balls.find(q => q.n === n); if (b) bpRespot(g.balls, b); }
+    const c = bpIn(g.balls), name = n => (bpOwner(n) === 0 ? 'red ' : 'ivory ') + (BP_MARK.includes(n) ? 'marked' : n - (bpOwner(n) ? 20 : 15));
+    N.moves.push({ t, good: J.good.map(a => a.length), back: J.back.length });
+    const parts = [];
+    if (J.good[0].length) parts.push(J.good[0].map(name).join(', ') + ' in');
+    if (J.good[1].length) parts.push(J.good[1].map(name).join(', ') + ' in');
+    if (J.back.length) parts.push(J.back.map(name).join(', ') + ' back on ' + (J.back.length > 1 ? 'their places' : 'its place'));
+    N.said = who + ': ' + (parts.join('; ') || 'none in');
+    if (c[t] === 5 || c[1 - t] === 5){
+      N.over = c[t] === 5 ? t + 1 : 2 - t; N.said += ' · ' + (N.over === 1 ? 'all five of yours in' : 'all five of the computer\'s in');
+      if (N.over === 1 && !g.auto){ N.stars = c[1] <= 1 ? 3 : c[1] <= 3 ? 2 : 1; const k = bpKey(g); if (!(BEST[k] >= N.stars)){ BEST[k] = N.stars; ARCADE.save('trickshots.best', JSON.stringify(BEST)); } }
+    } else if (!(J.good[t].length && !J.back.length)) N.turn ^= 1;
+    if (!N.over) bpSetCue(g, N.turn);
+    N.plan = null; N.gen = null; N.thinkAt = 0; g.anim = null; g.dirty = true; if (!g.auto) touch();
+  }
+  function* bpPlanGen(g, lvIn){
+    const lv = Math.max(1, Math.min(5, lvIn || g.lv || 1)), T = BP_TRY[lv - 1], t = g.nine.turn, pk = BP_POCK[bpPocketOf(t)];
+    const cands = g.balls.filter(b => bpCanPick(g.balls, t, b)).sort((a, b) => Math.hypot(a.x - pk[0], a.z - pk[1]) - Math.hypot(b.x - pk[0], b.z - pk[1])).slice(0, T.balls);
+    let best = null;
+    for (const b of cands){
+      const B = g.balls.map(q => ({ ...q, cue: q.n === b.n })), base = Math.atan2(pk[1] - b.z, pk[0] - b.x), d0 = Math.hypot(pk[0] - b.x, pk[1] - b.z);
+      for (let k = 0; k < T.angs; k++) for (const pw of T.pows){
+        const a = base + 2 * Math.PI * k / T.angs, st = strikeOf(a, 0, 0, pw, MU_TIP, 0), sm = simBp(B, st.dir, st.speed, st.w, st.vy); yield;
+        if (!sm) continue; const J = bpJudge(B, sm), f = sm.final.find(q => q.n === b.n), d1 = f && !f.sunk ? Math.hypot(pk[0] - f.x, pk[1] - f.z) : d0;
+        const score = J.good[t].length - 0.8 * J.good[1 - t].length - 1.2 * J.back.filter(n => bpOwner(n) === t).length + 0.06 * (d0 - d1);
+        if (!best || score > best.score) best = { a, p: pw, tip: [0, 0], score, n: b.n };
+      }
+    }
+    if (!best){ bpSetCue(g, t); best = { a: bpAim(g.balls, t), p: 14, tip: [0, 0], score: -1, n: null }; }
+    else g.balls.forEach(q => { q.cue = q.n === best.n; });
+    const u1 = Math.random() || 1e-9, u2 = Math.random(), gauss = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return { a: best.a + gauss * BP_ERR[lv - 1] * D, p: best.p, tip: best.tip, score: best.score };
+  }
+  function bpTitle(g){
+    const N = g.nine, b = BEST[bpKey(g)], c = bpIn(g.balls), markIn = g.balls.some(q => q.n === BP_MARK[0] && q.sunk);
+    return 'Bumper pool — level ' + g.lv + ' · ' + (N.over ? (N.over === 1 ? (N.stars ? starStr(N.stars) + ' ' : '') + 'you won' : 'the computer won') + ', tap to play again'
+      : N.turn === 0 ? 'your shot (the reds, into the far pocket; ' + (markIn ? 'tap one of yours to play it)' : 'the marked one first)') : 'the computer\'s shot (the ivories)')
+      + ' · in: yours ' + c[0] + ' of 5, the computer\'s ' + c[1] + ' of 5'
+      + (N.said ? ' · ' + N.said : '') + (b ? ' · best ' + starStr(b) : '') + ' · power ' + g.power;
+  }
+  function bpAuto(idx, lvA, lvB = lvA, maxShots = 80){ const g = matchAuto('bumper', idx, lvA, lvB, maxShots); return { shots: g.shots, over: g.nine.over, inn: bpIn(g.balls), moves: g.nine.moves, balls: g.balls }; }
+  // a tap or a press on one of your own balls you may strike makes it the one struck (bumper pool)
+  function pickAt(g, u, v){
+    if (!g || !g.nine || g.nine.turn || g.nine.over || !kindOf(g).pick || u == null) return false;
+    const [x, z] = toTable(u, v), p = g.balls.find(b => !b.sunk && kindOf(g).pick(g, b) && Math.hypot(b.x - x, b.z - z) < R * 1.6);
+    if (!p || p.cue) return false;
+    g.balls.forEach(b => { b.cue = b === p; }); g.ang = bpAim(g.balls, 0); g.dirty = true; touch(); return true;
+  }
   const GAMES = { get: k => GM().get(k), set: (k, v) => GM().set(k, v), has: k => GM().has(k), delete: k => GM().delete(k), clear: () => GM().clear(),
                   forEach: f => GM().forEach(f), values: () => GM().values(), keys: () => GM().keys(), get size(){ return GM().size; } };
   let LIVE = null, DRAG = null, ateAt = 0, TOLD = false;
@@ -57349,6 +57480,10 @@ const TRICK_APP = (() => {
     const W2 = BWL_DW, DITCHES = [[-LX / 2 - W2, -LZ / 2 - W2, LX / 2 + W2, -LZ / 2], [-LX / 2 - W2, LZ / 2, LX / 2 + W2, LZ / 2 + W2], [-LX / 2 - W2, -LZ / 2, -LX / 2, LZ / 2], [LX / 2, -LZ / 2, LX / 2 + W2, LZ / 2]];
     for (const [x0, z0, x1, z1] of ditch ? DITCHES : bare ? CUSHIONS_C : CUSHIONS3) out.push({ kind: 'tsBox', u: Ub((x0 + x1) / 2), v: Vb((z0 + z1) / 2), scale: Sb(1), sx: x1 - x0, sy: ditch ? 0.02 : CUSH_H, sz: z1 - z0, color: ditch ? DITCH_C : CUSH });
     if ((M() || {}).rt) for (const sg of [-1, 1]) out.push({ kind: 'tsBox', u: Ub(sg * (LX / 2 + CUSH_W / 2)), v: Vb(0), scale: Sb(1), sx: CUSH_W * 1.02, sy: CUSH_H * 1.04, sz: HK_GOAL, color: sg < 0 ? 0x2a4fb0 : 0xd23a2f });   // (pool hockey's goals: yours blue, the computer's red)
+    if ((M() || {}).bumper){   // (bumper pool: its two pockets, a ring of its side's colour round each, and its bumpers)
+      BP_POCK.forEach(([x, z], k) => out.push({ kind: 'tsDot', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK), color: 0x050506 }, { kind: 'tsRing', u: Ub(x), v: Vb(z), scale: Sb(2 * POCK + 0.3), color: k ? 0xc8312b : 0xece4cf }));
+      for (const [x, z] of BP_POSTS) out.push({ kind: 'tsPost', u: Ub(x), v: Vb(z), scale: Sb(1), sx: 2 * BP_BR, sy: CUSH_H * 1.1, sz: 2 * BP_BR, color: 0x1c1c20 });
+    }
     const ch = V.ch;
     if (ch && ch.zone){ const [x, z, r] = ch.zone; out.push({ kind: 'tsZone', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }, { kind: 'tsZoneFill', u: Ub(x), v: Vb(z), scale: Sb(2 * r), color: GOLD }); }
     if (V.sim) pathItems(out, V);
@@ -57399,6 +57534,8 @@ const TRICK_APP = (() => {
      sphere by its own longitude and latitude. */
   function ballTex(T, n){
     const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128; const c = cv.getContext('2d'), col = n ? COLS[n] : '#f2f0ea';
+    if (n >= 16){ c.fillStyle = col; c.fillRect(0, 0, 256, 128); if (n === 16 || n === 21){ c.fillStyle = '#1a1a1e'; c.fillRect(0, 128 * 0.42, 256, 128 * 0.16); }   // (bumper pool: no number, the marked one a dark band)
+      return new T.CanvasTexture(cv); }
     c.fillStyle = n === 0 || n >= 9 ? '#f2f0ea' : col; c.fillRect(0, 0, 256, 128);
     if (n >= 9){ c.fillStyle = col; c.fillRect(0, 128 * 0.31, 256, 128 * 0.38); }
     if (n === 0){ c.fillStyle = '#c0392b'; for (const [x, y] of [[0, 64], [64, 64], [128, 64], [192, 64], [256, 64], [32, 26], [160, 102]]){ const sx = 1 / Math.max(0.3, Math.sin(y / 128 * Math.PI)); c.beginPath(); c.ellipse(x, y, 4.5 * sx, 4.5, 0, 0, 7); c.fill(); } }
@@ -57408,13 +57545,14 @@ const TRICK_APP = (() => {
   }
   // the pieces' shapes, a unit across (a ball sits on the cloth; the cue lies along +x back from its tip, the field turning +x to the yaw)
   const geos = {
-    ...Object.fromEntries(Array.from({ length: 16 }, (_, n) => ['tsB' + n, T => { const g = new T.SphereGeometry(0.5, 24, 16); g.userData.map = ballTex(T, n); return g; }])),
+    ...Object.fromEntries(Array.from({ length: 26 }, (_, n) => ['tsB' + n, T => { const g = new T.SphereGeometry(0.5, 24, 16); g.userData.map = ballTex(T, n); return g; }])),
     tsTrail: T => { const g = FieldKit.disc(T, 0.5, 0.015, 12); g.userData.unlit = true; g.userData.opacity = 0.35; return g; },
     tsStar: T => { const sh = new T.Shape(); for (let k = 0; k < 10; k++){ const a = Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 0.2 : 0.5; k ? sh.lineTo(r * Math.cos(a), r * Math.sin(a)) : sh.moveTo(r * Math.cos(a), r * Math.sin(a)); }
       const g = new T.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); g.translate(0, 0.03, 0); g.userData.unlit = true; return g; },
     tsBall: T => { const g = new T.SphereGeometry(0.5, 20, 14); g.translate(0, 0.5, 0); return g; },
     tsBand: T => { const g = new T.SphereGeometry(0.514, 20, 6, 0, Math.PI * 2, Math.PI / 2 - 0.47, 0.94); g.rotateX(Math.PI / 2); g.translate(0, 0.5, 0); return g; },
     tsBox: T => { const g = new T.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; },
+    tsPost: T => { const g = new T.CylinderGeometry(0.5, 0.5, 1, 20); g.translate(0, 0.5, 0); return g; },   // (bumper pool's bumpers)
     // (the cue: a unit long from its tip at the origin back along −x, thick at the butt; a white ferrule, maple, a dark wrapped butt;
     //  drawn on top, as its tip is, the tip over it)
     tsCue: T => cueGeo(T, 1), tsCueIdle: T => cueGeo(T, 0),
@@ -57656,10 +57794,12 @@ const TRICK_APP = (() => {
     const c = MAP.cv.getContext('2d'), Wd = MAP.cv.width, Hd = MAP.cv.height, k = Wd / BW, X = x => (x + BW / 2) * k, Z = z => (z + BH / 2) * k, hex = n => '#' + n.toString(16).padStart(6, '0');
     c.clearRect(0, 0, Wd, Hd); c.fillStyle = hex(CLOTH); c.fillRect(0, 0, Wd, Hd);
     c.fillStyle = hex(WOOD2); c.fillRect(0, 0, Wd, Hd); c.fillStyle = hex(CLOTH); c.fillRect(X(-LX / 2), Z(-LZ / 2), LX * k, LZ * k);
+    if (m.bumper){ c.fillStyle = '#07090c'; for (const [x, z] of BP_POCK){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); }
+      c.fillStyle = '#1c1c20'; for (const [x, z] of BP_POSTS){ c.beginPath(); c.arc(X(x), Z(z), Math.max(2, BP_BR * k), 0, 7); c.fill(); } }
     if (!m.bare && !m.rt){ c.fillStyle = '#07090c'; for (const [x, z] of POCKETS){ c.beginPath(); c.arc(X(x), Z(z), POCK * k * 0.8, 0, 7); c.fill(); } }
     let w = null;
     V.B.forEach((b, i) => { const q = V.pos ? V.pos[i] : (b.sunk ? null : [b.x, b.z]); if (!q) return; if (b.cue) w = q;
-      const x = X(q[0]), z = Z(q[1]), r = Math.max(3.2, (b.r || R) * k * 1.25), col = b.cue ? '#f2f0ea' : b.col || COLS[b.n > 8 ? b.n - 8 : b.n] || '#c8c4b8';
+      const x = X(q[0]), z = Z(q[1]), r = Math.max(3.2, (b.r || R) * k * 1.25), col = b.n === 0 ? '#f2f0ea' : b.col || COLS[b.n > 8 ? b.n - 8 : b.n] || '#c8c4b8';
       c.beginPath(); c.arc(x, z, r, 0, 7); c.fillStyle = b.stripe ? '#f2f0ea' : col; c.fill();
       if (b.stripe){ c.beginPath(); c.arc(x, z, r * 0.58, 0, 7); c.fillStyle = COLS[b.n - 8] || col; c.fill(); }
       c.lineWidth = 1; c.strokeStyle = 'rgba(0,0,0,.55)'; c.beginPath(); c.arc(x, z, r, 0, 7); c.stroke(); });
@@ -57994,6 +58134,7 @@ const TRICK_APP = (() => {
       /* A TAP PUTS THE DIALS AWAY AND MOVES NO CUE (Nov 22: "Tapping the screen clears the dials of they are open.   Tapping the screen should not move
          the cue stick."): a tap on a point used to aim the shot at it, so a stray touch threw the aim away. Now a tap only shuts the spin inset if it
          is up; the cue is moved by dragging it, the arrow keys and the row. */
+      if (pickAt(g, u, v)){ behindCue(g); return true; }   // (bumper pool: a tap on one of your balls plays it)
       CTL.spin = false; touch(); return true;
     },
     onCellHold(c, r){ if (ED.on) return true; restart(c, r); say('The table as it was set.', 1400); return true; },
@@ -58004,6 +58145,7 @@ const TRICK_APP = (() => {
       const g = liveGame(); if (!g || g.anim) return false;
       if (g.nine && g.nine.rt){ if (g.nine.over) return false; hkAim(g, u, v, xy); DRAG = { g, moved: false, rt: true }; return true; }   // (pool hockey: the finger is the mallet's place)
       if (g.nine && (g.nine.turn || g.nine.over)) return false;   // (not your shot: the drag is the view's)
+      pickAt(g, u, v);   // (bumper pool: a press on one of your balls makes it the one struck, and the drag then aims it)
       /* THE CUE IS TAKEN FROM ANYWHERE (Nov 22: "Should be able move the cue stick off the anywhere, doesn't restrict to the default board."): the cue
          is 21 ball widths long and lies out over the boards beside, so a hand that takes it there, or anywhere off the table, moves it too; until
          now a press off the played board panned the view. Two fingers, the wheel, the rails and the keys still move the view, and a tap (no drag)
@@ -58140,12 +58282,19 @@ const TRICK_APP = (() => {
       ctx.beginPath(); ctx.moveTo(sz * 0.2, sz * 0.62); ctx.lineTo(sz * 0.5, sz * 0.28); ctx.lineTo(sz * 0.92, sz * 0.5); ctx.lineTo(sz * 0.7, sz * 0.72); ctx.lineTo(sz * 0.4, sz * 0.5); ctx.stroke(); ctx.setLineDash([]);
       for (const [x, y, c] of [[0.2, 0.62, '#f2f0ea'], [0.4, 0.5, '#d23a2f'], [0.62, 0.4, '#e3c33b']]) dot(ctx, x * sz, y * sz, sz * 0.05, c); },
     debug: { rackC, carScore, carFinish, carPlan, carPlanGen, carAuto, carTitle, simC, CAR_TO, CAR_ERR, CAR_SEE, GRID_C, CUSHIONS_C } });
-  app.bowl = matchApp(MATCH.bowl, { name: 'Bowling', hint: 'you the solids, the computer the stripes: the first with all five in the ditch wins; clear one of yours to bowl again',
+  app.bowl = matchApp(MATCH.bowl, { name: 'Bowling', hint: 'you the solids, the computer the stripes: clear your seven, then the 8, to win; clear one of yours to bowl again',
     level: 'How steady the computer\'s hand is, how many balls it looks at and how far your own ball is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The ten balls racked again, the white on the head spot, the ditch empty.',
     icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
       const d = sz * 0.07; [1, 2, 3, 4].forEach((n, row) => { for (let j = 0; j < n; j++) dot(ctx, sz * 0.6 + row * d * 1.4, sz * 0.5 + (j - (n - 1) / 2) * d * 1.6, d * 0.5, ['#e3c33b', '#2f5fd0', '#d23a2f', '#6b3fa0', '#e0782a', '#2e8b57', '#7a2f2a', '#16161a', '#e3c33b', '#2f5fd0'][row * (row + 1) / 2 + j]); });
       dot(ctx, sz * 0.2, sz * 0.5, d * 0.55, '#f2f0ea'); },
-    debug: { rackB, simB, bwlDown, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, bwlCleared, BWL_SPOT, BWL_ERR, BWL_SEE, BWL_R, BWL_DW, BWL_GRP } });
+    debug: { rackB, simB, bwlDown, bwlFinish, bwlPlanGen, bwlAuto, bwlTitle, bwlCleared, BWL_SPOT, BWL_ERR, BWL_SEE, BWL_R, BWL_DW, BWL_GRP, BWL_PAIRS, BWL_MID, BWL_EIGHT } });
+  app.bumper = matchApp(MATCH.bumper, { name: 'Bumper pool', hint: 'your reds into the far pocket, the marked one first; the first with all five in wins',
+    level: 'How steady the computer\'s hand is, how many shots it tries and how far your own ball is seen ahead; a step harder farther out.', again: 'Start this board again', againTip: 'The ten balls on their places, your shot.',
+    icon(ctx, sz){ TABLE_ICON(ctx, sz, false);
+      ctx.fillStyle = '#07090c'; for (const x of [0.18, 0.82]){ ctx.beginPath(); ctx.arc(sz * x, sz * 0.5, sz * 0.05, 0, 7); ctx.fill(); }
+      ctx.fillStyle = '#1c1c20'; for (const [x, y] of [[0.5, 0.4], [0.5, 0.6], [0.42, 0.5], [0.58, 0.5]]){ ctx.beginPath(); ctx.arc(sz * x, sz * y, sz * 0.025, 0, 7); ctx.fill(); }
+      for (const [x, y, c] of [[0.3, 0.38, '#c8312b'], [0.3, 0.62, '#c8312b'], [0.7, 0.38, '#ece4cf'], [0.7, 0.62, '#ece4cf']]) dot(ctx, x * sz, y * sz, sz * 0.045, c); },
+    debug: { rackBp, simBp, bpJudge, bpFinish, bpPlanGen, bpAuto, bpTitle, bpIn, bpCanPick, bpSetCue, pickAt, uvOf: (x, z) => [(x + BW / 2) / BW, (z + BH / 2) / BH], BP_POCK, BP_POSTS, BP_START, BP_GRP, BP_MARK } });
   return app;
 })();
 const NINEBALL_APP = TRICK_APP.nine;   // (9-ball against the computer, on trick shots' engine and table, Nov 22)
@@ -58154,6 +58303,7 @@ const EIGHTBALL_APP = TRICK_APP.eight;   // (8-ball against the computer, on the
 const STRAIGHT_APP = TRICK_APP.straight;   // (straight pool, 14.1, against the computer, on the same engine, Nov 22)
 const ONEPOCKET_APP = TRICK_APP.one;   // (one-pocket against the computer, on the same engine, Nov 22)
 const BANKPOOL_APP = TRICK_APP.bank;   // (bank pool against the computer: only a ball off a cushion counts, Nov 23)
+const BUMPER_APP = TRICK_APP.bumper;   // (bumper pool on the pool table, Nov 25)
 const BOWLING_APP = TRICK_APP.bowl;   // (bowling on the pool table: the pins ten pool balls, bowling's rules, Nov 25)
 const POOLHOCKEY_APP = TRICK_APP.hockey;   // (pool hockey: the pool engine stepped in real time, Nov 22)
 /* Pixels, LOD and hello-world taken off the list (Sep 25: "remove the pixels, lod and hello-world applications"). */
@@ -65655,7 +65805,7 @@ const WAR_APP = (() => {
   };
   return app;
 })();
-window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, BANKPOOL_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
+window.FIELD_APPS = [CHESS_APP, DEFENDER_APP, BREAKOUT_APP, CROSSING_APP, QUEENS_APP, SNAKE_APP, TRON_APP, MISSILE_APP, ASTEROIDS_APP, TETRIS_APP, BLOCKOUT_APP, SOMA_APP, GEMS_APP, BOMBER_APP, PACMAN_APP, TD_APP, AIR_APP, INVADERS_APP, TILES_APP, GOLF_APP, TILT_APP, PINBALL_APP, PONG_APP, AIRHOCKEY_APP, SQUASH_APP, CURLING_APP, BOWLING_APP, BUMPER_APP, MARBLE_APP, SIMON_APP, LIGHTS_APP, MOLE_APP, WAR_APP, NONOGRAM_APP, SUDOKU_APP, HASHI_APP, FLASH_APP, GAMELAB_APP, TANKS_APP, TRICK_APP, NINEBALL_APP, EIGHTBALL_APP, STRAIGHT_APP, ONEPOCKET_APP, BANKPOOL_APP, CAROM_APP, POOLHOCKEY_APP, MINES_APP, MEMORY_APP, PIPES_APP, LOOPS_APP, MANIA_APP, FLOW_APP, NETSLIDE_APP, ROLL_APP, UNBLOCK_APP, T2048_APP, SOKOBAN_APP, CHECKERS_APP, GO_APP, REVERSI_APP, GOMOKU_APP, CONNECT4_APP, LOA_APP, ATAXX_APP, LEVELS_APP, GALLERY_APP];
 // the board games' position editor (Oct 13): every app that describes itself for it gets the bottom row's hooks
 window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 /* EVERY APP HAS AN ID (Sep 28: "each application should have a unique [id] so we can specify it
@@ -65664,7 +65814,7 @@ window.FIELD_APPS.forEach(a => { if (a._ed) BOARD_ED.wrap(a, a._ed); });
 [[CHESS_APP, 'chess'], [DEFENDER_APP, 'defender'], [BREAKOUT_APP, 'breakout'], [CROSSING_APP, 'crossing'],
  [QUEENS_APP, 'queens'], [SNAKE_APP, 'snake'], [TRON_APP, 'tron'], [MISSILE_APP, 'missilecommand'], [ASTEROIDS_APP, 'asteroids'], [TETRIS_APP, 'tetris'], [BLOCKOUT_APP, 'blockout'], [SOMA_APP, 'soma'], [GEMS_APP, 'bejeweled'],
  [BOMBER_APP, 'bomberman'], [PACMAN_APP, 'pacman'], [TD_APP, 'towerdefense'], [AIR_APP, 'airraid'],
- [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [BANKPOOL_APP, 'bankpool'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
+ [INVADERS_APP, 'invaders'], [TILES_APP, 'tiles'], [GOLF_APP, 'minigolf'], [TILT_APP, 'tiltmaze'], [PINBALL_APP, 'pinball'], [PONG_APP, 'pong'], [AIRHOCKEY_APP, 'airhockey'], [SQUASH_APP, 'squash'], [CURLING_APP, 'curling'], [BOWLING_APP, 'bowling'], [BUMPER_APP, 'bumperpool'], [MARBLE_APP, 'marblerun'], [SIMON_APP, 'simon'], [LIGHTS_APP, 'lightsout'], [MOLE_APP, 'whackamole'], [WAR_APP, 'boardwar'], [NONOGRAM_APP, 'nonograms'], [SUDOKU_APP, 'sudoku'], [HASHI_APP, 'hashi'], [FLASH_APP, 'flashcards'], [GAMELAB_APP, 'gamelab'], [TANKS_APP, 'tanks'], [TRICK_APP, 'trickshots'], [NINEBALL_APP, 'nineball'], [EIGHTBALL_APP, 'eightball'], [STRAIGHT_APP, 'straightpool'], [ONEPOCKET_APP, 'onepocket'], [BANKPOOL_APP, 'bankpool'], [CAROM_APP, 'threecushion'], [POOLHOCKEY_APP, 'poolhockey'], [MINES_APP, 'minesweeper'], [MEMORY_APP, 'memory'], [PIPES_APP, 'pipes'],
  [LOOPS_APP, 'infinityloop'], [MANIA_APP, 'pipemania'], [FLOW_APP, 'flow'], [NETSLIDE_APP, 'netslide'],
  [ROLL_APP, 'rolltheball'], [UNBLOCK_APP, 'unblockme'], [T2048_APP, '2048'], [SOKOBAN_APP, 'sokoban'],
  [CHECKERS_APP, 'checkers'], [GO_APP, 'go'], [REVERSI_APP, 'reversi'], [GOMOKU_APP, 'gomoku'],
@@ -65678,7 +65828,7 @@ SHARE.install(CHESS_APP, (c, r, P) => chessTakeSetup(P));   // (chess's own shar
   const DONE = { blockout: g => g.state === 'done', soma: g => g.state === 'done', bejeweled: g => g.state === 'won', sokoban: g => !!g.solved,
     tiltmaze: g => g.state === 'done', pinball: g => g.state === 'over', simon: g => g.state === 'over', lightsout: g => !!g.done,
     whackamole: g => g.state === 'over', nonograms: g => g.state === 'solved', tanks: g => g.state === 'over', pong: g => g.state === 'over',
-    airhockey: g => g.state === 'over', squash: g => g.state === 'over', curling: g => g.state === 'over', bowling: g => !!(g.nine && g.nine.over),
+    airhockey: g => g.state === 'over', squash: g => g.state === 'over', curling: g => g.state === 'over', bowling: g => !!(g.nine && g.nine.over), bumperpool: g => !!(g.nine && g.nine.over),
     marblerun: g => g.state === 'won', trickshots: g => !!(g.ch && g.solvedIn) };
   /* Every other game with its boards' games in `_debug.GAMES` and an `onReset` is read by the words its own state uses for an end
      (Nov 1: "double click is still not reseting the board": the first cut named seventeen games; Snake, Tetris, 2048 and the
