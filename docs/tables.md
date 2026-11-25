@@ -1471,3 +1471,10 @@ the real Enter, a board no one plays (25 balls, to a win).
 buttons (⏮ ⏸/⏵ ⏭ ✕) carry `replay: true`; `playPadTick` sets `pad-replay` on the body while the pad shows one, and the CSS hides `#bbHandle`
 under it. The dots come back when the replay ends or is stopped. A field-wide hook: any app's act with `replay` does the same. Probed in 9-ball:
 the dots shown before, hidden during the replay, back after ✕.
+
+**The replay in the menu** (Nov 25: "move the replay buttons into the menu."). The play pad keeps only ▦ (the whole table). The replay's buttons are
+menu items in every pool match game (`rpMenu`, in `matchApp`'s menu): "Replay this game (n shots)" while there is a game to replay, and while one
+plays "Replay: the shot before", "Replay: stop on this shot" / "go on", "Replay: the next shot" and "Replay: back to the game", doing what the
+pad's did (`onPlayAct`). A menu item can now carry `when` (rendered only while it returns true; the menu is built each time it opens). A tap on
+the table still stops a replay on its shot and goes on. The row's dots, hidden while the pad showed the replay's buttons (`pad-replay`, above),
+now stay; the hook stays for any act marked `replay`. Part 5's replay check works the menu's items now, and passes.

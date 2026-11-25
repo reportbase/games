@@ -17495,6 +17495,7 @@ function renderAppMenu(){
     _first = false;
     for (const it of (sec.items || [])){
       if (it.debug && !MENU_DEBUG) continue;
+      if (it.when){ let ok = false; try { ok = !!it.when(); } catch {} if (!ok) continue; }   // (an item shown only while it applies: the pool games' replay, Nov 25)
       if (it.ref){
         const el = document.getElementById(it.ref);
         if (el) got.push(el);                      // a missing ref is silently nothing
@@ -58098,9 +58099,7 @@ const TRICK_APP = (() => {
     fitView(){ WHOLE = false; behindCue(liveGame()); },
     playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r || (g.nine && g.nine.rt)) return null;
       const L = [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }];
-      if (g.rp) L.push({ key: 'rpPrev', glyph: '⏮', title: 'The shot before', replay: true }, { key: 'rpPause', glyph: g.rp.paused ? '⏵' : '⏸', title: g.rp.paused ? 'Go on' : 'Stop on this shot', on: g.rp.paused, replay: true },
-        { key: 'rpNext', glyph: '⏭', title: 'The next shot', replay: true }, { key: 'rpStop', glyph: '✕', title: 'Back to the game', replay: true });
-      else if (rpCan(g)) L.push({ key: 'rp', glyph: '⏵', title: 'Play this game again from its first shot (' + g.log.length + (g.log.length === 1 ? ' shot' : ' shots') + ')' });
+      // (the replay's buttons are in the menu since Nov 25: "move the replay buttons into the menu."; `rpMenu`)
       return L; },
     playPadLow: true,                                         // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")
     onPlayAct(c, r, key){
@@ -58216,6 +58215,20 @@ const TRICK_APP = (() => {
     if (pockets){ ctx.fillStyle = '#060608'; for (const [x, y] of [[0.06, 0.26], [0.5, 0.25], [0.94, 0.26], [0.06, 0.74], [0.5, 0.75], [0.94, 0.74]]){ ctx.beginPath(); ctx.arc(x * sz, y * sz, sz * 0.05, 0, 7); ctx.fill(); } }
   };
   const dot = (ctx, x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
+  /* THE REPLAY IN THE MENU (Nov 25: "move the replay buttons into the menu."): A GAME PLAYED AGAIN's ⏵, and while it plays ⏮ ⏸/⏵ ⏭ ✕, were on
+     the play pad; they are the menu's now, each shown only while it applies (a menu item's `when`), doing what the pad's did (`onPlayAct`).
+     A tap on the table still stops a replay on its shot and goes on. */
+  function rpMenu(){
+    const act = key => { const f = framedCell(), A = window.getFieldApp && window.getFieldApp(); if (f && A && A.onPlayAct) A.onPlayAct(f.c, f.r, key); };
+    const g = () => liveGame();
+    return [
+      { label: () => { const q = g(); return 'Replay this game' + (q && q.log ? ' (' + q.log.length + (q.log.length === 1 ? ' shot)' : ' shots)') : ''); }, title: 'Play this game again from its first shot, on the board.', when: () => !g() || !g().rp ? rpCan(g()) : false, on(){ act('rp'); } },
+      { label: 'Replay: the shot before', title: 'Back to the start of this shot, or at its start the one before.', when: () => !!(g() && g().rp), on(){ act('rpPrev'); } },
+      { label: () => g() && g().rp && g().rp.paused ? 'Replay: go on' : 'Replay: stop on this shot', title: 'Stop the replay on this shot, or go on from it.', when: () => !!(g() && g().rp), on(){ act('rpPause'); } },
+      { label: 'Replay: the next shot', title: 'On to the next shot of the replay.', when: () => !!(g() && g().rp), on(){ act('rpNext'); } },
+      { label: 'Replay: back to the game', title: 'End the replay; the game waits where it was.', when: () => !!(g() && g().rp), on(){ act('rpStop'); } },
+    ];
+  }
   function matchApp(m, o){
     const A = Object.defineProperties({}, Object.getOwnPropertyDescriptors(app));
     Object.assign(A, {
@@ -58223,6 +58236,7 @@ const TRICK_APP = (() => {
       menu: [{ head: o.name, items: [
         { label: DL.item.label, title: o.level, on(){ DL.item.on(); m.games.clear(); RECS.clear(); RECS_N.clear(); NREC.clear(); touch(); } },
         SND.item,
+        ...rpMenu(),
         { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball.', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
         { label: o.again, title: o.againTip, on(){ if (m.reset){ m.reset(); m.games.clear(); } const f = framedCell(); if (f) restart(f.c, f.r); } },
       ]}],

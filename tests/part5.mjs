@@ -1605,9 +1605,10 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
     console.log(`${ok ? 'ok  ' : 'FAIL'} pool hockey: the engine stepped a frame at a time (a mallet goes to its place and keeps its half, driven through the ball it sends it on, a ball through a mouth scores and one beside it comes off the cushion), the two computers at it stay on the table, a goal counted and the third wins, a real drag starts play and moves your mallet at the near end, a board no one plays is a recording with no shot seen ahead`);
   }
 
-  // A GAME PLAYED AGAIN (Nov 23: "Can you replay a game?", "Yes"): every shot of a match is kept as it is struck; the pad's ⏵ plays them back on
-  // the board, each flown again from the balls as they lay to where the game itself went on from; ⏭ ⏸ ⏮ step and stop it, ✕ gives the game back
-  // untouched.
+  // A GAME PLAYED AGAIN (Nov 23: "Can you replay a game?", "Yes"): every shot of a match is kept as it is struck; the menu's "Replay this game"
+  // (the pad's ⏵ until Nov 25: "move the replay buttons into the menu.") plays them back on the board, each flown again from the balls as they lay
+  // to where the game itself went on from; the next shot, stop on this shot and the shot before step and stop it, back to the game gives it back
+  // untouched; the pad keeps only ▦.
   {
     current = 'replay';
     await page.evaluate(() => window.setFieldApp(window.FIELD_APPS.find(a => a.id === 'nineball')));
@@ -1623,16 +1624,17 @@ const game = { title: 'Words', size: l => 5 + Math.ceil(l / 2),
       for (let k = 0; k + 1 < g.log.length; k++){ D.rpGo(g, k); const nx = g.log[k + 1].balls;   // (a ball the rules put back, or the white in hand, is not where the flight left it: those apart by more than a ball are the rules')
         out.push(Math.max(0, ...g.rp.s.final.map(b => { const q = nx.find(x => x.n === b.n), d = Math.hypot(q.x - b.x, q.z - b.z); return b.sunk || q.sunk || d > 0.9 ? 0 : d; }))); }
       D.rpGo(g, g.log.length); return out; });
-    const press = async t => { await page.evaluate(t => { const b = [...document.querySelectorAll('#playPad.low button')].find(b => b.textContent === t); if (b) b.click(); }, t); await drawn(page, 400); };
-    await press('⏵'); const r2 = await rS();
-    await press('⏭'); const r3 = await rS();
-    await press('⏸'); const r4 = await rS();
-    await press('⏮'); const r5 = await rS();
-    await press('✕'); const r6 = await rS();
+    const press = async t => { await page.evaluate(t => { const btn = document.getElementById('menuBtn'), m = document.getElementById('menu'); if (!m.hidden) btn.click(); btn.click();
+      const b = [...document.querySelectorAll('#appMenu button')].find(b => b.textContent.startsWith(t)); if (b) b.click(); if (!m.hidden) btn.click(); }, t); await drawn(page, 400); };
+    await press('Replay this game'); const r2 = await rS();
+    await press('Replay: the next shot'); const r3 = await rS();
+    await press('Replay: stop on this shot'); const r4 = await rS();
+    await press('Replay: the shot before'); const r5 = await rS();
+    await press('Replay: back to the game'); const r6 = await rS();
     const ok = r0 && r0.log === 0 && r0.pad === '▦' && r1 && r1.log >= 3 && flown.length >= 2 && flown.every(d => d < 1e-9)
-      && r2.rp && r2.rp[0] === 0 && r2.pad === '▦⏮⏸⏭✕' && /played again · shot 1 of/.test(r2.title) && r3.rp && r3.rp[0] === 1 && r4.rp && r4.rp[1] === true && r5.rp && r5.rp[0] <= 1 && r6.rp === null && r6.log >= r1.log;
+      && r2.rp && r2.rp[0] === 0 && r2.pad === '▦' && /played again · shot 1 of/.test(r2.title) && r3.rp && r3.rp[0] === 1 && r4.rp && r4.rp[1] === true && r5.rp && r5.rp[0] <= 1 && r6.rp === null && r6.log >= r1.log;
     if (!ok) failures.push('[replay] ' + JSON.stringify({ r0, r1, flown, r2, r3, r4, r5, r6 }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} pool replay: a match's shots kept as they are struck, each flown again to where the game went on from, the pad's ⏵ ⏭ ⏸ ⏮ ✕ play, step, stop and leave it (${r1 ? r1.log : '?'} shots)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} pool replay: a match's shots kept as they are struck, each flown again to where the game went on from, the menu's replay items play, step, stop and leave it, the pad only ▦ (${r1 ? r1.log : '?'} shots)`);
   }
 
   // BANK POOL (Nov 23: "What next pool game", then "Proceed"): an entry of the pool games' table. A ball down counts only if it met a cushion on
