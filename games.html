@@ -247,7 +247,8 @@
      loaded file's name (centred, one line, cut short, between the lock and turn chips and the quick buttons); a long press still
      shuts the row, and shut, the dots are back, since they are how it opens. */
   body:not(.bb-collapsed) #bbHandle { display: none; }
-  body.pad-replay #bbHandle { display: none; }   /* (Nov 25: the replay's buttons up, the row's dots hidden: playPadTick) */
+  body.pad-replay #bbHandle { display: none; }
+  body.pad-replay #playPad.low { left: 50%; transform: translateX(-50%); }   /* (the replay's buttons alone, in the middle of the footer, Nov 25) */   /* (Nov 25: the replay's buttons up, the row's dots hidden: playPadTick) */
   #bbName { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: var(--bb-peek); display: flex; align-items: center;
             max-width: calc(100% - 260px); padding: 0 8px; box-sizing: border-box; font-size: 0.75rem; color: #f3f1ea; letter-spacing: .02em;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 2; text-shadow: 0 1px 2px rgba(0, 0, 0, .8); }
@@ -58025,6 +58026,7 @@ const TRICK_APP = (() => {
   addEventListener('keydown', e => {
     if ((e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) || e.ctrlKey || e.metaKey || e.altKey) return;
     const g = liveGame(); if (!g || ED.on) return;
+    if (g.rp){ if (e.key === 'Escape'){ e.preventDefault(); e.stopImmediatePropagation(); rpGo(g, g.log.length); } return; }   // (a replay: Escape ends it, REPLAY MODE)
     if (g.nine && (g.nine.turn || g.nine.over)) return;      // (the computer's shot, or the rack over: the keys are not the cue's)
     const k = e.key; let did = true;
     if (k === 'ArrowLeft' || k === 'ArrowRight') nudge(g, (k === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 1 : 0.05));
@@ -58098,9 +58100,11 @@ const TRICK_APP = (() => {
     onLeave(){ ctlHide(); },
     fitView(){ WHOLE = false; behindCue(liveGame()); },
     playActs(c, r){ const g = liveGame(); if (!g || ED.on || !LIVE || LIVE.c !== c || LIVE.r !== r || (g.nine && g.nine.rt)) return null;
-      const L = [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }];
-      // (the replay's buttons are in the menu since Nov 25: "move the replay buttons into the menu."; `rpMenu`)
-      return L; },
+      // (a replay up: its buttons alone, the whole board's ▦ and the row's dots hidden (`replay`, `pad-replay`); REPLAY MODE, over `rpMenu`)
+      if (g.rp) return [{ key: 'rpPrev', glyph: '⏮', title: 'The shot before', replay: true },
+        { key: 'rpPause', glyph: g.rp.paused ? '⏵' : '⏸', title: g.rp.paused ? 'Go on' : 'Stop on this shot', on: g.rp.paused, replay: true },
+        { key: 'rpNext', glyph: '⏭', title: 'The next shot', replay: true }, { key: 'rpStop', glyph: '⏹', title: 'End the replay (Escape)', replay: true }];
+      return [{ key: 'view', glyph: '▦', title: WHOLE ? 'Back behind the white, along the shot' : 'The whole table from above', on: WHOLE }]; },
     playPadLow: true,                                         // (Nov 22: "Move the full board button to the bottom of the screen and remove the text label.   Hide the button when the bottom browser is visible.")
     onPlayAct(c, r, key){
       const g = liveGame();
@@ -58215,19 +58219,15 @@ const TRICK_APP = (() => {
     if (pockets){ ctx.fillStyle = '#060608'; for (const [x, y] of [[0.06, 0.26], [0.5, 0.25], [0.94, 0.26], [0.06, 0.74], [0.5, 0.75], [0.94, 0.74]]){ ctx.beginPath(); ctx.arc(x * sz, y * sz, sz * 0.05, 0, 7); ctx.fill(); } }
   };
   const dot = (ctx, x, y, r, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); };
-  /* THE REPLAY IN THE MENU (Nov 25: "move the replay buttons into the menu."): A GAME PLAYED AGAIN's ⏵, and while it plays ⏮ ⏸/⏵ ⏭ ✕, were on
-     the play pad; they are the menu's now, each shown only while it applies (a menu item's `when`), doing what the pad's did (`onPlayAct`).
-     A tap on the table still stops a replay on its shot and goes on. */
+  /* THE REPLAY IN THE MENU (Nov 25: "move the replay buttons into the menu."), then REPLAY MODE (the same day's next: "the menu should just show one
+     menu item called replay, and when selected it shows the replay button on the footer only and hide the full board and bottom browser buttons.
+     escape key or stop button cancels replay mode."): the menu has one item, Replay, while there is a game to play again (a menu item's `when`).
+     Chosen, the replay plays and the footer's pad has only its buttons, ⏮ ⏸/⏵ ⏭ ⏹ (`playActs`), the whole board's ▦ and the row's dots hidden
+     (`pad-replay`); ⏹ or Escape ends it and the game is back as it was. A tap on the table still stops a replay on its shot and goes on. */
   function rpMenu(){
     const act = key => { const f = framedCell(), A = window.getFieldApp && window.getFieldApp(); if (f && A && A.onPlayAct) A.onPlayAct(f.c, f.r, key); };
     const g = () => liveGame();
-    return [
-      { label: () => { const q = g(); return 'Replay this game' + (q && q.log ? ' (' + q.log.length + (q.log.length === 1 ? ' shot)' : ' shots)') : ''); }, title: 'Play this game again from its first shot, on the board.', when: () => !g() || !g().rp ? rpCan(g()) : false, on(){ act('rp'); } },
-      { label: 'Replay: the shot before', title: 'Back to the start of this shot, or at its start the one before.', when: () => !!(g() && g().rp), on(){ act('rpPrev'); } },
-      { label: () => g() && g().rp && g().rp.paused ? 'Replay: go on' : 'Replay: stop on this shot', title: 'Stop the replay on this shot, or go on from it.', when: () => !!(g() && g().rp), on(){ act('rpPause'); } },
-      { label: 'Replay: the next shot', title: 'On to the next shot of the replay.', when: () => !!(g() && g().rp), on(){ act('rpNext'); } },
-      { label: 'Replay: back to the game', title: 'End the replay; the game waits where it was.', when: () => !!(g() && g().rp), on(){ act('rpStop'); } },
-    ];
+    return [{ label: 'Replay', title: 'Play this game again from its first shot, on the board; ⏹ or Escape ends it.', when: () => { const q = g(); return !!(q && !q.rp && rpCan(q)); }, on(){ act('rp'); } }];
   }
   function matchApp(m, o){
     const A = Object.defineProperties({}, Object.getOwnPropertyDescriptors(app));
