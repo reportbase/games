@@ -966,8 +966,13 @@
   body .chip[aria-pressed="true"] { background: var(--dgold); color: #14141a !important; border-color: rgba(212, 160, 82, .9); }
   #playPad button { border-radius: 16px; border: 1px solid var(--dchip-line); background: var(--dchip-bg); color: #e6e4ee; box-shadow: var(--dchip-shadow); }
   /* (THE TOOL BAR, Nov 26: small square icon buttons, no words, in the middle at the foot of the screen, above the dots or the open row) */
+  /* (Nov 26: "It should still be on the bottom and wrap around if the buttons extend beyond the screen width.": at the foot of the screen with the
+     row shut, above the row with it open; as wide as its buttons up to the screen less 16px a side (`width: max-content`: centred by `left: 50%`
+     alone it would wrap at half the screen), past that onto more lines, growing upward) */
   #toolBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bb-h) + var(--bb-bottom) + 6px); z-index: 30; display: flex; gap: 6px;
-             padding: 4px; border-radius: 12px; background: rgba(12, 13, 18, .45); pointer-events: auto; max-width: calc(100vw - 32px); flex-wrap: wrap; justify-content: center; }
+             padding: 4px; border-radius: 12px; background: rgba(12, 13, 18, .45); pointer-events: auto; width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box;
+             flex-wrap: wrap; justify-content: center; }
+  body.bb-collapsed #toolBar { bottom: var(--bb-bottom); }
   #toolBar button { width: 38px; height: 38px; padding: 0; font-size: 1.2rem; line-height: 1; border-radius: 10px; border: 1px solid var(--dchip-line); background: var(--dchip-bg);
                     color: #e6e4ee; box-shadow: var(--dchip-shadow); cursor: pointer; touch-action: manipulation; display: flex; align-items: center; justify-content: center; }
   #toolBar button.on { border-color: var(--dgold); box-shadow: 0 0 0 1.5px var(--dgold), var(--dchip-shadow); color: var(--dgold); }
@@ -13835,7 +13840,8 @@ function playPadTick(a){
 /* THE TOOL BAR, A SECOND ROW ON THE BOTTOM (Nov 26: "Let's make a second type of object browser on the bottom.  Block builder should use this
    second browser.   It should always be visible  for small icons with no text."): a game that gives `toolTiles(c, r)` for the framed board,
    [{ glyph, title, on }], has a strip of small square buttons, an icon each and no words (the title is the tooltip and the name read aloud), at
-   the foot of the screen in the middle, always up while the game gives them: above the dots with the row shut, above the row with it open. The
+   the foot of the screen in the middle, always up while the game gives them: at the very bottom with the row shut, above the row with it open
+   (wrapping onto more lines past the screen's width, Nov 26). The
    one marked `on` is ringed. A press reaches `onToolTap(c, r, index)`. It is not the row of boards (that stays as it was, opened by its dots) nor
    the play pad (the big round buttons, `playActs`); it is drawn as draw's buttons are. Rebuilt only when what it shows changes. */
 let _toolBarSig = null;
