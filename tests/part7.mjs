@@ -194,14 +194,19 @@ try {
     await tile('Remove'); await drawn(page, 300);
     p = await at(cu, cv); await page.mouse.click(p.x, p.y); await drawn(page, 500);
     const t3 = await gs();
-    const live = { row0, row1, padKeys, tool: t1 && t1.tool, set: t2 && t2.st.split('|')[mid], off: t3 && t3.st.split('|')[mid], moves: t3 && t3.moves, toolX: t3 && t3.tool };
+    // undo (Nov 26: "Add undo to block builder."): the row's Undo puts the block taken off back, a real Z takes the block set off
+    await tile('Undo'); await drawn(page, 300); const t4 = await gs();
+    await page.keyboard.press('z'); await drawn(page, 300); const t5 = await gs();
+    const menuStart = await page.evaluate(() => { const btn = document.getElementById('menuBtn'), m = document.getElementById('menu'); if (!m.hidden) btn.click(); btn.click();
+      const L = [...document.querySelectorAll('#appMenu button')].map(b => b.textContent); btn.click(); return L.some(t => /this board again/.test(t)); });
+    const live = { undo1: t4 && t4.st.split('|')[mid] + ':' + t4.moves, undo2: t5 && t5.st.split('|')[mid] + ':' + t5.moves, menuStart, row0, row1, padKeys, tool: t1 && t1.tool, set: t2 && t2.st.split('|')[mid], off: t3 && t3.st.split('|')[mid], moves: t3 && t3.moves, toolX: t3 && t3.tool };
     const shown = await page.evaluate(async () => { const A = window.getFieldApp(), D = A._debug, f = D.LIVE, c = f.c + 2, r = f.r;
       const look = () => A.cellItems(c, r).filter(i => i.kind === 'blkCube').length, seen = new Set();
       for (let k = 0; k < 12; k++){ seen.add(look()); await new Promise(ok => setTimeout(ok, 400)); } return seen.size; });
     const ok = bk.models === '40,40,40,40,40' && bk.built === 'true,true,3' && bk.removed === '0,2' && bk.wrong === false
-      && /^Red\*,Blue,.*Remove$/.test(live.row0) && /^Red,Blue\*/.test(live.row1) && !/c0|c1|x/.test(live.padKeys) && live.tool === 1 && live.set === '1' && live.off === '' && live.moves === 2 && live.toolX === -1 && shown >= 3;
+      && /^Red\*,Blue,.*Remove,Undo$/.test(live.row0) && /^Red,Blue\*/.test(live.row1) && !/c0|c1|x/.test(live.padKeys) && live.tool === 1 && live.set === '1' && live.off === '' && live.moves === 2 && live.toolX === -1 && live.undo1 === '1:1' && live.undo2 === ':0' && !live.menuStart && shown >= 3;
     if (!ok) failures.push('[block builder] ' + JSON.stringify({ bk, live, shown }));
-    console.log(`${ok ? 'ok  ' : 'FAIL'} block builder (models of every level in their bands, one piece, no stack too tall; built by its own order at par, 3 stars; the remove tool; a wrong colour not done; the bottom row's colours and Remove as tiles, the chosen one lit and none on the pad, Blue chosen and a real click setting a block of it, Remove and a real click taking it off; a board no one plays building, ${shown} looks)`);
+    console.log(`${ok ? 'ok  ' : 'FAIL'} block builder (models of every level in their bands, one piece, no stack too tall; built by its own order at par, 3 stars; the remove tool; a wrong colour not done; the bottom row's colours and Remove as tiles, the chosen one lit and none on the pad, Blue chosen and a real click setting a block of it, Remove and a real click taking it off, the row's Undo and a real Z taking both back, no Start this board again in the menu; a board no one plays building, ${shown} looks)`);
   }
 
 

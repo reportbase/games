@@ -30123,7 +30123,6 @@ const BLOCKOUT_APP = (() => {
       { label: () => 'See-through: ' + (SET.glass ? 'on' : 'off'), title: 'The cubes over where the piece will land, and over holes, drawn as glass; holes marked red. V on the keys.', on(){ setGlass(!SET.glass); } },
       SND.item,
       { label: 'How to play', title: 'The keys and touches.', on(){ say('Fill whole layers. Arrows or WASD slide the piece; Q and E spin it, R and F tip it away and toward you, Z and X roll it left and right; Enter drops it (Space pauses). On a phone: drag to slide, tap its shadow to drop, tap elsewhere to spin, and the bottom row tips and rolls.', 7000); } },
-      { label: 'Start this board again', title: 'An empty pit, the score at nothing.', on(){ const f = framedCell(); if (f) app.onReset(f.c, f.r); } },
     ]}],
     cellTitle(c, r){
       const lv = lvOf(c, r), L = LV[lv - 1], g = GAMES.get(gkey(c, r));
@@ -31415,7 +31414,6 @@ const SOMA_APP = (() => {
       { label: 'Make a figure for this board…', title: 'Your own figure: cells on and off layer by layer, the pieces to fill it with. The solver checks it can be filled and counts its ways. ✎ in the row too.', on(){ if (edOpen()) edPane(true); } },
       { label: 'Share this board\'s figure', title: 'A link that opens on this figure (yours, or the board\'s own), on whatever board it is framed.', on(){ shareFig(); } },
       { label: 'Forget this board\'s figure', title: 'Your figure off this board: its own comes back.', disabled: () => { const f = framedCell(); return !(f && MINE.has(boardIdx(f.c, f.r))); }, on(){ forgetFig(); } },
-      { label: 'Start this board again', title: 'Every piece back in the tray.', on(){ const f = framedCell(); if (f) app.onReset(f.c, f.r); } },
     ]}],
     cellTitle(c, r){
       if (ED.on && ED.c === c && ED.r === r) return 'Soma — making a figure: ' + edCount() + ' cubes in it, ' + edNeed() + ' in its pieces (' + ED.types.map((on, t) => on ? NAMES[t] : '').join('') + '), layer ' + (ED.z + 1) + ' of ' + ED.B[2];
@@ -32307,7 +32305,6 @@ const GEMS_APP = (() => {
       { label: () => 'Colours: ' + (SET.colours || 'by level'), title: 'Five to seven colours, or the level\'s (5 near the corner, 7 far out). Fewer colours make more lines fall into place by themselves.', on(){ setting('colours'); } },
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); resetAll(); } },
       SND.item,
-      { label: 'Start this board again', title: 'This board\'s goal from the start.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); try { fieldItemsChanged(); } catch {} } },
       { label: 'How to play', title: '', on(){ say('Swap two gems side by side (a tap on each, or a drag) to line up three or more. Four in a line make a flame gem, an L or T a star, five a hypercube: swap it with a colour to clear them all. Make the board\'s goal in its moves.', 9000); } },
     ] }],
     cellGrid(c, r, px){
@@ -48899,7 +48896,6 @@ const TILT_APP = (() => {
       SND.item,
       { label: () => 'Tilt steering: ' + (TILT.on ? 'on' : 'off'), title: 'On a phone: tip it to tip the board. The way you hold it when you turn this on counts as level.',
         on(){ ARCADE.setTilt(!TILT.on, say); } },
-      { label: 'Start this board again', title: 'The marble back at the start, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; } } },
       // (your own mazes: Oct 20, "let the user create their own mazes.")
       { label: () => ED.on ? 'Done: play this maze' : 'Make a maze for this board…', title: 'The bottom row becomes a maze editor: walls, holes, the start and the ring. The steady player checks it can be done and sets par; Done plays it.',
         on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
@@ -50707,7 +50703,6 @@ const PINBALL_APP = (() => {
     menu: [{ head: 'Pinball', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
-      { label: 'Start this board again', title: 'Three balls, the score at nothing.', on(){ const f = framedCell(); if (!f) return; LIVE = { c: f.c, r: f.r }; const g = gameAt(f.c, f.r); begin(g); } },
       // (a table of your own: Oct 25, "1", of what came next for pinball)
       { label: () => ED.on ? 'Done: play this table' : 'Make a table for this board…', title: 'The bottom row becomes a table editor: bumpers, ramps, the orbit, the saucer, drop banks, toys, the era, theme and level. The steady player checks it; Done plays it.',
         on(){ if (ED.on) edDone(); else if (edOpen()) edPane(true); } },
@@ -51071,7 +51066,6 @@ const SIMON_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: () => 'Song: ' + (SONG < 0 ? 'your own sequence' : SONGS[SONG].name), title: 'Play a preset tune instead of the board\'s own sequence (also the buttons in the bottom row).', on(){ const f = framedCell(); if (f) playSong(f.c, f.r, SONG + 1 >= SONGS.length ? -1 : SONG + 1); else SONG = SONG + 1 >= SONGS.length ? -1 : SONG + 1; } },
-      { label: 'Start this board again', title: 'A new game of this board\'s sequence, from one step.', on(){ const f = framedCell(); if (f){ const g = fresh(f.c, f.r); GAMES.set(gkey(f.c, f.r), g); LIVE = { c: f.c, r: f.r }; begin(g); } } },
     ]}],
     // (the bottom row: Own sequence, then a button a song; a tap begins that tune on the framed board)
     statTiles(c, r){
@@ -51356,7 +51350,6 @@ const LIGHTS_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
       { label: 'Hint', title: 'Flash one press of a shortest way out from where the lights are now.', on(){ const f = framedCell(); if (f){ LIVE = { c: f.c, r: f.r }; hint(gameAt(f.c, f.r)); try { fieldItemsChanged(); } catch {} } } },
-      { label: 'Start this board again', title: 'This board\'s lights as dealt, no presses yet.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
     ]}],
     cellFar: { light: OFF_B, dark: BASE },
     itemMinPx: 10,
@@ -51463,7 +51456,7 @@ const BLOCKS_APP = (() => {
   let LIVE = null;
   const { BEST, saveBest } = BOARD_KIT.best('blocks.best');
   const bestKey = S => S.idx + '@' + S.lv;
-  const fresh = (c, r) => { const S = modelOf(c, r); return { S, c, r, n: S.n, st: Array.from({ length: S.n * S.n }, () => []), moves: 0, tool: 0, done: false, last: -1, lastTo: 0 }; };
+  const fresh = (c, r) => { const S = modelOf(c, r); return { S, c, r, n: S.n, st: Array.from({ length: S.n * S.n }, () => []), moves: 0, tool: 0, done: false, last: -1, lastTo: 0, hist: [] }; };
   const gameAt = BOARD_KIT.gameAt(GAMES, (c, r) => fresh(c, r));
   const liveGame = BOARD_KIT.liveGame(() => app, () => LIVE, gameAt);
   const starsOf = (moves, par) => moves <= par ? 3 : moves <= Math.ceil(par * 1.5) ? 2 : 1;
@@ -51474,8 +51467,8 @@ const BLOCKS_APP = (() => {
   function act(g, i, quiet){
     if (g.done || i < 0 || i >= g.n * g.n) return false;
     const s = g.st[i];
-    if (g.tool < 0){ if (!s.length) return false; s.pop(); SND.play('slide', quiet); }
-    else { if (s.length >= g.S.D.h) return false; s.push(g.tool); SND.play('tap', quiet); }
+    if (g.tool < 0){ if (!s.length) return false; g.hist.push([i, '-', s.pop()]); SND.play('slide', quiet); }
+    else { if (s.length >= g.S.D.h) return false; s.push(g.tool); g.hist.push([i, '+', g.tool]); SND.play('tap', quiet); }
     g.moves++; g.last = i; g.lastTo = clock() + 0.3;
     if (sameAs(g.st, g.S.st)){
       g.done = true;
@@ -51485,6 +51478,20 @@ const BLOCKS_APP = (() => {
     }
     return true;
   }
+  /* UNDO (Nov 26: "Add undo to block builder."): every block set or taken off is kept (`hist`), and Undo takes the last back (a block set is
+     taken off again, one taken off is set again), and its move with it. The row's Undo tile, Z or Ctrl+Z. A board built is done: nothing to undo. */
+  function undo(g, quiet){
+    if (!g || g.done || !g.hist.length) return false;
+    const [i, op, col] = g.hist.pop(), s = g.st[i];
+    if (op === '+') s.pop(); else s.push(col);
+    g.moves = Math.max(0, g.moves - 1); g.last = i; g.lastTo = clock() + 0.3; SND.play('slide', quiet);
+    return true;
+  }
+  addEventListener('keydown', e => {
+    if (!(e.key === 'z' || e.key === 'Z') || e.altKey || (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) return;
+    let a = null; try { a = window.getFieldApp && window.getFieldApp(); } catch {} if (a !== app) return;
+    const g = liveGame(); if (g && undo(g)){ e.preventDefault(); try { fieldItemsChanged(); bbRefreshNow(); } catch {} }
+  });
   // a board no one plays: its model built a block at a time, held, and cleared
   function shownOf(S){
     const k = S.order.length, t = BOARD_KIT.loopT(S.phase, HOLD0 + k * STEP + HOLD1), m = t < HOLD0 ? 0 : Math.min(k, Math.floor((t - HOLD0) / STEP) + 1);
@@ -51518,7 +51525,6 @@ const BLOCKS_APP = (() => {
     menu: [{ head: 'Block builder', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); MODELS.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
-      { label: 'Start this board again', title: 'This board\'s plot cleared, no moves yet.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
     ]}],
     cellFar: { light: TILE_B, dark: BASE },
     itemMinPx: 10,
@@ -51553,15 +51559,16 @@ const BLOCKS_APP = (() => {
        remove tool's, the chosen one lit (`statTiles`, `onStatTap`); until then they were the play pad's buttons. The row opens by its dots. */
     statTiles(c, r){ const g = GAMES.get(gkey(c, r)); if (!g || g.done || !LIVE || LIVE.c !== c || LIVE.r !== r) return null;
       const L = []; for (let k = 0; k < g.S.D.cols; k++) L.push({ glyph: COL_GLYPH[k], value: COL_NAME[k][0].toUpperCase() + COL_NAME[k].slice(1), label: 'set ' + COL_NAME[k] + ' blocks', bg: g.tool === k ? ON : undefined });
-      L.push({ glyph: '⌫', value: 'Remove', label: 'the top block', bg: g.tool < 0 ? ON : undefined }); return L; },
+      L.push({ glyph: '⌫', value: 'Remove', label: 'the top block', bg: g.tool < 0 ? ON : undefined });
+      L.push({ glyph: '↶', value: 'Undo', label: g.hist.length ? 'the last move (Z)' : 'nothing yet' }); return L; },
     onStatTap(c, r, i){ const f = c == null ? framedCell() : { c, r }; if (!f) return false; const g = gameAt(f.c, f.r); LIVE = { c: f.c, r: f.r };
-      g.tool = i < g.S.D.cols ? i : -1; try { fieldItemsChanged(); bbRefreshNow(); } catch {} return true; },
+      if (i === g.S.D.cols + 1) undo(g); else g.tool = i < g.S.D.cols ? i : -1; try { fieldItemsChanged(); bbRefreshNow(); } catch {} return true; },
     drawIcon(ctx, sz){
       ctx.fillStyle = '#15171d'; ctx.fillRect(0, 0, sz, sz);
       const b = sz * 0.16, cube = (x, y, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, b * 0.92, b * 0.92); };
       [[0.18, 0.62, '#d23a2f'], [0.34, 0.62, '#2f6fc0'], [0.34, 0.46, '#e3c33b'], [0.5, 0.62, '#d23a2f'], [0.66, 0.62, '#2e9b57'], [0.66, 0.46, '#2f6fc0'], [0.66, 0.3, '#d23a2f']].forEach(([x, y, c]) => cube(x * sz, y * sz, c));
     },
-    _debug: { modelOf, gameAt, fresh, act, shownOf, starsOf, cellAt, sameAs, levelAt, boardIdx, LV, GAMES, BEST, MODELS, P0, P1,
+    _debug: { modelOf, gameAt, fresh, act, undo, shownOf, starsOf, cellAt, sameAs, levelAt, boardIdx, LV, GAMES, BEST, MODELS, P0, P1,
               levelOf: (c, r) => levelAt(boardIdx(c, r)), get LIVE(){ return LIVE; }, set LIVE(v){ LIVE = v; }, fly: (c, r) => gotoCell(c, r) },
   };
   return app;
@@ -51817,7 +51824,6 @@ const MOLE_APP = (() => {
     menu: [{ head: 'Whack-a-mole', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); try { fieldItemsChanged(); } catch {} } },
       SND.item,
-      { label: 'Start this board again', title: 'This board\'s round again, from the count.', on(){ const f = framedCell(); if (f){ const g = fresh(f.c, f.r); GAMES.set(gkey(f.c, f.r), g); LIVE = { c: f.c, r: f.r }; begin(g); } } },
     ]}],
     cellFar: { light: GRASS, dark: GRASS },
     itemMinPx: 12,
@@ -52254,7 +52260,6 @@ const NONOGRAM_APP = (() => {
       SND.item,
       { label: () => 'Taps: ' + (MODE === 'fill' ? 'fill' : 'cross out'), title: 'What a tap on a square does: fill it, or mark it empty with an X. A hold always crosses. The two marks in the board\'s top left corner, or X on the keys, switch it too.',
         on(){ setMode(MODE === 'fill' ? 'cross' : 'fill'); } },
-      { label: 'Start this board again', title: 'This board\'s puzzle blank again, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
     ]}],
     cellFar: { light: BAND, dark: BAND },
     faceMinPx: 8,
@@ -52899,7 +52904,6 @@ const SUDOKU_APP = (() => {
       { label: () => 'Show mistakes: ' + (MISTAKES ? 'on' : 'off'), title: 'A wrong digit shows red as soon as it is put down. Off, nothing says so until a hint or the end.', on(){ setMistakes(!MISTAKES); } },
       { label: 'Hint', title: 'Light the square the next logical step finds, and name the technique in the title; again puts its digit in. Each press is a fault.',
         on(){ const f = framedCell(); if (f){ LIVE = { c: f.c, r: f.r }; hint(gameAt(f.c, f.r)); try { fieldItemsChanged(); } catch {} } } },
-      { label: 'Start this board again', title: 'This board\'s puzzle as dealt, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
     ]}],
     cellFar: { light: BAND, dark: BAND },
     faceMinPx: 8,
@@ -53545,7 +53549,6 @@ const HASHI_APP = (() => {
       { label: () => 'Show mistakes: ' + (MISTAKES ? 'on' : 'off'), title: 'A bridge the answer does not have shows red as soon as it is laid. Off, nothing says so until a hint or the end.', on(){ setMistakes(!MISTAKES); } },
       { label: 'Hint', title: 'Light the pair the next logical step finds, and name the technique in the title; again lays its bridge. Each press is a fault.',
         on(){ const f = framedCell(); if (f){ LIVE = { c: f.c, r: f.r }; hint(gameAt(f.c, f.r)); try { fieldItemsChanged(); } catch {} } } },
-      { label: 'Start this board again', title: 'This board\'s sea as dealt, no bridges, the clock at nothing.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); LIVE = { c: f.c, r: f.r }; try { fieldItemsChanged(); } catch {} } } },
     ]}],
     cellFar: { light: BAND, dark: BAND },
     faceMinPx: 8,
@@ -55165,7 +55168,6 @@ const TANKS_APP = (() => {
       { label: () => 'Tanks: ' + SET.n, title: 'Two, three or four tanks on each board, every one for itself.', on(){ setMode(SET.n === 4 ? 2 : SET.n + 1, null); } },
       { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One: you against the computer\'s tanks. Two: you and a friend on this device, passing it between turns (Player 1 the leftmost tank, Player 2 the rightmost).', on(){ setMode(null, SET.players === 2 ? 1 : 2); } },
       SND.item,
-      { label: 'Start this board again', title: 'This board\'s ground as it was, every tank whole.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
     ]}],
     cellFar: { light: SKY_B, dark: EARTH },
     itemMinPx: FAR_PX,
@@ -58278,7 +58280,6 @@ const TRICK_APP = (() => {
       { label: () => { const f = framedCell(); return f && FREEPLAY.has(gkey(f.c, f.r)) ? 'Back to this board\'s trick shot' : 'Free play on this board'; },
         title: 'Free play: one of wander\'s tables (the rack, the row of four, the jump, the massé, or fifteen balls scattered), the balls yours to move and the shots to undo.',
         on(){ const f = framedCell(); if (!f) return; const k = gkey(f.c, f.r); if (FREEPLAY.has(k)) FREEPLAY.delete(k); else FREEPLAY.add(k); LIVE = { c: f.c, r: f.r }; restart(f.c, f.r); } },
-      { label: 'Start this board again', title: 'The table as it was set, the cue as it began.', on(){ const f = framedCell(); if (f) restart(f.c, f.r); } },
       { label: 'Make a trick shot for this board…', title: 'The row becomes an editor: place the balls, mark what the shot must do; a shot is looked for and its par set.', on(){ if (!ED.on && edOpen()) edPane(true); } },
       { label: 'Share this board\'s trick shot', title: 'A link that opens on this table\'s own trick shot (the one being made, while making it).', on(){ shareShot(); } },
       { label: 'Forget this board\'s trick shot', title: 'Its own trick shot goes, and the board\'s made one comes back.', on(){ const f = framedCell(); if (!f) return; const idx = boardIdx(f.c, f.r); if (!MINE.has(idx)) return say('This board has no trick shot of its own.', 1800);
@@ -58457,7 +58458,6 @@ const TRICK_APP = (() => {
         SND.item,
         ...rpMenu(),
         { label: () => 'Paths: ' + SET.paths, title: 'The shot seen ahead: every ball\'s way, the white\'s alone, or only the aim to the first ball.', on(){ SET.paths = { all: 'cue', cue: 'off', off: 'all' }[SET.paths]; ARCADE.save('trickshots.paths', SET.paths); GAMES.forEach(g => { g.dirty = true; }); touch(); } },
-        { label: o.again, title: o.againTip, on(){ if (m.reset){ m.reset(); m.games.clear(); } const f = framedCell(); if (f) restart(f.c, f.r); } },
       ]}],
       cellTitle(c, r){
         const g = GAMES.get(gkey(c, r)); if (g) return titleOf(g);
@@ -60083,7 +60083,6 @@ const PONG_APP = (() => {
       { label: () => 'Arena: ' + (SET.arena ? 'on' : 'off'), title: 'Every board its own bumpers, walls, sliding walls and portals, more of them farther out.', on(){ setting('arena'); } },
       { label: () => 'Physics: ' + (SET.phys === 'theme' ? 'by theme' : 'plain'), title: 'By theme: a bounce in table tennis and tennis, the puck sliding on the ice, goals in air hockey, a gravity well in space.', on(){ setting('phys'); } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'Blips, tocks and the crowd, each theme its own.', on(){ setting('sound'); } },
-      { label: 'Start this board again', title: 'A new match, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
       { label: 'How to play', title: 'The controls.', on(){ say('Drag anywhere on the table, or hold ← →, to move your paddle (the near one); drag up, or ↑, to step it forward into a shot. Where the ball meets the paddle sets its angle; a paddle moving as it hits puts spin on it, and a fast swipe into the angle is a smash. First to ' + SET.target + ', won by two; the one who lost the point serves (a tap or Space serves at once). The bottom row has the settings.', 9000); } },
     ]}],
     cellFar: { light: 0x16181f, dark: 0x0c0d12 },
@@ -60699,7 +60698,6 @@ const AIRHOCKEY_APP = (() => {
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); RECS.clear(); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Players: ' + (SET.players === 2 ? 'two' : 'one'), title: 'One against the computer, or two on one device: a finger each on your own half.', on(){ setting('players'); } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The clack, the rails, the buzzer.', on(){ setting('sound'); } },
-      { label: 'Start this board again', title: 'A new match, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
       { label: 'How to play', title: 'The controls.', on(){ say('Your mallet (the near one) goes where your finger is, anywhere in your half; or use the arrow keys. Swing through the puck to shoot: the harder you swing, the harder it goes. Bank it off the rails. The puck scored on comes back to the one scored against. First to ' + SET.target + '. The bottom row has the settings.', 9000); } },
     ]}],
     cellFar: { light: 0x16181f, dark: 0x0c0d12 },
@@ -61743,7 +61741,6 @@ const SQUASH_APP = (() => {
       { label: () => 'Hands: ' + (SET.hands === 'swing' ? 'swing' : 'auto'), title: 'Auto: your racket takes the ball as it comes. Swing: you time each swing (let go of the court, or Enter).', on(){ setting('hands'); } },
       { label: () => 'Shot: ' + SHOT_NAMES[SET.shot].toLowerCase(), title: 'By how you move, or always a drive, drop, lob, boast or kill (keys 1–5, 0 back).', on(){ setting('shot'); } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The racket, the front wall, the tin.', on(){ setting('sound'); } },
-      { label: 'Start this board again', title: 'A new match or drill, the score at nothing.', on(){ const f = framedCell(); if (f) begin(gameAt(f.c, f.r)); } },
       { label: 'How to play', title: 'The rules and the controls.', on(){ say('You (red) and the computer (blue) share the court and take turns: the ring under a player says whose shot it is. Run to the ball (your finger, or the arrow keys) and your racket takes it as it comes to you. Where it meets you sets the angle: off your right side it goes right. Step in toward the front wall for a drive, stand still for a drop, go back for a lob. A shot must hit the front wall above the tin and under the top line before it touches the floor; the other side must return it before it bounces twice. Stand in the way of the other side\'s shot and it is a let, or a stroke to them if they were near the ball. The guide shows where the ball will come down. A tap or Enter serves when it is your serve. With Swing hands you time each stroke: let go of the court (or Enter) as the ball comes, the ring lit; a flick as you let go picks the shot (up a kill, down a lob, across a boast), or pick one in the row or with 1–5. Every board\'s computer has a style of its own, named in the title. Hold the court still between rallies and let go to show or hide the row. The row has the game (squash, racquetball, fives), drills and doubles.', 16000); } },
     ]}],
     cellFar: { light: 0x1d1813, dark: 0x0f0c0a },
@@ -62227,7 +62224,6 @@ const MARBLE_APP = (() => {
     menu: [{ head: 'Marble run', items: [
       { label: DL.item.label, title: DL.item.title, on(){ DL.item.on(); GAMES.clear(); PUZ.clear(); RUNS.clear(); try { fieldItemsChanged(); } catch {} } },
       { label: () => 'Sound: ' + (SET.sound ? 'on' : 'off'), title: 'The pieces going down, the marble.', on(){ SET.sound = !SET.sound; saveSet(); } },
-      { label: 'Start this board again', title: 'Every piece of yours back in the stock.', on(){ const f = framedCell(); if (f){ GAMES.set(gkey(f.c, f.r), fresh(f.c, f.r)); try { bbRefreshNow(); } catch {} } } },
       { label: 'Show the way', title: 'The way the board was made, laid for you (no stars for it).', on(){ const g = liveGame(); if (!g || !g.P) return; g.placed = new Map([...g.P.sol].filter(([k]) => !g.P.given.has(k))); for (const t of TYPES) g.inv[t] = 0; g.shown = true; g.state = 'build'; say('The way it was made. Run it.', 1800); try { bbRefreshNow(); } catch {} } },
       { label: 'How to play', title: 'The pieces and the run.', on(){ say('Bring the marble from the blue chute to the red cup. Tap a square: the piece from your stock that fits best lies there, turned and raised to join what is beside it; tap it again for the next piece or way that joins, and again past the last to take it back. Tap the chute or the cup to run the marble. (Or pick a piece in the row and tap a square: it lies turned and raised to join what is beside it; tap it again to turn it another way, Raise and Lower move it a level. Ramps and spirals come down a level, which is what gives the marble its speed: on the flat and round curves it slows, and taken too fast a curve throws it off. Ends must meet at the same height. Run sends it.', 12000); } },
     ]}],
@@ -64088,7 +64084,6 @@ onmessage = ev => {
       { label: 'Fix this version', title: 'This board\'s game broke while played: send its error back to Claude to fix.', on: withFramed((c, r) => fixIt(c, r)) },
       { label: 'Undo the last change', title: 'Back a version on this board.', on: withFramed((c, r) => undo(c, r, -1)) },
       { label: 'Redo', title: 'Forward a version again.', on: withFramed((c, r) => undo(c, r, +1)) },
-      { label: 'Start this board again', title: 'The game from its opening.', on: withFramed((c, r) => restart(c, r)) },
       ...STARTERS.map((S, s) => ({ label: 'Start from ' + S.name, title: 'This board plays ' + S.name + ' as it came, to change from there (your versions so far stay in Undo).', on: withFramed((c, r) => startFrom(c, r, s)) })),
       { label: 'Show the rules (code)…', title: 'The game\'s module, to read or change by hand.', on: withFramed((c, r) => openRules(c, r)) },
       { label: 'Share this board\'s game', title: 'Copy a link that opens the page on this game. Whoever opens it runs it in the same sandbox.', on: withFramed((c, r) => share(c, r)) },

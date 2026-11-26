@@ -705,3 +705,8 @@ the row's tiles now (`statTiles`, `onStatTap`: Red, Blue, … and ⌫ Remove, th
 The row opens by its dots as ever (the field's rule that games play with the row shut gives way here, as asked). Part 7's check reads the row's
 tiles, the chosen one lit and none on the pad, chooses Blue and Remove from the row, and sets and takes off a block with real clicks; passing.
 Looked at with the row open.
+
+**Block builder: undo** (Nov 26: "Add undo to block builder."). Every block set or taken off is kept (`hist`); Undo (`undo`) takes the last back,
+a block set taken off again and one taken off set again, and its move with it. The row's ↶ Undo tile (after Remove), Z or Ctrl+Z; nothing to undo
+on a board built. Part 7's check: the row's Undo putting back the block taken off, a real Z taking the block set off, the moves back to 0; and no
+"Start this board again" in the menu (taken out of every game the same day). Passing.

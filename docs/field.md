@@ -603,3 +603,11 @@ menu button is as it was. Checked by a probe: the real click turns the button's 
 different", read as the lower-left button, the only one down there). Off, the two measured the same (fill, ring, glyph, shadow); on, the
 whole-table button was a gold disc, a fill the menu's button never has. On, it is now the menu's own pressed look: the dark disc with the ring
 gold. It keeps its one glyph. Checked by a probe of the computed fill, off and on, against the menu button's.
+
+**No "Start this board again" in the menus** (Nov 26: "Remove menu option to start this board over again in all applications."). The item was
+in the menus of 19 games (3D Tetris, Soma, Bejeweled, the tilt maze, pinball, Simon, Lights Out, the block builder, Whack-a-mole, Nonograms,
+Sudoku, Hashi, the tanks, trick shots, Pong, air hockey, squash, marble run, the game lab) and of every pool match game (`matchApp`'s `o.again`,
+"Rack this board again" in 9-ball and 8-ball); all taken out. The menu's first item, Reset (`_resetItemFor`, the same for every game with
+`onReset`), stays: it asks, then starts the board over. A hold on a board still starts it again where a game had that. A probe opened every one
+of the 67 apps' menus: each built, none with the item; chess, the flash cards, Levels and the gallery have no Reset (chess its own button), as
+before. `matchApp`'s `again` and `againTip` are no longer read.
