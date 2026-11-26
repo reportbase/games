@@ -611,3 +611,13 @@ Sudoku, Hashi, the tanks, trick shots, Pong, air hockey, squash, marble run, the
 `onReset`), stays: it asks, then starts the board over. A hold on a board still starts it again where a game had that. A probe opened every one
 of the 67 apps' menus: each built, none with the item; chess, the flash cards, Levels and the gallery have no Reset (chess its own button), as
 before. `matchApp`'s `again` and `againTip` are no longer read.
+
+**The tool bar, a second row on the bottom** (Nov 26: "Let's make a second type of object browser on the bottom.  Block builder should use this
+second browser.   It should always be visible  for small icons with no text."). A game that gives `toolTiles(c, r)` for the framed board,
+[{ glyph, title, on, dim }], has a strip of small square buttons (38px, an icon each, no words: the title is the tooltip and the name read aloud)
+in the middle at the foot of the screen (`#toolBar`, `toolBarTick`, beside `playPadTick` in `bbStatTick`), always up while the game gives them:
+above the row's peek with it shut, above the row with it open (`bottom: --bb-h + --bb-bottom + 6px`). `on` is ringed in gold, `dim` faded; a
+press reaches `onToolTap(c, r, index)`. Drawn as draw's buttons are. It is not the row of boards (opened by its dots; a game with nothing in the
+row has no dots, as before) nor the play pad. The block builder is the first to use it: its colours, ⌫ Remove and ↶ Undo (it had them in the
+row for a few hours, and on the play pad before that). Part 7's block builder check clicks the bar's buttons for real: up with the row shut,
+above the dots (or the dots away), four buttons, no words, the chosen one ringed. Looked at in a screenshot.

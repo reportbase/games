@@ -710,3 +710,7 @@ Looked at with the row open.
 a block set taken off again and one taken off set again, and its move with it. The row's ↶ Undo tile (after Remove), Z or Ctrl+Z; nothing to undo
 on a board built. Part 7's check: the row's Undo putting back the block taken off, a real Z taking the block set off, the moves back to 0; and no
 "Start this board again" in the menu (taken out of every game the same day). Passing.
+
+**Block builder: the tool bar** (Nov 26, the same day: "Block builder should use this second browser."). The colours, Remove and Undo are the new
+tool bar's small icons (`toolTiles`, `onToolTap`; docs/field.md), always at the foot of the screen; the row of boards has nothing from this game
+now (so no dots for it, as Lights Out). Undo is faded while there is nothing to undo.
